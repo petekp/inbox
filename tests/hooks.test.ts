@@ -599,6 +599,9 @@ test('/inbox demo shows sample entries in every tab, sends nothing, and goes bac
   expect(await pane.find({ text: /Report query runs twice/ })).toBeDefined()
   await pane.press({ key: 'tab-prs' })
   expect(await pane.find({ text: /Add CSV export to the reports page/ })).toBeDefined()
+  // The sample PRs are not looked up, and their buttons open nothing.
+  await pane.press({ key: 'open-acme/reports#42' })
+  expect(ran.filter(argv => argv[0] === 'gh' || argv[0] === 'open')).toEqual([])
 
   await $.command.run({ command: 'inbox', args: 'demo' } as never)
   expect(await pane.find({ text: /Add CSV export/ })).toBeUndefined()

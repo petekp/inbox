@@ -124,6 +124,8 @@ const SETTLED = atom({ plugin: 'inbox', key: 'settled' } as const, [] as Settled
 const SETTLED_MS = 8000
 const IS_DEMO = atom({ plugin: 'inbox', key: 'isDemo' } as const, false)
 const SAMPLE_PRESS = 'Sample entry: nothing was sent. Run /inbox demo to go back.'
+// The pane's buttons that only move around it, which work in the demo. Every other press there sends nothing.
+const DEMO_PRESSES = /^(tab-|toggle-|title-|select-|typekey-|next$|previous$)/
 // A dirtier tree is read only this far, so changes past it go unseen.
 const SNAPSHOT_MAX = 2000
 const PR_POLL_MS = 2 * 60_000
@@ -825,7 +827,12 @@ async function actOnNote($: EngineInterface, note: Note, how: 'address' | 'discu
 async function showTab($: EngineInterface, tab: Tab) {
   await update($, TAB, () => tab)
   await $.ui.scroll({ in: PANE, to: 'start' }).catch(() => undefined)
-  if (tab === 'prs') void fetchPrs($, true)
+  if (tab === 'prs') void findPrs($)
+}
+
+/** Refreshes the PRs tab as it comes into view, asking gh for the branch's PR. The demo shows sample PRs, so it asks nothing. */
+async function findPrs($: EngineInterface) {
+  if (!(await read($, IS_DEMO))) await fetchPrs($, true)
 }
 
 function isCollapsed(collapsed: Collapsed, section: Section): boolean {
@@ -1634,7 +1641,7 @@ export const register: Register = on => {
   on('command.run', { command: 'inbox' }, async ($, e) => {
     const isDemo = e.args.trim() === 'demo' ? await update($, IS_DEMO, d => !d) : await read($, IS_DEMO)
     const opened = await $.ui.open({ id: PANE, title: 'Inbox', focus: true, closeOnEscape: true })
-    if (opened.isPlaced && !isDemo && (await read($, TAB)) === 'prs') void fetchPrs($, true)
+    if (opened.isPlaced && (await read($, TAB)) === 'prs') void findPrs($)
 
     return {
       text: isDemo ? 'Showing sample entries in the inbox. Run /inbox demo again to go back.' : 'Opened the inbox.',
@@ -1816,13 +1823,27 @@ export const register: Register = on => {
     return r
   })
 
+  // Sample entries can be selected and opened, but what they would send goes nowhere.
+  on('ui.press', { plugin: 'inbox', requestId: PANE }, async ($, e, next) => {
+    if (DEMO_PRESSES.test(e.element) || !(await read($, IS_DEMO))) return next(e)
+    $.ui.toast(SAMPLE_PRESS)
+
+    return { element: e.element }
+  })
+  on('ui.input', { plugin: 'inbox', requestId: PANE }, async ($, e, next) => {
+    if (e.kind !== 'submit' || !(await read($, IS_DEMO))) return next(e)
+    $.ui.toast(SAMPLE_PRESS)
+
+    return { element: e.element, value: e.value }
+  })
+
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const elements = $.ui.resolve(e)
     const { Box, Button, Link, Markdown, Text } = elements
     // The mobile app draws no text field, so there the typed reply is not offered.
     const Input = 'Input' in elements ? elements.Input : null
     const [
-      { ledger, prViews: prState, stop, checks, settled, now, isDemo },
+      { ledger, prViews: prState, stop, checks, settled, now },
       presence,
       tab,
       collapsed,
@@ -1838,8 +1859,6 @@ export const register: Register = on => {
       read($, IS_DARK_THEME),
       read($, TYPING),
     ])
-    // Sample entries can be selected and opened, but their actions send nothing.
-    const act = (onPress: (press: UiPressArgument) => void) => (isDemo ? () => $.ui.toast(SAMPLE_PRESS) : onPress)
     const card = ledger.card
     const prViews = Object.values(prState.views)
 
@@ -2022,11 +2041,7 @@ export const register: Register = on => {
     const keysWidth = (keys: KeyAction[]) =>
       keys.reduce((w, k) => w + k.hotkey.length + 2 + k.label.length, 0) + 2 * Math.max(0, keys.length - 1)
     // A typed reply needs a text field, so it is left out where there is none.
-    // In the demo, every other key only says that nothing was sent.
-    const pressable = (keys: KeyAction[]) =>
-      keys
-        .filter(k => Input || !k.key.startsWith('typekey-'))
-        .map(k => (k.key.startsWith('typekey-') ? k : { ...k, onPress: act(k.onPress) }))
+    const pressable = (keys: KeyAction[]) => keys.filter(k => Input || !k.key.startsWith('typekey-'))
     // A section's children hang from its title like a directory listing. A
     // child's row has a 1-column bar, 3 columns for the tree, 3 for its marker,
     // then its text. `branch` draws the tree: ├─ on the child's first line, or
@@ -2164,7 +2179,7 @@ export const register: Register = on => {
                     placeholder={row.typeHint}
                     submitLabel="send"
                     autoFocus
-                    onSubmit={(value: string) => (isDemo ? $.ui.toast(SAMPLE_PRESS) : row.onType?.(value))}
+                    onSubmit={(value: string) => row.onType?.(value)}
                   />
                 </Box>
               ) : null}
@@ -2544,17 +2559,12 @@ export const register: Register = on => {
                 <Button
                   key={`address-all-${pr.ref}`}
                   label={`Address all ${waitingOn.length} threads`}
-                  onPress={act(() => void send($, prompts.address(pr, waitingOn)))}
+                  onPress={() => void send($, prompts.address(pr, waitingOn))}
                 />
               ) : null}
-              <Button key={`open-${pr.ref}`} label="Open PR" dimColor onPress={act(() => void openUrl($, pr.url))} />
+              <Button key={`open-${pr.ref}`} label="Open PR" dimColor onPress={() => void openUrl($, pr.url)} />
               {pr.ref !== prState.branchRef ? (
-                <Button
-                  key={`unlink-${pr.ref}`}
-                  label="Remove"
-                  dimColor
-                  onPress={act(() => void unlinkPr($, pr.ref))}
-                />
+                <Button key={`unlink-${pr.ref}`} label="Remove" dimColor onPress={() => void unlinkPr($, pr.ref)} />
               ) : null}
             </Box>
           </Box>,
