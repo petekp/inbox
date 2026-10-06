@@ -177,6 +177,41 @@ test('after 15 idle minutes the band shows where the session stands', async ($, 
   expect(await band.find({ text: /last active/ })).toBeUndefined()
 })
 
+test('loaded into a conversation with nothing to fork yet, it catches up after the first reply, showing no failure', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world(on, [])
+  // A resumed session: earlier turns, but no request from this process to fork.
+  on('session.turns', () => ({ value: 3 }))
+  let canFork = false
+  on('model.fork', () => ({
+    value: canFork
+      ? {
+          isAnswered: true as const,
+          text: 'GOAL: Ship the onboarding flow\nNOW: Waiting on copy review',
+          usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+        }
+      : { isAnswered: false as const, reason: 'nothing-to-fork' as const },
+  }))
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  expect(await pane.find({ text: /update failed/ })).toBeUndefined()
+
+  canFork = true
+  await $.prompt.submit({ text: 'where were we', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Waiting on review.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+  expect(await band.find({ text: /Ship the onboarding flow/ })).toBeDefined()
+})
+
 test('after a failed update, the next reply catches up over the whole conversation', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])

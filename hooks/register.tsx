@@ -74,6 +74,7 @@ const PRESENCE = atom(
     lastActiveAt: 0,
     isAway: false,
     isUpdating: false,
+    isBehind: false,
     error: null,
     minute: 0,
   } as Presence,
@@ -417,27 +418,32 @@ async function showSettled($: EngineInterface, before: Ledger, after: Ledger) {
 
 type ModelResult = Awaited<ReturnType<EngineInterface['model']['fork']>>
 
-/** Applies the ledger model's reply; returns what went wrong, or null. */
+/** How an update ended: whether the ledger may still miss turns, and the failure to show, if any. */
+type UpdateEnd = Pick<Presence, 'isBehind' | 'error'>
+
+/** Applies the ledger model's reply. */
 async function applyLedgerReply(
   $: EngineInterface,
   r: ModelResult,
   source: string | null,
   change: (l: Ledger, u: Update, now: number) => Ledger,
-): Promise<string | null> {
+): Promise<UpdateEnd> {
   if (!r.isAnswered) {
-    if (r.reason === 'api-error') return `model error ${r.status ?? ''}`.trim()
-    return r.reason === 'nothing-to-fork' ? 'nothing to read yet' : r.reason
+    // A fork has nothing to read until this process sends its first request,
+    // as after a resume. The catch-up runs again after the next reply.
+    if (r.reason === 'nothing-to-fork') return { isBehind: true, error: null }
+    return { isBehind: true, error: r.reason === 'api-error' ? `model error ${r.status ?? ''}`.trim() : r.reason }
   }
   const parsed = parseReply(r.text, source)
-  if (!parsed) return 'the ledger model replied in an unreadable format'
+  if (!parsed) return { isBehind: true, error: 'the ledger model replied in an unreadable format' }
   const now = await $.clock.now()
   await commitLedger($, l => change(l, parsed, now))
 
-  return null
+  return { isBehind: false, error: null }
 }
 
-/** Updates the ledger from one exchange; returns what went wrong, or null. */
-async function runUpdate($: EngineInterface, ex: Exchange): Promise<string | null> {
+/** Updates the ledger from one exchange. */
+async function runUpdate($: EngineInterface, ex: Exchange): Promise<UpdateEnd> {
   const r = await $.model.complete({
     model: MODEL,
     system: SYSTEM,
@@ -458,22 +464,25 @@ async function runUpdate($: EngineInterface, ex: Exchange): Promise<string | nul
  * Brings the ledger up to date over the whole conversation, for turns the
  * per-turn update missed: it closes what was handled and adds what still waits.
  */
-async function catchUp($: EngineInterface): Promise<string | null> {
+async function catchUp($: EngineInterface): Promise<UpdateEnd> {
   const r = await $.model.fork({ prompt: catchUpPrompt(await read($, LEDGER), await screen($)) })
 
   return applyLedgerReply($, r, null, (l, u, now) => applyUpdate(l, u, now, l.turn))
 }
 
 /**
- * Queues the next update: a catch-up after a failed one, since the ledger may
- * have missed that turn, else this exchange alone.
+ * Queues the next update: a catch-up while the ledger may have missed a turn,
+ * else this exchange alone.
  */
 function queueUpdate($: EngineInterface, ex: Exchange | null) {
   queue = queue.then(async () => {
-    const isBehind = (await read($, PRESENCE)).error !== null
+    const { isBehind } = await read($, PRESENCE)
     await update($, PRESENCE, p => ({ ...p, isUpdating: true }))
-    const error = await (isBehind || ex === null ? catchUp($) : runUpdate($, ex)).catch(() => 'the last update failed')
-    await update($, PRESENCE, p => ({ ...p, isUpdating: false, error }))
+    const end = await (isBehind || ex === null ? catchUp($) : runUpdate($, ex)).catch((): UpdateEnd => ({
+      isBehind: true,
+      error: 'the last update failed',
+    }))
+    await update($, PRESENCE, p => ({ ...p, ...end, isUpdating: false }))
   })
   // A rejected link would skip every later update, so the chain swallows it.
   queue = queue.catch(() => undefined)
@@ -1244,7 +1253,7 @@ export const register: Register = on => {
     // A reload stops any update the previous load had running, and state outlives
     // it, so an update in flight at load was cut off: record it as failed.
     const presence = await update($, PRESENCE, p =>
-      p.isUpdating ? { ...p, isUpdating: false, error: 'an update was cut off' } : p,
+      p.isUpdating ? { ...p, isUpdating: false, isBehind: true, error: 'an update was cut off' } : p,
     )
     const theme = (await $.config.list().catch(() => [])).find(row => row.key === 'theme')?.value
     await update($, IS_DARK_THEME, () => theme === 'dark')
@@ -1275,7 +1284,7 @@ export const register: Register = on => {
     // conversation that already has turns: the mod loaded mid-session, or its saved state was lost.
     const loaded = await read($, LEDGER)
     const isEmpty = !loaded.card && loaded.items.length === 0
-    if (presence.error !== null || (isEmpty && (await $.session.turns().catch(() => 0)) > 0)) queueUpdate($, null)
+    if (presence.isBehind || (isEmpty && (await $.session.turns().catch(() => 0)) > 0)) queueUpdate($, null)
     await publishStatus($)
     // A resumed session's linked PRs; the branch's PR waits for the PRs tab.
     if (loaded.prs.length > 0) void fetchPrs($, false)
@@ -1296,7 +1305,7 @@ export const register: Register = on => {
     if (isOn && e.reason === 'clear') {
       await update($, LEDGER, () => EMPTY)
       await update($, PREVIOUS, () => null)
-      await update($, PRESENCE, p => ({ ...p, isAway: false, error: null }))
+      await update($, PRESENCE, p => ({ ...p, isAway: false, isBehind: false, error: null }))
       activity = []
       person = null
       press = null

@@ -151,7 +151,9 @@ export type Presence = {
   lastActiveAt: number
   isAway: boolean
   isUpdating: boolean
-  /** Why the last update failed. While set, the ledger may have missed a turn, so the next update re-reads the whole conversation. */
+  /** The ledger may have missed a turn, so the next update re-reads the whole conversation. */
+  isBehind: boolean
+  /** Why the last update failed, shown in the pane; null when it did not fail. */
   error: string | null
   /** The minute of the last clock tick, so the "last active" text redraws. */
   minute: number
