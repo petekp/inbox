@@ -257,6 +257,9 @@ let root = ''
 // The repo's top folder, where git reads the working tree; null outside git.
 let top: string | null = null
 let refreshing: Promise<void> = Promise.resolve()
+// The PR fetches, one at a time, and the next one when it is waiting to start: whether it looks up the branch's PR.
+let fetchingPrs: Promise<void> = Promise.resolve()
+let nextFetchFindsBranchPr: boolean | null = null
 let isSaved = false
 let queue: Promise<void> = Promise.resolve()
 // The inbox text Claude last read beside a prompt, so it is sent again only when it changed.
@@ -958,12 +961,28 @@ function urlRef(json: string): string | null {
 /**
  * Refreshes every PR the tab shows: the linked ones and the current branch's.
  * Only `findsBranchPr` asks gh which PR the branch has; otherwise the last one
- * found is refreshed by its ref. One fetch runs at a time.
+ * found is refreshed by its ref. One fetch runs at a time. A request made
+ * while one runs waits for it, joined with any other request waiting.
  */
-async function fetchPrs($: EngineInterface, findsBranchPr: boolean) {
-  const state = await read($, PR_VIEWS)
-  if (state.isFetching) return
-  await update($, PR_VIEWS, v => ({ ...v, isFetching: true }))
+function fetchPrs($: EngineInterface, findsBranchPr: boolean): Promise<void> {
+  if (nextFetchFindsBranchPr !== null) {
+    nextFetchFindsBranchPr ||= findsBranchPr
+    return fetchingPrs
+  }
+  nextFetchFindsBranchPr = findsBranchPr
+  fetchingPrs = fetchingPrs
+    .then(() => {
+      const finds = nextFetchFindsBranchPr ?? false
+      nextFetchFindsBranchPr = null
+      return fetchPrsNow($, finds)
+    })
+    .catch(() => undefined)
+
+  return fetchingPrs
+}
+
+async function fetchPrsNow($: EngineInterface, findsBranchPr: boolean) {
+  const state = await update($, PR_VIEWS, v => ({ ...v, isFetching: true }))
   try {
     const linked = (await read($, LEDGER)).prs
     const branchTarget = findsBranchPr ? null : state.branchRef

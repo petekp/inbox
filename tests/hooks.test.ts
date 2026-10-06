@@ -32,7 +32,8 @@ let ran: string[][] = []
 let toolAnswer: { text: string; isError: boolean } = { text: 'ok', isError: false }
 
 // gh's answers by command; anything else fails, as gh does outside a repo with no PR.
-let ghAnswers: { match: (argv: readonly string[]) => boolean; stdout: string }[] = []
+// `hold` delays an answer until it resolves, as a slow network would.
+let ghAnswers: { match: (argv: readonly string[]) => boolean; stdout: string; hold?: () => Promise<void> }[] = []
 
 function gh(argv: readonly string[]) {
   const hit = ghAnswers.find(a => a.match(argv))
@@ -74,8 +75,9 @@ function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   on('env.get', ($, e) => ({ value: vars[e.name] }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('tool.register', ($, e) => ({ value: { tool: `mcp__inbox__${e.name}` } }))
-  on('process.run', ($, e) => {
+  on('process.run', async ($, e) => {
     ran.push([...e.argv])
+    await ghAnswers.find(a => a.match(e.argv))?.hold?.()
     return { value: gh(e.argv) }
   })
   on('model.complete', ($, e) => {
@@ -464,6 +466,51 @@ test('a PR linked in a reply shows in the PRs tab, and Address sends its thread'
   await pane.press({ key: 'address-T1' })
   expect(sent.at(-1)).toContain('Address this review comment on PR #12')
   expect(sent.at(-1)).toContain('bin/greet:4, from @sam:\nQuote the name.')
+})
+
+test('opening the PRs tab while another PR fetch runs still finds the branch’s PR', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world(on, [])
+  const view = (number: number, title: string) =>
+    JSON.stringify({
+      number,
+      title,
+      url: `https://github.com/acme/greet/pull/${number}`,
+      isDraft: false,
+      state: 'OPEN',
+      baseRefName: 'main',
+      mergeable: 'MERGEABLE',
+      reviewDecision: 'APPROVED',
+      statusCheckRollup: [],
+    })
+  const noThreads = JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } })
+  let isSlow = true
+  ghAnswers.push(
+    // The linked PR's first fetch is still running when the tab opens.
+    {
+      match: argv => argv.includes('view') && argv.includes('12'),
+      stdout: view(12, 'Linked work'),
+      hold: () => (isSlow ? ((isSlow = false), clock.sleep(5000)) : Promise.resolve()),
+    },
+    { match: argv => argv.includes('view') && !argv.includes('12'), stdout: view(13, 'Branch work') },
+    { match: argv => argv.includes('graphql'), stdout: noThreads },
+  )
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'open the PR', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Opened https://github.com/acme/greet/pull/12.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-prs' })
+  await clock.advance(5000)
+
+  expect(await pane.find({ text: /Linked work/ })).toBeDefined()
+  expect(await pane.find({ text: /Branch work/ })).toBeDefined()
 })
 
 test('a stop and an open permission prompt lead the sidebar line until they clear', async ($, on) => {
