@@ -1,0 +1,5 @@
+{
+  "name": "inbox",
+  "owner": { "name": "Pete Petrash" },
+  "plugins": [{ "name": "inbox", "source": "./" }]
+}
