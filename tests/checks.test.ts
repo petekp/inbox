@@ -26,6 +26,13 @@ describe('checksIn', () => {
 })
 
 describe('readResults', () => {
+  test('a check run twice in one command is unknown, since its output mixes both runs', () => {
+    const command = 'claude plugin test . | grep pass; claude plugin test /tmp/copy | grep pass'
+    expect(readResults(command, checksIn(command), ' 48 pass\n 0 fail\n 47 pass\n 1 fail\n', false)).toEqual([
+      { call: { name: 'plugin tests', kind: 'tests' }, result: 'unknown', summary: 'ran 2 times in one command' },
+    ])
+  })
+
   test('a labeled exit line decides each check', () => {
     const command = 'bun test > t.log; echo "test exit $?"; tsc > c.log; echo "tsc exit $?"'
     expect(readResults(command, checksIn(command), 'test exit 0\ntsc exit 2\n', false).map(r => r.result)).toEqual([

@@ -139,9 +139,11 @@ function summaryOf(output: string): string {
 }
 
 /**
- * How each check in a command ended. An explicit "<name> exit N" line wins.
- * Then the command's own exit status, when a lone check ends the command and
- * nothing filters it. Then failure or pass counts in the output.
+ * How each check in a command ended. A check the command runs more than once
+ * is unknown, since the output does not say which lines are which run's.
+ * Otherwise an explicit "<name> exit N" line wins. Then the command's own exit
+ * status, when a lone check ends the command and nothing filters it. Then
+ * failure or pass counts in the output.
  */
 export function readResults(
   command: string,
@@ -155,6 +157,8 @@ export function readResults(
   const last = segments(command).at(-1) ?? ''
 
   return calls.map(call => {
+    const runs = segments(command).filter(s => checksIn(s).some(c => c.name === call.name)).length
+    if (runs > 1) return { call, result: 'unknown', summary: `ran ${runs} times in one command` }
     const words = call.name.toLowerCase().split(/\s+/)
     const labeled = exits.find(
       x =>
