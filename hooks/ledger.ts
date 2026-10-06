@@ -148,7 +148,7 @@ function readHelp(
     return quoted.trim() !== '' && quoted.length <= 8000 && isFromReply(quoted) ? { kind, text: quoted, name } : null
   }
   if (kind === 'run') {
-    const command = quoted.trim().replace(/^!\s*/, '')
+    const command = commandText(quoted)
     const isUsable = command !== '' && command.length <= 4000 && isFromReply(command)
     return isUsable ? { kind: NEEDS_PERSON.test(command) ? 'terminal' : 'run', command, name } : null
   }
@@ -164,15 +164,20 @@ function readHelp(
   return null
 }
 
+/** A command as written, without surrounding space or a leading `!`. */
+function commandText(text: string): string {
+  return text.trim().replace(/^!\s*/, '')
+}
+
 /** The command a help runs or copies, so a copy of a command yields to its command button. */
 function commandOf(help: Help): string | null {
-  if (help.kind === 'run' || help.kind === 'terminal') return help.command
-  if (help.kind === 'copy') return help.text.trim().replace(/^!\s*/, '')
+  if (isCommand(help)) return help.command
+  if (help.kind === 'copy') return commandText(help.text)
 
   return null
 }
 
-function isCommand(help: Help): boolean {
+function isCommand(help: Help): help is Extract<Help, { kind: 'run' | 'terminal' }> {
   return help.kind === 'run' || help.kind === 'terminal'
 }
 
@@ -249,10 +254,7 @@ export function screenText(isPaneOpen: boolean, tab: string): string {
 export function tasksRunBy(ledger: Ledger, command: string): Item[] {
   const typed = squash(command)
 
-  return ledger.items.filter(
-    i =>
-      i.kind === 'do' && i.helps.some(h => (h.kind === 'run' || h.kind === 'terminal') && squash(h.command) === typed),
-  )
+  return ledger.items.filter(i => i.kind === 'do' && i.helps.some(h => isCommand(h) && squash(h.command) === typed))
 }
 
 /** A transcript row of the person's own command, as session.append carries it. */
@@ -514,12 +516,12 @@ const ACCEPT_RECS = /\b(all|both|everything|your)\b[^.\n]{0,40}\b(recommend\w*|r
  * numbered answers mapped to the latest batch, an item quoted from the band,
  * or a blanket "go" over the latest recommendations. Null when it answers none.
  *
- * `turn` is the person's prompt count including this prompt, so the latest
- * batch is only offered when it came from the reply just before it.
+ * `ledger.turn` already counts this prompt, so the latest batch is only
+ * offered when it came from the reply just before it.
  */
-export function answerNote(ledger: Ledger, text: string, turn: number): string | null {
+export function answerNote(ledger: Ledger, text: string): string | null {
   const lines: string[] = []
-  const batch = ledger.batchTurn === turn - 1 ? latestBatch(ledger) : []
+  const batch = ledger.batchTurn === ledger.turn - 1 ? latestBatch(ledger) : []
 
   if (batch.length > 0) {
     const numbers = new Set<number>()
@@ -721,7 +723,7 @@ function stopShort(stop: Stop): string {
 }
 
 /** "Allow push main to origin?", or a question dialog's question. */
-export function dialogText(dialog: Dialog): string {
+function dialogText(dialog: Dialog): string {
   return dialog.kind === 'permission' ? `Allow ${dialog.text}?` : dialog.text
 }
 

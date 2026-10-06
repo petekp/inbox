@@ -125,7 +125,6 @@ export function demoView(now: number): View {
         },
         { name: 'npm build', kind: 'build', result: 'unknown', summary: '', ranAt: now - 4 * MIN },
       ],
-      snapshot: null,
       changedAt: now - 10 * MIN,
       codeChangedAt: now - 10 * MIN,
     },

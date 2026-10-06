@@ -146,6 +146,11 @@ export function checkCounts(pr: PrView): Record<PrCheck['bucket'], number> {
   return counts
 }
 
+/** "1 thread waiting on you", "3 threads waiting on you". */
+function threadsWaiting(count: number): string {
+  return `${count} ${count === 1 ? 'thread' : 'threads'} waiting on you`
+}
+
 /** What stands between the PR and merging, or that it is ready. */
 export function readiness(pr: PrView): { isReady: boolean; text: string } {
   if (pr.state !== 'OPEN') return { isReady: false, text: pr.state === 'MERGED' ? 'Merged' : 'Closed' }
@@ -156,7 +161,7 @@ export function readiness(pr: PrView): { isReady: boolean; text: string } {
     pr.mergeable === 'CONFLICTING' ? `conflicts with ${pr.base}` : null,
     failing > 0 ? `${failing} failing ${failing === 1 ? 'check' : 'checks'}` : null,
     pr.reviewDecision === 'CHANGES_REQUESTED' ? 'changes requested' : null,
-    open > 0 ? `${open} ${open === 1 ? 'thread' : 'threads'} waiting on you` : null,
+    open > 0 ? threadsWaiting(open) : null,
     pr.reviewDecision === 'REVIEW_REQUIRED' ? 'needs approval' : null,
     pending > 0 ? `${pending} ${pending === 1 ? 'check' : 'checks'} running` : null,
   ].filter((b): b is string => b !== null)
@@ -167,6 +172,19 @@ export function readiness(pr: PrView): { isReady: boolean; text: string } {
         text: `Ready to merge${pr.reviewDecision === 'APPROVED' ? ': approved' : ''}, checks pass, no threads waiting on you`,
       }
     : { isReady: false, text: `Blocked: ${blockers.join(', ')}` }
+}
+
+/** The band's one-line PR alert: the first open PR that needs the person, or null. */
+export function prAttention(views: PrView[]): string | null {
+  for (const pr of views) {
+    if (pr.state !== 'OPEN') continue
+    const open = waitingThreads(pr).length
+    if (checkCounts(pr).fail > 0) return `PR #${pr.number} CI failing`
+    if (pr.reviewDecision === 'CHANGES_REQUESTED') return `PR #${pr.number} changes requested`
+    if (open > 0) return `PR #${pr.number} ${threadsWaiting(open)}`
+  }
+
+  return null
 }
 
 /** Where a thread sits in the diff: "path:line", or the path alone. */

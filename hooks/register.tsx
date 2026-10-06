@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, UiPressArgument, UiScrollResult } from 'claude-code'
+import type { EngineInterface, Register, SessionAppendMessage, UiPressArgument, UiScrollResult } from 'claude-code'
 
 import type {
   Checks,
@@ -23,8 +23,18 @@ import type {
   Stop,
   Tab,
 } from '../types'
-import { checkLine, checksIn, claimMessage, contradictedClaim, isStale, readResults, recordCheck } from './checks'
+import {
+  checkDetail,
+  checkLine,
+  checkMark,
+  checksIn,
+  claimMessage,
+  contradictedClaim,
+  readResults,
+  recordCheck,
+} from './checks'
 import { demoView } from './demo'
+import type { View } from './demo'
 import { candidates, changedPaths, readChanged, readLsTree, sameSnapshot } from './git'
 import type { Exchange, Press, Update } from './ledger'
 import {
@@ -33,6 +43,7 @@ import {
   checkCounts,
   failingChecks,
   parseRef,
+  prAttention,
   prRefs,
   prompts,
   readThreads,
@@ -74,8 +85,7 @@ const PRESENCE = atom(
     lastActiveAt: 0,
     isAway: false,
     isUpdating: false,
-    isBehind: false,
-    error: null,
+    ledgerState: 'current',
     minute: 0,
   } as Presence,
 )
@@ -105,8 +115,9 @@ const PR_VIEWS = atom(
 )
 const STOP = atom({ plugin: 'inbox', key: 'stop' } as const, null as Stop | null)
 const DIALOGS = atom({ plugin: 'inbox', key: 'dialogs' } as const, [] as Dialog[])
-const NO_CHECKS: Checks = { results: [], snapshot: null, changedAt: 0, codeChangedAt: 0 }
+const NO_CHECKS: Checks = { results: [], changedAt: 0, codeChangedAt: 0 }
 const CHECKS = atom({ plugin: 'inbox', key: 'checks' } as const, NO_CHECKS)
+const SNAPSHOT = atom({ plugin: 'inbox', key: 'snapshot' } as const, null as Snapshot | null)
 const TYPING = atom({ plugin: 'inbox', key: 'typing' } as const, null as string | null)
 const SETTLED = atom({ plugin: 'inbox', key: 'settled' } as const, [] as Settled[])
 // How long a closed item's row stays in place, with its outcome, before it moves to Closed.
@@ -190,6 +201,23 @@ const DARK_DIVIDER = '#3c3c3c'
 type TreePos = 'mid' | 'last' | 'pass'
 // More tree lines than a row wraps to; the tree's Box clips the rest.
 const TREE_DEPTH = 200
+// The tree column's text for each place and lead, built once each.
+const treeTexts = new Map<string, string>()
+
+/** The tree column for a row: `lead` lines of │, its branch, then │ or blank below. */
+function treeText(pos: TreePos, lead: number): string {
+  const key = `${pos}:${lead}`
+  const cached = treeTexts.get(key)
+  if (cached !== undefined) return cached
+  const text = [
+    ...Array<string>(lead).fill('│'),
+    pos === 'last' ? '└─' : pos === 'mid' ? '├─' : '│',
+    ...Array<string>(TREE_DEPTH).fill(pos === 'last' ? ' ' : '│'),
+  ].join('\n')
+  treeTexts.set(key, text)
+
+  return text
+}
 const DONE = 'success'
 // Each pane tab has its own color, used by its marker and by what it shows.
 const NOTES = 'autoAccept'
@@ -245,13 +273,29 @@ let shellCommand: string | null = null
 // Slash commands that say nothing about the work.
 const QUIET_COMMANDS = new Set(['inbox', 'clear'])
 
-/** Adds a command the person ran themselves to what they sent this turn. */
+/** Adds a message or a command of the person's to what they sent this turn. */
 function notePerson(line: string) {
   person = person === null ? line : `${person}\n\n${line}`
 }
 
 function noteActivity(line: string) {
   if (activity.length < 40 && !activity.includes(line)) activity.push(line)
+}
+
+/** A transcript row's text, its text blocks joined. */
+function messageText(message: SessionAppendMessage): string {
+  return message.content.map(b => (b.type === 'text' ? b.text : '')).join('')
+}
+
+/** A tool result's fields, or none when the result is not an object. */
+function resultFields(ran: { result?: unknown }): Record<string, unknown> {
+  return ran.result && typeof ran.result === 'object' ? (ran.result as Record<string, unknown>) : {}
+}
+
+/** Reads whether Claude Code draws in its dark theme. */
+async function syncTheme($: EngineInterface) {
+  const theme = (await $.config.list().catch(() => [])).find(row => row.key === 'theme')?.value
+  await update($, IS_DARK_THEME, () => theme === 'dark')
 }
 
 async function save($: EngineInterface, ledger: Ledger) {
@@ -261,14 +305,14 @@ async function save($: EngineInterface, ledger: Ledger) {
   // the store's insertion order, which the pruning treats as most recent. Later
   // saves only overwrite, so pruning runs once per process.
   if (!isSaved) await $.store.delete(key)
-  await $.store.set(key, { savedAt, ledger })
-  if (ledger.card) await $.store.set(`p:${root}`, { sessionId, savedAt, ledger })
+  await Promise.all([
+    $.store.set(key, { savedAt, ledger }),
+    ledger.card ? $.store.set(`p:${root}`, { savedAt, ledger }) : undefined,
+  ])
   if (isSaved) return
   isSaved = true
   const sessions = (await $.store.keys()).filter(k => k.startsWith('s:'))
-  for (const old of sessions.slice(0, Math.max(0, sessions.length - KEPT_SESSIONS))) {
-    await $.store.delete(old)
-  }
+  await Promise.all(sessions.slice(0, Math.max(0, sessions.length - KEPT_SESSIONS)).map(old => $.store.delete(old)))
 }
 
 /**
@@ -282,7 +326,9 @@ function publishStatus($: EngineInterface, isEnding = false): Promise<void> {
     .then(async () => {
       const pane = await $.env.get('HERDR_PANE_ID')
       if (!pane) return
-      const line = isEnding ? '' : statusLine(await read($, LEDGER), await read($, STOP), await read($, DIALOGS))
+      const line = isEnding
+        ? ''
+        : statusLine(...(await Promise.all([read($, LEDGER), read($, STOP), read($, DIALOGS)])))
       if (line === published) return
       published = line
       const token = line ? ['--token', `inbox=${line}`] : ['--clear-token', 'inbox']
@@ -374,7 +420,7 @@ function permissionText(tool: string, input: Record<string, unknown>): string {
 }
 
 /** Changes the ledger and saves it, so a resumed session finds it. */
-async function commitLedger($: EngineInterface, change: (l: Ledger) => Ledger): Promise<Ledger> {
+async function commitLedger($: EngineInterface, change: (l: Ledger) => Ledger): Promise<void> {
   let before: Ledger = EMPTY
   const after = await update($, LEDGER, l => {
     before = l
@@ -383,8 +429,6 @@ async function commitLedger($: EngineInterface, change: (l: Ledger) => Ledger): 
   await save($, after)
   void publishStatus($)
   await showSettled($, before, after)
-
-  return after
 }
 
 /**
@@ -409,17 +453,20 @@ async function showSettled($: EngineInterface, before: Ledger, after: Ledger) {
   })
   if (settled.length === 0) return
   await update($, SETTLED, s => [...s.filter(x => !settled.some(y => y.id === x.id)), ...settled])
-  // A reload or session end cuts the wait short; the rows then go with the state.
+  expireSettled($, settled, SETTLED_MS)
+}
+
+/** Removes just-closed rows after a wait. A reload cancels the wait, so session.start sets it again. */
+function expireSettled($: EngineInterface, settled: Settled[], waitMs: number) {
   void $.clock
-    .sleep(SETTLED_MS)
+    .sleep(waitMs)
     .then(() => update($, SETTLED, s => s.filter(x => !settled.some(y => y.id === x.id && y.at === x.at))))
     .catch(() => undefined)
 }
 
 type ModelResult = Awaited<ReturnType<EngineInterface['model']['fork']>>
 
-/** How an update ended: whether the ledger may still miss turns, and the failure to show, if any. */
-type UpdateEnd = Pick<Presence, 'isBehind' | 'error'>
+type LedgerState = Presence['ledgerState']
 
 /** Applies the ledger model's reply. */
 async function applyLedgerReply(
@@ -427,23 +474,22 @@ async function applyLedgerReply(
   r: ModelResult,
   source: string | null,
   change: (l: Ledger, u: Update, now: number) => Ledger,
-): Promise<UpdateEnd> {
+): Promise<LedgerState> {
   if (!r.isAnswered) {
     // A fork has nothing to read until this process sends its first request,
     // as after a resume. The catch-up runs again after the next reply.
-    if (r.reason === 'nothing-to-fork') return { isBehind: true, error: null }
-    return { isBehind: true, error: r.reason === 'api-error' ? `model error ${r.status ?? ''}`.trim() : r.reason }
+    return r.reason === 'nothing-to-fork' ? 'behind' : 'failed'
   }
   const parsed = parseReply(r.text, source)
-  if (!parsed) return { isBehind: true, error: 'the ledger model replied in an unreadable format' }
+  if (!parsed) return 'failed'
   const now = await $.clock.now()
   await commitLedger($, l => change(l, parsed, now))
 
-  return { isBehind: false, error: null }
+  return 'current'
 }
 
 /** Updates the ledger from one exchange. */
-async function runUpdate($: EngineInterface, ex: Exchange): Promise<UpdateEnd> {
+async function runUpdate($: EngineInterface, ex: Exchange): Promise<LedgerState> {
   const r = await $.model.complete({
     model: MODEL,
     system: SYSTEM,
@@ -464,8 +510,9 @@ async function runUpdate($: EngineInterface, ex: Exchange): Promise<UpdateEnd> {
  * Brings the ledger up to date over the whole conversation, for turns the
  * per-turn update missed: it closes what was handled and adds what still waits.
  */
-async function catchUp($: EngineInterface): Promise<UpdateEnd> {
-  const r = await $.model.fork({ prompt: catchUpPrompt(await read($, LEDGER), await screen($)) })
+async function catchUp($: EngineInterface): Promise<LedgerState> {
+  const [ledger, shown] = await Promise.all([read($, LEDGER), screen($)])
+  const r = await $.model.fork({ prompt: catchUpPrompt(ledger, shown) })
 
   return applyLedgerReply($, r, null, (l, u, now) => applyUpdate(l, u, now, l.turn))
 }
@@ -476,13 +523,11 @@ async function catchUp($: EngineInterface): Promise<UpdateEnd> {
  */
 function queueUpdate($: EngineInterface, ex: Exchange | null) {
   queue = queue.then(async () => {
-    const { isBehind } = await read($, PRESENCE)
-    await update($, PRESENCE, p => ({ ...p, isUpdating: true }))
-    const end = await (isBehind || ex === null ? catchUp($) : runUpdate($, ex)).catch((): UpdateEnd => ({
-      isBehind: true,
-      error: 'the last update failed',
-    }))
-    await update($, PRESENCE, p => ({ ...p, ...end, isUpdating: false }))
+    const { ledgerState } = await update($, PRESENCE, p => ({ ...p, isUpdating: true }))
+    const state = await (ledgerState !== 'current' || ex === null ? catchUp($) : runUpdate($, ex)).catch(
+      (): LedgerState => 'failed',
+    )
+    await update($, PRESENCE, p => ({ ...p, ledgerState: state, isUpdating: false }))
   })
   // A rejected link would skip every later update, so the chain swallows it.
   queue = queue.catch(() => undefined)
@@ -523,7 +568,6 @@ async function send($: EngineInterface, text: string, sentBy: Press | null = nul
 
 /** Appends context as a row only the model reads. Without it Claude still gets the prompt, so a refused append is ignored. */
 async function appendContext($: EngineInterface, context: string[]) {
-  if (context.length === 0) return
   await $.session
     .append({ message: { type: 'user', content: [{ type: 'text', text: context.join('\n\n') }] } })
     .catch(() => undefined)
@@ -535,28 +579,31 @@ async function appendContext($: EngineInterface, context: string[]) {
  * numbered answer refers to, and the inbox when it changed.
  */
 async function notePrompt($: EngineInterface, text: string, sentBy: Press | null): Promise<string[]> {
-  const now = await $.clock.now()
-  await update($, PRESENCE, p => ({ ...p, lastActiveAt: now, isAway: false }))
-  const ledger = await update($, LEDGER, l => ({ ...l, turn: l.turn + 1 }))
+  const [now, ledger, prev, isShown] = await Promise.all([
+    $.clock.now(),
+    update($, LEDGER, l => ({ ...l, turn: l.turn + 1 })),
+    read($, PREVIOUS),
+    isPaneShown($),
+  ])
+  await Promise.all([
+    update($, PRESENCE, p => ({ ...p, lastActiveAt: now, isAway: false })),
+    prev ? update($, PREVIOUS, () => null) : undefined,
+  ])
   const notes: string[] = []
 
-  const prev = await read($, PREVIOUS)
-  if (prev) {
-    if (prev.isBroughtIn) {
-      const carried = carryText(
-        prev.ledger,
-        `inbox: the user chose to continue from the previous session in this folder (${ago(now - prev.savedAt)}). Where it stood:`,
-      )
-      if (carried) notes.push(carried)
-    }
-    await update($, PREVIOUS, () => null)
+  if (prev?.isBroughtIn) {
+    const carried = carryText(
+      prev.ledger,
+      `inbox: the user chose to continue from the previous session in this folder (${ago(now - prev.savedAt)}). Where it stood:`,
+    )
+    if (carried) notes.push(carried)
   }
   // A button's prompt already says what it does; an Explain, for one, quotes its item without answering it.
-  const answer = sentBy ? null : answerNote(ledger, text, ledger.turn)
+  const answer = sentBy ? null : answerNote(ledger, text)
   if (answer) notes.push(answer)
   // The inbox when it changed since Claude last read it, or when something was
   // settled since. An empty inbox with nothing settled says nothing new.
-  const inbox = inboxText(ledger, await isPaneShown($))
+  const inbox = inboxText(ledger, isShown)
   const closed = closedText(ledger.decided.filter(d => !toldDecided.has(d.id)))
   const isEmpty = ledger.items.length === 0 && ledger.notes.length === 0
   if (closed || (inbox !== toldInbox && !(isEmpty && toldInbox === null))) {
@@ -566,7 +613,7 @@ async function notePrompt($: EngineInterface, text: string, sentBy: Press | null
   }
 
   if (sentBy) press = sentBy
-  person = person === null ? text : `${person}\n\n${text}`
+  notePerson(text)
   trigger = null
 
   return notes
@@ -750,8 +797,12 @@ async function sendTypedForNote($: EngineInterface, note: Note, text: string) {
   const words = text.trim()
   if (!words) return
   await removeNote($, note.id)
-  const body = [`${noteKindLabel(note)}: ${note.title}`, note.detail, ...(note.path ? [`File: ${note.path}`] : [])]
-  await send($, [`About this note you recorded:`, ...body, '', words].join('\n'))
+  await send($, [`About this note you recorded:`, ...noteBody(note), '', words].join('\n'))
+}
+
+/** A note as Claude reads it back: its kind and title, its detail, and its file. */
+function noteBody(note: Note): string[] {
+  return [`${noteKindLabel(note)}: ${note.title}`, note.detail, ...(note.path ? [`File: ${note.path}`] : [])]
 }
 
 async function removeNote($: EngineInterface, id: string) {
@@ -765,8 +816,7 @@ async function actOnNote($: EngineInterface, note: Note, how: 'address' | 'discu
     how === 'address'
       ? 'Please address this note you recorded:'
       : "Let's talk through this note you recorded before changing anything:"
-  const body = [`${noteKindLabel(note)}: ${note.title}`, note.detail, ...(note.path ? [`File: ${note.path}`] : [])]
-  await send($, [opening, ...body].join('\n'))
+  await send($, [opening, ...noteBody(note)].join('\n'))
 }
 
 async function showTab($: EngineInterface, tab: Tab) {
@@ -843,6 +893,7 @@ async function gh($: EngineInterface, args: string[]) {
 
 /** Remembers PRs this session created or linked, newest last. */
 async function linkPrs($: EngineInterface, refs: string[]) {
+  if (refs.length === 0) return
   const linked = (await read($, LEDGER)).prs
   if (refs.every(r => linked.includes(r))) return
   await commitLedger($, l => ({ ...l, prs: [...l.prs.filter(r => !refs.includes(r)), ...refs].slice(-MAX_PRS) }))
@@ -916,8 +967,10 @@ async function fetchPrs($: EngineInterface, findsBranchPr: boolean) {
   try {
     const linked = (await read($, LEDGER)).prs
     const branchTarget = findsBranchPr ? null : state.branchRef
+    // The branch's PR, when it is also linked, is fetched once, with the linked ones.
+    const isBranchLinked = branchTarget !== null && linked.includes(branchTarget)
     const [branch, ...rest] = await Promise.all([
-      findsBranchPr || branchTarget ? fetchPr($, branchTarget, state.views) : null,
+      findsBranchPr || (branchTarget && !isBranchLinked) ? fetchPr($, branchTarget, state.views) : null,
       ...linked.map(ref => fetchPr($, ref, state.views)),
     ])
     const views: Record<string, PrView> = {}
@@ -956,19 +1009,6 @@ async function unlinkPr($: EngineInterface, ref: string) {
     delete views[ref]
     return { ...v, views }
   })
-}
-
-/** The band's one-line PR alert: the first open PR that needs the person, or null. */
-function prAttention(views: PrView[]): string | null {
-  for (const pr of views) {
-    if (pr.state !== 'OPEN') continue
-    const open = waitingThreads(pr).length
-    if (checkCounts(pr).fail > 0) return `PR #${pr.number} CI failing`
-    if (pr.reviewDecision === 'CHANGES_REQUESTED') return `PR #${pr.number} changes requested`
-    if (open > 0) return `PR #${pr.number} ${open} ${open === 1 ? 'thread' : 'threads'} waiting on you`
-  }
-
-  return null
 }
 
 type Action = {
@@ -1079,6 +1119,10 @@ function isLinkable(url: string): boolean {
   return /^(https:\/\/|http:\/\/localhost(:\d+)?(\/|$))[!-~]*$/.test(url) && !url.includes('@')
 }
 
+function capitalized(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
 function decisionText(d: Decided): string {
   return `${d.ask} → ${d.outcome}`
 }
@@ -1094,7 +1138,7 @@ function isLapsed(d: Decided): boolean {
 
 /** The outcome as the pane shows it: "Dismissed", "Yes, renamed". */
 function outcomeText(d: Decided): string {
-  return d.outcome.charAt(0).toUpperCase() + d.outcome.slice(1)
+  return capitalized(d.outcome)
 }
 
 function noteKindLabel(note: Note): string {
@@ -1138,9 +1182,12 @@ async function hashFiles($: EngineInterface, paths: string[]): Promise<string[] 
 
 /** The working tree's content, read without writing to the repo. */
 async function readSnapshot($: EngineInterface): Promise<Snapshot | null> {
-  const out = await runGit($, ['status', '--porcelain=v1', '-z', '-uall'])
+  const [out, headOut] = await Promise.all([
+    runGit($, ['status', '--porcelain=v1', '-z', '-uall']),
+    runGit($, ['rev-parse', '--verify', '-q', 'HEAD']),
+  ])
   if (out === null) return null
-  const head = (await runGit($, ['rev-parse', '--verify', '-q', 'HEAD']))?.trim() || null
+  const head = headOut?.trim() || null
   const changed = readChanged(out).slice(0, SNAPSHOT_MAX)
   const dirty: Snapshot['dirty'] = {}
   for (const c of changed) if (c.isDeleted) dirty[c.path] = ''
@@ -1179,8 +1226,12 @@ async function contentChanges($: EngineInterface, a: Snapshot, b: Snapshot): Pro
   }
   const paths = candidates(a, b, committed)
   if (paths.length === 0) return []
-  const before = a.head ? await lsTree($, a.head, paths) : {}
-  const after = b.head === a.head ? before : b.head ? await lsTree($, b.head, paths) : {}
+  const none = Promise.resolve<Record<string, string>>({})
+  const reading = a.head ? lsTree($, a.head, paths) : none
+  const [before, after] = await Promise.all([
+    reading,
+    b.head === a.head ? reading : b.head ? lsTree($, b.head, paths) : none,
+  ])
   if (!before || !after) return null
 
   return changedPaths(a, b, paths, before, after)
@@ -1194,17 +1245,17 @@ async function contentChanges($: EngineInterface, a: Snapshot, b: Snapshot): Pro
 function refreshTree($: EngineInterface): Promise<void> {
   refreshing = refreshing
     .then(async () => {
-      const snapshot = await readSnapshot($)
+      const [snapshot, before] = await Promise.all([readSnapshot($), read($, SNAPSHOT)])
       if (!snapshot) return
-      const before = (await read($, CHECKS)).snapshot
       if (before && sameSnapshot(before, snapshot)) return
       // A path list git could not read counts as a change to code.
       const changes = before ? await contentChanges($, before, snapshot) : []
+      await update($, SNAPSHOT, () => snapshot)
+      if (changes !== null && changes.length === 0) return
       const now = await $.clock.now()
       await update($, CHECKS, c => ({
         ...c,
-        snapshot,
-        changedAt: changes === null || changes.length > 0 ? now : c.changedAt,
+        changedAt: now,
         codeChangedAt: changes === null || changes.some(p => !/\.md$/i.test(p)) ? now : c.codeChangedAt,
       }))
     })
@@ -1231,40 +1282,55 @@ async function recordChecks($: EngineInterface, command: string, output: string,
   }))
 }
 
+/**
+ * What the band and the pane draw: the session's own state, or the samples
+ * `/inbox demo` shows in its place.
+ */
+async function drawnState($: EngineInterface): Promise<View & { isDemo: boolean; now: number }> {
+  const [ledger, stop, checks, settled, prViews, isDemo, now] = await Promise.all([
+    read($, LEDGER),
+    read($, STOP),
+    read($, CHECKS),
+    read($, SETTLED),
+    read($, PR_VIEWS),
+    read($, IS_DEMO),
+    $.clock.now(),
+  ])
+
+  return { ...(isDemo ? demoView(now) : { ledger, stop, checks, settled, prViews }), isDemo, now }
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const r = await next(e)
     isOn = e.isInteractive
     if (!isOn) return r
-    sessionId = await $.session.id()
-    root = await $.session.root()
+    ;[sessionId, root] = await Promise.all([$.session.id(), $.session.root()])
     isSaved = false
-    const git = await $.process
-      .run(['git', 'rev-parse', '--show-toplevel'], { cwd: root, timeoutMs: 5000 })
-      .catch(() => null)
-    top = git?.exitCode === 0 ? git.stdout.trim() || null : null
-
-    await $.command.register({
-      name: 'inbox',
-      description: 'Show where this session stands and what is waiting on you',
-    })
-    await $.tool.register({ name: 'note', description: NOTE_DESCRIPTION, inputSchema: NOTE_SCHEMA })
-    await $.tool.register({ name: 'close', description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA })
     // A reload stops any update the previous load had running, and state outlives
     // it, so an update in flight at load was cut off: record it as failed.
-    const presence = await update($, PRESENCE, p =>
-      p.isUpdating ? { ...p, isUpdating: false, isBehind: true, error: 'an update was cut off' } : p,
-    )
-    const theme = (await $.config.list().catch(() => [])).find(row => row.key === 'theme')?.value
-    await update($, IS_DARK_THEME, () => theme === 'dark')
-    const stored = (await $.store.get('collapsed')) as Collapsed | undefined
+    const [git, presence, stored, now, current, saved] = await Promise.all([
+      $.process.run(['git', 'rev-parse', '--show-toplevel'], { cwd: root, timeoutMs: 5000 }).catch(() => null),
+      update($, PRESENCE, p => (p.isUpdating ? { ...p, isUpdating: false, ledgerState: 'failed' as const } : p)),
+      $.store.get('collapsed') as Promise<Collapsed | undefined>,
+      $.clock.now(),
+      read($, LEDGER),
+      $.store.get(`s:${sessionId}`) as Promise<{ savedAt: number; ledger: Ledger } | undefined>,
+      $.command.register({ name: 'inbox', description: 'Show where this session stands and what is waiting on you' }),
+      $.tool.register({ name: 'note', description: NOTE_DESCRIPTION, inputSchema: NOTE_SCHEMA }),
+      $.tool.register({ name: 'close', description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA }),
+      syncTheme($),
+    ])
+    top = git?.exitCode === 0 ? git.stdout.trim() || null : null
     if (stored) await update($, COLLAPSED, () => stored)
-    const now = await $.clock.now()
-    const current = await read($, LEDGER)
-    const saved = (await $.store.get(`s:${sessionId}`)) as { savedAt: number; ledger: Ledger } | undefined
+    // A reload cancels the timers that clear just-closed rows, so the rows still showing get new ones.
+    const settled = await update($, SETTLED, s => s.filter(x => now - x.at < SETTLED_MS))
+    if (settled.length > 0) expireSettled($, settled, Math.max(...settled.map(s => s.at + SETTLED_MS - now)))
+    let loaded = current
     if (current.turn === 0 && !current.card) {
       if (saved) {
         // A resumed session: bring its card back and show it as a return.
+        loaded = saved.ledger
         await update($, LEDGER, () => saved.ledger)
         await update($, PRESENCE, p => ({ ...p, lastActiveAt: saved.savedAt, isAway: true }))
       } else {
@@ -1282,10 +1348,10 @@ export const register: Register = on => {
     })
     // Catch up now after a failed update, or when the ledger is empty in a
     // conversation that already has turns: the mod loaded mid-session, or its saved state was lost.
-    const loaded = await read($, LEDGER)
     const isEmpty = !loaded.card && loaded.items.length === 0
-    if (presence.isBehind || (isEmpty && (await $.session.turns().catch(() => 0)) > 0)) queueUpdate($, null)
-    await publishStatus($)
+    if (presence.ledgerState !== 'current' || (isEmpty && (await $.session.turns().catch(() => 0)) > 0))
+      queueUpdate($, null)
+    void publishStatus($)
     // A resumed session's linked PRs; the branch's PR waits for the PRs tab.
     if (loaded.prs.length > 0) void fetchPrs($, false)
 
@@ -1295,17 +1361,22 @@ export const register: Register = on => {
   on('session.end', async ($, e, next) => {
     // The pane outlives the session, so its sidebar line goes with it.
     if (isOn) {
-      await update($, STOP, () => null)
-      await update($, DIALOGS, () => [])
-      await update($, CHECKS, () => NO_CHECKS)
-      await update($, SETTLED, () => [])
-      await update($, IS_DEMO, () => false)
-      await publishStatus($, true)
+      await Promise.all([
+        update($, STOP, () => null),
+        update($, DIALOGS, () => []),
+        update($, CHECKS, () => NO_CHECKS),
+        update($, SNAPSHOT, () => null),
+        update($, SETTLED, () => []),
+        update($, IS_DEMO, () => false),
+        publishStatus($, true),
+      ])
     }
     if (isOn && e.reason === 'clear') {
-      await update($, LEDGER, () => EMPTY)
-      await update($, PREVIOUS, () => null)
-      await update($, PRESENCE, p => ({ ...p, isAway: false, isBehind: false, error: null }))
+      await Promise.all([
+        update($, LEDGER, () => EMPTY),
+        update($, PREVIOUS, () => null),
+        update($, PRESENCE, p => ({ ...p, isAway: false, ledgerState: 'current' as const })),
+      ])
       activity = []
       person = null
       press = null
@@ -1363,12 +1434,13 @@ export const register: Register = on => {
   }))
   on('tool.describe', { tool: CLOSE_TOOL }, async ($, e, next) => ({ ...(await next(e)), isDeferred: false }))
   on('tool.check', { tool: CLOSE_TOOL }, () => ({ decision: 'allow' }))
+  on('tool.call', { tool: CLOSE_TOOL }, async ($, e) => ({
+    result: await recordClose($, e as unknown as Record<string, unknown>),
+  }))
 
   on('tool.call', async ($, e, next) => {
     if (!isOn) return next(e)
     const { tool: _tool, tool_use_id: _id, agentId: _agent, ...input } = e as unknown as Record<string, unknown>
-    // The close tool is served here: a matcher naming a tool registered at run time does not type-check.
-    if (String(e.tool) === CLOSE_TOOL) return { result: await recordClose($, input) }
     const key = callKey(String(e.tool), input)
     const run = () => clearingDialog($, key, () => next(e))
     // A subagent's call can raise a permission prompt too, which the person answers.
@@ -1376,10 +1448,7 @@ export const register: Register = on => {
     if (e.tool === 'Bash') {
       noteActivity(`${e.run_in_background ? 'started in background' : 'ran'}: ${e.command.slice(0, 140)}`)
       const ran = await run()
-      const output = (ran.result && typeof ran.result === 'object' ? ran.result : {}) as {
-        interrupted?: unknown
-        backgroundTaskId?: unknown
-      }
+      const output = resultFields(ran)
       // A command that was cut off or moved to the background has not finished its checks.
       if (!e.run_in_background && !output.interrupted && !output.backgroundTaskId && typeof ran.deny !== 'string') {
         await recordChecks($, e.command, ran.text ?? '', ran.isError === true)
@@ -1398,7 +1467,7 @@ export const register: Register = on => {
       // The answers come back in the tool result, never in a typed prompt, so
       // the ledger model only learns them from here.
       const ran = await run()
-      const result = (ran.result && typeof ran.result === 'object' ? ran.result : {}) as { afkTimeoutMs?: unknown }
+      const result = resultFields(ran)
       // A dialog that resolved on its own while the person was away holds no answer of theirs.
       const how =
         typeof result.afkTimeoutMs === 'number'
@@ -1465,23 +1534,26 @@ export const register: Register = on => {
     await closeDialogs($, null)
     if (!isOn || e.reason !== 'answer' || e.answer.trim() === '') return r
 
-    if ((await read($, CHECKS)).results.length > 0) await refreshTree($)
-    const checks = await read($, CHECKS)
+    let checks = await read($, CHECKS)
+    if (checks.results.length > 0) {
+      await refreshTree($)
+      checks = await read($, CHECKS)
+    }
+    const [ledger, shown, now] = await Promise.all([read($, LEDGER), screen($), $.clock.now()])
     const ex: Exchange = {
       person,
       trigger,
       activity,
       reply: e.answer,
-      turn: (await read($, LEDGER)).turn,
+      turn: ledger.turn,
       press,
-      screen: await screen($),
+      screen: shown,
       checks: checks.results.map(c => checkLine(c, checks)),
     }
     press = null
     person = null
     trigger = null
     activity = []
-    const now = await $.clock.now()
     await update($, PRESENCE, p => ({ ...p, lastActiveAt: now }))
     queueUpdate($, ex)
     await linkPrs($, prRefs(e.answer))
@@ -1502,23 +1574,26 @@ export const register: Register = on => {
   })
 
   // A prompt this mod sent: its context goes in just before it, wherever the engine runs it.
-  on('session.append', { door: ['prompt', 'delivery'] }, async ($, e, next) => {
-    const isMine = e.origin.kind === 'plugin' && 'name' in e.origin && e.origin.name === 'inbox'
-    if (!isOn || e.agentId || !isMine) return next(e)
-    const text = e.message.content.map(b => (b.type === 'text' ? b.text : '')).join('')
-    const context = contextFor.get(text)
-    contextFor.delete(text)
-    if (context) await appendContext($, context)
+  on(
+    'session.append',
+    { door: ['prompt', 'delivery'], origin: { kind: 'plugin', name: 'inbox' } },
+    async ($, e, next) => {
+      if (!isOn || e.agentId) return next(e)
+      const text = messageText(e.message)
+      const context = contextFor.get(text)
+      contextFor.delete(text)
+      if (context) await appendContext($, context)
 
-    return next(e)
-  })
+      return next(e)
+    },
+  )
 
   // The person's own `!` and slash commands reach no prompt.submit hook, only these rows.
   // The matcher keeps every other row from waking the hooks module.
   on('session.append', { door: 'command' }, async ($, e, next) => {
     const r = await next(e)
     if (!isOn || e.agentId) return r
-    const row = readCommandRow(e.message.content.map(b => (b.type === 'text' ? b.text : '')).join(''))
+    const row = readCommandRow(messageText(e.message))
     if (row?.kind === 'shell') {
       shellCommand = row.command
       notePerson(`$ ${row.command}`)
@@ -1550,23 +1625,11 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!isOn || e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [realLedger, presence, prev, realPrs, realStop, realChecks, realSettled, now, isDemo] = await Promise.all([
-      read($, LEDGER),
+    const [{ ledger, prViews: prs, stop, checks, settled, now }, presence, prev] = await Promise.all([
+      drawnState($),
       read($, PRESENCE),
       read($, PREVIOUS),
-      read($, PR_VIEWS),
-      read($, STOP),
-      read($, CHECKS),
-      read($, SETTLED),
-      $.clock.now(),
-      read($, IS_DEMO),
     ])
-    const demo = isDemo ? demoView(now) : null
-    const ledger = demo?.ledger ?? realLedger
-    const prs = demo?.prViews ?? realPrs
-    const stop = demo ? demo.stop : realStop
-    const checks = demo?.checks ?? realChecks
-    const settled = demo?.settled ?? realSettled
     const isWorking = e.props.isWorking
 
     // A stop is the one thing to act on, so it takes the band.
@@ -1619,9 +1682,8 @@ export const register: Register = on => {
     }
 
     const card = ledger.card
-    const justSettled = settled.filter(s => now - s.at < SETTLED_MS)
-    if (!card && ledger.items.length === 0 && ledger.notes.length === 0 && justSettled.length === 0) return next(e)
-    const settledHint = justSettled.map(s => (
+    if (!card && ledger.items.length === 0 && ledger.notes.length === 0 && settled.length === 0) return next(e)
+    const settledHint = settled.map(s => (
       <Text color={DONE}>
         {' · ✓ '}
         {s.ask} → {outcomeText(s)}
@@ -1730,8 +1792,7 @@ export const register: Register = on => {
 
   on('config.set', { key: 'theme' }, async ($, e, next) => {
     const r = await next(e)
-    const theme = (await $.config.list().catch(() => [])).find(row => row.key === 'theme')?.value
-    await update($, IS_DARK_THEME, () => theme === 'dark')
+    if (r.deny === undefined) await update($, IS_DARK_THEME, () => r.value === 'dark')
 
     return r
   })
@@ -1742,42 +1803,24 @@ export const register: Register = on => {
     // The mobile app draws no text field, so there the typed reply is not offered.
     const Input = 'Input' in elements ? elements.Input : null
     const [
-      realLedger,
+      { ledger, prViews: prState, stop, checks, settled, now, isDemo },
       presence,
       tab,
-      realPrs,
       collapsed,
       selection,
-      now,
       isDark,
-      realStop,
-      realChecks,
       typing,
-      realSettled,
-      isDemo,
     ] = await Promise.all([
-      read($, LEDGER),
+      drawnState($),
       read($, PRESENCE),
       read($, TAB),
-      read($, PR_VIEWS),
       read($, COLLAPSED),
       read($, SELECTION),
-      $.clock.now(),
       read($, IS_DARK_THEME),
-      read($, STOP),
-      read($, CHECKS),
       read($, TYPING),
-      read($, SETTLED),
-      read($, IS_DEMO),
     ])
-    const demo = isDemo ? demoView(now) : null
-    const ledger = demo?.ledger ?? realLedger
-    const prState = demo?.prViews ?? realPrs
-    const stop = demo ? demo.stop : realStop
-    const checks = demo?.checks ?? realChecks
-    const settled = demo?.settled ?? realSettled
     // Sample entries can be selected and opened, but their actions send nothing.
-    const act = (onPress: (press: UiPressArgument) => void) => (demo ? () => $.ui.toast(SAMPLE_PRESS) : onPress)
+    const act = (onPress: (press: UiPressArgument) => void) => (isDemo ? () => $.ui.toast(SAMPLE_PRESS) : onPress)
     const card = ledger.card
     const prViews = Object.values(prState.views)
 
@@ -1975,17 +2018,11 @@ export const register: Register = on => {
     // Claude Code drew lines this Box clipped elsewhere in the pane (anthropics/claude-code#100030).
     const branch = (pos: TreePos, lead = 0) => (
       <Box position="absolute" top={0} bottom={0} left={1} width={2}>
-        <Text color={MUTED_LINE}>
-          {[
-            ...Array<string>(lead).fill('│'),
-            pos === 'last' ? '└─' : pos === 'mid' ? '├─' : '│',
-            ...Array<string>(TREE_DEPTH).fill(pos === 'last' ? ' ' : '│'),
-          ].join('\n')}
-        </Text>
+        <Text color={MUTED_LINE}>{treeText(pos, lead)}</Text>
       </Box>
     )
     const treeRow = (
-      pos: TreePos,
+      pos: TreePos | null,
       marker: JSX.Element,
       content: JSX.Element,
       opts: { key?: string; age?: string; gapAfter?: boolean } = {},
@@ -2003,12 +2040,17 @@ export const register: Register = on => {
             <Text dimColor>{opts.age}</Text>
           </Box>
         ) : null}
-        {branch(pos)}
+        {pos ? branch(pos) : null}
       </Box>
     )
     const childPos = (n: number, count: number): TreePos => (n === count - 1 ? 'last' : 'mid')
     // A list's rows with a divider between each two. It starts where the rows'
     // text starts and runs to the pane's edge; in a section, the tree's │ passes it.
+    const dividerColor = isDark ? DARK_DIVIDER : MUTED_LINE
+    // A divider line from `inset` columns in to the pane's edge.
+    const rule = (inset: number) => (
+      <Text color={dividerColor}>{'─'.repeat(Math.max(0, e.props.bodyColumns - inset))}</Text>
+    )
     const divided = (rowEls: JSX.Element[], group: string, isTree: boolean) =>
       rowEls.flatMap((el, n) =>
         n === 0
@@ -2020,15 +2062,11 @@ export const register: Register = on => {
                   <Box width={6} flexShrink={0}>
                     <Text color={MUTED_LINE}>│</Text>
                   </Box>
-                  <Text color={isDark ? DARK_DIVIDER : MUTED_LINE}>
-                    {'─'.repeat(Math.max(0, e.props.bodyColumns - 9))}
-                  </Text>
+                  {rule(9)}
                 </Box>
               ) : (
                 <Box key={`divider-${group}-${n}`} paddingLeft={5}>
-                  <Text color={isDark ? DARK_DIVIDER : MUTED_LINE}>
-                    {'─'.repeat(Math.max(0, e.props.bodyColumns - 7))}
-                  </Text>
+                  {rule(7)}
                 </Box>
               ),
               el,
@@ -2107,7 +2145,7 @@ export const register: Register = on => {
                     placeholder={row.typeHint}
                     submitLabel="send"
                     autoFocus
-                    onSubmit={(value: string) => (demo ? $.ui.toast(SAMPLE_PRESS) : row.onType?.(value))}
+                    onSubmit={(value: string) => (isDemo ? $.ui.toast(SAMPLE_PRESS) : row.onType?.(value))}
                   />
                 </Box>
               ) : null}
@@ -2188,7 +2226,7 @@ export const register: Register = on => {
         </Box>
         <Box flexDirection="row" columnGap={2}>
           <Text dimColor>{status}</Text>
-          {presence.error && !presence.isUpdating ? (
+          {presence.ledgerState === 'failed' && !presence.isUpdating ? (
             <Text color="error">update failed, retries after the next reply</Text>
           ) : null}
         </Box>
@@ -2227,7 +2265,7 @@ export const register: Register = on => {
     // The line between two sections that share a card, from the caret to the edge.
     const sectionDivider = (key: string) => (
       <Box key={key} paddingLeft={1}>
-        <Text color={isDark ? DARK_DIVIDER : MUTED_LINE}>{'─'.repeat(Math.max(0, e.props.bodyColumns - 3))}</Text>
+        {rule(3)}
       </Box>
     )
     const sectionCard = (children: JSX.Element | JSX.Element[]) => (
@@ -2267,12 +2305,18 @@ export const register: Register = on => {
     }
 
     const waitingView = () => {
-      const decided = [...ledger.decided].reverse().slice(0, 6)
-      const history = [
-        collapsible(
-          'checks',
-          'Checks',
-          [...checks.results].reverse().map(
+      // "12m", where the row's age sits.
+      const age = (at: number) => ago(now - at).replace(' ago', '')
+      const historySections: {
+        section: Section
+        title: string
+        entries: ((pos: TreePos) => JSX.Element)[]
+        isFailing?: boolean
+      }[] = [
+        {
+          section: 'checks',
+          title: 'Checks',
+          entries: [...checks.results].reverse().map(
             c => (pos: TreePos) =>
               treeRow(
                 pos,
@@ -2280,27 +2324,21 @@ export const register: Register = on => {
                   color={c.result === 'pass' ? DONE : c.result === 'fail' ? 'error' : undefined}
                   dimColor={c.result === 'unknown'}
                 >
-                  {c.result === 'pass' ? '✓' : c.result === 'fail' ? '✗' : '·'}
+                  {checkMark(c)}
                 </Text>,
                 <Text wrap="wrap">
                   {c.name}
-                  <Text dimColor>
-                    {c.summary ? `, ${c.summary}` : ''}
-                    {isStale(c, checks) ? ', before the last edit' : ''}
-                  </Text>
+                  <Text dimColor>{checkDetail(c, checks)}</Text>
                 </Text>,
-                { age: ago(now - c.ranAt).replace(' ago', '') },
+                { age: age(c.ranAt) },
               ),
           ),
-          {
-            isLast: (card?.done ?? []).length === 0 && decided.length === 0,
-            isFailing: checks.results.some(c => c.result === 'fail'),
-          },
-        ),
-        collapsible(
-          'done',
-          'Finished by Claude',
-          (card?.done ?? []).map(
+          isFailing: checks.results.some(c => c.result === 'fail'),
+        },
+        {
+          section: 'done',
+          title: 'Finished by Claude',
+          entries: (card?.done ?? []).map(
             d => (pos: TreePos) =>
               treeRow(
                 pos,
@@ -2310,37 +2348,44 @@ export const register: Register = on => {
                 </Text>,
               ),
           ),
-          { isLast: decided.length === 0 },
-        ),
-        collapsible(
-          'decided',
-          'Closed',
-          decided.map(
-            d => (pos: TreePos) =>
-              treeRow(
-                pos,
-                <Text dimColor>◇</Text>,
-                <Box flexDirection="column">
-                  <Text wrap="wrap" dimColor>
-                    {d.ask}
-                  </Text>
-                  <Text wrap="wrap" bold={!isLapsed(d)} dimColor={isLapsed(d)}>
-                    {outcomeText(d)}
-                  </Text>
-                </Box>,
-                // Two-line entries need space between them to read as separate items.
-                { age: ago(now - d.at).replace(' ago', ''), gapAfter: pos === 'mid' },
-              ),
-          ),
-          { isLast: true },
-        ),
+        },
+        {
+          section: 'decided',
+          title: 'Closed',
+          entries: [...ledger.decided]
+            .reverse()
+            .slice(0, 6)
+            .map(
+              d => (pos: TreePos) =>
+                treeRow(
+                  pos,
+                  <Text dimColor>◇</Text>,
+                  <Box flexDirection="column">
+                    <Text wrap="wrap" dimColor>
+                      {d.ask}
+                    </Text>
+                    <Text wrap="wrap" bold={!isLapsed(d)} dimColor={isLapsed(d)}>
+                      {outcomeText(d)}
+                    </Text>
+                  </Box>,
+                  // Two-line entries need space between them to read as separate items.
+                  { age: age(d.at), gapAfter: pos === 'mid' },
+                ),
+            ),
+        },
       ]
-        .filter(section => section.length > 0)
-        .flatMap((section, n) => (n === 0 ? section : [sectionDivider(`history-divider-${n}`), ...section]))
+      const shownSections = historySections.filter(s => s.entries.length > 0)
+      const history = shownSections.flatMap((s, n) => [
+        ...(n === 0 ? [] : [sectionDivider(`history-divider-${n}`)]),
+        ...collapsible(s.section, s.title, s.entries, {
+          isLast: n === shownSections.length - 1,
+          isFailing: s.isFailing,
+        }),
+      ])
 
       // An item that just closed stays where its row was in its group, with a
       // check and its outcome, until it moves to Closed. It cannot be selected.
-      const fresh = settled.filter(s => now - s.at < SETTLED_MS).sort((a, b) => a.index - b.index)
+      const fresh = [...settled].sort((a, b) => a.index - b.index)
       const settledRow = (s: Settled, pos: TreePos) =>
         treeRow(
           pos,
@@ -2378,6 +2423,23 @@ export const register: Register = on => {
           ]),
         ]
       })
+      const running = collapsible(
+        'running',
+        'Running',
+        (card?.running ?? []).map(run => (pos: TreePos) => {
+          const { name, url } = splitRunning(run)
+
+          return treeRow(
+            pos,
+            <Text color={DONE}>●</Text>,
+            <Text wrap="wrap">
+              {name ? <Text>{name} </Text> : null}
+              {url && isLinkable(url) ? <Link href={url} /> : <Text dimColor>{url}</Text>}
+            </Text>,
+          )
+        }),
+        { isLast: true },
+      )
       // A stop is fixed in the session, not here, so it shows above the list without keys.
       const outside = stop
         ? [
@@ -2390,7 +2452,7 @@ export const register: Register = on => {
                   <Text dimColor> · {ago(now - stop.at)}</Text>
                 </Text>
                 <Text wrap="wrap">
-                  {stopText(stop).charAt(0).toUpperCase() + stopText(stop).slice(1)}. {stopFix(stop)}
+                  {capitalized(stopText(stop))}. {stopFix(stop)}
                 </Text>
               </Box>,
             ),
@@ -2401,24 +2463,7 @@ export const register: Register = on => {
         <Box flexDirection="column" gap={1}>
           {outside}
           {groups.length > 0 ? groups : outside.length === 0 ? emptyLine('Nothing is waiting on you.') : null}
-          {card && card.running.length > 0
-            ? sectionCard([
-                sectionHeader('running', 'Running', card.running.length),
-                ...(isCollapsed(collapsed, 'running') ? [] : [titleGap()]),
-                ...(isCollapsed(collapsed, 'running') ? [] : card.running).map((run, n) => {
-                  const { name, url } = splitRunning(run)
-
-                  return treeRow(
-                    childPos(n, card.running.length),
-                    <Text color={DONE}>●</Text>,
-                    <Text wrap="wrap">
-                      {name ? <Text>{name} </Text> : null}
-                      {url && isLinkable(url) ? <Link href={url} /> : <Text dimColor>{url}</Text>}
-                    </Text>,
-                  )
-                }),
-              ])
-            : null}
+          {running.length > 0 ? sectionCard(running) : null}
           {history.length > 0 ? sectionCard(history) : null}
         </Box>
       )
@@ -2458,12 +2503,10 @@ export const register: Register = on => {
           </Text>
         </Box>,
         titleGap(prRows.length > 0),
-        <Box flexDirection="row" overflow="hidden">
-          <Box width={4} flexShrink={0} />
-          <Box width={3} flexShrink={0}>
-            <Text color={ready.isReady ? DONE : WAITING}>{ready.isReady ? '✓' : '◇'}</Text>
-          </Box>
-          <Box flexDirection="column" flexShrink={1} flexGrow={1} paddingRight={1}>
+        treeRow(
+          prRows.length > 0 ? 'pass' : null,
+          <Text color={ready.isReady ? DONE : WAITING}>{ready.isReady ? '✓' : '◇'}</Text>,
+          <Box flexDirection="column">
             <Text wrap="wrap" color={ready.isReady ? DONE : WAITING}>
               {ready.text}
             </Text>
@@ -2495,9 +2538,8 @@ export const register: Register = on => {
                 />
               ) : null}
             </Box>
-          </Box>
-          {prRows.length > 0 ? branch('pass') : null}
-        </Box>,
+          </Box>,
+        ),
         ...divided(
           prRows.map((r, n) => listRow(r, childPos(n, prRows.length))),
           pr.ref,
@@ -2524,8 +2566,8 @@ export const register: Register = on => {
     const moveKeys: KeyAction[] =
       ids.length > 1
         ? [
-            { key: 'next', label: 'Next', hotkey: 'j', dimColor: true, onPress: () => move(1) },
-            { key: 'previous', label: 'Previous', hotkey: 'k', dimColor: true, onPress: () => move(-1) },
+            { key: 'next', label: 'Next', hotkey: 'j', onPress: () => move(1) },
+            { key: 'previous', label: 'Previous', hotkey: 'k', onPress: () => move(-1) },
           ]
         : []
 

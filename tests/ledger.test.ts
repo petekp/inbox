@@ -142,30 +142,30 @@ describe('answerNote', () => {
   const ledger = applyUpdate({ ...EMPTY, turn: 1 }, parseReply(REPLY)!, 1, 1)
 
   test('maps numbered answers to the latest batch by label', () => {
-    const note = answerNote({ ...ledger, turn: 2 }, '1. yes\n2. keep it', 2)
+    const note = answerNote({ ...ledger, turn: 2 }, '1. yes\n2. keep it')
     expect(note).toContain('1 → "Rename Send.swift to Herdr?"')
     expect(note).toContain('2 → "Cut TODOS.md down to open items?"')
   })
 
   test('maps answers written on one line', () => {
-    const note = answerNote({ ...ledger, turn: 2 }, '1. node 2. yes', 2)
+    const note = answerNote({ ...ledger, turn: 2 }, '1. node 2. yes')
     expect(note).toContain('2 → "Cut TODOS.md down to open items?"')
   })
 
   test('does not read a number mid-sentence as an answer', () => {
-    expect(answerNote({ ...ledger, turn: 2 }, 'i was looking at bullet 2. it reads oddly', 2)).toBe(null)
+    expect(answerNote({ ...ledger, turn: 2 }, 'i was looking at bullet 2. it reads oddly')).toBe(null)
   })
 
   test('offers the recommendations for a bare "go"', () => {
-    expect(answerNote({ ...ledger, turn: 2 }, 'go', 2)).toContain('recommended: yes')
+    expect(answerNote({ ...ledger, turn: 2 }, 'go')).toContain('recommended: yes')
   })
 
   test('ignores numbers once the batch is a turn old', () => {
-    expect(answerNote({ ...ledger, turn: 3 }, '1. yes', 3)).toBe(null)
+    expect(answerNote({ ...ledger, turn: 3 }, '1. yes')).toBe(null)
   })
 
   test('says nothing for an ordinary prompt', () => {
-    expect(answerNote({ ...ledger, turn: 2 }, 'can you also fix the toolbar?', 2)).toBe(null)
+    expect(answerNote({ ...ledger, turn: 2 }, 'can you also fix the toolbar?')).toBe(null)
   })
 })
 

@@ -140,7 +140,6 @@ export type Snapshot = { head: string | null; dirty: Record<string, string> }
 /** The checks Claude ran, and when the files they check last changed. */
 export type Checks = {
   results: Check[]
-  snapshot: Snapshot | null
   /** When any file's content last changed. */
   changedAt: number
   /** When a file other than Markdown last changed. Tests, types and builds go stale only then. */
@@ -151,17 +150,17 @@ export type Presence = {
   lastActiveAt: number
   isAway: boolean
   isUpdating: boolean
-  /** The ledger may have missed a turn, so the next update re-reads the whole conversation. */
-  isBehind: boolean
-  /** Why the last update failed, shown in the pane; null when it did not fail. */
-  error: string | null
+  /**
+   * `behind` and `failed`: the ledger may have missed a turn, so the next
+   * update re-reads the whole conversation. Only `failed` shows in the pane.
+   */
+  ledgerState: 'current' | 'behind' | 'failed'
   /** The minute of the last clock tick, so the "last active" text redraws. */
   minute: number
 }
 
 /** The most recent other session in this project, offered on a fresh start. */
 export type Previous = {
-  sessionId: string
   savedAt: number
   ledger: Ledger
   isBroughtIn: boolean
@@ -195,6 +194,8 @@ declare module 'claude-code' {
       stop: Stop | null
       dialogs: Dialog[]
       checks: Checks
+      /** The working tree as last read, kept apart from `checks` because no drawing reads it. */
+      snapshot: Snapshot | null
       /** The row whose free-text field is open, if any. */
       typing: string | null
       /** Items that just closed, shown in place with their outcome for a few seconds. */

@@ -192,11 +192,19 @@ export function isStale(check: Check, checks: Checks): boolean {
   return changedAt > check.ranAt
 }
 
-/** "✓ npm test, 24 pass", with ", before the last edit" when the files changed after it ran. */
-export function checkLine(check: Check, checks: Checks): string {
-  const mark = check.result === 'pass' ? '✓' : check.result === 'fail' ? '✗' : '·'
+/** A check's result as one mark: ✓ passed, ✗ failed, · unknown. */
+export function checkMark(check: Check): string {
+  return check.result === 'pass' ? '✓' : check.result === 'fail' ? '✗' : '·'
+}
 
-  return `${mark} ${check.name}${check.summary ? `, ${check.summary}` : ''}${isStale(check, checks) ? ', before the last edit' : ''}`
+/** What follows a check's name: ", 24 pass", then ", before the last edit" when the files changed after it ran. */
+export function checkDetail(check: Check, checks: Checks): string {
+  return `${check.summary ? `, ${check.summary}` : ''}${isStale(check, checks) ? ', before the last edit' : ''}`
+}
+
+/** "✓ npm test, 24 pass, before the last edit". */
+export function checkLine(check: Check, checks: Checks): string {
+  return `${checkMark(check)} ${check.name}${checkDetail(check, checks)}`
 }
 
 /** The reply's prose, as its sentences, without code blocks and inline code. */

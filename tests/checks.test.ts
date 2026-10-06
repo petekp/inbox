@@ -80,7 +80,6 @@ describe('contradictedClaim', () => {
   })
   const checks = (result: Check['result'], changedAt: number, codeChangedAt: number): Checks => ({
     results: [ran(result)],
-    snapshot: null,
     changedAt,
     codeChangedAt,
   })
