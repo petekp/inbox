@@ -1,9 +1,6 @@
 # inbox
 
-A Claude Code mod that collects what is waiting on you in a session: the
-agent's questions, issues Claude found, and your PRs' checks and reviews. It
-lists them in the `/inbox` pane. A one-line band above the prompt shows where
-the session stands and how many items wait.
+A Claude Code mod that gathers and manages outstanding questions, tasks, issues, and opportunities into one nicely organized place during a session. Just use `/inbox`.
 
 https://github.com/user-attachments/assets/560f80be-e6fb-484e-8a3f-7b4828b98fb2
 
@@ -15,13 +12,13 @@ Type this at the prompt of a Claude Code session in a terminal:
 /plugin install inbox --marketplace petekp/inbox
 ```
 
-Answer `y` to add the marketplace, then choose a scope. The mod starts
+Answer `y` to add the marketplace, then choose a scope. The mod will begin
 working in that session.
 
 - It was built and tested with Claude Code 2.1.292.
 - The PRs tab needs the `gh` CLI, signed in.
 - After each reply, the mod makes one Sonnet call of about 3k input and 500
-  output tokens. How it works, below, says what the call reads.
+  output tokens to keep the Inbox up to date.
 
 To update, run `claude plugin update inbox`, then `/reload-plugins` in a
 running session.
