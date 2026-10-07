@@ -1925,6 +1925,14 @@ export const register: Register = on => {
     }
   })
 
+  // A field left open would take the keys again when the pane reopens, as Esc in it closes the pane.
+  on('ui.close', { id: PANE }, async ($, e, next) => {
+    const r = await next(e)
+    await update($, TYPING, () => null)
+
+    return r
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!isOn || e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
