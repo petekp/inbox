@@ -206,6 +206,9 @@ const MUTED_LINE = 'subtle'
 const DARK_DIVIDER = '#3c3c3c'
 // How a pressable row or tab looks under the pointer: inverted at full strength, all its parts at once.
 const LIT = { dimColor: false, inverse: true }
+// The selected tab's panel, and an unselected tab's under the pointer: `subtle` is a step lighter than the tab bar.
+const RAISED = 'subtle'
+const RAISE = { dimColor: false, backgroundColor: RAISED, inverse: false }
 // A child's place under its section: a middle child, the last, or a block the tree passes.
 type TreePos = 'mid' | 'last' | 'pass'
 // More tree lines than a row wraps to; the tree's Box clips the rest.
@@ -2320,36 +2323,46 @@ export const register: Register = on => {
         justifyContent="space-between"
         columnGap={3}
       >
-        <Box flexDirection="row" alignItems="center" columnGap={3}>
+        <Box flexDirection="row" columnGap={1}>
           {TABS.map(({ id, label, hotkey }) => {
             const count = id === 'waiting' ? ledger.items.length : rows[id].length
-            const chip = ` ${label}${count > 0 ? ` ${count}` : ''} `
-            const blank = ' '.repeat(`${hotkey}: ${label}${count > 0 ? ` ${count}` : ''}`.length)
+            const counted = `${label}${count > 0 ? ` ${count}` : ''}`
+
+            // The selected tab is a raised panel three lines tall, its name in the
+            // middle line and a line of its color along the top edge.
+            if (tab === id)
+              return (
+                <Box flexDirection="column">
+                  <Text color={TAB_COLORS[id]} backgroundColor={RAISED}>
+                    {'▔'.repeat(counted.length + 2)}
+                  </Text>
+                  <Text backgroundColor={RAISED} bold>
+                    {` ${counted} `}
+                  </Text>
+                  <Text backgroundColor={RAISED}>{' '.repeat(counted.length + 2)}</Text>
+                </Box>
+              )
+            // Each line is a Button, so a click anywhere on the tab's three lines
+            // selects it. Under the pointer, the keyed Box raises all three as one
+            // panel, the selected tab's shape without its line.
+            const width = `${hotkey}: ${counted}`.length + 2
             const show = () => void showTab($, id)
 
-            return tab === id ? (
-              <Box flexDirection="column">
-                <Text color={TAB_COLORS[id]}>{'▄'.repeat(chip.length)}</Text>
-                <Text backgroundColor={TAB_COLORS[id]} color="inverseText" bold>
-                  {chip}
-                </Text>
-                <Text color={TAB_COLORS[id]}>{'▀'.repeat(chip.length)}</Text>
-              </Box>
-            ) : (
-              // Three lines tall, as the selected tab is, so the pointer and a
-              // click take the whole block. The keyed Box lights its parts as one.
+            return (
               <Box key={`tab-block-${id}`} flexDirection="column">
-                <Button plain key={`tab-${id}-above`} label={blank} hover={LIT} onPress={show} />
+                <Button plain key={`tab-${id}-above`} label={' '.repeat(width)} hover={RAISE} onPress={show} />
                 <Box flexDirection="row">
-                  <Button plain key={`tab-${id}`} hotkey={hotkey} label={label} dimColor hover={LIT} onPress={show} />
+                  <Button plain key={`tab-${id}-before`} label=" " hover={RAISE} onPress={show} />
+                  <Button plain key={`tab-${id}`} hotkey={hotkey} label={label} dimColor hover={RAISE} onPress={show} />
                   {count > 0 ? (
-                    <Text color={TAB_COLORS[id]} hover={LIT}>
+                    <Text color={TAB_COLORS[id]} hover={RAISE}>
                       {' '}
                       {count}
                     </Text>
                   ) : null}
+                  <Button plain key={`tab-${id}-after`} label=" " hover={RAISE} onPress={show} />
                 </Box>
-                <Button plain key={`tab-${id}-below`} label={blank} hover={LIT} onPress={show} />
+                <Button plain key={`tab-${id}-below`} label={' '.repeat(width)} hover={RAISE} onPress={show} />
               </Box>
             )
           })}
@@ -2615,13 +2628,13 @@ export const register: Register = on => {
       const ready = readiness(pr)
       const counts = checkCounts(pr)
       const waitingOn = waitingThreads(pr)
-      const answered = pr.threads.length - waitingOn.length
+      // The viewer replied last. Their own notes with no reply wait on no one, so they don't count.
+      const answered = pr.threads.filter(t => !t.isWaiting && t.reply !== null).length
+      // The headline already names a draft and failing or running checks; this line adds only what it leaves out.
+      const checksPass = pr.state === 'OPEN' && !ready.isReady && counts.fail === 0 && counts.pending === 0
       const facts = [
-        pr.isDraft ? 'draft' : null,
-        pr.ref === prState.branchRef ? 'this branch' : null,
-        pr.checks.length > 0 ? `${counts.pass}/${pr.checks.length - counts.skip} checks pass` : null,
-        counts.pending > 0 ? `${counts.pending} running` : null,
-        answered > 0 ? `${answered} ${answered === 1 ? 'thread waits' : 'threads wait'} on others` : null,
+        checksPass && counts.pass > 0 ? `${counts.pass} ${counts.pass === 1 ? 'check passes' : 'checks pass'}` : null,
+        answered > 0 ? `${answered} open ${answered === 1 ? 'thread' : 'threads'} you answered` : null,
       ].filter(Boolean)
 
       return sectionCard([
