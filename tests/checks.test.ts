@@ -24,6 +24,8 @@ describe('checksIn', () => {
     expect(checksIn('echo "run bun test later"')).toEqual([])
     expect(checksIn('git commit -m "Fix tsc errors and jest setup"')).toEqual([])
     expect(checksIn('until ! pgrep -x xcodebuild >/dev/null; do sleep 5; done')).toEqual([])
+    expect(checksIn('if ! pgrep -x xcodebuild >/dev/null; then echo idle; fi')).toEqual([])
+    expect(checksIn('for f in a b; do grep tsc $f; done')).toEqual([])
   })
 
   test('names common runners by kind, behind a package manager’s options', () => {

@@ -62,18 +62,24 @@ function segments(command: string, keepQuotes = false): string[] {
     .filter(Boolean)
 }
 
+/** A segment without the shell syntax before its command, such as `if !` in `if ! pgrep -x xcodebuild` or `do`. */
+function commandOf(segment: string): string {
+  return segment.replace(/^(?:[({]\s*|!\s+|(?:if|then|elif|else|do|while|until|time)\s+)+/, '')
+}
+
 /**
  * Commands that only show text, move around or look for a process; a check
- * named in one of them is not run, as in `until ! pgrep -x xcodebuild`.
+ * named in one of them is not run, as in `pgrep -x xcodebuild`.
  */
 const NOT_A_CHECK =
-  /^(?:(?:until|while)\s+)?(?:!\s+)?(?:echo|printf|cat|grep|rg|tail|head|less|ls|cd|git|gh|brew|man|which|type|open|pgrep|pkill|killall|ps|lsof)\b/
+  /^(?:echo|printf|cat|grep|rg|tail|head|less|ls|cd|git|gh|brew|man|which|type|open|pgrep|pkill|killall|ps|lsof)\b/
 
 /** The check one segment runs, and the word that starts it, such as `npm` or `tsc`. */
 function checkIn(segment: string): { call: CheckCall; runner: string } | null {
-  if (NOT_A_CHECK.test(segment)) return null
+  const command = commandOf(segment)
+  if (NOT_A_CHECK.test(command)) return null
   for (const c of CHECKS) {
-    const m = segment.match(c.pattern)
+    const m = command.match(c.pattern)
     if (m) return { call: { name: c.name(m), kind: c.kind }, runner: m[0].trim().split(/\s+/)[0] ?? '' }
   }
 
@@ -149,7 +155,7 @@ export function checkRuns(command: string, cwd: string, home: string): CheckRun[
 
   const blank = segments(command)
   segments(command, true).forEach((segment, i) => {
-    const words = wordsOf(segment.replace(/^[({]\s*/, ''))
+    const words = wordsOf(commandOf(segment))
     const [first = '', ...rest] = words
     const assigned = first === 'export' ? rest : words
     const assignment = assigned.length === 1 ? assigned[0]?.match(/^(\w+)=(.*)$/s) : null
