@@ -74,10 +74,12 @@ running session.
     the cause and fix it. `x: Dismiss` hides the row until the check runs
     again. A run that passes removes it.
   - On a question, the letters send an answer to Claude as your message,
-    quoting the question: `a: Node  b: Python`. If Claude is working, the
-    answer waits until the turn ends. The recommended answer's key says so.
-    The other actions follow, with gray keys, on the same row when they fit,
-    and on a line of their own when they don't.
+    quoting the question: `a: Node  b: Python`. Every question has at least
+    one. When Claude's reply names no choices, the inbox predicts the likely
+    answers, such as `a: Approve  b: Not yet`. If Claude is working, the
+    answer waits until the turn ends. The answer Claude recommended says so
+    on its key. The other actions follow, with gray keys, on the same row
+    when they fit, and on a line of their own when they don't.
   - `t` opens a one-line field for your own words, when no option fits. The
     field takes the keyboard, unless the prompt holds text you were writing.
     Enter sends your words as your message, quoting the item. A question closes

@@ -38,6 +38,14 @@ describe('parseReply', () => {
     expect(u?.added[0]?.options).toEqual(['Yes', 'No'])
   })
 
+  test('an answer written after "|" instead of " / " stays an answer, not the recommendation', () => {
+    const [item] = parseReply(
+      'NEW: decide | - | Which port? | Use another port / Stop docs site | Pick one for me | -',
+    )!.added
+    expect(item?.options).toEqual(['Use another port', 'Stop docs site', 'Pick one for me'])
+    expect(item?.rec).toBe(null)
+  })
+
   test('a key written as "-" adds nothing and keeps the card', () => {
     const u = parseReply('GOAL: -\nNOW: -\nDONE: -\nRUNNING: -\nNEW: do | - | - | - | -')!
     expect(u.added).toEqual([])
