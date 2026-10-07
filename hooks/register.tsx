@@ -2951,7 +2951,7 @@ export const register: Register = on => {
                 Last refresh failed: {pr.error}
               </Text>
             ) : null}
-            <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+            <Box flexDirection="row" flexWrap="wrap" columnGap={2} marginTop={blankLine}>
               {waitingOn.length > 1 ? (
                 <Button
                   key={`address-all-${pr.ref}`}
@@ -2966,6 +2966,7 @@ export const register: Register = on => {
             </Box>
           </Box>,
         ),
+        ...(prRows.length > 0 ? titleGap() : []),
         ...divided(
           prRows.map((r, n) => listRow(r, childPos(n, prRows.length))),
           pr.ref,
