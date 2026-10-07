@@ -191,6 +191,34 @@ export function prAttention(views: PrView[]): string | null {
   return null
 }
 
+/**
+ * The HTML tags review bots write in comments, such as `<sub>` and `<details>`.
+ * Lowercase only, so a type parameter such as `Props<P>` stays.
+ */
+const HTML_TAG =
+  /<\/?(?:a|b|br|code|details|div|em|h[1-6]|hr|i|img|kbd|li|ol|p|pre|span|strong|sub|summary|sup|table|tbody|td|th|thead|tr|ul)\b[^>]*>/g
+
+/**
+ * A review comment's Markdown without the HTML that review bots add, and with
+ * each image as its alt text, so a bot's `![P1 Badge](…)` reads "P1".
+ */
+export function readableComment(body: string): string {
+  return body
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(HTML_TAG, '')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, (_, alt: string) => alt.replace(/\s*badge$/i, ''))
+    .trim()
+}
+
+/** A review comment as one line of plain text, for a row that shows only its start. */
+export function commentLine(body: string): string {
+  return readableComment(body)
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^\s*(?:#{1,6}|>)\s*/gm, '')
+    .replace(/\*\*|__|`/g, '')
+    .replace(/\s+/g, ' ')
+}
+
 /** Where a thread sits in the diff: "path:line", or the path alone. */
 export function threadWhere(t: PrThread, path = t.path): string {
   return `${path}${t.line ? `:${t.line}` : ''}`

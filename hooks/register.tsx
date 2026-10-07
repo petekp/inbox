@@ -46,6 +46,7 @@ import {
   THREADS_QUERY,
   VIEW_FIELDS,
   checkCounts,
+  commentLine,
   failingChecks,
   parseRef,
   prAttention,
@@ -53,6 +54,7 @@ import {
   prompts,
   readThreads,
   readView,
+  readableComment,
   readiness,
   threadWhere,
   waitingThreads,
@@ -2347,15 +2349,15 @@ export const register: Register = on => {
           </Text>
         ),
         title: threadWhere(t),
-        line: { before: `${threadWhere(t, baseName(t.path))} `, text: latest.body.replace(/\s+/g, ' ') },
+        line: { before: `${threadWhere(t, baseName(t.path))} `, text: commentLine(latest.body) },
         body: (
           <Box flexDirection="column">
             {t.reply ? (
               <Text color={pal.muted} wrap="wrap">
-                @{t.author}: {clipLabel(t.body, 200)}
+                @{t.author}: {clipLabel(commentLine(t.body), 200)}
               </Text>
             ) : null}
-            <Markdown text={`**@${latest.author}:** ${clipLabel(latest.body, 1200)}`} />
+            <Markdown text={`**@${latest.author}:** ${clipLabel(readableComment(latest.body), 1200)}`} />
           </Box>
         ),
         keys: () => [

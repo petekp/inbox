@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { prRefs, readThreads, readView, readiness } from '../hooks/prs'
+import { commentLine, prRefs, readThreads, readView, readableComment, readiness } from '../hooks/prs'
 
 const VIEW = JSON.stringify({
   number: 12,
@@ -107,6 +107,16 @@ const THREADS = JSON.stringify({
 })
 
 describe('prs', () => {
+  test('a review comment reads without the HTML and badges review bots add', () => {
+    const body =
+      '**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Guard the empty list**\n\n' +
+      'An empty `Array<string>` reaches [the parser](https://example.com/parser).<!-- review state -->'
+    expect(readableComment(body)).toBe(
+      '**P1  Guard the empty list**\n\nAn empty `Array<string>` reaches [the parser](https://example.com/parser).',
+    )
+    expect(commentLine(body)).toBe('P1 Guard the empty list An empty Array<string> reaches the parser.')
+  })
+
   test('finds PR links once each', () => {
     expect(
       prRefs('see https://github.com/acme/greet/pull/12 and https://github.com/acme/greet/pull/12#r1, not /issues/3'),
