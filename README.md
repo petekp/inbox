@@ -47,8 +47,9 @@ running session.
   the last edit" when files in its git repo changed after it ran, in the
   session's folder or any other. A Markdown-only edit leaves tests, type
   checks and builds current. A check script such as `check.sh` that passes
-  replaces the earlier results in its folder. A check still failing when
-  Claude stops also waits in the /inbox pane.
+  replaces the earlier results in its folder. A check whose folder is gone,
+  such as a removed worktree's, drops out. A check still failing when Claude
+  stops also waits in the /inbox pane.
 - **Numbered answers.** Reply "1. yes 2. no" to the agent's numbered
   questions as usual. The mod attaches the full questions to your message,
   so the agent knows what each number meant.

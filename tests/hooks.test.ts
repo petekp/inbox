@@ -615,6 +615,30 @@ test('a failing test run shows in the band, reaches the per-turn call, stops a c
   expect(await band.find({ text: /✗ npm test/ })).toBeDefined()
 })
 
+test('a failed check whose folder is gone, such as a removed worktree, drops out', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world(on, [])
+  let isThere = true
+  on('fs.exists', () => ({ value: isThere }))
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  toolAnswer = { text: ' 11 pass\n 1 fail\n', isError: true }
+  await $.tool.call({ tool: 'Bash', command: 'npm --prefix /tmp/wt test', description: 'Run the tests' } as never)
+  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+  expect(await band.find({ text: /✗ npm test in wt/ })).toBeDefined()
+
+  isThere = false
+  await $.turn.complete({
+    answer: 'Removed the worktree.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  expect(await band.find({ text: /✗ npm test in wt/ })).toBeUndefined()
+})
+
 test('/inbox demo shows sample entries in every tab, sends nothing, and goes back', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world(on, [])

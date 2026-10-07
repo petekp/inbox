@@ -1469,13 +1469,27 @@ function repoOf($: EngineInterface, folder: string): Promise<string | null> {
 }
 
 /**
- * Reads the working tree of each repo in `repos`, or of each repo a recorded
- * check ran in. A repo whose content differs from its last reading makes the
- * checks that ran there stale. Readings run one at a time.
+ * Drops the checks that ran in a folder that is gone, such as a removed
+ * worktree's: they can be neither fixed nor run again.
+ */
+async function dropGoneFolders($: EngineInterface) {
+  const folders = [...new Set((await read($, CHECKS)).results.flatMap(c => (c.folder ? [c.folder] : [])))]
+  const found = await Promise.all(folders.map(f => $.fs.exists(f).catch(() => true)))
+  const gone = new Set(folders.filter((_f, i) => !found[i]))
+  if (gone.size > 0)
+    await update($, CHECKS, c => ({ ...c, results: c.results.filter(x => !x.folder || !gone.has(x.folder)) }))
+}
+
+/**
+ * Drops the checks whose folder is gone, then reads the working tree of each
+ * repo in `repos`, or of each repo a recorded check ran in. A repo whose
+ * content differs from its last reading makes the checks that ran there
+ * stale. Readings run one at a time.
  */
 function refreshTree($: EngineInterface, repos?: string[]): Promise<void> {
   refreshing = refreshing
     .then(async () => {
+      await dropGoneFolders($)
       const checked = repos ?? (await read($, CHECKS)).results.flatMap(c => (c.repo ? [c.repo] : []))
       const before = await read($, SNAPSHOTS)
       for (const repo of new Set(checked)) {
