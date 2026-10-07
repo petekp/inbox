@@ -23,6 +23,7 @@ describe('checksIn', () => {
     expect(checksIn('cat t.log | grep pass')).toEqual([])
     expect(checksIn('echo "run bun test later"')).toEqual([])
     expect(checksIn('git commit -m "Fix tsc errors and jest setup"')).toEqual([])
+    expect(checksIn('until ! pgrep -x xcodebuild >/dev/null; do sleep 5; done')).toEqual([])
   })
 
   test('names common runners by kind, behind a package manager’s options', () => {
@@ -130,6 +131,13 @@ describe('readResults', () => {
       'pass',
       'fail',
     ])
+    // The runner's own line wins over another runner's line that also says "test".
+    const both = 'python3 -m unittest > u.log; echo "unittest exit $?"; bun test | tail -4; echo "bun exit $?"'
+    expect(readResults(both, runs(both), 'unittest exit 1\nbun exit 0\n 7 pass\n 0 fail\n', false)[0]?.result).toBe(
+      'pass',
+    )
+    const build = 'go build ./... > b.log 2>&1; echo "build exit=$?"'
+    expect(readResults(build, runs(build), 'build exit=0\n', false)[0]?.result).toBe('pass')
   })
 
   test('a lone check that ends the command is decided by its exit status; counts describe it', () => {
@@ -155,6 +163,23 @@ describe('readResults', () => {
   test('a filtered command without counts is unknown, since the exit status is the filter’s', () => {
     const [r] = readResults('npm run build | tail -3', runs('npm run build | tail -3'), 'done in 2s', false)
     expect(r?.result).toBe('unknown')
+  })
+
+  test('failure words another command printed do not fail a lone check', () => {
+    const result = (command: string, output: string) => readResults(command, runs(command), output, false)[0]?.result
+    // The runner's own tally decides it.
+    const node = 'node --test 2>&1 | grep "^ℹ"; node verify.mjs | grep FAIL'
+    expect(result(node, 'ℹ pass 40\nℹ fail 0\nFAIL demo asset missing\n')).toBe('pass')
+    // tsc fails only on its own "error TS" lines.
+    const tsc = 'npx tsc --noEmit && echo OK; npm run check:all 2>&1 | tail -3'
+    expect(result(tsc, 'FAIL — 1 guidance claim does not resolve\n7 passed\n')).toBe('unknown')
+    expect(result(tsc, "src/a.ts(1,1): error TS2322: Type 'x' is not assignable.\n")).toBe('fail')
+    // ESLint's "problems" include warnings, which fail only past --max-warnings.
+    const lint = 'npx eslint src | tail -3'
+    expect(result(lint, '✖ 316 problems (0 errors, 316 warnings)\n')).toBe('pass')
+    expect(result(lint, '✖ 2 problems (0 errors, 2 warnings)\nESLint found too many warnings (maximum: 0).\n')).toBe(
+      'fail',
+    )
   })
 })
 

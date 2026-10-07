@@ -62,8 +62,12 @@ function segments(command: string, keepQuotes = false): string[] {
     .filter(Boolean)
 }
 
-/** Commands that only show text or move around; a check named in one of them is not run. */
-const NOT_A_CHECK = /^(?:echo|printf|cat|grep|rg|tail|head|less|ls|cd|git|gh|brew|man|which|type|open)\b/
+/**
+ * Commands that only show text, move around or look for a process; a check
+ * named in one of them is not run, as in `until ! pgrep -x xcodebuild`.
+ */
+const NOT_A_CHECK =
+  /^(?:(?:until|while)\s+)?(?:!\s+)?(?:echo|printf|cat|grep|rg|tail|head|less|ls|cd|git|gh|brew|man|which|type|open|pgrep|pkill|killall|ps|lsof)\b/
 
 /** The check one segment runs, and the word that starts it, such as `npm` or `tsc`. */
 function checkIn(segment: string): { call: CheckCall; runner: string } | null {
@@ -192,11 +196,13 @@ export function isTemporary(folder: string): boolean {
   return /^(?:\/private)?\/(?:tmp|var\/tmp|var\/folders)(?:\/|$)/.test(folder)
 }
 
-const FAIL_COUNT = /\b([1-9]\d*)\s+(?:fail(?:ed|ing|ures?|s)?|errors?|problems?)\b|^[ℹ#]\s*fail\s+[1-9]\d*\s*$/im
+// Not "problems": ESLint counts warnings in them, as in "316 problems (0 errors, 316 warnings)".
+const FAIL_COUNT = /\b([1-9]\d*)\s+(?:fail(?:ed|ing|ures?|s)?|errors?)\b|^[ℹ#]\s*fail\s+[1-9]\d*\s*$/im
 const ZERO_FAIL = /\b0\s+(?:fail(?:ed|ing|ures?|s)?|errors?)\b|^[ℹ#]\s*fail\s+0\s*$/im
 const PASS_COUNT = /\b(\d+)\s+(?:pass(?:ed|ing|es)?|tests? passed|ok)\b/i
 const TS_ERROR = /\berror\s+TS\d+\b/
-const FAIL_WORD = /^\s*(?:FAIL|FAILED|✗|×|✘)\b|\bTests?:\s+\d+\s+failed\b|^error(?:\[E\d+\])?:/im
+const FAIL_WORD =
+  /^\s*(?:FAIL|FAILED|✗|×|✘)\b|\bTests?:\s+\d+\s+failed\b|^error(?:\[E\d+\])?:|\bESLint found too many warnings\b/im
 const SUMMARY = [
   /^.*\b\d+\s+(?:pass(?:ed|ing)?|fail(?:ed|ing)?)\b.*$/im,
   /^.*\bRan \d+ tests?\b.*$/im,
@@ -234,25 +240,30 @@ function bareExit(command: string, output: string): number | null {
   return lines.length === 1 ? Number(lines[0]) : null
 }
 
+/** Words in check names that say what a check does, not which runner ran it. */
+const GENERIC_WORDS = new Set(['test', 'tests', '--test', 'build', 'check', 'run'])
+
 /** Whether a segment sends its output to a file, so the output here is not its own. */
 function isRedirected(segment: string): boolean {
   return /(?:^|[^\d&])>>?\s*[^&\s]/.test(segment)
 }
 
 /** Pass and fail counts on lines of their own: bun's " 24 pass", node's "ℹ pass 24", TAP's "# pass 24". */
-function counts(output: string): string | null {
-  const count = (word: string) =>
-    output.match(new RegExp(`^\\s*(\\d+)\\s+${word}\\s*$|^[ℹ#]\\s*${word}\\s+(\\d+)\\s*$`, 'm'))
+function counts(output: string): { pass: number; fail: number } | null {
+  const count = (word: string) => {
+    const m = output.match(new RegExp(`^\\s*(\\d+)\\s+${word}\\s*$|^[ℹ#]\\s*${word}\\s+(\\d+)\\s*$`, 'm'))
+
+    return m ? Number(m[1] ?? m[2]) : null
+  }
   const pass = count('pass')
   const fail = count('fail')
-  if (!pass || !fail) return null
 
-  return `${pass[1] ?? pass[2]} pass, ${fail[1] ?? fail[2]} fail`
+  return pass === null || fail === null ? null : { pass, fail }
 }
 
 function summaryOf(output: string): string {
   const both = counts(output)
-  if (both) return both
+  if (both) return `${both.pass} pass, ${both.fail} fail`
   for (const p of SUMMARY) {
     const m = output.match(p)
     if (m) return m[0].trim().slice(0, 120)
@@ -267,7 +278,8 @@ function summaryOf(output: string): string {
  * command runs more than once is unknown, since the output does not say which
  * lines are which run's. Otherwise an explicit "<name> exit N" line wins. Then
  * the command's own exit status, when a lone check ends the command and
- * nothing filters it. Then failure or pass counts in the output.
+ * nothing filters it. Then the runner's own pass and fail tally, then failure
+ * or pass words in the output, which other commands in it may have printed.
  */
 export function readResults(
   command: string,
@@ -284,10 +296,10 @@ export function readResults(
     const own = runs.filter(r => r.call.name === call.name)
     if (own.length > 1) return { call, result: 'unknown', summary: `ran ${own.length} times in one command` }
     const words = call.name.toLowerCase().replace(/\.sh$/, '').split(/\s+/)
-    const labeled = exits.find(
-      x =>
-        x.label !== '' && words.some(w => x.label.includes(w) || (call.kind === 'tests' && x.label.includes('test'))),
-    )
+    // The runner's word ("bun") names its line; "test" can name another runner's, as in "unittest exit 1".
+    const named = words.filter(w => !GENERIC_WORDS.has(w))
+    const labelFor = (ws: string[]) => exits.find(x => x.label !== '' && ws.some(w => x.label.includes(w)))
+    const labeled = labelFor(named) ?? labelFor(call.kind === 'tests' ? [...words, 'test'] : words)
     const bare = calls.length === 1 && exits.length === 0 ? bareExit(command, output) : null
     const only =
       calls.length === 1 && exits.length === 1 ? exits[0] : bare === null ? undefined : { label: '', code: bare }
@@ -297,9 +309,16 @@ export function readResults(
       return { call, result: isError ? 'fail' : 'pass', summary: summary || (isError ? 'exited with an error' : '') }
     }
     if (calls.length === 1) {
-      if (FAIL_COUNT.test(output) || TS_ERROR.test(output) || FAIL_WORD.test(output))
-        return { call, result: 'fail', summary }
-      if (ZERO_FAIL.test(output) || PASS_COUNT.test(output)) return { call, result: 'pass', summary }
+      const tally = counts(output)
+      if (tally) return { call, result: tally.fail > 0 ? 'fail' : 'pass', summary }
+      // tsc reports a failure only as "error TSnnnn" lines.
+      if (call.name === 'tsc') {
+        if (TS_ERROR.test(output)) return { call, result: 'fail', summary }
+      } else {
+        if (FAIL_COUNT.test(output) || TS_ERROR.test(output) || FAIL_WORD.test(output))
+          return { call, result: 'fail', summary }
+        if (ZERO_FAIL.test(output) || PASS_COUNT.test(output)) return { call, result: 'pass', summary }
+      }
     }
     if (isError) return { call, result: 'fail', summary: summary || 'exited with an error' }
     if (isFiltered || isRedirected(own[0]?.segment ?? '')) return { call, result: 'unknown', summary }
