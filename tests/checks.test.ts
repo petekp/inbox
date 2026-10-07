@@ -1,7 +1,15 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Check, Checks } from '../types'
-import { checkRuns, checksIn, contradictedClaim, markStale, readResults, recordCheck } from '../hooks/checks'
+import {
+  checkRuns,
+  checksIn,
+  contradictedClaim,
+  failureLines,
+  markStale,
+  readResults,
+  recordCheck,
+} from '../hooks/checks'
 import { candidates, changedPaths, readChanged, readLsTree } from '../hooks/git'
 
 describe('checksIn', () => {
@@ -61,6 +69,8 @@ describe('checkRuns', () => {
       ranAt: 1,
       repo: '/work/repo',
       isStale: false,
+      command: '',
+      failures: [],
       isLeftFailing: false,
       isDismissed: false,
     })
@@ -78,6 +88,8 @@ describe('checkRuns', () => {
       ranAt: 1,
       repo: null,
       isStale: false,
+      command: '',
+      failures: [],
       isLeftFailing: false,
       isDismissed: false,
     }
@@ -85,6 +97,21 @@ describe('checkRuns', () => {
     const script = (result: Check['result']): Check => ({ ...tsc, name: 'check.sh', kind: 'all', result })
     expect(recordCheck([tsc, copy], script('pass'))).toEqual([copy, script('pass')])
     expect(recordCheck([tsc], script('fail'))).toEqual([tsc, script('fail')])
+  })
+})
+
+describe('failureLines', () => {
+  test('keeps the lines that name a failing test or an error, at most three', () => {
+    const bun = [
+      '(pass) parses dates',
+      '(fail) parses times [2ms]',
+      '  AssertionError: expected 3 to be 4',
+      ' 1 fail',
+    ].join('\n')
+    expect(failureLines(bun)).toEqual(['(fail) parses times [2ms]', 'AssertionError: expected 3 to be 4'])
+    const tsc = [1, 2, 3, 4].map(n => `src/a.ts(${n},1): error TS2322: Type 'x' is not assignable.`).join('\n')
+    expect(failureLines(tsc)).toHaveLength(3)
+    expect(failureLines('Done in 2s')).toEqual([])
   })
 })
 
@@ -141,6 +168,8 @@ describe('contradictedClaim', () => {
     ranAt: 10,
     repo: '/work/repo',
     isStale,
+    command: '',
+    failures: [],
     isLeftFailing: false,
     isDismissed: false,
   })
@@ -177,6 +206,8 @@ describe('markStale', () => {
     ranAt: 10,
     repo,
     isStale: false,
+    command: '',
+    failures: [],
     isLeftFailing: false,
     isDismissed: false,
   })

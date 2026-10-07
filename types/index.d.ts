@@ -155,6 +155,10 @@ export type Check = {
    * a check script, and a file other than Markdown for the rest.
    */
   isStale: boolean
+  /** The piece of Claude's command that ran it, as written, such as `npm test > t.log`. */
+  command: string
+  /** Up to three output lines that name what failed, when the command ran no other check. */
+  failures: string[]
   /** A turn of Claude's ended with it failing, so the Needs you tab lists it. */
   isLeftFailing: boolean
   /** The person dismissed its row in the Needs you tab. */

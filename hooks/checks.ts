@@ -112,9 +112,10 @@ function resolvePath(from: string, path: string): string {
 
 /**
  * One time a command runs a check: the check, the piece of the command that
- * runs it, whether that piece ends the command, and the folder it ran in.
+ * runs it (`segment` with quoted text blanked, `command` as written), whether
+ * that piece ends the command, and the folder it ran in.
  */
-export type CheckRun = { call: CheckCall; segment: string; isLast: boolean; folder: string | null }
+export type CheckRun = { call: CheckCall; segment: string; command: string; isLast: boolean; folder: string | null }
 
 /**
  * Each check a command runs, in order, with its folder, absolute: where the
@@ -173,7 +174,13 @@ export function checkRuns(command: string, cwd: string, home: string): CheckRun[
       })
       // A project file, such as tsconfig.build.json or Cargo.toml, names its folder.
       if (named && /\.(?:json|toml)$/.test(named)) named = named.replace(/\/?[^/]*$/, '') || '.'
-      runs.push({ call, segment: piece, isLast: i === blank.length - 1, folder: named === undefined ? dir : at(named) })
+      runs.push({
+        call,
+        segment: piece,
+        command: segment,
+        isLast: i === blank.length - 1,
+        folder: named === undefined ? dir : at(named),
+      })
     }
   })
 
@@ -197,6 +204,19 @@ const SUMMARY = [
   /^.*\bFound \d+ (?:errors?|problems?)\b.*$/im,
   /^.*\b\d+ (?:errors?|warnings?|problems?)\b.*$/im,
 ]
+
+/** A line that names what failed: a failing test, a compiler error, or an error message. */
+const FAILURE_LINE = /^\s*(?:\(fail\)|FAIL\b|✗|×|✘)|\berror\s+TS\d+\b|^\s*(?:[A-Z]\w*Error|error)(?:\[\w+\])?:/
+
+/** Up to three lines of a check's output that name what failed, each cut to 160 characters. */
+export function failureLines(output: string): string[] {
+  return output
+    .split('\n')
+    .filter(line => FAILURE_LINE.test(line))
+    .map(line => line.trim().slice(0, 160))
+    .filter((line, i, all) => all.indexOf(line) === i)
+    .slice(0, 3)
+}
 
 /** "<label> exit N" lines a command printed, such as `echo "tsc exit $?"`, `exit: 1` or `exit=1`. */
 function exitLines(output: string): { label: string; code: number }[] {
@@ -391,12 +411,23 @@ export function contradictedClaim(reply: string, checks: Checks): Contradiction 
   return null
 }
 
+/** What a failed check's output says: the lines that name the failure, then the summary unless it repeats one. */
+export function outputLines(check: Check): string[] {
+  const isRepeated = check.failures.some(f => f.includes(check.summary) || check.summary.includes(f))
+
+  return [...check.failures, ...(check.summary && !isRepeated ? [check.summary] : [])]
+}
+
 /** What `a: Fix` on a failing check sends Claude. */
 export function fixMessage(check: Check): string {
-  const where = check.folder ? ` in ${check.folder}` : ''
-  const output = check.summary ? ` Its output: ${check.summary}` : ''
+  const output = outputLines(check)
 
-  return `${check.name} failed when you last ran it${where}.${output}\nFind the cause, fix it, and run it again to verify.`
+  return [
+    `${check.name} failed when you last ran it${check.folder ? ` in ${check.folder}` : ''}.`,
+    ...(check.command ? [`Command: ${check.command}`] : []),
+    ...(output.length > 0 ? ['Output:', ...output] : []),
+    'Find the cause, fix it, and run it again to verify.',
+  ].join('\n')
 }
 
 /** What sends Claude back to correct a claim before its turn ends. */

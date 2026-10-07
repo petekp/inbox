@@ -69,8 +69,10 @@ running session.
   2), 3), then Your tasks. Each item shows how long it has waited. Lines join
   each group's title to its rows, as in a directory listing.
   - Failing checks are the checks still failing when Claude last stopped.
-    `a: Fix` asks Claude to find the cause and fix it. `x: Dismiss` hides
-    the row until the check runs again. A run that passes removes it.
+    Each shows up to three output lines that name what failed, and the
+    command that ran it. `a: Fix` sends both to Claude and asks it to find
+    the cause and fix it. `x: Dismiss` hides the row until the check runs
+    again. A run that passes removes it.
   - On a question, the letters send an answer to Claude as your message,
     quoting the question: `a: Node  b: Python`. If Claude is working, the
     answer waits until the turn ends. The recommended answer's key says so.

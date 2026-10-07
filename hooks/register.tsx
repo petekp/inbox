@@ -29,9 +29,11 @@ import {
   checksIn,
   claimMessage,
   contradictedClaim,
+  failureLines,
   fixMessage,
   isTemporary,
   markStale,
+  outputLines,
   readResults,
   recordCheck,
 } from './checks'
@@ -387,6 +389,7 @@ let press: Press | null = null
 // Set in session.start, which a hot reload runs again.
 let sessionId = ''
 let root = ''
+let home = ''
 // The repo's top folder, where git reads the working tree; null outside git.
 let top: string | null = null
 // Each folder outside the session's where a check ran, with its repo's top folder.
@@ -844,6 +847,11 @@ function repoPath(path: string): string {
   return base && path.startsWith(`${base}/`) ? path.slice(base.length + 1) : path
 }
 
+/** Text with the home folder written as ~, as in a shell prompt. */
+function tilde(text: string): string {
+  return home ? text.replaceAll(`${home}/`, '~/') : text
+}
+
 function baseName(path: string): string {
   return path.replace(/\/+$/, '').split('/').pop() ?? path
 }
@@ -902,6 +910,8 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
         ...r,
         repo: r.repo ?? null,
         isStale: r.isStale ?? false,
+        command: r.command ?? '',
+        failures: r.failures ?? [],
         isLeftFailing: r.isLeftFailing ?? false,
         isDismissed: r.isDismissed ?? false,
       })),
@@ -1511,15 +1521,19 @@ function refreshTree($: EngineInterface, repos?: string[]): Promise<void> {
 
 /** Records how each check a Bash command ran ended, and in which folder; `cwd` is where the shell started. */
 async function recordChecks($: EngineInterface, command: string, cwd: string, output: string, isError: boolean) {
-  const runs = checkRuns(command, cwd, (await $.env.get('HOME')) ?? '')
+  const runs = checkRuns(command, cwd, home)
+  // With other checks in the command, the output's failure lines may be theirs.
+  const isAlone = new Set(runs.map(x => x.call.name)).size === 1
   const ended = readResults(command, runs, output, isError).flatMap(r => {
+    const own = runs.filter(x => x.call.name === r.call.name)
     // A folder the command hides, as after `cd "$(git rev-parse --show-toplevel)"`, is taken as the session's.
-    const folders = new Set(runs.filter(x => x.call.name === r.call.name).map(x => x.folder ?? root))
+    const folders = new Set(own.map(x => x.folder ?? root))
     const [folder = root] = folders
     // A check run in several folders, or in a throwaway copy, says nothing about this session's work.
     if (folders.size > 1 || (isTemporary(folder) && !isTemporary(root))) return []
+    const failures = r.result === 'fail' && isAlone ? failureLines(output) : []
 
-    return [{ ...r, folder }]
+    return [{ ...r, folder, command: own[0]?.command ?? '', failures }]
   })
   if (ended.length === 0) return
   const results = await Promise.all(ended.map(async r => ({ ...r, repo: await repoOf($, r.folder) })))
@@ -1540,6 +1554,8 @@ async function recordChecks($: EngineInterface, command: string, cwd: string, ou
           result: r.result,
           summary: r.summary,
           ranAt,
+          command: r.command,
+          failures: r.failures,
           repo: r.repo,
           isStale: false,
           isLeftFailing: false,
@@ -1573,7 +1589,11 @@ export const register: Register = on => {
     const r = await next(e)
     isOn = e.isInteractive
     if (!isOn) return r
-    ;[sessionId, root] = await Promise.all([$.session.id(), $.session.root()])
+    ;[sessionId, root, home] = await Promise.all([
+      $.session.id(),
+      $.session.root(),
+      $.env.get('HOME').then(h => h ?? ''),
+    ])
     isSaved = false
     // A reload stops any update the previous load had running, and state outlives
     // it, so an update in flight at load was cut off: record it as failed.
@@ -2241,6 +2261,7 @@ export const register: Register = on => {
     })
     const failedCheckRow = (c: Check): Row => {
       const id = `check:${c.folder ?? '.'}:${c.name}`
+      const output = outputLines(c)
 
       return {
         id,
@@ -2249,13 +2270,24 @@ export const register: Register = on => {
         title: checkName(c),
         titleAfter: ` · ${ago(now - c.ranAt)}`,
         line: { text: checkName(c), after: ` · ${ago(now - c.ranAt)}` },
-        body:
-          c.summary || c.isStale ? (
-            <Text wrap="wrap">
-              {c.summary}
-              {c.isStale ? <Text color={pal.muted}>{c.summary ? ' · ' : ''}Ran before the last edit</Text> : null}
-            </Text>
-          ) : null,
+        // What failed, then where and how it ran, as a shell prompt would show it.
+        body: (
+          <Box flexDirection="column" rowGap={1}>
+            {output.length > 0 ? (
+              <Box flexDirection="column">
+                {output.map(line => (
+                  <Text wrap="wrap">{line}</Text>
+                ))}
+              </Box>
+            ) : null}
+            {c.command ? (
+              <Text wrap="wrap" color={pal.muted}>
+                {c.folder ? `${tilde(c.folder)} ` : ''}$ {tilde(c.command)}
+              </Text>
+            ) : null}
+            {c.isStale ? <Text color={pal.muted}>Ran before the last edit</Text> : null}
+          </Box>
+        ),
         keys: () => [
           { key: `fix-${id}`, label: 'Fix', hotkey: 'a', onPress: () => void send($, fixMessage(c)) },
           { key: `dismiss-${id}`, label: 'Dismiss', hotkey: 'x', onPress: () => void dismissCheck($, c) },

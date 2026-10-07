@@ -609,7 +609,7 @@ test('a failing test run shows in the band, reaches the per-turn call, stops a c
   expect(await pane.find({ text: /Failing checks 1/ })).toBeDefined()
   await pane.press({ key: 'fix-check:.:npm test' })
   await clock.settle()
-  expect(sent.at(-1)).toContain('npm test failed when you last ran it. Its output: 11 pass, 1 fail')
+  expect(sent.at(-1)).toContain('npm test failed when you last ran it.\nCommand: npm test\nOutput:\n11 pass, 1 fail\n')
   await pane.press({ key: 'dismiss-check:.:npm test' })
   expect(await pane.find({ text: /Failing checks/ })).toBeUndefined()
   expect(await band.find({ text: /✗ npm test/ })).toBeDefined()
