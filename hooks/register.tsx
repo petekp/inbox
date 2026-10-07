@@ -1935,7 +1935,22 @@ export const register: Register = on => {
     }
 
     const card = ledger.card
-    if (!card && ledger.items.length === 0 && ledger.findings.length === 0 && settled.length === 0) return next(e)
+    // A failed check gets a line of its own, so a narrow band cannot cut it off.
+    const failedRows = checks.results
+      .filter(c => c.result === 'fail')
+      .map(c => (
+        <Text wrap="truncate-end" color="error">
+          {'  '}
+          {checkLine(c)}
+        </Text>
+      ))
+
+    if (!card && ledger.items.length === 0 && ledger.findings.length === 0 && settled.length === 0) {
+      // Before the session's first card, failed checks are all the band has to show.
+      if (isWorking || failedRows.length === 0) return next(e)
+
+      return <Box flexDirection="column">{failedRows}</Box>
+    }
     const settledHint = settled.map(s => (
       <Text color={DONE}>
         {' · ✓ '}
@@ -1974,16 +1989,6 @@ export const register: Register = on => {
         <Text dimColor>{run}</Text>
       </Text>
     ))
-
-    // A failed check gets a line of its own, so a narrow band cannot cut it off.
-    const failedRows = checks.results
-      .filter(c => c.result === 'fail')
-      .map(c => (
-        <Text wrap="truncate-end" color="error">
-          {'  '}
-          {checkLine(c)}
-        </Text>
-      ))
 
     if (presence.isAway && card) {
       const rows = [

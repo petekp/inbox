@@ -577,6 +577,9 @@ test('a failing test run shows in the band, reaches the per-turn call, stops a c
     command: 'cd "$(git rev-parse --show-toplevel)" && npm test',
     description: 'Run the tests',
   } as never)
+  // The band shows the failure before the session has a card.
+  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+  expect(await band.find({ text: /✗ npm test, 11 pass, 1 fail/ })).toBeDefined()
 
   const blocked = await $.classic.Stop({
     stop_hook_active: false,
@@ -599,7 +602,6 @@ test('a failing test run shows in the band, reaches the per-turn call, stops a c
   })
   await clock.settle()
   expect(prompts.at(-1)).toContain('<checks>\n✗ npm test, 11 pass, 1 fail\n</checks>')
-  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await band.find({ text: /✗ npm test, 11 pass, 1 fail/ })).toBeDefined()
 
   // Still failing when the turn ended, so it waits on the person until they dismiss it.
