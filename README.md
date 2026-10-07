@@ -43,11 +43,9 @@ running session.
   work stands. The Waiting tab also shows a stop above its items.
 - **Checks.** The mod records each test, type check, lint, build or
   validation command Claude runs, and how it ended. A failed check gets a
-  line of its own under the band, as in "✗ npm test, 1 fail". The Waiting
-  tab lists every check under Checks, which starts folded. A red ✗ after
-  its title means a check failed. Click the title row to open it; the pane
-  remembers. A check is marked "before the last
-  edit" when files changed after it ran. A Markdown-only edit leaves tests,
+  line of its own under the band, as in "✗ npm test, 1 fail". The card the
+  band shows when you return lists every check. A check is marked "before
+  the last edit" when files changed after it ran. A Markdown-only edit leaves tests,
   type checks and builds current.
 - **Numbered answers.** Reply "1. yes 2. no" to the agent's numbered
   questions as usual. The mod attaches the full questions to your message,
@@ -64,7 +62,8 @@ running session.
   blue, shows its full text, and lists its actions. The other rows take one
   line each, with a muted line between each two. The Waiting tab lists
   Questions first, newest first and numbered 1), 2), 3), then Your tasks.
-  Lines join each section's title to its rows, as in a directory listing.
+  Each item shows how long it has waited. Lines join each group's title to
+  its rows, as in a directory listing.
   - On a question, the digits send an answer to Claude as your message,
     quoting the question: `1: Node  2: Python`. If Claude is working, the
     answer waits until the turn ends. The recommended answer's key says so.
@@ -78,17 +77,13 @@ running session.
     means, without acting on it. The item stays open.
   - `x: Dismiss` drops a question. `d: Done` closes a task that is yours to
     do. A task also closes on its own when you run its command with `!`.
-  - Under the list, the Waiting tab shows what's running, the checks, what
-    Claude finished, and closed items. Every section folds: click anywhere
-    on its title row, which lights up under the pointer. A folded section
-    shows `▸` and an open one `▾`. Its count follows the title, muted.
-    Checks, Finished by Claude and Closed share a card, with a line between
-    each two. The mod remembers what you folded in later sessions, and the
-    selection skips a folded section's rows.
+  - Under each group's open items are its last three closed ones: what was
+    asked, how it closed, and when. An item left unanswered for 12 prompts
+    closes as "expired, unanswered".
   - The tab bar shows when the inbox last updated, at its right end. A tab
     you switch to starts at its top.
 - **Keys.** While the pane has focus, `j` and `k` move the selection, `w`,
-  `n` and `p` switch tabs, and each action's key presses it. `/inbox` gives
+  `f` and `p` switch tabs, and each action's key presses it. `/inbox` gives
   the pane focus, and ctrl+x tab moves focus between the pane and the
   prompt. A label written `key: Action` has a key. A label in brackets, like
   `[ Open PR ]`, is click only. You can also click any action, or click a
@@ -123,14 +118,15 @@ running session.
 - **Answering in chat.** Claude reads the open items and findings beside each
   message you send, each with an id such as `i35`. When your message
   answers one, Claude first closes it with a `close` tool the mod gives it,
-  passing your answer, before any other work. The item then shows in
-  Closed with your answer, as if you had pressed it.
+  passing your answer, before any other work. The item then closes with
+  your answer, as if you had pressed it.
 - **Claude closes items.** When an item is done or no longer applies,
-  Claude closes it with a short reason. It moves to Closed as "Closed by
-  Claude:" and the reason, dimmed because you did not decide it. Claude
+  Claude closes it with a short reason. It closes as "Closed by Claude:"
+  and the reason, dimmed because you did not decide it. Claude
   never closes a question to answer it for you.
 - **Closing shows in place.** However an item closes, its row stays where it
-  was for 8 seconds with a ✓ and the outcome, then leaves for Closed. The
+  was for 8 seconds with a ✓ and the outcome, then joins the closed items
+  under its group. The
   band shows the same ✓ line meanwhile, so you see it with the pane closed.
 
 - **PRs.** The pane's PRs tab shows the pull requests this session

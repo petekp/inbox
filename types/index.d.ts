@@ -20,6 +20,8 @@ export type Item = {
   helps: Help[]
   /** The person-prompt count when the agent asked it. */
   turn: number
+  /** When the agent asked it; null for an item saved before the mod kept the time. */
+  at: number | null
 }
 
 /**
@@ -34,10 +36,17 @@ export type Help =
   | { kind: 'terminal'; command: string; name: string | null }
   | { kind: 'link'; url: string; name: string | null }
 
-export type Decided = { id: string; ask: string; outcome: string; at: number }
+/** An item that closed, and how. */
+export type Decided = {
+  id: string
+  kind: Item['kind']
+  ask: string
+  outcome: string
+  at: number
+}
 
 /** An item that just closed, and where its row stood among the open items of its kind. */
-export type Settled = Decided & { kind: Item['kind']; index: number }
+export type Settled = Decided & { index: number }
 
 /** Something Claude noticed outside the current task and recorded for the person. */
 export type Finding = {
@@ -171,12 +180,6 @@ export type Previous = {
 
 export type Tab = 'waiting' | 'findings' | 'prs'
 
-/** A pane section the person can collapse. */
-export type Section = 'questions' | 'tasks' | 'running' | 'checks' | 'done' | 'decided'
-
-/** The sections the person folded (true) or opened (false); one never toggled keeps its default. */
-export type Collapsed = Partial<Record<Section, boolean>>
-
 /** A tab's selected row: its id, and its position for when that row goes away. */
 export type Cursor = { id: string | null; index: number }
 
@@ -192,7 +195,6 @@ declare module 'claude-code' {
       previous: Previous | null
       tab: Tab
       prViews: PrViews
-      collapsed: Collapsed
       selection: Record<Tab, Cursor>
       stop: Stop | null
       dialogs: Dialog[]

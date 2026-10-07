@@ -18,14 +18,25 @@ const MAX_OPEN = 20
 /** Prompts after which an unanswered item is dropped as moot. */
 const STALE_AFTER = 12
 const MAX_DECIDED = 12
+/** The outcome of an item left unanswered until it went stale. */
+export const EXPIRED = 'expired, unanswered'
 const MAX_HELPS = 3
 const MAX_FINDINGS = 30
 
-/** A ledger saved by an earlier version of the mod, in the current shape. Findings were once saved as `notes`. */
+/**
+ * A ledger saved by an earlier version of the mod, in the current shape.
+ * Findings were once saved as `notes`; items once had no time, and closed
+ * items no kind, so an old closed item counts as a question.
+ */
 export function upgradeLedger(ledger: Ledger): Ledger {
   const { notes, ...rest } = ledger as Ledger & { notes?: Finding[] }
 
-  return notes ? { ...rest, findings: [...(rest.findings ?? []), ...notes] } : ledger
+  return {
+    ...rest,
+    findings: [...(rest.findings ?? []), ...(notes ?? [])],
+    items: rest.items.map(i => ({ ...i, at: i.at ?? null })),
+    decided: rest.decided.map(d => ({ ...d, kind: d.kind ?? 'decide' })),
+  }
 }
 /**
  * Commands that sign in or ask for a password. They need the person's own
@@ -125,6 +136,16 @@ export function toolActivity(tool: string, input: Record<string, unknown>): stri
   return tool.startsWith('mcp__') ? `called ${tool.slice(5)}` : null
 }
 
+/** What the agent asked in a question dialog and how it was answered, as an activity line. */
+export function dialogLine(answer: string, isTimedOut: boolean): string {
+  // A dialog that resolved on its own while the person was away holds no answer of theirs.
+  const how = isTimedOut
+    ? 'it timed out while the user was away, so the user did not answer; it went on with'
+    : 'answer'
+
+  return `asked the user in a dialog; ${how}: ${answer.slice(0, 400)}`
+}
+
 const TRANSCRIPT_MAX = 80_000
 const MESSAGE_MAX = 6000
 
@@ -141,19 +162,15 @@ export function transcriptText(messages: SessionMessage[]): string {
     if (m.role === 'user') {
       if (!text || text.startsWith('inbox:')) continue
       const row = readCommandRow(text)
-      if (row?.kind === 'shell') lines.push(`Person ran: $ ${row.command}`)
-      else if (row?.kind === 'output')
-        lines.push(`Output: ${clip([row.stdout, row.stderr].filter(Boolean).join(NL), 600)}`)
-      else if (row?.kind === 'slash') lines.push(`Person ran: /${row.name} ${row.args}`.trim())
-      else lines.push(`Person: ${clip(text, MESSAGE_MAX)}`)
+      const line = row ? commandRowLine(row) : clip(text, MESSAGE_MAX)
+      if (line) lines.push(`Person: ${line}`)
       continue
     }
     if (text) lines.push(`Agent: ${clip(text, MESSAGE_MAX)}`)
     for (const use of m.toolUses) {
+      const timedOut = typeof (use.result as { afkTimeoutMs?: unknown } | undefined)?.afkTimeoutMs === 'number'
       const line =
-        use.tool === 'AskUserQuestion'
-          ? `asked the user in a dialog; answer: ${clip(use.text ?? '', 400)}`
-          : toolActivity(use.tool, use.input)
+        use.tool === 'AskUserQuestion' ? dialogLine(use.text ?? '', timedOut) : toolActivity(use.tool, use.input)
       if (line) lines.push(`Agent ${line}`)
     }
   }
@@ -194,7 +211,7 @@ export type Press = { id: string; action: 'answer' | 'explain' | 'run' }
 export type Update = {
   card: Omit<Card, 'updatedAt'>
   closed: { id: string; outcome: string }[]
-  added: (Omit<Item, 'id' | 'turn' | 'helps'> & { helps: Help[] })[]
+  added: (Omit<Item, 'id' | 'turn' | 'at' | 'helps'> & { helps: Help[] })[]
   /** Helps for items already open. */
   helped: { id: string; help: Help }[]
 }
@@ -369,6 +386,18 @@ export function readCommandRow(text: string): CommandRow | null {
   return null
 }
 
+/** Slash commands that say nothing about the work. */
+const QUIET_COMMANDS = new Set(['inbox', 'clear'])
+
+/** A command row as the ledger model reads it in <person>; null for one that says nothing. */
+export function commandRowLine(row: CommandRow): string | null {
+  if (row.kind === 'shell') return `$ ${row.command}`
+  if (row.kind === 'slash') return QUIET_COMMANDS.has(row.name) ? null : `/${row.name} ${row.args}`.trim()
+  const output = [row.stdout, row.stderr].filter(Boolean).join(NL)
+
+  return output ? `output: ${clip(output, 600)}` : null
+}
+
 function squash(command: string): string {
   return command.trim().replace(/\s+/g, ' ')
 }
@@ -398,7 +427,7 @@ export function parseReply(text: string, source: string | null = null): Update |
     if (!m) continue
     seen += 1
     const key = m[1]
-    // The model sometimes writes a key with "-" for "nothing", as in "NEW: do | - | - | - | -".
+    // The model writes "-" for "nothing", for a whole value ("NOW: -") or one field ("NEW: do | - | - | - | -").
     const value = dash(m[2]) ?? ''
     if (key === 'GOAL') card.goal = value
     else if (key === 'NOW') card.now = value
@@ -408,17 +437,14 @@ export function parseReply(text: string, source: string | null = null): Update |
       const [id, outcome] = value.split('|').map(s => s.trim())
       if (id) closed.push({ id, outcome: outcome ?? '' })
     } else if (key === 'NEW') {
-      const [kind, label, ask, options, rec] = value.split('|').map(s => s.trim())
-      if (!ask || ask === '-') continue
+      const [kind, label, ask, options, rec] = value.split('|').map(dash)
+      if (!ask) continue
       added.push({
         kind: kind === 'do' ? 'do' : 'decide',
-        label: dash(label),
+        label: label ?? null,
         ask,
-        options:
-          dash(options)
-            ?.split(/\s+\/\s+/)
-            .filter(Boolean) ?? [],
-        rec: dash(rec),
+        options: options?.split(/\s+\/\s+/).filter(Boolean) ?? [],
+        rec: rec ?? null,
         helps: [],
       })
     } else if (key === 'HELP') {
@@ -526,7 +552,7 @@ export function closeItem(ledger: Ledger, id: string, outcome: string, now: numb
     items: ledger.items.filter(i => i.id !== id),
     decided: [
       ...ledger.decided,
-      ...ledger.items.filter(i => i.id === id).map(i => ({ id, ask: i.ask, outcome, at: now })),
+      ...ledger.items.filter(i => i.id === id).map(i => ({ id, kind: i.kind, ask: i.ask, outcome, at: now })),
     ].slice(-MAX_DECIDED),
   }
 }
@@ -547,7 +573,7 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
     const outcome = closing.get(item.id)
     const helps = u.helped.filter(h => h.id === item.id).reduce((all, h) => withHelp(all, h.help), item.helps)
     if (outcome === undefined) items.push({ ...item, helps })
-    else decided.push({ id: item.id, ask: item.ask, outcome, at: now })
+    else decided.push({ id: item.id, kind: item.kind, ask: item.ask, outcome, at: now })
   }
 
   let nextId = ledger.nextId
@@ -559,15 +585,20 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
       items[at] = { ...restated, helps: a.helps.reduce((all, h) => withHelp(all, h), restated.helps) }
       continue
     }
-    items.push({ ...a, id: `i${nextId}`, turn })
+    items.push({ ...a, id: `i${nextId}`, turn, at: now })
     nextId += 1
     added += 1
   }
 
+  // An item left unanswered too long, or pushed out by newer ones, closes as expired.
+  const kept = items.filter(i => turn - i.turn <= STALE_AFTER).slice(-MAX_OPEN)
+  for (const i of items)
+    if (!kept.includes(i)) decided.push({ id: i.id, kind: i.kind, ask: i.ask, outcome: EXPIRED, at: now })
+
   return {
     ...ledger,
     card,
-    items: items.filter(i => turn - i.turn <= STALE_AFTER).slice(-MAX_OPEN),
+    items: kept,
     decided: decided.slice(-MAX_DECIDED),
     findings: ledger.findings.filter(f => !closing.has(f.id)),
     nextId,

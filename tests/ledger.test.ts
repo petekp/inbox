@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import {
   EMPTY,
+  EXPIRED,
   answerNote,
   applyUpdate,
   carryText,
@@ -100,16 +101,21 @@ describe('applyUpdate', () => {
     )
     expect(second.items.map(i => i.id)).toEqual(['i2', 'i3', 'i4'])
     expect(second.decided).toEqual([
-      { id: 'i1', ask: 'Rename Send.swift to Herdr?', outcome: 'yes, renamed', at: 2000 },
+      { id: 'i1', kind: 'decide', ask: 'Rename Send.swift to Herdr?', outcome: 'yes, renamed', at: 2000 },
     ])
     expect(latestBatch(second).map(i => i.id)).toEqual(['i4'])
     expect(second.card?.done).toEqual(first.card?.done)
   })
 
-  test('drops items left unanswered for more than 12 prompts', () => {
+  test('closes items left unanswered for more than 12 prompts as expired', () => {
     const first = applyUpdate({ ...EMPTY, turn: 1 }, parseReply(REPLY)!, 1, 1)
     const later = applyUpdate({ ...first, turn: 14 }, parseReply('NOW: still going')!, 2, 14)
     expect(later.items.length).toBe(0)
+    expect(later.decided.map(d => [d.id, d.outcome])).toEqual([
+      ['i1', EXPIRED],
+      ['i2', EXPIRED],
+      ['i3', EXPIRED],
+    ])
     expect(applyUpdate({ ...first, turn: 13 }, parseReply('NOW: still going')!, 2, 13).items.length).toBe(3)
   })
 

@@ -208,10 +208,8 @@ function bareExit(command: string, output: string): number | null {
   return lines.length === 1 ? Number(lines[0]) : null
 }
 
-/** Whether the segment that runs a check sends its output to a file, so the output here is not the check's. */
-function isRedirected(command: string, call: CheckCall): boolean {
-  const segment = segments(command).find(s => checksIn(s).some(c => c.name === call.name)) ?? ''
-
+/** Whether a segment sends its output to a file, so the output here is not its own. */
+function isRedirected(segment: string): boolean {
   return /(?:^|[^\d&])>>?\s*[^&\s]/.test(segment)
 }
 
@@ -254,10 +252,12 @@ export function readResults(
   const exits = exitLines(output)
   const isFiltered = /\|\s*(tail|head|grep|rg|sed|awk|cut|wc|tee|less)\b/.test(command)
   const summary = summaryOf(output)
-  const last = segments(command).at(-1) ?? ''
+  const parts = segments(command)
+  // The check each segment runs, by name, so each call finds its own segments.
+  const ran = parts.map(s => checkIn(s)?.call.name)
 
   return calls.map(call => {
-    const runs = segments(command).filter(s => checksIn(s).some(c => c.name === call.name)).length
+    const runs = ran.filter(name => name === call.name).length
     if (runs > 1) return { call, result: 'unknown', summary: `ran ${runs} times in one command` }
     const words = call.name.toLowerCase().replace(/\.sh$/, '').split(/\s+/)
     const labeled = exits.find(
@@ -269,7 +269,7 @@ export function readResults(
       calls.length === 1 && exits.length === 1 ? exits[0] : bare === null ? undefined : { label: '', code: bare }
     const exit = labeled ?? only
     if (exit) return { call, result: exit.code === 0 ? 'pass' : 'fail', summary: summary || `exit ${exit.code}` }
-    if (calls.length === 1 && !isFiltered && checksIn(last).some(c => c.name === call.name)) {
+    if (calls.length === 1 && !isFiltered && ran.at(-1) === call.name) {
       return { call, result: isError ? 'fail' : 'pass', summary: summary || (isError ? 'exited with an error' : '') }
     }
     if (calls.length === 1) {
@@ -278,7 +278,7 @@ export function readResults(
       if (ZERO_FAIL.test(output) || PASS_COUNT.test(output)) return { call, result: 'pass', summary }
     }
     if (isError) return { call, result: 'fail', summary: summary || 'exited with an error' }
-    if (isFiltered || isRedirected(command, call)) return { call, result: 'unknown', summary }
+    if (isFiltered || isRedirected(parts[ran.indexOf(call.name)] ?? '')) return { call, result: 'unknown', summary }
 
     return { call, result: 'pass', summary }
   })
@@ -297,17 +297,17 @@ export function isStale(check: Check, checks: Checks): boolean {
 }
 
 /** A check's result as one mark: ✓ passed, ✗ failed, · unknown. */
-export function checkMark(check: Check): string {
+function checkMark(check: Check): string {
   return check.result === 'pass' ? '✓' : check.result === 'fail' ? '✗' : '·'
 }
 
 /** What follows a check's name: ", 24 pass", then ", before the last edit" when the files changed after it ran. */
-export function checkDetail(check: Check, checks: Checks): string {
+function checkDetail(check: Check, checks: Checks): string {
   return `${check.summary ? `, ${check.summary}` : ''}${isStale(check, checks) ? ', before the last edit' : ''}`
 }
 
 /** "npm test", or "npm test in app" for one that ran outside the session's folder. */
-export function checkName(check: Check): string {
+function checkName(check: Check): string {
   return check.folder ? `${check.name} in ${check.folder.replace(/^.*\//, '')}` : check.name
 }
 

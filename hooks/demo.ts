@@ -29,6 +29,7 @@ export function demoView(now: number): View {
           rec: 'ISO 8601',
           helps: [],
           turn: 9,
+          at: now - 12 * MIN,
         },
         {
           id: 'd12',
@@ -39,6 +40,7 @@ export function demoView(now: number): View {
           rec: 'No',
           helps: [],
           turn: 9,
+          at: now - 12 * MIN,
         },
         {
           id: 'd13',
@@ -49,6 +51,7 @@ export function demoView(now: number): View {
           rec: null,
           helps: [{ kind: 'terminal', command: 'npm login', name: 'npm login' }],
           turn: 9,
+          at: now - 5 * MIN,
         },
         {
           id: 'd14',
@@ -62,6 +65,7 @@ export function demoView(now: number): View {
             { kind: 'open', path: '.env.local' },
           ],
           turn: 9,
+          at: now - 5 * MIN,
         },
         {
           id: 'd15',
@@ -72,19 +76,40 @@ export function demoView(now: number): View {
           rec: null,
           helps: [],
           turn: 7,
+          at: now - 40 * MIN,
         },
       ],
       decided: [
-        { id: 'd5', ask: 'Name the button "Export" or "Download CSV"?', outcome: 'Download CSV', at: now - 50 * MIN },
-        { id: 'd6', ask: 'Stream large exports, or build them in memory?', outcome: 'Stream them', at: now - 40 * MIN },
+        {
+          id: 'd5',
+          kind: 'decide',
+          ask: 'Name the button "Export" or "Download CSV"?',
+          outcome: 'Download CSV',
+          at: now - 50 * MIN,
+        },
+        {
+          id: 'd6',
+          kind: 'decide',
+          ask: 'Stream large exports, or build them in memory?',
+          outcome: 'Stream them',
+          at: now - 40 * MIN,
+        },
+        { id: 'd9', kind: 'do', ask: 'Run the migration on staging', outcome: 'done', at: now - 25 * MIN },
         {
           id: 'd7',
+          kind: 'decide',
           ask: 'Fix the flaky date test in this PR?',
           outcome: 'closed by Claude: no longer applies: test removed',
           at: now - 20 * MIN,
         },
-        { id: 'd8', ask: 'Add an export to the admin page too?', outcome: 'dismissed', at: now - 10 * MIN },
-        { id: 'd10', ask: 'Use the existing date helper?', outcome: 'Yes, reuse it', at: now },
+        {
+          id: 'd8',
+          kind: 'decide',
+          ask: 'Add an export to the admin page too?',
+          outcome: 'dismissed',
+          at: now - 10 * MIN,
+        },
+        { id: 'd10', kind: 'decide', ask: 'Use the existing date helper?', outcome: 'Yes, reuse it', at: now },
       ],
       findings: [
         {
