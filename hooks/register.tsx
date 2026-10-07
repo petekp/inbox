@@ -2596,11 +2596,12 @@ export const register: Register = on => {
         const toggle = () =>
           void update($, UNFOLDED, u => (u.includes(kind) ? u.filter(k => k !== kind) : [...u, kind]))
 
+        // One Button for the arrow and the count; the two spaces put the count where other rows' text starts.
         return treeRow(
           pos,
-          <Button plain key={`fold-${kind}-caret`} label={isUnfolded ? '▾' : '▸'} onPress={toggle} />,
+          null,
           <Box flexDirection="row">
-            <Button plain key={`fold-${kind}`} label={`${count} Closed`} onPress={toggle} />
+            <Button plain key={`fold-${kind}`} label={`${isUnfolded ? '▾' : '▸'}  ${count} Closed`} onPress={toggle} />
           </Box>,
           `fold-row-${kind}`,
         )
