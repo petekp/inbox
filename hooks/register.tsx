@@ -114,12 +114,13 @@ const CHECKS = atom({ plugin: 'inbox', key: 'checks' } as const, NO_CHECKS)
 const SNAPSHOT = atom({ plugin: 'inbox', key: 'snapshot' } as const, null as Snapshot | null)
 const TYPING = atom({ plugin: 'inbox', key: 'typing' } as const, null as string | null)
 const SETTLED = atom({ plugin: 'inbox', key: 'settled' } as const, [] as Settled[])
+const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as Item['kind'][])
 // How long a closed item's row stays in place, with its outcome, before it moves to Closed.
 const SETTLED_MS = 8000
 const IS_DEMO = atom({ plugin: 'inbox', key: 'isDemo' } as const, false)
 const SAMPLE_PRESS = 'Sample entry: nothing was sent. Run /inbox demo to go back.'
 // The pane's buttons that only move around it, which work in the demo. Every other press there sends nothing.
-const DEMO_PRESSES = /^(tab-|title-|select-|typekey-|next$|previous$)/
+const DEMO_PRESSES = /^(tab-|title-|select-|typekey-|fold-|next$|previous$)/
 // A dirtier tree is read only this far, so changes past it go unseen.
 const SNAPSHOT_MAX = 2000
 const PR_POLL_MS = 2 * 60_000
@@ -230,9 +231,9 @@ const TABS: { id: Tab; label: string; hotkey: string }[] = [
   { id: 'prs', label: 'PRs', hotkey: 'p' },
 ]
 // The Waiting tab lists questions first, because each takes one key.
-const WAITING_GROUPS: { kind: Item['kind']; title: string }[] = [
-  { kind: 'decide', title: 'Questions' },
-  { kind: 'do', title: 'Your tasks' },
+const WAITING_GROUPS: { kind: Item['kind']; title: string; empty: string }[] = [
+  { kind: 'decide', title: 'Questions', empty: 'No questions are waiting on you.' },
+  { kind: 'do', title: 'Your tasks', empty: 'No tasks are waiting on you.' },
 ]
 // How many recently closed items each group lists under its open ones.
 const CLOSED_SHOWN = 3
@@ -1883,15 +1884,23 @@ export const register: Register = on => {
     const { Box, Button, Markdown, Text } = elements
     // The mobile app draws no text field, so there the typed reply is not offered.
     const Input = 'Input' in elements ? elements.Input : null
-    const [{ ledger, prViews: prState, stop, checks, settled, now }, presence, tab, selection, isDark, typing] =
-      await Promise.all([
-        drawnState($),
-        read($, PRESENCE),
-        read($, TAB),
-        read($, SELECTION),
-        read($, IS_DARK_THEME),
-        read($, TYPING),
-      ])
+    const [
+      { ledger, prViews: prState, stop, checks, settled, now },
+      presence,
+      tab,
+      selection,
+      isDark,
+      typing,
+      unfolded,
+    ] = await Promise.all([
+      drawnState($),
+      read($, PRESENCE),
+      read($, TAB),
+      read($, SELECTION),
+      read($, IS_DARK_THEME),
+      read($, TYPING),
+      read($, UNFOLDED),
+    ])
     const card = ledger.card
     const prViews = Object.values(prState.views)
 
@@ -2324,12 +2333,13 @@ export const register: Register = on => {
       </Box>
     )
 
-    // A group's title: its name, and how many of its items are open.
+    // A group's title: its name, and how many of its items are open. An empty
+    // group's own line says it has none, so its title has no count.
     const groupTitle = (title: string, count: number) => (
       <Box paddingLeft={1}>
         <Text>
           {title}
-          <Text dimColor> {count}</Text>
+          {count > 0 ? <Text dimColor> {count}</Text> : null}
         </Text>
       </Box>
     )
@@ -2383,7 +2393,21 @@ export const register: Register = on => {
           </Box>,
           `closed-${d.id}`,
         )
-      const groups = waitingGroups.flatMap(g => {
+      // The row that folds or unfolds a group's closed items, with how many there are.
+      const foldRow = (kind: Item['kind'], count: number, isUnfolded: boolean, pos: TreePos) => {
+        const toggle = () =>
+          void update($, UNFOLDED, u => (u.includes(kind) ? u.filter(k => k !== kind) : [...u, kind]))
+
+        return treeRow(
+          pos,
+          <Button plain key={`fold-${kind}-caret`} label={isUnfolded ? '▾' : '▸'} dimColor onPress={toggle} />,
+          <Box flexDirection="row">
+            <Button plain key={`fold-${kind}`} label={`${count} Closed`} dimColor onPress={toggle} />
+          </Box>,
+          `fold-row-${kind}`,
+        )
+      }
+      const groups = waitingGroups.map(g => {
         const entries: ({ row: Row } | { settled: Settled })[] = g.rows.map(row => ({ row }))
         for (const s of fresh.filter(x => x.kind === g.kind))
           entries.splice(Math.min(s.index, entries.length), 0, { settled: s })
@@ -2391,22 +2415,40 @@ export const register: Register = on => {
           .filter(d => d.kind === g.kind && !showing.has(d.id))
           .slice(-CLOSED_SHOWN)
           .reverse()
-        const count = entries.length + closed.length
-        if (count === 0) return []
+        const isUnfolded = unfolded.includes(g.kind)
+        // The group's children in order: its open items, or a line saying it has
+        // none; then the fold row and, unfolded, the closed items.
+        const top: ((pos: TreePos) => JSX.Element)[] =
+          entries.length > 0
+            ? entries.map(x => (pos: TreePos) => ('row' in x ? listRow(x.row, pos) : settledRow(x.settled, pos)))
+            : [
+                (pos: TreePos) =>
+                  treeRow(
+                    pos,
+                    <Text> </Text>,
+                    <Text dimColor wrap="wrap">
+                      {g.empty}
+                    </Text>,
+                    `empty-${g.kind}`,
+                  ),
+              ]
+        const rest: ((pos: TreePos) => JSX.Element)[] =
+          closed.length === 0
+            ? []
+            : [
+                (pos: TreePos) => foldRow(g.kind, closed.length, isUnfolded, pos),
+                ...(isUnfolded ? closed.map(d => (pos: TreePos) => closedRow(d, pos)) : []),
+              ]
+        const count = top.length + rest.length
         const open = divided(
-          entries.map((x, n) =>
-            'row' in x ? listRow(x.row, childPos(n, count)) : settledRow(x.settled, childPos(n, count)),
-          ),
+          top.map((draw, n) => draw(childPos(n, count))),
           g.kind,
           true,
         )
-        // Each closed item is two lines, so a blank line of the tree sets it apart.
-        const tail = closed.flatMap((d, n) => [
-          ...(n === 0 && entries.length === 0 ? [] : [titleGap()]),
-          closedRow(d, childPos(entries.length + n, count)),
-        ])
+        // Each closed item is two lines, so a blank line of the tree sets it and the fold row apart.
+        const tail = rest.flatMap((draw, n) => [titleGap(), draw(childPos(top.length + n, count))])
 
-        return [sectionCard([groupTitle(g.title, g.rows.length), titleGap(), ...open, ...tail])]
+        return sectionCard([groupTitle(g.title, g.rows.length), titleGap(), ...open, ...tail])
       })
       // A stop is fixed in the session, not here, so it shows above the list without keys.
       const outside = stop
@@ -2430,7 +2472,6 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column" gap={1}>
           {outside}
-          {ledger.items.length === 0 && outside.length === 0 ? emptyLine('Nothing is waiting on you.') : null}
           {groups}
         </Box>
       )

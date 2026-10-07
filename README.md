@@ -77,8 +77,10 @@ running session.
     means, without acting on it. The item stays open.
   - `x: Dismiss` drops a question. `d: Done` closes a task that is yours to
     do. A task also closes on its own when you run its command with `!`.
-  - Under each group's open items are its last three closed ones: what was
-    asked, how it closed, and when. An item left unanswered for 12 prompts
+  - Both groups always show. A group with nothing open says so.
+  - Under each group's open items, a folded row such as `▸ 3 Closed` holds
+    its last three closed ones: what was asked, how it closed, and when.
+    Click the row to unfold them. An item left unanswered for 12 prompts
     closes as "expired, unanswered".
   - The tab bar shows when the inbox last updated, at its right end. A tab
     you switch to starts at its top.

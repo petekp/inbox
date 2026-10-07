@@ -210,6 +210,8 @@ declare module 'claude-code' {
       typing: string | null
       /** Items that just closed, shown in place with their outcome for a few seconds. */
       settled: Settled[]
+      /** The Waiting groups whose closed items show. Each starts folded. */
+      unfolded: Item['kind'][]
       /** The band and pane show sample entries instead of the session's own, for `/inbox demo`. */
       isDemo: boolean
     }

@@ -402,10 +402,12 @@ test('Claude closes an item or finding that no longer applies, by the id it read
     'Not closed: no open item or finding has the id i9.',
   )
 
-  // After a few seconds the rows leave, and Closed holds both outcomes.
+  // After a few seconds the rows leave for the group's closed items, which start folded.
   await clock.advance(9000)
   expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
   expect(await band.find({ text: /✓/ })).toBeUndefined()
+  expect(await pane.find({ text: /^Deno$/ })).toBeUndefined()
+  await pane.press({ key: 'fold-decide' })
   expect(await pane.find({ text: /^Deno$/ })).toBeDefined()
   expect(await pane.find({ text: /^Closed by Claude: no longer applies$/ })).toBeDefined()
 })
