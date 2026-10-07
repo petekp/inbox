@@ -122,7 +122,7 @@ describe('prs', () => {
     ])
     const threads = readThreads(THREADS)
     // T1 is the viewer's note with a reply from sam, so it waits on the viewer.
-    // T4 is the viewer's own note with no reply yet, so it waits on someone else.
+    // T4 is the viewer's own note with no reply yet, so it doesn't wait on the viewer.
     expect(threads[0]?.reply?.body).toBe('Quote the name.')
     expect(threads.map(t => [t.id, t.isWaiting, t.line, t.replies])).toEqual([
       ['T1', true, 4, 1],
