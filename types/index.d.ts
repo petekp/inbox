@@ -202,7 +202,8 @@ export type PrViews = { views: Record<string, PrView>; branchRef: string | null;
 declare module 'claude-code' {
   interface PluginState {
     inbox: {
-      isDarkTheme: boolean
+      /** The Claude Code theme in use, such as `dark` or `light-ansi`; '' until read. */
+      theme: string
       ledger: Ledger
       presence: Presence
       previous: Previous | null

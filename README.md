@@ -58,17 +58,18 @@ running session.
   during the past week shows the previous session's card. "Continue from it"
   adds that card to your first message. "Hide" dismisses it.
 - **/inbox** opens everything in a pane, with three tabs: Needs you, Findings
-  and PRs. Each tab is a list with one selected row. The selected row is shaded
-  blue, shows its full text, and lists its actions. The other rows take one
-  line each, with a muted line between each two. The Needs you tab lists
-  Questions first, newest first and numbered 1), 2), 3), then Your tasks.
-  Each item shows how long it has waited. Lines join each group's title to
-  its rows, as in a directory listing.
+  and PRs. Each tab is a list with one selected row. The selected row shows
+  its full text and lists its actions. It is shaded blue, or marked by a bar
+  at its left in the ANSI themes and Auto. The other rows take one line each,
+  with a muted line between each two. The Needs you tab lists Questions
+  first, newest first and numbered 1), 2), 3), then Your tasks. Each item
+  shows how long it has waited. Lines join each group's title to its rows, as
+  in a directory listing.
   - On a question, the letters send an answer to Claude as your message,
     quoting the question: `a: Node  b: Python`. If Claude is working, the
     answer waits until the turn ends. The recommended answer's key says so.
-    The other actions follow, dimmer, on the same row when they fit, and
-    on a line of their own when they don't.
+    The other actions follow, with gray keys, on the same row when they fit,
+    and on a line of their own when they don't.
   - `t` opens a one-line field for your own words, when no option fits.
     Enter sends them as your message, quoting the item. A question closes
     with your words as its answer. A task stays open until Claude closes it.
@@ -203,6 +204,10 @@ it back. It does nothing in headless `claude -p` runs.
   recorded as unknown.
 - The mod reads at most 2000 uncommitted files, so changes past those go
   unseen.
+- The pane's text meets WCAG AA contrast in the Dark and Light themes, their
+  colorblind-friendly versions, and Auto. The ANSI themes draw in your
+  terminal's palette, and a custom theme in its own colors, so contrast there
+  depends on those colors.
 
 ## Developing
 

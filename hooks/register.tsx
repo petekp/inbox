@@ -101,7 +101,7 @@ const NO_CURSOR: Cursor = { id: null, index: 0 }
 const NO_SELECTION: Record<Tab, Cursor> = { waiting: NO_CURSOR, findings: NO_CURSOR, prs: NO_CURSOR }
 const SELECTION = atom({ plugin: 'inbox', key: 'selection' } as const, NO_SELECTION)
 // Whether Claude Code uses its `dark` theme, which picks the selected row's tint.
-const IS_DARK_THEME = atom({ plugin: 'inbox', key: 'isDarkTheme' } as const, false)
+const THEME = atom({ plugin: 'inbox', key: 'theme' } as const, '')
 const PR_VIEWS = atom(
   { plugin: 'inbox', key: 'prViews' } as const,
   { views: {}, branchRef: null, isFetching: false } as PrViews,
@@ -178,27 +178,12 @@ const PANE = 'inbox'
 // Theme keys, so the colors follow the person's Claude Code theme.
 const ACCENT = 'claude'
 const WAITING = 'warning'
-// Unselected tabs and the sections' cards: a theme key a shade off the pane's
-// background, in every theme. In the dark theme it is rgb(55, 55, 55).
-const PANEL_BG = 'userMessageBackground'
-// The selected row in every tab is blue. In the dark theme its background is
-// the `ide` blue at about 20% over the cards' rgb(55, 55, 55), muted next to
-// the theme's selectionBg. Hex does not follow the theme, so other themes use SELECTION_BG.
-const DARK_SELECTION = '#3b4654'
-const SELECTION_BG = 'selectionBg'
-// The tree's lines and the dividers between rows, quieter than the text.
-const MUTED_LINE = 'subtle'
-// The dividers in the dark theme: about half the contrast of `subtle`'s
-// rgb(80, 80, 80) against the cards' rgb(55, 55, 55). Other themes use MUTED_LINE.
-const DARK_DIVIDER = '#444444'
-// The selected tab's panel, and an unselected tab's under the pointer: `subtle` is a step lighter than PANEL_BG.
-const RAISED = 'subtle'
-// `inverse: false` keeps the engine from inverting the line under the pointer inside the panel.
-const RAISE = { dimColor: false, backgroundColor: RAISED, inverse: false }
 // A child's place under its section: a middle child, the last, or a block the tree passes.
 type TreePos = 'mid' | 'last' | 'pass'
 // More tree lines than a row wraps to; the tree's Box clips the rest.
 const TREE_DEPTH = 200
+// The bar that marks a selected row where the palette has no selection color.
+const SELECTION_BAR = Array<string>(TREE_DEPTH).fill('▌').join('\n')
 // The tree column's text for each place and lead, built once each.
 const treeTexts = new Map<string, string>()
 
@@ -217,10 +202,148 @@ function treeText(pos: TreePos, lead: number): string {
   return text
 }
 const DONE = 'success'
-// Each pane tab has its own color, used by its marker and by what it shows.
 const FINDINGS = 'autoAccept'
 const PRS = 'planMode'
-const TAB_COLORS: Record<Tab, string> = { waiting: WAITING, findings: FINDINGS, prs: PRS }
+
+// A status color in the pane. Each tab has the tone of its own name.
+type Tone = Tab | 'done' | 'error'
+/**
+ * The pane's colors in one Claude Code theme. Each text color meets WCAG AA,
+ * 4.5:1, on every background the pane draws it on, and each marker meets 3:1.
+ * The terminal draws Button labels in its own text color, and the theme's dim
+ * gray for `dimColor`, so the pane gives Buttons no dimColor.
+ */
+type Palette = {
+  /** Painted under the whole pane, over the theme's own background. */
+  body?: string
+  /** The sections' cards. */
+  card?: string
+  /** An unselected tab's panel. */
+  tab?: string
+  /** The selected tab's panel, and an unselected tab's under the pointer. */
+  raised: string
+  /** The text on `raised`; without one, the default text color. */
+  raisedText?: string
+  /** The selected row's background. Without one, a bar in `key` marks the row. */
+  selection?: string
+  /** Secondary text: ages, counts, labels and closed items. */
+  muted: string
+  /** The letters of a selected row's keys. */
+  key: string
+  /** The tree's lines. */
+  line: string
+  /** The rules between rows. */
+  divider: string
+  /** Text in a status color. A tone left out draws its text in the default color. */
+  tone: Partial<Record<Tone, string>>
+  /** A marker in a status color, such as ✓, and the selected tab's top line. */
+  mark: Record<Tone, string>
+}
+
+// Hex tuned for one theme, each tone checked against the pane, the cards, the
+// selected tab and the selected row. They hold only for the theme they name.
+const DARK_TONES = { waiting: '#ffc107', findings: '#cab0ff', prs: '#8cc8c0', done: '#7ecd8f', error: '#ffa3b0' }
+const DARK_DALTONIZED_TONES = {
+  waiting: '#ffcc00',
+  findings: '#cab0ff',
+  prs: '#a3c2c2',
+  done: '#82c1ff',
+  error: '#ffa3a3',
+}
+const LIGHT_TONES = { waiting: '#745417', findings: '#7b00e8', prs: '#006363', done: '#25652f', error: '#a5293d' }
+const LIGHT_DALTONIZED_TONES = {
+  waiting: '#7a4900',
+  findings: '#7400db',
+  prs: '#2d5a5a',
+  done: '#005885',
+  error: '#ad0000',
+}
+const DARK_PALETTE: Palette = {
+  card: '#373737',
+  tab: '#373737',
+  raised: '#4c4c4c',
+  selection: '#3b4654',
+  muted: '#bdbdbd',
+  key: '#b1b9f9',
+  line: '#505050',
+  divider: '#444444',
+  tone: DARK_TONES,
+  mark: DARK_TONES,
+}
+const LIGHT_PALETTE: Palette = {
+  card: '#e6e6e6',
+  tab: '#e6e6e6',
+  raised: '#d0d0d0',
+  selection: '#b4d5ff',
+  muted: '#595959',
+  key: '#243bf5',
+  line: '#afafaf',
+  divider: '#c8c8c8',
+  tone: LIGHT_TONES,
+  mark: LIGHT_TONES,
+}
+// The ANSI themes take the terminal's 16 colors, and Claude Code draws the
+// pane on a palette gray that default text fails against. The pane paints its
+// own body in the palette color nearest the terminal's background, draws text
+// only in the default and muted colors, and puts status colors on markers.
+// A color name such as "black" is drawn as fixed RGB, so each color is a theme
+// key whose value in that ANSI theme is the palette color named beside it.
+// Checked with Ghostty's default palette and its "Apple System Colors Light".
+const DARK_ANSI_PALETTE: Palette = {
+  body: 'inverseText', // black
+  raised: 'inactive', // white
+  raisedText: 'inverseText', // black
+  muted: 'inactive', // white
+  key: 'suggestion', // bright blue
+  line: 'userMessageBackground', // bright black
+  divider: 'userMessageBackground',
+  tone: {},
+  mark: { waiting: WAITING, findings: FINDINGS, prs: PRS, done: DONE, error: 'error' }, // the bright colors
+}
+const LIGHT_ANSI_PALETTE: Palette = {
+  body: 'userMessageBackgroundHover', // bright white
+  raised: 'text', // black
+  raisedText: 'userMessageBackgroundHover', // bright white
+  muted: 'inactive', // bright black
+  key: 'suggestion', // blue
+  line: 'userMessageBackground', // white
+  divider: 'userMessageBackground',
+  tone: {},
+  // Red, magenta, blue, green and red: the theme's yellow and cyan fall under 3:1 on bright white.
+  mark: { waiting: 'error', findings: FINDINGS, prs: 'suggestion', done: DONE, error: 'error' },
+}
+const PALETTES: Record<string, Palette> = {
+  dark: DARK_PALETTE,
+  'dark-daltonized': { ...DARK_PALETTE, key: '#99ccff', tone: DARK_DALTONIZED_TONES, mark: DARK_DALTONIZED_TONES },
+  light: LIGHT_PALETTE,
+  'light-daltonized': {
+    ...LIGHT_PALETTE,
+    card: '#dcdcdc',
+    tab: '#dcdcdc',
+    raised: '#c8c8c8',
+    muted: '#545454',
+    key: '#003ae8',
+    divider: '#c0c0c0',
+    tone: LIGHT_DALTONIZED_TONES,
+    mark: LIGHT_DALTONIZED_TONES,
+  },
+  'dark-ansi': DARK_ANSI_PALETTE,
+  'light-ansi': LIGHT_ANSI_PALETTE,
+}
+// Auto and custom themes: theme keys whose values pass in both Claude Code's
+// dark and light themes, since the mod cannot tell which one Auto chose. Text
+// sits on the pane's own background, as in the ANSI palettes.
+const THEME_KEY_PALETTE: Palette = {
+  tab: 'userMessageBackground',
+  raised: 'subtle',
+  raisedText: 'text',
+  muted: 'inactive',
+  key: 'remember',
+  line: 'subtle',
+  divider: 'subtle',
+  tone: {},
+  mark: { waiting: WAITING, findings: FINDINGS, prs: PRS, done: DONE, error: 'error' },
+}
 const TABS: { id: Tab; label: string; hotkey: string }[] = [
   { id: 'waiting', label: 'Needs you', hotkey: '1' },
   { id: 'findings', label: 'Findings', hotkey: '2' },
@@ -293,10 +416,10 @@ function resultFields(ran: { result?: unknown }): Record<string, unknown> {
   return ran.result && typeof ran.result === 'object' ? (ran.result as Record<string, unknown>) : {}
 }
 
-/** Reads whether Claude Code draws in its dark theme. */
+/** Reads which Claude Code theme draws the pane. */
 async function syncTheme($: EngineInterface) {
   const theme = (await $.config.list().catch(() => [])).find(row => row.key === 'theme')?.value
-  await update($, IS_DARK_THEME, () => theme === 'dark')
+  await update($, THEME, () => (typeof theme === 'string' ? theme : ''))
 }
 
 async function save($: EngineInterface, ledger: Ledger) {
@@ -1198,10 +1321,10 @@ function outcomeText(d: Decided): string {
   return capitalized(d.outcome)
 }
 
-/** A finding's kind as the Findings tab draws it: a mark before its name, both in the kind's color. */
-const FINDING_BADGES: Record<Finding['kind'], { label: string; mark: string; color: string }> = {
-  issue: { label: 'Issue', mark: '▲', color: 'warning' },
-  opportunity: { label: 'Opportunity', mark: '✦', color: 'success' },
+/** A finding's kind as the Findings tab draws it: a mark before its name, both in the kind's tone. */
+const FINDING_BADGES: Record<Finding['kind'], { label: string; mark: string; tone: Tone }> = {
+  issue: { label: 'Issue', mark: '▲', tone: 'waiting' },
+  opportunity: { label: 'Opportunity', mark: '✦', tone: 'done' },
 }
 
 /** Runs a git command that reads the working tree; null when it fails. Optional locks are off, so it never takes the index lock from a commit. */
@@ -1865,7 +1988,7 @@ export const register: Register = on => {
 
   on('config.set', { key: 'theme' }, async ($, e, next) => {
     const r = await next(e)
-    if (r.deny === undefined) await update($, IS_DARK_THEME, () => r.value === 'dark')
+    if (r.deny === undefined) await update($, THEME, () => (typeof r.value === 'string' ? r.value : ''))
 
     return r
   })
@@ -1894,7 +2017,7 @@ export const register: Register = on => {
       presence,
       tab,
       selection,
-      isDark,
+      theme,
       typing,
       unfolded,
       isKeyListShown,
@@ -1903,13 +2026,22 @@ export const register: Register = on => {
       read($, PRESENCE),
       read($, TAB),
       read($, SELECTION),
-      read($, IS_DARK_THEME),
+      read($, THEME),
       read($, TYPING),
       read($, UNFOLDED),
       read($, IS_KEY_LIST_SHOWN),
     ])
     const card = ledger.card
     const prViews = Object.values(prState.views)
+    const pal = PALETTES[theme] ?? THEME_KEY_PALETTE
+    // `inverse: false` keeps the engine from inverting the line under the pointer inside the panel.
+    const raise = {
+      dimColor: false,
+      backgroundColor: pal.raised,
+      inverse: false,
+      // A hover prop set to undefined is refused, so the color is left out when the palette has none.
+      ...(pal.raisedText ? { color: pal.raisedText } : {}),
+    }
 
     // One list row's content. Selected, a row shows its context line, its title
     // in full, its body and its keys; otherwise one line: `line`, or the title.
@@ -1918,13 +2050,13 @@ export const register: Register = on => {
       handle: string
       meta?: JSX.Element
       title: string
-      /** Dim text on the selected title's line, such as an age. */
+      /** Muted text on the selected title's line, such as an age. */
       titleAfter?: string
-      /** Unselected, the row is one line: `before` dimmed, `text` as a button that selects the row, then `after`. */
-      line?: { before?: string; text: string; after?: string; afterColor?: string }
+      /** Unselected, the row is one line: `before` muted, `text` as a button that selects the row, then `after`, muted or in a tone. */
+      line?: { before?: string; text: string; after?: string; afterTone?: Tone }
       body?: JSX.Element | null
       keys: () => KeyAction[]
-      /** Secondary actions, dimmed on a line under `keys`. */
+      /** Secondary actions, after `keys` with their letters muted. */
       moreKeys?: () => KeyAction[]
       /** Where the person's own words go, for a row that takes them. */
       onType?: (text: string) => void
@@ -1945,7 +2077,7 @@ export const register: Register = on => {
         titleAfter: asked,
         body: rec ? (
           <Text wrap="wrap">
-            <Text dimColor>Recommended: </Text>
+            <Text color={pal.muted}>Recommended: </Text>
             <Text bold>{rec}</Text>
           </Text>
         ) : null,
@@ -1961,10 +2093,9 @@ export const register: Register = on => {
       title: finding.title,
       meta: (
         <Text wrap="truncate-end">
-          <Text color={FINDING_BADGES[finding.kind].color}>
-            {FINDING_BADGES[finding.kind].mark} {FINDING_BADGES[finding.kind].label}
-          </Text>
-          <Text dimColor> {ago(now - finding.at)}</Text>
+          <Text color={pal.mark[FINDING_BADGES[finding.kind].tone]}>{FINDING_BADGES[finding.kind].mark} </Text>
+          <Text color={pal.tone[FINDING_BADGES[finding.kind].tone]}>{FINDING_BADGES[finding.kind].label}</Text>
+          <Text color={pal.muted}> {ago(now - finding.at)}</Text>
         </Text>
       ),
       line: { text: finding.title, after: ` · ${ago(now - finding.at)}` },
@@ -1973,7 +2104,7 @@ export const register: Register = on => {
           <Text wrap="wrap">{finding.detail}</Text>
           {finding.path ? (
             <Text wrap="wrap">
-              <Text dimColor>Relevant file: </Text>
+              <Text color={pal.muted}>Relevant file: </Text>
               {repoPath(finding.path)}
             </Text>
           ) : null}
@@ -2007,12 +2138,12 @@ export const register: Register = on => {
       id: `${pr.ref} check ${c.name}`,
       handle: '✗',
       meta: (
-        <Text color="error" bold>
+        <Text color={pal.tone.error} bold>
           Failing check
         </Text>
       ),
       title: c.name,
-      line: { text: c.name, after: ' · failing check', afterColor: 'error' },
+      line: { text: c.name, after: ' · failing check', afterTone: 'error' },
       keys: () => [
         { key: `fix-${pr.ref}-${c.name}`, label: 'Fix', hotkey: 'a', onPress: () => void send($, prompts.fix(pr, c)) },
         {
@@ -2031,10 +2162,10 @@ export const register: Register = on => {
         handle: '◦',
         meta: (
           <Text wrap="truncate-end">
-            <Text color={PRS} bold>
+            <Text color={pal.tone.prs} bold>
               Review thread
             </Text>
-            <Text dimColor>
+            <Text color={pal.muted}>
               {t.replies > 0 ? ` · ${t.replies + 1} comments` : ''}
               {t.isOutdated ? ' · outdated' : ''}
             </Text>
@@ -2044,7 +2175,11 @@ export const register: Register = on => {
         line: { before: `${threadWhere(t, baseName(t.path))} `, text: latest.body.replace(/\s+/g, ' ') },
         body: (
           <Box flexDirection="column">
-            {t.reply ? <Markdown dimColor text={`@${t.author}: ${clipLabel(t.body, 200)}`} /> : null}
+            {t.reply ? (
+              <Text color={pal.muted} wrap="wrap">
+                @{t.author}: {clipLabel(t.body, 200)}
+              </Text>
+            ) : null}
             <Markdown text={`**@${latest.author}:** ${clipLabel(latest.body, 1200)}`} />
           </Box>
         ),
@@ -2095,19 +2230,27 @@ export const register: Register = on => {
     const indexOf = new Map(ids.map((id, n) => [id, n]))
     const at = selectedIndex(ids, selection[tab])
 
-    const keyRow = (keys: KeyAction[], dimmed: KeyAction[] = []) => (
-      <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-        {keys.map(k => (
-          <Button plain {...k} />
-        ))}
-        {dimmed.map(k => (
-          <Button plain {...k} dimColor />
-        ))}
+    // A Button draws its hotkey in the theme's accent, which Claude Code's light
+    // theme draws under 4.5:1 on any background. So a key's letter is Text in the
+    // palette's color, its label a Button, and the key itself a hidden Button.
+    const keyedButton = ({ hotkey, ...action }: KeyAction, letter: string) => (
+      <Box key={`keyed-${action.key}`} flexDirection="row">
+        <Text color={letter}>{hotkey}</Text>
+        <Button plain {...action} label={`: ${action.label}`} />
       </Box>
     )
-    // A selected row's secondary keys share its key row, dimmed, when they fit,
-    // and otherwise take a line of their own rather than wrap mid-row. A plain
-    // Button draws "key: label", and keyRow puts 2 columns between Buttons.
+    const keyRow = (keys: KeyAction[], secondary: KeyAction[] = []) => (
+      <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+        {keys.map(k => keyedButton(k, pal.key))}
+        {secondary.map(k => keyedButton(k, pal.muted))}
+      </Box>
+    )
+    // The Buttons that take the pane's keys, drawn in a hidden Box.
+    const keyBindings = (keys: KeyAction[], suffix = '') =>
+      keys.map(({ key, ...k }) => <Button key={`${key}${suffix}`} plain {...k} />)
+    // A selected row's secondary keys share its key row when they fit, and
+    // otherwise take a line of their own rather than wrap mid-row. A key draws
+    // "key: label", and keyRow puts 2 columns between keys.
     const keysWidth = (keys: KeyAction[]) =>
       keys.reduce((w, k) => w + k.hotkey.length + 2 + k.label.length, 0) + 2 * Math.max(0, keys.length - 1)
     // A typed reply needs a text field, so it is left out where there is none.
@@ -2122,7 +2265,7 @@ export const register: Register = on => {
     // Claude Code drew lines this Box clipped elsewhere in the pane (anthropics/claude-code#100030).
     const branch = (pos: TreePos, lead = 0) => (
       <Box position="absolute" top={0} bottom={0} left={1} width={2}>
-        <Text color={MUTED_LINE}>{treeText(pos, lead)}</Text>
+        <Text color={pal.line}>{treeText(pos, lead)}</Text>
       </Box>
     )
     // A row with no marker, such as a group's empty line, starts its text right after the tree.
@@ -2143,10 +2286,9 @@ export const register: Register = on => {
     const childPos = (n: number, count: number): TreePos => (n === count - 1 ? 'last' : 'mid')
     // A list's rows with a divider between each two. It starts where the rows'
     // text starts and runs to the pane's edge; in a section, the tree's │ passes it.
-    const dividerColor = isDark ? DARK_DIVIDER : MUTED_LINE
     // A divider line from `inset` columns in to the pane's edge.
     const rule = (inset: number) => (
-      <Text color={dividerColor}>{'─'.repeat(Math.max(0, e.props.bodyColumns - inset))}</Text>
+      <Text color={pal.divider}>{'─'.repeat(Math.max(0, e.props.bodyColumns - inset))}</Text>
     )
     const divided = (rowEls: JSX.Element[], group: string, isTree: boolean) =>
       rowEls.flatMap((el, n) =>
@@ -2157,7 +2299,7 @@ export const register: Register = on => {
                 <Box key={`divider-${group}-${n}`} flexDirection="row">
                   <Box width={1} flexShrink={0} />
                   <Box width={6} flexShrink={0}>
-                    <Text color={MUTED_LINE}>│</Text>
+                    <Text color={pal.line}>│</Text>
                   </Box>
                   {rule(9)}
                 </Box>
@@ -2169,7 +2311,8 @@ export const register: Register = on => {
               el,
             ],
       )
-    // The selected row gets a blue background, and reads top to bottom:
+    // The selected row gets a blue background, or a bar where the palette has
+    // no selection color, and reads top to bottom:
     // context line, title, body, keys, each set off by a blank line. The handle
     // is a Button, so a click selects the row.
     // A Button label does not wrap or truncate, so the clickable text is clipped
@@ -2183,10 +2326,10 @@ export const register: Register = on => {
 
       return (
         <Box flexDirection="row">
-          {line.before ? <Text dimColor>{line.before}</Text> : null}
+          {line.before ? <Text color={pal.muted}>{line.before}</Text> : null}
           <Button plain key={`title-${row.id}`} label={clipLabel(line.text, room)} onPress={onPress} />
           {line.after ? (
-            <Text wrap="truncate-end" color={line.afterColor} dimColor={!line.afterColor}>
+            <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
               {line.after}
             </Text>
           ) : null}
@@ -2206,7 +2349,7 @@ export const register: Register = on => {
           key={`row-${row.id}`}
           flexDirection="row"
           overflow="hidden"
-          backgroundColor={isSelected ? (isDark ? DARK_SELECTION : SELECTION_BG) : undefined}
+          backgroundColor={isSelected ? pal.selection : undefined}
         >
           <Box width={1} flexShrink={0} />
           {tree ? <Box width={3} flexShrink={0} /> : null}
@@ -2215,7 +2358,6 @@ export const register: Register = on => {
               plain
               key={`select-${row.id}`}
               label={row.handle}
-              dimColor={!isSelected}
               onPress={() => void select($, tab, row.id, index)}
             />
           </Box>
@@ -2224,7 +2366,7 @@ export const register: Register = on => {
               {row.meta}
               <Text wrap="wrap">
                 <Text bold>{row.title}</Text>
-                {row.titleAfter ? <Text dimColor>{row.titleAfter}</Text> : null}
+                {row.titleAfter ? <Text color={pal.muted}>{row.titleAfter}</Text> : null}
               </Text>
               {row.body ? <Box marginTop={1}>{row.body}</Box> : null}
               <Box flexDirection="column" marginTop={1}>
@@ -2254,13 +2396,17 @@ export const register: Register = on => {
           {tree ? branch(tree, isSelected ? 1 : 0) : null}
           {/* What select() scrolls into view. Drawn on the selected row alone, so the key exists
           only once that row has redrawn expanded. */}
-          {isSelected ? <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1} /> : null}
+          {isSelected ? (
+            <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1}>
+              {pal.selection ? null : <Text color={pal.key}>{SELECTION_BAR}</Text>}
+            </Box>
+          ) : null}
         </Box>
       )
     }
     const emptyLine = (text: string) => (
       <Box paddingLeft={1}>
-        <Text dimColor wrap="wrap">
+        <Text color={pal.muted} wrap="wrap">
           {text}
         </Text>
       </Box>
@@ -2308,22 +2454,22 @@ export const register: Register = on => {
             if (tab === id)
               return (
                 <Box flexDirection="column">
-                  <Text color={TAB_COLORS[id]} backgroundColor={RAISED}>
+                  <Text color={pal.mark[id]} backgroundColor={pal.raised}>
                     {'▔'.repeat(width)}
                   </Text>
-                  <Text backgroundColor={RAISED}>
+                  <Text backgroundColor={pal.raised}>
                     {' '}
-                    <Text bold backgroundColor={RAISED}>
+                    <Text bold color={pal.raisedText} backgroundColor={pal.raised}>
                       {label}
                     </Text>
                     {count > 0 ? (
-                      <Text bold color={TAB_COLORS[id]} backgroundColor={RAISED}>
+                      <Text bold color={pal.tone[id] ?? pal.raisedText} backgroundColor={pal.raised}>
                         {' '}
                         {count}
                       </Text>
                     ) : null}{' '}
                   </Text>
-                  <Text backgroundColor={RAISED}>{' '.repeat(width)}</Text>
+                  <Text backgroundColor={pal.raised}>{' '.repeat(width)}</Text>
                 </Box>
               )
 
@@ -2333,28 +2479,28 @@ export const register: Register = on => {
             const show = () => void showTab($, id)
 
             return (
-              <Box key={`tab-block-${id}`} flexDirection="column" backgroundColor={PANEL_BG}>
-                <Button plain key={`tab-${id}-above`} label={' '.repeat(width)} hover={RAISE} onPress={show} />
+              <Box key={`tab-block-${id}`} flexDirection="column" backgroundColor={pal.tab}>
+                <Button plain key={`tab-${id}-above`} label={' '.repeat(width)} hover={raise} onPress={show} />
                 <Box flexDirection="row">
-                  <Button plain key={`tab-${id}-before`} label=" " hover={RAISE} onPress={show} />
-                  <Button plain key={`tab-${id}`} label={label} dimColor hover={RAISE} onPress={show} />
+                  <Button plain key={`tab-${id}-before`} label=" " hover={raise} onPress={show} />
+                  <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show} />
                   {count > 0 ? (
-                    <Text color={TAB_COLORS[id]} hover={RAISE}>
+                    <Text color={pal.tone[id]} hover={raise}>
                       {' '}
                       {count}
                     </Text>
                   ) : null}
-                  <Button plain key={`tab-${id}-after`} label=" " hover={RAISE} onPress={show} />
+                  <Button plain key={`tab-${id}-after`} label=" " hover={raise} onPress={show} />
                 </Box>
-                <Button plain key={`tab-${id}-below`} label={' '.repeat(width)} hover={RAISE} onPress={show} />
+                <Button plain key={`tab-${id}-below`} label={' '.repeat(width)} hover={raise} onPress={show} />
               </Box>
             )
           })}
         </Box>
         <Box flexDirection="row" columnGap={2}>
-          <Text dimColor>{status}</Text>
+          <Text color={pal.muted}>{status}</Text>
           {presence.ledgerState === 'failed' && !presence.isUpdating ? (
-            <Text color="error">update failed, retries after the next reply</Text>
+            <Text color={pal.tone.error}>update failed, retries after the next reply</Text>
           ) : null}
         </Box>
       </Box>
@@ -2367,7 +2513,6 @@ export const register: Register = on => {
             plain
             key="key-list"
             label={isKeyListShown ? '▾ Keys' : '▸ Keys'}
-            dimColor
             onPress={() => void update($, IS_KEY_LIST_SHOWN, shown => !shown)}
           />
         </Box>
@@ -2377,7 +2522,7 @@ export const register: Register = on => {
                 <Box width={keyColumn} flexShrink={0}>
                   <Text bold>{k.keys}</Text>
                 </Box>
-                <Text dimColor wrap="wrap">
+                <Text color={pal.muted} wrap="wrap">
                   {k.does}
                 </Text>
               </Box>
@@ -2392,12 +2537,12 @@ export const register: Register = on => {
       <Box paddingLeft={1}>
         <Text>
           {title}
-          {count > 0 ? <Text dimColor> {count}</Text> : null}
+          {count > 0 ? <Text color={pal.muted}> {count}</Text> : null}
         </Text>
       </Box>
     )
     const section = (children: JSX.Element | JSX.Element[]) => (
-      <Box flexDirection="column" paddingY={1} backgroundColor={PANEL_BG}>
+      <Box flexDirection="column" paddingY={1} backgroundColor={pal.card}>
         {children}
       </Box>
     )
@@ -2405,7 +2550,7 @@ export const register: Register = on => {
     // do not crowd it, and between two-line entries, so they read apart.
     const titleGap = (hasChildren = true) => (
       <Box paddingLeft={1}>
-        <Text color={MUTED_LINE}>{hasChildren ? '│' : ' '}</Text>
+        <Text color={pal.line}>{hasChildren ? '│' : ' '}</Text>
       </Box>
     )
     const waitingView = () => {
@@ -2417,12 +2562,12 @@ export const register: Register = on => {
       const settledRow = (s: Settled, pos: TreePos) =>
         treeRow(
           pos,
-          <Text color={DONE}>✓</Text>,
+          <Text color={pal.mark.done}>✓</Text>,
           <Box flexDirection="column">
-            <Text wrap="truncate-end" dimColor>
+            <Text wrap="truncate-end" color={pal.muted}>
               {s.ask}
             </Text>
-            <Text wrap="wrap" color={DONE}>
+            <Text wrap="wrap" color={pal.tone.done}>
               {outcomeText(s)}
             </Text>
           </Box>,
@@ -2432,16 +2577,16 @@ export const register: Register = on => {
       const closedRow = (d: Decided, pos: TreePos) =>
         treeRow(
           pos,
-          <Text dimColor>◇</Text>,
+          <Text color={pal.muted}>◇</Text>,
           <Box flexDirection="column">
-            <Text wrap="wrap" dimColor>
+            <Text wrap="wrap" color={pal.muted}>
               {d.ask}
             </Text>
             <Text wrap="wrap">
-              <Text bold={!isLapsed(d)} dimColor={isLapsed(d)}>
+              <Text bold={!isLapsed(d)} color={isLapsed(d) ? pal.muted : undefined}>
                 {outcomeText(d)}
               </Text>
-              <Text dimColor> · {ago(now - d.at)}</Text>
+              <Text color={pal.muted}> · {ago(now - d.at)}</Text>
             </Text>
           </Box>,
           `closed-${d.id}`,
@@ -2453,9 +2598,9 @@ export const register: Register = on => {
 
         return treeRow(
           pos,
-          <Button plain key={`fold-${kind}-caret`} label={isUnfolded ? '▾' : '▸'} dimColor onPress={toggle} />,
+          <Button plain key={`fold-${kind}-caret`} label={isUnfolded ? '▾' : '▸'} onPress={toggle} />,
           <Box flexDirection="row">
-            <Button plain key={`fold-${kind}`} label={`${count} Closed`} dimColor onPress={toggle} />
+            <Button plain key={`fold-${kind}`} label={`${count} Closed`} onPress={toggle} />
           </Box>,
           `fold-row-${kind}`,
         )
@@ -2479,7 +2624,7 @@ export const register: Register = on => {
                   treeRow(
                     pos,
                     null,
-                    <Text dimColor wrap="wrap">
+                    <Text color={pal.muted} wrap="wrap">
                       {g.empty}
                     </Text>,
                     `empty-${g.kind}`,
@@ -2509,10 +2654,10 @@ export const register: Register = on => {
             section(
               <Box flexDirection="column" paddingLeft={1}>
                 <Text wrap="truncate-end">
-                  <Text color="error" bold>
+                  <Text color={pal.tone.error} bold>
                     Stopped
                   </Text>
-                  <Text dimColor> · {ago(now - stop.at)}</Text>
+                  <Text color={pal.muted}> · {ago(now - stop.at)}</Text>
                 </Text>
                 <Text wrap="wrap">
                   {capitalized(stopText(stop))}. {stopFix(stop)}
@@ -2559,7 +2704,7 @@ export const register: Register = on => {
       return section([
         <Box paddingLeft={1}>
           <Text wrap="wrap">
-            <Text bold color={PRS}>
+            <Text bold color={pal.tone.prs}>
               #{pr.number}{' '}
             </Text>
             <Text bold>{pr.title}</Text>
@@ -2568,18 +2713,18 @@ export const register: Register = on => {
         titleGap(prRows.length > 0),
         treeRow(
           prRows.length > 0 ? 'pass' : null,
-          <Text color={ready.isReady ? DONE : WAITING}>{ready.isReady ? '✓' : '◇'}</Text>,
+          <Text color={pal.mark[ready.isReady ? 'done' : 'waiting']}>{ready.isReady ? '✓' : '◇'}</Text>,
           <Box flexDirection="column">
-            <Text wrap="wrap" color={ready.isReady ? DONE : WAITING}>
+            <Text wrap="wrap" color={pal.tone[ready.isReady ? 'done' : 'waiting']}>
               {ready.text}
             </Text>
             {facts.length > 0 ? (
-              <Text dimColor wrap="wrap">
+              <Text color={pal.muted} wrap="wrap">
                 {facts.join(' · ')}
               </Text>
             ) : null}
             {pr.error ? (
-              <Text color="error" wrap="wrap">
+              <Text color={pal.tone.error} wrap="wrap">
                 Last refresh failed: {pr.error}
               </Text>
             ) : null}
@@ -2591,9 +2736,9 @@ export const register: Register = on => {
                   onPress={() => void send($, prompts.address(pr, waitingOn))}
                 />
               ) : null}
-              <Button key={`open-${pr.ref}`} label="Open PR" dimColor onPress={() => void openUrl($, pr.url)} />
+              <Button key={`open-${pr.ref}`} label="Open PR" onPress={() => void openUrl($, pr.url)} />
               {pr.ref !== prState.branchRef ? (
-                <Button key={`unlink-${pr.ref}`} label="Remove" dimColor onPress={() => void unlinkPr($, pr.ref)} />
+                <Button key={`unlink-${pr.ref}`} label="Remove" onPress={() => void unlinkPr($, pr.ref)} />
               ) : null}
             </Box>
           </Box>,
@@ -2635,19 +2780,29 @@ export const register: Register = on => {
       onPress: () => void showTab($, id),
     }))
 
+    const selectedRow = rows[tab][at]
+    const rowKeys = selectedRow ? pressable([...selectedRow.keys(), ...(selectedRow.moreKeys?.() ?? [])]) : []
+
     // Docked, the pane takes at least the window's height, so the footer sits at
     // its bottom edge until the content is taller than the window. The engine has
     // no fixed footer, so past that it follows the content. Inline, the frame fits
-    // the tree. A pane takes a key only as a Button's hotkey, so the tab keys, j
-    // and k are Buttons in a hidden Box.
+    // the tree. A pane takes a key only as a Button's hotkey, so the tab keys, j,
+    // k and the selected row's keys are Buttons in a hidden Box.
     return (
-      <Box flexDirection="column" minHeight={e.props.placement === 'dock' ? e.props.scroll.bodyRows : undefined}>
+      <Box
+        flexDirection="column"
+        minHeight={e.props.placement === 'dock' ? e.props.scroll.bodyRows : undefined}
+        backgroundColor={pal.body}
+      >
         {tabs}
         <Box flexDirection="column" paddingX={1} paddingTop={1} flexGrow={1}>
           {tab === 'findings' ? findingsView() : tab === 'prs' ? prsView() : waitingView()}
         </Box>
         {footer}
-        <Box display="none">{keyRow([...tabKeys, ...moveKeys])}</Box>
+        <Box display="none">
+          {keyBindings([...tabKeys, ...moveKeys])}
+          {keyBindings(rowKeys, '-key')}
+        </Box>
       </Box>
     )
   })
