@@ -309,17 +309,18 @@ export function parseReply(text: string, source: string | null = null): Update |
     if (!m) continue
     seen += 1
     const key = m[1]
-    const value = (m[2] ?? '').trim()
+    // The model sometimes writes a key with "-" for "nothing", as in "NEW: do | - | - | - | -".
+    const value = dash(m[2]) ?? ''
     if (key === 'GOAL') card.goal = value
     else if (key === 'NOW') card.now = value
     else if (key === 'DONE' && value) card.done.push(value)
-    else if (key === 'RUNNING' && value && value !== '-') card.running.push(value)
+    else if (key === 'RUNNING' && value) card.running.push(value)
     else if (key === 'CLOSED') {
       const [id, outcome] = value.split('|').map(s => s.trim())
       if (id) closed.push({ id, outcome: outcome ?? '' })
     } else if (key === 'NEW') {
       const [kind, label, ask, options, rec] = value.split('|').map(s => s.trim())
-      if (!ask) continue
+      if (!ask || ask === '-') continue
       added.push({
         kind: kind === 'do' ? 'do' : 'decide',
         label: dash(label),

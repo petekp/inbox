@@ -37,6 +37,12 @@ describe('parseReply', () => {
     expect(u?.added[0]?.options).toEqual(['Yes', 'No'])
   })
 
+  test('a key written as "-" adds nothing and keeps the card', () => {
+    const u = parseReply('GOAL: -\nNOW: -\nDONE: -\nRUNNING: -\nNEW: do | - | - | - | -')!
+    expect(u.added).toEqual([])
+    expect(u.card).toEqual({ goal: '', done: [], now: '', running: [] })
+  })
+
   test('keeps HELP lines quoted from the reply, attached to the item they name', () => {
     const reply = [
       'Edit ~/.claude/settings.json and paste:',
