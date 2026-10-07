@@ -22,7 +22,7 @@ import type {
   Tab,
 } from '../types'
 import {
-  checkFolders,
+  checkRuns,
   checkLine,
   checksIn,
   claimMessage,
@@ -31,7 +31,6 @@ import {
   readResults,
   recordCheck,
 } from './checks'
-import type { CheckCall } from './checks'
 import { demoView } from './demo'
 import type { View } from './demo'
 import { candidates, changedPaths, readChanged, readLsTree, sameSnapshot } from './git'
@@ -1316,19 +1315,14 @@ function refreshTree($: EngineInterface): Promise<void> {
 }
 
 /** Records how each check a Bash command ran ended, and in which folder; `cwd` is where the shell started. */
-async function recordChecks(
-  $: EngineInterface,
-  command: string,
-  calls: CheckCall[],
-  cwd: string,
-  output: string,
-  isError: boolean,
-) {
-  const folders = checkFolders(command, cwd, (await $.env.get('HOME')) ?? '')
-  const results = readResults(command, calls, output, isError).flatMap(r => {
-    const folder = folders.get(r.call.name) ?? null
-    // A check whose folder the command hides, or one in a throwaway copy, says nothing about this session's work.
-    if (folder === null || (isTemporary(folder) && !isTemporary(root))) return []
+async function recordChecks($: EngineInterface, command: string, cwd: string, output: string, isError: boolean) {
+  const runs = checkRuns(command, cwd, (await $.env.get('HOME')) ?? '')
+  const results = readResults(command, runs, output, isError).flatMap(r => {
+    // A folder the command hides, as after `cd "$(git rev-parse --show-toplevel)"`, is taken as the session's.
+    const folders = new Set(runs.filter(x => x.call.name === r.call.name).map(x => x.folder ?? root))
+    const [folder = root] = folders
+    // A check run in several folders, or in a throwaway copy, says nothing about this session's work.
+    if (folders.size > 1 || (isTemporary(folder) && !isTemporary(root))) return []
 
     return [{ ...r, folder: folder === root ? null : folder }]
   })
@@ -1531,7 +1525,7 @@ export const register: Register = on => {
       const ran = await run()
       const output = resultFields(ran)
       if (cwd !== null && !output.interrupted && !output.backgroundTaskId && typeof ran.deny !== 'string') {
-        await recordChecks($, e.command, calls, cwd, ran.text ?? '', ran.isError === true)
+        await recordChecks($, e.command, cwd, ran.text ?? '', ran.isError === true)
       }
       if (activity.length < 40)
         for (const url of new Set(ran.text?.match(LOCAL_URL) ?? [])) noteActivity(`URL in output: ${url}`)

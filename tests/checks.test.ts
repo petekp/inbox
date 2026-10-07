@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Check, Checks } from '../types'
-import { checkFolders, checksIn, contradictedClaim, readResults, recordCheck } from '../hooks/checks'
+import { checkRuns, checksIn, contradictedClaim, readResults, recordCheck } from '../hooks/checks'
 import { candidates, changedPaths, readChanged, readLsTree } from '../hooks/git'
 
 describe('checksIn', () => {
@@ -26,8 +26,9 @@ describe('checksIn', () => {
   })
 })
 
-describe('checkFolders', () => {
-  const folder = (command: string, cwd = '/work/repo') => [...checkFolders(command, cwd, '/home/me').values()][0]
+describe('checkRuns', () => {
+  const runs = (command: string) => checkRuns(command, '/work/repo', '/home/me')
+  const folder = (command: string) => runs(command)[0]?.folder
 
   test('follows cd, variables the command set, and the folder a check names', () => {
     expect(folder('npm test')).toBe('/work/repo')
@@ -40,7 +41,14 @@ describe('checkFolders', () => {
   test('is null when the command hides the folder', () => {
     expect(folder('cd - && npm test')).toBe(null)
     expect(folder('claude plugin test $COPY')).toBe(null)
-    expect(folder('claude plugin test . ; claude plugin test /tmp/copy')).toBe(null)
+    expect(folder('cd "$(git rev-parse --show-toplevel)" && npm test')).toBe(null)
+  })
+
+  test('gives each run of a check its own folder', () => {
+    expect(runs('claude plugin test . ; claude plugin test /tmp/copy').map(r => r.folder)).toEqual([
+      '/work/repo',
+      '/tmp/copy',
+    ])
   })
 
   test('a result replaces only the same check in the same folder', () => {
@@ -58,53 +66,44 @@ describe('checkFolders', () => {
 })
 
 describe('readResults', () => {
+  const runs = (command: string) => checkRuns(command, '/work/repo', '/home/me')
   test('a check run twice in one command is unknown, since its output mixes both runs', () => {
     const command = 'claude plugin test . | grep pass; claude plugin test /tmp/copy | grep pass'
-    expect(readResults(command, checksIn(command), ' 48 pass\n 0 fail\n 47 pass\n 1 fail\n', false)).toEqual([
+    expect(readResults(command, runs(command), ' 48 pass\n 0 fail\n 47 pass\n 1 fail\n', false)).toEqual([
       { call: { name: 'plugin tests', kind: 'tests' }, result: 'unknown', summary: 'ran 2 times in one command' },
     ])
   })
 
   test('a labeled exit line decides each check', () => {
     const command = 'bun test > t.log; echo "test exit $?"; tsc > c.log; echo "tsc exit $?"'
-    expect(readResults(command, checksIn(command), 'test exit 0\ntsc exit 2\n', false).map(r => r.result)).toEqual([
+    expect(readResults(command, runs(command), 'test exit 0\ntsc exit 2\n', false).map(r => r.result)).toEqual([
       'pass',
       'fail',
     ])
   })
 
   test('a lone check that ends the command is decided by its exit status; counts describe it', () => {
-    const [failed] = readResults(
-      'bun test',
-      [{ name: 'bun test', kind: 'tests' }],
-      ' 24 pass\n 1 fail\nRan 25 tests across 3 files.',
-      true,
-    )
+    const [failed] = readResults('bun test', runs('bun test'), ' 24 pass\n 1 fail\nRan 25 tests across 3 files.', true)
     expect(failed).toMatchObject({ result: 'fail', summary: '24 pass, 1 fail' })
     // A test named after errors does not fail a clean run.
-    const [passed] = readResults(
-      'bun test',
-      [{ name: 'bun test', kind: 'tests' }],
-      '(pass) reports 2 errors\n 25 pass\n 0 fail\n',
-      false,
-    )
+    const [passed] = readResults('bun test', runs('bun test'), '(pass) reports 2 errors\n 25 pass\n 0 fail\n', false)
     expect(passed).toMatchObject({ result: 'pass', summary: '25 pass, 0 fail' })
   })
 
   test('reads an exit status printed as exit=N or by a bare echo', () => {
     const command = 'npm test > /tmp/t.log 2>&1; echo "exit=$?"'
-    expect(readResults(command, checksIn(command), 'exit=1', false)[0]?.result).toBe('fail')
+    expect(readResults(command, runs(command), 'exit=1', false)[0]?.result).toBe('fail')
     const bare = 'npm test > /tmp/t.log 2>&1; echo $?'
-    expect(readResults(bare, checksIn(bare), '1\n', false)[0]?.result).toBe('fail')
+    expect(readResults(bare, runs(bare), '1\n', false)[0]?.result).toBe('fail')
   })
 
   test('output sent to a file with no exit status shown is unknown', () => {
     const command = 'npm test > /tmp/t.log 2>&1; echo done'
-    expect(readResults(command, checksIn(command), 'done', false)[0]?.result).toBe('unknown')
+    expect(readResults(command, runs(command), 'done', false)[0]?.result).toBe('unknown')
   })
 
   test('a filtered command without counts is unknown, since the exit status is the filter’s', () => {
-    const [r] = readResults('npm run build | tail -3', [{ name: 'npm build', kind: 'build' }], 'done in 2s', false)
+    const [r] = readResults('npm run build | tail -3', runs('npm run build | tail -3'), 'done in 2s', false)
     expect(r?.result).toBe('unknown')
   })
 })

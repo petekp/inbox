@@ -569,7 +569,12 @@ test('a failing test run shows in the band, reaches the per-turn call, and stops
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'fix the parser', wait: false, origin: { kind: 'composer' } })
   toolAnswer = { text: ' 11 pass\n 1 fail\n', isError: true }
-  await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'Run the tests' } as never)
+  // The command hides the folder, so the run counts as the session's.
+  await $.tool.call({
+    tool: 'Bash',
+    command: 'cd "$(git rev-parse --show-toplevel)" && npm test',
+    description: 'Run the tests',
+  } as never)
 
   const blocked = await $.classic.Stop({
     stop_hook_active: false,

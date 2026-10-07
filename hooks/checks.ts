@@ -111,14 +111,20 @@ function resolvePath(from: string, path: string): string {
 }
 
 /**
- * The folder each check in a command ran in, absolute: where the shell
- * started, moved by each `cd`, or the folder the check names, as in
- * `claude plugin test <folder>` or `npm --prefix <folder> test`. Null when the
- * command hides it, as with `cd -` or a variable the command did not set, or
- * when the check ran in more than one folder.
+ * One time a command runs a check: the check, the piece of the command that
+ * runs it, whether that piece ends the command, and the folder it ran in.
  */
-export function checkFolders(command: string, cwd: string, home: string): Map<string, string | null> {
-  const folders = new Map<string, string | null>()
+export type CheckRun = { call: CheckCall; segment: string; isLast: boolean; folder: string | null }
+
+/**
+ * Each check a command runs, in order, with its folder, absolute: where the
+ * shell started, moved by each `cd`, or the folder the check names, as in
+ * `claude plugin test <folder>` or `npm --prefix <folder> test`. The folder is
+ * null when the command hides it, as with `cd -`, `$(...)` or a variable the
+ * command did not set.
+ */
+export function checkRuns(command: string, cwd: string, home: string): CheckRun[] {
+  const runs: CheckRun[] = []
   const vars = new Map([['HOME', home]])
   let dir: string | null = resolvePath('/', cwd)
   const expand = (word: string): string | null => {
@@ -153,7 +159,8 @@ export function checkFolders(command: string, cwd: string, home: string): Map<st
     } else if (first === 'popd') {
       dir = null
     } else {
-      const found = checkIn(blank[i] ?? '')
+      const piece = blank[i] ?? ''
+      const found = checkIn(piece)
       if (!found) return
       const { call, runner } = found
       const after = words.slice(words.findIndex(w => w === runner || w.endsWith(`/${runner}`)) + 1)
@@ -166,12 +173,11 @@ export function checkFolders(command: string, cwd: string, home: string): Map<st
       })
       // A project file, such as tsconfig.build.json or Cargo.toml, names its folder.
       if (named && /\.(?:json|toml)$/.test(named)) named = named.replace(/\/?[^/]*$/, '') || '.'
-      const folder = named === undefined ? dir : at(named)
-      folders.set(call.name, folders.has(call.name) && folders.get(call.name) !== folder ? null : folder)
+      runs.push({ call, segment: piece, isLast: i === blank.length - 1, folder: named === undefined ? dir : at(named) })
     }
   })
 
-  return folders
+  return runs
 }
 
 /** Whether a folder is a temporary one, where a throwaway copy of a project lives. */
@@ -237,28 +243,26 @@ function summaryOf(output: string): string {
 }
 
 /**
- * How each check in a command ended. A check the command runs more than once
- * is unknown, since the output does not say which lines are which run's.
- * Otherwise an explicit "<name> exit N" line wins. Then the command's own exit
- * status, when a lone check ends the command and nothing filters it. Then
- * failure or pass counts in the output.
+ * How each check in a command ended, from its runs (`checkRuns`). A check the
+ * command runs more than once is unknown, since the output does not say which
+ * lines are which run's. Otherwise an explicit "<name> exit N" line wins. Then
+ * the command's own exit status, when a lone check ends the command and
+ * nothing filters it. Then failure or pass counts in the output.
  */
 export function readResults(
   command: string,
-  calls: CheckCall[],
+  runs: CheckRun[],
   output: string,
   isError: boolean,
 ): { call: CheckCall; result: Check['result']; summary: string }[] {
   const exits = exitLines(output)
   const isFiltered = /\|\s*(tail|head|grep|rg|sed|awk|cut|wc|tee|less)\b/.test(command)
   const summary = summaryOf(output)
-  const parts = segments(command)
-  // The check each segment runs, by name, so each call finds its own segments.
-  const ran = parts.map(s => checkIn(s)?.call.name)
+  const calls = runs.map(r => r.call).filter((c, i, all) => all.findIndex(x => x.name === c.name) === i)
 
   return calls.map(call => {
-    const runs = ran.filter(name => name === call.name).length
-    if (runs > 1) return { call, result: 'unknown', summary: `ran ${runs} times in one command` }
+    const own = runs.filter(r => r.call.name === call.name)
+    if (own.length > 1) return { call, result: 'unknown', summary: `ran ${own.length} times in one command` }
     const words = call.name.toLowerCase().replace(/\.sh$/, '').split(/\s+/)
     const labeled = exits.find(
       x =>
@@ -269,7 +273,7 @@ export function readResults(
       calls.length === 1 && exits.length === 1 ? exits[0] : bare === null ? undefined : { label: '', code: bare }
     const exit = labeled ?? only
     if (exit) return { call, result: exit.code === 0 ? 'pass' : 'fail', summary: summary || `exit ${exit.code}` }
-    if (calls.length === 1 && !isFiltered && ran.at(-1) === call.name) {
+    if (calls.length === 1 && !isFiltered && own[0]?.isLast) {
       return { call, result: isError ? 'fail' : 'pass', summary: summary || (isError ? 'exited with an error' : '') }
     }
     if (calls.length === 1) {
@@ -278,7 +282,7 @@ export function readResults(
       if (ZERO_FAIL.test(output) || PASS_COUNT.test(output)) return { call, result: 'pass', summary }
     }
     if (isError) return { call, result: 'fail', summary: summary || 'exited with an error' }
-    if (isFiltered || isRedirected(parts[ran.indexOf(call.name)] ?? '')) return { call, result: 'unknown', summary }
+    if (isFiltered || isRedirected(own[0]?.segment ?? '')) return { call, result: 'unknown', summary }
 
     return { call, result: 'pass', summary }
   })
