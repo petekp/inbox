@@ -85,6 +85,7 @@ export function demoView(now: number): View {
           kind: 'decide',
           ask: 'Name the button "Export" or "Download CSV"?',
           outcome: 'Download CSV',
+          how: 'answered',
           at: now - 50 * MIN,
         },
         {
@@ -92,14 +93,16 @@ export function demoView(now: number): View {
           kind: 'decide',
           ask: 'Stream large exports, or build them in memory?',
           outcome: 'Stream them',
+          how: 'answered',
           at: now - 40 * MIN,
         },
-        { id: 'd9', kind: 'do', ask: 'Run the migration on staging', outcome: 'done', at: now - 25 * MIN },
+        { id: 'd9', kind: 'do', ask: 'Run the migration on staging', outcome: 'done', how: 'done', at: now - 25 * MIN },
         {
           id: 'd7',
           kind: 'decide',
           ask: 'Fix the flaky date test in this PR?',
           outcome: 'closed by Claude: no longer applies: test removed',
+          how: 'claude',
           at: now - 20 * MIN,
         },
         {
@@ -107,9 +110,17 @@ export function demoView(now: number): View {
           kind: 'decide',
           ask: 'Add an export to the admin page too?',
           outcome: 'dismissed',
+          how: 'dismissed',
           at: now - 10 * MIN,
         },
-        { id: 'd10', kind: 'decide', ask: 'Use the existing date helper?', outcome: 'Yes, reuse it', at: now },
+        {
+          id: 'd10',
+          kind: 'decide',
+          ask: 'Use the existing date helper?',
+          outcome: 'Yes, reuse it',
+          how: 'answered',
+          at: now,
+        },
       ],
       findings: [
         {
@@ -162,7 +173,15 @@ export function demoView(now: number): View {
       codeChangedAt: now - 10 * MIN,
     },
     settled: [
-      { id: 'd10', ask: 'Use the existing date helper?', outcome: 'Yes, reuse it', at: now, kind: 'decide', index: 1 },
+      {
+        id: 'd10',
+        ask: 'Use the existing date helper?',
+        outcome: 'Yes, reuse it',
+        how: 'answered',
+        at: now,
+        kind: 'decide',
+        index: 1,
+      },
     ],
     prViews: {
       branchRef: 'acme/reports#42',

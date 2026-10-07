@@ -41,7 +41,14 @@ export type Decided = {
   id: string
   kind: Item['kind']
   ask: string
+  /** What the pane shows for how it closed, such as the person's answer. */
   outcome: string
+  /**
+   * How it closed: the person answered it, marked a task done or ran its
+   * command, or dismissed it; it expired unanswered; Claude closed it with a
+   * reason; or the per-reply update closed it, with an outcome the model wrote.
+   */
+  how: 'answered' | 'done' | 'dismissed' | 'expired' | 'claude' | 'update'
   at: number
 }
 

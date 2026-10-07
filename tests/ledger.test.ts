@@ -101,7 +101,14 @@ describe('applyUpdate', () => {
     )
     expect(second.items.map(i => i.id)).toEqual(['i2', 'i3', 'i4'])
     expect(second.decided).toEqual([
-      { id: 'i1', kind: 'decide', ask: 'Rename Send.swift to Herdr?', outcome: 'yes, renamed', at: 2000 },
+      {
+        id: 'i1',
+        kind: 'decide',
+        ask: 'Rename Send.swift to Herdr?',
+        outcome: 'yes, renamed',
+        how: 'update',
+        at: 2000,
+      },
     ])
     expect(latestBatch(second).map(i => i.id)).toEqual(['i4'])
     expect(second.card?.done).toEqual(first.card?.done)

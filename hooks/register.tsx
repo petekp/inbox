@@ -51,9 +51,7 @@ import {
   waitingThreads,
 } from './prs'
 import {
-  CLOSED_BY_CLAUDE,
   EMPTY,
-  EXPIRED,
   SYSTEM,
   addFinding,
   ago,
@@ -62,6 +60,7 @@ import {
   buildPrompt,
   carryText,
   closeItem,
+  type Closing,
   commandRowLine,
   dialogLine,
   parseReply,
@@ -566,7 +565,7 @@ async function tick($: EngineInterface) {
  * for the turn to end.
  */
 async function sendAnswer($: EngineInterface, item: Item, answer: string) {
-  await close($, item.id, answer)
+  await close($, item.id, { how: 'answered', outcome: answer })
   await send($, `Re "${item.ask}": ${answer}`, { id: item.id, action: 'answer' })
 }
 
@@ -644,9 +643,9 @@ async function explain($: EngineInterface, item: Item) {
   await send($, text, { id: item.id, action: 'explain' })
 }
 
-async function close($: EngineInterface, id: string, outcome: string) {
+async function close($: EngineInterface, id: string, closing: Closing) {
   const now = await $.clock.now()
-  await commitLedger($, l => closeItem(l, id, outcome, now))
+  await commitLedger($, l => closeItem(l, id, closing, now))
 }
 
 /**
@@ -928,7 +927,9 @@ async function closeTasksRunBy($: EngineInterface, command: string) {
   const ran = tasksRunBy(await read($, LEDGER), command)
   if (ran.length === 0) return
   const now = await $.clock.now()
-  await commitLedger($, l => ran.reduce((after, item) => closeItem(after, item.id, 'you ran it', now), l))
+  await commitLedger($, l =>
+    ran.reduce((after, item) => closeItem(after, item.id, { how: 'done', outcome: 'you ran it' }, now), l),
+  )
 }
 
 async function gh($: EngineInterface, args: string[]) {
@@ -1131,7 +1132,11 @@ function helpActions($: EngineInterface, item: Item): Action[] {
 }
 
 function doneAction($: EngineInterface, item: Item): Action {
-  return { key: `done-${item.id}`, label: 'Done', onPress: () => void close($, item.id, 'done') }
+  return {
+    key: `done-${item.id}`,
+    label: 'Done',
+    onPress: () => void close($, item.id, { how: 'done', outcome: 'done' }),
+  }
 }
 
 /** A pane action with the key that presses it while the pane has focus. */
@@ -1161,7 +1166,12 @@ function itemKeys($: EngineInterface, item: Item): { keys: KeyAction[]; more: Ke
     more: [
       typeKey,
       explainKey,
-      { key: `dismiss-${item.id}`, label: 'Dismiss', hotkey: 'x', onPress: () => void close($, item.id, 'dismissed') },
+      {
+        key: `dismiss-${item.id}`,
+        label: 'Dismiss',
+        hotkey: 'x',
+        onPress: () => void close($, item.id, { how: 'dismissed', outcome: 'dismissed' }),
+      },
     ],
   }
 }
@@ -1176,12 +1186,9 @@ function decisionText(d: Decided): string {
 
 /** An item that closed without the person deciding it: dismissed, expired, or overtaken by the work. */
 function isLapsed(d: Decided): boolean {
-  return (
-    d.outcome === 'dismissed' ||
-    d.outcome === EXPIRED ||
-    d.outcome.startsWith(CLOSED_BY_CLAUDE) ||
-    /^(no longer applies|replaced|superseded|moot)/i.test(d.outcome)
-  )
+  if (d.how === 'dismissed' || d.how === 'expired' || d.how === 'claude') return true
+  // The per-reply update writes its own outcome, so only its wording says the work overtook the item.
+  return d.how === 'update' && /^(no longer applies|replaced|superseded|moot)/i.test(d.outcome)
 }
 
 /** The outcome as the pane shows it: "Dismissed", "Yes, renamed". */
