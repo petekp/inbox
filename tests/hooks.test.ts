@@ -612,19 +612,19 @@ test('/inbox demo shows sample entries in every tab, sends nothing, and goes bac
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   expect((await $.command.run({ command: 'inbox', args: 'demo' } as never)).text).toContain('Showing sample entries')
   const pane = await $.ui.mount(PANE)
-  expect(await pane.find({ text: /Export dates as ISO 8601/ })).toBeDefined()
+  expect(await pane.find({ text: /Show the Keys list in a footer/ })).toBeDefined()
   await pane.press({ key: 'answer-d11-0' })
   expect(sent).toEqual([])
   await pane.press({ key: 'tab-findings' })
-  expect(await pane.find({ text: /Report query runs twice/ })).toBeDefined()
+  expect(await pane.find({ text: /Catch-up could read only the turns/ })).toBeDefined()
   await pane.press({ key: 'tab-prs' })
-  expect(await pane.find({ text: /Add CSV export to the reports page/ })).toBeDefined()
+  expect(await pane.find({ text: /Switch tabs with 1, 2 and 3/ })).toBeDefined()
   // The sample PRs are not looked up, and their buttons open nothing.
-  await pane.press({ key: 'open-acme/reports#42' })
+  await pane.press({ key: 'open-petekp/inbox#31' })
   expect(ran.filter(argv => argv[0] === 'gh' || argv[0] === 'open')).toEqual([])
 
   await $.command.run({ command: 'inbox', args: 'demo' } as never)
-  expect(await pane.find({ text: /Add CSV export/ })).toBeUndefined()
+  expect(await pane.find({ text: /Switch tabs with 1, 2 and 3/ })).toBeUndefined()
 })
 
 test('a headless run does nothing', async ($, on) => {

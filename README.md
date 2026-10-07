@@ -156,7 +156,7 @@ running session.
 
 **`/inbox demo`** shows sample entries in every section of the band and
 the pane, for work on the layout: questions, tasks, a permission prompt, a
-just-closed item, checks, findings and two PRs. Their actions send nothing.
+just-closed item, checks, findings and three PRs. Their actions send nothing.
 Your own inbox is untouched. Run `/inbox demo` again to go back.
 
 The card, the open items and the findings survive compaction. The mod adds them to the
