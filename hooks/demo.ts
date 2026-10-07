@@ -194,7 +194,18 @@ export function demoView(now: number): View {
     stop: null,
     checks: {
       results: [
-        { name: 'prettier', kind: 'lint', folder: null, result: 'pass', summary: '', ranAt: now - 20 * MIN },
+        {
+          name: 'prettier',
+          kind: 'lint',
+          folder: null,
+          result: 'pass',
+          summary: '',
+          ranAt: now - 20 * MIN,
+          repo: null,
+          isStale: true,
+          isLeftFailing: false,
+          isDismissed: false,
+        },
         {
           name: 'claude plugin test',
           kind: 'tests',
@@ -202,6 +213,10 @@ export function demoView(now: number): View {
           result: 'pass',
           summary: '64 pass, 0 fail',
           ranAt: now - 6 * MIN,
+          repo: null,
+          isStale: false,
+          isLeftFailing: false,
+          isDismissed: false,
         },
         {
           name: 'tsc',
@@ -210,6 +225,10 @@ export function demoView(now: number): View {
           result: 'fail',
           summary: 'hooks/register.tsx(2310,7): error TS2322',
           ranAt: now - 5 * MIN,
+          repo: null,
+          isStale: false,
+          isLeftFailing: true,
+          isDismissed: false,
         },
         {
           name: 'claude plugin validate',
@@ -218,10 +237,12 @@ export function demoView(now: number): View {
           result: 'unknown',
           summary: '',
           ranAt: now - 4 * MIN,
+          repo: null,
+          isStale: false,
+          isLeftFailing: false,
+          isDismissed: false,
         },
       ],
-      changedAt: now - 10 * MIN,
-      codeChangedAt: now - 10 * MIN,
     },
     settled: [
       {

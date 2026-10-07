@@ -563,7 +563,7 @@ test('a stop and an open permission prompt lead the sidebar line until they clea
   expect(sidebarLines().at(-1)).toBe('')
 })
 
-test('a failing test run shows in the band, reaches the per-turn call, and stops a claim that tests pass', async ($, on) => {
+test('a failing test run shows in the band, reaches the per-turn call, stops a claim that tests pass, and waits in the pane', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
   world(on, prompts)
@@ -601,6 +601,16 @@ test('a failing test run shows in the band, reaches the per-turn call, and stops
   expect(prompts.at(-1)).toContain('<checks>\n✗ npm test, 11 pass, 1 fail\n</checks>')
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await band.find({ text: /✗ npm test, 11 pass, 1 fail/ })).toBeDefined()
+
+  // Still failing when the turn ended, so it waits on the person until they dismiss it.
+  const pane = await $.ui.mount(PANE)
+  expect(await pane.find({ text: /Failing checks 1/ })).toBeDefined()
+  await pane.press({ key: 'fix-check:.:npm test' })
+  await clock.settle()
+  expect(sent.at(-1)).toContain('npm test failed when you last ran it. Its output: 11 pass, 1 fail')
+  await pane.press({ key: 'dismiss-check:.:npm test' })
+  expect(await pane.find({ text: /Failing checks/ })).toBeUndefined()
+  expect(await band.find({ text: /✗ npm test/ })).toBeDefined()
 })
 
 test('/inbox demo shows sample entries in every tab, sends nothing, and goes back', async ($, on) => {
@@ -613,6 +623,8 @@ test('/inbox demo shows sample entries in every tab, sends nothing, and goes bac
   expect((await $.command.run({ command: 'inbox', args: 'demo' } as never)).text).toContain('Showing sample entries')
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ text: /Show the Keys list in a footer/ })).toBeDefined()
+  // The sample failing check is the first row, so the first question is the next one.
+  await pane.press({ key: 'next' })
   await pane.press({ key: 'answer-d11-0' })
   expect(sent).toEqual([])
   await pane.press({ key: 'tab-findings' })

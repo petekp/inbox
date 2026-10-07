@@ -288,16 +288,22 @@ export function readResults(
   })
 }
 
-/** Keeps each check's latest result in each folder. */
+/**
+ * Keeps each check's latest result in each folder. A check script that
+ * passes, such as check.sh, replaces every earlier result in its folder.
+ */
 export function recordCheck(results: Check[], check: Check): Check[] {
-  return [...results.filter(c => c.name !== check.name || c.folder !== check.folder), check]
+  const isReplaced = (c: Check) =>
+    c.folder === check.folder && (c.name === check.name || (check.kind === 'all' && check.result === 'pass'))
+
+  return [...results.filter(c => !isReplaced(c)), check]
 }
 
-/** Whether a file the check depends on changed after it ran. A Markdown edit leaves tests, types and builds current. */
-export function isStale(check: Check, checks: Checks): boolean {
-  const changedAt = ['lint', 'validate', 'all'].includes(check.kind) ? checks.changedAt : checks.codeChangedAt
-
-  return changedAt > check.ranAt
+/** Marks the checks that ran in `repo` stale after its files changed. A Markdown-only change leaves tests, types and builds current. */
+export function markStale(results: Check[], repo: string, isCodeChange: boolean): Check[] {
+  return results.map(c =>
+    c.repo === repo && (isCodeChange || ['lint', 'validate', 'all'].includes(c.kind)) ? { ...c, isStale: true } : c,
+  )
 }
 
 /** A check's result as one mark: ✓ passed, ✗ failed, · unknown. */
@@ -306,18 +312,18 @@ function checkMark(check: Check): string {
 }
 
 /** What follows a check's name: ", 24 pass", then ", before the last edit" when the files changed after it ran. */
-function checkDetail(check: Check, checks: Checks): string {
-  return `${check.summary ? `, ${check.summary}` : ''}${isStale(check, checks) ? ', before the last edit' : ''}`
+function checkDetail(check: Check): string {
+  return `${check.summary ? `, ${check.summary}` : ''}${check.isStale ? ', before the last edit' : ''}`
 }
 
 /** "npm test", or "npm test in app" for one that ran outside the session's folder. */
-function checkName(check: Check): string {
+export function checkName(check: Check): string {
   return check.folder ? `${check.name} in ${check.folder.replace(/^.*\//, '')}` : check.name
 }
 
 /** "✓ npm test, 24 pass, before the last edit". */
-export function checkLine(check: Check, checks: Checks): string {
-  return `${checkMark(check)} ${checkName(check)}${checkDetail(check, checks)}`
+export function checkLine(check: Check): string {
+  return `${checkMark(check)} ${checkName(check)}${checkDetail(check)}`
 }
 
 /** The reply's prose, as its sentences, without code blocks and inline code. */
@@ -378,11 +384,19 @@ export function contradictedClaim(reply: string, checks: Checks): Contradiction 
           claim: s,
           problem: `${checkName(latest)} failed when it last ran${latest.summary ? ` (${latest.summary})` : ''}`,
         }
-      if (isStale(latest, checks)) return { claim: s, problem: `the files changed after ${checkName(latest)} last ran` }
+      if (latest.isStale) return { claim: s, problem: `the files changed after ${checkName(latest)} last ran` }
     }
   }
 
   return null
+}
+
+/** What `a: Fix` on a failing check sends Claude. */
+export function fixMessage(check: Check): string {
+  const where = check.folder ? ` in ${check.folder}` : ''
+  const output = check.summary ? ` Its output: ${check.summary}` : ''
+
+  return `${check.name} failed when you last ran it${where}.${output}\nFind the cause, fix it, and run it again to verify.`
 }
 
 /** What sends Claude back to correct a claim before its turn ends. */

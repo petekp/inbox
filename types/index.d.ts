@@ -148,6 +148,17 @@ export type Check = {
   /** The output's summary line, such as "24 pass, 1 fail". */
   summary: string
   ranAt: number
+  /** The top folder of the git repo it ran in, whose edits make it stale; null outside git. */
+  repo: string | null
+  /**
+   * Files it reads changed after it ran: any file for a lint, a validation or
+   * a check script, and a file other than Markdown for the rest.
+   */
+  isStale: boolean
+  /** A turn of Claude's ended with it failing, so the Needs you tab lists it. */
+  isLeftFailing: boolean
+  /** The person dismissed its row in the Needs you tab. */
+  isDismissed: boolean
 }
 
 /**
@@ -156,14 +167,8 @@ export type Check = {
  */
 export type Snapshot = { head: string | null; dirty: Record<string, string> }
 
-/** The checks Claude ran, and when the files they check last changed. */
-export type Checks = {
-  results: Check[]
-  /** When any file's content last changed. */
-  changedAt: number
-  /** When a file other than Markdown last changed. Tests, types and builds go stale only then. */
-  codeChangedAt: number
-}
+/** The checks Claude ran. */
+export type Checks = { results: Check[] }
 
 export type Presence = {
   lastActiveAt: number
@@ -213,8 +218,8 @@ declare module 'claude-code' {
       stop: Stop | null
       dialogs: Dialog[]
       checks: Checks
-      /** The working tree as last read, kept apart from `checks` because no drawing reads it. */
-      snapshot: Snapshot | null
+      /** Each checked repo's working tree as last read, by its top folder, kept apart from `checks` because no drawing reads it. */
+      snapshots: Record<string, Snapshot>
       /** The row whose free-text field is open, if any. */
       typing: string | null
       /** Items that just closed, shown in place with their outcome for a few seconds. */

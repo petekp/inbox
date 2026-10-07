@@ -44,8 +44,11 @@ running session.
   validation command Claude runs, and how it ended. A failed check gets a
   line of its own under the band, as in "✗ npm test, 1 fail". The card the
   band shows when you return lists every check. A check is marked "before
-  the last edit" when files changed after it ran. A Markdown-only edit leaves tests,
-  type checks and builds current.
+  the last edit" when files in its git repo changed after it ran, in the
+  session's folder or any other. A Markdown-only edit leaves tests, type
+  checks and builds current. A check script such as `check.sh` that passes
+  replaces the earlier results in its folder. A check still failing when
+  Claude stops also waits in the /inbox pane.
 - **Numbered answers.** Reply "1. yes 2. no" to the agent's numbered
   questions as usual. The mod attaches the full questions to your message,
   so the agent knows what each number meant.
@@ -60,10 +63,13 @@ running session.
   and PRs. Each tab is a list with one selected row. The selected row shows
   its full text and lists its actions. It is shaded blue, or marked by a bar
   at its left in the ANSI themes and Auto. The other rows take one line each,
-  with a muted line between each two. The Needs you tab lists Questions
-  first, newest first and numbered 1), 2), 3), then Your tasks. Each item
-  shows how long it has waited. Lines join each group's title to its rows, as
-  in a directory listing.
+  with a muted line between each two. The Needs you tab lists Failing checks
+  first, when there are any, then Questions, newest first and numbered 1),
+  2), 3), then Your tasks. Each item shows how long it has waited. Lines join
+  each group's title to its rows, as in a directory listing.
+  - Failing checks are the checks still failing when Claude last stopped.
+    `a: Fix` asks Claude to find the cause and fix it. `x: Dismiss` hides
+    the row until the check runs again. A run that passes removes it.
   - On a question, the letters send an answer to Claude as your message,
     quoting the question: `a: Node  b: Python`. If Claude is working, the
     answer waits until the turn ends. The recommended answer's key says so.
@@ -77,7 +83,7 @@ running session.
     means, without acting on it. The item stays open.
   - `x: Dismiss` drops a question. `d: Done` closes a task that is yours to
     do. A task also closes on its own when you run its command with `!`.
-  - Both groups always show. A group with nothing open says so.
+  - Questions and Your tasks always show. A group with nothing open says so.
   - Under each group's open items, a folded row such as `▸ 3 Closed` holds
     its last three closed ones: what was asked, how it closed, and when.
     Click the row to unfold them. An item left unanswered for 12 prompts

@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, SessionAppendMessage, UiPressArgument, UiScrollResult } from 'claude-code'
 
 import type {
+  Check,
   Checks,
   Cursor,
   Decided,
@@ -22,12 +23,15 @@ import type {
   Tab,
 } from '../types'
 import {
+  checkName,
   checkRuns,
   checkLine,
   checksIn,
   claimMessage,
   contradictedClaim,
+  fixMessage,
   isTemporary,
+  markStale,
   readResults,
   recordCheck,
 } from './checks'
@@ -108,9 +112,9 @@ const PR_VIEWS = atom(
 )
 const STOP = atom({ plugin: 'inbox', key: 'stop' } as const, null as Stop | null)
 const DIALOGS = atom({ plugin: 'inbox', key: 'dialogs' } as const, [] as Dialog[])
-const NO_CHECKS: Checks = { results: [], changedAt: 0, codeChangedAt: 0 }
+const NO_CHECKS: Checks = { results: [] }
 const CHECKS = atom({ plugin: 'inbox', key: 'checks' } as const, NO_CHECKS)
-const SNAPSHOT = atom({ plugin: 'inbox', key: 'snapshot' } as const, null as Snapshot | null)
+const SNAPSHOTS = atom({ plugin: 'inbox', key: 'snapshots' } as const, {} as Record<string, Snapshot>)
 const TYPING = atom({ plugin: 'inbox', key: 'typing' } as const, null as string | null)
 const SETTLED = atom({ plugin: 'inbox', key: 'settled' } as const, [] as Settled[])
 const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as Item['kind'][])
@@ -379,6 +383,8 @@ let sessionId = ''
 let root = ''
 // The repo's top folder, where git reads the working tree; null outside git.
 let top: string | null = null
+// Each folder outside the session's where a check ran, with its repo's top folder.
+const repoTops = new Map<string, Promise<string | null>>()
 let refreshing: Promise<void> = Promise.resolve()
 // The PR fetches, one at a time, and the next one when it is waiting to start: whether it looks up the branch's PR.
 let fetchingPrs: Promise<void> = Promise.resolve()
@@ -884,6 +890,16 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
     // Presence from before the turn counts existed cannot say whether the last
     // turn's update landed, so that load catches up once.
     update($, PRESENCE, p => ({ ...p, turnsStarted: p.turnsStarted ?? 1, turnsApplied: p.turnsApplied ?? 0 })),
+    // Results from before each one kept its repo never go stale; the next run of each replaces it.
+    update($, CHECKS, c => ({
+      results: c.results.map(r => ({
+        ...r,
+        repo: r.repo ?? null,
+        isStale: r.isStale ?? false,
+        isLeftFailing: r.isLeftFailing ?? false,
+        isDismissed: r.isDismissed ?? false,
+      })),
+    })),
   ])
 
   return ledger
@@ -974,6 +990,14 @@ function findingBody(finding: Finding): string[] {
 
 async function removeFinding($: EngineInterface, id: string) {
   await commitLedger($, l => ({ ...l, findings: l.findings.filter(f => f.id !== id) }))
+}
+
+/** Hides a failing check's row in the Needs you tab until the check runs again. */
+async function dismissCheck($: EngineInterface, check: Check) {
+  await update($, CHECKS, c => ({
+    ...c,
+    results: c.results.map(x => (x.name === check.name && x.folder === check.folder ? { ...x, isDismissed: true } : x)),
+  }))
 }
 
 /** Sends the finding back to Claude, to fix it or to talk it through first. */
@@ -1327,12 +1351,11 @@ const FINDING_BADGES: Record<Finding['kind'], { label: string; mark: string; ton
   opportunity: { label: 'Opportunity', mark: '✦', tone: 'done' },
 }
 
-/** Runs a git command that reads the working tree; null when it fails. Optional locks are off, so it never takes the index lock from a commit. */
-async function runGit($: EngineInterface, args: string[], stdin?: string): Promise<string | null> {
-  if (!top) return null
+/** Runs a git command that reads a repo's working tree; null when it fails. Optional locks are off, so it never takes the index lock from a commit. */
+async function runGit($: EngineInterface, repo: string, args: string[], stdin?: string): Promise<string | null> {
   const r = await $.process
     .run(['git', '--no-optional-locks', ...args], {
-      cwd: top,
+      cwd: repo,
       timeoutMs: 15_000,
       ...(stdin === undefined ? {} : { stdin }),
     })
@@ -1342,31 +1365,32 @@ async function runGit($: EngineInterface, args: string[], stdin?: string): Promi
 }
 
 /** Each file's blob id, as a commit would store it. A folder, such as a submodule's, gets a mark of its own. */
-async function hashFiles($: EngineInterface, paths: string[]): Promise<string[] | null> {
-  const out = await runGit($, ['hash-object', '--stdin-paths'], `${paths.join('\n')}\n`)
+async function hashFiles($: EngineInterface, repo: string, paths: string[]): Promise<string[] | null> {
+  const out = await runGit($, repo, ['hash-object', '--stdin-paths'], `${paths.join('\n')}\n`)
   if (out !== null) return out.split('\n')
   // One path git cannot hash fails the whole call, so hash the files alone.
   const kinds = await Promise.all(
     paths.map(p =>
-      $.fs.stat(`${top}/${p}`).then(
+      $.fs.stat(`${repo}/${p}`).then(
         s => s.kind,
         () => 'other' as const,
       ),
     ),
   )
   const files = paths.filter((_p, i) => kinds[i] === 'file')
-  const hashed = files.length > 0 ? await runGit($, ['hash-object', '--stdin-paths'], `${files.join('\n')}\n`) : ''
+  const hashed =
+    files.length > 0 ? await runGit($, repo, ['hash-object', '--stdin-paths'], `${files.join('\n')}\n`) : ''
   if (hashed === null) return null
   const ids = hashed.split('\n')
 
   return paths.map((_p, i) => (kinds[i] === 'file' ? (ids[files.indexOf(paths[i] ?? '')] ?? '') : `${kinds[i]}`))
 }
 
-/** The working tree's content, read without writing to the repo. */
-async function readSnapshot($: EngineInterface): Promise<Snapshot | null> {
+/** A repo's working tree content, read without writing to the repo. */
+async function readSnapshot($: EngineInterface, repo: string): Promise<Snapshot | null> {
   const [out, headOut] = await Promise.all([
-    runGit($, ['status', '--porcelain=v1', '-z', '-uall']),
-    runGit($, ['rev-parse', '--verify', '-q', 'HEAD']),
+    runGit($, repo, ['status', '--porcelain=v1', '-z', '-uall']),
+    runGit($, repo, ['rev-parse', '--verify', '-q', 'HEAD']),
   ])
   if (out === null) return null
   const head = headOut?.trim() || null
@@ -1375,7 +1399,7 @@ async function readSnapshot($: EngineInterface): Promise<Snapshot | null> {
   for (const c of changed) if (c.isDeleted) dirty[c.path] = ''
   const present = changed.filter(c => !c.isDeleted && !c.path.includes('\n')).map(c => c.path)
   if (present.length > 0) {
-    const ids = await hashFiles($, present)
+    const ids = await hashFiles($, repo, present)
     if (!ids) return null
     present.forEach((path, i) => {
       dirty[path] = ids[i] ?? ''
@@ -1386,10 +1410,15 @@ async function readSnapshot($: EngineInterface): Promise<Snapshot | null> {
 }
 
 /** Each path's object id in a commit, for the paths it has. */
-async function lsTree($: EngineInterface, head: string, paths: string[]): Promise<Record<string, string> | null> {
+async function lsTree(
+  $: EngineInterface,
+  repo: string,
+  head: string,
+  paths: string[],
+): Promise<Record<string, string> | null> {
   const ids: Record<string, string> = {}
   for (let i = 0; i < paths.length; i += 200) {
-    const out = await runGit($, ['ls-tree', '-z', '--full-tree', head, '--', ...paths.slice(i, i + 200)])
+    const out = await runGit($, repo, ['ls-tree', '-z', '--full-tree', head, '--', ...paths.slice(i, i + 200)])
     if (out === null) return null
     Object.assign(ids, readLsTree(out))
   }
@@ -1397,49 +1426,63 @@ async function lsTree($: EngineInterface, head: string, paths: string[]): Promis
   return ids
 }
 
-/** The paths whose content differs between two snapshots, or null when git could not tell. A commit only moves content into HEAD, so it changes nothing. */
-async function contentChanges($: EngineInterface, a: Snapshot, b: Snapshot): Promise<string[] | null> {
+/** The paths whose content differs between two snapshots of a repo, or null when git could not tell. A commit only moves content into HEAD, so it changes nothing. */
+async function contentChanges($: EngineInterface, repo: string, a: Snapshot, b: Snapshot): Promise<string[] | null> {
   if (a.head !== b.head && !b.head) return null
   let committed: string[] = []
   if (a.head && b.head && a.head !== b.head) {
-    const out = await runGit($, ['diff', '--name-only', '-z', '--no-renames', a.head, b.head])
+    const out = await runGit($, repo, ['diff', '--name-only', '-z', '--no-renames', a.head, b.head])
     if (out === null) return null
     committed = out.split('\0').filter(Boolean)
   }
   const paths = candidates(a, b, committed)
   if (paths.length === 0) return []
   const none = Promise.resolve<Record<string, string>>({})
-  const reading = a.head ? lsTree($, a.head, paths) : none
+  const reading = a.head ? lsTree($, repo, a.head, paths) : none
   const [before, after] = await Promise.all([
     reading,
-    b.head === a.head ? reading : b.head ? lsTree($, b.head, paths) : none,
+    b.head === a.head ? reading : b.head ? lsTree($, repo, b.head, paths) : none,
   ])
   if (!before || !after) return null
 
   return changedPaths(a, b, paths, before, after)
 }
 
+/** The top folder of the git repo that holds `folder`; null outside git. */
+function repoOf($: EngineInterface, folder: string): Promise<string | null> {
+  if (folder === root) return Promise.resolve(top)
+  const known = repoTops.get(folder)
+  if (known) return known
+  const found = $.process.run(['git', 'rev-parse', '--show-toplevel'], { cwd: folder, timeoutMs: 5000 }).then(
+    r => (r.exitCode === 0 ? r.stdout.trim() || null : null),
+    () => null,
+  )
+  repoTops.set(folder, found)
+
+  return found
+}
+
 /**
- * Reads the working tree again. When its content differs from the last
- * reading, now becomes when it changed, so checks that ran earlier read as
- * before the last edit. Readings run one at a time.
+ * Reads the working tree of each repo in `repos`, or of each repo a recorded
+ * check ran in. A repo whose content differs from its last reading makes the
+ * checks that ran there stale. Readings run one at a time.
  */
-function refreshTree($: EngineInterface): Promise<void> {
+function refreshTree($: EngineInterface, repos?: string[]): Promise<void> {
   refreshing = refreshing
     .then(async () => {
-      const [snapshot, before] = await Promise.all([readSnapshot($), read($, SNAPSHOT)])
-      if (!snapshot) return
-      if (before && sameSnapshot(before, snapshot)) return
-      // A path list git could not read counts as a change to code.
-      const changes = before ? await contentChanges($, before, snapshot) : []
-      await update($, SNAPSHOT, () => snapshot)
-      if (changes !== null && changes.length === 0) return
-      const now = await $.clock.now()
-      await update($, CHECKS, c => ({
-        ...c,
-        changedAt: now,
-        codeChangedAt: changes === null || changes.some(p => !/\.md$/i.test(p)) ? now : c.codeChangedAt,
-      }))
+      const checked = repos ?? (await read($, CHECKS)).results.flatMap(c => (c.repo ? [c.repo] : []))
+      const before = await read($, SNAPSHOTS)
+      for (const repo of new Set(checked)) {
+        const snapshot = await readSnapshot($, repo)
+        const last = before[repo]
+        if (!snapshot || (last && sameSnapshot(last, snapshot))) continue
+        // A path list git could not read counts as a change to code.
+        const changes = last ? await contentChanges($, repo, last, snapshot) : []
+        await update($, SNAPSHOTS, s => ({ ...s, [repo]: snapshot }))
+        if (changes !== null && changes.length === 0) continue
+        const isCodeChange = changes === null || changes.some(p => !/\.md$/i.test(p))
+        await update($, CHECKS, c => ({ ...c, results: markStale(c.results, repo, isCodeChange) }))
+      }
     })
     .catch(() => undefined)
 
@@ -1449,18 +1492,22 @@ function refreshTree($: EngineInterface): Promise<void> {
 /** Records how each check a Bash command ran ended, and in which folder; `cwd` is where the shell started. */
 async function recordChecks($: EngineInterface, command: string, cwd: string, output: string, isError: boolean) {
   const runs = checkRuns(command, cwd, (await $.env.get('HOME')) ?? '')
-  const results = readResults(command, runs, output, isError).flatMap(r => {
+  const ended = readResults(command, runs, output, isError).flatMap(r => {
     // A folder the command hides, as after `cd "$(git rev-parse --show-toplevel)"`, is taken as the session's.
     const folders = new Set(runs.filter(x => x.call.name === r.call.name).map(x => x.folder ?? root))
     const [folder = root] = folders
     // A check run in several folders, or in a throwaway copy, says nothing about this session's work.
     if (folders.size > 1 || (isTemporary(folder) && !isTemporary(root))) return []
 
-    return [{ ...r, folder: folder === root ? null : folder }]
+    return [{ ...r, folder }]
   })
-  if (results.length === 0) return
+  if (ended.length === 0) return
+  const results = await Promise.all(ended.map(async r => ({ ...r, repo: await repoOf($, r.folder) })))
   // Edits made before the check count as before it.
-  await refreshTree($)
+  await refreshTree(
+    $,
+    results.flatMap(r => (r.repo ? [r.repo] : [])),
+  )
   const ranAt = await $.clock.now()
   await update($, CHECKS, c => ({
     ...c,
@@ -1469,10 +1516,14 @@ async function recordChecks($: EngineInterface, command: string, cwd: string, ou
         recordCheck(all, {
           name: r.call.name,
           kind: r.call.kind,
-          folder: r.folder,
+          folder: r.folder === root ? null : r.folder,
           result: r.result,
           summary: r.summary,
           ranAt,
+          repo: r.repo,
+          isStale: false,
+          isLeftFailing: false,
+          isDismissed: false,
         }),
       c.results,
     ),
@@ -1567,7 +1618,7 @@ export const register: Register = on => {
         update($, STOP, () => null),
         update($, DIALOGS, () => []),
         update($, CHECKS, () => NO_CHECKS),
-        update($, SNAPSHOT, () => null),
+        update($, SNAPSHOTS, () => ({})),
         update($, SETTLED, () => []),
         update($, IS_DEMO, () => false),
         publishStatus($, true),
@@ -1729,7 +1780,13 @@ export const register: Register = on => {
     isTurnRunning = false
     // No dialog outlives the turn that raised it.
     await closeDialogs($, null)
-    if (!isOn || e.reason !== 'answer' || e.answer.trim() === '') return r
+    if (!isOn) return r
+    // A check still failing when Claude stops waits on the person, in the Needs you tab.
+    await update($, CHECKS, c => ({
+      ...c,
+      results: c.results.map(x => (x.result === 'fail' ? { ...x, isLeftFailing: true } : x)),
+    }))
+    if (e.reason !== 'answer' || e.answer.trim() === '') return r
 
     let checks = await read($, CHECKS)
     if (checks.results.length > 0) {
@@ -1745,7 +1802,7 @@ export const register: Register = on => {
       turn: ledger.turn,
       press,
       screen: shown,
-      checks: checks.results.map(c => checkLine(c, checks)),
+      checks: checks.results.map(checkLine),
     }
     press = null
     person = null
@@ -1924,7 +1981,7 @@ export const register: Register = on => {
       .map(c => (
         <Text wrap="truncate-end" color="error">
           {'  '}
-          {checkLine(c, checks)}
+          {checkLine(c)}
         </Text>
       ))
 
@@ -1952,7 +2009,7 @@ export const register: Register = on => {
           ? [
               <Text wrap="truncate-end" dimColor>
                 {'  '}
-                {checks.results.map(c => checkLine(c, checks)).join(' · ')}
+                {checks.results.map(checkLine).join(' · ')}
               </Text>,
             ]
           : []),
@@ -2154,6 +2211,28 @@ export const register: Register = on => {
         },
       ],
     })
+    const failedCheckRow = (c: Check): Row => {
+      const id = `check:${c.folder ?? '.'}:${c.name}`
+
+      return {
+        id,
+        handle: '✗',
+        title: checkName(c),
+        titleAfter: ` · ${ago(now - c.ranAt)}`,
+        line: { text: checkName(c), after: ` · ${ago(now - c.ranAt)}` },
+        body:
+          c.summary || c.isStale ? (
+            <Text wrap="wrap">
+              {c.summary}
+              {c.isStale ? <Text color={pal.muted}>{c.summary ? ' · ' : ''}Ran before the last edit</Text> : null}
+            </Text>
+          ) : null,
+        keys: () => [
+          { key: `fix-${id}`, label: 'Fix', hotkey: 'a', onPress: () => void send($, fixMessage(c)) },
+          { key: `dismiss-${id}`, label: 'Dismiss', hotkey: 'x', onPress: () => void dismissCheck($, c) },
+        ],
+      }
+    }
     const threadRow = (pr: PrView, t: PrThread): Row => {
       const latest = t.reply ?? { author: t.author, body: t.body }
 
@@ -2213,6 +2292,7 @@ export const register: Register = on => {
     }
 
     // Each tab's rows in order: the cursor, the counts and the drawing all read these.
+    const failedCheckRows = checks.results.filter(c => c.isLeftFailing && !c.isDismissed).map(failedCheckRow)
     const waitingGroups = WAITING_GROUPS.map(g => ({
       ...g,
       rows: listedItems(ledger.items, g.kind).map((item, n) => itemRow(item, g.kind === 'decide' ? `${n + 1})` : '•')),
@@ -2222,7 +2302,7 @@ export const register: Register = on => {
       rows: [...failingChecks(pr).map(c => checkRow(pr, c)), ...waitingThreads(pr).map(t => threadRow(pr, t))],
     }))
     const rows: Record<Tab, Row[]> = {
-      waiting: waitingGroups.flatMap(g => g.rows),
+      waiting: [...failedCheckRows, ...waitingGroups.flatMap(g => g.rows)],
       findings: [...ledger.findings].reverse().map(findingRow),
       prs: prGroups.flatMap(g => g.rows),
     }
@@ -2446,7 +2526,7 @@ export const register: Register = on => {
       >
         <Box flexDirection="row" columnGap={1}>
           {TABS.map(({ id, label }) => {
-            const count = id === 'waiting' ? ledger.items.length : rows[id].length
+            const count = id === 'waiting' ? ledger.items.length + failedCheckRows.length : rows[id].length
             const width = `${label}${count > 0 ? ` ${count}` : ''}`.length + 2
 
             // The selected tab is a raised panel three lines tall, with its name on
@@ -2649,6 +2729,21 @@ export const register: Register = on => {
 
         return section([groupTitle(g.title, g.rows.length), titleGap(), ...open, ...tail])
       })
+      // Checks still failing when Claude stopped come first, since they block the work. The group shows only with some.
+      const failed =
+        failedCheckRows.length > 0
+          ? [
+              section([
+                groupTitle('Failing checks', failedCheckRows.length),
+                titleGap(),
+                ...divided(
+                  failedCheckRows.map((row, n) => listRow(row, childPos(n, failedCheckRows.length))),
+                  'checks',
+                  true,
+                ),
+              ]),
+            ]
+          : []
       // A stop is fixed in the session, not here, so it shows above the list without keys.
       const outside = stop
         ? [
@@ -2671,6 +2766,7 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column" gap={1}>
           {outside}
+          {failed}
           {groups}
         </Box>
       )
