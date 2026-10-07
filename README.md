@@ -5,6 +5,8 @@ agent's questions, issues Claude found, and your PRs' checks and reviews. It
 lists them in the `/inbox` pane. A one-line band above the prompt shows where
 the session stands and how many items wait.
 
+https://github.com/user-attachments/assets/560f80be-e6fb-484e-8a3f-7b4828b98fb2
+
 ## Install
 
 Type this at the prompt of a Claude Code session in a terminal:
