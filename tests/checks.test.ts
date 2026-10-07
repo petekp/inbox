@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Check, Checks } from '../types'
-import { checksIn, contradictedClaim, readResults } from '../hooks/checks'
+import { checkFolders, checksIn, contradictedClaim, readResults, recordCheck } from '../hooks/checks'
 import { candidates, changedPaths, readChanged, readLsTree } from '../hooks/git'
 
 describe('checksIn', () => {
@@ -20,8 +20,40 @@ describe('checksIn', () => {
   test('names common runners by kind, behind a package manager’s options', () => {
     expect(checksIn('npm run build')).toEqual([{ name: 'npm build', kind: 'build' }])
     expect(checksIn('./scripts/validate.sh')).toEqual([{ name: 'validate.sh', kind: 'validate' }])
+    expect(checksIn('./scripts/check.sh')).toEqual([{ name: 'check.sh', kind: 'all' }])
     expect(checksIn('npm --prefix /work/app test > t.log 2>&1')).toEqual([{ name: 'npm test', kind: 'tests' }])
     expect(checksIn('pnpm -C app run lint')).toEqual([{ name: 'lint', kind: 'lint' }])
+  })
+})
+
+describe('checkFolders', () => {
+  const folder = (command: string, cwd = '/work/repo') => [...checkFolders(command, cwd, '/home/me').values()][0]
+
+  test('follows cd, variables the command set, and the folder a check names', () => {
+    expect(folder('npm test')).toBe('/work/repo')
+    expect(folder('cd mods/x && claude plugin test . > t.log 2>&1')).toBe('/work/repo/mods/x')
+    expect(folder('S=/tmp/copy; cp -R . "$S" && claude plugin test $S > $S.log 2>&1')).toBe('/tmp/copy')
+    expect(folder('npm --prefix ../app test')).toBe('/work/app')
+    expect(folder('npx -y -p typescript tsc --noEmit -p ~/app/tsconfig.json')).toBe('/home/me/app')
+  })
+
+  test('is null when the command hides the folder', () => {
+    expect(folder('cd - && npm test')).toBe(null)
+    expect(folder('claude plugin test $COPY')).toBe(null)
+    expect(folder('claude plugin test . ; claude plugin test /tmp/copy')).toBe(null)
+  })
+
+  test('a result replaces only the same check in the same folder', () => {
+    const at = (folder: string | null, result: Check['result']): Check => ({
+      name: 'plugin tests',
+      kind: 'tests',
+      folder,
+      result,
+      summary: '',
+      ranAt: 1,
+    })
+    expect(recordCheck([at(null, 'pass')], at('/work/copy', 'fail'))).toHaveLength(2)
+    expect(recordCheck([at(null, 'fail')], at(null, 'pass'))).toEqual([at(null, 'pass')])
   })
 })
 
@@ -81,6 +113,7 @@ describe('contradictedClaim', () => {
   const ran = (result: Check['result']): Check => ({
     name: 'bun test',
     kind: 'tests',
+    folder: null,
     result,
     summary: result === 'fail' ? '2 fail' : '',
     ranAt: 10,
@@ -99,6 +132,13 @@ describe('contradictedClaim', () => {
       'the files changed after bun test last ran',
     )
     expect(contradictedClaim('All tests pass.', checks('pass', 5, 5))).toBe(null)
+  })
+
+  test('a check script that ran after the last edit answers for every kind', () => {
+    const suite: Check = { name: 'check.sh', kind: 'all', folder: null, result: 'pass', summary: '', ranAt: 30 }
+    expect(
+      contradictedClaim('All tests pass.', { results: [ran('pass'), suite], changedAt: 20, codeChangedAt: 20 }),
+    ).toBe(null)
   })
 
   test('a Markdown edit after the run leaves tests current', () => {

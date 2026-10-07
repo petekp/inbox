@@ -43,40 +43,140 @@ const CHECKS: { kind: CheckKind; pattern: RegExp; name: (m: RegExpMatchArray) =>
     pattern: /(?:^|\s)(?:\S*\/)?[\w.-]*(?:validate|doctor)[\w.-]*\.sh\b/,
     name: m => m[0].trim().replace(/^.*\//, ''),
   },
+  { kind: 'all', pattern: /(?:^|\s)(?:\S*\/)?checks?\.sh\b/, name: m => m[0].trim().replace(/^.*\//, '') },
 ]
 
 /**
  * The pieces of a shell command that run one after another or in a pipe, with
- * heredoc bodies and quoted strings blanked, so `git commit -m "fix tsc"`
- * runs no tsc.
+ * heredoc bodies removed. Quoted strings are blanked, so `git commit -m "fix tsc"`
+ * runs no tsc, unless `keepQuotes`, for reading the paths a command names.
  */
-function segments(command: string): string[] {
+function segments(command: string, keepQuotes = false): string[] {
+  const quoted: string[] = []
+
   return command
     .replace(/<<-?\s*(["']?)(\w+)\1[^\n]*\n[\s\S]*?\n\2\b/g, ' ')
-    .replace(/(["'])(?:\\.|(?!\1)[\s\S])*\1/g, '""')
+    .replace(/(["'])(?:\\.|(?!\1)[\s\S])*\1/g, q => `\0${quoted.push(q) - 1}\0`)
     .split(/&&|\|\||;|\n|\|/)
-    .map(s => s.trim())
+    .map(s => s.replace(/\0(\d+)\0/g, (_, i: string) => (keepQuotes ? (quoted[Number(i)] ?? '') : '""')).trim())
     .filter(Boolean)
 }
 
 /** Commands that only show text or move around; a check named in one of them is not run. */
 const NOT_A_CHECK = /^(?:echo|printf|cat|grep|rg|tail|head|less|ls|cd|git|gh|brew|man|which|type|open)\b/
 
+/** The check one segment runs, and the word that starts it, such as `npm` or `tsc`. */
+function checkIn(segment: string): { call: CheckCall; runner: string } | null {
+  if (NOT_A_CHECK.test(segment)) return null
+  for (const c of CHECKS) {
+    const m = segment.match(c.pattern)
+    if (m) return { call: { name: c.name(m), kind: c.kind }, runner: m[0].trim().split(/\s+/)[0] ?? '' }
+  }
+
+  return null
+}
+
 /** The checks a command runs, in order, at most one per segment. */
 export function checksIn(command: string): CheckCall[] {
   const found: CheckCall[] = []
   for (const segment of segments(command)) {
-    if (NOT_A_CHECK.test(segment)) continue
-    for (const c of CHECKS) {
-      const m = segment.match(c.pattern)
-      if (!m) continue
-      const name = c.name(m)
-      if (!found.some(f => f.name === name)) found.push({ name, kind: c.kind })
-      break
-    }
+    const call = checkIn(segment)?.call
+    if (call && !found.some(f => f.name === call.name)) found.push(call)
   }
 
   return found
+}
+
+/** Options that name the folder a check runs in, as in `npm --prefix app test`. */
+const FOLDER_OPTIONS = new Set(['--prefix', '-C', '--cwd', '--dir', '--directory', '--package-path', '--manifest-path'])
+/** tsc's `-p` names its project; other runners use `-p` for a package or plugin. */
+const TSC_FOLDER_OPTIONS = new Set([...FOLDER_OPTIONS, '-p', '--project'])
+
+/** A segment's words, with their quotes removed. */
+function wordsOf(segment: string): string[] {
+  return (segment.match(/(?:"(?:\\.|[^"\\])*"|'[^']*'|[^\s"']+)+/g) ?? []).map(w =>
+    w.replace(/"((?:\\.|[^"\\])*)"|'([^']*)'/g, (_, double?: string, single?: string) => double ?? single ?? ''),
+  )
+}
+
+/** `path` resolved against the folder `from`, with `.` and `..` worked out. */
+function resolvePath(from: string, path: string): string {
+  const parts: string[] = []
+  for (const part of `${path.startsWith('/') ? '' : from}/${path}`.split('/')) {
+    if (part === '..') parts.pop()
+    else if (part && part !== '.') parts.push(part)
+  }
+
+  return `/${parts.join('/')}`
+}
+
+/**
+ * The folder each check in a command ran in, absolute: where the shell
+ * started, moved by each `cd`, or the folder the check names, as in
+ * `claude plugin test <folder>` or `npm --prefix <folder> test`. Null when the
+ * command hides it, as with `cd -` or a variable the command did not set, or
+ * when the check ran in more than one folder.
+ */
+export function checkFolders(command: string, cwd: string, home: string): Map<string, string | null> {
+  const folders = new Map<string, string | null>()
+  const vars = new Map([['HOME', home]])
+  let dir: string | null = resolvePath('/', cwd)
+  const expand = (word: string): string | null => {
+    if (/\$\(|`/.test(word)) return null
+    let isKnown = true
+    const out = word
+      .replace(/^~(?=\/|$)/, home)
+      .replace(/\$\{?(\w+)\}?/g, (_, name: string) => vars.get(name) ?? ((isKnown = false), ''))
+
+    return isKnown ? out : null
+  }
+  const at = (path: string): string | null => {
+    const p = expand(path)
+
+    return p === null || dir === null ? null : resolvePath(dir, p)
+  }
+
+  const blank = segments(command)
+  segments(command, true).forEach((segment, i) => {
+    const words = wordsOf(segment.replace(/^[({]\s*/, ''))
+    const [first = '', ...rest] = words
+    const assigned = first === 'export' ? rest : words
+    const assignment = assigned.length === 1 ? assigned[0]?.match(/^(\w+)=(.*)$/s) : null
+    if (assignment) {
+      const [, name = '', value = ''] = assignment
+      const expanded = expand(value)
+      if (expanded === null) vars.delete(name)
+      else vars.set(name, expanded)
+    } else if (first === 'cd' || first === 'pushd') {
+      const target = rest.find(w => w === '-' || !w.startsWith('-'))
+      dir = target === '-' ? null : target === undefined ? home : at(target)
+    } else if (first === 'popd') {
+      dir = null
+    } else {
+      const found = checkIn(blank[i] ?? '')
+      if (!found) return
+      const { call, runner } = found
+      const after = words.slice(words.findIndex(w => w === runner || w.endsWith(`/${runner}`)) + 1)
+      const options = runner === 'tsc' ? TSC_FOLDER_OPTIONS : FOLDER_OPTIONS
+      // `claude plugin test <folder>`: the first word after `plugin test` that is not an option or a redirect.
+      let named = runner === 'claude' ? after.slice(2).find(w => !/^-|^\d*[<>&]/.test(w)) : undefined
+      after.forEach((w, j) => {
+        const [option = '', value] = w.startsWith('--') && w.includes('=') ? w.split(/=(.*)/s) : [w, after[j + 1]]
+        if (options.has(option) && value !== undefined) named = value
+      })
+      // A project file, such as tsconfig.build.json or Cargo.toml, names its folder.
+      if (named && /\.(?:json|toml)$/.test(named)) named = named.replace(/\/?[^/]*$/, '') || '.'
+      const folder = named === undefined ? dir : at(named)
+      folders.set(call.name, folders.has(call.name) && folders.get(call.name) !== folder ? null : folder)
+    }
+  })
+
+  return folders
+}
+
+/** Whether a folder is a temporary one, where a throwaway copy of a project lives. */
+export function isTemporary(folder: string): boolean {
+  return /^(?:\/private)?\/(?:tmp|var\/tmp|var\/folders)(?:\/|$)/.test(folder)
 }
 
 const FAIL_COUNT = /\b([1-9]\d*)\s+(?:fail(?:ed|ing|ures?|s)?|errors?|problems?)\b|^[ℹ#]\s*fail\s+[1-9]\d*\s*$/im
@@ -159,7 +259,7 @@ export function readResults(
   return calls.map(call => {
     const runs = segments(command).filter(s => checksIn(s).some(c => c.name === call.name)).length
     if (runs > 1) return { call, result: 'unknown', summary: `ran ${runs} times in one command` }
-    const words = call.name.toLowerCase().split(/\s+/)
+    const words = call.name.toLowerCase().replace(/\.sh$/, '').split(/\s+/)
     const labeled = exits.find(
       x =>
         x.label !== '' && words.some(w => x.label.includes(w) || (call.kind === 'tests' && x.label.includes('test'))),
@@ -184,14 +284,14 @@ export function readResults(
   })
 }
 
-/** Keeps each check's latest result. */
+/** Keeps each check's latest result in each folder. */
 export function recordCheck(results: Check[], check: Check): Check[] {
-  return [...results.filter(c => c.name !== check.name), check]
+  return [...results.filter(c => c.name !== check.name || c.folder !== check.folder), check]
 }
 
 /** Whether a file the check depends on changed after it ran. A Markdown edit leaves tests, types and builds current. */
 export function isStale(check: Check, checks: Checks): boolean {
-  const changedAt = check.kind === 'lint' || check.kind === 'validate' ? checks.changedAt : checks.codeChangedAt
+  const changedAt = ['lint', 'validate', 'all'].includes(check.kind) ? checks.changedAt : checks.codeChangedAt
 
   return changedAt > check.ranAt
 }
@@ -206,9 +306,14 @@ export function checkDetail(check: Check, checks: Checks): string {
   return `${check.summary ? `, ${check.summary}` : ''}${isStale(check, checks) ? ', before the last edit' : ''}`
 }
 
+/** "npm test", or "npm test in app" for one that ran outside the session's folder. */
+export function checkName(check: Check): string {
+  return check.folder ? `${check.name} in ${check.folder.replace(/^.*\//, '')}` : check.name
+}
+
 /** "✓ npm test, 24 pass, before the last edit". */
 export function checkLine(check: Check, checks: Checks): string {
-  return `${checkMark(check)} ${check.name}${checkDetail(check, checks)}`
+  return `${checkMark(check)} ${checkName(check)}${checkDetail(check, checks)}`
 }
 
 /** The reply's prose, as its sentences, without code blocks and inline code. */
@@ -250,24 +355,26 @@ const HEDGE = /\b(?:not|fail\w*|if|should|would|will|until|unless|once|might|may
 export type Contradiction = { claim: string; problem: string }
 
 /**
- * The first success the reply claims that the latest check of that kind
- * contradicts: it failed, or the files changed after it ran. A claim with no
- * check of its kind is left alone, since the check may have run in a way the
- * mod cannot see.
+ * The first success the reply claims that the latest check of that kind, or
+ * of a script that runs them all, contradicts: it failed, or the files
+ * changed after it ran. A claim with no check of its kind is left alone,
+ * since the check may have run in a way the mod cannot see.
  */
 export function contradictedClaim(reply: string, checks: Checks): Contradiction | null {
   for (const s of sentences(reply)) {
     if (HEDGE.test(s)) continue
     for (const { kind, pattern } of CLAIMS) {
       if (!pattern.test(s)) continue
-      const latest = checks.results.filter(c => c.kind === kind).sort((a, b) => b.ranAt - a.ranAt)[0]
+      const latest = checks.results
+        .filter(c => c.kind === kind || c.kind === 'all')
+        .sort((a, b) => b.ranAt - a.ranAt)[0]
       if (!latest) continue
       if (latest.result === 'fail')
         return {
           claim: s,
-          problem: `${latest.name} failed when it last ran${latest.summary ? ` (${latest.summary})` : ''}`,
+          problem: `${checkName(latest)} failed when it last ran${latest.summary ? ` (${latest.summary})` : ''}`,
         }
-      if (isStale(latest, checks)) return { claim: s, problem: `the files changed after ${latest.name} last ran` }
+      if (isStale(latest, checks)) return { claim: s, problem: `the files changed after ${checkName(latest)} last ran` }
     }
   }
 

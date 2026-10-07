@@ -71,6 +71,7 @@ function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   mock.store(on)
   on('session.id', () => ({ value: 'session-1' }))
   on('session.root', () => ({ value: '/tmp/project' }))
+  on('session.cwd', () => ({ value: '/tmp/project' }))
   // Outside Herdr unless a test passes HERDR_PANE_ID.
   on('env.get', ($, e) => ({ value: vars[e.name] }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))

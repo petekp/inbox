@@ -25,11 +25,14 @@ import type {
 } from '../types'
 import {
   checkDetail,
+  checkFolders,
   checkLine,
   checkMark,
+  checkName,
   checksIn,
   claimMessage,
   contradictedClaim,
+  isTemporary,
   readResults,
   recordCheck,
 } from './checks'
@@ -1290,11 +1293,19 @@ function refreshTree($: EngineInterface): Promise<void> {
   return refreshing
 }
 
-/** Records how each check a Bash command ran ended. */
-async function recordChecks($: EngineInterface, command: string, output: string, isError: boolean) {
+/** Records how each check a Bash command ran ended, and in which folder; `cwd` is where the shell started. */
+async function recordChecks($: EngineInterface, command: string, cwd: string, output: string, isError: boolean) {
   const calls = checksIn(command)
   if (calls.length === 0) return
-  const results = readResults(command, calls, output, isError)
+  const folders = checkFolders(command, cwd, (await $.env.get('HOME')) ?? '')
+  const results = readResults(command, calls, output, isError).flatMap(r => {
+    const folder = folders.get(r.call.name) ?? null
+    // A check whose folder the command hides, or one in a throwaway copy, says nothing about this session's work.
+    if (folder === null || (isTemporary(folder) && !isTemporary(root))) return []
+
+    return [{ ...r, folder: folder === root ? null : folder }]
+  })
+  if (results.length === 0) return
   // Edits made before the check count as before it.
   await refreshTree($)
   const ranAt = await $.clock.now()
@@ -1302,7 +1313,14 @@ async function recordChecks($: EngineInterface, command: string, output: string,
     ...c,
     results: results.reduce(
       (all, r) =>
-        recordCheck(all, { name: r.call.name, kind: r.call.kind, result: r.result, summary: r.summary, ranAt }),
+        recordCheck(all, {
+          name: r.call.name,
+          kind: r.call.kind,
+          folder: r.folder,
+          result: r.result,
+          summary: r.summary,
+          ranAt,
+        }),
       c.results,
     ),
   }))
@@ -1473,11 +1491,13 @@ export const register: Register = on => {
     if (e.agentId) return run()
     if (e.tool === 'Bash') {
       noteActivity(`${e.run_in_background ? 'started in background' : 'ran'}: ${e.command.slice(0, 140)}`)
+      // The command's own `cd` moves the session's folder, so read where it starts first.
+      const cwd = await $.session.cwd()
       const ran = await run()
       const output = resultFields(ran)
       // A command that was cut off or moved to the background has not finished its checks.
       if (!e.run_in_background && !output.interrupted && !output.backgroundTaskId && typeof ran.deny !== 'string') {
-        await recordChecks($, e.command, ran.text ?? '', ran.isError === true)
+        await recordChecks($, e.command, cwd, ran.text ?? '', ran.isError === true)
       }
       if (activity.length < 40)
         for (const url of new Set(ran.text?.match(LOCAL_URL) ?? [])) noteActivity(`URL in output: ${url}`)
@@ -2361,7 +2381,7 @@ export const register: Register = on => {
                   {checkMark(c)}
                 </Text>,
                 <Text wrap="wrap">
-                  {c.name}
+                  {checkName(c)}
                   <Text dimColor>{checkDetail(c, checks)}</Text>
                 </Text>,
                 { age: age(c.ranAt) },

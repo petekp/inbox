@@ -114,16 +114,24 @@ export function demoView(now: number): View {
     stop: null,
     checks: {
       results: [
-        { name: 'eslint', kind: 'lint', result: 'pass', summary: '', ranAt: now - 30 * MIN },
-        { name: 'npm test', kind: 'tests', result: 'pass', summary: '48 pass, 0 fail', ranAt: now - 6 * MIN },
+        { name: 'eslint', kind: 'lint', folder: null, result: 'pass', summary: '', ranAt: now - 30 * MIN },
+        {
+          name: 'npm test',
+          kind: 'tests',
+          folder: null,
+          result: 'pass',
+          summary: '48 pass, 0 fail',
+          ranAt: now - 6 * MIN,
+        },
         {
           name: 'tsc',
           kind: 'types',
+          folder: null,
           result: 'fail',
           summary: 'src/export.ts(12,5): error TS2322',
           ranAt: now - 5 * MIN,
         },
-        { name: 'npm build', kind: 'build', result: 'unknown', summary: '', ranAt: now - 4 * MIN },
+        { name: 'npm build', kind: 'build', folder: null, result: 'unknown', summary: '', ranAt: now - 4 * MIN },
       ],
       changedAt: now - 10 * MIN,
       codeChangedAt: now - 10 * MIN,

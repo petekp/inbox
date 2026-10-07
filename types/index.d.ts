@@ -119,12 +119,15 @@ export type Dialog = {
   key: string
 }
 
-export type CheckKind = 'tests' | 'types' | 'lint' | 'build' | 'validate'
+/** `all`: a script that runs the project's checks together, such as `check.sh`. */
+export type CheckKind = 'tests' | 'types' | 'lint' | 'build' | 'validate' | 'all'
 
-/** The latest result of one check command Claude ran, such as `npm test`. */
+/** The latest result of one check command Claude ran, such as `npm test`, in one folder. */
 export type Check = {
   name: string
   kind: CheckKind
+  /** The folder it ran in, absolute; null for the session's own folder. */
+  folder: string | null
   result: 'pass' | 'fail' | 'unknown'
   /** The output's summary line, such as "24 pass, 1 fail". */
   summary: string
