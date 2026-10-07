@@ -150,7 +150,10 @@ running session.
   It looks up which PR the current branch has only while the tab is open.
   Each PR shows:
   - whether it can merge, or what blocks it: draft, conflicts, failing
-    checks, requested changes, open threads, missing approval, running checks
+    checks, requested changes, open threads, missing approval, running
+    checks. This status is in GitHub's colors: green when the PR can
+    merge, purple once merged, red once closed, gray for a draft, and
+    amber when something else blocks it.
   - each failing check as a row. `a: Fix` asks Claude to find the cause in
     the logs and fix it, and `o: Open log` opens the check's page.
   - each unresolved review thread whose last comment is someone else's, so

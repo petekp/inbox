@@ -151,9 +151,13 @@ function threadsWaiting(count: number): string {
   return `${count} ${count === 1 ? 'thread' : 'threads'} waiting on you`
 }
 
+/** Where a PR stands: ready to merge, blocked, a draft, merged or closed. */
+export type PrStatus = 'ready' | 'blocked' | 'draft' | 'merged' | 'closed'
+
 /** What stands between the PR and merging, or that it is ready. */
-export function readiness(pr: PrView): { isReady: boolean; text: string } {
-  if (pr.state !== 'OPEN') return { isReady: false, text: pr.state === 'MERGED' ? 'Merged' : 'Closed' }
+export function readiness(pr: PrView): { status: PrStatus; text: string } {
+  if (pr.state === 'MERGED') return { status: 'merged', text: 'Merged' }
+  if (pr.state !== 'OPEN') return { status: 'closed', text: 'Closed' }
   const { fail: failing, pending } = checkCounts(pr)
   const open = waitingThreads(pr).length
   const blockers = [
@@ -168,10 +172,10 @@ export function readiness(pr: PrView): { isReady: boolean; text: string } {
 
   return blockers.length === 0
     ? {
-        isReady: true,
+        status: 'ready',
         text: `Ready to merge${pr.reviewDecision === 'APPROVED' ? ': approved' : ''}, checks pass, no threads waiting on you`,
       }
-    : { isReady: false, text: `Blocked: ${blockers.join(', ')}` }
+    : { status: pr.isDraft ? 'draft' : 'blocked', text: `Blocked: ${blockers.join(', ')}` }
 }
 
 /** The band's one-line PR alert: the first open PR that needs the person, or null. */

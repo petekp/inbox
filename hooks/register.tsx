@@ -41,6 +41,7 @@ import { demoView } from './demo'
 import type { View } from './demo'
 import { candidates, changedPaths, readChanged, readLsTree, sameSnapshot } from './git'
 import type { Exchange, Press, Update } from './ledger'
+import type { PrStatus } from './prs'
 import {
   THREADS_QUERY,
   VIEW_FIELDS,
@@ -1369,6 +1370,18 @@ function isLapsed(d: Decided): boolean {
 /** The outcome as the pane shows it: "Dismissed", "Yes, renamed". */
 function outcomeText(d: Decided): string {
   return capitalized(d.outcome)
+}
+
+/**
+ * A PR's status line in GitHub's colors: green ready, purple merged, red closed
+ * and a gray draft. Blocked is amber, the color of what waits on someone.
+ */
+const PR_STATUS_TONES: Record<PrStatus, Tone | null> = {
+  ready: 'done',
+  blocked: 'waiting',
+  draft: null,
+  merged: 'findings', // the pane's purple
+  closed: 'error',
 }
 
 /** A finding's kind as the Findings tab draws it: a mark before its name, both in the kind's tone. */
@@ -2898,13 +2911,14 @@ export const register: Register = on => {
           )
 
     const prBlock = ({ pr, rows: prRows }: { pr: PrView; rows: Row[] }) => {
-      const ready = readiness(pr)
+      const { status, text: statusText } = readiness(pr)
+      const tone = PR_STATUS_TONES[status]
       const counts = checkCounts(pr)
       const waitingOn = waitingThreads(pr)
       // The viewer replied last. Their own notes with no reply wait on no one, so they don't count.
       const answered = pr.threads.filter(t => !t.isWaiting && t.reply !== null).length
       // The headline already names a draft and failing or running checks; this line adds only what it leaves out.
-      const checksPass = pr.state === 'OPEN' && !ready.isReady && counts.fail === 0 && counts.pending === 0
+      const checksPass = (status === 'blocked' || status === 'draft') && counts.fail === 0 && counts.pending === 0
       const facts = [
         checksPass && counts.pass > 0 ? `${counts.pass} ${counts.pass === 1 ? 'check passes' : 'checks pass'}` : null,
         answered > 0 ? `${answered} open ${answered === 1 ? 'thread' : 'threads'} you answered` : null,
@@ -2922,10 +2936,10 @@ export const register: Register = on => {
         ...titleGap(prRows.length > 0),
         treeRow(
           prRows.length > 0 ? 'pass' : null,
-          <Text color={pal.mark[ready.isReady ? 'done' : 'waiting']}>{ready.isReady ? '✓' : '◇'}</Text>,
+          <Text color={tone ? pal.mark[tone] : pal.muted}>{status === 'ready' ? '✓' : '◇'}</Text>,
           <Box flexDirection="column">
-            <Text wrap="wrap" color={pal.tone[ready.isReady ? 'done' : 'waiting']}>
-              {ready.text}
+            <Text wrap="wrap" color={tone ? pal.tone[tone] : pal.muted}>
+              {statusText}
             </Text>
             {facts.length > 0 ? (
               <Text color={pal.muted} wrap="wrap">
