@@ -59,7 +59,7 @@ running session.
   how many items wait on you. It collapses when you send a message.
 - **Last session in this folder.** A new session in a folder you worked in
   during the past week shows the previous session's card. "Continue from it"
-  adds that card to your first message. "Hide" dismisses it.
+  adds that card to your first message. "Dismiss" removes the card.
 - **/inbox** opens everything in a pane, with three tabs: Needs you, Findings
   and PRs. Each tab is a list with one selected row. The selected row shows
   its full text and lists its actions. It is shaded blue, or marked by a bar

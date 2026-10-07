@@ -1234,7 +1234,7 @@ async function openUrl($: EngineInterface, url: string) {
   if (r.exitCode !== 0) $.ui.toast(`Could not open ${url}`)
 }
 
-async function unlinkPr($: EngineInterface, ref: string) {
+async function dismissPr($: EngineInterface, ref: string) {
   await commitLedger($, l => ({ ...l, prs: l.prs.filter(r => r !== ref) }))
   await update($, PR_VIEWS, v => {
     const views = { ...v.views }
@@ -1999,7 +1999,7 @@ export const register: Register = on => {
                 onPress={() => update($, PREVIOUS, p => (p ? { ...p, isBroughtIn: true } : p))}
               />
             )}
-            <Button key="hide-prev" label="Hide" onPress={() => update($, PREVIOUS, () => null)} />
+            <Button key="dismiss-prev" label="Dismiss" onPress={() => update($, PREVIOUS, () => null)} />
           </Box>
         </Box>
       )
@@ -2961,7 +2961,7 @@ export const register: Register = on => {
               ) : null}
               <Button key={`open-${pr.ref}`} label="Open PR" onPress={() => void openUrl($, pr.url)} />
               {pr.ref !== prState.branchRef ? (
-                <Button key={`unlink-${pr.ref}`} label="Remove" onPress={() => void unlinkPr($, pr.ref)} />
+                <Button key={`dismiss-pr-${pr.ref}`} label="Dismiss" onPress={() => void dismissPr($, pr.ref)} />
               ) : null}
             </Box>
           </Box>,
