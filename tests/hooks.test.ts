@@ -287,10 +287,12 @@ test('a reload that cuts off the end-of-turn hook catches up on load', async ($,
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'add a greeting cli', turnId: 't1' })
   await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
-  // The next turn ends in a reload that runs no turn.complete hook, as when the turn edited the mod.
-  await $.prompt.submit({ text: 'write it', wait: false, origin: { kind: 'composer' } })
+  // A turn with no prompt, as a task notification starts, ends in a reload that runs
+  // no turn.complete hook, as when the turn edited the mod.
+  await $.turn.start({ text: '', turnId: 't2' })
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.settle()
 

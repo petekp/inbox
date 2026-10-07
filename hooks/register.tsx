@@ -90,7 +90,8 @@ const PRESENCE = atom(
     isAway: false,
     isUpdating: false,
     ledgerState: 'current',
-    appliedTurn: 0,
+    turnsStarted: 0,
+    turnsApplied: 0,
     minute: 0,
   } as Presence,
 )
@@ -528,21 +529,19 @@ async function catchUp($: EngineInterface): Promise<LedgerState> {
  * Queues the next update: a catch-up while the ledger may have missed a turn,
  * else this exchange alone.
  */
-function queueUpdate($: EngineInterface, ex: Exchange | null) {
+function queueUpdate($: EngineInterface, next: { ex: Exchange; turnsStarted: number } | null) {
   queue = queue.then(async () => {
-    const [{ ledgerState }, { turn }] = await Promise.all([
-      update($, PRESENCE, p => ({ ...p, isUpdating: true })),
-      read($, LEDGER),
-    ])
-    const state = await (ledgerState !== 'current' || ex === null ? catchUp($) : runUpdate($, ex)).catch(
+    const { ledgerState, turnsStarted } = await update($, PRESENCE, p => ({ ...p, isUpdating: true }))
+    const state = await (ledgerState !== 'current' || next === null ? catchUp($) : runUpdate($, next.ex)).catch(
       (): LedgerState => 'failed',
     )
-    const applied = ex?.turn ?? turn
+    // An exchange covers the turns started by its end; a catch-up, those started before it ran.
+    const applied = next?.turnsStarted ?? turnsStarted
     await update($, PRESENCE, p => ({
       ...p,
       ledgerState: state,
       isUpdating: false,
-      appliedTurn: state === 'current' ? Math.max(p.appliedTurn, applied) : p.appliedTurn,
+      turnsApplied: state === 'current' ? Math.max(p.turnsApplied, applied) : p.turnsApplied,
     }))
   })
   // A rejected link would skip every later update, so the chain swallows it.
@@ -762,8 +761,9 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
     update($, PREVIOUS, p => p && { ...p, ledger: upgradeLedger(p.ledger) }),
     update($, TAB, t => ((t as string) === 'notes' ? 'findings' : t)),
     update($, SELECTION, s => ({ ...NO_SELECTION, ...s })),
-    // Presence from before appliedTurn existed has none, so that load catches up once.
-    update($, PRESENCE, p => ({ ...p, appliedTurn: p.appliedTurn ?? 0 })),
+    // Presence from before the turn counts existed cannot say whether the last
+    // turn's update landed, so that load catches up once.
+    update($, PRESENCE, p => ({ ...p, turnsStarted: p.turnsStarted ?? 1, turnsApplied: p.turnsApplied ?? 0 })),
   ])
 
   return ledger
@@ -1402,7 +1402,7 @@ export const register: Register = on => {
         // A resumed session: bring its card back and show it as a return.
         loaded = upgradeLedger(saved.ledger)
         await update($, LEDGER, () => loaded)
-        await update($, PRESENCE, p => ({ ...p, lastActiveAt: saved.savedAt, isAway: true, appliedTurn: loaded.turn }))
+        await update($, PRESENCE, p => ({ ...p, lastActiveAt: saved.savedAt, isAway: true }))
       } else {
         const prev = (await $.store.get(`p:${root}`)) as Omit<Previous, 'isBroughtIn'> | undefined
         if (prev?.ledger.card && now - prev.savedAt < PREVIOUS_MAX_AGE_MS) {
@@ -1416,15 +1416,15 @@ export const register: Register = on => {
     $.clock.every(PR_POLL_MS, () => {
       void pollPrs($)
     })
-    // Catch up now after a failed update; after a prompt whose reply never reached
+    // Catch up now after a failed update; after a turn whose reply never reached
     // the ledger, as when a reload cut off the end-of-turn hook before it queued the
     // update; or when the ledger is empty in a conversation that already has turns:
     // the mod loaded mid-session, or its saved state was lost.
     const isEmpty = !loaded.card && loaded.items.length === 0
-    const { appliedTurn } = await read($, PRESENCE)
+    const { turnsStarted, turnsApplied } = await read($, PRESENCE)
     if (
       presence.ledgerState !== 'current' ||
-      loaded.turn > appliedTurn ||
+      turnsStarted > turnsApplied ||
       (isEmpty && (await $.session.turns().catch(() => 0)) > 0)
     )
       queueUpdate($, null)
@@ -1487,8 +1487,10 @@ export const register: Register = on => {
 
   on('turn.start', async ($, e, next) => {
     isTurnRunning = true
-    // A turn that starts means the session runs again.
-    if (isOn) await setStop($, null)
+    // A turn that starts means the session runs again. Counted here, before the
+    // turn can end, since a reload can cut off its end-of-turn hook.
+    if (isOn)
+      await Promise.all([setStop($, null), update($, PRESENCE, p => ({ ...p, turnsStarted: p.turnsStarted + 1 }))])
 
     return next(e)
   })
@@ -1624,8 +1626,8 @@ export const register: Register = on => {
     person = null
     trigger = null
     activity = []
-    await update($, PRESENCE, p => ({ ...p, lastActiveAt: now }))
-    queueUpdate($, ex)
+    const { turnsStarted } = await update($, PRESENCE, p => ({ ...p, lastActiveAt: now }))
+    queueUpdate($, { ex, turnsStarted })
     await linkPrs($, prRefs(e.answer))
 
     return r

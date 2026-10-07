@@ -175,10 +175,11 @@ export type Presence = {
    */
   ledgerState: 'current' | 'behind' | 'failed'
   /**
-   * The ledger's prompt count (`Ledger.turn`) as of the last update that
-   * landed. A load that finds the ledger past it catches up.
+   * The turns started in this process, and how many of them reached the
+   * ledger. A load that finds more started than applied catches up.
    */
-  appliedTurn: number
+  turnsStarted: number
+  turnsApplied: number
   /** The minute of the last clock tick, so the "last active" text redraws. */
   minute: number
 }
