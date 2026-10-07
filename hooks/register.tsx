@@ -272,7 +272,8 @@ const DARK_PALETTE: Palette = {
   line: '#505050',
   divider: '#444444',
   tone: DARK_TONES,
-  mark: DARK_TONES,
+  // A marker needs only 3:1, so a failing check's ✗ takes Claude Code's own red, which text here could not.
+  mark: { ...DARK_TONES, error: '#ff6b80' },
 }
 const LIGHT_PALETTE: Palette = {
   card: '#e6e6e6',
@@ -318,7 +319,12 @@ const LIGHT_ANSI_PALETTE: Palette = {
 }
 const PALETTES: Record<string, Palette> = {
   dark: DARK_PALETTE,
-  'dark-daltonized': { ...DARK_PALETTE, key: '#99ccff', tone: DARK_DALTONIZED_TONES, mark: DARK_DALTONIZED_TONES },
+  'dark-daltonized': {
+    ...DARK_PALETTE,
+    key: '#99ccff',
+    tone: DARK_DALTONIZED_TONES,
+    mark: { ...DARK_DALTONIZED_TONES, error: '#ff6666' },
+  },
   light: LIGHT_PALETTE,
   'light-daltonized': {
     ...LIGHT_PALETTE,
@@ -2110,6 +2116,8 @@ export const register: Register = on => {
     type Row = {
       id: string
       handle: string
+      /** A status color for a marker handle, such as a failing check's ✗. A Button takes no color, so this handle is Text and only the row's text selects it. */
+      handleTone?: Tone
       meta?: JSX.Element
       title: string
       /** Muted text on the selected title's line, such as an age. */
@@ -2199,6 +2207,7 @@ export const register: Register = on => {
     const checkRow = (pr: PrView, c: PrCheck): Row => ({
       id: `${pr.ref} check ${c.name}`,
       handle: '✗',
+      handleTone: 'error',
       meta: (
         <Text color={pal.tone.error} bold>
           Failing check
@@ -2222,6 +2231,7 @@ export const register: Register = on => {
       return {
         id,
         handle: '✗',
+        handleTone: 'error',
         title: checkName(c),
         titleAfter: ` · ${ago(now - c.ranAt)}`,
         line: { text: checkName(c), after: ` · ${ago(now - c.ranAt)}` },
@@ -2439,12 +2449,16 @@ export const register: Register = on => {
           <Box width={1} flexShrink={0} />
           {tree ? <Box width={3} flexShrink={0} /> : null}
           <Box width={tree ? 3 : 4} flexShrink={0} paddingLeft={tree ? 0 : 2} paddingY={isSelected ? 1 : 0}>
-            <Button
-              plain
-              key={`select-${row.id}`}
-              label={row.handle}
-              onPress={() => void select($, tab, row.id, index)}
-            />
+            {row.handleTone ? (
+              <Text color={pal.mark[row.handleTone]}>{row.handle}</Text>
+            ) : (
+              <Button
+                plain
+                key={`select-${row.id}`}
+                label={row.handle}
+                onPress={() => void select($, tab, row.id, index)}
+              />
+            )}
           </Box>
           {isSelected ? (
             <Box flexDirection="column" flexShrink={1} flexGrow={1} paddingRight={1} paddingY={1}>
