@@ -261,9 +261,8 @@ function counts(output: string): { pass: number; fail: number } | null {
   return pass === null || fail === null ? null : { pass, fail }
 }
 
-function summaryOf(output: string): string {
-  const both = counts(output)
-  if (both) return `${both.pass} pass, ${both.fail} fail`
+function summaryOf(output: string, tally: ReturnType<typeof counts>): string {
+  if (tally) return `${tally.pass} pass, ${tally.fail} fail`
   for (const p of SUMMARY) {
     const m = output.match(p)
     if (m) return m[0].trim().slice(0, 120)
@@ -289,7 +288,8 @@ export function readResults(
 ): { call: CheckCall; result: Check['result']; summary: string }[] {
   const exits = exitLines(output)
   const isFiltered = /\|\s*(tail|head|grep|rg|sed|awk|cut|wc|tee|less)\b/.test(command)
-  const summary = summaryOf(output)
+  const tally = counts(output)
+  const summary = summaryOf(output, tally)
   const calls = runs.map(r => r.call).filter((c, i, all) => all.findIndex(x => x.name === c.name) === i)
 
   return calls.map(call => {
@@ -312,7 +312,6 @@ export function readResults(
     if (calls.length === 1 && call.name === 'tsc') {
       if (TS_ERROR.test(output)) return { call, result: 'fail', summary }
     } else if (calls.length === 1) {
-      const tally = counts(output)
       if (tally) return { call, result: tally.fail > 0 ? 'fail' : 'pass', summary }
       if (FAIL_COUNT.test(output) || TS_ERROR.test(output) || FAIL_WORD.test(output))
         return { call, result: 'fail', summary }

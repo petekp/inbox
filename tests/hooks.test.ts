@@ -76,6 +76,7 @@ function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   on('env.get', ($, e) => ({ value: vars[e.name] }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('tool.register', ($, e) => ({ value: { tool: `mcp__inbox__${e.name}` } }))
+  on('ui.open', () => ({ value: { isPlaced: true as const } }))
   on('process.run', async ($, e) => {
     ran.push([...e.argv])
     await ghAnswers.find(a => a.match(e.argv))?.hold?.()
@@ -327,7 +328,6 @@ test('a finding Claude records shows in the Findings tab, and Address it sends i
 test('t opens a field for the person’s own words: an answer closes its question, a reply sends a finding back', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
-  on('ui.open', () => ({ value: { isPlaced: true as const } }))
   on('ui.focus', () => ({}))
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
@@ -643,7 +643,6 @@ test('a failed check whose folder is gone, such as a removed worktree, drops out
 test('/inbox demo shows sample entries in every tab, sends nothing, and goes back', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world(on, [])
-  on('ui.open', () => ({ value: { isPlaced: true as const } }))
   on('ui.toast', () => ({ value: undefined }))
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })

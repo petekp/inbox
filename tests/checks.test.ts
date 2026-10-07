@@ -118,6 +118,7 @@ describe('failureLines', () => {
 
 describe('readResults', () => {
   const runs = (command: string) => checkRuns(command, '/work/repo', '/home/me')
+  const result = (command: string, output: string) => readResults(command, runs(command), output, false)[0]?.result
   test('a check run twice in one command is unknown, since its output mixes both runs', () => {
     const command = 'claude plugin test . | grep pass; claude plugin test /tmp/copy | grep pass'
     expect(readResults(command, runs(command), ' 48 pass\n 0 fail\n 47 pass\n 1 fail\n', false)).toEqual([
@@ -133,11 +134,9 @@ describe('readResults', () => {
     ])
     // The runner's own line wins over another runner's line that also says "test".
     const both = 'python3 -m unittest > u.log; echo "unittest exit $?"; bun test | tail -4; echo "bun exit $?"'
-    expect(readResults(both, runs(both), 'unittest exit 1\nbun exit 0\n 7 pass\n 0 fail\n', false)[0]?.result).toBe(
-      'pass',
-    )
+    expect(result(both, 'unittest exit 1\nbun exit 0\n 7 pass\n 0 fail\n')).toBe('pass')
     const build = 'go build ./... > b.log 2>&1; echo "build exit=$?"'
-    expect(readResults(build, runs(build), 'build exit=0\n', false)[0]?.result).toBe('pass')
+    expect(result(build, 'build exit=0\n')).toBe('pass')
   })
 
   test('a lone check that ends the command is decided by its exit status; counts describe it', () => {
@@ -150,14 +149,14 @@ describe('readResults', () => {
 
   test('reads an exit status printed as exit=N or by a bare echo', () => {
     const command = 'npm test > /tmp/t.log 2>&1; echo "exit=$?"'
-    expect(readResults(command, runs(command), 'exit=1', false)[0]?.result).toBe('fail')
+    expect(result(command, 'exit=1')).toBe('fail')
     const bare = 'npm test > /tmp/t.log 2>&1; echo $?'
-    expect(readResults(bare, runs(bare), '1\n', false)[0]?.result).toBe('fail')
+    expect(result(bare, '1\n')).toBe('fail')
   })
 
   test('output sent to a file with no exit status shown is unknown', () => {
     const command = 'npm test > /tmp/t.log 2>&1; echo done'
-    expect(readResults(command, runs(command), 'done', false)[0]?.result).toBe('unknown')
+    expect(result(command, 'done')).toBe('unknown')
   })
 
   test('a filtered command without counts is unknown, since the exit status is the filter’s', () => {
@@ -166,7 +165,6 @@ describe('readResults', () => {
   })
 
   test('failure words another command printed do not fail a lone check', () => {
-    const result = (command: string, output: string) => readResults(command, runs(command), output, false)[0]?.result
     // The runner's own tally decides it.
     const node = 'node --test 2>&1 | grep "^ℹ"; node verify.mjs | grep FAIL'
     expect(result(node, 'ℹ pass 40\nℹ fail 0\nFAIL demo asset missing\n')).toBe('pass')

@@ -2135,6 +2135,7 @@ export const register: Register = on => {
     // Inline above the prompt, the pane takes its room from the conversation, so
     // it drops the section cards, the tab panels and the blank lines between parts.
     const isInline = e.props.placement === 'inline'
+    const blankLine = isInline ? 0 : 1
     const [
       { ledger, prViews: prState, stop, checks, settled, now },
       presence,
@@ -2225,7 +2226,7 @@ export const register: Register = on => {
       ),
       line: { text: finding.title, after: ` · ${ago(now - finding.at)}` },
       body: (
-        <Box flexDirection="column" rowGap={isInline ? 0 : 1}>
+        <Box flexDirection="column" rowGap={blankLine}>
           <Text wrap="wrap">{finding.detail}</Text>
           {finding.path ? (
             <Text wrap="wrap">
@@ -2293,7 +2294,7 @@ export const register: Register = on => {
         line: { text: checkName(c), after: ` · ${ago(now - c.ranAt)}` },
         // What failed, then where and how it ran, as a shell prompt would show it.
         body: (
-          <Box flexDirection="column" rowGap={isInline ? 0 : 1}>
+          <Box flexDirection="column" rowGap={blankLine}>
             {output.length > 0 ? (
               <Box flexDirection="column">
                 {output.map(line => (
@@ -2515,12 +2516,7 @@ export const register: Register = on => {
         >
           <Box width={1} flexShrink={0} />
           {tree ? <Box width={3} flexShrink={0} /> : null}
-          <Box
-            width={tree ? 3 : 4}
-            flexShrink={0}
-            paddingLeft={tree ? 0 : 2}
-            paddingY={isSelected && !isInline ? 1 : 0}
-          >
+          <Box width={tree ? 3 : 4} flexShrink={0} paddingLeft={tree ? 0 : 2} paddingY={isSelected ? blankLine : 0}>
             {row.handleTone ? (
               <Text color={pal.mark[row.handleTone]}>{row.handle}</Text>
             ) : (
@@ -2533,14 +2529,14 @@ export const register: Register = on => {
             )}
           </Box>
           {isSelected ? (
-            <Box flexDirection="column" flexShrink={1} flexGrow={1} paddingRight={1} paddingY={isInline ? 0 : 1}>
+            <Box flexDirection="column" flexShrink={1} flexGrow={1} paddingRight={1} paddingY={blankLine}>
               {row.meta}
               <Text wrap="wrap">
                 <Text bold>{row.title}</Text>
                 {row.titleAfter ? <Text color={pal.muted}>{row.titleAfter}</Text> : null}
               </Text>
-              {row.body ? <Box marginTop={isInline ? 0 : 1}>{row.body}</Box> : null}
-              <Box flexDirection="column" marginTop={isInline ? 0 : 1}>
+              {row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null}
+              <Box flexDirection="column" marginTop={blankLine}>
                 {keys.length === 0
                   ? keyRow(more)
                   : keysWidth([...keys, ...more]) <= e.props.bodyColumns - 3 - (tree ? 7 : 5)
@@ -2548,7 +2544,7 @@ export const register: Register = on => {
                     : [keyRow(keys), keyRow([], more)]}
               </Box>
               {Input && row.onType && typing === row.id ? (
-                <Box marginTop={isInline ? 0 : 1}>
+                <Box marginTop={blankLine}>
                   <Input
                     key={`type-${row.id}`}
                     placeholder={row.typeHint}
@@ -2619,9 +2615,7 @@ export const register: Register = on => {
         <Box flexDirection="row" columnGap={isInline ? 3 : 1}>
           {TABS.map(({ id, label }) => {
             const count = id === 'waiting' ? ledger.items.length + failedCheckRows.length : rows[id].length
-            const width = `${label}${count > 0 ? ` ${count}` : ''}`.length + 2
 
-            // Inline, a tab is its name on one line, the selected one bold and underlined.
             if (isInline)
               return (
                 <Box key={`tab-block-${id}`} flexDirection="row">
@@ -2640,6 +2634,8 @@ export const register: Register = on => {
                   ) : null}
                 </Box>
               )
+
+            const width = `${label}${count > 0 ? ` ${count}` : ''}`.length + 2
 
             // The selected tab is a raised panel three lines tall, with its name on
             // the middle line and a line of its color along the top edge.
@@ -2699,7 +2695,7 @@ export const register: Register = on => {
     )
     // The footer's list of keys, folded to one line until clicked.
     const footer = (
-      <Box flexDirection="column" paddingX={2} paddingY={isInline ? 0 : 1}>
+      <Box flexDirection="column" paddingX={2} paddingY={blankLine}>
         <Box flexDirection="row">
           <Button
             plain
@@ -2734,17 +2730,21 @@ export const register: Register = on => {
       </Box>
     )
     const section = (children: JSX.Element | JSX.Element[]) => (
-      <Box flexDirection="column" paddingY={isInline ? 0 : 1} backgroundColor={isInline ? undefined : pal.card}>
+      <Box flexDirection="column" paddingY={blankLine} backgroundColor={isInline ? undefined : pal.card}>
         {children}
       </Box>
     )
     // A blank line in the tree, but for its │: under a title, so the children
-    // do not crowd it, and between two-line entries, so they read apart.
-    const titleGap = (hasChildren = true) => (
-      <Box paddingLeft={1}>
-        <Text color={pal.line}>{hasChildren ? '│' : ' '}</Text>
-      </Box>
-    )
+    // do not crowd it, and between two-line entries, so they read apart. Inline
+    // it is left out, so callers spread what this returns.
+    const titleGap = (hasChildren = true) =>
+      isInline
+        ? []
+        : [
+            <Box paddingLeft={1}>
+              <Text color={pal.line}>{hasChildren ? '│' : ' '}</Text>
+            </Box>,
+          ]
     const waitingView = () => {
       // An item that just closed stays where its row was in its group, with a
       // check and its outcome, until it joins the group's closed items. It
@@ -2836,13 +2836,10 @@ export const register: Register = on => {
           g.kind,
           true,
         )
-        // Each closed item is two lines, so in the docked pane a blank line of the
-        // tree sets it and the fold row apart.
-        const tail = rest.flatMap((draw, n) =>
-          isInline ? [draw(childPos(top.length + n, count))] : [titleGap(), draw(childPos(top.length + n, count))],
-        )
+        // Each closed item is two lines, so a blank line of the tree sets it and the fold row apart.
+        const tail = rest.flatMap((draw, n) => [...titleGap(), draw(childPos(top.length + n, count))])
 
-        return section([groupTitle(g.title, g.rows.length), ...(isInline ? [] : [titleGap()]), ...open, ...tail])
+        return section([groupTitle(g.title, g.rows.length), ...titleGap(), ...open, ...tail])
       })
       // Checks still failing when Claude stopped come first, since they block the work. The group shows only with some.
       const failed =
@@ -2850,7 +2847,7 @@ export const register: Register = on => {
           ? [
               section([
                 groupTitle('Failing checks', failedCheckRows.length),
-                ...(isInline ? [] : [titleGap()]),
+                ...titleGap(),
                 ...divided(
                   failedCheckRows.map((row, n) => listRow(row, childPos(n, failedCheckRows.length))),
                   'checks',
@@ -2922,7 +2919,7 @@ export const register: Register = on => {
             <Text bold>{pr.title}</Text>
           </Text>
         </Box>,
-        ...(isInline ? [] : [titleGap(prRows.length > 0)]),
+        ...titleGap(prRows.length > 0),
         treeRow(
           prRows.length > 0 ? 'pass' : null,
           <Text color={pal.mark[ready.isReady ? 'done' : 'waiting']}>{ready.isReady ? '✓' : '◇'}</Text>,
@@ -3001,13 +2998,9 @@ export const register: Register = on => {
     // the tree. A pane takes a key only as a Button's hotkey, so the tab keys, j,
     // k and the selected row's keys are Buttons in a hidden Box.
     return (
-      <Box
-        flexDirection="column"
-        minHeight={e.props.placement === 'dock' ? e.props.scroll.bodyRows : undefined}
-        backgroundColor={pal.body}
-      >
+      <Box flexDirection="column" minHeight={isInline ? undefined : e.props.scroll.bodyRows} backgroundColor={pal.body}>
         {tabs}
-        <Box flexDirection="column" paddingX={1} paddingTop={isInline ? 0 : 1} flexGrow={1}>
+        <Box flexDirection="column" paddingX={1} paddingTop={blankLine} flexGrow={1}>
           {tab === 'findings' ? findingsView() : tab === 'prs' ? prsView() : waitingView()}
         </Box>
         {footer}
