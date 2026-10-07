@@ -167,6 +167,11 @@ export type Presence = {
    * update re-reads the whole conversation. Only `failed` shows in the pane.
    */
   ledgerState: 'current' | 'behind' | 'failed'
+  /**
+   * The ledger's prompt count (`Ledger.turn`) as of the last update that
+   * landed. A load that finds the ledger past it catches up.
+   */
+  appliedTurn: number
   /** The minute of the last clock tick, so the "last active" text redraws. */
   minute: number
 }

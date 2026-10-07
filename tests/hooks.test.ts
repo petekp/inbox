@@ -274,6 +274,30 @@ test('after a failed update, the next reply catches up over the whole conversati
   expect(await pane.find({ text: /README is stale/ })).toBeUndefined()
 })
 
+test('a reload that cuts off the end-of-turn hook catches up on load', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world(on, [])
+  on('model.fork', () => ({
+    value: {
+      isAnswered: true,
+      text: 'GOAL: Add a greeting CLI\nNOW: Waiting on the push\nNEW: decide | - | Push the branch to origin? | yes / no | yes',
+      usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    },
+  }))
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  // The next turn ends in a reload that runs no turn.complete hook, as when the turn edited the mod.
+  await $.prompt.submit({ text: 'write it', wait: false, origin: { kind: 'composer' } })
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+
+  const pane = await $.ui.mount(PANE)
+  expect(await pane.find({ text: /Push the branch to origin\?/ })).toBeDefined()
+})
+
 test('a finding Claude records shows in the Findings tab, and Address it sends it back', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world(on, [])

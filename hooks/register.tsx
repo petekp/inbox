@@ -92,6 +92,7 @@ const PRESENCE = atom(
     isAway: false,
     isUpdating: false,
     ledgerState: 'current',
+    appliedTurn: 0,
     minute: 0,
   } as Presence,
 )
@@ -530,11 +531,20 @@ async function catchUp($: EngineInterface): Promise<LedgerState> {
  */
 function queueUpdate($: EngineInterface, ex: Exchange | null) {
   queue = queue.then(async () => {
-    const { ledgerState } = await update($, PRESENCE, p => ({ ...p, isUpdating: true }))
+    const [{ ledgerState }, { turn }] = await Promise.all([
+      update($, PRESENCE, p => ({ ...p, isUpdating: true })),
+      read($, LEDGER),
+    ])
     const state = await (ledgerState !== 'current' || ex === null ? catchUp($) : runUpdate($, ex)).catch(
       (): LedgerState => 'failed',
     )
-    await update($, PRESENCE, p => ({ ...p, ledgerState: state, isUpdating: false }))
+    const applied = ex?.turn ?? turn
+    await update($, PRESENCE, p => ({
+      ...p,
+      ledgerState: state,
+      isUpdating: false,
+      appliedTurn: state === 'current' ? Math.max(p.appliedTurn, applied) : p.appliedTurn,
+    }))
   })
   // A rejected link would skip every later update, so the chain swallows it.
   queue = queue.catch(() => undefined)
@@ -753,6 +763,8 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
     update($, PREVIOUS, p => p && { ...p, ledger: upgradeLedger(p.ledger) }),
     update($, TAB, t => ((t as string) === 'notes' ? 'findings' : t)),
     update($, SELECTION, s => ({ ...NO_SELECTION, ...s })),
+    // Presence from before appliedTurn existed has none, so that load catches up once.
+    update($, PRESENCE, p => ({ ...p, appliedTurn: p.appliedTurn ?? 0 })),
   ])
 
   return ledger
@@ -1388,7 +1400,7 @@ export const register: Register = on => {
         // A resumed session: bring its card back and show it as a return.
         loaded = upgradeLedger(saved.ledger)
         await update($, LEDGER, () => loaded)
-        await update($, PRESENCE, p => ({ ...p, lastActiveAt: saved.savedAt, isAway: true }))
+        await update($, PRESENCE, p => ({ ...p, lastActiveAt: saved.savedAt, isAway: true, appliedTurn: loaded.turn }))
       } else {
         const prev = (await $.store.get(`p:${root}`)) as Omit<Previous, 'isBroughtIn'> | undefined
         if (prev?.ledger.card && now - prev.savedAt < PREVIOUS_MAX_AGE_MS) {
@@ -1402,10 +1414,17 @@ export const register: Register = on => {
     $.clock.every(PR_POLL_MS, () => {
       void pollPrs($)
     })
-    // Catch up now after a failed update, or when the ledger is empty in a
-    // conversation that already has turns: the mod loaded mid-session, or its saved state was lost.
+    // Catch up now after a failed update; after a prompt whose reply never reached
+    // the ledger, as when a reload cut off the end-of-turn hook before it queued the
+    // update; or when the ledger is empty in a conversation that already has turns:
+    // the mod loaded mid-session, or its saved state was lost.
     const isEmpty = !loaded.card && loaded.items.length === 0
-    if (presence.ledgerState !== 'current' || (isEmpty && (await $.session.turns().catch(() => 0)) > 0))
+    const { appliedTurn } = await read($, PRESENCE)
+    if (
+      presence.ledgerState !== 'current' ||
+      loaded.turn > appliedTurn ||
+      (isEmpty && (await $.session.turns().catch(() => 0)) > 0)
+    )
       queueUpdate($, null)
     void publishStatus($)
     // A resumed session's linked PRs; the branch's PR waits for the PRs tab.
