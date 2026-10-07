@@ -191,7 +191,7 @@ test('resumed into a conversation it cannot fork yet, it catches up from the tra
   on('session.messages', () => ({
     value: [
       said('user', 'Add a greeting CLI. Node or Python?'),
-      said('user', 'inbox: as of the last reply. Only the items listed here are open.'),
+      said('user', 'inbox: what waits on the user, as of your last reply. Anything not listed here is closed.'),
       said('assistant', 'The plan is written. 1. Node or Python? 2. Name the command greet?'),
     ],
   }))
@@ -286,7 +286,7 @@ test('a finding Claude records shows in the Findings tab, and Address it sends i
     detail: 'The fetch retry spins with no delay and can hammer the API.',
     path: 'src/api.ts',
   })
-  expect(r.result).toBe('Recorded. The user sees it in the Findings tab of /inbox.')
+  expect(r.result).toBe('Recorded as f1. The user sees it in the Findings tab of /inbox.')
 
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ text: /Retry loop never backs off/ })).toBeUndefined()

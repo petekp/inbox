@@ -308,7 +308,7 @@ function clip(text: string, max: number): string {
   return text.length <= max ? text : text.slice(0, max) + ' …[cut]'
 }
 
-/** The ledger as the model reads it: the card, the open items and the findings, with their ids. */
+/** The ledger as the model reads it: the card, the open items and findings with their ids, and recently settled items. */
 function ledgerBlocks(ledger: Ledger): string[] {
   const card = ledger.card
     ? [
@@ -320,9 +320,11 @@ function ledgerBlocks(ledger: Ledger): string[] {
     : ''
   const open = ledger.items.map(i => `${i.id} | ${i.kind} | ${i.label ?? '-'} | ${i.ask}`).join(NL)
   const findings = ledger.findings.map(f => `${f.id} | ${f.kind}: ${f.title}`).join(NL)
+  // An expired item was never answered, so the reply may ask it again.
   const decided = ledger.decided
+    .filter(d => d.outcome !== EXPIRED)
     .slice(-8)
-    .map(d => `${d.ask} → ${settled(d)}`)
+    .map(d => `${d.ask} → ${outcomeText(d)}`)
     .join(NL)
 
   return [
@@ -677,16 +679,22 @@ export function answerNote(ledger: Ledger, text: string): string | null {
  * Adds a finding Claude recorded. One whose title matches an open one is
  * skipped, so the same finding is not listed twice.
  */
-export function addFinding(ledger: Ledger, finding: Omit<Finding, 'id'>): { ledger: Ledger; isAdded: boolean } {
+export function addFinding(
+  ledger: Ledger,
+  finding: Omit<Finding, 'id'>,
+): { ledger: Ledger; id: string; isAdded: boolean } {
   const findings = ledger.findings
-  if (findings.some(f => sameAsk(f.title, finding.title))) return { ledger, isAdded: false }
+  const same = findings.find(f => sameAsk(f.title, finding.title))
+  if (same) return { ledger, id: same.id, isAdded: false }
+  const id = `f${ledger.nextId}`
 
   return {
     ledger: {
       ...ledger,
-      findings: [...findings, { ...finding, id: `f${ledger.nextId}` }].slice(-MAX_FINDINGS),
+      findings: [...findings, { ...finding, id }].slice(-MAX_FINDINGS),
       nextId: ledger.nextId + 1,
     },
+    id,
     isAdded: true,
   }
 }
@@ -705,7 +713,7 @@ function findingLine(finding: Finding, withId: boolean): string {
  * survive it. Ids go in only for this session's own ledger, since Claude
  * closes items by id; the previous session's items are not this one's.
  */
-export function carryText(ledger: Ledger, title: string, withIds = false): string | null {
+export function carryText(ledger: Ledger, title: string, isOwn = false): string | null {
   const findings = ledger.findings
   if (!ledger.card && ledger.items.length === 0 && findings.length === 0) return null
   const out = [title]
@@ -717,15 +725,15 @@ export function carryText(ledger: Ledger, title: string, withIds = false): strin
   }
   if (ledger.items.length > 0) {
     out.push('Waiting on the user:')
-    for (const item of ledger.items) out.push(itemLine(item, withIds))
+    for (const item of ledger.items) out.push(itemLine(item, isOwn))
   }
   if (findings.length > 0) {
-    out.push('Findings you recorded for the user, still open:')
-    for (const f of findings) out.push(findingLine(f, withIds))
+    out.push(isOwn ? 'Findings you recorded, still open:' : 'Findings that session recorded, still open:')
+    for (const f of findings) out.push(findingLine(f, isOwn))
   }
   if (ledger.decided.length > 0) {
-    out.push('Recently decided:')
-    for (const d of ledger.decided.slice(-6)) out.push(`- "${d.ask}" → ${d.outcome}`)
+    out.push('Recently closed:')
+    for (const d of ledger.decided.slice(-6)) out.push(`- "${d.ask}" → ${outcomeText(d)}`)
   }
 
   return out.join(NL)
@@ -737,7 +745,7 @@ export function carryText(ledger: Ledger, title: string, withIds = false): strin
  * how Claude learns what changed since.
  */
 export function inboxText(ledger: Ledger, isPaneOpen: boolean): string {
-  const out = ['inbox: as of the last reply. Only the items listed here are open.']
+  const out = ['inbox: what waits on the user, as of your last reply. Anything not listed here is closed.']
   if (ledger.items.length > 0) {
     out.push('Waiting on the user:')
     for (const item of ledger.items) out.push(itemLine(item, true))
@@ -753,21 +761,30 @@ export function inboxText(ledger: Ledger, isPaneOpen: boolean): string {
   return out.join(NL)
 }
 
-/** How an item was settled, in words a model reads without the mod's vocabulary. */
-function settled(d: Decided): string {
-  return d.outcome === 'dismissed' ? 'dismissed by the user' : d.outcome
+/** How an item closed, in words a model reads without the mod's vocabulary. */
+function outcomeText(d: Decided): string {
+  if (d.outcome === 'dismissed') return 'dismissed by the user'
+  if (d.outcome === EXPIRED) return 'expired before the user answered'
+
+  return d.outcome
 }
 
 /**
- * The items settled since Claude last read the inbox, so Claude can tell a
- * dismissed question from one still waiting and does not ask it again.
+ * The items closed since Claude last read the inbox, so Claude can tell a
+ * dismissed question from one still waiting, and an expired one from one answered.
  */
 export function closedText(decided: Decided[]): string | null {
   if (decided.length === 0) return null
+  const advice = (d: Decided) =>
+    d.outcome === 'dismissed'
+      ? '. Ask it again only if the user brings it up.'
+      : d.outcome === EXPIRED
+        ? '. Ask it again if it still matters.'
+        : ''
 
   return [
-    'Settled since you last read the inbox. Do not ask these again unless the user brings them up:',
-    ...decided.map(d => `- "${d.ask}" → ${settled(d)}`),
+    'Closed since you last read the inbox:',
+    ...decided.map(d => `- "${d.ask}" → ${outcomeText(d)}${advice(d)}`),
   ].join(NL)
 }
 

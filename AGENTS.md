@@ -1,0 +1,11 @@
+# Working on the inbox mod
+
+- The repo is public. Keep private paths, other people's names and session content out of commits.
+- Run `./scripts/check.sh` after every change.
+- Test a change to text a model reads before keeping it. Small rewordings change behavior: a one-word edit to the findings rule in `SYSTEM` made the inbox model re-add questions the user had dismissed.
+  - Claude reads `GUIDANCE`, the tool descriptions and the tool results in `hooks/register.tsx`, and the `inbox:` texts that `inboxText`, `closedText`, `carryText` and `answerNote` build in `hooks/ledger.ts`.
+  - The inbox model, a Sonnet call after each reply, reads `SYSTEM` and the blocks from `buildPrompt` in `hooks/ledger.ts`.
+  - To compare two versions, print each one's prompt for the same sample exchange, run each several times with `claude -p --model sonnet --tools "" --system-prompt …`, and count the outcomes.
+- Saved state outlives the code. Its shape is `PluginState` in `types/index.d.ts`. When a saved shape changes, convert old state in `upgradeLedger` or `upgradeState`.
+- In `tests/hooks.test.ts`, `world()` answers every engine event the mod uses, and the test harness takes one handler per event. A test changes an answer through the variables `world()` resets, such as `ledgerReply`, `toolAnswer` and `ghAnswers`.
+- The plugin store is keyed by the mod's name, so a session that loads a copy under your own config writes to your real inbox's state. Check the UI live in a session with its own `CLAUDE_CONFIG_DIR`. `mods/scripts/live.sh` in petekp/claude-code-setup starts one in tmux.

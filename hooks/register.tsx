@@ -125,22 +125,23 @@ const PR_POLL_MS = 2 * 60_000
 const MAX_PRS = 6
 
 const FINDING_TOOL = 'mcp__inbox__record_finding'
-const FINDING_DESCRIPTION = `Record a finding for the user: something you noticed that deserves their attention but is outside the current task, such as a bug, a risk, missing tests, tech debt, or an opportunity to improve something. Also record one when you work around a problem instead of fixing it, or when part of your change could not be tested or verified. The finding waits in the Findings tab of /inbox, where they can ask you to address it or to discuss it.
-
-Keep working on the current task, and do not fix what you found unless asked. Record only what a careful senior engineer would flag to a teammate, not style nits or anything already discussed. You do not need to mention the finding in your reply.`
+const FINDING_DESCRIPTION = `Record a finding for the user. It waits in the Findings tab of /inbox until it is closed, and from there the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, and leave out style nits and anything the user already decided.`
 const GUIDANCE = `# Inbox
-The inbox plugin keeps what waits on the user in a band above their prompt and in the /inbox pane.
+The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, in a band above their prompt and in the /inbox pane, and your findings, in the pane's Findings tab.
 
-When you notice something outside the current task that deserves the user's attention, such as a bug, a risk, missing tests, tech debt, or a chance to improve something, record it with the mcp__inbox__record_finding tool when you notice it. Record one too at these moments, which are easy to pass over while focused on the task:
+A finding is something you noticed that deserves the user's attention but is outside the current task: a bug, a risk, missing tests, tech debt, or a chance to improve something. Record it with mcp__inbox__record_finding the moment you notice it, then go on with the task; fixing it waits until the user asks. Record one too at two moments that are easy to pass over while focused on the task:
 - You work around a problem instead of fixing it, such as copying files by hand because a tool does not reach them.
 - Part of your change could not be tested or verified.
-The user reviews findings in /inbox and can ask you to address or discuss each one. Keep to the task; you may still mention the finding briefly in your reply.
+State those two in your reply as well. Mention any other finding only when it bears on what the user asked.
 
-Before telling the user an inbox item is open or needs them, check the latest inbox context beside their prompt. It lists every open item; an item it does not list is closed.
+The latest "inbox:" text beside the user's prompt is the current state. It lists every open item and finding with its id, such as [i35] or [f12], and anything it does not list is closed. Check it before telling the user that something is open or waits on them.
 
-That list shows each item's and finding's id, such as [i35]. When the user's message answers an open item, close it first, before any other work, with the mcp__inbox__close tool and their answer in a few words, so their inbox shows it answered at once. When an item is done or no longer applies, close it with a reason of a few words, without waiting to be asked. Never close a question to answer it for the user: only they answer it.`
+Close with mcp__inbox__close:
+- When the user's message answers an open item, close it first, before other work, with their answer.
+- When an item or finding is done or no longer applies, close it with a short reason, without waiting to be asked.
+The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.`
 const CLOSE_TOOL = 'mcp__inbox__close'
-const CLOSE_DESCRIPTION = `Close an item or finding in the user's inbox, by the id the inbox context beside their latest message shows, such as i35 or f32. When the user's own message answered it, pass their answer; call this first, before other work, so their inbox shows it answered at once. When it is done or no longer applies, pass a reason instead. Never close a question to answer it for the user. The user sees a closed item in /inbox, with its outcome, under the open ones.`
+const CLOSE_DESCRIPTION = `Close an open item or finding by its id, such as i35 or f12, as listed in the latest "inbox:" text beside the user's prompt. Pass the user's answer when their message answered it, and a reason otherwise.`
 const CLOSE_SCHEMA = {
   type: 'object',
   properties: {
@@ -270,8 +271,8 @@ let published: string | null = null
 let publishing: Promise<void> = Promise.resolve()
 // Context for prompts this mod sent, by text, appended just before each prompt's row.
 const contextFor = new Map<string, string[]>()
-// The settled items Claude has been told about, by id.
-let toldDecided = new Set<string>()
+// The closed items Claude has been told about, by id.
+let toldClosed = new Set<string>()
 // The `!` command whose output row comes next.
 let shellCommand: string | null = null
 
@@ -607,15 +608,15 @@ async function notePrompt($: EngineInterface, text: string, sentBy: Press | null
   // A button's prompt already says what it does; an Explain, for one, quotes its item without answering it.
   const answer = sentBy ? null : answerNote(ledger, text)
   if (answer) notes.push(answer)
-  // The inbox when it changed since Claude last read it, or when something was
-  // settled since. An empty inbox with nothing settled says nothing new.
+  // The inbox when it changed since Claude last read it, or when an item
+  // closed since. An empty inbox with nothing closed says nothing new.
   const inbox = inboxText(ledger, isShown)
-  const closed = closedText(ledger.decided.filter(d => !toldDecided.has(d.id)))
+  const closed = closedText(ledger.decided.filter(d => !toldClosed.has(d.id)))
   const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0
   if (closed || (inbox !== toldInbox && !(isEmpty && toldInbox === null))) {
     notes.push(closed ? `${inbox}\n${closed}` : inbox)
     toldInbox = inbox
-    toldDecided = new Set(ledger.decided.map(d => d.id))
+    toldClosed = new Set(ledger.decided.map(d => d.id))
   }
 
   if (sentBy) press = sentBy
@@ -771,14 +772,16 @@ async function recordFinding($: EngineInterface, input: Record<string, unknown>)
     path: path || null,
     at,
   }
-  let isAdded = false
+  let added = { id: '', isAdded: false }
   await commitLedger($, l => {
     const r = addFinding(l, finding)
-    isAdded = r.isAdded
+    added = r
     return r.ledger
   })
 
-  return isAdded ? 'Recorded. The user sees it in the Findings tab of /inbox.' : 'Already recorded.'
+  return added.isAdded
+    ? `Recorded as ${added.id}. The user sees it in the Findings tab of /inbox.`
+    : `Already recorded as ${added.id}.`
 }
 
 async function recordClose($: EngineInterface, input: Record<string, unknown>): Promise<string> {
@@ -1435,7 +1438,7 @@ export const register: Register = on => {
       press = null
       shellCommand = null
       toldInbox = null
-      toldDecided = new Set()
+      toldClosed = new Set()
       contextFor.clear()
     }
 
@@ -1612,7 +1615,7 @@ export const register: Register = on => {
     if (!isOn) return r
     const text = carryText(
       await read($, LEDGER),
-      'inbox: where this session stands, summarized by a plugin after each reply. It may be slightly out of date.',
+      'inbox: where this session stands, as of the last reply. An "inbox:" text beside a later prompt replaces this.',
       true,
     )
 
