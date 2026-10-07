@@ -178,24 +178,20 @@ const PANE = 'inbox'
 // Theme keys, so the colors follow the person's Claude Code theme.
 const ACCENT = 'claude'
 const WAITING = 'warning'
-// The tab bar's panel: a theme key a shade off the pane's background, in every theme.
+// Unselected tabs and the sections' cards: a theme key a shade off the pane's
+// background, in every theme. In the dark theme it is rgb(55, 55, 55).
 const PANEL_BG = 'userMessageBackground'
 // The selected row in every tab is blue. In the dark theme its background is
-// the `ide` blue at about 20% over the pane's rgb(38, 38, 38), muted next to
+// the `ide` blue at about 20% over the cards' rgb(55, 55, 55), muted next to
 // the theme's selectionBg. Hex does not follow the theme, so other themes use SELECTION_BG.
-const DARK_SELECTION = '#2d3846'
+const DARK_SELECTION = '#3b4654'
 const SELECTION_BG = 'selectionBg'
-// In the dark theme, the pane's body is darker than its rgb(38, 38, 38), and
-// each section sits on a card of that color. Hex does not follow the theme,
-// so other themes draw neither.
-const DARK_BODY = '#1a1a1a'
-const CARD_BG = 'composerSidebarBackground'
 // The tree's lines and the dividers between rows, quieter than the text.
 const MUTED_LINE = 'subtle'
 // The dividers in the dark theme: about half the contrast of `subtle`'s
-// rgb(80, 80, 80) against the pane's rgb(38, 38, 38). Other themes use MUTED_LINE.
-const DARK_DIVIDER = '#3c3c3c'
-// The selected tab's panel, and an unselected tab's under the pointer: `subtle` is a step lighter than the tab bar.
+// rgb(80, 80, 80) against the cards' rgb(55, 55, 55). Other themes use MUTED_LINE.
+const DARK_DIVIDER = '#444444'
+// The selected tab's panel, and an unselected tab's under the pointer: `subtle` is a step lighter than PANEL_BG.
 const RAISED = 'subtle'
 // `inverse: false` keeps the engine from inverting the line under the pointer inside the panel.
 const RAISE = { dimColor: false, backgroundColor: RAISED, inverse: false }
@@ -2129,12 +2125,15 @@ export const register: Register = on => {
         <Text color={MUTED_LINE}>{treeText(pos, lead)}</Text>
       </Box>
     )
-    const treeRow = (pos: TreePos | null, marker: JSX.Element, content: JSX.Element, key?: string) => (
+    // A row with no marker, such as a group's empty line, starts its text right after the tree.
+    const treeRow = (pos: TreePos | null, marker: JSX.Element | null, content: JSX.Element, key?: string) => (
       <Box key={key} flexDirection="row" overflow="hidden">
         <Box width={4} flexShrink={0} />
-        <Box width={3} flexShrink={0}>
-          {marker}
-        </Box>
+        {marker ? (
+          <Box width={3} flexShrink={0}>
+            {marker}
+          </Box>
+        ) : null}
         <Box flexDirection="column" flexShrink={1} flexGrow={1} paddingRight={1}>
           {content}
         </Box>
@@ -2287,11 +2286,11 @@ export const register: Register = on => {
     ]
     const keyColumn = Math.max(...keyList.map(k => k.keys.length)) + 2
 
-    // The tab bar is the pane's top panel, with when the inbox last updated at
-    // its right end, or under the tabs when the pane is too narrow.
+    // The tab bar is drawn on the pane's own background, as part of the pane's
+    // title bar, with when the inbox last updated at its right end, or under the
+    // tabs when the pane is too narrow.
     const tabs = (
       <Box
-        backgroundColor={PANEL_BG}
         paddingX={1}
         flexDirection="row"
         flexWrap="wrap"
@@ -2334,7 +2333,7 @@ export const register: Register = on => {
             const show = () => void showTab($, id)
 
             return (
-              <Box key={`tab-block-${id}`} flexDirection="column">
+              <Box key={`tab-block-${id}`} flexDirection="column" backgroundColor={PANEL_BG}>
                 <Button plain key={`tab-${id}-above`} label={' '.repeat(width)} hover={RAISE} onPress={show} />
                 <Box flexDirection="row">
                   <Button plain key={`tab-${id}-before`} label=" " hover={RAISE} onPress={show} />
@@ -2397,8 +2396,8 @@ export const register: Register = on => {
         </Text>
       </Box>
     )
-    const sectionCard = (children: JSX.Element | JSX.Element[]) => (
-      <Box flexDirection="column" paddingY={1} backgroundColor={isDark ? CARD_BG : undefined}>
+    const section = (children: JSX.Element | JSX.Element[]) => (
+      <Box flexDirection="column" paddingY={1} backgroundColor={PANEL_BG}>
         {children}
       </Box>
     )
@@ -2479,7 +2478,7 @@ export const register: Register = on => {
                 (pos: TreePos) =>
                   treeRow(
                     pos,
-                    <Text> </Text>,
+                    null,
                     <Text dimColor wrap="wrap">
                       {g.empty}
                     </Text>,
@@ -2502,12 +2501,12 @@ export const register: Register = on => {
         // Each closed item is two lines, so a blank line of the tree sets it and the fold row apart.
         const tail = rest.flatMap((draw, n) => [titleGap(), draw(childPos(top.length + n, count))])
 
-        return sectionCard([groupTitle(g.title, g.rows.length), titleGap(), ...open, ...tail])
+        return section([groupTitle(g.title, g.rows.length), titleGap(), ...open, ...tail])
       })
       // A stop is fixed in the session, not here, so it shows above the list without keys.
       const outside = stop
         ? [
-            sectionCard(
+            section(
               <Box flexDirection="column" paddingLeft={1}>
                 <Text wrap="truncate-end">
                   <Text color="error" bold>
@@ -2536,7 +2535,7 @@ export const register: Register = on => {
         ? emptyLine(
             'No findings. Claude records one when it notices an issue or an opportunity outside the current task.',
           )
-        : sectionCard(
+        : section(
             divided(
               rows.findings.map(r => listRow(r)),
               'findings',
@@ -2557,7 +2556,7 @@ export const register: Register = on => {
         answered > 0 ? `${answered} open ${answered === 1 ? 'thread' : 'threads'} you answered` : null,
       ].filter(Boolean)
 
-      return sectionCard([
+      return section([
         <Box paddingLeft={1}>
           <Text wrap="wrap">
             <Text bold color={PRS}>
@@ -2636,17 +2635,13 @@ export const register: Register = on => {
       onPress: () => void showTab($, id),
     }))
 
-    // Docked, the pane takes at least the window's height, so its background fills
-    // it and the footer sits at its bottom edge until the content is taller than the
-    // window. The engine has no fixed footer, so past that it follows the content.
-    // Inline, the frame fits the tree. A pane takes a key only as a Button's hotkey,
-    // so the tab keys, j and k are Buttons in a hidden Box.
+    // Docked, the pane takes at least the window's height, so the footer sits at
+    // its bottom edge until the content is taller than the window. The engine has
+    // no fixed footer, so past that it follows the content. Inline, the frame fits
+    // the tree. A pane takes a key only as a Button's hotkey, so the tab keys, j
+    // and k are Buttons in a hidden Box.
     return (
-      <Box
-        flexDirection="column"
-        minHeight={e.props.placement === 'dock' ? e.props.scroll.bodyRows : undefined}
-        backgroundColor={isDark ? DARK_BODY : undefined}
-      >
+      <Box flexDirection="column" minHeight={e.props.placement === 'dock' ? e.props.scroll.bodyRows : undefined}>
         {tabs}
         <Box flexDirection="column" paddingX={1} paddingTop={1} flexGrow={1}>
           {tab === 'findings' ? findingsView() : tab === 'prs' ? prsView() : waitingView()}
