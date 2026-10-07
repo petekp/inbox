@@ -315,7 +315,7 @@ export function readResults(
     // name can end in what it does, as "eslint" ends in "lint". The runner's word ("bun") names its
     // line before a word another runner's line can share, as in "unit test exit 1".
     const named = words.filter(w => !GENERIC_WORDS.has(w))
-    const names = (label: string, w: string) => label === w || (GENERIC_WORDS.has(w) && label.endsWith(w))
+    const names = (label: string, w: string) => (GENERIC_WORDS.has(w) ? label.endsWith(w) : label === w)
     const labelFor = (ws: string[]) => exits.find(x => labelWords(x.label).some(l => ws.some(w => names(l, w))))
     const labeled = labelFor(named) ?? labelFor(call.kind === 'tests' ? [...words, 'test'] : words)
     const bare = calls.length === 1 && exits.length === 0 ? bareExit(command, output) : null

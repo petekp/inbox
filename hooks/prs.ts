@@ -151,7 +151,7 @@ function threadsWaiting(count: number): string {
   return `${count} ${count === 1 ? 'thread' : 'threads'} waiting on you`
 }
 
-/** Where a PR stands: ready to merge, blocked, a draft, merged or closed. */
+/** Where a PR stands. A draft is open and not ready, whatever else blocks it. */
 export type PrStatus = 'ready' | 'blocked' | 'draft' | 'merged' | 'closed'
 
 /** What stands between the PR and merging, or that it is ready. */

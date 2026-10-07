@@ -120,7 +120,9 @@ describe('failureLines', () => {
 
 describe('readResults', () => {
   const runs = (command: string) => checkRuns(command, '/work/repo', '/home/me')
-  const result = (command: string, output: string) => readResults(command, runs(command), output, false)[0]?.result
+  const results = (command: string, output: string) =>
+    readResults(command, runs(command), output, false).map(r => r.result)
+  const result = (command: string, output: string) => results(command, output)[0]
   test('a check run twice in one command is unknown, since its output mixes both runs', () => {
     const command = 'claude plugin test . | grep pass; claude plugin test /tmp/copy | grep pass'
     expect(readResults(command, runs(command), ' 48 pass\n 0 fail\n 47 pass\n 1 fail\n', false)).toEqual([
@@ -130,25 +132,16 @@ describe('readResults', () => {
 
   test('a labeled exit line decides each check', () => {
     const command = 'bun test > t.log; echo "test exit $?"; tsc > c.log; echo "tsc exit $?"'
-    expect(readResults(command, runs(command), 'test exit 0\ntsc exit 2\n', false).map(r => r.result)).toEqual([
-      'pass',
-      'fail',
-    ])
+    expect(results(command, 'test exit 0\ntsc exit 2\n')).toEqual(['pass', 'fail'])
     // The runner's own line wins over another runner's line that also says "test".
     const both = 'python3 -m unittest > u.log; echo "unittest exit $?"; bun test | tail -4; echo "bun exit $?"'
     expect(result(both, 'unittest exit 1\nbun exit 0\n 7 pass\n 0 fail\n')).toBe('pass')
     // A label names its check by whole words, so "go" is not in "golangci-lint".
     const go = 'golangci-lint run > l.log; echo "golangci-lint exit $?"; go test ./... > t.log; echo "go test exit $?"'
-    expect(readResults(go, runs(go), 'golangci-lint exit 1\ngo test exit 0\n', false).map(r => r.result)).toEqual([
-      'fail',
-      'pass',
-    ])
+    expect(results(go, 'golangci-lint exit 1\ngo test exit 0\n')).toEqual(['fail', 'pass'])
     // A runner's name can end in what the check does, as eslint's does for the lint script.
     const lint = 'pnpm run typecheck > tc.log; echo "TSC EXIT=$?"; pnpm run lint > es.log; echo "ESLINT EXIT=$?"'
-    const lintResult = readResults(lint, runs(lint), 'TSC EXIT=0\nESLINT EXIT=1\n', false).find(
-      r => r.call.name === 'lint',
-    )
-    expect(lintResult?.result).toBe('fail')
+    expect(results(lint, 'TSC EXIT=0\nESLINT EXIT=1\n')[1]).toBe('fail')
     const build = 'go build ./... > b.log 2>&1; echo "build exit=$?"'
     expect(result(build, 'build exit=0\n')).toBe('pass')
   })

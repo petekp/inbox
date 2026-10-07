@@ -1375,15 +1375,15 @@ function outcomeText(d: Decided): string {
 }
 
 /**
- * A PR's status line in GitHub's colors: green ready, purple merged, red closed
- * and a gray draft. Blocked is amber, the color of what waits on someone.
+ * A PR's status line: a mark, and GitHub's colors, green ready, purple merged,
+ * red closed and a gray draft. Blocked is amber, the color of what waits on someone.
  */
-const PR_STATUS_TONES: Record<PrStatus, Tone | null> = {
-  ready: 'done',
-  blocked: 'waiting',
-  draft: null,
-  merged: 'findings', // the pane's purple
-  closed: 'error',
+const PR_STATUSES: Record<PrStatus, { mark: string; tone: Tone | null }> = {
+  ready: { mark: '✓', tone: 'done' },
+  blocked: { mark: '◇', tone: 'waiting' },
+  draft: { mark: '◇', tone: null },
+  merged: { mark: '◇', tone: 'findings' },
+  closed: { mark: '◇', tone: 'error' },
 }
 
 /** A finding's kind as the Findings tab draws it: a mark before its name, both in the kind's tone. */
@@ -2914,7 +2914,8 @@ export const register: Register = on => {
 
     const prBlock = ({ pr, rows: prRows }: { pr: PrView; rows: Row[] }) => {
       const { status, text: statusText } = readiness(pr)
-      const tone = PR_STATUS_TONES[status]
+      const { mark, tone } = PR_STATUSES[status]
+      const hasRows = prRows.length > 0
       const counts = checkCounts(pr)
       const waitingOn = waitingThreads(pr)
       // The viewer replied last. Their own notes with no reply wait on no one, so they don't count.
@@ -2935,10 +2936,10 @@ export const register: Register = on => {
             <Text bold>{pr.title}</Text>
           </Text>
         </Box>,
-        ...titleGap(prRows.length > 0),
+        ...titleGap(hasRows),
         treeRow(
-          prRows.length > 0 ? 'pass' : null,
-          <Text color={tone ? pal.mark[tone] : pal.muted}>{status === 'ready' ? '✓' : '◇'}</Text>,
+          hasRows ? 'pass' : null,
+          <Text color={tone ? pal.mark[tone] : pal.muted}>{mark}</Text>,
           <Box flexDirection="column">
             <Text wrap="wrap" color={tone ? pal.tone[tone] : pal.muted}>
               {statusText}
@@ -2968,7 +2969,7 @@ export const register: Register = on => {
             </Box>
           </Box>,
         ),
-        ...(prRows.length > 0 ? titleGap() : []),
+        ...(hasRows ? titleGap() : []),
         ...divided(
           prRows.map((r, n) => listRow(r, childPos(n, prRows.length))),
           pr.ref,
