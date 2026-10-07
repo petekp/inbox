@@ -10,7 +10,7 @@ import type {
   Help,
   Item,
   Ledger,
-  Note,
+  Finding,
   PrCheck,
   PrThread,
   PrView,
@@ -59,7 +59,7 @@ import {
   CLOSED_BY_CLAUDE,
   EMPTY,
   SYSTEM,
-  addNote,
+  addFinding,
   ago,
   answerNote,
   applyUpdate,
@@ -79,6 +79,10 @@ import {
   stopKindOf,
   stopText,
   tasksRunBy,
+  toolActivity,
+  transcriptCatchUpPrompt,
+  transcriptText,
+  upgradeLedger,
 } from './ledger'
 
 const LEDGER = atom({ plugin: 'inbox', key: 'ledger' } as const, EMPTY)
@@ -106,10 +110,8 @@ const COLLAPSED_BY_DEFAULT: Record<Section, boolean> = {
   decided: false,
 }
 const NO_CURSOR: Cursor = { id: null, index: 0 }
-const SELECTION = atom(
-  { plugin: 'inbox', key: 'selection' } as const,
-  { waiting: NO_CURSOR, notes: NO_CURSOR, prs: NO_CURSOR } as Record<Tab, Cursor>,
-)
+const NO_SELECTION: Record<Tab, Cursor> = { waiting: NO_CURSOR, findings: NO_CURSOR, prs: NO_CURSOR }
+const SELECTION = atom({ plugin: 'inbox', key: 'selection' } as const, NO_SELECTION)
 // Whether Claude Code uses its `dark` theme, which picks the selected row's tint.
 const IS_DARK_THEME = atom({ plugin: 'inbox', key: 'isDarkTheme' } as const, false)
 const PR_VIEWS = atom(
@@ -134,27 +136,27 @@ const SNAPSHOT_MAX = 2000
 const PR_POLL_MS = 2 * 60_000
 const MAX_PRS = 6
 
-const NOTE_TOOL = 'mcp__inbox__note'
-const NOTE_DESCRIPTION = `Record a note for the user about something you noticed that deserves their attention but is outside the current task: a bug, a risk, missing tests, tech debt, or an opportunity to improve something. Also record one when you work around a problem instead of fixing it, or when part of your change could not be tested or verified. The note waits in their session card, where they can ask you to address it or to discuss it.
+const FINDING_TOOL = 'mcp__inbox__record_finding'
+const FINDING_DESCRIPTION = `Record a finding for the user: something you noticed that deserves their attention but is outside the current task, such as a bug, a risk, missing tests, tech debt, or an opportunity to improve something. Also record one when you work around a problem instead of fixing it, or when part of your change could not be tested or verified. The finding waits in the Findings tab of /inbox, where they can ask you to address it or to discuss it.
 
-Keep working on the current task, and do not fix the noted thing unless asked. Record only what a careful senior engineer would flag to a teammate, not style nits or anything already discussed. You do not need to mention the note in your reply.`
-const NOTE_GUIDANCE = `# Inbox
+Keep working on the current task, and do not fix what you found unless asked. Record only what a careful senior engineer would flag to a teammate, not style nits or anything already discussed. You do not need to mention the finding in your reply.`
+const GUIDANCE = `# Inbox
 The inbox plugin keeps what waits on the user in a band above their prompt and in the /inbox pane.
 
-When you notice something outside the current task that deserves the user's attention, such as a bug, a risk, missing tests, tech debt, or a chance to improve something, record it with the mcp__inbox__note tool when you notice it. Record one too at these moments, which are easy to pass over while focused on the task:
+When you notice something outside the current task that deserves the user's attention, such as a bug, a risk, missing tests, tech debt, or a chance to improve something, record it with the mcp__inbox__record_finding tool when you notice it. Record one too at these moments, which are easy to pass over while focused on the task:
 - You work around a problem instead of fixing it, such as copying files by hand because a tool does not reach them.
 - Part of your change could not be tested or verified.
-The user reviews notes in /inbox and can ask you to address or discuss each one. Keep to the task; you may still mention the note briefly in your reply.
+The user reviews findings in /inbox and can ask you to address or discuss each one. Keep to the task; you may still mention the finding briefly in your reply.
 
 Before telling the user an inbox item is open or needs them, check the latest inbox context beside their prompt. It lists every open item; an item it does not list is closed.
 
-That list shows each item's and note's id, such as [i35]. When the user's message answers an open item, close it first, before any other work, with the mcp__inbox__close tool and their answer in a few words, so their inbox shows it answered at once. When an item is done or no longer applies, close it with a reason of a few words, without waiting to be asked. Never close a question to answer it for the user: only they answer it.`
+That list shows each item's and finding's id, such as [i35]. When the user's message answers an open item, close it first, before any other work, with the mcp__inbox__close tool and their answer in a few words, so their inbox shows it answered at once. When an item is done or no longer applies, close it with a reason of a few words, without waiting to be asked. Never close a question to answer it for the user: only they answer it.`
 const CLOSE_TOOL = 'mcp__inbox__close'
-const CLOSE_DESCRIPTION = `Close an item or note in the user's inbox, by the id the inbox context beside their latest message shows, such as i35 or n32. When the user's own message answered it, pass their answer; call this first, before other work, so their inbox shows it answered at once. When it is done or no longer applies, pass a reason instead. Never close a question to answer it for the user. A closed item shows in /inbox under Closed.`
+const CLOSE_DESCRIPTION = `Close an item or finding in the user's inbox, by the id the inbox context beside their latest message shows, such as i35 or f32. When the user's own message answered it, pass their answer; call this first, before other work, so their inbox shows it answered at once. When it is done or no longer applies, pass a reason instead. Never close a question to answer it for the user. A closed item shows in /inbox under Closed.`
 const CLOSE_SCHEMA = {
   type: 'object',
   properties: {
-    id: { type: 'string', description: 'The id of the open item or note, such as i35 or n32.' },
+    id: { type: 'string', description: 'The id of the open item or finding, such as i35 or f32.' },
     answer: {
       type: 'string',
       description: "The user's answer, in their words and at most 8, when their own message answered it.",
@@ -166,7 +168,7 @@ const CLOSE_SCHEMA = {
   },
   required: ['id'],
 }
-const NOTE_SCHEMA = {
+const FINDING_SCHEMA = {
   type: 'object',
   properties: {
     kind: {
@@ -202,6 +204,8 @@ const MUTED_LINE = 'subtle'
 // The dividers in the dark theme: about half the contrast of `subtle`'s
 // rgb(80, 80, 80) against the pane's rgb(38, 38, 38). Other themes use MUTED_LINE.
 const DARK_DIVIDER = '#3c3c3c'
+// How a pressable row or tab looks under the pointer: inverted at full strength, all its parts at once.
+const LIT = { dimColor: false, inverse: true }
 // A child's place under its section: a middle child, the last, or a block the tree passes.
 type TreePos = 'mid' | 'last' | 'pass'
 // More tree lines than a row wraps to; the tree's Box clips the rest.
@@ -225,12 +229,12 @@ function treeText(pos: TreePos, lead: number): string {
 }
 const DONE = 'success'
 // Each pane tab has its own color, used by its marker and by what it shows.
-const NOTES = 'autoAccept'
+const FINDINGS = 'autoAccept'
 const PRS = 'planMode'
-const TAB_COLORS: Record<Tab, string> = { waiting: WAITING, notes: NOTES, prs: PRS }
+const TAB_COLORS: Record<Tab, string> = { waiting: WAITING, findings: FINDINGS, prs: PRS }
 const TABS: { id: Tab; label: string; hotkey: string }[] = [
   { id: 'waiting', label: 'Waiting', hotkey: 'w' },
-  { id: 'notes', label: 'Notes', hotkey: 'n' },
+  { id: 'findings', label: 'Findings', hotkey: 'f' },
   { id: 'prs', label: 'PRs', hotkey: 'p' },
 ]
 // The Waiting tab lists questions first, because each takes one key.
@@ -520,9 +524,23 @@ async function runUpdate($: EngineInterface, ex: Exchange): Promise<LedgerState>
  */
 async function catchUp($: EngineInterface): Promise<LedgerState> {
   const [ledger, shown] = await Promise.all([read($, LEDGER), screen($)])
-  const r = await $.model.fork({ prompt: catchUpPrompt(ledger, shown) })
+  const change = (l: Ledger, u: Update, now: number) => applyUpdate(l, u, now, l.turn)
+  const forked = await $.model.fork({ prompt: catchUpPrompt(ledger, shown) })
+  if (forked.isAnswered || forked.reason !== 'nothing-to-fork') return applyLedgerReply($, forked, null, change)
+  // A resumed conversation has no request of this process's to fork until its
+  // first reply, so the model reads the transcript instead, uncached.
+  const transcript = transcriptText(await $.session.messages())
+  if (!transcript) return 'behind'
+  const r = await $.model.complete({
+    model: MODEL,
+    system: SYSTEM,
+    prompt: transcriptCatchUpPrompt(ledger, shown, transcript),
+    maxTokens: 1600,
+    effort: 'low',
+    timeoutMs: 90_000,
+  })
 
-  return applyLedgerReply($, r, null, (l, u, now) => applyUpdate(l, u, now, l.turn))
+  return applyLedgerReply($, r, transcript, change)
 }
 
 /**
@@ -613,7 +631,7 @@ async function notePrompt($: EngineInterface, text: string, sentBy: Press | null
   // settled since. An empty inbox with nothing settled says nothing new.
   const inbox = inboxText(ledger, isShown)
   const closed = closedText(ledger.decided.filter(d => !toldDecided.has(d.id)))
-  const isEmpty = ledger.items.length === 0 && ledger.notes.length === 0
+  const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0
   if (closed || (inbox !== toldInbox && !(isEmpty && toldInbox === null))) {
     notes.push(closed ? `${inbox}\n${closed}` : inbox)
     toldInbox = inbox
@@ -698,6 +716,13 @@ async function useStep($: EngineInterface, item: Item, step: Help[], press: UiPr
   for (const help of step) await useHelp($, item, help, press)
 }
 
+/** A path inside the repo, relative to its top folder; any other path as given. */
+function repoPath(path: string): string {
+  const base = top ?? root
+
+  return base && path.startsWith(`${base}/`) ? path.slice(base.length + 1) : path
+}
+
 function baseName(path: string): string {
   return path.replace(/\/+$/, '').split('/').pop() ?? path
 }
@@ -736,14 +761,30 @@ function steps(helps: Help[]): { label: string; step: Help[] }[] {
     )
 }
 
-async function recordNote($: EngineInterface, input: Record<string, unknown>): Promise<string> {
+/**
+ * Brings state an earlier version of the mod wrote up to date, and returns the
+ * ledger. A reload keeps $.state, so a running session can still hold findings
+ * under `notes`, and `notes` as its tab.
+ */
+async function upgradeState($: EngineInterface): Promise<Ledger> {
+  const [ledger] = await Promise.all([
+    update($, LEDGER, upgradeLedger),
+    update($, PREVIOUS, p => p && { ...p, ledger: upgradeLedger(p.ledger) }),
+    update($, TAB, t => ((t as string) === 'notes' ? 'findings' : t)),
+    update($, SELECTION, s => ({ ...NO_SELECTION, ...s })),
+  ])
+
+  return ledger
+}
+
+async function recordFinding($: EngineInterface, input: Record<string, unknown>): Promise<string> {
   const text = (value: unknown, max: number) => (typeof value === 'string' ? value.trim().slice(0, max) : '')
   const title = text(input.title, 120)
   const detail = text(input.detail, 600)
-  if (title === '' || detail === '') return 'Not recorded: a note needs a title and a detail.'
+  if (title === '' || detail === '') return 'Not recorded: a finding needs a title and a detail.'
   const at = await $.clock.now()
   const path = text(input.path, 300)
-  const note = {
+  const finding = {
     kind: input.kind === 'opportunity' ? ('opportunity' as const) : ('issue' as const),
     title,
     detail,
@@ -752,12 +793,12 @@ async function recordNote($: EngineInterface, input: Record<string, unknown>): P
   }
   let isAdded = false
   await commitLedger($, l => {
-    const r = addNote(l, note)
+    const r = addFinding(l, finding)
     isAdded = r.isAdded
     return r.ledger
   })
 
-  return isAdded ? 'Noted. The user sees it in the Notes tab of /inbox.' : 'Already noted.'
+  return isAdded ? 'Recorded. The user sees it in the Findings tab of /inbox.' : 'Already recorded.'
 }
 
 async function recordClose($: EngineInterface, input: Record<string, unknown>): Promise<string> {
@@ -768,16 +809,16 @@ async function recordClose($: EngineInterface, input: Record<string, unknown>): 
   if (id === '' || (answer === '' && reason === ''))
     return "Not closed: give the id, and the user's answer or a reason."
   const now = await $.clock.now()
-  let closed: 'item' | 'note' | null = null
+  let closed: 'item' | 'finding' | null = null
   await commitLedger($, l => {
     const r = closeByClaude(l, id, answer ? { answer } : { reason }, now)
     closed = r.closed
     return r.ledger
   })
   if (closed === 'item') return `Closed ${id}. The user sees it in /inbox under Closed.`
-  if (closed === 'note') return `Closed note ${id}.`
+  if (closed === 'finding') return `Closed finding ${id}.`
 
-  return `Not closed: no open item or note has the id ${id}. The open ones are listed beside the user's latest message.`
+  return `Not closed: no open item or finding has the id ${id}. The open ones are listed beside the user's latest message.`
 }
 
 /** Opens the free-text field under a row and gives it the keyboard. */
@@ -799,32 +840,36 @@ async function sendTypedForItem($: EngineInterface, item: Item, text: string) {
   else await sendAnswer($, item, words)
 }
 
-/** Sends the person's own words about a note, which leaves the Notes tab as Address does. */
-async function sendTypedForNote($: EngineInterface, note: Note, text: string) {
+/** Sends the person's own words about a finding, which leaves the Findings tab as Address does. */
+async function sendTypedForFinding($: EngineInterface, finding: Finding, text: string) {
   await update($, TYPING, () => null)
   const words = text.trim()
   if (!words) return
-  await removeNote($, note.id)
-  await send($, [`About this note you recorded:`, ...noteBody(note), '', words].join('\n'))
+  await removeFinding($, finding.id)
+  await send($, [`About this finding you recorded:`, ...findingBody(finding), '', words].join('\n'))
 }
 
-/** A note as Claude reads it back: its kind and title, its detail, and its file. */
-function noteBody(note: Note): string[] {
-  return [`${noteKindLabel(note)}: ${note.title}`, note.detail, ...(note.path ? [`File: ${note.path}`] : [])]
+/** A finding as Claude reads it back: its kind and title, its detail, and its file. */
+function findingBody(finding: Finding): string[] {
+  return [
+    `${findingKindLabel(finding)}: ${finding.title}`,
+    finding.detail,
+    ...(finding.path ? [`File: ${finding.path}`] : []),
+  ]
 }
 
-async function removeNote($: EngineInterface, id: string) {
-  await commitLedger($, l => ({ ...l, notes: l.notes.filter(n => n.id !== id) }))
+async function removeFinding($: EngineInterface, id: string) {
+  await commitLedger($, l => ({ ...l, findings: l.findings.filter(f => f.id !== id) }))
 }
 
-/** Sends the note back to Claude, to fix it or to talk it through first. */
-async function actOnNote($: EngineInterface, note: Note, how: 'address' | 'discuss') {
-  await removeNote($, note.id)
+/** Sends the finding back to Claude, to fix it or to talk it through first. */
+async function actOnFinding($: EngineInterface, finding: Finding, how: 'address' | 'discuss') {
+  await removeFinding($, finding.id)
   const opening =
     how === 'address'
-      ? 'Please address this note you recorded:'
-      : "Let's talk through this note you recorded before changing anything:"
-  await send($, [opening, ...noteBody(note)].join('\n'))
+      ? 'Please address this finding you recorded:'
+      : "Let's talk through this finding you recorded before changing anything:"
+  await send($, [opening, ...findingBody(finding)].join('\n'))
 }
 
 async function showTab($: EngineInterface, tab: Tab) {
@@ -1170,8 +1215,14 @@ function outcomeText(d: Decided): string {
   return capitalized(d.outcome)
 }
 
-function noteKindLabel(note: Note): string {
-  return note.kind === 'issue' ? 'Issue' : 'Opportunity'
+function findingKindLabel(finding: Finding): string {
+  return finding.kind === 'issue' ? 'Issue' : 'Opportunity'
+}
+
+/** A finding's kind as the Findings tab draws it: a mark before its name, both in the kind's color. */
+const FINDING_BADGES: Record<Finding['kind'], { mark: string; color: string }> = {
+  issue: { mark: '▲', color: 'warning' },
+  opportunity: { mark: '✦', color: 'success' },
 }
 
 /** Runs a git command that reads the working tree; null when it fails. Optional locks are off, so it never takes the index lock from a commit. */
@@ -1358,10 +1409,10 @@ export const register: Register = on => {
       update($, PRESENCE, p => (p.isUpdating ? { ...p, isUpdating: false, ledgerState: 'failed' as const } : p)),
       $.store.get('collapsed') as Promise<Collapsed | undefined>,
       $.clock.now(),
-      read($, LEDGER),
+      upgradeState($),
       $.store.get(`s:${sessionId}`) as Promise<{ savedAt: number; ledger: Ledger } | undefined>,
       $.command.register({ name: 'inbox', description: 'Show where this session stands and what is waiting on you' }),
-      $.tool.register({ name: 'note', description: NOTE_DESCRIPTION, inputSchema: NOTE_SCHEMA }),
+      $.tool.register({ name: 'record_finding', description: FINDING_DESCRIPTION, inputSchema: FINDING_SCHEMA }),
       $.tool.register({ name: 'close', description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA }),
       syncTheme($),
     ])
@@ -1374,13 +1425,13 @@ export const register: Register = on => {
     if (current.turn === 0 && !current.card) {
       if (saved) {
         // A resumed session: bring its card back and show it as a return.
-        loaded = saved.ledger
-        await update($, LEDGER, () => saved.ledger)
+        loaded = upgradeLedger(saved.ledger)
+        await update($, LEDGER, () => loaded)
         await update($, PRESENCE, p => ({ ...p, lastActiveAt: saved.savedAt, isAway: true }))
       } else {
         const prev = (await $.store.get(`p:${root}`)) as Omit<Previous, 'isBroughtIn'> | undefined
         if (prev?.ledger.card && now - prev.savedAt < PREVIOUS_MAX_AGE_MS) {
-          await update($, PREVIOUS, () => ({ ...prev, isBroughtIn: false }))
+          await update($, PREVIOUS, () => ({ ...prev, ledger: upgradeLedger(prev.ledger), isBroughtIn: false }))
         }
       }
     }
@@ -1466,15 +1517,15 @@ export const register: Register = on => {
 
     return {
       ...r,
-      sections: [...r.sections, { id: 'inbox:guidance', text: NOTE_GUIDANCE, scope: 'session' as const }],
+      sections: [...r.sections, { id: 'inbox:guidance', text: GUIDANCE, scope: 'session' as const }],
     }
   })
 
-  // The note tool is listed up front, needs no permission prompt, and is served here.
-  on('tool.describe', { tool: NOTE_TOOL }, async ($, e, next) => ({ ...(await next(e)), isDeferred: false }))
-  on('tool.check', { tool: NOTE_TOOL }, () => ({ decision: 'allow' }))
-  on('tool.call', { tool: NOTE_TOOL }, async ($, e) => ({
-    result: await recordNote($, e as unknown as Record<string, unknown>),
+  // The finding tool is listed up front, needs no permission prompt, and is served here.
+  on('tool.describe', { tool: FINDING_TOOL }, async ($, e, next) => ({ ...(await next(e)), isDeferred: false }))
+  on('tool.check', { tool: FINDING_TOOL }, () => ({ decision: 'allow' }))
+  on('tool.call', { tool: FINDING_TOOL }, async ($, e) => ({
+    result: await recordFinding($, e as unknown as Record<string, unknown>),
   }))
   on('tool.describe', { tool: CLOSE_TOOL }, async ($, e, next) => ({ ...(await next(e)), isDeferred: false }))
   on('tool.check', { tool: CLOSE_TOOL }, () => ({ decision: 'allow' }))
@@ -1489,8 +1540,9 @@ export const register: Register = on => {
     const run = () => clearingDialog($, key, () => next(e))
     // A subagent's call can raise a permission prompt too, which the person answers.
     if (e.agentId) return run()
+    const line = toolActivity(String(e.tool), input)
     if (e.tool === 'Bash') {
-      noteActivity(`${e.run_in_background ? 'started in background' : 'ran'}: ${e.command.slice(0, 140)}`)
+      if (line) noteActivity(line)
       // The command's own `cd` moves the session's folder, so read where it starts first.
       const cwd = await $.session.cwd()
       const ran = await run()
@@ -1523,10 +1575,7 @@ export const register: Register = on => {
 
       return ran
     }
-    if (e.tool === 'Edit' || e.tool === 'Write') noteActivity(`edited ${e.file_path}`)
-    else if (e.tool === 'Skill') noteActivity(`used skill ${e.skill}`)
-    else if (e.tool === 'Agent') noteActivity(`started agent: ${e.description}`)
-    else if (String(e.tool).startsWith('mcp__')) noteActivity(`called ${String(e.tool).slice(5)}`)
+    if (line) noteActivity(line)
 
     return run()
   })
@@ -1728,7 +1777,7 @@ export const register: Register = on => {
     }
 
     const card = ledger.card
-    if (!card && ledger.items.length === 0 && ledger.notes.length === 0 && settled.length === 0) return next(e)
+    if (!card && ledger.items.length === 0 && ledger.findings.length === 0 && settled.length === 0) return next(e)
     const settledHint = settled.map(s => (
       <Text color={DONE}>
         {' · ✓ '}
@@ -1738,14 +1787,14 @@ export const register: Register = on => {
 
     const goal = card?.goal || 'This session'
     const waiting = ledger.items.length
-    const noteCount = ledger.notes.length
+    const findingCount = ledger.findings.length
     const prAlert = prAttention(Object.values(prs.views))
     // The items themselves live in /inbox; the band only says how many wait.
     const hints = [
       ...settledHint,
       waiting > 0 ? <Text color={WAITING}> · {waiting} waiting on you in /inbox</Text> : null,
-      noteCount > 0 ? (
-        <Text color={NOTES}> · {noteCount === 1 ? '1 note' : `${noteCount} notes`} in /inbox</Text>
+      findingCount > 0 ? (
+        <Text color={FINDINGS}> · {findingCount === 1 ? '1 finding' : `${findingCount} findings`} in /inbox</Text>
       ) : null,
       prAlert ? <Text color={PRS}> · {prAlert}</Text> : null,
     ]
@@ -1925,31 +1974,52 @@ export const register: Register = on => {
         typeHint: item.kind === 'do' ? 'Your reply to Claude' : 'Your answer',
       }
     }
-    const noteRow = (note: Note): Row => ({
-      id: note.id,
+    const findingRow = (finding: Finding): Row => ({
+      id: finding.id,
       handle: '•',
-      title: note.title,
-      titleAfter: ` · ${ago(now - note.at)}`,
-      subtitle: (
+      title: finding.title,
+      meta: (
         <Text wrap="truncate-end">
-          <Text color={NOTES}>{noteKindLabel(note)}</Text>
-          {note.path ? <Text dimColor> · {baseName(note.path)}</Text> : null}
+          <Text color={FINDING_BADGES[finding.kind].color}>
+            {FINDING_BADGES[finding.kind].mark} {findingKindLabel(finding)}
+          </Text>
+          <Text dimColor> {ago(now - finding.at)}</Text>
         </Text>
       ),
-      line: { text: note.title, after: ` · ${ago(now - note.at)}` },
-      body: <Text wrap="wrap">{note.detail}</Text>,
-      onType: (text: string) => void sendTypedForNote($, note, text),
+      line: { text: finding.title, after: ` · ${ago(now - finding.at)}` },
+      body: (
+        <Box flexDirection="column" rowGap={1}>
+          <Text wrap="wrap">{finding.detail}</Text>
+          {finding.path ? (
+            <Text wrap="wrap">
+              <Text dimColor>Relevant file: </Text>
+              {repoPath(finding.path)}
+            </Text>
+          ) : null}
+        </Box>
+      ),
+      onType: (text: string) => void sendTypedForFinding($, finding, text),
       typeHint: 'Your reply to Claude',
       keys: () => [
         {
-          key: `address-${note.id}`,
+          key: `address-${finding.id}`,
           label: 'Address it',
           hotkey: 'a',
-          onPress: () => void actOnNote($, note, 'address'),
+          onPress: () => void actOnFinding($, finding, 'address'),
         },
-        { key: `discuss-${note.id}`, label: 'Discuss', hotkey: 'd', onPress: () => void actOnNote($, note, 'discuss') },
-        { key: `typekey-${note.id}`, label: 'Type a reply', hotkey: 't', onPress: () => void startTyping($, note.id) },
-        { key: `drop-${note.id}`, label: 'Dismiss', hotkey: 'x', onPress: () => void removeNote($, note.id) },
+        {
+          key: `discuss-${finding.id}`,
+          label: 'Discuss',
+          hotkey: 'd',
+          onPress: () => void actOnFinding($, finding, 'discuss'),
+        },
+        {
+          key: `typekey-${finding.id}`,
+          label: 'Type a reply',
+          hotkey: 't',
+          onPress: () => void startTyping($, finding.id),
+        },
+        { key: `drop-${finding.id}`, label: 'Dismiss', hotkey: 'x', onPress: () => void removeFinding($, finding.id) },
       ],
     })
     const checkRow = (pr: PrView, c: PrCheck): Row => ({
@@ -1963,7 +2033,7 @@ export const register: Register = on => {
       title: c.name,
       line: { text: c.name, after: ' · failing check', afterColor: 'error' },
       keys: () => [
-        { key: `fix-${pr.ref}-${c.name}`, label: 'Fix', hotkey: 'f', onPress: () => void send($, prompts.fix(pr, c)) },
+        { key: `fix-${pr.ref}-${c.name}`, label: 'Fix', hotkey: 'a', onPress: () => void send($, prompts.fix(pr, c)) },
         {
           key: `log-${pr.ref}-${c.name}`,
           label: 'Open log',
@@ -2038,7 +2108,7 @@ export const register: Register = on => {
     // A folded section's rows are out of view, so the selection skips them.
     const rows: Record<Tab, Row[]> = {
       waiting: waitingGroups.filter(g => !isCollapsed(collapsed, g.section)).flatMap(g => g.rows),
-      notes: [...ledger.notes].reverse().map(noteRow),
+      findings: [...ledger.findings].reverse().map(findingRow),
       prs: prGroups.flatMap(g => g.rows),
     }
     const ids = rows[tab].map(r => r.id)
@@ -2150,7 +2220,7 @@ export const register: Register = on => {
         </Box>
       )
     }
-    // `tree` places the row as a section's child; without it, as in Notes, the
+    // `tree` places the row as a section's child; without it, as in Findings, the
     // handle sits in the 4 columns after the bar.
     const listRow = (row: Row, tree?: TreePos) => {
       const index = indexOf.get(row.id) ?? -1
@@ -2254,6 +2324,8 @@ export const register: Register = on => {
           {TABS.map(({ id, label, hotkey }) => {
             const count = id === 'waiting' ? ledger.items.length : rows[id].length
             const chip = ` ${label}${count > 0 ? ` ${count}` : ''} `
+            const blank = ' '.repeat(`${hotkey}: ${label}${count > 0 ? ` ${count}` : ''}`.length)
+            const show = () => void showTab($, id)
 
             return tab === id ? (
               <Box flexDirection="column">
@@ -2264,16 +2336,20 @@ export const register: Register = on => {
                 <Text color={TAB_COLORS[id]}>{'▀'.repeat(chip.length)}</Text>
               </Box>
             ) : (
-              <Box flexDirection="row">
-                <Button
-                  plain
-                  key={`tab-${id}`}
-                  hotkey={hotkey}
-                  label={label}
-                  dimColor
-                  onPress={() => void showTab($, id)}
-                />
-                {count > 0 ? <Text color={TAB_COLORS[id]}> {count}</Text> : null}
+              // Three lines tall, as the selected tab is, so the pointer and a
+              // click take the whole block. The keyed Box lights its parts as one.
+              <Box key={`tab-block-${id}`} flexDirection="column">
+                <Button plain key={`tab-${id}-above`} label={blank} hover={LIT} onPress={show} />
+                <Box flexDirection="row">
+                  <Button plain key={`tab-${id}`} hotkey={hotkey} label={label} dimColor hover={LIT} onPress={show} />
+                  {count > 0 ? (
+                    <Text color={TAB_COLORS[id]} hover={LIT}>
+                      {' '}
+                      {count}
+                    </Text>
+                  ) : null}
+                </Box>
+                <Button plain key={`tab-${id}-below`} label={blank} hover={LIT} onPress={show} />
               </Box>
             )
           })}
@@ -2298,20 +2374,19 @@ export const register: Register = on => {
       const toggle = () => void toggleSection($, section)
       const used = 1 + ` ${title}`.length + ` ${count}`.length + (isFailing ? 2 : 0)
       const pad = e.props.bodyColumns - 4 - used
-      const lit = { dimColor: false, inverse: true }
 
       return (
         <Box key={`header-${section}`} flexDirection="row" paddingLeft={1}>
-          <Button plain key={`toggle-${section}-caret`} label={caret} dimColor hover={lit} onPress={toggle} />
-          <Button plain key={`toggle-${section}`} label={` ${title}`} hover={lit} onPress={toggle} />
-          <Button plain key={`toggle-${section}-count`} label={` ${count}`} dimColor hover={lit} onPress={toggle} />
+          <Button plain key={`toggle-${section}-caret`} label={caret} dimColor hover={LIT} onPress={toggle} />
+          <Button plain key={`toggle-${section}`} label={` ${title}`} hover={LIT} onPress={toggle} />
+          <Button plain key={`toggle-${section}-count`} label={` ${count}`} dimColor hover={LIT} onPress={toggle} />
           {isFailing ? (
             <Text color="error" hover={{ inverse: true }}>
               {' ✗'}
             </Text>
           ) : null}
           {pad > 0 ? (
-            <Button plain key={`toggle-${section}-row`} label={' '.repeat(pad)} hover={lit} onPress={toggle} />
+            <Button plain key={`toggle-${section}-row`} label={' '.repeat(pad)} hover={LIT} onPress={toggle} />
           ) : null}
         </Box>
       )
@@ -2523,13 +2598,15 @@ export const register: Register = on => {
       )
     }
 
-    const notesView = () =>
-      rows.notes.length === 0
-        ? emptyLine('No notes. Claude adds one when it notices an issue or an opportunity outside the current task.')
+    const findingsView = () =>
+      rows.findings.length === 0
+        ? emptyLine(
+            'No findings. Claude records one when it notices an issue or an opportunity outside the current task.',
+          )
         : sectionCard(
             divided(
-              rows.notes.map(r => listRow(r)),
-              'notes',
+              rows.findings.map(r => listRow(r)),
+              'findings',
               false,
             ),
           )
@@ -2631,7 +2708,7 @@ export const register: Register = on => {
       >
         {tabs}
         <Box flexDirection="column" paddingX={1} flexGrow={1}>
-          {tab === 'notes' ? notesView() : tab === 'prs' ? prsView() : waitingView()}
+          {tab === 'findings' ? findingsView() : tab === 'prs' ? prsView() : waitingView()}
         </Box>
         <Box display="none">{keyRow(moveKeys)}</Box>
       </Box>

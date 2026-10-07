@@ -86,7 +86,7 @@ export function demoView(now: number): View {
         { id: 'd8', ask: 'Add an export to the admin page too?', outcome: 'dismissed', at: now - 10 * MIN },
         { id: 'd10', ask: 'Use the existing date helper?', outcome: 'Yes, reuse it', at: now },
       ],
-      notes: [
+      findings: [
         {
           id: 'd16',
           kind: 'opportunity',

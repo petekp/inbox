@@ -1,10 +1,12 @@
-import type { Card, Decided, Dialog, Help, Item, Ledger, Note, Stop } from '../types'
+import type { SessionMessage } from 'claude-code'
+
+import type { Card, Decided, Dialog, Finding, Help, Item, Ledger, Stop } from '../types'
 
 export const EMPTY: Ledger = {
   card: null,
   items: [],
   decided: [],
-  notes: [],
+  findings: [],
   prs: [],
   nextId: 1,
   turn: 0,
@@ -17,7 +19,14 @@ const MAX_OPEN = 20
 const STALE_AFTER = 12
 const MAX_DECIDED = 12
 const MAX_HELPS = 3
-const MAX_NOTES = 30
+const MAX_FINDINGS = 30
+
+/** A ledger saved by an earlier version of the mod, in the current shape. Findings were once saved as `notes`. */
+export function upgradeLedger(ledger: Ledger): Ledger {
+  const { notes, ...rest } = ledger as Ledger & { notes?: Finding[] }
+
+  return notes ? { ...rest, findings: [...(rest.findings ?? []), ...notes] } : ledger
+}
 /**
  * Commands that sign in or ask for a password. They need the person's own
  * terminal, so their button copies them instead of asking Claude to run them.
@@ -30,7 +39,7 @@ export const SYSTEM = `You keep a short ledger for a person who works with a cod
 Input:
 - <card>: the ledger before this exchange (may be empty)
 - <open>: items still waiting on the person, each with an id
-- <notes>: findings the agent recorded for the person to review later, outside the current task, each with an id
+- <findings>: findings the agent recorded for the person to review later, outside the current task, each with an id
 - <decided>: items the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again.
 - <person>: what the person just sent, and the commands they ran themselves: "$ cmd" for a shell command, with its output, and "/name" for a slash command
 - <activity>: what the agent did this turn (files edited, commands, URLs)
@@ -44,9 +53,9 @@ GOAL: what this session is for, at most 12 words. Keep the previous goal unless 
 DONE: one finished outcome, at most 8 words. Up to 4 DONE lines, oldest first, keeping the most recent. Outcomes, not activity: "PR #12 opened", not "ran gh".
 NOW: where the work stands at the end of this reply, at most 12 words. Name what it waits on, if anything.
 RUNNING: something still running that the person may open, as "name: URL or port". Dev servers, simulators, background jobs. Omit anything the agent stopped. Zero or more lines.
-CLOSED: <id> | what was decided, at most 8 words. For each item in <open> the person answered in <person> (including "all recommended", "go", "yes to all", numbered answers), or that the reply or <activity> shows is done or no longer applies. A person asking what an item means has not answered it, and a reply explaining it does not close it. When <person> asks to run an item's command and the reply says it ran, that item is done. So is an item whose command the person ran themselves, per <person>, when its output shows it worked. Also one line for each note in <notes> that the reply or <activity> shows was fixed, or that the person dealt with or set aside.
+CLOSED: <id> | what was decided, at most 8 words. For each item in <open> the person answered in <person> (including "all recommended", "go", "yes to all", numbered answers), or that the reply or <activity> shows is done or no longer applies. A person asking what an item means has not answered it, and a reply explaining it does not close it. When <person> asks to run an item's command and the reply says it ran, that item is done. So is an item whose command the person ran themselves, per <person>, when its output shows it worked. Also one line for each finding in <findings> that the reply or <activity> shows was fixed, or that the person dealt with or set aside.
 NEW: <kind> | <label> | <ask> | <options> | <rec>
-  One line per thing in <reply> that waits on the person and is not already in <open> or <notes>. A finding the agent recorded as a note is not NEW unless the reply asks the person to decide on it now. When the reply restates, rewords or narrows an item in <open>, it is not new: add HELP lines to that item's id instead.
+  One line per thing in <reply> that waits on the person and is not already in <open> or <findings>. A finding the agent recorded is not NEW unless the reply asks the person to decide on it now. When the reply restates, rewords or narrows an item in <open>, it is not new: add HELP lines to that item's id instead.
   kind: "decide" (a choice, approval, or information only the person has, explicitly put to them, without which the agent cannot go on with its task) or "do" (an action only the person can take, without which the agent cannot continue or finish: sign in, run a command needing their password, test on their device, reply to a teammate).
   label: the reply's own number or id for it ("1", "D3"), or "-".
   ask: plain words, readable without the reply, at most 12 words, or up to 16 when 12 would lose meaning. Keep the question's meaning and every alternative it names. Replace any term the reply coined with what it means.
@@ -66,6 +75,9 @@ HELP: <item> | <kind> | <value> | <name>
 
 Write plainly. No jargon, no filler, no markdown.`
 
+const CATCH_UP =
+  'The ledger below may have missed turns. Close every item in <open> and every finding in <findings> that the conversation shows answered, done, dealt with, or no longer relevant. Add as NEW only what still waits on the user and is not already in <open> or <findings>.'
+
 /**
  * Asks a fork of the main conversation to bring the ledger up to date at once,
  * for turns the per-turn update missed.
@@ -73,13 +85,90 @@ Write plainly. No jargon, no filler, no markdown.`
 export function catchUpPrompt(ledger: Ledger, screen: string): string {
   return [
     'Pause the task. Do not use tools. Instead, act as the ledger keeper described below, over this whole conversation.',
-    'Treat the whole conversation as the exchange. The ledger below may have missed turns. Close every item in <open> and every note in <notes> that the conversation shows answered, done, dealt with, or no longer relevant. Add as NEW only what still waits on the user and is not already in <open> or <notes>.',
+    `Treat the whole conversation as the exchange. ${CATCH_UP}`,
     ...ledgerBlocks(ledger),
     `<screen>${NL}${screen}${NL}</screen>`,
     'Code blocks here carry no [block N] marker, so a copy HELP must be one line of text.',
     '',
     SYSTEM,
   ].join(NL)
+}
+
+/**
+ * The catch-up as an ordinary call over the transcript, for a conversation
+ * this process cannot fork yet. SYSTEM goes in the call's system prompt.
+ */
+export function transcriptCatchUpPrompt(ledger: Ledger, screen: string, transcript: string): string {
+  return [
+    `Treat the conversation in <conversation> as the exchange. Its start may be cut. ${CATCH_UP}`,
+    ...ledgerBlocks(ledger),
+    `<conversation>${NL}${numberBlocks(transcript)}${NL}</conversation>`,
+    `<screen>${NL}${screen}${NL}</screen>`,
+  ].join(NL)
+}
+
+/** What the agent did with one tool call, as an activity line; null for a call the ledger has no use for. */
+export function toolActivity(tool: string, input: Record<string, unknown>): string | null {
+  const text = (key: string) => (typeof input[key] === 'string' ? (input[key] as string) : '')
+  switch (tool) {
+    case 'Bash':
+      return `${input.run_in_background ? 'started in background' : 'ran'}: ${text('command').slice(0, 140)}`
+    case 'Edit':
+    case 'Write':
+      return `edited ${text('file_path')}`
+    case 'Skill':
+      return `used skill ${text('skill')}`
+    case 'Agent':
+      return `started agent: ${text('description')}`
+  }
+
+  return tool.startsWith('mcp__') ? `called ${tool.slice(5)}` : null
+}
+
+const TRANSCRIPT_MAX = 80_000
+const MESSAGE_MAX = 6000
+
+/**
+ * The conversation as the transcript catch-up reads it: the person's messages
+ * and commands, the agent's replies and what it did. Only the most recent
+ * part that fits is kept, since what still waits is near the end. Rows this
+ * mod added beside a prompt, which start with "inbox:", are left out.
+ */
+export function transcriptText(messages: SessionMessage[]): string {
+  const lines: string[] = []
+  for (const m of messages) {
+    const text = m.text.trim()
+    if (m.role === 'user') {
+      if (!text || text.startsWith('inbox:')) continue
+      const row = readCommandRow(text)
+      if (row?.kind === 'shell') lines.push(`Person ran: $ ${row.command}`)
+      else if (row?.kind === 'output')
+        lines.push(`Output: ${clip([row.stdout, row.stderr].filter(Boolean).join(NL), 600)}`)
+      else if (row?.kind === 'slash') lines.push(`Person ran: /${row.name} ${row.args}`.trim())
+      else lines.push(`Person: ${clip(text, MESSAGE_MAX)}`)
+      continue
+    }
+    if (text) lines.push(`Agent: ${clip(text, MESSAGE_MAX)}`)
+    for (const use of m.toolUses) {
+      const line =
+        use.tool === 'AskUserQuestion'
+          ? `asked the user in a dialog; answer: ${clip(use.text ?? '', 400)}`
+          : toolActivity(use.tool, use.input)
+      if (line) lines.push(`Agent ${line}`)
+    }
+  }
+  const kept: string[] = []
+  let size = 0
+  for (const line of lines.reverse()) {
+    size += line.length + 1
+    if (size > TRANSCRIPT_MAX) {
+      kept.push('(earlier conversation left out)')
+      break
+    }
+    kept.push(line)
+  }
+
+  return kept.reverse().join(NL)
 }
 
 export type Exchange = {
@@ -202,7 +291,7 @@ function clip(text: string, max: number): string {
   return text.length <= max ? text : text.slice(0, max) + ' …[cut]'
 }
 
-/** The ledger as the model reads it: the card, the open items and the notes, with their ids. */
+/** The ledger as the model reads it: the card, the open items and the findings, with their ids. */
 function ledgerBlocks(ledger: Ledger): string[] {
   const card = ledger.card
     ? [
@@ -213,7 +302,7 @@ function ledgerBlocks(ledger: Ledger): string[] {
       ].join(NL)
     : ''
   const open = ledger.items.map(i => `${i.id} | ${i.kind} | ${i.label ?? '-'} | ${i.ask}`).join(NL)
-  const notes = ledger.notes.map(n => `${n.id} | ${n.kind}: ${n.title}`).join(NL)
+  const findings = ledger.findings.map(f => `${f.id} | ${f.kind}: ${f.title}`).join(NL)
   const decided = ledger.decided
     .slice(-8)
     .map(d => `${d.ask} → ${settled(d)}`)
@@ -222,7 +311,7 @@ function ledgerBlocks(ledger: Ledger): string[] {
   return [
     `<card>${NL}${card}${NL}</card>`,
     `<open>${NL}${open}${NL}</open>`,
-    `<notes>${NL}${notes}${NL}</notes>`,
+    `<findings>${NL}${findings}${NL}</findings>`,
     `<decided>${NL}${decided}${NL}</decided>`,
   ]
 }
@@ -411,9 +500,9 @@ function matchOpen(items: Item[], a: Update['added'][number]): number {
 export const CLOSED_BY_CLAUDE = 'closed by Claude'
 
 /**
- * Closes an open item or note for Claude: one the user answered in their own
+ * Closes an open item or finding for Claude: one the user answered in their own
  * message, with that answer as its outcome, or one that is done or no longer
- * applies, with Claude's reason. A note, which Claude recorded itself, is
+ * applies, with Claude's reason. A finding, which Claude recorded itself, is
  * removed. `closed` is null when no open one has the id.
  */
 export function closeByClaude(
@@ -421,11 +510,11 @@ export function closeByClaude(
   id: string,
   how: { answer: string } | { reason: string },
   now: number,
-): { ledger: Ledger; closed: 'item' | 'note' | null } {
+): { ledger: Ledger; closed: 'item' | 'finding' | null } {
   const outcome = 'answer' in how ? how.answer : `${CLOSED_BY_CLAUDE}: ${how.reason}`
   if (ledger.items.some(i => i.id === id)) return { ledger: closeItem(ledger, id, outcome, now), closed: 'item' }
-  if (ledger.notes.some(n => n.id === id))
-    return { ledger: { ...ledger, notes: ledger.notes.filter(n => n.id !== id) }, closed: 'note' }
+  if (ledger.findings.some(f => f.id === id))
+    return { ledger: { ...ledger, findings: ledger.findings.filter(f => f.id !== id) }, closed: 'finding' }
 
   return { ledger, closed: null }
 }
@@ -480,7 +569,7 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
     card,
     items: items.filter(i => turn - i.turn <= STALE_AFTER).slice(-MAX_OPEN),
     decided: decided.slice(-MAX_DECIDED),
-    notes: ledger.notes.filter(n => !closing.has(n.id)),
+    findings: ledger.findings.filter(f => !closing.has(f.id)),
     nextId,
     batchTurn: added > 0 ? turn : ledger.batchTurn,
   }
@@ -554,17 +643,17 @@ export function answerNote(ledger: Ledger, text: string): string | null {
 }
 
 /**
- * Adds a note Claude recorded. A note whose title matches an open one is
+ * Adds a finding Claude recorded. One whose title matches an open one is
  * skipped, so the same finding is not listed twice.
  */
-export function addNote(ledger: Ledger, note: Omit<Note, 'id'>): { ledger: Ledger; isAdded: boolean } {
-  const notes = ledger.notes
-  if (notes.some(n => sameAsk(n.title, note.title))) return { ledger, isAdded: false }
+export function addFinding(ledger: Ledger, finding: Omit<Finding, 'id'>): { ledger: Ledger; isAdded: boolean } {
+  const findings = ledger.findings
+  if (findings.some(f => sameAsk(f.title, finding.title))) return { ledger, isAdded: false }
 
   return {
     ledger: {
       ...ledger,
-      notes: [...notes, { ...note, id: `n${ledger.nextId}` }].slice(-MAX_NOTES),
+      findings: [...findings, { ...finding, id: `f${ledger.nextId}` }].slice(-MAX_FINDINGS),
       nextId: ledger.nextId + 1,
     },
     isAdded: true,
@@ -576,8 +665,8 @@ function itemLine(item: Item, withId: boolean): string {
   return `- ${withId ? `[${item.id}] ` : ''}${item.label ? `(${item.label}) ` : ''}${describe(item)}`
 }
 
-function noteLine(note: Note, withId: boolean): string {
-  return `- ${withId ? `[${note.id}] ` : ''}${note.kind}: ${note.title}`
+function findingLine(finding: Finding, withId: boolean): string {
+  return `- ${withId ? `[${finding.id}] ` : ''}${finding.kind}: ${finding.title}`
 }
 
 /**
@@ -586,8 +675,8 @@ function noteLine(note: Note, withId: boolean): string {
  * closes items by id; the previous session's items are not this one's.
  */
 export function carryText(ledger: Ledger, title: string, withIds = false): string | null {
-  const notes = ledger.notes
-  if (!ledger.card && ledger.items.length === 0 && notes.length === 0) return null
+  const findings = ledger.findings
+  if (!ledger.card && ledger.items.length === 0 && findings.length === 0) return null
   const out = [title]
   if (ledger.card) {
     out.push(`Goal: ${ledger.card.goal}`)
@@ -599,9 +688,9 @@ export function carryText(ledger: Ledger, title: string, withIds = false): strin
     out.push('Waiting on the user:')
     for (const item of ledger.items) out.push(itemLine(item, withIds))
   }
-  if (notes.length > 0) {
-    out.push('Notes you recorded for the user, still open:')
-    for (const n of notes) out.push(noteLine(n, withIds))
+  if (findings.length > 0) {
+    out.push('Findings you recorded for the user, still open:')
+    for (const f of findings) out.push(findingLine(f, withIds))
   }
   if (ledger.decided.length > 0) {
     out.push('Recently decided:')
@@ -624,9 +713,9 @@ export function inboxText(ledger: Ledger, isPaneOpen: boolean): string {
   } else {
     out.push('Nothing is waiting on the user.')
   }
-  if (ledger.notes.length > 0) {
-    out.push('Notes you recorded, still open:')
-    for (const n of ledger.notes) out.push(noteLine(n, true))
+  if (ledger.findings.length > 0) {
+    out.push('Findings you recorded, still open:')
+    for (const f of ledger.findings) out.push(findingLine(f, true))
   }
   out.push(isPaneOpen ? 'The user has the /inbox pane open beside the conversation.' : 'The /inbox pane is closed.')
 
@@ -740,9 +829,10 @@ export function statusLine(ledger: Ledger, stop: Stop | null, dialogs: Dialog[])
   if (dialog) return dialogText(dialog)
   const first = latestBatch(ledger)[0] ?? ledger.items[0]
   if (first) return ledger.items.length > 1 ? `${ledger.items.length} · ${first.ask}` : first.ask
-  const notes = ledger.notes.length === 0 ? null : `${ledger.notes.length} note${ledger.notes.length === 1 ? '' : 's'}`
+  const count = ledger.findings.length
+  const findings = count === 0 ? null : `${count} finding${count === 1 ? '' : 's'}`
 
-  return [ledger.card?.now, notes].filter(Boolean).join(' · ')
+  return [ledger.card?.now, findings].filter(Boolean).join(' · ')
 }
 
 /** "just now", "12m ago", "3h ago", "2d ago". */

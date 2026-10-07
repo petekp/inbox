@@ -40,7 +40,7 @@ export type Decided = { id: string; ask: string; outcome: string; at: number }
 export type Settled = Decided & { kind: Item['kind']; index: number }
 
 /** Something Claude noticed outside the current task and recorded for the person. */
-export type Note = {
+export type Finding = {
   id: string
   kind: 'issue' | 'opportunity'
   title: string
@@ -91,7 +91,7 @@ export type Ledger = {
   card: Card | null
   items: Item[]
   decided: Decided[]
-  notes: Note[]
+  findings: Finding[]
   /** PRs this session created or linked, as "owner/repo#123". */
   prs: string[]
   nextId: number
@@ -169,7 +169,7 @@ export type Previous = {
   isBroughtIn: boolean
 }
 
-export type Tab = 'waiting' | 'notes' | 'prs'
+export type Tab = 'waiting' | 'findings' | 'prs'
 
 /** A pane section the person can collapse. */
 export type Section = 'questions' | 'tasks' | 'running' | 'checks' | 'done' | 'decided'

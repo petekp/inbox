@@ -180,39 +180,34 @@ test('after 15 idle minutes the band shows where the session stands', async ($, 
   expect(await band.find({ text: /last active/ })).toBeUndefined()
 })
 
-test('loaded into a conversation with nothing to fork yet, it catches up after the first reply, showing no failure', async ($, on) => {
+test('resumed into a conversation it cannot fork yet, it catches up from the transcript before any reply', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
+  const prompts: string[] = []
+  world(on, prompts)
   // A resumed session: earlier turns, but no request from this process to fork.
   on('session.turns', () => ({ value: 3 }))
-  let canFork = false
-  on('model.fork', () => ({
-    value: canFork
-      ? {
-          isAnswered: true as const,
-          text: 'GOAL: Ship the onboarding flow\nNOW: Waiting on copy review',
-          usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
-        }
-      : { isAnswered: false as const, reason: 'nothing-to-fork' as const },
+  on('model.fork', () => ({ value: { isAnswered: false as const, reason: 'nothing-to-fork' as const } }))
+  const said = (role: 'user' | 'assistant', text: string) => ({ role, text, toolUses: [] })
+  on('session.messages', () => ({
+    value: [
+      said('user', 'Add a greeting CLI. Node or Python?'),
+      said('user', 'inbox: as of the last reply. Only the items listed here are open.'),
+      said('assistant', 'The plan is written. 1. Node or Python? 2. Name the command greet?'),
+    ],
   }))
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.settle()
-  const pane = await $.ui.mount(PANE)
-  expect(await pane.find({ text: /update failed/ })).toBeUndefined()
-
-  canFork = true
-  await $.prompt.submit({ text: 'where were we', wait: false, origin: { kind: 'composer' } })
-  await $.turn.complete({
-    answer: 'Waiting on review.',
-    durationMs: 5,
-    isAborted: false,
-    turnId: 't1',
-    reason: 'answer',
-  })
-  await clock.settle()
+  const conversation = prompts.at(-1)?.match(/<conversation>\n([\s\S]*?)\n<\/conversation>/)?.[1]
+  // The mod's own context rows are not part of the conversation it summarizes.
+  expect(conversation).toBe(
+    'Person: Add a greeting CLI. Node or Python?\nAgent: The plan is written. 1. Node or Python? 2. Name the command greet?',
+  )
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  expect(await band.find({ text: /Ship the onboarding flow/ })).toBeDefined()
+  expect(await band.find({ text: /Add a greeting CLI/ })).toBeDefined()
+  const pane = await $.ui.mount(PANE)
+  expect(await pane.find({ text: /Use Node or Python\?/ })).toBeDefined()
+  expect(await pane.find({ text: /update failed/ })).toBeUndefined()
 })
 
 test('after a failed update, the next reply catches up over the whole conversation', async ($, on) => {
@@ -221,7 +216,7 @@ test('after a failed update, the next reply catches up over the whole conversati
   on('model.fork', () => ({
     value: {
       isAnswered: true,
-      text: 'GOAL: Ship the onboarding flow\nNOW: Waiting on copy review\nCLOSED: i1 | Node\nCLOSED: n3 | fixed\nNEW: do | - | Review the welcome copy | - | -',
+      text: 'GOAL: Ship the onboarding flow\nNOW: Waiting on copy review\nCLOSED: i1 | Node\nCLOSED: f3 | fixed\nNEW: do | - | Review the welcome copy | - | -',
       usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
     },
   }))
@@ -230,9 +225,9 @@ test('after a failed update, the next reply catches up over the whole conversati
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
   await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
-  // Notes and items share one id counter, so after i1 and i2 this note is n3.
+  // Findings and items share one id counter, so after i1 and i2 this finding is f3.
   await $.tool.call({
-    tool: 'mcp__inbox__note',
+    tool: 'mcp__inbox__record_finding',
     kind: 'issue',
     title: 'README is stale',
     detail: 'It names the old command.',
@@ -279,35 +274,35 @@ test('after a failed update, the next reply catches up over the whole conversati
   expect(await pane.find({ text: /Name the command greet\?/ })).toBeDefined()
   expect(await pane.find({ text: /Review the welcome copy/ })).toBeDefined()
   expect(await pane.find({ text: /update failed/ })).toBeUndefined()
-  await pane.press({ key: 'tab-notes' })
+  await pane.press({ key: 'tab-findings' })
   expect(await pane.find({ text: /README is stale/ })).toBeUndefined()
 })
 
-test('a note Claude records shows in the Notes tab, and Address it sends it back', async ($, on) => {
+test('a finding Claude records shows in the Findings tab, and Address it sends it back', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world(on, [])
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   const r = await $.tool.call({
-    tool: 'mcp__inbox__note',
+    tool: 'mcp__inbox__record_finding',
     kind: 'issue',
     title: 'Retry loop never backs off',
     detail: 'The fetch retry spins with no delay and can hammer the API.',
     path: 'src/api.ts',
   })
-  expect(r.result).toBe('Noted. The user sees it in the Notes tab of /inbox.')
+  expect(r.result).toBe('Recorded. The user sees it in the Findings tab of /inbox.')
 
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ text: /Retry loop never backs off/ })).toBeUndefined()
-  await pane.press({ key: 'tab-notes' })
+  await pane.press({ key: 'tab-findings' })
   expect(await pane.find({ text: /Retry loop never backs off/ })).toBeDefined()
 
-  await pane.press({ key: 'address-n1' })
-  expect(sent.at(-1)).toContain('Please address this note you recorded:\nIssue: Retry loop never backs off')
+  await pane.press({ key: 'address-f1' })
+  expect(sent.at(-1)).toContain('Please address this finding you recorded:\nIssue: Retry loop never backs off')
   expect(await pane.find({ text: /Retry loop never backs off/ })).toBeUndefined()
 })
 
-test('t opens a field for the person’s own words: an answer closes its question, a reply sends a note back', async ($, on) => {
+test('t opens a field for the person’s own words: an answer closes its question, a reply sends a finding back', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
   on('ui.focus', () => ({}))
@@ -323,7 +318,7 @@ test('t opens a field for the person’s own words: an answer closes its questio
   })
   await clock.settle()
   await $.tool.call({
-    tool: 'mcp__inbox__note',
+    tool: 'mcp__inbox__record_finding',
     kind: 'issue',
     title: 'README is stale',
     detail: 'It names the old command.',
@@ -336,16 +331,16 @@ test('t opens a field for the person’s own words: an answer closes its questio
   expect(sent.at(-1)).toBe('Re "Use Node or Python?": Deno, actually')
   expect(await pane.find({ key: 'row-i1' })).toBeUndefined()
 
-  await pane.press({ key: 'tab-notes' })
-  await pane.press({ key: 'typekey-n3' })
-  await pane.input({ key: 'type-n3', text: 'Fix it after the CLI ships.' })
+  await pane.press({ key: 'tab-findings' })
+  await pane.press({ key: 'typekey-f3' })
+  await pane.input({ key: 'type-f3', text: 'Fix it after the CLI ships.' })
   expect(sent.at(-1)).toBe(
-    'About this note you recorded:\nIssue: README is stale\nIt names the old command.\n\nFix it after the CLI ships.',
+    'About this finding you recorded:\nIssue: README is stale\nIt names the old command.\n\nFix it after the CLI ships.',
   )
   expect(await pane.find({ text: /README is stale/ })).toBeUndefined()
 })
 
-test('Claude closes an item or note that no longer applies, by the id it reads beside the prompt', async ($, on) => {
+test('Claude closes an item or finding that no longer applies, by the id it reads beside the prompt', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
 
@@ -360,14 +355,14 @@ test('Claude closes an item or note that no longer applies, by the id it reads b
   })
   await clock.settle()
   await $.tool.call({
-    tool: 'mcp__inbox__note',
+    tool: 'mcp__inbox__record_finding',
     kind: 'issue',
     title: 'README is stale',
     detail: 'It names the old command.',
   })
   const told = await $.prompt.submit({ text: 'where are we?', wait: false, origin: { kind: 'composer' } })
   expect(told.context?.join('\n')).toContain('- [i2] (2) "Name the command greet?"')
-  expect(told.context?.join('\n')).toContain('- [n3] issue: README is stale')
+  expect(told.context?.join('\n')).toContain('- [f3] issue: README is stale')
 
   const close = (input: Record<string, string>) => $.tool.call({ tool: 'mcp__inbox__close', ...input } as never)
   const pane = await $.ui.mount(PANE)
@@ -380,9 +375,9 @@ test('Claude closes an item or note that no longer applies, by the id it reads b
   expect((await close({ id: 'i2', reason: 'no longer applies' })).result).toBe(
     'Closed i2. The user sees it in /inbox under Closed.',
   )
-  expect((await close({ id: 'n3', reason: 'fixed' })).result).toBe('Closed note n3.')
+  expect((await close({ id: 'f3', reason: 'fixed' })).result).toBe('Closed finding f3.')
   expect((await close({ id: 'i9', reason: 'done' })).result).toContain(
-    'Not closed: no open item or note has the id i9.',
+    'Not closed: no open item or finding has the id i9.',
   )
 
   // After a few seconds the rows leave, and Closed holds both outcomes.
@@ -596,7 +591,7 @@ test('/inbox demo shows sample entries in every tab, sends nothing, and goes bac
   expect(await pane.find({ text: /Export dates as ISO 8601/ })).toBeDefined()
   await pane.press({ key: 'answer-d11-0' })
   expect(sent).toEqual([])
-  await pane.press({ key: 'tab-notes' })
+  await pane.press({ key: 'tab-findings' })
   expect(await pane.find({ text: /Report query runs twice/ })).toBeDefined()
   await pane.press({ key: 'tab-prs' })
   expect(await pane.find({ text: /Add CSV export to the reports page/ })).toBeDefined()

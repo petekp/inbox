@@ -1,7 +1,7 @@
 # inbox
 
 A Claude Code mod that collects what is waiting on you in a session: the
-agent's questions, issues Claude noted, and your PRs' checks and reviews. It
+agent's questions, issues Claude found, and your PRs' checks and reviews. It
 lists them in the `/inbox` pane. A one-line band above the prompt shows where
 the session stands and how many items wait.
 
@@ -59,7 +59,7 @@ running session.
 - **Last session in this folder.** A new session in a folder you worked in
   during the past week shows the previous session's card. "Continue from it"
   adds that card to your first message. "Hide" dismisses it.
-- **/inbox** opens everything in a pane, with three tabs: Waiting, Notes and
+- **/inbox** opens everything in a pane, with three tabs: Waiting, Findings and
   PRs. Each tab is a list with one selected row. The selected row is shaded
   blue, shows its full text, and lists its actions. The other rows take one
   line each, with a muted line between each two. The Waiting tab lists
@@ -110,17 +110,17 @@ running session.
   Every path, command, snippet and link must appear in the agent's reply or
   in what it did that turn. The mod drops anything else, so the model cannot
   invent one. The mod itself never runs a command.
-- **Notes.** While it works, Claude records issues and opportunities it notices
+- **Findings.** While it works, Claude records issues and opportunities it notices
   outside the current task: a bug, a risk, missing tests, tech debt, a chance
-  to improve something. It also records a note when it works around a problem
-  instead of fixing it, and when part of its change could not be tested. It uses a `note` tool the mod gives it, and keeps
-  working on the task. The band shows "2 notes in /inbox". The pane's Notes
-  tab lists them, newest first. The selected note has four actions:
+  to improve something. It also records a finding when it works around a problem
+  instead of fixing it, and when part of its change could not be tested. It uses a `record_finding` tool the mod gives it, and keeps
+  working on the task. The band shows "2 findings in /inbox". The pane's Findings
+  tab lists them, newest first. The selected finding has four actions:
   - `a: Address it` asks Claude to fix it.
   - `d: Discuss` asks Claude to talk it through before changing anything.
-  - `t: Type a reply` sends the note back with your own words.
+  - `t: Type a reply` sends the finding back with your own words.
   - `x: Dismiss` drops it.
-- **Answering in chat.** Claude reads the open items and notes beside each
+- **Answering in chat.** Claude reads the open items and findings beside each
   message you send, each with an id such as `i35`. When your message
   answers one, Claude first closes it with a `close` tool the mod gives it,
   passing your answer, before any other work. The item then shows in
@@ -140,7 +140,7 @@ running session.
   Each PR shows:
   - whether it can merge, or what blocks it: draft, conflicts, failing
     checks, requested changes, open threads, missing approval, running checks
-  - each failing check as a row. `f: Fix` asks Claude to find the cause in
+  - each failing check as a row. `a: Fix` asks Claude to find the cause in
     the logs and fix it, and `o: Open log` opens the check's page.
   - each unresolved review thread whose last comment is someone else's, so
     it waits on you, as a row. The selected thread shows the first comment
@@ -156,10 +156,10 @@ running session.
 
 **`/inbox demo`** shows sample entries in every section of the band and
 the pane, for work on the layout: questions, tasks, a permission prompt, a
-just-closed item, checks, notes and two PRs. Their actions send nothing.
+just-closed item, checks, findings and two PRs. Their actions send nothing.
 Your own inbox is untouched. Run `/inbox demo` again to go back.
 
-The card, the open items and the notes survive compaction. The mod adds them to the
+The card, the open items and the findings survive compaction. The mod adds them to the
 context the model rereads after compacting.
 
 ## How it works
@@ -186,7 +186,7 @@ Each update costs about 3k input and 500 output tokens. It runs after the
 reply is shown and takes 3 to 5 seconds. When an update fails, or
 when the mod loads into a conversation it has not read, such as after an
 install mid-session, it catches up instead. One call over the whole
-conversation closes the questions and notes that were handled and adds what
+conversation closes the questions and findings that were handled and adds what
 still waits on you.
 
 The mod keeps each session's card in its store, so `claude --resume` brings
