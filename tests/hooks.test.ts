@@ -327,6 +327,7 @@ test('a finding Claude records shows in the Findings tab, and Address it sends i
 test('t opens a field for the person’s own words: an answer closes its question, a reply sends a finding back', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
+  on('ui.open', () => ({ value: { isPlaced: true as const } }))
   on('ui.focus', () => ({}))
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })

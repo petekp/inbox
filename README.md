@@ -78,8 +78,9 @@ running session.
     answer waits until the turn ends. The recommended answer's key says so.
     The other actions follow, with gray keys, on the same row when they fit,
     and on a line of their own when they don't.
-  - `t` opens a one-line field for your own words, when no option fits.
-    Enter sends them as your message, quoting the item. A question closes
+  - `t` opens a one-line field for your own words, when no option fits. The
+    field takes the keyboard, unless the prompt holds text you were writing.
+    Enter sends your words as your message, quoting the item. A question closes
     with your words as its answer. A task stays open until Claude closes it.
     The mobile app has no field, so it has no `t`.
   - `e: Explain` asks Claude what an item is about and what each choice

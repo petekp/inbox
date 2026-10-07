@@ -967,9 +967,19 @@ async function recordClose($: EngineInterface, input: Record<string, unknown>): 
   return `Not closed: no open item or finding has the id ${id}. The open ones are listed beside the user's latest message.`
 }
 
+/**
+ * Opens the pane, or raises it, asking for the keyboard. The surface grants
+ * that only while the prompt holds the keys over an empty composer.
+ */
+function openPane($: EngineInterface) {
+  return $.ui.open({ id: PANE, title: 'Inbox', focus: true, closeOnEscape: true })
+}
+
 /** Opens the free-text field under a row and gives it the keyboard. */
 async function startTyping($: EngineInterface, id: string) {
   await update($, TYPING, () => id)
+  // A click leaves the keys with the prompt, and `ui.focus` is refused in a pane that lacks them.
+  await openPane($)
   await $.ui.focus({ requestId: PANE, key: `type-${id}` }).catch(() => undefined)
 }
 
@@ -1907,7 +1917,7 @@ export const register: Register = on => {
 
   on('command.run', { command: 'inbox' }, async ($, e) => {
     const isDemo = e.args.trim() === 'demo' ? await update($, IS_DEMO, d => !d) : await read($, IS_DEMO)
-    const opened = await $.ui.open({ id: PANE, title: 'Inbox', focus: true, closeOnEscape: true })
+    const opened = await openPane($)
     if (opened.isPlaced && (await read($, TAB)) === 'prs') void findPrs($)
 
     return {
