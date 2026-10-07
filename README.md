@@ -40,7 +40,7 @@ running session.
   `! Signed out: /login`. An open permission prompt or question dialog comes
   next, as in `Allow push main to origin?`. Then come the number of waiting
   items and the first one. With nothing waiting, the line says where the
-  work stands. The Waiting tab also shows a stop above its items.
+  work stands. The Needs you tab also shows a stop above its items.
 - **Checks.** The mod records each test, type check, lint, build or
   validation command Claude runs, and how it ended. A failed check gets a
   line of its own under the band, as in "✗ npm test, 1 fail". The card the
@@ -57,10 +57,10 @@ running session.
 - **Last session in this folder.** A new session in a folder you worked in
   during the past week shows the previous session's card. "Continue from it"
   adds that card to your first message. "Hide" dismisses it.
-- **/inbox** opens everything in a pane, with three tabs: Waiting, Findings and
-  PRs. Each tab is a list with one selected row. The selected row is shaded
+- **/inbox** opens everything in a pane, with three tabs: Needs you, Findings
+  and PRs. Each tab is a list with one selected row. The selected row is shaded
   blue, shows its full text, and lists its actions. The other rows take one
-  line each, with a muted line between each two. The Waiting tab lists
+  line each, with a muted line between each two. The Needs you tab lists
   Questions first, newest first and numbered 1), 2), 3), then Your tasks.
   Each item shows how long it has waited. Lines join each group's title to
   its rows, as in a directory listing.
@@ -84,7 +84,7 @@ running session.
     closes as "expired, unanswered".
   - The tab bar shows when the inbox last updated, at its right end. A tab
     you switch to starts at its top.
-- **Keys.** While the pane has focus, `j` and `k` move the selection, `w`,
+- **Keys.** While the pane has focus, `j` and `k` move the selection, `n`,
   `f` and `p` switch tabs, and each action's key presses it. `/inbox` gives
   the pane focus, and ctrl+x tab moves focus between the pane and the
   prompt. A label written `key: Action` has a key. A label in brackets, like

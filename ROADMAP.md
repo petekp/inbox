@@ -14,7 +14,7 @@ Planned work. None of it is built yet.
   alternative". Pressing the alternative switches it, and `e` explains it.
   A call leaves the list half a day after Claude made it.
 - **Held actions.** Acts that cannot be undone, or that speak for you, wait
-  in the Waiting tab with the exact command or text: force-pushes,
+  in the Needs you tab with the exact command or text: force-pushes,
   discarding local work, deletions, and messages to people. One press runs
   it, and Claude keeps working meanwhile. A held discard runs only while the
   files are unchanged. Pushes, releases and deploys stay under Claude Code's

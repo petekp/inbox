@@ -225,11 +225,11 @@ const FINDINGS = 'autoAccept'
 const PRS = 'planMode'
 const TAB_COLORS: Record<Tab, string> = { waiting: WAITING, findings: FINDINGS, prs: PRS }
 const TABS: { id: Tab; label: string; hotkey: string }[] = [
-  { id: 'waiting', label: 'Waiting', hotkey: 'w' },
+  { id: 'waiting', label: 'Needs you', hotkey: 'n' },
   { id: 'findings', label: 'Findings', hotkey: 'f' },
   { id: 'prs', label: 'PRs', hotkey: 'p' },
 ]
-// The Waiting tab lists questions first, because each takes one key.
+// The Needs you tab lists questions first, because each takes one key.
 const WAITING_GROUPS: { kind: Item['kind']; title: string; empty: string }[] = [
   { kind: 'decide', title: 'Questions', empty: 'No questions are waiting on you.' },
   { kind: 'do', title: 'Your tasks', empty: 'No tasks are waiting on you.' },
@@ -436,7 +436,7 @@ async function commitLedger($: EngineInterface, change: (l: Ledger) => Ledger): 
 }
 
 /**
- * The open items of one kind in the order the Waiting tab lists them.
+ * The open items of one kind in the order the Needs you tab lists them.
  * Questions go newest first, so a new batch's numbers match Claude's in its reply.
  */
 function listedItems(items: Item[], kind: Item['kind']): Item[] {
