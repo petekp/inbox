@@ -308,17 +308,15 @@ export function readResults(
     if (calls.length === 1 && !isFiltered && own[0]?.isLast) {
       return { call, result: isError ? 'fail' : 'pass', summary: summary || (isError ? 'exited with an error' : '') }
     }
-    if (calls.length === 1) {
+    // tsc reports a failure only as "error TSnnnn" lines, so a tally or a failure word is another command's.
+    if (calls.length === 1 && call.name === 'tsc') {
+      if (TS_ERROR.test(output)) return { call, result: 'fail', summary }
+    } else if (calls.length === 1) {
       const tally = counts(output)
       if (tally) return { call, result: tally.fail > 0 ? 'fail' : 'pass', summary }
-      // tsc reports a failure only as "error TSnnnn" lines.
-      if (call.name === 'tsc') {
-        if (TS_ERROR.test(output)) return { call, result: 'fail', summary }
-      } else {
-        if (FAIL_COUNT.test(output) || TS_ERROR.test(output) || FAIL_WORD.test(output))
-          return { call, result: 'fail', summary }
-        if (ZERO_FAIL.test(output) || PASS_COUNT.test(output)) return { call, result: 'pass', summary }
-      }
+      if (FAIL_COUNT.test(output) || TS_ERROR.test(output) || FAIL_WORD.test(output))
+        return { call, result: 'fail', summary }
+      if (ZERO_FAIL.test(output) || PASS_COUNT.test(output)) return { call, result: 'pass', summary }
     }
     if (isError) return { call, result: 'fail', summary: summary || 'exited with an error' }
     if (isFiltered || isRedirected(own[0]?.segment ?? '')) return { call, result: 'unknown', summary }

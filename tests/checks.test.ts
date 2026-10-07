@@ -173,6 +173,7 @@ describe('readResults', () => {
     // tsc fails only on its own "error TS" lines.
     const tsc = 'npx tsc --noEmit && echo OK; npm run check:all 2>&1 | tail -3'
     expect(result(tsc, 'FAIL — 1 guidance claim does not resolve\n7 passed\n')).toBe('unknown')
+    expect(result(tsc, ' 40 pass\n 2 fail\n')).toBe('unknown')
     expect(result(tsc, "src/a.ts(1,1): error TS2322: Type 'x' is not assignable.\n")).toBe('fail')
     // ESLint's "problems" include warnings, which fail only past --max-warnings.
     const lint = 'npx eslint src | tail -3'
