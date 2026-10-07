@@ -1,6 +1,6 @@
 # inbox
 
-A Claude Code mod that gathers and manages outstanding questions, tasks, issues, and opportunities into one nicely organized place during a session. Just use `/inbox`.
+A Claude Code mod that gathers and manages outstanding questions, tasks, issues, and opportunities into one nicely organized place alongside your session. Just use `/inbox`.
 
 https://github.com/user-attachments/assets/560f80be-e6fb-484e-8a3f-7b4828b98fb2
 
