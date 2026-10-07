@@ -137,6 +137,18 @@ describe('readResults', () => {
     // The runner's own line wins over another runner's line that also says "test".
     const both = 'python3 -m unittest > u.log; echo "unittest exit $?"; bun test | tail -4; echo "bun exit $?"'
     expect(result(both, 'unittest exit 1\nbun exit 0\n 7 pass\n 0 fail\n')).toBe('pass')
+    // A label names its check by whole words, so "go" is not in "golangci-lint".
+    const go = 'golangci-lint run > l.log; echo "golangci-lint exit $?"; go test ./... > t.log; echo "go test exit $?"'
+    expect(readResults(go, runs(go), 'golangci-lint exit 1\ngo test exit 0\n', false).map(r => r.result)).toEqual([
+      'fail',
+      'pass',
+    ])
+    // A runner's name can end in what the check does, as eslint's does for the lint script.
+    const lint = 'pnpm run typecheck > tc.log; echo "TSC EXIT=$?"; pnpm run lint > es.log; echo "ESLINT EXIT=$?"'
+    const lintResult = readResults(lint, runs(lint), 'TSC EXIT=0\nESLINT EXIT=1\n', false).find(
+      r => r.call.name === 'lint',
+    )
+    expect(lintResult?.result).toBe('fail')
     const build = 'go build ./... > b.log 2>&1; echo "build exit=$?"'
     expect(result(build, 'build exit=0\n')).toBe('pass')
   })

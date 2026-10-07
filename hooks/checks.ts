@@ -247,7 +247,16 @@ function bareExit(command: string, output: string): number | null {
 }
 
 /** Words in check names that say what a check does, not which runner ran it. */
-const GENERIC_WORDS = new Set(['test', 'tests', '--test', 'build', 'check', 'run'])
+const GENERIC_WORDS = new Set(['test', 'build', 'check', 'run', 'lint'])
+
+/** The words of a check name or a label, split at punctuation, with a final "s" dropped so "tests" reads as "test". */
+function labelWords(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map(w => w.replace(/s$/, ''))
+    .filter(Boolean)
+}
 
 /** Whether a segment sends its output to a file, so the output here is not its own. */
 function isRedirected(segment: string): boolean {
@@ -301,10 +310,13 @@ export function readResults(
   return calls.map(call => {
     const own = runs.filter(r => r.call.name === call.name)
     if (own.length > 1) return { call, result: 'unknown', summary: `ran ${own.length} times in one command` }
-    const words = call.name.toLowerCase().replace(/\.sh$/, '').split(/\s+/)
-    // The runner's word ("bun") names its line; "test" can name another runner's, as in "unittest exit 1".
+    const words = labelWords(call.name.replace(/\.sh$/, ''))
+    // A label names a check by whole words, so "go" is not in "golangci-lint exit 1", but a runner's
+    // name can end in what it does, as "eslint" ends in "lint". The runner's word ("bun") names its
+    // line before a word another runner's line can share, as in "unit test exit 1".
     const named = words.filter(w => !GENERIC_WORDS.has(w))
-    const labelFor = (ws: string[]) => exits.find(x => x.label !== '' && ws.some(w => x.label.includes(w)))
+    const names = (label: string, w: string) => label === w || (GENERIC_WORDS.has(w) && label.endsWith(w))
+    const labelFor = (ws: string[]) => exits.find(x => labelWords(x.label).some(l => ws.some(w => names(l, w))))
     const labeled = labelFor(named) ?? labelFor(call.kind === 'tests' ? [...words, 'test'] : words)
     const bare = calls.length === 1 && exits.length === 0 ? bareExit(command, output) : null
     const only =
