@@ -64,8 +64,8 @@ running session.
   Questions first, newest first and numbered 1), 2), 3), then Your tasks.
   Each item shows how long it has waited. Lines join each group's title to
   its rows, as in a directory listing.
-  - On a question, the digits send an answer to Claude as your message,
-    quoting the question: `1: Node  2: Python`. If Claude is working, the
+  - On a question, the letters send an answer to Claude as your message,
+    quoting the question: `a: Node  b: Python`. If Claude is working, the
     answer waits until the turn ends. The recommended answer's key says so.
     The other actions follow, dimmer, on the same row when they fit, and
     on a line of their own when they don't.
@@ -84,10 +84,11 @@ running session.
     closes as "expired, unanswered".
   - The tab bar shows when the inbox last updated, at its right end. A tab
     you switch to starts at its top.
-- **Keys.** While the pane has focus, `j` and `k` move the selection, `n`,
-  `f` and `p` switch tabs, and each action's key presses it. `/inbox` gives
-  the pane focus, and ctrl+x tab moves focus between the pane and the
-  prompt. A label written `key: Action` has a key. A label in brackets, like
+- **Keys.** While the pane has focus, `1`, `2` and `3` switch tabs, `j` and
+  `k` move the selection, and each action's key presses it. `▸ Keys`, at the
+  bottom of the pane, lists the keys no row shows. `/inbox` gives the pane
+  focus, and ctrl+x tab moves focus between the pane and the prompt. A label
+  written `key: Action` has a key. A label in brackets, like
   `[ Open PR ]`, is click only. You can also click any action, or click a
   row's text to select it.
 - **Helper buttons.** When the agent's reply spells out how to do an item, the

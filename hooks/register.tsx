@@ -114,12 +114,13 @@ const SNAPSHOT = atom({ plugin: 'inbox', key: 'snapshot' } as const, null as Sna
 const TYPING = atom({ plugin: 'inbox', key: 'typing' } as const, null as string | null)
 const SETTLED = atom({ plugin: 'inbox', key: 'settled' } as const, [] as Settled[])
 const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as Item['kind'][])
+const IS_KEY_LIST_SHOWN = atom({ plugin: 'inbox', key: 'isKeyListShown' } as const, false)
 // How long a closed item's row stays in place, with its outcome, before it moves to Closed.
 const SETTLED_MS = 8000
 const IS_DEMO = atom({ plugin: 'inbox', key: 'isDemo' } as const, false)
 const SAMPLE_PRESS = 'Sample entry: nothing was sent. Run /inbox demo to go back.'
 // The pane's buttons that only move around it, which work in the demo. Every other press there sends nothing.
-const DEMO_PRESSES = /^(tab-|title-|select-|typekey-|fold-|next$|previous$)/
+const DEMO_PRESSES = /^(tab-|title-|select-|typekey-|fold-|key-list$|next$|previous$)/
 // A dirtier tree is read only this far, so changes past it go unseen.
 const SNAPSHOT_MAX = 2000
 const PR_POLL_MS = 2 * 60_000
@@ -225,9 +226,9 @@ const FINDINGS = 'autoAccept'
 const PRS = 'planMode'
 const TAB_COLORS: Record<Tab, string> = { waiting: WAITING, findings: FINDINGS, prs: PRS }
 const TABS: { id: Tab; label: string; hotkey: string }[] = [
-  { id: 'waiting', label: 'Needs you', hotkey: 'n' },
-  { id: 'findings', label: 'Findings', hotkey: 'f' },
-  { id: 'prs', label: 'PRs', hotkey: 'p' },
+  { id: 'waiting', label: 'Needs you', hotkey: '1' },
+  { id: 'findings', label: 'Findings', hotkey: '2' },
+  { id: 'prs', label: 'PRs', hotkey: '3' },
 ]
 // The Needs you tab lists questions first, because each takes one key.
 const WAITING_GROUPS: { kind: Item['kind']; title: string; empty: string }[] = [
@@ -1142,15 +1143,20 @@ function doneAction($: EngineInterface, item: Item): Action {
 /** A pane action with the key that presses it while the pane has focus. */
 type KeyAction = Action & { hotkey: string }
 
+// The keys of a question's answers and a task's helps, lettered as a multiple-choice
+// question letters them. The digits switch tabs, and the letters left out are the
+// keys of a Needs you row's other actions and of moving the selection.
+const CHOICE_KEYS = [...'abcfghilm']
+
 /**
- * The selected item's actions. `keys` finish it: answers and helps on digits,
- * as a survey numbers them, and Done for a task. `more` are the other ways to
- * respond: your own words, Explain, and Dismiss for a question.
+ * The selected item's actions. `keys` finish it: answers and helps on letters,
+ * and Done for a task. `more` are the other ways to respond: your own words,
+ * Explain, and Dismiss for a question.
  */
 function itemKeys($: EngineInterface, item: Item): { keys: KeyAction[]; more: KeyAction[] } {
-  const numbered = [...(item.kind === 'do' ? [] : answerActions($, item)), ...helpActions($, item)]
-    .slice(0, 9)
-    .map((a, n) => ({ ...a, hotkey: String(n + 1) }))
+  const lettered = [...(item.kind === 'do' ? [] : answerActions($, item)), ...helpActions($, item)]
+    .slice(0, CHOICE_KEYS.length)
+    .map((a, n) => ({ ...a, hotkey: CHOICE_KEYS[n]! }))
   const explainKey = { key: `explain-${item.id}`, label: 'Explain', hotkey: 'e', onPress: () => void explain($, item) }
   const typeKey = {
     key: `typekey-${item.id}`,
@@ -1159,10 +1165,10 @@ function itemKeys($: EngineInterface, item: Item): { keys: KeyAction[]; more: Ke
     onPress: () => void startTyping($, item.id),
   }
   if (item.kind === 'do')
-    return { keys: [...numbered, { ...doneAction($, item), hotkey: 'd' }], more: [typeKey, explainKey] }
+    return { keys: [...lettered, { ...doneAction($, item), hotkey: 'd' }], more: [typeKey, explainKey] }
 
   return {
-    keys: numbered,
+    keys: lettered,
     more: [
       typeKey,
       explainKey,
@@ -1895,6 +1901,7 @@ export const register: Register = on => {
       isDark,
       typing,
       unfolded,
+      isKeyListShown,
     ] = await Promise.all([
       drawnState($),
       read($, PRESENCE),
@@ -1903,6 +1910,7 @@ export const register: Register = on => {
       read($, IS_DARK_THEME),
       read($, TYPING),
       read($, UNFOLDED),
+      read($, IS_KEY_LIST_SHOWN),
     ])
     const card = ledger.card
     const prViews = Object.values(prState.views)
@@ -2271,6 +2279,14 @@ export const register: Register = on => {
             ? `Updated ${ago(now - card.updatedAt)}`
             : 'Not updated yet'
 
+    // The keys no row shows, listed in the footer.
+    const keyList = [
+      { keys: TABS.map(t => t.hotkey).join(' '), does: 'Switch tabs' },
+      { keys: 'j k', does: 'Select the next or previous row' },
+      { keys: 'ctrl+x tab', does: 'Move focus between the pane and the prompt' },
+    ]
+    const keyColumn = Math.max(...keyList.map(k => k.keys.length)) + 2
+
     // The tab bar is the pane's top panel, with when the inbox last updated at
     // its right end, or under the tabs when the pane is too narrow.
     const tabs = (
@@ -2284,28 +2300,37 @@ export const register: Register = on => {
         columnGap={3}
       >
         <Box flexDirection="row" columnGap={1}>
-          {TABS.map(({ id, label, hotkey }) => {
+          {TABS.map(({ id, label }) => {
             const count = id === 'waiting' ? ledger.items.length : rows[id].length
-            const counted = `${label}${count > 0 ? ` ${count}` : ''}`
+            const width = `${label}${count > 0 ? ` ${count}` : ''}`.length + 2
 
-            // The selected tab is a raised panel three lines tall, its name in the
-            // middle line and a line of its color along the top edge.
+            // The selected tab is a raised panel three lines tall, with its name on
+            // the middle line and a line of its color along the top edge.
             if (tab === id)
               return (
                 <Box flexDirection="column">
                   <Text color={TAB_COLORS[id]} backgroundColor={RAISED}>
-                    {'▔'.repeat(counted.length + 2)}
+                    {'▔'.repeat(width)}
                   </Text>
-                  <Text backgroundColor={RAISED} bold>
-                    {` ${counted} `}
+                  <Text backgroundColor={RAISED}>
+                    {' '}
+                    <Text bold backgroundColor={RAISED}>
+                      {label}
+                    </Text>
+                    {count > 0 ? (
+                      <Text bold color={TAB_COLORS[id]} backgroundColor={RAISED}>
+                        {' '}
+                        {count}
+                      </Text>
+                    ) : null}{' '}
                   </Text>
-                  <Text backgroundColor={RAISED}>{' '.repeat(counted.length + 2)}</Text>
+                  <Text backgroundColor={RAISED}>{' '.repeat(width)}</Text>
                 </Box>
               )
+
             // Each line is a Button, so a click anywhere on the tab's three lines
             // selects it. Under the pointer, the keyed Box raises all three as one
             // panel, the selected tab's shape without its line.
-            const width = `${hotkey}: ${counted}`.length + 2
             const show = () => void showTab($, id)
 
             return (
@@ -2313,7 +2338,7 @@ export const register: Register = on => {
                 <Button plain key={`tab-${id}-above`} label={' '.repeat(width)} hover={RAISE} onPress={show} />
                 <Box flexDirection="row">
                   <Button plain key={`tab-${id}-before`} label=" " hover={RAISE} onPress={show} />
-                  <Button plain key={`tab-${id}`} hotkey={hotkey} label={label} dimColor hover={RAISE} onPress={show} />
+                  <Button plain key={`tab-${id}`} label={label} dimColor hover={RAISE} onPress={show} />
                   {count > 0 ? (
                     <Text color={TAB_COLORS[id]} hover={RAISE}>
                       {' '}
@@ -2333,6 +2358,32 @@ export const register: Register = on => {
             <Text color="error">update failed, retries after the next reply</Text>
           ) : null}
         </Box>
+      </Box>
+    )
+    // The footer's list of keys, folded to one line until clicked.
+    const footer = (
+      <Box flexDirection="column" paddingX={2} paddingY={1}>
+        <Box flexDirection="row">
+          <Button
+            plain
+            key="key-list"
+            label={isKeyListShown ? '▾ Keys' : '▸ Keys'}
+            dimColor
+            onPress={() => void update($, IS_KEY_LIST_SHOWN, shown => !shown)}
+          />
+        </Box>
+        {isKeyListShown
+          ? keyList.map(k => (
+              <Box key={`key-list-${k.keys}`} flexDirection="row">
+                <Box width={keyColumn} flexShrink={0}>
+                  <Text bold>{k.keys}</Text>
+                </Box>
+                <Text dimColor wrap="wrap">
+                  {k.does}
+                </Text>
+              </Box>
+            ))
+          : null}
       </Box>
     )
 
@@ -2578,21 +2629,30 @@ export const register: Register = on => {
             { key: 'previous', label: 'Previous', hotkey: 'k', onPress: () => move(-1) },
           ]
         : []
+    const tabKeys: KeyAction[] = TABS.map(({ id, label, hotkey }) => ({
+      key: `tab-key-${id}`,
+      label,
+      hotkey,
+      onPress: () => void showTab($, id),
+    }))
 
-    // At least the body's height, so the pane's background fills it. A pane takes a
-    // key only as a Button's hotkey, so j and k are Buttons in a hidden Box.
+    // Docked, the pane takes at least the window's height, so its background fills
+    // it and the footer sits at its bottom edge until the content is taller than the
+    // window. The engine has no fixed footer, so past that it follows the content.
+    // Inline, the frame fits the tree. A pane takes a key only as a Button's hotkey,
+    // so the tab keys, j and k are Buttons in a hidden Box.
     return (
       <Box
         flexDirection="column"
-        gap={1}
-        minHeight={e.props.scroll.bodyRows}
+        minHeight={e.props.placement === 'dock' ? e.props.scroll.bodyRows : undefined}
         backgroundColor={isDark ? DARK_BODY : undefined}
       >
         {tabs}
-        <Box flexDirection="column" paddingX={1} flexGrow={1}>
+        <Box flexDirection="column" paddingX={1} paddingTop={1} flexGrow={1}>
           {tab === 'findings' ? findingsView() : tab === 'prs' ? prsView() : waitingView()}
         </Box>
-        <Box display="none">{keyRow(moveKeys)}</Box>
+        {footer}
+        <Box display="none">{keyRow([...tabKeys, ...moveKeys])}</Box>
       </Box>
     )
   })
