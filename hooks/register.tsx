@@ -29,11 +29,12 @@ import {
   checkLine,
   checksIn,
   claimMessage,
+  distinctSummary,
   failureLines,
-  failureSummary,
+  failCount,
+  failureList,
   fixMessage,
   NO_TARGET,
-  outputLines,
   readResults,
 } from './checks'
 import type { Contradiction } from './checks'
@@ -141,7 +142,6 @@ const TYPING = atom({ plugin: 'inbox', key: 'typing' } as const, null as string 
 const SETTLED = atom({ plugin: 'inbox', key: 'settled' } as const, [] as Settled[])
 const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as Item['kind'][])
 const IS_KEY_LIST_SHOWN = atom({ plugin: 'inbox', key: 'isKeyListShown' } as const, false)
-const IS_CHECK_DETAIL_SHOWN = atom({ plugin: 'inbox', key: 'isCheckDetailShown' } as const, false)
 // How long a closed item's row stays in place, with its outcome, before it moves to Closed.
 const SETTLED_MS = 8000
 const IS_DEMO = atom({ plugin: 'inbox', key: 'isDemo' } as const, false)
@@ -881,21 +881,6 @@ async function useHelp($: EngineInterface, item: Item, help: Help, press: UiPres
 
 function clipLabel(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
-}
-
-/** `text` wrapped at spaces to `width` columns, in at most `count` lines; the last ends in … when text is left over. */
-function wrapLines(text: string, width: number, count: number): string[] {
-  const lines: string[] = []
-  let rest = text.trim()
-  while (rest && lines.length < count) {
-    const cut = rest.length <= width ? rest.length : rest.lastIndexOf(' ', width)
-    const end = cut > 0 ? cut : width
-    lines.push(rest.slice(0, end))
-    rest = rest.slice(end).trimStart()
-  }
-  if (rest) lines[count - 1] = clipLabel(`${lines[count - 1] ?? ''} ${rest}`, width)
-
-  return lines
 }
 
 /** Each step's helps in order: one press copies then opens, for example. */
@@ -2214,7 +2199,6 @@ export const register: Register = on => {
       typing,
       unfolded,
       isKeyListShown,
-      isCheckDetailShown,
     ] = await Promise.all([
       drawnState($),
       read($, PRESENCE),
@@ -2224,7 +2208,6 @@ export const register: Register = on => {
       read($, TYPING),
       read($, UNFOLDED),
       read($, IS_KEY_LIST_SHOWN),
-      read($, IS_CHECK_DETAIL_SHOWN),
     ])
     const card = ledger.card
     const prViews = Object.values(prState.views)
@@ -2249,6 +2232,8 @@ export const register: Register = on => {
       title: string
       /** Muted text on the selected title's line, such as an age. */
       titleAfter?: string
+      /** A line under the selected title. */
+      subtitle?: JSX.Element
       /** Unselected, the row is one line: `before` muted, `text` as a button that selects the row, then `after`, muted or in a tone. */
       line?: { before?: string; text: string; after?: string; afterTone?: Tone }
       /** Unselected, text that does not fit beside `after` goes on a second line instead of being cut. */
@@ -2368,64 +2353,42 @@ export const register: Register = on => {
         ],
       }
     }
-    // What failed in up to two lines, naming the file, with the output and the
-    // command folded under Details. Once Fix is pressed, the row waits on Claude.
+    // What ran and how it ended, when, then what failed and the command. Once
+    // Fix is pressed, the row waits on Claude.
     const failedCheckRow = (c: Check): Row => {
       const id = `check:${checkKey(c)}`
-      const { file, text } = failureSummary(c)
-      // Without failure lines, the summary above is the output's only line.
-      const output = outputLines(c).filter(line => line !== text)
-      const hasDetail = c.command !== '' || output.length > 0
+      const failed = failureList(c)
+      const count = failCount(c)
+      const name = checkName(c, root)
+      const ran = ago(now - c.ranAt)
+      // Unselected, the count says how much failed, or else the file the failure names.
+      const brief = count ? `${count.fail} failed` : failed.find(f => f.file)?.file
       const fixSent = c.fixSentAt === null ? null : `Fix sent · ${ago(now - c.fixSentAt)}`
-      const fix = {
-        key: `fix-${id}`,
-        label: fixSent ? 'Fix again' : 'Fix',
-        hotkey: 'a',
-        onPress: () => void sendFix($, c),
-      }
-      const dismiss = { key: `dismiss-${id}`, label: 'Dismiss', hotkey: 'x', onPress: () => void dismissCheck($, c) }
 
       return {
         id,
         handle: '✗',
         handleTone: 'error',
-        title: checkName(c, root),
-        titleAfter: ` · ${ago(now - c.ranAt)}${c.isStale ? ', before the last edit' : ''}`,
+        title: `${name} · ${count ? `${count.fail} of ${count.total} failed` : (distinctSummary(c) ?? 'failed')}`,
+        subtitle: (
+          <Text color={pal.muted}>
+            {ran}
+            {c.isStale ? <Text color={pal.tone.needsYou}>, before the last edit</Text> : null}
+          </Text>
+        ),
         line:
           c.fixSentAt === null
-            ? { text: checkName(c, root), after: `${file ? ` · ${file}` : ''} · ${ago(now - c.ranAt)}` }
-            : { text: checkName(c, root), after: ` · fix sent ${ago(now - c.fixSentAt)}`, afterTone: 'done' },
+            ? { text: name, after: `${brief ? ` · ${brief}` : ''} · ${ran}` }
+            : { text: name, after: ` · fix sent ${ago(now - c.fixSentAt)}`, afterTone: 'done' },
         body: (
           <Box flexDirection="column">
-            {wrapLines(file ? `${file}: ${text}` : text, e.props.bodyColumns - 10, 2).map(line => (
-              <Text wrap="truncate-end">{line}</Text>
+            {failed.map(f => (
+              <Text wrap="truncate-end">{f.file ? `${f.file}: ${f.text}` : f.text}</Text>
             ))}
-            {hasDetail ? (
-              <Box flexDirection="row">
-                <Button
-                  plain
-                  key={`fold-details-${id}`}
-                  label={isCheckDetailShown ? '▾ Details' : '▸ Details'}
-                  onPress={() => void update($, IS_CHECK_DETAIL_SHOWN, shown => !shown)}
-                />
-              </Box>
-            ) : null}
-            {hasDetail && isCheckDetailShown ? (
-              // The output's failure lines, then where and how it ran, as a shell prompt would show it.
-              <Box flexDirection="column" rowGap={blankLine}>
-                {output.length > 0 ? (
-                  <Box flexDirection="column">
-                    {output.map(line => (
-                      <Text wrap="wrap">{line}</Text>
-                    ))}
-                  </Box>
-                ) : null}
-                {c.command ? (
-                  <Text wrap="wrap" color={pal.muted}>
-                    {c.folder ? `${tilde(c.folder)} ` : ''}$ {tilde(c.command)}
-                  </Text>
-                ) : null}
-              </Box>
+            {c.command ? (
+              <Text wrap="wrap" color={pal.muted}>
+                {c.folder ? `${tilde(c.folder)} ` : ''}$ {tilde(c.command)}
+              </Text>
             ) : null}
             {fixSent ? (
               <Box marginTop={blankLine}>
@@ -2434,8 +2397,12 @@ export const register: Register = on => {
             ) : null}
           </Box>
         ),
-        keys: () => [fix],
-        moreKeys: () => [dismiss],
+        keys: () => [
+          { key: `fix-${id}`, label: fixSent ? 'Fix again' : 'Fix', hotkey: 'a', onPress: () => void sendFix($, c) },
+        ],
+        moreKeys: () => [
+          { key: `dismiss-${id}`, label: 'Dismiss', hotkey: 'x', onPress: () => void dismissCheck($, c) },
+        ],
       }
     }
     const threadRow = (pr: PrView, t: PrThread): Row => {
@@ -2686,6 +2653,7 @@ export const register: Register = on => {
                 <Text bold>{row.title}</Text>
                 {row.titleAfter ? <Text color={pal.muted}>{row.titleAfter}</Text> : null}
               </Text>
+              {row.subtitle}
               {row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null}
               <Box flexDirection="column" marginTop={blankLine}>
                 {keys.length === 0

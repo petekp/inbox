@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Check, Checks } from '../types'
-import { checkName, checkRuns, checksIn, claimsIn, failureLines, failureSummary, readResults } from '../hooks/checks'
+import { checkName, checkRuns, checksIn, claimsIn, failureLines, failureList, readResults } from '../hooks/checks'
 import { candidates, changedPaths, readChanged, readLsTree } from '../hooks/git'
 
 describe('checksIn', () => {
@@ -167,10 +167,19 @@ describe('failureLines', () => {
     expect(failureLines(bun)).toEqual(['(fail) parses times [2ms]', 'AssertionError: expected 3 to be 4'])
     const tsc = [1, 2, 3, 4].map(n => `src/a.ts(${n},1): error TS2322: Type 'x' is not assignable.`).join('\n')
     expect(failureLines(tsc)).toHaveLength(3)
+    // node --test lists each failure again under a "✖ failing tests:" heading.
+    const node = [
+      '✖ parses times (1.2ms)',
+      'ℹ fail 1',
+      '✖ failing tests:',
+      'test at a.test.js:5:1',
+      '✖ parses times (1.2ms)',
+    ].join('\n')
+    expect(failureLines(node)).toEqual(['✖ parses times (1.2ms)'])
     expect(failureLines('Done in 2s')).toEqual([])
   })
 
-  test('a failure in one line names the file, even from another of its lines, and what failed', () => {
+  test('each failure names its file, even from a later line that repeats it, and what failed', () => {
     const failed = (failures: string[]): Check => ({
       name: 'tests',
       kind: 'tests',
@@ -189,21 +198,21 @@ describe('failureLines', () => {
       fixSentAt: null,
     })
     expect(
-      failureSummary(
-        failed(["hooks/register.tsx(2310,7): error TS2322: Type 'string' is not assignable to 'number'."]),
-      ),
-    ).toEqual({ file: 'register.tsx:2310', text: "Type 'string' is not assignable to 'number'." })
+      failureList(failed(["hooks/register.tsx(2310,7): error TS2322: Type 'string' is not assignable to 'number'."])),
+    ).toEqual([{ file: 'register.tsx:2310', text: "Type 'string' is not assignable to 'number'." }])
     const vitest = [
       '× parses a dated heading 3ms',
       'FAIL  |node| tests/markdown/parse.test.ts > headings > parses a dated heading',
     ]
-    expect(failureSummary(failed(vitest))).toEqual({ file: 'parse.test.ts', text: 'parses a dated heading' })
+    expect(failureList(failed(vitest))).toEqual([{ file: 'parse.test.ts', text: 'parses a dated heading' }])
+    expect(failureList(failed(['✖ sums every value (0.9ms)', '✖ averages the values (0.1ms)']))).toEqual([
+      { file: null, text: 'sums every value' },
+      { file: null, text: 'averages the values' },
+    ])
     // Go names a package, not a file, and its first line is a bare FAIL.
-    expect(failureSummary(failed(['FAIL', 'FAIL\texample.com/app/message\t0.698s']))).toEqual({
-      file: null,
-      text: 'example.com/app/message',
-    })
-    expect(failureSummary(failed([]))).toEqual({ file: null, text: 'exit 1' })
+    expect(failureList(failed(['FAIL', 'FAIL\texample.com/app/message\t0.698s']))).toEqual([
+      { file: null, text: 'example.com/app/message' },
+    ])
   })
 })
 

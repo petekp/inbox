@@ -261,8 +261,6 @@ declare module 'claude-code' {
       unfolded: Item['kind'][]
       /** The pane's list of the keys no row shows is unfolded. */
       isKeyListShown: boolean
-      /** A failing check's row shows its output and command under the summary. */
-      isCheckDetailShown: boolean
       /** The band and pane show sample entries instead of the session's own, for `/inbox demo`. */
       isDemo: boolean
     }

@@ -417,8 +417,13 @@ const SUMMARY = [
   /^.*\b\d+ (?:errors?|warnings?|problems?)\b.*$/im,
 ]
 
+/** The marks a test runner puts before a failing test. node's "✖ failing tests:" heading names none. */
+const FAIL_MARK = String.raw`\(fail\)|FAIL(?:ED)?\b|✗|✖(?! failing tests:)|×|✘`
+
 /** A line that names what failed: a failing test, a compiler error, or an error message. */
-const FAILURE_LINE = /^\s*(?:\(fail\)|FAIL\b|✗|×|✘)|\berror\s+TS\d+\b|^\s*(?:[A-Z]\w*Error|error)(?:\[\w+\])?:/
+const FAILURE_LINE = new RegExp(
+  String.raw`^\s*(?:${FAIL_MARK})|\berror\s+TS\d+\b|^\s*(?:[A-Z]\w*Error|error)(?:\[\w+\])?:`,
+)
 
 /** Up to three lines of a check's output that name what failed, each cut to 160 characters. */
 export function failureLines(output: string): string[] {
@@ -479,6 +484,7 @@ function counts(output: string): { pass: number; fail: number } | null {
 }
 
 function summaryOf(output: string, tally: ReturnType<typeof counts>): string {
+  // failCount reads this back for the pane's "2 of 176 failed".
   if (tally) return `${tally.pass} pass, ${tally.fail} fail`
   for (const p of SUMMARY) {
     const m = output.match(p)
@@ -639,45 +645,59 @@ export function claimsIn(reply: string): { sentence: string; kind: CheckKind }[]
   })
 }
 
-/** What a failed check's output says: the lines that name the failure, then the summary unless it repeats one. */
-export function outputLines(check: Check): string[] {
+/** The output's summary line, unless it repeats a failure line, as tsc's first error does. */
+export function distinctSummary(check: Check): string | null {
   const isRepeated = check.failures.some(f => f.includes(check.summary) || check.summary.includes(f))
 
-  return [...check.failures, ...(check.summary && !isRepeated ? [check.summary] : [])]
+  return check.summary && !isRepeated ? check.summary : null
+}
+
+/** What a failed check's output says: the lines that name the failure, then the summary unless it repeats one. */
+export function outputLines(check: Check): string[] {
+  const summary = distinctSummary(check)
+
+  return [...check.failures, ...(summary ? [summary] : [])]
 }
 
 /** A path with an extension, then the line it names, if any: `src/a.ts(12,5)`, `/src/a.swift:30:27`, `src/a.test.ts`. */
 const LOCATION = /((?:[\w@.~-]*\/)*[\w@~-][\w@.~-]*\.[A-Za-z]\w{0,5})(?:\((\d+),\d+\)|:(\d+)(?::\d+)?)?(?![\w/])/g
 
-/**
- * A failed check in one line: the file the failure lines name, as its base
- * name and line, and what the first informative one says, without its
- * marker, location and timing. Without failure lines, the summary.
- */
-export function failureSummary(check: Check): { file: string | null; text: string } {
-  // A token counts as a file when it names a line or a folder, so a word like "foo.bar" does not.
-  const locations = check.failures.map(
-    line => [...line.matchAll(LOCATION)].find(m => m[2] ?? m[3] ?? m[1]?.includes('/')) ?? null,
-  )
-  const found = locations.find(Boolean)
-  const path = found?.[1]
-  const line = found?.[2] ?? found?.[3]
-  const said = check.failures
-    .map((failure, n) =>
-      failure
-        .replace(locations[n]?.[0] ?? '', '')
-        .replace(/^\s*(?:\(fail\)|FAIL(?:ED)?\b|✗|×|✘|❯)\s*/, '')
-        .replace(/^\|[\w-]+\|\s*/, '')
-        .replace(/^[\s:>-]*(?:error(?:\s+TS\d+|\[\w+\])?:\s*)?/i, '')
-        .replace(/\s*\[?\d+(?:\.\d+)?\s?m?s\]?$/, '')
-        .trim(),
-    )
-    .find(Boolean)
+/** A failure mark, or vitest's ❯, at the start of a failure line. */
+const LEADING_MARK = new RegExp(String.raw`^\s*(?:${FAIL_MARK}|❯)\s*`)
 
-  return {
-    file: path ? `${path.replace(/^.*\//, '')}${line ? `:${line}` : ''}` : null,
-    text: said ?? check.summary,
+/**
+ * What a failed check's failure lines say, one entry per failure: the file a
+ * line names, as its base name and line, and its text without marker,
+ * location and timing. A line whose text ends with an earlier one's, as
+ * vitest's FAIL line repeats its × line, only adds its file to that entry.
+ */
+export function failureList(check: Check): { file: string | null; text: string }[] {
+  const list: { file: string | null; text: string }[] = []
+  for (const failure of check.failures) {
+    // A token counts as a file when it names a line or a folder, so a word like "foo.bar" does not.
+    const found = [...failure.matchAll(LOCATION)].find(m => m[2] ?? m[3] ?? m[1]?.includes('/'))
+    const line = found?.[2] ?? found?.[3]
+    const file = found?.[1] ? `${found[1].replace(/^.*\//, '')}${line ? `:${line}` : ''}` : null
+    const text = failure
+      .replace(found?.[0] ?? '', '')
+      .replace(LEADING_MARK, '')
+      .replace(/^\|[\w-]+\|\s*/, '')
+      .replace(/^[\s:>-]*(?:error(?:\s+TS\d+|\[\w+\])?:\s*)?/i, '')
+      .replace(/\s*[[(]?\d+(?:\.\d+)?\s?m?s[\])]?$/, '')
+      .trim()
+    const earlier = list.find(f => text.endsWith(f.text))
+    if (earlier) earlier.file ??= file
+    else if (text) list.push({ file, text })
   }
+
+  return list
+}
+
+/** How many of a check's tests failed, read from its "N pass, M fail" summary; null when the output gave no counts. */
+export function failCount(check: Check): { fail: number; total: number } | null {
+  const m = check.summary.match(/^(\d+) pass, (\d+) fail$/)
+
+  return m ? { fail: Number(m[2]), total: Number(m[1]) + Number(m[2]) } : null
 }
 
 /** What `a: Fix` on a failing check sends Claude. */
