@@ -133,6 +133,7 @@ const PR_VIEWS = atom(
 const PR_FIXES_SENT = atom({ plugin: 'inbox', key: 'prFixesSent' } as const, {} as Record<string, PrFixSent>)
 const STOP = atom({ plugin: 'inbox', key: 'stop' } as const, null as Stop | null)
 const DIALOGS = atom({ plugin: 'inbox', key: 'dialogs' } as const, [] as Dialog[])
+const EDIT_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit'])
 const CHECKS = atom({ plugin: 'inbox', key: 'checks' } as const, NO_CHECKS)
 const SNAPSHOTS = atom({ plugin: 'inbox', key: 'snapshots' } as const, {} as Record<string, Snapshot>)
 const TYPING = atom({ plugin: 'inbox', key: 'typing' } as const, null as string | null)
@@ -1803,7 +1804,17 @@ export const register: Register = on => {
     if (!isOn) return next(e)
     const { tool: _tool, tool_use_id: _id, agentId: _agent, ...input } = e as unknown as Record<string, unknown>
     const key = callKey(String(e.tool), input)
-    const run = () => clearingDialog($, key, () => next(e))
+    const run = async () => {
+      const ran = await clearingDialog($, key, () => next(e))
+      // A file edited by Claude or a subagent makes its repo one of the session's.
+      const path = input[e.tool === 'NotebookEdit' ? 'notebook_path' : 'file_path']
+      if (EDIT_TOOLS.has(String(e.tool)) && typeof path === 'string' && typeof ran.deny !== 'string') {
+        const repo = await repoOf($, path.slice(0, Math.max(path.lastIndexOf('/'), 1)))
+        if (repo !== null) await update($, CHECKS, c => addRepo(c, repo))
+      }
+
+      return ran
+    }
     // A subagent's call can raise a permission prompt too, which the person answers.
     if (e.agentId) return run()
     const line = toolActivity(String(e.tool), input)
@@ -1822,16 +1833,6 @@ export const register: Register = on => {
         for (const url of new Set(ran.text?.match(LOCAL_URL) ?? [])) noteActivity(`URL in output: ${url}`)
       // A PR this session opened; other commands print PR links that are not this session's.
       if (/\bgh\s+pr\s+create\b/.test(e.command)) void linkPrs($, prRefs(ran.text ?? ''))
-
-      return ran
-    }
-    if (e.tool === 'Edit' || e.tool === 'Write' || e.tool === 'NotebookEdit') {
-      const ran = await run()
-      const path = input[e.tool === 'NotebookEdit' ? 'notebook_path' : 'file_path']
-      if (typeof path === 'string' && typeof ran.deny !== 'string') {
-        const repo = await repoOf($, path.slice(0, Math.max(path.lastIndexOf('/'), 1)))
-        if (repo !== null) await update($, CHECKS, c => addRepo(c, repo))
-      }
 
       return ran
     }
