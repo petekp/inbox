@@ -215,7 +215,7 @@ const RUN_CHECK_SCHEMA = {
   },
   required: ['checks'],
 }
-const BASH_CHECK_REFUSAL = `Run checks with ${RUN_CHECK_TOOL} instead of Bash. It runs each check, saves its full output to a log file, and reports the exit status.`
+const BASH_CHECK_REFUSAL = `Not run. Run each check on its own, with no pipe, redirect or other command, so its exit status is the check's: with ${RUN_CHECK_TOOL}, which saves the output to a log file, or alone with Bash.`
 const SUBAGENT_CHECK_REFUSAL = `Not run: ${RUN_CHECK_TOOL} runs checks in the main conversation's folder, not a subagent's. Run each check with Bash instead.`
 
 const PANE = 'inbox'
@@ -1601,6 +1601,11 @@ function refreshTree($: EngineInterface, repos?: string[]): Promise<void> {
 /** Shell syntax that would make a check command more than the one check. */
 const SHELL_SYNTAX = /[|;&<>`]|\$\(/
 
+/** Whether a command is one check and nothing else, so its exit status is the check's. */
+function isLoneCheck(command: string): boolean {
+  return checksIn(command).length === 1 && !SHELL_SYNTAX.test(command)
+}
+
 let checkLogFolder: Promise<string> | null = null
 
 /**
@@ -1637,8 +1642,8 @@ async function runChecks($: EngineInterface, checks: string[]): Promise<string> 
   const logFolder = await checkLogs($)
   const lines: string[] = []
   for (const command of checks) {
-    const [call, ...others] = checksIn(command)
-    if (!call || others.length > 0 || SHELL_SYNTAX.test(command)) {
+    const [call] = checksIn(command)
+    if (!call || !isLoneCheck(command)) {
       lines.push(`${command}: not run. Pass one check per command, with no pipe, redirect or other command.`)
       continue
     }
@@ -1647,7 +1652,10 @@ async function runChecks($: EngineInterface, checks: string[]): Promise<string> 
       .call({ tool: 'Bash', command, description: `Run ${call.name}` })
       .catch((err: unknown) => ({ deny: String(err) }))
     if (typeof ran.deny === 'string') {
-      lines.push(`${command}: not run. ${ran.deny}`)
+      // In auto mode the classifier cannot decide a call a plugin makes, but it can decide Claude's own Bash call.
+      lines.push(
+        `${command}: not run. ${ran.deny} If this tool cannot run it, run \`${command}\` alone in Bash, with no pipe or redirect.`,
+      )
       continue
     }
     const fields = resultFields(ran)
@@ -1921,15 +1929,14 @@ export const register: Register = on => {
 
   on('tool.call', async ($, e, next) => {
     if (!isOn) return next(e)
-    // Claude's check commands go through the check tool, which runs each as a Bash call of this mod's.
-    if (
+    // A check Claude runs in Bash is recorded when it runs alone, and refused otherwise, so every result is exact.
+    const isCheck =
       e.tool === 'Bash' &&
       !e.agentId &&
       !e.run_in_background &&
       next.origin.plugin !== 'inbox' &&
       checksIn(e.command).length > 0
-    )
-      return { deny: BASH_CHECK_REFUSAL }
+    if (isCheck && !isLoneCheck(e.command)) return { deny: BASH_CHECK_REFUSAL }
     const { tool: _tool, tool_use_id: _id, agentId: _agent, ...input } = e as unknown as Record<string, unknown>
     const key = callKey(String(e.tool), input)
     const run = async () => {
@@ -1948,7 +1955,11 @@ export const register: Register = on => {
     const line = toolActivity(String(e.tool), input)
     if (line) noteActivity(line)
     if (e.tool === 'Bash') {
+      const cwd = isCheck ? await $.session.cwd() : ''
       const ran = await run()
+      const fields = resultFields(ran)
+      if (isCheck && typeof ran.deny !== 'string' && !fields.backgroundTaskId && !fields.interrupted)
+        await recordCheck($, e.command, cwd, ran.text ?? '', ran.isError === true)
       if (activity.length < 40)
         for (const url of new Set(ran.text?.match(LOCAL_URL) ?? [])) noteActivity(`URL in output: ${url}`)
       // A PR this session opened; other commands print PR links that are not this session's.

@@ -1,7 +1,6 @@
 # Exact check results
 
-Status: B chosen and built on the `run-check` branch. Not yet merged or
-tried in a live session. Terms follow `GLOSSARY.md`.
+Status: B built. Terms follow `GLOSSARY.md`.
 
 ## The problem
 
@@ -53,8 +52,9 @@ Three things follow:
 registers. The mod runs each check through the engine's Bash tool and reads
 the exit status from the result. It saves the full output to a log file. It
 returns pass or fail, the summary, up to three failure lines and the log's
-path. A check command Claude sends to Bash on the main loop is refused, with a
-message that names `run_check`.
+path. A check Claude runs alone in Bash is recorded too, since its exit status
+is the check's. A check in a compound Bash command is refused, with a message
+that names `run_check` and Bash alone.
 
 - A result is unknown only when its run times out.
 - Failure lines are always available, since the mod holds the full output.
@@ -70,10 +70,10 @@ message that names `run_check`.
 
 **Decision: B.** A can't fix the largest cause, so at least two in five
 results would stay unknown. B makes every main-loop result exact, and the code
-shrinks a little. The mod refuses check commands in Bash for everyone who
-installs it, since without the refusal both paths stay. Agent rules that tell
-Claude to send a check's output to a log file say to use `run_check` where it
-exists.
+shrinks a little. The mod refuses compound check commands in Bash for everyone
+who installs it. It lets a lone check through, because auto mode cannot run
+`run_check`'s checks. Agent rules that tell Claude to send a check's output to
+a log file say to use `run_check` where it exists.
 
 ## Plan for B
 
@@ -91,6 +91,11 @@ and a trial build of B.
   naming the mod. So the refusal lets the mod's own calls through.
 - The nested call works inside a model turn. The transcript shows the
   `run_check` call, not the nested Bash call.
+- Auto mode cannot approve the nested call. Its classifier decides only the
+  tool calls in Claude's own response, so the call comes back "gave no
+  verdict". The mod cannot read the permission mode, and its `tool.check` hook
+  on `run_check` never fires. So `run_check`'s "not run" line tells Claude to run
+  the command alone in Bash, which the classifier can decide.
 - The mod's own `tool.call` hook answers a call to its registered tool in place
   of the engine, so no permission check covers what that hook does itself.
   `$.process.run` has no permission check or sandbox. So the tool runs checks
@@ -116,8 +121,8 @@ hooks, so the numbers describe that small project, not a real working session.
 - `node --test` marks a failure with ✖, which the failure-line reader misses,
   so the results had no failure lines.
 
-Not checked: how auto mode's classifier treats the nested call, and whether a
-result reaches the band and Needs you. A `claude -p` session has no pane.
+Not checked in the trial: whether a result reaches the band and Needs you. A
+`claude -p` session has no pane. A live session later showed both.
 
 **Design.**
 
@@ -141,9 +146,11 @@ result reaches the band and Needs you. A `claude -p` session has no pane.
   and the result names the Read tool. In `claude -p` trials in a worktree,
   Claude went straight to Read in 3 of 3 runs. Without the tool named, it
   tried `tail` in Bash first, which needs a prompt.
-- **The refusal.** Main-loop Bash commands in which `checksIn` finds a check.
-  Subagents' commands and commands sent to the background pass, and stay
-  unrecorded as now. A subagent's `run_check` call is answered "Not run" and
+- **Bash.** A main-loop Bash command that is one check and nothing else runs,
+  and its result is recorded as `run_check` records it. One in which
+  `checksIn` finds a check alongside a pipe, redirect or other command is
+  refused. Subagents' commands and commands sent to the background pass, and
+  stay unrecorded. A subagent's `run_check` call is answered "Not run" and
   sent to Bash: the tool runs in the main conversation's shell, so in a trial a
   subagent in its own worktree had the main checkout tested.
 - **Text the model reads.** The tool's description and both refusals are new.

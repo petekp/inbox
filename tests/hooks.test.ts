@@ -794,7 +794,7 @@ test("run_check does not run a command with a pipe or two checks, or a subagent'
   expect(toolCalls).toEqual([])
 })
 
-test('a check command Claude sends to Bash is refused, unless a subagent or the background runs it', async ($, on) => {
+test('a lone check Claude runs in Bash is recorded, and one with a pipe is refused', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world(on, [])
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
@@ -805,6 +805,12 @@ test('a check command Claude sends to Bash is refused, unless a subagent or the 
     description: 'Run tests',
   } as never)
   expect(refused.deny).toContain(RUN_CHECK)
+  // Alone, its exit status is the check's, so it runs and is recorded.
+  toolAnswer = { text: 'Exit code 1\n 3 pass\n 1 fail\n', isError: true }
+  const alone = await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'Run tests' } as never)
+  expect(alone.deny).toBeUndefined()
+  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+  expect(await band.find({ text: /✗ npm test, 3 pass, 1 fail/ })).toBeDefined()
   const sub = await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'Run tests', agentId: 'a1' } as never)
   expect(sub.deny).toBeUndefined()
   const background = await $.tool.call({
@@ -821,7 +827,7 @@ test('a check command Claude sends to Bash is refused, unless a subagent or the 
   const ran = await $.tool.call({ tool: RUN_CHECK, checks: ['npm test'] } as never)
   expect(ran.result).toContain('npm test: passed, 3 pass, 0 fail.')
   // The refused command never ran.
-  expect(toolCalls).toEqual(['npm test', 'npm test', 'git status', 'npm test'])
+  expect(toolCalls).toEqual(['npm test', 'npm test', 'npm test', 'git status', 'npm test'])
 })
 
 test('/inbox demo shows sample entries in every tab, sends nothing, and goes back', async ($, on) => {

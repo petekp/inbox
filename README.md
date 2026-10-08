@@ -48,8 +48,8 @@ panel and the prompt.
 After 15 minutes with no activity, or when you resume a session, the line
 above the prompt expands into a short summary of where things stand.
 
-Claude runs tests and builds through a tool the mod adds, so the mod knows
-exactly how each one ended. If Claude says something passes when the last run
+Claude runs each test or build as a command of its own, so the mod knows
+exactly how it ended. If Claude says something passes when the last run
 failed, or hasn't run since an edit, the mod asks Claude to run it again or
 say the change is untested.
 
