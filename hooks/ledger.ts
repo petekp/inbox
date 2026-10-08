@@ -19,7 +19,7 @@ const MAX_OPEN = 20
 const STALE_AFTER = 12
 const MAX_CLOSED = 12
 /** The outcome of an item left unanswered until it went stale. */
-export const EXPIRED = 'expired, unanswered'
+const EXPIRED = 'expired, unanswered'
 const MAX_HELPS = 3
 const MAX_FINDINGS = 30
 

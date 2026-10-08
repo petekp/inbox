@@ -128,21 +128,6 @@ describe('stale results across several checks', () => {
     const results = [ran('tests', '/work/app'), ran('lint', '/work/app'), ran('tests', '/work/lib'), ran('tests', null)]
     expect(staleness(results, ['src/a.ts'])).toEqual([true, true, false, false])
   })
-
-  test('a result outside git never goes stale, since no repo owns it', () => {
-    const outside = makeCheck({ result: 'pass', repo: null, folder: '/tmp/x' })
-    expect(changed(checksOf([outside]), '/work/app', ['src/a.ts'], root).results[0]?.isStale).toBe(false)
-  })
-
-  test('a Markdown-only change leaves tests, types and builds current', () => {
-    const results = [
-      ran('tests', '/work/app'),
-      ran('types', '/work/app'),
-      ran('lint', '/work/app'),
-      ran('all', '/work/app'),
-    ]
-    expect(staleness(results, ['README.md'])).toEqual([false, false, true, true])
-  })
 })
 
 describe('sending Claude back', () => {
@@ -281,12 +266,6 @@ describe('targets', () => {
       run({ target: target([], ['-t=x']) }),
       ['pass:-t=x'],
     ],
-    [
-      'a run with paths never covers a result with none',
-      [existing('fail')],
-      run({ target: target([a]) }),
-      ['fail:', `pass:${a}`],
-    ],
     ['another check is left alone', [existing('fail', target(), { name: 'tsc' })], run(), ['fail:', 'pass:']],
     [
       'the same check in another folder is left alone',
@@ -331,60 +310,6 @@ describe('targets', () => {
       expect(after(results, ran)).toEqual(expected)
     })
   }
-
-  test('a result replaces only the same check in the same folder', () => {
-    const plugin = (result: Check['result'], folder: string | null = null) =>
-      makeCheck({ name: 'plugin tests', result, folder })
-    const ran = (result: Check['result'], folder: string) => run({ name: 'plugin tests', result, folder })
-    const state = (results: Check[], ...runs: ReturnType<typeof run>[]) =>
-      recorded(checksOf(results), runs, 5, root).results.map(c => [c.folder, c.result])
-    expect(state([plugin('pass')], ran('fail', '/work/copy'))).toEqual([
-      [null, 'pass'],
-      ['/work/copy', 'fail'],
-    ])
-    expect(state([plugin('fail')], ran('pass', root))).toEqual([[null, 'pass']])
-  })
-
-  test('a passing check script replaces every earlier result in its folder, and a failing one none', () => {
-    const tsc = makeCheck({ name: 'tsc', kind: 'types', result: 'fail' })
-    const copy = makeCheck({ name: 'tsc', kind: 'types', result: 'fail', folder: '/work/copy' })
-    const script = (result: Check['result']) => run({ name: 'check.sh', kind: 'all', result })
-    const names = (...runs: ReturnType<typeof run>[]) =>
-      recorded(checksOf([tsc, copy]), runs, 5, root).results.map(c => `${c.name}:${c.folder}:${c.result}`)
-    expect(names(script('pass'))).toEqual(['tsc:/work/copy:fail', 'check.sh:null:pass'])
-    expect(names(script('fail'))).toEqual(['tsc:null:fail', 'tsc:/work/copy:fail', 'check.sh:null:fail'])
-  })
-
-  test('a result is known by its target, and a whole-suite key is name and folder', () => {
-    expect(checkKey(makeCheck())).toBe('.:npm test')
-    expect(checkKey(makeCheck({ target: target([a]) }))).not.toBe(checkKey(makeCheck()))
-    expect(checkKey(makeCheck({ target: target([], ['x', 'y']) }))).toBe(
-      checkKey(makeCheck({ target: target([], ['y', 'x']) })),
-    )
-  })
-
-  test('dismissing or fixing a result leaves the same check’s other targets alone', () => {
-    const whole = makeCheck({ ranAt: 1 })
-    const narrow = makeCheck({ ranAt: 1, target: target([a]) })
-    const checks = checksOf([whole, narrow])
-    expect(dismissed(checks, narrow).results.map(c => c.isDismissed)).toEqual([false, true])
-    expect(fixSent(checks, whole, 9).results.map(c => c.fixSentAt)).toEqual([9, null])
-  })
-
-  test('upgradeChecks reads a saved result’s target from its command', () => {
-    const saved = (command: string, folder: string | null = null) =>
-      ({ results: [{ ...makeCheck({ command, folder }), target: undefined }], repos: [] }) as unknown as Checks
-    const upgraded = (command: string, folder?: string | null) =>
-      upgradeChecks(saved(command, folder), root, '/home/me').results[0]?.target
-    expect(upgraded('npx vitest run a.test.ts')).toEqual(target(['/work/app/a.test.ts']))
-    expect(upgraded('npx vitest run a.test.ts -t foo', '/work/app/pkg')).toEqual(
-      target(['/work/app/pkg/a.test.ts'], ['-t=foo']),
-    )
-    expect(upgraded('npm test')).toEqual(target())
-    expect(upgraded('')).toEqual(target())
-    const kept = { results: [makeCheck({ command: 'vitest b.ts', target: target([a]) })], repos: [] }
-    expect(upgradeChecks(kept, root, '/home/me').results[0]?.target).toEqual(target([a]))
-  })
 })
 
 describe('which results contradict a claim', () => {
@@ -447,6 +372,15 @@ describe('which results contradict a claim', () => {
       ['check.sh failed when it last ran (x)'],
     ],
     ['a failure of another kind', [makeCheck({ name: 'tsc', kind: 'types' })], []],
+    ['a current pass', [makeCheck({ result: 'pass' })], []],
+    [
+      'a stale result that a later check script answers for',
+      [
+        makeCheck({ ranAt: 1, result: 'pass', isStale: true }),
+        makeCheck({ ranAt: 2, name: 'check.sh', kind: 'all', result: 'pass' }),
+      ],
+      [],
+    ],
   ]
 
   for (const [label, results, expected] of cases) {

@@ -680,12 +680,18 @@ test('a failing test run shows in the band, reaches the per-turn call, stops a c
     last_assistant_message: 'Fixed the parser. All tests pass. Should I also rename the helper?',
   } as never)
   expect(blocked.block).toContain('npm test failed when it last ran (11 pass, 1 fail)')
-  // Sent back once: the second stop goes through.
+  // The stop that follows a send-back goes through.
   const again = await $.classic.Stop({
     stop_hook_active: true,
     last_assistant_message: 'Fixed the parser. All tests pass.',
   } as never)
   expect(again.block).toBeUndefined()
+  // A later reply with the same claim is not sent back again for the same run.
+  const later = await $.classic.Stop({
+    stop_hook_active: false,
+    last_assistant_message: 'Fixed the parser. All tests pass.',
+  } as never)
+  expect(later.block).toBeUndefined()
 
   await $.turn.complete({
     answer: 'The parser still fails one test.',

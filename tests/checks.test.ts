@@ -2,7 +2,6 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { Check, Checks } from '../types'
 import { checkName, checkRuns, checksIn, claimsIn, failureLines, failureSummary, readResults } from '../hooks/checks'
-import { contradictedClaim } from '../hooks/check-tracking'
 import { candidates, changedPaths, readChanged, readLsTree } from '../hooks/git'
 
 describe('checksIn', () => {
@@ -295,6 +294,7 @@ describe('claimsIn', () => {
     ['a claim outside the quotes', 'I changed "build" and all tests pass', true],
     ['an apostrophe', "Pete's tests pass", true],
     ['single quotes', "The 'tests pass' line is a claim", true],
+    ['a hedged claim', 'The tests should pass once CI runs', false],
   ]
 
   for (const [label, reply, isClaim] of cases) {
@@ -302,48 +302,6 @@ describe('claimsIn', () => {
       expect(claimsIn(reply).map(c => c.kind)).toEqual(isClaim ? ['tests'] : [])
     })
   }
-})
-
-describe('contradictedClaim', () => {
-  const ran = (result: Check['result'], isStale = false): Check => ({
-    name: 'bun test',
-    kind: 'tests',
-    folder: null,
-    target: { paths: [], filters: [] },
-    result,
-    summary: result === 'fail' ? '2 fail' : '',
-    ranAt: 10,
-    repo: '/work/repo',
-    isStale,
-    command: '',
-    failures: [],
-    isLeftFailing: false,
-    isDismissed: false,
-    isSentBack: false,
-    fixSentAt: null,
-  })
-  const checks = (...results: Check[]): Checks => ({ results, repos: [] })
-
-  test('a success claim meets a failed or stale run', () => {
-    expect(contradictedClaim('All tests pass now.', checks(ran('fail')))?.problem).toBe(
-      'bun test failed when it last ran (2 fail)',
-    )
-    expect(contradictedClaim('All tests pass.', checks(ran('pass', true)))?.problem).toBe(
-      'the files changed after bun test last ran',
-    )
-    expect(contradictedClaim('All tests pass.', checks(ran('pass')))).toBe(null)
-  })
-
-  test('a check script that ran after the last edit answers for every kind', () => {
-    const suite: Check = { ...ran('pass'), name: 'check.sh', kind: 'all', ranAt: 30 }
-    expect(contradictedClaim('All tests pass.', checks(ran('pass', true), suite))).toBe(null)
-  })
-
-  test('leaves hedged claims and claims with no check of their kind alone', () => {
-    expect(contradictedClaim('The tests should pass once CI runs.', checks(ran('fail')))).toBe(null)
-    expect(contradictedClaim('Types are clean.', checks(ran('fail')))).toBe(null)
-    expect(contradictedClaim('Your reply says "tests pass".', checks(ran('fail')))).toBe(null)
-  })
 })
 
 const z = (...fields: string[]) => `${fields.join('\0')}\0`

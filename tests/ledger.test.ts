@@ -2,7 +2,6 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import {
   EMPTY,
-  EXPIRED,
   answerNote,
   applyUpdate,
   carryText,
@@ -130,9 +129,9 @@ describe('applyUpdate', () => {
     const later = applyUpdate({ ...first, turn: 14 }, parseReply('NOW: still going')!, 2, 14)
     expect(later.items.length).toBe(0)
     expect(later.closed.map(d => [d.id, d.outcome])).toEqual([
-      ['i1', EXPIRED],
-      ['i2', EXPIRED],
-      ['i3', EXPIRED],
+      ['i1', 'expired, unanswered'],
+      ['i2', 'expired, unanswered'],
+      ['i3', 'expired, unanswered'],
     ])
     expect(applyUpdate({ ...first, turn: 13 }, parseReply('NOW: still going')!, 2, 13).items.length).toBe(3)
   })
@@ -168,16 +167,36 @@ describe('applyUpdate', () => {
   })
 
   const repeats: [string, string, number, number][] = [
-    ['its id as the label', 'NEW: decide | i1 | Something else entirely? | - | -', 5000, 0],
-    ['the same ask', 'NEW: decide | - | Rename Send.swift to Herdr? | - | -', 5000, 0],
-    ['a restated ask', 'NEW: decide | - | Should Send.swift be renamed to Herdr? | - | -', 5000, 0],
-    ['the same label', 'NEW: decide | 1 | Another question altogether? | - | -', 5000, 0],
-    ['the same label, closed before the prompt', 'NEW: decide | 1 | Another question altogether? | - | -', 6000, 1],
-    ['the same ask, closed before the prompt', 'NEW: decide | - | Rename Send.swift to Herdr? | - | -', 6000, 1],
+    [
+      'the id of an item closed during the update as its label',
+      'NEW: decide | i1 | Something else entirely? | - | -',
+      5000,
+      0,
+    ],
+    ['the ask of an item closed during the update', 'NEW: decide | - | Rename Send.swift to Herdr? | - | -', 5000, 0],
+    [
+      'a restated ask of an item closed during the update',
+      'NEW: decide | - | Should Send.swift be renamed to Herdr? | - | -',
+      5000,
+      0,
+    ],
+    [
+      'the label of an item closed during the update',
+      'NEW: decide | 1 | Another question altogether? | - | -',
+      5000,
+      0,
+    ],
+    [
+      'the label of an item closed before the prompt',
+      'NEW: decide | 1 | Another question altogether? | - | -',
+      6000,
+      1,
+    ],
+    ['the ask of an item closed before the prompt', 'NEW: decide | - | Rename Send.swift to Herdr? | - | -', 6000, 1],
     ['an unrelated question', 'NEW: decide | 9 | Cut TODOS.md down to open items? | - | -', 5000, 1],
   ]
   for (const [name, line, promptAt, added] of repeats)
-    test(`a NEW line with ${name}, for an item closed during the update`, () => {
+    test(`a NEW line with ${name} is ${added === 0 ? 'dropped' : 'added'}`, () => {
       const first = applyUpdate(
         { ...EMPTY, turn: 1 },
         parseReply('NEW: decide | 1 | Rename Send.swift to Herdr? | - | -')!,

@@ -238,13 +238,6 @@ function* contradictions(reply: string, checks: Checks, root: string): Generator
   }
 }
 
-/** The first contradicted claim in the reply. */
-export function contradictedClaim(reply: string, checks: Checks, root = ''): Contradicted | null {
-  for (const c of contradictions(reply, checks, root)) return c
-
-  return null
-}
-
 /**
  * The Stop hook's check: the first claim in the reply that the session's
  * results contradict and that has not yet sent Claude back, with that result
