@@ -82,9 +82,9 @@ running session.
     quoting the question: `a: Node  b: Python`. Every question has at least
     one. When Claude's reply names no choices, the inbox predicts the likely
     answers, such as `a: Approve  b: Not yet`. If Claude is working, the
-    answer waits until the turn ends. A green dot marks the answer Claude
-    recommended. The other actions follow on the same row when they fit,
-    and on a line of their own when they don't.
+    answer waits until the turn ends. The answer Claude recommended says so,
+    as in `a: Build all (recommended)`. The other actions follow on the same
+    row when they fit, and on a line of their own when they don't.
   - `t` opens a one-line field for your own words, when no option fits. The
     field takes the keyboard, unless the prompt holds text you were writing.
     Enter sends your words as your message, quoting the item. A question closes

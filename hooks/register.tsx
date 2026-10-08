@@ -1337,7 +1337,8 @@ type Action = {
 function answerActions($: EngineInterface, item: Item): Action[] {
   return item.options.map((answer, n) => ({
     key: `answer-${item.id}-${n}`,
-    label: clipLabel(answer, 32),
+    // Pressing it sends the answer alone, without the note.
+    label: answer === item.rec ? `${clipLabel(answer, 32)} (recommended)` : clipLabel(answer, 32),
     ...(answer === item.rec ? { variant: 'primary' as const } : {}),
     onPress: () => void sendAnswer($, item, answer),
   }))
@@ -2516,17 +2517,12 @@ export const register: Register = on => {
     const indexOf = new Map(ids.map((id, n) => [id, n]))
     const at = selectedIndex(ids, selection[tab])
 
-    // A plain Button draws "a: Label" with the key in the theme's accent. A
-    // Button takes no color, so a dot before it marks the answer Claude recommended.
-    const keyedButton = (k: KeyAction) => (
-      <Box key={`keyed-${k.key}`} flexDirection="row">
-        {k.variant === 'primary' ? <Text color={pal.mark.done}>● </Text> : null}
-        <Button plain {...k} />
-      </Box>
-    )
+    // A plain Button draws "a: Label", with the key in the theme's accent.
     const keyRow = (keys: KeyAction[]) => (
       <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-        {keys.map(keyedButton)}
+        {keys.map(k => (
+          <Button plain {...k} />
+        ))}
       </Box>
     )
     // The Buttons that take the pane's keys, drawn in a hidden Box.
@@ -2534,10 +2530,9 @@ export const register: Register = on => {
       keys.map(({ key, ...k }) => <Button key={`${key}${suffix}`} plain {...k} />)
     // A selected row's secondary keys share its key row when they fit, and
     // otherwise take a line of their own rather than wrap mid-row. A key draws
-    // "key: label", after a dot and a space when recommended, and keyRow puts 2 columns between keys.
+    // "key: label", and keyRow puts 2 columns between keys.
     const keysWidth = (keys: KeyAction[]) =>
-      keys.reduce((w, k) => w + (k.variant === 'primary' ? 2 : 0) + k.hotkey.length + 2 + k.label.length, 0) +
-      2 * Math.max(0, keys.length - 1)
+      keys.reduce((w, k) => w + k.hotkey.length + 2 + k.label.length, 0) + 2 * Math.max(0, keys.length - 1)
     // A typed reply needs a text field, so it is left out where there is none.
     const pressable = (keys: KeyAction[]) => keys.filter(k => Input || !k.key.startsWith('typekey-'))
     // A section's children hang from its title like a directory listing. A
