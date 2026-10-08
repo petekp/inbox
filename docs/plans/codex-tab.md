@@ -94,8 +94,8 @@ row leaves, the row now in its place is selected.
 
 ## Typed text survives polls
 
-The tab polls the server every 3 seconds. The current tab rebuilds its whole
-page on each poll, so half-typed text is lost. The new tab:
+The tab polls the server every 3 seconds. So that half-typed text survives a
+poll, the tab:
 
 - draws with Preact, which updates only what changed;
 - keeps each row's draft by row id, so a draft survives the row redrawing,
@@ -111,8 +111,12 @@ page on each poll, so half-typed text is lost. The new tab:
 The tab uses the host's CSS variables for its background, text, muted text
 and borders, and falls back to its own values outside the app. The tones are
 the pane's: amber for Needs you, purple for findings, green for done, red for
-errors, in the pane's dark and light values. The host's real variable values
-are not verified, so the tones' contrast holds for the fallbacks only.
+errors, in the pane's dark and light values.
+
+On the fallback backgrounds, every text color has at least 5.3:1 contrast on
+the page, a group's card and a selected row, in dark and light. The ✗ mark
+has 4.2:1 on a selected row in dark, and a mark needs 3:1. The host's own
+variable values are not measured yet.
 
 ## Build
 
@@ -124,11 +128,12 @@ are not verified, so the tones' contrast holds for the fallbacks only.
 
 ## Verify
 
-A stand-in host page frames the tab, answers its handshake, and serves views
-from `viewOf` on sample state. At 576 px wide, dark and light:
+A stand-in host page framed the tab, answered its handshake, and passed its
+calls to the real server code on sample state. At 576 px wide, in dark and
+light:
 
-- type into a field, wait two polls, and see the text and focus kept;
-- press an answer while a poll's reply is held back, and see the row stay
-  closed;
-- see a closed item stay in place, then move under Closed;
-- press a hotkey letter in a text field, and see it typed.
+- Text typed into a field, and the field's focus, outlasted two polls.
+- A poll whose reply was held back past an answer did not bring the
+  answered question back.
+- A closed item stayed in place for five seconds, then moved under Closed.
+- Letters typed into a field stayed in the field and pressed no action.

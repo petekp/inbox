@@ -187,7 +187,7 @@ async function act(rowId: string, press: TabPress, onSent?: () => void) {
     if (r?.copy) await copy(rowId, r.copy)
     if (r?.view) applyView(r.view, seq)
   } catch {
-    errors.set(rowId, 'The press did not reach the inbox.')
+    errors.set(rowId, 'Not sent: the inbox did not answer.')
   } finally {
     isPressing = false
     sending.delete(rowId)
