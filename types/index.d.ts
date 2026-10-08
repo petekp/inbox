@@ -15,6 +15,7 @@ export type Item = {
   label: string | null
   ask: string
   options: string[]
+  /** The option the agent recommended, exactly as `options` has it. */
   rec: string | null
   /** Steps the agent's reply spelled out, one press each. */
   helps: Help[]

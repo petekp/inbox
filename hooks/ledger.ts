@@ -43,13 +43,40 @@ export function upgradeLedger(ledger: Ledger): Ledger {
   return {
     ...rest,
     findings: [...(rest.findings ?? []), ...(notes ?? [])],
-    items: rest.items.map(i => ({ ...i, kind: readKind(i.kind), at: i.at ?? null })),
+    items: rest.items.map(i => ({
+      ...i,
+      kind: readKind(i.kind),
+      at: i.at ?? null,
+      rec: recommendedOption(i.options, i.rec),
+    })),
     closed: (rest.closed ?? decided ?? []).map(d => ({
       ...d,
       kind: readKind(d.kind),
       how: d.how ?? howFromOutcome(d.outcome),
     })),
   }
+}
+
+function words(text: string): string[] {
+  return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
+}
+
+/**
+ * The option a recommendation names: the one whose words all appear in it,
+ * the longest when several do. "Symlink into a PATH folder" names "Symlink
+ * into PATH". Null when it names none, since a recommendation that is not one
+ * of the answers came from the wrong field or from no recommendation at all.
+ */
+export function recommendedOption(options: string[], rec: string | null): string | null {
+  if (!rec) return null
+  const named = new Set(words(rec))
+  let best: string | null = null
+  for (const option of options) {
+    const w = words(option)
+    if (w.length > words(best ?? '').length && w.every(x => named.has(x))) best = option
+  }
+
+  return best
 }
 
 /** How a closed item saved before `how` existed closed, read from its outcome's wording. */
@@ -93,8 +120,8 @@ NEW: <kind> | <label> | <ask> | <options> | <rec>
   kind: "decide" (a choice, approval, or information only the person has, explicitly put to them, without which the agent cannot go on with its task) or "do" (an action only the person can take, without which the agent cannot continue or finish: sign in, run a command needing their password, test on their device, reply to a teammate).
   label: the reply's own number or id for it ("1", "D3"), or "-".
   ask: plain words, readable without the reply, at most 12 words, or up to 16 when 12 would lose meaning. Keep the question's meaning and every alternative it names. Replace any term the reply coined with what it means.
-  options: the answers the person can pick, separated by " / ", at most 5 words each; "-" for kind "do". For kind "decide", always at least one, so one press can answer. Use the choices the reply offers. When it offers none, predict the answers the person would most likely give: the yes and the no for an approval or a yes-or-no question ("Approve / Not yet"); the 1 to 3 likeliest answers to an open question, from the conversation; or, when the conversation suggests no answer, what the person would most likely ask the agent to do instead ("List the choices", "Pick one for me").
-  rec: the recommendation the reply states in its own words ("I'd go with X", "I recommend X"), at most 8 words, or "-" when it states none.
+  options: the answers the person can pick, separated by " / ", at most 5 words each; "-" for kind "do". For kind "decide", always at least one, so one press can answer. Use the choices the reply offers, plus the answer it recommends when that is not one of them. When the reply offers none, predict the answers the person would most likely give: the yes and the no for an approval or a yes-or-no question ("Approve / Not yet"); the 1 to 3 likeliest answers to an open question, from the conversation; or, when the conversation suggests no answer, what the person would most likely ask the agent to do instead ("List the choices", "Pick one for me").
+  rec: the option the reply states it recommends for this question ("I'd go with X", "I recommend X"), copied from options, or "-" when it states none for this question.
   Skip: rhetorical questions; offers to continue ("Want me to start?") when continuing is the obvious default; FYIs; generic "let me know"; invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
 HELP: <item> | <kind> | <value> | <name>
   A step that does part of an item's work in one press, when the reply or activity already spells it out: the file to edit, the text to paste, the command to run, the page to visit. Not background reading. Up to 3 per item, most useful first.
@@ -466,12 +493,13 @@ export function parseReply(text: string, source: string | null = null): Update |
       const [kind, label, ask, ...rest] = value.split('|').map(dash)
       const rec = rest.length > 1 ? rest.pop() : null
       if (!ask) continue
+      const options = rest.flatMap(o => o?.split(/\s+\/\s+/) ?? []).filter(Boolean)
       added.push({
         kind: readKind(kind),
         label: label ?? null,
         ask,
-        options: rest.flatMap(o => o?.split(/\s+\/\s+/) ?? []).filter(Boolean),
-        rec: rec ?? null,
+        options,
+        rec: recommendedOption(options, rec ?? null),
         helps: [],
       })
     } else if (key === 'HELP') {

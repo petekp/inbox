@@ -1338,45 +1338,11 @@ type Action = {
   onPress: (press: UiPressArgument) => void
 }
 
-/** One-press answers: the options the agent offered, or a short recommendation. */
-function answers(item: Item): string[] {
-  if (item.options.length > 0) return item.options
-  return item.rec && item.rec.length <= 32 ? [item.rec] : []
-}
-
-function words(text: string): string[] {
-  return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
-}
-
-/**
- * Which answer the recommendation names, if any: the answer whose words all
- * appear in it, the longest when several do. "Symlink into a PATH folder"
- * names "Symlink into PATH".
- */
-function recommendedIndex(all: string[], rec: string | null): number {
-  if (!rec) return -1
-  const named = new Set(words(rec))
-  let best = -1
-  let bestLength = 0
-  all.forEach((answer, n) => {
-    const w = words(answer)
-    if (w.length > bestLength && w.every(x => named.has(x))) {
-      best = n
-      bestLength = w.length
-    }
-  })
-
-  return best
-}
-
 function answerActions($: EngineInterface, item: Item): Action[] {
-  const all = answers(item)
-  const recommended = recommendedIndex(all, item.rec)
-
-  return all.map((answer, n) => ({
+  return item.options.map((answer, n) => ({
     key: `answer-${item.id}-${n}`,
-    label: n === recommended ? `${clipLabel(answer, 32)} (recommended)` : clipLabel(answer, 32),
-    ...(n === recommended ? { variant: 'primary' as const } : {}),
+    label: clipLabel(answer, 32),
+    ...(answer === item.rec ? { variant: 'primary' as const } : {}),
     onPress: () => void sendAnswer($, item, answer),
   }))
 }
@@ -2293,11 +2259,8 @@ export const register: Register = on => {
       typeHint?: string
     }
     // An item's group header says whether it is a question or a task, so the row
-    // needs no context line. A recommendation that names an answer is marked on
-    // that answer's key instead of in the body.
+    // needs no context line. The recommended answer is marked on its key.
     const itemRow = (item: Item, handle: string): Row => {
-      const rec = item.rec && item.kind !== 'task' && recommendedIndex(answers(item), item.rec) < 0 ? item.rec : null
-
       const asked = item.at === null ? undefined : ` · ${ago(now - item.at)}`
 
       return {
@@ -2305,12 +2268,7 @@ export const register: Register = on => {
         handle,
         title: item.ask,
         titleAfter: asked,
-        body: rec ? (
-          <Text wrap="wrap">
-            <Text color={pal.muted}>Recommended: </Text>
-            <Text bold>{rec}</Text>
-          </Text>
-        ) : null,
+        body: null,
         keys: () => itemKeys($, item).keys,
         moreKeys: () => itemKeys($, item).more,
         onType: (text: string) => void sendTypedForItem($, item, text),
@@ -2560,10 +2518,17 @@ export const register: Register = on => {
 
     // A Button draws its hotkey in the theme's accent, which Claude Code's light
     // theme draws under 4.5:1 on any background. So a key's letter is Text in the
-    // palette's color, its label a Button, and the key itself a hidden Button.
+    // palette's color, its label a Button, and the key itself a hidden Button. A
+    // Button takes no color, so the recommended answer's letter carries it.
     const keyedButton = ({ hotkey, ...action }: KeyAction, letter: string) => (
       <Box key={`keyed-${action.key}`} flexDirection="row">
-        <Text color={letter}>{hotkey}</Text>
+        {action.variant === 'primary' ? (
+          <Text bold color={pal.tone.done}>
+            {hotkey}
+          </Text>
+        ) : (
+          <Text color={letter}>{hotkey}</Text>
+        )}
         <Button plain {...action} label={`: ${action.label}`} />
       </Box>
     )

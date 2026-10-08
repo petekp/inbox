@@ -32,7 +32,7 @@ describe('parseReply', () => {
     expect(u?.card.done).toEqual(['Reducer built on its own branch', '422 unit tests pass'])
     expect(u?.card.running).toEqual(['vite dev: http://localhost:5173'])
     expect(u?.added.map(a => [a.kind, a.label, a.rec])).toEqual([
-      ['question', '1', 'yes'],
+      ['question', '1', 'Yes'],
       ['question', '2', null],
       ['task', null, null],
     ])
@@ -45,6 +45,16 @@ describe('parseReply', () => {
     )!.added
     expect(item?.options).toEqual(['Use another port', 'Stop docs site', 'Pick one for me'])
     expect(item?.rec).toBe(null)
+  })
+
+  test('keeps a recommendation only as the answer it names', () => {
+    const [stray, named] = parseReply(
+      [
+        'NEW: decide | - | Refuse check commands in Bash? | Refuse / Keep both paths | Pick one for me',
+        'NEW: decide | - | Which port? | Use 3001 / Stop docs site | I would use 3001 for now',
+      ].join('\n'),
+    )!.added
+    expect([stray?.rec, named?.rec]).toEqual([null, 'Use 3001'])
   })
 
   test('a key written as "-" adds nothing and keeps the card', () => {
@@ -257,7 +267,7 @@ describe('answerNote', () => {
   })
 
   test('offers the recommendations for a bare "go"', () => {
-    expect(answerNote({ ...ledger, turn: 2 }, 'go')).toContain('recommended: yes')
+    expect(answerNote({ ...ledger, turn: 2 }, 'go')).toContain('recommended: Yes')
   })
 
   test('ignores numbers once the batch is a turn old', () => {
