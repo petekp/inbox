@@ -1181,11 +1181,14 @@ async function linkPrs($: EngineInterface, refs: string[]) {
 /**
  * One PR's view and open threads. `target` is "owner/repo#123", or null for
  * the current branch's PR, whose ref is known only from gh's answer.
+ * `knownBranchRef` is the branch's PR as of the last fetch: it stays the
+ * branch's PR when the lookup fails for any reason but "no pull requests found".
  */
 async function fetchPr(
   $: EngineInterface,
   target: string | null,
   views: Record<string, PrView>,
+  knownBranchRef: string | null,
 ): Promise<PrView | null> {
   const threadsOf = (ref: string) => {
     const r = parseRef(ref)
@@ -1208,7 +1211,8 @@ async function fetchPr(
     gh($, ['pr', 'view', ...(t ? [t.number, '-R', t.repo] : []), '--json', VIEW_FIELDS]),
     target ? threadsOf(target) : null,
   ])
-  const ref = target ?? (view.exitCode === 0 ? urlRef(view.stdout) : null)
+  const hasNoPr = view.exitCode !== 0 && /no pull requests found/i.test(view.stderr)
+  const ref = target ?? (view.exitCode === 0 ? urlRef(view.stdout) : hasNoPr ? null : knownBranchRef)
   if (!ref) return null
   const previous = views[ref]
   const base = view.exitCode === 0 ? readView(ref, view.stdout) : null
@@ -1264,16 +1268,20 @@ async function fetchPrsNow($: EngineInterface, findsBranchPr: boolean) {
     // The branch's PR, when it is also linked, is fetched once, with the linked ones.
     const isBranchLinked = branchTarget !== null && linked.includes(branchTarget)
     const [branch, ...rest] = await Promise.all([
-      findsBranchPr || (branchTarget && !isBranchLinked) ? fetchPr($, branchTarget, state.views) : null,
-      ...linked.map(ref => fetchPr($, ref, state.views)),
+      findsBranchPr || (branchTarget && !isBranchLinked)
+        ? fetchPr($, branchTarget, state.views, state.branchRef)
+        : null,
+      ...linked.map(ref => fetchPr($, ref, state.views, null)),
     ])
-    const views: Record<string, PrView> = {}
-    for (const v of [...rest, branch]) if (v) views[v.ref] = v
-    await update($, PR_VIEWS, () => ({
-      views,
-      branchRef: findsBranchPr ? (branch?.ref ?? null) : state.branchRef,
-      isFetching: false,
-    }))
+    const fetched: Record<string, PrView> = {}
+    for (const v of [...rest, branch]) if (v) fetched[v.ref] = v
+    const branchRef = findsBranchPr ? (branch?.ref ?? null) : state.branchRef
+    // A PR dismissed while the fetch ran stays dismissed.
+    const stillLinked = (await read($, LEDGER)).prs
+    const views = Object.fromEntries(
+      Object.entries(fetched).filter(([ref]) => ref === branchRef || stillLinked.includes(ref)),
+    )
+    await update($, PR_VIEWS, () => ({ views, branchRef, isFetching: false }))
   } catch {
     await update($, PR_VIEWS, v => ({ ...v, isFetching: false }))
   }

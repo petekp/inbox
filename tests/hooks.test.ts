@@ -33,15 +33,21 @@ let toolAnswer: { text: string; isError: boolean } = { text: 'ok', isError: fals
 
 // gh's answers by command; anything else fails, as gh does outside a repo with no PR.
 // `hold` delays an answer until it resolves, as a slow network would.
-let ghAnswers: { match: (argv: readonly string[]) => boolean; stdout: string; hold?: () => Promise<void> }[] = []
+let ghAnswers: {
+  match: (argv: readonly string[]) => boolean
+  stdout: string
+  hold?: () => Promise<void>
+  // Makes the call fail with this message.
+  fails?: string
+}[] = []
 
 function gh(argv: readonly string[]) {
   const hit = ghAnswers.find(a => a.match(argv))
 
   return {
-    exitCode: hit ? 0 : 1,
-    stdout: hit?.stdout ?? '',
-    stderr: hit ? '' : 'no pull requests found',
+    exitCode: hit && !hit.fails ? 0 : 1,
+    stdout: hit && !hit.fails ? hit.stdout : '',
+    stderr: hit ? (hit.fails ?? '') : 'no pull requests found',
     isStdoutTruncated: false,
     isStderrTruncated: false,
   }
@@ -558,6 +564,68 @@ test('opening the PRs tab while another PR fetch runs still finds the branch’s
   await clock.advance(5000)
 
   expect(await pane.find({ text: /Linked work/ })).toBeDefined()
+  expect(await pane.find({ text: /Branch work/ })).toBeDefined()
+})
+
+test('a PR fetch keeps a Dismiss made while it ran, and the branch PR when its lookup fails', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world(on, [])
+  const view = (number: number, title: string) =>
+    JSON.stringify({
+      number,
+      title,
+      url: `https://github.com/acme/greet/pull/${number}`,
+      isDraft: false,
+      state: 'OPEN',
+      baseRefName: 'main',
+      mergeable: 'MERGEABLE',
+      reviewDecision: 'APPROVED',
+      statusCheckRollup: [],
+    })
+  const noThreads = JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } })
+  let isSlow = false
+  let branchFails: string | undefined
+  ghAnswers.push(
+    {
+      match: argv => argv.includes('view') && argv.includes('12'),
+      stdout: view(12, 'Linked work'),
+      hold: () => (isSlow ? clock.sleep(5000) : Promise.resolve()),
+    },
+    {
+      match: argv => argv.includes('view') && !argv.includes('12'),
+      stdout: view(13, 'Branch work'),
+      get fails() {
+        return branchFails
+      },
+    },
+    { match: argv => argv.includes('graphql'), stdout: noThreads },
+  )
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'open the PR', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Opened https://github.com/acme/greet/pull/12.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-prs' })
+  await clock.settle()
+  expect(await pane.find({ text: /Linked work/ })).toBeDefined()
+  expect(await pane.find({ text: /Branch work/ })).toBeDefined()
+
+  // Showing the tab again looks up the branch's PR, which fails, and holds on the linked PR.
+  branchFails = 'HTTP 502'
+  isSlow = true
+  await pane.press({ key: 'tab-needsYou' })
+  await pane.press({ key: 'tab-prs' })
+  await pane.press({ key: 'dismiss-pr-acme/greet#12' })
+  isSlow = false
+  await clock.advance(5000)
+
+  expect(await pane.find({ text: /Linked work/ })).toBeUndefined()
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
 })
 
