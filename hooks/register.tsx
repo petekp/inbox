@@ -1077,6 +1077,11 @@ async function removeFinding($: EngineInterface, id: string) {
   await commitLedger($, l => ({ ...l, findings: l.findings.filter(f => f.id !== id) }))
 }
 
+/** How many things wait on the person: open questions and tasks, and the session's checks left failing with no fix sent. */
+function needsYouCount(ledger: Ledger, checks: Checks): number {
+  return ledger.items.length + needsYou(checks, root).count
+}
+
 /** Hides a failing check's row in the Needs you tab until the check runs again. */
 async function dismissCheck($: EngineInterface, check: Check) {
   await update($, CHECKS, c => dismissed(c, check))
@@ -2114,7 +2119,7 @@ export const register: Register = on => {
     ))
 
     const goal = card?.goal || 'This session'
-    const waiting = ledger.items.length
+    const waiting = needsYouCount(ledger, checks)
     const findingCount = ledger.findings.length
     const prAlert = prAttention(Object.values(prs.views))
     // The items themselves live in /inbox; the band only says how many wait.
@@ -2545,7 +2550,7 @@ export const register: Register = on => {
     }
     // What each tab's count says waits on the person: a check whose fix went to Claude waits on Claude.
     const tabCounts: Record<Tab, number> = {
-      needsYou: ledger.items.length + checksNeedingYou,
+      needsYou: needsYouCount(ledger, checks),
       findings: rows.findings.length,
       prs: rows.prs.length - prViews.flatMap(pr => failingChecks(pr).filter(c => prFixSentAt(pr, c) !== null)).length,
     }
