@@ -690,9 +690,11 @@ async function applyLedgerReply(
   return 'current'
 }
 
-/** Asks the ledger model to update the ledger, with SYSTEM as its instructions. */
+/** Asks the ledger model to update the ledger, with SYSTEM as its instructions, cached for the next call within five minutes. */
 function askLedgerModel($: EngineInterface, prompt: string, timeoutMs: number): Promise<ModelResult> {
-  return $.model.complete({ model: MODEL, system: SYSTEM, prompt, maxTokens: 1600, effort: 'low', timeoutMs })
+  const system = [{ text: SYSTEM, cache: true as const }]
+
+  return $.model.complete({ model: MODEL, system, prompt, maxTokens: 1600, effort: 'low', timeoutMs })
 }
 
 /** Updates the ledger from one exchange. */
