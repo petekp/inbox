@@ -2858,29 +2858,42 @@ export const register: Register = on => {
         </Box>
       </Box>
     )
-    // The footer's list of keys, folded to one line until clicked.
+    // The footer's one line opens the list of keys as a drawer above it. The
+    // drawer is absolute, so it covers the rows above instead of moving the line.
     const footer = (
-      <Box flexDirection="column" paddingX={2} paddingY={blankLine}>
-        <Box flexDirection="row">
+      <Box flexDirection="column" paddingX={1} paddingY={blankLine}>
+        <Box flexDirection="row" paddingX={1}>
           <Button
             plain
             key="key-list"
-            label={isKeyListShown ? '▾ Keys' : '▸ Keys'}
+            label={isKeyListShown ? '▾ Keys' : '▴ Keys'}
             onPress={() => void update($, IS_KEY_LIST_SHOWN, shown => !shown)}
           />
-        </Box>
-        {isKeyListShown
-          ? keyList.map(k => (
-              <Box key={`key-list-${k.keys}`} flexDirection="row">
-                <Box width={keyColumn} flexShrink={0}>
-                  <Text bold>{k.keys}</Text>
+          {isKeyListShown ? (
+            <Box
+              position="absolute"
+              bottom={1}
+              left={0}
+              right={0}
+              flexDirection="column"
+              paddingX={1}
+              backgroundColor={pal.raised}
+            >
+              {keyList.map(k => (
+                <Box key={`key-list-${k.keys}`} flexDirection="row">
+                  <Box width={keyColumn} flexShrink={0}>
+                    <Text bold color={pal.raisedText}>
+                      {k.keys}
+                    </Text>
+                  </Box>
+                  <Text color={pal.raisedText ?? pal.muted} wrap="wrap">
+                    {k.does}
+                  </Text>
                 </Box>
-                <Text color={pal.muted} wrap="wrap">
-                  {k.does}
-                </Text>
-              </Box>
-            ))
-          : null}
+              ))}
+            </Box>
+          ) : null}
+        </Box>
       </Box>
     )
 

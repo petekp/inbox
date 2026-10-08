@@ -102,8 +102,8 @@ running session.
   - The tab bar shows when the inbox last updated, at its right end. A tab
     you switch to starts at its top.
 - **Keys.** While the pane has focus, `1`, `2` and `3` switch tabs, `j` and
-  `k` move the selection, and each action's key presses it. `▸ Keys`, at the
-  bottom of the pane, lists the keys no row shows. `/inbox` gives the pane
+  `k` move the selection, and each action's key presses it. `▴ Keys`, at the
+  bottom of the pane, opens a list of the keys no row shows above it. `/inbox` gives the pane
   focus, and ctrl+x tab moves focus between the pane and the prompt. A label
   written `key: Action` has a key. A label in brackets, like
   `[ Open PR ]`, is click only. You can also click any action, or click a
