@@ -25,7 +25,7 @@ import type {
 } from '../types'
 import {
   checkName,
-  checkRuns,
+  checkRun,
   checkLine,
   checksIn,
   claimMessage,
@@ -34,8 +34,7 @@ import {
   failCount,
   failureList,
   fixMessage,
-  NO_TARGET,
-  readResults,
+  readResult,
 } from './checks'
 import type { Contradiction } from './checks'
 import {
@@ -200,6 +199,22 @@ const FINDING_SCHEMA = {
   },
   required: ['kind', 'title', 'detail'],
 }
+
+const RUN_CHECK_TOOL = 'mcp__inbox__run_check'
+const RUN_CHECK_DESCRIPTION = `Run tests, type checks, lints, builds and validation scripts with this tool, not with Bash. Each command is one check, such as "npm test", "npx vitest run src/a.test.ts" or "tsc --noEmit", with no pipe, redirect or other command. They run in order in the shell's current folder; to check another folder, cd there with Bash first. Each check's full output goes to a log file, and you get back whether it passed, its summary, the lines that name what failed, and the log's path.`
+const RUN_CHECK_SCHEMA = {
+  type: 'object',
+  properties: {
+    checks: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'The check commands to run, in order, one check each.',
+    },
+  },
+  required: ['checks'],
+}
+const BASH_CHECK_REFUSAL = `Run checks with ${RUN_CHECK_TOOL} instead of Bash. It runs each check, saves its full output to a log file, and reports the exit status.`
+const SUBAGENT_CHECK_REFUSAL = `Not run: ${RUN_CHECK_TOOL} runs checks in the main conversation's folder, not a subagent's. Run each check with Bash instead.`
 
 const PANE = 'inbox'
 // Theme keys, so the colors follow the person's Claude Code theme.
@@ -1579,44 +1594,103 @@ function refreshTree($: EngineInterface, repos?: string[]): Promise<void> {
   return refreshing
 }
 
-/** Records how each check a Bash command ran ended, and in which folder; `cwd` is where the shell started. */
-async function recordChecks($: EngineInterface, command: string, cwd: string, output: string, isError: boolean) {
-  const runs = checkRuns(command, cwd, home)
-  // With other checks in the command, the output's failure lines may be theirs.
-  const isAlone = new Set(runs.map(x => x.call.name)).size === 1
-  const ended = readResults(command, runs, output, isError).flatMap(r => {
-    const own = runs.filter(x => x.call.name === r.call.name)
-    // A folder the command hides, as after `cd "$(git rev-parse --show-toplevel)"`, is taken as the session's.
-    const folders = new Set(own.map(x => x.folder ?? root))
-    const [folder = root] = folders
-    // A check run in several folders at once says nothing about any one of them.
-    if (folders.size > 1) return []
-    const failures = r.result === 'fail' && isAlone ? failureLines(output) : []
+/** Shell syntax that would make a check command more than the one check. */
+const SHELL_SYNTAX = /[|;&<>`]|\$\(/
 
-    return [{ ...r, folder, command: own[0]?.command ?? '', failures, target: own[0]?.target ?? NO_TARGET }]
-  })
-  if (ended.length === 0) return
-  const results = await Promise.all(ended.map(async r => ({ ...r, repo: await repoOf($, r.folder) })))
+/** The folder run_check saves logs in: the repo's git folder when it is inside the repo's top folder, else the temporary folder. */
+async function checkLogFolder($: EngineInterface): Promise<string> {
+  const gitDir = top === null ? null : (await runGit($, root, ['rev-parse', '--absolute-git-dir']))?.trim()
+  if (top !== null && gitDir?.startsWith(`${top}/`)) return `${gitDir}/inbox/checks`
+
+  return `${((await $.env.get('TMPDIR')) ?? '/tmp').replace(/\/$/, '')}/inbox-checks`
+}
+
+/**
+ * Runs each check as a Bash call of this mod's, so the Bash permission check
+ * applies and the tool.call hook records it. Saves each one's output to a log
+ * file and returns what Claude reads: how it ended, its summary, the lines that
+ * name what failed, a failed run's last lines, and the log's path.
+ */
+async function runChecks($: EngineInterface, checks: string[]): Promise<string> {
+  if (checks.length === 0) return 'Pass at least one check command in "checks".'
+  const logFolder = await checkLogFolder($)
+  const lines: string[] = []
+  for (const command of checks) {
+    const [call, ...others] = checksIn(command)
+    if (!call || others.length > 0 || SHELL_SYNTAX.test(command)) {
+      lines.push(`${command}: not run. Pass one check per command, with no pipe, redirect or other command.`)
+      continue
+    }
+    const ran = await $.tool
+      .call({ tool: 'Bash', command, description: `Run ${call.name}` })
+      .catch((err: unknown) => ({ deny: String(err) }))
+    if (typeof ran.deny === 'string') {
+      lines.push(`${command}: not run. ${ran.deny}`)
+      continue
+    }
+    if (resultFields(ran).backgroundTaskId) {
+      lines.push(`${command}: still running in the background, so its result is unknown.`)
+      continue
+    }
+    const output = ran.text ?? ''
+    const isFailed = ran.isError === true
+    const { summary } = readResult(output, isFailed)
+    const exit = output.match(/^Exit code (\d+)/)?.[1]
+    // Sessions share the folder, so each session keeps the latest log of each command.
+    const log = `${logFolder}/${sessionId}/${command.replace(/[^\w.-]+/g, '-').slice(0, 100)}.log`
+    const isSaved = await $.fs.write(log, output).then(
+      () => true,
+      () => false,
+    )
+    lines.push(
+      [
+        `${command}: ${isFailed ? `failed${exit ? ` with exit ${exit}` : ''}` : 'passed'}${summary ? `, ${summary}` : ''}.`,
+        ...(isFailed
+          ? [
+              ...failureLines(output).map(l => `  ${l}`),
+              '  Last 30 lines:',
+              ...output
+                .trimEnd()
+                .split('\n')
+                .slice(-30)
+                .map(l => `    ${l}`),
+            ]
+          : []),
+        ...(isSaved ? [`  Log: ${log}`] : []),
+      ].join('\n'),
+    )
+  }
+
+  return lines.join('\n')
+}
+
+/** Records how a single check ended, and in which folder; `cwd` is where the shell started. */
+async function recordCheck($: EngineInterface, command: string, cwd: string, output: string, isError: boolean) {
+  const run = checkRun(command, cwd, home)
+  if (!run) return
+  // A folder the command hides is taken as the session's.
+  const folder = run.folder ?? root
+  const { result, summary } = readResult(output, isError)
+  const repo = await repoOf($, folder)
   // Edits made before the check count as before it.
-  await refreshTree(
-    $,
-    results.flatMap(r => (r.repo ? [r.repo] : [])),
-  )
+  await refreshTree($, repo ? [repo] : [])
   const ranAt = await $.clock.now()
   await update($, CHECKS, c =>
     recorded(
       c,
-      results.map(r => ({
-        name: r.call.name,
-        kind: r.call.kind,
-        folder: r.folder,
-        result: r.result,
-        summary: r.summary,
-        command: r.command,
-        failures: r.failures,
-        repo: r.repo,
-        target: r.target,
-      })),
+      [
+        {
+          name: run.call.name,
+          kind: run.call.kind,
+          folder,
+          result,
+          summary,
+          command: run.command,
+          failures: result === 'fail' ? failureLines(output) : [],
+          repo,
+          target: run.target,
+        },
+      ],
       ranAt,
       root,
     ),
@@ -1664,6 +1738,7 @@ export const register: Register = on => {
       $.command.register({ name: 'inbox', description: 'Show where this session stands and what is waiting on you' }),
       $.tool.register({ name: 'record_finding', description: FINDING_DESCRIPTION, inputSchema: FINDING_SCHEMA }),
       $.tool.register({ name: 'close', description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA }),
+      $.tool.register({ name: 'run_check', description: RUN_CHECK_DESCRIPTION, inputSchema: RUN_CHECK_SCHEMA }),
       syncTheme($),
     ])
     top = git?.exitCode === 0 ? git.stdout.trim() || null : null
@@ -1792,8 +1867,33 @@ export const register: Register = on => {
     result: await recordClose($, e as unknown as Record<string, unknown>),
   }))
 
+  // The check tool is listed up front and needs no prompt of its own: each check
+  // runs as a Bash call, which takes the Bash permission check.
+  on('tool.describe', { tool: RUN_CHECK_TOOL as never }, async ($, e, next) => ({
+    ...(await next(e)),
+    isDeferred: false,
+  }))
+  on('tool.check', { tool: RUN_CHECK_TOOL as never }, () => ({ decision: 'allow' }))
+  on('tool.call', { tool: RUN_CHECK_TOOL as never }, async ($, e) => {
+    const input = e as unknown as Record<string, unknown>
+    // The checks run in the main conversation's shell, so a subagent in a worktree of its own would check the wrong folder.
+    if (input.agentId) return { result: SUBAGENT_CHECK_REFUSAL }
+    const checks = Array.isArray(input.checks) ? input.checks.filter((c): c is string => typeof c === 'string') : []
+
+    return { result: await runChecks($, checks) }
+  })
+
   on('tool.call', async ($, e, next) => {
     if (!isOn) return next(e)
+    // Claude's check commands go through the check tool, which runs each as a Bash call of this mod's.
+    if (
+      e.tool === 'Bash' &&
+      !e.agentId &&
+      !e.run_in_background &&
+      next.origin.plugin !== 'inbox' &&
+      checksIn(e.command).length > 0
+    )
+      return { deny: BASH_CHECK_REFUSAL }
     const { tool: _tool, tool_use_id: _id, agentId: _agent, ...input } = e as unknown as Record<string, unknown>
     const key = callKey(String(e.tool), input)
     const run = async () => {
@@ -1812,14 +1912,14 @@ export const register: Register = on => {
     const line = toolActivity(String(e.tool), input)
     if (line) noteActivity(line)
     if (e.tool === 'Bash') {
-      // A command moved to the background has not finished its checks.
-      const calls = e.run_in_background ? [] : checksIn(e.command)
-      // The command's own `cd` moves the session's folder, so read where it starts first.
-      const cwd = calls.length > 0 ? await $.session.cwd() : null
+      // Only this mod's own calls reach here with a check: run_check runs each as a whole command.
+      const isCheck = next.origin.plugin === 'inbox' && checksIn(e.command).length > 0
+      // A command moved to the background has not finished its check.
+      const cwd = isCheck && !e.run_in_background ? await $.session.cwd() : null
       const ran = await run()
       const output = resultFields(ran)
       if (cwd !== null && !output.interrupted && !output.backgroundTaskId && typeof ran.deny !== 'string') {
-        await recordChecks($, e.command, cwd, ran.text ?? '', ran.isError === true)
+        await recordCheck($, e.command, cwd, ran.text ?? '', ran.isError === true)
       }
       if (activity.length < 40)
         for (const url of new Set(ran.text?.match(LOCAL_URL) ?? [])) noteActivity(`URL in output: ${url}`)

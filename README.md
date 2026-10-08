@@ -49,9 +49,10 @@ panel and the prompt.
 After 15 minutes with no activity, or when you resume a session, the line
 above the prompt expands into a short summary of where things stand.
 
-The mod also tracks the tests and builds Claude runs. If Claude says something
-passes when the last run failed, or hasn't run since an edit, the mod asks
-Claude to run it again or say the change is untested.
+Claude runs tests and builds through a tool the mod adds, so the mod knows
+exactly how each one ended. If Claude says something passes when the last run
+failed, or hasn't run since an edit, the mod asks Claude to run it again or
+say the change is untested.
 
 To see every part with sample items, run `/inbox demo`. Run it again to go
 back to your own.

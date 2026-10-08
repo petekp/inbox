@@ -248,153 +248,83 @@ function readTarget(
 
 /** The target of the check run a saved command, run in `folder`, describes; the whole suite when it reads as none. */
 export function targetOfCommand(command: string, folder: string, home: string): Target {
-  return checkRuns(command, folder, home)[0]?.target ?? NO_TARGET
+  return checkRun(command, folder, home)?.target ?? NO_TARGET
 }
 
-/**
- * The `echo "<label> exit $?"` right after a check's pipeline: the label it
- * prints, how many echoes before it in the command print the same label, and
- * whether `$?` is the check's own status. After `check | tail` it is tail's,
- * unless the command sets pipefail.
- */
-export type ExitEcho = { label: string; nth: number; isOwn: boolean }
-
-/**
- * One time a command runs a check: the check, the part of its suite the run
- * covered, the piece of the command that runs it (`segment` with quoted text blanked, `command` as written), whether
- * that piece ends the command, the folder it ran in, and the echo that prints
- * its status.
- */
+/** A check a command runs: the check, the part of its suite the run covered, the command as written, and the folder it ran in. */
 export type CheckRun = {
   call: CheckCall
   target: Target
-  segment: string
   command: string
-  isLast: boolean
   folder: string | null
-  exitEcho: ExitEcho | null
-}
-
-/** The label an `echo "<label> exit $?"` prints, '' for `echo "exit=$?"`, or null for a segment that prints no status. */
-function echoedLabel(segment: string): string | null {
-  const [first, ...printed] = wordsOf(commandOf(segment))
-  if (first !== 'echo' || !printed.some(w => w.includes('$?'))) return null
-  const text = printed
-    .filter(w => !/^-[neE]+$/.test(w))
-    .join(' ')
-    .replace(/\$\?/g, '0')
-
-  return exitLines(text)[0]?.label ?? null
 }
 
 /**
- * Each check a command runs, in order, with its folder, absolute: where the
- * shell started, moved by each `cd`, or the folder the check names, as in
- * `claude plugin test <folder>` or `npm --prefix <folder> test`. The folder is
- * null when the command hides it, as with `cd -`, `$(...)` or a variable the
- * command did not set.
+ * The first check a command runs, with its folder, absolute: where the shell
+ * started, or the folder the check names, as in `claude plugin test <folder>`
+ * or `npm --prefix <folder> test`. The folder is null when the command hides
+ * it, as with a variable other than HOME or `$(...)`.
  */
-export function checkRuns(command: string, cwd: string, home: string): CheckRun[] {
-  const runs: CheckRun[] = []
-  const vars = new Map([['HOME', home]])
-  let dir: string | null = resolvePath('/', cwd)
+export function checkRun(command: string, cwd: string, home: string): CheckRun | null {
+  const dir = resolvePath('/', cwd)
   const expand = (word: string): string | null => {
     if (/\$\(|`/.test(word)) return null
-    let isKnown = true
-    const out = word
-      .replace(/^~(?=\/|$)/, home)
-      .replace(/\$\{?(\w+)\}?/g, (_, name: string) => vars.get(name) ?? ((isKnown = false), ''))
+    const out = word.replace(/^~(?=\/|$)/, home).replace(/\$\{?HOME\}?/g, home)
 
-    return isKnown ? out : null
+    return out.includes('$') ? null : out
   }
-  const at = (path: string): string | null => {
-    const p = expand(path)
-
-    return p === null || dir === null ? null : resolvePath(dir, p)
-  }
-
   const blank = segments(command)
   const kept = segments(command, true)
-  const echoes = kept.map(s => echoedLabel(s.text))
-  const isPipefail = /\bset\s+(?:-\w+\s+)*-\w*o\s+pipefail\b/.test(command)
-  // The echo after a pipeline prints the status of the pipeline's last command.
-  const exitEchoAfter = (i: number): ExitEcho | null => {
-    let end = i
-    while (kept[end]?.next === '|') end++
-    const label = echoes[end + 1]
-
-    return label === null || label === undefined
-      ? null
-      : { label, nth: echoes.slice(0, end + 1).filter(l => l === label).length, isOwn: end === i || isPipefail }
-  }
-  kept.forEach(({ text: segment }, i) => {
+  for (const [i, { text: segment }] of kept.entries()) {
+    const found = checkIn(blank[i]?.text ?? '')
+    if (!found) continue
+    const { call, runner, consumed } = found
     const words = wordsOf(commandOf(segment))
-    const [first = '', ...rest] = words
-    const assigned = first === 'export' ? rest : words
-    const assignment = assigned.length === 1 ? assigned[0]?.match(/^(\w+)=(.*)$/s) : null
-    if (assignment) {
-      const [, name = '', value = ''] = assignment
-      const expanded = expand(value)
-      if (expanded === null) vars.delete(name)
-      else vars.set(name, expanded)
-    } else if (first === 'cd' || first === 'pushd') {
-      const target = rest.find(w => w === '-' || !w.startsWith('-'))
-      dir = target === '-' ? null : target === undefined ? home : at(target)
-    } else if (first === 'popd') {
-      dir = null
-    } else {
-      const piece = blank[i]?.text ?? ''
-      const found = checkIn(piece)
-      if (!found) return
-      const { call, runner, consumed } = found
-      const after = words.slice(words.findIndex(w => w === runner || w.endsWith(`/${runner}`)) + 1)
-      const options = runner === 'tsc' ? TSC_FOLDER_OPTIONS : FOLDER_OPTIONS
-      // The words that name the folder are not target words.
-      const folderWords = new Set<number>()
-      let named: string | undefined
-      if (runner === 'claude') {
-        // `claude plugin test <folder>`: the first word after `plugin test` that is not an option or a redirect.
-        const j = after.findIndex((w, k) => k >= 2 && !/^-|^\d*[<>&]/.test(w))
-        if (j >= 0) {
-          named = after[j]
-          folderWords.add(j)
-        }
+    const after = words.slice(words.findIndex(w => w === runner || w.endsWith(`/${runner}`)) + 1)
+    const options = runner === 'tsc' ? TSC_FOLDER_OPTIONS : FOLDER_OPTIONS
+    // The words that name the folder are not target words.
+    const folderWords = new Set<number>()
+    let named: string | undefined
+    if (runner === 'claude') {
+      // `claude plugin test <folder>`: the first word after `plugin test` that is not an option or a redirect.
+      const j = after.findIndex((w, k) => k >= 2 && !/^-|^\d*[<>&]/.test(w))
+      if (j >= 0) {
+        named = after[j]
+        folderWords.add(j)
       }
-      after.forEach((w, j) => {
-        const isInline = w.startsWith('--') && w.includes('=')
-        const [option = '', value] = isInline ? w.split(/=(.*)/s) : [w, after[j + 1]]
-        if (options.has(option) && value !== undefined) {
-          named = value
-          folderWords.add(j)
-          if (!isInline) folderWords.add(j + 1)
-        }
-      })
-      // A project file, such as tsconfig.build.json or Cargo.toml, names its folder.
-      if (named && /\.(?:json|toml)$/.test(named)) named = named.replace(/\/?[^/]*$/, '') || '.'
-      const folder = named === undefined ? dir : at(named)
-      const resolve = (word: string): string | null => {
-        const path = expand(word)
-
-        return path === null || folder === null ? null : resolvePath(folder, path)
-      }
-      runs.push({
-        call,
-        target: readTarget(
-          after.filter((_, j) => j >= consumed && !folderWords.has(j)),
-          runner,
-          folder,
-          resolve,
-        ),
-        segment: piece,
-        command: segment,
-        isLast: i === blank.length - 1,
-        folder,
-        exitEcho: exitEchoAfter(i),
-      })
     }
-  })
+    after.forEach((w, j) => {
+      const isInline = w.startsWith('--') && w.includes('=')
+      const [option = '', value] = isInline ? w.split(/=(.*)/s) : [w, after[j + 1]]
+      if (options.has(option) && value !== undefined) {
+        named = value
+        folderWords.add(j)
+        if (!isInline) folderWords.add(j + 1)
+      }
+    })
+    // A project file, such as tsconfig.build.json or Cargo.toml, names its folder.
+    if (named && /\.(?:json|toml)$/.test(named)) named = named.replace(/\/?[^/]*$/, '') || '.'
+    let folder: string | null = dir
+    if (named !== undefined) {
+      const path = expand(named)
+      folder = path === null ? null : resolvePath(dir, path)
+    }
+    const resolve = (word: string): string | null => {
+      const path = expand(word)
 
-  return runs
+      return path === null || folder === null ? null : resolvePath(folder, path)
+    }
+    const target = readTarget(
+      after.filter((_, j) => j >= consumed && !folderWords.has(j)),
+      runner,
+      folder,
+      resolve,
+    )
+
+    return { call, target, command: segment, folder }
+  }
+
+  return null
 }
 
 /** Whether a folder is a temporary one, where a throwaway copy of a project lives. */
@@ -402,13 +332,6 @@ export function isTemporary(folder: string): boolean {
   return /^(?:\/private)?\/(?:tmp|var\/tmp|var\/folders)(?:\/|$)/.test(folder)
 }
 
-// Not "problems": ESLint counts warnings in them, as in "316 problems (0 errors, 316 warnings)".
-const FAIL_COUNT = /\b([1-9]\d*)\s+(?:fail(?:ed|ing|ures?|s)?|errors?)\b|^[ℹ#]\s*fail\s+[1-9]\d*\s*$/im
-const ZERO_FAIL = /\b0\s+(?:fail(?:ed|ing|ures?|s)?|errors?)\b|^[ℹ#]\s*fail\s+0\s*$/im
-const PASS_COUNT = /\b(\d+)\s+(?:pass(?:ed|ing|es)?|tests? passed|ok)\b/i
-const TS_ERROR = /\berror\s+TS\d+\b/
-const FAIL_WORD =
-  /^\s*(?:FAIL|FAILED|✗|×|✘)\b|\bTests?:\s+\d+\s+failed\b|^error(?:\[E\d+\])?:|\bESLint found too many warnings\b/im
 const SUMMARY = [
   /^.*\b\d+\s+(?:pass(?:ed|ing)?|fail(?:ed|ing)?)\b.*$/im,
   /^.*\bRan \d+ tests?\b.*$/im,
@@ -435,41 +358,6 @@ export function failureLines(output: string): string[] {
     .slice(0, 3)
 }
 
-/** "<label> exit N" lines a command printed, such as `echo "tsc exit $?"`, `exit: 1` or `exit=1`. */
-function exitLines(output: string): { label: string; code: number }[] {
-  return [
-    ...output.matchAll(/^[ \t]*(?:(\S[^\n]*?)[ \t]+)?exit(?:[ \t]+code)?(?:[ \t]*[:=][ \t]*|[ \t]+)(\d+)[ \t]*$/gim),
-  ].map(m => ({
-    label: (m[1] ?? '').toLowerCase(),
-    code: Number(m[2]),
-  }))
-}
-
-/** The status a bare `echo $?` printed, the only line of its kind. */
-function bareExit(command: string, output: string): number | null {
-  if (!/\becho\s+["']?\$\?["']?\s*(?:$|[;&|\n])/.test(command)) return null
-  const lines = output.match(/^\s*\d+\s*$/gm) ?? []
-
-  return lines.length === 1 ? Number(lines[0]) : null
-}
-
-/** Words in check names that say what a check does, not which runner ran it. */
-const GENERIC_WORDS = new Set(['test', 'build', 'check', 'run', 'lint'])
-
-/** The words of a check name or a label, split at punctuation, with a final "s" dropped so "tests" reads as "test". */
-function labelWords(text: string): string[] {
-  return text
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .map(w => w.replace(/s$/, ''))
-    .filter(Boolean)
-}
-
-/** Whether a segment sends its output to a file, so the output here is not its own. */
-function isRedirected(segment: string): boolean {
-  return /(?:^|[^\d&])>>?\s*[^&\s]/.test(segment)
-}
-
 /** Pass and fail counts on lines of their own: bun's " 24 pass", node's "ℹ pass 24", TAP's "# pass 24". */
 function counts(output: string): { pass: number; fail: number } | null {
   const count = (word: string) => {
@@ -483,9 +371,16 @@ function counts(output: string): { pass: number; fail: number } | null {
   return pass === null || fail === null ? null : { pass, fail }
 }
 
-function summaryOf(output: string, tally: ReturnType<typeof counts>): string {
+/** How a check ended, from the engine's exit status, with a summary read from its output. */
+export function readResult(output: string, isError: boolean): { result: Check['result']; summary: string } {
+  const tally = counts(output)
   // failCount reads this back for the pane's "2 of 176 failed".
-  if (tally) return `${tally.pass} pass, ${tally.fail} fail`
+  const summary = tally ? `${tally.pass} pass, ${tally.fail} fail` : summaryLine(output)
+
+  return { result: isError ? 'fail' : 'pass', summary: summary || (isError ? 'exited with an error' : '') }
+}
+
+function summaryLine(output: string): string {
   for (const p of SUMMARY) {
     const m = output.match(p)
     if (m) return m[0].trim().slice(0, 120)
@@ -493,70 +388,6 @@ function summaryOf(output: string, tally: ReturnType<typeof counts>): string {
   const firstError = output.split('\n').find(line => /\berror\b/i.test(line))
 
   return (firstError ?? '').trim().slice(0, 120)
-}
-
-/**
- * How each check in a command ended, from its runs (`checkRuns`). A check the
- * command runs more than once is unknown, since the output does not say which
- * lines are which run's. Otherwise the exit line its own `echo "... exit $?"`
- * printed wins, then an exit line that names it, as a script may print. Then
- * the command's own exit status, when a lone check ends the command and
- * nothing filters it. Then the runner's own pass and fail tally, then failure
- * or pass words in the output, which other commands in it may have printed.
- */
-export function readResults(
-  command: string,
-  runs: CheckRun[],
-  output: string,
-  isError: boolean,
-): { call: CheckCall; result: Check['result']; summary: string }[] {
-  const exits = exitLines(output)
-  // Each `echo "<label> exit $?"` prints one exit line. When the output has as many lines of a label as the
-  // command has echoes of it, each line belongs to the pipeline before its echo, and no other check reads it.
-  const echoed = segments(command, true).map(s => echoedLabel(s.text))
-  const ofLabel = (label: string) => exits.filter(x => x.label === label)
-  const isPlaced = (label: string) => ofLabel(label).length === echoed.filter(l => l === label).length
-  const unplaced = exits.filter(x => !isPlaced(x.label))
-  const isFiltered = /\|\s*(tail|head|grep|rg|sed|awk|cut|wc|tee|less)\b/.test(command)
-  const tally = counts(output)
-  const summary = summaryOf(output, tally)
-  const calls = runs.map(r => r.call).filter((c, i, all) => all.findIndex(x => x.name === c.name) === i)
-
-  return calls.map(call => {
-    const own = runs.filter(r => r.call.name === call.name)
-    if (own.length > 1) return { call, result: 'unknown', summary: `ran ${own.length} times in one command` }
-    const words = labelWords(call.name.replace(/\.sh$/, ''))
-    // A label names a check by whole words, so "go" is not in "golangci-lint exit 1", but a runner's
-    // name can end in what it does, as "eslint" ends in "lint". The runner's word ("bun") names its
-    // line before a word another runner's line can share, as in "unit test exit 1".
-    const named = words.filter(w => !GENERIC_WORDS.has(w))
-    const names = (label: string, w: string) => (GENERIC_WORDS.has(w) ? label.endsWith(w) : label === w)
-    const labelFor = (ws: string[]) => unplaced.find(x => labelWords(x.label).some(l => ws.some(w => names(l, w))))
-    const echo = own[0]?.exitEcho
-    const placed = echo?.isOwn && isPlaced(echo.label) ? ofLabel(echo.label)[echo.nth] : undefined
-    const labeled = placed ?? labelFor(named) ?? labelFor(call.kind === 'tests' ? [...words, 'test'] : words)
-    const bare = calls.length === 1 && exits.length === 0 ? bareExit(command, output) : null
-    const only =
-      calls.length === 1 && unplaced.length === 1 ? unplaced[0] : bare === null ? undefined : { label: '', code: bare }
-    const exit = labeled ?? only
-    if (exit) return { call, result: exit.code === 0 ? 'pass' : 'fail', summary: summary || `exit ${exit.code}` }
-    if (calls.length === 1 && !isFiltered && own[0]?.isLast) {
-      return { call, result: isError ? 'fail' : 'pass', summary: summary || (isError ? 'exited with an error' : '') }
-    }
-    // tsc reports a failure only as "error TSnnnn" lines, so a tally or a failure word is another command's.
-    if (calls.length === 1 && call.name === 'tsc') {
-      if (TS_ERROR.test(output)) return { call, result: 'fail', summary }
-    } else if (calls.length === 1) {
-      if (tally) return { call, result: tally.fail > 0 ? 'fail' : 'pass', summary }
-      if (FAIL_COUNT.test(output) || TS_ERROR.test(output) || FAIL_WORD.test(output))
-        return { call, result: 'fail', summary }
-      if (ZERO_FAIL.test(output) || PASS_COUNT.test(output)) return { call, result: 'pass', summary }
-    }
-    if (isError) return { call, result: 'fail', summary: summary || 'exited with an error' }
-    if (isFiltered || isRedirected(own[0]?.segment ?? '')) return { call, result: 'unknown', summary }
-
-    return { call, result: 'pass', summary }
-  })
 }
 
 /** A check's result as one mark: ✓ passed, ✗ failed, · unknown. */

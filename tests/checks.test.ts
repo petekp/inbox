@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Check, Checks } from '../types'
-import { checkName, checkRuns, checksIn, claimsIn, failureLines, failureList, readResults } from '../hooks/checks'
+import { checkName, checkRun, checksIn, claimsIn, failureLines, failureList, readResult } from '../hooks/checks'
 import { candidates, changedPaths, readChanged, readLsTree } from '../hooks/git'
 
 describe('checksIn', () => {
@@ -38,22 +38,21 @@ describe('checksIn', () => {
   })
 })
 
-describe('checkRuns', () => {
-  const runs = (command: string) => checkRuns(command, '/work/repo', '/home/me')
-  const folder = (command: string) => runs(command)[0]?.folder
+describe('checkRun', () => {
+  const run = (command: string) => checkRun(command, '/work/repo', '/home/me')
+  const folder = (command: string) => run(command)?.folder
 
-  test('follows cd, variables the command set, and the folder a check names', () => {
+  test('runs in the shell’s folder, or the one the check names', () => {
     expect(folder('npm test')).toBe('/work/repo')
-    expect(folder('cd mods/x && claude plugin test . > t.log 2>&1')).toBe('/work/repo/mods/x')
-    expect(folder('S=/tmp/copy; cp -R . "$S" && claude plugin test $S > $S.log 2>&1')).toBe('/tmp/copy')
+    expect(folder('claude plugin test mods/x')).toBe('/work/repo/mods/x')
+    expect(folder('claude plugin test $HOME/x')).toBe('/home/me/x')
     expect(folder('npm --prefix ../app test')).toBe('/work/app')
     expect(folder('npx -y -p typescript tsc --noEmit -p ~/app/tsconfig.json')).toBe('/home/me/app')
   })
 
   test('is null when the command hides the folder', () => {
-    expect(folder('cd - && npm test')).toBe(null)
     expect(folder('claude plugin test $COPY')).toBe(null)
-    expect(folder('cd "$(git rev-parse --show-toplevel)" && npm test')).toBe(null)
+    expect(folder('npm --prefix "$(mktemp -d)" test')).toBe(null)
   })
 
   describe('target', () => {
@@ -94,28 +93,19 @@ describe('checkRuns', () => {
       ['eslint src/ --max-warnings 0', { paths: ['/work/repo/src'], filters: ['--max-warnings', '0'] }],
       ['ruff check .', none],
       ['golangci-lint run ./...', none],
-      ['cd app && vitest run a.test.ts', { paths: ['/work/repo/app/a.test.ts'] }],
       ['vitest run /work/repo ./', none],
       ['vitest run ../other/a.test.ts', { paths: ['/work/other/a.test.ts'] }],
       ['vitest run ~/b.test.ts', { paths: ['/home/me/b.test.ts'] }],
       ['vitest run a.test.ts < in.txt', { paths: ['/work/repo/a.test.ts'] }],
       // A path the mod cannot resolve is kept as written, so the run never clears a failure by mistake.
       ['vitest run $X/a.test.ts', { filters: ['$X/a.test.ts'] }],
-      ['cd - && vitest run a.test.ts', { filters: ['a.test.ts'] }],
     ]
 
     for (const [command, expected] of cases) {
       test(command, () => {
-        expect(runs(command)[0]?.target).toEqual({ ...none, ...expected })
+        expect(run(command)?.target).toEqual({ ...none, ...expected })
       })
     }
-  })
-
-  test('gives each run of a check its own folder', () => {
-    expect(runs('claude plugin test . ; claude plugin test /tmp/copy').map(r => r.folder)).toEqual([
-      '/work/repo',
-      '/tmp/copy',
-    ])
   })
 })
 
@@ -216,80 +206,21 @@ describe('failureLines', () => {
   })
 })
 
-describe('readResults', () => {
-  const runs = (command: string) => checkRuns(command, '/work/repo', '/home/me')
-  const results = (command: string, output: string) =>
-    readResults(command, runs(command), output, false).map(r => r.result)
-  const result = (command: string, output: string) => results(command, output)[0]
-  test('a check run twice in one command is unknown, since its output mixes both runs', () => {
-    const command = 'claude plugin test . | grep pass; claude plugin test /tmp/copy | grep pass'
-    expect(readResults(command, runs(command), ' 48 pass\n 0 fail\n 47 pass\n 1 fail\n', false)).toEqual([
-      { call: { name: 'plugin tests', kind: 'tests' }, result: 'unknown', summary: 'ran 2 times in one command' },
-    ])
-  })
-
-  test('a labeled exit line decides each check', () => {
-    const command = 'bun test > t.log; echo "test exit $?"; tsc > c.log; echo "tsc exit $?"'
-    expect(results(command, 'test exit 0\ntsc exit 2\n')).toEqual(['pass', 'fail'])
-    // The runner's own line wins over another runner's line that also says "test".
-    const both = 'python3 -m unittest > u.log; echo "unittest exit $?"; bun test | tail -4; echo "bun exit $?"'
-    expect(result(both, 'unittest exit 1\nbun exit 0\n 7 pass\n 0 fail\n')).toBe('pass')
-    // A label names its check by whole words, so "go" is not in "golangci-lint".
-    const go = 'golangci-lint run > l.log; echo "golangci-lint exit $?"; go test ./... > t.log; echo "go test exit $?"'
-    expect(results(go, 'golangci-lint exit 1\ngo test exit 0\n')).toEqual(['fail', 'pass'])
-    // A runner's name can end in what the check does, as eslint's does for the lint script.
-    const lint = 'pnpm run typecheck > tc.log; echo "TSC EXIT=$?"; pnpm run lint > es.log; echo "ESLINT EXIT=$?"'
-    expect(results(lint, 'TSC EXIT=0\nESLINT EXIT=1\n')).toEqual(['pass', 'fail'])
-    const build = 'go build ./... > b.log 2>&1; echo "build exit=$?"'
-    expect(result(build, 'build exit=0\n')).toBe('pass')
-    // A continued line and a pipe inside $(...) stay in the check's piece, so its echo is the next one.
-    const xcode =
-      'xcodebuild test-without-building \\\n  -xctestrun $(ls *.xctestrun | head -1) > x.log; echo "test exit $?"'
-    expect(result(xcode, 'test exit 65\n')).toBe('fail')
-  })
-
-  test('a lone check that ends the command is decided by its exit status; counts describe it', () => {
-    const [failed] = readResults('bun test', runs('bun test'), ' 24 pass\n 1 fail\nRan 25 tests across 3 files.', true)
-    expect(failed).toMatchObject({ result: 'fail', summary: '24 pass, 1 fail' })
+describe('readResult', () => {
+  test('the exit status decides; the runner’s counts describe it', () => {
+    expect(readResult(' 24 pass\n 1 fail\nRan 25 tests across 3 files.', true)).toEqual({
+      result: 'fail',
+      summary: '24 pass, 1 fail',
+    })
     // A test named after errors does not fail a clean run.
-    const [passed] = readResults('bun test', runs('bun test'), '(pass) reports 2 errors\n 25 pass\n 0 fail\n', false)
-    expect(passed).toMatchObject({ result: 'pass', summary: '25 pass, 0 fail' })
+    expect(readResult('(pass) reports 2 errors\n 25 pass\n 0 fail\n', false)).toEqual({
+      result: 'pass',
+      summary: '25 pass, 0 fail',
+    })
   })
 
-  test('reads an exit status printed as exit=N or by a bare echo', () => {
-    const command = 'npm test > /tmp/t.log 2>&1; echo "exit=$?"'
-    expect(result(command, 'exit=1')).toBe('fail')
-    const bare = 'npm test > /tmp/t.log 2>&1; echo $?'
-    expect(result(bare, '1\n')).toBe('fail')
-  })
-
-  test('output sent to a file with no exit status shown is unknown', () => {
-    const command = 'npm test > /tmp/t.log 2>&1; echo done'
-    expect(result(command, 'done')).toBe('unknown')
-  })
-
-  test('a filtered command without counts is unknown, since the exit status is the filter’s', () => {
-    const [r] = readResults('npm run build | tail -3', runs('npm run build | tail -3'), 'done in 2s', false)
-    expect(r?.result).toBe('unknown')
-    expect(result('npm run build | tail -3; echo "exit $?"', 'done in 2s\nexit 0\n')).toBe('unknown')
-    expect(result('set -o pipefail; npm run build | tail -3; echo "exit $?"', 'done in 2s\nexit 1\n')).toBe('fail')
-  })
-
-  test('failure words another command printed do not fail a lone check', () => {
-    // The runner's own tally decides it.
-    const node = 'node --test 2>&1 | grep "^ℹ"; node verify.mjs | grep FAIL'
-    expect(result(node, 'ℹ pass 40\nℹ fail 0\nFAIL demo asset missing\n')).toBe('pass')
-    // tsc fails only on its own "error TS" lines.
-    const tsc = 'npx tsc --noEmit && echo OK; npm run check:all 2>&1 | tail -3'
-    expect(result(tsc, 'FAIL — 1 guidance claim does not resolve\n7 passed\n')).toBe('unknown')
-    expect(result(tsc, ' 40 pass\n 2 fail\n')).toBe('unknown')
-    expect(result(tsc, "src/a.ts(1,1): error TS2322: Type 'x' is not assignable.\n")).toBe('fail')
-    // ESLint's "problems" include warnings, which fail only past --max-warnings.
-    const lint = 'npx eslint src | tail -3'
-    expect(result(lint, '✖ 316 problems (0 errors, 316 warnings)\n')).toBe('pass')
-    expect(result(lint, '✖ 2 problems (0 errors, 2 warnings)\nESLint found too many warnings (maximum: 0).\n')).toBe(
-      'fail',
-    )
+  test('a failing check with no recognizable summary still says so', () => {
+    expect(readResult('Exit code 2\nboom', true)).toEqual({ result: 'fail', summary: 'exited with an error' })
   })
 })
 

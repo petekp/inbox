@@ -1,6 +1,7 @@
 # Exact check results
 
-Status: B chosen and tried in a trial build. Terms follow `GLOSSARY.md`.
+Status: B chosen and built on the `run-check` branch. Not yet merged or
+tried in a live session. Terms follow `GLOSSARY.md`.
 
 ## The problem
 
@@ -133,12 +134,15 @@ result reaches the band and Needs you. A `claude -p` session has no pane.
   that name what failed, and for a failure the output's last 30 lines. Reason:
   in the trial Claude needed the output, and a log it can't read costs a turn.
 - **The log.** Saved where Claude can read it without a prompt: in the repo's
-  `.git` folder, which git does not track. Outside git, the result carries the
-  output's last lines only. Reading a file under `.git` without a prompt is
-  still to be checked.
+  `.git` folder (`.git/inbox/checks/<session>/<command>.log`), which git does not
+  track. Each session keeps the latest log of each command. In a linked worktree, the git folder is outside the worktree, so
+  the log goes in the temporary folder, as it does outside git. In a `claude -p`
+  trial, Claude read logs under `.git` with `grep` and `tail` without a prompt.
 - **The refusal.** Main-loop Bash commands in which `checksIn` finds a check.
   Subagents' commands and commands sent to the background pass, and stay
-  unrecorded as now.
+  unrecorded as now. A subagent's `run_check` call is answered "Not run" and
+  sent to Bash: the tool runs in the main conversation's shell, so in a trial a
+  subagent in its own worktree had the main checkout tested.
 - **Text the model reads.** The tool's description and both refusals are new.
   Per `AGENTS.md`, test them with a real model before shipping. The trial's
   wording is the starting point.

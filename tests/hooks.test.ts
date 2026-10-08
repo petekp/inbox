@@ -31,6 +31,9 @@ let ran: string[][] = []
 // What a tool call Claude makes answers; a test can make it fail.
 let toolAnswer: { text: string; isError: boolean } = { text: 'ok', isError: false }
 
+// The commands of the Bash calls that reached the engine.
+let toolCalls: string[] = []
+
 // gh's answers by command; anything else fails, as gh does outside a repo with no PR.
 // `hold` delays an answer until it resolves, as a slow network would.
 let ghAnswers: {
@@ -68,10 +71,13 @@ const PANE = {
   },
 }
 
+const RUN_CHECK = 'mcp__inbox__run_check'
+
 function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   sent = []
   ran = []
   toolAnswer = { text: 'ok', isError: false }
+  toolCalls = []
   ghAnswers = []
   ledgerReply = LEDGER_REPLY
   mock.store(on)
@@ -110,11 +116,13 @@ function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   on('classic.StopFailure', () => ({}))
   on('classic.PermissionRequest', () => ({}))
   on('classic.Stop', () => ({}))
-  on('tool.call', () =>
-    toolAnswer.isError
+  on('tool.call', (_$, e) => {
+    toolCalls.push(String((e as { command?: unknown }).command))
+
+    return toolAnswer.isError
       ? { isError: true as const, result: toolAnswer.text, text: toolAnswer.text }
-      : { result: toolAnswer.text, text: toolAnswer.text },
-  )
+      : { result: toolAnswer.text, text: toolAnswer.text }
+  })
   // The band with nothing to show falls through to the engine's own, drawn empty here.
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
 }
@@ -665,12 +673,7 @@ test('a failing test run shows in the band, reaches the per-turn call, stops a c
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'fix the parser', wait: false, origin: { kind: 'composer' } })
   toolAnswer = { text: ' 11 pass\n 1 fail\n', isError: true }
-  // The command hides the folder, so the run counts as the session's.
-  await $.tool.call({
-    tool: 'Bash',
-    command: 'cd "$(git rev-parse --show-toplevel)" && npm test',
-    description: 'Run the tests',
-  } as never)
+  await $.tool.call({ tool: RUN_CHECK, checks: ['npm test'] } as never)
   // The band shows the failure before the session has a card.
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await band.find({ text: /✗ npm test, 11 pass, 1 fail/ })).toBeDefined()
@@ -728,11 +731,7 @@ test('a failed check whose folder is gone, such as a removed worktree, drops out
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   toolAnswer = { text: ' 11 pass\n 1 fail\n', isError: true }
-  await $.tool.call({
-    tool: 'Bash',
-    command: 'npm --prefix /tmp/project/wt test',
-    description: 'Run the tests',
-  } as never)
+  await $.tool.call({ tool: RUN_CHECK, checks: ['npm --prefix /tmp/project/wt test'] } as never)
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await band.find({ text: /✗ npm test in wt/ })).toBeDefined()
 
@@ -746,6 +745,74 @@ test('a failed check whose folder is gone, such as a removed worktree, drops out
   })
   await clock.settle()
   expect(await band.find({ text: /✗ npm test in wt/ })).toBeUndefined()
+})
+
+test('run_check reports a pass and a failure with its exit code, and saves the output to a log', async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  world(on, [])
+  const written: Record<string, string> = {}
+  on('fs.write', (_$, e) => {
+    written[e.path] = e.text
+
+    return { value: undefined }
+  })
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+
+  toolAnswer = { text: ' 12 pass\n 0 fail\n', isError: false }
+  const passed = await $.tool.call({ tool: RUN_CHECK, checks: ['bun test'] } as never)
+  expect(passed.result).toBe('bun test: passed, 12 pass, 0 fail.\n  Log: /tmp/inbox-checks/session-1/bun-test.log')
+
+  toolAnswer = { text: 'Exit code 2\n(fail) parses times\n 11 pass\n 1 fail\n', isError: true }
+  const failed = await $.tool.call({ tool: RUN_CHECK, checks: ['bun test'] } as never)
+  expect(failed.result).toContain('bun test: failed with exit 2, 11 pass, 1 fail.\n  (fail) parses times\n')
+  expect(failed.result).toContain('  Last 30 lines:\n    Exit code 2\n    (fail) parses times')
+  expect(written['/tmp/inbox-checks/session-1/bun-test.log']).toBe(toolAnswer.text)
+})
+
+test("run_check does not run a command with a pipe or two checks, or a subagent's checks", async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  world(on, [])
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+
+  const answer = await $.tool.call({
+    tool: RUN_CHECK,
+    checks: ['npm test | tail -5', 'npm test && tsc', 'echo hi'],
+  } as never)
+  expect(String(answer.result).match(/not run/g)).toHaveLength(3)
+  // A subagent in a worktree of its own would get the main conversation's folder checked.
+  const fromSubagent = await $.tool.call({ tool: RUN_CHECK, checks: ['npm test'], agentId: 'a1' } as never)
+  expect(String(fromSubagent.result)).toContain('Bash')
+  expect(toolCalls).toEqual([])
+})
+
+test('a check command Claude sends to Bash is refused, unless a subagent or the background runs it', async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  world(on, [])
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+
+  const refused = await $.tool.call({
+    tool: 'Bash',
+    command: 'npm test 2>&1 | tail -5',
+    description: 'Run tests',
+  } as never)
+  expect(refused.deny).toContain(RUN_CHECK)
+  const sub = await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'Run tests', agentId: 'a1' } as never)
+  expect(sub.deny).toBeUndefined()
+  const background = await $.tool.call({
+    tool: 'Bash',
+    command: 'npm test',
+    description: 'Run tests',
+    run_in_background: true,
+  } as never)
+  expect(background.deny).toBeUndefined()
+  const other = await $.tool.call({ tool: 'Bash', command: 'git status', description: 'Status' } as never)
+  expect(other.deny).toBeUndefined()
+  // The Bash call run_check makes itself is not refused.
+  toolAnswer = { text: ' 3 pass\n 0 fail\n', isError: false }
+  const ran = await $.tool.call({ tool: RUN_CHECK, checks: ['npm test'] } as never)
+  expect(ran.result).toContain('npm test: passed, 3 pass, 0 fail.')
+  // The refused command never ran.
+  expect(toolCalls).toEqual(['npm test', 'npm test', 'git status', 'npm test'])
 })
 
 test('/inbox demo shows sample entries in every tab, sends nothing, and goes back', async ($, on) => {
