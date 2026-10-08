@@ -611,6 +611,9 @@ test('a failing test run shows in the band, reaches the per-turn call, stops a c
   await pane.press({ key: 'fix-check:.:npm test' })
   await clock.settle()
   expect(sent.at(-1)).toContain('npm test failed when you last ran it.\nCommand: npm test\nOutput:\n11 pass, 1 fail\n')
+  // Once the fix is sent, the row says so and no longer counts as waiting on the person.
+  expect(await pane.find({ text: /Fix sent ·/ })).toBeDefined()
+  expect(await pane.find({ text: /Failing checks 1/ })).toBeUndefined()
   await pane.press({ key: 'dismiss-check:.:npm test' })
   expect(await pane.find({ text: /Failing checks/ })).toBeUndefined()
   expect(await band.find({ text: /✗ npm test/ })).toBeDefined()
@@ -649,7 +652,8 @@ test('/inbox demo shows sample entries in every tab, sends nothing, and goes bac
   expect((await $.command.run({ command: 'inbox', args: 'demo' } as never)).text).toContain('Showing sample entries')
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ text: /Show the Keys list in a footer/ })).toBeDefined()
-  // The sample failing check is the first row, so the first question is the next one.
+  // The two sample failing checks are the first rows, so the first question follows them.
+  await pane.press({ key: 'next' })
   await pane.press({ key: 'next' })
   await pane.press({ key: 'answer-d11-0' })
   expect(sent).toEqual([])

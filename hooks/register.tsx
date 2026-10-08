@@ -30,6 +30,7 @@ import {
   claimMessage,
   contradictedClaim,
   failureLines,
+  failureSummary,
   fixMessage,
   isTemporary,
   markStale,
@@ -124,6 +125,7 @@ const TYPING = atom({ plugin: 'inbox', key: 'typing' } as const, null as string 
 const SETTLED = atom({ plugin: 'inbox', key: 'settled' } as const, [] as Settled[])
 const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as Item['kind'][])
 const IS_KEY_LIST_SHOWN = atom({ plugin: 'inbox', key: 'isKeyListShown' } as const, false)
+const IS_CHECK_DETAIL_SHOWN = atom({ plugin: 'inbox', key: 'isCheckDetailShown' } as const, false)
 // How long a closed item's row stays in place, with its outcome, before it moves to Closed.
 const SETTLED_MS = 8000
 const IS_DEMO = atom({ plugin: 'inbox', key: 'isDemo' } as const, false)
@@ -838,6 +840,21 @@ function clipLabel(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }
 
+/** `text` wrapped at spaces to `width` columns, in at most `count` lines; the last ends in … when text is left over. */
+function wrapLines(text: string, width: number, count: number): string[] {
+  const lines: string[] = []
+  let rest = text.trim()
+  while (rest && lines.length < count) {
+    const cut = rest.length <= width ? rest.length : rest.lastIndexOf(' ', width)
+    const end = cut > 0 ? cut : width
+    lines.push(rest.slice(0, end))
+    rest = rest.slice(end).trimStart()
+  }
+  if (rest) lines[count - 1] = clipLabel(`${lines[count - 1] ?? ''} ${rest}`, width)
+
+  return lines
+}
+
 /** Each step's helps in order: one press copies then opens, for example. */
 async function useStep($: EngineInterface, item: Item, step: Help[], press: UiPressArgument) {
   for (const help of step) await useHelp($, item, help, press)
@@ -917,6 +934,7 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
         failures: r.failures ?? [],
         isLeftFailing: r.isLeftFailing ?? false,
         isDismissed: r.isDismissed ?? false,
+        fixSentAt: r.fixSentAt ?? null,
       })),
     })),
   ])
@@ -1026,6 +1044,19 @@ async function dismissCheck($: EngineInterface, check: Check) {
   await update($, CHECKS, c => ({
     ...c,
     results: c.results.map(x => (x.name === check.name && x.folder === check.folder ? { ...x, isDismissed: true } : x)),
+  }))
+}
+
+/** Asks Claude to fix a failing check, and marks that run's row as handed to Claude. */
+async function sendFix($: EngineInterface, check: Check) {
+  await send($, fixMessage(check))
+  const at = await $.clock.now()
+  // Matched by run, so a rerun recorded meanwhile keeps its own state.
+  await update($, CHECKS, c => ({
+    ...c,
+    results: c.results.map(x =>
+      x.name === check.name && x.folder === check.folder && x.ranAt === check.ranAt ? { ...x, fixSentAt: at } : x,
+    ),
   }))
 }
 
@@ -1585,6 +1616,7 @@ async function recordChecks($: EngineInterface, command: string, cwd: string, ou
           isStale: false,
           isLeftFailing: false,
           isDismissed: false,
+          fixSentAt: null,
         }),
       c.results,
     ),
@@ -2160,6 +2192,7 @@ export const register: Register = on => {
       typing,
       unfolded,
       isKeyListShown,
+      isCheckDetailShown,
     ] = await Promise.all([
       drawnState($),
       read($, PRESENCE),
@@ -2169,6 +2202,7 @@ export const register: Register = on => {
       read($, TYPING),
       read($, UNFOLDED),
       read($, IS_KEY_LIST_SHOWN),
+      read($, IS_CHECK_DETAIL_SHOWN),
     ])
     const card = ledger.card
     const prViews = Object.values(prState.views)
@@ -2296,39 +2330,72 @@ export const register: Register = on => {
         },
       ],
     })
+    // What failed in up to two lines, naming the file, with the output and the
+    // command folded under Details. Once Fix is pressed, the row waits on Claude.
     const failedCheckRow = (c: Check): Row => {
       const id = `check:${c.folder ?? '.'}:${c.name}`
       const output = outputLines(c)
+      const { file, text } = failureSummary(c)
+      const hasDetail = c.command !== '' || output.some(line => line !== text)
+      const fixSent = c.fixSentAt === null ? null : `Fix sent · ${ago(now - c.fixSentAt)}`
+      const fix = {
+        key: `fix-${id}`,
+        label: fixSent ? 'Fix again' : 'Fix',
+        hotkey: 'a',
+        onPress: () => void sendFix($, c),
+      }
+      const dismiss = { key: `dismiss-${id}`, label: 'Dismiss', hotkey: 'x', onPress: () => void dismissCheck($, c) }
 
       return {
         id,
         handle: '✗',
         handleTone: 'error',
         title: checkName(c),
-        titleAfter: ` · ${ago(now - c.ranAt)}`,
-        line: { text: checkName(c), after: ` · ${ago(now - c.ranAt)}` },
-        // What failed, then where and how it ran, as a shell prompt would show it.
+        titleAfter: ` · ${ago(now - c.ranAt)}${c.isStale ? ', before the last edit' : ''}`,
+        line:
+          c.fixSentAt === null
+            ? { text: checkName(c), after: `${file ? ` · ${file}` : ''} · ${ago(now - c.ranAt)}` }
+            : { text: checkName(c), after: ` · fix sent ${ago(now - c.fixSentAt)}`, afterTone: 'done' },
         body: (
-          <Box flexDirection="column" rowGap={blankLine}>
-            {output.length > 0 ? (
-              <Box flexDirection="column">
-                {output.map(line => (
-                  <Text wrap="wrap">{line}</Text>
-                ))}
+          <Box flexDirection="column">
+            {wrapLines(file ? `${file}: ${text}` : text, e.props.bodyColumns - 10, 2).map(line => (
+              <Text wrap="truncate-end">{line}</Text>
+            ))}
+            {hasDetail ? (
+              <Box flexDirection="row">
+                <Button
+                  plain
+                  key={`fold-details-${id}`}
+                  label={isCheckDetailShown ? '▾ Details' : '▸ Details'}
+                  onPress={() => void update($, IS_CHECK_DETAIL_SHOWN, shown => !shown)}
+                />
               </Box>
             ) : null}
-            {c.command ? (
-              <Text wrap="wrap" color={pal.muted}>
-                {c.folder ? `${tilde(c.folder)} ` : ''}$ {tilde(c.command)}
-              </Text>
+            {hasDetail && isCheckDetailShown ? (
+              // The output's failure lines, then where and how it ran, as a shell prompt would show it.
+              <Box flexDirection="column" rowGap={blankLine}>
+                {output.length > 0 ? (
+                  <Box flexDirection="column">
+                    {output.map(line => (
+                      <Text wrap="wrap">{line}</Text>
+                    ))}
+                  </Box>
+                ) : null}
+                {c.command ? (
+                  <Text wrap="wrap" color={pal.muted}>
+                    {c.folder ? `${tilde(c.folder)} ` : ''}$ {tilde(c.command)}
+                  </Text>
+                ) : null}
+              </Box>
             ) : null}
-            {c.isStale ? <Text color={pal.muted}>Ran before the last edit</Text> : null}
+            {fixSent ? (
+              <Box marginTop={blankLine}>
+                <Text color={pal.tone.done}>{fixSent}</Text>
+              </Box>
+            ) : null}
           </Box>
         ),
-        keys: () => [
-          { key: `fix-${id}`, label: 'Fix', hotkey: 'a', onPress: () => void send($, fixMessage(c)) },
-          { key: `dismiss-${id}`, label: 'Dismiss', hotkey: 'x', onPress: () => void dismissCheck($, c) },
-        ],
+        keys: () => [fix, dismiss],
       }
     }
     const threadRow = (pr: PrView, t: PrThread): Row => {
@@ -2390,7 +2457,10 @@ export const register: Register = on => {
     }
 
     // Each tab's rows in order: the cursor, the counts and the drawing all read these.
-    const failedCheckRows = checks.results.filter(c => c.isLeftFailing && !c.isDismissed).map(failedCheckRow)
+    const failedChecks = checks.results.filter(c => c.isLeftFailing && !c.isDismissed)
+    const failedCheckRows = failedChecks.map(failedCheckRow)
+    // A check whose fix went to Claude waits on Claude, so it is not counted as waiting on the person.
+    const checksWaiting = failedChecks.filter(c => c.fixSentAt === null).length
     const waitingGroups = WAITING_GROUPS.map(g => ({
       ...g,
       rows: listedItems(ledger.items, g.kind).map((item, n) => itemRow(item, g.kind === 'decide' ? `${n + 1})` : '•')),
@@ -2629,7 +2699,7 @@ export const register: Register = on => {
       >
         <Box flexDirection="row" columnGap={isInline ? 3 : 1}>
           {TABS.map(({ id, label }) => {
-            const count = id === 'waiting' ? ledger.items.length + failedCheckRows.length : rows[id].length
+            const count = id === 'waiting' ? ledger.items.length + checksWaiting : rows[id].length
 
             if (isInline)
               return (
@@ -2861,7 +2931,7 @@ export const register: Register = on => {
         failedCheckRows.length > 0
           ? [
               section([
-                groupTitle('Failing checks', failedCheckRows.length),
+                groupTitle('Failing checks', checksWaiting),
                 ...titleGap(),
                 ...divided(
                   failedCheckRows.map((row, n) => listRow(row, childPos(n, failedCheckRows.length))),

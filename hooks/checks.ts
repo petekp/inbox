@@ -528,6 +528,40 @@ export function outputLines(check: Check): string[] {
   return [...check.failures, ...(check.summary && !isRepeated ? [check.summary] : [])]
 }
 
+/** A path with an extension, then the line it names, if any: `src/a.ts(12,5)`, `/src/a.swift:30:27`, `src/a.test.ts`. */
+const LOCATION = /((?:[\w@.~-]*\/)*[\w@~-][\w@.~-]*\.[A-Za-z]\w{0,5})(?:\((\d+),\d+\)|:(\d+)(?::\d+)?)?(?![\w/])/g
+
+/**
+ * A failed check in one line: the file the failure lines name, as its base
+ * name and line, and what the first informative one says, without its
+ * marker, location and timing. Without failure lines, the summary.
+ */
+export function failureSummary(check: Check): { file: string | null; text: string } {
+  // A token counts as a file when it names a line or a folder, so a word like "foo.bar" does not.
+  const locations = check.failures.map(
+    line => [...line.matchAll(LOCATION)].find(m => m[2] ?? m[3] ?? m[1]?.includes('/')) ?? null,
+  )
+  const found = locations.find(Boolean)
+  const path = found?.[1]
+  const line = found?.[2] ?? found?.[3]
+  const said = check.failures
+    .map((failure, n) =>
+      failure
+        .replace(locations[n]?.[0] ?? '', '')
+        .replace(/^\s*(?:\(fail\)|FAIL(?:ED)?\b|✗|×|✘|❯)\s*/, '')
+        .replace(/^\|[\w-]+\|\s*/, '')
+        .replace(/^[\s:>-]*(?:error(?:\s+TS\d+|\[\w+\])?:\s*)?/i, '')
+        .replace(/\s*\[?\d+(?:\.\d+)?\s?m?s\]?$/, '')
+        .trim(),
+    )
+    .find(Boolean)
+
+  return {
+    file: path ? `${path.replace(/^.*\//, '')}${line ? `:${line}` : ''}` : null,
+    text: said ?? check.summary,
+  }
+}
+
 /** What `a: Fix` on a failing check sends Claude. */
 export function fixMessage(check: Check): string {
   const output = outputLines(check)

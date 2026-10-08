@@ -163,6 +163,8 @@ export type Check = {
   isLeftFailing: boolean
   /** The person dismissed its row in the Needs you tab. */
   isDismissed: boolean
+  /** When the person pressed Fix on its row, so it no longer waits on them; null before. The next run replaces the result. */
+  fixSentAt: number | null
 }
 
 /**
@@ -232,6 +234,8 @@ declare module 'claude-code' {
       unfolded: Item['kind'][]
       /** The pane's list of the keys no row shows is unfolded. */
       isKeyListShown: boolean
+      /** A failing check's row shows its output and command under the summary. */
+      isCheckDetailShown: boolean
       /** The band and pane show sample entries instead of the session's own, for `/inbox demo`. */
       isDemo: boolean
     }

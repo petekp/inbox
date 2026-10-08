@@ -69,10 +69,12 @@ running session.
   2), 3), then Your tasks. Each item shows how long it has waited. Lines join
   each group's title to its rows, as in a directory listing.
   - Failing checks are the checks still failing when Claude last stopped.
-    Each shows up to three output lines that name what failed, and the
-    command that ran it. `a: Fix` sends both to Claude and asks it to find
-    the cause and fix it. `x: Dismiss` hides the row until the check runs
-    again. A run that passes removes it.
+    Each says what failed in up to two lines. When the output names a file,
+    the summary starts with it, as in `register.tsx:2310`. Click `▸ Details`
+    to unfold the output and the command that ran it. `a: Fix` sends both
+    to Claude and asks it to find the cause and fix it. The row then says
+    "Fix sent" and no longer counts toward Needs you. `x: Dismiss` hides the
+    row until the check runs again. A run that passes removes it.
   - On a question, the letters send an answer to Claude as your message,
     quoting the question: `a: Node  b: Python`. Every question has at least
     one. When Claude's reply names no choices, the inbox predicts the likely

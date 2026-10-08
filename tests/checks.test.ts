@@ -6,6 +6,7 @@ import {
   checksIn,
   contradictedClaim,
   failureLines,
+  failureSummary,
   markStale,
   readResults,
   recordCheck,
@@ -77,6 +78,7 @@ describe('checkRuns', () => {
       failures: [],
       isLeftFailing: false,
       isDismissed: false,
+      fixSentAt: null,
     })
     expect(recordCheck([at(null, 'pass')], at('/work/copy', 'fail'))).toHaveLength(2)
     expect(recordCheck([at(null, 'fail')], at(null, 'pass'))).toEqual([at(null, 'pass')])
@@ -96,6 +98,7 @@ describe('checkRuns', () => {
       failures: [],
       isLeftFailing: false,
       isDismissed: false,
+      fixSentAt: null,
     }
     const copy: Check = { ...tsc, folder: '/work/copy' }
     const script = (result: Check['result']): Check => ({ ...tsc, name: 'check.sh', kind: 'all', result })
@@ -116,6 +119,40 @@ describe('failureLines', () => {
     const tsc = [1, 2, 3, 4].map(n => `src/a.ts(${n},1): error TS2322: Type 'x' is not assignable.`).join('\n')
     expect(failureLines(tsc)).toHaveLength(3)
     expect(failureLines('Done in 2s')).toEqual([])
+  })
+
+  test('a failure in one line names the file, even from another of its lines, and what failed', () => {
+    const failed = (failures: string[]): Check => ({
+      name: 'tests',
+      kind: 'tests',
+      folder: null,
+      result: 'fail',
+      summary: 'exit 1',
+      ranAt: 1,
+      repo: null,
+      isStale: false,
+      command: '',
+      failures,
+      isLeftFailing: true,
+      isDismissed: false,
+      fixSentAt: null,
+    })
+    expect(
+      failureSummary(
+        failed(["hooks/register.tsx(2310,7): error TS2322: Type 'string' is not assignable to 'number'."]),
+      ),
+    ).toEqual({ file: 'register.tsx:2310', text: "Type 'string' is not assignable to 'number'." })
+    const vitest = [
+      '× parses a dated heading 3ms',
+      'FAIL  |node| tests/markdown/parse.test.ts > headings > parses a dated heading',
+    ]
+    expect(failureSummary(failed(vitest))).toEqual({ file: 'parse.test.ts', text: 'parses a dated heading' })
+    // Go names a package, not a file, and its first line is a bare FAIL.
+    expect(failureSummary(failed(['FAIL', 'FAIL\texample.com/app/message\t0.698s']))).toEqual({
+      file: null,
+      text: 'example.com/app/message',
+    })
+    expect(failureSummary(failed([]))).toEqual({ file: null, text: 'exit 1' })
   })
 })
 
@@ -210,6 +247,7 @@ describe('contradictedClaim', () => {
     failures: [],
     isLeftFailing: false,
     isDismissed: false,
+    fixSentAt: null,
   })
   const checks = (...results: Check[]): Checks => ({ results })
 
@@ -248,6 +286,7 @@ describe('markStale', () => {
     failures: [],
     isLeftFailing: false,
     isDismissed: false,
+    fixSentAt: null,
   })
   const staleness = (results: Check[]) => results.map(c => c.isStale)
 
