@@ -241,7 +241,7 @@ describe('contradictedClaim', () => {
     isDismissed: false,
     fixSentAt: null,
   })
-  const checks = (...results: Check[]): Checks => ({ results })
+  const checks = (...results: Check[]): Checks => ({ results, repos: [] })
 
   test('a success claim meets a failed or stale run', () => {
     expect(contradictedClaim('All tests pass now.', checks(ran('fail')))?.problem).toBe(

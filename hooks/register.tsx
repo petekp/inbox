@@ -37,10 +37,11 @@ import {
 } from './checks'
 import {
   NO_CHECKS,
+  addRepo,
   bandLines,
   changed,
   checkKey,
-  contradictedClaim,
+  claimAgainst,
   dismissed,
   fixSent,
   needsYou,
@@ -1670,6 +1671,8 @@ export const register: Register = on => {
       syncTheme($),
     ])
     top = git?.exitCode === 0 ? git.stdout.trim() || null : null
+    const sessionRepo = top
+    if (sessionRepo !== null) await update($, CHECKS, c => addRepo(c, sessionRepo))
     // A reload cancels the timers that clear just-closed rows, so the rows still showing get new ones.
     const settled = await update($, SETTLED, s => s.filter(x => now - x.at < SETTLED_MS))
     if (settled.length > 0) expireSettled($, settled, Math.max(...settled.map(s => s.at + SETTLED_MS - now)))
@@ -1821,6 +1824,16 @@ export const register: Register = on => {
 
       return ran
     }
+    if (e.tool === 'Edit' || e.tool === 'Write' || e.tool === 'NotebookEdit') {
+      const ran = await run()
+      const path = input[e.tool === 'NotebookEdit' ? 'notebook_path' : 'file_path']
+      if (typeof path === 'string' && typeof ran.deny !== 'string') {
+        const repo = await repoOf($, path.slice(0, Math.max(path.lastIndexOf('/'), 1)))
+        if (repo !== null) await update($, CHECKS, c => addRepo(c, repo))
+      }
+
+      return ran
+    }
     if (e.tool === 'AskUserQuestion') {
       const questions = (Array.isArray(input.questions) ? input.questions : []) as { question?: unknown }[]
       const question = typeof questions[0]?.question === 'string' ? questions[0].question : 'A question'
@@ -1871,7 +1884,7 @@ export const register: Register = on => {
     const reply = e.last_assistant_message ?? ''
     if (!reply.trim() || (await read($, CHECKS)).results.length === 0) return r
     await refreshTree($)
-    const claim = contradictedClaim(reply, await read($, CHECKS))
+    const claim = claimAgainst(await read($, CHECKS), reply, root)
 
     return claim ? { ...r, block: claimMessage(claim) } : r
   })
@@ -2043,7 +2056,7 @@ export const register: Register = on => {
 
     const card = ledger.card
     // A failed check gets a line of its own, so a narrow band cannot cut it off.
-    const lines = bandLines(checks)
+    const lines = bandLines(checks, root)
     const failedRows = lines.failing.map(c => (
       <Text wrap="truncate-end" color="error">
         {'  '}
@@ -2477,7 +2490,7 @@ export const register: Register = on => {
     }
 
     // Each tab's rows in order: the cursor, the counts and the drawing all read these.
-    const { rows: failedChecks, count: checksNeedingYou } = needsYou(checks)
+    const { rows: failedChecks, count: checksNeedingYou } = needsYou(checks, root)
     const failedCheckRows = failedChecks.map(failedCheckRow)
     const needsYouGroups = NEEDS_YOU_GROUPS.map(g => ({
       ...g,

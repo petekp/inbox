@@ -652,7 +652,11 @@ test('a failed check whose folder is gone, such as a removed worktree, drops out
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   toolAnswer = { text: ' 11 pass\n 1 fail\n', isError: true }
-  await $.tool.call({ tool: 'Bash', command: 'npm --prefix /tmp/wt test', description: 'Run the tests' } as never)
+  await $.tool.call({
+    tool: 'Bash',
+    command: 'npm --prefix /tmp/project/wt test',
+    description: 'Run the tests',
+  } as never)
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await band.find({ text: /✗ npm test in wt/ })).toBeDefined()
 

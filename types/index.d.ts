@@ -174,7 +174,11 @@ export type Check = {
 export type Snapshot = { head: string | null; dirty: Record<string, string> }
 
 /** The checks Claude ran. */
-export type Checks = { results: Check[] }
+export type Checks = {
+  results: Check[]
+  /** The session's repos: the one it started in, and each repo where Claude edited a file. Only their results count. */
+  repos: string[]
+}
 
 export type Presence = {
   lastActiveAt: number

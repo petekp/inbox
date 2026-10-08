@@ -200,6 +200,7 @@ export function demoView(now: number): View {
     },
     stop: null,
     checks: {
+      repos: [],
       results: [
         {
           name: 'prettier',
