@@ -255,7 +255,9 @@ type Tone = Tab | 'done' | 'error'
  * The pane's colors in one Claude Code theme. Each text color meets WCAG AA,
  * 4.5:1, on every background the pane draws it on, and each marker meets 3:1.
  * The terminal draws Button labels in its own text color, and the theme's dim
- * gray for `dimColor`, so the pane gives Buttons no dimColor.
+ * gray for `dimColor`, so the pane gives Buttons no dimColor. The footer's Keys
+ * toggle and the Closed folds are the exceptions: secondary controls, they
+ * brighten under the pointer.
  */
 type Palette = {
   /** Painted under the whole pane, over the theme's own background. */
@@ -1109,14 +1111,20 @@ async function actOnFinding($: EngineInterface, finding: Finding, how: 'address'
 }
 
 async function showTab($: EngineInterface, tab: Tab) {
+  if (tab === 'prs') await findPrs($)
   await update($, TAB, () => tab)
   await $.ui.scroll({ in: PANE, to: 'start' }).catch(() => undefined)
-  if (tab === 'prs') void findPrs($)
 }
 
-/** Refreshes the PRs tab as it comes into view, asking gh for the branch's PR. The demo shows sample PRs, so it asks nothing. */
+/**
+ * Refreshes the PRs tab as it comes into view, asking gh for the branch's PR.
+ * Call it before the tab draws: it marks the fetch first, so the tab opens on
+ * "Checking for PRs…" and not on "No PRs". The demo shows sample PRs, so it asks nothing.
+ */
 async function findPrs($: EngineInterface) {
-  if (!(await read($, IS_DEMO))) await fetchPrs($, true)
+  if (await read($, IS_DEMO)) return
+  await update($, PR_VIEWS, v => ({ ...v, isFetching: true }))
+  void fetchPrs($, true)
 }
 
 /**
@@ -1290,9 +1298,10 @@ async function fetchPrsNow($: EngineInterface, findsBranchPr: boolean) {
     const views = Object.fromEntries(
       Object.entries(fetched).filter(([ref]) => ref === branchRef || stillLinked.includes(ref)),
     )
-    await update($, PR_VIEWS, () => ({ views, branchRef, isFetching: false }))
+    // A fetch queued behind this one keeps the tab checking, so it does not show "No PRs" in between.
+    await update($, PR_VIEWS, () => ({ views, branchRef, isFetching: nextFetchFindsBranchPr !== null }))
   } catch {
-    await update($, PR_VIEWS, v => ({ ...v, isFetching: false }))
+    await update($, PR_VIEWS, v => ({ ...v, isFetching: nextFetchFindsBranchPr !== null }))
   }
 }
 
@@ -2111,8 +2120,8 @@ export const register: Register = on => {
 
   on('command.run', { command: 'inbox' }, async ($, e) => {
     const isDemo = e.args.trim() === 'demo' ? await update($, IS_DEMO, d => !d) : await read($, IS_DEMO)
-    const opened = await openPane($)
-    if (opened.isPlaced && (await read($, TAB)) === 'prs') void findPrs($)
+    if ((await read($, TAB)) === 'prs') await findPrs($)
+    await openPane($)
 
     return {
       text: isDemo ? 'Showing sample entries in the inbox. Run /inbox demo again to go back.' : 'Opened the inbox.',
@@ -2635,10 +2644,15 @@ export const register: Register = on => {
     // A Button draws its hotkey in the theme's accent, which Claude Code's light
     // theme draws at 2.9:1 on the selected row. So a key's letter is Text in the
     // palette's color, its label a Button, and the key itself a hidden Button.
+    // Both invert while the pointer is over either, so the letter lights with its label.
+    // A hover cannot name the terminal's default color, which a Button's label
+    // inverts, so the letter and the label both invert the muted color to match.
     const keyedButton = ({ hotkey, ...action }: KeyAction) => (
       <Box key={`keyed-${action.key}`} flexDirection="row">
-        <Text color={pal.key}>{hotkey}</Text>
-        <Button plain {...action} label={`: ${action.label}`} />
+        <Text color={pal.key} hover={{ color: pal.muted, inverse: true }}>
+          {hotkey}
+        </Text>
+        <Button plain {...action} label={`: ${action.label}`} hover={{ color: pal.muted, inverse: true }} />
       </Box>
     )
     // A row's other actions follow its main ones after a muted dot.
@@ -2671,15 +2685,22 @@ export const register: Register = on => {
     // in an absolute Box that spans the row, however it wraps, and the row clips
     // the rest. The row clips, not this Box: once its row scrolled out of view,
     // Claude Code drew lines this Box clipped elsewhere in the pane (anthropics/claude-code#100030).
-    const branch = (pos: TreePos, lead = 0) => (
-      <Box position="absolute" top={0} bottom={0} left={1} width={2}>
+    const branch = (pos: TreePos, lead = 0, left = 1) => (
+      <Box position="absolute" top={0} bottom={0} left={left} width={2}>
         <Text color={pal.line}>{treeText(pos, lead)}</Text>
       </Box>
     )
     // A row with no marker, such as a group's empty line, starts its text right after the tree.
-    const treeRow = (pos: TreePos | null, marker: JSX.Element | null, content: JSX.Element, key?: string) => (
+    // A row at depth 1 hangs from a tree under the marker column, as a group's closed items do.
+    const treeRow = (
+      pos: TreePos | null,
+      marker: JSX.Element | null,
+      content: JSX.Element,
+      key?: string,
+      depth = 0,
+    ) => (
       <Box key={key} flexDirection="row" overflow="hidden">
-        <Box width={4} flexShrink={0} />
+        <Box width={4 + 3 * depth} flexShrink={0} />
         {marker ? (
           <Box width={3} flexShrink={0}>
             {marker}
@@ -2688,7 +2709,7 @@ export const register: Register = on => {
         <Box flexDirection="column" flexShrink={1} flexGrow={1} paddingRight={1}>
           {content}
         </Box>
-        {pos ? branch(pos) : null}
+        {pos ? branch(pos, 0, 1 + 3 * depth) : null}
       </Box>
     )
     const childPos = (n: number, count: number): TreePos => (n === count - 1 ? 'last' : 'mid')
@@ -2736,12 +2757,14 @@ export const register: Register = on => {
       const isWrapped = row.hasSecondLine === true && text.length > room && space > 0
       const first = isWrapped ? text.slice(0, space) : clipLabel(text, room)
       const second = isWrapped ? clipLabel(text.slice(space + 1), Math.max(12, width)) : null
+      // The two lines are two Buttons. One hover group inverts both under the pointer, so they read as one.
+      const hover = second ? { hover: { scope: `title-${row.id}`.slice(0, 64), inverse: true } } : {}
 
       return (
         <Box flexDirection="column">
           <Box flexDirection="row">
             {line.before ? <Text color={pal.muted}>{line.before}</Text> : null}
-            <Button plain key={`title-${row.id}`} label={first} onPress={onPress} />
+            <Button plain key={`title-${row.id}`} label={first} {...hover} onPress={onPress} />
             {line.after ? (
               <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
                 {line.after}
@@ -2750,7 +2773,7 @@ export const register: Register = on => {
           </Box>
           {second ? (
             <Box paddingLeft={line.before?.length ?? 0}>
-              <Button plain key={`title-${row.id}-2`} label={second} onPress={onPress} />
+              <Button plain key={`title-${row.id}-2`} label={second} {...hover} onPress={onPress} />
             </Box>
           ) : null}
         </Box>
@@ -2829,13 +2852,43 @@ export const register: Register = on => {
         </Box>
       )
     }
-    const emptyLine = (text: string) => (
-      <Box paddingLeft={1}>
-        <Text color={pal.muted} wrap="wrap">
-          {text}
-        </Text>
-      </Box>
-    )
+    // An empty tab names what would be there and when it comes. Docked, it sits in
+    // the middle of the pane, one Text per line, since a Text cannot center its lines.
+    // The lines are balanced: as narrow as they can be without adding a line.
+    const emptyState = (title: string, text = '') => {
+      const wrap = (width: number) => {
+        const lines: string[] = []
+        for (const word of text.split(' ').filter(Boolean)) {
+          const last = lines.at(-1)
+          if (last !== undefined && last.length + 1 + word.length <= width) lines[lines.length - 1] = `${last} ${word}`
+          else lines.push(word)
+        }
+
+        return lines
+      }
+      const most = Math.min(46, e.props.bodyColumns - 6)
+      const count = wrap(most).length
+      let width = Math.ceil(text.length / Math.max(count, 1))
+      while (width < most && wrap(width).length > count) width++
+      const lines = wrap(width)
+      const align = isInline ? 'flex-start' : 'center'
+
+      // The title and lines center as one block, so rounding cannot widen the gap between them.
+      return (
+        <Box flexDirection="column" flexGrow={1} justifyContent={align} alignItems={align}>
+          <Box flexDirection="column" alignItems={align} paddingLeft={isInline ? 1 : 0}>
+            <Text bold>{title}</Text>
+            {lines.length > 0 ? (
+              <Box flexDirection="column" alignItems={align} marginTop={blankLine}>
+                {lines.map(line => (
+                  <Text color={pal.muted}>{line}</Text>
+                ))}
+              </Box>
+            ) : null}
+          </Box>
+        </Box>
+      )
+    }
 
     const newest = prViews.reduce((t, v) => Math.max(t, v.fetchedAt), 0)
     const status =
@@ -2853,7 +2906,7 @@ export const register: Register = on => {
     const keyList = [
       { keys: TABS.map(t => t.hotkey).join(' '), does: 'Switch tabs' },
       { keys: 'j k', does: 'Select the next or previous row' },
-      { keys: 'ctrl+x tab', does: 'Move focus between the pane and the prompt' },
+      { keys: 'ctrl+x tab', does: 'Move focus between the pane and the session' },
     ]
     const keyColumn = Math.max(...keyList.map(k => k.keys.length)) + 2
 
@@ -2944,7 +2997,7 @@ export const register: Register = on => {
           })}
         </Box>
         <Box flexDirection="row" columnGap={2}>
-          <Text color={pal.muted}>{status}</Text>
+          <Text dimColor>{status}</Text>
           {presence.ledgerState === 'failed' && !presence.isUpdating ? (
             <Text color={pal.tone.error}>update failed, retries after the next reply</Text>
           ) : null}
@@ -2958,6 +3011,7 @@ export const register: Register = on => {
         <Box flexDirection="row" paddingX={1}>
           <Button
             plain
+            dimColor
             key="key-list"
             label={isKeyListShown ? '▾ Keys' : '▴ Keys'}
             onPress={() => void update($, IS_KEY_LIST_SHOWN, shown => !shown)}
@@ -3054,22 +3108,28 @@ export const register: Register = on => {
             </Text>
           </Box>,
           `closed-${d.id}`,
+          1,
         )
       // The row that folds or unfolds a group's closed items, with how many there are.
-      const foldRow = (kind: Item['kind'], count: number, isUnfolded: boolean, pos: TreePos) => {
-        const toggle = () =>
-          void update($, UNFOLDED, u => (u.includes(kind) ? u.filter(k => k !== kind) : [...u, kind]))
-
+      // It sits apart from the group's tree, and the closed items hang from its arrow.
+      const foldRow = (kind: Item['kind'], count: number, isUnfolded: boolean) =>
         // One Button for the arrow and the count; the two spaces put the count where other rows' text starts.
-        return treeRow(
-          pos,
+        treeRow(
+          null,
           null,
           <Box flexDirection="row">
-            <Button plain key={`fold-${kind}`} label={`${isUnfolded ? '▾' : '▸'}  ${count} Closed`} onPress={toggle} />
+            <Button
+              plain
+              dimColor
+              key={`fold-${kind}`}
+              label={`${isUnfolded ? '▾' : '▸'}  ${count} Closed`}
+              onPress={() =>
+                void update($, UNFOLDED, u => (u.includes(kind) ? u.filter(k => k !== kind) : [...u, kind]))
+              }
+            />
           </Box>,
           `fold-row-${kind}`,
         )
-      }
       const groups = needsYouGroups.map(g => {
         const entries: ({ row: Row } | { settled: Settled })[] = g.rows.map(row => ({ row }))
         for (const s of fresh.filter(x => x.kind === g.kind))
@@ -3095,21 +3155,30 @@ export const register: Register = on => {
                     `empty-${g.kind}`,
                   ),
               ]
-        const rest: ((pos: TreePos) => JSX.Element)[] =
-          closed.length === 0
-            ? []
-            : [
-                (pos: TreePos) => foldRow(g.kind, closed.length, isUnfolded, pos),
-                ...(isUnfolded ? closed.map(d => (pos: TreePos) => closedRow(d, pos)) : []),
-              ]
-        const count = top.length + rest.length
         const open = divided(
-          top.map((draw, n) => draw(childPos(n, count))),
+          top.map((draw, n) => draw(childPos(n, top.length))),
           g.kind,
           true,
         )
-        // Each closed item is two lines, so a blank line of the tree sets it and the fold row apart.
-        const tail = rest.flatMap((draw, n) => [...titleGap(), draw(childPos(top.length + n, count))])
+        // Each closed item is two lines, so a blank line of their tree sets each apart.
+        const closedGap = () =>
+          isInline
+            ? []
+            : [
+                <Box paddingLeft={4}>
+                  <Text color={pal.line}>│</Text>
+                </Box>,
+              ]
+        const tail =
+          closed.length === 0
+            ? []
+            : [
+                ...titleGap(false),
+                foldRow(g.kind, closed.length, isUnfolded),
+                ...(isUnfolded
+                  ? closed.flatMap((d, n) => [...closedGap(), closedRow(d, childPos(n, closed.length))])
+                  : []),
+              ]
 
         return section([groupTitle(g.title, g.rows.length), ...titleGap(), ...open, ...tail])
       })
@@ -3158,8 +3227,9 @@ export const register: Register = on => {
 
     const findingsView = () =>
       rows.findings.length === 0
-        ? emptyLine(
-            'No findings. Claude records one when it notices an issue or an opportunity outside the current task.',
+        ? emptyState(
+            'No findings',
+            'Claude adds one here when it notices a bug, a risk or an idea outside its current task.',
           )
         : section(
             divided(
@@ -3235,12 +3305,12 @@ export const register: Register = on => {
       ])
     }
     const prsView = () => (
-      <Box flexDirection="column" gap={1}>
+      <Box flexDirection="column" flexGrow={1} gap={1}>
         {prGroups.length === 0
-          ? emptyLine(
-              prState.isFetching
-                ? 'Checking for PRs…'
-                : 'No PRs. A PR shows here when this session opens or links one, or when this branch has one.',
+          ? // Loading keeps the empty state's text, so only the title changes when the fetch ends.
+            emptyState(
+              prState.isFetching ? 'Checking for PRs…' : 'No PRs',
+              'Your PRs show here when this session opens or links one, or when your branch has one.',
             )
           : prGroups.map(prBlock)}
       </Box>
@@ -3275,7 +3345,11 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column" minHeight={isInline ? undefined : e.props.scroll.bodyRows} backgroundColor={pal.body}>
         {tabs}
-        <Box flexDirection="column" paddingX={1} paddingTop={blankLine} flexGrow={1}>
+        {/* ▔ draws at the top of its cell, so the rule touches the tabs' bottom edge
+            and the rest of its row stands in for the blank line above the content.
+            It takes the unselected tabs' color, so they read as resting on it. */}
+        {isInline ? null : <Text color={pal.tab ?? pal.divider}>{'▔'.repeat(e.props.bodyColumns)}</Text>}
+        <Box flexDirection="column" paddingX={1} flexGrow={1}>
           {tab === 'findings' ? findingsView() : tab === 'prs' ? prsView() : needsYouView()}
         </Box>
         {footer}
