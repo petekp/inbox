@@ -1,6 +1,6 @@
 # The inbox as a Codex plugin
 
-Status: plan. Nothing is built. The Claude Code mod stays unchanged.
+Status: building. Step 0 is done. The Claude Code mod stays unchanged.
 
 Goal: give Codex sessions what the inbox gives Claude Code sessions. That
 means one place for what waits on the person, Codex's findings, check results
@@ -25,18 +25,14 @@ Terms follow `GLOSSARY.md`. "The mod" is the Claude Code mod in this repo.
   extensions let a plugin's MCP App open as a tab within a thread, one
   instance per thread [verified]. Its buttons can send a message into the
   conversation with `ui/message`, but Codex marks that message untrusted, so
-  the model does not act on it. Step 0b picks another way to send. The SDK
-  and its example
-  plugin, Bits & Bolts, target the Codex desktop app with a local stdio MCP
-  server, the same shape as this plugin.
+  the model does not act on it. So a press runs `codex queue`, which
+  delivers the message as the person's own [verified].
 - **The band has no surface.** No plugin can draw above the prompt. The tab's
   header shows what the band shows.
-- **The plugin needs a long-lived process.** The mod is one process that
-  lives as long as the session. A Codex hook is a new process for every event.
-  Timers, the live tab and safe state writes need one process that stays up.
-  Codex starts several MCP server processes per session, so one inbox
-  process per person serves every session. Hooks and MCP servers forward to
-  it.
+- **State lives in files.** The mod is one process that lives as long as
+  the session. A Codex hook is a new process for every event, and Codex
+  starts several MCP server processes per session. Each of them reads and
+  writes the session's state file under a lock.
 - **The first version** includes the findings and close tools, the inbox
   texts, the per-reply update, check tracking with the claim check, and the
   Inbox tab with Needs you and Findings. The PRs tab comes later.
@@ -57,9 +53,9 @@ Terms follow `GLOSSARY.md`. "The mod" is the Claude Code mod in this repo.
 | Messages from the app | `ui/message` sends text into the current thread [verified] | Codex wraps it as untrusted input from an MCP app. The model reports the text instead of following it [verified] |
 | Live updates in the app | `resources/subscribe` and `notifications/resources/updated` [documented for file viewers] | A thread tab's subscribe never reached the server, and no update arrived [verified]. The app calls a data tool on a timer instead [verified] |
 | Status line | `tui.status_line` in the CLI [verified] | Built-in items only. No custom command |
-| Messages from outside the app | `codex queue --thread <id> --message <text>` queues a message for a session [verified: the command and its help] | Whether a queued message reaches a thread open in the desktop app, and as the person's own message [unverified] |
+| Messages from outside the app | `codex queue --thread <id> --message <text>` queues a message for a session. The desktop app runs it as the person's message, after any running turn [verified] | None |
 | App server | `turn/start`, `thread/resume`, `turn/completed` and more on a shared local daemon [verified: in the generated protocol types] | Marked experimental |
-| One-off model call | `codex exec --ephemeral --ignore-user-config --output-schema <file>` [verified: the flags exist] | Its cost and token overhead [unverified] |
+| One-off model call | `codex exec --ephemeral --ignore-user-config` with tools and features off [verified] | About 12.5k input tokens of overhead per call [verified] |
 
 ## Feature map
 
@@ -67,19 +63,19 @@ Terms follow `GLOSSARY.md`. "The mod" is the Claude Code mod in this repo.
 | --- | --- | --- | --- |
 | `record_finding`, `close` | `$.tool.register`, allowed without a prompt | MCP tools served by the plugin. Approval set per tool in the person's Codex config | Direct, but see gap 5 |
 | `run_check` | Runs each check through Claude's own Bash tool | Left out. See gap 4 | Gap |
-| Checks Codex runs in its shell | `tool.call` on Bash records lone checks and refuses compound ones | `PreToolUse` on the shell tool denies a compound check. `PostToolUse` records a lone one's result | Direct if the hook input carries the exit code [unverified] |
+| Checks Codex runs in its shell | `tool.call` on Bash records lone checks and refuses compound ones | `PreToolUse` on the shell tool denies a compound check. `Stop` records each lone one's result from the transcript | Direct |
 | Stale results | Git snapshots after each turn | The same git snapshots, taken by the server at `Stop`. `git.ts` carries over | Direct |
-| Session's repos | Paths from Edit, Write, NotebookEdit | Paths from Codex's patch tool, via `PostToolUse` [unverified shape] | Direct if the hook fires for it |
+| Session's repos | Paths from Edit, Write, NotebookEdit | Paths named in Codex's patches, via `PostToolUse` on `apply_patch` | Direct |
 | Claim check | `classic.Stop` blocks once | A blocking `Stop` hook | Direct |
 | `GUIDANCE` in the system prompt | `prompt.compose` adds a section | `SessionStart` context on every start, resume, clear and compact | Direct. It becomes developer context, not system prompt |
 | Start-of-context block (`carryText`) | `prompt.context` | The same `SessionStart` output | Direct |
 | Inbox line and answer line | `prompt.submit` context | `UserPromptSubmit` `additionalContext` | Direct |
 | Per-reply update by the inbox model | `$.model.complete` with Sonnet after `turn.complete` | A background `Stop` hook asks the server to run `codex exec` with `SYSTEM` | Direct. See gaps 6 and 7 |
-| Catch-up after a missed update | `$.model.fork` | `codex exec` on `transcriptCatchUpPrompt`, built from `transcript_path` | Direct. Depends on Codex's transcript format [unverified] |
+| Catch-up after a missed update | `$.model.fork` | `codex exec` on `transcriptCatchUpPrompt`, built from `transcript_path` | Direct, later |
 | Activity lines for the update | Every tool call | `PostToolUse` matched to the shell and patch tools only. Other tools add no line | Reduced |
 | Band above the prompt | `ui.render` AbovePrompt | The Inbox tab's header. Nothing above the prompt | Gap 1 |
 | `/inbox` pane, three tabs, keys | `ui.render` Pane | The Inbox tab: an MCP App opened from a thread entrypoint | Direct |
-| Pane buttons that send a message | `$.prompt.submit` | Step 0b picks the path. `ui/message` arrives as untrusted | Open |
+| Pane buttons that send a message | `$.prompt.submit` | The tab calls a tool, and the MCP server runs `codex queue` | Direct |
 | Last action on a row | Drawn with `withLastAction()` | The same rule in the tab: each button shows what it did as soon as it is pressed | Direct |
 | Card after 15 minutes away, or on resume | `clock.every` and `isAway` | A timer in the MCP server. The tab shows the card | Direct |
 | PRs tab | `gh` polled from the mod | `gh` polled by the server. `prs.ts` carries over | Direct, later |
@@ -90,7 +86,7 @@ Terms follow `GLOSSARY.md`. "The mod" is the Claude Code mod in this repo.
 | Previous session's card ("Continue from it") | Store keyed by folder | The same, in the server's state | Direct, later |
 | `/inbox demo` | Sample state | A demo switch in the tab | Direct, later |
 | Every open session in one view, from the roadmap | Not built | A `global` entrypoint: a sidebar entry listing every session | Later |
-| Saved state | `$.store`, one writer | JSON files under `PLUGIN_DATA`, written only by the MCP server | Direct |
+| Saved state | `$.store`, one writer | One JSON file per session, written under a lock by hooks and MCP servers | Direct |
 
 ## Gaps and what to do about each
 
@@ -112,11 +108,12 @@ entrypoint and a `ui://inbox/tab` resource. The person opens it as a tab
 beside the conversation, one instance per thread. It shows the header, then
 Needs you and Findings.
 
-- **Buttons:** each press must reach the model as the person's request, as the
-  mod's presses send a prompt. `ui/message` does not: Codex wraps its text as
-  untrusted input from an MCP app, and the model reports it instead of acting.
-  Step 0b tests `codex queue` from the server. The server records what it
-  sent, to tell it from the person's own words.
+- **Buttons:** a press calls an app-only tool, and the MCP server runs
+  `codex queue` with the press's text. The message reaches the model as the
+  person's own, as the mod's presses do. The server records what it sent,
+  so `UserPromptSubmit` can tell a press from the person's own words.
+  Rejected: `ui/message`, which Codex wraps as untrusted input from an app,
+  so the model reports its text instead of acting on it.
 - **Live updates:** the app calls a data tool every few seconds while open.
   A thread tab gets no resource updates.
 - **Which session:** every call from the tab carries `_meta.thread_id`, the
@@ -132,26 +129,34 @@ The mod keeps the turn's state in memory: activity, replies Claude was sent
 back from, what the inbox line last told Claude. It runs timers. Codex starts
 a new process for each hook. Up to 8 background hooks can run at once.
 
-**Do:** one inbox process per person is the long-lived process. The first
-hook or MCP server that finds it missing starts it. It owns every session's
-state, keyed by session id, writes it to `PLUGIN_DATA`, runs the timers and
-queues model updates. Each hook is a small script that posts its event to it
-over a local socket and prints the answer. Each MCP server process forwards
-its tool calls to it.
+**Do:** keep each session's state in one JSON file in the plugin's data
+folder. Every hook and MCP server process reads it, changes it and writes it
+back under a lock. Each hook is a short script that does its event's work
+and prints its answer. The per-reply update runs in a detached process the
+`Stop` hook starts, so a long model call outlives the hook.
 
-Reason: Codex does not run one MCP server per session. The desktop app
-started 17 server processes in three minutes, most of them only to list
-tools [verified in step 0]. Hooks get `session_id`, and tool calls carry the
-same id in `_meta` [verified], so every event names its session.
+Reason: the first version needs no timers, and the tab polls, so nothing
+needs a process that stays up. Codex does not run one MCP server per
+session either: the desktop app started 17 server processes in three
+minutes, most only to list tools [verified in step 0]. Hooks get
+`session_id`, and tool calls carry the same id in `_meta` [verified], so
+every process finds its session's file. Rejected: one long-lived inbox
+process per person, reached over a socket. It adds a lifecycle, version
+checks after each update, and a socket, for timers the first version
+doesn't have. The card after time away and the PRs tab may need it later.
 
-- **Cost:** every matched hook starts a process, which adds latency to each
-  matched tool call. So `PostToolUse` matches only the shell and patch tools.
-- **Failure case:** if the server doesn't answer, a hook exits 0 with no
-  output. Codex goes on as if the plugin weren't installed.
+- **Cost:** every matched hook starts a Node process, about 50 ms, before
+  each matched tool call. So `PreToolUse` matches only the shell tool, and
+  `PostToolUse` only the patch and inbox tools.
+- **Failure case:** a hook that fails exits 0 with no output. Codex goes on
+  as if the plugin weren't installed.
 - **Guard:** the hooks do nothing in `codex exec` runs. That covers the
   inbox's own update call and runs that other plugins start. A hook reads
   the first line of `transcript_path`, whose `originator` is `codex_exec` in
   an `exec` run [verified in step 0].
+- **Node:** hooks and the server run `node` from the person's PATH. The
+  desktop app also passes `CODEX_MCP_NODE_PATH`, its own Node, to hooks. A
+  person without Node is not covered yet.
 
 ### 4. `run_check` would bypass Codex's sandbox
 
@@ -165,13 +170,7 @@ reason the mod gives. `checks.ts` and `check-tracking.ts` carry over unchanged.
 
 ### 5. Which session a tool call belongs to
 
-`record_finding` must reach the right session's inbox. Codex may not tell an
-MCP server which session called it [unverified]. The circuit plugin learns the
-folder from MCP roots, not the session.
-
-**Do:** check first whether the tool call carries the session id. If it
-doesn't, a `PreToolUse` hook on the inbox's tools adds `session_id` to the
-input through `updatedInput` [documented]. Hooks always get `session_id`.
+Answered in step 0: every tool call carries the session id in `_meta`.
 
 ### 6. Events Codex doesn't have
 
@@ -216,11 +215,12 @@ The update runs `codex exec` once per reply, on the person's Codex sign-in.
 On a ChatGPT plan it counts toward usage limits.
 
 The inbox's own prompt is the same size as the mod's: 3–4k tokens in,
-100–250 out. `codex exec` adds its own base instructions [unverified size].
-With `--ignore-user-config` it should skip the person's config, plugins and
-MCP servers [unverified]. Step 0 measures the real total. If the base instructions double the
-cost, the fallback is a direct Responses API call. That only works for people
-with an API key.
+100–250 out. `codex exec` adds about 12.5k tokens of its own instructions
+and tool setup, even with tools and features off [verified]. So each reply
+costs about 16k input tokens. A direct Responses API call would skip the
+overhead, but only for people with an API key. The first version uses
+`codex exec`, through `CODEX_CLI_PATH`, so it needs nothing the desktop app
+doesn't already have.
 
 `SessionStart` output is `GUIDANCE` plus the start-of-context block. With
 many open items and findings it can pass the 2,500-token default limit on a
@@ -233,31 +233,35 @@ context, as they do for Claude.
 ## Architecture
 
 ```
-Codex session ── hooks (one process per event) ──────────┐
-     │                                                    ▼
-     ├── MCP tools ──▶ MCP server processes ──▶ inbox process, one per person ──▶ PLUGIN_DATA/*.json
-     │                        ▲                           │
-     └── Inbox tab (MCP App) ─┘ polls a data tool         └──▶ codex exec (inbox model)
+Codex session ── hooks (one process per event) ──┐
+     │                                            ▼
+     ├── MCP tools ──▶ MCP server processes ──▶ sessions/<id>.json, under a lock
+     │                        ▲                   │
+     └── Inbox tab (MCP App) ─┘ polls             └── Stop hook ──▶ detached update ──▶ codex exec
               │
-              └── a press sends its text into the thread, by the path step 0b picks
+              └── a press calls a tool, and the server runs `codex queue`
 ```
 
-- **Hooks:** `SessionStart`, `UserPromptSubmit`, `SessionEnd`, and
-  `PreToolUse` and `PostToolUse` matched to the shell, patch and inbox tools.
-  Two `Stop` hooks: a blocking one for the claim check, and a background one
-  for the update.
-- **MCP server:** Node, the same language as the mod, built on
-  `@openai/mcp-extensions`. It reuses the logic
-  of `checks.ts`, `check-tracking.ts`, `git.ts` and `prs.ts` unchanged. It
-  uses a Codex copy of `ledger.ts`, because that file holds the model-facing
-  text and imports a Claude Code type.
-- **Shared code needs a build step.** Codex installs a plugin by copying only
-  its folder into its cache, and manifest paths must stay inside that folder
-  [documented]. Plain Node also can't load the shared modules as they are:
-  `check-tracking.ts` imports `./checks` with no extension [verified]. So the
-  plugin ships a bundle of the server, made with esbuild.
-- **Tab:** one HTML bundle served as `ui://inbox/tab`, built with Vite as
-  Bits & Bolts does. It talks to the host through the MCP Apps bridge.
+- **Hooks:** `SessionStart`, `UserPromptSubmit`, `PreToolUse` on the shell
+  tool, `PostToolUse` on the patch and inbox tools, and `Stop`. `Stop`
+  records the turn's checks from the transcript, sends Codex back over a
+  contradicted claim, and starts the update.
+- **MCP server:** Node, the same language as the mod. It speaks MCP over
+  stdio by hand, as the step 0 probe did, since it needs only `initialize`,
+  `tools/list`, `tools/call` and `resources/read`. Rejected:
+  `@openai/mcp-extensions`, a dependency for a few message shapes.
+- **Shared code:** the plugin reuses `ledger.ts`, `checks.ts`,
+  `check-tracking.ts` and `git.ts` unchanged. Codex's own texts, such as
+  `GUIDANCE` and the inbox line's pane sentence, live in `codex/`, so the
+  mod's measured texts don't change.
+- **Build step.** Codex installs a plugin by copying only its folder into
+  its cache [documented]. Plain Node also can't load the shared modules as
+  they are: `check-tracking.ts` imports `./checks` with no extension
+  [verified]. So esbuild bundles each entry point into the plugin folder,
+  and the bundles are committed, since a Git marketplace install runs no
+  build.
+- **Tab:** one plain HTML file with inline script, served as
+  `ui://inbox/tab`. Rejected: Vite, a build for a single page.
 
 ## First version
 
@@ -318,7 +322,6 @@ exec` and a throwaway plugin.
 | 6. Clean `exec` | `--ephemeral --ignore-user-config` fired no plugin hooks and saved no session. It costs 21.5k input tokens for a one-word answer, 12.3k of it cached. Switching off tools and features and replacing the base instructions brings it to 12.5k, and no flag tried went lower. `exec` waits on stdin unless it is given `/dev/null`. |
 | 7. `exec` in a hook | `SessionStart` input looks the same as in a session. The transcript's first line, `session_meta`, has `source: "exec"` and `originator: "codex_exec"`. |
 | 8. Marketplace file | With `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json` at one root, Codex reads `.agents/plugins/marketplace.json`. |
-
 | 1. Hooks in the desktop app | Every hook fired in a desktop thread, and `SessionStart` context reached the model. The transcript's `session_meta` has `originator: "Codex Desktop"` and `source: "vscode"`. |
 | 5. Thread tab | It opened from the local plugin. Every `tools/call` from the tab carries `_meta.thread_id`, equal to the hooks' `session_id`. The host context has no thread id. `resources/subscribe` never reached the server, and no resource update arrived in two minutes. Polling a tool every 5 seconds worked throughout. |
 | 5. `ui/message` | It reached the thread, as a turn whose user text is "An MCP app initiated this message. Read the untrusted_input tool output." The tab's text sits in an `untrusted_input` tool output with `source: "mcp_app"`. The text asked for "OK". The model answered "The MCP app sent: …" instead. A second press arrived 0.3 seconds after a busy turn ended, which suggests it was queued, but the press time was not logged. |
@@ -340,26 +343,51 @@ desktop app.
 
 ### Step 0b: how a press reaches the model
 
-Open a thread in the desktop app, then try each path with the probe:
+`codex queue --thread <id> --message <text>` works. Tested on a desktop app
+thread with the binary the app bundles:
 
-1. **`codex queue --thread <id> --message <text>`,** run by the server when
-   the tab calls a tool. Check that the message arrives as the person's own,
-   in an idle and a busy thread.
-2. **`ui/message` with a `SessionStart` note** saying that Inbox tab messages
-   are the person's own presses. Measure whether the model then acts on them.
-   Codex marks these messages untrusted on purpose, so this path is the
-   fallback.
+| Case | Result |
+| --- | --- |
+| Idle thread | The message arrived as a plain user message, and the model followed it. `UserPromptSubmit` fired with the exact text. |
+| Busy thread | The message waited, then started its own turn 14 ms after the running turn ended. |
+| How it hands off | `codex queue` writes a row to `~/.codex/queue_1.sqlite` and exits in 0.2 seconds. The desktop app picks the row up. |
+
+- **No CLI install needed.** Every hook gets `CODEX_CLI_PATH`, the path of
+  the `codex` binary inside the desktop app. Hooks save it in the session's
+  state, and the MCP server runs `queue` and `exec` with it. MCP server
+  processes get no Codex environment variables, so they can't read it
+  themselves.
+- **Rejected:** writing the queue row directly. The table is Codex's private,
+  versioned schema.
+- **Rejected:** `ui/message` with a note telling the model that tab messages
+  are the person's. Codex marks them untrusted on purpose.
+
+### Shell results come from the transcript
+
+In the desktop app, Codex runs shell commands through its code mode, which
+returns early from a command that runs longer than a set wait, often 1
+second. `PreToolUse` fires for each command. `PostToolUse` fires only for
+one that finished within the wait [verified: a 20-second command got no
+`PostToolUse`]. The transcript records every command's end, with its exit
+code and output, as an `item_completed` `CommandExecution`.
+
+So the `Stop` hook reads the turn's finished commands from the transcript
+and records each lone check. `PreToolUse` still denies a compound check.
 
 ## Build steps
 
-1. Step 0, then step 0b.
-2. Measure the ported `SYSTEM` and `GUIDANCE` with candidate models.
-3. The MCP server's state and logic, with tests ported from `ledger.test.ts` and
-   `check-tracking.test.ts`.
-4. Hook scripts, tested by piping recorded hook input into them.
-5. The MCP server's tools and socket.
-6. The Inbox tab.
-7. Install it, then run a real session in the desktop app.
+1. Step 0 and step 0b. Done.
+2. The plugin folder, the build and the marketplace entry.
+3. Session state, the hooks and the MCP tools, with tests that feed
+   hand-written hook input to each hook. The shared modules keep their own
+   tests in `tests/`.
+4. The per-reply update through `codex exec`. Measure `SYSTEM` on the
+   candidate models, `gpt-6-luna` and `gpt-6.1-sol` at low effort, and pick
+   one.
+5. The Inbox tab.
+6. A full session through `codex exec`, with hook trust bypassed for the
+   test. Then a real session in the desktop app, which needs the person to
+   trust the hooks and open the tab.
 
 ## Decisions
 
