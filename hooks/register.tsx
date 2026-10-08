@@ -2645,7 +2645,7 @@ export const register: Register = on => {
               {unselectedLine(row, () => void select($, tab, row.id, index), tree ? 7 : 5)}
             </Box>
           )}
-          {tree ? branch(tree, isSelected ? 1 : 0) : null}
+          {tree ? branch(tree, isSelected ? blankLine : 0) : null}
           {/* What select() scrolls into view. Drawn on the selected row alone, so the key exists
           only once that row has redrawn expanded. */}
           {isSelected ? (
