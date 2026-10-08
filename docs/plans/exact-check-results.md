@@ -91,9 +91,10 @@ and a trial build of B.
   naming the mod. So the refusal lets the mod's own calls through.
 - The nested call works inside a model turn. The transcript shows the
   `run_check` call, not the nested Bash call.
-- Auto mode cannot approve the nested call. Its classifier decides only the
-  tool calls in Claude's own response, so the call comes back "gave no
-  verdict". The mod cannot read the permission mode, and its `tool.check` hook
+- In auto mode, the nested call runs only when an allow rule matches it. The
+  classifier decides only the tool calls in Claude's own response, so without
+  a rule the call comes back "gave no verdict". Reported upstream as
+  anthropics/claude-code#100575. The mod cannot read the permission mode, and its `tool.check` hook
   on `run_check` never fires. So `run_check`'s "not run" line tells Claude to run
   the command alone in Bash, which the classifier can decide.
 - The mod's own `tool.call` hook answers a call to its registered tool in place
