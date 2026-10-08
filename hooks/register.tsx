@@ -149,7 +149,7 @@ const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as Item[
 const SHOWN_DETAILS = atom({ plugin: 'inbox', key: 'shownDetails' } as const, [] as string[])
 const IS_KEY_LIST_SHOWN = atom({ plugin: 'inbox', key: 'isKeyListShown' } as const, false)
 // How long a closed item's row stays in place, with its outcome, before it moves to Closed.
-const SETTLED_MS = 6400
+const SETTLED_MS = 5120
 // The bar under a just-closed row, in cells. It loses half a cell per step of SETTLED_MS, so the pane redraws that often.
 const LEAVE_BAR_CELLS = 12
 const LEAVE_BAR_STEPS = LEAVE_BAR_CELLS * 2

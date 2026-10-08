@@ -12,7 +12,7 @@ help; and a typed reply to a task.
 
 These already showed their effect:
 
-- **Answer, Done, Dismiss on an item.** The row stays in place for 6.4 seconds with
+- **Answer, Done, Dismiss on an item.** The row stays in place for 5.12 seconds with
   a ✓ and the outcome.
 - **Fix on a check.** The row says "Fix sent · 2m ago" and the key becomes "Fix again".
 - **Dismiss on a finding, a check or a PR.** The row or block leaves the list.
@@ -45,12 +45,12 @@ it again must look deliberate.
 - **Opens and copies record nothing.** The browser, app or toast they bring up
   is the feedback, and a note in the pane would only repeat it.
 - **A finding that leaves.** Address, Discuss and a typed reply send the finding
-  to Claude and remove it, so it stays in place for 6.4 seconds with a ✓ and its
+  to Claude and remove it, so it stays in place for 5.12 seconds with a ✓ and its
   last action, as a closed item does. Dismiss only hides, so its row leaves at
   once.
 - **A leave bar.** A row that stays in place after it closes shows a thin
   bar under its outcome, 12 cells of `─`, that empties by half cells as its
-  6.4 seconds run out. Reason: the person sees when the row will move to
+  5.12 seconds run out. Reason: the person sees when the row will move to
   Closed.
 - **A row handed to Claude folds.** After Address or Address all on a review
   thread, Fix on a failing check, or a Run step or typed reply on a task, the
