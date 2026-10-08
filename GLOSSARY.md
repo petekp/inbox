@@ -42,9 +42,8 @@ and any test-name filter. A run that names none covers the whole suite, and a
 folder covers the files inside it.
 
 **Check result**:
-How a check's latest run ended: pass, fail or unknown. Only a pass or fail of
-the same or a broader target replaces it, and an unknown never replaces a
-pass or fail.
+How a check's latest run ended: pass or fail. A later result of the same or a
+broader target replaces it.
 
 **Check tracking**:
 Keeping each check's latest result and its state: stale, left failing,

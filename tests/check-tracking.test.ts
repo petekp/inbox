@@ -77,10 +77,9 @@ describe('band lines', () => {
   test('a failing result shows on its own line and not in the summary', () => {
     const fail = makeCheck({ name: 'npm test', result: 'fail' })
     const pass = makeCheck({ name: 'tsc', result: 'pass' })
-    const unknown = makeCheck({ name: 'lint', result: 'unknown' })
-    const lines = bandLines(checksOf([fail, pass, unknown]), root)
+    const lines = bandLines(checksOf([fail, pass]), root)
     expect(lines.failing.map(c => c.name)).toEqual(['npm test'])
-    expect(lines.summary.map(c => c.name)).toEqual(['tsc', 'lint'])
+    expect(lines.summary.map(c => c.name)).toEqual(['tsc'])
   })
 
   test('a dismissed failure leaves the band, and a new run shows again', () => {
@@ -278,30 +277,6 @@ describe('targets', () => {
       [existing('fail', target([a]))],
       run({ name: 'check.sh', kind: 'all' }),
       ['pass:'],
-    ],
-    [
-      'an unknown replaces an unknown it covers',
-      [existing('unknown', target([a]))],
-      run({ result: 'unknown' }),
-      ['unknown:'],
-    ],
-    [
-      'an unknown leaves a pass or fail of a broader target',
-      [existing('fail')],
-      run({ result: 'unknown', target: target([a]) }),
-      ['fail:', `unknown:${a}`],
-    ],
-    [
-      'an unknown leaves a pass or fail of a narrower target',
-      [existing('pass', target([a]))],
-      run({ result: 'unknown' }),
-      [`pass:${a}`, 'unknown:'],
-    ],
-    [
-      'an unknown with the target of a known result is not recorded',
-      [existing('fail', target([a]))],
-      run({ result: 'unknown', target: target([a]) }),
-      [`fail:${a}`],
     ],
   ]
 

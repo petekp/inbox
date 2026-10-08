@@ -142,7 +142,7 @@ function wordsOf(segment: string): string[] {
 }
 
 /** `path` resolved against the folder `from`, with `.` and `..` worked out. */
-function resolvePath(from: string, path: string): string {
+export function resolvePath(from: string, path: string): string {
   const parts: string[] = []
   for (const part of `${path.startsWith('/') ? '' : from}/${path}`.split('/')) {
     if (part === '..') parts.pop()
@@ -390,9 +390,9 @@ function summaryLine(output: string): string {
   return (firstError ?? '').trim().slice(0, 120)
 }
 
-/** A check's result as one mark: ✓ passed, ✗ failed, · unknown. */
+/** A check's result as one mark: ✓ passed, ✗ failed. */
 function checkMark(check: Check): string {
-  return check.result === 'pass' ? '✓' : check.result === 'fail' ? '✗' : '·'
+  return check.result === 'pass' ? '✓' : '✗'
 }
 
 /** What follows a check's name: ", 24 pass", then ", before the last edit" when the files changed after it ran. */

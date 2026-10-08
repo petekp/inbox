@@ -160,7 +160,7 @@ export type Check = {
   target: Target
   /** The folder it ran in, absolute; null for the session's own folder. */
   folder: string | null
-  result: 'pass' | 'fail' | 'unknown'
+  result: 'pass' | 'fail'
   /** The output's summary line, such as "24 pass, 1 fail". */
   summary: string
   ranAt: number

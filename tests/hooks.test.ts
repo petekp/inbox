@@ -123,6 +123,8 @@ function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
       ? { isError: true as const, result: toolAnswer.text, text: toolAnswer.text }
       : { result: toolAnswer.text, text: toolAnswer.text }
   })
+  // The engine asks the person, as for a file outside the project.
+  on('tool.check', () => ({ decision: 'ask' as const }))
   // The band with nothing to show falls through to the engine's own, drawn empty here.
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
 }
@@ -760,13 +762,20 @@ test('run_check reports a pass and a failure with its exit code, and saves the o
 
   toolAnswer = { text: ' 12 pass\n 0 fail\n', isError: false }
   const passed = await $.tool.call({ tool: RUN_CHECK, checks: ['bun test'] } as never)
-  expect(passed.result).toBe('bun test: passed, 12 pass, 0 fail.\n  Log: /tmp/inbox-checks/session-1/bun-test.log')
+  expect(passed.result).toBe(
+    'bun test: passed, 12 pass, 0 fail.\n  Log, readable with the Read tool: /tmp/inbox-checks/session-1/bun-test.log',
+  )
 
   toolAnswer = { text: 'Exit code 2\n(fail) parses times\n 11 pass\n 1 fail\n', isError: true }
   const failed = await $.tool.call({ tool: RUN_CHECK, checks: ['bun test'] } as never)
   expect(failed.result).toContain('bun test: failed with exit 2, 11 pass, 1 fail.\n  (fail) parses times\n')
   expect(failed.result).toContain('  Last 30 lines:\n    Exit code 2\n    (fail) parses times')
   expect(written['/tmp/inbox-checks/session-1/bun-test.log']).toBe(toolAnswer.text)
+  // Claude reads the session's logs without a prompt, and nothing else on that account.
+  const readCheck = (file_path: string) => $.tool.check({ tool: 'Read', input: { file_path } })
+  expect((await readCheck('/tmp/inbox-checks/session-1/bun-test.log')).decision).toBe('allow')
+  expect((await readCheck('/tmp/inbox-checks/session-1/../../secrets.txt')).decision).not.toBe('allow')
+  expect((await readCheck('/tmp/inbox-checks/session-2/bun-test.log')).decision).not.toBe('allow')
 })
 
 test("run_check does not run a command with a pipe or two checks, or a subagent's checks", async ($, on) => {

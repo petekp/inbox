@@ -32,7 +32,7 @@ export function checkKey(check: Check): string {
 }
 
 /** Whether the folder `path` is, or contains, `inner`. */
-const contains = (path: string, inner: string) => inner === path || inner.startsWith(`${path}/`)
+export const contains = (path: string, inner: string) => inner === path || inner.startsWith(`${path}/`)
 
 /**
  * Whether `run` covers `result`: it is the same check in the same folder, its
@@ -52,15 +52,9 @@ function covers(run: Check, result: Check): boolean {
 /**
  * Keeps each check's latest results. A pass or fail replaces every result it
  * covers; a check script that passes, such as check.sh, replaces every earlier
- * result in its folder. An unknown replaces only an unknown it covers, and is
- * not recorded when a pass or fail of its own target is there.
+ * result in its folder.
  */
 function recordCheck(results: Check[], check: Check): Check[] {
-  if (check.result === 'unknown') {
-    if (results.some(c => c.result !== 'unknown' && checkKey(c) === checkKey(check))) return results
-
-    return [...results.filter(c => !(c.result === 'unknown' && covers(check, c))), check]
-  }
   const isAll = check.kind === 'all' && check.result === 'pass'
 
   return [...results.filter(c => !(covers(check, c) || (isAll && c.folder === check.folder))), check]
@@ -170,18 +164,21 @@ export function upgradeChecks(saved: Checks, root: string, home: string): Checks
   return {
     // State saved before the session's repos were kept counted every result's repo.
     repos: saved.repos ?? [...new Set(saved.results.flatMap(r => (r.repo ? [r.repo] : [])))],
-    results: saved.results.map(r => ({
-      ...r,
-      repo: r.repo ?? null,
-      isStale: r.isStale ?? false,
-      command: r.command ?? '',
-      target: r.target ?? targetOfCommand(r.command ?? '', r.folder ?? root, home),
-      failures: r.failures ?? [],
-      isLeftFailing: r.isLeftFailing ?? false,
-      isDismissed: r.isDismissed ?? false,
-      isSentBack: r.isSentBack ?? false,
-      fixSentAt: r.fixSentAt ?? null,
-    })),
+    // Results read as unknown, before run_check, say nothing about the work.
+    results: saved.results
+      .filter(r => (r.result as string) !== 'unknown')
+      .map(r => ({
+        ...r,
+        repo: r.repo ?? null,
+        isStale: r.isStale ?? false,
+        command: r.command ?? '',
+        target: r.target ?? targetOfCommand(r.command ?? '', r.folder ?? root, home),
+        failures: r.failures ?? [],
+        isLeftFailing: r.isLeftFailing ?? false,
+        isDismissed: r.isDismissed ?? false,
+        isSentBack: r.isSentBack ?? false,
+        fixSentAt: r.fixSentAt ?? null,
+      })),
   }
 }
 

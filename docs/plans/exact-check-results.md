@@ -133,11 +133,14 @@ result reaches the band and Needs you. A `claude -p` session has no pane.
 - **What Claude gets back.** Whether each check passed, its summary, the lines
   that name what failed, and for a failure the output's last 30 lines. Reason:
   in the trial Claude needed the output, and a log it can't read costs a turn.
-- **The log.** Saved where Claude can read it without a prompt: in the repo's
-  `.git` folder (`.git/inbox/checks/<session>/<command>.log`), which git does not
-  track. Each session keeps the latest log of each command. In a linked worktree, the git folder is outside the worktree, so
-  the log goes in the temporary folder, as it does outside git. In a `claude -p`
-  trial, Claude read logs under `.git` with `grep` and `tail` without a prompt.
+- **The log.** Each session keeps the latest log of each command, in
+  `<git folder>/inbox/checks/<session>/<command>.log`, which git does not
+  track. In a linked worktree the git folder is outside the worktree, so the
+  log goes in the temporary folder instead, as it does outside git. The mod
+  allows Claude's Read and Grep calls inside that folder without a prompt,
+  and the result names the Read tool. In `claude -p` trials in a worktree,
+  Claude went straight to Read in 3 of 3 runs. Without the tool named, it
+  tried `tail` in Bash first, which needs a prompt.
 - **The refusal.** Main-loop Bash commands in which `checksIn` finds a check.
   Subagents' commands and commands sent to the background pass, and stay
   unrecorded as now. A subagent's `run_check` call is answered "Not run" and

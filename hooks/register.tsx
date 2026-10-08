@@ -35,11 +35,13 @@ import {
   failureList,
   fixMessage,
   readResult,
+  resolvePath,
 } from './checks'
 import type { Contradiction } from './checks'
 import {
   NO_CHECKS,
   addRepo,
+  contains,
   bandLines,
   changed,
   checkKey,
@@ -1597,23 +1599,40 @@ function refreshTree($: EngineInterface, repos?: string[]): Promise<void> {
 /** Shell syntax that would make a check command more than the one check. */
 const SHELL_SYNTAX = /[|;&<>`]|\$\(/
 
-/** The folder run_check saves logs in: the repo's git folder when it is inside the repo's top folder, else the temporary folder. */
-async function checkLogFolder($: EngineInterface): Promise<string> {
-  const gitDir = top === null ? null : (await runGit($, root, ['rev-parse', '--absolute-git-dir']))?.trim()
-  if (top !== null && gitDir?.startsWith(`${top}/`)) return `${gitDir}/inbox/checks`
+let checkLogFolder: Promise<string> | null = null
 
-  return `${((await $.env.get('TMPDIR')) ?? '/tmp').replace(/\/$/, '')}/inbox-checks`
+/**
+ * Where run_check saves this session's logs, found once per load: the repo's
+ * git folder when it is inside the repo's top folder, else the temporary folder.
+ */
+function checkLogs($: EngineInterface): Promise<string> {
+  checkLogFolder ??= (async () => {
+    const [gitDir, tmp] = await Promise.all([
+      top === null ? null : runGit($, root, ['rev-parse', '--absolute-git-dir']),
+      $.env.get('TMPDIR'),
+    ])
+    const dir = gitDir?.trim()
+    const folder =
+      top !== null && dir && contains(top, dir)
+        ? `${dir}/inbox/checks`
+        : `${(tmp ?? '/tmp').replace(/\/$/, '')}/inbox-checks`
+
+    // Sessions share the folder, so each keeps its logs in a folder of its own.
+    return `${folder}/${sessionId}`
+  })()
+
+  return checkLogFolder
 }
 
 /**
  * Runs each check as a Bash call of this mod's, so the Bash permission check
- * applies and the tool.call hook records it. Saves each one's output to a log
- * file and returns what Claude reads: how it ended, its summary, the lines that
- * name what failed, a failed run's last lines, and the log's path.
+ * applies, and records how it ended. Saves each one's output to a log file and
+ * returns what Claude reads: how it ended, its summary, the lines that name
+ * what failed, a failed run's last lines, and the log's path.
  */
 async function runChecks($: EngineInterface, checks: string[]): Promise<string> {
   if (checks.length === 0) return 'Pass at least one check command in "checks".'
-  const logFolder = await checkLogFolder($)
+  const logFolder = await checkLogs($)
   const lines: string[] = []
   for (const command of checks) {
     const [call, ...others] = checksIn(command)
@@ -1621,6 +1640,7 @@ async function runChecks($: EngineInterface, checks: string[]): Promise<string> 
       lines.push(`${command}: not run. Pass one check per command, with no pipe, redirect or other command.`)
       continue
     }
+    const cwd = await $.session.cwd()
     const ran = await $.tool
       .call({ tool: 'Bash', command, description: `Run ${call.name}` })
       .catch((err: unknown) => ({ deny: String(err) }))
@@ -1628,16 +1648,20 @@ async function runChecks($: EngineInterface, checks: string[]): Promise<string> 
       lines.push(`${command}: not run. ${ran.deny}`)
       continue
     }
-    if (resultFields(ran).backgroundTaskId) {
-      lines.push(`${command}: still running in the background, so its result is unknown.`)
+    const fields = resultFields(ran)
+    if (fields.backgroundTaskId || fields.interrupted) {
+      lines.push(
+        `${command}: ${fields.interrupted ? 'interrupted' : 'still running in the background'}, so its result is unknown.`,
+      )
       continue
     }
     const output = ran.text ?? ''
     const isFailed = ran.isError === true
+    await recordCheck($, command, cwd, output, isFailed)
     const { summary } = readResult(output, isFailed)
     const exit = output.match(/^Exit code (\d+)/)?.[1]
-    // Sessions share the folder, so each session keeps the latest log of each command.
-    const log = `${logFolder}/${sessionId}/${command.replace(/[^\w.-]+/g, '-').slice(0, 100)}.log`
+    // Each command keeps only its latest log.
+    const log = `${logFolder}/${command.replace(/[^\w.-]+/g, '-').slice(0, 100)}.log`
     const isSaved = await $.fs.write(log, output).then(
       () => true,
       () => false,
@@ -1656,7 +1680,7 @@ async function runChecks($: EngineInterface, checks: string[]): Promise<string> 
                 .map(l => `    ${l}`),
             ]
           : []),
-        ...(isSaved ? [`  Log: ${log}`] : []),
+        ...(isSaved ? [`  Log, readable with the Read tool: ${log}`] : []),
       ].join('\n'),
     )
   }
@@ -1874,6 +1898,16 @@ export const register: Register = on => {
     isDeferred: false,
   }))
   on('tool.check', { tool: RUN_CHECK_TOOL as never }, () => ({ decision: 'allow' }))
+  // Claude reads run_check's logs without a prompt, also where they sit outside
+  // the project, as in a worktree session, whose git folder is elsewhere.
+  for (const tool of ['Read', 'Grep'] as const)
+    on('tool.check', { tool }, async ($, e, next) => {
+      const input = e.input as { file_path?: unknown; path?: unknown }
+      const path = input.file_path ?? input.path
+      const isLog = isOn && typeof path === 'string' && contains(await checkLogs($), resolvePath(root, path))
+
+      return isLog ? { decision: 'allow' } : next(e)
+    })
   on('tool.call', { tool: RUN_CHECK_TOOL as never }, async ($, e) => {
     const input = e as unknown as Record<string, unknown>
     // The checks run in the main conversation's shell, so a subagent in a worktree of its own would check the wrong folder.
@@ -1912,15 +1946,7 @@ export const register: Register = on => {
     const line = toolActivity(String(e.tool), input)
     if (line) noteActivity(line)
     if (e.tool === 'Bash') {
-      // Only this mod's own calls reach here with a check: run_check runs each as a whole command.
-      const isCheck = next.origin.plugin === 'inbox' && checksIn(e.command).length > 0
-      // A command moved to the background has not finished its check.
-      const cwd = isCheck && !e.run_in_background ? await $.session.cwd() : null
       const ran = await run()
-      const output = resultFields(ran)
-      if (cwd !== null && !output.interrupted && !output.backgroundTaskId && typeof ran.deny !== 'string') {
-        await recordCheck($, e.command, cwd, ran.text ?? '', ran.isError === true)
-      }
       if (activity.length < 40)
         for (const url of new Set(ran.text?.match(LOCAL_URL) ?? [])) noteActivity(`URL in output: ${url}`)
       // A PR this session opened; other commands print PR links that are not this session's.
