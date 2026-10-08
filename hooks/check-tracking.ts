@@ -2,8 +2,8 @@
 // stale, left failing, dismissed, fix sent), and what the band, the pane and
 // the Stop hook read from the results. Pure functions; the I/O stays in register.tsx.
 
-import type { Check, CheckKind, Checks } from '../types'
-import { checkName, claimsIn, isTemporary } from './checks'
+import type { Check, CheckKind, Checks, Target } from '../types'
+import { checkName, claimsIn, isTemporary, targetOfCommand } from './checks'
 import type { Contradiction } from './checks'
 
 export const NO_CHECKS: Checks = { results: [], repos: [] }
@@ -18,22 +18,52 @@ type Run = {
   command: string
   failures: string[]
   repo: string | null
+  target: Target
 }
 
-/** The one identity rule: a check is known by its name and the folder it ran in. */
+/** The one identity rule: a check is known by its name, the folder it ran in and, when it narrows anything, its target. */
 export function checkKey(check: Check): string {
-  return `${check.folder ?? '.'}:${check.name}`
+  const { paths, filters } = check.target
+  const key = `${check.folder ?? '.'}:${check.name}`
+
+  return paths.length === 0 && filters.length === 0
+    ? key
+    : `${key}:${JSON.stringify([[...paths].sort(), [...filters].sort()])}`
+}
+
+/** Whether the folder `path` is, or contains, `inner`. */
+const contains = (path: string, inner: string) => inner === path || inner.startsWith(`${path}/`)
+
+/**
+ * Whether `run` covers `result`: it is the same check in the same folder, its
+ * filters are none or the same ones, and its paths are none or contain every
+ * path the result has (which must have some).
+ */
+function covers(run: Check, result: Check): boolean {
+  if (run.name !== result.name || run.folder !== result.folder) return false
+  const a = run.target
+  const b = result.target
+  const isSameFilters = a.filters.length === b.filters.length && a.filters.every(f => b.filters.includes(f))
+  const hasPaths = b.paths.length > 0 && b.paths.every(q => a.paths.some(p => contains(p, q)))
+
+  return (a.filters.length === 0 || isSameFilters) && (a.paths.length === 0 || hasPaths)
 }
 
 /**
- * Keeps each check's latest result in each folder. A check script that
- * passes, such as check.sh, replaces every earlier result in its folder.
+ * Keeps each check's latest results. A pass or fail replaces every result it
+ * covers; a check script that passes, such as check.sh, replaces every earlier
+ * result in its folder. An unknown replaces only an unknown it covers, and is
+ * not recorded when a pass or fail of its own target is there.
  */
 export function recordCheck(results: Check[], check: Check): Check[] {
-  const isReplaced = (c: Check) =>
-    c.folder === check.folder && (c.name === check.name || (check.kind === 'all' && check.result === 'pass'))
+  if (check.result === 'unknown') {
+    if (results.some(c => c.result !== 'unknown' && checkKey(c) === checkKey(check))) return results
 
-  return [...results.filter(c => !isReplaced(c)), check]
+    return [...results.filter(c => !(c.result === 'unknown' && covers(check, c))), check]
+  }
+  const isAll = check.kind === 'all' && check.result === 'pass'
+
+  return [...results.filter(c => !(covers(check, c) || (isAll && c.folder === check.folder))), check]
 }
 
 /** Marks the checks that ran in `repo` stale after its files changed. A Markdown-only change leaves tests, types and builds current. */
@@ -58,6 +88,7 @@ export function recorded(checks: Checks, runs: Run[], at: number, root: string):
           recordCheck(all, {
             name: r.name,
             kind: r.kind,
+            target: r.target,
             folder: r.folder === root ? null : r.folder,
             result: r.result,
             summary: r.summary,
@@ -137,8 +168,12 @@ export function fixSent(checks: Checks, check: Check, at: number): Checks {
   }
 }
 
-/** Results saved before a field existed get its default. A result from before each one kept its repo never goes stale. */
-export function upgradeChecks(saved: Checks): Checks {
+/**
+ * Results saved before a field existed get its default. A result from before
+ * each one kept its repo never goes stale, and one from before targets takes
+ * its target from its saved command. `root` is the session's folder.
+ */
+export function upgradeChecks(saved: Checks, root: string, home: string): Checks {
   return {
     repos: saved.repos ?? [],
     results: saved.results.map(r => ({
@@ -146,6 +181,7 @@ export function upgradeChecks(saved: Checks): Checks {
       repo: r.repo ?? null,
       isStale: r.isStale ?? false,
       command: r.command ?? '',
+      target: r.target ?? targetOfCommand(r.command ?? '', r.folder ?? root, home),
       failures: r.failures ?? [],
       isLeftFailing: r.isLeftFailing ?? false,
       isDismissed: r.isDismissed ?? false,
@@ -191,24 +227,24 @@ export type Contradicted = Contradiction & { check: Check }
  * after it ran. A claim with no check of its kind is left alone, since the
  * check may have run in a way the mod cannot see.
  */
-function* contradictions(reply: string, checks: Checks): Generator<Contradicted> {
+function* contradictions(reply: string, checks: Checks, root: string): Generator<Contradicted> {
   for (const { sentence, kind } of claimsIn(reply)) {
     const latest = checks.results.filter(c => c.kind === kind || c.kind === 'all').sort((a, b) => b.ranAt - a.ranAt)[0]
     if (!latest) continue
     if (latest.result === 'fail')
       yield {
         claim: sentence,
-        problem: `${checkName(latest)} failed when it last ran${latest.summary ? ` (${latest.summary})` : ''}`,
+        problem: `${checkName(latest, root)} failed when it last ran${latest.summary ? ` (${latest.summary})` : ''}`,
         check: latest,
       }
     else if (latest.isStale)
-      yield { claim: sentence, problem: `the files changed after ${checkName(latest)} last ran`, check: latest }
+      yield { claim: sentence, problem: `the files changed after ${checkName(latest, root)} last ran`, check: latest }
   }
 }
 
 /** The first contradicted claim in the reply. */
-export function contradictedClaim(reply: string, checks: Checks): Contradicted | null {
-  for (const c of contradictions(reply, checks)) return c
+export function contradictedClaim(reply: string, checks: Checks, root = ''): Contradicted | null {
+  for (const c of contradictions(reply, checks, root)) return c
 
   return null
 }
@@ -224,7 +260,7 @@ export function claimAgainst(
   root: string,
 ): { checks: Checks; claim: Contradiction | null } {
   const own = { ...checks, results: checks.results.filter(c => counts(checks, c, root)) }
-  for (const { claim, problem, check } of contradictions(reply, own)) {
+  for (const { claim, problem, check } of contradictions(reply, own, root)) {
     if (check.isSentBack) continue
     const key = checkKey(check)
 

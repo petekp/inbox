@@ -138,10 +138,23 @@ export type Dialog = {
 /** `all`: a script that runs the project's checks together, such as `check.sh`. */
 export type CheckKind = 'tests' | 'types' | 'lint' | 'build' | 'validate' | 'all'
 
-/** The latest result of one check command Claude ran, such as `npm test`, in one folder. */
+/**
+ * The part of a check's suite one run covered. Both lists empty means the
+ * whole suite.
+ */
+export type Target = {
+  /** Files and folders the run named, absolute. */
+  paths: string[]
+  /** Test-name filters and any argument the inbox could not read, such as `-t=parses dates`. */
+  filters: string[]
+}
+
+/** The latest result of one check command Claude ran, such as `npm test`, in one folder, for one target. */
 export type Check = {
   name: string
   kind: CheckKind
+  /** The part of the suite the run covered; empty for the whole suite. */
+  target: Target
   /** The folder it ran in, absolute; null for the session's own folder. */
   folder: string | null
   result: 'pass' | 'fail' | 'unknown'

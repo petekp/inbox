@@ -1,13 +1,25 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Check, Checks } from '../types'
-import { addRepo, bandLines, changed, claimAgainst, needsYou, upgradeChecks } from '../hooks/check-tracking'
+import {
+  addRepo,
+  bandLines,
+  changed,
+  checkKey,
+  claimAgainst,
+  dismissed,
+  fixSent,
+  needsYou,
+  recorded,
+  upgradeChecks,
+} from '../hooks/check-tracking'
 
 function makeCheck(overrides: Partial<Check> = {}): Check {
   return {
     name: 'npm test',
     kind: 'tests',
     folder: null,
+    target: { paths: [], filters: [] },
     result: 'fail',
     summary: '1 fail',
     ranAt: 1,
@@ -36,7 +48,7 @@ describe('the session’s repos', () => {
 
   test('upgradeChecks gives saved state no repos', () => {
     const saved = { results: [] } as unknown as Checks
-    expect(upgradeChecks(saved).repos).toEqual([])
+    expect(upgradeChecks(saved, root, '/home/me').repos).toEqual([])
   })
 
   const cases: [string, Partial<Check>, boolean][] = [
@@ -139,6 +151,187 @@ describe('sending Claude back', () => {
 
   test('upgradeChecks gives a saved result no send-back', () => {
     const saved = { results: [{ ...makeCheck(), isSentBack: undefined }], repos: [] } as unknown as Checks
-    expect(upgradeChecks(saved).results[0]?.isSentBack).toBe(false)
+    expect(upgradeChecks(saved, root, '/home/me').results[0]?.isSentBack).toBe(false)
+  })
+})
+
+describe('targets', () => {
+  const target = (paths: string[] = [], filters: string[] = []) => ({ paths, filters })
+  const a = '/work/app/src/a.ts'
+  const src = '/work/app/src'
+  const run = (overrides: Partial<Parameters<typeof recorded>[1][number]> = {}) => ({
+    name: 'vitest',
+    kind: 'tests' as const,
+    folder: root,
+    result: 'pass' as const,
+    summary: '',
+    command: 'vitest',
+    failures: [],
+    repo: root,
+    target: target(),
+    ...overrides,
+  })
+  const existing = (result: Check['result'], t = target(), overrides: Partial<Check> = {}) =>
+    makeCheck({ name: 'vitest', result, target: t, ...overrides })
+  /** Each result as "pass:" for the whole suite, or "fail:<paths and filters>". */
+  const after = (results: Check[], ...runs: ReturnType<typeof run>[]) =>
+    recorded(checksOf(results), runs, 5, root).results.map(
+      c => `${c.result}:${[...c.target.paths, ...c.target.filters].join(',')}`,
+    )
+
+  const cases: [string, Check[], ReturnType<typeof run>, string[]][] = [
+    ['a whole-suite pass replaces a failure of one file', [existing('fail', target([a]))], run(), ['pass:']],
+    [
+      'a whole-suite fail replaces a pass of one file',
+      [existing('pass', target([a]))],
+      run({ result: 'fail' }),
+      ['fail:'],
+    ],
+    [
+      'a pass of a file replaces a failure of that file',
+      [existing('fail', target([a]))],
+      run({ target: target([a]) }),
+      [`pass:${a}`],
+    ],
+    [
+      'a pass of a folder replaces a failure of a file below it',
+      [existing('fail', target([a]))],
+      run({ target: target([src]) }),
+      [`pass:${src}`],
+    ],
+    [
+      'a pass of a file leaves a whole-suite failure',
+      [existing('fail')],
+      run({ target: target([a]) }),
+      ['fail:', `pass:${a}`],
+    ],
+    [
+      'a pass of a file leaves a failure of the folder above',
+      [existing('fail', target([src]))],
+      run({ target: target([a]) }),
+      [`fail:${src}`, `pass:${a}`],
+    ],
+    [
+      'a pass of a folder does not cover a sibling with the same prefix',
+      [existing('fail', target([`${src}2/b.ts`]))],
+      run({ target: target([src]) }),
+      [`fail:${src}2/b.ts`, `pass:${src}`],
+    ],
+    [
+      'a pass of one file leaves a failure of another',
+      [existing('fail', target([a]))],
+      run({ target: target(['/work/app/src/b.ts']) }),
+      [`fail:${a}`, 'pass:/work/app/src/b.ts'],
+    ],
+    [
+      'a pass with a filter leaves a failure of the whole file',
+      [existing('fail', target([a]))],
+      run({ target: target([a], ['-t=x']) }),
+      [`fail:${a}`, `pass:${a},-t=x`],
+    ],
+    [
+      'a pass of a file replaces a failure of one test in it',
+      [existing('fail', target([a], ['-t=x']))],
+      run({ target: target([a]) }),
+      [`pass:${a}`],
+    ],
+    [
+      'a pass with the same filters replaces a failure with them',
+      [existing('fail', target([], ['-t=x', '-k=y']))],
+      run({ target: target([], ['-k=y', '-t=x']) }),
+      ['pass:-k=y,-t=x'],
+    ],
+    [
+      'a pass with other filters leaves a failure',
+      [existing('fail', target([], ['-t=x']))],
+      run({ target: target([], ['-t=y']) }),
+      ['fail:-t=x', 'pass:-t=y'],
+    ],
+    [
+      'a filter alone covers the same filter on a file',
+      [existing('fail', target([a], ['-t=x']))],
+      run({ target: target([], ['-t=x']) }),
+      ['pass:-t=x'],
+    ],
+    [
+      'a run with paths never covers a result with none',
+      [existing('fail')],
+      run({ target: target([a]) }),
+      ['fail:', `pass:${a}`],
+    ],
+    ['another check is left alone', [existing('fail', target(), { name: 'tsc' })], run(), ['fail:', 'pass:']],
+    [
+      'the same check in another folder is left alone',
+      [existing('fail', target(), { folder: '/work/copy' })],
+      run(),
+      ['fail:', 'pass:'],
+    ],
+    [
+      'a passing check script replaces every result in its folder',
+      [existing('fail', target([a]))],
+      run({ name: 'check.sh', kind: 'all' }),
+      ['pass:'],
+    ],
+    [
+      'an unknown replaces an unknown it covers',
+      [existing('unknown', target([a]))],
+      run({ result: 'unknown' }),
+      ['unknown:'],
+    ],
+    [
+      'an unknown leaves a pass or fail of a broader target',
+      [existing('fail')],
+      run({ result: 'unknown', target: target([a]) }),
+      ['fail:', `unknown:${a}`],
+    ],
+    [
+      'an unknown leaves a pass or fail of a narrower target',
+      [existing('pass', target([a]))],
+      run({ result: 'unknown' }),
+      [`pass:${a}`, 'unknown:'],
+    ],
+    [
+      'an unknown with the target of a known result is not recorded',
+      [existing('fail', target([a]))],
+      run({ result: 'unknown', target: target([a]) }),
+      [`fail:${a}`],
+    ],
+  ]
+
+  for (const [label, results, ran, expected] of cases) {
+    test(label, () => {
+      expect(after(results, ran)).toEqual(expected)
+    })
+  }
+
+  test('a result is known by its target, and a whole-suite key is name and folder', () => {
+    expect(checkKey(makeCheck())).toBe('.:npm test')
+    expect(checkKey(makeCheck({ target: target([a]) }))).not.toBe(checkKey(makeCheck()))
+    expect(checkKey(makeCheck({ target: target([], ['x', 'y']) }))).toBe(
+      checkKey(makeCheck({ target: target([], ['y', 'x']) })),
+    )
+  })
+
+  test('dismissing or fixing a result leaves the same check’s other targets alone', () => {
+    const whole = makeCheck({ ranAt: 1 })
+    const narrow = makeCheck({ ranAt: 1, target: target([a]) })
+    const checks = checksOf([whole, narrow])
+    expect(dismissed(checks, narrow).results.map(c => c.isDismissed)).toEqual([false, true])
+    expect(fixSent(checks, whole, 9).results.map(c => c.fixSentAt)).toEqual([9, null])
+  })
+
+  test('upgradeChecks reads a saved result’s target from its command', () => {
+    const saved = (command: string, folder: string | null = null) =>
+      ({ results: [{ ...makeCheck({ command, folder }), target: undefined }], repos: [] }) as unknown as Checks
+    const upgraded = (command: string, folder?: string | null) =>
+      upgradeChecks(saved(command, folder), root, '/home/me').results[0]?.target
+    expect(upgraded('npx vitest run a.test.ts')).toEqual(target(['/work/app/a.test.ts']))
+    expect(upgraded('npx vitest run a.test.ts -t foo', '/work/app/pkg')).toEqual(
+      target(['/work/app/pkg/a.test.ts'], ['-t=foo']),
+    )
+    expect(upgraded('npm test')).toEqual(target())
+    expect(upgraded('')).toEqual(target())
+    const kept = { results: [makeCheck({ command: 'vitest b.ts', target: target([a]) })], repos: [] }
+    expect(upgradeChecks(kept, root, '/home/me').results[0]?.target).toEqual(target([a]))
   })
 })

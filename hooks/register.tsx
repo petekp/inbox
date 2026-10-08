@@ -32,6 +32,7 @@ import {
   failureLines,
   failureSummary,
   fixMessage,
+  NO_TARGET,
   outputLines,
   readResults,
 } from './checks'
@@ -946,7 +947,7 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
     // Presence from before the turn counts existed cannot say whether the last
     // turn's update landed, so that load catches up once.
     update($, PRESENCE, p => ({ ...p, turnsStarted: p.turnsStarted ?? 1, turnsApplied: p.turnsApplied ?? 0 })),
-    update($, CHECKS, upgradeChecks),
+    update($, CHECKS, c => upgradeChecks(c, root, home)),
   ])
 
   return ledger
@@ -1056,7 +1057,7 @@ async function dismissCheck($: EngineInterface, check: Check) {
 
 /** Asks Claude to fix a failing check, and marks that run's row as handed to Claude. */
 async function sendFix($: EngineInterface, check: Check) {
-  await send($, fixMessage(check))
+  await send($, fixMessage(check, root))
   const at = await $.clock.now()
   await update($, CHECKS, c => fixSent(c, check, at))
 }
@@ -1600,7 +1601,7 @@ async function recordChecks($: EngineInterface, command: string, cwd: string, ou
     if (folders.size > 1) return []
     const failures = r.result === 'fail' && isAlone ? failureLines(output) : []
 
-    return [{ ...r, folder, command: own[0]?.command ?? '', failures }]
+    return [{ ...r, folder, command: own[0]?.command ?? '', failures, target: own[0]?.target ?? NO_TARGET }]
   })
   if (ended.length === 0) return
   const results = await Promise.all(ended.map(async r => ({ ...r, repo: await repoOf($, r.folder) })))
@@ -1622,6 +1623,7 @@ async function recordChecks($: EngineInterface, command: string, cwd: string, ou
         command: r.command,
         failures: r.failures,
         repo: r.repo,
+        target: r.target,
       })),
       ranAt,
       root,
@@ -1922,7 +1924,7 @@ export const register: Register = on => {
       turn: ledger.turn,
       press,
       screen: shown,
-      checks: checks.results.map(checkLine),
+      checks: checks.results.map(c => checkLine(c, root)),
     }
     press = null
     person = null
@@ -2068,7 +2070,7 @@ export const register: Register = on => {
     const failedRows = lines.failing.map(c => (
       <Text wrap="truncate-end" color="error">
         {'  '}
-        {checkLine(c)}
+        {checkLine(c, root)}
       </Text>
     ))
 
@@ -2141,7 +2143,7 @@ export const register: Register = on => {
           ? [
               <Text wrap="truncate-end" dimColor>
                 {'  '}
-                {lines.summary.map(checkLine).join(' · ')}
+                {lines.summary.map(c => checkLine(c, root)).join(' · ')}
               </Text>,
             ]
           : []),
@@ -2391,12 +2393,12 @@ export const register: Register = on => {
         id,
         handle: '✗',
         handleTone: 'error',
-        title: checkName(c),
+        title: checkName(c, root),
         titleAfter: ` · ${ago(now - c.ranAt)}${c.isStale ? ', before the last edit' : ''}`,
         line:
           c.fixSentAt === null
-            ? { text: checkName(c), after: `${file ? ` · ${file}` : ''} · ${ago(now - c.ranAt)}` }
-            : { text: checkName(c), after: ` · fix sent ${ago(now - c.fixSentAt)}`, afterTone: 'done' },
+            ? { text: checkName(c, root), after: `${file ? ` · ${file}` : ''} · ${ago(now - c.ranAt)}` }
+            : { text: checkName(c, root), after: ` · fix sent ${ago(now - c.fixSentAt)}`, afterTone: 'done' },
         body: (
           <Box flexDirection="column">
             {wrapLines(file ? `${file}: ${text}` : text, e.props.bodyColumns - 10, 2).map(line => (

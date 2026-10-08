@@ -3,20 +3,21 @@
 // changed after it, and which successes Claude's reply claims. Nothing here
 // asks a model.
 
-import type { Check, CheckKind } from '../types'
+import type { Check, CheckKind, Target } from '../types'
 
 /** One recognized check inside a command, such as `bun test` or `tsc`. */
 export type CheckCall = { name: string; kind: CheckKind }
 
 /** A package manager's options before its script, such as `--prefix app` or `-w pkg`. */
 const PM_OPTIONS = String.raw`(?:-{1,2}[\w-]+(?:=\S+|\s+(?!-|(?:run|test|build|lint)\b)\S+)?\s+)*`
+/** A script such as `test` or `lint:css`; the match's group 2 is its `:css` part, so `lint` and `lint:css` are different checks. */
 const pm = (managers: string, script: string) =>
-  new RegExp(String.raw`\b(${managers})\s+${PM_OPTIONS}(?:run\s+)?${script}\b`)
+  new RegExp(String.raw`\b(${managers})\s+${PM_OPTIONS}(?:run\s+)?(?:${script})(:[\w.:-]*\w)?\b`)
 
 const CHECKS: { kind: CheckKind; pattern: RegExp; name: (m: RegExpMatchArray) => string }[] = [
   { kind: 'tests', pattern: /\bclaude\s+plugin\s+test\b/, name: () => 'plugin tests' },
   { kind: 'validate', pattern: /\bclaude\s+plugin\s+validate\b/, name: () => 'plugin validate' },
-  { kind: 'tests', pattern: pm('bun|npm|pnpm|yarn|deno', 'test'), name: m => `${m[1]} test` },
+  { kind: 'tests', pattern: pm('bun|npm|pnpm|yarn|deno', 'test'), name: m => `${m[1]} test${m[2] ?? ''}` },
   { kind: 'tests', pattern: /\bnode\s+(?:-{1,2}[\w-]+(?:=\S+)?\s+)*--test\b/, name: () => 'node --test' },
   { kind: 'tests', pattern: /\b(vitest|jest|pytest|rspec|mocha|phpunit|ava|tap)\b/, name: m => m[1] ?? 'tests' },
   { kind: 'tests', pattern: /\b(go|cargo|swift|mix|dotnet)\s+test\b/, name: m => `${m[1]} test` },
@@ -25,16 +26,20 @@ const CHECKS: { kind: CheckKind; pattern: RegExp; name: (m: RegExpMatchArray) =>
   { kind: 'tests', pattern: /\bmake\s+(?:check|test)\b/, name: m => m[0] },
   { kind: 'types', pattern: /\btsc\b/, name: () => 'tsc' },
   { kind: 'types', pattern: /\b(mypy|pyright)\b/, name: m => m[1] ?? 'types' },
-  { kind: 'types', pattern: pm('bun|npm|pnpm|yarn', '(?:typecheck|type-check|check-types)'), name: () => 'typecheck' },
+  {
+    kind: 'types',
+    pattern: pm('bun|npm|pnpm|yarn', 'typecheck|type-check|check-types'),
+    name: m => `typecheck${m[2] ?? ''}`,
+  },
   { kind: 'types', pattern: /\bcargo\s+check\b/, name: () => 'cargo check' },
   {
     kind: 'lint',
     pattern: /\b(eslint|biome|ruff|shellcheck|swiftlint|clippy|golangci-lint|stylelint)\b/,
     name: m => m[1] ?? 'lint',
   },
-  { kind: 'lint', pattern: pm('bun|npm|pnpm|yarn', 'lint'), name: () => 'lint' },
+  { kind: 'lint', pattern: pm('bun|npm|pnpm|yarn', 'lint'), name: m => `lint${m[2] ?? ''}` },
   { kind: 'lint', pattern: /\bprettier\b[^|;&]*--check\b/, name: () => 'prettier' },
-  { kind: 'build', pattern: pm('bun|npm|pnpm|yarn', 'build'), name: m => `${m[1]} build` },
+  { kind: 'build', pattern: pm('bun|npm|pnpm|yarn', 'build'), name: m => `${m[1]} build${m[2] ?? ''}` },
   { kind: 'build', pattern: /\b(cargo|go|swift)\s+build\b/, name: m => `${m[1]} build` },
   { kind: 'build', pattern: /\bxcodebuild\b(?![^|;&]*\btest\b)/, name: () => 'xcodebuild' },
   { kind: 'build', pattern: /\b(?:next|vite)\s+build\b/, name: m => m[0] },
@@ -97,13 +102,17 @@ function commandOf(segment: string): string {
 const NOT_A_CHECK =
   /^(?:echo|printf|cat|grep|rg|tail|head|less|ls|cd|git|gh|brew|man|which|type|open|pgrep|pkill|killall|ps|lsof)\b/
 
-/** The check one segment runs, and the word that starts it, such as `npm` or `tsc`. */
-function checkIn(segment: string): { call: CheckCall; runner: string } | null {
+/** The check one segment runs, the word that starts it, such as `npm` or `tsc`, and how many words after it the match used, such as `run lint` after `npm`. */
+function checkIn(segment: string): { call: CheckCall; runner: string; consumed: number } | null {
   const command = commandOf(segment)
   if (NOT_A_CHECK.test(command)) return null
   for (const c of CHECKS) {
     const m = command.match(c.pattern)
-    if (m) return { call: { name: c.name(m), kind: c.kind }, runner: m[0].trim().split(/\s+/)[0] ?? '' }
+    if (m) {
+      const [runner = '', ...used] = m[0].trim().split(/\s+/)
+
+      return { call: { name: c.name(m), kind: c.kind }, runner, consumed: used.length }
+    }
   }
 
   return null
@@ -143,6 +152,91 @@ function resolvePath(from: string, path: string): string {
   return `/${parts.join('/')}`
 }
 
+/** The target of a run of the whole suite. */
+export const NO_TARGET: Target = { paths: [], filters: [] }
+
+/** Flags that change how a run reports or how fast it goes, not what it runs. */
+const OUTPUT_FLAGS = new Set([
+  '--reporter',
+  '--verbose',
+  '-v',
+  '--silent',
+  '--quiet',
+  '-q',
+  '--color',
+  '--no-color',
+  '--ci',
+  '--bail',
+  '-x',
+  '--coverage',
+  '--pretty',
+  '--noEmit',
+  '--passWithNoTests',
+  '--tb',
+  '--maxWorkers',
+  '-j',
+])
+/** The output flags that take their value as the next word. */
+const VALUE_FLAGS = new Set(['--reporter', '--tb', '--maxWorkers', '-j'])
+/** Flags that pick tests by name or by path pattern. */
+const FILTER_FLAGS = new Set(['-t', '--testNamePattern', '--grep', '-g', '-k', '--filter', '-run', '--testPathPattern'])
+/** A word a runner takes as its command, not as a target, as in `vitest run`. */
+const COMMAND_WORDS: Record<string, string[]> = {
+  vitest: ['run'],
+  'golangci-lint': ['run'],
+  ruff: ['check'],
+  biome: ['check', 'lint', 'ci'],
+}
+const REDIRECT = /^(?:\d*|&)[<>]|^&$/
+const isPath = (word: string) => word === '.' || word.includes('/') || /\.[A-Za-z0-9]+$/.test(word)
+
+/**
+ * The part of a suite a run covered, read from the words after its runner
+ * and script. A file or folder narrows it, as does a test-name filter. A flag
+ * that only changes output or speed does not. Any other argument counts as a
+ * filter, so a run read wrongly never clears a failure. `resolve` gives a
+ * path's absolute form, null when it cannot; `folder` is the run's folder.
+ */
+function readTarget(
+  words: string[],
+  runner: string,
+  folder: string | null,
+  resolve: (word: string) => string | null,
+): Target {
+  const paths: string[] = []
+  const filters: string[] = []
+  const add = (list: string[], item: string) => void (list.includes(item) || list.push(item))
+  const rest = words[0] === '--' ? words.slice(1) : words
+  for (let i = 0; i < rest.length; i++) {
+    const word = rest[i] ?? ''
+    if (REDIRECT.test(word)) break
+    const isFlag = word.startsWith('-')
+    const [flag = '', inline] = isFlag && word.includes('=') ? word.split(/=(.*)/s) : [word, undefined]
+    if (OUTPUT_FLAGS.has(flag)) {
+      if (inline === undefined && VALUE_FLAGS.has(flag)) i++
+    } else if (FILTER_FLAGS.has(flag)) {
+      const value = inline ?? rest[++i]
+      add(filters, value === undefined ? flag : `${flag}=${value}`)
+    } else if (COMMAND_WORDS[runner]?.includes(word)) {
+      continue
+    } else if (!isFlag && isPath(word)) {
+      // Go's `./pkg/...` means the folder and everything below it.
+      const path = folder === null ? null : resolve(word.replace(/\/\.\.\.$/, '') || '.')
+      if (path === null) add(filters, word)
+      else if (path !== folder) add(paths, path)
+    } else {
+      add(filters, word)
+    }
+  }
+
+  return { paths, filters }
+}
+
+/** The target of the check run a saved command, run in `folder`, describes; the whole suite when it reads as none. */
+export function targetOfCommand(command: string, folder: string, home: string): Target {
+  return checkRuns(command, folder, home)[0]?.target ?? NO_TARGET
+}
+
 /**
  * The `echo "<label> exit $?"` right after a check's pipeline: the label it
  * prints, how many echoes before it in the command print the same label, and
@@ -152,13 +246,14 @@ function resolvePath(from: string, path: string): string {
 export type ExitEcho = { label: string; nth: number; isOwn: boolean }
 
 /**
- * One time a command runs a check: the check, the piece of the command that
- * runs it (`segment` with quoted text blanked, `command` as written), whether
+ * One time a command runs a check: the check, the part of its suite the run
+ * covered, the piece of the command that runs it (`segment` with quoted text blanked, `command` as written), whether
  * that piece ends the command, the folder it ran in, and the echo that prints
  * its status.
  */
 export type CheckRun = {
   call: CheckCall
+  target: Target
   segment: string
   command: string
   isLast: boolean
@@ -237,23 +332,49 @@ export function checkRuns(command: string, cwd: string, home: string): CheckRun[
       const piece = blank[i]?.text ?? ''
       const found = checkIn(piece)
       if (!found) return
-      const { call, runner } = found
+      const { call, runner, consumed } = found
       const after = words.slice(words.findIndex(w => w === runner || w.endsWith(`/${runner}`)) + 1)
       const options = runner === 'tsc' ? TSC_FOLDER_OPTIONS : FOLDER_OPTIONS
-      // `claude plugin test <folder>`: the first word after `plugin test` that is not an option or a redirect.
-      let named = runner === 'claude' ? after.slice(2).find(w => !/^-|^\d*[<>&]/.test(w)) : undefined
+      // The words that name the folder are not target words.
+      const folderWords = new Set<number>()
+      let named: string | undefined
+      if (runner === 'claude') {
+        // `claude plugin test <folder>`: the first word after `plugin test` that is not an option or a redirect.
+        const j = after.findIndex((w, k) => k >= 2 && !/^-|^\d*[<>&]/.test(w))
+        if (j >= 0) {
+          named = after[j]
+          folderWords.add(j)
+        }
+      }
       after.forEach((w, j) => {
-        const [option = '', value] = w.startsWith('--') && w.includes('=') ? w.split(/=(.*)/s) : [w, after[j + 1]]
-        if (options.has(option) && value !== undefined) named = value
+        const isInline = w.startsWith('--') && w.includes('=')
+        const [option = '', value] = isInline ? w.split(/=(.*)/s) : [w, after[j + 1]]
+        if (options.has(option) && value !== undefined) {
+          named = value
+          folderWords.add(j)
+          if (!isInline) folderWords.add(j + 1)
+        }
       })
       // A project file, such as tsconfig.build.json or Cargo.toml, names its folder.
       if (named && /\.(?:json|toml)$/.test(named)) named = named.replace(/\/?[^/]*$/, '') || '.'
+      const folder = named === undefined ? dir : at(named)
+      const resolve = (word: string): string | null => {
+        const path = expand(word)
+
+        return path === null || folder === null ? null : resolvePath(folder, path)
+      }
       runs.push({
         call,
+        target: readTarget(
+          after.filter((_, j) => j >= consumed && !folderWords.has(j)),
+          runner,
+          folder,
+          resolve,
+        ),
         segment: piece,
         command: segment,
         isLast: i === blank.length - 1,
-        folder: named === undefined ? dir : at(named),
+        folder,
         exitEcho: exitEchoAfter(i),
       })
     }
@@ -428,14 +549,25 @@ function checkDetail(check: Check): string {
   return `${check.summary ? `, ${check.summary}` : ''}${check.isStale ? ', before the last edit' : ''}`
 }
 
-/** "npm test", or "npm test in app" for one that ran outside the session's folder. */
-export function checkName(check: Check): string {
-  return check.folder ? `${check.name} in ${check.folder.replace(/^.*\//, '')}` : check.name
+/** What a check's target adds to its name: its paths relative to the check's folder (`root` for the session's own), then its filters. */
+function targetText(check: Check, root: string): string {
+  const base = check.folder ?? root
+  const paths = check.target.paths.map(p => (p.startsWith(`${base}/`) ? p.slice(base.length + 1) : p))
+
+  return [...paths, ...check.target.filters].join(' ')
+}
+
+/** "npm test", "vitest a.test.ts" for a narrower run, and "npm test in app" for one that ran outside the session's folder `root`. */
+export function checkName(check: Check, root: string): string {
+  const target = targetText(check, root)
+  const name = target ? `${check.name} ${target}` : check.name
+
+  return check.folder ? `${name} in ${check.folder.replace(/^.*\//, '')}` : name
 }
 
 /** "✓ npm test, 24 pass, before the last edit". */
-export function checkLine(check: Check): string {
-  return `${checkMark(check)} ${checkName(check)}${checkDetail(check)}`
+export function checkLine(check: Check, root: string): string {
+  return `${checkMark(check)} ${checkName(check, root)}${checkDetail(check)}`
 }
 
 /** The reply's prose, as its sentences, without code blocks and inline code. */
@@ -526,11 +658,12 @@ export function failureSummary(check: Check): { file: string | null; text: strin
 }
 
 /** What `a: Fix` on a failing check sends Claude. */
-export function fixMessage(check: Check): string {
+export function fixMessage(check: Check, root: string): string {
   const output = outputLines(check)
+  const target = targetText(check, root)
 
   return [
-    `${check.name} failed when you last ran it${check.folder ? ` in ${check.folder}` : ''}.`,
+    `${check.name}${target ? ` ${target}` : ''} failed when you last ran it${check.folder ? ` in ${check.folder}` : ''}.`,
     ...(check.command ? [`Command: ${check.command}`] : []),
     ...(output.length > 0 ? ['Output:', ...output] : []),
     'Find the cause, fix it, and run it again to verify.',

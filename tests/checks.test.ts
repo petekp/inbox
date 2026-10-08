@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Check, Checks } from '../types'
-import { checkRuns, checksIn, failureLines, failureSummary, readResults } from '../hooks/checks'
+import { checkName, checkRuns, checksIn, failureLines, failureSummary, readResults } from '../hooks/checks'
 import { contradictedClaim, markStale, recordCheck } from '../hooks/check-tracking'
 import { candidates, changedPaths, readChanged, readLsTree } from '../hooks/git'
 
@@ -20,6 +20,14 @@ describe('checksIn', () => {
     expect(checksIn('if ! pgrep -x xcodebuild >/dev/null; then echo idle; fi')).toEqual([])
     expect(checksIn('for f in a b; do grep tsc $f; done')).toEqual([])
     expect(checksIn('kill $(pgrep -x xcodebuild)')).toEqual([])
+  })
+
+  test('names a package-manager script by its full script name', () => {
+    expect(checksIn('npm run lint:css')).toEqual([{ name: 'lint:css', kind: 'lint' }])
+    expect(checksIn('pnpm -C app run lint')).toEqual([{ name: 'lint', kind: 'lint' }])
+    expect(checksIn('npm run test:unit -- a.test.ts')).toEqual([{ name: 'npm test:unit', kind: 'tests' }])
+    expect(checksIn('yarn build:prod')).toEqual([{ name: 'yarn build:prod', kind: 'build' }])
+    expect(checksIn('npm run typecheck:app')).toEqual([{ name: 'typecheck:app', kind: 'types' }])
   })
 
   test('names common runners by kind, behind a package manager’s options', () => {
@@ -49,6 +57,57 @@ describe('checkRuns', () => {
     expect(folder('cd "$(git rev-parse --show-toplevel)" && npm test')).toBe(null)
   })
 
+  describe('target', () => {
+    const none = { paths: [], filters: [] }
+    const cases: [string, { paths?: string[]; filters?: string[] }][] = [
+      ['npm test', none],
+      ['vitest run', none],
+      ['vitest run a.test.ts', { paths: ['/work/repo/a.test.ts'] }],
+      [
+        'npx vitest run src/a.test.ts src/b.test.ts --reporter dot',
+        { paths: ['/work/repo/src/a.test.ts', '/work/repo/src/b.test.ts'] },
+      ],
+      ['vitest run -t "parses dates"', { filters: ['-t=parses dates'] }],
+      ['vitest --testNamePattern=parses', { filters: ['--testNamePattern=parses'] }],
+      ['jest --testPathPattern auth', { filters: ['--testPathPattern=auth'] }],
+      ['pytest tests/ -k date -x -q', { paths: ['/work/repo/tests'], filters: ['-k=date'] }],
+      ['pytest -v --tb short --color=yes', none],
+      ['jest --bail --ci --coverage --silent', none],
+      ['npm test -- --coverage', none],
+      ['npm test -- a.test.ts > t.log 2>&1', { paths: ['/work/repo/a.test.ts'] }],
+      ['npm run test:unit -- -t foo', { filters: ['-t=foo'] }],
+      ['bun test src/a.test.ts', { paths: ['/work/repo/src/a.test.ts'] }],
+      ['go test ./...', none],
+      ['go test ./pkg/... -run TestX', { paths: ['/work/repo/pkg'], filters: ['-run=TestX'] }],
+      ['cargo test parses_dates', { filters: ['parses_dates'] }],
+      ['cargo test --manifest-path app/Cargo.toml foo', { filters: ['foo'] }],
+      ['npm --prefix app test src/a.test.ts', { paths: ['/work/repo/app/src/a.test.ts'] }],
+      ['claude plugin test mods/x', none],
+      ['claude plugin test mods/x > t.log 2>&1', none],
+      ['npx tsc --noEmit -p tsconfig.json', none],
+      ['tsc --noEmit --strict', { filters: ['--strict'] }],
+      ['prettier --check .', none],
+      ['prettier --check src', { filters: ['src'] }],
+      ['eslint src/ --max-warnings 0', { paths: ['/work/repo/src'], filters: ['--max-warnings', '0'] }],
+      ['ruff check .', none],
+      ['golangci-lint run ./...', none],
+      ['cd app && vitest run a.test.ts', { paths: ['/work/repo/app/a.test.ts'] }],
+      ['vitest run /work/repo ./', none],
+      ['vitest run ../other/a.test.ts', { paths: ['/work/other/a.test.ts'] }],
+      ['vitest run ~/b.test.ts', { paths: ['/home/me/b.test.ts'] }],
+      ['vitest run a.test.ts < in.txt', { paths: ['/work/repo/a.test.ts'] }],
+      // A path the mod cannot resolve is kept as written, so the run never clears a failure by mistake.
+      ['vitest run $X/a.test.ts', { filters: ['$X/a.test.ts'] }],
+      ['cd - && vitest run a.test.ts', { filters: ['a.test.ts'] }],
+    ]
+
+    for (const [command, expected] of cases) {
+      test(command, () => {
+        expect(runs(command)[0]?.target).toEqual({ ...none, ...expected })
+      })
+    }
+  })
+
   test('gives each run of a check its own folder', () => {
     expect(runs('claude plugin test . ; claude plugin test /tmp/copy').map(r => r.folder)).toEqual([
       '/work/repo',
@@ -61,6 +120,7 @@ describe('checkRuns', () => {
       name: 'plugin tests',
       kind: 'tests',
       folder,
+      target: { paths: [], filters: [] },
       result,
       summary: '',
       ranAt: 1,
@@ -82,6 +142,7 @@ describe('checkRuns', () => {
       name: 'tsc',
       kind: 'types',
       folder: null,
+      target: { paths: [], filters: [] },
       result: 'fail',
       summary: '',
       ranAt: 1,
@@ -98,6 +159,43 @@ describe('checkRuns', () => {
     const script = (result: Check['result']): Check => ({ ...tsc, name: 'check.sh', kind: 'all', result })
     expect(recordCheck([tsc, copy], script('pass'))).toEqual([copy, script('pass')])
     expect(recordCheck([tsc], script('fail'))).toEqual([tsc, script('fail')])
+  })
+})
+
+describe('checkName', () => {
+  const named = (overrides: Partial<Check>) =>
+    checkName(
+      {
+        name: 'vitest',
+        kind: 'tests',
+        folder: null,
+        target: { paths: [], filters: [] },
+        result: 'fail',
+        summary: '',
+        ranAt: 1,
+        repo: null,
+        isStale: false,
+        command: '',
+        failures: [],
+        isLeftFailing: false,
+        isDismissed: false,
+        isSentBack: false,
+        fixSentAt: null,
+        ...overrides,
+      },
+      '/work/repo',
+    )
+
+  test('shows the target after the name, with paths relative to the check’s folder', () => {
+    expect(named({})).toBe('vitest')
+    expect(named({ target: { paths: ['/work/repo/a.test.ts'], filters: [] } })).toBe('vitest a.test.ts')
+    expect(named({ target: { paths: ['/work/repo/src/a.test.ts'], filters: ['-t=parses dates'] } })).toBe(
+      'vitest src/a.test.ts -t=parses dates',
+    )
+    expect(named({ folder: '/work/app', target: { paths: ['/work/app/a.test.ts'], filters: [] } })).toBe(
+      'vitest a.test.ts in app',
+    )
+    expect(named({ target: { paths: ['/work/other/a.test.ts'], filters: [] } })).toBe('vitest /work/other/a.test.ts')
   })
 })
 
@@ -120,6 +218,7 @@ describe('failureLines', () => {
       name: 'tests',
       kind: 'tests',
       folder: null,
+      target: { paths: [], filters: [] },
       result: 'fail',
       summary: 'exit 1',
       ranAt: 1,
@@ -233,6 +332,7 @@ describe('contradictedClaim', () => {
     name: 'bun test',
     kind: 'tests',
     folder: null,
+    target: { paths: [], filters: [] },
     result,
     summary: result === 'fail' ? '2 fail' : '',
     ranAt: 10,
@@ -273,6 +373,7 @@ describe('markStale', () => {
     name: kind,
     kind,
     folder: null,
+    target: { paths: [], filters: [] },
     result: 'pass',
     summary: '',
     ranAt: 10,
