@@ -56,14 +56,6 @@ Claude to run it again or say the change is untested.
 To see every part with sample items, run `/inbox demo`. Run it again to go
 back to your own.
 
-## Limits
-
-- A model writes the summary and picks what goes in the inbox, so it can be
-  wrong.
-- If you answer within a few seconds of a reply, the inbox may not have the
-  question yet. Claude still sees your answer.
-- A question or task you never answer closes after 12 of your messages.
-
 ## Developing
 
 Run the mod from a clone:
