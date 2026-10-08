@@ -3039,9 +3039,16 @@ export const register: Register = on => {
 
       return (
         <Box flexDirection="column">
+          {/* Only `after` shrinks when the line is too long: a shrunk `before` would wrap mid-path. */}
           <Box flexDirection="row">
-            {line.before ? <Text color={pal.muted}>{line.before}</Text> : null}
-            <Button plain key={`title-${row.id}`} label={first} {...hover} onPress={onPress} />
+            {line.before ? (
+              <Box flexShrink={0}>
+                <Text color={pal.muted}>{line.before}</Text>
+              </Box>
+            ) : null}
+            <Box flexShrink={0}>
+              <Button plain key={`title-${row.id}`} label={first} {...hover} onPress={onPress} />
+            </Box>
             {line.after ? (
               <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
                 {line.after}
