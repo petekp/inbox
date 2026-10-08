@@ -600,7 +600,7 @@ test('a PR linked in a reply shows in the PRs tab; its buttons send its conflict
   expect(sent.at(-1)).toContain('Address this review comment on PR #12')
   expect(sent.at(-1)).toContain('bin/greet:4, from @sam:\nQuote the name.')
   await clock.settle()
-  expect(await pane.find({ text: /Address sent ·/ })).toBeDefined()
+  expect(await pane.find({ text: /Sent to Claude to fix ·/ })).toBeDefined()
 
   // Sent to Claude, the thread folds to its first line, with its keys behind Details, until the reviewer answers.
   const details = 'fold-details-acme/greet#12 thread T1'

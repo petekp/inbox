@@ -444,7 +444,7 @@ export function demoView(now: number): View {
       },
       'petekp/inbox#31 thread DT1': {
         action: 'address-DT1',
-        text: 'Address sent',
+        text: 'Sent to Claude to fix',
         at: now - 2 * MIN,
         isHandoff: true,
         turnsStarted: 14,

@@ -536,9 +536,16 @@ function publishStatus($: EngineInterface, isEnding = false): Promise<void> {
     .then(async () => {
       const pane = await $.env.get('HERDR_PANE_ID')
       if (!pane) return
-      const line = isEnding
-        ? ''
-        : statusLine(...(await Promise.all([read($, LEDGER), read($, STOP), read($, DIALOGS)])))
+      const [ledger, stop, dialogs, lastActions, presence] = await Promise.all([
+        read($, LEDGER),
+        read($, STOP),
+        read($, DIALOGS),
+        read($, LAST_ACTIONS),
+        read($, PRESENCE),
+      ])
+      // A task handed to Claude waits on no one, as in the band.
+      const items = ledger.items.filter(i => i.kind !== 'task' || !isTaskHandedOff(lastActions[i.id], presence))
+      const line = isEnding ? '' : statusLine({ ...ledger, items }, stop, dialogs)
       if (line === published) return
       published = line
       const token = line ? ['--token', `inbox=${line}`] : ['--clear-token', 'inbox']
@@ -669,6 +676,7 @@ async function showSettled($: EngineInterface, before: Ledger, after: Ledger) {
 async function recordLastAction($: EngineInterface, id: string, last: Omit<LastAction, 'at' | 'turnsStarted'>) {
   const [at, { turnsStarted }] = await Promise.all([$.clock.now(), read($, PRESENCE)])
   await update($, LAST_ACTIONS, a => ({ ...a, [id]: { ...last, at, turnsStarted } }))
+  if (last.isHandoff) void publishStatus($)
   // A fresh object redraws the pane once the settle time is over, so a removed row's place clears.
   void $.clock
     .sleep(SETTLED_MS)
@@ -763,6 +771,8 @@ function queueUpdate($: EngineInterface, next: { ex: Exchange; turnsStarted: num
       isUpdating: false,
       turnsApplied: state === 'current' ? Math.max(p.turnsApplied, applied) : p.turnsApplied,
     }))
+    // A task handed to Claude unfolds once the update for its turn applies.
+    void publishStatus($)
   })
   // A rejected link would skip every later update, so the chain swallows it.
   queue = queue.catch(() => undefined)
@@ -994,12 +1004,19 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
     })),
     update($, UNFOLDED, u => u.map(readKind)),
     // Before last actions said whether they handed work off, Address, a task's Run step and a typed reply did.
+    // An earlier build saved one for Open and Open log, which record nothing now, as the page they open shows the press.
     update($, LAST_ACTIONS, a =>
       Object.fromEntries(
-        Object.entries(a).map(([id, last]) => [
-          id,
-          { ...last, isHandoff: last.isHandoff ?? /^(address-|help-|typed$)/.test(last.action) },
-        ]),
+        Object.entries(a)
+          .filter(([, last]) => !/^(open|log)-/.test(last.action))
+          .map(([id, last]) => [
+            id,
+            {
+              ...last,
+              text: last.text === 'Address sent' ? ADDRESS_SENT : last.text,
+              isHandoff: last.isHandoff ?? /^(address-|help-|typed$)/.test(last.action),
+            },
+          ]),
       ),
     ),
     update($, SETTLED, s => s.map(x => ({ ...x, kind: readKind(x.kind) }))),
@@ -1478,6 +1495,9 @@ function doneAction($: EngineInterface, item: Item): Action {
     onPress: () => void close($, item.id, { how: 'done', outcome: 'done' }),
   }
 }
+
+/** What a review thread says once Address sends it: what happened to it, not which button was pressed. */
+const ADDRESS_SENT = 'Sent to Claude to fix'
 
 /** A pane action with the key that presses it while the pane has focus. */
 type KeyAction = Action & { hotkey: string }
@@ -2725,7 +2745,7 @@ export const register: Register = on => {
                     @{latest.author}: {commentLine(latest.body)}
                   </Text>
                 ),
-                ...(isChanged ? { note: 'Lines changed since this comment · still open on GitHub' } : {}),
+                ...(t.isLinesChanged ? { note: 'Lines changed since this comment · still open on GitHub' } : {}),
               },
             }
           : {}),
@@ -2753,7 +2773,7 @@ export const register: Register = on => {
             key: `address-${t.id}`,
             label: 'Address',
             hotkey: 'a',
-            done: 'Address sent',
+            done: ADDRESS_SENT,
             handsOff: true,
             onPress: () => void send($, prompts.address(pr, [t])),
           },
@@ -3540,7 +3560,7 @@ export const register: Register = on => {
                     const index = indexOf.get(id) ?? -1
                     void recordLastAction($, id, {
                       action: `address-${t.id}`,
-                      text: 'Address sent',
+                      text: ADDRESS_SENT,
                       isHandoff: true,
                       tab,
                       title: threadWhere(t),

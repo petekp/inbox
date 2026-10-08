@@ -10,7 +10,8 @@ Every surface shows that the same way:
 
 - **It folds.** One line with a ✓ and what was sent, as in "Run load script
   sent · 1m ago". The body and the row's keys sit behind Details, on `v`.
-- **It leaves every "waiting on you" count:** the band and the tab counts.
+- **It leaves every "waiting on you" count:** the band, the tab counts and
+  the Herdr sidebar line.
   A PR's blockers still list it, in words that say it was sent, since it still
   blocks the merge.
 - **It unfolds and counts again** when something shows it waits on the person
@@ -57,8 +58,9 @@ still shows its options after Run, which is the bug the person reported.
    on changed lines". A reply from someone
    else newer than the PR's latest commit keeps it waiting. That needs the
    latest commit's date in `THREADS_QUERY`.
-5. **Which presses hand off work.** Run, Fix, Address, Address all, Resolve
-   conflicts and a typed reply hand work to Claude. Explain, Discuss and Draft
+5. **Which presses hand off work.** Run, Fix, Address, Address all and a
+   typed reply hand a row's work to Claude. Resolve conflicts acts on the
+   whole PR, so it has no row to fold. Explain, Discuss and Draft
    reply ask Claude to talk or draft, and the person still owes a decision or
    a post. So those three record their last action but don't fold the row.
    This replaces the thread rule in action-feedback.md, which folded on

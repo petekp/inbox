@@ -39,7 +39,9 @@ it again must look deliberate.
 - **The key after a press.** The action reads "Discuss again". Reason: as with
   "Fix again", a second press is then a choice, not a retry.
 - **Wording.** It says "<action> sent", as in "Draft reply sent". Reason: the
-  person reads the action they pressed, in the form "Fix sent" set.
+  person reads the action they pressed, in the form "Fix sent" set. Address
+  on a review thread says "Sent to Claude to fix" instead, because "address
+  sent" read as a label, not as what happened.
 - **Opens and copies record nothing.** The browser, app or toast they bring up
   is the feedback, and a note in the pane would only repeat it.
 - **A finding that leaves.** Address, Discuss and a typed reply send the finding
