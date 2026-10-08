@@ -39,8 +39,8 @@ them the base instructions every `codex exec` call includes.
 
 ## Needs
 
-- The Codex desktop app on macOS.
-- Node.js on your PATH. The hooks and the plugin's server run with `node`.
+- The Codex desktop app on macOS. The hooks and the plugin's server run on
+  the Node.js the app ships with, or on `node` from your PATH outside the app.
 
 ## Working on it
 

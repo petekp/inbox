@@ -1,9 +1,10 @@
 {
   "mcpServers": {
     "inbox": {
-      "command": "node",
-      "args": ["./dist/server.mjs"],
+      "command": "/bin/sh",
+      "args": ["-c", "exec \"${CODEX_MCP_NODE_PATH:-node}\" ./dist/server.mjs"],
       "cwd": ".",
+      "env_vars": ["PATH", "HOME", "CODEX_HOME", "CODEX_CLI_PATH", "CODEX_MCP_NODE_PATH"],
       "default_tools_approval_mode": "approve"
     }
   }

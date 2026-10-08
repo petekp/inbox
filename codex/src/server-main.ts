@@ -10,8 +10,9 @@ import { dataDir } from './state'
 import TAB_HTML from './tab.html'
 import { run } from './tree'
 
-/** The codex binary that started this server, which is the desktop app's when the app runs it. */
-async function parentCli(): Promise<string> {
+/** The desktop app's codex binary: from CODEX_CLI_PATH, which .mcp.json passes on, else the binary that started this server. */
+async function appCli(): Promise<string> {
+  if (process.env.CODEX_CLI_PATH) return process.env.CODEX_CLI_PATH
   const r = await run(['ps', '-o', 'comm=', '-p', String(process.ppid)], { cwd: '/', timeoutMs: 5000 })
   const path = r.stdout.trim()
 
@@ -23,7 +24,7 @@ const handle = makeServer({
   now: Date.now,
   exec: run,
   tabHtml: TAB_HTML,
-  fallbackCli: parentCli,
+  fallbackCli: appCli,
 })
 
 createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', line => {

@@ -676,7 +676,8 @@ var run = (args, { cwd, stdin, timeoutMs }) => new Promise((resolve) => {
 });
 
 // src/server-main.ts
-async function parentCli() {
+async function appCli() {
+  if (process.env.CODEX_CLI_PATH) return process.env.CODEX_CLI_PATH;
   const r = await run(["ps", "-o", "comm=", "-p", String(process.ppid)], { cwd: "/", timeoutMs: 5e3 });
   const path = r.stdout.trim();
   return r.code === 0 && /(^|\/)codex$/.test(path) ? path : "codex";
@@ -686,7 +687,7 @@ var handle = makeServer({
   now: Date.now,
   exec: run,
   tabHtml: tab_default,
-  fallbackCli: parentCli
+  fallbackCli: appCli
 });
 createInterface({ input: process.stdin, crlfDelay: Infinity }).on("line", (line) => {
   let message;

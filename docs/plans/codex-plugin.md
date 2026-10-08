@@ -158,9 +158,11 @@ doesn't have. The card after time away and the PRs tab may need it later.
   inbox's own update call and runs that other plugins start. A hook reads
   the first line of `transcript_path`, whose `originator` is `codex_exec` in
   an `exec` run [verified in step 0].
-- **Node:** hooks and the server run `node` from the person's PATH. The
-  desktop app also passes `CODEX_MCP_NODE_PATH`, its own Node, to hooks. A
-  person without Node is not covered yet.
+- **Node:** hooks and the server run on `$CODEX_MCP_NODE_PATH`, the Node
+  the desktop app ships with, and fall back to `node` on the PATH. The server
+  starts through `/bin/sh` to choose, and `.mcp.json` lists the variables
+  Codex passes it in `env_vars`, as OpenAI's bundled plugins do [verified:
+  hooks, server and update ran with no `node` on the PATH].
 
 ### 4. `run_check` would bypass Codex's sandbox
 
