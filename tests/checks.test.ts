@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { Check, Checks } from '../types'
 import { checkName, checkRuns, checksIn, claimsIn, failureLines, failureSummary, readResults } from '../hooks/checks'
-import { contradictedClaim, markStale, recordCheck } from '../hooks/check-tracking'
+import { contradictedClaim } from '../hooks/check-tracking'
 import { candidates, changedPaths, readChanged, readLsTree } from '../hooks/git'
 
 describe('checksIn', () => {
@@ -113,52 +113,6 @@ describe('checkRuns', () => {
       '/work/repo',
       '/tmp/copy',
     ])
-  })
-
-  test('a result replaces only the same check in the same folder', () => {
-    const at = (folder: string | null, result: Check['result']): Check => ({
-      name: 'plugin tests',
-      kind: 'tests',
-      folder,
-      target: { paths: [], filters: [] },
-      result,
-      summary: '',
-      ranAt: 1,
-      repo: '/work/repo',
-      isStale: false,
-      command: '',
-      failures: [],
-      isLeftFailing: false,
-      isDismissed: false,
-      isSentBack: false,
-      fixSentAt: null,
-    })
-    expect(recordCheck([at(null, 'pass')], at('/work/copy', 'fail'))).toHaveLength(2)
-    expect(recordCheck([at(null, 'fail')], at(null, 'pass'))).toEqual([at(null, 'pass')])
-  })
-
-  test('a passing check script replaces every earlier result in its folder', () => {
-    const tsc: Check = {
-      name: 'tsc',
-      kind: 'types',
-      folder: null,
-      target: { paths: [], filters: [] },
-      result: 'fail',
-      summary: '',
-      ranAt: 1,
-      repo: null,
-      isStale: false,
-      command: '',
-      failures: [],
-      isLeftFailing: false,
-      isDismissed: false,
-      isSentBack: false,
-      fixSentAt: null,
-    }
-    const copy: Check = { ...tsc, folder: '/work/copy' }
-    const script = (result: Check['result']): Check => ({ ...tsc, name: 'check.sh', kind: 'all', result })
-    expect(recordCheck([tsc, copy], script('pass'))).toEqual([copy, script('pass')])
-    expect(recordCheck([tsc], script('fail'))).toEqual([tsc, script('fail')])
   })
 })
 
@@ -385,37 +339,6 @@ describe('contradictedClaim', () => {
     expect(contradictedClaim('The tests should pass once CI runs.', checks(ran('fail')))).toBe(null)
     expect(contradictedClaim('Types are clean.', checks(ran('fail')))).toBe(null)
     expect(contradictedClaim('Your reply says "tests pass".', checks(ran('fail')))).toBe(null)
-  })
-})
-
-describe('markStale', () => {
-  const ran = (kind: Check['kind'], repo: string | null): Check => ({
-    name: kind,
-    kind,
-    folder: null,
-    target: { paths: [], filters: [] },
-    result: 'pass',
-    summary: '',
-    ranAt: 10,
-    repo,
-    isStale: false,
-    command: '',
-    failures: [],
-    isLeftFailing: false,
-    isDismissed: false,
-    isSentBack: false,
-    fixSentAt: null,
-  })
-  const staleness = (results: Check[]) => results.map(c => c.isStale)
-
-  test('a code change makes the checks in its repo stale, and no others', () => {
-    const results = [ran('tests', '/a'), ran('lint', '/a'), ran('tests', '/b'), ran('tests', null)]
-    expect(staleness(markStale(results, '/a', true))).toEqual([true, true, false, false])
-  })
-
-  test('a Markdown-only change leaves tests, types and builds current', () => {
-    const results = [ran('tests', '/a'), ran('types', '/a'), ran('lint', '/a'), ran('all', '/a')]
-    expect(staleness(markStale(results, '/a', false))).toEqual([false, false, true, true])
   })
 })
 

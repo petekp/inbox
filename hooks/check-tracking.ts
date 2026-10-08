@@ -55,7 +55,7 @@ function covers(run: Check, result: Check): boolean {
  * result in its folder. An unknown replaces only an unknown it covers, and is
  * not recorded when a pass or fail of its own target is there.
  */
-export function recordCheck(results: Check[], check: Check): Check[] {
+function recordCheck(results: Check[], check: Check): Check[] {
   if (check.result === 'unknown') {
     if (results.some(c => c.result !== 'unknown' && checkKey(c) === checkKey(check))) return results
 
@@ -64,13 +64,6 @@ export function recordCheck(results: Check[], check: Check): Check[] {
   const isAll = check.kind === 'all' && check.result === 'pass'
 
   return [...results.filter(c => !(covers(check, c) || (isAll && c.folder === check.folder))), check]
-}
-
-/** Marks the checks that ran in `repo` stale after its files changed. A Markdown-only change leaves tests, types and builds current. */
-export function markStale(results: Check[], repo: string, isCodeChange: boolean): Check[] {
-  return results.map(c =>
-    c.repo === repo && (isCodeChange || ['lint', 'validate', 'all'].includes(c.kind)) ? { ...c, isStale: true } : c,
-  )
 }
 
 /**
@@ -219,7 +212,7 @@ export function bandLines(checks: Checks, root: string): { failing: Check[]; sum
 }
 
 /** A contradicted claim, with the result it is about. */
-export type Contradicted = Contradiction & { check: Check }
+type Contradicted = Contradiction & { check: Check }
 
 /**
  * Each result that contradicts a success the reply claims, claim by claim:
