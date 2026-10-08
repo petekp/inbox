@@ -36,8 +36,9 @@ in `hooks/register.tsx`.
 
 These apply to every palette:
 
-- The mod draws each key letter itself, in a color that passes. A hidden
-  Button binds the key, as the tab keys already did.
+- Each action's Button draws its own key, so the key reads as part of the
+  action. The key takes the `suggestion` color, which falls under AA in the
+  Light theme. Tab keys and j, k are bound by hidden Buttons.
 - Secondary text uses the palette's muted color, never `dimColor`. Buttons
   drop `dimColor` and draw at full strength.
 - The thread's first comment is drawn as Text in the muted color, because

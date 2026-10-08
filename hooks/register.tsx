@@ -251,12 +251,12 @@ type Palette = {
   raised: string
   /** The text on `raised`; without one, the default text color. */
   raisedText?: string
-  /** The selected row's background. Without one, a bar in `key` marks the row. */
+  /** The selected row's background. Without one, a bar marks the row. */
   selection?: string
   /** Secondary text: ages, counts, labels and closed items. */
   muted: string
-  /** The letters of a selected row's keys. */
-  key: string
+  /** The bar that marks the selected row where there is no `selection`. */
+  bar?: string
   /** The tree's lines. */
   line: string
   /** The rules between rows. */
@@ -291,7 +291,6 @@ const DARK_PALETTE: Palette = {
   raised: '#4c4c4c',
   selection: '#3b4654',
   muted: '#bdbdbd',
-  key: '#b1b9f9',
   line: '#505050',
   divider: '#444444',
   tone: DARK_TONES,
@@ -304,7 +303,6 @@ const LIGHT_PALETTE: Palette = {
   raised: '#d0d0d0',
   selection: '#b4d5ff',
   muted: '#595959',
-  key: '#243bf5',
   line: '#afafaf',
   divider: '#c8c8c8',
   tone: LIGHT_TONES,
@@ -322,7 +320,7 @@ const DARK_ANSI_PALETTE: Palette = {
   raised: 'inactive', // white
   raisedText: 'inverseText', // black
   muted: 'inactive', // white
-  key: 'suggestion', // bright blue
+  bar: 'suggestion', // bright blue
   line: 'userMessageBackground', // bright black
   divider: 'userMessageBackground',
   tone: {},
@@ -333,7 +331,7 @@ const LIGHT_ANSI_PALETTE: Palette = {
   raised: 'text', // black
   raisedText: 'userMessageBackgroundHover', // bright white
   muted: 'inactive', // bright black
-  key: 'suggestion', // blue
+  bar: 'suggestion', // blue
   line: 'userMessageBackground', // white
   divider: 'userMessageBackground',
   tone: {},
@@ -344,7 +342,6 @@ const PALETTES: Record<string, Palette> = {
   dark: DARK_PALETTE,
   'dark-daltonized': {
     ...DARK_PALETTE,
-    key: '#99ccff',
     tone: DARK_DALTONIZED_TONES,
     mark: { ...DARK_DALTONIZED_TONES, error: '#ff6666' },
   },
@@ -355,7 +352,6 @@ const PALETTES: Record<string, Palette> = {
     tab: '#dcdcdc',
     raised: '#c8c8c8',
     muted: '#545454',
-    key: '#003ae8',
     divider: '#c0c0c0',
     tone: LIGHT_DALTONIZED_TONES,
     mark: LIGHT_DALTONIZED_TONES,
@@ -371,7 +367,7 @@ const THEME_KEY_PALETTE: Palette = {
   raised: 'subtle',
   raisedText: 'text',
   muted: 'inactive',
-  key: 'remember',
+  bar: 'remember',
   line: 'subtle',
   divider: 'subtle',
   tone: {},
@@ -2520,26 +2516,17 @@ export const register: Register = on => {
     const indexOf = new Map(ids.map((id, n) => [id, n]))
     const at = selectedIndex(ids, selection[tab])
 
-    // A Button draws its hotkey in the theme's accent, which Claude Code's light
-    // theme draws under 4.5:1 on any background. So a key's letter is Text in the
-    // palette's color, its label a Button, and the key itself a hidden Button. A
-    // Button takes no color, so the recommended answer's letter carries it.
-    const keyedButton = ({ hotkey, ...action }: KeyAction, letter: string) => (
-      <Box key={`keyed-${action.key}`} flexDirection="row">
-        {action.variant === 'primary' ? (
-          <Text bold color={pal.tone.done}>
-            {hotkey}
-          </Text>
-        ) : (
-          <Text color={letter}>{hotkey}</Text>
-        )}
-        <Button plain {...action} label={`: ${action.label}`} />
+    // A plain Button draws "a: Label" with the key in the theme's accent. A
+    // Button takes no color, so a dot before it marks the answer Claude recommended.
+    const keyedButton = (k: KeyAction) => (
+      <Box key={`keyed-${k.key}`} flexDirection="row">
+        {k.variant === 'primary' ? <Text color={pal.mark.done}>● </Text> : null}
+        <Button plain {...k} />
       </Box>
     )
-    const keyRow = (keys: KeyAction[], secondary: KeyAction[] = []) => (
+    const keyRow = (keys: KeyAction[]) => (
       <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-        {keys.map(k => keyedButton(k, pal.key))}
-        {secondary.map(k => keyedButton(k, pal.muted))}
+        {keys.map(keyedButton)}
       </Box>
     )
     // The Buttons that take the pane's keys, drawn in a hidden Box.
@@ -2547,9 +2534,10 @@ export const register: Register = on => {
       keys.map(({ key, ...k }) => <Button key={`${key}${suffix}`} plain {...k} />)
     // A selected row's secondary keys share its key row when they fit, and
     // otherwise take a line of their own rather than wrap mid-row. A key draws
-    // "key: label", and keyRow puts 2 columns between keys.
+    // "key: label", after a dot and a space when recommended, and keyRow puts 2 columns between keys.
     const keysWidth = (keys: KeyAction[]) =>
-      keys.reduce((w, k) => w + k.hotkey.length + 2 + k.label.length, 0) + 2 * Math.max(0, keys.length - 1)
+      keys.reduce((w, k) => w + (k.variant === 'primary' ? 2 : 0) + k.hotkey.length + 2 + k.label.length, 0) +
+      2 * Math.max(0, keys.length - 1)
     // A typed reply needs a text field, so it is left out where there is none.
     const pressable = (keys: KeyAction[]) => keys.filter(k => Input || !k.key.startsWith('typekey-'))
     // A section's children hang from its title like a directory listing. A
@@ -2686,8 +2674,8 @@ export const register: Register = on => {
                 {keys.length === 0
                   ? keyRow(more)
                   : keysWidth([...keys, ...more]) <= e.props.bodyColumns - 3 - (tree ? 7 : 5)
-                    ? keyRow(keys, more)
-                    : [keyRow(keys), keyRow([], more)]}
+                    ? keyRow([...keys, ...more])
+                    : [keyRow(keys), keyRow(more)]}
               </Box>
               {Input && row.onType && typing === row.id ? (
                 <Box marginTop={blankLine}>
@@ -2711,7 +2699,7 @@ export const register: Register = on => {
           only once that row has redrawn expanded. */}
           {isSelected ? (
             <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1}>
-              {pal.selection ? null : <Text color={pal.key}>{SELECTION_BAR}</Text>}
+              {pal.selection ? null : <Text color={pal.bar}>{SELECTION_BAR}</Text>}
             </Box>
           ) : null}
         </Box>

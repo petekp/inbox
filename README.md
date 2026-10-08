@@ -82,9 +82,9 @@ running session.
     quoting the question: `a: Node  b: Python`. Every question has at least
     one. When Claude's reply names no choices, the inbox predicts the likely
     answers, such as `a: Approve  b: Not yet`. If Claude is working, the
-    answer waits until the turn ends. The key of the answer Claude recommended
-    is green. The other actions follow, with gray keys, on the same row
-    when they fit, and on a line of their own when they don't.
+    answer waits until the turn ends. A green dot marks the answer Claude
+    recommended. The other actions follow on the same row when they fit,
+    and on a line of their own when they don't.
   - `t` opens a one-line field for your own words, when no option fits. The
     field takes the keyboard, unless the prompt holds text you were writing.
     Enter sends your words as your message, quoting the item. A question closes
@@ -227,9 +227,10 @@ it back. It does nothing in headless `claude -p` runs.
 - The mod reads at most 2000 uncommitted files, so changes past those go
   unseen.
 - The pane's text meets WCAG AA contrast in the Dark and Light themes, their
-  colorblind-friendly versions, and Auto. The ANSI themes draw in your
-  terminal's palette, and a custom theme in its own colors, so contrast there
-  depends on those colors.
+  colorblind-friendly versions, and Auto. The exception is the action keys in
+  the Light theme, which Claude Code draws in its own blue at 4.4:1. The ANSI
+  themes draw in your terminal's palette, and a custom theme in its own
+  colors, so contrast there depends on those colors.
 
 ## Developing
 
