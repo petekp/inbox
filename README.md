@@ -1,4 +1,4 @@
-# inbox
+# inbox, for claude code
 
 A Claude Code mod that gathers and intelligently manages outstanding questions, tasks, issues, and opportunities into one nicely organized place alongside your session. Just use `/inbox`.
 
