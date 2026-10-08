@@ -68,13 +68,16 @@ running session.
   first, when there are any, then Questions, newest first and numbered 1),
   2), 3), then Your tasks. Each item shows how long it has waited. Lines join
   each group's title to its rows, as in a directory listing.
-  - Failing checks are the checks still failing when Claude last stopped.
+  - Failing checks are the checks still failing when Claude last stopped,
+    in the repo the session started in or a repo Claude edited a file in.
     Each says what failed in up to two lines. When the output names a file,
     the summary starts with it, as in `register.tsx:2310`. Click `▸ Details`
     to unfold the output and the command that ran it. `a: Fix` sends both
     to Claude and asks it to find the cause and fix it. The row then says
     "Fix sent" and no longer counts toward Needs you. `x: Dismiss` hides the
-    row until the check runs again. A run that passes removes it.
+    row, and the check's line above the prompt, until the check runs again.
+    A passing run that covers the same tests removes it: `vitest` covers
+    `vitest a.test.ts`, but not the other way round.
   - On a question, the letters send an answer to Claude as your message,
     quoting the question: `a: Node  b: Python`. Every question has at least
     one. When Claude's reply names no choices, the inbox predicts the likely
@@ -191,9 +194,10 @@ finished work.
 
 The Sonnet call also reads the latest check results, so the card does not
 call a failing run passing. At the end of each turn, if Claude's reply says
-tests, types, lint or a build pass when the latest run of that kind failed
-or ran before the last edit, the mod sends Claude back once. Claude then
-runs the check or says the change is untested. The mod reads the working
+tests, types, lint or a build pass when a run of that kind still fails, or
+the latest one ran before a later edit in its folder, the mod sends Claude
+back, once for each result. Claude then runs the check or says the change is
+untested. The mod reads the working
 tree with git and never writes to the repo.
 
 When the inbox changes, the mod attaches it to your next message. Claude then
