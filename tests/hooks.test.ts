@@ -410,7 +410,7 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
   expect(await band.find({ text: /✓/ })).toBeUndefined()
   expect(await pane.find({ text: /^Deno$/ })).toBeUndefined()
-  await pane.press({ key: 'fold-decide' })
+  await pane.press({ key: 'fold-question' })
   expect(await pane.find({ text: /^Deno$/ })).toBeDefined()
   expect(await pane.find({ text: /^Closed by Claude: no longer applies$/ })).toBeDefined()
 })

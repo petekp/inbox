@@ -13,6 +13,7 @@ import {
   statusLine,
   stopKindOf,
   tasksRunBy,
+  upgradeLedger,
 } from '../hooks/ledger'
 
 const REPLY = `GOAL: Move annotation queue logic into a tested reducer
@@ -31,9 +32,9 @@ describe('parseReply', () => {
     expect(u?.card.done).toEqual(['Reducer built on its own branch', '422 unit tests pass'])
     expect(u?.card.running).toEqual(['vite dev: http://localhost:5173'])
     expect(u?.added.map(a => [a.kind, a.label, a.rec])).toEqual([
-      ['decide', '1', 'yes'],
-      ['decide', '2', null],
-      ['do', null, null],
+      ['question', '1', 'yes'],
+      ['question', '2', null],
+      ['task', null, null],
     ])
     expect(u?.added[0]?.options).toEqual(['Yes', 'No'])
   })
@@ -108,10 +109,10 @@ describe('applyUpdate', () => {
       2,
     )
     expect(second.items.map(i => i.id)).toEqual(['i2', 'i3', 'i4'])
-    expect(second.decided).toEqual([
+    expect(second.closed).toEqual([
       {
         id: 'i1',
-        kind: 'decide',
+        kind: 'question',
         ask: 'Rename Send.swift to Herdr?',
         outcome: 'yes, renamed',
         how: 'update',
@@ -126,7 +127,7 @@ describe('applyUpdate', () => {
     const first = applyUpdate({ ...EMPTY, turn: 1 }, parseReply(REPLY)!, 1, 1)
     const later = applyUpdate({ ...first, turn: 14 }, parseReply('NOW: still going')!, 2, 14)
     expect(later.items.length).toBe(0)
-    expect(later.decided.map(d => [d.id, d.outcome])).toEqual([
+    expect(later.closed.map(d => [d.id, d.outcome])).toEqual([
       ['i1', EXPIRED],
       ['i2', EXPIRED],
       ['i3', EXPIRED],
@@ -162,6 +163,35 @@ describe('applyUpdate', () => {
     const first = applyUpdate(EMPTY, parseReply(REPLY)!, 1, 1)
     const again = applyUpdate(first, parseReply('NEW: decide | 1 | rename send.swift to herdr | - | -')!, 2, 2)
     expect(again.items.length).toBe(3)
+  })
+})
+
+describe('upgradeLedger', () => {
+  test('converts a ledger saved with `decided` and the kinds decide and do', () => {
+    const item = { id: 'i1', label: null, ask: 'Push?', options: [], rec: null, helps: [], turn: 1, at: 5 }
+    const record = { id: 'i3', ask: 'Login', outcome: 'done', how: 'done', at: 9 }
+    const { closed, ...base } = EMPTY
+    const saved = {
+      ...base,
+      items: [
+        { ...item, kind: 'decide' },
+        { ...item, id: 'i2', kind: 'do' },
+      ],
+      decided: [
+        { ...record, kind: 'do' },
+        { ...record, id: 'i4', kind: 'decide' },
+        { ...record, id: 'i5' },
+      ],
+    }
+    const upgraded = upgradeLedger(saved as never)
+
+    expect(upgraded.items.map(i => i.kind)).toEqual(['question', 'task'])
+    expect(upgraded.closed.map(d => [d.id, d.kind])).toEqual([
+      ['i3', 'task'],
+      ['i4', 'question'],
+      ['i5', 'question'],
+    ])
+    expect('decided' in upgraded).toBe(false)
   })
 })
 

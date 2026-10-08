@@ -29,7 +29,7 @@ export function demoView(now: number): View {
       items: [
         {
           id: 'd11',
-          kind: 'decide',
+          kind: 'question',
           label: '1',
           ask: 'Show the Keys list in a footer, or under the tab bar?',
           options: ['Footer', 'Under the tab bar'],
@@ -40,7 +40,7 @@ export function demoView(now: number): View {
         },
         {
           id: 'd12',
-          kind: 'decide',
+          kind: 'question',
           label: '2',
           ask: 'Keep findings open until you confirm a fix?',
           options: ['Keep it open', 'Close it'],
@@ -51,7 +51,7 @@ export function demoView(now: number): View {
         },
         {
           id: 'd13',
-          kind: 'decide',
+          kind: 'question',
           label: '3',
           ask: 'Expire questions after 20 prompts, not 12?',
           options: ['Yes', 'No'],
@@ -62,7 +62,7 @@ export function demoView(now: number): View {
         },
         {
           id: 'd14',
-          kind: 'do',
+          kind: 'task',
           label: null,
           ask: 'Sign in to gh for the PRs tab',
           options: [],
@@ -73,7 +73,7 @@ export function demoView(now: number): View {
         },
         {
           id: 'd15',
-          kind: 'decide',
+          kind: 'question',
           label: null,
           ask: 'Which theme should the README screenshot use?',
           options: [],
@@ -84,7 +84,7 @@ export function demoView(now: number): View {
         },
         {
           id: 'd16',
-          kind: 'do',
+          kind: 'task',
           label: null,
           ask: 'Check the pane in the light theme',
           options: [],
@@ -95,7 +95,7 @@ export function demoView(now: number): View {
         },
         {
           id: 'd17',
-          kind: 'do',
+          kind: 'task',
           label: null,
           ask: 'Run /reload-plugins in your other sessions',
           options: [],
@@ -105,10 +105,10 @@ export function demoView(now: number): View {
           at: now - 25 * MIN,
         },
       ],
-      decided: [
+      closed: [
         {
           id: 'd5',
-          kind: 'decide',
+          kind: 'question',
           ask: 'Rename the Waiting tab?',
           outcome: 'Needs you',
           how: 'answered',
@@ -116,7 +116,7 @@ export function demoView(now: number): View {
         },
         {
           id: 'd6',
-          kind: 'decide',
+          kind: 'question',
           ask: 'Commit the reload fix and the rename as two commits?',
           outcome: 'yes',
           how: 'answered',
@@ -124,7 +124,7 @@ export function demoView(now: number): View {
         },
         {
           id: 'd9',
-          kind: 'do',
+          kind: 'task',
           ask: 'Update Claude Code to 2.1.292',
           outcome: 'done',
           how: 'done',
@@ -132,7 +132,7 @@ export function demoView(now: number): View {
         },
         {
           id: 'd7',
-          kind: 'decide',
+          kind: 'question',
           ask: 'Keep the darker body behind the section cards?',
           outcome: 'closed by Claude: no longer applies: the body matches the tab bar',
           how: 'claude',
@@ -140,7 +140,7 @@ export function demoView(now: number): View {
         },
         {
           id: 'd8',
-          kind: 'decide',
+          kind: 'question',
           ask: 'Add a fourth Session tab?',
           outcome: 'dismissed',
           how: 'dismissed',
@@ -148,7 +148,7 @@ export function demoView(now: number): View {
         },
         {
           id: 'd10',
-          kind: 'decide',
+          kind: 'question',
           ask: 'Draw the tabs on the pane’s own background?',
           outcome: 'Yes, as part of the title bar',
           how: 'answered',
@@ -287,7 +287,7 @@ export function demoView(now: number): View {
         outcome: 'Yes, as part of the title bar',
         how: 'answered',
         at: now,
-        kind: 'decide',
+        kind: 'question',
         index: 1,
       },
     ],

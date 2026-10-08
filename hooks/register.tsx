@@ -5,7 +5,7 @@ import type {
   Check,
   Checks,
   Cursor,
-  Decided,
+  Closed,
   Dialog,
   Help,
   Item,
@@ -81,6 +81,7 @@ import {
   inboxText,
   resetTime,
   readCommandRow,
+  readKind,
   screenText,
   statusLine,
   stopFix,
@@ -107,9 +108,9 @@ const PRESENCE = atom(
   } as Presence,
 )
 const PREVIOUS = atom({ plugin: 'inbox', key: 'previous' } as const, null as Previous | null)
-const TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'waiting' as Tab)
+const TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'needsYou' as Tab)
 const NO_CURSOR: Cursor = { id: null, index: 0 }
-const NO_SELECTION: Record<Tab, Cursor> = { waiting: NO_CURSOR, findings: NO_CURSOR, prs: NO_CURSOR }
+const NO_SELECTION: Record<Tab, Cursor> = { needsYou: NO_CURSOR, findings: NO_CURSOR, prs: NO_CURSOR }
 const SELECTION = atom({ plugin: 'inbox', key: 'selection' } as const, NO_SELECTION)
 // Whether Claude Code uses its `dark` theme, which picks the selected row's tint.
 const THEME = atom({ plugin: 'inbox', key: 'theme' } as const, '')
@@ -190,7 +191,7 @@ const FINDING_SCHEMA = {
 const PANE = 'inbox'
 // Theme keys, so the colors follow the person's Claude Code theme.
 const ACCENT = 'claude'
-const WAITING = 'warning'
+const NEEDS_YOU = 'warning'
 // A child's place under its section: a middle child, the last, or a block the tree passes.
 type TreePos = 'mid' | 'last' | 'pass'
 // More tree lines than a row wraps to; the tree's Box clips the rest.
@@ -255,17 +256,17 @@ type Palette = {
 
 // Hex tuned for one theme, each tone checked against the pane, the cards, the
 // selected tab and the selected row. They hold only for the theme they name.
-const DARK_TONES = { waiting: '#ffc107', findings: '#cab0ff', prs: '#8cc8c0', done: '#7ecd8f', error: '#ffa3b0' }
+const DARK_TONES = { needsYou: '#ffc107', findings: '#cab0ff', prs: '#8cc8c0', done: '#7ecd8f', error: '#ffa3b0' }
 const DARK_DALTONIZED_TONES = {
-  waiting: '#ffcc00',
+  needsYou: '#ffcc00',
   findings: '#cab0ff',
   prs: '#a3c2c2',
   done: '#82c1ff',
   error: '#ffa3a3',
 }
-const LIGHT_TONES = { waiting: '#745417', findings: '#7b00e8', prs: '#006363', done: '#25652f', error: '#a5293d' }
+const LIGHT_TONES = { needsYou: '#745417', findings: '#7b00e8', prs: '#006363', done: '#25652f', error: '#a5293d' }
 const LIGHT_DALTONIZED_TONES = {
-  waiting: '#7a4900',
+  needsYou: '#7a4900',
   findings: '#7400db',
   prs: '#2d5a5a',
   done: '#005885',
@@ -312,7 +313,7 @@ const DARK_ANSI_PALETTE: Palette = {
   line: 'userMessageBackground', // bright black
   divider: 'userMessageBackground',
   tone: {},
-  mark: { waiting: WAITING, findings: FINDINGS, prs: PRS, done: DONE, error: 'error' }, // the bright colors
+  mark: { needsYou: NEEDS_YOU, findings: FINDINGS, prs: PRS, done: DONE, error: 'error' }, // the bright colors
 }
 const LIGHT_ANSI_PALETTE: Palette = {
   body: 'userMessageBackgroundHover', // bright white
@@ -324,7 +325,7 @@ const LIGHT_ANSI_PALETTE: Palette = {
   divider: 'userMessageBackground',
   tone: {},
   // Red, magenta, blue, green and red: the theme's yellow and cyan fall under 3:1 on bright white.
-  mark: { waiting: 'error', findings: FINDINGS, prs: 'suggestion', done: DONE, error: 'error' },
+  mark: { needsYou: 'error', findings: FINDINGS, prs: 'suggestion', done: DONE, error: 'error' },
 }
 const PALETTES: Record<string, Palette> = {
   dark: DARK_PALETTE,
@@ -361,17 +362,17 @@ const THEME_KEY_PALETTE: Palette = {
   line: 'subtle',
   divider: 'subtle',
   tone: {},
-  mark: { waiting: WAITING, findings: FINDINGS, prs: PRS, done: DONE, error: 'error' },
+  mark: { needsYou: NEEDS_YOU, findings: FINDINGS, prs: PRS, done: DONE, error: 'error' },
 }
 const TABS: { id: Tab; label: string; hotkey: string }[] = [
-  { id: 'waiting', label: 'Needs you', hotkey: '1' },
+  { id: 'needsYou', label: 'Needs you', hotkey: '1' },
   { id: 'findings', label: 'Findings', hotkey: '2' },
   { id: 'prs', label: 'PRs', hotkey: '3' },
 ]
 // The Needs you tab lists questions first, because each takes one key.
-const WAITING_GROUPS: { kind: Item['kind']; title: string; empty: string }[] = [
-  { kind: 'decide', title: 'Questions', empty: 'No questions are waiting on you.' },
-  { kind: 'do', title: 'Your tasks', empty: 'No tasks are waiting on you.' },
+const NEEDS_YOU_GROUPS: { kind: Item['kind']; title: string; empty: string }[] = [
+  { kind: 'question', title: 'Questions', empty: 'No questions are waiting on you.' },
+  { kind: 'task', title: 'Your tasks', empty: 'No tasks are waiting on you.' },
 ]
 // How many recently closed items each group lists under its open ones.
 const CLOSED_SHOWN = 3
@@ -583,7 +584,7 @@ async function commitLedger($: EngineInterface, change: (l: Ledger) => Ledger): 
  */
 function listedItems(items: Item[], kind: Item['kind']): Item[] {
   const listed = items.filter(i => i.kind === kind)
-  return kind === 'decide' ? listed.sort((a, b) => b.turn - a.turn) : listed
+  return kind === 'question' ? listed.sort((a, b) => b.turn - a.turn) : listed
 }
 
 /**
@@ -593,7 +594,7 @@ function listedItems(items: Item[], kind: Item['kind']): Item[] {
 async function showSettled($: EngineInterface, before: Ledger, after: Ledger) {
   const open = new Set(after.items.map(i => i.id))
   const settled = before.items.flatMap(item => {
-    const d = open.has(item.id) ? undefined : after.decided.find(x => x.id === item.id)
+    const d = open.has(item.id) ? undefined : after.closed.find(x => x.id === item.id)
     return d ? [{ ...d, index: listedItems(before.items, item.kind).indexOf(item) }] : []
   })
   if (settled.length === 0) return
@@ -761,12 +762,12 @@ async function notePrompt($: EngineInterface, text: string, sentBy: Press | null
   // The inbox when it changed since Claude last read it, or when an item
   // closed since. An empty inbox with nothing closed says nothing new.
   const inbox = inboxText(ledger, isShown)
-  const closed = closedText(ledger.decided.filter(d => !toldClosed.has(d.id)))
+  const closed = closedText(ledger.closed.filter(d => !toldClosed.has(d.id)))
   const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0
   if (closed || (inbox !== toldInbox && !(isEmpty && toldInbox === null))) {
     notes.push(closed ? `${inbox}\n${closed}` : inbox)
     toldInbox = inbox
-    toldClosed = new Set(ledger.decided.map(d => d.id))
+    toldClosed = new Set(ledger.closed.map(d => d.id))
   }
 
   if (sentBy) press = sentBy
@@ -776,9 +777,9 @@ async function notePrompt($: EngineInterface, text: string, sentBy: Press | null
   return notes
 }
 
-/** Asks Claude what an item is about. The item stays open, since nothing was decided. */
+/** Asks Claude what an item is about. The item stays open, since nothing was closed. */
 async function explain($: EngineInterface, item: Item) {
-  const what = item.kind === 'do' ? 'this task you left for me' : 'this question you asked me'
+  const what = item.kind === 'task' ? 'this task you left for me' : 'this question you asked me'
   const options = item.options.length > 0 ? `\nOptions: ${item.options.join(' / ')}` : ''
   const text = `Remind me what ${what} is about: why it came up, and what each choice would mean. Don't act on it yet.\n"${item.ask}"${options}`
   await send($, text, { id: item.id, action: 'explain' })
@@ -915,14 +916,21 @@ function steps(helps: Help[]): { label: string; step: Help[] }[] {
 /**
  * Brings state an earlier version of the mod wrote up to date, and returns the
  * ledger. A reload keeps $.state, so a running session can still hold findings
- * under `notes`, and `notes` as its tab.
+ * under `notes`, and `notes` as its tab, and the Needs you tab as `waiting`,
+ * with item kinds `decide` and `do`.
  */
 async function upgradeState($: EngineInterface): Promise<Ledger> {
   const [ledger] = await Promise.all([
     update($, LEDGER, upgradeLedger),
     update($, PREVIOUS, p => p && { ...p, ledger: upgradeLedger(p.ledger) }),
-    update($, TAB, t => ((t as string) === 'notes' ? 'findings' : t)),
-    update($, SELECTION, s => ({ ...NO_SELECTION, ...s })),
+    update($, TAB, t => ((t as string) === 'notes' ? 'findings' : (t as string) === 'waiting' ? 'needsYou' : t)),
+    update($, SELECTION, ({ waiting, ...s }: Record<Tab, Cursor> & { waiting?: Cursor }) => ({
+      ...NO_SELECTION,
+      ...(waiting ? { needsYou: waiting } : {}),
+      ...s,
+    })),
+    update($, UNFOLDED, u => u.map(readKind)),
+    update($, SETTLED, s => s.map(x => ({ ...x, kind: readKind(x.kind) }))),
     // Presence from before the turn counts existed cannot say whether the last
     // turn's update landed, so that load catches up once.
     update($, PRESENCE, p => ({ ...p, turnsStarted: p.turnsStarted ?? 1, turnsApplied: p.turnsApplied ?? 0 })),
@@ -1015,7 +1023,7 @@ async function sendTypedForItem($: EngineInterface, item: Item, text: string) {
   await update($, TYPING, () => null)
   const words = text.trim()
   if (!words) return
-  if (item.kind === 'do') await send($, `Re the task you left for me, "${item.ask}": ${words}`)
+  if (item.kind === 'task') await send($, `Re the task you left for me, "${item.ask}": ${words}`)
   else await sendAnswer($, item, words)
 }
 
@@ -1371,17 +1379,17 @@ const CHOICE_KEYS = [...'abcfghilm']
  * Explain, and Dismiss for a question.
  */
 function itemKeys($: EngineInterface, item: Item): { keys: KeyAction[]; more: KeyAction[] } {
-  const lettered = [...(item.kind === 'do' ? [] : answerActions($, item)), ...helpActions($, item)]
+  const lettered = [...(item.kind === 'task' ? [] : answerActions($, item)), ...helpActions($, item)]
     .slice(0, CHOICE_KEYS.length)
     .map((a, n) => ({ ...a, hotkey: CHOICE_KEYS[n]! }))
   const explainKey = { key: `explain-${item.id}`, label: 'Explain', hotkey: 'e', onPress: () => void explain($, item) }
   const typeKey = {
     key: `typekey-${item.id}`,
-    label: item.kind === 'do' ? 'Type a reply' : 'Type an answer',
+    label: item.kind === 'task' ? 'Type a reply' : 'Type an answer',
     hotkey: 't',
     onPress: () => void startTyping($, item.id),
   }
-  if (item.kind === 'do')
+  if (item.kind === 'task')
     return { keys: [...lettered, { ...doneAction($, item), hotkey: 'd' }], more: [typeKey, explainKey] }
 
   return {
@@ -1403,19 +1411,19 @@ function capitalized(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-function decisionText(d: Decided): string {
+function closedLine(d: Closed): string {
   return `${d.ask} → ${d.outcome}`
 }
 
 /** An item that closed without the person deciding it: dismissed, expired, or overtaken by the work. */
-function isLapsed(d: Decided): boolean {
+function isLapsed(d: Closed): boolean {
   if (d.how === 'dismissed' || d.how === 'expired' || d.how === 'claude') return true
   // The per-reply update writes its own outcome, so only its wording says the work overtook the item.
   return d.how === 'update' && /^(no longer applies|replaced|superseded|moot)/i.test(d.outcome)
 }
 
 /** The outcome as the pane shows it: "Dismissed", "Yes, renamed". */
-function outcomeText(d: Decided): string {
+function outcomeText(d: Closed): string {
   return capitalized(d.outcome)
 }
 
@@ -1425,7 +1433,7 @@ function outcomeText(d: Decided): string {
  */
 const PR_STATUSES: Record<PrStatus, { mark: string; tone: Tone | null }> = {
   ready: { mark: '✓', tone: 'done' },
-  blocked: { mark: '◇', tone: 'waiting' },
+  blocked: { mark: '◇', tone: 'needsYou' },
   draft: { mark: '◇', tone: null },
   merged: { mark: '◇', tone: 'findings' },
   closed: { mark: '◇', tone: 'error' },
@@ -1433,7 +1441,7 @@ const PR_STATUSES: Record<PrStatus, { mark: string; tone: Tone | null }> = {
 
 /** A finding's kind as the Findings tab draws it: a mark before its name, both in the kind's tone. */
 const FINDING_BADGES: Record<Finding['kind'], { label: string; mark: string; tone: Tone }> = {
-  issue: { label: 'Issue', mark: '▲', tone: 'waiting' },
+  issue: { label: 'Issue', mark: '▲', tone: 'needsYou' },
   opportunity: { label: 'Opportunity', mark: '✦', tone: 'done' },
 }
 
@@ -2086,7 +2094,7 @@ export const register: Register = on => {
     // The items themselves live in /inbox; the band only says how many wait.
     const hints = [
       ...settledHint,
-      waiting > 0 ? <Text color={WAITING}> · {waiting} waiting on you in /inbox</Text> : null,
+      waiting > 0 ? <Text color={NEEDS_YOU}> · {waiting} waiting on you in /inbox</Text> : null,
       findingCount > 0 ? (
         <Text color={FINDINGS}> · {findingCount === 1 ? '1 finding' : `${findingCount} findings`} in /inbox</Text>
       ) : null,
@@ -2099,7 +2107,7 @@ export const register: Register = on => {
           <Text color={ACCENT}>◆ </Text>
           <Text dimColor>{goal}</Text>
           {settledHint}
-          {waiting > 0 ? <Text color={WAITING}> · {waiting} waiting on you</Text> : null}
+          {waiting > 0 ? <Text color={NEEDS_YOU}> · {waiting} waiting on you</Text> : null}
         </Text>
       )
     }
@@ -2140,11 +2148,11 @@ export const register: Register = on => {
             ]
           : []),
         ...openRows,
-        ...(ledger.decided.length > 0
+        ...(ledger.closed.length > 0
           ? [
               <Text wrap="truncate-end" dimColor>
                 {'  Closed: '}
-                {ledger.decided.slice(-2).map(decisionText).join(' · ')}
+                {ledger.closed.slice(-2).map(closedLine).join(' · ')}
               </Text>,
             ]
           : []),
@@ -2257,7 +2265,7 @@ export const register: Register = on => {
     // needs no context line. A recommendation that names an answer is marked on
     // that answer's key instead of in the body.
     const itemRow = (item: Item, handle: string): Row => {
-      const rec = item.rec && item.kind !== 'do' && recommendedIndex(answers(item), item.rec) < 0 ? item.rec : null
+      const rec = item.rec && item.kind !== 'task' && recommendedIndex(answers(item), item.rec) < 0 ? item.rec : null
 
       const asked = item.at === null ? undefined : ` · ${ago(now - item.at)}`
 
@@ -2275,7 +2283,7 @@ export const register: Register = on => {
         keys: () => itemKeys($, item).keys,
         moreKeys: () => itemKeys($, item).more,
         onType: (text: string) => void sendTypedForItem($, item, text),
-        typeHint: item.kind === 'do' ? 'Your reply to Claude' : 'Your answer',
+        typeHint: item.kind === 'task' ? 'Your reply to Claude' : 'Your answer',
       }
     }
     const findingRow = (finding: Finding): Row => ({
@@ -2494,23 +2502,25 @@ export const register: Register = on => {
     // Each tab's rows in order: the cursor, the counts and the drawing all read these.
     const failedChecks = checks.results.filter(c => c.isLeftFailing && !c.isDismissed)
     const failedCheckRows = failedChecks.map(failedCheckRow)
-    const checksWaiting = failedChecks.filter(c => c.fixSentAt === null).length
-    const waitingGroups = WAITING_GROUPS.map(g => ({
+    const checksNeedingYou = failedChecks.filter(c => c.fixSentAt === null).length
+    const needsYouGroups = NEEDS_YOU_GROUPS.map(g => ({
       ...g,
-      rows: listedItems(ledger.items, g.kind).map((item, n) => itemRow(item, g.kind === 'decide' ? `${n + 1})` : '•')),
+      rows: listedItems(ledger.items, g.kind).map((item, n) =>
+        itemRow(item, g.kind === 'question' ? `${n + 1})` : '•'),
+      ),
     }))
     const prGroups = prViews.map(pr => ({
       pr,
       rows: [...failingChecks(pr).map(c => checkRow(pr, c)), ...waitingThreads(pr).map(t => threadRow(pr, t))],
     }))
     const rows: Record<Tab, Row[]> = {
-      waiting: [...failedCheckRows, ...waitingGroups.flatMap(g => g.rows)],
+      needsYou: [...failedCheckRows, ...needsYouGroups.flatMap(g => g.rows)],
       findings: [...ledger.findings].reverse().map(findingRow),
       prs: prGroups.flatMap(g => g.rows),
     }
     // What each tab's count says waits on the person: a check whose fix went to Claude waits on Claude.
     const tabCounts: Record<Tab, number> = {
-      waiting: ledger.items.length + checksWaiting,
+      needsYou: ledger.items.length + checksNeedingYou,
       findings: rows.findings.length,
       prs: rows.prs.length - prViews.flatMap(pr => failingChecks(pr).filter(c => prFixSentAt(pr, c) !== null)).length,
     }
@@ -2870,7 +2880,7 @@ export const register: Register = on => {
               <Text color={pal.line}>{hasChildren ? '│' : ' '}</Text>
             </Box>,
           ]
-    const waitingView = () => {
+    const needsYouView = () => {
       // An item that just closed stays where its row was in its group, with a
       // check and its outcome, until it joins the group's closed items. It
       // cannot be selected.
@@ -2891,7 +2901,7 @@ export const register: Register = on => {
           `settled-${s.id}`,
         )
       // A closed item under its group's open ones: what was asked, then how it closed and when.
-      const closedRow = (d: Decided, pos: TreePos) =>
+      const closedRow = (d: Closed, pos: TreePos) =>
         treeRow(
           pos,
           <Text color={pal.muted}>◇</Text>,
@@ -2923,11 +2933,11 @@ export const register: Register = on => {
           `fold-row-${kind}`,
         )
       }
-      const groups = waitingGroups.map(g => {
+      const groups = needsYouGroups.map(g => {
         const entries: ({ row: Row } | { settled: Settled })[] = g.rows.map(row => ({ row }))
         for (const s of fresh.filter(x => x.kind === g.kind))
           entries.splice(Math.min(s.index, entries.length), 0, { settled: s })
-        const closed = ledger.decided
+        const closed = ledger.closed
           .filter(d => d.kind === g.kind && !showing.has(d.id))
           .slice(-CLOSED_SHOWN)
           .reverse()
@@ -2971,7 +2981,7 @@ export const register: Register = on => {
         failedCheckRows.length > 0
           ? [
               section([
-                groupTitle('Failing checks', checksWaiting),
+                groupTitle('Failing checks', checksNeedingYou),
                 ...titleGap(),
                 ...divided(
                   failedCheckRows.map((row, n) => listRow(row, childPos(n, failedCheckRows.length))),
@@ -3129,7 +3139,7 @@ export const register: Register = on => {
       <Box flexDirection="column" minHeight={isInline ? undefined : e.props.scroll.bodyRows} backgroundColor={pal.body}>
         {tabs}
         <Box flexDirection="column" paddingX={1} paddingTop={blankLine} flexGrow={1}>
-          {tab === 'findings' ? findingsView() : tab === 'prs' ? prsView() : waitingView()}
+          {tab === 'findings' ? findingsView() : tab === 'prs' ? prsView() : needsYouView()}
         </Box>
         {footer}
         <Box display="none">

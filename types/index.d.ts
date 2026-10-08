@@ -10,7 +10,7 @@ export type Card = {
 /** Something the agent put to the person that is still unanswered. */
 export type Item = {
   id: string
-  kind: 'decide' | 'do'
+  kind: 'question' | 'task'
   /** The agent's own number or id for it ("1", "D3"), so "1. yes" maps back. */
   label: string | null
   ask: string
@@ -37,7 +37,7 @@ export type Help =
   | { kind: 'link'; url: string; name: string | null }
 
 /** An item that closed, and how. */
-export type Decided = {
+export type Closed = {
   id: string
   kind: Item['kind']
   ask: string
@@ -53,7 +53,7 @@ export type Decided = {
 }
 
 /** An item that just closed, and where its row stood among the open items of its kind. */
-export type Settled = Decided & { index: number }
+export type Settled = Closed & { index: number }
 
 /** Something Claude noticed outside the current task and recorded for the person. */
 export type Finding = {
@@ -106,7 +106,7 @@ export type PrView = {
 export type Ledger = {
   card: Card | null
   items: Item[]
-  decided: Decided[]
+  closed: Closed[]
   findings: Finding[]
   /** PRs this session created or linked, as "owner/repo#123". */
   prs: string[]
@@ -202,7 +202,7 @@ export type Previous = {
   isBroughtIn: boolean
 }
 
-export type Tab = 'waiting' | 'findings' | 'prs'
+export type Tab = 'needsYou' | 'findings' | 'prs'
 
 /** A tab's selected row: its id, and its position for when that row goes away. */
 export type Cursor = { id: string | null; index: number }
@@ -235,7 +235,7 @@ declare module 'claude-code' {
       typing: string | null
       /** Items that just closed, shown in place with their outcome for a few seconds. */
       settled: Settled[]
-      /** The Waiting groups whose closed items show. Each starts folded. */
+      /** The Needs you groups whose closed items show. Each starts folded. */
       unfolded: Item['kind'][]
       /** The pane's list of the keys no row shows is unfolded. */
       isKeyListShown: boolean

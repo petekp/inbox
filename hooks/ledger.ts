@@ -1,11 +1,11 @@
 import type { SessionMessage } from 'claude-code'
 
-import type { Card, Decided, Dialog, Finding, Help, Item, Ledger, Stop } from '../types'
+import type { Card, Closed, Dialog, Finding, Help, Item, Ledger, Stop } from '../types'
 
 export const EMPTY: Ledger = {
   card: null,
   items: [],
-  decided: [],
+  closed: [],
   findings: [],
   prs: [],
   nextId: 1,
@@ -17,30 +17,43 @@ const NL = '\n'
 const MAX_OPEN = 20
 /** Prompts after which an unanswered item is dropped as moot. */
 const STALE_AFTER = 12
-const MAX_DECIDED = 12
+const MAX_CLOSED = 12
 /** The outcome of an item left unanswered until it went stale. */
 export const EXPIRED = 'expired, unanswered'
 const MAX_HELPS = 3
 const MAX_FINDINGS = 30
 
+/** The inbox model's protocol names the two kinds decide and do. */
+const MODEL_KIND: Record<Item['kind'], 'decide' | 'do'> = { question: 'decide', task: 'do' }
+
+/** Reads a kind the model wrote or an older version saved; anything but a task is a question. */
+export function readKind(kind: string | null | undefined): Item['kind'] {
+  return kind === 'task' || kind === 'do' ? 'task' : 'question'
+}
+
 /**
  * A ledger saved by an earlier version of the mod, in the current shape.
  * Findings were once saved as `notes`; items once had no time, and closed
- * items no kind or `how`, so an old closed item counts as a question.
+ * items no kind or `how`, so an old closed item counts as a question. Closed
+ * items were saved as `decided`, and kinds as `decide` and `do`.
  */
 export function upgradeLedger(ledger: Ledger): Ledger {
-  const { notes, ...rest } = ledger as Ledger & { notes?: Finding[] }
+  const { notes, decided, ...rest } = ledger as Ledger & { notes?: Finding[]; decided?: Ledger['closed'] }
 
   return {
     ...rest,
     findings: [...(rest.findings ?? []), ...(notes ?? [])],
-    items: rest.items.map(i => ({ ...i, at: i.at ?? null })),
-    decided: rest.decided.map(d => ({ ...d, kind: d.kind ?? 'decide', how: d.how ?? howFromOutcome(d.outcome) })),
+    items: rest.items.map(i => ({ ...i, kind: readKind(i.kind), at: i.at ?? null })),
+    closed: (rest.closed ?? decided ?? []).map(d => ({
+      ...d,
+      kind: readKind(d.kind),
+      how: d.how ?? howFromOutcome(d.outcome),
+    })),
   }
 }
 
 /** How a closed item saved before `how` existed closed, read from its outcome's wording. */
-function howFromOutcome(outcome: string): Decided['how'] {
+function howFromOutcome(outcome: string): Closed['how'] {
   if (outcome === 'dismissed') return 'dismissed'
   if (outcome === EXPIRED) return 'expired'
   if (outcome === 'done' || outcome === 'you ran it') return 'done'
@@ -328,10 +341,10 @@ function ledgerBlocks(ledger: Ledger): string[] {
         ...ledger.card.running.map(r => `RUNNING: ${r}`),
       ].join(NL)
     : ''
-  const open = ledger.items.map(i => `${i.id} | ${i.kind} | ${i.label ?? '-'} | ${i.ask}`).join(NL)
+  const open = ledger.items.map(i => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? '-'} | ${i.ask}`).join(NL)
   const findings = ledger.findings.map(f => `${f.id} | ${f.kind}: ${f.title}`).join(NL)
   // An expired item was never answered, so the reply may ask it again.
-  const decided = ledger.decided
+  const closed = ledger.closed
     .filter(d => d.how !== 'expired')
     .slice(-8)
     .map(d => `${d.ask} → ${outcomeText(d)}`)
@@ -341,7 +354,7 @@ function ledgerBlocks(ledger: Ledger): string[] {
     `<card>${NL}${card}${NL}</card>`,
     `<open>${NL}${open}${NL}</open>`,
     `<findings>${NL}${findings}${NL}</findings>`,
-    `<decided>${NL}${decided}${NL}</decided>`,
+    `<decided>${NL}${closed}${NL}</decided>`,
   ]
 }
 
@@ -372,7 +385,7 @@ export function screenText(isPaneOpen: boolean, tab: string): string {
 export function tasksRunBy(ledger: Ledger, command: string): Item[] {
   const typed = squash(command)
 
-  return ledger.items.filter(i => i.kind === 'do' && i.helps.some(h => isCommand(h) && squash(h.command) === typed))
+  return ledger.items.filter(i => i.kind === 'task' && i.helps.some(h => isCommand(h) && squash(h.command) === typed))
 }
 
 /** A transcript row of the person's own command, as session.append carries it. */
@@ -454,7 +467,7 @@ export function parseReply(text: string, source: string | null = null): Update |
       const rec = rest.length > 1 ? rest.pop() : null
       if (!ask) continue
       added.push({
-        kind: kind === 'do' ? 'do' : 'decide',
+        kind: readKind(kind),
         label: label ?? null,
         ask,
         options: rest.flatMap(o => o?.split(/\s+\/\s+/) ?? []).filter(Boolean),
@@ -563,17 +576,17 @@ export function closeByClaude(
 }
 
 /** How an item is closing: what the pane shows, and how it closed. */
-export type Closing = Pick<Decided, 'how' | 'outcome'>
+export type Closing = Pick<Closed, 'how' | 'outcome'>
 
 /** Closes one item, recording how it closed. */
 export function closeItem(ledger: Ledger, id: string, closing: Closing, now: number): Ledger {
   return {
     ...ledger,
     items: ledger.items.filter(i => i.id !== id),
-    decided: [
-      ...ledger.decided,
+    closed: [
+      ...ledger.closed,
       ...ledger.items.filter(i => i.id === id).map(i => ({ id, kind: i.kind, ask: i.ask, ...closing, at: now })),
-    ].slice(-MAX_DECIDED),
+    ].slice(-MAX_CLOSED),
   }
 }
 
@@ -587,13 +600,13 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
     updatedAt: now,
   }
   const closing = new Map(u.closed.map(c => [c.id, c.outcome]))
-  const decided = [...ledger.decided]
+  const closed = [...ledger.closed]
   const items: Item[] = []
   for (const item of ledger.items) {
     const outcome = closing.get(item.id)
     const helps = u.helped.filter(h => h.id === item.id).reduce((all, h) => withHelp(all, h.help), item.helps)
     if (outcome === undefined) items.push({ ...item, helps })
-    else decided.push({ id: item.id, kind: item.kind, ask: item.ask, outcome, how: 'update', at: now })
+    else closed.push({ id: item.id, kind: item.kind, ask: item.ask, outcome, how: 'update', at: now })
   }
 
   let nextId = ledger.nextId
@@ -614,13 +627,13 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
   const kept = items.filter(i => turn - i.turn <= STALE_AFTER).slice(-MAX_OPEN)
   for (const i of items)
     if (!kept.includes(i))
-      decided.push({ id: i.id, kind: i.kind, ask: i.ask, outcome: EXPIRED, how: 'expired', at: now })
+      closed.push({ id: i.id, kind: i.kind, ask: i.ask, outcome: EXPIRED, how: 'expired', at: now })
 
   return {
     ...ledger,
     card,
     items: kept,
-    decided: decided.slice(-MAX_DECIDED),
+    closed: closed.slice(-MAX_CLOSED),
     findings: ledger.findings.filter(f => !closing.has(f.id)),
     nextId,
     batchTurn: added > 0 ? turn : ledger.batchTurn,
@@ -636,7 +649,7 @@ function describe(item: Item): string {
   const parts = [`"${item.ask}"`]
   if (item.options.length > 0) parts.push(`options: ${item.options.join(' / ')}`)
   if (item.rec) parts.push(`recommended: ${item.rec}`)
-  if (item.kind === 'do') parts.push('an action for the user')
+  if (item.kind === 'task') parts.push('an action for the user')
 
   return parts.join('; ')
 }
@@ -750,9 +763,9 @@ export function carryText(ledger: Ledger, title: string, isOwn = false): string 
     out.push(isOwn ? 'Findings you recorded, still open:' : 'Findings that session recorded, still open:')
     for (const f of findings) out.push(findingLine(f, isOwn))
   }
-  if (ledger.decided.length > 0) {
+  if (ledger.closed.length > 0) {
     out.push('Recently closed:')
-    for (const d of ledger.decided.slice(-6)) out.push(`- "${d.ask}" → ${outcomeText(d)}`)
+    for (const d of ledger.closed.slice(-6)) out.push(`- "${d.ask}" → ${outcomeText(d)}`)
   }
 
   return out.join(NL)
@@ -781,7 +794,7 @@ export function inboxText(ledger: Ledger, isPaneOpen: boolean): string {
 }
 
 /** How an item closed, in words a model reads without the mod's vocabulary. */
-function outcomeText(d: Decided): string {
+function outcomeText(d: Closed): string {
   if (d.how === 'dismissed') return 'dismissed by the user'
   if (d.how === 'expired') return 'expired before the user answered'
 
@@ -792,9 +805,9 @@ function outcomeText(d: Decided): string {
  * The items closed since Claude last read the inbox, so Claude can tell a
  * dismissed question from one still waiting, and an expired one from one answered.
  */
-export function closedText(decided: Decided[]): string | null {
-  if (decided.length === 0) return null
-  const advice = (d: Decided) =>
+export function closedText(closed: Closed[]): string | null {
+  if (closed.length === 0) return null
+  const advice = (d: Closed) =>
     d.how === 'dismissed'
       ? '. Ask it again only if the user brings it up.'
       : d.how === 'expired'
@@ -803,7 +816,7 @@ export function closedText(decided: Decided[]): string | null {
 
   return [
     'Closed since you last read the inbox:',
-    ...decided.map(d => `- "${d.ask}" → ${outcomeText(d)}${advice(d)}`),
+    ...closed.map(d => `- "${d.ask}" → ${outcomeText(d)}${advice(d)}`),
   ].join(NL)
 }
 
