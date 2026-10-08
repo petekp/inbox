@@ -46,20 +46,43 @@ const CHECKS: { kind: CheckKind; pattern: RegExp; name: (m: RegExpMatchArray) =>
   { kind: 'all', pattern: /(?:^|\s)(?:\S*\/)?checks?\.sh\b/, name: m => m[0].trim().replace(/^.*\//, '') },
 ]
 
+/** A piece of a shell command and the operator after it: `&&`, `||`, `;`, a newline, `|`, or '' at the end. */
+type Segment = { text: string; next: string }
+
 /**
  * The pieces of a shell command that run one after another or in a pipe, with
- * heredoc bodies removed. Quoted strings are blanked, so `git commit -m "fix tsc"`
+ * heredoc bodies removed and continued lines joined. A command substitution
+ * stays inside its piece, so `-xctestrun $(ls *.xctestrun | head -1)` is not a
+ * pipe. Quoted strings and substitutions are blanked, so `git commit -m "fix tsc"`
  * runs no tsc, unless `keepQuotes`, for reading the paths a command names.
  */
-function segments(command: string, keepQuotes = false): string[] {
+function segments(command: string, keepQuotes = false): Segment[] {
   const quoted: string[] = []
-
-  return command
+  const substituted: string[] = []
+  let masked = command
     .replace(/<<-?\s*(["']?)(\w+)\1[^\n]*\n[\s\S]*?\n\2\b/g, ' ')
     .replace(/(["'])(?:\\.|(?!\1)[\s\S])*\1/g, q => `\0${quoted.push(q) - 1}\0`)
-    .split(/&&|\|\||;|\n|\|/)
-    .map(s => s.replace(/\0(\d+)\0/g, (_, i: string) => (keepQuotes ? (quoted[Number(i)] ?? '') : '""')).trim())
-    .filter(Boolean)
+    .replace(/\\\n/g, ' ')
+  // Innermost first, so a substitution inside another one is masked too.
+  for (let before = ''; before !== masked;) {
+    before = masked
+    masked = masked.replace(/\$\([^()]*\)|`[^`]*`/g, s => `\x01${substituted.push(s) - 1}\x01`)
+  }
+  const unmask = (text: string): string => {
+    let out = text
+    while (/\x01\d+\x01/.test(out))
+      out = out.replace(/\x01(\d+)\x01/g, (_, n: string) => (keepQuotes ? (substituted[Number(n)] ?? '') : '""'))
+
+    return out.replace(/\0(\d+)\0/g, (_, n: string) => (keepQuotes ? (quoted[Number(n)] ?? '') : '""'))
+  }
+  const parts = masked.split(/(&&|\|\||;|\n|\|)/)
+  const found: Segment[] = []
+  for (let i = 0; i < parts.length; i += 2) {
+    const text = unmask(parts[i] ?? '').trim()
+    if (text) found.push({ text, next: parts[i + 1] ?? '' })
+  }
+
+  return found
 }
 
 /** A segment without the shell syntax before its command, such as `if !` in `if ! pgrep -x xcodebuild` or `do`. */
@@ -90,7 +113,7 @@ function checkIn(segment: string): { call: CheckCall; runner: string } | null {
 export function checksIn(command: string): CheckCall[] {
   const found: CheckCall[] = []
   for (const segment of segments(command)) {
-    const call = checkIn(segment)?.call
+    const call = checkIn(segment.text)?.call
     if (call && !found.some(f => f.name === call.name)) found.push(call)
   }
 
@@ -121,11 +144,39 @@ function resolvePath(from: string, path: string): string {
 }
 
 /**
+ * The `echo "<label> exit $?"` right after a check's pipeline: the label it
+ * prints, how many echoes before it in the command print the same label, and
+ * whether `$?` is the check's own status. After `check | tail` it is tail's,
+ * unless the command sets pipefail.
+ */
+export type ExitEcho = { label: string; nth: number; isOwn: boolean }
+
+/**
  * One time a command runs a check: the check, the piece of the command that
  * runs it (`segment` with quoted text blanked, `command` as written), whether
- * that piece ends the command, and the folder it ran in.
+ * that piece ends the command, the folder it ran in, and the echo that prints
+ * its status.
  */
-export type CheckRun = { call: CheckCall; segment: string; command: string; isLast: boolean; folder: string | null }
+export type CheckRun = {
+  call: CheckCall
+  segment: string
+  command: string
+  isLast: boolean
+  folder: string | null
+  exitEcho: ExitEcho | null
+}
+
+/** The label an `echo "<label> exit $?"` prints, '' for `echo "exit=$?"`, or null for a segment that prints no status. */
+function echoedLabel(segment: string): string | null {
+  const [first, ...printed] = wordsOf(commandOf(segment))
+  if (first !== 'echo' || !printed.some(w => w.includes('$?'))) return null
+  const text = printed
+    .filter(w => !/^-[neE]+$/.test(w))
+    .join(' ')
+    .replace(/\$\?/g, '0')
+
+  return exitLines(text)[0]?.label ?? null
+}
 
 /**
  * Each check a command runs, in order, with its folder, absolute: where the
@@ -154,7 +205,20 @@ export function checkRuns(command: string, cwd: string, home: string): CheckRun[
   }
 
   const blank = segments(command)
-  segments(command, true).forEach((segment, i) => {
+  const kept = segments(command, true)
+  const echoes = kept.map(s => echoedLabel(s.text))
+  const isPipefail = /\bset\s+(?:-\w+\s+)*-\w*o\s+pipefail\b/.test(command)
+  // The echo after a pipeline prints the status of the pipeline's last command.
+  const exitEchoAfter = (i: number): ExitEcho | null => {
+    let end = i
+    while (kept[end]?.next === '|') end++
+    const label = echoes[end + 1]
+
+    return label === null || label === undefined
+      ? null
+      : { label, nth: echoes.slice(0, end + 1).filter(l => l === label).length, isOwn: end === i || isPipefail }
+  }
+  kept.forEach(({ text: segment }, i) => {
     const words = wordsOf(commandOf(segment))
     const [first = '', ...rest] = words
     const assigned = first === 'export' ? rest : words
@@ -170,7 +234,7 @@ export function checkRuns(command: string, cwd: string, home: string): CheckRun[
     } else if (first === 'popd') {
       dir = null
     } else {
-      const piece = blank[i] ?? ''
+      const piece = blank[i]?.text ?? ''
       const found = checkIn(piece)
       if (!found) return
       const { call, runner } = found
@@ -190,6 +254,7 @@ export function checkRuns(command: string, cwd: string, home: string): CheckRun[
         command: segment,
         isLast: i === blank.length - 1,
         folder: named === undefined ? dir : at(named),
+        exitEcho: exitEchoAfter(i),
       })
     }
   })
@@ -232,7 +297,9 @@ export function failureLines(output: string): string[] {
 
 /** "<label> exit N" lines a command printed, such as `echo "tsc exit $?"`, `exit: 1` or `exit=1`. */
 function exitLines(output: string): { label: string; code: number }[] {
-  return [...output.matchAll(/^\s*(?:(\S[^\n]*?)\s+)?exit(?:\s+code)?(?:\s*[:=]\s*|\s+)(\d+)\s*$/gim)].map(m => ({
+  return [
+    ...output.matchAll(/^[ \t]*(?:(\S[^\n]*?)[ \t]+)?exit(?:[ \t]+code)?(?:[ \t]*[:=][ \t]*|[ \t]+)(\d+)[ \t]*$/gim),
+  ].map(m => ({
     label: (m[1] ?? '').toLowerCase(),
     code: Number(m[2]),
   }))
@@ -290,7 +357,8 @@ function summaryOf(output: string, tally: ReturnType<typeof counts>): string {
 /**
  * How each check in a command ended, from its runs (`checkRuns`). A check the
  * command runs more than once is unknown, since the output does not say which
- * lines are which run's. Otherwise an explicit "<name> exit N" line wins. Then
+ * lines are which run's. Otherwise the exit line its own `echo "... exit $?"`
+ * printed wins, then an exit line that names it, as a script may print. Then
  * the command's own exit status, when a lone check ends the command and
  * nothing filters it. Then the runner's own pass and fail tally, then failure
  * or pass words in the output, which other commands in it may have printed.
@@ -302,6 +370,12 @@ export function readResults(
   isError: boolean,
 ): { call: CheckCall; result: Check['result']; summary: string }[] {
   const exits = exitLines(output)
+  // Each `echo "<label> exit $?"` prints one exit line. When the output has as many lines of a label as the
+  // command has echoes of it, each line belongs to the pipeline before its echo, and no other check reads it.
+  const echoed = segments(command, true).map(s => echoedLabel(s.text))
+  const ofLabel = (label: string) => exits.filter(x => x.label === label)
+  const isPlaced = (label: string) => ofLabel(label).length === echoed.filter(l => l === label).length
+  const unplaced = exits.filter(x => !isPlaced(x.label))
   const isFiltered = /\|\s*(tail|head|grep|rg|sed|awk|cut|wc|tee|less)\b/.test(command)
   const tally = counts(output)
   const summary = summaryOf(output, tally)
@@ -316,11 +390,13 @@ export function readResults(
     // line before a word another runner's line can share, as in "unit test exit 1".
     const named = words.filter(w => !GENERIC_WORDS.has(w))
     const names = (label: string, w: string) => (GENERIC_WORDS.has(w) ? label.endsWith(w) : label === w)
-    const labelFor = (ws: string[]) => exits.find(x => labelWords(x.label).some(l => ws.some(w => names(l, w))))
-    const labeled = labelFor(named) ?? labelFor(call.kind === 'tests' ? [...words, 'test'] : words)
+    const labelFor = (ws: string[]) => unplaced.find(x => labelWords(x.label).some(l => ws.some(w => names(l, w))))
+    const echo = own[0]?.exitEcho
+    const placed = echo?.isOwn && isPlaced(echo.label) ? ofLabel(echo.label)[echo.nth] : undefined
+    const labeled = placed ?? labelFor(named) ?? labelFor(call.kind === 'tests' ? [...words, 'test'] : words)
     const bare = calls.length === 1 && exits.length === 0 ? bareExit(command, output) : null
     const only =
-      calls.length === 1 && exits.length === 1 ? exits[0] : bare === null ? undefined : { label: '', code: bare }
+      calls.length === 1 && unplaced.length === 1 ? unplaced[0] : bare === null ? undefined : { label: '', code: bare }
     const exit = labeled ?? only
     if (exit) return { call, result: exit.code === 0 ? 'pass' : 'fail', summary: summary || `exit ${exit.code}` }
     if (calls.length === 1 && !isFiltered && own[0]?.isLast) {

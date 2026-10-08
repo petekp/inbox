@@ -26,6 +26,7 @@ describe('checksIn', () => {
     expect(checksIn('until ! pgrep -x xcodebuild >/dev/null; do sleep 5; done')).toEqual([])
     expect(checksIn('if ! pgrep -x xcodebuild >/dev/null; then echo idle; fi')).toEqual([])
     expect(checksIn('for f in a b; do grep tsc $f; done')).toEqual([])
+    expect(checksIn('kill $(pgrep -x xcodebuild)')).toEqual([])
   })
 
   test('names common runners by kind, behind a package manager’s options', () => {
@@ -141,9 +142,13 @@ describe('readResults', () => {
     expect(results(go, 'golangci-lint exit 1\ngo test exit 0\n')).toEqual(['fail', 'pass'])
     // A runner's name can end in what the check does, as eslint's does for the lint script.
     const lint = 'pnpm run typecheck > tc.log; echo "TSC EXIT=$?"; pnpm run lint > es.log; echo "ESLINT EXIT=$?"'
-    expect(results(lint, 'TSC EXIT=0\nESLINT EXIT=1\n')[1]).toBe('fail')
+    expect(results(lint, 'TSC EXIT=0\nESLINT EXIT=1\n')).toEqual(['pass', 'fail'])
     const build = 'go build ./... > b.log 2>&1; echo "build exit=$?"'
     expect(result(build, 'build exit=0\n')).toBe('pass')
+    // A continued line and a pipe inside $(...) stay in the check's piece, so its echo is the next one.
+    const xcode =
+      'xcodebuild test-without-building \\\n  -xctestrun $(ls *.xctestrun | head -1) > x.log; echo "test exit $?"'
+    expect(result(xcode, 'test exit 65\n')).toBe('fail')
   })
 
   test('a lone check that ends the command is decided by its exit status; counts describe it', () => {
@@ -169,6 +174,8 @@ describe('readResults', () => {
   test('a filtered command without counts is unknown, since the exit status is the filter’s', () => {
     const [r] = readResults('npm run build | tail -3', runs('npm run build | tail -3'), 'done in 2s', false)
     expect(r?.result).toBe('unknown')
+    expect(result('npm run build | tail -3; echo "exit $?"', 'done in 2s\nexit 0\n')).toBe('unknown')
+    expect(result('set -o pipefail; npm run build | tail -3; echo "exit $?"', 'done in 2s\nexit 1\n')).toBe('fail')
   })
 
   test('failure words another command printed do not fail a lone check', () => {
