@@ -335,3 +335,72 @@ describe('targets', () => {
     expect(upgradeChecks(kept, root, '/home/me').results[0]?.target).toEqual(target([a]))
   })
 })
+
+describe('which results contradict a claim', () => {
+  const a = { paths: ['/work/app/a.test.ts'], filters: [] }
+  const b = { paths: ['/work/app/b.test.ts'], filters: [] }
+  /** The problems the Stop hook finds in turn, each result sent back once. */
+  const problems = (results: Check[], reply = 'The tests pass.') => {
+    const found: string[] = []
+    let checks = checksOf(results)
+    for (let n = 0; n < 10; n++) {
+      const next = claimAgainst(checks, reply, root)
+      if (!next.claim) break
+      found.push(next.claim.problem)
+      checks = next.checks
+    }
+
+    return found
+  }
+
+  const cases: [string, Check[], string[]][] = [
+    [
+      'every failure still recorded, latest first',
+      [
+        makeCheck({ ranAt: 1, target: a, summary: '1 fail' }),
+        makeCheck({ ranAt: 3, target: b, summary: '2 fail' }),
+        makeCheck({ ranAt: 2, name: 'jest', summary: '3 fail' }),
+      ],
+      [
+        'npm test b.test.ts failed when it last ran (2 fail)',
+        'jest failed when it last ran (3 fail)',
+        'npm test a.test.ts failed when it last ran (1 fail)',
+      ],
+    ],
+    [
+      'an older failure that a later pass of another target did not clear',
+      [makeCheck({ ranAt: 1, target: a }), makeCheck({ ranAt: 2, target: b, result: 'pass' })],
+      ['npm test a.test.ts failed when it last ran (1 fail)'],
+    ],
+    [
+      'the failures, then the latest result if it is stale',
+      [makeCheck({ ranAt: 1, target: a }), makeCheck({ ranAt: 2, target: b, result: 'pass', isStale: true })],
+      ['npm test a.test.ts failed when it last ran (1 fail)', 'the files changed after npm test b.test.ts last ran'],
+    ],
+    [
+      'a stale result that is not the latest',
+      [
+        makeCheck({ ranAt: 1, target: a, result: 'pass', isStale: true }),
+        makeCheck({ ranAt: 2, target: b, result: 'pass' }),
+      ],
+      [],
+    ],
+    [
+      'a latest result that failed and is stale, once',
+      [makeCheck({ isStale: true })],
+      ['npm test failed when it last ran (1 fail)'],
+    ],
+    [
+      'a failed check script, for a claim of any kind',
+      [makeCheck({ name: 'check.sh', kind: 'all', summary: 'x' })],
+      ['check.sh failed when it last ran (x)'],
+    ],
+    ['a failure of another kind', [makeCheck({ name: 'tsc', kind: 'types' })], []],
+  ]
+
+  for (const [label, results, expected] of cases) {
+    test(label, () => {
+      expect(problems(results)).toEqual(expected)
+    })
+  }
+})

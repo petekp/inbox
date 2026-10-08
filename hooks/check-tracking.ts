@@ -222,22 +222,24 @@ export function bandLines(checks: Checks, root: string): { failing: Check[]; sum
 export type Contradicted = Contradiction & { check: Check }
 
 /**
- * Each success the reply claims that the latest check of that kind, or of a
- * script that runs them all, contradicts: it failed, or the files changed
- * after it ran. A claim with no check of its kind is left alone, since the
- * check may have run in a way the mod cannot see.
+ * Each result that contradicts a success the reply claims, claim by claim:
+ * every failure of that kind, or of a script that runs them all, latest
+ * first, then the latest result of that kind if the files changed after it
+ * ran. A later pass removes the failures it covers, so a failure still
+ * recorded is one no later run cleared. A claim with no check of its kind is
+ * left alone, since the check may have run in a way the mod cannot see.
  */
 function* contradictions(reply: string, checks: Checks, root: string): Generator<Contradicted> {
   for (const { sentence, kind } of claimsIn(reply)) {
-    const latest = checks.results.filter(c => c.kind === kind || c.kind === 'all').sort((a, b) => b.ranAt - a.ranAt)[0]
-    if (!latest) continue
-    if (latest.result === 'fail')
+    const ofKind = checks.results.filter(c => c.kind === kind || c.kind === 'all').sort((a, b) => b.ranAt - a.ranAt)
+    for (const failed of ofKind.filter(c => c.result === 'fail'))
       yield {
         claim: sentence,
-        problem: `${checkName(latest, root)} failed when it last ran${latest.summary ? ` (${latest.summary})` : ''}`,
-        check: latest,
+        problem: `${checkName(failed, root)} failed when it last ran${failed.summary ? ` (${failed.summary})` : ''}`,
+        check: failed,
       }
-    else if (latest.isStale)
+    const [latest] = ofKind
+    if (latest && latest.result !== 'fail' && latest.isStale)
       yield { claim: sentence, problem: `the files changed after ${checkName(latest, root)} last ran`, check: latest }
   }
 }
