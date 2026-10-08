@@ -11,7 +11,7 @@ themes, and Auto.
   `dimColor` uses the theme's `inactive` gray instead. Button has no color prop.
 - **Hotkey letters**, the `a` in `a: Address it`, use the theme's `suggestion`
   color. In the Light theme that blue reaches 4.4:1 even on white, so no
-  background can make it pass.
+  background can make it pass. On the selected row's blue it is 2.9:1.
 - **The pane's background** is the theme's `composerSidebarBackground`. In the
   ANSI themes that is a palette gray, and default text on it fails AA in
   Ghostty's default palette.
@@ -36,9 +36,8 @@ in `hooks/register.tsx`.
 
 These apply to every palette:
 
-- Each action's Button draws its own key, so the key reads as part of the
-  action. The key takes the `suggestion` color, which falls under AA in the
-  Light theme. Tab keys and j, k are bound by hidden Buttons.
+- The mod draws each key letter itself, in a color that passes. A hidden
+  Button binds the key, as the tab keys already did.
 - Secondary text uses the palette's muted color, never `dimColor`. Buttons
   drop `dimColor` and draw at full strength.
 - The thread's first comment is drawn as Text in the muted color, because

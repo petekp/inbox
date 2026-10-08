@@ -251,12 +251,12 @@ type Palette = {
   raised: string
   /** The text on `raised`; without one, the default text color. */
   raisedText?: string
-  /** The selected row's background. Without one, a bar marks the row. */
+  /** The selected row's background. Without one, a bar in `key` marks the row. */
   selection?: string
   /** Secondary text: ages, counts, labels and closed items. */
   muted: string
-  /** The bar that marks the selected row where there is no `selection`. */
-  bar?: string
+  /** The letters of a selected row's keys. */
+  key: string
   /** The tree's lines. */
   line: string
   /** The rules between rows. */
@@ -291,6 +291,7 @@ const DARK_PALETTE: Palette = {
   raised: '#4c4c4c',
   selection: '#3b4654',
   muted: '#bdbdbd',
+  key: '#b1b9f9',
   line: '#505050',
   divider: '#444444',
   tone: DARK_TONES,
@@ -303,6 +304,7 @@ const LIGHT_PALETTE: Palette = {
   raised: '#d0d0d0',
   selection: '#b4d5ff',
   muted: '#595959',
+  key: '#243bf5',
   line: '#afafaf',
   divider: '#c8c8c8',
   tone: LIGHT_TONES,
@@ -320,7 +322,7 @@ const DARK_ANSI_PALETTE: Palette = {
   raised: 'inactive', // white
   raisedText: 'inverseText', // black
   muted: 'inactive', // white
-  bar: 'suggestion', // bright blue
+  key: 'suggestion', // bright blue
   line: 'userMessageBackground', // bright black
   divider: 'userMessageBackground',
   tone: {},
@@ -331,7 +333,7 @@ const LIGHT_ANSI_PALETTE: Palette = {
   raised: 'text', // black
   raisedText: 'userMessageBackgroundHover', // bright white
   muted: 'inactive', // bright black
-  bar: 'suggestion', // blue
+  key: 'suggestion', // blue
   line: 'userMessageBackground', // white
   divider: 'userMessageBackground',
   tone: {},
@@ -342,6 +344,7 @@ const PALETTES: Record<string, Palette> = {
   dark: DARK_PALETTE,
   'dark-daltonized': {
     ...DARK_PALETTE,
+    key: '#99ccff',
     tone: DARK_DALTONIZED_TONES,
     mark: { ...DARK_DALTONIZED_TONES, error: '#ff6666' },
   },
@@ -352,6 +355,7 @@ const PALETTES: Record<string, Palette> = {
     tab: '#dcdcdc',
     raised: '#c8c8c8',
     muted: '#545454',
+    key: '#003ae8',
     divider: '#c0c0c0',
     tone: LIGHT_DALTONIZED_TONES,
     mark: LIGHT_DALTONIZED_TONES,
@@ -367,7 +371,7 @@ const THEME_KEY_PALETTE: Palette = {
   raised: 'subtle',
   raisedText: 'text',
   muted: 'inactive',
-  bar: 'remember',
+  key: 'remember',
   line: 'subtle',
   divider: 'subtle',
   tone: {},
@@ -2251,7 +2255,7 @@ export const register: Register = on => {
       hasSecondLine?: boolean
       body?: JSX.Element | null
       keys: () => KeyAction[]
-      /** Secondary actions, after `keys` with their letters muted. */
+      /** Actions that talk about the row or drop it, after `keys` and a muted dot. */
       moreKeys?: () => KeyAction[]
       /** Where the person's own words go, for a row that takes them. */
       onType?: (text: string) => void
@@ -2307,17 +2311,19 @@ export const register: Register = on => {
           hotkey: 'a',
           onPress: () => void actOnFinding($, finding, 'address'),
         },
-        {
-          key: `discuss-${finding.id}`,
-          label: 'Discuss',
-          hotkey: 'd',
-          onPress: () => void actOnFinding($, finding, 'discuss'),
-        },
+      ],
+      moreKeys: () => [
         {
           key: `typekey-${finding.id}`,
           label: 'Type a reply',
           hotkey: 't',
           onPress: () => void startTyping($, finding.id),
+        },
+        {
+          key: `discuss-${finding.id}`,
+          label: 'Discuss',
+          hotkey: 'e',
+          onPress: () => void actOnFinding($, finding, 'discuss'),
         },
         { key: `drop-${finding.id}`, label: 'Dismiss', hotkey: 'x', onPress: () => void removeFinding($, finding.id) },
       ],
@@ -2428,7 +2434,8 @@ export const register: Register = on => {
             ) : null}
           </Box>
         ),
-        keys: () => [fix, dismiss],
+        keys: () => [fix],
+        moreKeys: () => [dismiss],
       }
     }
     const threadRow = (pr: PrView, t: PrThread): Row => {
@@ -2474,16 +2481,18 @@ export const register: Register = on => {
             onPress: () => void send($, prompts.draft(pr, t)),
           },
           {
-            key: `discuss-${t.id}`,
-            label: 'Discuss',
-            hotkey: 'd',
-            onPress: () => void send($, prompts.discuss(pr, t)),
-          },
-          {
             key: `open-${t.id}`,
             label: 'Open',
             hotkey: 'o',
             onPress: () => void openUrl($, t.reply?.url || t.url || pr.url),
+          },
+        ],
+        moreKeys: () => [
+          {
+            key: `discuss-${t.id}`,
+            label: 'Discuss',
+            hotkey: 'e',
+            onPress: () => void send($, prompts.discuss(pr, t)),
           },
         ],
       }
@@ -2517,12 +2526,21 @@ export const register: Register = on => {
     const indexOf = new Map(ids.map((id, n) => [id, n]))
     const at = selectedIndex(ids, selection[tab])
 
-    // A plain Button draws "a: Label", with the key in the theme's accent.
-    const keyRow = (keys: KeyAction[]) => (
+    // A Button draws its hotkey in the theme's accent, which Claude Code's light
+    // theme draws at 2.9:1 on the selected row. So a key's letter is Text in the
+    // palette's color, its label a Button, and the key itself a hidden Button.
+    const keyedButton = ({ hotkey, ...action }: KeyAction) => (
+      <Box key={`keyed-${action.key}`} flexDirection="row">
+        <Text color={pal.key}>{hotkey}</Text>
+        <Button plain {...action} label={`: ${action.label}`} />
+      </Box>
+    )
+    // A row's other actions follow its main ones after a muted dot.
+    const keyRow = (keys: KeyAction[], more: KeyAction[] = []) => (
       <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-        {keys.map(k => (
-          <Button plain {...k} />
-        ))}
+        {keys.map(keyedButton)}
+        {keys.length > 0 && more.length > 0 ? <Text color={pal.muted}>·</Text> : null}
+        {more.map(keyedButton)}
       </Box>
     )
     // The Buttons that take the pane's keys, drawn in a hidden Box.
@@ -2530,9 +2548,13 @@ export const register: Register = on => {
       keys.map(({ key, ...k }) => <Button key={`${key}${suffix}`} plain {...k} />)
     // A selected row's secondary keys share its key row when they fit, and
     // otherwise take a line of their own rather than wrap mid-row. A key draws
-    // "key: label", and keyRow puts 2 columns between keys.
-    const keysWidth = (keys: KeyAction[]) =>
-      keys.reduce((w, k) => w + k.hotkey.length + 2 + k.label.length, 0) + 2 * Math.max(0, keys.length - 1)
+    // "key: label", and keyRow puts 2 columns between keys and the dot.
+    const keysWidth = (keys: KeyAction[], more: KeyAction[]) => {
+      const all = [...keys, ...more]
+      const dot = keys.length > 0 && more.length > 0 ? 3 : 0
+
+      return all.reduce((w, k) => w + k.hotkey.length + 2 + k.label.length, 0) + 2 * Math.max(0, all.length - 1) + dot
+    }
     // A typed reply needs a text field, so it is left out where there is none.
     const pressable = (keys: KeyAction[]) => keys.filter(k => Input || !k.key.startsWith('typekey-'))
     // A section's children hang from its title like a directory listing. A
@@ -2668,8 +2690,8 @@ export const register: Register = on => {
               <Box flexDirection="column" marginTop={blankLine}>
                 {keys.length === 0
                   ? keyRow(more)
-                  : keysWidth([...keys, ...more]) <= e.props.bodyColumns - 3 - (tree ? 7 : 5)
-                    ? keyRow([...keys, ...more])
+                  : keysWidth(keys, more) <= e.props.bodyColumns - 3 - (tree ? 7 : 5)
+                    ? keyRow(keys, more)
                     : [keyRow(keys), keyRow(more)]}
               </Box>
               {Input && row.onType && typing === row.id ? (
@@ -2694,7 +2716,7 @@ export const register: Register = on => {
           only once that row has redrawn expanded. */}
           {isSelected ? (
             <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1}>
-              {pal.selection ? null : <Text color={pal.bar}>{SELECTION_BAR}</Text>}
+              {pal.selection ? null : <Text color={pal.key}>{SELECTION_BAR}</Text>}
             </Box>
           ) : null}
         </Box>
