@@ -2250,6 +2250,8 @@ export const register: Register = on => {
       titleAfter?: string
       /** Unselected, the row is one line: `before` muted, `text` as a button that selects the row, then `after`, muted or in a tone. */
       line?: { before?: string; text: string; after?: string; afterTone?: Tone }
+      /** Unselected, text that does not fit beside `after` goes on a second line instead of being cut. */
+      hasSecondLine?: boolean
       body?: JSX.Element | null
       keys: () => KeyAction[]
       /** Secondary actions, after `keys` with their letters muted. */
@@ -2268,6 +2270,7 @@ export const register: Register = on => {
         handle,
         title: item.ask,
         titleAfter: asked,
+        hasSecondLine: item.kind === 'question',
         body: null,
         keys: () => itemKeys($, item).keys,
         moreKeys: () => itemKeys($, item).more,
@@ -2366,9 +2369,10 @@ export const register: Register = on => {
     // command folded under Details. Once Fix is pressed, the row waits on Claude.
     const failedCheckRow = (c: Check): Row => {
       const id = `check:${checkKey(c)}`
-      const output = outputLines(c)
       const { file, text } = failureSummary(c)
-      const hasDetail = c.command !== '' || output.some(line => line !== text)
+      // Without failure lines, the summary above is the output's only line.
+      const output = outputLines(c).filter(line => line !== text)
+      const hasDetail = c.command !== '' || output.length > 0
       const fixSent = c.fixSentAt === null ? null : `Fix sent · ${ago(now - c.fixSentAt)}`
       const fix = {
         key: `fix-${id}`,
@@ -2610,21 +2614,33 @@ export const register: Register = on => {
     // part off. The handle is a Button, so a click selects the row.
     // A Button label does not wrap or truncate, so the clickable text is clipped
     // to what fits beside the handle and the row's other text.
+    // A row with a second line breaks its text at a space before `after`, which
+    // stays on the first line, and clips the rest to the second.
     const unselectedLine = (row: Row, onPress: () => void, inset: number) => {
       const line = row.line ?? { text: row.title, after: row.titleAfter }
-      const room = Math.max(
-        12,
-        e.props.bodyColumns - 3 - inset - (line.before?.length ?? 0) - (line.after?.length ?? 0),
-      )
+      const width = e.props.bodyColumns - 3 - inset - (line.before?.length ?? 0)
+      const room = Math.max(12, width - (line.after?.length ?? 0))
+      const text = line.text.trim()
+      const space = text.lastIndexOf(' ', room)
+      const isWrapped = row.hasSecondLine === true && text.length > room && space > 0
+      const first = isWrapped ? text.slice(0, space) : clipLabel(text, room)
+      const second = isWrapped ? clipLabel(text.slice(space + 1), Math.max(12, width)) : null
 
       return (
-        <Box flexDirection="row">
-          {line.before ? <Text color={pal.muted}>{line.before}</Text> : null}
-          <Button plain key={`title-${row.id}`} label={clipLabel(line.text, room)} onPress={onPress} />
-          {line.after ? (
-            <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
-              {line.after}
-            </Text>
+        <Box flexDirection="column">
+          <Box flexDirection="row">
+            {line.before ? <Text color={pal.muted}>{line.before}</Text> : null}
+            <Button plain key={`title-${row.id}`} label={first} onPress={onPress} />
+            {line.after ? (
+              <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
+                {line.after}
+              </Text>
+            ) : null}
+          </Box>
+          {second ? (
+            <Box paddingLeft={line.before?.length ?? 0}>
+              <Button plain key={`title-${row.id}-2`} label={second} onPress={onPress} />
+            </Box>
           ) : null}
         </Box>
       )
@@ -2826,7 +2842,7 @@ export const register: Register = on => {
     // The footer's one line opens the list of keys as a drawer above it. The
     // drawer is absolute, so it covers the rows above instead of moving the line.
     const footer = (
-      <Box flexDirection="column" paddingX={1} paddingY={blankLine}>
+      <Box flexDirection="column" paddingX={1} paddingTop={blankLine}>
         <Box flexDirection="row" paddingX={1}>
           <Button
             plain
@@ -2838,10 +2854,11 @@ export const register: Register = on => {
             <Box
               position="absolute"
               bottom={1}
-              left={0}
-              right={0}
+              left={-1}
+              right={-1}
               flexDirection="column"
-              paddingX={1}
+              paddingX={2}
+              paddingY={1}
               backgroundColor={pal.raised}
             >
               {keyList.map(k => (
