@@ -29,16 +29,26 @@ import {
   checkLine,
   checksIn,
   claimMessage,
-  contradictedClaim,
   failureLines,
   failureSummary,
   fixMessage,
-  isTemporary,
-  markStale,
   outputLines,
   readResults,
-  recordCheck,
 } from './checks'
+import {
+  NO_CHECKS,
+  bandLines,
+  changed,
+  checkKey,
+  contradictedClaim,
+  dismissed,
+  fixSent,
+  needsYou,
+  pruned,
+  recorded,
+  turnEnded,
+  upgradeChecks,
+} from './check-tracking'
 import { demoView } from './demo'
 import type { View } from './demo'
 import { candidates, changedPaths, readChanged, readLsTree, sameSnapshot } from './git'
@@ -121,7 +131,6 @@ const PR_VIEWS = atom(
 const PR_FIXES_SENT = atom({ plugin: 'inbox', key: 'prFixesSent' } as const, {} as Record<string, PrFixSent>)
 const STOP = atom({ plugin: 'inbox', key: 'stop' } as const, null as Stop | null)
 const DIALOGS = atom({ plugin: 'inbox', key: 'dialogs' } as const, [] as Dialog[])
-const NO_CHECKS: Checks = { results: [] }
 const CHECKS = atom({ plugin: 'inbox', key: 'checks' } as const, NO_CHECKS)
 const SNAPSHOTS = atom({ plugin: 'inbox', key: 'snapshots' } as const, {} as Record<string, Snapshot>)
 const TYPING = atom({ plugin: 'inbox', key: 'typing' } as const, null as string | null)
@@ -934,19 +943,7 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
     // Presence from before the turn counts existed cannot say whether the last
     // turn's update landed, so that load catches up once.
     update($, PRESENCE, p => ({ ...p, turnsStarted: p.turnsStarted ?? 1, turnsApplied: p.turnsApplied ?? 0 })),
-    // Results from before each one kept its repo never go stale; the next run of each replaces it.
-    update($, CHECKS, c => ({
-      results: c.results.map(r => ({
-        ...r,
-        repo: r.repo ?? null,
-        isStale: r.isStale ?? false,
-        command: r.command ?? '',
-        failures: r.failures ?? [],
-        isLeftFailing: r.isLeftFailing ?? false,
-        isDismissed: r.isDismissed ?? false,
-        fixSentAt: r.fixSentAt ?? null,
-      })),
-    })),
+    update($, CHECKS, upgradeChecks),
   ])
 
   return ledger
@@ -1051,23 +1048,14 @@ async function removeFinding($: EngineInterface, id: string) {
 
 /** Hides a failing check's row in the Needs you tab until the check runs again. */
 async function dismissCheck($: EngineInterface, check: Check) {
-  await update($, CHECKS, c => ({
-    ...c,
-    results: c.results.map(x => (x.name === check.name && x.folder === check.folder ? { ...x, isDismissed: true } : x)),
-  }))
+  await update($, CHECKS, c => dismissed(c, check))
 }
 
 /** Asks Claude to fix a failing check, and marks that run's row as handed to Claude. */
 async function sendFix($: EngineInterface, check: Check) {
   await send($, fixMessage(check))
   const at = await $.clock.now()
-  // Matched by run, so a rerun recorded meanwhile keeps its own state.
-  await update($, CHECKS, c => ({
-    ...c,
-    results: c.results.map(x =>
-      x.name === check.name && x.folder === check.folder && x.ranAt === check.ranAt ? { ...x, fixSentAt: at } : x,
-    ),
-  }))
+  await update($, CHECKS, c => fixSent(c, check, at))
 }
 
 /** Sends the finding back to Claude, to fix it or to talk it through first. */
@@ -1564,8 +1552,7 @@ async function dropGoneFolders($: EngineInterface) {
   const folders = [...new Set((await read($, CHECKS)).results.flatMap(c => (c.folder ? [c.folder] : [])))]
   const found = await Promise.all(folders.map(f => $.fs.exists(f).catch(() => true)))
   const gone = new Set(folders.filter((_f, i) => !found[i]))
-  if (gone.size > 0)
-    await update($, CHECKS, c => ({ ...c, results: c.results.filter(x => !x.folder || !gone.has(x.folder)) }))
+  if (gone.size > 0) await update($, CHECKS, c => pruned(c, gone))
 }
 
 /**
@@ -1588,8 +1575,7 @@ function refreshTree($: EngineInterface, repos?: string[]): Promise<void> {
         const changes = last ? await contentChanges($, repo, last, snapshot) : []
         await update($, SNAPSHOTS, s => ({ ...s, [repo]: snapshot }))
         if (changes !== null && changes.length === 0) continue
-        const isCodeChange = changes === null || changes.some(p => !/\.md$/i.test(p))
-        await update($, CHECKS, c => ({ ...c, results: markStale(c.results, repo, isCodeChange) }))
+        await update($, CHECKS, c => changed(c, repo, changes))
       }
     })
     .catch(() => undefined)
@@ -1607,8 +1593,8 @@ async function recordChecks($: EngineInterface, command: string, cwd: string, ou
     // A folder the command hides, as after `cd "$(git rev-parse --show-toplevel)"`, is taken as the session's.
     const folders = new Set(own.map(x => x.folder ?? root))
     const [folder = root] = folders
-    // A check run in several folders, or in a throwaway copy, says nothing about this session's work.
-    if (folders.size > 1 || (isTemporary(folder) && !isTemporary(root))) return []
+    // A check run in several folders at once says nothing about any one of them.
+    if (folders.size > 1) return []
     const failures = r.result === 'fail' && isAlone ? failureLines(output) : []
 
     return [{ ...r, folder, command: own[0]?.command ?? '', failures }]
@@ -1621,28 +1607,23 @@ async function recordChecks($: EngineInterface, command: string, cwd: string, ou
     results.flatMap(r => (r.repo ? [r.repo] : [])),
   )
   const ranAt = await $.clock.now()
-  await update($, CHECKS, c => ({
-    ...c,
-    results: results.reduce(
-      (all, r) =>
-        recordCheck(all, {
-          name: r.call.name,
-          kind: r.call.kind,
-          folder: r.folder === root ? null : r.folder,
-          result: r.result,
-          summary: r.summary,
-          ranAt,
-          command: r.command,
-          failures: r.failures,
-          repo: r.repo,
-          isStale: false,
-          isLeftFailing: false,
-          isDismissed: false,
-          fixSentAt: null,
-        }),
-      c.results,
+  await update($, CHECKS, c =>
+    recorded(
+      c,
+      results.map(r => ({
+        name: r.call.name,
+        kind: r.call.kind,
+        folder: r.folder,
+        result: r.result,
+        summary: r.summary,
+        command: r.command,
+        failures: r.failures,
+        repo: r.repo,
+      })),
+      ranAt,
+      root,
     ),
-  }))
+  )
 }
 
 /**
@@ -1903,10 +1884,7 @@ export const register: Register = on => {
     await closeDialogs($, null)
     if (!isOn) return r
     // A check still failing when Claude stops waits on the person, in the Needs you tab.
-    await update($, CHECKS, c => ({
-      ...c,
-      results: c.results.map(x => (x.result === 'fail' ? { ...x, isLeftFailing: true } : x)),
-    }))
+    await update($, CHECKS, turnEnded)
     if (e.reason !== 'answer' || e.answer.trim() === '') return r
 
     let checks = await read($, CHECKS)
@@ -2065,14 +2043,13 @@ export const register: Register = on => {
 
     const card = ledger.card
     // A failed check gets a line of its own, so a narrow band cannot cut it off.
-    const failedRows = checks.results
-      .filter(c => c.result === 'fail')
-      .map(c => (
-        <Text wrap="truncate-end" color="error">
-          {'  '}
-          {checkLine(c)}
-        </Text>
-      ))
+    const lines = bandLines(checks)
+    const failedRows = lines.failing.map(c => (
+      <Text wrap="truncate-end" color="error">
+        {'  '}
+        {checkLine(c)}
+      </Text>
+    ))
 
     if (!card && ledger.items.length === 0 && ledger.findings.length === 0 && settled.length === 0) {
       // Before the session's first card, failed checks are all the band has to show.
@@ -2139,11 +2116,11 @@ export const register: Register = on => {
           <Text dimColor> → </Text>
           {card.now}
         </Text>,
-        ...(checks.results.length > 0
+        ...(lines.summary.length > 0
           ? [
               <Text wrap="truncate-end" dimColor>
                 {'  '}
-                {checks.results.map(checkLine).join(' · ')}
+                {lines.summary.map(checkLine).join(' · ')}
               </Text>,
             ]
           : []),
@@ -2376,7 +2353,7 @@ export const register: Register = on => {
     // What failed in up to two lines, naming the file, with the output and the
     // command folded under Details. Once Fix is pressed, the row waits on Claude.
     const failedCheckRow = (c: Check): Row => {
-      const id = `check:${c.folder ?? '.'}:${c.name}`
+      const id = `check:${checkKey(c)}`
       const output = outputLines(c)
       const { file, text } = failureSummary(c)
       const hasDetail = c.command !== '' || output.some(line => line !== text)
@@ -2500,9 +2477,8 @@ export const register: Register = on => {
     }
 
     // Each tab's rows in order: the cursor, the counts and the drawing all read these.
-    const failedChecks = checks.results.filter(c => c.isLeftFailing && !c.isDismissed)
+    const { rows: failedChecks, count: checksNeedingYou } = needsYou(checks)
     const failedCheckRows = failedChecks.map(failedCheckRow)
-    const checksNeedingYou = failedChecks.filter(c => c.fixSentAt === null).length
     const needsYouGroups = NEEDS_YOU_GROUPS.map(g => ({
       ...g,
       rows: listedItems(ledger.items, g.kind).map((item, n) =>

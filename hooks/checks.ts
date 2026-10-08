@@ -1,9 +1,9 @@
 // Checks measured from Claude's commands: which commands were tests, type
 // checks, lints, builds or validations, how each ended, whether the files
-// changed after it, and whether Claude's reply claims a success a check
-// contradicts. Nothing here asks a model.
+// changed after it, and which successes Claude's reply claims. Nothing here
+// asks a model.
 
-import type { Check, CheckKind, Checks } from '../types'
+import type { Check, CheckKind } from '../types'
 
 /** One recognized check inside a command, such as `bun test` or `tsc`. */
 export type CheckCall = { name: string; kind: CheckKind }
@@ -418,24 +418,6 @@ export function readResults(
   })
 }
 
-/**
- * Keeps each check's latest result in each folder. A check script that
- * passes, such as check.sh, replaces every earlier result in its folder.
- */
-export function recordCheck(results: Check[], check: Check): Check[] {
-  const isReplaced = (c: Check) =>
-    c.folder === check.folder && (c.name === check.name || (check.kind === 'all' && check.result === 'pass'))
-
-  return [...results.filter(c => !isReplaced(c)), check]
-}
-
-/** Marks the checks that ran in `repo` stale after its files changed. A Markdown-only change leaves tests, types and builds current. */
-export function markStale(results: Check[], repo: string, isCodeChange: boolean): Check[] {
-  return results.map(c =>
-    c.repo === repo && (isCodeChange || ['lint', 'validate', 'all'].includes(c.kind)) ? { ...c, isStale: true } : c,
-  )
-}
-
 /** A check's result as one mark: ✓ passed, ✗ failed, · unknown. */
 function checkMark(check: Check): string {
   return check.result === 'pass' ? '✓' : check.result === 'fail' ? '✗' : '·'
@@ -489,36 +471,17 @@ const CLAIMS: { kind: CheckKind; pattern: RegExp }[] = [
   },
 ]
 
+/** A sentence of Claude's reply that claims a success, and what the check results say against it. */
+export type Contradiction = { claim: string; problem: string }
+
 /** Words that make a claim conditional, negative or about the future. */
 const HEDGE = /\b(?:not|fail\w*|if|should|would|will|until|unless|once|might|may|expect\w*|untested)\b|n't\b/i
 
-export type Contradiction = { claim: string; problem: string }
-
-/**
- * The first success the reply claims that the latest check of that kind, or
- * of a script that runs them all, contradicts: it failed, or the files
- * changed after it ran. A claim with no check of its kind is left alone,
- * since the check may have run in a way the mod cannot see.
- */
-export function contradictedClaim(reply: string, checks: Checks): Contradiction | null {
-  for (const s of sentences(reply)) {
-    if (HEDGE.test(s)) continue
-    for (const { kind, pattern } of CLAIMS) {
-      if (!pattern.test(s)) continue
-      const latest = checks.results
-        .filter(c => c.kind === kind || c.kind === 'all')
-        .sort((a, b) => b.ranAt - a.ranAt)[0]
-      if (!latest) continue
-      if (latest.result === 'fail')
-        return {
-          claim: s,
-          problem: `${checkName(latest)} failed when it last ran${latest.summary ? ` (${latest.summary})` : ''}`,
-        }
-      if (latest.isStale) return { claim: s, problem: `the files changed after ${checkName(latest)} last ran` }
-    }
-  }
-
-  return null
+/** The successes the reply claims, in sentence order and then `CLAIMS` order. A hedged sentence claims nothing. */
+export function claimsIn(reply: string): { sentence: string; kind: CheckKind }[] {
+  return sentences(reply).flatMap(sentence =>
+    HEDGE.test(sentence) ? [] : CLAIMS.filter(c => c.pattern.test(sentence)).map(c => ({ sentence, kind: c.kind })),
+  )
 }
 
 /** What a failed check's output says: the lines that name the failure, then the summary unless it repeats one. */

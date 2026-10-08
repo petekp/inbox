@@ -1,16 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Check, Checks } from '../types'
-import {
-  checkRuns,
-  checksIn,
-  contradictedClaim,
-  failureLines,
-  failureSummary,
-  markStale,
-  readResults,
-  recordCheck,
-} from '../hooks/checks'
+import { checkRuns, checksIn, failureLines, failureSummary, readResults } from '../hooks/checks'
+import { contradictedClaim, markStale, recordCheck } from '../hooks/check-tracking'
 import { candidates, changedPaths, readChanged, readLsTree } from '../hooks/git'
 
 describe('checksIn', () => {
