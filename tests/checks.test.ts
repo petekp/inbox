@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Check, Checks } from '../types'
-import { checkName, checkRuns, checksIn, failureLines, failureSummary, readResults } from '../hooks/checks'
+import { checkName, checkRuns, checksIn, claimsIn, failureLines, failureSummary, readResults } from '../hooks/checks'
 import { contradictedClaim, markStale, recordCheck } from '../hooks/check-tracking'
 import { candidates, changedPaths, readChanged, readLsTree } from '../hooks/git'
 
@@ -327,6 +327,25 @@ describe('readResults', () => {
   })
 })
 
+describe('claimsIn', () => {
+  const cases: [string, string, boolean][] = [
+    ['a plain claim', 'All tests pass', true],
+    ['a phrase in double quotes', 'Your reply says "tests pass"', false],
+    ['a phrase in curly double quotes', 'Your reply says “tests pass”', false],
+    ['a phrase in backticks', 'The line `tests pass` is in the log', false],
+    ['a claim beside a quoted phrase', 'The "unit" tests pass', true],
+    ['a claim outside the quotes', 'I changed "build" and all tests pass', true],
+    ['an apostrophe', "Pete's tests pass", true],
+    ['single quotes', "The 'tests pass' line is a claim", true],
+  ]
+
+  for (const [label, reply, isClaim] of cases) {
+    test(`${label} ${isClaim ? 'is' : 'is not'} a claim`, () => {
+      expect(claimsIn(reply).map(c => c.kind)).toEqual(isClaim ? ['tests'] : [])
+    })
+  }
+})
+
 describe('contradictedClaim', () => {
   const ran = (result: Check['result'], isStale = false): Check => ({
     name: 'bun test',
@@ -365,6 +384,7 @@ describe('contradictedClaim', () => {
   test('leaves hedged claims and claims with no check of their kind alone', () => {
     expect(contradictedClaim('The tests should pass once CI runs.', checks(ran('fail')))).toBe(null)
     expect(contradictedClaim('Types are clean.', checks(ran('fail')))).toBe(null)
+    expect(contradictedClaim('Your reply says "tests pass".', checks(ran('fail')))).toBe(null)
   })
 })
 

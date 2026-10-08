@@ -609,11 +609,20 @@ export type Contradiction = { claim: string; problem: string }
 /** Words that make a claim conditional, negative or about the future. */
 const HEDGE = /\b(?:not|fail\w*|if|should|would|will|until|unless|once|might|may|expect\w*|untested)\b|n't\b/i
 
-/** The successes the reply claims, in sentence order and then `CLAIMS` order. A hedged sentence claims nothing. */
+/** Text in double quotes, curly double quotes or backticks: a phrase the reply mentions, not one it says. */
+const QUOTED = /"[^"]*"|“[^”]*”|`[^`]*`/g
+
+/**
+ * The successes the reply claims, in sentence order and then `CLAIMS` order.
+ * A hedged sentence claims nothing, and neither does a check phrase in quotes.
+ * Single quotes stay, since they are also apostrophes.
+ */
 export function claimsIn(reply: string): { sentence: string; kind: CheckKind }[] {
-  return sentences(reply).flatMap(sentence =>
-    HEDGE.test(sentence) ? [] : CLAIMS.filter(c => c.pattern.test(sentence)).map(c => ({ sentence, kind: c.kind })),
-  )
+  return sentences(reply).flatMap(sentence => {
+    const said = sentence.replace(QUOTED, ' ')
+
+    return HEDGE.test(said) ? [] : CLAIMS.filter(c => c.pattern.test(said)).map(c => ({ sentence, kind: c.kind }))
+  })
 }
 
 /** What a failed check's output says: the lines that name the failure, then the summary unless it repeats one. */
