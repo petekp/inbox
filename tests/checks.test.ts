@@ -76,6 +76,7 @@ describe('checkRuns', () => {
       ['vitest --run --no-coverage', none],
       ['jest --runInBand --watchAll=false --forceExit', none],
       ['eslint --format stylish', none],
+      ['bun test --timeout 5000', none],
       ['npm test -- --coverage', none],
       ['npm test -- a.test.ts > t.log 2>&1', { paths: ['/work/repo/a.test.ts'] }],
       ['npm run test:unit -- -t foo', { filters: ['-t=foo'] }],

@@ -46,9 +46,10 @@ describe('the session’s repos', () => {
     expect(addRepo(once, '/work/lib').repos).toEqual(['/work/app', '/work/lib'])
   })
 
-  test('upgradeChecks gives saved state no repos', () => {
-    const saved = { results: [] } as unknown as Checks
-    expect(upgradeChecks(saved, root, '/home/me').repos).toEqual([])
+  test('upgradeChecks counts the repos of results saved before repos were kept', () => {
+    const saved = { results: [makeCheck({ repo: '/work/lib' }), makeCheck({ repo: null })] } as unknown as Checks
+    expect(upgradeChecks(saved, root, '/home/me').repos).toEqual(['/work/lib'])
+    expect(upgradeChecks({ results: [], repos: ['/work/app'] }, root, '/home/me').repos).toEqual(['/work/app'])
   })
 
   const cases: [string, Partial<Check>, boolean][] = [

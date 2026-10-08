@@ -168,7 +168,8 @@ export function fixSent(checks: Checks, check: Check, at: number): Checks {
  */
 export function upgradeChecks(saved: Checks, root: string, home: string): Checks {
   return {
-    repos: saved.repos ?? [],
+    // State saved before the session's repos were kept counted every result's repo.
+    repos: saved.repos ?? [...new Set(saved.results.flatMap(r => (r.repo ? [r.repo] : [])))],
     results: saved.results.map(r => ({
       ...r,
       repo: r.repo ?? null,

@@ -185,11 +185,13 @@ const OUTPUT_FLAGS = new Set([
   '--detectOpenHandles',
   '--no-cache',
   '--format',
+  '--timeout',
+  '--testTimeout',
   '-s',
   '-vv',
 ])
 /** The output flags that take their value as the next word. */
-const VALUE_FLAGS = new Set(['--reporter', '--tb', '--maxWorkers', '-j', '--format'])
+const VALUE_FLAGS = new Set(['--reporter', '--tb', '--maxWorkers', '-j', '--format', '--timeout', '--testTimeout'])
 /** Flags that pick tests by name or by path pattern. */
 const FILTER_FLAGS = new Set(['-t', '--testNamePattern', '--grep', '-g', '-k', '--filter', '-run', '--testPathPattern'])
 /** A word a runner takes as its command, not as a target, as in `vitest run`. */
