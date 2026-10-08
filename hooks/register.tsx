@@ -35,6 +35,7 @@ import {
   outputLines,
   readResults,
 } from './checks'
+import type { Contradiction } from './checks'
 import {
   NO_CHECKS,
   addRepo,
@@ -1576,7 +1577,7 @@ function refreshTree($: EngineInterface, repos?: string[]): Promise<void> {
         const changes = last ? await contentChanges($, repo, last, snapshot) : []
         await update($, SNAPSHOTS, s => ({ ...s, [repo]: snapshot }))
         if (changes !== null && changes.length === 0) continue
-        await update($, CHECKS, c => changed(c, repo, changes))
+        await update($, CHECKS, c => changed(c, repo, changes, root))
       }
     })
     .catch(() => undefined)
@@ -1884,9 +1885,15 @@ export const register: Register = on => {
     const reply = e.last_assistant_message ?? ''
     if (!reply.trim() || (await read($, CHECKS)).results.length === 0) return r
     await refreshTree($)
-    const claim = claimAgainst(await read($, CHECKS), reply, root)
+    const sent: { claim: Contradiction | null } = { claim: null }
+    await update($, CHECKS, c => {
+      const found = claimAgainst(c, reply, root)
+      sent.claim = found.claim
 
-    return claim ? { ...r, block: claimMessage(claim) } : r
+      return found.checks
+    })
+
+    return sent.claim ? { ...r, block: claimMessage(sent.claim) } : r
   })
 
   on('turn.complete', async ($, e, next) => {

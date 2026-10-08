@@ -68,6 +68,7 @@ export function recorded(checks: Checks, runs: Run[], at: number, root: string):
             isStale: false,
             isLeftFailing: false,
             isDismissed: false,
+            isSentBack: false,
             fixSentAt: null,
           }),
         checks.results,
@@ -75,15 +76,33 @@ export function recorded(checks: Checks, runs: Run[], at: number, root: string):
   }
 }
 
-/**
- * The files in `repo` changed at `paths`; null means git could not tell,
- * which counts as a change to code. No paths change nothing.
- */
-export function changed(checks: Checks, repo: string, paths: string[] | null): Checks {
-  if (paths !== null && paths.length === 0) return checks
-  const isCodeChange = paths === null || paths.some(p => !/\.md$/i.test(p))
+/** Whether a result of this kind reads the file at `path`: Markdown matters only to a lint, a validation or a check script. */
+function readsFile(kind: CheckKind, path: string): boolean {
+  return ['lint', 'validate', 'all'].includes(kind) || !/\.md$/i.test(path)
+}
 
-  return { ...checks, results: markStale(checks.results, repo, isCodeChange) }
+/**
+ * The files in `repo` changed at `paths`, relative to `repo`; null means git
+ * could not tell, which makes every result there stale. Otherwise a result is
+ * stale when a file it reads changed in its folder, `root` for the session's own.
+ */
+export function changed(checks: Checks, repo: string, paths: string[] | null, root: string): Checks {
+  if (paths !== null && paths.length === 0) return checks
+  const isStaleBy = (c: Check) => {
+    if (paths === null) return true
+    const folder = c.folder ?? root
+
+    return paths.some(p => {
+      const path = `${repo}/${p}`
+
+      return readsFile(c.kind, p) && (path === folder || path.startsWith(`${folder}/`))
+    })
+  }
+
+  return {
+    ...checks,
+    results: checks.results.map(c => (c.repo === repo && isStaleBy(c) ? { ...c, isStale: true } : c)),
+  }
 }
 
 /** The session started in this repo, or Claude edited a file in it. */
@@ -130,6 +149,7 @@ export function upgradeChecks(saved: Checks): Checks {
       failures: r.failures ?? [],
       isLeftFailing: r.isLeftFailing ?? false,
       isDismissed: r.isDismissed ?? false,
+      isSentBack: r.isSentBack ?? false,
       fixSentAt: r.fixSentAt ?? null,
     })),
   }
@@ -162,28 +182,62 @@ export function bandLines(checks: Checks, root: string): { failing: Check[]; sum
   }
 }
 
+/** A contradicted claim, with the result it is about. */
+export type Contradicted = Contradiction & { check: Check }
+
 /**
- * The first success the reply claims that the latest check of that kind, or
- * of a script that runs them all, contradicts: it failed, or the files
- * changed after it ran. A claim with no check of its kind is left alone,
- * since the check may have run in a way the mod cannot see.
+ * Each success the reply claims that the latest check of that kind, or of a
+ * script that runs them all, contradicts: it failed, or the files changed
+ * after it ran. A claim with no check of its kind is left alone, since the
+ * check may have run in a way the mod cannot see.
  */
-export function contradictedClaim(reply: string, checks: Checks): Contradiction | null {
+function* contradictions(reply: string, checks: Checks): Generator<Contradicted> {
   for (const { sentence, kind } of claimsIn(reply)) {
     const latest = checks.results.filter(c => c.kind === kind || c.kind === 'all').sort((a, b) => b.ranAt - a.ranAt)[0]
     if (!latest) continue
     if (latest.result === 'fail')
-      return {
+      yield {
         claim: sentence,
         problem: `${checkName(latest)} failed when it last ran${latest.summary ? ` (${latest.summary})` : ''}`,
+        check: latest,
       }
-    if (latest.isStale) return { claim: sentence, problem: `the files changed after ${checkName(latest)} last ran` }
+    else if (latest.isStale)
+      yield { claim: sentence, problem: `the files changed after ${checkName(latest)} last ran`, check: latest }
   }
+}
+
+/** The first contradicted claim in the reply. */
+export function contradictedClaim(reply: string, checks: Checks): Contradicted | null {
+  for (const c of contradictions(reply, checks)) return c
 
   return null
 }
 
-/** The Stop hook's check: the first contradicted claim among the session's results. */
-export function claimAgainst(checks: Checks, reply: string, root: string): Contradiction | null {
-  return contradictedClaim(reply, { ...checks, results: checks.results.filter(c => counts(checks, c, root)) })
+/**
+ * The Stop hook's check: the first claim in the reply that the session's
+ * results contradict and that has not yet sent Claude back, with that result
+ * marked so it sends Claude back once.
+ */
+export function claimAgainst(
+  checks: Checks,
+  reply: string,
+  root: string,
+): { checks: Checks; claim: Contradiction | null } {
+  const own = { ...checks, results: checks.results.filter(c => counts(checks, c, root)) }
+  for (const { claim, problem, check } of contradictions(reply, own)) {
+    if (check.isSentBack) continue
+    const key = checkKey(check)
+
+    return {
+      checks: {
+        ...checks,
+        results: checks.results.map(c =>
+          checkKey(c) === key && c.ranAt === check.ranAt ? { ...c, isSentBack: true } : c,
+        ),
+      },
+      claim: { claim, problem },
+    }
+  }
+
+  return { checks, claim: null }
 }

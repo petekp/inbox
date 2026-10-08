@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Check, Checks } from '../types'
-import { addRepo, bandLines, claimAgainst, needsYou, upgradeChecks } from '../hooks/check-tracking'
+import { addRepo, bandLines, changed, claimAgainst, needsYou, upgradeChecks } from '../hooks/check-tracking'
 
 function makeCheck(overrides: Partial<Check> = {}): Check {
   return {
@@ -17,6 +17,7 @@ function makeCheck(overrides: Partial<Check> = {}): Check {
     failures: [],
     isLeftFailing: true,
     isDismissed: false,
+    isSentBack: false,
     fixSentAt: null,
     ...overrides,
   }
@@ -54,7 +55,7 @@ describe('the session’s repos', () => {
       const checks = checksOf([makeCheck(overrides)], ['/work/app', '/work/lib'])
       expect(needsYou(checks, root).rows).toHaveLength(isCounted ? 1 : 0)
       expect(bandLines(checks, root).failing).toHaveLength(isCounted ? 1 : 0)
-      expect(claimAgainst(checks, 'The tests pass.', root) !== null).toBe(isCounted)
+      expect(claimAgainst(checks, 'The tests pass.', root).claim !== null).toBe(isCounted)
     })
   }
 })
@@ -74,5 +75,70 @@ describe('band lines', () => {
     expect(bandLines(checksOf([dismissed]), root)).toEqual({ failing: [], summary: [] })
     const rerun = makeCheck({ isDismissed: false })
     expect(bandLines(checksOf([rerun]), root).failing).toEqual([rerun])
+  })
+})
+
+describe('stale results', () => {
+  const stale = (check: Partial<Check>, paths: string[] | null) =>
+    changed(checksOf([makeCheck({ result: 'pass', ...check })]), '/work/app', paths, root).results[0]?.isStale
+
+  const cases: [string, Partial<Check>, string[] | null, boolean][] = [
+    ['git could not tell', {}, null, true],
+    ['a file in the check’s folder changed', { folder: '/work/app/pkg' }, ['pkg/src/a.ts'], true],
+    ['the check ran in the session’s folder and any file changed', { folder: null }, ['src/a.ts'], true],
+    ['a file elsewhere in the repo changed', { folder: '/work/app/pkg' }, ['other/a.ts'], false],
+    ['a folder with the same prefix changed', { folder: '/work/app/pkg' }, ['pkg2/a.ts'], false],
+    ['only Markdown changed and the check is tests', { kind: 'tests' }, ['README.md'], false],
+    ['only Markdown changed and the check is types', { kind: 'types' }, ['docs/a.MD'], false],
+    ['only Markdown changed and the check is a build', { kind: 'build' }, ['README.md'], false],
+    ['only Markdown changed and the check is lint', { kind: 'lint' }, ['README.md'], true],
+    ['only Markdown changed and the check is validate', { kind: 'validate' }, ['README.md'], true],
+    ['only Markdown changed and the check is a check script', { kind: 'all' }, ['README.md'], true],
+    ['no file changed', {}, [], false],
+    ['another repo changed', { repo: '/work/lib' }, ['a.ts'], false],
+  ]
+
+  for (const [label, overrides, paths, isStale] of cases) {
+    test(`${label}: ${isStale ? 'stale' : 'current'}`, () => {
+      expect(stale(overrides, paths)).toBe(isStale)
+    })
+  }
+})
+
+describe('sending Claude back', () => {
+  const reply = 'The tests pass.'
+
+  test('sends back over a failed result once, then lets the reply through', () => {
+    const first = claimAgainst(checksOf([makeCheck()]), reply, root)
+    expect(first.claim?.problem).toBe('npm test failed when it last ran (1 fail)')
+    expect(first.checks.results[0]?.isSentBack).toBe(true)
+    expect(claimAgainst(first.checks, reply, root).claim).toBe(null)
+  })
+
+  test('sends back over a stale result once', () => {
+    const first = claimAgainst(checksOf([makeCheck({ result: 'pass', isStale: true })]), reply, root)
+    expect(first.claim?.problem).toBe('the files changed after npm test last ran')
+    expect(claimAgainst(first.checks, reply, root).claim).toBe(null)
+  })
+
+  test('a new run of the check is sent back again', () => {
+    const sent = claimAgainst(checksOf([makeCheck()]), reply, root).checks
+    const rerun = { ...sent, results: [makeCheck({ ranAt: 2 })] }
+    expect(claimAgainst(rerun, reply, root).claim).not.toBe(null)
+  })
+
+  test('skips a result already sent back for the next contradiction', () => {
+    const checks = checksOf([
+      makeCheck({ name: 'npm test', isSentBack: true }),
+      makeCheck({ name: 'tsc', kind: 'types', summary: '2 errors' }),
+    ])
+    const found = claimAgainst(checks, 'The tests pass. Types are clean.', root)
+    expect(found.claim?.problem).toBe('tsc failed when it last ran (2 errors)')
+    expect(found.checks.results.map(c => c.isSentBack)).toEqual([true, true])
+  })
+
+  test('upgradeChecks gives a saved result no send-back', () => {
+    const saved = { results: [{ ...makeCheck(), isSentBack: undefined }], repos: [] } as unknown as Checks
+    expect(upgradeChecks(saved).results[0]?.isSentBack).toBe(false)
   })
 })

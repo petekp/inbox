@@ -163,6 +163,8 @@ export type Check = {
   isLeftFailing: boolean
   /** The person dismissed its row in the Needs you tab. */
   isDismissed: boolean
+  /** The Stop hook already sent Claude back over this result, so it does not again. */
+  isSentBack: boolean
   /** When the person pressed Fix on its row, so it no longer waits on them; null before. The next run replaces the result. */
   fixSentAt: number | null
 }

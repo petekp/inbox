@@ -215,6 +215,7 @@ export function demoView(now: number): View {
           isStale: true,
           isLeftFailing: false,
           isDismissed: false,
+          isSentBack: false,
           fixSentAt: null,
         },
         {
@@ -230,6 +231,7 @@ export function demoView(now: number): View {
           isStale: false,
           isLeftFailing: false,
           isDismissed: false,
+          isSentBack: false,
           fixSentAt: null,
         },
         {
@@ -247,6 +249,7 @@ export function demoView(now: number): View {
           isStale: false,
           isLeftFailing: true,
           isDismissed: false,
+          isSentBack: false,
           fixSentAt: null,
         },
         {
@@ -262,6 +265,7 @@ export function demoView(now: number): View {
           isStale: false,
           isLeftFailing: true,
           isDismissed: false,
+          isSentBack: false,
           fixSentAt: now - 1 * MIN,
         },
         {
@@ -277,6 +281,7 @@ export function demoView(now: number): View {
           isStale: false,
           isLeftFailing: false,
           isDismissed: false,
+          isSentBack: false,
           fixSentAt: null,
         },
       ],

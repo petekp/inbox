@@ -70,6 +70,7 @@ describe('checkRuns', () => {
       failures: [],
       isLeftFailing: false,
       isDismissed: false,
+      isSentBack: false,
       fixSentAt: null,
     })
     expect(recordCheck([at(null, 'pass')], at('/work/copy', 'fail'))).toHaveLength(2)
@@ -90,6 +91,7 @@ describe('checkRuns', () => {
       failures: [],
       isLeftFailing: false,
       isDismissed: false,
+      isSentBack: false,
       fixSentAt: null,
     }
     const copy: Check = { ...tsc, folder: '/work/copy' }
@@ -127,6 +129,7 @@ describe('failureLines', () => {
       failures,
       isLeftFailing: true,
       isDismissed: false,
+      isSentBack: false,
       fixSentAt: null,
     })
     expect(
@@ -239,6 +242,7 @@ describe('contradictedClaim', () => {
     failures: [],
     isLeftFailing: false,
     isDismissed: false,
+    isSentBack: false,
     fixSentAt: null,
   })
   const checks = (...results: Check[]): Checks => ({ results, repos: [] })
@@ -278,6 +282,7 @@ describe('markStale', () => {
     failures: [],
     isLeftFailing: false,
     isDismissed: false,
+    isSentBack: false,
     fixSentAt: null,
   })
   const staleness = (results: Check[]) => results.map(c => c.isStale)
