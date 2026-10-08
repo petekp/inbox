@@ -222,7 +222,7 @@ The inbox's own prompt is the same size as the mod's: 3–4k tokens in,
 100–250 out. `codex exec` adds about 12.5k tokens of its own instructions
 and tool setup, even with tools and features off [verified]. So each reply
 costs about 16k input tokens. A direct Responses API call would skip the
-overhead, but only for people with an API key. The first version uses
+overhead, but only for people with an API key. Decided: the plugin uses
 `codex exec`, through `CODEX_CLI_PATH`, so it needs nothing the desktop app
 doesn't already have.
 
