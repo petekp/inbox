@@ -50,6 +50,7 @@ const THREADS = JSON.stringify({
                     author: { login: 'pat' },
                     body: 'Names are not quoted on purpose.',
                     url: 'https://github.com/acme/greet/pull/12#r1',
+                    createdAt: '2026-10-08T09:30:00Z',
                   },
                 ],
               },
@@ -59,6 +60,7 @@ const THREADS = JSON.stringify({
                     author: { login: 'sam' },
                     body: 'Quote the name.',
                     url: 'https://github.com/acme/greet/pull/12#r2',
+                    createdAt: '2026-10-08T10:00:00Z',
                   },
                 ],
               },
@@ -134,6 +136,9 @@ describe('prs', () => {
     // T1 is the viewer's note with a reply from sam, so it waits on the viewer.
     // T4 is the viewer's own note with no reply yet, so it doesn't wait on the viewer.
     expect(threads[0]?.reply?.body).toBe('Quote the name.')
+    // The thread's time is its first comment's; a comment with none leaves it unknown.
+    expect(threads.map(t => t.at)).toEqual([Date.parse('2026-10-08T09:30:00Z'), null, null])
+    expect(threads[0]?.reply?.at).toBe(Date.parse('2026-10-08T10:00:00Z'))
     expect(threads.map(t => [t.id, t.isWaiting, t.line, t.replies])).toEqual([
       ['T1', true, 4, 1],
       ['T4', false, 2, 0],

@@ -30,8 +30,8 @@ export const THREADS_QUERY = `query($owner: String!, $repo: String!, $number: In
       reviewThreads(first: 100) {
         nodes {
           id isResolved isOutdated path line originalLine
-          comments(first: 1) { totalCount nodes { author { login } body url } }
-          last: comments(last: 1) { nodes { author { login } body url } }
+          comments(first: 1) { totalCount nodes { author { login } body url createdAt } }
+          last: comments(last: 1) { nodes { author { login } body url createdAt } }
         }
       }
     }
@@ -95,8 +95,11 @@ type ThreadNode = {
   path: string
   line: number | null
   originalLine: number | null
-  comments: { totalCount: number; nodes: { author: { login: string } | null; body: string; url: string }[] }
-  last: { nodes: { author: { login: string } | null; body: string; url: string }[] }
+  comments: {
+    totalCount: number
+    nodes: { author: { login: string } | null; body: string; url: string; createdAt?: string }[]
+  }
+  last: { nodes: { author: { login: string } | null; body: string; url: string; createdAt?: string }[] }
 }
 
 type ThreadsAnswer = {
@@ -114,7 +117,14 @@ export function readThreads(json: string): PrThread[] {
       .map(t => {
         const first = t.comments.nodes[0]
         const last = t.comments.totalCount > 1 ? t.last.nodes[0] : undefined
-        const reply = last ? { author: last.author?.login ?? 'ghost', body: last.body.trim(), url: last.url } : null
+        const reply = last
+          ? {
+              author: last.author?.login ?? 'ghost',
+              body: last.body.trim(),
+              url: last.url,
+              at: Date.parse(last.createdAt ?? '') || null,
+            }
+          : null
 
         return {
           id: t.id,
@@ -127,6 +137,7 @@ export function readThreads(json: string): PrThread[] {
           body: (first?.body ?? '').trim(),
           replies: Math.max(0, t.comments.totalCount - 1),
           url: first?.url ?? '',
+          at: Date.parse(first?.createdAt ?? '') || null,
         }
       })
   } catch {
@@ -244,6 +255,11 @@ export const prompts = {
       `The CI check "${check.name}" is failing on PR #${pr.number} (${pr.url}).`,
       'Find out why from its logs, fix it, and verify the fix. If the fix needs a change to CI configuration, ask me before making it.',
       ...(check.url ? [`Check details: ${check.url}`] : []),
+    ].join(NL),
+  resolve: (pr: PrView) =>
+    [
+      `PR #${pr.number} (${pr.url}) conflicts with ${pr.base}. Update its branch from ${pr.base}, resolve the conflicts, and verify.`,
+      'Ask me before you push, and tell me how you resolved each conflict.',
     ].join(NL),
   address: (pr: PrView, threads: PrThread[]) =>
     [

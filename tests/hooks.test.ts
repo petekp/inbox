@@ -318,7 +318,7 @@ test('a reload that cuts off the end-of-turn hook catches up on load', async ($,
 })
 
 test('a finding Claude records shows in the Findings tab, and Address it sends it back', async ($, on) => {
-  mock.clock(on, { now: 1_000_000 })
+  const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
@@ -338,6 +338,10 @@ test('a finding Claude records shows in the Findings tab, and Address it sends i
 
   await pane.press({ key: 'address-f1' })
   expect(sent.at(-1)).toContain('Please address this finding you recorded:\nIssue: Retry loop never backs off')
+  // It stays in place with what was sent for a few seconds, then leaves.
+  await clock.settle()
+  expect(await pane.find({ text: /Address sent/ })).toBeDefined()
+  await clock.advance(9000)
   expect(await pane.find({ text: /Retry loop never backs off/ })).toBeUndefined()
 })
 
@@ -376,6 +380,9 @@ test('t opens a field for the person’s own words: an answer closes its questio
   expect(sent.at(-1)).toBe(
     'About this finding you recorded:\nIssue: README is stale\nIt names the old command.\n\nFix it after the CLI ships.',
   )
+  await clock.settle()
+  expect(await pane.find({ text: /Reply sent/ })).toBeDefined()
+  await clock.advance(9000)
   expect(await pane.find({ text: /README is stale/ })).toBeUndefined()
 })
 
@@ -431,11 +438,13 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   expect(await pane.find({ text: /^Closed by Claude: no longer applies$/ })).toBeDefined()
 })
 
-test('a PR linked in a reply shows in the PRs tab; Fix and Address send its check and thread', async ($, on) => {
+test('a PR linked in a reply shows in the PRs tab; its buttons send its conflicts, check and thread, and say so', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
   // Each run of the failing check has its own job page, so a rerun has a new URL.
   let job = 1
+  // Whether the reviewer has answered since the thread was sent to Claude.
+  let hasReply = false
   ghAnswers.push(
     {
       match: argv => argv.includes('view') && argv.includes('12'),
@@ -447,7 +456,7 @@ test('a PR linked in a reply shows in the PRs tab; Fix and Address send its chec
           isDraft: false,
           state: 'OPEN',
           baseRefName: 'main',
-          mergeable: 'MERGEABLE',
+          mergeable: 'CONFLICTING',
           reviewDecision: 'REVIEW_REQUIRED',
           statusCheckRollup: [
             {
@@ -463,37 +472,50 @@ test('a PR linked in a reply shows in the PRs tab; Fix and Address send its chec
     },
     {
       match: argv => argv.includes('graphql'),
-      stdout: JSON.stringify({
-        data: {
-          repository: {
-            pullRequest: {
-              reviewThreads: {
-                nodes: [
-                  {
-                    id: 'T1',
-                    isResolved: false,
-                    isOutdated: false,
-                    path: 'bin/greet',
-                    line: 4,
-                    originalLine: 4,
-                    comments: {
-                      totalCount: 1,
-                      nodes: [
-                        {
-                          author: { login: 'sam' },
-                          body: 'Quote the name.',
-                          url: 'https://github.com/acme/greet/pull/12#r1',
-                        },
-                      ],
+      get stdout() {
+        return JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewThreads: {
+                  nodes: [
+                    {
+                      id: 'T1',
+                      isResolved: false,
+                      isOutdated: false,
+                      path: 'bin/greet',
+                      line: 4,
+                      originalLine: 4,
+                      comments: {
+                        totalCount: hasReply ? 2 : 1,
+                        nodes: [
+                          {
+                            author: { login: 'sam' },
+                            body: 'Quote the name.',
+                            url: 'https://github.com/acme/greet/pull/12#r1',
+                          },
+                        ],
+                      },
+                      last: {
+                        nodes: [
+                          hasReply
+                            ? {
+                                author: { login: 'sam' },
+                                body: 'Still unquoted.',
+                                url: '',
+                                createdAt: '2026-10-08T00:00:00Z',
+                              }
+                            : { author: { login: 'sam' }, body: 'Quote the name.', url: '' },
+                        ],
+                      },
                     },
-                    last: { nodes: [{ author: { login: 'sam' }, body: 'Quote the name.', url: '' }] },
-                  },
-                ],
+                  ],
+                },
               },
             },
           },
-        },
-      }),
+        })
+      },
     },
   )
 
@@ -512,7 +534,16 @@ test('a PR linked in a reply shows in the PRs tab; Fix and Address send its chec
   await pane.press({ key: 'tab-prs' })
   await clock.settle()
   expect(await pane.find({ text: /Add a greeting CLI/ })).toBeDefined()
-  expect(await pane.find({ text: /Blocked: 1 failing check, 1 thread waiting on you, needs approval/ })).toBeDefined()
+  expect(
+    await pane.find({ text: /Blocked: conflicts with main, 1 failing check, 1 thread waiting on you, needs approval/ }),
+  ).toBeDefined()
+
+  // A press that sends says so where it was pressed, and the button then reads "again".
+  await pane.press({ key: 'resolve-acme/greet#12' })
+  expect(sent.at(-1)).toContain('PR #12 (https://github.com/acme/greet/pull/12) conflicts with main.')
+  await clock.settle()
+  expect(await pane.find({ text: /Resolve conflicts sent ·/ })).toBeDefined()
+  expect((await pane.find({ key: 'resolve-acme/greet#12' }))?.props.label).toBe('Resolve conflicts again')
 
   // The failing check comes first. Once its fix is sent, the row says so until a rerun of it fails again.
   await pane.press({ key: 'fix-acme/greet#12-test' })
@@ -526,10 +557,29 @@ test('a PR linked in a reply shows in the PRs tab; Fix and Address send its chec
   await clock.settle()
   expect(await pane.find({ text: /fix sent/i })).toBeUndefined()
 
+  // A thread's keys say so too, pressed by hotkey or by click.
   await pane.press({ key: 'next' })
+  await pane.press({ key: 'discuss-T1-key' })
+  expect(sent.at(-1)).toContain("Let's talk through this review comment on PR #12")
+  await clock.settle()
+  expect(await pane.find({ text: /Discuss sent ·/ })).toBeDefined()
+  expect((await pane.find({ key: 'discuss-T1' }))?.props.label).toMatch(/Discuss again$/)
   await pane.press({ key: 'address-T1' })
   expect(sent.at(-1)).toContain('Address this review comment on PR #12')
   expect(sent.at(-1)).toContain('bin/greet:4, from @sam:\nQuote the name.')
+  await clock.settle()
+  expect(await pane.find({ text: /Address sent ·/ })).toBeDefined()
+  expect((await pane.find({ key: 'address-T1-key' }))?.props.label).toBe('Address again')
+
+  // Sent to Claude, the thread folds to its first line, until the reviewer answers.
+  const details = 'fold-details-acme/greet#12 thread T1'
+  expect(await pane.find({ key: details })).toBeDefined()
+  hasReply = true
+  await pane.press({ key: 'tab-findings' })
+  await pane.press({ key: 'tab-prs' })
+  await clock.settle()
+  expect(await pane.find({ text: /Still unquoted/ })).toBeDefined()
+  expect(await pane.find({ key: details })).toBeUndefined()
 })
 
 test('opening the PRs tab while another PR fetch runs still finds the branch’s PR', async ($, on) => {

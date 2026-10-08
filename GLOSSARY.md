@@ -88,3 +88,7 @@ PRs tabs.
 **Card**:
 The short summary of where the session stands: its goal, what's done, and
 what's happening now.
+
+**Last action**:
+What an item or PR in the pane says after the person presses one of its
+actions, such as "Discuss sent · 1m ago". Each keeps only its latest.

@@ -58,6 +58,19 @@ export type Closed = {
 /** An item that just closed, and where its row stood among the open items of its kind. */
 export type Settled = Closed & { index: number }
 
+/** What a row's last action did, shown on the row so the person sees the press went through. */
+export type LastAction = {
+  /** The action's key, so that action reads "… again". */
+  action: string
+  /** What happened, as in "Discuss sent". */
+  text: string
+  at: number
+  /** Where the row was, and its title, for a row the press removed: it shows its last action in its place for a few seconds. */
+  tab: Tab
+  title: string
+  index: number
+}
+
 /** Something Claude noticed outside the current task and recorded for the person. */
 export type Finding = {
   id: string
@@ -75,8 +88,8 @@ export type PrCheck = { name: string; bucket: 'pass' | 'fail' | 'pending' | 'ski
 export type PrThread = {
   id: string
   author: string
-  /** The thread's latest comment, when anyone answered the first. */
-  reply: { author: string; body: string; url: string } | null
+  /** The thread's latest comment, when anyone answered the first. Its `at` is as the thread's. */
+  reply: { author: string; body: string; url: string; at: number | null } | null
   /** Someone other than the viewer wrote its last comment, so it waits on them. */
   isWaiting: boolean
   isOutdated: boolean
@@ -85,6 +98,8 @@ export type PrThread = {
   body: string
   replies: number
   url: string
+  /** When its first comment was written; null when GitHub gave no time, or for a thread saved before the mod kept it. */
+  at: number | null
 }
 
 /** A PR as gh last reported it. */
@@ -257,8 +272,12 @@ declare module 'claude-code' {
       typing: string | null
       /** Items that just closed, shown in place with their outcome for a few seconds. */
       settled: Settled[]
+      /** Each row's last action, by the row's id. */
+      lastActions: Record<string, LastAction>
       /** The Needs you groups whose closed items show. Each starts folded. */
       unfolded: Item['kind'][]
+      /** The rows whose folded details show, by the row's id. */
+      shownDetails: string[]
       /** The pane's list of the keys no row shows is unfolded. */
       isKeyListShown: boolean
       /** The band and pane show sample entries instead of the session's own, for `/inbox demo`. */
