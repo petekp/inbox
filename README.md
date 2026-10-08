@@ -15,8 +15,7 @@ In a Claude Code session, type:
 Answer `y` to add the marketplace, then choose a scope. It starts working in
 that session.
 
-- It costs one Sonnet call after each of Claude's replies, about 3k tokens in
-  and 500 out.
+- It makes one Sonnet call after each of Claude's replies. See [Cost](#cost).
 - The PRs tab needs the GitHub CLI, `gh`, signed in.
 - It was built and tested with Claude Code 2.1.292.
 
@@ -56,6 +55,20 @@ say the change is untested.
 
 To see every part with sample items, run `/inbox demo`. Run it again to go
 back to your own.
+
+## Cost
+
+You might be wondering how many extra tokens the inbox uses. It adds two
+things:
+
+| What the inbox adds | Tokens | Cost at API prices |
+|---|---|---|
+| A Sonnet call after each of Claude's replies, to update the inbox | 3–4k in, 100–250 out | About 1¢ per reply |
+| Its instructions and tools, sent with every request Claude makes | About 1,350, cached | Under 0.1¢ per request |
+
+In one long Opus session, this came to about 1% of the total cost. A shorter
+or cheaper session pays a larger share. On a Claude plan, these count toward
+your usage limits.
 
 ## Developing
 
