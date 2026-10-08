@@ -1,6 +1,8 @@
 # The inbox as a Codex plugin
 
-Status: building. Step 0 is done. The Claude Code mod stays unchanged.
+Status: first version built in `codex/`, and run end to end through `codex
+exec`. Not yet tried in a desktop app session. The Claude Code mod stays
+unchanged.
 
 Goal: give Codex sessions what the inbox gives Claude Code sessions. That
 means one place for what waits on the person, Codex's findings, check results
@@ -188,12 +190,12 @@ Claude and Sonnet. AGENTS.md records that a one-word change made the inbox
 model re-add dismissed questions. The port changes both the agent, Codex, and
 the inbox model, an OpenAI model.
 
-**Do:** port the text with as few changes as possible. Two kinds are needed:
+**Do:** port the text with as few changes as possible. Two kinds are needed, both in `codex/src/texts.ts`:
 
 - "Claude" becomes "Codex".
-- Tool names change. The texts name `mcp__inbox__record_finding`, Bash, Read
-  and others by their Claude Code names. Codex names MCP tools and its own
-  tools differently [unverified: the exact names].
+- The surface: the band and the /inbox pane become the Inbox tab. Tool
+  names stay, since Codex also names the inbox's tools
+  `mcp__inbox__record_finding` and `mcp__inbox__close` [verified].
 
 Then measure it as AGENTS.md describes. Run the same sample exchanges several times
 through `codex exec` with each candidate model, and count re-added, wrongly
@@ -374,20 +376,54 @@ code and output, as an `item_completed` `CommandExecution`.
 So the `Stop` hook reads the turn's finished commands from the transcript
 and records each lone check. `PreToolUse` still denies a compound check.
 
+## First version results
+
+Built in `codex/`, with `codex/README.md` for installing. A three-turn
+session ran through `codex exec`, in a separate Codex home with hook trust
+bypassed:
+
+| Part | Result |
+| --- | --- |
+| Hooks | `SessionStart`, `UserPromptSubmit`, `PreToolUse` with the matcher `Bash\|apply_patch\|mcp__.*`, and `Stop` all fired. |
+| Check tracking | A failing `npm test` was recorded from the transcript, then a passing rerun, which went stale after a patch. |
+| Claim check | Codex honors `{decision: "block", reason}` from `Stop`: the turn went on, and the next `Stop` had `stop_hook_active: true`. |
+| A press | The server closed the question, and `codex queue` wrote the answer for the right thread with the CLI path a hook saved. `codex exec resume` also reads the queue, and delivered it. |
+| Findings | `record_finding` needs no approval with `default_tools_approval_mode: "approve"` in `.mcp.json`. Without it, Codex refused the call. |
+| Data folder | MCP server processes found the hooks' data folder from their own install path. |
+| Tab | Drawn in a browser with a stand-in host, in dark and light, at the desktop tab's 576 px. A press shows "Sending …" on its row at once. |
+
+Found while building:
+
+- The transcript writes a command's `cwd` as a `file://` URL. Read as a path,
+  every check looked like it ran in a folder that is gone.
+- `codex exec` rejects an unknown `--disable` feature name, so the update
+  drops any name a release rejects and tries again.
+
+The inbox model, measured on four sample exchanges, three runs each:
+
+| Model | Right | Time per call |
+| --- | --- | --- |
+| `gpt-6.1-sol`, low effort | 12 of 12 | 4–5 s |
+| `gpt-6-luna`, low effort | 10 of 12 | 3 s |
+
+Both misses by `gpt-6-luna` closed an open finding because the reply said
+it was recorded, which drops the finding. It made the same mistake in the
+live session. The plugin uses `gpt-6.1-sol`.
+
+Not tried yet: a desktop app session with the hooks trusted and the tab
+open, and a press from the tab reaching a live thread.
+
 ## Build steps
 
 1. Step 0 and step 0b. Done.
-2. The plugin folder, the build and the marketplace entry.
-3. Session state, the hooks and the MCP tools, with tests that feed
-   hand-written hook input to each hook. The shared modules keep their own
-   tests in `tests/`.
-4. The per-reply update through `codex exec`. Measure `SYSTEM` on the
-   candidate models, `gpt-6-luna` and `gpt-6.1-sol` at low effort, and pick
-   one.
-5. The Inbox tab.
-6. A full session through `codex exec`, with hook trust bypassed for the
-   test. Then a real session in the desktop app, which needs the person to
-   trust the hooks and open the tab.
+2. The plugin folder, the build and the marketplace entry. Done.
+3. Session state, the hooks and the MCP tools, with tests. Done.
+4. The per-reply update through `codex exec`, and the model measurement.
+   Done.
+5. The Inbox tab. Done.
+6. A full session through `codex exec`. Done. A real session in the desktop
+   app, which needs the person to install the plugin, trust the hooks and
+   open the tab. Not yet.
 
 ## Decisions
 

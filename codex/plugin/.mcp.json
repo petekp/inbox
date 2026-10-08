@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "inbox": {
+      "command": "node",
+      "args": ["./dist/server.mjs"],
+      "cwd": ".",
+      "default_tools_approval_mode": "approve"
+    }
+  }
+}

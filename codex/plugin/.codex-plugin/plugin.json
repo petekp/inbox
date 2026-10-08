@@ -1,0 +1,17 @@
+{
+  "name": "inbox",
+  "version": "0.1.0",
+  "description": "Collects what waits on you in a Codex session: questions, tasks, failing checks and Codex's findings, in a tab beside the conversation",
+  "author": { "name": "Pete Petrash" },
+  "repository": "https://github.com/petekp/inbox",
+  "license": "MIT",
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "Inbox",
+    "shortDescription": "What waits on you in this conversation",
+    "developerName": "Pete Petrash",
+    "category": "Developer Tools",
+    "capabilities": ["Interactive"]
+  }
+}

@@ -1,3 +1,8 @@
 # Prettier only pads the tables in these docs, and it can break a code span
 # that wraps across lines.
 *.md
+
+# Built by codex/build.mjs
+codex/plugin/dist/
+codex/test-dist/
+codex/package-lock.json

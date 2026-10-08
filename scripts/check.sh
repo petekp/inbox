@@ -1,7 +1,7 @@
 #!/bin/sh
 # Checks the mod: formatting with Prettier, its structure with
 # `claude plugin validate`, its types with tsc, and its tests with
-# `claude plugin test`. Exits 1 on any failure.
+# `claude plugin test`. Then the Codex plugin in codex/. Exits 1 on any failure.
 #
 # Needs npx and the claude CLI.
 #
@@ -44,5 +44,15 @@ else
     echo "  - types: not checked. Load the mod once to write them: claude --plugin-dir $DIR"
 fi
 check "tests" claude plugin test "$DIR"
+
+# The Codex plugin in codex/: its committed bundles match its sources, its
+# types, and its tests. Its tools come from its own package.json.
+if [ -d "$DIR/codex/node_modules" ]; then
+    check "codex bundles" npm --prefix "$DIR/codex" run --silent check
+    check "codex types" npm --prefix "$DIR/codex" run --silent types
+    check "codex tests" npm --prefix "$DIR/codex" test --silent
+else
+    echo "  - codex: not checked. Install its tools once: npm --prefix $DIR/codex ci"
+fi
 
 exit "$status"

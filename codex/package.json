@@ -1,0 +1,17 @@
+{
+  "name": "inbox-codex",
+  "private": true,
+  "type": "module",
+  "description": "Builds the inbox Codex plugin in ./plugin from ./src and the mod's shared modules in ../hooks",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node build.mjs --tests && node --test \"test-dist/*.spec.mjs\"",
+    "types": "tsc --noEmit -p .",
+    "check": "node build.mjs --check"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.0",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}

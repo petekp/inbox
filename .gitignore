@@ -3,3 +3,7 @@
 
 # Throwaway scripts that import the mod's code, so they live inside the repo
 .scratch/
+
+# The Codex plugin's tools and test bundles; its plugin/dist bundles are committed
+codex/node_modules/
+codex/test-dist/
