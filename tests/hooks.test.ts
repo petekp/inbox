@@ -609,7 +609,7 @@ test('a failing test run shows in the band, reaches the per-turn call, stops a c
 
   const blocked = await $.classic.Stop({
     stop_hook_active: false,
-    last_assistant_message: 'Fixed the parser. All tests pass.',
+    last_assistant_message: 'Fixed the parser. All tests pass. Should I also rename the helper?',
   } as never)
   expect(blocked.block).toContain('npm test failed when it last ran (11 pass, 1 fail)')
   // Sent back once: the second stop goes through.
@@ -628,6 +628,8 @@ test('a failing test run shows in the band, reaches the per-turn call, stops a c
   })
   await clock.settle()
   expect(prompts.at(-1)).toContain('<checks>\n✗ npm test, 11 pass, 1 fail\n</checks>')
+  // The reply Claude was sent back from reaches the update, though it is not the final answer.
+  expect(prompts.at(-1)).toContain('Should I also rename the helper?')
   expect(await band.find({ text: /✗ npm test, 11 pass, 1 fail/ })).toBeDefined()
 
   // Still failing when the turn ended, so it waits on the person until they dismiss it.

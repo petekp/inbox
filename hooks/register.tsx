@@ -407,6 +407,8 @@ let isTurnRunning = false
 let isOn = false
 // The press behind this turn's prompt.
 let press: Press | null = null
+// Replies a Stop hook sent Claude back from this turn, before the final one.
+let sentBack: string[] = []
 // Set in session.start, which a hot reload runs again.
 let sessionId = ''
 let root = ''
@@ -432,6 +434,30 @@ const contextFor = new Map<string, string[]>()
 let toldClosed = new Set<string>()
 // The `!` command whose output row comes next.
 let shellCommand: string | null = null
+
+/** Clears everything gathered for the turn's exchange. */
+function resetTurn() {
+  activity = []
+  person = null
+  trigger = null
+  press = null
+  sentBack = []
+}
+
+/** Sends Claude back when the reply claims a check passes against its latest run. */
+async function blockOnClaim<R extends { block?: string }>($: EngineInterface, r: R, reply: string): Promise<R> {
+  if ((await read($, CHECKS)).results.length === 0) return r
+  await refreshTree($)
+  const sent: { claim: Contradiction | null } = { claim: null }
+  await update($, CHECKS, c => {
+    const found = claimAgainst(c, reply, root)
+    sent.claim = found.claim
+
+    return found.checks
+  })
+
+  return sent.claim ? { ...r, block: claimMessage(sent.claim) } : r
+}
 
 /** Adds a message or a command of the person's to what they sent this turn. */
 function notePerson(line: string) {
@@ -1740,9 +1766,7 @@ export const register: Register = on => {
         update($, PREVIOUS, () => null),
         update($, PRESENCE, p => ({ ...p, isAway: false, ledgerState: 'current' as const })),
       ])
-      activity = []
-      person = null
-      press = null
+      resetTurn()
       shellCommand = null
       toldInbox = null
       toldClosed = new Set()
@@ -1885,19 +1909,14 @@ export const register: Register = on => {
   // before the last edit, sends Claude back once to run it or say so.
   on('classic.Stop', async ($, e, next) => {
     const r = await next(e)
-    if (!isOn || e.agent_id || e.stop_hook_active || r.block) return r
+    if (!isOn || e.agent_id) return r
     const reply = e.last_assistant_message ?? ''
-    if (!reply.trim() || (await read($, CHECKS)).results.length === 0) return r
-    await refreshTree($)
-    const sent: { claim: Contradiction | null } = { claim: null }
-    await update($, CHECKS, c => {
-      const found = claimAgainst(c, reply, root)
-      sent.claim = found.claim
+    if (!reply.trim()) return r
+    const result = r.block || e.stop_hook_active ? r : await blockOnClaim($, r, reply)
+    // The reply Claude is sent back from never becomes the turn's final answer.
+    if (result.block) sentBack.push(reply)
 
-      return found.checks
-    })
-
-    return sent.claim ? { ...r, block: claimMessage(sent.claim) } : r
+    return result
   })
 
   on('turn.complete', async ($, e, next) => {
@@ -1917,23 +1936,21 @@ export const register: Register = on => {
       checks = await read($, CHECKS)
     }
     const [ledger, shown, now] = await Promise.all([read($, LEDGER), screen($), $.clock.now()])
+    const reply = [...sentBack, e.answer].join('\n\n')
     const ex: Exchange = {
       person,
       trigger,
       activity,
-      reply: e.answer,
+      reply,
       turn: ledger.turn,
       press,
       screen: shown,
       checks: checks.results.map(c => checkLine(c, root)),
     }
-    press = null
-    person = null
-    trigger = null
-    activity = []
+    resetTurn()
     const { turnsStarted } = await update($, PRESENCE, p => ({ ...p, lastActiveAt: now }))
     queueUpdate($, { ex, turnsStarted })
-    await linkPrs($, prRefs(e.answer))
+    await linkPrs($, prRefs(reply))
 
     return r
   })
