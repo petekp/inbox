@@ -46,12 +46,11 @@ it again must look deliberate.
   to Claude and remove it, so it stays in place for 8 seconds with a ✓ and its
   last action, as a closed item does. Dismiss only hides, so its row leaves at
   once.
-- **A review thread folds once sent.** After Address, Draft reply, Discuss or
-  Address all, the thread shows a ✓ and the first line of its latest comment,
-  with the full comment behind a click-only `▸ Details`. A comment newer than
-  the send unfolds it. Reason: as with an answered question, the person has
-  done their part, and the long comment no longer needs to be read. The thread
-  stays in the list, since GitHub still shows it open.
+- **A row handed to Claude folds.** After Address or Address all on a review
+  thread, Fix on a failing check, or a Run step or typed reply on a task, the
+  row shows a ✓ and what was sent, with its body and keys behind Details. It
+  leaves the "waiting on you" counts. Discuss, Draft reply and Explain record
+  their last action but don't fold. See [sent-rows.md](sent-rows.md).
 - **Resolve conflicts.** A PR that conflicts with its base branch gets a
   Resolve conflicts button. It asks Claude to update the branch, resolve the
   conflicts and verify, and to ask before pushing.

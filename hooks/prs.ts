@@ -21,12 +21,14 @@ export const VIEW_FIELDS = 'number,title,url,isDraft,state,baseRefName,mergeable
 
 /**
  * Unresolved review threads: the first comment, which states the finding, and
- * who wrote the last one, which says whose turn it is.
+ * who wrote the last one, which says whose turn it is. The latest commit's
+ * time tells a reply that came after the lines changed from one before.
  */
 export const THREADS_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
   viewer { login }
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
+      commits(last: 1) { nodes { commit { committedDate } } }
       reviewThreads(first: 100) {
         nodes {
           id isResolved isOutdated path line originalLine
@@ -103,7 +105,15 @@ type ThreadNode = {
 }
 
 type ThreadsAnswer = {
-  data?: { viewer?: { login: string }; repository?: { pullRequest?: { reviewThreads?: { nodes?: ThreadNode[] } } } }
+  data?: {
+    viewer?: { login: string }
+    repository?: {
+      pullRequest?: {
+        commits?: { nodes?: { commit?: { committedDate?: string } }[] }
+        reviewThreads?: { nodes?: ThreadNode[] }
+      }
+    }
+  }
 }
 
 /** Reads the THREADS_QUERY answer: open threads only, oldest first. */
@@ -111,8 +121,10 @@ export function readThreads(json: string): PrThread[] {
   try {
     const data = (JSON.parse(json) as ThreadsAnswer).data
     const viewer = data?.viewer?.login
+    const pr = data?.repository?.pullRequest
+    const headAt = Date.parse(pr?.commits?.nodes?.[0]?.commit?.committedDate ?? '') || null
 
-    return (data?.repository?.pullRequest?.reviewThreads?.nodes ?? [])
+    return (pr?.reviewThreads?.nodes ?? [])
       .filter(t => !t.isResolved)
       .map(t => {
         const first = t.comments.nodes[0]
@@ -126,12 +138,17 @@ export function readThreads(json: string): PrThread[] {
             }
           : null
 
+        // With either time unknown, someone else's reply keeps the thread waiting.
+        const isAnsweredSince =
+          reply !== null && reply.author !== viewer && (headAt === null || reply.at === null || reply.at > headAt)
+
         return {
           id: t.id,
           author: first?.author?.login ?? 'ghost',
           reply,
           isWaiting: (reply?.author ?? first?.author?.login) !== viewer,
           isOutdated: t.isOutdated,
+          isLinesChanged: t.isOutdated && !isAnsweredSince,
           path: t.path,
           line: t.line ?? t.originalLine,
           body: (first?.body ?? '').trim(),
@@ -145,9 +162,27 @@ export function readThreads(json: string): PrThread[] {
   }
 }
 
-/** Open threads whose last comment someone else wrote: the ones waiting on the person. */
+/** Open threads whose last comment someone else wrote: the PRs tab lists these. */
 export function waitingThreads(pr: PrView): PrThread[] {
   return pr.threads.filter(t => t.isWaiting)
+}
+
+/** Which of a PR's rows the person handed to Claude: a thread sent to it, or a failing check whose fix was sent. */
+export type Handoffs = {
+  isThreadSent: (pr: PrView, t: PrThread) => boolean
+  isFixSent: (pr: PrView, c: PrCheck) => boolean
+}
+
+export const NO_HANDOFFS: Handoffs = { isThreadSent: () => false, isFixSent: () => false }
+
+/** Waiting threads still on the person: not sent to Claude, and not on lines a later commit changed. */
+export function threadsOnYou(pr: PrView, h: Handoffs): PrThread[] {
+  return waitingThreads(pr).filter(t => !t.isLinesChanged && !h.isThreadSent(pr, t))
+}
+
+/** The PR rows that wait on the person, for every count of them: failing checks with no fix sent, and threads on them. */
+export function prRowsOnYou(pr: PrView, h: Handoffs): number {
+  return failingChecks(pr).filter(c => !h.isFixSent(pr, c)).length + threadsOnYou(pr, h).length
 }
 
 export function checkCounts(pr: PrView): Record<PrCheck['bucket'], number> {
@@ -165,18 +200,39 @@ function threadsWaiting(count: number): string {
 /** Where a PR stands. A draft is open and not ready, whatever else blocks it. */
 export type PrStatus = 'ready' | 'blocked' | 'draft' | 'merged' | 'closed'
 
-/** What stands between the PR and merging, or that it is ready. */
-export function readiness(pr: PrView): { status: PrStatus; text: string } {
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`
+}
+
+/** "2 failing checks", or with how many have a fix sent. A check stays a blocker until it passes. */
+function failingText(failing: number, sent: number): string {
+  const checks = plural(failing, 'failing check', 'failing checks')
+  if (sent === 0) return checks
+
+  return sent === failing ? `${checks}, fix sent` : `${checks}, ${sent} with a fix sent`
+}
+
+/**
+ * What stands between the PR and merging, or that it is ready. A thread sent
+ * to Claude or on changed lines still blocks, as it is still open on GitHub.
+ */
+export function readiness(pr: PrView, h: Handoffs = NO_HANDOFFS): { status: PrStatus; text: string } {
   if (pr.state === 'MERGED') return { status: 'merged', text: 'Merged' }
   if (pr.state !== 'OPEN') return { status: 'closed', text: 'Closed' }
   const { fail: failing, pending } = checkCounts(pr)
-  const open = waitingThreads(pr).length
+  const fixesSent = failingChecks(pr).filter(c => h.isFixSent(pr, c)).length
+  const waiting = waitingThreads(pr)
+  const open = threadsOnYou(pr, h).length
+  const sent = waiting.filter(t => h.isThreadSent(pr, t)).length
+  const changed = waiting.filter(t => t.isLinesChanged && !h.isThreadSent(pr, t)).length
   const blockers = [
     pr.isDraft ? 'draft' : null,
     pr.mergeable === 'CONFLICTING' ? `conflicts with ${pr.base}` : null,
-    failing > 0 ? `${failing} failing ${failing === 1 ? 'check' : 'checks'}` : null,
+    failing > 0 ? failingText(failing, fixesSent) : null,
     pr.reviewDecision === 'CHANGES_REQUESTED' ? 'changes requested' : null,
     open > 0 ? threadsWaiting(open) : null,
+    sent > 0 ? `${plural(sent, 'thread', 'threads')} sent to Claude` : null,
+    changed > 0 ? `${plural(changed, 'thread', 'threads')} on changed lines` : null,
     pr.reviewDecision === 'REVIEW_REQUIRED' ? 'needs approval' : null,
     pending > 0 ? `${pending} ${pending === 1 ? 'check' : 'checks'} running` : null,
   ].filter((b): b is string => b !== null)
@@ -190,11 +246,11 @@ export function readiness(pr: PrView): { status: PrStatus; text: string } {
 }
 
 /** The band's one-line PR alert: the first open PR that needs the person, or null. */
-export function prAttention(views: PrView[]): string | null {
+export function prAttention(views: PrView[], h: Handoffs = NO_HANDOFFS): string | null {
   for (const pr of views) {
     if (pr.state !== 'OPEN') continue
-    const open = waitingThreads(pr).length
-    if (checkCounts(pr).fail > 0) return `PR #${pr.number} CI failing`
+    const open = threadsOnYou(pr, h).length
+    if (failingChecks(pr).some(c => !h.isFixSent(pr, c))) return `PR #${pr.number} CI failing`
     if (pr.reviewDecision === 'CHANGES_REQUESTED') return `PR #${pr.number} changes requested`
     if (open > 0) return `PR #${pr.number} ${threadsWaiting(open)}`
   }

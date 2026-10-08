@@ -2,7 +2,7 @@
 // `/inbox demo` for work on the layout. Nothing here reaches the session's
 // real inbox, its store, or Claude.
 
-import type { Checks, Ledger, PrFixSent, PrViews, Settled, Stop } from '../types'
+import type { Checks, LastAction, Ledger, Presence, PrFixSent, PrViews, Settled, Stop } from '../types'
 
 export type View = {
   ledger: Ledger
@@ -11,6 +11,9 @@ export type View = {
   settled: Settled[]
   prViews: PrViews
   prFixesSent: Record<string, PrFixSent>
+  lastActions: Record<string, LastAction>
+  /** The turn counts a task handed to Claude folds by. */
+  turns: Pick<Presence, 'turnsStarted' | 'turnsApplied'>
 }
 
 const MIN = 60_000
@@ -92,6 +95,17 @@ export function demoView(now: number): View {
           helps: [{ kind: 'copy', text: '/theme', name: 'theme command' }],
           turn: 14,
           at: now - 5 * MIN,
+        },
+        {
+          id: 'd18',
+          kind: 'task',
+          label: null,
+          ask: 'Run the load script and send back its output lines',
+          options: [],
+          rec: null,
+          helps: [{ kind: 'run', command: './scripts/load.sh', name: 'load script' }],
+          turn: 14,
+          at: now - 4 * MIN,
         },
         {
           id: 'd17',
@@ -312,6 +326,7 @@ export function demoView(now: number): View {
               reply: null,
               isWaiting: true,
               isOutdated: false,
+              isLinesChanged: false,
               path: 'hooks/register.tsx',
               line: 1147,
               body: 'Why do the answer keys skip d? A question has no Done action.',
@@ -330,6 +345,7 @@ export function demoView(now: number): View {
               },
               isWaiting: true,
               isOutdated: true,
+              isLinesChanged: false,
               path: 'README.md',
               line: 87,
               body: 'Should the Keys list live in the footer?',
@@ -348,12 +364,27 @@ export function demoView(now: number): View {
               },
               isWaiting: false,
               isOutdated: false,
+              isLinesChanged: false,
               path: 'hooks/register.tsx',
               line: 2296,
               body: 'Can the tab width come from the label alone now?',
               replies: 1,
               url: `${REPO}/pull/31#discussion_r4`,
               at: now - 26 * 60 * MIN,
+            },
+            {
+              id: 'DT4',
+              author: 'review-bot',
+              reply: null,
+              isWaiting: true,
+              isOutdated: true,
+              isLinesChanged: true,
+              path: 'hooks/prs.ts',
+              line: 114,
+              body: 'Outdated threads still count as waiting on the person.',
+              replies: 0,
+              url: `${REPO}/pull/31#discussion_r6`,
+              at: now - 50 * MIN,
             },
           ],
           fetchedAt: now - MIN,
@@ -400,5 +431,28 @@ export function demoView(now: number): View {
     prFixesSent: {
       'petekp/inbox#31 check lint': { at: now - 2 * MIN, url: `${REPO}/actions/runs/3` },
     },
+    lastActions: {
+      d18: {
+        action: 'help-d18-0',
+        text: 'Run load script sent',
+        at: now - 1 * MIN,
+        isHandoff: true,
+        turnsStarted: 14,
+        tab: 'needsYou',
+        title: 'Run the load script and send back its output lines',
+        index: 0,
+      },
+      'petekp/inbox#31 thread DT1': {
+        action: 'address-DT1',
+        text: 'Address sent',
+        at: now - 2 * MIN,
+        isHandoff: true,
+        turnsStarted: 14,
+        tab: 'prs',
+        title: 'hooks/register.tsx:1147',
+        index: 0,
+      },
+    },
+    turns: { turnsStarted: 14, turnsApplied: 14 },
   }
 }

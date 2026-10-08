@@ -1,6 +1,16 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { commentLine, prRefs, readThreads, readView, readableComment, readiness } from '../hooks/prs'
+import {
+  commentLine,
+  prAttention,
+  prRefs,
+  prRowsOnYou,
+  readThreads,
+  readView,
+  readableComment,
+  readiness,
+} from '../hooks/prs'
+import type { Handoffs } from '../hooks/prs'
 
 const VIEW = JSON.stringify({
   number: 12,
@@ -139,13 +149,60 @@ describe('prs', () => {
     // The thread's time is its first comment's; a comment with none leaves it unknown.
     expect(threads.map(t => t.at)).toEqual([Date.parse('2026-10-08T09:30:00Z'), null, null])
     expect(threads[0]?.reply?.at).toBe(Date.parse('2026-10-08T10:00:00Z'))
-    expect(threads.map(t => [t.id, t.isWaiting, t.line, t.replies])).toEqual([
-      ['T1', true, 4, 1],
-      ['T4', false, 2, 0],
-      ['T3', true, 9, 0],
+    // T3 is outdated with no reply: a later commit changed its lines, so it no longer waits on the viewer.
+    expect(threads.map(t => [t.id, t.isWaiting, t.isLinesChanged, t.line, t.replies])).toEqual([
+      ['T1', true, false, 4, 1],
+      ['T4', false, false, 2, 0],
+      ['T3', true, true, 9, 0],
     ])
     expect(readiness({ ...view, threads, fetchedAt: 0, error: null }).text).toBe(
-      'Blocked: 1 failing check, changes requested, 2 threads waiting on you, 1 check running',
+      'Blocked: 1 failing check, changes requested, 1 thread waiting on you, 1 thread on changed lines, 1 check running',
+    )
+  })
+
+  test('an outdated thread waits again when someone replies after the latest commit', () => {
+    const outdated = (replyAt: string) =>
+      JSON.stringify({
+        data: {
+          viewer: { login: 'pat' },
+          repository: {
+            pullRequest: {
+              commits: { nodes: [{ commit: { committedDate: '2026-10-08T12:00:00Z' } }] },
+              reviewThreads: {
+                nodes: [
+                  {
+                    id: 'T5',
+                    isResolved: false,
+                    isOutdated: true,
+                    path: 'bin/greet',
+                    line: null,
+                    originalLine: 3,
+                    comments: {
+                      totalCount: 2,
+                      nodes: [{ author: { login: 'sam' }, body: 'Quote the name.', url: '' }],
+                    },
+                    last: {
+                      nodes: [{ author: { login: 'sam' }, body: 'Still unquoted.', url: '', createdAt: replyAt }],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      })
+    expect(readThreads(outdated('2026-10-08T11:00:00Z'))[0]?.isLinesChanged).toBe(true)
+    expect(readThreads(outdated('2026-10-08T13:00:00Z'))[0]?.isLinesChanged).toBe(false)
+  })
+
+  test('a thread sent to Claude and a check with a fix sent stop waiting on the person, and still block', () => {
+    const view = readView('acme/greet#12', VIEW)!
+    const pr = { ...view, threads: readThreads(THREADS).slice(0, 1), fetchedAt: 0, error: null }
+    const sent: Handoffs = { isThreadSent: () => true, isFixSent: () => true }
+    expect(prRowsOnYou(pr, sent)).toBe(0)
+    expect(prAttention([pr], sent)).toBe('PR #12 changes requested')
+    expect(readiness(pr, sent).text).toBe(
+      'Blocked: 1 failing check, fix sent, changes requested, 1 thread sent to Claude, 1 check running',
     )
   })
 })

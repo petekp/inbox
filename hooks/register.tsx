@@ -59,7 +59,7 @@ import { demoView } from './demo'
 import type { View } from './demo'
 import { candidates, changedPaths, readChanged, readLsTree, sameSnapshot } from './git'
 import type { Exchange, Press, Update } from './ledger'
-import type { PrStatus } from './prs'
+import type { Handoffs, PrStatus } from './prs'
 import {
   THREADS_QUERY,
   VIEW_FIELDS,
@@ -69,7 +69,9 @@ import {
   parseRef,
   prAttention,
   prRefs,
+  prRowsOnYou,
   prompts,
+  threadsOnYou,
   readThreads,
   readView,
   readableComment,
@@ -664,9 +666,9 @@ async function showSettled($: EngineInterface, before: Ledger, after: Ledger) {
 }
 
 /** Records what a row's action did. A row the press removed shows it in its place until SETTLED_MS passes. */
-async function recordLastAction($: EngineInterface, id: string, last: Omit<LastAction, 'at'>) {
-  const at = await $.clock.now()
-  await update($, LAST_ACTIONS, a => ({ ...a, [id]: { ...last, at } }))
+async function recordLastAction($: EngineInterface, id: string, last: Omit<LastAction, 'at' | 'turnsStarted'>) {
+  const [at, { turnsStarted }] = await Promise.all([$.clock.now(), read($, PRESENCE)])
+  await update($, LAST_ACTIONS, a => ({ ...a, [id]: { ...last, at, turnsStarted } }))
   // A fresh object redraws the pane once the settle time is over, so a removed row's place clears.
   void $.clock
     .sleep(SETTLED_MS)
@@ -977,7 +979,8 @@ function steps(helps: Help[]): { label: string; step: Help[] }[] {
  * Brings state an earlier version of the mod wrote up to date, and returns the
  * ledger. A reload keeps $.state, so a running session can still hold findings
  * under `notes`, and `notes` as its tab, and the Needs you tab as `waiting`,
- * with item kinds `decide` and `do`, and PR threads without a time.
+ * with item kinds `decide` and `do`, PR threads without a time or
+ * `isLinesChanged`, and last actions that don't say whether they handed work off.
  */
 async function upgradeState($: EngineInterface): Promise<Ledger> {
   const [ledger] = await Promise.all([
@@ -990,6 +993,15 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
       ...s,
     })),
     update($, UNFOLDED, u => u.map(readKind)),
+    // Before last actions said whether they handed work off, Address, a task's Run step and a typed reply did.
+    update($, LAST_ACTIONS, a =>
+      Object.fromEntries(
+        Object.entries(a).map(([id, last]) => [
+          id,
+          { ...last, isHandoff: last.isHandoff ?? /^(address-|help-|typed$)/.test(last.action) },
+        ]),
+      ),
+    ),
     update($, SETTLED, s => s.map(x => ({ ...x, kind: readKind(x.kind) }))),
     // Presence from before the turn counts existed cannot say whether the last
     // turn's update landed, so that load catches up once.
@@ -1004,6 +1016,7 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
             ...pr,
             threads: pr.threads.map(t => ({
               ...t,
+              isLinesChanged: t.isLinesChanged ?? false,
               at: t.at ?? null,
               reply: t.reply && { ...t.reply, at: t.reply.at ?? null },
             })),
@@ -1113,9 +1126,20 @@ async function removeFinding($: EngineInterface, id: string) {
   await commitLedger($, l => ({ ...l, findings: l.findings.filter(f => f.id !== id) }))
 }
 
-/** How many things wait on the person: open questions and tasks, and the session's checks left failing with no fix sent. */
-function needsYouCount(ledger: Ledger, checks: Checks): number {
-  return ledger.items.length + needsYou(checks, root).count
+/**
+ * How many things wait on the person: open questions, tasks not handed to
+ * Claude, and the session's checks left failing with no fix sent. The band and
+ * the Needs you tab both read this.
+ */
+function needsYouCount(
+  ledger: Ledger,
+  checks: Checks,
+  lastActions: Record<string, LastAction>,
+  turns: View['turns'],
+): number {
+  const items = ledger.items.filter(i => i.kind !== 'task' || !isTaskHandedOff(lastActions[i.id], turns))
+
+  return items.length + needsYou(checks, root).count
 }
 
 /** Hides a failing check's row in the Needs you tab until the check runs again. */
@@ -1362,6 +1386,37 @@ function prCheckId(pr: PrView, check: PrCheck): string {
   return `${pr.ref} check ${check.name}`
 }
 
+/**
+ * A task handed to Claude waits on Claude until the update for a turn started
+ * after the press has applied. Still open then, Claude's reply did not finish
+ * it, so it waits on the person again. Counts lower than at the press were
+ * reset, so the task no longer folds.
+ */
+function isTaskHandedOff(last: LastAction | undefined, turns: View['turns']): boolean {
+  const pressed = last?.isHandoff === true ? last.turnsStarted : undefined
+
+  return pressed !== undefined && pressed <= turns.turnsStarted && turns.turnsApplied <= pressed
+}
+
+/** A Fix mark holds only for the run it was pressed on, so a rerun that fails again asks for the person again. */
+function prFixSentAt(sent: Record<string, PrFixSent>, pr: PrView, c: PrCheck): number | null {
+  const fix = sent[prCheckId(pr, c)]
+
+  return fix && fix.url === c.url ? fix.at : null
+}
+
+/** Which PR rows the person handed to Claude. A thread stays sent until a comment newer than the press. */
+function handoffs(lastActions: Record<string, LastAction>, prFixesSent: Record<string, PrFixSent>): Handoffs {
+  return {
+    isThreadSent: (pr, t) => {
+      const last = lastActions[prThreadId(pr, t)]
+
+      return last?.isHandoff === true && last.at > ((t.reply ?? t).at ?? 0)
+    },
+    isFixSent: (pr, c) => prFixSentAt(prFixesSent, pr, c) !== null,
+  }
+}
+
 /** Asks Claude to fix a failing PR check, and marks that run of it as handed to Claude. */
 async function sendPrFix($: EngineInterface, pr: PrView, check: PrCheck) {
   await send($, prompts.fix(pr, check))
@@ -1389,6 +1444,8 @@ type Action = {
    * leaves, a field opens, the row shows its own mark, or a page, app or toast opens.
    */
   done: string | null
+  /** The press hands the row's work to Claude, so the row folds and stops waiting on the person. Explain, Discuss and Draft reply only ask Claude to talk or draft. */
+  handsOff?: boolean
   onPress: (press: UiPressArgument) => void
 }
 
@@ -1408,6 +1465,7 @@ function helpActions($: EngineInterface, item: Item): Action[] {
     key: `help-${item.id}-${n}`,
     label,
     done: step.some(h => h.kind === 'run') ? `${label} sent` : null,
+    handsOff: step.some(h => h.kind === 'run'),
     onPress: (press: UiPressArgument) => void useStep($, item, step, press),
   }))
 }
@@ -1797,18 +1855,24 @@ async function recordCheck($: EngineInterface, command: string, cwd: string, out
  * `/inbox demo` shows in its place.
  */
 async function drawnState($: EngineInterface): Promise<View & { now: number }> {
-  const [ledger, stop, checks, settled, prViews, prFixesSent, isDemo, now] = await Promise.all([
+  const [ledger, stop, checks, settled, prViews, prFixesSent, lastActions, presence, isDemo, now] = await Promise.all([
     read($, LEDGER),
     read($, STOP),
     read($, CHECKS),
     read($, SETTLED),
     read($, PR_VIEWS),
     read($, PR_FIXES_SENT),
+    read($, LAST_ACTIONS),
+    read($, PRESENCE),
     read($, IS_DEMO),
     $.clock.now(),
   ])
+  const turns = { turnsStarted: presence.turnsStarted, turnsApplied: presence.turnsApplied }
 
-  return { ...(isDemo ? demoView(now) : { ledger, stop, checks, settled, prViews, prFixesSent }), now }
+  return {
+    ...(isDemo ? demoView(now) : { ledger, stop, checks, settled, prViews, prFixesSent, lastActions, turns }),
+    now,
+  }
 }
 
 export const register: Register = on => {
@@ -2191,11 +2255,8 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!isOn || e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [{ ledger, prViews: prs, stop, checks, settled, now }, presence, prev] = await Promise.all([
-      drawnState($),
-      read($, PRESENCE),
-      read($, PREVIOUS),
-    ])
+    const [{ ledger, prViews: prs, prFixesSent, lastActions, turns, stop, checks, settled, now }, presence, prev] =
+      await Promise.all([drawnState($), read($, PRESENCE), read($, PREVIOUS)])
     const isWorking = e.props.isWorking
 
     // A stop is the one thing to act on, so it takes the band.
@@ -2250,10 +2311,12 @@ export const register: Register = on => {
     const card = ledger.card
     // A failed check gets a line of its own, so a narrow band cannot cut it off.
     const lines = bandLines(checks, root)
+    // A failing check whose fix went to Claude no longer waits on the person, so its line is muted.
     const failedRows = lines.failing.map(c => (
-      <Text wrap="truncate-end" color="error">
+      <Text wrap="truncate-end" color={c.fixSentAt === null ? 'error' : undefined} dimColor={c.fixSentAt !== null}>
         {'  '}
         {checkLine(c, root)}
+        {c.fixSentAt === null ? '' : ' · fix sent'}
       </Text>
     ))
 
@@ -2271,9 +2334,9 @@ export const register: Register = on => {
     ))
 
     const goal = card?.goal || 'This session'
-    const waiting = needsYouCount(ledger, checks)
+    const waiting = needsYouCount(ledger, checks, lastActions, turns)
     const findingCount = ledger.findings.length
-    const prAlert = prAttention(Object.values(prs.views))
+    const prAlert = prAttention(Object.values(prs.views), handoffs(lastActions, prFixesSent))
     // The items themselves live in /inbox; the band only says how many wait.
     const hints = [
       ...settledHint,
@@ -2391,7 +2454,7 @@ export const register: Register = on => {
     const isInline = e.props.placement === 'inline'
     const blankLine = isInline ? 0 : 1
     const [
-      { ledger, prViews: prState, prFixesSent, stop, checks, settled, now },
+      { ledger, prViews: prState, prFixesSent, lastActions, turns, stop, checks, settled, now },
       presence,
       tab,
       selection,
@@ -2399,7 +2462,6 @@ export const register: Register = on => {
       typing,
       unfolded,
       isKeyListShown,
-      lastActions,
       shownDetails,
     ] = await Promise.all([
       drawnState($),
@@ -2410,7 +2472,6 @@ export const register: Register = on => {
       read($, TYPING),
       read($, UNFOLDED),
       read($, IS_KEY_LIST_SHOWN),
-      read($, LAST_ACTIONS),
       read($, SHOWN_DETAILS),
     ])
     const card = ledger.card
@@ -2446,18 +2507,27 @@ export const register: Register = on => {
       keys: () => KeyAction[]
       /** Actions that talk about the row or drop it, after `keys` and a muted dot. */
       moreKeys?: () => KeyAction[]
-      /** Where the person's own words go, for a row that takes them, and what the row says once they are sent (Action's `done`). */
-      onType?: { done: string | null; send: (text: string) => void }
+      /** Where the person's own words go, for a row that takes them, and what the row says once they are sent (Action's `done` and `handsOff`). */
+      onType?: { done: string | null; handsOff?: boolean; send: (text: string) => void }
       typeHint?: string
+      /**
+       * The row no longer waits on the person. Selected, it shows `line` and
+       * `note`, with its body and keys behind Details, on `v`.
+       */
+      fold?: { line?: JSX.Element; note?: string }
     }
     // An item's group header says whether it is a question or a task, so the row
     // needs no context line. The recommended answer is marked on its key.
     const itemRow = (item: Item, handle: string): Row => {
       const asked = item.at === null ? undefined : ` · ${ago(now - item.at)}`
+      // A task handed to Claude folds, as an answered question closes, until Claude's reply leaves it open.
+      const isHandedOff = item.kind === 'task' && isTaskHandedOff(lastActions[item.id], turns)
 
       return {
         id: item.id,
-        handle,
+        handle: isHandedOff ? '✓' : handle,
+        handleTone: isHandedOff ? 'done' : undefined,
+        ...(isHandedOff ? { fold: {} } : {}),
         title: item.ask,
         titleAfter: asked,
         hasSecondLine: item.kind === 'question',
@@ -2467,6 +2537,7 @@ export const register: Register = on => {
         // A question closes on its typed answer; a task stays open.
         onType: {
           done: item.kind === 'task' ? 'Reply sent' : null,
+          handsOff: item.kind === 'task',
           send: (text: string) => void sendTypedForItem($, item, text),
         },
         typeHint: item.kind === 'task' ? 'Your reply to Claude' : 'Your answer',
@@ -2530,19 +2601,16 @@ export const register: Register = on => {
         },
       ],
     })
-    // A Fix mark holds only for the run it was pressed on, so a rerun that fails again asks for the person again.
-    const prFixSentAt = (pr: PrView, c: PrCheck) => {
-      const sent = prFixesSent[prCheckId(pr, c)]
-
-      return sent && sent.url === c.url ? sent.at : null
-    }
+    const handoff = handoffs(lastActions, prFixesSent)
+    // Once its fix is sent, a failing check folds until a run of it fails again.
     const checkRow = (pr: PrView, c: PrCheck): Row => {
-      const sentAt = prFixSentAt(pr, c)
+      const sentAt = prFixSentAt(prFixesSent, pr, c)
 
       return {
         id: prCheckId(pr, c),
-        handle: '✗',
-        handleTone: 'error',
+        handle: sentAt === null ? '✗' : '✓',
+        handleTone: sentAt === null ? 'error' : 'done',
+        ...(sentAt === null ? {} : { fold: { note: `Fix sent · ${ago(now - sentAt)}` } }),
         meta: (
           <Text color={pal.tone.error} bold>
             Failing check
@@ -2553,7 +2621,7 @@ export const register: Register = on => {
           sentAt === null
             ? { text: c.name, after: ' · failing check', afterTone: 'error' }
             : { text: c.name, after: ` · fix sent ${ago(now - sentAt)}`, afterTone: 'done' },
-        body: sentAt === null ? null : <Text color={pal.tone.done}>Fix sent · {ago(now - sentAt)}</Text>,
+        body: null,
         keys: () => [
           {
             key: `fix-${pr.ref}-${c.name}`,
@@ -2573,7 +2641,7 @@ export const register: Register = on => {
       }
     }
     // What ran and how it ended, when, then what failed and the command. Once
-    // Fix is pressed, the row waits on Claude.
+    // Fix is pressed, the row waits on Claude and folds until the check runs again.
     const failedCheckRow = (c: Check): Row => {
       const id = `check:${checkKey(c)}`
       const failed = failureList(c)
@@ -2586,8 +2654,9 @@ export const register: Register = on => {
 
       return {
         id,
-        handle: '✗',
-        handleTone: 'error',
+        handle: fixSent ? '✓' : '✗',
+        handleTone: fixSent ? 'done' : 'error',
+        ...(fixSent ? { fold: { note: fixSent } } : {}),
         title: `${name} · ${count ? `${count.fail} of ${count.total} failed` : (distinctSummary(c) ?? 'failed')}`,
         subtitle: (
           <Text color={pal.muted}>
@@ -2608,11 +2677,6 @@ export const register: Register = on => {
               <Text wrap="wrap" color={pal.muted}>
                 {c.folder ? `${tilde(c.folder)} ` : ''}$ {tilde(c.command)}
               </Text>
-            ) : null}
-            {fixSent ? (
-              <Box marginTop={blankLine}>
-                <Text color={pal.tone.done}>{fixSent}</Text>
-              </Box>
             ) : null}
           </Box>
         ),
@@ -2643,17 +2707,28 @@ export const register: Register = on => {
           <Markdown text={`**@${latest.author}:** ${clipLabel(readableComment(latest.body), 1200)}`} />
         </Box>
       )
-      // Sent to Claude, the thread folds to its first line, as an answered question
-      // does, until a comment newer than the send arrives.
-      const last = lastActions[id]
-      const isSent = last !== undefined && last.at > (latest.at ?? 0)
-      const isShown = shownDetails.includes(id)
-      const toggle = () => void update($, SHOWN_DETAILS, s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id]))
+      // Sent to Claude, the thread folds to the first line of its latest comment,
+      // until a comment newer than the send arrives. So does one on lines a later
+      // commit changed, but with no ✓: nothing says the change fixed it.
+      const isSent = handoff.isThreadSent(pr, t)
+      const isChanged = !isSent && t.isLinesChanged
 
       return {
         id,
         handle: isSent ? '✓' : '◦',
         handleTone: isSent ? 'done' : undefined,
+        ...(isSent || isChanged
+          ? {
+              fold: {
+                line: (
+                  <Text wrap="truncate-end" color={pal.muted}>
+                    @{latest.author}: {commentLine(latest.body)}
+                  </Text>
+                ),
+                ...(isChanged ? { note: 'Lines changed since this comment · still open on GitHub' } : {}),
+              },
+            }
+          : {}),
         meta: (
           <Text wrap="truncate-end">
             <Text color={pal.tone.prs} bold>
@@ -2670,31 +2745,16 @@ export const register: Register = on => {
         line: {
           before: `${threadWhere(t, baseName(t.path))} `,
           text: commentLine(latest.body),
-          after: t.at === null ? undefined : ` · ${ago(now - t.at)}`,
+          after: isChanged ? ' · lines changed' : t.at === null ? undefined : ` · ${ago(now - t.at)}`,
         },
-        body: isSent ? (
-          <Box flexDirection="column">
-            <Text wrap="truncate-end" color={pal.muted}>
-              @{latest.author}: {commentLine(latest.body)}
-            </Text>
-            <Button
-              plain
-              dimColor
-              key={`fold-details-${id}`}
-              label={isShown ? '▾ Details' : '▸ Details'}
-              onPress={toggle}
-            />
-            {isShown ? <Box marginTop={blankLine}>{comment}</Box> : null}
-          </Box>
-        ) : (
-          comment
-        ),
+        body: comment,
         keys: () => [
           {
             key: `address-${t.id}`,
             label: 'Address',
             hotkey: 'a',
             done: 'Address sent',
+            handsOff: true,
             onPress: () => void send($, prompts.address(pr, [t])),
           },
           {
@@ -2742,11 +2802,11 @@ export const register: Register = on => {
       findings: [...ledger.findings].reverse().map(findingRow),
       prs: prGroups.flatMap(g => g.rows),
     }
-    // What each tab's count says waits on the person: a check whose fix went to Claude waits on Claude.
+    // What each tab's count says waits on the person: a row handed to Claude waits on Claude.
     const tabCounts: Record<Tab, number> = {
-      needsYou: needsYouCount(ledger, checks),
+      needsYou: needsYouCount(ledger, checks, lastActions, turns),
       findings: rows.findings.length,
-      prs: rows.prs.length - prViews.flatMap(pr => failingChecks(pr).filter(c => prFixSentAt(pr, c) !== null)).length,
+      prs: prViews.reduce((n, pr) => n + prRowsOnYou(pr, handoff), 0),
     }
     const ids = rows[tab].map(r => r.id)
     const indexOf = new Map(ids.map((id, n) => [id, n]))
@@ -2788,6 +2848,8 @@ export const register: Register = on => {
     }
     // A typed reply needs a text field, so it is left out where there is none.
     const pressable = (keys: KeyAction[]) => keys.filter(k => Input || !k.key.startsWith('typekey-'))
+    const toggleDetails = (id: string) =>
+      void update($, SHOWN_DETAILS, s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id]))
     // Every action that declares `done` records it on its row once the press has
     // worked, so a press never goes unseen. One already done reads "… again", so a
     // second press is a choice. A click and a key press both run through here.
@@ -2801,10 +2863,36 @@ export const register: Register = on => {
           label: lastActions[row.id]?.action === a.key ? `${a.label} again` : a.label,
           onPress: (press: UiPressArgument) => {
             a.onPress(press)
-            void recordLastAction($, row.id, { action: a.key, text: done, tab, title: row.title, index })
+            void recordLastAction($, row.id, {
+              action: a.key,
+              text: done,
+              isHandoff: a.handsOff === true,
+              tab,
+              title: row.title,
+              index,
+            })
           },
         }
       })
+    // A folded row offers only Details, which shows its body and its keys.
+    const detailsKey = (row: Row): KeyAction => ({
+      key: `fold-details-${row.id}`,
+      label: shownDetails.includes(row.id) ? 'Hide details' : 'Details',
+      hotkey: 'v',
+      done: null,
+      onPress: () => toggleDetails(row.id),
+    })
+    // The selected row's keys, for both the key row it draws and the hidden bindings.
+    const rowActions = (row: Row, index: number): { keys: KeyAction[]; more: KeyAction[] } => {
+      if (row.fold && !shownDetails.includes(row.id)) return { keys: [detailsKey(row)], more: [] }
+      const keys = pressable(withLastAction(row, index, row.keys()))
+      const more = pressable(withLastAction(row, index, row.moreKeys?.() ?? []))
+
+      return row.fold ? { keys, more: [...more, detailsKey(row)] } : { keys, more }
+    }
+    // A last action is green only on a row that shows a ✓, as a folded review thread
+    // does. On a row still open it is muted, so it does not read as an answer.
+    const lastTone = (row: Row) => (row.handleTone === 'done' ? ('done' as const) : undefined)
     const lastActionText = (id: string) => {
       const last = lastActions[id]
 
@@ -2889,7 +2977,7 @@ export const register: Register = on => {
         ? {
             ...plain,
             after: ` · ${last.text.charAt(0).toLowerCase()}${last.text.slice(1)} ${ago(now - last.at)}`,
-            afterTone: 'done' as const,
+            afterTone: lastTone(row),
           }
         : plain
       const width = e.props.bodyColumns - 3 - inset - (line.before?.length ?? 0)
@@ -2926,9 +3014,10 @@ export const register: Register = on => {
     const listRow = (row: Row, tree?: TreePos) => {
       const index = indexOf.get(row.id) ?? -1
       const isSelected = index === at
-      const keys = isSelected ? pressable(withLastAction(row, index, row.keys())) : []
-      const more = isSelected ? pressable(withLastAction(row, index, row.moreKeys?.() ?? [])) : []
+      const { keys, more } = isSelected ? rowActions(row, index) : { keys: [], more: [] }
+      const isOpen = !row.fold || shownDetails.includes(row.id)
       const lastText = lastActionText(row.id)
+      const status = [row.fold?.note, lastText].filter((s): s is string => Boolean(s))
 
       return (
         <Box
@@ -2959,12 +3048,15 @@ export const register: Register = on => {
                 {row.titleAfter ? <Text color={pal.muted}>{row.titleAfter}</Text> : null}
               </Text>
               {row.subtitle}
-              {row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null}
-              {lastText ? (
-                <Box marginTop={blankLine}>
-                  <Text color={pal.tone.done} wrap="wrap">
-                    {lastText}
-                  </Text>
+              {isOpen && row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null}
+              {!isOpen && row.fold?.line ? <Box marginTop={blankLine}>{row.fold.line}</Box> : null}
+              {status.length > 0 ? (
+                <Box flexDirection="column" marginTop={blankLine}>
+                  {status.map(s => (
+                    <Text color={lastTone(row) ? pal.tone.done : pal.muted} wrap="wrap">
+                      {s}
+                    </Text>
+                  ))}
                 </Box>
               ) : null}
               <Box flexDirection="column" marginTop={blankLine}>
@@ -2988,6 +3080,7 @@ export const register: Register = on => {
                         void recordLastAction($, row.id, {
                           action: 'typed',
                           text: typed.done,
+                          isHandoff: typed.handsOff === true,
                           tab,
                           title: row.title,
                           index,
@@ -3341,7 +3434,8 @@ export const register: Register = on => {
                   : []),
               ]
 
-        return section([groupTitle(g.title, g.rows.length), ...titleGap(), ...open, ...tail])
+        // A row handed to Claude stays listed but, as in Failing checks, leaves the count.
+        return section([groupTitle(g.title, g.rows.filter(r => !r.fold).length), ...titleGap(), ...open, ...tail])
       })
       // Checks still failing when Claude stopped come first, since they block the work. The group shows only with some.
       const failed =
@@ -3416,11 +3510,11 @@ export const register: Register = on => {
     }
 
     const prBlock = ({ pr, rows: prRows }: { pr: PrView; rows: Row[] }) => {
-      const { status, text: statusText } = readiness(pr)
+      const { status, text: statusText } = readiness(pr, handoff)
       const { mark, tone } = PR_STATUSES[status]
       const hasRows = prRows.length > 0
       const counts = checkCounts(pr)
-      const waitingOn = waitingThreads(pr)
+      const waitingOn = threadsOnYou(pr, handoff)
       const prActions: Action[] = [
         ...(pr.state === 'OPEN' && pr.mergeable === 'CONFLICTING'
           ? [
@@ -3447,6 +3541,7 @@ export const register: Register = on => {
                     void recordLastAction($, id, {
                       action: `address-${t.id}`,
                       text: 'Address sent',
+                      isHandoff: true,
                       tab,
                       title: threadWhere(t),
                       index,
@@ -3502,9 +3597,7 @@ export const register: Register = on => {
                 <Button key={a.key} label={a.label} onPress={a.onPress} />
               ))}
             </Box>
-            {lastActionText(`pr:${pr.ref}`) ? (
-              <Text color={pal.tone.done}>{lastActionText(`pr:${pr.ref}`)}</Text>
-            ) : null}
+            {lastActionText(`pr:${pr.ref}`) ? <Text color={pal.muted}>{lastActionText(`pr:${pr.ref}`)}</Text> : null}
           </Box>,
         ),
         ...(hasRows ? titleGap() : []),
@@ -3547,9 +3640,8 @@ export const register: Register = on => {
     }))
 
     const selectedRow = rows[tab][at]
-    const rowKeys = selectedRow
-      ? pressable(withLastAction(selectedRow, at, [...selectedRow.keys(), ...(selectedRow.moreKeys?.() ?? [])]))
-      : []
+    const selectedActions = selectedRow ? rowActions(selectedRow, at) : null
+    const rowKeys = selectedActions ? [...selectedActions.keys, ...selectedActions.more] : []
 
     // Docked, the pane takes at least the window's height, so the footer sits at
     // its bottom edge until the content is taller than the window. The engine has

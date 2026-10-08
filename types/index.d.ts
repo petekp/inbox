@@ -65,6 +65,10 @@ export type LastAction = {
   /** What happened, as in "Discuss sent". */
   text: string
   at: number
+  /** The press handed the row's work to Claude, so the row folds and stops waiting on the person. */
+  isHandoff?: boolean
+  /** The turns started when it was pressed, so a task folds until the update for a later turn applies. */
+  turnsStarted?: number
   /** Where the row was, and its title, for a row the press removed: it shows its last action in its place for a few seconds. */
   tab: Tab
   title: string
@@ -93,6 +97,11 @@ export type PrThread = {
   /** Someone other than the viewer wrote its last comment, so it waits on them. */
   isWaiting: boolean
   isOutdated: boolean
+  /**
+   * Outdated, and no one else replied after the PR's latest commit: a later
+   * commit changed the lines it was on, and nothing since says that left it unfixed.
+   */
+  isLinesChanged: boolean
   path: string
   line: number | null
   body: string

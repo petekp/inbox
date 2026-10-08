@@ -176,6 +176,38 @@ test('a reply becomes a card and open items, and "1. yes" carries the question',
   expect(prompts.at(-1)).toContain('Re "Use Node or Python?": Node\n</person>')
 })
 
+test('a task handed to Claude folds and leaves the count until Claude’s reply leaves it open', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world(on, [])
+  ledgerReply =
+    'GOAL: Load the data\nNOW: Waiting on the load script\nNEW: do | - | Run the load script | - | -\nHELP: new 1 | run | ./load.sh | load script'
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'load the data', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'load the data', turnId: 't1' })
+  await $.turn.complete({ answer: 'Run ./load.sh.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+  const pane = await $.ui.mount(PANE)
+  expect(await band.find({ text: /1 waiting on you/ })).toBeDefined()
+
+  // Run hands the task to Claude: it folds to what was sent, and waits on no one in the band or the tab.
+  await pane.press({ key: 'help-i1-0' })
+  await clock.settle()
+  expect(sent.at(-1)).toContain('./load.sh')
+  expect(await pane.find({ text: /Run load script sent ·/ })).toBeDefined()
+  expect(await pane.find({ key: 'help-i1-0' })).toBeUndefined()
+  expect(await band.find({ text: /waiting on you/ })).toBeUndefined()
+
+  // The turn that answers the send ends with the task still open, so it waits on the person again.
+  ledgerReply = 'NOW: The load script needs your password'
+  await $.turn.start({ text: 'For "Run the load script", run this', turnId: 't2' })
+  await $.turn.complete({ answer: 'It needs sudo.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
+  await clock.settle()
+  expect((await pane.find({ key: 'help-i1-0-key' }))?.props.label).toBe('Run load script again')
+  expect(await band.find({ text: /1 waiting on you/ })).toBeDefined()
+})
+
 test('after 15 idle minutes the band shows where the session stands', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
@@ -569,11 +601,12 @@ test('a PR linked in a reply shows in the PRs tab; its buttons send its conflict
   expect(sent.at(-1)).toContain('bin/greet:4, from @sam:\nQuote the name.')
   await clock.settle()
   expect(await pane.find({ text: /Address sent ·/ })).toBeDefined()
-  expect((await pane.find({ key: 'address-T1-key' }))?.props.label).toBe('Address again')
 
-  // Sent to Claude, the thread folds to its first line, until the reviewer answers.
+  // Sent to Claude, the thread folds to its first line, with its keys behind Details, until the reviewer answers.
   const details = 'fold-details-acme/greet#12 thread T1'
-  expect(await pane.find({ key: details })).toBeDefined()
+  expect(await pane.find({ key: 'address-T1-key' })).toBeUndefined()
+  await pane.press({ key: `${details}-key` })
+  expect((await pane.find({ key: 'address-T1-key' }))?.props.label).toBe('Address again')
   hasReply = true
   await pane.press({ key: 'tab-findings' })
   await pane.press({ key: 'tab-prs' })
@@ -767,9 +800,11 @@ test('a failing test run shows in the band, reaches the per-turn call, stops a c
   await pane.press({ key: 'fix-check:.:npm test' })
   await clock.settle()
   expect(sent.at(-1)).toContain('npm test failed when you last ran it.\nCommand: npm test\nOutput:\n11 pass, 1 fail\n')
-  // Once the fix is sent, the row says so and no longer counts as waiting on the person.
+  // Once the fix is sent, the row says so, folds its keys behind Details, and no longer counts as waiting on the person.
   expect(await pane.find({ text: /Fix sent ·/ })).toBeDefined()
   expect(await pane.find({ text: /Failing checks 1/ })).toBeUndefined()
+  expect(await pane.find({ key: 'dismiss-check:.:npm test' })).toBeUndefined()
+  await pane.press({ key: 'fold-details-check:.:npm test-key' })
   await pane.press({ key: 'dismiss-check:.:npm test' })
   expect(await pane.find({ text: /Failing checks/ })).toBeUndefined()
   expect(await band.find({ text: /✗ npm test/ })).toBeUndefined()
