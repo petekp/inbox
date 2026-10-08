@@ -2,9 +2,16 @@
 // `/inbox demo` for work on the layout. Nothing here reaches the session's
 // real inbox, its store, or Claude.
 
-import type { Checks, Ledger, PrViews, Settled, Stop } from '../types'
+import type { Checks, Ledger, PrFixSent, PrViews, Settled, Stop } from '../types'
 
-export type View = { ledger: Ledger; stop: Stop | null; checks: Checks; settled: Settled[]; prViews: PrViews }
+export type View = {
+  ledger: Ledger
+  stop: Stop | null
+  checks: Checks
+  settled: Settled[]
+  prViews: PrViews
+  prFixesSent: Record<string, PrFixSent>
+}
 
 const MIN = 60_000
 const REPO = 'https://github.com/petekp/inbox'
@@ -301,6 +308,7 @@ export function demoView(now: number): View {
           checks: [
             { name: 'prettier', bucket: 'pass', url: `${REPO}/actions/runs/1` },
             { name: 'plugin tests', bucket: 'fail', url: `${REPO}/actions/runs/2` },
+            { name: 'lint', bucket: 'fail', url: `${REPO}/actions/runs/3` },
             { name: 'plugin validate', bucket: 'pending', url: null },
           ],
           threads: [
@@ -385,6 +393,9 @@ export function demoView(now: number): View {
           error: null,
         },
       },
+    },
+    prFixesSent: {
+      'petekp/inbox#31 check lint': { at: now - 2 * MIN, url: `${REPO}/actions/runs/3` },
     },
   }
 }

@@ -157,7 +157,9 @@ running session.
     merge, purple once merged, red once closed, gray for a draft, and
     amber when something else blocks it.
   - each failing check as a row. `a: Fix` asks Claude to find the cause in
-    the logs and fix it, and `o: Open log` opens the check's page.
+    the logs and fix it, and `o: Open log` opens the check's page. After
+    Fix, the row says "Fix sent" and the tab no longer counts it, until the
+    check runs again.
   - each unresolved review thread whose last comment is someone else's, so
     it waits on you, as a row. The selected thread shows the first comment
     and, under it, the latest reply. Its actions are `a: Address`,

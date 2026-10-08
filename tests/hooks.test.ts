@@ -415,23 +415,35 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   expect(await pane.find({ text: /^Closed by Claude: no longer applies$/ })).toBeDefined()
 })
 
-test('a PR linked in a reply shows in the PRs tab, and Address sends its thread', async ($, on) => {
+test('a PR linked in a reply shows in the PRs tab; Fix and Address send its check and thread', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
+  // Each run of the failing check has its own job page, so a rerun has a new URL.
+  let job = 1
   ghAnswers.push(
     {
       match: argv => argv.includes('view') && argv.includes('12'),
-      stdout: JSON.stringify({
-        number: 12,
-        title: 'Add a greeting CLI',
-        url: 'https://github.com/acme/greet/pull/12',
-        isDraft: false,
-        state: 'OPEN',
-        baseRefName: 'main',
-        mergeable: 'MERGEABLE',
-        reviewDecision: 'REVIEW_REQUIRED',
-        statusCheckRollup: [],
-      }),
+      get stdout() {
+        return JSON.stringify({
+          number: 12,
+          title: 'Add a greeting CLI',
+          url: 'https://github.com/acme/greet/pull/12',
+          isDraft: false,
+          state: 'OPEN',
+          baseRefName: 'main',
+          mergeable: 'MERGEABLE',
+          reviewDecision: 'REVIEW_REQUIRED',
+          statusCheckRollup: [
+            {
+              __typename: 'CheckRun',
+              name: 'test',
+              status: 'COMPLETED',
+              conclusion: 'FAILURE',
+              detailsUrl: `https://github.com/acme/greet/actions/runs/7/job/${job}`,
+            },
+          ],
+        })
+      },
     },
     {
       match: argv => argv.includes('graphql'),
@@ -484,8 +496,21 @@ test('a PR linked in a reply shows in the PRs tab, and Address sends its thread'
   await pane.press({ key: 'tab-prs' })
   await clock.settle()
   expect(await pane.find({ text: /Add a greeting CLI/ })).toBeDefined()
-  expect(await pane.find({ text: /Blocked: 1 thread waiting on you, needs approval/ })).toBeDefined()
+  expect(await pane.find({ text: /Blocked: 1 failing check, 1 thread waiting on you, needs approval/ })).toBeDefined()
 
+  // The failing check comes first. Once its fix is sent, the row says so until a rerun of it fails again.
+  await pane.press({ key: 'fix-acme/greet#12-test' })
+  expect(sent.at(-1)).toContain('The CI check "test" is failing on PR #12')
+  expect(await pane.find({ text: /Fix sent ·/ })).toBeDefined()
+  await pane.press({ key: 'next' })
+  expect(await pane.find({ text: /fix sent/ })).toBeDefined()
+  job = 2
+  await pane.press({ key: 'tab-findings' })
+  await pane.press({ key: 'tab-prs' })
+  await clock.settle()
+  expect(await pane.find({ text: /fix sent/i })).toBeUndefined()
+
+  await pane.press({ key: 'next' })
   await pane.press({ key: 'address-T1' })
   expect(sent.at(-1)).toContain('Address this review comment on PR #12')
   expect(sent.at(-1)).toContain('bin/greet:4, from @sam:\nQuote the name.')

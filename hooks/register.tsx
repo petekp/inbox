@@ -12,6 +12,7 @@ import type {
   Ledger,
   Finding,
   PrCheck,
+  PrFixSent,
   PrThread,
   PrView,
   PrViews,
@@ -116,6 +117,7 @@ const PR_VIEWS = atom(
   { plugin: 'inbox', key: 'prViews' } as const,
   { views: {}, branchRef: null, isFetching: false } as PrViews,
 )
+const PR_FIXES_SENT = atom({ plugin: 'inbox', key: 'prFixesSent' } as const, {} as Record<string, PrFixSent>)
 const STOP = atom({ plugin: 'inbox', key: 'stop' } as const, null as Stop | null)
 const DIALOGS = atom({ plugin: 'inbox', key: 'dialogs' } as const, [] as Dialog[])
 const NO_CHECKS: Checks = { results: [] }
@@ -1267,6 +1269,18 @@ async function openUrl($: EngineInterface, url: string) {
   if (r.exitCode !== 0) $.ui.toast(`Could not open ${url}`)
 }
 
+/** The id of a failing PR check's row, which also keys its Fix mark. */
+function prCheckId(pr: PrView, check: PrCheck): string {
+  return `${pr.ref} check ${check.name}`
+}
+
+/** Asks Claude to fix a failing PR check, and marks that run of it as handed to Claude. */
+async function sendPrFix($: EngineInterface, pr: PrView, check: PrCheck) {
+  await send($, prompts.fix(pr, check))
+  const at = await $.clock.now()
+  await update($, PR_FIXES_SENT, sent => ({ ...sent, [prCheckId(pr, check)]: { at, url: check.url } }))
+}
+
 async function dismissPr($: EngineInterface, ref: string) {
   await commitLedger($, l => ({ ...l, prs: l.prs.filter(r => r !== ref) }))
   await update($, PR_VIEWS, v => {
@@ -1628,17 +1642,18 @@ async function recordChecks($: EngineInterface, command: string, cwd: string, ou
  * `/inbox demo` shows in its place.
  */
 async function drawnState($: EngineInterface): Promise<View & { now: number }> {
-  const [ledger, stop, checks, settled, prViews, isDemo, now] = await Promise.all([
+  const [ledger, stop, checks, settled, prViews, prFixesSent, isDemo, now] = await Promise.all([
     read($, LEDGER),
     read($, STOP),
     read($, CHECKS),
     read($, SETTLED),
     read($, PR_VIEWS),
+    read($, PR_FIXES_SENT),
     read($, IS_DEMO),
     $.clock.now(),
   ])
 
-  return { ...(isDemo ? demoView(now) : { ledger, stop, checks, settled, prViews }), now }
+  return { ...(isDemo ? demoView(now) : { ledger, stop, checks, settled, prViews, prFixesSent }), now }
 }
 
 export const register: Register = on => {
@@ -1715,6 +1730,7 @@ export const register: Register = on => {
         update($, STOP, () => null),
         update($, DIALOGS, () => []),
         update($, CHECKS, () => NO_CHECKS),
+        update($, PR_FIXES_SENT, () => ({})),
         update($, SNAPSHOTS, () => ({})),
         update($, SETTLED, () => []),
         update($, IS_DEMO, () => false),
@@ -2184,7 +2200,7 @@ export const register: Register = on => {
     const isInline = e.props.placement === 'inline'
     const blankLine = isInline ? 0 : 1
     const [
-      { ledger, prViews: prState, stop, checks, settled, now },
+      { ledger, prViews: prState, prFixesSent, stop, checks, settled, now },
       presence,
       tab,
       selection,
@@ -2309,27 +2325,46 @@ export const register: Register = on => {
         { key: `drop-${finding.id}`, label: 'Dismiss', hotkey: 'x', onPress: () => void removeFinding($, finding.id) },
       ],
     })
-    const checkRow = (pr: PrView, c: PrCheck): Row => ({
-      id: `${pr.ref} check ${c.name}`,
-      handle: '✗',
-      handleTone: 'error',
-      meta: (
-        <Text color={pal.tone.error} bold>
-          Failing check
-        </Text>
-      ),
-      title: c.name,
-      line: { text: c.name, after: ' · failing check', afterTone: 'error' },
-      keys: () => [
-        { key: `fix-${pr.ref}-${c.name}`, label: 'Fix', hotkey: 'a', onPress: () => void send($, prompts.fix(pr, c)) },
-        {
-          key: `log-${pr.ref}-${c.name}`,
-          label: 'Open log',
-          hotkey: 'o',
-          onPress: () => void openUrl($, c.url ?? pr.url),
-        },
-      ],
-    })
+    // A Fix mark holds only for the run it was pressed on, so a rerun that fails again asks for the person again.
+    const prFixSentAt = (pr: PrView, c: PrCheck) => {
+      const sent = prFixesSent[prCheckId(pr, c)]
+
+      return sent && sent.url === c.url ? sent.at : null
+    }
+    const checkRow = (pr: PrView, c: PrCheck): Row => {
+      const sentAt = prFixSentAt(pr, c)
+
+      return {
+        id: prCheckId(pr, c),
+        handle: '✗',
+        handleTone: 'error',
+        meta: (
+          <Text color={pal.tone.error} bold>
+            Failing check
+          </Text>
+        ),
+        title: c.name,
+        line:
+          sentAt === null
+            ? { text: c.name, after: ' · failing check', afterTone: 'error' }
+            : { text: c.name, after: ` · fix sent ${ago(now - sentAt)}`, afterTone: 'done' },
+        body: sentAt === null ? null : <Text color={pal.tone.done}>Fix sent · {ago(now - sentAt)}</Text>,
+        keys: () => [
+          {
+            key: `fix-${pr.ref}-${c.name}`,
+            label: sentAt === null ? 'Fix' : 'Fix again',
+            hotkey: 'a',
+            onPress: () => void sendPrFix($, pr, c),
+          },
+          {
+            key: `log-${pr.ref}-${c.name}`,
+            label: 'Open log',
+            hotkey: 'o',
+            onPress: () => void openUrl($, c.url ?? pr.url),
+          },
+        ],
+      }
+    }
     // What failed in up to two lines, naming the file, with the output and the
     // command folded under Details. Once Fix is pressed, the row waits on Claude.
     const failedCheckRow = (c: Check): Row => {
@@ -2459,7 +2494,6 @@ export const register: Register = on => {
     // Each tab's rows in order: the cursor, the counts and the drawing all read these.
     const failedChecks = checks.results.filter(c => c.isLeftFailing && !c.isDismissed)
     const failedCheckRows = failedChecks.map(failedCheckRow)
-    // A check whose fix went to Claude waits on Claude, so it is not counted as waiting on the person.
     const checksWaiting = failedChecks.filter(c => c.fixSentAt === null).length
     const waitingGroups = WAITING_GROUPS.map(g => ({
       ...g,
@@ -2473,6 +2507,12 @@ export const register: Register = on => {
       waiting: [...failedCheckRows, ...waitingGroups.flatMap(g => g.rows)],
       findings: [...ledger.findings].reverse().map(findingRow),
       prs: prGroups.flatMap(g => g.rows),
+    }
+    // What each tab's count says waits on the person: a check whose fix went to Claude waits on Claude.
+    const tabCounts: Record<Tab, number> = {
+      waiting: ledger.items.length + checksWaiting,
+      findings: rows.findings.length,
+      prs: rows.prs.length - prViews.flatMap(pr => failingChecks(pr).filter(c => prFixSentAt(pr, c) !== null)).length,
     }
     const ids = rows[tab].map(r => r.id)
     const indexOf = new Map(ids.map((id, n) => [id, n]))
@@ -2699,7 +2739,7 @@ export const register: Register = on => {
       >
         <Box flexDirection="row" columnGap={isInline ? 3 : 1}>
           {TABS.map(({ id, label }) => {
-            const count = id === 'waiting' ? ledger.items.length + checksWaiting : rows[id].length
+            const count = tabCounts[id]
 
             if (isInline)
               return (

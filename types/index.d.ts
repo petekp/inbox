@@ -210,6 +210,9 @@ export type Cursor = { id: string | null; index: number }
 /** The PR tab's data: each PR's latest view, the current branch's PR, and whether a fetch runs. */
 export type PrViews = { views: Record<string, PrView>; branchRef: string | null; isFetching: boolean }
 
+/** A failing PR check the person pressed Fix on: when, and the check's URL then. A rerun has a new URL, so the mark lapses. */
+export type PrFixSent = { at: number; url: string | null }
+
 declare module 'claude-code' {
   interface PluginState {
     inbox: {
@@ -220,6 +223,8 @@ declare module 'claude-code' {
       previous: Previous | null
       tab: Tab
       prViews: PrViews
+      /** The PR checks the person pressed Fix on, by their row's id. */
+      prFixesSent: Record<string, PrFixSent>
       selection: Record<Tab, Cursor>
       stop: Stop | null
       dialogs: Dialog[]
