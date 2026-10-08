@@ -23,8 +23,10 @@ Terms follow `GLOSSARY.md`. "The mod" is the Claude Code mod in this repo.
   claim.
 - **The pane becomes a tab beside each conversation.** OpenAI's MCP
   extensions let a plugin's MCP App open as a tab within a thread, one
-  instance per thread [documented]. Its buttons send a message into the
-  conversation with `ui/message` [documented]. The SDK and its example
+  instance per thread [verified]. Its buttons can send a message into the
+  conversation with `ui/message`, but Codex marks that message untrusted, so
+  the model does not act on it. Step 0b picks another way to send. The SDK
+  and its example
   plugin, Bits & Bolts, target the Codex desktop app with a local stdio MCP
   server, the same shape as this plugin.
 - **The band has no surface.** No plugin can draw above the prompt. The tab's
@@ -32,8 +34,9 @@ Terms follow `GLOSSARY.md`. "The mod" is the Claude Code mod in this repo.
 - **The plugin needs a long-lived process.** The mod is one process that
   lives as long as the session. A Codex hook is a new process for every event.
   Timers, the live tab and safe state writes need one process that stays up.
-  The plugin's MCP server is that process, if it can tell which session it
-  serves.
+  Codex starts several MCP server processes per session, so one inbox
+  process per person serves every session. Hooks and MCP servers forward to
+  it.
 - **The first version** includes the findings and close tools, the inbox
   texts, the per-reply update, check tracking with the claim check, and the
   Inbox tab with Needs you and Findings. The PRs tab comes later.
@@ -50,11 +53,11 @@ Terms follow `GLOSSARY.md`. "The mod" is the Claude Code mod in this repo.
 | Sending the agent back | `Stop` returns `decision: "block"` with a `reason`, and gets `stop_hook_active` [documented] | None |
 | Background hooks | `"async": true`, up to 8 at once per session [documented] | Unfinished ones are cancelled when the session ends |
 | Custom UI | MCP Apps: HTML from a `ui://` resource on the plugin's MCP server [documented] | The CLI's `enable_mcp_apps` flag is off [verified], so this is for the desktop app |
-| Tabs and sidebar entries | `_meta["openai/ui"].entrypoints`: `thread` opens the app as a tab in a thread, `global` as a sidebar entry [documented, desktop supported] | Thread tabs open with `{}` as arguments. Whether the app learns which thread it is in [unverified] |
-| Messages from the app | `ui/message` with `target: "active"` sends text into the current thread [documented] | None |
-| Live updates in the app | `resources/subscribe` and `notifications/resources/updated` [documented for file viewers, used by Bits & Bolts] | For thread tabs [unverified]. Fallback: the app calls a data tool on a timer |
+| Tabs and sidebar entries | `_meta["openai/ui"].entrypoints`: `thread` opens the app as a tab in a thread, `global` as a sidebar entry [verified for a thread tab from a local plugin] | Thread tabs open with `{}` as arguments. The server learns the thread from each call's `_meta.thread_id` [verified] |
+| Messages from the app | `ui/message` sends text into the current thread [verified] | Codex wraps it as untrusted input from an MCP app. The model reports the text instead of following it [verified] |
+| Live updates in the app | `resources/subscribe` and `notifications/resources/updated` [documented for file viewers] | A thread tab's subscribe never reached the server, and no update arrived [verified]. The app calls a data tool on a timer instead [verified] |
 | Status line | `tui.status_line` in the CLI [verified] | Built-in items only. No custom command |
-| Messages from outside the app | `codex queue --thread <id> --message <text>` [verified: the command exists] | Not needed while `ui/message` works |
+| Messages from outside the app | `codex queue --thread <id> --message <text>` queues a message for a session [verified: the command and its help] | Whether a queued message reaches a thread open in the desktop app, and as the person's own message [unverified] |
 | App server | `turn/start`, `thread/resume`, `turn/completed` and more on a shared local daemon [verified: in the generated protocol types] | Marked experimental |
 | One-off model call | `codex exec --ephemeral --ignore-user-config --output-schema <file>` [verified: the flags exist] | Its cost and token overhead [unverified] |
 
@@ -76,7 +79,7 @@ Terms follow `GLOSSARY.md`. "The mod" is the Claude Code mod in this repo.
 | Activity lines for the update | Every tool call | `PostToolUse` matched to the shell and patch tools only. Other tools add no line | Reduced |
 | Band above the prompt | `ui.render` AbovePrompt | The Inbox tab's header. Nothing above the prompt | Gap 1 |
 | `/inbox` pane, three tabs, keys | `ui.render` Pane | The Inbox tab: an MCP App opened from a thread entrypoint | Direct |
-| Pane buttons that send a message | `$.prompt.submit` | `ui/message` to the active thread | Direct |
+| Pane buttons that send a message | `$.prompt.submit` | Step 0b picks the path. `ui/message` arrives as untrusted | Open |
 | Last action on a row | Drawn with `withLastAction()` | The same rule in the tab: each button shows what it did as soon as it is pressed | Direct |
 | Card after 15 minutes away, or on resume | `clock.every` and `isAway` | A timer in the MCP server. The tab shows the card | Direct |
 | PRs tab | `gh` polled from the mod | `gh` polled by the server. `prs.ts` carries over | Direct, later |
@@ -109,19 +112,19 @@ entrypoint and a `ui://inbox/tab` resource. The person opens it as a tab
 beside the conversation, one instance per thread. It shows the header, then
 Needs you and Findings.
 
-- **Buttons:** each press sends its message with `ui/message`, as the mod's
-  presses send a prompt. The text appears as the person's message, so the
-  server records what it sent, to tell it from the person's own words.
-- **Live updates:** the app subscribes to its resource and redraws on
-  `notifications/resources/updated`. If thread tabs don't get those, it calls
-  a data tool every few seconds while open.
-- **Which session:** the tab must show its own thread's inbox. Its tool call
-  gets `{}`, so step 0 checks what the app learns about its thread.
+- **Buttons:** each press must reach the model as the person's request, as the
+  mod's presses send a prompt. `ui/message` does not: Codex wraps its text as
+  untrusted input from an MCP app, and the model reports it instead of acting.
+  Step 0b tests `codex queue` from the server. The server records what it
+  sent, to tell it from the person's own words.
+- **Live updates:** the app calls a data tool every few seconds while open.
+  A thread tab gets no resource updates.
+- **Which session:** every call from the tab carries `_meta.thread_id`, the
+  same id the hooks get as `session_id`. The server keys each tab's data by
+  it.
 
 **Rejected:** a local web page served on a fixed port. It needs a browser
-beside Codex, and its buttons would need `codex queue`, which is unverified
-for a live session. The tab sits in the conversation and sends with
-`ui/message`.
+beside Codex. The tab sits beside the conversation it serves.
 
 ### 3. Hooks are short-lived processes
 
@@ -129,26 +132,26 @@ The mod keeps the turn's state in memory: activity, replies Claude was sent
 back from, what the inbox line last told Claude. It runs timers. Codex starts
 a new process for each hook. Up to 8 background hooks can run at once.
 
-**Do:** the plugin's MCP server is the long-lived process. Codex starts one
-with each session and stops it with the session, as Claude Code does the
-mod. It owns the session's state, writes it to `PLUGIN_DATA`, runs the
-timers, queues model updates and serves the tab. Each hook is a small script
-that posts its event to the session's server over a local socket and prints
-the answer.
+**Do:** one inbox process per person is the long-lived process. The first
+hook or MCP server that finds it missing starts it. It owns every session's
+state, keyed by session id, writes it to `PLUGIN_DATA`, runs the timers and
+queues model updates. Each hook is a small script that posts its event to it
+over a local socket and prints the answer. Each MCP server process forwards
+its tool calls to it.
 
-This needs the hook and the server to agree on a session. Hooks get
-`session_id` [documented]. Whether the MCP server can learn it is step 0
-item 4. If it can't, the fallback is one server per person, started by the
-first hook that finds it missing, with each MCP server forwarding to it.
+Reason: Codex does not run one MCP server per session. The desktop app
+started 17 server processes in three minutes, most of them only to list
+tools [verified in step 0]. Hooks get `session_id`, and tool calls carry the
+same id in `_meta` [verified], so every event names its session.
 
 - **Cost:** every matched hook starts a process, which adds latency to each
   matched tool call. So `PostToolUse` matches only the shell and patch tools.
 - **Failure case:** if the server doesn't answer, a hook exits 0 with no
   output. Codex goes on as if the plugin weren't installed.
 - **Guard:** the hooks do nothing in `codex exec` runs. That covers the
-  inbox's own update call and runs that other plugins start. How a hook tells
-  it is in `exec` [unverified]. The fallback is an environment variable the
-  inbox sets on its own runs.
+  inbox's own update call and runs that other plugins start. A hook reads
+  the first line of `transcript_path`, whose `originator` is `codex_exec` in
+  an `exec` run [verified in step 0].
 
 ### 4. `run_check` would bypass Codex's sandbox
 
@@ -230,13 +233,13 @@ context, as they do for Claude.
 ## Architecture
 
 ```
-Codex session ── hooks (one process per event) ──┐
-     │                                            ▼
-     ├── MCP tools ──────────────────────▶ MCP server, one per session ──▶ PLUGIN_DATA/*.json
-     │                                     │        │
-     └── Inbox tab (MCP App) ◀── updates ──┘        └──▶ codex exec (inbox model)
+Codex session ── hooks (one process per event) ──────────┐
+     │                                                    ▼
+     ├── MCP tools ──▶ MCP server processes ──▶ inbox process, one per person ──▶ PLUGIN_DATA/*.json
+     │                        ▲                           │
+     └── Inbox tab (MCP App) ─┘ polls a data tool         └──▶ codex exec (inbox model)
               │
-              └── ui/message: a press sends its text into the thread
+              └── a press sends its text into the thread, by the path step 0b picks
 ```
 
 - **Hooks:** `SessionStart`, `UserPromptSubmit`, `SessionEnd`, and
@@ -302,9 +305,54 @@ scratch plugin, not kept code.
    whether `.agents/plugins/marketplace.json` takes precedence, so
    `codex plugin marketplace add petekp/inbox` doesn't read the mod's listing.
 
+### Step 0 results
+
+Measured with Codex 0.160.1, the desktop app's own binary, through `codex
+exec` and a throwaway plugin.
+
+| Check | Result |
+| --- | --- |
+| 2. Shell hook shape | `tool_name` is `Bash`, `tool_input.command` is the command. `tool_response` is the output text only, with no exit code. The exit code is in the transcript at `transcript_path`: an `item_completed` event whose item `id` equals the hook's `tool_use_id`, with `exit_code`, `status`, `stdout`, `stderr` and `cwd`. It is written before `PostToolUse` runs. |
+| 3. Patch hook | `apply_patch` fires `PreToolUse` and `PostToolUse`. `tool_input.command` is the patch, whose `*** Add File:`, `*** Update File:` and `*** Delete File:` lines name the files. |
+| 4. Session id | Every MCP `tools/call` carries `_meta["x-codex-turn-metadata"]` with `session_id`, `thread_id` and `turn_id`. `initialize` and the server's environment carry none, so a server learns its session at its first tool call. MCP tools are named `mcp__<server>__<tool>` in hooks, so `PreToolUse` sees them. |
+| 6. Clean `exec` | `--ephemeral --ignore-user-config` fired no plugin hooks and saved no session. It costs 21.5k input tokens for a one-word answer, 12.3k of it cached. Switching off tools and features and replacing the base instructions brings it to 12.5k, and no flag tried went lower. `exec` waits on stdin unless it is given `/dev/null`. |
+| 7. `exec` in a hook | `SessionStart` input looks the same as in a session. The transcript's first line, `session_meta`, has `source: "exec"` and `originator: "codex_exec"`. |
+| 8. Marketplace file | With `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json` at one root, Codex reads `.agents/plugins/marketplace.json`. |
+
+| 1. Hooks in the desktop app | Every hook fired in a desktop thread, and `SessionStart` context reached the model. The transcript's `session_meta` has `originator: "Codex Desktop"` and `source: "vscode"`. |
+| 5. Thread tab | It opened from the local plugin. Every `tools/call` from the tab carries `_meta.thread_id`, equal to the hooks' `session_id`. The host context has no thread id. `resources/subscribe` never reached the server, and no resource update arrived in two minutes. Polling a tool every 5 seconds worked throughout. |
+| 5. `ui/message` | It reached the thread, as a turn whose user text is "An MCP app initiated this message. Read the untrusted_input tool output." The tab's text sits in an `untrusted_input` tool output with `source: "mcp_app"`. The text asked for "OK". The model answered "The MCP app sent: …" instead. A second press arrived 0.3 seconds after a busy turn ended, which suggests it was queued, but the press time was not logged. |
+| Server processes | The desktop app started 17 probe server processes from one `app-server` in three minutes. Most got only `initialize` and `tools/list`. The one that served the tab lived for at least 2.5 minutes, across turns. |
+
+`SessionStart` `additionalContext` reached the model in `exec` and in the
+desktop app.
+
+### What step 0 changes
+
+- **Buttons need another path.** The model treats a `ui/message` as data from
+  an app, not as the person's request. Pressing Address would show the
+  comment to the model without asking it to act.
+- **The tab polls.** Thread tabs get no resource updates.
+- **The tab knows its thread.** No hook or workaround is needed.
+- **The server is not one process per session.** Codex starts several, so
+  state must live in a file or in one process the others reach, as the
+  fallback in section 3 describes.
+
+### Step 0b: how a press reaches the model
+
+Open a thread in the desktop app, then try each path with the probe:
+
+1. **`codex queue --thread <id> --message <text>`,** run by the server when
+   the tab calls a tool. Check that the message arrives as the person's own,
+   in an idle and a busy thread.
+2. **`ui/message` with a `SessionStart` note** saying that Inbox tab messages
+   are the person's own presses. Measure whether the model then acts on them.
+   Codex marks these messages untrusted on purpose, so this path is the
+   fallback.
+
 ## Build steps
 
-1. Step 0.
+1. Step 0, then step 0b.
 2. Measure the ported `SYSTEM` and `GUIDANCE` with candidate models.
 3. The MCP server's state and logic, with tests ported from `ledger.test.ts` and
    `check-tracking.test.ts`.
