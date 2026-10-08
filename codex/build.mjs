@@ -1,6 +1,7 @@
 // Bundles the plugin's entry points, with the mod's shared modules, into
 // plugin/dist. The bundles are committed, since a Git marketplace install
-// copies the plugin folder and runs no build.
+// copies the plugin folder and runs no build. The tab's script is bundled for
+// the browser first and inlined into tab.html, which the server carries as text.
 //
 // Usage:
 //   node build.mjs          writes plugin/dist
@@ -17,12 +18,43 @@ import * as esbuild from 'esbuild'
 const here = dirname(fileURLToPath(import.meta.url))
 const mode = process.argv[2] ?? ''
 
+const tab = await esbuild.build({
+  absWorkingDir: here,
+  entryPoints: ['src/tab.tsx'],
+  bundle: true,
+  platform: 'browser',
+  format: 'iife',
+  target: 'chrome120',
+  jsx: 'automatic',
+  jsxImportSource: 'preact',
+  minify: true,
+  legalComments: 'none',
+  logLevel: 'warning',
+  write: false,
+})
+const tabScript = tab.outputFiles[0].text
+// The script sits inside a <script> element, which the first "</script" in it would end.
+if (/<\/script/i.test(tabScript))
+  throw new Error('The tab script contains "</script", which would end its element early.')
+
+/** Loads tab.html with the tab's script inlined. */
+const inlineTab = {
+  name: 'inline-tab',
+  setup(build) {
+    build.onLoad({ filter: /[/\\]tab\.html$/ }, args => ({
+      contents: readFileSync(args.path, 'utf8').replace('/*TAB_SCRIPT*/', () => tabScript),
+      loader: 'text',
+    }))
+  },
+}
+
 const common = {
   bundle: true,
   platform: 'node',
   format: 'esm',
   target: 'node20',
   loader: { '.html': 'text' },
+  plugins: [inlineTab],
   legalComments: 'none',
   logLevel: 'warning',
 }

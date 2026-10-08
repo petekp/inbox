@@ -5,501 +5,362 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Inbox</title>
     <style>
+      /* The host's variables when Codex passes them; otherwise the pane's own colors. */
       :root {
         --bg: var(--color-background-primary, #ffffff);
         --text: var(--color-text-primary, #1f1f1f);
-        --muted: var(--color-text-secondary, #6b6b6b);
+        --muted: var(--color-text-secondary, #595959);
         --line: var(--color-border-default, rgba(0, 0, 0, 0.12));
-        --button: var(--color-background-secondary, rgba(0, 0, 0, 0.05));
-        --accent: #8a5a00;
+        --card: var(--color-background-secondary, rgba(0, 0, 0, 0.035));
+        --key: #243bf5;
+        --needs-you: #745417;
+        --findings: #7b00e8;
         --done: #25652f;
         --error: #a5293d;
-        --findings: #7b00e8;
+        --error-mark: #a5293d;
       }
       @media (prefers-color-scheme: dark) {
         :root:not([data-theme='light']) {
           --bg: var(--color-background-primary, #1e1e1e);
           --text: var(--color-text-primary, #ececec);
-          --muted: var(--color-text-secondary, #9a9a9a);
+          --muted: var(--color-text-secondary, #bdbdbd);
           --line: var(--color-border-default, rgba(255, 255, 255, 0.12));
-          --button: var(--color-background-secondary, rgba(255, 255, 255, 0.07));
-          --accent: #ffc107;
+          --card: var(--color-background-secondary, rgba(255, 255, 255, 0.045));
+          --key: #b1b9f9;
+          --needs-you: #ffc107;
+          --findings: #cab0ff;
           --done: #7ecd8f;
           --error: #ffa3b0;
-          --findings: #cab0ff;
+          --error-mark: #ff6b80;
         }
       }
       :root[data-theme='dark'] {
-        --accent: #ffc107;
+        --key: #b1b9f9;
+        --needs-you: #ffc107;
+        --findings: #cab0ff;
         --done: #7ecd8f;
         --error: #ffa3b0;
-        --findings: #cab0ff;
+        --error-mark: #ff6b80;
+      }
+      * {
+        box-sizing: border-box;
       }
       body {
         margin: 0;
-        padding: 12px 16px 24px;
         background: var(--bg);
         color: var(--text);
         font: 13px/1.45 var(--font-sans, system-ui, sans-serif);
       }
-      h2 {
-        margin: 20px 0 6px;
-        font-size: 12px;
-        font-weight: 600;
-        color: var(--muted);
-      }
-      .goal {
-        font-size: 14px;
-        font-weight: 600;
+      button {
+        font: inherit;
+        color: inherit;
+        background: none;
+        border: none;
+        padding: 0;
+        cursor: pointer;
+        text-align: left;
       }
       .muted {
         color: var(--muted);
       }
-      .status {
-        margin-top: 4px;
-        color: var(--muted);
+      .tone-needsYou {
+        color: var(--needs-you);
       }
-      .waiting {
-        color: var(--accent);
-        font-weight: 600;
+      .tone-findings {
+        color: var(--findings);
       }
-      .row {
-        border-top: 1px solid var(--line);
-        padding: 10px 0;
-      }
-      .ask {
-        font-weight: 500;
-      }
-      .detail {
-        margin-top: 2px;
-        white-space: pre-wrap;
-      }
-      .actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        margin-top: 8px;
-      }
-      button {
-        font: inherit;
-        color: inherit;
-        background: var(--button);
-        border: 1px solid var(--line);
-        border-radius: 7px;
-        padding: 3px 9px;
-        cursor: pointer;
-      }
-      button.primary {
-        border-color: var(--accent);
-      }
-      button.link {
-        background: none;
-        border: none;
-        padding: 0;
-        color: var(--muted);
-        text-decoration: underline;
-      }
-      .last {
-        margin-top: 6px;
-        color: var(--muted);
-      }
-      .ok {
+      .tone-done {
         color: var(--done);
       }
-      .error {
+      .tone-error {
         color: var(--error);
       }
-      .badge-issue {
-        color: var(--accent);
+      .mark-error {
+        color: var(--error-mark);
       }
-      .badge-opportunity {
-        color: var(--findings);
+      .notice {
+        padding: 8px 16px;
+        color: var(--error);
+      }
+      header {
+        padding: 12px 16px 4px;
+      }
+      .goal {
+        font-weight: 600;
+      }
+      .goal-mark {
+        color: var(--muted);
+        margin-right: 6px;
+      }
+      .card-line {
+        padding-left: 18px;
+      }
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 4px 16px;
+        padding: 8px 16px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .tabs {
+        display: flex;
+        gap: 16px;
+      }
+      .tab {
+        padding: 6px 0;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+        color: var(--muted);
+      }
+      .tab.shown {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .tab.shown.needsYou {
+        border-color: var(--needs-you);
+      }
+      .tab.shown.findings {
+        border-color: var(--findings);
+      }
+      .status {
+        padding: 6px 0;
+        color: var(--muted);
+      }
+      main {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 12px 12px 8px;
+      }
+      section {
+        background: var(--card);
+        border-radius: 8px;
+        padding: 8px 0;
+      }
+      .group-title {
+        padding: 2px 12px 6px;
+        font-weight: 600;
+      }
+      .group-title .count {
+        font-weight: normal;
+        color: var(--muted);
+        margin-left: 6px;
+      }
+      .entry + .entry {
+        border-top: 1px solid var(--line);
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        padding: 6px 12px 6px 9px;
+        border-left: 3px solid transparent;
+      }
+      .row.selected {
+        border-left-color: var(--key);
+        background: color-mix(in srgb, var(--key) 12%, transparent);
+        padding-top: 10px;
+        padding-bottom: 10px;
+      }
+      .handle {
+        flex: none;
+        width: 22px;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .handle.tone-done {
+        color: var(--done);
+      }
+      .handle.mark-error {
+        color: var(--error-mark);
+      }
+      .content {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .line {
+        display: flex;
+        gap: 0;
+        width: 100%;
+        min-width: 0;
+      }
+      .line .text {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .line .text.two {
+        white-space: normal;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+      }
+      .line .after {
+        flex: none;
+        white-space: pre;
+        color: var(--muted);
+      }
+      .line .after.tone-done {
+        color: var(--done);
+      }
+      .line:hover .text {
+        text-decoration: underline;
+        text-decoration-color: var(--line);
+      }
+      .title {
+        font-weight: 600;
+      }
+      .title .after {
+        font-weight: normal;
+        color: var(--muted);
+      }
+      .body {
+        overflow-wrap: anywhere;
+      }
+      .body p {
+        margin: 0 0 4px;
+      }
+      .failure {
+        font: 12px var(--font-mono, ui-monospace, monospace);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .command {
+        font: 12px var(--font-mono, ui-monospace, monospace);
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+      .keys {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 6px;
+      }
+      .key {
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 2px 8px;
+        background: var(--bg);
+      }
+      .key:hover {
+        border-color: var(--muted);
+      }
+      .key.primary {
+        border-color: var(--needs-you);
+      }
+      .key kbd {
+        font: inherit;
+        color: var(--key);
+        margin-right: 6px;
+      }
+      .key-dot {
+        color: var(--muted);
+        padding: 0 2px;
       }
       form {
         display: flex;
         gap: 6px;
-        margin-top: 8px;
       }
       input {
         flex: 1;
         min-width: 0;
         font: inherit;
         color: inherit;
-        background: transparent;
+        background: var(--bg);
         border: 1px solid var(--line);
-        border-radius: 7px;
+        border-radius: 6px;
         padding: 3px 8px;
+      }
+      form button {
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 2px 8px;
+        background: var(--bg);
       }
       textarea {
         width: 100%;
-        box-sizing: border-box;
-        margin-top: 6px;
         font: 12px var(--font-mono, ui-monospace, monospace);
         color: inherit;
-        background: var(--button);
+        background: var(--bg);
         border: 1px solid var(--line);
-        border-radius: 7px;
+        border-radius: 6px;
+      }
+      .empty-line {
+        padding: 2px 12px 4px 42px;
+        color: var(--muted);
+      }
+      .fold {
+        padding: 6px 12px 2px 42px;
+        color: var(--muted);
+      }
+      .closed {
+        display: flex;
+        gap: 8px;
+        padding: 4px 12px 4px 42px;
+      }
+      .closed .ask {
+        color: var(--muted);
+      }
+      .closed .outcome {
+        font-weight: 600;
+      }
+      .closed .outcome.lapsed {
+        font-weight: normal;
+        color: var(--muted);
+      }
+      .settled .what {
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .leave {
+        width: 96px;
+        height: 2px;
+        margin-top: 4px;
+      }
+      .leave div {
+        height: 100%;
+        background: var(--done);
+        animation-name: leave;
+        animation-timing-function: linear;
+        animation-fill-mode: forwards;
+      }
+      @keyframes leave {
+        from {
+          width: 100%;
+        }
+        to {
+          width: 0;
+        }
       }
       .empty {
+        padding: 48px 32px;
+        text-align: center;
+      }
+      .empty .title {
+        margin-bottom: 6px;
+      }
+      footer {
+        padding: 4px 16px 16px;
         color: var(--muted);
-        padding: 6px 0;
+      }
+      footer kbd {
+        font: inherit;
+        color: var(--key);
       }
     </style>
   </head>
   <body>
-    <div id="app" class="muted">Loading…</div>
+    <div id="app" class="notice muted">Loading…</div>
     <script>
-      let nextId = 0
-      let view = null
-      let isPressing = false
-      // Per-row state the server doesn't keep: an open text field, shown details, a press in flight, a copy to show.
-      const typing = new Set()
-      const details = new Set()
-      const sending = new Map()
-      const copies = new Map()
-      let notice = null
-      const pending = new Map()
-
-      function request(method, params) {
-        return new Promise((resolve, reject) => {
-          const id = ++nextId
-          pending.set(id, { resolve, reject })
-          parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*')
-        })
-      }
-
-      window.addEventListener('message', e => {
-        const m = e.data
-        if (!m || m.jsonrpc !== '2.0') return
-        if (m.id != null && !m.method && pending.has(m.id)) {
-          const p = pending.get(m.id)
-          pending.delete(m.id)
-          if (m.error) p.reject(m.error)
-          else p.resolve(m.result)
-          return
-        }
-        if (m.method === 'ui/notifications/host-context-changed') applyHost(m.params || {})
-        if (m.id != null && m.method) parent.postMessage({ jsonrpc: '2.0', id: m.id, result: {} }, '*')
-      })
-
-      function applyHost(ctx) {
-        if (ctx.theme) document.documentElement.dataset.theme = ctx.theme
-        const vars = ctx.styles && ctx.styles.variables
-        if (vars) for (const [k, v] of Object.entries(vars)) document.documentElement.style.setProperty(k, v)
-      }
-
-      async function callTool(name, args) {
-        const r = await request('tools/call', { name, arguments: args || {} })
-        return r && r.structuredContent
-      }
-
-      async function refresh() {
-        if (isPressing) return
-        try {
-          view = await callTool('inbox_view')
-          render()
-        } catch (e) {
-          notice = { kind: 'error', text: 'Could not read the inbox.' }
-          render()
-        }
-      }
-
-      async function act(rowId, label, press) {
-        sending.set(rowId, label)
-        notice = null
-        render()
-        isPressing = true
-        try {
-          const r = await callTool('inbox_press', { press })
-          if (r && r.view) view = r.view
-          if (r && r.error) notice = { kind: 'error', text: r.error }
-          if (r && r.copy) await copy(rowId, r.copy)
-        } catch (e) {
-          notice = { kind: 'error', text: 'The press did not reach the inbox.' }
-        } finally {
-          isPressing = false
-          sending.delete(rowId)
-          render()
-        }
-      }
-
-      async function copy(rowId, c) {
-        try {
-          await navigator.clipboard.writeText(c.text)
-          notice = { kind: 'ok', text: `Copied ${c.name}.` }
-        } catch (e) {
-          // The tab's frame may not get the clipboard, so the text shows for a manual copy.
-          copies.set(rowId, c)
-        }
-      }
-
-      function ago(ms) {
-        const min = Math.round(ms / 60000)
-        if (min < 1) return 'just now'
-        if (min < 60) return `${min}m ago`
-        const h = Math.round(min / 60)
-        return h < 48 ? `${h}h ago` : `${Math.round(h / 24)}d ago`
-      }
-
-      function h(tag, props, ...children) {
-        const el = document.createElement(tag)
-        for (const [k, v] of Object.entries(props || {})) {
-          if (k === 'onclick' || k === 'onsubmit') el[k] = v
-          else if (k === 'class') el.className = v
-          else if (v !== false && v != null) el.setAttribute(k, v)
-        }
-        for (const c of children.flat()) if (c != null && c !== false) el.append(c)
-        return el
-      }
-
-      function button(label, onclick, cls) {
-        return h('button', { class: cls || '', onclick }, label)
-      }
-
-      /** What the row's last press did, and a label for pressing it again. */
-      function lastLine(rowId, last) {
-        if (sending.has(rowId)) return h('div', { class: 'last' }, `${sending.get(rowId)}…`)
-        if (!last) return null
-        return h(
-          'div',
-          { class: last.isHandoff ? 'last ok' : 'last' },
-          `${last.isHandoff ? '✓ ' : ''}${last.text} · ${ago(view.at - last.at)}`,
-        )
-      }
-
-      function again(label, last, action) {
-        return last && last.action === action ? `${label} again` : label
-      }
-
-      function textField(rowId, placeholder, onSend) {
-        const input = h('input', { placeholder, 'aria-label': placeholder })
-        setTimeout(() => input.focus(), 0)
-        return h(
-          'form',
-          {
-            onsubmit: e => {
-              e.preventDefault()
-              const t = input.value.trim()
-              if (!t) return
-              typing.delete(rowId)
-              onSend(t)
-            },
-          },
-          input,
-          h('button', { type: 'submit' }, 'Send'),
-          button('Cancel', () => {
-            typing.delete(rowId)
-            render()
-          }),
-        )
-      }
-
-      function copyBox(rowId) {
-        const c = copies.get(rowId)
-        if (!c) return null
-        const area = h('textarea', { rows: '3', readonly: true })
-        area.value = c.text
-        setTimeout(() => area.select(), 0)
-        return h(
-          'div',
-          {},
-          h('div', { class: 'last' }, `Copy ${c.name} from here:`),
-          area,
-          button('Close', () => {
-            copies.delete(rowId)
-            render()
-          }),
-        )
-      }
-
-      function itemRow(item) {
-        const last = item.last
-        if (item.isHandedOff && !details.has(item.id))
-          return h(
-            'div',
-            { class: 'row' },
-            h('div', { class: 'ok' }, `✓ ${last.text} · ${ago(view.at - last.at)}`),
-            h('div', { class: 'muted' }, item.ask),
-            h(
-              'div',
-              { class: 'actions' },
-              button('Details', () => (details.add(item.id), render()), 'link'),
-            ),
-          )
-        const isQuestion = item.kind === 'question'
-        const options = isQuestion
-          ? item.options.map((o, n) =>
-              button(
-                o.isRec ? `${o.text} (recommended)` : o.text,
-                () => act(item.id, `Sending "${o.text}"`, { action: 'answer', id: item.id, option: n }),
-                o.isRec ? 'primary' : '',
-              ),
-            )
-          : []
-        const stepButtons = item.steps.map((label, n) =>
-          button(again(label, last, `step-${n}`), () => act(item.id, label, { action: 'step', id: item.id, step: n })),
-        )
-        const more = [
-          ...(isQuestion ? [] : [button('Done', () => act(item.id, 'Marking done', { action: 'done', id: item.id }))]),
-          button(isQuestion ? 'Type an answer' : 'Type a reply', () => (typing.add(item.id), render())),
-          button(again('Explain', last, 'explain'), () =>
-            act(item.id, 'Sending Explain', { action: 'explain', id: item.id }),
-          ),
-          ...(isQuestion
-            ? [button('Dismiss', () => act(item.id, 'Dismissing', { action: 'dismiss', id: item.id }))]
-            : []),
-          ...(item.isHandedOff ? [button('Hide details', () => (details.delete(item.id), render()), 'link')] : []),
-        ]
-        return h(
-          'div',
-          { class: 'row' },
-          h('div', { class: 'ask' }, item.label && item.label !== '-' ? `${item.label}. ${item.ask}` : item.ask),
-          options.length + stepButtons.length > 0 ? h('div', { class: 'actions' }, options, stepButtons) : null,
-          h('div', { class: 'actions' }, more),
-          typing.has(item.id)
-            ? textField(item.id, isQuestion ? 'Your answer' : 'Your reply', t =>
-                act(item.id, 'Sending your words', { action: 'type', id: item.id, text: t }),
-              )
-            : null,
-          copyBox(item.id),
-          lastLine(item.id, last),
-        )
-      }
-
-      function checkRow(c) {
-        const rowId = `check:${c.key}`
-        if (c.fixSent && !details.has(rowId))
-          return h(
-            'div',
-            { class: 'row' },
-            h('div', { class: 'ok' }, `✓ Fix sent${c.last ? ` · ${ago(view.at - c.last.at)}` : ''}`),
-            h('div', { class: 'muted' }, `${c.name} failed`),
-            h(
-              'div',
-              { class: 'actions' },
-              button('Details', () => (details.add(rowId), render()), 'link'),
-            ),
-          )
-        return h(
-          'div',
-          { class: 'row' },
-          h(
-            'div',
-            { class: 'ask' },
-            h('span', { class: 'error' }, '✗ '),
-            `${c.name} failed${c.summary ? `: ${c.summary}` : ''}`,
-          ),
-          c.failures.length > 0 ? h('div', { class: 'detail muted' }, c.failures.join('\n')) : null,
-          h(
-            'div',
-            { class: 'actions' },
-            button(
-              c.fixSent ? 'Fix again' : 'Fix',
-              () => act(rowId, 'Sending Fix', { action: 'fix', key: c.key }),
-              'primary',
-            ),
-            button('Dismiss', () => act(rowId, 'Dismissing', { action: 'dismissCheck', key: c.key })),
-            c.fixSent ? button('Hide details', () => (details.delete(rowId), render()), 'link') : null,
-          ),
-          lastLine(rowId, c.last),
-        )
-      }
-
-      function findingRow(f) {
-        return h(
-          'div',
-          { class: 'row' },
-          h(
-            'div',
-            { class: 'ask' },
-            h('span', { class: `badge-${f.kind}` }, f.kind === 'issue' ? '▲ ' : '✦ '),
-            f.title,
-          ),
-          h('div', { class: 'detail muted' }, f.detail),
-          f.path ? h('div', { class: 'muted' }, f.path) : null,
-          h(
-            'div',
-            { class: 'actions' },
-            button('Address', () => act(f.id, 'Sending Address', { action: 'address', id: f.id }), 'primary'),
-            button('Discuss', () => act(f.id, 'Sending Discuss', { action: 'discuss', id: f.id })),
-            button('Type a reply', () => (typing.add(f.id), render())),
-            button('Dismiss', () => act(f.id, 'Dismissing', { action: 'dismissFinding', id: f.id })),
-          ),
-          typing.has(f.id)
-            ? textField(f.id, 'Your reply', t =>
-                act(f.id, 'Sending your words', { action: 'typedFinding', id: f.id, text: t }),
-              )
-            : null,
-          lastLine(f.id, f.last),
-        )
-      }
-
-      function leavingRow(x) {
-        return h(
-          'div',
-          { class: 'row' },
-          h('div', { class: 'ok' }, `✓ ${x.text}`),
-          h('div', { class: 'muted' }, x.title),
-        )
-      }
-
-      function render() {
-        const app = document.getElementById('app')
-        if (!view) return
-        const v = view
-        const header = [
-          v.goal ? h('div', { class: 'goal' }, v.goal) : h('div', { class: 'goal muted' }, 'Nothing summarized yet.'),
-          v.now ? h('div', {}, v.now) : null,
-          v.done.length > 0 ? h('div', { class: 'muted' }, `Done: ${v.done.join(' · ')}`) : null,
-          v.running.length > 0 ? h('div', { class: 'muted' }, `Running: ${v.running.join(' · ')}`) : null,
-          h(
-            'div',
-            { class: 'status' },
-            v.waiting > 0 ? h('span', { class: 'waiting' }, `${v.waiting} waiting on you`) : 'Nothing waiting on you',
-            v.updating ? ' · updating…' : v.failed ? h('span', { class: 'error' }, ' · the last update failed') : null,
-          ),
-          notice ? h('div', { class: notice.kind === 'error' ? 'last error' : 'last ok' }, notice.text) : null,
-        ]
-        const needsYou = [...v.questions.map(itemRow), ...v.tasks.map(itemRow), ...v.checks.map(checkRow)]
-        const findings = [...v.leaving.map(leavingRow), ...v.findings.map(findingRow)]
-        app.className = ''
-        app.replaceChildren(
-          ...header.filter(Boolean),
-          h('h2', {}, 'Needs you'),
-          ...(needsYou.length > 0 ? needsYou : [h('div', { class: 'empty' }, 'No questions or tasks for you.')]),
-          h('h2', {}, 'Findings'),
-          ...(findings.length > 0
-            ? findings
-            : [
-                h(
-                  'div',
-                  { class: 'empty' },
-                  'No findings. Codex records bugs, risks and opportunities it notices outside the task here.',
-                ),
-              ]),
-          ...(v.closed.length > 0
-            ? [
-                h('h2', {}, 'Recently closed'),
-                ...v.closed.map(d => h('div', { class: 'row muted' }, `${d.ask} → ${d.outcome}`)),
-              ]
-            : []),
-        )
-      }
-
-      request('ui/initialize', {
-        protocolVersion: '2026-01-26',
-        appInfo: { name: 'inbox', version: '0.1.0' },
-        appCapabilities: { tools: {} },
-      })
-        .then(r => {
-          applyHost((r && r.hostContext) || {})
-          parent.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/initialized', params: {} }, '*')
-          refresh()
-          setInterval(refresh, 3000)
-        })
-        .catch(() => {
-          document.getElementById('app').textContent = 'The inbox could not connect to Codex.'
-        })
+      /*TAB_SCRIPT*/
     </script>
   </body>
 </html>

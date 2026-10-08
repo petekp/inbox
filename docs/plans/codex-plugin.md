@@ -398,7 +398,7 @@ bypassed:
 | A press from a server Codex started | Against the real Codex home, an app-server started the inbox server, and `mcpServer/tool/call` pressed an answer the way the tab does. The server ran `codex queue`, the message started its own turn as a user message, and the model answered it. `codex queue` goes through the app-server's `thread/queue/add`, and needs a saved thread: it fails for an ephemeral one. |
 | Findings | `record_finding` needs no approval with `default_tools_approval_mode: "approve"` in `.mcp.json`. Without it, Codex refused the call. |
 | Data folder | MCP server processes found the hooks' data folder from their own install path. |
-| Tab | Drawn in a browser with a stand-in host, in dark and light, at the desktop tab's 576 px. A press shows "Sending …" on its row at once. |
+| Tab | Drawn in a browser with a stand-in host, in dark and light, at the desktop tab's 576 px. The stand-in ran the real server code. Typed text and its focus outlasted two polls. A poll held back past a press did not bring the closed row back. A row closed by a press or by the update stayed in place for five seconds, then moved under Closed. |
 
 Found while building:
 
@@ -429,7 +429,8 @@ press from the tab in the desktop app.
 3. Session state, the hooks and the MCP tools, with tests. Done.
 4. The per-reply update through `codex exec`, and the model measurement.
    Done.
-5. The Inbox tab. Done.
+5. The Inbox tab. Done. Rebuilt with Preact to follow the mod's pane:
+   [codex-tab.md](codex-tab.md).
 6. A full session through `codex exec`. Done. A real session in the desktop
    app, which needs the person to install the plugin, trust the hooks and
    open the tab. Not yet.

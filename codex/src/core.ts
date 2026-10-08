@@ -9,7 +9,10 @@ import {
   checkRun,
   checksIn,
   claimMessage,
+  distinctSummary,
+  failCount,
   failureLines,
+  failureList,
   fixMessage,
   readResult,
 } from '../../hooks/checks'
@@ -25,7 +28,7 @@ import {
   toolActivity,
 } from '../../hooks/ledger'
 import type { Exchange, Press } from '../../hooks/ledger'
-import type { Check, Help, Item, Ledger } from '../../types'
+import type { Check, Closed, Help, Item, Ledger } from '../../types'
 import type { LastAction, SessionState } from './state'
 import { CLOSED_BY, GUIDANCE, inboxText, messages, screenText, START_TITLE } from './texts'
 
@@ -33,6 +36,8 @@ import { CLOSED_BY, GUIDANCE, inboxText, messages, screenText, START_TITLE } fro
 const TAB_OPEN_MS = 15_000
 /** How long a row the press removed shows its last action in its place. */
 export const SETTLED_MS = 5120
+/** How many recently closed items each Needs you group lists. */
+const CLOSED_SHOWN = 3
 const MAX_ACTIVITY = 40
 const MAX_SENT = 20
 const MAX_RECORDED_RUNS = 400
@@ -396,7 +401,14 @@ export function press(s: SessionState, p: TabPress, now: number): { state: Sessi
     const words = p.action === 'typedFinding' ? p.text.trim() : ''
     if (p.action === 'typedFinding' && !words) return null
     const how = p.action === 'typedFinding' ? 'typed' : p.action
-    const text = how === 'address' ? 'Address sent' : how === 'discuss' ? 'Discuss sent' : 'Reply sent'
+    const text =
+      how === 'address'
+        ? finding.kind === 'issue'
+          ? 'Sent to Codex to fix'
+          : 'Sent to Codex to act on'
+        : how === 'discuss'
+          ? 'Discuss sent'
+          : 'Reply sent'
 
     return send(
       withLast(removed, p.id, { action: p.action, text, title: finding.title }, now),
@@ -479,6 +491,30 @@ export type ItemRow = {
   isHandedOff: boolean
 }
 
+export type CheckRow = {
+  key: string
+  name: string
+  /** How it failed: "2 of 24 failed", or the output's summary. */
+  outcome: string
+  /** The count that failed, or the file the failure names, for the one-line row. */
+  brief: string | null
+  ranAt: number
+  isStale: boolean
+  failures: string[]
+  command: string
+  fixSentAt: number | null
+}
+
+export type ClosedRow = {
+  id: string
+  kind: Item['kind']
+  ask: string
+  outcome: string
+  /** Closed without the person deciding it: dismissed, expired, or overtaken by the work. */
+  isLapsed: boolean
+  at: number
+}
+
 export type View = {
   goal: string
   now: string
@@ -486,18 +522,15 @@ export type View = {
   running: string[]
   updating: boolean
   failed: boolean
+  /** When the per-reply update last changed the summary; null before the first. */
+  updatedAt: number | null
   /** How many things wait on the person: questions, tasks not handed to Codex, checks left failing without a fix sent. */
   waiting: number
   questions: ItemRow[]
   tasks: ItemRow[]
-  checks: {
-    key: string
-    name: string
-    summary: string
-    failures: string[]
-    fixSent: boolean
-    last: LastAction | null
-  }[]
+  checks: CheckRow[]
+  /** Keys of checks the person dismissed, so the tab does not show a dismissed check as passed. */
+  dismissedChecks: string[]
   findings: {
     id: string
     kind: 'issue' | 'opportunity'
@@ -509,9 +542,34 @@ export type View = {
   }[]
   /** Findings a press removed in the last few seconds, shown in their place with what was sent. */
   leaving: { id: string; title: string; text: string; at: number }[]
-  closed: { ask: string; outcome: string; how: string; at: number }[]
+  /** Each group's latest closed items, newest first. */
+  closed: ClosedRow[]
   /** When the view was drawn, for the rows' ages. */
   at: number
+}
+
+/** An item that closed without the person deciding it. The per-reply update writes its own outcome, so only its wording says the work overtook the item. */
+function isLapsed(d: Closed): boolean {
+  if (d.how === 'dismissed' || d.how === 'expired' || d.how === 'claude') return true
+
+  return d.how === 'update' && /^(no longer applies|replaced|superseded|moot)/i.test(d.outcome)
+}
+
+function checkRow(c: Check, root: string): CheckRow {
+  const count = failCount(c)
+  const failed = failureList(c)
+
+  return {
+    key: checkKey(c),
+    name: checkName(c, root),
+    outcome: count ? `${count.fail} of ${count.total} failed` : (distinctSummary(c) ?? 'failed'),
+    brief: count ? `${count.fail} failed` : (failed.find(f => f.file)?.file ?? null),
+    ranAt: c.ranAt,
+    isStale: c.isStale,
+    failures: failed.map(f => (f.file ? `${f.file}: ${f.text}` : f.text)),
+    command: c.command,
+    fixSentAt: c.fixSentAt,
+  }
 }
 
 /** What the tab draws. */
@@ -543,25 +601,23 @@ export function viewOf(s: SessionState, now: number): View {
     running: l.card?.running ?? [],
     updating: s.presence.isUpdating || s.pending.length > 0,
     failed: s.presence.ledgerState === 'failed',
+    updatedAt: l.card?.updatedAt ?? null,
     waiting: questions.length + tasks.filter(t => !t.isHandedOff).length + failing.count,
     questions,
     tasks,
-    checks: failing.rows.map(c => ({
-      key: checkKey(c),
-      name: checkName(c, s.root),
-      summary: c.summary,
-      failures: c.failures,
-      fixSent: c.fixSentAt !== null,
-      last: s.lastActions[`check:${checkKey(c)}`] ?? null,
-    })),
+    checks: failing.rows.map(c => checkRow(c, s.root)),
+    dismissedChecks: s.checks.results.filter(c => c.isDismissed).map(checkKey),
     findings: l.findings.map(f => ({ ...f, last: s.lastActions[f.id] ?? null })),
     leaving: Object.entries(s.lastActions)
       .filter(([id, a]) => a.title !== undefined && !open.has(id) && now - a.at < SETTLED_MS)
       .map(([id, a]) => ({ id, title: a.title ?? '', text: a.text, at: a.at })),
-    closed: l.closed
-      .slice(-3)
-      .reverse()
-      .map(d => ({ ask: d.ask, outcome: d.outcome, how: d.how, at: d.at })),
+    closed: (['question', 'task'] as const).flatMap(kind =>
+      l.closed
+        .filter(d => d.kind === kind)
+        .slice(-CLOSED_SHOWN)
+        .reverse()
+        .map(d => ({ id: d.id, kind, ask: d.ask, outcome: d.outcome, isLapsed: isLapsed(d), at: d.at })),
+    ),
     at: now,
   }
 }

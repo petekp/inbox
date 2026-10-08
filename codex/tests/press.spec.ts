@@ -94,7 +94,7 @@ test('Address removes the finding, sends it, and shows what was sent in its plac
   )
   assert.deepEqual(
     viewOf(r.state, 60).leaving.map(x => [x.title, x.text]),
-    [['No lint script', 'Address sent']],
+    [['No lint script', 'Sent to Codex to fix']],
   )
   assert.deepEqual(viewOf(r.state, 60 + 6000).leaving, [])
   assert.deepEqual(r.state.ledger.findings, [])
