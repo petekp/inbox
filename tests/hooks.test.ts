@@ -641,7 +641,7 @@ test('a failing test run shows in the band, reaches the per-turn call, stops a c
   expect(await pane.find({ text: /Failing checks 1/ })).toBeUndefined()
   await pane.press({ key: 'dismiss-check:.:npm test' })
   expect(await pane.find({ text: /Failing checks/ })).toBeUndefined()
-  expect(await band.find({ text: /✗ npm test/ })).toBeDefined()
+  expect(await band.find({ text: /✗ npm test/ })).toBeUndefined()
 })
 
 test('a failed check whose folder is gone, such as a removed worktree, drops out', async ($, on) => {

@@ -152,11 +152,14 @@ export function needsYou(checks: Checks, root: string): { rows: Check[]; count: 
   return { rows, count: rows.filter(c => c.fixSentAt === null).length }
 }
 
-/** What the band shows from the session's results: the failing ones, one line each, and the rest on the dim summary line. No result shows twice. */
+/** What the band shows from the session's results: the failing ones not dismissed, one line each, and the rest on the dim summary line. No result shows twice. */
 export function bandLines(checks: Checks, root: string): { failing: Check[]; summary: Check[] } {
   const own = checks.results.filter(c => counts(checks, c, root))
 
-  return { failing: own.filter(c => c.result === 'fail'), summary: own.filter(c => c.result !== 'fail') }
+  return {
+    failing: own.filter(c => c.result === 'fail' && !c.isDismissed),
+    summary: own.filter(c => c.result !== 'fail'),
+  }
 }
 
 /**

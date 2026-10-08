@@ -68,4 +68,11 @@ describe('band lines', () => {
     expect(lines.failing.map(c => c.name)).toEqual(['npm test'])
     expect(lines.summary.map(c => c.name)).toEqual(['tsc', 'lint'])
   })
+
+  test('a dismissed failure leaves the band, and a new run shows again', () => {
+    const dismissed = makeCheck({ isDismissed: true })
+    expect(bandLines(checksOf([dismissed]), root)).toEqual({ failing: [], summary: [] })
+    const rerun = makeCheck({ isDismissed: false })
+    expect(bandLines(checksOf([rerun]), root).failing).toEqual([rerun])
+  })
 })
