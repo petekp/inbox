@@ -654,12 +654,13 @@ function askLedgerModel($: EngineInterface, prompt: string, timeoutMs: number): 
 
 /** Updates the ledger from one exchange. */
 async function runUpdate($: EngineInterface, ex: Exchange): Promise<LedgerState> {
+  const promptAt = await $.clock.now()
   const r = await askLedgerModel($, buildPrompt(await read($, LEDGER), ex), 45_000)
   // An Explain turn talks about its item without deciding it.
   const explained = ex.press?.action === 'explain' ? ex.press.id : null
 
   return applyLedgerReply($, r, [ex.reply, ...ex.activity].join('\n'), (l, u, now) =>
-    applyUpdate(l, { ...u, closed: u.closed.filter(c => c.id !== explained) }, now, ex.turn),
+    applyUpdate(l, { ...u, closed: u.closed.filter(c => c.id !== explained) }, now, ex.turn, promptAt),
   )
 }
 

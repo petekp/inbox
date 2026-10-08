@@ -41,6 +41,8 @@ export type Closed = {
   id: string
   kind: Item['kind']
   ask: string
+  /** The reply's own number for it, when it had one. */
+  label?: string
   /** What the pane shows for how it closed, such as the person's answer. */
   outcome: string
   /**

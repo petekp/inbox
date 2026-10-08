@@ -6,6 +6,7 @@ import {
   answerNote,
   applyUpdate,
   carryText,
+  closeItem,
   latestBatch,
   parseReply,
   readCommandRow,
@@ -114,6 +115,7 @@ describe('applyUpdate', () => {
         id: 'i1',
         kind: 'question',
         ask: 'Rename Send.swift to Herdr?',
+        label: '1',
         outcome: 'yes, renamed',
         how: 'update',
         at: 2000,
@@ -164,6 +166,28 @@ describe('applyUpdate', () => {
     const again = applyUpdate(first, parseReply('NEW: decide | 1 | rename send.swift to herdr | - | -')!, 2, 2)
     expect(again.items.length).toBe(3)
   })
+
+  const repeats: [string, string, number, number][] = [
+    ['its id as the label', 'NEW: decide | i1 | Something else entirely? | - | -', 5000, 0],
+    ['the same ask', 'NEW: decide | - | Rename Send.swift to Herdr? | - | -', 5000, 0],
+    ['a restated ask', 'NEW: decide | - | Should Send.swift be renamed to Herdr? | - | -', 5000, 0],
+    ['the same label', 'NEW: decide | 1 | Another question altogether? | - | -', 5000, 0],
+    ['the same label, closed before the prompt', 'NEW: decide | 1 | Another question altogether? | - | -', 6000, 1],
+    ['the same ask, closed before the prompt', 'NEW: decide | - | Rename Send.swift to Herdr? | - | -', 6000, 1],
+    ['an unrelated question', 'NEW: decide | 9 | Cut TODOS.md down to open items? | - | -', 5000, 1],
+  ]
+  for (const [name, line, promptAt, added] of repeats)
+    test(`a NEW line with ${name}, for an item closed during the update`, () => {
+      const first = applyUpdate(
+        { ...EMPTY, turn: 1 },
+        parseReply('NEW: decide | 1 | Rename Send.swift to Herdr? | - | -')!,
+        1000,
+        1,
+      )
+      const answered = closeItem(first, 'i1', { how: 'answered', outcome: 'yes' }, 5500)
+      const next = applyUpdate({ ...answered, turn: 2 }, parseReply(line)!, 7000, 2, promptAt)
+      expect(next.items.length).toBe(added)
+    })
 })
 
 describe('upgradeLedger', () => {

@@ -543,10 +543,23 @@ function sameAsk(a: string, b: string): boolean {
  * The open item a NEW line repeats, if any. The summary model often restates
  * an open item, labelled with its id or reworded, instead of leaving it alone.
  */
-function matchOpen(items: Item[], a: Update['added'][number]): number {
+function matchOpen(items: Pick<Item, 'id' | 'kind' | 'ask'>[], a: Update['added'][number]): number {
   return items.findIndex(
     i => i.id === a.label || sameAsk(i.ask, a.ask) || (i.kind === a.kind && restates(i.ask, a.ask)),
   )
+}
+
+/** Whether a NEW line repeats an item that closed at or after `since`, by matchOpen's rule or its label. */
+function repeatsRecentlyClosed(closed: Closed[], a: Update['added'][number], since: number): boolean {
+  const recent = closed.filter(c => c.at >= since)
+
+  return matchOpen(recent, a) >= 0 || (a.label !== null && recent.some(c => c.label === a.label))
+}
+
+function closedRecord(item: Item, closing: Closing, now: number): Closed {
+  const { id, kind, ask, label } = item
+
+  return { id, kind, ask, ...(label ? { label } : {}), ...closing, at: now }
 }
 
 /** The outcome of an item Claude closed, so the pane and Claude can tell it from the user's own decision. */
@@ -583,14 +596,17 @@ export function closeItem(ledger: Ledger, id: string, closing: Closing, now: num
   return {
     ...ledger,
     items: ledger.items.filter(i => i.id !== id),
-    closed: [
-      ...ledger.closed,
-      ...ledger.items.filter(i => i.id === id).map(i => ({ id, kind: i.kind, ask: i.ask, ...closing, at: now })),
-    ].slice(-MAX_CLOSED),
+    closed: [...ledger.closed, ...ledger.items.filter(i => i.id === id).map(i => closedRecord(i, closing, now))].slice(
+      -MAX_CLOSED,
+    ),
   }
 }
 
-export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number): Ledger {
+/**
+ * `promptAt` is when the update's prompt was built. A NEW line that repeats an
+ * item closed since then is dropped: the person answered it while the model ran.
+ */
+export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number, promptAt = now): Ledger {
   const prev = ledger.card
   const card: Card = {
     goal: u.card.goal || prev?.goal || '',
@@ -606,12 +622,13 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
     const outcome = closing.get(item.id)
     const helps = u.helped.filter(h => h.id === item.id).reduce((all, h) => withHelp(all, h.help), item.helps)
     if (outcome === undefined) items.push({ ...item, helps })
-    else closed.push({ id: item.id, kind: item.kind, ask: item.ask, outcome, how: 'update', at: now })
+    else closed.push(closedRecord(item, { outcome, how: 'update' }, now))
   }
 
   let nextId = ledger.nextId
   let added = 0
   for (const a of u.added) {
+    if (repeatsRecentlyClosed(ledger.closed, a, promptAt)) continue
     const at = matchOpen(items, a)
     const restated = items[at]
     if (restated) {
@@ -625,9 +642,7 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
 
   // An item left unanswered too long, or pushed out by newer ones, closes as expired.
   const kept = items.filter(i => turn - i.turn <= STALE_AFTER).slice(-MAX_OPEN)
-  for (const i of items)
-    if (!kept.includes(i))
-      closed.push({ id: i.id, kind: i.kind, ask: i.ask, outcome: EXPIRED, how: 'expired', at: now })
+  for (const i of items) if (!kept.includes(i)) closed.push(closedRecord(i, { outcome: EXPIRED, how: 'expired' }, now))
 
   return {
     ...ledger,
