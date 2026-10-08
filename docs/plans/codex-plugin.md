@@ -67,14 +67,14 @@ Terms follow `GLOSSARY.md`. "The mod" is the Claude Code mod in this repo.
 | `run_check` | Runs each check through Claude's own Bash tool | Left out. See gap 4 | Gap |
 | Checks Codex runs in its shell | `tool.call` on Bash records lone checks and refuses compound ones | `PreToolUse` on the shell tool denies a compound check. `Stop` records each lone one's result from the transcript | Direct |
 | Stale results | Git snapshots after each turn | The same git snapshots, taken by the server at `Stop`. `git.ts` carries over | Direct |
-| Session's repos | Paths from Edit, Write, NotebookEdit | Paths named in Codex's patches, via `PostToolUse` on `apply_patch` | Direct |
+| Session's repos | Paths from Edit, Write, NotebookEdit | Paths named in Codex's patches, via `PreToolUse` on `apply_patch` | Direct |
 | Claim check | `classic.Stop` blocks once | A blocking `Stop` hook | Direct |
 | `GUIDANCE` in the system prompt | `prompt.compose` adds a section | `SessionStart` context on every start, resume, clear and compact | Direct. It becomes developer context, not system prompt |
 | Start-of-context block (`carryText`) | `prompt.context` | The same `SessionStart` output | Direct |
 | Inbox line and answer line | `prompt.submit` context | `UserPromptSubmit` `additionalContext` | Direct |
 | Per-reply update by the inbox model | `$.model.complete` with Sonnet after `turn.complete` | A background `Stop` hook asks the server to run `codex exec` with `SYSTEM` | Direct. See gaps 6 and 7 |
 | Catch-up after a missed update | `$.model.fork` | `codex exec` on `transcriptCatchUpPrompt`, built from `transcript_path` | Direct, later |
-| Activity lines for the update | Every tool call | `PostToolUse` matched to the shell and patch tools only. Other tools add no line | Reduced |
+| Activity lines for the update | Every tool call | `PreToolUse` on the shell, patch and MCP tools. Codex's other tools add no line | Reduced |
 | Band above the prompt | `ui.render` AbovePrompt | The Inbox tab's header. Nothing above the prompt | Gap 1 |
 | `/inbox` pane, three tabs, keys | `ui.render` Pane | The Inbox tab: an MCP App opened from a thread entrypoint | Direct |
 | Pane buttons that send a message | `$.prompt.submit` | The tab calls a tool, and the MCP server runs `codex queue` | Direct |
@@ -147,9 +147,11 @@ process per person, reached over a socket. It adds a lifecycle, version
 checks after each update, and a socket, for timers the first version
 doesn't have. The card after time away and the PRs tab may need it later.
 
-- **Cost:** every matched hook starts a Node process, about 50 ms, before
-  each matched tool call. So `PreToolUse` matches only the shell tool, and
-  `PostToolUse` only the patch and inbox tools.
+- **Cost:** every matched hook starts a Node process before each matched
+  tool call. So the plugin has no `PostToolUse` hook, and `PreToolUse`
+  matches only the shell, patch and MCP tools, with
+  `Bash|apply_patch|mcp__.*`. It notes the activity line before the tool
+  runs, since a long shell command gets no `PostToolUse`.
 - **Failure case:** a hook that fails exits 0 with no output. Codex goes on
   as if the plugin weren't installed.
 - **Guard:** the hooks do nothing in `codex exec` runs. That covers the
@@ -244,8 +246,8 @@ Codex session ── hooks (one process per event) ──┐
               └── a press calls a tool, and the server runs `codex queue`
 ```
 
-- **Hooks:** `SessionStart`, `UserPromptSubmit`, `PreToolUse` on the shell
-  tool, `PostToolUse` on the patch and inbox tools, and `Stop`. `Stop`
+- **Hooks:** `SessionStart`, `UserPromptSubmit`, `PreToolUse` on the shell,
+  patch and MCP tools, and `Stop`. `Stop`
   records the turn's checks from the transcript, sends Codex back over a
   contradicted claim, and starts the update.
 - **MCP server:** Node, the same language as the mod. It speaks MCP over
@@ -386,6 +388,9 @@ bypassed:
 | --- | --- |
 | Hooks | `SessionStart`, `UserPromptSubmit`, `PreToolUse` with the matcher `Bash\|apply_patch\|mcp__.*`, and `Stop` all fired. |
 | Check tracking | A failing `npm test` was recorded from the transcript, then a passing rerun, which went stale after a patch. |
+| Refused check | Codex honors `permissionDecision: "deny"` from `PreToolUse`: it did not run `npm test \| tail -3`, and gave the hook's reason. |
+| Inbox line | `UserPromptSubmit` `additionalContext` reached the model as a developer message, and Codex answered from it. |
+| Resume | `SessionStart` fires again on resume, and the guidance from the start is still in the conversation. So a resume gets only the start-of-context block. |
 | Claim check | Codex honors `{decision: "block", reason}` from `Stop`: the turn went on, and the next `Stop` had `stop_hook_active: true`. |
 | A press | The server closed the question, and `codex queue` wrote the answer for the right thread with the CLI path a hook saved. `codex exec resume` also reads the queue, and delivered it. |
 | Findings | `record_finding` needs no approval with `default_tools_approval_mode: "approve"` in `.mcp.json`. Without it, Codex refused the call. |

@@ -27,6 +27,11 @@ test('a session records a failing check, ends the turn, and sends Codex back onc
   const started = await readState(dir, 's1')
   assert.equal(started.top, repo)
   assert.equal(started.cliPath, '/apps/codex')
+  // A resumed conversation still holds the guidance, and this one has no ledger yet.
+  assert.equal(
+    await handleHook(input('SessionStart', { cwd: repo, source: 'resume', transcript_path: transcript }), deps),
+    null,
+  )
 
   await handleHook(input('UserPromptSubmit', { prompt: 'Run the tests', turn_id: 't1' }), deps)
   writeFileSync(transcript, `${commandEndLine('t1', 'e1', 'npm test', repo, 1, FAILED)}\n`)

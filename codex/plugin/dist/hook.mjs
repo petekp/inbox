@@ -596,11 +596,10 @@ var MAX_RECORDED_RUNS = 400;
 function isTabOpen(s, now) {
   return now - s.tabSeenAt < TAB_OPEN_MS;
 }
-function startContext(s) {
+function startContext(s, source) {
   const carried = carryText(s.ledger, START_TITLE, true);
-  return carried ? `${GUIDANCE}
-
-${carried}` : GUIDANCE;
+  const parts = [source === "resume" ? null : GUIDANCE, carried].filter((x) => x !== null);
+  return parts.length > 0 ? parts.join("\n\n") : null;
 }
 function cleared(s) {
   return {
@@ -1051,7 +1050,8 @@ async function handleHook(input, deps) {
         const checks = top ? addRepo(base.checks, top) : base.checks;
         return withCli({ ...base, root, top, checks });
       });
-      return { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: startContext(s) } };
+      const context = startContext(s, input.source);
+      return context ? { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: context } } : null;
     }
     case "UserPromptSubmit": {
       let notes = [];

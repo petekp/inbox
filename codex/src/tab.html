@@ -489,7 +489,7 @@
       request('ui/initialize', {
         protocolVersion: '2026-01-26',
         appInfo: { name: 'inbox', version: '0.1.0' },
-        appCapabilities: {},
+        appCapabilities: { tools: {} },
       })
         .then(r => {
           applyHost((r && r.hostContext) || {})

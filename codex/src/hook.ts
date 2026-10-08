@@ -72,7 +72,9 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
         return withCli({ ...base, root, top, checks })
       })
 
-      return { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: startContext(s) } }
+      const context = startContext(s, input.source)
+
+      return context ? { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } } : null
     }
     case 'UserPromptSubmit': {
       let notes: string[] = []

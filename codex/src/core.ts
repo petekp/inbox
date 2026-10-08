@@ -41,11 +41,16 @@ export function isTabOpen(s: SessionState, now: number): boolean {
   return now - s.tabSeenAt < TAB_OPEN_MS
 }
 
-/** What SessionStart gives Codex: the guidance, and where the session stands when it has a ledger. */
-export function startContext(s: SessionState): string {
+/**
+ * What SessionStart gives Codex: the guidance, and where the session stands
+ * when it has a ledger. A resumed conversation still holds the guidance from
+ * its start, so it gets only where the session stands. Null when that is empty.
+ */
+export function startContext(s: SessionState, source: string | undefined): string | null {
   const carried = carryText(s.ledger, START_TITLE, true)
+  const parts = [source === 'resume' ? null : GUIDANCE, carried].filter((x): x is string => x !== null)
 
-  return carried ? `${GUIDANCE}\n\n${carried}` : GUIDANCE
+  return parts.length > 0 ? parts.join('\n\n') : null
 }
 
 /** A cleared conversation starts a new ledger; the rest of the state stays. */
