@@ -3396,7 +3396,7 @@ export const register: Register = on => {
               plain
               dimColor
               key={`fold-${kind}`}
-              label={`${isUnfolded ? '▾' : '▸'}  ${count} Closed`}
+              label={`${isUnfolded ? '▾' : '▸'} ${count} Closed`}
               onPress={() =>
                 void update($, UNFOLDED, u => (u.includes(kind) ? u.filter(k => k !== kind) : [...u, kind]))
               }
