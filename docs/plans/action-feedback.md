@@ -48,6 +48,9 @@ it again must look deliberate.
   to Claude and remove it, so it stays in place for 8 seconds with a ✓ and its
   last action, as a closed item does. Dismiss only hides, so its row leaves at
   once.
+- **A leave bar.** A row that stays in place for 8 seconds after it closes
+  shows a thin bar under its outcome, 12 cells of `▔`, that empties as the 8
+  seconds run out. Reason: the person sees when the row will move to Closed.
 - **A row handed to Claude folds.** After Address or Address all on a review
   thread, Fix on a failing check, or a Run step or typed reply on a task, the
   row shows a ✓ and what was sent, with its body and keys behind Details. It

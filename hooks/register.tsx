@@ -150,6 +150,8 @@ const SHOWN_DETAILS = atom({ plugin: 'inbox', key: 'shownDetails' } as const, []
 const IS_KEY_LIST_SHOWN = atom({ plugin: 'inbox', key: 'isKeyListShown' } as const, false)
 // How long a closed item's row stays in place, with its outcome, before it moves to Closed.
 const SETTLED_MS = 8000
+// The bar under a just-closed row, in cells. It loses one per step of SETTLED_MS, so the pane redraws that often.
+const LEAVE_BAR_CELLS = 12
 const IS_DEMO = atom({ plugin: 'inbox', key: 'isDemo' } as const, false)
 const SAMPLE_PRESS = 'Sample entry: nothing was sent. Run /inbox demo to go back.'
 // The pane's buttons that only move around it, which work in the demo. Every other press there sends nothing.
@@ -670,6 +672,19 @@ async function showSettled($: EngineInterface, before: Ledger, after: Ledger) {
   if (settled.length === 0) return
   await update($, SETTLED, s => [...s.filter(x => !settled.some(y => y.id === x.id)), ...settled])
   expireSettled($, settled, SETTLED_MS)
+  redrawWhileLeaving($, () => update($, SETTLED, s => [...s]), SETTLED_MS)
+}
+
+/** Redraws the pane at each step of a just-closed row's leave bar, for `waitMs`. A fresh value is what redraws it. */
+function redrawWhileLeaving($: EngineInterface, refresh: () => Promise<unknown>, waitMs: number) {
+  // Whole milliseconds, so the last wait ends at `waitMs` and its redraw finds the row gone.
+  const step = Math.ceil(SETTLED_MS / LEAVE_BAR_CELLS)
+  void (async () => {
+    for (let left = waitMs; left > 0; left -= step) {
+      await $.clock.sleep(Math.min(step, left))
+      await refresh()
+    }
+  })().catch(() => undefined)
 }
 
 /** Records what a row's action did. A row the press removed shows it in its place until SETTLED_MS passes. */
@@ -677,11 +692,9 @@ async function recordLastAction($: EngineInterface, id: string, last: Omit<LastA
   const [at, { turnsStarted }] = await Promise.all([$.clock.now(), read($, PRESENCE)])
   await update($, LAST_ACTIONS, a => ({ ...a, [id]: { ...last, at, turnsStarted } }))
   if (last.isHandoff) void publishStatus($)
-  // A fresh object redraws the pane once the settle time is over, so a removed row's place clears.
-  void $.clock
-    .sleep(SETTLED_MS)
-    .then(() => update($, LAST_ACTIONS, a => ({ ...a })))
-    .catch(() => undefined)
+  // A finding the press removed shows in its place, with a leave bar, until the settle time is over.
+  // A fresh object redraws the pane, so the bar shrinks and the place then clears.
+  redrawWhileLeaving($, () => update($, LAST_ACTIONS, a => ({ ...a })), SETTLED_MS)
 }
 
 /** Removes just-closed rows after a wait. A reload cancels the wait, so session.start sets it again. */
@@ -1925,7 +1938,11 @@ export const register: Register = on => {
     if (sessionRepo !== null) await update($, CHECKS, c => addRepo(c, sessionRepo))
     // A reload cancels the timers that clear just-closed rows, so the rows still showing get new ones.
     const settled = await update($, SETTLED, s => s.filter(x => now - x.at < SETTLED_MS))
-    if (settled.length > 0) expireSettled($, settled, Math.max(...settled.map(s => s.at + SETTLED_MS - now)))
+    if (settled.length > 0) {
+      const waitMs = Math.max(...settled.map(s => s.at + SETTLED_MS - now))
+      expireSettled($, settled, waitMs)
+      redrawWhileLeaving($, () => update($, SETTLED, s => [...s]), waitMs)
+    }
     let loaded = current
     if (current.turn === 0 && !current.card) {
       if (saved) {
@@ -2873,6 +2890,13 @@ export const register: Register = on => {
     // Every action that declares `done` records it on its row once the press has
     // worked, so a press never goes unseen. One already done reads "… again", so a
     // second press is a choice. A click and a key press both run through here.
+    // Under a just-closed row, a thin bar that empties as its time in place runs out.
+    // ▔ fills the top eighth of a cell, so the bar sits just under the outcome line.
+    const leaveBar = (at: number) => {
+      const cells = Math.ceil((Math.max(0, SETTLED_MS - (now - at)) / SETTLED_MS) * LEAVE_BAR_CELLS)
+
+      return cells > 0 ? <Text color={pal.mark.done}>{'▔'.repeat(cells)}</Text> : null
+    }
     const withLastAction = <A extends Action>(row: { id: string; title: string }, index: number, actions: A[]): A[] =>
       actions.map(a => {
         const done = a.done
@@ -3362,6 +3386,7 @@ export const register: Register = on => {
             <Text wrap="wrap" color={pal.tone.done}>
               {outcomeText(s)}
             </Text>
+            {leaveBar(s.at)}
           </Box>,
           `settled-${s.id}`,
         )
@@ -3511,6 +3536,7 @@ export const register: Register = on => {
             {last.title}
           </Text>
           <Text color={pal.tone.done}>{last.text}</Text>
+          {leaveBar(last.at)}
         </Box>
       </Box>
     )
