@@ -3555,10 +3555,7 @@ export const register: Register = on => {
         .filter(([id, n]) => n.tab === 'findings' && now - n.at < SETTLED_MS && !rows.findings.some(r => r.id === id))
         .sort(([, a], [, b]) => a.index - b.index)
       if (rows.findings.length === 0 && settled.length === 0)
-        return emptyState(
-          'No findings',
-          'Claude adds one here when it notices a bug, a risk or an idea outside its current task.',
-        )
+        return emptyState('No findings yet', 'Claude flags issues and opportunities it spots beyond your task.')
       const shown = rows.findings.map(r => listRow(r))
       for (const [id, last] of settled) shown.splice(Math.min(last.index, shown.length), 0, settledFinding(id, last))
 
