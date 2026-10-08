@@ -1,7 +1,7 @@
 # The inbox as a Codex plugin
 
-Status: first version built in `codex/`, and run end to end through `codex
-exec`. Not yet tried in a desktop app session. The Claude Code mod stays
+Status: first version built in `codex/`. It runs in the desktop app; a
+press from the tab there is not confirmed yet. The Claude Code mod stays
 unchanged.
 
 Goal: give Codex sessions what the inbox gives Claude Code sessions. That
@@ -418,8 +418,9 @@ Both misses by `gpt-6-luna` closed an open finding because the reply said
 it was recorded, which drops the finding. It made the same mistake in the
 live session. The plugin uses `gpt-6.1-sol`.
 
-Not tried yet: a desktop app session with the hooks trusted and the tab
-open.
+In a desktop app session with the hooks trusted, the hooks ran, the update
+added the reply's two questions, and the tab polled. Not confirmed yet: a
+press from the tab in the desktop app.
 
 ## Build steps
 
