@@ -395,6 +395,7 @@ bypassed:
 | Resume | `SessionStart` fires again on resume, and the guidance from the start is still in the conversation. So a resume gets only the start-of-context block. |
 | Claim check | Codex honors `{decision: "block", reason}` from `Stop`: the turn went on, and the next `Stop` had `stop_hook_active: true`. |
 | A press | The server closed the question, and `codex queue` wrote the answer for the right thread with the CLI path a hook saved. `codex exec resume` also reads the queue, and delivered it. |
+| A press from a server Codex started | Against the real Codex home, an app-server started the inbox server, and `mcpServer/tool/call` pressed an answer the way the tab does. The server ran `codex queue`, the message started its own turn as a user message, and the model answered it. `codex queue` goes through the app-server's `thread/queue/add`, and needs a saved thread: it fails for an ephemeral one. |
 | Findings | `record_finding` needs no approval with `default_tools_approval_mode: "approve"` in `.mcp.json`. Without it, Codex refused the call. |
 | Data folder | MCP server processes found the hooks' data folder from their own install path. |
 | Tab | Drawn in a browser with a stand-in host, in dark and light, at the desktop tab's 576 px. A press shows "Sending …" on its row at once. |
@@ -418,7 +419,7 @@ it was recorded, which drops the finding. It made the same mistake in the
 live session. The plugin uses `gpt-6.1-sol`.
 
 Not tried yet: a desktop app session with the hooks trusted and the tab
-open, and a press from the tab reaching a live thread.
+open.
 
 ## Build steps
 
