@@ -1,2 +1,5 @@
 # Types the engine writes beside a loaded mod
 .claude-plugin/types/
+
+# Throwaway scripts that import the mod's code, so they live inside the repo
+.scratch/
