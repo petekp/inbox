@@ -149,9 +149,10 @@ const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as Item[
 const SHOWN_DETAILS = atom({ plugin: 'inbox', key: 'shownDetails' } as const, [] as string[])
 const IS_KEY_LIST_SHOWN = atom({ plugin: 'inbox', key: 'isKeyListShown' } as const, false)
 // How long a closed item's row stays in place, with its outcome, before it moves to Closed.
-const SETTLED_MS = 8000
-// The bar under a just-closed row, in cells. It loses one per step of SETTLED_MS, so the pane redraws that often.
+const SETTLED_MS = 6400
+// The bar under a just-closed row, in cells. It loses half a cell per step of SETTLED_MS, so the pane redraws that often.
 const LEAVE_BAR_CELLS = 12
+const LEAVE_BAR_STEPS = LEAVE_BAR_CELLS * 2
 const IS_DEMO = atom({ plugin: 'inbox', key: 'isDemo' } as const, false)
 const SAMPLE_PRESS = 'Sample entry: nothing was sent. Run /inbox demo to go back.'
 // The pane's buttons that only move around it, which work in the demo. Every other press there sends nothing.
@@ -678,7 +679,7 @@ async function showSettled($: EngineInterface, before: Ledger, after: Ledger) {
 /** Redraws the pane at each step of a just-closed row's leave bar, for `waitMs`. A fresh value is what redraws it. */
 function redrawWhileLeaving($: EngineInterface, refresh: () => Promise<unknown>, waitMs: number) {
   // Whole milliseconds, so the last wait ends at `waitMs` and its redraw finds the row gone.
-  const step = Math.ceil(SETTLED_MS / LEAVE_BAR_CELLS)
+  const step = Math.ceil(SETTLED_MS / LEAVE_BAR_STEPS)
   void (async () => {
     for (let left = waitMs; left > 0; left -= step) {
       await $.clock.sleep(Math.min(step, left))
@@ -2891,11 +2892,13 @@ export const register: Register = on => {
     // worked, so a press never goes unseen. One already done reads "… again", so a
     // second press is a choice. A click and a key press both run through here.
     // Under a just-closed row, a thin bar that empties as its time in place runs out.
-    // ▔ fills the top eighth of a cell, so the bar sits just under the outcome line.
+    // ─ is a light line across a cell and ╴ across its left half, so the bar shrinks by half cells.
     const leaveBar = (at: number) => {
-      const cells = Math.ceil((Math.max(0, SETTLED_MS - (now - at)) / SETTLED_MS) * LEAVE_BAR_CELLS)
+      const halves = Math.ceil((Math.max(0, SETTLED_MS - (now - at)) / SETTLED_MS) * LEAVE_BAR_STEPS)
 
-      return cells > 0 ? <Text color={pal.mark.done}>{'▔'.repeat(cells)}</Text> : null
+      return halves > 0 ? (
+        <Text color={pal.mark.done}>{'─'.repeat(Math.floor(halves / 2)) + (halves % 2 ? '╴' : '')}</Text>
+      ) : null
     }
     const withLastAction = <A extends Action>(row: { id: string; title: string }, index: number, actions: A[]): A[] =>
       actions.map(a => {
