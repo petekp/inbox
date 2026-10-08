@@ -58,3 +58,14 @@ describe('the session’s repos', () => {
     })
   }
 })
+
+describe('band lines', () => {
+  test('a failing result shows on its own line and not in the summary', () => {
+    const fail = makeCheck({ name: 'npm test', result: 'fail' })
+    const pass = makeCheck({ name: 'tsc', result: 'pass' })
+    const unknown = makeCheck({ name: 'lint', result: 'unknown' })
+    const lines = bandLines(checksOf([fail, pass, unknown]), root)
+    expect(lines.failing.map(c => c.name)).toEqual(['npm test'])
+    expect(lines.summary.map(c => c.name)).toEqual(['tsc', 'lint'])
+  })
+})
