@@ -1407,7 +1407,8 @@ function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { k
         ...base,
         ...lettered(),
         key: `answer-${id}-${item.options.indexOf(p.option)}`,
-        ...(a.isPrimary ? { variant: 'primary' as const } : {}),
+        // Pane keys are plain Buttons, which draw `variant` the same as no variant, so the label carries the mark.
+        ...(a.isPrimary ? { label: `${a.label} (recommended)`, variant: 'primary' as const } : {}),
         onPress: () => void sendAnswer($, item, p.option),
       })
       if (n === lastOption && folded > 0)
@@ -2121,7 +2122,7 @@ export const register: Register = on => {
       fold?: { line?: JSX.Element; note?: string }
     }
     // An item's group header says whether it is a question or a task, so the row
-    // needs no context line. The recommended answer is its key's style.
+    // needs no context line. The recommended answer is marked on its key.
     const itemRow = (r: RowView, item: Item): Row => {
       const asked = item.at === null ? undefined : ` · ${ago(now - item.at)}`
       // A task handed to Claude folds, as an answered question closes, until Claude's reply leaves it open.
