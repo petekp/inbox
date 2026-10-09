@@ -1007,11 +1007,14 @@ function helpLabel(help: Help): string {
   return clipLabel(label, 32)
 }
 
+/** One button's helps, used in order by one press. */
+type HelpStep = { label: string; step: Help[] }
+
 /**
  * The item's helps as buttons. A snippet to copy and a file to open become one
  * step, "Copy env line and open .env.local", since the snippet goes in that file.
  */
-function steps(helps: Help[]): { label: string; step: Help[] }[] {
+function steps(helps: Help[]): HelpStep[] {
   const copy = helps.find(h => h.kind === 'copy')
   const open = helps.find(h => h.kind === 'open')
   if (!copy || !open || copy.kind !== 'copy' || open.kind !== 'open')
@@ -1642,23 +1645,30 @@ function answerActions($: EngineInterface, item: Item): Action[] {
 }
 
 /**
- * An item's helps, then an Open link for each PR the session tracks that its
+ * An item's help steps, then one that opens the PRs the session tracks that its
  * ask names as "#123", as in "Mark #12 ready for review". The reply that raised
- * the item often names the PR only by number, so the item has no link of its own.
+ * the item often names a PR only by number, so the item has no link of its own.
+ * Several PRs share one step, so a task naming five does not take five keys.
  */
-function itemHelps(item: Item, prState: PrViews, linked: string[]): Help[] {
+function itemSteps(item: Item, prState: PrViews, linked: string[]): HelpStep[] {
   const refs = prState.branchRef ? [...linked, prState.branchRef] : linked
-  const links = namedPrs(item.ask, refs).map(ref => {
-    const { repo, number } = parseRef(ref)
-    const url = prState.views[ref]?.url ?? `https://github.com/${repo}/pull/${number}`
-    return { kind: 'link' as const, url, name: `PR #${number}` }
-  })
+  const links = namedPrs(item.ask, refs)
+    .map(ref => {
+      const { repo, number } = parseRef(ref)
+      const url = prState.views[ref]?.url ?? `https://github.com/${repo}/pull/${number}`
+      return { kind: 'link' as const, url, name: `PR #${number}` }
+    })
+    .filter(l => !item.helps.some(h => h.kind === 'link' && h.url === l.url))
+  const prStep =
+    links.length === 0
+      ? []
+      : [{ label: links.length === 1 ? helpLabel(links[0]!) : `Open ${links.length} PRs`, step: links }]
 
-  return [...item.helps, ...links.filter(l => !item.helps.some(h => h.kind === 'link' && h.url === l.url))]
+  return [...steps(item.helps), ...prStep]
 }
 
-function helpActions($: EngineInterface, item: Item, helps: Help[]): Action[] {
-  return steps(helps).map(({ label, step }, n) => ({
+function helpActions($: EngineInterface, item: Item, helpSteps: HelpStep[]): Action[] {
+  return helpSteps.map(({ label, step }, n) => ({
     key: `help-${item.id}-${n}`,
     label,
     done: step.some(h => h.kind === 'run'),
@@ -1689,8 +1699,8 @@ const CHOICE_KEYS = [...'abcfghilm']
  * and Done for a task. `more` are the other ways to respond: your own words,
  * Explain, and Dismiss for a question.
  */
-function itemKeys($: EngineInterface, item: Item, helps: Help[]): { keys: KeyAction[]; more: KeyAction[] } {
-  const lettered = [...(item.kind === 'task' ? [] : answerActions($, item)), ...helpActions($, item, helps)]
+function itemKeys($: EngineInterface, item: Item, helpSteps: HelpStep[]): { keys: KeyAction[]; more: KeyAction[] } {
+  const lettered = [...(item.kind === 'task' ? [] : answerActions($, item)), ...helpActions($, item, helpSteps)]
     .slice(0, CHOICE_KEYS.length)
     .map((a, n) => ({ ...a, hotkey: CHOICE_KEYS[n]! }))
   const explainKey = {
@@ -2751,8 +2761,8 @@ export const register: Register = on => {
         titleAfter: asked,
         hasSecondLine: item.kind === 'question',
         body: null,
-        keys: () => itemKeys($, item, itemHelps(item, prState, ledger.prs)).keys,
-        moreKeys: () => itemKeys($, item, itemHelps(item, prState, ledger.prs)).more,
+        keys: () => itemKeys($, item, itemSteps(item, prState, ledger.prs)).keys,
+        moreKeys: () => itemKeys($, item, itemSteps(item, prState, ledger.prs)).more,
         // A question closes on its typed answer; a task stays open.
         onType: {
           done: item.kind === 'task' ? 'Reply' : null,
