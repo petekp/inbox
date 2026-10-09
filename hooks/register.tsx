@@ -616,8 +616,9 @@ function permissionText(tool: string, input: Record<string, unknown>): string {
 async function commitLedger($: EngineInterface, change: (l: Ledger) => Ledger): Promise<void> {
   let before: Ledger = EMPTY
   const after = await update($, LEDGER, l => {
-    before = l
-    return change(l)
+    // A tool call can land after a hot reload and before turnOn converts the ledger an older build saved.
+    before = upgradeLedger(l)
+    return change(before)
   })
   await save($, after)
   void publishStatus($)
@@ -2102,6 +2103,8 @@ async function setDemo($: EngineInterface, isShown: boolean) {
 
 /** Turns the mod on for this session, once, from the start or the desktop app's attach. */
 async function turnOn($: EngineInterface) {
+  // A hot reload keeps state an older build wrote. Draws start once isOn is set, and they read the current shape.
+  await upgradeState($)
   isOn = true
   toolsRefused = false
   // A refused registration rejects. Each is caught on its own, so the mod still loads the conversation.

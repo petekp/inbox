@@ -1952,3 +1952,22 @@ test('the desktop pane draws each action and tab as one button, with no keys, an
   await pane.press({ key: 'close-pane' })
   expect(panesClosed).toEqual(['inbox'])
 })
+
+test('a tool call after a hot reload, before the load converts the ledger, still applies', async ($, on) => {
+  mock.clock(on, { now: 1 })
+  world($, on, [])
+  // While set, the mod's ledger writes save it as a build before closedFindings existed left it.
+  let strip = false
+  on('state.set', { plugin: 'inbox', key: 'ledger' } as const, ($, e, next) => {
+    if (!strip) return next(e)
+    const { closedFindings, ...old } = e.value as Record<string, unknown>
+    return next({ ...e, value: old as never })
+  })
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__inbox__record_finding', kind: 'issue', title: 'README is stale', detail: 'Old.' })
+  strip = true
+  await $.tool.call({ tool: 'mcp__inbox__record_finding', kind: 'issue', title: 'Second', detail: 'Two.' })
+  strip = false
+  const r = await $.tool.call({ tool: 'mcp__inbox__close', id: 'f1', reason: 'fixed' } as never)
+  expect(JSON.stringify(r)).toMatch(/f1/)
+})
