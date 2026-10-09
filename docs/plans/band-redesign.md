@@ -1,6 +1,8 @@
 # Band redesign: counts only
 
-The band is the block the inbox draws above the prompt. This plan cuts it to one line: the counts for Needs you and Findings, with [Open inbox] at the right end. A stop adds a second line with [Resume]. Everything else lives in the pane. Nothing here is built.
+The band is the block the inbox draws above the prompt. This plan cuts it to one line: the counts for Needs you and Findings, with [Open inbox] at the right end. A stop adds a second line with [Resume]. Everything else lives in the pane.
+
+It is built. 5e6bcdc cut the band to the counts and the stop line and removed the last-session offer. f51412e moved [Open inbox] to the right end. One part was left out: on desktop the band's text is not cut to fit, so a long line wraps. [desktop-look.md](desktop-look.md) keeps it that way, because the words matter more than one line.
 
 ## What the band shows
 
@@ -15,7 +17,7 @@ Nothing needs you                                     [ Open inbox ]
 - **Amber colors only "N need you".** The rest is the theme's muted text.
 - **The band stays hidden when the session has no inbox content,** as today. The engine draws its own band then.
 
-**Stopped.** The counts line stays first, so [Open inbox] does not move. The stop draws under it in red.
+**Stopped.** The counts line stays first, so [Open inbox] does not move. The stop draws under it, with "Stopped 1m ago:" in red.
 
 ```
 2 need you · 4 findings                               [ Open inbox ]
@@ -44,13 +46,13 @@ Demo: 7 need you · 4 findings           [ Hide demo ] [ Open inbox ]
 
 ## The last-session offer is removed
 
-When a new session started in a folder, the band offered the last session's card with [Continue from it] and [Dismiss]. The whole feature goes:
+When a new session started in a folder, the band offered the last session's card with [Continue from it] and [Dismiss]. The whole feature is gone:
 
-- the `PREVIOUS` atom, `bringBack()` and the `p:<folder>` store writes;
+- the `PREVIOUS` atom and the `p:<folder>` store writes;
 - the band's `previous` state and its two buttons;
-- the note `notePrompt` adds to the next message when the card is brought in.
+- the note `notePrompt` added to the next message when the card was brought in.
 
-That note is text the model reads. Removing it removes the feature with it and changes no other wording, so no A/B is needed. Saved `p:<folder>` entries stay in the store, unread. Deleting them needs a way to list store keys; check whether `$.store` has one.
+That note is text the model reads. Removing it removed the feature with it and changed no other wording, so no A/B was needed. The first save in each process deletes the `p:<folder>` keys that earlier builds wrote, using `$.store.keys()`. `bringBack()` stays, and restores only the same conversation's saved session.
 
 ## The two rare warnings stay in the pane
 

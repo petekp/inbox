@@ -31,7 +31,9 @@ _Avoid_: note
 ### Surfaces
 
 **Band**:
-The line above the prompt that says where the session stands.
+The line above the prompt with the Needs you and Findings counts and [Open
+inbox]. When the session stops, a second line says why, with [Resume] after
+an API error.
 
 **Pane**:
 The `/inbox` panel beside the conversation, with its Needs you, Findings and

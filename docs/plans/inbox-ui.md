@@ -288,7 +288,7 @@ Demo: 7 need you · 4 findings               [Hide demo] [Open inbox]
 
 A count of zero drops out. Only "N need you" is amber; the rest is muted. During `/inbox demo` the line starts with "Demo:", so the sample counts do not pass for real ones.
 
-A stop draws a second line, in red, under the counts, so [Open inbox] does not move. An API error adds [Resume], which reads "Resuming…" under the same key while it sends. When the band has one row, the stop line drops.
+A stop draws a second line under the counts, so [Open inbox] does not move. It starts with "Stopped 1m ago:" in red. An API error adds [Resume], which reads "Resuming…" under the same key while it sends. When the band has one row, the stop line drops.
 
 ```
 2 need you · 1 finding                                  [Open inbox]
@@ -596,8 +596,8 @@ Section 2 applies to every client. The tables list where each change lands in to
 | A question's number is the one `answerNote` resolves, else `?` | `itemRow` numbers by place among open questions, `hooks/register.tsx:2828` | A typed number must answer the question the pane numbers |
 | No row opens on its own after a press (decision 3) | Selection fallback, `hooks/register.tsx:1132-1153` | A row opening under the pointer catches a second click |
 | 0.4 s press guard, with dim buttons | New | A double-click on a title lands on a button that just drew |
-| Each press declares one of the five kinds in 2.3, and its feedback follows the kind | `Action.done` and `Action.handsOff` in `hooks/register.tsx` | One rule a new action cannot get wrong |
-| Local presses show a pending note, then the result. Open and Open log now record too. | `withLastAction`, `hooks/register.tsx:2900-2915`; opens record nothing today | A slow `open` or `gh` call must show the press at once |
+| Each press declares one of the five kinds in 2.3, and its feedback follows the kind | `Action.kind`, a `PressKind`, in `hooks/register.tsx` | One rule a new action cannot get wrong |
+| Local presses show a pending note, then the result. Open and Open log now record too. | `runPress()` in `hooks/register.tsx` records the pending note, and `withResult()` in `hooks/presses.ts` replaces it with the result | A slow `open` or `gh` call must show the press at once |
 | Sends during a turn read `Queued` until the prompt's row is stored | `send()`, `hooks/register.tsx:823-829` | A ✓ before Claude has the message is not true |
 | Undo on settled Marks, including finding and PR Dismiss | Settled rows, `hooks/register.tsx:3394-3408` | Catches a misclicked Done or Dismiss |
 | Feedback on the row instead of toasts, including terminal help steps | `hooks/register.tsx:885-921`, `1421`, `2512` | Toasts are unverified on desktop |
@@ -688,7 +688,7 @@ Default taken while the owner was away: (b). Override it to change the tagged li
 **Press contract.**
 
 - Each press declares its kind: Talk, Hand-off, Local, Mark or View. The kind decides the feedback in 2.3, replacing today's `done` and `handsOff` pair.
-- A Local press records its pending note at once, as `withLastAction` records the label today, and then its result or error.
+- A Local press records its pending note at once, and then its result or error. `runPress()` records both.
 - A send records its delivery state: queued, arrived, or failed with a reason. A failed or withdrawn send undoes its press.
 - `LastAction` gains the result and delivery fields. It is saved state in two places, and both must convert old records:
   - the mod: `LastAction` in `types/index.d.ts`, converted in `upgradeState`;

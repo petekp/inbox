@@ -76,23 +76,27 @@ toast says so.
 
 ## Enforcement
 
-- **The type.** Every `Action` declares `done`: whether its press records its
-  label, or `false` when the press shows itself (it closes or settles the row, opens the
-  text field, moves the selection, or brings up a page, an app or a toast).
-  Leaving it out fails the type check, so a new action has to decide. The type covers only buttons built
+- **The type.** Every `Action` declares its `kind`, a `PressKind`: Talk,
+  Hand-off, Local, Mark or View. A Talk or Hand-off press leaves "✓ <label>"
+  on its row. A Local press, an open or a copy, shows "Opening x…" and then
+  its result. A Mark or View press shows itself: it closes or settles the row,
+  or opens the text field. Leaving `kind` out fails the type check, so a new
+  action has to decide. The type covers only buttons built
   as an `Action`. The pane's other buttons switch tabs, select a row, fold a
   group, open the Keys list, or act on the resume card, and each changes the
   pane by itself.
-- **One wrapper.** `withLastAction()` wraps each action's press to record its
-  last action and relabels it "again". Row buttons, the hidden hotkeys and the
-  PR block all draw through it. The one handler that records its own is
-  Address all, which also records Address on each thread it sent.
+- **One press path.** Every action's press, by click or hotkey, runs
+  `runPress()` in `hooks/register.tsx`. It applies a row press with
+  `applyPress()` in `hooks/presses.ts` and a PR press with `applyPrPress()`,
+  then records the row's last action. A button reads "… again" when its row's
+  last press was that action. Address all also records Address on each thread
+  it sent.
 - **A test.** The PR test presses Resolve conflicts on the block, Discuss by
   hotkey and Address by click, and checks each shows "✓ <label>" and reads
-  "again". It fails when a render path skips the wrapper, which the type
+  "again". It fails when a render path skips `runPress()`, which the type
   cannot catch.
-- **Agent guidance.** `AGENTS.md` states the rule and points at `done` and
-  `withLastAction()`.
+- **Agent guidance.** `AGENTS.md` states the rule and points at `kind`,
+  `runPress()` and `applyPress()`.
 
 ## Not covered
 
