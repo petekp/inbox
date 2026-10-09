@@ -374,7 +374,7 @@ An item source is whatever adds and closes items. Today it is the per-turn updat
 | Action labels | `a: Explain`, letters on the first 9 options and steps | `[Explain]`, no letters |
 | Recommended option | `variant: 'primary'`, as today, with no ` (recommended)` suffix | The same. If live check 4 shows a desktop Button ignores `variant`, keep the suffix on desktop only. |
 | Hidden hotkey Box | Drawn | Not drawn |
-| Tabs | Raised panel | One Button per unselected tab; the selected tab as bold Text |
+| Tabs | Raised panel | The same panel of plain Buttons for every tab, the shown one in the selection color |
 | Closed row | Handle Button and title Button | Handle as Text; title as one Button cut to one line with "…" |
 | Keys drawer, "1 2 3", "j k", "ctrl+x tab" | Shown | Not drawn |
 | Tab draw-in | Drawn | Not drawn |

@@ -34,7 +34,7 @@ The inbox has two renderers. The mod draws the terminal and desktop Code mode. O
 
 **Terminal.** The band leads with how many things need the person and the top one, and has an [Open inbox] button. The pane keeps its keys, and gains the shared fixes: feedback on the row, Undo, a Cancel button, every option drawn, question numbers that match what a typed number answers, and source-neutral status words.
 
-**Desktop Code mode.** The same band and pane, drawn for clicks. Actions are plain labels with no key letters. Each tab is one button. The app's own ✕ closes the pane. Nothing depends on a key.
+**Desktop Code mode.** The same band and pane, drawn for clicks. Actions are plain labels with no key letters. Each tab is a clickable panel. The app's own ✕ closes the pane. Nothing depends on a key.
 
 **Claude mode.** Claude records items with the inbox's tools, because nothing else watches a chat. Claude ends a reply that leaves something open with an inline card: a count, up to three rows and [Open inbox]. The full view opens fullscreen with Needs you and Findings. It is not built now (decision 2). The seams stay open so it can be added.
 
@@ -372,7 +372,7 @@ Below 50 columns, a closed row drops its age; the open form still shows it. At 5
 |---|---|---|---|
 | Action labels | `a: Explain`: a Text letter beside a ": Label" Button | `[Explain]` | Hotkeys do nothing on desktop. "a" beside a native ": Explain" button is noise. |
 | Hidden hotkey Box | Drawn | Not drawn | It does nothing there, and might draw as visible native buttons. |
-| Tabs | Raised panel; 5 plain Buttons per unselected tab | One native button per unselected tab. The selected tab is bold Text. | Desktop draws every Button as a native button. Bold Text marks the selected tab without depending on `variant`. |
+| Tabs | Raised panel; 5 plain Buttons per unselected tab | The same panel of plain Buttons for every tab, the shown one in the selection color, with each count in its tab's color | The app takes the focus off the pane when the pressed element leaves, so the next click only brings it back. Drawing the shown tab's name as a Button keeps it. A plain Button draws without chrome, so the panel can be large and its count colored. |
 | Closed row | Handle Button and title Button, two when the title wraps | Handle as Text. The title is one button, cut to one line with "…". | Halves the native buttons in the list. |
 | Keys drawer, "1 2 3", "j k", "ctrl+x tab" | Shown | Not drawn | Nothing to press. |
 | Tab draw-in | Kept | Not drawn | It drops most frames at 10 redraws a second. The 1.5 s new-row bar and the leave bar stay. |

@@ -3667,21 +3667,6 @@ export const register: Register = on => {
           {TABS.map(({ id, label }) => {
             const count = tabCounts[id]
 
-            // Each tab would be five native buttons as a raised panel, so desktop draws one per tab, and the shown tab as bold text.
-            if (look === 'desktop')
-              return tab === id ? (
-                <Text bold>
-                  {label}
-                  {count > 0 ? <Text color={pal.tone[id]}> {count}</Text> : null}
-                </Text>
-              ) : (
-                <Button
-                  key={`tab-${id}`}
-                  label={count > 0 ? `${label} ${count}` : label}
-                  onPress={() => void showTab($, id)}
-                />
-              )
-
             if (isInline)
               return (
                 <Box key={`tab-block-${id}`} flexDirection="row">
@@ -3702,6 +3687,31 @@ export const register: Register = on => {
               )
 
             const width = `${label}${count > 0 ? ` ${count}` : ''}`.length + 2 * TAB_PAD.length
+
+            // Desktop: every tab is the same three-line panel, the shown one raised. Its name stays a
+            // Button under the same key, because the app takes the focus off the pane when the
+            // element that holds it leaves, and the next click would only bring it back.
+            if (look === 'desktop') {
+              const show = () => void showTab($, id)
+              const isShown = tab === id
+
+              return (
+                <Box
+                  key={`tab-block-${id}`}
+                  flexDirection="column"
+                  backgroundColor={isShown ? (pal.selection ?? pal.raised) : pal.tab}
+                >
+                  <Button plain key={`tab-${id}-above`} label={' '.repeat(width)} onPress={show} />
+                  <Box flexDirection="row">
+                    <Button plain key={`tab-${id}-before`} label={TAB_PAD} onPress={show} />
+                    <Button plain key={`tab-${id}`} label={label} onPress={show} />
+                    {count > 0 ? <Text color={pal.tone[id]}> {count}</Text> : null}
+                    <Button plain key={`tab-${id}-after`} label={TAB_PAD} onPress={show} />
+                  </Box>
+                  <Button plain key={`tab-${id}-below`} label={' '.repeat(width)} onPress={show} />
+                </Box>
+              )
+            }
 
             // The selected tab is a raised panel three lines tall, with its name on
             // the middle line and a line of its color along the top edge. After a

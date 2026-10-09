@@ -1945,8 +1945,13 @@ test('the desktop pane draws each action and tab as one button, with no keys and
   // No letters, hidden hotkey Buttons or list of keys: only clicks reach a desktop pane.
   expect(buttons.filter(b => b.props.hotkey !== undefined || String(b.props.label).startsWith(': '))).toEqual([])
   expect(buttons.map(b => b.key ?? '').filter(k => /-key$|^tab-key-|^next$|^previous$|^key-list$/.test(k))).toEqual([])
-  // The shown tab is text; each other tab is one button.
-  expect(buttons.map(b => b.key ?? '').filter(k => k.startsWith('tab-'))).toEqual(['tab-findings', 'tab-prs'])
+  // Every tab's name is a button, the shown tab's too: the app takes the focus off the pane when
+  // the pressed element leaves, and the next click would only bring it back.
+  expect(buttons.map(b => b.key ?? '').filter(k => /^tab-[a-zA-Z]+$/.test(k))).toEqual([
+    'tab-needsYou',
+    'tab-findings',
+    'tab-prs',
+  ])
   // The recommended option is the desktop's primary button, with no words added.
   const recommended = await pane.find({ key: 'answer-i1-0' })
   expect([recommended?.props.label, recommended?.props.variant]).toEqual(['Node', 'primary'])
