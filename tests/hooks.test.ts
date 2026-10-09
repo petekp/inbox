@@ -105,6 +105,8 @@ let storeRefusal: string | undefined
 let toolRefusal: string | undefined
 // The ids of the panes the mod opened or raised, in order.
 let panesOpened: string[] = []
+// The ids of the panes the mod closed, in order.
+let panesClosed: string[] = []
 
 async function runBeforeAct() {
   const act = beforeAct
@@ -151,6 +153,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   storeRefusal = undefined
   toolRefusal = undefined
   panesOpened = []
+  panesClosed = []
   on('store.get', ($, e) => {
     if (storeRefusal && e.key.startsWith('s:')) return { deny: storeRefusal }
     const json = stored.get(e.key)
@@ -191,6 +194,10 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   on('ui.open', ($, e) => {
     panesOpened.push(e.id)
     return { value: { isPlaced: true as const } }
+  })
+  on('ui.close', ($, e) => {
+    panesClosed.push(e.id)
+    return { value: undefined }
   })
   on('ui.toast', ($, e) => {
     toasts.push(e.text)
@@ -1906,3 +1913,43 @@ for (const isAttachedFirst of [true, false]) {
     expect(await band.find({ text: /2 need you/ })).toBeDefined()
   })
 }
+
+test('the desktop pane draws each action and tab as one button, with no keys, and [Close] closes it', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  surfaces = ['desktop']
+  await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Node or Python?', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  await clock.advance(3 * 60_000)
+
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 36 } })
+  const buttons = await pane.findAll({ type: 'Button' })
+  // No letters, hidden hotkey Buttons or list of keys: only clicks reach a desktop pane.
+  expect(buttons.filter(b => b.props.hotkey !== undefined || String(b.props.label).startsWith(': '))).toEqual([])
+  expect(buttons.map(b => b.key ?? '').filter(k => /-key$|^tab-key-|^next$|^previous$|^key-list$/.test(k))).toEqual([])
+  expect(await pane.find({ text: /Switch tabs|ctrl\+x/ })).toBeUndefined()
+  // The shown tab is text; each other tab is one button.
+  expect(buttons.map(b => b.key ?? '').filter(k => k.startsWith('tab-'))).toEqual(['tab-findings', 'tab-prs'])
+  // The recommended option is the desktop's primary button, with no words added.
+  const recommended = await pane.find({ key: 'answer-i1-0' })
+  expect([recommended?.props.label, recommended?.props.variant]).toEqual(['Node', 'primary'])
+  // A closed row's handle is text and its title one button; below 50 columns it drops its age.
+  expect(await pane.find({ key: 'select-i2' })).toBeUndefined()
+  expect(await pane.find({ key: 'title-i2' })).toBeDefined()
+  expect(await pane.findAll({ type: 'Text', text: /^ · 3m ago$/ })).toHaveLength(1)
+  await pane.redraw({ ...PANE.props, bodyColumns: 69 })
+  expect(await pane.findAll({ type: 'Text', text: /^ · 3m ago$/ })).toHaveLength(2)
+
+  // A click on a closed row's title opens it, and its actions work once the guard ends.
+  await pane.press({ key: 'title-i2' })
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'explain-i2' })
+  await clock.settle()
+  expect(sent).toHaveLength(1)
+  expect(await pane.find({ text: /✓ Explain/ })).toBeDefined()
+
+  await pane.press({ key: 'close-pane' })
+  expect(panesClosed).toEqual(['inbox'])
+})

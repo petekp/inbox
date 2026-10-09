@@ -193,6 +193,10 @@ The answer to a question is the user's to give. Close a question with their answ
 const CLOSE_TOOL = 'mcp__inbox__close'
 
 const PANE = 'inbox'
+// Whether the desktop pane offers a typed reply. Set it false if the app does not paint `Input`: the engine still resolves it, so the mod cannot tell.
+const DESKTOP_TYPING = true
+// From this many columns, the desktop pane puts its status on the tab line and shows each closed row's age.
+const DESKTOP_WIDE_AT = 50
 // Theme keys, so the colors follow the person's Claude Code theme.
 const ACCENT = 'claude'
 const NEEDS_YOU = 'warning'
@@ -1988,8 +1992,7 @@ function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { k
         ...base,
         ...lettered(),
         key: `answer-${id}-${item.options.indexOf(p.option)}`,
-        // Pane keys are plain Buttons, which draw `variant` the same as no variant, so the label carries the mark.
-        ...(a.isPrimary ? { label: `${a.label} (recommended)`, variant: 'primary' as const } : {}),
+        ...(a.isPrimary ? { variant: 'primary' as const } : {}),
       })
       if (n === lastOption && folded > 0)
         keys.push({
@@ -2846,13 +2849,16 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const elements = $.ui.resolve(e)
     const { Box, Button, Markdown, Text } = elements
-    // The mobile app draws no text field, so there the typed reply is not offered.
-    const Input = 'Input' in elements ? elements.Input : null
+    // Desktop draws every Button as a native button, and only clicks reach the pane: no letters, key hints or hidden hotkeys.
+    const look = e.surface === 'desktop' ? 'desktop' : 'terminal'
+    // The mobile app draws no text field, so there the typed reply is not offered; nor on desktop without DESKTOP_TYPING.
+    const Input = 'Input' in elements && (look === 'terminal' || DESKTOP_TYPING) ? elements.Input : null
+    // Narrow, the desktop pane puts its status under the tabs and drops closed rows' ages.
+    const isNarrowDesktop = look === 'desktop' && e.props.bodyColumns < DESKTOP_WIDE_AT
     // Inline above the prompt, the pane takes its room from the conversation, so
     // it drops the section cards, the tab panels and the blank lines between parts.
     const isInline = e.props.placement === 'inline'
     const blankLine = isInline ? 0 : 1
-    const look = e.surface === 'desktop' ? 'desktop' : 'terminal'
     const [
       { ledger, prViews: prState, lastActions, notes, stop, view, isDemo, now },
       presence,
@@ -2905,8 +2911,11 @@ export const register: Register = on => {
       titleAfter?: string
       /** A line under the selected title. */
       subtitle?: JSX.Element
-      /** Unselected, the row is one line: `before` muted, `text` as a button that selects the row, then `after`, muted or in a tone. */
-      line?: { before?: string; text: string; after?: string; afterTone?: Tone }
+      /**
+       * Unselected, the row is one line: `before` muted, `text` as a button that selects the row, then `after`, muted or
+       * in a tone, then `age`, which a narrow desktop pane leaves out.
+       */
+      line?: { before?: string; text: string; after?: string; afterTone?: Tone; age?: string }
       /** Unselected, text that does not fit beside `after` goes on a second line instead of being cut. */
       hasSecondLine?: boolean
       body?: JSX.Element | null
@@ -2958,7 +2967,7 @@ export const register: Register = on => {
           <Text color={pal.muted}> {ago(now - finding.at)}</Text>
         </Text>
       ),
-      line: { text: finding.title, after: ` · ${ago(now - finding.at)}` },
+      line: { text: finding.title, age: ` · ${ago(now - finding.at)}` },
       body: (
         <Box flexDirection="column" rowGap={blankLine}>
           <Text wrap="wrap">{finding.detail}</Text>
@@ -3055,7 +3064,7 @@ export const register: Register = on => {
         line: {
           before: `${threadWhere(t, baseName(t.path))} `,
           text: commentLine(latest.body),
-          after: isChanged ? ' · lines changed' : t.at === null ? undefined : ` · ${ago(now - t.at)}`,
+          ...(isChanged ? { after: ' · lines changed' } : t.at === null ? {} : { age: ` · ${ago(now - t.at)}` }),
         },
         body: comment,
         keys: () => [
@@ -3148,25 +3157,36 @@ export const register: Register = on => {
     // inverts, so the letter and the label both invert the muted color to match.
     // An action past the lettered ones, or one that only changes the view, has no key and draws its label alone.
     // While the open row is guarded, both draw dim and a click does nothing. Its key, a hidden Button, works at once.
+    // On desktop an action is its native button alone, and the recommended option is that surface's primary button.
+    // A plain terminal Button draws `variant` as no variant, so there the recommended option's label carries the mark.
+    const shownLabel = (a: Pick<KeyAction, 'label' | 'variant'>) =>
+      look === 'terminal' && a.variant === 'primary' ? `${a.label} (recommended)` : a.label
     const keyedButton =
       (rowId: string) =>
-      ({ hotkey, kind: _kind, ...action }: KeyAction) => (
-        <Box key={`keyed-${action.key}`} flexDirection="row">
-          {hotkey ? (
-            <Text color={pal.key} dimColor={isOpenGuarded} hover={{ color: pal.muted, inverse: true }}>
-              {hotkey}
-            </Text>
-          ) : null}
+      ({ hotkey, kind: _kind, ...action }: KeyAction) =>
+        look === 'desktop' ? (
           <Button
-            plain
             {...action}
             {...(isOpenGuarded ? { dimColor: true } : {})}
-            label={hotkey ? `: ${action.label}` : action.label}
-            hover={{ color: pal.muted, inverse: true }}
             onPress={press => void unlessGuarded($, rowId, press, action.onPress)}
           />
-        </Box>
-      )
+        ) : (
+          <Box key={`keyed-${action.key}`} flexDirection="row">
+            {hotkey ? (
+              <Text color={pal.key} dimColor={isOpenGuarded} hover={{ color: pal.muted, inverse: true }}>
+                {hotkey}
+              </Text>
+            ) : null}
+            <Button
+              plain
+              {...action}
+              {...(isOpenGuarded ? { dimColor: true } : {})}
+              label={hotkey ? `: ${shownLabel(action)}` : shownLabel(action)}
+              hover={{ color: pal.muted, inverse: true }}
+              onPress={press => void unlessGuarded($, rowId, press, action.onPress)}
+            />
+          </Box>
+        )
     // The open row's actions. Its other actions follow its main ones after a muted dot.
     const keyRow = (rowId: string, keys: KeyAction[], more: KeyAction[] = []) => (
       <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
@@ -3178,17 +3198,20 @@ export const register: Register = on => {
     // The Buttons that take the pane's keys, drawn in a hidden Box.
     const keyBindings = (keys: KeyAction[], suffix = '') =>
       keys.flatMap(({ key, hotkey, kind: _kind, ...k }) =>
-        hotkey ? [<Button key={`${key}${suffix}`} plain hotkey={hotkey} {...k} />] : [],
+        hotkey ? [<Button key={`${key}${suffix}`} plain hotkey={hotkey} {...k} label={shownLabel(k)} />] : [],
       )
     // A selected row's secondary keys share its key row when they fit, and
     // otherwise take a line of their own rather than wrap mid-row. A key draws
-    // "key: label", and keyRow puts 2 columns between keys and the dot.
+    // "key: label" in the terminal and about "[label]" on desktop, and keyRow puts 2 columns between keys and the dot.
     const keysWidth = (keys: KeyAction[], more: KeyAction[]) => {
       const all = [...keys, ...more]
       const dot = keys.length > 0 && more.length > 0 ? 3 : 0
 
       return (
-        all.reduce((w, k) => w + (k.hotkey ? k.hotkey.length + 2 : 0) + k.label.length, 0) +
+        all.reduce(
+          (w, k) => w + (look === 'desktop' ? 2 : k.hotkey ? k.hotkey.length + 2 : 0) + shownLabel(k).length,
+          0,
+        ) +
         2 * Math.max(0, all.length - 1) +
         dot
       )
@@ -3334,22 +3357,23 @@ export const register: Register = on => {
     // A row with a second line breaks its text at a space before `after`, which
     // stays on the first line, and clips the rest to the second.
     const unselectedLine = (row: Row, onPress: () => void, inset: number) => {
-      const plain = row.line ?? { text: row.title, after: row.titleAfter }
+      const plain = row.line ?? { text: row.title, age: row.titleAfter }
       const f = feedbackLabel(row.id, row)
-      // A row's last action takes the place of its age, as "✓ Discuss 1m ago".
+      // A row's last action takes the place of its age, as "✓ Discuss 1m ago". A narrow desktop pane drops the age, not the action.
       const line = f
         ? {
             ...plain,
-            after: ` · ${[f.text, f.age].filter(Boolean).join(' ')}`,
+            after: ` · ${[f.text, isNarrowDesktop ? '' : f.age].filter(Boolean).join(' ')}`,
             // A message still queued is muted: nothing has reached Claude yet.
             afterTone: f.isFailure ? ('error' as const) : f.age && !f.isQueued ? lastTone(row) : undefined,
           }
-        : plain
+        : { ...plain, after: [plain.after, isNarrowDesktop ? '' : plain.age].filter(Boolean).join('') || undefined }
       const width = e.props.bodyColumns - 3 - inset - (line.before?.length ?? 0)
       const room = Math.max(12, width - (line.after?.length ?? 0))
       const text = line.text.trim()
       const space = text.lastIndexOf(' ', room)
-      const isWrapped = row.hasSecondLine === true && text.length > room && space > 0
+      // Desktop cuts the title to one native button, rather than draw two.
+      const isWrapped = look === 'terminal' && row.hasSecondLine === true && text.length > room && space > 0
       const first = isWrapped ? text.slice(0, space) : clipLabel(text, room)
       const second = isWrapped ? clipLabel(text.slice(space + 1), Math.max(12, width)) : null
       // The two lines are two Buttons. One hover group inverts both under the pointer, so they read as one.
@@ -3412,8 +3436,11 @@ export const register: Register = on => {
           <Box width={1} flexShrink={0} />
           {tree ? <Box width={3} flexShrink={0} /> : null}
           <Box width={tree ? 3 : 4} flexShrink={0} paddingLeft={tree ? 0 : 2} paddingY={isSelected ? blankLine : 0}>
+            {/* On desktop the title alone opens the row, so the list draws half as many native buttons. */}
             {row.handleTone ? (
               <Text color={pal.mark[row.handleTone]}>{row.handle}</Text>
+            ) : look === 'desktop' ? (
+              <Text>{row.handle}</Text>
             ) : (
               <Button
                 plain
@@ -3561,19 +3588,39 @@ export const register: Register = on => {
     // The tab bar is drawn on the pane's own background, as part of the pane's
     // title bar, with when the inbox last updated at its right end, or under the
     // tabs when the pane is too narrow. Inline, its names line up with the group titles.
+    // A narrow desktop pane always puts the status under the tabs, one part per line.
     const tabs = (
       <Box
         paddingLeft={isInline ? 2 : 1}
         paddingRight={1}
-        flexDirection="row"
+        flexDirection={isNarrowDesktop ? 'column' : 'row'}
         flexWrap="wrap"
-        alignItems="center"
+        alignItems={isNarrowDesktop ? 'flex-start' : 'center'}
         justifyContent="space-between"
         columnGap={3}
       >
-        <Box flexDirection="row" columnGap={isInline ? 3 : 1}>
+        <Box
+          flexDirection="row"
+          {...(look === 'desktop' ? { flexWrap: 'wrap' as const } : {})}
+          columnGap={isInline ? 3 : look === 'desktop' ? 2 : 1}
+        >
           {TABS.map(({ id, label }) => {
             const count = tabCounts[id]
+
+            // Each tab would be five native buttons as a raised panel, so desktop draws one per tab, and the shown tab as bold text.
+            if (look === 'desktop')
+              return tab === id ? (
+                <Text bold>
+                  {label}
+                  {count > 0 ? <Text color={pal.tone[id]}> {count}</Text> : null}
+                </Text>
+              ) : (
+                <Button
+                  key={`tab-${id}`}
+                  label={count > 0 ? `${label} ${count}` : label}
+                  onPress={() => void showTab($, id)}
+                />
+              )
 
             if (isInline)
               return (
@@ -3648,7 +3695,7 @@ export const register: Register = on => {
             )
           })}
         </Box>
-        <Box flexDirection="row" columnGap={2}>
+        <Box flexDirection={isNarrowDesktop ? 'column' : 'row'} columnGap={2}>
           <Text dimColor>{status}</Text>
           {!isPrStatus && error ? (
             <Text color={pal.tone.error} wrap="wrap">
@@ -4123,6 +4170,16 @@ export const register: Register = on => {
     // k and the selected row's keys are Buttons in a hidden Box.
     return (
       <Box flexDirection="column" minHeight={isInline ? undefined : e.props.scroll.bodyRows} backgroundColor={pal.body}>
+        {/* No key reaches a desktop pane, so Esc cannot close it. */}
+        {look === 'desktop' ? (
+          <Box paddingX={1} marginBottom={blankLine}>
+            <Button
+              key="close-pane"
+              label="Close"
+              onPress={() => void $.ui.close({ id: PANE }).catch(() => undefined)}
+            />
+          </Box>
+        ) : null}
         {isDemo ? (
           <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={isInline ? 2 : 1} marginBottom={blankLine}>
             <Text wrap="wrap" bold color={pal.tone.needsYou}>
@@ -4135,15 +4192,20 @@ export const register: Register = on => {
         {/* ▔ draws at the top of its cell, so the rule touches the tabs' bottom edge
             and the rest of its row stands in for the blank line above the content.
             It takes the unselected tabs' color, so they read as resting on it. */}
-        {isInline ? null : <Text color={pal.tab ?? pal.divider}>{'▔'.repeat(e.props.bodyColumns)}</Text>}
-        <Box flexDirection="column" paddingX={1} flexGrow={1}>
+        {isInline || look === 'desktop' ? null : (
+          <Text color={pal.tab ?? pal.divider}>{'▔'.repeat(e.props.bodyColumns)}</Text>
+        )}
+        <Box flexDirection="column" paddingX={1} paddingTop={look === 'desktop' ? blankLine : 0} flexGrow={1}>
           {tab === 'findings' ? findingsView() : tab === 'prs' ? prsView() : needsYouView()}
         </Box>
-        {footer}
-        <Box display="none">
-          {keyBindings([...tabKeys, ...moveKeys])}
-          {keyBindings(rowKeys, '-key')}
-        </Box>
+        {/* Desktop takes no keys: a Button's hotkey does nothing there, so it gets neither the list of keys nor the hidden Buttons. */}
+        {look === 'desktop' ? null : footer}
+        {look === 'desktop' ? null : (
+          <Box display="none">
+            {keyBindings([...tabKeys, ...moveKeys])}
+            {keyBindings(rowKeys, '-key')}
+          </Box>
+        )}
       </Box>
     )
   })
