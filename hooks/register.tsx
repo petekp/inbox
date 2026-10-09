@@ -123,6 +123,7 @@ import {
   recordClose,
   recordFinding,
 } from './tools'
+import type { TabsProps } from './tabs-client'
 
 const LEDGER = atom({ plugin: 'inbox', key: 'ledger' } as const, EMPTY)
 const PRESENCE = atom(
@@ -197,6 +198,7 @@ const DESKTOP_WIDE_AT = 50
 // About how many characters of desktop's proportional text fit in one column of `bodyColumns`, measured
 // on a /inbox demo row. A guess too high is cut from the muted text after a title, not from the title.
 const DESKTOP_CHARS_PER_CELL = 1.25
+const DESKTOP_TAB_PADDING = 2
 const DESKTOP_TAB_PAD = '\u00a0'.repeat(3)
 // Theme keys, so the colors follow the person's Claude Code theme.
 const NEEDS_YOU = 'warning'
@@ -1709,20 +1711,7 @@ async function perform(
  * pending one on the row, then sends. A press whose row
  * is gone or changed sends nothing: the row, or the pane's status line, says so.
  */
-/**
- * The desktop app takes the focus off the pane when the element holding it leaves, and the next
- * click there only brings it back. A press that may redraw its own Button away moves the ring
- * first, while the pane still holds the focus, to the shown tab's Button, which every drawing has
- * (anthropics/claude-code#100874).
- */
-async function keepPaneFocus($: EngineInterface, surface: UiPressArgument['surface']) {
-  if (surface !== 'desktop') return
-  const tab = await read($, TAB)
-  await $.ui.focus({ requestId: PANE, key: `tab-${tab}` }).catch(() => undefined)
-}
-
 async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPressArgument['surface']) {
-  await keepPaneFocus($, surface)
   // Undo is pressed on a row that just closed, and a PR block's actions on no row.
   const rowId = 'ref' in p ? prRowId(p) : p.id
   if (p.action !== 'undo' && !rowId.startsWith('pr:')) await keepPressedOpen($, rowId)
@@ -2567,6 +2556,16 @@ export const register: Register = on => {
   })
 
   // A field left open would take the keys again when the pane reopens, as Esc in it closes the pane.
+  // The desktop tab bar's Client posts the tab a click landed on.
+  on('ui.message', async ($, e, next) => {
+    const r = await next(e)
+    const picked = (e.data as { tab?: unknown } | null)?.tab
+    const shown = TABS.find(t => t.id === picked)
+    if (e.requestId === PANE && e.element === 'tabs' && shown) await showTab($, shown.id)
+
+    return r
+  })
+
   on('ui.close', { id: PANE }, async ($, e, next) => {
     const r = await next(e)
     await update($, TYPING, () => null)
@@ -3305,7 +3304,7 @@ export const register: Register = on => {
               {unselectedLine(
                 row,
                 // Opening the row draws its title as Text, so the title's Button leaves.
-                press => void keepPaneFocus($, press.surface).then(() => select($, tab, row.id, index)),
+                () => void select($, tab, row.id, index),
                 tree ? 7 : 5,
               )}
             </Box>
@@ -3401,6 +3400,24 @@ export const register: Register = on => {
     // title bar, with when the inbox last updated at its right end, or under the
     // tabs when the pane is too narrow. Inline, its names line up with the group titles.
     // A narrow desktop pane always puts the status under the tabs, one part per line.
+    // Desktop draws the tabs in a Client, whose region takes the pointer over each whole tab.
+    const tabProps: TabsProps | null =
+      look === 'desktop' && 'Client' in elements
+        ? {
+            tabs: TABS.map(({ id, label }) => {
+              const text = tabCounts[id] > 0 ? `${label} ${tabCounts[id]}` : label
+              const width = Math.ceil(text.length / DESKTOP_CHARS_PER_CELL) + 2 * DESKTOP_TAB_PADDING
+              return { id, label, count: tabCounts[id], countColor: pal.tone[id] ?? null, width }
+            }),
+            shown: tab,
+            gap: 1,
+            colors: {
+              tab: pal.tab ?? null,
+              hover: pal.raised ?? pal.tab ?? null,
+              shown: pal.selection ?? pal.raised ?? pal.tab ?? null,
+            },
+          }
+        : null
     const tabs = (
       <Box
         paddingLeft={isInline ? 2 : 1}
@@ -3416,96 +3433,101 @@ export const register: Register = on => {
           {...(look === 'desktop' ? { flexWrap: 'wrap' as const } : {})}
           columnGap={isInline ? 3 : look === 'desktop' ? 2 : 1}
         >
-          {TABS.map(({ id, label }) => {
-            const count = tabCounts[id]
+          {'Client' in elements && tabProps ? (
+            <elements.Client key="tabs" module="./tabs-client.tsx" props={tabProps} />
+          ) : null}
+          {tabProps
+            ? null
+            : TABS.map(({ id, label }) => {
+                const count = tabCounts[id]
 
-            if (isInline)
-              return (
-                <Box key={`tab-block-${id}`} flexDirection="row">
-                  {tab === id ? (
-                    <Text bold underline>
-                      {label}
-                    </Text>
-                  ) : (
-                    <Button plain key={`tab-${id}`} label={label} onPress={() => void showTab($, id)} />
-                  )}
-                  {count > 0 ? (
-                    <Text bold={tab === id} color={pal.tone[id]}>
-                      {' '}
-                      {count}
-                    </Text>
-                  ) : null}
-                </Box>
-              )
+                if (isInline)
+                  return (
+                    <Box key={`tab-block-${id}`} flexDirection="row">
+                      {tab === id ? (
+                        <Text bold underline>
+                          {label}
+                        </Text>
+                      ) : (
+                        <Button plain key={`tab-${id}`} label={label} onPress={() => void showTab($, id)} />
+                      )}
+                      {count > 0 ? (
+                        <Text bold={tab === id} color={pal.tone[id]}>
+                          {' '}
+                          {count}
+                        </Text>
+                      ) : null}
+                    </Box>
+                  )
 
-            const width = `${label}${count > 0 ? ` ${count}` : ''}`.length + 2 * TAB_PAD.length
+                const width = `${label}${count > 0 ? ` ${count}` : ''}`.length + 2 * TAB_PAD.length
 
-            // Desktop: every tab is one native button, the shown one the primary. The key stays the
-            // same in every drawing: the app takes the focus off the pane when the element holding
-            // it leaves, and the next click would only bring it back.
-            // A Button sizes to its label, so non-breaking spaces widen the tab; plain spaces would collapse.
-            // A native tab element would replace this (anthropics/claude-code#100890).
-            if (look === 'desktop')
-              return (
-                <Button
-                  key={`tab-${id}`}
-                  label={`${DESKTOP_TAB_PAD}${count > 0 ? `${label} ${count}` : label}${DESKTOP_TAB_PAD}`}
-                  {...(tab === id ? { variant: 'primary' as const } : {})}
-                  onPress={() => void showTab($, id)}
-                />
-              )
+                // Desktop: every tab is one native button, the shown one the primary. The key stays the
+                // same in every drawing: the app takes the focus off the pane when the element holding
+                // it leaves, and the next click would only bring it back.
+                // A Button sizes to its label, so non-breaking spaces widen the tab; plain spaces would collapse.
+                // A native tab element would replace this (anthropics/claude-code#100890).
+                if (look === 'desktop')
+                  return (
+                    <Button
+                      key={`tab-${id}`}
+                      label={`${DESKTOP_TAB_PAD}${count > 0 ? `${label} ${count}` : label}${DESKTOP_TAB_PAD}`}
+                      {...(tab === id ? { variant: 'primary' as const } : {})}
+                      onPress={() => void showTab($, id)}
+                    />
+                  )
 
-            // The selected tab is a raised panel three lines tall, with its name on
-            // the middle line and a line of its color along the top edge. After a
-            // jump to it, the line draws in from the left.
-            const since = jumped?.tab === id ? now - jumped.at : DRAW_IN_MS
-            const edge = since < DRAW_IN_MS ? Math.max(1, Math.ceil((width * since) / DRAW_IN_MS)) : width
-            if (tab === id)
-              return (
-                <Box flexDirection="column">
-                  <Text color={pal.mark[id]} backgroundColor={pal.raised}>
-                    {'▔'.repeat(edge) + ' '.repeat(width - edge)}
-                  </Text>
-                  <Text backgroundColor={pal.raised}>
-                    {TAB_PAD}
-                    <Text bold color={pal.raisedText} backgroundColor={pal.raised}>
-                      {label}
-                    </Text>
-                    {count > 0 ? (
-                      <Text bold color={pal.tone[id] ?? pal.raisedText} backgroundColor={pal.raised}>
-                        {' '}
-                        {count}
+                // The selected tab is a raised panel three lines tall, with its name on
+                // the middle line and a line of its color along the top edge. After a
+                // jump to it, the line draws in from the left.
+                const since = jumped?.tab === id ? now - jumped.at : DRAW_IN_MS
+                const edge = since < DRAW_IN_MS ? Math.max(1, Math.ceil((width * since) / DRAW_IN_MS)) : width
+                if (tab === id)
+                  return (
+                    <Box flexDirection="column">
+                      <Text color={pal.mark[id]} backgroundColor={pal.raised}>
+                        {'▔'.repeat(edge) + ' '.repeat(width - edge)}
                       </Text>
-                    ) : null}
-                    {TAB_PAD}
-                  </Text>
-                  <Text backgroundColor={pal.raised}>{' '.repeat(width)}</Text>
-                </Box>
-              )
+                      <Text backgroundColor={pal.raised}>
+                        {TAB_PAD}
+                        <Text bold color={pal.raisedText} backgroundColor={pal.raised}>
+                          {label}
+                        </Text>
+                        {count > 0 ? (
+                          <Text bold color={pal.tone[id] ?? pal.raisedText} backgroundColor={pal.raised}>
+                            {' '}
+                            {count}
+                          </Text>
+                        ) : null}
+                        {TAB_PAD}
+                      </Text>
+                      <Text backgroundColor={pal.raised}>{' '.repeat(width)}</Text>
+                    </Box>
+                  )
 
-            // Each line is a Button, so a click anywhere on the tab's three lines
-            // selects it. Under the pointer, the keyed Box raises all three as one
-            // panel, the selected tab's shape without its line.
-            const show = () => void showTab($, id)
+                // Each line is a Button, so a click anywhere on the tab's three lines
+                // selects it. Under the pointer, the keyed Box raises all three as one
+                // panel, the selected tab's shape without its line.
+                const show = () => void showTab($, id)
 
-            return (
-              <Box key={`tab-block-${id}`} flexDirection="column" backgroundColor={pal.tab}>
-                <Button plain key={`tab-${id}-above`} label={' '.repeat(width)} hover={raise} onPress={show} />
-                <Box flexDirection="row">
-                  <Button plain key={`tab-${id}-before`} label={TAB_PAD} hover={raise} onPress={show} />
-                  <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show} />
-                  {count > 0 ? (
-                    <Text color={pal.tone[id]} hover={raise}>
-                      {' '}
-                      {count}
-                    </Text>
-                  ) : null}
-                  <Button plain key={`tab-${id}-after`} label={TAB_PAD} hover={raise} onPress={show} />
-                </Box>
-                <Button plain key={`tab-${id}-below`} label={' '.repeat(width)} hover={raise} onPress={show} />
-              </Box>
-            )
-          })}
+                return (
+                  <Box key={`tab-block-${id}`} flexDirection="column" backgroundColor={pal.tab}>
+                    <Button plain key={`tab-${id}-above`} label={' '.repeat(width)} hover={raise} onPress={show} />
+                    <Box flexDirection="row">
+                      <Button plain key={`tab-${id}-before`} label={TAB_PAD} hover={raise} onPress={show} />
+                      <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show} />
+                      {count > 0 ? (
+                        <Text color={pal.tone[id]} hover={raise}>
+                          {' '}
+                          {count}
+                        </Text>
+                      ) : null}
+                      <Button plain key={`tab-${id}-after`} label={TAB_PAD} hover={raise} onPress={show} />
+                    </Box>
+                    <Button plain key={`tab-${id}-below`} label={' '.repeat(width)} hover={raise} onPress={show} />
+                  </Box>
+                )
+              })}
         </Box>
         <Box flexDirection={isNarrowDesktop ? 'column' : 'row'} columnGap={2}>
           <Text dimColor>{status}</Text>
