@@ -2110,6 +2110,8 @@ async function turnOn($: EngineInterface) {
     $.tool.register({ name: 'close', description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA }).catch(refused),
     syncTheme($),
   ])
+  // A pane kept across a hot reload is already drawn.
+  if (toolsRefused) await redrawPane($)
   $.clock.every(60_000, () => {
     void tick($)
   })
@@ -2142,7 +2144,12 @@ async function loadConversation($: EngineInterface, id: string, isCleared: boole
     readSaved($, id),
   ])
   top = git?.exitCode === 0 ? git.stdout.trim() || null : null
-  if (saved === null) unreadable = { id, isCleared, isReading: false }
+  // Only a conversation with no turns loaded yet needs its saved copy, as a hot reload's does not.
+  const isUnread = saved === null && current.turn === 0 && !current.card
+  if (isUnread) {
+    unreadable = { id, isCleared, isReading: false }
+    await redrawPane($)
+  }
   const loaded = saved === null ? current : await bringBack($, current, saved.session, isCleared, now)
   // Catch up now after a failed update; after a turn whose reply never reached
   // the ledger, as when a reload cut off the end-of-turn hook before it queued the
@@ -2154,7 +2161,7 @@ async function loadConversation($: EngineInterface, id: string, isCleared: boole
   if (
     presence.ledgerState !== 'current' ||
     turnsStarted > turnsApplied ||
-    (saved !== null && isEmpty && (await $.session.turns().catch(() => 0)) > 0)
+    (!isUnread && isEmpty && (await $.session.turns().catch(() => 0)) > 0)
   )
     queueUpdate($, null)
   void publishStatus($)

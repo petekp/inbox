@@ -103,6 +103,8 @@ let stored = new Map<string, string>()
 let storeRefusal: string | undefined
 // Makes the engine refuse the mod's tools, as an organization's settings can, with this reason.
 let toolRefusal: string | undefined
+// The ids of the panes the mod opened or raised, in order.
+let panesOpened: string[] = []
 
 async function runBeforeAct() {
   const act = beforeAct
@@ -148,6 +150,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   stored = new Map()
   storeRefusal = undefined
   toolRefusal = undefined
+  panesOpened = []
   on('store.get', ($, e) => {
     if (storeRefusal && e.key.startsWith('s:')) return { deny: storeRefusal }
     const json = stored.get(e.key)
@@ -185,7 +188,10 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   on('env.get', ($, e) => ({ value: vars[e.name] }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('tool.register', ($, e) => (toolRefusal ? { deny: toolRefusal } : { value: { tool: `mcp__inbox__${e.name}` } }))
-  on('ui.open', () => ({ value: { isPlaced: true as const } }))
+  on('ui.open', ($, e) => {
+    panesOpened.push(e.id)
+    return { value: { isPlaced: true as const } }
+  })
   on('ui.toast', ($, e) => {
     toasts.push(e.text)
     return { value: undefined }
@@ -675,7 +681,9 @@ test('the band leads with [Open inbox], the count and the top row, while working
   const pane = await $.ui.mount(PANE)
   await pane.press({ key: 'select-i2' })
   await pane.press({ key: 'tab-findings' })
+  panesOpened = []
   await standing.press({ key: 'open-inbox' })
+  expect(panesOpened).toEqual(['inbox'])
   expect(await pane.find({ key: 'explain-i1' })).toBeDefined()
   expect(await pane.find({ key: 'explain-i2' })).toBeUndefined()
 
@@ -1815,12 +1823,29 @@ test('tools the engine refuses turn the status line red on every tab, and the mo
 test('a saved session the store cannot read shows as unreadable, not empty, until [Try again] reads it', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  stored.set('s:session-1', JSON.stringify(SAVED_SESSION))
-  storeRefusal = 'the store is busy'
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  const pane = await $.ui.mount(PANE)
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
 
+  // A reload that finds the conversation still loaded needs no saved copy, so a failed read changes nothing.
+  storeRefusal = 'the store is busy'
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.settle()
-  const pane = await $.ui.mount(PANE)
+  expect(await pane.find({ text: /Could not read the inbox/ })).toBeUndefined()
+  expect(await pane.find({ text: /Use Node or Python\?/ })).toBeDefined()
+
+  // /resume into it while the store refuses: the open pane says it could not read the inbox, not that nothing needs you.
+  storeRefusal = undefined
+  await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
+  await $.classic.SessionStart({ source: 'clear', session_id: 'session-2' })
+  await clock.settle()
+  expect(await pane.find({ text: /Nothing needs you/ })).toBeDefined()
+  storeRefusal = 'the store is busy'
+  await $.session.end({ reason: 'resume', sessionId: 'session-2', resume: { id: 'session-2' } })
+  await $.classic.SessionStart({ source: 'resume', session_id: 'session-1' })
+  await clock.settle()
   expect(await pane.find({ text: 'Could not read the inbox.' })).toBeDefined()
   expect(await pane.find({ text: /Nothing needs you/ })).toBeUndefined()
 
