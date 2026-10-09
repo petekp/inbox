@@ -1,6 +1,6 @@
 # The Claude desktop app
 
-Checked on 2026-10-08. The app is version 2.31226.0 on macOS (its `Info.plist`). The terminal `claude` is 2.1.295. The app holds its own Claude Code copies, 2.1.289 and 2.1.293.
+Checked on 2026-10-08, with versions rechecked on 2026-10-09. The app is version 2.31226.1 on macOS (its `Info.plist`). The terminal `claude` is 2.1.296. The app holds its own Claude Code copies, 2.1.293 and 2.1.295. On 2026-10-08 it was 2.31226.0 and held 2.1.289 and 2.1.293.
 
 The desktop app is the inbox's third client, beside the terminal and Codex. Its Code mode runs Claude Code sessions, so the inbox mod (the plugin code in `hooks/`) can run there. Its Claude mode is the chat side of the app; whether it can host any part of the inbox is unknown.
 
@@ -126,9 +126,9 @@ There is no `-p` flag and no `--plugin-dir` on the command line. It is still a h
 | Mods work on Desktop from 2.1.286 and in the terminal from 2.1.287. | https://code.claude.com/docs/en/plugins/mods/overview#turn-mods-on-or-off (Markdown line 97) |
 | The changelog first mentions mods at 2.1.287 (October 1). | https://code.claude.com/docs/en/changelog |
 | The mods reference describes the CLI and the Desktop app "as of v2.1.290". | https://code.claude.com/docs/en/plugins/mods/reference (Markdown line 9) |
-| The app holds 2.1.289 and 2.1.293 in `~/Library/Application Support/Claude/claude-code/`. | Live |
-| A Code-mode session running at check time used the 2.1.293 copy. | Live: its process path |
-| `~/Library/Application Support/Claude/claude-code-vm/` holds 2.1.293. | Live. Inference: the copy for Cowork's VM mode. |
+| The app holds 2.1.293 and 2.1.295 in `~/Library/Application Support/Claude/claude-code/`. On 2026-10-08 it held 2.1.289 and 2.1.293. | Live |
+| The app installed 2.1.295 at 14:41 PDT on 2026-10-09. The Code-mode session started then runs it. Sessions before then ran 2.1.293. | Live: folder time, process path and start time |
+| `~/Library/Application Support/Claude/claude-code-vm/` holds 2.1.295. On 2026-10-08 it held 2.1.293. | Live. Inference: the copy for Cowork's VM mode. |
 
 The app downloads these copies into Application Support. It does not ship them inside the app bundle (live; the desktop page says "The desktop app downloads and updates that copy").
 
@@ -197,7 +197,7 @@ Risks for the inbox:
 
 ## Drawing limits for desktop design
 
-Read this before designing any desktop UI for the inbox. It lists what a mod can draw in Code mode on engine 2.1.293, with a source and a status for each claim. Each claim is either verified live, stated in the docs or types, inferred, or unknown.
+Read this before designing any desktop UI for the inbox. It lists what a mod can draw in Code mode on engines 2.1.293 and 2.1.295, with a source and a status for each claim. Each claim is either verified live, stated in the docs or types, inferred, or unknown.
 
 **What this means for the inbox's tabs:**
 - A mod cannot customize the engine's pane tabs. The only thing a mod controls is the title text. Another `$.ui.open` with the same id changes that text, so a title can carry a count.
@@ -209,7 +209,7 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 - `mods.md:N` is `docs/reference/claude-code-mods.md`.
 - `desktop.md:N` is `docs/reference/claude-desktop-app.md`.
 - `live` means probes in this project's desktop Code-mode sessions. The attach, viewport, placement, band, copy and submit probes ran on 2026-10-08 (desktop.md:29-55). The drawing probes ran on 2026-10-09.
-- The app keeps two engine copies, 2.1.289 and 2.1.293. It downloads them into Application Support; they are not built into the app. The probed sessions ran 2.1.293 (desktop.md:3, :129-133).
+- The app downloads its engine copies into Application Support; they are not built into the app. Probes before 14:41 PDT on 2026-10-09 ran on 2.1.293. Later probes ran on 2.1.295 and say so (desktop.md:3, :129-133).
 
 ### What desktop draws
 
@@ -275,14 +275,14 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 - **Trying a prop just to see what happens.** One unsupported prop drops the mod's whole drawing.
 - **Image or Raster.** They are not drawn on desktop. Svg is the only image route, and the mod receives no clicks from it.
 - **Redrawing a focused Button under a new key.** The pane loses focus (#100874), unless the mod moves the focus to a Button that is still drawn.
-- **A scrolling list drawn in Clients.** The scroll wheel does nothing with the pointer over a Client, while it scrolls the pane over Box and Text (live, #100923).
-- **Redrawing the pane every fraction of a second.** While a settled row's leave bar redrew every 213 ms, clicks on the pane's Buttons did nothing. With one redraw at the end, they worked (live, #100924).
+- **A scrolling list drawn in Clients.** The scroll wheel does nothing with the pointer over a Client (live, 2.1.293), while it scrolls the pane over Box and Text (live, 2.1.295). #100923.
+- **Redrawing the pane every fraction of a second.** While a settled row's leave bar redrew every 213 ms, clicks on the pane's Buttons did nothing. With one redraw at the end, they worked (live, 2.1.295, #100924).
 
 ### What works
 
 - A docked pane whose width follows the person's drag. Fit content to `bodyColumns`.
-- Native Buttons. `onPress` fires with surface `'desktop'`, and a click on a button's corners or edges presses it (live).
-- Moving the focus to a Button the next drawing still has, when a press removes the focused one. A `$.ui.focus` for that Button, called once the render hook has returned, kept every next click working in a run of 19 presses (live).
+- Native Buttons. `onPress` fires with surface `'desktop'`, and a click on a button's corners or edges presses it (live, 2.1.295).
+- Moving the focus to a Button the next drawing still has, when a press removes the focused one. A `$.ui.focus` for that Button, called once the render hook has returned, kept every next click working in a run of 19 presses (live, 2.1.295).
 - A `Client` for any click area larger than a Button label. Its module draws with Box and Text, gets pointer events over its whole region, and posts to the hooks module through `ui.message`.
 - Hierarchy with `variant="primary"` (white filled) against the default (dark gray rounded).
 - A Box `backgroundColor` and hover `backgroundColor` for row highlight. This is visual only, not clickable.
