@@ -275,8 +275,8 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 - **Trying a prop just to see what happens.** One unsupported prop drops the mod's whole drawing.
 - **Image or Raster.** They are not drawn on desktop. Svg is the only image route, and the mod receives no clicks from it.
 - **Redrawing a focused Button under a new key.** The pane loses focus (#100874), unless the mod moves the focus to a Button that is still drawn.
-- **A scrolling list drawn in Clients.** The scroll wheel does nothing with the pointer over a Client, while it scrolls the pane over Box and Text (live).
-- **Redrawing the pane every fraction of a second.** While a settled row's leave bar redrew every 213 ms, clicks on the pane's Buttons did nothing. With one redraw at the end, they worked (live).
+- **A scrolling list drawn in Clients.** The scroll wheel does nothing with the pointer over a Client, while it scrolls the pane over Box and Text (live, #100923).
+- **Redrawing the pane every fraction of a second.** While a settled row's leave bar redrew every 213 ms, clicks on the pane's Buttons did nothing. With one redraw at the end, they worked (live, #100924).
 
 ### What works
 
