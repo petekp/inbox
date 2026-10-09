@@ -3444,6 +3444,7 @@ export const register: Register = on => {
             // same in every drawing: the app takes the focus off the pane when the element holding
             // it leaves, and the next click would only bring it back.
             // A Button sizes to its label, so non-breaking spaces widen the tab; plain spaces would collapse.
+            // A native tab element would replace this (anthropics/claude-code#100890).
             if (look === 'desktop')
               return (
                 <Button
