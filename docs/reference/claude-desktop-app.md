@@ -195,6 +195,119 @@ Risks for the inbox:
 
 - The inbox hides hotkey `Button`s in a `Box` with `display="none"` (`hooks/register.tsx:3728`). A desktop that draws native buttons may show them or drop them. Unverified.
 
+## Drawing limits for desktop design
+
+Read this before designing any desktop UI for the inbox. It lists what a mod can draw in Code mode on engine 2.1.293, with a source and a status for each claim. Each claim is either verified live, stated in the docs or types, inferred, or unknown.
+
+**What this means for the inbox's tabs:**
+- A mod cannot customize the engine's pane tabs. The only thing a mod controls is the title text. Another `$.ui.open` with the same id changes that text, so a title can carry a count.
+- Box and Button cannot make a whole tab, row or card clickable. A Box takes no clicks. A Button is only as big as its label and does not stretch.
+- `Client` is the one route nobody has tested. It is a sized region with its own pointer listener. The types disagree on whether desktop runs it: one place says pointer input reaches a Client on desktop, another says desktop "carries it as data". Until a probe works, plan on Buttons only.
+
+**Source key:**
+- `types:N (Symbol)` is `.claude-plugin/types/claude-code/index.d.ts` line N, as written by engine 2.1.293. Each engine that loads the mod rewrites this file, so the line numbers drift. Find the line by the symbol (desktop.md:89).
+- `mods.md:N` is `docs/reference/claude-code-mods.md`.
+- `desktop.md:N` is `docs/reference/claude-desktop-app.md`.
+- `live` means probes in this project's desktop Code-mode sessions. The attach, viewport, placement, band, copy and submit probes ran on 2026-10-08 (desktop.md:29-55). The drawing probes ran on 2026-10-09.
+- The app keeps two engine copies, 2.1.289 and 2.1.293. It downloads them into Application Support; they are not built into the app. The probed sessions ran 2.1.293 (desktop.md:3, :129-133).
+
+### What desktop draws
+
+| Element | What desktop does | Status | Source |
+|---|---|---|---|
+| Pane placement | Opens docked (`placement: 'dock'`) and focused. `bodyColumns` went from 36 to 69 as the person widened it, and `bodyRows` was 42. The types describe placement only in terminal terms. Where the pane sits among the app's own panes is unknown. | verified live | desktop.md:51; types:10241 (`Pane`), 10267 (`Pane.placement`); mods.md:231. mods.md:623 says docking is unknown, which the live probe supersedes. |
+| Pane size request | `rows` and `columns` on `$.ui.open` are requests. A size the person dragged wins. The dock ignores `rows`, and an inline pane ignores `columns`. | stated | types:7383-7402 (`PaneOpenArgs.rows`, `.columns`) |
+| Older desktop | Places no pane. `$.ui.open` answers `isPlaced: false` until a surface that places panes attaches. | stated | types:13994 (`UiOpenResult`) |
+| Engine pane tabs | The label is the pane's `title`, or its id, and nothing else. A title may hold emoji. Control characters are refused. Tabs exist only while 2 or more panes are open. A click on a tab switches panes, and the engine does that. Re-opening the same id changes the title. No prop styles, sizes, colors or replaces a tab. Whether desktop draws these tabs at all is unknown. | stated. No customization: inferred. Desktop drawing: unknown. | types:7342-7346 (`PaneOpenArgs.title`), 10249-10253 (`Pane.title`), 7333-7403 (`PaneOpenArgs`); mods.md:586 |
+| Pane frame, close mark, tab row | Drawn by the engine, outside the mod's tree. Not counted in `bodyColumns` or `bodyRows`. No prop changes them. | stated; no prop: inferred | types:10262-10263 (`Pane.bodyColumns`), 10278-10280 (`Pane.scroll`) |
+| Layout units | The types say layout is in cells: the pane's pixels divided by the code font's character width and line height. They add "Cell-based until the first element lays out in pixels". But Text draws in a proportional font, and about 1.25 characters fit per column. The sources conflict, and the live result wins. | verified live; stated | live; types:10318-10323 (`RenderViewport`); mods.md:620 |
+| Viewport | At attach: `{ columns: 106, rows: 48, isFullscreen: true }`. The docs say `rows` is the whole window, not the pane. The types say that on a remote surface the viewport is the pane's width and height. Live, `columns` narrowed from 106 to 70 as the pane widened, so it tracks the transcript, not the mod pane. The types conflict with both the docs and the live result. | verified live; stated; conflicting | desktop.md:37, :51; mods.md:613; types:10321-10322 (`RenderViewport`) |
+| Box | Drawn as a flex div. `backgroundColor` and hover `backgroundColor` draw. It takes no clicks. An absolute Box is clipped, for both pointer and paint, to its site's region, and the pointer on it counts as on its parent. Offsets are whole cells. There are no per-side borders and no borderRadius, opacity, shadow, cursor, maxWidth, z-index or font props. | verified live (background, hover, clicks, borders); stated (props, offsets, absolute); inferred (absences) | live; types:901-990 (`BoxProps`), 921-931 (`BoxProps.position`), 933 (`BoxProps.top`), 12139 (`StyledElement`) |
+| Box borderStyle | The docs list ten names, and any other name draws no border. Which names desktop honors is untested. | stated; unknown on desktop | mods.md:692; types:984 (`BoxProps.borderStyle`) |
+| Box `display: 'none'` | Hides the Box. Whether native Buttons inside it stay hidden on desktop is unverified. | unknown | desktop.md:196; mods.md:1580 |
+| Hover | Hover is plain data in the tree. No hook runs. A Box hover can change border style and color, background, `display: 'flex'`, and an absolute Box's offsets. Box hover background works on desktop. Text and Button hover, and scope groups, are unknown on desktop. A Text or Button hover outside a keyed Box with no scope is refused. A Button always inverts under the pointer. | verified live (Box background); stated; unknown | live; types:855-895 (`BoxHoverProps`), 915 (`BoxProps.hover`), 1133-1140 (`ButtonProps.hover`), 12499-12500 (`TextProps.hover`) |
+| Text | Drawn as a styled span in a proportional font. Props: color, backgroundColor, dimColor, bold, italic, underline, strikethrough, inverse, wrap, hover. There is no font size, family or weight beyond bold. `wrap="truncate-end"` does not stop wrapping. The types say a tree wider than the room "wraps or truncates, as its Text props say", so this conflicts with them. | verified live (font, wrap); stated (props); inferred (absences) | live; types:12494-12512 (`TextProps`), 10327 (`RenderViewport.columns`) |
+| Box-drawing characters | A run of `─` wraps instead of drawing a rule. | verified live | live |
+| Color | A theme key or any raw string. The types say a surface draws a value it does not know in its own way. How desktop paints colors and dimColor is not documented. | stated; unknown | types:1667-1673 (`Color`) |
+| Button drawing | Always a native button, plain or not. A plain Button still highlights under the pointer and on focus. One line tall and as wide as its label. It does not stretch to fill a column Box or an absolute overlay. Taller than a line of text. A long label is cut with an ellipsis. | verified live; stated (native, plain) | live; types:1056-1057 (`ButtonProps`), 1094 (`ButtonProps.plain`) |
+| Button label spaces | A label of plain spaces draws with no size and takes no clicks. Non-breaking spaces keep their size. | verified live | live |
+| Button variant | `primary` draws a white filled button. The default is a dark gray rounded button. `secondary` exists and was not tried. `plain` wins over `variant`. | verified live (primary, default); stated (secondary, plain) | live; types:1103-1112 (`ButtonProps.variant`); mods.md:664 |
+| Button `role: 'dismiss'` | Desktop draws its native close control at the trailing edge, with the label as its accessible name. Not seen live. | stated | types:1117-1118 (`ButtonProps.role`); mods.md:665 |
+| Button props | Only key, label, hotkey, action, plain, dimColor, variant, role, autoFocus, hover, onPress. No width, padding, flex, color, bold, border, icon, disabled or tooltip. Any other prop fails the whole tree. | stated (list); inferred (absences) | types:1060-1152 (`ButtonProps`), 9309-9311 (`RenderElement`), 9323-9389 (`RenderElement` Button) |
+| Button children | A string label only on 2.1.293. String and `Text` children need engine 2.1.295, and the probed sessions ran 2.1.293. TypeScript does not catch an element child, because every element constructor accepts children. The types say a press on an Svg or Raster "goes on an enclosing Button", but a Button is a leaf and cannot enclose anything. | verified live (string only); stated (2.1.295, TypeScript, contradiction) | live; desktop.md:3, :130; mods.md:668, :1469; types:9320 (`RenderElement` Button), 3744-3756 (`ElementChildren`, `ElementConstructor`), 9579, 9610 |
+| Clicks | Buttons take clicks and a Box takes none. A press carries surface `'desktop'`. Clicks on Input, Select, Link and Client were not tested. | verified live (Button, Box) | live; desktop.md:53 |
+| Hotkeys | Do nothing. A Button's hotkey logs no press while the pane is focused. The types do not limit hotkeys to the terminal, and the docs say a small key shows beside the label. The live result wins. | verified live | live; desktop.md:54; types:1071-1078 (`ButtonProps.hotkey`); mods.md:656-659 |
+| Button `action` chord | Terminal only. | stated | types:1083-1086 (`ButtonProps.action`); mods.md:662 |
+| Focus | The pane and the band each keep a focus ring. The `focus` request on open is not a grant. If the focused Button is missing from the next drawing, the app takes focus off the pane, and the next click only refocuses it (anthropics/claude-code#100874). Keeping the same key avoids this. `$.ui.focus` acts only in a site that holds the keyboard. | verified live; stated | live; types:13736-13739 (`UiFocusComponent`), 7350-7356 (`PaneOpenArgs.focus`), 13712 (`ui.focus`) |
+| Band (AbovePrompt) | Draws on desktop. `maxRows` was 12, where a 49-row terminal gave 19. `bodyColumns` shrank as the pane widened. The types explain why: the band's column is the transcript beside a docked pane, less 5 columns for `[-]`. The types describe the engine's `[-]` and `n more` rows without naming a surface. Whether desktop draws them is unknown. Every mod shares the band. | verified live; stated; unknown (`[-]`, `n more`) | desktop.md:52; types:10181-10188 (`AbovePrompt`), 10212-10216 (`AbovePrompt.bodyColumns`); mods.md:588-589, 615-617 |
+| Input, Select | Draw on desktop. Leaf elements with no width or style props. Typing into an Input on desktop is untested. | stated | types:5441-5483 (`InputProps`), 10419-10458 (`SelectProps`); mods.md:640, 675 |
+| Link | Drawn as an anchor. The sources conflict: the types allow only `https:` on a remote surface. The docs also allow `http://localhost`, with no `@` and in canonical form. Anything else draws as plain text. The types leave where a click opens to the surface. Where it opens is untested. | stated, conflicting | types:5608-5619 (`LinkProps`); desktop.md:184; mods.md:683-684 |
+| Markdown | A leaf element. A link that is not https, http or file draws as text. The types describe `onLinkPress` clicks only for "the fullscreen terminal". Whether desktop sends link clicks to it is unknown. | stated; unknown | types:5688-5695 (`MarkdownProps.onLinkPress`); mods.md:687 |
+| Code | Colors come from the engine's highlighter, never the mod. | stated | types:1612-1614 (`CodeProps`) |
+| Svg | Drawn as an image. With `isInteractive` it draws in a sandboxed frame with CSS :hover, SMIL animation and `<title>` tooltips, but no scripts or event handlers. Width and height are CSS pixels. Up to 131,072 characters, and `alt` is required. Not drawn on the terminal. | stated | types:12196-12229 (`SvgProps`); mods.md:641, 694 |
+| Client | A region drawn by a separate module "for animation and pointer input". It takes `width`, `height` and `flexGrow`, and a module sets a pointer listener with `onPointer`. The types conflict about desktop. The test types say `pointer` reaches a Client on "terminal and desktop today". The element type says "The desktop carries it as data". Pointer events count whole cells, and finer positions come only from terminals that report pixels. Nothing has been tested on desktop. | stated, conflicting; unknown live | types:1489-1530 (`ClientProps`), 1433-1483 (`ClientPointerEvent`), 1577-1580 (`ClientSurface.onPointer`), 9555-9561 (`RenderElement` Client), 14811-14813 (`ElementOfAct`); mods.md:642, 695 |
+| Not drawn | The Raster and Image elements. The ToolProgress, TurnDuration and InfoNotice render sites. | stated | types:3796-3807 (`Elements.desktop`); mods.md:597; desktop.md:23, 181, 183 |
+| Invalid tree | One prop off the allowlist fails the whole tree, and the engine draws its own content instead. For an element the surface lacks, the sources disagree. The interface docs say the engine draws its own site. The gallery says an Svg-only terminal pane opens empty. The types disagree with each other: one place says a missing element draws a fragment, another says the tree is refused. | stated; conflicting | types:9309-9311 (`RenderElement`), 12146 (`StyledElement.props`), 3758-3760 (`ElementName`), 9579-9580 (`RenderElement` Svg); mods.md:358, 646, 1576 |
+| Spinner | On desktop, the row that carries the turn's mark. | stated | types:10035-10037 (Spinner) |
+| PromptHint `tail` | Terminal only. | stated | types:10170-10174 (`PromptHint.tail`) |
+| Redraw | After a hot reload, the pane redraws only on its next state change or minute tick. The docs state a limit of 10 redraws a second outside the terminal's fast sites. The real desktop rate was not measured. | verified live (reload); stated (limit); unmeasured (rate) | live; mods.md:702, :1708; desktop.md:190 |
+| `e.surface` | The docs say `terminal` or `desktop`. The types also allow `mobile` and `vscode`. | stated, conflicting | desktop.md:192; mods.md:1558; types:10315 (`RenderSurface`) |
+| `$.ui.copy` | Returns `{ isCopied: true }`. This supersedes the types' "a remote surface has no path yet" and the docs' inference that copy fails on desktop. | verified live | desktop.md:49; mods.md:505 |
+| `$.prompt.submit` | With `asUser: true`, starts a turn at once. | verified live | desktop.md:50 |
+| `$.prompt.read`, fill, suggest | The types say they return empty results in headless sessions. Desktop runs sessions headless, so they may be inert there. | stated (headless); inferred (desktop) | desktop.md:188; mods.md:513 |
+| Sessions | Mods draw in local Code-mode sessions. They draw nothing in WSL or cloud sessions. The docs say SSH sessions draw too; that is untested. | verified live (local); stated (WSL, cloud, SSH) | desktop.md:21, 146-153, 275 |
+
+### What this rules out
+
+- **Customizing the engine's pane tabs.** Only `title` reaches a tab. Nothing styles, sizes, badges or replaces it. The title text can change, as with a count.
+- **A whole-tab hit area built from Box or Button.** A Box takes no clicks. A Button sizes to its label and does not stretch, even in an absolute overlay. Client is the only untested route; see "Still unknown".
+- **Clickable whole rows or cards built from Box or Button.** Same reason as the tab bar.
+- **Making a Button look like text or a tab.** `plain` still draws native chrome and a pointer highlight.
+- **Styled content inside a Button**, such as colored counts, dim parts, chips or icons. Engine 2.1.293 takes only a string label.
+- **Spacer or invisible Buttons made of spaces.** They have no size and take no clicks.
+- **Keyboard-first design and key hints beside labels.** Hotkeys do nothing, and `action` chords are terminal only.
+- **Column-exact alignment with spaces or character counts.** The font is proportional, about 1.25 characters per column.
+- **Relying on `wrap="truncate-end"` to keep one line.** Text still wraps. Keep the text short.
+- **Rules drawn with `─` and other box-drawing characters.** They wrap.
+- **Single-side dividers.** A Box has no per-side borders.
+- **Rounded corners, shadows, opacity, font sizes or font families.** No props exist for them.
+- **Mixed Button-and-Text rows at text height.** A native button is taller than a text line.
+- **Trying a prop just to see what happens.** One unsupported prop drops the mod's whole drawing.
+- **Image or Raster.** They are not drawn on desktop. Svg is the only image route, and the mod receives no clicks from it.
+- **Redrawing a focused Button under a new key.** The pane loses focus (#100874).
+
+### What works
+
+- A docked pane whose width follows the person's drag. Fit content to `bodyColumns`.
+- Native Buttons as the only tested click targets. `onPress` fires with surface `'desktop'`.
+- Hierarchy with `variant="primary"` (white filled) against the default (dark gray rounded).
+- A Box `backgroundColor` and hover `backgroundColor` for row highlight. This is visual only, not clickable.
+- Stable Button keys across redraws, which keep pane focus.
+- Non-breaking spaces to pad a Button label. A long label shows an ellipsis.
+- `$.ui.copy` and `$.prompt.submit({ asUser: true })`.
+- The band draws, up to 12 rows here.
+
+### Still unknown
+
+- **Whether a Client receives pointer input on desktop.** This is the only possible route to a click region larger than a Button label, such as a whole tab or row. The types conflict on it. Probe a Client with a pointer listener that posts each event to the hooks module, where it arrives as `ui.message`.
+- **Whether desktop draws engine pane tabs, and whether they switch on click.** Open two mod panes in a desktop session, then screenshot and click.
+- **Where a mod pane docks among the app's panes, whether Cmd+\ closes it, and whether it pops out.** Try each in a desktop session.
+- **Which `borderStyle` names and `borderColor` values desktop honors.** Draw one Box per name and screenshot.
+- **Text and Button hover, and scope groups, on desktop.** Draw each inside a keyed Box and hover.
+- **Whether Buttons inside a `display: 'none'` Box stay hidden.** Draw one and screenshot.
+- **How `role: 'dismiss'` and `variant="secondary"` look.** Draw each in the pane and in the band.
+- **Whether the band shows `[-]` and `n more` on desktop.** Overflow the band past `maxRows` and screenshot.
+- **Where a Link click opens, and whether `http://localhost` links work.** Click both kinds of link.
+- **Whether Markdown link clicks reach `onLinkPress`.** Log presses while clicking a Markdown link.
+- **Whether typing reaches an Input on desktop.** Draw an autoFocus Input and type.
+- **Whether `ctrl+x tab` or `focus: true` focuses the pane on desktop, and whether keybindings.json applies.** Try each and read `isFocused`.
+- **Toasts, status, `holdToasts` and `$.ui.selection` on desktop.** Call each and screenshot or log the result.
+- **`$.ui.notify`.** Retest once the app runs 2.1.295. Check the session's engine version first.
+- **The real redraw rate on desktop.** Log redraw timestamps under rapid state changes.
+- **Which surface fires `onPress` when a terminal and the desktop share a session.** Attach both and click.
+- **Whether `/inbox` appears in the app's `/` menu.** Type `/` in a desktop session.
+- **Whether the app shows failure and reload lines.** Break the mod with the watch variable set and look.
+
 ## Connectors and MCP
 
 - The app delivers claude.ai connectors to local and SSH Code sessions as in-process `type: "sdk"` servers. "no MCP setting or `managed-mcp.json` reaches them" (https://code.claude.com/docs/en/mcp#how-connectors-reach-claude-code).
