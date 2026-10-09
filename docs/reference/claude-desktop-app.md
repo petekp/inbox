@@ -275,7 +275,6 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 - **Trying a prop just to see what happens.** One unsupported prop drops the mod's whole drawing.
 - **Image or Raster.** They are not drawn on desktop. Svg is the only image route, and the mod receives no clicks from it.
 - **Redrawing a focused Button under a new key.** The pane loses focus (#100874), unless the mod moves the focus to a Button that is still drawn.
-- **A scrolling list drawn in Clients.** The scroll wheel does nothing with the pointer over a Client (live, 2.1.293), while it scrolls the pane over Box and Text (live, 2.1.295). #100923.
 - **Redrawing the pane every fraction of a second.** While a settled row's leave bar redrew every 213 ms, clicks on the pane's Buttons did nothing. With one redraw at the end, they worked (live, 2.1.295, #100924).
 
 ### What works
@@ -284,6 +283,7 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 - Native Buttons. `onPress` fires with surface `'desktop'`, and a click on a button's corners or edges presses it (live, 2.1.295).
 - Moving the focus to a Button the next drawing still has, when a press removes the focused one. A `$.ui.focus` for that Button, called once the render hook has returned, kept every next click working in a run of 19 presses (live, 2.1.295).
 - A `Client` for any click area larger than a Button label. Its module draws with Box and Text, gets pointer events over its whole region, and posts to the hooks module through `ui.message`.
+- Scrolling the pane with the pointer over a `Client` (live, 2.1.295). On 2.1.293 the pane did not scroll there (#100923).
 - Hierarchy with `variant="primary"` (white filled) against the default (dark gray rounded).
 - A Box `backgroundColor` and hover `backgroundColor` for row highlight. This is visual only, not clickable.
 - Stable Button keys across redraws, which keep pane focus.

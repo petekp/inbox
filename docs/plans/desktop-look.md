@@ -2,7 +2,7 @@
 
 ## Status after the first probes
 
-- **Rows and the Closed fold stay native Buttons.** The scroll wheel does nothing over a Client (probe 2), so a list of Client rows could not be scrolled. The row Client in component 9 and the fold Client in component 16 are dropped. Closed rows keep today's title Button, which takes clicks on its label only.
+- **Rows and the Closed fold stay native Buttons for now.** Probe 2's first check failed on engine 2.1.293: the pane did not scroll with the pointer over the tab bar Client. On 2.1.295 it scrolls. The row Client in component 9 and the fold Client in component 16 wait on probe 2's settling check, a throwaway row Client in a long list. Until then, closed rows keep today's title Button, which takes clicks on its label only.
 - **Native Buttons take clicks on their corners and edges** (probe 16). Single actions meet the whole-shape rule.
 - **Focus is fixed in one place** (probe 1, rule 11). The pane tracks the Button a press focused. When a drawing leaves it out, the focus moves to the Button that took its place, else the open row's first action, else the first Button. Every click landed on the first try in a run of 19 presses.
 - **The leave bar is gone on desktop** (component 14). While it redrew every 213 ms, clicks on the pane's Buttons did nothing. Desktop now redraws once, when the settled row leaves.
