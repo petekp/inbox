@@ -706,7 +706,38 @@ var CODEX = {
   band: null,
   findingsIn: "the Findings section of the Inbox tab"
 };
-var TAB_DESCRIPTION = "Open the Inbox tab beside this conversation. Call it only when the user asks to see the inbox.";
+var INBOX_DESCRIPTION = "What waits on the user in this conversation: open questions, tasks and findings, as text. Call it only when the user asks to see the inbox or what waits on them. It does not open the Inbox tab; the user opens that from the side panel.";
+var VIEW_DESCRIPTION = "For the Inbox tab only: what the tab shows for this conversation, or its demo. Do not call it; to tell the user what waits on them, call inbox.";
+function inboxToolText(v) {
+  const isOpen = (r) => r.state.is === "open";
+  const groups = [
+    ["Questions:", v.needsYou.questions.filter(isOpen)],
+    ["Tasks:", v.needsYou.tasks.filter(isOpen)],
+    ["Findings:", v.findings.rows.filter(isOpen)]
+  ];
+  const needs = v.needsYou.count;
+  const findings = v.findings.count;
+  if (needs === 0 && findings === 0) return "Nothing waits on the user.";
+  const counts = [
+    needs > 0 ? `${needs} wait on the user` : null,
+    findings > 0 ? findings === 1 ? "1 finding" : `${findings} findings` : null
+  ].filter((x) => x !== null);
+  const out = [counts.join(" \xB7 ")];
+  for (const [title, rows] of groups) {
+    if (rows.length === 0) continue;
+    out.push(title);
+    for (const r of rows) out.push(rowLine(r));
+  }
+  out.push("Open the Inbox tab to act on these.");
+  return out.join("\n");
+}
+function rowLine(r) {
+  if (r.finding) return `${r.handle} [${r.id}] ${r.finding.kind}: ${r.title}`;
+  const item = r.item;
+  const options = item && item.options.length > 0 ? `; options: ${item.options.join(" / ")}` : "";
+  const rec = item?.rec ? `; recommended: ${item.rec}` : "";
+  return `${r.handle} [${r.id}] "${r.title}"${options}${rec}`;
+}
 
 // src/core.ts
 function isPromptMissed(h, turnId) {
@@ -1266,18 +1297,18 @@ var MAX_SENT = 20;
 var TOOLS = [
   { name: "record_finding", description: findingDescription(CODEX), inputSchema: FINDING_SCHEMA },
   { name: "close", description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA },
+  // No resourceUri: Codex mounts every model-called MCP App inline in the transcript.
+  { name: "inbox", description: INBOX_DESCRIPTION, inputSchema: { type: "object", properties: {} } },
   {
-    name: "inbox",
-    title: "Inbox",
-    description: TAB_DESCRIPTION,
-    inputSchema: { type: "object", properties: {} },
-    _meta: { ui: { resourceUri: TAB_URI }, "openai/ui": { entrypoints: [{ type: "thread" }] } }
-  },
-  {
+    // The side panel names the tab from this title. Entrypoints ignore `visibility`, so the tab still opens.
     name: "inbox_view",
-    description: "What the Inbox tab shows for this conversation, or its demo.",
+    title: "Inbox",
+    description: VIEW_DESCRIPTION,
     inputSchema: { type: "object", properties: { demo: { type: "boolean" } } },
-    _meta: APP_ONLY
+    _meta: {
+      ui: { resourceUri: TAB_URI, visibility: ["app"] },
+      "openai/ui": { entrypoints: [{ type: "thread" }] }
+    }
   },
   {
     name: "inbox_press",
@@ -1443,7 +1474,7 @@ function makeServer(deps) {
       }
       case "inbox": {
         const s = turn === void 0 ? await readState(dir, id) : await updateState(dir, id, heard);
-        return { ...text("Opened the Inbox tab beside the conversation."), structuredContent: viewOf(s, now()) };
+        return text(inboxToolText(viewOf(s, now())));
       }
       case "inbox_view": {
         if (args.demo === true) return { ...text("Inbox demo"), structuredContent: served(demoOf(id), id) };

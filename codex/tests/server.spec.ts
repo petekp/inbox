@@ -57,7 +57,7 @@ async function setup(queueCode: number) {
       }
     }>
 
-  return { dir, calls: runner.calls, call }
+  return { dir, calls: runner.calls, call, handle }
 }
 
 const ANSWER = { press: { action: 'answer', id: 'i1', option: 'Yes' }, thread: 's1' }
@@ -167,6 +167,72 @@ test('a close Codex read, then undone, is reported again when the row closes a s
   assert.match(await prompt('and now?'), closedLine)
   // Dismiss and Undo send nothing.
   assert.deepEqual(calls, [])
+})
+
+test('the tab opens from the app-only inbox_view tool, and the model’s inbox tool mounts nothing', async () => {
+  const { handle } = await setup(0)
+  const r = (await handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' })) as {
+    result: { tools: { name: string; title?: string; _meta?: Record<string, unknown> }[] }
+  }
+  const tool = (name: string) => r.result.tools.find(t => t.name === name)
+  assert.equal(tool('inbox')?._meta, undefined)
+  assert.equal(tool('inbox_view')?.title, 'Inbox')
+  assert.deepEqual(tool('inbox_view')?._meta, {
+    ui: { resourceUri: 'ui://inbox/tab', visibility: ['app'] },
+    'openai/ui': { entrypoints: [{ type: 'thread' }] },
+  })
+})
+
+test('the inbox tool answers in text: the count, each row that waits, and where to act on them', async () => {
+  const { dir, call } = await setup(0)
+  const codex = { 'x-codex-turn-metadata': { session_id: 's1', turn_id: 't1' } }
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: {
+      ...s.ledger,
+      items: [
+        ...s.ledger.items,
+        {
+          id: 'i2',
+          kind: 'task',
+          label: null,
+          ask: 'Add the API key to .env',
+          options: [],
+          rec: null,
+          helps: [],
+          turn: 1,
+          at: 2,
+        },
+      ],
+      findings: [{ id: 'f3', kind: 'issue', title: 'No lint script', detail: 'Only tests run.', path: null, at: 3 }],
+      // The question came in the reply to the latest prompt, so a "1" in the next one answers it.
+      turn: 1,
+      batchTurn: 1,
+    },
+  }))
+  const r = (await call('inbox', {}, codex)) as unknown as {
+    result: { content: { text: string }[]; structuredContent?: unknown }
+  }
+  assert.equal(r.result.structuredContent, undefined)
+  assert.equal(
+    r.result.content[0]?.text,
+    [
+      '2 wait on the user · 1 finding',
+      'Questions:',
+      '1) [i1] "Ship it?"; options: Yes / No',
+      'Tasks:',
+      '• [i2] "Add the API key to .env"',
+      'Findings:',
+      '• [f3] issue: No lint script',
+      'Open the Inbox tab to act on these.',
+    ].join('\n'),
+  )
+  // A row that just closed still settles in the tab, but no longer waits.
+  await call('inbox_press', { press: { action: 'dismiss', id: 'i1' }, thread: 's1' }, { thread_id: 's1' })
+  await call('inbox_press', { press: { action: 'dismiss', id: 'i2' }, thread: 's1' }, { thread_id: 's1' })
+  await call('inbox_press', { press: { action: 'dismiss', id: 'f3' }, thread: 's1' }, { thread_id: 's1' })
+  const after = await call('inbox', {}, codex)
+  assert.equal(after.result.content[0]?.text, 'Nothing waits on the user.')
 })
 
 test('Codex’s own tool calls reach their session through the turn metadata', async () => {

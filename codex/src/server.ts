@@ -1,5 +1,5 @@
-// The plugin's MCP server: Codex's record_finding and close tools, and the
-// Inbox tab with the app-only tools it calls. It speaks MCP over stdio by
+// The plugin's MCP server: Codex's record_finding, close and inbox tools, and
+// the Inbox tab with the app-only tools it calls. It speaks MCP over stdio by
 // hand, since it needs only a few message shapes.
 
 import { constants } from 'node:fs'
@@ -20,7 +20,7 @@ import type { TabView } from './core'
 import { demoState } from './demo'
 import { readState, updateState } from './state'
 import type { SessionState } from './state'
-import { CODEX, TAB_DESCRIPTION } from './texts'
+import { CODEX, INBOX_DESCRIPTION, inboxToolText, VIEW_DESCRIPTION } from './texts'
 import type { Run } from './run'
 import type { LastAction, LocalResult, RowNote } from '../../types'
 
@@ -33,18 +33,18 @@ const MAX_SENT = 20
 const TOOLS = [
   { name: 'record_finding', description: findingDescription(CODEX), inputSchema: FINDING_SCHEMA },
   { name: 'close', description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA },
+  // No resourceUri: Codex mounts every model-called MCP App inline in the transcript.
+  { name: 'inbox', description: INBOX_DESCRIPTION, inputSchema: { type: 'object', properties: {} } },
   {
-    name: 'inbox',
-    title: 'Inbox',
-    description: TAB_DESCRIPTION,
-    inputSchema: { type: 'object', properties: {} },
-    _meta: { ui: { resourceUri: TAB_URI }, 'openai/ui': { entrypoints: [{ type: 'thread' }] } },
-  },
-  {
+    // The side panel names the tab from this title. Entrypoints ignore `visibility`, so the tab still opens.
     name: 'inbox_view',
-    description: 'What the Inbox tab shows for this conversation, or its demo.',
+    title: 'Inbox',
+    description: VIEW_DESCRIPTION,
     inputSchema: { type: 'object', properties: { demo: { type: 'boolean' } } },
-    _meta: APP_ONLY,
+    _meta: {
+      ui: { resourceUri: TAB_URI, visibility: ['app'] },
+      'openai/ui': { entrypoints: [{ type: 'thread' }] },
+    },
   },
   {
     name: 'inbox_press',
@@ -287,7 +287,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       }
       case 'inbox': {
         const s = turn === undefined ? await readState(dir, id) : await updateState(dir, id, heard)
-        return { ...text('Opened the Inbox tab beside the conversation.'), structuredContent: viewOf(s, now()) }
+        return text(inboxToolText(viewOf(s, now())))
       }
       case 'inbox_view': {
         if (args.demo === true) return { ...text('Inbox demo'), structuredContent: served(demoOf(id), id) }

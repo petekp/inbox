@@ -4,6 +4,7 @@
 // The shared texts in ../../hooks/ledger.ts name Codex and the tab through CODEX.
 
 import type { Host } from '../../hooks/ledger'
+import type { InboxView, RowView } from '../../hooks/view'
 
 /** How the shared texts name Codex and the tab. */
 export const CODEX: Host = {
@@ -28,8 +29,46 @@ Close with mcp__inbox__close:
 - When an item or finding is done or no longer applies, close it with a short reason, without waiting to be asked.
 The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.`
 
-export const TAB_DESCRIPTION =
-  'Open the Inbox tab beside this conversation. Call it only when the user asks to see the inbox.'
+export const INBOX_DESCRIPTION =
+  'What waits on the user in this conversation: open questions, tasks and findings, as text. Call it only when the user asks to see the inbox or what waits on them. It does not open the Inbox tab; the user opens that from the side panel.'
+
+export const VIEW_DESCRIPTION =
+  'For the Inbox tab only: what the tab shows for this conversation, or its demo. Do not call it; to tell the user what waits on them, call inbox.'
+
+/** What the `inbox` tool tells Codex: the count, one line per row that counts, and where to act on them. */
+export function inboxToolText(v: InboxView): string {
+  const isOpen = (r: RowView) => r.state.is === 'open'
+  const groups: [string, RowView[]][] = [
+    ['Questions:', v.needsYou.questions.filter(isOpen)],
+    ['Tasks:', v.needsYou.tasks.filter(isOpen)],
+    ['Findings:', v.findings.rows.filter(isOpen)],
+  ]
+  const needs = v.needsYou.count
+  const findings = v.findings.count
+  if (needs === 0 && findings === 0) return 'Nothing waits on the user.'
+  const counts = [
+    needs > 0 ? `${needs} wait on the user` : null,
+    findings > 0 ? (findings === 1 ? '1 finding' : `${findings} findings`) : null,
+  ].filter(x => x !== null)
+  const out = [counts.join(' · ')]
+  for (const [title, rows] of groups) {
+    if (rows.length === 0) continue
+    out.push(title)
+    for (const r of rows) out.push(rowLine(r))
+  }
+  out.push('Open the Inbox tab to act on these.')
+
+  return out.join('\n')
+}
+
+function rowLine(r: RowView): string {
+  if (r.finding) return `${r.handle} [${r.id}] ${r.finding.kind}: ${r.title}`
+  const item = r.item
+  const options = item && item.options.length > 0 ? `; options: ${item.options.join(' / ')}` : ''
+  const rec = item?.rec ? `; recommended: ${item.rec}` : ''
+
+  return `${r.handle} [${r.id}] "${r.title}"${options}${rec}`
+}
 
 export const START_TITLE =
   'inbox: where this session stands, as of the last reply. An "inbox:" text beside a later prompt replaces this.'
