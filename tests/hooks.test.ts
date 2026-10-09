@@ -1571,11 +1571,25 @@ test('a stop and an open permission prompt lead the sidebar line until they clea
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await band.find({ text: /Run \/login, then send a message to resume\./ })).toBeDefined()
   expect(await band.find({ key: 'open-inbox' })).toBeDefined()
+  // Resuming before /login would stop again, so the pane offers no [Resume].
+  const pane = await $.ui.mount(PANE)
+  expect(await pane.find({ key: 'resume' })).toBeUndefined()
   // The next turn means the session runs again.
   await $.turn.start({ text: 'logged in, go on', turnId: 't2' })
   await clock.settle()
   expect(await band.find({ text: /Stopped/ })).toBeUndefined()
   expect(sidebarLines().at(-1)).toBe('')
+
+  // An API error resumes from the pane: [Resume] sends what the person would type.
+  await $.classic.StopFailure({ error: 'server_error' } as never)
+  await clock.settle()
+  expect(await pane.find({ text: /API error \(server_error\)\./ })).toBeDefined()
+  await pane.press({ key: 'resume' })
+  await clock.settle()
+  expect(sent.at(-1)).toBe('Continue')
+  await $.turn.start({ text: 'Continue', turnId: 't3' })
+  await clock.settle()
+  expect(await pane.find({ text: /Stopped/ })).toBeUndefined()
 })
 
 test('a reply another Stop hook sends Claude back from reaches the per-turn call, and the inbox sends back none itself', async ($, on) => {

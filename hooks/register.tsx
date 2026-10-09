@@ -439,6 +439,8 @@ let toolsRefused = false
 // The conversation whose saved session the store could not read, and whether [Try again] is reading it now.
 // While set, Needs you says so in place of an empty list.
 let unreadable: { id: string; isCleared: boolean; isReading: boolean } | null = null
+// What [Resume] on a stop did: sending its prompt, or why the prompt will not enter.
+let resuming: { is: 'sending' } | { is: 'refused'; why: string } | null = null
 // The draft a row's field opened with. The engine replaces the typed text whenever the drawn
 // `value` changes, so drawing each saved keystroke as `value` can drop keys typed before it lands.
 const fieldSeeds = new Map<string, string>()
@@ -536,8 +538,20 @@ function publishStatus($: EngineInterface, isEnding = false): Promise<void> {
 
 async function setStop($: EngineInterface, stop: Stop | null) {
   if (stop === null && (await read($, STOP)) === null) return
+  resuming = null
   await update($, STOP, () => stop)
   void publishStatus($)
+}
+
+/** [Resume] on a stop sends what the person would type. The turn's start clears the stop. */
+async function resume($: EngineInterface) {
+  resuming = { is: 'sending' }
+  await redrawPane($)
+  const sent = await send($, 'Continue')
+  if ('notSent' in sent) {
+    resuming = { is: 'refused', why: sent.notSent }
+    await redrawPane($)
+  }
 }
 
 /**
@@ -3941,7 +3955,8 @@ export const register: Register = on => {
           ]
         : []
       if (isNothing && groups.length === 0 && !stop && unread.length === 0) return emptyState('Nothing needs you.')
-      // A stop is fixed in the session, not here, so it shows above the list without keys.
+      // A stop shows above the list. An API error can be resumed from here; the other stops
+      // need a fix outside the session first, so they only say what it is.
       const outside = stop
         ? [
             section(
@@ -3952,9 +3967,27 @@ export const register: Register = on => {
                   </Text>
                   <Text color={pal.muted}> · {ago(now - stop.at)}</Text>
                 </Text>
-                <Text wrap="wrap">
-                  {capitalized(stopText(stop))}. {stopFix(stop)}
-                </Text>
+                {stop.kind === 'api-error' ? (
+                  <Box flexDirection="column">
+                    <Text wrap="wrap">{capitalized(stopText(stop))}.</Text>
+                    {resuming?.is === 'refused' ? (
+                      <Text color={pal.tone.error} wrap="wrap">
+                        Not sent: {resuming.why}
+                      </Text>
+                    ) : null}
+                    {resuming?.is === 'sending' ? (
+                      <Text color={pal.muted}>Resuming…</Text>
+                    ) : (
+                      <Box flexDirection="row">
+                        <Button key="resume" label="Resume" onPress={() => void resume($)} />
+                      </Box>
+                    )}
+                  </Box>
+                ) : (
+                  <Text wrap="wrap">
+                    {capitalized(stopText(stop))}. {stopFix(stop)}
+                  </Text>
+                )}
               </Box>,
             ),
           ]
