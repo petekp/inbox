@@ -2995,7 +2995,8 @@ export const register: Register = on => {
     // An action past the lettered ones, or one that only changes the view, has no key and draws its label alone.
     // While the open row is guarded, both draw dim and a click does nothing. Its key, a hidden Button, works at once.
     // On desktop an action is its native button alone. The recommended option's label ends "(recommended)" in every
-    // look, because a plain terminal Button ignores `variant`. Desktop also draws that option as its primary button.
+    // look. A plain terminal Button ignores `variant`, so there the words are the only mark. Desktop also draws the
+    // option as its primary button.
     const shownLabel = (a: Pick<KeyAction, 'label' | 'variant'>) =>
       a.variant === 'primary' ? `${a.label} (recommended)` : a.label
     const keyedButton =
@@ -3315,7 +3316,7 @@ export const register: Register = on => {
                 </Box>
               ) : null}
               <Box flexDirection="column" marginTop={blankLine}>
-                {/* On desktop the two groups always take separate lines, with a wider gap between them than inside a group. */}
+                {/* Desktop drops the dot between groups: a Text among taller native buttons sits at their top edge. */}
                 {look === 'desktop'
                   ? [keys, more]
                       .filter(group => group.length > 0)
