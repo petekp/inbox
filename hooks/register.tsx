@@ -548,12 +548,14 @@ async function setStop($: EngineInterface, stop: Stop | null) {
 
 /** [Resume] on a stop sends what the person would type. The turn's start clears the stop. */
 async function resume($: EngineInterface) {
+  // The band and the pane both read the stop, so writing it again redraws both.
+  const redraw = () => update($, STOP, s => (s ? { ...s } : s))
   resuming = { is: 'sending' }
-  await redrawPane($)
+  await redraw()
   const sent = await send($, 'Continue')
   if ('notSent' in sent) {
     resuming = { is: 'refused', why: sent.notSent }
-    await redrawPane($)
+    await redraw()
   }
 }
 
@@ -2680,7 +2682,8 @@ export const register: Register = on => {
     // Line 1: [Open inbox], then text that cuts at its end, so its least important parts go first.
     // On desktop a native button is taller than a line of text. The text sits level with its top,
     // and its Box may shrink below the text's width, so the text truncates instead of wrapping.
-    const lineOne = (parts: (JSX.Element | null)[]) => (
+    // A button after the text stays whole: only the text shrinks.
+    const lineOne = (parts: (JSX.Element | null)[], end: JSX.Element | null = null) => (
       <Box flexDirection="row" alignItems="flex-start" gap={1}>
         <Button key="open-inbox" label="Open inbox" onPress={() => void openInbox($)} />
         <Box flexShrink={1} minWidth={0}>
@@ -2688,6 +2691,7 @@ export const register: Register = on => {
             {parts.filter(p => p !== null).flatMap((p, n) => (n === 0 ? [p] : [' · ', p]))}
           </Text>
         </Box>
+        {end}
       </Box>
     )
     // While the demo shows, its banner leads the band, with a way out, while there is room above line 1.
@@ -2710,12 +2714,26 @@ export const register: Register = on => {
     if (state.is === 'stopped') {
       // A stop is the one thing to act on, so it takes the band.
       const { stop } = state
-      return lineOne([
-        <Text>
-          <Text color="error">! Stopped {ago(now - stop.at)}: </Text>
-          {stopText(stop)}. <Text dimColor>{stopFix(stop)}</Text>
-        </Text>,
-      ])
+      // An API error resumes from [Resume] after the text, as in the pane.
+      const isResumable = stop.kind === 'api-error'
+      const after = !isResumable
+        ? stopFix(stop)
+        : resuming?.is === 'sending'
+          ? 'Resuming…'
+          : resuming?.is === 'refused'
+            ? `Not sent: ${resuming.why}`
+            : ''
+      return lineOne(
+        [
+          <Text>
+            <Text color="error">! Stopped {ago(now - stop.at)}: </Text>
+            {stopText(stop)}.{after ? <Text dimColor> {after}</Text> : null}
+          </Text>,
+        ],
+        isResumable && resuming?.is !== 'sending' ? (
+          <Button key="resume" label="Resume" onPress={() => void resume($)} />
+        ) : null,
+      )
     }
 
     if (state.is === 'previous') {

@@ -1574,6 +1574,7 @@ test('a stop and an open permission prompt lead the sidebar line until they clea
   // Resuming before /login would stop again, so the pane offers no [Resume].
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ key: 'resume' })).toBeUndefined()
+  expect(await band.find({ key: 'resume' })).toBeUndefined()
   // The next turn means the session runs again.
   await $.turn.start({ text: 'logged in, go on', turnId: 't2' })
   await clock.settle()
@@ -1584,6 +1585,7 @@ test('a stop and an open permission prompt lead the sidebar line until they clea
   await $.classic.StopFailure({ error: 'server_error' } as never)
   await clock.settle()
   expect(await pane.find({ text: /API error \(server_error\)\./ })).toBeDefined()
+  expect(await band.find({ key: 'resume' })).toBeDefined()
   await pane.press({ key: 'resume' })
   await clock.settle()
   expect(sent.at(-1)).toBe('Continue')
