@@ -314,14 +314,20 @@ export function inboxView({
   const numbers = questionNumbers(ledger, ledger.turn + 1)
   const stateOf = (id: string): RowState => {
     const closed = settledItems.get(id) ?? settledFindings.get(id)
-    if (closed)
+    if (closed) {
+      const at = 'closedAt' in closed ? closed.closedAt : closed.at
+      const last = lastActions[id]
+
       return {
         is: 'settled',
         label: settledLabel(closed.outcome),
-        at: 'closedAt' in closed ? closed.closedAt : closed.at,
+        at,
         canUndo: isUndoable(closed.how),
-        isQueued: closed.how === 'answered' && lastActions[id]?.delivery?.state === 'queued',
+        // Queued only while the answer press that closed the row waits to reach Claude. Claude's own close sends nothing.
+        isQueued:
+          closed.how === 'answered' && last?.kind === 'mark' && last.at === at && last.delivery?.state === 'queued',
       }
+    }
 
     return isHandedOff(lastActions[id], turns) ? { is: 'handedOff' } : { is: 'open' }
   }

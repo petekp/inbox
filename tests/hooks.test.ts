@@ -971,12 +971,19 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   expect((await pane.find({ key: 'discuss-f3-key' }))?.props.label).toBe('Discuss again')
   expect(await band.find({ text: /1 finding/ })).toBeDefined()
   await pane.press({ key: 'tab-needsYou' })
+  // An Explain waits behind the running turn.
+  submitAnswer = 'hold'
+  await pane.press({ key: 'explain-i1' })
+  await clock.settle()
+  expect(await pane.find({ text: /^Queued: Explain/ })).toBeDefined()
   // The user answered i1 in their own message: it closes with their answer, shown in place.
+  // No answer of the person's waits to reach Claude, so it settles with a ✓, though the Explain is still queued.
   expect((await close({ id: 'i1', answer: 'Deno' })).result).toBe(
     'Closed i1. The user sees it in the /inbox pane with its outcome.',
   )
   expect(await pane.find({ key: 'row-i1' })).toBeUndefined()
   expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
+  expect(await pane.find({ text: /^Deno$/ })).toBeDefined()
   expect(await band.find({ text: /✓ Use Node or Python\? → Deno/ })).toBeDefined()
   expect((await close({ id: 'i2', reason: 'no longer applies' })).result).toBe(
     'Closed i2. The user sees it in the /inbox pane with its outcome.',

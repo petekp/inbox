@@ -610,14 +610,18 @@ function inboxView({
   const numbers = questionNumbers(ledger, ledger.turn + 1);
   const stateOf = (id) => {
     const closed2 = settledItems.get(id) ?? settledFindings.get(id);
-    if (closed2)
+    if (closed2) {
+      const at = "closedAt" in closed2 ? closed2.closedAt : closed2.at;
+      const last = lastActions[id];
       return {
         is: "settled",
         label: settledLabel(closed2.outcome),
-        at: "closedAt" in closed2 ? closed2.closedAt : closed2.at,
+        at,
         canUndo: isUndoable(closed2.how),
-        isQueued: closed2.how === "answered" && lastActions[id]?.delivery?.state === "queued"
+        // Queued only while the answer press that closed the row waits to reach Claude. Claude's own close sends nothing.
+        isQueued: closed2.how === "answered" && last?.kind === "mark" && last.at === at && last.delivery?.state === "queued"
       };
+    }
     return isHandedOff(lastActions[id], turns) ? { is: "handedOff" } : { is: "open" };
   };
   const settledActions = (id, state) => state.is !== "settled" ? null : state.canUndo ? [{ press: { action: "undo", id }, label: "Undo", kind: "view", isPrimary: false, isFolded: false }] : [];

@@ -401,6 +401,28 @@ export function withFailure(
 }
 
 /**
+ * Last actions once a press's message entered as `entered`, which another
+ * plugin rewrote it to: each row the press made at `at` that still waits for
+ * `message` waits for `entered` instead, so its arrival matches.
+ */
+export function withRewrite(
+  lastActions: Record<string, LastAction>,
+  rows: string[],
+  at: number,
+  message: string,
+  entered: string,
+): Record<string, LastAction> {
+  const moved = rows.flatMap(id => {
+    const a = lastActions[id]
+    return a?.at === at && a.delivery?.state === 'queued' && a.delivery.message === message
+      ? [[id, { ...a, delivery: { state: 'queued' as const, message: entered } }] as const]
+      : []
+  })
+
+  return moved.length === 0 ? lastActions : { ...lastActions, ...Object.fromEntries(moved) }
+}
+
+/**
  * The ledger once an answer's message failed to send: the question the answer
  * closed at `at` opens again, as it was. Any later close of it stands.
  */

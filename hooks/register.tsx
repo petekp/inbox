@@ -98,6 +98,7 @@ import {
   withArrival,
   withFailure,
   withQueued,
+  withRewrite,
   withResult,
 } from './presses'
 import type { Effect, HelpStep, PrActionId, RowPress } from './presses'
@@ -405,6 +406,10 @@ let published: string | null = null
 let publishing: Promise<void> = Promise.resolve()
 // Context for prompts this mod sent, by text, appended just before each prompt's row.
 const contextFor = new Map<string, string[]>()
+// A count of this mod's prompt rows stored, and its value at each text's latest row, so a
+// send can tell whether its prompt entered while `$.prompt.submit` settled.
+const storedAt = new Map<string, number>()
+let storedCount = 0
 // The `!` command whose output row comes next.
 let shellCommand: string | null = null
 // The draft a row's field opened with. The engine replaces the typed text whenever the drawn
@@ -782,22 +787,35 @@ async function tick($: EngineInterface) {
  * Sends a prompt as the person's own message. A plugin's own prompt skips that
  * plugin's prompt.submit hook, so the bookkeeping happens here, and what
  * Claude reads beside the prompt goes just before it, in a row only the model sees.
- * Resolves once the prompt entered or was queued, with null, or with why it will
- * not enter. A prompt that will not enter is taken back out of what Claude and the
- * per-turn update read next; the prompt count stays.
+ * Resolves once the prompt entered or was queued, or with why it will not enter.
+ * A prompt that will not enter is taken back out of what Claude and the per-turn
+ * update read next; the prompt count stays.
  */
-async function send($: EngineInterface, text: string, sentBy: Press | null = null): Promise<string | null> {
+async function send($: EngineInterface, text: string, sentBy: Press | null = null): Promise<Sent> {
   const [toldBefore, pressBefore] = [told, press]
   const context = await notePrompt($, text, sentBy)
   const toldSent = told
   // The engine may run the prompt now, after the running turn, or inside it, so
   // the context goes in when the prompt's own row is stored (session.append).
   if (context.length > 0) contextFor.set(text, context)
-  const reason = await $.prompt.submit({ text, asUser: true }).then(
-    r => r.drop ?? null,
-    (err: unknown) => (err instanceof Error ? err.message : String(err)) || 'the session refused it',
+  const since = storedCount
+  const sent = await $.prompt.submit({ text, asUser: true }).then(
+    (r): Sent => (r.drop === undefined ? { entered: r.text, since } : { notSent: r.drop }),
+    // A rejection after the prompt's row was stored still reached Claude.
+    (err: unknown): Sent =>
+      isStoredSince(text, since)
+        ? { entered: text, since }
+        : { notSent: (err instanceof Error ? err.message : String(err)) || 'the session refused it' },
   )
-  if (reason === null) return null
+  if ('entered' in sent) {
+    // Another plugin's prompt.submit hook rewrote the prompt, so its context waits under the text that enters.
+    if (sent.entered !== text && contextFor.get(text) === context) {
+      contextFor.delete(text)
+      if (!isStoredSince(sent.entered, since)) contextFor.set(sent.entered, context)
+    }
+
+    return sent
+  }
   // Each part is put back only while nothing since has changed it.
   if (told === toldSent) told = toldBefore
   if (person === text) person = null
@@ -805,7 +823,18 @@ async function send($: EngineInterface, text: string, sentBy: Press | null = nul
   if (sentBy && press === sentBy) press = pressBefore
   if (contextFor.get(text) === context) contextFor.delete(text)
 
-  return reason
+  return sent
+}
+
+/**
+ * How a send ended: the text that entered, which another plugin's prompt.submit
+ * hook may have rewritten, with the stored-row count before the send; or why it will not enter.
+ */
+type Sent = { entered: string; since: number } | { notSent: string }
+
+/** Whether a row of this mod's with `text` was stored after the stored-row count was `since`. */
+function isStoredSince(text: string, since: number): boolean {
+  return (storedAt.get(text) ?? 0) > since
 }
 
 /** Appends context as a row only the model reads. Without it Claude still gets the prompt, so a refused append is ignored. */
@@ -1626,22 +1655,50 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   // A send that will not enter undoes the press, and the press's later sends stay unsent.
   for (const e of pressed.effects) {
     if (e.kind !== 'send') continue
-    const reason = await send($, e.text, e.by)
-    if (reason === null) continue
-    await undoUnsent($, p, Object.keys(pressed.lasts), now, reason)
+    const sent = await send($, e.text, e.by)
+    if ('entered' in sent) {
+      if (sent.entered !== e.text) await awaitRewritten($, Object.keys(pressed.lasts), now, e.text, sent)
+      continue
+    }
+    await undoUnsent($, p, Object.keys(pressed.lasts), now, sent.notSent)
     break
   }
 }
 
 /**
+ * Has a press's rows wait for its prompt as another plugin rewrote it, since the
+ * stored row carries that text. A row stored before the rewrite was known arrives here.
+ */
+async function awaitRewritten(
+  $: EngineInterface,
+  rows: string[],
+  at: number,
+  message: string,
+  sent: Extract<Sent, { entered: string }>,
+) {
+  await update($, LAST_ACTIONS, a => {
+    const moved = withRewrite(a, rows, at, message, sent.entered)
+
+    return isStoredSince(sent.entered, sent.since) ? withArrival(moved, sent.entered) : moved
+  })
+  void publishStatus($)
+}
+
+/**
  * Undoes a press whose message will not reach Claude. Each row it recorded on
  * reads `Not sent: <reason>`, which unfolds a hand-off. An answer's question
- * opens again, and typed words go back into the row's draft unless a newer one is there.
+ * opens again, and typed words go back into the row's draft unless a newer one
+ * is there. Neither happens once a newer press replaced this one on the row, or its message arrived.
  */
 async function undoUnsent($: EngineInterface, p: RowPress | PrPress, rows: string[], at: number, reason: string) {
   const lasts = await update($, LAST_ACTIONS, a => withFailure(a, rows, at, reason))
-  if (!('ref' in p) && lasts[p.id]?.kind === 'mark') await commitLedger($, l => reopenOnFailure(l, p.id, at))
-  if (!('ref' in p) && p.action === 'type') await update($, DRAFTS, d => (d[p.id] ? d : { ...d, [p.id]: p.text }))
+  if (!('ref' in p)) {
+    const last = lasts[p.id]
+    if (last?.at === at && last.delivery?.state === 'failed') {
+      if (last.kind === 'mark') await commitLedger($, l => reopenOnFailure(l, p.id, at))
+      if (p.action === 'type') await update($, DRAFTS, d => (d[p.id] ? d : { ...d, [p.id]: p.text }))
+    }
+  }
   void publishStatus($)
 }
 
@@ -2034,6 +2091,7 @@ export const register: Register = on => {
       shellCommand = null
       told = TOLD_NOTHING
       contextFor.clear()
+      storedAt.clear()
       fieldSeeds.clear()
     }
 
@@ -2211,6 +2269,7 @@ export const register: Register = on => {
     async ($, e, next) => {
       if (!isOn || e.agentId) return next(e)
       const text = messageText(e.message)
+      storedAt.set(text, ++storedCount)
       const context = contextFor.get(text)
       contextFor.delete(text)
       if (context) await appendContext($, context)
