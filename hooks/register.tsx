@@ -197,6 +197,9 @@ const PANE = 'inbox'
 const DESKTOP_TYPING = true
 // From this many columns, the desktop pane puts its status on the tab line and shows each closed row's age.
 const DESKTOP_WIDE_AT = 50
+// About how many characters of desktop's proportional text fit in one column of `bodyColumns`, measured
+// on a /inbox demo row. A guess too high is cut from the muted text after a title, not from the title.
+const DESKTOP_CHARS_PER_CELL = 1.25
 // Theme keys, so the colors follow the person's Claude Code theme.
 const ACCENT = 'claude'
 const NEEDS_YOU = 'warning'
@@ -2675,18 +2678,26 @@ export const register: Register = on => {
     const room = Math.max(1, e.props.maxRows)
 
     // Line 1: [Open inbox], then text that cuts at its end, so its least important parts go first.
+    // On desktop a native button is taller than a line of text. The text sits level with its top,
+    // and its Box may shrink below the text's width, so the text truncates instead of wrapping.
     const lineOne = (parts: (JSX.Element | null)[]) => (
-      <Box flexDirection="row" gap={1}>
+      <Box flexDirection="row" alignItems="flex-start" gap={1}>
         <Button key="open-inbox" label="Open inbox" onPress={() => void openInbox($)} />
-        <Text wrap="truncate-end">{parts.filter(p => p !== null).flatMap((p, n) => (n === 0 ? [p] : [' · ', p]))}</Text>
+        <Box flexShrink={1} minWidth={0}>
+          <Text wrap="truncate-end">
+            {parts.filter(p => p !== null).flatMap((p, n) => (n === 0 ? [p] : [' · ', p]))}
+          </Text>
+        </Box>
       </Box>
     )
     // While the demo shows, its banner leads the band, with a way out, while there is room above line 1.
     const banner = isDemo ? (
-      <Box flexDirection="row" gap={1}>
-        <Text wrap="truncate-end" color={NEEDS_YOU}>
-          {DEMO_BANNER}
-        </Text>
+      <Box flexDirection="row" alignItems="flex-start" gap={1}>
+        <Box flexShrink={1} minWidth={0}>
+          <Text wrap="truncate-end" color={NEEDS_YOU}>
+            {DEMO_BANNER}
+          </Text>
+        </Box>
         <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo($, false)} />
       </Box>
     ) : null
@@ -2876,6 +2887,8 @@ export const register: Register = on => {
     const Input = 'Input' in elements && (look === 'terminal' || DESKTOP_TYPING) ? elements.Input : null
     // Narrow, the desktop pane puts its status under the tabs and drops closed rows' ages.
     const isNarrowDesktop = look === 'desktop' && e.props.bodyColumns < DESKTOP_WIDE_AT
+    // Desktop wraps " · 12m ago" as one unit after a title, not as "12m" and "ago" on two lines.
+    const unbroken = (after: string) => (look === 'desktop' ? ` ${after.trimStart().replaceAll(' ', ' ')}` : after)
     // Inline above the prompt, the pane takes its room from the conversation, so
     // it drops the section cards, the tab panels and the blank lines between parts.
     const isInline = e.props.placement === 'inline'
@@ -3314,11 +3327,13 @@ export const register: Register = on => {
     // in an absolute Box that spans the row, however it wraps, and the row clips
     // the rest. The row clips, not this Box: once its row scrolled out of view,
     // Claude Code drew lines this Box clipped elsewhere in the pane (anthropics/claude-code#100030).
-    const branch = (pos: TreePos, lead = 0, left = 1) => (
-      <Box position="absolute" top={0} bottom={0} left={left} width={2}>
-        <Text color={pal.line}>{treeText(pos, lead)}</Text>
-      </Box>
-    )
+    // Desktop draws no tree: its lines differ in height, so stacked glyphs break into separate bars.
+    const branch = (pos: TreePos, lead = 0, left = 1) =>
+      look === 'desktop' ? null : (
+        <Box position="absolute" top={0} bottom={0} left={left} width={2}>
+          <Text color={pal.line}>{treeText(pos, lead)}</Text>
+        </Box>
+      )
     // A row with no marker, such as a group's empty line, starts its text right after the tree.
     // A row at depth 1 hangs from a tree under the marker column, as a group's closed items do.
     const treeRow = (
@@ -3328,7 +3343,7 @@ export const register: Register = on => {
       key?: string,
       depth = 0,
     ) => (
-      <Box key={key} flexDirection="row" overflow="hidden">
+      <Box key={key} flexDirection="row" alignItems="flex-start" overflow="hidden">
         <Box width={4 + 3 * depth} flexShrink={0} />
         {marker ? (
           <Box width={3} flexShrink={0}>
@@ -3348,12 +3363,16 @@ export const register: Register = on => {
     const rule = (inset: number) => (
       <Text color={pal.divider}>{'─'.repeat(Math.max(0, e.props.bodyColumns - inset))}</Text>
     )
+    // Desktop draws text in a proportional font, where a run of ─ sized in cells overflows the
+    // row and wraps into a second line, so rows there are set apart by a blank line instead.
     const divided = (rowEls: JSX.Element[], group: string, isTree: boolean) =>
       rowEls.flatMap((el, n) =>
         n === 0 || isInline
           ? [el]
           : [
-              isTree ? (
+              look === 'desktop' ? (
+                <Box key={`divider-${group}-${n}`} height={1} />
+              ) : isTree ? (
                 <Box key={`divider-${group}-${n}`} flexDirection="row">
                   <Box width={1} flexShrink={0} />
                   <Box width={6} flexShrink={0}>
@@ -3390,7 +3409,8 @@ export const register: Register = on => {
           }
         : { ...plain, after: [plain.after, isNarrowDesktop ? '' : plain.age].filter(Boolean).join('') || undefined }
       const width = e.props.bodyColumns - 3 - inset - (line.before?.length ?? 0)
-      const room = Math.max(12, width - (line.after?.length ?? 0) - buttonFrame)
+      const perCell = look === 'desktop' ? DESKTOP_CHARS_PER_CELL : 1
+      const room = Math.max(12, Math.floor((width - buttonFrame) * perCell) - (line.after?.length ?? 0))
       const text = line.text.trim()
       const space = text.lastIndexOf(' ', room)
       // Desktop cuts the title to one native button, rather than draw two.
@@ -3451,6 +3471,7 @@ export const register: Register = on => {
         <Box
           key={`row-${row.id}`}
           flexDirection="row"
+          alignItems="flex-start"
           overflow="hidden"
           backgroundColor={isSelected ? pal.selection : undefined}
         >
@@ -3476,7 +3497,7 @@ export const register: Register = on => {
               {row.meta}
               <Text wrap="wrap">
                 <Text bold>{row.title}</Text>
-                {row.titleAfter ? <Text color={pal.muted}>{row.titleAfter}</Text> : null}
+                {row.titleAfter ? <Text color={pal.muted}>{unbroken(row.titleAfter)}</Text> : null}
               </Text>
               {row.subtitle}
               {isOpen && row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null}
@@ -3801,7 +3822,7 @@ export const register: Register = on => {
         ? []
         : [
             <Box paddingLeft={1}>
-              <Text color={pal.line}>{hasChildren ? '│' : ' '}</Text>
+              <Text color={pal.line}>{hasChildren && look !== 'desktop' ? '│' : ' '}</Text>
             </Box>,
           ]
     // A closed item or finding under the open ones: what was asked, then how it closed and when.
@@ -3817,7 +3838,7 @@ export const register: Register = on => {
             <Text bold={!isLapsed(d)} color={isLapsed(d) ? pal.muted : undefined}>
               {outcomeText(d)}
             </Text>
-            <Text color={pal.muted}> · {ago(now - d.at)}</Text>
+            <Text color={pal.muted}>{unbroken(` · ${ago(now - d.at)}`)}</Text>
           </Text>
         </Box>,
         `closed-${d.id}`,
@@ -3847,7 +3868,7 @@ export const register: Register = on => {
         ? []
         : [
             <Box paddingLeft={4}>
-              <Text color={pal.line}>│</Text>
+              <Text color={pal.line}>{look === 'desktop' ? ' ' : '│'}</Text>
             </Box>,
           ]
     // The fold row and, unfolded, the closed items under it; nothing when none closed.
@@ -3898,7 +3919,7 @@ export const register: Register = on => {
       return pos ? (
         treeRow(pos, mark, content, `settled-${r.id}`)
       ) : (
-        <Box key={`settled-${r.id}`} flexDirection="row" overflow="hidden">
+        <Box key={`settled-${r.id}`} flexDirection="row" alignItems="flex-start" overflow="hidden">
           <Box width={1} flexShrink={0} />
           <Box width={4} flexShrink={0} paddingLeft={2}>
             {mark}
@@ -4210,16 +4231,6 @@ export const register: Register = on => {
     // k and the selected row's keys are Buttons in a hidden Box.
     return (
       <Box flexDirection="column" minHeight={isInline ? undefined : e.props.scroll.bodyRows} backgroundColor={pal.body}>
-        {/* No key reaches a desktop pane, so Esc cannot close it. */}
-        {look === 'desktop' ? (
-          <Box paddingX={1} marginBottom={blankLine}>
-            <Button
-              key="close-pane"
-              label="Close"
-              onPress={() => void $.ui.close({ id: PANE }).catch(() => undefined)}
-            />
-          </Box>
-        ) : null}
         {isDemo ? (
           <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={isInline ? 2 : 1} marginBottom={blankLine}>
             <Text wrap="wrap" bold color={pal.tone.needsYou}>

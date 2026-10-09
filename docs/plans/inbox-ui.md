@@ -34,7 +34,7 @@ The inbox has two renderers. The mod draws the terminal and desktop Code mode. O
 
 **Terminal.** The band leads with how many things need the person and the top one, and has an [Open inbox] button. The pane keeps its keys, and gains the shared fixes: feedback on the row, Undo, a Cancel button, every option drawn, question numbers that match what a typed number answers, and source-neutral status words.
 
-**Desktop Code mode.** The same band and pane, drawn for clicks. Actions are plain labels with no key letters. Each tab is one button. The pane has its own [Close] button. Nothing depends on a key.
+**Desktop Code mode.** The same band and pane, drawn for clicks. Actions are plain labels with no key letters. Each tab is one button. The app's own ✕ closes the pane. Nothing depends on a key.
 
 **Claude mode.** Claude records items with the inbox's tools, because nothing else watches a chat. Claude ends a reply that leaves something open with an inline card: a count, up to three rows and [Open inbox]. The full view opens fullscreen with Needs you and Findings. It is not built now (decision 2). The seams stay open so it can be added.
 
@@ -124,7 +124,7 @@ Every press is one of five kinds. The kind decides what the screen shows at once
 | **Mark** | Changes state only, and sends nothing. | The row settles in place with the Mark's own label, `✓ Done` or `✓ Dismissed`, and an [Undo] button, then leaves after 5.12 s. |
 | **View** | Changes only what is on screen, or reloads it. | The change itself: a view opens or closes, a row unfolds, a tab switches, a status reads `Refreshing PRs`. |
 
-The View kind covers [Open inbox], [Close], the tab buttons, Details and Hide details, [All 7 options], the Closed fold, Show demo and Hide demo, Reply in chat, Undo and Retry. [Try again] repeats a failed press, so it takes that press's kind.
+The View kind covers [Open inbox], the tab buttons, Details and Hide details, [All 7 options], the Closed fold, Show demo and Hide demo, Reply in chat, Undo and Retry. [Try again] repeats a failed press, so it takes that press's kind.
 
 **Answering a question** is a Mark and a send together. The row settles as `✓ Yes, rename`, and `Re "<ask>": <answer>` goes to Claude. It has no Undo, because the message is already on its way.
 
@@ -339,7 +339,6 @@ The mod picks the desktop drawing on each draw from `e.surface === 'desktop'`, n
 **The pane at 36 columns.**
 
 ```
-[Close]
 Needs you 3  [Findings 2]  [PRs]
 Updated 3m ago
 Questions
@@ -377,7 +376,9 @@ Below 50 columns, a closed row drops its age; the open form still shows it. At 5
 | Closed row | Handle Button and title Button, two when the title wraps | Handle as Text. The title is one button, cut to one line with "…". | Halves the native buttons in the list. |
 | Keys drawer, "1 2 3", "j k", "ctrl+x tab" | Shown | Not drawn | Nothing to press. |
 | Tab draw-in | Kept | Not drawn | It drops most frames at 10 redraws a second. The 1.5 s new-row bar and the leave bar stay. |
-| Closing the pane | Esc | A [Close] button in the pane | No key reaches the pane, and no host close control is verified. |
+| Closing the pane | Esc | The app's own ✕ on the pane's title bar | The app draws it, so a [Close] in the pane would be a second close. |
+| Tree lines and dividers | `│ ├─ └─` and a `─` rule between rows | None. A blank line sets rows apart. | Desktop text is proportional and its lines differ in height, so stacked glyphs break into bars and a rule sized in columns wraps. |
+| Title cut | By columns | By about 1.25 characters per column | A column of `bodyColumns` holds more than one character of desktop text. |
 | Links | `Link` | `Link` for https. A button that runs `open` for local files and folders. | `Link` is live only for https. `$.process` works on desktop. |
 
 **Typing.** The engine types list `Input` for desktop, so `$.ui.resolve(e)` returns it there. Whether the app paints it, and whether Enter sends, is live check 4. The mod cannot see at runtime that a resolved element failed to paint. So if the check fails, the desktop drawing branch on `e.surface` drops the `typekey-` actions itself. Today's rule, which hides them only when `Input` does not resolve (`hooks/register.tsx:2885`), would not catch it. The person then types in the composer, and Claude already holds the item through carry text. The inbox cannot prefill the composer, because `$.prompt.fill` does nothing in a headless session.
@@ -618,7 +619,6 @@ Section 2 applies to every client. The tables list where each change lands in to
 | "Address it" becomes "Address" | Finding keys | One word per concept |
 | Findings fold on Address and stay open on Discuss, and re-enter by the turn rule (decision 1) | `actOnFinding`, `hooks/register.tsx:1104-1107` | A discussion that ends in "later" keeps the finding |
 | Desktop drawing branch on `e.surface` | Row keys `2856-2871`, tabs `3296-3308`, hidden hotkey Box `3728-3731`, draw-in `170-172` | Desktop draws native buttons and ignores keys |
-| [Close] in the desktop pane | `closeOnEscape`, `hooks/register.tsx:1023-1025` | No key reaches a desktop pane |
 | [Retry] after a failed PR fetch | `hooks/register.tsx:3656-3660` | No key to retry on desktop |
 
 ### Codex tab

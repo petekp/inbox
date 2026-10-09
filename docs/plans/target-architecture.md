@@ -198,7 +198,7 @@ export function feedbackText(f: Feedback, look: 'terminal' | 'desktop' | 'html')
 | Hand-off | Type a reply on a task or finding, Address on a finding, a step with a Run; Address, Resolve conflicts and Address all on PRs | `LastAction{kind:'handoff', turnsStarted}`, delivery queued |
 | Local | Steps that open, link or copy; Open, Open PR, Open log, thread Open | Only `result` (4.3, "Local presses") |
 | Mark | Done, Dismiss (item, finding, PR); an answer, which also sends | The ledger close. An answer adds `LastAction{kind:'mark'}` with delivery queued. |
-| View | Tabs, Details, [All N options], Closed fold, [Open inbox], [Close], demo toggles, Retry, Undo | Nothing in the reducer, except Undo (4.5) |
+| View | Tabs, Details, [All N options], Closed fold, [Open inbox], demo toggles, Retry, Undo | Nothing in the reducer, except Undo (4.5) |
 
 `kind` replaces the mod's `Action.done` and `Action.handsOff`, and the `isHandoff` field of `LastAction`.
 
@@ -378,7 +378,7 @@ An item source is whatever adds and closes items. Today it is the per-turn updat
 | Closed row | Handle Button and title Button | Handle as Text; title as one Button cut to one line with "…" |
 | Keys drawer, "1 2 3", "j k", "ctrl+x tab" | Shown | Not drawn |
 | Tab draw-in | Drawn | Not drawn |
-| Close | Esc | A [Close] Button that calls `$.ui.close` |
+| Close | Esc | The app's own ✕ on the pane's title bar |
 | Local file and folder links | A Button that runs `open` through `openCommands`, as today | The same |
 | https links | A Button that runs `open`, as today, so the press records a result | The same |
 | Width | As today | Below 50 columns closed rows drop their age. At 50 or more, the status moves onto the tab line and buttons share lines. |
@@ -792,7 +792,7 @@ Every step:
 - **Goal:** UI 3.2.
 - **Files:** `hooks/register.tsx`, `tests/hooks.test.ts`.
 - **Behavior:** the `look` table in 6.1.
-- **Tests:** mount the pane with `surface: 'desktop'` (the harness passes it to `$.ui.mount`). Assert no key letters, no hidden hotkey Buttons, no Keys drawer or key hints, one Button per tab, a [Close] that closes the pane, and closed rows at 36 columns without their age.
+- **Tests:** mount the pane with `surface: 'desktop'` (the harness passes it to `$.ui.mount`). Assert no key letters, no hidden hotkey Buttons, no Keys drawer or key hints, one Button per tab, no close Button of the mod's own, and closed rows at 36 columns without their age.
 - **Saved state:** none.
 - **Model-read:** none.
 - **Verify live:** a desktop Code-mode session; resize the pane across 50 columns. Run live check 4. Each result has a set outcome:

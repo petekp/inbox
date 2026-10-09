@@ -1928,7 +1928,7 @@ for (const isAttachedFirst of [true, false]) {
   })
 }
 
-test('the desktop pane draws each action and tab as one button, with no keys, and [Close] closes it', async ($, on) => {
+test('the desktop pane draws each action and tab as one button, with no keys and no close button of its own', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   surfaces = ['desktop']
@@ -1951,9 +1951,9 @@ test('the desktop pane draws each action and tab as one button, with no keys, an
   // A closed row's handle is text and its title one button; below 50 columns it drops its age.
   expect(await pane.find({ key: 'select-i2' })).toBeUndefined()
   expect(await pane.find({ key: 'title-i2' })).toBeDefined()
-  expect(await pane.findAll({ type: 'Text', text: /^ · 3m ago$/ })).toHaveLength(1)
+  expect(await pane.findAll({ type: 'Text', text: /^ ·\s3m\sago$/ })).toHaveLength(1)
   await pane.redraw({ ...PANE.props, bodyColumns: 69 })
-  expect(await pane.findAll({ type: 'Text', text: /^ · 3m ago$/ })).toHaveLength(2)
+  expect(await pane.findAll({ type: 'Text', text: /^ ·\s3m\sago$/ })).toHaveLength(2)
 
   // A click on a closed row's title opens it, and its actions work once the guard ends.
   await pane.press({ key: 'title-i2' })
@@ -1963,8 +1963,8 @@ test('the desktop pane draws each action and tab as one button, with no keys, an
   expect(sent).toHaveLength(1)
   expect(await pane.find({ text: /✓ Explain/ })).toBeDefined()
 
-  await pane.press({ key: 'close-pane' })
-  expect(panesClosed).toEqual(['inbox'])
+  // The app draws its own close mark on the pane's title bar.
+  expect(await pane.find({ key: 'close-pane' })).toBeUndefined()
 })
 
 test('a tool call after a hot reload, before the load converts the ledger, still applies', async ($, on) => {
