@@ -6,7 +6,7 @@ a record.
 
 ## What each instruction is for
 
-Claude reads nine kinds of text from the mod. The inbox model, the Sonnet call
+Claude reads eight kinds of text from the mod. The inbox model, the Sonnet call
 that updates the inbox after each reply, reads two.
 
 | Text | Read by | When | Role |
@@ -18,7 +18,6 @@ that updates the inbox after each reply, reads two.
 | Answer line (`answerNote`) | Claude | Beside a prompt that answers numbered items | Which items the numbers mean |
 | Start-of-context block (`carryText`) | Claude | At session start and after compaction | Goal, done, now, open items, findings, recently closed; a later inbox line replaces it |
 | Previous-session text (`carryText`) | Claude | First prompt after "Continue from it" | Where the last session stood, its findings marked as that session's |
-| Claim check (`claimMessage`) | Claude | Turn end, when a reply claims a check passes that failed or is stale | Run the check or say it is untested |
 | Button messages | Claude, as your message | When you press | One action on one item, finding or PR row |
 | `systemText` | Inbox model | After each reply | Card, new items, closing items and findings |
 | `catchUpPrompt` | A fork of the conversation | After a failed update, or a mid-conversation load | Same as `systemText`, over the whole conversation |
@@ -87,8 +86,8 @@ model re-added a dismissed question in 4 of 5 runs.
 4. "Continue from it" moves the previous session's open findings into this
    session's tab, with new ids.
 5. Optional: at turn end, a reply that says it left something untested or
-   unfixed, with no finding recorded that turn, is sent back once, as the claim
-   check does for checks. It catches misses, at the cost of some false alarms.
+   unfixed, with no finding recorded that turn, is sent back once. It catches
+   misses, at the cost of some false alarms.
 
 ## Decisions
 
