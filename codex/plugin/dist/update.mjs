@@ -72,7 +72,7 @@ function howFromOutcome(outcome) {
 }
 var NEEDS_PERSON = /\b(login|logout|auth|signin|sign-in|sudo|passwd|ssh-add|ssh-keygen|configure|init --interactive)\b/i;
 function systemText(host) {
-  const band = host.band ? ` They always see the items in <open> in ${host.band}.` : "";
+  const band = host.band ? ` They always see how many items are in <open> and <findings> in ${host.band}.` : "";
   return `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
 
 Input:
