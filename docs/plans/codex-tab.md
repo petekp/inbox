@@ -13,17 +13,17 @@ terminal has only character cells.
 
 From the top:
 
-1. **The header:** the session's goal, then what's happening now and up to
-   three running items. These are the band's lines. Codex has no band, so the
-   tab's header carries them. The waiting count is left out, because the tab
-   counts show it.
-2. **The tab bar:** "Needs you" and "Findings", each with its open count in
+1. **The tab bar:** "Needs you" and "Findings", each with its open count in
    its tone. At the right end, when the inbox last updated: "Updated 2m ago",
    "Updating…", or "update failed, retries after the next reply". These are
    the pane's tabs and status words.
-3. **The selected tab's list.**
-4. **A footer** listing the keys no row shows: `1 2` switch tabs, `j k`
+2. **The selected tab's list.**
+3. **A footer** listing the keys no row shows: `1 2` switch tabs, `j k`
    select a row.
+
+The tab has no header with the session's goal. The conversation sits beside
+the tab: the thread's title names the goal, and Codex's last reply says
+where the work stands.
 
 ### Needs you
 
@@ -98,7 +98,7 @@ blue-gray selection does. Nothing has a shadow or a border.
 
 **Type.** Words use the host's sans. Only what the terminal drew as
 structure uses the host's mono: the tree, the row marks, the key letters and
-check output. The goal is the one larger line.
+check output.
 
 **Color means state.** Amber waits on you, purple is a finding, green is
 done, red is failing, and periwinkle marks a key. Nothing else is colored.
@@ -106,11 +106,22 @@ done, red is failing, and periwinkle marks a key. Nothing else is colored.
 **Motion** only answers a press: the tab edge drawing in, and the leave bar.
 Both stop when the system asks for reduced motion.
 
+## Demo
+
+"Show demo" in the footer swaps the tab's entries for the samples the pane's
+`/inbox demo` shows, from `hooks/demo.ts`, so both demos match. Codex gives a
+plugin no slash command, so the tab is where the demo starts. A note above
+the tabs says the entries are samples.
+
+The server keeps the demo in memory for each conversation, and it starts
+over when the server restarts. A press in the demo runs the same press logic
+on that copy, so rows fold, settle and read "again" as they would for real.
+It sends nothing to Codex and leaves the conversation's saved inbox alone.
+
 ## Left out of the first version
 
 - **The PRs tab.** The plugin does not fetch pull requests yet.
 - **The stop section.** Codex has no stop the plugin can see.
-- **The demo.** The pane's `/inbox demo` has no Codex command to start it.
 
 ## Typed text survives polls
 

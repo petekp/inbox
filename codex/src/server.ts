@@ -6,6 +6,7 @@ import { isAbsolute, join } from 'node:path'
 
 import { press, recordClose, recordFinding, viewOf } from './core'
 import type { TabPress } from './core'
+import { demoState } from './demo'
 import { readState, updateState } from './state'
 import type { SessionState } from './state'
 import { CLOSE_DESCRIPTION, FINDING_DESCRIPTION, TAB_DESCRIPTION } from './texts'
@@ -59,14 +60,18 @@ const TOOLS = [
   },
   {
     name: 'inbox_view',
-    description: 'What the Inbox tab shows for this conversation.',
-    inputSchema: { type: 'object', properties: {} },
+    description: 'What the Inbox tab shows for this conversation, or its demo.',
+    inputSchema: { type: 'object', properties: { demo: { type: 'boolean' } } },
     _meta: APP_ONLY,
   },
   {
     name: 'inbox_press',
     description: 'A press in the Inbox tab.',
-    inputSchema: { type: 'object', properties: { press: { type: 'object' } }, required: ['press'] },
+    inputSchema: {
+      type: 'object',
+      properties: { press: { type: 'object' }, demo: { type: 'boolean' } },
+      required: ['press'],
+    },
     _meta: APP_ONLY,
   },
 ]
@@ -136,6 +141,23 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     return { view: viewOf(s, now()), copy, error }
   }
 
+  // Each conversation's demo, kept in memory only: it starts over when the server does.
+  const demos = new Map<string, SessionState>()
+  const demoOf = (id: string) => {
+    const s = demos.get(id) ?? demoState(now())
+    demos.set(id, s)
+    return s
+  }
+
+  /** A press in the demo changes only its copy and sends nothing. */
+  function onDemoPress(id: string, p: TabPress) {
+    const r = press(demoOf(id), p, now())
+    if (r) demos.set(id, r.state)
+    const copy = r?.effects.find(e => e.kind === 'copy')
+
+    return { view: viewOf(demoOf(id), now()), copy: copy ? { text: copy.text, name: copy.name } : null, error: null }
+  }
+
   async function callTool(name: string, args: Record<string, unknown>, id: string | null) {
     if (!id) return { ...text('Not done: this call carries no session id.'), isError: true }
     switch (name) {
@@ -154,11 +176,13 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         return { ...text('Opened the Inbox tab beside the conversation.'), structuredContent: viewOf(s, now()) }
       }
       case 'inbox_view': {
+        if (args.demo === true) return { ...text('Inbox demo'), structuredContent: viewOf(demoOf(id), now()) }
         const s = await updateState(dir, id, s => ({ ...s, tabSeenAt: now() }))
         return { ...text('Inbox view'), structuredContent: viewOf(s, now()) }
       }
       case 'inbox_press': {
-        const r = await onPress(id, args.press as TabPress)
+        const r =
+          args.demo === true ? onDemoPress(id, args.press as TabPress) : await onPress(id, args.press as TabPress)
         return { ...text(r.error ?? 'Done'), structuredContent: r }
       }
     }

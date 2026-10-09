@@ -52,6 +52,8 @@ const TABS: { id: Tab; label: string; hotkey: string }[] = [
 const POLL_MS = 3000
 
 let view: View | null = null
+// The demo shows the mod's sample entries, and its presses send nothing.
+let isDemo = false
 let readFailed = false
 let tab: Tab = 'needsYou'
 const selection: Record<Tab, { id: string; index: number } | null> = { needsYou: null, findings: null }
@@ -161,7 +163,7 @@ async function poll() {
   if (!isPressing) {
     const seq = ++requested
     try {
-      const v = await callTool<View>('inbox_view')
+      const v = await callTool<View>('inbox_view', { demo: isDemo })
       if (v) applyView(v, seq)
     } catch {
       readFailed = true
@@ -181,7 +183,7 @@ async function act(rowId: string, press: TabPress, onSent?: () => void) {
   isPressing = true
   const seq = ++requested
   try {
-    const r = await callTool<PressReply>('inbox_press', { press })
+    const r = await callTool<PressReply>('inbox_press', { press, demo: isDemo })
     if (r?.error) errors.set(rowId, r.error)
     else onSent?.()
     if (r?.copy) await copy(rowId, r.copy)
@@ -745,25 +747,6 @@ function Findings({ lists, now }: { lists: Lists; now: number }) {
   )
 }
 
-/** The band's lines: the goal, what's happening now, and what's running. */
-function Header({ v }: { v: View }) {
-  if (!v.goal) return null
-
-  return (
-    <header>
-      <span class="goal-mark">◆</span>
-      <div class="goal">{v.goal}</div>
-      {v.now ? <div class="card-line">Now {v.now}</div> : null}
-      {v.running.slice(0, 3).map(r => (
-        <div class="card-line">
-          <span class="running-mark">●</span>
-          {r}
-        </div>
-      ))}
-    </header>
-  )
-}
-
 function TabBar({ v, lists, now }: { v: View; lists: Lists; now: number }) {
   const counts: Record<Tab, number> = { needsYou: v.waiting, findings: lists.findings.length }
   const status = v.updating
@@ -799,6 +782,26 @@ function TabBar({ v, lists, now }: { v: View; lists: Lists; now: number }) {
   )
 }
 
+/** Switches between the conversation's inbox and the demo. The new view starts fresh, so no row reads as just closed. */
+async function toggleDemo() {
+  isDemo = !isDemo
+  view = null
+  settled = []
+  order = { check: [], question: [], task: [], finding: [] }
+  selection.needsYou = null
+  selection.findings = null
+  typing = null
+  const seq = ++requested
+  draw()
+  try {
+    const v = await callTool<View>('inbox_view', { demo: isDemo })
+    if (v) applyView(v, seq)
+  } catch {
+    readFailed = true
+    draw()
+  }
+}
+
 function App(): ComponentChildren {
   if (!view)
     return <div class="notice">{readFailed ? 'Could not read the inbox.' : <span class="muted">Loading…</span>}</div>
@@ -809,12 +812,17 @@ function App(): ComponentChildren {
   return (
     <>
       {readFailed ? <div class="notice">Could not read the inbox.</div> : null}
-      <Header v={v} />
+      {isDemo ? <div class="demo-note">Showing sample entries. Presses here send nothing to Codex.</div> : null}
       <TabBar v={v} lists={lists} now={now} />
       {tab === 'needsYou' ? <NeedsYou v={v} lists={lists} now={now} /> : <Findings lists={lists} now={now} />}
       <footer>
-        <kbd>1 2</kbd>Switch tabs<span class="sep">·</span>
-        <kbd>j k</kbd>Select the next or previous row
+        <span>
+          <kbd>1 2</kbd>Switch tabs<span class="sep">·</span>
+          <kbd>j k</kbd>Select the next or previous row
+        </span>
+        <button type="button" class="demo-toggle" onClick={() => void toggleDemo()}>
+          {isDemo ? 'Hide demo' : 'Show demo'}
+        </button>
       </footer>
     </>
   )

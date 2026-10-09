@@ -75,3 +75,24 @@ test('Codex’s own tool calls reach their session through the turn metadata', a
   assert.match(r.result.content[0]?.text ?? '', /^Recorded as f2/)
   assert.equal((await readState(dir, 's1')).ledger.findings[0]?.title, 'No lint script')
 })
+
+test('a press in the demo changes only the demo and sends nothing into the conversation', async () => {
+  const { dir, calls, call } = await setup(0)
+  type Questions = { result: { structuredContent: { questions: { id: string }[] } } }
+  const demo = (await call('inbox_view', { demo: true }, { thread_id: 's1' })) as unknown as Questions
+  const first = demo.result.structuredContent.questions[0]
+  assert.ok(first)
+  const r = await call(
+    'inbox_press',
+    { press: { action: 'answer', id: first.id, option: 0 }, demo: true },
+    { thread_id: 's1' },
+  )
+  assert.deepEqual(calls, [])
+  assert.ok(!(r.result.structuredContent.view.questions as { id: string }[]).some(q => q.id === first.id))
+  const real = await readState(dir, 's1')
+  assert.deepEqual(real.sent, [])
+  assert.deepEqual(
+    real.ledger.items.map(i => i.id),
+    ['i1'],
+  )
+})

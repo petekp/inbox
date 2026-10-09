@@ -112,33 +112,6 @@
         color: var(--error);
       }
 
-      /* The band's lines. */
-      header {
-        padding: 14px 16px 2px;
-        display: grid;
-        grid-template-columns: 18px 1fr;
-      }
-      .goal-mark {
-        color: var(--muted);
-        font-size: 10px;
-      }
-      .goal {
-        font-size: 14px;
-        line-height: 20px;
-        font-weight: 600;
-        letter-spacing: -0.005em;
-      }
-      .card-line {
-        grid-column: 2;
-        color: var(--muted);
-      }
-      .running-mark {
-        color: var(--done);
-        font-size: 8px;
-        vertical-align: 1px;
-        margin-right: 6px;
-      }
-
       /* Tabs: raised panels, the shown one lighter, with its tone along the top edge. */
       nav {
         display: flex;
@@ -501,9 +474,29 @@
         margin-bottom: 4px;
       }
       footer {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 4px 16px;
         padding: 8px 16px 16px;
         color: var(--muted);
         font-size: 12px;
+      }
+      .demo-toggle {
+        padding: 0 6px;
+        border-radius: 5px;
+        color: var(--muted);
+      }
+      .demo-toggle:hover {
+        color: var(--text);
+        background: var(--hover);
+      }
+      .demo-note {
+        margin: 12px 12px 0;
+        padding: 6px 12px;
+        border-radius: 6px;
+        background: var(--raised);
+        color: var(--text);
       }
       footer kbd {
         margin-right: 4px;
