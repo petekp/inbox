@@ -417,6 +417,8 @@ const TABS: { id: Tab; label: string; hotkey: string }[] = [
   { id: 'findings', label: 'Findings', hotkey: '2' },
   { id: 'prs', label: 'PRs', hotkey: '3' },
 ]
+// The blank columns on each side of a docked tab's name, which a click there also selects.
+const TAB_PAD = '  '
 // The Needs you tab lists questions first, because each takes one key.
 const NEEDS_YOU_GROUPS: { kind: Item['kind']; title: string; empty: string }[] = [
   { kind: 'question', title: 'Questions', empty: 'No questions are waiting on you.' },
@@ -3430,7 +3432,7 @@ export const register: Register = on => {
                 </Box>
               )
 
-            const width = `${label}${count > 0 ? ` ${count}` : ''}`.length + 2
+            const width = `${label}${count > 0 ? ` ${count}` : ''}`.length + 2 * TAB_PAD.length
 
             // The selected tab is a raised panel three lines tall, with its name on
             // the middle line and a line of its color along the top edge. After a
@@ -3444,7 +3446,7 @@ export const register: Register = on => {
                     {'▔'.repeat(edge) + ' '.repeat(width - edge)}
                   </Text>
                   <Text backgroundColor={pal.raised}>
-                    {' '}
+                    {TAB_PAD}
                     <Text bold color={pal.raisedText} backgroundColor={pal.raised}>
                       {label}
                     </Text>
@@ -3453,7 +3455,8 @@ export const register: Register = on => {
                         {' '}
                         {count}
                       </Text>
-                    ) : null}{' '}
+                    ) : null}
+                    {TAB_PAD}
                   </Text>
                   <Text backgroundColor={pal.raised}>{' '.repeat(width)}</Text>
                 </Box>
@@ -3468,7 +3471,7 @@ export const register: Register = on => {
               <Box key={`tab-block-${id}`} flexDirection="column" backgroundColor={pal.tab}>
                 <Button plain key={`tab-${id}-above`} label={' '.repeat(width)} hover={raise} onPress={show} />
                 <Box flexDirection="row">
-                  <Button plain key={`tab-${id}-before`} label=" " hover={raise} onPress={show} />
+                  <Button plain key={`tab-${id}-before`} label={TAB_PAD} hover={raise} onPress={show} />
                   <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show} />
                   {count > 0 ? (
                     <Text color={pal.tone[id]} hover={raise}>
@@ -3476,7 +3479,7 @@ export const register: Register = on => {
                       {count}
                     </Text>
                   ) : null}
-                  <Button plain key={`tab-${id}-after`} label=" " hover={raise} onPress={show} />
+                  <Button plain key={`tab-${id}-after`} label={TAB_PAD} hover={raise} onPress={show} />
                 </Box>
                 <Button plain key={`tab-${id}-below`} label={' '.repeat(width)} hover={raise} onPress={show} />
               </Box>
