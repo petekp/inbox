@@ -5,7 +5,7 @@
 import { spawn } from 'node:child_process'
 import { resolve } from 'node:path'
 
-import { activityOf, cleared, endTurn, noteActivity, notePrompt, patchFiles, startContext } from './core'
+import { activityOf, cleared, endTurn, noteActivity, noteHook, notePrompt, patchFiles, startContext } from './core'
 import { updateState } from './state'
 import type { SessionState } from './state'
 import { isExecRun } from './transcript'
@@ -45,7 +45,9 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
   switch (input.hook_event_name) {
     case 'SessionStart': {
       const root = input.cwd ?? ''
-      const s = await updateState(dir, id, s => withCli({ ...(input.source === 'clear' ? cleared(s) : s), root }))
+      const s = await updateState(dir, id, s =>
+        noteHook(withCli({ ...(input.source === 'clear' ? cleared(s) : s), root }), 'start', now()),
+      )
 
       const context = startContext(s, input.source)
 
@@ -57,7 +59,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
         const r = notePrompt(withCli(s), input.prompt ?? '', now())
         notes = r.notes
 
-        return r.state
+        return noteHook(r.state, 'prompt', now(), input.turn_id)
       })
 
       return notes.length === 0
@@ -95,7 +97,9 @@ async function stop(
   const { dir, now } = deps
   const id = input.session_id
   const reply = input.last_assistant_message ?? ''
-  const written = await updateState(dir, id, current => endTurn(withCli(current), reply, now()))
+  const written = await updateState(dir, id, current =>
+    noteHook(endTurn(withCli(current), reply, now()), 'stop', now()),
+  )
   if (written.pending.length > 0) deps.startUpdate(id)
 
   return null

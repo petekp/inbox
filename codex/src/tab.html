@@ -88,10 +88,6 @@
         outline-offset: 1px;
         border-radius: 4px;
       }
-      kbd {
-        font: 12px/20px var(--mono);
-        color: var(--key);
-      }
       .muted {
         color: var(--muted);
       }
@@ -111,15 +107,38 @@
         padding: 10px 16px;
         color: var(--error);
       }
+      .notice .key {
+        color: var(--text);
+      }
+
+      /* Line 1: the count and the status. Line 2: the goal and its current step. */
+      header {
+        padding: 12px 16px 0;
+      }
+      .line-one {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 0 16px;
+      }
+      .counts {
+        font-weight: 600;
+      }
+      .goal {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .goal-mark {
+        color: var(--key);
+      }
 
       /* Tabs: the shown one a raised panel, the others text on the background. */
       nav {
         display: flex;
         flex-wrap: wrap;
-        align-items: flex-end;
-        justify-content: space-between;
         gap: 4px 16px;
-        padding: 12px 12px 0;
+        padding: 8px 12px 0;
       }
       .tabs {
         display: flex;
@@ -143,9 +162,9 @@
         margin-left: 6px;
       }
       .status {
-        padding: 6px 4px;
         color: var(--muted);
         font-size: 12px;
+        text-align: right;
       }
 
       main {
@@ -237,6 +256,16 @@
         padding-top: 12px;
         padding-bottom: 12px;
       }
+      /* A row that just appeared, in its tab's color. */
+      .row.new {
+        box-shadow: inset 3px 0 0 var(--bar);
+      }
+      .tone-bar-needsYou {
+        --bar: var(--needs-you);
+      }
+      .tone-bar-findings {
+        --bar: var(--findings);
+      }
       .mark {
         flex: none;
         width: calc(var(--text-x) - var(--mark-x));
@@ -313,7 +342,7 @@
       .body p + p {
         margin-top: 4px;
       }
-      /* Keys are text, as the pane draws them: "a: Fix". */
+      /* Keys are text buttons, with no key text: keys are an extra. */
       .keys {
         display: flex;
         flex-wrap: wrap;
@@ -470,12 +499,6 @@
         border-radius: 6px;
         background: var(--raised);
         color: var(--text);
-      }
-      footer kbd {
-        margin-right: 4px;
-      }
-      footer .sep {
-        margin: 0 8px;
       }
       @media (prefers-reduced-motion: reduce) {
         .leave div {

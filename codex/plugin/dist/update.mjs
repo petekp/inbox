@@ -393,6 +393,15 @@ function upgradeLastActions(saved) {
 }
 
 // src/state.ts
+var NOTHING_HEARD = {
+  startAt: null,
+  promptAt: null,
+  prompts: 0,
+  promptTurns: [],
+  stopAt: null,
+  stops: 0,
+  promptMissedAt: null
+};
 function emptyState(sessionId) {
   return {
     version: 1,
@@ -407,7 +416,8 @@ function emptyState(sessionId) {
     pending: [],
     sent: [],
     lastActions: {},
-    tabSeenAt: 0
+    tabSeenAt: 0,
+    heard: NOTHING_HEARD
   };
 }
 function dataDir(env, pluginRoot) {
@@ -440,7 +450,16 @@ function upgraded(saved, sessionId) {
     pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex })),
     // A message sent before the server kept its row changes no row when it arrives.
     sent: (saved.sent ?? []).map((x) => ({ ...x, row: x.row ?? null, queuedId: x.queuedId ?? null })),
-    lastActions: upgradeLastActions(saved.lastActions ?? {})
+    lastActions: upgradeLastActions(saved.lastActions ?? {}),
+    // A file saved before the hooks kept this record came from hooks that ran, so it reads as heard.
+    // Its turns were not recorded, so `promptAt` is set too: a tool call then falls back to the time rule.
+    heard: saved.heard ? { ...NOTHING_HEARD, ...saved.heard } : {
+      ...NOTHING_HEARD,
+      startAt: 0,
+      promptAt: 0,
+      prompts: saved.presence?.turnsStarted ?? 0,
+      stops: saved.presence?.turnsStarted ?? 0
+    }
   };
 }
 async function readState(dir, sessionId) {

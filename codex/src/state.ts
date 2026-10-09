@@ -46,6 +46,34 @@ export type SessionState = {
   lastActions: Record<string, LastAction>
   /** When the tab last asked for its view, so the inbox texts can say whether it is open. */
   tabSeenAt: number
+  heard: Heard
+}
+
+/**
+ * Which of the plugin's hooks have run in this session. Codex skips a hook
+ * until the person trusts it, so a hook that never ran means items are missing.
+ * Times are null until the hook first runs.
+ */
+export type Heard = {
+  startAt: number | null
+  promptAt: number | null
+  prompts: number
+  /** The turn ids UserPromptSubmit recorded last, oldest first. */
+  promptTurns: string[]
+  stopAt: number | null
+  stops: number
+  /** When Codex called a tool in a turn UserPromptSubmit did not record. */
+  promptMissedAt: number | null
+}
+
+export const NOTHING_HEARD: Heard = {
+  startAt: null,
+  promptAt: null,
+  prompts: 0,
+  promptTurns: [],
+  stopAt: null,
+  stops: 0,
+  promptMissedAt: null,
 }
 
 export function emptyState(sessionId: string): SessionState {
@@ -63,6 +91,7 @@ export function emptyState(sessionId: string): SessionState {
     sent: [],
     lastActions: {},
     tabSeenAt: 0,
+    heard: NOTHING_HEARD,
   }
 }
 
@@ -125,6 +154,17 @@ function upgraded(saved: Saved, sessionId: string): SessionState {
     // A message sent before the server kept its row changes no row when it arrives.
     sent: (saved.sent ?? []).map(x => ({ ...x, row: x.row ?? null, queuedId: x.queuedId ?? null })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
+    // A file saved before the hooks kept this record came from hooks that ran, so it reads as heard.
+    // Its turns were not recorded, so `promptAt` is set too: a tool call then falls back to the time rule.
+    heard: saved.heard
+      ? { ...NOTHING_HEARD, ...saved.heard }
+      : {
+          ...NOTHING_HEARD,
+          startAt: 0,
+          promptAt: 0,
+          prompts: saved.presence?.turnsStarted ?? 0,
+          stops: saved.presence?.turnsStarted ?? 0,
+        },
   }
 }
 

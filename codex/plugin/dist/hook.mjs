@@ -346,11 +346,31 @@ function endTurn(s, reply, now) {
   };
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] };
 }
+var MAX_PROMPT_TURNS = 10;
+function noteHook(s, hook, now, turnId) {
+  const h = s.heard;
+  const heard = hook === "start" ? { ...h, startAt: now } : hook === "prompt" ? {
+    ...h,
+    promptAt: now,
+    prompts: h.prompts + 1,
+    promptTurns: turnId ? [...h.promptTurns.filter((t) => t !== turnId), turnId].slice(-MAX_PROMPT_TURNS) : h.promptTurns
+  } : { ...h, stopAt: now, stops: h.stops + 1 };
+  return { ...s, heard };
+}
 
 // src/state.ts
 import { mkdir, readFile, rename, rmdir, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+var NOTHING_HEARD = {
+  startAt: null,
+  promptAt: null,
+  prompts: 0,
+  promptTurns: [],
+  stopAt: null,
+  stops: 0,
+  promptMissedAt: null
+};
 function emptyState(sessionId) {
   return {
     version: 1,
@@ -365,7 +385,8 @@ function emptyState(sessionId) {
     pending: [],
     sent: [],
     lastActions: {},
-    tabSeenAt: 0
+    tabSeenAt: 0,
+    heard: NOTHING_HEARD
   };
 }
 function dataDir(env, pluginRoot) {
@@ -398,7 +419,16 @@ function upgraded(saved, sessionId) {
     pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex })),
     // A message sent before the server kept its row changes no row when it arrives.
     sent: (saved.sent ?? []).map((x) => ({ ...x, row: x.row ?? null, queuedId: x.queuedId ?? null })),
-    lastActions: upgradeLastActions(saved.lastActions ?? {})
+    lastActions: upgradeLastActions(saved.lastActions ?? {}),
+    // A file saved before the hooks kept this record came from hooks that ran, so it reads as heard.
+    // Its turns were not recorded, so `promptAt` is set too: a tool call then falls back to the time rule.
+    heard: saved.heard ? { ...NOTHING_HEARD, ...saved.heard } : {
+      ...NOTHING_HEARD,
+      startAt: 0,
+      promptAt: 0,
+      prompts: saved.presence?.turnsStarted ?? 0,
+      stops: saved.presence?.turnsStarted ?? 0
+    }
   };
 }
 async function readState(dir, sessionId) {
@@ -480,7 +510,11 @@ async function handleHook(input, deps) {
   switch (input.hook_event_name) {
     case "SessionStart": {
       const root = input.cwd ?? "";
-      const s = await updateState(dir, id, (s2) => withCli({ ...input.source === "clear" ? cleared(s2) : s2, root }));
+      const s = await updateState(
+        dir,
+        id,
+        (s2) => noteHook(withCli({ ...input.source === "clear" ? cleared(s2) : s2, root }), "start", now())
+      );
       const context = startContext(s, input.source);
       return context ? { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: context } } : null;
     }
@@ -489,7 +523,7 @@ async function handleHook(input, deps) {
       await updateState(dir, id, (s) => {
         const r = notePrompt(withCli(s), input.prompt ?? "", now());
         notes = r.notes;
-        return r.state;
+        return noteHook(r.state, "prompt", now(), input.turn_id);
       });
       return notes.length === 0 ? null : { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: notes.join("\n\n") } };
     }
@@ -515,7 +549,11 @@ async function stop(input, deps, withCli) {
   const { dir, now } = deps;
   const id = input.session_id;
   const reply = input.last_assistant_message ?? "";
-  const written = await updateState(dir, id, (current) => endTurn(withCli(current), reply, now()));
+  const written = await updateState(
+    dir,
+    id,
+    (current) => noteHook(endTurn(withCli(current), reply, now()), "stop", now())
+  );
   if (written.pending.length > 0) deps.startUpdate(id);
   return null;
 }

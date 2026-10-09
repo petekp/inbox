@@ -7,7 +7,9 @@ import { recordClose, recordFinding } from '../../hooks/tools'
 import { closedShown, feedbackText, SETTLED_MS } from '../../hooks/view'
 import type { RowView } from '../../hooks/view'
 import type { Item, LocalResult } from '../../types'
-import { endTurn, notePrompt, viewOf } from '../src/core'
+import { followTo, newRows } from '../src/arrivals'
+import { endTurn, noteHook, notePrompt, noteToolCall, viewOf } from '../src/core'
+import { demoState } from '../src/demo'
 import { drawnSettled, SETTLE_WINDOW_MS, settledIds, settledSeen } from '../src/settle'
 import { emptyState } from '../src/state'
 import type { SessionState } from '../src/state'
@@ -465,4 +467,59 @@ test('Codex closing an item reads as Codex in its outcome', () => {
     recordClose(CODEX, withItems().ledger, { id: 'i9', reason: 'x' }, 50).result.startsWith('Not closed'),
     true,
   )
+})
+
+test('the tab says the hooks were not heard when none ran, when a tool call comes in a turn no prompt recorded, or when two prompts saw no Stop', () => {
+  const s = withItems()
+  // No hook ran in this session.
+  assert.equal(viewOf(s, 10).heard, 'none')
+  const started = noteHook(s, 'start', 10)
+  assert.equal(viewOf(started, 10).heard, 'heard')
+  // UserPromptSubmit recorded turn t1. Codex's tool call in turn t2 shows it skipped that prompt.
+  const prompted = noteHook(started, 'prompt', 20, 't1')
+  assert.equal(viewOf(noteToolCall(prompted, 't1', 30), 30).heard, 'heard')
+  const missed = noteToolCall(prompted, 't2', 30)
+  assert.equal(viewOf(missed, 30).heard, 'partial')
+  // A prompt recorded after the miss shows the hook runs again.
+  assert.equal(viewOf(noteHook(noteHook(missed, 'stop', 35), 'prompt', 40, 't3'), 40).heard, 'heard')
+  // Two prompts and no Stop: the replies never reach the inbox model.
+  const twice = noteHook(prompted, 'prompt', 50, 't2')
+  assert.equal(viewOf(twice, 50).heard, 'partial')
+  assert.equal(viewOf(noteHook(twice, 'stop', 60), 60).heard, 'heard')
+  // With no turn id, a call between a Stop and the next prompt reads as missed.
+  const stopped = noteHook(prompted, 'stop', 40)
+  assert.equal(viewOf(noteToolCall(stopped, null, 45), 45).heard, 'partial')
+  assert.equal(viewOf(noteToolCall(prompted, null, 25), 25).heard, 'heard')
+  // The demo's samples show no such text.
+  assert.equal(viewOf(demoState(10), 10).heard, 'heard')
+})
+
+test('a tool call in a turn the prompt hook recorded, after a Stop sent Codex back, is not read as a skipped prompt', () => {
+  const prompted = noteHook(noteHook(withItems(), 'start', 10), 'prompt', 20, 't1')
+  // Another plugin's Stop hook blocked the reply, and Codex goes on in turn t1.
+  const sentBack = noteHook(prompted, 'stop', 30)
+  const called = noteToolCall(sentBack, 't1', 40)
+  assert.equal(called.heard.promptMissedAt, null)
+  assert.equal(viewOf(called, 40).heard, 'heard')
+})
+
+test('the tab moves from an empty Needs you to Findings when a poll brings a finding, and marks only rows new since its first view', () => {
+  const s = noteHook(emptyState('s1'), 'start', 1)
+  const first = newRows(null, viewOf(s, 10))
+  assert.deepEqual(first.added, { needsYou: [], findings: [] })
+  const withFinding = {
+    ...s,
+    ledger: recordFinding(CODEX, s.ledger, { kind: 'issue', title: 'No lint script', detail: 'Only tests run.' }, 20)
+      .ledger,
+  }
+  const next = newRows(first.seen, viewOf(withFinding, 20))
+  assert.deepEqual(next.added, { needsYou: [], findings: ['f1'] })
+  assert.deepEqual(followTo('needsYou', true, next.added, { needsYou: [], findings: ['f1'] }), {
+    tab: 'findings',
+    id: 'f1',
+  })
+  // A tab that shows rows stays where it is.
+  assert.equal(followTo('needsYou', false, next.added, { needsYou: ['i1'], findings: ['f1'] }), null)
+  // The same rows in the next poll are not new.
+  assert.deepEqual(newRows(next.seen, viewOf(withFinding, 30)).added, { needsYou: [], findings: [] })
 })

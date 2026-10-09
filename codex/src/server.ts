@@ -15,7 +15,7 @@ import {
   recordClose,
   recordFinding,
 } from '../../hooks/tools'
-import { viewOf } from './core'
+import { noteToolCall, viewOf } from './core'
 import type { TabView } from './core'
 import { demoState } from './demo'
 import { readState, updateState } from './state'
@@ -79,6 +79,24 @@ export function sessionOf(params: Record<string, unknown> | undefined): string |
   const id = turn.session_id ?? meta.thread_id ?? meta.threadId
 
   return typeof id === 'string' && id ? id : null
+}
+
+/**
+ * For a call Codex's model made in the session's own thread, the turn it came
+ * in: its turn id, or null when the metadata has none. Undefined for a call that
+ * says nothing about the session's prompts: the tab's calls carry no turn
+ * metadata, and a subagent's or a forked chat's call can carry the root's
+ * session id for a turn whose prompt the root's UserPromptSubmit never saw.
+ */
+export function turnOf(params: Record<string, unknown> | undefined): string | null | undefined {
+  const meta = (params?._meta ?? {}) as Record<string, unknown>
+  const turn = meta['x-codex-turn-metadata']
+  if (typeof turn !== 'object' || turn === null) return undefined
+  const t = turn as Record<string, unknown>
+  const isOtherThread = typeof t.thread_id === 'string' && t.thread_id !== t.session_id
+  if (t.parent_thread_id || t.forked_from_thread_id || isOtherThread) return undefined
+
+  return typeof t.turn_id === 'string' && t.turn_id ? t.turn_id : null
 }
 
 const text = (t: string) => ({ content: [{ type: 'text', text: t }] })
@@ -247,8 +265,15 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     }
   }
 
-  async function callTool(name: string, args: Record<string, unknown>, id: string | null) {
+  async function callTool(
+    name: string,
+    args: Record<string, unknown>,
+    id: string | null,
+    turn: string | null | undefined,
+  ) {
     if (!id) return { ...text('Not done: this call carries no session id.'), isError: true }
+    // A call from Codex's model shows whether UserPromptSubmit recorded its turn. The tab's calls show nothing.
+    const heard = (s: SessionState) => (turn === undefined ? s : noteToolCall(s, turn, now()))
     switch (name) {
       case 'record_finding':
       case 'close': {
@@ -256,12 +281,12 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         await updateState(dir, id, s => {
           const r = (name === 'close' ? recordClose : recordFinding)(CODEX, s.ledger, args, now())
           result = r.result
-          return { ...s, ledger: r.ledger }
+          return heard({ ...s, ledger: r.ledger })
         })
         return text(result)
       }
       case 'inbox': {
-        const s = await readState(dir, id)
+        const s = turn === undefined ? await readState(dir, id) : await updateState(dir, id, heard)
         return { ...text('Opened the Inbox tab beside the conversation.'), structuredContent: viewOf(s, now()) }
       }
       case 'inbox_view': {
@@ -295,7 +320,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         const name = String(params?.name ?? '')
         const args = (params?.arguments ?? {}) as Record<string, unknown>
         try {
-          return ok(await callTool(name, args, sessionOf(params)))
+          return ok(await callTool(name, args, sessionOf(params), turnOf(params)))
         } catch (err) {
           return ok({ ...text(`Failed: ${err instanceof Error ? err.message : String(err)}`), isError: true })
         }

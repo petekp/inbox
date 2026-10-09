@@ -8,7 +8,7 @@ import { inboxView, perTurnStatus } from '../../hooks/view'
 import type { InboxView } from '../../hooks/view'
 import type { LastAction } from '../../types'
 import { SETTLE_WINDOW_MS } from './settle'
-import type { SessionState } from './state'
+import type { Heard, SessionState } from './state'
 import { CODEX, GUIDANCE, START_TITLE } from './texts'
 
 /** The tab polls every few seconds; a poll this recent means it is open. */
@@ -112,8 +112,67 @@ export function endTurn(s: SessionState, reply: string, now: number): SessionSta
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] }
 }
 
+/** How many of UserPromptSubmit's turn ids the session keeps. */
+const MAX_PROMPT_TURNS = 10
+
+/** Records that a hook ran: SessionStart, UserPromptSubmit with its turn id, or Stop. */
+export function noteHook(
+  s: SessionState,
+  hook: 'start' | 'prompt' | 'stop',
+  now: number,
+  turnId?: string,
+): SessionState {
+  const h = s.heard
+  const heard: Heard =
+    hook === 'start'
+      ? { ...h, startAt: now }
+      : hook === 'prompt'
+        ? {
+            ...h,
+            promptAt: now,
+            prompts: h.prompts + 1,
+            promptTurns: turnId
+              ? [...h.promptTurns.filter(t => t !== turnId), turnId].slice(-MAX_PROMPT_TURNS)
+              : h.promptTurns,
+          }
+        : { ...h, stopAt: now, stops: h.stops + 1 }
+
+  return { ...s, heard }
+}
+
+/**
+ * Whether a model tool call came in a turn UserPromptSubmit did not record.
+ * Another plugin's Stop hook can send Codex back within the same turn, so the
+ * turn ids decide. Times decide only for a call with no turn id, or when no turn id was recorded.
+ */
+export function isPromptMissed(h: Heard, turnId: string | null): boolean {
+  if (turnId !== null && (h.promptTurns.length > 0 || h.promptAt === null)) return !h.promptTurns.includes(turnId)
+
+  return h.promptAt === null || (h.stopAt !== null && h.promptAt < h.stopAt)
+}
+
+/** Records a model tool call: when its turn was not recorded, UserPromptSubmit is being skipped. */
+export function noteToolCall(s: SessionState, turnId: string | null, now: number): SessionState {
+  return isPromptMissed(s.heard, turnId) ? { ...s, heard: { ...s.heard, promptMissedAt: now } } : s
+}
+
+/**
+ * Whether the session's hooks are running: `none` when SessionStart never ran,
+ * `partial` when UserPromptSubmit missed a turn since it last ran, or when it
+ * recorded two turns and Stop none, so no reply reaches the inbox model.
+ */
+export type HeardState = 'heard' | 'none' | 'partial'
+
+export function heardState(h: Heard): HeardState {
+  if (h.startAt === null) return 'none'
+  const isMissed = h.promptMissedAt !== null && (h.promptAt === null || h.promptMissedAt >= h.promptAt)
+
+  return isMissed || (h.prompts >= 2 && h.stops === 0) ? 'partial' : 'heard'
+}
+
 /** What the tab draws: the shared inbox view, and what only the tab reads. */
 export type View = InboxView & {
+  heard: HeardState
   goal: string
   now: string
   done: string[]
@@ -154,6 +213,7 @@ export function viewOf(s: SessionState, now: number): View {
       status: perTurnStatus(l, update),
       now,
     }),
+    heard: heardState(s.heard),
     goal: l.card?.goal ?? '',
     now: l.card?.now ?? '',
     done: l.card?.done ?? [],

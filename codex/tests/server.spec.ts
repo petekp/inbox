@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import type { Feedback } from '../../hooks/view'
-import { notePrompt, viewOf } from '../src/core'
+import { noteHook, notePrompt, viewOf } from '../src/core'
 import { makeServer } from '../src/server'
 import { readState, updateState } from '../src/state'
 import { fakeRunner, tempDir } from './helpers'
@@ -178,6 +178,27 @@ test('Codex’s own tool calls reach their session through the turn metadata', a
   )
   assert.match(r.result.content[0]?.text ?? '', /^Recorded as f2/)
   assert.equal((await readState(dir, 's1')).ledger.findings[0]?.title, 'No lint script')
+})
+
+test('a tool call from Codex in a turn UserPromptSubmit never recorded shows the hook skipped; the tab’s own calls show nothing', async () => {
+  const { dir, call } = await setup(0)
+  await updateState(dir, 's1', s => noteHook(noteHook(s, 'start', 10), 'prompt', 20, 't1'))
+  const viewed = async () => {
+    const r = (await call('inbox_view', {}, { thread_id: 's1' })) as unknown as {
+      result: { structuredContent: { heard: string } }
+    }
+    return r.result.structuredContent.heard
+  }
+  assert.equal(await viewed(), 'heard')
+  await call('close', { id: 'i1', reason: 'done' }, { 'x-codex-turn-metadata': { session_id: 's1', turn_id: 't1' } })
+  assert.equal(await viewed(), 'heard')
+  // A subagent's call carries the root's session id, in a turn the root's prompt hook never sees.
+  await call('inbox', {}, { 'x-codex-turn-metadata': { session_id: 's1', thread_id: 'sub1', turn_id: 'u1' } })
+  await call('inbox', {}, { 'x-codex-turn-metadata': { session_id: 's1', parent_thread_id: 's1', turn_id: 'u2' } })
+  assert.equal(await viewed(), 'heard')
+  await call('inbox', {}, { 'x-codex-turn-metadata': { session_id: 's1', turn_id: 't2' } })
+  assert.equal((await readState(dir, 's1')).heard.promptMissedAt, 100)
+  assert.equal(await viewed(), 'partial')
 })
 
 test('a press in the demo changes only the demo, sends nothing into the conversation, and says so', async () => {

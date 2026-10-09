@@ -5,7 +5,7 @@ import { test } from 'node:test'
 
 import { EMPTY, inboxText } from '../../hooks/ledger'
 import { feedbackText } from '../../hooks/view'
-import { notePrompt, viewOf } from '../src/core'
+import { notePrompt, noteToolCall, viewOf } from '../src/core'
 import { handleHook } from '../src/hook'
 import { readState, statePath, updateState } from '../src/state'
 import { CODEX } from '../src/texts'
@@ -47,6 +47,45 @@ test('a session starts with the guidance, records the prompt, and ends the turn 
   assert.equal(ended.pending[0]?.ex.person, 'Run the tests')
   assert.equal(ended.pending[0]?.ex.reply, 'All tests pass.')
   assert.deepEqual(deps.updates, ['s1'])
+})
+
+test('each hook records that it ran, with the turn UserPromptSubmit saw, and the tab reads the session as heard', async () => {
+  const dir = tempDir()
+  let clock = 1000
+  const deps = hookDeps(dir, () => clock)
+  const heard = async () => (await readState(dir, 's1')).heard
+  assert.equal(viewOf(await readState(dir, 's1'), clock).heard, 'none')
+
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
+  assert.deepEqual(await heard(), {
+    startAt: 1000,
+    promptAt: null,
+    prompts: 0,
+    promptTurns: [],
+    stopAt: null,
+    stops: 0,
+    promptMissedAt: null,
+  })
+  clock = 2000
+  await handleHook(input('UserPromptSubmit', { prompt: 'Hi', turn_id: 't1' }), deps)
+  assert.deepEqual(
+    { ...(await heard()), startAt: undefined },
+    {
+      startAt: undefined,
+      promptAt: 2000,
+      prompts: 1,
+      promptTurns: ['t1'],
+      stopAt: null,
+      stops: 0,
+      promptMissedAt: null,
+    },
+  )
+  clock = 3000
+  // A reply with no text still ends a turn the Stop hook saw.
+  await handleHook(input('Stop', { turn_id: 't1', last_assistant_message: '' }), deps)
+  const h = await heard()
+  assert.deepEqual([h.stopAt, h.stops], [3000, 1])
+  assert.equal(viewOf(await readState(dir, 's1'), clock).heard, 'heard')
 })
 
 test('a patch notes each edited file, resolved against the folder it ran in', async () => {
@@ -152,6 +191,10 @@ test('a session saved by an older build loads converted, as the mod converts its
   await updateState(dir, 's1', x => x)
   assert.deepEqual((await readState(dir, 's1')).lastActions, s.lastActions)
   for (const key of ['top', 'checks', 'snapshots', 'recordedRuns']) assert.equal(key in s, false, key)
+  // Its hooks ran before they kept a record, so the tab does not say they are skipped.
+  assert.equal(viewOf(s, 2).heard, 'heard')
+  // No turn of it was recorded, so a tool call in the turn running now is not read as a skipped prompt.
+  assert.equal(viewOf(noteToolCall(s, 't9', 3), 3).heard, 'heard')
   assert.deepEqual(s.turn, { person: 'Run the tests', activity: [], press: null })
   assert.equal('checks' in (s.pending[0]?.ex ?? {}), false)
   assert.equal(s.pending[0]?.ex.reply, 'Hello')

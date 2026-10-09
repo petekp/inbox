@@ -8,13 +8,23 @@ import type { ComponentChildren, JSX } from 'preact'
 import { ago, isLapsed } from '../../hooks/ledger'
 import { noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
-import { closedShown, feedbackText, hasAge, isFailure, isGuarded, PRESS_GUARD_MS, SETTLED_MS } from '../../hooks/view'
+import {
+  closedShown,
+  feedbackText,
+  hasAge,
+  isFailure,
+  isGuarded,
+  NEW_ROW_MS,
+  PRESS_GUARD_MS,
+  SETTLED_MS,
+} from '../../hooks/view'
 import type { Feedback, RowState, RowView } from '../../hooks/view'
 import type { Finding, Item, RowNote } from '../../types'
+import { followTo, newRows } from './arrivals'
+import type { SeenRows, Tab } from './arrivals'
 import type { TabView as View } from './core'
 import { drawnSettled, POLL_MS, settledIds, settledSeen } from './settle'
 
-type Tab = 'needsYou' | 'findings'
 type Tone = 'needsYou' | 'findings' | 'done' | 'error'
 type Group = 'question' | 'task' | 'finding'
 
@@ -57,7 +67,11 @@ const TABS: { id: Tab; label: string; hotkey: string }[] = [
 let view: View | null = null
 // The demo shows the mod's sample entries, and its presses send nothing.
 let isDemo = false
+// The first read of the view failed, so there is no view to show.
 let readFailed = false
+// Polls that failed in a row while a view shows, and when the shown view was read.
+let pollFailures = 0
+let readAt = 0
 let tab: Tab = 'needsYou'
 // Each tab's open row, and when a click or key opened it; 0 when it was open by default when pressed.
 // Null until a row opens there: the tab then draws its top row open.
@@ -80,6 +94,9 @@ const copies = new Map<string, { name: string; text: string }>()
 let lineNote: { text: string; at: number } | null = null
 // When the tab first saw each row the view lists as settled. It draws one in place for SETTLED_MS from then.
 let seen = new Map<string, number>()
+// The row ids the tab has seen, and when each row new to it appeared. A new row draws a bar for NEW_ROW_MS.
+let rowsSeen: SeenRows = null
+const arrived = new Map<string, number>()
 // Each view request takes the next number, and a reply older than the view shown is dropped.
 let requested = 0
 let shown = 0
@@ -117,9 +134,13 @@ function applyHost(ctx: { theme?: string; styles?: { variables?: Record<string, 
   for (const [k, v] of Object.entries(ctx.styles?.variables ?? {})) document.documentElement.style.setProperty(k, v)
 }
 
-async function callTool<T>(name: string, args: unknown = {}): Promise<T | undefined> {
-  const r = (await request('tools/call', { name, arguments: args })) as { structuredContent?: T } | undefined
-  return r?.structuredContent
+/** A tool's answer for the tab. A call the server could not answer throws, as a failed request does. */
+async function callTool<T>(name: string, args: unknown = {}): Promise<T> {
+  const r = (await request('tools/call', { name, arguments: args })) as
+    { structuredContent?: T; isError?: boolean; content?: { text?: string }[] } | undefined
+  if (!r || r.isError || r.structuredContent === undefined) throw new Error(r?.content?.[0]?.text ?? `${name} failed`)
+
+  return r.structuredContent
 }
 
 // ── The view ────────────────────────────────────────────────────────────────
@@ -128,25 +149,56 @@ function applyView(next: View, seq: number) {
   if (seq < shown) return
   shown = seq
   readFailed = false
+  pollFailures = 0
+  readAt = Date.now()
   const before = seen
   seen = settledSeen(seen, settledIds(next), Date.now())
   // A row seen settled for the first time leaves for its Closed fold once SETTLED_MS passes.
   if ([...seen.keys()].some(id => !before.has(id))) setTimeout(draw, SETTLED_MS + 50)
   view = next
+  const rows = newRows(rowsSeen, next)
+  rowsSeen = rows.seen
+  const added = [...rows.added.needsYou, ...rows.added.findings]
+  for (const id of added) arrived.set(id, Date.now())
+  if (added.length > 0) setTimeout(draw, NEW_ROW_MS + 50)
+  follow(next, rows.added)
   draw()
 }
 
-async function poll() {
-  if (!isPressing) {
-    const seq = ++requested
-    try {
-      const v = await callTool<View>('inbox_view', { demo: isDemo })
-      if (v) applyView(v, seq)
-    } catch {
-      readFailed = true
-      draw()
-    }
+/** Moves to the other tab for its new rows while the tab on screen shows only its empty text, as the mod's pane does. */
+function follow(v: View, added: Record<Tab, string[]>) {
+  const lists = listsOf(v, drawnSettled(seen, Date.now()))
+  const isEmpty = {
+    needsYou:
+      lists.questions.length === 0 &&
+      lists.tasks.length === 0 &&
+      !(unfolded.has('question') && itemsClosed(v, 'question', []).length > 0) &&
+      !(unfolded.has('task') && itemsClosed(v, 'task', []).length > 0),
+    findings: lists.findings.length === 0 && !(unfolded.has('finding') && v.findings.closed.length > 0),
+  }[tab]
+  const to = followTo(tab, isEmpty, added, {
+    needsYou: lists.byTab.needsYou.map(r => r.id),
+    findings: lists.byTab.findings.map(r => r.id),
+  })
+  if (!to) return
+  tab = to.tab
+  if (to.id) open(to.tab, to.id)
+}
+
+/** Reads the view once. A failed first read shows that the inbox could not be read; a failed poll after it counts toward "retrying". */
+async function read() {
+  const seq = ++requested
+  try {
+    applyView(await callTool<View>('inbox_view', { demo: isDemo }), seq)
+  } catch {
+    if (view) pollFailures++
+    else readFailed = true
+    draw()
   }
+}
+
+async function poll() {
+  if (!isPressing) await read()
   setTimeout(poll, POLL_MS)
 }
 
@@ -452,7 +504,10 @@ function rowActions(row: Row): { keys: Key[]; more: Key[] } {
 
 // ── Drawing ─────────────────────────────────────────────────────────────────
 
-/** One of the open row's actions. A click right after the row opened does nothing; its key works at once. */
+/**
+ * One of the open row's actions. A click right after the row opened does
+ * nothing; its key works at once. Keys are an extra, so no key text shows.
+ */
 function KeyButton({ k }: { k: Key }) {
   return (
     <button
@@ -463,11 +518,6 @@ function KeyButton({ k }: { k: Key }) {
         if (!isOpenGuarded()) k.run()
       }}
     >
-      {k.hotkey ? (
-        <>
-          <kbd>{k.hotkey}</kbd>:{' '}
-        </>
-      ) : null}
       {k.label}
     </button>
   )
@@ -493,7 +543,7 @@ function TypeField({ row }: { row: Row }) {
         onInput={e => drafts.set(row.id, e.currentTarget.value)}
       />
       <button type="submit" class="key">
-        <kbd>↵</kbd>: Send
+        Send
       </button>
       <button
         type="button"
@@ -503,7 +553,7 @@ function TypeField({ row }: { row: Row }) {
           draw()
         }}
       >
-        <kbd>esc</kbd>: Cancel
+        Cancel
       </button>
     </form>
   )
@@ -537,17 +587,28 @@ function isFeedbackShown(row: Row): boolean {
   return !errors.has(row.id) && noteOf(row.id) === null && !copies.has(row.id)
 }
 
+/** Whether a row appeared less than NEW_ROW_MS ago, so it draws a bar. */
+function isNew(id: string): boolean {
+  const at = arrived.get(id)
+
+  return at !== undefined && Date.now() - at < NEW_ROW_MS
+}
+
 function ListRow({
   row,
+  tone,
   isSelected,
   onSelect,
   now,
 }: {
   row: Row
+  /** The tab's color, for the bar of a row that just appeared. */
+  tone: Tone
   isSelected: boolean
   onSelect: () => void
   now: number
 }) {
+  const bar = isNew(row.id) ? ` new tone-bar-${tone}` : ''
   // A last action is green only on a row that shows a ✓. On a row still open it is muted, so it does not read as an answer,
   // and so is a message still queued, which has not reached Codex.
   const lastTone = row.handleTone === 'done' && row.feedback?.is !== 'queued' ? 'tone-done' : 'muted'
@@ -570,7 +631,7 @@ function ListRow({
       : plain
 
     return (
-      <div class="row">
+      <div class={`row${bar}`}>
         {handle}
         <button type="button" class="line" onClick={onSelect}>
           <span class={row.hasSecondLine ? 'text two' : 'text'}>{line.text}</span>
@@ -591,7 +652,7 @@ function ListRow({
   const note = noteOf(row.id)
 
   return (
-    <div class="row selected">
+    <div class={`row selected${bar}`}>
       {handle}
       <div class="content">
         <div class="tight">
@@ -704,6 +765,7 @@ function Entries({
           <div class="entry" key={x.row.id}>
             <ListRow
               row={x.row}
+              tone={t}
               now={now}
               isSelected={all.indexOf(x.row) === at}
               onSelect={() => select(t, all, all.indexOf(x.row))}
@@ -819,13 +881,34 @@ function ClosedFold({ group, closed, now }: { group: Group; closed: ClosedLine[]
   )
 }
 
+/**
+ * What Needs you reads in place of its empty text when the session's hooks
+ * have not all run, so an empty list does not read as all clear. Null when they have.
+ */
+function notHeardText(v: View): [string, string] | null {
+  if (v.heard === 'heard') return null
+
+  return [
+    'The inbox has not heard from this chat’s hooks.',
+    v.heard === 'none'
+      ? 'Codex runs a plugin’s hooks only after you trust them.'
+      : 'Items from Codex’s replies are missing.',
+  ]
+}
+
 function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number }) {
   const all = lists.byTab.needsYou
   const isNothing = lists.questions.length === 0 && lists.tasks.length === 0
   const hasClosed =
     itemsClosed(v, 'question', lists.questions).length > 0 || itemsClosed(v, 'task', lists.tasks).length > 0
+  const notHeard = notHeardText(v)
   if (isNothing && !hasClosed)
-    return (
+    return notHeard ? (
+      <div class="empty">
+        <div class="title">{notHeard[0]}</div>
+        <div class="muted">{notHeard[1]}</div>
+      </div>
+    ) : (
       <div class="empty">
         <div class="title">Nothing needs you.</div>
       </div>
@@ -836,7 +919,14 @@ function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number }) {
     <main>
       {isNothing ? (
         <section>
-          <div class="group-title empty-line">Nothing needs you.</div>
+          {notHeard ? (
+            <div class="group-title">
+              {notHeard[0]}
+              <div class="muted">{notHeard[1]}</div>
+            </div>
+          ) : (
+            <div class="group-title empty-line">Nothing needs you.</div>
+          )}
         </section>
       ) : null}
       <ItemGroup v={v} kind="question" entries={lists.questions} all={all} now={now} />
@@ -875,10 +965,62 @@ function Findings({ v, lists, now }: { v: View; lists: Lists; now: number }) {
   )
 }
 
-function TabBar({ v, now }: { v: View; now: number }) {
-  const counts: Record<Tab, number> = { needsYou: v.needsYou.count, findings: v.findings.count }
+/** How long polls may fail before "retrying" turns red. */
+const LATE_READ_MS = 60_000
+
+/**
+ * Line 1, the count and the status, and line 2, the goal and its current step,
+ * since the tab has no band. While polls fail, the status says when the view shown was read.
+ */
+function Heading({ v, now }: { v: View; now: number }) {
   const { changedAt, isUpdating, error } = v.status
-  const status = isUpdating ? 'Updating…' : changedAt !== null ? `Updated ${ago(now - changedAt)}` : 'Not updated yet'
+  const sinceRead = Date.now() - readAt
+  const status =
+    pollFailures >= 2 ? (
+      <span class={sinceRead > LATE_READ_MS ? 'tone-error' : undefined}>Last read {ago(sinceRead)} · retrying</span>
+    ) : isUpdating ? (
+      'Updating…'
+    ) : changedAt !== null ? (
+      `Updated ${ago(now - changedAt)}`
+    ) : (
+      'Not updated yet'
+    )
+  const findings = v.findings.count
+  const counts = [
+    v.needsYou.count > 0 ? <span class="tone-needsYou">{v.needsYou.count} need you</span> : null,
+    findings > 0 ? <span class="tone-findings">{findings === 1 ? '1 finding' : `${findings} findings`}</span> : null,
+  ].filter(x => x !== null)
+
+  return (
+    <header>
+      <div class="line-one">
+        <span class="counts">
+          {counts.map((c, n) => (
+            <span key={n}>
+              {n > 0 ? <span class="muted"> · </span> : null}
+              {c}
+            </span>
+          ))}
+        </span>
+        <div class="status">
+          {status}
+          {error ? <div class="tone-error">{error}</div> : null}
+          {lineNote && Date.now() - lineNote.at < SETTLED_MS ? <div class="muted">{lineNote.text}</div> : null}
+        </div>
+      </div>
+      {v.goal ? (
+        <div class="goal">
+          <span class="goal-mark">◆ </span>
+          {v.goal}
+          {v.now ? <span class="muted"> · {v.now}</span> : null}
+        </div>
+      ) : null}
+    </header>
+  )
+}
+
+function TabBar({ v }: { v: View }) {
+  const counts: Record<Tab, number> = { needsYou: v.needsYou.count, findings: v.findings.count }
 
   return (
     <nav>
@@ -897,44 +1039,44 @@ function TabBar({ v, now }: { v: View; now: number }) {
           </button>
         ))}
       </div>
-      <div class="status">
-        {status}
-        {error ? <div class="tone-error">{error}</div> : null}
-        {lineNote && Date.now() - lineNote.at < SETTLED_MS ? <div class="muted">{lineNote.text}</div> : null}
-      </div>
     </nav>
   )
 }
 
-/** Switches between the conversation's inbox and the demo. The new view starts fresh, so no row reads as just closed. */
+/** Switches between the conversation's inbox and the demo. The new view starts fresh, so no row reads as just closed or new. */
 async function toggleDemo() {
   isDemo = !isDemo
   view = null
   seen = new Map()
+  rowsSeen = null
+  arrived.clear()
   selection.needsYou = null
   selection.findings = null
   typing = null
-  const seq = ++requested
   draw()
-  try {
-    const v = await callTool<View>('inbox_view', { demo: isDemo })
-    if (v) applyView(v, seq)
-  } catch {
-    readFailed = true
-    draw()
-  }
+  await read()
 }
 
 function App(): ComponentChildren {
   if (!view)
-    return <div class="notice">{readFailed ? 'Could not read the inbox.' : <span class="muted">Loading…</span>}</div>
+    return readFailed ? (
+      <div class="notice">
+        Could not read the inbox.{' '}
+        <button type="button" class="key" onClick={() => void read()}>
+          Try again
+        </button>
+      </div>
+    ) : (
+      <div class="notice">
+        <span class="muted">Loading…</span>
+      </div>
+    )
   const v = view
   const now = v.at
   const lists = listsOf(v, drawnSettled(seen, Date.now()))
 
   return (
     <>
-      {readFailed ? <div class="notice">Could not read the inbox.</div> : null}
       {isDemo ? (
         <div class="demo-note">
           <span>Showing sample entries. Presses here send nothing.</span>
@@ -943,13 +1085,10 @@ function App(): ComponentChildren {
           </button>
         </div>
       ) : null}
-      <TabBar v={v} now={now} />
+      <Heading v={v} now={now} />
+      <TabBar v={v} />
       {tab === 'needsYou' ? <NeedsYou v={v} lists={lists} now={now} /> : <Findings v={v} lists={lists} now={now} />}
       <footer>
-        <span>
-          <kbd>1 2</kbd>Switch tabs<span class="sep">·</span>
-          <kbd>j k</kbd>Select the next or previous row
-        </span>
         {isDemo ? null : (
           <button type="button" class="demo-toggle" onClick={() => void toggleDemo()}>
             Show demo
