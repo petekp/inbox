@@ -3350,9 +3350,9 @@ export const register: Register = on => {
     // A group's title: its name, and how many of its items are open. An empty
     // group's own line says it has none, so its title has no count.
     const groupTitle = (title: string, count: number) => (
-      <Box paddingLeft={1}>
+      <Box paddingLeft={2}>
         <Text>
-          {title}
+          <Text bold>{title}</Text>
           {count > 0 ? <Text color={pal.muted}> {count}</Text> : null}
         </Text>
       </Box>
