@@ -30,18 +30,19 @@ it again must look deliberate.
 ## Design
 
 - **A last action per row.** When an action that keeps its row is pressed, the
-  row records it: what happened and when. It keeps only the latest, for the
-  session. Reason: the "Fix sent" row already works this way.
-- **Where it shows.** Selected, the row shows "Discuss sent · just now" in the
-  done color, under its body. Unselected, it replaces the row's age, as
-  "discuss sent 1m ago". A PR block shows it under its buttons. Reason: the
-  same places "Fix sent" uses.
+  row records it: which action and when. It keeps only the latest, for the
+  session. Reason: a PR check's Fix already works this way.
+- **Where it shows.** Selected, the row shows "✓ Discuss · just now" under its
+  body. Unselected, it replaces the row's age, as "✓ Discuss 1m ago". A PR
+  block shows it under its buttons. Reason: the same places a PR check's Fix
+  uses.
 - **The key after a press.** The action reads "Discuss again". Reason: as with
   "Fix again", a second press is then a choice, not a retry.
-- **Wording.** It says "<action> sent", as in "Draft reply sent". Reason: the
-  person reads the action they pressed, in the form "Fix sent" set. Address
-  on a review thread says "Sent to Claude to fix" instead, because "address
-  sent" read as a label, not as what happened.
+- **Wording.** It says a ✓ and the label of the action pressed, as in
+  "✓ Draft reply". Reason: the person sees the choice they made, checked off.
+  "Draft reply sent" read as a label, and "Sent to Claude to fix" was long.
+  A row whose own mark is already a ✓, such as a folded thread, leaves out
+  the second one.
 - **Opens and copies record nothing.** The browser, app or toast they bring up
   is the feedback, and a note in the pane would only repeat it.
 - **A finding that leaves.** Address, Discuss and a typed reply send the finding
@@ -66,8 +67,8 @@ toast says so.
 
 ## Enforcement
 
-- **The type.** Every `Action` declares `done`: the text its press records, or
-  `null` when the press shows itself (it closes or settles the row, opens the
+- **The type.** Every `Action` declares `done`: whether its press records its
+  label, or `false` when the press shows itself (it closes or settles the row, opens the
   text field, moves the selection, or brings up a page, an app or a toast).
   Leaving it out fails the type check, so a new action has to decide. The type covers only buttons built
   as an `Action`. The pane's other buttons switch tabs, select a row, fold a
@@ -78,7 +79,7 @@ toast says so.
   PR block all draw through it. The one handler that records its own is
   Address all, which also records Address on each thread it sent.
 - **A test.** The PR test presses Resolve conflicts on the block, Discuss by
-  hotkey and Address by click, and checks each shows "… sent" and reads
+  hotkey and Address by click, and checks each shows "✓ <label>" and reads
   "again". It fails when a render path skips the wrapper, which the type
   cannot catch.
 - **Agent guidance.** `AGENTS.md` states the rule and points at `done` and
@@ -88,4 +89,4 @@ toast says so.
 
 - Whether Claude has started on a sent message. The engine queues a message sent
   while Claude works, and the mod cannot see when it is delivered. The row
-  says "sent" either way.
+  shows the ✓ either way.

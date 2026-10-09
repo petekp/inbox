@@ -91,4 +91,5 @@ what's happening now.
 
 **Last action**:
 What an item or PR in the pane says after the person presses one of its
-actions, such as "Discuss sent · 1m ago". Each keeps only its latest.
+actions: a ✓ and the action's label, as in "✓ Discuss · 1m ago". Each keeps
+only its latest.

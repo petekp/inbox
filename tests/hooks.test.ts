@@ -195,7 +195,7 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   await pane.press({ key: 'help-i1-0' })
   await clock.settle()
   expect(sent.at(-1)).toContain('./load.sh')
-  expect(await pane.find({ text: /Run load script sent ·/ })).toBeDefined()
+  expect(await pane.find({ text: /Run load script · just now/ })).toBeDefined()
   expect(await pane.find({ key: 'help-i1-0' })).toBeUndefined()
   expect(await band.find({ text: /waiting on you/ })).toBeUndefined()
 
@@ -372,7 +372,7 @@ test('a finding Claude records shows in the Findings tab, and Address it sends i
   expect(sent.at(-1)).toContain('Please address this finding you recorded:\nIssue: Retry loop never backs off')
   // It stays in place with what was sent for a few seconds, then leaves.
   await clock.settle()
-  expect(await pane.find({ text: /Address sent/ })).toBeDefined()
+  expect(await pane.find({ text: /^Address it$/ })).toBeDefined()
   await clock.advance(9000)
   expect(await pane.find({ text: /Retry loop never backs off/ })).toBeUndefined()
 })
@@ -413,7 +413,7 @@ test('t opens a field for the person’s own words: an answer closes its questio
     'About this finding you recorded:\nIssue: README is stale\nIt names the old command.\n\nFix it after the CLI ships.',
   )
   await clock.settle()
-  expect(await pane.find({ text: /Reply sent/ })).toBeDefined()
+  expect(await pane.find({ text: /^Reply$/ })).toBeDefined()
   await clock.advance(9000)
   expect(await pane.find({ text: /README is stale/ })).toBeUndefined()
 })
@@ -574,33 +574,33 @@ test('a PR linked in a reply shows in the PRs tab; its buttons send its conflict
   await pane.press({ key: 'resolve-acme/greet#12' })
   expect(sent.at(-1)).toContain('PR #12 (https://github.com/acme/greet/pull/12) conflicts with main.')
   await clock.settle()
-  expect(await pane.find({ text: /Resolve conflicts sent ·/ })).toBeDefined()
+  expect(await pane.find({ text: /✓ Resolve conflicts ·/ })).toBeDefined()
   expect((await pane.find({ key: 'resolve-acme/greet#12' }))?.props.label).toBe('Resolve conflicts again')
 
   // The failing check comes first. Once its fix is sent, the row says so until a rerun of it fails again.
   await pane.press({ key: 'fix-acme/greet#12-test' })
   expect(sent.at(-1)).toContain('The CI check "test" is failing on PR #12')
-  expect(await pane.find({ text: /Fix sent ·/ })).toBeDefined()
+  expect(await pane.find({ text: /Fix · just now/ })).toBeDefined()
   await pane.press({ key: 'next' })
-  expect(await pane.find({ text: /fix sent/ })).toBeDefined()
+  expect(await pane.find({ text: /· Fix just now/ })).toBeDefined()
   job = 2
   await pane.press({ key: 'tab-findings' })
   await pane.press({ key: 'tab-prs' })
   await clock.settle()
-  expect(await pane.find({ text: /fix sent/i })).toBeUndefined()
+  expect(await pane.find({ text: /fix sent|· Fix /i })).toBeUndefined()
 
   // A thread's keys say so too, pressed by hotkey or by click.
   await pane.press({ key: 'next' })
   await pane.press({ key: 'discuss-T1-key' })
   expect(sent.at(-1)).toContain("Let's talk through this review comment on PR #12")
   await clock.settle()
-  expect(await pane.find({ text: /Discuss sent ·/ })).toBeDefined()
+  expect(await pane.find({ text: /✓ Discuss ·/ })).toBeDefined()
   expect((await pane.find({ key: 'discuss-T1' }))?.props.label).toMatch(/Discuss again$/)
   await pane.press({ key: 'address-T1' })
   expect(sent.at(-1)).toContain('Address this review comment on PR #12')
   expect(sent.at(-1)).toContain('bin/greet:4, from @sam:\nQuote the name.')
   await clock.settle()
-  expect(await pane.find({ text: /Sent to Claude to fix ·/ })).toBeDefined()
+  expect(await pane.find({ text: /Address · just now/ })).toBeDefined()
 
   // Sent to Claude, the thread folds to its first line, with its keys behind Details, until the reviewer answers.
   const details = 'fold-details-acme/greet#12 thread T1'

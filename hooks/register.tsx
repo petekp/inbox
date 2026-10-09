@@ -1028,7 +1028,8 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
             id,
             {
               ...last,
-              text: last.text === 'Address sent' ? ADDRESS_SENT : last.text,
+              // Earlier versions saved "Discuss sent" or "Sent to Claude to fix"; a last action is now the label pressed.
+              text: /^Sent to Claude to /.test(last.text) ? 'Address' : last.text.replace(/ sent$/, ''),
               isHandoff: last.isHandoff ?? /^(address-|help-|typed$)/.test(last.action),
             },
           ]),
@@ -1471,11 +1472,11 @@ type Action = {
   variant?: 'primary'
   dimColor?: boolean
   /**
-   * What the row says once pressed, as in "Discuss sent", so the person sees it
-   * went through. Null only when the press shows itself: the row closes or
-   * leaves, a field opens, the row shows its own mark, or a page, app or toast opens.
+   * Whether the press leaves "✓ <label>" on its row, so the person sees it went
+   * through. False only when the press shows itself: the row closes or leaves,
+   * a field opens, the row shows its own mark, or a page, app or toast opens.
    */
-  done: string | null
+  done: boolean
   /** The press hands the row's work to Claude, so the row folds and stops waiting on the person. Explain, Discuss and Draft reply only ask Claude to talk or draft. */
   handsOff?: boolean
   onPress: (press: UiPressArgument) => void
@@ -1487,7 +1488,7 @@ function answerActions($: EngineInterface, item: Item): Action[] {
     // Pressing it sends the answer alone, without the note.
     label: answer === item.rec ? `${clipLabel(answer, 32)} (recommended)` : clipLabel(answer, 32),
     ...(answer === item.rec ? { variant: 'primary' as const } : {}),
-    done: null,
+    done: false,
     onPress: () => void sendAnswer($, item, answer),
   }))
 }
@@ -1496,7 +1497,7 @@ function helpActions($: EngineInterface, item: Item): Action[] {
   return steps(item.helps).map(({ label, step }, n) => ({
     key: `help-${item.id}-${n}`,
     label,
-    done: step.some(h => h.kind === 'run') ? `${label} sent` : null,
+    done: step.some(h => h.kind === 'run'),
     handsOff: step.some(h => h.kind === 'run'),
     onPress: (press: UiPressArgument) => void useStep($, item, step, press),
   }))
@@ -1506,13 +1507,10 @@ function doneAction($: EngineInterface, item: Item): Action {
   return {
     key: `done-${item.id}`,
     label: 'Done',
-    done: null,
+    done: false,
     onPress: () => void close($, item.id, { how: 'done', outcome: 'done' }),
   }
 }
-
-/** What a review thread says once Address sends it: what happened to it, not which button was pressed. */
-const ADDRESS_SENT = 'Sent to Claude to fix'
 
 /** A pane action with the key that presses it while the pane has focus. */
 type KeyAction = Action & { hotkey: string }
@@ -1535,14 +1533,14 @@ function itemKeys($: EngineInterface, item: Item): { keys: KeyAction[]; more: Ke
     key: `explain-${item.id}`,
     label: 'Explain',
     hotkey: 'e',
-    done: 'Explain sent',
+    done: true,
     onPress: () => void explain($, item),
   }
   const typeKey = {
     key: `typekey-${item.id}`,
     label: item.kind === 'task' ? 'Type a reply' : 'Type an answer',
     hotkey: 't',
-    done: null,
+    done: false,
     onPress: () => void startTyping($, item.id),
   }
   if (item.kind === 'task')
@@ -1557,7 +1555,7 @@ function itemKeys($: EngineInterface, item: Item): { keys: KeyAction[]; more: Ke
         key: `dismiss-${item.id}`,
         label: 'Dismiss',
         hotkey: 'x',
-        done: null,
+        done: false,
         onPress: () => void close($, item.id, { how: 'dismissed', outcome: 'dismissed' }),
       },
     ],
@@ -2568,7 +2566,7 @@ export const register: Register = on => {
         moreKeys: () => itemKeys($, item).more,
         // A question closes on its typed answer; a task stays open.
         onType: {
-          done: item.kind === 'task' ? 'Reply sent' : null,
+          done: item.kind === 'task' ? 'Reply' : null,
           handsOff: item.kind === 'task',
           send: (text: string) => void sendTypedForItem($, item, text),
         },
@@ -2598,14 +2596,14 @@ export const register: Register = on => {
           ) : null}
         </Box>
       ),
-      onType: { done: 'Reply sent', send: (text: string) => void sendTypedForFinding($, finding, text) },
+      onType: { done: 'Reply', send: (text: string) => void sendTypedForFinding($, finding, text) },
       typeHint: 'Your reply to Claude',
       keys: () => [
         {
           key: `address-${finding.id}`,
           label: 'Address it',
           hotkey: 'a',
-          done: 'Address sent',
+          done: true,
           onPress: () => void actOnFinding($, finding, 'address'),
         },
       ],
@@ -2614,21 +2612,21 @@ export const register: Register = on => {
           key: `typekey-${finding.id}`,
           label: 'Type a reply',
           hotkey: 't',
-          done: null,
+          done: false,
           onPress: () => void startTyping($, finding.id),
         },
         {
           key: `discuss-${finding.id}`,
           label: 'Discuss',
           hotkey: 'e',
-          done: 'Discuss sent',
+          done: true,
           onPress: () => void actOnFinding($, finding, 'discuss'),
         },
         {
           key: `drop-${finding.id}`,
           label: 'Dismiss',
           hotkey: 'x',
-          done: null,
+          done: false,
           onPress: () => void removeFinding($, finding.id),
         },
       ],
@@ -2642,7 +2640,7 @@ export const register: Register = on => {
         id: prCheckId(pr, c),
         handle: sentAt === null ? '✗' : '✓',
         handleTone: sentAt === null ? 'error' : 'done',
-        ...(sentAt === null ? {} : { fold: { note: `Fix sent · ${ago(now - sentAt)}` } }),
+        ...(sentAt === null ? {} : { fold: { note: `Fix · ${ago(now - sentAt)}` } }),
         meta: (
           <Text color={pal.tone.error} bold>
             Failing check
@@ -2652,21 +2650,21 @@ export const register: Register = on => {
         line:
           sentAt === null
             ? { text: c.name, after: ' · failing check', afterTone: 'error' }
-            : { text: c.name, after: ` · fix sent ${ago(now - sentAt)}`, afterTone: 'done' },
+            : { text: c.name, after: ` · Fix ${ago(now - sentAt)}`, afterTone: 'done' },
         body: null,
         keys: () => [
           {
             key: `fix-${pr.ref}-${c.name}`,
             label: sentAt === null ? 'Fix' : 'Fix again',
             hotkey: 'a',
-            done: null,
+            done: false,
             onPress: () => void sendPrFix($, pr, c),
           },
           {
             key: `log-${pr.ref}-${c.name}`,
             label: 'Open log',
             hotkey: 'o',
-            done: null,
+            done: false,
             onPress: () => void openUrl($, c.url ?? pr.url),
           },
         ],
@@ -2717,12 +2715,12 @@ export const register: Register = on => {
             key: `fix-${id}`,
             label: fixSent ? 'Fix again' : 'Fix',
             hotkey: 'a',
-            done: null,
+            done: false,
             onPress: () => void sendFix($, c),
           },
         ],
         moreKeys: () => [
-          { key: `dismiss-${id}`, label: 'Dismiss', hotkey: 'x', done: null, onPress: () => void dismissCheck($, c) },
+          { key: `dismiss-${id}`, label: 'Dismiss', hotkey: 'x', done: false, onPress: () => void dismissCheck($, c) },
         ],
       }
     }
@@ -2785,7 +2783,7 @@ export const register: Register = on => {
             key: `address-${t.id}`,
             label: 'Address',
             hotkey: 'a',
-            done: ADDRESS_SENT,
+            done: true,
             handsOff: true,
             onPress: () => void send($, prompts.address(pr, [t])),
           },
@@ -2793,14 +2791,14 @@ export const register: Register = on => {
             key: `draft-${t.id}`,
             label: 'Draft reply',
             hotkey: 'r',
-            done: 'Draft reply sent',
+            done: true,
             onPress: () => void send($, prompts.draft(pr, t)),
           },
           {
             key: `open-${t.id}`,
             label: 'Open',
             hotkey: 'o',
-            done: null,
+            done: false,
             onPress: () => void openUrl($, t.reply?.url || t.url || pr.url),
           },
         ],
@@ -2809,7 +2807,7 @@ export const register: Register = on => {
             key: `discuss-${t.id}`,
             label: 'Discuss',
             hotkey: 'e',
-            done: 'Discuss sent',
+            done: true,
             onPress: () => void send($, prompts.discuss(pr, t)),
           },
         ],
@@ -2896,8 +2894,7 @@ export const register: Register = on => {
     }
     const withLastAction = <A extends Action>(row: { id: string; title: string }, index: number, actions: A[]): A[] =>
       actions.map(a => {
-        const done = a.done
-        if (done === null) return a
+        if (!a.done) return a
 
         return {
           ...a,
@@ -2906,7 +2903,7 @@ export const register: Register = on => {
             a.onPress(press)
             void recordLastAction($, row.id, {
               action: a.key,
-              text: done,
+              text: a.label,
               isHandoff: a.handsOff === true,
               tab,
               title: row.title,
@@ -2920,7 +2917,7 @@ export const register: Register = on => {
       key: `fold-details-${row.id}`,
       label: shownDetails.includes(row.id) ? 'Hide details' : 'Details',
       hotkey: 'v',
-      done: null,
+      done: false,
       onPress: () => toggleDetails(row.id),
     })
     // The selected row's keys, for both the key row it draws and the hidden bindings.
@@ -2934,10 +2931,11 @@ export const register: Register = on => {
     // A last action is green only on a row that shows a ✓, as a folded review thread
     // does. On a row still open it is muted, so it does not read as an answer.
     const lastTone = (row: Row) => (row.handleTone === 'done' ? ('done' as const) : undefined)
-    const lastActionText = (id: string) => {
+    // A last action reads "✓ Discuss · 1m ago". A row whose own mark is a ✓ leaves out the second one.
+    const lastActionText = (id: string, row?: Row) => {
       const last = lastActions[id]
 
-      return last ? `${last.text} · ${ago(now - last.at)}` : null
+      return last ? `${row && lastTone(row) ? '' : '✓ '}${last.text} · ${ago(now - last.at)}` : null
     }
     // A section's children hang from its title like a directory listing. A
     // child's row has a 1-column bar, 3 columns for the tree, 3 for its marker,
@@ -3013,11 +3011,11 @@ export const register: Register = on => {
     const unselectedLine = (row: Row, onPress: () => void, inset: number) => {
       const plain = row.line ?? { text: row.title, after: row.titleAfter }
       const last = lastActions[row.id]
-      // A row's last action takes the place of its age, as "discuss sent 1m ago".
+      // A row's last action takes the place of its age, as "✓ Discuss 1m ago".
       const line = last
         ? {
             ...plain,
-            after: ` · ${last.text.charAt(0).toLowerCase()}${last.text.slice(1)} ${ago(now - last.at)}`,
+            after: ` · ${lastTone(row) ? '' : '✓ '}${last.text} ${ago(now - last.at)}`,
             afterTone: lastTone(row),
           }
         : plain
@@ -3064,7 +3062,7 @@ export const register: Register = on => {
       const isSelected = index === at
       const { keys, more } = isSelected ? rowActions(row, index) : { keys: [], more: [] }
       const isOpen = !row.fold || shownDetails.includes(row.id)
-      const lastText = lastActionText(row.id)
+      const lastText = lastActionText(row.id, row)
       const status = [row.fold?.note, lastText].filter((s): s is string => Boolean(s))
 
       return (
@@ -3568,7 +3566,7 @@ export const register: Register = on => {
               {
                 key: `resolve-${pr.ref}`,
                 label: 'Resolve conflicts',
-                done: 'Resolve conflicts sent',
+                done: true,
                 onPress: () => void send($, prompts.resolve(pr)),
               },
             ]
@@ -3578,7 +3576,7 @@ export const register: Register = on => {
               {
                 key: `address-all-${pr.ref}`,
                 label: `Address all ${waitingOn.length} threads`,
-                done: 'Address all sent',
+                done: true,
                 onPress: () => {
                   void send($, prompts.address(pr, waitingOn))
                   // Each thread it sent reads as if its own Address were pressed, so it folds too.
@@ -3587,7 +3585,7 @@ export const register: Register = on => {
                     const index = indexOf.get(id) ?? -1
                     void recordLastAction($, id, {
                       action: `address-${t.id}`,
-                      text: ADDRESS_SENT,
+                      text: 'Address',
                       isHandoff: true,
                       tab,
                       title: threadWhere(t),
@@ -3598,9 +3596,9 @@ export const register: Register = on => {
               },
             ]
           : []),
-        { key: `open-${pr.ref}`, label: 'Open PR', done: null, onPress: () => void openUrl($, pr.url) },
+        { key: `open-${pr.ref}`, label: 'Open PR', done: false, onPress: () => void openUrl($, pr.url) },
         ...(pr.ref !== prState.branchRef
-          ? [{ key: `dismiss-pr-${pr.ref}`, label: 'Dismiss', done: null, onPress: () => void dismissPr($, pr.ref) }]
+          ? [{ key: `dismiss-pr-${pr.ref}`, label: 'Dismiss', done: false, onPress: () => void dismissPr($, pr.ref) }]
           : []),
       ]
       // The viewer replied last. Their own notes with no reply wait on no one, so they don't count.
@@ -3674,15 +3672,15 @@ export const register: Register = on => {
     const moveKeys: KeyAction[] =
       ids.length > 1
         ? [
-            { key: 'next', label: 'Next', hotkey: 'j', done: null, onPress: () => move(1) },
-            { key: 'previous', label: 'Previous', hotkey: 'k', done: null, onPress: () => move(-1) },
+            { key: 'next', label: 'Next', hotkey: 'j', done: false, onPress: () => move(1) },
+            { key: 'previous', label: 'Previous', hotkey: 'k', done: false, onPress: () => move(-1) },
           ]
         : []
     const tabKeys: KeyAction[] = TABS.map(({ id, label, hotkey }) => ({
       key: `tab-key-${id}`,
       label,
       hotkey,
-      done: null,
+      done: false,
       onPress: () => void showTab($, id),
     }))
 

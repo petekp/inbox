@@ -434,7 +434,7 @@ export function demoView(now: number): View {
     lastActions: {
       d18: {
         action: 'help-d18-0',
-        text: 'Run load script sent',
+        text: 'Run load script',
         at: now - 1 * MIN,
         isHandoff: true,
         turnsStarted: 14,
@@ -444,7 +444,7 @@ export function demoView(now: number): View {
       },
       'petekp/inbox#31 thread DT1': {
         action: 'address-DT1',
-        text: 'Sent to Claude to fix',
+        text: 'Address',
         at: now - 2 * MIN,
         isHandoff: true,
         turnsStarted: 14,

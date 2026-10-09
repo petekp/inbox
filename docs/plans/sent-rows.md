@@ -8,8 +8,8 @@ Status: built. Terms follow `GLOSSARY.md`. It extends
 When the person hands a row's work to Claude, the row stops waiting on them.
 Every surface shows that the same way:
 
-- **It folds.** One line with a ✓ and what was sent, as in "Run load script
-  sent · 1m ago". The body and the row's keys sit behind Details, on `v`.
+- **It folds.** One line with a ✓ and the action pressed, as in "Run load
+  script · 1m ago". The body and the row's keys sit behind Details, on `v`.
 - **It leaves every "waiting on you" count:** the band, the tab counts and
   the Herdr sidebar line.
   A PR's blockers still list it, in words that say it was sent, since it still

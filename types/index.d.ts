@@ -62,7 +62,7 @@ export type Settled = Closed & { index: number }
 export type LastAction = {
   /** The action's key, so that action reads "… again". */
   action: string
-  /** What happened, as in "Discuss sent". */
+  /** The label of the action pressed, as in "Discuss". The row shows it after a ✓. */
   text: string
   at: number
   /** The press handed the row's work to Claude, so the row folds and stops waiting on the person. */
