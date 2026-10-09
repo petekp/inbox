@@ -197,6 +197,7 @@ const DESKTOP_WIDE_AT = 50
 // About how many characters of desktop's proportional text fit in one column of `bodyColumns`, measured
 // on a /inbox demo row. A guess too high is cut from the muted text after a title, not from the title.
 const DESKTOP_CHARS_PER_CELL = 1.25
+const DESKTOP_TAB_PAD = '\u00a0'.repeat(3)
 // Theme keys, so the colors follow the person's Claude Code theme.
 const NEEDS_YOU = 'warning'
 // A child's place under its section: a middle child, the last, or a block the tree passes.
@@ -3442,11 +3443,12 @@ export const register: Register = on => {
             // Desktop: every tab is one native button, the shown one the primary. The key stays the
             // same in every drawing: the app takes the focus off the pane when the element holding
             // it leaves, and the next click would only bring it back.
+            // A Button sizes to its label, so non-breaking spaces widen the tab; plain spaces would collapse.
             if (look === 'desktop')
               return (
                 <Button
                   key={`tab-${id}`}
-                  label={count > 0 ? `${label} ${count}` : label}
+                  label={`${DESKTOP_TAB_PAD}${count > 0 ? `${label} ${count}` : label}${DESKTOP_TAB_PAD}`}
                   {...(tab === id ? { variant: 'primary' as const } : {})}
                   onPress={() => void showTab($, id)}
                 />
