@@ -20,8 +20,8 @@ that updates the inbox after each reply, reads two.
 | Previous-session text (`carryText`) | Claude | First prompt after "Continue from it" | Where the last session stood, its findings marked as that session's |
 | Claim check (`claimMessage`) | Claude | Turn end, when a reply claims a check passes that failed or is stale | Run the check or say it is untested |
 | Button messages | Claude, as your message | When you press | One action on one item, finding or PR row |
-| `SYSTEM` | Inbox model | After each reply | Card, new items, closing items and findings |
-| `catchUpPrompt` | A fork of the conversation | After a failed update, or a mid-conversation load | Same as `SYSTEM`, over the whole conversation |
+| `systemText` | Inbox model | After each reply | Card, new items, closing items and findings |
+| `catchUpPrompt` | A fork of the conversation | After a failed update, or a mid-conversation load | Same as `systemText`, over the whole conversation |
 
 ## Done
 

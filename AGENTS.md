@@ -2,9 +2,9 @@
 
 - The repo is public. Keep private paths, other people's names and session content out of commits.
 - Run `./scripts/check.sh` after every change.
-- Test a change to text a model reads before keeping it. Small rewordings change behavior: a one-word edit to the findings rule in `SYSTEM` made the inbox model re-add questions the user had dismissed.
+- Test a change to text a model reads before keeping it. Small rewordings change behavior: a one-word edit to the findings rule in `systemText` made the inbox model re-add questions the user had dismissed.
   - Claude reads `GUIDANCE`, the tool descriptions and the tool results in `hooks/register.tsx`, and the `inbox:` texts that `inboxText`, `closedText`, `carryText` and `answerNote` build in `hooks/ledger.ts`.
-  - The inbox model, a Sonnet call after each reply, reads `SYSTEM` and the blocks from `buildPrompt` in `hooks/ledger.ts`.
+  - The inbox model, a Sonnet call after each reply, reads `systemText` and the blocks from `buildPrompt` in `hooks/ledger.ts`.
   - To compare two versions, print each one's prompt for the same sample exchange, run each several times with `claude -p --model sonnet --tools "" --system-prompt …`, and count the outcomes.
 - Every action in the pane shows what it did as soon as it is pressed. When Discuss showed nothing, a person sent the same message four or five times. Each `Action` declares `done`: whether its press leaves a ✓ and its label on the row, as in "✓ Discuss", or `false` when the press shows itself, as closing a row, opening the text field or opening a page in the browser does. Draw an action's buttons through `withLastAction()`, as `listRow`, `rowKeys` and the PR block do.
 - Saved state outlives the code. Its shape is `PluginState` in `types/index.d.ts`. When a saved shape changes, convert old state in `upgradeLedger` or `upgradeState`.

@@ -119,7 +119,9 @@ function howFromOutcome(outcome) {
   return "update";
 }
 var NEEDS_PERSON = /\b(login|logout|auth|signin|sign-in|sudo|passwd|ssh-add|ssh-keygen|configure|init --interactive)\b/i;
-var SYSTEM = `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
+function systemText(host) {
+  const band = host.band ? ` They always see the items in <open> in ${host.band}.` : "";
+  return `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
 
 Input:
 - <card>: the ledger before this exchange (may be empty)
@@ -129,7 +131,7 @@ Input:
 - <person>: what the person just sent, and the commands they ran themselves: "$ cmd" for a shell command, with its output, and "/name" for a slash command
 - <activity>: what the agent did this turn (files edited, commands, URLs)
 - <reply>: the agent's final reply
-- <screen>: what the person has on screen besides the conversation. They always see the items in <open> in a band above their prompt.
+- <screen>: what the person has on screen besides the conversation.${band}
 - <checks>: the latest result of each test, type check, lint or build the agent ran, read from the commands themselves. "before the last edit" means files changed after it ran. These results override the reply: never write in DONE or NOW that a check passes unless <checks> shows it passing and not before the last edit.
 
 Answer with lines only, each starting with one of these keys. No other text.
@@ -159,6 +161,7 @@ HELP: <item> | <kind> | <value> | <name>
   Use only paths, commands, text and URLs that appear in <reply> or <activity>. Never invent one.
 
 Write plainly. No jargon, no filler, no markdown.`;
+}
 var FENCE = /```[^\n]*\n([\s\S]*?)```/g;
 function codeBlocks(reply) {
   return [...reply.matchAll(FENCE)].map((m) => (m[1] ?? "").replace(/\n$/, ""));
@@ -523,6 +526,17 @@ var run = (args, { cwd, stdin, timeoutMs }) => new Promise((resolve) => {
 import { randomUUID } from "node:crypto";
 import { mkdir as mkdir2, readFile as readFile2, rm, writeFile as writeFile2 } from "node:fs/promises";
 import { join as join2 } from "node:path";
+
+// src/texts.ts
+var CODEX = {
+  agent: "Codex",
+  surface: "the Inbox tab",
+  band: null,
+  shownIn: "the Inbox tab",
+  findingsIn: "the Findings section of the Inbox tab"
+};
+
+// src/update.ts
 var MODEL = "gpt-6.1-sol";
 var TIMEOUT_MS = 12e4;
 var OFF = [
@@ -549,7 +563,8 @@ function codexAsk(exec, cli, dir, model = MODEL) {
     const system = join2(dir, "inbox-system.md");
     const out = join2(work, `reply-${randomUUID()}.txt`);
     await mkdir2(work, { recursive: true });
-    if (await readFile2(system, "utf8").catch(() => "") !== SYSTEM) await writeFile2(system, SYSTEM);
+    const instructions = systemText(CODEX);
+    if (await readFile2(system, "utf8").catch(() => "") !== instructions) await writeFile2(system, instructions);
     let off = [...OFF];
     for (let tries = 0; tries <= OFF.length; tries += 1) {
       await rm(out, { force: true });

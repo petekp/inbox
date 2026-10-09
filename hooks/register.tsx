@@ -82,7 +82,6 @@ import {
 } from './prs'
 import {
   EMPTY,
-  SYSTEM,
   ago,
   applyUpdate,
   buildPrompt,
@@ -104,6 +103,7 @@ import {
   stopFix,
   stopKindOf,
   stopText,
+  systemText,
   tasksRunBy,
   toolActivity,
   transcriptCatchUpPrompt,
@@ -730,9 +730,9 @@ async function applyLedgerReply(
   return 'current'
 }
 
-/** Asks the ledger model to update the ledger, with SYSTEM as its instructions, cached for the next call within five minutes. */
+/** Asks the ledger model to update the ledger, with systemText as its instructions, cached for the next call within five minutes. */
 function askLedgerModel($: EngineInterface, prompt: string, timeoutMs: number): Promise<ModelResult> {
-  const system = [{ text: SYSTEM, cache: true as const }]
+  const system = [{ text: systemText(CLAUDE_CODE), cache: true as const }]
 
   return $.model.complete({ model: MODEL, system, prompt, maxTokens: 1600, effort: 'low', timeoutMs })
 }
@@ -756,7 +756,7 @@ async function runUpdate($: EngineInterface, ex: Exchange): Promise<LedgerState>
 async function catchUp($: EngineInterface): Promise<LedgerState> {
   const [ledger, shown] = await Promise.all([read($, LEDGER), screen($)])
   const change = (l: Ledger, u: Update, now: number) => applyUpdate(l, u, now, l.turn)
-  const forked = await $.model.fork({ prompt: catchUpPrompt(ledger, shown) })
+  const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
   if (forked.isAnswered || forked.reason !== 'nothing-to-fork') return applyLedgerReply($, forked, null, change)
   // A resumed conversation has no request of this process's to fork until its
   // first reply, so the model reads the transcript instead, uncached.

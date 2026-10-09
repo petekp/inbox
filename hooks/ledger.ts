@@ -95,7 +95,11 @@ function howFromOutcome(outcome: string): Closed['how'] {
 const NEEDS_PERSON =
   /\b(login|logout|auth|signin|sign-in|sudo|passwd|ssh-add|ssh-keygen|configure|init --interactive)\b/i
 
-export const SYSTEM = `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
+/** The inbox model's instructions in a host. */
+export function systemText(host: Host): string {
+  const band = host.band ? ` They always see the items in <open> in ${host.band}.` : ''
+
+  return `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
 
 Input:
 - <card>: the ledger before this exchange (may be empty)
@@ -105,7 +109,7 @@ Input:
 - <person>: what the person just sent, and the commands they ran themselves: "$ cmd" for a shell command, with its output, and "/name" for a slash command
 - <activity>: what the agent did this turn (files edited, commands, URLs)
 - <reply>: the agent's final reply
-- <screen>: what the person has on screen besides the conversation. They always see the items in <open> in a band above their prompt.
+- <screen>: what the person has on screen besides the conversation.${band}
 - <checks>: the latest result of each test, type check, lint or build the agent ran, read from the commands themselves. "before the last edit" means files changed after it ran. These results override the reply: never write in DONE or NOW that a check passes unless <checks> shows it passing and not before the last edit.
 
 Answer with lines only, each starting with one of these keys. No other text.
@@ -135,6 +139,7 @@ HELP: <item> | <kind> | <value> | <name>
   Use only paths, commands, text and URLs that appear in <reply> or <activity>. Never invent one.
 
 Write plainly. No jargon, no filler, no markdown.`
+}
 
 const CATCH_UP =
   'The ledger below may have missed turns. Close every item in <open> and every finding in <findings> that the conversation shows answered, done, dealt with, or no longer relevant. Add as NEW only what still waits on the user and is not already in <open> or <findings>.'
@@ -143,7 +148,7 @@ const CATCH_UP =
  * Asks a fork of the main conversation to bring the ledger up to date at once,
  * for turns the per-turn update missed.
  */
-export function catchUpPrompt(ledger: Ledger, screen: string): string {
+export function catchUpPrompt(host: Host, ledger: Ledger, screen: string): string {
   return [
     'Pause the task. Do not use tools. Instead, act as the ledger keeper described below, over this whole conversation.',
     `Treat the whole conversation as the exchange. ${CATCH_UP}`,
@@ -151,13 +156,13 @@ export function catchUpPrompt(ledger: Ledger, screen: string): string {
     `<screen>${NL}${screen}${NL}</screen>`,
     'Code blocks here carry no [block N] marker, so a copy HELP must be one line of text.',
     '',
-    SYSTEM,
+    systemText(host),
   ].join(NL)
 }
 
 /**
  * The catch-up as an ordinary call over the transcript, for a conversation
- * this process cannot fork yet. SYSTEM goes in the call's system prompt.
+ * this process cannot fork yet. systemText goes in the call's system prompt.
  */
 export function transcriptCatchUpPrompt(ledger: Ledger, screen: string, transcript: string): string {
   return [
@@ -403,11 +408,19 @@ export function buildPrompt(ledger: Ledger, ex: Exchange): string {
  * person sees the inbox. The tool descriptions and results name the inbox as
  * `shownIn` and its findings as `findingsIn`.
  */
-export type Host = { agent: string; surface: string; shownIn: string; findingsIn: string }
+export type Host = {
+  agent: string
+  surface: string
+  /** Where the person sees the open items at all times, besides the surface; null when only the surface shows them. */
+  band: string | null
+  shownIn: string
+  findingsIn: string
+}
 
 export const CLAUDE_CODE: Host = {
   agent: 'Claude',
   surface: 'the /inbox pane',
+  band: 'a band above their prompt',
   shownIn: '/inbox',
   findingsIn: 'the Findings tab of /inbox',
 }

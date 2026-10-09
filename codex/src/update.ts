@@ -6,9 +6,10 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { applyUpdate, buildPrompt, parseReply, SYSTEM } from '../../hooks/ledger'
+import { applyUpdate, buildPrompt, parseReply, systemText } from '../../hooks/ledger'
 import { readState, statePath, updateState } from './state'
 import type { SessionState } from './state'
+import { CODEX } from './texts'
 import type { Run } from './tree'
 
 /** The inbox model, at low reasoning effort. gpt-6-luna is faster but closed a finding the reply only mentioned. */
@@ -43,7 +44,7 @@ export type Ask = (prompt: string) => Promise<string | null>
 
 /**
  * Asks the inbox model through the desktop app's own `codex exec`, with
- * SYSTEM as its only instructions, in an empty folder, with no saved session,
+ * systemText as its only instructions, in an empty folder, with no saved session,
  * user config, hooks or tools. Null when it fails.
  */
 export function codexAsk(exec: Run, cli: string, dir: string, model = MODEL): Ask {
@@ -52,7 +53,8 @@ export function codexAsk(exec: Run, cli: string, dir: string, model = MODEL): As
     const system = join(dir, 'inbox-system.md')
     const out = join(work, `reply-${randomUUID()}.txt`)
     await mkdir(work, { recursive: true })
-    if ((await readFile(system, 'utf8').catch(() => '')) !== SYSTEM) await writeFile(system, SYSTEM)
+    const instructions = systemText(CODEX)
+    if ((await readFile(system, 'utf8').catch(() => '')) !== instructions) await writeFile(system, instructions)
     let off = [...OFF]
     for (let tries = 0; tries <= OFF.length; tries += 1) {
       await rm(out, { force: true })

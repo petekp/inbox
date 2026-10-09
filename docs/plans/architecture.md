@@ -64,8 +64,8 @@ In order:
    are gone. Both hosts' texts came out the same, character for character,
    on sample inputs. A closed item's stored `how` stays `'claude'` for either
    agent, since renaming a stored value needs approval. The update model's
-   instructions still tell Codex's model the person sees items in a band;
-   changing that needs a measurement on Codex's model.
+   instructions, `systemText`, mention the band only for a host that has
+   one. Codex's model gave the same updates without that sentence.
 3. **One session engine.** Done. The logic both hosts kept as copies now
    lives in `hooks/`, and both hosts' texts came out the same, character for
    character:

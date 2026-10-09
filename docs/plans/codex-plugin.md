@@ -72,7 +72,7 @@ Terms follow `GLOSSARY.md`. "The mod" is the Claude Code mod in this repo.
 | `GUIDANCE` in the system prompt | `prompt.compose` adds a section | `SessionStart` context on every start, resume, clear and compact | Direct. It becomes developer context, not system prompt |
 | Start-of-context block (`carryText`) | `prompt.context` | The same `SessionStart` output | Direct |
 | Inbox line and answer line | `prompt.submit` context | `UserPromptSubmit` `additionalContext` | Direct |
-| Per-reply update by the inbox model | `$.model.complete` with Sonnet after `turn.complete` | A background `Stop` hook asks the server to run `codex exec` with `SYSTEM` | Direct. See gaps 6 and 7 |
+| Per-reply update by the inbox model | `$.model.complete` with Sonnet after `turn.complete` | A background `Stop` hook asks the server to run `codex exec` with `systemText` | Direct. See gaps 6 and 7 |
 | Catch-up after a missed update | `$.model.fork` | `codex exec` on `transcriptCatchUpPrompt`, built from `transcript_path` | Direct, later |
 | Activity lines for the update | Every tool call | `PreToolUse` on the shell, patch and MCP tools. Codex's other tools add no line | Reduced |
 | Band above the prompt | `ui.render` AbovePrompt | The Inbox tab's header. Nothing above the prompt | Gap 1 |
@@ -189,7 +189,7 @@ person's next message, so it can close the task then.
 
 ### 7. The model-facing text was measured on Claude and Sonnet
 
-`SYSTEM`, `GUIDANCE`, the tool descriptions and the inbox texts were tuned on
+`systemText`, `GUIDANCE`, the tool descriptions and the inbox texts were tuned on
 Claude and Sonnet. AGENTS.md records that a one-word change made the inbox
 model re-add dismissed questions. The port changes both the agent, Codex, and
 the inbox model, an OpenAI model.
