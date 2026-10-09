@@ -4,10 +4,11 @@ import { test } from 'node:test'
 import { applyPress, finishedResult } from '../../hooks/presses'
 import type { PressResult, RowPress } from '../../hooks/presses'
 import { recordClose, recordFinding } from '../../hooks/tools'
-import { feedbackText, SETTLED_MS } from '../../hooks/view'
+import { closedShown, feedbackText, SETTLED_MS } from '../../hooks/view'
 import type { RowView } from '../../hooks/view'
 import type { Item, LocalResult } from '../../types'
 import { endTurn, notePrompt, viewOf } from '../src/core'
+import { drawnSettled, SETTLE_WINDOW_MS, settledIds, settledSeen } from '../src/settle'
 import { emptyState } from '../src/state'
 import type { SessionState } from '../src/state'
 import { CODEX } from '../src/texts'
@@ -355,11 +356,13 @@ test('Address hands a finding off: it folds until an applied turn leaves it open
     [['f3', 'open', 'Discuss again']],
   )
   assert.equal(discussed.count, 1)
-  // Closed by Codex, it leaves the list for the Findings tab's Closed fold.
-  const closed = viewOf(
-    { ...sent, ledger: recordClose(CODEX, sent.ledger, { id: 'f3', reason: 'fixed' }, 90).ledger },
-    100,
+  // Closed by Codex, it settles in place with no Undo, then leaves the list for the Findings tab's Closed fold.
+  const closedBy = { ...sent, ledger: recordClose(CODEX, sent.ledger, { id: 'f3', reason: 'fixed' }, 90).ledger }
+  assert.deepEqual(
+    viewOf(closedBy, 100).findings.rows.map(r => [r.id, r.state, r.actions]),
+    [['f3', { is: 'settled', label: 'Closed by Codex: fixed', at: 90, canUndo: false }, []]],
   )
+  const closed = viewOf(closedBy, 90 + SETTLE_WINDOW_MS)
   assert.deepEqual(closed.findings.rows, [])
   assert.deepEqual(
     closed.findings.closed.map(f => [f.id, f.title, f.outcome]),
@@ -373,6 +376,79 @@ test('Address hands a finding off: it folds until an applied turn leaves it open
     dismissed.ledger.closedFindings.map(f => [f.id, f.how]),
     [['f3', 'dismissed']],
   )
+})
+
+test('Dismiss settles a row in place with Undo, and Undo puts it back open where it was; only a Done or Dismiss undoes', () => {
+  const s = withItems()
+  const dismissed = after(s, { action: 'dismiss', id: 'i1' })
+  const settled = viewOf(dismissed, 60).needsYou
+  assert.deepEqual(
+    settled.questions.map(r => [r.id, r.state, r.actions.map(a => a.press)]),
+    [['i1', { is: 'settled', label: 'Dismissed', at: 50, canUndo: true }, [{ action: 'undo', id: 'i1' }]]],
+  )
+  // It leaves the count while it settles.
+  assert.equal(settled.count, 1)
+  assert.equal(settled.topId, 'i2')
+  const undone = after(dismissed, { action: 'undo', id: 'i1' })
+  const back = viewOf(undone, 70).needsYou
+  assert.deepEqual(
+    back.questions.map(r => [r.id, r.state.is, r.handle, r.item?.options]),
+    [['i1', 'open', '1)', ['Fix add.js', 'Change test']]],
+  )
+  assert.equal(back.count, 2)
+  assert.deepEqual(undone.ledger.closed, [])
+  // Undo again, or on a row Codex answered or closed, finds nothing to undo.
+  assert.ok('stale' in pressed(undone, { action: 'undo', id: 'i1' }))
+  const answered = after(s, { action: 'answer', id: 'i1', option: 'Fix add.js' })
+  assert.ok('stale' in pressed(answered, { action: 'undo', id: 'i1' }))
+  const closedByCodex = { ...s, ledger: recordClose(CODEX, s.ledger, { id: 'i2', reason: 'done' }, 50).ledger }
+  assert.ok('stale' in pressed(closedByCodex, { action: 'undo', id: 'i2' }))
+  const expired = {
+    ...s,
+    ledger: {
+      ...s.ledger,
+      items: s.ledger.items.slice(1),
+      closed: [
+        {
+          id: 'i1',
+          kind: 'question' as const,
+          ask: 'Fix add.js or the test?',
+          outcome: 'expired',
+          how: 'expired' as const,
+          at: 40,
+          item: s.ledger.items[0],
+        },
+      ],
+    },
+  }
+  assert.ok('stale' in pressed(expired, { action: 'undo', id: 'i1' }))
+  // A dismissed finding comes back the same way.
+  const withFinding = {
+    ...s,
+    ledger: recordFinding(CODEX, s.ledger, { kind: 'issue', title: 'No lint script', detail: 'Only tests run.' }, 10)
+      .ledger,
+  }
+  const restored = after(after(withFinding, { action: 'dismiss', id: 'f3' }), { action: 'undo', id: 'f3' })
+  assert.deepEqual(
+    viewOf(restored, 70).findings.rows.map(r => [r.id, r.state.is]),
+    [['f3', 'open']],
+  )
+})
+
+test('the tab draws a settled row for SETTLED_MS from its first poll, then lists it in the Closed fold while the server still lists it settled', () => {
+  const s = withItems()
+  const dismissed = after(s, { action: 'dismiss', id: 'i1' })
+  // The first poll that lists the close comes 2 s after it.
+  let seen = settledSeen(new Map(), settledIds(viewOf(dismissed, 2050)), 2050)
+  assert.deepEqual([...drawnSettled(seen, 2050)], ['i1'])
+  const fold = (now: number) =>
+    closedShown(viewOf(dismissed, now).needsYou.closed.questions, drawnSettled(seen, now)).map(d => d.id)
+  assert.deepEqual(fold(2050), [])
+  // Past the tab's own SETTLED_MS, the server still lists it as settled, and the tab shows it in the fold.
+  const later = 2050 + SETTLED_MS + 1
+  seen = settledSeen(seen, settledIds(viewOf(dismissed, later)), later)
+  assert.equal(viewOf(dismissed, later).needsYou.questions[0]?.state.is, 'settled')
+  assert.deepEqual(fold(later), ['i1'])
 })
 
 test('Codex closing an item reads as Codex in its outcome', () => {

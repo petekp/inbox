@@ -57,9 +57,6 @@ export type Closed = {
   item?: Item
 }
 
-/** A row that just closed, kept where it stood in its group for a few seconds. */
-export type Settled = Closed & { index: number }
-
 /** The row a jump moved the pane to, so the tab and row can show where it went. */
 export type Arrival = { tab: Tab; id: string | null; at: number }
 
@@ -237,8 +234,6 @@ export type PrViews = { views: Record<string, PrView>; branchRef: string | null;
 export type DemoCopy = {
   ledger: Ledger
   stop: Stop | null
-  /** Items that just closed on the copy, shown in place until SETTLED_MS after their `at`. */
-  settled: Settled[]
   prViews: PrViews
   lastActions: Record<string, LastAction>
   /** Each sample row's latest note, by the row's id. */
@@ -266,8 +261,6 @@ declare module 'claude-code' {
       drafts: Record<string, string>
       /** Each row's latest note, by the row's id. */
       notes: Record<string, RowNote>
-      /** Items that just closed, shown in place for a few seconds. */
-      settled: Settled[]
       /** The pane's latest jump to a new row. */
       arrival: Arrival | null
       /** Each row's last action, by the row's id. */

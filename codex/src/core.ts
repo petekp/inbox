@@ -2,11 +2,12 @@
 // tells Codex, what the tab shows, and how a turn ends.
 // Hooks and the MCP server do the I/O around them.
 
-import { carryText, EMPTY, isLapsed, promptNotes, screenText, toolActivity } from '../../hooks/ledger'
+import { carryText, EMPTY, promptNotes, screenText, toolActivity } from '../../hooks/ledger'
 import type { Exchange, Press } from '../../hooks/ledger'
-import { CLOSED_SHOWN, inboxView, perTurnStatus } from '../../hooks/view'
+import { inboxView, perTurnStatus } from '../../hooks/view'
 import type { InboxView } from '../../hooks/view'
-import type { Item, LastAction } from '../../types'
+import type { LastAction } from '../../types'
+import { SETTLE_WINDOW_MS } from './settle'
 import type { SessionState } from './state'
 import { CODEX, GUIDANCE, START_TITLE } from './texts'
 
@@ -103,16 +104,6 @@ export function endTurn(s: SessionState, reply: string, now: number): SessionSta
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] }
 }
 
-export type ClosedRow = {
-  id: string
-  kind: Item['kind']
-  ask: string
-  outcome: string
-  /** Closed without the person deciding it: dismissed, expired, or overtaken by the work. */
-  isLapsed: boolean
-  at: number
-}
-
 /** What the tab draws: the shared inbox view, and what only the tab reads. */
 export type View = InboxView & {
   goal: string
@@ -121,8 +112,6 @@ export type View = InboxView & {
   running: string[]
   /** Each row's last press, by row id. The tab draws from each row's feedback; a tab loaded before that still reads this. */
   lastActions: Record<string, LastAction>
-  /** Each group's latest closed items, newest first. */
-  closed: ClosedRow[]
   /** When the view was drawn, for the rows' ages. */
   at: number
 }
@@ -152,6 +141,8 @@ export function viewOf(s: SessionState, now: number): View {
       notes: {},
       turns: s.presence,
       extraSteps: {},
+      // The tab times each settled row from its first poll, so the server lists a close for longer.
+      settleWindowMs: SETTLE_WINDOW_MS,
       status: perTurnStatus(l, update),
       now,
     }),
@@ -160,13 +151,6 @@ export function viewOf(s: SessionState, now: number): View {
     done: l.card?.done ?? [],
     running: l.card?.running ?? [],
     lastActions: s.lastActions,
-    closed: (['question', 'task'] as const).flatMap(kind =>
-      l.closed
-        .filter(d => d.kind === kind)
-        .slice(-CLOSED_SHOWN)
-        .reverse()
-        .map(d => ({ id: d.id, kind, ask: d.ask, outcome: d.outcome, isLapsed: isLapsed(d), at: d.at })),
-    ),
     at: now,
   }
 }

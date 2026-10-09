@@ -131,6 +131,8 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         ...s,
         ledger: r.ledger,
         lastActions: r.last ? { ...s.lastActions, [p.id]: r.last } : s.lastActions,
+        // Codex was told of the close; with the id out of `told`, a second close of the row is reported too.
+        told: p.action === 'undo' ? { ...s.told, closed: s.told.closed.filter(id => id !== p.id) } : s.told,
       }
       if (r.last?.result?.state === 'pending') local = { effects: r.effects, pending: r.last.result }
       // Sent while the lock is held, so a send that fails leaves the row as it was.

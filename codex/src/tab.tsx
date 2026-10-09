@@ -8,10 +8,11 @@ import type { ComponentChildren, JSX } from 'preact'
 import { ago, isLapsed } from '../../hooks/ledger'
 import { noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
-import { CLOSED_SHOWN, feedbackText, isFailure, SETTLED_MS } from '../../hooks/view'
-import type { Feedback, RowView } from '../../hooks/view'
+import { closedShown, feedbackText, isFailure, SETTLED_MS } from '../../hooks/view'
+import type { Feedback, RowState, RowView } from '../../hooks/view'
 import type { Finding, Item, RowNote } from '../../types'
-import type { ClosedRow, TabView as View } from './core'
+import type { TabView as View } from './core'
+import { drawnSettled, POLL_MS, settledIds, settledSeen } from './settle'
 
 type Tab = 'needsYou' | 'findings'
 type Tone = 'needsYou' | 'findings' | 'done' | 'error'
@@ -43,8 +44,8 @@ type Row = {
   feedback: Feedback | null
 }
 
-/** A row that just left its list, shown in its place until SETTLED_MS passes. */
-type Settled = { id: string; group: Group; index: number; what: string; outcome: string; at: number }
+/** A row that just closed, drawn in its place with its outcome, or a row still open. */
+type Entry = { row: Row } | { settled: RowView; state: Extract<RowState, { is: 'settled' }> }
 
 // The keys of a question's answers and a task's steps, as the pane letters them.
 const CHOICE_KEYS = [...'abcfghilm']
@@ -52,7 +53,6 @@ const TABS: { id: Tab; label: string; hotkey: string }[] = [
   { id: 'needsYou', label: 'Needs you', hotkey: '1' },
   { id: 'findings', label: 'Findings', hotkey: '2' },
 ]
-const POLL_MS = 3000
 
 let view: View | null = null
 // The demo shows the mod's sample entries, and its presses send nothing.
@@ -76,8 +76,8 @@ const notes = new Map<string, { text: string; at: number }>()
 const copies = new Map<string, { name: string; text: string }>()
 // A note for a press whose row is no longer drawn, shown on line 1 for SETTLED_MS.
 let lineNote: { text: string; at: number } | null = null
-let settled: Settled[] = []
-let order: Record<Group, string[]> = { question: [], task: [], finding: [] }
+// When the tab first saw each row the view lists as settled. It draws one in place for SETTLED_MS from then.
+let seen = new Map<string, number>()
 // Each view request takes the next number, and a reply older than the view shown is dropped.
 let requested = 0
 let shown = 0
@@ -122,39 +122,14 @@ async function callTool<T>(name: string, args: unknown = {}): Promise<T | undefi
 
 // ── The view ────────────────────────────────────────────────────────────────
 
-function orderOf(v: View): Record<Group, string[]> {
-  return {
-    question: v.needsYou.questions.map(r => r.id),
-    task: v.needsYou.tasks.map(r => r.id),
-    finding: v.findings.rows.map(r => r.id),
-  }
-}
-
-/** What a row that left says in its place, or null when it leaves without a trace, as a finding does until closes settle. */
-function leftText(prev: View, next: View, group: Group, id: string): { what: string; outcome: string } | null {
-  if (group === 'finding') return null
-  const d = next.closed.find(x => x.id === id)
-
-  return d ? { what: d.ask, outcome: capitalized(d.outcome) } : null
-}
-
 function applyView(next: View, seq: number) {
   if (seq < shown) return
   shown = seq
   readFailed = false
-  const now = Date.now()
-  const nextOrder = orderOf(next)
-  const left: Settled[] = []
-  if (view)
-    for (const group of Object.keys(order) as Group[])
-      order[group].forEach((id, index) => {
-        if (nextOrder[group].includes(id) || settled.some(s => s.id === id)) return
-        const text = leftText(view!, next, group, id)
-        if (text) left.push({ id, group, index, ...text, at: now })
-      })
-  settled = [...settled.filter(s => !nextOrder[s.group].includes(s.id)), ...left]
-  if (left.length > 0) setTimeout(draw, SETTLED_MS + 50)
-  order = nextOrder
+  const before = seen
+  seen = settledSeen(seen, settledIds(next), Date.now())
+  // A row seen settled for the first time leaves for its Closed fold once SETTLED_MS passes.
+  if ([...seen.keys()].some(id => !before.has(id))) setTimeout(draw, SETTLED_MS + 50)
   view = next
   draw()
 }
@@ -180,9 +155,11 @@ type PressReply = {
   note?: RowNote['note'] | null
 }
 
-/** Whether the view lists a row with this id. */
+/** Whether the view lists an open row with this id, which can show a note. */
 function isListed(v: View, id: string): boolean {
-  return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows].some(r => r.id === id)
+  return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows].some(
+    r => r.id === id && r.state.is !== 'settled',
+  )
 }
 
 /**
@@ -200,10 +177,11 @@ async function act(rowId: string, press: RowPress, onSent?: () => void, pending 
   try {
     const r = await callTool<PressReply>('inbox_press', { press, thread: view?.thread, demo: isDemo })
     if (r?.error) errors.set(rowId, r.error)
-    // A sample press went through on the demo's copy, so its typed words go as a real press's do.
-    else if (r?.note !== 'stale') onSent?.()
     if (r?.copy) await copy(rowId, r.copy)
     if (r?.view) applyView(r.view, seq)
+    // A sample press went through on the demo's copy, so its typed words go as a real press's do.
+    // After the view, so `onSent` reads the rows as they are after the press.
+    if (!r?.error && r?.note !== 'stale') onSent?.()
     if (r?.note && view && isListed(view, rowId)) {
       notes.set(rowId, { text: noteText(r.note), at: Date.now() })
       setTimeout(draw, SETTLED_MS + 50)
@@ -362,25 +340,52 @@ function findingRow(v: View, r: RowView, f: Finding): Row {
 }
 
 type Lists = {
-  questions: Row[]
-  tasks: Row[]
-  findings: Row[]
-  /** Each tab's rows in order: the selection and the keys read these. */
+  questions: Entry[]
+  tasks: Entry[]
+  findings: Entry[]
+  /** Each tab's open rows in order: the selection and the keys read these. A settled row cannot be selected. */
   byTab: Record<Tab, Row[]>
 }
 
-function listsOf(v: View): Lists {
-  const items = (rows: RowView[]) => rows.flatMap(r => (r.item ? [itemRow(v, r, r.item)] : []))
-  const questions = items(v.needsYou.questions)
-  const tasks = items(v.needsYou.tasks)
-  const findings = v.findings.rows.flatMap(r => (r.finding ? [findingRow(v, r, r.finding)] : []))
+/** The view's lists as the tab draws them. A settled row shows while `drawn` has it, and is left out after. */
+function listsOf(v: View, drawn: ReadonlySet<string>): Lists {
+  const entries = (rows: RowView[]) =>
+    rows.flatMap((r): Entry[] => {
+      if (r.state.is === 'settled') return drawn.has(r.id) ? [{ settled: r, state: r.state }] : []
+      if (r.item) return [{ row: itemRow(v, r, r.item) }]
+      return r.finding ? [{ row: findingRow(v, r, r.finding) }] : []
+    })
+  const rowsOf = (list: Entry[]) => list.flatMap(x => ('row' in x ? [x.row] : []))
+  const questions = entries(v.needsYou.questions)
+  const tasks = entries(v.needsYou.tasks)
+  const findings = entries(v.findings.rows)
 
   return {
     questions,
     tasks,
     findings,
-    byTab: { needsYou: [...questions, ...tasks], findings },
+    byTab: { needsYou: [...rowsOf(questions), ...rowsOf(tasks)], findings: rowsOf(findings) },
   }
+}
+
+/** The ids of the settled rows a list draws, which its Closed fold leaves out. */
+function settledIn(entries: Entry[]): Set<string> {
+  return new Set(entries.flatMap(x => ('settled' in x ? [x.settled.id] : [])))
+}
+
+/** Undo on a settled row: the row comes back open, and selected. */
+function undo(r: RowView) {
+  const t: Tab = r.type === 'finding' ? 'findings' : 'needsYou'
+  void act(r.id, { action: 'undo', id: r.id }, () => {
+    const rows = view ? listsOf(view, drawnSettled(seen, Date.now())).byTab[t] : []
+    selection[t] = {
+      id: r.id,
+      index: Math.max(
+        0,
+        rows.findIndex(x => x.id === r.id),
+      ),
+    }
+  })
 }
 
 /** The selected row's index: the selected row, or the row now in its place once it left. */
@@ -600,19 +605,29 @@ function ListRow({
   )
 }
 
-function SettledView({ s }: { s: Settled }) {
+/** A row that just closed, with its outcome, [Undo] after the person's own Done or Dismiss, and its leave bar. */
+function SettledView({ settled: r, state }: Extract<Entry, { settled: RowView }>) {
+  const start = seen.get(r.id) ?? Date.now()
+
   return (
     <div class="row settled">
       <span class="mark done">✓</span>
       <div class="content tight">
-        <div class="what">{s.what}</div>
-        <div class="tone-done">{s.outcome}</div>
+        <div class="what">{r.title}</div>
+        <div>
+          <span class="tone-done">{state.label}</span>
+          {state.canUndo ? (
+            <button type="button" class="key" onClick={() => undo(r)}>
+              Undo
+            </button>
+          ) : null}
+        </div>
         <div class="leave">
           {/* The bar's delay is set once, when it is drawn: the animation keeps its own clock after that. */}
           <div
             style={{ animationDuration: `${SETTLED_MS}ms` }}
             ref={el => {
-              if (el && !el.style.animationDelay) el.style.animationDelay = `-${Math.max(0, Date.now() - s.at)}ms`
+              if (el && !el.style.animationDelay) el.style.animationDelay = `-${Math.max(0, Date.now() - start)}ms`
             }}
           />
         </div>
@@ -621,13 +636,10 @@ function SettledView({ s }: { s: Settled }) {
   )
 }
 
-/** A group's rows with the rows that just left spliced in where they were. */
-function Entries({ rows, group, all, now }: { rows: Row[]; group: Group; all: Row[]; now: number }) {
+/** A list's rows, with the rows that just closed in their places. */
+function Entries({ entries, group, all, now }: { entries: Entry[]; group: Group; all: Row[]; now: number }) {
   const t: Tab = group === 'finding' ? 'findings' : 'needsYou'
   const at = selectedIndex(all, t)
-  const entries: ({ row: Row } | { settled: Settled })[] = rows.map(row => ({ row }))
-  for (const s of settled.filter(x => x.group === group).sort((a, b) => a.index - b.index))
-    entries.splice(Math.min(s.index, entries.length), 0, { settled: s })
   if (entries.length === 0) return null
 
   // Needs you hangs its rows from each group's title, as the pane does; Findings lists them flat.
@@ -645,7 +657,7 @@ function Entries({ rows, group, all, now }: { rows: Row[]; group: Group; all: Ro
           </div>
         ) : (
           <div class="entry" key={`settled-${x.settled.id}`}>
-            <SettledView s={x.settled} />
+            <SettledView settled={x.settled} state={x.state} />
           </div>
         ),
       )}
@@ -662,45 +674,58 @@ function GroupTitle({ title, count }: { title: string; count: number }) {
   )
 }
 
+/** A group's closed items as its fold lists them: without the rows drawn settled, up to CLOSED_SHOWN. */
+function itemsClosed(v: View, kind: 'question' | 'task', entries: Entry[]): ClosedLine[] {
+  return closedShown(v.needsYou.closed[kind === 'question' ? 'questions' : 'tasks'], settledIn(entries)).map(d => ({
+    id: d.id,
+    ask: d.ask,
+    outcome: d.outcome,
+    isLapsed: isLapsed(d),
+    at: d.at,
+  }))
+}
+
 function ItemGroup({
   v,
   kind,
-  rows,
+  entries,
   all,
   now,
 }: {
   v: View
   kind: 'question' | 'task'
-  rows: Row[]
+  entries: Entry[]
   all: Row[]
   now: number
 }) {
   const title = kind === 'question' ? 'Questions' : 'Tasks'
-  const showing = new Set(settled.map(s => s.id))
-  const closed = v.closed.filter(d => d.kind === kind && !showing.has(d.id))
+  const closed = itemsClosed(v, kind, entries)
   // A group with no open, settled or closed items is left out.
-  if (rows.length === 0 && !settled.some(s => s.group === kind) && closed.length === 0) return null
+  if (entries.length === 0 && closed.length === 0) return null
+  const rows = entries.flatMap(x => ('row' in x ? [x.row] : []))
 
   return (
     <section>
       {/* A row handed to Codex stays listed but leaves the count. */}
       <GroupTitle title={title} count={rows.filter(r => !r.fold).length} />
-      <Entries rows={rows} group={kind} all={all} now={now} />
+      <Entries entries={entries} group={kind} all={all} now={now} />
       <ClosedFold group={kind} closed={closed} now={now} />
     </section>
   )
 }
 
+/** A closed item or finding as a Closed fold lists it. */
+type ClosedLine = {
+  id: string
+  ask: string
+  outcome: string
+  /** Closed without the person deciding it: dismissed, expired, or overtaken by the work. */
+  isLapsed: boolean
+  at: number
+}
+
 /** A list's closed items or findings behind `▸ N Closed`, each with how it closed and when. */
-function ClosedFold({
-  group,
-  closed,
-  now,
-}: {
-  group: Group
-  closed: Pick<ClosedRow, 'id' | 'ask' | 'outcome' | 'isLapsed' | 'at'>[]
-  now: number
-}) {
+function ClosedFold({ group, closed, now }: { group: Group; closed: ClosedLine[]; now: number }) {
   if (closed.length === 0) return null
   const isUnfolded = unfolded.has(group)
 
@@ -742,9 +767,10 @@ function ClosedFold({
 
 function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number }) {
   const all = lists.byTab.needsYou
-  const isNothing = all.length === 0 && !settled.some(s => s.group !== 'finding')
-  const showing = new Set(settled.map(s => s.id))
-  if (isNothing && !v.closed.some(d => !showing.has(d.id)))
+  const isNothing = lists.questions.length === 0 && lists.tasks.length === 0
+  const hasClosed =
+    itemsClosed(v, 'question', lists.questions).length > 0 || itemsClosed(v, 'task', lists.tasks).length > 0
+  if (isNothing && !hasClosed)
     return (
       <div class="empty">
         <div class="title">Nothing needs you.</div>
@@ -759,18 +785,22 @@ function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number }) {
           <div class="group-title empty-line">Nothing needs you.</div>
         </section>
       ) : null}
-      <ItemGroup v={v} kind="question" rows={lists.questions} all={all} now={now} />
-      <ItemGroup v={v} kind="task" rows={lists.tasks} all={all} now={now} />
+      <ItemGroup v={v} kind="question" entries={lists.questions} all={all} now={now} />
+      <ItemGroup v={v} kind="task" entries={lists.tasks} all={all} now={now} />
     </main>
   )
 }
 
 function Findings({ v, lists, now }: { v: View; lists: Lists; now: number }) {
-  // A finding stays listed until Codex closes it or the person dismisses it. Then it moves to Closed.
-  const closed = v.findings.closed
-    .slice(0, CLOSED_SHOWN)
-    .map(f => ({ id: f.id, ask: f.title, outcome: f.outcome, isLapsed: isLapsed(f), at: f.closedAt }))
-  const isNothing = lists.findings.length === 0 && !settled.some(s => s.group === 'finding')
+  // A finding stays listed until Codex closes it or the person dismisses it. Then it settles and moves to Closed.
+  const closed = closedShown(v.findings.closed, settledIn(lists.findings)).map(f => ({
+    id: f.id,
+    ask: f.title,
+    outcome: f.outcome,
+    isLapsed: isLapsed(f),
+    at: f.closedAt,
+  }))
+  const isNothing = lists.findings.length === 0
   if (isNothing && closed.length === 0)
     return (
       <div class="empty">
@@ -784,7 +814,7 @@ function Findings({ v, lists, now }: { v: View; lists: Lists; now: number }) {
     <main>
       <section>
         {isNothing ? <div class="group-title empty-line">No open findings.</div> : null}
-        <Entries rows={lists.findings} group="finding" all={lists.findings} now={now} />
+        <Entries entries={lists.findings} group="finding" all={lists.byTab.findings} now={now} />
         <ClosedFold group="finding" closed={closed} now={now} />
       </section>
     </main>
@@ -826,8 +856,7 @@ function TabBar({ v, now }: { v: View; now: number }) {
 async function toggleDemo() {
   isDemo = !isDemo
   view = null
-  settled = []
-  order = { question: [], task: [], finding: [] }
+  seen = new Map()
   selection.needsYou = null
   selection.findings = null
   typing = null
@@ -847,7 +876,7 @@ function App(): ComponentChildren {
     return <div class="notice">{readFailed ? 'Could not read the inbox.' : <span class="muted">Loading…</span>}</div>
   const v = view
   const now = v.at
-  const lists = listsOf(v)
+  const lists = listsOf(v, drawnSettled(seen, Date.now()))
 
   return (
     <>
@@ -880,7 +909,6 @@ function App(): ComponentChildren {
 const root = document.getElementById('app')!
 
 function draw() {
-  settled = settled.filter(s => Date.now() - s.at < SETTLED_MS)
   // The page's "Loading…" text is not Preact's, so it goes before the first draw.
   if (root.className) {
     root.className = ''
@@ -913,7 +941,7 @@ document.addEventListener('keydown', e => {
     draw()
     return
   }
-  const rows = listsOf(view).byTab[tab]
+  const rows = listsOf(view, drawnSettled(seen, Date.now())).byTab[tab]
   const at = selectedIndex(rows, tab)
   const move = e.key === 'j' || e.key === 'ArrowDown' ? 1 : e.key === 'k' || e.key === 'ArrowUp' ? -1 : 0
   if (move !== 0) {

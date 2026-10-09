@@ -1,11 +1,21 @@
 // The inbox as every host draws it: the Needs you order and count, question
-// handles, which rows are handed off, and the item status. The band, the pane,
+// handles, which rows are handed off or just closed, and the item status. The band, the pane,
 // the sidebar line, row navigation and the Codex tab all read this, so they agree.
 // Pure: it reads only its arguments, and imports nothing from the engine.
 
-import type { ClosedFinding, Finding, Item, LastAction, Ledger, LocalResult, PressKind, RowNote } from '../types'
-import { latestBatch, questionNumbers } from './ledger'
-import { actionId, clipLabel, isHandedOff, noteText, stepsOf } from './presses'
+import type {
+  Closed,
+  ClosedFinding,
+  Finding,
+  Item,
+  LastAction,
+  Ledger,
+  LocalResult,
+  PressKind,
+  RowNote,
+} from '../types'
+import { latestBatch, questionNumbers, reopenFinding, reopenItem } from './ledger'
+import { actionId, clipLabel, isHandedOff, isUndoable, noteText, stepsOf } from './presses'
 import type { HelpStep, RowPress } from './presses'
 
 /** A question with more options than this shows the first 4 and [All N options]. */
@@ -30,12 +40,19 @@ export type ViewInput = {
   turns: Turns
   /** Per item id, steps a host adds beyond the item's own helps: the mod's "Open PR #N". */
   extraSteps: Record<string, HelpStep[]>
+  /** How long after a close the view still lists the row as settled. The mod passes SETTLED_MS; Codex adds two polls. */
+  settleWindowMs: number
   status: ItemStatus
   now: number
 }
 
-/** A handed-off row stays in its place, folded, and leaves the count. */
-export type RowState = { is: 'open' } | { is: 'handedOff' }
+/**
+ * A handed-off row stays in its place, folded, and leaves the count. A settled
+ * row just closed: it stays in its place with its outcome, `label`, and leaves
+ * the count. `canUndo` when the person's own Done or Dismiss closed it.
+ */
+export type RowState =
+  { is: 'open' } | { is: 'handedOff' } | { is: 'settled'; label: string; at: number; canUndo: boolean }
 
 /**
  * What a row says about its last press: "✓ Explain · 1m ago". A Talk or Hand-off ✓
@@ -86,10 +103,17 @@ export type InboxView = {
     topId: string | null
     questions: RowView[]
     tasks: RowView[]
+    /** Every close the ledger keeps, newest first, settled rows included. */
+    closed: { questions: Closed[]; tasks: Closed[] }
   }
   /** Newest first. The count leaves out handed-off findings. `closed` is every close the ledger keeps, newest first. */
   findings: { count: number; rows: RowView[]; closed: ClosedFinding[] }
   status: ItemStatus
+}
+
+/** What a Closed fold lists: its closes, without the rows drawn as settled right now, up to CLOSED_SHOWN. */
+export function closedShown<T extends { id: string }>(closed: T[], drawnSettled: ReadonlySet<string>): T[] {
+  return closed.filter(d => !drawnSettled.has(d.id)).slice(0, CLOSED_SHOWN)
 }
 
 const UPDATE_FAILED = 'Last update failed. Items from that reply may be missing.'
@@ -232,14 +256,57 @@ function actionsOf(
   ]
 }
 
-export function inboxView({ ledger, lastActions, notes, turns, extraSteps, status, now }: ViewInput): InboxView {
-  const { questions, tasks } = needsYouOrder(ledger)
-  // The number the person's next prompt answers each question by.
+/** How a settled row reads after its ✓: its outcome, as "Done", "Dismissed" or the answer given. */
+function settledLabel(outcome: string): string {
+  return outcome.charAt(0).toUpperCase() + outcome.slice(1)
+}
+
+export function inboxView({
+  ledger,
+  lastActions,
+  notes,
+  turns,
+  extraSteps,
+  settleWindowMs,
+  status,
+  now,
+}: ViewInput): InboxView {
+  const isSettling = (at: number) => now - at < settleWindowMs
+  const isOpen = (id: string) => ledger.items.some(i => i.id === id) || ledger.findings.some(f => f.id === id)
+  // A row that just closed is put back among the open ones, so it is ordered where it stood.
+  const settledItems = new Map(
+    ledger.closed.filter(d => d.item && isSettling(d.at) && !isOpen(d.id)).map(d => [d.id, d] as const),
+  )
+  const settledFindings = new Map(
+    ledger.closedFindings.filter(f => isSettling(f.closedAt) && !isOpen(f.id)).map(f => [f.id, f] as const),
+  )
+  const placed = [...settledFindings.keys()].reduce(reopenFinding, [...settledItems.keys()].reduce(reopenItem, ledger))
+  const { questions, tasks } = needsYouOrder(placed)
+  // The number the person's next prompt answers each question by, which only open questions have.
   const numbers = questionNumbers(ledger, ledger.turn + 1)
-  const stateOf = (id: string): RowState => (isHandedOff(lastActions[id], turns) ? { is: 'handedOff' } : { is: 'open' })
+  const stateOf = (id: string): RowState => {
+    const closed = settledItems.get(id) ?? settledFindings.get(id)
+    if (closed)
+      return {
+        is: 'settled',
+        label: settledLabel(closed.outcome),
+        at: 'closedAt' in closed ? closed.closedAt : closed.at,
+        canUndo: isUndoable(closed.how),
+      }
+
+    return isHandedOff(lastActions[id], turns) ? { is: 'handedOff' } : { is: 'open' }
+  }
+  // A settled row offers only Undo, and only after the person's own Done or Dismiss.
+  const settledActions = (id: string, state: RowState): ActionView[] | null =>
+    state.is !== 'settled'
+      ? null
+      : state.canUndo
+        ? [{ press: { action: 'undo', id }, label: 'Undo', kind: 'view', isPrimary: false, isFolded: false }]
+        : []
   const itemRow = (item: Item): RowView => {
     const n = numbers.get(item.id)
     const steps = stepsOf(item, extraSteps[item.id] ?? [])
+    const state = stateOf(item.id)
 
     return {
       id: item.id,
@@ -251,30 +318,43 @@ export function inboxView({ ledger, lastActions, notes, turns, extraSteps, statu
       finding: null,
       steps,
       // Questions never fold.
-      state: item.kind === 'task' ? stateOf(item.id) : { is: 'open' },
-      feedback: feedbackOf(lastActions[item.id], notes[item.id], now),
-      actions: actionsOf({ id: item.id, item, steps }, lastActions[item.id]),
+      state: item.kind === 'question' && state.is === 'handedOff' ? { is: 'open' } : state,
+      feedback: state.is === 'settled' ? null : feedbackOf(lastActions[item.id], notes[item.id], now),
+      actions: settledActions(item.id, state) ?? actionsOf({ id: item.id, item, steps }, lastActions[item.id]),
     }
   }
   const questionRows = questions.map(itemRow)
   const taskRows = tasks.map(itemRow)
   const counted = [...questionRows, ...taskRows].filter(r => r.state.is === 'open')
-  const findingRows = [...ledger.findings].reverse().map((finding): RowView => ({
-    id: finding.id,
-    type: 'finding',
-    handle: '•',
-    title: finding.title,
-    at: finding.at,
-    item: null,
-    finding,
-    steps: [],
-    state: stateOf(finding.id),
-    feedback: feedbackOf(lastActions[finding.id], notes[finding.id], now),
-    actions: actionsOf({ id: finding.id, item: null, steps: [] }, lastActions[finding.id]),
-  }))
+  const findingRows = [...placed.findings].reverse().map((finding): RowView => {
+    const state = stateOf(finding.id)
+
+    return {
+      id: finding.id,
+      type: 'finding',
+      handle: '•',
+      title: finding.title,
+      at: finding.at,
+      item: null,
+      finding,
+      steps: [],
+      state,
+      feedback: state.is === 'settled' ? null : feedbackOf(lastActions[finding.id], notes[finding.id], now),
+      actions:
+        settledActions(finding.id, state) ??
+        actionsOf({ id: finding.id, item: null, steps: [] }, lastActions[finding.id]),
+    }
+  })
+  const closed = [...ledger.closed].reverse()
 
   return {
-    needsYou: { count: counted.length, topId: counted[0]?.id ?? null, questions: questionRows, tasks: taskRows },
+    needsYou: {
+      count: counted.length,
+      topId: counted[0]?.id ?? null,
+      questions: questionRows,
+      tasks: taskRows,
+      closed: { questions: closed.filter(d => d.kind === 'question'), tasks: closed.filter(d => d.kind === 'task') },
+    },
     findings: {
       count: findingRows.filter(r => r.state.is === 'open').length,
       rows: findingRows,

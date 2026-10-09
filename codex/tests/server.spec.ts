@@ -46,7 +46,7 @@ async function setup(queueCode: number) {
         structuredContent: {
           error: string | null
           note: string | null
-          view: { needsYou: { questions: { id: string }[] } }
+          view: { needsYou: { questions: { id: string; state: { is: string } }[] } }
         }
         content: { text: string }[]
       }
@@ -63,7 +63,11 @@ test('a press sends its message into the tab’s thread with the codex binary th
   assert.equal(r.result.structuredContent.error, null)
   assert.equal(r.result.structuredContent.note, null)
   assert.deepEqual(calls, [['/apps/codex', 'queue', '--thread', 's1', '--message', 'Re "Ship it?": Yes']])
-  assert.deepEqual(r.result.structuredContent.view.needsYou.questions, [])
+  // The answered question settles in place before it leaves.
+  assert.deepEqual(
+    r.result.structuredContent.view.needsYou.questions.map(q => [q.id, q.state.is]),
+    [['i1', 'settled']],
+  )
   const s = await readState(dir, 's1')
   assert.equal(s.sent[0]?.text, 'Re "Ship it?": Yes')
 
@@ -104,6 +108,35 @@ test('a press whose message fails to send leaves its row as it was', async () =>
   assert.deepEqual((await readState(dir, 's1')).sent, [])
 })
 
+test('a close Codex read, then undone, is reported again when the row closes a second time', async () => {
+  const { dir, calls, call } = await setup(0)
+  const press = (action: string) =>
+    call('inbox_press', { press: { action, id: 'i1' }, thread: 's1' }, { thread_id: 's1' })
+  const prompt = async (text: string) => {
+    let notes: string[] = []
+    await updateState(dir, 's1', s => {
+      const r = notePrompt(s, text, 200)
+      notes = r.notes
+      return r.state
+    })
+    return notes.join('\n')
+  }
+  const closedLine = /Closed since you last read the inbox:\n- "Ship it\?" → dismissed by the user/
+
+  await press('dismiss')
+  assert.match(await prompt('carry on'), closedLine)
+  const undone = await press('undo')
+  assert.equal(undone.result.structuredContent.note, null)
+  assert.deepEqual(
+    undone.result.structuredContent.view.needsYou.questions.map(q => [q.id, q.state.is]),
+    [['i1', 'open']],
+  )
+  await press('dismiss')
+  assert.match(await prompt('and now?'), closedLine)
+  // Dismiss and Undo send nothing.
+  assert.deepEqual(calls, [])
+})
+
 test('Codex’s own tool calls reach their session through the turn metadata', async () => {
   const { dir, call } = await setup(0)
   const r = await call(
@@ -119,10 +152,14 @@ test('a press in the demo changes only the demo, sends nothing into the conversa
   const { dir, calls, call } = await setup(0)
   const before = await readState(dir, 's1')
   type Questions = {
-    result: { structuredContent: { needsYou: { questions: { id: string; item: { options: string[] } }[] } } }
+    result: {
+      structuredContent: {
+        needsYou: { questions: { id: string; state: { is: string }; item: { options: string[] } }[] }
+      }
+    }
   }
   const demo = (await call('inbox_view', { demo: true }, { thread_id: 's1' })) as unknown as Questions
-  const first = demo.result.structuredContent.needsYou.questions[0]
+  const first = demo.result.structuredContent.needsYou.questions.find(q => q.state.is === 'open')
   assert.ok(first)
   const option = first.item.options[0]
   const r = await call(
@@ -131,7 +168,7 @@ test('a press in the demo changes only the demo, sends nothing into the conversa
     { thread_id: 's1' },
   )
   assert.deepEqual(calls, [])
-  assert.ok(!r.result.structuredContent.view.needsYou.questions.some(q => q.id === first.id))
+  assert.equal(r.result.structuredContent.view.needsYou.questions.find(q => q.id === first.id)?.state.is, 'settled')
   assert.equal(r.result.structuredContent.note, 'sample')
   assert.equal(r.result.content[0]?.text, 'Sample entry: nothing was sent.')
   // A copy step copies nothing in the demo: its row gets the same note.

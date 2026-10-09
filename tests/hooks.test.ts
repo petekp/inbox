@@ -545,7 +545,8 @@ test('last actions an earlier build saved convert once by the table, and a task 
   expect(await pane.find({ text: /Run load script · just now/ })).toBeDefined()
   expect(await pane.find({ key: 'help-i1-0' })).toBeUndefined()
   expect(await band.find({ text: /waiting on you/ })).toBeUndefined()
-  // Findings' Closed fold stays open across the reloads.
+  // Findings' Closed fold stays open across the reloads. The closed finding shows there once it has settled.
+  await clock.advance(SETTLED_MS)
   await pane.press({ key: 'tab-findings' })
   expect((await pane.find({ key: 'fold-finding' }))?.props.label).toBe('▾ 1 Closed')
 })
@@ -661,8 +662,11 @@ test('after a failed update, the next reply catches up over the whole conversati
   expect(await pane.find({ text: /Name the command greet\?/ })).toBeDefined()
   expect(await pane.find({ text: /Review the welcome copy/ })).toBeDefined()
   expect(await pane.find({ text: /update failed/ })).toBeUndefined()
+  // The finding the update closed settles in its place, with no Undo, since the person did not close it.
   await pane.press({ key: 'tab-findings' })
-  expect(await pane.find({ text: /README is stale/ })).toBeUndefined()
+  expect(await pane.find({ key: 'row-f3' })).toBeUndefined()
+  expect(await pane.find({ key: 'settled-f3' })).toBeDefined()
+  expect(await pane.find({ key: 'undo-f3' })).toBeUndefined()
 })
 
 test('a reload that cuts off the end-of-turn hook catches up on load', async ($, on) => {
@@ -886,6 +890,50 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   await pane.press({ key: 'fold-finding' })
   expect(await pane.find({ text: /^README is stale$/ })).toBeDefined()
   expect(await pane.find({ text: /^Closed by Claude: fixed$/ })).toBeDefined()
+})
+
+test('Dismiss settles a question in place with Undo, which brings it back open and selected, and a second close reaches Claude too', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world(on, [])
+  const start = () => $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  const prompt = async (text: string) =>
+    (await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })).context?.join('\n') ?? ''
+  const closedLine = '- "Use Node or Python?" → dismissed by the user.'
+
+  await start()
+  await prompt('add a greeting cli')
+  await $.turn.complete({
+    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+
+  // Dismiss settles the question where it was, with Undo, and Claude reads it closed beside the next prompt.
+  await pane.press({ key: 'dismiss-i1' })
+  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
+  expect(await pane.find({ text: /^Dismissed$/ })).toBeDefined()
+  expect(await prompt('carry on')).toContain(closedLine)
+  // A reload while it settles still shows it.
+  await start()
+  await clock.settle()
+  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
+  // Undo brings it back where it was, open with its options and selected, though another row was.
+  await pane.press({ key: 'select-i2' })
+  await pane.press({ key: 'undo-i1' })
+  expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
+  expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
+  expect(await pane.find({ key: 'answer-i1-1' })).toBeDefined()
+  // Dismissed again, the close reaches Claude again.
+  await pane.press({ key: 'dismiss-i1' })
+  expect(await prompt('and now?')).toContain(closedLine)
+  // Once its time in place ends, it leaves for the Closed fold.
+  await clock.advance(SETTLED_MS)
+  expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
+  expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('▸ 1 Closed')
 })
 
 test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, its buttons send its conflicts and thread and say so, and its failing check waits on the person', async ($, on) => {
@@ -1131,7 +1179,7 @@ test('opening the PRs tab while another PR fetch runs still finds the branch’s
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
 })
 
-test('a PR fetch keeps a Dismiss made while it ran, and the branch PR when its lookup fails', async ($, on) => {
+test('a PR’s Dismiss settles its block with Undo, which brings it back, and a fetch keeps a Dismiss made while it ran, and the branch PR when its lookup fails', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
   const view = (number: number, title: string) =>
@@ -1179,6 +1227,18 @@ test('a PR fetch keeps a Dismiss made while it ran, and the branch PR when its l
   await clock.settle()
   expect(await pane.find({ text: /Linked work/ })).toBeDefined()
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
+  const linked = () => (JSON.parse(stored.get('s:session-1') ?? '{}') as { ledger?: { prs: string[] } }).ledger?.prs
+
+  // Dismiss settles the PR's block in place, with Undo, and the session no longer tracks it.
+  await pane.press({ key: 'dismiss-pr-acme/greet#12' })
+  expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeDefined()
+  expect(await pane.find({ key: 'open-acme/greet#12' })).toBeUndefined()
+  expect(linked()).toEqual([])
+  // Undo brings the block back as it was.
+  await pane.press({ key: 'undo-pr:acme/greet#12' })
+  expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeUndefined()
+  expect(await pane.find({ key: 'open-acme/greet#12' })).toBeDefined()
+  expect(linked()).toEqual(['acme/greet#12'])
 
   // Showing the tab again looks up the branch's PR, which fails, and holds on the linked PR.
   branchFails = 'HTTP 502'
@@ -1188,6 +1248,9 @@ test('a PR fetch keeps a Dismiss made while it ran, and the branch PR when its l
   await pane.press({ key: 'dismiss-pr-acme/greet#12' })
   isSlow = false
   await clock.advance(5000)
+  // The fetch kept the dismissed PR's block while it settles, and it leaves after.
+  expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeDefined()
+  await clock.advance(SETTLED_MS)
 
   expect(await pane.find({ text: /Linked work/ })).toBeUndefined()
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
@@ -1334,13 +1397,18 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   await pane.input({ key: 'type-d17', text: 'Done in both.' })
   expect(await pane.find({ key: 'fold-details-d17' })).toBeDefined()
 
-  // Done settles the sample task in place, then it moves to Closed.
+  // Done settles the sample task in place; Undo brings it back open; then it moves to Closed.
   await pane.press({ key: 'title-d14' })
   await pane.press({ key: 'done-d14' })
   await clock.settle()
   expect(await pane.find({ key: 'done-d14' })).toBeUndefined()
+  expect(await pane.find({ key: 'settled-d14' })).toBeDefined()
   expect(await pane.find({ text: /Sign in to gh for the PRs tab/ })).toBeDefined()
   expect(await band.find({ text: /4 waiting on you/ })).toBeDefined()
+  await pane.press({ key: 'undo-d14' })
+  expect(await pane.find({ key: 'done-d14' })).toBeDefined()
+  expect(await band.find({ text: /5 waiting on you/ })).toBeDefined()
+  await pane.press({ key: 'done-d14' })
   await clock.advance(SETTLED_MS)
   expect(await pane.find({ text: /Sign in to gh for the PRs tab/ })).toBeUndefined()
   expect(sent).toEqual([])
@@ -1352,8 +1420,10 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   // The sample PRs are not looked up, and their buttons open nothing.
   await pane.press({ key: 'open-petekp/inbox#31' })
   expect(await pane.find({ text: SAMPLE })).toBeDefined()
-  // Dismiss takes the sample PR off the copy and leaves the session's PR with the same ref.
+  // Dismiss settles the sample PR, then takes it off the copy, and leaves the session's PR with the same ref.
   await pane.press({ key: 'dismiss-pr-petekp/inbox#29' })
+  expect(await pane.find({ key: 'settled-pr:petekp/inbox#29' })).toBeDefined()
+  await clock.advance(SETTLED_MS)
   expect(await pane.find({ text: /Count turns to tell when a reload cut off an update/ })).toBeUndefined()
   expect(stored.get('s:session-1')).toBe(saved)
   expect(ran.slice(ranBeforeDemo).filter(argv => argv[0] === 'gh' || argv[0] === 'open')).toEqual([])

@@ -1,8 +1,8 @@
 // What the person's presses send and how their buttons are labeled, the same
 // in every host: each message goes to the agent as the person's own words.
 
-import type { Finding, Help, Item, LastAction, Ledger, LocalResult, RowNote } from '../types'
-import { closeFinding, closeItem } from './ledger'
+import type { Closed, Finding, Help, Item, LastAction, Ledger, LocalResult, RowNote } from '../types'
+import { closeFinding, closeItem, reopenFinding, reopenItem } from './ledger'
 import type { Press } from './ledger'
 import { namedPrs, parseRef } from './prs'
 
@@ -252,6 +252,11 @@ export type Effect =
  */
 export type PressResult = { ledger: Ledger; last: LastAction | null; effects: Effect[] } | { stale: true }
 
+/** Whether a close can be undone: the person's own Done or Dismiss, which sent nothing. */
+export function isUndoable(how: Closed['how']): boolean {
+  return how === 'done' || how === 'dismissed'
+}
+
 /** What a row reads after a press that found it gone or changed. */
 export const STALE_TEXT = 'This changed before your press. Nothing was sent.'
 
@@ -352,6 +357,16 @@ export function applyPress(
   })
   const unchanged = { ledger, last: null, effects: [] }
 
+  if (p.action === 'undo') {
+    // Only the person's own Done or Dismiss undoes, so an old drawing cannot reopen an answered, expired or agent-closed row.
+    if (ledger.items.some(i => i.id === p.id) || ledger.findings.some(f => f.id === p.id)) return stale
+    const closed = ledger.closed.findLast(c => c.id === p.id)
+    if (closed?.item && isUndoable(closed.how)) return { ...unchanged, ledger: reopenItem(ledger, p.id) }
+    const closedFinding = ledger.closedFindings.findLast(f => f.id === p.id)
+    if (closedFinding && isUndoable(closedFinding.how)) return { ...unchanged, ledger: reopenFinding(ledger, p.id) }
+    return stale
+  }
+
   const finding = ledger.findings.find(f => f.id === p.id)
   if (finding) {
     // A finding sent to the agent stays open until the agent closes it or the person dismisses it.
@@ -426,7 +441,7 @@ export function applyPress(
         effects,
       }
     }
-    // No host offers Undo yet, and Address and Discuss are a finding's.
+    // Address and Discuss are a finding's.
     default:
       return stale
   }

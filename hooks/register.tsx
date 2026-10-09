@@ -26,7 +26,6 @@ import type {
   LastAction,
   PressKind,
   RowNote,
-  Settled,
   Stop,
   Tab,
 } from '../types'
@@ -97,17 +96,8 @@ import {
   withResult,
 } from './presses'
 import type { Effect, HelpStep, PrActionId, RowPress } from './presses'
-import {
-  CLOSED_SHOWN,
-  feedbackOf,
-  feedbackText,
-  inboxView,
-  isFailure,
-  needsYouOrder,
-  perTurnStatus,
-  SETTLED_MS,
-} from './view'
-import type { InboxView, RowView } from './view'
+import { closedShown, feedbackOf, feedbackText, inboxView, isFailure, perTurnStatus, SETTLED_MS } from './view'
+import type { InboxView, RowState, RowView } from './view'
 import {
   CLOSE_DESCRIPTION,
   CLOSE_SCHEMA,
@@ -146,7 +136,6 @@ const DIALOGS = atom({ plugin: 'inbox', key: 'dialogs' } as const, [] as Dialog[
 const TYPING = atom({ plugin: 'inbox', key: 'typing' } as const, null as string | null)
 const DRAFTS = atom({ plugin: 'inbox', key: 'drafts' } as const, {} as Record<string, string>)
 const NOTES = atom({ plugin: 'inbox', key: 'notes' } as const, {} as Record<string, RowNote>)
-const SETTLED = atom({ plugin: 'inbox', key: 'settled' } as const, [] as Settled[])
 const ARRIVAL = atom({ plugin: 'inbox', key: 'arrival' } as const, null as Arrival | null)
 const LAST_ACTIONS = atom({ plugin: 'inbox', key: 'lastActions' } as const, {} as Record<string, LastAction>)
 const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as (Item['kind'] | 'finding')[])
@@ -593,9 +582,20 @@ async function commitLedger($: EngineInterface, change: (l: Ledger) => Ledger): 
   })
   await save($, after)
   void publishStatus($)
-  await showSettled($, before, after)
-  // After showSettled, so a row this change closed holds its tab.
+  // A row this change closed stays in place, with its leave bar, for SETTLED_MS.
+  if (hasNewClose(before, after)) redrawWhileLeaving($, SETTLED_MS)
   void followNewRows($).catch(() => undefined)
+}
+
+/** Whether `after` closed an item or finding that `before` had not. */
+function hasNewClose(before: Ledger, after: Ledger): boolean {
+  const closes = (l: Ledger) => [
+    ...l.closed.map(d => `${d.id} ${d.at}`),
+    ...l.closedFindings.map(f => `${f.id} ${f.closedAt}`),
+  ]
+  const was = new Set(closes(before))
+
+  return closes(after).some(c => !was.has(c))
 }
 
 /**
@@ -625,6 +625,7 @@ function viewOf(
     turns,
     now,
     extraSteps: prViews ? Object.fromEntries(ledger.items.map(i => [i.id, itemPrSteps(i, prViews, ledger.prs)])) : {},
+    settleWindowMs: SETTLED_MS,
     // catchUp reruns a failed update after the next message.
     status: perTurnStatus(ledger, {
       isUpdating: presence.isUpdating,
@@ -635,55 +636,41 @@ function viewOf(
 }
 
 /**
- * Keeps each item that just closed in its row for a few seconds, with its
- * outcome, so the person sees it was registered, however it closed.
+ * Redraws the pane at each step of a settled row's leave bar, for `waitMs`,
+ * so the row leaves once SETTLED_MS after its close has passed. The view reads
+ * the time, so a fresh value of what it draws from is what redraws it: the
+ * session's last actions, or the demo's copy.
  */
-async function showSettled($: EngineInterface, before: Ledger, after: Ledger) {
-  await settle($, settledOf(before, after))
-}
-
-/** The items a change closed, each with its close record and its place in its group before the change. */
-function settledOf(before: Ledger, after: Ledger): Settled[] {
-  const open = new Set(after.items.map(i => i.id))
-  const order = needsYouOrder(before)
-
-  return before.items.flatMap(item => {
-    const d = open.has(item.id) ? undefined : after.closed.find(x => x.id === item.id)
-    return d ? [{ ...d, index: order[item.kind === 'question' ? 'questions' : 'tasks'].indexOf(item) }] : []
-  })
-}
-
-/** Keeps rows that just closed in place, each with a leave bar, until SETTLED_MS passes. */
-async function settle($: EngineInterface, settled: Settled[]) {
-  if (settled.length === 0) return
-  await update($, SETTLED, s => [...s.filter(x => !settled.some(y => y.id === x.id)), ...settled])
-  expireSettled($, settled, SETTLED_MS)
-  redrawWhileLeaving($, () => update($, SETTLED, s => [...s]), SETTLED_MS)
-}
-
-/** What a just-closed row says: what it was, and how it closed. */
-function settledText(s: Settled): { what: string; outcome: string } {
-  return { what: s.ask, outcome: outcomeText(s) }
-}
-
-/** Redraws the pane at each step of a just-closed row's leave bar, for `waitMs`. A fresh value is what redraws it. */
-function redrawWhileLeaving($: EngineInterface, refresh: () => Promise<unknown>, waitMs: number) {
+function redrawWhileLeaving($: EngineInterface, waitMs: number) {
   // Whole milliseconds, so the last wait ends at `waitMs` and its redraw finds the row gone.
   const step = Math.ceil(SETTLED_MS / LEAVE_BAR_STEPS)
   void (async () => {
     for (let left = waitMs; left > 0; left -= step) {
       await $.clock.sleep(Math.min(step, left))
-      await refresh()
+      await Promise.all([update($, LAST_ACTIONS, a => ({ ...a })), update($, DEMO, d => d && { ...d })])
     }
   })().catch(() => undefined)
 }
 
-/** Removes just-closed rows after a wait. A reload cancels the wait, so session.start sets it again. */
-function expireSettled($: EngineInterface, settled: Settled[], waitMs: number) {
-  void $.clock
-    .sleep(waitMs)
-    .then(() => update($, SETTLED, s => s.filter(x => !settled.some(y => y.id === x.id && y.at === x.at))))
-    .catch(() => undefined)
+/**
+ * A reload cancels the redraws that were running, so this sets them again
+ * until the latest of these ends, each SETTLED_MS after its time: a close, a
+ * PR's Dismiss, a Local result and a row's note. Drawn on the demo's copy
+ * while the demo shows.
+ */
+async function redrawAfterReload($: EngineInterface) {
+  const { ledger, lastActions, notes, now } = await drawnState($)
+  const times = [
+    ...ledger.closed.map(d => d.at),
+    ...ledger.closedFindings.map(f => f.closedAt),
+    ...Object.values(lastActions).flatMap(a => [
+      ...(a.result ? [a.result.at] : []),
+      ...(a.action === 'pr-dismiss' ? [a.at] : []),
+    ]),
+    ...Object.values(notes).map(n => n.at),
+  ]
+  const waitMs = Math.max(0, ...times.map(t => t + SETTLED_MS - now))
+  if (waitMs > 0) redrawWhileLeaving($, waitMs)
 }
 
 type ModelResult = Awaited<ReturnType<EngineInterface['model']['fork']>>
@@ -887,8 +874,6 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
     // Last actions an earlier build saved by button key, without a kind. Those for Open, Open log,
     // a session check and a PR check's Fix record nothing now, so they go.
     update($, LAST_ACTIONS, upgradeLastActions),
-    // A session check's row that just passed or was sent to Claude settled here too, and is gone with them.
-    update($, SETTLED, s => s.filter(x => (x.kind as string) !== 'check').map(x => ({ ...x, kind: readKind(x.kind) }))),
     // Presence from before the turn counts existed cannot say whether the last
     // turn's update landed, so that load catches up once.
     update($, PRESENCE, p => ({ ...p, turnsStarted: p.turnsStarted ?? 1, turnsApplied: p.turnsApplied ?? 0 })),
@@ -1039,11 +1024,18 @@ async function jumpTo($: EngineInterface, tab: Tab, row: { id: string; index: nu
   })().catch(() => undefined)
 }
 
-/** Each tab's row ids, in the order the pane lists them. */
+/** The ids of the rows that just closed, which stay in place but cannot be selected. */
+function settledIn(rows: RowView[]): string[] {
+  return rows.filter(r => r.state.is === 'settled').map(r => r.id)
+}
+
+/** Each tab's selectable row ids, in the order the pane lists them: rows that just closed are left out. */
 function tabRowIds(view: InboxView, prViews: PrView[]): Record<Tab, string[]> {
+  const ids = (rows: RowView[]) => rows.filter(r => r.state.is !== 'settled').map(r => r.id)
+
   return {
-    needsYou: NEEDS_YOU_GROUPS.flatMap(g => view.needsYou[g.list].map(r => r.id)),
-    findings: view.findings.rows.map(r => r.id),
+    needsYou: NEEDS_YOU_GROUPS.flatMap(g => ids(view.needsYou[g.list])),
+    findings: ids(view.findings.rows),
     prs: prViews.flatMap(pr => [
       ...failingChecks(pr).map(c => prCheckId(pr, c)),
       ...waitingThreads(pr).map(t => prThreadId(pr, t)),
@@ -1064,25 +1056,29 @@ async function followNewRows($: EngineInterface, isOpening = false) {
     read($, UNFOLDED),
     isPaneShown($),
   ])
-  const { ledger, prViews: prState, settled, stop, isDemo } = drawn
-  const prViews = Object.values(prState.views)
-  const ids = tabRowIds(drawn.view, prViews)
+  const { ledger, prViews: prState, lastActions, stop, isDemo, view, now } = drawn
+  const prs = drawnPrs(prState, ledger.prs, lastActions, now)
+  const prViews = prs.filter(x => !x.isSettled).map(x => x.pr)
+  const ids = tabRowIds(view, prViews)
+  const settledNeedsYou = settledIn([...view.needsYou.questions, ...view.needsYou.tasks])
   if (isOpening) recordedRows = null
-  // A PR fetch's rows count once it ends. A new PR counts even with no rows.
+  // A PR fetch's rows count once it ends. A new PR counts even with no rows. A row
+  // that just closed is still recorded, so it does not count as new if Undo brings it back.
   const added = newRows(isDemo, {
-    ...ids,
-    prs: prState.isFetching ? null : [...prViews.map(pr => `pr ${pr.ref}`), ...ids.prs],
+    needsYou: [...ids.needsYou, ...settledNeedsYou],
+    findings: [...ids.findings, ...settledIn(view.findings.rows)],
+    prs: prState.isFetching ? null : [...prs.map(x => `pr ${x.pr.ref}`), ...ids.prs],
   })
   if (!isShown) return
   // A tab is empty while it shows only its empty text.
   const isEmpty = {
     needsYou:
       ids.needsYou.length === 0 &&
-      settled.length === 0 &&
+      settledNeedsYou.length === 0 &&
       !stop &&
       !unfolded.some(kind => ledger.closed.some(d => d.kind === kind)),
-    findings: ids.findings.length === 0 && !(unfolded.includes('finding') && ledger.closedFindings.length > 0),
-    prs: prViews.length === 0 && !prState.isFetching,
+    findings: view.findings.rows.length === 0 && !(unfolded.includes('finding') && ledger.closedFindings.length > 0),
+    prs: prs.length === 0 && !prState.isFetching,
   }[tab]
   const to = isEmpty ? TABS.find(t => t.id !== tab && added[t.id].length > 0)?.id : undefined
   if (!to) return
@@ -1228,12 +1224,26 @@ async function fetchPrsNow($: EngineInterface, findsBranchPr: boolean) {
     for (const v of [...rest, branch]) if (v) fetched[v.ref] = v
     const branchRef = findsBranchPr ? (branch?.ref ?? null) : state.branchRef
     // A PR dismissed while the fetch ran stays dismissed.
-    const stillLinked = (await read($, LEDGER)).prs
+    const [stillLinked, lastActions, now] = await Promise.all([
+      read($, LEDGER).then(l => l.prs),
+      read($, LAST_ACTIONS),
+      $.clock.now(),
+    ])
     const views = Object.fromEntries(
       Object.entries(fetched).filter(([ref]) => ref === branchRef || stillLinked.includes(ref)),
     )
     // A fetch queued behind this one keeps the tab checking, so it does not show "No PRs" in between.
-    await update($, PR_VIEWS, () => ({ views, branchRef, isFetching: nextFetchFindsBranchPr !== null }))
+    // A PR dismissed moments ago keeps its last view while its block shows settled.
+    await update($, PR_VIEWS, v => ({
+      views: {
+        ...views,
+        ...Object.fromEntries(
+          Object.entries(v.views).filter(([ref]) => !(ref in views) && isDismissing(lastActions, ref, now)),
+        ),
+      },
+      branchRef,
+      isFetching: nextFetchFindsBranchPr !== null,
+    }))
   } catch {
     await update($, PR_VIEWS, v => ({ ...v, isFetching: nextFetchFindsBranchPr !== null }))
   }
@@ -1280,37 +1290,66 @@ function handoffs(lastActions: Record<string, LastAction>): Handoffs {
   }
 }
 
-async function dismissPr($: EngineInterface, ref: string) {
-  const withoutPr = (v: PrViews): PrViews => {
-    const views = { ...v.views }
-    delete views[ref]
-    return { ...v, views }
-  }
-  // A sample PR leaves only the demo's copy.
-  if (await read($, DEMO)) {
-    await update(
-      $,
-      DEMO,
-      d =>
-        d && { ...d, ledger: { ...d.ledger, prs: d.ledger.prs.filter(r => r !== ref) }, prViews: withoutPr(d.prViews) },
-    )
-    return
-  }
-  await commitLedger($, l => ({ ...l, prs: l.prs.filter(r => r !== ref) }))
-  await update($, PR_VIEWS, withoutPr)
+/** A PR the session still tracks: one it linked, or the current branch's. */
+function isTracked(prState: PrViews, linked: string[], ref: string): boolean {
+  return linked.includes(ref) || prState.branchRef === ref
+}
+
+/** A PR the person dismissed less than SETTLED_MS ago, whose block stays in place, settled, with Undo. */
+function isDismissing(lastActions: Record<string, LastAction>, ref: string, now: number): boolean {
+  const mark = lastActions[`pr:${ref}`]
+
+  return mark?.action === 'pr-dismiss' && now - mark.at < SETTLED_MS
+}
+
+/** The PRs the tab draws: each one tracked, and each one just dismissed, which draws settled. */
+function drawnPrs(
+  prState: PrViews,
+  linked: string[],
+  lastActions: Record<string, LastAction>,
+  now: number,
+): { pr: PrView; isSettled: boolean }[] {
+  return Object.values(prState.views).flatMap((pr): { pr: PrView; isSettled: boolean }[] =>
+    isTracked(prState, linked, pr.ref)
+      ? [{ pr, isSettled: false }]
+      : isDismissing(lastActions, pr.ref, now)
+        ? [{ pr, isSettled: true }]
+        : [],
+  )
+}
+
+/**
+ * Drops a dismissed PR's view once its settled block has left, unless Undo
+ * tracks it again. The tab already leaves out a PR it no longer tracks, so a
+ * reload that cancels this leaves only a view the next fetch drops.
+ */
+function leavePr($: EngineInterface, ref: string) {
+  void $.clock
+    .sleep(SETTLED_MS)
+    .then(async () => {
+      const linked = (await read($, LEDGER)).prs
+      await update($, PR_VIEWS, v => {
+        if (isTracked(v, linked, ref) || !(ref in v.views)) return v
+        const { [ref]: _left, ...views } = v.views
+        return { ...v, views }
+      })
+    })
+    .catch(() => undefined)
 }
 
 /** A press on a PR block, one of its review threads, or a failing check's row. Only the mod has PRs. */
 type PrPress =
   | { action: 'thread-address' | 'thread-draft' | 'thread-discuss' | 'thread-open'; ref: string; thread: string }
-  | { action: 'pr-conflicts' | 'pr-address-all' | 'pr-open'; ref: string }
+  | { action: 'pr-conflicts' | 'pr-address-all' | 'pr-open' | 'pr-dismiss' | 'pr-undo'; ref: string }
   | { action: 'log'; ref: string; check: string }
 
 /**
- * A press's outcome as the runner applies it: the last action of each row it
- * records on, and the effects to perform. `stale` when its row is gone or changed.
+ * A press's outcome as the runner applies it: the ledger after it, the last
+ * action of each row it records on, the rows whose last action it removes, and
+ * the effects to perform. `stale` when its row is gone or changed.
  */
-type Applied = { lasts: Record<string, LastAction>; effects: Effect[] } | { stale: true }
+type Applied =
+  { ledger: Ledger; lasts: Record<string, LastAction>; drop: string[]; effects: Effect[] } | { stale: true }
 
 /** The row a PR press was drawn on, which keys its last action and its note. */
 function prRowId(p: PrPress): string {
@@ -1323,19 +1362,33 @@ function prRowId(p: PrPress): string {
 /**
  * Applies a PR press, as `applyPress` does a row press. Pure. Stale when the PR
  * is no longer tracked or drawn, its thread or check is gone, or what the
- * press acts on is over: the PR no longer conflicts, or no thread waits on the person.
+ * press acts on is over: the PR no longer conflicts, or no thread waits on the
+ * person. Undo is stale unless the PR's block still holds its Dismiss.
  */
 function applyPrPress(
+  ledger: Ledger,
   prState: PrViews,
-  linked: string[],
   lastActions: Record<string, LastAction>,
   p: PrPress,
   ctx: { now: number; turnsStarted: number },
 ): Applied {
   const stale = { stale: true as const }
   const pr = prState.views[p.ref]
-  if (!pr || !(linked.includes(p.ref) || prState.branchRef === p.ref)) return stale
-  const record = (kind: 'talk' | 'handoff', action: PrActionId, text: string): LastAction => ({
+  const markId = `pr:${p.ref}`
+  const applied = (a: Partial<Exclude<Applied, { stale: true }>>): Applied => ({
+    ledger,
+    lasts: {},
+    drop: [],
+    effects: [],
+    ...a,
+  })
+  if (p.action === 'pr-undo') {
+    // Like an item's Undo, it does not check the settle window, so a press just after it ends still lands.
+    if (!pr || isTracked(prState, ledger.prs, p.ref) || lastActions[markId]?.action !== 'pr-dismiss') return stale
+    return applied({ ledger: { ...ledger, prs: [...ledger.prs, p.ref].slice(-MAX_PRS) }, drop: [markId] })
+  }
+  if (!pr || !isTracked(prState, ledger.prs, p.ref)) return stale
+  const record = (kind: 'talk' | 'handoff' | 'mark', action: PrActionId, text: string): LastAction => ({
     kind,
     action,
     text,
@@ -1348,7 +1401,7 @@ function applyPrPress(
     const effects: Effect[] = [{ kind: 'open', target: url, name }]
     const result = pendingResult(effects, ctx.now)
 
-    return { lasts: { [rowId]: localLast(lastActions[rowId], { action: p.action, text }, result) }, effects }
+    return applied({ lasts: { [rowId]: localLast(lastActions[rowId], { action: p.action, text }, result) }, effects })
   }
   switch (p.action) {
     case 'thread-address':
@@ -1360,32 +1413,46 @@ function applyPrPress(
       const id = prThreadId(pr, t)
       if (p.action === 'thread-open') return open(id, 'Open', t.reply?.url || t.url || pr.url, 'the comment')
       if (p.action === 'thread-address')
-        return { lasts: { [id]: record('handoff', p.action, 'Address') }, effects: [send(prompts.address(pr, [t]))] }
+        return applied({
+          lasts: { [id]: record('handoff', p.action, 'Address') },
+          effects: [send(prompts.address(pr, [t]))],
+        })
       if (p.action === 'thread-draft')
-        return { lasts: { [id]: record('talk', p.action, 'Draft reply') }, effects: [send(prompts.draft(pr, t))] }
-      return { lasts: { [id]: record('talk', p.action, 'Discuss') }, effects: [send(prompts.discuss(pr, t))] }
+        return applied({
+          lasts: { [id]: record('talk', p.action, 'Draft reply') },
+          effects: [send(prompts.draft(pr, t))],
+        })
+      return applied({ lasts: { [id]: record('talk', p.action, 'Discuss') }, effects: [send(prompts.discuss(pr, t))] })
     }
     case 'pr-conflicts':
       if (pr.state !== 'OPEN' || pr.mergeable !== 'CONFLICTING') return stale
-      return {
-        lasts: { [`pr:${pr.ref}`]: record('handoff', p.action, 'Resolve conflicts') },
+      return applied({
+        lasts: { [markId]: record('handoff', p.action, 'Resolve conflicts') },
         effects: [send(prompts.resolve(pr))],
-      }
+      })
     case 'pr-address-all': {
       const waiting = threadsOnYou(pr, handoffs(lastActions))
       if (waiting.length === 0) return stale
       // Each thread it sends reads as if its own Address were pressed, so it folds too.
       const threads = waiting.map(t => [prThreadId(pr, t), record('handoff', 'thread-address', 'Address')])
-      return {
+      return applied({
         lasts: {
-          [`pr:${pr.ref}`]: record('handoff', p.action, `Address all ${waiting.length} threads`),
+          [markId]: record('handoff', p.action, `Address all ${waiting.length} threads`),
           ...Object.fromEntries(threads),
         },
         effects: [send(prompts.address(pr, waiting))],
-      }
+      })
     }
     case 'pr-open':
-      return open(`pr:${pr.ref}`, 'Open PR', pr.url, `PR #${pr.number}`)
+      return open(markId, 'Open PR', pr.url, `PR #${pr.number}`)
+    case 'pr-dismiss':
+      // The branch's PR has no Dismiss: the tab shows it while the branch has it.
+      if (!ledger.prs.includes(p.ref) || prState.branchRef === p.ref) return stale
+      // Its view stays, so its block settles in place until it leaves.
+      return applied({
+        ledger: { ...ledger, prs: ledger.prs.filter(r => r !== p.ref) },
+        lasts: { [markId]: record('mark', p.action, 'Dismissed') },
+      })
     case 'log': {
       const check = pr.checks.find(c => c.name === p.check)
       if (!check) return stale
@@ -1435,15 +1502,14 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   const ctx = { now, turnsStarted: presence.turnsStarted }
   const rowId = 'ref' in p ? prRowId(p) : p.id
   let applied = { stale: true } as Applied
-  if ('ref' in p) {
-    applied = applyAnyPress(await read($, LEDGER), prState, lastActions, p, ctx).applied
+  if ('ref' in p && p.action !== 'pr-dismiss' && p.action !== 'pr-undo') {
+    applied = applyAnyPress(await read($, LEDGER), prState, lastActions, p, ctx)
   } else {
-    if (p.action === 'type') await update($, TYPING, t => (t === p.id ? null : t))
+    if (!('ref' in p) && p.action === 'type') await update($, TYPING, t => (t === p.id ? null : t))
     // `update` may run the change again on a version miss; the last run's result is the one used.
     await commitLedger($, l => {
-      const r = applyAnyPress(l, prState, lastActions, p, ctx)
-      applied = r.applied
-      return r.ledger
+      applied = applyAnyPress(l, prState, lastActions, p, ctx)
+      return 'stale' in applied ? l : applied.ledger
     })
   }
 
@@ -1468,7 +1534,9 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   }
   const lasts = Object.values(pressed.lasts)
   await Promise.all([
-    lasts.length > 0 ? update($, LAST_ACTIONS, a => ({ ...a, ...pressed.lasts })) : undefined,
+    lasts.length > 0 || pressed.drop.length > 0
+      ? update($, LAST_ACTIONS, a => withLasts(a, pressed.lasts, pressed.drop))
+      : undefined,
     // A press that went through replaces the row's note, and a sent reply its draft.
     update($, NOTES, n => {
       if (!(rowId in n)) return n
@@ -1484,6 +1552,15 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   ])
   // The sidebar line stops counting a handed-off row at once.
   if (lasts.some(l => l.kind === 'handoff')) void publishStatus($)
+  if ('ref' in p && p.action === 'pr-dismiss') {
+    redrawWhileLeaving($, SETTLED_MS)
+    leavePr($, p.ref)
+  }
+  if (!('ref' in p) && p.action === 'undo') {
+    // Claude was told of the close; with the id out of `told`, a second close of the row is reported too.
+    told = { ...told, closed: told.closed.filter(id => id !== p.id) }
+    await selectRestored($, p.id)
+  }
   const errors: (string | null)[] = []
   for (const e of pressed.effects) if (e.kind !== 'send') errors.push(await perform($, e, surface))
   const pending = pressed.lasts[rowId]?.result
@@ -1507,46 +1584,62 @@ function applyAnyPress(
   lastActions: Record<string, LastAction>,
   p: RowPress | PrPress,
   ctx: { now: number; turnsStarted: number },
-): { ledger: Ledger; applied: Applied } {
-  if ('ref' in p) return { ledger, applied: applyPrPress(prState, ledger.prs, lastActions, p, ctx) }
+): Applied {
+  if ('ref' in p) return applyPrPress(ledger, prState, lastActions, p, ctx)
   const item = ledger.items.find(i => i.id === p.id)
   const r = applyPress(ledger, lastActions[p.id], p, {
     ...ctx,
     extraSteps: item ? itemPrSteps(item, prState, ledger.prs) : [],
   })
-  if ('stale' in r) return { ledger, applied: r }
+  if ('stale' in r) return r
 
-  return { ledger: r.ledger, applied: { lasts: r.last ? { [p.id]: r.last } : {}, effects: r.effects } }
+  return { ledger: r.ledger, lasts: r.last ? { [p.id]: r.last } : {}, drop: [], effects: r.effects }
+}
+
+/** Last actions with a press's entries merged in and the ones it removes gone. */
+function withLasts(
+  lastActions: Record<string, LastAction>,
+  lasts: Record<string, LastAction>,
+  drop: string[],
+): Record<string, LastAction> {
+  return Object.fromEntries(Object.entries({ ...lastActions, ...lasts }).filter(([id]) => !drop.includes(id)))
+}
+
+/** Selects a row Undo brought back, in its own tab. */
+async function selectRestored($: EngineInterface, id: string) {
+  const ids = tabRowIds((await drawnState($)).view, [])
+  const tab: Tab = ids.findings.includes(id) ? 'findings' : 'needsYou'
+  const index = ids[tab].indexOf(id)
+  if (index >= 0) await select($, tab, id, index)
 }
 
 /**
  * Runs a press on the demo's copy. It changes only the copy and performs
  * nothing: each send, open or copy becomes its row's sample note instead.
- * Rows still settle, fold and show their ✓ on the copy.
+ * Rows still settle, fold, undo and show their ✓ on the copy.
  */
 async function runDemoPress($: EngineInterface, p: RowPress | PrPress) {
   const now = await $.clock.now()
   const rowId = 'ref' in p ? prRowId(p) : p.id
   if (!('ref' in p) && p.action === 'type') await update($, TYPING, t => (t === p.id ? null : t))
   let applied = { stale: true } as Applied
-  let settled: Settled[] = []
+  let isClosing = false
   await update($, DEMO, d => {
     if (!d) return d
     // The copy's own turn counts, so a sample hand-off folds by them.
     const r = applyAnyPress(d.ledger, d.prViews, d.lastActions, p, { now, turnsStarted: d.turns.turnsStarted })
-    applied = r.applied
+    applied = r
     const { [rowId]: _replaced, ...notes } = d.notes
-    if ('stale' in r.applied) return { ...d, notes: { ...notes, [rowId]: { note: 'stale' as const, at: now } } }
-    settled = settledOf(d.ledger, r.ledger)
+    if ('stale' in r) return { ...d, notes: { ...notes, [rowId]: { note: 'stale' as const, at: now } } }
+    isClosing = hasNewClose(d.ledger, r.ledger) || ('ref' in p && p.action === 'pr-dismiss')
     // An open or copy records only its result, and the demo runs none, so its row keeps its last action.
-    const lasts = Object.entries(r.applied.lasts).filter(([, l]) => l.result === undefined)
+    const lasts = Object.fromEntries(Object.entries(r.lasts).filter(([, l]) => l.result === undefined))
 
     return {
       ...d,
       ledger: r.ledger,
-      lastActions: { ...d.lastActions, ...Object.fromEntries(lasts) },
-      settled: [...d.settled.filter(s => !settled.some(x => x.id === s.id)), ...settled],
-      notes: r.applied.effects.length > 0 ? { ...notes, [rowId]: { note: 'sample' as const, at: now } } : notes,
+      lastActions: withLasts(d.lastActions, lasts, r.drop),
+      notes: r.effects.length > 0 ? { ...notes, [rowId]: { note: 'sample' as const, at: now } } : notes,
     }
   })
   const pressed = applied
@@ -1556,14 +1649,14 @@ async function runDemoPress($: EngineInterface, p: RowPress | PrPress) {
       const { [p.id]: _sent, ...rest } = d
       return rest
     })
+  if (!('stale' in pressed) && !('ref' in p) && p.action === 'undo') await selectRestored($, p.id)
   // A fresh copy redraws the pane: once a note's SETTLED_MS ends, and at each step of a leave bar.
-  const refresh = () => update($, DEMO, d => d && { ...d })
   if ('stale' in pressed || pressed.effects.length > 0)
     void $.clock
       .sleep(SETTLED_MS)
-      .then(refresh)
+      .then(() => update($, DEMO, d => d && { ...d }))
       .catch(() => undefined)
-  if (settled.length > 0) redrawWhileLeaving($, refresh, SETTLED_MS)
+  if (isClosing) redrawWhileLeaving($, SETTLED_MS)
 }
 
 type Action = {
@@ -1704,10 +1797,9 @@ const FINDING_BADGES: Record<Finding['kind'], { label: string; mark: string; ton
  * `/inbox demo` shows in its place.
  */
 async function drawnState($: EngineInterface): Promise<DemoCopy & { view: InboxView; isDemo: boolean; now: number }> {
-  const [ledger, stop, settled, prViews, lastActions, notes, presence, demo, now] = await Promise.all([
+  const [ledger, stop, prViews, lastActions, notes, presence, demo, now] = await Promise.all([
     read($, LEDGER),
     read($, STOP),
-    read($, SETTLED),
     read($, PR_VIEWS),
     read($, LAST_ACTIONS),
     read($, NOTES),
@@ -1716,10 +1808,7 @@ async function drawnState($: EngineInterface): Promise<DemoCopy & { view: InboxV
     $.clock.now(),
   ])
   const turns = { turnsStarted: presence.turnsStarted, turnsApplied: presence.turnsApplied }
-  // The copy keeps its closed rows; each shows in place until SETTLED_MS after it closed.
-  const drawn = demo
-    ? { ...demo, settled: demo.settled.filter(s => now - s.at < SETTLED_MS) }
-    : { ledger, stop, settled, prViews, lastActions, notes, turns }
+  const drawn = demo ?? { ledger, stop, prViews, lastActions, notes, turns }
 
   return { ...drawn, view: viewOf({ ...drawn, now }, presence), isDemo: demo !== null, now }
 }
@@ -1729,7 +1818,7 @@ async function setDemo($: EngineInterface, isShown: boolean) {
   const now = await $.clock.now()
   await update($, DEMO, () => (isShown ? demoView(now) : null))
   // The copy starts with a row that just closed, whose leave bar runs down.
-  if (isShown) redrawWhileLeaving($, () => update($, DEMO, d => d && { ...d }), SETTLED_MS)
+  if (isShown) redrawWhileLeaving($, SETTLED_MS)
   // findPrs does nothing during the demo, so the real PRs tab looks up the branch's PR once it ends.
   if ((await read($, TAB)) === 'prs') await findPrs($)
   await followNewRows($, true)
@@ -1738,8 +1827,7 @@ async function setDemo($: EngineInterface, isShown: boolean) {
 /** Turns the mod on for this session, once, from the start or the desktop app's attach. */
 async function turnOn($: EngineInterface) {
   isOn = true
-  const [now] = await Promise.all([
-    $.clock.now(),
+  await Promise.all([
     $.command.register({ name: 'inbox', description: 'Show where this session stands and what is waiting on you' }),
     $.tool.register({
       name: 'record_finding',
@@ -1749,13 +1837,6 @@ async function turnOn($: EngineInterface) {
     $.tool.register({ name: 'close', description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA }),
     syncTheme($),
   ])
-  // A reload cancels the timers that clear just-closed rows, so the rows still showing get new ones.
-  const settled = await update($, SETTLED, s => s.filter(x => now - x.at < SETTLED_MS))
-  if (settled.length > 0) {
-    const waitMs = Math.max(...settled.map(s => s.at + SETTLED_MS - now))
-    expireSettled($, settled, waitMs)
-    redrawWhileLeaving($, () => update($, SETTLED, s => [...s]), waitMs)
-  }
   $.clock.every(60_000, () => {
     void tick($)
   })
@@ -1763,6 +1844,8 @@ async function turnOn($: EngineInterface) {
     void pollPrs($)
   })
   await loadConversation($, await $.session.id(), false)
+  // After loadConversation, which brings saved state up to date.
+  await redrawAfterReload($)
 }
 
 /**
@@ -1848,7 +1931,6 @@ export const register: Register = on => {
       await Promise.all([
         update($, STOP, () => null),
         update($, DIALOGS, () => []),
-        update($, SETTLED, () => []),
         update($, DEMO, () => null),
         publishStatus($, true),
       ])
@@ -2103,9 +2185,11 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!isOn || e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [{ ledger, prViews: prs, lastActions, stop, settled, view, isDemo, now }, presence, prev] = await Promise.all(
-      [drawnState($), read($, PRESENCE), read($, PREVIOUS)],
-    )
+    const [{ ledger, prViews: prs, lastActions, stop, view, isDemo, now }, presence, prev] = await Promise.all([
+      drawnState($),
+      read($, PRESENCE),
+      read($, PREVIOUS),
+    ])
     const isWorking = e.props.isWorking
     // While the demo shows, its banner leads the band, with a way out.
     const banner = isDemo ? (
@@ -2171,18 +2255,25 @@ export const register: Register = on => {
     }
 
     const card = ledger.card
+    const settled = [...view.needsYou.questions, ...view.needsYou.tasks].flatMap(r =>
+      r.state.is === 'settled' ? [{ what: r.title, outcome: r.state.label }] : [],
+    )
     if (!card && ledger.items.length === 0 && ledger.findings.length === 0 && settled.length === 0) return next(e)
     const settledHint = settled.map(s => (
       <Text color={DONE}>
         {' · ✓ '}
-        {settledText(s).what} → {settledText(s).outcome}
+        {s.what} → {s.outcome}
       </Text>
     ))
 
     const goal = card?.goal || 'This session'
     const waiting = view.needsYou.count
     const findingCount = view.findings.count
-    const prAlert = prAttention(Object.values(prs.views), handoffs(lastActions))
+    // A PR dismissed moments ago is no longer tracked, so it raises no alert.
+    const prAlert = prAttention(
+      drawnPrs(prs, ledger.prs, lastActions, now).flatMap(x => (x.isSettled ? [] : [x.pr])),
+      handoffs(lastActions),
+    )
     // The items themselves live in /inbox; the band only says how many wait.
     const hints = [
       ...settledHint,
@@ -2283,7 +2374,7 @@ export const register: Register = on => {
     const blankLine = isInline ? 0 : 1
     const look = e.surface === 'desktop' ? 'desktop' : 'terminal'
     const [
-      { ledger, prViews: prState, lastActions, notes, stop, settled, view, isDemo, now },
+      { ledger, prViews: prState, lastActions, notes, stop, view, isDemo, now },
       presence,
       tab,
       selection,
@@ -2309,7 +2400,8 @@ export const register: Register = on => {
     ])
     // A hot reload keeps TYPING but empties fieldSeeds, so an open field takes its seed again here.
     if (typing !== null && !fieldSeeds.has(typing)) fieldSeeds.set(typing, (await read($, DRAFTS))[typing] ?? '')
-    const prViews = Object.values(prState.views)
+    const shownPrs = drawnPrs(prState, ledger.prs, lastActions, now)
+    const prViews = shownPrs.map(x => x.pr)
     const pal = PALETTES[theme] ?? THEME_KEY_PALETTE
     // `inverse: false` keeps the engine from inverting the line under the pointer inside the panel.
     const raise = {
@@ -2515,25 +2607,39 @@ export const register: Register = on => {
       }
     }
 
+    // Each list's entries in order: a row, or a row that just closed, which stays in its place and cannot be selected.
+    type Entry = { row: Row } | { settled: RowView; state: Extract<RowState, { is: 'settled' }> }
+    const entriesOf = (list: RowView[], toRow: (r: RowView) => Row | null): Entry[] =>
+      list.flatMap((r): Entry[] => {
+        if (r.state.is === 'settled') return [{ settled: r, state: r.state }]
+        const row = toRow(r)
+        return row ? [{ row }] : []
+      })
+    const rowsOf = (entries: Entry[]) => entries.flatMap(x => ('row' in x ? [x.row] : []))
     // Each tab's rows in order: the cursor, the counts and the drawing all read these.
-    const needsYouGroups = NEEDS_YOU_GROUPS.map(g => ({
-      ...g,
-      rows: view.needsYou[g.list].flatMap(r => (r.item ? [itemRow(r, r.item)] : [])),
-    }))
-    const prGroups = prViews.map(pr => ({
+    const needsYouGroups = NEEDS_YOU_GROUPS.map(g => {
+      const entries = entriesOf(view.needsYou[g.list], r => (r.item ? itemRow(r, r.item) : null))
+      return { ...g, entries, rows: rowsOf(entries) }
+    })
+    const findingEntries = entriesOf(view.findings.rows, r => (r.finding ? findingRow(r, r.finding) : null))
+    // A PR dismissed moments ago draws settled, with no rows.
+    const prGroups = shownPrs.map(({ pr, isSettled }) => ({
       pr,
-      rows: [...failingChecks(pr).map(c => checkRow(pr, c)), ...waitingThreads(pr).map(t => threadRow(pr, t))],
+      isSettled,
+      rows: isSettled
+        ? []
+        : [...failingChecks(pr).map(c => checkRow(pr, c)), ...waitingThreads(pr).map(t => threadRow(pr, t))],
     }))
     const rows: Record<Tab, Row[]> = {
       needsYou: needsYouGroups.flatMap(g => g.rows),
-      findings: view.findings.rows.flatMap(r => (r.finding ? [findingRow(r, r.finding)] : [])),
+      findings: rowsOf(findingEntries),
       prs: prGroups.flatMap(g => g.rows),
     }
     // What each tab's count says waits on the person: a row handed to Claude waits on Claude.
     const tabCounts: Record<Tab, number> = {
       needsYou: view.needsYou.count,
       findings: view.findings.count,
-      prs: prViews.reduce((n, pr) => n + prRowsOnYou(pr, handoff), 0),
+      prs: prGroups.reduce((n, g) => n + (g.isSettled ? 0 : prRowsOnYou(g.pr, handoff)), 0),
     }
     const ids = rows[tab].map(r => r.id)
     const indexOf = new Map(ids.map((id, n) => [id, n]))
@@ -3147,44 +3253,60 @@ export const register: Register = on => {
             foldRow(kind, closed.length, isUnfolded),
             ...(isUnfolded ? closed.flatMap((d, n) => [...closedGap(), closedRow(d, childPos(n, closed.length))]) : []),
           ]
+    // A row that just closed stays where it was, with a ✓ and its outcome, and
+    // [Undo] after the person's own Done or Dismiss, until it joins its list's
+    // closed items. It cannot be selected. `undo` is that press.
+    const settledContent = (what: string, outcome: string, at: number, undo: RowPress | PrPress | null) => (
+      <Box flexDirection="column">
+        <Text wrap="truncate-end" color={pal.muted}>
+          {what}
+        </Text>
+        <Box flexDirection="row" columnGap={2}>
+          <Text wrap="wrap" color={pal.tone.done}>
+            {outcome}
+          </Text>
+          {undo ? (
+            <Button
+              key={`undo-${'ref' in undo ? `pr:${undo.ref}` : undo.id}`}
+              label="Undo"
+              onPress={press => void runPress($, undo, press.surface)}
+            />
+          ) : null}
+        </Box>
+        {leaveBar(at)}
+      </Box>
+    )
+    const settledRow = ({ settled: r, state }: Extract<Entry, { settled: RowView }>, pos?: TreePos) => {
+      const undo = r.actions.find(a => a.press.action === 'undo')?.press ?? null
+      const content = settledContent(r.title, state.label, state.at, undo)
+      const mark = <Text color={pal.mark.done}>✓</Text>
+      // In a group's tree, or flat as Findings lists its rows.
+      return pos ? (
+        treeRow(pos, mark, content, `settled-${r.id}`)
+      ) : (
+        <Box key={`settled-${r.id}`} flexDirection="row" overflow="hidden">
+          <Box width={1} flexShrink={0} />
+          <Box width={4} flexShrink={0} paddingLeft={2}>
+            {mark}
+          </Box>
+          <Box flexDirection="column" flexShrink={1} flexGrow={1} paddingRight={1}>
+            {content}
+          </Box>
+        </Box>
+      )
+    }
+    const settledOf = (entries: Entry[]) => new Set(entries.flatMap(x => ('settled' in x ? [x.settled.id] : [])))
     const needsYouView = () => {
-      // An item that just closed stays where its row was in its group, with a
-      // check and its outcome, until it joins the group's closed items. It
-      // cannot be selected.
-      const fresh = [...settled].sort((a, b) => a.index - b.index)
-      const showing = new Set(settled.map(s => s.id))
-      const settledRow = (s: Settled, pos: TreePos) =>
-        treeRow(
-          pos,
-          <Text color={pal.mark.done}>✓</Text>,
-          <Box flexDirection="column">
-            <Text wrap="truncate-end" color={pal.muted}>
-              {settledText(s).what}
-            </Text>
-            <Text wrap="wrap" color={pal.tone.done}>
-              {settledText(s).outcome}
-            </Text>
-            {leaveBar(s.at)}
-          </Box>,
-          `settled-${s.id}`,
-        )
       // A group with no open, settled or closed items is left out.
       const groups = needsYouGroups.flatMap(g => {
-        const entries: ({ row: Row } | { settled: Settled })[] = g.rows.map(row => ({ row }))
-        for (const s of fresh.filter(x => x.kind === g.kind))
-          entries.splice(Math.min(s.index, entries.length), 0, { settled: s })
-        const closed = ledger.closed
-          .filter(d => d.kind === g.kind && !showing.has(d.id))
-          .slice(-CLOSED_SHOWN)
-          .reverse()
+        const { entries } = g
+        const closed = closedShown(view.needsYou.closed[g.list], settledOf(entries))
         if (entries.length === 0 && closed.length === 0) return []
         const isUnfolded = unfolded.includes(g.kind)
         // The group's children in order: its open items, then the fold row and, unfolded, the closed items.
         const open = divided(
           entries.map((x, n) =>
-            'row' in x
-              ? listRow(x.row, childPos(n, entries.length))
-              : settledRow(x.settled, childPos(n, entries.length)),
+            'row' in x ? listRow(x.row, childPos(n, entries.length)) : settledRow(x, childPos(n, entries.length)),
           ),
           g.kind,
           true,
@@ -3200,7 +3322,7 @@ export const register: Register = on => {
           ]),
         ]
       })
-      const isNothing = rows.needsYou.length === 0 && settled.length === 0
+      const isNothing = needsYouGroups.every(g => g.entries.length === 0)
       if (isNothing && groups.length === 0 && !stop) return emptyState('Nothing needs you.')
       // A stop is fixed in the session, not here, so it shows above the list without keys.
       const outside = stop
@@ -3241,18 +3363,22 @@ export const register: Register = on => {
       )
     }
 
-    // A finding stays listed until Claude closes it or the person dismisses it. Then it moves to Closed.
+    // A finding stays listed until Claude closes it or the person dismisses it. Then it settles and moves to Closed.
     const findingsView = () => {
-      const closed = view.findings.closed
-        .slice(0, CLOSED_SHOWN)
-        .map(f => ({ id: f.id, ask: f.title, at: f.closedAt, how: f.how, outcome: f.outcome }))
-      if (rows.findings.length === 0 && closed.length === 0)
+      const closed = closedShown(view.findings.closed, settledOf(findingEntries)).map(f => ({
+        id: f.id,
+        ask: f.title,
+        at: f.closedAt,
+        how: f.how,
+        outcome: f.outcome,
+      }))
+      if (findingEntries.length === 0 && closed.length === 0)
         return emptyState('No findings yet', 'Claude flags issues and opportunities it spots beyond your task.')
       // With closed findings still shown, the empty text is one line above them.
       const open =
-        rows.findings.length > 0
+        findingEntries.length > 0
           ? divided(
-              rows.findings.map(r => listRow(r)),
+              findingEntries.map(x => ('row' in x ? listRow(x.row) : settledRow(x))),
               'findings',
               false,
             )
@@ -3265,13 +3391,28 @@ export const register: Register = on => {
       return section([...open, ...closedFold('finding', closed, unfolded.includes('finding'))])
     }
 
-    const prBlock = ({ pr, rows: prRows }: { pr: PrView; rows: Row[] }) => {
+    // A PR the person just dismissed keeps its title, settled, with [Undo], until it leaves.
+    const settledPrBlock = (pr: PrView) =>
+      section([
+        treeRow(
+          null,
+          <Text color={pal.mark.done}>✓</Text>,
+          settledContent(`#${pr.number} ${pr.title}`, 'Dismissed', lastActions[`pr:${pr.ref}`]?.at ?? now, {
+            action: 'pr-undo',
+            ref: pr.ref,
+          }),
+          `settled-pr:${pr.ref}`,
+        ),
+      ])
+    const prBlock = ({ pr, isSettled, rows: prRows }: { pr: PrView; isSettled: boolean; rows: Row[] }) => {
+      if (isSettled) return settledPrBlock(pr)
       const { status, text: statusText } = readiness(pr, handoff)
       const { mark, tone } = PR_STATUSES[status]
       const hasRows = prRows.length > 0
       const counts = checkCounts(pr)
       const waitingOn = threadsOnYou(pr, handoff)
-      const prLast = lastActionText(`pr:${pr.ref}`)
+      // A Dismiss left on a PR that is tracked again, as one a later reply links, is over.
+      const prLast = lastActions[`pr:${pr.ref}`]?.action === 'pr-dismiss' ? null : lastActionText(`pr:${pr.ref}`)
       const prActions: Action[] = [
         ...(pr.state === 'OPEN' && pr.mergeable === 'CONFLICTING'
           ? [
@@ -3305,7 +3446,7 @@ export const register: Register = on => {
                 key: `dismiss-pr-${pr.ref}`,
                 label: 'Dismiss',
                 kind: 'mark' as const,
-                onPress: () => void dismissPr($, pr.ref),
+                onPress: prPress({ action: 'pr-dismiss', ref: pr.ref }),
               },
             ]
           : []),

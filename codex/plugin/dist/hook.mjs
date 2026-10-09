@@ -246,6 +246,13 @@ function upgradeLastActions(saved) {
   );
 }
 
+// ../hooks/view.ts
+var SETTLED_MS = 5120;
+
+// src/settle.ts
+var POLL_MS = 3e3;
+var SETTLE_WINDOW_MS = SETTLED_MS + 2 * POLL_MS;
+
 // src/texts.ts
 var CODEX = {
   agent: "Codex",

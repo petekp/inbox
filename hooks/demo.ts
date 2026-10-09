@@ -15,9 +15,7 @@ export function isDemoCopy(saved: unknown): saved is DemoCopy {
   if (!saved || typeof saved !== 'object') return false
   const d = saved as Record<string, unknown>
 
-  return ['ledger', 'settled', 'prViews', 'lastActions', 'notes', 'turns'].every(
-    k => d[k] !== null && typeof d[k] === 'object',
-  )
+  return ['ledger', 'prViews', 'lastActions', 'notes', 'turns'].every(k => d[k] !== null && typeof d[k] === 'object')
 }
 
 export function demoView(now: number): DemoCopy {
@@ -168,6 +166,18 @@ export function demoView(now: number): DemoCopy {
           outcome: 'Yes, as part of the title bar',
           how: 'answered',
           at: now,
+          // Closed as the demo starts, so it shows settled in its place first.
+          item: {
+            id: 'd10',
+            kind: 'question',
+            label: null,
+            ask: 'Draw the tabs on the pane’s own background?',
+            options: ['Yes, as part of the title bar', 'No, on a card'],
+            rec: 'Yes, as part of the title bar',
+            helps: [],
+            turn: 14,
+            at: now - 12 * MIN,
+          },
         },
       ],
       findings: [
@@ -227,17 +237,6 @@ export function demoView(now: number): DemoCopy {
       batchTurn: 14,
     },
     stop: null,
-    settled: [
-      {
-        id: 'd10',
-        ask: 'Draw the tabs on the pane’s own background?',
-        outcome: 'Yes, as part of the title bar',
-        how: 'answered',
-        at: now,
-        kind: 'question',
-        index: 1,
-      },
-    ],
     prViews: {
       branchRef: 'petekp/inbox#31',
       isFetching: false,
