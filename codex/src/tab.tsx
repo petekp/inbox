@@ -70,7 +70,8 @@ const optionsShown = new Set<string>()
 const unfolded = new Set<'question' | 'task'>()
 const sending = new Set<string>()
 const errors = new Map<string, string>()
-const notes = new Map<string, string>()
+// A row's note. One with `at`, the stale note, shows for SETTLED_MS from then; the rest stay until the next press.
+const notes = new Map<string, { text: string; at?: number }>()
 const copies = new Map<string, { name: string; text: string }>()
 // A note for a press whose row is no longer drawn, shown on line 1 for SETTLED_MS.
 let lineNote: { text: string; at: number } | null = null
@@ -204,7 +205,8 @@ async function act(rowId: string, press: RowPress, onSent?: () => void) {
     if (r?.copy) await copy(rowId, r.copy)
     if (r?.view) applyView(r.view, seq)
     if (r?.note && view && isListed(view, rowId)) {
-      notes.set(rowId, STALE_TEXT)
+      notes.set(rowId, { text: STALE_TEXT, at: Date.now() })
+      setTimeout(draw, SETTLED_MS + 50)
       // The typed words go back into the field they were sent from.
       if (press.action === 'type') typing = rowId
     } else if (r?.note) {
@@ -223,7 +225,7 @@ async function act(rowId: string, press: RowPress, onSent?: () => void) {
 async function copy(rowId: string, c: { text: string; name: string }) {
   try {
     await navigator.clipboard.writeText(c.text)
-    notes.set(rowId, `Copied ${c.name}`)
+    notes.set(rowId, { text: `Copied ${c.name}` })
   } catch {
     // The tab's frame may not get the clipboard, so the text shows for a manual copy.
     copies.set(rowId, c)
@@ -507,6 +509,8 @@ function ListRow({
   const { keys, more } = rowActions(row)
   const status = [row.fold?.note, lastText(row, now)]
   const copied = copies.get(row.id)
+  const n = notes.get(row.id)
+  const note = n && (n.at === undefined || Date.now() - n.at < SETTLED_MS) ? n.text : null
 
   return (
     <div class="row selected">
@@ -520,13 +524,13 @@ function ListRow({
           </div>
         </div>
         {isOpen && row.body ? <div class="body">{row.body}</div> : null}
-        {status.some(Boolean) || sending.has(row.id) || notes.has(row.id) || errors.has(row.id) ? (
+        {status.some(Boolean) || sending.has(row.id) || note || errors.has(row.id) ? (
           <div class="tight">
             {status.filter(Boolean).map(s => (
               <div class={lastTone}>{s}</div>
             ))}
             {sending.has(row.id) ? <div class="muted">Sending…</div> : null}
-            {notes.has(row.id) ? <div class="muted">{notes.get(row.id)}</div> : null}
+            {note ? <div class="muted">{note}</div> : null}
             {errors.has(row.id) ? <div class="tone-error">{errors.get(row.id)}</div> : null}
           </div>
         ) : null}

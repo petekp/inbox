@@ -1102,19 +1102,24 @@ test('/clear and /resume switch the inbox to the other conversation, and each ke
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await turn('add a greeting cli')
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'answer-i1-0' })
   // /clear goes on under a new id, without a session.start. As in the engine,
   // $.session.id() still names the first conversation; the event names the new one.
   await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
   await $.classic.SessionStart({ source: 'clear', session_id: 'session-2' })
-  ledgerReply = 'GOAL: Fix the build\nNOW: Waiting\nNEW: decide | 1 | Pin the Node version? | - | yes'
+  ledgerReply = 'GOAL: Fix the build\nNOW: Waiting\nNEW: decide | 1 | Pin the Node version? | Yes / No | Yes'
   await turn('fix the build')
+  // Ids restart at i1, and the first conversation's answer to its i1 does not mark this one.
+  expect(await pane.find({ text: /Pin the Node version\?/ })).toBeDefined()
+  expect(await pane.find({ text: /✓/ })).toBeUndefined()
+  expect((await pane.find({ key: 'answer-i1-0' }))?.props.label).not.toMatch(/again/)
   // /resume returns to the first conversation.
   await $.session.end({ reason: 'resume', sessionId: 'session-2', resume: { id: 'session-2' } })
   await $.classic.SessionStart({ source: 'resume', session_id: 'session-1' })
   await clock.settle()
 
-  const pane = await $.ui.mount(PANE)
-  expect(await pane.find({ text: /Use Node or Python\?/ })).toBeDefined()
+  expect(await pane.find({ text: /Name the command greet\?/ })).toBeDefined()
   expect(await pane.find({ text: /Pin the Node version\?/ })).toBeUndefined()
 
   // The second conversation's items were saved under its own id.

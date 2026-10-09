@@ -389,6 +389,9 @@ let publishing: Promise<void> = Promise.resolve()
 const contextFor = new Map<string, string[]>()
 // The `!` command whose output row comes next.
 let shellCommand: string | null = null
+// The draft a row's field opened with. The engine replaces the typed text whenever the drawn
+// `value` changes, so drawing each saved keystroke as `value` can drop keys typed before it lands.
+const fieldSeeds = new Map<string, string>()
 
 /** Clears everything gathered for the turn's exchange. */
 function resetTurn() {
@@ -910,6 +913,7 @@ function openPane($: EngineInterface) {
 
 /** Opens the free-text field under a row and gives it the keyboard. */
 async function startTyping($: EngineInterface, id: string) {
+  fieldSeeds.set(id, (await read($, DRAFTS))[id] ?? '')
   await update($, TYPING, () => id)
   // A click leaves the keys with the prompt, and `ui.focus` is refused in a pane that lacks them.
   await openPane($)
@@ -1717,12 +1721,15 @@ export const register: Register = on => {
         update($, OPTIONS_SHOWN, () => []),
         update($, DRAFTS, () => ({})),
         update($, NOTES, () => ({})),
+        // Thread and `pr:` entries stay: the branch PR outlives the conversation, and isThreadSent reads them.
+        update($, LAST_ACTIONS, a => Object.fromEntries(Object.entries(a).filter(([k]) => !/^[if]\d+$/.test(k)))),
         update($, PRESENCE, p => ({ ...p, isAway: false, isUpdating: false, ledgerState: 'current' as const })),
       ])
       resetTurn()
       shellCommand = null
       told = TOLD_NOTHING
       contextFor.clear()
+      fieldSeeds.clear()
     }
 
     return next(e)
@@ -2124,7 +2131,6 @@ export const register: Register = on => {
       selection,
       theme,
       typing,
-      drafts,
       unfolded,
       isKeyListShown,
       shownDetails,
@@ -2138,7 +2144,6 @@ export const register: Register = on => {
       read($, SELECTION),
       read($, THEME),
       read($, TYPING),
-      read($, DRAFTS),
       read($, UNFOLDED),
       read($, IS_KEY_LIST_SHOWN),
       read($, SHOWN_DETAILS),
@@ -2146,6 +2151,8 @@ export const register: Register = on => {
       read($, IS_DEMO),
       read($, OPTIONS_SHOWN),
     ])
+    // A hot reload keeps TYPING but empties fieldSeeds, so an open field takes its seed again here.
+    if (typing !== null && !fieldSeeds.has(typing)) fieldSeeds.set(typing, (await read($, DRAFTS))[typing] ?? '')
     // Sample entries can be selected and opened, but what they would send goes nowhere.
     // This is decided here, not in a ui.press hook: a press whose hook awaits before
     // next(e) fails when a redraw lands in the wait, since the redraw releases the old drawing's handles.
@@ -2659,7 +2666,7 @@ export const register: Register = on => {
                   <Input
                     key={`type-${row.id}`}
                     placeholder={row.typeHint}
-                    {...(drafts[row.id] ? { value: drafts[row.id] } : {})}
+                    {...(fieldSeeds.get(row.id) ? { value: fieldSeeds.get(row.id) } : {})}
                     submitLabel="send"
                     autoFocus
                     onInput={(value: string) => void update($, DRAFTS, d => ({ ...d, [row.id]: value }))}
