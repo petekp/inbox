@@ -2586,12 +2586,11 @@ export const register: Register = on => {
       findings > 0 ? <Text dimColor>{findings === 1 ? '1 finding' : `${findings} findings`}</Text> : null,
     ].filter(p => p !== null)
 
-    // Line 1: [Open inbox] and the counts. On desktop a native button is taller than a line of text,
-    // so the text sits level with its top. Sample counts could pass for real ones, so the demo says so.
+    // Line 1: the counts, then [Open inbox] at the right end. On desktop a native button is taller than
+    // a line of text, so the text sits level with its top. Sample counts could pass for real ones, so the demo says so.
     const countLine = (
       <Box flexDirection="row" alignItems="flex-start" gap={1}>
-        <Button key="open-inbox" label="Open inbox" onPress={() => void openInbox($)} />
-        <Box flexShrink={1} minWidth={0}>
+        <Box flexGrow={1} flexShrink={1} minWidth={0}>
           <Text wrap="truncate-end">
             {isDemo ? <Text dimColor>Demo: </Text> : null}
             {counts.length > 0 ? (
@@ -2602,6 +2601,7 @@ export const register: Register = on => {
           </Text>
         </Box>
         {isDemo ? <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo($, false)} /> : null}
+        <Button key="open-inbox" label="Open inbox" onPress={() => void openInbox($)} />
       </Box>
     )
     if (!stop) return countLine

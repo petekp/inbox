@@ -278,12 +278,12 @@ Keys are an optional extra wherever they work. No action depends on them. Only t
 - The `/inbox` pane. It docks beside the transcript in a fullscreen terminal from 110 columns, and is otherwise a framed region above the prompt.
 - The Herdr sidebar line, unchanged. It stays the only place that names an open permission prompt or AskUserQuestion dialog.
 
-**The band.** One line: [Open inbox] and the counts for Needs you and Findings. The button opens the pane with the top row open. The line is the same while Claude works and when the person comes back after a break.
+**The band.** One line: the counts for Needs you and Findings, with [Open inbox] at the right end. The button opens the pane with the top row open. The line is the same while Claude works and when the person comes back after a break.
 
 ```
-[Open inbox] 2 need you · 1 finding
-[Open inbox] Nothing needs you
-[Open inbox] Demo: 7 need you · 4 findings [Hide demo]
+2 need you · 1 finding                                  [Open inbox]
+Nothing needs you                                       [Open inbox]
+Demo: 7 need you · 4 findings               [Hide demo] [Open inbox]
 ```
 
 A count of zero drops out. Only "N need you" is amber; the rest is muted. During `/inbox demo` the line starts with "Demo:", so the sample counts do not pass for real ones.
@@ -291,7 +291,7 @@ A count of zero drops out. Only "N need you" is amber; the rest is muted. During
 A stop draws a second line, in red, under the counts, so [Open inbox] does not move. An API error adds [Resume], which reads "Resuming…" under the same key while it sends. When the band has one row, the stop line drops.
 
 ```
-[Open inbox] 2 need you · 1 finding
+2 need you · 1 finding                                  [Open inbox]
 Stopped 1m ago: API error (overloaded). [Resume]
 ```
 
@@ -327,7 +327,7 @@ The band falls back to the engine default when the mod is off, a survey shows, o
 
 The mod picks the desktop drawing on each draw from `e.surface === 'desktop'`, not once per session, because each surface's render is its own evaluation (engine types, `RenderSurface`).
 
-**The band.** The same states as the terminal. [Open inbox] comes first on line 1, so a narrow band never pushes it off the line. It is a native button.
+**The band.** The same states as the terminal. [Open inbox] sits at the right end of line 1. The counts shrink first, so a narrow band never pushes it off the line. It is a native button.
 
 **The pane at 36 columns.**
 
@@ -590,7 +590,7 @@ Section 2 applies to every client. The tables list where each change lands in to
 
 | Change | Where today | Reason |
 |---|---|---|
-| The band is [Open inbox] and the counts; a stop adds a line under them | The band render in `hooks/register.tsx` | The band showed up to seven lines on too many topics. The pane holds the rows. |
+| The band is the counts and [Open inbox]; a stop adds a line under them | The band render in `hooks/register.tsx` | The band showed up to seven lines on too many topics. The pane holds the rows. |
 | The last-session offer is removed | `PREVIOUS`, `bringBack` and the `p:<folder>` store key | The owner chose to drop it |
 | Needs you order: questions, then tasks | Group order in the pane, `hooks/register.tsx:2836` | Claude's latest questions come first and read 1, 2, 3 |
 | A question's number is the one `answerNote` resolves, else `?` | `itemRow` numbers by place among open questions, `hooks/register.tsx:2828` | A typed number must answer the question the pane numbers |

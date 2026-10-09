@@ -1,13 +1,13 @@
 # Band redesign: counts only
 
-The band is the block the inbox draws above the prompt. This plan cuts it to one line: [Open inbox] and the counts for Needs you and Findings. A stop adds a second line with [Resume]. Everything else lives in the pane. Nothing here is built.
+The band is the block the inbox draws above the prompt. This plan cuts it to one line: the counts for Needs you and Findings, with [Open inbox] at the right end. A stop adds a second line with [Resume]. Everything else lives in the pane. Nothing here is built.
 
 ## What the band shows
 
 ```
-[ Open inbox ] 2 need you · 4 findings
-[ Open inbox ] 1 finding
-[ Open inbox ] Nothing needs you
+2 need you · 4 findings                               [ Open inbox ]
+1 finding                                             [ Open inbox ]
+Nothing needs you                                     [ Open inbox ]
 ```
 
 - **The same line in every state.** Standing, working and coming back after a break all draw it. The eye lands on the same place each time.
@@ -18,7 +18,7 @@ The band is the block the inbox draws above the prompt. This plan cuts it to one
 **Stopped.** The counts line stays first, so [Open inbox] does not move. The stop draws under it in red.
 
 ```
-[ Open inbox ] 2 need you · 4 findings
+2 need you · 4 findings                               [ Open inbox ]
 Stopped 1m ago: the API is overloaded. [ Resume ]
 Stopped 3m ago: sign-in expired. Run /login, then send a message to resume.
 ```
@@ -28,7 +28,7 @@ Stopped 3m ago: sign-in expired. Run /login, then send a message to resume.
 **Demo.** Sample counts could pass for real ones, so the line says so and keeps [Hide demo].
 
 ```
-[ Open inbox ] Demo: 7 need you · 4 findings [ Hide demo ]
+Demo: 7 need you · 4 findings           [ Hide demo ] [ Open inbox ]
 ```
 
 ## What leaves the band
