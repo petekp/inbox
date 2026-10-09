@@ -284,7 +284,8 @@ function recordClose(host, ledger, input, now) {
 }
 
 // ../hooks/view.ts
-var UPDATE_FAILED = "Last update failed. Items from that reply may be missing. It retries after your next message.";
+var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
+var UPDATE_RETRIES = " It retries after your next message.";
 function needsYouOrder(ledger) {
   const latest = new Set(latestBatch(ledger).map((i) => i.id));
   const questions = ledger.items.filter((i) => i.kind === "question");
@@ -344,7 +345,7 @@ function perTurnStatus(ledger, update) {
   return {
     changedAt: times.length === 0 ? null : Math.max(...times),
     isUpdating: update.isUpdating,
-    error: update.isFailed && !update.isUpdating ? UPDATE_FAILED : null
+    error: update.isFailed && !update.isUpdating ? UPDATE_FAILED + (update.retries ? UPDATE_RETRIES : "") : null
   };
 }
 
@@ -452,7 +453,9 @@ function viewOf(s, now) {
   const open = new Set(l.findings.map((f) => f.id));
   const update = {
     isUpdating: s.presence.isUpdating || s.pending.length > 0,
-    isFailed: s.presence.ledgerState === "failed"
+    isFailed: s.presence.ledgerState === "failed",
+    // applied() drops a failed exchange; nothing reruns it.
+    retries: false
   };
   return {
     ...inboxView({ ledger: l, lastActions: s.lastActions, turns: s.presence, status: perTurnStatus(l, update) }),

@@ -146,7 +146,8 @@ test('the tab reads Updating… while exchanges wait for the inbox model, and sh
     { isUpdating: viewOf(waiting, 60).status.isUpdating, error: viewOf(waiting, 60).status.error },
     { isUpdating: true, error: null },
   )
-  assert.match(viewOf(s, 60).status.error ?? '', /^Last update failed\./)
+  // Codex does not rerun a failed update, so the error promises no retry.
+  assert.equal(viewOf(s, 60).status.error, 'Last update failed. Items from that reply may be missing.')
   assert.equal(viewOf(s, 60).status.changedAt, 1)
 })
 

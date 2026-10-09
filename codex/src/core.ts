@@ -270,6 +270,8 @@ export function viewOf(s: SessionState, now: number): View {
   const update = {
     isUpdating: s.presence.isUpdating || s.pending.length > 0,
     isFailed: s.presence.ledgerState === 'failed',
+    // applied() drops a failed exchange; nothing reruns it.
+    retries: false,
   }
 
   return {

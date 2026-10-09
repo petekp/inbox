@@ -50,7 +50,8 @@ export type InboxView = {
   status: ItemStatus
 }
 
-const UPDATE_FAILED = 'Last update failed. Items from that reply may be missing. It retries after your next message.'
+const UPDATE_FAILED = 'Last update failed. Items from that reply may be missing.'
+const UPDATE_RETRIES = ' It retries after your next message.'
 
 /**
  * The open items in the order Needs you lists them. Questions: the latest
@@ -114,9 +115,13 @@ export function inboxView({ ledger, lastActions, turns, status }: ViewInput): In
 /**
  * The per-turn update's status. The list changed last when the card or any
  * item or finding did, so tool calls that write the list count too. A failure
- * shows only once no update runs, since a running one may repair it.
+ * shows only once no update runs, since a running one may repair it. Its text
+ * promises a retry only when the source retries a failed update.
  */
-export function perTurnStatus(ledger: Ledger, update: { isUpdating: boolean; isFailed: boolean }): ItemStatus {
+export function perTurnStatus(
+  ledger: Ledger,
+  update: { isUpdating: boolean; isFailed: boolean; retries: boolean },
+): ItemStatus {
   const times = [
     ledger.card?.updatedAt,
     ...ledger.items.map(i => i.at),
@@ -128,6 +133,6 @@ export function perTurnStatus(ledger: Ledger, update: { isUpdating: boolean; isF
   return {
     changedAt: times.length === 0 ? null : Math.max(...times),
     isUpdating: update.isUpdating,
-    error: update.isFailed && !update.isUpdating ? UPDATE_FAILED : null,
+    error: update.isFailed && !update.isUpdating ? UPDATE_FAILED + (update.retries ? UPDATE_RETRIES : '') : null,
   }
 }

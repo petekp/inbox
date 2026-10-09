@@ -576,7 +576,12 @@ function viewOf(
     ledger,
     lastActions,
     turns,
-    status: perTurnStatus(ledger, { isUpdating: presence.isUpdating, isFailed: presence.ledgerState === 'failed' }),
+    // catchUp reruns a failed update after the next message.
+    status: perTurnStatus(ledger, {
+      isUpdating: presence.isUpdating,
+      isFailed: presence.ledgerState === 'failed',
+      retries: true,
+    }),
   })
 }
 
