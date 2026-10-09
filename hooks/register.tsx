@@ -1729,6 +1729,9 @@ async function setDemo($: EngineInterface, isShown: boolean) {
   await update($, DEMO, () => (isShown ? demoView(now) : null))
   // The copy starts with a row that just closed, whose leave bar runs down.
   if (isShown) redrawWhileLeaving($, () => update($, DEMO, d => d && { ...d }), SETTLED_MS)
+  // findPrs does nothing during the demo, so the real PRs tab looks up the branch's PR once it ends.
+  if ((await read($, TAB)) === 'prs') await findPrs($)
+  await followNewRows($, true)
 }
 
 /** Turns the mod on for this session, once, from the start or the desktop app's attach. */
@@ -2078,8 +2081,8 @@ export const register: Register = on => {
   on('command.run', { command: 'inbox' }, async ($, e) => {
     const isShown = (await read($, DEMO)) !== null
     if (e.args.trim() === 'demo') await setDemo($, !isShown)
+    else if ((await read($, TAB)) === 'prs') await findPrs($)
     const isDemo = (await read($, DEMO)) !== null
-    if ((await read($, TAB)) === 'prs') await findPrs($)
     await openPane($)
     await followNewRows($, true)
 

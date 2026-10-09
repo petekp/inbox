@@ -1206,13 +1206,42 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
   const SAMPLE = 'Sample entry: nothing was sent.'
+  // The session links a real PR with a sample PR's ref, so a sample press that reached the real state would show.
+  const view = (number: number, title: string) =>
+    JSON.stringify({
+      number,
+      title,
+      url: `https://github.com/petekp/inbox/pull/${number}`,
+      isDraft: false,
+      state: 'OPEN',
+      baseRefName: 'main',
+      mergeable: 'MERGEABLE',
+      reviewDecision: 'APPROVED',
+      statusCheckRollup: [],
+    })
+  ghAnswers.push(
+    { match: argv => argv.includes('view') && argv.includes('29'), stdout: view(29, 'Real linked work') },
+    { match: argv => argv.includes('view') && !argv.includes('29'), stdout: view(40, 'Real branch work') },
+    {
+      match: argv => argv.includes('graphql'),
+      stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
+    },
+  )
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
-  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await $.turn.complete({
+    answer: 'Plan ready. Opened https://github.com/petekp/inbox/pull/29.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
   await clock.settle()
   const saved = stored.get('s:session-1')
   expect(saved).toContain('Use Node or Python?')
+  expect(saved).toContain('petekp/inbox#29')
+  const ranBeforeDemo = ran.length
 
   expect((await $.command.run({ command: 'inbox', args: 'demo' } as never)).text).toContain('Showing sample entries')
   const pane = await $.ui.mount(PANE)
@@ -1263,10 +1292,19 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   // The sample PRs are not looked up, and their buttons open nothing.
   await pane.press({ key: 'open-petekp/inbox#31' })
   expect(await pane.find({ text: SAMPLE })).toBeDefined()
-  expect(ran.filter(argv => argv[0] === 'gh' || argv[0] === 'open')).toEqual([])
+  // Dismiss takes the sample PR off the copy and leaves the session's PR with the same ref.
+  await pane.press({ key: 'dismiss-pr-petekp/inbox#29' })
+  expect(await pane.find({ text: /Count turns to tell when a reload cut off an update/ })).toBeUndefined()
+  expect(stored.get('s:session-1')).toBe(saved)
+  expect(ran.slice(ranBeforeDemo).filter(argv => argv[0] === 'gh' || argv[0] === 'open')).toEqual([])
+
+  // [Hide demo] on the PRs tab shows the session's own PRs and looks up the branch's PR.
+  await pane.press({ key: 'hide-demo' })
+  await clock.settle()
+  expect(await pane.find({ text: /Real linked work/ })).toBeDefined()
+  expect(await pane.find({ text: /Real branch work/ })).toBeDefined()
 
   // [Hide demo] brings back the session's own rows, which no sample press touched.
-  await pane.press({ key: 'hide-demo' })
   await pane.press({ key: 'tab-needsYou' })
   expect(await pane.find({ text: /Use Node or Python/ })).toBeDefined()
   expect(await pane.find({ text: /Showing sample entries/ })).toBeUndefined()
