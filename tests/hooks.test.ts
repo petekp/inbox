@@ -1931,9 +1931,9 @@ test('the desktop pane draws each action as one button and the tabs as one click
   expect(buttons.map(b => b.key ?? '').filter(k => /-key$|^tab-key-|^next$|^previous$|^key-list$/.test(k))).toEqual([])
   // The tabs are a Client region, not Buttons: a desktop Button is only as big as its label.
   expect(buttons.map(b => b.key ?? '').filter(k => k.startsWith('tab-'))).toEqual([])
-  // The recommended option is the desktop's primary button, with no words added.
+  // The recommended option is the desktop's primary button, and its label says so, as in the terminal.
   const recommended = await pane.find({ key: 'answer-i1-0' })
-  expect([recommended?.props.label, recommended?.props.variant]).toEqual(['Node', 'primary'])
+  expect([recommended?.props.label, recommended?.props.variant]).toEqual(['Node (recommended)', 'primary'])
   // A closed row's handle is text and its title one button; below 50 columns it drops its age.
   expect(await pane.find({ key: 'select-i2' })).toBeUndefined()
   expect(await pane.find({ key: 'title-i2' })).toBeDefined()

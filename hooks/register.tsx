@@ -2757,7 +2757,7 @@ export const register: Register = on => {
       hasSecondLine?: boolean
       body?: JSX.Element | null
       keys: () => KeyAction[]
-      /** Actions that talk about the row or drop it, after `keys` and a muted dot. */
+      /** Actions that talk about the row or drop it, after `keys`: past a muted dot in the terminal, on their own line on desktop. */
       moreKeys?: () => KeyAction[]
       /** For a row that takes the person's own words: what its field says while empty. */
       typeHint?: string
@@ -2994,16 +2994,17 @@ export const register: Register = on => {
     // inverts, so the letter and the label both invert the muted color to match.
     // An action past the lettered ones, or one that only changes the view, has no key and draws its label alone.
     // While the open row is guarded, both draw dim and a click does nothing. Its key, a hidden Button, works at once.
-    // On desktop an action is its native button alone, and the recommended option is that surface's primary button.
-    // A plain terminal Button draws `variant` as no variant, so there the recommended option's label carries the mark.
+    // On desktop an action is its native button alone. The recommended option's label ends "(recommended)" in every
+    // look, because a plain terminal Button ignores `variant`. Desktop also draws that option as its primary button.
     const shownLabel = (a: Pick<KeyAction, 'label' | 'variant'>) =>
-      look === 'terminal' && a.variant === 'primary' ? `${a.label} (recommended)` : a.label
+      a.variant === 'primary' ? `${a.label} (recommended)` : a.label
     const keyedButton =
       (rowId: string) =>
       ({ hotkey, kind: _kind, ...action }: KeyAction) =>
         look === 'desktop' ? (
           <Button
             {...action}
+            label={shownLabel(action)}
             {...(isOpenGuarded ? { dimColor: true } : {})}
             onPress={press => void unlessGuarded($, rowId, press, action.onPress)}
           />
@@ -3024,9 +3025,9 @@ export const register: Register = on => {
             />
           </Box>
         )
-    // The open row's actions. Its other actions follow its main ones after a muted dot.
+    // The open row's actions. In the terminal its other actions can follow its main ones after a muted dot.
     const keyRow = (rowId: string, keys: KeyAction[], more: KeyAction[] = []) => (
-      <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+      <Box flexDirection="row" flexWrap="wrap" columnGap={2} rowGap={look === 'desktop' ? 1 : 0}>
         {keys.map(keyedButton(rowId))}
         {keys.length > 0 && more.length > 0 ? <Text color={pal.muted}>·</Text> : null}
         {more.map(keyedButton(rowId))}
@@ -3037,20 +3038,15 @@ export const register: Register = on => {
       keys.flatMap(({ key, hotkey, kind: _kind, ...k }) =>
         hotkey ? [<Button key={`${key}${suffix}`} plain hotkey={hotkey} {...k} label={shownLabel(k)} />] : [],
       )
-    // A selected row's secondary keys share its key row when they fit, and
+    // In the terminal, a selected row's secondary keys share its key row when they fit, and
     // otherwise take a line of their own rather than wrap mid-row. A key draws
-    // "key: label" in the terminal and about "[label]" on desktop, and keyRow puts 2 columns between keys and the dot.
-    // A desktop native button is assumed to draw about 2 columns wider than its label.
-    const buttonFrame = look === 'desktop' ? 2 : 0
+    // "key: label", and keyRow puts 2 columns between keys and the dot.
     const keysWidth = (keys: KeyAction[], more: KeyAction[]) => {
       const all = [...keys, ...more]
       const dot = keys.length > 0 && more.length > 0 ? 3 : 0
 
       return (
-        all.reduce(
-          (w, k) => w + (look === 'desktop' ? buttonFrame : k.hotkey ? k.hotkey.length + 2 : 0) + shownLabel(k).length,
-          0,
-        ) +
+        all.reduce((w, k) => w + (k.hotkey ? k.hotkey.length + 2 : 0) + shownLabel(k).length, 0) +
         2 * Math.max(0, all.length - 1) +
         dot
       )
@@ -3193,6 +3189,8 @@ export const register: Register = on => {
               el,
             ],
       )
+    // A desktop native button is assumed to draw about 2 columns wider than its label.
+    const buttonFrame = look === 'desktop' ? 2 : 0
     // The selected row gets a blue background, or a bar where the palette has
     // no selection color, and reads top to bottom:
     // context line, title, body, keys. In the docked pane a blank line sets each
@@ -3317,11 +3315,16 @@ export const register: Register = on => {
                 </Box>
               ) : null}
               <Box flexDirection="column" marginTop={blankLine}>
-                {keys.length === 0
-                  ? keyRow(row.id, more)
-                  : keysWidth(keys, more) <= e.props.bodyColumns - 3 - (tree ? 7 : 5)
-                    ? keyRow(row.id, keys, more)
-                    : [keyRow(row.id, keys), keyRow(row.id, more)]}
+                {/* On desktop the two groups always take separate lines, with a wider gap between them than inside a group. */}
+                {look === 'desktop'
+                  ? [keys, more]
+                      .filter(group => group.length > 0)
+                      .map((group, n) => <Box marginTop={n > 0 ? 2 : 0}>{keyRow(row.id, group)}</Box>)
+                  : keys.length === 0
+                    ? keyRow(row.id, more)
+                    : keysWidth(keys, more) <= e.props.bodyColumns - 3 - (tree ? 7 : 5)
+                      ? keyRow(row.id, keys, more)
+                      : [keyRow(row.id, keys), keyRow(row.id, more)]}
               </Box>
               {Input && row.typeHint && typing === row.id ? (
                 <Box marginTop={blankLine}>

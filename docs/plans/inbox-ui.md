@@ -74,7 +74,7 @@ A row has two forms:
 
 | Row | Where | Closed form | Open form adds |
 |---|---|---|---|
-| Question | Needs you | `1) ask · 3m ago`, or `? ask · 3m ago` (see numbers below) | Full ask, one button per option with the recommended one styled primary, help steps |
+| Question | Needs you | `1) ask · 3m ago`, or `? ask · 3m ago` (see numbers below) | Full ask, one button per option with the recommended one styled primary and labeled "(recommended)", help steps |
 | Task | Needs you | `• ask · 3m ago` | Help steps (open, copy, run, terminal, link), "Open PR #N" when the ask names a tracked PR |
 | Finding | Findings | `• title · 3m ago` | Kind badge (▲ Issue or ✦ Opportunity), detail, "Relevant file: path" |
 | PR block | PRs | Always open: `#12 title`, readiness, one line of facts | PR actions |
@@ -339,7 +339,9 @@ Questions
    Rename the users table to
    accounts before the
    migration runs?
-   [Yes, rename] [No, keep users]
+   [Yes, rename (recommended)]
+   [No, keep users]
+
    [Type an answer] [Explain]
    [Dismiss]
 ? Keep the old endpoint for…
@@ -347,14 +349,16 @@ Tasks
 • Add STRIPE_KEY to .env
 ```
 
-Below 50 columns, a closed row drops its age; the open form still shows it. At 50 columns or more, closed rows show their age, the status moves onto the tab line, and buttons share lines where they fit.
+Below 50 columns, a closed row drops its age; the open form still shows it. At 50 columns or more, closed rows show their age and the status moves onto the tab line. An open row's actions always form two groups, each starting on a new line. The options, help steps, and Done or Address come first. Type, Explain or Discuss, and Dismiss follow.
 
 **After [Explain] is pressed**, the row stays open and records the press:
 
 ```
 1) Rename the table to accou…
    ✓ Explain · just now
-   [Yes, rename] [No, keep users]
+   [Yes, rename (recommended)]
+   [No, keep users]
+
    [Type an answer] [Explain again]
    [Dismiss]
 ```
@@ -622,7 +626,7 @@ Every shared change in section 2 applies to the tab in full. That includes the f
 | Split the `inbox` tool: text-only for the model, entrypoint-only for the tab | `codex/src/server.ts:31-39` | A model call mounts the full tab inline |
 | Every option draws | Options cut at `CHOICE_KEYS`, `codex/src/tab.tsx:245` | Same as the mod |
 | "Address it" becomes "Address" | `codex/src/tab.tsx:352` | Same as the mod |
-| Recommended option as primary button | `codex/src/tab.tsx:236` | Matches the mod |
+| Recommended option as primary button | `codex/src/tab.tsx:236` | The mod also labels it "(recommended)". The Codex tab marks it with primary alone. |
 | `✓ Label` wording | `codex/src/core.ts:254-339`, `codex/src/tab.tsx:491-497` | One phrase per action in every client |
 | Sending, Queued, ✓, or Not sent | `codex/src/tab.tsx:530-538`, `codex/src/server.ts:87-94` | A queued message has not reached Codex yet |
 | Per-hook "not heard" state | Group empty text, `codex/src/tab.tsx:616-620`, `:667` | Skipped hooks look like an empty inbox |
