@@ -31,7 +31,7 @@ Run these live checks. Tests cover each behavior, but no live session has.
 - Codex: the thread entrypoint moves from the `inbox` tool to `inbox_view`.
 - `PluginState.unfolded` also holds `'finding'`, for the Findings Closed fold. The plan did not list this one. Old values stay valid.
 
-**The cost of removing session checks.** With the `<checks>` block gone, the per-turn update writes "tests pass" into the card in 8 of 8 runs when a reply claims it, against 0 of 8 before. The removal was your call. This is the measured cost.
+**The cost of removing session checks.** With the `<checks>` block gone, the per-turn update writes "tests pass" into the card in 8 of 8 runs when a reply claims it, against 0 of 8 before. You kept the removal after seeing this cost.
 
 **Restoring checks is new work now.** The removal is one commit, `89995f7`, but 15 steps build on it. Reverting it alone does not apply cleanly.
 
