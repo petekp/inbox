@@ -198,6 +198,8 @@ const DESKTOP_WIDE_AT = 50
 // About how many characters of desktop's proportional text fit in one column of `bodyColumns`, measured
 // on a /inbox demo row. A guess too high is cut from the muted text after a title, not from the title.
 const DESKTOP_CHARS_PER_CELL = 1.25
+// A lower guess for text that must stay one line, since desktop wraps text that is too long. Tab labels measured about 1.1.
+const DESKTOP_CLIP_CHARS_PER_CELL = 1.1
 const DESKTOP_TAB_PADDING = 2
 const DESKTOP_TAB_PAD = '\u00a0'.repeat(3)
 // Theme keys, so the colors follow the person's Claude Code theme.
@@ -2767,7 +2769,7 @@ export const register: Register = on => {
        * The row no longer waits on the person. Selected, it shows `line` and
        * `note`, with its body and keys behind Details, on `v`.
        */
-      fold?: { line?: JSX.Element; note?: string }
+      fold?: { line?: string; note?: string }
     }
     // An item's group header says whether it is a question or a task, so the row
     // needs no context line. The recommended answer is marked on its key.
@@ -2876,11 +2878,7 @@ export const register: Register = on => {
         ...(isSent || isChanged
           ? {
               fold: {
-                line: (
-                  <Text wrap="truncate-end" color={pal.muted}>
-                    @{latest.author}: {commentLine(latest.body)}
-                  </Text>
-                ),
+                line: `@${latest.author}: ${commentLine(latest.body)}`,
                 ...(t.isLinesChanged ? { note: 'Lines changed since this comment · still open on GitHub' } : {}),
               },
             }
@@ -3192,6 +3190,12 @@ export const register: Register = on => {
       )
     // A desktop native button is assumed to draw about 2 columns wider than its label.
     const buttonFrame = look === 'desktop' ? 2 : 0
+    // Desktop wraps a `truncate-end` Text too, so a line that must stay one line, `inset`
+    // columns in, is clipped here. The terminal truncates it itself.
+    const oneLine = (text: string, inset: number) =>
+      look === 'desktop'
+        ? clipLabel(text, Math.max(12, Math.floor((e.props.bodyColumns - 3 - inset) * DESKTOP_CLIP_CHARS_PER_CELL) - 1))
+        : text
     // The selected row gets a blue background, or a bar where the palette has
     // no selection color, and reads top to bottom:
     // context line, title, body, keys. In the docked pane a blank line sets each
@@ -3305,7 +3309,13 @@ export const register: Register = on => {
               </Text>
               {row.subtitle}
               {isOpen && row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null}
-              {!isOpen && row.fold?.line ? <Box marginTop={blankLine}>{row.fold.line}</Box> : null}
+              {!isOpen && row.fold?.line ? (
+                <Box marginTop={blankLine}>
+                  <Text wrap="truncate-end" color={pal.muted}>
+                    {oneLine(row.fold.line, tree ? 7 : 5)}
+                  </Text>
+                </Box>
+              ) : null}
               {status.length > 0 ? (
                 <Box flexDirection="column" marginTop={blankLine}>
                   {status.map(s => (
@@ -3728,11 +3738,12 @@ export const register: Register = on => {
       outcome: string,
       at: number,
       undo: RowPress | PrPress | null,
+      inset: number,
       isQueued = false,
     ) => (
       <Box flexDirection="column">
         <Text wrap="truncate-end" color={pal.muted}>
-          {what}
+          {oneLine(what, inset)}
         </Text>
         <Box flexDirection="row" columnGap={2}>
           <Text wrap="wrap" color={isQueued ? pal.muted : pal.tone.done}>
@@ -3751,7 +3762,7 @@ export const register: Register = on => {
     )
     const settledRow = ({ settled: r, state }: Extract<Entry, { settled: RowView }>, pos?: TreePos) => {
       const undo = r.actions.find(a => a.press.action === 'undo')?.press ?? null
-      const content = settledContent(r.title, state.label, state.at, undo, state.isQueued)
+      const content = settledContent(r.title, state.label, state.at, undo, pos ? 7 : 5, state.isQueued)
       // The ✓ waits for the answer to reach Claude; the blank keeps the row's text in line.
       const mark = state.isQueued ? <Text> </Text> : <Text color={pal.mark.done}>✓</Text>
       // In a group's tree, or flat as Findings lists its rows.
@@ -3909,10 +3920,16 @@ export const register: Register = on => {
         treeRow(
           null,
           <Text color={pal.mark.done}>✓</Text>,
-          settledContent(`#${pr.number} ${pr.title}`, 'Dismissed', lastActions[`pr:${pr.ref}`]?.at ?? now, {
-            action: 'pr-undo',
-            ref: pr.ref,
-          }),
+          settledContent(
+            `#${pr.number} ${pr.title}`,
+            'Dismissed',
+            lastActions[`pr:${pr.ref}`]?.at ?? now,
+            {
+              action: 'pr-undo',
+              ref: pr.ref,
+            },
+            7,
+          ),
           `settled-pr:${pr.ref}`,
         ),
       ])
