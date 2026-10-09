@@ -3714,7 +3714,8 @@ export const register: Register = on => {
             if (look === 'desktop') {
               const show = () => void showTab($, id)
               const isShown = tab === id
-              const cover = ' '.repeat(width * 3)
+              // Non-breaking spaces: desktop collapses a label of plain spaces to nothing, so the Button takes no click.
+              const cover = ' '.repeat(width * 3)
 
               return (
                 <Box
