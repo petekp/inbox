@@ -55,7 +55,7 @@ One phrase names the count everywhere: "need you". The tab is "Needs you", the b
 - open questions;
 - open tasks not handed off.
 
-It leaves out findings, PR rows, handed-off rows and the stop line. A queued send (2.3) counts as pressed: an answered question is closed and leaves, and a handed-off row leaves, while a row with a queued talk send stays in the count. Findings have their own count ("1 finding"). PR rows have the PR tab's count.
+It leaves out findings, PR rows, handed-off rows and the stop line. A queued send (2.3) counts as pressed: an answered question is closed and leaves, and a handed-off row leaves, while a row with a queued talk send stays in the count. Findings have their own count ("1 finding"). The PRs tab counts the open PRs that need the person: a merge conflict, a failing check, requested changes or a thread waiting on them.
 
 **The order of the Needs you list.** The top row is the first row of this list. [Open inbox] opens the pane with it open.
 

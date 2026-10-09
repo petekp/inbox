@@ -40,7 +40,7 @@ import {
   failingChecks,
   parseRef,
   prRefs,
-  prRowsOnYou,
+  prNeedsYou,
   prompts,
   threadsOnYou,
   readThreads,
@@ -2931,11 +2931,11 @@ export const register: Register = on => {
       findings: rowsOf(findingEntries),
       prs: prGroups.flatMap(g => g.rows),
     }
-    // What each tab's count says waits on the person: a row handed to Claude waits on Claude.
+    // What waits on the person: rows, or on the PRs tab, PRs. A row handed to Claude waits on Claude.
     const tabCounts: Record<Tab, number> = {
       needsYou: view.needsYou.count,
       findings: view.findings.count,
-      prs: prGroups.reduce((n, g) => n + (g.isSettled ? 0 : prRowsOnYou(g.pr, handoff)), 0),
+      prs: prGroups.filter(g => !g.isSettled && prNeedsYou(g.pr, handoff)).length,
     }
     const ids = rows[tab].map(r => r.id)
     const indexOf = new Map(ids.map((id, n) => [id, n]))

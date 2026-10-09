@@ -193,9 +193,15 @@ export function threadsOnYou(pr: PrView, h: Handoffs): PrThread[] {
   return waitingThreads(pr).filter(t => !t.isLinesChanged && !h.isThreadSent(pr, t))
 }
 
-/** The PR rows that wait on the person, for every count of them: failing checks, and threads on them. */
-export function prRowsOnYou(pr: PrView, h: Handoffs): number {
-  return failingChecks(pr).length + threadsOnYou(pr, h).length
+/** Whether an open PR waits on the person: a merge conflict, a failing check, requested changes or a thread on them. */
+export function prNeedsYou(pr: PrView, h: Handoffs): boolean {
+  return (
+    pr.state === 'OPEN' &&
+    (pr.mergeable === 'CONFLICTING' ||
+      failingChecks(pr).length > 0 ||
+      pr.reviewDecision === 'CHANGES_REQUESTED' ||
+      threadsOnYou(pr, h).length > 0)
+  )
 }
 
 export function checkCounts(pr: PrView): Record<PrCheck['bucket'], number> {
