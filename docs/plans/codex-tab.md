@@ -77,14 +77,34 @@ focus, and while a modifier key is held, so typing and the app's shortcuts
 work. `j` and `k`, or the arrow keys, move the selection. When the selected
 row leaves, the row now in its place is selected.
 
-## Web forms of terminal drawing
+## Look
+
+The tab keeps the pane's structure and redraws its character art as the
+page's own lines, so it reads as the same inbox at a finer grain.
 
 | Pane | Tab | Why |
 | --- | --- | --- |
-| A raised tab panel with a line of `▔` | An underline in the tab's tone | A web page draws a border directly. |
-| A tree of `├─` and `└─` from each group's title | A card per group, rows divided by lines | The tree places rows in a grid of cells. A card groups them on a page. |
-| A leave bar that loses half a cell per step | A bar whose width shrinks in a CSS transition | A page can animate width smoothly. |
+| A tree of `├─` and `└─` hanging from each group's title | The same tree in hairlines, with a rounded last elbow | The tree is what makes the pane recognizable. Hairlines keep it light beside proportional text. |
+| A raised tab panel with a line of `▔` in the tab's tone | A raised tab with a 2 px edge in its tone, drawn in from the left on a switch | Same shape and meaning. The draw-in answers the switch, as the pane's does after a jump. |
+| Keys drawn as text, as `a: Fix` | The same text, with a light fill under the pointer | Text keys keep a row quiet. Boxed buttons made every row look like a form. |
+| A divider from the text column to the edge | A hairline from the text column | The tree passes through it, as in the pane. |
+| A leave bar that loses half a cell per step | A bar whose width shrinks smoothly | A page can animate width. |
 | A drawer listing the keys | A footer line | The tab has room for one more line. |
+
+**Surfaces.** The page, a group's card, the raised tab and the selected row
+are mixed from the host's own background and text colors, so the tab sits
+inside Codex's theme. The selected row adds a little blue, as the pane's
+blue-gray selection does. Nothing has a shadow or a border.
+
+**Type.** Words use the host's sans. Only what the terminal drew as
+structure uses the host's mono: the tree, the row marks, the key letters and
+check output. The goal is the one larger line.
+
+**Color means state.** Amber waits on you, purple is a finding, green is
+done, red is failing, and periwinkle marks a key. Nothing else is colored.
+
+**Motion** only answers a press: the tab edge drawing in, and the leave bar.
+Both stop when the system asks for reduced motion.
 
 ## Left out of the first version
 
@@ -113,9 +133,9 @@ and borders, and falls back to its own values outside the app. The tones are
 the pane's: amber for Needs you, purple for findings, green for done, red for
 errors, in the pane's dark and light values.
 
-On the fallback backgrounds, every text color has at least 5.3:1 contrast on
-the page, a group's card and a selected row, in dark and light. The ✗ mark
-has 4.2:1 on a selected row in dark, and a mark needs 3:1. The host's own
+On the fallback backgrounds, every text color has at least 5.1:1 contrast on
+the page, a group's card, the raised tab and a selected row, in dark and
+light. The ✗ mark has 4.4:1 at its lowest, and a mark needs 3:1. The host's own
 variable values are not measured yet.
 
 ## Build

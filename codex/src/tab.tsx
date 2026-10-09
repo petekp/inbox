@@ -14,7 +14,7 @@ type Tone = 'needsYou' | 'findings' | 'done' | 'error'
 type Group = 'check' | 'question' | 'task' | 'finding'
 
 /** One of a row's actions, with the key that presses it while the tab has focus. */
-type Key = { hotkey: string; label: string; isPrimary?: boolean; run: () => void }
+type Key = { hotkey: string; label: string; note?: string; run: () => void }
 
 /** A list row. Selected, it shows its title in full, its body and its keys; otherwise one line. */
 type Row = {
@@ -230,8 +230,8 @@ function itemRow(v: View, item: ItemRow, handle: string): Row {
   const lettered = [
     ...(isQuestion
       ? item.options.map((o, n) => ({
-          label: o.isRec ? `${clip(o.text, 32)} (recommended)` : clip(o.text, 32),
-          isPrimary: o.isRec,
+          label: clip(o.text, 32),
+          ...(o.isRec ? { note: '(recommended)' } : {}),
           run: () => void act(id, { action: 'answer', id, option: n }),
         }))
       : []),
@@ -421,9 +421,9 @@ function rowActions(row: Row): { keys: Key[]; more: Key[] } {
 
 function KeyButton({ k }: { k: Key }) {
   return (
-    <button type="button" class={k.isPrimary ? 'key primary' : 'key'} onClick={k.run}>
-      <kbd>{k.hotkey}</kbd>
-      {k.label}
+    <button type="button" class="key" onClick={k.run}>
+      <kbd>{k.hotkey}</kbd>: {k.label}
+      {k.note ? <span class="note"> {k.note}</span> : null}
     </button>
   )
 }
@@ -447,15 +447,18 @@ function TypeField({ row }: { row: Row }) {
         aria-label={typed.hint}
         onInput={e => drafts.set(row.id, e.currentTarget.value)}
       />
-      <button type="submit">Send</button>
+      <button type="submit" class="key">
+        <kbd>↵</kbd>: Send
+      </button>
       <button
         type="button"
+        class="key"
         onClick={() => {
           typing = null
           draw()
         }}
       >
-        Cancel
+        <kbd>esc</kbd>: Cancel
       </button>
     </form>
   )
@@ -478,9 +481,7 @@ function RowView({
 }) {
   // A last action is green only on a row that shows a ✓. On a row still open it is muted, so it does not read as an answer.
   const lastTone = row.handleTone === 'done' ? 'tone-done' : 'muted'
-  const handle = (
-    <span class={`handle ${row.handleTone ? `mark-${row.handleTone} tone-${row.handleTone}` : ''}`}>{row.handle}</span>
-  )
+  const handle = <span class={`mark ${row.handleTone ?? ''}`}>{row.handle}</span>
 
   if (!isSelected) {
     const plain = row.line ?? { text: row.title, after: row.titleAfter }
@@ -515,19 +516,25 @@ function RowView({
     <div class="row selected">
       {handle}
       <div class="content">
-        {row.meta}
-        <div class="title">
-          {row.title}
-          {row.titleAfter ? <span class="after">{row.titleAfter}</span> : null}
+        <div class="tight">
+          {row.meta ? <div class="meta">{row.meta}</div> : null}
+          <div class="title">
+            {row.title}
+            {row.titleAfter ? <span class="after">{row.titleAfter}</span> : null}
+          </div>
+          {row.subtitle}
         </div>
-        {row.subtitle}
         {isOpen && row.body ? <div class="body">{row.body}</div> : null}
-        {status.filter(Boolean).map(s => (
-          <div class={lastTone}>{s}</div>
-        ))}
-        {sending.has(row.id) ? <div class="muted">Sending…</div> : null}
-        {notes.has(row.id) ? <div class="muted">{notes.get(row.id)}</div> : null}
-        {errors.has(row.id) ? <div class="tone-error">{errors.get(row.id)}</div> : null}
+        {status.some(Boolean) || sending.has(row.id) || notes.has(row.id) || errors.has(row.id) ? (
+          <div class="tight">
+            {status.filter(Boolean).map(s => (
+              <div class={lastTone}>{s}</div>
+            ))}
+            {sending.has(row.id) ? <div class="muted">Sending…</div> : null}
+            {notes.has(row.id) ? <div class="muted">{notes.get(row.id)}</div> : null}
+            {errors.has(row.id) ? <div class="tone-error">{errors.get(row.id)}</div> : null}
+          </div>
+        ) : null}
         <div class="keys">
           {keys.map(k => (
             <KeyButton k={k} />
@@ -562,8 +569,8 @@ function RowView({
 function SettledView({ s }: { s: Settled }) {
   return (
     <div class="row settled">
-      <span class="handle tone-done">✓</span>
-      <div class="content" style={{ gap: '0' }}>
+      <span class="mark done">✓</span>
+      <div class="content tight">
         <div class="what">{s.what}</div>
         <div class="tone-done">{s.outcome}</div>
         <div class="leave">
@@ -581,15 +588,37 @@ function SettledView({ s }: { s: Settled }) {
 }
 
 /** A group's rows with the rows that just left spliced in where they were. */
-function Entries({ rows, group, all, now }: { rows: Row[]; group: Group; all: Row[]; now: number }) {
+function Entries({
+  rows,
+  group,
+  all,
+  now,
+  empty,
+}: {
+  rows: Row[]
+  group: Group
+  all: Row[]
+  now: number
+  /** What the group's one line says when it has no rows. */
+  empty?: string
+}) {
   const t: Tab = group === 'finding' ? 'findings' : 'needsYou'
   const at = selectedIndex(all, t)
   const entries: ({ row: Row } | { settled: Settled })[] = rows.map(row => ({ row }))
   for (const s of settled.filter(x => x.group === group).sort((a, b) => a.index - b.index))
     entries.splice(Math.min(s.index, entries.length), 0, { settled: s })
 
+  // Needs you hangs its rows from each group's title, as the pane does; Findings lists them flat.
   return (
-    <>
+    <div class={group === 'finding' ? 'flat' : 'tree'}>
+      {entries.length === 0 && empty ? (
+        <div class="entry">
+          <div class="row">
+            <span class="mark" />
+            <span class="empty-line">{empty}</span>
+          </div>
+        </div>
+      ) : null}
       {entries.map(x =>
         'row' in x ? (
           <div class="entry" key={x.row.id}>
@@ -606,7 +635,7 @@ function Entries({ rows, group, all, now }: { rows: Row[]; group: Group; all: Ro
           </div>
         ),
       )}
-    </>
+    </div>
   )
 }
 
@@ -637,13 +666,12 @@ function ItemGroup({
   const showing = new Set(settled.map(s => s.id))
   const closed = v.closed.filter(d => d.kind === kind && !showing.has(d.id))
   const isUnfolded = unfolded.has(kind)
-  const hasEntries = rows.length > 0 || settled.some(s => s.group === kind)
 
   return (
     <section>
       {/* A row handed to Codex stays listed but leaves the count. */}
       <GroupTitle title={title} count={rows.filter(r => !r.fold).length} />
-      {hasEntries ? <Entries rows={rows} group={kind} all={all} now={now} /> : <div class="empty-line">{empty}</div>}
+      <Entries rows={rows} group={kind} all={all} now={now} empty={empty} />
       {closed.length > 0 ? (
         <button
           type="button"
@@ -654,23 +682,28 @@ function ItemGroup({
             draw()
           }}
         >
-          {isUnfolded ? '▾' : '▸'} {closed.length} Closed
+          <span class="fold-mark">{isUnfolded ? '▾' : '▸'}</span>
+          {closed.length} Closed
         </button>
       ) : null}
-      {isUnfolded
-        ? closed.map(d => (
-            <div class="closed" key={`closed-${d.id}`}>
-              <span class="muted">◇</span>
-              <div>
-                <div class="ask">{d.ask}</div>
-                <div>
-                  <span class={d.isLapsed ? 'outcome lapsed' : 'outcome'}>{capitalized(d.outcome)}</span>
-                  <span class="muted"> · {ago(now - d.at)}</span>
+      {isUnfolded && closed.length > 0 ? (
+        <div class="tree closed-tree">
+          {closed.map(d => (
+            <div class="entry" key={`closed-${d.id}`}>
+              <div class="row">
+                <span class="mark">◇</span>
+                <div class="content tight">
+                  <div class="muted">{d.ask}</div>
+                  <div>
+                    <span class={d.isLapsed ? 'outcome lapsed' : 'outcome'}>{capitalized(d.outcome)}</span>
+                    <span class="muted"> · {ago(now - d.at)}</span>
+                  </div>
                 </div>
               </div>
             </div>
-          ))
-        : null}
+          ))}
+        </div>
+      ) : null}
     </section>
   )
 }
@@ -718,14 +751,13 @@ function Header({ v }: { v: View }) {
 
   return (
     <header>
-      <div class="goal">
-        <span class="goal-mark">◆</span>
-        {v.goal}
-      </div>
-      {v.now ? <div class="card-line muted">Now {v.now}</div> : null}
+      <span class="goal-mark">◆</span>
+      <div class="goal">{v.goal}</div>
+      {v.now ? <div class="card-line">Now {v.now}</div> : null}
       {v.running.slice(0, 3).map(r => (
-        <div class="card-line muted">
-          <span class="tone-done">●</span> {r}
+        <div class="card-line">
+          <span class="running-mark">●</span>
+          {r}
         </div>
       ))}
     </header>
@@ -753,7 +785,7 @@ function TabBar({ v, lists, now }: { v: View; lists: Lists; now: number }) {
             }}
           >
             {t.label}
-            {counts[t.id] > 0 ? <span class={`tone-${t.id}`}> {counts[t.id]}</span> : null}
+            {counts[t.id] > 0 ? <span class={`count tone-${t.id}`}>{counts[t.id]}</span> : null}
           </button>
         ))}
       </div>
@@ -781,7 +813,8 @@ function App(): ComponentChildren {
       <TabBar v={v} lists={lists} now={now} />
       {tab === 'needsYou' ? <NeedsYou v={v} lists={lists} now={now} /> : <Findings lists={lists} now={now} />}
       <footer>
-        <kbd>1 2</kbd> Switch tabs · <kbd>j k</kbd> Select the next or previous row
+        <kbd>1 2</kbd>Switch tabs<span class="sep">·</span>
+        <kbd>j k</kbd>Select the next or previous row
       </footer>
     </>
   )

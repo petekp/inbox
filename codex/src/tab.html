@@ -7,40 +7,62 @@
     <style>
       /* The host's variables when Codex passes them; otherwise the pane's own colors. */
       :root {
+        color-scheme: light;
         --bg: var(--color-background-primary, #ffffff);
         --text: var(--color-text-primary, #1f1f1f);
         --muted: var(--color-text-secondary, #595959);
-        --line: var(--color-border-default, rgba(0, 0, 0, 0.12));
-        --card: var(--color-background-secondary, rgba(0, 0, 0, 0.035));
         --key: #243bf5;
         --needs-you: #745417;
         --findings: #7b00e8;
         --done: #25652f;
         --error: #a5293d;
         --error-mark: #a5293d;
+        --sans: var(--font-sans, -apple-system, system-ui, sans-serif);
+        --mono: var(--font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
+        /* Surfaces are mixed from the host's colors, so they follow its theme. */
+        --card: color-mix(in srgb, var(--text) 4.5%, var(--bg));
+        --raised: color-mix(in srgb, var(--text) 9%, var(--bg));
+        --selected: color-mix(in srgb, #4c9aff 20%, var(--card));
+        --tree: color-mix(in srgb, var(--text) 30%, var(--bg));
+        --divider: color-mix(in srgb, var(--text) 9%, var(--bg));
+        --hover: color-mix(in srgb, var(--key) 14%, transparent);
+        /* The tree's grid: its line, where a row's mark sits, and where its text starts. */
+        --tree-x: 15px;
+        --mark-x: 30px;
+        --text-x: 52px;
       }
       @media (prefers-color-scheme: dark) {
         :root:not([data-theme='light']) {
-          --bg: var(--color-background-primary, #1e1e1e);
+          color-scheme: dark;
+          --bg: var(--color-background-primary, #171717);
           --text: var(--color-text-primary, #ececec);
-          --muted: var(--color-text-secondary, #bdbdbd);
-          --line: var(--color-border-default, rgba(255, 255, 255, 0.12));
-          --card: var(--color-background-secondary, rgba(255, 255, 255, 0.045));
+          --muted: var(--color-text-secondary, #a8a8a8);
           --key: #b1b9f9;
           --needs-you: #ffc107;
           --findings: #cab0ff;
           --done: #7ecd8f;
           --error: #ffa3b0;
           --error-mark: #ff6b80;
+          --card: color-mix(in srgb, var(--text) 5.5%, var(--bg));
+          --raised: color-mix(in srgb, var(--text) 11%, var(--bg));
+          --selected: color-mix(in srgb, #7fa6d9 15%, var(--card));
+          --tree: color-mix(in srgb, var(--text) 32%, var(--bg));
+          --divider: color-mix(in srgb, var(--text) 8%, var(--bg));
         }
       }
       :root[data-theme='dark'] {
+        color-scheme: dark;
         --key: #b1b9f9;
         --needs-you: #ffc107;
         --findings: #cab0ff;
         --done: #7ecd8f;
         --error: #ffa3b0;
         --error-mark: #ff6b80;
+        --card: color-mix(in srgb, var(--text) 5.5%, var(--bg));
+        --raised: color-mix(in srgb, var(--text) 11%, var(--bg));
+        --selected: color-mix(in srgb, #7fa6d9 15%, var(--card));
+        --tree: color-mix(in srgb, var(--text) 32%, var(--bg));
+        --divider: color-mix(in srgb, var(--text) 8%, var(--bg));
       }
       * {
         box-sizing: border-box;
@@ -49,7 +71,8 @@
         margin: 0;
         background: var(--bg);
         color: var(--text);
-        font: 13px/1.45 var(--font-sans, system-ui, sans-serif);
+        font: 13px/20px var(--sans);
+        -webkit-font-smoothing: antialiased;
       }
       button {
         font: inherit;
@@ -59,6 +82,15 @@
         padding: 0;
         cursor: pointer;
         text-align: left;
+      }
+      :focus-visible {
+        outline: 1.5px solid var(--key);
+        outline-offset: 1px;
+        border-radius: 4px;
+      }
+      kbd {
+        font: 12px/20px var(--mono);
+        color: var(--key);
       }
       .muted {
         color: var(--muted);
@@ -75,104 +107,201 @@
       .tone-error {
         color: var(--error);
       }
-      .mark-error {
-        color: var(--error-mark);
-      }
       .notice {
-        padding: 8px 16px;
+        padding: 10px 16px;
         color: var(--error);
       }
+
+      /* The band's lines. */
       header {
-        padding: 12px 16px 4px;
-      }
-      .goal {
-        font-weight: 600;
+        padding: 14px 16px 2px;
+        display: grid;
+        grid-template-columns: 18px 1fr;
       }
       .goal-mark {
         color: var(--muted);
-        margin-right: 6px;
+        font-size: 10px;
+      }
+      .goal {
+        font-size: 14px;
+        line-height: 20px;
+        font-weight: 600;
+        letter-spacing: -0.005em;
       }
       .card-line {
-        padding-left: 18px;
+        grid-column: 2;
+        color: var(--muted);
       }
+      .running-mark {
+        color: var(--done);
+        font-size: 8px;
+        vertical-align: 1px;
+        margin-right: 6px;
+      }
+
+      /* Tabs: raised panels, the shown one lighter, with its tone along the top edge. */
       nav {
         display: flex;
         flex-wrap: wrap;
         align-items: flex-end;
         justify-content: space-between;
         gap: 4px 16px;
-        padding: 8px 16px 0;
-        border-bottom: 1px solid var(--line);
+        padding: 12px 12px 0;
       }
       .tabs {
         display: flex;
-        gap: 16px;
+        gap: 4px;
       }
       .tab {
-        padding: 6px 0;
-        border-bottom: 2px solid transparent;
-        margin-bottom: -1px;
+        position: relative;
+        padding: 6px 12px;
+        border-radius: 6px;
+        background: var(--card);
         color: var(--muted);
       }
+      .tab:hover {
+        color: var(--text);
+      }
       .tab.shown {
+        background: var(--raised);
         color: var(--text);
         font-weight: 600;
       }
-      .tab.shown.needsYou {
-        border-color: var(--needs-you);
+      .tab.shown::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        height: 2px;
+        border-radius: 6px 6px 0 0;
+        transform-origin: left;
+        animation: draw-in 200ms ease-out;
       }
-      .tab.shown.findings {
-        border-color: var(--findings);
+      .tab.shown.needsYou::before {
+        background: var(--needs-you);
+      }
+      .tab.shown.findings::before {
+        background: var(--findings);
+      }
+      .tab .count {
+        font-weight: 600;
+        margin-left: 6px;
+      }
+      @keyframes draw-in {
+        from {
+          transform: scaleX(0);
+        }
       }
       .status {
-        padding: 6px 0;
+        padding: 6px 4px;
         color: var(--muted);
+        font-size: 12px;
       }
+
       main {
         display: flex;
         flex-direction: column;
-        gap: 10px;
-        padding: 12px 12px 8px;
+        gap: 8px;
+        padding: 12px 12px 4px;
       }
       section {
         background: var(--card);
         border-radius: 8px;
-        padding: 8px 0;
+        padding: 10px 0;
       }
       .group-title {
-        padding: 2px 12px 6px;
-        font-weight: 600;
+        padding: 0 14px 0 calc(var(--tree-x) + 4px);
+        font-weight: 500;
       }
       .group-title .count {
-        font-weight: normal;
         color: var(--muted);
         margin-left: 6px;
       }
-      .entry + .entry {
-        border-top: 1px solid var(--line);
+
+      /* The tree: a hairline from the group's title, an elbow to each row, and a rounded last elbow. */
+      .tree {
+        position: relative;
+        padding-top: 8px;
       }
+      .tree::before {
+        content: '';
+        position: absolute;
+        left: var(--tree-x);
+        top: 0;
+        height: 8px;
+        border-left: 1px solid var(--tree);
+      }
+      .entry {
+        position: relative;
+        --elbow: 16px;
+      }
+      .entry:has(> .row.selected) {
+        --elbow: 22px;
+      }
+      .tree > .entry::before {
+        content: '';
+        position: absolute;
+        left: var(--tree-x);
+        top: 0;
+        bottom: 0;
+        border-left: 1px solid var(--tree);
+        z-index: 1;
+      }
+      .tree > .entry::after {
+        content: '';
+        position: absolute;
+        left: var(--tree-x);
+        top: var(--elbow);
+        width: 11px;
+        border-top: 1px solid var(--tree);
+        z-index: 1;
+      }
+      .tree > .entry:last-child::before {
+        bottom: auto;
+        height: calc(var(--elbow) + 1px);
+        width: 11px;
+        border-bottom: 1px solid var(--tree);
+        border-bottom-left-radius: 7px;
+      }
+      .tree > .entry:last-child::after {
+        display: none;
+      }
+      .flat {
+        --mark-x: 18px;
+        --text-x: 40px;
+      }
+
+      /* Rows. A divider runs from the text column to the edge, under the tree's line. */
       .row {
         display: flex;
-        gap: 8px;
-        padding: 6px 12px 6px 9px;
-        border-left: 3px solid transparent;
+        padding: 6px 14px 6px var(--mark-x);
+      }
+      .entry + .entry > .row {
+        background-image: linear-gradient(var(--divider), var(--divider));
+        background-repeat: no-repeat;
+        background-size: calc(100% - var(--text-x)) 1px;
+        background-position: right top;
       }
       .row.selected {
-        border-left-color: var(--key);
-        background: color-mix(in srgb, var(--key) 12%, transparent);
-        padding-top: 10px;
-        padding-bottom: 10px;
+        background-color: var(--selected);
+        padding-top: 12px;
+        padding-bottom: 12px;
       }
-      .handle {
+      .mark {
         flex: none;
-        width: 22px;
+        width: calc(var(--text-x) - var(--mark-x));
+        font: 12px/20px var(--mono);
         color: var(--muted);
-        font-variant-numeric: tabular-nums;
       }
-      .handle.tone-done {
+      .mark.done,
+      .mark.error {
+        font-size: 13px;
+      }
+      .mark.done {
         color: var(--done);
       }
-      .handle.mark-error {
+      .mark.error {
         color: var(--error-mark);
       }
       .content {
@@ -180,11 +309,16 @@
         min-width: 0;
         display: flex;
         flex-direction: column;
-        gap: 6px;
+        gap: 8px;
+      }
+      .content > .tight,
+      .content.tight {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
       }
       .line {
         display: flex;
-        gap: 0;
         width: 100%;
         min-width: 0;
       }
@@ -209,63 +343,66 @@
         color: var(--done);
       }
       .line:hover .text {
-        text-decoration: underline;
-        text-decoration-color: var(--line);
+        color: color-mix(in srgb, var(--text) 80%, var(--key));
       }
       .title {
         font-weight: 600;
       }
       .title .after {
-        font-weight: normal;
+        font-weight: 400;
         color: var(--muted);
+      }
+      .meta {
+        font-size: 12px;
       }
       .body {
         overflow-wrap: anywhere;
       }
       .body p {
-        margin: 0 0 4px;
+        margin: 0;
       }
-      .failure {
-        font: 12px var(--font-mono, ui-monospace, monospace);
+      .body p + p {
+        margin-top: 4px;
+      }
+      .failure,
+      .command {
+        font: 12px/18px var(--mono);
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
       .command {
-        font: 12px var(--font-mono, ui-monospace, monospace);
         color: var(--muted);
+        white-space: normal;
         overflow-wrap: anywhere;
       }
+
+      /* Keys are text, as the pane draws them: "a: Fix". */
       .keys {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
-        gap: 4px 6px;
+        gap: 2px 8px;
+        margin-left: -6px;
       }
       .key {
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        padding: 2px 8px;
-        background: var(--bg);
+        padding: 1px 6px;
+        border-radius: 5px;
+        white-space: nowrap;
       }
       .key:hover {
-        border-color: var(--muted);
+        background: var(--hover);
       }
-      .key.primary {
-        border-color: var(--needs-you);
-      }
-      .key kbd {
-        font: inherit;
-        color: var(--key);
-        margin-right: 6px;
+      .key .note {
+        color: var(--muted);
       }
       .key-dot {
         color: var(--muted);
-        padding: 0 2px;
       }
       form {
         display: flex;
-        gap: 6px;
+        align-items: center;
+        gap: 8px;
       }
       input {
         flex: 1;
@@ -273,45 +410,59 @@
         font: inherit;
         color: inherit;
         background: var(--bg);
-        border: 1px solid var(--line);
+        border: 1px solid var(--tree);
         border-radius: 6px;
-        padding: 3px 8px;
+        padding: 4px 8px;
       }
-      form button {
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        padding: 2px 8px;
-        background: var(--bg);
+      input:focus {
+        outline: none;
+        border-color: var(--key);
       }
       textarea {
         width: 100%;
-        font: 12px var(--font-mono, ui-monospace, monospace);
+        font: 12px var(--mono);
         color: inherit;
         background: var(--bg);
-        border: 1px solid var(--line);
+        border: 1px solid var(--tree);
         border-radius: 6px;
       }
+
       .empty-line {
-        padding: 2px 12px 4px 42px;
         color: var(--muted);
       }
       .fold {
-        padding: 6px 12px 2px 42px;
+        display: block;
+        margin: 8px 0 0 calc(var(--mark-x) - 2px);
+        padding: 1px 4px;
+        border-radius: 5px;
         color: var(--muted);
       }
-      .closed {
-        display: flex;
-        gap: 8px;
-        padding: 4px 12px 4px 42px;
+      .fold:hover {
+        color: var(--text);
       }
-      .closed .ask {
-        color: var(--muted);
+      .fold-mark {
+        display: inline-block;
+        width: 14px;
+        font-family: var(--mono);
       }
-      .closed .outcome {
+      /* The closed items hang from the fold's arrow. */
+      .tree.closed-tree {
+        --tree-x: 36px;
+        --mark-x: 52px;
+        --text-x: 72px;
+        padding-top: 4px;
+      }
+      .tree.closed-tree::before {
+        height: 4px;
+      }
+      .tree.closed-tree .entry + .entry > .row {
+        background-image: none;
+      }
+      .outcome {
         font-weight: 600;
       }
-      .closed .outcome.lapsed {
-        font-weight: normal;
+      .outcome.lapsed {
+        font-weight: 400;
         color: var(--muted);
       }
       .settled .what {
@@ -322,8 +473,10 @@
       }
       .leave {
         width: 96px;
-        height: 2px;
+        height: 1.5px;
         margin-top: 4px;
+        border-radius: 1px;
+        overflow: hidden;
       }
       .leave div {
         height: 100%;
@@ -341,19 +494,28 @@
         }
       }
       .empty {
-        padding: 48px 32px;
+        padding: 56px 32px;
         text-align: center;
       }
       .empty .title {
-        margin-bottom: 6px;
+        margin-bottom: 4px;
       }
       footer {
-        padding: 4px 16px 16px;
+        padding: 8px 16px 16px;
         color: var(--muted);
+        font-size: 12px;
       }
       footer kbd {
-        font: inherit;
-        color: var(--key);
+        margin-right: 4px;
+      }
+      footer .sep {
+        margin: 0 8px;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .tab.shown::before,
+        .leave div {
+          animation: none;
+        }
       }
     </style>
   </head>
