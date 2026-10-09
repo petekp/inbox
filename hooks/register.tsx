@@ -10,6 +10,7 @@ import type {
 
 import type {
   Arrival,
+  Card,
   Cursor,
   Closed,
   DemoCopy,
@@ -169,6 +170,8 @@ const DRAW_IN_MS = 200
 const DRAW_IN_STEPS = 4
 const DEMO = atom({ plugin: 'inbox', key: 'demo' } as const, null as DemoCopy | null)
 const DEMO_BANNER = 'Showing sample entries. Presses here send nothing.'
+const TOOLS_REFUSED_TEXT =
+  "Claude cannot record or close items here: your organization's settings block the inbox's tools."
 const PR_POLL_MS = 2 * 60_000
 const MAX_PRS = 6
 
@@ -426,6 +429,11 @@ const storedAt = new Map<string, number>()
 let storedCount = 0
 // The `!` command whose output row comes next.
 let shellCommand: string | null = null
+// The engine refused a `$.tool.register` at turn-on, as an organization's settings can, so Claude cannot record or close items.
+let toolsRefused = false
+// The conversation whose saved session the store could not read, and whether [Try again] is reading it now.
+// While set, Needs you says so in place of an empty list.
+let unreadable: { id: string; isCleared: boolean; isReading: boolean } | null = null
 // The draft a row's field opened with. The engine replaces the typed text whenever the drawn
 // `value` changes, so drawing each saved keystroke as `value` can drop keys typed before it lands.
 const fieldSeeds = new Map<string, string>()
@@ -1010,6 +1018,24 @@ async function openTopRow($: EngineInterface) {
   else await select($, tab, top, ids.indexOf(top))
 }
 
+/** Opens the pane on the shown tab with its top row open, as /inbox does. Nothing in the tabs counts as new. */
+async function showInbox($: EngineInterface) {
+  await openPane($)
+  await followNewRows($, true)
+  await openTopRow($)
+}
+
+/**
+ * The band's [Open inbox]: opens the pane with the top row that needs the
+ * person open, the row line 1 names. With none, it opens on the shown tab.
+ */
+async function openInbox($: EngineInterface) {
+  const { view } = await drawnState($)
+  if (view.needsYou.topId !== null) await update($, TAB, () => 'needsYou' as const)
+  else if ((await read($, TAB)) === 'prs') await findPrs($)
+  await showInbox($)
+}
+
 /** Sends a row's draft as its typed answer or reply, as Enter in its field does. A blank draft sends nothing. */
 async function sendDraft($: EngineInterface, id: string, surface: UiPressArgument['surface']) {
   const text = (await read($, DRAFTS))[id] ?? ''
@@ -1220,6 +1246,7 @@ async function followNewRows($: EngineInterface, isOpening = false) {
       ids.needsYou.length === 0 &&
       settledNeedsYou.length === 0 &&
       !stop &&
+      !isUnreadShown(isDemo) &&
       !unfolded.some(kind => ledger.closed.some(d => d.kind === kind)),
     findings: view.findings.rows.length === 0 && !(unfolded.includes('finding') && ledger.closedFindings.length > 0),
     prs: prs.length === 0 && !prState.isFetching,
@@ -1228,6 +1255,11 @@ async function followNewRows($: EngineInterface, isOpening = false) {
   if (!to) return
   const id = ids[to].find(x => added[to].includes(x))
   await jumpTo($, to, id === undefined ? null : { id, index: ids[to].indexOf(id) })
+}
+
+/** Needs you says the saved session could not be read: for this conversation, and not over the demo's samples. */
+function isUnreadShown(isDemo: boolean): boolean {
+  return !isDemo && unreadable?.id === sessionId
 }
 
 async function isPaneShown($: EngineInterface) {
@@ -2061,14 +2093,21 @@ async function setDemo($: EngineInterface, isShown: boolean) {
 /** Turns the mod on for this session, once, from the start or the desktop app's attach. */
 async function turnOn($: EngineInterface) {
   isOn = true
+  toolsRefused = false
+  // A refused registration rejects. Each is caught on its own, so the mod still loads the conversation.
+  const refused = () => {
+    toolsRefused = true
+  }
   await Promise.all([
     $.command.register({ name: 'inbox', description: 'Show where this session stands and what is waiting on you' }),
-    $.tool.register({
-      name: 'record_finding',
-      description: findingDescription(CLAUDE_CODE),
-      inputSchema: FINDING_SCHEMA,
-    }),
-    $.tool.register({ name: 'close', description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA }),
+    $.tool
+      .register({
+        name: 'record_finding',
+        description: findingDescription(CLAUDE_CODE),
+        inputSchema: FINDING_SCHEMA,
+      })
+      .catch(refused),
+    $.tool.register({ name: 'close', description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA }).catch(refused),
     syncTheme($),
   ])
   $.clock.every(60_000, () => {
@@ -2092,6 +2131,7 @@ async function loadConversation($: EngineInterface, id: string, isCleared: boole
   root = await $.session.root()
   isSaved = false
   recordedRows = null
+  unreadable = null
   // A reload stops any update the previous load had running, and state outlives
   // it, so an update in flight at load was cut off: record it as failed.
   const [git, presence, now, current, saved] = await Promise.all([
@@ -2099,38 +2139,155 @@ async function loadConversation($: EngineInterface, id: string, isCleared: boole
     update($, PRESENCE, p => (p.isUpdating ? { ...p, isUpdating: false, ledgerState: 'failed' as const } : p)),
     $.clock.now(),
     upgradeState($),
-    $.store.get(`s:${sessionId}`) as Promise<{ savedAt: number; ledger: Ledger } | undefined>,
+    readSaved($, id),
   ])
   top = git?.exitCode === 0 ? git.stdout.trim() || null : null
-  let loaded = current
-  if (current.turn === 0 && !current.card) {
-    if (saved) {
-      // A resumed session: bring its card back and show it as a return.
-      loaded = upgradeLedger(saved.ledger)
-      await update($, LEDGER, () => loaded)
-      await update($, PRESENCE, p => ({ ...p, lastActiveAt: saved.savedAt, isAway: true }))
-    } else if (!isCleared) {
-      const prev = (await $.store.get(`p:${root}`)) as Omit<Previous, 'isBroughtIn'> | undefined
-      if (prev?.ledger.card && now - prev.savedAt < PREVIOUS_MAX_AGE_MS) {
-        await update($, PREVIOUS, () => ({ ...prev, ledger: upgradeLedger(prev.ledger), isBroughtIn: false }))
-      }
-    }
-  }
+  if (saved === null) unreadable = { id, isCleared, isReading: false }
+  const loaded = saved === null ? current : await bringBack($, current, saved.session, isCleared, now)
   // Catch up now after a failed update; after a turn whose reply never reached
   // the ledger, as when a reload cut off the end-of-turn hook before it queued the
   // update; or when the ledger is empty in a conversation that already has turns:
-  // the mod loaded mid-session, or its saved state was lost.
+  // the mod loaded mid-session, or its saved state was lost. A saved session the
+  // store could not read is not lost, so [Try again] can still bring it back.
   const isEmpty = !loaded.card && loaded.items.length === 0
   const { turnsStarted, turnsApplied } = await read($, PRESENCE)
   if (
     presence.ledgerState !== 'current' ||
     turnsStarted > turnsApplied ||
-    (isEmpty && (await $.session.turns().catch(() => 0)) > 0)
+    (saved !== null && isEmpty && (await $.session.turns().catch(() => 0)) > 0)
   )
     queueUpdate($, null)
   void publishStatus($)
   // A resumed session's linked PRs; the branch's PR waits for the PRs tab.
   if (loaded.prs.length > 0) void fetchPrs($, false)
+}
+
+type SavedSession = { savedAt: number; ledger: Ledger }
+
+/** Conversation `id`'s saved session, `session` undefined when it has none; null when the store could not read it. */
+async function readSaved($: EngineInterface, id: string): Promise<{ session: SavedSession | undefined } | null> {
+  try {
+    return { session: (await $.store.get(`s:${id}`)) as SavedSession | undefined }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Into a conversation with no turns yet, brings back its saved session, shown as
+ * a return, or else offers the folder's previous session as a card. A cleared
+ * conversation brings in no previous card. Returns the ledger now in place.
+ */
+async function bringBack(
+  $: EngineInterface,
+  current: Ledger,
+  session: SavedSession | undefined,
+  isCleared: boolean,
+  now: number,
+): Promise<Ledger> {
+  if (current.turn !== 0 || current.card) return current
+  if (session) {
+    const loaded = upgradeLedger(session.ledger)
+    await update($, LEDGER, () => loaded)
+    await update($, PRESENCE, p => ({ ...p, lastActiveAt: session.savedAt, isAway: true }))
+
+    return loaded
+  }
+  if (isCleared) return current
+  // A previous card that cannot be read is only not offered.
+  const prev = (await $.store.get(`p:${root}`).catch(() => undefined)) as Omit<Previous, 'isBroughtIn'> | undefined
+  if (prev?.ledger.card && now - prev.savedAt < PREVIOUS_MAX_AGE_MS) {
+    await update($, PREVIOUS, () => ({ ...prev, ledger: upgradeLedger(prev.ledger), isBroughtIn: false }))
+  }
+
+  return current
+}
+
+/** Reads the saved session again after the store could not, as [Try again] does, and brings it back. */
+async function readAgain($: EngineInterface) {
+  const failed = unreadable
+  if (failed === null || failed.id !== sessionId || failed.isReading) return
+  unreadable = { ...failed, isReading: true }
+  await redrawPane($)
+  const [saved, now] = await Promise.all([readSaved($, failed.id), $.clock.now()])
+  // A conversation loaded meanwhile has its own read.
+  if (sessionId !== failed.id) return
+  unreadable = saved === null ? failed : null
+  if (saved !== null) {
+    const loaded = await bringBack($, await read($, LEDGER), saved.session, failed.isCleared, now)
+    if (!loaded.card && loaded.items.length === 0 && (await $.session.turns().catch(() => 0)) > 0) queueUpdate($, null)
+    void publishStatus($)
+    if (loaded.prs.length > 0) void fetchPrs($, false)
+    void followNewRows($).catch(() => undefined)
+  }
+  await redrawPane($)
+}
+
+/** Redraws the pane after a change only a module flag holds, which no draw subscribes to. */
+function redrawPane($: EngineInterface) {
+  return update($, SELECTION, s => ({ ...s }))
+}
+
+/** What the band's line 1 adds to the goal, in order of importance. */
+type BandHints = {
+  waiting: number
+  /** The title of the top row that needs the person, which [Open inbox] opens. */
+  top: string | null
+  findings: number
+  prAlert: string | null
+  /** Rows that just closed: what was asked, and how it closed. */
+  settled: { what: string; outcome: string }[]
+}
+
+/** UI 3.1's band states after off and a survey, first match wins. The engine draws its own band for `none`. */
+type BandState =
+  | { is: 'stopped'; stop: Stop }
+  | { is: 'previous'; previous: Previous; waiting: number }
+  | { is: 'none' }
+  | { is: 'working'; goal: string; hints: BandHints }
+  | { is: 'away'; card: Card; lastActiveAt: number; closed: Closed[]; hints: BandHints }
+  | { is: 'standing'; goal: string; step: string | null; running: string[]; hints: BandHints }
+
+function bandState(s: {
+  ledger: Ledger
+  view: InboxView
+  stop: Stop | null
+  previous: Previous | null
+  presence: Presence
+  isWorking: boolean
+  prAlert: string | null
+  now: number
+}): BandState {
+  if (s.stop) return { is: 'stopped', stop: s.stop }
+  if (s.previous && s.ledger.turn === 0) {
+    // Nothing was handed off in this process, so every open item counts.
+    const turns = { turnsStarted: 0, turnsApplied: 0 }
+    const waiting = viewOf({ ledger: s.previous.ledger, lastActions: {}, notes: {}, turns, now: s.now }, s.presence)
+      .needsYou.count
+
+    return { is: 'previous', previous: s.previous, waiting }
+  }
+  const { needsYou, findings } = s.view
+  const rows = [...needsYou.questions, ...needsYou.tasks]
+  const settled = rows.flatMap(r =>
+    r.state.is === 'settled' && !r.state.isQueued ? [{ what: r.title, outcome: r.state.label }] : [],
+  )
+  const card = s.ledger.card
+  if (!card && s.ledger.items.length === 0 && s.ledger.findings.length === 0 && settled.length === 0)
+    return { is: 'none' }
+  const hints: BandHints = {
+    waiting: needsYou.count,
+    top: rows.find(r => r.id === needsYou.topId)?.title ?? null,
+    findings: findings.count,
+    prAlert: s.prAlert,
+    settled,
+  }
+  const goal = card?.goal || 'This session'
+  if (s.isWorking) return { is: 'working', goal, hints }
+  if (s.presence.isAway && card)
+    return { is: 'away', card, lastActiveAt: s.presence.lastActiveAt, closed: s.ledger.closed.slice(-2), hints }
+
+  return { is: 'standing', goal, step: card?.now || null, running: (card?.running ?? []).slice(0, 3), hints }
 }
 
 export const register: Register = on => {
@@ -2415,9 +2572,7 @@ export const register: Register = on => {
     if (e.args.trim() === 'demo') await setDemo($, !isShown)
     else if ((await read($, TAB)) === 'prs') await findPrs($)
     const isDemo = (await read($, DEMO)) !== null
-    await openPane($)
-    await followNewRows($, true)
-    await openTopRow($)
+    await showInbox($)
 
     return {
       text: isDemo ? 'Showing sample entries in the inbox. Run /inbox demo again to go back.' : 'Opened the inbox.',
@@ -2435,13 +2590,28 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!isOn || e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [{ ledger, prViews: prs, lastActions, stop, view, isDemo, now }, presence, prev] = await Promise.all([
+    const [{ ledger, prViews: prs, lastActions, stop, view, isDemo, now }, presence, previous] = await Promise.all([
       drawnState($),
       read($, PRESENCE),
       read($, PREVIOUS),
     ])
-    const isWorking = e.props.isWorking
-    // While the demo shows, its banner leads the band, with a way out.
+    // A PR dismissed moments ago is no longer tracked, so it raises no alert.
+    const prAlert = prAttention(
+      drawnPrs(prs, ledger.prs, lastActions, now).flatMap(x => (x.isSettled ? [] : [x.pr])),
+      handoffs(lastActions),
+    )
+    const state = bandState({ ledger, view, stop, previous, presence, isWorking: e.props.isWorking, prAlert, now })
+    if (state.is === 'none') return next(e)
+    const room = Math.max(1, e.props.maxRows)
+
+    // Line 1: [Open inbox], then text that cuts at its end, so its least important parts go first.
+    const lineOne = (parts: (JSX.Element | null)[]) => (
+      <Box flexDirection="row" gap={1}>
+        <Button key="open-inbox" label="Open inbox" onPress={() => void openInbox($)} />
+        <Text wrap="truncate-end">{parts.filter(p => p !== null).flatMap((p, n) => (n === 0 ? [p] : [' · ', p]))}</Text>
+      </Box>
+    )
+    // While the demo shows, its banner leads the band, with a way out, while there is room above line 1.
     const banner = isDemo ? (
       <Box flexDirection="row" gap={1}>
         <Text wrap="truncate-end" color={NEEDS_YOU}>
@@ -2450,43 +2620,53 @@ export const register: Register = on => {
         <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo($, false)} />
       </Box>
     ) : null
-
-    // A stop is the one thing to act on, so it takes the band.
-    if (stop) {
-      return (
-        <Text wrap="truncate-end">
-          <Text color="error">! Stopped {ago(now - stop.at)}: </Text>
-          {stopText(stop)}. <Text dimColor>{stopFix(stop)}</Text>
-        </Text>
-      )
+    // Every state is cut to maxRows from its end. Line 1 always stays.
+    const fitted = (first: JSX.Element, rest: JSX.Element[]) => {
+      const head = banner && room > 1 ? [banner, first] : [first]
+      return <Box flexDirection="column">{[...head, ...rest].slice(0, Math.max(head.length, room))}</Box>
     }
 
-    if (prev && ledger.turn === 0) {
-      const c = prev.ledger.card
-      // Nothing was handed off in this process, so every open item counts.
-      const waiting = viewOf(
-        { ledger: prev.ledger, lastActions: {}, notes: {}, turns: { turnsStarted: 0, turnsApplied: 0 }, now },
-        presence,
-      ).needsYou.count
+    if (state.is === 'stopped') {
+      // A stop is the one thing to act on, so it takes the band.
+      const { stop } = state
+      return lineOne([
+        <Text>
+          <Text color="error">! Stopped {ago(now - stop.at)}: </Text>
+          {stopText(stop)}. <Text dimColor>{stopFix(stop)}</Text>
+        </Text>,
+      ])
+    }
 
+    if (state.is === 'previous') {
+      const { previous: prev, waiting } = state
+      const c = prev.ledger.card
+      const lines = [
+        ...(c ? [<Text wrap="truncate-end"> Goal {c.goal}</Text>] : []),
+        ...(c?.now
+          ? [
+              <Text wrap="truncate-end" dimColor>
+                {' '}
+                Now {c.now}
+              </Text>,
+            ]
+          : []),
+        ...(waiting > 0
+          ? [
+              <Text wrap="truncate-end" dimColor>
+                {'  '}
+                {waiting} {waiting === 1 ? 'item was' : 'items were'} waiting on you
+              </Text>,
+            ]
+          : []),
+      ]
+
+      // Cut, it keeps its title and its buttons.
       return (
         <Box flexDirection="column">
           <Text bold>
             Last session in this folder <Text dimColor>· {ago(now - prev.savedAt)}</Text>
           </Text>
-          {c && <Text wrap="truncate-end"> Goal {c.goal}</Text>}
-          {c?.now && (
-            <Text wrap="truncate-end" dimColor>
-              {' '}
-              Now {c.now}
-            </Text>
-          )}
-          {waiting > 0 && (
-            <Text wrap="truncate-end" dimColor>
-              {'  '}
-              {waiting} {waiting === 1 ? 'item was' : 'items were'} waiting on you
-            </Text>
-          )}
+          {lines.slice(0, Math.max(0, room - 2))}
           <Box flexDirection="row" gap={1}>
             {prev.isBroughtIn ? (
               <Text dimColor> Added to your next message.</Text>
@@ -2504,66 +2684,60 @@ export const register: Register = on => {
       )
     }
 
-    const card = ledger.card
-    const settled = [...view.needsYou.questions, ...view.needsYou.tasks].flatMap(r =>
-      r.state.is === 'settled' && !r.state.isQueued ? [{ what: r.title, outcome: r.state.label }] : [],
+    const { hints } = state
+    const count = (withTop: boolean) => (
+      <Text>
+        <Text color={NEEDS_YOU}>{hints.waiting} need you</Text>
+        {withTop && hints.top ? `: ${hints.top}` : ''}
+      </Text>
     )
-    if (!card && ledger.items.length === 0 && ledger.findings.length === 0 && settled.length === 0) return next(e)
-    const settledHint = settled.map(s => (
+    const settled = hints.settled.map(s => (
       <Text color={DONE}>
-        {' · ✓ '}
-        {s.what} → {s.outcome}
+        ✓ {s.what} → {s.outcome}
       </Text>
     ))
-
-    const goal = card?.goal || 'This session'
-    const waiting = view.needsYou.count
-    const findingCount = view.findings.count
-    // A PR dismissed moments ago is no longer tracked, so it raises no alert.
-    const prAlert = prAttention(
-      drawnPrs(prs, ledger.prs, lastActions, now).flatMap(x => (x.isSettled ? [] : [x.pr])),
-      handoffs(lastActions),
-    )
-    // The items themselves live in /inbox; the band only says how many wait.
-    const hints = [
-      ...settledHint,
-      waiting > 0 ? <Text color={NEEDS_YOU}> · {waiting} waiting on you in /inbox</Text> : null,
-      findingCount > 0 ? (
-        <Text color={FINDINGS}> · {findingCount === 1 ? '1 finding' : `${findingCount} findings`} in /inbox</Text>
+    // What follows the count, or the goal when nothing needs the person.
+    const rest = [
+      hints.findings > 0 ? (
+        <Text color={FINDINGS}>{hints.findings === 1 ? '1 finding' : `${hints.findings} findings`}</Text>
       ) : null,
-      prAlert ? <Text color={PRS}> · {prAlert}</Text> : null,
+      hints.prAlert ? <Text color={PRS}>{hints.prAlert}</Text> : null,
+      ...settled,
     ]
+    const goalText = (goal: string, after: JSX.Element | string | null) => (
+      <Text>
+        <Text color={ACCENT}>◆ </Text>
+        <Text dimColor>{goal}</Text>
+        {after}
+      </Text>
+    )
+    const running = (runs: string[]) =>
+      runs.map(run => (
+        <Text wrap="truncate-end">
+          <Text color={DONE}> ● </Text>
+          <Text dimColor>{run}</Text>
+        </Text>
+      ))
 
-    if (isWorking) {
-      return (
-        <Box flexDirection="column">
-          {banner}
-          <Text wrap="truncate-end">
-            <Text color={ACCENT}>◆ </Text>
-            <Text dimColor>{goal}</Text>
-            {settledHint}
-            {waiting > 0 ? <Text color={NEEDS_YOU}> · {waiting} waiting on you</Text> : null}
-          </Text>
-        </Box>
+    if (state.is === 'working') {
+      return fitted(
+        hints.waiting > 0
+          ? lineOne([count(false), goalText(state.goal, null)])
+          : lineOne([goalText(state.goal, null), ...settled]),
+        [],
       )
     }
 
-    const openRows = (card?.running ?? []).slice(0, 3).map(run => (
-      <Text wrap="truncate-end">
-        <Text color={DONE}> ● </Text>
-        <Text dimColor>{run}</Text>
-      </Text>
-    ))
-
-    if (presence.isAway && card) {
-      const rows = [
-        ...(banner ? [banner] : []),
-        <Text wrap="truncate-end">
+    if (state.is === 'away') {
+      const { card } = state
+      const goalLine = (
+        <Text>
           <Text color={ACCENT}>◆ </Text>
           <Text bold>{card.goal}</Text>
-          <Text dimColor> · last active {ago(now - presence.lastActiveAt)}</Text>
-          {hints}
-        </Text>,
+          <Text dimColor> · last active {ago(now - state.lastActiveAt)}</Text>
+        </Text>
+      )
+      const below = [
         ...(card.done.length > 0
           ? [
               <Text wrap="truncate-end">
@@ -2576,34 +2750,30 @@ export const register: Register = on => {
           <Text dimColor> → </Text>
           {card.now}
         </Text>,
-        ...openRows,
-        ...(ledger.closed.length > 0
+        ...running(card.running.slice(0, 3)),
+        ...(state.closed.length > 0
           ? [
               <Text wrap="truncate-end" dimColor>
                 {'  Closed: '}
-                {ledger.closed.slice(-2).map(closedLine).join(' · ')}
+                {state.closed.map(closedLine).join(' · ')}
               </Text>,
             ]
           : []),
       ]
 
-      return <Box flexDirection="column">{rows.slice(0, Math.max(1, e.props.maxRows))}</Box>
+      return hints.waiting > 0
+        ? fitted(lineOne([count(true), ...rest]), [<Text wrap="truncate-end">{goalLine}</Text>, ...below])
+        : fitted(lineOne([goalLine, ...rest]), below)
     }
 
-    return (
-      <Box flexDirection="column">
-        {banner}
-        <Text wrap="truncate-end">
-          <Text color={ACCENT}>◆ </Text>
-          <Text dimColor>
-            {goal}
-            {card?.now ? ` · ${card.now}` : ''}
-          </Text>
-          {hints}
-        </Text>
-        {openRows}
-      </Box>
-    )
+    const step = state.step ? ` · ${state.step}` : ''
+
+    return hints.waiting > 0
+      ? fitted(lineOne([count(true), ...rest]), [
+          <Text wrap="truncate-end">{goalText(state.goal, <Text dimColor>{step}</Text>)}</Text>,
+          ...running(state.running),
+        ])
+      : fitted(lineOne([goalText(state.goal, <Text dimColor>{step}</Text>), ...rest]), running(state.running))
   })
 
   on('config.set', { key: 'theme' }, async ($, e, next) => {
@@ -3425,6 +3595,12 @@ export const register: Register = on => {
               {error}
             </Text>
           ) : null}
+          {/* The band still draws without the tools, so every tab's status line says so. */}
+          {toolsRefused ? (
+            <Text color={pal.tone.error} wrap="wrap">
+              {TOOLS_REFUSED_TEXT}
+            </Text>
+          ) : null}
           {lineNote ? (
             <Text color={pal.muted} wrap="wrap">
               {feedbackText({ is: 'note', note: lineNote.note, at: lineNote.at }, look)}
@@ -3633,7 +3809,24 @@ export const register: Register = on => {
         ]
       })
       const isNothing = needsYouGroups.every(g => g.entries.length === 0)
-      if (isNothing && groups.length === 0 && !stop) return emptyState('Nothing needs you.')
+      // A saved session the store could not read is unknown, not empty, so it never reads as "Nothing needs you."
+      const unread = isUnreadShown(isDemo)
+        ? [
+            section(
+              <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingLeft={2}>
+                {unreadable?.isReading ? (
+                  <Text color={pal.muted}>Reading the inbox…</Text>
+                ) : (
+                  <Text color={pal.tone.error}>Could not read the inbox.</Text>
+                )}
+                {unreadable?.isReading ? null : (
+                  <Button key="read-again" label="Try again" onPress={() => void readAgain($)} />
+                )}
+              </Box>,
+            ),
+          ]
+        : []
+      if (isNothing && groups.length === 0 && !stop && unread.length === 0) return emptyState('Nothing needs you.')
       // A stop is fixed in the session, not here, so it shows above the list without keys.
       const outside = stop
         ? [
@@ -3654,19 +3847,21 @@ export const register: Register = on => {
         : []
 
       // With closed items or a stop still shown, the empty text is one line above them.
-      const nothing = isNothing
-        ? [
-            section(
-              <Box paddingLeft={2}>
-                <Text color={pal.muted}>Nothing needs you.</Text>
-              </Box>,
-            ),
-          ]
-        : []
+      const nothing =
+        isNothing && unread.length === 0
+          ? [
+              section(
+                <Box paddingLeft={2}>
+                  <Text color={pal.muted}>Nothing needs you.</Text>
+                </Box>,
+              ),
+            ]
+          : []
 
       return (
         <Box flexDirection="column" gap={1}>
           {outside}
+          {unread}
           {nothing}
           {groups}
         </Box>
@@ -3796,10 +3991,14 @@ export const register: Register = on => {
                 {facts.join(' · ')}
               </Text>
             ) : null}
+            {/* The next poll is minutes away, and desktop has no key to refresh with. */}
             {pr.error ? (
-              <Text color={pal.tone.error} wrap="wrap">
-                Last refresh failed: {pr.error}
-              </Text>
+              <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+                <Text color={pal.tone.error} wrap="wrap">
+                  Last refresh failed: {pr.error}
+                </Text>
+                <Button key={`refresh-${pr.ref}`} label="Retry" onPress={() => void findPrs($)} />
+              </Box>
             ) : null}
             <Box flexDirection="row" flexWrap="wrap" columnGap={2} marginTop={blankLine}>
               {prActions.map(a => (

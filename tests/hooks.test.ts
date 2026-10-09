@@ -99,6 +99,10 @@ let beforeAct: (() => Promise<unknown>) | undefined
 
 // The mod's own store, as JSON text by key, which outlives the session.
 let stored = new Map<string, string>()
+// Makes the store refuse to read a saved session, with this reason.
+let storeRefusal: string | undefined
+// Makes the engine refuse the mod's tools, as an organization's settings can, with this reason.
+let toolRefusal: string | undefined
 
 async function runBeforeAct() {
   const act = beforeAct
@@ -142,7 +146,10 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   theme = ''
   beforeAct = undefined
   stored = new Map()
+  storeRefusal = undefined
+  toolRefusal = undefined
   on('store.get', ($, e) => {
+    if (storeRefusal && e.key.startsWith('s:')) return { deny: storeRefusal }
     const json = stored.get(e.key)
     return { value: json === undefined ? undefined : JSON.parse(json) }
   })
@@ -177,7 +184,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   // Outside Herdr unless a test passes HERDR_PANE_ID.
   on('env.get', ($, e) => ({ value: vars[e.name] }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
-  on('tool.register', ($, e) => ({ value: { tool: `mcp__inbox__${e.name}` } }))
+  on('tool.register', ($, e) => (toolRefusal ? { deny: toolRefusal } : { value: { tool: `mcp__inbox__${e.name}` } }))
   on('ui.open', () => ({ value: { isPlaced: true as const } }))
   on('ui.toast', ($, e) => {
     toasts.push(e.text)
@@ -260,10 +267,10 @@ test('a reply becomes a card and open items, and "1. yes" carries the question',
   expect(prompts.length).toBe(1)
   expect(prompts[0]).toContain('<person>\nadd a greeting cli\n</person>')
 
-  // The band counts what waits; the items themselves are in /inbox.
+  // The band counts what waits and names only the top row; the rest are in /inbox.
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  expect(await band.find({ text: /2 waiting on you in \/inbox/ })).toBeDefined()
-  expect(await band.find({ text: /Use Node or Python\?/ })).toBeUndefined()
+  expect(await band.find({ text: /2 need you: Use Node or Python\?/ })).toBeDefined()
+  expect(await band.find({ text: /Name the command greet\?/ })).toBeUndefined()
 
   const answered = await $.prompt.submit({ text: '1. node\n2. yes', wait: false, origin: { kind: 'composer' } })
   expect(answered.context?.join('\n')).toContain('1 → "Use Node or Python?"')
@@ -318,7 +325,7 @@ test('a question’s handle is the number a typed answer reaches, and the band c
     '?',
     '?',
   ])
-  expect(await band.find({ text: /6 waiting on you/ })).toBeDefined()
+  expect(await band.find({ text: /6 need you/ })).toBeDefined()
   expect(await pane.find({ text: /^ 6$/ })).toBeDefined()
 
   // "1." answers the row drawn as 1).
@@ -332,7 +339,7 @@ test('a question’s handle is the number a typed answer reaches, and the band c
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'help-i4-0' })
   await clock.settle()
-  expect(await band.find({ text: /5 waiting on you/ })).toBeDefined()
+  expect(await band.find({ text: /5 need you/ })).toBeDefined()
   expect(await pane.find({ text: /^ 5$/ })).toBeDefined()
 
   // The sidebar names the pane's top row, even when the latest reply lists a task first.
@@ -370,7 +377,7 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   await clock.settle()
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   const pane = await $.ui.mount(PANE)
-  expect(await band.find({ text: /2 waiting on you/ })).toBeDefined()
+  expect(await band.find({ text: /2 need you/ })).toBeDefined()
 
   // Run hands the task to Claude: it folds to what was sent, and leaves the count in the band and the tab.
   await pane.press({ key: 'help-i1-0' })
@@ -378,7 +385,7 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   expect(sent.at(-1)).toContain('./load.sh')
   expect(await pane.find({ text: /Run load script · just now/ })).toBeDefined()
   expect(await pane.find({ key: 'help-i1-0' })).toBeUndefined()
-  expect(await band.find({ text: /1 waiting on you/ })).toBeDefined()
+  expect(await band.find({ text: /1 need you/ })).toBeDefined()
 
   // Behind Details, a copy says where to run the command, and an open of a missing file says so in red, with no toast.
   // Neither unfolds the task or brings it back into the count.
@@ -393,7 +400,7 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   expect(red).toBeDefined()
   expect(toasts).toEqual([])
   expect(await pane.find({ key: 'fold-details-i1' })).toBeDefined()
-  expect(await band.find({ text: /1 waiting on you/ })).toBeDefined()
+  expect(await band.find({ text: /1 need you/ })).toBeDefined()
   // A failure stays until the next press on its row.
   await clock.advance(SETTLED_MS)
   expect(await pane.find({ text: 'Could not open load.md: it no longer exists' })).toBeDefined()
@@ -421,7 +428,7 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   await $.turn.complete({ answer: 'It needs sudo.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
   await clock.settle()
   expect((await pane.find({ key: 'help-i1-0-key' }))?.props.label).toBe('Run load script again')
-  expect(await band.find({ text: /2 waiting on you/ })).toBeDefined()
+  expect(await band.find({ text: /2 need you/ })).toBeDefined()
 })
 
 test('a question with 7 options shows 4 until [All 7 options], draws its steps after them, and letters only the first 9', async ($, on) => {
@@ -611,32 +618,69 @@ test('last actions an earlier build saved convert once by the table, and a task 
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await pane.find({ text: /Run load script · just now/ })).toBeDefined()
   expect(await pane.find({ key: 'help-i1-0' })).toBeUndefined()
-  expect(await band.find({ text: /waiting on you/ })).toBeUndefined()
+  expect(await band.find({ text: /need you/ })).toBeUndefined()
   // Findings' Closed fold stays open across the reloads. The closed finding shows there once it has settled.
   await clock.advance(SETTLED_MS)
   await pane.press({ key: 'tab-findings' })
   expect((await pane.find({ key: 'fold-finding' }))?.props.label).toBe('▾ 1 Closed')
 })
 
-test('after 15 idle minutes the band shows where the session stands', async ($, on) => {
+test('the band leads with [Open inbox], the count and the top row, while working, after 15 idle minutes and cut short', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
+  const band = (props: Partial<typeof BAND.props> = {}) =>
+    $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND, props: { ...BAND.props, ...props } })
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
   await $.turn.start({ text: 'add a greeting cli', turnId: 't1' })
   await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
+  await $.tool.call({
+    tool: 'mcp__inbox__record_finding',
+    kind: 'issue',
+    title: 'README is stale',
+    detail: 'It names the old command.',
+  })
 
-  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  expect(await band.find({ text: /last active/ })).toBeUndefined()
+  // Line 1 names how many need the person and the top one, then the finding count. The goal and step come second.
+  const standing = await band()
+  expect(await standing.find({ key: 'open-inbox' })).toBeDefined()
+  expect(await standing.find({ text: '2 need you: Use Node or Python? · 1 finding' })).toBeDefined()
+  expect(await standing.find({ text: '◆ Add a greeting CLI · Waiting on two choices' })).toBeDefined()
+  expect(await standing.find({ text: /last active/ })).toBeUndefined()
 
+  // While Claude works, one line: the count and the goal.
+  const working = await band({ isWorking: true })
+  expect(await working.find({ key: 'open-inbox' })).toBeDefined()
+  expect(await working.find({ text: '2 need you · ◆ Add a greeting CLI' })).toBeDefined()
+  expect(await working.find({ text: /Use Node or Python/ })).toBeUndefined()
+
+  // After 15 idle minutes, the same line 1 leads where the session stands.
   await clock.advance(16 * 60_000)
-  expect(await band.find({ text: /last active 16m ago/ })).toBeDefined()
-  expect(await band.find({ text: /Add a greeting CLI/ })).toBeDefined()
+  expect(await standing.find({ text: '2 need you: Use Node or Python? · 1 finding' })).toBeDefined()
+  expect(await standing.find({ text: /Add a greeting CLI · last active 16m ago/ })).toBeDefined()
+  expect(await standing.find({ text: /Plan written/ })).toBeDefined()
+  expect(await standing.find({ text: /Waiting on two choices/ })).toBeDefined()
+  // Cut to 3 rows, it keeps line 1 and drops rows from its end.
+  const short = await band({ maxRows: 3 })
+  expect(await short.find({ text: '2 need you: Use Node or Python? · 1 finding' })).toBeDefined()
+  expect(await short.find({ text: /Plan written/ })).toBeDefined()
+  expect(await short.find({ text: /Waiting on two choices/ })).toBeUndefined()
+  const shortest = await band({ maxRows: 1 })
+  expect(await shortest.find({ key: 'open-inbox' })).toBeDefined()
+  expect(await shortest.find({ text: /last active/ })).toBeUndefined()
+
+  // [Open inbox] opens the pane on Needs you with its top row open, from another row and tab.
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'select-i2' })
+  await pane.press({ key: 'tab-findings' })
+  await standing.press({ key: 'open-inbox' })
+  expect(await pane.find({ key: 'explain-i1' })).toBeDefined()
+  expect(await pane.find({ key: 'explain-i2' })).toBeUndefined()
 
   await $.prompt.submit({ text: 'ok back', wait: false, origin: { kind: 'composer' } })
-  expect(await band.find({ text: /last active/ })).toBeUndefined()
+  expect(await standing.find({ text: /last active/ })).toBeUndefined()
 })
 
 test('resumed into a conversation it cannot fork yet, it catches up from the transcript before any reply', async ($, on) => {
@@ -956,7 +1000,7 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   await pane.input({ key: 'type-i2', text: 'yes' })
   await clock.settle()
   // The answered question leaves the count at once, and settles as queued, with no ✓.
-  expect(await band.find({ text: /1 waiting on you/ })).toBeDefined()
+  expect(await band.find({ text: /1 need you/ })).toBeDefined()
   expect(await pane.find({ text: 'Queued: Yes' })).toBeDefined()
   // The turn ends and both prompts enter.
   await arrive($)
@@ -981,7 +1025,7 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   expect(sent.at(-1)).toBe('Re "Use Node or Python?": Node')
   expect(await pane.find({ key: 'row-i1' })).toBeDefined()
   expect(await pane.find({ text: 'Not sent: a hook refused it' })).toBeDefined()
-  expect(await band.find({ text: /1 waiting on you/ })).toBeDefined()
+  expect(await band.find({ text: /1 need you/ })).toBeDefined()
   // Nothing went, so no option reads "again".
   expect((await pane.find({ key: 'answer-i1-0-key' }))?.props.label).toBe('Node (recommended)')
 
@@ -1477,6 +1521,17 @@ test('a PR’s Dismiss settles its block with Undo, which brings it back, and a 
 
   expect(await pane.find({ text: /Linked work/ })).toBeUndefined()
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
+
+  // The branch PR says its lookup failed, with [Retry], which looks it up again at once.
+  expect(await pane.find({ text: 'Last refresh failed: HTTP 502' })).toBeDefined()
+  branchFails = undefined
+  const lookups = () => ran.filter(argv => argv[0] === 'gh' && argv.includes('view')).length
+  const before = lookups()
+  await pane.press({ key: 'refresh-acme/greet#13' })
+  await clock.settle()
+  expect(lookups()).toBe(before + 1)
+  expect(await pane.find({ text: /Last refresh failed/ })).toBeUndefined()
+  expect(await pane.find({ text: /Branch work/ })).toBeDefined()
 })
 
 test('a stop and an open permission prompt lead the sidebar line until they clear', async ($, on) => {
@@ -1500,6 +1555,7 @@ test('a stop and an open permission prompt lead the sidebar line until they clea
   expect(sidebarLines().at(-1)).toBe('! Signed out: /login')
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await band.find({ text: /Run \/login, then send a message to resume\./ })).toBeDefined()
+  expect(await band.find({ key: 'open-inbox' })).toBeDefined()
   // The next turn means the session runs again.
   await $.turn.start({ text: 'logged in, go on', turnId: 't2' })
   await clock.settle()
@@ -1597,7 +1653,7 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
     expect(await view.find({ key: 'hide-demo' })).toBeDefined()
   }
   expect(await pane.find({ text: /Use Node or Python/ })).toBeUndefined()
-  expect(await band.find({ text: /7 waiting on you/ })).toBeDefined()
+  expect(await band.find({ text: /7 need you/ })).toBeDefined()
 
   // An answer closes the sample question in place, and the status line says nothing was sent.
   await clock.advance(PRESS_GUARD_MS)
@@ -1630,10 +1686,10 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   expect(await pane.find({ key: 'done-d14' })).toBeUndefined()
   expect(await pane.find({ key: 'settled-d14' })).toBeDefined()
   expect(await pane.find({ text: /Sign in to gh for the PRs tab/ })).toBeDefined()
-  expect(await band.find({ text: /4 waiting on you/ })).toBeDefined()
+  expect(await band.find({ text: /4 need you/ })).toBeDefined()
   await pane.press({ key: 'undo-d14' })
   expect(await pane.find({ key: 'done-d14' })).toBeDefined()
-  expect(await band.find({ text: /5 waiting on you/ })).toBeDefined()
+  expect(await band.find({ text: /5 need you/ })).toBeDefined()
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'done-d14' })
   await clock.advance(SETTLED_MS)
@@ -1667,7 +1723,7 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   expect(await pane.find({ key: 'explain-i1' })).toBeDefined()
   expect(await pane.find({ text: /Showing sample entries/ })).toBeUndefined()
   expect(await pane.find({ text: SAMPLE })).toBeUndefined()
-  expect(await band.find({ text: /2 waiting on you/ })).toBeDefined()
+  expect(await band.find({ text: /2 need you/ })).toBeDefined()
   expect(stored.get('s:session-1')).toBe(saved)
 })
 
@@ -1710,6 +1766,76 @@ test('/clear and /resume switch the inbox to the other conversation, and each ke
   expect(await pane.find({ text: /Use Node or Python\?/ })).toBeUndefined()
 })
 
+// Conversation session-1 as an earlier process saved it, with one open question.
+const SAVED_SESSION = {
+  savedAt: 900_000,
+  ledger: {
+    card: { goal: 'Add a greeting CLI', done: [], now: 'Waiting on a choice', running: [], updatedAt: 900_000 },
+    items: [
+      {
+        id: 'i1',
+        kind: 'question',
+        label: '1',
+        ask: 'Use Node or Python?',
+        options: ['Node', 'Python'],
+        rec: 'Node',
+        helps: [],
+        turn: 1,
+        at: 900_000,
+      },
+    ],
+    closed: [],
+    findings: [],
+    closedFindings: [],
+    prs: [],
+    nextId: 2,
+    turn: 1,
+    batchTurn: 1,
+  },
+}
+
+test('tools the engine refuses turn the status line red on every tab, and the mod still loads the conversation', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  theme = 'dark'
+  toolRefusal = 'blocked by managed settings'
+  stored.set('s:session-1', JSON.stringify(SAVED_SESSION))
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  const refused = "Claude cannot record or close items here: your organization's settings block the inbox's tools."
+  const red = (await pane.find({ type: 'Text', text: refused }))?.props.color
+  expect(red).toBeDefined()
+  expect(await pane.find({ text: /Use Node or Python\?/ })).toBeDefined()
+  await pane.press({ key: 'tab-findings' })
+  expect((await pane.find({ type: 'Text', text: refused }))?.props.color).toBe(red)
+})
+
+test('a saved session the store cannot read shows as unreadable, not empty, until [Try again] reads it', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  stored.set('s:session-1', JSON.stringify(SAVED_SESSION))
+  storeRefusal = 'the store is busy'
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  expect(await pane.find({ text: 'Could not read the inbox.' })).toBeDefined()
+  expect(await pane.find({ text: /Nothing needs you/ })).toBeUndefined()
+
+  // While the store still refuses, [Try again] says so again.
+  await pane.press({ key: 'read-again' })
+  await clock.settle()
+  expect(await pane.find({ text: 'Could not read the inbox.' })).toBeDefined()
+
+  storeRefusal = undefined
+  await pane.press({ key: 'read-again' })
+  await clock.settle()
+  expect(await pane.find({ text: /Could not read the inbox/ })).toBeUndefined()
+  expect(await pane.find({ text: /Use Node or Python\?/ })).toBeDefined()
+})
+
 test('a headless run does nothing', async ($, on) => {
   const prompts: string[] = []
   mock.clock(on, { now: 1 })
@@ -1743,6 +1869,6 @@ for (const isAttachedFirst of [true, false]) {
 
     expect(prompts.length).toBe(1)
     const band = await $.ui.mount({ plugin: 'inbox', surface: 'desktop', ...BAND })
-    expect(await band.find({ text: /2 waiting on you in \/inbox/ })).toBeDefined()
+    expect(await band.find({ text: /2 need you/ })).toBeDefined()
   })
 }
