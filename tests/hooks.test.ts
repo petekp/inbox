@@ -365,7 +365,7 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
     detail: 'The fetch retry spins with no delay and can hammer the API.',
     path: 'src/api.ts',
   })
-  expect(r.result).toBe('Recorded as f1. The user sees it in the Findings tab of /inbox.')
+  expect(r.result).toBe('Recorded as f1. The user sees it in the Findings tab of the /inbox pane.')
   await clock.settle()
   expect(await pane.find({ text: /Retry loop never backs off/ })).toBeDefined()
 
@@ -448,13 +448,13 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   // The user answered i1 in their own message: it closes with their answer, shown in place.
   expect((await close({ id: 'i1', answer: 'Deno' })).result).toBe(
-    'Closed i1. The user sees it in /inbox with its outcome.',
+    'Closed i1. The user sees it in the /inbox pane with its outcome.',
   )
   expect(await pane.find({ key: 'row-i1' })).toBeUndefined()
   expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
   expect(await band.find({ text: /✓ Use Node or Python\? → Deno/ })).toBeDefined()
   expect((await close({ id: 'i2', reason: 'no longer applies' })).result).toBe(
-    'Closed i2. The user sees it in /inbox with its outcome.',
+    'Closed i2. The user sees it in the /inbox pane with its outcome.',
   )
   expect((await close({ id: 'f3', reason: 'fixed' })).result).toBe('Closed finding f3.')
   expect((await close({ id: 'i9', reason: 'done' })).result).toContain(

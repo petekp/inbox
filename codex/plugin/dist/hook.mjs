@@ -630,7 +630,6 @@ var CODEX = {
   agent: "Codex",
   surface: "the Inbox tab",
   band: null,
-  shownIn: "the Inbox tab",
   findingsIn: "the Findings section of the Inbox tab"
 };
 var GUIDANCE = `# Inbox

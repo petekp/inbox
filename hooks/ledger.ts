@@ -403,17 +403,13 @@ export function buildPrompt(ledger: Ledger, ex: Exchange): string {
   ].join(NL)
 }
 
-/**
- * The app the inbox runs in, as its texts name it: the agent, and where the
- * person sees the inbox. The tool descriptions and results name the inbox as
- * `shownIn` and its findings as `findingsIn`.
- */
+/** The app the inbox runs in, as its texts name it: the agent, and where the person sees the inbox. */
 export type Host = {
   agent: string
   surface: string
   /** Where the person sees the open items at all times, besides the surface; null when only the surface shows them. */
   band: string | null
-  shownIn: string
+  /** Where the person sees the findings, within the surface. */
   findingsIn: string
 }
 
@@ -421,8 +417,7 @@ export const CLAUDE_CODE: Host = {
   agent: 'Claude',
   surface: 'the /inbox pane',
   band: 'a band above their prompt',
-  shownIn: '/inbox',
-  findingsIn: 'the Findings tab of /inbox',
+  findingsIn: 'the Findings tab of the /inbox pane',
 }
 
 /** The host's surface at the start of a sentence. */
