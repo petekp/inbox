@@ -173,7 +173,7 @@ test('a reply becomes a card and open items, and "1. yes" carries the question',
 
 test('a question’s handle is the number a typed answer reaches, and the band counts what the tab counts', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
+  world(on, [], { HERDR_PANE_ID: 'p1' })
   // A HELP line's command must appear in Claude's reply.
   const reply = async (text: string, turnId: string) => {
     await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
@@ -221,6 +221,16 @@ test('a question’s handle is the number a typed answer reaches, and the band c
   await clock.settle()
   expect(await band.find({ text: /5 waiting on you/ })).toBeDefined()
   expect(await pane.find({ text: /^ 5$/ })).toBeDefined()
+
+  // The sidebar names the pane's top row, even when the latest reply lists a task first.
+  ledgerReply = ['NEW: do | - | Water the plants | - | -', 'NEW: decide | 1 | Ship it? | yes / no | yes'].join('\n')
+  await reply('ship it', 't3')
+  expect(await handle('i8')).toBe('1)')
+  expect(sidebarLines().at(-1)).toBe('8 · Ship it?')
+  // With no question in the latest reply, the newest older question leads.
+  ledgerReply = 'NEW: do | - | Feed the cat | - | -'
+  await reply('one more task', 't4')
+  expect(sidebarLines().at(-1)).toBe('9 · Ship it?')
 })
 
 test('a task handed to Claude folds and leaves the count until Claude’s reply leaves it open', async ($, on) => {

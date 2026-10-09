@@ -1111,15 +1111,16 @@ function dialogText(dialog: Dialog): string {
 
 /**
  * The session's line in the Herdr sidebar: a stop and its fix, else an open
- * dialog, else how many items wait and the first of the latest reply's, else
- * where the work stands. The count leads, because the sidebar cuts long lines
- * at its edge. Empty when there is nothing to say.
+ * dialog, else how many items wait and the first of `ledger.items`, else
+ * where the work stands. The caller passes the items in the order Needs you
+ * lists them, so the line names the pane's top row. The count leads, because
+ * the sidebar cuts long lines at its edge. Empty when there is nothing to say.
  */
 export function statusLine(ledger: Ledger, stop: Stop | null, dialogs: Dialog[]): string {
   if (stop) return `! ${stopShort(stop)}`
   const dialog = dialogs[0]
   if (dialog) return dialogText(dialog)
-  const first = latestBatch(ledger)[0] ?? ledger.items[0]
+  const first = ledger.items[0]
   if (first) return ledger.items.length > 1 ? `${ledger.items.length} · ${first.ask}` : first.ask
   const count = ledger.findings.length
   const findings = count === 0 ? null : `${count} finding${count === 1 ? '' : 's'}`

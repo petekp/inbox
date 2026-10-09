@@ -457,12 +457,11 @@ function publishStatus($: EngineInterface, isEnding = false): Promise<void> {
         read($, LAST_ACTIONS),
         read($, PRESENCE),
       ])
-      // Only the items the band counts: a task handed to Claude waits on no one.
+      // Only the items the band counts, in the pane's order: a task handed to Claude waits on no one.
       const { needsYou } = viewOf({ ledger, lastActions, turns: presence }, presence)
-      const counted = new Set(
-        [...needsYou.questions, ...needsYou.tasks].filter(r => r.state.is === 'open').map(r => r.id),
-      )
-      const items = ledger.items.filter(i => counted.has(i.id))
+      const items = [...needsYou.questions, ...needsYou.tasks]
+        .filter(r => r.state.is === 'open')
+        .flatMap(r => (r.item ? [r.item] : []))
       const line = isEnding ? '' : statusLine({ ...ledger, items }, stop, dialogs)
       if (line === published) return
       published = line
