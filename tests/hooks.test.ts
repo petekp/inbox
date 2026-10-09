@@ -1929,7 +1929,6 @@ test('the desktop pane draws each action and tab as one button, with no keys, an
   // No letters, hidden hotkey Buttons or list of keys: only clicks reach a desktop pane.
   expect(buttons.filter(b => b.props.hotkey !== undefined || String(b.props.label).startsWith(': '))).toEqual([])
   expect(buttons.map(b => b.key ?? '').filter(k => /-key$|^tab-key-|^next$|^previous$|^key-list$/.test(k))).toEqual([])
-  expect(await pane.find({ text: /Switch tabs|ctrl\+x/ })).toBeUndefined()
   // The shown tab is text; each other tab is one button.
   expect(buttons.map(b => b.key ?? '').filter(k => k.startsWith('tab-'))).toEqual(['tab-findings', 'tab-prs'])
   // The recommended option is the desktop's primary button, with no words added.

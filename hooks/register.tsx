@@ -3203,13 +3203,15 @@ export const register: Register = on => {
     // A selected row's secondary keys share its key row when they fit, and
     // otherwise take a line of their own rather than wrap mid-row. A key draws
     // "key: label" in the terminal and about "[label]" on desktop, and keyRow puts 2 columns between keys and the dot.
+    // A desktop native button is assumed to draw about 2 columns wider than its label.
+    const buttonFrame = look === 'desktop' ? 2 : 0
     const keysWidth = (keys: KeyAction[], more: KeyAction[]) => {
       const all = [...keys, ...more]
       const dot = keys.length > 0 && more.length > 0 ? 3 : 0
 
       return (
         all.reduce(
-          (w, k) => w + (look === 'desktop' ? 2 : k.hotkey ? k.hotkey.length + 2 : 0) + shownLabel(k).length,
+          (w, k) => w + (look === 'desktop' ? buttonFrame : k.hotkey ? k.hotkey.length + 2 : 0) + shownLabel(k).length,
           0,
         ) +
         2 * Math.max(0, all.length - 1) +
@@ -3351,9 +3353,9 @@ export const register: Register = on => {
     // The selected row gets a blue background, or a bar where the palette has
     // no selection color, and reads top to bottom:
     // context line, title, body, keys. In the docked pane a blank line sets each
-    // part off. The handle is a Button, so a click selects the row.
+    // part off. In the terminal the handle is a Button that selects the row; on desktop only the title button does.
     // A Button label does not wrap or truncate, so the clickable text is clipped
-    // to what fits beside the handle and the row's other text.
+    // to what fits beside the handle and the row's other text, less a desktop button's frame.
     // A row with a second line breaks its text at a space before `after`, which
     // stays on the first line, and clips the rest to the second.
     const unselectedLine = (row: Row, onPress: () => void, inset: number) => {
@@ -3369,7 +3371,7 @@ export const register: Register = on => {
           }
         : { ...plain, after: [plain.after, isNarrowDesktop ? '' : plain.age].filter(Boolean).join('') || undefined }
       const width = e.props.bodyColumns - 3 - inset - (line.before?.length ?? 0)
-      const room = Math.max(12, width - (line.after?.length ?? 0))
+      const room = Math.max(12, width - (line.after?.length ?? 0) - buttonFrame)
       const text = line.text.trim()
       const space = text.lastIndexOf(' ', room)
       // Desktop cuts the title to one native button, rather than draw two.
