@@ -31,7 +31,6 @@ import {
   checkCounts,
   commentLine,
   failingChecks,
-  namedPrs,
   parseRef,
   prAttention,
   prRefs,
@@ -77,8 +76,10 @@ import {
   type Told,
   upgradeLedger,
 } from './ledger'
-import { baseName, clipLabel, helpLabel, isTaskHandedOff, localPath, messages, openCommands, steps } from './presses'
+import { baseName, clipLabel, localPath, messages, openCommands, prSteps, stepsOf } from './presses'
 import type { HelpStep } from './presses'
+import { inboxView, needsYouOrder, perTurnStatus } from './view'
+import type { InboxView, RowView } from './view'
 import {
   CLOSE_DESCRIPTION,
   CLOSE_SCHEMA,
@@ -340,9 +341,9 @@ const TABS: { id: Tab; label: string; hotkey: string }[] = [
 // The blank columns on each side of a docked tab's name, which a click there also selects.
 const TAB_PAD = '  '
 // The Needs you tab lists questions first, because each takes one key.
-const NEEDS_YOU_GROUPS: { kind: Item['kind']; title: string; empty: string }[] = [
-  { kind: 'question', title: 'Questions', empty: 'No questions are waiting on you.' },
-  { kind: 'task', title: 'Your tasks', empty: 'No tasks are waiting on you.' },
+const NEEDS_YOU_GROUPS: { kind: Item['kind']; title: string; list: 'questions' | 'tasks' }[] = [
+  { kind: 'question', title: 'Questions', list: 'questions' },
+  { kind: 'task', title: 'Tasks', list: 'tasks' },
 ]
 // How many recently closed items each group lists under its open ones.
 const CLOSED_SHOWN = 3
@@ -456,8 +457,12 @@ function publishStatus($: EngineInterface, isEnding = false): Promise<void> {
         read($, LAST_ACTIONS),
         read($, PRESENCE),
       ])
-      // A task handed to Claude waits on no one, as in the band.
-      const items = ledger.items.filter(i => i.kind !== 'task' || !isTaskHandedOff(lastActions[i.id], presence))
+      // Only the items the band counts: a task handed to Claude waits on no one.
+      const { needsYou } = viewOf({ ledger, lastActions, turns: presence }, presence)
+      const counted = new Set(
+        [...needsYou.questions, ...needsYou.tasks].filter(r => r.state.is === 'open').map(r => r.id),
+      )
+      const items = ledger.items.filter(i => counted.has(i.id))
       const line = isEnding ? '' : statusLine({ ...ledger, items }, stop, dialogs)
       if (line === published) return
       published = line
@@ -563,13 +568,17 @@ async function commitLedger($: EngineInterface, change: (l: Ledger) => Ledger): 
   void followNewRows($).catch(() => undefined)
 }
 
-/**
- * The open items of one kind in the order the Needs you tab lists them.
- * Questions go newest first, so a new batch's numbers match Claude's in its reply.
- */
-function listedItems(items: Item[], kind: Item['kind']): Item[] {
-  const listed = items.filter(i => i.kind === kind)
-  return kind === 'question' ? listed.sort((a, b) => b.turn - a.turn) : listed
+/** The inbox view of a ledger, with the item status the presence gives. */
+function viewOf(
+  { ledger, lastActions, turns }: Pick<View, 'ledger' | 'lastActions' | 'turns'>,
+  presence: Presence,
+): InboxView {
+  return inboxView({
+    ledger,
+    lastActions,
+    turns,
+    status: perTurnStatus(ledger, { isUpdating: presence.isUpdating, isFailed: presence.ledgerState === 'failed' }),
+  })
 }
 
 /**
@@ -578,11 +587,12 @@ function listedItems(items: Item[], kind: Item['kind']): Item[] {
  */
 async function showSettled($: EngineInterface, before: Ledger, after: Ledger) {
   const open = new Set(after.items.map(i => i.id))
+  const order = needsYouOrder(before)
   await settle(
     $,
     before.items.flatMap(item => {
       const d = open.has(item.id) ? undefined : after.closed.find(x => x.id === item.id)
-      return d ? [{ ...d, index: listedItems(before.items, item.kind).indexOf(item) }] : []
+      return d ? [{ ...d, index: order[item.kind === 'question' ? 'questions' : 'tasks'].indexOf(item) }] : []
     }),
   )
 }
@@ -979,14 +989,6 @@ async function removeFinding($: EngineInterface, id: string) {
   await commitLedger($, l => ({ ...l, findings: l.findings.filter(f => f.id !== id) }))
 }
 
-/**
- * How many things wait on the person: open questions, and tasks not handed to
- * Claude. The band and the Needs you tab both read this.
- */
-function needsYouCount(ledger: Ledger, lastActions: Record<string, LastAction>, turns: View['turns']): number {
-  return ledger.items.filter(i => i.kind !== 'task' || !isTaskHandedOff(lastActions[i.id], turns)).length
-}
-
 /** Sends the finding back to Claude, to fix it or to talk it through first. */
 async function actOnFinding($: EngineInterface, finding: Finding, how: 'address' | 'discuss') {
   await removeFinding($, finding.id)
@@ -1085,10 +1087,10 @@ async function jumpTo($: EngineInterface, tab: Tab, row: { id: string; index: nu
 }
 
 /** Each tab's row ids, in the order the pane lists them. */
-function tabRowIds(ledger: Ledger, prViews: PrView[]): Record<Tab, string[]> {
+function tabRowIds(view: InboxView, prViews: PrView[]): Record<Tab, string[]> {
   return {
-    needsYou: NEEDS_YOU_GROUPS.flatMap(g => listedItems(ledger.items, g.kind).map(i => i.id)),
-    findings: [...ledger.findings].reverse().map(f => f.id),
+    needsYou: NEEDS_YOU_GROUPS.flatMap(g => view.needsYou[g.list].map(r => r.id)),
+    findings: view.findings.rows.map(r => r.id),
     prs: prViews.flatMap(pr => [
       ...failingChecks(pr).map(c => prCheckId(pr, c)),
       ...waitingThreads(pr).map(t => prThreadId(pr, t)),
@@ -1103,16 +1105,16 @@ function tabRowIds(ledger: Ledger, prViews: PrView[]): Record<Tab, string[]> {
  * row calls this. See docs/plans/jump-to-new-rows.md.
  */
 async function followNewRows($: EngineInterface, isOpening = false) {
-  const [view, isDemo, tab, unfolded, isShown] = await Promise.all([
+  const [drawn, isDemo, tab, unfolded, isShown] = await Promise.all([
     drawnState($),
     read($, IS_DEMO),
     read($, TAB),
     read($, UNFOLDED),
     isPaneShown($),
   ])
-  const { ledger, prViews: prState, settled, lastActions, stop, now } = view
+  const { ledger, prViews: prState, settled, lastActions, stop, now } = drawn
   const prViews = Object.values(prState.views)
-  const ids = tabRowIds(ledger, prViews)
+  const ids = tabRowIds(drawn.view, prViews)
   if (isOpening) recordedRows = null
   // A PR fetch's rows count once it ends. A new PR counts even with no rows.
   const added = newRows(isDemo, {
@@ -1362,27 +1364,17 @@ function answerActions($: EngineInterface, item: Item): Action[] {
   }))
 }
 
-/**
- * An item's help steps, then one that opens the PRs the session tracks that its
- * ask names as "#123", as in "Mark #12 ready for review". The reply that raised
- * the item often names a PR only by number, so the item has no link of its own.
- * Several PRs share one step, so a task naming five does not take five keys.
- */
+/** An item's help steps, then one that opens the PRs the session tracks that its ask names. */
 function itemSteps(item: Item, prState: PrViews, linked: string[]): HelpStep[] {
   const refs = prState.branchRef ? [...linked, prState.branchRef] : linked
-  const links = namedPrs(item.ask, refs)
-    .map(ref => {
-      const { repo, number } = parseRef(ref)
-      const url = prState.views[ref]?.url ?? `https://github.com/${repo}/pull/${number}`
-      return { kind: 'link' as const, url, name: `PR #${number}` }
-    })
-    .filter(l => !item.helps.some(h => h.kind === 'link' && h.url === l.url))
-  const prStep =
-    links.length === 0
-      ? []
-      : [{ label: links.length === 1 ? helpLabel(links[0]!) : `Open ${links.length} PRs`, step: links }]
 
-  return [...steps(item.helps), ...prStep]
+  return stepsOf(
+    item,
+    prSteps(
+      item,
+      refs.map(ref => ({ ref, url: prState.views[ref]?.url ?? null })),
+    ),
+  )
 }
 
 function helpActions($: EngineInterface, item: Item, helpSteps: HelpStep[]): Action[] {
@@ -1489,7 +1481,7 @@ const FINDING_BADGES: Record<Finding['kind'], { label: string; mark: string; ton
  * What the band and the pane draw: the session's own state, or the samples
  * `/inbox demo` shows in its place.
  */
-async function drawnState($: EngineInterface): Promise<View & { now: number }> {
+async function drawnState($: EngineInterface): Promise<View & { view: InboxView; now: number }> {
   const [ledger, stop, settled, prViews, lastActions, presence, isDemo, now] = await Promise.all([
     read($, LEDGER),
     read($, STOP),
@@ -1501,11 +1493,9 @@ async function drawnState($: EngineInterface): Promise<View & { now: number }> {
     $.clock.now(),
   ])
   const turns = { turnsStarted: presence.turnsStarted, turnsApplied: presence.turnsApplied }
+  const drawn = isDemo ? demoView(now) : { ledger, stop, settled, prViews, lastActions, turns }
 
-  return {
-    ...(isDemo ? demoView(now) : { ledger, stop, settled, prViews, lastActions, turns }),
-    now,
-  }
+  return { ...drawn, view: viewOf(drawn, presence), now }
 }
 
 /** Turns the mod on for this session, once, from the start or the desktop app's attach. */
@@ -1866,7 +1856,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!isOn || e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [{ ledger, prViews: prs, lastActions, turns, stop, settled, now }, presence, prev] = await Promise.all([
+    const [{ ledger, prViews: prs, lastActions, stop, settled, view, now }, presence, prev] = await Promise.all([
       drawnState($),
       read($, PRESENCE),
       read($, PREVIOUS),
@@ -1885,7 +1875,11 @@ export const register: Register = on => {
 
     if (prev && ledger.turn === 0) {
       const c = prev.ledger.card
-      const waiting = prev.ledger.items.length
+      // Nothing was handed off in this process, so every open item counts.
+      const waiting = viewOf(
+        { ledger: prev.ledger, lastActions: {}, turns: { turnsStarted: 0, turnsApplied: 0 } },
+        presence,
+      ).needsYou.count
 
       return (
         <Box flexDirection="column">
@@ -1932,8 +1926,8 @@ export const register: Register = on => {
     ))
 
     const goal = card?.goal || 'This session'
-    const waiting = needsYouCount(ledger, lastActions, turns)
-    const findingCount = ledger.findings.length
+    const waiting = view.needsYou.count
+    const findingCount = view.findings.count
     const prAlert = prAttention(Object.values(prs.views), handoffs(lastActions))
     // The items themselves live in /inbox; the band only says how many wait.
     const hints = [
@@ -2029,7 +2023,7 @@ export const register: Register = on => {
     const isInline = e.props.placement === 'inline'
     const blankLine = isInline ? 0 : 1
     const [
-      { ledger, prViews: prState, lastActions, turns, stop, settled, now },
+      { ledger, prViews: prState, lastActions, stop, settled, view, now },
       presence,
       tab,
       selection,
@@ -2063,7 +2057,6 @@ export const register: Register = on => {
           ResolvedButton(DEMO_PRESSES.test(props.key ?? props.label ?? '') ? props : { ...props, onPress: showSample })
     const Input: typeof ResolvedInput =
       !isDemo || !ResolvedInput ? ResolvedInput : props => ResolvedInput({ ...props, onSubmit: showSample })
-    const card = ledger.card
     const prViews = Object.values(prState.views)
     const pal = PALETTES[theme] ?? THEME_KEY_PALETTE
     // `inverse: false` keeps the engine from inverting the line under the pointer inside the panel.
@@ -2107,14 +2100,14 @@ export const register: Register = on => {
     }
     // An item's group header says whether it is a question or a task, so the row
     // needs no context line. The recommended answer is marked on its key.
-    const itemRow = (item: Item, handle: string): Row => {
+    const itemRow = (r: RowView, item: Item): Row => {
       const asked = item.at === null ? undefined : ` · ${ago(now - item.at)}`
       // A task handed to Claude folds, as an answered question closes, until Claude's reply leaves it open.
-      const isHandedOff = item.kind === 'task' && isTaskHandedOff(lastActions[item.id], turns)
+      const isHandedOff = r.state.is === 'handedOff'
 
       return {
         id: item.id,
-        handle: isHandedOff ? '✓' : handle,
+        handle: isHandedOff ? '✓' : r.handle,
         handleTone: isHandedOff ? 'done' : undefined,
         ...(isHandedOff ? { fold: {} } : {}),
         title: item.ask,
@@ -2306,9 +2299,7 @@ export const register: Register = on => {
     // Each tab's rows in order: the cursor, the counts and the drawing all read these.
     const needsYouGroups = NEEDS_YOU_GROUPS.map(g => ({
       ...g,
-      rows: listedItems(ledger.items, g.kind).map((item, n) =>
-        itemRow(item, g.kind === 'question' ? `${n + 1})` : '•'),
-      ),
+      rows: view.needsYou[g.list].flatMap(r => (r.item ? [itemRow(r, r.item)] : [])),
     }))
     const prGroups = prViews.map(pr => ({
       pr,
@@ -2316,13 +2307,13 @@ export const register: Register = on => {
     }))
     const rows: Record<Tab, Row[]> = {
       needsYou: needsYouGroups.flatMap(g => g.rows),
-      findings: [...ledger.findings].reverse().map(findingRow),
+      findings: view.findings.rows.flatMap(r => (r.finding ? [findingRow(r.finding)] : [])),
       prs: prGroups.flatMap(g => g.rows),
     }
     // What each tab's count says waits on the person: a row handed to Claude waits on Claude.
     const tabCounts: Record<Tab, number> = {
-      needsYou: needsYouCount(ledger, lastActions, turns),
-      findings: rows.findings.length,
+      needsYou: view.needsYou.count,
+      findings: view.findings.count,
       prs: prViews.reduce((n, pr) => n + prRowsOnYou(pr, handoff), 0),
     }
     const ids = rows[tab].map(r => r.id)
@@ -2682,17 +2673,19 @@ export const register: Register = on => {
       )
     }
 
+    // The PRs tab shows when its PRs were checked; the other tabs, the item status.
     const newest = prViews.reduce((t, v) => Math.max(t, v.fetchedAt), 0)
-    const status =
-      tab === 'prs' && prViews.length > 0
-        ? prState.isFetching
-          ? 'Refreshing PRs'
-          : `PRs checked ${ago(now - newest)}`
-        : presence.isUpdating
-          ? 'Updating…'
-          : card
-            ? `Updated ${ago(now - card.updatedAt)}`
-            : 'Not updated yet'
+    const isPrStatus = tab === 'prs' && prViews.length > 0
+    const { changedAt, isUpdating, error } = view.status
+    const status = isPrStatus
+      ? prState.isFetching
+        ? 'Refreshing PRs'
+        : `PRs checked ${ago(now - newest)}`
+      : isUpdating
+        ? 'Updating…'
+        : changedAt !== null
+          ? `Updated ${ago(now - changedAt)}`
+          : 'Not updated yet'
 
     // The keys no row shows, listed in the footer.
     const keyList = [
@@ -2794,8 +2787,10 @@ export const register: Register = on => {
         </Box>
         <Box flexDirection="row" columnGap={2}>
           <Text dimColor>{status}</Text>
-          {presence.ledgerState === 'failed' && !presence.isUpdating ? (
-            <Text color={pal.tone.error}>update failed, retries after the next reply</Text>
+          {!isPrStatus && error ? (
+            <Text color={pal.tone.error} wrap="wrap">
+              {error}
+            </Text>
           ) : null}
         </Box>
       </Box>
@@ -2927,7 +2922,8 @@ export const register: Register = on => {
           </Box>,
           `fold-row-${kind}`,
         )
-      const groups = needsYouGroups.map(g => {
+      // A group with no open, settled or closed items is left out.
+      const groups = needsYouGroups.flatMap(g => {
         const entries: ({ row: Row } | { settled: Settled })[] = g.rows.map(row => ({ row }))
         for (const s of fresh.filter(x => x.kind === g.kind))
           entries.splice(Math.min(s.index, entries.length), 0, { settled: s })
@@ -2935,25 +2931,15 @@ export const register: Register = on => {
           .filter(d => d.kind === g.kind && !showing.has(d.id))
           .slice(-CLOSED_SHOWN)
           .reverse()
+        if (entries.length === 0 && closed.length === 0) return []
         const isUnfolded = unfolded.includes(g.kind)
-        // The group's children in order: its open items, or a line saying it has
-        // none; then the fold row and, unfolded, the closed items.
-        const top: ((pos: TreePos) => JSX.Element)[] =
-          entries.length > 0
-            ? entries.map(x => (pos: TreePos) => ('row' in x ? listRow(x.row, pos) : settledRow(x.settled, pos)))
-            : [
-                (pos: TreePos) =>
-                  treeRow(
-                    pos,
-                    null,
-                    <Text color={pal.muted} wrap="wrap">
-                      {g.empty}
-                    </Text>,
-                    `empty-${g.kind}`,
-                  ),
-              ]
+        // The group's children in order: its open items, then the fold row and, unfolded, the closed items.
         const open = divided(
-          top.map((draw, n) => draw(childPos(n, top.length))),
+          entries.map((x, n) =>
+            'row' in x
+              ? listRow(x.row, childPos(n, entries.length))
+              : settledRow(x.settled, childPos(n, entries.length)),
+          ),
           g.kind,
           true,
         )
@@ -2978,8 +2964,16 @@ export const register: Register = on => {
               ]
 
         // A row handed to Claude stays listed but leaves the count.
-        return section([groupTitle(g.title, g.rows.filter(r => !r.fold).length), ...titleGap(), ...open, ...tail])
+        return [
+          section([
+            groupTitle(g.title, g.rows.filter(r => !r.fold).length),
+            ...(open.length > 0 ? [...titleGap(), ...open] : []),
+            ...tail,
+          ]),
+        ]
       })
+      const isNothing = rows.needsYou.length === 0 && settled.length === 0
+      if (isNothing && groups.length === 0 && !stop) return emptyState('Nothing needs you.')
       // A stop is fixed in the session, not here, so it shows above the list without keys.
       const outside = stop
         ? [
@@ -2999,9 +2993,21 @@ export const register: Register = on => {
           ]
         : []
 
+      // With closed items or a stop still shown, the empty text is one line above them.
+      const nothing = isNothing
+        ? [
+            section(
+              <Box paddingLeft={2}>
+                <Text color={pal.muted}>Nothing needs you.</Text>
+              </Box>,
+            ),
+          ]
+        : []
+
       return (
         <Box flexDirection="column" gap={1}>
           {outside}
+          {nothing}
           {groups}
         </Box>
       )

@@ -171,6 +171,58 @@ test('a reply becomes a card and open items, and "1. yes" carries the question',
   expect(prompts.at(-1)).toContain('Re "Use Node or Python?": Node\n</person>')
 })
 
+test('a question’s handle is the number a typed answer reaches, and the band counts what the tab counts', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world(on, [])
+  // A HELP line's command must appear in Claude's reply.
+  const reply = async (text: string, turnId: string) => {
+    await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
+    await $.turn.start({ text, turnId })
+    await $.turn.complete({ answer: 'Run ./load.sh.', durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+    await clock.settle()
+  }
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await reply('add a greeting cli', 't1')
+  // The next reply asks two new questions and leaves two tasks; the first reply's questions stay open.
+  ledgerReply = [
+    'NOW: Waiting on the flags',
+    'NEW: decide | 1 | Add a --loud flag? | yes / no | yes',
+    'NEW: do | - | Run the load script | - | -',
+    'HELP: new 2 | run | ./load.sh | load script',
+    'NEW: decide | 2 | Print in color? | yes / no | no',
+    'NEW: do | - | Sign in to npm | - | -',
+  ].join('\n')
+  await reply('add flags too', 't2')
+
+  const pane = await $.ui.mount(PANE)
+  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+  const handle = async (id: string) => (await pane.find({ key: `select-${id}` }))?.props.label
+  // The latest reply's questions lead, numbered as a typed answer reaches them, and older ones read "?".
+  expect(await pane.find({ key: 'explain-i3' })).toBeDefined()
+  expect([await handle('i3'), await handle('i5'), await handle('i1'), await handle('i2')]).toEqual([
+    '1)',
+    '2)',
+    '?',
+    '?',
+  ])
+  expect(await band.find({ text: /6 waiting on you/ })).toBeDefined()
+  expect(await pane.find({ text: /^ 6$/ })).toBeDefined()
+
+  // "1." answers the row drawn as 1).
+  const answered = await $.prompt.submit({ text: '1. yes', wait: false, origin: { kind: 'composer' } })
+  expect(answered.context?.join('\n')).toContain('1 → "Add a --loud flag?"')
+  // After any message of the person's, a typed number no longer reaches the batch.
+  expect(await handle('i3')).toBe('?')
+
+  // A task handed to Claude leaves the band's count and the tab's alike.
+  await pane.press({ key: 'select-i4' })
+  await pane.press({ key: 'help-i4-0' })
+  await clock.settle()
+  expect(await band.find({ text: /5 waiting on you/ })).toBeDefined()
+  expect(await pane.find({ text: /^ 5$/ })).toBeDefined()
+})
+
 test('a task handed to Claude folds and leaves the count until Claude’s reply leaves it open', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
@@ -352,7 +404,7 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'inbox', args: '' } as never)
   const pane = await $.ui.mount(PANE)
-  expect(await pane.find({ text: /No questions are waiting on you/ })).toBeDefined()
+  expect(await pane.find({ text: /^Nothing needs you\.$/ })).toBeDefined()
   const r = await $.tool.call({
     tool: 'mcp__inbox__record_finding',
     kind: 'issue',

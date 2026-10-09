@@ -2,6 +2,7 @@
 // in every host: each message goes to the agent as the person's own words.
 
 import type { Finding, Help, Item } from '../types'
+import { namedPrs, parseRef } from './prs'
 
 export function clipLabel(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
@@ -76,13 +77,42 @@ export function steps(helps: Help[]): HelpStep[] {
     )
 }
 
+/** A PR the session tracks, which an item's ask can name as "#123". */
+export type TrackedPr = { ref: string; url: string | null }
+
 /**
- * A task handed to the agent waits on the agent until the update for a turn
- * started after the press has applied. Still open then, the agent's reply did
- * not finish it, so it waits on the person again. Counts lower than at the
- * press were reset, so the task no longer folds.
+ * One step that opens the tracked PRs an item's ask names as "#123", as in
+ * "Mark #12 ready for review". The reply that raised the item often names a PR
+ * only by number, so the item has no link of its own. Several PRs share one
+ * step, so a task naming five does not take five keys.
  */
-export function isTaskHandedOff(
+export function prSteps(item: Item, tracked: TrackedPr[]): HelpStep[] {
+  const urls = new Map(tracked.map(pr => [pr.ref, pr.url]))
+  const links = namedPrs(item.ask, [...urls.keys()])
+    .map(ref => {
+      const { repo, number } = parseRef(ref)
+      const url = urls.get(ref) ?? `https://github.com/${repo}/pull/${number}`
+      return { kind: 'link' as const, url, name: `PR #${number}` }
+    })
+    .filter(l => !item.helps.some(h => h.kind === 'link' && h.url === l.url))
+
+  return links.length === 0
+    ? []
+    : [{ label: links.length === 1 ? helpLabel(links[0]!) : `Open ${links.length} PRs`, step: links }]
+}
+
+/** An item's steps: its own helps, then the steps a host adds, such as `prSteps`. */
+export function stepsOf(item: Item, extraSteps: HelpStep[]): HelpStep[] {
+  return [...steps(item.helps), ...extraSteps]
+}
+
+/**
+ * A task or finding handed to the agent waits on the agent until the update
+ * for a turn started after the press has applied. Still open then, the agent's
+ * reply did not finish it, so it waits on the person again. Counts lower than
+ * at the press were reset, so the row no longer folds.
+ */
+export function isHandedOff(
   last: { isHandoff?: boolean; turnsStarted?: number } | undefined,
   turns: { turnsStarted: number; turnsApplied: number },
 ): boolean {

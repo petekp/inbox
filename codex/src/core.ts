@@ -4,7 +4,7 @@
 
 import { carryText, closeItem, EMPTY, isLapsed, promptNotes, screenText, toolActivity } from '../../hooks/ledger'
 import type { Exchange, Press } from '../../hooks/ledger'
-import { isTaskHandedOff, messages, steps } from '../../hooks/presses'
+import { isHandedOff, messages, steps } from '../../hooks/presses'
 import type { Item } from '../../types'
 import type { LastAction, SessionState } from './state'
 import { CODEX, GUIDANCE, START_TITLE } from './texts'
@@ -299,7 +299,7 @@ export function viewOf(s: SessionState, now: number): View {
     steps: steps(i.helps).map(x => x.label),
     at: i.at,
     last: s.lastActions[i.id] ?? null,
-    isHandedOff: i.kind === 'task' && isTaskHandedOff(s.lastActions[i.id], s.presence),
+    isHandedOff: i.kind === 'task' && isHandedOff(s.lastActions[i.id], s.presence),
   })
   const questions = l.items
     .filter(i => i.kind === 'question')
