@@ -775,7 +775,7 @@ function TabBar({ v, lists, now }: { v: View; lists: Lists; now: number }) {
       <div class="status">
         {status}
         {v.failed && !v.updating ? (
-          <span class="tone-error"> · update failed, retries after the next reply</span>
+          <span class="tone-error"> · update failed, items from that reply are missing</span>
         ) : null}
       </div>
     </nav>
