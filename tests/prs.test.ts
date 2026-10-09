@@ -1,15 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import {
-  commentLine,
-  prAttention,
-  prRefs,
-  prRowsOnYou,
-  readThreads,
-  readView,
-  readableComment,
-  readiness,
-} from '../hooks/prs'
+import { commentLine, prRefs, prRowsOnYou, readThreads, readView, readableComment, readiness } from '../hooks/prs'
 import type { Handoffs } from '../hooks/prs'
 
 const VIEW = JSON.stringify({
@@ -200,7 +191,6 @@ describe('prs', () => {
     const pr = { ...view, threads: readThreads(THREADS).slice(0, 1), fetchedAt: 0, error: null }
     const sent: Handoffs = { isThreadSent: () => true }
     expect(prRowsOnYou(pr, sent)).toBe(1)
-    expect(prAttention([pr], sent)).toBe('PR #12 CI failing')
     expect(readiness(pr, sent).text).toBe(
       'Blocked: 1 failing check, changes requested, 1 thread sent to Claude, 1 check running',
     )

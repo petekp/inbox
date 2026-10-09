@@ -23,7 +23,6 @@ import type {
   PrView,
   PrViews,
   Presence,
-  Previous,
   LastAction,
   PressKind,
   RowNote,
@@ -40,7 +39,6 @@ import {
   commentLine,
   failingChecks,
   parseRef,
-  prAttention,
   prRefs,
   prRowsOnYou,
   prompts,
@@ -139,7 +137,6 @@ const PRESENCE = atom(
     minute: 0,
   } as Presence,
 )
-const PREVIOUS = atom({ plugin: 'inbox', key: 'previous' } as const, null as Previous | null)
 const TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'needsYou' as Tab)
 const NO_CURSOR: Cursor = { id: null, index: 0, openedAt: 0 }
 const NO_SELECTION: Record<Tab, Cursor> = { needsYou: NO_CURSOR, findings: NO_CURSOR, prs: NO_CURSOR }
@@ -201,7 +198,6 @@ const DESKTOP_WIDE_AT = 50
 // on a /inbox demo row. A guess too high is cut from the muted text after a title, not from the title.
 const DESKTOP_CHARS_PER_CELL = 1.25
 // Theme keys, so the colors follow the person's Claude Code theme.
-const ACCENT = 'claude'
 const NEEDS_YOU = 'warning'
 // A child's place under its section: a middle child, the last, or a block the tree passes.
 type TreePos = 'mid' | 'last' | 'pass'
@@ -392,7 +388,6 @@ const NEEDS_YOU_GROUPS: { kind: Item['kind']; title: string; list: 'questions' |
 ]
 const MODEL = 'sonnet'
 const AWAY_MS = 15 * 60_000
-const PREVIOUS_MAX_AGE_MS = 7 * 24 * 60 * 60_000
 const KEPT_SESSIONS = 40
 const LOCAL_URL = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|[\w.-]+\.localhost)(?::\d+)?[^\s"'`)\]]*/g
 
@@ -441,7 +436,7 @@ let shellCommand: string | null = null
 let toolsRefused = false
 // The conversation whose saved session the store could not read, and whether [Try again] is reading it now.
 // While set, Needs you says so in place of an empty list.
-let unreadable: { id: string; isCleared: boolean; isReading: boolean } | null = null
+let unreadable: { id: string; isReading: boolean } | null = null
 // What [Resume] on a stop did: sending its prompt, or why the prompt will not enter.
 let resuming: { is: 'sending' } | { is: 'refused'; why: string } | null = null
 // The draft a row's field opened with. The engine replaces the typed text whenever the drawn
@@ -491,14 +486,17 @@ async function save($: EngineInterface, ledger: Ledger) {
   // the store's insertion order, which the pruning treats as most recent. Later
   // saves only overwrite, so pruning runs once per process.
   if (!isSaved) await $.store.delete(key)
-  await Promise.all([
-    $.store.set(key, { savedAt, ledger }),
-    ledger.card ? $.store.set(`p:${root}`, { savedAt, ledger }) : undefined,
-  ])
+  await $.store.set(key, { savedAt, ledger })
   if (isSaved) return
   isSaved = true
-  const sessions = (await $.store.keys()).filter(k => k.startsWith('s:'))
-  await Promise.all(sessions.slice(0, Math.max(0, sessions.length - KEPT_SESSIONS)).map(old => $.store.delete(old)))
+  const keys = await $.store.keys()
+  const sessions = keys.filter(k => k.startsWith('s:'))
+  // `p:` keys held the last-session offer, which earlier builds saved per folder.
+  const stale = [
+    ...sessions.slice(0, Math.max(0, sessions.length - KEPT_SESSIONS)),
+    ...keys.filter(k => k.startsWith('p:')),
+  ]
+  await Promise.all(stale.map(old => $.store.delete(old)))
 }
 
 /**
@@ -897,31 +895,17 @@ async function appendContext($: EngineInterface, context: string[]) {
 
 /**
  * Records a prompt in the person's words and returns what Claude reads beside
- * it: the previous session's card when they continue from it, the questions a
- * numbered answer refers to, and the inbox when it changed.
+ * it: the questions a numbered answer refers to, and the inbox when it changed.
  */
 async function notePrompt($: EngineInterface, text: string, sentBy: Press | null): Promise<string[]> {
-  const [now, ledger, prev, isShown] = await Promise.all([
+  const [now, ledger, isShown] = await Promise.all([
     $.clock.now(),
     update($, LEDGER, l => ({ ...l, turn: l.turn + 1 })),
-    read($, PREVIOUS),
     isPaneShown($),
   ])
-  await Promise.all([
-    update($, PRESENCE, p => ({ ...p, lastActiveAt: now, isAway: false })),
-    prev ? update($, PREVIOUS, () => null) : undefined,
-  ])
-  const notes: string[] = []
-
-  if (prev?.isBroughtIn) {
-    const carried = carryText(
-      prev.ledger,
-      `inbox: the user chose to continue from the previous session in this folder (${ago(now - prev.savedAt)}). Where it stood:`,
-    )
-    if (carried) notes.push(carried)
-  }
+  await update($, PRESENCE, p => ({ ...p, lastActiveAt: now, isAway: false }))
   const r = promptNotes(CLAUDE_CODE, ledger, { text, isPress: sentBy !== null, isOpen: isShown }, told)
-  notes.push(...r.notes)
+  const notes = r.notes
   told = r.told
 
   if (sentBy) press = sentBy
@@ -962,7 +946,6 @@ function repoPath(path: string): string {
 async function upgradeState($: EngineInterface): Promise<Ledger> {
   const [ledger] = await Promise.all([
     update($, LEDGER, upgradeLedger),
-    update($, PREVIOUS, p => p && { ...p, ledger: upgradeLedger(p.ledger) }),
     update($, TAB, t => ((t as string) === 'notes' ? 'findings' : (t as string) === 'waiting' ? 'needsYou' : t)),
     update($, SELECTION, ({ waiting, ...s }: Record<Tab, Cursor> & { waiting?: Cursor }) => {
       const cursors: Record<Tab, Cursor> = { ...NO_SELECTION, ...(waiting ? { needsYou: waiting } : {}), ...s }
@@ -2069,10 +2052,6 @@ function capitalized(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-function closedLine(d: Closed): string {
-  return `${d.ask} → ${d.outcome}`
-}
-
 /** A closed item, or a closed finding by its title, as its list's Closed fold draws it. */
 type ClosedLine = Pick<Closed, 'id' | 'ask' | 'at' | 'how' | 'outcome'>
 
@@ -2163,7 +2142,7 @@ async function turnOn($: EngineInterface) {
   $.clock.every(PR_POLL_MS, () => {
     void pollPrs($)
   })
-  await loadConversation($, await $.session.id(), false)
+  await loadConversation($, await $.session.id())
   // After loadConversation, which brings saved state up to date.
   await redrawAfterReload($)
 }
@@ -2171,9 +2150,9 @@ async function turnOn($: EngineInterface) {
 /**
  * Loads the conversation `id` the session runs: at the start, and after
  * /clear, /resume or /branch, which switch conversations under a new session
- * id without a session.start. A cleared conversation brings in no previous card.
+ * id without a session.start.
  */
-async function loadConversation($: EngineInterface, id: string, isCleared: boolean) {
+async function loadConversation($: EngineInterface, id: string) {
   sessionId = id
   root = await $.session.root()
   isSaved = false
@@ -2181,10 +2160,9 @@ async function loadConversation($: EngineInterface, id: string, isCleared: boole
   unreadable = null
   // A reload stops any update the previous load had running, and state outlives
   // it, so an update in flight at load was cut off: record it as failed.
-  const [git, presence, now, current, saved] = await Promise.all([
+  const [git, presence, current, saved] = await Promise.all([
     $.process.run(['git', 'rev-parse', '--show-toplevel'], { cwd: root, timeoutMs: 5000 }).catch(() => null),
     update($, PRESENCE, p => (p.isUpdating ? { ...p, isUpdating: false, ledgerState: 'failed' as const } : p)),
-    $.clock.now(),
     upgradeState($),
     readSaved($, id),
   ])
@@ -2192,10 +2170,10 @@ async function loadConversation($: EngineInterface, id: string, isCleared: boole
   // Only a conversation with no turns loaded yet needs its saved copy, as a hot reload's does not.
   const isUnread = saved === null && current.turn === 0 && !current.card
   if (isUnread) {
-    unreadable = { id, isCleared, isReading: false }
+    unreadable = { id, isReading: false }
     await redrawPane($)
   }
-  const loaded = saved === null ? current : await bringBack($, current, saved.session, isCleared, now)
+  const loaded = saved === null ? current : await bringBack($, current, saved.session)
   // Catch up now after a failed update; after a turn whose reply never reached
   // the ledger, as when a reload cut off the end-of-turn hook before it queued the
   // update; or when the ledger is empty in a conversation that already has turns:
@@ -2227,32 +2205,15 @@ async function readSaved($: EngineInterface, id: string): Promise<{ session: Sav
 
 /**
  * Into a conversation with no turns yet, brings back its saved session, shown as
- * a return, or else offers the folder's previous session as a card. A cleared
- * conversation brings in no previous card. Returns the ledger now in place.
+ * a return. Returns the ledger now in place.
  */
-async function bringBack(
-  $: EngineInterface,
-  current: Ledger,
-  session: SavedSession | undefined,
-  isCleared: boolean,
-  now: number,
-): Promise<Ledger> {
-  if (current.turn !== 0 || current.card) return current
-  if (session) {
-    const loaded = upgradeLedger(session.ledger)
-    await update($, LEDGER, () => loaded)
-    await update($, PRESENCE, p => ({ ...p, lastActiveAt: session.savedAt, isAway: true }))
+async function bringBack($: EngineInterface, current: Ledger, session: SavedSession | undefined): Promise<Ledger> {
+  if (current.turn !== 0 || current.card || !session) return current
+  const loaded = upgradeLedger(session.ledger)
+  await update($, LEDGER, () => loaded)
+  await update($, PRESENCE, p => ({ ...p, lastActiveAt: session.savedAt, isAway: true }))
 
-    return loaded
-  }
-  if (isCleared) return current
-  // A previous card that cannot be read is only not offered.
-  const prev = (await $.store.get(`p:${root}`).catch(() => undefined)) as Omit<Previous, 'isBroughtIn'> | undefined
-  if (prev?.ledger.card && now - prev.savedAt < PREVIOUS_MAX_AGE_MS) {
-    await update($, PREVIOUS, () => ({ ...prev, ledger: upgradeLedger(prev.ledger), isBroughtIn: false }))
-  }
-
-  return current
+  return loaded
 }
 
 /**
@@ -2299,7 +2260,7 @@ async function readAgain($: EngineInterface) {
   if (failed === null || failed.id !== sessionId || failed.isReading) return
   unreadable = { ...failed, isReading: true }
   await redrawPane($)
-  const [saved, now] = await Promise.all([readSaved($, failed.id), $.clock.now()])
+  const saved = await readSaved($, failed.id)
   // A conversation loaded meanwhile has its own read.
   if (sessionId !== failed.id) return
   unreadable = saved === null ? failed : null
@@ -2309,7 +2270,7 @@ async function readAgain($: EngineInterface) {
     const loaded =
       hasRun && saved.session
         ? await restore($, current, saved.session.ledger)
-        : await bringBack($, current, saved.session, failed.isCleared, now)
+        : await bringBack($, current, saved.session)
     if (
       (hasRun && saved.session) ||
       (!loaded.card && loaded.items.length === 0 && (await $.session.turns().catch(() => 0)) > 0)
@@ -2325,68 +2286,6 @@ async function readAgain($: EngineInterface) {
 /** Redraws the pane after a change only a module flag holds, which no draw subscribes to. */
 function redrawPane($: EngineInterface) {
   return update($, SELECTION, s => ({ ...s }))
-}
-
-/** What the band's line 1 adds to the goal, in order of importance. */
-type BandHints = {
-  waiting: number
-  /** The title of the top row that needs the person, which [Open inbox] opens. */
-  top: string | null
-  findings: number
-  prAlert: string | null
-  /** Rows that just closed: what was asked, and how it closed. */
-  settled: { what: string; outcome: string }[]
-}
-
-/** The band's states after off and a survey, first match wins. The engine draws its own band for `none`. */
-type BandState =
-  | { is: 'stopped'; stop: Stop }
-  | { is: 'previous'; previous: Previous; waiting: number }
-  | { is: 'none' }
-  | { is: 'working'; goal: string; hints: BandHints }
-  | { is: 'away'; card: Card; lastActiveAt: number; closed: Closed[]; hints: BandHints }
-  | { is: 'standing'; goal: string; step: string | null; running: string[]; hints: BandHints }
-
-function bandState(s: {
-  ledger: Ledger
-  view: InboxView
-  stop: Stop | null
-  previous: Previous | null
-  presence: Presence
-  isWorking: boolean
-  prAlert: string | null
-  now: number
-}): BandState {
-  if (s.stop) return { is: 'stopped', stop: s.stop }
-  if (s.previous && s.ledger.turn === 0) {
-    // Nothing was handed off in this process, so every open item counts.
-    const turns = { turnsStarted: 0, turnsApplied: 0 }
-    const waiting = viewOf({ ledger: s.previous.ledger, lastActions: {}, notes: {}, turns, now: s.now }, s.presence)
-      .needsYou.count
-
-    return { is: 'previous', previous: s.previous, waiting }
-  }
-  const { needsYou, findings } = s.view
-  const rows = [...needsYou.questions, ...needsYou.tasks]
-  const settled = rows.flatMap(r =>
-    r.state.is === 'settled' && !r.state.isQueued ? [{ what: r.title, outcome: r.state.label }] : [],
-  )
-  const card = s.ledger.card
-  if (!card && s.ledger.items.length === 0 && s.ledger.findings.length === 0 && settled.length === 0)
-    return { is: 'none' }
-  const hints: BandHints = {
-    waiting: needsYou.count,
-    top: rows.find(r => r.id === needsYou.topId)?.title ?? null,
-    findings: findings.count,
-    prAlert: s.prAlert,
-    settled,
-  }
-  const goal = card?.goal || 'This session'
-  if (s.isWorking) return { is: 'working', goal, hints }
-  if (s.presence.isAway && card)
-    return { is: 'away', card, lastActiveAt: s.presence.lastActiveAt, closed: s.ledger.closed.slice(-2), hints }
-
-  return { is: 'standing', goal, step: card?.now || null, running: (card?.running ?? []).slice(0, 3), hints }
 }
 
 export const register: Register = on => {
@@ -2410,7 +2309,7 @@ export const register: Register = on => {
     // $.session.id() still names the previous conversation here, so the new id comes
     // from the event. A start with --resume also raises this, for the conversation
     // session.start already loaded.
-    if (isOn && e.session_id !== sessionId) await loadConversation($, e.session_id, e.source === 'clear')
+    if (isOn && e.session_id !== sessionId) await loadConversation($, e.session_id)
 
     return r
   })
@@ -2430,7 +2329,6 @@ export const register: Register = on => {
       conversation += 1
       await Promise.all([
         update($, LEDGER, () => EMPTY),
-        update($, PREVIOUS, () => null),
         forgetRowState($),
         update($, PRESENCE, p => ({ ...p, isAway: false, isUpdating: false, ledgerState: 'current' as const })),
       ])
@@ -2678,228 +2576,63 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!isOn || e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [{ ledger, prViews: prs, lastActions, stop, view, isDemo, now }, presence, previous] = await Promise.all([
-      drawnState($),
-      read($, PRESENCE),
-      read($, PREVIOUS),
-    ])
-    // A PR dismissed moments ago is no longer tracked, so it raises no alert.
-    const prAlert = prAttention(
-      drawnPrs(prs, ledger.prs, lastActions, now).flatMap(x => (x.isSettled ? [] : [x.pr])),
-      handoffs(lastActions),
-    )
-    const state = bandState({ ledger, view, stop, previous, presence, isWorking: e.props.isWorking, prAlert, now })
-    if (state.is === 'none') return next(e)
-    const room = Math.max(1, e.props.maxRows)
+    const { ledger, stop, view, isDemo, now } = await drawnState($)
+    if (!stop && !ledger.card && ledger.items.length === 0 && ledger.findings.length === 0) return next(e)
+    const { count: waiting } = view.needsYou
+    const { count: findings } = view.findings
+    const counts = [
+      waiting > 0 ? <Text color={NEEDS_YOU}>{waiting} need you</Text> : null,
+      findings > 0 ? <Text dimColor>{findings === 1 ? '1 finding' : `${findings} findings`}</Text> : null,
+    ].filter(p => p !== null)
 
-    // Line 1: [Open inbox], then text that cuts at its end, so its least important parts go first.
-    // On desktop a native button is taller than a line of text. The text sits level with its top,
-    // and its Box may shrink below the text's width, so the text truncates instead of wrapping.
-    // A button after the text stays whole: only the text shrinks.
-    const lineOne = (parts: (JSX.Element | null)[], end: JSX.Element | null = null) => (
+    // Line 1: [Open inbox] and the counts. On desktop a native button is taller than a line of text,
+    // so the text sits level with its top. Sample counts could pass for real ones, so the demo says so.
+    const countLine = (
       <Box flexDirection="row" alignItems="flex-start" gap={1}>
         <Button key="open-inbox" label="Open inbox" onPress={() => void openInbox($)} />
         <Box flexShrink={1} minWidth={0}>
           <Text wrap="truncate-end">
-            {parts.filter(p => p !== null).flatMap((p, n) => (n === 0 ? [p] : [' · ', p]))}
+            {isDemo ? <Text dimColor>Demo: </Text> : null}
+            {counts.length > 0 ? (
+              counts.flatMap((p, n) => (n === 0 ? [p] : [<Text dimColor> · </Text>, p]))
+            ) : (
+              <Text dimColor>Nothing needs you</Text>
+            )}
           </Text>
         </Box>
-        {end}
+        {isDemo ? <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo($, false)} /> : null}
       </Box>
     )
-    // While the demo shows, its banner leads the band, with a way out, while there is room above line 1.
-    const banner = isDemo ? (
+    if (!stop) return countLine
+
+    // A stop draws under the counts, so [Open inbox] stays in place. An API error resumes from
+    // [Resume], which keeps its key while it sends, so the desktop app keeps the band's focus.
+    const isResumable = stop.kind === 'api-error'
+    const after = !isResumable ? stopFix(stop) : resuming?.is === 'refused' ? `Not sent: ${resuming.why}` : ''
+    const stopLine = (
       <Box flexDirection="row" alignItems="flex-start" gap={1}>
         <Box flexShrink={1} minWidth={0}>
-          <Text wrap="truncate-end" color={NEEDS_YOU}>
-            {DEMO_BANNER}
+          <Text wrap="truncate-end">
+            <Text color="error">Stopped {ago(now - stop.at)}: </Text>
+            {stopText(stop)}.{after ? <Text dimColor> {after}</Text> : null}
           </Text>
         </Box>
-        <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo($, false)} />
-      </Box>
-    ) : null
-    // Every state is cut to maxRows from its end. Line 1 always stays.
-    const fitted = (first: JSX.Element, rest: JSX.Element[]) => {
-      const head = banner && room > 1 ? [banner, first] : [first]
-      return <Box flexDirection="column">{[...head, ...rest].slice(0, Math.max(head.length, room))}</Box>
-    }
-
-    if (state.is === 'stopped') {
-      // A stop is the one thing to act on, so it takes the band.
-      const { stop } = state
-      // An API error resumes from [Resume] after the text, as in the pane.
-      const isResumable = stop.kind === 'api-error'
-      const after = !isResumable
-        ? stopFix(stop)
-        : resuming?.is === 'sending'
-          ? 'Resuming…'
-          : resuming?.is === 'refused'
-            ? `Not sent: ${resuming.why}`
-            : ''
-      return lineOne(
-        [
-          <Text>
-            <Text color="error">! Stopped {ago(now - stop.at)}: </Text>
-            {stopText(stop)}.{after ? <Text dimColor> {after}</Text> : null}
-          </Text>,
-        ],
-        isResumable && resuming?.is !== 'sending' ? (
-          <Button key="resume" label="Resume" onPress={() => void resume($)} />
-        ) : null,
-      )
-    }
-
-    if (state.is === 'previous') {
-      const { previous: prev, waiting } = state
-      const c = prev.ledger.card
-      const lines = [
-        ...(c ? [<Text wrap="truncate-end"> Goal {c.goal}</Text>] : []),
-        ...(c?.now
-          ? [
-              <Text wrap="truncate-end" dimColor>
-                {' '}
-                Now {c.now}
-              </Text>,
-            ]
-          : []),
-        ...(waiting > 0
-          ? [
-              <Text wrap="truncate-end" dimColor>
-                {'  '}
-                {waiting} {waiting === 1 ? 'item was' : 'items were'} waiting on you
-              </Text>,
-            ]
-          : []),
-      ]
-
-      const title = (
-        <Text bold wrap="truncate-end">
-          Last session in this folder <Text dimColor>· {ago(now - prev.savedAt)}</Text>
-        </Text>
-      )
-      const buttons = [
-        prev.isBroughtIn ? (
-          <Text dimColor> Added to your next message.</Text>
-        ) : (
+        {isResumable ? (
           <Button
-            key="bring"
-            label="Continue from it"
-            variant="primary"
-            onPress={() => update($, PREVIOUS, p => (p ? { ...p, isBroughtIn: true } : p))}
+            key="resume"
+            label={resuming?.is === 'sending' ? 'Resuming…' : 'Resume'}
+            onPress={() => void resume($)}
           />
-        ),
-        <Button key="dismiss-prev" label="Dismiss" onPress={() => update($, PREVIOUS, () => null)} />,
-      ]
-      // Cut, it keeps its title and its buttons, on one row when only one fits.
-      if (room < 2) {
-        return (
-          <Box flexDirection="row" gap={1}>
-            {title}
-            {buttons}
-          </Box>
-        )
-      }
-      return (
-        <Box flexDirection="column">
-          {title}
-          {lines.slice(0, Math.max(0, room - 2))}
-          <Box flexDirection="row" gap={1}>
-            {buttons}
-          </Box>
-        </Box>
-      )
-    }
-
-    const { hints } = state
-    const count = (withTop: boolean) => (
-      <Text>
-        <Text color={NEEDS_YOU}>{hints.waiting} need you</Text>
-        {withTop && hints.top ? `: ${hints.top}` : ''}
-      </Text>
+        ) : null}
+      </Box>
     )
-    const settled = hints.settled.map(s => (
-      <Text color={DONE}>
-        ✓ {s.what} → {s.outcome}
-      </Text>
-    ))
-    // What follows the count, or the goal when nothing needs the person.
-    const rest = [
-      hints.findings > 0 ? (
-        <Text color={FINDINGS}>{hints.findings === 1 ? '1 finding' : `${hints.findings} findings`}</Text>
-      ) : null,
-      hints.prAlert ? <Text color={PRS}>{hints.prAlert}</Text> : null,
-      ...settled,
-    ]
-    const goalText = (goal: string, after: JSX.Element | string | null) => (
-      <Text>
-        <Text color={ACCENT}>◆ </Text>
-        <Text dimColor>{goal}</Text>
-        {after}
-      </Text>
+
+    return (
+      <Box flexDirection="column">
+        {countLine}
+        {e.props.maxRows > 1 ? stopLine : null}
+      </Box>
     )
-    const running = (runs: string[]) =>
-      runs.map(run => (
-        <Text wrap="truncate-end">
-          <Text color={DONE}> ● </Text>
-          <Text dimColor>{run}</Text>
-        </Text>
-      ))
-
-    if (state.is === 'working') {
-      return fitted(
-        hints.waiting > 0
-          ? lineOne([count(false), goalText(state.goal, null)])
-          : lineOne([goalText(state.goal, null), ...settled]),
-        [],
-      )
-    }
-
-    if (state.is === 'away') {
-      const { card } = state
-      const goalLine = (
-        <Text>
-          <Text color={ACCENT}>◆ </Text>
-          <Text bold>{card.goal}</Text>
-          <Text dimColor> · last active {ago(now - state.lastActiveAt)}</Text>
-        </Text>
-      )
-      const below = [
-        ...(card.done.length > 0
-          ? [
-              <Text wrap="truncate-end">
-                <Text color={DONE}> ✓ </Text>
-                <Text dimColor>{card.done.slice(-3).join(' · ')}</Text>
-              </Text>,
-            ]
-          : []),
-        <Text wrap="truncate-end">
-          <Text dimColor> → </Text>
-          {card.now}
-        </Text>,
-        ...running(card.running.slice(0, 3)),
-        ...(state.closed.length > 0
-          ? [
-              <Text wrap="truncate-end" dimColor>
-                {'  Closed: '}
-                {state.closed.map(closedLine).join(' · ')}
-              </Text>,
-            ]
-          : []),
-      ]
-
-      return hints.waiting > 0
-        ? fitted(lineOne([count(true), ...rest]), [<Text wrap="truncate-end">{goalLine}</Text>, ...below])
-        : fitted(lineOne([goalLine, ...rest]), below)
-    }
-
-    const step = state.step ? ` · ${state.step}` : ''
-
-    return hints.waiting > 0
-      ? fitted(lineOne([count(true), ...rest]), [
-          <Text wrap="truncate-end">{goalText(state.goal, <Text dimColor>{step}</Text>)}</Text>,
-          ...running(state.running),
-        ])
-      : fitted(lineOne([goalText(state.goal, <Text dimColor>{step}</Text>), ...rest]), running(state.running))
   })
 
   on('config.set', { key: 'theme' }, async ($, e, next) => {

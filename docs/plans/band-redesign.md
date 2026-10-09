@@ -37,7 +37,7 @@ Stopped 3m ago: sign-in expired. Run /login, then send a message to resume.
 |---|---|
 | The top question's title | The pane's Needs you tab |
 | PR alerts | The pane's PRs tab |
-| Goal, step and running commands | The pane |
+| Goal, step and running commands | Not drawn in the terminal or on desktop. The Herdr sidebar line and Claude still read them. |
 | Settled answers and the Closed line | The pane's settled rows and Closed fold |
 | The recap after 15 minutes away | Dropped |
 | The offer to continue the last session | Dropped, see below |

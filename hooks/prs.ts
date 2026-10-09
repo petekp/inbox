@@ -249,19 +249,6 @@ export function readiness(pr: PrView, h: Handoffs = NO_HANDOFFS): { status: PrSt
     : { status: pr.isDraft ? 'draft' : 'blocked', text: `Blocked: ${blockers.join(', ')}` }
 }
 
-/** The band's one-line PR alert: the first open PR that needs the person, or null. */
-export function prAttention(views: PrView[], h: Handoffs = NO_HANDOFFS): string | null {
-  for (const pr of views) {
-    if (pr.state !== 'OPEN') continue
-    const open = threadsOnYou(pr, h).length
-    if (failingChecks(pr).length > 0) return `PR #${pr.number} CI failing`
-    if (pr.reviewDecision === 'CHANGES_REQUESTED') return `PR #${pr.number} changes requested`
-    if (open > 0) return `PR #${pr.number} ${threadsWaiting(open)}`
-  }
-
-  return null
-}
-
 /**
  * The HTML tags review bots write in comments, such as `<sub>` and `<details>`.
  * Lowercase only, so a type parameter such as `Props<P>` stays.

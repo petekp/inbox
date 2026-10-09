@@ -59,7 +59,7 @@ Deleted in step 1: `hooks/checks.ts`, `hooks/check-tracking.ts`, `hooks/tree.ts`
 
 **Why the drawing stays in `register.tsx`.** Moving the pane into its own file would be a diff of about 1,000 lines that meets no current requirement. The desktop branch touches only leaf helpers. The move can happen later, once the pane closure has shrunk.
 
-**Why the band's state choice stays in `register.tsx`.** Only the mod has a band. Its inputs (previous session, presence, working, the PR alert) are mod-only. Shared code is for what more than one host reads.
+**Why the band's drawing stays in `register.tsx`.** Only the mod has a band. Its inputs (the stop, the demo and `maxRows`) are mod-only. Shared code is for what more than one host reads.
 
 ## 3. View model
 
@@ -136,7 +136,7 @@ export type InboxView = {
     closed: { questions: Closed[]; tasks: Closed[] }   // every close the ledger keeps, newest first; see "Closed fold"
   }
   findings: { count: number; rows: RowView[]; closed: ClosedFinding[] }
-  card: Card | null      // goal, current step, done steps (the away band reads them), running
+  card: Card | null      // goal, current step, done steps, running
   status: ItemStatus
 }
 

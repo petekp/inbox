@@ -221,13 +221,6 @@ export type Presence = {
   minute: number
 }
 
-/** The most recent other session in this project, offered on a fresh start. */
-export type Previous = {
-  savedAt: number
-  ledger: Ledger
-  isBroughtIn: boolean
-}
-
 export type Tab = 'needsYou' | 'findings' | 'prs'
 
 /**
@@ -263,7 +256,6 @@ declare module 'claude-code' {
       theme: string
       ledger: Ledger
       presence: Presence
-      previous: Previous | null
       tab: Tab
       prViews: PrViews
       selection: Record<Tab, Cursor>

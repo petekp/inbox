@@ -55,9 +55,9 @@ One phrase names the count everywhere: "need you". The tab is "Needs you", the b
 - open questions;
 - open tasks not handed off.
 
-It leaves out findings, PR rows, handed-off rows and the stop line. A queued send (2.3) counts as pressed: an answered question is closed and leaves, and a handed-off row leaves, while a row with a queued talk send stays in the count. Findings have their own count ("1 finding"). PR rows have the PR tab's count and the band's PR alert.
+It leaves out findings, PR rows, handed-off rows and the stop line. A queued send (2.3) counts as pressed: an answered question is closed and leaves, and a handed-off row leaves, while a row with a queued talk send stays in the count. Findings have their own count ("1 finding"). PR rows have the PR tab's count.
 
-**The order of the Needs you list.** The top row is the first row of this list. The band names it, and [Open inbox] opens the pane with it open.
+**The order of the Needs you list.** The top row is the first row of this list. [Open inbox] opens the pane with it open.
 
 1. Questions from Claude's latest reply, in the order Claude asked them.
 2. Other open questions, newest first.
@@ -85,13 +85,11 @@ A row has two forms:
 | Stop | Top of the band and pane | One red line: what stopped and what to do | Nothing |
 | Settled | Where the row was | `✓ Done · just now` with the leave bar | [Undo], after a Mark |
 | Closed fold | Under Questions and Tasks, and Findings (decision 1) | `▸ 3 Closed` | Up to 3 closed items, each `ask → outcome` |
-| Card goal and step | Band; Codex tab line 2 | `◆ goal · current step` | Nothing |
-| Running | Band only | `● npm run build`, at most 3 | Nothing. The card lists commands, with no duration. |
-| Previous session | Band, terminal and desktop | `Last session in this folder · 2h ago`, its goal, step and waiting count | [Continue from it] and [Dismiss] |
+| Card goal and step | Codex tab line 2 | `◆ goal · current step` | Nothing |
 
 The Closed fold's outcomes are today's: the answer itself ("Yes, rename"), "Done", "You ran it", "Dismissed", "Expired", "Closed by Claude: <reason>", and the per-turn update's own outcome text.
 
-The pane does not show the card goal and step, because the band above it does. Codex has no band, so its tab shows them on line 2. Claude mode has no per-turn update, so it has no goal line. Codex and Claude mode have no previous-session card.
+The terminal and desktop do not show the card goal and step: the band shows only counts, and the pane only rows. Codex has no band, so its tab shows them on line 2. Claude mode has no per-turn update, so it has no goal line.
 
 The group title "Your tasks" becomes "Tasks", to match "Questions".
 
@@ -127,8 +125,6 @@ Every press is one of five kinds. The kind decides what the screen shows at once
 The View kind covers [Open inbox], the tab buttons, Details and Hide details, [All 7 options], the Closed fold, Show demo and Hide demo, Reply in chat, Undo and Retry. [Try again] repeats a failed press, so it takes that press's kind.
 
 **Answering a question** is a Mark and a send together. The row settles as `✓ Yes, rename`, and `Re "<ask>": <answer>` goes to Claude. It has no Undo, because the message is already on its way.
-
-**Continue from it**, on the previous-session card, is a Mark that reads `Added to your next message.` It has no Undo, because [Dismiss] beside it takes the card away.
 
 **A terminal help step** copies a command for the person to run. Its note names where to run it:
 
@@ -282,27 +278,24 @@ Keys are an optional extra wherever they work. No action depends on them. Only t
 - The `/inbox` pane. It docks beside the transcript in a fullscreen terminal from 110 columns, and is otherwise a framed region above the prompt.
 - The Herdr sidebar line, unchanged. It stays the only place that names an open permission prompt or AskUserQuestion dialog.
 
-**The band.** Line 1 starts with [Open inbox], then the count and the top row when the count is above 0. The button opens the pane with that row open. Today the band says "in /inbox" and the person has to type the command.
+**The band.** One line: [Open inbox] and the counts for Needs you and Findings. The button opens the pane with the top row open. The line is the same while Claude works and when the person comes back after a break.
 
 ```
-[Open inbox] 2 need you: Rename the table to accounts? · 1 finding · PR #12 CI failing
-◆ Migrate auth to sessions · writing the migration test
-  ● npm run build
+[Open inbox] 2 need you · 1 finding
+[Open inbox] Nothing needs you
+[Open inbox] Demo: 7 need you · 4 findings [Hide demo]
 ```
 
-Line 1 holds, in this order: the button, the count and the top row, the finding count, the PR alert, and the settled hints (`· ✓ what → outcome`). Line 1 cuts at its end, so the least important parts go first.
+A count of zero drops out. Only "N need you" is amber; the rest is muted. During `/inbox demo` the line starts with "Demo:", so the sample counts do not pass for real ones.
 
-Band states, in today's order, first match wins:
+A stop draws a second line, in red, under the counts, so [Open inbox] does not move. An API error adds [Resume], which reads "Resuming…" under the same key while it sends. When the band has one row, the stop line drops.
 
-1. Off, or a survey shows: the engine default.
-2. Stopped: one red line and [Open inbox].
-3. Previous session, before the first prompt: today's card with [Continue from it] and [Dismiss].
-4. No card, items, findings or settled rows yet: the engine default.
-5. Working: one line. `[Open inbox] 2 need you · ◆ goal` when the count is above 0, else `[Open inbox] ◆ goal` with the settled hints.
-6. Away 15 minutes or more: today's away layout, with "last active 20m ago", the last 3 done steps, the current step, running rows and the last 2 closed items. When the count is above 0, the count line from the sketch comes first.
-7. Otherwise, the sketch above. With nothing to count, line 1 reads `[Open inbox] ◆ goal · step` with the finding count and PR alert.
+```
+[Open inbox] 2 need you · 1 finding
+Stopped 1m ago: API error (overloaded). [Resume]
+```
 
-Every state is cut to `maxRows`, with line 1 kept. Today only the away state is cut (`hooks/register.tsx:2449`).
+The band falls back to the engine default when the mod is off, a survey shows, or the session has no stop, card, items or findings. Unreadable saved items and blocked inbox tools show only in the pane.
 
 **The pane.** It keeps today's layout and keys: raised tabs when docked, "a: Label" on each action, j and k, 1 2 3 for tabs, ctrl+x tab, Esc, and the Keys drawer. It gains the shared changes in section 2.
 
@@ -597,9 +590,8 @@ Section 2 applies to every client. The tables list where each change lands in to
 
 | Change | Where today | Reason |
 |---|---|---|
-| Band line 1 leads with [Open inbox], the count and the top row; PR alert and settled hints follow | `hooks/register.tsx:2297-2466`, hint text `2385-2387` | What needs the person comes first. The band had no click target. |
-| Away layout keeps its place in the band order and gains the count line when the count is above 0 | `hooks/register.tsx:2404-2449` | A person coming back sees what waits first |
-| Every band state cut to `maxRows` | `hooks/register.tsx:2449` cuts only the away state | Keeps line 1 in sight |
+| The band is [Open inbox] and the counts; a stop adds a line under them | The band render in `hooks/register.tsx` | The band showed up to seven lines on too many topics. The pane holds the rows. |
+| The last-session offer is removed | `PREVIOUS`, `bringBack` and the `p:<folder>` store key | The owner chose to drop it |
 | Needs you order: questions, then tasks | Group order in the pane, `hooks/register.tsx:2836` | Claude's latest questions come first and read 1, 2, 3 |
 | A question's number is the one `answerNote` resolves, else `?` | `itemRow` numbers by place among open questions, `hooks/register.tsx:2828` | A typed number must answer the question the pane numbers |
 | No row opens on its own after a press (decision 3) | Selection fallback, `hooks/register.tsx:1132-1153` | A row opening under the pointer catches a second click |

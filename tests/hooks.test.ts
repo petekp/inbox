@@ -280,10 +280,10 @@ test('a reply becomes a card and open items, and "1. yes" carries the question',
   expect(prompts.length).toBe(1)
   expect(prompts[0]).toContain('<person>\nadd a greeting cli\n</person>')
 
-  // The band counts what waits and names only the top row; the rest are in /inbox.
+  // The band counts what waits; the rows are in /inbox.
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  expect(await band.find({ text: /2 need you: Use Node or Python\?/ })).toBeDefined()
-  expect(await band.find({ text: /Name the command greet\?/ })).toBeUndefined()
+  expect(await band.find({ text: '2 need you' })).toBeDefined()
+  expect(await band.find({ text: /Use Node or Python\?|Name the command greet\?/ })).toBeUndefined()
 
   const answered = await $.prompt.submit({ text: '1. node\n2. yes', wait: false, origin: { kind: 'composer' } })
   expect(answered.context?.join('\n')).toContain('1 → "Use Node or Python?"')
@@ -638,7 +638,7 @@ test('last actions an earlier build saved convert once by the table, and a task 
   expect((await pane.find({ key: 'fold-finding' }))?.props.label).toBe('▾ 1 Closed')
 })
 
-test('the band leads with [Open inbox], the count and the top row, while working, after 15 idle minutes and cut short', async ($, on) => {
+test('the band is [Open inbox] and the counts, the same while working and after 15 idle minutes', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   const band = (props: Partial<typeof BAND.props> = {}) =>
@@ -656,33 +656,19 @@ test('the band leads with [Open inbox], the count and the top row, while working
     detail: 'It names the old command.',
   })
 
-  // Line 1 names how many need the person and the top one, then the finding count. The goal and step come second.
+  // One line: [Open inbox] and the counts, with no title, goal or step.
   const standing = await band()
   expect(await standing.find({ key: 'open-inbox' })).toBeDefined()
-  expect(await standing.find({ text: '2 need you: Use Node or Python? · 1 finding' })).toBeDefined()
-  expect(await standing.find({ text: '◆ Add a greeting CLI · Waiting on two choices' })).toBeDefined()
-  expect(await standing.find({ text: /last active/ })).toBeUndefined()
+  expect(await standing.find({ text: '2 need you · 1 finding' })).toBeDefined()
+  expect(await standing.find({ text: /Use Node or Python|Add a greeting CLI|Waiting on two choices/ })).toBeUndefined()
 
-  // While Claude works, one line: the count and the goal.
   const working = await band({ isWorking: true })
-  expect(await working.find({ key: 'open-inbox' })).toBeDefined()
-  expect(await working.find({ text: '2 need you · ◆ Add a greeting CLI' })).toBeDefined()
-  expect(await working.find({ text: /Use Node or Python/ })).toBeUndefined()
+  expect(await working.find({ text: '2 need you · 1 finding' })).toBeDefined()
 
-  // After 15 idle minutes, the same line 1 leads where the session stands.
+  // Coming back after 15 idle minutes adds nothing.
   await clock.advance(16 * 60_000)
-  expect(await standing.find({ text: '2 need you: Use Node or Python? · 1 finding' })).toBeDefined()
-  expect(await standing.find({ text: /Add a greeting CLI · last active 16m ago/ })).toBeDefined()
-  expect(await standing.find({ text: /Plan written/ })).toBeDefined()
-  expect(await standing.find({ text: /Waiting on two choices/ })).toBeDefined()
-  // Cut to 3 rows, it keeps line 1 and drops rows from its end.
-  const short = await band({ maxRows: 3 })
-  expect(await short.find({ text: '2 need you: Use Node or Python? · 1 finding' })).toBeDefined()
-  expect(await short.find({ text: /Plan written/ })).toBeDefined()
-  expect(await short.find({ text: /Waiting on two choices/ })).toBeUndefined()
-  const shortest = await band({ maxRows: 1 })
-  expect(await shortest.find({ key: 'open-inbox' })).toBeDefined()
-  expect(await shortest.find({ text: /last active/ })).toBeUndefined()
+  expect(await standing.find({ text: '2 need you · 1 finding' })).toBeDefined()
+  expect(await standing.find({ text: /Plan written|last active/ })).toBeUndefined()
 
   // [Open inbox] opens the pane on Needs you with its top row open, from another row and tab.
   const pane = await $.ui.mount(PANE)
@@ -693,9 +679,6 @@ test('the band leads with [Open inbox], the count and the top row, while working
   expect(panesOpened).toEqual(['inbox'])
   expect(await pane.find({ key: 'explain-i1' })).toBeDefined()
   expect(await pane.find({ key: 'explain-i2' })).toBeUndefined()
-
-  await $.prompt.submit({ text: 'ok back', wait: false, origin: { kind: 'composer' } })
-  expect(await standing.find({ text: /last active/ })).toBeUndefined()
 })
 
 test('resumed into a conversation it cannot fork yet, it catches up from the transcript before any reply', async ($, on) => {
@@ -721,8 +704,6 @@ test('resumed into a conversation it cannot fork yet, it catches up from the tra
   expect(conversation).toBe(
     'Person: Add a greeting CLI. Node or Python?\nAgent: The plan is written. 1. Node or Python? 2. Name the command greet?',
   )
-  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  expect(await band.find({ text: /Add a greeting CLI/ })).toBeDefined()
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ text: /Use Node or Python\?/ })).toBeDefined()
   expect(await pane.find({ text: /update failed/ })).toBeUndefined()
@@ -779,8 +760,6 @@ test('after a failed update, the next reply catches up over the whole conversati
     reason: 'answer',
   })
   await clock.settle()
-  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  expect(await band.find({ text: /Ship the onboarding flow/ })).toBeDefined()
   // It closes what the conversation handled, keeps what still waits, and adds what is new.
   expect(await pane.find({ key: 'row-i1' })).toBeUndefined()
   // The question shows under the open ones, with its outcome under it.
@@ -1110,7 +1089,6 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   expect(await pane.find({ key: 'row-i1' })).toBeUndefined()
   expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
   expect(await pane.find({ text: /^Deno$/ })).toBeDefined()
-  expect(await band.find({ text: /✓ Use Node or Python\? → Deno/ })).toBeDefined()
   expect((await close({ id: 'i2', reason: 'no longer applies' })).result).toBe(
     'Closed i2. The user sees it in the /inbox pane with its outcome.',
   )
@@ -1122,7 +1100,6 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   // After a few seconds the rows leave for the group's closed items, which start folded.
   await clock.advance(9000)
   expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
-  expect(await band.find({ text: /✓/ })).toBeUndefined()
   expect(await pane.find({ text: /^Deno$/ })).toBeUndefined()
   await pane.press({ key: 'fold-question' })
   expect(await pane.find({ text: /^Deno$/ })).toBeDefined()
@@ -1407,9 +1384,6 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   await pane.press({ key: 'address-T1' })
   expect(sent.length).toBe(sends)
   expect(await pane.find({ text: /^This changed before your press\. Nothing was sent\.$/ })).toBeDefined()
-  // The failing check holds the band's PR alert, as nothing hands it to Claude.
-  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  expect(await band.find({ text: /PR #12 CI failing/ })).toBeDefined()
 })
 
 test('opening the PRs tab while another PR fetch runs still finds the branch’s PR', async ($, on) => {
@@ -1569,8 +1543,10 @@ test('a stop and an open permission prompt lead the sidebar line until they clea
   await clock.settle()
   expect(sidebarLines().at(-1)).toBe('! Signed out: /login')
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+  // The stop draws under the counts, so [Open inbox] stays where it always is.
   expect(await band.find({ text: /Run \/login, then send a message to resume\./ })).toBeDefined()
   expect(await band.find({ key: 'open-inbox' })).toBeDefined()
+  expect(await band.find({ text: 'Nothing needs you' })).toBeDefined()
   // Resuming before /login would stop again, so the pane offers no [Resume].
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ key: 'resume' })).toBeUndefined()
@@ -1589,6 +1565,7 @@ test('a stop and an open permission prompt lead the sidebar line until they clea
   await pane.press({ key: 'resume' })
   await clock.settle()
   expect(sent.at(-1)).toBe('Continue')
+  expect((await band.find({ key: 'resume' }))?.props.label).toBe('Resuming…')
   await $.turn.start({ text: 'Continue', turnId: 't3' })
   await clock.settle()
   expect(await pane.find({ text: /Stopped/ })).toBeUndefined()
@@ -1679,12 +1656,11 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   expect((await $.command.run({ command: 'inbox', args: 'demo' } as never)).text).toContain('Showing sample entries')
   const pane = await $.ui.mount(PANE)
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  for (const view of [pane, band]) {
-    expect(await view.find({ text: 'Showing sample entries. Presses here send nothing.' })).toBeDefined()
-    expect(await view.find({ key: 'hide-demo' })).toBeDefined()
-  }
+  expect(await pane.find({ text: 'Showing sample entries. Presses here send nothing.' })).toBeDefined()
   expect(await pane.find({ text: /Use Node or Python/ })).toBeUndefined()
-  expect(await band.find({ text: /7 need you/ })).toBeDefined()
+  // The band marks the sample counts as the demo's.
+  expect(await band.find({ text: /^Demo: 7 need you/ })).toBeDefined()
+  for (const view of [pane, band]) expect(await view.find({ key: 'hide-demo' })).toBeDefined()
 
   // An answer closes the sample question in place, and the status line says nothing was sent.
   await clock.advance(PRESS_GUARD_MS)
@@ -1767,8 +1743,11 @@ test('/clear and /resume switch the inbox to the other conversation, and each ke
     await clock.settle()
   }
 
+  // An earlier build saved a last-session offer per folder; the first save deletes it.
+  stored.set('p:/tmp/project', JSON.stringify(SAVED_SESSION))
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await turn('add a greeting cli')
+  expect(stored.has('p:/tmp/project')).toBe(false)
   const pane = await $.ui.mount(PANE)
   await pane.press({ key: 'answer-i1-0' })
   // /clear goes on under a new id, without a session.start. As in the engine,

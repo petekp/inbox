@@ -46,8 +46,9 @@ prompt to the line above it, then to the panel, then back to the prompt. When
 the tab you're on is empty and something new
 arrives on another tab, the panel switches to it.
 
-After 15 minutes with no activity, or when you resume a session, the line
-above the prompt expands into a short summary of where things stand.
+The line above the prompt counts what needs you and the findings waiting,
+with a button that opens the panel. When Claude stops on an error, the stop
+shows on a second line.
 
 To see every part with sample items, run `/inbox demo`. Presses on them change
 only the samples and send nothing. Press Hide demo, or run the command again,
