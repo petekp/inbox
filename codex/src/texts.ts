@@ -1,11 +1,13 @@
 // What Codex and the tab read that differs from the mod's texts. Each one
 // keeps the mod's wording except where the surface differs: Codex shows the
 // inbox in a tab beside the conversation, with no band above the prompt.
-// The mod's other model-facing texts come from ../../hooks/ledger.ts unchanged.
+// The shared texts in ../../hooks/ledger.ts name Codex and the tab through CODEX.
 
+import type { Host } from '../../hooks/ledger'
 import type { Finding, Item } from '../../types'
-import { inboxText as modInboxText } from '../../hooks/ledger'
-import type { Ledger } from '../../types'
+
+/** How the shared texts name Codex and the tab. */
+export const CODEX: Host = { agent: 'Codex', surface: 'the Inbox tab' }
 
 export const FINDING_DESCRIPTION = `Record a finding for the user. It waits in the Findings section of the Inbox tab until it is closed, and from there the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, and leave out style nits and anything the user already decided.`
 
@@ -32,26 +34,6 @@ export const TAB_DESCRIPTION =
 /** Codex's word for a lone check refused in the shell: the mod's, without run_check, which the plugin leaves out. */
 export const CHECK_REFUSAL =
   "Not run. Run each check on its own, with no pipe, redirect or other command, so its exit status is the check's."
-
-/** The outcome prefix the mod writes for an item Claude closed, and Codex's in its place. */
-export const CLOSED_BY = 'closed by Codex'
-
-const PANE_OPEN = 'The user has the /inbox pane open beside the conversation.'
-const PANE_CLOSED = 'The /inbox pane is closed.'
-
-/** The mod's inbox line, with its last sentence naming the Inbox tab instead of the /inbox pane. */
-export function inboxText(ledger: Ledger, isTabOpen: boolean): string {
-  return modInboxText(ledger, isTabOpen)
-    .replace(PANE_OPEN, 'The user has the Inbox tab open beside the conversation.')
-    .replace(PANE_CLOSED, 'The Inbox tab is closed.')
-}
-
-/** What the person has on screen besides the conversation, as the inbox model reads it. */
-export function screenText(isTabOpen: boolean): string {
-  return isTabOpen
-    ? 'The Inbox tab is open beside the conversation, listing every open item.'
-    : 'The Inbox tab is closed.'
-}
 
 export const START_TITLE =
   'inbox: where this session stands, as of the last reply. An "inbox:" text beside a later prompt replaces this.'

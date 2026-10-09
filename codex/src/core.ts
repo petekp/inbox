@@ -20,18 +20,19 @@ import {
   addFinding,
   answerNote,
   carryText,
-  closeByClaude,
+  closeByAgent,
   closedText,
   closeItem,
-  CLOSED_BY_CLAUDE,
   EMPTY,
+  inboxText,
   isLapsed,
+  screenText,
   toolActivity,
 } from '../../hooks/ledger'
 import type { Exchange, Press } from '../../hooks/ledger'
 import type { Check, Help, Item, Ledger } from '../../types'
 import type { LastAction, SessionState } from './state'
-import { CLOSED_BY, GUIDANCE, inboxText, messages, screenText, START_TITLE } from './texts'
+import { CODEX, GUIDANCE, messages, START_TITLE } from './texts'
 
 /** The tab polls every few seconds; a poll this recent means it is open. */
 const TAB_OPEN_MS = 15_000
@@ -86,7 +87,7 @@ export function notePrompt(s: SessionState, text: string, now: number): { state:
   if (answer) notes.push(answer)
   // The inbox when it changed since Codex last read it, or when an item
   // closed since. An empty inbox with nothing closed says nothing new.
-  const inbox = inboxText(ledger, isTabOpen(s, now))
+  const inbox = inboxText(CODEX, ledger, isTabOpen(s, now))
   const told = new Set(s.told.closed)
   const closed = closedText(ledger.closed.filter(d => !told.has(d.id)))
   const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0
@@ -223,7 +224,7 @@ export function endTurn(s: SessionState, reply: string, now: number): SessionSta
     reply: [...s.turn.sentBack, reply].join('\n\n'),
     turn: s.ledger.turn,
     press: s.turn.press,
-    screen: screenText(isTabOpen(s, now)),
+    screen: screenText(CODEX, isTabOpen(s, now), null),
     checks: checks.results.map(c => checkLine(c, s.root)),
   }
 
@@ -270,15 +271,8 @@ export function recordClose(
   const reason = text('reason')
   if (id === '' || (answer === '' && reason === ''))
     return { state: s, result: "Not closed: give the id, and the user's answer or a reason." }
-  const r = closeByClaude(s.ledger, id, answer ? { answer } : { reason }, now)
-  // The shared ledger words the outcome for Claude; the tab and Codex read Codex's name.
-  const ledger: Ledger = {
-    ...r.ledger,
-    closed: r.ledger.closed.map(d =>
-      d.id === id && d.how === 'claude' ? { ...d, outcome: d.outcome.replace(CLOSED_BY_CLAUDE, CLOSED_BY) } : d,
-    ),
-  }
-  const state = { ...s, ledger }
+  const r = closeByAgent(CODEX, s.ledger, id, answer ? { answer } : { reason }, now)
+  const state = { ...s, ledger: r.ledger }
   if (r.closed === 'item') return { state, result: `Closed ${id}. The user sees it in the Inbox tab with its outcome.` }
   if (r.closed === 'finding') return { state, result: `Closed finding ${id}.` }
 

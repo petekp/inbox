@@ -62,13 +62,15 @@ In order:
      `.replace()` on exact sentences. A test now fails when the Codex inbox
      line names the /inbox pane, so a reworded sentence no longer passes
      silently. Item 2 removes the patches.
-2. **Name the host instead of patching its words.** Shared texts name
-   Claude, the band and the /inbox pane, as in "closed by Claude" and "sent
-   to Claude". A small host value, with the agent's name and the surface's
-   name, passed to the text builders, replaces the patches. Requirement:
-   both hosts read these texts, and patching fails silently. Rejected: more
-   `.replace()` calls. Claude's texts must come out the same, character for
-   character, on sample inputs, so the change needs no new measurement.
+2. **Name the host instead of patching its words.** Done. A `Host` value in
+   `hooks/ledger.ts` names the agent and the surface where the person sees
+   the inbox: `CLAUDE_CODE` in the mod, `CODEX` in the plugin. `inboxText`,
+   `screenText` and `closeByAgent` take it, and the plugin's patched copies
+   are gone. Both hosts' texts came out the same, character for character,
+   on sample inputs. A closed item's stored `how` stays `'claude'` for either
+   agent, since renaming a stored value needs approval. The update model's
+   instructions still tell Codex's model the person sees items in a band;
+   changing that needs a measurement on Codex's model.
 3. **One session engine.** Move the session logic that the Codex plugin
    already holds as plain functions on state into `hooks/`: prompts and
    presses noted, findings recorded, items closed, presses applied as data

@@ -3,10 +3,10 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { EMPTY } from '../../hooks/ledger'
+import { EMPTY, inboxText } from '../../hooks/ledger'
 import { handleHook } from '../src/hook'
 import { readState, statePath } from '../src/state'
-import { inboxText } from '../src/texts'
+import { CODEX } from '../src/texts'
 import { commandEndLine, fakeRunner, hookDeps, input, tempDir, tempRepo } from './helpers'
 
 const FAILED = 'ℹ tests 1\nℹ pass 0\nℹ fail 1\n✖ adds (1.2ms)'
@@ -178,7 +178,7 @@ test('the inbox line Codex reads names the Inbox tab, never the mod’s /inbox p
     ],
   }
   for (const isOpen of [true, false]) {
-    const text = inboxText(ledger, isOpen)
+    const text = inboxText(CODEX, ledger, isOpen)
     assert.match(text, /Inbox tab/)
     assert.doesNotMatch(text, /\/inbox|pane/)
   }

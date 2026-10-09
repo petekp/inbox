@@ -502,6 +502,12 @@ function toolActivity(tool, input) {
   }
   return tool.startsWith("mcp__") ? `called ${tool.slice(5)}` : null;
 }
+function surfaceAtStart(host) {
+  return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
+}
+function screenText(host, isOpen, tab) {
+  return isOpen ? `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab} tab, ` : ""}listing every open item.` : `${surfaceAtStart(host)} is closed.`;
+}
 var CLOSED_BY_CLAUDE = "closed by Claude";
 function latestBatch(ledger) {
   return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
@@ -577,7 +583,7 @@ function carryText(ledger, title, isOwn = false) {
   }
   return out.join(NL);
 }
-function inboxText(ledger, isPaneOpen) {
+function inboxText(host, ledger, isOpen) {
   const out = ["inbox: what waits on the user, as of your last reply. Anything not listed here is closed."];
   if (ledger.items.length > 0) {
     out.push("Waiting on the user:");
@@ -589,7 +595,7 @@ function inboxText(ledger, isPaneOpen) {
     out.push("Findings you recorded, still open:");
     for (const f of ledger.findings) out.push(findingLine(f, true));
   }
-  out.push(isPaneOpen ? "The user has the /inbox pane open beside the conversation." : "The /inbox pane is closed.");
+  out.push(isOpen ? `The user has ${host.surface} open beside the conversation.` : `${surfaceAtStart(host)} is closed.`);
   return out.join(NL);
 }
 function outcomeText(d) {
@@ -607,6 +613,7 @@ function closedText(closed) {
 }
 
 // src/texts.ts
+var CODEX = { agent: "Codex", surface: "the Inbox tab" };
 var GUIDANCE = `# Inbox
 The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, and your findings, in the Inbox tab beside the conversation.
 
@@ -622,14 +629,6 @@ Close with mcp__inbox__close:
 - When an item or finding is done or no longer applies, close it with a short reason, without waiting to be asked.
 The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.`;
 var CHECK_REFUSAL = "Not run. Run each check on its own, with no pipe, redirect or other command, so its exit status is the check's.";
-var PANE_OPEN = "The user has the /inbox pane open beside the conversation.";
-var PANE_CLOSED = "The /inbox pane is closed.";
-function inboxText2(ledger, isTabOpen2) {
-  return inboxText(ledger, isTabOpen2).replace(PANE_OPEN, "The user has the Inbox tab open beside the conversation.").replace(PANE_CLOSED, "The Inbox tab is closed.");
-}
-function screenText(isTabOpen2) {
-  return isTabOpen2 ? "The Inbox tab is open beside the conversation, listing every open item." : "The Inbox tab is closed.";
-}
 var START_TITLE = 'inbox: where this session stands, as of the last reply. An "inbox:" text beside a later prompt replaces this.';
 
 // src/core.ts
@@ -661,7 +660,7 @@ function notePrompt(s, text, now) {
   const notes = [];
   const answer = sentAt >= 0 ? null : answerNote(ledger, text);
   if (answer) notes.push(answer);
-  const inbox = inboxText2(ledger, isTabOpen(s, now));
+  const inbox = inboxText(CODEX, ledger, isTabOpen(s, now));
   const told = new Set(s.told.closed);
   const closed = closedText(ledger.closed.filter((d) => !told.has(d.id)));
   const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0;
@@ -758,7 +757,7 @@ function endTurn(s, reply, now) {
     reply: [...s.turn.sentBack, reply].join("\n\n"),
     turn: s.ledger.turn,
     press: s.turn.press,
-    screen: screenText(isTabOpen(s, now)),
+    screen: screenText(CODEX, isTabOpen(s, now), null),
     checks: checks.results.map((c) => checkLine(c, s.root))
   };
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] };

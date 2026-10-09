@@ -96,8 +96,9 @@ import {
   dialogLine,
   parseReply,
   catchUpPrompt,
-  closeByClaude,
+  closeByAgent,
   closedText,
+  CLAUDE_CODE,
   inboxText,
   isLapsed,
   resetTime,
@@ -888,7 +889,7 @@ async function notePrompt($: EngineInterface, text: string, sentBy: Press | null
   if (answer) notes.push(answer)
   // The inbox when it changed since Claude last read it, or when an item
   // closed since. An empty inbox with nothing closed says nothing new.
-  const inbox = inboxText(ledger, isShown)
+  const inbox = inboxText(CLAUDE_CODE, ledger, isShown)
   const closed = closedText(ledger.closed.filter(d => !toldClosed.has(d.id)))
   const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0
   if (closed || (inbox !== toldInbox && !(isEmpty && toldInbox === null))) {
@@ -1123,7 +1124,7 @@ async function recordClose($: EngineInterface, input: Record<string, unknown>): 
   const now = await $.clock.now()
   let closed: 'item' | 'finding' | null = null
   await commitLedger($, l => {
-    const r = closeByClaude(l, id, answer ? { answer } : { reason }, now)
+    const r = closeByAgent(CLAUDE_CODE, l, id, answer ? { answer } : { reason }, now)
     closed = r.closed
     return r.ledger
   })
@@ -1397,7 +1398,7 @@ async function isPrsTabShown($: EngineInterface) {
 async function screen($: EngineInterface) {
   const tab = await read($, TAB)
 
-  return screenText(await isPaneShown($), TABS.find(t => t.id === tab)?.label ?? tab)
+  return screenText(CLAUDE_CODE, await isPaneShown($), TABS.find(t => t.id === tab)?.label ?? tab)
 }
 
 /** Closes the open tasks whose exact command the person ran in shell mode. */

@@ -398,11 +398,21 @@ export function buildPrompt(ledger: Ledger, ex: Exchange): string {
   ].join(NL)
 }
 
-/** What the person sees besides the conversation, as the ledger model reads it. */
-export function screenText(isPaneOpen: boolean, tab: string): string {
-  return isPaneOpen
-    ? `The /inbox pane is open beside the conversation, on its ${tab} tab, listing every open item.`
-    : 'The /inbox pane is closed.'
+/** The app the inbox runs in, as its texts name it: the agent, and where the person sees the inbox. */
+export type Host = { agent: string; surface: string }
+
+export const CLAUDE_CODE: Host = { agent: 'Claude', surface: 'the /inbox pane' }
+
+/** The host's surface at the start of a sentence. */
+function surfaceAtStart(host: Host): string {
+  return host.surface.charAt(0).toUpperCase() + host.surface.slice(1)
+}
+
+/** What the person sees besides the conversation, as the ledger model reads it. `tab` is the tab shown, when the surface has tabs the model should hear about. */
+export function screenText(host: Host, isOpen: boolean, tab: string | null): string {
+  return isOpen
+    ? `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab} tab, ` : ''}listing every open item.`
+    : `${surfaceAtStart(host)} is closed.`
 }
 
 /**
@@ -590,16 +600,18 @@ function closedRecord(item: Item, closing: Closing, now: number): Closed {
   return { id, kind, ask, ...(label ? { label } : {}), ...closing, at: now }
 }
 
-/** The outcome of an item Claude closed, so the pane and Claude can tell it from the user's own decision. */
-export const CLOSED_BY_CLAUDE = 'closed by Claude'
+/** How an outcome the mod saved before `how` existed marks an item Claude closed. */
+const CLOSED_BY_CLAUDE = 'closed by Claude'
 
 /**
- * Closes an open item or finding for Claude: one the user answered in their own
- * message, with that answer as its outcome, or one that is done or no longer
- * applies, with Claude's reason. A finding, which Claude recorded itself, is
- * removed. `closed` is null when no open one has the id.
+ * Closes an open item or finding for the agent: one the user answered in their
+ * own message, with that answer as its outcome, or one that is done or no
+ * longer applies, with the agent's reason. A finding, which the agent recorded
+ * itself, is removed. `closed` is null when no open one has the id. Its `how`
+ * is the stored value 'claude' for either agent.
  */
-export function closeByClaude(
+export function closeByAgent(
+  host: Host,
   ledger: Ledger,
   id: string,
   how: { answer: string } | { reason: string },
@@ -608,7 +620,7 @@ export function closeByClaude(
   const closing: Closing =
     'answer' in how
       ? { how: 'answered', outcome: how.answer }
-      : { how: 'claude', outcome: `${CLOSED_BY_CLAUDE}: ${how.reason}` }
+      : { how: 'claude', outcome: `closed by ${host.agent}: ${how.reason}` }
   if (ledger.items.some(i => i.id === id)) return { ledger: closeItem(ledger, id, closing, now), closed: 'item' }
   if (ledger.findings.some(f => f.id === id))
     return { ledger: { ...ledger, findings: ledger.findings.filter(f => f.id !== id) }, closed: 'finding' }
@@ -815,11 +827,11 @@ export function carryText(ledger: Ledger, title: string, isOwn = false): string 
 }
 
 /**
- * The inbox as Claude reads it beside a prompt: what is open now and whether
- * the pane shows it. prompt.context reaches only the first message, so this is
- * how Claude learns what changed since.
+ * The inbox as the agent reads it beside a prompt: what is open now and whether
+ * the host's surface shows it. prompt.context reaches only the first message,
+ * so this is how the agent learns what changed since.
  */
-export function inboxText(ledger: Ledger, isPaneOpen: boolean): string {
+export function inboxText(host: Host, ledger: Ledger, isOpen: boolean): string {
   const out = ['inbox: what waits on the user, as of your last reply. Anything not listed here is closed.']
   if (ledger.items.length > 0) {
     out.push('Waiting on the user:')
@@ -831,7 +843,7 @@ export function inboxText(ledger: Ledger, isPaneOpen: boolean): string {
     out.push('Findings you recorded, still open:')
     for (const f of ledger.findings) out.push(findingLine(f, true))
   }
-  out.push(isPaneOpen ? 'The user has the /inbox pane open beside the conversation.' : 'The /inbox pane is closed.')
+  out.push(isOpen ? `The user has ${host.surface} open beside the conversation.` : `${surfaceAtStart(host)} is closed.`)
 
   return out.join(NL)
 }
