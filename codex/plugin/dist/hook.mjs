@@ -515,7 +515,7 @@ function carryText(ledger, title, isOwn = false) {
   if (!ledger.card && ledger.items.length === 0 && findings.length === 0) return null;
   const out = [title];
   if (ledger.card) {
-    out.push(`Goal: ${ledger.card.goal}`);
+    if (ledger.card.goal) out.push(`Goal: ${ledger.card.goal}`);
     if (ledger.card.done.length > 0) out.push(`Done: ${ledger.card.done.join("; ")}`);
     if (ledger.card.now) out.push(`Now: ${ledger.card.now}`);
     if (ledger.card.running.length > 0) out.push(`Running: ${ledger.card.running.join("; ")}`);

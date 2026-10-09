@@ -109,9 +109,9 @@ Input:
 
 Answer with lines only, each starting with one of these keys. No other text.
 
-GOAL: what this session is for, at most 12 words. Keep the previous goal unless the person clearly changed direction.
+GOAL: what this session is for, at most 12 words. Keep the previous goal unless the person clearly changed direction. "-" until the person has asked for something.
 DONE: one finished outcome, at most 8 words. Up to 4 DONE lines, oldest first, keeping the most recent. Outcomes, not activity: "PR #12 opened", not "ran gh".
-NOW: where the work stands at the end of this reply, at most 12 words. Name what it waits on, if anything.
+NOW: where the work stands at the end of this reply, at most 12 words. Name what it waits on, if anything. "-" when no work has started.
 RUNNING: something still running that the person may open, as "name: URL or port". Dev servers, simulators, background jobs. Omit anything the agent stopped. Zero or more lines.
 CLOSED: <id> | what was decided, at most 8 words. For each item in <open> the person answered in <person> (including "all recommended", "go", "yes to all", numbered answers), or that the reply or <activity> shows is done or no longer applies. A person asking what an item means has not answered it, and a reply explaining it does not close it. When <person> asks to run an item's command and the reply says it ran, that item is done. So is an item whose command the person ran themselves, per <person>, when its output shows it worked. Also one line for each finding in <findings> that the reply or <activity> shows was fixed, or that the person dealt with or set aside.
 NEW: <kind> | <label> | <ask> | <options> | <rec>
