@@ -1901,16 +1901,17 @@ async function turnOn($: EngineInterface) {
   $.clock.every(PR_POLL_MS, () => {
     void pollPrs($)
   })
-  await loadConversation($, false)
+  await loadConversation($, await $.session.id(), false)
 }
 
 /**
- * Loads the conversation the session runs: at the start, and after /clear,
- * /resume or /branch, which switch conversations under a new session id
- * without a session.start. A cleared conversation brings in no previous card.
+ * Loads the conversation `id` the session runs: at the start, and after
+ * /clear, /resume or /branch, which switch conversations under a new session
+ * id without a session.start. A cleared conversation brings in no previous card.
  */
-async function loadConversation($: EngineInterface, isCleared: boolean) {
-  ;[sessionId, root, home] = await Promise.all([$.session.id(), $.session.root(), $.env.get('HOME').then(h => h ?? '')])
+async function loadConversation($: EngineInterface, id: string, isCleared: boolean) {
+  sessionId = id
+  ;[root, home] = await Promise.all([$.session.root(), $.env.get('HOME').then(h => h ?? '')])
   isSaved = false
   checkLogFolder = null
   recordedRows = null
@@ -1975,8 +1976,10 @@ export const register: Register = on => {
 
   on('classic.SessionStart', { source: ['clear', 'resume', 'fork'] }, async ($, e, next) => {
     const r = await next(e)
-    // A start with --resume also raises this, for the conversation session.start already loaded.
-    if (isOn && (await $.session.id()) !== sessionId) await loadConversation($, e.source === 'clear')
+    // $.session.id() still names the previous conversation here, so the new id comes
+    // from the event. A start with --resume also raises this, for the conversation
+    // session.start already loaded.
+    if (isOn && e.session_id !== sessionId) await loadConversation($, e.session_id, e.source === 'clear')
 
     return r
   })

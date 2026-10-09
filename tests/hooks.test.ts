@@ -75,8 +75,6 @@ const RUN_CHECK = 'mcp__inbox__run_check'
 
 // The apps drawing the session when it starts. A REPL start sets isInteractive instead.
 let surfaces: RenderSurface[] = []
-// The conversation the session runs; /clear and /resume change it.
-let sessionAnswer = 'session-1'
 
 function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   sent = []
@@ -86,11 +84,10 @@ function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   ghAnswers = []
   ledgerReply = LEDGER_REPLY
   surfaces = []
-  sessionAnswer = 'session-1'
   mock.store(on)
   on('session.surfaces', () => ({ value: surfaces }))
   on('session.attach', ($, e) => ({ clientId: e.clientId }))
-  on('session.id', () => ({ value: sessionAnswer }))
+  on('session.id', () => ({ value: 'session-1' }))
   on('session.end', ($, e) => ({ sessionId: e.sessionId }))
   on('session.root', () => ({ value: '/tmp/project' }))
   on('session.cwd', () => ({ value: '/tmp/project' }))
@@ -1004,16 +1001,15 @@ test('/clear and /resume switch the inbox to the other conversation, and each ke
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await turn('add a greeting cli')
-  // /clear goes on under a new id, without a session.start.
+  // /clear goes on under a new id, without a session.start. As in the engine,
+  // $.session.id() still names the first conversation; the event names the new one.
   await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
-  sessionAnswer = 'session-2'
-  await $.classic.SessionStart({ source: 'clear' })
+  await $.classic.SessionStart({ source: 'clear', session_id: 'session-2' })
   ledgerReply = 'GOAL: Fix the build\nNOW: Waiting\nNEW: decide | 1 | Pin the Node version? | - | yes'
   await turn('fix the build')
   // /resume returns to the first conversation.
   await $.session.end({ reason: 'resume', sessionId: 'session-2', resume: { id: 'session-2' } })
-  sessionAnswer = 'session-1'
-  await $.classic.SessionStart({ source: 'resume' })
+  await $.classic.SessionStart({ source: 'resume', session_id: 'session-1' })
   await clock.settle()
 
   const pane = await $.ui.mount(PANE)
@@ -1022,8 +1018,7 @@ test('/clear and /resume switch the inbox to the other conversation, and each ke
 
   // The second conversation's items were saved under its own id.
   await $.session.end({ reason: 'resume', sessionId: 'session-1', resume: { id: 'session-1' } })
-  sessionAnswer = 'session-2'
-  await $.classic.SessionStart({ source: 'resume' })
+  await $.classic.SessionStart({ source: 'resume', session_id: 'session-2' })
   await clock.settle()
   expect(await pane.find({ text: /Pin the Node version\?/ })).toBeDefined()
   expect(await pane.find({ text: /Use Node or Python\?/ })).toBeUndefined()
