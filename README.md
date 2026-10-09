@@ -41,8 +41,9 @@ can also have Claude fix a finding, mark a task done, or dismiss anything you
 don't need.
 
 In the panel, `1`, `2` and `3` switch tabs, `j` and `k` move up and down, and
-an action's letter runs it. You can also click. ctrl+x tab moves between the
-panel and the session. When the tab you're on is empty and something new
+an action's letter runs it. You can also click. ctrl+x tab moves focus from the
+prompt to the line above it, then to the panel, then back to the prompt. When
+the tab you're on is empty and something new
 arrives on another tab, the panel switches to it.
 
 After 15 minutes with no activity, or when you resume a session, the line

@@ -3588,7 +3588,7 @@ export const register: Register = on => {
     const keyList = [
       { keys: TABS.map(t => t.hotkey).join(' '), does: 'Switch tabs' },
       { keys: 'j k', does: 'Select the next or previous row' },
-      { keys: 'ctrl+x tab', does: 'Move focus between the pane and the session' },
+      { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
     ]
     const keyColumn = Math.max(...keyList.map(k => k.keys.length)) + 2
 
