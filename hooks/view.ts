@@ -107,7 +107,7 @@ export type RowView = {
   steps: HelpStep[]
   state: RowState
   feedback: Feedback | null
-  /** Every action the row offers, every option included, in UI 2.4's order. Key letters are each renderer's. */
+  /** Every action the row offers, every option included, in the order `actionsOf` sets. Key letters are each renderer's. */
   actions: ActionView[]
 }
 
@@ -234,8 +234,8 @@ function stepKind(step: HelpStep): PressKind {
 }
 
 /**
- * A row's actions in UI 2.4's order, each labeled "… again" when the row's
- * last press, other than an open or copy, was that action.
+ * A row's actions in the order the pane and the tab draw them, each labeled
+ * "… again" when the row's last press, other than an open or copy, was that action.
  */
 function actionsOf(
   row: { id: string; item: Item | null; steps: HelpStep[] },

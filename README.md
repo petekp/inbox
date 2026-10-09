@@ -29,8 +29,7 @@ things are waiting on you.
 
 Type `/inbox` to see them. It opens a panel with three tabs:
 
-- **Needs you**: questions Claude asked you, tasks only you can do, and tests
-  or builds that failed.
+- **Needs you**: questions Claude asked you, and tasks only you can do.
 - **Findings**: bugs, risks and ideas Claude noticed outside the task it's
   working on.
 - **PRs**: pull requests from this session and your current branch, what's
@@ -48,11 +47,6 @@ arrives on another tab, the panel switches to it.
 
 After 15 minutes with no activity, or when you resume a session, the line
 above the prompt expands into a short summary of where things stand.
-
-Claude runs each test or build as a command of its own, so the mod knows
-exactly how it ended. If Claude says something passes when the last run
-failed, or hasn't run since an edit, the mod asks Claude to run it again or
-say the change is untested.
 
 To see every part with sample items, run `/inbox demo`. Presses on them change
 only the samples and send nothing. Press Hide demo, or run the command again,

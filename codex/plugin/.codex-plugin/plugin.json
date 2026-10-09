@@ -1,7 +1,7 @@
 {
   "name": "inbox",
   "version": "0.1.0",
-  "description": "Collects what waits on you in a Codex session: questions, tasks, failing checks and Codex's findings, in a tab beside the conversation",
+  "description": "Collects what waits on you in a Codex session: questions, tasks and Codex's findings, in a tab beside the conversation",
   "author": { "name": "Pete Petrash" },
   "repository": "https://github.com/petekp/inbox",
   "license": "MIT",

@@ -1037,10 +1037,14 @@ async function showInbox($: EngineInterface) {
  * person open, the row line 1 names. With none, it opens on the shown tab.
  */
 async function openInbox($: EngineInterface) {
+  // Opened before any other await. After one, the engine no longer counts the press as
+  // asking for the pane, and below 144 columns, once the person has closed it, leaves it unplaced.
+  await openPane($)
   const { view } = await drawnState($)
   if (view.needsYou.topId !== null) await update($, TAB, () => 'needsYou' as const)
   else if ((await read($, TAB)) === 'prs') await findPrs($)
-  await showInbox($)
+  await followNewRows($, true)
+  await openTopRow($)
 }
 
 /** Sends a row's draft as its typed answer or reply, as Enter in its field does. A blank draft sends nothing. */
@@ -1927,7 +1931,7 @@ type Action = {
   variant?: 'primary'
   dimColor?: boolean
   /**
-   * What the press does (UI 2.3). A Talk or Hand-off press leaves "✓ <label>"
+   * What the press does. A Talk or Hand-off press leaves "✓ <label>"
    * on its row, so the person sees it went through, and a Hand-off folds the
    * row. A Local press shows "Opening x…" on its row, then its result. The
    * other kinds show themselves: the row closes, a field opens, or the screen changes.
@@ -2299,7 +2303,7 @@ type BandHints = {
   settled: { what: string; outcome: string }[]
 }
 
-/** UI 3.1's band states after off and a survey, first match wins. The engine draws its own band for `none`. */
+/** The band's states after off and a survey, first match wins. The engine draws its own band for `none`. */
 type BandState =
   | { is: 'stopped'; stop: Stop }
   | { is: 'previous'; previous: Previous; waiting: number }
@@ -2861,7 +2865,6 @@ export const register: Register = on => {
     const blankLine = isInline ? 0 : 1
     const [
       { ledger, prViews: prState, lastActions, notes, stop, view, isDemo, now },
-      presence,
       tab,
       selection,
       theme,
@@ -2873,7 +2876,6 @@ export const register: Register = on => {
       optionsShown,
     ] = await Promise.all([
       drawnState($),
-      read($, PRESENCE),
       read($, TAB),
       read($, SELECTION),
       read($, THEME),
