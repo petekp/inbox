@@ -80,6 +80,26 @@ In order:
    from "Left for later". Requirement: two hosts run the same rules.
    Rejected: keeping the copies in step by hand. `LastAction` becomes one type, and
    any change to a saved shape converts old state and needs approval.
+
+   Steps, one commit each, with both hosts' texts unchanged character for
+   character:
+
+   1. **Press messages and step labels** move to `hooks/presses.ts`: the
+      text each press sends, a finding as the agent reads it back, the
+      labels of an item's steps, and when a handed-off task folds.
+   2. **The working-tree reader** moves to `hooks/tree.ts`, with git and the
+      file system passed in. It returns each repo's new reading and the
+      paths that changed, and each host applies them to its own current
+      checks, so a check recorded during a reading is kept.
+   3. **The finding and close tools** share their input checks and result
+      texts, with the place each host shows the result taken from `Host`.
+   4. **What the agent reads beside a prompt** is one function: the answer
+      note, and the inbox when it changed or an item closed since the agent
+      last read it. Continuing from a previous session stays in the mod.
+
+   Applying presses as data, and one `LastAction` type, belong with item 4,
+   since the drawing code dispatches the presses.
+
 4. **One view model, two renderers.** A plain function turns the state into
    tabs, groups and rows: each row's mark, tone, title, body, fold state and
    keys, with each key's letter, label, done text and press. The Ink pane

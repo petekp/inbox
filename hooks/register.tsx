@@ -115,6 +115,8 @@ import {
   transcriptText,
   upgradeLedger,
 } from './ledger'
+import { baseName, clipLabel, helpLabel, isTaskHandedOff, messages, steps } from './presses'
+import type { HelpStep } from './presses'
 
 const LEDGER = atom({ plugin: 'inbox', key: 'ledger' } as const, EMPTY)
 const PRESENCE = atom(
@@ -836,7 +838,7 @@ async function tick($: EngineInterface) {
  */
 async function sendAnswer($: EngineInterface, item: Item, answer: string) {
   await close($, item.id, { how: 'answered', outcome: answer })
-  await send($, `Re "${item.ask}": ${answer}`, { id: item.id, action: 'answer' })
+  await send($, messages.answer(item, answer), { id: item.id, action: 'answer' })
 }
 
 /**
@@ -907,10 +909,7 @@ async function notePrompt($: EngineInterface, text: string, sentBy: Press | null
 
 /** Asks Claude what an item is about. The item stays open, since nothing was closed. */
 async function explain($: EngineInterface, item: Item) {
-  const what = item.kind === 'task' ? 'this task you left for me' : 'this question you asked me'
-  const options = item.options.length > 0 ? `\nOptions: ${item.options.join(' / ')}` : ''
-  const text = `Remind me what ${what} is about: why it came up, and what each choice would mean. Don't act on it yet.\n"${item.ask}"${options}`
-  await send($, text, { id: item.id, action: 'explain' })
+  await send($, messages.explain(item), { id: item.id, action: 'explain' })
 }
 
 async function close($: EngineInterface, id: string, closing: Closing) {
@@ -951,8 +950,7 @@ async function useHelp($: EngineInterface, item: Item, help: Help, press: UiPres
     const r = await $.ui.copy({ text: help.text, surface: press.surface })
     $.ui.toast(r.isCopied ? `Copied ${help.name ?? 'snippet'}` : 'Could not copy to the clipboard')
   } else if (help.kind === 'run') {
-    const fence = '```'
-    await send($, `For "${item.ask}", run this:\n${fence}\n${help.command}\n${fence}`, { id: item.id, action: 'run' })
+    await send($, messages.run(item, help.command), { id: item.id, action: 'run' })
   } else if (help.kind === 'terminal') {
     // A filled "! command" reaches the model as text; only a typed "!" switches the prompt to shell mode.
     const r = await $.ui.copy({ text: help.command, surface: press.surface })
@@ -965,10 +963,6 @@ async function useHelp($: EngineInterface, item: Item, help: Help, press: UiPres
   } else {
     await openUrl($, help.url)
   }
-}
-
-function clipLabel(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }
 
 /** Each step's helps in order: one press copies then opens, for example. */
@@ -986,47 +980,6 @@ function repoPath(path: string): string {
 /** Text with the home folder written as ~, as in a shell prompt. */
 function tilde(text: string): string {
   return home ? text.replaceAll(`${home}/`, '~/') : text
-}
-
-function baseName(path: string): string {
-  return path.replace(/\/+$/, '').split('/').pop() ?? path
-}
-
-function helpLabel(help: Help): string {
-  const label =
-    help.kind === 'open'
-      ? `Open ${baseName(help.path)}`
-      : help.kind === 'copy'
-        ? `Copy ${help.name ?? 'snippet'}`
-        : help.kind === 'run'
-          ? `Run ${help.name ?? help.command}`
-          : help.kind === 'terminal'
-            ? `Copy ${help.name ?? help.command}`
-            : `Open ${help.name ?? new URL(help.url).host}`
-
-  return clipLabel(label, 32)
-}
-
-/** One button's helps, used in order by one press. */
-type HelpStep = { label: string; step: Help[] }
-
-/**
- * The item's helps as buttons. A snippet to copy and a file to open become one
- * step, "Copy env line and open .env.local", since the snippet goes in that file.
- */
-function steps(helps: Help[]): HelpStep[] {
-  const copy = helps.find(h => h.kind === 'copy')
-  const open = helps.find(h => h.kind === 'open')
-  if (!copy || !open || copy.kind !== 'copy' || open.kind !== 'open')
-    return helps.map(h => ({ label: helpLabel(h), step: [h] }))
-
-  return helps
-    .filter(h => h !== copy)
-    .map(h =>
-      h === open
-        ? { label: clipLabel(`Copy ${copy.name ?? 'snippet'} and open ${baseName(open.path)}`, 48), step: [copy, open] }
-        : { label: helpLabel(h), step: [h] },
-    )
 }
 
 /**
@@ -1162,7 +1115,7 @@ async function sendTypedForItem($: EngineInterface, item: Item, text: string) {
   await update($, TYPING, () => null)
   const words = text.trim()
   if (!words) return
-  if (item.kind === 'task') await send($, `Re the task you left for me, "${item.ask}": ${words}`)
+  if (item.kind === 'task') await send($, messages.taskReply(item, words))
   else await sendAnswer($, item, words)
 }
 
@@ -1172,16 +1125,7 @@ async function sendTypedForFinding($: EngineInterface, finding: Finding, text: s
   const words = text.trim()
   if (!words) return
   await removeFinding($, finding.id)
-  await send($, [`About this finding you recorded:`, ...findingBody(finding), '', words].join('\n'))
-}
-
-/** A finding as Claude reads it back: its kind and title, its detail, and its file. */
-function findingBody(finding: Finding): string[] {
-  return [
-    `${FINDING_BADGES[finding.kind].label}: ${finding.title}`,
-    finding.detail,
-    ...(finding.path ? [`File: ${finding.path}`] : []),
-  ]
+  await send($, messages.finding(finding, 'typed', words))
 }
 
 async function removeFinding($: EngineInterface, id: string) {
@@ -1233,11 +1177,7 @@ function waitingChecks(checks: Checks): Check[] {
 /** Sends the finding back to Claude, to fix it or to talk it through first. */
 async function actOnFinding($: EngineInterface, finding: Finding, how: 'address' | 'discuss') {
   await removeFinding($, finding.id)
-  const opening =
-    how === 'address'
-      ? 'Please address this finding you recorded:'
-      : "Let's talk through this finding you recorded before changing anything:"
-  await send($, [opening, ...findingBody(finding)].join('\n'))
+  await send($, messages.finding(finding, how))
 }
 
 async function showTab($: EngineInterface, tab: Tab) {
@@ -1568,18 +1508,6 @@ function prCheckId(pr: PrView, check: PrCheck): string {
 /** The id of a session check's row in the Needs you tab. */
 function checkRowId(check: Check): string {
   return `check:${checkKey(check)}`
-}
-
-/**
- * A task handed to Claude waits on Claude until the update for a turn started
- * after the press has applied. Still open then, Claude's reply did not finish
- * it, so it waits on the person again. Counts lower than at the press were
- * reset, so the task no longer folds.
- */
-function isTaskHandedOff(last: LastAction | undefined, turns: View['turns']): boolean {
-  const pressed = last?.isHandoff === true ? last.turnsStarted : undefined
-
-  return pressed !== undefined && pressed <= turns.turnsStarted && turns.turnsApplied <= pressed
 }
 
 /** A Fix mark holds only for the run it was pressed on, so a rerun that fails again asks for the person again. */

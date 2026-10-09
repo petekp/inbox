@@ -30,9 +30,10 @@ import {
   toolActivity,
 } from '../../hooks/ledger'
 import type { Exchange, Press } from '../../hooks/ledger'
-import type { Check, Help, Item, Ledger } from '../../types'
+import { isTaskHandedOff, messages, steps } from '../../hooks/presses'
+import type { Check, Item } from '../../types'
 import type { LastAction, SessionState } from './state'
-import { CODEX, GUIDANCE, messages, START_TITLE } from './texts'
+import { CODEX, GUIDANCE, START_TITLE } from './texts'
 
 /** The tab polls every few seconds; a poll this recent means it is open. */
 const TAB_OPEN_MS = 15_000
@@ -280,55 +281,6 @@ export function recordClose(
     state: s,
     result: `Not closed: no open item or finding has the id ${id}. The open ones are listed beside the user's latest message.`,
   }
-}
-
-/** A task stays folded from a hand-off press until the inbox model has summarized the turn that press started. */
-export function isTaskHandedOff(last: LastAction | undefined, p: SessionState['presence']): boolean {
-  const pressed = last?.isHandoff === true ? last.turnsStarted : undefined
-
-  return pressed !== undefined && pressed <= p.turnsStarted && p.turnsApplied <= pressed
-}
-
-function baseName(path: string): string {
-  return path.replace(/\/+$/, '').split('/').pop() ?? path
-}
-
-function clipLabel(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text
-}
-
-function helpLabel(help: Help): string {
-  const label =
-    help.kind === 'open'
-      ? `Open ${baseName(help.path)}`
-      : help.kind === 'copy'
-        ? `Copy ${help.name ?? 'snippet'}`
-        : help.kind === 'run'
-          ? `Run ${help.name ?? help.command}`
-          : help.kind === 'terminal'
-            ? `Copy ${help.name ?? help.command}`
-            : `Open ${help.name ?? new URL(help.url).host}`
-
-  return clipLabel(label, 32)
-}
-
-/**
- * The item's helps as buttons, as the mod groups them: a snippet to copy and
- * a file to open become one step, since the snippet goes in that file.
- */
-export function steps(helps: Help[]): { label: string; step: Help[] }[] {
-  const copy = helps.find(h => h.kind === 'copy')
-  const open = helps.find(h => h.kind === 'open')
-  if (!copy || !open || copy.kind !== 'copy' || open.kind !== 'open')
-    return helps.map(h => ({ label: helpLabel(h), step: [h] }))
-
-  return helps
-    .filter(h => h !== copy)
-    .map(h =>
-      h === open
-        ? { label: clipLabel(`Copy ${copy.name ?? 'snippet'} and open ${baseName(open.path)}`, 48), step: [copy, open] }
-        : { label: helpLabel(h), step: [h] },
-    )
 }
 
 /** A press from the tab. */

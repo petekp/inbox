@@ -4,7 +4,6 @@
 // The shared texts in ../../hooks/ledger.ts name Codex and the tab through CODEX.
 
 import type { Host } from '../../hooks/ledger'
-import type { Finding, Item } from '../../types'
 
 /** How the shared texts name Codex and the tab. */
 export const CODEX: Host = { agent: 'Codex', surface: 'the Inbox tab' }
@@ -37,31 +36,3 @@ export const CHECK_REFUSAL =
 
 export const START_TITLE =
   'inbox: where this session stands, as of the last reply. An "inbox:" text beside a later prompt replaces this.'
-
-/** The messages a press sends, as the mod words them. */
-export const messages = {
-  answer: (item: Item, answer: string) => `Re "${item.ask}": ${answer}`,
-  explain: (item: Item) => {
-    const what = item.kind === 'task' ? 'this task you left for me' : 'this question you asked me'
-    const options = item.options.length > 0 ? `\nOptions: ${item.options.join(' / ')}` : ''
-
-    return `Remind me what ${what} is about: why it came up, and what each choice would mean. Don't act on it yet.\n"${item.ask}"${options}`
-  },
-  run: (item: Item, command: string) => `For "${item.ask}", run this:\n\`\`\`\n${command}\n\`\`\``,
-  taskReply: (item: Item, words: string) => `Re the task you left for me, "${item.ask}": ${words}`,
-  finding: (finding: Finding, how: 'address' | 'discuss' | 'typed', words = '') => {
-    const opening =
-      how === 'address'
-        ? 'Please address this finding you recorded:'
-        : how === 'discuss'
-          ? "Let's talk through this finding you recorded before changing anything:"
-          : 'About this finding you recorded:'
-    const body = [
-      `${finding.kind === 'issue' ? 'Issue' : 'Opportunity'}: ${finding.title}`,
-      finding.detail,
-      ...(finding.path ? [`File: ${finding.path}`] : []),
-    ]
-
-    return [opening, ...body, ...(how === 'typed' ? ['', words] : [])].join('\n')
-  },
-}
