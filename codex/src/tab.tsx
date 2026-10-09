@@ -6,11 +6,12 @@ import { render } from 'preact'
 import type { ComponentChildren, JSX } from 'preact'
 
 import { ago } from '../../hooks/ledger'
-import { feedbackText } from '../../hooks/view'
+import { STALE_TEXT } from '../../hooks/presses'
+import type { RowPress } from '../../hooks/presses'
+import { feedbackText, SETTLED_MS } from '../../hooks/view'
 import type { Feedback, RowView } from '../../hooks/view'
 import type { Finding, Item } from '../../types'
-import { SETTLED_MS } from './core'
-import type { TabPress, View } from './core'
+import type { TabView as View } from './core'
 
 type Tab = 'needsYou' | 'findings'
 type Tone = 'needsYou' | 'findings' | 'done' | 'error'
@@ -71,6 +72,8 @@ const sending = new Set<string>()
 const errors = new Map<string, string>()
 const notes = new Map<string, string>()
 const copies = new Map<string, { name: string; text: string }>()
+// A note for a press whose row is no longer drawn, shown on line 1 for SETTLED_MS.
+let lineNote: { text: string; at: number } | null = null
 let settled: Settled[] = []
 let order: Record<Group, string[]> = { question: [], task: [], finding: [] }
 // Each view request takes the next number, and a reply older than the view shown is dropped.
@@ -171,9 +174,23 @@ async function poll() {
   setTimeout(poll, POLL_MS)
 }
 
-type PressReply = { view?: View; copy?: { text: string; name: string } | null; error?: string | null }
+type PressReply = {
+  view?: View
+  copy?: { text: string; name: string } | null
+  error?: string | null
+  note?: 'stale' | null
+}
 
-async function act(rowId: string, press: TabPress, onSent?: () => void) {
+/** Whether the view lists a row with this id. */
+function isListed(v: View, id: string): boolean {
+  return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows].some(r => r.id === id)
+}
+
+/**
+ * Sends a press, drawn for the view's session, to the server. `onSent` runs
+ * only once the press went through, so a stale or failed press keeps a typed draft.
+ */
+async function act(rowId: string, press: RowPress, onSent?: () => void) {
   sending.add(rowId)
   errors.delete(rowId)
   notes.delete(rowId)
@@ -181,11 +198,19 @@ async function act(rowId: string, press: TabPress, onSent?: () => void) {
   isPressing = true
   const seq = ++requested
   try {
-    const r = await callTool<PressReply>('inbox_press', { press, demo: isDemo })
+    const r = await callTool<PressReply>('inbox_press', { press, thread: view?.thread, demo: isDemo })
     if (r?.error) errors.set(rowId, r.error)
-    else onSent?.()
+    else if (!r?.note) onSent?.()
     if (r?.copy) await copy(rowId, r.copy)
     if (r?.view) applyView(r.view, seq)
+    if (r?.note && view && isListed(view, rowId)) {
+      notes.set(rowId, STALE_TEXT)
+      // The typed words go back into the field they were sent from.
+      if (press.action === 'type') typing = rowId
+    } else if (r?.note) {
+      lineNote = { text: STALE_TEXT, at: Date.now() }
+      setTimeout(draw, SETTLED_MS + 50)
+    }
   } catch {
     errors.set(rowId, 'Not sent: the inbox did not answer.')
   } finally {
@@ -237,14 +262,7 @@ function rowKeys(r: RowView): { keys: Key[]; more: Key[] } {
     const p = a.press
     const label = a.label
     if (p.action === 'answer' && item) {
-      // The server still takes an option by its place in the list.
-      const option = item.options.indexOf(p.option)
-      keys.push({
-        ...lettered(),
-        label,
-        isPrimary: a.isPrimary,
-        run: () => void act(id, { action: 'answer', id, option }),
-      })
+      keys.push({ ...lettered(), label, isPrimary: a.isPrimary, run: () => void act(id, p) })
       if (n === lastOption && folded > 0)
         keys.push({
           label: `All ${item.options.length} options`,
@@ -253,21 +271,13 @@ function rowKeys(r: RowView): { keys: Key[]; more: Key[] } {
             draw()
           },
         })
-    } else if (p.action === 'step')
-      keys.push({ ...lettered(), label, run: () => void act(id, { action: 'step', id, step: p.step }) })
-    else if (p.action === 'done') keys.push({ hotkey: 'd', label, run: () => void act(id, { action: 'done', id }) })
-    else if (p.action === 'address')
-      keys.push({ hotkey: 'a', label, run: () => void act(id, { action: 'address', id }) })
+    } else if (p.action === 'step') keys.push({ ...lettered(), label, run: () => void act(id, p) })
+    else if (p.action === 'done') keys.push({ hotkey: 'd', label, run: () => void act(id, p) })
+    else if (p.action === 'address') keys.push({ hotkey: 'a', label, run: () => void act(id, p) })
     else if (p.action === 'type') more.push({ hotkey: 't', label, run: () => startTyping(id) })
-    else if (p.action === 'explain' || p.action === 'discuss') {
-      const action = p.action
-      more.push({ hotkey: 'e', label, run: () => void act(id, { action, id }) })
-    } else if (p.action === 'dismiss')
-      more.push({
-        hotkey: 'x',
-        label,
-        run: () => void act(id, item ? { action: 'dismiss', id } : { action: 'dismissFinding', id }),
-      })
+    else if (p.action === 'explain' || p.action === 'discuss')
+      more.push({ hotkey: 'e', label, run: () => void act(id, p) })
+    else if (p.action === 'dismiss') more.push({ hotkey: 'x', label, run: () => void act(id, p) })
   }
 
   return { keys, more }
@@ -331,7 +341,7 @@ function findingRow(v: View, r: RowView, f: Finding): Row {
     ...rowKeys(r),
     typing: {
       hint: 'Your reply to Codex',
-      send: text => void act(id, { action: 'typedFinding', id, text }, () => drafts.delete(id)),
+      send: text => void act(id, { action: 'type', id, text }, () => drafts.delete(id)),
     },
     feedback: r.feedback,
   }
@@ -444,7 +454,10 @@ function TypeField({ row }: { row: Row }) {
 
 /** A row's last press, "✓ Explain". A row whose own mark is a ✓ leaves out the second one. */
 function feedbackLabel(row: Row): string | null {
-  return row.feedback && (row.handleTone === 'done' ? row.feedback.label : feedbackText(row.feedback))
+  const f = row.feedback
+  if (!f) return null
+
+  return f.is === 'done' && row.handleTone === 'done' ? f.label : feedbackText(f)
 }
 
 function lastText(row: Row, now: number): string | null {
@@ -739,6 +752,7 @@ function TabBar({ v, now }: { v: View; now: number }) {
       <div class="status">
         {status}
         {error ? <div class="tone-error">{error}</div> : null}
+        {lineNote && Date.now() - lineNote.at < SETTLED_MS ? <div class="muted">{lineNote.text}</div> : null}
       </div>
     </nav>
   )

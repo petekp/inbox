@@ -3,13 +3,15 @@
 // the sidebar line, row navigation and the Codex tab all read this, so they agree.
 // Pure: it reads only its arguments, and imports nothing from the engine.
 
-import type { Finding, Item, LastAction, Ledger, PressKind } from '../types'
+import type { Finding, Item, LastAction, Ledger, PressKind, RowNote } from '../types'
 import { latestBatch, questionNumbers } from './ledger'
-import { actionId, clipLabel, isHandedOff, stepsOf } from './presses'
+import { actionId, clipLabel, isHandedOff, STALE_TEXT, stepsOf } from './presses'
 import type { HelpStep, RowPress } from './presses'
 
 /** A question with more options than this shows the first 4 and [All N options]. */
 export const OPTIONS_FOLD_AT = 5
+/** How long a row that just closed stays in its place, and a row's note shows. */
+export const SETTLED_MS = 5120
 
 /** The turn counts a handed-off row folds by. */
 export type Turns = { turnsStarted: number; turnsApplied: number }
@@ -21,17 +23,23 @@ export type ViewInput = {
   ledger: Ledger
   /** Each row's last press, by row id. */
   lastActions: Record<string, LastAction>
+  /** Each row's latest note, by row id. Codex keeps its notes in the tab and passes {}. */
+  notes: Record<string, RowNote>
   turns: Turns
   /** Per item id, steps a host adds beyond the item's own helps: the mod's "Open PR #N". */
   extraSteps: Record<string, HelpStep[]>
   status: ItemStatus
+  now: number
 }
 
 /** A handed-off row stays in its place, folded, and leaves the count. */
 export type RowState = { is: 'open' } | { is: 'handedOff' }
 
-/** What a row says about its last press: "✓ Explain · 1m ago". A Talk or Hand-off ✓ stays. */
-export type Feedback = { is: 'done'; label: string; at: number }
+/**
+ * What a row says about its last press: "✓ Explain · 1m ago". A Talk or Hand-off ✓
+ * stays. A newer note shows in its place for SETTLED_MS.
+ */
+export type Feedback = { is: 'done'; label: string; at: number } | { is: 'note'; note: RowNote['note']; at: number }
 
 export type ActionView = {
   press: RowPress
@@ -96,14 +104,21 @@ export function needsYouOrder(ledger: Ledger): { questions: Item[]; tasks: Item[
   }
 }
 
-/** A last press's feedback: none for a Local press, which shows only its result. */
-export function feedbackOf(last: LastAction | undefined): Feedback | null {
+/**
+ * A row's feedback: its note while the note is newer than its last press and
+ * younger than SETTLED_MS, else its last press. None for a Local press, which
+ * shows only its result.
+ */
+export function feedbackOf(last: LastAction | undefined, note: RowNote | undefined, now: number): Feedback | null {
+  if (note && now - note.at < SETTLED_MS && (!last || note.at >= last.at))
+    return { is: 'note', note: note.note, at: note.at }
+
   return last && last.kind !== 'local' ? { is: 'done', label: last.text, at: last.at } : null
 }
 
-/** Feedback as a row reads it, before its age. */
+/** Feedback as a row reads it, before any age. */
 export function feedbackText(f: Feedback): string {
-  return `✓ ${f.label}`
+  return f.is === 'note' ? STALE_TEXT : `✓ ${f.label}`
 }
 
 /** A step's kind: one that asks Claude to run a command hands the row off; the rest open or copy. */
@@ -161,7 +176,7 @@ function actionsOf(
   ]
 }
 
-export function inboxView({ ledger, lastActions, turns, extraSteps, status }: ViewInput): InboxView {
+export function inboxView({ ledger, lastActions, notes, turns, extraSteps, status, now }: ViewInput): InboxView {
   const { questions, tasks } = needsYouOrder(ledger)
   // The number the person's next prompt answers each question by.
   const numbers = questionNumbers(ledger, ledger.turn + 1)
@@ -181,7 +196,7 @@ export function inboxView({ ledger, lastActions, turns, extraSteps, status }: Vi
       steps,
       // Questions never fold.
       state: item.kind === 'task' ? stateOf(item.id) : { is: 'open' },
-      feedback: feedbackOf(lastActions[item.id]),
+      feedback: feedbackOf(lastActions[item.id], notes[item.id], now),
       actions: actionsOf({ id: item.id, item, steps }, lastActions[item.id]),
     }
   }
@@ -198,7 +213,7 @@ export function inboxView({ ledger, lastActions, turns, extraSteps, status }: Vi
     finding,
     steps: [],
     state: stateOf(finding.id),
-    feedback: feedbackOf(lastActions[finding.id]),
+    feedback: feedbackOf(lastActions[finding.id], notes[finding.id], now),
     actions: actionsOf({ id: finding.id, item: null, steps: [] }, lastActions[finding.id]),
   }))
 

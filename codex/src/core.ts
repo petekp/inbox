@@ -1,12 +1,10 @@
 // The plugin's session logic as pure functions on SessionState: what a prompt
-// tells Codex, what a press does, what the tab shows, and how a turn ends.
+// tells Codex, what the tab shows, and how a turn ends.
 // Hooks and the MCP server do the I/O around them.
 
-import { carryText, closeItem, EMPTY, isLapsed, promptNotes, screenText, toolActivity } from '../../hooks/ledger'
+import { carryText, EMPTY, isLapsed, promptNotes, screenText, toolActivity } from '../../hooks/ledger'
 import type { Exchange, Press } from '../../hooks/ledger'
-import { actionId, messages, pressText, steps } from '../../hooks/presses'
-import type { RowPress } from '../../hooks/presses'
-import { inboxView, perTurnStatus } from '../../hooks/view'
+import { inboxView, perTurnStatus, SETTLED_MS } from '../../hooks/view'
 import type { InboxView } from '../../hooks/view'
 import type { Item, LastAction } from '../../types'
 import type { SessionState } from './state'
@@ -14,12 +12,9 @@ import { CODEX, GUIDANCE, START_TITLE } from './texts'
 
 /** The tab polls every few seconds; a poll this recent means it is open. */
 const TAB_OPEN_MS = 15_000
-/** How long a row the press removed shows its last action in its place. */
-export const SETTLED_MS = 5120
 /** How many recently closed items each Needs you group lists. */
 const CLOSED_SHOWN = 3
 const MAX_ACTIVITY = 40
-const MAX_SENT = 20
 
 export function isTabOpen(s: SessionState, now: number): boolean {
   return now - s.tabSeenAt < TAB_OPEN_MS
@@ -110,136 +105,6 @@ export function endTurn(s: SessionState, reply: string, now: number): SessionSta
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] }
 }
 
-/** A press from the tab. */
-export type TabPress =
-  | { action: 'answer'; id: string; option: number }
-  | { action: 'type'; id: string; text: string }
-  | { action: 'explain'; id: string }
-  | { action: 'done'; id: string }
-  | { action: 'dismiss'; id: string }
-  | { action: 'step'; id: string; step: number }
-  | { action: 'address'; id: string }
-  | { action: 'discuss'; id: string }
-  | { action: 'dismissFinding'; id: string }
-  | { action: 'typedFinding'; id: string; text: string }
-
-/** What a press asks the server to do besides changing the state. */
-export type Effect =
-  | { kind: 'send'; text: string; press: Press | null }
-  | { kind: 'open'; target: string }
-  | { kind: 'copy'; text: string; name: string }
-
-/** Records a Talk or Hand-off press on its row, under the action id and label the mod records for it. */
-function withLast(
-  s: SessionState,
-  p: RowPress,
-  kind: 'talk' | 'handoff',
-  now: number,
-  extra: Pick<LastAction, 'title'> = {},
-): SessionState {
-  const last: LastAction = {
-    kind,
-    action: actionId(p),
-    text: pressText(p),
-    at: now,
-    turnsStarted: s.presence.turnsStarted,
-    ...extra,
-  }
-
-  return { ...s, lastActions: { ...s.lastActions, [p.id]: last } }
-}
-
-function sent(s: SessionState, text: string, press: Press | null, now: number): SessionState {
-  return { ...s, sent: [...s.sent, { text, press, at: now }].slice(-MAX_SENT) }
-}
-
-/**
- * Applies a press. Returns the new state and what the server must do: send a
- * message as the person's, open a file or page, or hand text to copy. Null
- * when the press's row is gone, as when another tab or Codex closed it.
- */
-export function press(s: SessionState, p: TabPress, now: number): { state: SessionState; effects: Effect[] } | null {
-  const send = (state: SessionState, text: string, by: Press | null) => ({
-    state: sent(state, text, by, now),
-    effects: [{ kind: 'send' as const, text, press: by }],
-  })
-  if (
-    p.action === 'address' ||
-    p.action === 'discuss' ||
-    p.action === 'dismissFinding' ||
-    p.action === 'typedFinding'
-  ) {
-    const finding = s.ledger.findings.find(f => f.id === p.id)
-    if (!finding) return null
-    const removed = { ...s, ledger: { ...s.ledger, findings: s.ledger.findings.filter(f => f.id !== p.id) } }
-    if (p.action === 'dismissFinding') return { state: removed, effects: [] }
-    const words = p.action === 'typedFinding' ? p.text.trim() : ''
-    if (p.action === 'typedFinding' && !words) return null
-    const how = p.action === 'typedFinding' ? 'typed' : p.action
-    const last =
-      how === 'typed'
-        ? withLast(removed, { action: 'type', id: p.id, text: words }, 'handoff', now, { title: finding.title })
-        : withLast(removed, { action: how, id: p.id }, how === 'address' ? 'handoff' : 'talk', now, {
-            title: finding.title,
-          })
-
-    return send(last, messages.finding(finding, how, words), null)
-  }
-  const item = s.ledger.items.find(i => i.id === p.id)
-  if (!item) return null
-  const close = (outcome: string, how: 'answered' | 'done' | 'dismissed') => ({
-    ...s,
-    ledger: closeItem(s.ledger, item.id, { how, outcome }, now),
-  })
-  switch (p.action) {
-    case 'answer': {
-      const answer = item.options[p.option]
-      if (answer === undefined) return null
-      return send(close(answer, 'answered'), messages.answer(item, answer), { id: item.id, action: 'answer' })
-    }
-    case 'type': {
-      const words = p.text.trim()
-      if (!words) return null
-      if (item.kind === 'question')
-        return send(close(words, 'answered'), messages.answer(item, words), { id: item.id, action: 'answer' })
-      return send(
-        withLast(s, { action: 'type', id: item.id, text: words }, 'handoff', now),
-        messages.taskReply(item, words),
-        null,
-      )
-    }
-    case 'explain':
-      return send(withLast(s, { action: 'explain', id: item.id }, 'talk', now), messages.explain(item), {
-        id: item.id,
-        action: 'explain',
-      })
-    case 'done':
-      return { state: close('done', 'done'), effects: [] }
-    case 'dismiss':
-      return { state: close('dismissed', 'dismissed'), effects: [] }
-    case 'step': {
-      const found = steps(item.helps)[p.step]
-      if (!found) return null
-      const effects: Effect[] = []
-      let state = s
-      for (const help of found.step) {
-        if (help.kind === 'run') {
-          const text = messages.run(item, help.command)
-          state = sent(state, text, { id: item.id, action: 'run' }, now)
-          effects.push({ kind: 'send', text, press: { id: item.id, action: 'run' } })
-        } else if (help.kind === 'open') effects.push({ kind: 'open', target: help.path })
-        else if (help.kind === 'link') effects.push({ kind: 'open', target: help.url })
-        else if (help.kind === 'copy') effects.push({ kind: 'copy', text: help.text, name: help.name ?? 'snippet' })
-        else effects.push({ kind: 'copy', text: help.command, name: help.name ?? 'the command' })
-      }
-      if (found.step.some(h => h.kind === 'run'))
-        state = withLast(state, { action: 'step', id: item.id, step: p.step, label: found.label }, 'handoff', now)
-
-      return { state, effects }
-    }
-  }
-}
-
 export type ClosedRow = {
   id: string
   kind: Item['kind']
@@ -266,6 +131,12 @@ export type View = InboxView & {
   at: number
 }
 
+/**
+ * The view as the server sends it to the tab, with the session the call came
+ * from. The tab sends `thread` back with each press, which reads as stale in any other session.
+ */
+export type TabView = View & { thread: string }
+
 /** What the tab draws. */
 export function viewOf(s: SessionState, now: number): View {
   const l = s.ledger
@@ -282,9 +153,12 @@ export function viewOf(s: SessionState, now: number): View {
     ...inboxView({
       ledger: l,
       lastActions: s.lastActions,
+      // The tab keeps its own row notes.
+      notes: {},
       turns: s.presence,
       extraSteps: {},
       status: perTurnStatus(l, update),
+      now,
     }),
     goal: l.card?.goal ?? '',
     now: l.card?.now ?? '',

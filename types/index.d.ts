@@ -87,6 +87,9 @@ export type LastAction = {
   index?: number
 }
 
+/** A short note on a row that is not a press's result: a press that found its row gone or changed. */
+export type RowNote = { note: 'stale'; at: number }
+
 /** Something Claude noticed outside the current task and recorded for the person. */
 export type Finding = {
   id: string
@@ -228,6 +231,10 @@ declare module 'claude-code' {
       dialogs: Dialog[]
       /** The row whose free-text field is open, if any. */
       typing: string | null
+      /** Each row's unsent typed words, by the row's id, kept while the field closes or another row opens. */
+      drafts: Record<string, string>
+      /** Each row's latest note, by the row's id. */
+      notes: Record<string, RowNote>
       /** Items that just closed, shown in place for a few seconds. */
       settled: Settled[]
       /** The pane's latest jump to a new row. */

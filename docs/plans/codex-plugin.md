@@ -74,7 +74,7 @@ Terms follow `GLOSSARY.md`. "The mod" is the Claude Code mod in this repo.
 | Band above the prompt | `ui.render` AbovePrompt | The Inbox tab's header. Nothing above the prompt | Gap 1 |
 | `/inbox` pane, three tabs, keys | `ui.render` Pane | The Inbox tab: an MCP App opened from a thread entrypoint | Direct |
 | Pane buttons that send a message | `$.prompt.submit` | The tab calls a tool, and the MCP server runs `codex queue` | Direct |
-| Last action on a row | Drawn with `withLastAction()` | The same rule in the tab: each button shows what it did as soon as it is pressed | Direct |
+| Last action on a row | Recorded by `runPress()` | The same rule in the tab: each button shows what it did as soon as it is pressed | Direct |
 | Card after 15 minutes away, or on resume | `clock.every` and `isAway` | A timer in the MCP server. The tab shows the card | Direct |
 | PRs tab | `gh` polled from the mod | `gh` polled by the server. `prs.ts` carries over | Direct, later |
 | Questions and permission dialogs | AskUserQuestion and `PermissionRequest` | `PermissionRequest` exists. Codex's question tool is not on by default | Later |

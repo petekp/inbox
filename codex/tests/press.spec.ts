@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
+import { applyPress } from '../../hooks/presses'
+import type { PressResult, RowPress } from '../../hooks/presses'
 import { recordClose, recordFinding } from '../../hooks/tools'
 import type { RowView } from '../../hooks/view'
 import type { Item } from '../../types'
-import { endTurn, notePrompt, press, viewOf } from '../src/core'
+import { endTurn, notePrompt, viewOf } from '../src/core'
 import { emptyState } from '../src/state'
 import type { SessionState } from '../src/state'
 import { CODEX } from '../src/texts'
@@ -49,24 +51,48 @@ function withItems(): SessionState {
   }
 }
 
-test('an answer closes its question and sends the answer, which the next prompt matches as a press', () => {
-  const r = press(withItems(), { action: 'answer', id: 'i1', option: 0 }, 50)
-  assert.ok(r)
+/** A press on a state's ledger, at time 50, as a host applies it. */
+function pressed(s: SessionState, p: RowPress): PressResult {
+  return applyPress(s.ledger, p, { now: 50, turnsStarted: s.presence.turnsStarted, extraSteps: [] })
+}
+
+/** The state after a press that went through, with its last action on its row. */
+function after(s: SessionState, p: RowPress): SessionState {
+  const r = pressed(s, p)
+  assert.ok(!('stale' in r))
+
+  return { ...s, ledger: r.ledger, lastActions: r.last ? { ...s.lastActions, [p.id]: r.last } : s.lastActions }
+}
+
+test('an answer names its option by text: it closes the question and sends the answer as a press', () => {
+  const r = pressed(withItems(), { action: 'answer', id: 'i1', option: 'Fix add.js' })
+  assert.ok(!('stale' in r))
   assert.deepEqual(r.effects, [
-    { kind: 'send', text: 'Re "Fix add.js or the test?": Fix add.js', press: { id: 'i1', action: 'answer' } },
+    { kind: 'send', text: 'Re "Fix add.js or the test?": Fix add.js', by: { id: 'i1', action: 'answer' } },
   ])
   assert.deepEqual(
-    r.state.ledger.closed.map(d => [d.id, d.outcome, d.how]),
+    r.ledger.closed.map(d => [d.id, d.outcome, d.how]),
     [['i1', 'Fix add.js', 'answered']],
   )
+  assert.equal(r.last?.kind, 'mark')
+})
 
-  const prompt = notePrompt(r.state, 'Re "Fix add.js or the test?": Fix add.js', 60)
-  assert.deepEqual(prompt.state.turn.press, { id: 'i1', action: 'answer' })
-  assert.deepEqual(prompt.state.sent, [])
-  assert.match(
-    prompt.notes.join('\n'),
-    /Closed since you last read the inbox:\n- "Fix add.js or the test\?" → Fix add.js/,
-  )
+test('a press drawn for a row that left or changed is stale, and changes and sends nothing', () => {
+  const s = withItems()
+  const stale: unknown[] = [
+    // The row is gone.
+    { action: 'answer', id: 'i9', option: 'Fix add.js' },
+    // The option is no longer among the question's, or comes from a tab that sent its index.
+    { action: 'answer', id: 'i1', option: 'Delete the test' },
+    { action: 'answer', id: 'i1', option: 0 },
+    // The step at that place has another label now.
+    { action: 'step', id: 'i2', step: 0, label: 'Run the old script' },
+    // Undo has nothing to undo while the item is open.
+    { action: 'undo', id: 'i1' },
+  ]
+  for (const p of stale) assert.deepEqual(pressed(s, p as RowPress), { stale: true })
+  // A blank typed reply goes through and does nothing.
+  assert.deepEqual(pressed(s, { action: 'type', id: 'i2', text: '  ' }), { ledger: s.ledger, last: null, effects: [] })
 })
 
 test('the person’s own numbered answer gets the note that maps it to the question', () => {
@@ -75,17 +101,68 @@ test('the person’s own numbered answer gets the note that maps it to the quest
 })
 
 test('a run step hands the task to Codex: it folds until the turn it started is summarized', () => {
-  const r = press(withItems(), { action: 'step', id: 'i2', step: 0 }, 50)
-  assert.ok(r)
-  assert.equal(r.effects[0]?.kind, 'send')
-  const folded = viewOf(r.state, 60)
+  const p: RowPress = { action: 'step', id: 'i2', step: 0, label: 'Run seed script' }
+  const r = pressed(withItems(), p)
+  assert.ok(!('stale' in r))
+  assert.deepEqual(r.effects, [
+    {
+      kind: 'send',
+      text: 'For "Sign in to npm", run this:\n```\nnpm run seed\n```',
+      by: { id: 'i2', action: 'run' },
+    },
+  ])
+  const s = after(withItems(), p)
+  const folded = viewOf(s, 60)
   assert.deepEqual(folded.needsYou.tasks[0]?.state, { is: 'handedOff' })
   assert.deepEqual(folded.needsYou.tasks[0]?.feedback, { is: 'done', label: 'Run seed script', at: 50 })
   assert.equal(folded.needsYou.count, 1)
 
-  const started = notePrompt(r.state, (r.effects[0] as { text: string }).text, 70).state
+  const started = notePrompt(s, 'For "Sign in to npm", run this:', 70).state
   const summarized = { ...started, presence: { ...started.presence, turnsApplied: started.presence.turnsStarted } }
   assert.deepEqual(viewOf(summarized, 80).needsYou.tasks[0]?.state, { is: 'open' })
+})
+
+test('a run step on a question sends its command and leaves the question open, and a step that copies and opens sends nothing', () => {
+  const w = withItems()
+  const question = w.ledger.items[0]!
+  const s: SessionState = {
+    ...w,
+    ledger: {
+      ...w.ledger,
+      items: [
+        {
+          ...question,
+          helps: [
+            { kind: 'run', command: 'npm test', name: 'tests' },
+            { kind: 'copy', text: 'API_KEY=x', name: 'env line' },
+            { kind: 'open', path: '.env.local' },
+          ],
+        },
+      ],
+    },
+  }
+  const run = pressed(s, { action: 'step', id: 'i1', step: 0, label: 'Run tests' })
+  assert.ok(!('stale' in run))
+  assert.deepEqual(
+    run.effects.map(e => e.kind),
+    ['send'],
+  )
+  assert.equal(run.last?.kind, 'handoff')
+  assert.deepEqual(
+    run.ledger.items.map(i => i.id),
+    ['i1'],
+  )
+  assert.equal(viewOf(after(s, { action: 'step', id: 'i1', step: 0, label: 'Run tests' }), 60).needsYou.count, 1)
+
+  const copyOpen = pressed(s, { action: 'step', id: 'i1', step: 1, label: 'Copy env line and open .env.local' })
+  assert.deepEqual(copyOpen, {
+    ledger: s.ledger,
+    last: null,
+    effects: [
+      { kind: 'copy', text: 'API_KEY=x', name: 'env line', isCommand: false },
+      { kind: 'open', target: '.env.local', name: '.env.local' },
+    ],
+  })
 })
 
 /** An open question or task asked in reply `turn`. */
@@ -194,22 +271,30 @@ test('Address removes the finding, sends it, and shows what was sent in its plac
     ledger: recordFinding(CODEX, w.ledger, { kind: 'issue', title: 'No lint script', detail: 'Only tests run.' }, 10)
       .ledger,
   }
-  const r = press(s, { action: 'address', id: 'f3' }, 50)
-  assert.ok(r)
-  assert.match(
-    (r.effects[0] as { text: string }).text,
-    /^Please address this finding you recorded:\nIssue: No lint script/,
-  )
+  const r = pressed(s, { action: 'address', id: 'f3' })
+  assert.ok(!('stale' in r))
+  assert.deepEqual(r.effects, [
+    {
+      kind: 'send',
+      text: 'Please address this finding you recorded:\nIssue: No lint script\nOnly tests run.',
+      by: null,
+    },
+  ])
+  const sent = after(s, { action: 'address', id: 'f3' })
   assert.deepEqual(
-    viewOf(r.state, 60).leaving.map(x => [x.title, x.text]),
+    viewOf(sent, 60).leaving.map(x => [x.title, x.text]),
     [['No lint script', 'Address']],
   )
-  assert.deepEqual(viewOf(r.state, 60 + 6000).leaving, [])
-  assert.deepEqual(r.state.ledger.findings, [])
-})
-
-test('a press on a row that is gone does nothing', () => {
-  assert.equal(press(withItems(), { action: 'answer', id: 'i9', option: 0 }, 50), null)
+  assert.deepEqual(viewOf(sent, 60 + 6000).leaving, [])
+  assert.deepEqual(sent.ledger.findings, [])
+  // Dismiss closes a finding without sending anything.
+  const dismissed = pressed(s, { action: 'dismiss', id: 'f3' })
+  assert.ok(!('stale' in dismissed))
+  assert.deepEqual(dismissed.effects, [])
+  assert.deepEqual(
+    dismissed.ledger.closedFindings.map(f => [f.id, f.how]),
+    [['f3', 'dismissed']],
+  )
 })
 
 test('Codex closing an item reads as Codex in its outcome', () => {

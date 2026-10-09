@@ -6,7 +6,6 @@ import type {
   Cursor,
   Closed,
   Dialog,
-  Help,
   Item,
   Ledger,
   Finding,
@@ -18,6 +17,7 @@ import type {
   Previous,
   LastAction,
   PressKind,
+  RowNote,
   Settled,
   Stop,
   Tab,
@@ -52,7 +52,6 @@ import {
   buildPrompt,
   carryText,
   closeItem,
-  type Closing,
   commandRowLine,
   dialogLine,
   parseReply,
@@ -77,19 +76,9 @@ import {
   type Told,
   upgradeLedger,
 } from './ledger'
-import {
-  actionId,
-  baseName,
-  clipLabel,
-  localPath,
-  messages,
-  openCommands,
-  pressText,
-  prSteps,
-  upgradeLastActions,
-} from './presses'
-import type { HelpStep, PrActionId } from './presses'
-import { feedbackOf, feedbackText, inboxView, needsYouOrder, perTurnStatus } from './view'
+import { applyPress, baseName, clipLabel, localPath, openCommands, prSteps, upgradeLastActions } from './presses'
+import type { Effect, HelpStep, PressResult, PrActionId, RowPress } from './presses'
+import { feedbackOf, feedbackText, inboxView, needsYouOrder, perTurnStatus, SETTLED_MS } from './view'
 import type { InboxView, RowView } from './view'
 import {
   CLOSE_DESCRIPTION,
@@ -127,6 +116,8 @@ const PR_VIEWS = atom(
 const STOP = atom({ plugin: 'inbox', key: 'stop' } as const, null as Stop | null)
 const DIALOGS = atom({ plugin: 'inbox', key: 'dialogs' } as const, [] as Dialog[])
 const TYPING = atom({ plugin: 'inbox', key: 'typing' } as const, null as string | null)
+const DRAFTS = atom({ plugin: 'inbox', key: 'drafts' } as const, {} as Record<string, string>)
+const NOTES = atom({ plugin: 'inbox', key: 'notes' } as const, {} as Record<string, RowNote>)
 const SETTLED = atom({ plugin: 'inbox', key: 'settled' } as const, [] as Settled[])
 const ARRIVAL = atom({ plugin: 'inbox', key: 'arrival' } as const, null as Arrival | null)
 const LAST_ACTIONS = atom({ plugin: 'inbox', key: 'lastActions' } as const, {} as Record<string, LastAction>)
@@ -135,7 +126,6 @@ const SHOWN_DETAILS = atom({ plugin: 'inbox', key: 'shownDetails' } as const, []
 const OPTIONS_SHOWN = atom({ plugin: 'inbox', key: 'optionsShown' } as const, [] as string[])
 const IS_KEY_LIST_SHOWN = atom({ plugin: 'inbox', key: 'isKeyListShown' } as const, false)
 // How long a closed item's row stays in place, with its outcome, before it moves to Closed.
-const SETTLED_MS = 5120
 // The bar under a just-closed row, in cells. It loses half a cell per step of SETTLED_MS, so the pane redraws that often.
 const LEAVE_BAR_CELLS = 12
 const LEAVE_BAR_STEPS = LEAVE_BAR_CELLS * 2
@@ -462,15 +452,16 @@ function publishStatus($: EngineInterface, isEnding = false): Promise<void> {
     .then(async () => {
       const pane = await $.env.get('HERDR_PANE_ID')
       if (!pane) return
-      const [ledger, stop, dialogs, lastActions, presence] = await Promise.all([
+      const [ledger, stop, dialogs, lastActions, presence, now] = await Promise.all([
         read($, LEDGER),
         read($, STOP),
         read($, DIALOGS),
         read($, LAST_ACTIONS),
         read($, PRESENCE),
+        $.clock.now(),
       ])
       // Only the items the band counts, in the pane's order: a task handed to Claude waits on no one.
-      const { needsYou } = viewOf({ ledger, lastActions, turns: presence }, presence)
+      const { needsYou } = viewOf({ ledger, lastActions, notes: {}, turns: presence, now }, presence)
       const items = [...needsYou.questions, ...needsYou.tasks]
         .filter(r => r.state.is === 'open')
         .flatMap(r => (r.item ? [r.item] : []))
@@ -585,13 +576,26 @@ async function commitLedger($: EngineInterface, change: (l: Ledger) => Ledger): 
  * the counts need none.
  */
 function viewOf(
-  { ledger, lastActions, turns, prViews }: Pick<View, 'ledger' | 'lastActions' | 'turns'> & { prViews?: PrViews },
+  {
+    ledger,
+    lastActions,
+    notes,
+    turns,
+    prViews,
+    now,
+  }: Pick<View, 'ledger' | 'lastActions' | 'turns'> & {
+    notes: Record<string, RowNote>
+    prViews?: PrViews
+    now: number
+  },
   presence: Presence,
 ): InboxView {
   return inboxView({
     ledger,
     lastActions,
+    notes,
     turns,
+    now,
     extraSteps: prViews ? Object.fromEntries(ledger.items.map(i => [i.id, itemPrSteps(i, prViews, ledger.prs)])) : {},
     // catchUp reruns a failed update after the next message.
     status: perTurnStatus(ledger, {
@@ -641,16 +645,6 @@ function redrawWhileLeaving($: EngineInterface, refresh: () => Promise<unknown>,
       await refresh()
     }
   })().catch(() => undefined)
-}
-
-/** Records what a row's action did. A row the press removed shows it in its place until SETTLED_MS passes. */
-async function recordLastAction($: EngineInterface, id: string, last: Omit<LastAction, 'at' | 'turnsStarted'>) {
-  const [at, { turnsStarted }] = await Promise.all([$.clock.now(), read($, PRESENCE)])
-  await update($, LAST_ACTIONS, a => ({ ...a, [id]: { ...last, at, turnsStarted } }))
-  if (last.kind === 'handoff') void publishStatus($)
-  // A finding the press removed shows in its place, with a leave bar, until the settle time is over.
-  // A fresh object redraws the pane, so the bar shrinks and the place then clears.
-  redrawWhileLeaving($, () => update($, LAST_ACTIONS, a => ({ ...a })), SETTLED_MS)
 }
 
 /** Removes just-closed rows after a wait. A reload cancels the wait, so session.start sets it again. */
@@ -762,16 +756,6 @@ async function tick($: EngineInterface) {
 }
 
 /**
- * Sends an answer to Claude as the person's own message. The item closes at
- * once, so a second press cannot send it twice. A prompt sent mid-turn waits
- * for the turn to end.
- */
-async function sendAnswer($: EngineInterface, item: Item, answer: string) {
-  await close($, item.id, { how: 'answered', outcome: answer })
-  await send($, messages.answer(item, answer), { id: item.id, action: 'answer' })
-}
-
-/**
  * Sends a prompt as the person's own message. A plugin's own prompt skips that
  * plugin's prompt.submit hook, so the bookkeeping happens here, and what
  * Claude reads beside the prompt goes just before it, in a row only the model sees.
@@ -827,16 +811,6 @@ async function notePrompt($: EngineInterface, text: string, sentBy: Press | null
   return notes
 }
 
-/** Asks Claude what an item is about. The item stays open, since nothing was closed. */
-async function explain($: EngineInterface, item: Item) {
-  await send($, messages.explain(item), { id: item.id, action: 'explain' })
-}
-
-async function close($: EngineInterface, id: string, closing: Closing) {
-  const now = await $.clock.now()
-  await commitLedger($, l => closeItem(l, id, closing, now))
-}
-
 /** Opens a path an item names, as `openCommands` decides. */
 async function openPath($: EngineInterface, raw: string) {
   const path = localPath(raw, root, (await $.env.get('HOME')) ?? '')
@@ -852,33 +826,6 @@ async function openPath($: EngineInterface, raw: string) {
   const r = await $.process.run(argv)
   const retry = r.exitCode !== 0 && fallback ? await $.process.run(fallback) : r
   if (retry.exitCode !== 0) $.ui.toast(`Could not open ${name}: ${retry.stderr.trim()}`)
-}
-
-async function useHelp($: EngineInterface, item: Item, help: Help, press: UiPressArgument) {
-  if (help.kind === 'open') {
-    await openPath($, help.path)
-  } else if (help.kind === 'copy') {
-    const r = await $.ui.copy({ text: help.text, surface: press.surface })
-    $.ui.toast(r.isCopied ? `Copied ${help.name ?? 'snippet'}` : 'Could not copy to the clipboard')
-  } else if (help.kind === 'run') {
-    await send($, messages.run(item, help.command), { id: item.id, action: 'run' })
-  } else if (help.kind === 'terminal') {
-    // A filled "! command" reaches the model as text; only a typed "!" switches the prompt to shell mode.
-    const r = await $.ui.copy({ text: help.command, surface: press.surface })
-    const what = help.name ?? 'the command'
-    $.ui.toast(
-      r.isCopied
-        ? `Copied ${what}. Run it in a terminal, or type ! here and paste.`
-        : 'Could not copy to the clipboard',
-    )
-  } else {
-    await openUrl($, help.url)
-  }
-}
-
-/** Each step's helps in order: one press copies then opens, for example. */
-async function useStep($: EngineInterface, item: Item, step: Help[], press: UiPressArgument) {
-  for (const help of step) await useHelp($, item, help, press)
 }
 
 /** A path inside the repo, relative to its top folder; any other path as given. */
@@ -967,38 +914,6 @@ async function startTyping($: EngineInterface, id: string) {
   // A click leaves the keys with the prompt, and `ui.focus` is refused in a pane that lacks them.
   await openPane($)
   await $.ui.focus({ requestId: PANE, key: `type-${id}` }).catch(() => undefined)
-}
-
-/**
- * Sends the person's own words about an item as their message. A question
- * closes with those words as its answer, as an option press does. A task
- * stays open, since Claude closes it once the message settles it.
- */
-async function sendTypedForItem($: EngineInterface, item: Item, text: string) {
-  await update($, TYPING, () => null)
-  const words = text.trim()
-  if (!words) return
-  if (item.kind === 'task') await send($, messages.taskReply(item, words))
-  else await sendAnswer($, item, words)
-}
-
-/** Sends the person's own words about a finding, which leaves the Findings tab as Address does. */
-async function sendTypedForFinding($: EngineInterface, finding: Finding, text: string) {
-  await update($, TYPING, () => null)
-  const words = text.trim()
-  if (!words) return
-  await removeFinding($, finding.id)
-  await send($, messages.finding(finding, 'typed', words))
-}
-
-async function removeFinding($: EngineInterface, id: string) {
-  await commitLedger($, l => ({ ...l, findings: l.findings.filter(f => f.id !== id) }))
-}
-
-/** Sends the finding back to Claude, to fix it or to talk it through first. */
-async function actOnFinding($: EngineInterface, finding: Finding, how: 'address' | 'discuss') {
-  await removeFinding($, finding.id)
-  await send($, messages.finding(finding, how))
 }
 
 async function showTab($: EngineInterface, tab: Tab) {
@@ -1343,6 +1258,182 @@ async function dismissPr($: EngineInterface, ref: string) {
   })
 }
 
+/** A press on a PR block, one of its review threads, or a failing check's row. Only the mod has PRs. */
+type PrPress =
+  | { action: 'thread-address' | 'thread-draft' | 'thread-discuss' | 'thread-open'; ref: string; thread: string }
+  | { action: 'pr-conflicts' | 'pr-address-all' | 'pr-open'; ref: string }
+  | { action: 'log'; ref: string; check: string }
+
+/**
+ * A press's outcome as the runner applies it: the last action of each row it
+ * records on, and the effects to perform. `stale` when its row is gone or changed.
+ */
+type Applied = { lasts: Record<string, LastAction>; effects: Effect[] } | { stale: true }
+
+/** The row a PR press was drawn on, which keys its last action and its note. */
+function prRowId(p: PrPress): string {
+  if (p.action === 'log') return `${p.ref} check ${p.check}`
+  if ('thread' in p) return `${p.ref} thread ${p.thread}`
+
+  return `pr:${p.ref}`
+}
+
+/**
+ * Applies a PR press, as `applyPress` does a row press. Pure. Stale when the PR
+ * is no longer tracked or drawn, its thread or check is gone, or what the
+ * press acts on is over: the PR no longer conflicts, or no thread waits on the person.
+ */
+function applyPrPress(
+  prState: PrViews,
+  linked: string[],
+  lastActions: Record<string, LastAction>,
+  p: PrPress,
+  ctx: { now: number; turnsStarted: number },
+): Applied {
+  const stale = { stale: true as const }
+  const pr = prState.views[p.ref]
+  if (!pr || !(linked.includes(p.ref) || prState.branchRef === p.ref)) return stale
+  const record = (kind: 'talk' | 'handoff', action: PrActionId, text: string): LastAction => ({
+    kind,
+    action,
+    text,
+    at: ctx.now,
+    turnsStarted: ctx.turnsStarted,
+  })
+  const send = (text: string): Effect => ({ kind: 'send', text, by: null })
+  const open = (url: string): Effect => ({ kind: 'open', target: url, name: url })
+  switch (p.action) {
+    case 'thread-address':
+    case 'thread-draft':
+    case 'thread-discuss':
+    case 'thread-open': {
+      const t = pr.threads.find(x => x.id === p.thread)
+      if (!t) return stale
+      const id = prThreadId(pr, t)
+      if (p.action === 'thread-open') return { lasts: {}, effects: [open(t.reply?.url || t.url || pr.url)] }
+      if (p.action === 'thread-address')
+        return { lasts: { [id]: record('handoff', p.action, 'Address') }, effects: [send(prompts.address(pr, [t]))] }
+      if (p.action === 'thread-draft')
+        return { lasts: { [id]: record('talk', p.action, 'Draft reply') }, effects: [send(prompts.draft(pr, t))] }
+      return { lasts: { [id]: record('talk', p.action, 'Discuss') }, effects: [send(prompts.discuss(pr, t))] }
+    }
+    case 'pr-conflicts':
+      if (pr.state !== 'OPEN' || pr.mergeable !== 'CONFLICTING') return stale
+      return {
+        lasts: { [`pr:${pr.ref}`]: record('handoff', p.action, 'Resolve conflicts') },
+        effects: [send(prompts.resolve(pr))],
+      }
+    case 'pr-address-all': {
+      const waiting = threadsOnYou(pr, handoffs(lastActions))
+      if (waiting.length === 0) return stale
+      // Each thread it sends reads as if its own Address were pressed, so it folds too.
+      const threads = waiting.map(t => [prThreadId(pr, t), record('handoff', 'thread-address', 'Address')])
+      return {
+        lasts: {
+          [`pr:${pr.ref}`]: record('handoff', p.action, `Address all ${waiting.length} threads`),
+          ...Object.fromEntries(threads),
+        },
+        effects: [send(prompts.address(pr, waiting))],
+      }
+    }
+    case 'pr-open':
+      return { lasts: {}, effects: [open(pr.url)] }
+    case 'log': {
+      const check = pr.checks.find(c => c.name === p.check)
+      return check ? { lasts: {}, effects: [open(check.url ?? pr.url)] } : stale
+    }
+  }
+}
+
+/** Opens a path or URL, or copies text, for a press, saying so in a toast. */
+async function perform($: EngineInterface, e: Effect, surface: UiPressArgument['surface']) {
+  if (e.kind === 'open') {
+    await (/^[a-z][a-z\d+.-]*:\/\//i.test(e.target) ? openUrl($, e.target) : openPath($, e.target))
+  } else if (e.kind === 'copy') {
+    const r = await $.ui.copy({ text: e.text, surface })
+    // A filled "! command" reaches the model as text; only a typed "!" switches the prompt to shell mode.
+    const copied = e.isCommand
+      ? `Copied ${e.name}. Run it in a terminal, or type ! here and paste.`
+      : `Copied ${e.name}`
+    $.ui.toast(r.isCopied ? copied : 'Could not copy to the clipboard')
+  }
+}
+
+/**
+ * Runs a press from the pane, by click or key. A row press goes through
+ * `applyPress` on the ledger, a PR press through `applyPrPress`. The row's last
+ * action records it, then opens and copies run, then sends. A press whose row
+ * is gone or changed sends nothing: the row, or the pane's status line, says so.
+ */
+async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPressArgument['surface']) {
+  const [now, presence, lastActions, prState] = await Promise.all([
+    $.clock.now(),
+    read($, PRESENCE),
+    read($, LAST_ACTIONS),
+    read($, PR_VIEWS),
+  ])
+  const ctx = { now, turnsStarted: presence.turnsStarted }
+  const rowId = 'ref' in p ? prRowId(p) : p.id
+  // A finding the press removes shows its last action in its place, in the Findings tab, until SETTLED_MS passes.
+  let place = null as Pick<LastAction, 'tab' | 'index'> | null
+  let applied: Applied
+  if ('ref' in p) {
+    applied = applyPrPress(prState, (await read($, LEDGER)).prs, lastActions, p, ctx)
+  } else {
+    if (p.action === 'type') await update($, TYPING, t => (t === p.id ? null : t))
+    // `update` may run the change again on a version miss; the last run's result is the one used.
+    let r = { stale: true } as PressResult
+    await commitLedger($, l => {
+      const item = l.items.find(i => i.id === p.id)
+      const index = [...l.findings].reverse().findIndex(f => f.id === p.id)
+      place = index >= 0 ? { tab: 'findings', index } : null
+      r = applyPress(l, p, { ...ctx, extraSteps: item ? itemPrSteps(item, prState, l.prs) : [] })
+      return 'stale' in r ? l : r.ledger
+    })
+    applied = 'stale' in r ? r : { lasts: r.last ? { [p.id]: { ...r.last, ...place } } : {}, effects: r.effects }
+  }
+
+  if ('stale' in applied) {
+    await Promise.all([
+      update($, NOTES, n => ({ ...n, [rowId]: { note: 'stale' as const, at: now } })),
+      'id' in p && p.action === 'type' ? update($, DRAFTS, d => ({ ...d, [p.id]: p.text })) : undefined,
+    ])
+    // The note shows for SETTLED_MS. Removing it then also redraws the pane.
+    void $.clock
+      .sleep(SETTLED_MS)
+      .then(() =>
+        update($, NOTES, n => {
+          if (n[rowId]?.at !== now) return n
+          const { [rowId]: _gone, ...rest } = n
+          return rest
+        }),
+      )
+      .catch(() => undefined)
+    return
+  }
+  const lasts = Object.values(applied.lasts)
+  await Promise.all([
+    lasts.length > 0 ? update($, LAST_ACTIONS, a => ({ ...a, ...applied.lasts })) : undefined,
+    // A press that went through replaces the row's note, and a sent reply its draft.
+    update($, NOTES, n => {
+      if (!(rowId in n)) return n
+      const { [rowId]: _gone, ...rest } = n
+      return rest
+    }),
+    'id' in p && p.action === 'type'
+      ? update($, DRAFTS, d => {
+          const { [p.id]: _sent, ...rest } = d
+          return rest
+        })
+      : undefined,
+  ])
+  // The sidebar line stops counting a handed-off row at once.
+  if (lasts.some(l => l.kind === 'handoff')) void publishStatus($)
+  if (place && lasts.length > 0) redrawWhileLeaving($, () => update($, LAST_ACTIONS, a => ({ ...a })), SETTLED_MS)
+  for (const e of applied.effects) if (e.kind !== 'send') await perform($, e, surface)
+  for (const e of applied.effects) if (e.kind === 'send') await send($, e.text, e.by)
+}
+
 type Action = {
   key: string
   label: string
@@ -1355,8 +1446,6 @@ type Action = {
    * opens, or the screen changes.
    */
   kind: PressKind
-  /** For a Talk or Hand-off press: the action id its row stores, and the label the row reads after a ✓. */
-  records?: { action: string; text: string }
   onPress: (press: UiPressArgument) => void
 }
 
@@ -1399,7 +1488,7 @@ function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { k
     const base = {
       label: a.label,
       kind: a.kind,
-      ...(a.kind === 'talk' || a.kind === 'handoff' ? { records: { action: actionId(p), text: pressText(p) } } : {}),
+      onPress: (press: UiPressArgument) => void runPress($, p, press.surface),
     }
     const lettered = () => (letters < CHOICE_KEYS.length ? { hotkey: CHOICE_KEYS[letters++]! } : {})
     if (p.action === 'answer' && item) {
@@ -1409,7 +1498,6 @@ function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { k
         key: `answer-${id}-${item.options.indexOf(p.option)}`,
         // Pane keys are plain Buttons, which draw `variant` the same as no variant, so the label carries the mark.
         ...(a.isPrimary ? { label: `${a.label} (recommended)`, variant: 'primary' as const } : {}),
-        onPress: () => void sendAnswer($, item, p.option),
       })
       if (n === lastOption && folded > 0)
         keys.push({
@@ -1419,22 +1507,11 @@ function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { k
           onPress: () => void update($, OPTIONS_SHOWN, s => (s.includes(id) ? s : [...s, id])),
         })
     } else if (p.action === 'step' && item) {
-      const step = r.steps[p.step]?.step ?? []
-      keys.push({
-        ...base,
-        ...lettered(),
-        key: `help-${id}-${p.step}`,
-        onPress: (press: UiPressArgument) => void useStep($, item, step, press),
-      })
+      keys.push({ ...base, ...lettered(), key: `help-${id}-${p.step}` })
     } else if (p.action === 'done') {
-      keys.push({
-        ...base,
-        key: `done-${id}`,
-        hotkey: 'd',
-        onPress: () => void close($, id, { how: 'done', outcome: 'done' }),
-      })
+      keys.push({ ...base, key: `done-${id}`, hotkey: 'd' })
     } else if (p.action === 'address' && finding) {
-      keys.push({ ...base, key: `address-${id}`, hotkey: 'a', onPress: () => void actOnFinding($, finding, 'address') })
+      keys.push({ ...base, key: `address-${id}`, hotkey: 'a' })
     } else if (p.action === 'type') {
       // The press opens the field; sending from it is what records the reply.
       more.push({
@@ -1445,20 +1522,11 @@ function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { k
         onPress: () => void startTyping($, id),
       })
     } else if (p.action === 'explain' && item) {
-      more.push({ ...base, key: `explain-${id}`, hotkey: 'e', onPress: () => void explain($, item) })
+      more.push({ ...base, key: `explain-${id}`, hotkey: 'e' })
     } else if (p.action === 'discuss' && finding) {
-      more.push({ ...base, key: `discuss-${id}`, hotkey: 'e', onPress: () => void actOnFinding($, finding, 'discuss') })
+      more.push({ ...base, key: `discuss-${id}`, hotkey: 'e' })
     } else if (p.action === 'dismiss') {
-      more.push(
-        finding
-          ? { ...base, key: `drop-${id}`, hotkey: 'x', onPress: () => void removeFinding($, id) }
-          : {
-              ...base,
-              key: `dismiss-${id}`,
-              hotkey: 'x',
-              onPress: () => void close($, id, { how: 'dismissed', outcome: 'dismissed' }),
-            },
-      )
+      more.push({ ...base, key: finding ? `drop-${id}` : `dismiss-${id}`, hotkey: 'x' })
     }
   }
 
@@ -1500,21 +1568,24 @@ const FINDING_BADGES: Record<Finding['kind'], { label: string; mark: string; ton
  * What the band and the pane draw: the session's own state, or the samples
  * `/inbox demo` shows in its place.
  */
-async function drawnState($: EngineInterface): Promise<View & { view: InboxView; now: number }> {
-  const [ledger, stop, settled, prViews, lastActions, presence, isDemo, now] = await Promise.all([
+async function drawnState(
+  $: EngineInterface,
+): Promise<View & { notes: Record<string, RowNote>; view: InboxView; now: number }> {
+  const [ledger, stop, settled, prViews, lastActions, notes, presence, isDemo, now] = await Promise.all([
     read($, LEDGER),
     read($, STOP),
     read($, SETTLED),
     read($, PR_VIEWS),
     read($, LAST_ACTIONS),
+    read($, NOTES),
     read($, PRESENCE),
     read($, IS_DEMO),
     $.clock.now(),
   ])
   const turns = { turnsStarted: presence.turnsStarted, turnsApplied: presence.turnsApplied }
-  const drawn = isDemo ? demoView(now) : { ledger, stop, settled, prViews, lastActions, turns }
+  const drawn = isDemo ? { ...demoView(now), notes: {} } : { ledger, stop, settled, prViews, lastActions, notes, turns }
 
-  return { ...drawn, view: viewOf(drawn, presence), now }
+  return { ...drawn, view: viewOf({ ...drawn, now }, presence), now }
 }
 
 /** Turns the mod on for this session, once, from the start or the desktop app's attach. */
@@ -1641,8 +1712,11 @@ export const register: Register = on => {
       await Promise.all([
         update($, LEDGER, () => EMPTY),
         update($, PREVIOUS, () => null),
-        // Ids restart at i1 in the new conversation, so an id kept here would unfold another question.
+        // Ids restart at i1 in the new conversation, so an id kept here would unfold another question,
+        // or put one row's words or note on another.
         update($, OPTIONS_SHOWN, () => []),
+        update($, DRAFTS, () => ({})),
+        update($, NOTES, () => ({})),
         update($, PRESENCE, p => ({ ...p, isAway: false, isUpdating: false, ledgerState: 'current' as const })),
       ])
       resetTurn()
@@ -1898,7 +1972,7 @@ export const register: Register = on => {
       const c = prev.ledger.card
       // Nothing was handed off in this process, so every open item counts.
       const waiting = viewOf(
-        { ledger: prev.ledger, lastActions: {}, turns: { turnsStarted: 0, turnsApplied: 0 } },
+        { ledger: prev.ledger, lastActions: {}, notes: {}, turns: { turnsStarted: 0, turnsApplied: 0 }, now },
         presence,
       ).needsYou.count
 
@@ -2044,12 +2118,13 @@ export const register: Register = on => {
     const isInline = e.props.placement === 'inline'
     const blankLine = isInline ? 0 : 1
     const [
-      { ledger, prViews: prState, lastActions, stop, settled, view, now },
+      { ledger, prViews: prState, lastActions, notes, stop, settled, view, now },
       presence,
       tab,
       selection,
       theme,
       typing,
+      drafts,
       unfolded,
       isKeyListShown,
       shownDetails,
@@ -2063,6 +2138,7 @@ export const register: Register = on => {
       read($, SELECTION),
       read($, THEME),
       read($, TYPING),
+      read($, DRAFTS),
       read($, UNFOLDED),
       read($, IS_KEY_LIST_SHOWN),
       read($, SHOWN_DETAILS),
@@ -2112,8 +2188,7 @@ export const register: Register = on => {
       keys: () => KeyAction[]
       /** Actions that talk about the row or drop it, after `keys` and a muted dot. */
       moreKeys?: () => KeyAction[]
-      /** Where the person's own words go, for a row that takes them. A row they leave open records them as a hand-off. */
-      onType?: { isHandoff: boolean; send: (text: string) => void }
+      /** For a row that takes the person's own words: what its field says while empty. */
       typeHint?: string
       /**
        * The row no longer waits on the person. Selected, it shows `line` and
@@ -2139,11 +2214,6 @@ export const register: Register = on => {
         body: null,
         keys: () => rowKeyActions($, r, optionsShown.includes(r.id)).keys,
         moreKeys: () => rowKeyActions($, r, optionsShown.includes(r.id)).more,
-        // A question closes on its typed answer; a task stays open.
-        onType: {
-          isHandoff: item.kind === 'task',
-          send: (text: string) => void sendTypedForItem($, item, text),
-        },
         typeHint: item.kind === 'task' ? 'Your reply to Claude' : 'Your answer',
       }
     }
@@ -2170,17 +2240,15 @@ export const register: Register = on => {
           ) : null}
         </Box>
       ),
-      onType: { isHandoff: true, send: (text: string) => void sendTypedForFinding($, finding, text) },
       typeHint: 'Your reply to Claude',
       keys: () => rowKeyActions($, r, true).keys,
       moreKeys: () => rowKeyActions($, r, true).more,
     })
     const handoff = handoffs(lastActions)
-    // A PR action that records itself on its row, labeled "… again" once it was the row's last action.
-    const recorded = (rowId: string, action: PrActionId, label: string) => ({
-      label: lastActions[rowId]?.action === action ? `${label} again` : label,
-      records: { action: actionId({ action }), text: label },
-    })
+    // A PR action labeled "… again" once it was its row's last action.
+    const again = (rowId: string, action: PrActionId, label: string) =>
+      lastActions[rowId]?.action === action ? `${label} again` : label
+    const prPress = (p: PrPress) => (press: UiPressArgument) => void runPress($, p, press.surface)
     const checkRow = (pr: PrView, c: PrCheck): Row => ({
       id: prCheckId(pr, c),
       handle: '✗',
@@ -2199,7 +2267,7 @@ export const register: Register = on => {
           label: 'Open log',
           hotkey: 'o',
           kind: 'local',
-          onPress: () => void openUrl($, c.url ?? pr.url),
+          onPress: prPress({ action: 'log', ref: pr.ref, check: c.name }),
         },
       ],
     })
@@ -2260,33 +2328,33 @@ export const register: Register = on => {
         keys: () => [
           {
             key: `address-${t.id}`,
-            ...recorded(id, 'thread-address', 'Address'),
+            label: again(id, 'thread-address', 'Address'),
             hotkey: 'a',
             kind: 'handoff',
-            onPress: () => void send($, prompts.address(pr, [t])),
+            onPress: prPress({ action: 'thread-address', ref: pr.ref, thread: t.id }),
           },
           {
             key: `draft-${t.id}`,
-            ...recorded(id, 'thread-draft', 'Draft reply'),
+            label: again(id, 'thread-draft', 'Draft reply'),
             hotkey: 'r',
             kind: 'talk',
-            onPress: () => void send($, prompts.draft(pr, t)),
+            onPress: prPress({ action: 'thread-draft', ref: pr.ref, thread: t.id }),
           },
           {
             key: `open-${t.id}`,
             label: 'Open',
             hotkey: 'o',
             kind: 'local',
-            onPress: () => void openUrl($, t.reply?.url || t.url || pr.url),
+            onPress: prPress({ action: 'thread-open', ref: pr.ref, thread: t.id }),
           },
         ],
         moreKeys: () => [
           {
             key: `discuss-${t.id}`,
-            ...recorded(id, 'thread-discuss', 'Discuss'),
+            label: again(id, 'thread-discuss', 'Discuss'),
             hotkey: 'e',
             kind: 'talk',
-            onPress: () => void send($, prompts.discuss(pr, t)),
+            onPress: prPress({ action: 'thread-discuss', ref: pr.ref, thread: t.id }),
           },
         ],
       }
@@ -2323,7 +2391,7 @@ export const register: Register = on => {
     // A hover cannot name the terminal's default color, which a Button's label
     // inverts, so the letter and the label both invert the muted color to match.
     // An action past the lettered ones, or one that only changes the view, has no key and draws its label alone.
-    const keyedButton = ({ hotkey, kind: _kind, records: _records, ...action }: KeyAction) => (
+    const keyedButton = ({ hotkey, kind: _kind, ...action }: KeyAction) => (
       <Box key={`keyed-${action.key}`} flexDirection="row">
         {hotkey ? (
           <Text color={pal.key} hover={{ color: pal.muted, inverse: true }}>
@@ -2348,7 +2416,7 @@ export const register: Register = on => {
     )
     // The Buttons that take the pane's keys, drawn in a hidden Box.
     const keyBindings = (keys: KeyAction[], suffix = '') =>
-      keys.flatMap(({ key, hotkey, kind: _kind, records: _records, ...k }) =>
+      keys.flatMap(({ key, hotkey, kind: _kind, ...k }) =>
         hotkey ? [<Button key={`${key}${suffix}`} plain hotkey={hotkey} {...k} />] : [],
       )
     // A selected row's secondary keys share its key row when they fit, and
@@ -2377,21 +2445,6 @@ export const register: Register = on => {
         <Text color={pal.mark.done}>{'─'.repeat(Math.floor(halves / 2)) + (halves % 2 ? '╴' : '')}</Text>
       ) : null
     }
-    // A Talk or Hand-off press records itself on its row once it has worked, so a
-    // press never goes unseen. A click and a key press both run through here.
-    const withLastAction = <A extends Action>(row: { id: string; title: string }, index: number, actions: A[]): A[] =>
-      actions.map(a => {
-        const { kind, records } = a
-        if (!records || (kind !== 'talk' && kind !== 'handoff')) return a
-
-        return {
-          ...a,
-          onPress: (press: UiPressArgument) => {
-            a.onPress(press)
-            void recordLastAction($, row.id, { kind, ...records, tab, title: row.title, index })
-          },
-        }
-      })
     // A folded row offers only Details, which shows its body and its keys.
     const detailsKey = (row: Row): KeyAction => ({
       key: `fold-details-${row.id}`,
@@ -2401,10 +2454,10 @@ export const register: Register = on => {
       onPress: () => toggleDetails(row.id),
     })
     // The selected row's keys, for both the key row it draws and the hidden bindings.
-    const rowActions = (row: Row, index: number): { keys: KeyAction[]; more: KeyAction[] } => {
+    const rowActions = (row: Row): { keys: KeyAction[]; more: KeyAction[] } => {
       if (row.fold && !shownDetails.includes(row.id)) return { keys: [detailsKey(row)], more: [] }
-      const keys = pressable(withLastAction(row, index, row.keys()))
-      const more = pressable(withLastAction(row, index, row.moreKeys?.() ?? []))
+      const keys = pressable(row.keys())
+      const more = pressable(row.moreKeys?.() ?? [])
 
       return row.fold ? { keys, more: [...more, detailsKey(row)] } : { keys, more }
     }
@@ -2412,15 +2465,19 @@ export const register: Register = on => {
     // does. On a row still open it is muted, so it does not read as an answer.
     const lastTone = (row: Row) => (row.handleTone === 'done' ? ('done' as const) : undefined)
     // A last action reads "✓ Discuss · 1m ago". A row whose own mark is a ✓ leaves out the second one.
+    // A note reads alone, with no age.
     const feedbackLabel = (id: string, row?: Row) => {
-      const f = feedbackOf(lastActions[id])
+      const f = feedbackOf(lastActions[id], notes[id], now)
+      if (!f) return null
 
-      return f && { text: row && lastTone(row) ? f.label : feedbackText(f), at: f.at }
+      return f.is === 'note'
+        ? { text: feedbackText(f), age: '' }
+        : { text: row && lastTone(row) ? f.label : feedbackText(f), age: ago(now - f.at) }
     }
     const lastActionText = (id: string, row?: Row) => {
       const f = feedbackLabel(id, row)
 
-      return f ? `${f.text} · ${ago(now - f.at)}` : null
+      return f ? [f.text, f.age].filter(Boolean).join(' · ') : null
     }
     // A section's children hang from its title like a directory listing. A
     // child's row has a 1-column bar, 3 columns for the tree, 3 for its marker,
@@ -2497,7 +2554,13 @@ export const register: Register = on => {
       const plain = row.line ?? { text: row.title, after: row.titleAfter }
       const f = feedbackLabel(row.id, row)
       // A row's last action takes the place of its age, as "✓ Discuss 1m ago".
-      const line = f ? { ...plain, after: ` · ${f.text} ${ago(now - f.at)}`, afterTone: lastTone(row) } : plain
+      const line = f
+        ? {
+            ...plain,
+            after: ` · ${[f.text, f.age].filter(Boolean).join(' ')}`,
+            afterTone: f.age ? lastTone(row) : undefined,
+          }
+        : plain
       const width = e.props.bodyColumns - 3 - inset - (line.before?.length ?? 0)
       const room = Math.max(12, width - (line.after?.length ?? 0))
       const text = line.text.trim()
@@ -2539,7 +2602,7 @@ export const register: Register = on => {
     const listRow = (row: Row, tree?: TreePos) => {
       const index = indexOf.get(row.id) ?? -1
       const isSelected = index === at
-      const { keys, more } = isSelected ? rowActions(row, index) : { keys: [], more: [] }
+      const { keys, more } = isSelected ? rowActions(row) : { keys: [], more: [] }
       const isOpen = !row.fold || shownDetails.includes(row.id)
       const lastText = lastActionText(row.id, row)
       const status = [row.fold?.note, lastText].filter((s): s is string => Boolean(s))
@@ -2591,28 +2654,18 @@ export const register: Register = on => {
                     ? keyRow(keys, more)
                     : [keyRow(keys), keyRow(more)]}
               </Box>
-              {Input && row.onType && typing === row.id ? (
+              {Input && row.typeHint && typing === row.id ? (
                 <Box marginTop={blankLine}>
                   <Input
                     key={`type-${row.id}`}
                     placeholder={row.typeHint}
+                    {...(drafts[row.id] ? { value: drafts[row.id] } : {})}
                     submitLabel="send"
                     autoFocus
-                    onSubmit={(value: string) => {
-                      const typed = row.onType
-                      typed?.send(value)
-                      if (typed?.isHandoff && value.trim()) {
-                        const press = { action: 'type' as const, id: row.id, text: value }
-                        void recordLastAction($, row.id, {
-                          kind: 'handoff',
-                          action: actionId(press),
-                          text: pressText(press),
-                          tab,
-                          title: row.title,
-                          index,
-                        })
-                      }
-                    }}
+                    onInput={(value: string) => void update($, DRAFTS, d => ({ ...d, [row.id]: value }))}
+                    onSubmit={(value: string, e) =>
+                      void runPress($, { action: 'type', id: row.id, text: value }, e.surface)
+                    }
                   />
                 </Box>
               ) : null}
@@ -2689,6 +2742,16 @@ export const register: Register = on => {
         : changedAt !== null
           ? `Updated ${ago(now - changedAt)}`
           : 'Not updated yet'
+
+    // A note on a row the pane no longer draws, as after a press on a row that left, shows on the status line.
+    const drawnIds = new Set([
+      ...Object.values(rows).flatMap(list => list.map(r => r.id)),
+      ...prViews.map(pr => `pr:${pr.ref}`),
+    ])
+    const lineNote = Object.entries(notes)
+      .filter(([id, n]) => !drawnIds.has(id) && now - n.at < SETTLED_MS)
+      .map(([, n]) => n)
+      .sort((a, b) => b.at - a.at)[0]
 
     // The keys no row shows, listed in the footer.
     const keyList = [
@@ -2793,6 +2856,11 @@ export const register: Register = on => {
           {!isPrStatus && error ? (
             <Text color={pal.tone.error} wrap="wrap">
               {error}
+            </Text>
+          ) : null}
+          {lineNote ? (
+            <Text color={pal.muted} wrap="wrap">
+              {feedbackText({ is: 'note', note: lineNote.note, at: lineNote.at })}
             </Text>
           ) : null}
         </Box>
@@ -3055,9 +3123,9 @@ export const register: Register = on => {
           ? [
               {
                 key: `resolve-${pr.ref}`,
-                ...recorded(`pr:${pr.ref}`, 'pr-conflicts', 'Resolve conflicts'),
+                label: again(`pr:${pr.ref}`, 'pr-conflicts', 'Resolve conflicts'),
                 kind: 'handoff' as const,
-                onPress: () => void send($, prompts.resolve(pr)),
+                onPress: prPress({ action: 'pr-conflicts', ref: pr.ref }),
               },
             ]
           : []),
@@ -3065,28 +3133,18 @@ export const register: Register = on => {
           ? [
               {
                 key: `address-all-${pr.ref}`,
-                ...recorded(`pr:${pr.ref}`, 'pr-address-all', `Address all ${waitingOn.length} threads`),
+                label: again(`pr:${pr.ref}`, 'pr-address-all', `Address all ${waitingOn.length} threads`),
                 kind: 'handoff' as const,
-                onPress: () => {
-                  void send($, prompts.address(pr, waitingOn))
-                  // Each thread it sent reads as if its own Address were pressed, so it folds too.
-                  for (const t of waitingOn) {
-                    const id = prThreadId(pr, t)
-                    const index = indexOf.get(id) ?? -1
-                    void recordLastAction($, id, {
-                      kind: 'handoff',
-                      action: actionId({ action: 'thread-address' }),
-                      text: 'Address',
-                      tab,
-                      title: threadWhere(t),
-                      index,
-                    })
-                  }
-                },
+                onPress: prPress({ action: 'pr-address-all', ref: pr.ref }),
               },
             ]
           : []),
-        { key: `open-${pr.ref}`, label: 'Open PR', kind: 'local', onPress: () => void openUrl($, pr.url) },
+        {
+          key: `open-${pr.ref}`,
+          label: 'Open PR',
+          kind: 'local',
+          onPress: prPress({ action: 'pr-open', ref: pr.ref }),
+        },
         ...(pr.ref !== prState.branchRef
           ? [
               {
@@ -3135,7 +3193,7 @@ export const register: Register = on => {
               </Text>
             ) : null}
             <Box flexDirection="row" flexWrap="wrap" columnGap={2} marginTop={blankLine}>
-              {withLastAction({ id: `pr:${pr.ref}`, title: pr.title }, 0, prActions).map(a => (
+              {prActions.map(a => (
                 <Button key={a.key} label={a.label} onPress={a.onPress} />
               ))}
             </Box>
@@ -3182,7 +3240,7 @@ export const register: Register = on => {
     }))
 
     const selectedRow = rows[tab][at]
-    const selectedActions = selectedRow ? rowActions(selectedRow, at) : null
+    const selectedActions = selectedRow ? rowActions(selectedRow) : null
     const rowKeys = selectedActions ? [...selectedActions.keys, ...selectedActions.more] : []
 
     // Docked, the pane takes at least the window's height, so the footer sits at

@@ -71,6 +71,15 @@ const PANE = {
 // The apps drawing the session when it starts. A REPL start sets isInteractive instead.
 let surfaces: RenderSurface[] = []
 
+// Runs once, before the next press or Enter in a drawing reaches its handler, as a change landing between a draw and a press does.
+let beforeAct: (() => Promise<unknown>) | undefined
+
+async function runBeforeAct() {
+  const act = beforeAct
+  beforeAct = undefined
+  await act?.()
+}
+
 function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   sent = []
   ran = []
@@ -78,6 +87,7 @@ function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   ghAnswers = []
   ledgerReply = LEDGER_REPLY
   surfaces = []
+  beforeAct = undefined
   mock.store(on)
   on('session.surfaces', () => ({ value: surfaces }))
   on('session.attach', ($, e) => ({ clientId: e.clientId }))
@@ -122,6 +132,14 @@ function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   on('tool.check', () => ({ decision: 'ask' as const }))
   // The band with nothing to show falls through to the engine's own, drawn empty here.
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
+  on('ui.press', async ($, e, next) => {
+    await runBeforeAct()
+    return next(e)
+  })
+  on('ui.input', async ($, e, next) => {
+    if (e.kind === 'submit') await runBeforeAct()
+    return next(e)
+  })
 }
 
 /** The sidebar lines the mod published to Herdr, in order. */
@@ -614,6 +632,47 @@ test('t opens a field for the person’s own words: an answer closes its questio
   expect(await pane.find({ text: /README is stale/ })).toBeUndefined()
 })
 
+test('a press on a question Claude closed since the draw sends nothing and says so, and a typed answer keeps its words', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world(on, [])
+  on('ui.focus', () => ({}))
+  // The typed words a stale press keeps, as the mod last saved them.
+  let drafts: unknown = null
+  on('state.set', { plugin: 'inbox', key: 'drafts' } as const, ($, e, next) => {
+    drafts = e.value
+    return next(e)
+  })
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const close = (id: string) => () => $.tool.call({ tool: 'mcp__inbox__close', id, reason: 'settled in chat' } as never)
+  const pane = await $.ui.mount(PANE)
+  const stale = /^This changed before your press\. Nothing was sent\.$/
+
+  // Claude closes the question after the pane drew it and before the press lands.
+  beforeAct = close('i1')
+  await pane.press({ key: 'answer-i1-0' })
+  expect(sent).toEqual([])
+  expect(await pane.find({ text: stale })).toBeDefined()
+  await clock.advance(9000)
+  expect(await pane.find({ text: stale })).toBeUndefined()
+
+  await pane.press({ key: 'typekey-i2' })
+  beforeAct = close('i2')
+  await pane.input({ key: 'type-i2', text: 'Call it hello' })
+  expect(sent).toEqual([])
+  expect(await pane.find({ text: stale })).toBeDefined()
+  expect(drafts).toEqual({ i2: 'Call it hello' })
+})
+
 test('Claude closes an item or finding that no longer applies, by the id it reads beside the prompt', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
@@ -670,8 +729,16 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
   ledgerReply = 'NOW: Waiting on review\nNEW: do | - | Mark #12 ready for review | - | -'
-  // Whether the reviewer has answered since the thread was sent to Claude.
+  // Whether the reviewer has answered since the thread was sent to Claude, and whether it was resolved on GitHub.
   let hasReply = false
+  let isResolved = false
+  // Runs once each PR fetch has saved what it found.
+  let onFetched: (() => void) | undefined
+  on('state.set', { plugin: 'inbox', key: 'prViews' } as const, async ($, e, next) => {
+    const r = await next(e)
+    if (!e.value.isFetching) onFetched?.()
+    return r
+  })
   ghAnswers.push(
     {
       match: argv => argv.includes('view') && argv.includes('12'),
@@ -708,7 +775,8 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
                   nodes: [
                     {
                       id: 'T1',
-                      isResolved: false,
+                      // A thread resolved on GitHub leaves the PR's list.
+                      isResolved,
                       isOutdated: false,
                       path: 'bin/greet',
                       line: 4,
@@ -806,6 +874,18 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   await clock.settle()
   expect(await pane.find({ text: /Still unquoted/ })).toBeDefined()
   expect(await pane.find({ key: details })).toBeUndefined()
+
+  // The thread is resolved on GitHub, and a refresh drops it, after the pane drew it and before Address lands.
+  const sends = sent.length
+  beforeAct = async () => {
+    isResolved = true
+    const fetched = new Promise<void>(resolve => (onFetched = resolve))
+    await $.command.run({ command: 'inbox', args: '' } as never)
+    await fetched
+  }
+  await pane.press({ key: 'address-T1' })
+  expect(sent.length).toBe(sends)
+  expect(await pane.find({ text: /^This changed before your press\. Nothing was sent\.$/ })).toBeDefined()
   // The failing check holds the band's PR alert, as nothing hands it to Claude.
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await band.find({ text: /PR #12 CI failing/ })).toBeDefined()

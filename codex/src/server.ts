@@ -5,7 +5,8 @@
 import { constants } from 'node:fs'
 import { access, stat } from 'node:fs/promises'
 
-import { baseName, localPath, openCommands } from '../../hooks/presses'
+import { applyPress, baseName, localPath, openCommands, STALE_TEXT } from '../../hooks/presses'
+import type { RowPress } from '../../hooks/presses'
 import {
   CLOSE_DESCRIPTION,
   CLOSE_SCHEMA,
@@ -14,18 +15,20 @@ import {
   recordClose,
   recordFinding,
 } from '../../hooks/tools'
-import { press, viewOf } from './core'
-import type { TabPress } from './core'
+import { viewOf } from './core'
+import type { TabView } from './core'
 import { demoState } from './demo'
 import { readState, updateState } from './state'
 import type { SessionState } from './state'
 import { CODEX, TAB_DESCRIPTION } from './texts'
 import type { Run } from './run'
+import type { RowNote } from '../../types'
 
 export const TAB_URI = 'ui://inbox/tab'
 const TAB_MIME = 'text/html;profile=mcp-app'
 
 const APP_ONLY = { ui: { visibility: ['app'] } }
+const MAX_SENT = 20
 
 const TOOLS = [
   { name: 'record_finding', description: findingDescription(CODEX), inputSchema: FINDING_SCHEMA },
@@ -48,7 +51,7 @@ const TOOLS = [
     description: 'A press in the Inbox tab.',
     inputSchema: {
       type: 'object',
-      properties: { press: { type: 'object' }, demo: { type: 'boolean' } },
+      properties: { press: { type: 'object' }, thread: { type: 'string' }, demo: { type: 'boolean' } },
       required: ['press'],
     },
     _meta: APP_ONLY,
@@ -80,6 +83,14 @@ export function sessionOf(params: Record<string, unknown> | undefined): string |
 
 const text = (t: string) => ({ content: [{ type: 'text', text: t }] })
 
+/** What the tab hears back from a press: the view after it, text to copy, why it failed, or a note for its row. */
+type PressReply = {
+  view: TabView
+  copy: { text: string; name: string } | null
+  error: string | null
+  note: RowNote['note'] | null
+}
+
 export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<string, unknown> | null> {
   const { dir, now } = deps
 
@@ -93,28 +104,47 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     if (r.code !== 0) throw new Error(r.stderr.trim() || `codex queue exited ${r.code}`)
   }
 
-  async function onPress(id: string, p: TabPress) {
-    let copy: { text: string; name: string } | null = null
+  /** The view for the tab, with the session it was read for. */
+  const served = (s: SessionState, id: string): TabView => ({ ...viewOf(s, now()), thread: id })
+
+  /**
+   * Applies a press drawn for `thread` in session `id`'s state. A press drawn
+   * for another session, or for a row that changed, sends nothing and returns a stale note.
+   */
+  async function onPress(id: string, p: RowPress, thread: unknown): Promise<PressReply> {
+    let copy: PressReply['copy'] = null
     const opens: string[] = []
     let error: string | null = null
+    let note: PressReply['note'] = thread === id ? null : 'stale'
     const s = await updateState(dir, id, async s => {
-      const r = press(s, p, now())
-      if (!r) return s
+      if (note) return s
+      const r = applyPress(s.ledger, p, { now: now(), turnsStarted: s.presence.turnsStarted, extraSteps: [] })
+      if ('stale' in r) {
+        note = 'stale'
+        return s
+      }
+      let next: SessionState = {
+        ...s,
+        ledger: r.ledger,
+        lastActions: r.last ? { ...s.lastActions, [p.id]: r.last } : s.lastActions,
+      }
       // Sent while the lock is held, so a send that fails leaves the row as it was.
       for (const e of r.effects) {
-        if (e.kind === 'send') await queue(r.state, e.text)
-        else if (e.kind === 'open') opens.push(e.target)
+        if (e.kind === 'send') {
+          await queue(next, e.text)
+          next = { ...next, sent: [...next.sent, { text: e.text, press: e.by, at: now() }].slice(-MAX_SENT) }
+        } else if (e.kind === 'open') opens.push(e.target)
         else copy = { text: e.text, name: e.name }
       }
 
-      return r.state
+      return next
     }).catch(async (err: unknown) => {
       error = `Not sent: ${err instanceof Error ? err.message : String(err)}`
       return readState(dir, id)
     })
     for (const target of opens) error = (await open(s, target)) ?? error
 
-    return { view: viewOf(s, now()), copy, error }
+    return { view: served(s, id), copy, error, note }
   }
 
   /** Opens a link, or a path as `openCommands` decides, and says why when it could not. */
@@ -146,12 +176,26 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   }
 
   /** A press in the demo changes only its copy and sends nothing. */
-  function onDemoPress(id: string, p: TabPress) {
-    const r = press(demoOf(id), p, now())
-    if (r) demos.set(id, r.state)
-    const copy = r?.effects.find(e => e.kind === 'copy')
+  function onDemoPress(id: string, p: RowPress, thread: unknown): PressReply {
+    const s = demoOf(id)
+    const r =
+      thread === id
+        ? applyPress(s.ledger, p, { now: now(), turnsStarted: s.presence.turnsStarted, extraSteps: [] })
+        : ({ stale: true } as const)
+    if ('stale' in r) return { view: served(s, id), copy: null, error: null, note: 'stale' }
+    demos.set(id, {
+      ...s,
+      ledger: r.ledger,
+      lastActions: r.last ? { ...s.lastActions, [p.id]: r.last } : s.lastActions,
+    })
+    const copy = r.effects.find(e => e.kind === 'copy')
 
-    return { view: viewOf(demoOf(id), now()), copy: copy ? { text: copy.text, name: copy.name } : null, error: null }
+    return {
+      view: served(demoOf(id), id),
+      copy: copy ? { text: copy.text, name: copy.name } : null,
+      error: null,
+      note: null,
+    }
   }
 
   async function callTool(name: string, args: Record<string, unknown>, id: string | null) {
@@ -172,14 +216,14 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         return { ...text('Opened the Inbox tab beside the conversation.'), structuredContent: viewOf(s, now()) }
       }
       case 'inbox_view': {
-        if (args.demo === true) return { ...text('Inbox demo'), structuredContent: viewOf(demoOf(id), now()) }
+        if (args.demo === true) return { ...text('Inbox demo'), structuredContent: served(demoOf(id), id) }
         const s = await updateState(dir, id, s => ({ ...s, tabSeenAt: now() }))
-        return { ...text('Inbox view'), structuredContent: viewOf(s, now()) }
+        return { ...text('Inbox view'), structuredContent: served(s, id) }
       }
       case 'inbox_press': {
-        const r =
-          args.demo === true ? onDemoPress(id, args.press as TabPress) : await onPress(id, args.press as TabPress)
-        return { ...text(r.error ?? 'Done'), structuredContent: r }
+        const p = args.press as RowPress
+        const r = args.demo === true ? onDemoPress(id, p, args.thread) : await onPress(id, p, args.thread)
+        return { ...text(r.error ?? (r.note ? STALE_TEXT : 'Done')), structuredContent: r }
       }
     }
 

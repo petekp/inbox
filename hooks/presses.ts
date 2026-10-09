@@ -1,7 +1,9 @@
 // What the person's presses send and how their buttons are labeled, the same
 // in every host: each message goes to the agent as the person's own words.
 
-import type { Finding, Help, Item, LastAction } from '../types'
+import type { Finding, Help, Item, LastAction, Ledger } from '../types'
+import { closeFinding, closeItem } from './ledger'
+import type { Press } from './ledger'
 import { namedPrs, parseRef } from './prs'
 
 export function clipLabel(text: string, max: number): string {
@@ -224,6 +226,140 @@ export function upgradeLastActions(saved: Record<string, LastAction>): Record<st
       return upgraded ? [[key, upgraded]] : []
     }),
   )
+}
+
+/**
+ * What a press asks its host to do outside saved state: send a message as the
+ * person's own, open a path or URL, or copy text. `by` marks a send the
+ * per-turn update reads as a press; `isCommand` marks a command only the person can run.
+ */
+export type Effect =
+  | { kind: 'send'; text: string; by: Press | null }
+  | { kind: 'open'; target: string; name: string }
+  | { kind: 'copy'; text: string; name: string; isCommand: boolean }
+
+/**
+ * A press's outcome: the new ledger, the pressed row's new last action, and the
+ * effects to perform. `last` null leaves the row's last action as it was.
+ * `stale` when the row the press was drawn for is gone or changed under it.
+ */
+export type PressResult = { ledger: Ledger; last: LastAction | null; effects: Effect[] } | { stale: true }
+
+/** What a row reads after a press that found it gone or changed. */
+export const STALE_TEXT = 'This changed before your press. Nothing was sent.'
+
+/** A help as the effect it asks for; a Run help asks the agent, as the person, to run its command. */
+function helpEffect(item: Item, help: Help): Effect {
+  switch (help.kind) {
+    case 'run':
+      return { kind: 'send', text: messages.run(item, help.command), by: { id: item.id, action: 'run' } }
+    case 'open':
+      return { kind: 'open', target: help.path, name: baseName(help.path) }
+    case 'link':
+      return { kind: 'open', target: help.url, name: help.name ?? help.url }
+    case 'copy':
+      return { kind: 'copy', text: help.text, name: help.name ?? 'snippet', isCommand: false }
+    case 'terminal':
+      return { kind: 'copy', text: help.command, name: help.name ?? 'the command', isCommand: true }
+  }
+}
+
+/**
+ * Applies a press on a question, task or finding row, the same in every host.
+ * Pure: it reads only its arguments. `ctx.extraSteps` are the steps the host
+ * drew beyond the item's own helps, so a step press is checked against what was drawn.
+ */
+export function applyPress(
+  ledger: Ledger,
+  p: RowPress,
+  ctx: { now: number; turnsStarted: number; extraSteps: HelpStep[] },
+): PressResult {
+  const stale = { stale: true as const }
+  const record = (kind: LastAction['kind'], extra: Pick<LastAction, 'title'> = {}): LastAction => ({
+    kind,
+    action: actionId(p),
+    text: pressText(p),
+    at: ctx.now,
+    turnsStarted: ctx.turnsStarted,
+    ...extra,
+  })
+  const unchanged = { ledger, last: null, effects: [] }
+
+  const finding = ledger.findings.find(f => f.id === p.id)
+  if (finding) {
+    // A finding sent to the agent leaves the list. Its title stays on its last action, so it shows in its place for a few seconds.
+    const removed = { ...ledger, findings: ledger.findings.filter(f => f.id !== p.id) }
+    const sendFinding = (kind: 'talk' | 'handoff', text: string) => ({
+      ledger: removed,
+      last: record(kind, { title: finding.title }),
+      effects: [{ kind: 'send' as const, text, by: null }],
+    })
+    switch (p.action) {
+      case 'address':
+        return sendFinding('handoff', messages.finding(finding, 'address'))
+      case 'discuss':
+        return sendFinding('talk', messages.finding(finding, 'discuss'))
+      case 'type': {
+        const words = p.text.trim()
+        return words ? sendFinding('handoff', messages.finding(finding, 'typed', words)) : unchanged
+      }
+      case 'dismiss':
+        return {
+          ledger: closeFinding(ledger, p.id, { how: 'dismissed', outcome: 'dismissed' }, ctx.now),
+          last: null,
+          effects: [],
+        }
+      default:
+        return stale
+    }
+  }
+
+  const item = ledger.items.find(i => i.id === p.id)
+  if (!item) return stale
+  const answered = (answer: string): PressResult => ({
+    ledger: closeItem(ledger, item.id, { how: 'answered', outcome: answer }, ctx.now),
+    last: record('mark'),
+    effects: [{ kind: 'send', text: messages.answer(item, answer), by: { id: item.id, action: 'answer' } }],
+  })
+  switch (p.action) {
+    case 'answer':
+      return item.options.includes(p.option) ? answered(p.option) : stale
+    case 'type': {
+      const words = p.text.trim()
+      if (!words) return unchanged
+      if (item.kind === 'question') return answered(words)
+      // A task stays open: the agent closes it once the reply settles it.
+      return {
+        ledger,
+        last: record('handoff'),
+        effects: [{ kind: 'send', text: messages.taskReply(item, words), by: null }],
+      }
+    }
+    case 'explain':
+      return {
+        ledger,
+        last: record('talk'),
+        effects: [{ kind: 'send', text: messages.explain(item), by: { id: item.id, action: 'explain' } }],
+      }
+    case 'done':
+      return { ledger: closeItem(ledger, item.id, { how: 'done', outcome: 'done' }, ctx.now), last: null, effects: [] }
+    case 'dismiss':
+      return {
+        ledger: closeItem(ledger, item.id, { how: 'dismissed', outcome: 'dismissed' }, ctx.now),
+        last: null,
+        effects: [],
+      }
+    case 'step': {
+      const step = stepsOf(item, ctx.extraSteps)[p.step]
+      if (!step || step.label !== p.label) return stale
+      const effects = step.step.map(h => helpEffect(item, h))
+      // A step that only opens or copies leaves the row's last action as it was.
+      return { ledger, last: effects.some(e => e.kind === 'send') ? record('handoff') : null, effects }
+    }
+    // No host offers Undo yet, and Address and Discuss are a finding's.
+    default:
+      return stale
+  }
 }
 
 /** A finding as the agent reads it back: its kind and title, its detail, and its file. */
