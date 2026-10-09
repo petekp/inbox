@@ -133,8 +133,8 @@ test('a session saved by an older build loads converted, as the mod converts its
     i1: { kind: 'talk', action: 'explain', text: 'Explain', at: 1 },
     i2: { kind: 'handoff', action: 'type', text: 'Reply', at: 1, turnsStarted: 1 },
     i3: { kind: 'handoff', action: 'step-0', text: 'Run seed script', at: 1, turnsStarted: 1 },
-    f2: { kind: 'handoff', action: 'address', text: 'Address', at: 1, title: 'No tests' },
-    f3: { kind: 'talk', action: 'discuss', text: 'Discuss', at: 1, title: 'No docs' },
+    f2: { kind: 'handoff', action: 'address', text: 'Address', at: 1 },
+    f3: { kind: 'talk', action: 'discuss', text: 'Discuss', at: 1 },
   })
   // The old Explain reads as today's, on the question it was pressed on.
   const question = viewOf(s, 2).needsYou.questions[0]

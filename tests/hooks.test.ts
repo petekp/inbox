@@ -456,6 +456,17 @@ test('last actions an earlier build saved convert once by the table, and a task 
     i5: { action: 'explain', text: 'Explain sent', at },
     f6: { action: 'address-f6', text: 'Sent to Claude to fix', at },
     f7: { action: 'discuss-f7', text: 'Discuss sent', at },
+    // Saved with a kind, by a build that still kept where a removed finding stood.
+    f9: {
+      kind: 'handoff',
+      action: 'address',
+      text: 'Address',
+      at,
+      turnsStarted: 1,
+      tab: 'findings',
+      title: 'x',
+      index: 0,
+    },
     [thread('T1')]: { action: 'address-T1', text: 'Address', at, isHandoff: true },
     [thread('T2')]: { action: 'draft-T2', text: 'Draft reply', at },
     [thread('T3')]: { action: 'discuss-T3', text: 'Discuss', at },
@@ -466,22 +477,14 @@ test('last actions an earlier build saved convert once by the table, and a task 
     'check:/repo npm test': { action: 'fix-check', text: 'Fix', at },
   }
   const converted = {
-    i1: {
-      kind: 'handoff',
-      action: 'step-0',
-      text: 'Run load script',
-      at,
-      turnsStarted: 1,
-      tab: 'needsYou',
-      title: 'Run the load script',
-      index: 0,
-    },
+    i1: { kind: 'handoff', action: 'step-0', text: 'Run load script', at, turnsStarted: 1 },
     i2: { kind: 'talk', action: 'explain', text: 'Explain', at },
     i3: { kind: 'handoff', action: 'type', text: 'Reply', at },
     i4: { kind: 'handoff', action: 'step-1', text: 'Seed', at },
     i5: { kind: 'talk', action: 'explain', text: 'Explain', at },
     f6: { kind: 'handoff', action: 'address', text: 'Address', at },
     f7: { kind: 'talk', action: 'discuss', text: 'Discuss', at },
+    f9: { kind: 'handoff', action: 'address', text: 'Address', at, turnsStarted: 1 },
     [thread('T1')]: { kind: 'handoff', action: 'thread-address', text: 'Address', at },
     [thread('T2')]: { kind: 'talk', action: 'thread-draft', text: 'Draft reply', at },
     [thread('T3')]: { kind: 'talk', action: 'thread-discuss', text: 'Discuss', at },
@@ -665,7 +668,7 @@ test('a reload that cuts off the end-of-turn hook catches up on load', async ($,
   expect(await pane.find({ text: /Push the branch to origin\?/ })).toBeDefined()
 })
 
-test('a finding Claude records while the pane shows an empty tab brings the pane to it, and Address sends it back', async ($, on) => {
+test('a finding Claude records while the pane shows an empty tab brings the pane to it, and Address hands it to Claude until Claude’s reply leaves it open', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
   on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown: true, isFocused: true, isPlaced: true }] }))
@@ -685,16 +688,30 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
   await clock.settle()
   expect(await pane.find({ text: /Retry loop never backs off/ })).toBeDefined()
 
+  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+  expect(await band.find({ text: /1 finding/ })).toBeDefined()
+
   await pane.press({ key: 'address-f1' })
   expect(sent.at(-1)).toContain('Please address this finding you recorded:\nIssue: Retry loop never backs off')
-  // It stays in place with what was sent for a few seconds, then leaves.
+  // It folds to what was sent, with its keys behind Details, and leaves the finding count. It stays listed.
   await clock.settle()
-  expect(await pane.find({ text: /^Address$/ })).toBeDefined()
+  expect(await pane.find({ text: /Address · just now/ })).toBeDefined()
+  expect(await pane.find({ key: 'fold-details-f1' })).toBeDefined()
+  expect(await pane.find({ key: 'address-f1' })).toBeUndefined()
+  expect(await band.find({ text: /1 finding/ })).toBeUndefined()
   await clock.advance(9000)
-  expect(await pane.find({ text: /Retry loop never backs off/ })).toBeUndefined()
+  expect(await pane.find({ text: /Retry loop never backs off/ })).toBeDefined()
+
+  // Claude's reply leaves it open, so once that turn's update applies it waits on the person again.
+  await $.turn.start({ text: sent.at(-1) ?? '', turnId: 't1' })
+  await $.turn.complete({ answer: 'Added a backoff.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  expect(await pane.find({ key: 'fold-details-f1' })).toBeUndefined()
+  expect((await pane.find({ key: 'address-f1-key' }))?.props.label).toBe('Address again')
+  expect(await band.find({ text: /1 finding/ })).toBeDefined()
 })
 
-test('t opens a field for the person’s own words: an answer closes its question, a reply sends a finding back', async ($, on) => {
+test('t opens a field for the person’s own words: an answer closes its question, a reply hands a finding to Claude', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
   on('ui.focus', () => ({}))
@@ -730,9 +747,10 @@ test('t opens a field for the person’s own words: an answer closes its questio
     'About this finding you recorded:\nIssue: README is stale\nIt names the old command.\n\nFix it after the CLI ships.',
   )
   await clock.settle()
-  expect(await pane.find({ text: /^Reply$/ })).toBeDefined()
+  expect(await pane.find({ text: /Reply · just now/ })).toBeDefined()
+  expect(await pane.find({ key: 'fold-details-f3' })).toBeDefined()
   await clock.advance(9000)
-  expect(await pane.find({ text: /README is stale/ })).toBeUndefined()
+  expect(await pane.find({ text: /README is stale/ })).toBeDefined()
 })
 
 test('a press on a question Claude closed since the draw sends nothing and says so, and a typed answer keeps its words', async ($, on) => {
@@ -803,6 +821,16 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   const close = (input: Record<string, string>) => $.tool.call({ tool: 'mcp__inbox__close', ...input } as never)
   const pane = await $.ui.mount(PANE)
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+
+  // Discuss talks the finding through and leaves it open and counted.
+  await pane.press({ key: 'tab-findings' })
+  await pane.press({ key: 'discuss-f3' })
+  await clock.settle()
+  expect(sent.at(-1)).toContain("Let's talk through this finding you recorded")
+  expect(await pane.find({ text: /✓ Discuss · just now/ })).toBeDefined()
+  expect((await pane.find({ key: 'discuss-f3-key' }))?.props.label).toBe('Discuss again')
+  expect(await band.find({ text: /1 finding/ })).toBeDefined()
+  await pane.press({ key: 'tab-needsYou' })
   // The user answered i1 in their own message: it closes with their answer, shown in place.
   expect((await close({ id: 'i1', answer: 'Deno' })).result).toBe(
     'Closed i1. The user sees it in the /inbox pane with its outcome.',
@@ -826,6 +854,15 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   await pane.press({ key: 'fold-question' })
   expect(await pane.find({ text: /^Deno$/ })).toBeDefined()
   expect(await pane.find({ text: /^Closed by Claude: no longer applies$/ })).toBeDefined()
+
+  // The closed finding leaves its list for the Findings tab's own Closed fold.
+  await pane.press({ key: 'tab-findings' })
+  expect(await pane.find({ key: 'row-f3' })).toBeUndefined()
+  expect(await pane.find({ text: /^No open findings\.$/ })).toBeDefined()
+  expect((await pane.find({ key: 'fold-finding' }))?.props.label).toBe('▸ 1 Closed')
+  await pane.press({ key: 'fold-finding' })
+  expect(await pane.find({ text: /^README is stale$/ })).toBeDefined()
+  expect(await pane.find({ text: /^Closed by Claude: fixed$/ })).toBeDefined()
 })
 
 test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, its buttons send its conflicts and thread and say so, and its failing check waits on the person', async ($, on) => {

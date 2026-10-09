@@ -97,7 +97,16 @@ import {
   withResult,
 } from './presses'
 import type { Effect, HelpStep, PrActionId, RowPress } from './presses'
-import { feedbackOf, feedbackText, inboxView, isFailure, needsYouOrder, perTurnStatus, SETTLED_MS } from './view'
+import {
+  CLOSED_SHOWN,
+  feedbackOf,
+  feedbackText,
+  inboxView,
+  isFailure,
+  needsYouOrder,
+  perTurnStatus,
+  SETTLED_MS,
+} from './view'
 import type { InboxView, RowView } from './view'
 import {
   CLOSE_DESCRIPTION,
@@ -140,7 +149,7 @@ const NOTES = atom({ plugin: 'inbox', key: 'notes' } as const, {} as Record<stri
 const SETTLED = atom({ plugin: 'inbox', key: 'settled' } as const, [] as Settled[])
 const ARRIVAL = atom({ plugin: 'inbox', key: 'arrival' } as const, null as Arrival | null)
 const LAST_ACTIONS = atom({ plugin: 'inbox', key: 'lastActions' } as const, {} as Record<string, LastAction>)
-const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as Item['kind'][])
+const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as (Item['kind'] | 'finding')[])
 const SHOWN_DETAILS = atom({ plugin: 'inbox', key: 'shownDetails' } as const, [] as string[])
 const OPTIONS_SHOWN = atom({ plugin: 'inbox', key: 'optionsShown' } as const, [] as string[])
 const IS_KEY_LIST_SHOWN = atom({ plugin: 'inbox', key: 'isKeyListShown' } as const, false)
@@ -364,8 +373,6 @@ const NEEDS_YOU_GROUPS: { kind: Item['kind']; title: string; list: 'questions' |
   { kind: 'question', title: 'Questions', list: 'questions' },
   { kind: 'task', title: 'Tasks', list: 'tasks' },
 ]
-// How many recently closed items each group lists under its open ones.
-const CLOSED_SHOWN = 3
 const MODEL = 'sonnet'
 const AWAY_MS = 15 * 60_000
 const PREVIOUS_MAX_AGE_MS = 7 * 24 * 60 * 60_000
@@ -480,12 +487,13 @@ function publishStatus($: EngineInterface, isEnding = false): Promise<void> {
         read($, PRESENCE),
         $.clock.now(),
       ])
-      // Only the items the band counts, in the pane's order: a task handed to Claude waits on no one.
-      const { needsYou } = viewOf({ ledger, lastActions, notes: {}, turns: presence, now }, presence)
+      // Only the items and findings the band counts, in the pane's order: a row handed to Claude waits on no one.
+      const { needsYou, findings } = viewOf({ ledger, lastActions, notes: {}, turns: presence, now }, presence)
       const items = [...needsYou.questions, ...needsYou.tasks]
         .filter(r => r.state.is === 'open')
         .flatMap(r => (r.item ? [r.item] : []))
-      const line = isEnding ? '' : statusLine({ ...ledger, items }, stop, dialogs)
+      const open = findings.rows.filter(r => r.state.is === 'open').flatMap(r => (r.finding ? [r.finding] : []))
+      const line = isEnding ? '' : statusLine({ ...ledger, items, findings: open }, stop, dialogs)
       if (line === published) return
       published = line
       const token = line ? ['--token', `inbox=${line}`] : ['--clear-token', 'inbox']
@@ -872,7 +880,8 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
       ...(waiting ? { needsYou: waiting } : {}),
       ...s,
     })),
-    update($, UNFOLDED, u => u.map(readKind)),
+    // Old builds saved the group kinds as `decide` and `do`; Findings' fold keeps its own name.
+    update($, UNFOLDED, u => u.map(k => (k === 'finding' ? k : readKind(k)))),
     // A demo an earlier build seeded may lack a field this one draws, so it ends; /inbox demo seeds a new one.
     update($, DEMO, d => (d === null || isDemoCopy(d) ? d : null)),
     // Last actions an earlier build saved by button key, without a kind. Those for Open, Open log,
@@ -1055,7 +1064,7 @@ async function followNewRows($: EngineInterface, isOpening = false) {
     read($, UNFOLDED),
     isPaneShown($),
   ])
-  const { ledger, prViews: prState, settled, lastActions, stop, isDemo, now } = drawn
+  const { ledger, prViews: prState, settled, stop, isDemo } = drawn
   const prViews = Object.values(prState.views)
   const ids = tabRowIds(drawn.view, prViews)
   if (isOpening) recordedRows = null
@@ -1072,9 +1081,7 @@ async function followNewRows($: EngineInterface, isOpening = false) {
       settled.length === 0 &&
       !stop &&
       !unfolded.some(kind => ledger.closed.some(d => d.kind === kind)),
-    findings:
-      ids.findings.length === 0 &&
-      !Object.values(lastActions).some(n => n.tab === 'findings' && now - n.at < SETTLED_MS),
+    findings: ids.findings.length === 0 && !(unfolded.includes('finding') && ledger.closedFindings.length > 0),
     prs: prViews.length === 0 && !prState.isFetching,
   }[tab]
   const to = isEmpty ? TABS.find(t => t.id !== tab && added[t.id].length > 0)?.id : undefined
@@ -1477,8 +1484,6 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   ])
   // The sidebar line stops counting a handed-off row at once.
   if (lasts.some(l => l.kind === 'handoff')) void publishStatus($)
-  if (lasts.some(l => l.tab === 'findings'))
-    redrawWhileLeaving($, () => update($, LAST_ACTIONS, a => ({ ...a })), SETTLED_MS)
   const errors: (string | null)[] = []
   for (const e of pressed.effects) if (e.kind !== 'send') errors.push(await perform($, e, surface))
   const pending = pressed.lasts[rowId]?.result
@@ -1495,11 +1500,7 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   for (const e of pressed.effects) if (e.kind === 'send') await send($, e.text, e.by)
 }
 
-/**
- * Applies a row press with `applyPress` or a PR press with `applyPrPress`.
- * Pure. A finding the press removes keeps its place on its last action, so it
- * shows there in the Findings tab until SETTLED_MS passes.
- */
+/** Applies a row press with `applyPress` or a PR press with `applyPrPress`. Pure. */
 function applyAnyPress(
   ledger: Ledger,
   prState: PrViews,
@@ -1509,15 +1510,13 @@ function applyAnyPress(
 ): { ledger: Ledger; applied: Applied } {
   if ('ref' in p) return { ledger, applied: applyPrPress(prState, ledger.prs, lastActions, p, ctx) }
   const item = ledger.items.find(i => i.id === p.id)
-  const index = [...ledger.findings].reverse().findIndex(f => f.id === p.id)
-  const place = index >= 0 ? { tab: 'findings' as const, index } : {}
   const r = applyPress(ledger, lastActions[p.id], p, {
     ...ctx,
     extraSteps: item ? itemPrSteps(item, prState, ledger.prs) : [],
   })
   if ('stale' in r) return { ledger, applied: r }
 
-  return { ledger: r.ledger, applied: { lasts: r.last ? { [p.id]: { ...r.last, ...place } } : {}, effects: r.effects } }
+  return { ledger: r.ledger, applied: { lasts: r.last ? { [p.id]: r.last } : {}, effects: r.effects } }
 }
 
 /**
@@ -1564,8 +1563,7 @@ async function runDemoPress($: EngineInterface, p: RowPress | PrPress) {
       .sleep(SETTLED_MS)
       .then(refresh)
       .catch(() => undefined)
-  if (settled.length > 0 || (!('stale' in pressed) && Object.values(pressed.lasts).some(l => l.tab === 'findings')))
-    redrawWhileLeaving($, refresh, SETTLED_MS)
+  if (settled.length > 0) redrawWhileLeaving($, refresh, SETTLED_MS)
 }
 
 type Action = {
@@ -1675,8 +1673,11 @@ function closedLine(d: Closed): string {
   return `${d.ask} → ${d.outcome}`
 }
 
+/** A closed item, or a closed finding by its title, as its list's Closed fold draws it. */
+type ClosedLine = Pick<Closed, 'id' | 'ask' | 'at' | 'how' | 'outcome'>
+
 /** The outcome as the pane shows it: "Dismissed", "Yes, renamed". */
-function outcomeText(d: Closed): string {
+function outcomeText(d: Pick<Closed, 'outcome'>): string {
   return capitalized(d.outcome)
 }
 
@@ -2369,9 +2370,11 @@ export const register: Register = on => {
         typeHint: item.kind === 'task' ? 'Your reply to Claude' : 'Your answer',
       }
     }
+    // A finding handed to Claude folds, as a task does, until Claude's reply leaves it open.
     const findingRow = (r: RowView, finding: Finding): Row => ({
       id: finding.id,
-      handle: '•',
+      handle: r.state.is === 'handedOff' ? '✓' : r.handle,
+      ...(r.state.is === 'handedOff' ? { handleTone: 'done' as const, fold: {} } : {}),
       title: finding.title,
       meta: (
         <Text wrap="truncate-end">
@@ -3089,6 +3092,61 @@ export const register: Register = on => {
               <Text color={pal.line}>{hasChildren ? '│' : ' '}</Text>
             </Box>,
           ]
+    // A closed item or finding under the open ones: what was asked, then how it closed and when.
+    const closedRow = (d: ClosedLine, pos: TreePos) =>
+      treeRow(
+        pos,
+        <Text color={pal.muted}>◇</Text>,
+        <Box flexDirection="column">
+          <Text wrap="wrap" color={pal.muted}>
+            {d.ask}
+          </Text>
+          <Text wrap="wrap">
+            <Text bold={!isLapsed(d)} color={isLapsed(d) ? pal.muted : undefined}>
+              {outcomeText(d)}
+            </Text>
+            <Text color={pal.muted}> · {ago(now - d.at)}</Text>
+          </Text>
+        </Box>,
+        `closed-${d.id}`,
+        1,
+      )
+    // The row that folds or unfolds a list's closed items, with how many there are.
+    // It sits apart from the list's tree, and the closed items hang from its arrow.
+    const foldRow = (kind: Item['kind'] | 'finding', count: number, isUnfolded: boolean) =>
+      // One Button for the arrow and the count; the two spaces put the count where other rows' text starts.
+      treeRow(
+        null,
+        null,
+        <Box flexDirection="row">
+          <Button
+            plain
+            dimColor
+            key={`fold-${kind}`}
+            label={`${isUnfolded ? '▾' : '▸'} ${count} Closed`}
+            onPress={() => void update($, UNFOLDED, u => (u.includes(kind) ? u.filter(k => k !== kind) : [...u, kind]))}
+          />
+        </Box>,
+        `fold-row-${kind}`,
+      )
+    // Each closed item is two lines, so a blank line of their tree sets each apart.
+    const closedGap = () =>
+      isInline
+        ? []
+        : [
+            <Box paddingLeft={4}>
+              <Text color={pal.line}>│</Text>
+            </Box>,
+          ]
+    // The fold row and, unfolded, the closed items under it; nothing when none closed.
+    const closedFold = (kind: Item['kind'] | 'finding', closed: ClosedLine[], isUnfolded: boolean) =>
+      closed.length === 0
+        ? []
+        : [
+            ...titleGap(false),
+            foldRow(kind, closed.length, isUnfolded),
+            ...(isUnfolded ? closed.flatMap((d, n) => [...closedGap(), closedRow(d, childPos(n, closed.length))]) : []),
+          ]
     const needsYouView = () => {
       // An item that just closed stays where its row was in its group, with a
       // check and its outcome, until it joins the group's closed items. It
@@ -3109,45 +3167,6 @@ export const register: Register = on => {
             {leaveBar(s.at)}
           </Box>,
           `settled-${s.id}`,
-        )
-      // A closed item under its group's open ones: what was asked, then how it closed and when.
-      const closedRow = (d: Closed, pos: TreePos) =>
-        treeRow(
-          pos,
-          <Text color={pal.muted}>◇</Text>,
-          <Box flexDirection="column">
-            <Text wrap="wrap" color={pal.muted}>
-              {d.ask}
-            </Text>
-            <Text wrap="wrap">
-              <Text bold={!isLapsed(d)} color={isLapsed(d) ? pal.muted : undefined}>
-                {outcomeText(d)}
-              </Text>
-              <Text color={pal.muted}> · {ago(now - d.at)}</Text>
-            </Text>
-          </Box>,
-          `closed-${d.id}`,
-          1,
-        )
-      // The row that folds or unfolds a group's closed items, with how many there are.
-      // It sits apart from the group's tree, and the closed items hang from its arrow.
-      const foldRow = (kind: Item['kind'], count: number, isUnfolded: boolean) =>
-        // One Button for the arrow and the count; the two spaces put the count where other rows' text starts.
-        treeRow(
-          null,
-          null,
-          <Box flexDirection="row">
-            <Button
-              plain
-              dimColor
-              key={`fold-${kind}`}
-              label={`${isUnfolded ? '▾' : '▸'} ${count} Closed`}
-              onPress={() =>
-                void update($, UNFOLDED, u => (u.includes(kind) ? u.filter(k => k !== kind) : [...u, kind]))
-              }
-            />
-          </Box>,
-          `fold-row-${kind}`,
         )
       // A group with no open, settled or closed items is left out.
       const groups = needsYouGroups.flatMap(g => {
@@ -3170,25 +3189,7 @@ export const register: Register = on => {
           g.kind,
           true,
         )
-        // Each closed item is two lines, so a blank line of their tree sets each apart.
-        const closedGap = () =>
-          isInline
-            ? []
-            : [
-                <Box paddingLeft={4}>
-                  <Text color={pal.line}>│</Text>
-                </Box>,
-              ]
-        const tail =
-          closed.length === 0
-            ? []
-            : [
-                ...titleGap(false),
-                foldRow(g.kind, closed.length, isUnfolded),
-                ...(isUnfolded
-                  ? closed.flatMap((d, n) => [...closedGap(), closedRow(d, childPos(n, closed.length))])
-                  : []),
-              ]
+        const tail = closedFold(g.kind, closed, isUnfolded)
 
         // A row handed to Claude stays listed but leaves the count.
         return [
@@ -3240,32 +3241,28 @@ export const register: Register = on => {
       )
     }
 
-    // A finding the person sent to Claude leaves the list, so its last action stays in its place for a few seconds.
-    const settledFinding = (id: string, last: LastAction) => (
-      <Box key={`settled-${id}`} flexDirection="row">
-        <Box width={5} flexShrink={0} paddingLeft={2}>
-          <Text color={pal.mark.done}>✓</Text>
-        </Box>
-        <Box flexDirection="column" flexShrink={1}>
-          <Text wrap="truncate-end" color={pal.muted}>
-            {last.title}
-          </Text>
-          <Text color={pal.tone.done}>{last.text}</Text>
-          {leaveBar(last.at)}
-        </Box>
-      </Box>
-    )
+    // A finding stays listed until Claude closes it or the person dismisses it. Then it moves to Closed.
     const findingsView = () => {
-      const settled = Object.entries(lastActions)
-        .filter(([id, n]) => n.tab === 'findings' && now - n.at < SETTLED_MS && !rows.findings.some(r => r.id === id))
-        .sort(([, a], [, b]) => (a.index ?? 0) - (b.index ?? 0))
-      if (rows.findings.length === 0 && settled.length === 0)
+      const closed = view.findings.closed
+        .slice(0, CLOSED_SHOWN)
+        .map(f => ({ id: f.id, ask: f.title, at: f.closedAt, how: f.how, outcome: f.outcome }))
+      if (rows.findings.length === 0 && closed.length === 0)
         return emptyState('No findings yet', 'Claude flags issues and opportunities it spots beyond your task.')
-      const shown = rows.findings.map(r => listRow(r))
-      for (const [id, last] of settled)
-        shown.splice(Math.min(last.index ?? 0, shown.length), 0, settledFinding(id, last))
+      // With closed findings still shown, the empty text is one line above them.
+      const open =
+        rows.findings.length > 0
+          ? divided(
+              rows.findings.map(r => listRow(r)),
+              'findings',
+              false,
+            )
+          : [
+              <Box paddingLeft={2}>
+                <Text color={pal.muted}>No open findings.</Text>
+              </Box>,
+            ]
 
-      return section(divided(shown, 'findings', false))
+      return section([...open, ...closedFold('finding', closed, unfolded.includes('finding'))])
     }
 
     const prBlock = ({ pr, rows: prRows }: { pr: PrView; rows: Row[] }) => {

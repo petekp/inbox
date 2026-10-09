@@ -4,7 +4,7 @@
 
 import { carryText, EMPTY, isLapsed, promptNotes, screenText, toolActivity } from '../../hooks/ledger'
 import type { Exchange, Press } from '../../hooks/ledger'
-import { inboxView, perTurnStatus, SETTLED_MS } from '../../hooks/view'
+import { CLOSED_SHOWN, inboxView, perTurnStatus } from '../../hooks/view'
 import type { InboxView } from '../../hooks/view'
 import type { Item, LastAction } from '../../types'
 import type { SessionState } from './state'
@@ -12,8 +12,6 @@ import { CODEX, GUIDANCE, START_TITLE } from './texts'
 
 /** The tab polls every few seconds; a poll this recent means it is open. */
 const TAB_OPEN_MS = 15_000
-/** How many recently closed items each Needs you group lists. */
-const CLOSED_SHOWN = 3
 const MAX_ACTIVITY = 40
 
 export function isTabOpen(s: SessionState, now: number): boolean {
@@ -123,8 +121,6 @@ export type View = InboxView & {
   running: string[]
   /** Each row's last press, by row id. The tab draws from each row's feedback; a tab loaded before that still reads this. */
   lastActions: Record<string, LastAction>
-  /** Findings a press removed in the last few seconds, shown in their place with what was sent. */
-  leaving: { id: string; title: string; text: string; at: number }[]
   /** Each group's latest closed items, newest first. */
   closed: ClosedRow[]
   /** When the view was drawn, for the rows' ages. */
@@ -140,7 +136,6 @@ export type TabView = View & { thread: string }
 /** What the tab draws. */
 export function viewOf(s: SessionState, now: number): View {
   const l = s.ledger
-  const open = new Set(l.findings.map(f => f.id))
   // Exchanges waiting for the inbox model will still change the list, so they read as updating.
   const update = {
     isUpdating: s.presence.isUpdating || s.pending.length > 0,
@@ -165,9 +160,6 @@ export function viewOf(s: SessionState, now: number): View {
     done: l.card?.done ?? [],
     running: l.card?.running ?? [],
     lastActions: s.lastActions,
-    leaving: Object.entries(s.lastActions)
-      .filter(([id, a]) => a.title !== undefined && !open.has(id) && now - a.at < SETTLED_MS)
-      .map(([id, a]) => ({ id, title: a.title ?? '', text: a.text, at: a.at })),
     closed: (['question', 'task'] as const).flatMap(kind =>
       l.closed
         .filter(d => d.kind === kind)

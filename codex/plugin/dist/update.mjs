@@ -92,6 +92,7 @@ DONE: one finished outcome, at most 8 words. Up to 4 DONE lines, oldest first, k
 NOW: where the work stands at the end of this reply, at most 12 words. Name what it waits on, if anything. "-" when no work has started.
 RUNNING: something still running that the person may open, as "name: URL or port". Dev servers, simulators, background jobs. Omit anything the agent stopped. Zero or more lines.
 CLOSED: <id> | what was decided, at most 8 words. For each item in <open> the person answered in <person> (including "all recommended", "go", "yes to all", numbered answers), or that the reply or <activity> shows is done or no longer applies. A person asking what an item means has not answered it, and a reply explaining it does not close it. When <person> asks to run an item's command and the reply says it ran, that item is done. So is an item whose command the person ran themselves, per <person>, when its output shows it worked. Also one line for each finding in <findings> that the reply or <activity> shows was fixed, or that the person dealt with or set aside.
+  Putting a finding off ("later", "not now") is not setting it aside: it stays open.
 NEW: <kind> | <label> | <ask> | <options> | <rec>
   One line per thing in <reply> that waits on the person and is not already in <open> or <findings>. A finding the agent recorded is not NEW unless the reply asks the person to decide on it now. When the reply restates, rewords or narrows an item in <open>, it is not new: add HELP lines to that item's id instead.
   kind: "decide" (a choice, approval, or information only the person has, explicitly put to them, without which the agent cannot go on with its task) or "do" (an action only the person can take, without which the agent cannot continue or finish: sign in, run a command needing their password, test on their device, reply to a teammate).
@@ -377,7 +378,13 @@ function upgradedLastAction(key, old) {
 }
 function upgradeLastActions(saved) {
   return Object.fromEntries(
-    Object.entries(saved).flatMap(([key, last]) => {
+    Object.entries(saved).flatMap(([key, entry]) => {
+      const {
+        tab: _tab,
+        title: _title,
+        index: _index,
+        ...last
+      } = entry;
       if ("kind" in last && last.kind) return [[key, last]];
       const upgraded2 = upgradedLastAction(key, last);
       return upgraded2 ? [[key, upgraded2]] : [];

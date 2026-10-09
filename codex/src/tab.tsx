@@ -5,13 +5,13 @@
 import { render } from 'preact'
 import type { ComponentChildren, JSX } from 'preact'
 
-import { ago } from '../../hooks/ledger'
+import { ago, isLapsed } from '../../hooks/ledger'
 import { noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
-import { feedbackText, isFailure, SETTLED_MS } from '../../hooks/view'
+import { CLOSED_SHOWN, feedbackText, isFailure, SETTLED_MS } from '../../hooks/view'
 import type { Feedback, RowView } from '../../hooks/view'
 import type { Finding, Item, RowNote } from '../../types'
-import type { TabView as View } from './core'
+import type { ClosedRow, TabView as View } from './core'
 
 type Tab = 'needsYou' | 'findings'
 type Tone = 'needsYou' | 'findings' | 'done' | 'error'
@@ -67,7 +67,7 @@ const drafts = new Map<string, string>()
 const details = new Set<string>()
 // Questions whose every option shows. Until then, one with more than 5 options shows 4.
 const optionsShown = new Set<string>()
-const unfolded = new Set<'question' | 'task'>()
+const unfolded = new Set<Group>()
 // What a row shows while its press runs: "Sending…", or a Local press's pending note.
 const sending = new Map<string, string>()
 const errors = new Map<string, string>()
@@ -130,12 +130,9 @@ function orderOf(v: View): Record<Group, string[]> {
   }
 }
 
-/** What a row that left says in its place, or null when it leaves without a trace, as a dismissed finding does. */
+/** What a row that left says in its place, or null when it leaves without a trace, as a finding does until closes settle. */
 function leftText(prev: View, next: View, group: Group, id: string): { what: string; outcome: string } | null {
-  if (group === 'finding') {
-    const f = next.leaving.find(x => x.id === id)
-    return f ? { what: f.title, outcome: f.text } : null
-  }
+  if (group === 'finding') return null
   const d = next.closed.find(x => x.id === id)
 
   return d ? { what: d.ask, outcome: capitalized(d.outcome) } : null
@@ -325,11 +322,15 @@ const FINDING_BADGES = {
 
 function findingRow(v: View, r: RowView, f: Finding): Row {
   const badge = FINDING_BADGES[f.kind]
+  // A finding handed to Codex folds, as a task does, until Codex's reply leaves it open.
+  const isHandedOff = r.state.is === 'handedOff'
   const id = f.id
 
   return {
     id,
-    handle: '•',
+    handle: isHandedOff ? '✓' : r.handle,
+    handleTone: isHandedOff ? 'done' : undefined,
+    ...(isHandedOff ? { fold: {} } : {}),
     title: f.title,
     meta: (
       <div>
@@ -677,7 +678,6 @@ function ItemGroup({
   const title = kind === 'question' ? 'Questions' : 'Tasks'
   const showing = new Set(settled.map(s => s.id))
   const closed = v.closed.filter(d => d.kind === kind && !showing.has(d.id))
-  const isUnfolded = unfolded.has(kind)
   // A group with no open, settled or closed items is left out.
   if (rows.length === 0 && !settled.some(s => s.group === kind) && closed.length === 0) return null
 
@@ -686,21 +686,39 @@ function ItemGroup({
       {/* A row handed to Codex stays listed but leaves the count. */}
       <GroupTitle title={title} count={rows.filter(r => !r.fold).length} />
       <Entries rows={rows} group={kind} all={all} now={now} />
-      {closed.length > 0 ? (
-        <button
-          type="button"
-          class="fold"
-          onClick={() => {
-            if (isUnfolded) unfolded.delete(kind)
-            else unfolded.add(kind)
-            draw()
-          }}
-        >
-          <span class="fold-mark">{isUnfolded ? '▾' : '▸'}</span>
-          {closed.length} Closed
-        </button>
-      ) : null}
-      {isUnfolded && closed.length > 0 ? (
+      <ClosedFold group={kind} closed={closed} now={now} />
+    </section>
+  )
+}
+
+/** A list's closed items or findings behind `▸ N Closed`, each with how it closed and when. */
+function ClosedFold({
+  group,
+  closed,
+  now,
+}: {
+  group: Group
+  closed: Pick<ClosedRow, 'id' | 'ask' | 'outcome' | 'isLapsed' | 'at'>[]
+  now: number
+}) {
+  if (closed.length === 0) return null
+  const isUnfolded = unfolded.has(group)
+
+  return (
+    <>
+      <button
+        type="button"
+        class="fold"
+        onClick={() => {
+          if (isUnfolded) unfolded.delete(group)
+          else unfolded.add(group)
+          draw()
+        }}
+      >
+        <span class="fold-mark">{isUnfolded ? '▾' : '▸'}</span>
+        {closed.length} Closed
+      </button>
+      {isUnfolded ? (
         <div class="tree closed-tree">
           {closed.map(d => (
             <div class="entry" key={`closed-${d.id}`}>
@@ -718,7 +736,7 @@ function ItemGroup({
           ))}
         </div>
       ) : null}
-    </section>
+    </>
   )
 }
 
@@ -747,8 +765,13 @@ function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number }) {
   )
 }
 
-function Findings({ lists, now }: { lists: Lists; now: number }) {
-  if (lists.findings.length === 0 && !settled.some(s => s.group === 'finding'))
+function Findings({ v, lists, now }: { v: View; lists: Lists; now: number }) {
+  // A finding stays listed until Codex closes it or the person dismisses it. Then it moves to Closed.
+  const closed = v.findings.closed
+    .slice(0, CLOSED_SHOWN)
+    .map(f => ({ id: f.id, ask: f.title, outcome: f.outcome, isLapsed: isLapsed(f), at: f.closedAt }))
+  const isNothing = lists.findings.length === 0 && !settled.some(s => s.group === 'finding')
+  if (isNothing && closed.length === 0)
     return (
       <div class="empty">
         <div class="title">No findings yet</div>
@@ -756,10 +779,13 @@ function Findings({ lists, now }: { lists: Lists; now: number }) {
       </div>
     )
 
+  // With closed findings still shown, the empty text is one line above them.
   return (
     <main>
       <section>
+        {isNothing ? <div class="group-title empty-line">No open findings.</div> : null}
         <Entries rows={lists.findings} group="finding" all={lists.findings} now={now} />
+        <ClosedFold group="finding" closed={closed} now={now} />
       </section>
     </main>
   )
@@ -835,7 +861,7 @@ function App(): ComponentChildren {
         </div>
       ) : null}
       <TabBar v={v} now={now} />
-      {tab === 'needsYou' ? <NeedsYou v={v} lists={lists} now={now} /> : <Findings lists={lists} now={now} />}
+      {tab === 'needsYou' ? <NeedsYou v={v} lists={lists} now={now} /> : <Findings v={v} lists={lists} now={now} />}
       <footer>
         <span>
           <kbd>1 2</kbd>Switch tabs<span class="sep">·</span>

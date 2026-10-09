@@ -232,7 +232,13 @@ function upgradedLastAction(key, old) {
 }
 function upgradeLastActions(saved) {
   return Object.fromEntries(
-    Object.entries(saved).flatMap(([key, last]) => {
+    Object.entries(saved).flatMap(([key, entry]) => {
+      const {
+        tab: _tab,
+        title: _title,
+        index: _index,
+        ...last
+      } = entry;
       if ("kind" in last && last.kind) return [[key, last]];
       const upgraded2 = upgradedLastAction(key, last);
       return upgraded2 ? [[key, upgraded2]] : [];

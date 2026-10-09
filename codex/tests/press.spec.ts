@@ -316,7 +316,7 @@ test('the tab reads Updating… while exchanges wait for the inbox model, and sh
   assert.equal(viewOf(s, 60).status.changedAt, 1)
 })
 
-test('Address removes the finding, sends it, and shows what was sent in its place for a few seconds', () => {
+test('Address hands a finding off: it folds until an applied turn leaves it open; Discuss keeps it open; a close moves it to Closed', () => {
   const w = withItems()
   const s = {
     ...w,
@@ -333,12 +333,38 @@ test('Address removes the finding, sends it, and shows what was sent in its plac
     },
   ])
   const sent = after(s, { action: 'address', id: 'f3' })
+  const folded = viewOf(sent, 60).findings
   assert.deepEqual(
-    viewOf(sent, 60).leaving.map(x => [x.title, x.text]),
-    [['No lint script', 'Address']],
+    folded.rows.map(r => [r.id, r.state.is, r.feedback && feedbackText(r.feedback, 'html')]),
+    [['f3', 'handedOff', '✓ Address']],
   )
-  assert.deepEqual(viewOf(sent, 60 + 6000).leaving, [])
-  assert.deepEqual(sent.ledger.findings, [])
+  assert.equal(folded.count, 0)
+  // The turn the message started ends, and its update applies with the finding still open.
+  const started = notePrompt(sent, 'Please address this finding you recorded:', 70).state
+  const applied = { ...started, presence: { ...started.presence, turnsApplied: started.presence.turnsStarted } }
+  const back = viewOf(applied, 80).findings
+  assert.deepEqual(
+    back.rows.map(r => [r.id, r.state.is]),
+    [['f3', 'open']],
+  )
+  assert.equal(back.count, 1)
+  // Discuss talks it through, and it stays open and counted.
+  const discussed = viewOf(after(s, { action: 'discuss', id: 'f3' }), 60).findings
+  assert.deepEqual(
+    discussed.rows.map(r => [r.id, r.state.is, r.actions.find(a => a.press.action === 'discuss')?.label]),
+    [['f3', 'open', 'Discuss again']],
+  )
+  assert.equal(discussed.count, 1)
+  // Closed by Codex, it leaves the list for the Findings tab's Closed fold.
+  const closed = viewOf(
+    { ...sent, ledger: recordClose(CODEX, sent.ledger, { id: 'f3', reason: 'fixed' }, 90).ledger },
+    100,
+  )
+  assert.deepEqual(closed.findings.rows, [])
+  assert.deepEqual(
+    closed.findings.closed.map(f => [f.id, f.title, f.outcome]),
+    [['f3', 'No lint script', 'closed by Codex: fixed']],
+  )
   // Dismiss closes a finding without sending anything.
   const dismissed = pressed(s, { action: 'dismiss', id: 'f3' })
   assert.ok(!('stale' in dismissed))

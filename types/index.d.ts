@@ -81,10 +81,6 @@ export type LastAction = {
   at: number
   /** The turns started when it was pressed, so a handed-off row folds until the update for a later turn applies. */
   turnsStarted?: number
-  /** Where the row was, and its title, for a row the press removed: it shows its last action in its place for a few seconds. */
-  tab?: Tab
-  title?: string
-  index?: number
   /** The latest Local press's outcome: its opens and copies, pending until each has run. Talk, Hand-off and Mark presses clear it. */
   result?: LocalResult
 }
@@ -276,8 +272,8 @@ declare module 'claude-code' {
       arrival: Arrival | null
       /** Each row's last action, by the row's id. */
       lastActions: Record<string, LastAction>
-      /** The Needs you groups whose closed items show. Each starts folded. */
-      unfolded: Item['kind'][]
+      /** The Needs you groups, and Findings, whose closed items show. Each starts folded. */
+      unfolded: (Item['kind'] | 'finding')[]
       /** The rows whose folded details show, by the row's id. */
       shownDetails: string[]
       /** The questions whose every option shows, by the row's id. Until then, one with more than 5 options shows 4. */

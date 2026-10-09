@@ -220,7 +220,14 @@ function upgradedLastAction(key: string, old: Omit<LastAction, 'kind'> & { isHan
  */
 export function upgradeLastActions(saved: Record<string, LastAction>): Record<string, LastAction> {
   return Object.fromEntries(
-    Object.entries(saved).flatMap(([key, last]) => {
+    Object.entries(saved).flatMap(([key, entry]) => {
+      // Earlier builds kept where a removed row stood, and its title, so it showed in place. Nothing reads them now.
+      const {
+        tab: _tab,
+        title: _title,
+        index: _index,
+        ...last
+      } = entry as LastAction & Partial<Record<'tab' | 'title' | 'index', unknown>>
       if ('kind' in last && last.kind) return [[key, last]]
       const upgraded = upgradedLastAction(key, last)
       return upgraded ? [[key, upgraded]] : []
@@ -336,23 +343,21 @@ export function applyPress(
   ctx: { now: number; turnsStarted: number; extraSteps: HelpStep[] },
 ): PressResult {
   const stale = { stale: true as const }
-  const record = (kind: LastAction['kind'], extra: Pick<LastAction, 'title'> = {}): LastAction => ({
+  const record = (kind: LastAction['kind']): LastAction => ({
     kind,
     action: actionId(p),
     text: pressText(p),
     at: ctx.now,
     turnsStarted: ctx.turnsStarted,
-    ...extra,
   })
   const unchanged = { ledger, last: null, effects: [] }
 
   const finding = ledger.findings.find(f => f.id === p.id)
   if (finding) {
-    // A finding sent to the agent leaves the list. Its title stays on its last action, so it shows in its place for a few seconds.
-    const removed = { ...ledger, findings: ledger.findings.filter(f => f.id !== p.id) }
+    // A finding sent to the agent stays open until the agent closes it or the person dismisses it.
     const sendFinding = (kind: 'talk' | 'handoff', text: string) => ({
-      ledger: removed,
-      last: record(kind, { title: finding.title }),
+      ledger,
+      last: record(kind),
       effects: [{ kind: 'send' as const, text, by: null }],
     })
     switch (p.action) {

@@ -3,13 +3,15 @@
 // the sidebar line, row navigation and the Codex tab all read this, so they agree.
 // Pure: it reads only its arguments, and imports nothing from the engine.
 
-import type { Finding, Item, LastAction, Ledger, LocalResult, PressKind, RowNote } from '../types'
+import type { ClosedFinding, Finding, Item, LastAction, Ledger, LocalResult, PressKind, RowNote } from '../types'
 import { latestBatch, questionNumbers } from './ledger'
 import { actionId, clipLabel, isHandedOff, noteText, stepsOf } from './presses'
 import type { HelpStep, RowPress } from './presses'
 
 /** A question with more options than this shows the first 4 and [All N options]. */
 export const OPTIONS_FOLD_AT = 5
+/** How many closed items each Closed fold lists. */
+export const CLOSED_SHOWN = 3
 /** How long a row that just closed stays in its place, and a row's note shows. */
 export const SETTLED_MS = 5120
 
@@ -85,8 +87,8 @@ export type InboxView = {
     questions: RowView[]
     tasks: RowView[]
   }
-  /** Newest first. The count leaves out handed-off findings. */
-  findings: { count: number; rows: RowView[] }
+  /** Newest first. The count leaves out handed-off findings. `closed` is every close the ledger keeps, newest first. */
+  findings: { count: number; rows: RowView[]; closed: ClosedFinding[] }
   status: ItemStatus
 }
 
@@ -273,7 +275,11 @@ export function inboxView({ ledger, lastActions, notes, turns, extraSteps, statu
 
   return {
     needsYou: { count: counted.length, topId: counted[0]?.id ?? null, questions: questionRows, tasks: taskRows },
-    findings: { count: findingRows.filter(r => r.state.is === 'open').length, rows: findingRows },
+    findings: {
+      count: findingRows.filter(r => r.state.is === 'open').length,
+      rows: findingRows,
+      closed: [...ledger.closedFindings].reverse(),
+    },
     status,
   }
 }
