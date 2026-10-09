@@ -2,8 +2,10 @@
 // Inbox tab with the app-only tools it calls. It speaks MCP over stdio by
 // hand, since it needs only a few message shapes.
 
-import { isAbsolute, join } from 'node:path'
+import { constants } from 'node:fs'
+import { access, stat } from 'node:fs/promises'
 
+import { baseName, localPath, openCommands } from '../../hooks/presses'
 import {
   CLOSE_DESCRIPTION,
   CLOSE_SCHEMA,
@@ -110,12 +112,29 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       error = `Not sent: ${err instanceof Error ? err.message : String(err)}`
       return readState(dir, id)
     })
-    for (const target of opens) {
-      const path = /^https:\/\//.test(target) || isAbsolute(target) ? target : join(s.root || '/', target)
-      await deps.exec(['open', path], { cwd: '/', timeoutMs: 10_000 })
-    }
+    for (const target of opens) error = (await open(s, target)) ?? error
 
     return { view: viewOf(s, now()), copy, error }
+  }
+
+  /** Opens a link, or a path as `openCommands` decides, and says why when it could not. */
+  async function open(s: SessionState, target: string): Promise<string | null> {
+    const run = (argv: string[]) => deps.exec(argv, { cwd: '/', timeoutMs: 10_000 })
+    if (/^https:\/\//.test(target)) return (await run(['open', target])).code === 0 ? null : `Could not open ${target}`
+    const path = localPath(target, s.root || '/', s.home)
+    const info = await stat(path).catch(() => null)
+    if (!info) return `${baseName(path)} is not there anymore`
+    const isExecutable =
+      info.isFile() &&
+      (await access(path, constants.X_OK).then(
+        () => true,
+        () => false,
+      ))
+    const { argv, fallback } = openCommands(path, info.isFile(), isExecutable)
+    const r = await run(argv)
+    const retry = r.code !== 0 && fallback ? await run(fallback) : r
+
+    return retry.code === 0 ? null : `Could not open ${baseName(path)}: ${retry.stderr.trim()}`
   }
 
   // Each conversation's demo, kept in memory only: it starts over when the server does.

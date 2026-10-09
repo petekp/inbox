@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { makeServer } from '../src/server'
@@ -95,4 +97,40 @@ test('a press in the demo changes only the demo and sends nothing into the conve
     real.ledger.items.map(i => i.id),
     ['i1'],
   )
+})
+
+test('an Open step shows a file macOS would run in Finder, and opens any other file', async () => {
+  const { dir, calls, call } = await setup(0)
+  const root = tempDir()
+  writeFileSync(join(root, 'deploy.command'), 'echo hi')
+  writeFileSync(join(root, 'notes.md'), '# Notes')
+  await updateState(dir, 's1', s => ({
+    ...s,
+    root,
+    ledger: {
+      ...s.ledger,
+      items: [
+        {
+          id: 'i2',
+          kind: 'task',
+          label: null,
+          ask: 'Check the deploy script',
+          options: [],
+          rec: null,
+          helps: [
+            { kind: 'open', path: 'deploy.command' },
+            { kind: 'open', path: 'notes.md' },
+          ],
+          turn: 1,
+          at: 1,
+        },
+      ],
+    },
+  }))
+  await call('inbox_press', { press: { action: 'step', id: 'i2', step: 0 } }, { thread_id: 's1' })
+  await call('inbox_press', { press: { action: 'step', id: 'i2', step: 1 } }, { thread_id: 's1' })
+  assert.deepEqual(calls, [
+    ['open', '-R', join(root, 'deploy.command')],
+    ['open', join(root, 'notes.md')],
+  ])
 })

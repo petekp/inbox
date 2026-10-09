@@ -26,6 +26,34 @@ export function helpLabel(help: Help): string {
   return clipLabel(label, 32)
 }
 
+/** A path an item names, made absolute: `~/` from the home folder, a relative one from the session's folder. */
+export function localPath(raw: string, root: string, home: string): string {
+  if (raw.startsWith('~/')) return home + raw.slice(1)
+  if (raw.startsWith('/')) return raw
+
+  return `${root.replace(/\/$/, '')}/${raw.replace(/^\.\//, '')}`
+}
+
+// Files macOS `open` would run or install instead of showing.
+const LAUNCHES =
+  /\.(app|command|tool|terminal|workflow|scpt|scptd|applescript|pkg|mpkg|dmg|webloc|inetloc|fileloc|prefpane|kext)$/i
+
+/**
+ * The commands that open a local path. A folder, an executable, or anything
+ * `open` would launch is shown in Finder instead. A file opens in the app
+ * macOS assigns to its type, and `fallback` opens one with no assigned app
+ * in the default text editor.
+ */
+export function openCommands(
+  path: string,
+  isFile: boolean,
+  isExecutable: boolean,
+): { argv: string[]; fallback: string[] | null } {
+  if (!isFile || isExecutable || LAUNCHES.test(path)) return { argv: ['open', '-R', path], fallback: null }
+
+  return { argv: ['open', path], fallback: ['open', '-t', path] }
+}
+
 /** One button's helps, used in order by one press. */
 export type HelpStep = { label: string; step: Help[] }
 

@@ -112,7 +112,7 @@ import {
   type Told,
   upgradeLedger,
 } from './ledger'
-import { baseName, clipLabel, helpLabel, isTaskHandedOff, messages, steps } from './presses'
+import { baseName, clipLabel, helpLabel, isTaskHandedOff, localPath, messages, openCommands, steps } from './presses'
 import type { HelpStep } from './presses'
 import {
   CLOSE_DESCRIPTION,
@@ -406,9 +406,6 @@ const MODEL = 'sonnet'
 const AWAY_MS = 15 * 60_000
 const PREVIOUS_MAX_AGE_MS = 7 * 24 * 60 * 60_000
 const KEPT_SESSIONS = 40
-// Opened with `open -R` (shown in Finder) instead of `open`, which would launch them.
-const LAUNCHES =
-  /\.(app|command|tool|terminal|workflow|scpt|scptd|applescript|pkg|mpkg|dmg|webloc|inetloc|fileloc|prefpane|kext)$/i
 const LOCAL_URL = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|[\w.-]+\.localhost)(?::\d+)?[^\s"'`)\]]*/g
 
 // One turn's exchange, gathered across hooks. Module variables reset on a hot
@@ -884,29 +881,20 @@ async function close($: EngineInterface, id: string, closing: Closing) {
   await commitLedger($, l => closeItem(l, id, closing, now))
 }
 
-/**
- * Opens a file in the app macOS assigns to its type, else the default text
- * editor. A folder, an executable, or anything `open` would launch is shown in
- * Finder instead.
- */
+/** Opens a path an item names, as `openCommands` decides. */
 async function openPath($: EngineInterface, raw: string) {
-  const home = (await $.env.get('HOME')) ?? ''
-  const path = raw.startsWith('~/')
-    ? home + raw.slice(1)
-    : raw.startsWith('/')
-      ? raw
-      : `${root}/${raw.replace(/^\.\//, '')}`
+  const path = localPath(raw, root, (await $.env.get('HOME')) ?? '')
   const name = baseName(path)
   if (!(await $.fs.exists(path))) {
     $.ui.toast(`${name} is not there anymore`)
     return
   }
   const stat = await $.fs.stat(path)
-  const isExecutable = stat.kind === 'file' && (await $.process.run(['test', '-x', path])).exitCode === 0
-  const isReveal = stat.kind !== 'file' || isExecutable || LAUNCHES.test(path)
-  const r = await $.process.run(isReveal ? ['open', '-R', path] : ['open', path])
-  // A file with no registered type, such as .env.local, fails `open`; -t uses the default text editor.
-  const retry = r.exitCode !== 0 && !isReveal ? await $.process.run(['open', '-t', path]) : r
+  const isFile = stat.kind === 'file'
+  const isExecutable = isFile && (await $.process.run(['test', '-x', path])).exitCode === 0
+  const { argv, fallback } = openCommands(path, isFile, isExecutable)
+  const r = await $.process.run(argv)
+  const retry = r.exitCode !== 0 && fallback ? await $.process.run(fallback) : r
   if (retry.exitCode !== 0) $.ui.toast(`Could not open ${name}: ${retry.stderr.trim()}`)
 }
 
