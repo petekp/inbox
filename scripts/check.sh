@@ -38,11 +38,19 @@ check "prettier" npx -y "$PRETTIER" --check .
 [ "$status" = "$before" ] || echo "      Fix: npx -y $PRETTIER --write ."
 
 check "plugin validate" claude plugin validate "$DIR"
-# Claude Code writes these types when it loads the mod from this folder.
-if [ -f "$DIR/.claude-plugin/types/tsconfig.json" ]; then
+# Claude Code writes these types when it loads the mod from this folder, and
+# claude -p does not. A worktree's copy does not load while another copy of the
+# mod loads first. The types name no paths, so a worktree uses the main checkout's.
+types="$DIR/.claude-plugin/types"
+main=$(git -C "$DIR" worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')
+if [ ! -e "$types" ] && [ -n "$main" ] && [ -f "$main/.claude-plugin/types/tsconfig.json" ]; then
+    cp -R "$main/.claude-plugin/types" "$types"
+    echo "  - types: copied from $main"
+fi
+if [ -f "$types/tsconfig.json" ]; then
     check "types" npx -y -p typescript tsc --noEmit -p "$DIR"
 else
-    echo "  x types: not checked. Start one interactive session to write them (claude -p does not): claude --plugin-dir $DIR"
+    echo "  x types: not checked. Start one interactive session to write them: claude --plugin-dir $DIR"
     status=1
 fi
 check "tests" claude plugin test "$DIR"
