@@ -3381,7 +3381,8 @@ export const register: Register = on => {
 
         return lines
       }
-      const most = Math.min(46, e.props.bodyColumns - 6)
+      const room = e.props.bodyColumns - 6
+      const most = Math.min(46, look === 'desktop' ? Math.floor(room * DESKTOP_CHARS_PER_CELL) : room)
       const count = wrap(most).length
       let width = Math.ceil(text.length / Math.max(count, 1))
       while (width < most && wrap(width).length > count) width++
