@@ -1728,7 +1728,8 @@ async function perform(
 /**
  * The desktop app takes the focus off the pane when the element holding it leaves, and the next
  * click there only brings it back. A press that may redraw its own Button away moves the ring
- * first, while the pane still holds the focus, to the shown tab's Button, which every drawing has.
+ * first, while the pane still holds the focus, to the shown tab's Button, which every drawing has
+ * (anthropics/claude-code#100874).
  */
 async function keepPaneFocus($: EngineInterface, surface: UiPressArgument['surface']) {
   if (surface !== 'desktop') return
