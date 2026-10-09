@@ -3451,6 +3451,7 @@ export const register: Register = on => {
             colors: {
               tab: pal.tab ?? null,
               hover: pal.raised ?? pal.tab ?? null,
+              hoverText: pal.raisedText ?? null,
               shown: pal.selection ?? pal.raised ?? pal.tab ?? null,
             },
           }
