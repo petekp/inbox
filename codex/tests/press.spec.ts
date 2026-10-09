@@ -120,7 +120,8 @@ test('a run step hands the task to Codex: it folds until the turn it started is 
   const s = after(withItems(), p)
   const folded = viewOf(s, 60)
   assert.deepEqual(folded.needsYou.tasks[0]?.state, { is: 'handedOff' })
-  assert.deepEqual(folded.needsYou.tasks[0]?.feedback, { is: 'done', label: 'Run seed script', at: 50 })
+  // Its message waits for the running turn to end.
+  assert.deepEqual(folded.needsYou.tasks[0]?.feedback, { is: 'queued', label: 'Run seed script', at: 50 })
   assert.equal(folded.needsYou.count, 1)
 
   const started = notePrompt(s, 'For "Sign in to npm", run this:', 70).state
@@ -208,11 +209,11 @@ test('an open or copy on a handed-off task keeps it folded and out of the count,
     '✓ Copied npm login. Run it in a terminal, or type ! and paste.',
   )
   assert.equal(feedbackText({ is: 'local', result }, 'desktop'), '✓ Copied npm login. Run it in Terminal.')
-  // A success note gives way to the hand-off's own ✓ after a few seconds.
+  // A success note gives way to the hand-off's own feedback after a few seconds: its message is still queued.
   const done = { ...copied, lastActions: { i2: { ...copied.lastActions.i2!, result } } }
   assert.equal(viewOf(done, 60).needsYou.tasks[0]?.feedback?.is, 'local')
   assert.deepEqual(viewOf(done, 55 + SETTLED_MS).needsYou.tasks[0]?.feedback, {
-    is: 'done',
+    is: 'queued',
     label: 'Run seed script',
     at: 50,
   })
@@ -337,7 +338,7 @@ test('Address hands a finding off: it folds until an applied turn leaves it open
   const folded = viewOf(sent, 60).findings
   assert.deepEqual(
     folded.rows.map(r => [r.id, r.state.is, r.feedback && feedbackText(r.feedback, 'html')]),
-    [['f3', 'handedOff', '✓ Address']],
+    [['f3', 'handedOff', 'Queued: Address']],
   )
   assert.equal(folded.count, 0)
   // The turn the message started ends, and its update applies with the finding still open.
@@ -360,7 +361,7 @@ test('Address hands a finding off: it folds until an applied turn leaves it open
   const closedBy = { ...sent, ledger: recordClose(CODEX, sent.ledger, { id: 'f3', reason: 'fixed' }, 90).ledger }
   assert.deepEqual(
     viewOf(closedBy, 100).findings.rows.map(r => [r.id, r.state, r.actions]),
-    [['f3', { is: 'settled', label: 'Closed by Codex: fixed', at: 90, canUndo: false }, []]],
+    [['f3', { is: 'settled', label: 'Closed by Codex: fixed', at: 90, canUndo: false, isQueued: false }, []]],
   )
   const closed = viewOf(closedBy, 90 + SETTLE_WINDOW_MS)
   assert.deepEqual(closed.findings.rows, [])
@@ -384,7 +385,13 @@ test('Dismiss settles a row in place with Undo, and Undo puts it back open where
   const settled = viewOf(dismissed, 60).needsYou
   assert.deepEqual(
     settled.questions.map(r => [r.id, r.state, r.actions.map(a => a.press)]),
-    [['i1', { is: 'settled', label: 'Dismissed', at: 50, canUndo: true }, [{ action: 'undo', id: 'i1' }]]],
+    [
+      [
+        'i1',
+        { is: 'settled', label: 'Dismissed', at: 50, canUndo: true, isQueued: false },
+        [{ action: 'undo', id: 'i1' }],
+      ],
+    ],
   )
   // It leaves the count while it settles.
   assert.equal(settled.count, 1)

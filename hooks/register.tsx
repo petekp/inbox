@@ -83,6 +83,7 @@ import {
   upgradeLedger,
 } from './ledger'
 import {
+  actionId,
   applyPress,
   baseName,
   clipLabel,
@@ -92,11 +93,15 @@ import {
   openCommands,
   pendingResult,
   prSteps,
+  reopenOnFailure,
   upgradeLastActions,
+  withArrival,
+  withFailure,
+  withQueued,
   withResult,
 } from './presses'
 import type { Effect, HelpStep, PrActionId, RowPress } from './presses'
-import { closedShown, feedbackOf, feedbackText, inboxView, isFailure, perTurnStatus, SETTLED_MS } from './view'
+import { closedShown, feedbackOf, feedbackText, hasAge, inboxView, isFailure, perTurnStatus, SETTLED_MS } from './view'
 import type { InboxView, RowState, RowView } from './view'
 import {
   CLOSE_DESCRIPTION,
@@ -777,13 +782,30 @@ async function tick($: EngineInterface) {
  * Sends a prompt as the person's own message. A plugin's own prompt skips that
  * plugin's prompt.submit hook, so the bookkeeping happens here, and what
  * Claude reads beside the prompt goes just before it, in a row only the model sees.
+ * Resolves once the prompt entered or was queued, with null, or with why it will
+ * not enter. A prompt that will not enter is taken back out of what Claude and the
+ * per-turn update read next; the prompt count stays.
  */
-async function send($: EngineInterface, text: string, sentBy: Press | null = null) {
+async function send($: EngineInterface, text: string, sentBy: Press | null = null): Promise<string | null> {
+  const [toldBefore, pressBefore] = [told, press]
   const context = await notePrompt($, text, sentBy)
+  const toldSent = told
   // The engine may run the prompt now, after the running turn, or inside it, so
   // the context goes in when the prompt's own row is stored (session.append).
   if (context.length > 0) contextFor.set(text, context)
-  await $.prompt.submit({ text, asUser: true })
+  const reason = await $.prompt.submit({ text, asUser: true }).then(
+    r => r.drop ?? null,
+    (err: unknown) => (err instanceof Error ? err.message : String(err)) || 'the session refused it',
+  )
+  if (reason === null) return null
+  // Each part is put back only while nothing since has changed it.
+  if (told === toldSent) told = toldBefore
+  if (person === text) person = null
+  else if (person?.endsWith(`\n\n${text}`)) person = person.slice(0, -(text.length + 2))
+  if (sentBy && press === sentBy) press = pressBefore
+  if (contextFor.get(text) === context) contextFor.delete(text)
+
+  return reason
 }
 
 /** Appends context as a row only the model reads. Without it Claude still gets the prompt, so a refused append is ignored. */
@@ -1279,13 +1301,16 @@ function prCheckId(pr: PrView, check: PrCheck): string {
   return `${pr.ref} check ${check.name}`
 }
 
-/** Which PR rows the person handed to Claude. A thread stays sent until a comment newer than the press. */
+/**
+ * Which PR rows the person handed to Claude. A thread stays sent until a
+ * comment newer than the press, and one whose message failed to send never was.
+ */
 function handoffs(lastActions: Record<string, LastAction>): Handoffs {
   return {
     isThreadSent: (pr, t) => {
       const last = lastActions[prThreadId(pr, t)]
 
-      return last?.kind === 'handoff' && last.at > ((t.reply ?? t).at ?? 0)
+      return last?.kind === 'handoff' && last.delivery?.state !== 'failed' && last.at > ((t.reply ?? t).at ?? 0)
     },
   }
 }
@@ -1365,6 +1390,25 @@ function prRowId(p: PrPress): string {
 }
 
 /**
+ * The PR press [Try again] repeats on a thread or PR block whose message failed
+ * to send, with its kind, or null. As `retryOf` does a row press.
+ */
+function prRetryOf(
+  last: LastAction | undefined,
+  ref: string,
+  thread: string | null,
+): { press: PrPress; kind: PressKind } | null {
+  if (last?.delivery?.state !== 'failed') return null
+  const a = last.action
+  if (thread !== null && (a === 'thread-address' || a === 'thread-draft' || a === 'thread-discuss'))
+    return { press: { action: a, ref, thread }, kind: last.kind }
+  if (thread === null && (a === 'pr-conflicts' || a === 'pr-address-all'))
+    return { press: { action: a, ref }, kind: last.kind }
+
+  return null
+}
+
+/**
  * Applies a PR press, as `applyPress` does a row press. Pure. Stale when the PR
  * is no longer tracked or drawn, its thread or check is gone, or what the
  * press acts on is over: the PR no longer conflicts, or no thread waits on the
@@ -1380,13 +1424,13 @@ function applyPrPress(
   const stale = { stale: true as const }
   const pr = prState.views[p.ref]
   const markId = `pr:${p.ref}`
-  const applied = (a: Partial<Exclude<Applied, { stale: true }>>): Applied => ({
-    ledger,
-    lasts: {},
-    drop: [],
-    effects: [],
-    ...a,
-  })
+  // Every row a sending press records on waits for the message to arrive.
+  const applied = (a: Partial<Exclude<Applied, { stale: true }>>): Applied => {
+    const effects = a.effects ?? []
+    const lasts = Object.fromEntries(Object.entries(a.lasts ?? {}).map(([id, l]) => [id, withQueued(l, effects)]))
+
+    return { ledger, drop: [], ...a, lasts, effects }
+  }
   if (p.action === 'pr-undo') {
     // Like an item's Undo, it does not check the settle window, so a press just after it ends still lands.
     if (!pr || isTracked(prState, ledger.prs, p.ref) || lastActions[markId]?.action !== 'pr-dismiss') return stale
@@ -1579,7 +1623,26 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
         .then(() => update($, LAST_ACTIONS, a => ({ ...a })))
         .catch(() => undefined)
   }
-  for (const e of pressed.effects) if (e.kind === 'send') await send($, e.text, e.by)
+  // A send that will not enter undoes the press, and the press's later sends stay unsent.
+  for (const e of pressed.effects) {
+    if (e.kind !== 'send') continue
+    const reason = await send($, e.text, e.by)
+    if (reason === null) continue
+    await undoUnsent($, p, Object.keys(pressed.lasts), now, reason)
+    break
+  }
+}
+
+/**
+ * Undoes a press whose message will not reach Claude. Each row it recorded on
+ * reads `Not sent: <reason>`, which unfolds a hand-off. An answer's question
+ * opens again, and typed words go back into the row's draft unless a newer one is there.
+ */
+async function undoUnsent($: EngineInterface, p: RowPress | PrPress, rows: string[], at: number, reason: string) {
+  const lasts = await update($, LAST_ACTIONS, a => withFailure(a, rows, at, reason))
+  if (!('ref' in p) && lasts[p.id]?.kind === 'mark') await commitLedger($, l => reopenOnFailure(l, p.id, at))
+  if (!('ref' in p) && p.action === 'type') await update($, DRAFTS, d => (d[p.id] ? d : { ...d, [p.id]: p.text }))
+  void publishStatus($)
 }
 
 /** Applies a row press with `applyPress` or a PR press with `applyPrPress`. Pure. */
@@ -1638,7 +1701,10 @@ async function runDemoPress($: EngineInterface, p: RowPress | PrPress) {
     if ('stale' in r) return { ...d, notes: { ...notes, [rowId]: { note: 'stale' as const, at: now } } }
     isClosing = hasNewClose(d.ledger, r.ledger) || ('ref' in p && p.action === 'pr-dismiss')
     // An open or copy records only its result, and the demo runs none, so its row keeps its last action.
-    const lasts = Object.fromEntries(Object.entries(r.lasts).filter(([, l]) => l.result === undefined))
+    // A sample send goes nowhere, so nothing would ever clear its Queued.
+    const lasts = Object.fromEntries(
+      Object.entries(r.lasts).flatMap(([id, { delivery: _unsent, ...l }]) => (l.result === undefined ? [[id, l]] : [])),
+    )
 
     return {
       ...d,
@@ -1712,6 +1778,15 @@ function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { k
   const lastOption = shown.map(a => a.press.action).lastIndexOf('answer')
   const keys: KeyAction[] = []
   const more: KeyAction[] = []
+  // A press whose message failed to send leads with [Try again], which repeats it as its own kind.
+  const retry = r.feedback?.is === 'notSent' ? r.feedback.retry : null
+  if (retry)
+    keys.push({
+      key: `retry-${id}`,
+      label: 'Try again',
+      kind: r.actions.find(a => actionId(a.press) === actionId(retry))?.kind ?? 'talk',
+      onPress: press => void runPress($, retry, press.surface),
+    })
   let letters = 0
   for (const [n, a] of shown.entries()) {
     const p = a.press
@@ -2129,6 +2204,7 @@ export const register: Register = on => {
   })
 
   // A prompt this mod sent: its context goes in just before it, wherever the engine runs it.
+  // Its row being stored is how the press that sent it learns it arrived.
   on(
     'session.append',
     { door: ['prompt', 'delivery'], origin: { kind: 'plugin', name: 'inbox' } },
@@ -2138,8 +2214,16 @@ export const register: Register = on => {
       const context = contextFor.get(text)
       contextFor.delete(text)
       if (context) await appendContext($, context)
+      const r = await next(e)
+      const isAwaited = Object.values(await read($, LAST_ACTIONS)).some(
+        a => a.delivery?.state === 'queued' && a.delivery.message === text,
+      )
+      if (isAwaited) {
+        await update($, LAST_ACTIONS, a => withArrival(a, text))
+        void publishStatus($)
+      }
 
-      return next(e)
+      return r
     },
   )
 
@@ -2261,7 +2345,7 @@ export const register: Register = on => {
 
     const card = ledger.card
     const settled = [...view.needsYou.questions, ...view.needsYou.tasks].flatMap(r =>
-      r.state.is === 'settled' ? [{ what: r.title, outcome: r.state.label }] : [],
+      r.state.is === 'settled' && !r.state.isQueued ? [{ what: r.title, outcome: r.state.label }] : [],
     )
     if (!card && ledger.items.length === 0 && ledger.findings.length === 0 && settled.length === 0) return next(e)
     const settledHint = settled.map(s => (
@@ -2497,9 +2581,11 @@ export const register: Register = on => {
       moreKeys: () => rowKeyActions($, r, true).more,
     })
     const handoff = handoffs(lastActions)
-    // A PR action labeled "… again" once it was its row's last action.
+    // A PR action labeled "… again" once it was its row's last action, unless its message failed to send.
     const again = (rowId: string, action: PrActionId, label: string) =>
-      lastActions[rowId]?.action === action ? `${label} again` : label
+      lastActions[rowId]?.action === action && lastActions[rowId]?.delivery?.state !== 'failed'
+        ? `${label} again`
+        : label
     const prPress = (p: PrPress) => (press: UiPressArgument) => void runPress($, p, press.surface)
     const checkRow = (pr: PrView, c: PrCheck): Row => ({
       id: prCheckId(pr, c),
@@ -2578,6 +2664,11 @@ export const register: Register = on => {
         },
         body: comment,
         keys: () => [
+          ...[prRetryOf(lastActions[id], pr.ref, t.id)].flatMap(retry =>
+            retry
+              ? [{ key: `retry-${t.id}`, label: 'Try again', kind: retry.kind, onPress: prPress(retry.press) }]
+              : [],
+          ),
           {
             key: `address-${t.id}`,
             label: again(id, 'thread-address', 'Address'),
@@ -2730,20 +2821,27 @@ export const register: Register = on => {
     // A last action is green only on a row that shows a ✓, as a folded review thread
     // does. On a row still open it is muted, so it does not read as an answer.
     const lastTone = (row: Row) => (row.handleTone === 'done' ? ('done' as const) : undefined)
-    // A last action reads "✓ Discuss · 1m ago". A row whose own mark is a ✓ leaves out the second one.
-    // A note and a Local result read alone, with no age. A failed result is red.
+    // A last action reads "✓ Discuss · 1m ago", or "Queued: Discuss · 1m ago". A row whose own mark is a ✓
+    // leaves out the second one. A note and a Local result read alone, with no age. A failure is red.
     const feedbackLabel = (id: string, row?: Row) => {
-      const f = feedbackOf(lastActions[id], notes[id], now)
+      const f = feedbackOf(id, lastActions[id], notes[id], now)
       if (!f) return null
 
-      return f.is === 'done'
-        ? { text: row && lastTone(row) ? f.label : feedbackText(f, look), age: ago(now - f.at), isFailure: false }
-        : { text: feedbackText(f, look), age: '', isFailure: isFailure(f) }
+      return hasAge(f)
+        ? {
+            text: f.is === 'done' && row && lastTone(row) ? f.label : feedbackText(f, look),
+            age: ago(now - f.at),
+            isFailure: false,
+            isQueued: f.is === 'queued',
+          }
+        : { text: feedbackText(f, look), age: '', isFailure: isFailure(f), isQueued: false }
     }
     const lastActionText = (id: string, row?: Row) => {
       const f = feedbackLabel(id, row)
 
-      return f ? { text: [f.text, f.age].filter(Boolean).join(' · '), isFailure: f.isFailure } : null
+      return f
+        ? { text: [f.text, f.age].filter(Boolean).join(' · '), isFailure: f.isFailure, isQueued: f.isQueued }
+        : null
     }
     // A section's children hang from its title like a directory listing. A
     // child's row has a 1-column bar, 3 columns for the tree, 3 for its marker,
@@ -2824,7 +2922,8 @@ export const register: Register = on => {
         ? {
             ...plain,
             after: ` · ${[f.text, f.age].filter(Boolean).join(' ')}`,
-            afterTone: f.isFailure ? ('error' as const) : f.age ? lastTone(row) : undefined,
+            // A message still queued is muted: nothing has reached Claude yet.
+            afterTone: f.isFailure ? ('error' as const) : f.age && !f.isQueued ? lastTone(row) : undefined,
           }
         : plain
       const width = e.props.bodyColumns - 3 - inset - (line.before?.length ?? 0)
@@ -2874,7 +2973,14 @@ export const register: Register = on => {
       const tone = lastTone(row) ? pal.tone.done : pal.muted
       const status = [
         ...(row.fold?.note ? [{ text: row.fold.note, color: tone }] : []),
-        ...(lastText ? [{ text: lastText.text, color: lastText.isFailure ? pal.tone.error : tone }] : []),
+        ...(lastText
+          ? [
+              {
+                text: lastText.text,
+                color: lastText.isFailure ? pal.tone.error : lastText.isQueued ? pal.muted : tone,
+              },
+            ]
+          : []),
       ]
 
       return (
@@ -3260,15 +3366,22 @@ export const register: Register = on => {
           ]
     // A row that just closed stays where it was, with a ✓ and its outcome, and
     // [Undo] after the person's own Done or Dismiss, until it joins its list's
-    // closed items. It cannot be selected. `undo` is that press.
-    const settledContent = (what: string, outcome: string, at: number, undo: RowPress | PrPress | null) => (
+    // closed items. It cannot be selected. `undo` is that press. An answer
+    // whose message has not reached Claude reads "Queued: <answer>" instead.
+    const settledContent = (
+      what: string,
+      outcome: string,
+      at: number,
+      undo: RowPress | PrPress | null,
+      isQueued = false,
+    ) => (
       <Box flexDirection="column">
         <Text wrap="truncate-end" color={pal.muted}>
           {what}
         </Text>
         <Box flexDirection="row" columnGap={2}>
-          <Text wrap="wrap" color={pal.tone.done}>
-            {outcome}
+          <Text wrap="wrap" color={isQueued ? pal.muted : pal.tone.done}>
+            {isQueued ? `Queued: ${outcome}` : outcome}
           </Text>
           {undo ? (
             <Button
@@ -3283,8 +3396,9 @@ export const register: Register = on => {
     )
     const settledRow = ({ settled: r, state }: Extract<Entry, { settled: RowView }>, pos?: TreePos) => {
       const undo = r.actions.find(a => a.press.action === 'undo')?.press ?? null
-      const content = settledContent(r.title, state.label, state.at, undo)
-      const mark = <Text color={pal.mark.done}>✓</Text>
+      const content = settledContent(r.title, state.label, state.at, undo, state.isQueued)
+      // The ✓ waits for the answer to reach Claude; the blank keeps the row's text in line.
+      const mark = state.isQueued ? <Text> </Text> : <Text color={pal.mark.done}>✓</Text>
       // In a group's tree, or flat as Findings lists its rows.
       return pos ? (
         treeRow(pos, mark, content, `settled-${r.id}`)
@@ -3418,7 +3532,11 @@ export const register: Register = on => {
       const waitingOn = threadsOnYou(pr, handoff)
       // A Dismiss left on a PR that is tracked again, as one a later reply links, is over.
       const prLast = lastActions[`pr:${pr.ref}`]?.action === 'pr-dismiss' ? null : lastActionText(`pr:${pr.ref}`)
+      const retry = prRetryOf(lastActions[`pr:${pr.ref}`], pr.ref, null)
       const prActions: Action[] = [
+        ...(retry
+          ? [{ key: `retry-${pr.ref}`, label: 'Try again', kind: retry.kind, onPress: prPress(retry.press) }]
+          : []),
         ...(pr.state === 'OPEN' && pr.mergeable === 'CONFLICTING'
           ? [
               {

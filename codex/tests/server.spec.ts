@@ -3,7 +3,8 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { notePrompt } from '../src/core'
+import type { Feedback } from '../../hooks/view'
+import { notePrompt, viewOf } from '../src/core'
 import { makeServer } from '../src/server'
 import { readState, updateState } from '../src/state'
 import { fakeRunner, tempDir } from './helpers'
@@ -32,7 +33,11 @@ async function setup(queueCode: number) {
       ],
     },
   }))
-  const runner = fakeRunner(() => ({ code: queueCode, stdout: '', stderr: queueCode === 0 ? '' : 'no such thread' }))
+  const runner = fakeRunner(() =>
+    queueCode === 0
+      ? { code: 0, stdout: 'Queued message q1\n', stderr: '' }
+      : { code: queueCode, stdout: '', stderr: 'no such thread' },
+  )
   const handle = makeServer({
     dir,
     now: () => 100,
@@ -46,7 +51,7 @@ async function setup(queueCode: number) {
         structuredContent: {
           error: string | null
           note: string | null
-          view: { needsYou: { questions: { id: string; state: { is: string } }[] } }
+          view: { needsYou: { questions: { id: string; state: { is: string }; feedback: Feedback | null }[] } }
         }
         content: { text: string }[]
       }
@@ -100,12 +105,39 @@ test('a press drawn in another thread, or on a row that changed, reads stale and
   assert.deepEqual(s.lastActions, before.lastActions)
 })
 
-test('a press whose message fails to send leaves its row as it was', async () => {
+test('a press reads Queued until Codex takes its message as a prompt, then ✓', async () => {
+  const { dir, call } = await setup(0)
+  const r = await call('inbox_press', { press: { action: 'explain', id: 'i1' }, thread: 's1' }, { thread_id: 's1' })
+  assert.deepEqual(r.result.structuredContent.view.needsYou.questions[0]?.feedback, {
+    is: 'queued',
+    label: 'Explain',
+    at: 100,
+  })
+  const s = await readState(dir, 's1')
+  assert.deepEqual(
+    s.sent.map(x => [x.row, x.queuedId]),
+    [['i1', 'q1']],
+  )
+  // UserPromptSubmit carries the message the tab queued.
+  const arrived = notePrompt(s, s.sent[0]!.text, 200).state
+  assert.deepEqual(viewOf(arrived, 200).needsYou.questions[0]?.feedback, { is: 'done', label: 'Explain', at: 100 })
+})
+
+test('a press whose message fails to send is undone, and its row says why with [Try again]', async () => {
   const { dir, call } = await setup(1)
   const r = await call('inbox_press', ANSWER, { thread_id: 's1' })
+  // The tab keeps a typed draft only when the reply says the press failed.
   assert.match(r.result.structuredContent.error ?? '', /Not sent: no such thread/)
-  assert.equal(r.result.structuredContent.view.needsYou.questions.length, 1)
-  assert.deepEqual((await readState(dir, 's1')).sent, [])
+  const question = r.result.structuredContent.view.needsYou.questions[0]
+  assert.equal(question?.state.is, 'open')
+  assert.deepEqual(question?.feedback, {
+    is: 'notSent',
+    reason: 'no such thread',
+    retry: { action: 'answer', id: 'i1', option: 'Yes' },
+  })
+  const s = await readState(dir, 's1')
+  assert.deepEqual(s.sent, [])
+  assert.deepEqual(s.ledger.closed, [])
 })
 
 test('a close Codex read, then undone, is reported again when the row closes a second time', async () => {

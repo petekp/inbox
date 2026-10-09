@@ -8,7 +8,7 @@ import type { ComponentChildren, JSX } from 'preact'
 import { ago, isLapsed } from '../../hooks/ledger'
 import { noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
-import { closedShown, feedbackText, isFailure, SETTLED_MS } from '../../hooks/view'
+import { closedShown, feedbackText, hasAge, isFailure, SETTLED_MS } from '../../hooks/view'
 import type { Feedback, RowState, RowView } from '../../hooks/view'
 import type { Finding, Item, RowNote } from '../../types'
 import type { TabView as View } from './core'
@@ -162,6 +162,13 @@ function isListed(v: View, id: string): boolean {
   )
 }
 
+/** Whether the view lists this row as reading "Not sent". */
+function isNotSent(v: View, id: string): boolean {
+  return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows].some(
+    r => r.id === id && r.feedback?.is === 'notSent',
+  )
+}
+
 /**
  * Sends a press, drawn for the view's session, to the server. `onSent` runs
  * only once the press went through, so a stale or failed press keeps a typed draft.
@@ -176,9 +183,10 @@ async function act(rowId: string, press: RowPress, onSent?: () => void, pending 
   const seq = ++requested
   try {
     const r = await callTool<PressReply>('inbox_press', { press, thread: view?.thread, demo: isDemo })
-    if (r?.error) errors.set(rowId, r.error)
     if (r?.copy) await copy(rowId, r.copy)
     if (r?.view) applyView(r.view, seq)
+    // A message that did not send shows on its row, from the view, when the row is there to show it.
+    if (r?.error && !(view && isNotSent(view, rowId))) errors.set(rowId, r.error)
     // A sample press went through on the demo's copy, so its typed words go as a real press's do.
     // After the view, so `onSent` reads the rows as they are after the press.
     if (!r?.error && r?.note !== 'stale') onSent?.()
@@ -237,6 +245,9 @@ function rowKeys(r: RowView): { keys: Key[]; more: Key[] } {
   const lastOption = shown.map(a => a.press.action).lastIndexOf('answer')
   const keys: Key[] = []
   const more: Key[] = []
+  // A press whose message failed to send leads with [Try again], which repeats it.
+  const retry = r.feedback?.is === 'notSent' ? r.feedback.retry : null
+  if (retry) keys.push({ label: 'Try again', run: () => void act(id, retry) })
   let letters = 0
   const lettered = () => (letters < CHOICE_KEYS.length ? { hotkey: CHOICE_KEYS[letters++]! } : {})
   for (const [n, a] of shown.entries()) {
@@ -471,7 +482,7 @@ function TypeField({ row }: { row: Row }) {
   )
 }
 
-/** A row's last press, "✓ Explain". A row whose own mark is a ✓ leaves out the second one. */
+/** A row's last press, "✓ Explain" or "Queued: Explain". A row whose own mark is a ✓ leaves out the second one. */
 function feedbackLabel(row: Row): string | null {
   const f = row.feedback
   if (!f) return null
@@ -479,12 +490,12 @@ function feedbackLabel(row: Row): string | null {
   return f.is === 'done' && row.handleTone === 'done' ? f.label : feedbackText(f, 'html')
 }
 
-/** The feedback with its age. A note and a Local result read alone, with no age. */
+/** The feedback with its age. A note, a Local result and a message not sent read alone, with no age. */
 function lastText(row: Row, now: number): string | null {
   const f = row.feedback
   if (!f) return null
 
-  return f.is === 'done' ? `${feedbackLabel(row)} · ${ago(now - f.at)}` : feedbackLabel(row)
+  return hasAge(f) ? `${feedbackLabel(row)} · ${ago(now - f.at)}` : feedbackLabel(row)
 }
 
 /** A row's note while it shows. */
@@ -510,8 +521,9 @@ function ListRow({
   onSelect: () => void
   now: number
 }) {
-  // A last action is green only on a row that shows a ✓. On a row still open it is muted, so it does not read as an answer.
-  const lastTone = row.handleTone === 'done' ? 'tone-done' : 'muted'
+  // A last action is green only on a row that shows a ✓. On a row still open it is muted, so it does not read as an answer,
+  // and so is a message still queued, which has not reached Codex.
+  const lastTone = row.handleTone === 'done' && row.feedback?.is !== 'queued' ? 'tone-done' : 'muted'
   const handle = <span class={`mark ${row.handleTone ?? ''}`}>{row.handle}</span>
 
   if (!isSelected) {
@@ -611,11 +623,14 @@ function SettledView({ settled: r, state }: Extract<Entry, { settled: RowView }>
 
   return (
     <div class="row settled">
-      <span class="mark done">✓</span>
+      {/* The ✓ waits for an answer's message to reach Codex. */}
+      <span class="mark done">{state.isQueued ? '' : '✓'}</span>
       <div class="content tight">
         <div class="what">{r.title}</div>
         <div>
-          <span class="tone-done">{state.label}</span>
+          <span class={state.isQueued ? 'muted' : 'tone-done'}>
+            {state.isQueued ? `Queued: ${state.label}` : state.label}
+          </span>
           {state.canUndo ? (
             <button type="button" class="key" onClick={() => undo(r)}>
               Undo

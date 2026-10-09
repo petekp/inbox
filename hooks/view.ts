@@ -15,7 +15,7 @@ import type {
   RowNote,
 } from '../types'
 import { latestBatch, questionNumbers, reopenFinding, reopenItem } from './ledger'
-import { actionId, clipLabel, isHandedOff, isUndoable, noteText, stepsOf } from './presses'
+import { actionId, clipLabel, isHandedOff, isUndoable, noteText, retryOf, stepsOf } from './presses'
 import type { HelpStep, RowPress } from './presses'
 
 /** A question with more options than this shows the first 4 and [All N options]. */
@@ -50,17 +50,24 @@ export type ViewInput = {
  * A handed-off row stays in its place, folded, and leaves the count. A settled
  * row just closed: it stays in its place with its outcome, `label`, and leaves
  * the count. `canUndo` when the person's own Done or Dismiss closed it.
+ * `isQueued` while the answer that closed it has not reached the agent yet.
  */
 export type RowState =
-  { is: 'open' } | { is: 'handedOff' } | { is: 'settled'; label: string; at: number; canUndo: boolean }
+  | { is: 'open' }
+  | { is: 'handedOff' }
+  | { is: 'settled'; label: string; at: number; canUndo: boolean; isQueued: boolean }
 
 /**
  * What a row says about its last press: "✓ Explain · 1m ago". A Talk or Hand-off ✓
- * stays. A Local press's result shows while pending, for SETTLED_MS once done,
+ * stays. Until its message arrives it reads "Queued: Explain · 1m ago", and once
+ * it failed, "Not sent: <reason>" with the press [Try again] repeats, if any.
+ * A Local press's result shows while pending, for SETTLED_MS once done,
  * and until the next press once failed. A newer note shows in their place for SETTLED_MS.
  */
 export type Feedback =
   | { is: 'done'; label: string; at: number }
+  | { is: 'queued'; label: string; at: number }
+  | { is: 'notSent'; reason: string; retry: RowPress | null }
   | { is: 'local'; result: LocalResult }
   | { is: 'note'; note: RowNote['note']; at: number }
 
@@ -138,22 +145,36 @@ export function needsYouOrder(ledger: Ledger): { questions: Item[]; tasks: Item[
 }
 
 /**
- * A row's feedback: its note while the note is newer than its last press and
+ * Row `id`'s feedback: its note while the note is newer than its last press and
  * younger than SETTLED_MS; else its Local result while that shows; else its
- * last Talk, Hand-off or Mark press.
+ * last Talk, Hand-off or Mark press, by where its message is.
  */
-export function feedbackOf(last: LastAction | undefined, note: RowNote | undefined, now: number): Feedback | null {
+export function feedbackOf(
+  id: string,
+  last: LastAction | undefined,
+  note: RowNote | undefined,
+  now: number,
+): Feedback | null {
   const result = last?.result
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
     return { is: 'note', note: note.note, at: note.at }
   if (result && (result.state !== 'done' || now - result.at < SETTLED_MS)) return { is: 'local', result }
+  if (!last || last.kind === 'local') return null
+  const delivery = last.delivery
+  if (delivery?.state === 'queued') return { is: 'queued', label: last.text, at: last.at }
+  if (delivery?.state === 'failed') return { is: 'notSent', reason: delivery.reason, retry: retryOf(id, last) }
 
-  return last && last.kind !== 'local' ? { is: 'done', label: last.text, at: last.at } : null
+  return { is: 'done', label: last.text, at: last.at }
 }
 
 /** Feedback that reports a failure, which a row draws in red. */
 export function isFailure(f: Feedback | null): boolean {
-  return f?.is === 'local' && f.result.state === 'failed'
+  return f?.is === 'notSent' || (f?.is === 'local' && f.result.state === 'failed')
+}
+
+/** Feedback that reads with its age: a press's ✓, or its message still queued. */
+export function hasAge(f: Feedback): f is Extract<Feedback, { is: 'done' | 'queued' }> {
+  return f.is === 'done' || f.is === 'queued'
 }
 
 // Where a copied command runs. The desktop app's composer is not known to take "!" for shell mode.
@@ -192,6 +213,8 @@ function localText(r: LocalResult, look: Look): string {
 export function feedbackText(f: Feedback, look: Look): string {
   if (f.is === 'note') return noteText(f.note)
   if (f.is === 'local') return localText(f.result, look)
+  if (f.is === 'queued') return `Queued: ${f.label}`
+  if (f.is === 'notSent') return `Not sent: ${f.reason}`
 
   return `✓ ${f.label}`
 }
@@ -217,10 +240,15 @@ function actionsOf(
     flags: Partial<Pick<ActionView, 'isPrimary' | 'isFolded'>> = {},
   ): ActionView => ({
     press,
-    // The type action opens a field for new words each time, and an open or copy
-    // only shows its result, so neither reads "again".
+    // The type action opens a field for new words each time, an open or copy
+    // only shows its result, and a press whose message failed did nothing, so none reads "again".
     label:
-      press.action !== 'type' && last?.kind !== 'local' && last?.action === actionId(press) ? `${label} again` : label,
+      press.action !== 'type' &&
+      last?.kind !== 'local' &&
+      last?.delivery?.state !== 'failed' &&
+      last?.action === actionId(press)
+        ? `${label} again`
+        : label,
     kind,
     isPrimary: flags.isPrimary ?? false,
     isFolded: flags.isFolded ?? false,
@@ -292,6 +320,7 @@ export function inboxView({
         label: settledLabel(closed.outcome),
         at: 'closedAt' in closed ? closed.closedAt : closed.at,
         canUndo: isUndoable(closed.how),
+        isQueued: closed.how === 'answered' && lastActions[id]?.delivery?.state === 'queued',
       }
 
     return isHandedOff(lastActions[id], turns) ? { is: 'handedOff' } : { is: 'open' }
@@ -319,7 +348,7 @@ export function inboxView({
       steps,
       // Questions never fold.
       state: item.kind === 'question' && state.is === 'handedOff' ? { is: 'open' } : state,
-      feedback: state.is === 'settled' ? null : feedbackOf(lastActions[item.id], notes[item.id], now),
+      feedback: state.is === 'settled' ? null : feedbackOf(item.id, lastActions[item.id], notes[item.id], now),
       actions: settledActions(item.id, state) ?? actionsOf({ id: item.id, item, steps }, lastActions[item.id]),
     }
   }
@@ -339,7 +368,7 @@ export function inboxView({
       finding,
       steps: [],
       state,
-      feedback: state.is === 'settled' ? null : feedbackOf(lastActions[finding.id], notes[finding.id], now),
+      feedback: state.is === 'settled' ? null : feedbackOf(finding.id, lastActions[finding.id], notes[finding.id], now),
       actions:
         settledActions(finding.id, state) ??
         actionsOf({ id: finding.id, item: null, steps: [] }, lastActions[finding.id]),

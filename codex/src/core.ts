@@ -46,11 +46,18 @@ export function cleared(s: SessionState): SessionState {
 /**
  * Records a prompt and returns what Codex reads beside it: the questions a
  * numbered answer refers to, and the inbox when it changed. A message the
- * tab sent is matched by its text, since UserPromptSubmit carries only that.
+ * tab sent is matched by its text, since UserPromptSubmit carries only that,
+ * and the press that sent it arrived, unless its row was pressed again since.
  */
 export function notePrompt(s: SessionState, text: string, now: number): { state: SessionState; notes: string[] } {
   const sentAt = s.sent.findIndex(x => x.text === text)
   const sentBy: Press | null = sentAt >= 0 ? (s.sent[sentAt]?.press ?? null) : null
+  const row = sentAt >= 0 ? (s.sent[sentAt]?.row ?? null) : null
+  const last = row === null ? undefined : s.lastActions[row]
+  const lastActions =
+    row !== null && last?.delivery?.state === 'queued' && last.delivery.message === text
+      ? { ...s.lastActions, [row]: { ...last, delivery: { state: 'arrived' as const } } }
+      : s.lastActions
   const ledger = { ...s.ledger, turn: s.ledger.turn + 1 }
   const r = promptNotes(CODEX, ledger, { text, isPress: sentAt >= 0, isOpen: isTabOpen(s, now) }, s.told)
   const person = s.turn.person === null ? text : `${s.turn.person}\n\n${text}`
@@ -60,6 +67,7 @@ export function notePrompt(s: SessionState, text: string, now: number): { state:
       ...s,
       ledger,
       told: r.told,
+      lastActions,
       sent: sentAt >= 0 ? s.sent.filter((_x, i) => i !== sentAt) : s.sent,
       turn: { ...s.turn, person, press: sentBy ?? s.turn.press },
       presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 },

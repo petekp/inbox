@@ -5,7 +5,7 @@ import { test } from 'node:test'
 
 import { EMPTY, inboxText } from '../../hooks/ledger'
 import { feedbackText } from '../../hooks/view'
-import { viewOf } from '../src/core'
+import { notePrompt, viewOf } from '../src/core'
 import { handleHook } from '../src/hook'
 import { readState, statePath, updateState } from '../src/state'
 import { CODEX } from '../src/texts'
@@ -83,6 +83,8 @@ test('a session saved by an older build loads converted, as the mod converts its
     snapshots: { '/repo': { head: null, dirty: {} } },
     recordedRuns: ['e1'],
     turn: { person: 'Run the tests', activity: [], press: null, sentBack: ['Tests pass.'] },
+    // Sent before the server kept the row and the queued id.
+    sent: [{ text: 'Re "Ship it?": Yes', press: { id: 'i1', action: 'answer' }, at: 1 }],
     pending: [
       {
         ex: {
@@ -140,6 +142,12 @@ test('a session saved by an older build loads converted, as the mod converts its
   const question = viewOf(s, 2).needsYou.questions[0]
   assert.equal(question && question.feedback && feedbackText(question.feedback, 'html'), '✓ Explain')
   assert.ok(question?.actions.some(a => a.label === 'Explain again'))
+  // Its arrival changes no row.
+  assert.deepEqual(
+    s.sent.map(x => [x.row, x.queuedId]),
+    [[null, null]],
+  )
+  assert.deepEqual(notePrompt(s, 'Re "Ship it?": Yes', 2).state.lastActions, s.lastActions)
   // Saved and read again, a converted file stays as it is.
   await updateState(dir, 's1', x => x)
   assert.deepEqual((await readState(dir, 's1')).lastActions, s.lastActions)

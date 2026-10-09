@@ -112,13 +112,14 @@ export function stepsOf(item: Item, extraSteps: HelpStep[]): HelpStep[] {
  * A task or finding handed to the agent waits on the agent until the update
  * for a turn started after the press has applied. Still open then, the agent's
  * reply did not finish it, so it waits on the person again. Counts lower than
- * at the press were reset, so the row no longer folds.
+ * at the press were reset, so the row no longer folds. A hand-off whose message
+ * failed to send gave nothing away.
  */
 export function isHandedOff(
-  last: Pick<LastAction, 'kind' | 'turnsStarted'> | undefined,
+  last: Pick<LastAction, 'kind' | 'turnsStarted' | 'delivery'> | undefined,
   turns: { turnsStarted: number; turnsApplied: number },
 ): boolean {
-  const pressed = last?.kind === 'handoff' ? last.turnsStarted : undefined
+  const pressed = last?.kind === 'handoff' && last.delivery?.state !== 'failed' ? last.turnsStarted : undefined
 
   return pressed !== undefined && pressed <= turns.turnsStarted && turns.turnsApplied <= pressed
 }
@@ -340,8 +341,97 @@ export function withResult(
  * Pure: it reads only its arguments. `last` is the row's current last action,
  * which a Local press keeps. `ctx.extraSteps` are the steps the host drew
  * beyond the item's own helps, so a step press is checked against what was drawn.
+ * A press that sends records its message as queued until its host sees it arrive.
  */
 export function applyPress(
+  ledger: Ledger,
+  last: LastAction | undefined,
+  p: RowPress,
+  ctx: { now: number; turnsStarted: number; extraSteps: HelpStep[] },
+): PressResult {
+  const r = pressed(ledger, last, p, ctx)
+
+  return 'stale' in r || !r.last ? r : { ...r, last: withQueued(r.last, r.effects) }
+}
+
+/** A press's last action with its message queued, when the press sends one. A press with several sends is matched by its first. */
+export function withQueued(last: LastAction, effects: Effect[]): LastAction {
+  const send = effects.find(e => e.kind === 'send')
+
+  return send ? { ...last, delivery: { state: 'queued', message: send.text } } : last
+}
+
+/**
+ * Last actions once a message entered as a turn's prompt: the oldest press
+ * still queued with that text arrived. Every row that one press recorded
+ * arrives together, as a PR's Address all records each thread it sends.
+ */
+export function withArrival(lastActions: Record<string, LastAction>, message: string): Record<string, LastAction> {
+  const isWaiting = (a: LastAction) => a.delivery?.state === 'queued' && a.delivery.message === message
+  const waiting = Object.values(lastActions).filter(isWaiting)
+  if (waiting.length === 0) return lastActions
+  const at = Math.min(...waiting.map(a => a.at))
+
+  return Object.fromEntries(
+    Object.entries(lastActions).map(([id, a]) => [
+      id,
+      isWaiting(a) && a.at === at ? { ...a, delivery: { state: 'arrived' as const } } : a,
+    ]),
+  )
+}
+
+/**
+ * Last actions once a press's message failed to send: each row the press made
+ * at `at` reads why. A row pressed again since keeps its newer press.
+ */
+export function withFailure(
+  lastActions: Record<string, LastAction>,
+  rows: string[],
+  at: number,
+  reason: string,
+): Record<string, LastAction> {
+  const failed = rows.flatMap(id => {
+    const a = lastActions[id]
+    return a?.at === at && a.delivery?.state === 'queued'
+      ? [[id, { ...a, delivery: { state: 'failed' as const, reason } }] as const]
+      : []
+  })
+
+  return failed.length === 0 ? lastActions : { ...lastActions, ...Object.fromEntries(failed) }
+}
+
+/**
+ * The ledger once an answer's message failed to send: the question the answer
+ * closed at `at` opens again, as it was. Any later close of it stands.
+ */
+export function reopenOnFailure(ledger: Ledger, id: string, at: number): Ledger {
+  if (ledger.items.some(i => i.id === id)) return ledger
+  const closed = ledger.closed.findLast(c => c.id === id)
+
+  return closed?.item && closed.how === 'answered' && closed.at === at ? reopenItem(ledger, id) : ledger
+}
+
+/**
+ * The press [Try again] repeats on a row whose message failed to send, or null.
+ * A typed reply has none: its words go back into the row's draft instead.
+ */
+export function retryOf(id: string, last: LastAction): RowPress | null {
+  if (!/^[if]\d+$/.test(id)) return null
+  const step = /^step-(\d+)$/.exec(last.action)
+  if (step) return { action: 'step', id, step: Number(step[1]), label: last.text }
+  switch (last.action) {
+    case 'answer':
+      return { action: 'answer', id, option: last.text }
+    case 'explain':
+    case 'address':
+    case 'discuss':
+      return { action: last.action, id }
+    default:
+      return null
+  }
+}
+
+function pressed(
   ledger: Ledger,
   last: LastAction | undefined,
   p: RowPress,

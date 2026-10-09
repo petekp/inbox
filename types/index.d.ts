@@ -80,7 +80,16 @@ export type LastAction = {
   turnsStarted?: number
   /** The latest Local press's outcome: its opens and copies, pending until each has run. Talk, Hand-off and Mark presses clear it. */
   result?: LocalResult
+  /** Whether the press's message reached the agent. Missing on a press that sent nothing, and on one saved before the mod kept it, which reads as arrived. */
+  delivery?: Delivery
 }
+
+/**
+ * A sent message's way to the agent: queued once the press sent it, with its
+ * text to match the arrival by; arrived once it entered as a turn's prompt;
+ * failed when it will not enter, with why.
+ */
+export type Delivery = { state: 'queued'; message: string } | { state: 'arrived' } | { state: 'failed'; reason: string }
 
 /** One open or copy of a Local press, by the name the row shows for it, and why it failed. */
 export type LocalPart = {

@@ -300,6 +300,9 @@ function cleared(s) {
 function notePrompt(s, text, now) {
   const sentAt = s.sent.findIndex((x) => x.text === text);
   const sentBy = sentAt >= 0 ? s.sent[sentAt]?.press ?? null : null;
+  const row = sentAt >= 0 ? s.sent[sentAt]?.row ?? null : null;
+  const last = row === null ? void 0 : s.lastActions[row];
+  const lastActions = row !== null && last?.delivery?.state === "queued" && last.delivery.message === text ? { ...s.lastActions, [row]: { ...last, delivery: { state: "arrived" } } } : s.lastActions;
   const ledger = { ...s.ledger, turn: s.ledger.turn + 1 };
   const r = promptNotes(CODEX, ledger, { text, isPress: sentAt >= 0, isOpen: isTabOpen(s, now) }, s.told);
   const person = s.turn.person === null ? text : `${s.turn.person}
@@ -310,6 +313,7 @@ ${text}`;
       ...s,
       ledger,
       told: r.told,
+      lastActions,
       sent: sentAt >= 0 ? s.sent.filter((_x, i) => i !== sentAt) : s.sent,
       turn: { ...s.turn, person, press: sentBy ?? s.turn.press },
       presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }
@@ -392,6 +396,8 @@ function upgraded(saved, sessionId) {
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...saved.presence },
     pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex })),
+    // A message sent before the server kept its row changes no row when it arrives.
+    sent: (saved.sent ?? []).map((x) => ({ ...x, row: x.row ?? null, queuedId: x.queuedId ?? null })),
     lastActions: upgradeLastActions(saved.lastActions ?? {})
   };
 }

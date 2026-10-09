@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { On, RenderSurface } from 'claude-code'
+import type { Engine } from 'claude-code/testing'
+import type { On, PromptOrigin, RenderSurface } from 'claude-code'
 
 import { SETTLED_MS } from '../hooks/view'
 
@@ -29,6 +30,14 @@ let sent: string[] = []
 
 // Every command the mod ran, such as the herdr call that publishes the sidebar line.
 let ran: string[][] = []
+
+// How the session takes the mod's own prompts. `enter`: the prompt enters and its row is stored at once,
+// as when Claude is idle. `hold`: it waits behind a running turn, and its row is stored at `arrive()`.
+// `{ drop }`: a hook refuses it.
+let submitAnswer: 'enter' | 'hold' | { drop: string } = 'enter'
+// The prompts held behind the running turn, which `arrive()` stores.
+let held: { text: string; origin: PromptOrigin }[] = []
+let promptRows = 0
 
 // What another plugin's Stop hook answers; a test can make it send Claude back.
 let stopBlock: string | undefined
@@ -97,8 +106,31 @@ async function runBeforeAct() {
   await act?.()
 }
 
-function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
+/**
+ * Stores a prompt's own row, as Claude Code does once the prompt enters. The kit
+ * does not for a plugin's own prompt, so the test raises it.
+ */
+async function storePrompt($: Engine, prompt: { text: string; origin: PromptOrigin }) {
+  const row = {
+    message: { type: 'user' as const, role: 'user' as const, content: [{ type: 'text' as const, text: prompt.text }] },
+    door: 'prompt' as const,
+    origin: prompt.origin,
+    uuid: `prompt-row-${++promptRows}`,
+  }
+  await $.session.append(row)
+}
+
+/** The running turn ends, and the prompts held behind it enter. */
+async function arrive($: Engine) {
+  const prompts = held
+  held = []
+  for (const p of prompts) await storePrompt($, p)
+}
+
+function world($: Engine, on: On, prompts: string[], vars: Record<string, string> = {}) {
   sent = []
+  submitAnswer = 'enter'
+  held = []
   ran = []
   stopBlock = undefined
   ghAnswers = []
@@ -173,8 +205,12 @@ function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
       },
     }
   })
-  on('prompt.submit', ($, e) => {
-    if (e.origin.kind === 'plugin') sent.push(e.text)
+  on('prompt.submit', async (_$, e) => {
+    if (e.origin.kind !== 'plugin') return { text: e.text, context: e.context }
+    sent.push(e.text)
+    if (typeof submitAnswer === 'object') return { drop: submitAnswer.drop }
+    if (submitAnswer === 'hold') held.push({ text: e.text, origin: e.origin })
+    else await storePrompt($, { text: e.text, origin: e.origin })
 
     return { text: e.text, context: e.context }
   })
@@ -208,7 +244,7 @@ function sidebarLines(): string[] {
 test('a reply becomes a card and open items, and "1. yes" carries the question', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
-  world(on, prompts)
+  world($, on, prompts)
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
@@ -249,7 +285,7 @@ test('a reply becomes a card and open items, and "1. yes" carries the question',
 
 test('a question’s handle is the number a typed answer reaches, and the band counts what the tab counts', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [], { HERDR_PANE_ID: 'p1' })
+  world($, on, [], { HERDR_PANE_ID: 'p1' })
   // A HELP line's command must appear in Claude's reply.
   const reply = async (text: string, turnId: string) => {
     await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
@@ -311,7 +347,7 @@ test('a question’s handle is the number a typed answer reaches, and the band c
 
 test('a task handed to Claude folds and leaves the count until Claude’s reply leaves it open, whatever it opens or copies meanwhile', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
+  world($, on, [])
   ledgerReply = [
     'GOAL: Load the data',
     'NOW: Waiting on the load script',
@@ -388,7 +424,7 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
 
 test('a question with 7 options shows 4 until [All 7 options], draws its steps after them, and letters only the first 9', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
+  world($, on, [])
   ledgerReply = [
     'NOW: Waiting on a color',
     'NEW: decide | 1 | Which color? | Red / Orange / Yellow / Green / Blue / Indigo / Violet | Green',
@@ -432,7 +468,7 @@ test('a question with 7 options shows 4 until [All 7 options], draws its steps a
 
 test('last actions an earlier build saved convert once by the table, and a task handed off then still folds', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
+  world($, on, [])
   ledgerReply =
     'NOW: Waiting on the load script\nNEW: do | - | Run the load script | - | -\nHELP: new 1 | run | ./load.sh | load script'
   const LAST_ACTIONS = { plugin: 'inbox', key: 'lastActions' } as const
@@ -553,7 +589,7 @@ test('last actions an earlier build saved convert once by the table, and a task 
 
 test('after 15 idle minutes the band shows where the session stands', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
+  world($, on, [])
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
@@ -575,7 +611,7 @@ test('after 15 idle minutes the band shows where the session stands', async ($, 
 test('resumed into a conversation it cannot fork yet, it catches up from the transcript before any reply', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
-  world(on, prompts)
+  world($, on, prompts)
   // A resumed session: earlier turns, but no request from this process to fork.
   on('session.turns', () => ({ value: 3 }))
   on('model.fork', () => ({ value: { isAnswered: false as const, reason: 'nothing-to-fork' as const } }))
@@ -604,7 +640,7 @@ test('resumed into a conversation it cannot fork yet, it catches up from the tra
 
 test('after a failed update, the next reply catches up over the whole conversation', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
+  world($, on, [])
   on('model.fork', () => ({
     value: {
       isAnswered: true,
@@ -671,7 +707,7 @@ test('after a failed update, the next reply catches up over the whole conversati
 
 test('a reload that cuts off the end-of-turn hook catches up on load', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
+  world($, on, [])
   on('model.fork', () => ({
     value: {
       isAnswered: true,
@@ -697,7 +733,7 @@ test('a reload that cuts off the end-of-turn hook catches up on load', async ($,
 
 test('a finding Claude records while the pane shows an empty tab brings the pane to it, and Address hands it to Claude until Claude’s reply leaves it open', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
+  world($, on, [])
   on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown: true, isFocused: true, isPlaced: true }] }))
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
@@ -740,7 +776,7 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
 
 test('t opens a field for the person’s own words: an answer closes its question, a reply hands a finding to Claude', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
+  world($, on, [])
   on('ui.focus', () => ({}))
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
@@ -782,7 +818,7 @@ test('t opens a field for the person’s own words: an answer closes its questio
 
 test('a press on a question Claude closed since the draw sends nothing and says so, and a typed answer keeps its words', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
+  world($, on, [])
   on('ui.focus', () => ({}))
   // The typed words a stale press keeps, as the mod last saved them.
   let drafts: unknown = null
@@ -821,9 +857,86 @@ test('a press on a question Claude closed since the draw sends nothing and says 
   expect(drafts).toEqual({ i2: 'Call it hello' })
 })
 
+test('a press during a turn reads Queued until its prompt enters, and one that will not enter is undone with Not sent and [Try again]', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  const prompts: string[] = []
+  world($, on, prompts)
+  on('ui.focus', () => ({}))
+  let drafts: unknown = null
+  on('state.set', { plugin: 'inbox', key: 'drafts' } as const, ($, e, next) => {
+    drafts = e.value
+    return next(e)
+  })
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+
+  // A turn runs, so the mod's prompts wait behind it.
+  submitAnswer = 'hold'
+  await pane.press({ key: 'explain-i1' })
+  await clock.settle()
+  expect(await pane.find({ text: /^Queued: Explain · just now$/ })).toBeDefined()
+  await pane.press({ key: 'select-i2' })
+  await pane.press({ key: 'typekey-i2' })
+  await pane.input({ key: 'type-i2', text: 'yes' })
+  await clock.settle()
+  // The answered question leaves the count at once, and settles as queued, with no ✓.
+  expect(await band.find({ text: /1 waiting on you/ })).toBeDefined()
+  expect(await pane.find({ text: 'Queued: Yes' })).toBeDefined()
+  // The turn ends and both prompts enter.
+  await arrive($)
+  await clock.settle()
+  expect(await pane.find({ text: /^✓ Explain · just now$/ })).toBeDefined()
+  expect(await pane.find({ text: /Queued/ })).toBeUndefined()
+
+  // A hook refuses a typed answer: the question opens again, and the words go back into its field.
+  submitAnswer = { drop: 'a hook refused it' }
+  await pane.press({ key: 'select-i1' })
+  await pane.press({ key: 'typekey-i1' })
+  await pane.input({ key: 'type-i1', text: 'Deno, actually' })
+  await clock.settle()
+  expect(sent.at(-1)).toBe('Re "Use Node or Python?": Deno, actually')
+  expect(await pane.find({ key: 'row-i1' })).toBeDefined()
+  expect(drafts).toEqual({ i1: 'Deno, actually' })
+  // A refused answer: the question opens again and counts, says why, and offers [Try again].
+  await pane.press({ key: 'answer-i1-0' })
+  await clock.settle()
+  expect(sent.at(-1)).toBe('Re "Use Node or Python?": Node')
+  expect(await pane.find({ key: 'row-i1' })).toBeDefined()
+  expect(await pane.find({ text: 'Not sent: a hook refused it' })).toBeDefined()
+  expect(await band.find({ text: /1 waiting on you/ })).toBeDefined()
+  // Nothing went, so no option reads "again".
+  expect((await pane.find({ key: 'answer-i1-0-key' }))?.props.label).toBe('Node (recommended)')
+
+  // Claude reads none of the unsent words, beside the next prompt or in the next exchange.
+  submitAnswer = 'enter'
+  const next = await $.prompt.submit({ text: 'carry on', wait: false, origin: { kind: 'composer' } })
+  expect(next.context?.join('\n') ?? '').not.toMatch(/→ (Node|Deno)/)
+  await $.turn.complete({ answer: 'Carrying on.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
+  await clock.settle()
+  expect(prompts.at(-1)).toContain('carry on\n</person>')
+  expect(prompts.at(-1)).not.toContain('Re "Use Node or Python?"')
+
+  // [Try again] repeats the answer, which closes the question.
+  await pane.press({ key: 'retry-i1' })
+  await clock.settle()
+  expect(sent.at(-1)).toBe('Re "Use Node or Python?": Node')
+  expect(await pane.find({ key: 'row-i1' })).toBeUndefined()
+})
+
 test('Claude closes an item or finding that no longer applies, by the id it reads beside the prompt', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
+  world($, on, [])
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
@@ -894,7 +1007,7 @@ test('Claude closes an item or finding that no longer applies, by the id it read
 
 test('Dismiss settles a question in place with Undo, which brings it back open and selected, and a second close reaches Claude too', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
+  world($, on, [])
   const start = () => $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   const prompt = async (text: string) =>
     (await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })).context?.join('\n') ?? ''
@@ -938,7 +1051,7 @@ test('Dismiss settles a question in place with Undo, which brings it back open a
 
 test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, its buttons send its conflicts and thread and say so, and its failing check waits on the person', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
+  world($, on, [])
   ledgerReply = 'NOW: Waiting on review\nNEW: do | - | Mark #12 ready for review | - | -'
   // Whether the reviewer has answered since the thread was sent to Claude, and whether it was resolved on GitHub.
   let hasReply = false
@@ -1093,14 +1206,27 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   await clock.settle()
   expect(await pane.find({ text: /✓ Discuss ·/ })).toBeDefined()
   expect((await pane.find({ key: 'discuss-T1' }))?.props.label).toMatch(/Discuss again$/)
+  // A hook refuses Address: the thread stays open and waiting, says why, and offers [Try again].
+  const details = 'fold-details-acme/greet#12 thread T1'
+  submitAnswer = { drop: 'a hook refused it' }
   await pane.press({ key: 'address-T1' })
   expect(sent.at(-1)).toContain('Address this review comment on PR #12')
   expect(sent.at(-1)).toContain('bin/greet:4, from @sam:\nQuote the name.')
   await clock.settle()
-  expect(await pane.find({ text: /Address · just now/ })).toBeDefined()
+  expect(await pane.find({ text: 'Not sent: a hook refused it' })).toBeDefined()
+  expect(await pane.find({ key: details })).toBeUndefined()
+  expect((await pane.find({ key: 'address-T1-key' }))?.props.label).toBe('Address')
+  // Tried again during a turn, it folds at once and reads Queued until its prompt enters.
+  submitAnswer = 'hold'
+  await pane.press({ key: 'retry-T1' })
+  await clock.settle()
+  expect(await pane.find({ text: /^Queued: Address · just now$/ })).toBeDefined()
+  expect(await pane.find({ key: details })).toBeDefined()
+  await arrive($)
+  await clock.settle()
+  expect(await pane.find({ text: /^Address · just now$/ })).toBeDefined()
 
   // Sent to Claude, the thread folds to its first line, with its keys behind Details, until the reviewer answers.
-  const details = 'fold-details-acme/greet#12 thread T1'
   expect(await pane.find({ key: 'address-T1-key' })).toBeUndefined()
   await pane.press({ key: `${details}-key` })
   expect((await pane.find({ key: 'address-T1-key' }))?.props.label).toBe('Address again')
@@ -1136,7 +1262,7 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
 
 test('opening the PRs tab while another PR fetch runs still finds the branch’s PR', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
+  world($, on, [])
   const view = (number: number, title: string) =>
     JSON.stringify({
       number,
@@ -1181,7 +1307,7 @@ test('opening the PRs tab while another PR fetch runs still finds the branch’s
 
 test('a PR’s Dismiss settles its block with Undo, which brings it back, and a fetch keeps a Dismiss made while it ran, and the branch PR when its lookup fails', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
+  world($, on, [])
   const view = (number: number, title: string) =>
     JSON.stringify({
       number,
@@ -1262,7 +1388,7 @@ test('a PR’s Dismiss settles its block with Undo, which brings it back, and a 
 
 test('a stop and an open permission prompt lead the sidebar line until they clear', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [], { HERDR_PANE_ID: 'p1' })
+  world($, on, [], { HERDR_PANE_ID: 'p1' })
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.classic.PermissionRequest({
@@ -1291,7 +1417,7 @@ test('a stop and an open permission prompt lead the sidebar line until they clea
 test('a reply another Stop hook sends Claude back from reaches the per-turn call, and the inbox sends back none itself', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
-  world(on, prompts)
+  world($, on, prompts)
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'fix the parser', wait: false, origin: { kind: 'composer' } })
@@ -1331,7 +1457,7 @@ test('a reply another Stop hook sends Claude back from reaches the per-turn call
 
 test('/inbox demo shows sample entries in every tab, presses change only its copy, and [Hide demo] goes back', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
+  world($, on, [])
   const SAMPLE = 'Sample entry: nothing was sent.'
   // The session links a real PR with a sample PR's ref, so a sample press that reached the real state would show.
   const view = (number: number, title: string) =>
@@ -1449,7 +1575,7 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
 
 test('/clear and /resume switch the inbox to the other conversation, and each keeps its saved items', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
+  world($, on, [])
   const turn = async (text: string) => {
     await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
     await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: text, reason: 'answer' })
@@ -1489,7 +1615,7 @@ test('/clear and /resume switch the inbox to the other conversation, and each ke
 test('a headless run does nothing', async ($, on) => {
   const prompts: string[] = []
   mock.clock(on, { now: 1 })
-  world(on, prompts)
+  world($, on, prompts)
 
   await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
   await $.prompt.submit({ text: 'hi', wait: false, origin: { kind: 'sdk' } })
@@ -1502,7 +1628,7 @@ for (const isAttachedFirst of [true, false]) {
   test(`the desktop app turns the mod on when it attaches ${isAttachedFirst ? 'before' : 'after'} the start`, async ($, on) => {
     const clock = mock.clock(on, { now: 1_000_000 })
     const prompts: string[] = []
-    world(on, prompts)
+    world($, on, prompts)
     if (isAttachedFirst) surfaces = ['desktop']
 
     await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })

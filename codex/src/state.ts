@@ -37,8 +37,12 @@ export type SessionState = {
   }
   /** Exchanges waiting for the inbox model, oldest first, with the turns started when each ended. */
   pending: { ex: Exchange; turnsStarted: number }[]
-  /** Messages the tab sent with `codex queue`, so UserPromptSubmit can tell them from the person's own words. */
-  sent: { text: string; press: Press | null; at: number }[]
+  /**
+   * Messages the tab sent with `codex queue`, so UserPromptSubmit can tell them
+   * from the person's own words, and mark the press on `row` arrived. `queuedId`
+   * is the id `codex queue` gave the message. Both are null on one an earlier build saved.
+   */
+  sent: { text: string; press: Press | null; at: number; row: string | null; queuedId: string | null }[]
   lastActions: Record<string, LastAction>
   /** When the tab last asked for its view, so the inbox texts can say whether it is open. */
   tabSeenAt: number
@@ -90,7 +94,8 @@ export function statePath(dir: string, sessionId: string): string {
 }
 
 /** State an earlier build saved, with the keys it kept for session checks and the claim send-back. */
-type Saved = Omit<Partial<SessionState>, 'turn' | 'pending'> & {
+type Saved = Omit<Partial<SessionState>, 'turn' | 'pending' | 'sent'> & {
+  sent?: (Omit<SessionState['sent'][number], 'row' | 'queuedId'> & Partial<SessionState['sent'][number]>)[]
   checks?: unknown
   snapshots?: unknown
   recordedRuns?: unknown
@@ -117,6 +122,8 @@ function upgraded(saved: Saved, sessionId: string): SessionState {
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...saved.presence },
     pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex })),
+    // A message sent before the server kept its row changes no row when it arrives.
+    sent: (saved.sent ?? []).map(x => ({ ...x, row: x.row ?? null, queuedId: x.queuedId ?? null })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
   }
 }

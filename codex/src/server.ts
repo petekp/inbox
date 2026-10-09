@@ -22,7 +22,7 @@ import { readState, updateState } from './state'
 import type { SessionState } from './state'
 import { CODEX, TAB_DESCRIPTION } from './texts'
 import type { Run } from './run'
-import type { LocalResult, RowNote } from '../../types'
+import type { LastAction, LocalResult, RowNote } from '../../types'
 
 export const TAB_URI = 'ui://inbox/tab'
 const TAB_MIME = 'text/html;profile=mcp-app'
@@ -83,6 +83,10 @@ export function sessionOf(params: Record<string, unknown> | undefined): string |
 
 const text = (t: string) => ({ content: [{ type: 'text', text: t }] })
 
+function withoutDelivery({ delivery: _delivery, ...last }: LastAction): LastAction {
+  return last
+}
+
 /** What the tab hears back from a press: the view after it, text to copy, why it failed, or a note for its row. */
 type PressReply = {
   view: TabView
@@ -94,14 +98,19 @@ type PressReply = {
 export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<string, unknown> | null> {
   const { dir, now } = deps
 
-  /** Sends a message into the session as the person's own: it runs after any running turn. */
-  async function queue(s: SessionState, message: string): Promise<void> {
+  /**
+   * Sends a message into the session as the person's own: it runs after any
+   * running turn. Returns the id `codex queue` printed for it, or null when it printed none.
+   */
+  async function queue(s: SessionState, message: string): Promise<string | null> {
     const cli = s.cliPath ?? (await deps.fallbackCli())
     const r = await deps.exec([cli, 'queue', '--thread', s.sessionId, '--message', message], {
       cwd: s.root || '/',
       timeoutMs: 15_000,
     })
     if (r.code !== 0) throw new Error(r.stderr.trim() || `codex queue exited ${r.code}`)
+
+    return /Queued message (\S+)/.exec(r.stdout)?.[1] ?? null
   }
 
   /** The view for the tab, with the session it was read for. */
@@ -135,11 +144,23 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         told: p.action === 'undo' ? { ...s.told, closed: s.told.closed.filter(id => id !== p.id) } : s.told,
       }
       if (r.last?.result?.state === 'pending') local = { effects: r.effects, pending: r.last.result }
-      // Sent while the lock is held, so a send that fails leaves the row as it was.
+      // Sent while the lock is held, so no other write lands between the press and its undoing.
       for (const e of r.effects) {
         if (e.kind === 'send') {
-          await queue(next, e.text)
-          next = { ...next, sent: [...next.sent, { text: e.text, press: e.by, at: now() }].slice(-MAX_SENT) }
+          try {
+            const queuedId = await queue(next, e.text)
+            next = {
+              ...next,
+              sent: [...next.sent, { text: e.text, press: e.by, at: now(), row: p.id, queuedId }].slice(-MAX_SENT),
+            }
+          } catch (err) {
+            const reason = err instanceof Error ? err.message : String(err)
+            error = `Not sent: ${reason}`
+            copy = null
+            // The press is undone: the state before it, and its row says why.
+            const failed = r.last && { ...r.last, delivery: { state: 'failed' as const, reason } }
+            return failed ? { ...s, lastActions: { ...s.lastActions, [p.id]: failed } } : s
+          }
         } else if (e.kind === 'copy') copy = { text: e.text, name: e.name }
       }
 
@@ -208,12 +229,14 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
           })
         : ({ stale: true } as const)
     if ('stale' in r) return { view: served(s, id), copy: null, error: null, note: 'stale' }
-    // The demo opens nothing, so a Local press records no result there.
+    // The demo opens nothing, so a Local press records no result there. A sample
+    // send goes nowhere, so nothing would ever clear its Queued.
     const isLocal = r.last?.result !== undefined
+    const sample = r.last && !isLocal ? withoutDelivery(r.last) : null
     demos.set(id, {
       ...s,
       ledger: r.ledger,
-      lastActions: r.last && !isLocal ? { ...s.lastActions, [p.id]: r.last } : s.lastActions,
+      lastActions: sample ? { ...s.lastActions, [p.id]: sample } : s.lastActions,
     })
 
     return {

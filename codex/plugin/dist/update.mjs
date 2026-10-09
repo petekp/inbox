@@ -438,6 +438,8 @@ function upgraded(saved, sessionId) {
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...saved.presence },
     pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex })),
+    // A message sent before the server kept its row changes no row when it arrives.
+    sent: (saved.sent ?? []).map((x) => ({ ...x, row: x.row ?? null, queuedId: x.queuedId ?? null })),
     lastActions: upgradeLastActions(saved.lastActions ?? {})
   };
 }
