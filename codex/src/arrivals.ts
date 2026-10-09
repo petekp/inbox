@@ -2,9 +2,14 @@
 // for NEW_ROW_MS, and the tab it moves to for them. The mod's followNewRows
 // follows the same rules. Pure, so tests can run them without the tab's page.
 
-import type { InboxView } from '../../hooks/view'
+import { closedShown } from '../../hooks/view'
+import type { InboxView, RowView } from '../../hooks/view'
+import type { HeardState } from './core'
 
 export type Tab = 'needsYou' | 'findings'
+
+/** A Closed fold, which the person unfolds by its group. */
+export type Group = 'question' | 'task' | 'finding'
 
 export const TAB_IDS: Tab[] = ['needsYou', 'findings']
 
@@ -30,6 +35,30 @@ export function newRows(seen: SeenRows, v: InboxView): { seen: SeenRows; added: 
       findings: seen ? listed.findings.filter(id => !seen.findings.has(id)) : [],
     },
   }
+}
+
+/**
+ * Whether a tab shows only its empty text: no open rows, no rows drawn settled,
+ * and no unfolded Closed fold. Needs you is not empty while it shows the
+ * not-heard text, so a new finding does not move the tab away from that warning.
+ */
+export function isShownEmpty(
+  v: InboxView & { heard: HeardState },
+  t: Tab,
+  drawn: ReadonlySet<string>,
+  unfolded: ReadonlySet<Group>,
+): boolean {
+  const isListed = (rows: RowView[]) => rows.some(r => r.state.is !== 'settled' || drawn.has(r.id))
+  const isClosedShown = (g: Group, closed: { id: string }[]) => unfolded.has(g) && closedShown(closed, drawn).length > 0
+  if (t === 'findings') return !isListed(v.findings.rows) && !isClosedShown('finding', v.findings.closed)
+
+  return (
+    v.heard === 'heard' &&
+    !isListed(v.needsYou.questions) &&
+    !isListed(v.needsYou.tasks) &&
+    !isClosedShown('question', v.needsYou.closed.questions) &&
+    !isClosedShown('task', v.needsYou.closed.tasks)
+  )
 }
 
 /**

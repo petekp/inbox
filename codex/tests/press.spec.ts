@@ -7,11 +7,11 @@ import { recordClose, recordFinding } from '../../hooks/tools'
 import { closedShown, feedbackText, SETTLED_MS } from '../../hooks/view'
 import type { RowView } from '../../hooks/view'
 import type { Item, LocalResult } from '../../types'
-import { followTo, newRows } from '../src/arrivals'
+import { followTo, isShownEmpty, newRows } from '../src/arrivals'
 import { endTurn, noteHook, notePrompt, noteToolCall, viewOf } from '../src/core'
 import { demoState } from '../src/demo'
 import { drawnSettled, SETTLE_WINDOW_MS, settledIds, settledSeen } from '../src/settle'
-import { emptyState } from '../src/state'
+import { emptyState, NOTHING_HEARD } from '../src/state'
 import type { SessionState } from '../src/state'
 import { CODEX } from '../src/texts'
 
@@ -486,6 +486,10 @@ test('the tab says the hooks were not heard when none ran, when a tool call come
   const twice = noteHook(prompted, 'prompt', 50, 't2')
   assert.equal(viewOf(twice, 50).heard, 'partial')
   assert.equal(viewOf(noteHook(twice, 'stop', 60), 60).heard, 'heard')
+  // A second prompt in the same turn, such as a steer, is one turn.
+  assert.equal(viewOf(noteHook(prompted, 'prompt', 50, 't1'), 50).heard, 'heard')
+  // SessionStart did not run, as when the plugin came after the chat opened, but the other hooks did.
+  assert.equal(viewOf(noteHook(noteHook(s, 'prompt', 20, 't1'), 'stop', 30), 30).heard, 'partial')
   // With no turn id, a call between a Stop and the next prompt reads as missed.
   const stopped = noteHook(prompted, 'stop', 40)
   assert.equal(viewOf(noteToolCall(stopped, null, 45), 45).heard, 'partial')
@@ -514,12 +518,17 @@ test('the tab moves from an empty Needs you to Findings when a poll brings a fin
   }
   const next = newRows(first.seen, viewOf(withFinding, 20))
   assert.deepEqual(next.added, { needsYou: [], findings: ['f1'] })
-  assert.deepEqual(followTo('needsYou', true, next.added, { needsYou: [], findings: ['f1'] }), {
-    tab: 'findings',
-    id: 'f1',
-  })
+  const followed = (state: SessionState) =>
+    followTo('needsYou', isShownEmpty(viewOf(state, 20), 'needsYou', new Set(), new Set()), next.added, {
+      needsYou: [],
+      findings: ['f1'],
+    })
+  assert.deepEqual(followed(withFinding), { tab: 'findings', id: 'f1' })
+  // While Needs you says the hooks were not heard, it stays on that warning.
+  assert.equal(viewOf({ ...withFinding, heard: NOTHING_HEARD }, 20).heard, 'none')
+  assert.equal(followed({ ...withFinding, heard: NOTHING_HEARD }), null)
   // A tab that shows rows stays where it is.
-  assert.equal(followTo('needsYou', false, next.added, { needsYou: ['i1'], findings: ['f1'] }), null)
+  assert.equal(followed({ ...withFinding, ledger: withItems().ledger }), null)
   // The same rows in the next poll are not new.
   assert.deepEqual(newRows(next.seen, viewOf(withFinding, 30)).added, { needsYou: [], findings: [] })
 })

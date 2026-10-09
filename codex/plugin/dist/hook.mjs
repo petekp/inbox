@@ -523,7 +523,7 @@ async function handleHook(input, deps) {
       await updateState(dir, id, (s) => {
         const r = notePrompt(withCli(s), input.prompt ?? "", now());
         notes = r.notes;
-        return noteHook(r.state, "prompt", now(), input.turn_id);
+        return input.agent_id ? r.state : noteHook(r.state, "prompt", now(), input.turn_id);
       });
       return notes.length === 0 ? null : { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: notes.join("\n\n") } };
     }

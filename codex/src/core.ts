@@ -157,17 +157,20 @@ export function noteToolCall(s: SessionState, turnId: string | null, now: number
 }
 
 /**
- * Whether the session's hooks are running: `none` when SessionStart never ran,
- * `partial` when UserPromptSubmit missed a turn since it last ran, or when it
- * recorded two turns and Stop none, so no reply reaches the inbox model.
+ * Whether the session's hooks are running: `none` when no hook ran, `partial`
+ * when SessionStart did not run but another hook did, when UserPromptSubmit
+ * missed a turn since it last ran, or when it recorded two turns and Stop none,
+ * so no reply reaches the inbox model.
  */
 export type HeardState = 'heard' | 'none' | 'partial'
 
 export function heardState(h: Heard): HeardState {
-  if (h.startAt === null) return 'none'
+  if (h.startAt === null && h.promptAt === null && h.stopAt === null) return 'none'
   const isMissed = h.promptMissedAt !== null && (h.promptAt === null || h.promptMissedAt >= h.promptAt)
+  // Prompts in one turn, such as a steer, share its turn id. A prompt with no turn id counts on its own.
+  const turns = h.promptTurns.length > 0 ? h.promptTurns.length : h.prompts
 
-  return isMissed || (h.prompts >= 2 && h.stops === 0) ? 'partial' : 'heard'
+  return h.startAt === null || isMissed || (turns >= 2 && h.stops === 0) ? 'partial' : 'heard'
 }
 
 /** What the tab draws: the shared inbox view, and what only the tab reads. */

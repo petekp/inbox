@@ -14,6 +14,8 @@ export type HookInput = {
   hook_event_name: string
   session_id: string
   turn_id?: string
+  /** Set when a subagent's hook fires. It carries the parent's session id. */
+  agent_id?: string
   transcript_path?: string
   cwd?: string
   source?: string
@@ -59,7 +61,8 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
         const r = notePrompt(withCli(s), input.prompt ?? '', now())
         notes = r.notes
 
-        return noteHook(r.state, 'prompt', now(), input.turn_id)
+        // A subagent's prompt is not a turn of this chat, so it says nothing about this chat's hooks.
+        return input.agent_id ? r.state : noteHook(r.state, 'prompt', now(), input.turn_id)
       })
 
       return notes.length === 0

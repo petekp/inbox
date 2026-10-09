@@ -80,6 +80,9 @@ test('each hook records that it ran, with the turn UserPromptSubmit saw, and the
       promptMissedAt: null,
     },
   )
+  // A subagent's prompt carries this chat's session id, but is not one of its turns.
+  await handleHook(input('UserPromptSubmit', { prompt: 'Review', turn_id: 'a1', agent_id: 'agent-1' }), deps)
+  assert.deepEqual([(await heard()).prompts, (await heard()).promptTurns], [1, ['t1']])
   clock = 3000
   // A reply with no text still ends a turn the Stop hook saw.
   await handleHook(input('Stop', { turn_id: 't1', last_assistant_message: '' }), deps)

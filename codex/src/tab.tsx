@@ -20,13 +20,12 @@ import {
 } from '../../hooks/view'
 import type { Feedback, RowState, RowView } from '../../hooks/view'
 import type { Finding, Item, RowNote } from '../../types'
-import { followTo, newRows } from './arrivals'
-import type { SeenRows, Tab } from './arrivals'
+import { followTo, isShownEmpty, newRows } from './arrivals'
+import type { Group, SeenRows, Tab } from './arrivals'
 import type { TabView as View } from './core'
 import { drawnSettled, POLL_MS, settledIds, settledSeen } from './settle'
 
 type Tone = 'needsYou' | 'findings' | 'done' | 'error'
-type Group = 'question' | 'task' | 'finding'
 
 /** One of a row's actions, with the key that presses it while the tab has focus, if it has one. */
 type Key = { hotkey?: string; label: string; isPrimary?: boolean; run: () => void }
@@ -107,11 +106,16 @@ let isPressing = false
 let nextId = 0
 const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>()
 
-function request(method: string, params: unknown): Promise<unknown> {
+/** Sends a request to the host. With `timeoutMs`, a request the host has not answered by then fails, and a later answer is dropped. */
+function request(method: string, params: unknown, timeoutMs?: number): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const id = ++nextId
     pending.set(id, { resolve, reject })
     parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*')
+    if (timeoutMs !== undefined)
+      setTimeout(() => {
+        if (pending.delete(id)) reject(new Error(`${method} timed out`))
+      }, timeoutMs)
   })
 }
 
@@ -135,8 +139,8 @@ function applyHost(ctx: { theme?: string; styles?: { variables?: Record<string, 
 }
 
 /** A tool's answer for the tab. A call the server could not answer throws, as a failed request does. */
-async function callTool<T>(name: string, args: unknown = {}): Promise<T> {
-  const r = (await request('tools/call', { name, arguments: args })) as
+async function callTool<T>(name: string, args: unknown = {}, timeoutMs?: number): Promise<T> {
+  const r = (await request('tools/call', { name, arguments: args }, timeoutMs)) as
     { structuredContent?: T; isError?: boolean; content?: { text?: string }[] } | undefined
   if (!r || r.isError || r.structuredContent === undefined) throw new Error(r?.content?.[0]?.text ?? `${name} failed`)
 
@@ -167,16 +171,9 @@ function applyView(next: View, seq: number) {
 
 /** Moves to the other tab for its new rows while the tab on screen shows only its empty text, as the mod's pane does. */
 function follow(v: View, added: Record<Tab, string[]>) {
-  const lists = listsOf(v, drawnSettled(seen, Date.now()))
-  const isEmpty = {
-    needsYou:
-      lists.questions.length === 0 &&
-      lists.tasks.length === 0 &&
-      !(unfolded.has('question') && itemsClosed(v, 'question', []).length > 0) &&
-      !(unfolded.has('task') && itemsClosed(v, 'task', []).length > 0),
-    findings: lists.findings.length === 0 && !(unfolded.has('finding') && v.findings.closed.length > 0),
-  }[tab]
-  const to = followTo(tab, isEmpty, added, {
+  const drawn = drawnSettled(seen, Date.now())
+  const lists = listsOf(v, drawn)
+  const to = followTo(tab, isShownEmpty(v, tab, drawn, unfolded), added, {
     needsYou: lists.byTab.needsYou.map(r => r.id),
     findings: lists.byTab.findings.map(r => r.id),
   })
@@ -185,11 +182,14 @@ function follow(v: View, added: Record<Tab, string[]>) {
   if (to.id) open(to.tab, to.id)
 }
 
+/** How long a view read may go unanswered before it counts as failed, so a lost answer cannot stop the polls. */
+const READ_TIMEOUT_MS = 3 * POLL_MS
+
 /** Reads the view once. A failed first read shows that the inbox could not be read; a failed poll after it counts toward "retrying". */
 async function read() {
   const seq = ++requested
   try {
-    applyView(await callTool<View>('inbox_view', { demo: isDemo }), seq)
+    applyView(await callTool<View>('inbox_view', { demo: isDemo }, READ_TIMEOUT_MS), seq)
   } catch {
     if (view) pollFailures++
     else readFailed = true
