@@ -140,7 +140,49 @@ var EMPTY = {
   batchTurn: 0
 };
 var MAX_CLOSED = 12;
+var EXPIRED = "expired, unanswered";
 var MAX_FINDINGS = 30;
+function readKind(kind) {
+  return kind === "task" || kind === "do" ? "task" : "question";
+}
+function upgradeLedger(ledger) {
+  const { notes, decided, ...rest } = ledger;
+  return {
+    ...rest,
+    findings: [...rest.findings ?? [], ...notes ?? []],
+    items: rest.items.map((i) => ({
+      ...i,
+      kind: readKind(i.kind),
+      at: i.at ?? null,
+      rec: recommendedOption(i.options, i.rec)
+    })),
+    closed: (rest.closed ?? decided ?? []).map((d) => ({
+      ...d,
+      kind: readKind(d.kind),
+      how: d.how ?? howFromOutcome(d.outcome)
+    }))
+  };
+}
+function words(text2) {
+  return text2.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+}
+function recommendedOption(options, rec) {
+  if (!rec) return null;
+  const named = new Set(words(rec));
+  let best = null;
+  for (const option of options) {
+    const w = words(option);
+    if (w.length > words(best ?? "").length && w.every((x) => named.has(x))) best = option;
+  }
+  return best;
+}
+function howFromOutcome(outcome) {
+  if (outcome === "dismissed") return "dismissed";
+  if (outcome === EXPIRED) return "expired";
+  if (outcome === "done" || outcome === "you ran it") return "done";
+  if (outcome.startsWith(CLOSED_BY_CLAUDE)) return "claude";
+  return "update";
+}
 function sameAsk(a, b) {
   const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   return norm(a) === norm(b);
@@ -204,15 +246,15 @@ Options: ${item.options.join(" / ")}` : "";
 \`\`\`
 ${command}
 \`\`\``,
-  taskReply: (item, words) => `Re the task you left for me, "${item.ask}": ${words}`,
-  finding: (finding, how, words = "") => {
+  taskReply: (item, words2) => `Re the task you left for me, "${item.ask}": ${words2}`,
+  finding: (finding, how, words2 = "") => {
     const opening = how === "address" ? "Please address this finding you recorded:" : how === "discuss" ? "Let's talk through this finding you recorded before changing anything:" : "About this finding you recorded:";
     const body = [
       `${finding.kind === "issue" ? "Issue" : "Opportunity"}: ${finding.title}`,
       finding.detail,
       ...finding.path ? [`File: ${finding.path}`] : []
     ];
-    return [opening, ...body, ...how === "typed" ? ["", words] : []].join("\n");
+    return [opening, ...body, ...how === "typed" ? ["", words2] : []].join("\n");
   }
 };
 
@@ -313,13 +355,13 @@ function press(s, p, now) {
     if (!finding) return null;
     const removed = { ...s, ledger: { ...s.ledger, findings: s.ledger.findings.filter((f) => f.id !== p.id) } };
     if (p.action === "dismissFinding") return { state: removed, effects: [] };
-    const words = p.action === "typedFinding" ? p.text.trim() : "";
-    if (p.action === "typedFinding" && !words) return null;
+    const words2 = p.action === "typedFinding" ? p.text.trim() : "";
+    if (p.action === "typedFinding" && !words2) return null;
     const how = p.action === "typedFinding" ? "typed" : p.action;
     const text2 = how === "address" ? finding.kind === "issue" ? "Sent to Codex to fix" : "Sent to Codex to act on" : how === "discuss" ? "Discuss sent" : "Reply sent";
     return send(
       withLast(removed, p.id, { action: p.action, text: text2, title: finding.title }, now),
-      messages.finding(finding, how, words),
+      messages.finding(finding, how, words2),
       null
     );
   }
@@ -336,12 +378,12 @@ function press(s, p, now) {
       return send(close(answer, "answered"), messages.answer(item, answer), { id: item.id, action: "answer" });
     }
     case "type": {
-      const words = p.text.trim();
-      if (!words) return null;
+      const words2 = p.text.trim();
+      if (!words2) return null;
       if (item.kind === "question")
-        return send(close(words, "answered"), messages.answer(item, words), { id: item.id, action: "answer" });
+        return send(close(words2, "answered"), messages.answer(item, words2), { id: item.id, action: "answer" });
       const last = { action: "typed", text: "Reply sent", isHandoff: true, turnsStarted: s.presence.turnsStarted };
-      return send(withLast(s, item.id, last, now), messages.taskReply(item, words), null);
+      return send(withLast(s, item.id, last, now), messages.taskReply(item, words2), null);
     }
     case "explain":
       return send(withLast(s, item.id, { action: "explain", text: "Explain sent" }, now), messages.explain(item), {
@@ -918,6 +960,9 @@ function upgraded(saved, sessionId) {
   return {
     ...base,
     ...saved,
+    // The ledger's shape is the mod's, so a saved one converts the way the mod's does. It converts
+    // before the defaults fill in, since an empty `closed` would hide an old `decided`.
+    ledger: saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger,
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...saved.presence }

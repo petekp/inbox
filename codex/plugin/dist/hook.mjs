@@ -153,11 +153,11 @@ var COMMAND_WORDS = {
 };
 var REDIRECT = /^(?:\d*|&)[<>]|^&$/;
 var isPath = (word) => word === "." || word.includes("/") || /\.[A-Za-z0-9]+$/.test(word);
-function readTarget(words, runner, folder, resolve) {
+function readTarget(words2, runner, folder, resolve) {
   const paths = [];
   const filters = [];
   const add = (list, item) => void (list.includes(item) || list.push(item));
-  const rest = words[0] === "--" ? words.slice(1) : words;
+  const rest = words2[0] === "--" ? words2.slice(1) : words2;
   for (let i = 0; i < rest.length; i++) {
     const word = rest[i] ?? "";
     if (REDIRECT.test(word)) break;
@@ -193,8 +193,8 @@ function checkRun(command, cwd, home) {
     const found = checkIn(blank[i]?.text ?? "");
     if (!found) continue;
     const { call, runner, consumed } = found;
-    const words = wordsOf(commandOf(segment));
-    const after = words.slice(words.findIndex((w) => w === runner || w.endsWith(`/${runner}`)) + 1);
+    const words2 = wordsOf(commandOf(segment));
+    const after = words2.slice(words2.findIndex((w) => w === runner || w.endsWith(`/${runner}`)) + 1);
     const options = runner === "tsc" ? TSC_FOLDER_OPTIONS : FOLDER_OPTIONS;
     const folderWords = /* @__PURE__ */ new Set();
     let named;
@@ -445,6 +445,48 @@ var EMPTY = {
   batchTurn: 0
 };
 var NL = "\n";
+var EXPIRED = "expired, unanswered";
+function readKind(kind) {
+  return kind === "task" || kind === "do" ? "task" : "question";
+}
+function upgradeLedger(ledger) {
+  const { notes, decided, ...rest } = ledger;
+  return {
+    ...rest,
+    findings: [...rest.findings ?? [], ...notes ?? []],
+    items: rest.items.map((i) => ({
+      ...i,
+      kind: readKind(i.kind),
+      at: i.at ?? null,
+      rec: recommendedOption(i.options, i.rec)
+    })),
+    closed: (rest.closed ?? decided ?? []).map((d) => ({
+      ...d,
+      kind: readKind(d.kind),
+      how: d.how ?? howFromOutcome(d.outcome)
+    }))
+  };
+}
+function words(text) {
+  return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+}
+function recommendedOption(options, rec) {
+  if (!rec) return null;
+  const named = new Set(words(rec));
+  let best = null;
+  for (const option of options) {
+    const w = words(option);
+    if (w.length > words(best ?? "").length && w.every((x) => named.has(x))) best = option;
+  }
+  return best;
+}
+function howFromOutcome(outcome) {
+  if (outcome === "dismissed") return "dismissed";
+  if (outcome === EXPIRED) return "expired";
+  if (outcome === "done" || outcome === "you ran it") return "done";
+  if (outcome.startsWith(CLOSED_BY_CLAUDE)) return "claude";
+  return "update";
+}
 function toolActivity(tool, input) {
   const text = (key) => typeof input[key] === "string" ? input[key] : "";
   switch (tool) {
@@ -460,6 +502,7 @@ function toolActivity(tool, input) {
   }
   return tool.startsWith("mcp__") ? `called ${tool.slice(5)}` : null;
 }
+var CLOSED_BY_CLAUDE = "closed by Claude";
 function latestBatch(ledger) {
   return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
 }
@@ -765,6 +808,9 @@ function upgraded(saved, sessionId) {
   return {
     ...base,
     ...saved,
+    // The ledger's shape is the mod's, so a saved one converts the way the mod's does. It converts
+    // before the defaults fill in, since an empty `closed` would hide an old `decided`.
+    ledger: saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger,
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...saved.presence }
@@ -848,10 +894,10 @@ function folderOf(cwd) {
 function shellCommand(argv) {
   if (typeof argv === "string") return argv;
   if (!Array.isArray(argv)) return "";
-  const words = argv.filter((w) => typeof w === "string");
-  const i = words.findIndex((w) => /^-\w*c$/.test(w));
-  if (i >= 1 && /(^|\/)(ba|z|da|k)?sh$/.test(words[0] ?? "")) return words[i + 1] ?? "";
-  return words.join(" ");
+  const words2 = argv.filter((w) => typeof w === "string");
+  const i = words2.findIndex((w) => /^-\w*c$/.test(w));
+  if (i >= 1 && /(^|\/)(ba|z|da|k)?sh$/.test(words2[0] ?? "")) return words2[i + 1] ?? "";
+  return words2.join(" ");
 }
 async function commandEnds(path, turnId) {
   const ends = [];

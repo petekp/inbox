@@ -7,7 +7,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import { NO_CHECKS } from '../../hooks/check-tracking'
-import { EMPTY } from '../../hooks/ledger'
+import { EMPTY, upgradeLedger } from '../../hooks/ledger'
 import type { Exchange, Press } from '../../hooks/ledger'
 import type { Checks, Ledger, Snapshot } from '../../types'
 
@@ -120,6 +120,11 @@ function upgraded(saved: Partial<SessionState>, sessionId: string): SessionState
   return {
     ...base,
     ...saved,
+    // The ledger's shape is the mod's, so a saved one converts the way the mod's does. It converts
+    // before the defaults fill in, since an empty `closed` would hide an old `decided`.
+    ledger: saved.ledger
+      ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) }
+      : base.ledger,
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...saved.presence },

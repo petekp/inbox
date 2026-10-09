@@ -80,6 +80,24 @@ var MODEL_KIND = { question: "decide", task: "do" };
 function readKind(kind) {
   return kind === "task" || kind === "do" ? "task" : "question";
 }
+function upgradeLedger(ledger) {
+  const { notes, decided, ...rest } = ledger;
+  return {
+    ...rest,
+    findings: [...rest.findings ?? [], ...notes ?? []],
+    items: rest.items.map((i) => ({
+      ...i,
+      kind: readKind(i.kind),
+      at: i.at ?? null,
+      rec: recommendedOption(i.options, i.rec)
+    })),
+    closed: (rest.closed ?? decided ?? []).map((d) => ({
+      ...d,
+      kind: readKind(d.kind),
+      how: d.how ?? howFromOutcome(d.outcome)
+    }))
+  };
+}
 function words(text) {
   return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
@@ -92,6 +110,13 @@ function recommendedOption(options, rec) {
     if (w.length > words(best ?? "").length && w.every((x) => named.has(x))) best = option;
   }
   return best;
+}
+function howFromOutcome(outcome) {
+  if (outcome === "dismissed") return "dismissed";
+  if (outcome === EXPIRED) return "expired";
+  if (outcome === "done" || outcome === "you ran it") return "done";
+  if (outcome.startsWith(CLOSED_BY_CLAUDE)) return "claude";
+  return "update";
 }
 var NEEDS_PERSON = /\b(login|logout|auth|signin|sign-in|sudo|passwd|ssh-add|ssh-keygen|configure|init --interactive)\b/i;
 var SYSTEM = `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
@@ -319,6 +344,7 @@ function closedRecord(item, closing, now) {
   const { id, kind, ask, label } = item;
   return { id, kind, ask, ...label ? { label } : {}, ...closing, at: now };
 }
+var CLOSED_BY_CLAUDE = "closed by Claude";
 function applyUpdate(ledger, u, now, turn, promptAt = now) {
   const prev = ledger.card;
   const card = {
@@ -410,6 +436,9 @@ function upgraded(saved, sessionId) {
   return {
     ...base,
     ...saved,
+    // The ledger's shape is the mod's, so a saved one converts the way the mod's does. It converts
+    // before the defaults fill in, since an empty `closed` would hide an old `decided`.
+    ledger: saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger,
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...saved.presence }

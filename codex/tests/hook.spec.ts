@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
+import { EMPTY } from '../../hooks/ledger'
 import { handleHook } from '../src/hook'
-import { readState } from '../src/state'
+import { readState, statePath } from '../src/state'
+import { inboxText } from '../src/texts'
 import { commandEndLine, fakeRunner, hookDeps, input, tempDir, tempRepo } from './helpers'
 
 const FAILED = 'ℹ tests 1\nℹ pass 0\nℹ fail 1\n✖ adds (1.2ms)'
@@ -116,4 +118,68 @@ test('hooks do nothing in a codex exec run', async () => {
   const out = await handleHook(input('SessionStart', { cwd: '/', transcript_path: transcript }), hookDeps(dir, exec))
   assert.equal(out, null)
   assert.equal((await readState(dir, 's1')).root, '')
+})
+
+test('a session saved with an older ledger shape loads converted, as the mod converts its own', async () => {
+  const dir = tempDir()
+  const old = {
+    version: 1,
+    sessionId: 's1',
+    ledger: {
+      items: [
+        {
+          id: 'i1',
+          kind: 'decide',
+          label: null,
+          ask: 'Ship it?',
+          options: ['Yes', 'No'],
+          rec: 'Yes',
+          helps: [],
+          turn: 1,
+        },
+      ],
+      decided: [{ id: 'i0', ask: 'Rename it?', outcome: 'dismissed', at: 1 }],
+      notes: [{ id: 'f1', kind: 'issue', title: 'No lint', detail: '', path: null, at: 1 }],
+    },
+  }
+  mkdirSync(join(dir, 'sessions'), { recursive: true })
+  writeFileSync(statePath(dir, 's1'), JSON.stringify(old))
+  const { ledger } = await readState(dir, 's1')
+  assert.deepEqual(
+    ledger.items.map(i => [i.kind, i.at]),
+    [['question', null]],
+  )
+  assert.deepEqual(
+    ledger.closed.map(d => [d.id, d.kind, d.how]),
+    [['i0', 'question', 'dismissed']],
+  )
+  assert.deepEqual(
+    ledger.findings.map(f => f.id),
+    ['f1'],
+  )
+  assert.equal(ledger.nextId, EMPTY.nextId)
+})
+
+test('the inbox line Codex reads names the Inbox tab, never the mod’s /inbox pane', () => {
+  const ledger = {
+    ...EMPTY,
+    items: [
+      {
+        id: 'i1',
+        kind: 'question' as const,
+        label: null,
+        ask: 'Ship it?',
+        options: ['Yes'],
+        rec: null,
+        helps: [],
+        turn: 1,
+        at: 1,
+      },
+    ],
+  }
+  for (const isOpen of [true, false]) {
+    const text = inboxText(ledger, isOpen)
+    assert.match(text, /Inbox tab/)
+    assert.doesNotMatch(text, /\/inbox|pane/)
+  }
 })
