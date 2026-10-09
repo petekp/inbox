@@ -1879,83 +1879,91 @@ async function drawnState($: EngineInterface): Promise<View & { now: number }> {
   }
 }
 
+/** Turns the mod on for this session and loads it, once, from the start or the desktop app's attach. */
+async function turnOn($: EngineInterface) {
+  isOn = true
+  ;[sessionId, root, home] = await Promise.all([$.session.id(), $.session.root(), $.env.get('HOME').then(h => h ?? '')])
+  isSaved = false
+  recordedRows = null
+  // A reload stops any update the previous load had running, and state outlives
+  // it, so an update in flight at load was cut off: record it as failed.
+  const [git, presence, now, current, saved] = await Promise.all([
+    $.process.run(['git', 'rev-parse', '--show-toplevel'], { cwd: root, timeoutMs: 5000 }).catch(() => null),
+    update($, PRESENCE, p => (p.isUpdating ? { ...p, isUpdating: false, ledgerState: 'failed' as const } : p)),
+    $.clock.now(),
+    upgradeState($),
+    $.store.get(`s:${sessionId}`) as Promise<{ savedAt: number; ledger: Ledger } | undefined>,
+    $.command.register({ name: 'inbox', description: 'Show where this session stands and what is waiting on you' }),
+    $.tool.register({
+      name: 'record_finding',
+      description: findingDescription(CLAUDE_CODE),
+      inputSchema: FINDING_SCHEMA,
+    }),
+    $.tool.register({ name: 'close', description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA }),
+    $.tool.register({ name: 'run_check', description: RUN_CHECK_DESCRIPTION, inputSchema: RUN_CHECK_SCHEMA }),
+    syncTheme($),
+  ])
+  top = git?.exitCode === 0 ? git.stdout.trim() || null : null
+  const sessionRepo = top
+  if (sessionRepo !== null) await update($, CHECKS, c => addRepo(c, sessionRepo))
+  // A reload cancels the timers that clear just-closed rows, so the rows still showing get new ones.
+  const settled = await update($, SETTLED, s => s.filter(x => now - x.at < SETTLED_MS))
+  if (settled.length > 0) {
+    const waitMs = Math.max(...settled.map(s => s.at + SETTLED_MS - now))
+    expireSettled($, settled, waitMs)
+    redrawWhileLeaving($, () => update($, SETTLED, s => [...s]), waitMs)
+  }
+  let loaded = current
+  if (current.turn === 0 && !current.card) {
+    if (saved) {
+      // A resumed session: bring its card back and show it as a return.
+      loaded = upgradeLedger(saved.ledger)
+      await update($, LEDGER, () => loaded)
+      await update($, PRESENCE, p => ({ ...p, lastActiveAt: saved.savedAt, isAway: true }))
+    } else {
+      const prev = (await $.store.get(`p:${root}`)) as Omit<Previous, 'isBroughtIn'> | undefined
+      if (prev?.ledger.card && now - prev.savedAt < PREVIOUS_MAX_AGE_MS) {
+        await update($, PREVIOUS, () => ({ ...prev, ledger: upgradeLedger(prev.ledger), isBroughtIn: false }))
+      }
+    }
+  }
+  $.clock.every(60_000, () => {
+    void tick($)
+  })
+  $.clock.every(PR_POLL_MS, () => {
+    void pollPrs($)
+  })
+  // Catch up now after a failed update; after a turn whose reply never reached
+  // the ledger, as when a reload cut off the end-of-turn hook before it queued the
+  // update; or when the ledger is empty in a conversation that already has turns:
+  // the mod loaded mid-session, or its saved state was lost.
+  const isEmpty = !loaded.card && loaded.items.length === 0
+  const { turnsStarted, turnsApplied } = await read($, PRESENCE)
+  if (
+    presence.ledgerState !== 'current' ||
+    turnsStarted > turnsApplied ||
+    (isEmpty && (await $.session.turns().catch(() => 0)) > 0)
+  )
+    queueUpdate($, null)
+  void publishStatus($)
+  // A resumed session's linked PRs; the branch's PR waits for the PRs tab.
+  if (loaded.prs.length > 0) void fetchPrs($, false)
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const r = await next(e)
-    isOn = e.isInteractive
-    if (!isOn) return r
-    ;[sessionId, root, home] = await Promise.all([
-      $.session.id(),
-      $.session.root(),
-      $.env.get('HOME').then(h => h ?? ''),
-    ])
-    isSaved = false
-    recordedRows = null
-    // A reload stops any update the previous load had running, and state outlives
-    // it, so an update in flight at load was cut off: record it as failed.
-    const [git, presence, now, current, saved] = await Promise.all([
-      $.process.run(['git', 'rev-parse', '--show-toplevel'], { cwd: root, timeoutMs: 5000 }).catch(() => null),
-      update($, PRESENCE, p => (p.isUpdating ? { ...p, isUpdating: false, ledgerState: 'failed' as const } : p)),
-      $.clock.now(),
-      upgradeState($),
-      $.store.get(`s:${sessionId}`) as Promise<{ savedAt: number; ledger: Ledger } | undefined>,
-      $.command.register({ name: 'inbox', description: 'Show where this session stands and what is waiting on you' }),
-      $.tool.register({
-        name: 'record_finding',
-        description: findingDescription(CLAUDE_CODE),
-        inputSchema: FINDING_SCHEMA,
-      }),
-      $.tool.register({ name: 'close', description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA }),
-      $.tool.register({ name: 'run_check', description: RUN_CHECK_DESCRIPTION, inputSchema: RUN_CHECK_SCHEMA }),
-      syncTheme($),
-    ])
-    top = git?.exitCode === 0 ? git.stdout.trim() || null : null
-    const sessionRepo = top
-    if (sessionRepo !== null) await update($, CHECKS, c => addRepo(c, sessionRepo))
-    // A reload cancels the timers that clear just-closed rows, so the rows still showing get new ones.
-    const settled = await update($, SETTLED, s => s.filter(x => now - x.at < SETTLED_MS))
-    if (settled.length > 0) {
-      const waitMs = Math.max(...settled.map(s => s.at + SETTLED_MS - now))
-      expireSettled($, settled, waitMs)
-      redrawWhileLeaving($, () => update($, SETTLED, s => [...s]), waitMs)
-    }
-    let loaded = current
-    if (current.turn === 0 && !current.card) {
-      if (saved) {
-        // A resumed session: bring its card back and show it as a return.
-        loaded = upgradeLedger(saved.ledger)
-        await update($, LEDGER, () => loaded)
-        await update($, PRESENCE, p => ({ ...p, lastActiveAt: saved.savedAt, isAway: true }))
-      } else {
-        const prev = (await $.store.get(`p:${root}`)) as Omit<Previous, 'isBroughtIn'> | undefined
-        if (prev?.ledger.card && now - prev.savedAt < PREVIOUS_MAX_AGE_MS) {
-          await update($, PREVIOUS, () => ({ ...prev, ledger: upgradeLedger(prev.ledger), isBroughtIn: false }))
-        }
-      }
-    }
-    $.clock.every(60_000, () => {
-      void tick($)
-    })
-    $.clock.every(PR_POLL_MS, () => {
-      void pollPrs($)
-    })
-    // Catch up now after a failed update; after a turn whose reply never reached
-    // the ledger, as when a reload cut off the end-of-turn hook before it queued the
-    // update; or when the ledger is empty in a conversation that already has turns:
-    // the mod loaded mid-session, or its saved state was lost.
-    const isEmpty = !loaded.card && loaded.items.length === 0
-    const { turnsStarted, turnsApplied } = await read($, PRESENCE)
-    if (
-      presence.ledgerState !== 'current' ||
-      turnsStarted > turnsApplied ||
-      (isEmpty && (await $.session.turns().catch(() => 0)) > 0)
-    )
-      queueUpdate($, null)
-    void publishStatus($)
-    // A resumed session's linked PRs; the branch's PR waits for the PRs tab.
-    if (loaded.prs.length > 0) void fetchPrs($, false)
+    // The desktop app runs its sessions headless and attaches to them, before
+    // or after this start. -p, the SDK and VS Code draw nothing, so the mod stays off there.
+    if (e.isInteractive || (await $.session.surfaces()).includes('desktop')) await turnOn($)
 
     return r
+  })
+
+  on('session.attach', { surface: 'desktop' }, async ($, e, next) => {
+    if (!isOn) await turnOn($)
+
+    return next(e)
   })
 
   on('session.end', async ($, e, next) => {

@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { On } from 'claude-code'
+import type { On, RenderSurface } from 'claude-code'
 
 const LEDGER_REPLY = `GOAL: Add a greeting CLI
 DONE: Plan written
@@ -73,6 +73,9 @@ const PANE = {
 
 const RUN_CHECK = 'mcp__inbox__run_check'
 
+// The apps drawing the session when it starts. A REPL start sets isInteractive instead.
+let surfaces: RenderSurface[] = []
+
 function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   sent = []
   ran = []
@@ -80,7 +83,10 @@ function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   toolCalls = []
   ghAnswers = []
   ledgerReply = LEDGER_REPLY
+  surfaces = []
   mock.store(on)
+  on('session.surfaces', () => ({ value: surfaces }))
+  on('session.attach', ($, e) => ({ clientId: e.clientId }))
   on('session.id', () => ({ value: 'session-1' }))
   on('session.root', () => ({ value: '/tmp/project' }))
   on('session.cwd', () => ({ value: '/tmp/project' }))
@@ -993,3 +999,28 @@ test('a headless run does nothing', async ($, on) => {
 
   expect(prompts.length).toBe(0)
 })
+
+for (const isAttachedFirst of [true, false]) {
+  test(`the desktop app turns the mod on when it attaches ${isAttachedFirst ? 'before' : 'after'} the start`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    const prompts: string[] = []
+    world(on, prompts)
+    if (isAttachedFirst) surfaces = ['desktop']
+
+    await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
+    if (!isAttachedFirst) await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
+    await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'sdk' } })
+    await $.turn.complete({
+      answer: 'Node or Python?',
+      durationMs: 5,
+      isAborted: false,
+      turnId: 't1',
+      reason: 'answer',
+    })
+    await clock.settle()
+
+    expect(prompts.length).toBe(1)
+    const band = await $.ui.mount({ plugin: 'inbox', surface: 'desktop', ...BAND })
+    expect(await band.find({ text: /2 waiting on you in \/inbox/ })).toBeDefined()
+  })
+}
