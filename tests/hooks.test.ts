@@ -470,9 +470,10 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   expect(await pane.find({ text: /^Closed by Claude: no longer applies$/ })).toBeDefined()
 })
 
-test('a PR linked in a reply shows in the PRs tab; its buttons send its conflicts, check and thread, and say so', async ($, on) => {
+test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, and its buttons send its conflicts, check and thread, and say so', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
+  ledgerReply = 'NOW: Waiting on review\nNEW: do | - | Mark #12 ready for review | - | -'
   // Each run of the failing check has its own job page, so a rerun has a new URL.
   let job = 1
   // Whether the reviewer has answered since the thread was sent to Claude.
@@ -563,6 +564,11 @@ test('a PR linked in a reply shows in the PRs tab; its buttons send its conflict
   await clock.settle()
 
   const pane = await $.ui.mount(PANE)
+  // The task names the PR only by number, and still links to it.
+  expect((await pane.find({ key: 'help-i1-0-key' }))?.props.label).toBe('Open PR #12')
+  await pane.press({ key: 'help-i1-0' })
+  expect(ran.at(-1)).toEqual(['open', 'https://github.com/acme/greet/pull/12'])
+
   await pane.press({ key: 'tab-prs' })
   await clock.settle()
   expect(await pane.find({ text: /Add a greeting CLI/ })).toBeDefined()

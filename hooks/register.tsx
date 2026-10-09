@@ -66,6 +66,7 @@ import {
   checkCounts,
   commentLine,
   failingChecks,
+  namedPrs,
   parseRef,
   prAttention,
   prRefs,
@@ -1493,8 +1494,24 @@ function answerActions($: EngineInterface, item: Item): Action[] {
   }))
 }
 
-function helpActions($: EngineInterface, item: Item): Action[] {
-  return steps(item.helps).map(({ label, step }, n) => ({
+/**
+ * An item's helps, then an Open link for each PR the session tracks that its
+ * ask names as "#123", as in "Mark #12 ready for review". The reply that raised
+ * the item often names the PR only by number, so the item has no link of its own.
+ */
+function itemHelps(item: Item, prState: PrViews, linked: string[]): Help[] {
+  const refs = prState.branchRef ? [...linked, prState.branchRef] : linked
+  const links = namedPrs(item.ask, refs).map(ref => {
+    const { repo, number } = parseRef(ref)
+    const url = prState.views[ref]?.url ?? `https://github.com/${repo}/pull/${number}`
+    return { kind: 'link' as const, url, name: `PR #${number}` }
+  })
+
+  return [...item.helps, ...links.filter(l => !item.helps.some(h => h.kind === 'link' && h.url === l.url))]
+}
+
+function helpActions($: EngineInterface, item: Item, helps: Help[]): Action[] {
+  return steps(helps).map(({ label, step }, n) => ({
     key: `help-${item.id}-${n}`,
     label,
     done: step.some(h => h.kind === 'run'),
@@ -1525,8 +1542,8 @@ const CHOICE_KEYS = [...'abcfghilm']
  * and Done for a task. `more` are the other ways to respond: your own words,
  * Explain, and Dismiss for a question.
  */
-function itemKeys($: EngineInterface, item: Item): { keys: KeyAction[]; more: KeyAction[] } {
-  const lettered = [...(item.kind === 'task' ? [] : answerActions($, item)), ...helpActions($, item)]
+function itemKeys($: EngineInterface, item: Item, helps: Help[]): { keys: KeyAction[]; more: KeyAction[] } {
+  const lettered = [...(item.kind === 'task' ? [] : answerActions($, item)), ...helpActions($, item, helps)]
     .slice(0, CHOICE_KEYS.length)
     .map((a, n) => ({ ...a, hotkey: CHOICE_KEYS[n]! }))
   const explainKey = {
@@ -2562,8 +2579,8 @@ export const register: Register = on => {
         titleAfter: asked,
         hasSecondLine: item.kind === 'question',
         body: null,
-        keys: () => itemKeys($, item).keys,
-        moreKeys: () => itemKeys($, item).more,
+        keys: () => itemKeys($, item, itemHelps(item, prState, ledger.prs)).keys,
+        moreKeys: () => itemKeys($, item, itemHelps(item, prState, ledger.prs)).more,
         // A question closes on its typed answer; a task stays open.
         onType: {
           done: item.kind === 'task' ? 'Reply' : null,

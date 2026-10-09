@@ -8,6 +8,20 @@ export function prRefs(text: string): string[] {
   return [...new Set([...text.matchAll(PR_URL)].map(m => `${m[1]}#${m[2]}`))]
 }
 
+/**
+ * The PRs of `refs` that the text names as "#123", in its order. A number two
+ * of `refs` share names neither, since the text does not say which repo.
+ */
+export function namedPrs(text: string, refs: string[]): string[] {
+  const numbers = new Set([...text.matchAll(/#(\d+)\b/g)].map(m => m[1]))
+  const known = [...new Set(refs)]
+
+  return [...numbers].flatMap(n => {
+    const named = known.filter(ref => parseRef(ref).number === n)
+    return named.length === 1 ? named : []
+  })
+}
+
 /** "owner/repo#123" as its parts. */
 export function parseRef(ref: string): { repo: string; owner: string; name: string; number: string } {
   const [repo = '', number = ''] = ref.split('#')
