@@ -258,7 +258,7 @@ Each section gives four things:
   - For other stops, the fix
 - **Desktop:** today's card, with one change. [Resume] stays drawn under key `resume` while sending, and only its label changes. This replaces the Text swap at `register.tsx:3791-3797`. Add `if (resuming?.is === 'sending') return` at the top of `resume()`. That also stops the band from sending "Continue" twice (A2).
 - **Known cost:** if a send succeeds but no turn starts, both buttons read "Resuming…" and do nothing until the person types.
-- **Status:** waits on A2. F1 must be diagnosed first.
+- **Status:** waits on A2.
 
 ### 7. Group title and section card
 
@@ -483,7 +483,6 @@ Each section gives four things:
 - **Status:**
   - The budget is ready.
   - The reading state waits on A7.
-  - F1 must be diagnosed before this component counts as done.
 
 ### 19. New-row bar
 
@@ -524,8 +523,6 @@ These change the terminal or shared code.
 
 ### Findings, not in this build
 
-- **F1.** In `desk-stop`, the band showed a stop while the pane showed the centered "Nothing needs you.". That is a false all-clear.
-- **F2.** `stopText` maps `overloaded`, but the capture showed `overloaded_error`. Find where that value came from first.
 - **F3.** The billing fix says "then resume", but billing stops have no button. Proposed wording: "then send a message to resume."
 - **F4.** `inbox-ui.md:291` says the whole stop line is red. Only the prefix is.
 - **F5.** Check that `/login` exists in a desktop session, and that running it clears a sign-in stop.
@@ -561,7 +558,7 @@ These change the terminal or shared code.
 | 15 | Button `dimColor` | Whether the guard shows anything | Draw one dimmed Button next to an undimmed one. |
 | 16 | Button edges | Your click-area rule, and with it whether single actions stay native Buttons | Click the corners and edges of a native button and log each press. |
 | 17 | Band | Component 1 | Close the pane and click [Open inbox], then repeat while the pane shows PRs. Capture the current demo band in dark and light. Narrowest band. Overflow the band past its rows to look for `[-]`. |
-| 18 | Stop path | F1, F2, F5 | Write STOP with no hot reload in between and capture the band beside the pane. Trace the origin of `overloaded_error`. Try `/login`. |
+| 18 | Stop path | F5 | Try `/login` in a desktop session with a sign-in stop. |
 | 19 | PR refresh failure | Component 17 | Patch one demo PR with `error: 'gh: HTTP 502'`, short and long. Capture today's row, the column, and "Refreshing…". |
 | 20 | Demo banner | Component 3 | Capture the banner at about 69 columns. Measure whether the sentence and [Hide demo] would fit on one line. |
 
