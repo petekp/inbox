@@ -438,6 +438,8 @@ let nextFetchFindsBranchPr: boolean | null = null
 let recordedRows: { isDemo: boolean; ids: Partial<Record<Tab, Set<string>>> } | null = null
 let isSaved = false
 let queue: Promise<void> = Promise.resolve()
+// Counts the conversations this process has run, so an update queued in one never writes into the next.
+let conversation = 0
 // What Claude last read of the inbox beside a prompt, so it is sent again only when it changed.
 let told: Told = TOLD_NOTHING
 // The line last published to this pane's Herdr sidebar row, and the chain that publishes in order.
@@ -713,6 +715,7 @@ type LedgerState = Presence['ledgerState']
 /** Applies the ledger model's reply. */
 async function applyLedgerReply(
   $: EngineInterface,
+  at: number,
   r: ModelResult,
   source: string | null,
   change: (l: Ledger, u: Update, now: number) => Ledger,
@@ -723,7 +726,7 @@ async function applyLedgerReply(
     return r.reason === 'nothing-to-fork' ? 'behind' : 'failed'
   }
   const parsed = parseReply(r.text, source)
-  if (!parsed) return 'failed'
+  if (!parsed || at !== conversation) return 'failed'
   const now = await $.clock.now()
   await commitLedger($, l => change(l, parsed, now))
 
@@ -738,13 +741,13 @@ function askLedgerModel($: EngineInterface, prompt: string, timeoutMs: number): 
 }
 
 /** Updates the ledger from one exchange. */
-async function runUpdate($: EngineInterface, ex: Exchange): Promise<LedgerState> {
+async function runUpdate($: EngineInterface, at: number, ex: Exchange): Promise<LedgerState> {
   const promptAt = await $.clock.now()
   const r = await askLedgerModel($, buildPrompt(await read($, LEDGER), ex), 45_000)
   // An Explain turn talks about its item without deciding it.
   const explained = ex.press?.action === 'explain' ? ex.press.id : null
 
-  return applyLedgerReply($, r, [ex.reply, ...ex.activity].join('\n'), (l, u, now) =>
+  return applyLedgerReply($, at, r, [ex.reply, ...ex.activity].join('\n'), (l, u, now) =>
     applyUpdate(l, { ...u, closed: u.closed.filter(c => c.id !== explained) }, now, ex.turn, promptAt),
   )
 }
@@ -753,18 +756,18 @@ async function runUpdate($: EngineInterface, ex: Exchange): Promise<LedgerState>
  * Brings the ledger up to date over the whole conversation, for turns the
  * per-turn update missed: it closes what was handled and adds what still waits.
  */
-async function catchUp($: EngineInterface): Promise<LedgerState> {
+async function catchUp($: EngineInterface, at: number): Promise<LedgerState> {
   const [ledger, shown] = await Promise.all([read($, LEDGER), screen($)])
   const change = (l: Ledger, u: Update, now: number) => applyUpdate(l, u, now, l.turn)
   const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
-  if (forked.isAnswered || forked.reason !== 'nothing-to-fork') return applyLedgerReply($, forked, null, change)
+  if (forked.isAnswered || forked.reason !== 'nothing-to-fork') return applyLedgerReply($, at, forked, null, change)
   // A resumed conversation has no request of this process's to fork until its
   // first reply, so the model reads the transcript instead, uncached.
   const transcript = transcriptText(await $.session.messages())
   if (!transcript) return 'behind'
   const r = await askLedgerModel($, transcriptCatchUpPrompt(ledger, shown, transcript), 90_000)
 
-  return applyLedgerReply($, r, transcript, change)
+  return applyLedgerReply($, at, r, transcript, change)
 }
 
 /**
@@ -772,11 +775,14 @@ async function catchUp($: EngineInterface): Promise<LedgerState> {
  * else this exchange alone.
  */
 function queueUpdate($: EngineInterface, next: { ex: Exchange; turnsStarted: number } | null) {
+  const at = conversation
   queue = queue.then(async () => {
+    if (at !== conversation) return
     const { ledgerState, turnsStarted } = await update($, PRESENCE, p => ({ ...p, isUpdating: true }))
-    const state = await (ledgerState !== 'current' || next === null ? catchUp($) : runUpdate($, next.ex)).catch(
+    const state = await (ledgerState !== 'current' || next === null ? catchUp($, at) : runUpdate($, at, next.ex)).catch(
       (): LedgerState => 'failed',
     )
+    if (at !== conversation) return
     // An exchange covers the turns started by its end; a catch-up, those started before it ran.
     const applied = next?.turnsStarted ?? turnsStarted
     await update($, PRESENCE, p => ({
@@ -1879,20 +1885,11 @@ async function drawnState($: EngineInterface): Promise<View & { now: number }> {
   }
 }
 
-/** Turns the mod on for this session and loads it, once, from the start or the desktop app's attach. */
+/** Turns the mod on for this session, once, from the start or the desktop app's attach. */
 async function turnOn($: EngineInterface) {
   isOn = true
-  ;[sessionId, root, home] = await Promise.all([$.session.id(), $.session.root(), $.env.get('HOME').then(h => h ?? '')])
-  isSaved = false
-  recordedRows = null
-  // A reload stops any update the previous load had running, and state outlives
-  // it, so an update in flight at load was cut off: record it as failed.
-  const [git, presence, now, current, saved] = await Promise.all([
-    $.process.run(['git', 'rev-parse', '--show-toplevel'], { cwd: root, timeoutMs: 5000 }).catch(() => null),
-    update($, PRESENCE, p => (p.isUpdating ? { ...p, isUpdating: false, ledgerState: 'failed' as const } : p)),
+  const [now] = await Promise.all([
     $.clock.now(),
-    upgradeState($),
-    $.store.get(`s:${sessionId}`) as Promise<{ savedAt: number; ledger: Ledger } | undefined>,
     $.command.register({ name: 'inbox', description: 'Show where this session stands and what is waiting on you' }),
     $.tool.register({
       name: 'record_finding',
@@ -1903,9 +1900,6 @@ async function turnOn($: EngineInterface) {
     $.tool.register({ name: 'run_check', description: RUN_CHECK_DESCRIPTION, inputSchema: RUN_CHECK_SCHEMA }),
     syncTheme($),
   ])
-  top = git?.exitCode === 0 ? git.stdout.trim() || null : null
-  const sessionRepo = top
-  if (sessionRepo !== null) await update($, CHECKS, c => addRepo(c, sessionRepo))
   // A reload cancels the timers that clear just-closed rows, so the rows still showing get new ones.
   const settled = await update($, SETTLED, s => s.filter(x => now - x.at < SETTLED_MS))
   if (settled.length > 0) {
@@ -1913,6 +1907,37 @@ async function turnOn($: EngineInterface) {
     expireSettled($, settled, waitMs)
     redrawWhileLeaving($, () => update($, SETTLED, s => [...s]), waitMs)
   }
+  $.clock.every(60_000, () => {
+    void tick($)
+  })
+  $.clock.every(PR_POLL_MS, () => {
+    void pollPrs($)
+  })
+  await loadConversation($, false)
+}
+
+/**
+ * Loads the conversation the session runs: at the start, and after /clear,
+ * /resume or /branch, which switch conversations under a new session id
+ * without a session.start. A cleared conversation brings in no previous card.
+ */
+async function loadConversation($: EngineInterface, isCleared: boolean) {
+  ;[sessionId, root, home] = await Promise.all([$.session.id(), $.session.root(), $.env.get('HOME').then(h => h ?? '')])
+  isSaved = false
+  checkLogFolder = null
+  recordedRows = null
+  // A reload stops any update the previous load had running, and state outlives
+  // it, so an update in flight at load was cut off: record it as failed.
+  const [git, presence, now, current, saved] = await Promise.all([
+    $.process.run(['git', 'rev-parse', '--show-toplevel'], { cwd: root, timeoutMs: 5000 }).catch(() => null),
+    update($, PRESENCE, p => (p.isUpdating ? { ...p, isUpdating: false, ledgerState: 'failed' as const } : p)),
+    $.clock.now(),
+    upgradeState($),
+    $.store.get(`s:${sessionId}`) as Promise<{ savedAt: number; ledger: Ledger } | undefined>,
+  ])
+  top = git?.exitCode === 0 ? git.stdout.trim() || null : null
+  const sessionRepo = top
+  if (sessionRepo !== null) await update($, CHECKS, c => addRepo(c, sessionRepo))
   let loaded = current
   if (current.turn === 0 && !current.card) {
     if (saved) {
@@ -1920,19 +1945,13 @@ async function turnOn($: EngineInterface) {
       loaded = upgradeLedger(saved.ledger)
       await update($, LEDGER, () => loaded)
       await update($, PRESENCE, p => ({ ...p, lastActiveAt: saved.savedAt, isAway: true }))
-    } else {
+    } else if (!isCleared) {
       const prev = (await $.store.get(`p:${root}`)) as Omit<Previous, 'isBroughtIn'> | undefined
       if (prev?.ledger.card && now - prev.savedAt < PREVIOUS_MAX_AGE_MS) {
         await update($, PREVIOUS, () => ({ ...prev, ledger: upgradeLedger(prev.ledger), isBroughtIn: false }))
       }
     }
   }
-  $.clock.every(60_000, () => {
-    void tick($)
-  })
-  $.clock.every(PR_POLL_MS, () => {
-    void pollPrs($)
-  })
   // Catch up now after a failed update; after a turn whose reply never reached
   // the ledger, as when a reload cut off the end-of-turn hook before it queued the
   // update; or when the ledger is empty in a conversation that already has turns:
@@ -1966,6 +1985,14 @@ export const register: Register = on => {
     return next(e)
   })
 
+  on('classic.SessionStart', { source: ['clear', 'resume', 'fork'] }, async ($, e, next) => {
+    const r = await next(e)
+    // A start with --resume also raises this, for the conversation session.start already loaded.
+    if (isOn && (await $.session.id()) !== sessionId) await loadConversation($, e.source === 'clear')
+
+    return r
+  })
+
   on('session.end', async ($, e, next) => {
     // The pane outlives the session, so its sidebar line goes with it.
     if (isOn) {
@@ -1980,11 +2007,13 @@ export const register: Register = on => {
         publishStatus($, true),
       ])
     }
-    if (isOn && e.reason === 'clear') {
+    // /clear, /resume and /branch (which reports resume) go on in this process with another conversation.
+    if (isOn && (e.reason === 'clear' || e.reason === 'resume')) {
+      conversation += 1
       await Promise.all([
         update($, LEDGER, () => EMPTY),
         update($, PREVIOUS, () => null),
-        update($, PRESENCE, p => ({ ...p, isAway: false, ledgerState: 'current' as const })),
+        update($, PRESENCE, p => ({ ...p, isAway: false, isUpdating: false, ledgerState: 'current' as const })),
       ])
       resetTurn()
       shellCommand = null

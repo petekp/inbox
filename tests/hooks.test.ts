@@ -75,6 +75,8 @@ const RUN_CHECK = 'mcp__inbox__run_check'
 
 // The apps drawing the session when it starts. A REPL start sets isInteractive instead.
 let surfaces: RenderSurface[] = []
+// The conversation the session runs; /clear and /resume change it.
+let sessionAnswer = 'session-1'
 
 function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   sent = []
@@ -84,10 +86,12 @@ function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   ghAnswers = []
   ledgerReply = LEDGER_REPLY
   surfaces = []
+  sessionAnswer = 'session-1'
   mock.store(on)
   on('session.surfaces', () => ({ value: surfaces }))
   on('session.attach', ($, e) => ({ clientId: e.clientId }))
-  on('session.id', () => ({ value: 'session-1' }))
+  on('session.id', () => ({ value: sessionAnswer }))
+  on('session.end', ($, e) => ({ sessionId: e.sessionId }))
   on('session.root', () => ({ value: '/tmp/project' }))
   on('session.cwd', () => ({ value: '/tmp/project' }))
   // Outside Herdr unless a test passes HERDR_PANE_ID.
@@ -122,6 +126,7 @@ function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   on('classic.StopFailure', () => ({}))
   on('classic.PermissionRequest', () => ({}))
   on('classic.Stop', () => ({}))
+  on('classic.SessionStart', () => ({}))
   on('tool.call', (_$, e) => {
     toolCalls.push(String((e as { command?: unknown }).command))
 
@@ -986,6 +991,42 @@ test('/inbox demo shows sample entries in every tab, sends nothing, and goes bac
 
   await $.command.run({ command: 'inbox', args: 'demo' } as never)
   expect(await pane.find({ text: /Switch tabs with 1, 2 and 3/ })).toBeUndefined()
+})
+
+test('/clear and /resume switch the inbox to the other conversation, and each keeps its saved items', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world(on, [])
+  const turn = async (text: string) => {
+    await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
+    await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: text, reason: 'answer' })
+    await clock.settle()
+  }
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await turn('add a greeting cli')
+  // /clear goes on under a new id, without a session.start.
+  await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
+  sessionAnswer = 'session-2'
+  await $.classic.SessionStart({ source: 'clear' })
+  ledgerReply = 'GOAL: Fix the build\nNOW: Waiting\nNEW: decide | 1 | Pin the Node version? | - | yes'
+  await turn('fix the build')
+  // /resume returns to the first conversation.
+  await $.session.end({ reason: 'resume', sessionId: 'session-2', resume: { id: 'session-2' } })
+  sessionAnswer = 'session-1'
+  await $.classic.SessionStart({ source: 'resume' })
+  await clock.settle()
+
+  const pane = await $.ui.mount(PANE)
+  expect(await pane.find({ text: /Use Node or Python\?/ })).toBeDefined()
+  expect(await pane.find({ text: /Pin the Node version\?/ })).toBeUndefined()
+
+  // The second conversation's items were saved under its own id.
+  await $.session.end({ reason: 'resume', sessionId: 'session-1', resume: { id: 'session-1' } })
+  sessionAnswer = 'session-2'
+  await $.classic.SessionStart({ source: 'resume' })
+  await clock.settle()
+  expect(await pane.find({ text: /Pin the Node version\?/ })).toBeDefined()
+  expect(await pane.find({ text: /Use Node or Python\?/ })).toBeUndefined()
 })
 
 test('a headless run does nothing', async ($, on) => {
