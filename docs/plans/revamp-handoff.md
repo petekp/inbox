@@ -22,7 +22,7 @@ Run these live checks. Tests cover each behavior, but no live session has.
 
 ## Decisions that are yours
 
-**Stored and wire-name changes.** Each one has a conversion, and old state upgrades on load. They still change a contract, so they need your approval:
+**Stored and wire-name changes, approved.** Each one has a conversion, and old state upgrades on load:
 
 - `LastAction.isHandoff` becomes `kind`: Talk, Hand-off, Local or Mark.
 - `LastAction.action` holds action ids instead of button keys.
