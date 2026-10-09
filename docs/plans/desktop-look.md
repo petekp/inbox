@@ -1,5 +1,13 @@
 # Desktop look: the terminal's essence in the Claude app
 
+## Status after the first probes
+
+- **Rows and the Closed fold stay native Buttons.** The scroll wheel does nothing over a Client (probe 2), so a list of Client rows could not be scrolled. The row Client in component 9 and the fold Client in component 16 are dropped. Closed rows keep today's title Button, which takes clicks on its label only.
+- **Native Buttons take clicks on their corners and edges** (probe 16). Single actions meet the whole-shape rule.
+- **Focus is fixed in one place** (probe 1, rule 11). The pane tracks the Button a press focused. When a drawing leaves it out, the focus moves to the Button that took its place, else the open row's first action, else the first Button. Every click landed on the first try in a run of 19 presses.
+- **The leave bar is gone on desktop** (component 14). While it redrew every 213 ms, clicks on the pane's Buttons did nothing. Desktop now redraws once, when the settled row leaves.
+- The rest of this plan is unchanged and still waits on its probes.
+
 ## Summary
 
 - **The goal is a pane that reads the same in both apps.** That means the same words, order, color roles, places and states. The chrome can differ. Key letters, tree lines, `─` rules and the 200 ms animations stay in the terminal.
