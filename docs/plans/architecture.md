@@ -26,9 +26,6 @@ Terms follow `GLOSSARY.md`.
 
 ## Left for later
 
-- **The working-tree change tracker.** Moving the git snapshot code out of
-  `register.tsx` would make staleness testable end to end. It fixes no known
-  bug, and check tracking already takes the changed paths as a value.
 - **Ledger freshness.** The catch-up counters live in five places. They work,
   and a change there risks the reload and catch-up behavior for little gain.
 - **A view model for the pane.** Rows, counts and the cursor are computed
@@ -42,16 +39,14 @@ Terms follow `GLOSSARY.md`.
 
 The inbox now runs in two hosts. The Claude Code mod is `hooks/register.tsx`.
 The Codex plugin is `codex/src`. Both use the plain modules in `hooks/`:
-`ledger.ts`, `checks.ts`, `check-tracking.ts`, `git.ts`, `prs.ts` and
-`demo.ts`. Those modules, and the Codex plugin's split into saved state,
-hooks and a server, are sound and should stay as they are.
+`ledger.ts`, `checks.ts`, `check-tracking.ts`, `git.ts`, `tree.ts`,
+`tools.ts`, `presses.ts`, `prs.ts` and `demo.ts`. Those modules, and the
+Codex plugin's split into saved state, hooks and a server, are sound and
+should stay as they are.
 
-What is weak is everything between the plain modules and each host's
-drawing. Each host keeps its own copy of the session logic, the press
-messages, the working-tree snapshot code and the rules for drawing a row.
-The copies match today, apart from how they reach git or the engine. Every
-change to one now needs the same change by hand in the other, and the PRs tab
-would add the largest copy yet.
+What is weak is the step from the state to each host's drawing. Each host
+keeps its own rules for drawing a row. Every change to one needs the same
+change by hand in the other, and the PRs tab would add the largest copy yet.
 
 In order:
 
@@ -71,34 +66,26 @@ In order:
    agent, since renaming a stored value needs approval. The update model's
    instructions still tell Codex's model the person sees items in a band;
    changing that needs a measurement on Codex's model.
-3. **One session engine.** Move the session logic that the Codex plugin
-   already holds as plain functions on state into `hooks/`: prompts and
-   presses noted, findings recorded, items closed, presses applied as data
-   with their effects, the press messages, and the working-tree snapshot code
-   with git passed in. `register.tsx` then calls the same functions through
-   its engine. This covers the turn recorder and the working-tree tracker
-   from "Left for later". Requirement: two hosts run the same rules.
-   Rejected: keeping the copies in step by hand. `LastAction` becomes one type, and
-   any change to a saved shape converts old state and needs approval.
-
-   Steps, one commit each, with both hosts' texts unchanged character for
+3. **One session engine.** Done. The logic both hosts kept as copies now
+   lives in `hooks/`, and both hosts' texts came out the same, character for
    character:
-
-   1. **Press messages and step labels** move to `hooks/presses.ts`: the
-      text each press sends, a finding as the agent reads it back, the
-      labels of an item's steps, and when a handed-off task folds.
-   2. **The working-tree reader** moves to `hooks/tree.ts`, with git and the
-      file system passed in. It returns each repo's new reading and the
-      paths that changed, and each host applies them to its own current
-      checks, so a check recorded during a reading is kept.
-   3. **The finding and close tools** share their input checks and result
-      texts, with the place each host shows the result taken from `Host`.
-   4. **What the agent reads beside a prompt** is one function: the answer
-      note, and the inbox when it changed or an item closed since the agent
-      last read it. Continuing from a previous session stays in the mod.
+   - `presses.ts` holds the text each press sends, a finding as the agent
+     reads it back, the labels of an item's steps, and when a handed-off task
+     folds.
+   - `tree.ts` reads a repo's working tree and the paths whose content
+     changed since its last reading. Each host passes in how it runs a
+     command and reads a path's kind, and applies the changes to its own
+     current checks, so a check recorded during a reading is kept. Codex now
+     marks a folder `dir`, as the engine does.
+   - `tools.ts` holds the record_finding and close tools: their schemas,
+     descriptions and results. `Host` names where each host shows the inbox
+     and its findings in those texts.
+   - `promptNotes` in `ledger.ts` builds what the agent reads beside a
+     prompt. Continuing from a previous session stays in the mod.
 
    Applying presses as data, and one `LastAction` type, belong with item 4,
-   since the drawing code dispatches the presses.
+   since the drawing code dispatches the presses. The mod's turn recorder
+   still keeps one turn in module variables.
 
 4. **One view model, two renderers.** A plain function turns the state into
    tabs, groups and rows: each row's mark, tone, title, body, fold state and

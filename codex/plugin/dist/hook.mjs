@@ -611,6 +611,19 @@ function closedText(closed) {
     ...closed.map((d) => `- "${d.ask}" \u2192 ${outcomeText(d)}${advice(d)}`)
   ].join(NL);
 }
+var TOLD_NOTHING = { inbox: null, closed: [] };
+function promptNotes(host, ledger, prompt, told) {
+  const notes = [];
+  const answer = prompt.isPress ? null : answerNote(ledger, prompt.text);
+  if (answer) notes.push(answer);
+  const inbox = inboxText(host, ledger, prompt.isOpen);
+  const toldClosed = new Set(told.closed);
+  const closed = closedText(ledger.closed.filter((d) => !toldClosed.has(d.id)));
+  const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0;
+  if (!closed && (inbox === told.inbox || isEmpty && told.inbox === null)) return { notes, told };
+  notes.push(closed ? `${inbox}${NL}${closed}` : inbox);
+  return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
+}
 
 // src/texts.ts
 var CODEX = {
@@ -662,19 +675,7 @@ function notePrompt(s, text, now) {
   const sentAt = s.sent.findIndex((x) => x.text === text);
   const sentBy = sentAt >= 0 ? s.sent[sentAt]?.press ?? null : null;
   const ledger = { ...s.ledger, turn: s.ledger.turn + 1 };
-  const notes = [];
-  const answer = sentAt >= 0 ? null : answerNote(ledger, text);
-  if (answer) notes.push(answer);
-  const inbox = inboxText(CODEX, ledger, isTabOpen(s, now));
-  const told = new Set(s.told.closed);
-  const closed = closedText(ledger.closed.filter((d) => !told.has(d.id)));
-  const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0;
-  let toldNow = s.told;
-  if (closed || inbox !== s.told.inbox && !(isEmpty && s.told.inbox === null)) {
-    notes.push(closed ? `${inbox}
-${closed}` : inbox);
-    toldNow = { inbox, closed: ledger.closed.map((d) => d.id) };
-  }
+  const r = promptNotes(CODEX, ledger, { text, isPress: sentAt >= 0, isOpen: isTabOpen(s, now) }, s.told);
   const person = s.turn.person === null ? text : `${s.turn.person}
 
 ${text}`;
@@ -682,12 +683,12 @@ ${text}`;
     state: {
       ...s,
       ledger,
-      told: toldNow,
+      told: r.told,
       sent: sentAt >= 0 ? s.sent.filter((_x, i) => i !== sentAt) : s.sent,
       turn: { ...s.turn, person, press: sentBy ?? s.turn.press },
       presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }
     },
-    notes
+    notes: r.notes
   };
 }
 function noteActivity(s, line) {
@@ -784,7 +785,7 @@ function emptyState(sessionId) {
     checks: NO_CHECKS,
     snapshots: {},
     turn: { person: null, activity: [], press: null, sentBack: [] },
-    told: { inbox: null, closed: [] },
+    told: TOLD_NOTHING,
     presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: "current", isUpdating: false },
     pending: [],
     sent: [],

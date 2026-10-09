@@ -891,6 +891,37 @@ export function closedText(closed: Closed[]): string | null {
   ].join(NL)
 }
 
+/** The inbox text the agent last read beside a prompt, and the closed items it was told about, by id. */
+export type Told = { inbox: string | null; closed: string[] }
+
+export const TOLD_NOTHING: Told = { inbox: null, closed: [] }
+
+/**
+ * What the agent reads beside a prompt: whether it answers an open item,
+ * unless a press sent it, and the inbox when it changed since the agent last
+ * read it or when an item closed since. An empty inbox with nothing closed
+ * says nothing new. Also returns what the agent has now been told.
+ */
+export function promptNotes(
+  host: Host,
+  ledger: Ledger,
+  prompt: { text: string; isPress: boolean; isOpen: boolean },
+  told: Told,
+): { notes: string[]; told: Told } {
+  const notes: string[] = []
+  // A press's message already says what it does; an Explain, for one, quotes its item without answering it.
+  const answer = prompt.isPress ? null : answerNote(ledger, prompt.text)
+  if (answer) notes.push(answer)
+  const inbox = inboxText(host, ledger, prompt.isOpen)
+  const toldClosed = new Set(told.closed)
+  const closed = closedText(ledger.closed.filter(d => !toldClosed.has(d.id)))
+  const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0
+  if (!closed && (inbox === told.inbox || (isEmpty && told.inbox === null))) return { notes, told }
+  notes.push(closed ? `${inbox}${NL}${closed}` : inbox)
+
+  return { notes, told: { inbox, closed: ledger.closed.map(d => d.id) } }
+}
+
 /**
  * The stop's kind, from the error word and the message Claude Code showed.
  * A reached usage limit and a busy server are both `rate_limit`; only the

@@ -7,8 +7,8 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import { NO_CHECKS } from '../../hooks/check-tracking'
-import { EMPTY, upgradeLedger } from '../../hooks/ledger'
-import type { Exchange, Press } from '../../hooks/ledger'
+import { EMPTY, TOLD_NOTHING, upgradeLedger } from '../../hooks/ledger'
+import type { Exchange, Press, Told } from '../../hooks/ledger'
 import type { Checks, Ledger, Snapshot } from '../../types'
 
 /** What a row's last press did, shown on the row so the person sees it went through. */
@@ -45,7 +45,7 @@ export type SessionState = {
     sentBack: string[]
   }
   /** The inbox text Codex last read beside a prompt, and the closed items it was told about. */
-  told: { inbox: string | null; closed: string[] }
+  told: Told
   presence: {
     /** Prompts that started a turn, and how many of those turns the inbox model has summarized. */
     turnsStarted: number
@@ -76,7 +76,7 @@ export function emptyState(sessionId: string): SessionState {
     checks: NO_CHECKS,
     snapshots: {},
     turn: { person: null, activity: [], press: null, sentBack: [] },
-    told: { inbox: null, closed: [] },
+    told: TOLD_NOTHING,
     presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: 'current', isUpdating: false },
     pending: [],
     sent: [],

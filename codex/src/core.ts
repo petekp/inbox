@@ -16,17 +16,7 @@ import {
   fixMessage,
   readResult,
 } from '../../hooks/checks'
-import {
-  answerNote,
-  carryText,
-  closedText,
-  closeItem,
-  EMPTY,
-  inboxText,
-  isLapsed,
-  screenText,
-  toolActivity,
-} from '../../hooks/ledger'
+import { carryText, closeItem, EMPTY, isLapsed, promptNotes, screenText, toolActivity } from '../../hooks/ledger'
 import type { Exchange, Press } from '../../hooks/ledger'
 import { isTaskHandedOff, messages, steps } from '../../hooks/presses'
 import type { Check, Item } from '../../types'
@@ -80,33 +70,19 @@ export function notePrompt(s: SessionState, text: string, now: number): { state:
   const sentAt = s.sent.findIndex(x => x.text === text)
   const sentBy: Press | null = sentAt >= 0 ? (s.sent[sentAt]?.press ?? null) : null
   const ledger = { ...s.ledger, turn: s.ledger.turn + 1 }
-  const notes: string[] = []
-  // A press's message already says what it does; an Explain, for one, quotes its item without answering it.
-  const answer = sentAt >= 0 ? null : answerNote(ledger, text)
-  if (answer) notes.push(answer)
-  // The inbox when it changed since Codex last read it, or when an item
-  // closed since. An empty inbox with nothing closed says nothing new.
-  const inbox = inboxText(CODEX, ledger, isTabOpen(s, now))
-  const told = new Set(s.told.closed)
-  const closed = closedText(ledger.closed.filter(d => !told.has(d.id)))
-  const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0
-  let toldNow = s.told
-  if (closed || (inbox !== s.told.inbox && !(isEmpty && s.told.inbox === null))) {
-    notes.push(closed ? `${inbox}\n${closed}` : inbox)
-    toldNow = { inbox, closed: ledger.closed.map(d => d.id) }
-  }
+  const r = promptNotes(CODEX, ledger, { text, isPress: sentAt >= 0, isOpen: isTabOpen(s, now) }, s.told)
   const person = s.turn.person === null ? text : `${s.turn.person}\n\n${text}`
 
   return {
     state: {
       ...s,
       ledger,
-      told: toldNow,
+      told: r.told,
       sent: sentAt >= 0 ? s.sent.filter((_x, i) => i !== sentAt) : s.sent,
       turn: { ...s.turn, person, press: sentBy ?? s.turn.press },
       presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 },
     },
-    notes,
+    notes: r.notes,
   }
 }
 

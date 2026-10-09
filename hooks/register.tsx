@@ -84,7 +84,6 @@ import {
   EMPTY,
   SYSTEM,
   ago,
-  answerNote,
   applyUpdate,
   buildPrompt,
   carryText,
@@ -94,10 +93,9 @@ import {
   dialogLine,
   parseReply,
   catchUpPrompt,
-  closedText,
   CLAUDE_CODE,
-  inboxText,
   isLapsed,
+  promptNotes,
   resetTime,
   readCommandRow,
   readKind,
@@ -110,6 +108,8 @@ import {
   toolActivity,
   transcriptCatchUpPrompt,
   transcriptText,
+  TOLD_NOTHING,
+  type Told,
   upgradeLedger,
 } from './ledger'
 import { baseName, clipLabel, helpLabel, isTaskHandedOff, messages, steps } from './presses'
@@ -438,15 +438,13 @@ let nextFetchFindsBranchPr: boolean | null = null
 let recordedRows: { isDemo: boolean; ids: Partial<Record<Tab, Set<string>>> } | null = null
 let isSaved = false
 let queue: Promise<void> = Promise.resolve()
-// The inbox text Claude last read beside a prompt, so it is sent again only when it changed.
-let toldInbox: string | null = null
+// What Claude last read of the inbox beside a prompt, so it is sent again only when it changed.
+let told: Told = TOLD_NOTHING
 // The line last published to this pane's Herdr sidebar row, and the chain that publishes in order.
 let published: string | null = null
 let publishing: Promise<void> = Promise.resolve()
 // Context for prompts this mod sent, by text, appended just before each prompt's row.
 const contextFor = new Map<string, string[]>()
-// The closed items Claude has been told about, by id.
-let toldClosed = new Set<string>()
 // The `!` command whose output row comes next.
 let shellCommand: string | null = null
 
@@ -859,19 +857,9 @@ async function notePrompt($: EngineInterface, text: string, sentBy: Press | null
     )
     if (carried) notes.push(carried)
   }
-  // A button's prompt already says what it does; an Explain, for one, quotes its item without answering it.
-  const answer = sentBy ? null : answerNote(ledger, text)
-  if (answer) notes.push(answer)
-  // The inbox when it changed since Claude last read it, or when an item
-  // closed since. An empty inbox with nothing closed says nothing new.
-  const inbox = inboxText(CLAUDE_CODE, ledger, isShown)
-  const closed = closedText(ledger.closed.filter(d => !toldClosed.has(d.id)))
-  const isEmpty = ledger.items.length === 0 && ledger.findings.length === 0
-  if (closed || (inbox !== toldInbox && !(isEmpty && toldInbox === null))) {
-    notes.push(closed ? `${inbox}\n${closed}` : inbox)
-    toldInbox = inbox
-    toldClosed = new Set(ledger.closed.map(d => d.id))
-  }
+  const r = promptNotes(CLAUDE_CODE, ledger, { text, isPress: sentBy !== null, isOpen: isShown }, told)
+  notes.push(...r.notes)
+  told = r.told
 
   if (sentBy) press = sentBy
   notePerson(text)
@@ -1992,8 +1980,7 @@ export const register: Register = on => {
       ])
       resetTurn()
       shellCommand = null
-      toldInbox = null
-      toldClosed = new Set()
+      told = TOLD_NOTHING
       contextFor.clear()
     }
 

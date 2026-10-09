@@ -394,6 +394,7 @@ function outcomeText(d) {
   if (d.how === "expired") return "expired before the user answered";
   return d.outcome;
 }
+var TOLD_NOTHING = { inbox: null, closed: [] };
 
 // src/state.ts
 function emptyState(sessionId) {
@@ -408,7 +409,7 @@ function emptyState(sessionId) {
     checks: NO_CHECKS,
     snapshots: {},
     turn: { person: null, activity: [], press: null, sentBack: [] },
-    told: { inbox: null, closed: [] },
+    told: TOLD_NOTHING,
     presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: "current", isUpdating: false },
     pending: [],
     sent: [],
