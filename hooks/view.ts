@@ -1,6 +1,6 @@
 // The inbox as every host draws it: the Needs you order and count, question
 // handles, which rows are handed off, and the item status. The band, the pane,
-// the sidebar line and row navigation all read this, so they agree.
+// the sidebar line, row navigation and the Codex tab all read this, so they agree.
 // Pure: it reads only its arguments, and imports nothing from the engine.
 
 import type { Finding, Item, LastAction, Ledger } from '../types'
@@ -15,7 +15,8 @@ export type ItemStatus = { changedAt: number | null; isUpdating: boolean; error:
 
 export type ViewInput = {
   ledger: Ledger
-  lastActions: Record<string, LastAction>
+  /** Each row's last press. Only the hand-off fields are read, so Codex's own last actions fit too. */
+  lastActions: Record<string, Pick<LastAction, 'isHandoff' | 'turnsStarted'>>
   turns: Turns
   status: ItemStatus
 }

@@ -4,7 +4,9 @@
 
 import { carryText, closeItem, EMPTY, isLapsed, promptNotes, screenText, toolActivity } from '../../hooks/ledger'
 import type { Exchange, Press } from '../../hooks/ledger'
-import { isHandedOff, messages, steps } from '../../hooks/presses'
+import { messages, steps } from '../../hooks/presses'
+import { inboxView, perTurnStatus } from '../../hooks/view'
+import type { InboxView } from '../../hooks/view'
 import type { Item } from '../../types'
 import type { LastAction, SessionState } from './state'
 import { CODEX, GUIDANCE, START_TITLE } from './texts'
@@ -234,19 +236,6 @@ export function press(s: SessionState, p: TabPress, now: number): { state: Sessi
   }
 }
 
-/** One row of the tab. */
-export type ItemRow = {
-  id: string
-  kind: Item['kind']
-  ask: string
-  label: string | null
-  options: { text: string; isRec: boolean }[]
-  steps: string[]
-  at: number | null
-  last: LastAction | null
-  isHandedOff: boolean
-}
-
 export type ClosedRow = {
   id: string
   kind: Item['kind']
@@ -257,28 +246,14 @@ export type ClosedRow = {
   at: number
 }
 
-export type View = {
+/** What the tab draws: the shared inbox view, and what only the tab reads. */
+export type View = InboxView & {
   goal: string
   now: string
   done: string[]
   running: string[]
-  updating: boolean
-  failed: boolean
-  /** When the per-reply update last changed the summary; null before the first. */
-  updatedAt: number | null
-  /** How many things wait on the person: questions, and tasks not handed to Codex. */
-  waiting: number
-  questions: ItemRow[]
-  tasks: ItemRow[]
-  findings: {
-    id: string
-    kind: 'issue' | 'opportunity'
-    title: string
-    detail: string
-    path: string | null
-    at: number
-    last: LastAction | null
-  }[]
+  /** Each row's last press, by row id. */
+  lastActions: Record<string, LastAction>
   /** Findings a press removed in the last few seconds, shown in their place with what was sent. */
   leaving: { id: string; title: string; text: string; at: number }[]
   /** Each group's latest closed items, newest first. */
@@ -290,36 +265,20 @@ export type View = {
 /** What the tab draws. */
 export function viewOf(s: SessionState, now: number): View {
   const l = s.ledger
-  const row = (i: Item): ItemRow => ({
-    id: i.id,
-    kind: i.kind,
-    ask: i.ask,
-    label: i.label,
-    options: i.options.map(o => ({ text: o, isRec: o === i.rec })),
-    steps: steps(i.helps).map(x => x.label),
-    at: i.at,
-    last: s.lastActions[i.id] ?? null,
-    isHandedOff: i.kind === 'task' && isHandedOff(s.lastActions[i.id], s.presence),
-  })
-  const questions = l.items
-    .filter(i => i.kind === 'question')
-    .sort((a, b) => b.turn - a.turn)
-    .map(row)
-  const tasks = l.items.filter(i => i.kind === 'task').map(row)
   const open = new Set(l.findings.map(f => f.id))
+  // Exchanges waiting for the inbox model will still change the list, so they read as updating.
+  const update = {
+    isUpdating: s.presence.isUpdating || s.pending.length > 0,
+    isFailed: s.presence.ledgerState === 'failed',
+  }
 
   return {
+    ...inboxView({ ledger: l, lastActions: s.lastActions, turns: s.presence, status: perTurnStatus(l, update) }),
     goal: l.card?.goal ?? '',
     now: l.card?.now ?? '',
     done: l.card?.done ?? [],
     running: l.card?.running ?? [],
-    updating: s.presence.isUpdating || s.pending.length > 0,
-    failed: s.presence.ledgerState === 'failed',
-    updatedAt: l.card?.updatedAt ?? null,
-    waiting: questions.length + tasks.filter(t => !t.isHandedOff).length,
-    questions,
-    tasks,
-    findings: l.findings.map(f => ({ ...f, last: s.lastActions[f.id] ?? null })),
+    lastActions: s.lastActions,
     leaving: Object.entries(s.lastActions)
       .filter(([id, a]) => a.title !== undefined && !open.has(id) && now - a.at < SETTLED_MS)
       .map(([id, a]) => ({ id, title: a.title ?? '', text: a.text, at: a.at })),

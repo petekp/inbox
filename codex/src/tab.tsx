@@ -6,8 +6,11 @@ import { render } from 'preact'
 import type { ComponentChildren, JSX } from 'preact'
 
 import { ago } from '../../hooks/ledger'
+import { steps } from '../../hooks/presses'
+import type { RowView } from '../../hooks/view'
+import type { Finding, Item } from '../../types'
 import { SETTLED_MS } from './core'
-import type { ItemRow, TabPress, View } from './core'
+import type { TabPress, View } from './core'
 
 type Tab = 'needsYou' | 'findings'
 type Tone = 'needsYou' | 'findings' | 'done' | 'error'
@@ -114,9 +117,9 @@ async function callTool<T>(name: string, args: unknown = {}): Promise<T | undefi
 
 function orderOf(v: View): Record<Group, string[]> {
   return {
-    question: v.questions.map(i => i.id),
-    task: v.tasks.map(i => i.id),
-    finding: [...v.findings].reverse().map(f => f.id),
+    question: v.needsYou.questions.map(r => r.id),
+    task: v.needsYou.tasks.map(r => r.id),
+    finding: v.findings.rows.map(r => r.id),
   }
 }
 
@@ -216,21 +219,22 @@ function startTyping(id: string) {
   draw()
 }
 
-function itemRow(v: View, item: ItemRow, handle: string): Row {
-  const last = item.last
+function itemRow(v: View, r: RowView, item: Item): Row {
+  const last = v.lastActions[r.id] ?? null
   const isQuestion = item.kind === 'question'
+  const isHandedOff = r.state.is === 'handedOff'
   // An action already pressed reads "… again", so a second press is a choice.
   const again = (label: string, action: string) => (last?.action === action ? `${label} again` : label)
   const id = item.id
   const lettered = [
     ...(isQuestion
       ? item.options.map((o, n) => ({
-          label: clip(o.text, 32),
-          ...(o.isRec ? { note: '(recommended)' } : {}),
+          label: clip(o, 32),
+          ...(o === item.rec ? { note: '(recommended)' } : {}),
           run: () => void act(id, { action: 'answer', id, option: n }),
         }))
       : []),
-    ...item.steps.map((label, n) => ({
+    ...steps(item.helps).map(({ label }, n) => ({
       label: again(label, `step-${n}`),
       run: () => void act(id, { action: 'step', id, step: n }),
     })),
@@ -246,9 +250,9 @@ function itemRow(v: View, item: ItemRow, handle: string): Row {
 
   return {
     id,
-    handle: item.isHandedOff ? '✓' : handle,
-    handleTone: item.isHandedOff ? 'done' : undefined,
-    ...(item.isHandedOff ? { fold: {} } : {}),
+    handle: isHandedOff ? '✓' : r.handle,
+    handleTone: isHandedOff ? 'done' : undefined,
+    ...(isHandedOff ? { fold: {} } : {}),
     title: item.ask,
     titleAfter: item.at === null ? undefined : ` · ${ago(v.at - item.at)}`,
     hasSecondLine: isQuestion,
@@ -271,7 +275,7 @@ const FINDING_BADGES = {
   opportunity: { label: 'Opportunity', mark: '✦', tone: 'done' },
 } as const
 
-function findingRow(v: View, f: View['findings'][number]): Row {
+function findingRow(v: View, f: Finding): Row {
   const badge = FINDING_BADGES[f.kind]
   const id = f.id
 
@@ -309,7 +313,7 @@ function findingRow(v: View, f: View['findings'][number]): Row {
       hint: 'Your reply to Codex',
       send: text => void act(id, { action: 'typedFinding', id, text }, () => drafts.delete(id)),
     },
-    last: f.last,
+    last: v.lastActions[id] ?? null,
   }
 }
 
@@ -322,9 +326,10 @@ type Lists = {
 }
 
 function listsOf(v: View): Lists {
-  const questions = v.questions.map((q, n) => itemRow(v, q, `${n + 1})`))
-  const tasks = v.tasks.map(t => itemRow(v, t, '•'))
-  const findings = [...v.findings].reverse().map(f => findingRow(v, f))
+  const items = (rows: RowView[]) => rows.flatMap(r => (r.item ? [itemRow(v, r, r.item)] : []))
+  const questions = items(v.needsYou.questions)
+  const tasks = items(v.needsYou.tasks)
+  const findings = v.findings.rows.flatMap(r => (r.finding ? [findingRow(v, r.finding)] : []))
 
   return {
     questions,
@@ -417,7 +422,7 @@ function lastText(row: Row, now: number): string | null {
   return row.last ? `${row.last.text} · ${ago(now - row.last.at)}` : null
 }
 
-function RowView({
+function ListRow({
   row,
   isSelected,
   onSelect,
@@ -536,41 +541,21 @@ function SettledView({ s }: { s: Settled }) {
 }
 
 /** A group's rows with the rows that just left spliced in where they were. */
-function Entries({
-  rows,
-  group,
-  all,
-  now,
-  empty,
-}: {
-  rows: Row[]
-  group: Group
-  all: Row[]
-  now: number
-  /** What the group's one line says when it has no rows. */
-  empty?: string
-}) {
+function Entries({ rows, group, all, now }: { rows: Row[]; group: Group; all: Row[]; now: number }) {
   const t: Tab = group === 'finding' ? 'findings' : 'needsYou'
   const at = selectedIndex(all, t)
   const entries: ({ row: Row } | { settled: Settled })[] = rows.map(row => ({ row }))
   for (const s of settled.filter(x => x.group === group).sort((a, b) => a.index - b.index))
     entries.splice(Math.min(s.index, entries.length), 0, { settled: s })
+  if (entries.length === 0) return null
 
   // Needs you hangs its rows from each group's title, as the pane does; Findings lists them flat.
   return (
     <div class={group === 'finding' ? 'flat' : 'tree'}>
-      {entries.length === 0 && empty ? (
-        <div class="entry">
-          <div class="row">
-            <span class="mark" />
-            <span class="empty-line">{empty}</span>
-          </div>
-        </div>
-      ) : null}
       {entries.map(x =>
         'row' in x ? (
           <div class="entry" key={x.row.id}>
-            <RowView
+            <ListRow
               row={x.row}
               now={now}
               isSelected={all.indexOf(x.row) === at}
@@ -609,17 +594,18 @@ function ItemGroup({
   all: Row[]
   now: number
 }) {
-  const title = kind === 'question' ? 'Questions' : 'Your tasks'
-  const empty = kind === 'question' ? 'No questions are waiting on you.' : 'No tasks are waiting on you.'
+  const title = kind === 'question' ? 'Questions' : 'Tasks'
   const showing = new Set(settled.map(s => s.id))
   const closed = v.closed.filter(d => d.kind === kind && !showing.has(d.id))
   const isUnfolded = unfolded.has(kind)
+  // A group with no open, settled or closed items is left out.
+  if (rows.length === 0 && !settled.some(s => s.group === kind) && closed.length === 0) return null
 
   return (
     <section>
       {/* A row handed to Codex stays listed but leaves the count. */}
       <GroupTitle title={title} count={rows.filter(r => !r.fold).length} />
-      <Entries rows={rows} group={kind} all={all} now={now} empty={empty} />
+      <Entries rows={rows} group={kind} all={all} now={now} />
       {closed.length > 0 ? (
         <button
           type="button"
@@ -658,9 +644,23 @@ function ItemGroup({
 
 function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number }) {
   const all = lists.byTab.needsYou
+  const isNothing = all.length === 0 && !settled.some(s => s.group !== 'finding')
+  const showing = new Set(settled.map(s => s.id))
+  if (isNothing && !v.closed.some(d => !showing.has(d.id)))
+    return (
+      <div class="empty">
+        <div class="title">Nothing needs you.</div>
+      </div>
+    )
 
+  // With closed items still shown, the empty text is one line above them.
   return (
     <main>
+      {isNothing ? (
+        <section>
+          <div class="group-title empty-line">Nothing needs you.</div>
+        </section>
+      ) : null}
       <ItemGroup v={v} kind="question" rows={lists.questions} all={all} now={now} />
       <ItemGroup v={v} kind="task" rows={lists.tasks} all={all} now={now} />
     </main>
@@ -685,13 +685,10 @@ function Findings({ lists, now }: { lists: Lists; now: number }) {
   )
 }
 
-function TabBar({ v, lists, now }: { v: View; lists: Lists; now: number }) {
-  const counts: Record<Tab, number> = { needsYou: v.waiting, findings: lists.findings.length }
-  const status = v.updating
-    ? 'Updating…'
-    : v.updatedAt !== null
-      ? `Updated ${ago(now - v.updatedAt)}`
-      : 'Not updated yet'
+function TabBar({ v, now }: { v: View; now: number }) {
+  const counts: Record<Tab, number> = { needsYou: v.needsYou.count, findings: v.findings.count }
+  const { changedAt, isUpdating, error } = v.status
+  const status = isUpdating ? 'Updating…' : changedAt !== null ? `Updated ${ago(now - changedAt)}` : 'Not updated yet'
 
   return (
     <nav>
@@ -712,9 +709,7 @@ function TabBar({ v, lists, now }: { v: View; lists: Lists; now: number }) {
       </div>
       <div class="status">
         {status}
-        {v.failed && !v.updating ? (
-          <span class="tone-error"> · update failed, items from that reply are missing</span>
-        ) : null}
+        {error ? <div class="tone-error">{error}</div> : null}
       </div>
     </nav>
   )
@@ -751,7 +746,7 @@ function App(): ComponentChildren {
     <>
       {readFailed ? <div class="notice">Could not read the inbox.</div> : null}
       {isDemo ? <div class="demo-note">Showing sample entries. Presses here send nothing to Codex.</div> : null}
-      <TabBar v={v} lists={lists} now={now} />
+      <TabBar v={v} now={now} />
       {tab === 'needsYou' ? <NeedsYou v={v} lists={lists} now={now} /> : <Findings lists={lists} now={now} />}
       <footer>
         <span>

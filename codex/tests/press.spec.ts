@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { recordClose, recordFinding } from '../../hooks/tools'
-import { notePrompt, press, viewOf } from '../src/core'
+import type { RowView } from '../../hooks/view'
+import type { Item } from '../../types'
+import { endTurn, notePrompt, press, viewOf } from '../src/core'
 import { emptyState } from '../src/state'
 import type { SessionState } from '../src/state'
 import { CODEX } from '../src/texts'
@@ -77,13 +79,75 @@ test('a run step hands the task to Codex: it folds until the turn it started is 
   assert.ok(r)
   assert.equal(r.effects[0]?.kind, 'send')
   const folded = viewOf(r.state, 60)
-  assert.equal(folded.tasks[0]?.isHandedOff, true)
-  assert.equal(folded.tasks[0]?.last?.text, 'Run seed script sent')
-  assert.equal(folded.waiting, 1)
+  assert.deepEqual(folded.needsYou.tasks[0]?.state, { is: 'handedOff' })
+  assert.equal(folded.lastActions.i2?.text, 'Run seed script sent')
+  assert.equal(folded.needsYou.count, 1)
 
   const started = notePrompt(r.state, (r.effects[0] as { text: string }).text, 70).state
   const summarized = { ...started, presence: { ...started.presence, turnsApplied: started.presence.turnsStarted } }
-  assert.equal(viewOf(summarized, 80).tasks[0]?.isHandedOff, false)
+  assert.deepEqual(viewOf(summarized, 80).needsYou.tasks[0]?.state, { is: 'open' })
+})
+
+/** An open question or task asked in reply `turn`. */
+function asked(id: string, kind: Item['kind'], turn: number): Item {
+  return { id, kind, label: null, ask: `Ask ${id}`, options: [], rec: null, helps: [], turn, at: turn }
+}
+
+test('the tab lists Needs you in the mod’s order, numbers only the questions a typed number answers, and counts what waits', () => {
+  const s = emptyState('s1')
+  // An older question and task stay open after the latest reply asked a question, a task and a question.
+  const state: SessionState = {
+    ...s,
+    ledger: {
+      ...s.ledger,
+      turn: 2,
+      batchTurn: 2,
+      nextId: 6,
+      items: [
+        asked('i1', 'task', 1),
+        asked('i2', 'question', 1),
+        asked('i3', 'question', 2),
+        asked('i4', 'task', 2),
+        asked('i5', 'question', 2),
+      ],
+    },
+    // The older task was handed to Codex in the turn that is running.
+    lastActions: { i1: { action: 'typed', text: 'Reply sent', at: 1, isHandoff: true, turnsStarted: 2 } },
+    presence: { ...s.presence, turnsStarted: 2, turnsApplied: 2 },
+  }
+  const v = viewOf(state, 10)
+  const rows = (list: RowView[]) => list.map(r => [r.id, r.handle, r.state.is])
+  assert.deepEqual(rows(v.needsYou.questions), [
+    ['i3', '1)', 'open'],
+    // The task in the batch takes position 2, as a typed "2." would answer it.
+    ['i5', '3)', 'open'],
+    ['i2', '?', 'open'],
+  ])
+  assert.deepEqual(rows(v.needsYou.tasks), [
+    ['i1', '•', 'handedOff'],
+    ['i4', '•', 'open'],
+  ])
+  assert.equal(v.needsYou.count, 4)
+  assert.equal(v.needsYou.topId, 'i3')
+
+  // Once the person sends any message, a typed number no longer reaches the batch.
+  const after = viewOf(notePrompt(state, 'thanks', 20).state, 30)
+  assert.deepEqual(
+    after.needsYou.questions.map(r => r.handle),
+    ['?', '?', '?'],
+  )
+})
+
+test('the tab reads Updating… while exchanges wait for the inbox model, and shows a failed update only once none do', () => {
+  const s = { ...withItems(), presence: { ...withItems().presence, isUpdating: false, ledgerState: 'failed' as const } }
+  const waiting = endTurn(s, 'Done.', 50)
+  assert.equal(waiting.pending.length, 1)
+  assert.deepEqual(
+    { isUpdating: viewOf(waiting, 60).status.isUpdating, error: viewOf(waiting, 60).status.error },
+    { isUpdating: true, error: null },
+  )
+  assert.match(viewOf(s, 60).status.error ?? '', /^Last update failed\./)
+  assert.equal(viewOf(s, 60).status.changedAt, 1)
 })
 
 test('Address removes the finding, sends it, and shows what was sent in its place for a few seconds', () => {

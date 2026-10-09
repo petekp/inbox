@@ -42,7 +42,7 @@ async function setup(queueCode: number) {
   const call = (name: string, args: Record<string, unknown>, meta: Record<string, unknown>) =>
     handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args, _meta: meta } }) as Promise<{
       result: {
-        structuredContent: { error: string | null; view: { questions: unknown[] } }
+        structuredContent: { error: string | null; view: { needsYou: { questions: { id: string }[] } } }
         content: { text: string }[]
       }
     }>
@@ -55,7 +55,7 @@ test('a press sends its message into the tab’s thread with the codex binary th
   const r = await call('inbox_press', { press: { action: 'answer', id: 'i1', option: 0 } }, { thread_id: 's1' })
   assert.equal(r.result.structuredContent.error, null)
   assert.deepEqual(calls, [['/apps/codex', 'queue', '--thread', 's1', '--message', 'Re "Ship it?": Yes']])
-  assert.deepEqual(r.result.structuredContent.view.questions, [])
+  assert.deepEqual(r.result.structuredContent.view.needsYou.questions, [])
   assert.equal((await readState(dir, 's1')).sent[0]?.text, 'Re "Ship it?": Yes')
 })
 
@@ -63,7 +63,7 @@ test('a press whose message fails to send leaves its row as it was', async () =>
   const { dir, call } = await setup(1)
   const r = await call('inbox_press', { press: { action: 'answer', id: 'i1', option: 0 } }, { thread_id: 's1' })
   assert.match(r.result.structuredContent.error ?? '', /Not sent: no such thread/)
-  assert.equal(r.result.structuredContent.view.questions.length, 1)
+  assert.equal(r.result.structuredContent.view.needsYou.questions.length, 1)
   assert.deepEqual((await readState(dir, 's1')).sent, [])
 })
 
@@ -80,9 +80,9 @@ test('Codex’s own tool calls reach their session through the turn metadata', a
 
 test('a press in the demo changes only the demo and sends nothing into the conversation', async () => {
   const { dir, calls, call } = await setup(0)
-  type Questions = { result: { structuredContent: { questions: { id: string }[] } } }
+  type Questions = { result: { structuredContent: { needsYou: { questions: { id: string }[] } } } }
   const demo = (await call('inbox_view', { demo: true }, { thread_id: 's1' })) as unknown as Questions
-  const first = demo.result.structuredContent.questions[0]
+  const first = demo.result.structuredContent.needsYou.questions[0]
   assert.ok(first)
   const r = await call(
     'inbox_press',
@@ -90,7 +90,7 @@ test('a press in the demo changes only the demo and sends nothing into the conve
     { thread_id: 's1' },
   )
   assert.deepEqual(calls, [])
-  assert.ok(!(r.result.structuredContent.view.questions as { id: string }[]).some(q => q.id === first.id))
+  assert.ok(!r.result.structuredContent.view.needsYou.questions.some(q => q.id === first.id))
   const real = await readState(dir, 's1')
   assert.deepEqual(real.sent, [])
   assert.deepEqual(
