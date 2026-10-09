@@ -228,9 +228,19 @@ test('the inbox tool answers in text: the count, each row that waits, and where 
     ].join('\n'),
   )
   // A row that just closed still settles in the tab, but no longer waits.
-  await call('inbox_press', { press: { action: 'dismiss', id: 'i1' }, thread: 's1' }, { thread_id: 's1' })
   await call('inbox_press', { press: { action: 'dismiss', id: 'i2' }, thread: 's1' }, { thread_id: 's1' })
   await call('inbox_press', { press: { action: 'dismiss', id: 'f3' }, thread: 's1' }, { thread_id: 's1' })
+  const one = await call('inbox', {}, codex)
+  assert.equal(
+    one.result.content[0]?.text,
+    [
+      '1 waits on the user',
+      'Questions:',
+      '1) [i1] "Ship it?"; options: Yes / No',
+      'Open the Inbox tab to act on these.',
+    ].join('\n'),
+  )
+  await call('inbox_press', { press: { action: 'dismiss', id: 'i1' }, thread: 's1' }, { thread_id: 's1' })
   const after = await call('inbox', {}, codex)
   assert.equal(after.result.content[0]?.text, 'Nothing waits on the user.')
 })

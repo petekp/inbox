@@ -719,7 +719,7 @@ function inboxToolText(v) {
   const findings = v.findings.count;
   if (needs === 0 && findings === 0) return "Nothing waits on the user.";
   const counts = [
-    needs > 0 ? `${needs} wait on the user` : null,
+    needs > 0 ? `${needs} ${needs === 1 ? "waits" : "wait"} on the user` : null,
     findings > 0 ? findings === 1 ? "1 finding" : `${findings} findings` : null
   ].filter((x) => x !== null);
   const out = [counts.join(" \xB7 ")];
