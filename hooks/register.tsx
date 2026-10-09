@@ -97,6 +97,7 @@ import {
   closeByClaude,
   closedText,
   inboxText,
+  isLapsed,
   resetTime,
   readCommandRow,
   readKind,
@@ -1569,13 +1570,6 @@ function capitalized(text: string): string {
 
 function closedLine(d: Closed): string {
   return `${d.ask} → ${d.outcome}`
-}
-
-/** An item that closed without the person deciding it: dismissed, expired, or overtaken by the work. */
-function isLapsed(d: Closed): boolean {
-  if (d.how === 'dismissed' || d.how === 'expired' || d.how === 'claude') return true
-  // The per-reply update writes its own outcome, so only its wording says the work overtook the item.
-  return d.how === 'update' && /^(no longer applies|replaced|superseded|moot)/i.test(d.outcome)
 }
 
 /** The outcome as the pane shows it: "Dismissed", "Yes, renamed". */

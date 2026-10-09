@@ -836,6 +836,13 @@ export function inboxText(ledger: Ledger, isPaneOpen: boolean): string {
   return out.join(NL)
 }
 
+/** An item that closed without the person deciding it: dismissed, expired, or overtaken by the work. */
+export function isLapsed(d: Closed): boolean {
+  if (d.how === 'dismissed' || d.how === 'expired' || d.how === 'claude') return true
+  // The per-reply update writes its own outcome, so only its wording says the work overtook the item.
+  return d.how === 'update' && /^(no longer applies|replaced|superseded|moot)/i.test(d.outcome)
+}
+
 /** How an item closed, in words a model reads without the mod's vocabulary. */
 function outcomeText(d: Closed): string {
   if (d.how === 'dismissed') return 'dismissed by the user'

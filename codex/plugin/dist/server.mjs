@@ -181,6 +181,10 @@ function addFinding(ledger, finding) {
     isAdded: true
   };
 }
+function isLapsed(d) {
+  if (d.how === "dismissed" || d.how === "expired" || d.how === "claude") return true;
+  return d.how === "update" && /^(no longer applies|replaced|superseded|moot)/i.test(d.outcome);
+}
 
 // src/texts.ts
 var FINDING_DESCRIPTION = `Record a finding for the user. It waits in the Findings section of the Inbox tab until it is closed, and from there the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, and leave out style nits and anything the user already decided.`;
@@ -378,10 +382,6 @@ function press(s, p, now) {
       return { state, effects };
     }
   }
-}
-function isLapsed(d) {
-  if (d.how === "dismissed" || d.how === "expired" || d.how === "claude") return true;
-  return d.how === "update" && /^(no longer applies|replaced|superseded|moot)/i.test(d.outcome);
 }
 function checkRow(c, root) {
   const count = failCount(c);

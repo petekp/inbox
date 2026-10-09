@@ -25,10 +25,11 @@ import {
   closeItem,
   CLOSED_BY_CLAUDE,
   EMPTY,
+  isLapsed,
   toolActivity,
 } from '../../hooks/ledger'
 import type { Exchange, Press } from '../../hooks/ledger'
-import type { Check, Closed, Help, Item, Ledger } from '../../types'
+import type { Check, Help, Item, Ledger } from '../../types'
 import type { LastAction, SessionState } from './state'
 import { CLOSED_BY, GUIDANCE, inboxText, messages, screenText, START_TITLE } from './texts'
 
@@ -546,13 +547,6 @@ export type View = {
   closed: ClosedRow[]
   /** When the view was drawn, for the rows' ages. */
   at: number
-}
-
-/** An item that closed without the person deciding it. The per-reply update writes its own outcome, so only its wording says the work overtook the item. */
-function isLapsed(d: Closed): boolean {
-  if (d.how === 'dismissed' || d.how === 'expired' || d.how === 'claude') return true
-
-  return d.how === 'update' && /^(no longer applies|replaced|superseded|moot)/i.test(d.outcome)
 }
 
 function checkRow(c: Check, root: string): CheckRow {
