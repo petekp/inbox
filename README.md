@@ -54,8 +54,9 @@ exactly how it ended. If Claude says something passes when the last run
 failed, or hasn't run since an edit, the mod asks Claude to run it again or
 say the change is untested.
 
-To see every part with sample items, run `/inbox demo`. Run it again to go
-back to your own.
+To see every part with sample items, run `/inbox demo`. Presses on them change
+only the samples and send nothing. Press Hide demo, or run the command again,
+to go back to your own items.
 
 ## Cost
 

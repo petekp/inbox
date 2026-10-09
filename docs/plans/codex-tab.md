@@ -110,13 +110,15 @@ Both stop when the system asks for reduced motion.
 
 "Show demo" in the footer swaps the tab's entries for the samples the pane's
 `/inbox demo` shows, from `hooks/demo.ts`, so both demos match. Codex gives a
-plugin no slash command, so the tab is where the demo starts. A note above
-the tabs says the entries are samples.
+plugin no slash command, so the tab is where the demo starts. A banner above
+the tabs says the entries are samples, with Hide demo to leave.
 
 The server keeps the demo in memory for each conversation, and it starts
 over when the server restarts. A press in the demo runs the same press logic
 on that copy, so rows fold, settle and read "again" as they would for real.
-It sends nothing to Codex and leaves the conversation's saved inbox alone.
+It sends, opens and copies nothing, and leaves the conversation's saved inbox
+alone. A press that would send, open or copy reads "Sample entry: nothing
+was sent." on its row.
 
 ## Left out of the first version
 

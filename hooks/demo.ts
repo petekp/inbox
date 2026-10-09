@@ -2,22 +2,25 @@
 // `/inbox demo` for work on the layout. Nothing here reaches the session's
 // real inbox, its store, or Claude.
 
-import type { LastAction, Ledger, Presence, PrViews, Settled, Stop } from '../types'
-
-export type View = {
-  ledger: Ledger
-  stop: Stop | null
-  settled: Settled[]
-  prViews: PrViews
-  lastActions: Record<string, LastAction>
-  /** The turn counts a task handed to Claude folds by. */
-  turns: Pick<Presence, 'turnsStarted' | 'turnsApplied'>
-}
+import type { DemoCopy } from '../types'
 
 const MIN = 60_000
 const REPO = 'https://github.com/petekp/inbox'
 
-export function demoView(now: number): View {
+/**
+ * Whether a saved demo has the shape this build draws. The demo's atom outlives
+ * a hot reload, so a copy an earlier build seeded may lack a field.
+ */
+export function isDemoCopy(saved: unknown): saved is DemoCopy {
+  if (!saved || typeof saved !== 'object') return false
+  const d = saved as Record<string, unknown>
+
+  return ['ledger', 'settled', 'prViews', 'lastActions', 'notes', 'turns'].every(
+    k => d[k] !== null && typeof d[k] === 'object',
+  )
+}
+
+export function demoView(now: number): DemoCopy {
   return {
     ledger: {
       card: {
@@ -374,6 +377,7 @@ export function demoView(now: number): View {
         index: 0,
       },
     },
+    notes: {},
     turns: { turnsStarted: 14, turnsApplied: 14 },
   }
 }

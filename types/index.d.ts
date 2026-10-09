@@ -102,8 +102,11 @@ export type LocalPart = {
 /** What a Local press did. The words are built per surface when the row is drawn. */
 export type LocalResult = { state: 'pending' | 'done' | 'failed'; parts: LocalPart[]; at: number }
 
-/** A short note on a row that is not a press's result: a press that found its row gone or changed. */
-export type RowNote = { note: 'stale'; at: number }
+/**
+ * A short note on a row that is not a press's result: a press that found its
+ * row gone or changed, or a press on a sample entry, which sends nothing.
+ */
+export type RowNote = { note: 'stale' | 'sample'; at: number }
 
 /** Something Claude noticed outside the current task and recorded for the person. */
 export type Finding = {
@@ -231,6 +234,23 @@ export type Cursor = { id: string | null; index: number }
 /** The PR tab's data: each PR's latest view, the current branch's PR, and whether a fetch runs. */
 export type PrViews = { views: Record<string, PrView>; branchRef: string | null; isFetching: boolean }
 
+/**
+ * The sample state `/inbox demo` shows in place of the session's own. Presses
+ * on it change only this copy, so nothing reaches the real inbox, its store or Claude.
+ */
+export type DemoCopy = {
+  ledger: Ledger
+  stop: Stop | null
+  /** Items that just closed on the copy, shown in place until SETTLED_MS after their `at`. */
+  settled: Settled[]
+  prViews: PrViews
+  lastActions: Record<string, LastAction>
+  /** Each sample row's latest note, by the row's id. */
+  notes: Record<string, RowNote>
+  /** The turn counts a sample row handed to Claude folds by. */
+  turns: Pick<Presence, 'turnsStarted' | 'turnsApplied'>
+}
+
 declare module 'claude-code' {
   interface PluginState {
     inbox: {
@@ -264,8 +284,8 @@ declare module 'claude-code' {
       optionsShown: string[]
       /** The pane's list of the keys no row shows is unfolded. */
       isKeyListShown: boolean
-      /** The band and pane show sample entries instead of the session's own, for `/inbox demo`. */
-      isDemo: boolean
+      /** The sample entries the band and pane show instead of the session's own, while `/inbox demo` is on. */
+      demo: DemoCopy | null
     }
   }
 }

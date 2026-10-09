@@ -1,7 +1,7 @@
 // What the person's presses send and how their buttons are labeled, the same
 // in every host: each message goes to the agent as the person's own words.
 
-import type { Finding, Help, Item, LastAction, Ledger, LocalResult } from '../types'
+import type { Finding, Help, Item, LastAction, Ledger, LocalResult, RowNote } from '../types'
 import { closeFinding, closeItem } from './ledger'
 import type { Press } from './ledger'
 import { namedPrs, parseRef } from './prs'
@@ -247,6 +247,11 @@ export type PressResult = { ledger: Ledger; last: LastAction | null; effects: Ef
 
 /** What a row reads after a press that found it gone or changed. */
 export const STALE_TEXT = 'This changed before your press. Nothing was sent.'
+
+/** What a row's note reads: after a stale press, or after a press on a sample entry. */
+export function noteText(note: RowNote['note']): string {
+  return note === 'sample' ? 'Sample entry: nothing was sent.' : STALE_TEXT
+}
 
 /** A help as the effect it asks for; a Run help asks the agent, as the person, to run its command. */
 function helpEffect(item: Item, help: Help): Effect {

@@ -6,11 +6,11 @@ import { render } from 'preact'
 import type { ComponentChildren, JSX } from 'preact'
 
 import { ago } from '../../hooks/ledger'
-import { pendingResult, STALE_TEXT, stepEffects } from '../../hooks/presses'
+import { noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
 import { feedbackText, isFailure, SETTLED_MS } from '../../hooks/view'
 import type { Feedback, RowView } from '../../hooks/view'
-import type { Finding, Item } from '../../types'
+import type { Finding, Item, RowNote } from '../../types'
 import type { TabView as View } from './core'
 
 type Tab = 'needsYou' | 'findings'
@@ -71,7 +71,7 @@ const unfolded = new Set<'question' | 'task'>()
 // What a row shows while its press runs: "Sending…", or a Local press's pending note.
 const sending = new Map<string, string>()
 const errors = new Map<string, string>()
-// A row's stale note, shown for SETTLED_MS from `at`.
+// A row's stale or sample note, shown for SETTLED_MS from `at`.
 const notes = new Map<string, { text: string; at: number }>()
 const copies = new Map<string, { name: string; text: string }>()
 // A note for a press whose row is no longer drawn, shown on line 1 for SETTLED_MS.
@@ -180,7 +180,7 @@ type PressReply = {
   view?: View
   copy?: { text: string; name: string } | null
   error?: string | null
-  note?: 'stale' | null
+  note?: RowNote['note'] | null
 }
 
 /** Whether the view lists a row with this id. */
@@ -203,16 +203,17 @@ async function act(rowId: string, press: RowPress, onSent?: () => void, pending 
   try {
     const r = await callTool<PressReply>('inbox_press', { press, thread: view?.thread, demo: isDemo })
     if (r?.error) errors.set(rowId, r.error)
-    else if (!r?.note) onSent?.()
+    // A sample press went through on the demo's copy, so its typed words go as a real press's do.
+    else if (r?.note !== 'stale') onSent?.()
     if (r?.copy) await copy(rowId, r.copy)
     if (r?.view) applyView(r.view, seq)
     if (r?.note && view && isListed(view, rowId)) {
-      notes.set(rowId, { text: STALE_TEXT, at: Date.now() })
+      notes.set(rowId, { text: noteText(r.note), at: Date.now() })
       setTimeout(draw, SETTLED_MS + 50)
-      // The typed words go back into the field they were sent from.
-      if (press.action === 'type') typing = rowId
+      // A stale press's typed words go back into the field they were sent from.
+      if (r.note === 'stale' && press.action === 'type') typing = rowId
     } else if (r?.note) {
-      lineNote = { text: STALE_TEXT, at: Date.now() }
+      lineNote = { text: noteText(r.note), at: Date.now() }
       setTimeout(draw, SETTLED_MS + 50)
     }
   } catch {
@@ -480,7 +481,7 @@ function lastText(row: Row, now: number): string | null {
   return f.is === 'done' ? `${feedbackLabel(row)} · ${ago(now - f.at)}` : feedbackLabel(row)
 }
 
-/** A row's stale note while it shows. */
+/** A row's note while it shows. */
 function noteOf(id: string): string | null {
   const n = notes.get(id)
 
@@ -825,7 +826,14 @@ function App(): ComponentChildren {
   return (
     <>
       {readFailed ? <div class="notice">Could not read the inbox.</div> : null}
-      {isDemo ? <div class="demo-note">Showing sample entries. Presses here send nothing to Codex.</div> : null}
+      {isDemo ? (
+        <div class="demo-note">
+          <span>Showing sample entries. Presses here send nothing.</span>
+          <button type="button" class="key" onClick={() => void toggleDemo()}>
+            Hide demo
+          </button>
+        </div>
+      ) : null}
       <TabBar v={v} now={now} />
       {tab === 'needsYou' ? <NeedsYou v={v} lists={lists} now={now} /> : <Findings lists={lists} now={now} />}
       <footer>
@@ -833,9 +841,11 @@ function App(): ComponentChildren {
           <kbd>1 2</kbd>Switch tabs<span class="sep">·</span>
           <kbd>j k</kbd>Select the next or previous row
         </span>
-        <button type="button" class="demo-toggle" onClick={() => void toggleDemo()}>
-          {isDemo ? 'Hide demo' : 'Show demo'}
-        </button>
+        {isDemo ? null : (
+          <button type="button" class="demo-toggle" onClick={() => void toggleDemo()}>
+            Show demo
+          </button>
+        )}
       </footer>
     </>
   )

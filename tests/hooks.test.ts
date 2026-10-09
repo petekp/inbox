@@ -88,6 +88,9 @@ let theme = ''
 // Runs once, before the next press or Enter in a drawing reaches its handler, as a change landing between a draw and a press does.
 let beforeAct: (() => Promise<unknown>) | undefined
 
+// The mod's own store, as JSON text by key, which outlives the session.
+let stored = new Map<string, string>()
+
 async function runBeforeAct() {
   const act = beforeAct
   beforeAct = undefined
@@ -106,7 +109,20 @@ function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   toasts = []
   theme = ''
   beforeAct = undefined
-  mock.store(on)
+  stored = new Map()
+  on('store.get', ($, e) => {
+    const json = stored.get(e.key)
+    return { value: json === undefined ? undefined : JSON.parse(json) }
+  })
+  on('store.set', ($, e) => {
+    stored.set(e.key, JSON.stringify(e.value))
+    return { value: undefined }
+  })
+  on('store.delete', ($, e) => {
+    stored.delete(e.key)
+    return { value: undefined }
+  })
+  on('store.keys', () => ({ value: [...stored.keys()] }))
   on('config.list', () => ({
     value: theme
       ? [
@@ -1186,27 +1202,77 @@ test('a reply another Stop hook sends Claude back from reaches the per-turn call
   expect(prompts.at(-1)).not.toContain('All tests pass.')
 })
 
-test('/inbox demo shows sample entries in every tab, sends nothing, and goes back', async ($, on) => {
-  mock.clock(on, { now: 1_000_000 })
+test('/inbox demo shows sample entries in every tab, presses change only its copy, and [Hide demo] goes back', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
+  const SAMPLE = 'Sample entry: nothing was sent.'
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  const saved = stored.get('s:session-1')
+  expect(saved).toContain('Use Node or Python?')
+
   expect((await $.command.run({ command: 'inbox', args: 'demo' } as never)).text).toContain('Showing sample entries')
   const pane = await $.ui.mount(PANE)
-  expect(await pane.find({ text: /Show the Keys list in a footer/ })).toBeDefined()
-  // The first question is the first row, so its answers show.
+  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+  for (const view of [pane, band]) {
+    expect(await view.find({ text: 'Showing sample entries. Presses here send nothing.' })).toBeDefined()
+    expect(await view.find({ key: 'hide-demo' })).toBeDefined()
+  }
+  expect(await pane.find({ text: /Use Node or Python/ })).toBeUndefined()
+  expect(await band.find({ text: /7 waiting on you/ })).toBeDefined()
+
+  // An answer closes the sample question in place, and the status line says nothing was sent.
   await pane.press({ key: 'answer-d11-0' })
+  await clock.settle()
   expect(sent).toEqual([])
+  expect(await pane.find({ key: 'answer-d11-0' })).toBeUndefined()
+  expect(await pane.find({ text: 'Footer' })).toBeDefined()
+  expect(await pane.find({ text: SAMPLE })).toBeDefined()
+
+  // Explain says so on its row, then shows its ✓.
+  await pane.press({ key: 'title-d17' })
+  await pane.press({ key: 'explain-d17' })
+  expect(await pane.find({ text: SAMPLE })).toBeDefined()
+  await clock.advance(SETTLED_MS)
+  expect(await pane.find({ text: SAMPLE })).toBeUndefined()
+  expect(await pane.find({ text: /✓ Explain/ })).toBeDefined()
+
+  // A typed reply hands the task off on the copy: it folds and leaves the count.
+  await pane.press({ key: 'typekey-d17' })
+  await pane.input({ key: 'type-d17', text: 'Done in both.' })
+  expect(await pane.find({ key: 'fold-details-d17' })).toBeDefined()
+
+  // Done settles the sample task in place, then it moves to Closed.
+  await pane.press({ key: 'title-d14' })
+  await pane.press({ key: 'done-d14' })
+  await clock.settle()
+  expect(await pane.find({ key: 'done-d14' })).toBeUndefined()
+  expect(await pane.find({ text: /Sign in to gh for the PRs tab/ })).toBeDefined()
+  expect(await band.find({ text: /4 waiting on you/ })).toBeDefined()
+  await clock.advance(SETTLED_MS)
+  expect(await pane.find({ text: /Sign in to gh for the PRs tab/ })).toBeUndefined()
+  expect(sent).toEqual([])
+
   await pane.press({ key: 'tab-findings' })
   expect(await pane.find({ text: /Catch-up could read only the turns/ })).toBeDefined()
   await pane.press({ key: 'tab-prs' })
   expect(await pane.find({ text: /Switch tabs with 1, 2 and 3/ })).toBeDefined()
   // The sample PRs are not looked up, and their buttons open nothing.
   await pane.press({ key: 'open-petekp/inbox#31' })
+  expect(await pane.find({ text: SAMPLE })).toBeDefined()
   expect(ran.filter(argv => argv[0] === 'gh' || argv[0] === 'open')).toEqual([])
 
-  await $.command.run({ command: 'inbox', args: 'demo' } as never)
-  expect(await pane.find({ text: /Switch tabs with 1, 2 and 3/ })).toBeUndefined()
+  // [Hide demo] brings back the session's own rows, which no sample press touched.
+  await pane.press({ key: 'hide-demo' })
+  await pane.press({ key: 'tab-needsYou' })
+  expect(await pane.find({ text: /Use Node or Python/ })).toBeDefined()
+  expect(await pane.find({ text: /Showing sample entries/ })).toBeUndefined()
+  expect(await pane.find({ text: SAMPLE })).toBeUndefined()
+  expect(await band.find({ text: /2 waiting on you/ })).toBeDefined()
+  expect(stored.get('s:session-1')).toBe(saved)
 })
 
 test('/clear and /resume switch the inbox to the other conversation, and each keeps its saved items', async ($, on) => {

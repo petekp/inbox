@@ -5,7 +5,7 @@
 import { constants } from 'node:fs'
 import { access, stat } from 'node:fs/promises'
 
-import { applyPress, finishedResult, localPath, openCommands, STALE_TEXT, withResult } from '../../hooks/presses'
+import { applyPress, finishedResult, localPath, noteText, openCommands, withResult } from '../../hooks/presses'
 import type { Effect, RowPress } from '../../hooks/presses'
 import {
   CLOSE_DESCRIPTION,
@@ -194,7 +194,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     return s
   }
 
-  /** A press in the demo changes only its copy and sends nothing. */
+  /** A press in the demo changes only its copy and performs nothing: each send, open or copy gives its row the sample note. */
   function onDemoPress(id: string, p: RowPress, thread: unknown): PressReply {
     const s = demoOf(id)
     const r =
@@ -213,13 +213,12 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       ledger: r.ledger,
       lastActions: r.last && !isLocal ? { ...s.lastActions, [p.id]: r.last } : s.lastActions,
     })
-    const copy = r.effects.find(e => e.kind === 'copy')
 
     return {
       view: served(demoOf(id), id),
-      copy: copy ? { text: copy.text, name: copy.name } : null,
+      copy: null,
       error: null,
-      note: null,
+      note: r.effects.length > 0 ? 'sample' : null,
     }
   }
 
@@ -248,7 +247,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       case 'inbox_press': {
         const p = args.press as RowPress
         const r = args.demo === true ? onDemoPress(id, p, args.thread) : await onPress(id, p, args.thread)
-        return { ...text(r.error ?? (r.note ? STALE_TEXT : 'Done')), structuredContent: r }
+        return { ...text(r.error ?? (r.note ? noteText(r.note) : 'Done')), structuredContent: r }
       }
     }
 

@@ -5,7 +5,7 @@
 
 import type { Finding, Item, LastAction, Ledger, LocalResult, PressKind, RowNote } from '../types'
 import { latestBatch, questionNumbers } from './ledger'
-import { actionId, clipLabel, isHandedOff, STALE_TEXT, stepsOf } from './presses'
+import { actionId, clipLabel, isHandedOff, noteText, stepsOf } from './presses'
 import type { HelpStep, RowPress } from './presses'
 
 /** A question with more options than this shows the first 4 and [All N options]. */
@@ -164,7 +164,7 @@ function localText(r: LocalResult, look: Look): string {
 
 /** Feedback as a row reads it, before any age. */
 export function feedbackText(f: Feedback, look: Look): string {
-  if (f.is === 'note') return STALE_TEXT
+  if (f.is === 'note') return noteText(f.note)
   if (f.is === 'local') return localText(f.result, look)
 
   return `✓ ${f.label}`

@@ -115,8 +115,9 @@ test('Codex’s own tool calls reach their session through the turn metadata', a
   assert.equal((await readState(dir, 's1')).ledger.findings[0]?.title, 'No lint script')
 })
 
-test('a press in the demo changes only the demo and sends nothing into the conversation', async () => {
+test('a press in the demo changes only the demo, sends nothing into the conversation, and says so', async () => {
   const { dir, calls, call } = await setup(0)
+  const before = await readState(dir, 's1')
   type Questions = {
     result: { structuredContent: { needsYou: { questions: { id: string; item: { options: string[] } }[] } } }
   }
@@ -131,12 +132,17 @@ test('a press in the demo changes only the demo and sends nothing into the conve
   )
   assert.deepEqual(calls, [])
   assert.ok(!r.result.structuredContent.view.needsYou.questions.some(q => q.id === first.id))
-  const real = await readState(dir, 's1')
-  assert.deepEqual(real.sent, [])
-  assert.deepEqual(
-    real.ledger.items.map(i => i.id),
-    ['i1'],
+  assert.equal(r.result.structuredContent.note, 'sample')
+  assert.equal(r.result.content[0]?.text, 'Sample entry: nothing was sent.')
+  // A copy step copies nothing in the demo: its row gets the same note.
+  const copied = await call(
+    'inbox_press',
+    { press: { action: 'step', id: 'd16', step: 0, label: 'Copy theme command' }, thread: 's1', demo: true },
+    { thread_id: 's1' },
   )
+  assert.equal(copied.result.structuredContent.note, 'sample')
+  assert.equal((copied.result.structuredContent as unknown as { copy: unknown }).copy, null)
+  assert.deepEqual(await readState(dir, 's1'), before)
 })
 
 test('an Open step shows a file macOS would run in Finder, opens any other file, and records on its row what happened', async () => {

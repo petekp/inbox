@@ -12,6 +12,7 @@ import type {
   Arrival,
   Cursor,
   Closed,
+  DemoCopy,
   Dialog,
   Item,
   Ledger,
@@ -29,8 +30,7 @@ import type {
   Stop,
   Tab,
 } from '../types'
-import { demoView } from './demo'
-import type { View } from './demo'
+import { demoView, isDemoCopy } from './demo'
 import type { Exchange, Press, Update } from './ledger'
 import type { Handoffs, PrStatus } from './prs'
 import {
@@ -96,7 +96,7 @@ import {
   upgradeLastActions,
   withResult,
 } from './presses'
-import type { Effect, HelpStep, PressResult, PrActionId, RowPress } from './presses'
+import type { Effect, HelpStep, PrActionId, RowPress } from './presses'
 import { feedbackOf, feedbackText, inboxView, isFailure, needsYouOrder, perTurnStatus, SETTLED_MS } from './view'
 import type { InboxView, RowView } from './view'
 import {
@@ -152,10 +152,8 @@ const LEAVE_BAR_STEPS = LEAVE_BAR_CELLS * 2
 const DRAW_IN_MS = 200
 const DRAW_IN_STEPS = 4
 const ARRIVAL_MS = 1500
-const IS_DEMO = atom({ plugin: 'inbox', key: 'isDemo' } as const, false)
-const SAMPLE_PRESS = 'Sample entry: nothing was sent. Run /inbox demo to go back.'
-// The pane's buttons that only move around it, which work in the demo. Every other press there sends nothing.
-const DEMO_PRESSES = /^(tab-|title-|select-|typekey-|fold-|all-options-|key-list$|next$|previous$)/
+const DEMO = atom({ plugin: 'inbox', key: 'demo' } as const, null as DemoCopy | null)
+const DEMO_BANNER = 'Showing sample entries. Presses here send nothing.'
 const PR_POLL_MS = 2 * 60_000
 const MAX_PRS = 6
 
@@ -605,7 +603,7 @@ function viewOf(
     turns,
     prViews,
     now,
-  }: Pick<View, 'ledger' | 'lastActions' | 'turns'> & {
+  }: Pick<DemoCopy, 'ledger' | 'lastActions' | 'turns'> & {
     notes: Record<string, RowNote>
     prViews?: PrViews
     now: number
@@ -633,15 +631,18 @@ function viewOf(
  * outcome, so the person sees it was registered, however it closed.
  */
 async function showSettled($: EngineInterface, before: Ledger, after: Ledger) {
+  await settle($, settledOf(before, after))
+}
+
+/** The items a change closed, each with its close record and its place in its group before the change. */
+function settledOf(before: Ledger, after: Ledger): Settled[] {
   const open = new Set(after.items.map(i => i.id))
   const order = needsYouOrder(before)
-  await settle(
-    $,
-    before.items.flatMap(item => {
-      const d = open.has(item.id) ? undefined : after.closed.find(x => x.id === item.id)
-      return d ? [{ ...d, index: order[item.kind === 'question' ? 'questions' : 'tasks'].indexOf(item) }] : []
-    }),
-  )
+
+  return before.items.flatMap(item => {
+    const d = open.has(item.id) ? undefined : after.closed.find(x => x.id === item.id)
+    return d ? [{ ...d, index: order[item.kind === 'question' ? 'questions' : 'tasks'].indexOf(item) }] : []
+  })
 }
 
 /** Keeps rows that just closed in place, each with a leave bar, until SETTLED_MS passes. */
@@ -872,6 +873,8 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
       ...s,
     })),
     update($, UNFOLDED, u => u.map(readKind)),
+    // A demo an earlier build seeded may lack a field this one draws, so it ends; /inbox demo seeds a new one.
+    update($, DEMO, d => (d === null || isDemoCopy(d) ? d : null)),
     // Last actions an earlier build saved by button key, without a kind. Those for Open, Open log,
     // a session check and a PR check's Fix record nothing now, so they go.
     update($, LAST_ACTIONS, upgradeLastActions),
@@ -948,7 +951,7 @@ async function showTab($: EngineInterface, tab: Tab) {
  * "Checking for PRs…" and not on "No PRs". The demo shows sample PRs, so it asks nothing.
  */
 async function findPrs($: EngineInterface) {
-  if (await read($, IS_DEMO)) return
+  if (await read($, DEMO)) return
   await update($, PR_VIEWS, v => ({ ...v, isFetching: true }))
   void fetchPrs($, true)
 }
@@ -1046,14 +1049,13 @@ function tabRowIds(view: InboxView, prViews: PrView[]): Record<Tab, string[]> {
  * row calls this. See docs/plans/jump-to-new-rows.md.
  */
 async function followNewRows($: EngineInterface, isOpening = false) {
-  const [drawn, isDemo, tab, unfolded, isShown] = await Promise.all([
+  const [drawn, tab, unfolded, isShown] = await Promise.all([
     drawnState($),
-    read($, IS_DEMO),
     read($, TAB),
     read($, UNFOLDED),
     isPaneShown($),
   ])
-  const { ledger, prViews: prState, settled, lastActions, stop, now } = drawn
+  const { ledger, prViews: prState, settled, lastActions, stop, isDemo, now } = drawn
   const prViews = Object.values(prState.views)
   const ids = tabRowIds(drawn.view, prViews)
   if (isOpening) recordedRows = null
@@ -1272,12 +1274,23 @@ function handoffs(lastActions: Record<string, LastAction>): Handoffs {
 }
 
 async function dismissPr($: EngineInterface, ref: string) {
-  await commitLedger($, l => ({ ...l, prs: l.prs.filter(r => r !== ref) }))
-  await update($, PR_VIEWS, v => {
+  const withoutPr = (v: PrViews): PrViews => {
     const views = { ...v.views }
     delete views[ref]
     return { ...v, views }
-  })
+  }
+  // A sample PR leaves only the demo's copy.
+  if (await read($, DEMO)) {
+    await update(
+      $,
+      DEMO,
+      d =>
+        d && { ...d, ledger: { ...d.ledger, prs: d.ledger.prs.filter(r => r !== ref) }, prViews: withoutPr(d.prViews) },
+    )
+    return
+  }
+  await commitLedger($, l => ({ ...l, prs: l.prs.filter(r => r !== ref) }))
+  await update($, PR_VIEWS, withoutPr)
 }
 
 /** A press on a PR block, one of its review threads, or a failing check's row. Only the mod has PRs. */
@@ -1405,6 +1418,7 @@ async function perform(
  * is gone or changed sends nothing: the row, or the pane's status line, says so.
  */
 async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPressArgument['surface']) {
+  if (await read($, DEMO)) return runDemoPress($, p)
   const [now, presence, lastActions, prState] = await Promise.all([
     $.clock.now(),
     read($, PRESENCE),
@@ -1413,26 +1427,21 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   ])
   const ctx = { now, turnsStarted: presence.turnsStarted }
   const rowId = 'ref' in p ? prRowId(p) : p.id
-  // A finding the press removes shows its last action in its place, in the Findings tab, until SETTLED_MS passes.
-  let place = null as Pick<LastAction, 'tab' | 'index'> | null
-  let applied: Applied
+  let applied = { stale: true } as Applied
   if ('ref' in p) {
-    applied = applyPrPress(prState, (await read($, LEDGER)).prs, lastActions, p, ctx)
+    applied = applyAnyPress(await read($, LEDGER), prState, lastActions, p, ctx).applied
   } else {
     if (p.action === 'type') await update($, TYPING, t => (t === p.id ? null : t))
     // `update` may run the change again on a version miss; the last run's result is the one used.
-    let r = { stale: true } as PressResult
     await commitLedger($, l => {
-      const item = l.items.find(i => i.id === p.id)
-      const index = [...l.findings].reverse().findIndex(f => f.id === p.id)
-      place = index >= 0 ? { tab: 'findings', index } : null
-      r = applyPress(l, lastActions[p.id], p, { ...ctx, extraSteps: item ? itemPrSteps(item, prState, l.prs) : [] })
-      return 'stale' in r ? l : r.ledger
+      const r = applyAnyPress(l, prState, lastActions, p, ctx)
+      applied = r.applied
+      return r.ledger
     })
-    applied = 'stale' in r ? r : { lasts: r.last ? { [p.id]: { ...r.last, ...place } } : {}, effects: r.effects }
   }
 
-  if ('stale' in applied) {
+  const pressed = applied
+  if ('stale' in pressed) {
     await Promise.all([
       update($, NOTES, n => ({ ...n, [rowId]: { note: 'stale' as const, at: now } })),
       'id' in p && p.action === 'type' ? update($, DRAFTS, d => ({ ...d, [p.id]: p.text })) : undefined,
@@ -1450,9 +1459,9 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
       .catch(() => undefined)
     return
   }
-  const lasts = Object.values(applied.lasts)
+  const lasts = Object.values(pressed.lasts)
   await Promise.all([
-    lasts.length > 0 ? update($, LAST_ACTIONS, a => ({ ...a, ...applied.lasts })) : undefined,
+    lasts.length > 0 ? update($, LAST_ACTIONS, a => ({ ...a, ...pressed.lasts })) : undefined,
     // A press that went through replaces the row's note, and a sent reply its draft.
     update($, NOTES, n => {
       if (!(rowId in n)) return n
@@ -1468,10 +1477,11 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   ])
   // The sidebar line stops counting a handed-off row at once.
   if (lasts.some(l => l.kind === 'handoff')) void publishStatus($)
-  if (place && lasts.length > 0) redrawWhileLeaving($, () => update($, LAST_ACTIONS, a => ({ ...a })), SETTLED_MS)
+  if (lasts.some(l => l.tab === 'findings'))
+    redrawWhileLeaving($, () => update($, LAST_ACTIONS, a => ({ ...a })), SETTLED_MS)
   const errors: (string | null)[] = []
-  for (const e of applied.effects) if (e.kind !== 'send') errors.push(await perform($, e, surface))
-  const pending = applied.lasts[rowId]?.result
+  for (const e of pressed.effects) if (e.kind !== 'send') errors.push(await perform($, e, surface))
+  const pending = pressed.lasts[rowId]?.result
   if (pending?.state === 'pending') {
     const result = finishedResult(pending, errors, await $.clock.now())
     await update($, LAST_ACTIONS, a => withResult(a, rowId, pending.at, result))
@@ -1482,7 +1492,80 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
         .then(() => update($, LAST_ACTIONS, a => ({ ...a })))
         .catch(() => undefined)
   }
-  for (const e of applied.effects) if (e.kind === 'send') await send($, e.text, e.by)
+  for (const e of pressed.effects) if (e.kind === 'send') await send($, e.text, e.by)
+}
+
+/**
+ * Applies a row press with `applyPress` or a PR press with `applyPrPress`.
+ * Pure. A finding the press removes keeps its place on its last action, so it
+ * shows there in the Findings tab until SETTLED_MS passes.
+ */
+function applyAnyPress(
+  ledger: Ledger,
+  prState: PrViews,
+  lastActions: Record<string, LastAction>,
+  p: RowPress | PrPress,
+  ctx: { now: number; turnsStarted: number },
+): { ledger: Ledger; applied: Applied } {
+  if ('ref' in p) return { ledger, applied: applyPrPress(prState, ledger.prs, lastActions, p, ctx) }
+  const item = ledger.items.find(i => i.id === p.id)
+  const index = [...ledger.findings].reverse().findIndex(f => f.id === p.id)
+  const place = index >= 0 ? { tab: 'findings' as const, index } : {}
+  const r = applyPress(ledger, lastActions[p.id], p, {
+    ...ctx,
+    extraSteps: item ? itemPrSteps(item, prState, ledger.prs) : [],
+  })
+  if ('stale' in r) return { ledger, applied: r }
+
+  return { ledger: r.ledger, applied: { lasts: r.last ? { [p.id]: { ...r.last, ...place } } : {}, effects: r.effects } }
+}
+
+/**
+ * Runs a press on the demo's copy. It changes only the copy and performs
+ * nothing: each send, open or copy becomes its row's sample note instead.
+ * Rows still settle, fold and show their ✓ on the copy.
+ */
+async function runDemoPress($: EngineInterface, p: RowPress | PrPress) {
+  const now = await $.clock.now()
+  const rowId = 'ref' in p ? prRowId(p) : p.id
+  if (!('ref' in p) && p.action === 'type') await update($, TYPING, t => (t === p.id ? null : t))
+  let applied = { stale: true } as Applied
+  let settled: Settled[] = []
+  await update($, DEMO, d => {
+    if (!d) return d
+    // The copy's own turn counts, so a sample hand-off folds by them.
+    const r = applyAnyPress(d.ledger, d.prViews, d.lastActions, p, { now, turnsStarted: d.turns.turnsStarted })
+    applied = r.applied
+    const { [rowId]: _replaced, ...notes } = d.notes
+    if ('stale' in r.applied) return { ...d, notes: { ...notes, [rowId]: { note: 'stale' as const, at: now } } }
+    settled = settledOf(d.ledger, r.ledger)
+    // An open or copy records only its result, and the demo runs none, so its row keeps its last action.
+    const lasts = Object.entries(r.applied.lasts).filter(([, l]) => l.result === undefined)
+
+    return {
+      ...d,
+      ledger: r.ledger,
+      lastActions: { ...d.lastActions, ...Object.fromEntries(lasts) },
+      settled: [...d.settled.filter(s => !settled.some(x => x.id === s.id)), ...settled],
+      notes: r.applied.effects.length > 0 ? { ...notes, [rowId]: { note: 'sample' as const, at: now } } : notes,
+    }
+  })
+  const pressed = applied
+  if (!('ref' in p) && p.action === 'type')
+    await update($, DRAFTS, d => {
+      if ('stale' in pressed) return { ...d, [p.id]: p.text }
+      const { [p.id]: _sent, ...rest } = d
+      return rest
+    })
+  // A fresh copy redraws the pane: once a note's SETTLED_MS ends, and at each step of a leave bar.
+  const refresh = () => update($, DEMO, d => d && { ...d })
+  if ('stale' in pressed || pressed.effects.length > 0)
+    void $.clock
+      .sleep(SETTLED_MS)
+      .then(refresh)
+      .catch(() => undefined)
+  if (settled.length > 0 || (!('stale' in pressed) && Object.values(pressed.lasts).some(l => l.tab === 'findings')))
+    redrawWhileLeaving($, refresh, SETTLED_MS)
 }
 
 type Action = {
@@ -1619,10 +1702,8 @@ const FINDING_BADGES: Record<Finding['kind'], { label: string; mark: string; ton
  * What the band and the pane draw: the session's own state, or the samples
  * `/inbox demo` shows in its place.
  */
-async function drawnState(
-  $: EngineInterface,
-): Promise<View & { notes: Record<string, RowNote>; view: InboxView; now: number }> {
-  const [ledger, stop, settled, prViews, lastActions, notes, presence, isDemo, now] = await Promise.all([
+async function drawnState($: EngineInterface): Promise<DemoCopy & { view: InboxView; isDemo: boolean; now: number }> {
+  const [ledger, stop, settled, prViews, lastActions, notes, presence, demo, now] = await Promise.all([
     read($, LEDGER),
     read($, STOP),
     read($, SETTLED),
@@ -1630,13 +1711,24 @@ async function drawnState(
     read($, LAST_ACTIONS),
     read($, NOTES),
     read($, PRESENCE),
-    read($, IS_DEMO),
+    read($, DEMO),
     $.clock.now(),
   ])
   const turns = { turnsStarted: presence.turnsStarted, turnsApplied: presence.turnsApplied }
-  const drawn = isDemo ? { ...demoView(now), notes: {} } : { ledger, stop, settled, prViews, lastActions, notes, turns }
+  // The copy keeps its closed rows; each shows in place until SETTLED_MS after it closed.
+  const drawn = demo
+    ? { ...demo, settled: demo.settled.filter(s => now - s.at < SETTLED_MS) }
+    : { ledger, stop, settled, prViews, lastActions, notes, turns }
 
-  return { ...drawn, view: viewOf({ ...drawn, now }, presence), now }
+  return { ...drawn, view: viewOf({ ...drawn, now }, presence), isDemo: demo !== null, now }
+}
+
+/** Shows the demo's sample entries on a fresh copy, or ends the demo. */
+async function setDemo($: EngineInterface, isShown: boolean) {
+  const now = await $.clock.now()
+  await update($, DEMO, () => (isShown ? demoView(now) : null))
+  // The copy starts with a row that just closed, whose leave bar runs down.
+  if (isShown) redrawWhileLeaving($, () => update($, DEMO, d => d && { ...d }), SETTLED_MS)
 }
 
 /** Turns the mod on for this session, once, from the start or the desktop app's attach. */
@@ -1753,7 +1845,7 @@ export const register: Register = on => {
         update($, STOP, () => null),
         update($, DIALOGS, () => []),
         update($, SETTLED, () => []),
-        update($, IS_DEMO, () => false),
+        update($, DEMO, () => null),
         publishStatus($, true),
       ])
     }
@@ -1984,7 +2076,9 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'inbox' }, async ($, e) => {
-    const isDemo = e.args.trim() === 'demo' ? await update($, IS_DEMO, d => !d) : await read($, IS_DEMO)
+    const isShown = (await read($, DEMO)) !== null
+    if (e.args.trim() === 'demo') await setDemo($, !isShown)
+    const isDemo = (await read($, DEMO)) !== null
     if ((await read($, TAB)) === 'prs') await findPrs($)
     await openPane($)
     await followNewRows($, true)
@@ -2005,12 +2099,19 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!isOn || e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [{ ledger, prViews: prs, lastActions, stop, settled, view, now }, presence, prev] = await Promise.all([
-      drawnState($),
-      read($, PRESENCE),
-      read($, PREVIOUS),
-    ])
+    const [{ ledger, prViews: prs, lastActions, stop, settled, view, isDemo, now }, presence, prev] = await Promise.all(
+      [drawnState($), read($, PRESENCE), read($, PREVIOUS)],
+    )
     const isWorking = e.props.isWorking
+    // While the demo shows, its banner leads the band, with a way out.
+    const banner = isDemo ? (
+      <Box flexDirection="row" gap={1}>
+        <Text wrap="truncate-end" color={NEEDS_YOU}>
+          {DEMO_BANNER}
+        </Text>
+        <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo($, false)} />
+      </Box>
+    ) : null
 
     // A stop is the one thing to act on, so it takes the band.
     if (stop) {
@@ -2090,12 +2191,15 @@ export const register: Register = on => {
 
     if (isWorking) {
       return (
-        <Text wrap="truncate-end">
-          <Text color={ACCENT}>◆ </Text>
-          <Text dimColor>{goal}</Text>
-          {settledHint}
-          {waiting > 0 ? <Text color={NEEDS_YOU}> · {waiting} waiting on you</Text> : null}
-        </Text>
+        <Box flexDirection="column">
+          {banner}
+          <Text wrap="truncate-end">
+            <Text color={ACCENT}>◆ </Text>
+            <Text dimColor>{goal}</Text>
+            {settledHint}
+            {waiting > 0 ? <Text color={NEEDS_YOU}> · {waiting} waiting on you</Text> : null}
+          </Text>
+        </Box>
       )
     }
 
@@ -2108,6 +2212,7 @@ export const register: Register = on => {
 
     if (presence.isAway && card) {
       const rows = [
+        ...(banner ? [banner] : []),
         <Text wrap="truncate-end">
           <Text color={ACCENT}>◆ </Text>
           <Text bold>{card.goal}</Text>
@@ -2142,6 +2247,7 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column">
+        {banner}
         <Text wrap="truncate-end">
           <Text color={ACCENT}>◆ </Text>
           <Text dimColor>
@@ -2164,16 +2270,16 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const elements = $.ui.resolve(e)
-    const { Box, Button: ResolvedButton, Markdown, Text } = elements
+    const { Box, Button, Markdown, Text } = elements
     // The mobile app draws no text field, so there the typed reply is not offered.
-    const ResolvedInput = 'Input' in elements ? elements.Input : null
+    const Input = 'Input' in elements ? elements.Input : null
     // Inline above the prompt, the pane takes its room from the conversation, so
     // it drops the section cards, the tab panels and the blank lines between parts.
     const isInline = e.props.placement === 'inline'
     const blankLine = isInline ? 0 : 1
     const look = e.surface === 'desktop' ? 'desktop' : 'terminal'
     const [
-      { ledger, prViews: prState, lastActions, notes, stop, settled, view, now },
+      { ledger, prViews: prState, lastActions, notes, stop, settled, view, isDemo, now },
       presence,
       tab,
       selection,
@@ -2183,7 +2289,6 @@ export const register: Register = on => {
       isKeyListShown,
       shownDetails,
       arrival,
-      isDemo,
       optionsShown,
     ] = await Promise.all([
       drawnState($),
@@ -2196,21 +2301,10 @@ export const register: Register = on => {
       read($, IS_KEY_LIST_SHOWN),
       read($, SHOWN_DETAILS),
       read($, ARRIVAL),
-      read($, IS_DEMO),
       read($, OPTIONS_SHOWN),
     ])
     // A hot reload keeps TYPING but empties fieldSeeds, so an open field takes its seed again here.
     if (typing !== null && !fieldSeeds.has(typing)) fieldSeeds.set(typing, (await read($, DRAFTS))[typing] ?? '')
-    // Sample entries can be selected and opened, but what they would send goes nowhere.
-    // This is decided here, not in a ui.press hook: a press whose hook awaits before
-    // next(e) fails when a redraw lands in the wait, since the redraw releases the old drawing's handles.
-    const showSample = () => void $.ui.toast(SAMPLE_PRESS)
-    const Button: typeof ResolvedButton = !isDemo
-      ? ResolvedButton
-      : props =>
-          ResolvedButton(DEMO_PRESSES.test(props.key ?? props.label ?? '') ? props : { ...props, onPress: showSample })
-    const Input: typeof ResolvedInput =
-      !isDemo || !ResolvedInput ? ResolvedInput : props => ResolvedInput({ ...props, onSubmit: showSample })
     const prViews = Object.values(prState.views)
     const pal = PALETTES[theme] ?? THEME_KEY_PALETTE
     // `inverse: false` keeps the engine from inverting the line under the pointer inside the panel.
@@ -3314,6 +3408,14 @@ export const register: Register = on => {
     // k and the selected row's keys are Buttons in a hidden Box.
     return (
       <Box flexDirection="column" minHeight={isInline ? undefined : e.props.scroll.bodyRows} backgroundColor={pal.body}>
+        {isDemo ? (
+          <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={isInline ? 2 : 1} marginBottom={blankLine}>
+            <Text wrap="wrap" bold color={pal.tone.needsYou}>
+              {DEMO_BANNER}
+            </Text>
+            <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo($, false)} />
+          </Box>
+        ) : null}
         {tabs}
         {/* ▔ draws at the top of its cell, so the rule touches the tabs' bottom edge
             and the rest of its row stands in for the blank line above the content.
