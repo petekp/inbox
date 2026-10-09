@@ -572,6 +572,8 @@ async function setStop($: EngineInterface, stop: Stop | null) {
 
 /** [Resume] on a stop sends what the person would type. The turn's start clears the stop. */
 async function resume($: EngineInterface) {
+  // [Resume] keeps its key while it reads "Resuming…", so a second press lands here.
+  if (resuming?.is === 'sending') return
   // The band and the pane both read the stop, so writing it again redraws both.
   const redraw = () => update($, STOP, s => (s ? { ...s } : s))
   resuming = { is: 'sending' }
