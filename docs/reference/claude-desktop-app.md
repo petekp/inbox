@@ -202,7 +202,7 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 **What this means for the inbox's tabs:**
 - A mod cannot customize the engine's pane tabs. The only thing a mod controls is the title text. Another `$.ui.open` with the same id changes that text, so a title can carry a count.
 - Box and Button cannot make a whole tab, row or card clickable. A Box takes no clicks. A Button is only as big as its label and does not stretch.
-- `Client` is the one route nobody has tested. It is a sized region with its own pointer listener. The types disagree on whether desktop runs it: one place says pointer input reaches a Client on desktop, another says desktop "carries it as data". Until a probe works, plan on Buttons only.
+- A `Client` can. It is a region a separate surface module draws, with a set width and height, and it gets pointer input over the whole region on desktop (live, 2026-10-09). Its module can post each click to the hooks module.
 
 **Source key:**
 - `types:N (Symbol)` is `.claude-plugin/types/claude-code/index.d.ts` line N, as written by engine 2.1.293. Each engine that loads the mod rewrites this file, so the line numbers drift. Find the line by the symbol (desktop.md:89).
@@ -235,7 +235,7 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 | Button `role: 'dismiss'` | Desktop draws its native close control at the trailing edge, with the label as its accessible name. Not seen live. | stated | types:1117-1118 (`ButtonProps.role`); mods.md:665 |
 | Button props | Only key, label, hotkey, action, plain, dimColor, variant, role, autoFocus, hover, onPress. No width, padding, flex, color, bold, border, icon, disabled or tooltip. Any other prop fails the whole tree. | stated (list); inferred (absences) | types:1060-1152 (`ButtonProps`), 9309-9311 (`RenderElement`), 9323-9389 (`RenderElement` Button) |
 | Button children | A string label only on 2.1.293. String and `Text` children need engine 2.1.295, and the probed sessions ran 2.1.293. TypeScript does not catch an element child, because every element constructor accepts children. The types say a press on an Svg or Raster "goes on an enclosing Button", but a Button is a leaf and cannot enclose anything. | verified live (string only); stated (2.1.295, TypeScript, contradiction) | live; desktop.md:3, :130; mods.md:668, :1469; types:9320 (`RenderElement` Button), 3744-3756 (`ElementChildren`, `ElementConstructor`), 9579, 9610 |
-| Clicks | Buttons take clicks and a Box takes none. A press carries surface `'desktop'`. Clicks on Input, Select, Link and Client were not tested. | verified live (Button, Box) | live; desktop.md:53 |
+| Clicks | Buttons and Clients take clicks, and a Box takes none. A press carries surface `'desktop'`. Clicks on Input, Select and Link were not tested. | verified live (Button, Client, Box) | live; desktop.md:53 |
 | Hotkeys | Do nothing. A Button's hotkey logs no press while the pane is focused. The types do not limit hotkeys to the terminal, and the docs say a small key shows beside the label. The live result wins. | verified live | live; desktop.md:54; types:1071-1078 (`ButtonProps.hotkey`); mods.md:656-659 |
 | Button `action` chord | Terminal only. | stated | types:1083-1086 (`ButtonProps.action`); mods.md:662 |
 | Focus | The pane and the band each keep a focus ring. The `focus` request on open is not a grant. If the focused Button is missing from the next drawing, the app takes focus off the pane, and the next click only refocuses it (anthropics/claude-code#100874). Keeping the same key avoids this. `$.ui.focus` acts only in a site that holds the keyboard. | verified live; stated | live; types:13736-13739 (`UiFocusComponent`), 7350-7356 (`PaneOpenArgs.focus`), 13712 (`ui.focus`) |
@@ -245,7 +245,7 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 | Markdown | A leaf element. A link that is not https, http or file draws as text. The types describe `onLinkPress` clicks only for "the fullscreen terminal". Whether desktop sends link clicks to it is unknown. | stated; unknown | types:5688-5695 (`MarkdownProps.onLinkPress`); mods.md:687 |
 | Code | Colors come from the engine's highlighter, never the mod. | stated | types:1612-1614 (`CodeProps`) |
 | Svg | Drawn as an image. With `isInteractive` it draws in a sandboxed frame with CSS :hover, SMIL animation and `<title>` tooltips, but no scripts or event handlers. Width and height are CSS pixels. Up to 131,072 characters, and `alt` is required. Not drawn on the terminal. | stated | types:12196-12229 (`SvgProps`); mods.md:641, 694 |
-| Client | A region drawn by a separate module "for animation and pointer input". It takes `width`, `height` and `flexGrow`, and a module sets a pointer listener with `onPointer`. The types conflict about desktop. The test types say `pointer` reaches a Client on "terminal and desktop today". The element type says "The desktop carries it as data". Pointer events count whole cells, and finer positions come only from terminals that report pixels. Nothing has been tested on desktop. | stated, conflicting; unknown live | types:1489-1530 (`ClientProps`), 1433-1483 (`ClientPointerEvent`), 1577-1580 (`ClientSurface.onPointer`), 9555-9561 (`RenderElement` Client), 14811-14813 (`ElementOfAct`); mods.md:642, 695 |
+| Client | A region drawn by a separate module "for animation and pointer input". It takes `width`, `height` and `flexGrow`, and a module sets a pointer listener with `onPointer`. The types conflict about desktop. The test types say `pointer` reaches a Client on "terminal and desktop today". The element type says "The desktop carries it as data". Pointer events count whole cells, and finer positions come only from terminals that report pixels. Live on desktop, a Client under the pane's tabs with `width="100%"` and `height={4}` laid out at 36 by 3 cells and drew its module's Box and Text. Its pointer listener got `down`, `move` and `leave` events with cell positions, on every row of the region. Each `surface.post` reached a `ui.message` hook, and the hook's `{ props }` answer redrew the instance. So "carries it as data" is wrong for engine 2.1.293. | verified live; stated | types:1489-1530 (`ClientProps`), 1433-1483 (`ClientPointerEvent`), 1577-1580 (`ClientSurface.onPointer`), 9555-9561 (`RenderElement` Client), 14811-14813 (`ElementOfAct`); mods.md:642, 695 |
 | Not drawn | The Raster and Image elements. The ToolProgress, TurnDuration and InfoNotice render sites. | stated | types:3796-3807 (`Elements.desktop`); mods.md:597; desktop.md:23, 181, 183 |
 | Invalid tree | One prop off the allowlist fails the whole tree, and the engine draws its own content instead. For an element the surface lacks, the sources disagree. The interface docs say the engine draws its own site. The gallery says an Svg-only terminal pane opens empty. The types disagree with each other: one place says a missing element draws a fragment, another says the tree is refused. | stated; conflicting | types:9309-9311 (`RenderElement`), 12146 (`StyledElement.props`), 3758-3760 (`ElementName`), 9579-9580 (`RenderElement` Svg); mods.md:358, 646, 1576 |
 | Spinner | On desktop, the row that carries the turn's mark. | stated | types:10035-10037 (Spinner) |
@@ -260,7 +260,7 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 ### What this rules out
 
 - **Customizing the engine's pane tabs.** Only `title` reaches a tab. Nothing styles, sizes, badges or replaces it. The title text can change, as with a count.
-- **A whole-tab hit area built from Box or Button.** A Box takes no clicks. A Button sizes to its label and does not stretch, even in an absolute overlay. Client is the only untested route; see "Still unknown".
+- **A whole-tab hit area built from Box or Button.** A Box takes no clicks. A Button sizes to its label and does not stretch, even in an absolute overlay. Draw the tabs in a Client instead.
 - **Clickable whole rows or cards built from Box or Button.** Same reason as the tab bar.
 - **Making a Button look like text or a tab.** `plain` still draws native chrome and a pointer highlight.
 - **Styled content inside a Button**, such as colored counts, dim parts, chips or icons. Engine 2.1.293 takes only a string label.
@@ -279,7 +279,8 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 ### What works
 
 - A docked pane whose width follows the person's drag. Fit content to `bodyColumns`.
-- Native Buttons as the only tested click targets. `onPress` fires with surface `'desktop'`.
+- Native Buttons. `onPress` fires with surface `'desktop'`.
+- A `Client` for any click area larger than a Button label. Its module draws with Box and Text, gets pointer events over its whole region, and posts to the hooks module through `ui.message`.
 - Hierarchy with `variant="primary"` (white filled) against the default (dark gray rounded).
 - A Box `backgroundColor` and hover `backgroundColor` for row highlight. This is visual only, not clickable.
 - Stable Button keys across redraws, which keep pane focus.
@@ -289,7 +290,8 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 
 ### Still unknown
 
-- **Whether a Client receives pointer input on desktop.** This is the only possible route to a click region larger than a Button label, such as a whole tab or row. The types conflict on it. Probe a Client with a pointer listener that posts each event to the hooks module, where it arrives as `ui.message`.
+- **How a Client maps a click to what it drew.** Pointer positions are whole cells, but desktop text is proportional. Check whether a Box with a set width in cells lines up with the cells the pointer reports.
+- **Whether a Client keeps the pane's focus, takes keys after a click, and draws its own hover.** Draw tabs in a Client, then click, type and hover.
 - **Whether desktop draws engine pane tabs, and whether they switch on click.** Open two mod panes in a desktop session, then screenshot and click.
 - **Where a mod pane docks among the app's panes, whether Cmd+\ closes it, and whether it pops out.** Try each in a desktop session.
 - **Which `borderStyle` names and `borderColor` values desktop honors.** Draw one Box per name and screenshot.
