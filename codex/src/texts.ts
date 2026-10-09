@@ -6,9 +6,12 @@
 import type { Host } from '../../hooks/ledger'
 
 /** How the shared texts name Codex and the tab. */
-export const CODEX: Host = { agent: 'Codex', surface: 'the Inbox tab' }
-
-export const FINDING_DESCRIPTION = `Record a finding for the user. It waits in the Findings section of the Inbox tab until it is closed, and from there the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, and leave out style nits and anything the user already decided.`
+export const CODEX: Host = {
+  agent: 'Codex',
+  surface: 'the Inbox tab',
+  shownIn: 'the Inbox tab',
+  findingsIn: 'the Findings section of the Inbox tab',
+}
 
 export const GUIDANCE = `# Inbox
 The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, and your findings, in the Inbox tab beside the conversation.
@@ -24,8 +27,6 @@ Close with mcp__inbox__close:
 - When the user's message answers an open item, close it first, before other work, with their answer.
 - When an item or finding is done or no longer applies, close it with a short reason, without waiting to be asked.
 The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.`
-
-export const CLOSE_DESCRIPTION = `Close an open item or finding by its id, such as i35 or f12, as listed in the latest "inbox:" text beside the user's prompt. Pass the user's answer when their message answered it, and a reason otherwise.`
 
 export const TAB_DESCRIPTION =
   'Open the Inbox tab beside this conversation. Call it only when the user asks to see the inbox.'

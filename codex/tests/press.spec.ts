@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { notePrompt, press, recordClose, recordFinding, viewOf } from '../src/core'
+import { recordClose, recordFinding } from '../../hooks/tools'
+import { notePrompt, press, viewOf } from '../src/core'
 import { emptyState } from '../src/state'
 import type { SessionState } from '../src/state'
+import { CODEX } from '../src/texts'
 
 function withItems(): SessionState {
   const s = emptyState('s1')
@@ -85,7 +87,12 @@ test('a run step hands the task to Codex: it folds until the turn it started is 
 })
 
 test('Address removes the finding, sends it, and shows what was sent in its place for a few seconds', () => {
-  const s = recordFinding(withItems(), { kind: 'issue', title: 'No lint script', detail: 'Only tests run.' }, 10).state
+  const w = withItems()
+  const s = {
+    ...w,
+    ledger: recordFinding(CODEX, w.ledger, { kind: 'issue', title: 'No lint script', detail: 'Only tests run.' }, 10)
+      .ledger,
+  }
   const r = press(s, { action: 'address', id: 'f3' }, 50)
   assert.ok(r)
   assert.match(
@@ -105,7 +112,10 @@ test('a press on a row that is gone does nothing', () => {
 })
 
 test('Codex closing an item reads as Codex in its outcome', () => {
-  const r = recordClose(withItems(), { id: 'i1', reason: 'no longer applies' }, 50)
-  assert.equal(r.state.ledger.closed[0]?.outcome, 'closed by Codex: no longer applies')
-  assert.equal(recordClose(withItems(), { id: 'i9', reason: 'x' }, 50).result.startsWith('Not closed'), true)
+  const r = recordClose(CODEX, withItems().ledger, { id: 'i1', reason: 'no longer applies' }, 50)
+  assert.equal(r.ledger.closed[0]?.outcome, 'closed by Codex: no longer applies')
+  assert.equal(
+    recordClose(CODEX, withItems().ledger, { id: 'i9', reason: 'x' }, 50).result.startsWith('Not closed'),
+    true,
+  )
 })

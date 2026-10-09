@@ -613,7 +613,12 @@ function closedText(closed) {
 }
 
 // src/texts.ts
-var CODEX = { agent: "Codex", surface: "the Inbox tab" };
+var CODEX = {
+  agent: "Codex",
+  surface: "the Inbox tab",
+  shownIn: "the Inbox tab",
+  findingsIn: "the Findings section of the Inbox tab"
+};
 var GUIDANCE = `# Inbox
 The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, and your findings, in the Inbox tab beside the conversation.
 

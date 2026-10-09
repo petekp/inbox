@@ -4,52 +4,29 @@
 
 import { isAbsolute, join } from 'node:path'
 
-import { press, recordClose, recordFinding, viewOf } from './core'
+import {
+  CLOSE_DESCRIPTION,
+  CLOSE_SCHEMA,
+  FINDING_SCHEMA,
+  findingDescription,
+  recordClose,
+  recordFinding,
+} from '../../hooks/tools'
+import { press, viewOf } from './core'
 import type { TabPress } from './core'
 import { demoState } from './demo'
 import { readState, updateState } from './state'
 import type { SessionState } from './state'
-import { CLOSE_DESCRIPTION, FINDING_DESCRIPTION, TAB_DESCRIPTION } from './texts'
+import { CODEX, TAB_DESCRIPTION } from './texts'
 import type { Run } from './tree'
 
 export const TAB_URI = 'ui://inbox/tab'
 const TAB_MIME = 'text/html;profile=mcp-app'
 
-const FINDING_SCHEMA = {
-  type: 'object',
-  properties: {
-    kind: {
-      type: 'string',
-      enum: ['issue', 'opportunity'],
-      description: 'issue: something wrong or risky. opportunity: something that could be better.',
-    },
-    title: { type: 'string', description: 'What it is, in at most 12 plain words.' },
-    detail: { type: 'string', description: 'Why it matters and what you would do, in one or two sentences.' },
-    path: { type: 'string', description: 'The file it is about, if one.' },
-  },
-  required: ['kind', 'title', 'detail'],
-}
-
-const CLOSE_SCHEMA = {
-  type: 'object',
-  properties: {
-    id: { type: 'string', description: 'The id of the open item or finding, such as i35 or f32.' },
-    answer: {
-      type: 'string',
-      description: "The user's answer, in their words and at most 8, when their own message answered it.",
-    },
-    reason: {
-      type: 'string',
-      description: 'Otherwise, why it is closed, in at most 8 words, such as "no longer applies: Inbox kept".',
-    },
-  },
-  required: ['id'],
-}
-
 const APP_ONLY = { ui: { visibility: ['app'] } }
 
 const TOOLS = [
-  { name: 'record_finding', description: FINDING_DESCRIPTION, inputSchema: FINDING_SCHEMA },
+  { name: 'record_finding', description: findingDescription(CODEX), inputSchema: FINDING_SCHEMA },
   { name: 'close', description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA },
   {
     name: 'inbox',
@@ -165,9 +142,9 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       case 'close': {
         let result = ''
         await updateState(dir, id, s => {
-          const r = (name === 'close' ? recordClose : recordFinding)(s, args, now())
+          const r = (name === 'close' ? recordClose : recordFinding)(CODEX, s.ledger, args, now())
           result = r.result
-          return r.state
+          return { ...s, ledger: r.ledger }
         })
         return text(result)
       }

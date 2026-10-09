@@ -83,7 +83,6 @@ import {
 import {
   EMPTY,
   SYSTEM,
-  addFinding,
   ago,
   answerNote,
   applyUpdate,
@@ -95,7 +94,6 @@ import {
   dialogLine,
   parseReply,
   catchUpPrompt,
-  closeByAgent,
   closedText,
   CLAUDE_CODE,
   inboxText,
@@ -116,6 +114,14 @@ import {
 } from './ledger'
 import { baseName, clipLabel, helpLabel, isTaskHandedOff, messages, steps } from './presses'
 import type { HelpStep } from './presses'
+import {
+  CLOSE_DESCRIPTION,
+  CLOSE_SCHEMA,
+  FINDING_SCHEMA,
+  findingDescription,
+  recordClose,
+  recordFinding,
+} from './tools'
 import { readRepo, type TreeIO } from './tree'
 
 const LEDGER = atom({ plugin: 'inbox', key: 'ledger' } as const, EMPTY)
@@ -172,7 +178,6 @@ const PR_POLL_MS = 2 * 60_000
 const MAX_PRS = 6
 
 const FINDING_TOOL = 'mcp__inbox__record_finding'
-const FINDING_DESCRIPTION = `Record a finding for the user. It waits in the Findings tab of /inbox until it is closed, and from there the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, and leave out style nits and anything the user already decided.`
 const GUIDANCE = `# Inbox
 The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, in a band above their prompt and in the /inbox pane, and your findings, in the pane's Findings tab.
 
@@ -188,36 +193,6 @@ Close with mcp__inbox__close:
 - When an item or finding is done or no longer applies, close it with a short reason, without waiting to be asked.
 The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.`
 const CLOSE_TOOL = 'mcp__inbox__close'
-const CLOSE_DESCRIPTION = `Close an open item or finding by its id, such as i35 or f12, as listed in the latest "inbox:" text beside the user's prompt. Pass the user's answer when their message answered it, and a reason otherwise.`
-const CLOSE_SCHEMA = {
-  type: 'object',
-  properties: {
-    id: { type: 'string', description: 'The id of the open item or finding, such as i35 or f32.' },
-    answer: {
-      type: 'string',
-      description: "The user's answer, in their words and at most 8, when their own message answered it.",
-    },
-    reason: {
-      type: 'string',
-      description: 'Otherwise, why it is closed, in at most 8 words, such as "no longer applies: Inbox kept".',
-    },
-  },
-  required: ['id'],
-}
-const FINDING_SCHEMA = {
-  type: 'object',
-  properties: {
-    kind: {
-      type: 'string',
-      enum: ['issue', 'opportunity'],
-      description: 'issue: something wrong or risky. opportunity: something that could be better.',
-    },
-    title: { type: 'string', description: 'What it is, in at most 12 plain words.' },
-    detail: { type: 'string', description: 'Why it matters and what you would do, in one or two sentences.' },
-    path: { type: 'string', description: 'The file it is about, if one.' },
-  },
-  required: ['kind', 'title', 'detail'],
-}
 
 const RUN_CHECK_TOOL = 'mcp__inbox__run_check'
 const RUN_CHECK_DESCRIPTION = `Run tests, type checks, lints, builds and validation scripts with this tool, not with Bash. Each command is one check, such as "npm test", "npx vitest run src/a.test.ts" or "tsc --noEmit", with no pipe, redirect or other command. They run in order in the shell's current folder; to check another folder, cd there with Bash first. Each check's full output goes to a log file, and you get back whether it passed, its summary, the lines that name what failed, and the log's path.`
@@ -1042,50 +1017,21 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
   return ledger
 }
 
-async function recordFinding($: EngineInterface, input: Record<string, unknown>): Promise<string> {
-  const text = (value: unknown, max: number) => (typeof value === 'string' ? value.trim().slice(0, max) : '')
-  const title = text(input.title, 120)
-  const detail = text(input.detail, 600)
-  if (title === '' || detail === '') return 'Not recorded: a finding needs a title and a detail.'
-  const at = await $.clock.now()
-  const path = text(input.path, 300)
-  const finding = {
-    kind: input.kind === 'opportunity' ? ('opportunity' as const) : ('issue' as const),
-    title,
-    detail,
-    path: path || null,
-    at,
-  }
-  let added = { id: '', isAdded: false }
-  await commitLedger($, l => {
-    const r = addFinding(l, finding)
-    added = r
-    return r.ledger
-  })
-
-  return added.isAdded
-    ? `Recorded as ${added.id}. The user sees it in the Findings tab of /inbox.`
-    : `Already recorded as ${added.id}.`
-}
-
-async function recordClose($: EngineInterface, input: Record<string, unknown>): Promise<string> {
-  const text = (key: string) => (typeof input[key] === 'string' ? (input[key] as string).trim().slice(0, 80) : '')
-  const id = text('id').replace(/^\[|\]$/g, '')
-  const answer = text('answer')
-  const reason = text('reason')
-  if (id === '' || (answer === '' && reason === ''))
-    return "Not closed: give the id, and the user's answer or a reason."
+/** Runs a record_finding or close call on the ledger. Returns the text the agent reads back. */
+async function runTool(
+  $: EngineInterface,
+  tool: typeof recordFinding,
+  input: Record<string, unknown>,
+): Promise<string> {
   const now = await $.clock.now()
-  let closed: 'item' | 'finding' | null = null
+  let result = ''
   await commitLedger($, l => {
-    const r = closeByAgent(CLAUDE_CODE, l, id, answer ? { answer } : { reason }, now)
-    closed = r.closed
+    const r = tool(CLAUDE_CODE, l, input, now)
+    result = r.result
     return r.ledger
   })
-  if (closed === 'item') return `Closed ${id}. The user sees it in /inbox with its outcome.`
-  if (closed === 'finding') return `Closed finding ${id}.`
 
-  return `Not closed: no open item or finding has the id ${id}. The open ones are listed beside the user's latest message.`
+  return result
 }
 
 /**
@@ -1966,7 +1912,11 @@ export const register: Register = on => {
       upgradeState($),
       $.store.get(`s:${sessionId}`) as Promise<{ savedAt: number; ledger: Ledger } | undefined>,
       $.command.register({ name: 'inbox', description: 'Show where this session stands and what is waiting on you' }),
-      $.tool.register({ name: 'record_finding', description: FINDING_DESCRIPTION, inputSchema: FINDING_SCHEMA }),
+      $.tool.register({
+        name: 'record_finding',
+        description: findingDescription(CLAUDE_CODE),
+        inputSchema: FINDING_SCHEMA,
+      }),
       $.tool.register({ name: 'close', description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA }),
       $.tool.register({ name: 'run_check', description: RUN_CHECK_DESCRIPTION, inputSchema: RUN_CHECK_SCHEMA }),
       syncTheme($),
@@ -2093,12 +2043,12 @@ export const register: Register = on => {
   on('tool.describe', { tool: FINDING_TOOL }, async ($, e, next) => ({ ...(await next(e)), isDeferred: false }))
   on('tool.check', { tool: FINDING_TOOL }, () => ({ decision: 'allow' }))
   on('tool.call', { tool: FINDING_TOOL }, async ($, e) => ({
-    result: await recordFinding($, e as unknown as Record<string, unknown>),
+    result: await runTool($, recordFinding, e as unknown as Record<string, unknown>),
   }))
   on('tool.describe', { tool: CLOSE_TOOL }, async ($, e, next) => ({ ...(await next(e)), isDeferred: false }))
   on('tool.check', { tool: CLOSE_TOOL }, () => ({ decision: 'allow' }))
   on('tool.call', { tool: CLOSE_TOOL }, async ($, e) => ({
-    result: await recordClose($, e as unknown as Record<string, unknown>),
+    result: await runTool($, recordClose, e as unknown as Record<string, unknown>),
   }))
 
   // The check tool is listed up front and needs no prompt of its own: each check

@@ -17,10 +17,8 @@ import {
   readResult,
 } from '../../hooks/checks'
 import {
-  addFinding,
   answerNote,
   carryText,
-  closeByAgent,
   closedText,
   closeItem,
   EMPTY,
@@ -230,57 +228,6 @@ export function endTurn(s: SessionState, reply: string, now: number): SessionSta
   }
 
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] }
-}
-
-function cut(value: unknown, max: number): string {
-  return typeof value === 'string' ? value.trim().slice(0, max) : ''
-}
-
-export function recordFinding(
-  s: SessionState,
-  input: Record<string, unknown>,
-  now: number,
-): { state: SessionState; result: string } {
-  const title = cut(input.title, 120)
-  const detail = cut(input.detail, 600)
-  if (title === '' || detail === '') return { state: s, result: 'Not recorded: a finding needs a title and a detail.' }
-  const path = cut(input.path, 300)
-  const r = addFinding(s.ledger, {
-    kind: input.kind === 'opportunity' ? 'opportunity' : 'issue',
-    title,
-    detail,
-    path: path || null,
-    at: now,
-  })
-
-  return {
-    state: { ...s, ledger: r.ledger },
-    result: r.isAdded
-      ? `Recorded as ${r.id}. The user sees it in the Findings section of the Inbox tab.`
-      : `Already recorded as ${r.id}.`,
-  }
-}
-
-export function recordClose(
-  s: SessionState,
-  input: Record<string, unknown>,
-  now: number,
-): { state: SessionState; result: string } {
-  const text = (key: string) => cut(input[key], 80)
-  const id = text('id').replace(/^\[|\]$/g, '')
-  const answer = text('answer')
-  const reason = text('reason')
-  if (id === '' || (answer === '' && reason === ''))
-    return { state: s, result: "Not closed: give the id, and the user's answer or a reason." }
-  const r = closeByAgent(CODEX, s.ledger, id, answer ? { answer } : { reason }, now)
-  const state = { ...s, ledger: r.ledger }
-  if (r.closed === 'item') return { state, result: `Closed ${id}. The user sees it in the Inbox tab with its outcome.` }
-  if (r.closed === 'finding') return { state, result: `Closed finding ${id}.` }
-
-  return {
-    state: s,
-    result: `Not closed: no open item or finding has the id ${id}. The open ones are listed beside the user's latest message.`,
-  }
 }
 
 /** A press from the tab. */
