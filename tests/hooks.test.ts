@@ -1,6 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On, RenderSurface } from 'claude-code'
 
+import { SETTLED_MS } from '../hooks/view'
+
 const LEDGER_REPLY = `GOAL: Add a greeting CLI
 DONE: Plan written
 NOW: Waiting on two choices
@@ -31,7 +33,7 @@ let ran: string[][] = []
 // What another plugin's Stop hook answers; a test can make it send Claude back.
 let stopBlock: string | undefined
 
-// gh's answers by command; anything else fails, as gh does outside a repo with no PR.
+// gh's answers by command; anything else but `open` fails, as gh does outside a repo with no PR.
 // `hold` delays an answer until it resolves, as a slow network would.
 let ghAnswers: {
   match: (argv: readonly string[]) => boolean
@@ -43,6 +45,8 @@ let ghAnswers: {
 
 function gh(argv: readonly string[]) {
   const hit = ghAnswers.find(a => a.match(argv))
+  if (!hit && argv[0] === 'open')
+    return { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 
   return {
     exitCode: hit && !hit.fails ? 0 : 1,
@@ -71,6 +75,13 @@ const PANE = {
 // The apps drawing the session when it starts. A REPL start sets isInteractive instead.
 let surfaces: RenderSurface[] = []
 
+// The files on disk, by absolute path; any other path is not there.
+let files: string[] = []
+
+// What the mod put on the clipboard, and the toasts it showed.
+let copied: string[] = []
+let toasts: string[] = []
+
 // Runs once, before the next press or Enter in a drawing reaches its handler, as a change landing between a draw and a press does.
 let beforeAct: (() => Promise<unknown>) | undefined
 
@@ -87,6 +98,9 @@ function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   ghAnswers = []
   ledgerReply = LEDGER_REPLY
   surfaces = []
+  files = []
+  copied = []
+  toasts = []
   beforeAct = undefined
   mock.store(on)
   on('session.surfaces', () => ({ value: surfaces }))
@@ -99,6 +113,16 @@ function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('tool.register', ($, e) => ({ value: { tool: `mcp__inbox__${e.name}` } }))
   on('ui.open', () => ({ value: { isPlaced: true as const } }))
+  on('ui.toast', ($, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  on('ui.copy', ($, e) => {
+    copied.push(e.text)
+    return { value: { isCopied: true as const } }
+  })
+  on('fs.exists', ($, e) => ({ value: files.includes(e.path) }))
+  on('fs.stat', () => ({ value: { kind: 'file' as const, size: 1, mtimeMs: 1, isLink: false } }))
   on('process.run', async ($, e) => {
     ran.push([...e.argv])
     await ghAnswers.find(a => a.match(e.argv))?.hold?.()
@@ -251,28 +275,67 @@ test('a question’s handle is the number a typed answer reaches, and the band c
   expect(sidebarLines().at(-1)).toBe('9 · Ship it?')
 })
 
-test('a task handed to Claude folds and leaves the count until Claude’s reply leaves it open', async ($, on) => {
+test('a task handed to Claude folds and leaves the count until Claude’s reply leaves it open, whatever it opens or copies meanwhile', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
-  ledgerReply =
-    'GOAL: Load the data\nNOW: Waiting on the load script\nNEW: do | - | Run the load script | - | -\nHELP: new 1 | run | ./load.sh | load script'
+  ledgerReply = [
+    'GOAL: Load the data',
+    'NOW: Waiting on the load script',
+    'NEW: do | - | Run the load script | - | -',
+    'HELP: new 1 | run | ./load.sh | load script',
+    'HELP: new 1 | run | npm login | -',
+    'HELP: new 1 | open | notes/load.md | -',
+    'NEW: do | - | Add the API key | - | -',
+    'HELP: new 2 | copy | API_KEY=x | env line',
+    'HELP: new 2 | open | .env.local | -',
+  ].join('\n')
+  const answer = 'Run ./load.sh after npm login; see notes/load.md. Put API_KEY=x in .env.local.'
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'load the data', wait: false, origin: { kind: 'composer' } })
   await $.turn.start({ text: 'load the data', turnId: 't1' })
-  await $.turn.complete({ answer: 'Run ./load.sh.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await $.turn.complete({ answer, durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   const pane = await $.ui.mount(PANE)
-  expect(await band.find({ text: /1 waiting on you/ })).toBeDefined()
+  expect(await band.find({ text: /2 waiting on you/ })).toBeDefined()
 
-  // Run hands the task to Claude: it folds to what was sent, and waits on no one in the band or the tab.
+  // Run hands the task to Claude: it folds to what was sent, and leaves the count in the band and the tab.
   await pane.press({ key: 'help-i1-0' })
   await clock.settle()
   expect(sent.at(-1)).toContain('./load.sh')
   expect(await pane.find({ text: /Run load script · just now/ })).toBeDefined()
   expect(await pane.find({ key: 'help-i1-0' })).toBeUndefined()
-  expect(await band.find({ text: /waiting on you/ })).toBeUndefined()
+  expect(await band.find({ text: /1 waiting on you/ })).toBeDefined()
+
+  // Behind Details, a copy says where to run the command, and an open of a missing file says so in red, with no toast.
+  // Neither unfolds the task or brings it back into the count.
+  await pane.press({ key: 'fold-details-i1-key' })
+  await pane.press({ key: 'help-i1-1' })
+  await clock.settle()
+  expect(copied).toEqual(['npm login'])
+  expect(await pane.find({ text: '✓ Copied npm login. Run it in a terminal, or type ! and paste.' })).toBeDefined()
+  await pane.press({ key: 'help-i1-2' })
+  await clock.settle()
+  expect(await pane.find({ text: 'Could not open load.md: it no longer exists' })).toBeDefined()
+  expect(toasts).toEqual([])
+  expect(await pane.find({ key: 'fold-details-i1' })).toBeDefined()
+  expect(await band.find({ text: /1 waiting on you/ })).toBeDefined()
+  // A failure stays until the next press on its row.
+  await clock.advance(SETTLED_MS)
+  expect(await pane.find({ text: 'Could not open load.md: it no longer exists' })).toBeDefined()
+
+  // A step that copies and opens reads as one note, which clears after a few seconds.
+  files = ['/tmp/project/.env.local']
+  await pane.press({ key: 'select-i2' })
+  await pane.press({ key: 'help-i2-0' })
+  await clock.settle()
+  expect(copied.at(-1)).toBe('API_KEY=x')
+  expect(ran.at(-1)).toEqual(['open', '/tmp/project/.env.local'])
+  expect(await pane.find({ text: '✓ Copied env line · Opened .env.local' })).toBeDefined()
+  await clock.advance(SETTLED_MS)
+  expect(await pane.find({ text: /Opened \.env\.local/ })).toBeUndefined()
+  await pane.press({ key: 'title-i1' })
 
   // The turn that answers the send ends with the task still open, so it waits on the person again.
   ledgerReply = 'NOW: The load script needs your password'
@@ -280,7 +343,7 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   await $.turn.complete({ answer: 'It needs sudo.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
   await clock.settle()
   expect((await pane.find({ key: 'help-i1-0-key' }))?.props.label).toBe('Run load script again')
-  expect(await band.find({ text: /1 waiting on you/ })).toBeDefined()
+  expect(await band.find({ text: /2 waiting on you/ })).toBeDefined()
 })
 
 test('a question with 7 options shows 4 until [All 7 options], draws its steps after them, and letters only the first 9', async ($, on) => {
@@ -828,8 +891,17 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   const pane = await $.ui.mount(PANE)
   // The task names the PR only by number, and still links to it.
   expect((await pane.find({ key: 'help-i1-0-key' }))?.props.label).toBe('Open PR #12')
+  // The row says the PR is opening while `open` runs, then that it opened.
+  let opened = () => {}
+  ghAnswers.push({ match: argv => argv[0] === 'open', stdout: '', hold: () => new Promise(r => (opened = r)) })
   await pane.press({ key: 'help-i1-0' })
+  await clock.settle()
   expect(ran.at(-1)).toEqual(['open', 'https://github.com/acme/greet/pull/12'])
+  expect(await pane.find({ text: 'Opening PR #12…' })).toBeDefined()
+  opened()
+  await clock.settle()
+  expect(await pane.find({ text: '✓ Opened PR #12' })).toBeDefined()
+  ghAnswers.pop()
 
   await pane.press({ key: 'tab-prs' })
   await clock.settle()
@@ -868,6 +940,13 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   expect(await pane.find({ key: 'address-T1-key' })).toBeUndefined()
   await pane.press({ key: `${details}-key` })
   expect((await pane.find({ key: 'address-T1-key' }))?.props.label).toBe('Address again')
+  // Opening it on GitHub keeps it folded and out of the count.
+  await pane.press({ key: 'open-T1' })
+  await clock.settle()
+  expect(ran.at(-1)).toEqual(['open', 'https://github.com/acme/greet/pull/12#r1'])
+  expect(await pane.find({ text: '✓ Opened the comment' })).toBeDefined()
+  expect(await pane.find({ key: details })).toBeDefined()
+  expect(await pane.find({ text: /^ 1$/ })).toBeDefined()
   hasReply = true
   await pane.press({ key: 'tab-findings' })
   await pane.press({ key: 'tab-prs' })
@@ -1070,7 +1149,6 @@ test('a reply another Stop hook sends Claude back from reaches the per-turn call
 test('/inbox demo shows sample entries in every tab, sends nothing, and goes back', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world(on, [])
-  on('ui.toast', () => ({ value: undefined }))
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   expect((await $.command.run({ command: 'inbox', args: 'demo' } as never)).text).toContain('Showing sample entries')

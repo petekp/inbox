@@ -3,7 +3,7 @@
 // the sidebar line, row navigation and the Codex tab all read this, so they agree.
 // Pure: it reads only its arguments, and imports nothing from the engine.
 
-import type { Finding, Item, LastAction, Ledger, PressKind, RowNote } from '../types'
+import type { Finding, Item, LastAction, Ledger, LocalResult, PressKind, RowNote } from '../types'
 import { latestBatch, questionNumbers } from './ledger'
 import { actionId, clipLabel, isHandedOff, STALE_TEXT, stepsOf } from './presses'
 import type { HelpStep, RowPress } from './presses'
@@ -37,9 +37,16 @@ export type RowState = { is: 'open' } | { is: 'handedOff' }
 
 /**
  * What a row says about its last press: "✓ Explain · 1m ago". A Talk or Hand-off ✓
- * stays. A newer note shows in its place for SETTLED_MS.
+ * stays. A Local press's result shows while pending, for SETTLED_MS once done,
+ * and until the next press once failed. A newer note shows in their place for SETTLED_MS.
  */
-export type Feedback = { is: 'done'; label: string; at: number } | { is: 'note'; note: RowNote['note']; at: number }
+export type Feedback =
+  | { is: 'done'; label: string; at: number }
+  | { is: 'local'; result: LocalResult }
+  | { is: 'note'; note: RowNote['note']; at: number }
+
+/** Where a row is drawn, which decides some of its words: the mod in a terminal or the desktop app, or an HTML view. */
+export type Look = 'terminal' | 'desktop' | 'html'
 
 export type ActionView = {
   press: RowPress
@@ -106,19 +113,61 @@ export function needsYouOrder(ledger: Ledger): { questions: Item[]; tasks: Item[
 
 /**
  * A row's feedback: its note while the note is newer than its last press and
- * younger than SETTLED_MS, else its last press. None for a Local press, which
- * shows only its result.
+ * younger than SETTLED_MS; else its Local result while that shows; else its
+ * last Talk, Hand-off or Mark press.
  */
 export function feedbackOf(last: LastAction | undefined, note: RowNote | undefined, now: number): Feedback | null {
-  if (note && now - note.at < SETTLED_MS && (!last || note.at >= last.at))
+  const result = last?.result
+  if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
     return { is: 'note', note: note.note, at: note.at }
+  if (result && (result.state !== 'done' || now - result.at < SETTLED_MS)) return { is: 'local', result }
 
   return last && last.kind !== 'local' ? { is: 'done', label: last.text, at: last.at } : null
 }
 
+/** Feedback that reports a failure, which a row draws in red. */
+export function isFailure(f: Feedback | null): boolean {
+  return f?.is === 'local' && f.result.state === 'failed'
+}
+
+// Where a copied command runs. The desktop app's composer is not known to take "!" for shell mode.
+const RUN_IT: Record<Look, string> = {
+  terminal: 'Run it in a terminal, or type ! and paste.',
+  desktop: 'Run it in Terminal.',
+  html: 'Run it in Terminal.',
+}
+const VERBS = {
+  open: { pending: 'Opening', done: 'Opened', failed: 'open' },
+  copy: { pending: 'Copying', done: 'Copied', failed: 'copy' },
+}
+
+/**
+ * A Local result as its row reads it: "Opening .env…", "✓ Copied the key ·
+ * Opened .env", or "Could not open .env: it no longer exists". Several PRs
+ * one step opens read as one count, "✓ Opened 3 PRs".
+ */
+function localText(r: LocalResult, look: Look): string {
+  const isPrs =
+    r.parts.length > 1 && r.parts.every(p => p.kind === 'open' && p.error === null && /^PR #\d+$/.test(p.name))
+  const parts = isPrs ? [{ ...r.parts[0]!, name: `${r.parts.length} PRs` }] : r.parts
+  if (r.state === 'pending') return `${parts.map(p => `${VERBS[p.kind].pending} ${p.name}`).join(' · ')}…`
+  const text = parts
+    .map(p =>
+      p.error === null ? `${VERBS[p.kind].done} ${p.name}` : `Could not ${VERBS[p.kind].failed} ${p.name}: ${p.error}`,
+    )
+    .join(' · ')
+  if (r.state === 'failed') return text
+  const isCommand = parts.some(p => p.kind === 'copy' && p.isCommand)
+
+  return `✓ ${text}${isCommand ? `. ${RUN_IT[look]}` : ''}`
+}
+
 /** Feedback as a row reads it, before any age. */
-export function feedbackText(f: Feedback): string {
-  return f.is === 'note' ? STALE_TEXT : `✓ ${f.label}`
+export function feedbackText(f: Feedback, look: Look): string {
+  if (f.is === 'note') return STALE_TEXT
+  if (f.is === 'local') return localText(f.result, look)
+
+  return `✓ ${f.label}`
 }
 
 /** A step's kind: one that asks Claude to run a command hands the row off; the rest open or copy. */

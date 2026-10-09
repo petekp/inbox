@@ -1,5 +1,12 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, SessionAppendMessage, UiPressArgument, UiScrollResult } from 'claude-code'
+import type {
+  EngineInterface,
+  Register,
+  SessionAppendMessage,
+  UiCopyResult,
+  UiPressArgument,
+  UiScrollResult,
+} from 'claude-code'
 
 import type {
   Arrival,
@@ -76,9 +83,21 @@ import {
   type Told,
   upgradeLedger,
 } from './ledger'
-import { applyPress, baseName, clipLabel, localPath, openCommands, prSteps, upgradeLastActions } from './presses'
+import {
+  applyPress,
+  baseName,
+  clipLabel,
+  finishedResult,
+  localLast,
+  localPath,
+  openCommands,
+  pendingResult,
+  prSteps,
+  upgradeLastActions,
+  withResult,
+} from './presses'
 import type { Effect, HelpStep, PressResult, PrActionId, RowPress } from './presses'
-import { feedbackOf, feedbackText, inboxView, needsYouOrder, perTurnStatus, SETTLED_MS } from './view'
+import { feedbackOf, feedbackText, inboxView, isFailure, needsYouOrder, perTurnStatus, SETTLED_MS } from './view'
 import type { InboxView, RowView } from './view'
 import {
   CLOSE_DESCRIPTION,
@@ -814,21 +833,18 @@ async function notePrompt($: EngineInterface, text: string, sentBy: Press | null
   return notes
 }
 
-/** Opens a path an item names, as `openCommands` decides. */
-async function openPath($: EngineInterface, raw: string) {
+/** Opens a path an item names, as `openCommands` decides. Returns why it could not, or null. */
+async function openPath($: EngineInterface, raw: string): Promise<string | null> {
   const path = localPath(raw, root, (await $.env.get('HOME')) ?? '')
-  const name = baseName(path)
-  if (!(await $.fs.exists(path))) {
-    $.ui.toast(`${name} is not there anymore`)
-    return
-  }
+  if (!(await $.fs.exists(path))) return 'it no longer exists'
   const stat = await $.fs.stat(path)
   const isFile = stat.kind === 'file'
   const isExecutable = isFile && (await $.process.run(['test', '-x', path])).exitCode === 0
   const { argv, fallback } = openCommands(path, isFile, isExecutable)
   const r = await $.process.run(argv)
   const retry = r.exitCode !== 0 && fallback ? await $.process.run(fallback) : r
-  if (retry.exitCode !== 0) $.ui.toast(`Could not open ${name}: ${retry.stderr.trim()}`)
+
+  return retry.exitCode === 0 ? null : retry.stderr.trim() || `open exited ${retry.exitCode}`
 }
 
 /** A path inside the repo, relative to its top folder; any other path as given. */
@@ -1227,9 +1243,11 @@ async function pollPrs($: EngineInterface) {
   await fetchPrs($, findsBranchPr)
 }
 
-async function openUrl($: EngineInterface, url: string) {
+/** Opens a URL in the browser. Returns why it could not, or null. */
+async function openUrl($: EngineInterface, url: string): Promise<string | null> {
   const r = await $.process.run(['open', url])
-  if (r.exitCode !== 0) $.ui.toast(`Could not open ${url}`)
+
+  return r.exitCode === 0 ? null : r.stderr.trim() || `open exited ${r.exitCode}`
 }
 
 /** The id of a review thread's row, which also keys its last action. */
@@ -1305,7 +1323,13 @@ function applyPrPress(
     turnsStarted: ctx.turnsStarted,
   })
   const send = (text: string): Effect => ({ kind: 'send', text, by: null })
-  const open = (url: string): Effect => ({ kind: 'open', target: url, name: url })
+  // An open is Local: its row keeps its last action, with the open's result on it.
+  const open = (rowId: string, text: string, url: string, name: string): Applied => {
+    const effects: Effect[] = [{ kind: 'open', target: url, name }]
+    const result = pendingResult(effects, ctx.now)
+
+    return { lasts: { [rowId]: localLast(lastActions[rowId], { action: p.action, text }, result) }, effects }
+  }
   switch (p.action) {
     case 'thread-address':
     case 'thread-draft':
@@ -1314,7 +1338,7 @@ function applyPrPress(
       const t = pr.threads.find(x => x.id === p.thread)
       if (!t) return stale
       const id = prThreadId(pr, t)
-      if (p.action === 'thread-open') return { lasts: {}, effects: [open(t.reply?.url || t.url || pr.url)] }
+      if (p.action === 'thread-open') return open(id, 'Open', t.reply?.url || t.url || pr.url, 'the comment')
       if (p.action === 'thread-address')
         return { lasts: { [id]: record('handoff', p.action, 'Address') }, effects: [send(prompts.address(pr, [t]))] }
       if (p.action === 'thread-draft')
@@ -1341,32 +1365,43 @@ function applyPrPress(
       }
     }
     case 'pr-open':
-      return { lasts: {}, effects: [open(pr.url)] }
+      return open(`pr:${pr.ref}`, 'Open PR', pr.url, `PR #${pr.number}`)
     case 'log': {
       const check = pr.checks.find(c => c.name === p.check)
-      return check ? { lasts: {}, effects: [open(check.url ?? pr.url)] } : stale
+      if (!check) return stale
+      // A check with no log link opens the PR's page instead.
+      return open(prCheckId(pr, check), 'Open log', check.url ?? pr.url, check.url ? 'the log' : `PR #${pr.number}`)
     }
   }
 }
 
-/** Opens a path or URL, or copies text, for a press, saying so in a toast. */
-async function perform($: EngineInterface, e: Effect, surface: UiPressArgument['surface']) {
-  if (e.kind === 'open') {
-    await (/^[a-z][a-z\d+.-]*:\/\//i.test(e.target) ? openUrl($, e.target) : openPath($, e.target))
-  } else if (e.kind === 'copy') {
+const COPY_FAILURES: Record<Extract<UiCopyResult, { isCopied: false }>['reason'], string> = {
+  'no-surface': 'no app is attached',
+  'no-clipboard': 'the clipboard did not take it',
+  refused: 'another plugin refused it',
+}
+
+/** Opens a path or URL, or copies text, for a Local press. Returns why it could not, or null. */
+async function perform(
+  $: EngineInterface,
+  e: Exclude<Effect, { kind: 'send' }>,
+  surface: UiPressArgument['surface'],
+): Promise<string | null> {
+  try {
+    if (e.kind === 'open')
+      return await (/^[a-z][a-z\d+.-]*:\/\//i.test(e.target) ? openUrl($, e.target) : openPath($, e.target))
     const r = await $.ui.copy({ text: e.text, surface })
-    // A filled "! command" reaches the model as text; only a typed "!" switches the prompt to shell mode.
-    const copied = e.isCommand
-      ? `Copied ${e.name}. Run it in a terminal, or type ! here and paste.`
-      : `Copied ${e.name}`
-    $.ui.toast(r.isCopied ? copied : 'Could not copy to the clipboard')
+    return r.isCopied ? null : COPY_FAILURES[r.reason]
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err)
   }
 }
 
 /**
  * Runs a press from the pane, by click or key. A row press goes through
  * `applyPress` on the ledger, a PR press through `applyPrPress`. The row's last
- * action records it, then opens and copies run, then sends. A press whose row
+ * action records it, then opens and copies run and their result replaces the
+ * pending one on the row, then sends. A press whose row
  * is gone or changed sends nothing: the row, or the pane's status line, says so.
  */
 async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPressArgument['surface']) {
@@ -1391,7 +1426,7 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
       const item = l.items.find(i => i.id === p.id)
       const index = [...l.findings].reverse().findIndex(f => f.id === p.id)
       place = index >= 0 ? { tab: 'findings', index } : null
-      r = applyPress(l, p, { ...ctx, extraSteps: item ? itemPrSteps(item, prState, l.prs) : [] })
+      r = applyPress(l, lastActions[p.id], p, { ...ctx, extraSteps: item ? itemPrSteps(item, prState, l.prs) : [] })
       return 'stale' in r ? l : r.ledger
     })
     applied = 'stale' in r ? r : { lasts: r.last ? { [p.id]: { ...r.last, ...place } } : {}, effects: r.effects }
@@ -1434,7 +1469,19 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   // The sidebar line stops counting a handed-off row at once.
   if (lasts.some(l => l.kind === 'handoff')) void publishStatus($)
   if (place && lasts.length > 0) redrawWhileLeaving($, () => update($, LAST_ACTIONS, a => ({ ...a })), SETTLED_MS)
-  for (const e of applied.effects) if (e.kind !== 'send') await perform($, e, surface)
+  const errors: (string | null)[] = []
+  for (const e of applied.effects) if (e.kind !== 'send') errors.push(await perform($, e, surface))
+  const pending = applied.lasts[rowId]?.result
+  if (pending?.state === 'pending') {
+    const result = finishedResult(pending, errors, await $.clock.now())
+    await update($, LAST_ACTIONS, a => withResult(a, rowId, pending.at, result))
+    // A success note clears after SETTLED_MS. A fresh value is what redraws the pane then.
+    if (result.state === 'done')
+      void $.clock
+        .sleep(SETTLED_MS)
+        .then(() => update($, LAST_ACTIONS, a => ({ ...a })))
+        .catch(() => undefined)
+  }
   for (const e of applied.effects) if (e.kind === 'send') await send($, e.text, e.by)
 }
 
@@ -1446,8 +1493,8 @@ type Action = {
   /**
    * What the press does (UI 2.3). A Talk or Hand-off press leaves "✓ <label>"
    * on its row, so the person sees it went through, and a Hand-off folds the
-   * row. The other kinds show themselves: the row closes, a field or page
-   * opens, or the screen changes.
+   * row. A Local press shows "Opening x…" on its row, then its result. The
+   * other kinds show themselves: the row closes, a field opens, or the screen changes.
    */
   kind: PressKind
   onPress: (press: UiPressArgument) => void
@@ -2124,6 +2171,7 @@ export const register: Register = on => {
     // it drops the section cards, the tab panels and the blank lines between parts.
     const isInline = e.props.placement === 'inline'
     const blankLine = isInline ? 0 : 1
+    const look = e.surface === 'desktop' ? 'desktop' : 'terminal'
     const [
       { ledger, prViews: prState, lastActions, notes, stop, settled, view, now },
       presence,
@@ -2472,19 +2520,19 @@ export const register: Register = on => {
     // does. On a row still open it is muted, so it does not read as an answer.
     const lastTone = (row: Row) => (row.handleTone === 'done' ? ('done' as const) : undefined)
     // A last action reads "✓ Discuss · 1m ago". A row whose own mark is a ✓ leaves out the second one.
-    // A note reads alone, with no age.
+    // A note and a Local result read alone, with no age. A failed result is red.
     const feedbackLabel = (id: string, row?: Row) => {
       const f = feedbackOf(lastActions[id], notes[id], now)
       if (!f) return null
 
-      return f.is === 'note'
-        ? { text: feedbackText(f), age: '' }
-        : { text: row && lastTone(row) ? f.label : feedbackText(f), age: ago(now - f.at) }
+      return f.is === 'done'
+        ? { text: row && lastTone(row) ? f.label : feedbackText(f, look), age: ago(now - f.at), isFailure: false }
+        : { text: feedbackText(f, look), age: '', isFailure: isFailure(f) }
     }
     const lastActionText = (id: string, row?: Row) => {
       const f = feedbackLabel(id, row)
 
-      return f ? [f.text, f.age].filter(Boolean).join(' · ') : null
+      return f ? { text: [f.text, f.age].filter(Boolean).join(' · '), isFailure: f.isFailure } : null
     }
     // A section's children hang from its title like a directory listing. A
     // child's row has a 1-column bar, 3 columns for the tree, 3 for its marker,
@@ -2565,7 +2613,7 @@ export const register: Register = on => {
         ? {
             ...plain,
             after: ` · ${[f.text, f.age].filter(Boolean).join(' ')}`,
-            afterTone: f.age ? lastTone(row) : undefined,
+            afterTone: f.isFailure ? ('error' as const) : f.age ? lastTone(row) : undefined,
           }
         : plain
       const width = e.props.bodyColumns - 3 - inset - (line.before?.length ?? 0)
@@ -2612,7 +2660,11 @@ export const register: Register = on => {
       const { keys, more } = isSelected ? rowActions(row) : { keys: [], more: [] }
       const isOpen = !row.fold || shownDetails.includes(row.id)
       const lastText = lastActionText(row.id, row)
-      const status = [row.fold?.note, lastText].filter((s): s is string => Boolean(s))
+      const tone = lastTone(row) ? pal.tone.done : pal.muted
+      const status = [
+        ...(row.fold?.note ? [{ text: row.fold.note, color: tone }] : []),
+        ...(lastText ? [{ text: lastText.text, color: lastText.isFailure ? pal.tone.error : tone }] : []),
+      ]
 
       return (
         <Box
@@ -2648,8 +2700,8 @@ export const register: Register = on => {
               {status.length > 0 ? (
                 <Box flexDirection="column" marginTop={blankLine}>
                   {status.map(s => (
-                    <Text color={lastTone(row) ? pal.tone.done : pal.muted} wrap="wrap">
-                      {s}
+                    <Text color={s.color} wrap="wrap">
+                      {s.text}
                     </Text>
                   ))}
                 </Box>
@@ -2867,7 +2919,7 @@ export const register: Register = on => {
           ) : null}
           {lineNote ? (
             <Text color={pal.muted} wrap="wrap">
-              {feedbackText({ is: 'note', note: lineNote.note, at: lineNote.at })}
+              {feedbackText({ is: 'note', note: lineNote.note, at: lineNote.at }, look)}
             </Text>
           ) : null}
         </Box>
@@ -3125,6 +3177,7 @@ export const register: Register = on => {
       const hasRows = prRows.length > 0
       const counts = checkCounts(pr)
       const waitingOn = threadsOnYou(pr, handoff)
+      const prLast = lastActionText(`pr:${pr.ref}`)
       const prActions: Action[] = [
         ...(pr.state === 'OPEN' && pr.mergeable === 'CONFLICTING'
           ? [
@@ -3204,7 +3257,11 @@ export const register: Register = on => {
                 <Button key={a.key} label={a.label} onPress={a.onPress} />
               ))}
             </Box>
-            {lastActionText(`pr:${pr.ref}`) ? <Text color={pal.muted}>{lastActionText(`pr:${pr.ref}`)}</Text> : null}
+            {prLast ? (
+              <Text color={prLast.isFailure ? pal.tone.error : pal.muted} wrap="wrap">
+                {prLast.text}
+              </Text>
+            ) : null}
           </Box>,
         ),
         ...(hasRows ? titleGap() : []),

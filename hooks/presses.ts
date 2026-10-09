@@ -1,7 +1,7 @@
 // What the person's presses send and how their buttons are labeled, the same
 // in every host: each message goes to the agent as the person's own words.
 
-import type { Finding, Help, Item, LastAction, Ledger } from '../types'
+import type { Finding, Help, Item, LastAction, Ledger, LocalResult } from '../types'
 import { closeFinding, closeItem } from './ledger'
 import type { Press } from './ledger'
 import { namedPrs, parseRef } from './prs'
@@ -260,17 +260,73 @@ function helpEffect(item: Item, help: Help): Effect {
     case 'copy':
       return { kind: 'copy', text: help.text, name: help.name ?? 'snippet', isCommand: false }
     case 'terminal':
-      return { kind: 'copy', text: help.command, name: help.name ?? 'the command', isCommand: true }
+      return { kind: 'copy', text: help.command, name: help.name ?? clipLabel(help.command, 32), isCommand: true }
   }
+}
+
+/** The effects one press of a step asks for, in the order its helps run. */
+export function stepEffects(item: Item, step: HelpStep): Effect[] {
+  return step.step.map(h => helpEffect(item, h))
+}
+
+/** A Local press's opens and copies, each pending until its host has run it. */
+export function pendingResult(effects: Effect[], at: number): LocalResult {
+  return {
+    state: 'pending',
+    parts: effects.flatMap(e =>
+      e.kind === 'send'
+        ? []
+        : [{ kind: e.kind, name: e.name, isCommand: e.kind === 'copy' && e.isCommand, error: null }],
+    ),
+    at,
+  }
+}
+
+/** A pending result once each part ran: `errors` gives each part's failure in order, or null where it worked. */
+export function finishedResult(pending: LocalResult, errors: (string | null)[], at: number): LocalResult {
+  const parts = pending.parts.map((part, n) => ({ ...part, error: errors[n] ?? null }))
+
+  return { state: parts.some(part => part.error !== null) ? 'failed' : 'done', parts, at }
+}
+
+/**
+ * The last action a Local press leaves. A row's Talk, Hand-off or Mark entry
+ * keeps everything but its result, so a handed-off row stays folded and out of
+ * the count. A row with no such entry gets a local one.
+ */
+export function localLast(
+  last: LastAction | undefined,
+  pressed: Pick<LastAction, 'action' | 'text'>,
+  result: LocalResult,
+): LastAction {
+  return last && last.kind !== 'local' ? { ...last, result } : { kind: 'local', ...pressed, at: result.at, result }
+}
+
+/**
+ * Writes a Local press's finished result on its row, unless a later press has
+ * replaced the pending one, which `pendingAt` names.
+ */
+export function withResult(
+  lastActions: Record<string, LastAction>,
+  rowId: string,
+  pendingAt: number,
+  result: LocalResult,
+): Record<string, LastAction> {
+  const last = lastActions[rowId]
+  if (last?.result?.state !== 'pending' || last.result.at !== pendingAt) return lastActions
+
+  return { ...lastActions, [rowId]: { ...last, result } }
 }
 
 /**
  * Applies a press on a question, task or finding row, the same in every host.
- * Pure: it reads only its arguments. `ctx.extraSteps` are the steps the host
- * drew beyond the item's own helps, so a step press is checked against what was drawn.
+ * Pure: it reads only its arguments. `last` is the row's current last action,
+ * which a Local press keeps. `ctx.extraSteps` are the steps the host drew
+ * beyond the item's own helps, so a step press is checked against what was drawn.
  */
 export function applyPress(
   ledger: Ledger,
+  last: LastAction | undefined,
   p: RowPress,
   ctx: { now: number; turnsStarted: number; extraSteps: HelpStep[] },
 ): PressResult {
@@ -352,9 +408,13 @@ export function applyPress(
     case 'step': {
       const step = stepsOf(item, ctx.extraSteps)[p.step]
       if (!step || step.label !== p.label) return stale
-      const effects = step.step.map(h => helpEffect(item, h))
-      // A step that only opens or copies leaves the row's last action as it was.
-      return { ledger, last: effects.some(e => e.kind === 'send') ? record('handoff') : null, effects }
+      const effects = stepEffects(item, step)
+      if (effects.some(e => e.kind === 'send')) return { ledger, last: record('handoff'), effects }
+      return {
+        ledger,
+        last: localLast(last, { action: actionId(p), text: pressText(p) }, pendingResult(effects, ctx.now)),
+        effects,
+      }
     }
     // No host offers Undo yet, and Address and Discuss are a finding's.
     default:

@@ -5,8 +5,8 @@
 import { constants } from 'node:fs'
 import { access, stat } from 'node:fs/promises'
 
-import { applyPress, baseName, localPath, openCommands, STALE_TEXT } from '../../hooks/presses'
-import type { RowPress } from '../../hooks/presses'
+import { applyPress, finishedResult, localPath, openCommands, STALE_TEXT, withResult } from '../../hooks/presses'
+import type { Effect, RowPress } from '../../hooks/presses'
 import {
   CLOSE_DESCRIPTION,
   CLOSE_SCHEMA,
@@ -22,7 +22,7 @@ import { readState, updateState } from './state'
 import type { SessionState } from './state'
 import { CODEX, TAB_DESCRIPTION } from './texts'
 import type { Run } from './run'
-import type { RowNote } from '../../types'
+import type { LocalResult, RowNote } from '../../types'
 
 export const TAB_URI = 'ui://inbox/tab'
 const TAB_MIME = 'text/html;profile=mcp-app'
@@ -113,12 +113,16 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
    */
   async function onPress(id: string, p: RowPress, thread: unknown): Promise<PressReply> {
     let copy: PressReply['copy'] = null
-    const opens: string[] = []
+    let local = null as { effects: Effect[]; pending: LocalResult } | null
     let error: string | null = null
     let note: PressReply['note'] = thread === id ? null : 'stale'
-    const s = await updateState(dir, id, async s => {
+    let s = await updateState(dir, id, async s => {
       if (note) return s
-      const r = applyPress(s.ledger, p, { now: now(), turnsStarted: s.presence.turnsStarted, extraSteps: [] })
+      const r = applyPress(s.ledger, s.lastActions[p.id], p, {
+        now: now(),
+        turnsStarted: s.presence.turnsStarted,
+        extraSteps: [],
+      })
       if ('stale' in r) {
         note = 'stale'
         return s
@@ -128,13 +132,13 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         ledger: r.ledger,
         lastActions: r.last ? { ...s.lastActions, [p.id]: r.last } : s.lastActions,
       }
+      if (r.last?.result?.state === 'pending') local = { effects: r.effects, pending: r.last.result }
       // Sent while the lock is held, so a send that fails leaves the row as it was.
       for (const e of r.effects) {
         if (e.kind === 'send') {
           await queue(next, e.text)
           next = { ...next, sent: [...next.sent, { text: e.text, press: e.by, at: now() }].slice(-MAX_SENT) }
-        } else if (e.kind === 'open') opens.push(e.target)
-        else copy = { text: e.text, name: e.name }
+        } else if (e.kind === 'copy') copy = { text: e.text, name: e.name }
       }
 
       return next
@@ -142,18 +146,33 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       error = `Not sent: ${err instanceof Error ? err.message : String(err)}`
       return readState(dir, id)
     })
-    for (const target of opens) error = (await open(s, target)) ?? error
+    // Opens run outside the lock. The tab copies, and shows the text to copy by hand when its frame has no clipboard.
+    const ran = local
+    if (ran) {
+      const errors: (string | null)[] = []
+      for (const e of ran.effects)
+        if (e.kind !== 'send') errors.push(e.kind === 'open' ? await open(s, e.target) : null)
+      const result = finishedResult(ran.pending, errors, now())
+      s = await updateState(dir, id, s => ({
+        ...s,
+        lastActions: withResult(s.lastActions, p.id, ran.pending.at, result),
+      }))
+    }
 
     return { view: served(s, id), copy, error, note }
   }
 
-  /** Opens a link, or a path as `openCommands` decides, and says why when it could not. */
+  /** Opens a link, or a path as `openCommands` decides. Returns why it could not, or null. */
   async function open(s: SessionState, target: string): Promise<string | null> {
     const run = (argv: string[]) => deps.exec(argv, { cwd: '/', timeoutMs: 10_000 })
-    if (/^https:\/\//.test(target)) return (await run(['open', target])).code === 0 ? null : `Could not open ${target}`
+    const failure = (r: { code: number; stderr: string }) => r.stderr.trim() || `open exited ${r.code}`
+    if (/^https:\/\//.test(target)) {
+      const r = await run(['open', target])
+      return r.code === 0 ? null : failure(r)
+    }
     const path = localPath(target, s.root || '/', s.home)
     const info = await stat(path).catch(() => null)
-    if (!info) return `${baseName(path)} is not there anymore`
+    if (!info) return 'it no longer exists'
     const isExecutable =
       info.isFile() &&
       (await access(path, constants.X_OK).then(
@@ -164,7 +183,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     const r = await run(argv)
     const retry = r.code !== 0 && fallback ? await run(fallback) : r
 
-    return retry.code === 0 ? null : `Could not open ${baseName(path)}: ${retry.stderr.trim()}`
+    return retry.code === 0 ? null : failure(retry)
   }
 
   // Each conversation's demo, kept in memory only: it starts over when the server does.
@@ -180,13 +199,19 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     const s = demoOf(id)
     const r =
       thread === id
-        ? applyPress(s.ledger, p, { now: now(), turnsStarted: s.presence.turnsStarted, extraSteps: [] })
+        ? applyPress(s.ledger, s.lastActions[p.id], p, {
+            now: now(),
+            turnsStarted: s.presence.turnsStarted,
+            extraSteps: [],
+          })
         : ({ stale: true } as const)
     if ('stale' in r) return { view: served(s, id), copy: null, error: null, note: 'stale' }
+    // The demo opens nothing, so a Local press records no result there.
+    const isLocal = r.last?.result !== undefined
     demos.set(id, {
       ...s,
       ledger: r.ledger,
-      lastActions: r.last ? { ...s.lastActions, [p.id]: r.last } : s.lastActions,
+      lastActions: r.last && !isLocal ? { ...s.lastActions, [p.id]: r.last } : s.lastActions,
     })
     const copy = r.effects.find(e => e.kind === 'copy')
 

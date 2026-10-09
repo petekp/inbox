@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { applyPress } from '../../hooks/presses'
+import { applyPress, finishedResult } from '../../hooks/presses'
 import type { PressResult, RowPress } from '../../hooks/presses'
 import { recordClose, recordFinding } from '../../hooks/tools'
+import { feedbackText, SETTLED_MS } from '../../hooks/view'
 import type { RowView } from '../../hooks/view'
-import type { Item } from '../../types'
+import type { Item, LocalResult } from '../../types'
 import { endTurn, notePrompt, viewOf } from '../src/core'
 import { emptyState } from '../src/state'
 import type { SessionState } from '../src/state'
@@ -53,7 +54,11 @@ function withItems(): SessionState {
 
 /** A press on a state's ledger, at time 50, as a host applies it. */
 function pressed(s: SessionState, p: RowPress): PressResult {
-  return applyPress(s.ledger, p, { now: 50, turnsStarted: s.presence.turnsStarted, extraSteps: [] })
+  return applyPress(s.ledger, s.lastActions[p.id], p, {
+    now: 50,
+    turnsStarted: s.presence.turnsStarted,
+    extraSteps: [],
+  })
 }
 
 /** The state after a press that went through, with its last action on its row. */
@@ -122,7 +127,7 @@ test('a run step hands the task to Codex: it folds until the turn it started is 
   assert.deepEqual(viewOf(summarized, 80).needsYou.tasks[0]?.state, { is: 'open' })
 })
 
-test('a run step on a question sends its command and leaves the question open, and a step that copies and opens sends nothing', () => {
+test('a run step on a question sends its command and leaves the question open, and a step that copies and opens sends nothing and reads as one note', () => {
   const w = withItems()
   const question = w.ledger.items[0]!
   const s: SessionState = {
@@ -155,13 +160,60 @@ test('a run step on a question sends its command and leaves the question open, a
   assert.equal(viewOf(after(s, { action: 'step', id: 'i1', step: 0, label: 'Run tests' }), 60).needsYou.count, 1)
 
   const copyOpen = pressed(s, { action: 'step', id: 'i1', step: 1, label: 'Copy env line and open .env.local' })
+  const pending = {
+    state: 'pending' as const,
+    parts: [
+      { kind: 'copy' as const, name: 'env line', isCommand: false, error: null },
+      { kind: 'open' as const, name: '.env.local', isCommand: false, error: null },
+    ],
+    at: 50,
+  }
   assert.deepEqual(copyOpen, {
     ledger: s.ledger,
-    last: null,
+    last: { kind: 'local', action: 'step-1', text: 'Copy env line and open .env.local', at: 50, result: pending },
     effects: [
       { kind: 'copy', text: 'API_KEY=x', name: 'env line', isCommand: false },
       { kind: 'open', target: '.env.local', name: '.env.local' },
     ],
+  })
+  const local = (result: LocalResult) => feedbackText({ is: 'local', result }, 'html')
+  assert.equal(local(pending), 'Copying env line · Opening .env.local…')
+  assert.equal(local(finishedResult(pending, [null, null], 60)), '✓ Copied env line · Opened .env.local')
+  assert.equal(
+    local(finishedResult(pending, [null, 'it no longer exists'], 60)),
+    'Copied env line · Could not open .env.local: it no longer exists',
+  )
+})
+
+test('an open or copy on a handed-off task keeps it folded and out of the count, and its note says where to run a command', () => {
+  const w = withItems()
+  const task = w.ledger.items[1]!
+  const s: SessionState = {
+    ...w,
+    ledger: {
+      ...w.ledger,
+      items: [{ ...task, helps: [...task.helps, { kind: 'terminal', command: 'npm login', name: null }] }],
+    },
+  }
+  const handedOff = after(s, { action: 'step', id: 'i2', step: 0, label: 'Run seed script' })
+  const copied = after(handedOff, { action: 'step', id: 'i2', step: 1, label: 'Copy npm login' })
+  assert.deepEqual({ ...copied.lastActions.i2, result: undefined }, { ...handedOff.lastActions.i2, result: undefined })
+  const row = viewOf(copied, 60).needsYou.tasks[0]
+  assert.deepEqual(row?.state, { is: 'handedOff' })
+  assert.equal(viewOf(copied, 60).needsYou.count, 0)
+  const result = finishedResult(copied.lastActions.i2!.result!, [null], 55)
+  assert.equal(
+    feedbackText({ is: 'local', result }, 'terminal'),
+    '✓ Copied npm login. Run it in a terminal, or type ! and paste.',
+  )
+  assert.equal(feedbackText({ is: 'local', result }, 'desktop'), '✓ Copied npm login. Run it in Terminal.')
+  // A success note gives way to the hand-off's own ✓ after a few seconds.
+  const done = { ...copied, lastActions: { i2: { ...copied.lastActions.i2!, result } } }
+  assert.equal(viewOf(done, 60).needsYou.tasks[0]?.feedback?.is, 'local')
+  assert.deepEqual(viewOf(done, 55 + SETTLED_MS).needsYou.tasks[0]?.feedback, {
+    is: 'done',
+    label: 'Run seed script',
+    at: 50,
   })
 })
 

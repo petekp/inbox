@@ -85,7 +85,22 @@ export type LastAction = {
   tab?: Tab
   title?: string
   index?: number
+  /** The latest Local press's outcome: its opens and copies, pending until each has run. Talk, Hand-off and Mark presses clear it. */
+  result?: LocalResult
 }
+
+/** One open or copy of a Local press, by the name the row shows for it, and why it failed. */
+export type LocalPart = {
+  kind: 'open' | 'copy'
+  name: string
+  /** A command only the person can run, so the row says where to run it. */
+  isCommand: boolean
+  /** Null until it ran, and when it worked. */
+  error: string | null
+}
+
+/** What a Local press did. The words are built per surface when the row is drawn. */
+export type LocalResult = { state: 'pending' | 'done' | 'failed'; parts: LocalPart[]; at: number }
 
 /** A short note on a row that is not a press's result: a press that found its row gone or changed. */
 export type RowNote = { note: 'stale'; at: number }

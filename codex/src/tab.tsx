@@ -6,9 +6,9 @@ import { render } from 'preact'
 import type { ComponentChildren, JSX } from 'preact'
 
 import { ago } from '../../hooks/ledger'
-import { STALE_TEXT } from '../../hooks/presses'
+import { pendingResult, STALE_TEXT, stepEffects } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
-import { feedbackText, SETTLED_MS } from '../../hooks/view'
+import { feedbackText, isFailure, SETTLED_MS } from '../../hooks/view'
 import type { Feedback, RowView } from '../../hooks/view'
 import type { Finding, Item } from '../../types'
 import type { TabView as View } from './core'
@@ -68,10 +68,11 @@ const details = new Set<string>()
 // Questions whose every option shows. Until then, one with more than 5 options shows 4.
 const optionsShown = new Set<string>()
 const unfolded = new Set<'question' | 'task'>()
-const sending = new Set<string>()
+// What a row shows while its press runs: "Sending…", or a Local press's pending note.
+const sending = new Map<string, string>()
 const errors = new Map<string, string>()
-// A row's note. One with `at`, the stale note, shows for SETTLED_MS from then; the rest stay until the next press.
-const notes = new Map<string, { text: string; at?: number }>()
+// A row's stale note, shown for SETTLED_MS from `at`.
+const notes = new Map<string, { text: string; at: number }>()
 const copies = new Map<string, { name: string; text: string }>()
 // A note for a press whose row is no longer drawn, shown on line 1 for SETTLED_MS.
 let lineNote: { text: string; at: number } | null = null
@@ -191,10 +192,11 @@ function isListed(v: View, id: string): boolean {
  * Sends a press, drawn for the view's session, to the server. `onSent` runs
  * only once the press went through, so a stale or failed press keeps a typed draft.
  */
-async function act(rowId: string, press: RowPress, onSent?: () => void) {
-  sending.add(rowId)
+async function act(rowId: string, press: RowPress, onSent?: () => void, pending = 'Sending…') {
+  sending.set(rowId, pending)
   errors.delete(rowId)
   notes.delete(rowId)
+  copies.delete(rowId)
   draw()
   isPressing = true
   const seq = ++requested
@@ -222,12 +224,13 @@ async function act(rowId: string, press: RowPress, onSent?: () => void) {
   }
 }
 
+/** Copies a press's text. The row's result already reads "✓ Copied", so only a failure says more. */
 async function copy(rowId: string, c: { text: string; name: string }) {
   try {
     await navigator.clipboard.writeText(c.text)
-    notes.set(rowId, { text: `Copied ${c.name}` })
   } catch {
     // The tab's frame may not get the clipboard, so the text shows for a manual copy.
+    errors.set(rowId, `Could not copy ${c.name}: this tab has no clipboard access`)
     copies.set(rowId, c)
   }
 }
@@ -273,8 +276,15 @@ function rowKeys(r: RowView): { keys: Key[]; more: Key[] } {
             draw()
           },
         })
-    } else if (p.action === 'step') keys.push({ ...lettered(), label, run: () => void act(id, p) })
-    else if (p.action === 'done') keys.push({ hotkey: 'd', label, run: () => void act(id, p) })
+    } else if (p.action === 'step') {
+      const step = r.steps[p.step]
+      // An open or copy shows its pending note, as the pane does, until the server answers.
+      const pending =
+        a.kind === 'local' && item && step
+          ? feedbackText({ is: 'local', result: pendingResult(stepEffects(item, step), Date.now()) }, 'html')
+          : undefined
+      keys.push({ ...lettered(), label, run: () => void act(id, p, undefined, pending) })
+    } else if (p.action === 'done') keys.push({ hotkey: 'd', label, run: () => void act(id, p) })
     else if (p.action === 'address') keys.push({ hotkey: 'a', label, run: () => void act(id, p) })
     else if (p.action === 'type') more.push({ hotkey: 't', label, run: () => startTyping(id) })
     else if (p.action === 'explain' || p.action === 'discuss')
@@ -459,11 +469,27 @@ function feedbackLabel(row: Row): string | null {
   const f = row.feedback
   if (!f) return null
 
-  return f.is === 'done' && row.handleTone === 'done' ? f.label : feedbackText(f)
+  return f.is === 'done' && row.handleTone === 'done' ? f.label : feedbackText(f, 'html')
 }
 
+/** The feedback with its age. A note and a Local result read alone, with no age. */
 function lastText(row: Row, now: number): string | null {
-  return row.feedback ? `${feedbackLabel(row)} · ${ago(now - row.feedback.at)}` : null
+  const f = row.feedback
+  if (!f) return null
+
+  return f.is === 'done' ? `${feedbackLabel(row)} · ${ago(now - f.at)}` : feedbackLabel(row)
+}
+
+/** A row's stale note while it shows. */
+function noteOf(id: string): string | null {
+  const n = notes.get(id)
+
+  return n && Date.now() - n.at < SETTLED_MS ? n.text : null
+}
+
+/** The row's own note, error or copy box replaces its feedback while it shows. */
+function isFeedbackShown(row: Row): boolean {
+  return !errors.has(row.id) && noteOf(row.id) === null && !copies.has(row.id)
 }
 
 function ListRow({
@@ -484,11 +510,16 @@ function ListRow({
   if (!isSelected) {
     const plain = row.line ?? { text: row.title, after: row.titleAfter }
     // A row's last action takes the place of its age, as "✓ Discuss 1m ago".
-    const line = row.feedback
+    const last = isFeedbackShown(row) ? lastText(row, now) : null
+    const line = last
       ? {
           ...plain,
-          after: ` · ${feedbackLabel(row)} ${ago(now - row.feedback.at)}`,
-          afterTone: row.handleTone === 'done' ? ('done' as const) : undefined,
+          after: ` · ${last}`,
+          afterTone: isFailure(row.feedback)
+            ? ('error' as const)
+            : row.handleTone === 'done' && row.feedback?.is === 'done'
+              ? ('done' as const)
+              : undefined,
         }
       : plain
 
@@ -507,10 +538,11 @@ function ListRow({
 
   const isOpen = !row.fold || details.has(row.id)
   const { keys, more } = rowActions(row)
-  const status = [row.fold?.note, lastText(row, now)]
+  const last = isFeedbackShown(row) ? lastText(row, now) : null
+  const status = [row.fold?.note, isFailure(row.feedback) ? null : last]
+  const failure = isFailure(row.feedback) ? last : null
   const copied = copies.get(row.id)
-  const n = notes.get(row.id)
-  const note = n && (n.at === undefined || Date.now() - n.at < SETTLED_MS) ? n.text : null
+  const note = noteOf(row.id)
 
   return (
     <div class="row selected">
@@ -524,12 +556,13 @@ function ListRow({
           </div>
         </div>
         {isOpen && row.body ? <div class="body">{row.body}</div> : null}
-        {status.some(Boolean) || sending.has(row.id) || note || errors.has(row.id) ? (
+        {status.some(Boolean) || failure || sending.has(row.id) || note || errors.has(row.id) ? (
           <div class="tight">
             {status.filter(Boolean).map(s => (
               <div class={lastTone}>{s}</div>
             ))}
-            {sending.has(row.id) ? <div class="muted">Sending…</div> : null}
+            {failure ? <div class="tone-error">{failure}</div> : null}
+            {sending.has(row.id) ? <div class="muted">{sending.get(row.id)}</div> : null}
             {note ? <div class="muted">{note}</div> : null}
             {errors.has(row.id) ? <div class="tone-error">{errors.get(row.id)}</div> : null}
           </div>

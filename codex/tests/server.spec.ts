@@ -139,7 +139,7 @@ test('a press in the demo changes only the demo and sends nothing into the conve
   )
 })
 
-test('an Open step shows a file macOS would run in Finder, and opens any other file', async () => {
+test('an Open step shows a file macOS would run in Finder, opens any other file, and records on its row what happened', async () => {
   const { dir, calls, call } = await setup(0)
   const root = tempDir()
   writeFileSync(join(root, 'deploy.command'), 'echo hi')
@@ -160,6 +160,7 @@ test('an Open step shows a file macOS would run in Finder, and opens any other f
           helps: [
             { kind: 'open', path: 'deploy.command' },
             { kind: 'open', path: 'notes.md' },
+            { kind: 'open', path: 'moved.md' },
           ],
           turn: 1,
           at: 1,
@@ -175,4 +176,18 @@ test('an Open step shows a file macOS would run in Finder, and opens any other f
     ['open', '-R', join(root, 'deploy.command')],
     ['open', join(root, 'notes.md')],
   ])
+  assert.deepEqual((await readState(dir, 's1')).lastActions.i2?.result, {
+    state: 'done',
+    parts: [{ kind: 'open', name: 'notes.md', isCommand: false, error: null }],
+    at: 100,
+  })
+  // A file that is gone fails on its row; the reply's error is only for a message that was not sent.
+  const moved = await step(2, 'Open moved.md')
+  assert.equal(moved.result.structuredContent.error, null)
+  assert.deepEqual((await readState(dir, 's1')).lastActions.i2?.result, {
+    state: 'failed',
+    parts: [{ kind: 'open', name: 'moved.md', isCommand: false, error: 'it no longer exists' }],
+    at: 100,
+  })
+  assert.equal(calls.length, 2)
 })
