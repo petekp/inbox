@@ -761,7 +761,7 @@ function TabBar({ v, lists, now }: { v: View; lists: Lists; now: number }) {
         {TABS.map(t => (
           <button
             type="button"
-            class={`tab ${t.id} ${tab === t.id ? 'shown' : ''}`}
+            class={`tab ${tab === t.id ? 'shown' : ''}`}
             onClick={() => {
               tab = t.id
               draw()

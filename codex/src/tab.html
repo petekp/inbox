@@ -112,7 +112,7 @@
         color: var(--error);
       }
 
-      /* Tabs: raised panels, the shown one lighter, with its tone along the top edge. */
+      /* Tabs: the shown one a raised panel, the others text on the background. */
       nav {
         display: flex;
         flex-wrap: wrap;
@@ -126,10 +126,8 @@
         gap: 4px;
       }
       .tab {
-        position: relative;
         padding: 6px 12px;
         border-radius: 6px;
-        background: var(--card);
         color: var(--muted);
       }
       .tab:hover {
@@ -140,31 +138,9 @@
         color: var(--text);
         font-weight: 600;
       }
-      .tab.shown::before {
-        content: '';
-        position: absolute;
-        left: 0;
-        right: 0;
-        top: 0;
-        height: 2px;
-        border-radius: 6px 6px 0 0;
-        transform-origin: left;
-        animation: draw-in 200ms ease-out;
-      }
-      .tab.shown.needsYou::before {
-        background: var(--needs-you);
-      }
-      .tab.shown.findings::before {
-        background: var(--findings);
-      }
       .tab .count {
         font-weight: 600;
         margin-left: 6px;
-      }
-      @keyframes draw-in {
-        from {
-          transform: scaleX(0);
-        }
       }
       .status {
         padding: 6px 4px;
@@ -505,7 +481,6 @@
         margin: 0 8px;
       }
       @media (prefers-reduced-motion: reduce) {
-        .tab.shown::before,
         .leave div {
           animation: none;
         }
