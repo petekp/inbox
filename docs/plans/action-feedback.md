@@ -78,9 +78,9 @@ toast says so.
 
 - **The type.** Every `Action` declares its `kind`, a `PressKind`: Talk,
   Hand-off, Local, Mark or View. A Talk or Hand-off press leaves "✓ <label>"
-  on its row. A Local press, an open or a copy, shows "Opening x…" and then
-  its result. A Mark or View press shows itself: it closes or settles the row,
-  or opens the text field. Leaving `kind` out fails the type check, so a new
+  on its row. A Local press opens or copies something. It shows "Opening x…"
+  or "Copying x…" at once, and then its result. A Mark or View press shows
+  itself: it closes or settles the row, or opens the text field. Leaving `kind` out fails the type check, so a new
   action has to decide. The type covers only buttons built
   as an `Action`. The pane's other buttons switch tabs, select a row, fold a
   group, open the Keys list, or act on the resume card, and each changes the
@@ -91,10 +91,11 @@ toast says so.
   then records the row's last action. A button reads "… again" when its row's
   last press was that action. Address all also records Address on each thread
   it sent.
-- **A test.** The PR test presses Resolve conflicts on the block, Discuss by
-  hotkey and Address by click, and checks each shows "✓ <label>" and reads
-  "again". It fails when a render path skips `runPress()`, which the type
-  cannot catch.
+- **A test.** The PR test presses Resolve conflicts on the block and Discuss
+  by hotkey, and checks each shows "✓ <label>" and reads "again". It also
+  presses Address by click while a hook refuses it, and checks the row shows
+  "Not sent" with [Try again]. The test fails when a render path skips
+  `runPress()`, which the type cannot catch.
 - **Agent guidance.** `AGENTS.md` states the rule and points at `kind`,
   `runPress()` and `applyPress()`.
 

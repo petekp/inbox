@@ -687,7 +687,7 @@ Default taken while the owner was away: (b). Override it to change the tagged li
 
 **Press contract.**
 
-- Each press declares its kind: Talk, Hand-off, Local, Mark or View. The kind decides the feedback in 2.3, replacing today's `done` and `handsOff` pair.
+- Each press declares its kind: Talk, Hand-off, Local, Mark or View. The kind decides the feedback in 2.3. The kind replaced the `done` and `handsOff` pair.
 - A Local press records its pending note at once, and then its result or error. `runPress()` records both.
 - A send records its delivery state: queued, arrived, or failed with a reason. A failed or withdrawn send undoes its press.
 - `LastAction` gains the result and delivery fields. It is saved state in two places, and both must convert old records:
