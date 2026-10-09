@@ -1136,6 +1136,9 @@ test('Dismiss settles a question in place with Undo, which brings it back open a
   expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
   expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('▸ 1 Closed')
   expect(await pane.find({ key: 'explain-i2' })).toBeUndefined()
+  // j opens the one row left.
+  await pane.press({ key: 'next' })
+  expect(await pane.find({ key: 'explain-i2' })).toBeDefined()
 })
 
 test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, its buttons send its conflicts and thread and say so, and its failing check waits on the person', async ($, on) => {

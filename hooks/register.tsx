@@ -3837,8 +3837,9 @@ export const register: Register = on => {
       const to = Math.min(Math.max(at + step, 0), ids.length - 1)
       void select($, tab, ids[to] ?? '', to)
     }
+    // With no row open, j and k open the first row even when it is the only one.
     const moveKeys: KeyAction[] =
-      ids.length > 1
+      ids.length > 1 || (at < 0 && ids.length > 0)
         ? [
             { key: 'next', label: 'Next', hotkey: 'j', kind: 'view', onPress: () => move(1) },
             { key: 'previous', label: 'Previous', hotkey: 'k', kind: 'view', onPress: () => move(-1) },
