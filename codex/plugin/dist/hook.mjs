@@ -966,8 +966,82 @@ function changedPaths(a, b, paths, before, after) {
   return paths.filter((p) => (a.dirty[p] ?? before[p] ?? "") !== (b.dirty[p] ?? after[p] ?? ""));
 }
 
-// src/tree.ts
+// ../hooks/tree.ts
 var SNAPSHOT_MAX = 2e3;
+function git(io, repo, args, stdin) {
+  return io.run(["git", "--no-optional-locks", ...args], {
+    cwd: repo,
+    timeoutMs: 15e3,
+    ...stdin === void 0 ? {} : { stdin }
+  });
+}
+async function hashFiles(io, repo, paths) {
+  const out = await git(io, repo, ["hash-object", "--stdin-paths"], `${paths.join("\n")}
+`);
+  if (out !== null) return out.split("\n");
+  const kinds = await Promise.all(paths.map((p) => io.kindOf(`${repo}/${p}`)));
+  const files = paths.filter((_p, i) => kinds[i] === "file");
+  const hashed = files.length > 0 ? await git(io, repo, ["hash-object", "--stdin-paths"], `${files.join("\n")}
+`) : "";
+  if (hashed === null) return null;
+  const ids = hashed.split("\n");
+  return paths.map((p, i) => kinds[i] === "file" ? ids[files.indexOf(p)] ?? "" : `${kinds[i]}`);
+}
+async function readSnapshot(io, repo) {
+  const [out, headOut] = await Promise.all([
+    git(io, repo, ["status", "--porcelain=v1", "-z", "-uall"]),
+    git(io, repo, ["rev-parse", "--verify", "-q", "HEAD"])
+  ]);
+  if (out === null) return null;
+  const head = headOut?.trim() || null;
+  const changes = readChanged(out).slice(0, SNAPSHOT_MAX);
+  const dirty = {};
+  for (const c of changes) if (c.isDeleted) dirty[c.path] = "";
+  const present = changes.filter((c) => !c.isDeleted && !c.path.includes("\n")).map((c) => c.path);
+  if (present.length > 0) {
+    const ids = await hashFiles(io, repo, present);
+    if (!ids) return null;
+    present.forEach((path, i) => {
+      dirty[path] = ids[i] ?? "";
+    });
+  }
+  return { head, dirty };
+}
+async function lsTree(io, repo, head, paths) {
+  const ids = {};
+  for (let i = 0; i < paths.length; i += 200) {
+    const out = await git(io, repo, ["ls-tree", "-z", "--full-tree", head, "--", ...paths.slice(i, i + 200)]);
+    if (out === null) return null;
+    Object.assign(ids, readLsTree(out));
+  }
+  return ids;
+}
+async function contentChanges(io, repo, a, b) {
+  if (a.head !== b.head && !b.head) return null;
+  let committed = [];
+  if (a.head && b.head && a.head !== b.head) {
+    const out = await git(io, repo, ["diff", "--name-only", "-z", "--no-renames", a.head, b.head]);
+    if (out === null) return null;
+    committed = out.split("\0").filter(Boolean);
+  }
+  const paths = candidates(a, b, committed);
+  if (paths.length === 0) return [];
+  const none = Promise.resolve({});
+  const reading = a.head ? lsTree(io, repo, a.head, paths) : none;
+  const [before, after] = await Promise.all([
+    reading,
+    b.head === a.head ? reading : b.head ? lsTree(io, repo, b.head, paths) : none
+  ]);
+  if (!before || !after) return null;
+  return changedPaths(a, b, paths, before, after);
+}
+async function readRepo(io, repo, last) {
+  const snapshot = await readSnapshot(io, repo);
+  if (!snapshot || last && sameSnapshot(last, snapshot)) return null;
+  return { snapshot, changes: last ? await contentChanges(io, repo, last, snapshot) : [] };
+}
+
+// src/tree.ts
 var run = (args, { cwd, stdin, timeoutMs }) => new Promise((resolve) => {
   const [file = "", ...rest] = args;
   const child = execFile(
@@ -982,83 +1056,18 @@ var run = (args, { cwd, stdin, timeoutMs }) => new Promise((resolve) => {
   if (stdin !== void 0) child.stdin?.end(stdin);
   else child.stdin?.end();
 });
-async function git(exec, repo, args, stdin) {
-  const r = await exec(["git", "--no-optional-locks", ...args], {
-    cwd: repo,
-    timeoutMs: 15e3,
-    ...stdin === void 0 ? {} : { stdin }
-  });
-  return r.code === 0 ? r.stdout : null;
-}
 async function repoOf(exec, folder) {
   const r = await exec(["git", "rev-parse", "--show-toplevel"], { cwd: folder, timeoutMs: 5e3 });
   return r.code === 0 ? r.stdout.trim() || null : null;
 }
 async function kindOf(path) {
   return stat2(path).then(
-    (s) => s.isFile() ? "file" : s.isDirectory() ? "directory" : "other",
+    (s) => s.isFile() ? "file" : s.isDirectory() ? "dir" : "other",
     () => "other"
   );
 }
-async function hashFiles(exec, repo, paths) {
-  const out = await git(exec, repo, ["hash-object", "--stdin-paths"], `${paths.join("\n")}
-`);
-  if (out !== null) return out.split("\n");
-  const kinds = await Promise.all(paths.map((p) => kindOf(`${repo}/${p}`)));
-  const files = paths.filter((_p, i) => kinds[i] === "file");
-  const hashed = files.length > 0 ? await git(exec, repo, ["hash-object", "--stdin-paths"], `${files.join("\n")}
-`) : "";
-  if (hashed === null) return null;
-  const ids = hashed.split("\n");
-  return paths.map((p, i) => kinds[i] === "file" ? ids[files.indexOf(p)] ?? "" : `${kinds[i]}`);
-}
-async function readSnapshot(exec, repo) {
-  const [out, headOut] = await Promise.all([
-    git(exec, repo, ["status", "--porcelain=v1", "-z", "-uall"]),
-    git(exec, repo, ["rev-parse", "--verify", "-q", "HEAD"])
-  ]);
-  if (out === null) return null;
-  const head = headOut?.trim() || null;
-  const changes = readChanged(out).slice(0, SNAPSHOT_MAX);
-  const dirty = {};
-  for (const c of changes) if (c.isDeleted) dirty[c.path] = "";
-  const present = changes.filter((c) => !c.isDeleted && !c.path.includes("\n")).map((c) => c.path);
-  if (present.length > 0) {
-    const ids = await hashFiles(exec, repo, present);
-    if (!ids) return null;
-    present.forEach((path, i) => {
-      dirty[path] = ids[i] ?? "";
-    });
-  }
-  return { head, dirty };
-}
-async function lsTree(exec, repo, head, paths) {
-  const ids = {};
-  for (let i = 0; i < paths.length; i += 200) {
-    const out = await git(exec, repo, ["ls-tree", "-z", "--full-tree", head, "--", ...paths.slice(i, i + 200)]);
-    if (out === null) return null;
-    Object.assign(ids, readLsTree(out));
-  }
-  return ids;
-}
-async function contentChanges(exec, repo, a, b) {
-  if (a.head !== b.head && !b.head) return null;
-  let committed = [];
-  if (a.head && b.head && a.head !== b.head) {
-    const out = await git(exec, repo, ["diff", "--name-only", "-z", "--no-renames", a.head, b.head]);
-    if (out === null) return null;
-    committed = out.split("\0").filter(Boolean);
-  }
-  const paths = candidates(a, b, committed);
-  if (paths.length === 0) return [];
-  const none = Promise.resolve({});
-  const reading = a.head ? lsTree(exec, repo, a.head, paths) : none;
-  const [before, after] = await Promise.all([
-    reading,
-    b.head === a.head ? reading : b.head ? lsTree(exec, repo, b.head, paths) : none
-  ]);
-  if (!before || !after) return null;
-  return changedPaths(a, b, paths, before, after);
+function treeIO(exec) {
+  return { run: (args, opts) => exec(args, opts).then((r) => r.code === 0 ? r.stdout : null), kindOf };
 }
 async function refreshTree(exec, state, repos) {
   const folders = [...new Set(state.checks.results.flatMap((c) => c.folder ? [c.folder] : []))];
@@ -1068,10 +1077,9 @@ async function refreshTree(exec, state, repos) {
   const snapshots = { ...state.snapshots };
   const checked = repos ?? checks.results.flatMap((c) => c.repo ? [c.repo] : []);
   for (const repo of new Set(checked)) {
-    const snapshot = await readSnapshot(exec, repo);
-    const last = snapshots[repo];
-    if (!snapshot || last && sameSnapshot(last, snapshot)) continue;
-    const changes = last ? await contentChanges(exec, repo, last, snapshot) : [];
+    const reading = await readRepo(treeIO(exec), repo, snapshots[repo]);
+    if (!reading) continue;
+    const { snapshot, changes } = reading;
     snapshots[repo] = snapshot;
     if (changes !== null && changes.length === 0) continue;
     checks = changed(checks, repo, changes, state.root);

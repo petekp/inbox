@@ -58,7 +58,6 @@ import {
 } from './check-tracking'
 import { demoView } from './demo'
 import type { View } from './demo'
-import { candidates, changedPaths, readChanged, readLsTree, sameSnapshot } from './git'
 import type { Exchange, Press, Update } from './ledger'
 import type { Handoffs, PrStatus } from './prs'
 import {
@@ -117,6 +116,7 @@ import {
 } from './ledger'
 import { baseName, clipLabel, helpLabel, isTaskHandedOff, messages, steps } from './presses'
 import type { HelpStep } from './presses'
+import { readRepo, type TreeIO } from './tree'
 
 const LEDGER = atom({ plugin: 'inbox', key: 'ledger' } as const, EMPTY)
 const PRESENCE = atom(
@@ -168,8 +168,6 @@ const IS_DEMO = atom({ plugin: 'inbox', key: 'isDemo' } as const, false)
 const SAMPLE_PRESS = 'Sample entry: nothing was sent. Run /inbox demo to go back.'
 // The pane's buttons that only move around it, which work in the demo. Every other press there sends nothing.
 const DEMO_PRESSES = /^(tab-|title-|select-|typekey-|fold-|key-list$|next$|previous$)/
-// A dirtier tree is read only this far, so changes past it go unseen.
-const SNAPSHOT_MAX = 2000
 const PR_POLL_MS = 2 * 60_000
 const MAX_PRS = 6
 
@@ -1696,100 +1694,24 @@ const FINDING_BADGES: Record<Finding['kind'], { label: string; mark: string; ton
 }
 
 /** Runs a git command that reads a repo's working tree; null when it fails. Optional locks are off, so it never takes the index lock from a commit. */
-async function runGit($: EngineInterface, repo: string, args: string[], stdin?: string): Promise<string | null> {
-  const r = await $.process
-    .run(['git', '--no-optional-locks', ...args], {
-      cwd: repo,
-      timeoutMs: 15_000,
-      ...(stdin === undefined ? {} : { stdin }),
-    })
-    .catch(() => null)
-
-  return r && r.exitCode === 0 ? r.stdout : null
+async function runGit($: EngineInterface, repo: string, args: string[]): Promise<string | null> {
+  return treeIO($).run(['git', '--no-optional-locks', ...args], { cwd: repo, timeoutMs: 15_000 })
 }
 
-/** Each file's blob id, as a commit would store it. A folder, such as a submodule's, gets a mark of its own. */
-async function hashFiles($: EngineInterface, repo: string, paths: string[]): Promise<string[] | null> {
-  const out = await runGit($, repo, ['hash-object', '--stdin-paths'], `${paths.join('\n')}\n`)
-  if (out !== null) return out.split('\n')
-  // One path git cannot hash fails the whole call, so hash the files alone.
-  const kinds = await Promise.all(
-    paths.map(p =>
-      $.fs.stat(`${repo}/${p}`).then(
+/** How the shared working-tree reader runs commands and reads a path's kind here. */
+function treeIO($: EngineInterface): TreeIO {
+  return {
+    run: (args, opts) =>
+      $.process.run(args, opts).then(
+        r => (r.exitCode === 0 ? r.stdout : null),
+        () => null,
+      ),
+    kindOf: path =>
+      $.fs.stat(path).then(
         s => s.kind,
         () => 'other' as const,
       ),
-    ),
-  )
-  const files = paths.filter((_p, i) => kinds[i] === 'file')
-  const hashed =
-    files.length > 0 ? await runGit($, repo, ['hash-object', '--stdin-paths'], `${files.join('\n')}\n`) : ''
-  if (hashed === null) return null
-  const ids = hashed.split('\n')
-
-  return paths.map((_p, i) => (kinds[i] === 'file' ? (ids[files.indexOf(paths[i] ?? '')] ?? '') : `${kinds[i]}`))
-}
-
-/** A repo's working tree content, read without writing to the repo. */
-async function readSnapshot($: EngineInterface, repo: string): Promise<Snapshot | null> {
-  const [out, headOut] = await Promise.all([
-    runGit($, repo, ['status', '--porcelain=v1', '-z', '-uall']),
-    runGit($, repo, ['rev-parse', '--verify', '-q', 'HEAD']),
-  ])
-  if (out === null) return null
-  const head = headOut?.trim() || null
-  const changed = readChanged(out).slice(0, SNAPSHOT_MAX)
-  const dirty: Snapshot['dirty'] = {}
-  for (const c of changed) if (c.isDeleted) dirty[c.path] = ''
-  const present = changed.filter(c => !c.isDeleted && !c.path.includes('\n')).map(c => c.path)
-  if (present.length > 0) {
-    const ids = await hashFiles($, repo, present)
-    if (!ids) return null
-    present.forEach((path, i) => {
-      dirty[path] = ids[i] ?? ''
-    })
   }
-
-  return { head, dirty }
-}
-
-/** Each path's object id in a commit, for the paths it has. */
-async function lsTree(
-  $: EngineInterface,
-  repo: string,
-  head: string,
-  paths: string[],
-): Promise<Record<string, string> | null> {
-  const ids: Record<string, string> = {}
-  for (let i = 0; i < paths.length; i += 200) {
-    const out = await runGit($, repo, ['ls-tree', '-z', '--full-tree', head, '--', ...paths.slice(i, i + 200)])
-    if (out === null) return null
-    Object.assign(ids, readLsTree(out))
-  }
-
-  return ids
-}
-
-/** The paths whose content differs between two snapshots of a repo, or null when git could not tell. A commit only moves content into HEAD, so it changes nothing. */
-async function contentChanges($: EngineInterface, repo: string, a: Snapshot, b: Snapshot): Promise<string[] | null> {
-  if (a.head !== b.head && !b.head) return null
-  let committed: string[] = []
-  if (a.head && b.head && a.head !== b.head) {
-    const out = await runGit($, repo, ['diff', '--name-only', '-z', '--no-renames', a.head, b.head])
-    if (out === null) return null
-    committed = out.split('\0').filter(Boolean)
-  }
-  const paths = candidates(a, b, committed)
-  if (paths.length === 0) return []
-  const none = Promise.resolve<Record<string, string>>({})
-  const reading = a.head ? lsTree($, repo, a.head, paths) : none
-  const [before, after] = await Promise.all([
-    reading,
-    b.head === a.head ? reading : b.head ? lsTree($, repo, b.head, paths) : none,
-  ])
-  if (!before || !after) return null
-
-  return changedPaths(a, b, paths, before, after)
 }
 
 /** The top folder of the git repo that holds `folder`; null outside git. */
@@ -1830,11 +1752,9 @@ function refreshTree($: EngineInterface, repos?: string[]): Promise<void> {
       const checked = repos ?? (await read($, CHECKS)).results.flatMap(c => (c.repo ? [c.repo] : []))
       const before = await read($, SNAPSHOTS)
       for (const repo of new Set(checked)) {
-        const snapshot = await readSnapshot($, repo)
-        const last = before[repo]
-        if (!snapshot || (last && sameSnapshot(last, snapshot))) continue
-        // A path list git could not read counts as a change to code.
-        const changes = last ? await contentChanges($, repo, last, snapshot) : []
+        const reading = await readRepo(treeIO($), repo, before[repo])
+        if (!reading) continue
+        const { snapshot, changes } = reading
         await update($, SNAPSHOTS, s => ({ ...s, [repo]: snapshot }))
         if (changes !== null && changes.length === 0) continue
         await update($, CHECKS, c => changed(c, repo, changes, root))
