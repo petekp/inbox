@@ -1725,7 +1725,19 @@ async function perform(
  * pending one on the row, then sends. A press whose row
  * is gone or changed sends nothing: the row, or the pane's status line, says so.
  */
+/**
+ * The desktop app takes the focus off the pane when the element holding it leaves, and the next
+ * click there only brings it back. A press that may redraw its own Button away moves the ring
+ * first, while the pane still holds the focus, to the shown tab's Button, which every drawing has.
+ */
+async function keepPaneFocus($: EngineInterface, surface: UiPressArgument['surface']) {
+  if (surface !== 'desktop') return
+  const tab = await read($, TAB)
+  await $.ui.focus({ requestId: PANE, key: `tab-${tab}` }).catch(() => undefined)
+}
+
 async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPressArgument['surface']) {
+  await keepPaneFocus($, surface)
   // Undo is pressed on a row that just closed, and a PR block's actions on no row.
   const rowId = 'ref' in p ? prRowId(p) : p.id
   if (p.action !== 'undo' && !rowId.startsWith('pr:')) await keepPressedOpen($, rowId)
@@ -3414,7 +3426,7 @@ export const register: Register = on => {
     // to what fits beside the handle and the row's other text, less a desktop button's frame.
     // A row with a second line breaks its text at a space before `after`, which
     // stays on the first line, and clips the rest to the second.
-    const unselectedLine = (row: Row, onPress: () => void, inset: number) => {
+    const unselectedLine = (row: Row, onPress: (press: UiPressArgument) => void, inset: number) => {
       const plain = row.line ?? { text: row.title, age: row.titleAfter }
       const f = feedbackLabel(row.id, row)
       // A row's last action takes the place of its age, as "✓ Discuss 1m ago". A narrow desktop pane drops the age, not the action.
@@ -3555,7 +3567,12 @@ export const register: Register = on => {
             </Box>
           ) : (
             <Box flexShrink={1} flexGrow={1} paddingRight={1}>
-              {unselectedLine(row, () => void select($, tab, row.id, index), tree ? 7 : 5)}
+              {unselectedLine(
+                row,
+                // Opening the row draws its title as Text, so the title's Button leaves.
+                press => void keepPaneFocus($, press.surface).then(() => select($, tab, row.id, index)),
+                tree ? 7 : 5,
+              )}
             </Box>
           )}
           {tree ? branch(tree, isSelected ? blankLine : 0) : null}
