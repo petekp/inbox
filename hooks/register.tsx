@@ -2646,25 +2646,11 @@ export const register: Register = on => {
     return r
   })
 
-  // Sample entries can be selected and opened, but what they would send goes nowhere.
-  on('ui.press', { plugin: 'inbox', requestId: PANE }, async ($, e, next) => {
-    if (DEMO_PRESSES.test(e.element) || !(await read($, IS_DEMO))) return next(e)
-    $.ui.toast(SAMPLE_PRESS)
-
-    return { element: e.element }
-  })
-  on('ui.input', { plugin: 'inbox', requestId: PANE }, async ($, e, next) => {
-    if (e.kind !== 'submit' || !(await read($, IS_DEMO))) return next(e)
-    $.ui.toast(SAMPLE_PRESS)
-
-    return { element: e.element, value: e.value }
-  })
-
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const elements = $.ui.resolve(e)
-    const { Box, Button, Markdown, Text } = elements
+    const { Box, Button: ResolvedButton, Markdown, Text } = elements
     // The mobile app draws no text field, so there the typed reply is not offered.
-    const Input = 'Input' in elements ? elements.Input : null
+    const ResolvedInput = 'Input' in elements ? elements.Input : null
     // Inline above the prompt, the pane takes its room from the conversation, so
     // it drops the section cards, the tab panels and the blank lines between parts.
     const isInline = e.props.placement === 'inline'
@@ -2680,6 +2666,7 @@ export const register: Register = on => {
       isKeyListShown,
       shownDetails,
       arrival,
+      isDemo,
     ] = await Promise.all([
       drawnState($),
       read($, PRESENCE),
@@ -2691,7 +2678,18 @@ export const register: Register = on => {
       read($, IS_KEY_LIST_SHOWN),
       read($, SHOWN_DETAILS),
       read($, ARRIVAL),
+      read($, IS_DEMO),
     ])
+    // Sample entries can be selected and opened, but what they would send goes nowhere.
+    // This is decided here, not in a ui.press hook: a press whose hook awaits before
+    // next(e) fails when a redraw lands in the wait, since the redraw releases the old drawing's handles.
+    const showSample = () => void $.ui.toast(SAMPLE_PRESS)
+    const Button: typeof ResolvedButton = !isDemo
+      ? ResolvedButton
+      : props =>
+          ResolvedButton(DEMO_PRESSES.test(props.key ?? props.label ?? '') ? props : { ...props, onPress: showSample })
+    const Input: typeof ResolvedInput =
+      !isDemo || !ResolvedInput ? ResolvedInput : props => ResolvedInput({ ...props, onSubmit: showSample })
     const card = ledger.card
     const prViews = Object.values(prState.views)
     const pal = PALETTES[theme] ?? THEME_KEY_PALETTE
