@@ -440,6 +440,29 @@ let toolsRefused = false
 // The conversation whose saved session the store could not read, and whether [Try again] is reading it now.
 // While set, Needs you says so in place of an empty list.
 let unreadable: { id: string; isReading: boolean } | null = null
+/**
+ * The desktop app takes the focus off the pane when the Button holding it leaves the drawing, and
+ * the next click there only brings it back (anthropics/claude-code#100874). The pane tracks the
+ * Button a press focused, and when a drawing leaves it out, moves the focus to one it still has.
+ */
+let focusedKey: string | null = null
+/** The Button that takes the pressed one's place, such as a closed row's Undo, tried first. */
+let focusHint: string | null = null
+/** Which look the pane last drew in, for the redraws a timer runs. */
+let paneLook: 'terminal' | 'desktop' = 'terminal'
+
+/** Every Button key in a drawn tree. */
+function buttonKeys(node: unknown, keys = new Set<string>()): Set<string> {
+  if (Array.isArray(node)) for (const child of node) buttonKeys(child, keys)
+  else if (node && typeof node === 'object') {
+    const el = node as { type?: unknown; props?: { key?: unknown }; children?: unknown }
+    if (el.type === 'Button' && typeof el.props?.key === 'string') keys.add(el.props.key)
+    buttonKeys(el.children, keys)
+  }
+
+  return keys
+}
+
 // What [Resume] on a stop did: sending its prompt, or why the prompt will not enter.
 let resuming: { is: 'sending' } | { is: 'refused'; why: string } | null = null
 // The draft a row's field opened with. The engine replaces the typed text whenever the drawn
@@ -703,7 +726,9 @@ function viewOf(
  */
 function redrawWhileLeaving($: EngineInterface, waitMs: number) {
   // Whole milliseconds, so the last wait ends at `waitMs` and its redraw finds the row gone.
-  const step = Math.ceil(SETTLED_MS / LEAVE_BAR_STEPS)
+  // Desktop draws no leave bar and redraws once, when the row leaves: while the bar redrew every
+  // 213 ms there, clicks on the pane's Buttons, Undo among them, did nothing.
+  const step = paneLook === 'desktop' ? waitMs : Math.ceil(SETTLED_MS / LEAVE_BAR_STEPS)
   void (async () => {
     for (let left = waitMs; left > 0; left -= step) {
       await $.clock.sleep(Math.min(step, left))
@@ -2555,7 +2580,15 @@ export const register: Register = on => {
     }
   })
 
-  // A field left open would take the keys again when the pane reopens, as Esc in it closes the pane.
+  // A desktop press focuses its Button. One that closes a row leaves Undo in the Button's place.
+  on('ui.press', async ($, e, next) => {
+    if (e.requestId === PANE && e.surface === 'desktop') {
+      focusedKey = e.element
+      focusHint = /^(answer|done|dismiss|drop)-/.test(e.element) ? `undo-${e.element.split('-')[1]}` : null
+    }
+    return next(e)
+  })
+
   // The desktop tab bar's Client posts the tab a click landed on.
   on('ui.message', async ($, e, next) => {
     const r = await next(e)
@@ -2566,6 +2599,7 @@ export const register: Register = on => {
     return r
   })
 
+  // A field left open would take the keys again when the pane reopens, as Esc in it closes the pane.
   on('ui.close', { id: PANE }, async ($, e, next) => {
     const r = await next(e)
     await update($, TYPING, () => null)
@@ -2647,6 +2681,7 @@ export const register: Register = on => {
     const { Box, Button, Markdown, Text } = elements
     // Desktop draws every Button as a native button, and only clicks reach the pane: no letters, key hints or hidden hotkeys.
     const look = e.surface === 'desktop' ? 'desktop' : 'terminal'
+    paneLook = look
     // The mobile app draws no text field, so there the typed reply is not offered; nor on desktop without DESKTOP_TYPING.
     const Input = 'Input' in elements && (look === 'terminal' || DESKTOP_TYPING) ? elements.Input : null
     // Narrow, the desktop pane puts its status under the tabs and drops closed rows' ages.
@@ -3023,7 +3058,7 @@ export const register: Register = on => {
     const leaveBar = (at: number) => {
       const halves = Math.ceil((Math.max(0, SETTLED_MS - (now - at)) / SETTLED_MS) * LEAVE_BAR_STEPS)
 
-      return halves > 0 ? (
+      return halves > 0 && look === 'terminal' ? (
         <Text color={pal.mark.done}>{'─'.repeat(Math.floor(halves / 2)) + (halves % 2 ? '╴' : '')}</Text>
       ) : null
     }
@@ -4021,7 +4056,7 @@ export const register: Register = on => {
     // no fixed footer, so past that it follows the content. Inline, the frame fits
     // the tree. A pane takes a key only as a Button's hotkey, so the tab keys, j,
     // k and the selected row's keys are Buttons in a hidden Box.
-    return (
+    const drawn = (
       <Box flexDirection="column" minHeight={isInline ? undefined : e.props.scroll.bodyRows} backgroundColor={pal.body}>
         {isDemo ? (
           <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={isInline ? 2 : 1} marginBottom={blankLine}>
@@ -4051,5 +4086,21 @@ export const register: Register = on => {
         )}
       </Box>
     )
+    if (look === 'desktop' && focusedKey !== null) {
+      const keys = buttonKeys(drawn)
+      if (!keys.has(focusedKey)) {
+        const next = [focusHint, rowKeys[0]?.key, ...keys].find((k): k is string => !!k && keys.has(k)) ?? null
+        focusedKey = next
+        focusHint = null
+        // After this hook returns, since a focus asked from inside a drawing's own hook cannot wait on it.
+        if (next)
+          void $.clock
+            .sleep(0)
+            .then(() => $.ui.focus({ requestId: PANE, key: next }))
+            .catch(() => undefined)
+      }
+    }
+
+    return drawn
   })
 }
