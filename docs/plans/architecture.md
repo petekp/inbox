@@ -37,6 +37,10 @@ Terms follow `GLOSSARY.md`.
 
 ## Two hosts: Claude Code and Codex
 
+[clients.md](clients.md) reviews this plan against three clients: Claude
+Code in the terminal, the Claude app and the Codex app. It proposes a new
+order for the steps below.
+
 The inbox now runs in two hosts. The Claude Code mod is `hooks/register.tsx`.
 The Codex plugin is `codex/src`. Both use the plain modules in `hooks/`:
 `ledger.ts`, `checks.ts`, `check-tracking.ts`, `git.ts`, `tree.ts`,
