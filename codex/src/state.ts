@@ -6,10 +6,9 @@ import { mkdir, readFile, rename, rmdir, stat, writeFile } from 'node:fs/promise
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { NO_CHECKS } from '../../hooks/check-tracking'
 import { EMPTY, TOLD_NOTHING, upgradeLedger } from '../../hooks/ledger'
 import type { Exchange, Press, Told } from '../../hooks/ledger'
-import type { Checks, Ledger, Snapshot } from '../../types'
+import type { Ledger } from '../../types'
 
 /** What a row's last press did, shown on the row so the person sees it went through. */
 export type LastAction = {
@@ -28,21 +27,15 @@ export type SessionState = {
   sessionId: string
   /** The folder the session started in. */
   root: string
-  /** The top folder of the git repo holding `root`; null outside git. */
-  top: string | null
   home: string
   /** The codex binary the desktop app runs, from the hooks' CODEX_CLI_PATH. */
   cliPath: string | null
   ledger: Ledger
-  checks: Checks
-  snapshots: Record<string, Snapshot>
   /** What the turn running now gathered for the per-reply update. */
   turn: {
     person: string | null
     activity: string[]
     press: Press | null
-    /** Replies the Stop hook sent Codex back from, which never became the turn's final answer. */
-    sentBack: string[]
   }
   /** The inbox text Codex last read beside a prompt, and the closed items it was told about. */
   told: Told
@@ -58,8 +51,6 @@ export type SessionState = {
   /** Messages the tab sent with `codex queue`, so UserPromptSubmit can tell them from the person's own words. */
   sent: { text: string; press: Press | null; at: number }[]
   lastActions: Record<string, LastAction>
-  /** The transcript's CommandExecution ids already recorded as checks. */
-  recordedRuns: string[]
   /** When the tab last asked for its view, so the inbox texts can say whether it is open. */
   tabSeenAt: number
 }
@@ -69,19 +60,15 @@ export function emptyState(sessionId: string): SessionState {
     version: 1,
     sessionId,
     root: '',
-    top: null,
     home: homedir(),
     cliPath: null,
     ledger: EMPTY,
-    checks: NO_CHECKS,
-    snapshots: {},
-    turn: { person: null, activity: [], press: null, sentBack: [] },
+    turn: { person: null, activity: [], press: null },
     told: TOLD_NOTHING,
     presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: 'current', isUpdating: false },
     pending: [],
     sent: [],
     lastActions: {},
-    recordedRuns: [],
     tabSeenAt: 0,
   }
 }
@@ -113,36 +100,35 @@ export function statePath(dir: string, sessionId: string): string {
   return join(dir, 'sessions', `${fileName(sessionId)}.json`)
 }
 
-/** State saved by an earlier build, with any field it lacks. */
-function upgraded(saved: Partial<SessionState>, sessionId: string): SessionState {
+/** State an earlier build saved, with the keys it kept for session checks and the claim send-back. */
+type Saved = Omit<Partial<SessionState>, 'turn' | 'pending'> & {
+  checks?: unknown
+  snapshots?: unknown
+  recordedRuns?: unknown
+  top?: unknown
+  turn?: Partial<SessionState['turn']> & { sentBack?: unknown }
+  pending?: { ex: Exchange & { checks?: unknown }; turnsStarted: number }[]
+}
+
+/** State saved by an earlier build, with any field it lacks, and without the keys it no longer has. */
+function upgraded(saved: Saved, sessionId: string): SessionState {
   const base = emptyState(sessionId)
+  const { checks: _checks, snapshots: _snapshots, recordedRuns: _runs, top: _top, ...kept } = saved
+  const { sentBack: _sentBack, ...turn } = saved.turn ?? {}
 
   return {
     ...base,
-    ...saved,
+    ...kept,
     // The ledger's shape is the mod's, so a saved one converts the way the mod's does. It converts
     // before the defaults fill in, since an empty `closed` would hide an old `decided`.
     ledger: saved.ledger
       ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) }
       : base.ledger,
-    turn: { ...base.turn, ...saved.turn },
+    turn: { ...base.turn, ...turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...saved.presence },
-    snapshots: upgradeSnapshots(saved.snapshots ?? base.snapshots),
+    pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex })),
   }
-}
-
-/** Readings saved before the shared reader marked a dirty folder 'directory'; it now writes the engine's 'dir'. */
-function upgradeSnapshots(snapshots: Record<string, Snapshot>): Record<string, Snapshot> {
-  return Object.fromEntries(
-    Object.entries(snapshots).map(([repo, s]) => [
-      repo,
-      {
-        ...s,
-        dirty: Object.fromEntries(Object.entries(s.dirty).map(([p, id]) => [p, id === 'directory' ? 'dir' : id])),
-      },
-    ]),
-  )
 }
 
 /** A session's saved state. A missing file is a new session; a file that cannot be read or converted throws. */

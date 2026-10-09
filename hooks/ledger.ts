@@ -110,7 +110,6 @@ Input:
 - <activity>: what the agent did this turn (files edited, commands, URLs)
 - <reply>: the agent's final reply
 - <screen>: what the person has on screen besides the conversation.${band}
-- <checks>: the latest result of each test, type check, lint or build the agent ran, read from the commands themselves. "before the last edit" means files changed after it ran. These results override the reply: never write in DONE or NOW that a check passes unless <checks> shows it passing and not before the last edit.
 
 Answer with lines only, each starting with one of these keys. No other text.
 
@@ -256,8 +255,6 @@ export type Exchange = {
   press: Press | null
   /** What the person has on screen besides the conversation, from screenText. */
   screen: string
-  /** The latest result of each check the agent ran, from checkLine. */
-  checks: string[]
 }
 
 /** A prompt the mod sent for an item: an answer, an Explain, or a Run. */
@@ -399,7 +396,6 @@ export function buildPrompt(ledger: Ledger, ex: Exchange): string {
     `<activity>${NL}${clip(ex.activity.join(NL), 2500)}${NL}</activity>`,
     `<reply>${NL}${clip(numberBlocks(ex.reply), 12000)}${NL}</reply>`,
     `<screen>${NL}${ex.screen}${NL}</screen>`,
-    `<checks>${NL}${ex.checks.length > 0 ? ex.checks.join(NL) : '(none ran)'}${NL}</checks>`,
   ].join(NL)
 }
 

@@ -2,15 +2,13 @@
 // `/inbox demo` for work on the layout. Nothing here reaches the session's
 // real inbox, its store, or Claude.
 
-import type { Checks, LastAction, Ledger, Presence, PrFixSent, PrViews, Settled, Stop } from '../types'
+import type { LastAction, Ledger, Presence, PrViews, Settled, Stop } from '../types'
 
 export type View = {
   ledger: Ledger
   stop: Stop | null
-  checks: Checks
   settled: Settled[]
   prViews: PrViews
-  prFixesSent: Record<string, PrFixSent>
   lastActions: Record<string, LastAction>
   /** The turn counts a task handed to Claude folds by. */
   turns: Pick<Presence, 'turnsStarted' | 'turnsApplied'>
@@ -213,81 +211,6 @@ export function demoView(now: number): View {
       batchTurn: 14,
     },
     stop: null,
-    checks: {
-      repos: [],
-      results: [
-        {
-          name: 'prettier',
-          kind: 'lint',
-          folder: null,
-          target: { paths: [], filters: [] },
-          result: 'pass',
-          summary: '',
-          ranAt: now - 20 * MIN,
-          command: 'npx -y prettier@3.9.9 --check .',
-          failures: [],
-          repo: null,
-          isStale: true,
-          isLeftFailing: false,
-          isDismissed: false,
-          isSentBack: false,
-          fixSentAt: null,
-        },
-        {
-          name: 'claude plugin test',
-          kind: 'tests',
-          folder: null,
-          target: { paths: [], filters: [] },
-          result: 'pass',
-          summary: '64 pass, 0 fail',
-          ranAt: now - 6 * MIN,
-          command: 'claude plugin test .',
-          failures: [],
-          repo: null,
-          isStale: false,
-          isLeftFailing: false,
-          isDismissed: false,
-          isSentBack: false,
-          fixSentAt: null,
-        },
-        {
-          name: 'tsc',
-          kind: 'types',
-          folder: null,
-          target: { paths: [], filters: [] },
-          result: 'fail',
-          summary: 'hooks/register.tsx(2310,7): error TS2322',
-          ranAt: now - 5 * MIN,
-          command: 'npx -y -p typescript tsc --noEmit -p .',
-          failures: [
-            "hooks/register.tsx(2310,7): error TS2322: Type 'string | undefined' is not assignable to type 'string'.",
-          ],
-          repo: null,
-          isStale: false,
-          isLeftFailing: true,
-          isDismissed: false,
-          isSentBack: false,
-          fixSentAt: null,
-        },
-        {
-          name: 'vitest',
-          kind: 'tests',
-          folder: null,
-          target: { paths: [], filters: ['tests/parse.test.ts'] },
-          result: 'fail',
-          summary: '1 failed | 11 passed',
-          ranAt: now - 3 * MIN,
-          command: 'npx vitest run tests/parse.test.ts',
-          failures: ['× parses a dated heading 2ms', 'FAIL  tests/parse.test.ts > headings > parses a dated heading'],
-          repo: null,
-          isStale: false,
-          isLeftFailing: true,
-          isDismissed: false,
-          isSentBack: false,
-          fixSentAt: now - 1 * MIN,
-        },
-      ],
-    },
     settled: [
       {
         id: 'd10',
@@ -427,9 +350,6 @@ export function demoView(now: number): View {
           error: null,
         },
       },
-    },
-    prFixesSent: {
-      'petekp/inbox#31 check lint': { at: now - 2 * MIN, url: `${REPO}/actions/runs/3` },
     },
     lastActions: {
       d18: {

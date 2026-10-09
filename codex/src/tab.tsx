@@ -7,11 +7,11 @@ import type { ComponentChildren, JSX } from 'preact'
 
 import { ago } from '../../hooks/ledger'
 import { SETTLED_MS } from './core'
-import type { CheckRow, ItemRow, TabPress, View } from './core'
+import type { ItemRow, TabPress, View } from './core'
 
 type Tab = 'needsYou' | 'findings'
 type Tone = 'needsYou' | 'findings' | 'done' | 'error'
-type Group = 'check' | 'question' | 'task' | 'finding'
+type Group = 'question' | 'task' | 'finding'
 
 /** One of a row's actions, with the key that presses it while the tab has focus. */
 type Key = { hotkey: string; label: string; note?: string; run: () => void }
@@ -25,7 +25,6 @@ type Row = {
   title: string
   /** Muted text after the title, such as an age. */
   titleAfter?: string
-  subtitle?: JSX.Element
   /** The unselected line, when it differs from the title and its age. */
   line?: { text: string; after?: string; afterTone?: Tone }
   /** Unselected, the title may take a second line. */
@@ -68,7 +67,7 @@ const errors = new Map<string, string>()
 const notes = new Map<string, string>()
 const copies = new Map<string, { name: string; text: string }>()
 let settled: Settled[] = []
-let order: Record<Group, string[]> = { check: [], question: [], task: [], finding: [] }
+let order: Record<Group, string[]> = { question: [], task: [], finding: [] }
 // Each view request takes the next number, and a reply older than the view shown is dropped.
 let requested = 0
 let shown = 0
@@ -115,7 +114,6 @@ async function callTool<T>(name: string, args: unknown = {}): Promise<T | undefi
 
 function orderOf(v: View): Record<Group, string[]> {
   return {
-    check: v.checks.map(c => `check:${c.key}`),
     question: v.questions.map(i => i.id),
     task: v.tasks.map(i => i.id),
     finding: [...v.findings].reverse().map(f => f.id),
@@ -124,11 +122,6 @@ function orderOf(v: View): Record<Group, string[]> {
 
 /** What a row that left says in its place, or null when it leaves without a trace, as a dismissed finding does. */
 function leftText(prev: View, next: View, group: Group, id: string): { what: string; outcome: string } | null {
-  if (group === 'check') {
-    const c = prev.checks.find(x => `check:${x.key}` === id)
-    // A failing check leaves the list when a later run passes, or when the person dismisses it.
-    return c && !next.dismissedChecks.includes(c.key) ? { what: c.name, outcome: 'Passed' } : null
-  }
   if (group === 'finding') {
     const f = next.leaving.find(x => x.id === id)
     return f ? { what: f.title, outcome: f.text } : null
@@ -273,49 +266,6 @@ function itemRow(v: View, item: ItemRow, handle: string): Row {
   }
 }
 
-// What ran and how it ended, when, then what failed and the command. Once Fix
-// is pressed, the row waits on Codex and folds until the check runs again.
-function checkRow(v: View, c: CheckRow): Row {
-  const id = `check:${c.key}`
-  const ran = ago(v.at - c.ranAt)
-  const fixSent = c.fixSentAt === null ? null : ago(v.at - c.fixSentAt)
-
-  return {
-    id,
-    handle: fixSent ? '✓' : '✗',
-    handleTone: fixSent ? 'done' : 'error',
-    ...(fixSent ? { fold: { note: `Fix sent · ${fixSent}` } } : {}),
-    title: `${c.name} · ${c.outcome}`,
-    subtitle: (
-      <div class="muted">
-        {ran}
-        {c.isStale ? <span class="tone-needsYou">, before the last edit</span> : null}
-      </div>
-    ),
-    line: fixSent
-      ? { text: c.name, after: ` · fix sent ${fixSent}`, afterTone: 'done' }
-      : { text: c.name, after: `${c.brief ? ` · ${c.brief}` : ''} · ${ran}` },
-    body: (
-      <div>
-        {c.failures.map(f => (
-          <div class="failure" title={f}>
-            {f}
-          </div>
-        ))}
-        {c.command ? <div class="command">$ {c.command}</div> : null}
-      </div>
-    ),
-    keys: [
-      {
-        hotkey: 'a',
-        label: fixSent ? 'Fix again' : 'Fix',
-        run: () => void act(id, { action: 'fix', key: c.key }),
-      },
-    ],
-    more: [{ hotkey: 'x', label: 'Dismiss', run: () => void act(id, { action: 'dismissCheck', key: c.key }) }],
-  }
-}
-
 const FINDING_BADGES = {
   issue: { label: 'Issue', mark: '▲', tone: 'needsYou' },
   opportunity: { label: 'Opportunity', mark: '✦', tone: 'done' },
@@ -364,7 +314,6 @@ function findingRow(v: View, f: View['findings'][number]): Row {
 }
 
 type Lists = {
-  checks: Row[]
   questions: Row[]
   tasks: Row[]
   findings: Row[]
@@ -373,17 +322,15 @@ type Lists = {
 }
 
 function listsOf(v: View): Lists {
-  const checks = v.checks.map(c => checkRow(v, c))
   const questions = v.questions.map((q, n) => itemRow(v, q, `${n + 1})`))
   const tasks = v.tasks.map(t => itemRow(v, t, '•'))
   const findings = [...v.findings].reverse().map(f => findingRow(v, f))
 
   return {
-    checks,
     questions,
     tasks,
     findings,
-    byTab: { needsYou: [...checks, ...questions, ...tasks], findings },
+    byTab: { needsYou: [...questions, ...tasks], findings },
   }
 }
 
@@ -524,7 +471,6 @@ function RowView({
             {row.title}
             {row.titleAfter ? <span class="after">{row.titleAfter}</span> : null}
           </div>
-          {row.subtitle}
         </div>
         {isOpen && row.body ? <div class="body">{row.body}</div> : null}
         {status.some(Boolean) || sending.has(row.id) || notes.has(row.id) || errors.has(row.id) ? (
@@ -712,17 +658,9 @@ function ItemGroup({
 
 function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number }) {
   const all = lists.byTab.needsYou
-  const hasChecks = lists.checks.length > 0 || settled.some(s => s.group === 'check')
 
   return (
     <main>
-      {/* Checks still failing when Codex stopped come first, since they block the work. */}
-      {hasChecks ? (
-        <section>
-          <GroupTitle title="Failing checks" count={lists.checks.filter(r => !r.fold).length} />
-          <Entries rows={lists.checks} group="check" all={all} now={now} />
-        </section>
-      ) : null}
       <ItemGroup v={v} kind="question" rows={lists.questions} all={all} now={now} />
       <ItemGroup v={v} kind="task" rows={lists.tasks} all={all} now={now} />
     </main>
@@ -787,7 +725,7 @@ async function toggleDemo() {
   isDemo = !isDemo
   view = null
   settled = []
-  order = { check: [], question: [], task: [], finding: [] }
+  order = { question: [], task: [], finding: [] }
   selection.needsYou = null
   selection.findings = null
   typing = null

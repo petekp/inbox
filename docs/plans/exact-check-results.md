@@ -1,5 +1,7 @@
 # Exact check results
 
+Superseded: session checks, `run_check`, the Bash refusal and the claim send-back were removed from the mod and the Codex plugin.
+
 Status: B built. Terms follow `GLOSSARY.md`.
 
 ## The problem

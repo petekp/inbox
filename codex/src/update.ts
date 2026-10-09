@@ -10,7 +10,7 @@ import { applyUpdate, buildPrompt, parseReply, systemText } from '../../hooks/le
 import { readState, statePath, updateState } from './state'
 import type { SessionState } from './state'
 import { CODEX } from './texts'
-import type { Run } from './tree'
+import type { Run } from './run'
 
 /** The inbox model, at low reasoning effort. gpt-6-luna is faster but closed a finding the reply only mentioned. */
 export const MODEL = 'gpt-6.1-sol'

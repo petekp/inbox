@@ -3,8 +3,6 @@ import type { EngineInterface, Register, SessionAppendMessage, UiPressArgument, 
 
 import type {
   Arrival,
-  Check,
-  Checks,
   Cursor,
   Closed,
   Dialog,
@@ -13,7 +11,6 @@ import type {
   Ledger,
   Finding,
   PrCheck,
-  PrFixSent,
   PrThread,
   PrView,
   PrViews,
@@ -21,41 +18,9 @@ import type {
   Previous,
   LastAction,
   Settled,
-  Snapshot,
   Stop,
   Tab,
 } from '../types'
-import {
-  checkName,
-  checkRun,
-  checkLine,
-  checksIn,
-  claimMessage,
-  distinctSummary,
-  failureLines,
-  failCount,
-  failureList,
-  fixMessage,
-  readResult,
-  resolvePath,
-} from './checks'
-import type { Contradiction } from './checks'
-import {
-  NO_CHECKS,
-  addRepo,
-  contains,
-  bandLines,
-  changed,
-  checkKey,
-  claimAgainst,
-  dismissed,
-  fixSent,
-  needsYou,
-  pruned,
-  recorded,
-  turnEnded,
-  upgradeChecks,
-} from './check-tracking'
 import { demoView } from './demo'
 import type { View } from './demo'
 import type { Exchange, Press, Update } from './ledger'
@@ -122,7 +87,6 @@ import {
   recordClose,
   recordFinding,
 } from './tools'
-import { readRepo, type TreeIO } from './tree'
 
 const LEDGER = atom({ plugin: 'inbox', key: 'ledger' } as const, EMPTY)
 const PRESENCE = atom(
@@ -148,12 +112,8 @@ const PR_VIEWS = atom(
   { plugin: 'inbox', key: 'prViews' } as const,
   { views: {}, branchRef: null, isFetching: false } as PrViews,
 )
-const PR_FIXES_SENT = atom({ plugin: 'inbox', key: 'prFixesSent' } as const, {} as Record<string, PrFixSent>)
 const STOP = atom({ plugin: 'inbox', key: 'stop' } as const, null as Stop | null)
 const DIALOGS = atom({ plugin: 'inbox', key: 'dialogs' } as const, [] as Dialog[])
-const EDIT_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit'])
-const CHECKS = atom({ plugin: 'inbox', key: 'checks' } as const, NO_CHECKS)
-const SNAPSHOTS = atom({ plugin: 'inbox', key: 'snapshots' } as const, {} as Record<string, Snapshot>)
 const TYPING = atom({ plugin: 'inbox', key: 'typing' } as const, null as string | null)
 const SETTLED = atom({ plugin: 'inbox', key: 'settled' } as const, [] as Settled[])
 const ARRIVAL = atom({ plugin: 'inbox', key: 'arrival' } as const, null as Arrival | null)
@@ -193,22 +153,6 @@ Close with mcp__inbox__close:
 - When an item or finding is done or no longer applies, close it with a short reason, without waiting to be asked.
 The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.`
 const CLOSE_TOOL = 'mcp__inbox__close'
-
-const RUN_CHECK_TOOL = 'mcp__inbox__run_check'
-const RUN_CHECK_DESCRIPTION = `Run tests, type checks, lints, builds and validation scripts with this tool, not with Bash. Each command is one check, such as "npm test", "npx vitest run src/a.test.ts" or "tsc --noEmit", with no pipe, redirect or other command. They run in order in the shell's current folder; to check another folder, cd there with Bash first. Each check's full output goes to a log file, and you get back whether it passed, its summary, the lines that name what failed, and the log's path.`
-const RUN_CHECK_SCHEMA = {
-  type: 'object',
-  properties: {
-    checks: {
-      type: 'array',
-      items: { type: 'string' },
-      description: 'The check commands to run, in order, one check each.',
-    },
-  },
-  required: ['checks'],
-}
-const BASH_CHECK_REFUSAL = `Not run. Run each check on its own, with no pipe, redirect or other command, so its exit status is the check's: with ${RUN_CHECK_TOOL}, which saves the output to a log file, or alone with Bash.`
-const SUBAGENT_CHECK_REFUSAL = `Not run: ${RUN_CHECK_TOOL} runs checks in the main conversation's folder, not a subagent's. Run each check with Bash instead.`
 
 const PANE = 'inbox'
 // Theme keys, so the colors follow the person's Claude Code theme.
@@ -422,12 +366,8 @@ let sentBack: string[] = []
 // Set in session.start, which a hot reload runs again.
 let sessionId = ''
 let root = ''
-let home = ''
-// The repo's top folder, where git reads the working tree; null outside git.
+// The repo's top folder; null outside git.
 let top: string | null = null
-// Each folder outside the session's where a check ran, with its repo's top folder.
-const repoTops = new Map<string, Promise<string | null>>()
-let refreshing: Promise<void> = Promise.resolve()
 // The PR fetches, one at a time, and the next one when it is waiting to start: whether it looks up the branch's PR.
 let fetchingPrs: Promise<void> = Promise.resolve()
 let nextFetchFindsBranchPr: boolean | null = null
@@ -454,21 +394,6 @@ function resetTurn() {
   trigger = null
   press = null
   sentBack = []
-}
-
-/** Sends Claude back when the reply claims a check passes against its latest run. */
-async function blockOnClaim<R extends { block?: string }>($: EngineInterface, r: R, reply: string): Promise<R> {
-  if ((await read($, CHECKS)).results.length === 0) return r
-  await refreshTree($)
-  const sent: { claim: Contradiction | null } = { claim: null }
-  await update($, CHECKS, c => {
-    const found = claimAgainst(c, reply, root)
-    sent.claim = found.claim
-
-    return found.checks
-  })
-
-  return sent.claim ? { ...r, block: claimMessage(sent.claim) } : r
 }
 
 /** Adds a message or a command of the person's to what they sent this turn. */
@@ -672,7 +597,7 @@ async function settle($: EngineInterface, settled: Settled[]) {
 
 /** What a just-closed row says: what it was, and how it closed. */
 function settledText(s: Settled): { what: string; outcome: string } {
-  return s.kind === 'check' ? { what: s.title, outcome: s.outcome } : { what: s.ask, outcome: outcomeText(s) }
+  return { what: s.ask, outcome: outcomeText(s) }
 }
 
 /** Redraws the pane at each step of a just-closed row's leave bar, for `waitMs`. A fresh value is what redraws it. */
@@ -932,11 +857,6 @@ function repoPath(path: string): string {
   return base && path.startsWith(`${base}/`) ? path.slice(base.length + 1) : path
 }
 
-/** Text with the home folder written as ~, as in a shell prompt. */
-function tilde(text: string): string {
-  return home ? text.replaceAll(`${home}/`, '~/') : text
-}
-
 /**
  * Brings state an earlier version of the mod wrote up to date, and returns the
  * ledger. A reload keeps $.state, so a running session can still hold findings
@@ -957,10 +877,11 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
     update($, UNFOLDED, u => u.map(readKind)),
     // Before last actions said whether they handed work off, Address, a task's Run step and a typed reply did.
     // An earlier build saved one for Open and Open log, which record nothing now, as the page they open shows the press.
+    // Session checks and a PR check's Fix are gone, so their last actions go too.
     update($, LAST_ACTIONS, a =>
       Object.fromEntries(
         Object.entries(a)
-          .filter(([, last]) => !/^(open|log)-/.test(last.action))
+          .filter(([id, last]) => !/^(open|log|fix)-/.test(last.action) && !id.startsWith('check:'))
           .map(([id, last]) => [
             id,
             {
@@ -972,11 +893,11 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
           ]),
       ),
     ),
-    update($, SETTLED, s => s.map(x => (x.kind === 'check' ? x : { ...x, kind: readKind(x.kind) }))),
+    // A session check's row that just passed or was sent to Claude settled here too, and is gone with them.
+    update($, SETTLED, s => s.filter(x => (x.kind as string) !== 'check').map(x => ({ ...x, kind: readKind(x.kind) }))),
     // Presence from before the turn counts existed cannot say whether the last
     // turn's update landed, so that load catches up once.
     update($, PRESENCE, p => ({ ...p, turnsStarted: p.turnsStarted ?? 1, turnsApplied: p.turnsApplied ?? 0 })),
-    update($, CHECKS, c => upgradeChecks(c, root, home)),
     update($, PR_VIEWS, v => ({
       ...v,
       views: Object.fromEntries(
@@ -1059,45 +980,11 @@ async function removeFinding($: EngineInterface, id: string) {
 }
 
 /**
- * How many things wait on the person: open questions, tasks not handed to
- * Claude, and the session's checks left failing with no fix sent. The band and
- * the Needs you tab both read this.
+ * How many things wait on the person: open questions, and tasks not handed to
+ * Claude. The band and the Needs you tab both read this.
  */
-function needsYouCount(
-  ledger: Ledger,
-  checks: Checks,
-  lastActions: Record<string, LastAction>,
-  turns: View['turns'],
-): number {
-  const items = ledger.items.filter(i => i.kind !== 'task' || !isTaskHandedOff(lastActions[i.id], turns))
-
-  return items.length + needsYou(checks, root).count
-}
-
-/** Hides a failing check's row in the Needs you tab until the check runs again. */
-async function dismissCheck($: EngineInterface, check: Check) {
-  await update($, CHECKS, c => dismissed(c, check))
-}
-
-/**
- * Asks Claude to fix a failing check. Its row stays in place with a ✓ and
- * "Fix" for a few seconds, then leaves until the check runs again.
- */
-async function sendFix($: EngineInterface, check: Check) {
-  await send($, fixMessage(check, root))
-  const at = await $.clock.now()
-  const id = checkRowId(check)
-  let index = -1
-  await update($, CHECKS, c => {
-    index = waitingChecks(c).findIndex(x => checkRowId(x) === id)
-    return fixSent(c, check, at)
-  })
-  if (index >= 0) await settle($, [{ id, kind: 'check', title: checkName(check, root), outcome: 'Fix', at, index }])
-}
-
-/** The session's failing checks the Needs you tab lists: left failing, not dismissed, and not handed to Claude with Fix. */
-function waitingChecks(checks: Checks): Check[] {
-  return needsYou(checks, root).rows.filter(c => c.fixSentAt === null)
+function needsYouCount(ledger: Ledger, lastActions: Record<string, LastAction>, turns: View['turns']): number {
+  return ledger.items.filter(i => i.kind !== 'task' || !isTaskHandedOff(lastActions[i.id], turns)).length
 }
 
 /** Sends the finding back to Claude, to fix it or to talk it through first. */
@@ -1198,12 +1085,9 @@ async function jumpTo($: EngineInterface, tab: Tab, row: { id: string; index: nu
 }
 
 /** Each tab's row ids, in the order the pane lists them. */
-function tabRowIds(ledger: Ledger, checks: Checks, prViews: PrView[]): Record<Tab, string[]> {
+function tabRowIds(ledger: Ledger, prViews: PrView[]): Record<Tab, string[]> {
   return {
-    needsYou: [
-      ...waitingChecks(checks).map(checkRowId),
-      ...NEEDS_YOU_GROUPS.flatMap(g => listedItems(ledger.items, g.kind).map(i => i.id)),
-    ],
+    needsYou: NEEDS_YOU_GROUPS.flatMap(g => listedItems(ledger.items, g.kind).map(i => i.id)),
     findings: [...ledger.findings].reverse().map(f => f.id),
     prs: prViews.flatMap(pr => [
       ...failingChecks(pr).map(c => prCheckId(pr, c)),
@@ -1226,9 +1110,9 @@ async function followNewRows($: EngineInterface, isOpening = false) {
     read($, UNFOLDED),
     isPaneShown($),
   ])
-  const { ledger, checks, prViews: prState, settled, lastActions, stop, now } = view
+  const { ledger, prViews: prState, settled, lastActions, stop, now } = view
   const prViews = Object.values(prState.views)
-  const ids = tabRowIds(ledger, checks, prViews)
+  const ids = tabRowIds(ledger, prViews)
   if (isOpening) recordedRows = null
   // A PR fetch's rows count once it ends. A new PR counts even with no rows.
   const added = newRows(isDemo, {
@@ -1421,45 +1305,25 @@ async function openUrl($: EngineInterface, url: string) {
   if (r.exitCode !== 0) $.ui.toast(`Could not open ${url}`)
 }
 
-/** The id of a failing PR check's row, which also keys its Fix mark. */
 /** The id of a review thread's row, which also keys its last action. */
 function prThreadId(pr: PrView, t: PrThread): string {
   return `${pr.ref} thread ${t.id}`
 }
 
+/** The id of a failing PR check's row. */
 function prCheckId(pr: PrView, check: PrCheck): string {
   return `${pr.ref} check ${check.name}`
 }
 
-/** The id of a session check's row in the Needs you tab. */
-function checkRowId(check: Check): string {
-  return `check:${checkKey(check)}`
-}
-
-/** A Fix mark holds only for the run it was pressed on, so a rerun that fails again asks for the person again. */
-function prFixSentAt(sent: Record<string, PrFixSent>, pr: PrView, c: PrCheck): number | null {
-  const fix = sent[prCheckId(pr, c)]
-
-  return fix && fix.url === c.url ? fix.at : null
-}
-
 /** Which PR rows the person handed to Claude. A thread stays sent until a comment newer than the press. */
-function handoffs(lastActions: Record<string, LastAction>, prFixesSent: Record<string, PrFixSent>): Handoffs {
+function handoffs(lastActions: Record<string, LastAction>): Handoffs {
   return {
     isThreadSent: (pr, t) => {
       const last = lastActions[prThreadId(pr, t)]
 
       return last?.isHandoff === true && last.at > ((t.reply ?? t).at ?? 0)
     },
-    isFixSent: (pr, c) => prFixSentAt(prFixesSent, pr, c) !== null,
   }
-}
-
-/** Asks Claude to fix a failing PR check, and marks that run of it as handed to Claude. */
-async function sendPrFix($: EngineInterface, pr: PrView, check: PrCheck) {
-  await send($, prompts.fix(pr, check))
-  const at = await $.clock.now()
-  await update($, PR_FIXES_SENT, sent => ({ ...sent, [prCheckId(pr, check)]: { at, url: check.url } }))
 }
 
 async function dismissPr($: EngineInterface, ref: string) {
@@ -1621,245 +1485,16 @@ const FINDING_BADGES: Record<Finding['kind'], { label: string; mark: string; ton
   opportunity: { label: 'Opportunity', mark: '✦', tone: 'done' },
 }
 
-/** Runs a git command that reads a repo's working tree; null when it fails. Optional locks are off, so it never takes the index lock from a commit. */
-async function runGit($: EngineInterface, repo: string, args: string[]): Promise<string | null> {
-  return treeIO($).run(['git', '--no-optional-locks', ...args], { cwd: repo, timeoutMs: 15_000 })
-}
-
-/** How the shared working-tree reader runs commands and reads a path's kind here. */
-function treeIO($: EngineInterface): TreeIO {
-  return {
-    run: (args, opts) =>
-      $.process.run(args, opts).then(
-        r => (r.exitCode === 0 ? r.stdout : null),
-        () => null,
-      ),
-    kindOf: path =>
-      $.fs.stat(path).then(
-        s => s.kind,
-        () => 'other' as const,
-      ),
-  }
-}
-
-/** The top folder of the git repo that holds `folder`; null outside git. */
-function repoOf($: EngineInterface, folder: string): Promise<string | null> {
-  if (folder === root) return Promise.resolve(top)
-  const known = repoTops.get(folder)
-  if (known) return known
-  const found = $.process.run(['git', 'rev-parse', '--show-toplevel'], { cwd: folder, timeoutMs: 5000 }).then(
-    r => (r.exitCode === 0 ? r.stdout.trim() || null : null),
-    () => null,
-  )
-  repoTops.set(folder, found)
-
-  return found
-}
-
-/**
- * Drops the checks that ran in a folder that is gone, such as a removed
- * worktree's: they can be neither fixed nor run again.
- */
-async function dropGoneFolders($: EngineInterface) {
-  const folders = [...new Set((await read($, CHECKS)).results.flatMap(c => (c.folder ? [c.folder] : [])))]
-  const found = await Promise.all(folders.map(f => $.fs.exists(f).catch(() => true)))
-  const gone = new Set(folders.filter((_f, i) => !found[i]))
-  if (gone.size > 0) await update($, CHECKS, c => pruned(c, gone))
-}
-
-/**
- * Drops the checks whose folder is gone, then reads the working tree of each
- * repo in `repos`, or of each repo a recorded check ran in. A repo whose
- * content differs from its last reading makes the checks that ran there
- * stale. Readings run one at a time.
- */
-function refreshTree($: EngineInterface, repos?: string[]): Promise<void> {
-  refreshing = refreshing
-    .then(async () => {
-      await dropGoneFolders($)
-      const checked = repos ?? (await read($, CHECKS)).results.flatMap(c => (c.repo ? [c.repo] : []))
-      const before = await read($, SNAPSHOTS)
-      for (const repo of new Set(checked)) {
-        const reading = await readRepo(treeIO($), repo, before[repo])
-        if (!reading) continue
-        const { snapshot, changes } = reading
-        await update($, SNAPSHOTS, s => ({ ...s, [repo]: snapshot }))
-        if (changes !== null && changes.length === 0) continue
-        await update($, CHECKS, c => changed(c, repo, changes, root))
-      }
-    })
-    .catch(() => undefined)
-
-  return refreshing
-}
-
-/** Shell syntax that would make a check command more than the one check. */
-const SHELL_SYNTAX = /[|;&<>`]|\$\(/
-
-/** Whether a command is one check and nothing else, so its exit status is the check's. */
-function isLoneCheck(command: string): boolean {
-  return checksIn(command).length === 1 && !SHELL_SYNTAX.test(command)
-}
-
-let checkLogFolder: Promise<string> | null = null
-
-/**
- * Where run_check saves this session's logs, found once per load: the repo's
- * git folder when it is inside the repo's top folder, else the temporary folder.
- */
-function checkLogs($: EngineInterface): Promise<string> {
-  checkLogFolder ??= (async () => {
-    const [gitDir, tmp] = await Promise.all([
-      top === null ? null : runGit($, root, ['rev-parse', '--absolute-git-dir']),
-      $.env.get('TMPDIR'),
-    ])
-    const dir = gitDir?.trim()
-    const folder =
-      top !== null && dir && contains(top, dir)
-        ? `${dir}/inbox/checks`
-        : `${(tmp ?? '/tmp').replace(/\/$/, '')}/inbox-checks`
-
-    // Sessions share the folder, so each keeps its logs in a folder of its own.
-    return `${folder}/${sessionId}`
-  })()
-
-  return checkLogFolder
-}
-
-/**
- * Runs each check as a Bash call of this mod's, so the Bash permission check
- * applies, and records how it ended. Saves each one's output to a log file and
- * returns what Claude reads: how it ended, its summary, the lines that name
- * what failed, a failed run's last lines, and the log's path.
- */
-async function runChecks($: EngineInterface, checks: string[]): Promise<string> {
-  if (checks.length === 0) return 'Pass at least one check command in "checks".'
-  const logFolder = await checkLogs($)
-  const lines: string[] = []
-  for (const command of checks) {
-    const [call] = checksIn(command)
-    if (!call || !isLoneCheck(command)) {
-      lines.push(`${command}: not run. Pass one check per command, with no pipe, redirect or other command.`)
-      continue
-    }
-    const cwd = await $.session.cwd()
-    const ran = await $.tool
-      .call({ tool: 'Bash', command, description: `Run ${call.name}` })
-      .catch((err: unknown) => ({ deny: String(err) }))
-    if (typeof ran.deny === 'string') {
-      // In auto mode the classifier cannot decide a call a plugin makes, but it can decide Claude's own Bash call.
-      lines.push(
-        `${command}: not run. ${ran.deny} If this tool cannot run it, run \`${command}\` alone in Bash, with no pipe or redirect.`,
-      )
-      continue
-    }
-    const fields = resultFields(ran)
-    if (fields.backgroundTaskId || fields.interrupted) {
-      lines.push(
-        `${command}: ${fields.interrupted ? 'interrupted' : 'still running in the background'}, so its result is unknown.`,
-      )
-      continue
-    }
-    const output = ran.text ?? ''
-    const isFailed = ran.isError === true
-    await recordCheck($, command, cwd, output, isFailed)
-    const { summary } = readResult(output, isFailed)
-    const exit = output.match(/^Exit code (\d+)/)?.[1]
-    // Each command keeps only its latest log.
-    const log = `${logFolder}/${command.replace(/[^\w.-]+/g, '-').slice(0, 100)}.log`
-    const isSaved = await $.fs.write(log, output).then(
-      () => true,
-      () => false,
-    )
-    lines.push(
-      [
-        `${command}: ${isFailed ? `failed${exit ? ` with exit ${exit}` : ''}` : 'passed'}${summary ? `, ${summary}` : ''}.`,
-        ...(isFailed
-          ? [
-              ...failureLines(output).map(l => `  ${l}`),
-              '  Last 30 lines:',
-              ...output
-                .trimEnd()
-                .split('\n')
-                .slice(-30)
-                .map(l => `    ${l}`),
-            ]
-          : []),
-        ...(isSaved ? [`  Log, readable with the Read tool: ${log}`] : []),
-      ].join('\n'),
-    )
-  }
-
-  return lines.join('\n')
-}
-
-/** Records how a single check ended, and in which folder; `cwd` is where the shell started. */
-async function recordCheck($: EngineInterface, command: string, cwd: string, output: string, isError: boolean) {
-  const run = checkRun(command, cwd, home)
-  if (!run) return
-  // A folder the command hides is taken as the session's.
-  const folder = run.folder ?? root
-  const { result, summary } = readResult(output, isError)
-  const repo = await repoOf($, folder)
-  // Edits made before the check count as before it.
-  await refreshTree($, repo ? [repo] : [])
-  const ranAt = await $.clock.now()
-  let before: Checks = NO_CHECKS
-  const after = await update($, CHECKS, c => {
-    before = c
-    return recorded(
-      c,
-      [
-        {
-          name: run.call.name,
-          kind: run.call.kind,
-          folder,
-          result,
-          summary,
-          command: run.command,
-          failures: result === 'fail' ? failureLines(output) : [],
-          repo,
-          target: run.target,
-        },
-      ],
-      ranAt,
-      root,
-    )
-  })
-  // A failing check's row that this pass cleared stays in place for a few seconds, with a ✓.
-  if (result !== 'pass') return
-  const stillFailing = new Set(waitingChecks(after).map(checkRowId))
-  await settle(
-    $,
-    waitingChecks(before).flatMap((c, index) =>
-      stillFailing.has(checkRowId(c))
-        ? []
-        : [
-            {
-              id: checkRowId(c),
-              kind: 'check' as const,
-              title: checkName(c, root),
-              outcome: 'Passed' as const,
-              at: ranAt,
-              index,
-            },
-          ],
-    ),
-  )
-}
-
 /**
  * What the band and the pane draw: the session's own state, or the samples
  * `/inbox demo` shows in its place.
  */
 async function drawnState($: EngineInterface): Promise<View & { now: number }> {
-  const [ledger, stop, checks, settled, prViews, prFixesSent, lastActions, presence, isDemo, now] = await Promise.all([
+  const [ledger, stop, settled, prViews, lastActions, presence, isDemo, now] = await Promise.all([
     read($, LEDGER),
     read($, STOP),
-    read($, CHECKS),
     read($, SETTLED),
     read($, PR_VIEWS),
-    read($, PR_FIXES_SENT),
     read($, LAST_ACTIONS),
     read($, PRESENCE),
     read($, IS_DEMO),
@@ -1868,7 +1503,7 @@ async function drawnState($: EngineInterface): Promise<View & { now: number }> {
   const turns = { turnsStarted: presence.turnsStarted, turnsApplied: presence.turnsApplied }
 
   return {
-    ...(isDemo ? demoView(now) : { ledger, stop, checks, settled, prViews, prFixesSent, lastActions, turns }),
+    ...(isDemo ? demoView(now) : { ledger, stop, settled, prViews, lastActions, turns }),
     now,
   }
 }
@@ -1885,7 +1520,6 @@ async function turnOn($: EngineInterface) {
       inputSchema: FINDING_SCHEMA,
     }),
     $.tool.register({ name: 'close', description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA }),
-    $.tool.register({ name: 'run_check', description: RUN_CHECK_DESCRIPTION, inputSchema: RUN_CHECK_SCHEMA }),
     syncTheme($),
   ])
   // A reload cancels the timers that clear just-closed rows, so the rows still showing get new ones.
@@ -1911,9 +1545,8 @@ async function turnOn($: EngineInterface) {
  */
 async function loadConversation($: EngineInterface, id: string, isCleared: boolean) {
   sessionId = id
-  ;[root, home] = await Promise.all([$.session.root(), $.env.get('HOME').then(h => h ?? '')])
+  root = await $.session.root()
   isSaved = false
-  checkLogFolder = null
   recordedRows = null
   // A reload stops any update the previous load had running, and state outlives
   // it, so an update in flight at load was cut off: record it as failed.
@@ -1925,8 +1558,6 @@ async function loadConversation($: EngineInterface, id: string, isCleared: boole
     $.store.get(`s:${sessionId}`) as Promise<{ savedAt: number; ledger: Ledger } | undefined>,
   ])
   top = git?.exitCode === 0 ? git.stdout.trim() || null : null
-  const sessionRepo = top
-  if (sessionRepo !== null) await update($, CHECKS, c => addRepo(c, sessionRepo))
   let loaded = current
   if (current.turn === 0 && !current.card) {
     if (saved) {
@@ -1990,9 +1621,6 @@ export const register: Register = on => {
       await Promise.all([
         update($, STOP, () => null),
         update($, DIALOGS, () => []),
-        update($, CHECKS, () => NO_CHECKS),
-        update($, PR_FIXES_SENT, () => ({})),
-        update($, SNAPSHOTS, () => ({})),
         update($, SETTLED, () => []),
         update($, IS_DEMO, () => false),
         publishStatus($, true),
@@ -2066,65 +1694,17 @@ export const register: Register = on => {
     result: await runTool($, recordClose, e as unknown as Record<string, unknown>),
   }))
 
-  // The check tool is listed up front and needs no prompt of its own: each check
-  // runs as a Bash call, which takes the Bash permission check.
-  on('tool.describe', { tool: RUN_CHECK_TOOL as never }, async ($, e, next) => ({
-    ...(await next(e)),
-    isDeferred: false,
-  }))
-  on('tool.check', { tool: RUN_CHECK_TOOL as never }, () => ({ decision: 'allow' }))
-  // Claude reads run_check's logs without a prompt, also where they sit outside
-  // the project, as in a worktree session, whose git folder is elsewhere.
-  for (const tool of ['Read', 'Grep'] as const)
-    on('tool.check', { tool }, async ($, e, next) => {
-      const input = e.input as { file_path?: unknown; path?: unknown }
-      const path = input.file_path ?? input.path
-      const isLog = isOn && typeof path === 'string' && contains(await checkLogs($), resolvePath(root, path))
-
-      return isLog ? { decision: 'allow' } : next(e)
-    })
-  on('tool.call', { tool: RUN_CHECK_TOOL as never }, async ($, e) => {
-    const input = e as unknown as Record<string, unknown>
-    // The checks run in the main conversation's shell, so a subagent in a worktree of its own would check the wrong folder.
-    if (input.agentId) return { result: SUBAGENT_CHECK_REFUSAL }
-    const checks = Array.isArray(input.checks) ? input.checks.filter((c): c is string => typeof c === 'string') : []
-
-    return { result: await runChecks($, checks) }
-  })
-
   on('tool.call', async ($, e, next) => {
     if (!isOn) return next(e)
-    // A check Claude runs in Bash is recorded when it runs alone, and refused otherwise, so every result is exact.
-    const isCheck =
-      e.tool === 'Bash' &&
-      !e.agentId &&
-      !e.run_in_background &&
-      next.origin.plugin !== 'inbox' &&
-      checksIn(e.command).length > 0
-    if (isCheck && !isLoneCheck(e.command)) return { deny: BASH_CHECK_REFUSAL }
     const { tool: _tool, tool_use_id: _id, agentId: _agent, ...input } = e as unknown as Record<string, unknown>
     const key = callKey(String(e.tool), input)
-    const run = async () => {
-      const ran = await clearingDialog($, key, () => next(e))
-      // A file edited by Claude or a subagent makes its repo one of the session's.
-      const path = input[e.tool === 'NotebookEdit' ? 'notebook_path' : 'file_path']
-      if (EDIT_TOOLS.has(String(e.tool)) && typeof path === 'string' && typeof ran.deny !== 'string') {
-        const repo = await repoOf($, path.slice(0, Math.max(path.lastIndexOf('/'), 1)))
-        if (repo !== null) await update($, CHECKS, c => addRepo(c, repo))
-      }
-
-      return ran
-    }
+    const run = () => clearingDialog($, key, () => next(e))
     // A subagent's call can raise a permission prompt too, which the person answers.
     if (e.agentId) return run()
     const line = toolActivity(String(e.tool), input)
     if (line) noteActivity(line)
     if (e.tool === 'Bash') {
-      const cwd = isCheck ? await $.session.cwd() : ''
       const ran = await run()
-      const fields = resultFields(ran)
-      if (isCheck && typeof ran.deny !== 'string' && !fields.backgroundTaskId && !fields.interrupted)
-        await recordCheck($, e.command, cwd, ran.text ?? '', ran.isError === true)
       if (activity.length < 40)
         for (const url of new Set(ran.text?.match(LOCAL_URL) ?? [])) noteActivity(`URL in output: ${url}`)
       // A PR this session opened; other commands print PR links that are not this session's.
@@ -2174,18 +1754,15 @@ export const register: Register = on => {
     return r
   })
 
-  // A reply that claims a check passes when its latest run failed, or ran
-  // before the last edit, sends Claude back once to run it or say so.
+  // A reply another Stop hook sent Claude back from never becomes the turn's
+  // final answer, so it is kept for the per-reply update.
   on('classic.Stop', async ($, e, next) => {
     const r = await next(e)
     if (!isOn || e.agent_id) return r
     const reply = e.last_assistant_message ?? ''
-    if (!reply.trim()) return r
-    const result = r.block || e.stop_hook_active ? r : await blockOnClaim($, r, reply)
-    // The reply Claude is sent back from never becomes the turn's final answer.
-    if (result.block) sentBack.push(reply)
+    if (reply.trim() && r.block) sentBack.push(reply)
 
-    return result
+    return r
   })
 
   on('turn.complete', async ($, e, next) => {
@@ -2195,16 +1772,9 @@ export const register: Register = on => {
     // No dialog outlives the turn that raised it.
     await closeDialogs($, null)
     if (!isOn) return r
-    // A check still failing when Claude stops waits on the person, in the Needs you tab.
-    await update($, CHECKS, turnEnded)
     void followNewRows($).catch(() => undefined)
     if (e.reason !== 'answer' || e.answer.trim() === '') return r
 
-    let checks = await read($, CHECKS)
-    if (checks.results.length > 0) {
-      await refreshTree($)
-      checks = await read($, CHECKS)
-    }
     const [ledger, shown, now] = await Promise.all([read($, LEDGER), screen($), $.clock.now()])
     const reply = [...sentBack, e.answer].join('\n\n')
     const ex: Exchange = {
@@ -2215,7 +1785,6 @@ export const register: Register = on => {
       turn: ledger.turn,
       press,
       screen: shown,
-      checks: checks.results.map(c => checkLine(c, root)),
     }
     resetTurn()
     const { turnsStarted } = await update($, PRESENCE, p => ({ ...p, lastActiveAt: now }))
@@ -2297,8 +1866,11 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!isOn || e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [{ ledger, prViews: prs, prFixesSent, lastActions, turns, stop, checks, settled, now }, presence, prev] =
-      await Promise.all([drawnState($), read($, PRESENCE), read($, PREVIOUS)])
+    const [{ ledger, prViews: prs, lastActions, turns, stop, settled, now }, presence, prev] = await Promise.all([
+      drawnState($),
+      read($, PRESENCE),
+      read($, PREVIOUS),
+    ])
     const isWorking = e.props.isWorking
 
     // A stop is the one thing to act on, so it takes the band.
@@ -2351,23 +1923,7 @@ export const register: Register = on => {
     }
 
     const card = ledger.card
-    // A failed check gets a line of its own, so a narrow band cannot cut it off.
-    const lines = bandLines(checks, root)
-    // A failing check whose fix went to Claude no longer waits on the person, so its line is muted.
-    const failedRows = lines.failing.map(c => (
-      <Text wrap="truncate-end" color={c.fixSentAt === null ? 'error' : undefined} dimColor={c.fixSentAt !== null}>
-        {'  '}
-        {checkLine(c, root)}
-        {c.fixSentAt === null ? '' : ' · fix sent'}
-      </Text>
-    ))
-
-    if (!card && ledger.items.length === 0 && ledger.findings.length === 0 && settled.length === 0) {
-      // Before the session's first card, failed checks are all the band has to show.
-      if (isWorking || failedRows.length === 0) return next(e)
-
-      return <Box flexDirection="column">{failedRows}</Box>
-    }
+    if (!card && ledger.items.length === 0 && ledger.findings.length === 0 && settled.length === 0) return next(e)
     const settledHint = settled.map(s => (
       <Text color={DONE}>
         {' · ✓ '}
@@ -2376,9 +1932,9 @@ export const register: Register = on => {
     ))
 
     const goal = card?.goal || 'This session'
-    const waiting = needsYouCount(ledger, checks, lastActions, turns)
+    const waiting = needsYouCount(ledger, lastActions, turns)
     const findingCount = ledger.findings.length
-    const prAlert = prAttention(Object.values(prs.views), handoffs(lastActions, prFixesSent))
+    const prAlert = prAttention(Object.values(prs.views), handoffs(lastActions))
     // The items themselves live in /inbox; the band only says how many wait.
     const hints = [
       ...settledHint,
@@ -2427,14 +1983,6 @@ export const register: Register = on => {
           <Text dimColor> → </Text>
           {card.now}
         </Text>,
-        ...(lines.summary.length > 0
-          ? [
-              <Text wrap="truncate-end" dimColor>
-                {'  '}
-                {lines.summary.map(c => checkLine(c, root)).join(' · ')}
-              </Text>,
-            ]
-          : []),
         ...openRows,
         ...(ledger.closed.length > 0
           ? [
@@ -2459,7 +2007,6 @@ export const register: Register = on => {
           </Text>
           {hints}
         </Text>
-        {failedRows}
         {openRows}
       </Box>
     )
@@ -2482,7 +2029,7 @@ export const register: Register = on => {
     const isInline = e.props.placement === 'inline'
     const blankLine = isInline ? 0 : 1
     const [
-      { ledger, prViews: prState, prFixesSent, lastActions, turns, stop, checks, settled, now },
+      { ledger, prViews: prState, lastActions, turns, stop, settled, now },
       presence,
       tab,
       selection,
@@ -2643,93 +2190,29 @@ export const register: Register = on => {
         },
       ],
     })
-    const handoff = handoffs(lastActions, prFixesSent)
-    // Once its fix is sent, a failing check folds until a run of it fails again.
-    const checkRow = (pr: PrView, c: PrCheck): Row => {
-      const sentAt = prFixSentAt(prFixesSent, pr, c)
-
-      return {
-        id: prCheckId(pr, c),
-        handle: sentAt === null ? '✗' : '✓',
-        handleTone: sentAt === null ? 'error' : 'done',
-        ...(sentAt === null ? {} : { fold: { note: `Fix · ${ago(now - sentAt)}` } }),
-        meta: (
-          <Text color={pal.tone.error} bold>
-            Failing check
-          </Text>
-        ),
-        title: c.name,
-        line:
-          sentAt === null
-            ? { text: c.name, after: ' · failing check', afterTone: 'error' }
-            : { text: c.name, after: ` · Fix ${ago(now - sentAt)}`, afterTone: 'done' },
-        body: null,
-        keys: () => [
-          {
-            key: `fix-${pr.ref}-${c.name}`,
-            label: sentAt === null ? 'Fix' : 'Fix again',
-            hotkey: 'a',
-            done: false,
-            onPress: () => void sendPrFix($, pr, c),
-          },
-          {
-            key: `log-${pr.ref}-${c.name}`,
-            label: 'Open log',
-            hotkey: 'o',
-            done: false,
-            onPress: () => void openUrl($, c.url ?? pr.url),
-          },
-        ],
-      }
-    }
-    // What ran and how it ended, when, then what failed and the command.
-    const failedCheckRow = (c: Check): Row => {
-      const id = checkRowId(c)
-      const failed = failureList(c)
-      const count = failCount(c)
-      const name = checkName(c, root)
-      const ran = ago(now - c.ranAt)
-      // Unselected, the count says how much failed, or else the file the failure names.
-      const brief = count ? `${count.fail} failed` : failed.find(f => f.file)?.file
-
-      return {
-        id,
-        handle: '✗',
-        handleTone: 'error',
-        title: `${name} · ${count ? `${count.fail} of ${count.total} failed` : (distinctSummary(c) ?? 'failed')}`,
-        subtitle: (
-          <Text color={pal.muted}>
-            {ran}
-            {c.isStale ? <Text color={pal.tone.needsYou}>, before the last edit</Text> : null}
-          </Text>
-        ),
-        line: { text: name, after: `${brief ? ` · ${brief}` : ''} · ${ran}` },
-        body: (
-          <Box flexDirection="column">
-            {failed.map(f => (
-              <Text wrap="truncate-end">{f.file ? `${f.file}: ${f.text}` : f.text}</Text>
-            ))}
-            {c.command ? (
-              <Text wrap="wrap" color={pal.muted}>
-                {c.folder ? `${tilde(c.folder)} ` : ''}$ {tilde(c.command)}
-              </Text>
-            ) : null}
-          </Box>
-        ),
-        keys: () => [
-          {
-            key: `fix-${id}`,
-            label: 'Fix',
-            hotkey: 'a',
-            done: false,
-            onPress: () => void sendFix($, c),
-          },
-        ],
-        moreKeys: () => [
-          { key: `dismiss-${id}`, label: 'Dismiss', hotkey: 'x', done: false, onPress: () => void dismissCheck($, c) },
-        ],
-      }
-    }
+    const handoff = handoffs(lastActions)
+    const checkRow = (pr: PrView, c: PrCheck): Row => ({
+      id: prCheckId(pr, c),
+      handle: '✗',
+      handleTone: 'error',
+      meta: (
+        <Text color={pal.tone.error} bold>
+          Failing check
+        </Text>
+      ),
+      title: c.name,
+      line: { text: c.name, after: ' · failing check', afterTone: 'error' },
+      body: null,
+      keys: () => [
+        {
+          key: `log-${pr.ref}-${c.name}`,
+          label: 'Open log',
+          hotkey: 'o',
+          done: false,
+          onPress: () => void openUrl($, c.url ?? pr.url),
+        },
+      ],
+    })
     const threadRow = (pr: PrView, t: PrThread): Row => {
       const id = prThreadId(pr, t)
       const latest = t.reply ?? { author: t.author, body: t.body, at: t.at }
@@ -2821,7 +2304,6 @@ export const register: Register = on => {
     }
 
     // Each tab's rows in order: the cursor, the counts and the drawing all read these.
-    const failedCheckRows = waitingChecks(checks).map(failedCheckRow)
     const needsYouGroups = NEEDS_YOU_GROUPS.map(g => ({
       ...g,
       rows: listedItems(ledger.items, g.kind).map((item, n) =>
@@ -2833,13 +2315,13 @@ export const register: Register = on => {
       rows: [...failingChecks(pr).map(c => checkRow(pr, c)), ...waitingThreads(pr).map(t => threadRow(pr, t))],
     }))
     const rows: Record<Tab, Row[]> = {
-      needsYou: [...failedCheckRows, ...needsYouGroups.flatMap(g => g.rows)],
+      needsYou: needsYouGroups.flatMap(g => g.rows),
       findings: [...ledger.findings].reverse().map(findingRow),
       prs: prGroups.flatMap(g => g.rows),
     }
     // What each tab's count says waits on the person: a row handed to Claude waits on Claude.
     const tabCounts: Record<Tab, number> = {
-      needsYou: needsYouCount(ledger, checks, lastActions, turns),
+      needsYou: needsYouCount(ledger, lastActions, turns),
       findings: rows.findings.length,
       prs: prViews.reduce((n, pr) => n + prRowsOnYou(pr, handoff), 0),
     }
@@ -3498,28 +2980,6 @@ export const register: Register = on => {
         // A row handed to Claude stays listed but leaves the count.
         return section([groupTitle(g.title, g.rows.filter(r => !r.fold).length), ...titleGap(), ...open, ...tail])
       })
-      // Checks still failing when Claude stopped come first, since they block the work. The group shows only with some,
-      // or while a check that just passed or was sent to Claude stays in place.
-      const checkEntries: ({ row: Row } | { settled: Settled })[] = failedCheckRows.map(row => ({ row }))
-      for (const s of fresh.filter(x => x.kind === 'check'))
-        checkEntries.splice(Math.min(s.index, checkEntries.length), 0, { settled: s })
-      const failed =
-        checkEntries.length > 0
-          ? [
-              section([
-                groupTitle('Failing checks', failedCheckRows.length),
-                ...titleGap(),
-                ...divided(
-                  checkEntries.map((x, n) => {
-                    const pos = childPos(n, checkEntries.length)
-                    return 'row' in x ? listRow(x.row, pos) : settledRow(x.settled, pos)
-                  }),
-                  'checks',
-                  true,
-                ),
-              ]),
-            ]
-          : []
       // A stop is fixed in the session, not here, so it shows above the list without keys.
       const outside = stop
         ? [
@@ -3542,7 +3002,6 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column" gap={1}>
           {outside}
-          {failed}
           {groups}
         </Box>
       )

@@ -20,7 +20,7 @@ import { demoState } from './demo'
 import { readState, updateState } from './state'
 import type { SessionState } from './state'
 import { CODEX, TAB_DESCRIPTION } from './texts'
-import type { Run } from './tree'
+import type { Run } from './run'
 
 export const TAB_URI = 'ui://inbox/tab'
 const TAB_MIME = 'text/html;profile=mcp-app'

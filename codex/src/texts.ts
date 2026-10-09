@@ -31,9 +31,5 @@ The answer to a question is the user's to give. Close a question with their answ
 export const TAB_DESCRIPTION =
   'Open the Inbox tab beside this conversation. Call it only when the user asks to see the inbox.'
 
-/** Codex's word for a lone check refused in the shell: the mod's, without run_check, which the plugin leaves out. */
-export const CHECK_REFUSAL =
-  "Not run. Run each check on its own, with no pipe, redirect or other command, so its exit status is the check's."
-
 export const START_TITLE =
   'inbox: where this session stands, as of the last reply. An "inbox:" text beside a later prompt replaces this.'

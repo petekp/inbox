@@ -181,22 +181,21 @@ export function waitingThreads(pr: PrView): PrThread[] {
   return pr.threads.filter(t => t.isWaiting)
 }
 
-/** Which of a PR's rows the person handed to Claude: a thread sent to it, or a failing check whose fix was sent. */
+/** Which of a PR's rows the person handed to Claude: a thread sent to it. */
 export type Handoffs = {
   isThreadSent: (pr: PrView, t: PrThread) => boolean
-  isFixSent: (pr: PrView, c: PrCheck) => boolean
 }
 
-export const NO_HANDOFFS: Handoffs = { isThreadSent: () => false, isFixSent: () => false }
+export const NO_HANDOFFS: Handoffs = { isThreadSent: () => false }
 
 /** Waiting threads still on the person: not sent to Claude, and not on lines a later commit changed. */
 export function threadsOnYou(pr: PrView, h: Handoffs): PrThread[] {
   return waitingThreads(pr).filter(t => !t.isLinesChanged && !h.isThreadSent(pr, t))
 }
 
-/** The PR rows that wait on the person, for every count of them: failing checks with no fix sent, and threads on them. */
+/** The PR rows that wait on the person, for every count of them: failing checks, and threads on them. */
 export function prRowsOnYou(pr: PrView, h: Handoffs): number {
-  return failingChecks(pr).filter(c => !h.isFixSent(pr, c)).length + threadsOnYou(pr, h).length
+  return failingChecks(pr).length + threadsOnYou(pr, h).length
 }
 
 export function checkCounts(pr: PrView): Record<PrCheck['bucket'], number> {
@@ -218,14 +217,6 @@ function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`
 }
 
-/** "2 failing checks", or with how many have a fix sent. A check stays a blocker until it passes. */
-function failingText(failing: number, sent: number): string {
-  const checks = plural(failing, 'failing check', 'failing checks')
-  if (sent === 0) return checks
-
-  return sent === failing ? `${checks}, fix sent` : `${checks}, ${sent} with a fix sent`
-}
-
 /**
  * What stands between the PR and merging, or that it is ready. A thread sent
  * to Claude or on changed lines still blocks, as it is still open on GitHub.
@@ -234,7 +225,6 @@ export function readiness(pr: PrView, h: Handoffs = NO_HANDOFFS): { status: PrSt
   if (pr.state === 'MERGED') return { status: 'merged', text: 'Merged' }
   if (pr.state !== 'OPEN') return { status: 'closed', text: 'Closed' }
   const { fail: failing, pending } = checkCounts(pr)
-  const fixesSent = failingChecks(pr).filter(c => h.isFixSent(pr, c)).length
   const waiting = waitingThreads(pr)
   const open = threadsOnYou(pr, h).length
   const sent = waiting.filter(t => h.isThreadSent(pr, t)).length
@@ -242,7 +232,7 @@ export function readiness(pr: PrView, h: Handoffs = NO_HANDOFFS): { status: PrSt
   const blockers = [
     pr.isDraft ? 'draft' : null,
     pr.mergeable === 'CONFLICTING' ? `conflicts with ${pr.base}` : null,
-    failing > 0 ? failingText(failing, fixesSent) : null,
+    failing > 0 ? plural(failing, 'failing check', 'failing checks') : null,
     pr.reviewDecision === 'CHANGES_REQUESTED' ? 'changes requested' : null,
     open > 0 ? threadsWaiting(open) : null,
     sent > 0 ? `${plural(sent, 'thread', 'threads')} sent to Claude` : null,
@@ -264,7 +254,7 @@ export function prAttention(views: PrView[], h: Handoffs = NO_HANDOFFS): string 
   for (const pr of views) {
     if (pr.state !== 'OPEN') continue
     const open = threadsOnYou(pr, h).length
-    if (failingChecks(pr).some(c => !h.isFixSent(pr, c))) return `PR #${pr.number} CI failing`
+    if (failingChecks(pr).length > 0) return `PR #${pr.number} CI failing`
     if (pr.reviewDecision === 'CHANGES_REQUESTED') return `PR #${pr.number} changes requested`
     if (open > 0) return `PR #${pr.number} ${threadsWaiting(open)}`
   }
@@ -320,12 +310,6 @@ function threadText(t: PrThread): string {
 
 /** The message each PR button sends to Claude. */
 export const prompts = {
-  fix: (pr: PrView, check: PrCheck) =>
-    [
-      `The CI check "${check.name}" is failing on PR #${pr.number} (${pr.url}).`,
-      'Find out why from its logs, fix it, and verify the fix. If the fix needs a change to CI configuration, ask me before making it.',
-      ...(check.url ? [`Check details: ${check.url}`] : []),
-    ].join(NL),
   resolve: (pr: PrView) =>
     [
       `PR #${pr.number} (${pr.url}) conflicts with ${pr.base}. Update its branch from ${pr.base}, resolve the conflicts, and verify.`,

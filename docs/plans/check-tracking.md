@@ -1,5 +1,7 @@
 # Check tracking
 
+Superseded: session checks, `run_check`, the Bash refusal and the claim send-back were removed from the mod and the Codex plugin.
+
 Status: done. `hooks/check-tracking.ts` owns the check results, how they
 change, and what the band, the pane and the Stop hook read from them. Terms
 follow `GLOSSARY.md`.

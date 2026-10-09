@@ -15,12 +15,5 @@
       "claude-code": ["../.claude-plugin/types/claude-code"]
     }
   },
-  "include": [
-    "src",
-    "tests",
-    "../hooks/ledger.ts",
-    "../hooks/checks.ts",
-    "../hooks/check-tracking.ts",
-    "../hooks/git.ts"
-  ]
+  "include": ["src", "tests", "../hooks/ledger.ts"]
 }

@@ -5,7 +5,7 @@ import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { dataDir, readState } from './state'
-import { run } from './tree'
+import { run } from './run'
 import { codexAsk, runUpdates } from './update'
 
 async function main() {

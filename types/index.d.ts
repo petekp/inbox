@@ -55,11 +55,8 @@ export type Closed = {
   at: number
 }
 
-/** A failing check's row that left the list: a passing run cleared it, or Fix handed it to Claude. */
-export type LeftCheck = { id: string; kind: 'check'; title: string; outcome: 'Passed' | 'Fix'; at: number }
-
-/** A row that just closed or left, kept where it stood in its group for a few seconds. */
-export type Settled = (Closed | LeftCheck) & { index: number }
+/** A row that just closed, kept where it stood in its group for a few seconds. */
+export type Settled = Closed & { index: number }
 
 /** The row a jump moved the pane to, so the tab and row can show where it went. */
 export type Arrival = { tab: Tab; id: string | null; at: number }
@@ -168,66 +165,6 @@ export type Dialog = {
   key: string
 }
 
-/** `all`: a script that runs the project's checks together, such as `check.sh`. */
-export type CheckKind = 'tests' | 'types' | 'lint' | 'build' | 'validate' | 'all'
-
-/**
- * The part of a check's suite one run covered. Both lists empty means the
- * whole suite.
- */
-export type Target = {
-  /** Files and folders the run named, absolute. */
-  paths: string[]
-  /** Test-name filters and any argument the inbox could not read, such as `-t=parses dates`. */
-  filters: string[]
-}
-
-/** The latest result of one check command Claude ran, such as `npm test`, in one folder, for one target. */
-export type Check = {
-  name: string
-  kind: CheckKind
-  /** The part of the suite the run covered; empty for the whole suite. */
-  target: Target
-  /** The folder it ran in, absolute; null for the session's own folder. */
-  folder: string | null
-  result: 'pass' | 'fail'
-  /** The output's summary line, such as "24 pass, 1 fail". */
-  summary: string
-  ranAt: number
-  /** The top folder of the git repo it ran in, whose edits make it stale; null outside git. */
-  repo: string | null
-  /**
-   * Files it reads changed after it ran: any file for a lint, a validation or
-   * a check script, and a file other than Markdown for the rest.
-   */
-  isStale: boolean
-  /** The piece of Claude's command that ran it, as written, such as `npm test > t.log`. */
-  command: string
-  /** Up to three output lines that name what failed, when the command ran no other check. */
-  failures: string[]
-  /** A turn of Claude's ended with it failing, so the Needs you tab lists it. */
-  isLeftFailing: boolean
-  /** The person dismissed its row in the Needs you tab. */
-  isDismissed: boolean
-  /** The Stop hook already sent Claude back over this result, so it does not again. */
-  isSentBack: boolean
-  /** When the person pressed Fix on its row, so it no longer waits on them; null before. The next run replaces the result. */
-  fixSentAt: number | null
-}
-
-/**
- * The working tree's content, read without writing to the repo: HEAD, and the
- * blob id of each path that differs from it ('' for a deleted path).
- */
-export type Snapshot = { head: string | null; dirty: Record<string, string> }
-
-/** The checks Claude ran. */
-export type Checks = {
-  results: Check[]
-  /** The session's repos: the one it started in, and each repo where Claude edited a file. Only their results count. */
-  repos: string[]
-}
-
 export type Presence = {
   lastActiveAt: number
   isAway: boolean
@@ -262,9 +199,6 @@ export type Cursor = { id: string | null; index: number }
 /** The PR tab's data: each PR's latest view, the current branch's PR, and whether a fetch runs. */
 export type PrViews = { views: Record<string, PrView>; branchRef: string | null; isFetching: boolean }
 
-/** A failing PR check the person pressed Fix on: when, and the check's URL then. A rerun has a new URL, so the mark lapses. */
-export type PrFixSent = { at: number; url: string | null }
-
 declare module 'claude-code' {
   interface PluginState {
     inbox: {
@@ -275,17 +209,12 @@ declare module 'claude-code' {
       previous: Previous | null
       tab: Tab
       prViews: PrViews
-      /** The PR checks the person pressed Fix on, by their row's id. */
-      prFixesSent: Record<string, PrFixSent>
       selection: Record<Tab, Cursor>
       stop: Stop | null
       dialogs: Dialog[]
-      checks: Checks
-      /** Each checked repo's working tree as last read, by its top folder, kept apart from `checks` because no drawing reads it. */
-      snapshots: Record<string, Snapshot>
       /** The row whose free-text field is open, if any. */
       typing: string | null
-      /** Items that just closed, and checks that just passed, shown in place for a few seconds. */
+      /** Items that just closed, shown in place for a few seconds. */
       settled: Settled[]
       /** The pane's latest jump to a new row. */
       arrival: Arrival | null

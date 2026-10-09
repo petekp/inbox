@@ -8,8 +8,7 @@ Claude noticed along the way, into one place beside the conversation.
 ### What waits on the person
 
 **Needs you**:
-Everything that waits on the person: open questions, their tasks, and checks
-in the session's repos still failing when Claude stopped.
+Everything that waits on the person: open questions, and their tasks.
 _Avoid_: waiting
 
 **Question**:
@@ -28,54 +27,6 @@ _Avoid_: decided
 **Finding**:
 An issue or opportunity Claude noticed outside the current task.
 _Avoid_: note
-
-### Checks
-
-**Check**:
-A test, type check, lint, build or validation command Claude ran, known by its
-name, the folder it ran in, and its target.
-_Avoid_: test run, job
-
-**Target**:
-The part of a check's suite one run covered: the files and folders it named,
-and any test-name filter. A run that names none covers the whole suite, and a
-folder covers the files inside it.
-
-**Check result**:
-How a check's latest run ended: pass or fail. A later result of the same or a
-broader target replaces it.
-
-**Check tracking**:
-Keeping each check's latest result and its state: stale, left failing,
-dismissed, fix sent.
-
-**Session's repos**:
-The repo the session started in, and each repo where Claude edited a file
-with its file-editing tools. Only their check results count toward Needs you
-and toward contradicted claims. A result from outside any repo counts when it
-ran in the session's folder or below it.
-
-**Stale**:
-Describes a check result from before a change to a file in the check's
-folder. Files git ignores don't count.
-_Avoid_: outdated
-
-**Left failing**:
-Describes a check that was failing when Claude's turn ended.
-
-**Dismissed**:
-Describes a failing check result the person hid from the band and the pane.
-It stays hidden until the check runs again.
-
-**Fix sent**:
-Describes a failing check whose run the person asked Claude to fix. The pane
-stops listing it until the check runs again.
-
-**Contradicted claim**:
-A sentence in Claude's reply that says a check passes when the check's result
-failed or is stale. A phrase in quotes is not a claim. The inbox sends Claude
-back once per result, to run the check or say so.
-_Avoid_: nag
 
 ### Surfaces
 

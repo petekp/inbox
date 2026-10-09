@@ -2,11 +2,12 @@
 
 Status: first version built in `codex/`. It runs in the desktop app; a
 press from the tab there is not confirmed yet. The Claude Code mod stays
-unchanged.
+unchanged. Session checks and the claim check have since left both the mod
+and the plugin, so the parts of this plan about them describe removed code.
 
 Goal: give Codex sessions what the inbox gives Claude Code sessions. That
-means one place for what waits on the person, Codex's findings, check results
-it can trust, and an inbox kept current after each reply.
+means one place for what waits on the person, Codex's findings, and an
+inbox kept current after each reply.
 
 Terms follow `GLOSSARY.md`. "The mod" is the Claude Code mod in this repo.
 "The plugin" is the Codex version. Each claim about Codex carries a tag:
@@ -21,8 +22,7 @@ Terms follow `GLOSSARY.md`. "The mod" is the Claude Code mod in this repo.
 
 - **Most of the inbox ports directly.** A plugin's MCP server serves the
   tools. Hooks give Codex the inbox texts. A background Stop hook runs the
-  per-reply update. A blocking Stop hook sends Codex back over a contradicted
-  claim.
+  per-reply update.
 - **The pane becomes a tab beside each conversation.** OpenAI's MCP
   extensions let a plugin's MCP App open as a tab within a thread, one
   instance per thread [verified]. Its buttons can send a message into the
@@ -36,8 +36,8 @@ Terms follow `GLOSSARY.md`. "The mod" is the Claude Code mod in this repo.
   starts several MCP server processes per session. Each of them reads and
   writes the session's state file under a lock.
 - **The first version** includes the findings and close tools, the inbox
-  texts, the per-reply update, check tracking with the claim check, and the
-  Inbox tab with Needs you and Findings. The PRs tab comes later.
+  texts, the per-reply update, and the Inbox tab with Needs you and
+  Findings. The PRs tab comes later.
 
 ## What a Codex plugin can do
 
@@ -64,11 +64,7 @@ Terms follow `GLOSSARY.md`. "The mod" is the Claude Code mod in this repo.
 | Inbox feature | In the mod | In the plugin | Fit |
 | --- | --- | --- | --- |
 | `record_finding`, `close` | `$.tool.register`, allowed without a prompt | MCP tools served by the plugin. Approval set per tool in the person's Codex config | Direct, but see gap 5 |
-| `run_check` | Runs each check through Claude's own Bash tool | Left out. See gap 4 | Gap |
-| Checks Codex runs in its shell | `tool.call` on Bash records lone checks and refuses compound ones | `PreToolUse` on the shell tool denies a compound check. `Stop` records each lone one's result from the transcript | Direct |
-| Stale results | Git snapshots after each turn | The same git snapshots, taken by the server at `Stop`. `git.ts` carries over | Direct |
-| Session's repos | Paths from Edit, Write, NotebookEdit | Paths named in Codex's patches, via `PreToolUse` on `apply_patch` | Direct |
-| Claim check | `classic.Stop` blocks once | A blocking `Stop` hook | Direct |
+| Session checks, `run_check`, the claim check | Removed | Removed | None |
 | `GUIDANCE` in the system prompt | `prompt.compose` adds a section | `SessionStart` context on every start, resume, clear and compact | Direct. It becomes developer context, not system prompt |
 | Start-of-context block (`carryText`) | `prompt.context` | The same `SessionStart` output | Direct |
 | Inbox line and answer line | `prompt.submit` context | `UserPromptSubmit` `additionalContext` | Direct |
@@ -249,21 +245,19 @@ Codex session ── hooks (one process per event) ──┐
 ```
 
 - **Hooks:** `SessionStart`, `UserPromptSubmit`, `PreToolUse` on the shell,
-  patch and MCP tools, and `Stop`. `Stop`
-  records the turn's checks from the transcript, sends Codex back over a
-  contradicted claim, and starts the update.
+  patch and MCP tools, and `Stop`. `Stop` ends the turn and starts the
+  update.
 - **MCP server:** Node, the same language as the mod. It speaks MCP over
   stdio by hand, as the step 0 probe did, since it needs only `initialize`,
   `tools/list`, `tools/call` and `resources/read`. Rejected:
   `@openai/mcp-extensions`, a dependency for a few message shapes.
-- **Shared code:** the plugin reuses `ledger.ts`, `checks.ts`,
-  `check-tracking.ts` and `git.ts` unchanged. Codex's own texts, such as
+- **Shared code:** the plugin reuses `ledger.ts`, `presses.ts`, `tools.ts`
+  and `demo.ts` unchanged. Codex's own texts, such as
   `GUIDANCE` and the inbox line's pane sentence, live in `codex/`, so the
   mod's measured texts don't change.
 - **Build step.** Codex installs a plugin by copying only its folder into
   its cache [documented]. Plain Node also can't load the shared modules as
-  they are: `check-tracking.ts` imports `./checks` with no extension
-  [verified]. So esbuild bundles each entry point into the plugin folder,
+  they are: they import each other with no extension [verified]. So esbuild bundles each entry point into the plugin folder,
   and the bundles are committed, since a Git marketplace install runs no
   build.
 - **Tab:** one plain HTML file with inline script, served as
@@ -279,13 +273,11 @@ Includes:
 4. `GUIDANCE`, the start-of-context block, the inbox line and the answer line,
    through hooks.
 5. The per-reply update with `codex exec`, using the measured text and model.
-6. Check tracking: record lone checks, deny compound ones, stale results, and
-   the claim check.
-7. The Inbox tab, with the header, Needs you, Findings, answer and dismiss
+6. The Inbox tab, with the header, Needs you, Findings, answer and dismiss
    buttons, Address it and Discuss, and the last action on each row.
 
 Leaves out, in order of value: the PRs tab, the card after time away, the
-previous session's card, catch-up, dialogs, demo mode, `run_check`.
+previous session's card, catch-up, dialogs, demo mode.
 
 ## Step 0: checks before building
 

@@ -28,11 +28,8 @@ let sent: string[] = []
 // Every command the mod ran, such as the herdr call that publishes the sidebar line.
 let ran: string[][] = []
 
-// What a tool call Claude makes answers; a test can make it fail.
-let toolAnswer: { text: string; isError: boolean } = { text: 'ok', isError: false }
-
-// The commands of the Bash calls that reached the engine.
-let toolCalls: string[] = []
+// What another plugin's Stop hook answers; a test can make it send Claude back.
+let stopBlock: string | undefined
 
 // gh's answers by command; anything else fails, as gh does outside a repo with no PR.
 // `hold` delays an answer until it resolves, as a slow network would.
@@ -71,16 +68,13 @@ const PANE = {
   },
 }
 
-const RUN_CHECK = 'mcp__inbox__run_check'
-
 // The apps drawing the session when it starts. A REPL start sets isInteractive instead.
 let surfaces: RenderSurface[] = []
 
 function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   sent = []
   ran = []
-  toolAnswer = { text: 'ok', isError: false }
-  toolCalls = []
+  stopBlock = undefined
   ghAnswers = []
   ledgerReply = LEDGER_REPLY
   surfaces = []
@@ -90,7 +84,6 @@ function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   on('session.id', () => ({ value: 'session-1' }))
   on('session.end', ($, e) => ({ sessionId: e.sessionId }))
   on('session.root', () => ({ value: '/tmp/project' }))
-  on('session.cwd', () => ({ value: '/tmp/project' }))
   // Outside Herdr unless a test passes HERDR_PANE_ID.
   on('env.get', ($, e) => ({ value: vars[e.name] }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
@@ -122,15 +115,9 @@ function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('classic.StopFailure', () => ({}))
   on('classic.PermissionRequest', () => ({}))
-  on('classic.Stop', () => ({}))
+  on('classic.Stop', () => (stopBlock ? { block: stopBlock } : {}))
   on('classic.SessionStart', () => ({}))
-  on('tool.call', (_$, e) => {
-    toolCalls.push(String((e as { command?: unknown }).command))
-
-    return toolAnswer.isError
-      ? { isError: true as const, result: toolAnswer.text, text: toolAnswer.text }
-      : { result: toolAnswer.text, text: toolAnswer.text }
-  })
+  on('tool.call', () => ({ result: 'ok', text: 'ok' }))
   // The engine asks the person, as for a file outside the project.
   on('tool.check', () => ({ decision: 'ask' as const }))
   // The band with nothing to show falls through to the engine's own, drawn empty here.
@@ -479,12 +466,10 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   expect(await pane.find({ text: /^Closed by Claude: no longer applies$/ })).toBeDefined()
 })
 
-test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, and its buttons send its conflicts, check and thread, and say so', async ($, on) => {
+test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, its buttons send its conflicts and thread and say so, and its failing check waits on the person', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
   ledgerReply = 'NOW: Waiting on review\nNEW: do | - | Mark #12 ready for review | - | -'
-  // Each run of the failing check has its own job page, so a rerun has a new URL.
-  let job = 1
   // Whether the reviewer has answered since the thread was sent to Claude.
   let hasReply = false
   ghAnswers.push(
@@ -506,7 +491,7 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, an
               name: 'test',
               status: 'COMPLETED',
               conclusion: 'FAILURE',
-              detailsUrl: `https://github.com/acme/greet/actions/runs/7/job/${job}`,
+              detailsUrl: 'https://github.com/acme/greet/actions/runs/7/job/1',
             },
           ],
         })
@@ -592,17 +577,10 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, an
   expect(await pane.find({ text: /✓ Resolve conflicts ·/ })).toBeDefined()
   expect((await pane.find({ key: 'resolve-acme/greet#12' }))?.props.label).toBe('Resolve conflicts again')
 
-  // The failing check comes first. Once its fix is sent, the row says so until a rerun of it fails again.
-  await pane.press({ key: 'fix-acme/greet#12-test' })
-  expect(sent.at(-1)).toContain('The CI check "test" is failing on PR #12')
-  expect(await pane.find({ text: /Fix · just now/ })).toBeDefined()
-  await pane.press({ key: 'next' })
-  expect(await pane.find({ text: /· Fix just now/ })).toBeDefined()
-  job = 2
-  await pane.press({ key: 'tab-findings' })
-  await pane.press({ key: 'tab-prs' })
-  await clock.settle()
-  expect(await pane.find({ text: /fix sent|· Fix /i })).toBeUndefined()
+  // The failing check comes first. It offers its log and no Fix, so it waits on the person until it passes.
+  expect(await pane.find({ key: 'fix-acme/greet#12-test-key' })).toBeUndefined()
+  await pane.press({ key: 'log-acme/greet#12-test-key' })
+  expect(ran.at(-1)).toEqual(['open', 'https://github.com/acme/greet/actions/runs/7/job/1'])
 
   // A thread's keys say so too, pressed by hotkey or by click.
   await pane.press({ key: 'next' })
@@ -628,6 +606,9 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, an
   await clock.settle()
   expect(await pane.find({ text: /Still unquoted/ })).toBeDefined()
   expect(await pane.find({ key: details })).toBeUndefined()
+  // The failing check holds the band's PR alert, as nothing hands it to Claude.
+  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+  expect(await band.find({ text: /PR #12 CI failing/ })).toBeDefined()
 })
 
 test('opening the PRs tab while another PR fetch runs still finds the branch’s PR', async ($, on) => {
@@ -765,204 +746,45 @@ test('a stop and an open permission prompt lead the sidebar line until they clea
   expect(sidebarLines().at(-1)).toBe('')
 })
 
-test('a failing test run shows in the band, reaches the per-turn call, stops a claim that tests pass, and waits in the pane', async ($, on) => {
+test('a reply another Stop hook sends Claude back from reaches the per-turn call, and the inbox sends back none itself', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
   world(on, prompts)
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'fix the parser', wait: false, origin: { kind: 'composer' } })
-  toolAnswer = { text: ' 11 pass\n 1 fail\n', isError: true }
-  await $.tool.call({ tool: RUN_CHECK, checks: ['npm test'] } as never)
-  // The band shows the failure before the session has a card.
-  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  expect(await band.find({ text: /✗ npm test, 11 pass, 1 fail/ })).toBeDefined()
-
-  const blocked = await $.classic.Stop({
-    stop_hook_active: false,
-    last_assistant_message: 'Fixed the parser. All tests pass. Should I also rename the helper?',
-  } as never)
-  expect(blocked.block).toContain('npm test failed when it last ran (11 pass, 1 fail)')
-  // The stop that follows a send-back goes through.
-  const again = await $.classic.Stop({
-    stop_hook_active: true,
-    last_assistant_message: 'Fixed the parser. All tests pass.',
-  } as never)
-  expect(again.block).toBeUndefined()
-  // A later reply with the same claim is not sent back again for the same run.
-  const later = await $.classic.Stop({
-    stop_hook_active: false,
-    last_assistant_message: 'Fixed the parser. All tests pass.',
-  } as never)
-  expect(later.block).toBeUndefined()
-
-  await $.turn.complete({
-    answer: 'The parser still fails one test.',
-    durationMs: 5,
-    isAborted: false,
-    turnId: 't1',
-    reason: 'answer',
-  })
-  await clock.settle()
-  expect(prompts.at(-1)).toContain('<checks>\n✗ npm test, 11 pass, 1 fail\n</checks>')
-  // The reply Claude was sent back from reaches the update, though it is not the final answer.
-  expect(prompts.at(-1)).toContain('Should I also rename the helper?')
-  expect(await band.find({ text: /✗ npm test, 11 pass, 1 fail/ })).toBeDefined()
-
-  // Still failing when the turn ended, so it waits on the person until they dismiss it.
-  const pane = await $.ui.mount(PANE)
-  expect(await pane.find({ text: /Failing checks 1/ })).toBeDefined()
-  await pane.press({ key: 'fix-check:.:npm test' })
-  await clock.settle()
-  expect(sent.at(-1)).toContain('npm test failed when you last ran it.\nCommand: npm test\nOutput:\n11 pass, 1 fail\n')
-  // Once the fix is sent, the row stays in place with a ✓ and "Fix" for a few seconds, then leaves.
-  expect(await pane.find({ text: /^Fix$/ })).toBeDefined()
-  expect(await pane.find({ key: 'fix-check:.:npm test' })).toBeUndefined()
-  await clock.advance(6000)
-  expect(await pane.find({ text: /Failing checks/ })).toBeUndefined()
-
-  // A run that fails again brings it back, and Dismiss hides it from the pane and the band.
-  await $.prompt.submit({ text: 'Fix the failing check', wait: false, origin: { kind: 'composer' } })
-  await $.tool.call({ tool: RUN_CHECK, checks: ['npm test'] } as never)
-  await $.turn.complete({ answer: 'Still failing.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
-  await clock.settle()
-  expect(await pane.find({ text: /Failing checks 1/ })).toBeDefined()
-  await pane.press({ key: 'dismiss-check:.:npm test' })
-  expect(await pane.find({ text: /Failing checks/ })).toBeUndefined()
-  expect(await band.find({ text: /✗ npm test/ })).toBeUndefined()
-})
-
-test('a failing check that passes stays in place with a ✓ for a few seconds, then leaves', async ($, on) => {
-  const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
-
-  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  await $.prompt.submit({ text: 'fix the parser', wait: false, origin: { kind: 'composer' } })
-  toolAnswer = { text: ' 11 pass\n 1 fail\n', isError: true }
-  await $.tool.call({ tool: RUN_CHECK, checks: ['npm test'] } as never)
-  await $.turn.complete({
-    answer: 'One test still fails.',
-    durationMs: 5,
-    isAborted: false,
-    turnId: 't1',
-    reason: 'answer',
-  })
-  await clock.settle()
-  const pane = await $.ui.mount(PANE)
-  expect(await pane.find({ text: /Failing checks 1/ })).toBeDefined()
-
-  toolAnswer = { text: ' 12 pass\n', isError: false }
-  await $.tool.call({ tool: RUN_CHECK, checks: ['npm test'] } as never)
-  await clock.settle()
-  expect(await pane.find({ text: /Failing checks/ })).toBeDefined()
-  expect(await pane.find({ text: /Passed/ })).toBeDefined()
-  await clock.advance(6000)
-  expect(await pane.find({ text: /Failing checks/ })).toBeUndefined()
-})
-
-test('a failed check whose folder is gone, such as a removed worktree, drops out', async ($, on) => {
-  const clock = mock.clock(on, { now: 1_000_000 })
-  world(on, [])
-  let isThere = true
-  on('fs.exists', () => ({ value: isThere }))
-
-  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  toolAnswer = { text: ' 11 pass\n 1 fail\n', isError: true }
-  await $.tool.call({ tool: RUN_CHECK, checks: ['npm --prefix /tmp/project/wt test'] } as never)
-  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  expect(await band.find({ text: /✗ npm test in wt/ })).toBeDefined()
-
-  isThere = false
-  await $.turn.complete({
-    answer: 'Removed the worktree.',
-    durationMs: 5,
-    isAborted: false,
-    turnId: 't1',
-    reason: 'answer',
-  })
-  await clock.settle()
-  expect(await band.find({ text: /✗ npm test in wt/ })).toBeUndefined()
-})
-
-test('run_check reports a pass and a failure with its exit code, and saves the output to a log', async ($, on) => {
-  mock.clock(on, { now: 1_000_000 })
-  world(on, [])
-  const written: Record<string, string> = {}
-  on('fs.write', (_$, e) => {
-    written[e.path] = e.text
-
-    return { value: undefined }
-  })
-  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-
-  toolAnswer = { text: ' 12 pass\n 0 fail\n', isError: false }
-  const passed = await $.tool.call({ tool: RUN_CHECK, checks: ['bun test'] } as never)
-  expect(passed.result).toBe(
-    'bun test: passed, 12 pass, 0 fail.\n  Log, readable with the Read tool: /tmp/inbox-checks/session-1/bun-test.log',
-  )
-
-  toolAnswer = { text: 'Exit code 2\n(fail) parses times\n 11 pass\n 1 fail\n', isError: true }
-  const failed = await $.tool.call({ tool: RUN_CHECK, checks: ['bun test'] } as never)
-  expect(failed.result).toContain('bun test: failed with exit 2, 11 pass, 1 fail.\n  (fail) parses times\n')
-  expect(failed.result).toContain('  Last 30 lines:\n    Exit code 2\n    (fail) parses times')
-  expect(written['/tmp/inbox-checks/session-1/bun-test.log']).toBe(toolAnswer.text)
-  // Claude reads the session's logs without a prompt, and nothing else on that account.
-  const readCheck = (file_path: string) => $.tool.check({ tool: 'Read', input: { file_path } })
-  expect((await readCheck('/tmp/inbox-checks/session-1/bun-test.log')).decision).toBe('allow')
-  expect((await readCheck('/tmp/inbox-checks/session-1/../../secrets.txt')).decision).not.toBe('allow')
-  expect((await readCheck('/tmp/inbox-checks/session-2/bun-test.log')).decision).not.toBe('allow')
-})
-
-test("run_check does not run a command with a pipe or two checks, or a subagent's checks", async ($, on) => {
-  mock.clock(on, { now: 1_000_000 })
-  world(on, [])
-  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-
-  const answer = await $.tool.call({
-    tool: RUN_CHECK,
-    checks: ['npm test | tail -5', 'npm test && tsc', 'echo hi'],
-  } as never)
-  expect(String(answer.result).match(/not run/g)).toHaveLength(3)
-  // A subagent in a worktree of its own would get the main conversation's folder checked.
-  const fromSubagent = await $.tool.call({ tool: RUN_CHECK, checks: ['npm test'], agentId: 'a1' } as never)
-  expect(String(fromSubagent.result)).toContain('Bash')
-  expect(toolCalls).toEqual([])
-})
-
-test('a lone check Claude runs in Bash is recorded, and one with a pipe is refused', async ($, on) => {
-  mock.clock(on, { now: 1_000_000 })
-  world(on, [])
-  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-
-  const refused = await $.tool.call({
+  // A test run with a pipe runs as Claude wrote it.
+  const piped = await $.tool.call({
     tool: 'Bash',
     command: 'npm test 2>&1 | tail -5',
     description: 'Run tests',
   } as never)
-  expect(refused.deny).toContain(RUN_CHECK)
-  // Alone, its exit status is the check's, so it runs and is recorded.
-  toolAnswer = { text: 'Exit code 1\n 3 pass\n 1 fail\n', isError: true }
-  const alone = await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'Run tests' } as never)
-  expect(alone.deny).toBeUndefined()
-  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  expect(await band.find({ text: /✗ npm test, 3 pass, 1 fail/ })).toBeDefined()
-  const sub = await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'Run tests', agentId: 'a1' } as never)
-  expect(sub.deny).toBeUndefined()
-  const background = await $.tool.call({
-    tool: 'Bash',
-    command: 'npm test',
-    description: 'Run tests',
-    run_in_background: true,
+  expect(piped.deny).toBeUndefined()
+  // A reply that claims the tests pass ends the turn.
+  const claimed = await $.classic.Stop({
+    stop_hook_active: false,
+    last_assistant_message: 'Fixed the parser. All tests pass.',
   } as never)
-  expect(background.deny).toBeUndefined()
-  const other = await $.tool.call({ tool: 'Bash', command: 'git status', description: 'Status' } as never)
-  expect(other.deny).toBeUndefined()
-  // The Bash call run_check makes itself is not refused.
-  toolAnswer = { text: ' 3 pass\n 0 fail\n', isError: false }
-  const ran = await $.tool.call({ tool: RUN_CHECK, checks: ['npm test'] } as never)
-  expect(ran.result).toContain('npm test: passed, 3 pass, 0 fail.')
-  // The refused command never ran.
-  expect(toolCalls).toEqual(['npm test', 'npm test', 'npm test', 'git status', 'npm test'])
+  expect(claimed.block).toBeUndefined()
+
+  stopBlock = 'Run the linter before you stop.'
+  const blocked = await $.classic.Stop({
+    stop_hook_active: false,
+    last_assistant_message: 'Fixed the parser. Should I also rename the helper?',
+  } as never)
+  expect(blocked.block).toBe('Run the linter before you stop.')
+  stopBlock = undefined
+  await $.turn.complete({
+    answer: 'Linted. The parser is fixed.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  // The reply Claude was sent back from reaches the update, though it is not the final answer.
+  expect(prompts.at(-1)).toContain('Should I also rename the helper?')
+  expect(prompts.at(-1)).not.toContain('All tests pass.')
 })
 
 test('/inbox demo shows sample entries in every tab, sends nothing, and goes back', async ($, on) => {
@@ -974,8 +796,7 @@ test('/inbox demo shows sample entries in every tab, sends nothing, and goes bac
   expect((await $.command.run({ command: 'inbox', args: 'demo' } as never)).text).toContain('Showing sample entries')
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ text: /Show the Keys list in a footer/ })).toBeDefined()
-  // The sample failing check is the first row, so the first question follows it. The other was sent to Claude.
-  await pane.press({ key: 'next' })
+  // The first question is the first row, so its answers show.
   await pane.press({ key: 'answer-d11-0' })
   expect(sent).toEqual([])
   await pane.press({ key: 'tab-findings' })

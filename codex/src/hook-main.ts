@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url'
 import { detachedUpdate, handleHook } from './hook'
 import type { HookInput } from './hook'
 import { dataDir } from './state'
-import { run } from './tree'
 
 async function main() {
   let raw = ''
@@ -17,7 +16,6 @@ async function main() {
     dir,
     env: process.env,
     now: Date.now,
-    exec: run,
     startUpdate: detachedUpdate(dir, process.env, join(dist, 'update.mjs')),
   })
   if (out) process.stdout.write(JSON.stringify(out))

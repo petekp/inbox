@@ -195,14 +195,14 @@ describe('prs', () => {
     expect(readThreads(outdated('2026-10-08T13:00:00Z'))[0]?.isLinesChanged).toBe(false)
   })
 
-  test('a thread sent to Claude and a check with a fix sent stop waiting on the person, and still block', () => {
+  test('a thread sent to Claude stops waiting on the person and still blocks; a failing check always waits', () => {
     const view = readView('acme/greet#12', VIEW)!
     const pr = { ...view, threads: readThreads(THREADS).slice(0, 1), fetchedAt: 0, error: null }
-    const sent: Handoffs = { isThreadSent: () => true, isFixSent: () => true }
-    expect(prRowsOnYou(pr, sent)).toBe(0)
-    expect(prAttention([pr], sent)).toBe('PR #12 changes requested')
+    const sent: Handoffs = { isThreadSent: () => true }
+    expect(prRowsOnYou(pr, sent)).toBe(1)
+    expect(prAttention([pr], sent)).toBe('PR #12 CI failing')
     expect(readiness(pr, sent).text).toBe(
-      'Blocked: 1 failing check, fix sent, changes requested, 1 thread sent to Claude, 1 check running',
+      'Blocked: 1 failing check, changes requested, 1 thread sent to Claude, 1 check running',
     )
   })
 })

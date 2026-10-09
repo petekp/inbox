@@ -7,104 +7,56 @@ import { EMPTY, inboxText } from '../../hooks/ledger'
 import { handleHook } from '../src/hook'
 import { readState, statePath, updateState } from '../src/state'
 import { CODEX } from '../src/texts'
-import { commandEndLine, fakeRunner, hookDeps, input, tempDir, tempRepo } from './helpers'
+import { hookDeps, input, tempDir } from './helpers'
 
-const FAILED = 'ℹ tests 1\nℹ pass 0\nℹ fail 1\n✖ adds (1.2ms)'
-
-test('a session records a failing check, ends the turn, and sends Codex back once over a claim against it', async () => {
+test('a session starts with the guidance, records the prompt, and ends the turn into the update', async () => {
   const dir = tempDir()
-  const repo = tempRepo({
-    'package.json': '{"scripts":{"test":"node --test"}}',
-    'add.js': 'export const add = (a, b) => a - b\n',
-  })
+  const root = tempDir()
   const transcript = join(tempDir(), 'rollout.jsonl')
-  const { exec } = fakeRunner(() => ({ code: 0, stdout: '', stderr: '' }))
-  const deps = hookDeps(dir, exec)
+  const deps = hookDeps(dir)
 
   const start = await handleHook(
-    input('SessionStart', { cwd: repo, source: 'startup', transcript_path: transcript }),
+    input('SessionStart', { cwd: root, source: 'startup', transcript_path: transcript }),
     deps,
   )
   assert.match(JSON.stringify(start), /mcp__inbox__record_finding/)
   const started = await readState(dir, 's1')
-  assert.equal(started.top, repo)
+  assert.equal(started.root, root)
   assert.equal(started.cliPath, '/apps/codex')
   // A resumed conversation still holds the guidance, and this one has no ledger yet.
   assert.equal(
-    await handleHook(input('SessionStart', { cwd: repo, source: 'resume', transcript_path: transcript }), deps),
+    await handleHook(input('SessionStart', { cwd: root, source: 'resume', transcript_path: transcript }), deps),
     null,
   )
 
   await handleHook(input('UserPromptSubmit', { prompt: 'Run the tests', turn_id: 't1' }), deps)
-  writeFileSync(transcript, `${commandEndLine('t1', 'e1', 'npm test', repo, 1, FAILED)}\n`)
   assert.equal(
     await handleHook(
       input('Stop', {
         turn_id: 't1',
         transcript_path: transcript,
-        last_assistant_message: 'npm test fails: add subtracts.',
+        last_assistant_message: 'All tests pass.',
       }),
       deps,
     ),
     null,
   )
   const ended = await readState(dir, 's1')
-  assert.deepEqual(
-    ended.checks.results.map(c => [c.name, c.result, c.folder, c.isLeftFailing]),
-    [['npm test', 'fail', null, true]],
-  )
   assert.equal(ended.pending[0]?.ex.person, 'Run the tests')
+  assert.equal(ended.pending[0]?.ex.reply, 'All tests pass.')
   assert.deepEqual(deps.updates, ['s1'])
-
-  // The next turn claims the tests pass without running them again.
-  await handleHook(input('UserPromptSubmit', { prompt: 'Fix it', turn_id: 't2' }), deps)
-  const claim = 'Fixed add.js. All tests pass.'
-  const sentBack = await handleHook(
-    input('Stop', { turn_id: 't2', transcript_path: transcript, last_assistant_message: claim }),
-    deps,
-  )
-  assert.equal(sentBack?.decision, 'block')
-  assert.match(String(sentBack?.reason), /npm test failed when it last ran/)
-
-  const final = 'I have not rerun the tests, so the fix is untested.'
-  const again = await handleHook(
-    input('Stop', {
-      turn_id: 't2',
-      transcript_path: transcript,
-      last_assistant_message: final,
-      stop_hook_active: true,
-    }),
-    deps,
-  )
-  assert.equal(again, null)
-  const s = await readState(dir, 's1')
-  assert.equal(s.pending[1]?.ex.reply, `${claim}\n\n${final}`)
 })
 
-test('a check run together with other commands is refused before it runs', async () => {
-  const { exec } = fakeRunner(() => ({ code: 0, stdout: '', stderr: '' }))
-  const deps = hookDeps(tempDir(), exec)
-  const out = await handleHook(
-    input('PreToolUse', { tool_name: 'Bash', tool_input: { command: 'npm test | tail -5' } }),
-    deps,
-  )
-  assert.equal((out?.hookSpecificOutput as Record<string, unknown>).permissionDecision, 'deny')
-  assert.equal(
-    await handleHook(input('PreToolUse', { tool_name: 'Bash', tool_input: { command: 'npm test' } }), deps),
-    null,
-  )
-})
-
-test('a patch makes the edited file’s repo one of the session’s', async () => {
+test('a patch notes each edited file, resolved against the folder it ran in', async () => {
   const dir = tempDir()
-  const repo = tempRepo({ 'a.txt': 'a\n' })
-  const { exec } = fakeRunner(() => ({ code: 0, stdout: '', stderr: '' }))
-  const deps = hookDeps(dir, exec)
-  const patch = `*** Begin Patch\n*** Add File: ${repo}/new/b.txt\n+b\n*** End Patch`
-  await handleHook(input('PreToolUse', { tool_name: 'apply_patch', tool_input: { command: patch }, cwd: '/' }), deps)
+  const deps = hookDeps(dir)
+  const patch = '*** Begin Patch\n*** Add File: ../new/b.txt\n+b\n*** End Patch'
+  await handleHook(
+    input('PreToolUse', { tool_name: 'apply_patch', tool_input: { command: patch }, cwd: '/work/app' }),
+    deps,
+  )
   const s = await readState(dir, 's1')
-  assert.deepEqual(s.checks.repos, [repo])
-  assert.deepEqual(s.turn.activity, [`edited ${repo}/new/b.txt`])
+  assert.deepEqual(s.turn.activity, ['edited /work/new/b.txt'])
 })
 
 test('hooks do nothing in a codex exec run', async () => {
@@ -114,17 +66,36 @@ test('hooks do nothing in a codex exec run', async () => {
     transcript,
     `${JSON.stringify({ type: 'session_meta', payload: { originator: 'codex_exec', source: 'exec' } })}\n`,
   )
-  const { exec } = fakeRunner(() => ({ code: 0, stdout: '', stderr: '' }))
-  const out = await handleHook(input('SessionStart', { cwd: '/', transcript_path: transcript }), hookDeps(dir, exec))
+  const out = await handleHook(input('SessionStart', { cwd: '/', transcript_path: transcript }), hookDeps(dir))
   assert.equal(out, null)
   assert.equal((await readState(dir, 's1')).root, '')
 })
 
-test('a session saved with an older ledger shape loads converted, as the mod converts its own', async () => {
+test('a session saved by an older build loads converted, as the mod converts its own', async () => {
   const dir = tempDir()
   const old = {
     version: 1,
     sessionId: 's1',
+    top: '/repo',
+    checks: { results: [], repos: ['/repo'] },
+    snapshots: { '/repo': { head: null, dirty: {} } },
+    recordedRuns: ['e1'],
+    turn: { person: 'Run the tests', activity: [], press: null, sentBack: ['Tests pass.'] },
+    pending: [
+      {
+        ex: {
+          person: 'Hi',
+          trigger: null,
+          activity: [],
+          reply: 'Hello',
+          turn: 1,
+          press: null,
+          screen: '',
+          checks: ['✓ npm test'],
+        },
+        turnsStarted: 1,
+      },
+    ],
     ledger: {
       items: [
         {
@@ -144,7 +115,12 @@ test('a session saved with an older ledger shape loads converted, as the mod con
   }
   mkdirSync(join(dir, 'sessions'), { recursive: true })
   writeFileSync(statePath(dir, 's1'), JSON.stringify(old))
-  const { ledger } = await readState(dir, 's1')
+  const s = await readState(dir, 's1')
+  const ledger = s.ledger
+  for (const key of ['top', 'checks', 'snapshots', 'recordedRuns']) assert.equal(key in s, false, key)
+  assert.deepEqual(s.turn, { person: 'Run the tests', activity: [], press: null })
+  assert.equal('checks' in (s.pending[0]?.ex ?? {}), false)
+  assert.equal(s.pending[0]?.ex.reply, 'Hello')
   assert.deepEqual(
     ledger.items.map(i => [i.kind, i.at]),
     [['question', null]],

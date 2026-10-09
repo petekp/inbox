@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { makeServer } from './server'
 import { dataDir } from './state'
 import TAB_HTML from './tab.html'
-import { run } from './tree'
+import { run } from './run'
 
 /** The desktop app's codex binary: from CODEX_CLI_PATH, which .mcp.json passes on, else the binary that started this server. */
 async function appCli(): Promise<string> {

@@ -13,7 +13,6 @@ export function demoState(now: number): SessionState {
     ...s,
     root: '/demo',
     ledger: d.ledger,
-    checks: d.checks,
     lastActions: d.lastActions,
     presence: { ...s.presence, ...d.turns },
   }

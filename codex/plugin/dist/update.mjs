@@ -9,56 +9,6 @@ import { mkdir, readFile, rename, rmdir, stat, writeFile } from "node:fs/promise
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-// ../hooks/checks.ts
-var PM_OPTIONS = String.raw`(?:-{1,2}[\w-]+(?:=\S+|\s+(?!-|(?:run|test|build|lint)\b)\S+)?\s+)*`;
-var pm = (managers, script) => new RegExp(String.raw`\b(${managers})\s+${PM_OPTIONS}(?:run\s+)?(?:${script})(:[\w.:-]*\w)?\b`);
-var CHECKS = [
-  { kind: "tests", pattern: /\bclaude\s+plugin\s+test\b/, name: () => "plugin tests" },
-  { kind: "validate", pattern: /\bclaude\s+plugin\s+validate\b/, name: () => "plugin validate" },
-  { kind: "tests", pattern: pm("bun|npm|pnpm|yarn|deno", "test"), name: (m) => `${m[1]} test${m[2] ?? ""}` },
-  { kind: "tests", pattern: /\bnode\s+(?:-{1,2}[\w-]+(?:=\S+)?\s+)*--test\b/, name: () => "node --test" },
-  { kind: "tests", pattern: /\b(vitest|jest|pytest|rspec|mocha|phpunit|ava|tap)\b/, name: (m) => m[1] ?? "tests" },
-  { kind: "tests", pattern: /\b(go|cargo|swift|mix|dotnet)\s+test\b/, name: (m) => `${m[1]} test` },
-  { kind: "tests", pattern: /\bplaywright\s+test\b/, name: () => "playwright" },
-  { kind: "tests", pattern: /\bxcodebuild\b[^|;&]*\btest\b/, name: () => "xcodebuild test" },
-  { kind: "tests", pattern: /\bmake\s+(?:check|test)\b/, name: (m) => m[0] },
-  { kind: "types", pattern: /\btsc\b/, name: () => "tsc" },
-  { kind: "types", pattern: /\b(mypy|pyright)\b/, name: (m) => m[1] ?? "types" },
-  {
-    kind: "types",
-    pattern: pm("bun|npm|pnpm|yarn", "typecheck|type-check|check-types"),
-    name: (m) => `typecheck${m[2] ?? ""}`
-  },
-  { kind: "types", pattern: /\bcargo\s+check\b/, name: () => "cargo check" },
-  {
-    kind: "lint",
-    pattern: /\b(eslint|biome|ruff|shellcheck|swiftlint|clippy|golangci-lint|stylelint)\b/,
-    name: (m) => m[1] ?? "lint"
-  },
-  { kind: "lint", pattern: pm("bun|npm|pnpm|yarn", "lint"), name: (m) => `lint${m[2] ?? ""}` },
-  { kind: "lint", pattern: /\bprettier\b[^|;&]*--check\b/, name: () => "prettier" },
-  { kind: "build", pattern: pm("bun|npm|pnpm|yarn", "build"), name: (m) => `${m[1]} build${m[2] ?? ""}` },
-  { kind: "build", pattern: /\b(cargo|go|swift)\s+build\b/, name: (m) => `${m[1]} build` },
-  { kind: "build", pattern: /\bxcodebuild\b(?![^|;&]*\btest\b)/, name: () => "xcodebuild" },
-  { kind: "build", pattern: /\b(?:next|vite)\s+build\b/, name: (m) => m[0] },
-  {
-    kind: "validate",
-    pattern: /(?:^|\s)(?:\S*\/)?[\w.-]*(?:validate|doctor)[\w.-]*\.sh\b/,
-    name: (m) => m[0].trim().replace(/^.*\//, "")
-  },
-  { kind: "all", pattern: /(?:^|\s)(?:\S*\/)?checks?\.sh\b/, name: (m) => m[0].trim().replace(/^.*\//, "") }
-];
-var FOLDER_OPTIONS = /* @__PURE__ */ new Set(["--prefix", "-C", "--cwd", "--dir", "--directory", "--package-path", "--manifest-path"]);
-var TSC_FOLDER_OPTIONS = /* @__PURE__ */ new Set([...FOLDER_OPTIONS, "-p", "--project"]);
-var FAIL_MARK = String.raw`\(fail\)|FAIL(?:ED)?\b|✗|✖(?! failing tests:)|×|✘`;
-var FAILURE_LINE = new RegExp(
-  String.raw`^\s*(?:${FAIL_MARK})|\berror\s+TS\d+\b|^\s*(?:[A-Z]\w*Error|error)(?:\[\w+\])?:`
-);
-var LEADING_MARK = new RegExp(String.raw`^\s*(?:${FAIL_MARK}|❯)\s*`);
-
-// ../hooks/check-tracking.ts
-var NO_CHECKS = { results: [], repos: [] };
-
 // ../hooks/ledger.ts
 var EMPTY = {
   card: null,
@@ -132,7 +82,6 @@ Input:
 - <activity>: what the agent did this turn (files edited, commands, URLs)
 - <reply>: the agent's final reply
 - <screen>: what the person has on screen besides the conversation.${band}
-- <checks>: the latest result of each test, type check, lint or build the agent ran, read from the commands themselves. "before the last edit" means files changed after it ran. These results override the reply: never write in DONE or NOW that a check passes unless <checks> shows it passing and not before the last edit.
 
 Answer with lines only, each starting with one of these keys. No other text.
 
@@ -246,8 +195,7 @@ function buildPrompt(ledger, ex) {
     `<person>${NL}${clip(person, 4e3)}${NL}</person>`,
     `<activity>${NL}${clip(ex.activity.join(NL), 2500)}${NL}</activity>`,
     `<reply>${NL}${clip(numberBlocks(ex.reply), 12e3)}${NL}</reply>`,
-    `<screen>${NL}${ex.screen}${NL}</screen>`,
-    `<checks>${NL}${ex.checks.length > 0 ? ex.checks.join(NL) : "(none ran)"}${NL}</checks>`
+    `<screen>${NL}${ex.screen}${NL}</screen>`
   ].join(NL);
 }
 function dash(value) {
@@ -405,19 +353,15 @@ function emptyState(sessionId) {
     version: 1,
     sessionId,
     root: "",
-    top: null,
     home: homedir(),
     cliPath: null,
     ledger: EMPTY,
-    checks: NO_CHECKS,
-    snapshots: {},
-    turn: { person: null, activity: [], press: null, sentBack: [] },
+    turn: { person: null, activity: [], press: null },
     told: TOLD_NOTHING,
     presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: "current", isUpdating: false },
     pending: [],
     sent: [],
     lastActions: {},
-    recordedRuns: [],
     tabSeenAt: 0
   };
 }
@@ -437,28 +381,19 @@ function statePath(dir, sessionId) {
 }
 function upgraded(saved, sessionId) {
   const base = emptyState(sessionId);
+  const { checks: _checks, snapshots: _snapshots, recordedRuns: _runs, top: _top, ...kept } = saved;
+  const { sentBack: _sentBack, ...turn } = saved.turn ?? {};
   return {
     ...base,
-    ...saved,
+    ...kept,
     // The ledger's shape is the mod's, so a saved one converts the way the mod's does. It converts
     // before the defaults fill in, since an empty `closed` would hide an old `decided`.
     ledger: saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger,
-    turn: { ...base.turn, ...saved.turn },
+    turn: { ...base.turn, ...turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...saved.presence },
-    snapshots: upgradeSnapshots(saved.snapshots ?? base.snapshots)
+    pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex }))
   };
-}
-function upgradeSnapshots(snapshots) {
-  return Object.fromEntries(
-    Object.entries(snapshots).map(([repo, s]) => [
-      repo,
-      {
-        ...s,
-        dirty: Object.fromEntries(Object.entries(s.dirty).map(([p, id]) => [p, id === "directory" ? "dir" : id]))
-      }
-    ])
-  );
 }
 async function readState(dir, sessionId) {
   const saved = await readFile(statePath(dir, sessionId), "utf8").catch((err) => {
@@ -509,7 +444,7 @@ async function updateState(dir, sessionId, change) {
   });
 }
 
-// src/tree.ts
+// src/run.ts
 import { execFile } from "node:child_process";
 var run = (args, { cwd, stdin, timeoutMs }) => new Promise((resolve) => {
   const [file = "", ...rest] = args;

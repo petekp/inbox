@@ -749,10 +749,9 @@ A **settings hook** is a hook defined in a settings file or a plugin's `hooks/ho
 |---|---|---|
 | `SessionStart` | `classic.SessionStart` with `source: ['clear','resume','fork']` reloads the conversation (`hooks/register.tsx:1977`) | Sources: startup, resume, clear, compact, fork. `fork` covers `--fork-session`, `/fork`, `/branch`, moving to the background (before 2.1.214 forks reported `resume`). "If you run `/clear` or switch to another conversation while background hooks are still running, nothing they return applies to the session." "When you switch conversations with `/resume` inside a session, the switch waits for the hooks to finish instead." [H#sessionstart] |
 | `PermissionRequest` | Opens dialog rows (`hooks/register.tsx:2150`) | Fires when Claude Code is about to prompt, or would auto-deny a call that can't prompt. Not for sandbox network prompts. No `tool_use_id`. "For a call that reaches a `--permission-prompt-tool` or the Agent SDK's `canUseTool` callback, the hooks run alongside your host, and whichever decides first applies." [H#permissionrequest] |
-| `Stop` | Claim check returns `block` (`hooks/register.tsx:2179-2189`, built in `blockOnClaim` at `:471`); skips when `stop_hook_active` | `decision: block` makes Claude continue. `additionalContext` also continues, shown as `Stop hook feedback` "rather than a hook error". "after stop hooks have continued the turn eight times in a row, Claude Code overrides the next block" (`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`). Input has `stop_hook_active`, `last_assistant_message`, `background_tasks`, `session_crons`. "Does not run if the stoppage occurred due to a user interrupt". "The `/goal` command is a built-in shortcut for a session-scoped prompt-based Stop hook." [H#stop] |
+| `Stop` | Never blocks. Keeps a reply another hook blocked, for the per-reply update (`classic.Stop` in `hooks/register.tsx`) | `decision: block` makes Claude continue. `additionalContext` also continues, shown as `Stop hook feedback` "rather than a hook error". "after stop hooks have continued the turn eight times in a row, Claude Code overrides the next block" (`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`). Input has `stop_hook_active`, `last_assistant_message`, `background_tasks`, `session_crons`. "Does not run if the stoppage occurred due to a user interrupt". "The `/goal` command is a built-in shortcut for a session-scoped prompt-based Stop hook." [H#stop] |
 | `StopFailure` | Reads usage-limit and sign-in stops | Fires instead of Stop when an API error ends the turn. `error`, `error_details`. Types add `verification_required` to the documented 12 error values; the repo handles it (`hooks/ledger.ts:943`). [H#stopfailure-input; T] |
 
-- Inference: the claim check's `block` may render as a hook error, the wrong signal for a nudge. `additionalContext` on `classic.Stop` is allowed by the types. Check which reads better. While `/goal` continues a turn, `stop_hook_active` is true, so claims are not checked.
 
 ### Other events a "waits on you" model could use
 
@@ -838,7 +837,6 @@ Terms:
 - Where the guard loads, a user's mod can't approve a call that a `deny` rule refuses, "whichever settings file holds the rule", and a managed `PreToolUse` block is final. "Neither applies to a mod's own `$.fs` and `$.process` calls." [A#know-what-happens-by-default]
 - A user mod can still override `ask` rules and non-managed `PreToolUse` blocks. "In auto mode, a call the mod approves runs without a classifier check." [A#know-what-happens-by-default]
 - "The guard fails closed: if the guard can't read managed settings, it refuses every user's mod at load. If it can't check the deny rules for a call that a user's mod approved, it refuses the call." [A#set-options-on-the-built-in-guard]
-- Inference for the inbox: in a locked-down org, a deny rule on `Read` or `Grep` beats the inbox's `tool.check` allow for check logs (`hooks/register.tsx:2079-2084`). Expect prompts or denials there.
 
 ### What the guard's source skips (not in the docs)
 
@@ -856,7 +854,7 @@ Inference, not verified live. In any session where the guard loads (every Team o
 - GUIDANCE never reaches Claude. The inbox adds it as system-prompt section `inbox:guidance` through `prompt.compose` (`hooks/register.tsx:2047`).
 - The carry block never reaches Claude. The inbox adds it through `prompt.context` (`hooks/register.tsx:2228`).
 - The reload after `/clear`, `/resume` and `/branch` doesn't fire. It runs on `classic.SessionStart` (`hooks/register.tsx:1977`).
-- The band, pane, per-turn model call and tools still run, unless `allowedMcpServers` is set. Then `record_finding`, `close` and `run_check` don't register.
+- The band, pane, per-turn model call and tools still run, unless `allowedMcpServers` is set. Then `record_finding` and `close` don't register.
 - Options to weigh: move guidance into tool descriptions (`tool.describe` passes user subjects), move carry text into `prompt.submit` additive context, and reload on a `session.*` event.
 
 ### Policies that stop or limit user mods
@@ -1133,7 +1131,7 @@ Highest precedence first: [PLD#name-conflicts]
 ### Plugin security
 
 - "A Claude Code plugin you install can execute arbitrary code on your machine with your user privileges." [PS]
-- "Claude Code runs hooks, monitors, MCP servers, LSP servers, and the processes a mod starts outside the sandbox." Permission rules "cover the tool calls Claude makes, not the code a plugin runs by itself". The inbox's `record_finding`, `close` and `run_check` are tool calls, so permission rules apply to them; `run_check` runs arbitrary check commands. [PS#understand-what-a-plugin-can-do]
+- "Claude Code runs hooks, monitors, MCP servers, LSP servers, and the processes a mod starts outside the sandbox." Permission rules "cover the tool calls Claude makes, not the code a plugin runs by itself". The inbox's `record_finding` and `close` are tool calls, so permission rules apply to them. [PS#understand-what-a-plugin-can-do]
 - With auto-update, "the files you reviewed can change on disk". [PS#understand-what-a-plugin-can-do]
 
 ### Other components the inbox could add
