@@ -55,8 +55,11 @@ export type Closed = {
   at: number
 }
 
-/** An item that just closed, and where its row stood among the open items of its kind. */
-export type Settled = Closed & { index: number }
+/** A failing check's row that left the list: a passing run cleared it, or Fix handed it to Claude. */
+export type LeftCheck = { id: string; kind: 'check'; title: string; outcome: 'Passed' | 'Fix'; at: number }
+
+/** A row that just closed or left, kept where it stood in its group for a few seconds. */
+export type Settled = (Closed | LeftCheck) & { index: number }
 
 /** What a row's last action did, shown on the row so the person sees the press went through. */
 export type LastAction = {
@@ -279,7 +282,7 @@ declare module 'claude-code' {
       snapshots: Record<string, Snapshot>
       /** The row whose free-text field is open, if any. */
       typing: string | null
-      /** Items that just closed, shown in place with their outcome for a few seconds. */
+      /** Items that just closed, and checks that just passed, shown in place for a few seconds. */
       settled: Settled[]
       /** Each row's last action, by the row's id. */
       lastActions: Record<string, LastAction>

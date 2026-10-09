@@ -14,7 +14,9 @@ These already showed their effect:
 
 - **Answer, Done, Dismiss on an item.** The row stays in place for 5.12 seconds with
   a ✓ and the outcome.
-- **Fix on a check.** The row says "Fix sent · 2m ago" and the key becomes "Fix again".
+- **Fix on a check.** In Failing checks, the row stays in place for 5.12
+  seconds with a ✓ and "Fix", then leaves. On a PR, the row says
+  "Fix · 2m ago" beside its ✓, and the key becomes "Fix again".
 - **Dismiss on a finding, a check or a PR.** The row or block leaves the list.
 - **Copy helps.** A toast says what was copied.
 - **Opens.** Open PR, Open log, a thread's Open and a task's Open help bring up
@@ -53,8 +55,15 @@ it again must look deliberate.
   bar under its outcome, 12 cells of `─`, that empties by half cells as its
   5.12 seconds run out. Reason: the person sees when the row will move to
   Closed.
+- **A failing check that passes.** When a run of the check passes, its row in
+  Failing checks stays in place for 5.12 seconds with a ✓, the check's name,
+  "Passed" and the leave bar. Dismiss on a check leaves at once, as on a
+  finding, since both only hide the row.
+- **Fix on a failing check.** The row stays in place for 5.12 seconds with a
+  ✓, the check's name, "Fix" and the leave bar, then leaves Failing checks
+  until a run of the check fails again. See [sent-rows.md](sent-rows.md).
 - **A row handed to Claude folds.** After Address or Address all on a review
-  thread, Fix on a failing check, or a Run step or typed reply on a task, the
+  thread, Fix on a PR's failing check, or a Run step or typed reply on a task, the
   row shows a ✓ and what was sent, with its body and keys behind Details. It
   leaves the "waiting on you" counts. Discuss, Draft reply and Explain record
   their last action but don't fold. See [sent-rows.md](sent-rows.md).

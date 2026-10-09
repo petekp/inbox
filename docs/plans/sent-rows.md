@@ -10,6 +10,7 @@ Every surface shows that the same way:
 
 - **It folds.** One line with a ✓ and the action pressed, as in "Run load
   script · 1m ago". The body and the row's keys sit behind Details, on `v`.
+  A failing check of this session leaves the list instead. See change 2.
 - **It leaves every "waiting on you" count:** the band, the tab counts and
   the Herdr sidebar line.
   A PR's blockers still list it, in words that say it was sent, since it still
@@ -43,14 +44,20 @@ still shows its options after Run, which is the bug the person reported.
    on the person again. Rejected: closing the task on the press, as a
    question closes. If Claude cannot run it, the task is gone, and the inbox
    model is told never to re-add a closed item.
-2. **Failing check, this session and on a PR.** Fix folds the row. A new run
-   of the check unfolds it, as now: a rerun replaces the result, and a PR
-   check's new run has a new URL. The band stops counting a check whose fix was sent. The PR's blockers keep
-   it, as "1 failing check, fix sent".
-3. **Review thread.** A sent thread leaves "N threads waiting on you" in the
+2. **Failing check, this session.** Fix ends the row as an answer ends a
+   question. The row stays in place for 5.12 seconds with a ✓, the check's
+   name, "Fix" and the leave bar, then leaves Failing checks. Reason: the
+   person sees the press went through, and the row has nothing left to show
+   until the check runs again. A new run that fails brings it back, waiting
+   on the person. The band keeps the check as "fix sent" and stops counting
+   it.
+3. **Failing check on a PR.** Fix folds the row, as Address folds a review
+   thread in the same PR block. A new run of the check has a new URL, which
+   unfolds it. The PR's blockers keep it, as "1 failing check, fix sent".
+4. **Review thread.** A sent thread leaves "N threads waiting on you" in the
    band, the blockers and the PRs tab count. The blockers list it as "1 thread
    sent to Claude". It already folds.
-4. **Outdated review thread.** GitHub marks a comment outdated when a later
+5. **Outdated review thread.** GitHub marks a comment outdated when a later
    commit changed the lines it was on. An unresolved, outdated thread folds
    with "Lines changed since this comment · still open on GitHub" and leaves
    the counts. Its handle stays the muted dot, since the person sent nothing and GitHub
@@ -58,14 +65,14 @@ still shows its options after Run, which is the bug the person reported.
    on changed lines". A reply from someone
    else newer than the PR's latest commit keeps it waiting. That needs the
    latest commit's date in `THREADS_QUERY`.
-5. **Which presses hand off work.** Run, Fix, Address, Address all and a
+6. **Which presses hand off work.** Run, Fix, Address, Address all and a
    typed reply hand a row's work to Claude. Resolve conflicts acts on the
    whole PR, so it has no row to fold. Explain, Discuss and Draft
    reply ask Claude to talk or draft, and the person still owes a decision or
    a post. So those three record their last action but don't fold the row.
    This replaces the thread rule in action-feedback.md, which folded on
    Discuss and Draft reply.
-6. **Last-action color.** The last action is green only on a row with a ✓.
+7. **Last-action color.** The last action is green only on a row with a ✓.
    On a row still open it is muted, so it does not read as an answer.
 
 Findings keep their current behavior. Whether Address and Discuss should

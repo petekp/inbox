@@ -806,14 +806,49 @@ test('a failing test run shows in the band, reaches the per-turn call, stops a c
   await pane.press({ key: 'fix-check:.:npm test' })
   await clock.settle()
   expect(sent.at(-1)).toContain('npm test failed when you last ran it.\nCommand: npm test\nOutput:\n11 pass, 1 fail\n')
-  // Once the fix is sent, the row says so, folds its keys behind Details, and no longer counts as waiting on the person.
-  expect(await pane.find({ text: /Fix sent ·/ })).toBeDefined()
-  expect(await pane.find({ text: /Failing checks 1/ })).toBeUndefined()
-  expect(await pane.find({ key: 'dismiss-check:.:npm test' })).toBeUndefined()
-  await pane.press({ key: 'fold-details-check:.:npm test-key' })
+  // Once the fix is sent, the row stays in place with a ✓ and "Fix" for a few seconds, then leaves.
+  expect(await pane.find({ text: /^Fix$/ })).toBeDefined()
+  expect(await pane.find({ key: 'fix-check:.:npm test' })).toBeUndefined()
+  await clock.advance(6000)
+  expect(await pane.find({ text: /Failing checks/ })).toBeUndefined()
+
+  // A run that fails again brings it back, and Dismiss hides it from the pane and the band.
+  await $.prompt.submit({ text: 'Fix the failing check', wait: false, origin: { kind: 'composer' } })
+  await $.tool.call({ tool: RUN_CHECK, checks: ['npm test'] } as never)
+  await $.turn.complete({ answer: 'Still failing.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
+  await clock.settle()
+  expect(await pane.find({ text: /Failing checks 1/ })).toBeDefined()
   await pane.press({ key: 'dismiss-check:.:npm test' })
   expect(await pane.find({ text: /Failing checks/ })).toBeUndefined()
   expect(await band.find({ text: /✗ npm test/ })).toBeUndefined()
+})
+
+test('a failing check that passes stays in place with a ✓ for a few seconds, then leaves', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world(on, [])
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'fix the parser', wait: false, origin: { kind: 'composer' } })
+  toolAnswer = { text: ' 11 pass\n 1 fail\n', isError: true }
+  await $.tool.call({ tool: RUN_CHECK, checks: ['npm test'] } as never)
+  await $.turn.complete({
+    answer: 'One test still fails.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  expect(await pane.find({ text: /Failing checks 1/ })).toBeDefined()
+
+  toolAnswer = { text: ' 12 pass\n', isError: false }
+  await $.tool.call({ tool: RUN_CHECK, checks: ['npm test'] } as never)
+  await clock.settle()
+  expect(await pane.find({ text: /Failing checks/ })).toBeDefined()
+  expect(await pane.find({ text: /Passed/ })).toBeDefined()
+  await clock.advance(6000)
+  expect(await pane.find({ text: /Failing checks/ })).toBeUndefined()
 })
 
 test('a failed check whose folder is gone, such as a removed worktree, drops out', async ($, on) => {
@@ -930,8 +965,7 @@ test('/inbox demo shows sample entries in every tab, sends nothing, and goes bac
   expect((await $.command.run({ command: 'inbox', args: 'demo' } as never)).text).toContain('Showing sample entries')
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ text: /Show the Keys list in a footer/ })).toBeDefined()
-  // The two sample failing checks are the first rows, so the first question follows them.
-  await pane.press({ key: 'next' })
+  // The sample failing check is the first row, so the first question follows it. The other was sent to Claude.
   await pane.press({ key: 'next' })
   await pane.press({ key: 'answer-d11-0' })
   expect(sent).toEqual([])

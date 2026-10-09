@@ -668,14 +668,26 @@ function listedItems(items: Item[], kind: Item['kind']): Item[] {
  */
 async function showSettled($: EngineInterface, before: Ledger, after: Ledger) {
   const open = new Set(after.items.map(i => i.id))
-  const settled = before.items.flatMap(item => {
-    const d = open.has(item.id) ? undefined : after.closed.find(x => x.id === item.id)
-    return d ? [{ ...d, index: listedItems(before.items, item.kind).indexOf(item) }] : []
-  })
+  await settle(
+    $,
+    before.items.flatMap(item => {
+      const d = open.has(item.id) ? undefined : after.closed.find(x => x.id === item.id)
+      return d ? [{ ...d, index: listedItems(before.items, item.kind).indexOf(item) }] : []
+    }),
+  )
+}
+
+/** Keeps rows that just closed in place, each with a leave bar, until SETTLED_MS passes. */
+async function settle($: EngineInterface, settled: Settled[]) {
   if (settled.length === 0) return
   await update($, SETTLED, s => [...s.filter(x => !settled.some(y => y.id === x.id)), ...settled])
   expireSettled($, settled, SETTLED_MS)
   redrawWhileLeaving($, () => update($, SETTLED, s => [...s]), SETTLED_MS)
+}
+
+/** What a just-closed row says: what it was, and how it closed. */
+function settledText(s: Settled): { what: string; outcome: string } {
+  return s.kind === 'check' ? { what: s.title, outcome: s.outcome } : { what: s.ask, outcome: outcomeText(s) }
 }
 
 /** Redraws the pane at each step of a just-closed row's leave bar, for `waitMs`. A fresh value is what redraws it. */
@@ -1036,7 +1048,7 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
           ]),
       ),
     ),
-    update($, SETTLED, s => s.map(x => ({ ...x, kind: readKind(x.kind) }))),
+    update($, SETTLED, s => s.map(x => (x.kind === 'check' ? x : { ...x, kind: readKind(x.kind) }))),
     // Presence from before the turn counts existed cannot say whether the last
     // turn's update landed, so that load catches up once.
     update($, PRESENCE, p => ({ ...p, turnsStarted: p.turnsStarted ?? 1, turnsApplied: p.turnsApplied ?? 0 })),
@@ -1181,11 +1193,25 @@ async function dismissCheck($: EngineInterface, check: Check) {
   await update($, CHECKS, c => dismissed(c, check))
 }
 
-/** Asks Claude to fix a failing check, and marks that run's row as handed to Claude. */
+/**
+ * Asks Claude to fix a failing check. Its row stays in place with a ✓ and
+ * "Fix" for a few seconds, then leaves until the check runs again.
+ */
 async function sendFix($: EngineInterface, check: Check) {
   await send($, fixMessage(check, root))
   const at = await $.clock.now()
-  await update($, CHECKS, c => fixSent(c, check, at))
+  const id = checkRowId(check)
+  let index = -1
+  await update($, CHECKS, c => {
+    index = waitingChecks(c).findIndex(x => checkRowId(x) === id)
+    return fixSent(c, check, at)
+  })
+  if (index >= 0) await settle($, [{ id, kind: 'check', title: checkName(check, root), outcome: 'Fix', at, index }])
+}
+
+/** The session's failing checks the Needs you tab lists: left failing, not dismissed, and not handed to Claude with Fix. */
+function waitingChecks(checks: Checks): Check[] {
+  return needsYou(checks, root).rows.filter(c => c.fixSentAt === null)
 }
 
 /** Sends the finding back to Claude, to fix it or to talk it through first. */
@@ -1418,6 +1444,11 @@ function prThreadId(pr: PrView, t: PrThread): string {
 
 function prCheckId(pr: PrView, check: PrCheck): string {
   return `${pr.ref} check ${check.name}`
+}
+
+/** The id of a session check's row in the Needs you tab. */
+function checkRowId(check: Check): string {
+  return `check:${checkKey(check)}`
 }
 
 /**
@@ -1871,8 +1902,10 @@ async function recordCheck($: EngineInterface, command: string, cwd: string, out
   // Edits made before the check count as before it.
   await refreshTree($, repo ? [repo] : [])
   const ranAt = await $.clock.now()
-  await update($, CHECKS, c =>
-    recorded(
+  let before: Checks = NO_CHECKS
+  const after = await update($, CHECKS, c => {
+    before = c
+    return recorded(
       c,
       [
         {
@@ -1889,6 +1922,26 @@ async function recordCheck($: EngineInterface, command: string, cwd: string, out
       ],
       ranAt,
       root,
+    )
+  })
+  // A failing check's row that this pass cleared stays in place for a few seconds, with a ✓.
+  if (result !== 'pass') return
+  const stillFailing = new Set(waitingChecks(after).map(checkRowId))
+  await settle(
+    $,
+    waitingChecks(before).flatMap((c, index) =>
+      stillFailing.has(checkRowId(c))
+        ? []
+        : [
+            {
+              id: checkRowId(c),
+              kind: 'check' as const,
+              title: checkName(c, root),
+              outcome: 'Passed' as const,
+              at: ranAt,
+              index,
+            },
+          ],
     ),
   )
 }
@@ -2376,7 +2429,7 @@ export const register: Register = on => {
     const settledHint = settled.map(s => (
       <Text color={DONE}>
         {' · ✓ '}
-        {s.ask} → {outcomeText(s)}
+        {settledText(s).what} → {settledText(s).outcome}
       </Text>
     ))
 
@@ -2687,23 +2740,20 @@ export const register: Register = on => {
         ],
       }
     }
-    // What ran and how it ended, when, then what failed and the command. Once
-    // Fix is pressed, the row waits on Claude and folds until the check runs again.
+    // What ran and how it ended, when, then what failed and the command.
     const failedCheckRow = (c: Check): Row => {
-      const id = `check:${checkKey(c)}`
+      const id = checkRowId(c)
       const failed = failureList(c)
       const count = failCount(c)
       const name = checkName(c, root)
       const ran = ago(now - c.ranAt)
       // Unselected, the count says how much failed, or else the file the failure names.
       const brief = count ? `${count.fail} failed` : failed.find(f => f.file)?.file
-      const fixSent = c.fixSentAt === null ? null : `Fix sent · ${ago(now - c.fixSentAt)}`
 
       return {
         id,
-        handle: fixSent ? '✓' : '✗',
-        handleTone: fixSent ? 'done' : 'error',
-        ...(fixSent ? { fold: { note: fixSent } } : {}),
+        handle: '✗',
+        handleTone: 'error',
         title: `${name} · ${count ? `${count.fail} of ${count.total} failed` : (distinctSummary(c) ?? 'failed')}`,
         subtitle: (
           <Text color={pal.muted}>
@@ -2711,10 +2761,7 @@ export const register: Register = on => {
             {c.isStale ? <Text color={pal.tone.needsYou}>, before the last edit</Text> : null}
           </Text>
         ),
-        line:
-          c.fixSentAt === null
-            ? { text: name, after: `${brief ? ` · ${brief}` : ''} · ${ran}` }
-            : { text: name, after: ` · fix sent ${ago(now - c.fixSentAt)}`, afterTone: 'done' },
+        line: { text: name, after: `${brief ? ` · ${brief}` : ''} · ${ran}` },
         body: (
           <Box flexDirection="column">
             {failed.map(f => (
@@ -2730,7 +2777,7 @@ export const register: Register = on => {
         keys: () => [
           {
             key: `fix-${id}`,
-            label: fixSent ? 'Fix again' : 'Fix',
+            label: 'Fix',
             hotkey: 'a',
             done: false,
             onPress: () => void sendFix($, c),
@@ -2832,8 +2879,7 @@ export const register: Register = on => {
     }
 
     // Each tab's rows in order: the cursor, the counts and the drawing all read these.
-    const { rows: failedChecks, count: checksNeedingYou } = needsYou(checks, root)
-    const failedCheckRows = failedChecks.map(failedCheckRow)
+    const failedCheckRows = waitingChecks(checks).map(failedCheckRow)
     const needsYouGroups = NEEDS_YOU_GROUPS.map(g => ({
       ...g,
       rows: listedItems(ledger.items, g.kind).map((item, n) =>
@@ -3400,10 +3446,10 @@ export const register: Register = on => {
           <Text color={pal.mark.done}>✓</Text>,
           <Box flexDirection="column">
             <Text wrap="truncate-end" color={pal.muted}>
-              {s.ask}
+              {settledText(s).what}
             </Text>
             <Text wrap="wrap" color={pal.tone.done}>
-              {outcomeText(s)}
+              {settledText(s).outcome}
             </Text>
             {leaveBar(s.at)}
           </Box>,
@@ -3498,18 +3544,25 @@ export const register: Register = on => {
                   : []),
               ]
 
-        // A row handed to Claude stays listed but, as in Failing checks, leaves the count.
+        // A row handed to Claude stays listed but leaves the count.
         return section([groupTitle(g.title, g.rows.filter(r => !r.fold).length), ...titleGap(), ...open, ...tail])
       })
-      // Checks still failing when Claude stopped come first, since they block the work. The group shows only with some.
+      // Checks still failing when Claude stopped come first, since they block the work. The group shows only with some,
+      // or while a check that just passed or was sent to Claude stays in place.
+      const checkEntries: ({ row: Row } | { settled: Settled })[] = failedCheckRows.map(row => ({ row }))
+      for (const s of fresh.filter(x => x.kind === 'check'))
+        checkEntries.splice(Math.min(s.index, checkEntries.length), 0, { settled: s })
       const failed =
-        failedCheckRows.length > 0
+        checkEntries.length > 0
           ? [
               section([
-                groupTitle('Failing checks', checksNeedingYou),
+                groupTitle('Failing checks', failedCheckRows.length),
                 ...titleGap(),
                 ...divided(
-                  failedCheckRows.map((row, n) => listRow(row, childPos(n, failedCheckRows.length))),
+                  checkEntries.map((x, n) => {
+                    const pos = childPos(n, checkEntries.length)
+                    return 'row' in x ? listRow(x.row, pos) : settledRow(x.settled, pos)
+                  }),
                   'checks',
                   true,
                 ),

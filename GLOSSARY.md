@@ -68,7 +68,8 @@ Describes a failing check result the person hid from the band and the pane.
 It stays hidden until the check runs again.
 
 **Fix sent**:
-Describes a failing check whose run the person asked Claude to fix.
+Describes a failing check whose run the person asked Claude to fix. The pane
+stops listing it until the check runs again.
 
 **Contradicted claim**:
 A sentence in Claude's reply that says a check passes when the check's result
