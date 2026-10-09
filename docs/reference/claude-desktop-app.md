@@ -17,14 +17,41 @@ Terms used below:
 ## The facts that most constrain the inbox
 
 1. The app runs its own Claude Code copy, separate from the terminal's. "The desktop app downloads and updates that copy, so it can differ from the `claude` command in your terminal" (https://code.claude.com/docs/en/desktop#claude-code-version-in-the-code-tab). Live: 2.1.289 and 2.1.293 versus 2.1.295.
-2. The app runs each session headless, as an SDK host (live process arguments). Inference: `isInteractive` is false there. The types say it is "true under the REPL, false for a `-p` run or the SDK" (`SessionStartInput.isInteractive`). The mod stayed off in Code mode until commit 05c3548 stopped gating on that flag alone (`docs/plans/clients.md:56`).
+2. The app runs each session headless, as an SDK host (live process arguments). Live: `session.start` has `isInteractive: false`, `surface: null` and no surfaces. The app attaches about 0.1 s later with `surface: 'desktop'`. See "Live probe of a Code-mode session" below.
 3. Mods run and draw in local Code-mode sessions. WSL sessions get no plugins. A cloud session runs a mod's hooks only for a plugin that reaches it, and draws nothing (https://code.claude.com/docs/en/plugins/mods/overview#where-mods-run).
 4. Mods need engine 2.1.286 on Desktop (overview page). The inbox "was built and tested with Claude Code 2.1.292" (`README.md:20`). Whether it works on the app's 2.1.289 copy is unknown.
-5. `ToolProgress`, `TurnDuration`, `InfoNotice`, `Raster` and `Image` do not draw on the desktop (https://code.claude.com/docs/en/plugins/mods/reference#render-sites, #elements). `$.ui.copy` has no desktop path yet (engine types, `$.ui.copy`).
-6. Unknown: which `origin.kind` a typed Code-mode prompt has. `hooks/register.tsx:2025` counts only `composer`, `bridge`, or `plugin` with `asUser` as the person's words. The types also define `sdk`: "The SDK host's own turn (`claude -p`, the Agent SDK), not typed at a terminal". Inference: Code-mode prompts may arrive as `sdk`, which the inbox would not count as the person's words.
+5. `ToolProgress`, `TurnDuration`, `InfoNotice`, `Raster` and `Image` do not draw on the desktop (https://code.claude.com/docs/en/plugins/mods/reference#render-sites, #elements). Live: `$.ui.copy` works on the desktop, although a types comment says "a remote surface has no path yet".
+6. Live: a prompt typed in Code mode arrives with `origin.kind` `composer`, so the inbox counts it as the person's words (`hooks/register.tsx:2025`).
 7. The app and the CLI share `~/.claude/settings.json`, `~/.claude.json`, CLAUDE.md, hooks and skills (https://code.claude.com/docs/en/desktop#shared-configuration).
 8. The repo owner reported the mod loading in a local Code-mode session after commit 05c3548. Commit f7536d0 fixed `/clear`, `/resume` and `/branch`.
 9. There is no in-app way to confirm the mod loaded. `/plugin` does not run in Code mode (see "Plugins and Customize"). For an installed mod, refusal and `hook skipped` lines go to the debug log only (https://code.claude.com/docs/en/plugins/mods/troubleshoot#find-out-why-a-mod-does-nothing).
+
+## Live probe of a Code-mode session
+
+On 2026-10-08, a throwaway mod logged one new local Code-mode session in the app (version 2.31226.0). The mod loaded through `CLAUDE_CODE_PLUGIN_DIRS`, ahead of the inbox. Times are seconds from the first event.
+
+| Time | Event | What it showed |
+|---|---|---|
+| 0.00 | `classic.SessionStart` | `source: 'startup'`. `e.session_id` and `$.session.id()` match. It fires before `session.start`, as it does in the terminal. |
+| 0.02 | `session.start` | `isInteractive: false`, `surface: null`, `$.session.surfaces()` empty. |
+| 0.14 | `session.attach` | `{ surface: 'desktop', clientId: 'desktop-2', viewport: { columns: 106, rows: 48, isFullscreen: true } }`. `surfaces()` is now `['desktop']`. |
+| 0.17 | `prompt.submit` | The first typed prompt, `origin: { kind: 'composer' }`. The mod's tool was not registered yet. |
+| 0.19 | `$.tool.register` resolves | 20 ms after the first prompt. |
+| 0.26 | `turn.start` | Its input has `text` and `turnId`. |
+| 3.65 | `tool.call` | Claude called the mod's tool in that first turn. |
+
+What follows from it:
+
+- **Turning on.** A desktop session turns on at `session.attach`, never at `session.start`. The first prompt can arrive before setup that runs at attach has finished.
+- **Tools on turn one.** A tool registered at attach was still offered on the first turn, because the turn starts after registration finishes. The margin was 70 ms. This is one run, not a guarantee.
+- **The person's words.** A typed prompt is `composer`, the same as in the terminal.
+- **`$.process.run`** works. `git --version` and `gh auth status` succeeded, and `gh` used the keychain sign-in. The session's `PATH` matched the login shell's.
+- **`$.ui.copy`** returned `{ isCopied: true }` with `surface: 'desktop'`.
+- **`$.prompt.submit({ text, asUser: true })`** started a turn at once, with `origin: { kind: 'plugin', name, asUser: true }`.
+- **The pane** opened with `placement: 'dock'` and `isFocused: true`. Its `bodyColumns` changed from 36 to 69 as the person widened it, and the viewport narrowed from 106 to 70 columns to match. `bodyRows` was 42.
+- **The band** had `maxRows: 12`. The terminal at 49 rows gave 19. Its `bodyColumns` shrank as the pane widened.
+- **Button presses** carry `surface: 'desktop'`. Native buttons drew and clicks worked.
+- **Not covered:** keyboard hotkeys on desktop, `/clear` and `/resume` in the app, `Link` targets and `session.detach`.
 
 ## Modes and tabs
 
@@ -156,9 +183,9 @@ Sources: https://code.claude.com/docs/en/plugins/mods/reference#render-sites and
 | `Link` | Draws | Plain text unless the `href` is `https:` or `http://localhost`, has no `@`, and is in canonical form (https://code.claude.com/docs/en/plugins/mods/interface#link-in-the-desktop-app). The types say plain text for "anything but the `https:` URL its wire promises" (`LinkProps.href`). |
 | `Button` with `plain` | Terminal style | "A desktop draws its native button either way" (types, `ButtonProps.plain`) |
 | `role: 'dismiss'`, `variant` | Terminal style | Native controls (types) |
-| `$.ui.copy` | Works | "a remote surface has no path yet" (types, `$.ui.copy`) |
+| `$.ui.copy` | Works | Works (live), although the types say "a remote surface has no path yet" |
 | `$.prompt.read` | Works | Returns `{ text: '', cursor: 0 }` "where the session draws no box (a -p run, an SDK host)" (types) |
-| `$.process` | Works | Types say "CLI only". A local Code-mode session runs the CLI engine, so it likely works. Unverified. |
+| `$.process` | Works | Works in a local Code-mode session (live), although the types say "CLI only" |
 | Redraw rate | 30 per second for the visible pane, the expanded band and the hint line | "Throttled to 10 a second" (https://code.claude.com/docs/en/plugins/mods/reference#limits) |
 
 The reference says "`e.surface` is `terminal` or `desktop`" (reference#render-sites). The types allow four values, so a render hook typed from them must also handle `mobile` and `vscode`.
@@ -166,7 +193,6 @@ The reference says "`e.surface` is `terminal` or `desktop`" (reference#render-si
 Risks for the inbox:
 
 - The inbox hides hotkey `Button`s in a `Box` with `display="none"` (`hooks/register.tsx:3728`). A desktop that draws native buttons may show them or drop them. Unverified.
-- Copy actions (`hooks/register.tsx:905`, `:911`) likely fail in Code mode.
 
 ## Connectors and MCP
 
@@ -240,12 +266,8 @@ Each check runs in a local Code-mode session in the app unless noted.
 
 | Question | Live check |
 |---|---|
-| Which `origin.kind` a typed prompt has (`composer` or `sdk`) | Log `e.origin.kind` at `prompt.submit`, type a prompt, read the log. |
-| Whether start or attach fires first, and whether `turnOn` runs twice | Log both events with a timestamp. Count `/inbox` registrations. |
-| Whether tools registered at attach miss the first turn | Start a session, ask Claude on turn one to list `mcp__inbox__*` tools. |
-| Whether `$.process` and `$.ui.copy` work | Press a copy action. Run a mod call to `$.process`. Log the results. |
-| Pane placement | Log `viewport.isFullscreen`, `placement` and `bodyColumns` at draw time. |
-| Whether hidden hotkey `Button`s draw or work | Look at the pane. Press the hotkey. |
+| Whether hotkeys and hidden hotkey `Button`s work | Focus the pane, press a `Button`'s hotkey, and log the press. |
+| Whether `/clear` and `/resume` in the app raise `classic.SessionStart` with the new id | Log `classic.SessionStart` and `session.end`, then run both in the app. |
 | Whether `http://localhost` links are clickable | Draw one `Link` with that `href`. |
 | Whether `classic.PermissionRequest` fires | Trigger a permission prompt; log the event. |
 | What happens on `session.detach` and app quit | Log `session.detach` and `session.end`. Quit the app. Check whether the 1.5 s `session.end` budget is met and the store was written. |
