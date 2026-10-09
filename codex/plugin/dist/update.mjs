@@ -461,11 +461,11 @@ function upgradeSnapshots(snapshots) {
   );
 }
 async function readState(dir, sessionId) {
-  try {
-    return upgraded(JSON.parse(await readFile(statePath(dir, sessionId), "utf8")), sessionId);
-  } catch {
-    return emptyState(sessionId);
-  }
+  const saved = await readFile(statePath(dir, sessionId), "utf8").catch((err) => {
+    if (err.code === "ENOENT") return null;
+    throw err;
+  });
+  return saved === null ? emptyState(sessionId) : upgraded(JSON.parse(saved), sessionId);
 }
 var LOCK_WAIT_MS = 1e4;
 var LOCK_STALE_MS = 15e3;
@@ -497,7 +497,11 @@ async function withLock(path, fn, waitMs = LOCK_WAIT_MS) {
 async function updateState(dir, sessionId, change) {
   const path = statePath(dir, sessionId);
   return withLock(`${path}.lock`, async () => {
-    const next = await change(await readState(dir, sessionId));
+    const current = await readState(dir, sessionId).catch(async () => {
+      await rename(path, `${path}.unreadable-${Date.now()}`);
+      return emptyState(sessionId);
+    });
+    const next = await change(current);
     const tmp = `${path}.${process.pid}.tmp`;
     await writeFile(tmp, JSON.stringify(next));
     await rename(tmp, path);

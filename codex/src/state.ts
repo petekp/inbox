@@ -145,12 +145,14 @@ function upgradeSnapshots(snapshots: Record<string, Snapshot>): Record<string, S
   )
 }
 
+/** A session's saved state. A missing file is a new session; a file that cannot be read or converted throws. */
 export async function readState(dir: string, sessionId: string): Promise<SessionState> {
-  try {
-    return upgraded(JSON.parse(await readFile(statePath(dir, sessionId), 'utf8')), sessionId)
-  } catch {
-    return emptyState(sessionId)
-  }
+  const saved = await readFile(statePath(dir, sessionId), 'utf8').catch((err: NodeJS.ErrnoException) => {
+    if (err.code === 'ENOENT') return null
+    throw err
+  })
+
+  return saved === null ? emptyState(sessionId) : upgraded(JSON.parse(saved), sessionId)
 }
 
 const LOCK_WAIT_MS = 10_000
@@ -194,7 +196,13 @@ export async function updateState(
   const path = statePath(dir, sessionId)
 
   return withLock(`${path}.lock`, async () => {
-    const next = await change(await readState(dir, sessionId))
+    // A file this build cannot read, as one a newer build wrote, is kept beside
+    // it for recovery, and the session starts over instead of failing every write.
+    const current = await readState(dir, sessionId).catch(async () => {
+      await rename(path, `${path}.unreadable-${Date.now()}`)
+      return emptyState(sessionId)
+    })
+    const next = await change(current)
     const tmp = `${path}.${process.pid}.tmp`
     await writeFile(tmp, JSON.stringify(next))
     await rename(tmp, path)

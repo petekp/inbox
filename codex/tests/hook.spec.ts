@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { EMPTY, inboxText } from '../../hooks/ledger'
 import { handleHook } from '../src/hook'
-import { readState, statePath } from '../src/state'
+import { readState, statePath, updateState } from '../src/state'
 import { CODEX } from '../src/texts'
 import { commandEndLine, fakeRunner, hookDeps, input, tempDir, tempRepo } from './helpers'
 
@@ -182,4 +182,17 @@ test('the inbox line Codex reads names the Inbox tab, never the mod’s /inbox p
     assert.match(text, /Inbox tab/)
     assert.doesNotMatch(text, /\/inbox|pane/)
   }
+})
+
+test('a session file this build cannot read is kept aside, and the session starts over', async () => {
+  const dir = tempDir()
+  mkdirSync(join(dir, 'sessions'), { recursive: true })
+  writeFileSync(statePath(dir, 's1'), '{"ledger": ')
+  await assert.rejects(readState(dir, 's1'))
+
+  const s = await updateState(dir, 's1', s => ({ ...s, tabSeenAt: 5 }))
+  assert.equal(s.tabSeenAt, 5)
+  const kept = readdirSync(join(dir, 'sessions')).filter(f => f.startsWith('s1.json.unreadable-'))
+  assert.equal(kept.length, 1)
+  assert.equal(readFileSync(join(dir, 'sessions', kept[0]!), 'utf8'), '{"ledger": ')
 })
