@@ -128,7 +128,21 @@ function upgraded(saved: Partial<SessionState>, sessionId: string): SessionState
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...saved.presence },
+    snapshots: upgradeSnapshots(saved.snapshots ?? base.snapshots),
   }
+}
+
+/** Readings saved before the shared reader marked a dirty folder 'directory'; it now writes the engine's 'dir'. */
+function upgradeSnapshots(snapshots: Record<string, Snapshot>): Record<string, Snapshot> {
+  return Object.fromEntries(
+    Object.entries(snapshots).map(([repo, s]) => [
+      repo,
+      {
+        ...s,
+        dirty: Object.fromEntries(Object.entries(s.dirty).map(([p, id]) => [p, id === 'directory' ? 'dir' : id])),
+      },
+    ]),
+  )
 }
 
 export async function readState(dir: string, sessionId: string): Promise<SessionState> {

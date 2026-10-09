@@ -818,8 +818,20 @@ function upgraded(saved, sessionId) {
     ledger: saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger,
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
-    presence: { ...base.presence, ...saved.presence }
+    presence: { ...base.presence, ...saved.presence },
+    snapshots: upgradeSnapshots(saved.snapshots ?? base.snapshots)
   };
+}
+function upgradeSnapshots(snapshots) {
+  return Object.fromEntries(
+    Object.entries(snapshots).map(([repo, s]) => [
+      repo,
+      {
+        ...s,
+        dirty: Object.fromEntries(Object.entries(s.dirty).map(([p, id]) => [p, id === "directory" ? "dir" : id]))
+      }
+    ])
+  );
 }
 async function readState(dir, sessionId) {
   try {
