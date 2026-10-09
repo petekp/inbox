@@ -1239,6 +1239,7 @@ test('a PR’s Dismiss settles its block with Undo, which brings it back, and a 
   expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeUndefined()
   expect(await pane.find({ key: 'open-acme/greet#12' })).toBeDefined()
   expect(linked()).toEqual(['acme/greet#12'])
+  await clock.advance(3000)
 
   // Showing the tab again looks up the branch's PR, which fails, and holds on the linked PR.
   branchFails = 'HTTP 502'
@@ -1247,8 +1248,11 @@ test('a PR’s Dismiss settles its block with Undo, which brings it back, and a 
   await pane.press({ key: 'tab-prs' })
   await pane.press({ key: 'dismiss-pr-acme/greet#12' })
   isSlow = false
-  await clock.advance(5000)
+  // The first Dismiss's time in place has ended, and this one's has not.
+  await clock.advance(2500)
+  expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeDefined()
   // The fetch kept the dismissed PR's block while it settles, and it leaves after.
+  await clock.advance(2600)
   expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeDefined()
   await clock.advance(SETTLED_MS)
 

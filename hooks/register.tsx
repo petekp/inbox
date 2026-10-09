@@ -1319,15 +1319,20 @@ function drawnPrs(
 }
 
 /**
- * Drops a dismissed PR's view once its settled block has left, unless Undo
- * tracks it again. The tab already leaves out a PR it no longer tracks, so a
- * reload that cancels this leaves only a view the next fetch drops.
+ * Drops a dismissed PR's view once the settled block of the Dismiss made `at`
+ * has left. Not when Undo tracks the PR again, or a later Dismiss settles it
+ * anew. The tab already leaves out a PR it no longer tracks, so a reload that
+ * cancels this leaves only a view the next fetch drops.
  */
-function leavePr($: EngineInterface, ref: string) {
+function leavePr($: EngineInterface, ref: string, at: number) {
   void $.clock
     .sleep(SETTLED_MS)
     .then(async () => {
-      const linked = (await read($, LEDGER)).prs
+      const [linked, mark] = await Promise.all([
+        read($, LEDGER).then(l => l.prs),
+        read($, LAST_ACTIONS).then(a => a[`pr:${ref}`]),
+      ])
+      if (mark?.action !== 'pr-dismiss' || mark.at !== at) return
       await update($, PR_VIEWS, v => {
         if (isTracked(v, linked, ref) || !(ref in v.views)) return v
         const { [ref]: _left, ...views } = v.views
@@ -1554,7 +1559,7 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   if (lasts.some(l => l.kind === 'handoff')) void publishStatus($)
   if ('ref' in p && p.action === 'pr-dismiss') {
     redrawWhileLeaving($, SETTLED_MS)
-    leavePr($, p.ref)
+    leavePr($, p.ref, now)
   }
   if (!('ref' in p) && p.action === 'undo') {
     // Claude was told of the close; with the id out of `told`, a second close of the row is reported too.
