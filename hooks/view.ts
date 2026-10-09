@@ -24,6 +24,15 @@ export const OPTIONS_FOLD_AT = 5
 export const CLOSED_SHOWN = 3
 /** How long a row that just closed stays in its place, and a row's note shows. */
 export const SETTLED_MS = 5120
+/** How long a new row's bar shows. */
+export const NEW_ROW_MS = 1500
+/** How long a row's buttons ignore clicks after it opens, so a double-click cannot land on one that just drew. */
+export const PRESS_GUARD_MS = 400
+
+/** Whether a row opened at `openedAt` still ignores clicks. 0 means no click opened it, so nothing is guarded. */
+export function isGuarded(openedAt: number, now: number): boolean {
+  return openedAt > 0 && now - openedAt < PRESS_GUARD_MS
+}
 
 /** The turn counts a handed-off row folds by. */
 export type Turns = { turnsStarted: number; turnsApplied: number }

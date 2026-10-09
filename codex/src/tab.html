@@ -329,6 +329,11 @@
       .key:hover {
         background: var(--hover);
       }
+      /* The row just opened, so a click on its keys would be a double-click's second. */
+      .key:disabled {
+        color: var(--muted);
+        background: none;
+      }
       /* The option Claude recommended. */
       .key.primary {
         font-weight: 600;

@@ -8,7 +8,7 @@ import type { ComponentChildren, JSX } from 'preact'
 import { ago, isLapsed } from '../../hooks/ledger'
 import { noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
-import { closedShown, feedbackText, hasAge, isFailure, SETTLED_MS } from '../../hooks/view'
+import { closedShown, feedbackText, hasAge, isFailure, isGuarded, PRESS_GUARD_MS, SETTLED_MS } from '../../hooks/view'
 import type { Feedback, RowState, RowView } from '../../hooks/view'
 import type { Finding, Item, RowNote } from '../../types'
 import type { TabView as View } from './core'
@@ -59,7 +59,9 @@ let view: View | null = null
 let isDemo = false
 let readFailed = false
 let tab: Tab = 'needsYou'
-const selection: Record<Tab, { id: string; index: number } | null> = { needsYou: null, findings: null }
+// Each tab's open row, and when a click or key opened it; 0 when it was open by default when pressed.
+// Null until a row opens there: the tab then draws its top row open.
+const selection: Record<Tab, { id: string; openedAt: number } | null> = { needsYou: null, findings: null }
 let typing: string | null = null
 let focusTyping = false
 // Typed text by row, kept until it is sent, so a redraw, a new selection or a closed field keeps it.
@@ -174,6 +176,7 @@ function isNotSent(v: View, id: string): boolean {
  * only once the press went through, so a stale or failed press keeps a typed draft.
  */
 async function act(rowId: string, press: RowPress, onSent?: () => void, pending = 'Sending…') {
+  if (press.action !== 'undo') keepPressedOpen(rowId)
   sending.set(rowId, pending)
   errors.delete(rowId)
   notes.delete(rowId)
@@ -226,6 +229,7 @@ function capitalized(text: string): string {
 }
 
 function startTyping(id: string) {
+  keepPressedOpen(id)
   typing = id
   focusTyping = true
   draw()
@@ -387,32 +391,47 @@ function settledIn(entries: Entry[]): Set<string> {
 /** Undo on a settled row: the row comes back open, and selected. */
 function undo(r: RowView) {
   const t: Tab = r.type === 'finding' ? 'findings' : 'needsYou'
-  void act(r.id, { action: 'undo', id: r.id }, () => {
-    const rows = view ? listsOf(view, drawnSettled(seen, Date.now())).byTab[t] : []
-    selection[t] = {
-      id: r.id,
-      index: Math.max(
-        0,
-        rows.findIndex(x => x.id === r.id),
-      ),
-    }
-  })
+  void act(r.id, { action: 'undo', id: r.id }, () => open(t, r.id))
 }
 
-/** The selected row's index: the selected row, or the row now in its place once it left. */
-function selectedIndex(rows: Row[], t: Tab): number {
+/**
+ * The open row's index, or -1 when none is open. A tab where no row opened yet
+ * draws its top row open. Once the open row leaves, none is open: a row
+ * opening under the pointer would catch a second click.
+ */
+function selectedIndex(rows: Row[], t: Tab, v: View): number {
   const s = selection[t]
-  if (!s) return rows.length > 0 ? 0 : -1
-  const at = rows.findIndex(r => r.id === s.id)
+  // In Needs you the top row that counts, else the first, as when every task is handed off.
+  const id = s ? s.id : ((t === 'needsYou' ? v.needsYou.topId : null) ?? rows[0]?.id)
 
-  return at >= 0 ? at : Math.min(s.index, rows.length - 1)
+  return id ? rows.findIndex(r => r.id === id) : -1
+}
+
+/** Opens a row. Its buttons ignore clicks for PRESS_GUARD_MS, and draw again once that ends. */
+function open(t: Tab, id: string) {
+  selection[t] = { id, openedAt: Date.now() }
+  setTimeout(draw, PRESS_GUARD_MS + 50)
 }
 
 function select(t: Tab, rows: Row[], index: number) {
   const row = rows[index]
   if (!row) return
-  selection[t] = { id: row.id, index }
+  open(t, row.id)
   draw()
+}
+
+/**
+ * Keeps a row open once it is pressed while the tab draws it open by default,
+ * so the default does not open another row when this one leaves. A row open by
+ * default was not opened by a click, so it is not guarded.
+ */
+function keepPressedOpen(id: string) {
+  if (!selection[tab]) selection[tab] = { id, openedAt: 0 }
+}
+
+/** Whether the shown tab's open row opened too recently for a click on its buttons to count. */
+function isOpenGuarded(): boolean {
+  return isGuarded(selection[tab]?.openedAt ?? 0, Date.now())
 }
 
 /** The selected row's keys: a folded row offers only Details until it is opened. */
@@ -433,9 +452,17 @@ function rowActions(row: Row): { keys: Key[]; more: Key[] } {
 
 // ── Drawing ─────────────────────────────────────────────────────────────────
 
+/** One of the open row's actions. A click right after the row opened does nothing; its key works at once. */
 function KeyButton({ k }: { k: Key }) {
   return (
-    <button type="button" class={k.isPrimary ? 'key primary' : 'key'} onClick={k.run}>
+    <button
+      type="button"
+      class={k.isPrimary ? 'key primary' : 'key'}
+      disabled={isOpenGuarded()}
+      onClick={() => {
+        if (!isOpenGuarded()) k.run()
+      }}
+    >
       {k.hotkey ? (
         <>
           <kbd>{k.hotkey}</kbd>:{' '}
@@ -652,9 +679,21 @@ function SettledView({ settled: r, state }: Extract<Entry, { settled: RowView }>
 }
 
 /** A list's rows, with the rows that just closed in their places. */
-function Entries({ entries, group, all, now }: { entries: Entry[]; group: Group; all: Row[]; now: number }) {
+function Entries({
+  v,
+  entries,
+  group,
+  all,
+  now,
+}: {
+  v: View
+  entries: Entry[]
+  group: Group
+  all: Row[]
+  now: number
+}) {
   const t: Tab = group === 'finding' ? 'findings' : 'needsYou'
-  const at = selectedIndex(all, t)
+  const at = selectedIndex(all, t, v)
   if (entries.length === 0) return null
 
   // Needs you hangs its rows from each group's title, as the pane does; Findings lists them flat.
@@ -723,7 +762,7 @@ function ItemGroup({
     <section>
       {/* A row handed to Codex stays listed but leaves the count. */}
       <GroupTitle title={title} count={rows.filter(r => !r.fold).length} />
-      <Entries entries={entries} group={kind} all={all} now={now} />
+      <Entries v={v} entries={entries} group={kind} all={all} now={now} />
       <ClosedFold group={kind} closed={closed} now={now} />
     </section>
   )
@@ -829,7 +868,7 @@ function Findings({ v, lists, now }: { v: View; lists: Lists; now: number }) {
     <main>
       <section>
         {isNothing ? <div class="group-title empty-line">No open findings.</div> : null}
-        <Entries entries={lists.findings} group="finding" all={lists.byTab.findings} now={now} />
+        <Entries v={v} entries={lists.findings} group="finding" all={lists.byTab.findings} now={now} />
         <ClosedFold group="finding" closed={closed} now={now} />
       </section>
     </main>
@@ -957,7 +996,7 @@ document.addEventListener('keydown', e => {
     return
   }
   const rows = listsOf(view, drawnSettled(seen, Date.now())).byTab[tab]
-  const at = selectedIndex(rows, tab)
+  const at = selectedIndex(rows, tab, view)
   const move = e.key === 'j' || e.key === 'ArrowDown' ? 1 : e.key === 'k' || e.key === 'ArrowUp' ? -1 : 0
   if (move !== 0) {
     e.preventDefault()

@@ -57,8 +57,8 @@ export type Closed = {
   item?: Item
 }
 
-/** The row a jump moved the pane to, so the tab and row can show where it went. */
-export type Arrival = { tab: Tab; id: string | null; at: number }
+/** The rows that just appeared in the pane, and when, so each draws a bar for a moment. */
+export type Arrival = { ids: string[]; at: number }
 
 /**
  * What a press does, which decides what its row shows at once. Talk asks Claude
@@ -230,8 +230,13 @@ export type Previous = {
 
 export type Tab = 'needsYou' | 'findings' | 'prs'
 
-/** A tab's selected row: its id, and its position for when that row goes away. */
-export type Cursor = { id: string | null; index: number }
+/**
+ * A tab's open row: its id, its position, and when a click or key opened it.
+ * `id: null` with `openedAt: 0` means no row was opened in this conversation, so
+ * the pane draws the tab's top row open. `openedAt: 0` with an id means the row
+ * was open by that default when pressed, so it is not guarded.
+ */
+export type Cursor = { id: string | null; index: number; openedAt: number }
 
 /** The PR tab's data: each PR's latest view, the current branch's PR, and whether a fetch runs. */
 export type PrViews = { views: Record<string, PrView>; branchRef: string | null; isFetching: boolean }
@@ -270,7 +275,7 @@ declare module 'claude-code' {
       drafts: Record<string, string>
       /** Each row's latest note, by the row's id. */
       notes: Record<string, RowNote>
-      /** The pane's latest jump to a new row. */
+      /** The rows that last appeared in the pane, which draw a bar for NEW_ROW_MS. */
       arrival: Arrival | null
       /** Each row's last action, by the row's id. */
       lastActions: Record<string, LastAction>

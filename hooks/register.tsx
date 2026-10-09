@@ -102,7 +102,19 @@ import {
   withResult,
 } from './presses'
 import type { Effect, HelpStep, PrActionId, RowPress } from './presses'
-import { closedShown, feedbackOf, feedbackText, hasAge, inboxView, isFailure, perTurnStatus, SETTLED_MS } from './view'
+import {
+  closedShown,
+  feedbackOf,
+  feedbackText,
+  hasAge,
+  inboxView,
+  isFailure,
+  isGuarded,
+  NEW_ROW_MS,
+  perTurnStatus,
+  PRESS_GUARD_MS,
+  SETTLED_MS,
+} from './view'
 import type { InboxView, RowState, RowView } from './view'
 import {
   CLOSE_DESCRIPTION,
@@ -128,7 +140,7 @@ const PRESENCE = atom(
 )
 const PREVIOUS = atom({ plugin: 'inbox', key: 'previous' } as const, null as Previous | null)
 const TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'needsYou' as Tab)
-const NO_CURSOR: Cursor = { id: null, index: 0 }
+const NO_CURSOR: Cursor = { id: null, index: 0, openedAt: 0 }
 const NO_SELECTION: Record<Tab, Cursor> = { needsYou: NO_CURSOR, findings: NO_CURSOR, prs: NO_CURSOR }
 const SELECTION = atom({ plugin: 'inbox', key: 'selection' } as const, NO_SELECTION)
 // Whether Claude Code uses its `dark` theme, which picks the selected row's tint.
@@ -152,10 +164,9 @@ const IS_KEY_LIST_SHOWN = atom({ plugin: 'inbox', key: 'isKeyListShown' } as con
 // The bar under a just-closed row, in cells. It loses half a cell per step of SETTLED_MS, so the pane redraws that often.
 const LEAVE_BAR_CELLS = 12
 const LEAVE_BAR_STEPS = LEAVE_BAR_CELLS * 2
-// After a jump, how long the new tab's top edge takes to draw in, in steps, and how long the new row's bar keeps the tab's color.
+// After a jump, how long the new tab's top edge takes to draw in, in steps.
 const DRAW_IN_MS = 200
 const DRAW_IN_STEPS = 4
-const ARRIVAL_MS = 1500
 const DEMO = atom({ plugin: 'inbox', key: 'demo' } as const, null as DemoCopy | null)
 const DEMO_BANNER = 'Showing sample entries. Presses here send nothing.'
 const PR_POLL_MS = 2 * 60_000
@@ -217,7 +228,8 @@ type Tone = Tab | 'done' | 'error'
  * The terminal draws Button labels in its own text color, and the theme's dim
  * gray for `dimColor`, so the pane gives Buttons no dimColor. The footer's Keys
  * toggle and the Closed and Details folds are the exceptions: secondary
- * controls, they brighten under the pointer.
+ * controls, they brighten under the pointer. So are a just-opened row's
+ * buttons, dim while they ignore clicks.
  */
 type Palette = {
   /** Painted under the whole pane, over the theme's own background. */
@@ -395,6 +407,8 @@ let fetchingPrs: Promise<void> = Promise.resolve()
 let nextFetchFindsBranchPr: boolean | null = null
 // Each tab's row ids as of the last write that can add a row, so a row that appears later counts as new.
 let recordedRows: { isDemo: boolean; ids: Partial<Record<Tab, Set<string>>> } | null = null
+// The pane's latest jump to another tab, whose top edge draws in for DRAW_IN_MS. A reload may lose it mid-draw.
+let jumped: { tab: Tab; at: number } | null = null
 let isSaved = false
 let queue: Promise<void> = Promise.resolve()
 // Counts the conversations this process has run, so an update queued in one never writes into the next.
@@ -666,7 +680,7 @@ function redrawWhileLeaving($: EngineInterface, waitMs: number) {
  * A reload cancels the redraws that were running, so this sets them again
  * until the latest of these ends, each SETTLED_MS after its time: a close, a
  * PR's Dismiss, a Local result and a row's note. Drawn on the demo's copy
- * while the demo shows.
+ * while the demo shows. It also redraws once a new-row bar still showing ends.
  */
 async function redrawAfterReload($: EngineInterface) {
   const { ledger, lastActions, notes, now } = await drawnState($)
@@ -681,6 +695,8 @@ async function redrawAfterReload($: EngineInterface) {
   ]
   const waitMs = Math.max(0, ...times.map(t => t + SETTLED_MS - now))
   if (waitMs > 0) redrawWhileLeaving($, waitMs)
+  const arrival = await read($, ARRIVAL)
+  if (arrival && arrival.at + NEW_ROW_MS > now) redrawAfterNewRows($, arrival.at, now)
 }
 
 type ModelResult = Awaited<ReturnType<EngineInterface['model']['fork']>>
@@ -913,11 +929,15 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
     update($, LEDGER, upgradeLedger),
     update($, PREVIOUS, p => p && { ...p, ledger: upgradeLedger(p.ledger) }),
     update($, TAB, t => ((t as string) === 'notes' ? 'findings' : (t as string) === 'waiting' ? 'needsYou' : t)),
-    update($, SELECTION, ({ waiting, ...s }: Record<Tab, Cursor> & { waiting?: Cursor }) => ({
-      ...NO_SELECTION,
-      ...(waiting ? { needsYou: waiting } : {}),
-      ...s,
-    })),
+    update($, SELECTION, ({ waiting, ...s }: Record<Tab, Cursor> & { waiting?: Cursor }) => {
+      const cursors: Record<Tab, Cursor> = { ...NO_SELECTION, ...(waiting ? { needsYou: waiting } : {}), ...s }
+      // A cursor saved before `openedAt` existed: no click opened its row in a way that still guards it.
+      return Object.fromEntries(
+        Object.entries(cursors).map(([t, c]) => [t, { ...c, openedAt: c.openedAt ?? 0 }]),
+      ) as Record<Tab, Cursor>
+    }),
+    // An earlier build saved only the row the pane jumped to; its bar ended long ago.
+    update($, ARRIVAL, a => (a && Array.isArray(a.ids) ? a : null)),
     // Old builds saved the group kinds as `decide` and `do`; Findings' fold keeps its own name.
     update($, UNFOLDED, u => u.map(k => (k === 'finding' ? k : readKind(k)))),
     // A demo an earlier build seeded may lack a field this one draws, so it ends; /inbox demo seeds a new one.
@@ -975,9 +995,31 @@ function openPane($: EngineInterface) {
   return $.ui.open({ id: PANE, title: 'Inbox', focus: true, closeOnEscape: true })
 }
 
+/**
+ * Opens the shown tab's top row, as the pane opens. With no row to open, the
+ * tab draws its top row open by default once one arrives.
+ */
+async function openTopRow($: EngineInterface) {
+  const [{ view, ledger, prViews: prState, lastActions, now }, tab] = await Promise.all([drawnState($), read($, TAB)])
+  const prViews = drawnPrs(prState, ledger.prs, lastActions, now)
+    .filter(x => !x.isSettled)
+    .map(x => x.pr)
+  const ids = tabRowIds(view, prViews)[tab]
+  const top = topRow(tab, ids, view)
+  if (top === null) await update($, SELECTION, s => ({ ...s, [tab]: NO_CURSOR }))
+  else await select($, tab, top, ids.indexOf(top))
+}
+
+/** Sends a row's draft as its typed answer or reply, as Enter in its field does. A blank draft sends nothing. */
+async function sendDraft($: EngineInterface, id: string, surface: UiPressArgument['surface']) {
+  const text = (await read($, DRAFTS))[id] ?? ''
+  if (text.trim()) await runPress($, { action: 'type', id, text }, surface)
+}
+
 /** Opens the free-text field under a row and gives it the keyboard. */
 async function startTyping($: EngineInterface, id: string) {
   fieldSeeds.set(id, (await read($, DRAFTS))[id] ?? '')
+  await keepPressedOpen($, id)
   await update($, TYPING, () => id)
   // A click leaves the keys with the prompt, and `ui.focus` is refused in a pane that lacks them.
   await openPane($)
@@ -1008,8 +1050,14 @@ async function findPrs($: EngineInterface) {
  * Measured before the redraw, the row's end would land out of view.
  */
 async function select($: EngineInterface, tab: Tab, id: string, index: number) {
-  await update($, SELECTION, s => ({ ...s, [tab]: { id, index } }))
+  const openedAt = await $.clock.now()
+  await update($, SELECTION, s => ({ ...s, [tab]: { id, index, openedAt } }))
   await update($, TYPING, t => (t === id ? t : null))
+  // The row's buttons draw dim while guarded. A render cannot write state, so a fresh value redraws them once the guard ends.
+  void $.clock
+    .sleep(PRESS_GUARD_MS)
+    .then(() => update($, SELECTION, s => ({ ...s })))
+    .catch(() => undefined)
   for (let tries = 0; tries < 10; tries++) {
     const result = await $.ui
       .scroll({ in: PANE, to: { key: `view-${id}` }, block: 'nearest' })
@@ -1020,14 +1068,50 @@ async function select($: EngineInterface, tab: Tab, id: string, index: number) {
 }
 
 /**
- * The selected row's position: the cursor's row while it exists, else the row
- * now at its old position, so closing an item selects the one after it.
+ * The open row's position, or -1 when none is open. A tab with no row opened in
+ * this conversation draws `top` open. Once the open row leaves, none is open:
+ * a row opening under the pointer would catch a second click.
  */
-function selectedIndex(ids: string[], cursor: Cursor): number {
-  if (ids.length === 0) return -1
-  const at = cursor.id === null ? -1 : ids.indexOf(cursor.id)
+function selectedIndex(ids: string[], cursor: Cursor, top: string | null): number {
+  if (cursor.id !== null) return ids.indexOf(cursor.id)
 
-  return at >= 0 ? at : Math.min(cursor.index, ids.length - 1)
+  return cursor.openedAt === 0 && top !== null ? ids.indexOf(top) : -1
+}
+
+/**
+ * The row a tab draws open before any row was opened there: in Needs you the
+ * top row that counts, else the first, as when every task is handed off.
+ */
+function topRow(tab: Tab, ids: string[], view: InboxView): string | null {
+  return (tab === 'needsYou' ? view.needsYou.topId : null) ?? ids[0] ?? null
+}
+
+/**
+ * Runs a click on one of row `rowId`'s buttons, unless that row opened less
+ * than PRESS_GUARD_MS ago: then it is the second click of a double-click that
+ * opened the row, landing on a button that just drew.
+ */
+async function unlessGuarded(
+  $: EngineInterface,
+  rowId: string,
+  press: UiPressArgument,
+  onPress: (press: UiPressArgument) => void,
+) {
+  const [selection, tab, now] = await Promise.all([read($, SELECTION), read($, TAB), $.clock.now()])
+  const cursor = selection[tab]
+  if (cursor.id !== rowId || !isGuarded(cursor.openedAt, now)) onPress(press)
+}
+
+/**
+ * Keeps a row open once it is pressed while its tab draws it open by default,
+ * so the default does not open another row when this one leaves or stops
+ * counting. `openedAt` stays 0: the row was already open, so it is not guarded.
+ */
+async function keepPressedOpen($: EngineInterface, id: string) {
+  const tab = await read($, TAB)
+  await update($, SELECTION, s =>
+    s[tab].id === null && s[tab].openedAt === 0 ? { ...s, [tab]: { id, index: 0, openedAt: 0 } } : s,
+  )
 }
 
 /**
@@ -1053,26 +1137,29 @@ function newRows(isDemo: boolean, current: Record<Tab, string[] | null>): Record
 }
 
 /**
- * Moves the pane to a tab and selects a row there, or shows the tab's top when
- * there is none. The pane then redraws while the tab's top edge draws in, and
- * once more when the row's arrival bar ends.
+ * Moves the pane to a tab and opens a row there, or shows the tab's top when
+ * there is none. The pane then redraws while the tab's top edge draws in.
  */
 async function jumpTo($: EngineInterface, tab: Tab, row: { id: string; index: number } | null) {
   const at = await $.clock.now()
-  await update($, ARRIVAL, () => ({ tab, id: row?.id ?? null, at }))
+  jumped = { tab, at }
   await update($, TAB, () => tab)
   if (row) await select($, tab, row.id, row.index)
   else await $.ui.scroll({ in: PANE, to: 'start' }).catch(() => undefined)
-  const redrawAt = [
-    ...Array.from({ length: DRAW_IN_STEPS }, (_, n) => ((n + 1) * DRAW_IN_MS) / DRAW_IN_STEPS),
-    ARRIVAL_MS,
-  ]
   void (async () => {
-    for (const due of redrawAt) {
-      await $.clock.sleep(Math.max(0, at + due - (await $.clock.now())))
-      await update($, ARRIVAL, a => a && { ...a })
+    for (let n = 1; n <= DRAW_IN_STEPS; n++) {
+      await $.clock.sleep(Math.max(0, at + (n * DRAW_IN_MS) / DRAW_IN_STEPS - (await $.clock.now())))
+      await update($, SELECTION, s => ({ ...s }))
     }
   })().catch(() => undefined)
+}
+
+/** Redraws the pane once the new-row bars that started at `at` end. */
+function redrawAfterNewRows($: EngineInterface, at: number, now: number) {
+  void $.clock
+    .sleep(Math.max(0, at + NEW_ROW_MS - now))
+    .then(() => update($, ARRIVAL, a => a && { ...a }))
+    .catch(() => undefined)
 }
 
 /** The ids of the rows that just closed, which stay in place but cannot be selected. */
@@ -1095,10 +1182,11 @@ function tabRowIds(view: InboxView, prViews: PrView[]): Record<Tab, string[]> {
 }
 
 /**
- * Moves the pane to a new row on another tab while the tab on screen shows
- * only its empty text. `isOpening` records the tabs afresh, so nothing in them
- * counts as new. The render cannot write state, so each write that can add a
- * row calls this. See docs/plans/jump-to-new-rows.md.
+ * Marks the rows that just appeared, which draw a bar for NEW_ROW_MS, and moves
+ * the pane to a new row on another tab while the tab on screen shows only its
+ * empty text. `isOpening` records the tabs afresh, so nothing in them counts as
+ * new. The render cannot write state, so each write that can add a row calls
+ * this. See docs/plans/jump-to-new-rows.md.
  */
 async function followNewRows($: EngineInterface, isOpening = false) {
   const [drawn, tab, unfolded, isShown] = await Promise.all([
@@ -1121,6 +1209,11 @@ async function followNewRows($: EngineInterface, isOpening = false) {
     prs: prState.isFetching ? null : [...prs.map(x => `pr ${x.pr.ref}`), ...ids.prs],
   })
   if (!isShown) return
+  const arrived = TABS.flatMap(t => added[t.id])
+  if (arrived.length > 0) {
+    await update($, ARRIVAL, () => ({ ids: arrived, at: now }))
+    redrawAfterNewRows($, now, now)
+  }
   // A tab is empty while it shows only its empty text.
   const isEmpty = {
     needsYou:
@@ -1570,6 +1663,9 @@ async function perform(
  * is gone or changed sends nothing: the row, or the pane's status line, says so.
  */
 async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPressArgument['surface']) {
+  // Undo is pressed on a row that just closed, and a PR block's actions on no row.
+  const rowId = 'ref' in p ? prRowId(p) : p.id
+  if (p.action !== 'undo' && !rowId.startsWith('pr:')) await keepPressedOpen($, rowId)
   if (await read($, DEMO)) return runDemoPress($, p)
   const [now, presence, lastActions, prState] = await Promise.all([
     $.clock.now(),
@@ -1578,7 +1674,6 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
     read($, PR_VIEWS),
   ])
   const ctx = { now, turnsStarted: presence.turnsStarted }
-  const rowId = 'ref' in p ? prRowId(p) : p.id
   let applied = { stale: true } as Applied
   if ('ref' in p && p.action !== 'pr-dismiss' && p.action !== 'pr-undo') {
     applied = applyAnyPress(await read($, LEDGER), prState, lastActions, p, ctx)
@@ -1954,6 +2049,8 @@ async function drawnState($: EngineInterface): Promise<DemoCopy & { view: InboxV
 async function setDemo($: EngineInterface, isShown: boolean) {
   const now = await $.clock.now()
   await update($, DEMO, () => (isShown ? demoView(now) : null))
+  // The open rows and the field name the other entries' ids, so each tab draws its top row open again.
+  await Promise.all([update($, SELECTION, () => NO_SELECTION), update($, TYPING, () => null)])
   // The copy starts with a row that just closed, whose leave bar runs down.
   if (isShown) redrawWhileLeaving($, SETTLED_MS)
   // findPrs does nothing during the demo, so the real PRs tab looks up the branch's PR once it ends.
@@ -2078,8 +2175,12 @@ export const register: Register = on => {
       await Promise.all([
         update($, LEDGER, () => EMPTY),
         update($, PREVIOUS, () => null),
-        // Ids restart at i1 in the new conversation, so an id kept here would unfold another question,
+        // Ids restart at i1 in the new conversation, so an id kept here would open or unfold another row,
         // or put one row's words or note on another.
+        update($, SELECTION, () => NO_SELECTION),
+        update($, TYPING, () => null),
+        update($, UNFOLDED, () => []),
+        update($, SHOWN_DETAILS, () => []),
         update($, OPTIONS_SHOWN, () => []),
         update($, DRAFTS, () => ({})),
         update($, NOTES, () => ({})),
@@ -2316,6 +2417,7 @@ export const register: Register = on => {
     const isDemo = (await read($, DEMO)) !== null
     await openPane($)
     await followNewRows($, true)
+    await openTopRow($)
 
     return {
       text: isDemo ? 'Showing sample entries in the inbox. Run /inbox demo again to go back.' : 'Opened the inbox.',
@@ -2583,6 +2685,8 @@ export const register: Register = on => {
       moreKeys?: () => KeyAction[]
       /** For a row that takes the person's own words: what its field says while empty. */
       typeHint?: string
+      /** What sending those words does: closes a question, or hands a task or finding off. */
+      typeKind?: PressKind
       /**
        * The row no longer waits on the person. Selected, it shows `line` and
        * `note`, with its body and keys behind Details, on `v`.
@@ -2608,6 +2712,7 @@ export const register: Register = on => {
         keys: () => rowKeyActions($, r, optionsShown.includes(r.id)).keys,
         moreKeys: () => rowKeyActions($, r, optionsShown.includes(r.id)).more,
         typeHint: item.kind === 'task' ? 'Your reply to Claude' : 'Your answer',
+        typeKind: item.kind === 'task' ? 'handoff' : 'mark',
       }
     }
     // A finding handed to Claude folds, as a task does, until Claude's reply leaves it open.
@@ -2636,6 +2741,7 @@ export const register: Register = on => {
         </Box>
       ),
       typeHint: 'Your reply to Claude',
+      typeKind: 'handoff',
       keys: () => rowKeyActions($, r, true).keys,
       moreKeys: () => rowKeyActions($, r, true).more,
     })
@@ -2798,7 +2904,11 @@ export const register: Register = on => {
     }
     const ids = rows[tab].map(r => r.id)
     const indexOf = new Map(ids.map((id, n) => [id, n]))
-    const at = selectedIndex(ids, selection[tab])
+    const cursor = selection[tab]
+    const at = selectedIndex(ids, cursor, topRow(tab, ids, view))
+    // The open row's buttons ignore clicks for a moment after it opens, and draw dim meanwhile.
+    const isOpenGuarded = isGuarded(cursor.openedAt, now)
+    const isNew = (id: string) => arrival !== null && arrival.ids.includes(id) && now - arrival.at < NEW_ROW_MS
 
     // A Button draws its hotkey in the theme's accent, which Claude Code's light
     // theme draws at 2.9:1 on the selected row. So a key's letter is Text in the
@@ -2807,27 +2917,32 @@ export const register: Register = on => {
     // A hover cannot name the terminal's default color, which a Button's label
     // inverts, so the letter and the label both invert the muted color to match.
     // An action past the lettered ones, or one that only changes the view, has no key and draws its label alone.
-    const keyedButton = ({ hotkey, kind: _kind, ...action }: KeyAction) => (
-      <Box key={`keyed-${action.key}`} flexDirection="row">
-        {hotkey ? (
-          <Text color={pal.key} hover={{ color: pal.muted, inverse: true }}>
-            {hotkey}
-          </Text>
-        ) : null}
-        <Button
-          plain
-          {...action}
-          label={hotkey ? `: ${action.label}` : action.label}
-          hover={{ color: pal.muted, inverse: true }}
-        />
-      </Box>
-    )
-    // A row's other actions follow its main ones after a muted dot.
-    const keyRow = (keys: KeyAction[], more: KeyAction[] = []) => (
+    // While the open row is guarded, both draw dim and a click does nothing. Its key, a hidden Button, works at once.
+    const keyedButton =
+      (rowId: string) =>
+      ({ hotkey, kind: _kind, ...action }: KeyAction) => (
+        <Box key={`keyed-${action.key}`} flexDirection="row">
+          {hotkey ? (
+            <Text color={pal.key} dimColor={isOpenGuarded} hover={{ color: pal.muted, inverse: true }}>
+              {hotkey}
+            </Text>
+          ) : null}
+          <Button
+            plain
+            {...action}
+            {...(isOpenGuarded ? { dimColor: true } : {})}
+            label={hotkey ? `: ${action.label}` : action.label}
+            hover={{ color: pal.muted, inverse: true }}
+            onPress={press => void unlessGuarded($, rowId, press, action.onPress)}
+          />
+        </Box>
+      )
+    // The open row's actions. Its other actions follow its main ones after a muted dot.
+    const keyRow = (rowId: string, keys: KeyAction[], more: KeyAction[] = []) => (
       <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-        {keys.map(keyedButton)}
+        {keys.map(keyedButton(rowId))}
         {keys.length > 0 && more.length > 0 ? <Text color={pal.muted}>·</Text> : null}
-        {more.map(keyedButton)}
+        {more.map(keyedButton(rowId))}
       </Box>
     )
     // The Buttons that take the pane's keys, drawn in a hidden Box.
@@ -2877,6 +2992,21 @@ export const register: Register = on => {
 
       return row.fold ? { keys, more: [...more, detailsKey(row)] } : { keys, more }
     }
+    // Under the open field: Send sends the row's draft, and Cancel closes the field and keeps the draft.
+    const fieldActions = (row: Row): KeyAction[] => [
+      {
+        key: `send-${row.id}`,
+        label: 'Send',
+        kind: row.typeKind ?? 'handoff',
+        onPress: press => void sendDraft($, row.id, press.surface),
+      },
+      {
+        key: `cancel-${row.id}`,
+        label: 'Cancel',
+        kind: 'view',
+        onPress: () => void update($, TYPING, t => (t === row.id ? null : t)),
+      },
+    ]
     // A last action is green only on a row that shows a ✓, as a folded review thread
     // does. On a row still open it is muted, so it does not read as an answer.
     const lastTone = (row: Row) => (row.handleTone === 'done' ? ('done' as const) : undefined)
@@ -3084,10 +3214,10 @@ export const register: Register = on => {
               ) : null}
               <Box flexDirection="column" marginTop={blankLine}>
                 {keys.length === 0
-                  ? keyRow(more)
+                  ? keyRow(row.id, more)
                   : keysWidth(keys, more) <= e.props.bodyColumns - 3 - (tree ? 7 : 5)
-                    ? keyRow(keys, more)
-                    : [keyRow(keys), keyRow(more)]}
+                    ? keyRow(row.id, keys, more)
+                    : [keyRow(row.id, keys), keyRow(row.id, more)]}
               </Box>
               {Input && row.typeHint && typing === row.id ? (
                 <Box marginTop={blankLine}>
@@ -3104,6 +3234,7 @@ export const register: Register = on => {
                   />
                 </Box>
               ) : null}
+              {Input && row.typeHint && typing === row.id ? keyRow(row.id, fieldActions(row)) : null}
             </Box>
           ) : (
             <Box flexShrink={1} flexGrow={1} paddingRight={1}>
@@ -3115,12 +3246,13 @@ export const register: Register = on => {
           only once that row has redrawn expanded. */}
           {isSelected ? (
             <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1}>
-              {/* A row the pane just jumped to takes a bar in its tab's color, in every theme, for ARRIVAL_MS. */}
-              {arrival?.id === row.id && now - arrival.at < ARRIVAL_MS ? (
-                <Text color={pal.mark[tab]}>{SELECTION_BAR}</Text>
-              ) : pal.selection ? null : (
-                <Text color={pal.key}>{SELECTION_BAR}</Text>
-              )}
+              {pal.selection || isNew(row.id) ? null : <Text color={pal.key}>{SELECTION_BAR}</Text>}
+            </Box>
+          ) : null}
+          {/* A row that just appeared takes a bar in its tab's color, in every theme, for NEW_ROW_MS. */}
+          {isNew(row.id) ? (
+            <Box key={`new-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1}>
+              <Text color={pal.mark[tab]}>{SELECTION_BAR}</Text>
             </Box>
           ) : null}
         </Box>
@@ -3237,7 +3369,7 @@ export const register: Register = on => {
             // The selected tab is a raised panel three lines tall, with its name on
             // the middle line and a line of its color along the top edge. After a
             // jump to it, the line draws in from the left.
-            const since = arrival?.tab === id ? now - arrival.at : DRAW_IN_MS
+            const since = jumped?.tab === id ? now - jumped.at : DRAW_IN_MS
             const edge = since < DRAW_IN_MS ? Math.max(1, Math.ceil((width * since) / DRAW_IN_MS)) : width
             if (tab === id)
               return (

@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On, PromptOrigin, RenderSurface } from 'claude-code'
 
-import { SETTLED_MS } from '../hooks/view'
+import { NEW_ROW_MS, PRESS_GUARD_MS, SETTLED_MS } from '../hooks/view'
 
 const LEDGER_REPLY = `GOAL: Add a greeting CLI
 DONE: Plan written
@@ -329,6 +329,7 @@ test('a question’s handle is the number a typed answer reaches, and the band c
 
   // A task handed to Claude leaves the band's count and the tab's alike.
   await pane.press({ key: 'select-i4' })
+  await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'help-i4-0' })
   await clock.settle()
   expect(await band.find({ text: /5 waiting on you/ })).toBeDefined()
@@ -400,6 +401,7 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   // A step that copies and opens reads as one note, which clears after a few seconds.
   files = ['/tmp/project/.env.local']
   await pane.press({ key: 'select-i2' })
+  await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'help-i2-0' })
   await clock.settle()
   expect(copied.at(-1)).toBe('API_KEY=x')
@@ -545,6 +547,20 @@ test('last actions an earlier build saved convert once by the table, and a task 
     savedUnfolded = write.value
     return next(write)
   })
+  // Its open rows, with no time each opened, and its last jump, which named one row and its tab.
+  const oldCursor = { id: 'i1', index: 0 }
+  let savingOpen: { selection: unknown; arrival: unknown } | null = null
+  const savedOpen: { selection?: unknown; arrival?: unknown } = {}
+  on('state.set', { plugin: 'inbox', key: 'selection' } as const, ($, e, next) => {
+    const write = savingOpen ? { ...e, value: savingOpen.selection as never } : e
+    savedOpen.selection = write.value
+    return next(write)
+  })
+  on('state.set', { plugin: 'inbox', key: 'arrival' } as const, ($, e, next) => {
+    const write = savingOpen ? { ...e, value: savingOpen.arrival as never } : e
+    savedOpen.arrival = write.value
+    return next(write)
+  })
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'load the data', wait: false, origin: { kind: 'composer' } })
@@ -561,19 +577,34 @@ test('last actions an earlier build saved convert once by the table, and a task 
   // A reload under the earlier build leaves its last actions; the next reload converts them.
   saving = old
   savingUnfolded = ['finding', 'do']
+  savingOpen = {
+    selection: { needsYou: oldCursor, findings: { id: null, index: 0 }, prs: { id: null, index: 0 } },
+    arrival: { tab: 'findings', id: 'f2', at },
+  }
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   saving = null
   savingUnfolded = null
+  savingOpen = null
+  const openConverted = {
+    selection: {
+      needsYou: { ...oldCursor, openedAt: 0 },
+      findings: { id: null, index: 0, openedAt: 0 },
+      prs: { id: null, index: 0, openedAt: 0 },
+    },
+    arrival: null,
+  }
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.settle()
   expect(saved).toEqual(converted)
   expect(savedUnfolded).toEqual(['finding', 'task'])
+  expect(savedOpen).toEqual(openConverted)
   saved = null
   savedUnfolded = null
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.settle()
   expect(saved).toEqual(converted)
   expect(savedUnfolded).toEqual(['finding', 'task'])
+  expect(savedOpen).toEqual(openConverted)
 
   // The task handed off by the old Run still folds, and waits on no one.
   const pane = await $.ui.mount(PANE)
@@ -671,6 +702,7 @@ test('after a failed update, the next reply catches up over the whole conversati
   expect(await pane.find({ key: 'explain-i2' })).toBeDefined()
   await pane.press({ key: 'previous' })
   // Explain asks Claude about the item and leaves it open.
+  await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'explain-i1' })
   expect(sent.at(-1)).toContain('"Use Node or Python?"\nOptions: Node / Python')
   expect(await pane.find({ text: /Use Node or Python\?/ })).toBeDefined()
@@ -750,6 +782,10 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
   expect(r.result).toBe('Recorded as f1. The user sees it in the Findings tab of the /inbox pane.')
   await clock.settle()
   expect(await pane.find({ text: /Retry loop never backs off/ })).toBeDefined()
+  // The new row draws a bar for a moment.
+  expect(await pane.find({ key: 'new-f1' })).toBeDefined()
+  await clock.advance(NEW_ROW_MS)
+  expect(await pane.find({ key: 'new-f1' })).toBeUndefined()
 
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await band.find({ text: /1 finding/ })).toBeDefined()
@@ -772,6 +808,19 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
   expect(await pane.find({ key: 'fold-details-f1' })).toBeUndefined()
   expect((await pane.find({ key: 'address-f1-key' }))?.props.label).toBe('Address again')
   expect(await band.find({ text: /1 finding/ })).toBeDefined()
+
+  // A finding recorded while Findings shows draws its bar in place, without a jump, and the open row stays open.
+  await $.tool.call({
+    tool: 'mcp__inbox__record_finding',
+    kind: 'opportunity',
+    title: 'Cache the API token',
+    detail: 'Each call fetches a new token.',
+  })
+  await clock.settle()
+  expect(await pane.find({ key: 'new-f4' })).toBeDefined()
+  expect(await pane.find({ key: 'address-f1-key' })).toBeDefined()
+  await clock.advance(NEW_ROW_MS)
+  expect(await pane.find({ key: 'new-f4' })).toBeUndefined()
 })
 
 test('t opens a field for the person’s own words: an answer closes its question, a reply hands a finding to Claude', async ($, on) => {
@@ -799,7 +848,18 @@ test('t opens a field for the person’s own words: an answer closes its questio
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ key: 'type-i1' })).toBeUndefined()
   await pane.press({ key: 'typekey-i1' })
-  await pane.input({ key: 'type-i1', text: 'Deno, actually' })
+  await pane.input({ key: 'type-i1', text: 'Deno, actually', kind: 'change' })
+  // [Cancel] closes the field and keeps the words, which also outlast opening another row.
+  await pane.press({ key: 'cancel-i1' })
+  expect(await pane.find({ key: 'type-i1' })).toBeUndefined()
+  expect(sent).toEqual([])
+  await pane.press({ key: 'select-i2' })
+  await pane.press({ key: 'select-i1' })
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'typekey-i1' })
+  expect((await pane.find({ key: 'type-i1' }))?.props.value).toBe('Deno, actually')
+  // [Send] sends them as the answer.
+  await pane.press({ key: 'send-i1' })
   expect(sent.at(-1)).toBe('Re "Use Node or Python?": Deno, actually')
   expect(await pane.find({ key: 'row-i1' })).toBeUndefined()
 
@@ -849,6 +909,10 @@ test('a press on a question Claude closed since the draw sends nothing and says 
   await clock.advance(9000)
   expect(await pane.find({ text: stale })).toBeUndefined()
 
+  // The pressed row left, so no row is open until the person opens one.
+  expect(await pane.find({ key: 'typekey-i2' })).toBeUndefined()
+  await pane.press({ key: 'select-i2' })
+  await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
   beforeAct = close('i2')
   await pane.input({ key: 'type-i2', text: 'Call it hello' })
@@ -887,6 +951,7 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   await clock.settle()
   expect(await pane.find({ text: /^Queued: Explain · just now$/ })).toBeDefined()
   await pane.press({ key: 'select-i2' })
+  await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
   await pane.input({ key: 'type-i2', text: 'yes' })
   await clock.settle()
@@ -896,12 +961,14 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   // The turn ends and both prompts enter.
   await arrive($)
   await clock.settle()
+  await pane.press({ key: 'select-i1' })
   expect(await pane.find({ text: /^✓ Explain · just now$/ })).toBeDefined()
   expect(await pane.find({ text: /Queued/ })).toBeUndefined()
 
   // A hook refuses a typed answer: the question opens again, and the words go back into its field.
   submitAnswer = { drop: 'a hook refused it' }
   await pane.press({ key: 'select-i1' })
+  await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i1' })
   await pane.input({ key: 'type-i1', text: 'Deno, actually' })
   await clock.settle()
@@ -1036,6 +1103,8 @@ test('Dismiss settles a question in place with Undo, which brings it back open a
   await pane.press({ key: 'dismiss-i1' })
   expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
   expect(await pane.find({ text: /^Dismissed$/ })).toBeDefined()
+  // No other row opens in its place, where a second click would land.
+  expect(await pane.find({ key: 'explain-i2' })).toBeUndefined()
   expect(await prompt('carry on')).toContain(closedLine)
   // A reload while it settles still shows it.
   await start()
@@ -1047,13 +1116,26 @@ test('Dismiss settles a question in place with Undo, which brings it back open a
   expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
   expect(await pane.find({ key: 'answer-i1-1' })).toBeDefined()
-  // Dismissed again, the close reaches Claude again.
+  // Just after the row opens, its buttons draw dim and a click does nothing, as a double-click's second would.
+  await clock.advance(100)
+  expect((await pane.find({ key: 'dismiss-i1' }))?.props.dimColor).toBe(true)
   await pane.press({ key: 'dismiss-i1' })
+  expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
+  // Its key works at once. Dismissed again, the close reaches Claude again.
+  await pane.press({ key: 'dismiss-i1-key' })
+  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
   expect(await prompt('and now?')).toContain(closedLine)
-  // Once its time in place ends, it leaves for the Closed fold.
+  // Brought back once more, a click once the moment passed works.
+  await pane.press({ key: 'undo-i1' })
+  await clock.advance(500)
+  expect((await pane.find({ key: 'dismiss-i1' }))?.props.dimColor).toBeUndefined()
+  await pane.press({ key: 'dismiss-i1' })
+  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
+  // Once its time in place ends, it leaves for the Closed fold, and no other row opens in its place.
   await clock.advance(SETTLED_MS)
   expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
   expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('▸ 1 Closed')
+  expect(await pane.find({ key: 'explain-i2' })).toBeUndefined()
 })
 
 test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, its buttons send its conflicts and thread and say so, and its failing check waits on the person', async ($, on) => {
@@ -1216,6 +1298,7 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   // A hook refuses Address: the thread stays open and waiting, says why, and offers [Try again].
   const details = 'fold-details-acme/greet#12 thread T1'
   submitAnswer = { drop: 'a hook refused it' }
+  await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'address-T1' })
   expect(sent.at(-1)).toContain('Address this review comment on PR #12')
   expect(sent.at(-1)).toContain('bin/greet:4, from @sam:\nQuote the name.')
@@ -1514,6 +1597,7 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   expect(await band.find({ text: /7 waiting on you/ })).toBeDefined()
 
   // An answer closes the sample question in place, and the status line says nothing was sent.
+  await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'answer-d11-0' })
   await clock.settle()
   expect(sent).toEqual([])
@@ -1523,6 +1607,7 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
 
   // Explain says so on its row, then shows its ✓.
   await pane.press({ key: 'title-d17' })
+  await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'explain-d17' })
   expect(await pane.find({ text: SAMPLE })).toBeDefined()
   await clock.advance(SETTLED_MS)
@@ -1536,6 +1621,7 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
 
   // Done settles the sample task in place; Undo brings it back open; then it moves to Closed.
   await pane.press({ key: 'title-d14' })
+  await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'done-d14' })
   await clock.settle()
   expect(await pane.find({ key: 'done-d14' })).toBeUndefined()
@@ -1545,6 +1631,7 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   await pane.press({ key: 'undo-d14' })
   expect(await pane.find({ key: 'done-d14' })).toBeDefined()
   expect(await band.find({ text: /5 waiting on you/ })).toBeDefined()
+  await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'done-d14' })
   await clock.advance(SETTLED_MS)
   expect(await pane.find({ text: /Sign in to gh for the PRs tab/ })).toBeUndefined()
@@ -1574,6 +1661,7 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   // [Hide demo] brings back the session's own rows, which no sample press touched.
   await pane.press({ key: 'tab-needsYou' })
   expect(await pane.find({ text: /Use Node or Python/ })).toBeDefined()
+  expect(await pane.find({ key: 'explain-i1' })).toBeDefined()
   expect(await pane.find({ text: /Showing sample entries/ })).toBeUndefined()
   expect(await pane.find({ text: SAMPLE })).toBeUndefined()
   expect(await band.find({ text: /2 waiting on you/ })).toBeDefined()
