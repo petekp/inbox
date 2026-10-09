@@ -1854,11 +1854,20 @@ test('a saved session the store cannot read shows as unreadable, not empty, unti
   await clock.settle()
   expect(await pane.find({ text: 'Could not read the inbox.' })).toBeDefined()
 
+  // A turn and a finding meanwhile leave the saved copy as it was.
+  ledgerReply = 'NOW: Looking at it'
+  await $.prompt.submit({ text: 'keep going', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
+  await $.tool.call({ tool: 'mcp__inbox__record_finding', kind: 'issue', title: 'README is stale', detail: 'Old.' })
+  await clock.settle()
+  expect(stored.get('s:session-1')).toContain('Use Node or Python?')
+
   storeRefusal = undefined
   await pane.press({ key: 'read-again' })
   await clock.settle()
   expect(await pane.find({ text: /Could not read the inbox/ })).toBeUndefined()
   expect(await pane.find({ text: /Use Node or Python\?/ })).toBeDefined()
+  expect(stored.get('s:session-1')).toContain('Use Node or Python?')
 })
 
 test('a headless run does nothing', async ($, on) => {

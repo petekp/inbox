@@ -414,7 +414,8 @@ let recordedRows: { isDemo: boolean; ids: Partial<Record<Tab, Set<string>>> } | 
 let jumped: { tab: Tab; at: number } | null = null
 let isSaved = false
 let queue: Promise<void> = Promise.resolve()
-// Counts the conversations this process has run, so an update queued in one never writes into the next.
+// Counts the conversations this process has run, and the saved ledgers [Try again] put in place,
+// so an update queued on one ledger never writes into the next.
 let conversation = 0
 // What Claude last read of the inbox beside a prompt, so it is sent again only when it changed.
 let told: Told = TOLD_NOTHING
@@ -473,6 +474,8 @@ async function syncTheme($: EngineInterface) {
 }
 
 async function save($: EngineInterface, ledger: Ledger) {
+  // Until a read succeeds, the saved copy holds the conversation's rows, and this ledger lacks them.
+  if (unreadable?.id === sessionId) return
   const savedAt = await $.clock.now()
   const key = `s:${sessionId}`
   // The first save in a process deletes the key first, moving it to the end of
@@ -2210,6 +2213,44 @@ async function bringBack(
   return current
 }
 
+/**
+ * Puts the saved ledger in place of one built since the read failed, keeping the
+ * prompt count of the turns since. The saved ledger reuses the replaced one's ids
+ * for other rows, so updates queued on the replaced ledger are dropped, as is pane
+ * state kept by id; the caller's catch-up covers their turns. What only the
+ * replaced ledger held is lost.
+ */
+async function restore($: EngineInterface, current: Ledger, saved: Ledger): Promise<Ledger> {
+  conversation += 1
+  const loaded = upgradeLedger(saved)
+  const [restored] = await Promise.all([
+    update($, LEDGER, () => ({ ...loaded, turn: loaded.turn + current.turn })),
+    forgetRowState($),
+  ])
+
+  return restored
+}
+
+/**
+ * Forgets the pane state kept by row id, when another ledger takes the pane. Ids restart
+ * at i1 in each ledger, so a kept id would open or unfold another row, or put one row's
+ * words or note on another.
+ */
+async function forgetRowState($: EngineInterface) {
+  await Promise.all([
+    update($, SELECTION, () => NO_SELECTION),
+    update($, TYPING, () => null),
+    update($, UNFOLDED, () => []),
+    update($, SHOWN_DETAILS, () => []),
+    update($, OPTIONS_SHOWN, () => []),
+    update($, DRAFTS, () => ({})),
+    update($, NOTES, () => ({})),
+    // Thread and `pr:` entries stay: the branch PR outlives the ledger, and isThreadSent reads them.
+    update($, LAST_ACTIONS, a => Object.fromEntries(Object.entries(a).filter(([k]) => !/^[if]\d+$/.test(k)))),
+  ])
+  fieldSeeds.clear()
+}
+
 /** Reads the saved session again after the store could not, as [Try again] does, and brings it back. */
 async function readAgain($: EngineInterface) {
   const failed = unreadable
@@ -2221,8 +2262,17 @@ async function readAgain($: EngineInterface) {
   if (sessionId !== failed.id) return
   unreadable = saved === null ? failed : null
   if (saved !== null) {
-    const loaded = await bringBack($, await read($, LEDGER), saved.session, failed.isCleared, now)
-    if (!loaded.card && loaded.items.length === 0 && (await $.session.turns().catch(() => 0)) > 0) queueUpdate($, null)
+    const current = await read($, LEDGER)
+    const hasRun = current.turn !== 0 || current.card !== null
+    const loaded =
+      hasRun && saved.session
+        ? await restore($, current, saved.session.ledger)
+        : await bringBack($, current, saved.session, failed.isCleared, now)
+    if (
+      (hasRun && saved.session) ||
+      (!loaded.card && loaded.items.length === 0 && (await $.session.turns().catch(() => 0)) > 0)
+    )
+      queueUpdate($, null)
     void publishStatus($)
     if (loaded.prs.length > 0) void fetchPrs($, false)
     void followNewRows($).catch(() => undefined)
@@ -2339,17 +2389,7 @@ export const register: Register = on => {
       await Promise.all([
         update($, LEDGER, () => EMPTY),
         update($, PREVIOUS, () => null),
-        // Ids restart at i1 in the new conversation, so an id kept here would open or unfold another row,
-        // or put one row's words or note on another.
-        update($, SELECTION, () => NO_SELECTION),
-        update($, TYPING, () => null),
-        update($, UNFOLDED, () => []),
-        update($, SHOWN_DETAILS, () => []),
-        update($, OPTIONS_SHOWN, () => []),
-        update($, DRAFTS, () => ({})),
-        update($, NOTES, () => ({})),
-        // Thread and `pr:` entries stay: the branch PR outlives the conversation, and isThreadSent reads them.
-        update($, LAST_ACTIONS, a => Object.fromEntries(Object.entries(a).filter(([k]) => !/^[if]\d+$/.test(k)))),
+        forgetRowState($),
         update($, PRESENCE, p => ({ ...p, isAway: false, isUpdating: false, ledgerState: 'current' as const })),
       ])
       resetTurn()
@@ -2357,7 +2397,6 @@ export const register: Register = on => {
       told = TOLD_NOTHING
       contextFor.clear()
       storedAt.clear()
-      fieldSeeds.clear()
     }
 
     return next(e)
@@ -2667,25 +2706,39 @@ export const register: Register = on => {
           : []),
       ]
 
-      // Cut, it keeps its title and its buttons.
+      const title = (
+        <Text bold wrap="truncate-end">
+          Last session in this folder <Text dimColor>· {ago(now - prev.savedAt)}</Text>
+        </Text>
+      )
+      const buttons = [
+        prev.isBroughtIn ? (
+          <Text dimColor> Added to your next message.</Text>
+        ) : (
+          <Button
+            key="bring"
+            label="Continue from it"
+            variant="primary"
+            onPress={() => update($, PREVIOUS, p => (p ? { ...p, isBroughtIn: true } : p))}
+          />
+        ),
+        <Button key="dismiss-prev" label="Dismiss" onPress={() => update($, PREVIOUS, () => null)} />,
+      ]
+      // Cut, it keeps its title and its buttons, on one row when only one fits.
+      if (room < 2) {
+        return (
+          <Box flexDirection="row" gap={1}>
+            {title}
+            {buttons}
+          </Box>
+        )
+      }
       return (
         <Box flexDirection="column">
-          <Text bold>
-            Last session in this folder <Text dimColor>· {ago(now - prev.savedAt)}</Text>
-          </Text>
+          {title}
           {lines.slice(0, Math.max(0, room - 2))}
           <Box flexDirection="row" gap={1}>
-            {prev.isBroughtIn ? (
-              <Text dimColor> Added to your next message.</Text>
-            ) : (
-              <Button
-                key="bring"
-                label="Continue from it"
-                variant="primary"
-                onPress={() => update($, PREVIOUS, p => (p ? { ...p, isBroughtIn: true } : p))}
-              />
-            )}
-            <Button key="dismiss-prev" label="Dismiss" onPress={() => update($, PREVIOUS, () => null)} />
+            {buttons}
           </Box>
         </Box>
       )
