@@ -566,6 +566,7 @@ function viewOf(s, now) {
     now: l.card?.now ?? "",
     done: l.card?.done ?? [],
     running: l.card?.running ?? [],
+    lastActions: s.lastActions,
     leaving: Object.entries(s.lastActions).filter(([id, a]) => a.title !== void 0 && !open.has(id) && now - a.at < SETTLED_MS).map(([id, a]) => ({ id, title: a.title ?? "", text: a.text, at: a.at })),
     closed: ["question", "task"].flatMap(
       (kind) => l.closed.filter((d) => d.kind === kind).slice(-CLOSED_SHOWN).reverse().map((d) => ({ id: d.id, kind, ask: d.ask, outcome: d.outcome, isLapsed: isLapsed(d), at: d.at }))

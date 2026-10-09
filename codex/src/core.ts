@@ -256,6 +256,8 @@ export type View = InboxView & {
   now: string
   done: string[]
   running: string[]
+  /** Each row's last press, by row id. The tab draws from each row's feedback; a tab loaded before that still reads this. */
+  lastActions: Record<string, LastAction>
   /** Findings a press removed in the last few seconds, shown in their place with what was sent. */
   leaving: { id: string; title: string; text: string; at: number }[]
   /** Each group's latest closed items, newest first. */
@@ -288,6 +290,7 @@ export function viewOf(s: SessionState, now: number): View {
     now: l.card?.now ?? '',
     done: l.card?.done ?? [],
     running: l.card?.running ?? [],
+    lastActions: s.lastActions,
     leaving: Object.entries(s.lastActions)
       .filter(([id, a]) => a.title !== undefined && !open.has(id) && now - a.at < SETTLED_MS)
       .map(([id, a]) => ({ id, title: a.title ?? '', text: a.text, at: a.at })),
