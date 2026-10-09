@@ -4,11 +4,12 @@
 
 import { carryText, closeItem, EMPTY, isLapsed, promptNotes, screenText, toolActivity } from '../../hooks/ledger'
 import type { Exchange, Press } from '../../hooks/ledger'
-import { messages, steps } from '../../hooks/presses'
+import { actionId, messages, pressText, steps } from '../../hooks/presses'
+import type { RowPress } from '../../hooks/presses'
 import { inboxView, perTurnStatus } from '../../hooks/view'
 import type { InboxView } from '../../hooks/view'
-import type { Item } from '../../types'
-import type { LastAction, SessionState } from './state'
+import type { Item, LastAction } from '../../types'
+import type { SessionState } from './state'
 import { CODEX, GUIDANCE, START_TITLE } from './texts'
 
 /** The tab polls every few seconds; a poll this recent means it is open. */
@@ -128,8 +129,24 @@ export type Effect =
   | { kind: 'open'; target: string }
   | { kind: 'copy'; text: string; name: string }
 
-function withLast(s: SessionState, id: string, last: Omit<LastAction, 'at'>, now: number): SessionState {
-  return { ...s, lastActions: { ...s.lastActions, [id]: { ...last, at: now } } }
+/** Records a Talk or Hand-off press on its row, under the action id and label the mod records for it. */
+function withLast(
+  s: SessionState,
+  p: RowPress,
+  kind: 'talk' | 'handoff',
+  now: number,
+  extra: Pick<LastAction, 'title'> = {},
+): SessionState {
+  const last: LastAction = {
+    kind,
+    action: actionId(p),
+    text: pressText(p),
+    at: now,
+    turnsStarted: s.presence.turnsStarted,
+    ...extra,
+  }
+
+  return { ...s, lastActions: { ...s.lastActions, [p.id]: last } }
 }
 
 function sent(s: SessionState, text: string, press: Press | null, now: number): SessionState {
@@ -159,20 +176,14 @@ export function press(s: SessionState, p: TabPress, now: number): { state: Sessi
     const words = p.action === 'typedFinding' ? p.text.trim() : ''
     if (p.action === 'typedFinding' && !words) return null
     const how = p.action === 'typedFinding' ? 'typed' : p.action
-    const text =
-      how === 'address'
-        ? finding.kind === 'issue'
-          ? 'Sent to Codex to fix'
-          : 'Sent to Codex to act on'
-        : how === 'discuss'
-          ? 'Discuss sent'
-          : 'Reply sent'
+    const last =
+      how === 'typed'
+        ? withLast(removed, { action: 'type', id: p.id, text: words }, 'handoff', now, { title: finding.title })
+        : withLast(removed, { action: how, id: p.id }, how === 'address' ? 'handoff' : 'talk', now, {
+            title: finding.title,
+          })
 
-    return send(
-      withLast(removed, p.id, { action: p.action, text, title: finding.title }, now),
-      messages.finding(finding, how, words),
-      null,
-    )
+    return send(last, messages.finding(finding, how, words), null)
   }
   const item = s.ledger.items.find(i => i.id === p.id)
   if (!item) return null
@@ -191,11 +202,14 @@ export function press(s: SessionState, p: TabPress, now: number): { state: Sessi
       if (!words) return null
       if (item.kind === 'question')
         return send(close(words, 'answered'), messages.answer(item, words), { id: item.id, action: 'answer' })
-      const last = { action: 'typed', text: 'Reply sent', isHandoff: true, turnsStarted: s.presence.turnsStarted }
-      return send(withLast(s, item.id, last, now), messages.taskReply(item, words), null)
+      return send(
+        withLast(s, { action: 'type', id: item.id, text: words }, 'handoff', now),
+        messages.taskReply(item, words),
+        null,
+      )
     }
     case 'explain':
-      return send(withLast(s, item.id, { action: 'explain', text: 'Explain sent' }, now), messages.explain(item), {
+      return send(withLast(s, { action: 'explain', id: item.id }, 'talk', now), messages.explain(item), {
         id: item.id,
         action: 'explain',
       })
@@ -219,17 +233,7 @@ export function press(s: SessionState, p: TabPress, now: number): { state: Sessi
         else effects.push({ kind: 'copy', text: help.command, name: help.name ?? 'the command' })
       }
       if (found.step.some(h => h.kind === 'run'))
-        state = withLast(
-          state,
-          item.id,
-          {
-            action: `step-${p.step}`,
-            text: `${found.label} sent`,
-            isHandoff: true,
-            turnsStarted: s.presence.turnsStarted,
-          },
-          now,
-        )
+        state = withLast(state, { action: 'step', id: item.id, step: p.step, label: found.label }, 'handoff', now)
 
       return { state, effects }
     }
@@ -252,8 +256,6 @@ export type View = InboxView & {
   now: string
   done: string[]
   running: string[]
-  /** Each row's last press, by row id. */
-  lastActions: Record<string, LastAction>
   /** Findings a press removed in the last few seconds, shown in their place with what was sent. */
   leaving: { id: string; title: string; text: string; at: number }[]
   /** Each group's latest closed items, newest first. */
@@ -275,12 +277,17 @@ export function viewOf(s: SessionState, now: number): View {
   }
 
   return {
-    ...inboxView({ ledger: l, lastActions: s.lastActions, turns: s.presence, status: perTurnStatus(l, update) }),
+    ...inboxView({
+      ledger: l,
+      lastActions: s.lastActions,
+      turns: s.presence,
+      extraSteps: {},
+      status: perTurnStatus(l, update),
+    }),
     goal: l.card?.goal ?? '',
     now: l.card?.now ?? '',
     done: l.card?.done ?? [],
     running: l.card?.running ?? [],
-    lastActions: s.lastActions,
     leaving: Object.entries(s.lastActions)
       .filter(([id, a]) => a.title !== undefined && !open.has(id) && now - a.at < SETTLED_MS)
       .map(([id, a]) => ({ id, title: a.title ?? '', text: a.text, at: a.at })),

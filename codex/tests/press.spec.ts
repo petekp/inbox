@@ -80,7 +80,7 @@ test('a run step hands the task to Codex: it folds until the turn it started is 
   assert.equal(r.effects[0]?.kind, 'send')
   const folded = viewOf(r.state, 60)
   assert.deepEqual(folded.needsYou.tasks[0]?.state, { is: 'handedOff' })
-  assert.equal(folded.lastActions.i2?.text, 'Run seed script sent')
+  assert.deepEqual(folded.needsYou.tasks[0]?.feedback, { is: 'done', label: 'Run seed script', at: 50 })
   assert.equal(folded.needsYou.count, 1)
 
   const started = notePrompt(r.state, (r.effects[0] as { text: string }).text, 70).state
@@ -112,7 +112,7 @@ test('the tab lists Needs you in the mod’s order, numbers only the questions a
       ],
     },
     // The older task was handed to Codex in the turn that is running.
-    lastActions: { i1: { action: 'typed', text: 'Reply sent', at: 1, isHandoff: true, turnsStarted: 2 } },
+    lastActions: { i1: { kind: 'handoff', action: 'type', text: 'Reply', at: 1, turnsStarted: 2 } },
     presence: { ...s.presence, turnsStarted: 2, turnsApplied: 2 },
   }
   const v = viewOf(state, 10)
@@ -135,6 +135,42 @@ test('the tab lists Needs you in the mod’s order, numbers only the questions a
   assert.deepEqual(
     after.needsYou.questions.map(r => r.handle),
     ['?', '?', '?'],
+  )
+})
+
+test('a question lists every option, folds those past the fourth of 7, marks the recommended one, and lists its steps before its other actions', () => {
+  const s = emptyState('s1')
+  const colors = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Indigo', 'Violet']
+  const state: SessionState = {
+    ...s,
+    ledger: {
+      ...s.ledger,
+      items: [
+        {
+          ...asked('i1', 'question', 1),
+          options: colors,
+          rec: 'Green',
+          helps: [{ kind: 'run', command: './a.sh', name: 'a script' }],
+        },
+      ],
+    },
+  }
+  const actions = viewOf(state, 10).needsYou.questions[0]?.actions ?? []
+  assert.deepEqual(
+    actions.map(a => [a.label, a.kind, a.isPrimary, a.isFolded]),
+    [
+      ['Red', 'mark', false, false],
+      ['Orange', 'mark', false, false],
+      ['Yellow', 'mark', false, false],
+      ['Green', 'mark', true, false],
+      ['Blue', 'mark', false, true],
+      ['Indigo', 'mark', false, true],
+      ['Violet', 'mark', false, true],
+      ['Run a script', 'handoff', false, false],
+      ['Type an answer', 'mark', false, false],
+      ['Explain', 'talk', false, false],
+      ['Dismiss', 'mark', false, false],
+    ],
   )
 })
 
@@ -166,7 +202,7 @@ test('Address removes the finding, sends it, and shows what was sent in its plac
   )
   assert.deepEqual(
     viewOf(r.state, 60).leaving.map(x => [x.title, x.text]),
-    [['No lint script', 'Sent to Codex to fix']],
+    [['No lint script', 'Address']],
   )
   assert.deepEqual(viewOf(r.state, 60 + 6000).leaving, [])
   assert.deepEqual(r.state.ledger.findings, [])

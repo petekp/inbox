@@ -8,19 +8,8 @@ import { dirname, join } from 'node:path'
 
 import { EMPTY, TOLD_NOTHING, upgradeLedger } from '../../hooks/ledger'
 import type { Exchange, Press, Told } from '../../hooks/ledger'
-import type { Ledger } from '../../types'
-
-/** What a row's last press did, shown on the row so the person sees it went through. */
-export type LastAction = {
-  action: string
-  text: string
-  at: number
-  /** The press handed the row's work to Codex, so the row folds until the turn it started is summarized. */
-  isHandoff?: boolean
-  turnsStarted?: number
-  /** For a finding the press removed: its title, shown in its place for a few seconds. */
-  title?: string
-}
+import { upgradeLastActions } from '../../hooks/presses'
+import type { LastAction, Ledger } from '../../types'
 
 export type SessionState = {
   version: 1
@@ -128,6 +117,7 @@ function upgraded(saved: Saved, sessionId: string): SessionState {
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...saved.presence },
     pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex })),
+    lastActions: upgradeLastActions(saved.lastActions ?? {}),
   }
 }
 

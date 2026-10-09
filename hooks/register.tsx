@@ -17,6 +17,7 @@ import type {
   Presence,
   Previous,
   LastAction,
+  PressKind,
   Settled,
   Stop,
   Tab,
@@ -76,9 +77,19 @@ import {
   type Told,
   upgradeLedger,
 } from './ledger'
-import { baseName, clipLabel, localPath, messages, openCommands, prSteps, stepsOf } from './presses'
-import type { HelpStep } from './presses'
-import { inboxView, needsYouOrder, perTurnStatus } from './view'
+import {
+  actionId,
+  baseName,
+  clipLabel,
+  localPath,
+  messages,
+  openCommands,
+  pressText,
+  prSteps,
+  upgradeLastActions,
+} from './presses'
+import type { HelpStep, PrActionId } from './presses'
+import { feedbackOf, feedbackText, inboxView, needsYouOrder, perTurnStatus } from './view'
 import type { InboxView, RowView } from './view'
 import {
   CLOSE_DESCRIPTION,
@@ -121,6 +132,7 @@ const ARRIVAL = atom({ plugin: 'inbox', key: 'arrival' } as const, null as Arriv
 const LAST_ACTIONS = atom({ plugin: 'inbox', key: 'lastActions' } as const, {} as Record<string, LastAction>)
 const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as Item['kind'][])
 const SHOWN_DETAILS = atom({ plugin: 'inbox', key: 'shownDetails' } as const, [] as string[])
+const OPTIONS_SHOWN = atom({ plugin: 'inbox', key: 'optionsShown' } as const, [] as string[])
 const IS_KEY_LIST_SHOWN = atom({ plugin: 'inbox', key: 'isKeyListShown' } as const, false)
 // How long a closed item's row stays in place, with its outcome, before it moves to Closed.
 const SETTLED_MS = 5120
@@ -134,7 +146,7 @@ const ARRIVAL_MS = 1500
 const IS_DEMO = atom({ plugin: 'inbox', key: 'isDemo' } as const, false)
 const SAMPLE_PRESS = 'Sample entry: nothing was sent. Run /inbox demo to go back.'
 // The pane's buttons that only move around it, which work in the demo. Every other press there sends nothing.
-const DEMO_PRESSES = /^(tab-|title-|select-|typekey-|fold-|key-list$|next$|previous$)/
+const DEMO_PRESSES = /^(tab-|title-|select-|typekey-|fold-|all-options-|key-list$|next$|previous$)/
 const PR_POLL_MS = 2 * 60_000
 const MAX_PRS = 6
 
@@ -567,15 +579,20 @@ async function commitLedger($: EngineInterface, change: (l: Ledger) => Ledger): 
   void followNewRows($).catch(() => undefined)
 }
 
-/** The inbox view of a ledger, with the item status the presence gives. */
+/**
+ * The inbox view of a ledger, with the item status the presence gives. With
+ * `prViews`, an item whose ask names a tracked PR gets a step that opens it;
+ * the counts need none.
+ */
 function viewOf(
-  { ledger, lastActions, turns }: Pick<View, 'ledger' | 'lastActions' | 'turns'>,
+  { ledger, lastActions, turns, prViews }: Pick<View, 'ledger' | 'lastActions' | 'turns'> & { prViews?: PrViews },
   presence: Presence,
 ): InboxView {
   return inboxView({
     ledger,
     lastActions,
     turns,
+    extraSteps: prViews ? Object.fromEntries(ledger.items.map(i => [i.id, itemPrSteps(i, prViews, ledger.prs)])) : {},
     // catchUp reruns a failed update after the next message.
     status: perTurnStatus(ledger, {
       isUpdating: presence.isUpdating,
@@ -630,7 +647,7 @@ function redrawWhileLeaving($: EngineInterface, refresh: () => Promise<unknown>,
 async function recordLastAction($: EngineInterface, id: string, last: Omit<LastAction, 'at' | 'turnsStarted'>) {
   const [at, { turnsStarted }] = await Promise.all([$.clock.now(), read($, PRESENCE)])
   await update($, LAST_ACTIONS, a => ({ ...a, [id]: { ...last, at, turnsStarted } }))
-  if (last.isHandoff) void publishStatus($)
+  if (last.kind === 'handoff') void publishStatus($)
   // A finding the press removed shows in its place, with a leave bar, until the settle time is over.
   // A fresh object redraws the pane, so the bar shrinks and the place then clears.
   redrawWhileLeaving($, () => update($, LAST_ACTIONS, a => ({ ...a })), SETTLED_MS)
@@ -876,7 +893,7 @@ function repoPath(path: string): string {
  * ledger. A reload keeps $.state, so a running session can still hold findings
  * under `notes`, and `notes` as its tab, and the Needs you tab as `waiting`,
  * with item kinds `decide` and `do`, PR threads without a time or
- * `isLinesChanged`, and last actions that don't say whether they handed work off.
+ * `isLinesChanged`, and last actions saved by button key without a kind.
  */
 async function upgradeState($: EngineInterface): Promise<Ledger> {
   const [ledger] = await Promise.all([
@@ -889,24 +906,9 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
       ...s,
     })),
     update($, UNFOLDED, u => u.map(readKind)),
-    // Before last actions said whether they handed work off, Address, a task's Run step and a typed reply did.
-    // An earlier build saved one for Open and Open log, which record nothing now, as the page they open shows the press.
-    // Session checks and a PR check's Fix are gone, so their last actions go too.
-    update($, LAST_ACTIONS, a =>
-      Object.fromEntries(
-        Object.entries(a)
-          .filter(([id, last]) => !/^(open|log|fix)-/.test(last.action) && !id.startsWith('check:'))
-          .map(([id, last]) => [
-            id,
-            {
-              ...last,
-              // Earlier versions saved "Discuss sent" or "Sent to Claude to fix"; a last action is now the label pressed.
-              text: /^Sent to Claude to /.test(last.text) ? 'Address' : last.text.replace(/ sent$/, ''),
-              isHandoff: last.isHandoff ?? /^(address-|help-|typed$)/.test(last.action),
-            },
-          ]),
-      ),
-    ),
+    // Last actions an earlier build saved by button key, without a kind. Those for Open, Open log,
+    // a session check and a PR check's Fix record nothing now, so they go.
+    update($, LAST_ACTIONS, upgradeLastActions),
     // A session check's row that just passed or was sent to Claude settled here too, and is gone with them.
     update($, SETTLED, s => s.filter(x => (x.kind as string) !== 'check').map(x => ({ ...x, kind: readKind(x.kind) }))),
     // Presence from before the turn counts existed cannot say whether the last
@@ -1327,7 +1329,7 @@ function handoffs(lastActions: Record<string, LastAction>): Handoffs {
     isThreadSent: (pr, t) => {
       const last = lastActions[prThreadId(pr, t)]
 
-      return last?.isHandoff === true && last.at > ((t.reply ?? t).at ?? 0)
+      return last?.kind === 'handoff' && last.at > ((t.reply ?? t).at ?? 0)
     },
   }
 }
@@ -1347,107 +1349,119 @@ type Action = {
   variant?: 'primary'
   dimColor?: boolean
   /**
-   * Whether the press leaves "✓ <label>" on its row, so the person sees it went
-   * through. False only when the press shows itself: the row closes or leaves,
-   * a field opens, the row shows its own mark, or a page, app or toast opens.
+   * What the press does (UI 2.3). A Talk or Hand-off press leaves "✓ <label>"
+   * on its row, so the person sees it went through, and a Hand-off folds the
+   * row. The other kinds show themselves: the row closes, a field or page
+   * opens, or the screen changes.
    */
-  done: boolean
-  /** The press hands the row's work to Claude, so the row folds and stops waiting on the person. Explain, Discuss and Draft reply only ask Claude to talk or draft. */
-  handsOff?: boolean
+  kind: PressKind
+  /** For a Talk or Hand-off press: the action id its row stores, and the label the row reads after a ✓. */
+  records?: { action: string; text: string }
   onPress: (press: UiPressArgument) => void
 }
 
-function answerActions($: EngineInterface, item: Item): Action[] {
-  return item.options.map((answer, n) => ({
-    key: `answer-${item.id}-${n}`,
-    // Pressing it sends the answer alone, without the note.
-    label: answer === item.rec ? `${clipLabel(answer, 32)} (recommended)` : clipLabel(answer, 32),
-    ...(answer === item.rec ? { variant: 'primary' as const } : {}),
-    done: false,
-    onPress: () => void sendAnswer($, item, answer),
-  }))
-}
-
-/** An item's help steps, then one that opens the PRs the session tracks that its ask names. */
-function itemSteps(item: Item, prState: PrViews, linked: string[]): HelpStep[] {
+/** The steps that open the PRs the session tracks that an item's ask names. */
+function itemPrSteps(item: Item, prState: PrViews, linked: string[]): HelpStep[] {
   const refs = prState.branchRef ? [...linked, prState.branchRef] : linked
 
-  return stepsOf(
+  return prSteps(
     item,
-    prSteps(
-      item,
-      refs.map(ref => ({ ref, url: prState.views[ref]?.url ?? null })),
-    ),
+    refs.map(ref => ({ ref, url: prState.views[ref]?.url ?? null })),
   )
 }
 
-function helpActions($: EngineInterface, item: Item, helpSteps: HelpStep[]): Action[] {
-  return helpSteps.map(({ label, step }, n) => ({
-    key: `help-${item.id}-${n}`,
-    label,
-    done: step.some(h => h.kind === 'run'),
-    handsOff: step.some(h => h.kind === 'run'),
-    onPress: (press: UiPressArgument) => void useStep($, item, step, press),
-  }))
-}
+/** A pane action with the key that presses it while the pane has focus, if it has one. */
+type KeyAction = Action & { hotkey?: string }
 
-function doneAction($: EngineInterface, item: Item): Action {
-  return {
-    key: `done-${item.id}`,
-    label: 'Done',
-    done: false,
-    onPress: () => void close($, item.id, { how: 'done', outcome: 'done' }),
-  }
-}
-
-/** A pane action with the key that presses it while the pane has focus. */
-type KeyAction = Action & { hotkey: string }
-
-// The keys of a question's answers and a task's helps, lettered as a multiple-choice
+// The keys of a question's options and a row's steps, lettered as a multiple-choice
 // question letters them. The digits switch tabs, and the letters left out are the
 // keys of a Needs you row's other actions and of moving the selection.
 const CHOICE_KEYS = [...'abcfghilm']
 
 /**
- * The selected item's actions. `keys` finish it: answers and helps on letters,
- * and Done for a task. `more` are the other ways to respond: your own words,
- * Explain, and Dismiss for a question.
+ * A question, task or finding's actions as the pane's keys. `keys` finish the
+ * row: options and steps, the first 9 shown on letters, Done for a task and
+ * Address for a finding. `more` are the other ways to respond: your own words,
+ * Explain or Discuss, and Dismiss. Options past the fourth of a question with
+ * more than 5 show only after [All N options], which `isAllShown` records.
  */
-function itemKeys($: EngineInterface, item: Item, helpSteps: HelpStep[]): { keys: KeyAction[]; more: KeyAction[] } {
-  const lettered = [...(item.kind === 'task' ? [] : answerActions($, item)), ...helpActions($, item, helpSteps)]
-    .slice(0, CHOICE_KEYS.length)
-    .map((a, n) => ({ ...a, hotkey: CHOICE_KEYS[n]! }))
-  const explainKey = {
-    key: `explain-${item.id}`,
-    label: 'Explain',
-    hotkey: 'e',
-    done: true,
-    onPress: () => void explain($, item),
+function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { keys: KeyAction[]; more: KeyAction[] } {
+  const { id, item, finding } = r
+  const shown = r.actions.filter(a => isAllShown || !a.isFolded)
+  const folded = r.actions.length - shown.length
+  // [All N options] follows the last option shown.
+  const lastOption = shown.map(a => a.press.action).lastIndexOf('answer')
+  const keys: KeyAction[] = []
+  const more: KeyAction[] = []
+  let letters = 0
+  for (const [n, a] of shown.entries()) {
+    const p = a.press
+    const base = {
+      label: a.label,
+      kind: a.kind,
+      ...(a.kind === 'talk' || a.kind === 'handoff' ? { records: { action: actionId(p), text: pressText(p) } } : {}),
+    }
+    const lettered = () => (letters < CHOICE_KEYS.length ? { hotkey: CHOICE_KEYS[letters++]! } : {})
+    if (p.action === 'answer' && item) {
+      keys.push({
+        ...base,
+        ...lettered(),
+        key: `answer-${id}-${item.options.indexOf(p.option)}`,
+        ...(a.isPrimary ? { variant: 'primary' as const } : {}),
+        onPress: () => void sendAnswer($, item, p.option),
+      })
+      if (n === lastOption && folded > 0)
+        keys.push({
+          key: `all-options-${id}`,
+          label: `All ${item.options.length} options`,
+          kind: 'view',
+          onPress: () => void update($, OPTIONS_SHOWN, s => (s.includes(id) ? s : [...s, id])),
+        })
+    } else if (p.action === 'step' && item) {
+      const step = r.steps[p.step]?.step ?? []
+      keys.push({
+        ...base,
+        ...lettered(),
+        key: `help-${id}-${p.step}`,
+        onPress: (press: UiPressArgument) => void useStep($, item, step, press),
+      })
+    } else if (p.action === 'done') {
+      keys.push({
+        ...base,
+        key: `done-${id}`,
+        hotkey: 'd',
+        onPress: () => void close($, id, { how: 'done', outcome: 'done' }),
+      })
+    } else if (p.action === 'address' && finding) {
+      keys.push({ ...base, key: `address-${id}`, hotkey: 'a', onPress: () => void actOnFinding($, finding, 'address') })
+    } else if (p.action === 'type') {
+      // The press opens the field; sending from it is what records the reply.
+      more.push({
+        label: a.label,
+        kind: 'view',
+        key: `typekey-${id}`,
+        hotkey: 't',
+        onPress: () => void startTyping($, id),
+      })
+    } else if (p.action === 'explain' && item) {
+      more.push({ ...base, key: `explain-${id}`, hotkey: 'e', onPress: () => void explain($, item) })
+    } else if (p.action === 'discuss' && finding) {
+      more.push({ ...base, key: `discuss-${id}`, hotkey: 'e', onPress: () => void actOnFinding($, finding, 'discuss') })
+    } else if (p.action === 'dismiss') {
+      more.push(
+        finding
+          ? { ...base, key: `drop-${id}`, hotkey: 'x', onPress: () => void removeFinding($, id) }
+          : {
+              ...base,
+              key: `dismiss-${id}`,
+              hotkey: 'x',
+              onPress: () => void close($, id, { how: 'dismissed', outcome: 'dismissed' }),
+            },
+      )
+    }
   }
-  const typeKey = {
-    key: `typekey-${item.id}`,
-    label: item.kind === 'task' ? 'Type a reply' : 'Type an answer',
-    hotkey: 't',
-    done: false,
-    onPress: () => void startTyping($, item.id),
-  }
-  if (item.kind === 'task')
-    return { keys: [...lettered, { ...doneAction($, item), hotkey: 'd' }], more: [typeKey, explainKey] }
 
-  return {
-    keys: lettered,
-    more: [
-      typeKey,
-      explainKey,
-      {
-        key: `dismiss-${item.id}`,
-        label: 'Dismiss',
-        hotkey: 'x',
-        done: false,
-        onPress: () => void close($, item.id, { how: 'dismissed', outcome: 'dismissed' }),
-      },
-    ],
-  }
+  return { keys, more }
 }
 
 function capitalized(text: string): string {
@@ -1626,6 +1640,8 @@ export const register: Register = on => {
       await Promise.all([
         update($, LEDGER, () => EMPTY),
         update($, PREVIOUS, () => null),
+        // Ids restart at i1 in the new conversation, so an id kept here would unfold another question.
+        update($, OPTIONS_SHOWN, () => []),
         update($, PRESENCE, p => ({ ...p, isAway: false, isUpdating: false, ledgerState: 'current' as const })),
       ])
       resetTurn()
@@ -2038,6 +2054,7 @@ export const register: Register = on => {
       shownDetails,
       arrival,
       isDemo,
+      optionsShown,
     ] = await Promise.all([
       drawnState($),
       read($, PRESENCE),
@@ -2050,6 +2067,7 @@ export const register: Register = on => {
       read($, SHOWN_DETAILS),
       read($, ARRIVAL),
       read($, IS_DEMO),
+      read($, OPTIONS_SHOWN),
     ])
     // Sample entries can be selected and opened, but what they would send goes nowhere.
     // This is decided here, not in a ui.press hook: a press whose hook awaits before
@@ -2093,8 +2111,8 @@ export const register: Register = on => {
       keys: () => KeyAction[]
       /** Actions that talk about the row or drop it, after `keys` and a muted dot. */
       moreKeys?: () => KeyAction[]
-      /** Where the person's own words go, for a row that takes them, and what the row says once they are sent (Action's `done` and `handsOff`). */
-      onType?: { done: string | null; handsOff?: boolean; send: (text: string) => void }
+      /** Where the person's own words go, for a row that takes them. A row they leave open records them as a hand-off. */
+      onType?: { isHandoff: boolean; send: (text: string) => void }
       typeHint?: string
       /**
        * The row no longer waits on the person. Selected, it shows `line` and
@@ -2103,7 +2121,7 @@ export const register: Register = on => {
       fold?: { line?: JSX.Element; note?: string }
     }
     // An item's group header says whether it is a question or a task, so the row
-    // needs no context line. The recommended answer is marked on its key.
+    // needs no context line. The recommended answer is its key's style.
     const itemRow = (r: RowView, item: Item): Row => {
       const asked = item.at === null ? undefined : ` · ${ago(now - item.at)}`
       // A task handed to Claude folds, as an answered question closes, until Claude's reply leaves it open.
@@ -2118,18 +2136,17 @@ export const register: Register = on => {
         titleAfter: asked,
         hasSecondLine: item.kind === 'question',
         body: null,
-        keys: () => itemKeys($, item, itemSteps(item, prState, ledger.prs)).keys,
-        moreKeys: () => itemKeys($, item, itemSteps(item, prState, ledger.prs)).more,
+        keys: () => rowKeyActions($, r, optionsShown.includes(r.id)).keys,
+        moreKeys: () => rowKeyActions($, r, optionsShown.includes(r.id)).more,
         // A question closes on its typed answer; a task stays open.
         onType: {
-          done: item.kind === 'task' ? 'Reply' : null,
-          handsOff: item.kind === 'task',
+          isHandoff: item.kind === 'task',
           send: (text: string) => void sendTypedForItem($, item, text),
         },
         typeHint: item.kind === 'task' ? 'Your reply to Claude' : 'Your answer',
       }
     }
-    const findingRow = (finding: Finding): Row => ({
+    const findingRow = (r: RowView, finding: Finding): Row => ({
       id: finding.id,
       handle: '•',
       title: finding.title,
@@ -2152,42 +2169,17 @@ export const register: Register = on => {
           ) : null}
         </Box>
       ),
-      onType: { done: 'Reply', send: (text: string) => void sendTypedForFinding($, finding, text) },
+      onType: { isHandoff: true, send: (text: string) => void sendTypedForFinding($, finding, text) },
       typeHint: 'Your reply to Claude',
-      keys: () => [
-        {
-          key: `address-${finding.id}`,
-          label: 'Address it',
-          hotkey: 'a',
-          done: true,
-          onPress: () => void actOnFinding($, finding, 'address'),
-        },
-      ],
-      moreKeys: () => [
-        {
-          key: `typekey-${finding.id}`,
-          label: 'Type a reply',
-          hotkey: 't',
-          done: false,
-          onPress: () => void startTyping($, finding.id),
-        },
-        {
-          key: `discuss-${finding.id}`,
-          label: 'Discuss',
-          hotkey: 'e',
-          done: true,
-          onPress: () => void actOnFinding($, finding, 'discuss'),
-        },
-        {
-          key: `drop-${finding.id}`,
-          label: 'Dismiss',
-          hotkey: 'x',
-          done: false,
-          onPress: () => void removeFinding($, finding.id),
-        },
-      ],
+      keys: () => rowKeyActions($, r, true).keys,
+      moreKeys: () => rowKeyActions($, r, true).more,
     })
     const handoff = handoffs(lastActions)
+    // A PR action that records itself on its row, labeled "… again" once it was the row's last action.
+    const recorded = (rowId: string, action: PrActionId, label: string) => ({
+      label: lastActions[rowId]?.action === action ? `${label} again` : label,
+      records: { action: actionId({ action }), text: label },
+    })
     const checkRow = (pr: PrView, c: PrCheck): Row => ({
       id: prCheckId(pr, c),
       handle: '✗',
@@ -2205,7 +2197,7 @@ export const register: Register = on => {
           key: `log-${pr.ref}-${c.name}`,
           label: 'Open log',
           hotkey: 'o',
-          done: false,
+          kind: 'local',
           onPress: () => void openUrl($, c.url ?? pr.url),
         },
       ],
@@ -2267,33 +2259,32 @@ export const register: Register = on => {
         keys: () => [
           {
             key: `address-${t.id}`,
-            label: 'Address',
+            ...recorded(id, 'thread-address', 'Address'),
             hotkey: 'a',
-            done: true,
-            handsOff: true,
+            kind: 'handoff',
             onPress: () => void send($, prompts.address(pr, [t])),
           },
           {
             key: `draft-${t.id}`,
-            label: 'Draft reply',
+            ...recorded(id, 'thread-draft', 'Draft reply'),
             hotkey: 'r',
-            done: true,
+            kind: 'talk',
             onPress: () => void send($, prompts.draft(pr, t)),
           },
           {
             key: `open-${t.id}`,
             label: 'Open',
             hotkey: 'o',
-            done: false,
+            kind: 'local',
             onPress: () => void openUrl($, t.reply?.url || t.url || pr.url),
           },
         ],
         moreKeys: () => [
           {
             key: `discuss-${t.id}`,
-            label: 'Discuss',
+            ...recorded(id, 'thread-discuss', 'Discuss'),
             hotkey: 'e',
-            done: true,
+            kind: 'talk',
             onPress: () => void send($, prompts.discuss(pr, t)),
           },
         ],
@@ -2311,7 +2302,7 @@ export const register: Register = on => {
     }))
     const rows: Record<Tab, Row[]> = {
       needsYou: needsYouGroups.flatMap(g => g.rows),
-      findings: view.findings.rows.flatMap(r => (r.finding ? [findingRow(r.finding)] : [])),
+      findings: view.findings.rows.flatMap(r => (r.finding ? [findingRow(r, r.finding)] : [])),
       prs: prGroups.flatMap(g => g.rows),
     }
     // What each tab's count says waits on the person: a row handed to Claude waits on Claude.
@@ -2330,12 +2321,20 @@ export const register: Register = on => {
     // Both invert while the pointer is over either, so the letter lights with its label.
     // A hover cannot name the terminal's default color, which a Button's label
     // inverts, so the letter and the label both invert the muted color to match.
-    const keyedButton = ({ hotkey, ...action }: KeyAction) => (
+    // An action past the lettered ones, or one that only changes the view, has no key and draws its label alone.
+    const keyedButton = ({ hotkey, kind: _kind, records: _records, ...action }: KeyAction) => (
       <Box key={`keyed-${action.key}`} flexDirection="row">
-        <Text color={pal.key} hover={{ color: pal.muted, inverse: true }}>
-          {hotkey}
-        </Text>
-        <Button plain {...action} label={`: ${action.label}`} hover={{ color: pal.muted, inverse: true }} />
+        {hotkey ? (
+          <Text color={pal.key} hover={{ color: pal.muted, inverse: true }}>
+            {hotkey}
+          </Text>
+        ) : null}
+        <Button
+          plain
+          {...action}
+          label={hotkey ? `: ${action.label}` : action.label}
+          hover={{ color: pal.muted, inverse: true }}
+        />
       </Box>
     )
     // A row's other actions follow its main ones after a muted dot.
@@ -2348,7 +2347,9 @@ export const register: Register = on => {
     )
     // The Buttons that take the pane's keys, drawn in a hidden Box.
     const keyBindings = (keys: KeyAction[], suffix = '') =>
-      keys.map(({ key, ...k }) => <Button key={`${key}${suffix}`} plain {...k} />)
+      keys.flatMap(({ key, hotkey, kind: _kind, records: _records, ...k }) =>
+        hotkey ? [<Button key={`${key}${suffix}`} plain hotkey={hotkey} {...k} />] : [],
+      )
     // A selected row's secondary keys share its key row when they fit, and
     // otherwise take a line of their own rather than wrap mid-row. A key draws
     // "key: label", and keyRow puts 2 columns between keys and the dot.
@@ -2356,15 +2357,16 @@ export const register: Register = on => {
       const all = [...keys, ...more]
       const dot = keys.length > 0 && more.length > 0 ? 3 : 0
 
-      return all.reduce((w, k) => w + k.hotkey.length + 2 + k.label.length, 0) + 2 * Math.max(0, all.length - 1) + dot
+      return (
+        all.reduce((w, k) => w + (k.hotkey ? k.hotkey.length + 2 : 0) + k.label.length, 0) +
+        2 * Math.max(0, all.length - 1) +
+        dot
+      )
     }
     // A typed reply needs a text field, so it is left out where there is none.
     const pressable = (keys: KeyAction[]) => keys.filter(k => Input || !k.key.startsWith('typekey-'))
     const toggleDetails = (id: string) =>
       void update($, SHOWN_DETAILS, s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id]))
-    // Every action that declares `done` records it on its row once the press has
-    // worked, so a press never goes unseen. One already done reads "… again", so a
-    // second press is a choice. A click and a key press both run through here.
     // Under a just-closed row, a thin bar that empties as its time in place runs out.
     // ─ is a light line across a cell and ╴ across its left half, so the bar shrinks by half cells.
     const leaveBar = (at: number) => {
@@ -2374,23 +2376,18 @@ export const register: Register = on => {
         <Text color={pal.mark.done}>{'─'.repeat(Math.floor(halves / 2)) + (halves % 2 ? '╴' : '')}</Text>
       ) : null
     }
+    // A Talk or Hand-off press records itself on its row once it has worked, so a
+    // press never goes unseen. A click and a key press both run through here.
     const withLastAction = <A extends Action>(row: { id: string; title: string }, index: number, actions: A[]): A[] =>
       actions.map(a => {
-        if (!a.done) return a
+        const { kind, records } = a
+        if (!records || (kind !== 'talk' && kind !== 'handoff')) return a
 
         return {
           ...a,
-          label: lastActions[row.id]?.action === a.key ? `${a.label} again` : a.label,
           onPress: (press: UiPressArgument) => {
             a.onPress(press)
-            void recordLastAction($, row.id, {
-              action: a.key,
-              text: a.label,
-              isHandoff: a.handsOff === true,
-              tab,
-              title: row.title,
-              index,
-            })
+            void recordLastAction($, row.id, { kind, ...records, tab, title: row.title, index })
           },
         }
       })
@@ -2399,7 +2396,7 @@ export const register: Register = on => {
       key: `fold-details-${row.id}`,
       label: shownDetails.includes(row.id) ? 'Hide details' : 'Details',
       hotkey: 'v',
-      done: false,
+      kind: 'view',
       onPress: () => toggleDetails(row.id),
     })
     // The selected row's keys, for both the key row it draws and the hidden bindings.
@@ -2414,10 +2411,15 @@ export const register: Register = on => {
     // does. On a row still open it is muted, so it does not read as an answer.
     const lastTone = (row: Row) => (row.handleTone === 'done' ? ('done' as const) : undefined)
     // A last action reads "✓ Discuss · 1m ago". A row whose own mark is a ✓ leaves out the second one.
-    const lastActionText = (id: string, row?: Row) => {
-      const last = lastActions[id]
+    const feedbackLabel = (id: string, row?: Row) => {
+      const f = feedbackOf(lastActions[id])
 
-      return last ? `${row && lastTone(row) ? '' : '✓ '}${last.text} · ${ago(now - last.at)}` : null
+      return f && { text: row && lastTone(row) ? f.label : feedbackText(f), at: f.at }
+    }
+    const lastActionText = (id: string, row?: Row) => {
+      const f = feedbackLabel(id, row)
+
+      return f ? `${f.text} · ${ago(now - f.at)}` : null
     }
     // A section's children hang from its title like a directory listing. A
     // child's row has a 1-column bar, 3 columns for the tree, 3 for its marker,
@@ -2492,15 +2494,9 @@ export const register: Register = on => {
     // stays on the first line, and clips the rest to the second.
     const unselectedLine = (row: Row, onPress: () => void, inset: number) => {
       const plain = row.line ?? { text: row.title, after: row.titleAfter }
-      const last = lastActions[row.id]
+      const f = feedbackLabel(row.id, row)
       // A row's last action takes the place of its age, as "✓ Discuss 1m ago".
-      const line = last
-        ? {
-            ...plain,
-            after: ` · ${lastTone(row) ? '' : '✓ '}${last.text} ${ago(now - last.at)}`,
-            afterTone: lastTone(row),
-          }
-        : plain
+      const line = f ? { ...plain, after: ` · ${f.text} ${ago(now - f.at)}`, afterTone: lastTone(row) } : plain
       const width = e.props.bodyColumns - 3 - inset - (line.before?.length ?? 0)
       const room = Math.max(12, width - (line.after?.length ?? 0))
       const text = line.text.trim()
@@ -2604,15 +2600,17 @@ export const register: Register = on => {
                     onSubmit={(value: string) => {
                       const typed = row.onType
                       typed?.send(value)
-                      if (typed?.done && value.trim())
+                      if (typed?.isHandoff && value.trim()) {
+                        const press = { action: 'type' as const, id: row.id, text: value }
                         void recordLastAction($, row.id, {
-                          action: 'typed',
-                          text: typed.done,
-                          isHandoff: typed.handsOff === true,
+                          kind: 'handoff',
+                          action: actionId(press),
+                          text: pressText(press),
                           tab,
                           title: row.title,
                           index,
                         })
+                      }
                     }}
                   />
                 </Box>
@@ -3035,11 +3033,12 @@ export const register: Register = on => {
     const findingsView = () => {
       const settled = Object.entries(lastActions)
         .filter(([id, n]) => n.tab === 'findings' && now - n.at < SETTLED_MS && !rows.findings.some(r => r.id === id))
-        .sort(([, a], [, b]) => a.index - b.index)
+        .sort(([, a], [, b]) => (a.index ?? 0) - (b.index ?? 0))
       if (rows.findings.length === 0 && settled.length === 0)
         return emptyState('No findings yet', 'Claude flags issues and opportunities it spots beyond your task.')
       const shown = rows.findings.map(r => listRow(r))
-      for (const [id, last] of settled) shown.splice(Math.min(last.index, shown.length), 0, settledFinding(id, last))
+      for (const [id, last] of settled)
+        shown.splice(Math.min(last.index ?? 0, shown.length), 0, settledFinding(id, last))
 
       return section(divided(shown, 'findings', false))
     }
@@ -3055,8 +3054,8 @@ export const register: Register = on => {
           ? [
               {
                 key: `resolve-${pr.ref}`,
-                label: 'Resolve conflicts',
-                done: true,
+                ...recorded(`pr:${pr.ref}`, 'pr-conflicts', 'Resolve conflicts'),
+                kind: 'handoff' as const,
                 onPress: () => void send($, prompts.resolve(pr)),
               },
             ]
@@ -3065,8 +3064,8 @@ export const register: Register = on => {
           ? [
               {
                 key: `address-all-${pr.ref}`,
-                label: `Address all ${waitingOn.length} threads`,
-                done: true,
+                ...recorded(`pr:${pr.ref}`, 'pr-address-all', `Address all ${waitingOn.length} threads`),
+                kind: 'handoff' as const,
                 onPress: () => {
                   void send($, prompts.address(pr, waitingOn))
                   // Each thread it sent reads as if its own Address were pressed, so it folds too.
@@ -3074,9 +3073,9 @@ export const register: Register = on => {
                     const id = prThreadId(pr, t)
                     const index = indexOf.get(id) ?? -1
                     void recordLastAction($, id, {
-                      action: `address-${t.id}`,
+                      kind: 'handoff',
+                      action: actionId({ action: 'thread-address' }),
                       text: 'Address',
-                      isHandoff: true,
                       tab,
                       title: threadWhere(t),
                       index,
@@ -3086,9 +3085,16 @@ export const register: Register = on => {
               },
             ]
           : []),
-        { key: `open-${pr.ref}`, label: 'Open PR', done: false, onPress: () => void openUrl($, pr.url) },
+        { key: `open-${pr.ref}`, label: 'Open PR', kind: 'local', onPress: () => void openUrl($, pr.url) },
         ...(pr.ref !== prState.branchRef
-          ? [{ key: `dismiss-pr-${pr.ref}`, label: 'Dismiss', done: false, onPress: () => void dismissPr($, pr.ref) }]
+          ? [
+              {
+                key: `dismiss-pr-${pr.ref}`,
+                label: 'Dismiss',
+                kind: 'mark' as const,
+                onPress: () => void dismissPr($, pr.ref),
+              },
+            ]
           : []),
       ]
       // The viewer replied last. Their own notes with no reply wait on no one, so they don't count.
@@ -3162,15 +3168,15 @@ export const register: Register = on => {
     const moveKeys: KeyAction[] =
       ids.length > 1
         ? [
-            { key: 'next', label: 'Next', hotkey: 'j', done: false, onPress: () => move(1) },
-            { key: 'previous', label: 'Previous', hotkey: 'k', done: false, onPress: () => move(-1) },
+            { key: 'next', label: 'Next', hotkey: 'j', kind: 'view', onPress: () => move(1) },
+            { key: 'previous', label: 'Previous', hotkey: 'k', kind: 'view', onPress: () => move(-1) },
           ]
         : []
     const tabKeys: KeyAction[] = TABS.map(({ id, label, hotkey }) => ({
       key: `tab-key-${id}`,
       label,
       hotkey,
-      done: false,
+      kind: 'view',
       onPress: () => void showTab($, id),
     }))
 

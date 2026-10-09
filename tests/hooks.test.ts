@@ -265,6 +265,144 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   expect(await band.find({ text: /1 waiting on you/ })).toBeDefined()
 })
 
+test('a question with 7 options shows 4 until [All 7 options], draws its steps after them, and letters only the first 9', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world(on, [])
+  ledgerReply = [
+    'NOW: Waiting on a color',
+    'NEW: decide | 1 | Which color? | Red / Orange / Yellow / Green / Blue / Indigo / Violet | Green',
+    'HELP: new 1 | run | ./a.sh | a script',
+    'HELP: new 1 | run | ./b.sh | b script',
+    'HELP: new 1 | run | ./c.sh | c script',
+  ].join('\n')
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'pick a color', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Run ./a.sh, ./b.sh or ./c.sh first.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  const hotkey = async (key: string) => (await pane.find({ key: `${key}-key` }))?.props.hotkey
+
+  // The first 4 options show, then [All 7 options], then the steps, which take the next letters.
+  expect(await pane.find({ key: 'answer-i1-3' })).toBeDefined()
+  expect(await pane.find({ key: 'answer-i1-4' })).toBeUndefined()
+  expect(await hotkey('answer-i1-4')).toBeUndefined()
+  expect((await pane.find({ key: 'all-options-i1' }))?.props.label).toBe('All 7 options')
+  expect([await hotkey('answer-i1-3'), await hotkey('help-i1-0'), await hotkey('help-i1-2')]).toEqual(['f', 'g', 'i'])
+  // The recommended option is drawn primary, with no suffix.
+  expect((await pane.find({ key: 'answer-i1-3-key' }))?.props).toMatchObject({ label: 'Green', variant: 'primary' })
+
+  await pane.press({ key: 'all-options-i1' })
+  expect(await pane.find({ key: 'answer-i1-6' })).toBeDefined()
+  expect(await pane.find({ key: 'all-options-i1' })).toBeUndefined()
+  // 7 options and 3 steps: the last step has no letter, and still draws.
+  expect([await hotkey('answer-i1-6'), await hotkey('help-i1-0'), await hotkey('help-i1-1')]).toEqual(['i', 'l', 'm'])
+  expect(await hotkey('help-i1-2')).toBeUndefined()
+  expect((await pane.find({ key: 'help-i1-2' }))?.props.label).toBe('Run c script')
+  await pane.press({ key: 'answer-i1-6' })
+  expect(sent).toEqual(['Re "Which color?": Violet'])
+})
+
+test('last actions an earlier build saved convert once by the table, and a task handed off then still folds', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world(on, [])
+  ledgerReply =
+    'NOW: Waiting on the load script\nNEW: do | - | Run the load script | - | -\nHELP: new 1 | run | ./load.sh | load script'
+  const LAST_ACTIONS = { plugin: 'inbox', key: 'lastActions' } as const
+  const at = 1_000_000
+  // An earlier build's last actions, by button key: one per row of the conversion, and ones that record nothing now.
+  const thread = (id: string) => `acme/greet#12 thread ${id}`
+  const old: Record<string, Record<string, unknown>> = {
+    i1: {
+      action: 'help-i1-0',
+      text: 'Run load script',
+      at,
+      isHandoff: true,
+      turnsStarted: 1,
+      tab: 'needsYou',
+      title: 'Run the load script',
+      index: 0,
+    },
+    i2: { action: 'explain-i2', text: 'Explain sent', at },
+    i3: { action: 'typed', text: 'Reply', at, isHandoff: true },
+    i4: { action: 'step-1', text: 'Seed sent', at },
+    i5: { action: 'explain', text: 'Explain sent', at },
+    f6: { action: 'address-f6', text: 'Sent to Claude to fix', at },
+    f7: { action: 'discuss-f7', text: 'Discuss sent', at },
+    [thread('T1')]: { action: 'address-T1', text: 'Address', at, isHandoff: true },
+    [thread('T2')]: { action: 'draft-T2', text: 'Draft reply', at },
+    [thread('T3')]: { action: 'discuss-T3', text: 'Discuss', at },
+    'pr:acme/greet#12': { action: 'resolve-acme/greet#12', text: 'Resolve conflicts', at, isHandoff: false },
+    'pr:acme/greet#13': { action: 'address-all-acme/greet#13', text: 'Address all 2 threads', at },
+    i8: { action: 'open-i8', text: 'Open', at },
+    [`acme/greet#12 check test`]: { action: 'log-acme/greet#12-test', text: 'Open log', at },
+    'check:/repo npm test': { action: 'fix-check', text: 'Fix', at },
+  }
+  const converted = {
+    i1: {
+      kind: 'handoff',
+      action: 'step-0',
+      text: 'Run load script',
+      at,
+      turnsStarted: 1,
+      tab: 'needsYou',
+      title: 'Run the load script',
+      index: 0,
+    },
+    i2: { kind: 'talk', action: 'explain', text: 'Explain', at },
+    i3: { kind: 'handoff', action: 'type', text: 'Reply', at },
+    i4: { kind: 'handoff', action: 'step-1', text: 'Seed', at },
+    i5: { kind: 'talk', action: 'explain', text: 'Explain', at },
+    f6: { kind: 'handoff', action: 'address', text: 'Address', at },
+    f7: { kind: 'talk', action: 'discuss', text: 'Discuss', at },
+    [thread('T1')]: { kind: 'handoff', action: 'thread-address', text: 'Address', at },
+    [thread('T2')]: { kind: 'talk', action: 'thread-draft', text: 'Draft reply', at },
+    [thread('T3')]: { kind: 'talk', action: 'thread-discuss', text: 'Discuss', at },
+    // Saved as not handing off, so it stays a talk.
+    'pr:acme/greet#12': { kind: 'talk', action: 'pr-conflicts', text: 'Resolve conflicts', at },
+    'pr:acme/greet#13': { kind: 'handoff', action: 'pr-address-all', text: 'Address all 2 threads', at },
+  }
+  // While set, the mod's next write of its last actions saves this instead, as an earlier build left them.
+  let saving: unknown = null
+  // The last actions the mod wrote last.
+  let saved: unknown = null
+  on('state.set', LAST_ACTIONS, ($, e, next) => {
+    const write = saving ? { ...e, value: saving as never } : e
+    saved = write.value
+    return next(write)
+  })
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'load the data', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'load the data', turnId: 't1' })
+  await $.turn.complete({ answer: 'Run ./load.sh.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  // A reload under the earlier build leaves its last actions; the next reload converts them.
+  saving = old
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  saving = null
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  expect(saved).toEqual(converted)
+  saved = null
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  expect(saved).toEqual(converted)
+
+  // The task handed off by the old Run still folds, and waits on no one.
+  const pane = await $.ui.mount(PANE)
+  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+  expect(await pane.find({ text: /Run load script · just now/ })).toBeDefined()
+  expect(await pane.find({ key: 'help-i1-0' })).toBeUndefined()
+  expect(await band.find({ text: /waiting on you/ })).toBeUndefined()
+})
+
 test('after 15 idle minutes the band shows where the session stands', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
@@ -430,7 +568,7 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
   expect(sent.at(-1)).toContain('Please address this finding you recorded:\nIssue: Retry loop never backs off')
   // It stays in place with what was sent for a few seconds, then leaves.
   await clock.settle()
-  expect(await pane.find({ text: /^Address it$/ })).toBeDefined()
+  expect(await pane.find({ text: /^Address$/ })).toBeDefined()
   await clock.advance(9000)
   expect(await pane.find({ text: /Retry loop never backs off/ })).toBeUndefined()
 })

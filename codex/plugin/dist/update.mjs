@@ -359,6 +359,32 @@ function outcomeText(d) {
 }
 var TOLD_NOTHING = { inbox: null, closed: [] };
 
+// ../hooks/presses.ts
+var HANDOFF_IDS = /^(address|type|step-\d+|thread-address|pr-conflicts|pr-address-all)$/;
+function upgradedLastAction(key, old) {
+  const a = old.action;
+  const action = key.startsWith("pr:") ? a.startsWith("address-all-") ? "pr-address-all" : a.startsWith("resolve-") ? "pr-conflicts" : null : key.includes(" thread ") ? a.startsWith("address-") ? "thread-address" : a.startsWith("draft-") ? "thread-draft" : a.startsWith("discuss-") ? "thread-discuss" : null : /^explain(-|$)/.test(a) ? "explain" : /^(help-.+-|step-)\d+$/.test(a) ? `step-${a.split("-").pop()}` : a === "typed" ? "type" : /^address(-|$)/.test(a) ? "address" : /^discuss(-|$)/.test(a) ? "discuss" : null;
+  if (action === null) return null;
+  const { isHandoff, ...kept } = old;
+  const isHandedOff = isHandoff ?? HANDOFF_IDS.test(action);
+  return {
+    ...kept,
+    kind: isHandedOff ? "handoff" : "talk",
+    action,
+    // Earlier builds saved "Explain sent" or "Sent to Claude to fix"; a last action is now the label pressed.
+    text: /^Sent to (Claude|Codex) to /.test(old.text) ? "Address" : old.text.replace(/ sent$/, "")
+  };
+}
+function upgradeLastActions(saved) {
+  return Object.fromEntries(
+    Object.entries(saved).flatMap(([key, last]) => {
+      if ("kind" in last && last.kind) return [[key, last]];
+      const upgraded2 = upgradedLastAction(key, last);
+      return upgraded2 ? [[key, upgraded2]] : [];
+    })
+  );
+}
+
 // src/state.ts
 function emptyState(sessionId) {
   return {
@@ -404,7 +430,8 @@ function upgraded(saved, sessionId) {
     turn: { ...base.turn, ...turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...saved.presence },
-    pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex }))
+    pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex })),
+    lastActions: upgradeLastActions(saved.lastActions ?? {})
   };
 }
 async function readState(dir, sessionId) {

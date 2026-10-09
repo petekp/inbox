@@ -6,8 +6,8 @@ import { render } from 'preact'
 import type { ComponentChildren, JSX } from 'preact'
 
 import { ago } from '../../hooks/ledger'
-import { steps } from '../../hooks/presses'
-import type { RowView } from '../../hooks/view'
+import { feedbackText } from '../../hooks/view'
+import type { Feedback, RowView } from '../../hooks/view'
 import type { Finding, Item } from '../../types'
 import { SETTLED_MS } from './core'
 import type { TabPress, View } from './core'
@@ -16,8 +16,8 @@ type Tab = 'needsYou' | 'findings'
 type Tone = 'needsYou' | 'findings' | 'done' | 'error'
 type Group = 'question' | 'task' | 'finding'
 
-/** One of a row's actions, with the key that presses it while the tab has focus. */
-type Key = { hotkey: string; label: string; note?: string; run: () => void }
+/** One of a row's actions, with the key that presses it while the tab has focus, if it has one. */
+type Key = { hotkey?: string; label: string; isPrimary?: boolean; run: () => void }
 
 /** A list row. Selected, it shows its title in full, its body and its keys; otherwise one line. */
 type Row = {
@@ -39,7 +39,7 @@ type Row = {
   /** The row no longer waits on the person: selected, it shows `note`, with its body and keys behind Details. */
   fold?: { note?: string }
   typing?: { hint: string; send: (text: string) => void }
-  last?: { text: string; at: number } | null
+  feedback: Feedback | null
 }
 
 /** A row that just left its list, shown in its place until SETTLED_MS passes. */
@@ -64,6 +64,8 @@ let focusTyping = false
 // Typed text by row, kept until it is sent, so a redraw, a new selection or a closed field keeps it.
 const drafts = new Map<string, string>()
 const details = new Set<string>()
+// Questions whose every option shows. Until then, one with more than 5 options shows 4.
+const optionsShown = new Set<string>()
 const unfolded = new Set<'question' | 'task'>()
 const sending = new Set<string>()
 const errors = new Map<string, string>()
@@ -209,44 +211,72 @@ function capitalized(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-function clip(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text
-}
-
 function startTyping(id: string) {
   typing = id
   focusTyping = true
   draw()
 }
 
+/**
+ * A row's actions as the tab's keys, as the pane draws them. `keys` finish the
+ * row: options and steps, the first 9 shown on letters, Done for a task and
+ * Address for a finding. `more` are the other ways to respond. Options past the
+ * fourth of a question with more than 5 show only after [All N options].
+ */
+function rowKeys(r: RowView): { keys: Key[]; more: Key[] } {
+  const { id, item } = r
+  const shown = r.actions.filter(a => optionsShown.has(id) || !a.isFolded)
+  const folded = r.actions.length - shown.length
+  // [All N options] follows the last option shown.
+  const lastOption = shown.map(a => a.press.action).lastIndexOf('answer')
+  const keys: Key[] = []
+  const more: Key[] = []
+  let letters = 0
+  const lettered = () => (letters < CHOICE_KEYS.length ? { hotkey: CHOICE_KEYS[letters++]! } : {})
+  for (const [n, a] of shown.entries()) {
+    const p = a.press
+    const label = a.label
+    if (p.action === 'answer' && item) {
+      // The server still takes an option by its place in the list.
+      const option = item.options.indexOf(p.option)
+      keys.push({
+        ...lettered(),
+        label,
+        isPrimary: a.isPrimary,
+        run: () => void act(id, { action: 'answer', id, option }),
+      })
+      if (n === lastOption && folded > 0)
+        keys.push({
+          label: `All ${item.options.length} options`,
+          run: () => {
+            optionsShown.add(id)
+            draw()
+          },
+        })
+    } else if (p.action === 'step')
+      keys.push({ ...lettered(), label, run: () => void act(id, { action: 'step', id, step: p.step }) })
+    else if (p.action === 'done') keys.push({ hotkey: 'd', label, run: () => void act(id, { action: 'done', id }) })
+    else if (p.action === 'address')
+      keys.push({ hotkey: 'a', label, run: () => void act(id, { action: 'address', id }) })
+    else if (p.action === 'type') more.push({ hotkey: 't', label, run: () => startTyping(id) })
+    else if (p.action === 'explain' || p.action === 'discuss') {
+      const action = p.action
+      more.push({ hotkey: 'e', label, run: () => void act(id, { action, id }) })
+    } else if (p.action === 'dismiss')
+      more.push({
+        hotkey: 'x',
+        label,
+        run: () => void act(id, item ? { action: 'dismiss', id } : { action: 'dismissFinding', id }),
+      })
+  }
+
+  return { keys, more }
+}
+
 function itemRow(v: View, r: RowView, item: Item): Row {
-  const last = v.lastActions[r.id] ?? null
   const isQuestion = item.kind === 'question'
   const isHandedOff = r.state.is === 'handedOff'
-  // An action already pressed reads "… again", so a second press is a choice.
-  const again = (label: string, action: string) => (last?.action === action ? `${label} again` : label)
   const id = item.id
-  const lettered = [
-    ...(isQuestion
-      ? item.options.map((o, n) => ({
-          label: clip(o, 32),
-          ...(o === item.rec ? { note: '(recommended)' } : {}),
-          run: () => void act(id, { action: 'answer', id, option: n }),
-        }))
-      : []),
-    ...steps(item.helps).map(({ label }, n) => ({
-      label: again(label, `step-${n}`),
-      run: () => void act(id, { action: 'step', id, step: n }),
-    })),
-  ]
-    .slice(0, CHOICE_KEYS.length)
-    .map((k, n) => ({ ...k, hotkey: CHOICE_KEYS[n]! }))
-  const typeKey = { hotkey: 't', label: isQuestion ? 'Type an answer' : 'Type a reply', run: () => startTyping(id) }
-  const explainKey = {
-    hotkey: 'e',
-    label: again('Explain', 'explain'),
-    run: () => void act(id, { action: 'explain', id }),
-  }
 
   return {
     id,
@@ -256,17 +286,12 @@ function itemRow(v: View, r: RowView, item: Item): Row {
     title: item.ask,
     titleAfter: item.at === null ? undefined : ` · ${ago(v.at - item.at)}`,
     hasSecondLine: isQuestion,
-    keys: isQuestion
-      ? lettered
-      : [...lettered, { hotkey: 'd', label: 'Done', run: () => void act(id, { action: 'done', id }) }],
-    more: isQuestion
-      ? [typeKey, explainKey, { hotkey: 'x', label: 'Dismiss', run: () => void act(id, { action: 'dismiss', id }) }]
-      : [typeKey, explainKey],
+    ...rowKeys(r),
     typing: {
       hint: isQuestion ? 'Your answer' : 'Your reply to Codex',
       send: text => void act(id, { action: 'type', id, text }, () => drafts.delete(id)),
     },
-    last,
+    feedback: r.feedback,
   }
 }
 
@@ -275,7 +300,7 @@ const FINDING_BADGES = {
   opportunity: { label: 'Opportunity', mark: '✦', tone: 'done' },
 } as const
 
-function findingRow(v: View, f: Finding): Row {
+function findingRow(v: View, r: RowView, f: Finding): Row {
   const badge = FINDING_BADGES[f.kind]
   const id = f.id
 
@@ -303,17 +328,12 @@ function findingRow(v: View, f: Finding): Row {
         ) : null}
       </div>
     ),
-    keys: [{ hotkey: 'a', label: 'Address it', run: () => void act(id, { action: 'address', id }) }],
-    more: [
-      { hotkey: 't', label: 'Type a reply', run: () => startTyping(id) },
-      { hotkey: 'e', label: 'Discuss', run: () => void act(id, { action: 'discuss', id }) },
-      { hotkey: 'x', label: 'Dismiss', run: () => void act(id, { action: 'dismissFinding', id }) },
-    ],
+    ...rowKeys(r),
     typing: {
       hint: 'Your reply to Codex',
       send: text => void act(id, { action: 'typedFinding', id, text }, () => drafts.delete(id)),
     },
-    last: v.lastActions[id] ?? null,
+    feedback: r.feedback,
   }
 }
 
@@ -329,7 +349,7 @@ function listsOf(v: View): Lists {
   const items = (rows: RowView[]) => rows.flatMap(r => (r.item ? [itemRow(v, r, r.item)] : []))
   const questions = items(v.needsYou.questions)
   const tasks = items(v.needsYou.tasks)
-  const findings = v.findings.rows.flatMap(r => (r.finding ? [findingRow(v, r.finding)] : []))
+  const findings = v.findings.rows.flatMap(r => (r.finding ? [findingRow(v, r, r.finding)] : []))
 
   return {
     questions,
@@ -375,9 +395,13 @@ function rowActions(row: Row): { keys: Key[]; more: Key[] } {
 
 function KeyButton({ k }: { k: Key }) {
   return (
-    <button type="button" class="key" onClick={k.run}>
-      <kbd>{k.hotkey}</kbd>: {k.label}
-      {k.note ? <span class="note"> {k.note}</span> : null}
+    <button type="button" class={k.isPrimary ? 'key primary' : 'key'} onClick={k.run}>
+      {k.hotkey ? (
+        <>
+          <kbd>{k.hotkey}</kbd>:{' '}
+        </>
+      ) : null}
+      {k.label}
     </button>
   )
 }
@@ -418,8 +442,13 @@ function TypeField({ row }: { row: Row }) {
   )
 }
 
+/** A row's last press, "✓ Explain". A row whose own mark is a ✓ leaves out the second one. */
+function feedbackLabel(row: Row): string | null {
+  return row.feedback && (row.handleTone === 'done' ? row.feedback.label : feedbackText(row.feedback))
+}
+
 function lastText(row: Row, now: number): string | null {
-  return row.last ? `${row.last.text} · ${ago(now - row.last.at)}` : null
+  return row.feedback ? `${feedbackLabel(row)} · ${ago(now - row.feedback.at)}` : null
 }
 
 function ListRow({
@@ -439,11 +468,11 @@ function ListRow({
 
   if (!isSelected) {
     const plain = row.line ?? { text: row.title, after: row.titleAfter }
-    // A row's last action takes the place of its age, as "discuss sent 1m ago".
-    const line = row.last
+    // A row's last action takes the place of its age, as "✓ Discuss 1m ago".
+    const line = row.feedback
       ? {
           ...plain,
-          after: ` · ${row.last.text.charAt(0).toLowerCase()}${row.last.text.slice(1)} ${ago(now - row.last.at)}`,
+          after: ` · ${feedbackLabel(row)} ${ago(now - row.feedback.at)}`,
           afterTone: row.handleTone === 'done' ? ('done' as const) : undefined,
         }
       : plain

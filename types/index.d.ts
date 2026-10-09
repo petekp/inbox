@@ -63,21 +63,28 @@ export type Settled = Closed & { index: number }
 /** The row a jump moved the pane to, so the tab and row can show where it went. */
 export type Arrival = { tab: Tab; id: string | null; at: number }
 
+/**
+ * What a press does, which decides what its row shows at once. Talk asks Claude
+ * to talk or draft; Hand-off gives Claude the row's work, so the row folds;
+ * Local opens or copies on the person's machine; Mark changes state and sends
+ * nothing, or closes a question with its answer; View changes only the screen.
+ */
+export type PressKind = 'talk' | 'handoff' | 'local' | 'mark' | 'view'
+
 /** What a row's last action did, shown on the row so the person sees the press went through. */
 export type LastAction = {
-  /** The action's key, so that action reads "… again". */
+  kind: Exclude<PressKind, 'view'>
+  /** The action's id, as `actionId` makes it, so that action reads "… again". */
   action: string
   /** The label of the action pressed, as in "Discuss". The row shows it after a ✓. */
   text: string
   at: number
-  /** The press handed the row's work to Claude, so the row folds and stops waiting on the person. */
-  isHandoff?: boolean
-  /** The turns started when it was pressed, so a task folds until the update for a later turn applies. */
+  /** The turns started when it was pressed, so a handed-off row folds until the update for a later turn applies. */
   turnsStarted?: number
   /** Where the row was, and its title, for a row the press removed: it shows its last action in its place for a few seconds. */
-  tab: Tab
-  title: string
-  index: number
+  tab?: Tab
+  title?: string
+  index?: number
 }
 
 /** Something Claude noticed outside the current task and recorded for the person. */
@@ -231,6 +238,8 @@ declare module 'claude-code' {
       unfolded: Item['kind'][]
       /** The rows whose folded details show, by the row's id. */
       shownDetails: string[]
+      /** The questions whose every option shows, by the row's id. Until then, one with more than 5 options shows 4. */
+      optionsShown: string[]
       /** The pane's list of the keys no row shows is unfolded. */
       isKeyListShown: boolean
       /** The band and pane show sample entries instead of the session's own, for `/inbox demo`. */

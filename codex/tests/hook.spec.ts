@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { EMPTY, inboxText } from '../../hooks/ledger'
+import { feedbackText } from '../../hooks/view'
+import { viewOf } from '../src/core'
 import { handleHook } from '../src/hook'
 import { readState, statePath, updateState } from '../src/state'
 import { CODEX } from '../src/texts'
@@ -112,11 +114,35 @@ test('a session saved by an older build loads converted, as the mod converts its
       decided: [{ id: 'i0', ask: 'Rename it?', outcome: 'dismissed', at: 1 }],
       notes: [{ id: 'f1', kind: 'issue', title: 'No lint', detail: '', path: null, at: 1 }],
     },
+    // Last actions as this plugin saved them before they had a kind.
+    lastActions: {
+      i1: { action: 'explain', text: 'Explain sent', at: 1 },
+      i2: { action: 'typed', text: 'Reply sent', at: 1, isHandoff: true, turnsStarted: 1 },
+      i3: { action: 'step-0', text: 'Run seed script sent', at: 1, isHandoff: true, turnsStarted: 1 },
+      f2: { action: 'address', text: 'Sent to Codex to fix', at: 1, title: 'No tests' },
+      f3: { action: 'discuss', text: 'Discuss sent', at: 1, title: 'No docs' },
+      // The table has no row for a typed reply to a finding, so it records nothing now.
+      f4: { action: 'typedFinding', text: 'Reply sent', at: 1, title: 'No types' },
+    },
   }
   mkdirSync(join(dir, 'sessions'), { recursive: true })
   writeFileSync(statePath(dir, 's1'), JSON.stringify(old))
   const s = await readState(dir, 's1')
   const ledger = s.ledger
+  assert.deepEqual(s.lastActions, {
+    i1: { kind: 'talk', action: 'explain', text: 'Explain', at: 1 },
+    i2: { kind: 'handoff', action: 'type', text: 'Reply', at: 1, turnsStarted: 1 },
+    i3: { kind: 'handoff', action: 'step-0', text: 'Run seed script', at: 1, turnsStarted: 1 },
+    f2: { kind: 'handoff', action: 'address', text: 'Address', at: 1, title: 'No tests' },
+    f3: { kind: 'talk', action: 'discuss', text: 'Discuss', at: 1, title: 'No docs' },
+  })
+  // The old Explain reads as today's, on the question it was pressed on.
+  const question = viewOf(s, 2).needsYou.questions[0]
+  assert.equal(question && question.feedback && feedbackText(question.feedback), '✓ Explain')
+  assert.ok(question?.actions.some(a => a.label === 'Explain again'))
+  // Saved and read again, a converted file stays as it is.
+  await updateState(dir, 's1', x => x)
+  assert.deepEqual((await readState(dir, 's1')).lastActions, s.lastActions)
   for (const key of ['top', 'checks', 'snapshots', 'recordedRuns']) assert.equal(key in s, false, key)
   assert.deepEqual(s.turn, { person: 'Run the tests', activity: [], press: null })
   assert.equal('checks' in (s.pending[0]?.ex ?? {}), false)
