@@ -175,7 +175,10 @@ function stepKind(step: HelpStep): PressKind {
   return step.step.some(h => h.kind === 'run') ? 'handoff' : 'local'
 }
 
-/** A row's actions in UI 2.4's order, each labeled "… again" when the row's last press was that action. */
+/**
+ * A row's actions in UI 2.4's order, each labeled "… again" when the row's
+ * last press, other than an open or copy, was that action.
+ */
 function actionsOf(
   row: { id: string; item: Item | null; steps: HelpStep[] },
   last: LastAction | undefined,
@@ -188,8 +191,10 @@ function actionsOf(
     flags: Partial<Pick<ActionView, 'isPrimary' | 'isFolded'>> = {},
   ): ActionView => ({
     press,
-    // The type action opens a field for new words each time, so it never reads "again".
-    label: press.action !== 'type' && last?.action === actionId(press) ? `${label} again` : label,
+    // The type action opens a field for new words each time, and an open or copy
+    // only shows its result, so neither reads "again".
+    label:
+      press.action !== 'type' && last?.kind !== 'local' && last?.action === actionId(press) ? `${label} again` : label,
     kind,
     isPrimary: flags.isPrimary ?? false,
     isFolded: flags.isFolded ?? false,

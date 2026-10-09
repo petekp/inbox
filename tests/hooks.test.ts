@@ -82,6 +82,9 @@ let files: string[] = []
 let copied: string[] = []
 let toasts: string[] = []
 
+// The Claude Code theme /config reports. With none, the pane draws text in no status color.
+let theme = ''
+
 // Runs once, before the next press or Enter in a drawing reaches its handler, as a change landing between a draw and a press does.
 let beforeAct: (() => Promise<unknown>) | undefined
 
@@ -101,8 +104,23 @@ function world(on: On, prompts: string[], vars: Record<string, string> = {}) {
   files = []
   copied = []
   toasts = []
+  theme = ''
   beforeAct = undefined
   mock.store(on)
+  on('config.list', () => ({
+    value: theme
+      ? [
+          {
+            key: 'theme',
+            label: 'Theme',
+            kind: 'choice' as const,
+            value: theme,
+            provider: { plugin: 'engine', tier: 'core' as const },
+            isLocked: false,
+          },
+        ]
+      : [],
+  }))
   on('session.surfaces', () => ({ value: surfaces }))
   on('session.attach', ($, e) => ({ clientId: e.clientId }))
   on('session.id', () => ({ value: 'session-1' }))
@@ -290,6 +308,7 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
     'HELP: new 2 | open | .env.local | -',
   ].join('\n')
   const answer = 'Run ./load.sh after npm login; see notes/load.md. Put API_KEY=x in .env.local.'
+  theme = 'dark'
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'load the data', wait: false, origin: { kind: 'composer' } })
@@ -317,7 +336,8 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   expect(await pane.find({ text: '✓ Copied npm login. Run it in a terminal, or type ! and paste.' })).toBeDefined()
   await pane.press({ key: 'help-i1-2' })
   await clock.settle()
-  expect(await pane.find({ text: 'Could not open load.md: it no longer exists' })).toBeDefined()
+  const red = (await pane.find({ type: 'Text', text: 'Could not open load.md: it no longer exists' }))?.props.color
+  expect(red).toBeDefined()
   expect(toasts).toEqual([])
   expect(await pane.find({ key: 'fold-details-i1' })).toBeDefined()
   expect(await band.find({ text: /1 waiting on you/ })).toBeDefined()
@@ -332,7 +352,11 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   await clock.settle()
   expect(copied.at(-1)).toBe('API_KEY=x')
   expect(ran.at(-1)).toEqual(['open', '/tmp/project/.env.local'])
-  expect(await pane.find({ text: '✓ Copied env line · Opened .env.local' })).toBeDefined()
+  // A success note is not red. The first task's failure stays red on its collapsed line.
+  expect((await pane.find({ type: 'Text', text: '✓ Copied env line · Opened .env.local' }))?.props.color).not.toBe(red)
+  expect((await pane.find({ type: 'Text', text: ' · Could not open load.md' }))?.props.color).toBe(red)
+  // An open or copy does not make its button read "again".
+  expect((await pane.find({ key: 'help-i2-0-key' }))?.props.label).toBe('Copy env line and open .env.local')
   await clock.advance(SETTLED_MS)
   expect(await pane.find({ text: /Opened \.env\.local/ })).toBeUndefined()
   await pane.press({ key: 'title-i1' })
@@ -876,6 +900,7 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
       },
     },
   )
+  theme = 'dark'
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'open the PR', wait: false, origin: { kind: 'composer' } })
@@ -917,10 +942,25 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   expect(await pane.find({ text: /✓ Resolve conflicts ·/ })).toBeDefined()
   expect((await pane.find({ key: 'resolve-acme/greet#12' }))?.props.label).toBe('Resolve conflicts again')
 
+  // Open PR reports on the block, and a failed open reads in the failing check's red.
+  const red = (await pane.find({ type: 'Text', text: /^Failing check$/ }))?.props.color
+  expect(red).toBeDefined()
+  expect(await pane.find({ text: '✓ Opened PR #12' })).toBeUndefined()
+  await pane.press({ key: 'open-acme/greet#12' })
+  await clock.settle()
+  expect(await pane.find({ text: '✓ Opened PR #12' })).toBeDefined()
+  ghAnswers.push({ match: argv => argv[0] === 'open', stdout: '', fails: 'no browser' })
+  await pane.press({ key: 'open-acme/greet#12' })
+  await clock.settle()
+  expect((await pane.find({ type: 'Text', text: 'Could not open PR #12: no browser' }))?.props.color).toBe(red)
+  ghAnswers.pop()
+
   // The failing check comes first. It offers its log and no Fix, so it waits on the person until it passes.
   expect(await pane.find({ key: 'fix-acme/greet#12-test-key' })).toBeUndefined()
   await pane.press({ key: 'log-acme/greet#12-test-key' })
+  await clock.settle()
   expect(ran.at(-1)).toEqual(['open', 'https://github.com/acme/greet/actions/runs/7/job/1'])
+  expect(await pane.find({ text: '✓ Opened the log' })).toBeDefined()
 
   // A thread's keys say so too, pressed by hotkey or by click.
   await pane.press({ key: 'next' })
