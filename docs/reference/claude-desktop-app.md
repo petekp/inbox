@@ -51,7 +51,8 @@ What follows from it:
 - **The pane** opened with `placement: 'dock'` and `isFocused: true`. Its `bodyColumns` changed from 36 to 69 as the person widened it, and the viewport narrowed from 106 to 70 columns to match. `bodyRows` was 42.
 - **The band** had `maxRows: 12`. The terminal at 49 rows gave 19. Its `bodyColumns` shrank as the pane widened.
 - **Button presses** carry `surface: 'desktop'`. Native buttons drew and clicks worked.
-- **Not covered:** keyboard hotkeys on desktop, `/clear` and `/resume` in the app, `Link` targets and `session.detach`.
+- **Hotkeys do nothing.** With the pane focused, pressing a `Button`'s `hotkey` (`g`, `j`, `k`) logged no press. Only clicks reached the mod.
+- **Not covered:** `keybindings.json`, `/clear` and `/resume` in the app, `Link` targets and `session.detach`.
 
 ## Modes and tabs
 
@@ -266,7 +267,7 @@ Each check runs in a local Code-mode session in the app unless noted.
 
 | Question | Live check |
 |---|---|
-| Whether hotkeys and hidden hotkey `Button`s work | Focus the pane, press a `Button`'s hotkey, and log the press. |
+| Whether `keybindings.json` or any key reaches a desktop pane | Rebind `pane:close`, focus the pane, and try it. |
 | Whether `/clear` and `/resume` in the app raise `classic.SessionStart` with the new id | Log `classic.SessionStart` and `session.end`, then run both in the app. |
 | Whether `http://localhost` links are clickable | Draw one `Link` with that `href`. |
 | Whether `classic.PermissionRequest` fires | Trigger a permission prompt; log the event. |

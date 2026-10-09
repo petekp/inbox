@@ -1701,7 +1701,7 @@ Each row names the conflict, which source to trust, and why.
 | 21 | When the desktop app updates its engine, does an open session keep the old one? | `/status` in Code mode before and after an app update. |
 | 22 | Does the hot-reload approval prompt for Claude-written mods appear in desktop? | Ask Claude for a mod in Code mode. |
 | 23 | Does a pane the mod opens unasked wait for width on desktop? Answered: a pane opened by a command reads `placement: 'dock'`, `isFullscreen: true`, `bodyColumns` 36 to 69 as the person resizes it, and the band's `maxRows` is 12. [desktop](claude-desktop-app.md#live-probe-of-a-code-mode-session) | Call `$.ui.open` from a timer and record `isPlaced`. |
-| 24 | Does desktop honor hotkeys on Buttons inside `<Box display="none">`? How does it draw `plain` Buttons labeled `": Label"`? | Open `/inbox` in Code mode, screenshot it, press j, k and a row key with the pane focused. |
+| 24 | How does desktop draw `plain` Buttons labeled `": Label"`? Answered in part: a `Button`'s `hotkey` does nothing in a focused desktop pane, so hidden hotkey Buttons do nothing there. [desktop](claude-desktop-app.md#live-probe-of-a-code-mode-session) | Open `/inbox` in Code mode and screenshot it. |
 | 25 | How does a desktop pane or band get focus: click only, or ctrl+x tab and `focus: true` too? Do digit band hotkeys from an empty prompt work? | Try each in Code mode. |
 | 26 | Does desktop read `keybindings.json`? | Rebind `pane:close` and try it in Code mode. |
 | 27 | Desktop Link rule: https only, or `http://localhost` too? | Draw both in a Code-mode pane; see which is a live anchor. |
