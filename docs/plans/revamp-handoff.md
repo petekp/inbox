@@ -6,7 +6,7 @@ The `revamp` branch builds the UI plan in [inbox-ui.md](inbox-ui.md) through the
 
 Run these live checks. Tests cover each behavior, but no live session has.
 
-1. **Delivery in the terminal.** Start a signed-in session with its own `CLAUDE_CONFIG_DIR`, as AGENTS.md describes. Start a long turn, open `/inbox`, and press Explain on a question. The row should read `Queued: Explain`, then `✓ Explain` once the turn ends and the message enters. If it stays Queued, the engine stored the prompt under different text, and every press in every session would read Queued.
+1. **Delivery in the terminal. Passed.** In a signed-in terminal session, Explain pressed during a long turn read `Queued: Explain`, then `✓ Explain` once the turn ended and the message entered.
 2. **Desktop Code mode.** Load the branch in a desktop session, run `/inbox demo`, and check what the plan's live check 4 asks. Each outcome has a set change in step 14 of the plan:
    - The text field draws and Enter sends. If not, set `DESKTOP_TYPING` to false in `hooks/register.tsx`.
    - A guarded row's buttons look dim for 0.4 s after it opens.
