@@ -501,23 +501,43 @@ test('last actions an earlier build saved convert once by the table, and a task 
     saved = write.value
     return next(write)
   })
+  // The open folds the same earlier build saved: Findings' Closed fold, and the tasks' fold under its old kind.
+  let savingUnfolded: unknown = null
+  let savedUnfolded: unknown = null
+  on('state.set', { plugin: 'inbox', key: 'unfolded' } as const, ($, e, next) => {
+    const write = savingUnfolded ? { ...e, value: savingUnfolded as never } : e
+    savedUnfolded = write.value
+    return next(write)
+  })
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'load the data', wait: false, origin: { kind: 'composer' } })
   await $.turn.start({ text: 'load the data', turnId: 't1' })
   await $.turn.complete({ answer: 'Run ./load.sh.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
+  await $.tool.call({
+    tool: 'mcp__inbox__record_finding',
+    kind: 'issue',
+    title: 'README is stale',
+    detail: 'Old name.',
+  })
+  await $.tool.call({ tool: 'mcp__inbox__close', id: 'f2', reason: 'fixed' } as never)
   // A reload under the earlier build leaves its last actions; the next reload converts them.
   saving = old
+  savingUnfolded = ['finding', 'do']
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   saving = null
+  savingUnfolded = null
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.settle()
   expect(saved).toEqual(converted)
+  expect(savedUnfolded).toEqual(['finding', 'task'])
   saved = null
+  savedUnfolded = null
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.settle()
   expect(saved).toEqual(converted)
+  expect(savedUnfolded).toEqual(['finding', 'task'])
 
   // The task handed off by the old Run still folds, and waits on no one.
   const pane = await $.ui.mount(PANE)
@@ -525,6 +545,9 @@ test('last actions an earlier build saved convert once by the table, and a task 
   expect(await pane.find({ text: /Run load script · just now/ })).toBeDefined()
   expect(await pane.find({ key: 'help-i1-0' })).toBeUndefined()
   expect(await band.find({ text: /waiting on you/ })).toBeUndefined()
+  // Findings' Closed fold stays open across the reloads.
+  await pane.press({ key: 'tab-findings' })
+  expect((await pane.find({ key: 'fold-finding' }))?.props.label).toBe('▾ 1 Closed')
 })
 
 test('after 15 idle minutes the band shows where the session stands', async ($, on) => {
