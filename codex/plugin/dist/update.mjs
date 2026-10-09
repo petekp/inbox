@@ -36,19 +36,19 @@ function upgradeLedger(ledger) {
   return {
     ...rest,
     findings: [...rest.findings ?? [], ...notes ?? []],
+    // reopenFinding puts these back, so a conversion added for findings must run on them too.
     closedFindings: rest.closedFindings ?? [],
-    items: rest.items.map((i) => ({
-      ...i,
-      kind: readKind(i.kind),
-      at: i.at ?? null,
-      rec: recommendedOption(i.options, i.rec)
-    })),
+    items: rest.items.map(upgradeItem),
     closed: (rest.closed ?? decided ?? []).map((d) => ({
       ...d,
       kind: readKind(d.kind),
-      how: d.how ?? howFromOutcome(d.outcome)
+      how: d.how ?? howFromOutcome(d.outcome),
+      ...d.item ? { item: upgradeItem(d.item) } : {}
     }))
   };
+}
+function upgradeItem(item) {
+  return { ...item, kind: readKind(item.kind), at: item.at ?? null, rec: recommendedOption(item.options, item.rec) };
 }
 function words(text) {
   return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];

@@ -45,19 +45,21 @@ export function upgradeLedger(ledger: Ledger): Ledger {
   return {
     ...rest,
     findings: [...(rest.findings ?? []), ...(notes ?? [])],
+    // reopenFinding puts these back, so a conversion added for findings must run on them too.
     closedFindings: rest.closedFindings ?? [],
-    items: rest.items.map(i => ({
-      ...i,
-      kind: readKind(i.kind),
-      at: i.at ?? null,
-      rec: recommendedOption(i.options, i.rec),
-    })),
+    items: rest.items.map(upgradeItem),
     closed: (rest.closed ?? decided ?? []).map(d => ({
       ...d,
       kind: readKind(d.kind),
       how: d.how ?? howFromOutcome(d.outcome),
+      ...(d.item ? { item: upgradeItem(d.item) } : {}),
     })),
   }
+}
+
+/** An open item in the current shape. Also run on the copy a close record keeps, which reopenItem puts back. */
+function upgradeItem(item: Item): Item {
+  return { ...item, kind: readKind(item.kind), at: item.at ?? null, rec: recommendedOption(item.options, item.rec) }
 }
 
 function words(text: string): string[] {
