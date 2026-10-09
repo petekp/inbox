@@ -34,7 +34,7 @@ The inbox has two renderers. The mod draws the terminal and desktop Code mode. O
 
 **Terminal.** The band leads with how many things need the person and the top one, and has an [Open inbox] button. The pane keeps its keys, and gains the shared fixes: feedback on the row, Undo, a Cancel button, every option drawn, question numbers that match what a typed number answers, and source-neutral status words.
 
-**Desktop Code mode.** The same band and pane, drawn for clicks. Actions are plain labels with no key letters. Each tab is a clickable panel. The app's own ✕ closes the pane. Nothing depends on a key.
+**Desktop Code mode.** The same band and pane, drawn for clicks. Actions are plain labels with no key letters. Each tab is a native button, and the shown tab is the primary one. The app's own ✕ closes the pane. Nothing depends on a key.
 
 **Claude mode.** Claude records items with the inbox's tools, because nothing else watches a chat. Claude ends a reply that leaves something open with an inline card: a count, up to three rows and [Open inbox]. The full view opens fullscreen with Needs you and Findings. It is not built now (decision 2). The seams stay open so it can be added.
 

@@ -3706,52 +3706,18 @@ export const register: Register = on => {
 
             const width = `${label}${count > 0 ? ` ${count}` : ''}`.length + 2 * TAB_PAD.length
 
-            // Desktop: every tab is the same three-line panel, the shown one in the selection color.
-            // Only a Button takes a click, so three blank Buttons lie over the whole panel, wider
-            // than it and clipped to it, above the name and its colored count. The middle one keeps
-            // the tab's key in every drawing: the app takes the focus off the pane when the element
-            // holding it leaves, and the next click would only bring it back.
-            if (look === 'desktop') {
-              const show = () => void showTab($, id)
-              const isShown = tab === id
-              // Non-breaking spaces: desktop collapses a label of plain spaces to nothing, so the Button takes no click.
-              const cover = ' '.repeat(width * 3)
-
+            // Desktop: every tab is one native button, the shown one the primary. The key stays the
+            // same in every drawing: the app takes the focus off the pane when the element holding
+            // it leaves, and the next click would only bring it back.
+            if (look === 'desktop')
               return (
-                <Box
-                  key={`tab-block-${id}`}
-                  flexDirection="column"
-                  paddingX={2}
-                  paddingY={1}
-                  backgroundColor={isShown ? (pal.selection ?? pal.raised) : pal.tab}
-                  {...(isShown || !pal.raised ? {} : { hover: { backgroundColor: pal.raised } })}
-                >
-                  <Text>
-                    {label}
-                    {count > 0 ? <Text color={pal.tone[id]}> {count}</Text> : null}
-                  </Text>
-                  <Box
-                    position="absolute"
-                    top={0}
-                    bottom={0}
-                    left={0}
-                    right={0}
-                    flexDirection="column"
-                    overflow="hidden"
-                  >
-                    {(['above', '', 'below'] as const).map(part => (
-                      <Button
-                        plain
-                        key={part ? `tab-${id}-${part}` : `tab-${id}`}
-                        label={cover}
-                        hover={{ inverse: false }}
-                        onPress={show}
-                      />
-                    ))}
-                  </Box>
-                </Box>
+                <Button
+                  key={`tab-${id}`}
+                  label={count > 0 ? `${label} ${count}` : label}
+                  {...(tab === id ? { variant: 'primary' as const } : {})}
+                  onPress={() => void showTab($, id)}
+                />
               )
-            }
 
             // The selected tab is a raised panel three lines tall, with its name on
             // the middle line and a line of its color along the top edge. After a
