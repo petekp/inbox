@@ -6,3 +6,6 @@
 codex/plugin/dist/
 codex/test-dist/
 codex/package-lock.json
+
+# Worktrees Claude Code makes inside the repo, each with its own built files
+.claude/
