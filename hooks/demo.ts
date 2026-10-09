@@ -205,6 +205,7 @@ export function demoView(now: number): View {
           at: now - 30 * MIN,
         },
       ],
+      closedFindings: [],
       prs: ['petekp/inbox#31', 'petekp/inbox#29', 'petekp/inbox#33'],
       nextId: 24,
       turn: 14,

@@ -1,20 +1,28 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import {
+  CLAUDE_CODE,
   EMPTY,
+  addFinding,
   answerNote,
   applyUpdate,
   carryText,
+  closeByAgent,
+  closeFinding,
   closeItem,
   latestBatch,
   parseReply,
+  questionNumbers,
   readCommandRow,
+  reopenFinding,
+  reopenItem,
   resetTime,
   statusLine,
   stopKindOf,
   tasksRunBy,
   upgradeLedger,
 } from '../hooks/ledger'
+import type { Item } from '../types'
 
 const REPLY = `GOAL: Move annotation queue logic into a tested reducer
 DONE: Reducer built on its own branch
@@ -128,6 +136,7 @@ describe('applyUpdate', () => {
         outcome: 'yes, renamed',
         how: 'update',
         at: 2000,
+        item: first.items[0],
       },
     ])
     expect(latestBatch(second).map(i => i.id)).toEqual(['i4'])
@@ -219,11 +228,67 @@ describe('applyUpdate', () => {
     })
 })
 
+describe('reopening', () => {
+  const item = (id: string, options: string[] = []): Item => ({
+    id,
+    kind: 'question',
+    label: null,
+    ask: `Ask ${id}?`,
+    options,
+    rec: null,
+    helps: [],
+    turn: 1,
+    at: 1,
+  })
+
+  test('an item goes back in id order, as it was before it closed', () => {
+    const open = { ...EMPTY, items: [item('i1'), item('i2', ['Yes', 'No']), item('i10')] }
+    const dismissed = closeItem(open, 'i2', { how: 'dismissed', outcome: 'dismissed' }, 5)
+    const reopened = reopenItem(dismissed, 'i2')
+    expect(reopened.items.map(i => i.id)).toEqual(['i1', 'i2', 'i10'])
+    expect(reopened.items[1]).toEqual(item('i2', ['Yes', 'No']))
+    expect(reopened.closed).toEqual([])
+  })
+
+  test('an item whose close record kept no item stays closed', () => {
+    const closed = {
+      ...EMPTY,
+      closed: [{ id: 'i2', kind: 'question' as const, ask: 'Push?', outcome: 'done', how: 'done' as const, at: 1 }],
+    }
+    expect(reopenItem(closed, 'i2')).toBe(closed)
+  })
+
+  test('a closed finding goes back as it was', () => {
+    const finding = { kind: 'issue' as const, title: 'Hotkeys vanish', detail: 'In ANSI', path: null, at: 1 }
+    const one = addFinding(EMPTY, finding).ledger
+    const two = addFinding(one, { ...finding, title: 'Tabs unreadable' }).ledger
+    const dismissed = closeFinding(two, 'f1', { how: 'dismissed', outcome: 'dismissed' }, 9)
+    expect(dismissed.findings.map(f => f.id)).toEqual(['f2'])
+    expect(dismissed.closedFindings).toEqual([
+      { ...finding, id: 'f1', how: 'dismissed', outcome: 'dismissed', closedAt: 9 },
+    ])
+    expect(reopenFinding(dismissed, 'f1')).toEqual(two)
+  })
+
+  test('Claude and the per-turn update close findings with how and outcome', () => {
+    const finding = { kind: 'issue' as const, title: 'Hotkeys vanish', detail: 'In ANSI', path: null, at: 1 }
+    const open = addFinding(addFinding(EMPTY, finding).ledger, { ...finding, title: 'Tabs unreadable' }).ledger
+    const answered = closeByAgent(CLAUDE_CODE, open, 'f1', { answer: 'leave it' }, 5)
+    expect(answered.closed).toBe('finding')
+    const updated = applyUpdate(answered.ledger, parseReply('CLOSED: f2 | fixed in the theme')!, 6, 1)
+    expect(updated.findings).toEqual([])
+    expect(updated.closedFindings.map(f => [f.id, f.how, f.outcome, f.closedAt])).toEqual([
+      ['f1', 'answered', 'leave it', 5],
+      ['f2', 'update', 'fixed in the theme', 6],
+    ])
+  })
+})
+
 describe('upgradeLedger', () => {
   test('converts a ledger saved with `decided` and the kinds decide and do', () => {
     const item = { id: 'i1', label: null, ask: 'Push?', options: [], rec: null, helps: [], turn: 1, at: 5 }
     const record = { id: 'i3', ask: 'Login', outcome: 'done', how: 'done', at: 9 }
-    const { closed, ...base } = EMPTY
+    const { closed, closedFindings, ...base } = EMPTY
     const saved = {
       ...base,
       items: [
@@ -245,6 +310,7 @@ describe('upgradeLedger', () => {
       ['i5', 'question'],
     ])
     expect('decided' in upgraded).toBe(false)
+    expect(upgraded.closedFindings).toEqual([])
   })
 })
 
@@ -276,6 +342,40 @@ describe('answerNote', () => {
 
   test('says nothing for an ordinary prompt', () => {
     expect(answerNote({ ...ledger, turn: 2 }, 'can you also fix the toolbar?')).toBe(null)
+  })
+})
+
+describe('questionNumbers', () => {
+  const batch = applyUpdate(
+    { ...EMPTY, turn: 1 },
+    parseReply(
+      [
+        'NEW: decide | - | Rename Send.swift? | Yes / No | -',
+        'NEW: do | - | Test pinch zoom | - | -',
+        'NEW: decide | - | Cut TODOS.md? | Yes / No | -',
+      ].join('\n'),
+    )!,
+    1,
+    1,
+  )
+
+  test('numbers questions by their place in the whole batch, as answerNote reads "3. yes"', () => {
+    expect([...questionNumbers(batch, 2)]).toEqual([
+      ['i1', 1],
+      ['i3', 3],
+    ])
+    expect(answerNote({ ...batch, turn: 2 }, '3. yes')).toContain('3 → "Cut TODOS.md?"')
+  })
+
+  test('numbers only labeled items when any label has a number', () => {
+    const labeled = { ...batch, items: batch.items.map(i => (i.id === 'i2' ? { ...i, label: '2' } : i)) }
+    expect([...questionNumbers(labeled, 2)]).toEqual([])
+    const both = { ...batch, items: batch.items.map(i => (i.id === 'i3' ? { ...i, label: 'D4' } : i)) }
+    expect([...questionNumbers(both, 2)]).toEqual([['i3', 4]])
+  })
+
+  test('numbers nothing once the batch is a turn old', () => {
+    expect(questionNumbers(batch, 3).size).toBe(0)
   })
 })
 

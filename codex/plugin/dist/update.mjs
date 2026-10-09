@@ -15,6 +15,7 @@ var EMPTY = {
   items: [],
   closed: [],
   findings: [],
+  closedFindings: [],
   prs: [],
   nextId: 1,
   turn: 0,
@@ -35,6 +36,7 @@ function upgradeLedger(ledger) {
   return {
     ...rest,
     findings: [...rest.findings ?? [], ...notes ?? []],
+    closedFindings: rest.closedFindings ?? [],
     items: rest.items.map((i) => ({
       ...i,
       kind: readKind(i.kind),
@@ -293,7 +295,10 @@ function repeatsRecentlyClosed(closed, a, since) {
 }
 function closedRecord(item, closing, now) {
   const { id, kind, ask, label } = item;
-  return { id, kind, ask, ...label ? { label } : {}, ...closing, at: now };
+  return { id, kind, ask, ...label ? { label } : {}, ...closing, at: now, item };
+}
+function closedFindingRecord(finding, closing, now) {
+  return { ...finding, ...closing, closedAt: now };
 }
 var CLOSED_BY_CLAUDE = "closed by Claude";
 function applyUpdate(ledger, u, now, turn, promptAt = now) {
@@ -336,6 +341,13 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
     items: kept,
     closed: closed.slice(-MAX_CLOSED),
     findings: ledger.findings.filter((f) => !closing.has(f.id)),
+    closedFindings: [
+      ...ledger.closedFindings,
+      ...ledger.findings.flatMap((f) => {
+        const outcome = closing.get(f.id);
+        return outcome === void 0 ? [] : [closedFindingRecord(f, { outcome, how: "update" }, now)];
+      })
+    ].slice(-MAX_CLOSED),
     nextId,
     batchTurn: added > 0 ? turn : ledger.batchTurn
   };

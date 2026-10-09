@@ -53,6 +53,8 @@ export type Closed = {
    */
   how: 'answered' | 'done' | 'dismissed' | 'expired' | 'claude' | 'update'
   at: number
+  /** The item as it was while open, so it can be reopened; missing on a record saved before the mod kept it. */
+  item?: Item
 }
 
 /** A row that just closed, kept where it stood in its group for a few seconds. */
@@ -88,6 +90,9 @@ export type Finding = {
   path: string | null
   at: number
 }
+
+/** A finding that closed, and how, as `Closed` says it for an item. */
+export type ClosedFinding = Finding & Pick<Closed, 'how' | 'outcome'> & { closedAt: number }
 
 export type PrCheck = { name: string; bucket: 'pass' | 'fail' | 'pending' | 'skip'; url: string | null }
 
@@ -138,6 +143,8 @@ export type Ledger = {
   items: Item[]
   closed: Closed[]
   findings: Finding[]
+  /** Findings that closed, oldest first. Kept apart from `closed`, which the model-read texts list. */
+  closedFindings: ClosedFinding[]
   /** PRs this session created or linked, as "owner/repo#123". */
   prs: string[]
   nextId: number

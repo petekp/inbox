@@ -1,12 +1,13 @@
 import type { SessionMessage } from 'claude-code'
 
-import type { Card, Closed, Dialog, Finding, Help, Item, Ledger, Stop } from '../types'
+import type { Card, Closed, ClosedFinding, Dialog, Finding, Help, Item, Ledger, Stop } from '../types'
 
 export const EMPTY: Ledger = {
   card: null,
   items: [],
   closed: [],
   findings: [],
+  closedFindings: [],
   prs: [],
   nextId: 1,
   turn: 0,
@@ -35,7 +36,8 @@ export function readKind(kind: string | null | undefined): Item['kind'] {
  * A ledger saved by an earlier version of the mod, in the current shape.
  * Findings were once saved as `notes`; items once had no time, and closed
  * items no kind or `how`, so an old closed item counts as a question. Closed
- * items were saved as `decided`, and kinds as `decide` and `do`.
+ * items were saved as `decided`, and kinds as `decide` and `do`. Closed
+ * findings were once not kept.
  */
 export function upgradeLedger(ledger: Ledger): Ledger {
   const { notes, decided, ...rest } = ledger as Ledger & { notes?: Finding[]; decided?: Ledger['closed'] }
@@ -43,6 +45,7 @@ export function upgradeLedger(ledger: Ledger): Ledger {
   return {
     ...rest,
     findings: [...(rest.findings ?? []), ...(notes ?? [])],
+    closedFindings: rest.closedFindings ?? [],
     items: rest.items.map(i => ({
       ...i,
       kind: readKind(i.kind),
@@ -610,7 +613,11 @@ function repeatsRecentlyClosed(closed: Closed[], a: Update['added'][number], sin
 function closedRecord(item: Item, closing: Closing, now: number): Closed {
   const { id, kind, ask, label } = item
 
-  return { id, kind, ask, ...(label ? { label } : {}), ...closing, at: now }
+  return { id, kind, ask, ...(label ? { label } : {}), ...closing, at: now, item }
+}
+
+function closedFindingRecord(finding: Finding, closing: Closing, now: number): ClosedFinding {
+  return { ...finding, ...closing, closedAt: now }
 }
 
 /** How an outcome the mod saved before `how` existed marks an item Claude closed. */
@@ -619,9 +626,9 @@ const CLOSED_BY_CLAUDE = 'closed by Claude'
 /**
  * Closes an open item or finding for the agent: one the user answered in their
  * own message, with that answer as its outcome, or one that is done or no
- * longer applies, with the agent's reason. A finding, which the agent recorded
- * itself, is removed. `closed` is null when no open one has the id. Its `how`
- * is the stored value 'claude' for either agent.
+ * longer applies, with the agent's reason. A finding moves to
+ * `closedFindings` the same way. `closed` is null when no open one has the id.
+ * Its `how` is the stored value 'claude' for either agent.
  */
 export function closeByAgent(
   host: Host,
@@ -636,7 +643,7 @@ export function closeByAgent(
       : { how: 'claude', outcome: `closed by ${host.agent}: ${how.reason}` }
   if (ledger.items.some(i => i.id === id)) return { ledger: closeItem(ledger, id, closing, now), closed: 'item' }
   if (ledger.findings.some(f => f.id === id))
-    return { ledger: { ...ledger, findings: ledger.findings.filter(f => f.id !== id) }, closed: 'finding' }
+    return { ledger: closeFinding(ledger, id, closing, now), closed: 'finding' }
 
   return { ledger, closed: null }
 }
@@ -652,6 +659,58 @@ export function closeItem(ledger: Ledger, id: string, closing: Closing, now: num
     closed: [...ledger.closed, ...ledger.items.filter(i => i.id === id).map(i => closedRecord(i, closing, now))].slice(
       -MAX_CLOSED,
     ),
+  }
+}
+
+/** Closes one finding, recording how it closed. */
+export function closeFinding(ledger: Ledger, id: string, closing: Closing, now: number): Ledger {
+  return {
+    ...ledger,
+    findings: ledger.findings.filter(f => f.id !== id),
+    closedFindings: [
+      ...ledger.closedFindings,
+      ...ledger.findings.filter(f => f.id === id).map(f => closedFindingRecord(f, closing, now)),
+    ].slice(-MAX_CLOSED),
+  }
+}
+
+/** The number in an id, as 10 in "i10"; NaN for an id with none. */
+function idNumber(id: string): number {
+  return Number(id.match(/\d+/)?.[0] ?? Number.NaN)
+}
+
+/**
+ * Puts an entry back among open ones by its id's number, so "i2" goes before
+ * "i10". Order matters: answerNote reads the batch by position, and expiry
+ * keeps the last MAX_OPEN items.
+ */
+function inIdOrder<T extends { id: string }>(open: T[], entry: T): T[] {
+  const at = open.findIndex(x => idNumber(x.id) > idNumber(entry.id))
+
+  return at < 0 ? [...open, entry] : [...open.slice(0, at), entry, ...open.slice(at)]
+}
+
+/**
+ * Reopens a closed item from the item its close record kept, and removes the
+ * record. Unchanged when the item is open, or no record of it kept the item.
+ */
+export function reopenItem(ledger: Ledger, id: string): Ledger {
+  const item = ledger.closed.findLast(c => c.id === id)?.item
+  if (!item || ledger.items.some(i => i.id === id)) return ledger
+
+  return { ...ledger, items: inIdOrder(ledger.items, item), closed: ledger.closed.filter(c => c.id !== id) }
+}
+
+/** Reopens a closed finding and removes its close record. Unchanged when it is open or has no record. */
+export function reopenFinding(ledger: Ledger, id: string): Ledger {
+  const record = ledger.closedFindings.findLast(f => f.id === id)
+  if (!record || ledger.findings.some(f => f.id === id)) return ledger
+  const { how: _how, outcome: _outcome, closedAt: _closedAt, ...finding } = record
+
+  return {
+    ...ledger,
+    findings: inIdOrder(ledger.findings, finding),
+    closedFindings: ledger.closedFindings.filter(f => f.id !== id),
   }
 }
 
@@ -703,6 +762,13 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
     items: kept,
     closed: closed.slice(-MAX_CLOSED),
     findings: ledger.findings.filter(f => !closing.has(f.id)),
+    closedFindings: [
+      ...ledger.closedFindings,
+      ...ledger.findings.flatMap(f => {
+        const outcome = closing.get(f.id)
+        return outcome === undefined ? [] : [closedFindingRecord(f, { outcome, how: 'update' }, now)]
+      }),
+    ].slice(-MAX_CLOSED),
     nextId,
     batchTurn: added > 0 ? turn : ledger.batchTurn,
   }
@@ -728,6 +794,44 @@ function numberOf(label: string | null): number | null {
   return m ? Number(m[1]) : null
 }
 
+/**
+ * The latest batch, when the reply that added it came just before the prompt
+ * numbered `promptTurn`; otherwise empty, since "1. yes" no longer refers to it.
+ */
+function answerableBatch(ledger: Ledger, promptTurn: number): Item[] {
+  return ledger.batchTurn === promptTurn - 1 ? latestBatch(ledger) : []
+}
+
+/**
+ * The item each number in "1. yes" answers. When any item in the batch has a
+ * number in its label, numbers come from labels, unlabeled items get none, and
+ * the first item with a number keeps it. Otherwise each item's number is its
+ * place in the batch, tasks included.
+ */
+function batchNumbers(batch: Item[]): Map<number, Item> {
+  const hasLabels = batch.some(i => numberOf(i.label) !== null)
+  const byNumber = new Map<number, Item>()
+  batch.forEach((item, at) => {
+    const n = hasLabels ? numberOf(item.label) : at + 1
+    if (n !== null && !byNumber.has(n)) byNumber.set(n, item)
+  })
+
+  return byNumber
+}
+
+/**
+ * The number a person can answer each question of the latest batch by, in
+ * the prompt numbered `promptTurn`, by the rule answerNote reads answers with.
+ * Tasks are numbered too, but only questions are returned.
+ */
+export function questionNumbers(ledger: Ledger, promptTurn: number): Map<string, number> {
+  const numbers = new Map<string, number>()
+  for (const [n, item] of batchNumbers(answerableBatch(ledger, promptTurn)))
+    if (item.kind === 'question') numbers.set(item.id, n)
+
+  return numbers
+}
+
 const LINE_ANSWER = /(?:^|\n)\s*(?:[QqDd#]\s?)?(\d{1,2})\s*[.):\-–]\s*\S/g
 const INLINE_ANSWER = /\s(?:[QqDd#]\s?)?(\d{1,2})\s*[.)]\s+\S/g
 const ACCEPT_ALL =
@@ -744,7 +848,7 @@ const ACCEPT_RECS = /\b(all|both|everything|your)\b[^.\n]{0,40}\b(recommend\w*|r
  */
 export function answerNote(ledger: Ledger, text: string): string | null {
   const lines: string[] = []
-  const batch = ledger.batchTurn === ledger.turn - 1 ? latestBatch(ledger) : []
+  const batch = answerableBatch(ledger, ledger.turn)
 
   if (batch.length > 0) {
     const numbers = new Set<number>()
@@ -754,9 +858,9 @@ export function answerNote(ledger: Ledger, text: string): string | null {
     if (/^\s*(?:[QqDd#]\s?)?\d{1,2}\s*[.):\-–]\s/.test(text)) {
       for (const m of text.matchAll(INLINE_ANSWER)) numbers.add(Number(m[1]))
     }
-    const hasLabels = batch.some(i => numberOf(i.label) !== null)
+    const byNumber = batchNumbers(batch)
     for (const n of [...numbers].sort((a, b) => a - b)) {
-      const item = hasLabels ? batch.find(i => numberOf(i.label) === n) : batch[n - 1]
+      const item = byNumber.get(n)
       if (item) lines.push(`- ${n} → ${describe(item)}`)
     }
     if (lines.length === 0 && (ACCEPT_ALL.test(text) || ACCEPT_RECS.test(text))) {

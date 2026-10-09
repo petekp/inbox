@@ -14,6 +14,7 @@ var EMPTY = {
   items: [],
   closed: [],
   findings: [],
+  closedFindings: [],
   prs: [],
   nextId: 1,
   turn: 0,
@@ -29,6 +30,7 @@ function upgradeLedger(ledger) {
   return {
     ...rest,
     findings: [...rest.findings ?? [], ...notes ?? []],
+    closedFindings: rest.closedFindings ?? [],
     items: rest.items.map((i) => ({
       ...i,
       kind: readKind(i.kind),
@@ -98,22 +100,34 @@ function numberOf(label) {
   const m = label?.match(/(\d+)/);
   return m ? Number(m[1]) : null;
 }
+function answerableBatch(ledger, promptTurn) {
+  return ledger.batchTurn === promptTurn - 1 ? latestBatch(ledger) : [];
+}
+function batchNumbers(batch) {
+  const hasLabels = batch.some((i) => numberOf(i.label) !== null);
+  const byNumber = /* @__PURE__ */ new Map();
+  batch.forEach((item, at) => {
+    const n = hasLabels ? numberOf(item.label) : at + 1;
+    if (n !== null && !byNumber.has(n)) byNumber.set(n, item);
+  });
+  return byNumber;
+}
 var LINE_ANSWER = /(?:^|\n)\s*(?:[QqDd#]\s?)?(\d{1,2})\s*[.):\-–]\s*\S/g;
 var INLINE_ANSWER = /\s(?:[QqDd#]\s?)?(\d{1,2})\s*[.)]\s+\S/g;
 var ACCEPT_ALL = /^\s*(go|go ahead|yes|yep|yeah|sure|ok|okay|sgtm|lgtm|sounds good|do it|proceed|all good|ship it)\s*[.!]*\s*$/i;
 var ACCEPT_RECS = /\b(all|both|everything|your)\b[^.\n]{0,40}\b(recommend\w*|recs?|suggest\w*|picks?|calls?)\b/i;
 function answerNote(ledger, text) {
   const lines = [];
-  const batch = ledger.batchTurn === ledger.turn - 1 ? latestBatch(ledger) : [];
+  const batch = answerableBatch(ledger, ledger.turn);
   if (batch.length > 0) {
     const numbers = /* @__PURE__ */ new Set();
     for (const m of text.matchAll(LINE_ANSWER)) numbers.add(Number(m[1]));
     if (/^\s*(?:[QqDd#]\s?)?\d{1,2}\s*[.):\-–]\s/.test(text)) {
       for (const m of text.matchAll(INLINE_ANSWER)) numbers.add(Number(m[1]));
     }
-    const hasLabels = batch.some((i) => numberOf(i.label) !== null);
+    const byNumber = batchNumbers(batch);
     for (const n of [...numbers].sort((a, b) => a - b)) {
-      const item = hasLabels ? batch.find((i) => numberOf(i.label) === n) : batch[n - 1];
+      const item = byNumber.get(n);
       if (item) lines.push(`- ${n} \u2192 ${describe(item)}`);
     }
     if (lines.length === 0 && (ACCEPT_ALL.test(text) || ACCEPT_RECS.test(text))) {
