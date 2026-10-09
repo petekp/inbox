@@ -2644,7 +2644,10 @@ export const register: Register = on => {
     // A stop draws under the counts, so [Open inbox] stays in place. An API error resumes from
     // [Resume], which keeps its key while it sends, so the desktop app keeps the band's focus.
     const isResumable = stop.kind === 'api-error'
-    const after = !isResumable ? stopFix(stop) : resuming?.is === 'refused' ? `Not sent: ${resuming.why}` : ''
+    const notSent = isResumable && resuming?.is === 'refused' ? `Not sent: ${resuming.why}` : ''
+    // On desktop, a stop line that wraps pushes [Resume] to the right edge, under [Open inbox], so a refusal takes its own row.
+    const isNotSentOwnRow = notSent !== '' && e.surface === 'desktop' && e.props.maxRows > 2
+    const after = !isResumable ? stopFix(stop) : isNotSentOwnRow ? '' : notSent
     const stopLine = (
       <Box flexDirection="row" alignItems="flex-start" gap={1}>
         <Box flexShrink={1} minWidth={0}>
@@ -2667,6 +2670,7 @@ export const register: Register = on => {
       <Box flexDirection="column">
         {countLine}
         {e.props.maxRows > 1 ? stopLine : null}
+        {isNotSentOwnRow ? <Text dimColor>{notSent}</Text> : null}
       </Box>
     )
   })
