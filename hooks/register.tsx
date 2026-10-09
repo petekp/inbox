@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, SessionAppendMessage, UiPressArgument, UiScrollResult } from 'claude-code'
 
 import type {
+  Arrival,
   Check,
   Checks,
   Cursor,
@@ -146,6 +147,7 @@ const CHECKS = atom({ plugin: 'inbox', key: 'checks' } as const, NO_CHECKS)
 const SNAPSHOTS = atom({ plugin: 'inbox', key: 'snapshots' } as const, {} as Record<string, Snapshot>)
 const TYPING = atom({ plugin: 'inbox', key: 'typing' } as const, null as string | null)
 const SETTLED = atom({ plugin: 'inbox', key: 'settled' } as const, [] as Settled[])
+const ARRIVAL = atom({ plugin: 'inbox', key: 'arrival' } as const, null as Arrival | null)
 const LAST_ACTIONS = atom({ plugin: 'inbox', key: 'lastActions' } as const, {} as Record<string, LastAction>)
 const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as Item['kind'][])
 const SHOWN_DETAILS = atom({ plugin: 'inbox', key: 'shownDetails' } as const, [] as string[])
@@ -155,6 +157,10 @@ const SETTLED_MS = 5120
 // The bar under a just-closed row, in cells. It loses half a cell per step of SETTLED_MS, so the pane redraws that often.
 const LEAVE_BAR_CELLS = 12
 const LEAVE_BAR_STEPS = LEAVE_BAR_CELLS * 2
+// After a jump, how long the new tab's top edge takes to draw in, in steps, and how long the new row's bar keeps the tab's color.
+const DRAW_IN_MS = 200
+const DRAW_IN_STEPS = 4
+const ARRIVAL_MS = 1500
 const IS_DEMO = atom({ plugin: 'inbox', key: 'isDemo' } as const, false)
 const SAMPLE_PRESS = 'Sample entry: nothing was sent. Run /inbox demo to go back.'
 // The pane's buttons that only move around it, which work in the demo. Every other press there sends nothing.
@@ -450,6 +456,8 @@ let refreshing: Promise<void> = Promise.resolve()
 // The PR fetches, one at a time, and the next one when it is waiting to start: whether it looks up the branch's PR.
 let fetchingPrs: Promise<void> = Promise.resolve()
 let nextFetchFindsBranchPr: boolean | null = null
+// Each tab's row ids as of the last write that can add a row, so a row that appears later counts as new.
+let recordedRows: { isDemo: boolean; ids: Partial<Record<Tab, Set<string>>> } | null = null
 let isSaved = false
 let queue: Promise<void> = Promise.resolve()
 // The inbox text Claude last read beside a prompt, so it is sent again only when it changed.
@@ -651,6 +659,8 @@ async function commitLedger($: EngineInterface, change: (l: Ledger) => Ledger): 
   await save($, after)
   void publishStatus($)
   await showSettled($, before, after)
+  // After showSettled, so a row this change closed holds its tab.
+  void followNewRows($).catch(() => undefined)
 }
 
 /**
@@ -1270,6 +1280,108 @@ function selectedIndex(ids: string[], cursor: Cursor): number {
   return at >= 0 ? at : Math.min(cursor.index, ids.length - 1)
 }
 
+/**
+ * Records each tab's row ids and returns, by tab, the ids it did not have at
+ * the last record. A tab passed as null is loading: it keeps its record and
+ * returns nothing. The first record, and the first after the demo turns on or
+ * off, return nothing.
+ */
+function newRows(isDemo: boolean, current: Record<Tab, string[] | null>): Record<Tab, string[]> {
+  const before = recordedRows?.isDemo === isDemo ? recordedRows.ids : {}
+  const ids = { ...before }
+  const added: Record<Tab, string[]> = { needsYou: [], findings: [], prs: [] }
+  for (const { id: tab } of TABS) {
+    const listed = current[tab]
+    if (listed === null) continue
+    const seen = before[tab]
+    if (seen) added[tab] = listed.filter(id => !seen.has(id))
+    ids[tab] = new Set(listed)
+  }
+  recordedRows = { isDemo, ids }
+
+  return added
+}
+
+/**
+ * Moves the pane to a tab and selects a row there, or shows the tab's top when
+ * there is none. The pane then redraws while the tab's top edge draws in, and
+ * once more when the row's arrival bar ends.
+ */
+async function jumpTo($: EngineInterface, tab: Tab, row: { id: string; index: number } | null) {
+  const at = await $.clock.now()
+  await update($, ARRIVAL, () => ({ tab, id: row?.id ?? null, at }))
+  await update($, TAB, () => tab)
+  if (row) await select($, tab, row.id, row.index)
+  else await $.ui.scroll({ in: PANE, to: 'start' }).catch(() => undefined)
+  const redrawAt = [
+    ...Array.from({ length: DRAW_IN_STEPS }, (_, n) => ((n + 1) * DRAW_IN_MS) / DRAW_IN_STEPS),
+    ARRIVAL_MS,
+  ]
+  void (async () => {
+    for (const due of redrawAt) {
+      await $.clock.sleep(Math.max(0, at + due - (await $.clock.now())))
+      await update($, ARRIVAL, a => a && { ...a })
+    }
+  })().catch(() => undefined)
+}
+
+/** Each tab's row ids, in the order the pane lists them. */
+function tabRowIds(ledger: Ledger, checks: Checks, prViews: PrView[]): Record<Tab, string[]> {
+  return {
+    needsYou: [
+      ...waitingChecks(checks).map(checkRowId),
+      ...NEEDS_YOU_GROUPS.flatMap(g => listedItems(ledger.items, g.kind).map(i => i.id)),
+    ],
+    findings: [...ledger.findings].reverse().map(f => f.id),
+    prs: prViews.flatMap(pr => [
+      ...failingChecks(pr).map(c => prCheckId(pr, c)),
+      ...waitingThreads(pr).map(t => prThreadId(pr, t)),
+    ]),
+  }
+}
+
+/**
+ * Moves the pane to a new row on another tab while the tab on screen shows
+ * only its empty text. `isOpening` records the tabs afresh, so nothing in them
+ * counts as new. The render cannot write state, so each write that can add a
+ * row calls this. See docs/plans/jump-to-new-rows.md.
+ */
+async function followNewRows($: EngineInterface, isOpening = false) {
+  const [view, isDemo, tab, unfolded, isShown] = await Promise.all([
+    drawnState($),
+    read($, IS_DEMO),
+    read($, TAB),
+    read($, UNFOLDED),
+    isPaneShown($),
+  ])
+  const { ledger, checks, prViews: prState, settled, lastActions, stop, now } = view
+  const prViews = Object.values(prState.views)
+  const ids = tabRowIds(ledger, checks, prViews)
+  if (isOpening) recordedRows = null
+  // A PR fetch's rows count once it ends. A new PR counts even with no rows.
+  const added = newRows(isDemo, {
+    ...ids,
+    prs: prState.isFetching ? null : [...prViews.map(pr => `pr ${pr.ref}`), ...ids.prs],
+  })
+  if (!isShown) return
+  // A tab is empty while it shows only its empty text.
+  const isEmpty = {
+    needsYou:
+      ids.needsYou.length === 0 &&
+      settled.length === 0 &&
+      !stop &&
+      !unfolded.some(kind => ledger.closed.some(d => d.kind === kind)),
+    findings:
+      ids.findings.length === 0 &&
+      !Object.values(lastActions).some(n => n.tab === 'findings' && now - n.at < SETTLED_MS),
+    prs: prViews.length === 0 && !prState.isFetching,
+  }[tab]
+  const to = isEmpty ? TABS.find(t => t.id !== tab && added[t.id].length > 0)?.id : undefined
+  if (!to) return
+  const id = ids[to].find(x => added[to].includes(x))
+  await jumpTo($, to, id === undefined ? null : { id, index: ids[to].indexOf(id) })
+}
+
 async function isPaneShown($: EngineInterface) {
   return (await $.ui.panes().catch(() => [])).some(p => p.id === PANE && p.isShown)
 }
@@ -1417,6 +1529,7 @@ async function fetchPrsNow($: EngineInterface, findsBranchPr: boolean) {
   } catch {
     await update($, PR_VIEWS, v => ({ ...v, isFetching: nextFetchFindsBranchPr !== null }))
   }
+  void followNewRows($).catch(() => undefined)
 }
 
 /** The timed refresh, which runs only while the person is around and there is a PR to show or the PRs tab is open. */
@@ -1982,6 +2095,7 @@ export const register: Register = on => {
       $.env.get('HOME').then(h => h ?? ''),
     ])
     isSaved = false
+    recordedRows = null
     // A reload stops any update the previous load had running, and state outlives
     // it, so an update in flight at load was cut off: record it as failed.
     const [git, presence, now, current, saved] = await Promise.all([
@@ -2257,6 +2371,7 @@ export const register: Register = on => {
     if (!isOn) return r
     // A check still failing when Claude stops waits on the person, in the Needs you tab.
     await update($, CHECKS, turnEnded)
+    void followNewRows($).catch(() => undefined)
     if (e.reason !== 'answer' || e.answer.trim() === '') return r
 
     let checks = await read($, CHECKS)
@@ -2338,6 +2453,7 @@ export const register: Register = on => {
     const isDemo = e.args.trim() === 'demo' ? await update($, IS_DEMO, d => !d) : await read($, IS_DEMO)
     if ((await read($, TAB)) === 'prs') await findPrs($)
     await openPane($)
+    await followNewRows($, true)
 
     return {
       text: isDemo ? 'Showing sample entries in the inbox. Run /inbox demo again to go back.' : 'Opened the inbox.',
@@ -2563,6 +2679,7 @@ export const register: Register = on => {
       unfolded,
       isKeyListShown,
       shownDetails,
+      arrival,
     ] = await Promise.all([
       drawnState($),
       read($, PRESENCE),
@@ -2573,6 +2690,7 @@ export const register: Register = on => {
       read($, UNFOLDED),
       read($, IS_KEY_LIST_SHOWN),
       read($, SHOWN_DETAILS),
+      read($, ARRIVAL),
     ])
     const card = ledger.card
     const prViews = Object.values(prState.views)
@@ -3209,7 +3327,12 @@ export const register: Register = on => {
           only once that row has redrawn expanded. */}
           {isSelected ? (
             <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1}>
-              {pal.selection ? null : <Text color={pal.key}>{SELECTION_BAR}</Text>}
+              {/* A row the pane just jumped to takes a bar in its tab's color, in every theme, for ARRIVAL_MS. */}
+              {arrival?.id === row.id && now - arrival.at < ARRIVAL_MS ? (
+                <Text color={pal.mark[tab]}>{SELECTION_BAR}</Text>
+              ) : pal.selection ? null : (
+                <Text color={pal.key}>{SELECTION_BAR}</Text>
+              )}
             </Box>
           ) : null}
         </Box>
@@ -3312,12 +3435,15 @@ export const register: Register = on => {
             const width = `${label}${count > 0 ? ` ${count}` : ''}`.length + 2
 
             // The selected tab is a raised panel three lines tall, with its name on
-            // the middle line and a line of its color along the top edge.
+            // the middle line and a line of its color along the top edge. After a
+            // jump to it, the line draws in from the left.
+            const since = arrival?.tab === id ? now - arrival.at : DRAW_IN_MS
+            const edge = since < DRAW_IN_MS ? Math.max(1, Math.ceil((width * since) / DRAW_IN_MS)) : width
             if (tab === id)
               return (
                 <Box flexDirection="column">
                   <Text color={pal.mark[id]} backgroundColor={pal.raised}>
-                    {'▔'.repeat(width)}
+                    {'▔'.repeat(edge) + ' '.repeat(width - edge)}
                   </Text>
                   <Text backgroundColor={pal.raised}>
                     {' '}

@@ -61,6 +61,9 @@ export type LeftCheck = { id: string; kind: 'check'; title: string; outcome: 'Pa
 /** A row that just closed or left, kept where it stood in its group for a few seconds. */
 export type Settled = (Closed | LeftCheck) & { index: number }
 
+/** The row a jump moved the pane to, so the tab and row can show where it went. */
+export type Arrival = { tab: Tab; id: string | null; at: number }
+
 /** What a row's last action did, shown on the row so the person sees the press went through. */
 export type LastAction = {
   /** The action's key, so that action reads "… again". */
@@ -284,6 +287,8 @@ declare module 'claude-code' {
       typing: string | null
       /** Items that just closed, and checks that just passed, shown in place for a few seconds. */
       settled: Settled[]
+      /** The pane's latest jump to a new row. */
+      arrival: Arrival | null
       /** Each row's last action, by the row's id. */
       lastActions: Record<string, LastAction>
       /** The Needs you groups whose closed items show. Each starts folded. */

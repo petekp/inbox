@@ -349,11 +349,15 @@ test('a reload that cuts off the end-of-turn hook catches up on load', async ($,
   expect(await pane.find({ text: /Push the branch to origin\?/ })).toBeDefined()
 })
 
-test('a finding Claude records shows in the Findings tab, and Address it sends it back', async ($, on) => {
+test('a finding Claude records while the pane shows an empty tab brings the pane to it, and Address sends it back', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world(on, [])
+  on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown: true, isFocused: true, isPlaced: true }] }))
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'inbox', args: '' } as never)
+  const pane = await $.ui.mount(PANE)
+  expect(await pane.find({ text: /No questions are waiting on you/ })).toBeDefined()
   const r = await $.tool.call({
     tool: 'mcp__inbox__record_finding',
     kind: 'issue',
@@ -362,10 +366,7 @@ test('a finding Claude records shows in the Findings tab, and Address it sends i
     path: 'src/api.ts',
   })
   expect(r.result).toBe('Recorded as f1. The user sees it in the Findings tab of /inbox.')
-
-  const pane = await $.ui.mount(PANE)
-  expect(await pane.find({ text: /Retry loop never backs off/ })).toBeUndefined()
-  await pane.press({ key: 'tab-findings' })
+  await clock.settle()
   expect(await pane.find({ text: /Retry loop never backs off/ })).toBeDefined()
 
   await pane.press({ key: 'address-f1' })

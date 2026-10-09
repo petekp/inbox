@@ -43,7 +43,8 @@ don't need.
 
 In the panel, `1`, `2` and `3` switch tabs, `j` and `k` move up and down, and
 an action's letter runs it. You can also click. ctrl+x tab moves between the
-panel and the session.
+panel and the session. When the tab you're on is empty and something new
+arrives on another tab, the panel switches to it.
 
 After 15 minutes with no activity, or when you resume a session, the line
 above the prompt expands into a short summary of where things stand.
