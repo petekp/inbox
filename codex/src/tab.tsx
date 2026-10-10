@@ -23,7 +23,7 @@ import type { Finding, Item, RowNote } from '../../types'
 import { followTo, isShownEmpty, newRows } from './arrivals'
 import type { Group, SeenRows, Tab } from './arrivals'
 import type { TabView as View } from './core'
-import { drawnSettled, POLL_MS, PRESS_TIMEOUT_MS, settledIds, settledSeen } from './settle'
+import { drawnSettled, EXIT_MS, leavingSettled, POLL_MS, PRESS_TIMEOUT_MS, settledIds, settledSeen } from './settle'
 
 type Tone = 'needsYou' | 'findings' | 'done' | 'error'
 
@@ -99,6 +99,10 @@ let seen = new Map<string, number>()
 // The row ids the tab has seen, and when each row new to it appeared. A new row draws a bar for NEW_ROW_MS.
 let rowsSeen: SeenRows = null
 const arrived = new Map<string, number>()
+// Rows that arrived since the last draw, which grow in when they are first drawn.
+const entering = new Set<string>()
+// Settled rows whose Undo press is out. They stay drawn, and their countdown stops, until it answers.
+const undoing = new Set<string>()
 // Each view request takes the next number, and a reply older than the view shown is dropped.
 let requested = 0
 let shown = 0
@@ -161,13 +165,19 @@ function applyView(next: View, seq: number) {
   readAt = Date.now()
   const before = seen
   seen = settledSeen(seen, settledIds(next), Date.now())
-  // A row seen settled for the first time leaves for its Closed fold once SETTLED_MS passes.
-  if ([...seen.keys()].some(id => !before.has(id))) setTimeout(draw, SETTLED_MS + 50)
+  // A row seen settled for the first time starts to leave once SETTLED_MS passes, and is gone EXIT_MS later.
+  if ([...seen.keys()].some(id => !before.has(id))) {
+    setTimeout(draw, SETTLED_MS + 50)
+    setTimeout(draw, SETTLED_MS + EXIT_MS + 50)
+  }
   view = next
   const rows = newRows(rowsSeen, next)
   rowsSeen = rows.seen
   const added = [...rows.added.needsYou, ...rows.added.findings]
-  for (const id of added) arrived.set(id, Date.now())
+  for (const id of added) {
+    arrived.set(id, Date.now())
+    entering.add(id)
+  }
   if (added.length > 0) setTimeout(draw, NEW_ROW_MS + 50)
   follow(next, rows.added)
   draw()
@@ -175,7 +185,7 @@ function applyView(next: View, seq: number) {
 
 /** Moves to the other tab for its new rows while the tab on screen shows only its empty text, as the mod's pane does. */
 function follow(v: View, added: Record<Tab, string[]>) {
-  const drawn = drawnSettled(seen, Date.now())
+  const drawn = shownSettled()
   const lists = listsOf(v, drawn)
   const to = followTo(tab, isShownEmpty(v, tab, drawn, unfolded), added, {
     needsYou: lists.byTab.needsYou.map(r => r.id),
@@ -462,10 +472,32 @@ function settledIn(entries: Entry[]): Set<string> {
   return new Set(entries.flatMap(x => ('settled' in x ? [x.settled.id] : [])))
 }
 
-/** Undo on a settled row: the row comes back open, and selected. */
-function undo(r: RowView) {
+/** The settled rows drawn in place now. */
+function shownSettled(): Set<string> {
+  return drawnSettled(seen, Date.now(), undoing)
+}
+
+/** Undo on a settled row: the row comes back open and selected, reading "✓ Undo" as other presses read their result. */
+async function undo(r: RowView) {
+  if (undoing.has(r.id)) return
   const t: Tab = r.type === 'finding' ? 'findings' : 'needsYou'
-  void act(r.id, { action: 'undo', id: r.id }, () => open(t, r.id))
+  undoing.add(r.id)
+  try {
+    await act(r.id, { action: 'undo', id: r.id }, () => {
+      open(t, r.id)
+      notes.set(r.id, { text: '✓ Undo', at: Date.now() })
+      setTimeout(draw, SETTLED_MS + 50)
+    })
+  } finally {
+    undoing.delete(r.id)
+    // A failed Undo starts the row's time again, so its error shows and Undo can be pressed again.
+    if (errors.has(r.id) && seen.has(r.id)) {
+      seen.set(r.id, Date.now())
+      setTimeout(draw, SETTLED_MS + 50)
+      setTimeout(draw, SETTLED_MS + EXIT_MS + 50)
+    }
+    draw()
+  }
 }
 
 /**
@@ -744,36 +776,44 @@ function ListRow({
   )
 }
 
-/** A row that just closed, with its outcome, [Undo] after the person's own Done or Dismiss, and its leave bar. */
+/**
+ * A row that just closed: its title and outcome, and after the person's own Done or Dismiss, Undo and a
+ * countdown along its bottom edge. While Undo's press is out, the countdown stops and the row stays.
+ */
 function SettledView({ settled: r, state }: Extract<Entry, { settled: RowView }>) {
   const start = seen.get(r.id) ?? Date.now()
+  const isUndoing = undoing.has(r.id)
+  // Green only for what the person got: Done and answers. Dismissed, expired and agent closes are muted.
+  const isGood = !state.isLapsed && !state.isQueued
 
   return (
     <div class="row settled">
       {/* The ✓ waits for an answer's message to reach Codex. */}
-      <span class="mark done">{state.isQueued ? '' : '✓'}</span>
+      <span class={isGood ? 'mark done' : 'mark'}>{state.isQueued ? '' : '✓'}</span>
       <div class="content tight">
         <div class="what">{r.title}</div>
-        <div>
-          <span class={state.isQueued ? 'muted' : 'tone-done'}>
-            {state.isQueued ? `Queued: ${state.label}` : state.label}
-          </span>
-          {state.canUndo ? (
-            <button type="button" class="key ghost" onClick={() => undo(r)}>
-              Undo
-            </button>
-          ) : null}
+        <div class={isGood ? 'outcome-label tone-done' : 'outcome-label muted'}>
+          {state.isQueued ? `Queued: ${state.label}` : state.label}
         </div>
-        <div class="leave">
-          {/* The bar's delay is set once, when it is drawn: the animation keeps its own clock after that. */}
+        {errors.has(r.id) ? <div class="tone-error">{errors.get(r.id)}</div> : null}
+      </div>
+      {state.canUndo ? (
+        <button type="button" class="key undo" disabled={isUndoing} onClick={() => void undo(r)}>
+          {isUndoing ? 'Undoing…' : 'Undo'}
+        </button>
+      ) : null}
+      {state.canUndo ? (
+        <div class={isUndoing ? 'countdown paused' : 'countdown'}>
+          {/* The delay is set once, when it is drawn: the animation keeps its own clock after that. */}
           <div
+            key={start}
             style={{ animationDuration: `${SETTLED_MS}ms` }}
             ref={el => {
               if (el && !el.style.animationDelay) el.style.animationDelay = `-${Math.max(0, Date.now() - start)}ms`
             }}
           />
         </div>
-      </div>
+      ) : null}
     </div>
   )
 }
@@ -795,12 +835,14 @@ function Entries({
   const t: Tab = group === 'finding' ? 'findings' : 'needsYou'
   const at = selectedIndex(all, t, v)
   if (entries.length === 0) return null
+  const leaving = leavingSettled(seen, Date.now(), undoing)
 
+  // One element per row, keyed by its id whether it is open or settled, so its height can move between the two.
   return (
     <div class="list">
       {entries.map(x =>
         'row' in x ? (
-          <div class="entry" key={x.row.id}>
+          <div class="entry" key={x.row.id} data-motion={x.row.id}>
             <ListRow
               row={x.row}
               tone={t}
@@ -810,7 +852,11 @@ function Entries({
             />
           </div>
         ) : (
-          <div class="entry" key={`settled-${x.settled.id}`}>
+          <div
+            class={leaving.has(x.settled.id) ? 'entry leaving' : 'entry'}
+            key={x.settled.id}
+            data-motion={x.settled.id}
+          >
             <SettledView settled={x.settled} state={x.state} />
           </div>
         ),
@@ -885,20 +931,12 @@ function ClosedFold({ group, closed, now }: { group: Group; closed: ClosedLine[]
 
   return (
     <>
-      <button
-        type="button"
-        class="fold"
-        onClick={() => {
-          if (isUnfolded) unfolded.delete(group)
-          else unfolded.add(group)
-          draw()
-        }}
-      >
-        <span class="fold-mark">{isUnfolded ? '▾' : '▸'}</span>
+      <button type="button" class="fold" data-fold={group} onClick={() => toggleFold(group)}>
+        <span class={isUnfolded ? 'fold-mark open' : 'fold-mark'}>▸</span>
         {closed.length} Closed
       </button>
       {isUnfolded ? (
-        <div class="list closed-list">
+        <div class="list closed-list" data-motion={`closed-${group}`}>
           {closed.map(d => (
             <div class="entry" key={`closed-${d.id}`}>
               <div class="row">
@@ -1079,7 +1117,7 @@ function App(): ComponentChildren {
     )
   const v = view
   const now = v.at
-  const lists = listsOf(v, drawnSettled(seen, Date.now()))
+  const lists = listsOf(v, shownSettled())
 
   return (
     <>
@@ -1104,6 +1142,116 @@ function App(): ComponentChildren {
   )
 }
 
+// ── Motion ──────────────────────────────────────────────────────────────────
+
+// The Codex app's own timing, from its bundled styles: --cubic-enter, --cubic-move and --cubic-exit.
+const ENTER: KeyframeAnimationOptions = { duration: 300, easing: 'cubic-bezier(.19, 1, .22, 1)' }
+const MOVE: KeyframeAnimationOptions = { duration: 200, easing: 'cubic-bezier(.65, 0, .35, 1)' }
+const EXIT: KeyframeAnimationOptions = { duration: EXIT_MS, easing: 'cubic-bezier(.8, 0, .4, 1)', fill: 'forwards' }
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
+
+type Heights = Map<string, { el: HTMLElement; height: number }>
+
+/** Each moving element's drawn height, by its `data-motion` key, mid-animation included. */
+function measure(): Heights {
+  const heights: Heights = new Map()
+  for (const el of document.querySelectorAll<HTMLElement>('[data-motion]'))
+    heights.set(el.dataset.motion!, { el, height: el.getBoundingClientRect().height })
+
+  return heights
+}
+
+/** Runs a height animation, clipping the element's content until no animation is left on it. */
+function run(el: HTMLElement, frames: Keyframe[], timing: KeyframeAnimationOptions) {
+  el.style.overflow = 'hidden'
+  const a = el.animate(frames, timing)
+  const done = () => {
+    if (el.getAnimations().length === 0) el.style.overflow = ''
+  }
+  a.onfinish = done
+  a.oncancel = done
+}
+
+/**
+ * Animates what a draw changed. A row in `entering` grows in, a leaving row fades and collapses, and an
+ * element whose height changed moves from the height it was drawn at. A draw that changed nothing animates nothing.
+ */
+function animateDraw(before: Heights) {
+  if (reducedMotion.matches) {
+    entering.clear()
+    return
+  }
+  for (const el of document.querySelectorAll<HTMLElement>('[data-motion]')) {
+    const key = el.dataset.motion!
+    const was = before.get(key)
+    // A fold closing runs its own exit.
+    if (el.dataset.closing) continue
+    if (el.classList.contains('leaving')) {
+      if (el.dataset.leaving) continue
+      el.dataset.leaving = '1'
+      run(
+        el,
+        [
+          { height: `${el.getBoundingClientRect().height}px`, opacity: 1 },
+          { height: '0px', opacity: 0 },
+        ],
+        EXIT,
+      )
+      continue
+    }
+    // Undo can stop a row mid-exit.
+    delete el.dataset.leaving
+    if (!was || was.el !== el) {
+      if (!entering.delete(key)) continue
+      const height = el.getBoundingClientRect().height
+      run(
+        el,
+        [
+          { height: '0px', opacity: 0 },
+          { height: `${height}px`, opacity: 1 },
+        ],
+        ENTER,
+      )
+      continue
+    }
+    for (const a of el.getAnimations()) a.cancel()
+    const height = el.getBoundingClientRect().height
+    if (Math.abs(height - was.height) >= 0.5) run(el, [{ height: `${was.height}px` }, { height: `${height}px` }], MOVE)
+  }
+  // Rows that arrived on another tab grow in when that tab shows them, not later.
+  entering.clear()
+}
+
+/** Opens or closes a list's Closed fold. Closing collapses the list before the fold redraws without it. */
+function toggleFold(group: Group) {
+  if (!unfolded.has(group)) {
+    unfolded.add(group)
+    entering.add(`closed-${group}`)
+    draw()
+    return
+  }
+  const el = document.querySelector<HTMLElement>(`[data-motion="closed-${group}"]`)
+  if (!el || reducedMotion.matches) {
+    unfolded.delete(group)
+    draw()
+    return
+  }
+  el.dataset.closing = '1'
+  document.querySelector(`[data-fold="${group}"] .fold-mark`)?.classList.remove('open')
+  run(
+    el,
+    [
+      { height: `${el.getBoundingClientRect().height}px`, opacity: 1 },
+      { height: '0px', opacity: 0 },
+    ],
+    EXIT,
+  )
+  setTimeout(() => {
+    unfolded.delete(group)
+    draw()
+  }, EXIT_MS)
+}
+
 const root = document.getElementById('app')!
 
 function draw() {
@@ -1112,7 +1260,9 @@ function draw() {
     root.className = ''
     root.textContent = ''
   }
+  const before = measure()
   render(<App />, root)
+  animateDraw(before)
   if (focusTyping && typing) {
     focusTyping = false
     document.getElementById(`type-${typing}`)?.focus()
@@ -1139,7 +1289,7 @@ document.addEventListener('keydown', e => {
     draw()
     return
   }
-  const rows = listsOf(view, drawnSettled(seen, Date.now())).byTab[tab]
+  const rows = listsOf(view, shownSettled()).byTab[tab]
   const at = selectedIndex(rows, tab, view)
   const move = e.key === 'j' || e.key === 'ArrowDown' ? 1 : e.key === 'k' || e.key === 'ArrowUp' ? -1 : 0
   if (move !== 0) {

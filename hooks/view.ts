@@ -14,7 +14,7 @@ import type {
   PressKind,
   RowNote,
 } from '../types'
-import { latestBatch, questionNumbers, reopenFinding, reopenItem } from './ledger'
+import { isLapsed, latestBatch, questionNumbers, reopenFinding, reopenItem } from './ledger'
 import { actionId, clipLabel, isHandedOff, isUndoable, noteText, retryOf, stepsOf } from './presses'
 import type { HelpStep, RowPress } from './presses'
 
@@ -64,7 +64,7 @@ export type ViewInput = {
 export type RowState =
   | { is: 'open' }
   | { is: 'handedOff' }
-  | { is: 'settled'; label: string; at: number; canUndo: boolean; isQueued: boolean }
+  | { is: 'settled'; label: string; at: number; canUndo: boolean; isQueued: boolean; isLapsed: boolean }
 
 /**
  * What a row says about its last press: "✓ Explain · 1m ago". A Talk or Hand-off ✓
@@ -332,6 +332,8 @@ export function inboxView({
         label: settledLabel(closed.outcome),
         at,
         canUndo: isUndoable(closed.how),
+        // Dismissed, expired or closed by the agent: drawn muted, as the Closed fold draws it.
+        isLapsed: isLapsed(closed),
         // Queued only while the answer press that closed the row waits to reach Claude. Claude's own close sends nothing.
         isQueued:
           closed.how === 'answered' && last?.kind === 'mark' && last.at === at && last.delivery?.state === 'queued',

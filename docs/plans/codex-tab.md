@@ -79,32 +79,31 @@ row leaves, the row now in its place is selected.
 
 ## Look
 
-The tab keeps the pane's structure and redraws its character art as the
-page's own lines, so it reads as the same inbox at a finer grain.
+The tab shows the pane's content with Codex's own controls, spacing and type, so it reads as part of Codex.
 
 | Pane | Tab | Why |
 | --- | --- | --- |
-| A tree of `├─` and `└─` hanging from each group's title | The same tree in hairlines, with a rounded last elbow | The tree is what makes the pane recognizable. Hairlines keep it light beside proportional text. |
-| A raised tab panel with a line of `▔` in the tab's tone | A raised tab with a 2 px edge in its tone, drawn in from the left on a switch | Same shape and meaning. The draw-in answers the switch, as the pane's does after a jump. |
-| Keys drawn as text, as `a: Fix` | The same text, with a light fill under the pointer | Text keys keep a row quiet. Boxed buttons made every row look like a form. |
-| A divider from the text column to the edge | A hairline from the text column | The tree passes through it, as in the pane. |
-| A leave bar that loses half a cell per step | A bar whose width shrinks smoothly | A page can animate width. |
-| A drawer listing the keys | A footer line | The tab has room for one more line. |
+| A tree of `├─` and `└─` hanging from each group's title | A flat list under each group's title | Codex's lists are flat. Tree lines read as terminal art there. |
+| A raised tab panel with a line of `▔` in the tab's tone | A raised tab, with its count in the tab's tone | Codex marks the shown tab with a fill alone. |
+| Keys drawn as text, as `a: Fix` | Codex's pill buttons, as `desktop-polish.md` rule 5 sets | They are the host's own controls. |
+| A divider from the text column to the edge | A hairline from the text column | Same shape and meaning. |
+| A leave bar that loses half a cell per step | The settled row's bottom edge, draining, as `motion-and-undo.md` sets | A page can animate width, and the edge spans the row. |
+| A drawer listing the keys | Nothing. Keys work, with no key text | Keys are an optional extra, as UI plan 2.9 sets. |
 
 **Surfaces.** The page, a group's card, the raised tab and the selected row
 are mixed from the host's own background and text colors, so the tab sits
 inside Codex's theme. The selected row adds a little blue, as the pane's
 blue-gray selection does. Nothing has a shadow or a border.
 
-**Type.** Words use the host's sans. Only what the terminal drew as
-structure uses the host's mono: the tree, the row marks, the key letters and
-check output.
+**Type.** Words and row marks use the host's sans. Only the copy box uses
+the host's mono.
 
 **Color means state.** Amber waits on you, purple is a finding, green is
 done, red is failing, and periwinkle marks a key. Nothing else is colored.
 
-**Motion** only answers a press: the tab edge drawing in, and the leave bar.
-Both stop when the system asks for reduced motion.
+**Motion** follows `motion-and-undo.md`: anything that appears, leaves or
+changes size moves, with the Codex app's own timing. All of it stops when the
+system asks for reduced motion.
 
 ## Demo
 

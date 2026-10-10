@@ -10,7 +10,7 @@ import type { Item, LocalResult } from '../../types'
 import { followTo, isShownEmpty, newRows } from '../src/arrivals'
 import { endTurn, noteHook, notePrompt, noteToolCall, viewOf } from '../src/core'
 import { demoState } from '../src/demo'
-import { drawnSettled, SETTLE_WINDOW_MS, settledIds, settledSeen } from '../src/settle'
+import { drawnSettled, EXIT_MS, SETTLE_WINDOW_MS, settledIds, settledSeen } from '../src/settle'
 import { emptyState, NOTHING_HEARD } from '../src/state'
 import type { SessionState } from '../src/state'
 import { CODEX } from '../src/texts'
@@ -363,7 +363,13 @@ test('Address hands a finding off: it folds until an applied turn leaves it open
   const closedBy = { ...sent, ledger: recordClose(CODEX, sent.ledger, { id: 'f3', reason: 'fixed' }, 90).ledger }
   assert.deepEqual(
     viewOf(closedBy, 100).findings.rows.map(r => [r.id, r.state, r.actions]),
-    [['f3', { is: 'settled', label: 'Closed by Codex: fixed', at: 90, canUndo: false, isQueued: false }, []]],
+    [
+      [
+        'f3',
+        { is: 'settled', label: 'Closed by Codex: fixed', at: 90, canUndo: false, isQueued: false, isLapsed: true },
+        [],
+      ],
+    ],
   )
   const closed = viewOf(closedBy, 90 + SETTLE_WINDOW_MS)
   assert.deepEqual(closed.findings.rows, [])
@@ -390,7 +396,7 @@ test('Dismiss settles a row in place with Undo, and Undo puts it back open where
     [
       [
         'i1',
-        { is: 'settled', label: 'Dismissed', at: 50, canUndo: true, isQueued: false },
+        { is: 'settled', label: 'Dismissed', at: 50, canUndo: true, isQueued: false, isLapsed: true },
         [{ action: 'undo', id: 'i1' }],
       ],
     ],
@@ -453,8 +459,8 @@ test('the tab draws a settled row for SETTLED_MS from its first poll, then lists
   const fold = (now: number) =>
     closedShown(viewOf(dismissed, now).needsYou.closed.questions, drawnSettled(seen, now)).map(d => d.id)
   assert.deepEqual(fold(2050), [])
-  // Past the tab's own SETTLED_MS, the server still lists it as settled, and the tab shows it in the fold.
-  const later = 2050 + SETTLED_MS + 1
+  // Past the tab's own SETTLED_MS and the row's exit, the server still lists it as settled, and the tab shows it in the fold.
+  const later = 2050 + SETTLED_MS + EXIT_MS + 1
   seen = settledSeen(seen, settledIds(viewOf(dismissed, later)), later)
   assert.equal(viewOf(dismissed, later).needsYou.questions[0]?.state.is, 'settled')
   assert.deepEqual(fold(later), ['i1'])

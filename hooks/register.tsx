@@ -4014,7 +4014,8 @@ export const register: Register = on => {
     // A row that just closed stays where it was, with a ✓ and its outcome, and
     // [Undo] after the person's own Done or Dismiss, until it joins its list's
     // closed items. It cannot be selected. `undo` is that press. An answer
-    // whose message has not reached Claude reads "Queued: <answer>" instead.
+    // whose message has not reached Claude reads "Queued: <answer>" instead. A
+    // lapsed close, such as Dismissed, Expired or one by Claude, reads muted.
     const settledContent = (
       what: string,
       outcome: string,
@@ -4022,13 +4023,14 @@ export const register: Register = on => {
       undo: RowPress | PrPress | null,
       inset: number,
       isQueued = false,
+      isLapsed = false,
     ) => (
       <Box flexDirection="column">
         <Text wrap="truncate-end" color={pal.muted}>
           {oneLine(what, inset)}
         </Text>
         <Box flexDirection="row" columnGap={2}>
-          <Text wrap="wrap" color={isQueued ? pal.muted : pal.tone.done}>
+          <Text wrap="wrap" color={isQueued || isLapsed ? pal.muted : pal.tone.done}>
             {isQueued ? `Queued: ${outcome}` : outcome}
           </Text>
           {undo ? (
@@ -4044,9 +4046,9 @@ export const register: Register = on => {
     )
     const settledRow = ({ settled: r, state }: Extract<Entry, { settled: RowView }>, pos?: TreePos) => {
       const undo = r.actions.find(a => a.press.action === 'undo')?.press ?? null
-      const content = settledContent(r.title, state.label, state.at, undo, pos ? 7 : 5, state.isQueued)
+      const content = settledContent(r.title, state.label, state.at, undo, pos ? 7 : 5, state.isQueued, state.isLapsed)
       // The ✓ waits for the answer to reach Claude; the blank keeps the row's text in line.
-      const mark = state.isQueued ? <Text> </Text> : <Text color={pal.mark.done}>✓</Text>
+      const mark = state.isQueued ? <Text> </Text> : <Text color={state.isLapsed ? pal.muted : pal.mark.done}>✓</Text>
       // In a group's tree, or flat as Findings lists its rows.
       return pos ? (
         treeRow(pos, mark, content, `settled-${r.id}`)
@@ -4199,7 +4201,7 @@ export const register: Register = on => {
       section([
         treeRow(
           null,
-          <Text color={pal.mark.done}>✓</Text>,
+          <Text color={pal.muted}>✓</Text>,
           settledContent(
             `#${pr.number} ${pr.title}`,
             'Dismissed',
@@ -4209,6 +4211,8 @@ export const register: Register = on => {
               ref: pr.ref,
             },
             7,
+            false,
+            true,
           ),
           `settled-pr:${pr.ref}`,
         ),

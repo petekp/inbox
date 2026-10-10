@@ -28,6 +28,33 @@
         /* Codex's gray button fills: the foreground at 8% and 12% in light, 12% and 16% in dark. */
         --soft: color-mix(in oklab, var(--text) 8%, transparent);
         --soft-hover: color-mix(in oklab, var(--text) 12%, transparent);
+        /* The Codex app's timing: --transition-duration-basic with ease, --cubic-move, --cubic-enter, --ease-spring-snappy. */
+        --quick: 150ms ease;
+        --move: 200ms cubic-bezier(0.65, 0, 0.35, 1);
+        --enter: 300ms cubic-bezier(0.19, 1, 0.22, 1);
+        --spring: 300ms
+          linear(
+            0,
+            0.086,
+            0.2539,
+            0.428,
+            0.5786,
+            0.698,
+            0.7879,
+            0.8534,
+            0.8998,
+            0.9323,
+            0.9546,
+            0.9697,
+            0.98,
+            0.9868,
+            0.9913,
+            0.9943,
+            0.9963,
+            0.9976,
+            0.9985,
+            1
+          );
         /* Where a row's mark sits, and where its text starts. */
         --mark-x: 18px;
         --text-x: 40px;
@@ -346,9 +373,8 @@
       .keys.ghost-line {
         margin-left: -11px;
       }
-      /* The row just opened, so a click on its keys would be a double-click's second. */
+      /* The row just opened, so a click on its keys would be a double-click's second. Nothing dims: that read as a flicker. */
       .key:disabled {
-        opacity: 0.5;
         cursor: default;
       }
       .actions {
@@ -402,6 +428,10 @@
       .fold-mark {
         display: inline-block;
         width: 14px;
+        transition: transform var(--move);
+      }
+      .fold-mark.open {
+        transform: rotate(90deg);
       }
       /* The closed items sit under the fold's label. */
       .closed-list {
@@ -419,11 +449,9 @@
         font-weight: 400;
         color: var(--muted);
       }
-      /* Undo sits in a text line, so it takes Codex's smallest size, 20 px, and the row keeps its height. */
-      .settled .key {
-        min-height: 20px;
-        margin-left: 6px;
-        padding: 0 8px;
+      .row.settled {
+        position: relative;
+        align-items: center;
       }
       .settled .what {
         color: var(--muted);
@@ -431,26 +459,43 @@
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .leave {
-        width: 96px;
-        height: 1.5px;
-        margin-top: 4px;
-        border-radius: 1px;
+      .settled .outcome-label {
+        font-weight: 500;
+      }
+      .settled .outcome-label.muted {
+        font-weight: 400;
+      }
+      .key.undo {
+        flex: none;
+        margin-left: 12px;
+      }
+      /* The time Undo has left, draining along the row's bottom edge from the text column. */
+      .countdown {
+        position: absolute;
+        left: var(--text-x);
+        right: 0;
+        bottom: 0;
+        height: 2px;
+        background: var(--soft);
         overflow: hidden;
       }
-      .leave div {
+      .countdown div {
         height: 100%;
-        background: var(--done);
-        animation-name: leave;
+        background: color-mix(in oklab, var(--text) 32%, transparent);
+        transform-origin: left;
+        animation-name: drain;
         animation-timing-function: linear;
         animation-fill-mode: forwards;
       }
-      @keyframes leave {
+      .countdown.paused div {
+        animation-play-state: paused;
+      }
+      @keyframes drain {
         from {
-          width: 100%;
+          transform: scaleX(1);
         }
         to {
-          width: 0;
+          transform: scaleX(0);
         }
       }
       /* The page is at least the pane's height. The footer sits at its bottom, and an empty tab's text fills the space above it. */
@@ -500,9 +545,44 @@
         background: var(--raised);
         color: var(--text);
       }
+      /*
+       * Motion, with the Codex app's own timing. Hover and fills change over 150 ms, and what a draw
+       * mounts fades in from @starting-style. Heights move in the script, around each draw.
+       */
+      .key,
+      .tab,
+      .row,
+      .fold {
+        transition:
+          background-color var(--quick),
+          color var(--quick),
+          box-shadow var(--enter),
+          transform var(--spring);
+      }
+      .key:not(:disabled):active {
+        transform: scale(0.97);
+      }
+      .row > .content,
+      .row > .line,
+      .status-line,
+      .demo-note,
+      .empty,
+      main,
+      form {
+        transition: opacity var(--quick);
+        @starting-style {
+          opacity: 0;
+        }
+      }
       @media (prefers-reduced-motion: reduce) {
-        .leave div {
-          animation: none;
+        *,
+        *::before,
+        *::after {
+          transition-duration: 0s !important;
+        }
+        /* With no motion, the countdown shows no time left, so it is not drawn. */
+        .countdown {
+          display: none;
         }
       }
     </style>

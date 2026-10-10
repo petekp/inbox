@@ -29,7 +29,22 @@ export function settledSeen(seen: ReadonlyMap<string, number>, listed: string[],
   return new Map(listed.map(id => [id, seen.get(id) ?? now]))
 }
 
-/** The settled rows the tab draws in place: first seen less than SETTLED_MS ago. The rest show in their Closed fold. */
-export function drawnSettled(seen: ReadonlyMap<string, number>, now: number): Set<string> {
-  return new Set([...seen].filter(([, at]) => now - at < SETTLED_MS).map(([id]) => id))
+/** How long a settled row takes to fade and collapse once its SETTLED_MS ends. */
+export const EXIT_MS = 200
+
+/**
+ * The settled rows the tab draws in place: first seen less than SETTLED_MS ago, the rows still
+ * leaving for EXIT_MS after that, and `held` rows, whose Undo press is out. The rest show in their Closed fold.
+ */
+export function drawnSettled(
+  seen: ReadonlyMap<string, number>,
+  now: number,
+  held: ReadonlySet<string> = new Set(),
+): Set<string> {
+  return new Set([...seen].filter(([id, at]) => held.has(id) || now - at < SETTLED_MS + EXIT_MS).map(([id]) => id))
+}
+
+/** The drawn settled rows past their SETTLED_MS, which fade and collapse before they leave. */
+export function leavingSettled(seen: ReadonlyMap<string, number>, now: number, held: ReadonlySet<string>): Set<string> {
+  return new Set([...seen].filter(([id, at]) => !held.has(id) && now - at >= SETTLED_MS).map(([id]) => id))
 }
