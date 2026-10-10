@@ -10,7 +10,7 @@ Every build step below is done, in `f29471e` and earlier. The probes ran on 2026
   - On desktop, the new-row bar and the selection bar on an open row are Box fills.
   - The gap under a group title is half a line.
   - A PR's status block starts at the title's column.
-- **Not built, because a probe failed:** the rule under the tabs, and the tree rails. The status block's column takes the rails' place.
+- **Not built, because a probe failed:** the rule under the tabs, and the tree rails.
 - **Waiting on you:** the Auto theme's tab and row colors (probe 5), the app's appearance against the `theme` setting (probe 6), the band with the pane closed (probe 17), a pointer sweep over many rows (probe 4), and `/login` from a stop (probe 18).
 
 ## Summary
@@ -571,7 +571,7 @@ These change the terminal or shared code.
 
 ## Probe results
 
-The probes ran on 2026-10-09 in a desktop Code-mode session on engine 2.1.295, in the dark theme, at 68 columns. A temporary patch, never committed, drew test shapes above the demo and set the pane's state. An accessibility press triggered it, and `screencapture -l` captured the window. Widths other than 68 are simulated: the patch overrode `bodyColumns` and drew the pane in a Box that wide. A Client still sizes itself from its real region. At 2x, a cell is 15.8 px wide.
+The probes ran on 2026-10-09 in a desktop Code-mode session on engine 2.1.295, in the dark theme, at 68 columns. A temporary patch, never committed, drew test shapes above the demo and set the pane's state. An accessibility press triggered it, and `screencapture -l` captured the window. Widths other than 68 are simulated: the patch overrode `bodyColumns` and drew the pane in a Box that wide. At 2x, a cell is 15.8 px wide.
 
 | # | Result |
 |---|---|
@@ -581,7 +581,7 @@ The probes ran on 2026-10-09 in a desktop Code-mode session on engine 2.1.295, i
 | 5 | The dark palette passes: text on the raised gray 7.3:1, tone counts on it 4.5 to 5.3:1. The error mark on the raised gray is 3.0:1. The Auto palette fails in the dark app: the shown tab's text is 3.1:1 on `subtle`, the tone marks 1.1 to 1.4:1 on it, and the unshown tabs' `userMessageBackground` is almost the pane's own color. Auto also sets no selection color, so an open row has no fill. Theme keys resolve to the app's own theme, so the ANSI palettes cannot be simulated. `userMessageBackgroundHover` draws nothing. |
 | 6 | Yours. |
 | 7 | Sentences and the tab labels fit 1.26 to 1.30 characters per cell, and 1.23 to 1.27 in bold. A run of "n" fits 1.03. `DESKTOP_CHARS_PER_CELL` stays 1.25 and `DESKTOP_CLIP_CHARS_PER_CELL` stays 1.1. Tab labels are fixed text, so they are sized at 1.25 plus 1 cell of slack, not at the clip constant. |
-| 8 | Passes. In a clipped one-line Box, `▔` draws a line about 2 pt thick near the top of the line, with faint seams between glyphs. One `▔` covers about 0.7 of a cell, so a run must be longer than the width it fills. The rule under the tabs fails: in the hooks tree its glyph sits about 12 pt below the tabs instead of touching them. |
+| 8 | Passes. In a clipped one-line Box, `▔` draws a line about 2 pt thick near the top of the line, with faint seams between glyphs. One `▔` covers about 0.7 of a cell, so a run must be longer than the width it fills. The rule under the tabs fails: in a one-line Box right under the tabs Client, its glyph sits about 12 pt below the tabs instead of touching them. Why it sits lower there than at the top of a tab is unknown. |
 | 9 | Today's rule misplaces the status. From 50 to about 53 columns, the status wraps under the tabs with no gap, as if it were the first tab's caption. It fits beside them from 54 columns with one-digit counts. |
 | 10 | An empty `height={1}` Box draws a full 38 px line, the same as a blank Text row. An empty Box with `paddingTop={1}` draws 19 px, the same as a card's padding, so `titleGap` uses that. |
 | 11 | In the row Client, the new-row bar paints a full row tall, stops at the row's edge and clears after 1.5 s. On an open row the `▌` column drew as broken dashes, so desktop now uses a Box fill there. |

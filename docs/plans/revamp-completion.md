@@ -17,7 +17,7 @@ Code is built in a separate worktree, `revamp-build`, and moves to `revamp` once
 ## Where it stands
 
 - **Built and tested:** all 16 build steps, every 2026-10-09 decision, and sections 1 to 3 below.
-- **Seen working live:** terminal delivery. On desktop: focus, button edges, tab clicks, row and fold clicks, scrolling, typing with Enter, the dimmed guard, Markdown, and the look from section 3. In Codex: the tab, `inbox` answering in text only, and Explain going Sending, Queued, ✓.
+- **Seen working live:** terminal delivery. On desktop: focus, button edges, tab clicks, row and fold clicks, scrolling, typing with Enter, the dimmed guard, Markdown, and the look from section 3. The status under the tabs was seen at a simulated 60 columns. In Codex: the tab, `inbox` answering in text only, and Explain going Sending, Queued, ✓.
 - **Left:** the decisions in section 4, and the merge.
 
 ## 1. Fixes, done
