@@ -1292,17 +1292,6 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   opened()
   await clock.settle()
   expect(await pane.find({ text: '✓ Opened PR #12' })).toBeDefined()
-  // A reload while the open runs stops it, so the row says so, and keeps saying so if the open ends later.
-  await clock.advance(SETTLED_MS)
-  await pane.press({ key: 'help-i1-0' })
-  await clock.settle()
-  expect(await pane.find({ text: 'Opening PR #12…' })).toBeDefined()
-  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  await clock.settle()
-  expect(await pane.find({ text: 'Could not open PR #12: the inbox reloaded while it ran' })).toBeDefined()
-  opened()
-  await clock.settle()
-  expect(await pane.find({ text: 'Could not open PR #12: the inbox reloaded while it ran' })).toBeDefined()
   ghAnswers.pop()
 
   await pane.press({ key: 'tab-prs' })

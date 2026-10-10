@@ -32,7 +32,7 @@ These are built in a separate worktree, `revamp-build`. Your sessions load the `
   - `inbox-ui.md` and `action-feedback.md` cite `withLastAction`, which no longer exists.
   - `inbox-ui.md:291` says the whole stop line is red, but only the prefix is.
 - **Known gaps from the handoff.** Each is built here only if its fix keeps every saved shape and wire payload. A fix that would change one moves to section 3, with the conversion it needs.
-  - A pending open or copy can stay on "Opening x…" after a reload mid-call.
+  - A pending open or copy can stay on "Opening x…" after a reload mid-call. Its fix needs a live check and your decision, so it moved to section 3.
   - A reload after a prompt can lose an unreadable saved session. Its fix adds a saved field, so it moved to section 3.
   - The Codex tab warns that hooks were not heard only when Needs you is empty.
   - An `inbox_press` call from the Codex tab has no timeout.
@@ -61,6 +61,9 @@ Each takes a minute or two of clicking in the app. They run after section 1 land
 - Whether the row and fold Clients ship, after their probes.
 - The wording list and smaller questions in revamp-handoff.md.
 - Whether to keep an unreadable saved session across a reload. Today a module variable blocks saves until the copy is read. A reload resets it, and after a prompt the load does not set it again, so the next save overwrites the copy. The fix keeps it in saved state instead, as a new `PluginState.inbox.unreadable: string | null`: the conversation whose saved copy the store could not read. The load sets it, a successful [Try again] or another conversation clears it, and `save()` checks it. Old state needs no conversion, since a missing value reads as null.
+- What a row should show when the inbox reloads during its open or copy. Today the row stays on "Opening x…", because nothing in the new load finishes the old load's press. Marking it failed would often be wrong. macOS `open` hands the URL to the system and exits at once, so the PR most likely opened. The engine's types do not say whether a reload stops a running `$.process.run` or `$.ui.copy`, or whether the old load's state write still lands. They say only that a reload cancels timers and kills a `$.process.spawn` child. A live check answers this first. If the old load's result lands, nothing needs building. If it does not, choose one:
+  - Drop the pending result on reload. The row then shows nothing about the press. No saved shape changes.
+  - Add a result state for an unknown outcome, so the row reads, for example, "Not known whether PR #12 opened: the inbox reloaded". This adds a value to `LocalResult.state`, which the Codex tab's server also reads. Old state needs no conversion.
 - What to do with the main checkout's uncommitted `architecture.md` and `clients.md`.
 
 ## 4. Build what the probes and decisions allow
