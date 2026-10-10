@@ -354,6 +354,10 @@
         gap: 6px;
       }
       .key {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
         min-height: 26px;
         padding: 3px 11px;
         border-radius: 999px;
@@ -376,6 +380,11 @@
       }
       .key.primary:not(:disabled):hover {
         background: color-mix(in srgb, var(--text) 82%, var(--bg));
+      }
+      .key .icon {
+        flex: none;
+        width: 14px;
+        height: 14px;
       }
       .key.ghost {
         background: none;

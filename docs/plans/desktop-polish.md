@@ -47,7 +47,9 @@ Captured on 2026-10-09 in the Claude app's demo pane and the Codex tab:
    | ↺ | Undo |
    | ▸ ▾ | Details, Hide details |
 
-   Done, Dismiss, the options, Explain, Discuss and Draft reply have none. Reason: an icon tells the person what a press will do to their machine before they press it, and the rest only answer or talk. The glyph is added when the button is drawn, never to a saved label, so feedback still reads "✓ Copy theme command". The app has no icon prop, and Text inside a Button draws no dimmer than the label, so the glyph is part of the label.
+   Done, Dismiss, the options, Explain, Discuss and Draft reply have none.
+
+   The Codex tab draws real outline icons, stroked in the button's text color at 14 px, in the style of Codex's own. There every action but an answer has one: copy, open and play for steps, an arrow for Address, a pencil for Type, a speech bubble for Explain and Discuss, a cross for Dismiss, a check for Done, a turning arrow for Try again, a back arrow for Undo, and a chevron for Details. Reason: the follow-ups there are text-only buttons in one line, and an icon makes each one quick to find. An answer's own words say what it does. Reason: an icon tells the person what a press will do to their machine before they press it, and the rest only answer or talk. The glyph is added when the button is drawn, never to a saved label, so feedback still reads "✓ Copy theme command". The app has no icon prop, and Text inside a Button draws no dimmer than the label, so the glyph is part of the label.
 9. **A PR block reads title first.** In the Claude app:
    - The title is bold. "#31" before it is muted and not bold.
    - The status starts at the title's column, with no ◇ or ✓ mark. Its first word, as "Blocked", "Ready to merge" or "Merged", takes the status color. The reasons after it are muted.

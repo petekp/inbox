@@ -7,7 +7,7 @@ import type { ComponentChildren, JSX } from 'preact'
 
 import { ago, isLapsed } from '../../hooks/ledger'
 import { clipLabel, noteText, pendingResult, stepEffects } from '../../hooks/presses'
-import type { RowPress } from '../../hooks/presses'
+import type { HelpStep, RowPress } from '../../hooks/presses'
 import {
   closedShown,
   feedbackText,
@@ -28,7 +28,52 @@ import { drawnSettled, EXIT_MS, leavingSettled, POLL_MS, PRESS_TIMEOUT_MS, settl
 type Tone = 'needsYou' | 'findings' | 'done' | 'error'
 
 /** One of a row's actions, with the key that presses it while the tab has focus, if it has one. */
-type Key = { hotkey?: string; label: string; isPrimary?: boolean; run: () => void }
+type Key = { hotkey?: string; label: string; isPrimary?: boolean; icon?: IconName; run: () => void }
+
+/**
+ * Outline icons in the style of Codex's own: a 24-unit box drawn at 14 px, stroked in the text color, so they
+ * follow hover and the solid button. Each names what a press does; an answer's own words need none.
+ */
+const ICONS = {
+  check: 'M20 6 9 17l-5-5',
+  arrow: 'M5 12h14M13 6l6 6-6 6',
+  play: 'M7 4.5v15l12-7.5z',
+  copy: 'M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1',
+  open: 'M7 17 17 7M8 7h9v9',
+  pencil: 'M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z',
+  talk: 'M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z',
+  dismiss: 'M18 6 6 18M6 6l12 12',
+  retry: 'M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5',
+  undo: 'M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11',
+  right: 'm9 18 6-6-6-6',
+  down: 'm6 9 6 6 6-6',
+} as const
+type IconName = keyof typeof ICONS
+
+function Icon({ name }: { name: IconName }) {
+  return (
+    <svg
+      class="icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d={ICONS[name]} />
+    </svg>
+  )
+}
+
+/** A step's icon: play when it asks Codex to run a command, else copy or open, by its first help. */
+function stepIcon(step: HelpStep | undefined): IconName | undefined {
+  if (!step) return undefined
+  if (step.step.some(h => h.kind === 'run')) return 'play'
+  const first = step.step[0]?.kind
+  return first === 'copy' || first === 'terminal' ? 'copy' : first === 'open' || first === 'link' ? 'open' : undefined
+}
 
 /** A list row. Selected, it shows its title in full, its body and its keys; otherwise one line. */
 type Row = {
@@ -344,7 +389,7 @@ function rowKeys(r: RowView): { keys: Key[]; more: Key[] } {
   const more: Key[] = []
   // A press whose message failed to send leads with [Try again], which repeats it.
   const retry = r.feedback?.is === 'notSent' ? r.feedback.retry : null
-  if (retry) keys.push({ label: 'Try again', run: () => void act(id, retry) })
+  if (retry) keys.push({ label: 'Try again', icon: 'retry', run: () => void act(id, retry) })
   let letters = 0
   const lettered = () => (letters < CHOICE_KEYS.length ? { hotkey: CHOICE_KEYS[letters++]! } : {})
   for (const [n, a] of shown.entries()) {
@@ -367,13 +412,14 @@ function rowKeys(r: RowView): { keys: Key[]; more: Key[] } {
         a.kind === 'local' && item && step
           ? feedbackText({ is: 'local', result: pendingResult(stepEffects(item, step), Date.now()) }, 'html')
           : undefined
-      keys.push({ ...lettered(), label, run: () => void act(id, p, undefined, pending) })
-    } else if (p.action === 'done') keys.push({ hotkey: 'd', label, run: () => void act(id, p) })
-    else if (p.action === 'address') keys.push({ hotkey: 'a', label, run: () => void act(id, p) })
-    else if (p.action === 'type') more.push({ hotkey: 't', label, run: () => startTyping(id) })
+      const icon = stepIcon(step)
+      keys.push({ ...lettered(), label, ...(icon ? { icon } : {}), run: () => void act(id, p, undefined, pending) })
+    } else if (p.action === 'done') keys.push({ hotkey: 'd', label, icon: 'check', run: () => void act(id, p) })
+    else if (p.action === 'address') keys.push({ hotkey: 'a', label, icon: 'arrow', run: () => void act(id, p) })
+    else if (p.action === 'type') more.push({ hotkey: 't', label, icon: 'pencil', run: () => startTyping(id) })
     else if (p.action === 'explain' || p.action === 'discuss')
-      more.push({ hotkey: 'e', label, run: () => void act(id, p) })
-    else if (p.action === 'dismiss') more.push({ hotkey: 'x', label, run: () => void act(id, p) })
+      more.push({ hotkey: 'e', label, icon: 'talk', run: () => void act(id, p) })
+    else if (p.action === 'dismiss') more.push({ hotkey: 'x', label, icon: 'dismiss', run: () => void act(id, p) })
   }
 
   return { keys, more }
@@ -577,6 +623,7 @@ function rowActions(row: Row): { keys: Key[]; more: Key[] } {
   const detailsKey = {
     hotkey: 'v',
     label: details.has(row.id) ? 'Hide details' : 'Details',
+    icon: details.has(row.id) ? ('down' as const) : ('right' as const),
     run: () => {
       if (details.has(row.id)) details.delete(row.id)
       else details.add(row.id)
@@ -604,6 +651,7 @@ function KeyButton({ k, isGhost = false }: { k: Key; isGhost?: boolean }) {
         if (!isOpenGuarded()) k.run()
       }}
     >
+      {k.icon ? <Icon name={k.icon} /> : null}
       {k.label}
     </button>
   )
@@ -822,6 +870,7 @@ function SettledView({ settled: r, state }: Extract<Entry, { settled: RowView }>
       </div>
       {state.canUndo ? (
         <button type="button" class="key undo" disabled={isUndoing} onClick={() => void undo(r)}>
+          {isUndoing ? null : <Icon name="undo" />}
           {isUndoing ? 'Undoing…' : 'Undo'}
         </button>
       ) : null}
