@@ -21,11 +21,14 @@ Captured on 2026-10-09 in the Claude app's demo pane and the Codex tab:
    - In the Claude app, Send is the field's own button (`submitLabel`), labeled "Send". It is drawn before the field is clicked, and a click on it sends. The terminal keeps `send` as its Enter hint.
    - The field keeps the app's own width. It does not stretch inside a growing Box.
 4. **The status line never moves for a note.** The age stays at the right of the tabs. A note or error takes its own line under the tab row, one step below it. Reason: text that jumps when a note appears looks broken.
-5. **Codex tab actions follow rules 2 and 3.** Their two lines and their typing line match the Claude app's.
+5. **Codex tab actions follow rules 2 and 3, drawn as Codex's own buttons.** Each client uses its host app's controls, so the Codex tab copies the Button in the Codex app's bundled styles.
+   - Every action is a pill, 26 px tall, Codex's size `sm`.
+   - The recommended option is solid: filled with the text color, labeled in the background color.
+   - The row's other answers and main action have a gray fill: the text color at 8% in light and 12% in dark.
+   - The follow-ups, Cancel and Undo are ghost buttons: muted text, with the gray fill only on hover. The follow-up line's first label lines up with the row's text.
+   - The field is a pill with a 1 px border, the text color at 16%.
 
-## Your decision
-
-- **Whether Codex tab actions look like buttons.** Today they are plain words, close to the terminal, as your earlier brief for the tab asked. Small filled buttons would match the Claude app's native buttons. The recommended option would then be the filled accent button, and "(recommended)" would be added to its label, as the mod does.
+   Reason: these are the app's primary, secondary and ghost button styles, so the tab reads as part of Codex.
 
 ## Not changing
 

@@ -527,11 +527,11 @@ function rowActions(row: Row): { keys: Key[]; more: Key[] } {
  * One of the open row's actions. A click right after the row opened does
  * nothing; its key works at once. Keys are an extra, so no key text shows.
  */
-function KeyButton({ k }: { k: Key }) {
+function KeyButton({ k, isGhost = false }: { k: Key; isGhost?: boolean }) {
   return (
     <button
       type="button"
-      class={k.isPrimary ? 'key primary' : 'key'}
+      class={k.isPrimary ? 'key primary' : isGhost ? 'key ghost' : 'key'}
       disabled={isOpenGuarded()}
       onClick={() => {
         if (!isOpenGuarded()) k.run()
@@ -566,7 +566,7 @@ function TypeField({ row }: { row: Row }) {
       </button>
       <button
         type="button"
-        class="key"
+        class="key ghost"
         onClick={() => {
           typing = null
           draw()
@@ -706,9 +706,9 @@ function ListRow({
           {row.typing && typing === row.id ? (
             <TypeField row={row} />
           ) : more.length > 0 ? (
-            <div class="keys">
+            <div class="keys ghost-line">
               {more.map(k => (
-                <KeyButton k={k} />
+                <KeyButton k={k} isGhost />
               ))}
             </div>
           ) : null}
@@ -749,7 +749,7 @@ function SettledView({ settled: r, state }: Extract<Entry, { settled: RowView }>
             {state.isQueued ? `Queued: ${state.label}` : state.label}
           </span>
           {state.canUndo ? (
-            <button type="button" class="key" onClick={() => undo(r)}>
+            <button type="button" class="key ghost" onClick={() => undo(r)}>
               Undo
             </button>
           ) : null}

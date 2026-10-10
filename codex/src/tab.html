@@ -26,6 +26,9 @@
         --tree: color-mix(in srgb, var(--text) 30%, var(--bg));
         --divider: color-mix(in srgb, var(--text) 9%, var(--bg));
         --hover: color-mix(in srgb, var(--key) 14%, transparent);
+        /* Codex's gray button fills: the foreground at 8% and 12% in light, 12% and 16% in dark. */
+        --soft: color-mix(in oklab, var(--text) 8%, transparent);
+        --soft-hover: color-mix(in oklab, var(--text) 12%, transparent);
         /* The tree's grid: its line, where a row's mark sits, and where its text starts. */
         --tree-x: 15px;
         --mark-x: 30px;
@@ -48,6 +51,8 @@
           --selected: color-mix(in srgb, #7fa6d9 15%, var(--card));
           --tree: color-mix(in srgb, var(--text) 32%, var(--bg));
           --divider: color-mix(in srgb, var(--text) 8%, var(--bg));
+          --soft: color-mix(in oklab, var(--text) 12%, transparent);
+          --soft-hover: color-mix(in oklab, var(--text) 16%, transparent);
         }
       }
       :root[data-theme='dark'] {
@@ -63,6 +68,8 @@
         --selected: color-mix(in srgb, #7fa6d9 15%, var(--card));
         --tree: color-mix(in srgb, var(--text) 32%, var(--bg));
         --divider: color-mix(in srgb, var(--text) 8%, var(--bg));
+        --soft: color-mix(in oklab, var(--text) 12%, transparent);
+        --soft-hover: color-mix(in oklab, var(--text) 16%, transparent);
       }
       * {
         box-sizing: border-box;
@@ -343,30 +350,56 @@
       .body p + p {
         margin-top: 4px;
       }
-      /* Keys are text buttons, with no key text: keys are an extra. */
+      /*
+       * Actions are Codex's own pill buttons, size sm: the recommended option is solid, the row's other
+       * answers are a soft gray fill, and the follow-ups are ghost buttons. Keys are an extra, so no key text shows.
+       */
       .keys {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
-        gap: 2px 8px;
-        margin-left: -6px;
+        gap: 6px;
       }
       .key {
-        padding: 1px 6px;
-        border-radius: 5px;
+        min-height: 26px;
+        padding: 3px 11px;
+        border-radius: 999px;
+        background: var(--soft);
+        font-weight: 500;
+        text-align: center;
         white-space: nowrap;
       }
       .key:hover {
-        background: var(--hover);
+        background: var(--soft-hover);
+      }
+      .key:focus-visible {
+        outline-width: 2px;
+        outline-offset: 2px;
+        border-radius: 999px;
+      }
+      .key.primary {
+        background: var(--text);
+        color: var(--bg);
+      }
+      .key.primary:hover {
+        background: color-mix(in srgb, var(--text) 82%, var(--bg));
+      }
+      .key.ghost {
+        background: none;
+        color: var(--muted);
+      }
+      .key.ghost:hover {
+        background: var(--soft);
+        color: var(--text);
+      }
+      /* The ghost line's first label lines up with the text above it, as Codex aligns a leading ghost button. */
+      .keys.ghost-line {
+        margin-left: -11px;
       }
       /* The row just opened, so a click on its keys would be a double-click's second. */
       .key:disabled {
-        color: var(--muted);
-        background: none;
-      }
-      /* The option Claude recommended. */
-      .key.primary {
-        font-weight: 600;
+        opacity: 0.5;
+        cursor: default;
       }
       .actions {
         display: flex;
@@ -376,21 +409,23 @@
       form {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 6px;
       }
       input {
         flex: 1;
         min-width: 0;
+        min-height: 26px;
         font: inherit;
         color: inherit;
         background: var(--bg);
-        border: 1px solid var(--tree);
-        border-radius: 6px;
-        padding: 4px 8px;
+        border: 1px solid color-mix(in oklab, var(--text) 16%, transparent);
+        border-radius: 999px;
+        padding: 2px 11px;
       }
       input:focus {
         outline: none;
         border-color: var(--key);
+        border-radius: 999px;
       }
       textarea {
         width: 100%;
@@ -438,6 +473,9 @@
       .outcome.lapsed {
         font-weight: 400;
         color: var(--muted);
+      }
+      .settled .key {
+        margin-left: 6px;
       }
       .settled .what {
         color: var(--muted);
