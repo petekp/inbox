@@ -282,7 +282,7 @@ Staging: until step 11, the reducer leaves `delivery` unset, and section 3 reads
   - an answered question reopens from its stored item;
   - a hand-off stops counting as handed off, because its delivery failed, so the row unfolds;
   - the row reads `Not sent: <reason>` in red with [Try again];
-  - a typed reply's or answer's words go back into `DRAFTS[id]`. The runner holds them in its send continuation; nothing saves them. A reload while waiting loses them, the same loss as the next point.
+  - a typed reply's or answer's words go back into `DRAFTS[id]`. The runner holds them in its send continuation; nothing saves them.
 - `notePrompt` has already run for a failed send. The runner undoes the parts that would leak the unsent text into model-read input, each only when nothing else changed it since:
   - `told` (the inbox text Claude last read) goes back to its value before the send;
   - the text is removed from `person` when it is still the tail, so the next exchange's `<person>` does not hold it;
@@ -290,7 +290,7 @@ Staging: until step 11, the reducer leaves `delivery` unset, and section 3 reads
   - the `contextFor` entry for the text is deleted.
 
   It leaves `ledger.turn` counted. The cost: question handles read `?` until Claude asks again, and items move one prompt nearer to expiry. Both are safe. Moving `notePrompt` into the `session.append` arrival would leave nothing to undo. It is rejected for now, because it moves every press's turn counting into a hook that no test drives yet (step 11's spike).
-- If the mod reloads while waiting for `submit`, the failure path is lost and the row stays Queued. UI 2.3 allows that: it never claims a ✓ it cannot back.
+- If the mod reloads while waiting for `submit`, the failure path should still run. The Button returns the press's work, and a hot reload keeps returned work. So the failed mark, the reopened item and the restored words should land after the new load starts. This is inferred from a probe with another mod and not verified in the inbox. If the failure path is lost, the row stays Queued. UI 2.3 allows that: it never claims a ✓ it cannot back.
 
 **Codex.**
 - The server runs the press, `codex queue`, and the `sent` write inside one `updateState` call, under the session lock, as today.
