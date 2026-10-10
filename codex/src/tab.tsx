@@ -367,7 +367,8 @@ function itemRow(v: View, r: RowView, item: Item): Row {
 
   return {
     id,
-    handle: isHandedOff ? '✓' : r.handle,
+    // A question no typed number reaches draws a dot, as a task does: under the Questions title, a ? reads as a missing number.
+    handle: isHandedOff ? '✓' : r.handle === '?' ? '•' : r.handle,
     handleTone: isHandedOff ? 'done' : undefined,
     ...(isHandedOff ? { fold: {} } : {}),
     title: item.ask,
@@ -658,9 +659,10 @@ function ListRow({
       : plain
 
     return (
-      <div class={`row${bar}`}>
+      // The whole row takes the click. The button keeps the row in the focus order, and its click reaches the row.
+      <div class={`row collapsed${bar}`} onClick={onSelect}>
         {handle}
-        <button type="button" class="line" onClick={onSelect}>
+        <button type="button" class="line">
           <span class={row.hasSecondLine ? 'text two' : 'text'}>{line.text}</span>
           {line.after ? (
             <span class={`after ${line.afterTone ? `tone-${line.afterTone}` : ''}`}>{line.after}</span>

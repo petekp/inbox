@@ -86,7 +86,7 @@ A row has two forms:
 | Settled | Where the row was | `✓ Done · just now` with the leave bar | [Undo], after a Mark |
 | Closed fold | Under Questions and Tasks, and Findings (decision 1) | `▸ 3 Closed` | Up to 3 closed items, each `ask → outcome` |
 
-The Codex tab draws its lists flat, with no tree lines, in the app's sans font. A question's number shows as the number alone in a round gray badge. A finding's handle is its kind's mark, ▲ or ✦, in the kind's color, and its badge is the kind's name alone.
+The Codex tab draws its lists flat, with no tree lines, in the app's sans font. A question's number shows as the number alone in a round gray badge, and a question no number reaches shows a dot, as a task does. A collapsed row fills gray on hover and takes a click anywhere on it. A finding's handle is its kind's mark, ▲ or ✦, in the kind's color, and its badge is the kind's name alone.
 
 The Closed fold's outcomes are today's: the answer itself ("Yes, rename"), "Done", "You ran it", "Dismissed", "Expired", "Closed by Claude: <reason>", and the per-turn update's own outcome text.
 

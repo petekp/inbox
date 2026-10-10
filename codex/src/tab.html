@@ -276,8 +276,11 @@
       .line .after.tone-done {
         color: var(--done);
       }
-      .line:hover .text {
-        color: color-mix(in srgb, var(--text) 80%, var(--key));
+      .row.collapsed {
+        cursor: pointer;
+      }
+      .row.collapsed:hover {
+        background-color: var(--soft);
       }
       .title {
         font-weight: 600;
