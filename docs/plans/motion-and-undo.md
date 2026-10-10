@@ -36,7 +36,7 @@ When the system asks for reduced motion, every duration is 0 and the leave count
    Reason: the old open row replaced the line with a block that put the kind label above the title, so the title jumped down a line, and closing removed the content at once, so the row shrank around an empty space.
 3. **A row closes by a press.** The open row turns into its settled form in place: its height moves to the settled size and the content crossfades.
 4. **A settled row leaves.** It fades and its height collapses, 200 ms, and only then is it removed. The rows below slide up.
-5. **The Closed fold opens or closes.** The closed list's height moves, and its arrow turns.
+5. **The Closed fold opens or closes.** The closed list's height moves. Its chevron switches from right to down at once, with no turn.
 6. **The field opens.** The field and its buttons fade in where the follow-ups were.
 7. **A tab switches.** The new tab's body fades in, 150 ms.
 8. **A note or error appears under the tab row.** It fades in.
@@ -48,6 +48,8 @@ The tab plan's earlier rule, that motion only answers a press, is replaced: anyt
 Every row keeps one element from arrival to removal, keyed by its id, whether it is open, settled or back after Undo. Today a row changes key when it settles, so nothing can move between the two states.
 
 The 400 ms guard after a row opens stays, but it no longer dims the buttons. The dimming read as a flicker on every click.
+
+After a press in a list, closed rows and the fold show no hover fill until the pointer moves. Rows slide under a pointer that stays where it clicked, and the row that ends up under it would light up as the list settled.
 
 ## The settled row and Undo
 
