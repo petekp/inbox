@@ -66,9 +66,9 @@ its age, its detail and its file.
   its note and only Details. Details shows its body and actions again. The
   row no longer waits on the person, so it leaves the count.
 - **A row that just closed stays in place.** For about five seconds it shows
-  a ✓, what it was, and how it closed, over a bar that empties. Then it moves
-  under Closed. A finding sent to Codex shows what was sent. A check that
-  passed shows "Passed". The person sees where the row went.
+  a ✓, how it closed, and what it was, on one line. Then it moves under
+  Closed. A finding sent to Codex shows what was sent. A check that passed
+  shows "Passed". The person sees where the row went.
 
 ### Keys
 

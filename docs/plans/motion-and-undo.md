@@ -53,8 +53,6 @@ After a press in a list, closed rows and the fold show no hover fill until the p
 
 ## The settled row and Undo
 
-Today the settled row puts a green label and a small gray "Undo" on one line, over a 96 px hairline that counts down. Every outcome is green, including Dismissed and Expired. Undo shows nothing while it runs and nothing if it fails.
-
 The settled row in the Codex tab is one line, as tall as an open row's closed line, so the list keeps its rhythm:
 
 - **Mark:** ✓ in green for Done and answers. For Dismissed, Expired and closes by Codex, a muted ✓, matching how the Closed fold draws them.

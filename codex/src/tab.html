@@ -540,7 +540,7 @@
           stroke-dashoffset: 0;
         }
         to {
-          stroke-dashoffset: 100;
+          stroke-dashoffset: -100;
         }
       }
       /* The page is at least the pane's height. The footer sits at its bottom, and an empty tab's text fills the space above it. */
@@ -624,6 +624,8 @@
           translate var(--move);
       }
       .row > .content,
+      .row > .settled-line,
+      .row > .undo-group,
       .status-line,
       .demo-note,
       .empty,
