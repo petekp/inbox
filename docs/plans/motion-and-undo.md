@@ -28,7 +28,12 @@ When the system asks for reduced motion, every duration is 0 and the leave count
 ### What moves
 
 1. **A row arrives.** Its height grows from 0 and it fades in, 300 ms. The rows below slide down with it. The new-row bar fades out instead of vanishing.
-2. **A row opens or closes.** Its height moves between the two sizes, 200 ms, and the opened content fades in, 150 ms.
+2. **A row opens or closes, as an accordion.** The row's line, its mark, title and age, stays where it is in both states. Opening reveals a panel under it, and closing hides that panel again. The row being closed and the row being opened move together, 200 ms on the move curve, so the rows below slide once.
+   - **Opening:** the row's height grows to fit the panel. The panel fades in and slides down 4 px. The title unclamps to its full length in place.
+   - **Closing:** the panel stays drawn, and takes no clicks, while it fades out and the row's height shrinks to the line. Then it is removed.
+   - **The line never moves.** Open and closed rows have the same padding, and the title keeps its weight, because a bolder title rewraps the line. The open row is marked by its fill and its panel. The kind label, as "Opportunity", moves into the panel, under the line.
+
+   Reason: the old open row replaced the line with a block that put the kind label above the title, so the title jumped down a line, and closing removed the content at once, so the row shrank around an empty space.
 3. **A row closes by a press.** The open row turns into its settled form in place: its height moves to the settled size and the content crossfades.
 4. **A settled row leaves.** It fades and its height collapses, 200 ms, and only then is it removed. The rows below slide up.
 5. **The Closed fold opens or closes.** The closed list's height moves, and its arrow turns.

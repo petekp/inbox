@@ -107,6 +107,10 @@ const undoing = new Set<string>()
 const leftAt = new Map<string, number>()
 // Closed folds still drawn while their list collapses.
 const closingFolds = new Set<Group>()
+/** Rows closed by opening another, drawn with their panel until it has collapsed. */
+const closingRows = new Set<string>()
+/** Each tab's row drawn open by the last draw, so opening another knows which one closes. */
+const drawnOpen = new Map<Tab, string>()
 // Each view request takes the next number, and a reply older than the view shown is dropped.
 let requested = 0
 let shown = 0
@@ -416,12 +420,8 @@ function findingRow(v: View, r: RowView, f: Finding): Row {
     kind: f.kind,
     ...(isHandedOff ? { fold: {} } : {}),
     title: f.title,
-    meta: (
-      <div>
-        <span class={`tone-${badge.tone}`}>{badge.label}</span>
-        <span class="muted"> {ago(v.at - f.at)}</span>
-      </div>
-    ),
+    // The line above already shows the age.
+    meta: <span class={`tone-${badge.tone}`}>{badge.label}</span>,
     line: { text: f.title, after: ` · ${ago(v.at - f.at)}` },
     body: (
       <div>
@@ -528,6 +528,15 @@ function selectedIndex(rows: Row[], t: Tab, v: View): number {
 
 /** Opens a row. Its buttons ignore clicks for PRESS_GUARD_MS, and draw again once that ends. */
 function open(t: Tab, id: string) {
+  const was = drawnOpen.get(t)
+  if (was && was !== id && !reducedMotion.matches) {
+    closingRows.add(was)
+    // The collapse removes it when it ends; this covers a row that left the list or the tab meanwhile.
+    setTimeout(() => {
+      if (closingRows.delete(was)) draw()
+    }, MOVE_MS + 150)
+  }
+  closingRows.delete(id)
   selection[t] = { id, openedAt: Date.now() }
   setTimeout(draw, PRESS_GUARD_MS + 50)
 }
@@ -676,9 +685,6 @@ function ListRow({
   now: number
 }) {
   const bar = isNew(row.id) ? ` new tone-bar-${tone}` : ''
-  // A last action is green only on a row that shows a ✓. On a row still open it is muted, so it does not read as an answer,
-  // and so is a message still queued, which has not reached Codex.
-  const lastTone = row.handleTone === 'done' && row.feedback?.is !== 'queued' ? 'tone-done' : 'muted'
   // A number a typed reply reaches, as "1)", draws as a badge holding the number.
   const number = /^(\d+)\)$/.exec(row.handle)?.[1]
   const handle = (
@@ -687,104 +693,95 @@ function ListRow({
     </span>
   )
 
-  if (!isSelected) {
-    const plain = row.line ?? { text: row.title, after: row.titleAfter }
-    // A row's last action takes the place of its age, as "✓ Discuss 1m ago".
-    const last = isFeedbackShown(row) ? lastText(row, now) : null
-    const line = last
-      ? {
-          ...plain,
-          after: ` · ${last}`,
-          afterTone: isFailure(row.feedback)
-            ? ('error' as const)
-            : row.handleTone === 'done' && row.feedback?.is === 'done'
-              ? ('done' as const)
-              : undefined,
-        }
-      : plain
+  const plain = row.line ?? { text: row.title, after: row.titleAfter }
+  // A row's last action takes the place of its age, as "✓ Discuss 1m ago". It is green only on a row that shows a ✓,
+  // so on a row still open it does not read as an answer.
+  const last = isFeedbackShown(row) ? lastText(row, now) : null
+  const line = last
+    ? {
+        ...plain,
+        after: ` · ${last}`,
+        afterTone: isFailure(row.feedback)
+          ? ('error' as const)
+          : row.handleTone === 'done' && row.feedback?.is === 'done'
+            ? ('done' as const)
+            : undefined,
+      }
+    : plain
+  // A closed row keeps its panel drawn while it collapses, so the panel can fade out.
+  const isClosing = !isSelected && closingRows.has(row.id)
 
-    return (
-      // The whole row takes the click. The button keeps the row in the focus order, and its click reaches the row.
-      <div class={`row collapsed${bar}`} onClick={onSelect}>
-        {handle}
-        <button type="button" class="line">
+  // The same elements draw the row open and closed, so its line stays put and only the panel under it comes and goes.
+  // Closed, the whole row takes the click; the button keeps it in the focus order, and its click reaches the row.
+  return (
+    <div class={`row ${isSelected ? 'selected' : 'collapsed'}${bar}`} onClick={isSelected ? undefined : onSelect}>
+      {handle}
+      <div class="content">
+        <button type="button" class="line" aria-expanded={isSelected}>
           <span class={row.hasSecondLine ? 'text two' : 'text'}>{line.text}</span>
           {line.after ? (
             <span class={`after ${line.afterTone ? `tone-${line.afterTone}` : ''}`}>{line.after}</span>
           ) : null}
         </button>
+        {isSelected || isClosing ? <Panel row={row} isClosing={isClosing} /> : null}
       </div>
-    )
-  }
+    </div>
+  )
+}
 
+/** An open row's details under its line: its kind, body, notes, actions and copy box. */
+function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
   const isOpen = !row.fold || details.has(row.id)
   const { keys, more } = rowActions(row)
-  const last = isFeedbackShown(row) ? lastText(row, now) : null
-  const status = [
-    row.fold?.note ? { text: row.fold.note, tone: 'muted' } : null,
-    last && !isFailure(row.feedback) ? { text: last, tone: lastTone } : null,
-  ]
-  const failure = isFailure(row.feedback) ? last : null
   const copied = copies.get(row.id)
   const note = noteOf(row.id)
+  const notes = [
+    row.fold?.note ? <div class="muted">{row.fold.note}</div> : null,
+    sending.has(row.id) ? <div class="muted">{sending.get(row.id)}</div> : null,
+    note ? <div class="muted">{note}</div> : null,
+    errors.has(row.id) ? <div class="tone-error">{errors.get(row.id)}</div> : null,
+  ].filter(Boolean)
 
   return (
-    <div class={`row selected${bar}`}>
-      {handle}
-      <div class="content">
-        <div class="tight">
-          {row.meta ? <div class="meta">{row.meta}</div> : null}
-          <div class="title">
-            {row.title}
-            {row.titleAfter ? <span class="after">{row.titleAfter}</span> : null}
-          </div>
-        </div>
-        {isOpen && row.body ? <div class="body">{row.body}</div> : null}
-        {status.some(Boolean) || failure || sending.has(row.id) || note || errors.has(row.id) ? (
-          <div class="tight">
-            {status.map(s => (s ? <div class={s.tone}>{s.text}</div> : null))}
-            {failure ? <div class="tone-error">{failure}</div> : null}
-            {sending.has(row.id) ? <div class="muted">{sending.get(row.id)}</div> : null}
-            {note ? <div class="muted">{note}</div> : null}
-            {errors.has(row.id) ? <div class="tone-error">{errors.get(row.id)}</div> : null}
+    <div class={isClosing ? 'panel closing' : 'panel'} inert={isClosing}>
+      {row.meta ? <div class="meta">{row.meta}</div> : null}
+      {isOpen && row.body ? <div class="body">{row.body}</div> : null}
+      {notes.length > 0 ? <div class="tight">{notes}</div> : null}
+      {/* The row's answers on one line, its follow-ups on the next. An open field takes the follow-ups' line. */}
+      <div class="actions">
+        {keys.length > 0 ? (
+          <div class="keys">
+            {keys.map(k => (
+              <KeyButton k={k} />
+            ))}
           </div>
         ) : null}
-        {/* The row's answers on one line, its follow-ups on the next. An open field takes the follow-ups' line. */}
-        <div class="actions">
-          {keys.length > 0 ? (
-            <div class="keys">
-              {keys.map(k => (
-                <KeyButton k={k} />
-              ))}
-            </div>
-          ) : null}
-          {row.typing && typing === row.id ? (
-            <TypeField row={row} />
-          ) : more.length > 0 ? (
-            <div class="keys ghost-line">
-              {more.map(k => (
-                <KeyButton k={k} isGhost />
-              ))}
-            </div>
-          ) : null}
-        </div>
-        {copied ? (
-          <div>
-            <div class="muted">Copy {copied.name} from here:</div>
-            <textarea rows={3} readOnly value={copied.text} onFocus={e => e.currentTarget.select()} />
-            <button
-              type="button"
-              class="key"
-              onClick={() => {
-                copies.delete(row.id)
-                draw()
-              }}
-            >
-              Close
-            </button>
+        {row.typing && typing === row.id ? (
+          <TypeField row={row} />
+        ) : more.length > 0 ? (
+          <div class="keys ghost-line">
+            {more.map(k => (
+              <KeyButton k={k} isGhost />
+            ))}
           </div>
         ) : null}
       </div>
+      {copied ? (
+        <div>
+          <div class="muted">Copy {copied.name} from here:</div>
+          <textarea rows={3} readOnly value={copied.text} onFocus={e => e.currentTarget.select()} />
+          <button
+            type="button"
+            class="key"
+            onClick={() => {
+              copies.delete(row.id)
+              draw()
+            }}
+          >
+            Close
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -847,6 +844,7 @@ function Entries({
 }) {
   const t: Tab = group === 'finding' ? 'findings' : 'needsYou'
   const at = selectedIndex(all, t, v)
+  if (all[at]) drawnOpen.set(t, all[at].id)
   if (entries.length === 0) return null
   const leaving = leavingSettled(seen, Date.now(), undoing)
 
@@ -1231,6 +1229,12 @@ function animateDraw(before: Heights) {
       continue
     }
     delete el.dataset.leaving
+    const panel = el.querySelector<HTMLElement>('.panel.closing')
+    if (panel) {
+      if (!el.dataset.collapsing) collapse(el, key, panel)
+      continue
+    }
+    delete el.dataset.collapsing
     // The content's own height, which a running animation's clip does not change.
     const target = el.scrollHeight
     if (!was || was.el !== el) {
@@ -1264,6 +1268,28 @@ function animateDraw(before: Heights) {
   }
   // Rows that arrived on another tab grow in when that tab shows them, not later.
   entering.clear()
+}
+
+/**
+ * Shrinks a row whose panel is closing down to its line, then removes the panel. The animation holds its end
+ * until the draw that removes the panel, so the panel never shows again for a frame at full height.
+ */
+function collapse(el: HTMLElement, key: string, panel: HTMLElement) {
+  el.dataset.collapsing = '1'
+  const height = el.getBoundingClientRect().height
+  const target = el.scrollHeight - panel.getBoundingClientRect().height
+  for (const a of el.getAnimations()) a.cancel()
+  el.style.overflow = 'hidden'
+  el.dataset.to = String(target)
+  const a = el.animate([{ height: `${height}px` }, { height: `${target}px` }], { ...MOVE, fill: 'forwards' })
+  a.onfinish = () => {
+    closingRows.delete(key)
+    draw()
+    a.cancel()
+    if (el.getAnimations().length > 0) return
+    el.style.overflow = ''
+    delete el.dataset.to
+  }
 }
 
 /**
