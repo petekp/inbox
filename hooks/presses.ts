@@ -336,6 +336,31 @@ export function withResult(
   return { ...lastActions, [rowId]: { ...last, result } }
 }
 
+/** Ends every pending Local result as failed, each part with `reason`: no running press will finish it. */
+export function withCutOff(
+  lastActions: Record<string, LastAction>,
+  reason: string,
+  at: number,
+): Record<string, LastAction> {
+  return Object.fromEntries(
+    Object.entries(lastActions).map(([id, last]) =>
+      last.result?.state === 'pending'
+        ? [
+            id,
+            {
+              ...last,
+              result: finishedResult(
+                last.result,
+                last.result.parts.map(() => reason),
+                at,
+              ),
+            },
+          ]
+        : [id, last],
+    ),
+  )
+}
+
 /**
  * Applies a press on a question, task or finding row, the same in every host.
  * Pure: it reads only its arguments. `last` is the row's current last action,

@@ -95,6 +95,7 @@ import {
   reopenOnFailure,
   upgradeLastActions,
   withArrival,
+  withCutOff,
   withFailure,
   withQueued,
   withRewrite,
@@ -1716,6 +1717,7 @@ const COPY_FAILURES: Record<Extract<UiCopyResult, { isCopied: false }>['reason']
   'no-clipboard': 'the clipboard did not take it',
   refused: 'another plugin refused it',
 }
+const CUT_OFF = 'the inbox reloaded while it ran'
 
 /** Opens a path or URL, or copies text, for a Local press. Returns why it could not, or null. */
 async function perform(
@@ -2133,6 +2135,10 @@ async function setDemo($: EngineInterface, isShown: boolean) {
 
 /** Turns the mod on for this session, once, from the start or the desktop app's attach. */
 async function turnOn($: EngineInterface) {
+  // A reload stops the opens and copies the previous load had running, and state outlives them.
+  // This runs here, not in loadConversation, since /clear and /resume keep this load's presses running.
+  const now = await $.clock.now()
+  await update($, LAST_ACTIONS, a => withCutOff(a, CUT_OFF, now))
   // A hot reload keeps state an older build wrote. Draws start once isOn is set, and they read the current shape.
   await upgradeState($)
   isOn = true
