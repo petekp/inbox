@@ -34,7 +34,7 @@ Your decisions on 2026-10-09 approved all of these.
 
 - **Approvals A1 to A8** from desktop-look.md. A6 is not needed: probe 1 passed, so Undo keeps its own key.
 - **The row and fold Clients** (desktop-look.md components 9 and 16).
-- **The text field takes the focus when it opens.** Built in `db0a6a6`: the focus repair moves the focus to the field once a drawing has it. Not yet checked live.
+- **The text field takes the focus when it opens.** Built in `db0a6a6`: the focus repair moves the focus to the field once a drawing has it. Live, the request succeeds but the Claude app never gives the field the keyboard, so you still click into it. That is an app bug, reported as #100966.
 - **The Codex tab says why it could not read the inbox**, after "Could not read the inbox.", so a failure that does not repeat still shows its cause.
 - **`GUIDANCE` in `hooks/register.tsx`** tells Claude the open items show in the band. They no longer do. It is text Claude reads, so it ships only after an A/B.
 

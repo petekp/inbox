@@ -275,10 +275,12 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 - **Trying a prop just to see what happens.** One unsupported prop drops the mod's whole drawing.
 - **Image or Raster.** They are not drawn on desktop. Svg is the only image route, and the mod receives no clicks from it.
 - **Redrawing a focused Button under a new key.** The pane loses focus (#100874), unless the mod moves the focus to a Button that is still drawn.
+- **Giving a text field the keyboard.** An `Input` with `autoFocus`, or one `$.ui.focus` moves to, never takes typed keys until the person clicks it, though `$.ui.focus` resolves to `{}` (live, 2.1.295, #100966).
 - **Redrawing the pane every fraction of a second.** While a settled row's leave bar redrew every 213 ms, clicks on the pane's Buttons did nothing. With one redraw at the end, they worked (live, 2.1.295, #100924).
 
 ### What works
 
+- `Client` rows and fold lines: a click anywhere on them lands, they show hover, and the pane still scrolls with the pointer over them (live, 2.1.295).
 - A docked pane whose width follows the person's drag. Fit content to `bodyColumns`.
 - Native Buttons. `onPress` fires with surface `'desktop'`, and a click on a button's corners or edges presses it (live, 2.1.295).
 - Moving the focus to a Button the next drawing still has, when a press removes the focused one. A `$.ui.focus` for that Button, called once the render hook has returned, kept every next click working in a run of 19 presses (live, 2.1.295).
