@@ -4406,9 +4406,11 @@ export const register: Register = on => {
               )}
             </Box>
             {prLast ? (
-              <Text color={prLast.isFailure ? pal.tone.error : pal.muted} wrap="wrap">
-                {prLast.text}
-              </Text>
+              <Box marginTop={look === 'desktop' ? 1 : 0}>
+                <Text color={prLast.isFailure ? pal.tone.error : pal.muted} wrap="wrap">
+                  {prLast.text}
+                </Text>
+              </Box>
             ) : null}
           </Box>,
           undefined,
