@@ -1450,6 +1450,8 @@ test('a PR’s Dismiss settles its block with Undo, which brings it back, and a 
   const noThreads = JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } })
   let isSlow = false
   let branchFails: string | undefined
+  let branchHold = false
+  let releaseBranch = () => {}
   ghAnswers.push(
     {
       match: argv => argv.includes('view') && argv.includes('12'),
@@ -1462,6 +1464,7 @@ test('a PR’s Dismiss settles its block with Undo, which brings it back, and a 
       get fails() {
         return branchFails
       },
+      hold: () => (branchHold ? new Promise<void>(r => (releaseBranch = r)) : Promise.resolve()),
     },
     { match: argv => argv.includes('graphql'), stdout: noThreads },
   )
@@ -1514,12 +1517,22 @@ test('a PR’s Dismiss settles its block with Undo, which brings it back, and a 
 
   // The branch PR says its lookup failed, with [Retry], which looks it up again at once.
   expect(await pane.find({ text: 'Last refresh failed: HTTP 502' })).toBeDefined()
+  expect(await pane.find({ text: 'Refreshing…' })).toBeUndefined()
   branchFails = undefined
+  branchHold = true
   const lookups = () => ran.filter(argv => argv[0] === 'gh' && argv.includes('view')).length
   const before = lookups()
   await pane.press({ key: 'refresh-acme/greet#13' })
   await clock.settle()
+  // While it looks, the failure stays, "Refreshing…" shows under it, and [Retry] stays drawn.
+  expect(await pane.find({ text: 'Last refresh failed: HTTP 502' })).toBeDefined()
+  expect(await pane.find({ text: 'Refreshing…' })).toBeDefined()
+  expect(await pane.find({ key: 'refresh-acme/greet#13' })).toBeDefined()
+  branchHold = false
+  releaseBranch()
+  await clock.settle()
   expect(lookups()).toBe(before + 1)
+  expect(await pane.find({ text: 'Refreshing…' })).toBeUndefined()
   expect(await pane.find({ text: /Last refresh failed/ })).toBeUndefined()
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
 })

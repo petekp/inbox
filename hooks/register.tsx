@@ -4028,11 +4028,14 @@ export const register: Register = on => {
             ) : null}
             {/* The next poll is minutes away, and desktop has no key to refresh with. */}
             {pr.error ? (
-              <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+              <Box flexDirection="column">
                 <Text color={pal.tone.error} wrap="wrap">
                   Last refresh failed: {pr.error}
                 </Text>
-                <Button key={`refresh-${pr.ref}`} label="Retry" onPress={() => void findPrs($)} />
+                {prState.isFetching ? <Text color={pal.muted}>Refreshing…</Text> : null}
+                <Box flexDirection="row">
+                  <Button key={`refresh-${pr.ref}`} label="Retry" onPress={() => void findPrs($)} />
+                </Box>
               </Box>
             ) : null}
             <Box flexDirection="row" flexWrap="wrap" columnGap={2} marginTop={blankLine}>
