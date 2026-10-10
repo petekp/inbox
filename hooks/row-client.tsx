@@ -70,7 +70,6 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
     if (next.hover !== (surface.state?.hover ?? false) || next.pressed !== (surface.state?.pressed ?? false))
       surface.setState(next)
   }
-  // Set on every call, so the listener reads this call's props; a later call replaces it.
   surface.onPointer(e => {
     if (e.type === 'leave') return set({ hover: false, pressed: false })
     // While a button is held, moves arrive past the region's edges too.
