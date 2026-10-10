@@ -58,7 +58,6 @@ Then the desktop steps they gate:
 
 ## 4. Decisions still yours
 
-- **Keeping an unreadable saved session across a reload.** Today a module variable blocks saves until the copy is read. A reload resets it, and after a prompt the load does not set it again, so the next save overwrites the copy. The fix keeps it in saved state instead, as a new `PluginState.inbox.unreadable: string | null`: the conversation whose saved copy the store could not read. The load sets it, a successful [Try again] or another conversation clears it, and `save()` checks it. Old state needs no conversion, since a missing value reads as null.
 - **The Codex server's pending result when its process dies.** The server writes the pending result, then opens outside the lock. If the process dies in between, the row reads "Opening x…" until the next press. A new server cannot safely mark it failed, because another server process may own the press.
 - **The wording list and smaller questions** in revamp-handoff.md.
 

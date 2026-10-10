@@ -66,7 +66,3 @@ Run these live checks. Tests cover each behavior, but no live session has.
 
 - Restart open Claude Code sessions. `/reload-plugins` leaves the removed `run_check` tool listed until a restart.
 - Reinstall the Codex plugin with `codex plugin add inbox@inbox`, using the `codex` binary bundled in the ChatGPT app. Then reload any open Inbox tab.
-
-## Known gaps
-
-- If the saved session is unreadable and the person sends a prompt before pressing [Try again], a reload loses the saved copy. After the prompt, the load no longer offers [Try again], and the next save overwrites the copy. The fix adds a saved field, so it waits for your decision in [revamp-completion.md](revamp-completion.md), section 4.

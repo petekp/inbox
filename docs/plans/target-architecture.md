@@ -783,7 +783,7 @@ Every step:
   - A `tool.register` answer that rejects shows the red status, and the mod still loads the conversation.
   - A `$.store.get` that rejects shows `Could not read the inbox.`, and [Try again] with a working store shows the rows.
   - [Retry] fetches again.
-- **Saved state:** none (`toolsRefused` and the read failure are module flags).
+- **Saved state:** `unreadable`, the conversation whose saved session the store could not read. A reload keeps it, so saves still skip that copy. `toolsRefused` is a module flag.
 - **Model-read:** none. The band is not model-read.
 - **Verify live:** the band in each state in a terminal session. Also run the "context skipped" check: in a session whose managed settings skip the mod's `prompt.compose`, check whether its hook has run by the first `turn.start`. Record the result for section 10.
 

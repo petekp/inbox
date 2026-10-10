@@ -281,6 +281,8 @@ declare module 'claude-code' {
       isKeyListShown: boolean
       /** The sample entries the band and pane show instead of the session's own, while `/inbox demo` is on. */
       demo: DemoCopy | null
+      /** The conversation whose saved session the store could not read. Saves skip it until a read succeeds. */
+      unreadable: string | null
     }
   }
 }

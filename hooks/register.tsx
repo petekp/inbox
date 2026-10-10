@@ -161,6 +161,7 @@ const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as (Item
 const SHOWN_DETAILS = atom({ plugin: 'inbox', key: 'shownDetails' } as const, [] as string[])
 const OPTIONS_SHOWN = atom({ plugin: 'inbox', key: 'optionsShown' } as const, [] as string[])
 const IS_KEY_LIST_SHOWN = atom({ plugin: 'inbox', key: 'isKeyListShown' } as const, false)
+const UNREADABLE = atom({ plugin: 'inbox', key: 'unreadable' } as const, null as string | null)
 // How long a closed item's row stays in place, with its outcome, before it moves to Closed.
 // The bar under a just-closed row, in cells. It loses half a cell per step of SETTLED_MS, so the pane redraws that often.
 const LEAVE_BAR_CELLS = 12
@@ -443,9 +444,8 @@ let storedCount = 0
 let shellCommand: string | null = null
 // The engine refused a `$.tool.register` at turn-on, as an organization's settings can, so Claude cannot record or close items.
 let toolsRefused = false
-// The conversation whose saved session the store could not read, and whether [Try again] is reading it now.
-// While set, Needs you says so in place of an empty list.
-let unreadable: { id: string; isReading: boolean } | null = null
+// Whether [Try again] is reading the saved session that UNREADABLE names.
+let isReadingAgain = false
 /**
  * The desktop app takes the focus off the pane when the Button holding it leaves the drawing, and
  * the next click there only brings it back (anthropics/claude-code#100874). The pane tracks the key
@@ -515,7 +515,7 @@ async function syncTheme($: EngineInterface) {
 
 async function save($: EngineInterface, ledger: Ledger) {
   // Until a read succeeds, the saved copy holds the conversation's rows, and this ledger lacks them.
-  if (unreadable?.id === sessionId) return
+  if ((await read($, UNREADABLE)) === sessionId) return
   const savedAt = await $.clock.now()
   const key = `s:${sessionId}`
   // The first save in a process deletes the key first, moving it to the end of
@@ -1314,7 +1314,7 @@ async function followNewRows($: EngineInterface, isOpening = false) {
     read($, UNFOLDED),
     isPaneShown($),
   ])
-  const { ledger, prViews: prState, lastActions, stop, isDemo, view, now } = drawn
+  const { ledger, prViews: prState, lastActions, stop, isDemo, isUnread, view, now } = drawn
   const prs = drawnPrs(prState, ledger.prs, lastActions, now)
   const prViews = prs.filter(x => !x.isSettled).map(x => x.pr)
   const ids = tabRowIds(view, prViews)
@@ -1339,7 +1339,7 @@ async function followNewRows($: EngineInterface, isOpening = false) {
       ids.needsYou.length === 0 &&
       settledNeedsYou.length === 0 &&
       !stop &&
-      !isUnreadShown(isDemo) &&
+      !isUnread &&
       !unfolded.some(kind => ledger.closed.some(d => d.kind === kind)),
     findings: view.findings.rows.length === 0 && !(unfolded.includes('finding') && ledger.closedFindings.length > 0),
     prs: prs.length === 0 && !prState.isFetching,
@@ -1348,11 +1348,6 @@ async function followNewRows($: EngineInterface, isOpening = false) {
   if (!to) return
   const id = ids[to].find(x => added[to].includes(x))
   await jumpTo($, to, id === undefined ? null : { id, index: ids[to].indexOf(id) })
-}
-
-/** Needs you says the saved session could not be read: for this conversation, and not over the demo's samples. */
-function isUnreadShown(isDemo: boolean): boolean {
-  return !isDemo && unreadable?.id === sessionId
 }
 
 async function isPaneShown($: EngineInterface) {
@@ -2152,8 +2147,10 @@ const FINDING_BADGES: Record<Finding['kind'], { label: string; mark: string; ton
  * What the band and the pane draw: the session's own state, or the samples
  * `/inbox demo` shows in its place.
  */
-async function drawnState($: EngineInterface): Promise<DemoCopy & { view: InboxView; isDemo: boolean; now: number }> {
-  const [ledger, stop, prViews, lastActions, notes, presence, demo, now] = await Promise.all([
+async function drawnState(
+  $: EngineInterface,
+): Promise<DemoCopy & { view: InboxView; isDemo: boolean; isUnread: boolean; now: number }> {
+  const [ledger, stop, prViews, lastActions, notes, presence, demo, unreadable, now] = await Promise.all([
     read($, LEDGER),
     read($, STOP),
     read($, PR_VIEWS),
@@ -2161,12 +2158,16 @@ async function drawnState($: EngineInterface): Promise<DemoCopy & { view: InboxV
     read($, NOTES),
     read($, PRESENCE),
     read($, DEMO),
+    read($, UNREADABLE),
     $.clock.now(),
   ])
   const turns = { turnsStarted: presence.turnsStarted, turnsApplied: presence.turnsApplied }
   const drawn = demo ?? { ledger, stop, prViews, lastActions, notes, turns }
 
-  return { ...drawn, view: viewOf({ ...drawn, now }, presence), isDemo: demo !== null, now }
+  // Needs you says this conversation's saved session could not be read, but not over the demo's samples.
+  const isUnread = demo === null && unreadable === sessionId
+
+  return { ...drawn, view: viewOf({ ...drawn, now }, presence), isDemo: demo !== null, isUnread, now }
 }
 
 /** Shows the demo's sample entries on a fresh copy, or ends the demo. */
@@ -2227,7 +2228,7 @@ async function loadConversation($: EngineInterface, id: string) {
   root = await $.session.root()
   isSaved = false
   recordedRows = null
-  unreadable = null
+  isReadingAgain = false
   // A reload stops any update the previous load had running, and state outlives
   // it, so an update in flight at load was cut off: record it as failed.
   const [git, presence, current, saved] = await Promise.all([
@@ -2237,12 +2238,11 @@ async function loadConversation($: EngineInterface, id: string) {
     readSaved($, id),
   ])
   top = git?.exitCode === 0 ? git.stdout.trim() || null : null
-  // Only a conversation with no turns loaded yet needs its saved copy, as a hot reload's does not.
-  const isUnread = saved === null && current.turn === 0 && !current.card
-  if (isUnread) {
-    unreadable = { id, isReading: false }
-    await redrawPane($)
-  }
+  // Only a conversation with no turns loaded yet needs its saved copy, so only that load's read decides
+  // whether the copy is unreadable. Once turns ran, only [Try again] or another conversation clears UNREADABLE.
+  const isFresh = current.turn === 0 && !current.card
+  const isUnread =
+    (await update($, UNREADABLE, u => (isFresh ? (saved === null ? id : null) : u === id ? u : null))) === id
   const loaded = saved === null ? current : await bringBack($, current, saved.session)
   // Catch up now after a failed update; after a turn whose reply never reached
   // the ledger, as when a reload cut off the end-of-turn hook before it queued the
@@ -2326,15 +2326,20 @@ async function forgetRowState($: EngineInterface) {
 
 /** Reads the saved session again after the store could not, as [Try again] does, and brings it back. */
 async function readAgain($: EngineInterface) {
-  const failed = unreadable
-  if (failed === null || failed.id !== sessionId || failed.isReading) return
-  unreadable = { ...failed, isReading: true }
+  if (isReadingAgain) return
+  isReadingAgain = true
+  const id = sessionId
+  if ((await read($, UNREADABLE)) !== id) {
+    isReadingAgain = false
+    return
+  }
   await redrawPane($)
-  const saved = await readSaved($, failed.id)
-  // A conversation loaded meanwhile has its own read.
-  if (sessionId !== failed.id) return
-  unreadable = saved === null ? failed : null
+  const saved = await readSaved($, id)
+  // A conversation loaded meanwhile has its own read, and its load cleared isReadingAgain.
+  if (sessionId !== id) return
+  isReadingAgain = false
   if (saved !== null) {
+    await update($, UNREADABLE, () => null)
     const current = await read($, LEDGER)
     const hasRun = current.turn !== 0 || current.card !== null
     const loaded =
@@ -2763,7 +2768,7 @@ export const register: Register = on => {
     const isInline = e.props.placement === 'inline'
     const blankLine = isInline ? 0 : 1
     const [
-      { ledger, prViews: prState, lastActions, notes, stop, view, isDemo, now },
+      { ledger, prViews: prState, lastActions, notes, stop, view, isDemo, isUnread, now },
       tab,
       selection,
       theme,
@@ -3958,11 +3963,11 @@ export const register: Register = on => {
       })
       const isNothing = needsYouGroups.every(g => g.entries.length === 0)
       // A saved session the store could not read is unknown, not empty, so it never reads as "Nothing needs you."
-      const unread = isUnreadShown(isDemo)
+      const unread = isUnread
         ? [
             section(
               <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingLeft={2}>
-                {unreadable?.isReading ? (
+                {isReadingAgain ? (
                   <Text color={pal.muted}>Reading the inbox…</Text>
                 ) : (
                   <Text color={pal.tone.error}>Could not read the inbox.</Text>

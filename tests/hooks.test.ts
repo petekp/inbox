@@ -1906,6 +1906,15 @@ test('a saved session the store cannot read shows as unreadable, not empty, unti
   await clock.settle()
   expect(stored.get('s:session-1')).toContain('Use Node or Python?')
 
+  // A reload after those turns still offers [Try again], and the next turn still leaves the saved copy as it was.
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  expect(await pane.find({ text: 'Could not read the inbox.' })).toBeDefined()
+  await $.prompt.submit({ text: 'and the tests', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: 't3', reason: 'answer' })
+  await clock.settle()
+  expect(stored.get('s:session-1')).toContain('Use Node or Python?')
+
   storeRefusal = undefined
   await pane.press({ key: 'read-again' })
   await clock.settle()
