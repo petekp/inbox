@@ -16,9 +16,9 @@ Code is built in a separate worktree, `revamp-build`, and moves to `revamp` once
 
 ## Where it stands
 
-- **Built and tested:** all 16 build steps, every 2026-10-09 decision, and section 1 below.
-- **Seen working live:** terminal delivery. On desktop: focus, button edges, tab clicks, scrolling, typing with Enter, the dimmed guard and Markdown. In Codex: the tab, `inbox` answering in text only, and Explain going Sending, Queued, ✓.
-- **Left:** the second build round (section 2), the probes that gate the rest of the desktop design (section 3), the decisions in section 4, and the merge.
+- **Built and tested:** all 16 build steps, every 2026-10-09 decision, and sections 1 to 3 below.
+- **Seen working live:** terminal delivery. On desktop: focus, button edges, tab clicks, row and fold clicks, scrolling, typing with Enter, the dimmed guard, Markdown, and the look from section 3. In Codex: the tab, `inbox` answering in text only, and Explain going Sending, Queued, ✓.
+- **Left:** the decisions in section 4, and the merge.
 
 ## 1. Fixes, done
 
@@ -28,37 +28,30 @@ Code is built in a separate worktree, `revamp-build`, and moves to `revamp` once
 - The Codex tab shows its not-heard warning above open rows too (`c425466`), and a press times out after 60 s (`ed61ed0`).
 - Desktop: the tab hit test checks y and hover uses `raisedText` (`b7b53bf`), "Not sent" has its own band row (`ef694e2`), the empty-state lines fit (`9198ea7`), the recommended option is marked in every look and action groups sit on separate lines (`bdb2e82`, `755d216`), and the fold line and settled ask clip to one line (`2dcf4d3`).
 
-## 2. Second build round
+## 2. Second build round, done
 
-Your decisions on 2026-10-09 approved all of these.
+- Approvals A1 to A8 from desktop-look.md. A6 was not needed: probe 1 passed, so Undo keeps its own key.
+- The row and fold Clients (desktop-look.md components 9 and 16).
+- The text field takes the focus when it opens (`db0a6a6`). Live, the Claude app never gives the field the keyboard, so you still click into it. That is an app bug, reported as #100966.
+- The Codex tab says why it could not read the inbox.
+- `GUIDANCE` in `hooks/register.tsx` says the band shows only counts.
+- A press's work survives a reload, a session that could not be read stays unread across a reload, and the Codex tab drops a press still pending after 60 s.
 
-- **Approvals A1 to A8** from desktop-look.md. A6 is not needed: probe 1 passed, so Undo keeps its own key.
-- **The row and fold Clients** (desktop-look.md components 9 and 16).
-- **The text field takes the focus when it opens.** Built in `db0a6a6`: the focus repair moves the focus to the field once a drawing has it. Live, the request succeeds but the Claude app never gives the field the keyboard, so you still click into it. That is an app bug, reported as #100966.
-- **The Codex tab says why it could not read the inbox**, after "Could not read the inbox.", so a failure that does not repeat still shows its cause.
-- **`GUIDANCE` in `hooks/register.tsx`** tells Claude the open items show in the band. They no longer do. It is text Claude reads, so it ships only after an A/B.
+## 3. Probes and the desktop look, done
 
-## 3. Probes, then the desktop steps they gate
+The probes ran on 2026-10-09. "Probe results" in desktop-look.md records each one, and `f29471e` builds what they decided:
 
-I run most of these myself in the background. An accessibility press triggers pane Buttons, and `screencapture -l` captures the Claude window behind others. The tab bar and row Clients take no accessibility press, so a check that switches tabs or clicks a Client row needs you.
-
-- **3 and 4:** row Client sizing, and many Clients in a scrolled pane.
-- **5, 6, 7, 8 and 11:** theme colors, text width, the tab tone line and Box fills.
-- **9, 10, 13, 14, 15, 17, 19 and 20:** one capture each.
-
-Then the desktop steps they gate:
-
-- the tab colors, bold label and tone line
-- tab sizing
-- the status-line constant
-- Box fills
-- `titleGap`
-- tree rails or the indent fallback
-- the spec pass
+- The shown tab is raised and bold, with a line in its tone along its top.
+- Tabs are sized from measured text, and the status moves under them below 66 columns.
+- The bars on an open row are Box fills.
+- The gap under a group title is half a line.
+- A PR's status block starts at the title's column, in place of tree rails.
 
 ## 4. Decisions still yours
 
 - **The wording list and smaller questions** in revamp-handoff.md.
+- **The Auto theme on desktop.** In the dark app, the shown tab's text is 3.1:1 on the raised gray, its tone line under 1.5:1, and the other tabs almost match the pane. An open row has no fill. Fixing this needs new palette colors for Auto (desktop-look.md, probe 5). Before `f29471e` the shown tab used the same gray in Auto, since Auto sets no selection color.
+- **Checks only you can run:** switch the app between light and dark against the `theme` setting (probe 6), close the pane and press [Open inbox] (probe 17), sweep the pointer over a long list (probe 4), and try `/login` from a stop (probe 18).
 
 ## 5. Merge
 

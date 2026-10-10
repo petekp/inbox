@@ -1,13 +1,17 @@
 # Desktop look: the terminal's essence in the Claude app
 
-## Status after the first probes
+## Status
 
-- **Closed rows are Clients** (component 9). Each closed row is one Client keyed `select-<id>`, drawn by `hooks/row-client.tsx`, and a click on any of its cells opens the row. PR check and review-thread rows work the same way. Three things are not yet checked live: row sizing (probe 3), many Clients in a scrolled pane (probe 4), and where the focus lands after a row click (probe 1's row part).
-- **The Closed fold is a Client** (component 16). Each list's "▸ N Closed" line is one Client keyed `fold-<kind>`, drawn by `hooks/fold-client.tsx`. A click on any cell of the line posts the fold state it asks for, and the hooks module sets that state, so a double-click leaves the fold unfolded. Not yet checked live: the ▸ and ▾ glyphs (probe 13), the hover color on the card, and where the focus lands after a click.
-- **Native Buttons take clicks on their corners and edges** (probe 16). Single actions meet the whole-shape rule.
-- **Focus is fixed in one place** (probe 1, rule 11). The pane tracks the Button a press focused. When a drawing leaves it out, the focus moves to the Button that took its place, else the open row's first action, else the first Button. Every click landed on the first try in a run of 19 presses. A Type press moves the focus to its text field once a drawing has the field (`db0a6a6`). That is not yet checked live.
-- **The leave bar is gone on desktop** (component 14). While it redrew every 213 ms, clicks on the pane's Buttons did nothing. Desktop now redraws once, when the settled row leaves.
-- The rest of this plan is unchanged and still waits on its probes.
+Every build step below is done, in `f29471e` and earlier. The probes ran on 2026-10-09 against the Claude app on engine 2.1.295, in the dark theme. "Probe results" below records each one.
+
+- **Built from the probes:**
+  - The shown tab is raised and bold, with a line in its tone along its top.
+  - The tabs are sized from measured text, and the status moves under them below 66 columns.
+  - On desktop, the new-row bar and the selection bar on an open row are Box fills.
+  - The gap under a group title is half a line.
+  - A PR's status block starts at the title's column.
+- **Not built, because a probe failed:** the rule under the tabs, and the tree rails. The status block's column takes the rails' place.
+- **Waiting on you:** the Auto theme's tab and row colors (probe 5), the app's appearance against the `theme` setting (probe 6), the band with the pane closed (probe 17), a pointer sweep over many rows (probe 4), and `/login` from a stop (probe 18).
 
 ## Summary
 
@@ -15,7 +19,7 @@
 - **The big decision: use a Client only where a control's click area must be bigger than its label.** That covers three things: the tab bar (already built), each closed row, and the "▸ N Closed" fold line. Every single action stays a native Button. Everything else is Box and Text.
   - Reason: your rule is that a control takes a click over its whole drawn shape. A native Button takes clicks on its own chrome; probe 16 checks its corners and edges. A Box takes no clicks. Only a Client can make a whole row clickable.
   - Cost: medium to high. It needs a new row module, a click handler that rebuilds the drawn view, and title clipping moved into the module. Closed rows likely also leave the app's native keyboard focus order and accessibility tree (F7).
-  - Condition: the row Client waits on three probes: wheel scrolling over a Client, focus after a click on a row Client, and region sizing. A row's Client leaves the drawing when the row opens, which is the #100874 case, so the focus check runs on a throwaway row Client. If wheel scrolling or focus fails, rows keep today's title Button, which takes clicks on its label only. You then decide whether to accept that.
+  - The probes it depended on passed: wheel scrolling over a Client, focus after a click on a row Client, and region sizing.
 - **About half the components need no redesign.** They keep today's drawing and need only a probe. The real changes are:
   - tab colors, bold and sizing
   - the row Client
@@ -30,7 +34,7 @@
 - **Look**: which app draws the pane, `terminal` or `desktop`. In code it is `look === 'desktop'`.
 - **Client**: an engine element. Its own module draws Box and Text in a region and gets pointer events over every cell of that region. The tab bar (`hooks/tabs-client.tsx`) is one.
 - **Native Button**: the app's own button. It has rounded chrome, is sized to its label, is taller than a text line, and takes a click on its chrome. Whether its corners and edges take one is probe 16.
-- **Cell**: one layout unit. Desktop text is proportional and fits about 1.1 to 1.4 characters per cell. How tall a cell draws differs inside and outside a Client (rule 6).
+- **Cell**: one layout unit. Desktop text is proportional and fits about 1.25 characters per cell. How tall a cell draws differs inside and outside a Client (rule 6).
 - **pal**: the palette the mod picks from Claude Code's `theme` setting. `pal.card`, `pal.raised`, `pal.selection`, `pal.muted`, `pal.tone.*` and `pal.mark.*` are its color roles.
 - **#100874**: anthropics/claude-code#100874. If the focused Button is missing from the next drawing, the app takes focus off the pane. The next click then only refocuses it.
 - **keepPaneFocus**: a removed workaround. It focused the shown tab's Button before a press redrew. It went away when the tabs moved into the Client, because `$.ui.focus` cannot focus a Client.
@@ -69,13 +73,12 @@ These rules keep the components consistent. Where a component's own design disag
 
 ### 4. Glyphs
 
-- **These draw on desktop as single inline glyphs, as `desk-probe-seen` shows:** ✓, ✗ (it draws as a thin ✕), ◦, ◇, ·, …. `?` is plain ASCII.
-- **These are unverified:** •, ▲, ✦, ▸, ▾. Probe 13 checks them.
+- **These draw on desktop as single inline glyphs:** ✓, ✗ (it draws as a thin ✕), ◦, ◇, ·, …, •, ▲, ✦, ▸, ▾. `?` is plain ASCII.
 - **These do not survive:**
   - stacked glyph columns: the `│ ├─ └─` tree and `▌` bars
   - runs of `─`, which wrap
   - `╴`
-- **Replacements:** a bar becomes a Box with `backgroundColor`. `▔` appears only if probe 8 passes.
+- **Replacements:** a bar becomes a Box with `backgroundColor`. `▔` draws only as the shown tab's tone line, in a clipped one-line Box.
 
 ### 5. Text width
 
@@ -83,7 +86,7 @@ These rules keep the components consistent. Where a component's own design disag
 - Use two constants:
   - `DESKTOP_CHARS_PER_CELL` (1.25 today) where a wrap does no harm, such as the empty-state line budget.
   - A new, conservative `DESKTOP_CLIP_CHARS_PER_CELL` (about 1.1) where a wrap breaks the shape: tab labels, row titles, the settled row's ask, the fold line.
-- Both numbers are inferred, and the captures disagree. Tab labels measured about 1.1. Empty-state text measured about 1.4. No bold text has been measured, and the tabs will size their labels as bold. Probe 7 sets both.
+- Probe 7 measured 1.26 to 1.30 characters per cell for sentences and tab labels, 1.23 to 1.27 in bold, and 1.03 for a run of "n". Tab labels are fixed text, so the tabs size them at 1.25 plus 1 cell of slack.
 - Where fixed strings decide a fit, as in the status line's placement, count 1 cell per character. That overcounts, so the layout falls back to the safer arrangement too early rather than overflowing.
 
 ### 6. Spacing
@@ -95,7 +98,7 @@ These rules keep the components consistent. Where a component's own design disag
 - Inside a Client, a cell is a full line. In `desk-ctabs1` the tab panels, `paddingY` 1 around one text line, are 114 px tall: 3 × 38 px. Pointer rows are whole lines too.
   - So the row Client puts no padding inside itself. Spacing between rows stays in the hooks tree.
   - The tabs Client has no `height` prop (`register.tsx:3437`) and still drew 3 rows from its content. That is partial evidence for sizing a row Client by its content. It covers only content that does not wrap; probe 3 checks content that wraps.
-- On desktop, space things with Box padding and gaps in the hooks tree, not blank Text rows. Probe 10 checks whether an empty `height={1}` Box draws at 19 px.
+- On desktop, space things with Box padding and gaps in the hooks tree, not blank Text rows. An empty `height={1}` Box draws a full 38 px line. An empty Box with `paddingTop={1}` draws 19 px.
 - A native Button's chrome is about 48 px tall, about 1.25 text lines (Hide demo and Resolve conflicts again in `desk-probe-seen`). A line holding a Button is button-tall. That is normal on desktop, so accept it.
 
 ### 7. Row shape
@@ -166,7 +169,7 @@ Each section gives four things:
 - **Carries over**: what must match the terminal.
 - **Desktop**: what desktop draws.
 - **Why**: the reason.
-- **Status**: ready, or which probe comes first.
+- **Status**: whether it is built, and what is left.
 
 "A#" marks an item on the approval list and "F#" one on the findings list. Both lists come after the components.
 
@@ -188,7 +191,7 @@ Each section gives four things:
 - **Known differences:**
   - If desktop draws no `[-]`, the band cannot be collapsed there.
   - The band and the pane share the key `hide-demo`, so one press ends the demo in both.
-- **Status:** probe 17 first. No capture shows today's order: `desk-band1` shows an older one, with [Open inbox] before the counts. Expect no code change.
+- **Status:** built. At 63 columns the counts and both buttons fit one line (probe 17).
 
 ### 2. Band stop line
 
@@ -200,7 +203,7 @@ Each section gives four things:
 - **Desktop:** today's row, with one desktop-only change. When a resume is refused and the band has more than 2 rows, "Not sent: why" moves to its own third row.
 - **Why:** in this flex row, any wrapped text pushes [Resume] to the right edge, under [Open inbox]. The refusal is the only state with both a button and a long tail.
 - **Changed to fit shared rules:** "Not sent" turns red, matching the pane and row feedback (A1). After a successful resume the band may lose focus. Accept that cost.
-- **Status:** the third row is ready. The color waits on A1.
+- **Status:** built (A1).
 
 ### 3. Demo banner
 
@@ -212,7 +215,7 @@ Each section gives four things:
   - Only if probe 20 shows [Hide demo] dropping at a width where the sentence and the button measure as fitting on one line, wrap the Text in a Box with `flexShrink={1} minWidth={0}`. No `flexGrow`. The row then gets `alignItems="flex-start"` and no `flexWrap`.
 - **Why:** captures show the button genuinely does not fit at the captured width, and the terminal drops it there too, so today's drop matches. A drop at a width where both fit would be a desktop layout error, not a design.
 - **Cost of the conditional fix:** at narrow widths the sentence then wraps beside the button instead of the button dropping, which differs from the terminal.
-- **Status:** probe 20 first. No cost if it passes.
+- **Status:** built. The banner and [Hide demo] share one line from about 58 columns (probe 20).
 
 ### 4. Tab bar
 
@@ -238,10 +241,7 @@ Each section gives four things:
   - **Rule, only if probe 8 passes:** drawn in the hooks tree after the tabs Box, not inside the Client.
   - **If the tone line fails:** hover needs a shade between tab gray and raised. Without it, bold alone would separate hover from shown. No palette has such a shade, so it is a new palette field with contrast checks in every theme. That is your decision.
 - **Docs:** update `inbox-ui.md:37`, `:368` and `:613`.
-- **Status:**
-  - Ready now: the hit test and `raisedText` on hover.
-  - After probe 8: the shown tab's color and bold label, the tone line and the rule, or the hover shade.
-  - After probe 7: the sizing.
+- **Status:** built, without the rule: its glyph floats about 12 pt below the tabs (probe 8). No hover shade is needed.
 
 ### 5. Status line
 
@@ -256,7 +256,7 @@ Each section gives four things:
   - **Extra lines.** The error, the refused text and the note each take a full-width line under the tab row.
   - **Gap under the tabs.** When the status sits under the tabs, add a 1-cell gap above it, so it does not read as the first tab's caption.
   - **Fallback.** Without a Client, placement keeps `DESKTOP_WIDE_AT` (50).
-- **Status:** probe 9 first. It is the only evidence that today's 50-column rule misplaces the status.
+- **Status:** built. `DESKTOP_STATUS_BESIDE_AT` is 66 columns.
 
 ### 6. Pane stop block
 
@@ -267,7 +267,7 @@ Each section gives four things:
   - For other stops, the fix
 - **Desktop:** today's card, with one change. [Resume] stays drawn under key `resume` while sending, and only its label changes. This replaces the Text swap at `register.tsx:3791-3797`. Add `if (resuming?.is === 'sending') return` at the top of `resume()`. That also stops the band from sending "Continue" twice (A2).
 - **Known cost:** if a send succeeds but no turn starts, both buttons read "Resuming…" and do nothing until the person types.
-- **Status:** waits on A2.
+- **Status:** built (A2).
 
 ### 7. Group title and section card
 
@@ -276,7 +276,7 @@ Each section gives four things:
   - each group on its own card, with one gap between cards
 - **Desktop:** keep `groupTitle` and `section`. One change: on desktop, draw `titleGap` as an empty `height={1}` Box, not a Text row. The gap under a title then matches the card's padding. Do the same for `closedGap` only if the capture shows the same imbalance.
 - **Known difference:** Auto, custom and ANSI palettes draw no card. In those themes, only the bold title and the gap separate the groups. Probe 5 shows whether that is enough.
-- **Status:** probe 10 first.
+- **Status:** built. On desktop, `titleGap` is an empty Box with `paddingTop={1}`, 19 px tall.
 
 ### 8. Tree guides and row dividers
 
@@ -293,7 +293,7 @@ Each section gives four things:
   - Neither rail passes the status block. That departs from the terminal: with no elbows, how far the line runs is the only cue left.
   - The probe also tests a hairline divider and a half-scrolled group, because of the scroll-clip bug anthropics/claude-code#100030.
 - **Fallback, with no probe needed:** draw the PR status block at the title's text column, so only the children are indented.
-- **Status:** lowest priority, medium cost, probe first.
+- **Status:** built as the fallback. Probe 12 ruled out both rails.
 
 ### 9. Closed row (also PR check and review-thread rows)
 
@@ -328,7 +328,7 @@ Each section gives four things:
 - **Cost:**
   - Rows likely leave the app's native focus order and accessibility tree (F7).
   - The new module, the handler and the moved clipping.
-- **Status:** built. Probes 3 and 4 and probe 1's row Client part are not yet checked live.
+- **Status:** built and checked live. Row sizing passes at a simulated 40 columns (probe 3). The pointer sweep in probe 4 is yours.
 
 ### 10. Open row
 
@@ -350,7 +350,7 @@ Each section gives four things:
   - The reason "selection matches the shown tab" is dropped. The shown tab is raised gray now.
   - The `·` between groups and the `alignItems="center"` fix are dropped.
   - The focus fix moved to rule 11.
-- **Status:** spacing and actions are ready. The selection bar waits on probe 5. Probe 13 captures confirm the rest.
+- **Status:** built. With no selection color, as in the Auto palette, the selection bar is a Box filled with `pal.key`.
 
 ### 11. Option and action buttons
 
@@ -391,7 +391,7 @@ Each section gives four things:
 - **For you to decide (both looks):**
   - A PR block's feedback sits under its buttons, while a row's sits above them.
   - A Local "✓ …" on a row whose mark is ✓ shows two ✓.
-- **Status:** ships with the row Client.
+- **Status:** built with the row Client.
 
 ### 13. Folded row and Details
 
@@ -406,7 +406,7 @@ Each section gives four things:
   - **Change 2: the fold note is muted in both looks** (A3). It says the thread is still open, so it is context, not "done".
 - **Focus:** the toggle moves from the main group to the end of the talk group, and probe 1 covers that move. If focus is lost, keep the toggle on its own line, last, in both states.
 - **Docs:** `inbox-ui.md:120` should read "`✓ Address · just now`; opened, it offers [Details]".
-- **Status:** the clip is ready. The note color waits on A3. Focus waits on probe 1.
+- **Status:** built (A3).
 
 ### 14. Settled row and Undo
 
@@ -425,7 +425,7 @@ Each section gives four things:
     - If an empty Box paints nothing, put one non-breaking space inside.
     - If the bar looks too heavy, probe an Svg bar, which is unverified on desktop.
 - **Why:** reusing the key makes Done and Undo the same control. A double-click on Done would then close and reopen the row.
-- **Status:** the ask clip is ready. The bar waits on probe 11. The key waits on probe 1.
+- **Status:** built. Desktop has no leave bar.
 
 ### 15. Typed-answer field
 
@@ -442,7 +442,7 @@ Each section gives four things:
   - Questions can still be answered with typed option numbers.
   - "Type a reply" has no desktop substitute.
   - Before ruling out the spec's composer route, probe `$.prompt.fill` once (probe 14).
-- **Status:** probe 14 first.
+- **Status:** built. The field takes the keyboard only after a click, an app bug (#100966).
 
 ### 16. Closed fold
 
@@ -460,7 +460,7 @@ Each section gives four things:
   - Hover follows rule 9. At rest the background is `pal.card ?? null`.
   - The closed items stay Box and Text.
 - **Why a separate module from the tabs:** the tab bar maps x to one of several tabs. The fold is one target with two states.
-- **Status:** built. The ▸ and ▾ glyphs wait on probe 13. None of it is checked live yet.
+- **Status:** built and checked live. ▸ and ▾ draw as inline glyphs.
 
 ### 17. PR block
 
@@ -477,7 +477,7 @@ Each section gives four things:
   - The actions follow rule 8.
   - The Undo key decision moved to component 14 and rule 11.
 - **Known difference:** the taller native buttons absorb the blank line before them.
-- **Status:** waits on A4, then probe 19.
+- **Status:** built (A4). Probe 19 passes.
 
 ### 18. Empty and unreadable states
 
@@ -489,9 +489,7 @@ Each section gives four things:
 - **Desktop:**
   - **Line budget:** `Math.min(46, Math.floor((bodyColumns - 6) * DESKTOP_CHARS_PER_CELL))`. Desktop then breaks the text into the same number of lines as the terminal.
   - **Unreadable card:** keep the one `flexWrap` row, which matches the band stop line. Try again stays drawn under `read-again` while reading (A7).
-- **Status:**
-  - The budget is ready.
-  - The reading state waits on A7.
+- **Status:** built (A7).
 
 ### 19. New-row bar
 
@@ -504,7 +502,7 @@ Each section gives four things:
   - **Open row, and the no-Client fallback:** `<Box position="absolute" top={0} bottom={0} left={0} width={1} backgroundColor={pal.mark[tab]} />` with no Text. Nothing there takes a click, so the overlay costs no click area.
   - The terminal keeps `▌`.
 - **Accepted difference:** a full cell is about 7 pt, heavier than the terminal's half cell.
-- **Status:** probes 11 and 5. The closed-row bar ships with the row Client.
+- **Status:** built. The row Client draws the closed row's bar. An open row's bar is a Box fill.
 
 ### 20. Keys footer and hidden hotkeys
 
@@ -571,9 +569,33 @@ These change the terminal or shared code.
 | 19 | PR refresh failure | Component 17 | Patch one demo PR with `error: 'gh: HTTP 502'`, short and long. Capture today's row, the column, and "Refreshing…". |
 | 20 | Demo banner | Component 3 | Capture the banner at about 69 columns. Measure whether the sentence and [Hide demo] would fit on one line. |
 
+## Probe results
+
+The probes ran on 2026-10-09 in a desktop Code-mode session on engine 2.1.295, in the dark theme, at 68 columns. A temporary patch, never committed, drew test shapes above the demo and set the pane's state. An accessibility press triggered it, and `screencapture -l` captured the window. Widths other than 68 are simulated: the patch overrode `bodyColumns` and drew the pane in a Box that wide. A Client still sizes itself from its real region. At 2x, a cell is 15.8 px wide.
+
+| # | Result |
+|---|---|
+| 1, 2, 14, 15, 16 | Checked live earlier. See `docs/reference/claude-desktop-app.md`. |
+| 3 | Passes at a simulated 40 columns. A question that wraps makes its row Client two lines tall, and a one-line task stays one line. Titles clip with "…" and leave room to spare. |
+| 4 | Partly covered. Client rows open, hover and scroll (checked live earlier). The pointer sweep and the press-and-drag are yours. |
+| 5 | The dark palette passes: text on the raised gray 7.3:1, tone counts on it 4.5 to 5.3:1. The error mark on the raised gray is 3.0:1. The Auto palette fails in the dark app: the shown tab's text is 3.1:1 on `subtle`, the tone marks 1.1 to 1.4:1 on it, and the unshown tabs' `userMessageBackground` is almost the pane's own color. Auto also sets no selection color, so an open row has no fill. Theme keys resolve to the app's own theme, so the ANSI palettes cannot be simulated. `userMessageBackgroundHover` draws nothing. |
+| 6 | Yours. |
+| 7 | Sentences and the tab labels fit 1.26 to 1.30 characters per cell, and 1.23 to 1.27 in bold. A run of "n" fits 1.03. `DESKTOP_CHARS_PER_CELL` stays 1.25 and `DESKTOP_CLIP_CHARS_PER_CELL` stays 1.1. Tab labels are fixed text, so they are sized at 1.25 plus 1 cell of slack, not at the clip constant. |
+| 8 | Passes. In a clipped one-line Box, `▔` draws a line about 2 pt thick near the top of the line, with faint seams between glyphs. One `▔` covers about 0.7 of a cell, so a run must be longer than the width it fills. The rule under the tabs fails: in the hooks tree its glyph sits about 12 pt below the tabs instead of touching them. |
+| 9 | Today's rule misplaces the status. From 50 to about 53 columns, the status wraps under the tabs with no gap, as if it were the first tab's caption. It fits beside them from 54 columns with one-digit counts. |
+| 10 | An empty `height={1}` Box draws a full 38 px line, the same as a blank Text row. An empty Box with `paddingTop={1}` draws 19 px, the same as a card's padding, so `titleGap` uses that. |
+| 11 | In the row Client, the new-row bar paints a full row tall, stops at the row's edge and clears after 1.5 s. On an open row the `▌` column drew as broken dashes, so desktop now uses a Box fill there. |
+| 12 | Rail A, an absolute Box, paints and spans only the child rows, but it is a full cell wide, about 8 pt: the same shape as the new-row bar. Rail B, a bordered Box, draws a rounded outline. A zero-height bordered Box also draws an outline, not a hairline. The status block's column is used instead. |
+| 13 | The open question, finding and thread draw cleanly. • ▲ ✦ ▸ ▾ draw as single inline glyphs. The demo has no question with more than 5 options, and the Markdown link press was not tried. |
+| 17 | [Open inbox] from the PRs tab shows Needs you with its top row open. The band at 63 columns holds the counts and both buttons on one line. Past `maxRows`, the band clips the next line in half and shows no `[-]`. |
+| 18 | Yours. |
+| 19 | Passes. "Last refresh failed: gh: HTTP 502" sits in red over [Retry], "Refreshing…" shows muted while [Retry] stays, and a long error wraps. |
+| 20 | The banner and [Hide demo] share one line from about 58 columns. |
+| Pending press | A Button whose `onPress` stays pending for 30 s looks the same as any other, and a second press runs at once. Returning the press promise costs nothing visible. |
+
 ## Build order
 
-The probes come first, because probes 1, 2 and 16 decide whether the Client and native-Button plan holds, and probe 8 decides the tab colors. Run `./scripts/check.sh` after every code step. Each step can be tested on its own.
+Every step is done. The probes came first, because probes 1, 2 and 16 decide whether the Client and native-Button plan holds, and probe 8 decides the tab colors. Run `./scripts/check.sh` after every code step. Each step can be tested on its own.
 
 1. **Probe session 1: today's code, with logging patches only, reverted after.** The patches log presses and `onLinkPress` and draw one dimmed Button. Run the probes that can change the plan first: 1 (all but its row Client part), 16, and 2 (the cheap check). Then 5, 6, 9, 13, 15, 17, 18, 20.
 2. **Probe session 2: temporary patches, reverted after.** First 2 (the settling check, with a throwaway row Client), probe 1's row Client part on that same Client, and 3. Then 8, 7, 4, 10, 11, 12, 14, 19.
