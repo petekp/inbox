@@ -448,18 +448,21 @@ let unreadable: { id: string; isReading: boolean } | null = null
  * Button a press focused, and when a drawing leaves it out, moves the focus to one it still has.
  */
 let focusedKey: string | null = null
-/** The Button that takes the pressed one's place, such as a closed row's Undo, tried first. */
+/**
+ * The key that takes the pressed Button's place, such as a closed row's Undo, tried first. A Type
+ * press names its text field, which takes the focus once a drawing has it, though the Button stays.
+ */
 let focusHint: string | null = null
 /** Which look the pane last drew in, for the redraws a timer runs. */
 let paneLook: 'terminal' | 'desktop' = 'terminal'
 
-/** Every Button key in a drawn tree. */
-function buttonKeys(node: unknown, keys = new Set<string>()): Set<string> {
-  if (Array.isArray(node)) for (const child of node) buttonKeys(child, keys)
+/** Every Button and Input key in a drawn tree: the keys the focus can move to. */
+function focusKeys(node: unknown, keys = new Set<string>()): Set<string> {
+  if (Array.isArray(node)) for (const child of node) focusKeys(child, keys)
   else if (node && typeof node === 'object') {
     const el = node as { type?: unknown; props?: { key?: unknown }; children?: unknown }
-    if (el.type === 'Button' && typeof el.props?.key === 'string') keys.add(el.props.key)
-    buttonKeys(el.children, keys)
+    if ((el.type === 'Button' || el.type === 'Input') && typeof el.props?.key === 'string') keys.add(el.props.key)
+    focusKeys(el.children, keys)
   }
 
   return keys
@@ -2584,11 +2587,16 @@ export const register: Register = on => {
     }
   })
 
-  // A desktop press focuses its Button. One that closes a row leaves Undo in the Button's place.
+  // A desktop press focuses its Button. One that closes a row leaves Undo in the Button's place, and Type opens a field.
   on('ui.press', async ($, e, next) => {
     if (e.requestId === PANE && e.surface === 'desktop') {
       focusedKey = e.element
-      focusHint = /^(answer|done|dismiss|drop)-/.test(e.element) ? `undo-${e.element.split('-')[1]}` : null
+      const id = e.element.split('-')[1]
+      focusHint = /^(answer|done|dismiss|drop)-/.test(e.element)
+        ? `undo-${id}`
+        : e.element.startsWith('typekey-')
+          ? `type-${id}`
+          : null
     }
     return next(e)
   })
@@ -4116,8 +4124,9 @@ export const register: Register = on => {
       </Box>
     )
     if (look === 'desktop' && focusedKey !== null) {
-      const keys = buttonKeys(drawn)
-      if (!keys.has(focusedKey)) {
+      const keys = focusKeys(drawn)
+      const opensField = focusHint?.startsWith('type-') && keys.has(focusHint)
+      if (!keys.has(focusedKey) || opensField) {
         const next = [focusHint, rowKeys[0]?.key, ...keys].find((k): k is string => !!k && keys.has(k)) ?? null
         focusedKey = next
         focusHint = null
