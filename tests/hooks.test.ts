@@ -1999,11 +1999,11 @@ test('the desktop pane draws each action as one button and the tabs as one click
   expect(sent).toHaveLength(1)
   expect(await pane.find({ text: /✓ Explain/ })).toBeDefined()
 
-  // A click anywhere on a tab shows it, here the bottom row at the Findings tab's right edge.
+  // A click anywhere on a tab shows it, here in its bottom quarter line at the Findings tab's right edge.
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
   const { tabs, gap } = await tabBar()
   expect(tabs.map(t => t.id)).toEqual(['needsYou', 'findings', 'prs'])
-  await pane.pointer({ type: 'down', x: tabs[0]!.width + gap + tabs[1]!.width - 1, y: 2, button: 'left', in: 'tabs' })
+  await pane.pointer({ type: 'down', x: tabs[0]!.width + gap + tabs[1]!.width - 1, y: 1.1, button: 'left', in: 'tabs' })
   await clock.settle()
   expect((await tabBar()).shown).toBe('findings')
   // A click in the gap between tabs shows nothing new.

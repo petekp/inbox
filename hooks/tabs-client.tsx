@@ -7,35 +7,36 @@ import type { ClientModule } from 'claude-code'
  * posts the clicked tab's id to the hooks module, which shows that tab.
  */
 
-/**
- * One tab, its width in cells set by the hooks module, which knows the font. `toneColor` draws the line along
- * the shown tab's top. A null color is the theme's own.
- */
+/** One tab, its width in cells set by the hooks module, which knows the font. */
 export type ClientTab = {
   id: string
   label: string
   count: number
-  countColor: string | null
-  toneColor: string | null
   width: number
 }
 
-/** The shown tab and a hovered one are both `raised`; the shown one's bold label and tone line tell them apart. */
+/**
+ * Only the shown tab has a fill, `raised`. A hovered tab takes `tab`, or `raised` where the palette
+ * has no `tab`, and then the shown tab's bold label tells them apart. A null color is the theme's own.
+ */
 export type TabsProps = {
   tabs: ClientTab[]
   shown: string
   gap: number
-  colors: { tab: string | null; raised: string | null; raisedText: string | null }
+  colors: { tab: string | null; raised: string | null; raisedText: string | null; muted: string | null }
 }
 
 type State = { hover: string | null }
 
-/** A tab's drawn height: the row its tone line takes, its label line and a blank line under it. */
-const TAB_ROWS = 3
+/**
+ * A tab's drawn height in lines. A fill comes out rounded only inside a border, which insets the label by
+ * half a line on each side, so 1.25 lines fits the label and matches the app's own segmented control.
+ */
+const TAB_HEIGHT = 1.25
 
-/** The tab under cell (`x`, `y`) of the region, or null over a gap or outside the tabs' rows. */
+/** The tab under (`x`, `y`) in the region, or null over a gap or outside the tabs. */
 function tabAt(props: TabsProps, x: number, y: number): string | null {
-  if (y < 0 || y >= TAB_ROWS) return null
+  if (y < 0 || y >= TAB_HEIGHT) return null
   let left = 0
   for (const tab of props.tabs) {
     if (x >= left && x < left + tab.width) return tab.id
@@ -54,37 +55,35 @@ const Tabs: ClientModule<TabsProps, State> = (props, surface) => {
     if (at !== (surface.state?.hover ?? null)) surface.setState({ hover: at })
     if (e.type === 'down' && e.button !== 'right' && at !== null && at !== props.shown) surface.post({ tab: at })
   })
+  const { colors } = props
 
   return Box({
     flexDirection: 'row',
     gap: props.gap,
     children: props.tabs.map(tab => {
       const isShown = tab.id === props.shown
-      const isRaised = isShown || tab.id === hover
-      const background = isRaised ? props.colors.raised : props.colors.tab
-      const text = isRaised ? props.colors.raisedText : null
-      const count = Text({ ...(tab.countColor ? { color: tab.countColor } : {}), children: String(tab.count) })
-      // A ▔ covers about 0.7 of a cell, so the run is twice the tab's width and the row clips it.
-      const toneLine =
-        isShown && tab.toneColor
-          ? Text({ color: tab.toneColor, children: '▔'.repeat(2 * tab.width) })
-          : Text({ children: ' ' })
+      const isHovered = !isShown && tab.id === hover
+      const background = isShown ? colors.raised : isHovered ? (colors.tab ?? colors.raised) : null
+      // Text on `raised` takes `raisedText` where the palette sets one: there the muted gray can match the fill.
+      const onRaised = background !== null && background === colors.raised ? colors.raisedText : null
+      const labelColor = onRaised ?? (isShown || isHovered ? null : colors.muted)
+      const countColor = onRaised ?? colors.muted
+      const count = Text({ ...(countColor ? { color: countColor } : {}), children: String(tab.count) })
 
       return Box({
         key: tab.id,
         width: tab.width,
-        flexDirection: 'column',
+        height: TAB_HEIGHT,
+        borderStyle: 'single',
+        borderColor: '#0000',
         alignItems: 'center',
+        justifyContent: 'center',
         ...(background ? { backgroundColor: background } : {}),
-        children: [
-          Box({ width: tab.width, height: 1, overflow: 'hidden', children: toneLine }),
-          Text({
-            ...(text ? { color: text } : {}),
-            bold: isShown,
-            children: tab.count > 0 ? [tab.label, ' ', count] : tab.label,
-          }),
-          Text({ children: ' ' }),
-        ],
+        children: Text({
+          ...(labelColor ? { color: labelColor } : {}),
+          bold: isShown,
+          children: tab.count > 0 ? [tab.label, ' ', count] : tab.label,
+        }),
       })
     }),
   })

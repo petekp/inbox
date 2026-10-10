@@ -242,7 +242,7 @@ Each section gives four things:
   - **Rule, only if probe 8 passes:** drawn in the hooks tree after the tabs Box, not inside the Client.
   - **If the tone line fails:** hover needs a shade between tab gray and raised. Without it, bold alone would separate hover from shown. No palette has such a shade, so it is a new palette field with contrast checks in every theme. That is your decision.
 - **Docs:** update `inbox-ui.md:37`, `:368` and `:613`.
-- **Status:** built, without the rule: its glyph floats about 12 pt below the tabs (probe 8). No hover shade is needed.
+- **Status:** replaced by `desktop-polish.md` rule 7: rounded segments, with no tone line.
 
 ### 5. Status line
 
@@ -329,7 +329,7 @@ Each section gives four things:
 - **Cost:**
   - Rows likely leave the app's native focus order and accessibility tree (F7).
   - The new module, the handler and the moved clipping.
-- **Status:** built and checked live. Row sizing passes at a simulated 40 columns (probe 3). The pointer sweep in probe 4 is yours.
+- **Status:** built and checked live. Row sizing passes at a simulated 40 columns (probe 3). The pointer sweep in probe 4 is yours. Rows are now flush and 1.5 lines tall, by `desktop-polish.md` rule 6.
 
 ### 10. Open row
 
@@ -370,7 +370,7 @@ Each section gives four things:
   - `inbox-ui.md:77` and `:350`
   - Note that the Codex tab still marks the option with primary alone.
 - **Test:** the desktop test at `tests/hooks.test.ts:1930-1932` expects the label "Node" with "no words added". Update it to the new label.
-- **Status:** ready. Focus follows rule 11.
+- **Status:** ready. Focus follows rule 11. The two lines are replaced by `desktop-polish.md` rule 2, one line with the main action primary, and rule 8 adds icons.
 
 ### 12. Row feedback
 
@@ -478,7 +478,7 @@ Each section gives four things:
   - The actions follow rule 8.
   - The Undo key decision moved to component 14 and rule 11.
 - **Known difference:** the taller native buttons absorb the blank line before them.
-- **Status:** built (A4). Probe 19 passes.
+- **Status:** built (A4). Probe 19 passes. The title, status and actions are replaced by `desktop-polish.md` rule 9.
 
 ### 18. Empty and unreadable states
 

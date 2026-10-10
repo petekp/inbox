@@ -15,13 +15,13 @@ Captured on 2026-10-09 in the Claude app's demo pane and the Codex tab:
 
 ## Rules
 
-1. **One spacing step: half a line.** In the Claude app that is a padding or gap of 1, 19 px. Every gap inside an open row, between closed rows, and above the fold line is one step. Reason: the card's padding is already one step, and mixing 19 px and 38 px gaps is what reads as haphazard.
-2. **Two action lines, each a full line.** The first line answers the row: the options, or its main action (Done, Address, Open log, Open PR). The second holds the follow-ups: Type, Explain or Discuss, Dismiss. One step separates them. Reason: the person reads what answers the row first, and a line break with one step shows the grouping without a large gap.
-3. **Typing replaces the follow-up line.** While the field is open, the second line is the field, then Send, then Cancel. The button that opened the field is gone. There is one Send. Reason: the field is the follow-up the person chose, and a second Send asks them to choose between identical buttons.
+1. **One spacing step: half a line.** In the Claude app that is a padding or gap of 1, 19 px. Every gap inside an open row and above the fold line is one step. Closed rows have no gap between them (rule 6). Reason: the card's padding is already one step, and mixing 19 px and 38 px gaps is what reads as haphazard.
+2. **One action line, main action first.** In the Claude app an open row draws its actions on one line that wraps: the options or the main action, then the follow-ups (Type, Explain or Discuss, Dismiss). In the Claude app the main action is the primary button: the recommended option, Done, Address, Open log, or a PR's first action. A row has at most one primary button. Reason: split over two lines, a lone Done sat on a line of its own, and nothing showed it was the action that finishes the row.
+3. **Typing replaces the follow-ups.** While the field is open, the follow-ups leave the action line, and the field takes the next line, then Send, then Cancel. The button that opened the field is gone. There is one Send. Reason: the field is the follow-up the person chose, and a second Send asks them to choose between identical buttons.
    - In the Claude app, Send is the field's own button (`submitLabel`), labeled "Send". It is drawn before the field is clicked, and a click on it sends. The terminal keeps `send` as its Enter hint.
    - The field keeps the app's own width. It does not stretch inside a growing Box.
 4. **The status line never moves for a note.** The age stays at the right of the tabs. A note or error takes its own line under the tab row, one step below it. Reason: text that jumps when a note appears looks broken.
-5. **Codex tab actions follow rules 2 and 3, drawn as Codex's own buttons.** Each client uses its host app's controls, so the Codex tab copies the Button in the Codex app's bundled styles.
+5. **Codex tab actions follow rule 3, drawn as Codex's own buttons.** They keep two lines: the answers and main action on the first, the follow-ups on the second. There the follow-ups are ghost buttons, so the second line reads as a lighter tier, not as leftovers. Each client uses its host app's controls, so the Codex tab copies the Button in the Codex app's bundled styles.
    - Every action is a pill, 26 px tall, Codex's size `sm`. Undo sits in a line of text, so it takes Codex's smallest size, 20 px, and the closed row keeps its height.
    - The recommended option is solid: filled with the text color, labeled in the background color.
    - The row's other answers and main action have a gray fill: the text color at 8% in light and 12% in dark.
@@ -30,14 +30,41 @@ Captured on 2026-10-09 in the Claude app's demo pane and the Codex tab:
 
    Reason: these are the app's primary, secondary and ghost button styles, so the tab reads as part of Codex.
 
+6. **Closed rows are flush, and the whole row takes the click.** In the Claude app a closed row has no gap above or below it. It is padded by a quarter line on each side, so it is 1.5 lines tall, and its hover fill covers that whole height. A row that just closed and a PR's check and thread rows are padded the same. The "▸ 3 Closed" line takes the same height and hover, one step below the rows (rule 1). Reason: the click target was one line of text with a half-line gap the pointer fell into, and flush fills read as one list.
+   - A Client's `surface.rows` rounds the fractional height down, so the row's hover test adds the padding back.
+7. **The tabs are a row of rounded segments.** Only the shown tab has a fill: `pal.raised`, rounded, 1.25 lines tall, about the app's own segmented control. A hovered tab takes `pal.tab`. The other tabs have no fill and muted labels. Counts are muted, and the line in the tab's tone is gone. Reason: three square gray blocks with a colored top line looked unlike any control in the app.
+   - The app's segmented control also draws a track behind the segments. The pane cannot: a rounded fill comes only from a transparent border, which insets its content by half a line, so a rounded track pushes its rounded segments out of place.
+8. **Actions show an icon where one names the effect.** In the Claude app only, a label starts with a glyph:
+
+   | Glyph | Actions |
+   | --- | --- |
+   | ⧉ | A step that copies text or a command |
+   | ↗ | A step that opens a file or link, Open PR, Open log, Open |
+   | ▶ | A step that asks Claude to run a command |
+   | → | Address, Address all, Resolve conflicts |
+   | ✎ | Type a reply, Type an answer |
+   | ↻ | Try again |
+   | ↺ | Undo |
+   | ▸ ▾ | Details, Hide details |
+
+   Done, Dismiss, the options, Explain, Discuss and Draft reply have none. Reason: an icon tells the person what a press will do to their machine before they press it, and the rest only answer or talk. The glyph is added when the button is drawn, never to a saved label, so feedback still reads "✓ Copy theme command". The app has no icon prop, and Text inside a Button draws no dimmer than the label, so the glyph is part of the label.
+9. **A PR block reads title first.** In the Claude app:
+   - The title is bold. "#31" before it is muted and not bold.
+   - The status starts at the title's column, with no ◇ or ✓ mark. Its first word, as "Blocked", "Ready to merge" or "Merged", takes the status color. The reasons after it are muted.
+   - The main action is primary (rule 2), and actions carry icons (rule 8).
+   - An open check or thread row's context line, "Failing check" or "Review thread", is not bold, so the row's own name is the only bold line.
+
+   Reason: the amber sentence of seven reasons was the loudest text in the card, louder than the PR's title, and the number, title and context lines were all bold.
+
 ## Not changing
 
-- The tabs, the cards, the colors and the tone line, set by desktop-look.md.
+- The cards and the colors, set by desktop-look.md.
 - The terminal's look.
 - Any wording, except Send's capital S.
 
 ## Checks that need you
 
+- **Hover over the flush rows and the tabs.** Sweep the pointer down a list and across the tabs. Each row and tab should light over its whole height, with no dead band at its bottom edge.
 - **The press after a field opens or closes.** Type a reply removes its own button, the case where the app's next click only refocuses the pane (#100874). Click Type, then Cancel at once, then Type again, then another button, and count retries.
 
 ## Checks

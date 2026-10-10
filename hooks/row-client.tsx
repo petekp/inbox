@@ -19,6 +19,8 @@ export type RowProps = {
   title: string
   /** The age, or the row's last action in its place. */
   after: string
+  /** Lines of padding above and below the text. The hover covers it. */
+  padY: number
   /** 2 for a question, which can take two lines; 1 otherwise. */
   maxLines: number
   /** How many characters fit in a cell, counted low, so a clipped line does not wrap. */
@@ -72,8 +74,9 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
   }
   surface.onPointer(e => {
     if (e.type === 'leave') return set({ hover: false, pressed: false })
-    // While a button is held, moves arrive past the region's edges too.
-    const inside = e.x >= 0 && e.x < surface.columns && e.y >= 0 && e.y < surface.rows
+    // While a button is held, moves arrive past the region's edges too. `surface.rows` rounds the
+    // padded height down, as 1 for 1.5 lines, so the padding is added back.
+    const inside = e.x >= 0 && e.x < surface.columns && e.y >= 0 && e.y < surface.rows + 2 * props.padY
     if (e.type === 'down' && e.button === 'left') {
       set({ hover: true, pressed: true })
       surface.post({})
@@ -106,11 +109,14 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
       Box({
         width: props.textAt - props.handleAt,
         flexShrink: 0,
+        // The padding is on the handle and text, so the new-row bar spans the row's full height.
+        paddingY: props.padY,
         children: Text({ ...colored(props.colors.handle), children: props.handle }),
       }),
       Box({
         flexShrink: 1,
         flexGrow: 1,
+        paddingY: props.padY,
         children: Text({
           wrap: 'wrap',
           ...colored(null),

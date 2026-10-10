@@ -205,6 +205,11 @@ const DESKTOP_CHARS_PER_CELL = 1.25
 // letters such as "n" measured about 1.03.
 const DESKTOP_CLIP_CHARS_PER_CELL = 1.1
 const DESKTOP_TAB_PAD = '\u00a0'.repeat(3)
+/**
+ * A closed desktop row's padding above and below its text, in a Client's lines, so the row is 1.5 lines
+ * tall and the rows sit flush. A Box in the hooks tree counts padding in half lines, so it pads twice this.
+ */
+const DESKTOP_ROW_PAD = 0.25
 // Theme keys, so the colors follow the person's Claude Code theme.
 const NEEDS_YOU = 'warning'
 // A child's place under its section: a middle child, the last, or a block the tree passes.
@@ -2028,7 +2033,12 @@ async function runDemoPress($: EngineInterface, p: RowPress | PrPress) {
 type Action = {
   key: string
   label: string
+  /** The recommended option. Every look marks it, and desktop draws it as the primary button. */
   variant?: 'primary'
+  /** The press that finishes the row, as Done or Address. Desktop draws it as the primary button. */
+  isMain?: boolean
+  /** A glyph desktop draws before the label, naming what the press does, as ⧉ for a copy. */
+  icon?: string
   dimColor?: boolean
   /**
    * What the press does. A Talk or Hand-off press leaves "✓ <label>"
@@ -2057,6 +2067,14 @@ function itemPrSteps(item: Item, prState: PrViews, linked: string[]): HelpStep[]
 /** A pane action with the key that presses it while the pane has focus, if it has one. */
 type KeyAction = Action & { hotkey?: string }
 
+/** A step's icon: ▶ when it asks Claude to run a command, else ⧉ for a copy and ↗ for an open. */
+function stepIcon(step: HelpStep | undefined): string | undefined {
+  if (!step) return undefined
+  if (step.step.some(h => h.kind === 'run')) return '▶'
+  const first = step.step[0]?.kind
+  return first === 'copy' || first === 'terminal' ? '⧉' : first === 'open' || first === 'link' ? '↗' : undefined
+}
+
 // The keys of a question's options and a row's steps, lettered as a multiple-choice
 // question letters them. The digits switch tabs, and the letters left out are the
 // keys of a Needs you row's other actions and of moving the selection.
@@ -2083,6 +2101,7 @@ function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { k
     keys.push({
       key: `retry-${id}`,
       label: 'Try again',
+      icon: '↻',
       kind: r.actions.find(a => actionId(a.press) === actionId(retry))?.kind ?? 'talk',
       onPress: press => runPress($, retry, press.surface),
     })
@@ -2110,15 +2129,17 @@ function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { k
           onPress: () => void update($, OPTIONS_SHOWN, s => (s.includes(id) ? s : [...s, id])),
         })
     } else if (p.action === 'step' && item) {
-      keys.push({ ...base, ...lettered(), key: `help-${id}-${p.step}` })
+      const icon = stepIcon(r.steps[p.step])
+      keys.push({ ...base, ...lettered(), ...(icon ? { icon } : {}), key: `help-${id}-${p.step}` })
     } else if (p.action === 'done') {
-      keys.push({ ...base, key: `done-${id}`, hotkey: 'd' })
+      keys.push({ ...base, key: `done-${id}`, hotkey: 'd', isMain: true })
     } else if (p.action === 'address' && finding) {
-      keys.push({ ...base, key: `address-${id}`, hotkey: 'a' })
+      keys.push({ ...base, key: `address-${id}`, hotkey: 'a', isMain: true, icon: '→' })
     } else if (p.action === 'type') {
       // The press opens the field; sending from it is what records the reply.
       more.push({
         label: a.label,
+        icon: '✎',
         kind: 'view',
         key: `typekey-${id}`,
         hotkey: 't',
@@ -2960,7 +2981,7 @@ export const register: Register = on => {
       handle: '✗',
       handleTone: 'error',
       meta: (
-        <Text color={pal.tone.error} bold>
+        <Text color={pal.tone.error} bold={look !== 'desktop'}>
           Failing check
         </Text>
       ),
@@ -2971,6 +2992,8 @@ export const register: Register = on => {
         {
           key: `log-${pr.ref}-${c.name}`,
           label: 'Open log',
+          icon: '↗',
+          isMain: true,
           hotkey: 'o',
           kind: 'local',
           onPress: prPress({ action: 'log', ref: pr.ref, check: c.name }),
@@ -3010,7 +3033,7 @@ export const register: Register = on => {
           : {}),
         meta: (
           <Text wrap="truncate-end">
-            <Text color={pal.tone.prs} bold>
+            <Text color={pal.tone.prs} bold={look !== 'desktop'}>
               Review thread
             </Text>
             <Text color={pal.muted}>
@@ -3030,12 +3053,22 @@ export const register: Register = on => {
         keys: () => [
           ...[prRetryOf(lastActions[id], pr.ref, t.id)].flatMap(retry =>
             retry
-              ? [{ key: `retry-${t.id}`, label: 'Try again', kind: retry.kind, onPress: prPress(retry.press) }]
+              ? [
+                  {
+                    key: `retry-${t.id}`,
+                    label: 'Try again',
+                    icon: '↻',
+                    kind: retry.kind,
+                    onPress: prPress(retry.press),
+                  },
+                ]
               : [],
           ),
           {
             key: `address-${t.id}`,
             label: again(id, 'thread-address', 'Address'),
+            icon: '→',
+            isMain: true,
             hotkey: 'a',
             kind: 'handoff',
             onPress: prPress({ action: 'thread-address', ref: pr.ref, thread: t.id }),
@@ -3050,6 +3083,7 @@ export const register: Register = on => {
           {
             key: `open-${t.id}`,
             label: 'Open',
+            icon: '↗',
             hotkey: 'o',
             kind: 'local',
             onPress: prPress({ action: 'thread-open', ref: pr.ref, thread: t.id }),
@@ -3122,13 +3156,16 @@ export const register: Register = on => {
     // option as its primary button.
     const shownLabel = (a: Pick<KeyAction, 'label' | 'variant'>) =>
       a.variant === 'primary' ? `${a.label} (recommended)` : a.label
+    const desktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) =>
+      a.icon ? `${a.icon} ${shownLabel(a)}` : shownLabel(a)
     const keyedButton =
       (rowId: string) =>
-      ({ hotkey, kind: _kind, ...action }: KeyAction) =>
+      ({ hotkey, kind: _kind, isMain, icon, ...action }: KeyAction) =>
         look === 'desktop' ? (
           <Button
             {...action}
-            label={shownLabel(action)}
+            {...(isMain ? { variant: 'primary' as const } : {})}
+            label={desktopLabel({ ...action, ...(icon ? { icon } : {}) })}
             {...(isOpenGuarded ? { dimColor: true } : {})}
             onPress={press => unlessGuarded($, rowId, press, action.onPress)}
           />
@@ -3159,7 +3196,7 @@ export const register: Register = on => {
     )
     // The Buttons that take the pane's keys, drawn in a hidden Box.
     const keyBindings = (keys: KeyAction[], suffix = '') =>
-      keys.flatMap(({ key, hotkey, kind: _kind, ...k }) =>
+      keys.flatMap(({ key, hotkey, kind: _kind, isMain: _isMain, icon: _icon, ...k }) =>
         hotkey ? [<Button key={`${key}${suffix}`} plain hotkey={hotkey} {...k} label={shownLabel(k)} />] : [],
       )
     // In the terminal, a selected row's secondary keys share its key row when they fit, and
@@ -3194,6 +3231,7 @@ export const register: Register = on => {
     const detailsKey = (row: Row): KeyAction => ({
       key: `fold-details-${row.id}`,
       label: shownDetails.includes(row.id) ? 'Hide details' : 'Details',
+      icon: shownDetails.includes(row.id) ? '▾' : '▸',
       hotkey: 'v',
       kind: 'view',
       onPress: () => toggleDetails(row.id),
@@ -3292,15 +3330,13 @@ export const register: Register = on => {
       <Text color={pal.divider}>{'─'.repeat(Math.max(0, e.props.bodyColumns - inset))}</Text>
     )
     // Desktop draws text in a proportional font, where a run of ─ sized in cells overflows the
-    // row and wraps into a second line, so rows there are set apart by half a line instead.
+    // row and wraps into a second line, so there the rows sit flush and each pads itself.
     const divided = (rowEls: JSX.Element[], group: string, isTree: boolean) =>
       rowEls.flatMap((el, n) =>
-        n === 0 || isInline
+        n === 0 || isInline || look === 'desktop'
           ? [el]
           : [
-              look === 'desktop' ? (
-                <Box key={`divider-${group}-${n}`} paddingTop={1} />
-              ) : isTree ? (
+              isTree ? (
                 <Box key={`divider-${group}-${n}`} flexDirection="row">
                   <Box width={1} flexShrink={0} />
                   <Box width={6} flexShrink={0}>
@@ -3417,6 +3453,7 @@ export const register: Register = on => {
         before: line.before ?? '',
         title: line.text.trim(),
         after: line.after ? unbroken(line.after) : '',
+        padY: DESKTOP_ROW_PAD,
         maxLines: row.hasSecondLine ? 2 : 1,
         charsPerCell: DESKTOP_CLIP_CHARS_PER_CELL,
         // The list pads the pane by a column on each side.
@@ -3464,11 +3501,9 @@ export const register: Register = on => {
             onSubmit={(value: string, e) => sendTyped($, row.id, value, e.surface)}
           />
         ) : null
-      // On desktop the open field takes the follow-up line, and the button that opened it leaves.
-      // The field's own submit button is its Send.
-      const desktopGroups = (isTyping ? [keys.filter(k => !k.key.startsWith('typekey-'))] : [keys, more]).filter(
-        group => group.length > 0,
-      )
+      // On desktop the actions take one line, main ones first. The open field replaces the follow-ups,
+      // and the field's own submit button is its Send.
+      const desktopGroups = [isTyping ? keys : [...keys, ...more]].filter(group => group.length > 0)
       const isOpen = !row.fold || shownDetails.includes(row.id)
       const lastText = lastActionText(row.id, row)
       const tone = lastTone(row) ? pal.tone.done : pal.muted
@@ -3704,8 +3739,6 @@ export const register: Register = on => {
               id,
               label,
               count: tabSizes.hasCounts ? tabCounts[id] : 0,
-              countColor: pal.tone[id] ?? null,
-              toneColor: pal.mark[id],
               width: tabSizes.widths[n]!,
             })),
             shown: tab,
@@ -3714,6 +3747,7 @@ export const register: Register = on => {
               tab: pal.tab ?? null,
               raised: pal.raised ?? pal.tab ?? null,
               raisedText: pal.raisedText ?? null,
+              muted: pal.muted,
             },
           }
         : null
@@ -3964,6 +3998,7 @@ export const register: Register = on => {
                 inset: 4,
                 count,
                 isUnfolded,
+                padY: DESKTOP_ROW_PAD,
                 colors: {
                   rest: isInline ? null : (pal.card ?? null),
                   text: pal.muted,
@@ -4038,7 +4073,7 @@ export const register: Register = on => {
           {undo ? (
             <Button
               key={`undo-${'ref' in undo ? `pr:${undo.ref}` : undo.id}`}
-              label="Undo"
+              label={look === 'desktop' ? '↺ Undo' : 'Undo'}
               onPress={press => runPress($, undo, press.surface)}
             />
           ) : null}
@@ -4051,11 +4086,19 @@ export const register: Register = on => {
       const content = settledContent(r.title, state.label, state.at, undo, pos ? 7 : 5, state.isQueued, state.isLapsed)
       // The ✓ waits for the answer to reach Claude; the blank keeps the row's text in line.
       const mark = state.isQueued ? <Text> </Text> : <Text color={state.isLapsed ? pal.muted : pal.mark.done}>✓</Text>
-      // In a group's tree, or flat as Findings lists its rows.
+      // In a group's tree, or flat as Findings lists its rows. On desktop it pads itself as a closed row does.
       return pos ? (
-        treeRow(pos, mark, content, `settled-${r.id}`)
+        <Box key={`settled-${r.id}`} paddingY={look === 'desktop' ? 2 * DESKTOP_ROW_PAD : 0}>
+          {treeRow(pos, mark, content)}
+        </Box>
       ) : (
-        <Box key={`settled-${r.id}`} flexDirection="row" alignItems="flex-start" overflow="hidden">
+        <Box
+          key={`settled-${r.id}`}
+          flexDirection="row"
+          alignItems="flex-start"
+          overflow="hidden"
+          paddingY={look === 'desktop' ? 2 * DESKTOP_ROW_PAD : 0}
+        >
           <Box width={1} flexShrink={0} />
           <Box width={4} flexShrink={0} paddingLeft={2}>
             {mark}
@@ -4231,13 +4274,22 @@ export const register: Register = on => {
       const retry = prRetryOf(lastActions[`pr:${pr.ref}`], pr.ref, null)
       const prActions: Action[] = [
         ...(retry
-          ? [{ key: `retry-${pr.ref}`, label: 'Try again', kind: retry.kind, onPress: prPress(retry.press) }]
+          ? [
+              {
+                key: `retry-${pr.ref}`,
+                label: 'Try again',
+                icon: '↻',
+                kind: retry.kind,
+                onPress: prPress(retry.press),
+              },
+            ]
           : []),
         ...(pr.state === 'OPEN' && pr.mergeable === 'CONFLICTING'
           ? [
               {
                 key: `resolve-${pr.ref}`,
                 label: again(`pr:${pr.ref}`, 'pr-conflicts', 'Resolve conflicts'),
+                icon: '→',
                 kind: 'handoff' as const,
                 onPress: prPress({ action: 'pr-conflicts', ref: pr.ref }),
               },
@@ -4248,6 +4300,7 @@ export const register: Register = on => {
               {
                 key: `address-all-${pr.ref}`,
                 label: again(`pr:${pr.ref}`, 'pr-address-all', `Address all ${waitingOn.length} threads`),
+                icon: '→',
                 kind: 'handoff' as const,
                 onPress: prPress({ action: 'pr-address-all', ref: pr.ref }),
               },
@@ -4256,6 +4309,7 @@ export const register: Register = on => {
         {
           key: `open-${pr.ref}`,
           label: 'Open PR',
+          icon: '↗',
           kind: 'local',
           onPress: prPress({ action: 'pr-open', ref: pr.ref }),
         },
@@ -4279,23 +4333,40 @@ export const register: Register = on => {
         answered > 0 ? `${answered} open ${answered === 1 ? 'thread' : 'threads'} you answered` : null,
       ].filter(Boolean)
 
+      // On desktop the status's first words carry its color and its reasons are muted, so the
+      // title stays the loudest line; the words say the status, so it needs no mark.
+      const colon = statusText.indexOf(': ')
+      const statusHead = colon < 0 ? statusText : statusText.slice(0, colon)
+      const statusReasons = colon < 0 ? '' : statusText.slice(colon + 2)
+
       return section([
         <Box paddingLeft={1}>
           <Text wrap="wrap">
-            <Text bold color={pal.tone.prs}>
-              #{pr.number}{' '}
-            </Text>
+            {look === 'desktop' ? (
+              <Text color={pal.muted}>#{pr.number} </Text>
+            ) : (
+              <Text bold color={pal.tone.prs}>
+                #{pr.number}{' '}
+              </Text>
+            )}
             <Text bold>{pr.title}</Text>
           </Text>
         </Box>,
         ...titleGap(hasRows),
         treeRow(
           hasRows ? 'pass' : null,
-          <Text color={tone ? pal.mark[tone] : pal.muted}>{mark}</Text>,
+          look === 'desktop' ? null : <Text color={tone ? pal.mark[tone] : pal.muted}>{mark}</Text>,
           <Box flexDirection="column">
-            <Text wrap="wrap" color={tone ? pal.tone[tone] : pal.muted}>
-              {statusText}
-            </Text>
+            {look === 'desktop' ? (
+              <Text wrap="wrap">
+                <Text color={tone ? pal.tone[tone] : pal.muted}>{statusReasons ? `${statusHead}:` : statusHead}</Text>
+                {statusReasons ? <Text color={pal.muted}> {statusReasons}</Text> : null}
+              </Text>
+            ) : (
+              <Text wrap="wrap" color={tone ? pal.tone[tone] : pal.muted}>
+                {statusText}
+              </Text>
+            )}
             {facts.length > 0 ? (
               <Text color={pal.muted} wrap="wrap">
                 {facts.join(' · ')}
@@ -4313,10 +4384,26 @@ export const register: Register = on => {
                 </Box>
               </Box>
             ) : null}
-            <Box flexDirection="row" flexWrap="wrap" columnGap={2} marginTop={blankLine}>
-              {prActions.map(a => (
-                <Button key={a.key} label={a.label} onPress={a.onPress} />
-              ))}
+            <Box
+              flexDirection="row"
+              flexWrap="wrap"
+              columnGap={2}
+              rowGap={look === 'desktop' ? 1 : 0}
+              marginTop={blankLine}
+            >
+              {/* On desktop the first action, the one that moves the PR on, is the primary button. */}
+              {prActions.map((a, n) =>
+                look === 'desktop' ? (
+                  <Button
+                    key={a.key}
+                    label={desktopLabel(a)}
+                    {...(n === 0 && !a.key.startsWith('dismiss-') ? { variant: 'primary' as const } : {})}
+                    onPress={a.onPress}
+                  />
+                ) : (
+                  <Button key={a.key} label={a.label} onPress={a.onPress} />
+                ),
+              )}
             </Box>
             {prLast ? (
               <Text color={prLast.isFailure ? pal.tone.error : pal.muted} wrap="wrap">

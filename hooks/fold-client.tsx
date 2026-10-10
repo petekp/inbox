@@ -12,6 +12,8 @@ export type FoldProps = {
   inset: number
   count: number
   isUnfolded: boolean
+  /** Lines of padding above and below the text. The hover covers it. */
+  padY: number
   /** A null color is the theme's own. */
   colors: { rest: string | null; text: string | null; hover: string | null; hoverText: string | null }
 }
@@ -34,8 +36,9 @@ const Fold: ClientModule<FoldProps, State> = (props, surface) => {
   }
   surface.onPointer(e => {
     if (e.type === 'leave') return set({ ...now(), hover: false })
-    // While a button is held, moves arrive past the region's edges too.
-    const inside = e.x >= 0 && e.x < surface.columns && e.y >= 0 && e.y < surface.rows
+    // While a button is held, moves arrive past the region's edges too. `surface.rows` rounds the
+    // padded height down, so the padding is added back.
+    const inside = e.x >= 0 && e.x < surface.columns && e.y >= 0 && e.y < surface.rows + 2 * props.padY
     if (e.type === 'down' && e.button === 'left') {
       // The target comes from the drawn props, so a second click before the redraw asks for the same state.
       const target = !props.isUnfolded
@@ -54,6 +57,7 @@ const Fold: ClientModule<FoldProps, State> = (props, surface) => {
 
   return Box({
     flexDirection: 'row',
+    paddingY: props.padY,
     ...(background ? { backgroundColor: background } : {}),
     children: [
       Box({ width: props.inset, flexShrink: 0 }),
