@@ -224,6 +224,12 @@ function isNotSent(v: View, id: string): boolean {
 }
 
 /**
+ * How long a press may go unanswered before it reads as not sent and polls resume. It must exceed the
+ * server's limits on a press's lock waits, `codex queue` and opens, or a press that went through reads as failed.
+ */
+const PRESS_TIMEOUT_MS = 60_000
+
+/**
  * Sends a press, drawn for the view's session, to the server. `onSent` runs
  * only once the press went through, so a stale or failed press keeps a typed draft.
  */
@@ -237,7 +243,7 @@ async function act(rowId: string, press: RowPress, onSent?: () => void, pending 
   isPressing = true
   const seq = ++requested
   try {
-    const r = await callTool<PressReply>('inbox_press', { press, thread: view?.thread, demo: isDemo })
+    const r = await callTool<PressReply>('inbox_press', { press, thread: view?.thread, demo: isDemo }, PRESS_TIMEOUT_MS)
     if (r?.copy) await copy(rowId, r.copy)
     if (r?.view) applyView(r.view, seq)
     // A message that did not send shows on its row, from the view, when the row is there to show it.

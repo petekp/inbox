@@ -70,4 +70,3 @@ Run these live checks. Tests cover each behavior, but no live session has.
 ## Known gaps
 
 - If the saved session is unreadable and the person sends a prompt before pressing [Try again], the saved copy can no longer be brought back.
-- An `inbox_press` call from the Codex tab has no timeout.
