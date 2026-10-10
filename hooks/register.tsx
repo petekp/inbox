@@ -196,14 +196,14 @@ const CLOSE_TOOL = 'mcp__inbox__close'
 const PANE = 'inbox'
 // Whether the desktop pane offers a typed reply. Set it false if the app does not paint `Input`: the engine still resolves it, so the mod cannot tell.
 const DESKTOP_TYPING = true
-// From this many columns, the desktop pane puts its status on the tab line and shows each closed row's age.
+// From this many columns, the desktop pane shows each closed row's age.
 const DESKTOP_WIDE_AT = 50
-// About how many characters of desktop's proportional text fit in one column of `bodyColumns`, measured
-// on a /inbox demo row. A guess too high is cut from the muted text after a title, not from the title.
+// About how many characters of desktop's proportional text fit in one column of `bodyColumns`: sentences and
+// the tab labels measured 1.23 to 1.30, bold or not. A guess too high is cut from the muted text after a title.
 const DESKTOP_CHARS_PER_CELL = 1.25
-// A lower guess for text that must stay one line, since desktop wraps text that is too long. Tab labels measured about 1.1.
+// A lower guess for text that must stay one line, since desktop wraps text that is too long. A run of wide
+// letters such as "n" measured about 1.03.
 const DESKTOP_CLIP_CHARS_PER_CELL = 1.1
-const DESKTOP_TAB_PADDING = 2
 const DESKTOP_TAB_PAD = '\u00a0'.repeat(3)
 // Theme keys, so the colors follow the person's Claude Code theme.
 const NEEDS_YOU = 'warning'
@@ -387,6 +387,17 @@ const TABS: { id: Tab; label: string; hotkey: string }[] = [
   { id: 'findings', label: 'Findings', hotkey: '2' },
   { id: 'prs', label: 'PRs', hotkey: '3' },
 ]
+// Below this many columns, the desktop pane puts its status under the tabs: the width of the tabs with
+// two-digit counts, the gap and the longest status, counted at 1 cell per character, side by side. It is
+// fixed, so the status does not move when a count or an age changes.
+const DESKTOP_STATUS_BESIDE_AT = (() => {
+  const { widths, gap } = desktopTabSizes(
+    TABS.map(t => ({ label: t.label, count: 99 })),
+    Infinity,
+  )
+
+  return widths.reduce((sum, w) => sum + w, 0) + gap * (widths.length - 1) + 3 + 'PRs checked just now'.length + 2
+})()
 // The blank columns on each side of a docked tab's name, which a click there also selects.
 const TAB_PAD = '  '
 // The Needs you tab lists questions first, because each takes one key.
@@ -2147,6 +2158,35 @@ const FINDING_BADGES: Record<Finding['kind'], { label: string; mark: string; ton
  * What the band and the pane draw: the session's own state, or the samples
  * `/inbox demo` shows in its place.
  */
+/**
+ * The desktop tab bar's sizes for `columns`: each tab's width, the gap between tabs, and whether the counts
+ * show. A label is sized as bold text at DESKTOP_CHARS_PER_CELL plus 1 cell of slack. While the tabs do not
+ * fit, the padding drops from 2 to 1, then the gap, then the counts.
+ */
+function desktopTabSizes(
+  tabs: { label: string; count: number }[],
+  columns: number,
+): { widths: number[]; gap: number; hasCounts: boolean } {
+  const steps = [
+    { padding: 2, gap: 1, hasCounts: true },
+    { padding: 1, gap: 1, hasCounts: true },
+    { padding: 1, gap: 0, hasCounts: true },
+    { padding: 1, gap: 0, hasCounts: false },
+  ]
+  const sizes = steps.map(({ padding, gap, hasCounts }) => ({
+    widths: tabs.map(t => {
+      const text = hasCounts && t.count > 0 ? `${t.label} ${t.count}` : t.label
+      return Math.ceil(text.length / DESKTOP_CHARS_PER_CELL) + 1 + 2 * padding
+    }),
+    gap,
+    hasCounts,
+  }))
+
+  return (
+    sizes.find(s => s.widths.reduce((sum, w) => sum + w, 0) + s.gap * (s.widths.length - 1) <= columns) ?? sizes.at(-1)!
+  )
+}
+
 async function drawnState(
   $: EngineInterface,
 ): Promise<DemoCopy & { view: InboxView; isDemo: boolean; isUnread: boolean; now: number }> {
@@ -2761,6 +2801,7 @@ export const register: Register = on => {
     const Input = 'Input' in elements && (look === 'terminal' || DESKTOP_TYPING) ? elements.Input : null
     // Narrow, the desktop pane puts its status under the tabs and drops closed rows' ages.
     const isNarrowDesktop = look === 'desktop' && e.props.bodyColumns < DESKTOP_WIDE_AT
+    const isStatusBelow = look === 'desktop' && e.props.bodyColumns < DESKTOP_STATUS_BESIDE_AT
     // Desktop wraps " · 12m ago" as one unit after a title, not as "12m" and "ago" on two lines.
     const unbroken = (after: string) => (look === 'desktop' ? ` ${after.trimStart().replaceAll(' ', ' ')}` : after)
     // Inline above the prompt, the pane takes its room from the conversation, so
@@ -3209,9 +3250,10 @@ export const register: Register = on => {
       content: JSX.Element,
       key?: string,
       depth = 0,
+      lead = 4 + 3 * depth,
     ) => (
       <Box key={key} flexDirection="row" alignItems="flex-start" overflow="hidden">
-        <Box width={4 + 3 * depth} flexShrink={0} />
+        <Box width={lead} flexShrink={0} />
         {marker ? (
           <Box width={3} flexShrink={0}>
             {marker}
@@ -3496,15 +3538,38 @@ export const register: Register = on => {
           {/* What select() scrolls into view. Drawn on the selected row alone, so the key exists
           only once that row has redrawn expanded. */}
           {isSelected ? (
-            <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1}>
-              {pal.selection || isNew(row.id) ? null : <Text color={pal.key}>{SELECTION_BAR}</Text>}
+            <Box
+              key={`view-${row.id}`}
+              position="absolute"
+              top={0}
+              bottom={0}
+              left={0}
+              width={1}
+              // Desktop draws a column of ▌ as broken dashes, so there the bar is the Box's own fill.
+              {...(look === 'desktop' && !pal.selection && !isNew(row.id) ? { backgroundColor: pal.key } : {})}
+            >
+              {pal.selection || isNew(row.id) || look === 'desktop' ? null : (
+                <Text color={pal.key}>{SELECTION_BAR}</Text>
+              )}
             </Box>
           ) : null}
           {/* A row that just appeared takes a bar in its tab's color, in every theme, for NEW_ROW_MS. */}
           {isNew(row.id) ? (
-            <Box key={`new-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1}>
-              <Text color={pal.mark[tab]}>{SELECTION_BAR}</Text>
-            </Box>
+            look === 'desktop' ? (
+              <Box
+                key={`new-${row.id}`}
+                position="absolute"
+                top={0}
+                bottom={0}
+                left={0}
+                width={1}
+                backgroundColor={pal.mark[tab]}
+              />
+            ) : (
+              <Box key={`new-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1}>
+                <Text color={pal.mark[tab]}>{SELECTION_BAR}</Text>
+              </Box>
+            )
           ) : null}
         </Box>
       )
@@ -3583,23 +3648,31 @@ export const register: Register = on => {
     // The tab bar is drawn on the pane's own background, as part of the pane's
     // title bar, with when the inbox last updated at its right end, or under the
     // tabs when the pane is too narrow. Inline, its names line up with the group titles.
-    // A narrow desktop pane always puts the status under the tabs, one part per line.
+    // A desktop pane narrower than DESKTOP_STATUS_BESIDE_AT puts the status under the tabs, one part per line,
+    // half a line below them, so it does not read as the first tab's caption.
     // Desktop draws the tabs in a Client, whose region takes the pointer over each whole tab.
+    // The tabs Box pads the bar by 1 column on each side.
+    const tabSizes = desktopTabSizes(
+      TABS.map(({ id, label }) => ({ label, count: tabCounts[id] })),
+      e.props.bodyColumns - 2,
+    )
     const tabProps: TabsProps | null =
       look === 'desktop' && 'Client' in elements
         ? {
-            tabs: TABS.map(({ id, label }) => {
-              const text = tabCounts[id] > 0 ? `${label} ${tabCounts[id]}` : label
-              const width = Math.ceil(text.length / DESKTOP_CHARS_PER_CELL) + 2 * DESKTOP_TAB_PADDING
-              return { id, label, count: tabCounts[id], countColor: pal.tone[id] ?? null, width }
-            }),
+            tabs: TABS.map(({ id, label }, n) => ({
+              id,
+              label,
+              count: tabSizes.hasCounts ? tabCounts[id] : 0,
+              countColor: pal.tone[id] ?? null,
+              toneColor: pal.mark[id],
+              width: tabSizes.widths[n]!,
+            })),
             shown: tab,
-            gap: 1,
+            gap: tabSizes.gap,
             colors: {
               tab: pal.tab ?? null,
-              hover: pal.raised ?? pal.tab ?? null,
-              hoverText: pal.raisedText ?? null,
-              shown: pal.selection ?? pal.raised ?? pal.tab ?? null,
+              raised: pal.raised ?? pal.tab ?? null,
+              raisedText: pal.raisedText ?? null,
             },
           }
         : null
@@ -3607,11 +3680,12 @@ export const register: Register = on => {
       <Box
         paddingLeft={isInline ? 2 : 1}
         paddingRight={1}
-        flexDirection={isNarrowDesktop ? 'column' : 'row'}
+        flexDirection={isStatusBelow ? 'column' : 'row'}
         flexWrap="wrap"
-        alignItems={isNarrowDesktop ? 'flex-start' : 'center'}
+        alignItems={isStatusBelow ? 'flex-start' : 'center'}
         justifyContent="space-between"
         columnGap={3}
+        rowGap={isStatusBelow ? 1 : 0}
       >
         <Box
           flexDirection="row"
@@ -3714,7 +3788,7 @@ export const register: Register = on => {
                 )
               })}
         </Box>
-        <Box flexDirection={isNarrowDesktop ? 'column' : 'row'} columnGap={2}>
+        <Box flexDirection={isStatusBelow ? 'column' : 'row'} columnGap={2}>
           <Text dimColor>{status}</Text>
           {!isPrStatus && error ? (
             <Text color={pal.tone.error} wrap="wrap">
@@ -3794,14 +3868,17 @@ export const register: Register = on => {
     // A blank line in the tree, but for its │: under a title, so the children
     // do not crowd it, and between two-line entries, so they read apart. Inline
     // it is left out, so callers spread what this returns.
+    // On desktop a blank line is 38 px, twice a card's padding; an empty Box padded by 1 is 19 px, which matches it.
     const titleGap = (hasChildren = true) =>
       isInline
         ? []
-        : [
-            <Box paddingLeft={1}>
-              <Text color={pal.line}>{hasChildren && look !== 'desktop' ? '│' : ' '}</Text>
-            </Box>,
-          ]
+        : look === 'desktop'
+          ? [<Box paddingTop={1} />]
+          : [
+              <Box paddingLeft={1}>
+                <Text color={pal.line}>{hasChildren ? '│' : ' '}</Text>
+              </Box>,
+            ]
     // A closed item or finding under the open ones: what was asked, then how it closed and when.
     const closedRow = (d: ClosedLine, pos: TreePos) =>
       treeRow(
@@ -4190,6 +4267,10 @@ export const register: Register = on => {
               </Text>
             ) : null}
           </Box>,
+          undefined,
+          0,
+          // Desktop has no tree lines to show the status is not one of the rows, so it starts at the title's column.
+          look === 'desktop' ? 1 : undefined,
         ),
         ...(hasRows ? titleGap() : []),
         ...divided(

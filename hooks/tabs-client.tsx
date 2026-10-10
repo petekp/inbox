@@ -7,21 +7,31 @@ import type { ClientModule } from 'claude-code'
  * posts the clicked tab's id to the hooks module, which shows that tab.
  */
 
-/** One tab, its width in cells set by the hooks module, which knows the font. A null color is the theme's own. */
-export type ClientTab = { id: string; label: string; count: number; countColor: string | null; width: number }
+/**
+ * One tab, its width in cells set by the hooks module, which knows the font. `toneColor` draws the line along
+ * the shown tab's top. A null color is the theme's own.
+ */
+export type ClientTab = {
+  id: string
+  label: string
+  count: number
+  countColor: string | null
+  toneColor: string | null
+  width: number
+}
 
+/** The shown tab and a hovered one are both `raised`; the shown one's bold label and tone line tell them apart. */
 export type TabsProps = {
   tabs: ClientTab[]
   shown: string
   gap: number
-  colors: { tab: string | null; hover: string | null; hoverText: string | null; shown: string | null }
+  colors: { tab: string | null; raised: string | null; raisedText: string | null }
 }
 
 type State = { hover: string | null }
 
-const PADDING_Y = 1
-/** A tab's drawn height: its label line and the padding above and below it. */
-const TAB_ROWS = 1 + 2 * PADDING_Y
+/** A tab's drawn height: the row its tone line takes, its label line and a blank line under it. */
+const TAB_ROWS = 3
 
 /** The tab under cell (`x`, `y`) of the region, or null over a gap or outside the tabs' rows. */
 function tabAt(props: TabsProps, x: number, y: number): string | null {
@@ -49,21 +59,32 @@ const Tabs: ClientModule<TabsProps, State> = (props, surface) => {
     flexDirection: 'row',
     gap: props.gap,
     children: props.tabs.map(tab => {
-      const hovered = tab.id !== props.shown && tab.id === hover
-      const background = tab.id === props.shown ? props.colors.shown : hovered ? props.colors.hover : props.colors.tab
-      const text = hovered ? props.colors.hoverText : null
+      const isShown = tab.id === props.shown
+      const isRaised = isShown || tab.id === hover
+      const background = isRaised ? props.colors.raised : props.colors.tab
+      const text = isRaised ? props.colors.raisedText : null
       const count = Text({ ...(tab.countColor ? { color: tab.countColor } : {}), children: String(tab.count) })
+      // A ▔ covers about 0.7 of a cell, so the run is twice the tab's width and the row clips it.
+      const toneLine =
+        isShown && tab.toneColor
+          ? Text({ color: tab.toneColor, children: '▔'.repeat(2 * tab.width) })
+          : Text({ children: ' ' })
 
       return Box({
         key: tab.id,
         width: tab.width,
-        paddingY: PADDING_Y,
-        justifyContent: 'center',
+        flexDirection: 'column',
+        alignItems: 'center',
         ...(background ? { backgroundColor: background } : {}),
-        children: Text({
-          ...(text ? { color: text } : {}),
-          children: tab.count > 0 ? [tab.label, ' ', count] : tab.label,
-        }),
+        children: [
+          Box({ width: tab.width, height: 1, overflow: 'hidden', children: toneLine }),
+          Text({
+            ...(text ? { color: text } : {}),
+            bold: isShown,
+            children: tab.count > 0 ? [tab.label, ' ', count] : tab.label,
+          }),
+          Text({ children: ' ' }),
+        ],
       })
     }),
   })
