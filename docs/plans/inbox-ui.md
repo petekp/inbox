@@ -48,7 +48,7 @@ Every action is a button in every client. Keys are an optional extra wherever th
 
 The count of what needs the person and the top row come first. The card goal and current step come second. Every platform already shows which session waits on the person. The inbox adds the item itself.
 
-One phrase names the count everywhere: "need you". The tab is "Needs you", the band says "2 need you", and the empty state says "Nothing needs you."
+One phrase names the count everywhere: "need you". The tab is "Needs you", the band says "2 need you" or "1 needs you", and the empty state says "Nothing needs you."
 
 **What the count holds.** It is `needsYouCount`:
 

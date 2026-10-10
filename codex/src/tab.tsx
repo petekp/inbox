@@ -1016,7 +1016,11 @@ function Heading({ v, now }: { v: View; now: number }) {
     )
   const findings = v.findings.count
   const counts = [
-    v.needsYou.count > 0 ? <span class="tone-needsYou">{v.needsYou.count} need you</span> : null,
+    v.needsYou.count > 0 ? (
+      <span class="tone-needsYou">
+        {v.needsYou.count} {v.needsYou.count === 1 ? 'needs' : 'need'} you
+      </span>
+    ) : null,
     findings > 0 ? <span class="tone-findings">{findings === 1 ? '1 finding' : `${findings} findings`}</span> : null,
   ].filter(x => x !== null)
 

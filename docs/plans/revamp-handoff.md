@@ -48,19 +48,16 @@ Run these live checks. Tests cover each behavior, but no live session has.
 - `af36a61`: `systemText` gains one line under CLOSED: `Putting a finding off ("later", "not now") is not setting it aside: it stays open.` Without it, the update kept a finding the person put off open in 0 of 8 runs. With it, 8 of 8.
 - `33201fd` and `524b71b`: Codex's `inbox` tool answers in text.
 
-**Wording to accept or change.**
+**Wording, decided 2026-10-09.**
 
-- A missing file reads `it no longer exists`. The plan said `it was moved`.
-- Clipboard failures read `no app is attached`, `the clipboard did not take it` or `another plugin refused it`. In Codex they read `this tab has no clipboard access`.
-- With only closed findings, Findings reads `No open findings.`
-- The band count reads `1 need you` for one row.
-- The terminal keeps ` (recommended)` on the recommended option, because a terminal Button ignores `variant`.
-
-**Smaller open questions.**
-
-- `/inbox demo` still toggles. It could instead only start the demo, with [Hide demo] as the only way out.
-- The Needs you tab opens its first row when nothing counts. The plan's rule would open none.
-- After Undo, Claude's notes list the item again without the word "reopened". That version passed its A/B at 7 of 8. A version with an explicit `Reopened by the user` line scored 8 of 8.
+- A missing file reads `it no longer exists`, not the plan's `it was moved`. The inbox cannot tell a moved file from a deleted one.
+- Clipboard failures keep their cause: `no app is attached`, `the clipboard did not take it` or `another plugin refused it`, and in Codex `this tab has no clipboard access`. Each one says what to do differently.
+- With only closed findings, Findings reads `No open findings.` The closed ones are still listed under the fold.
+- The count reads `1 needs you` for one row, in the band and the Codex tab. `1 need you` read as a typo.
+- The terminal keeps ` (recommended)` on the recommended option. A terminal Button ignores `variant`, so the words are the only mark.
+- `/inbox demo` still toggles. Typing it again ends the demo, as [Hide demo] does.
+- The Needs you tab still opens its first row when nothing counts, so its actions are one click away.
+- After Undo, Claude's notes list the item again without the word "reopened", as you chose earlier.
 
 ## After merging
 

@@ -47,9 +47,9 @@ The probes ran on 2026-10-09. "Probe results" in desktop-look.md records each on
 - The gap under a group title is half a line.
 - A PR's status block starts at the title's column, in place of tree rails.
 
-## 4. Decisions still yours
+## 4. Left for you
 
-- **The wording list and smaller questions** in revamp-handoff.md.
+- **The wording list and smaller questions** are decided. revamp-handoff.md records each call and its reason.
 - **Checks only you can run:** switch the app between light and dark against the `theme` setting (probe 6), close the pane and press [Open inbox] (probe 17), sweep the pointer over a long list (probe 4), and try `/login` from a stop (probe 18).
 
 ## 5. Merge

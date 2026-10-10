@@ -404,7 +404,7 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   expect(sent.at(-1)).toContain('./load.sh')
   expect(await pane.find({ text: /Run load script · just now/ })).toBeDefined()
   expect(await pane.find({ key: 'help-i1-0' })).toBeUndefined()
-  expect(await band.find({ text: /1 need you/ })).toBeDefined()
+  expect(await band.find({ text: /1 needs you/ })).toBeDefined()
 
   // Behind Details, a copy says where to run the command, and an open of a missing file says so in red, with no toast.
   // Neither unfolds the task or brings it back into the count.
@@ -419,7 +419,7 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   expect(red).toBeDefined()
   expect(toasts).toEqual([])
   expect(await pane.find({ key: 'fold-details-i1' })).toBeDefined()
-  expect(await band.find({ text: /1 need you/ })).toBeDefined()
+  expect(await band.find({ text: /1 needs you/ })).toBeDefined()
   // A failure stays until the next press on its row.
   await clock.advance(SETTLED_MS)
   expect(await pane.find({ text: 'Could not open load.md: it no longer exists' })).toBeDefined()
@@ -1007,7 +1007,7 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   await pane.input({ key: 'type-i2', text: 'yes' })
   await clock.settle()
   // The answered question leaves the count at once, and settles as queued, with no ✓.
-  expect(await band.find({ text: /1 need you/ })).toBeDefined()
+  expect(await band.find({ text: /1 needs you/ })).toBeDefined()
   expect(await pane.find({ text: 'Queued: Yes' })).toBeDefined()
   // The turn ends and both prompts enter.
   await arrive($)
@@ -1032,7 +1032,7 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   expect(sent.at(-1)).toBe('Re "Use Node or Python?": Node')
   expect(await pane.find({ key: 'row-i1' })).toBeDefined()
   expect(await pane.find({ text: 'Not sent: a hook refused it' })).toBeDefined()
-  expect(await band.find({ text: /1 need you/ })).toBeDefined()
+  expect(await band.find({ text: /1 needs you/ })).toBeDefined()
   // Nothing went, so no option reads "again".
   expect((await pane.find({ key: 'answer-i1-0-key' }))?.props.label).toBe('Node (recommended)')
 

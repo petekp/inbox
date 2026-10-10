@@ -2736,7 +2736,11 @@ export const register: Register = on => {
     const { count: waiting } = view.needsYou
     const { count: findings } = view.findings
     const counts = [
-      waiting > 0 ? <Text color={NEEDS_YOU}>{waiting} need you</Text> : null,
+      waiting > 0 ? (
+        <Text color={NEEDS_YOU}>
+          {waiting} {waiting === 1 ? 'needs' : 'need'} you
+        </Text>
+      ) : null,
       findings > 0 ? <Text dimColor>{findings === 1 ? '1 finding' : `${findings} findings`}</Text> : null,
     ].filter(p => p !== null)
 
