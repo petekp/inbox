@@ -382,6 +382,18 @@ const THEME_KEY_PALETTE: Palette = {
   tone: {},
   mark: { needsYou: NEEDS_YOU, findings: FINDINGS, prs: PRS, done: DONE, error: 'error' },
 }
+// The desktop app resolves theme keys to its own colors, where Auto's tab and raised keys fail contrast and the
+// ANSI palettes' premise does not hold. So on desktop every theme without hex colors above takes translucent
+// gray fills, which land near the dark and light palettes' grays over either app appearance. The app refuses
+// a tree with an hsl() alpha or color-mix() color; rgba() draws.
+const DESKTOP_KEY_PALETTE: Palette = {
+  ...THEME_KEY_PALETTE,
+  tab: 'rgba(128, 128, 128, 0.2)',
+  card: 'rgba(128, 128, 128, 0.2)',
+  raised: 'rgba(128, 128, 128, 0.36)',
+  selection: 'rgba(76, 154, 255, 0.2)',
+}
+const HEX_THEMES = new Set(['dark', 'dark-daltonized', 'light', 'light-daltonized'])
 const TABS: { id: Tab; label: string; hotkey: string }[] = [
   { id: 'needsYou', label: 'Needs you', hotkey: '1' },
   { id: 'findings', label: 'Findings', hotkey: '2' },
@@ -2835,7 +2847,8 @@ export const register: Register = on => {
     if (typing !== null && !fieldSeeds.has(typing)) fieldSeeds.set(typing, (await read($, DRAFTS))[typing] ?? '')
     const shownPrs = drawnPrs(prState, ledger.prs, lastActions, now)
     const prViews = shownPrs.map(x => x.pr)
-    const pal = PALETTES[theme] ?? THEME_KEY_PALETTE
+    const pal =
+      look === 'desktop' && !HEX_THEMES.has(theme) ? DESKTOP_KEY_PALETTE : (PALETTES[theme] ?? THEME_KEY_PALETTE)
     // `inverse: false` keeps the engine from inverting the line under the pointer inside the panel.
     const raise = {
       dimColor: false,
