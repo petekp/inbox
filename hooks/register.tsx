@@ -175,7 +175,7 @@ const MAX_PRS = 6
 
 const FINDING_TOOL = 'mcp__inbox__record_finding'
 const GUIDANCE = `# Inbox
-The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox pane, and your findings, in the pane's Findings tab. A band above their prompt shows only how many of each are open.
+The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox pane, and your findings, in the pane's Findings tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings.
 
 A finding is something you noticed that deserves the user's attention but is outside the current task: a bug, a risk, missing tests, tech debt, or a chance to improve something. Record it with mcp__inbox__record_finding the moment you notice it, then go on with the task; fixing it waits until the user asks. Record one too at two moments that are easy to pass over while focused on the task:
 - You work around a problem instead of fixing it, such as copying files by hand because a tool does not reach them.
