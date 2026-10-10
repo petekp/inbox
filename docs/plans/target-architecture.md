@@ -349,7 +349,7 @@ type PrPress =
 - `pr-address-all` is the one press that writes more than one `LastAction`: a hand-off on each thread it sends, as today. On failure, all of them get the failed delivery.
 - Sends keep today's `by: null` and today's `prompts.*` text.
 
-**Codex, `onPress` in `server.ts`.** Inside `updateState`: check the press's thread (below), run `applyPress` with the row's `s.lastActions[id]` as `last`, run sends (4.4), and save. After the lock: run opens, then a second `updateState` writes the Local `result`. Copies return to the tab, which copies and shows the note itself. A stale result writes nothing; the press reply carries the `stale` note, and the tab shows it on the row, or on line 1 when the row is no longer drawn.
+**Codex, `onPress` in `server.ts`.** Inside `updateState`: check the press's thread (below), run `applyPress` with the row's `s.lastActions[id]` as `last`, run sends (4.4), and save. After the lock: run opens, then a second `updateState` writes the Local `result`. Copies return to the tab, which copies and shows the note itself. A stale result writes nothing; the press reply carries the `stale` note, and the tab shows it on the row, or on its own line under the tab row when the row is no longer drawn.
 
 **The thread a press targets (UI 7).** `inbox_view` returns the session id it read (`sessionOf`), and the tab sends it back as `thread` beside each `inbox_press`. The server reads the press's session from the call's meta, as today, and answers stale when that differs from `thread`. Meta alone is not enough. Whether one tab instance stays open across threads is unsourced (live check 5), and `docs/reference/README.md` notes that a forked chat may route a call to the root's session. Either case would apply a press drawn for `i3` in one chat to a different `i3` in another.
 
@@ -402,7 +402,7 @@ The recommended option drops its ` (recommended)` suffix because UI 3.2's sketch
 ### 6.2 The Codex tab
 
 - `inbox_view` returns `viewOf(state)`: `inboxView` plus `{ heard, isDemo, at, thread }`. `viewOf` passes `notes: {}`, since row notes live in the tab.
-- The tab draws the same rows, order, handles, actions and feedback as the pane, with UI 3.4's layout: line 1 the count and status, line 2 the card goal and step.
+- The tab draws the same rows, order, handles, actions and feedback as the pane, with UI 3.4's layout: the status at the right of the tab row, and no count or goal line.
 - The tab's UI state: drafts, row notes from press replies (stale, sample, copy results, `Sending…`), first-sight times, open rows. None of it goes to the session file. A note in tab state overrides the row's view feedback while it lasts.
 - Client-side timing:
   - A settled row shows from the first poll that lists it, for `SETTLED_MS`, with the leave bar. The server lists recent closes as settled for `SETTLED_MS` plus two poll intervals, so every close is seen at least once. The tab hides from its Closed fold only the ids it is drawing as settled. When its own timer ends, the id shows in the fold, even while the server still lists it as settled. This replaces the client diff (`applyView`, `leftText`) and the server's `leaving` list.
@@ -808,7 +808,7 @@ Every step:
 - **Goal:** UI 3.4's remaining tab parts.
 - **Files:** `codex/src/hook.ts` (records `startAt`, `promptAt`, `prompts`, `promptTurns`, `stopAt`, `stops`), `codex/src/server.ts` (a model tool call can set `promptMissedAt`), `codex/src/core.ts` (`heardState`), `codex/src/state.ts`, `codex/src/tab.tsx`.
 - **Behavior:**
-  - Goal line 2; status words.
+  - Status words at the right of the tab row.
   - **Not heard.** The text shows when no hook ran, when `promptMissedAt` is set, or when `prompts >= 2` and `stops === 0`. The partial line names the cost.
   - **`promptMissedAt` compares turns, not times.** A model tool call sets it only when the `turn_id` in its `x-codex-turn-metadata` is not among `promptTurns`. The time rule (`promptAt` null or older than `stopAt`) is only the fallback for a call with no turn id. Another plugin's Stop hook can send Codex back within the same turn, so a time comparison would wrongly mark a working session as not heard.
   - Loading, Unreadable with [Try again], No connection, Polls failing.

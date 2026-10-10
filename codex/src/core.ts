@@ -176,8 +176,6 @@ export function heardState(h: Heard): HeardState {
 /** What the tab draws: the shared inbox view, and what only the tab reads. */
 export type View = InboxView & {
   heard: HeardState
-  goal: string
-  now: string
   done: string[]
   running: string[]
   /** Each row's last press, by row id. The tab draws from each row's feedback; a tab loaded before that still reads this. */
@@ -235,8 +233,6 @@ export function viewOf(s: SessionState, now: number): View {
       now,
     }),
     heard: heardState(s.heard),
-    goal: l.card?.goal ?? '',
-    now: l.card?.now ?? '',
     done: l.card?.done ?? [],
     running: l.card?.running ?? [],
     lastActions,

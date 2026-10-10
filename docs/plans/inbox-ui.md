@@ -46,7 +46,7 @@ Every action is a button in every client. Keys are an optional extra wherever th
 
 ### 2.1 What comes first
 
-The count of what needs the person and the top row come first. The card goal and current step come second. Every platform already shows which session waits on the person. The inbox adds the item itself.
+The count of what needs the person and the top row come first. The card goal and current step go only to Claude, in the carry text. Every platform already shows which session waits on the person. The inbox adds the item itself.
 
 One phrase names the count everywhere: "need you". The tab is "Needs you", the band says "2 need you" or "1 needs you", and the empty state says "Nothing needs you."
 
@@ -85,11 +85,12 @@ A row has two forms:
 | Stop | Top of the band and pane | One red line: what stopped and what to do | Nothing |
 | Settled | Where the row was | `✓ Done · just now` with the leave bar | [Undo], after a Mark |
 | Closed fold | Under Questions and Tasks, and Findings (decision 1) | `▸ 3 Closed` | Up to 3 closed items, each `ask → outcome` |
-| Card goal and step | Codex tab line 2 | `◆ goal · current step` | Nothing |
+
+The Codex tab draws its lists flat, with no tree lines, in the app's sans font. A question's number shows as the number alone in a round gray badge. A finding's handle is its kind's mark, ▲ or ✦, in the kind's color, and its badge is the kind's name alone.
 
 The Closed fold's outcomes are today's: the answer itself ("Yes, rename"), "Done", "You ran it", "Dismissed", "Expired", "Closed by Claude: <reason>", and the per-turn update's own outcome text.
 
-The terminal and desktop do not show the card goal and step: the band shows only counts, and the pane only rows. Codex has no band, so its tab shows them on line 2. Claude mode has no per-turn update, so it has no goal line.
+No view shows the card goal and step. The band shows only counts, and the pane only rows. The Codex tab has no band, and its tab labels already carry the counts, so it draws no count or goal line either. Claude mode has no per-turn update, so it has no goal line.
 
 The group title "Your tasks" becomes "Tasks", to match "Questions".
 
@@ -485,9 +486,7 @@ The split is chosen over a compact inline layout because the tab is already wher
 **First thing seen.** The Needs you tab with its top row open.
 
 ```
- 2 need you · 1 finding                    Updated 3m ago
- ◆ Rename the inbox · writing the README
- [Needs you 2] [Findings 1]
+ [Needs you 2] [Findings 1]                Updated 3m ago
  ──────────────────────────────────────────────────────
  Questions
  1) Use "inbox" or "attention" for the name?     2m ago
@@ -499,7 +498,7 @@ The split is chosen over a compact inline layout because the tab is already wher
  [Show demo]
 ```
 
-Line 1 is the count and the status. Line 2 is the card goal and step, since Codex has no band. Codex's Activity view already shows which chat waits.
+The status sits at the right of the tab row. A read error or a note takes its own line under the row, so the status never moves. Codex's Activity view already shows which chat waits.
 
 **Kept from today's tab.**
 
@@ -631,7 +630,7 @@ Every shared change in section 2 applies to the tab in full. That includes the f
 | Sending, Queued, ✓, or Not sent | `codex/src/tab.tsx:530-538`, `codex/src/server.ts:87-94` | A queued message has not reached Codex yet |
 | Per-hook "not heard" state | Group empty text, `codex/src/tab.tsx:616-620`, `:667` | Skipped hooks look like an empty inbox |
 | "Your tasks" becomes "Tasks" | `codex/src/tab.tsx:667` | Same as the mod |
-| Goal and step on line 2 | Not drawn; `goal` is already in the view (`codex/src/core.ts:461`) | Codex has no band |
+| No count or goal line; the status at the right of the tab row | `TabBar` in `codex/src/tab.tsx` | The tab labels carry the counts, and Codex has no band |
 | Key text removed from the footer; keys kept | Footer `codex/src/tab.tsx:818-826`; keydown handler `851-884` stays | Keys are an optional extra; the text is noise where they are unverified |
 | Status words from 2.6; failing-poll state | `codex/src/tab.tsx:750-783` | Same as the mod |
 | Each press declares its kind, as in the mod | `press()` in `codex/src/core.ts:243-349` | Same as the mod |

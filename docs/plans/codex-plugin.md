@@ -29,8 +29,8 @@ Terms follow `GLOSSARY.md`. "The mod" is the Claude Code mod in this repo.
   conversation with `ui/message`, but Codex marks that message untrusted, so
   the model does not act on it. So a press runs `codex queue`, which
   delivers the message as the person's own [verified].
-- **The band has no surface.** No plugin can draw above the prompt. The tab's
-  header shows what the band shows.
+- **The band has no surface.** No plugin can draw above the prompt. The
+  Inbox tab's labels carry the counts, and the tab draws no header.
 - **State lives in files.** The mod is one process that lives as long as
   the session. A Codex hook is a new process for every event, and Codex
   starts several MCP server processes per session. Each of them reads and
@@ -71,7 +71,7 @@ Terms follow `GLOSSARY.md`. "The mod" is the Claude Code mod in this repo.
 | Per-reply update by the inbox model | `$.model.complete` with Sonnet after `turn.complete` | A background `Stop` hook asks the server to run `codex exec` with `systemText` | Direct. See gaps 6 and 7 |
 | Catch-up after a missed update | `$.model.fork` | `codex exec` on `transcriptCatchUpPrompt`, built from `transcript_path` | Direct, later |
 | Activity lines for the update | Every tool call | `PreToolUse` on the shell, patch and MCP tools. Codex's other tools add no line | Reduced |
-| Band above the prompt | `ui.render` AbovePrompt | The Inbox tab's header. Nothing above the prompt | Gap 1 |
+| Band above the prompt | `ui.render` AbovePrompt | Nothing. The Inbox tab's labels carry the counts | Gap 1 |
 | `/inbox` pane, three tabs, keys | `ui.render` Pane | The Inbox tab: an MCP App opened from a thread entrypoint | Direct |
 | Pane buttons that send a message | `$.prompt.submit` | The tab calls a tool, and the MCP server runs `codex queue` | Direct |
 | Last action on a row | Recorded by `runPress()` | The same rule in the tab: each button shows what it did as soon as it is pressed | Direct |
@@ -95,16 +95,17 @@ appears above the prompt. A hook's `systemMessage` appears in the conversation
 as a warning, after each turn [documented]. That is too loud for "2 waiting on
 you".
 
-**Do:** show the band's content as the Inbox tab's header. Add nothing to
-the conversation in the first version. Look again when Codex allows a custom
+**Do:** draw no band. The Inbox tab's labels carry the counts, and its status
+sits at the right of the tab row. Add nothing to the conversation in the
+first version. Look again when Codex allows a custom
 status line item.
 
 ### 2. The pane
 
 **Do:** the plugin's MCP server registers an `inbox.tab` tool with a thread
 entrypoint and a `ui://inbox/tab` resource. The person opens it as a tab
-beside the conversation, one instance per thread. It shows the header, then
-Needs you and Findings.
+beside the conversation, one instance per thread. It shows Needs you and
+Findings, with the status at the right of the tab row.
 
 - **Buttons:** a press calls an app-only tool, and the MCP server runs
   `codex queue` with the press's text. The message reaches the model as the
@@ -273,7 +274,7 @@ Includes:
 4. `GUIDANCE`, the start-of-context block, the inbox line and the answer line,
    through hooks.
 5. The per-reply update with `codex exec`, using the measured text and model.
-6. The Inbox tab, with the header, Needs you, Findings, answer and dismiss
+6. The Inbox tab, with Needs you, Findings, answer and dismiss
    buttons, Address it and Discuss, and the last action on each row.
 
 Leaves out, in order of value: the PRs tab, the card after time away, the

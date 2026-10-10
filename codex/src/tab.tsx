@@ -34,7 +34,10 @@ type Key = { hotkey?: string; label: string; isPrimary?: boolean; run: () => voi
 type Row = {
   id: string
   handle: string
+  /** `done` once the row is handed to Codex, which also sets how its feedback reads. */
   handleTone?: Tone
+  /** A finding's kind, which sets its handle's color and size. */
+  kind?: Finding['kind']
   meta?: JSX.Element
   title: string
   /** Muted text after the title, such as an age. */
@@ -89,7 +92,7 @@ const errors = new Map<string, string>()
 // A row's stale or sample note, shown for SETTLED_MS from `at`.
 const notes = new Map<string, { text: string; at: number }>()
 const copies = new Map<string, { name: string; text: string }>()
-// A note for a press whose row is no longer drawn, shown on line 1 for SETTLED_MS.
+// A note for a press whose row is no longer drawn, shown on its own line under the tab row for SETTLED_MS.
 let lineNote: { text: string; at: number } | null = null
 // When the tab first saw each row the view lists as settled. It draws one in place for SETTLED_MS from then.
 let seen = new Map<string, number>()
@@ -392,15 +395,14 @@ function findingRow(v: View, r: RowView, f: Finding): Row {
 
   return {
     id,
-    handle: isHandedOff ? '✓' : r.handle,
+    handle: isHandedOff ? '✓' : badge.mark,
     handleTone: isHandedOff ? 'done' : undefined,
+    kind: f.kind,
     ...(isHandedOff ? { fold: {} } : {}),
     title: f.title,
     meta: (
       <div>
-        <span class={`tone-${badge.tone}`}>
-          {badge.mark} {badge.label}
-        </span>
+        <span class={`tone-${badge.tone}`}>{badge.label}</span>
         <span class="muted"> {ago(v.at - f.at)}</span>
       </div>
     ),
@@ -631,7 +633,13 @@ function ListRow({
   // A last action is green only on a row that shows a ✓. On a row still open it is muted, so it does not read as an answer,
   // and so is a message still queued, which has not reached Codex.
   const lastTone = row.handleTone === 'done' && row.feedback?.is !== 'queued' ? 'tone-done' : 'muted'
-  const handle = <span class={`mark ${row.handleTone ?? ''}`}>{row.handle}</span>
+  // A number a typed reply reaches, as "1)", draws as a badge holding the number.
+  const number = /^(\d+)\)$/.exec(row.handle)?.[1]
+  const handle = (
+    <span class={`mark ${row.handleTone ?? row.kind ?? ''}`}>
+      {number ? <span class="number">{number}</span> : row.handle}
+    </span>
+  )
 
   if (!isSelected) {
     const plain = row.line ?? { text: row.title, after: row.titleAfter }
@@ -786,9 +794,8 @@ function Entries({
   const at = selectedIndex(all, t, v)
   if (entries.length === 0) return null
 
-  // Needs you hangs its rows from each group's title, as the pane does; Findings lists them flat.
   return (
-    <div class={group === 'finding' ? 'flat' : 'tree'}>
+    <div class="list">
       {entries.map(x =>
         'row' in x ? (
           <div class="entry" key={x.row.id}>
@@ -889,7 +896,7 @@ function ClosedFold({ group, closed, now }: { group: Group; closed: ClosedLine[]
         {closed.length} Closed
       </button>
       {isUnfolded ? (
-        <div class="tree closed-tree">
+        <div class="list closed-list">
           {closed.map(d => (
             <div class="entry" key={`closed-${d.id}`}>
               <div class="row">
@@ -998,10 +1005,11 @@ function Findings({ v, lists, now }: { v: View; lists: Lists; now: number }) {
 const LATE_READ_MS = 60_000
 
 /**
- * Line 1, the count and the status, and line 2, the goal and its current step,
- * since the tab has no band. While polls fail, the status says when the view shown was read.
+ * The tabs, with the status at the row's right. While polls fail, the status says when the view shown was read.
+ * A read error or a note takes its own line under the row, so the status never moves.
  */
-function Heading({ v, now }: { v: View; now: number }) {
+function TabBar({ v, now }: { v: View; now: number }) {
+  const counts: Record<Tab, number> = { needsYou: v.needsYou.count, findings: v.findings.count }
   const { changedAt, isUpdating, error } = v.status
   const sinceRead = Date.now() - readAt
   const status =
@@ -1014,46 +1022,6 @@ function Heading({ v, now }: { v: View; now: number }) {
     ) : (
       'Not updated yet'
     )
-  const findings = v.findings.count
-  const counts = [
-    v.needsYou.count > 0 ? (
-      <span class="tone-needsYou">
-        {v.needsYou.count} {v.needsYou.count === 1 ? 'needs' : 'need'} you
-      </span>
-    ) : null,
-    findings > 0 ? <span class="tone-findings">{findings === 1 ? '1 finding' : `${findings} findings`}</span> : null,
-  ].filter(x => x !== null)
-
-  return (
-    <header>
-      <div class="line-one">
-        <span class="counts">
-          {counts.map((c, n) => (
-            <span key={n}>
-              {n > 0 ? <span class="muted"> · </span> : null}
-              {c}
-            </span>
-          ))}
-        </span>
-        <div class="status">
-          {status}
-          {error ? <div class="tone-error">{error}</div> : null}
-          {lineNote && Date.now() - lineNote.at < SETTLED_MS ? <div class="muted">{lineNote.text}</div> : null}
-        </div>
-      </div>
-      {v.goal ? (
-        <div class="goal">
-          <span class="goal-mark">◆ </span>
-          {v.goal}
-          {v.now ? <span class="muted"> · {v.now}</span> : null}
-        </div>
-      ) : null}
-    </header>
-  )
-}
-
-function TabBar({ v }: { v: View }) {
-  const counts: Record<Tab, number> = { needsYou: v.needsYou.count, findings: v.findings.count }
 
   return (
     <nav>
@@ -1072,6 +1040,9 @@ function TabBar({ v }: { v: View }) {
           </button>
         ))}
       </div>
+      <div class="status">{status}</div>
+      {error ? <div class="status-line tone-error">{error}</div> : null}
+      {lineNote && Date.now() - lineNote.at < SETTLED_MS ? <div class="status-line muted">{lineNote.text}</div> : null}
     </nav>
   )
 }
@@ -1118,8 +1089,7 @@ function App(): ComponentChildren {
           </button>
         </div>
       ) : null}
-      <Heading v={v} now={now} />
-      <TabBar v={v} />
+      <TabBar v={v} now={now} />
       {tab === 'needsYou' ? <NeedsYou v={v} lists={lists} now={now} /> : <Findings v={v} lists={lists} now={now} />}
       <footer>
         {isDemo ? null : (

@@ -25,7 +25,7 @@ Captured on 2026-10-09 in the Claude app's demo pane and the Codex tab:
    - Every action is a pill, 26 px tall, Codex's size `sm`. Undo sits in a line of text, so it takes Codex's smallest size, 20 px, and the closed row keeps its height.
    - The recommended option is solid: filled with the text color, labeled in the background color.
    - The row's other answers and main action have a gray fill: the text color at 8% in light and 12% in dark.
-   - The follow-ups, Cancel and Undo are ghost buttons: muted text, with the gray fill only on hover. The follow-up line's first label lines up with the row's text.
+   - The follow-ups, Cancel and Undo are ghost buttons: muted text that turns to the text color on hover, with no fill. The follow-up line's first label lines up with the row's text.
    - The field is a pill with a 1 px border, the text color at 16%.
 
    Reason: these are the app's primary, secondary and ghost button styles, so the tab reads as part of Codex.

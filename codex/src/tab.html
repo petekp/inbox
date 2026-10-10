@@ -23,16 +23,14 @@
         --card: color-mix(in srgb, var(--text) 4.5%, var(--bg));
         --raised: color-mix(in srgb, var(--text) 9%, var(--bg));
         --selected: color-mix(in srgb, #4c9aff 20%, var(--card));
-        --tree: color-mix(in srgb, var(--text) 30%, var(--bg));
         --divider: color-mix(in srgb, var(--text) 9%, var(--bg));
         --hover: color-mix(in srgb, var(--key) 14%, transparent);
         /* Codex's gray button fills: the foreground at 8% and 12% in light, 12% and 16% in dark. */
         --soft: color-mix(in oklab, var(--text) 8%, transparent);
         --soft-hover: color-mix(in oklab, var(--text) 12%, transparent);
-        /* The tree's grid: its line, where a row's mark sits, and where its text starts. */
-        --tree-x: 15px;
-        --mark-x: 30px;
-        --text-x: 52px;
+        /* Where a row's mark sits, and where its text starts. */
+        --mark-x: 18px;
+        --text-x: 40px;
       }
       @media (prefers-color-scheme: dark) {
         :root:not([data-theme='light']) {
@@ -49,7 +47,6 @@
           --card: color-mix(in srgb, var(--text) 5.5%, var(--bg));
           --raised: color-mix(in srgb, var(--text) 11%, var(--bg));
           --selected: color-mix(in srgb, #7fa6d9 15%, var(--card));
-          --tree: color-mix(in srgb, var(--text) 32%, var(--bg));
           --divider: color-mix(in srgb, var(--text) 8%, var(--bg));
           --soft: color-mix(in oklab, var(--text) 12%, transparent);
           --soft-hover: color-mix(in oklab, var(--text) 16%, transparent);
@@ -66,7 +63,6 @@
         --card: color-mix(in srgb, var(--text) 5.5%, var(--bg));
         --raised: color-mix(in srgb, var(--text) 11%, var(--bg));
         --selected: color-mix(in srgb, #7fa6d9 15%, var(--card));
-        --tree: color-mix(in srgb, var(--text) 32%, var(--bg));
         --divider: color-mix(in srgb, var(--text) 8%, var(--bg));
         --soft: color-mix(in oklab, var(--text) 12%, transparent);
         --soft-hover: color-mix(in oklab, var(--text) 16%, transparent);
@@ -119,34 +115,13 @@
         color: var(--text);
       }
 
-      /* Line 1: the count and the status. Line 2: the goal and its current step. */
-      header {
-        padding: 12px 16px 0;
-      }
-      .line-one {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: space-between;
-        gap: 0 16px;
-      }
-      .counts {
-        font-weight: 600;
-      }
-      .goal {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .goal-mark {
-        color: var(--key);
-      }
-
       /* Tabs: the shown one a raised panel, the others text on the background. */
       nav {
         display: flex;
         flex-wrap: wrap;
+        align-items: center;
         gap: 4px 16px;
-        padding: 8px 12px 0;
+        padding: 12px 12px 0;
       }
       .tabs {
         display: flex;
@@ -170,9 +145,15 @@
         margin-left: 6px;
       }
       .status {
+        margin-left: auto;
         color: var(--muted);
         font-size: 12px;
-        text-align: right;
+      }
+      .status-line {
+        flex-basis: 100%;
+        padding: 0 4px;
+        font-size: 12px;
+        overflow-wrap: anywhere;
       }
 
       main {
@@ -187,7 +168,7 @@
         padding: 10px 0;
       }
       .group-title {
-        padding: 0 14px 0 calc(var(--tree-x) + 4px);
+        padding: 0 14px 0 var(--mark-x);
         font-weight: 500;
       }
       .group-title .count {
@@ -195,60 +176,7 @@
         margin-left: 6px;
       }
 
-      /* The tree: a hairline from the group's title, an elbow to each row, and a rounded last elbow. */
-      .tree {
-        position: relative;
-        padding-top: 8px;
-      }
-      .tree::before {
-        content: '';
-        position: absolute;
-        left: var(--tree-x);
-        top: 0;
-        height: 8px;
-        border-left: 1px solid var(--tree);
-      }
-      .entry {
-        position: relative;
-        --elbow: 16px;
-      }
-      .entry:has(> .row.selected) {
-        --elbow: 22px;
-      }
-      .tree > .entry::before {
-        content: '';
-        position: absolute;
-        left: var(--tree-x);
-        top: 0;
-        bottom: 0;
-        border-left: 1px solid var(--tree);
-        z-index: 1;
-      }
-      .tree > .entry::after {
-        content: '';
-        position: absolute;
-        left: var(--tree-x);
-        top: var(--elbow);
-        width: 11px;
-        border-top: 1px solid var(--tree);
-        z-index: 1;
-      }
-      .tree > .entry:last-child::before {
-        bottom: auto;
-        height: calc(var(--elbow) + 1px);
-        width: 11px;
-        border-bottom: 1px solid var(--tree);
-        border-bottom-left-radius: 7px;
-      }
-      .tree > .entry:last-child::after {
-        display: none;
-      }
-      .flat {
-        --mark-x: 18px;
-        --text-x: 40px;
-      }
-
-      /* Rows. A divider runs from the text column to the edge, under the tree's line. */
+      /* Rows. A divider runs from the text column to the edge. */
       .row {
         display: flex;
         padding: 6px 14px 6px var(--mark-x);
@@ -274,17 +202,37 @@
       .tone-bar-findings {
         --bar: var(--findings);
       }
+      /* Marks center in a badge's width, so a ?, a • and a number line up. */
       .mark {
         flex: none;
         width: calc(var(--text-x) - var(--mark-x));
-        font: 12px/20px var(--mono);
+        padding-right: 4px;
+        text-align: center;
         color: var(--muted);
       }
-      .mark.done,
-      .mark.error {
-        font-size: 13px;
+      .mark .number {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px;
+        border-radius: 999px;
+        background: var(--soft);
+        color: var(--text);
+        font-size: 11px;
+        font-weight: 500;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
+        vertical-align: 1px;
       }
       .mark.done {
+        color: var(--done);
+      }
+      .mark.issue {
+        color: var(--needs-you);
+      }
+      .mark.opportunity {
         color: var(--done);
       }
       .mark.error {
@@ -389,7 +337,6 @@
         color: var(--muted);
       }
       .key.ghost:not(:disabled):hover {
-        background: var(--soft);
         color: var(--text);
       }
       /* The ghost line's first label lines up with the text above it, as Codex aligns a leading ghost button. */
@@ -432,7 +379,7 @@
         font: 12px var(--mono);
         color: inherit;
         background: var(--bg);
-        border: 1px solid var(--tree);
+        border: 1px solid color-mix(in oklab, var(--text) 16%, transparent);
         border-radius: 6px;
       }
 
@@ -452,19 +399,14 @@
       .fold-mark {
         display: inline-block;
         width: 14px;
-        font-family: var(--mono);
       }
-      /* The closed items hang from the fold's arrow. */
-      .tree.closed-tree {
-        --tree-x: 36px;
-        --mark-x: 52px;
-        --text-x: 72px;
+      /* The closed items sit under the fold's label. */
+      .closed-list {
+        --mark-x: 34px;
+        --text-x: 56px;
         padding-top: 4px;
       }
-      .tree.closed-tree::before {
-        height: 4px;
-      }
-      .tree.closed-tree .entry + .entry > .row {
+      .closed-list .entry + .entry > .row {
         background-image: none;
       }
       .outcome {
@@ -508,14 +450,25 @@
           width: 0;
         }
       }
+      /* The page is at least the pane's height. The footer sits at its bottom, and an empty tab's text fills the space above it. */
+      #app {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
       .empty {
-        padding: 56px 32px;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 32px;
         text-align: center;
       }
       .empty .title {
         margin-bottom: 4px;
       }
       footer {
+        margin-top: auto;
         display: flex;
         flex-wrap: wrap;
         justify-content: space-between;
