@@ -444,8 +444,9 @@ let toolsRefused = false
 let unreadable: { id: string; isReading: boolean } | null = null
 /**
  * The desktop app takes the focus off the pane when the Button holding it leaves the drawing, and
- * the next click there only brings it back (anthropics/claude-code#100874). The pane tracks the
- * Button a press focused, and when a drawing leaves it out, moves the focus to one it still has.
+ * the next click there only brings it back (anthropics/claude-code#100874). The pane tracks the key
+ * that holds the focus: the Button a press focused, or the text field the pane moved it to. It moves
+ * the focus when a drawing leaves that key out, or first draws the field a Type press opened.
  */
 let focusedKey: string | null = null
 /**
