@@ -2,7 +2,7 @@
 // take. The tab polls, so it times each settled row from the first view that
 // lists it, not from the close. Pure, so the server and the tab share it.
 
-import { SETTLED_MS } from '../../hooks/view'
+import { allRows, SETTLED_MS, settledRowIds } from '../../hooks/view'
 import type { InboxView } from '../../hooks/view'
 
 /** How often the tab asks the server for its view. */
@@ -19,9 +19,7 @@ export const SETTLE_WINDOW_MS = SETTLED_MS + 2 * POLL_MS
 
 /** The rows a view lists as settled. */
 export function settledIds(v: InboxView): string[] {
-  return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows]
-    .filter(r => r.state.is === 'settled')
-    .map(r => r.id)
+  return settledRowIds(allRows(v))
 }
 
 /** When the tab first saw each row the view lists as settled: kept from `seen`, or `now` for one new to it. */

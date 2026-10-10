@@ -181,26 +181,22 @@ export function waitingThreads(pr: PrView): PrThread[] {
   return pr.threads.filter(t => t.isWaiting)
 }
 
-/** Which of a PR's rows the person handed to Claude: a thread sent to it. */
-export type Handoffs = {
-  isThreadSent: (pr: PrView, t: PrThread) => boolean
-}
-
-export const NO_HANDOFFS: Handoffs = { isThreadSent: () => false }
+/** Whether the person handed a thread to Claude. */
+export type IsThreadSent = (pr: PrView, t: PrThread) => boolean
 
 /** Waiting threads still on the person: not sent to Claude, and not on lines a later commit changed. */
-export function threadsOnYou(pr: PrView, h: Handoffs): PrThread[] {
-  return waitingThreads(pr).filter(t => !t.isLinesChanged && !h.isThreadSent(pr, t))
+export function threadsOnYou(pr: PrView, isSent: IsThreadSent): PrThread[] {
+  return waitingThreads(pr).filter(t => !t.isLinesChanged && !isSent(pr, t))
 }
 
 /** Whether an open PR waits on the person: a merge conflict, a failing check, requested changes or a thread on them. */
-export function prNeedsYou(pr: PrView, h: Handoffs): boolean {
+export function prNeedsYou(pr: PrView, isSent: IsThreadSent): boolean {
   return (
     pr.state === 'OPEN' &&
     (pr.mergeable === 'CONFLICTING' ||
       failingChecks(pr).length > 0 ||
       pr.reviewDecision === 'CHANGES_REQUESTED' ||
-      threadsOnYou(pr, h).length > 0)
+      threadsOnYou(pr, isSent).length > 0)
   )
 }
 
@@ -230,15 +226,21 @@ function plural(count: number, one: string, many: string): string {
  */
 export function readiness(
   pr: PrView,
-  h: Handoffs = NO_HANDOFFS,
+  isSent: IsThreadSent = () => false,
 ): { status: PrStatus; text: string; head: string; reasons: string } {
-  if (pr.state === 'MERGED') return { status: 'merged', text: 'Merged', head: 'Merged', reasons: '' }
-  if (pr.state !== 'OPEN') return { status: 'closed', text: 'Closed', head: 'Closed', reasons: '' }
+  const result = (status: PrStatus, head: string, reasons = '', joint = ': ') => ({
+    status,
+    text: reasons ? `${head}${joint}${reasons}` : head,
+    head,
+    reasons,
+  })
+  if (pr.state === 'MERGED') return result('merged', 'Merged')
+  if (pr.state !== 'OPEN') return result('closed', 'Closed')
   const { fail: failing, pending } = checkCounts(pr)
   const waiting = waitingThreads(pr)
-  const open = threadsOnYou(pr, h).length
-  const sent = waiting.filter(t => h.isThreadSent(pr, t)).length
-  const changed = waiting.filter(t => t.isLinesChanged && !h.isThreadSent(pr, t)).length
+  const open = threadsOnYou(pr, isSent).length
+  const sent = waiting.filter(t => isSent(pr, t)).length
+  const changed = waiting.filter(t => t.isLinesChanged && !isSent(pr, t)).length
   const blockers = [
     pr.isDraft ? 'draft' : null,
     pr.mergeable === 'CONFLICTING' ? `conflicts with ${pr.base}` : null,
@@ -252,17 +254,16 @@ export function readiness(
   ].filter((b): b is string => b !== null)
 
   if (blockers.length > 0) {
-    const reasons = blockers.join(', ')
-    return { status: pr.isDraft ? 'draft' : 'blocked', text: `Blocked: ${reasons}`, head: 'Blocked', reasons }
+    return result(pr.isDraft ? 'draft' : 'blocked', 'Blocked', blockers.join(', '))
   }
   const isApproved = pr.reviewDecision === 'APPROVED'
 
-  return {
-    status: 'ready',
-    text: `Ready to merge${isApproved ? ': approved' : ''}, checks pass, no threads waiting on you`,
-    head: 'Ready to merge',
-    reasons: `${isApproved ? 'approved, ' : ''}checks pass, no threads waiting on you`,
-  }
+  return result(
+    'ready',
+    'Ready to merge',
+    `${isApproved ? 'approved, ' : ''}checks pass, no threads waiting on you`,
+    isApproved ? ': ' : ', ',
+  )
 }
 
 /**

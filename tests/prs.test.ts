@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { commentLine, prRefs, prNeedsYou, readThreads, readView, readableComment, readiness } from '../hooks/prs'
-import type { Handoffs } from '../hooks/prs'
 
 const VIEW = JSON.stringify({
   number: 12,
@@ -189,7 +188,7 @@ describe('prs', () => {
   test('a thread sent to Claude stops waiting on the person and still blocks; a failing check always waits', () => {
     const view = readView('acme/greet#12', VIEW)!
     const pr = { ...view, threads: readThreads(THREADS).slice(0, 1), fetchedAt: 0, error: null }
-    const sent: Handoffs = { isThreadSent: () => true }
+    const sent = () => true
     expect(prNeedsYou(pr, sent)).toBe(true)
     expect(readiness(pr, sent).text).toBe(
       'Blocked: 1 failing check, changes requested, 1 thread sent to Claude, 1 check running',

@@ -302,6 +302,15 @@ function closedFindingRecord(finding, closing, now) {
   return { ...finding, ...closing, closedAt: now };
 }
 var CLOSED_BY_CLAUDE = "closed by Claude";
+function closeFinding(ledger, id, closing, now) {
+  const finding = ledger.findings.find((f) => f.id === id);
+  if (!finding) return ledger;
+  return {
+    ...ledger,
+    findings: ledger.findings.filter((f) => f.id !== id),
+    closedFindings: [...ledger.closedFindings, closedFindingRecord(finding, closing, now)].slice(-MAX_CLOSED)
+  };
+}
 function applyUpdate(ledger, u, now, turn, promptAt = now) {
   const prev = ledger.card;
   const card = {
@@ -336,19 +345,17 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
   }
   const kept = items.filter((i) => turn - i.turn <= STALE_AFTER).slice(-MAX_OPEN);
   for (const i of items) if (!kept.includes(i)) closed.push(closedRecord(i, { outcome: EXPIRED, how: "expired" }, now));
+  const { findings, closedFindings } = ledger.findings.reduce((l, f) => {
+    const outcome = closing.get(f.id);
+    return outcome === void 0 ? l : closeFinding(l, f.id, { outcome, how: "update" }, now);
+  }, ledger);
   return {
     ...ledger,
     card,
     items: kept,
     closed: closed.slice(-MAX_CLOSED),
-    findings: ledger.findings.filter((f) => !closing.has(f.id)),
-    closedFindings: [
-      ...ledger.closedFindings,
-      ...ledger.findings.flatMap((f) => {
-        const outcome = closing.get(f.id);
-        return outcome === void 0 ? [] : [closedFindingRecord(f, { outcome, how: "update" }, now)];
-      })
-    ].slice(-MAX_CLOSED),
+    findings,
+    closedFindings,
     nextId,
     batchTurn: added > 0 ? turn : ledger.batchTurn
   };
@@ -362,9 +369,26 @@ var TOLD_NOTHING = { inbox: null, closed: [] };
 
 // ../hooks/presses.ts
 var HANDOFF_IDS = /^(address|type|step-\d+|thread-address|pr-conflicts|pr-address-all)$/;
+var PR_RENAMES = [
+  [/^address-all-/, "pr-address-all"],
+  [/^resolve-/, "pr-conflicts"]
+];
+var THREAD_RENAMES = [
+  [/^address-/, "thread-address"],
+  [/^draft-/, "thread-draft"],
+  [/^discuss-/, "thread-discuss"]
+];
+var ROW_RENAMES = [
+  [/^explain(-|$)/, "explain"],
+  [/^(help-.+-|step-)\d+$/, (old) => `step-${old.split("-").pop()}`],
+  [/^typed$/, "type"],
+  [/^address(-|$)/, "address"],
+  [/^discuss(-|$)/, "discuss"]
+];
 function upgradedLastAction(key, old) {
-  const a = old.action;
-  const action = key.startsWith("pr:") ? a.startsWith("address-all-") ? "pr-address-all" : a.startsWith("resolve-") ? "pr-conflicts" : null : key.includes(" thread ") ? a.startsWith("address-") ? "thread-address" : a.startsWith("draft-") ? "thread-draft" : a.startsWith("discuss-") ? "thread-discuss" : null : /^explain(-|$)/.test(a) ? "explain" : /^(help-.+-|step-)\d+$/.test(a) ? `step-${a.split("-").pop()}` : a === "typed" ? "type" : /^address(-|$)/.test(a) ? "address" : /^discuss(-|$)/.test(a) ? "discuss" : null;
+  const renames = key.startsWith("pr:") ? PR_RENAMES : key.includes(" thread ") ? THREAD_RENAMES : ROW_RENAMES;
+  const found = renames.find(([pattern]) => pattern.test(old.action));
+  const action = found ? typeof found[1] === "function" ? found[1](old.action) : found[1] : null;
   if (action === null) return null;
   const { isHandoff, ...kept } = old;
   const isHandedOff = isHandoff ?? HANDOFF_IDS.test(action);

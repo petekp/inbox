@@ -84,26 +84,14 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
 
       return null
     }
-    case 'Stop':
-      return stop(input, deps, withCli)
+    case 'Stop': {
+      const reply = input.last_assistant_message ?? ''
+      const written = await updateState(dir, id, s => noteHook(endTurn(withCli(s), reply, now()), 'stop', now()))
+      if (written.pending.length > 0) deps.startUpdate(id)
+
+      return null
+    }
   }
-
-  return null
-}
-
-/** Ends the turn and starts the per-reply update. */
-async function stop(
-  input: HookInput,
-  deps: HookDeps,
-  withCli: (s: SessionState) => SessionState,
-): Promise<Record<string, unknown> | null> {
-  const { dir, now } = deps
-  const id = input.session_id
-  const reply = input.last_assistant_message ?? ''
-  const written = await updateState(dir, id, current =>
-    noteHook(endTurn(withCli(current), reply, now()), 'stop', now()),
-  )
-  if (written.pending.length > 0) deps.startUpdate(id)
 
   return null
 }

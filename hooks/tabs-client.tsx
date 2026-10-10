@@ -23,7 +23,7 @@ export type TabsProps = {
   tabs: ClientTab[]
   shown: string
   gap: number
-  colors: { tab: string | null; raised: string | null; raisedText: string | null; muted: string | null }
+  colors: { tab: string | null; raised: string; raisedText: string | null; muted: string | null }
 }
 
 type State = { hover: string | null }

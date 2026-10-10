@@ -13,13 +13,25 @@ import type {
   LocalResult,
   PressKind,
   RowNote,
+  Turns,
 } from '../types'
 import { isLapsed, latestBatch, questionNumbers, reopenFinding, reopenItem } from './ledger'
-import { actionId, clipLabel, isHandedOff, isUndoable, noteText, retryOf, stepsOf } from './presses'
+import { actionId, capitalized, clipLabel, isHandedOff, isUndoable, noteText, retryOf, stepsOf } from './presses'
 import type { HelpStep, RowPress } from './presses'
 
 /** A question with more options than this shows the first 4 and [All N options]. */
-export const OPTIONS_FOLD_AT = 5
+const OPTIONS_FOLD_AT = 5
+// The keys of a question's options and a row's steps, lettered as a multiple-choice
+// question letters them. The digits switch tabs, and the letters left out are the
+// keys of a Needs you row's other actions and of moving the selection.
+export const CHOICE_KEYS = [...'abcfghilm']
+
+/** A finding's kind as the Findings tab draws it: a mark before its name, both in the kind's tone. */
+export const FINDING_BADGES: Record<Finding['kind'], { label: string; mark: string; tone: 'needsYou' | 'done' }> = {
+  issue: { label: 'Issue', mark: '▲', tone: 'needsYou' },
+  opportunity: { label: 'Opportunity', mark: '✦', tone: 'done' },
+}
+
 /** How many closed items each Closed fold lists. */
 export const CLOSED_SHOWN = 3
 /** How long a row that just closed stays in its place, and a row's note shows. */
@@ -33,9 +45,6 @@ export const PRESS_GUARD_MS = 400
 export function isGuarded(openedAt: number, now: number): boolean {
   return openedAt > 0 && now - openedAt < PRESS_GUARD_MS
 }
-
-/** The turn counts a handed-off row folds by. */
-export type Turns = { turnsStarted: number; turnsApplied: number }
 
 /** When the item list last changed, whether its source is working, and its error, if any. */
 export type ItemStatus = { changedAt: number | null; isUpdating: boolean; error: string | null }
@@ -127,6 +136,16 @@ export type InboxView = {
   status: ItemStatus
 }
 
+/** Every row a view lists: questions, tasks, then findings. */
+export function allRows(v: InboxView): RowView[] {
+  return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows]
+}
+
+/** The ids of the rows among `rows` that just closed. */
+export function settledRowIds(rows: RowView[]): string[] {
+  return rows.filter(r => r.state.is === 'settled').map(r => r.id)
+}
+
 /** What a Closed fold lists: its closes, without the rows drawn as settled right now, up to CLOSED_SHOWN. */
 export function closedShown<T extends { id: string }>(closed: T[], drawnSettled: ReadonlySet<string>): T[] {
   return closed.filter(d => !drawnSettled.has(d.id)).slice(0, CLOSED_SHOWN)
@@ -140,7 +159,7 @@ const UPDATE_RETRIES = ' It retries after your next message.'
  * batch's in the order Claude asked them, then the rest newest first. Tasks:
  * oldest first.
  */
-export function needsYouOrder(ledger: Ledger): { questions: Item[]; tasks: Item[] } {
+function needsYouOrder(ledger: Ledger): { questions: Item[]; tasks: Item[] } {
   const latest = new Set(latestBatch(ledger).map(i => i.id))
   const questions = ledger.items.filter(i => i.kind === 'question')
 
@@ -187,11 +206,8 @@ export function hasAge(f: Feedback): f is Extract<Feedback, { is: 'done' | 'queu
 }
 
 // Where a copied command runs. The desktop app's composer is not known to take "!" for shell mode.
-const RUN_IT: Record<Look, string> = {
-  terminal: 'Run it in a terminal, or type ! and paste.',
-  desktop: 'Run it in Terminal.',
-  html: 'Run it in Terminal.',
-}
+const runIt = (look: Look) =>
+  look === 'terminal' ? 'Run it in a terminal, or type ! and paste.' : 'Run it in Terminal.'
 const VERBS = {
   open: { pending: 'Opening', done: 'Opened', failed: 'open' },
   copy: { pending: 'Copying', done: 'Copied', failed: 'copy' },
@@ -215,7 +231,7 @@ function localText(r: LocalResult, look: Look): string {
   if (r.state === 'failed') return text
   const isCommand = parts.some(p => p.kind === 'copy' && p.isCommand)
 
-  return `✓ ${text}${isCommand ? `. ${RUN_IT[look]}` : ''}`
+  return `✓ ${text}${isCommand ? `. ${runIt(look)}` : ''}`
 }
 
 /** Feedback as a row reads it, before any age. */
@@ -236,10 +252,12 @@ function stepKind(step: HelpStep): PressKind {
 /**
  * A row's actions in the order the pane and the tab draw them, each labeled
  * "… again" when the row's last press, other than an open or copy, was that action.
+ * A settled row offers only Undo, and only after the person's own Done or Dismiss.
  */
 function actionsOf(
   row: { id: string; item: Item | null; steps: HelpStep[] },
   last: LastAction | undefined,
+  state: RowState,
 ): ActionView[] {
   const { id, item, steps } = row
   const action = (
@@ -262,6 +280,7 @@ function actionsOf(
     isPrimary: flags.isPrimary ?? false,
     isFolded: flags.isFolded ?? false,
   })
+  if (state.is === 'settled') return state.canUndo ? [action({ action: 'undo', id }, 'Undo', 'view')] : []
   const stepActions = steps.map((s, n) => action({ action: 'step', id, step: n, label: s.label }, s.label, stepKind(s)))
   if (!item)
     return [
@@ -291,11 +310,6 @@ function actionsOf(
     action({ action: 'explain', id }, 'Explain', 'talk'),
     action({ action: 'dismiss', id }, 'Dismiss', 'mark'),
   ]
-}
-
-/** How a settled row reads after its ✓: its outcome, as "Done", "Dismissed" or the answer given. */
-function settledLabel(outcome: string): string {
-  return outcome.charAt(0).toUpperCase() + outcome.slice(1)
 }
 
 export function inboxView({
@@ -329,7 +343,7 @@ export function inboxView({
 
       return {
         is: 'settled',
-        label: settledLabel(closed.outcome),
+        label: capitalized(closed.outcome),
         at,
         canUndo: isUndoable(closed.how),
         // Dismissed, expired or closed by the agent: drawn muted, as the Closed fold draws it.
@@ -342,19 +356,19 @@ export function inboxView({
 
     return isHandedOff(lastActions[id], turns) ? { is: 'handedOff' } : { is: 'open' }
   }
-  // A settled row offers only Undo, and only after the person's own Done or Dismiss.
-  const settledActions = (id: string, state: RowState): ActionView[] | null =>
-    state.is !== 'settled'
-      ? null
-      : state.canUndo
-        ? [{ press: { action: 'undo', id }, label: 'Undo', kind: 'view', isPrimary: false, isFolded: false }]
-        : []
-  const itemRow = (item: Item): RowView => {
-    const n = numbers.get(item.id)
-    const steps = stepsOf(item, extraSteps[item.id] ?? [])
-    const state = stateOf(item.id)
+  const rowOf = (row: Omit<RowView, 'state' | 'feedback' | 'actions'>): RowView => {
+    const state = stateOf(row.id)
 
     return {
+      ...row,
+      state,
+      feedback: state.is === 'settled' ? null : feedbackOf(row.id, lastActions[row.id], notes[row.id], now),
+      actions: actionsOf(row, lastActions[row.id], state),
+    }
+  }
+  const itemRow = (item: Item): RowView => {
+    const n = numbers.get(item.id)
+    const row = rowOf({
       id: item.id,
       type: item.kind,
       handle: item.kind === 'task' ? '•' : n === undefined ? '?' : `${n})`,
@@ -362,20 +376,17 @@ export function inboxView({
       at: item.at,
       item,
       finding: null,
-      steps,
-      // Questions never fold.
-      state: item.kind === 'question' && state.is === 'handedOff' ? { is: 'open' } : state,
-      feedback: state.is === 'settled' ? null : feedbackOf(item.id, lastActions[item.id], notes[item.id], now),
-      actions: settledActions(item.id, state) ?? actionsOf({ id: item.id, item, steps }, lastActions[item.id]),
-    }
+      steps: stepsOf(item, extraSteps[item.id] ?? []),
+    })
+
+    // Questions never fold.
+    return item.kind === 'question' && row.state.is === 'handedOff' ? { ...row, state: { is: 'open' } } : row
   }
   const questionRows = questions.map(itemRow)
   const taskRows = tasks.map(itemRow)
   const counted = [...questionRows, ...taskRows].filter(r => r.state.is === 'open')
-  const findingRows = [...placed.findings].reverse().map((finding): RowView => {
-    const state = stateOf(finding.id)
-
-    return {
+  const findingRows = [...placed.findings].reverse().map(finding =>
+    rowOf({
       id: finding.id,
       type: 'finding',
       handle: '•',
@@ -384,13 +395,8 @@ export function inboxView({
       item: null,
       finding,
       steps: [],
-      state,
-      feedback: state.is === 'settled' ? null : feedbackOf(finding.id, lastActions[finding.id], notes[finding.id], now),
-      actions:
-        settledActions(finding.id, state) ??
-        actionsOf({ id: finding.id, item: null, steps: [] }, lastActions[finding.id]),
-    }
-  })
+    }),
+  )
   const closed = [...ledger.closed].reverse()
 
   return {
@@ -420,16 +426,17 @@ export function perTurnStatus(
   ledger: Ledger,
   update: { isUpdating: boolean; isFailed: boolean; retries: boolean },
 ): ItemStatus {
-  const times = [
-    ledger.card?.updatedAt,
+  let changedAt: number | null = ledger.card?.updatedAt ?? null
+  for (const t of [
     ...ledger.items.map(i => i.at),
     ...ledger.closed.map(d => d.at),
     ...ledger.findings.map(f => f.at),
     ...ledger.closedFindings.map(f => f.closedAt),
-  ].filter((t): t is number => typeof t === 'number')
+  ])
+    if (typeof t === 'number' && (changedAt === null || t > changedAt)) changedAt = t
 
   return {
-    changedAt: times.length === 0 ? null : Math.max(...times),
+    changedAt,
     isUpdating: update.isUpdating,
     error: update.isFailed && !update.isUpdating ? UPDATE_FAILED + (update.retries ? UPDATE_RETRIES : '') : null,
   }

@@ -10,7 +10,6 @@ import type {
 
 import type {
   Arrival,
-  Card,
   Cursor,
   Closed,
   DemoCopy,
@@ -31,7 +30,7 @@ import type {
 } from '../types'
 import { demoView, isDemoCopy } from './demo'
 import type { Exchange, Press, Update } from './ledger'
-import type { Handoffs, PrStatus } from './prs'
+import type { IsThreadSent, PrStatus } from './prs'
 import {
   THREADS_QUERY,
   VIEW_FIELDS,
@@ -85,6 +84,7 @@ import {
   actionId,
   applyPress,
   baseName,
+  capitalized,
   clipLabel,
   finishedResult,
   localLast,
@@ -92,7 +92,9 @@ import {
   openCommands,
   pendingResult,
   prSteps,
+  recordPress,
   reopenOnFailure,
+  stepIconKind,
   upgradeLastActions,
   withArrival,
   withFailure,
@@ -102,7 +104,9 @@ import {
 } from './presses'
 import type { Effect, HelpStep, PrActionId, RowPress } from './presses'
 import {
+  CHOICE_KEYS,
   closedShown,
+  FINDING_BADGES,
   feedbackOf,
   feedbackText,
   hasAge,
@@ -113,6 +117,7 @@ import {
   perTurnStatus,
   PRESS_GUARD_MS,
   SETTLED_MS,
+  settledRowIds,
 } from './view'
 import type { InboxView, RowState, RowView } from './view'
 import {
@@ -1310,11 +1315,6 @@ function redrawAfterNewRows($: EngineInterface, at: number, now: number) {
     .catch(() => undefined)
 }
 
-/** The ids of the rows that just closed, which stay in place but cannot be selected. */
-function settledIn(rows: RowView[]): string[] {
-  return rows.filter(r => r.state.is === 'settled').map(r => r.id)
-}
-
 /** Each tab's selectable row ids, in the order the pane lists them: rows that just closed are left out. */
 function tabRowIds(view: InboxView, prViews: PrView[]): Record<Tab, string[]> {
   const ids = (rows: RowView[]) => rows.filter(r => r.state.is !== 'settled').map(r => r.id)
@@ -1347,13 +1347,13 @@ async function followNewRows($: EngineInterface, isOpening = false) {
   const prs = drawnPrs(prState, ledger.prs, lastActions, now)
   const prViews = prs.filter(x => !x.isSettled).map(x => x.pr)
   const ids = tabRowIds(view, prViews)
-  const settledNeedsYou = settledIn([...view.needsYou.questions, ...view.needsYou.tasks])
+  const settledNeedsYou = settledRowIds([...view.needsYou.questions, ...view.needsYou.tasks])
   if (isOpening) recordedRows = null
   // A PR fetch's rows count once it ends. A new PR counts even with no rows. A row
   // that just closed is still recorded, so it does not count as new if Undo brings it back.
   const added = newRows(isDemo, {
     needsYou: [...ids.needsYou, ...settledNeedsYou],
-    findings: [...ids.findings, ...settledIn(view.findings.rows)],
+    findings: [...ids.findings, ...settledRowIds(view.findings.rows)],
     prs: prState.isFetching ? null : [...prs.map(x => `pr ${x.pr.ref}`), ...ids.prs],
   })
   if (!isShown) return
@@ -1564,25 +1564,36 @@ async function openUrl($: EngineInterface, url: string): Promise<string | null> 
 
 /** The id of a review thread's row, which also keys its last action. */
 function prThreadId(pr: PrView, t: PrThread): string {
-  return `${pr.ref} thread ${t.id}`
+  return threadRowId(pr.ref, t.id)
 }
 
 /** The id of a failing PR check's row. */
 function prCheckId(pr: PrView, check: PrCheck): string {
-  return `${pr.ref} check ${check.name}`
+  return checkRowId(pr.ref, check.name)
+}
+
+function threadRowId(ref: string, thread: string): string {
+  return `${ref} thread ${thread}`
+}
+
+function checkRowId(ref: string, check: string): string {
+  return `${ref} check ${check}`
+}
+
+/** The id of a PR block's own row, which keys its last action. */
+function prMarkId(ref: string): string {
+  return `pr:${ref}`
 }
 
 /**
  * Which PR rows the person handed to Claude. A thread stays sent until a
  * comment newer than the press, and one whose message failed to send never was.
  */
-function handoffs(lastActions: Record<string, LastAction>): Handoffs {
-  return {
-    isThreadSent: (pr, t) => {
-      const last = lastActions[prThreadId(pr, t)]
+function threadSentIn(lastActions: Record<string, LastAction>): IsThreadSent {
+  return (pr, t) => {
+    const last = lastActions[prThreadId(pr, t)]
 
-      return last?.kind === 'handoff' && last.delivery?.state !== 'failed' && last.at > ((t.reply ?? t).at ?? 0)
-    },
+    return last?.kind === 'handoff' && last.delivery?.state !== 'failed' && last.at > ((t.reply ?? t).at ?? 0)
   }
 }
 
@@ -1593,7 +1604,7 @@ function isTracked(prState: PrViews, linked: string[], ref: string): boolean {
 
 /** A PR the person dismissed less than SETTLED_MS ago, whose block stays in place, settled, with Undo. */
 function isDismissing(lastActions: Record<string, LastAction>, ref: string, now: number): boolean {
-  const mark = lastActions[`pr:${ref}`]
+  const mark = lastActions[prMarkId(ref)]
 
   return mark?.action === 'pr-dismiss' && now - mark.at < SETTLED_MS
 }
@@ -1626,7 +1637,7 @@ function leavePr($: EngineInterface, ref: string, at: number) {
     .then(async () => {
       const [linked, mark] = await Promise.all([
         read($, LEDGER).then(l => l.prs),
-        read($, LAST_ACTIONS).then(a => a[`pr:${ref}`]),
+        read($, LAST_ACTIONS).then(a => a[prMarkId(ref)]),
       ])
       if (mark?.action !== 'pr-dismiss' || mark.at !== at) return
       await update($, PR_VIEWS, v => {
@@ -1654,10 +1665,15 @@ type Applied =
 
 /** The row a PR press was drawn on, which keys its last action and its note. */
 function prRowId(p: PrPress): string {
-  if (p.action === 'log') return `${p.ref} check ${p.check}`
-  if ('thread' in p) return `${p.ref} thread ${p.thread}`
+  if (p.action === 'log') return checkRowId(p.ref, p.check)
+  if ('thread' in p) return threadRowId(p.ref, p.thread)
 
-  return `pr:${p.ref}`
+  return prMarkId(p.ref)
+}
+
+/** The row any press was drawn on. */
+function pressRowId(p: RowPress | PrPress): string {
+  return 'ref' in p ? prRowId(p) : p.id
 }
 
 /**
@@ -1694,7 +1710,7 @@ function applyPrPress(
 ): Applied {
   const stale = { stale: true as const }
   const pr = prState.views[p.ref]
-  const markId = `pr:${p.ref}`
+  const markId = prMarkId(p.ref)
   // Every row a sending press records on waits for the message to arrive.
   const applied = (a: Partial<Exclude<Applied, { stale: true }>>): Applied => {
     const effects = a.effects ?? []
@@ -1708,13 +1724,8 @@ function applyPrPress(
     return applied({ ledger: { ...ledger, prs: [...ledger.prs, p.ref].slice(-MAX_PRS) }, drop: [markId] })
   }
   if (!pr || !isTracked(prState, ledger.prs, p.ref)) return stale
-  const record = (kind: 'talk' | 'handoff' | 'mark', action: PrActionId, text: string): LastAction => ({
-    kind,
-    action,
-    text,
-    at: ctx.now,
-    turnsStarted: ctx.turnsStarted,
-  })
+  const record = (kind: 'talk' | 'handoff' | 'mark', action: PrActionId, text: string) =>
+    recordPress(kind, action, text, ctx)
   const send = (text: string): Effect => ({ kind: 'send', text, by: null })
   // An open is Local: its row keeps its last action, with the open's result on it.
   const open = (rowId: string, text: string, url: string, name: string): Applied => {
@@ -1751,7 +1762,7 @@ function applyPrPress(
         effects: [send(prompts.resolve(pr))],
       })
     case 'pr-address-all': {
-      const waiting = threadsOnYou(pr, handoffs(lastActions))
+      const waiting = threadsOnYou(pr, threadSentIn(lastActions))
       if (waiting.length === 0) return stale
       // Each thread it sends reads as if its own Address were pressed, so it folds too.
       const threads = waiting.map(t => [prThreadId(pr, t), record('handoff', 'thread-address', 'Address')])
@@ -1813,7 +1824,7 @@ async function perform(
  */
 async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPressArgument['surface']) {
   // Undo is pressed on a row that just closed, and a PR block's actions on no row.
-  const rowId = 'ref' in p ? prRowId(p) : p.id
+  const rowId = pressRowId(p)
   if (p.action !== 'undo' && !rowId.startsWith('pr:')) await keepPressedOpen($, rowId)
   if (await read($, DEMO)) return runDemoPress($, p)
   const [now, presence, lastActions, prState] = await Promise.all([
@@ -1989,7 +2000,7 @@ async function selectRestored($: EngineInterface, id: string) {
  */
 async function runDemoPress($: EngineInterface, p: RowPress | PrPress) {
   const now = await $.clock.now()
-  const rowId = 'ref' in p ? prRowId(p) : p.id
+  const rowId = pressRowId(p)
   if (!('ref' in p) && p.action === 'type') await update($, TYPING, t => (t === p.id ? null : t))
   let applied = { stale: true } as Applied
   let isClosing = false
@@ -2068,18 +2079,14 @@ function itemPrSteps(item: Item, prState: PrViews, linked: string[]): HelpStep[]
 /** A pane action with the key that presses it while the pane has focus, if it has one. */
 type KeyAction = Action & { hotkey?: string }
 
+const STEP_GLYPHS = { run: '▶', copy: '⧉', open: '↗' } as const
+
 /** A step's icon: ▶ when it asks Claude to run a command, else ⧉ for a copy and ↗ for an open. */
 function stepIcon(step: HelpStep | undefined): string | undefined {
-  if (!step) return undefined
-  if (step.step.some(h => h.kind === 'run')) return '▶'
-  const first = step.step[0]?.kind
-  return first === 'copy' || first === 'terminal' ? '⧉' : first === 'open' || first === 'link' ? '↗' : undefined
-}
+  const kind = stepIconKind(step)
 
-// The keys of a question's options and a row's steps, lettered as a multiple-choice
-// question letters them. The digits switch tabs, and the letters left out are the
-// keys of a Needs you row's other actions and of moving the selection.
-const CHOICE_KEYS = [...'abcfghilm']
+  return kind && STEP_GLYPHS[kind]
+}
 
 /**
  * A question, task or finding's actions as the pane's keys. `keys` finish the
@@ -2158,10 +2165,6 @@ function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { k
   return { keys, more }
 }
 
-function capitalized(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1)
-}
-
 /** A closed item, or a closed finding by its title, as its list's Closed fold draws it. */
 type ClosedLine = Pick<Closed, 'id' | 'ask' | 'at' | 'how' | 'outcome'>
 
@@ -2180,12 +2183,6 @@ const PR_STATUSES: Record<PrStatus, { mark: string; tone: Tone | null }> = {
   draft: { mark: '◇', tone: null },
   merged: { mark: '◇', tone: 'findings' },
   closed: { mark: '◇', tone: 'error' },
-}
-
-/** A finding's kind as the Findings tab draws it: a mark before its name, both in the kind's tone. */
-const FINDING_BADGES: Record<Finding['kind'], { label: string; mark: string; tone: Tone }> = {
-  issue: { label: 'Issue', mark: '▲', tone: 'needsYou' },
-  opportunity: { label: 'Opportunity', mark: '✦', tone: 'done' },
 }
 
 /**
@@ -2835,6 +2832,8 @@ export const register: Register = on => {
     // Desktop draws every Button as a native button, and only clicks reach the pane: no letters, key hints or hidden hotkeys.
     const look = e.surface === 'desktop' ? 'desktop' : 'terminal'
     paneLook = look
+    // Without a Client, an older desktop engine draws each of these with Buttons instead.
+    const hasClient = look === 'desktop' && 'Client' in elements
     // The mobile app draws no text field, so there the typed reply is not offered; nor on desktop without DESKTOP_TYPING.
     const Input = 'Input' in elements && (look === 'terminal' || DESKTOP_TYPING) ? elements.Input : null
     // Narrow, the desktop pane puts its status under the tabs and drops closed rows' ages.
@@ -2970,7 +2969,7 @@ export const register: Register = on => {
       keys: () => rowKeyActions($, r, true).keys,
       moreKeys: () => rowKeyActions($, r, true).more,
     })
-    const handoff = handoffs(lastActions)
+    const isThreadSent = threadSentIn(lastActions)
     // A PR action labeled "… again" once it was its row's last action, unless its message failed to send.
     const again = (rowId: string, action: PrActionId, label: string) =>
       lastActions[rowId]?.action === action && lastActions[rowId]?.delivery?.state !== 'failed'
@@ -3017,8 +3016,9 @@ export const register: Register = on => {
       // Sent to Claude, the thread folds to the first line of its latest comment,
       // until a comment newer than the send arrives. So does one on lines a later
       // commit changed, but with no ✓: nothing says the change fixed it.
-      const isSent = handoff.isThreadSent(pr, t)
+      const isSent = isThreadSent(pr, t)
       const isChanged = !isSent && t.isLinesChanged
+      const retry = prRetryOf(lastActions[id], pr.ref, t.id)
 
       return {
         id,
@@ -3052,19 +3052,17 @@ export const register: Register = on => {
         },
         body: comment,
         keys: () => [
-          ...[prRetryOf(lastActions[id], pr.ref, t.id)].flatMap(retry =>
-            retry
-              ? [
-                  {
-                    key: `retry-${t.id}`,
-                    label: 'Try again',
-                    icon: '↻',
-                    kind: retry.kind,
-                    onPress: prPress(retry.press),
-                  },
-                ]
-              : [],
-          ),
+          ...(retry
+            ? [
+                {
+                  key: `retry-${t.id}`,
+                  label: 'Try again',
+                  icon: '↻',
+                  kind: retry.kind,
+                  onPress: prPress(retry.press),
+                },
+              ]
+            : []),
           {
             key: `address-${t.id}`,
             label: again(id, 'thread-address', 'Address'),
@@ -3134,7 +3132,7 @@ export const register: Register = on => {
     const tabCounts: Record<Tab, number> = {
       needsYou: view.needsYou.count,
       findings: view.findings.count,
-      prs: prGroups.filter(g => !g.isSettled && prNeedsYou(g.pr, handoff)).length,
+      prs: prGroups.filter(g => !g.isSettled && prNeedsYou(g.pr, isThreadSent)).length,
     }
     const ids = rows[tab].map(r => r.id)
     const indexOf = new Map(ids.map((id, n) => [id, n]))
@@ -3220,9 +3218,10 @@ export const register: Register = on => {
     // Under a just-closed row, a thin bar that empties as its time in place runs out.
     // ─ is a light line across a cell and ╴ across its left half, so the bar shrinks by half cells.
     const leaveBar = (at: number, isLapsed: boolean) => {
+      if (look !== 'terminal') return null
       const halves = Math.ceil((Math.max(0, SETTLED_MS - (now - at)) / SETTLED_MS) * LEAVE_BAR_STEPS)
 
-      return halves > 0 && look === 'terminal' ? (
+      return halves > 0 ? (
         <Text color={isLapsed ? pal.muted : pal.mark.done}>
           {'─'.repeat(Math.floor(halves / 2)) + (halves % 2 ? '╴' : '')}
         </Text>
@@ -3477,7 +3476,7 @@ export const register: Register = on => {
       const isSelected = index === at
       // On desktop a Client takes a click on every cell of the row, where a Button takes one only on its label.
       // Without one, the row's title is a Button.
-      if (!isSelected && look === 'desktop' && 'Client' in elements)
+      if (!isSelected && hasClient)
         return (
           <Box key={`row-${row.id}`} flexDirection="row" overflow="hidden">
             <elements.Client
@@ -3707,7 +3706,7 @@ export const register: Register = on => {
     // A note on a row the pane no longer draws, as after a press on a row that left, shows on the status line.
     const drawnIds = new Set([
       ...Object.values(rows).flatMap(list => list.map(r => r.id)),
-      ...prViews.map(pr => `pr:${pr.ref}`),
+      ...prViews.map(pr => prMarkId(pr.ref)),
     ])
     const lineNote = Object.entries(notes)
       .filter(([id, n]) => !drawnIds.has(id) && now - n.at < SETTLED_MS)
@@ -3733,25 +3732,24 @@ export const register: Register = on => {
       TABS.map(({ id, label }) => ({ label, count: tabCounts[id] })),
       e.props.bodyColumns - 2,
     )
-    const tabProps: TabsProps | null =
-      look === 'desktop' && 'Client' in elements
-        ? {
-            tabs: TABS.map(({ id, label }, n) => ({
-              id,
-              label,
-              count: tabSizes.hasCounts ? tabCounts[id] : 0,
-              width: tabSizes.widths[n]!,
-            })),
-            shown: tab,
-            gap: tabSizes.gap,
-            colors: {
-              tab: pal.tab ?? null,
-              raised: pal.raised ?? pal.tab ?? null,
-              raisedText: pal.raisedText ?? null,
-              muted: pal.muted,
-            },
-          }
-        : null
+    const tabProps: TabsProps | null = hasClient
+      ? {
+          tabs: TABS.map(({ id, label }, n) => ({
+            id,
+            label,
+            count: tabSizes.hasCounts ? tabCounts[id] : 0,
+            width: tabSizes.widths[n]!,
+          })),
+          shown: tab,
+          gap: tabSizes.gap,
+          colors: {
+            tab: pal.tab ?? null,
+            raised: pal.raised,
+            raisedText: pal.raisedText ?? null,
+            muted: pal.muted,
+          },
+        }
+      : null
     const statusLines = [
       !isPrStatus && error ? (
         <Text color={pal.tone.error} wrap="wrap">
@@ -3786,9 +3784,7 @@ export const register: Register = on => {
           {...(look === 'desktop' ? { flexWrap: 'wrap' as const } : {})}
           columnGap={isInline ? 3 : look === 'desktop' ? 2 : 1}
         >
-          {'Client' in elements && tabProps ? (
-            <elements.Client key="tabs" module="./tabs-client.tsx" props={tabProps} />
-          ) : null}
+          {hasClient && tabProps ? <elements.Client key="tabs" module="./tabs-client.tsx" props={tabProps} /> : null}
           {tabProps
             ? null
             : TABS.map(({ id, label }) => {
@@ -3988,7 +3984,7 @@ export const register: Register = on => {
     // It sits apart from the list's tree, and the closed items hang from its arrow.
     // On desktop a Client takes a click on every cell of the line, where a Button takes one only on its label.
     const foldRow = (kind: Item['kind'] | 'finding', count: number, isUnfolded: boolean) =>
-      look === 'desktop' && 'Client' in elements ? (
+      hasClient ? (
         <Box key={`fold-row-${kind}`} flexDirection="row" overflow="hidden">
           <elements.Client
             key={`fold-${kind}`}
@@ -4073,7 +4069,7 @@ export const register: Register = on => {
           </Text>
           {undo ? (
             <Button
-              key={`undo-${'ref' in undo ? `pr:${undo.ref}` : undo.id}`}
+              key={`undo-${pressRowId(undo)}`}
               label={look === 'desktop' ? '↺ Undo' : 'Undo'}
               onPress={press => runPress($, undo, press.surface)}
             />
@@ -4081,10 +4077,10 @@ export const register: Register = on => {
         </Box>
         {leaveBar(at, isLapsed)}
         {/* On desktop the time Undo has left drains in a Client of its own, which ticks without redrawing the pane. */}
-        {undo && look === 'desktop' && 'Client' in elements ? (
+        {undo && hasClient ? (
           <Box marginTop={0.5}>
             <elements.Client
-              key={`countdown-${'ref' in undo ? `pr:${undo.ref}` : undo.id}-${at}`}
+              key={`countdown-${pressRowId(undo)}-${at}`}
               module="./countdown-client.tsx"
               width="100%"
               props={
@@ -4099,6 +4095,7 @@ export const register: Register = on => {
         ) : null}
       </Box>
     )
+    const settledPad = look === 'desktop' ? 2 * DESKTOP_ROW_PAD : 0
     const settledRow = ({ settled: r, state }: Extract<Entry, { settled: RowView }>, pos?: TreePos) => {
       const undo = r.actions.find(a => a.press.action === 'undo')?.press ?? null
       const content = settledContent(r.title, state.label, state.at, undo, pos ? 7 : 5, state.isQueued, state.isLapsed)
@@ -4106,7 +4103,7 @@ export const register: Register = on => {
       const mark = state.isQueued ? <Text> </Text> : <Text color={state.isLapsed ? pal.muted : pal.mark.done}>✓</Text>
       // In a group's tree, or flat as Findings lists its rows. On desktop it pads itself as a closed row does.
       return pos ? (
-        <Box key={`settled-${r.id}`} flexDirection="column" paddingY={look === 'desktop' ? 2 * DESKTOP_ROW_PAD : 0}>
+        <Box key={`settled-${r.id}`} flexDirection="column" paddingY={settledPad}>
           {treeRow(pos, mark, content)}
         </Box>
       ) : (
@@ -4115,7 +4112,7 @@ export const register: Register = on => {
           flexDirection="row"
           alignItems="flex-start"
           overflow="hidden"
-          paddingY={look === 'desktop' ? 2 * DESKTOP_ROW_PAD : 0}
+          paddingY={settledPad}
         >
           <Box width={1} flexShrink={0} />
           <Box width={4} flexShrink={0} paddingLeft={2}>
@@ -4268,7 +4265,7 @@ export const register: Register = on => {
           settledContent(
             `#${pr.number} ${pr.title}`,
             'Dismissed',
-            lastActions[`pr:${pr.ref}`]?.at ?? now,
+            lastActions[prMarkId(pr.ref)]?.at ?? now,
             {
               action: 'pr-undo',
               ref: pr.ref,
@@ -4282,14 +4279,14 @@ export const register: Register = on => {
       ])
     const prBlock = ({ pr, isSettled, rows: prRows }: { pr: PrView; isSettled: boolean; rows: Row[] }) => {
       if (isSettled) return settledPrBlock(pr)
-      const { status, text: statusText, head: statusHead, reasons: statusReasons } = readiness(pr, handoff)
+      const { status, text: statusText, head: statusHead, reasons: statusReasons } = readiness(pr, isThreadSent)
       const { mark, tone } = PR_STATUSES[status]
       const hasRows = prRows.length > 0
       const counts = checkCounts(pr)
-      const waitingOn = threadsOnYou(pr, handoff)
+      const waitingOn = threadsOnYou(pr, isThreadSent)
       // A Dismiss left on a PR that is tracked again, as one a later reply links, is over.
-      const prLast = lastActions[`pr:${pr.ref}`]?.action === 'pr-dismiss' ? null : lastActionText(`pr:${pr.ref}`)
-      const retry = prRetryOf(lastActions[`pr:${pr.ref}`], pr.ref, null)
+      const prLast = lastActions[prMarkId(pr.ref)]?.action === 'pr-dismiss' ? null : lastActionText(prMarkId(pr.ref))
+      const retry = prRetryOf(lastActions[prMarkId(pr.ref)], pr.ref, null)
       const prActions: Action[] = [
         ...(retry
           ? [
@@ -4306,7 +4303,7 @@ export const register: Register = on => {
           ? [
               {
                 key: `resolve-${pr.ref}`,
-                label: again(`pr:${pr.ref}`, 'pr-conflicts', 'Resolve conflicts'),
+                label: again(prMarkId(pr.ref), 'pr-conflicts', 'Resolve conflicts'),
                 icon: '→',
                 kind: 'handoff' as const,
                 onPress: prPress({ action: 'pr-conflicts', ref: pr.ref }),
@@ -4317,7 +4314,7 @@ export const register: Register = on => {
           ? [
               {
                 key: `address-all-${pr.ref}`,
-                label: again(`pr:${pr.ref}`, 'pr-address-all', `Address all ${waitingOn.length} threads`),
+                label: again(prMarkId(pr.ref), 'pr-address-all', `Address all ${waitingOn.length} threads`),
                 icon: '→',
                 kind: 'handoff' as const,
                 onPress: prPress({ action: 'pr-address-all', ref: pr.ref }),

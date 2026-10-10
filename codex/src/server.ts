@@ -22,7 +22,7 @@ import { readState, updateState } from './state'
 import type { SessionState } from './state'
 import { CODEX, INBOX_DESCRIPTION, inboxToolText, VIEW_DESCRIPTION } from './texts'
 import type { Run } from './run'
-import type { LastAction, LocalResult, RowNote } from '../../types'
+import type { LocalResult, RowNote } from '../../types'
 
 export const TAB_URI = 'ui://inbox/tab'
 const TAB_MIME = 'text/html;profile=mcp-app'
@@ -101,12 +101,8 @@ export function turnOf(params: Record<string, unknown> | undefined): string | nu
 
 const text = (t: string) => ({ content: [{ type: 'text', text: t }] })
 
-function withoutDelivery({ delivery: _delivery, ...last }: LastAction): LastAction {
-  return last
-}
-
 /** What the tab hears back from a press: the view after it, text to copy, why it failed, or a note for its row. */
-type PressReply = {
+export type PressReply = {
   view: TabView
   copy: { text: string; name: string } | null
   error: string | null
@@ -131,6 +127,9 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     return /Queued message (\S+)/.exec(r.stdout)?.[1] ?? null
   }
 
+  const pressOn = (s: SessionState, p: RowPress) =>
+    applyPress(s.ledger, s.lastActions[p.id], p, { now: now(), turnsStarted: s.presence.turnsStarted, extraSteps: [] })
+
   /** The view for the tab, with the session it was read for. */
   const served = (s: SessionState, id: string): TabView => ({ ...viewOf(s, now()), thread: id })
 
@@ -145,11 +144,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     let note: PressReply['note'] = thread === id ? null : 'stale'
     let s = await updateState(dir, id, async s => {
       if (note) return s
-      const r = applyPress(s.ledger, s.lastActions[p.id], p, {
-        now: now(),
-        turnsStarted: s.presence.turnsStarted,
-        extraSteps: [],
-      })
+      const r = pressOn(s, p)
       if ('stale' in r) {
         note = 'stale'
         return s
@@ -238,27 +233,21 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   /** A press in the demo changes only its copy and performs nothing: each send, open or copy gives its row the sample note. */
   function onDemoPress(id: string, p: RowPress, thread: unknown): PressReply {
     const s = demoOf(id)
-    const r =
-      thread === id
-        ? applyPress(s.ledger, s.lastActions[p.id], p, {
-            now: now(),
-            turnsStarted: s.presence.turnsStarted,
-            extraSteps: [],
-          })
-        : ({ stale: true } as const)
+    const r = thread === id ? pressOn(s, p) : ({ stale: true } as const)
     if ('stale' in r) return { view: served(s, id), copy: null, error: null, note: 'stale' }
     // The demo opens nothing, so a Local press records no result there. A sample
     // send goes nowhere, so nothing would ever clear its Queued.
     const isLocal = r.last?.result !== undefined
-    const sample = r.last && !isLocal ? withoutDelivery(r.last) : null
-    demos.set(id, {
-      ...s,
-      ledger: r.ledger,
-      lastActions: sample ? { ...s.lastActions, [p.id]: sample } : s.lastActions,
-    })
+    let lastActions = s.lastActions
+    if (r.last && !isLocal) {
+      const { delivery: _delivery, ...sample } = r.last
+      lastActions = { ...lastActions, [p.id]: sample }
+    }
+    const next: SessionState = { ...s, ledger: r.ledger, lastActions }
+    demos.set(id, next)
 
     return {
-      view: served(demoOf(id), id),
+      view: served(next, id),
       copy: null,
       error: null,
       note: r.effects.length > 0 ? 'sample' : null,

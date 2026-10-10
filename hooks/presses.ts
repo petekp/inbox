@@ -1,7 +1,7 @@
 // What the person's presses send and how their buttons are labeled, the same
 // in every host: each message goes to the agent as the person's own words.
 
-import type { Closed, Finding, Help, Item, LastAction, Ledger, LocalResult, RowNote } from '../types'
+import type { Closed, Delivery, Finding, Help, Item, LastAction, Ledger, LocalResult, RowNote, Turns } from '../types'
 import { closeFinding, closeItem, reopenFinding, reopenItem } from './ledger'
 import type { Press } from './ledger'
 import { namedPrs, parseRef } from './prs'
@@ -80,7 +80,7 @@ export function steps(helps: Help[]): HelpStep[] {
 }
 
 /** A PR the session tracks, which an item's ask can name as "#123". */
-export type TrackedPr = { ref: string; url: string | null }
+type TrackedPr = { ref: string; url: string | null }
 
 /**
  * One step that opens the tracked PRs an item's ask names as "#123", as in
@@ -117,7 +117,7 @@ export function stepsOf(item: Item, extraSteps: HelpStep[]): HelpStep[] {
  */
 export function isHandedOff(
   last: Pick<LastAction, 'kind' | 'turnsStarted' | 'delivery'> | undefined,
-  turns: { turnsStarted: number; turnsApplied: number },
+  turns: Turns,
 ): boolean {
   const pressed = last?.kind === 'handoff' && last.delivery?.state !== 'failed' ? last.turnsStarted : undefined
 
@@ -149,7 +149,7 @@ export function actionId(p: RowPress | { action: PrActionId }): string {
 }
 
 /** What a row reads after a ✓ once this press went through: "Explain", "Reply", or the step's own label. */
-export function pressText(p: RowPress): string {
+function pressText(p: RowPress): string {
   switch (p.action) {
     case 'answer':
       return p.option
@@ -162,12 +162,41 @@ export function pressText(p: RowPress): string {
   }
 }
 
-function capitalized(text: string): string {
+export function capitalized(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/** A step's icon kind: run when it asks the agent to run a command, else copy or open by its first help. */
+export function stepIconKind(step: HelpStep | undefined): 'run' | 'copy' | 'open' | undefined {
+  if (!step) return undefined
+  if (step.step.some(h => h.kind === 'run')) return 'run'
+  const first = step.step[0]?.kind
+  return first === 'copy' || first === 'terminal' ? 'copy' : first === 'open' || first === 'link' ? 'open' : undefined
 }
 
 /** Old stored actions that hand work off, for a last action saved before it said so. */
 const HANDOFF_IDS = /^(address|type|step-\d+|thread-address|pr-conflicts|pr-address-all)$/
+
+type Rename = [RegExp, string | ((old: string) => string)]
+
+const PR_RENAMES: Rename[] = [
+  [/^address-all-/, 'pr-address-all'],
+  [/^resolve-/, 'pr-conflicts'],
+]
+
+const THREAD_RENAMES: Rename[] = [
+  [/^address-/, 'thread-address'],
+  [/^draft-/, 'thread-draft'],
+  [/^discuss-/, 'thread-discuss'],
+]
+
+const ROW_RENAMES: Rename[] = [
+  [/^explain(-|$)/, 'explain'],
+  [/^(help-.+-|step-)\d+$/, old => `step-${old.split('-').pop()}`],
+  [/^typed$/, 'type'],
+  [/^address(-|$)/, 'address'],
+  [/^discuss(-|$)/, 'discuss'],
+]
 
 /**
  * A last action saved by an earlier build in today's shape, or null when its
@@ -175,32 +204,9 @@ const HANDOFF_IDS = /^(address|type|step-\d+|thread-address|pr-conflicts|pr-addr
  * is read with, since `address-` and `discuss-` named both finding and thread actions.
  */
 function upgradedLastAction(key: string, old: Omit<LastAction, 'kind'> & { isHandoff?: boolean }): LastAction | null {
-  const a = old.action
-  const action = key.startsWith('pr:')
-    ? a.startsWith('address-all-')
-      ? 'pr-address-all'
-      : a.startsWith('resolve-')
-        ? 'pr-conflicts'
-        : null
-    : key.includes(' thread ')
-      ? a.startsWith('address-')
-        ? 'thread-address'
-        : a.startsWith('draft-')
-          ? 'thread-draft'
-          : a.startsWith('discuss-')
-            ? 'thread-discuss'
-            : null
-      : /^explain(-|$)/.test(a)
-        ? 'explain'
-        : /^(help-.+-|step-)\d+$/.test(a)
-          ? `step-${a.split('-').pop()}`
-          : a === 'typed'
-            ? 'type'
-            : /^address(-|$)/.test(a)
-              ? 'address'
-              : /^discuss(-|$)/.test(a)
-                ? 'discuss'
-                : null
+  const renames = key.startsWith('pr:') ? PR_RENAMES : key.includes(' thread ') ? THREAD_RENAMES : ROW_RENAMES
+  const found = renames.find(([pattern]) => pattern.test(old.action))
+  const action = found ? (typeof found[1] === 'function' ? found[1](old.action) : found[1]) : null
   if (action === null) return null
   const { isHandoff, ...kept } = old
   const isHandedOff = isHandoff ?? HANDOFF_IDS.test(action)
@@ -259,7 +265,7 @@ export function isUndoable(how: Closed['how']): boolean {
 }
 
 /** What a row reads after a press that found it gone or changed. */
-export const STALE_TEXT = 'This changed before your press. Nothing was sent.'
+const STALE_TEXT = 'This changed before your press. Nothing was sent.'
 
 /** What a row's note reads: after a stale press, or after a press on a sample entry. */
 export function noteText(note: RowNote['note']): string {
@@ -380,6 +386,24 @@ export function withArrival(lastActions: Record<string, LastAction>, message: st
   )
 }
 
+/** Replaces the delivery of each row the press made at `at` that is still queued and passes `matches`. */
+function withQueuedDelivery(
+  lastActions: Record<string, LastAction>,
+  rows: string[],
+  at: number,
+  matches: (message: string) => boolean,
+  delivery: Delivery,
+): Record<string, LastAction> {
+  const changed = rows.flatMap(id => {
+    const a = lastActions[id]
+    return a?.at === at && a.delivery?.state === 'queued' && matches(a.delivery.message)
+      ? [[id, { ...a, delivery }] as const]
+      : []
+  })
+
+  return changed.length === 0 ? lastActions : { ...lastActions, ...Object.fromEntries(changed) }
+}
+
 /**
  * Last actions once a press's message failed to send: each row the press made
  * at `at` reads why. A row pressed again since keeps its newer press.
@@ -390,14 +414,7 @@ export function withFailure(
   at: number,
   reason: string,
 ): Record<string, LastAction> {
-  const failed = rows.flatMap(id => {
-    const a = lastActions[id]
-    return a?.at === at && a.delivery?.state === 'queued'
-      ? [[id, { ...a, delivery: { state: 'failed' as const, reason } }] as const]
-      : []
-  })
-
-  return failed.length === 0 ? lastActions : { ...lastActions, ...Object.fromEntries(failed) }
+  return withQueuedDelivery(lastActions, rows, at, () => true, { state: 'failed', reason })
 }
 
 /**
@@ -412,14 +429,7 @@ export function withRewrite(
   message: string,
   entered: string,
 ): Record<string, LastAction> {
-  const moved = rows.flatMap(id => {
-    const a = lastActions[id]
-    return a?.at === at && a.delivery?.state === 'queued' && a.delivery.message === message
-      ? [[id, { ...a, delivery: { state: 'queued' as const, message: entered } }] as const]
-      : []
-  })
-
-  return moved.length === 0 ? lastActions : { ...lastActions, ...Object.fromEntries(moved) }
+  return withQueuedDelivery(lastActions, rows, at, m => m === message, { state: 'queued', message: entered })
 }
 
 /**
@@ -453,6 +463,16 @@ export function retryOf(id: string, last: LastAction): RowPress | null {
   }
 }
 
+/** The last action a press records on its row. */
+export function recordPress(
+  kind: LastAction['kind'],
+  action: string,
+  text: string,
+  ctx: { now: number; turnsStarted: number },
+): LastAction {
+  return { kind, action, text, at: ctx.now, turnsStarted: ctx.turnsStarted }
+}
+
 function pressed(
   ledger: Ledger,
   last: LastAction | undefined,
@@ -460,13 +480,7 @@ function pressed(
   ctx: { now: number; turnsStarted: number; extraSteps: HelpStep[] },
 ): PressResult {
   const stale = { stale: true as const }
-  const record = (kind: LastAction['kind']): LastAction => ({
-    kind,
-    action: actionId(p),
-    text: pressText(p),
-    at: ctx.now,
-    turnsStarted: ctx.turnsStarted,
-  })
+  const record = (kind: LastAction['kind']) => recordPress(kind, actionId(p), pressText(p), ctx)
   const unchanged = { ledger, last: null, effects: [] }
 
   if (p.action === 'undo') {

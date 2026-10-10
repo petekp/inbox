@@ -216,9 +216,26 @@ function promptNotes(host, ledger, prompt, told) {
 
 // ../hooks/presses.ts
 var HANDOFF_IDS = /^(address|type|step-\d+|thread-address|pr-conflicts|pr-address-all)$/;
+var PR_RENAMES = [
+  [/^address-all-/, "pr-address-all"],
+  [/^resolve-/, "pr-conflicts"]
+];
+var THREAD_RENAMES = [
+  [/^address-/, "thread-address"],
+  [/^draft-/, "thread-draft"],
+  [/^discuss-/, "thread-discuss"]
+];
+var ROW_RENAMES = [
+  [/^explain(-|$)/, "explain"],
+  [/^(help-.+-|step-)\d+$/, (old) => `step-${old.split("-").pop()}`],
+  [/^typed$/, "type"],
+  [/^address(-|$)/, "address"],
+  [/^discuss(-|$)/, "discuss"]
+];
 function upgradedLastAction(key, old) {
-  const a = old.action;
-  const action = key.startsWith("pr:") ? a.startsWith("address-all-") ? "pr-address-all" : a.startsWith("resolve-") ? "pr-conflicts" : null : key.includes(" thread ") ? a.startsWith("address-") ? "thread-address" : a.startsWith("draft-") ? "thread-draft" : a.startsWith("discuss-") ? "thread-discuss" : null : /^explain(-|$)/.test(a) ? "explain" : /^(help-.+-|step-)\d+$/.test(a) ? `step-${a.split("-").pop()}` : a === "typed" ? "type" : /^address(-|$)/.test(a) ? "address" : /^discuss(-|$)/.test(a) ? "discuss" : null;
+  const renames = key.startsWith("pr:") ? PR_RENAMES : key.includes(" thread ") ? THREAD_RENAMES : ROW_RENAMES;
+  const found = renames.find(([pattern]) => pattern.test(old.action));
+  const action = found ? typeof found[1] === "function" ? found[1](old.action) : found[1] : null;
   if (action === null) return null;
   const { isHandoff, ...kept } = old;
   const isHandedOff2 = isHandoff ?? HANDOFF_IDS.test(action);
@@ -247,6 +264,7 @@ function upgradeLastActions(saved) {
 }
 
 // ../hooks/view.ts
+var CHOICE_KEYS = [..."abcfghilm"];
 var SETTLED_MS = 5120;
 
 // src/settle.ts
@@ -540,21 +558,13 @@ async function handleHook(input, deps) {
       if (line) await updateState(dir, id, (s) => noteActivity(s, line));
       return null;
     }
-    case "Stop":
-      return stop(input, deps, withCli);
+    case "Stop": {
+      const reply = input.last_assistant_message ?? "";
+      const written = await updateState(dir, id, (s) => noteHook(endTurn(withCli(s), reply, now()), "stop", now()));
+      if (written.pending.length > 0) deps.startUpdate(id);
+      return null;
+    }
   }
-  return null;
-}
-async function stop(input, deps, withCli) {
-  const { dir, now } = deps;
-  const id = input.session_id;
-  const reply = input.last_assistant_message ?? "";
-  const written = await updateState(
-    dir,
-    id,
-    (current) => noteHook(endTurn(withCli(current), reply, now()), "stop", now())
-  );
-  if (written.pending.length > 0) deps.startUpdate(id);
   return null;
 }
 function detachedUpdate(dir, env, script) {

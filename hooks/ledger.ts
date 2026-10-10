@@ -667,13 +667,13 @@ export function closeItem(ledger: Ledger, id: string, closing: Closing, now: num
 
 /** Closes one finding, recording how it closed. */
 export function closeFinding(ledger: Ledger, id: string, closing: Closing, now: number): Ledger {
+  const finding = ledger.findings.find(f => f.id === id)
+  if (!finding) return ledger
+
   return {
     ...ledger,
     findings: ledger.findings.filter(f => f.id !== id),
-    closedFindings: [
-      ...ledger.closedFindings,
-      ...ledger.findings.filter(f => f.id === id).map(f => closedFindingRecord(f, closing, now)),
-    ].slice(-MAX_CLOSED),
+    closedFindings: [...ledger.closedFindings, closedFindingRecord(finding, closing, now)].slice(-MAX_CLOSED),
   }
 }
 
@@ -759,19 +759,19 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
   const kept = items.filter(i => turn - i.turn <= STALE_AFTER).slice(-MAX_OPEN)
   for (const i of items) if (!kept.includes(i)) closed.push(closedRecord(i, { outcome: EXPIRED, how: 'expired' }, now))
 
+  const { findings, closedFindings } = ledger.findings.reduce((l, f) => {
+    const outcome = closing.get(f.id)
+
+    return outcome === undefined ? l : closeFinding(l, f.id, { outcome, how: 'update' }, now)
+  }, ledger)
+
   return {
     ...ledger,
     card,
     items: kept,
     closed: closed.slice(-MAX_CLOSED),
-    findings: ledger.findings.filter(f => !closing.has(f.id)),
-    closedFindings: [
-      ...ledger.closedFindings,
-      ...ledger.findings.flatMap(f => {
-        const outcome = closing.get(f.id)
-        return outcome === undefined ? [] : [closedFindingRecord(f, { outcome, how: 'update' }, now)]
-      }),
-    ].slice(-MAX_CLOSED),
+    findings,
+    closedFindings,
     nextId,
     batchTurn: added > 0 ? turn : ledger.batchTurn,
   }

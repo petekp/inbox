@@ -6,10 +6,13 @@ import { render } from 'preact'
 import type { ComponentChildren, JSX } from 'preact'
 
 import { ago, isLapsed } from '../../hooks/ledger'
-import { clipLabel, noteText, pendingResult, stepEffects } from '../../hooks/presses'
+import { capitalized, clipLabel, noteText, pendingResult, stepEffects, stepIconKind } from '../../hooks/presses'
 import type { HelpStep, RowPress } from '../../hooks/presses'
 import {
+  allRows,
+  CHOICE_KEYS,
   closedShown,
+  FINDING_BADGES,
   feedbackText,
   hasAge,
   isFailure,
@@ -18,11 +21,12 @@ import {
   PRESS_GUARD_MS,
   SETTLED_MS,
 } from '../../hooks/view'
-import type { Feedback, RowState, RowView } from '../../hooks/view'
+import type { Feedback, RowView } from '../../hooks/view'
 import type { Finding, Item, RowNote } from '../../types'
 import { followTo, isShownEmpty, newRows } from './arrivals'
 import type { Group, SeenRows, Tab } from './arrivals'
 import type { TabView as View } from './core'
+import type { PressReply } from './server'
 import { drawnSettled, EXIT_MS, leavingSettled, POLL_MS, PRESS_TIMEOUT_MS, settledIds, settledSeen } from './settle'
 
 type Tone = 'needsYou' | 'findings' | 'done' | 'error'
@@ -69,10 +73,9 @@ function Icon({ name }: { name: IconName }) {
 
 /** A step's icon: play when it asks Codex to run a command, else copy or open, by its first help. */
 function stepIcon(step: HelpStep | undefined): IconName | undefined {
-  if (!step) return undefined
-  if (step.step.some(h => h.kind === 'run')) return 'play'
-  const first = step.step[0]?.kind
-  return first === 'copy' || first === 'terminal' ? 'copy' : first === 'open' || first === 'link' ? 'open' : undefined
+  const kind = stepIconKind(step)
+
+  return kind === 'run' ? 'play' : kind
 }
 
 /** A list row. Selected, it shows its title in full, its body and its keys; otherwise one line. */
@@ -102,10 +105,8 @@ type Row = {
 }
 
 /** A row that just closed, drawn in its place with its outcome, or a row still open. */
-type Entry = { row: Row } | { settled: RowView; state: Extract<RowState, { is: 'settled' }> }
+type Entry = { row: Row } | { settled: RowView }
 
-// The keys of a question's answers and a task's steps, as the pane letters them.
-const CHOICE_KEYS = [...'abcfghilm']
 const TABS: { id: Tab; label: string; hotkey: string }[] = [
   { id: 'needsYou', label: 'Needs you', hotkey: '1' },
   { id: 'findings', label: 'Findings', hotkey: '2' },
@@ -164,18 +165,20 @@ let isPressing = false
 // ── The host ────────────────────────────────────────────────────────────────
 
 let nextId = 0
-const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>()
+const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void; timer?: number }>()
 
 /** Sends a request to the host. With `timeoutMs`, a request the host has not answered by then fails, and a later answer is dropped. */
 function request(method: string, params: unknown, timeoutMs?: number): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const id = ++nextId
-    pending.set(id, { resolve, reject })
+    const timer =
+      timeoutMs === undefined
+        ? undefined
+        : window.setTimeout(() => {
+            if (pending.delete(id)) reject(new Error(`The inbox did not answer in ${Math.round(timeoutMs / 1000)} s`))
+          }, timeoutMs)
+    pending.set(id, { resolve, reject, timer })
     parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*')
-    if (timeoutMs !== undefined)
-      setTimeout(() => {
-        if (pending.delete(id)) reject(new Error(`The inbox did not answer in ${Math.round(timeoutMs / 1000)} s`))
-      }, timeoutMs)
   })
 }
 
@@ -185,6 +188,7 @@ window.addEventListener('message', e => {
   if (m.id != null && !m.method && pending.has(m.id)) {
     const p = pending.get(m.id)!
     pending.delete(m.id)
+    clearTimeout(p.timer)
     if (m.error) p.reject(m.error)
     else p.resolve(m.result)
     return
@@ -221,8 +225,8 @@ function applyView(next: View, seq: number) {
   for (const id of leftAt.keys()) if (!seen.has(id)) leftAt.delete(id)
   // A row seen settled for the first time starts to leave once SETTLED_MS passes, and is gone EXIT_MS later.
   if ([...seen.keys()].some(id => !before.has(id))) {
-    setTimeout(draw, SETTLED_MS + 50)
-    setTimeout(draw, SETTLED_MS + EXIT_MS + 50)
+    drawIn(SETTLED_MS)
+    drawIn(SETTLED_MS + EXIT_MS)
   }
   view = next
   const rows = newRows(rowsSeen, next)
@@ -232,7 +236,7 @@ function applyView(next: View, seq: number) {
     arrived.set(id, Date.now())
     entering.add(id)
   }
-  if (added.length > 0) setTimeout(draw, NEW_ROW_MS + 50)
+  if (added.length > 0) drawIn(NEW_ROW_MS)
   follow(next, rows.added)
   draw()
 }
@@ -288,25 +292,14 @@ async function poll() {
   setTimeout(poll, POLL_MS)
 }
 
-type PressReply = {
-  view?: View
-  copy?: { text: string; name: string } | null
-  error?: string | null
-  note?: RowNote['note'] | null
-}
-
 /** Whether the view lists an open row with this id, which can show a note. */
 function isListed(v: View, id: string): boolean {
-  return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows].some(
-    r => r.id === id && r.state.is !== 'settled',
-  )
+  return allRows(v).some(r => r.id === id && r.state.is !== 'settled')
 }
 
 /** Whether the view lists this row as reading "Not sent". */
 function isNotSent(v: View, id: string): boolean {
-  return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows].some(
-    r => r.id === id && r.feedback?.is === 'notSent',
-  )
+  return allRows(v).some(r => r.id === id && r.feedback?.is === 'notSent')
 }
 
 /**
@@ -324,21 +317,21 @@ async function act(rowId: string, press: RowPress, onSent?: () => void, pending 
   const seq = ++requested
   try {
     const r = await callTool<PressReply>('inbox_press', { press, thread: view?.thread, demo: isDemo }, PRESS_TIMEOUT_MS)
-    if (r?.copy) await copy(rowId, r.copy)
-    if (r?.view) applyView(r.view, seq)
+    if (r.copy) await copy(rowId, r.copy)
+    if (r.view) applyView(r.view, seq)
     // A message that did not send shows on its row, from the view, when the row is there to show it.
-    if (r?.error && !(view && isNotSent(view, rowId))) errors.set(rowId, r.error)
+    if (r.error && !(view && isNotSent(view, rowId))) errors.set(rowId, r.error)
     // A sample press went through on the demo's copy, so its typed words go as a real press's do.
     // After the view, so `onSent` reads the rows as they are after the press.
-    if (!r?.error && r?.note !== 'stale') onSent?.()
-    if (r?.note && view && isListed(view, rowId)) {
+    if (!r.error && r.note !== 'stale') onSent?.()
+    if (r.note && view && isListed(view, rowId)) {
       notes.set(rowId, { text: noteText(r.note), at: Date.now() })
-      setTimeout(draw, SETTLED_MS + 50)
+      drawIn(SETTLED_MS)
       // A stale press's typed words go back into the field they were sent from.
       if (r.note === 'stale' && press.action === 'type') typing = rowId
-    } else if (r?.note) {
+    } else if (r.note) {
       lineNote = { text: noteText(r.note), at: Date.now() }
-      setTimeout(draw, SETTLED_MS + 50)
+      drawIn(SETTLED_MS)
     }
   } catch {
     errors.set(rowId, 'Not sent: the inbox did not answer.')
@@ -361,10 +354,6 @@ async function copy(rowId: string, c: { text: string; name: string }) {
 }
 
 // ── Rows ────────────────────────────────────────────────────────────────────
-
-function capitalized(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1)
-}
 
 function startTyping(id: string) {
   keepPressedOpen(id)
@@ -447,11 +436,6 @@ function itemRow(v: View, r: RowView, item: Item): Row {
   }
 }
 
-const FINDING_BADGES = {
-  issue: { label: 'Issue', mark: '▲', tone: 'needsYou' },
-  opportunity: { label: 'Opportunity', mark: '✦', tone: 'done' },
-} as const
-
 function findingRow(v: View, r: RowView, f: Finding): Row {
   const badge = FINDING_BADGES[f.kind]
   // A finding handed to Codex folds, as a task does, until Codex's reply leaves it open.
@@ -500,7 +484,7 @@ type Lists = {
 function listsOf(v: View, drawn: ReadonlySet<string>): Lists {
   const entries = (rows: RowView[]) =>
     rows.flatMap((r): Entry[] => {
-      if (r.state.is === 'settled') return drawn.has(r.id) ? [{ settled: r, state: r.state }] : []
+      if (r.state.is === 'settled') return drawn.has(r.id) ? [{ settled: r }] : []
       if (r.item) return [{ row: itemRow(v, r, r.item) }]
       return r.finding ? [{ row: findingRow(v, r, r.finding) }] : []
     })
@@ -536,7 +520,7 @@ async function undo(r: RowView) {
     await act(r.id, { action: 'undo', id: r.id }, () => {
       open(t, r.id)
       notes.set(r.id, { text: '✓ Undo', at: Date.now() })
-      setTimeout(draw, SETTLED_MS + 50)
+      drawIn(SETTLED_MS)
     })
   } finally {
     undoing.delete(r.id)
@@ -546,13 +530,13 @@ async function undo(r: RowView) {
     const error = errors.get(r.id)
     if (error && !isTimeLeft) {
       lineNote = { text: error, at: Date.now(), isError: true }
-      setTimeout(draw, SETTLED_MS + 50)
+      drawIn(SETTLED_MS)
     }
     // A row held past its time leaves the way any row does, with its exit.
     if (at !== undefined && !isTimeLeft) {
       seen.set(r.id, Date.now() - SETTLED_MS)
       leftAt.delete(r.id)
-      setTimeout(draw, EXIT_MS + 50)
+      drawIn(EXIT_MS)
     }
     draw()
   }
@@ -593,7 +577,7 @@ function noteOpenRow(t: Tab, rows: Row[], openId: string | undefined) {
 /** Opens a row. Its buttons ignore clicks for PRESS_GUARD_MS, and draw again once that ends. */
 function open(t: Tab, id: string) {
   selection[t] = { id, openedAt: Date.now() }
-  setTimeout(draw, PRESS_GUARD_MS + 50)
+  drawIn(PRESS_GUARD_MS)
 }
 
 function select(t: Tab, rows: Row[], index: number) {
@@ -863,7 +847,9 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
  * person's own Done or Dismiss, Undo sits at the right, its fill emptying from the right as Undo's time runs
  * out. While Undo's press is out, the fill stops and the row stays.
  */
-function SettledView({ settled: r, state }: Extract<Entry, { settled: RowView }>) {
+function SettledView({ settled: r }: Extract<Entry, { settled: RowView }>) {
+  const { state } = r
+  if (state.is !== 'settled') return null
   const start = seen.get(r.id) ?? Date.now()
   const isUndoing = undoing.has(r.id)
   // Green only for what the person got: Done and answers. Dismissed, expired and agent closes are muted.
@@ -940,7 +926,7 @@ function Entries({
             key={x.settled.id}
             data-motion={x.settled.id}
           >
-            <SettledView settled={x.settled} state={x.state} />
+            <SettledView settled={x.settled} />
           </div>
         ),
       )}
@@ -1265,6 +1251,14 @@ function run(el: HTMLElement, frames: Keyframe[], timing: KeyframeAnimationOptio
   a.oncancel = done
 }
 
+type Look = { height: number; opacity: number }
+
+/** Animates the element from one height and opacity to another, then leaves it clipped toward `to.height`. */
+function tween(el: HTMLElement, from: Look, to: Look, timing: KeyframeAnimationOptions) {
+  const frame = (l: Look) => ({ height: `${l.height}px`, opacity: l.opacity })
+  run(el, [frame(from), frame(to)], timing, to.height)
+}
+
 /**
  * Animates what a draw changed. A row in `entering` grows in, a leaving row fades and collapses, and an
  * element whose height changed moves there from where it was, mid-animation included, fading back in if it
@@ -1285,19 +1279,11 @@ function animateDraw(before: Heights) {
       if (el.dataset.leaving) continue
       el.dataset.leaving = '1'
       leftAt.set(key, Date.now())
-      setTimeout(draw, EXIT_MS + 50)
+      drawIn(EXIT_MS)
       const height = el.getBoundingClientRect().height
       const opacity = Number(getComputedStyle(el).opacity)
       for (const a of anims) a.cancel()
-      run(
-        el,
-        [
-          { height: `${height}px`, opacity },
-          { height: '0px', opacity: 0 },
-        ],
-        EXIT,
-        0,
-      )
+      tween(el, { height, opacity }, { height: 0, opacity: 0 }, EXIT)
       continue
     }
     delete el.dataset.leaving
@@ -1311,15 +1297,7 @@ function animateDraw(before: Heights) {
     const target = el.scrollHeight
     if (!was || was.el !== el) {
       if (!entering.delete(key)) continue
-      run(
-        el,
-        [
-          { height: '0px', opacity: 0 },
-          { height: `${target}px`, opacity: 1 },
-        ],
-        ENTER,
-        target,
-      )
+      tween(el, { height: 0, opacity: 0 }, { height: target, opacity: 1 }, ENTER)
       continue
     }
     if (anims.length > 0 && Math.abs(Number(el.dataset.to) - target) < 1) continue
@@ -1328,15 +1306,7 @@ function animateDraw(before: Heights) {
     const opacity = anims.length > 0 ? Number(getComputedStyle(el).opacity) : 1
     for (const a of anims) a.cancel()
     if (Math.abs(height - target) < 1 && opacity > 0.99) continue
-    run(
-      el,
-      [
-        { height: `${height}px`, opacity },
-        { height: `${target}px`, opacity: 1 },
-      ],
-      MOVE,
-      target,
-    )
+    tween(el, { height, opacity }, { height: target, opacity: 1 }, MOVE)
   }
   // Rows that arrived on another tab grow in when that tab shows them, not later.
   entering.clear()
@@ -1393,15 +1363,7 @@ function toggleFold(group: Group) {
   el.dataset.closing = '1'
   const height = el.getBoundingClientRect().height
   for (const a of el.getAnimations()) a.cancel()
-  run(
-    el,
-    [
-      { height: `${height}px`, opacity: 1 },
-      { height: '0px', opacity: 0 },
-    ],
-    EXIT,
-    0,
-  )
+  tween(el, { height, opacity: 1 }, { height: 0, opacity: 0 }, EXIT)
   setTimeout(() => {
     if (unfolded.has(group) || !closingFolds.delete(group)) return
     draw()
@@ -1428,6 +1390,11 @@ function revealSelected() {
 }
 
 const root = document.getElementById('app')!
+
+/** Draws again once `ms` has passed, with slack for the timer to land after the state it waits on expires. */
+function drawIn(ms: number) {
+  setTimeout(draw, ms + 50)
+}
 
 function draw() {
   // The page's "Loading…" text is not Preact's, so it goes before the first draw.

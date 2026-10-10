@@ -234,6 +234,9 @@ export type Cursor = { id: string | null; index: number; openedAt: number }
 /** The PR tab's data: each PR's latest view, the current branch's PR, and whether a fetch runs. */
 export type PrViews = { views: Record<string, PrView>; branchRef: string | null; isFetching: boolean }
 
+/** The turn counts a handed-off row folds by. */
+export type Turns = Pick<Presence, 'turnsStarted' | 'turnsApplied'>
+
 /**
  * The sample state `/inbox demo` shows in place of the session's own. Presses
  * on it change only this copy, so nothing reaches the real inbox, its store or Claude.
@@ -246,7 +249,7 @@ export type DemoCopy = {
   /** Each sample row's latest note, by the row's id. */
   notes: Record<string, RowNote>
   /** The turn counts a sample row handed to Claude folds by. */
-  turns: Pick<Presence, 'turnsStarted' | 'turnsApplied'>
+  turns: Turns
 }
 
 declare module 'claude-code' {
