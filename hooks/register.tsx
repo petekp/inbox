@@ -2658,13 +2658,15 @@ export const register: Register = on => {
     const notSent = isResumable && resuming?.is === 'refused' ? `Not sent: ${resuming.why}` : ''
     // On desktop, a stop line that wraps pushes [Resume] to the right edge, under [Open inbox], so a refusal takes its own row.
     const isNotSentOwnRow = notSent !== '' && e.surface === 'desktop' && e.props.maxRows > 2
-    const after = !isResumable ? stopFix(stop) : isNotSentOwnRow ? '' : notSent
+    const fix = isResumable ? '' : stopFix(stop)
+    const inlineNotSent = isNotSentOwnRow ? '' : notSent
     const stopLine = (
       <Box flexDirection="row" alignItems="flex-start" gap={1}>
         <Box flexShrink={1} minWidth={0}>
           <Text wrap="truncate-end">
             <Text color="error">Stopped {ago(now - stop.at)}: </Text>
-            {stopText(stop)}.{after ? <Text dimColor> {after}</Text> : null}
+            {stopText(stop)}.{fix ? <Text dimColor> {fix}</Text> : null}
+            {inlineNotSent ? <Text color="error"> {inlineNotSent}</Text> : null}
           </Text>
         </Box>
         {isResumable ? (
@@ -2681,7 +2683,7 @@ export const register: Register = on => {
       <Box flexDirection="column">
         {countLine}
         {e.props.maxRows > 1 ? stopLine : null}
-        {isNotSentOwnRow ? <Text dimColor>{notSent}</Text> : null}
+        {isNotSentOwnRow ? <Text color="error">{notSent}</Text> : null}
       </Box>
     )
   })
@@ -3273,7 +3275,7 @@ export const register: Register = on => {
       const lastText = lastActionText(row.id, row)
       const tone = lastTone(row) ? pal.tone.done : pal.muted
       const status = [
-        ...(row.fold?.note ? [{ text: row.fold.note, color: tone }] : []),
+        ...(row.fold?.note ? [{ text: row.fold.note, color: pal.muted }] : []),
         ...(lastText
           ? [
               {
@@ -3855,13 +3857,13 @@ export const register: Register = on => {
                         Not sent: {resuming.why}
                       </Text>
                     ) : null}
-                    {resuming?.is === 'sending' ? (
-                      <Text color={pal.muted}>Resuming…</Text>
-                    ) : (
-                      <Box flexDirection="row">
-                        <Button key="resume" label="Resume" onPress={() => void resume($)} />
-                      </Box>
-                    )}
+                    <Box flexDirection="row">
+                      <Button
+                        key="resume"
+                        label={resuming?.is === 'sending' ? 'Resuming…' : 'Resume'}
+                        onPress={() => void resume($)}
+                      />
+                    </Box>
                   </Box>
                 ) : (
                   <Text wrap="wrap">

@@ -1567,8 +1567,10 @@ test('a stop and an open permission prompt lead the sidebar line until they clea
   await clock.settle()
   expect(sent.at(-1)).toBe('Continue')
   expect((await band.find({ key: 'resume' }))?.props.label).toBe('Resuming…')
+  expect((await pane.find({ key: 'resume' }))?.props.label).toBe('Resuming…')
   // A second press while it sends sends nothing more.
   await band.press({ key: 'resume' })
+  await pane.press({ key: 'resume' })
   await clock.settle()
   expect(sent.filter(text => text === 'Continue')).toHaveLength(1)
   await $.turn.start({ text: 'Continue', turnId: 't3' })
