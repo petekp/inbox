@@ -1,6 +1,6 @@
 # Desktop polish
 
-The open row and the lists look haphazard in the Claude app, and less so in the Codex tab. This plan gives both one spacing rule and one action layout. The goal is the same pane in both apps, drawn with each app's own controls.
+The open row and the lists looked haphazard in the Claude app, and less so in the Codex tab. This plan sets one spacing rule for both, and for each app an action layout, tabs and rows drawn with that app's own controls.
 
 ## What is wrong today
 
@@ -58,7 +58,7 @@ Captured on 2026-10-09 in the Claude app's demo pane and the Codex tab:
 
 ## Not changing
 
-- The cards and the colors, set by desktop-look.md.
+- The cards and the palettes, set by desktop-look.md. Rules 7 and 9 change only which text takes which palette color.
 - The terminal's look.
 - Any wording, except Send's capital S.
 

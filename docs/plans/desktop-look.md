@@ -64,11 +64,11 @@ These rules keep the components consistent. Where a component's own design disag
 ### 3. Color roles
 
 - **Selection blue (`pal.selection`)**: the open row only, plus the pressed flash on a row Client.
-- **Raised gray (`pal.raised`)**: the shown tab, and hover on any Client. Text on raised uses `pal.raisedText` where the palette sets one. The ANSI palettes raise to white or black, so text without it would vanish. On the tab bar, shown and hover then share a color, as they do in the terminal. The shown tab's bold label and its tone line tell them apart (component 4).
+- **Raised gray (`pal.raised`)**: the shown tab, and hover on any Client. Text on raised uses `pal.raisedText` where the palette sets one. The ANSI palettes raise to white or black, so text without it would vanish. Only the shown tab is raised. A hovered tab takes `pal.tab`, or raised where the palette has no tab gray, and then the shown tab's bold label tells them apart (`desktop-polish.md` rule 7).
 - **Card (`pal.card`)**: section cards.
 - **Red (`pal.tone.error`)**: stopped or failed. "Stopped", "Not sent", "Could not…", a failing check.
 - **Green (`pal.mark.done`, `pal.tone.done`)**: done or handed to Claude.
-- **The tab's tone (amber, violet, teal)**: that tab's count and its new-row bar.
+- **The tab's tone (amber, violet, teal)**: that tab's new-row bar. Tab counts are muted.
 - **Muted**: context. Ages, paths, queued presses, notes.
 - **Color is only an extra cue.** The ANSI, Auto and custom palettes set no tones. The words must carry every state alone.
 
@@ -79,7 +79,7 @@ These rules keep the components consistent. Where a component's own design disag
   - stacked glyph columns: the `│ ├─ └─` tree and `▌` bars
   - runs of `─`, which wrap
   - `╴`
-- **Replacements:** a bar becomes a Box with `backgroundColor`. `▔` draws only as the shown tab's tone line, in a clipped one-line Box.
+- **Replacements:** a bar becomes a Box with `backgroundColor`. `▔` is not used.
 
 ### 5. Text width
 
@@ -97,7 +97,7 @@ These rules keep the components consistent. Where a component's own design disag
   - A Box padding or gap of 1 draws about 19 px, half a line. The section card's top padding shows it.
   - A blank Text row draws a full line.
 - Inside a Client, a cell is a full line. In `desk-ctabs1` the tab panels, `paddingY` 1 around one text line, are 114 px tall: 3 × 38 px. Pointer rows are whole lines too.
-  - So the row Client puts no padding inside itself. Spacing between rows stays in the hooks tree.
+  - The row and fold Clients pad their text by `DESKTOP_ROW_PAD`, a quarter line, so each row is 1.5 lines tall and rows sit flush. `surface.rows` rounds that height down, so the hover test adds the padding back.
   - The tabs Client has no `height` prop (`register.tsx:3437`) and still drew 3 rows from its content. That is partial evidence for sizing a row Client by its content. It covers only content that does not wrap; probe 3 checks content that wraps.
 - On desktop, space things with Box padding and gaps in the hooks tree, not blank Text rows. An empty `height={1}` Box draws a full 38 px line. An empty Box with `paddingTop={1}` draws 19 px.
 - A native Button's chrome is about 48 px tall, about 1.25 text lines (Hide demo and Resolve conflicts again in `desk-probe-seen`). A line holding a Button is button-tall. That is normal on desktop, so accept it.
@@ -106,15 +106,13 @@ These rules keep the components consistent. Where a component's own design disag
 
 - **Closed row.** One line, or two for a question. It holds the handle column, the muted `before`, the title, and `after` (the age or the last action). No background at rest. Raised on hover. Selection blue while pressed. The click area spans the full row, the same span the open row's selection fills.
 - **Open row.** Selection blue over the full row. The context line sits directly on the bold title. A gap then separates the body, the status lines, the actions and the field.
-- **Between rows.** A blank gap Box, with no rule.
+- **Between rows.** Nothing. Closed rows sit flush and pad themselves (`desktop-polish.md` rule 6).
 - **New-row bar.** A 1-cell bar at the row's left edge in the tab's mark color. On an open row it is an absolute Box at `left={0}`, painted over the row. On a closed row the row Client draws it itself (component 19).
 
 ### 8. Action buttons
 
-- On desktop the two action groups always take separate lines.
-  - The main group: Try again, the options, All N options, help steps, Done or Address.
-  - Then the talk and Dismiss group.
-- Each group is a `flexWrap` row with `columnGap 2` and `rowGap 1`. Put `marginTop 2` between the groups, so the gap between groups is clearly bigger than the gap inside one.
+- On desktop the actions take one `flexWrap` row with `columnGap 2` and `rowGap 1`: Try again, the options, All N options, help steps, Done or Address, then the talk and Dismiss actions (`desktop-polish.md` rule 2).
+- The recommended option, or else the action marked `isMain`, is the primary button. Icons follow rule 8.
 - No `·` Text between the groups. A Text among taller native buttons sits at their top edge.
 - No key letters. Hotkeys do nothing on desktop.
 
@@ -122,7 +120,7 @@ These rules keep the components consistent. Where a component's own design disag
 
 - Only Clients draw hover: `pal.raised` with `pal.raisedText`.
   - Call `setState` only when hover changes.
-  - Count a move as inside only within `surface.columns` by `surface.rows`.
+  - Count a move as inside only within `surface.columns` by `surface.rows`, plus the padding `surface.rows` rounds away.
 - A row Client draws selection blue the moment the pointer goes down. The press then shows before the round trip through the hooks module.
 - Native Buttons keep the app's own hover and press.
 - Nothing that takes no click gets a hover.

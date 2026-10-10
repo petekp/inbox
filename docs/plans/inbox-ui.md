@@ -34,7 +34,7 @@ The inbox has two renderers. The mod draws the terminal and desktop Code mode. O
 
 **Terminal.** The band leads with how many things need the person and the top one, and has an [Open inbox] button. The pane keeps its keys, and gains the shared fixes: feedback on the row, Undo, a Cancel button, every option drawn, question numbers that match what a typed number answers, and source-neutral status words.
 
-**Desktop Code mode.** The same band and pane, drawn for clicks. Actions are native buttons with no key letters. A tab, a closed row and a Closed fold line each take a click anywhere on them. The shown tab is raised and bold, with a line in its tab's color along its top. The app's own ✕ closes the pane. Nothing depends on a key.
+**Desktop Code mode.** The same band and pane, drawn for clicks. Actions are native buttons with no key letters. A tab, a closed row and a Closed fold line each take a click anywhere on them. The shown tab is a rounded raised segment with a bold label. The app's own ✕ closes the pane. Nothing depends on a key.
 
 **Claude mode.** Claude records items with the inbox's tools, because nothing else watches a chat. Claude ends a reply that leaves something open with an inline card: a count, up to three rows and [Open inbox]. The full view opens fullscreen with Needs you and Findings. It is not built now (decision 2). The seams stay open so it can be added.
 
@@ -341,16 +341,14 @@ Questions
    accounts before the
    migration runs?
    [Yes, rename (recommended)]
-   [No, keep users]
-
-   [Type an answer] [Explain]
-   [Dismiss]
+   [No, keep users] [✎ Type an answer]
+   [Explain] [Dismiss]
 ? Keep the old endpoint for…
 Tasks
 • Add STRIPE_KEY to .env
 ```
 
-Below 50 columns, a closed row drops its age; the open form still shows it. At 50 columns or more, closed rows show their age and the status moves onto the tab line. An open row's actions always form two groups, each starting on a new line. The options, help steps, and Done or Address come first. Type, Explain or Discuss, and Dismiss follow.
+Below 50 columns, a closed row drops its age; the open form still shows it. At 50 columns or more, closed rows show their age and the status moves onto the tab line. An open row's actions take one line that wraps. The options, help steps, and Done or Address come first, then Type, Explain or Discuss, and Dismiss. The recommended option, or else Done or Address, is the primary button. An action that copies, opens, runs or hands off starts with an icon, as `desktop-polish.md` rule 8 lists.
 
 **After [Explain] is pressed**, the row stays open and records the press:
 
@@ -358,10 +356,8 @@ Below 50 columns, a closed row drops its age; the open form still shows it. At 5
 1) Rename the table to accou…
    ✓ Explain · just now
    [Yes, rename (recommended)]
-   [No, keep users]
-
-   [Type an answer] [Explain again]
-   [Dismiss]
+   [No, keep users] [✎ Type an answer]
+   [Explain again] [Dismiss]
 ```
 
 **How the desktop drawing differs from the terminal.**
@@ -370,12 +366,12 @@ Below 50 columns, a closed row drops its age; the open form still shows it. At 5
 |---|---|---|---|
 | Action labels | `a: Explain`: a Text letter beside a ": Label" Button | `[Explain]` | Hotkeys do nothing on desktop. "a" beside a native ": Explain" button is noise. |
 | Hidden hotkey Box | Drawn | Not drawn | It does nothing there, and might draw as visible native buttons. |
-| Tabs | Raised panel; 5 plain Buttons per unselected tab | One Client draws the three tabs. A click anywhere on a tab shows it. The shown tab is raised, with a bold label and a line in its tab's color along its top. Each count is in its tab's color. | A Button takes a click only on its label. A Client takes one over its whole region. The selection color means the open row, so the shown tab does not use it. |
+| Tabs | Raised panel; 5 plain Buttons per unselected tab | One Client draws the three tabs. A click anywhere on a tab shows it. Only the shown tab has a fill: raised, rounded and bold. A hovered tab takes the tab gray. Other labels and every count are muted. | A Button takes a click only on its label. A Client takes one over its whole region. The selection color means the open row, so the shown tab does not use it. |
 | Closed row | Handle Button and title Button, two when the title wraps | One Client per row. A click anywhere on it opens the row. The title is cut to one line with "…". | A Button takes a click only on its label. |
 | Keys drawer, "1 2 3", "j k", "ctrl+x tab" | Shown | Not drawn | Nothing to press. |
 | Tab draw-in | Kept | Not drawn | It drops most frames at 10 redraws a second. The 1.5 s new-row bar and the leave bar stay. |
 | Closing the pane | Esc | The app's own ✕ on the pane's title bar | The app draws it, so a [Close] in the pane would be a second close. |
-| Tree lines and dividers | `│ ├─ └─` and a `─` rule between rows | None. A blank line sets rows apart. A PR's status block starts at the title's column, so only its check and thread rows are indented. | Desktop text is proportional and its lines differ in height, so stacked glyphs break into bars and a rule sized in columns wraps. A rail drawn as a Box is a full cell wide and would read as the new-row bar. |
+| Tree lines and dividers | `│ ├─ └─` and a `─` rule between rows | None. Closed rows sit flush, each padded a quarter line above and below. A PR's status block starts at the title's column, so only its check and thread rows are indented. | Desktop text is proportional and its lines differ in height, so stacked glyphs break into bars and a rule sized in columns wraps. A rail drawn as a Box is a full cell wide and would read as the new-row bar. |
 | Title cut | By columns | By about 1.25 characters per column | A column of `bodyColumns` holds more than one character of desktop text. |
 | Links | `Link` | `Link` for https. A button that runs `open` for local files and folders. | `Link` is live only for https. `$.process` works on desktop. |
 

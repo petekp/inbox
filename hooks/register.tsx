@@ -4264,7 +4264,7 @@ export const register: Register = on => {
       ])
     const prBlock = ({ pr, isSettled, rows: prRows }: { pr: PrView; isSettled: boolean; rows: Row[] }) => {
       if (isSettled) return settledPrBlock(pr)
-      const { status, text: statusText } = readiness(pr, handoff)
+      const { status, text: statusText, head: statusHead, reasons: statusReasons } = readiness(pr, handoff)
       const { mark, tone } = PR_STATUSES[status]
       const hasRows = prRows.length > 0
       const counts = checkCounts(pr)
@@ -4333,11 +4333,8 @@ export const register: Register = on => {
         answered > 0 ? `${answered} open ${answered === 1 ? 'thread' : 'threads'} you answered` : null,
       ].filter(Boolean)
 
-      // On desktop the status's first words carry its color and its reasons are muted, so the
+      // On desktop the status words carry its color and its reasons are muted, so the
       // title stays the loudest line; the words say the status, so it needs no mark.
-      const colon = statusText.indexOf(': ')
-      const statusHead = colon < 0 ? statusText : statusText.slice(0, colon)
-      const statusReasons = colon < 0 ? '' : statusText.slice(colon + 2)
 
       return section([
         <Box paddingLeft={1}>

@@ -226,10 +226,14 @@ function plural(count: number, one: string, many: string): string {
 /**
  * What stands between the PR and merging, or that it is ready. A thread sent
  * to Claude or on changed lines still blocks, as it is still open on GitHub.
+ * `text` is the whole line. `head` is its status words, as "Blocked", and `reasons` the rest, or ''.
  */
-export function readiness(pr: PrView, h: Handoffs = NO_HANDOFFS): { status: PrStatus; text: string } {
-  if (pr.state === 'MERGED') return { status: 'merged', text: 'Merged' }
-  if (pr.state !== 'OPEN') return { status: 'closed', text: 'Closed' }
+export function readiness(
+  pr: PrView,
+  h: Handoffs = NO_HANDOFFS,
+): { status: PrStatus; text: string; head: string; reasons: string } {
+  if (pr.state === 'MERGED') return { status: 'merged', text: 'Merged', head: 'Merged', reasons: '' }
+  if (pr.state !== 'OPEN') return { status: 'closed', text: 'Closed', head: 'Closed', reasons: '' }
   const { fail: failing, pending } = checkCounts(pr)
   const waiting = waitingThreads(pr)
   const open = threadsOnYou(pr, h).length
@@ -247,12 +251,18 @@ export function readiness(pr: PrView, h: Handoffs = NO_HANDOFFS): { status: PrSt
     pending > 0 ? `${pending} ${pending === 1 ? 'check' : 'checks'} running` : null,
   ].filter((b): b is string => b !== null)
 
-  return blockers.length === 0
-    ? {
-        status: 'ready',
-        text: `Ready to merge${pr.reviewDecision === 'APPROVED' ? ': approved' : ''}, checks pass, no threads waiting on you`,
-      }
-    : { status: pr.isDraft ? 'draft' : 'blocked', text: `Blocked: ${blockers.join(', ')}` }
+  if (blockers.length > 0) {
+    const reasons = blockers.join(', ')
+    return { status: pr.isDraft ? 'draft' : 'blocked', text: `Blocked: ${reasons}`, head: 'Blocked', reasons }
+  }
+  const isApproved = pr.reviewDecision === 'APPROVED'
+
+  return {
+    status: 'ready',
+    text: `Ready to merge${isApproved ? ': approved' : ''}, checks pass, no threads waiting on you`,
+    head: 'Ready to merge',
+    reasons: `${isApproved ? 'approved, ' : ''}checks pass, no threads waiting on you`,
+  }
 }
 
 /**
