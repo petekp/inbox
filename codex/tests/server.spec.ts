@@ -5,7 +5,9 @@ import { test } from 'node:test'
 
 import type { Feedback } from '../../hooks/view'
 import { noteHook, notePrompt, viewOf } from '../src/core'
+import type { View } from '../src/core'
 import { makeServer } from '../src/server'
+import { PRESS_TIMEOUT_MS } from '../src/settle'
 import { readState, updateState } from '../src/state'
 import { fakeRunner, tempDir } from './helpers'
 
@@ -362,4 +364,52 @@ test('an Open step shows a file macOS would run in Finder, opens any other file,
     at: 100,
   })
   assert.equal(calls.length, 2)
+})
+
+test('an open still pending after the press timeout shows nothing on its row, and stays saved as pending', async () => {
+  const { dir, call } = await setup(0)
+  const pending = (at: number) => ({
+    state: 'pending' as const,
+    parts: [{ kind: 'open' as const, name: 'notes.md', isCommand: false, error: null }],
+    at,
+  })
+  const opened = (at: number) => ({
+    kind: 'local' as const,
+    action: 'step-0',
+    text: 'Open notes.md',
+    at,
+    result: pending(at),
+  })
+  // The server's clock reads 100: one press began before the timeout, one just now.
+  const staleAt = 100 - PRESS_TIMEOUT_MS - 1
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: {
+      ...s.ledger,
+      items: [
+        ...s.ledger.items,
+        {
+          id: 'i2',
+          kind: 'task',
+          label: null,
+          ask: 'Read the notes',
+          options: [],
+          rec: null,
+          helps: [{ kind: 'open', path: 'notes.md' }],
+          turn: 1,
+          at: 1,
+        },
+      ],
+    },
+    lastActions: { i1: opened(staleAt), i2: opened(100) },
+  }))
+  const r = (await call('inbox_view', {}, { thread_id: 's1' })) as unknown as {
+    result: { structuredContent: View }
+  }
+  const view = r.result.structuredContent
+  assert.equal(view.needsYou.questions.find(q => q.id === 'i1')?.feedback, null)
+  assert.deepEqual(view.needsYou.tasks.find(t => t.id === 'i2')?.feedback, { is: 'local', result: pending(100) })
+  assert.equal(view.lastActions.i1?.result, undefined)
+  const saved = await readState(dir, 's1')
+  assert.deepEqual([saved.lastActions.i1?.result, saved.lastActions.i2?.result], [pending(staleAt), pending(100)])
 })

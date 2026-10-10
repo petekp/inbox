@@ -7,7 +7,7 @@ import type { Exchange, Press } from '../../hooks/ledger'
 import { inboxView, perTurnStatus } from '../../hooks/view'
 import type { InboxView } from '../../hooks/view'
 import type { LastAction } from '../../types'
-import { SETTLE_WINDOW_MS } from './settle'
+import { PRESS_TIMEOUT_MS, SETTLE_WINDOW_MS } from './settle'
 import type { Heard, SessionState } from './state'
 import { CODEX, GUIDANCE, START_TITLE } from './texts'
 
@@ -192,9 +192,27 @@ export type View = InboxView & {
  */
 export type TabView = View & { thread: string }
 
+/**
+ * Each row's last press, without a Local result still pending after PRESS_TIMEOUT_MS. The server
+ * runs a press's opens after saving it as pending, so a server that died between them left it pending.
+ * The saved result stays, since a slow server may still record its outcome.
+ */
+function withoutStalePending(lastActions: Record<string, LastAction>, now: number): Record<string, LastAction> {
+  const isStale = (last: LastAction) => last.result?.state === 'pending' && now - last.result.at > PRESS_TIMEOUT_MS
+
+  return Object.fromEntries(
+    Object.entries(lastActions).map(([id, last]) => {
+      if (!isStale(last)) return [id, last]
+      const { result: _result, ...rest } = last
+      return [id, rest]
+    }),
+  )
+}
+
 /** What the tab draws. */
 export function viewOf(s: SessionState, now: number): View {
   const l = s.ledger
+  const lastActions = withoutStalePending(s.lastActions, now)
   // Exchanges waiting for the inbox model will still change the list, so they read as updating.
   const update = {
     isUpdating: s.presence.isUpdating || s.pending.length > 0,
@@ -206,7 +224,7 @@ export function viewOf(s: SessionState, now: number): View {
   return {
     ...inboxView({
       ledger: l,
-      lastActions: s.lastActions,
+      lastActions,
       // The tab keeps its own row notes.
       notes: {},
       turns: s.presence,
@@ -221,7 +239,7 @@ export function viewOf(s: SessionState, now: number): View {
     now: l.card?.now ?? '',
     done: l.card?.done ?? [],
     running: l.card?.running ?? [],
-    lastActions: s.lastActions,
+    lastActions,
     at: now,
   }
 }

@@ -58,7 +58,6 @@ Then the desktop steps they gate:
 
 ## 4. Decisions still yours
 
-- **The Codex server's pending result when its process dies.** The server writes the pending result, then opens outside the lock. If the process dies in between, the row reads "Opening x…" until the next press. A new server cannot safely mark it failed, because another server process may own the press.
 - **The wording list and smaller questions** in revamp-handoff.md.
 
 ## 5. Merge

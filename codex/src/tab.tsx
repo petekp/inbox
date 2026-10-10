@@ -23,7 +23,7 @@ import type { Finding, Item, RowNote } from '../../types'
 import { followTo, isShownEmpty, newRows } from './arrivals'
 import type { Group, SeenRows, Tab } from './arrivals'
 import type { TabView as View } from './core'
-import { drawnSettled, POLL_MS, settledIds, settledSeen } from './settle'
+import { drawnSettled, POLL_MS, PRESS_TIMEOUT_MS, settledIds, settledSeen } from './settle'
 
 type Tone = 'needsYou' | 'findings' | 'done' | 'error'
 
@@ -241,12 +241,6 @@ function isNotSent(v: View, id: string): boolean {
     r => r.id === id && r.feedback?.is === 'notSent',
   )
 }
-
-/**
- * How long a press may go unanswered before it reads as not sent and polls resume. It must exceed the
- * server's limits on a press's lock waits, `codex queue` and opens, or a press that went through reads as failed.
- */
-const PRESS_TIMEOUT_MS = 60_000
 
 /**
  * Sends a press, drawn for the view's session, to the server. `onSent` runs
