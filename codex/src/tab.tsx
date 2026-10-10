@@ -142,7 +142,8 @@ function applyHost(ctx: { theme?: string; styles?: { variables?: Record<string, 
 async function callTool<T>(name: string, args: unknown = {}, timeoutMs?: number): Promise<T> {
   const r = (await request('tools/call', { name, arguments: args }, timeoutMs)) as
     { structuredContent?: T; isError?: boolean; content?: { text?: string }[] } | undefined
-  if (!r || r.isError || r.structuredContent === undefined) throw new Error(r?.content?.[0]?.text ?? `${name} failed`)
+  if (!r || r.isError || r.structuredContent === undefined)
+    throw new Error((r?.isError && r.content?.[0]?.text) || 'The answer had nothing to show')
 
   return r.structuredContent
 }
@@ -206,7 +207,7 @@ function failureText(err: unknown): string {
   const reason =
     clipLabel(
       message
-        .replace(/^Failed: /, '')
+        .replace(/^(Failed|Not done): /, '')
         .replace(/\s+/g, ' ')
         .trim(),
       120,
