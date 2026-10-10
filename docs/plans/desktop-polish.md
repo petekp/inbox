@@ -21,11 +21,11 @@ Captured on 2026-10-09 in the Claude app's demo pane and the Codex tab:
    - In the Claude app, Send is the field's own button (`submitLabel`), labeled "Send". It is drawn before the field is clicked, and a click on it sends. The terminal keeps `send` as its Enter hint.
    - The field keeps the app's own width. It does not stretch inside a growing Box.
 4. **The status line never moves for a note.** The age stays at the right of the tabs. A note or error takes its own line under the tab row, one step below it. Reason: text that jumps when a note appears looks broken.
-5. **Codex tab actions follow rule 3, drawn as Codex's own buttons.** They keep two lines: the answers and main action on the first, the follow-ups on the second. There the follow-ups are ghost buttons, so the second line reads as a lighter tier, not as leftovers. Each client uses its host app's controls, so the Codex tab copies the Button in the Codex app's bundled styles.
+5. **Codex tab actions follow rule 3, drawn as Codex's own buttons.** Like the Claude app's, they take one line that wraps: the answers and main action, then the follow-ups as ghost buttons. Each client uses its host app's controls, so the Codex tab copies the Button in the Codex app's bundled styles.
    - Every action is a pill, 26 px tall, Codex's size `sm`. Undo sits in a line of text, so it takes Codex's smallest size, 20 px, and the closed row keeps its height.
    - The recommended option is solid: filled with the text color, labeled in the background color.
    - The row's other answers and main action have a gray fill: the text color at 8% in light and 12% in dark.
-   - The follow-ups, Cancel and Undo are ghost buttons: muted text that turns to the text color on hover, with no fill. The follow-up line's first label lines up with the row's text.
+   - The follow-ups, Cancel and Undo are ghost buttons: muted text that turns to the text color on hover, with no fill. When a row has no answers or main action, the first follow-up's label lines up with the row's text.
    - The field is a pill with a 1 px border, the text color at 16%.
 
    Reason: these are the app's primary, secondary and ghost button styles, so the tab reads as part of Codex.

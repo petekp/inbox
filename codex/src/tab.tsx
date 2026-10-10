@@ -753,6 +753,7 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
   const { keys, more } = rowActions(row)
   const copied = copies.get(row.id)
   const note = noteOf(row.id)
+  const isTyping = !!row.typing && typing === row.id
   const notes = [
     row.fold?.note ? <div class="muted">{row.fold.note}</div> : null,
     sending.has(row.id) ? <div class="muted">{sending.get(row.id)}</div> : null,
@@ -765,24 +766,18 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
       {row.meta ? <div class="meta">{row.meta}</div> : null}
       {isOpen && row.body ? <div class="body">{row.body}</div> : null}
       {notes.length > 0 ? <div class="tight">{notes}</div> : null}
-      {/* The row's answers on one line, its follow-ups on the next. An open field takes the follow-ups' line. */}
+      {/* The row's answers and main action, then its follow-ups, on one line that wraps. An open field replaces the
+          follow-ups, on its own line. */}
       <div class="actions">
-        {keys.length > 0 ? (
-          <div class="keys">
+        {keys.length > 0 || (more.length > 0 && !isTyping) ? (
+          <div class={keys.length > 0 ? 'keys' : 'keys ghost-line'}>
             {keys.map(k => (
               <KeyButton k={k} />
             ))}
+            {isTyping ? null : more.map(k => <KeyButton k={k} isGhost />)}
           </div>
         ) : null}
-        {row.typing && typing === row.id ? (
-          <TypeField row={row} />
-        ) : more.length > 0 ? (
-          <div class="keys ghost-line">
-            {more.map(k => (
-              <KeyButton k={k} isGhost />
-            ))}
-          </div>
-        ) : null}
+        {isTyping ? <TypeField row={row} /> : null}
       </div>
       {copied ? (
         <div>
