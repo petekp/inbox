@@ -3286,14 +3286,14 @@ export const register: Register = on => {
       <Text color={pal.divider}>{'─'.repeat(Math.max(0, e.props.bodyColumns - inset))}</Text>
     )
     // Desktop draws text in a proportional font, where a run of ─ sized in cells overflows the
-    // row and wraps into a second line, so rows there are set apart by a blank line instead.
+    // row and wraps into a second line, so rows there are set apart by half a line instead.
     const divided = (rowEls: JSX.Element[], group: string, isTree: boolean) =>
       rowEls.flatMap((el, n) =>
         n === 0 || isInline
           ? [el]
           : [
               look === 'desktop' ? (
-                <Box key={`divider-${group}-${n}`} height={1} />
+                <Box key={`divider-${group}-${n}`} paddingTop={1} />
               ) : isTree ? (
                 <Box key={`divider-${group}-${n}`} flexDirection="row">
                   <Box width={1} flexShrink={0} />
@@ -3445,6 +3445,24 @@ export const register: Register = on => {
           </Box>
         )
       const { keys, more } = isSelected ? rowActions(row) : { keys: [], more: [] }
+      const isTyping = Input !== null && !!row.typeHint && typing === row.id
+      const field =
+        Input && isTyping ? (
+          <Input
+            key={`type-${row.id}`}
+            placeholder={row.typeHint}
+            {...(fieldSeeds.get(row.id) ? { value: fieldSeeds.get(row.id) } : {})}
+            submitLabel={look === 'desktop' ? 'Send' : 'send'}
+            autoFocus
+            onInput={(value: string) => void update($, DRAFTS, d => ({ ...d, [row.id]: value }))}
+            onSubmit={(value: string, e) => sendTyped($, row.id, value, e.surface)}
+          />
+        ) : null
+      // On desktop the open field takes the follow-up line, and the button that opened it leaves.
+      // The field's own submit button is its Send.
+      const desktopGroups = (isTyping ? [keys.filter(k => !k.key.startsWith('typekey-'))] : [keys, more]).filter(
+        group => group.length > 0,
+      )
       const isOpen = !row.fold || shownDetails.includes(row.id)
       const lastText = lastActionText(row.id, row)
       const tone = lastTone(row) ? pal.tone.done : pal.muted
@@ -3513,29 +3531,35 @@ export const register: Register = on => {
               <Box flexDirection="column" marginTop={blankLine}>
                 {/* Desktop drops the dot between groups: a Text among taller native buttons sits at their top edge. */}
                 {look === 'desktop'
-                  ? [keys, more]
-                      .filter(group => group.length > 0)
-                      .map((group, n) => <Box marginTop={n > 0 ? 2 : 0}>{keyRow(row.id, group)}</Box>)
+                  ? [
+                      ...desktopGroups.map((group, n) => <Box marginTop={n > 0 ? 1 : 0}>{keyRow(row.id, group)}</Box>),
+                      ...(isTyping
+                        ? [
+                            <Box
+                              flexDirection="row"
+                              alignItems="center"
+                              columnGap={2}
+                              marginTop={desktopGroups.length > 0 ? 1 : 0}
+                            >
+                              <Box flexGrow={1} flexShrink={1}>
+                                {field}
+                              </Box>
+                              {keyRow(
+                                row.id,
+                                fieldActions(row).filter(a => !a.key.startsWith('send-')),
+                              )}
+                            </Box>,
+                          ]
+                        : []),
+                    ]
                   : keys.length === 0
                     ? keyRow(row.id, more)
                     : keysWidth(keys, more) <= e.props.bodyColumns - 3 - (tree ? 7 : 5)
                       ? keyRow(row.id, keys, more)
                       : [keyRow(row.id, keys), keyRow(row.id, more)]}
               </Box>
-              {Input && row.typeHint && typing === row.id ? (
-                <Box marginTop={blankLine}>
-                  <Input
-                    key={`type-${row.id}`}
-                    placeholder={row.typeHint}
-                    {...(fieldSeeds.get(row.id) ? { value: fieldSeeds.get(row.id) } : {})}
-                    submitLabel="send"
-                    autoFocus
-                    onInput={(value: string) => void update($, DRAFTS, d => ({ ...d, [row.id]: value }))}
-                    onSubmit={(value: string, e) => sendTyped($, row.id, value, e.surface)}
-                  />
-                </Box>
-              ) : null}
-              {Input && row.typeHint && typing === row.id ? keyRow(row.id, fieldActions(row)) : null}
+              {isTyping && look === 'terminal' ? <Box marginTop={blankLine}>{field}</Box> : null}
+              {isTyping && look === 'terminal' ? keyRow(row.id, fieldActions(row)) : null}
             </Box>
           ) : (
             <Box flexShrink={1} flexGrow={1} paddingRight={1}>
@@ -3689,6 +3713,24 @@ export const register: Register = on => {
             },
           }
         : null
+    const statusLines = [
+      !isPrStatus && error ? (
+        <Text color={pal.tone.error} wrap="wrap">
+          {error}
+        </Text>
+      ) : null,
+      // The band still draws without the tools, so every tab's status line says so.
+      toolsRefused ? (
+        <Text color={pal.tone.error} wrap="wrap">
+          {TOOLS_REFUSED_TEXT}
+        </Text>
+      ) : null,
+      lineNote ? (
+        <Text color={pal.muted} wrap="wrap">
+          {feedbackText({ is: 'note', note: lineNote.note, at: lineNote.at }, look)}
+        </Text>
+      ) : null,
+    ]
     const tabs = (
       <Box
         paddingLeft={isInline ? 2 : 1}
@@ -3803,25 +3845,17 @@ export const register: Register = on => {
         </Box>
         <Box flexDirection={isStatusBelow ? 'column' : 'row'} columnGap={2}>
           <Text dimColor>{status}</Text>
-          {!isPrStatus && error ? (
-            <Text color={pal.tone.error} wrap="wrap">
-              {error}
-            </Text>
-          ) : null}
-          {/* The band still draws without the tools, so every tab's status line says so. */}
-          {toolsRefused ? (
-            <Text color={pal.tone.error} wrap="wrap">
-              {TOOLS_REFUSED_TEXT}
-            </Text>
-          ) : null}
-          {lineNote ? (
-            <Text color={pal.muted} wrap="wrap">
-              {feedbackText({ is: 'note', note: lineNote.note, at: lineNote.at }, look)}
-            </Text>
-          ) : null}
+          {look === 'desktop' ? null : statusLines}
         </Box>
       </Box>
     )
+    // On desktop each takes its own line under the tab row, so the status beside the tabs never moves for one.
+    const desktopStatusLines =
+      look === 'desktop' && statusLines.some(Boolean) ? (
+        <Box flexDirection="column" paddingX={1} paddingTop={1}>
+          {statusLines}
+        </Box>
+      ) : null
     // The footer's one line opens the list of keys as a drawer above it. The
     // drawer is absolute, so it covers the rows above instead of moving the line.
     const footer = (
@@ -3959,11 +3993,13 @@ export const register: Register = on => {
     const closedGap = () =>
       isInline
         ? []
-        : [
-            <Box paddingLeft={4}>
-              <Text color={pal.line}>{look === 'desktop' ? ' ' : '│'}</Text>
-            </Box>,
-          ]
+        : look === 'desktop'
+          ? [<Box paddingTop={1} />]
+          : [
+              <Box paddingLeft={4}>
+                <Text color={pal.line}>│</Text>
+              </Box>,
+            ]
     // The fold row and, unfolded, the closed items under it; nothing when none closed.
     const closedFold = (kind: Item['kind'] | 'finding', closed: ClosedLine[], isUnfolded: boolean) =>
       closed.length === 0
@@ -4345,6 +4381,7 @@ export const register: Register = on => {
           </Box>
         ) : null}
         {tabs}
+        {desktopStatusLines}
         {/* ▔ draws at the top of its cell, so the rule touches the tabs' bottom edge
             and the rest of its row stands in for the blank line above the content.
             It takes the unselected tabs' color, so they read as resting on it. */}
