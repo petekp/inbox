@@ -123,6 +123,7 @@ import {
   recordClose,
   recordFinding,
 } from './tools'
+import type { RowProps } from './row-client'
 import type { TabsProps } from './tabs-client'
 
 const LEDGER = atom({ plugin: 'inbox', key: 'ledger' } as const, EMPTY)
@@ -1151,6 +1152,28 @@ async function select($: EngineInterface, tab: Tab, id: string, index: number) {
     if (result.deny === undefined) return
     await $.clock.sleep(30)
   }
+}
+
+/**
+ * Opens the row whose desktop Client took a click, if the shown tab still lists it. A click less
+ * than PRESS_GUARD_MS after a row opened does nothing: the list reflows under the pointer as a row
+ * opens, so a quick second click lands on another row.
+ */
+async function selectClicked($: EngineInterface, id: string) {
+  const [{ ledger, prViews: prState, lastActions, view, now }, tab, selection] = await Promise.all([
+    drawnState($),
+    read($, TAB),
+    read($, SELECTION),
+  ])
+  const prViews = drawnPrs(prState, ledger.prs, lastActions, now)
+    .filter(x => !x.isSettled)
+    .map(x => x.pr)
+  const index = tabRowIds(view, prViews)[tab].indexOf(id)
+  if (index < 0 || isGuarded(selection[tab].openedAt, now)) return
+  // The Client leaves the drawing as its row opens, so the focus repair moves the focus to the row's first action.
+  focusedKey = `select-${id}`
+  focusHint = null
+  await select($, tab, id, index)
 }
 
 /**
@@ -2612,12 +2635,14 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // The desktop tab bar's Client posts the tab a click landed on.
+  // The desktop tab bar's Client posts the tab a click landed on, and a closed row's Client a click on the row.
   on('ui.message', async ($, e, next) => {
     const r = await next(e)
+    if (e.requestId !== PANE) return r
     const picked = (e.data as { tab?: unknown } | null)?.tab
     const shown = TABS.find(t => t.id === picked)
-    if (e.requestId === PANE && e.element === 'tabs' && shown) await showTab($, shown.id)
+    if (e.element === 'tabs' && shown) await showTab($, shown.id)
+    else if (e.element.startsWith('select-')) await selectClicked($, e.element.slice('select-'.length))
 
     return r
   })
@@ -3224,19 +3249,13 @@ export const register: Register = on => {
       )
     // The terminal truncates the settled ask itself.
     const oneLine = (text: string, inset: number) => (look === 'desktop' ? clipLine(text, inset) : text)
-    // The selected row gets a blue background, or a bar where the palette has
-    // no selection color, and reads top to bottom:
-    // context line, title, body, keys. In the docked pane a blank line sets each
-    // part off. In the terminal the handle is a Button that selects the row; on desktop only the title button does.
-    // A Button label does not wrap or truncate, so the clickable text is clipped
-    // to what fits beside the handle and the row's other text, less a desktop button's frame.
-    // A row with a second line breaks its text at a space before `after`, which
-    // stays on the first line, and clips the rest to the second.
-    const unselectedLine = (row: Row, onPress: (press: UiPressArgument) => void, inset: number) => {
+    // A closed row's one line: `before` muted, the title, then `after`. A row's last action takes the place of
+    // its age, as "✓ Discuss 1m ago". A narrow desktop pane drops the age, not the action.
+    const closedLine = (row: Row) => {
       const plain = row.line ?? { text: row.title, age: row.titleAfter }
       const f = feedbackLabel(row.id, row)
-      // A row's last action takes the place of its age, as "✓ Discuss 1m ago". A narrow desktop pane drops the age, not the action.
-      const line = f
+
+      return f
         ? {
             ...plain,
             after: ` · ${[f.text, isNarrowDesktop ? '' : f.age].filter(Boolean).join(' ')}`,
@@ -3244,15 +3263,38 @@ export const register: Register = on => {
             afterTone: f.isFailure ? ('error' as const) : f.age && !f.isQueued ? lastTone(row) : undefined,
           }
         : { ...plain, after: [plain.after, isNarrowDesktop ? '' : plain.age].filter(Boolean).join('') || undefined }
-      const width = e.props.bodyColumns - 3 - inset - (line.before?.length ?? 0)
+    }
+    // The selected row gets a blue background, or a bar where the palette has
+    // no selection color, and reads top to bottom:
+    // context line, title, body, keys. In the docked pane a blank line sets each
+    // part off. In the terminal the handle is a Button that selects the row. On desktop the whole row is a
+    // Client that does, or without one, the title button.
+    // A Button label does not wrap or truncate, so the clickable text is clipped
+    // to what fits beside the handle and the row's other text, less a desktop button's frame.
+    // A row with a second line breaks its text at a space before `after`, which
+    // stays on the first line, and clips the rest to the second.
+    const unselectedLine = (row: Row, onPress: (press: UiPressArgument) => void, inset: number) => {
+      const line = closedLine(row)
+      const before = line.before?.length ?? 0
+      const width = e.props.bodyColumns - 3 - inset - before
       const perCell = look === 'desktop' ? DESKTOP_CHARS_PER_CELL : 1
-      const room = Math.max(12, Math.floor((width - buttonFrame) * perCell) - (line.after?.length ?? 0))
+      // `before` is text, so it counts in characters, as the title does.
+      const budget = Math.floor((e.props.bodyColumns - 3 - inset - buttonFrame) * perCell) - before
+      const room = Math.max(12, budget - (line.after?.length ?? 0))
       const text = line.text.trim()
       const space = text.lastIndexOf(' ', room)
       // Desktop cuts the title to one native button, rather than draw two.
       const isWrapped = look === 'terminal' && row.hasSecondLine === true && text.length > room && space > 0
       const first = isWrapped ? text.slice(0, space) : clipLabel(text, room)
       const second = isWrapped ? clipLabel(text.slice(space + 1), Math.max(12, width)) : null
+      // Desktop wraps a long `after` under the title, so it is cut to the room the title leaves.
+      const afterRoom = budget - first.length
+      const after =
+        look === 'desktop' && line.after && line.after.length > afterRoom
+          ? afterRoom >= 2
+            ? clipLabel(line.after, afterRoom)
+            : undefined
+          : line.after
       // The two lines are two Buttons. One hover group inverts both under the pointer, so they read as one.
       const hover = second ? { hover: { scope: `title-${row.id}`.slice(0, 64), inverse: true } } : {}
 
@@ -3268,9 +3310,9 @@ export const register: Register = on => {
             <Box flexShrink={0}>
               <Button plain key={`title-${row.id}`} label={first} {...hover} onPress={onPress} />
             </Box>
-            {line.after ? (
+            {after ? (
               <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
-                {line.after}
+                {after}
               </Text>
             ) : null}
           </Box>
@@ -3282,11 +3324,50 @@ export const register: Register = on => {
         </Box>
       )
     }
+    // A closed desktop row drawn by its Client, at the columns listRow draws an open row's handle and text.
+    const rowClientProps = (row: Row, tree?: TreePos): RowProps => {
+      const line = closedLine(row)
+
+      return {
+        handleAt: tree ? 4 : 3,
+        textAt: tree ? 7 : 5,
+        handle: row.handle,
+        before: line.before ?? '',
+        title: line.text.trim(),
+        after: line.after ? unbroken(line.after) : '',
+        maxLines: row.hasSecondLine ? 2 : 1,
+        charsPerCell: DESKTOP_CLIP_CHARS_PER_CELL,
+        // The list pads the pane by a column on each side.
+        fallbackColumns: e.props.bodyColumns - 2,
+        newBar: isNew(row.id) ? pal.mark[tab] : null,
+        colors: {
+          handle: row.handleTone ? pal.mark[row.handleTone] : null,
+          muted: pal.muted,
+          after: line.afterTone ? (pal.tone[line.afterTone] ?? null) : pal.muted,
+          hover: pal.raised,
+          hoverText: pal.raisedText ?? null,
+          pressed: pal.selection ?? pal.raised,
+        },
+      }
+    }
     // `tree` places the row as a section's child; without it, as in Findings, the
     // handle sits in the 4 columns after the bar.
     const listRow = (row: Row, tree?: TreePos) => {
       const index = indexOf.get(row.id) ?? -1
       const isSelected = index === at
+      // On desktop a Client takes a click on every cell of the row, where a Button takes one only on its label.
+      // Without one, the row's title is a Button.
+      if (!isSelected && look === 'desktop' && 'Client' in elements)
+        return (
+          <Box key={`row-${row.id}`} flexDirection="row" overflow="hidden">
+            <elements.Client
+              key={`select-${row.id}`}
+              module="./row-client.tsx"
+              width="100%"
+              props={rowClientProps(row, tree)}
+            />
+          </Box>
+        )
       const { keys, more } = isSelected ? rowActions(row) : { keys: [], more: [] }
       const isOpen = !row.fold || shownDetails.includes(row.id)
       const lastText = lastActionText(row.id, row)
@@ -3314,7 +3395,7 @@ export const register: Register = on => {
           <Box width={1} flexShrink={0} />
           {tree ? <Box width={3} flexShrink={0} /> : null}
           <Box width={tree ? 3 : 4} flexShrink={0} paddingLeft={tree ? 0 : 2} paddingY={isSelected ? blankLine : 0}>
-            {/* On desktop the title alone opens the row, so the list draws half as many native buttons. */}
+            {/* Without a Client, desktop's title alone opens the row, so the list draws half as many native buttons. */}
             {row.handleTone ? (
               <Text color={pal.mark[row.handleTone]}>{row.handle}</Text>
             ) : look === 'desktop' ? (

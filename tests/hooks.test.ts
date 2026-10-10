@@ -1968,15 +1968,18 @@ test('the desktop pane draws each action as one button and the tabs as one click
   // The recommended option is the desktop's primary button, and its label says so, as in the terminal.
   const recommended = await pane.find({ key: 'answer-i1-0' })
   expect([recommended?.props.label, recommended?.props.variant]).toEqual(['Node (recommended)', 'primary'])
-  // A closed row's handle is text and its title one button; below 50 columns it drops its age.
-  expect(await pane.find({ key: 'select-i2' })).toBeUndefined()
-  expect(await pane.find({ key: 'title-i2' })).toBeDefined()
-  expect(await pane.findAll({ type: 'Text', text: /^ ·\s3m\sago$/ })).toHaveLength(1)
+  // A closed row is one click region with no buttons of its own; below 50 columns it drops its age.
+  expect((await pane.find({ key: 'select-i2' }))?.type).toBe('Client')
+  expect(await pane.find({ key: 'title-i2' })).toBeUndefined()
+  const closedAge = { type: 'Text', text: /^ ·\s3m\sago$/, in: 'select-i2' } as const
+  expect(await pane.find(closedAge)).toBeUndefined()
   await pane.redraw({ ...PANE.props, bodyColumns: 69 })
-  expect(await pane.findAll({ type: 'Text', text: /^ ·\s3m\sago$/ })).toHaveLength(2)
+  expect(await pane.find(closedAge)).toBeDefined()
 
-  // A click on a closed row's title opens it, and its actions work once the guard ends.
-  await pane.press({ key: 'title-i2' })
+  // A click anywhere on a closed row opens it, and its actions work once the guard ends.
+  await pane.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: 'select-i2' })
+  await clock.settle()
+  expect(await pane.find({ key: 'select-i2' })).toBeUndefined()
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'explain-i2' })
   await clock.settle()
@@ -1987,11 +1990,11 @@ test('the desktop pane draws each action as one button and the tabs as one click
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
   const { tabs, gap } = await tabBar()
   expect(tabs.map(t => t.id)).toEqual(['needsYou', 'findings', 'prs'])
-  await pane.pointer({ type: 'down', x: tabs[0]!.width + gap + tabs[1]!.width - 1, y: 2, button: 'left' })
+  await pane.pointer({ type: 'down', x: tabs[0]!.width + gap + tabs[1]!.width - 1, y: 2, button: 'left', in: 'tabs' })
   await clock.settle()
   expect((await tabBar()).shown).toBe('findings')
   // A click in the gap between tabs shows nothing new.
-  await pane.pointer({ type: 'down', x: tabs[0]!.width, y: 1, button: 'left' })
+  await pane.pointer({ type: 'down', x: tabs[0]!.width, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
   expect((await tabBar()).shown).toBe('findings')
 
