@@ -87,7 +87,7 @@ The tab shows the pane's content with Codex's own controls, spacing and type, so
 | A raised tab panel with a line of `▔` in the tab's tone | A raised tab, with its count in the tab's tone | Codex marks the shown tab with a fill alone. |
 | Keys drawn as text, as `a: Fix` | Codex's pill buttons, as `desktop-polish.md` rule 5 sets | They are the host's own controls. |
 | A divider from the text column to the edge | A hairline from the text column | Same shape and meaning. |
-| A leave bar that loses half a cell per step | The settled row's bottom edge, draining, as `motion-and-undo.md` sets | A page can animate width, and the edge spans the row. |
+| A leave bar that loses half a cell per step | A clock face beside Undo that empties, as `motion-and-undo.md` sets | A page can animate an SVG wedge, and it sits next to the button it times. |
 | A drawer listing the keys | Nothing. Keys work, with no key text | Keys are an optional extra, as UI plan 2.9 sets. |
 
 **Surfaces.** The page, a group's card, the raised tab and the selected row

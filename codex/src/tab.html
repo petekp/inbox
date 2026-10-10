@@ -57,7 +57,7 @@
           );
         /* Where a row's mark sits, and where its text starts. */
         --mark-x: 18px;
-        --text-x: 40px;
+        --text-x: 44px;
       }
       @media (prefers-color-scheme: dark) {
         :root:not([data-theme='light']) {
@@ -231,7 +231,7 @@
       .mark {
         flex: none;
         width: calc(var(--text-x) - var(--mark-x));
-        padding-right: 4px;
+        padding-right: 8px;
         text-align: center;
         color: var(--muted);
       }
@@ -469,7 +469,7 @@
       /* The closed items sit under the fold's label. */
       .closed-list {
         --mark-x: 34px;
-        --text-x: 56px;
+        --text-x: 60px;
         padding-top: 4px;
       }
       .closed-list .entry + .entry > .row {
@@ -482,53 +482,65 @@
         font-weight: 400;
         color: var(--muted);
       }
+      /* A row that just closed keeps a closed row's height, so the list does not change its rhythm. */
       .row.settled {
-        position: relative;
         align-items: center;
       }
-      .settled .what {
-        color: var(--muted);
+      .settled-line {
+        flex: 1;
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
+      .settled-line.wraps {
+        white-space: normal;
+      }
       .settled .outcome-label {
         font-weight: 500;
       }
-      .settled .outcome-label.muted {
-        font-weight: 400;
+      .settled .what {
+        color: var(--muted);
       }
-      .key.undo {
+      .undo-group {
         flex: none;
-        margin-left: 12px;
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        margin: -3px -11px -3px 12px;
       }
-      /* The time Undo has left, draining along the row's bottom edge from the text column. */
-      .countdown {
-        position: absolute;
-        left: var(--text-x);
-        right: 0;
-        bottom: 0;
-        height: 2px;
-        background: var(--soft);
-        overflow: hidden;
+      /* Undo is a text button, as Codex draws its own Undo, kept to the line's height. */
+      .undo-group .key {
+        min-height: 26px;
       }
-      .countdown div {
-        height: 100%;
-        background: color-mix(in oklab, var(--text) 32%, transparent);
-        transform-origin: left;
-        animation-name: drain;
+      /* The time Undo has left: a wedge that empties clockwise from the top, like a clock. A partial ring would read as a spinner. */
+      .clock {
+        width: 14px;
+        height: 14px;
+      }
+      .clock circle {
+        fill: none;
+      }
+      .clock .track {
+        fill: var(--soft);
+      }
+      .clock .left {
+        stroke: color-mix(in oklab, var(--text) 45%, transparent);
+        stroke-width: 7;
+        stroke-dasharray: 100;
+        animation-name: unwind;
         animation-timing-function: linear;
         animation-fill-mode: forwards;
       }
-      .countdown.paused div {
+      .clock.paused .left {
         animation-play-state: paused;
       }
-      @keyframes drain {
+      @keyframes unwind {
         from {
-          transform: scaleX(1);
+          stroke-dashoffset: 0;
         }
         to {
-          transform: scaleX(0);
+          stroke-dashoffset: 100;
         }
       }
       /* The page is at least the pane's height. The footer sits at its bottom, and an empty tab's text fills the space above it. */
@@ -628,8 +640,8 @@
         *::after {
           transition-duration: 0s !important;
         }
-        /* With no motion, the countdown shows no time left, so it is not drawn. */
-        .countdown {
+        /* With no motion, the clock shows no time left, so it is not drawn. */
+        .clock {
           display: none;
         }
       }

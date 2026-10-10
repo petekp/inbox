@@ -55,26 +55,26 @@ After a press in a list, closed rows and the fold show no hover fill until the p
 
 Today the settled row puts a green label and a small gray "Undo" on one line, over a 96 px hairline that counts down. Every outcome is green, including Dismissed and Expired. Undo shows nothing while it runs and nothing if it fails.
 
-The settled row in the Codex tab becomes:
+The settled row in the Codex tab is one line, as tall as an open row's closed line, so the list keeps its rhythm:
 
 - **Mark:** ✓ in green for Done and answers. For Dismissed, Expired and closes by Codex, a muted ✓, matching how the Closed fold draws them.
-- **Line 1:** the title, muted.
-- **Line 2:** the outcome. Green for Done and answers, muted for the rest.
-- **Undo:** a gray pill at the row's right, centered on its two lines, when the person's own Done or Dismiss closed the row.
-- **Countdown:** the row's bottom edge, from the text column to the card's edge, is a 2 px bar that drains over the time Undo has left. It replaces the 96 px hairline. A row with no Undo has no bar, and simply leaves when its time is up.
+- **Outcome first:** "Done" or "Dismissed" in weight 500, green for Done and answers. The person just caused it, so it reads first.
+- **Then the title:** muted, after " · ", cut with an ellipsis.
+- **Undo:** a text button with the undo icon at the row's right, as Codex draws its own Undo. It shows only when the person's own Done or Dismiss closed the row.
+- **Countdown:** a 14 px clock face just left of Undo. Its wedge empties clockwise over the time Undo has left. A partial ring would read as a loading spinner. A row with no Undo has no clock, and simply leaves when its time is up.
 
 Pressing Undo:
 
-- The button reads "Undoing…" and takes no second press. The countdown pauses, and the row does not leave while the press is out.
+- The button reads "Undoing…" and takes no second press. The clock stops, and the row does not leave while the press is out.
 - On success, the row grows back to its open form in place, with "✓ Undo" under its title for 5.12 s, as every other press shows its result.
-- On failure, the error shows on the settled row in the error color while the row has time left. If the row's time is up, the row leaves and the error shows under the tab row.
+- On failure, the error replaces the title, in the error color, while the row has time left. It wraps, so none of it is cut. If the row's time is up, the row leaves and the error shows under the tab row.
 
 ## The Claude app pane
 
 The pane is drawn through the engine's elements, which have no opacity, transform or CSS. Fast redraws from the hooks module break clicks, as issue #100924 records. So the pane gets:
 
 - **Now:** the outcome colors above. Green only for Done and answers. The terminal pane shares this code, so its settled rows change the same way.
-- **The countdown:** a 2 pt bar under a settled row that has Undo, from the text column to the card's edge. It drains in muted gray over a divider-gray track, as in the Codex tab. It is its own keyed `Client`, `countdown-client.tsx`, which ticks every 100 ms with `surface.every` and stops when empty, so the pane does not redraw. A probe showed the timer ticking on desktop, and five accessibility presses on a Button beside a ticking Client all registered. Real pointer clicks on Undo while it ticks still need a check.
+- **The countdown:** a 2 pt bar under a settled row that has Undo, from the text column to the card's edge. It drains in muted gray over a divider-gray track. No way to draw a clock face in the pane has been verified, so it keeps the bar. It is its own keyed `Client`, `countdown-client.tsx`, which ticks every 100 ms with `surface.every` and stops when empty, so the pane does not redraw. A probe showed the timer ticking on desktop, and five accessibility presses on a Button beside a ticking Client all registered. Real pointer clicks on Undo while it ticks still need a check.
 
 ## Checks
 
