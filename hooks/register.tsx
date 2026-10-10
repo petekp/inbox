@@ -1215,15 +1215,10 @@ function topRow(tab: Tab, ids: string[], view: InboxView): string | null {
  * than PRESS_GUARD_MS ago: then it is the second click of a double-click that
  * opened the row, landing on a button that just drew.
  */
-async function unlessGuarded(
-  $: EngineInterface,
-  rowId: string,
-  press: UiPressArgument,
-  onPress: (press: UiPressArgument) => void,
-) {
+async function unlessGuarded($: EngineInterface, rowId: string, press: UiPressArgument, onPress: Action['onPress']) {
   const [selection, tab, now] = await Promise.all([read($, SELECTION), read($, TAB), $.clock.now()])
   const cursor = selection[tab]
-  if (cursor.id !== rowId || !isGuarded(cursor.openedAt, now)) onPress(press)
+  if (cursor.id !== rowId || !isGuarded(cursor.openedAt, now)) await onPress(press)
 }
 
 /**
@@ -2024,7 +2019,11 @@ type Action = {
    * other kinds show themselves: the row closes, a field opens, or the screen changes.
    */
   kind: PressKind
-  onPress: (press: UiPressArgument) => void
+  /**
+   * Returns the press's work for its Button to return. A hot reload keeps work an `onPress`
+   * returns and drops work it leaves running, so a returned press's result still lands.
+   */
+  onPress: (press: UiPressArgument) => void | Promise<void>
 }
 
 /** The steps that open the PRs the session tracks that an item's ask names. */
@@ -2067,7 +2066,7 @@ function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { k
       key: `retry-${id}`,
       label: 'Try again',
       kind: r.actions.find(a => actionId(a.press) === actionId(retry))?.kind ?? 'talk',
-      onPress: press => void runPress($, retry, press.surface),
+      onPress: press => runPress($, retry, press.surface),
     })
   let letters = 0
   for (const [n, a] of shown.entries()) {
@@ -2075,7 +2074,7 @@ function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { k
     const base = {
       label: a.label,
       kind: a.kind,
-      onPress: (press: UiPressArgument) => void runPress($, p, press.surface),
+      onPress: (press: UiPressArgument) => runPress($, p, press.surface),
     }
     const lettered = () => (letters < CHOICE_KEYS.length ? { hotkey: CHOICE_KEYS[letters++]! } : {})
     if (p.action === 'answer' && item) {
@@ -2892,7 +2891,7 @@ export const register: Register = on => {
       lastActions[rowId]?.action === action && lastActions[rowId]?.delivery?.state !== 'failed'
         ? `${label} again`
         : label
-    const prPress = (p: PrPress) => (press: UiPressArgument) => void runPress($, p, press.surface)
+    const prPress = (p: PrPress) => (press: UiPressArgument) => runPress($, p, press.surface)
     const checkRow = (pr: PrView, c: PrCheck): Row => ({
       id: prCheckId(pr, c),
       handle: '✗',
@@ -3068,7 +3067,7 @@ export const register: Register = on => {
             {...action}
             label={shownLabel(action)}
             {...(isOpenGuarded ? { dimColor: true } : {})}
-            onPress={press => void unlessGuarded($, rowId, press, action.onPress)}
+            onPress={press => unlessGuarded($, rowId, press, action.onPress)}
           />
         ) : (
           <Box key={`keyed-${action.key}`} flexDirection="row">
@@ -3083,7 +3082,7 @@ export const register: Register = on => {
               {...(isOpenGuarded ? { dimColor: true } : {})}
               label={hotkey ? `: ${shownLabel(action)}` : shownLabel(action)}
               hover={{ color: pal.muted, inverse: true }}
-              onPress={press => void unlessGuarded($, rowId, press, action.onPress)}
+              onPress={press => unlessGuarded($, rowId, press, action.onPress)}
             />
           </Box>
         )
@@ -3148,7 +3147,7 @@ export const register: Register = on => {
         key: `send-${row.id}`,
         label: 'Send',
         kind: row.typeKind ?? 'handoff',
-        onPress: press => void sendDraft($, row.id, press.surface),
+        onPress: press => sendDraft($, row.id, press.surface),
       },
       {
         key: `cancel-${row.id}`,
@@ -3472,7 +3471,7 @@ export const register: Register = on => {
                     submitLabel="send"
                     autoFocus
                     onInput={(value: string) => void update($, DRAFTS, d => ({ ...d, [row.id]: value }))}
-                    onSubmit={(value: string, e) => void sendTyped($, row.id, value, e.surface)}
+                    onSubmit={(value: string, e) => sendTyped($, row.id, value, e.surface)}
                   />
                 </Box>
               ) : null}
@@ -3903,7 +3902,7 @@ export const register: Register = on => {
             <Button
               key={`undo-${'ref' in undo ? `pr:${undo.ref}` : undo.id}`}
               label="Undo"
-              onPress={press => void runPress($, undo, press.surface)}
+              onPress={press => runPress($, undo, press.surface)}
             />
           ) : null}
         </Box>

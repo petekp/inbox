@@ -18,7 +18,7 @@ Code is built in a separate worktree, `revamp-build`, and moves to `revamp` once
 
 - **Built and tested:** all 16 build steps, every 2026-10-09 decision, and section 1 below.
 - **Seen working live:** terminal delivery. On desktop: focus, button edges, tab clicks, scrolling, typing with Enter, the dimmed guard and Markdown. In Codex: the tab, `inbox` answering in text only, and Explain going Sending, Queued, ✓.
-- **Left:** the second build round (section 2), the probes that gate the rest of the desktop design (section 3), two decisions (section 4), and the merge.
+- **Left:** the second build round (section 2), the probes that gate the rest of the desktop design (section 3), the decisions in section 4, and the merge.
 
 ## 1. Fixes, done
 
@@ -59,10 +59,7 @@ Then the desktop steps they gate:
 ## 4. Decisions still yours
 
 - **Keeping an unreadable saved session across a reload.** Today a module variable blocks saves until the copy is read. A reload resets it, and after a prompt the load does not set it again, so the next save overwrites the copy. The fix keeps it in saved state instead, as a new `PluginState.inbox.unreadable: string | null`: the conversation whose saved copy the store could not read. The load sets it, a successful [Try again] or another conversation clears it, and `save()` checks it. Old state needs no conversion, since a missing value reads as null.
-- **What a row shows when the inbox reloads during its open or copy.** Today the row stays on "Opening x…", because nothing in the new load finishes the old load's press. Marking it failed would often be wrong: macOS `open` hands the URL to the system and exits at once, so the PR most likely opened. A live check comes first: whether the old load's result still lands. If it does not, choose one:
-  - Drop the pending result on reload. The row then shows nothing about the press. No saved shape changes.
-  - Add a result state for an unknown outcome, so the row reads, for example, "Not known whether PR #12 opened: the inbox reloaded". This adds a value to `LocalResult.state`, which the Codex server also reads. Old state needs no conversion.
-- **The Codex server's version of the same gap.** It writes the pending result, then opens outside the lock. If the server process dies in between, the row reads "Opening x…" until the next press. A new server cannot safely mark it failed, since another server process may own the press.
+- **The Codex server's pending result when its process dies.** The server writes the pending result, then opens outside the lock. If the process dies in between, the row reads "Opening x…" until the next press. A new server cannot safely mark it failed, because another server process may own the press.
 - **The wording list and smaller questions** in revamp-handoff.md.
 
 ## 5. Merge
