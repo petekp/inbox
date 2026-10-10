@@ -65,8 +65,10 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
   const { Box, Text } = surface.elements
   const hover = surface.state?.hover ?? false
   const pressed = surface.state?.pressed ?? false
+  // Reads the state when an event arrives: a down and an up can both arrive before the next call.
   const set = (next: State) => {
-    if (next.hover !== hover || next.pressed !== pressed) surface.setState(next)
+    if (next.hover !== (surface.state?.hover ?? false) || next.pressed !== (surface.state?.pressed ?? false))
+      surface.setState(next)
   }
   // Set on every call, so the listener reads this call's props; a later call replaces it.
   surface.onPointer(e => {
@@ -77,15 +79,16 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
       set({ hover: true, pressed: true })
       surface.post({})
     } else if (e.type === 'up') set({ hover: inside, pressed: false })
-    else if (e.type === 'move' || e.type === 'enter') set({ hover: inside, pressed })
+    else if (e.type === 'move' || e.type === 'enter') set({ hover: inside, pressed: surface.state?.pressed ?? false })
   })
 
   const columns = surface.columns || props.fallbackColumns
   const budget = Math.floor((columns - props.textAt) * props.charsPerCell * props.maxLines)
   const line = fitLine(budget, props.before, props.title, props.after)
   const background = pressed ? props.colors.pressed : hover ? props.colors.hover : null
-  // A raised hover can share its color with muted text, so on hover all text takes the palette's text for it.
-  const color = (own: string | null) => (hover && !pressed && props.colors.hoverText ? props.colors.hoverText : own)
+  // A raised background can share its color with muted text, so on it all text takes the palette's text for it.
+  const isRaised = background !== null && background === props.colors.hover
+  const color = (own: string | null) => (isRaised && props.colors.hoverText ? props.colors.hoverText : own)
   const colored = (own: string | null) => {
     const c = color(own)
     return c ? { color: c } : {}

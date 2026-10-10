@@ -327,7 +327,7 @@ Each section gives four things:
 - **Cost:**
   - Rows likely leave the app's native focus order and accessibility tree (F7).
   - The new module, the handler and the moved clipping.
-- **Status:** blocked on probes 2, 1 (its row Client part) and 3, then probe 4.
+- **Status:** built. Probes 3 and 4 and probe 1's row Client part are not yet checked live.
 
 ### 10. Open row
 
