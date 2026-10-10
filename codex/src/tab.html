@@ -369,7 +369,7 @@
         text-align: center;
         white-space: nowrap;
       }
-      .key:hover {
+      .key:not(:disabled):hover {
         background: var(--soft-hover);
       }
       .key:focus-visible {
@@ -381,14 +381,14 @@
         background: var(--text);
         color: var(--bg);
       }
-      .key.primary:hover {
+      .key.primary:not(:disabled):hover {
         background: color-mix(in srgb, var(--text) 82%, var(--bg));
       }
       .key.ghost {
         background: none;
         color: var(--muted);
       }
-      .key.ghost:hover {
+      .key.ghost:not(:disabled):hover {
         background: var(--soft);
         color: var(--text);
       }
@@ -474,8 +474,11 @@
         font-weight: 400;
         color: var(--muted);
       }
+      /* Undo sits in a text line, so it takes Codex's smallest size, 20 px, and the row keeps its height. */
       .settled .key {
+        min-height: 20px;
         margin-left: 6px;
+        padding: 0 8px;
       }
       .settled .what {
         color: var(--muted);

@@ -22,7 +22,7 @@ Captured on 2026-10-09 in the Claude app's demo pane and the Codex tab:
    - The field keeps the app's own width. It does not stretch inside a growing Box.
 4. **The status line never moves for a note.** The age stays at the right of the tabs. A note or error takes its own line under the tab row, one step below it. Reason: text that jumps when a note appears looks broken.
 5. **Codex tab actions follow rules 2 and 3, drawn as Codex's own buttons.** Each client uses its host app's controls, so the Codex tab copies the Button in the Codex app's bundled styles.
-   - Every action is a pill, 26 px tall, Codex's size `sm`.
+   - Every action is a pill, 26 px tall, Codex's size `sm`. Undo sits in a line of text, so it takes Codex's smallest size, 20 px, and the closed row keeps its height.
    - The recommended option is solid: filled with the text color, labeled in the background color.
    - The row's other answers and main action have a gray fill: the text color at 8% in light and 12% in dark.
    - The follow-ups, Cancel and Undo are ghost buttons: muted text, with the gray fill only on hover. The follow-up line's first label lines up with the row's text.
