@@ -123,6 +123,7 @@ import {
   recordClose,
   recordFinding,
 } from './tools'
+import type { CountdownProps } from './countdown-client'
 import type { FoldProps } from './fold-client'
 import type { RowProps } from './row-client'
 import type { TabsProps } from './tabs-client'
@@ -4079,6 +4080,23 @@ export const register: Register = on => {
           ) : null}
         </Box>
         {leaveBar(at, isLapsed)}
+        {/* On desktop the time Undo has left drains in a Client of its own, which ticks without redrawing the pane. */}
+        {undo && look === 'desktop' && 'Client' in elements ? (
+          <Box marginTop={0.5}>
+            <elements.Client
+              key={`countdown-${'ref' in undo ? `pr:${undo.ref}` : undo.id}-${at}`}
+              module="./countdown-client.tsx"
+              width="100%"
+              props={
+                {
+                  startedAt: at,
+                  totalMs: SETTLED_MS,
+                  colors: { bar: pal.muted, track: pal.divider },
+                } satisfies CountdownProps
+              }
+            />
+          </Box>
+        ) : null}
       </Box>
     )
     const settledRow = ({ settled: r, state }: Extract<Entry, { settled: RowView }>, pos?: TreePos) => {

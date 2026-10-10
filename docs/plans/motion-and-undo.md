@@ -5,7 +5,7 @@ The Codex tab gets enter, exit and move animations, and both clients get a clear
 ## Status
 
 - **Codex tab:** built and checked in a local copy of the tab, in both themes and with reduced motion. Not yet seen in the Codex app.
-- **Claude app:** the outcome colors are built. The countdown waits on its probe.
+- **Claude app:** the outcome colors and the countdown are built. A real click on Undo while the countdown runs is not yet tested.
 
 ## How the Codex tab animates
 
@@ -67,7 +67,7 @@ Pressing Undo:
 The pane is drawn through the engine's elements, which have no opacity, transform or CSS. Fast redraws from the hooks module break clicks, as issue #100924 records. So the pane gets:
 
 - **Now:** the outcome colors above. Green only for Done and answers. The terminal pane shares this code, so its settled rows change the same way.
-- **After a probe:** a countdown drawn by a keyed `Client` region beside Undo, which ticks inside the app without pane redraws. The probe checks that `surface.every` ticks on desktop, and that Undo stays clickable while the Client ticks. If either fails, the pane keeps no countdown.
+- **The countdown:** a 2 pt bar under a settled row that has Undo, from the text column to the card's edge. It drains in muted gray over a divider-gray track, as in the Codex tab. It is its own keyed `Client`, `countdown-client.tsx`, which ticks every 100 ms with `surface.every` and stops when empty, so the pane does not redraw. A probe showed the timer ticking on desktop, and five accessibility presses on a Button beside a ticking Client all registered. Real pointer clicks on Undo while it ticks still need a check.
 
 ## Checks
 
