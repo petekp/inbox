@@ -694,16 +694,25 @@ function ListRow({
             {errors.has(row.id) ? <div class="tone-error">{errors.get(row.id)}</div> : null}
           </div>
         ) : null}
-        <div class="keys">
-          {keys.map(k => (
-            <KeyButton k={k} />
-          ))}
-          {keys.length > 0 && more.length > 0 ? <span class="key-dot">·</span> : null}
-          {more.map(k => (
-            <KeyButton k={k} />
-          ))}
+        {/* The row's answers on one line, its follow-ups on the next. An open field takes the follow-ups' line. */}
+        <div class="actions">
+          {keys.length > 0 ? (
+            <div class="keys">
+              {keys.map(k => (
+                <KeyButton k={k} />
+              ))}
+            </div>
+          ) : null}
+          {row.typing && typing === row.id ? (
+            <TypeField row={row} />
+          ) : more.length > 0 ? (
+            <div class="keys">
+              {more.map(k => (
+                <KeyButton k={k} />
+              ))}
+            </div>
+          ) : null}
         </div>
-        {row.typing && typing === row.id ? <TypeField row={row} /> : null}
         {copied ? (
           <div>
             <div class="muted">Copy {copied.name} from here:</div>
