@@ -8,7 +8,7 @@ import type { ClientModule } from 'claude-code'
  */
 
 export type FoldProps = {
-  /** The column the arrow starts at, where the closed items' tree hangs from it. */
+  /** The column the arrow starts at. */
   inset: number
   count: number
   isUnfolded: boolean
@@ -16,10 +16,10 @@ export type FoldProps = {
   colors: { rest: string | null; text: string | null; hover: string | null; hoverText: string | null }
 }
 
-/** `pending` is the state the last click asked for, drawn until the hooks module's redraw or `PENDING_MS`. */
+/** `pending` is the state the last click asked for. It draws over the props for `PENDING_MS`. */
 type State = { hover: boolean; pending: { isUnfolded: boolean; seq: number } | null }
 
-/** How long a click's state draws without the hooks module's redraw, in case its post was lost. */
+/** How long a click's state draws over the props. If the post was lost, the arrow turns back after this. */
 const PENDING_MS = 1000
 
 const Fold: ClientModule<FoldProps, State> = (props, surface) => {
