@@ -93,7 +93,7 @@ const errors = new Map<string, string>()
 const notes = new Map<string, { text: string; at: number }>()
 const copies = new Map<string, { name: string; text: string }>()
 // A note for a press whose row is no longer drawn, shown on its own line under the tab row for SETTLED_MS.
-let lineNote: { text: string; at: number } | null = null
+let lineNote: { text: string; at: number; isError?: boolean } | null = null
 // When the tab first saw each row the view lists as settled. It draws one in place for SETTLED_MS from then.
 let seen = new Map<string, number>()
 // The row ids the tab has seen, and when each row new to it appeared. A new row draws a bar for NEW_ROW_MS.
@@ -103,6 +103,10 @@ const arrived = new Map<string, number>()
 const entering = new Set<string>()
 // Settled rows whose Undo press is out. They stay drawn, and their countdown stops, until it answers.
 const undoing = new Set<string>()
+// When each leaving row's exit started. It stays drawn for EXIT_MS from then.
+const leftAt = new Map<string, number>()
+// Closed folds still drawn while their list collapses.
+const closingFolds = new Set<Group>()
 // Each view request takes the next number, and a reply older than the view shown is dropped.
 let requested = 0
 let shown = 0
@@ -165,6 +169,7 @@ function applyView(next: View, seq: number) {
   readAt = Date.now()
   const before = seen
   seen = settledSeen(seen, settledIds(next), Date.now())
+  for (const id of leftAt.keys()) if (!seen.has(id)) leftAt.delete(id)
   // A row seen settled for the first time starts to leave once SETTLED_MS passes, and is gone EXIT_MS later.
   if ([...seen.keys()].some(id => !before.has(id))) {
     setTimeout(draw, SETTLED_MS + 50)
@@ -474,7 +479,7 @@ function settledIn(entries: Entry[]): Set<string> {
 
 /** The settled rows drawn in place now. */
 function shownSettled(): Set<string> {
-  return drawnSettled(seen, Date.now(), undoing)
+  return drawnSettled(seen, Date.now(), undoing, leftAt)
 }
 
 /** Undo on a settled row: the row comes back open and selected, reading "✓ Undo" as other presses read their result. */
@@ -490,11 +495,19 @@ async function undo(r: RowView) {
     })
   } finally {
     undoing.delete(r.id)
-    // A failed Undo starts the row's time again, so its error shows and Undo can be pressed again.
-    if (errors.has(r.id) && seen.has(r.id)) {
-      seen.set(r.id, Date.now())
+    const at = seen.get(r.id)
+    const isTimeLeft = at !== undefined && Date.now() - at < SETTLED_MS
+    // A failure shows on the row while it has time left. Otherwise the row leaves, so the error shows under the tabs.
+    const error = errors.get(r.id)
+    if (error && !isTimeLeft) {
+      lineNote = { text: error, at: Date.now(), isError: true }
       setTimeout(draw, SETTLED_MS + 50)
-      setTimeout(draw, SETTLED_MS + EXIT_MS + 50)
+    }
+    // A row held past its time leaves the way any row does, with its exit.
+    if (at !== undefined && !isTimeLeft) {
+      seen.set(r.id, Date.now() - SETTLED_MS)
+      leftAt.delete(r.id)
+      setTimeout(draw, EXIT_MS + 50)
     }
     draw()
   }
@@ -928,6 +941,7 @@ type ClosedLine = {
 function ClosedFold({ group, closed, now }: { group: Group; closed: ClosedLine[]; now: number }) {
   if (closed.length === 0) return null
   const isUnfolded = unfolded.has(group)
+  const isListed = isUnfolded || closingFolds.has(group)
 
   return (
     <>
@@ -935,7 +949,7 @@ function ClosedFold({ group, closed, now }: { group: Group; closed: ClosedLine[]
         <span class={isUnfolded ? 'fold-mark open' : 'fold-mark'}>▸</span>
         {closed.length} Closed
       </button>
-      {isUnfolded ? (
+      {isListed ? (
         <div class="list closed-list" data-motion={`closed-${group}`}>
           {closed.map(d => (
             <div class="entry" key={`closed-${d.id}`}>
@@ -1082,7 +1096,9 @@ function TabBar({ v, now }: { v: View; now: number }) {
       </div>
       <div class="status">{status}</div>
       {error ? <div class="status-line tone-error">{error}</div> : null}
-      {lineNote && Date.now() - lineNote.at < SETTLED_MS ? <div class="status-line muted">{lineNote.text}</div> : null}
+      {lineNote && Date.now() - lineNote.at < SETTLED_MS ? (
+        <div class={lineNote.isError ? 'status-line tone-error' : 'status-line muted'}>{lineNote.text}</div>
+      ) : null}
     </nav>
   )
 }
@@ -1146,7 +1162,8 @@ function App(): ComponentChildren {
 
 // The Codex app's own timing, from its bundled styles: --cubic-enter, --cubic-move and --cubic-exit.
 const ENTER: KeyframeAnimationOptions = { duration: 300, easing: 'cubic-bezier(.19, 1, .22, 1)' }
-const MOVE: KeyframeAnimationOptions = { duration: 200, easing: 'cubic-bezier(.65, 0, .35, 1)' }
+const MOVE_MS = 200
+const MOVE: KeyframeAnimationOptions = { duration: MOVE_MS, easing: 'cubic-bezier(.65, 0, .35, 1)' }
 const EXIT: KeyframeAnimationOptions = { duration: EXIT_MS, easing: 'cubic-bezier(.8, 0, .4, 1)', fill: 'forwards' }
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
 
@@ -1161,12 +1178,18 @@ function measure(): Heights {
   return heights
 }
 
-/** Runs a height animation, clipping the element's content until no animation is left on it. */
-function run(el: HTMLElement, frames: Keyframe[], timing: KeyframeAnimationOptions) {
+/**
+ * Runs a height animation toward `to`, clipping the element's content until no animation is left on it.
+ * `data-to` records the target, so a later draw heading the same way leaves the animation running.
+ */
+function run(el: HTMLElement, frames: Keyframe[], timing: KeyframeAnimationOptions, to: number) {
   el.style.overflow = 'hidden'
+  el.dataset.to = String(to)
   const a = el.animate(frames, timing)
   const done = () => {
-    if (el.getAnimations().length === 0) el.style.overflow = ''
+    if (el.getAnimations().length > 0) return
+    el.style.overflow = ''
+    delete el.dataset.to
   }
   a.onfinish = done
   a.oncancel = done
@@ -1174,7 +1197,8 @@ function run(el: HTMLElement, frames: Keyframe[], timing: KeyframeAnimationOptio
 
 /**
  * Animates what a draw changed. A row in `entering` grows in, a leaving row fades and collapses, and an
- * element whose height changed moves from the height it was drawn at. A draw that changed nothing animates nothing.
+ * element whose height changed moves there from where it was, mid-animation included, fading back in if it
+ * was fading out. A draw that changed nothing animates nothing.
  */
 function animateDraw(before: Heights) {
   if (reducedMotion.matches) {
@@ -1186,70 +1210,105 @@ function animateDraw(before: Heights) {
     const was = before.get(key)
     // A fold closing runs its own exit.
     if (el.dataset.closing) continue
+    const anims = el.getAnimations()
     if (el.classList.contains('leaving')) {
       if (el.dataset.leaving) continue
       el.dataset.leaving = '1'
+      leftAt.set(key, Date.now())
+      setTimeout(draw, EXIT_MS + 50)
+      const height = el.getBoundingClientRect().height
+      const opacity = Number(getComputedStyle(el).opacity)
+      for (const a of anims) a.cancel()
       run(
         el,
         [
-          { height: `${el.getBoundingClientRect().height}px`, opacity: 1 },
+          { height: `${height}px`, opacity },
           { height: '0px', opacity: 0 },
         ],
         EXIT,
+        0,
       )
       continue
     }
-    // Undo can stop a row mid-exit.
     delete el.dataset.leaving
+    // The content's own height, which a running animation's clip does not change.
+    const target = el.scrollHeight
     if (!was || was.el !== el) {
       if (!entering.delete(key)) continue
-      const height = el.getBoundingClientRect().height
       run(
         el,
         [
           { height: '0px', opacity: 0 },
-          { height: `${height}px`, opacity: 1 },
+          { height: `${target}px`, opacity: 1 },
         ],
         ENTER,
+        target,
       )
       continue
     }
-    for (const a of el.getAnimations()) a.cancel()
-    const height = el.getBoundingClientRect().height
-    if (Math.abs(height - was.height) >= 0.5) run(el, [{ height: `${was.height}px` }, { height: `${height}px` }], MOVE)
+    if (anims.length > 0 && Math.abs(Number(el.dataset.to) - target) < 1) continue
+    // Mid-animation, start from where it is drawn now. At rest, from its height before the draw.
+    const height = anims.length > 0 ? el.getBoundingClientRect().height : was.height
+    const opacity = anims.length > 0 ? Number(getComputedStyle(el).opacity) : 1
+    for (const a of anims) a.cancel()
+    if (Math.abs(height - target) < 1 && opacity > 0.99) continue
+    run(
+      el,
+      [
+        { height: `${height}px`, opacity },
+        { height: `${target}px`, opacity: 1 },
+      ],
+      MOVE,
+      target,
+    )
   }
   // Rows that arrived on another tab grow in when that tab shows them, not later.
   entering.clear()
 }
 
-/** Opens or closes a list's Closed fold. Closing collapses the list before the fold redraws without it. */
+/**
+ * Opens or closes a list's Closed fold. Closing takes the group out of `unfolded` at once, so the arrow turns
+ * and a second click reopens it, and keeps the list drawn in `closingFolds` while it collapses.
+ */
 function toggleFold(group: Group) {
+  const el = document.querySelector<HTMLElement>(`[data-motion="closed-${group}"]`)
   if (!unfolded.has(group)) {
     unfolded.add(group)
-    entering.add(`closed-${group}`)
+    if (closingFolds.delete(group) && el) delete el.dataset.closing
+    else entering.add(`closed-${group}`)
     draw()
     return
   }
-  const el = document.querySelector<HTMLElement>(`[data-motion="closed-${group}"]`)
+  unfolded.delete(group)
   if (!el || reducedMotion.matches) {
-    unfolded.delete(group)
     draw()
     return
   }
+  closingFolds.add(group)
+  draw()
   el.dataset.closing = '1'
-  document.querySelector(`[data-fold="${group}"] .fold-mark`)?.classList.remove('open')
+  const height = el.getBoundingClientRect().height
+  for (const a of el.getAnimations()) a.cancel()
   run(
     el,
     [
-      { height: `${el.getBoundingClientRect().height}px`, opacity: 1 },
+      { height: `${height}px`, opacity: 1 },
       { height: '0px', opacity: 0 },
     ],
     EXIT,
+    0,
   )
   setTimeout(() => {
-    unfolded.delete(group)
+    if (unfolded.has(group) || !closingFolds.delete(group)) return
     draw()
   }, EXIT_MS)
+}
+
+/** Brings the open row into view, and again once its height has moved, since a row still growing is clipped. */
+function revealSelected() {
+  document.querySelector('.row.selected')?.scrollIntoView({ block: 'nearest' })
+  if (!reducedMotion.matches)
+    setTimeout(() => document.querySelector('.row.selected')?.scrollIntoView({ block: 'nearest' }), MOVE_MS + 20)
 }
 
 const root = document.getElementById('app')!
@@ -1295,7 +1354,7 @@ document.addEventListener('keydown', e => {
   if (move !== 0) {
     e.preventDefault()
     select(tab, rows, Math.max(0, Math.min(rows.length - 1, at + move)))
-    document.querySelector('.row.selected')?.scrollIntoView({ block: 'nearest' })
+    revealSelected()
     return
   }
   const row = rows[at]

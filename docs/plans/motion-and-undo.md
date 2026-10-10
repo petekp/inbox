@@ -60,7 +60,7 @@ Pressing Undo:
 
 - The button reads "Undoing…" and takes no second press. The countdown pauses, and the row does not leave while the press is out.
 - On success, the row grows back to its open form in place, with "✓ Undo" under its title for 5.12 s, as every other press shows its result.
-- On failure, the error shows on the settled row in the error color, and Undo stays while its time lasts.
+- On failure, the error shows on the settled row in the error color while the row has time left. If the row's time is up, the row leaves and the error shows under the tab row.
 
 ## The Claude app pane
 

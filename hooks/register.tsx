@@ -3181,11 +3181,13 @@ export const register: Register = on => {
       void update($, SHOWN_DETAILS, s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id]))
     // Under a just-closed row, a thin bar that empties as its time in place runs out.
     // ─ is a light line across a cell and ╴ across its left half, so the bar shrinks by half cells.
-    const leaveBar = (at: number) => {
+    const leaveBar = (at: number, isLapsed: boolean) => {
       const halves = Math.ceil((Math.max(0, SETTLED_MS - (now - at)) / SETTLED_MS) * LEAVE_BAR_STEPS)
 
       return halves > 0 && look === 'terminal' ? (
-        <Text color={pal.mark.done}>{'─'.repeat(Math.floor(halves / 2)) + (halves % 2 ? '╴' : '')}</Text>
+        <Text color={isLapsed ? pal.muted : pal.mark.done}>
+          {'─'.repeat(Math.floor(halves / 2)) + (halves % 2 ? '╴' : '')}
+        </Text>
       ) : null
     }
     // A folded row offers only Details, which shows its body and its keys.
@@ -4041,7 +4043,7 @@ export const register: Register = on => {
             />
           ) : null}
         </Box>
-        {leaveBar(at)}
+        {leaveBar(at, isLapsed)}
       </Box>
     )
     const settledRow = ({ settled: r, state }: Extract<Entry, { settled: RowView }>, pos?: TreePos) => {

@@ -33,15 +33,23 @@ export function settledSeen(seen: ReadonlyMap<string, number>, listed: string[],
 export const EXIT_MS = 200
 
 /**
- * The settled rows the tab draws in place: first seen less than SETTLED_MS ago, the rows still
- * leaving for EXIT_MS after that, and `held` rows, whose Undo press is out. The rest show in their Closed fold.
+ * The settled rows the tab draws in place: first seen less than SETTLED_MS ago, `held` rows, whose Undo
+ * press is out, and leaving rows for EXIT_MS from `leftAt`, when their exit started, or from the end of
+ * their SETTLED_MS before it starts. The rest show in their Closed fold.
  */
 export function drawnSettled(
   seen: ReadonlyMap<string, number>,
   now: number,
   held: ReadonlySet<string> = new Set(),
+  leftAt: ReadonlyMap<string, number> = new Map(),
 ): Set<string> {
-  return new Set([...seen].filter(([id, at]) => held.has(id) || now - at < SETTLED_MS + EXIT_MS).map(([id]) => id))
+  const isDrawn = (id: string, at: number) => {
+    const left = leftAt.get(id)
+
+    return held.has(id) || now - at < SETTLED_MS || now - (left ?? at + SETTLED_MS) < EXIT_MS
+  }
+
+  return new Set([...seen].filter(([id, at]) => isDrawn(id, at)).map(([id]) => id))
 }
 
 /** The drawn settled rows past their SETTLED_MS, which fade and collapse before they leave. */
