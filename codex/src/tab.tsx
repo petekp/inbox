@@ -817,12 +817,23 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
       {/* The row's answers and main action, then its follow-ups, on one line that wraps. An open field replaces the
           follow-ups, on its own line. */}
       <div class="actions">
+        {/* Each group wraps as a whole: the follow-ups move to the next line together, never split across two. */}
         {keys.length > 0 || (more.length > 0 && !isTyping) ? (
-          <div class={keys.length > 0 ? 'keys' : 'keys ghost-line'}>
-            {keys.map(k => (
-              <KeyButton k={k} />
-            ))}
-            {isTyping ? null : more.map(k => <KeyButton k={k} isGhost />)}
+          <div class="key-groups">
+            {keys.length > 0 ? (
+              <div class="keys">
+                {keys.map(k => (
+                  <KeyButton k={k} />
+                ))}
+              </div>
+            ) : null}
+            {more.length > 0 && !isTyping ? (
+              <div class="keys follow-ups">
+                {more.map(k => (
+                  <KeyButton k={k} isGhost />
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
         {isTyping ? <TypeField row={row} /> : null}
@@ -1006,7 +1017,7 @@ function ClosedFold({ group, closed, now }: { group: Group; closed: ClosedLine[]
   return (
     <>
       <button type="button" class="fold" data-fold={group} onClick={() => toggleFold(group)}>
-        <span class={isUnfolded ? 'fold-mark open' : 'fold-mark'}>▸</span>
+        <Icon name={isUnfolded ? 'down' : 'right'} />
         {closed.length} Closed
       </button>
       {isListed ? (
@@ -1398,6 +1409,18 @@ function toggleFold(group: Group) {
   }, EXIT_MS)
 }
 
+/**
+ * Marks a follow-up group that starts its own line, so its first label lines up with the row's text, as a
+ * leading ghost button does in Codex. Only layout shows whether the group wrapped.
+ */
+function alignFollowUps() {
+  for (const group of document.querySelectorAll<HTMLElement>('.follow-ups')) {
+    const first = group.previousElementSibling as HTMLElement | null
+    group.classList.toggle('starts-line', !first || group.offsetTop > first.offsetTop + 2)
+  }
+}
+window.addEventListener('resize', alignFollowUps)
+
 /** Brings the open row into view, and again once its height has moved, since a row still growing is clipped. */
 function revealSelected() {
   document.querySelector('.row.selected')?.scrollIntoView({ block: 'nearest' })
@@ -1415,6 +1438,7 @@ function draw() {
   }
   const before = measure()
   render(<App />, root)
+  alignFollowUps()
   animateDraw(before)
   if (focusTyping && typing) {
     focusTyping = false
@@ -1426,6 +1450,19 @@ function draw() {
 
 // The pane's keys, while the tab has focus. A text field takes its own keys, and
 // a held modifier leaves the key to the app.
+// A press in a list moves rows under the pointer, so hover fills stay off until the pointer itself moves.
+let pressedAt: { x: number; y: number } | null = null
+document.addEventListener('pointerdown', e => {
+  if (!(e.target instanceof Element) || !e.target.closest('.list, .fold')) return
+  pressedAt = { x: e.clientX, y: e.clientY }
+  document.body.classList.add('still')
+})
+document.addEventListener('pointermove', e => {
+  if (!pressedAt || Math.hypot(e.clientX - pressedAt.x, e.clientY - pressedAt.y) < 3) return
+  pressedAt = null
+  document.body.classList.remove('still')
+})
+
 document.addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || !view) return
   const target = e.target as HTMLElement | null

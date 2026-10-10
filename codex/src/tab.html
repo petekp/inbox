@@ -194,7 +194,7 @@
         padding: 10px 0;
       }
       .group-title {
-        padding: 0 14px 0 var(--mark-x);
+        padding: 0 14px 6px var(--mark-x);
         font-weight: 500;
       }
       .group-title .count {
@@ -324,6 +324,13 @@
       .row.collapsed:hover {
         background-color: var(--soft);
       }
+      /* After a click, rows slide under a pointer that has not moved, so nothing they bring under it lights up. */
+      .still .row.collapsed:hover {
+        background-color: transparent;
+      }
+      .still .fold:hover {
+        color: var(--muted);
+      }
       .title {
         font-weight: 600;
       }
@@ -393,8 +400,16 @@
       .key.ghost:not(:disabled):hover {
         color: var(--text);
       }
-      /* The ghost line's first label lines up with the text above it, as Codex aligns a leading ghost button. */
-      .keys.ghost-line {
+      .key-groups {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 6px;
+      }
+      .key-groups > .keys {
+        min-width: 0;
+      }
+      /* A follow-up group that starts a line puts its first label under the row's text, as Codex aligns a leading ghost button. */
+      .follow-ups.starts-line {
         margin-left: -11px;
       }
       .actions {
@@ -445,13 +460,11 @@
       .fold:hover {
         color: var(--text);
       }
-      .fold-mark {
-        display: inline-block;
-        width: 14px;
-        transition: transform var(--move);
-      }
-      .fold-mark.open {
-        transform: rotate(90deg);
+      .fold .icon {
+        width: 12px;
+        height: 12px;
+        margin-right: 4px;
+        vertical-align: -1px;
       }
       /* The closed items sit under the fold's label. */
       .closed-list {
