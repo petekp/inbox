@@ -528,7 +528,7 @@ A failed `codex queue` shows `Not sent: <reason>` in red with [Try again]. The p
 - An inbox tool call arrives for a turn that `UserPromptSubmit` never recorded: that hook is skipped.
 - `UserPromptSubmit` has recorded two or more turns and `Stop` has recorded none: that hook is skipped, and the per-turn update never runs.
 
-Needs you then reads, in place of the empty text:
+Needs you then reads, above its rows or in place of the empty text:
 
 ```
 The inbox has not heard from this chat's hooks.
