@@ -882,8 +882,8 @@ function ClosedFold({ group, closed, now }: { group: Group; closed: ClosedLine[]
 }
 
 /**
- * What Needs you reads in place of its empty text when the session's hooks
- * have not all run, so an empty list does not read as all clear. Null when they have.
+ * What Needs you reads above its rows, or in place of its empty text, when the
+ * session's hooks have not all run, so the list does not read as complete. Null when they have.
  */
 function notHeardText(v: View): [string, string] | null {
   if (v.heard === 'heard') return null
@@ -917,16 +917,16 @@ function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number }) {
   // With closed items still shown, the empty text is one line above them.
   return (
     <main>
-      {isNothing ? (
+      {notHeard ? (
         <section>
-          {notHeard ? (
-            <div class="group-title">
-              {notHeard[0]}
-              <div class="muted">{notHeard[1]}</div>
-            </div>
-          ) : (
-            <div class="group-title empty-line">Nothing needs you.</div>
-          )}
+          <div class="group-title">
+            {notHeard[0]}
+            <div class="muted">{notHeard[1]}</div>
+          </div>
+        </section>
+      ) : isNothing ? (
+        <section>
+          <div class="group-title empty-line">Nothing needs you.</div>
         </section>
       ) : null}
       <ItemGroup v={v} kind="question" entries={lists.questions} all={all} now={now} />
