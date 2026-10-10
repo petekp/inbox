@@ -102,6 +102,8 @@ let beforeAct: (() => Promise<unknown>) | undefined
 let stored = new Map<string, string>()
 // Makes the store refuse to read a saved session, with this reason.
 let storeRefusal: string | undefined
+// Delays the store's read of a saved session until it resolves.
+let storeHold: (() => Promise<void>) | undefined
 // Makes the engine refuse the mod's tools, as an organization's settings can, with this reason.
 let toolRefusal: string | undefined
 // The ids of the panes the mod opened or raised, in order.
@@ -152,10 +154,12 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   beforeAct = undefined
   stored = new Map()
   storeRefusal = undefined
+  storeHold = undefined
   toolRefusal = undefined
   panesOpened = []
   panesClosed = []
-  on('store.get', ($, e) => {
+  on('store.get', async ($, e) => {
+    if (e.key.startsWith('s:')) await storeHold?.()
     if (storeRefusal && e.key.startsWith('s:')) return { deny: storeRefusal }
     const json = stored.get(e.key)
     return { value: json === undefined ? undefined : JSON.parse(json) }
@@ -887,6 +891,13 @@ test('t opens a field for the person’s own words: an answer closes its questio
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ key: 'type-i1' })).toBeUndefined()
   await pane.press({ key: 'typekey-i1' })
+  // A blank Enter or [Send] sends nothing and keeps the field open.
+  await pane.input({ key: 'type-i1', text: ' ' })
+  await clock.settle()
+  expect(await pane.find({ key: 'type-i1' })).toBeDefined()
+  await pane.press({ key: 'send-i1' })
+  await clock.settle()
+  expect(await pane.find({ key: 'type-i1' })).toBeDefined()
   await pane.input({ key: 'type-i1', text: 'Deno, actually', kind: 'change' })
   // [Cancel] closes the field and keeps the words, which also outlast opening another row.
   await pane.press({ key: 'cancel-i1' })
@@ -1871,8 +1882,16 @@ test('a saved session the store cannot read shows as unreadable, not empty, unti
   expect(await pane.find({ text: 'Could not read the inbox.' })).toBeDefined()
   expect(await pane.find({ text: /Nothing needs you/ })).toBeUndefined()
 
-  // While the store still refuses, [Try again] says so again.
+  // [Try again] stays drawn while it reads. While the store still refuses, it says so again.
+  let readDone = () => {}
+  storeHold = () => new Promise<void>(r => (readDone = r))
   await pane.press({ key: 'read-again' })
+  await clock.settle()
+  expect(await pane.find({ text: 'Reading the inbox…' })).toBeDefined()
+  expect(await pane.find({ key: 'read-again' })).toBeDefined()
+  await pane.press({ key: 'read-again' })
+  storeHold = undefined
+  readDone()
   await clock.settle()
   expect(await pane.find({ text: 'Could not read the inbox.' })).toBeDefined()
 

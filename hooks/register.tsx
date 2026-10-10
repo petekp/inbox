@@ -1086,10 +1086,15 @@ async function openInbox($: EngineInterface) {
   await openTopRow($)
 }
 
-/** Sends a row's draft as its typed answer or reply, as Enter in its field does. A blank draft sends nothing. */
+/** Sends a row's draft as its typed answer or reply, as Enter in its field does. */
 async function sendDraft($: EngineInterface, id: string, surface: UiPressArgument['surface']) {
-  const text = (await read($, DRAFTS))[id] ?? ''
+  await sendTyped($, id, (await read($, DRAFTS))[id] ?? '', surface)
+}
+
+/** Sends typed words as a row's answer or reply. Blank ones send nothing and leave the field open with the keyboard. */
+async function sendTyped($: EngineInterface, id: string, text: string, surface: UiPressArgument['surface']) {
   if (text.trim()) await runPress($, { action: 'type', id, text }, surface)
+  else await focusField($, id)
 }
 
 /** Opens the free-text field under a row and gives it the keyboard. */
@@ -1097,6 +1102,11 @@ async function startTyping($: EngineInterface, id: string) {
   fieldSeeds.set(id, (await read($, DRAFTS))[id] ?? '')
   await keepPressedOpen($, id)
   await update($, TYPING, () => id)
+  await focusField($, id)
+}
+
+/** Gives a row's open text field the keyboard. */
+async function focusField($: EngineInterface, id: string) {
   // A click leaves the keys with the prompt, and `ui.focus` is refused in a pane that lacks them.
   await openPane($)
   await $.ui.focus({ requestId: PANE, key: `type-${id}` }).catch(() => undefined)
@@ -3202,11 +3212,18 @@ export const register: Register = on => {
     // A desktop native button is assumed to draw about 2 columns wider than its label.
     const buttonFrame = look === 'desktop' ? 2 : 0
     // Desktop wraps a `truncate-end` Text too, so a line that must stay one line, `inset`
-    // columns in, is clipped here. The terminal truncates it itself.
-    const oneLine = (text: string, inset: number) =>
-      look === 'desktop'
-        ? clipLabel(text, Math.max(12, Math.floor((e.props.bodyColumns - 3 - inset) * DESKTOP_CLIP_CHARS_PER_CELL) - 1))
-        : text
+    // columns in, is clipped here. The fold line clips in both looks, at one character
+    // per cell in the terminal, so both end it the same way.
+    const clipLine = (text: string, inset: number) =>
+      clipLabel(
+        text,
+        Math.max(
+          12,
+          Math.floor((e.props.bodyColumns - 3 - inset) * (look === 'desktop' ? DESKTOP_CLIP_CHARS_PER_CELL : 1)) - 1,
+        ),
+      )
+    // The terminal truncates the settled ask itself.
+    const oneLine = (text: string, inset: number) => (look === 'desktop' ? clipLine(text, inset) : text)
     // The selected row gets a blue background, or a bar where the palette has
     // no selection color, and reads top to bottom:
     // context line, title, body, keys. In the docked pane a blank line sets each
@@ -3323,7 +3340,7 @@ export const register: Register = on => {
               {!isOpen && row.fold?.line ? (
                 <Box marginTop={blankLine}>
                   <Text wrap="truncate-end" color={pal.muted}>
-                    {oneLine(row.fold.line, tree ? 7 : 5)}
+                    {clipLine(row.fold.line, tree ? 7 : 5)}
                   </Text>
                 </Box>
               ) : null}
@@ -3357,9 +3374,7 @@ export const register: Register = on => {
                     submitLabel="send"
                     autoFocus
                     onInput={(value: string) => void update($, DRAFTS, d => ({ ...d, [row.id]: value }))}
-                    onSubmit={(value: string, e) =>
-                      void runPress($, { action: 'type', id: row.id, text: value }, e.surface)
-                    }
+                    onSubmit={(value: string, e) => void sendTyped($, row.id, value, e.surface)}
                   />
                 </Box>
               ) : null}
@@ -3829,9 +3844,7 @@ export const register: Register = on => {
                 ) : (
                   <Text color={pal.tone.error}>Could not read the inbox.</Text>
                 )}
-                {unreadable?.isReading ? null : (
-                  <Button key="read-again" label="Try again" onPress={() => void readAgain($)} />
-                )}
+                <Button key="read-again" label="Try again" onPress={() => void readAgain($)} />
               </Box>,
             ),
           ]
