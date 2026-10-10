@@ -2,7 +2,8 @@
 
 ## Status after the first probes
 
-- **Closed rows are Clients** (component 9). Each closed row is one Client keyed `select-<id>`, drawn by `hooks/row-client.tsx`, and a click on any of its cells opens the row. PR check and review-thread rows work the same way. Three things are not yet checked live: row sizing (probe 3), many Clients in a scrolled pane (probe 4), and where the focus lands after a row click (probe 1's row part). The Closed fold stays a native Button until component 16 is built.
+- **Closed rows are Clients** (component 9). Each closed row is one Client keyed `select-<id>`, drawn by `hooks/row-client.tsx`, and a click on any of its cells opens the row. PR check and review-thread rows work the same way. Three things are not yet checked live: row sizing (probe 3), many Clients in a scrolled pane (probe 4), and where the focus lands after a row click (probe 1's row part).
+- **The Closed fold is a Client** (component 16). Each list's "▸ N Closed" line is one Client keyed `fold-<kind>`, drawn by `hooks/fold-client.tsx`. A click on any cell of the line posts the fold state it asks for, and the hooks module sets that state, so a double-click leaves the fold unfolded. Not yet checked live: the ▸ and ▾ glyphs (probe 13), the hover color on the card, and where the focus lands after a click.
 - **Native Buttons take clicks on their corners and edges** (probe 16). Single actions meet the whole-shape rule.
 - **Focus is fixed in one place** (probe 1, rule 11). The pane tracks the Button a press focused. When a drawing leaves it out, the focus moves to the Button that took its place, else the open row's first action, else the first Button. Every click landed on the first try in a run of 19 presses. A Type press moves the focus to its text field once a drawing has the field (`db0a6a6`). That is not yet checked live.
 - **The leave bar is gone on desktop** (component 14). While it redrew every 213 ms, clicks on the pane's Buttons did nothing. Desktop now redraws once, when the settled row leaves.
@@ -459,7 +460,7 @@ Each section gives four things:
   - Hover follows rule 9. At rest the background is `pal.card ?? null`.
   - The closed items stay Box and Text.
 - **Why a separate module from the tabs:** the tab bar maps x to one of several tabs. The fold is one target with two states.
-- **Status:** after probes 1 and 2. The ▸ and ▾ glyphs are in probe 13.
+- **Status:** built. The ▸ and ▾ glyphs wait on probe 13. None of it is checked live yet.
 
 ### 17. PR block
 

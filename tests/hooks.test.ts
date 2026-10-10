@@ -2,6 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On, PromptOrigin, RenderSurface } from 'claude-code'
 
+import type { FoldProps } from '../hooks/fold-client'
 import type { TabsProps } from '../hooks/tabs-client'
 import { NEW_ROW_MS, PRESS_GUARD_MS, SETTLED_MS } from '../hooks/view'
 
@@ -1998,6 +1999,24 @@ test('the desktop pane draws each action as one button and the tabs as one click
   await pane.pointer({ type: 'down', x: tabs[0]!.width, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
   expect((await tabBar()).shown).toBe('findings')
+
+  // A click anywhere on the Closed fold unfolds it. The click posts the state it asks for, so a
+  // second click before the redraw posts the same state, and the fold stays unfolded.
+  await $.tool.call({ tool: 'mcp__inbox__record_finding', kind: 'issue', title: 'README is stale', detail: 'Old.' })
+  await $.tool.call({ tool: 'mcp__inbox__close', id: 'f3', reason: 'fixed' } as never)
+  await clock.advance(9000)
+  const fold = async () => (await pane.find({ key: 'fold-finding' }))?.props.props as FoldProps
+  const closedItem = { text: /^Closed by Claude: fixed$/ } as const
+  expect((await pane.find({ key: 'fold-finding' }))?.type).toBe('Client')
+  expect(await pane.find(closedItem)).toBeUndefined()
+  await pane.pointer({ type: 'down', x: 30, y: 0, button: 'left', in: 'fold-finding' })
+  await clock.settle()
+  expect((await fold()).isUnfolded).toBe(true)
+  expect(await pane.find(closedItem)).toBeDefined()
+  await pane.post({ isUnfolded: true }, { in: 'fold-finding' })
+  await clock.settle()
+  expect((await fold()).isUnfolded).toBe(true)
+  expect(await pane.find(closedItem)).toBeDefined()
 
   // The app draws its own close mark on the pane's title bar.
   expect(await pane.find({ key: 'close-pane' })).toBeUndefined()

@@ -123,6 +123,7 @@ import {
   recordClose,
   recordFinding,
 } from './tools'
+import type { FoldProps } from './fold-client'
 import type { RowProps } from './row-client'
 import type { TabsProps } from './tabs-client'
 
@@ -392,6 +393,8 @@ const NEEDS_YOU_GROUPS: { kind: Item['kind']; title: string; list: 'questions' |
   { kind: 'question', title: 'Questions', list: 'questions' },
   { kind: 'task', title: 'Tasks', list: 'tasks' },
 ]
+// The lists with a Closed fold.
+const FOLD_KINDS: (Item['kind'] | 'finding')[] = [...NEEDS_YOU_GROUPS.map(g => g.kind), 'finding']
 const MODEL = 'sonnet'
 const AWAY_MS = 15 * 60_000
 const KEPT_SESSIONS = 40
@@ -1174,6 +1177,18 @@ async function selectClicked($: EngineInterface, id: string) {
   focusedKey = `select-${id}`
   focusHint = null
   await select($, tab, id, index)
+}
+
+/**
+ * Sets a list's Closed fold to the state its desktop Client posted. A set, not a toggle: a second
+ * click before the redraw posts the same state, so a double-click leaves the fold unfolded.
+ */
+async function setFold($: EngineInterface, kind: string, isUnfolded: unknown) {
+  const fold = FOLD_KINDS.find(k => k === kind)
+  if (fold === undefined || typeof isUnfolded !== 'boolean') return
+  await update($, UNFOLDED, u =>
+    u.includes(fold) === isUnfolded ? u : isUnfolded ? [...u, fold] : u.filter(k => k !== fold),
+  )
 }
 
 /**
@@ -2635,14 +2650,16 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // The desktop tab bar's Client posts the tab a click landed on, and a closed row's Client a click on the row.
+  // The desktop tab bar's Client posts the tab a click landed on, a closed row's Client a click on the row,
+  // and a Closed fold's Client the fold state the click asks for.
   on('ui.message', async ($, e, next) => {
     const r = await next(e)
     if (e.requestId !== PANE) return r
-    const picked = (e.data as { tab?: unknown } | null)?.tab
-    const shown = TABS.find(t => t.id === picked)
+    const data = e.data as { tab?: unknown; isUnfolded?: unknown } | null
+    const shown = TABS.find(t => t.id === data?.tab)
     if (e.element === 'tabs' && shown) await showTab($, shown.id)
     else if (e.element.startsWith('select-')) await selectClicked($, e.element.slice('select-'.length))
+    else if (e.element.startsWith('fold-')) await setFold($, e.element.slice('fold-'.length), data?.isUnfolded)
 
     return r
   })
@@ -3802,21 +3819,47 @@ export const register: Register = on => {
       )
     // The row that folds or unfolds a list's closed items, with how many there are.
     // It sits apart from the list's tree, and the closed items hang from its arrow.
+    // On desktop a Client takes a click on every cell of the line, where a Button takes one only on its label.
     const foldRow = (kind: Item['kind'] | 'finding', count: number, isUnfolded: boolean) =>
-      // One Button for the arrow and the count; the two spaces put the count where other rows' text starts.
-      treeRow(
-        null,
-        null,
-        <Box flexDirection="row">
-          <Button
-            plain
-            dimColor
+      look === 'desktop' && 'Client' in elements ? (
+        <Box key={`fold-row-${kind}`} flexDirection="row" overflow="hidden">
+          <elements.Client
             key={`fold-${kind}`}
-            label={`${isUnfolded ? '▾' : '▸'} ${count} Closed`}
-            onPress={() => void update($, UNFOLDED, u => (u.includes(kind) ? u.filter(k => k !== kind) : [...u, kind]))}
+            module="./fold-client.tsx"
+            width="100%"
+            props={
+              {
+                inset: 4,
+                count,
+                isUnfolded,
+                colors: {
+                  rest: isInline ? null : (pal.card ?? null),
+                  text: pal.muted,
+                  hover: pal.raised,
+                  hoverText: pal.raisedText ?? null,
+                },
+              } satisfies FoldProps
+            }
           />
-        </Box>,
-        `fold-row-${kind}`,
+        </Box>
+      ) : (
+        // One Button for the arrow and the count; the two spaces put the count where other rows' text starts.
+        treeRow(
+          null,
+          null,
+          <Box flexDirection="row">
+            <Button
+              plain
+              dimColor
+              key={`fold-${kind}`}
+              label={`${isUnfolded ? '▾' : '▸'} ${count} Closed`}
+              onPress={() =>
+                void update($, UNFOLDED, u => (u.includes(kind) ? u.filter(k => k !== kind) : [...u, kind]))
+              }
+            />
+          </Box>,
+          `fold-row-${kind}`,
+        )
       )
     // Each closed item is two lines, so a blank line of their tree sets each apart.
     const closedGap = () =>
