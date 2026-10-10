@@ -50,7 +50,6 @@ The probes ran on 2026-10-09. "Probe results" in desktop-look.md records each on
 ## 4. Decisions still yours
 
 - **The wording list and smaller questions** in revamp-handoff.md.
-- **The Auto theme on desktop.** In the dark app, the shown tab's text is 3.1:1 on the raised gray, its tone line under 1.5:1, and the other tabs almost match the pane. An open row has no fill. Fixing this needs new palette colors for Auto (desktop-look.md, probe 5). Before `f29471e` the shown tab used the same gray in Auto, since Auto sets no selection color.
 - **Checks only you can run:** switch the app between light and dark against the `theme` setting (probe 6), close the pane and press [Open inbox] (probe 17), sweep the pointer over a long list (probe 4), and try `/login` from a stop (probe 18).
 
 ## 5. Merge

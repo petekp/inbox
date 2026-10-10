@@ -11,7 +11,8 @@ Every build step below is done, in `f29471e` and earlier. The probes ran on 2026
   - The gap under a group title is half a line.
   - A PR's status block starts at the title's column.
 - **Not built, because a probe failed:** the rule under the tabs, and the tree rails.
-- **Waiting on you:** the Auto theme's tab and row colors (probe 5), the app's appearance against the `theme` setting (probe 6), the band with the pane closed (probe 17), a pointer sweep over many rows (probe 4), and `/login` from a stop (probe 18).
+- **Built after probe 5:** on desktop, every theme without hex colors, such as Auto, draws its tabs, cards, raised surfaces and open rows with translucent `rgba()` grays and a translucent blue. They take their color from the app's background, so they follow its light or dark appearance (`8e08cc7`). They were seen in the dark app only.
+- **Waiting on you:** the app's appearance against the `theme` setting (probe 6), the band with the pane closed (probe 17), a pointer sweep over many rows (probe 4), and `/login` from a stop (probe 18).
 
 ## Summary
 

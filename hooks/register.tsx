@@ -3541,9 +3541,7 @@ export const register: Register = on => {
                               columnGap={2}
                               marginTop={desktopGroups.length > 0 ? 1 : 0}
                             >
-                              <Box flexGrow={1} flexShrink={1}>
-                                {field}
-                              </Box>
+                              <Box flexShrink={1}>{field}</Box>
                               {keyRow(
                                 row.id,
                                 fieldActions(row).filter(a => !a.key.startsWith('send-')),

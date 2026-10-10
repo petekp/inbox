@@ -6,7 +6,7 @@ The open row and the lists look haphazard in the Claude app, and less so in the 
 
 Captured on 2026-10-09 in the Claude app's demo pane and the Codex tab:
 
-- **Typing a reply.** The Claude app draws two send buttons: the field's own `send` and the pane's `Send`. Send and Cancel touch the field. The field is narrow. The "Type a reply" button that opened the field stays drawn.
+- **Typing a reply.** The Claude app draws two send buttons: the field's own `send` and the pane's `Send`. Send and Cancel touch the field. The "Type a reply" button that opened the field stays drawn.
 - **Action rows.** An open row splits its buttons into two rows 38 px apart, twice every other gap in the row. A lone button such as Done looks orphaned.
 - **List spacing.** Closed rows sit a full line (38 px) apart, but an open row pads itself by half a line (19 px).
 - **Status line.** When a note appears, such as "Sample entry: nothing was sent.", the status line moves under the tabs with no gap.
@@ -18,8 +18,8 @@ Captured on 2026-10-09 in the Claude app's demo pane and the Codex tab:
 1. **One spacing step: half a line.** In the Claude app that is a padding or gap of 1, 19 px. Every gap inside an open row, between closed rows, and above the fold line is one step. Reason: the card's padding is already one step, and mixing 19 px and 38 px gaps is what reads as haphazard.
 2. **Two action lines, each a full line.** The first line answers the row: the options, or its main action (Done, Address, Open log, Open PR). The second holds the follow-ups: Type, Explain or Discuss, Dismiss. One step separates them. Reason: the person reads what answers the row first, and a line break with one step shows the grouping without a large gap.
 3. **Typing replaces the follow-up line.** While the field is open, the second line is the field, then Send, then Cancel. The button that opened the field is gone. There is one Send. Reason: the field is the follow-up the person chose, and a second Send asks them to choose between identical buttons.
-   - In the Claude app, Send is the field's own button (`submitLabel`), labeled "Send", if a probe shows it is drawn before the field is clicked and that a click on it sends. Otherwise the pane's Send and Cancel stay on the field's line, beside the field's own button. The terminal keeps `send` as its Enter hint.
-   - The field fills the line, if a probe shows the field stretches inside a growing Box.
+   - In the Claude app, Send is the field's own button (`submitLabel`), labeled "Send". It is drawn before the field is clicked, and a click on it sends. The terminal keeps `send` as its Enter hint.
+   - The field keeps the app's own width. It does not stretch inside a growing Box.
 4. **The status line never moves for a note.** The age stays at the right of the tabs. A note or error takes its own line under the tab row, one step below it. Reason: text that jumps when a note appears looks broken.
 5. **Codex tab actions follow rules 2 and 3.** Their two lines and their typing line match the Claude app's.
 
