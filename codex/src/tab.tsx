@@ -432,8 +432,7 @@ function itemRow(v: View, r: RowView, item: Item): Row {
 
   return {
     id,
-    // A question no typed number reaches draws a dot, as a task does: under the Questions title, a ? reads as a missing number.
-    handle: isHandedOff ? '✓' : r.handle === '?' ? '•' : r.handle,
+    handle: isHandedOff ? '✓' : r.handle,
     handleTone: isHandedOff ? 'done' : undefined,
     ...(isHandedOff ? { fold: {} } : {}),
     title: item.ask,
@@ -743,11 +742,12 @@ function ListRow({
   now: number
 }) {
   const bar = isNew(row.id) ? ` new tone-bar-${tone}` : ''
-  // A number a typed reply reaches, as "1)", draws as a badge holding the number.
+  // A number a typed reply reaches, as "1)", draws as a badge holding the number. A question no typed number
+  // reaches, "?", draws the same badge empty: a ? would read as a missing number.
   const number = /^(\d+)\)$/.exec(row.handle)?.[1]
   const handle = (
     <span class={`mark ${row.handleTone ?? row.kind ?? ''}`}>
-      {number ? <span class="number">{number}</span> : row.handle}
+      {number ? <span class="number">{number}</span> : row.handle === '?' ? <span class="number" /> : row.handle}
     </span>
   )
 
