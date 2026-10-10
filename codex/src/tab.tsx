@@ -146,7 +146,7 @@ let rowsSeen: SeenRows = null
 const arrived = new Map<string, number>()
 // Rows that arrived since the last draw, which grow in when they are first drawn.
 const entering = new Set<string>()
-// Settled rows whose Undo press is out. They stay drawn, and their clock stops, until it answers.
+// Settled rows whose Undo press is out. They stay drawn, and their Undo fill stops, until it answers.
 const undoing = new Set<string>()
 // When each leaving row's exit started. It stays drawn for EXIT_MS from then.
 const leftAt = new Map<string, number>()
@@ -860,8 +860,8 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
 
 /**
  * A row that just closed, on one line as tall as any other row: a ✓, how it closed, then what it was. After the
- * person's own Done or Dismiss, Undo sits at the right, with a clock face beside it that empties as Undo's time
- * runs out. While Undo's press is out, the clock stops and the row stays.
+ * person's own Done or Dismiss, Undo sits at the right, its fill emptying from the right as Undo's time runs
+ * out. While Undo's press is out, the fill stops and the row stays.
  */
 function SettledView({ settled: r, state }: Extract<Entry, { settled: RowView }>) {
   const start = seen.get(r.id) ?? Date.now()
@@ -882,29 +882,19 @@ function SettledView({ settled: r, state }: Extract<Entry, { settled: RowView }>
         {error ? <span class="tone-error"> · {error}</span> : <span class="what"> · {r.title}</span>}
       </div>
       {state.canUndo ? (
-        <div class="undo-group">
+        <button type="button" class="key undo" disabled={isUndoing} onClick={() => void undo(r)}>
           {/* The delay is set once, when it is drawn: the animation keeps its own time after that. */}
-          <svg class={isUndoing ? 'clock paused' : 'clock'} viewBox="0 0 16 16" aria-hidden="true">
-            <circle class="track" cx="8" cy="8" r="7" />
-            <circle
-              key={start}
-              class="left"
-              cx="8"
-              cy="8"
-              r="3.5"
-              pathLength={100}
-              transform="rotate(-90 8 8)"
-              style={{ animationDuration: `${SETTLED_MS}ms` }}
-              ref={el => {
-                if (el && !el.style.animationDelay) el.style.animationDelay = `-${Math.max(0, Date.now() - start)}ms`
-              }}
-            />
-          </svg>
-          <button type="button" class="key ghost undo" disabled={isUndoing} onClick={() => void undo(r)}>
-            {isUndoing ? null : <Icon name="undo" />}
-            {isUndoing ? 'Undoing…' : 'Undo'}
-          </button>
-        </div>
+          <span
+            key={start}
+            class={isUndoing ? 'time-left paused' : 'time-left'}
+            style={{ animationDuration: `${SETTLED_MS}ms` }}
+            ref={el => {
+              if (el && !el.style.animationDelay) el.style.animationDelay = `-${Math.max(0, Date.now() - start)}ms`
+            }}
+          />
+          {isUndoing ? null : <Icon name="undo" />}
+          {isUndoing ? 'Undoing…' : 'Undo'}
+        </button>
       ) : null}
     </div>
   )

@@ -20,10 +20,9 @@ The timing and curves are the Codex app's own tokens, from its bundled styles:
 | `--cubic-enter` | `cubic-bezier(.19, 1, .22, 1)` | Things appearing |
 | `--cubic-exit` | `cubic-bezier(.8, 0, .4, 1)` | Things leaving |
 | `--cubic-move` | `cubic-bezier(.65, 0, .35, 1)` | Heights and positions changing |
-| `--ease-spring-snappy` | a `linear()` spring | A pressed button settling back |
-| Durations | 150, 200 and 300 ms | Hover and fades, moves, enters |
+| Durations | 150, 200 and 300 ms | Fades, moves, enters |
 
-When the system asks for reduced motion, every duration is 0 and the leave countdown does not run.
+When the system asks for reduced motion, every duration is 0, and Undo's fill stays full and does not count down.
 
 ### What moves
 
@@ -40,10 +39,8 @@ When the system asks for reduced motion, every duration is 0 and the leave count
 6. **The field opens.** The field and its buttons fade in where the follow-ups were.
 7. **A tab switches.** The new tab's body fades in, 150 ms.
 8. **A note or error appears under the tab row.** It fades in.
-9. **Hover.** Fills and text colors change over 150 ms, on rows, buttons and tabs.
-10. **A press.** A button scales to 0.97 while pressed and springs back.
 
-The tab plan's earlier rule, that motion only answers a press, is replaced: anything that appears or leaves moves, including rows a poll brings.
+Only what appears or leaves moves, including rows a poll brings. Hover, press and selection fills and text colors change at once, as a native control's do.
 
 Every row keeps one element from arrival to removal, keyed by its id, whether it is open, settled or back after Undo. Today a row changes key when it settles, so nothing can move between the two states.
 
@@ -58,12 +55,12 @@ The settled row in the Codex tab is one line, as tall as an open row's closed li
 - **Mark:** ✓ in green for Done and answers. For Dismissed, Expired and closes by Codex, a muted ✓, matching how the Closed fold draws them.
 - **Outcome first:** "Done" or "Dismissed" in weight 500, green for Done and answers. The person just caused it, so it reads first.
 - **Then the title:** muted, after " · ", cut with an ellipsis.
-- **Undo:** a text button with the undo icon at the row's right, as Codex draws its own Undo. It shows only when the person's own Done or Dismiss closed the row.
-- **Countdown:** a 14 px clock face just left of Undo. Its wedge empties clockwise over the time Undo has left. A partial ring would read as a loading spinner. A row with no Undo has no clock, and simply leaves when its time is up.
+- **Undo:** a gray pill with the undo icon at the row's right. It shows only when the person's own Done or Dismiss closed the row.
+- **Countdown:** Undo's fill is the time it has left. It empties from the right over 5.12 s, over a fainter track, so the time left sits on the button it limits. A row with no Undo has no countdown, and simply leaves when its time is up.
 
 Pressing Undo:
 
-- The button reads "Undoing…" and takes no second press. The clock stops, and the row does not leave while the press is out.
+- The button reads "Undoing…" and takes no second press. The fill stops, and the row does not leave while the press is out.
 - On success, the row grows back to its open form in place, with "✓ Undo" under its title for 5.12 s, as every other press shows its result.
 - On failure, the error replaces the title, in the error color, while the row has time left. It wraps, so none of it is cut. If the row's time is up, the row leaves and the error shows under the tab row.
 
@@ -72,7 +69,7 @@ Pressing Undo:
 The pane is drawn through the engine's elements, which have no opacity, transform or CSS. Fast redraws from the hooks module break clicks, as issue #100924 records. So the pane gets:
 
 - **Now:** the outcome colors above. Green only for Done and answers. The terminal pane shares this code, so its settled rows change the same way.
-- **The countdown:** a 2 pt bar under a settled row that has Undo, from the text column to the card's edge. It drains in muted gray over a divider-gray track. No way to draw a clock face in the pane has been verified, so it keeps the bar. It is its own keyed `Client`, `countdown-client.tsx`, which ticks every 100 ms with `surface.every` and stops when empty, so the pane does not redraw. A probe showed the timer ticking on desktop, and five accessibility presses on a Button beside a ticking Client all registered. Real pointer clicks on Undo while it ticks still need a check.
+- **The countdown:** a 2 pt bar under a settled row that has Undo, from the text column to the card's edge. It drains in muted gray over a divider-gray track. A Button takes only a text label, so the pane keeps the bar. It is its own keyed `Client`, `countdown-client.tsx`, which ticks every 100 ms with `surface.every` and stops when empty, so the pane does not redraw. A probe showed the timer ticking on desktop, and five accessibility presses on a Button beside a ticking Client all registered. Real pointer clicks on Undo while it ticks still need a check.
 
 ## Checks
 

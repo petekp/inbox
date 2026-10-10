@@ -28,33 +28,10 @@
         /* Codex's gray button fills: the foreground at 8% and 12% in light, 12% and 16% in dark. */
         --soft: color-mix(in oklab, var(--text) 8%, transparent);
         --soft-hover: color-mix(in oklab, var(--text) 12%, transparent);
-        /* The Codex app's timing: --transition-duration-basic with ease, --cubic-move, --cubic-enter, --ease-spring-snappy. */
+        /* The Codex app's timing: --transition-duration-basic with ease, --cubic-move, --cubic-enter. */
         --quick: 150ms ease;
         --move: 200ms cubic-bezier(0.65, 0, 0.35, 1);
         --enter: 300ms cubic-bezier(0.19, 1, 0.22, 1);
-        --spring: 300ms
-          linear(
-            0,
-            0.086,
-            0.2539,
-            0.428,
-            0.5786,
-            0.698,
-            0.7879,
-            0.8534,
-            0.8998,
-            0.9323,
-            0.9546,
-            0.9697,
-            0.98,
-            0.9868,
-            0.9913,
-            0.9943,
-            0.9963,
-            0.9976,
-            0.9985,
-            1
-          );
         /* Where a row's mark sits, and where its text starts. */
         --mark-x: 18px;
         --text-x: 44px;
@@ -502,45 +479,37 @@
       .settled .what {
         color: var(--muted);
       }
-      .undo-group {
+      /* Undo's fill is the time it has left. The pill keeps the line's height, so the row does not grow. */
+      .key.undo {
         flex: none;
-        display: flex;
-        align-items: center;
-        gap: 2px;
-        margin: -3px -11px -3px 12px;
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+        margin: -3px 0 -3px 12px;
+        background: color-mix(in oklab, var(--soft) 45%, transparent);
       }
-      /* Undo is a text button, as Codex draws its own Undo, kept to the line's height. */
-      .undo-group .key {
-        min-height: 26px;
-      }
-      /* The time Undo has left: a wedge that empties clockwise from the top, like a clock. A partial ring would read as a spinner. */
-      .clock {
-        width: 14px;
-        height: 14px;
-      }
-      .clock circle {
-        fill: none;
-      }
-      .clock .track {
-        fill: var(--soft);
-      }
-      .clock .left {
-        stroke: color-mix(in oklab, var(--text) 45%, transparent);
-        stroke-width: 7;
-        stroke-dasharray: 100;
-        animation-name: unwind;
+      .time-left {
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        background: var(--soft);
+        transform-origin: left;
+        animation-name: empty;
         animation-timing-function: linear;
         animation-fill-mode: forwards;
       }
-      .clock.paused .left {
+      .key.undo:not(:disabled):hover .time-left {
+        background: var(--soft-hover);
+      }
+      .time-left.paused {
         animation-play-state: paused;
       }
-      @keyframes unwind {
+      @keyframes empty {
         from {
-          stroke-dashoffset: 0;
+          transform: scaleX(1);
         }
         to {
-          stroke-dashoffset: -100;
+          transform: scaleX(0);
         }
       }
       /* The page is at least the pane's height. The footer sits at its bottom, and an empty tab's text fills the space above it. */
@@ -591,21 +560,13 @@
         color: var(--text);
       }
       /*
-       * Motion, with the Codex app's own timing. Hover and fills change over 150 ms, and what a draw
-       * mounts fades in from @starting-style. Heights move in the script, around each draw.
+       * Motion, with the Codex app's own timing, only for what enters or leaves. Hover, press and
+       * selection fills change at once. What a draw mounts fades in from @starting-style, and heights
+       * move in the script, around each draw.
        */
-      .key,
-      .tab,
-      .row,
-      .fold {
-        transition:
-          background-color var(--quick),
-          color var(--quick),
-          box-shadow var(--enter),
-          transform var(--spring);
-      }
-      .key:not(:disabled):active {
-        transform: scale(0.97);
+      /* The new-row bar fades out. */
+      .row {
+        transition: box-shadow var(--enter);
       }
       .panel {
         transition:
@@ -625,7 +586,7 @@
       }
       .row > .content,
       .row > .settled-line,
-      .row > .undo-group,
+      .row > .key.undo,
       .status-line,
       .demo-note,
       .empty,
@@ -642,9 +603,9 @@
         *::after {
           transition-duration: 0s !important;
         }
-        /* With no motion, the clock shows no time left, so it is not drawn. */
-        .clock {
-          display: none;
+        /* With no motion, Undo stays full and does not count down. */
+        .time-left {
+          animation: none;
         }
       }
     </style>
