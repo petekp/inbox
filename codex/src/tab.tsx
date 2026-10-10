@@ -665,7 +665,10 @@ function ListRow({
   const isOpen = !row.fold || details.has(row.id)
   const { keys, more } = rowActions(row)
   const last = isFeedbackShown(row) ? lastText(row, now) : null
-  const status = [row.fold?.note, isFailure(row.feedback) ? null : last]
+  const status = [
+    row.fold?.note ? { text: row.fold.note, tone: 'muted' } : null,
+    last && !isFailure(row.feedback) ? { text: last, tone: lastTone } : null,
+  ]
   const failure = isFailure(row.feedback) ? last : null
   const copied = copies.get(row.id)
   const note = noteOf(row.id)
@@ -684,9 +687,7 @@ function ListRow({
         {isOpen && row.body ? <div class="body">{row.body}</div> : null}
         {status.some(Boolean) || failure || sending.has(row.id) || note || errors.has(row.id) ? (
           <div class="tight">
-            {status.filter(Boolean).map(s => (
-              <div class={lastTone}>{s}</div>
-            ))}
+            {status.map(s => (s ? <div class={s.tone}>{s.text}</div> : null))}
             {failure ? <div class="tone-error">{failure}</div> : null}
             {sending.has(row.id) ? <div class="muted">{sending.get(row.id)}</div> : null}
             {note ? <div class="muted">{note}</div> : null}
