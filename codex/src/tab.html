@@ -110,7 +110,6 @@
         background: none;
         border: none;
         padding: 0;
-        cursor: pointer;
         text-align: left;
       }
       :focus-visible {
@@ -308,16 +307,10 @@
       .line .after.tone-done {
         color: var(--done);
       }
-      .row.collapsed {
-        cursor: pointer;
-      }
       /* Open, and while closing, the title shows in full where it stood, with the age following its last word. */
       .row.selected .line,
       .row.closing .line {
         display: block;
-      }
-      .row.selected .line {
-        cursor: default;
       }
       .row.selected .line .text,
       .row.closing .line .text {
@@ -394,10 +387,6 @@
       /* The ghost line's first label lines up with the text above it, as Codex aligns a leading ghost button. */
       .keys.ghost-line {
         margin-left: -11px;
-      }
-      /* The row just opened, so a click on its keys would be a double-click's second. Nothing dims: that read as a flicker. */
-      .key:disabled {
-        cursor: default;
       }
       .actions {
         display: flex;

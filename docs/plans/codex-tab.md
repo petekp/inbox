@@ -98,6 +98,9 @@ blue-gray selection does. Nothing has a shadow or a border.
 **Type.** Words and row marks use the host's sans. Only the copy box uses
 the host's mono.
 
+**Cursor.** Rows, tabs and buttons keep the arrow cursor, as Codex's own
+controls do. Only the text field shows a text cursor.
+
 **Color means state.** Amber waits on you, purple is a finding, green is
 done, red is failing, and periwinkle marks a key. Nothing else is colored.
 
