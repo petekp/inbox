@@ -109,7 +109,7 @@ const leftAt = new Map<string, number>()
 const closingFolds = new Set<Group>()
 /** Rows closed by opening another, drawn with their panel until it has collapsed. */
 const closingRows = new Set<string>()
-/** Each tab's row drawn open by the last draw, so opening another knows which one closes. */
+/** Each tab's row drawn open by the last draw, so the draw that opens another knows which one closes. */
 const drawnOpen = new Map<Tab, string>()
 // Each view request takes the next number, and a reply older than the view shown is dropped.
 let requested = 0
@@ -526,17 +526,27 @@ function selectedIndex(rows: Row[], t: Tab, v: View): number {
   return id ? rows.findIndex(r => r.id === id) : -1
 }
 
+/**
+ * Called as a tab's lists draw, before their rows. When the open row changed, by a click, a key or a poll that moved
+ * the default, the row drawn open before keeps its panel while it collapses. Only a panel on screen collapses: one
+ * on a tab not shown, or of a row no longer listed, has nothing to animate.
+ */
+function noteOpenRow(t: Tab, rows: Row[], openId: string | undefined) {
+  const was = drawnOpen.get(t)
+  if (openId) closingRows.delete(openId)
+  if (openId) drawnOpen.set(t, openId)
+  else drawnOpen.delete(t)
+  if (!was || was === openId || reducedMotion.matches || !rows.some(r => r.id === was)) return
+  if (!document.querySelector(`[data-motion="${CSS.escape(was)}"] .panel:not(.closing)`)) return
+  closingRows.add(was)
+  // The collapse removes it when it ends; this covers a collapse that never ran.
+  setTimeout(() => {
+    if (closingRows.delete(was)) draw()
+  }, MOVE_MS + 150)
+}
+
 /** Opens a row. Its buttons ignore clicks for PRESS_GUARD_MS, and draw again once that ends. */
 function open(t: Tab, id: string) {
-  const was = drawnOpen.get(t)
-  if (was && was !== id && !reducedMotion.matches) {
-    closingRows.add(was)
-    // The collapse removes it when it ends; this covers a row that left the list or the tab meanwhile.
-    setTimeout(() => {
-      if (closingRows.delete(was)) draw()
-    }, MOVE_MS + 150)
-  }
-  closingRows.delete(id)
   selection[t] = { id, openedAt: Date.now() }
   setTimeout(draw, PRESS_GUARD_MS + 50)
 }
@@ -714,10 +724,18 @@ function ListRow({
   // The same elements draw the row open and closed, so its line stays put and only the panel under it comes and goes.
   // Closed, the whole row takes the click; the button keeps it in the focus order, and its click reaches the row.
   return (
-    <div class={`row ${isSelected ? 'selected' : 'collapsed'}${bar}`} onClick={isSelected ? undefined : onSelect}>
+    <div
+      class={`row ${isSelected ? 'selected' : 'collapsed'}${isClosing ? ' closing' : ''}${bar}`}
+      onClick={isSelected ? undefined : onSelect}
+    >
       {handle}
       <div class="content">
-        <button type="button" class="line" aria-expanded={isSelected}>
+        {/* Open, the line does nothing, so it leaves the focus order. */}
+        <button
+          type="button"
+          class="line"
+          {...(isSelected ? { tabIndex: -1, 'aria-disabled': true } : { 'aria-expanded': false })}
+        >
           <span class={row.hasSecondLine ? 'text two' : 'text'}>{line.text}</span>
           {line.after ? (
             <span class={`after ${line.afterTone ? `tone-${line.afterTone}` : ''}`}>{line.after}</span>
@@ -844,7 +862,7 @@ function Entries({
 }) {
   const t: Tab = group === 'finding' ? 'findings' : 'needsYou'
   const at = selectedIndex(all, t, v)
-  if (all[at]) drawnOpen.set(t, all[at].id)
+  noteOpenRow(t, all, all[at]?.id)
   if (entries.length === 0) return null
   const leaving = leavingSettled(seen, Date.now(), undoing)
 
@@ -1231,7 +1249,7 @@ function animateDraw(before: Heights) {
     delete el.dataset.leaving
     const panel = el.querySelector<HTMLElement>('.panel.closing')
     if (panel) {
-      if (!el.dataset.collapsing) collapse(el, key, panel)
+      if (!el.dataset.collapsing) collapse(el, key, panel, was?.el === el ? was.height : undefined)
       continue
     }
     delete el.dataset.collapsing
@@ -1274,10 +1292,16 @@ function animateDraw(before: Heights) {
  * Shrinks a row whose panel is closing down to its line, then removes the panel. The animation holds its end
  * until the draw that removes the panel, so the panel never shows again for a frame at full height.
  */
-function collapse(el: HTMLElement, key: string, panel: HTMLElement) {
+function collapse(el: HTMLElement, key: string, panel: HTMLElement, before: number | undefined) {
   el.dataset.collapsing = '1'
-  const height = el.getBoundingClientRect().height
-  const target = el.scrollHeight - panel.getBoundingClientRect().height
+  const height = el.getAnimations().length > 0 ? el.getBoundingClientRect().height : (before ?? el.scrollHeight)
+  // The closing row keeps its open line until the panel goes, so its end height is measured as it will draw then.
+  const row = el.querySelector<HTMLElement>('.row.closing')
+  row?.classList.remove('closing')
+  panel.style.display = 'none'
+  const target = el.scrollHeight
+  panel.style.display = ''
+  row?.classList.add('closing')
   for (const a of el.getAnimations()) a.cancel()
   el.style.overflow = 'hidden'
   el.dataset.to = String(target)

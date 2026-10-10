@@ -311,16 +311,21 @@
       .row.collapsed {
         cursor: pointer;
       }
-      /* Open, the title shows in full where it stood, with the age following its last word. */
-      .row.selected .line {
+      /* Open, and while closing, the title shows in full where it stood, with the age following its last word. */
+      .row.selected .line,
+      .row.closing .line {
         display: block;
+      }
+      .row.selected .line {
         cursor: default;
       }
-      .row.selected .line .text {
+      .row.selected .line .text,
+      .row.closing .line .text {
         display: inline;
         white-space: normal;
       }
-      .row.selected .line .after {
+      .row.selected .line .after,
+      .row.closing .line .after {
         white-space: normal;
       }
       .row.collapsed:hover {
