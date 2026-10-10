@@ -6,7 +6,7 @@ import { render } from 'preact'
 import type { ComponentChildren, JSX } from 'preact'
 
 import { ago, isLapsed } from '../../hooks/ledger'
-import { noteText, pendingResult, stepEffects } from '../../hooks/presses'
+import { clipLabel, noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
 import {
   closedShown,
@@ -66,8 +66,8 @@ const TABS: { id: Tab; label: string; hotkey: string }[] = [
 let view: View | null = null
 // The demo shows the mod's sample entries, and its presses send nothing.
 let isDemo = false
-// The first read of the view failed, so there is no view to show.
-let readFailed = false
+// Why the first read of the view failed, which leaves no view to show. Null when it has not failed.
+let readError: string | null = null
 // Polls that failed in a row while a view shows, and when the shown view was read.
 let pollFailures = 0
 let readAt = 0
@@ -114,7 +114,7 @@ function request(method: string, params: unknown, timeoutMs?: number): Promise<u
     parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*')
     if (timeoutMs !== undefined)
       setTimeout(() => {
-        if (pending.delete(id)) reject(new Error(`${method} timed out`))
+        if (pending.delete(id)) reject(new Error(`The inbox did not answer in ${Math.round(timeoutMs / 1000)} s`))
       }, timeoutMs)
   })
 }
@@ -152,7 +152,7 @@ async function callTool<T>(name: string, args: unknown = {}, timeoutMs?: number)
 function applyView(next: View, seq: number) {
   if (seq < shown) return
   shown = seq
-  readFailed = false
+  readError = null
   pollFailures = 0
   readAt = Date.now()
   const before = seen
@@ -190,11 +190,29 @@ async function read() {
   const seq = ++requested
   try {
     applyView(await callTool<View>('inbox_view', { demo: isDemo }, READ_TIMEOUT_MS), seq)
-  } catch {
+  } catch (err) {
     if (view) pollFailures++
-    else readFailed = true
+    else readError = failureText(err)
     draw()
   }
+}
+
+/** A failed request's reason, clipped to one short line. The host rejects with its JSON-RPC error object, not an Error. */
+function failureText(err: unknown): string {
+  const message =
+    typeof err === 'object' && err !== null && typeof (err as { message?: unknown }).message === 'string'
+      ? (err as { message: string }).message
+      : String(err)
+  const reason =
+    clipLabel(
+      message
+        .replace(/^Failed: /, '')
+        .replace(/\s+/g, ' ')
+        .trim(),
+      120,
+    ) || 'No reason given'
+
+  return capitalized(/[.!?…]$/.test(reason) ? reason : `${reason}.`)
 }
 
 async function poll() {
@@ -1065,9 +1083,9 @@ async function toggleDemo() {
 
 function App(): ComponentChildren {
   if (!view)
-    return readFailed ? (
+    return readError !== null ? (
       <div class="notice">
-        Could not read the inbox.{' '}
+        Could not read the inbox. {readError}{' '}
         <button type="button" class="key" onClick={() => void read()}>
           Try again
         </button>
