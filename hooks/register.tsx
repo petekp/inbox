@@ -4106,7 +4106,7 @@ export const register: Register = on => {
       const mark = state.isQueued ? <Text> </Text> : <Text color={state.isLapsed ? pal.muted : pal.mark.done}>✓</Text>
       // In a group's tree, or flat as Findings lists its rows. On desktop it pads itself as a closed row does.
       return pos ? (
-        <Box key={`settled-${r.id}`} paddingY={look === 'desktop' ? 2 * DESKTOP_ROW_PAD : 0}>
+        <Box key={`settled-${r.id}`} flexDirection="column" paddingY={look === 'desktop' ? 2 * DESKTOP_ROW_PAD : 0}>
           {treeRow(pos, mark, content)}
         </Box>
       ) : (
