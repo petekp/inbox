@@ -58,5 +58,5 @@ The merge comes last, after sections 2 to 4 (your decision, 2026-10-09).
 
 - Merge `revamp` to main, with your OK.
 - Point `CLAUDE_CODE_PLUGIN_DIRS` back at the main checkout, and remove `CLAUDE_CODE_PLUGIN_DIR_WATCH`.
-- Point the `inbox` marketplace in `~/.codex/config.toml` back at the main checkout, and reinstall the Codex plugin. The installed copy now carries temporary call logging.
+- Point the `inbox` marketplace in `~/.codex/config.toml` back at the main checkout, and reinstall the Codex plugin.
 - Restart open sessions.
