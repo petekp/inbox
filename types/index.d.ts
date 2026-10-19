@@ -1,5 +1,6 @@
 export type Card = {
   goal: string
+  /** The newest 4 results the model wrote, oldest first: the milestones with source `done`. Older versions read it. */
   done: string[]
   now: string
   running: string[]
@@ -182,8 +183,24 @@ export type PrView = {
   error: string | null
 }
 
+/** One result the session reached, shown on the Map tab. */
+export type Milestone = {
+  id: string
+  /** What recorded it: a DONE line, a question the person answered, or a finding fixed. */
+  source: 'done' | 'answered' | 'fixed'
+  text: string
+  /** The person's answer, or the change that fixed a finding; null for the other sources. */
+  detail: string | null
+  /** The id of the item or finding, for the sources that have one. */
+  ref: string | null
+  /** When it happened; null when unknown, shown with no age. */
+  at: number | null
+}
+
 export type Ledger = {
   card: Card | null
+  /** Results so far, oldest first. */
+  milestones: Milestone[]
   items: Item[]
   closed: Closed[]
   findings: Finding[]
@@ -236,6 +253,11 @@ export type Presence = {
 
 export type Tab = 'needsYou' | 'findings' | 'prs'
 
+/** A tab that shows a page, not rows. It has no count and never takes part in arrivals. */
+export type PageTab = 'map'
+
+export type ShownTab = Tab | PageTab
+
 /**
  * A tab's open row: its id, its position, and when a click or key opened it.
  * `id: null` with `openedAt: 0` means no row was opened in this conversation, so
@@ -275,7 +297,7 @@ declare module 'claude-code' {
       theme: string
       ledger: Ledger
       presence: Presence
-      tab: Tab
+      tab: ShownTab
       prViews: PrViews
       selection: Record<Tab, Cursor>
       stop: Stop | null
