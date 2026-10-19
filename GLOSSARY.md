@@ -60,8 +60,9 @@ the newest 4 milestones from DONE lines.
 A Map line for a subagent the main agent started. It shows the task. While
 the subagent runs, the row shows what the subagent said it is doing through
 the `progress` tool, or else its latest step. Once it is done, the row shows
-the first line of its final reply. Finished rows stay until the next main turn starts. Hosts keep them outside
-the ledger, since the inbox model never reads them.
+the first line of its final reply. Finished rows stay until the next main
+turn starts. Hosts keep them outside the ledger, since the inbox model never
+reads them.
 
 **Milestone**:
 One result the session reached: something the agent finished (a DONE line,
