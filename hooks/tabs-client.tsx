@@ -13,6 +13,8 @@ export type TabsProps = {
   tabs: ClientTab[]
   shown: string
   gap: number
+  /** False when only the shown tab has its rounded frame, so the others take only their label's width. */
+  isEachFramed: boolean
   colors: { tab: string | null; raised: string; raisedText: string | null; muted: string | null }
 }
 
@@ -49,7 +51,8 @@ const Tabs: ClientModule<TabsProps, State> = (props, surface) => {
     children: props.tabs.map(tab => {
       const isShown = tab.id === props.shown
       const isHovered = !isShown && tab.id === hover
-      const background = isShown ? colors.raised : isHovered ? (colors.tab ?? colors.raised) : null
+      const isFramed = isShown || props.isEachFramed
+      const background = isShown ? colors.raised : isHovered && isFramed ? (colors.tab ?? colors.raised) : null
       const onRaised = background !== null && background === colors.raised ? colors.raisedText : null
       const labelColor = onRaised ?? (isShown || isHovered ? null : colors.muted)
       const count = Text({ color: tab.countColor, children: String(tab.count) })
@@ -58,8 +61,7 @@ const Tabs: ClientModule<TabsProps, State> = (props, surface) => {
         key: tab.id,
         width: tab.width,
         height: TAB_HEIGHT,
-        borderStyle: 'single',
-        borderColor: '#0000',
+        ...(isFramed ? { borderStyle: 'single' as const, borderColor: '#0000' } : {}),
         alignItems: 'center',
         justifyContent: 'center',
         ...(background ? { backgroundColor: background } : {}),

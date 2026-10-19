@@ -186,7 +186,6 @@ export type PrView = {
 /** One result the session reached, shown on the Map tab. */
 export type Milestone = {
   id: string
-  /** What recorded it: a DONE line, a question the person answered, or a finding fixed. */
   source: 'done' | 'answered' | 'fixed'
   text: string
   /** The person's answer, or the change that fixed a finding; null for the other sources. */

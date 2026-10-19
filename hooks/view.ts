@@ -416,7 +416,6 @@ export type MapRunning = { id: string; text: string }
 
 /** What the Map tab shows. Adapters draw it as it is. */
 export type MapView = {
-  /** True when there is no goal and no milestone; the tab shows `empty`. */
   isEmpty: boolean
   /** The session's goal; null until the person has asked for something. */
   goal: string | null
@@ -435,11 +434,11 @@ const MAP_TONES: Record<Milestone['source'], MapTone> = {
   fixed: 'findings',
 }
 
-/** Timed milestones newest first, then the ones with no time in their stored order. */
+/** Timed milestones newest first, then the ones with no time, newest stored first. */
 function newestFirst(milestones: Milestone[]): Milestone[] {
   const timed = milestones.filter(m => m.at !== null).sort((a, b) => b.at! - a.at!)
 
-  return [...timed, ...milestones.filter(m => m.at === null)]
+  return [...timed, ...milestones.filter(m => m.at === null).reverse()]
 }
 
 export function mapView(ledger: Pick<Ledger, 'card' | 'milestones'>, now: number, agent: string): MapView {

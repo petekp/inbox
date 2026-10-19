@@ -46,15 +46,15 @@ counts and [Open inbox]. When the session stops, a second line says why, with
 
 **Pane**:
 The `/inbox` panel beside the conversation in Claude Code, with its Needs
-you, Findings and PRs tabs. Codex shows the same tabs in its Inbox tab.
+you, Findings, PRs and Map tabs. Codex shows the same tabs in its Inbox tab.
 
 **Card**:
 The short summary of where the session stands: its goal, what's happening
 now, what runs, and the newest 4 results as `done`. The inbox model writes it.
 The Map tab draws the goal, now and running. The agent reads all of it in the
 text the inbox adds at the start of a session and after compaction. `done`
-stays in saved state because older versions read it; it always equals the
-newest 4 milestones from DONE lines.
+stays in saved state because older versions read it. Each update sets it to
+the newest 4 milestones from DONE lines.
 
 **Milestone**:
 One result the session reached: something the agent finished (a DONE line,

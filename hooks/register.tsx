@@ -2437,33 +2437,36 @@ function outcomeText(d: Pick<Closed, 'outcome'>): string {
 }
 
 function desktopTabSizes(
-  tabs: { label: string; count: number }[],
+  tabs: { label: string; count: number; isShown: boolean }[],
   columns: number,
-): { widths: number[]; gap: number; hasCounts: boolean } {
+): { widths: number[]; gap: number; hasCounts: boolean; isEachFramed: boolean } {
   const steps = [
-    { padding: 1, gap: 1, hasCounts: true },
-    { padding: 0, gap: 1, hasCounts: true },
-    { padding: 0, gap: 0, hasCounts: true },
-    { padding: 0, gap: 0, hasCounts: false },
+    { padding: 1, gap: 1, hasCounts: true, isEachFramed: true },
+    { padding: 0, gap: 1, hasCounts: true, isEachFramed: true },
+    { padding: 0, gap: 0, hasCounts: true, isEachFramed: true },
+    { padding: 0, gap: 0, hasCounts: false, isEachFramed: true },
+    { padding: 1, gap: 0, hasCounts: false, isEachFramed: false },
   ]
-  const frameCells = (2 * FRAME_INSET_PT) / DESKTOP_CELL_PT
-  const sizes = steps.map(({ padding, gap, hasCounts }) => ({
+  const sizes = steps.map(({ padding, gap, hasCounts, isEachFramed }) => ({
     widths: tabs.map(t => {
       const text = hasCounts && t.count > 0 ? `${t.label}${TAB_COUNT_GAP}${t.count}` : t.label
+      const isFramed = isEachFramed || t.isShown
       // A tab's rounded frame insets its label FRAME_INSET_PT on each side, so its width adds those columns,
       // rounded up, to what the label needs. Narrower, the label wraps inside the tab.
-      return Math.ceil(text.length / DESKTOP_CHARS_PER_CELL) + Math.ceil(frameCells) + padding
+      return (
+        Math.ceil(text.length / DESKTOP_CHARS_PER_CELL) +
+        (isFramed ? Math.ceil((2 * FRAME_INSET_PT) / DESKTOP_CELL_PT) : 0) +
+        padding
+      )
     }),
     gap,
     hasCounts,
+    isEachFramed,
   }))
-  const tightest = {
-    widths: tabs.map(t => Math.ceil(t.label.length / DESKTOP_CHARS_PER_CELL + frameCells)),
-    gap: 0,
-    hasCounts: false,
-  }
+  const fits = (s: (typeof sizes)[number]) =>
+    s.widths.reduce((sum, w) => sum + w, 0) + s.gap * (s.widths.length - 1) <= columns
 
-  return sizes.find(s => s.widths.reduce((sum, w) => sum + w, 0) + s.gap * (s.widths.length - 1) <= columns) ?? tightest
+  return sizes.find(fits) ?? sizes.at(-1)!
 }
 
 async function drawnState(
@@ -4193,13 +4196,13 @@ export const register: Register = on => {
 
     const keyList = [
       { keys: TABS.map(t => t.hotkey).join(' '), does: 'Switch tabs' },
-      { keys: 'j k', does: 'Select the next or previous row' },
+      ...(isMapShown ? [] : [{ keys: 'j k', does: 'Select the next or previous row' }]),
       { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
     ]
     const keyColumn = Math.max(...keyList.map(k => k.keys.length)) + 2
 
     const tabSizes = desktopTabSizes(
-      TABS.map(({ id, label }) => ({ label, count: tabCount(id) })),
+      TABS.map(({ id, label }) => ({ label, count: tabCount(id), isShown: id === shownTab })),
       e.props.bodyColumns - 2,
     )
     const tabProps: TabsProps | null = hasClient
@@ -4213,6 +4216,7 @@ export const register: Register = on => {
           })),
           shown: shownTab,
           gap: tabSizes.gap,
+          isEachFramed: tabSizes.isEachFramed,
           colors: {
             tab: pal.tab ?? null,
             raised: pal.raised,

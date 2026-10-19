@@ -395,10 +395,8 @@ function nextMilestoneId(milestones: Milestone[]): string {
 }
 
 /**
- * The only writer of milestones. An event milestone (it has a `ref`) is skipped when the ledger has one of the
- * same source and ref. A done milestone is skipped when any milestone has the same text, ignoring case, punctuation
- * and spacing. Over the cap,
- * the oldest goes: one with no time first.
+ * Adds a milestone unless the ledger already has it: an event milestone by its source and ref, a done milestone by
+ * its text, ignoring case, punctuation and spacing. Over the cap, the oldest goes: one with no time first.
  */
 export function addMilestone(ledger: Ledger, m: NewMilestone): Ledger {
   const isRepeat = ledger.milestones.some(x =>

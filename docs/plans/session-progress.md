@@ -52,13 +52,13 @@ If the tab turns out to be noise, the cost is a tab nobody opens, which is easy 
 
 **Why there is no PR source.** The mod can see `gh pr create` output, but Codex hooks run before a tool and see no output. A PR milestone would exist in one host only. As a `DONE` result it reads the same in both.
 
-**Not repeating results.** `<listed>` in the inbox model's prompt holds the newest 8 milestone texts, newest first, and the rule says never to write one again, even reworded. Code drops a `DONE` line only when it matches a listed text apart from case, punctuation and spacing. Word overlap was tried and rejected: it merged "Fixed login redirect bug" and "Fixed signup redirect bug".
+**Not repeating results.** `<listed>` in the inbox model's prompt holds the newest 8 milestone texts, newest first, and the rule says never to write one again, even reworded. Code drops a `DONE` line only when it matches a milestone's text apart from case, punctuation and spacing. Word overlap was tried and rejected: it merged "Fixed login redirect bug" and "Fixed signup redirect bug".
 
 **Catch-up.** After a failed update, the next update reads the whole conversation. Its `<listed>` holds every milestone text. It writes at most 6 `DONE` lines, and every milestone it writes has no time, since the turns are past. The Map shows these with no age, below the timed ones. Codex has no catch-up: a second failed update drops its exchange.
 
-**Order.** Timed milestones show newest first. The lines of one update get times one millisecond apart, so later lines sort above earlier ones. Milestones with no time follow, in the order they were stored.
+**Order.** Timed milestones show newest first. The lines of one update get times one millisecond apart, so later lines sort above earlier ones. Milestones with no time follow, newest stored first. A catch-up can cover the latest turn, so one of these may be newer than a timed one; with no time, the Map cannot tell.
 
-**Saved state.** `Card.done` stays, always equal to the newest 4 `done` milestone texts, because older versions read it. `upgradeLedger` seeds `milestones` from an old `card.done`, with no time.
+**Saved state.** `Card.done` stays, because older versions read it. Each update sets it to the newest 4 `done` milestone texts. `upgradeLedger` seeds `milestones` from an old `card.done`, with no time.
 
 **Checks.** The `DONE` rule is text the inbox model reads. `evals/cases.json` has cases for it, and `evals/run.ts` checks the number and wording of new results.
 
@@ -88,8 +88,8 @@ The rule for every look, from `docs/looks.md`: shared modules decide, adapters d
 
 - **Shared.** `mapView` in `hooks/view.ts` decides the sections, their order, when the tab counts as empty, and each line's text and age. The tab is empty when the session has no goal and no milestones.
 - **Arrivals.** `hooks/arrivals.ts` moves a look from an empty tab to a tab where rows arrived. Milestones arrive every turn, so Map lines must never count as arrivals. Otherwise an empty Needs you would jump to Map after each reply.
-- **Terminal and desktop.** `hooks/register.tsx` draws the tab. Lines are plain Text, so desktop needs no new Client. Adding a tab to the desktop tab bar touches `hooks/tabs-client.tsx`. Whether four tab labels fit at the narrowest desktop pane, 36 columns, is unknown. Probe it first.
-- **Codex.** `codex/src/tab.tsx` draws the tab. A new milestone enters through the row state machine in `codex/src/rows.ts`, like any new row.
+- **Terminal and desktop.** `hooks/register.tsx` draws the tab. Lines are plain Text, so desktop needs no new Client. In the Claude app's narrowest pane, four framed tabs did not fit: their labels wrapped inside the frames. There, only the shown tab keeps its frame, and the counts drop, as they already did for three tabs.
+- **Codex.** `codex/src/tab.tsx` draws the tab. Map lines do not animate: they are not rows, and the state machine in `codex/src/rows.ts` covers rows only.
 - **Presses.** None at first. A milestone could later offer Explain, and a planned step could offer "Do this next". Each would need a `PressKind` and the press rules in AGENTS.md.
 
 ## Order of work

@@ -83,7 +83,7 @@ The PRs tab needs the GitHub CLI, `gh`, signed in.
 ## Using it
 
 Type `/inbox` in Claude Code, or open the Inbox tab in the ChatGPT app. The
-inbox has three tabs.
+inbox has four tabs.
 
 ### Needs you
 
@@ -116,6 +116,12 @@ Blocked, Ready or Waiting, and lists what blocks it: review comments waiting
 on you, failing checks and merge conflicts. Buttons hand the work to the
 agent: address one review comment or all of them, draft a reply, fix a
 failing check, resolve conflicts, or merge.
+
+### Map
+
+Where the session stands, for when you come back to it: its goal, what it's
+doing now, what's running, and its milestones, newest first. A milestone is a
+result the agent finished, a question you answered, or a finding it fixed.
 
 ### It keeps itself up to date
 

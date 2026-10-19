@@ -2471,7 +2471,7 @@ test('a ledger update held during clear cannot write its old question into the n
 const SAVED_SESSION = {
   savedAt: 900_000,
   ledger: {
-    card: { goal: 'Add a greeting CLI', now: 'Waiting on a choice', running: [] },
+    card: { goal: 'Add a greeting CLI', done: [], now: 'Waiting on a choice', running: [] },
     items: [
       {
         id: 'i1',
