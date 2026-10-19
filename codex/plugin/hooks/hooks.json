@@ -45,6 +45,18 @@
           }
         ]
       }
+    ],
+    "Interrupt": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CODEX_MCP_NODE_PATH:-node}\" \"${PLUGIN_ROOT}/dist/hook.mjs\"",
+            "statusMessage": "Inbox: noting the interrupt",
+            "timeout": 3
+          }
+        ]
+      }
     ]
   }
 }

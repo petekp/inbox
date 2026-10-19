@@ -1254,9 +1254,9 @@ function MapTab({ map }: { map: View['map'] }) {
 
   return (
     <main>
-      {map.goal ? (
+      {map.goal || map.now ? (
         <section>
-          <h1 class="map-goal">{map.goal}</h1>
+          {map.goal ? <h1 class="map-goal">{map.goal}</h1> : null}
           {map.now ? <div class="map-now muted">{`Now${DOT}${map.now}`}</div> : null}
         </section>
       ) : null}

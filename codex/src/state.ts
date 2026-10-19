@@ -46,6 +46,8 @@ export type SessionState = {
     turnsApplied: number
     ledgerState: 'current' | 'failed'
     isUpdating: boolean
+    /** True from a main-agent prompt until its turn stops or is interrupted. */
+    isTurnRunning: boolean
   }
   /**
    * Exchanges waiting for the inbox model, oldest first, with the turns started when each ended. `failed` marks
@@ -116,7 +118,7 @@ export function emptyState(sessionId: string): SessionState {
     ledger: EMPTY,
     turn: { person: null, activity: [], press: null },
     told: TOLD_NOTHING,
-    presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: 'current', isUpdating: false },
+    presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: 'current', isUpdating: false, isTurnRunning: false },
     pending: [],
     sent: [],
     lastActions: {},

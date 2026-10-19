@@ -122,6 +122,7 @@ failing check, resolve conflicts, or merge.
 Where the session stands, for when you come back to it: its goal, what it's
 doing now, what's running, and its milestones, newest first. A milestone is a
 result the agent finished, a question you answered, or a finding it fixed.
+While the agent works on your message, the Now line reads "Working…".
 
 ### It keeps itself up to date
 
@@ -137,7 +138,7 @@ the agent replies, then "✓ Discussed".
 
 ### In each app
 
-- **Terminal:** each action shows the letter that runs it. `1`, `2` and `3`
+- **Terminal:** each action shows the letter that runs it. `1` to `4`
   switch tabs, and `j` and `k` move up and down. ctrl+x tab moves focus from
   the prompt to the line above it, then to the panel, then back to the prompt.
 - **Claude desktop app:** you click. Type `/inbox` to open the pane.

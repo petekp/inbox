@@ -418,6 +418,7 @@ export type MapView = {
   isEmpty: boolean
   /** The session's goal; null until the person has asked for something. */
   goal: string | null
+  /** "Working…" while the agent's turn runs, since the card's line then describes the state before it. */
   now: string | null
   running: { title: string; count: number; rows: MapRunning[] } | null
   milestones: MapSection | null
@@ -427,6 +428,7 @@ export type MapView = {
 }
 
 const MAP_SHOWN = 30
+const WORKING = 'Working…'
 const MAP_TONES: Record<Milestone['source'], MapTone> = {
   done: 'done',
   answered: 'needsYou',
@@ -440,15 +442,20 @@ function newestFirst(milestones: Milestone[]): Milestone[] {
   return [...timed, ...milestones.filter(m => m.at === null).reverse()]
 }
 
-export function mapView(ledger: Pick<Ledger, 'card' | 'milestones'>, now: number, agent: string): MapView {
+export function mapView(
+  ledger: Pick<Ledger, 'card' | 'milestones'>,
+  now: number,
+  agent: string,
+  isTurnRunning: boolean,
+): MapView {
   const card = ledger.card
   const all = newestFirst(ledger.milestones)
   const shown = all.slice(0, MAP_SHOWN)
 
   return {
-    isEmpty: !card?.goal && all.length === 0,
+    isEmpty: !card?.goal && all.length === 0 && !isTurnRunning,
     goal: card?.goal || null,
-    now: card?.goal && card.now ? card.now : null,
+    now: isTurnRunning ? WORKING : card?.goal && card.now ? card.now : null,
     running:
       card?.goal && card.running.length > 0
         ? {

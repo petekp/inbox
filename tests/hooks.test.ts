@@ -3032,6 +3032,30 @@ test('the desktop pane draws each action as one button and the tabs as one click
   expect(await pane.find({ key: 'close-pane' })).toBeUndefined()
 })
 
+test('the Map reads Working… while the main agent’s turn runs, until it ends or is interrupted, and not for a subagent’s turn', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-key-map' })
+  await clock.settle()
+  const working = { text: /Working…/ } as const
+  expect(await pane.find({ text: /No map yet/ })).toBeDefined()
+
+  await $.turn.start({ text: 'Look around the repo', turnId: 's1', agentId: 'a1' })
+  await clock.settle()
+  expect(await pane.find(working)).toBeUndefined()
+
+  await $.turn.start({ text: 'ship it', turnId: 't1' })
+  await clock.settle()
+  expect(await pane.find(working)).toBeDefined()
+  expect(await pane.find({ text: /No map yet/ })).toBeUndefined()
+
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: true, turnId: 't1', reason: 'aborted' })
+  await clock.settle()
+  expect(await pane.find(working)).toBeUndefined()
+})
+
 test('a tool call after a hot reload, before the load converts the ledger, still applies', async ($, on) => {
   mock.clock(on, { now: 1 })
   world($, on, [])

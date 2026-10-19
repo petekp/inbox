@@ -215,6 +215,7 @@ const PRESENCE = atom(
   {
     lastActiveAt: 0,
     isAway: false,
+    isTurnRunning: false,
     isUpdating: false,
     ledgerState: 'current',
     turnsStarted: 0,
@@ -563,7 +564,6 @@ const LOCAL_URL = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|[\w.-]+\.loca
 let activity: string[] = []
 let person: string | null = null
 let trigger: string | null = null
-let isTurnRunning = false
 let isOn = false
 let turningOn: Promise<void> | null = null
 let intervals: Timer[] = []
@@ -1073,7 +1073,7 @@ async function tick($: EngineInterface) {
   const p = await read($, PRESENCE)
   if (p.isAway) {
     await update($, PRESENCE, q => ({ ...q, minute: Math.floor(now / 60_000) }))
-  } else if (!isTurnRunning && p.lastActiveAt > 0 && now - p.lastActiveAt > AWAY_MS) {
+  } else if (!p.isTurnRunning && p.lastActiveAt > 0 && now - p.lastActiveAt > AWAY_MS) {
     await update($, PRESENCE, q => ({ ...q, isAway: true, minute: Math.floor(now / 60_000) }))
   }
 }
@@ -1202,7 +1202,12 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
     ),
     // Presence from before the turn counts existed cannot say whether the last
     // turn's update landed, so that load catches up once.
-    update($, PRESENCE, p => ({ ...p, turnsStarted: p.turnsStarted ?? 1, turnsApplied: p.turnsApplied ?? 0 })),
+    update($, PRESENCE, p => ({
+      ...p,
+      isTurnRunning: p.isTurnRunning ?? false,
+      turnsStarted: p.turnsStarted ?? 1,
+      turnsApplied: p.turnsApplied ?? 0,
+    })),
     update($, PR_VIEWS, v => ({
       ...v,
       views: Object.fromEntries(
@@ -1995,7 +2000,7 @@ function recordDoneRefusal($: EngineInterface, id: string, notificationId: strin
 async function wakeForDone($: EngineInterface) {
   const owner = { id: sessionId, generation: conversation }
   const notificationId = crypto.randomUUID()
-  const now = await $.clock.now()
+  const [now, { isTurnRunning }] = await Promise.all([$.clock.now(), read($, PRESENCE)])
   let wake: ReturnType<typeof doneWake> = null
   await commitLedger(
     $,
@@ -2468,9 +2473,16 @@ function desktopTabSizes(
   return sizes.find(fits) ?? sizes.at(-1)!
 }
 
-async function drawnState(
-  $: EngineInterface,
-): Promise<DemoCopy & { view: InboxView; isDemo: boolean; showsDemoNotices: boolean; isUnread: boolean; now: number }> {
+async function drawnState($: EngineInterface): Promise<
+  DemoCopy & {
+    view: InboxView
+    isDemo: boolean
+    showsDemoNotices: boolean
+    isUnread: boolean
+    isTurnRunning: boolean
+    now: number
+  }
+> {
   const [
     ledger,
     stop,
@@ -2511,6 +2523,7 @@ async function drawnState(
     isDemo: demo !== null,
     showsDemoNotices: demo !== null && !isDemoRecording,
     isUnread,
+    isTurnRunning: demo === null && presence.isTurnRunning,
     now,
   }
 }
@@ -2832,11 +2845,13 @@ export const register: Register = on => {
 
   on('turn.start', async ($, e, next) => {
     if (e.agentId) return next(e)
-    isTurnRunning = true
     // Counted here, before the
     // turn can end, since a reload can cut off its end-of-turn hook.
-    if (isOn)
-      await Promise.all([setStop($, null), update($, PRESENCE, p => ({ ...p, turnsStarted: p.turnsStarted + 1 }))])
+    const turnsStarted = (p: Presence) => (isOn ? p.turnsStarted + 1 : p.turnsStarted)
+    await Promise.all([
+      update($, PRESENCE, p => ({ ...p, isTurnRunning: true, turnsStarted: turnsStarted(p) })),
+      isOn ? setStop($, null) : undefined,
+    ])
 
     return next(e)
   })
@@ -2931,8 +2946,7 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     const r = await next(e)
     if (e.agentId) return r
-    isTurnRunning = false
-    await closeDialogs($, null)
+    await Promise.all([update($, PRESENCE, p => ({ ...p, isTurnRunning: false })), closeDialogs($, null)])
     if (!isOn) return r
     void wakeForDone($).catch(() => undefined)
     void followNewRows($).catch(() => undefined)
@@ -3227,7 +3241,19 @@ export const register: Register = on => {
         ? { rowPad: 2 * DESKTOP_ROW_PAD, settledPad: 2 * DESKTOP_ROW_PAD, buttonGap: 1, isFoldGapped: false }
         : { rowPad: blankLine, settledPad: 0, buttonGap: 2, isFoldGapped: true }
     const [
-      { ledger, prViews: prState, lastActions, notes, turns, stop, view, showsDemoNotices, isUnread, now },
+      {
+        ledger,
+        prViews: prState,
+        lastActions,
+        notes,
+        turns,
+        stop,
+        view,
+        showsDemoNotices,
+        isUnread,
+        isTurnRunning,
+        now,
+      },
       shownTab,
       selection,
       theme,
@@ -5137,7 +5163,7 @@ export const register: Register = on => {
           )
     }
     const mapPage = () => {
-      const map = mapView(ledger, now, CLAUDE_CODE.agent)
+      const map = mapView(ledger, now, CLAUDE_CODE.agent, isTurnRunning)
       if (map.isEmpty)
         return (
           <Box flexDirection="column" flexGrow={1}>
@@ -5149,10 +5175,10 @@ export const register: Register = on => {
       const milestones = map.milestones
 
       return sections([
-        ...(map.goal
+        ...(map.goal || map.now
           ? [
               <Box key="map-head" flexDirection="column">
-                {mapTitleLine(map.goal, 'map-goal', true)}
+                {map.goal ? mapTitleLine(map.goal, 'map-goal', true) : null}
                 {map.now ? mapTitleLine(`Now${DOT}${map.now}`, 'map-now', false) : null}
               </Box>,
             ]

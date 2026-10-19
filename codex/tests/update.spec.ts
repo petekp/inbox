@@ -91,7 +91,13 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     kept.pending.map(p => [p.ex.turn, p.failed]),
     [[2, true]],
   )
-  assert.deepEqual(kept.presence, { turnsStarted: 2, turnsApplied: 1, ledgerState: 'failed', isUpdating: false })
+  assert.deepEqual(kept.presence, {
+    turnsStarted: 2,
+    turnsApplied: 1,
+    ledgerState: 'failed',
+    isUpdating: false,
+    isTurnRunning: false,
+  })
   assert.equal(viewOf(kept, 5).status.isUpdating, false)
   assert.match(viewOf(kept, 5).status.error ?? '', /Last update failed.*retries after your next message/)
   assert.equal(
@@ -111,7 +117,13 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
   const dropped = await readState(dir, 's1')
   assert.equal(prompts.length, 3)
   assert.deepEqual(dropped.pending, [])
-  assert.deepEqual(dropped.presence, { turnsStarted: 2, turnsApplied: 2, ledgerState: 'failed', isUpdating: false })
+  assert.deepEqual(dropped.presence, {
+    turnsStarted: 2,
+    turnsApplied: 2,
+    ledgerState: 'failed',
+    isUpdating: false,
+    isTurnRunning: false,
+  })
   assert.equal(viewOf(dropped, 6).status.isUpdating, false)
   assert.match(viewOf(dropped, 6).status.error ?? '', /Last update failed/)
   assert.doesNotMatch(viewOf(dropped, 6).status.error ?? '', /retry/)

@@ -86,7 +86,8 @@ Two things need a probe before building:
 
 The rule for every look, from `docs/looks.md`: shared modules decide, adapters draw.
 
-- **Shared.** `mapView` in `hooks/view.ts` decides the sections, their order, when the tab counts as empty, and each line's text and age. The tab is empty when the session has no goal and no milestones.
+- **Shared.** `mapView` in `hooks/view.ts` decides the sections, their order, when the tab counts as empty, and each line's text and age. The tab is empty when the session has no goal, no milestones and no turn running.
+- **Working.** While the main agent's turn runs, the Now line reads "Working…", because the card's line then describes the state before the person's latest message. It is static text, as "Updating…" is, since the desktop pane cannot animate. The mod sets the flag at `turn.start` and clears it at `turn.complete`. Codex sets it at a main-agent `UserPromptSubmit` and clears it at `Stop`, `Interrupt` and a start that is not a compact.
 - **Arrivals.** `hooks/arrivals.ts` moves a look from an empty tab to a tab where rows arrived. Milestones arrive every turn, so Map lines must never count as arrivals. Otherwise an empty Needs you would jump to Map after each reply.
 - **Terminal and desktop.** `hooks/register.tsx` draws the tab. Lines are plain Text, so desktop needs no new Client. In the Claude app's narrowest pane, four framed tabs did not fit: their labels wrapped inside the frames. There, only the shown tab keeps its frame, and the counts drop, as they already did for three tabs.
 - **Codex.** `codex/src/tab.tsx` draws the tab. Map lines do not animate: they are not rows, and the state machine in `codex/src/rows.ts` covers rows only.
@@ -96,7 +97,8 @@ The rule for every look, from `docs/looks.md`: shared modules decide, adapters d
 
 1. **Milestones.** Done. The `milestones` field, the `DONE` rule change with its eval cases, the upgrade, and the Map tab with Goal, Now and Milestones in all three looks.
 2. **Planned steps.** The two probes, capturing the host's plan tool in both hosts, the inbox `plan` tool with its eval cases, and the Next section.
-3. **Across sessions.** One Map line for each open session, as part of "Every open session in one view" in `ROADMAP.md`.
+3. **Subagent progress.** One line for each subagent a running task started, which the subagent updates itself, and a short status the parent agent sets above them. Not started: it waits on approval, and on checking which subagent signals each host gives.
+4. **Across sessions.** One Map line for each open session, as part of "Every open session in one view" in `ROADMAP.md`.
 
 ## Decided
 

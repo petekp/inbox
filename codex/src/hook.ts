@@ -40,8 +40,14 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
   switch (input.hook_event_name) {
     case 'SessionStart': {
       const root = input.cwd ?? ''
+      // Codex runs SessionStart after compacting too, in the middle of a turn.
+      const endsTurn = input.source !== 'compact'
       const s = await updateState(dir, id, s =>
-        noteHook(withCli({ ...(input.source === 'clear' ? cleared(s) : s), root }), 'start', now()),
+        noteHook(
+          withCli({ ...(input.source === 'clear' ? cleared(s) : s), root, ...(endsTurn ? turnEnded(s) : {}) }),
+          'start',
+          now(),
+        ),
       )
 
       const context = startContext(s, input.source)
@@ -54,7 +60,14 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
         const r = notePrompt(withCli(s), input.prompt ?? '', now())
         notes = r.notes
 
-        return input.agent_id ? r.state : noteHook(r.state, 'prompt', now(), input.turn_id)
+        return input.agent_id
+          ? r.state
+          : noteHook(
+              { ...r.state, presence: { ...r.state.presence, isTurnRunning: true } },
+              'prompt',
+              now(),
+              input.turn_id,
+            )
       })
 
       return notes.length === 0
@@ -83,7 +96,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const written = await updateState(dir, id, s =>
         noteHook(
           endTurn(
-            lines.reduce((x, line) => noteActivity(x, line), withCli(s)),
+            lines.reduce((x, line) => noteActivity(x, line), withCli({ ...s, ...turnEnded(s) })),
             reply,
             now(),
           ),
@@ -95,9 +108,18 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
 
       return null
     }
+    case 'Interrupt': {
+      await updateState(dir, id, s => ({ ...s, ...turnEnded(s) }))
+
+      return null
+    }
   }
 
   return null
+}
+
+function turnEnded(s: SessionState): Pick<SessionState, 'presence'> {
+  return { presence: { ...s.presence, isTurnRunning: false } }
 }
 
 /** Starts the update in a detached process, so a model call longer than the hook's limit still finishes. */

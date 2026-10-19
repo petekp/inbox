@@ -64,7 +64,8 @@ no known time shows no age and sits below the timed ones.
 
 **Map**:
 A tab that shows a page instead of rows: the session's goal, where it stands,
-what runs and its milestones. It has no count and no presses.
+what runs and its milestones. It has no count and no presses. While the main
+agent's turn runs, its Now line reads "Working…" in place of the card's.
 
 **New row**:
 A row a look lists for the first time since it last recorded its rows. A

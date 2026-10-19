@@ -573,7 +573,7 @@ function emptyState(sessionId) {
     ledger: EMPTY,
     turn: { person: null, activity: [], press: null },
     told: TOLD_NOTHING,
-    presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: "current", isUpdating: false },
+    presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: "current", isUpdating: false, isTurnRunning: false },
     pending: [],
     sent: [],
     lastActions: {},
@@ -860,10 +860,15 @@ async function handleHook(input, deps) {
   switch (input.hook_event_name) {
     case "SessionStart": {
       const root = input.cwd ?? "";
+      const endsTurn = input.source !== "compact";
       const s = await updateState(
         dir,
         id,
-        (s2) => noteHook(withCli({ ...input.source === "clear" ? cleared(s2) : s2, root }), "start", now())
+        (s2) => noteHook(
+          withCli({ ...input.source === "clear" ? cleared(s2) : s2, root, ...endsTurn ? turnEnded(s2) : {} }),
+          "start",
+          now()
+        )
       );
       const context = startContext(s, input.source);
       return context ? { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: context } } : null;
@@ -873,7 +878,12 @@ async function handleHook(input, deps) {
       await updateState(dir, id, (s) => {
         const r = notePrompt(withCli(s), input.prompt ?? "", now());
         notes = r.notes;
-        return input.agent_id ? r.state : noteHook(r.state, "prompt", now(), input.turn_id);
+        return input.agent_id ? r.state : noteHook(
+          { ...r.state, presence: { ...r.state.presence, isTurnRunning: true } },
+          "prompt",
+          now(),
+          input.turn_id
+        );
       });
       return notes.length === 0 ? null : { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: notes.join("\n\n") } };
     }
@@ -899,7 +909,7 @@ async function handleHook(input, deps) {
         id,
         (s) => noteHook(
           endTurn(
-            lines.reduce((x, line) => noteActivity(x, line), withCli(s)),
+            lines.reduce((x, line) => noteActivity(x, line), withCli({ ...s, ...turnEnded(s) })),
             reply,
             now()
           ),
@@ -910,8 +920,15 @@ async function handleHook(input, deps) {
       if (written.pending.length > 0) deps.startUpdate(id);
       return null;
     }
+    case "Interrupt": {
+      await updateState(dir, id, (s) => ({ ...s, ...turnEnded(s) }));
+      return null;
+    }
   }
   return null;
+}
+function turnEnded(s) {
+  return { presence: { ...s.presence, isTurnRunning: false } };
 }
 function detachedUpdate(dir, env, script) {
   return (sessionId) => {

@@ -234,6 +234,8 @@ export type Dialog = {
 export type Presence = {
   lastActiveAt: number
   isAway: boolean
+  /** True from the main agent's `turn.start` to its `turn.complete`. */
+  isTurnRunning: boolean
   isUpdating: boolean
   /**
    * `behind` and `failed`: the ledger may have missed a turn, so the next
