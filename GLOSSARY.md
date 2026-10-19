@@ -49,10 +49,22 @@ The `/inbox` panel beside the conversation in Claude Code, with its Needs
 you, Findings and PRs tabs. Codex shows the same tabs in its Inbox tab.
 
 **Card**:
-The short summary of where the session stands: its goal, what's done, and
-what's happening now. The inbox model writes it, and the agent reads it in
-the text the inbox adds at the start of a session and after compaction. No
-look draws it.
+The short summary of where the session stands: its goal, what's happening
+now, what runs, and the newest 4 results as `done`. The inbox model writes it.
+The Map tab draws the goal, now and running. The agent reads all of it in the
+text the inbox adds at the start of a session and after compaction. `done`
+stays in saved state because older versions read it; it always equals the
+newest 4 milestones from DONE lines.
+
+**Milestone**:
+One result the session reached: something the agent finished (a DONE line,
+which includes a PR the session opened), a question the person answered, or a
+finding fixed. The Map tab lists them, newest first, with their ages. One with
+no known time shows no age and sits below the timed ones.
+
+**Map**:
+A tab that shows a page instead of rows: the session's goal, where it stands,
+what runs and its milestones. It has no count and no presses.
 
 **New row**:
 A row a look lists for the first time since it last recorded its rows. A

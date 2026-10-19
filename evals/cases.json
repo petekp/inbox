@@ -2101,5 +2101,239 @@
         "kind": "question"
       }
     ]
+  },
+  {
+    "name": "encoder-fixed-and-pr-opened",
+    "ledger": {
+      "turn": 6,
+      "nextId": 3,
+      "card": {
+        "goal": "Add CSV export to the reports page",
+        "done": ["Export button added to reports page"],
+        "now": "Writing the CSV encoder",
+        "running": []
+      },
+      "milestones": [
+        {
+          "id": "m1",
+          "source": "done",
+          "text": "Export button added to reports page",
+          "detail": null,
+          "ref": null,
+          "at": null
+        }
+      ]
+    },
+    "exchange": {
+      "person": "keep going",
+      "turn": 6,
+      "activity": [
+        "edited src/export/csv.ts",
+        "edited src/export/csv.test.ts",
+        "ran: npm test -- csv",
+        "ran: gh pr create --title \"Add CSV export\" --body ..."
+      ],
+      "reply": "The CSV encoder now quotes commas, quotes and newlines, and all 14 tests pass. I opened PR #48 with the export button and the encoder. Next I'll add the date-range filter to the export."
+    },
+    "about": "Two finished results in one exchange give one DONE line each; passing tests are not a result; a PR the session opened is one.",
+    "checks": [
+      {
+        "results": 2
+      },
+      {
+        "result": "encoder"
+      },
+      {
+        "result": "PR.*48"
+      },
+      {
+        "noResult": "test|pass"
+      }
+    ]
+  },
+  {
+    "name": "nothing-finished",
+    "ledger": {
+      "turn": 9,
+      "nextId": 3,
+      "card": {
+        "goal": "Add CSV export to the reports page",
+        "done": ["Export button added to reports page", "CSV encoder handles quoting", "PR #48 opened"],
+        "now": "Adding the date-range filter",
+        "running": []
+      },
+      "milestones": [
+        {
+          "id": "m1",
+          "source": "done",
+          "text": "Export button added to reports page",
+          "detail": null,
+          "ref": null,
+          "at": null
+        },
+        {
+          "id": "m2",
+          "source": "done",
+          "text": "CSV encoder handles quoting",
+          "detail": null,
+          "ref": null,
+          "at": null
+        },
+        {
+          "id": "m3",
+          "source": "done",
+          "text": "PR #48 opened",
+          "detail": null,
+          "ref": null,
+          "at": null
+        }
+      ]
+    },
+    "exchange": {
+      "person": "why did you pick RFC 4180 quoting instead of escaping with backslashes?",
+      "turn": 9,
+      "activity": [],
+      "reply": "Excel, Numbers and Google Sheets all read RFC 4180 quoting, and none of them read backslash escapes. A field like `Smith, Jr.` would split into two columns with backslashes. I haven't changed anything."
+    },
+    "about": "An explanation that changed nothing gives no DONE line.",
+    "checks": [
+      {
+        "results": 0
+      }
+    ]
+  },
+  {
+    "name": "mentions-earlier-outcome",
+    "ledger": {
+      "turn": 11,
+      "nextId": 3,
+      "card": {
+        "goal": "Add CSV export to the reports page",
+        "done": ["Export button added to reports page", "CSV encoder handles quoting", "PR #48 opened"],
+        "now": "Adding the date-range filter",
+        "running": []
+      },
+      "milestones": [
+        {
+          "id": "m1",
+          "source": "done",
+          "text": "Export button added to reports page",
+          "detail": null,
+          "ref": null,
+          "at": null
+        },
+        {
+          "id": "m2",
+          "source": "done",
+          "text": "CSV encoder handles quoting",
+          "detail": null,
+          "ref": null,
+          "at": null
+        },
+        {
+          "id": "m3",
+          "source": "done",
+          "text": "PR #48 opened",
+          "detail": null,
+          "ref": null,
+          "at": null
+        }
+      ]
+    },
+    "exchange": {
+      "person": "status?",
+      "turn": 11,
+      "activity": ["edited src/export/range.ts", "ran: npm test"],
+      "reply": "PR #48 is still open with the button and the encoder. Since then I added the date-range filter: the export now takes a start and end date, and tests pass. Nothing waits on you."
+    },
+    "about": "A reply that mentions earlier results gives a DONE line only for the new one.",
+    "checks": [
+      {
+        "results": 1
+      },
+      {
+        "result": "date"
+      },
+      {
+        "noResult": "PR|encoder|button"
+      }
+    ]
+  },
+  {
+    "name": "activity-only",
+    "ledger": {
+      "turn": 3,
+      "nextId": 1,
+      "card": {
+        "goal": "Find why the login page is slow",
+        "done": [],
+        "now": "Profiling the login page",
+        "running": []
+      },
+      "milestones": []
+    },
+    "exchange": {
+      "person": "go",
+      "turn": 3,
+      "activity": ["ran: npm run build", "ran: npx lighthouse http://localhost:3000/login", "edited notes.md"],
+      "reply": "I ran Lighthouse on the login page. Largest contentful paint is 4.1 s, and 3.2 s of that is the 1.8 MB hero image. I haven't changed anything yet. Next I'll try serving it as AVIF at the displayed size."
+    },
+    "about": "Commands run and a profile read are activity; the finding is the result.",
+    "checks": [
+      {
+        "results": 1
+      },
+      {
+        "result": "hero|image"
+      },
+      {
+        "noResult": "lighthouse|ran"
+      }
+    ]
+  },
+  {
+    "name": "catch-up-lists-new-results-only",
+    "about": "A catch-up over several turns gives a DONE line for each new result, and none for one already listed or for activity.",
+    "ledger": {
+      "turn": 8,
+      "nextId": 1,
+      "card": {
+        "goal": "Add CSV export to the reports page",
+        "done": ["Export button added to reports page"],
+        "now": "Adding the encoder",
+        "running": []
+      },
+      "milestones": [
+        {
+          "id": "m1",
+          "source": "done",
+          "text": "Export button added to reports page",
+          "detail": null,
+          "ref": null,
+          "at": null
+        }
+      ]
+    },
+    "catchUp": "Person: add CSV export to the reports page\nAgent: I added the export button to the reports page. Next is the encoder.\nAgent edited src/export/button.tsx\nPerson: go\nAgent edited src/export/csv.ts\nAgent ran: npm test -- csv\nAgent: The CSV encoder now quotes commas, quotes and newlines, and all 14 tests pass.\nPerson: now filter by date\nAgent edited src/export/range.ts\nAgent ran: npm run lint\nAgent: The export takes a start and end date now. Lint is clean. Nothing waits on you.",
+    "exchange": {
+      "person": null,
+      "turn": 8,
+      "activity": [],
+      "reply": "(catch-up)"
+    },
+    "checks": [
+      {
+        "results": 2
+      },
+      {
+        "result": "encoder"
+      },
+      {
+        "result": "date|range"
+      },
+      {
+        "noResult": "button|test|pass|lint"
+      }
+    ]
   }
 ]

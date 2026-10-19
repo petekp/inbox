@@ -35,7 +35,7 @@ describe('parseReply', () => {
   test('reads every key of the line format', () => {
     const u = parseReply(REPLY)
     expect(u?.card.goal).toBe('Move annotation queue logic into a tested reducer')
-    expect(u?.card.done).toEqual(['Reducer built on its own branch', '422 unit tests pass'])
+    expect(u?.done).toEqual(['Reducer built on its own branch', '422 unit tests pass'])
     expect(u?.card.running).toEqual(['vite dev: http://localhost:5173'])
     expect(u?.added.map(a => [a.kind, a.label, a.rec])).toEqual([
       ['question', '1', 'Yes'],
@@ -96,7 +96,7 @@ describe('parseReply', () => {
   test('a key written as "-" adds nothing and keeps the card', () => {
     const u = parseReply('GOAL: -\nNOW: -\nDONE: -\nRUNNING: -\nNEW: do | - | - | - | -')!
     expect(u.added).toEqual([])
-    expect(u.card).toEqual({ goal: '', done: [], now: '', running: [] })
+    expect(u.card).toEqual({ goal: '', now: '', running: [] })
   })
 
   test('keeps HELP lines quoted from the reply, attached to the item they name', () => {
@@ -194,7 +194,7 @@ describe('parseReply', () => {
         'NOW: Release build running',
       ].join('\n'),
     )
-    expect(u?.card.done).toEqual(['Arg parser fixed'])
+    expect(u?.done).toEqual(['Arg parser fixed'])
     expect(u?.added).toEqual([])
   })
 
@@ -292,7 +292,8 @@ describe('applyUpdate', () => {
       },
     ])
     expect(latestBatch(second).map(i => i.id)).toEqual(['i4'])
-    expect(second.card?.done).toEqual(first.card?.done)
+    expect(second.milestones.filter(m => m.source === 'done')).toEqual(first.milestones)
+    expect(second.milestones.at(-1)).toMatchObject({ source: 'answered', ref: 'i1', detail: 'yes, renamed' })
   })
 
   test('closes items left unanswered for more than 12 prompts as expired', () => {
@@ -752,6 +753,66 @@ describe('upgradeLedger', () => {
     ])
     expect('decided' in upgraded).toBe(false)
     expect(upgraded.closedFindings).toEqual([])
+  })
+})
+
+describe('milestones', () => {
+  const update = (ledger: typeof EMPTY, reply: string, now: number, isCatchUp = false) =>
+    applyUpdate(ledger, parseReply(reply)!, now, ledger.turn, now, isCatchUp)
+  const asked = update(
+    { ...EMPTY, turn: 1 },
+    'GOAL: Rename the greeting script\nNEW: decide | 1 | Rename greet.mjs to hello.mjs? | Yes / No | yes',
+    1,
+  )
+
+  test('an old card.done seeds milestones with no time, and the card keeps it', () => {
+    const saved = { ...EMPTY, card: { goal: 'g', done: ['A done', 'B done'], now: '', running: [] } }
+    const upgraded = upgradeLedger(saved)
+
+    expect(upgraded.milestones.map(m => [m.text, m.source, m.at])).toEqual([
+      ['A done', 'done', null],
+      ['B done', 'done', null],
+    ])
+    expect(upgraded.card?.done).toEqual(['A done', 'B done'])
+  })
+
+  test('card.done is the newest four results, oldest first', () => {
+    const ledger = ['One', 'Two', 'Three', 'Four', 'Five'].reduce(
+      (l, text, n) => update(l, `DONE: ${text}`, n + 1),
+      asked,
+    )
+
+    expect(ledger.card?.done).toEqual(['Two', 'Three', 'Four', 'Five'])
+    expect(ledger.milestones.filter(m => m.source === 'done')).toHaveLength(5)
+  })
+
+  test('an answer adds a milestone and reopening the question removes it', () => {
+    const answered = closeItem(asked, 'i1', { how: 'answered', outcome: 'Yes, rename it' }, 5)
+    expect(answered.milestones.map(m => [m.source, m.ref, m.detail])).toEqual([['answered', 'i1', 'Yes, rename it']])
+
+    expect(reopenItem(answered, 'i1').milestones).toEqual([])
+  })
+
+  test('a result worded the same apart from case and punctuation is not added twice', () => {
+    const once = update(asked, 'DONE: Fixed login redirect bug', 2)
+    const twice = update(once, 'DONE: fixed login redirect bug!', 3)
+
+    expect(twice.milestones.map(m => m.text)).toEqual(['Fixed login redirect bug'])
+  })
+
+  test('two different results that share most of their words both stay', () => {
+    const ledger = update(asked, 'DONE: Fixed login redirect bug\nDONE: Fixed signup redirect bug', 2)
+
+    expect(ledger.milestones.map(m => m.text)).toEqual(['Fixed login redirect bug', 'Fixed signup redirect bug'])
+  })
+
+  test('the lines of one update get later times, and a catch-up gives its lines no time', () => {
+    const live = update(asked, 'DONE: First result\nDONE: Second result', 10)
+    const caught = update(asked, 'DONE: First result\nDONE: Second result', 10, true)
+    const [first, second] = live.milestones
+
+    expect(second!.at!).toBeGreaterThan(first!.at!)
+    expect(caught.milestones.map(m => m.at)).toEqual([null, null])
   })
 })
 

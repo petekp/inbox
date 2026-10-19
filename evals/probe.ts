@@ -2,7 +2,7 @@ import { appendFileSync, readFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 import { parseArgs } from 'node:util'
 
-import { EMPTY } from '../hooks/ledger'
+import { EMPTY, upgradeLedger } from '../hooks/ledger'
 import { CLAUDE_CODE } from '../hooks/model-text'
 import {
   CLOSE_DESCRIPTION,
@@ -18,7 +18,7 @@ import type { Ledger } from '../types'
 const { values } = parseArgs({ options: { state: { type: 'string' }, log: { type: 'string' } } })
 const state: { agent: 'claude' | 'codex'; ledger: Partial<Ledger> } = JSON.parse(readFileSync(values.state!, 'utf8'))
 const host = state.agent === 'codex' ? CODEX : CLAUDE_CODE
-let ledger = { ...EMPTY, ...state.ledger } as Ledger
+let ledger = upgradeLedger({ ...EMPTY, ...state.ledger } as Ledger)
 
 const TOOLS = [
   { name: 'record', description: recordDescription(host), inputSchema: RECORD_SCHEMA },

@@ -2471,7 +2471,7 @@ test('a ledger update held during clear cannot write its old question into the n
 const SAVED_SESSION = {
   savedAt: 900_000,
   ledger: {
-    card: { goal: 'Add a greeting CLI', done: [], now: 'Waiting on a choice', running: [] },
+    card: { goal: 'Add a greeting CLI', now: 'Waiting on a choice', running: [] },
     items: [
       {
         id: 'i1',
@@ -2958,6 +2958,8 @@ test('the desktop pane draws each action as one button and the tabs as one click
   await clock.advance(3 * 60_000)
 
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 36 } })
+  const narrow = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+  expect(narrow.tabs.reduce((sum, t) => sum + t.width + narrow.gap, -narrow.gap)).toBeLessThanOrEqual(34)
   const buttons = await pane.findAll({ type: 'Button' })
   expect(buttons.filter(b => b.props.hotkey !== undefined || String(b.props.label).startsWith(': '))).toEqual([])
   expect(buttons.map(b => b.key ?? '').filter(k => /-key$|^tab-key-|^next$|^previous$|^key-list$/.test(k))).toEqual([])
@@ -2987,7 +2989,7 @@ test('the desktop pane draws each action as one button and the tabs as one click
 
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
   const { tabs, gap } = await tabBar()
-  expect(tabs.map(t => t.id)).toEqual(['needsYou', 'findings', 'prs'])
+  expect(tabs.map(t => t.id)).toEqual(['needsYou', 'findings', 'prs', 'map'])
   await pane.pointer({ type: 'down', x: tabs[0]!.width + gap + tabs[1]!.width - 1, y: 1.1, button: 'left', in: 'tabs' })
   await clock.settle()
   expect((await tabBar()).shown).toBe('findings')

@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
-import { applyUpdate, EMPTY, parseReply } from '../hooks/ledger'
-import { buildPrompt, CLAUDE_CODE, systemText } from '../hooks/model-text'
+import { applyUpdate, EMPTY, parseReply, upgradeLedger } from '../hooks/ledger'
+import { buildPrompt, CLAUDE_CODE, systemText, transcriptCatchUpPrompt } from '../hooks/model-text'
 import type { Exchange } from '../hooks/ledger'
 import type { Ledger } from '../types'
 import { run } from '../codex/src/run'
@@ -24,12 +24,17 @@ type Check =
   | { noHelp: string }
   | { item: string; rec?: string; options?: string }
   | { waiting: string; options?: string }
+  | { results: number }
+  | { result: string }
+  | { noResult: string }
 
 type Case = {
   name: string
   about: string
   ledger: Partial<Ledger>
   exchange: Partial<Exchange> & { reply: string }
+  /** A conversation to catch the ledger up on, in place of the exchange's per-reply update. */
+  catchUp?: string
   checks: Check[]
   min?: Partial<Record<Agent, number>>
 }
@@ -71,6 +76,7 @@ function failures(before: Ledger, after: Ledger, checks: Check[]): string[] {
   const isOpen = (id: string) => after.items.some(i => i.id === id) || after.findings.some(f => f.id === id)
   const closedOutcome = (id: string) =>
     after.closed.find(c => c.id === id)?.outcome ?? after.closedFindings.find(f => f.id === id)?.outcome ?? null
+  const results = after.milestones.filter(m => m.source === 'done' && !before.milestones.some(b => b.id === m.id))
   const out: string[] = []
   for (const c of checks) {
     if ('open' in c && !isOpen(c.open)) out.push(`${c.open} closed`)
@@ -79,6 +85,12 @@ function failures(before: Ledger, after: Ledger, checks: Check[]): string[] {
       if (outcome === null) out.push(`${c.closed} still open`)
       else if (c.outcome && !has(c.outcome, outcome)) out.push(`${c.closed} closed as "${outcome}"`)
     } else if ('added' in c && added.length !== c.added) out.push(`${added.length} items added`)
+    else if ('results' in c && results.length !== c.results)
+      out.push(`${results.length} results: ${results.map(m => `"${m.text}"`).join(', ')}`)
+    else if ('result' in c && !results.some(m => has(c.result, m.text)))
+      out.push(`no result like /${c.result}/: ${results.map(m => `"${m.text}"`).join(', ')}`)
+    else if ('noResult' in c && results.some(m => has(c.noResult, m.text)))
+      out.push(`a result like /${c.noResult}/: ${results.map(m => `"${m.text}"`).join(', ')}`)
     else if ('new' in c) {
       const match = added.find(
         i =>
@@ -110,7 +122,7 @@ function failures(before: Ledger, after: Ledger, checks: Check[]): string[] {
 type Result = { agent: Agent; name: string; run: number; answer: string | null; failed: string[] }
 
 async function once(agent: Agent, c: Case, n: number): Promise<Result> {
-  const ledger = { ...EMPTY, ...c.ledger } as Ledger
+  const ledger = upgradeLedger({ ...EMPTY, ...c.ledger } as Ledger)
   const ex: Exchange = {
     person: null,
     trigger: null,
@@ -120,13 +132,14 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
     screen: agent === 'codex' ? 'The Inbox tab is closed.' : 'The /inbox pane is closed.',
     ...c.exchange,
   }
-  const prompt = buildPrompt(ledger, ex)
+  const prompt =
+    c.catchUp === undefined ? buildPrompt(ledger, ex) : transcriptCatchUpPrompt(ledger, ex.screen, c.catchUp)
   const answer = agent === 'codex' ? await askCodex(prompt) : await claude(prompt)
   const update = answer === null ? null : parseReply(answer, `${ex.reply}\n${ex.activity.join('\n')}`)
   const failed =
     update === null
       ? ['no answer the mod can read']
-      : failures(ledger, applyUpdate(ledger, update, NOW, ledger.turn), c.checks)
+      : failures(ledger, applyUpdate(ledger, update, NOW, ledger.turn, NOW, c.catchUp !== undefined), c.checks)
 
   return { agent, name: c.name, run: n, answer, failed }
 }

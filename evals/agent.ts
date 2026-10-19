@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 
-import { EMPTY } from '../hooks/ledger'
+import { EMPTY, upgradeLedger } from '../hooks/ledger'
 import { CLAUDE_CODE, closedText, guidanceText, inboxText } from '../hooks/model-text'
 import type { Host } from '../hooks/model-text'
 import type { Ledger } from '../types'
@@ -85,7 +85,7 @@ function guidance(host: Host): string {
 
 function message(c: Case, host: Host): string {
   if (!c.ledger) return c.prompt
-  const ledger = { ...EMPTY, ...c.ledger } as Ledger
+  const ledger = upgradeLedger({ ...EMPTY, ...c.ledger } as Ledger)
   const notes = [inboxText(host, ledger, false), closedText(ledger.closed)].filter(Boolean)
 
   return `${notes.join('\n')}\n\n${c.prompt}`
