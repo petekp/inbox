@@ -2000,7 +2000,10 @@ function recordDoneRefusal($: EngineInterface, id: string, notificationId: strin
   return recording
 }
 
-const LIVE_AGENT_STATUSES: ReadonlySet<string> = new Set(['pending', 'running', 'waiting'])
+const SUBAGENT_RESULT_MAX = 80
+const ENDED_AGENT_STATUSES: ReadonlySet<string> = new Set(['completed', 'failed', 'killed'])
+/** The engine may not list a subagent yet in the moment after its spawn. */
+const UNLISTED_GRACE_MS = 10_000
 
 async function changeSubagent($: EngineInterface, id: string, change: (s: Subagent, now: number) => Subagent) {
   const now = await $.clock.now()
@@ -2010,14 +2013,18 @@ async function changeSubagent($: EngineInterface, id: string, change: (s: Subage
 }
 
 /**
- * Keeps only the subagents still running, by the engine's own list, since a
- * reload can miss a subagent's end. A finished one leaves when the main turn starts or ends.
+ * Drops the subagents that finished by `before`, and running ones the
+ * engine lists as ended or no longer lists, since a reload can miss an end.
  */
-async function settleSubagents($: EngineInterface) {
-  const listed = new Map((await $.agent.list()).map(a => [a.id, a.status]))
-  await update($, SUBAGENTS, list =>
-    list.filter(s => s.state === 'running' && LIVE_AGENT_STATUSES.has(listed.get(s.id) ?? '')),
-  )
+async function pruneSubagents($: EngineInterface, before: number) {
+  const [agents, now] = await Promise.all([$.agent.list(), $.clock.now()])
+  const listed = new Map(agents.map(a => [a.id, a.status]))
+  const isLost = (s: Subagent) => {
+    const status = listed.get(s.id)
+
+    return status === undefined ? now - s.startedAt > UNLISTED_GRACE_MS : ENDED_AGENT_STATUSES.has(status)
+  }
+  await update($, SUBAGENTS, list => list.filter(s => (s.state === 'running' ? !isLost(s) : s.at > before)))
 }
 
 async function wakeForDone($: EngineInterface) {
@@ -2675,7 +2682,7 @@ async function applyConversation(
     update($, PRESENCE, p => (p.isUpdating ? { ...p, isUpdating: false, ledgerState: 'failed' as const } : p)),
     upgradeState($),
     syncTheme($),
-    settleSubagents($),
+    pruneSubagents($, 0),
   ])
   if (revision !== loadRevision) return
   const isFresh = current.turn === 0 && !current.card
@@ -2877,9 +2884,9 @@ export const register: Register = on => {
     const added: Subagent = {
       id: agentId,
       task: e.description || 'Subagent',
-      isBackground: e.background,
       state: 'running',
       step: null,
+      result: null,
       startedAt: now,
       at: now,
     }
@@ -2899,7 +2906,7 @@ export const register: Register = on => {
     await Promise.all([
       update($, PRESENCE, p => ({ ...p, isTurnRunning: true, turnsStarted: turnsStarted(p) })),
       isOn ? setStop($, null) : undefined,
-      isOn ? settleSubagents($) : undefined,
+      isOn ? read($, PRESENCE).then(p => pruneSubagents($, p.lastActiveAt)) : undefined,
     ])
 
     return next(e)
@@ -2931,7 +2938,11 @@ export const register: Register = on => {
     const run = () => clearingDialog($, key, () => next(e))
     if (e.agentId) {
       const step = subagentStep(String(e.tool), input)
-      if (step) await changeSubagent($, e.agentId, (s, now) => ({ ...s, step, at: now }))
+      const agentId = e.agentId
+      if (step)
+        void changeSubagent($, agentId, (s, now) =>
+          s.step === step && s.state === 'running' ? s : { ...s, state: 'running', step, at: now },
+        ).catch(() => undefined)
       return run()
     }
     const line = toolActivity(String(e.tool), input)
@@ -3000,14 +3011,17 @@ export const register: Register = on => {
     const r = await next(e)
     if (e.agentId) {
       const state = e.reason === 'answer' ? 'done' : 'stopped'
-      if (isOn) await changeSubagent($, e.agentId, (s, now) => ({ ...s, state, at: now }))
+      const result = e.answer.trim().split('\n')[0] ?? ''
+      if (isOn)
+        await changeSubagent($, e.agentId, (s, now) => ({
+          ...s,
+          state,
+          result: result ? clipLabel(result, SUBAGENT_RESULT_MAX) : null,
+          at: now,
+        }))
       return r
     }
-    await Promise.all([
-      update($, PRESENCE, p => ({ ...p, isTurnRunning: false })),
-      closeDialogs($, null),
-      isOn ? settleSubagents($) : undefined,
-    ])
+    await Promise.all([update($, PRESENCE, p => ({ ...p, isTurnRunning: false })), closeDialogs($, null)])
     if (!isOn) return r
     void wakeForDone($).catch(() => undefined)
     void followNewRows($).catch(() => undefined)

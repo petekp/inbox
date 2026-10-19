@@ -476,32 +476,29 @@ function startContext(s, source) {
   const parts = [source === "resume" ? null : guidanceText(CODEX), carried].filter((x) => x !== null);
   return parts.length > 0 ? parts.join("\n\n") : null;
 }
+var SUBAGENT_RESULT_MAX = 80;
 function taskLabel(taskName) {
   const words2 = taskName.replace(/^.*\//, "").replace(/[_-]+/g, " ").trim();
   return words2 ? words2.charAt(0).toUpperCase() + words2.slice(1) : "Subagent";
 }
 function noteSpawn(s, taskName) {
-  return { ...s, spawning: [...s.spawning, taskLabel(taskName)] };
+  return { ...s, spawnedTasks: [...s.spawnedTasks, taskLabel(taskName)] };
 }
 function startSubagent(s, agentId, now) {
-  const [task = "Subagent", ...spawning] = s.spawning;
-  const started = {
-    id: agentId,
-    task,
-    isBackground: false,
-    state: "running",
-    step: null,
-    startedAt: now,
-    at: now
-  };
-  return { ...s, spawning, subagents: [...s.subagents.filter((x) => x.id !== agentId), started] };
+  const [task = "Subagent", ...spawnedTasks] = s.spawnedTasks;
+  const started = { id: agentId, task, state: "running", step: null, result: null, startedAt: now, at: now };
+  return { ...s, spawnedTasks, subagents: [...s.subagents.filter((x) => x.id !== agentId), started] };
 }
-function changeSubagent(s, agentId, change, now) {
+function withSubagentChange(s, agentId, change, now) {
   if (!s.subagents.some((x) => x.id === agentId)) return s;
   return { ...s, subagents: s.subagents.map((x) => x.id === agentId ? { ...x, ...change, at: now } : x) };
 }
-function settledSubagents(s) {
-  return { ...s, subagents: s.subagents.filter((x) => x.state === "running") };
+function subagentResult(reply) {
+  const line = (reply ?? "").trim().split("\n")[0] ?? "";
+  return line ? clipLabel(line, SUBAGENT_RESULT_MAX) : null;
+}
+function withoutSubagentsBefore(s, before) {
+  return { ...s, spawnedTasks: [], subagents: s.subagents.filter((x) => x.state === "running" || x.at > before) };
 }
 function cleared(s) {
   return {
@@ -632,7 +629,7 @@ function emptyState(sessionId) {
     turn: { person: null, activity: [], press: null },
     told: TOLD_NOTHING,
     subagents: [],
-    spawning: [],
+    spawnedTasks: [],
     presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: "current", isUpdating: false, isTurnRunning: false },
     pending: [],
     sent: [],
@@ -928,7 +925,7 @@ async function handleHook(input, deps) {
           withCli({
             ...input.source === "clear" ? cleared(s2) : s2,
             root,
-            ...endsTurn ? { ...turnEnded(s2), subagents: [], spawning: [] } : {}
+            ...endsTurn ? { ...turnEnded(s2), subagents: [], spawnedTasks: [] } : {}
           }),
           "start",
           now()
@@ -943,7 +940,10 @@ async function handleHook(input, deps) {
         const r = notePrompt(withCli(s), input.prompt ?? "", now());
         notes = r.notes;
         return input.agent_id ? r.state : noteHook(
-          settledSubagents({ ...r.state, presence: { ...r.state.presence, isTurnRunning: true } }),
+          withoutSubagentsBefore(
+            { ...r.state, presence: { ...r.state.presence, isTurnRunning: true } },
+            s.heard.stopAt ?? 0
+          ),
           "prompt",
           now(),
           input.turn_id
@@ -957,12 +957,8 @@ async function handleHook(input, deps) {
       const command = typeof toolInput.command === "string" ? toolInput.command : "";
       const agentId = input.agent_id;
       const step = agentId ? subagentStep(tool, toolInput) : null;
-      if (agentId && step) await updateState(dir, id, (s) => changeSubagent(s, agentId, { step }, now()));
-      if (!agentId && /spawn_agent$/.test(tool) && typeof toolInput.task_name === "string") {
-        const taskName = toolInput.task_name;
-        await updateState(dir, id, (s) => noteSpawn(s, taskName));
-        return null;
-      }
+      if (agentId && step)
+        await updateState(dir, id, (s) => withSubagentChange(s, agentId, { state: "running", step }, now()));
       if (tool === "apply_patch") {
         const files = patchFiles(command).map((f) => resolve2(input.cwd || "/", f));
         await updateState(dir, id, (s) => files.reduce((x, f) => noteActivity(x, `edited ${f}`), s));
@@ -972,7 +968,17 @@ async function handleHook(input, deps) {
       if (line) await updateState(dir, id, (s) => noteActivity(s, line));
       return null;
     }
+    case "PostToolUse": {
+      const response = input.tool_response ?? {};
+      const isSpawn = !input.agent_id && /spawn_agent$/.test(input.tool_name ?? "");
+      if (isSpawn && typeof response.task_name === "string") {
+        const taskName = response.task_name;
+        await updateState(dir, id, (s) => noteSpawn(s, taskName));
+      }
+      return null;
+    }
     case "Stop": {
+      if (input.agent_id) return null;
       const reply = input.last_assistant_message ?? "";
       const dialogs = await dialogsInTurn(input.transcript_path, input.turn_id);
       const lines = dialogs.map((questions) => dialogActivity(questions, { kind: "open" }));
@@ -981,7 +987,7 @@ async function handleHook(input, deps) {
         id,
         (s) => noteHook(
           endTurn(
-            lines.reduce((x, line) => noteActivity(x, line), withCli(settledSubagents({ ...s, ...turnEnded(s) }))),
+            lines.reduce((x, line) => noteActivity(x, line), withCli({ ...s, ...turnEnded(s), spawnedTasks: [] })),
             reply,
             now()
           ),
@@ -1007,7 +1013,8 @@ async function handleHook(input, deps) {
     }
     case "SubagentStop": {
       const agentId = input.agent_id;
-      if (agentId) await updateState(dir, id, (s) => changeSubagent(s, agentId, { state: "done" }, now()));
+      const result = subagentResult(input.last_assistant_message);
+      if (agentId) await updateState(dir, id, (s) => withSubagentChange(s, agentId, { state: "done", result }, now()));
       return null;
     }
   }

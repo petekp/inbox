@@ -97,7 +97,7 @@ The rule for every look, from `docs/looks.md`: shared modules decide, adapters d
 
 1. **Milestones.** Done. The `milestones` field, the `DONE` rule change with its eval cases, the upgrade, and the Map tab with Goal, Now and Milestones in all three looks.
 2. **Planned steps.** The two probes, capturing the host's plan tool in both hosts, the inbox `plan` tool with its eval cases, and the Next section.
-3. **Subagent progress.** One line for each subagent a running task started, which the subagent updates itself, and a short status the parent agent sets above them. Not started: it waits on approval, and on checking which subagent signals each host gives.
+3. **Subagent progress.** Automatic rows are built: one per subagent the main agent started, with its latest step, then its result. Next: a tool a subagent calls to set its own row, and the main agent calls to set its status. Both hosts attribute a tool call to the subagent that made it: Claude Code's `tool.call` carries `agentId`, and Codex's MCP call carries the subagent's id as `_meta.threadId`.
 4. **Across sessions.** One Map line for each open session, as part of "Every open session in one view" in `ROADMAP.md`.
 
 ## Decided

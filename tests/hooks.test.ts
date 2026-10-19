@@ -3059,7 +3059,7 @@ test('the Map reads Working… while the main agent’s turn runs, until it ends
   expect(await pane.find(working)).toBeUndefined()
 })
 
-test('the Map lists each subagent the main turn started with its last step, until the main turn ends', async ($, on) => {
+test('the Map lists each subagent the main turn started with its step, then its result until the next turn', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   on('agent.spawn', () => ({ model: 'sonnet', agentId: 'a1' }))
@@ -3075,7 +3075,7 @@ test('the Map lists each subagent the main turn started with its last step, unti
   expect(await pane.find({ text: 'Reading export.ts' })).toBeDefined()
 
   await $.turn.complete({
-    answer: 'Found it.',
+    answer: 'Found it in export.ts.\nDetails follow.',
     durationMs: 5,
     isAborted: false,
     turnId: 's1',
@@ -3084,9 +3084,13 @@ test('the Map lists each subagent the main turn started with its last step, unti
   } as never)
   await clock.settle()
   expect(await pane.find({ text: '✓' })).toBeDefined()
+  expect(await pane.find({ text: 'Found it in export.ts.' })).toBeDefined()
 
   agents = []
   await $.turn.complete({ answer: 'Shipped.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.advance(60_000)
+  expect(await pane.find({ text: 'Find the export code' })).toBeDefined()
+  await $.turn.start({ text: 'next', turnId: 't2' })
   await clock.settle()
   expect(await pane.find({ text: 'Find the export code' })).toBeUndefined()
 })

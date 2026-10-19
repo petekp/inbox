@@ -56,6 +56,12 @@ text the inbox adds at the start of a session and after compaction. `done`
 stays in saved state because older versions read it. Each update sets it to
 the newest 4 milestones from DONE lines.
 
+**Subagent row**:
+A Map line for a subagent the main agent started: its task, then its latest
+step while it runs, or the first line of its final reply once it is done.
+Finished rows stay until the next main turn starts. Hosts keep them outside
+the ledger, since the inbox model never reads them.
+
 **Milestone**:
 One result the session reached: something the agent finished (a DONE line,
 which includes a PR the session opened), a question the person answered, or a

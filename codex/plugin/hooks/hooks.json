@@ -24,7 +24,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|apply_patch|mcp__.*|.*spawn_agent",
+        "matcher": "Bash|apply_patch|mcp__.*",
         "hooks": [
           {
             "type": "command",
@@ -34,25 +34,14 @@
         ]
       }
     ],
-    "Stop": [
+    "PostToolUse": [
       {
+        "matcher": ".*spawn_agent",
         "hooks": [
           {
             "type": "command",
             "command": "\"${CODEX_MCP_NODE_PATH:-node}\" \"${PLUGIN_ROOT}/dist/hook.mjs\"",
-            "statusMessage": "Inbox: starting the inbox update",
-            "timeout": 60
-          }
-        ]
-      }
-    ],
-    "Interrupt": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CODEX_MCP_NODE_PATH:-node}\" \"${PLUGIN_ROOT}/dist/hook.mjs\"",
-            "statusMessage": "Inbox: noting the interrupt",
+            "statusMessage": "Inbox: noting the subagent",
             "timeout": 3
           }
         ]
@@ -77,6 +66,30 @@
             "type": "command",
             "command": "\"${CODEX_MCP_NODE_PATH:-node}\" \"${PLUGIN_ROOT}/dist/hook.mjs\"",
             "statusMessage": "Inbox: noting the subagent",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CODEX_MCP_NODE_PATH:-node}\" \"${PLUGIN_ROOT}/dist/hook.mjs\"",
+            "statusMessage": "Inbox: starting the inbox update",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "Interrupt": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CODEX_MCP_NODE_PATH:-node}\" \"${PLUGIN_ROOT}/dist/hook.mjs\"",
+            "statusMessage": "Inbox: noting the interrupt",
             "timeout": 3
           }
         ]

@@ -1,4 +1,5 @@
 import { EMPTY } from '../../hooks/ledger'
+import { clipLabel } from '../../hooks/text'
 import type { Exchange, Press } from '../../hooks/ledger'
 import {
   addActivity,
@@ -36,37 +37,31 @@ export function startContext(s: SessionState, source: string | undefined): strin
   return parts.length > 0 ? parts.join('\n\n') : null
 }
 
-/** Codex hands a subagent's task to it encrypted, so its row reads the spawn call's task name, as "Probe note". */
+const SUBAGENT_RESULT_MAX = 80
+
+/** Codex hands a subagent its task encrypted, so its row reads the spawn call's task name instead. */
 function taskLabel(taskName: string): string {
   const words = taskName.replace(/^.*\//, '').replace(/[_-]+/g, ' ').trim()
 
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : 'Subagent'
 }
 
-/** A spawn call's task name, held until the SubagentStart it leads to, which names only the agent's id. */
+/** SubagentStart names only the agent's id, so the task name of a spawn that returned waits for it. */
 export function noteSpawn(s: SessionState, taskName: string): SessionState {
-  return { ...s, spawning: [...s.spawning, taskLabel(taskName)] }
+  return { ...s, spawnedTasks: [...s.spawnedTasks, taskLabel(taskName)] }
 }
 
 export function startSubagent(s: SessionState, agentId: string, now: number): SessionState {
-  const [task = 'Subagent', ...spawning] = s.spawning
-  const started: Subagent = {
-    id: agentId,
-    task,
-    isBackground: false,
-    state: 'running',
-    step: null,
-    startedAt: now,
-    at: now,
-  }
+  const [task = 'Subagent', ...spawnedTasks] = s.spawnedTasks
+  const started: Subagent = { id: agentId, task, state: 'running', step: null, result: null, startedAt: now, at: now }
 
-  return { ...s, spawning, subagents: [...s.subagents.filter(x => x.id !== agentId), started] }
+  return { ...s, spawnedTasks, subagents: [...s.subagents.filter(x => x.id !== agentId), started] }
 }
 
-export function changeSubagent(
+export function withSubagentChange(
   s: SessionState,
   agentId: string,
-  change: Partial<Pick<Subagent, 'state' | 'step'>>,
+  change: Partial<Pick<Subagent, 'state' | 'step' | 'result'>>,
   now: number,
 ): SessionState {
   if (!s.subagents.some(x => x.id === agentId)) return s
@@ -74,9 +69,15 @@ export function changeSubagent(
   return { ...s, subagents: s.subagents.map(x => (x.id === agentId ? { ...x, ...change, at: now } : x)) }
 }
 
-/** Finished subagents leave when the main turn starts or ends; running ones stay. */
-export function settledSubagents(s: SessionState): SessionState {
-  return { ...s, subagents: s.subagents.filter(x => x.state === 'running') }
+export function subagentResult(reply: string | null | undefined): string | null {
+  const line = (reply ?? '').trim().split('\n')[0] ?? ''
+
+  return line ? clipLabel(line, SUBAGENT_RESULT_MAX) : null
+}
+
+/** Drops the subagents that finished by `before`, and spawn task names no SubagentStart claimed. */
+export function withoutSubagentsBefore(s: SessionState, before: number): SessionState {
+  return { ...s, spawnedTasks: [], subagents: s.subagents.filter(x => x.state === 'running' || x.at > before) }
 }
 
 export function cleared(s: SessionState): SessionState {

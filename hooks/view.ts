@@ -409,7 +409,7 @@ export const ROW_TABS = TABS.filter(
   (t): t is (typeof TABS)[number] & { id: 'needsYou' | 'findings' } => t.id === 'needsYou' || t.id === 'findings',
 )
 
-type MapTone = 'done' | 'needsYou' | 'findings'
+type MapTone = 'done' | 'needsYou' | 'findings' | 'error'
 /** A Map line with a mark. A null tone draws the mark muted. */
 export type MapRow = {
   id: string
@@ -453,9 +453,9 @@ function newestFirst(milestones: Milestone[]): Milestone[] {
 }
 
 const SUBAGENT_MARKS: Record<Subagent['state'], Pick<MapRow, 'mark' | 'tone'>> = {
-  running: { mark: '•', tone: null },
+  running: { mark: '●', tone: null },
   done: { mark: '✓', tone: 'done' },
-  stopped: { mark: '✕', tone: null },
+  stopped: { mark: '✕', tone: 'error' },
 }
 
 const STEP_MAX = 60
@@ -495,14 +495,14 @@ export function subagentStep(tool: string, input: Record<string, unknown>): stri
   return tool.startsWith('mcp__') ? clipLabel(`Using ${tool.split('__').pop()}`, STEP_MAX) : null
 }
 
-/** What the host is doing now: whether the main agent's turn runs, and the subagents it started. */
-export type MapWork = { isTurnRunning: boolean; subagents: Subagent[] }
+/** Whether the main agent's turn runs, and the subagents it started. */
+export type RunningWork = { isTurnRunning: boolean; subagents: Subagent[] }
 
 export function mapView(
   ledger: Pick<Ledger, 'card' | 'milestones'>,
   now: number,
   agent: string,
-  work: MapWork,
+  work: RunningWork,
 ): MapView {
   const card = ledger.card
   const all = newestFirst(ledger.milestones)
@@ -522,8 +522,8 @@ export function mapView(
               id: s.id,
               ...SUBAGENT_MARKS[s.state],
               text: s.task,
-              detail: s.step,
-              age: shortAgo(Math.max(0, now - s.at)),
+              detail: s.state === 'running' ? s.step : s.result,
+              age: shortAgo(Math.max(0, now - (s.state === 'running' ? s.startedAt : s.at))),
             })),
           }
         : null,

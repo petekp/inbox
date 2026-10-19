@@ -115,15 +115,19 @@ test('the Map reads Working… from a main-agent prompt until Stop or Interrupt,
   assert.equal(await now(), null)
 })
 
-test('the Map lists a subagent from its spawn call’s task name, with its last step, until the main turn ends', async () => {
+test('the Map lists a subagent by its spawn call’s task name, with its step, then its result until the next prompt', async () => {
   const dir = tempDir()
-  const deps = hookDeps(dir, () => 1000)
-  const rows = async () => viewOf(await readState(dir, 's1'), 1000).map.subagents?.rows ?? []
+  let clock = 1000
+  const deps = hookDeps(dir, () => clock)
+  const rows = async () => viewOf(await readState(dir, 's1'), clock).map.subagents?.rows ?? []
 
   await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
   await handleHook(input('UserPromptSubmit', { prompt: 'Ship it', turn_id: 't1' }), deps)
   await handleHook(
-    input('PreToolUse', { tool_name: 'collaborationspawn_agent', tool_input: { task_name: 'find_export_code' } }),
+    input('PostToolUse', {
+      tool_name: 'collaborationspawn_agent',
+      tool_response: { task_name: '/root/find_export_code' },
+    }),
     deps,
   )
   await handleHook(input('SubagentStart', { agent_id: 'a1' }), deps)
@@ -133,15 +137,21 @@ test('the Map lists a subagent from its spawn call’s task name, with its last 
   )
   assert.deepEqual(
     (await rows()).map(r => [r.mark, r.text, r.detail]),
-    [['•', 'Find export code', 'Running rg export src']],
+    [['●', 'Find export code', 'Running rg export src']],
   )
 
-  await handleHook(input('SubagentStop', { agent_id: 'a1', last_assistant_message: 'Found it.' }), deps)
-  assert.deepEqual(
-    (await rows()).map(r => r.mark),
-    ['✓'],
+  await handleHook(
+    input('SubagentStop', { agent_id: 'a1', last_assistant_message: 'Found it in src/export.ts.\nMore.' }),
+    deps,
   )
   await handleHook(input('Stop', { last_assistant_message: '', turn_id: 't1' }), deps)
+  assert.deepEqual(
+    (await rows()).map(r => [r.mark, r.detail]),
+    [['✓', 'Found it in src/export.ts.']],
+  )
+
+  clock = 2000
+  await handleHook(input('UserPromptSubmit', { prompt: 'Next', turn_id: 't2' }), deps)
   assert.deepEqual(await rows(), [])
 })
 

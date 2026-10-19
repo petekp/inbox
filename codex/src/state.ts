@@ -42,8 +42,8 @@ export type SessionState = {
   told: Told
   /** The subagents the main agent started that the Map still shows, oldest first. */
   subagents: Subagent[]
-  /** Task names of spawn calls whose SubagentStart has not come yet, oldest first. */
-  spawning: string[]
+  /** Task names of spawn calls that returned before their SubagentStart came, oldest first. */
+  spawnedTasks: string[]
   presence: {
     /** Prompts that started a turn, and how many of those turns the inbox model has summarized. */
     turnsStarted: number
@@ -123,7 +123,7 @@ export function emptyState(sessionId: string): SessionState {
     turn: { person: null, activity: [], press: null },
     told: TOLD_NOTHING,
     subagents: [],
-    spawning: [],
+    spawnedTasks: [],
     presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: 'current', isUpdating: false, isTurnRunning: false },
     pending: [],
     sent: [],

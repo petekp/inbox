@@ -5,7 +5,6 @@ import { dialogActivity } from '../../hooks/model-text'
 import { subagentStep } from '../../hooks/view'
 import {
   activityOf,
-  changeSubagent,
   cleared,
   endTurn,
   noteActivity,
@@ -13,9 +12,11 @@ import {
   notePrompt,
   noteSpawn,
   patchFiles,
-  settledSubagents,
   startContext,
   startSubagent,
+  subagentResult,
+  withoutSubagentsBefore,
+  withSubagentChange,
 } from './core'
 import { updateState } from './state'
 import type { SessionState } from './state'
@@ -62,7 +63,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
           withCli({
             ...(input.source === 'clear' ? cleared(s) : s),
             root,
-            ...(endsTurn ? { ...turnEnded(s), subagents: [], spawning: [] } : {}),
+            ...(endsTurn ? { ...turnEnded(s), subagents: [], spawnedTasks: [] } : {}),
           }),
           'start',
           now(),
@@ -82,7 +83,10 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
         return input.agent_id
           ? r.state
           : noteHook(
-              settledSubagents({ ...r.state, presence: { ...r.state.presence, isTurnRunning: true } }),
+              withoutSubagentsBefore(
+                { ...r.state, presence: { ...r.state.presence, isTurnRunning: true } },
+                s.heard.stopAt ?? 0,
+              ),
               'prompt',
               now(),
               input.turn_id,
@@ -99,13 +103,8 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const command = typeof toolInput.command === 'string' ? toolInput.command : ''
       const agentId = input.agent_id
       const step = agentId ? subagentStep(tool, toolInput) : null
-      if (agentId && step) await updateState(dir, id, s => changeSubagent(s, agentId, { step }, now()))
-      if (!agentId && /spawn_agent$/.test(tool) && typeof toolInput.task_name === 'string') {
-        const taskName = toolInput.task_name
-        await updateState(dir, id, s => noteSpawn(s, taskName))
-
-        return null
-      }
+      if (agentId && step)
+        await updateState(dir, id, s => withSubagentChange(s, agentId, { state: 'running', step }, now()))
       if (tool === 'apply_patch') {
         const files = patchFiles(command).map(f => resolve(input.cwd || '/', f))
         await updateState(dir, id, s => files.reduce((x, f) => noteActivity(x, `edited ${f}`), s))
@@ -117,14 +116,25 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
 
       return null
     }
+    case 'PostToolUse': {
+      const response = (input.tool_response ?? {}) as Record<string, unknown>
+      const isSpawn = !input.agent_id && /spawn_agent$/.test(input.tool_name ?? '')
+      if (isSpawn && typeof response.task_name === 'string') {
+        const taskName = response.task_name
+        await updateState(dir, id, s => noteSpawn(s, taskName))
+      }
+
+      return null
+    }
     case 'Stop': {
+      if (input.agent_id) return null
       const reply = input.last_assistant_message ?? ''
       const dialogs = await dialogsInTurn(input.transcript_path, input.turn_id)
       const lines = dialogs.map(questions => dialogActivity(questions, { kind: 'open' }))
       const written = await updateState(dir, id, s =>
         noteHook(
           endTurn(
-            lines.reduce((x, line) => noteActivity(x, line), withCli(settledSubagents({ ...s, ...turnEnded(s) }))),
+            lines.reduce((x, line) => noteActivity(x, line), withCli({ ...s, ...turnEnded(s), spawnedTasks: [] })),
             reply,
             now(),
           ),
@@ -153,7 +163,8 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
     }
     case 'SubagentStop': {
       const agentId = input.agent_id
-      if (agentId) await updateState(dir, id, s => changeSubagent(s, agentId, { state: 'done' }, now()))
+      const result = subagentResult(input.last_assistant_message)
+      if (agentId) await updateState(dir, id, s => withSubagentChange(s, agentId, { state: 'done', result }, now()))
 
       return null
     }

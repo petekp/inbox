@@ -191,12 +191,13 @@ export type Subagent = {
   id: string
   /** The Agent call's short description of the task. */
   task: string
-  isBackground: boolean
   state: 'running' | 'done' | 'stopped'
   /** What it did last, worded for the person; null before its first tool call. */
   step: string | null
-  /** When it started, and when its state or step last changed. */
+  /** The first line of its final reply, once it is done. */
+  result: string | null
   startedAt: number
+  /** When its state or step last changed. */
   at: number
 }
 
