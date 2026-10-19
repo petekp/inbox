@@ -8,7 +8,9 @@ export function isDemoCopy(saved: unknown): saved is DemoCopy {
   if (!saved || typeof saved !== 'object') return false
   const d = saved as Record<string, unknown>
 
-  return ['ledger', 'prViews', 'lastActions', 'notes', 'turns'].every(k => d[k] !== null && typeof d[k] === 'object')
+  return ['ledger', 'prViews', 'lastActions', 'notes', 'turns', 'work'].every(
+    k => d[k] !== null && typeof d[k] === 'object',
+  )
 }
 
 export function demoView(now: number): DemoCopy {
@@ -438,5 +440,28 @@ export function demoView(now: number): DemoCopy {
     },
     notes: {},
     turns: { turnsStarted: 14, turnsApplied: 14 },
+    work: {
+      isTurnRunning: true,
+      subagents: [
+        {
+          id: 'sa1',
+          task: 'Find where glances handle pinches',
+          isBackground: false,
+          state: 'running',
+          step: 'Reading GlanceView.swift',
+          startedAt: now - 2 * MIN,
+          at: now - 10_000,
+        },
+        {
+          id: 'sa2',
+          task: 'Check the gesture tests',
+          isBackground: false,
+          state: 'done',
+          step: 'Run the gesture tests',
+          startedAt: now - 4 * MIN,
+          at: now - MIN,
+        },
+      ],
+    },
   }
 }

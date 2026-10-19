@@ -31,6 +31,7 @@ import type {
   SentPrompt,
   ShownTab,
   Stop,
+  Subagent,
   Tab,
 } from '../types'
 import { demoView, isDemoCopy } from './demo'
@@ -145,6 +146,7 @@ import {
   isListTab,
   LIST_TABS,
   mapView,
+  subagentStep,
   ROW_TABS,
   TABS,
   CLOSED_MARKS,
@@ -223,6 +225,7 @@ const PRESENCE = atom(
     minute: 0,
   } as Presence,
 )
+const SUBAGENTS = atom({ plugin: 'inbox', key: 'subagents' } as const, [] as Subagent[])
 const TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'needsYou' as ShownTab)
 const NO_CURSOR: Cursor = { id: null, index: 0, openedAt: 0 }
 const NO_SELECTION: Record<Tab, Cursor> = { needsYou: NO_CURSOR, findings: NO_CURSOR, prs: NO_CURSOR }
@@ -1997,6 +2000,26 @@ function recordDoneRefusal($: EngineInterface, id: string, notificationId: strin
   return recording
 }
 
+const LIVE_AGENT_STATUSES: ReadonlySet<string> = new Set(['pending', 'running', 'waiting'])
+
+async function changeSubagent($: EngineInterface, id: string, change: (s: Subagent, now: number) => Subagent) {
+  const now = await $.clock.now()
+  await update($, SUBAGENTS, list =>
+    list.some(s => s.id === id) ? list.map(s => (s.id === id ? change(s, now) : s)) : list,
+  )
+}
+
+/**
+ * Keeps only the subagents still running, by the engine's own list, since a
+ * reload can miss a subagent's end. A finished one leaves when the main turn starts or ends.
+ */
+async function settleSubagents($: EngineInterface) {
+  const listed = new Map((await $.agent.list()).map(a => [a.id, a.status]))
+  await update($, SUBAGENTS, list =>
+    list.filter(s => s.state === 'running' && LIVE_AGENT_STATUSES.has(listed.get(s.id) ?? '')),
+  )
+}
+
 async function wakeForDone($: EngineInterface) {
   const owner = { id: sessionId, generation: conversation }
   const notificationId = crypto.randomUUID()
@@ -2479,7 +2502,6 @@ async function drawnState($: EngineInterface): Promise<
     isDemo: boolean
     showsDemoNotices: boolean
     isUnread: boolean
-    isTurnRunning: boolean
     now: number
   }
 > {
@@ -2490,6 +2512,7 @@ async function drawnState($: EngineInterface): Promise<
     lastActions,
     notes,
     presence,
+    subagents,
     demo,
     isDemoRecording,
     unreadable,
@@ -2504,6 +2527,7 @@ async function drawnState($: EngineInterface): Promise<
     read($, LAST_ACTIONS),
     read($, NOTES),
     read($, PRESENCE),
+    read($, SUBAGENTS),
     read($, DEMO),
     read($, DEMO_RECORDING),
     read($, UNREADABLE),
@@ -2513,7 +2537,8 @@ async function drawnState($: EngineInterface): Promise<
     $.clock.now(),
   ])
   const turns = { turnsStarted: presence.turnsStarted, turnsApplied: presence.turnsApplied }
-  const drawn = demo ?? { ledger, stop, prViews, lastActions, notes, turns }
+  const work = { isTurnRunning: presence.isTurnRunning, subagents }
+  const drawn = demo ?? { ledger, stop, prViews, lastActions, notes, turns, work }
 
   const isUnread = demo === null && unreadable === sessionId
 
@@ -2523,7 +2548,6 @@ async function drawnState($: EngineInterface): Promise<
     isDemo: demo !== null,
     showsDemoNotices: demo !== null && !isDemoRecording,
     isUnread,
-    isTurnRunning: demo === null && presence.isTurnRunning,
     now,
   }
 }
@@ -2651,6 +2675,7 @@ async function applyConversation(
     update($, PRESENCE, p => (p.isUpdating ? { ...p, isUpdating: false, ledgerState: 'failed' as const } : p)),
     upgradeState($),
     syncTheme($),
+    settleSubagents($),
   ])
   if (revision !== loadRevision) return
   const isFresh = current.turn === 0 && !current.card
@@ -2811,6 +2836,7 @@ export const register: Register = on => {
       conversation += 1
       await Promise.all([
         update($, LEDGER, () => EMPTY),
+        update($, SUBAGENTS, () => []),
         forgetRowState($),
         update($, PRESENCE, p => ({ ...p, isAway: false, isUpdating: false, ledgerState: 'current' as const })),
       ])
@@ -2843,14 +2869,37 @@ export const register: Register = on => {
     return notes.length === 0 ? next(e) : next({ ...e, context: [...(e.context ?? []), ...notes] })
   })
 
+  on('agent.spawn', async ($, e, next) => {
+    const r = await next(e)
+    const agentId = 'agentId' in r ? r.agentId : undefined
+    if (!isOn || e.parentAgentId || !agentId) return r
+    const now = await $.clock.now()
+    const added: Subagent = {
+      id: agentId,
+      task: e.description || 'Subagent',
+      isBackground: e.background,
+      state: 'running',
+      step: null,
+      startedAt: now,
+      at: now,
+    }
+    await update($, SUBAGENTS, list => [...list.filter(s => s.id !== added.id), added])
+
+    return r
+  })
+
   on('turn.start', async ($, e, next) => {
-    if (e.agentId) return next(e)
+    if (e.agentId) {
+      if (isOn) await changeSubagent($, e.agentId, (s, now) => ({ ...s, state: 'running', at: now }))
+      return next(e)
+    }
     // Counted here, before the
     // turn can end, since a reload can cut off its end-of-turn hook.
     const turnsStarted = (p: Presence) => (isOn ? p.turnsStarted + 1 : p.turnsStarted)
     await Promise.all([
       update($, PRESENCE, p => ({ ...p, isTurnRunning: true, turnsStarted: turnsStarted(p) })),
       isOn ? setStop($, null) : undefined,
+      isOn ? settleSubagents($) : undefined,
     ])
 
     return next(e)
@@ -2880,7 +2929,11 @@ export const register: Register = on => {
     const { tool: _tool, tool_use_id: _id, agentId: _agent, ...input } = e as unknown as Record<string, unknown>
     const key = callKey(String(e.tool), input)
     const run = () => clearingDialog($, key, () => next(e))
-    if (e.agentId) return run()
+    if (e.agentId) {
+      const step = subagentStep(String(e.tool), input)
+      if (step) await changeSubagent($, e.agentId, (s, now) => ({ ...s, step, at: now }))
+      return run()
+    }
     const line = toolActivity(String(e.tool), input)
     if (line) noteActivity(line)
     if (String(e.tool) === TURN_BOX_TOOL) turnBox = turnBoxText(input) ?? turnBox
@@ -2945,8 +2998,16 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     const r = await next(e)
-    if (e.agentId) return r
-    await Promise.all([update($, PRESENCE, p => ({ ...p, isTurnRunning: false })), closeDialogs($, null)])
+    if (e.agentId) {
+      const state = e.reason === 'answer' ? 'done' : 'stopped'
+      if (isOn) await changeSubagent($, e.agentId, (s, now) => ({ ...s, state, at: now }))
+      return r
+    }
+    await Promise.all([
+      update($, PRESENCE, p => ({ ...p, isTurnRunning: false })),
+      closeDialogs($, null),
+      isOn ? settleSubagents($) : undefined,
+    ])
     if (!isOn) return r
     void wakeForDone($).catch(() => undefined)
     void followNewRows($).catch(() => undefined)
@@ -3241,19 +3302,7 @@ export const register: Register = on => {
         ? { rowPad: 2 * DESKTOP_ROW_PAD, settledPad: 2 * DESKTOP_ROW_PAD, buttonGap: 1, isFoldGapped: false }
         : { rowPad: blankLine, settledPad: 0, buttonGap: 2, isFoldGapped: true }
     const [
-      {
-        ledger,
-        prViews: prState,
-        lastActions,
-        notes,
-        turns,
-        stop,
-        view,
-        showsDemoNotices,
-        isUnread,
-        isTurnRunning,
-        now,
-      },
+      { ledger, prViews: prState, lastActions, notes, turns, stop, view, showsDemoNotices, isUnread, work, now },
       shownTab,
       selection,
       theme,
@@ -5124,8 +5173,8 @@ export const register: Register = on => {
             children: <Text wrap="wrap">{text}</Text>,
           })
         : treeRow(pos, null, <Text wrap="wrap">{text}</Text>, `map-${id}`, 0, markColumns.textAt)
-    const milestoneRow = (m: MapRow, pos: TreePos) => {
-      const mark = <Text color={pal.mark[m.tone]}>✓</Text>
+    const markedRow = (m: MapRow, pos: TreePos) => {
+      const mark = <Text color={m.tone ? pal.mark[m.tone] : pal.muted}>{m.mark}</Text>
       const age = <Text color={pal.age}>{m.age}</Text>
       const lines = [
         <Text key="text" wrap="wrap">
@@ -5163,7 +5212,7 @@ export const register: Register = on => {
           )
     }
     const mapPage = () => {
-      const map = mapView(ledger, now, CLAUDE_CODE.agent, isTurnRunning)
+      const map = mapView(ledger, now, CLAUDE_CODE.agent, work)
       if (map.isEmpty)
         return (
           <Box flexDirection="column" flexGrow={1}>
@@ -5171,6 +5220,7 @@ export const register: Register = on => {
           </Box>
         )
       const earlier = map.earlier
+      const subagents = map.subagents
       const running = map.running
       const milestones = map.milestones
 
@@ -5181,6 +5231,15 @@ export const register: Register = on => {
                 {map.goal ? mapTitleLine(map.goal, 'map-goal', true) : null}
                 {map.now ? mapTitleLine(`Now${DOT}${map.now}`, 'map-now', false) : null}
               </Box>,
+            ]
+          : []),
+        ...(subagents
+          ? [
+              section([
+                groupTitle(subagents.title, subagents.count),
+                ...titleGap(),
+                ...subagents.rows.map((s, n) => markedRow(s, childPos(n, subagents.rows.length))),
+              ]),
             ]
           : []),
         ...(running
@@ -5198,7 +5257,7 @@ export const register: Register = on => {
                 groupTitle(milestones.title, milestones.count),
                 ...titleGap(),
                 ...milestones.rows.map((m, n) =>
-                  milestoneRow(m, earlier === null ? childPos(n, milestones.rows.length) : 'mid'),
+                  markedRow(m, earlier === null ? childPos(n, milestones.rows.length) : 'mid'),
                 ),
                 ...(earlier
                   ? [

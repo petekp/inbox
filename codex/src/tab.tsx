@@ -46,7 +46,16 @@ import {
   shortAgo,
 } from '../../hooks/view'
 import { ROW_PAD_PT } from '../../hooks/layout'
-import type { ActionEmphasis, DrawnEntry, DrawnLists, Feedback, ReplyHolds, RowView, RowWait } from '../../hooks/view'
+import type {
+  ActionEmphasis,
+  DrawnEntry,
+  DrawnLists,
+  Feedback,
+  MapRow,
+  ReplyHolds,
+  RowView,
+  RowWait,
+} from '../../hooks/view'
 import {
   checkActions,
   checkRunText,
@@ -1242,6 +1251,21 @@ function Entries({ entries, group, all, now }: { entries: Entry[]; group: Group;
   )
 }
 
+function MarkedRow({ row }: { row: MapRow }) {
+  return (
+    <div class="entry">
+      <div class="row">
+        <span class={row.tone ? `mark tone-${row.tone}` : 'mark muted'}>{row.mark}</span>
+        <div class="content tight">
+          <div>{row.text}</div>
+          {row.detail ? <div class="outcome">{row.detail}</div> : null}
+        </div>
+        <span class="side">{row.age}</span>
+      </div>
+    </div>
+  )
+}
+
 function MapTab({ map }: { map: View['map'] }) {
   if (map.isEmpty)
     return (
@@ -1250,7 +1274,7 @@ function MapTab({ map }: { map: View['map'] }) {
         <div class="muted">{map.empty.hint}</div>
       </div>
     )
-  const { running, milestones, earlier } = map
+  const { subagents, running, milestones, earlier } = map
 
   return (
     <main>
@@ -1258,6 +1282,16 @@ function MapTab({ map }: { map: View['map'] }) {
         <section>
           {map.goal ? <h1 class="map-goal">{map.goal}</h1> : null}
           {map.now ? <div class="map-now muted">{`Now${DOT}${map.now}`}</div> : null}
+        </section>
+      ) : null}
+      {subagents ? (
+        <section>
+          <GroupTitle title={subagents.title} count={subagents.count} />
+          <div class="list">
+            {subagents.rows.map(s => (
+              <MarkedRow key={s.id} row={s} />
+            ))}
+          </div>
         </section>
       ) : null}
       {running ? (
@@ -1280,16 +1314,7 @@ function MapTab({ map }: { map: View['map'] }) {
           <GroupTitle title={milestones.title} count={milestones.count} />
           <div class="list">
             {milestones.rows.map(m => (
-              <div class="entry" key={m.id}>
-                <div class="row">
-                  <span class={`mark tone-${m.tone}`}>✓</span>
-                  <div class="content tight">
-                    <div>{m.text}</div>
-                    {m.detail ? <div class="outcome">{m.detail}</div> : null}
-                  </div>
-                  <span class="side">{m.age}</span>
-                </div>
-              </div>
+              <MarkedRow key={m.id} row={m} />
             ))}
             {earlier ? <div class="earlier muted">{earlier}</div> : null}
           </div>

@@ -573,6 +573,7 @@ function emptyState(sessionId) {
     ledger: EMPTY,
     turn: { person: null, activity: [], press: null },
     told: TOLD_NOTHING,
+    subagents: [],
     presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: "current", isUpdating: false, isTurnRunning: false },
     pending: [],
     sent: [],

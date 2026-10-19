@@ -22,7 +22,7 @@ import type { Exchange, Press } from '../../hooks/ledger'
 import { TOLD_NOTHING } from '../../hooks/model-text'
 import type { Told } from '../../hooks/model-text'
 import { upgradeLastActions } from '../../hooks/presses'
-import type { LastAction, Ledger, PrViews } from '../../types'
+import type { LastAction, Ledger, PrViews, Subagent } from '../../types'
 
 export type SessionState = {
   version: 1
@@ -40,6 +40,8 @@ export type SessionState = {
   }
   /** The inbox text Codex last read beside a prompt, and the closed items it was told about. */
   told: Told
+  /** The subagents the main agent started that the Map still shows, oldest first. */
+  subagents: Subagent[]
   presence: {
     /** Prompts that started a turn, and how many of those turns the inbox model has summarized. */
     turnsStarted: number
@@ -118,6 +120,7 @@ export function emptyState(sessionId: string): SessionState {
     ledger: EMPTY,
     turn: { person: null, activity: [], press: null },
     told: TOLD_NOTHING,
+    subagents: [],
     presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: 'current', isUpdating: false, isTurnRunning: false },
     pending: [],
     sent: [],

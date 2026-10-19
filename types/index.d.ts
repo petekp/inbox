@@ -183,6 +183,23 @@ export type PrView = {
   error: string | null
 }
 
+/**
+ * A subagent the main agent started, as the Map tab shows it. Hosts keep these outside the ledger, since the inbox
+ * model never reads them.
+ */
+export type Subagent = {
+  id: string
+  /** The Agent call's short description of the task. */
+  task: string
+  isBackground: boolean
+  state: 'running' | 'done' | 'stopped'
+  /** What it did last, worded for the person; null before its first tool call. */
+  step: string | null
+  /** When it started, and when its state or step last changed. */
+  startedAt: number
+  at: number
+}
+
 /** One result the session reached, shown on the Map tab. */
 export type Milestone = {
   id: string
@@ -289,6 +306,8 @@ export type DemoCopy = {
   /** Each sample row's latest note, by the row's id. */
   notes: Record<string, RowNote>
   turns: Turns
+  /** What the Map shows as running now: the main turn and its subagents. */
+  work: { isTurnRunning: boolean; subagents: Subagent[] }
 }
 
 declare module 'claude-code' {
@@ -298,6 +317,7 @@ declare module 'claude-code' {
       theme: string
       ledger: Ledger
       presence: Presence
+      subagents: Subagent[]
       tab: ShownTab
       prViews: PrViews
       selection: Record<Tab, Cursor>

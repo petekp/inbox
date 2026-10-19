@@ -276,7 +276,7 @@ export function viewOf(s: SessionState, now: number, holds: ReplyHolds = NO_HOLD
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now),
-    map: mapView(l, now, CODEX.agent, s.presence.isTurnRunning),
+    map: mapView(l, now, CODEX.agent, { isTurnRunning: s.presence.isTurnRunning, subagents: s.subagents }),
     at: now,
   }
 }

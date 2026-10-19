@@ -12,7 +12,8 @@ export function demoState(now: number): SessionState {
     ledger: d.ledger,
     lastActions: d.lastActions,
     prViews: d.prViews,
-    presence: { ...s.presence, ...d.turns },
+    subagents: d.work.subagents,
+    presence: { ...s.presence, ...d.turns, isTurnRunning: d.work.isTurnRunning },
     heard: { ...s.heard, startAt: now },
   }
 }

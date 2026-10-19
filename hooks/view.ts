@@ -11,6 +11,7 @@ import type {
   PressKind,
   RowNote,
   ShownTab,
+  Subagent,
   Tab,
   Turns,
 } from '../types'
@@ -409,7 +410,15 @@ export const ROW_TABS = TABS.filter(
 )
 
 type MapTone = 'done' | 'needsYou' | 'findings'
-export type MapRow = { id: string; tone: MapTone; text: string; detail: string | null; age: string }
+/** A Map line with a mark. A null tone draws the mark muted. */
+export type MapRow = {
+  id: string
+  mark: string
+  tone: MapTone | null
+  text: string
+  detail: string | null
+  age: string
+}
 type MapSection = { title: string; count: number; rows: MapRow[] }
 type MapRunning = { id: string; text: string }
 
@@ -420,6 +429,7 @@ export type MapView = {
   goal: string | null
   /** "Working…" while the agent's turn runs, since the card's line then describes the state before it. */
   now: string | null
+  subagents: MapSection | null
   running: { title: string; count: number; rows: MapRunning[] } | null
   milestones: MapSection | null
   /** The milestones past `MAP_SHOWN`, as "12 earlier"; null when all show. */
@@ -442,20 +452,76 @@ function newestFirst(milestones: Milestone[]): Milestone[] {
   return [...timed, ...milestones.filter(m => m.at === null).reverse()]
 }
 
+const SUBAGENT_MARKS: Record<Subagent['state'], Pick<MapRow, 'mark' | 'tone'>> = {
+  running: { mark: '•', tone: null },
+  done: { mark: '✓', tone: 'done' },
+  stopped: { mark: '✕', tone: null },
+}
+
+const STEP_MAX = 60
+
+/** A subagent's tool call as the Map words its step, or null for a call that says nothing to the person. */
+export function subagentStep(tool: string, input: Record<string, unknown>): string | null {
+  const text = (key: string) => (typeof input[key] === 'string' ? (input[key] as string).trim() : '')
+  const file = (key: string) => text(key).split('/').pop() ?? ''
+  const clipped = (prefix: string, value: string) => (value ? clipLabel(`${prefix} ${value}`, STEP_MAX) : null)
+  switch (tool) {
+    case 'Read':
+      return clipped('Reading', file('file_path'))
+    case 'Edit':
+    case 'Write':
+    case 'NotebookEdit':
+      return clipped('Editing', file('file_path') || file('notebook_path'))
+    case 'Grep':
+    case 'Glob':
+      return clipped('Searching for', text('pattern'))
+    case 'Bash':
+      return text('description')
+        ? clipLabel(text('description'), STEP_MAX)
+        : clipped('Running', text('command').split('\n')[0] ?? '')
+    case 'WebSearch':
+      return clipped('Searching the web for', text('query'))
+    case 'WebFetch':
+      return clipped('Reading', text('url').replace(/^https?:\/\//, ''))
+    case 'Agent':
+      return clipped('Starting', text('description'))
+  }
+
+  return tool.startsWith('mcp__') ? clipLabel(`Using ${tool.split('__').pop()}`, STEP_MAX) : null
+}
+
+/** What the host is doing now: whether the main agent's turn runs, and the subagents it started. */
+export type MapWork = { isTurnRunning: boolean; subagents: Subagent[] }
+
 export function mapView(
   ledger: Pick<Ledger, 'card' | 'milestones'>,
   now: number,
   agent: string,
-  isTurnRunning: boolean,
+  work: MapWork,
 ): MapView {
   const card = ledger.card
   const all = newestFirst(ledger.milestones)
   const shown = all.slice(0, MAP_SHOWN)
+  const { isTurnRunning, subagents } = work
 
   return {
-    isEmpty: !card?.goal && all.length === 0 && !isTurnRunning,
+    isEmpty: !card?.goal && all.length === 0 && !isTurnRunning && subagents.length === 0,
     goal: card?.goal || null,
     now: isTurnRunning ? WORKING : card?.goal && card.now ? card.now : null,
+    subagents:
+      subagents.length > 0
+        ? {
+            title: 'Subagents',
+            count: subagents.length,
+            rows: subagents.map(s => ({
+              id: s.id,
+              ...SUBAGENT_MARKS[s.state],
+              text: s.task,
+              detail: s.step,
+              age: shortAgo(Math.max(0, now - s.at)),
+            })),
+          }
+        : null,
     running:
       card?.goal && card.running.length > 0
         ? {
@@ -471,6 +537,7 @@ export function mapView(
             count: all.length,
             rows: shown.map(m => ({
               id: m.id,
+              mark: '✓',
               tone: MAP_TONES[m.source],
               text: m.text,
               detail: m.detail,

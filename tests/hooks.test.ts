@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import type { On, PromptOrigin, RenderSurface } from 'claude-code'
+import type { AgentInfo, On, PromptOrigin, RenderSurface } from 'claude-code'
 
 import type { FoldProps } from '../hooks/fold-client'
 import type { LinksProps } from '../hooks/links-client'
@@ -83,6 +83,7 @@ const PANE = {
 }
 
 let surfaces: RenderSurface[] = []
+let agents: AgentInfo[] = []
 
 let files: string[] = []
 
@@ -135,6 +136,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   isGhMissing = false
   ledgerReply = LEDGER_REPLY
   surfaces = []
+  agents = []
   files = []
   copied = []
   toasts = []
@@ -180,6 +182,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
       : [],
   }))
   on('session.surfaces', () => ({ value: surfaces }))
+  on('agent.list', () => ({ value: agents }))
   on('session.attach', ($, e) => ({ clientId: e.clientId }))
   on('session.id', () => ({ value: 'session-1' }))
   on('session.end', ($, e) => ({ sessionId: e.sessionId }))
@@ -3054,6 +3057,38 @@ test('the Map reads Working… while the main agent’s turn runs, until it ends
   await $.turn.complete({ answer: '', durationMs: 5, isAborted: true, turnId: 't1', reason: 'aborted' })
   await clock.settle()
   expect(await pane.find(working)).toBeUndefined()
+})
+
+test('the Map lists each subagent the main turn started with its last step, until the main turn ends', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  on('agent.spawn', () => ({ model: 'sonnet', agentId: 'a1' }))
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-key-map' })
+  await $.turn.start({ text: 'ship it', turnId: 't1' })
+  await $.agent.spawn({ prompt: 'Find the export code.', description: 'Find the export code' } as never)
+  agents = [{ id: 'a1', status: 'running', description: 'Find the export code', type: 'general-purpose' } as AgentInfo]
+  await $.tool.call({ tool: 'Read', file_path: '/repo/src/export.ts', agentId: 'a1' } as never)
+  await clock.settle()
+  expect(await pane.find({ text: 'Find the export code' })).toBeDefined()
+  expect(await pane.find({ text: 'Reading export.ts' })).toBeDefined()
+
+  await $.turn.complete({
+    answer: 'Found it.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 's1',
+    reason: 'answer',
+    agentId: 'a1',
+  } as never)
+  await clock.settle()
+  expect(await pane.find({ text: '✓' })).toBeDefined()
+
+  agents = []
+  await $.turn.complete({ answer: 'Shipped.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  expect(await pane.find({ text: 'Find the export code' })).toBeUndefined()
 })
 
 test('a tool call after a hot reload, before the load converts the ledger, still applies', async ($, on) => {
