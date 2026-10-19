@@ -1,5 +1,6 @@
 import { addAgentItem, addFinding, closeByAgent, recommendedOption, stepHelp } from './ledger'
 import type { Host } from './model-text'
+import { clipLabel } from './text'
 import type { Closed, Ledger } from '../types'
 
 const NAME_BY_CONTENT = 'Name it by what it says, never by its id.'
@@ -63,6 +64,32 @@ export const CLOSE_SCHEMA = {
     },
   },
   required: ['id'],
+}
+
+export const PROGRESS_SCHEMA = {
+  type: 'object',
+  properties: { text: { type: 'string', description: 'What you are doing now, in at most 8 plain words.' } },
+  required: ['text'],
+}
+
+export function progressDescription(host: Host): string {
+  return `Show the user what you are doing now, in at most 8 plain words, such as "Reading the gesture tests". It shows in ${host.mapIn} until your turn ends. Call it as you start each step of a task that takes several steps, and skip it for one that takes one or two tool calls. Your reply still says what you did.`
+}
+
+const PROGRESS_MAX = 60
+
+/** The first line of the call's text, clipped to fit a Map row; null when it gave none. */
+export function progressText(input: Record<string, unknown>): string | null {
+  const line = cut(input.text, 4000).split('\n')[0]?.trim() ?? ''
+
+  return line === '' ? null : clipLabel(line, PROGRESS_MAX)
+}
+
+/** The texts the agent reads back from a progress call. */
+export const progressResult = {
+  shown: (host: Host) => `Shown in ${host.mapIn}.`,
+  empty: 'Not shown: give the text.',
+  unlisted: 'Not shown: the Map lists only the main agent and the subagents it started.',
 }
 
 export function recordDescription(host: Host): string {

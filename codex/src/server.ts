@@ -33,12 +33,16 @@ import type { EffectHost, RowPress } from '../../hooks/presses'
 import {
   CLOSE_DESCRIPTION,
   CLOSE_SCHEMA,
+  PROGRESS_SCHEMA,
   RECORD_SCHEMA,
+  progressDescription,
+  progressResult,
+  progressText,
   recordDescription,
   recordClose,
   recordItem,
 } from '../../hooks/tools'
-import { noteToolCall, viewOf } from './core'
+import { noteToolCall, viewOf, withSubagentChange } from './core'
 import type { TabView } from './core'
 import { demoState } from './demo'
 import { ghFinder, ghIn } from './gh'
@@ -79,6 +83,7 @@ function viewsStillShown(
 const toolsFor = (uri: string) => [
   { name: 'record', description: recordDescription(CODEX), inputSchema: RECORD_SCHEMA },
   { name: 'close', description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA },
+  { name: 'progress', description: progressDescription(CODEX), inputSchema: PROGRESS_SCHEMA },
   // No resourceUri: Codex mounts every model-called MCP App inline in the transcript.
   { name: 'inbox', description: INBOX_DESCRIPTION, inputSchema: { type: 'object', properties: {} } },
   {
@@ -181,6 +186,17 @@ export function turnOf(params: Record<string, unknown> | undefined): string | nu
   if (t.parent_thread_id || t.forked_from_thread_id || isOtherThread) return undefined
 
   return typeof t.turn_id === 'string' && t.turn_id ? t.turn_id : null
+}
+
+/** For a call a subagent made, its thread id, which its hooks carry as `agent_id`; null for any other call. */
+export function subagentOf(params: Record<string, unknown> | undefined): string | null {
+  const meta = (params?._meta ?? {}) as Record<string, unknown>
+  const turn = meta['x-codex-turn-metadata']
+  if (typeof turn !== 'object' || turn === null) return null
+  const t = turn as Record<string, unknown>
+  const isSubagent = typeof t.parent_thread_id === 'string' && t.parent_thread_id !== ''
+
+  return isSubagent && typeof t.thread_id === 'string' && t.thread_id ? t.thread_id : null
 }
 
 const text = (t: string) => ({ content: [{ type: 'text', text: t }] })
@@ -595,6 +611,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     args: Record<string, unknown>,
     id: string | null,
     turn: string | null | undefined,
+    subagent: string | null,
   ) {
     if (!id) return { ...text('Not done: this call carries no session id.'), isError: true }
     const heard = (s: SessionState) => (turn === undefined ? s : noteToolCall(s, turn, now()))
@@ -606,6 +623,22 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
           const r = (name === 'close' ? recordClose : recordItem)(CODEX, s.ledger, args, now())
           result = r.result
           return heard({ ...s, ledger: r.ledger })
+        })
+        return text(result)
+      }
+      case 'progress': {
+        const shown = progressText(args)
+        if (shown === null) return text(progressResult.empty)
+        let result = progressResult.unlisted
+        await updateState(dir, id, s => {
+          if (subagent !== null) {
+            if (!s.subagents.some(x => x.id === subagent)) return s
+            result = progressResult.shown(CODEX)
+            return withSubagentChange(s, subagent, { progress: shown }, now())
+          }
+          if (turn === undefined) return s
+          result = progressResult.shown(CODEX)
+          return heard({ ...s, presence: { ...s.presence, progress: shown } })
         })
         return text(result)
       }
@@ -659,7 +692,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         const args = (params?.arguments ?? {}) as Record<string, unknown>
         const session = sessionOf(params)
         try {
-          const result = ok(await callTool(name, args, session, turnOf(params)))
+          const result = ok(await callTool(name, args, session, turnOf(params), subagentOf(params)))
           if (session && !prunedFor.has(session)) {
             prunedFor.add(session)
             void pruneSessions(dir, session).catch(() => undefined)

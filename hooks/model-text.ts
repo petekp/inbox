@@ -82,7 +82,14 @@ The latest "inbox:" text beside the user's prompt is the current state. It lists
 Close with mcp__inbox__close:
 - When the user's message answers an open item, close it first, before other work, with their answer.
 - When an item or finding is done or no longer applies, close it with a short reason, without waiting to be asked.
-The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.`
+The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.
+
+${progressRule(host)}`
+}
+
+/** In the guidance, and added to the start of each subagent the main agent starts, since a subagent reads no guidance. */
+export function progressRule(host: Host): string {
+  return `On a task of several steps, call mcp__inbox__progress as you start each step, with what you are doing in at most 8 plain words, such as "Reading the gesture tests". The user sees it in ${host.mapIn} while you work. Your reply still says what you did.`
 }
 
 export const START_TITLE =
@@ -255,6 +262,7 @@ export type Host = {
   /** Where the person always sees how many items and findings are open, besides the surface; null when only the surface shows them. */
   band: string | null
   findingsIn: string
+  mapIn: string
   /** The first paragraph of `guidanceText`: what the inbox shows the person, and where. */
   intro: string
 }
@@ -264,6 +272,7 @@ export const CLAUDE_CODE: Host = {
   surface: 'the /inbox pane',
   band: 'a band above their prompt',
   findingsIn: 'the Findings tab of the /inbox pane',
+  mapIn: 'the Map tab of the /inbox pane',
   intro:
     "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox pane, and your findings, in the pane's Findings tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings.",
 }

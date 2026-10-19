@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { resolve } from 'node:path'
 
-import { dialogActivity } from '../../hooks/model-text'
+import { dialogActivity, progressRule } from '../../hooks/model-text'
 import { subagentStep } from '../../hooks/view'
 import {
   activityOf,
@@ -19,6 +19,7 @@ import {
   withSubagentChange,
 } from './core'
 import { updateState } from './state'
+import { CODEX } from './texts'
 import type { SessionState } from './state'
 import { dialogsInTurn, isNonInteractiveRun } from './transcript'
 
@@ -84,7 +85,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
           ? r.state
           : noteHook(
               withoutSubagentsBefore(
-                { ...r.state, presence: { ...r.state.presence, isTurnRunning: true } },
+                { ...r.state, presence: { ...r.state.presence, isTurnRunning: true, progress: null } },
                 s.heard.stopAt ?? 0,
               ),
               'prompt',
@@ -157,9 +158,10 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
     }
     case 'SubagentStart': {
       const agentId = input.agent_id
-      if (agentId) await updateState(dir, id, s => startSubagent(s, agentId, now()))
+      if (!agentId) return null
+      await updateState(dir, id, s => startSubagent(s, agentId, now()))
 
-      return null
+      return { hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: progressRule(CODEX) } }
     }
     case 'SubagentStop': {
       const agentId = input.agent_id
@@ -174,7 +176,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
 }
 
 function turnEnded(s: SessionState): Pick<SessionState, 'presence'> {
-  return { presence: { ...s.presence, isTurnRunning: false } }
+  return { presence: { ...s.presence, isTurnRunning: false, progress: null } }
 }
 
 /** Starts the update in a detached process, so a model call longer than the hook's limit still finishes. */

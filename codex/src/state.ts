@@ -52,6 +52,8 @@ export type SessionState = {
     isUpdating: boolean
     /** True from a main-agent prompt until its turn stops or is interrupted. */
     isTurnRunning: boolean
+    /** What the main agent last said it is doing in this turn, through the progress tool. */
+    progress: string | null
   }
   /**
    * Exchanges waiting for the inbox model, oldest first, with the turns started when each ended. `failed` marks
@@ -124,7 +126,14 @@ export function emptyState(sessionId: string): SessionState {
     told: TOLD_NOTHING,
     subagents: [],
     spawnedTasks: [],
-    presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: 'current', isUpdating: false, isTurnRunning: false },
+    presence: {
+      turnsStarted: 0,
+      turnsApplied: 0,
+      ledgerState: 'current',
+      isUpdating: false,
+      isTurnRunning: false,
+      progress: null,
+    },
     pending: [],
     sent: [],
     lastActions: {},

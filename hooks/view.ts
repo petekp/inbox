@@ -495,8 +495,8 @@ export function subagentStep(tool: string, input: Record<string, unknown>): stri
   return tool.startsWith('mcp__') ? clipLabel(`Using ${tool.split('__').pop()}`, STEP_MAX) : null
 }
 
-/** Whether the main agent's turn runs, and the subagents it started. */
-export type RunningWork = { isTurnRunning: boolean; subagents: Subagent[] }
+/** Whether the main agent's turn runs, what it said it is doing, and the subagents it started. */
+export type RunningWork = { isTurnRunning: boolean; progress: string | null; subagents: Subagent[] }
 
 export function mapView(
   ledger: Pick<Ledger, 'card' | 'milestones'>,
@@ -507,12 +507,12 @@ export function mapView(
   const card = ledger.card
   const all = newestFirst(ledger.milestones)
   const shown = all.slice(0, MAP_SHOWN)
-  const { isTurnRunning, subagents } = work
+  const { isTurnRunning, progress, subagents } = work
 
   return {
     isEmpty: !card?.goal && all.length === 0 && !isTurnRunning && subagents.length === 0,
     goal: card?.goal || null,
-    now: isTurnRunning ? WORKING : card?.goal && card.now ? card.now : null,
+    now: isTurnRunning ? (progress ?? WORKING) : card?.goal && card.now ? card.now : null,
     subagents:
       subagents.length > 0
         ? {
@@ -522,7 +522,7 @@ export function mapView(
               id: s.id,
               ...SUBAGENT_MARKS[s.state],
               text: s.task,
-              detail: s.state === 'running' ? s.step : s.result,
+              detail: s.state === 'running' ? (s.progress ?? s.step) : s.result,
               age: shortAgo(Math.max(0, now - (s.state === 'running' ? s.startedAt : s.at))),
             })),
           }

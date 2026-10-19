@@ -389,5 +389,31 @@
         "notReply": "\\b[if]\\d{1,3}\\b"
       }
     ]
+  },
+  {
+    "name": "progress-multi-step",
+    "about": "An agent starting a task of several steps shows what it is doing with progress.",
+    "prompt": "Task: move the date helpers out of src/utils.ts into a new src/dates.ts and update every file that imports them. That takes several steps: read utils.ts, find the files that import the helpers, write dates.ts, edit each importer, then run the tests. Start on it now. Your file and shell tools are not connected in this session, so when you reach the first step that needs one, stop and tell me.",
+    "checks": [
+      {
+        "calls": "progress",
+        "has": ["text"],
+        "min": 1
+      }
+    ]
+  },
+  {
+    "name": "no-progress-one-liner",
+    "about": "A question answered in one reply gets no progress call.",
+    "prompt": "In one sentence: what does HTTP status 418 mean?",
+    "checks": [
+      {
+        "calls": "progress",
+        "count": 0
+      },
+      {
+        "reply": "teapot"
+      }
+    ]
   }
 ]

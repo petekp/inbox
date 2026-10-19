@@ -7,6 +7,7 @@ export const CODEX: Host = {
   surface: 'the Inbox tab',
   band: null,
   findingsIn: 'the Findings section of the Inbox tab',
+  mapIn: 'the Map section of the Inbox tab',
   intro:
     'The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, and your findings, in the Inbox tab beside the conversation.',
 }

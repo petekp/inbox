@@ -4,13 +4,14 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { EMPTY } from '../../hooks/ledger'
-import { inboxText } from '../../hooks/model-text'
+import { inboxText, progressRule } from '../../hooks/model-text'
 import { feedbackText } from '../../hooks/view'
 import { notePrompt, noteToolCall, viewOf } from '../src/core'
 import { handleHook } from '../src/hook'
+import { makeServer } from '../src/server'
 import { readState, statePath, updateState } from '../src/state'
 import { CODEX } from '../src/texts'
-import { hookDeps, input, tempDir } from './helpers'
+import { fakeRunner, hookDeps, input, tempDir } from './helpers'
 
 test('a session starts with the guidance, records the prompt, and ends the turn into the update', async () => {
   const dir = tempDir()
@@ -115,11 +116,27 @@ test('the Map reads Working… from a main-agent prompt until Stop or Interrupt,
   assert.equal(await now(), null)
 })
 
-test('the Map lists a subagent by its spawn call’s task name, with its step, then its result until the next prompt', async () => {
+test('the Map lists a subagent by its spawn call’s task name, with its step or its own progress, then its result until the next prompt', async () => {
   const dir = tempDir()
   let clock = 1000
   const deps = hookDeps(dir, () => clock)
   const rows = async () => viewOf(await readState(dir, 's1'), clock).map.subagents?.rows ?? []
+  const server = makeServer({
+    dir,
+    now: () => clock,
+    exec: fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec,
+    tabHtml: '',
+    fallbackCli: async () => 'codex',
+  })
+  const progress = async (text: string, turn: Record<string, unknown>) => {
+    const r = (await server({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'progress', arguments: { text }, _meta: { 'x-codex-turn-metadata': turn } },
+    })) as { result: { content: { text: string }[] } }
+    return r.result.content[0]?.text
+  }
 
   await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
   await handleHook(input('UserPromptSubmit', { prompt: 'Ship it', turn_id: 't1' }), deps)
@@ -130,7 +147,9 @@ test('the Map lists a subagent by its spawn call’s task name, with its step, t
     }),
     deps,
   )
-  await handleHook(input('SubagentStart', { agent_id: 'a1' }), deps)
+  assert.deepEqual(await handleHook(input('SubagentStart', { agent_id: 'a1' }), deps), {
+    hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: progressRule(CODEX) },
+  })
   await handleHook(
     input('PreToolUse', { tool_name: 'Bash', tool_input: { command: 'rg export src' }, agent_id: 'a1' }),
     deps,
@@ -139,6 +158,23 @@ test('the Map lists a subagent by its spawn call’s task name, with its step, t
     (await rows()).map(r => [r.mark, r.text, r.detail]),
     [['●', 'Find export code', 'Running rg export src']],
   )
+
+  const subagent = { session_id: 's1', thread_id: 'a1', parent_thread_id: 's1', turn_id: 'u1' }
+  assert.equal(await progress('Tracing the CSV path', subagent), 'Shown in the Map section of the Inbox tab.')
+  await handleHook(
+    input('PreToolUse', { tool_name: 'Bash', tool_input: { command: 'rg csv src' }, agent_id: 'a1' }),
+    deps,
+  )
+  assert.deepEqual(
+    (await rows()).map(r => r.detail),
+    ['Tracing the CSV path'],
+  )
+  assert.match(
+    (await progress('Deep in', { ...subagent, thread_id: 'a9', parent_thread_id: 'a1' })) ?? '',
+    /^Not shown/,
+  )
+  await progress('Reading the release notes', { session_id: 's1', thread_id: 's1', turn_id: 't1' })
+  assert.equal(viewOf(await readState(dir, 's1'), clock).map.now, 'Reading the release notes')
 
   await handleHook(
     input('SubagentStop', { agent_id: 'a1', last_assistant_message: 'Found it in src/export.ts.\nMore.' }),
@@ -149,6 +185,7 @@ test('the Map lists a subagent by its spawn call’s task name, with its step, t
     (await rows()).map(r => [r.mark, r.detail]),
     [['✓', 'Found it in src/export.ts.']],
   )
+  assert.equal(viewOf(await readState(dir, 's1'), clock).map.now, null)
 
   clock = 2000
   await handleHook(input('UserPromptSubmit', { prompt: 'Next', turn_id: 't2' }), deps)

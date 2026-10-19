@@ -194,6 +194,8 @@ export type Subagent = {
   state: 'running' | 'done' | 'stopped'
   /** What it did last, worded for the person; null before its first tool call. */
   step: string | null
+  /** What it last said it is doing, through the progress tool. A running row shows it in place of `step`. */
+  progress: string | null
   /** The first line of its final reply, once it is done. */
   result: string | null
   startedAt: number
@@ -254,6 +256,8 @@ export type Presence = {
   isAway: boolean
   /** True from the main agent's `turn.start` to its `turn.complete`. */
   isTurnRunning: boolean
+  /** What the main agent last said it is doing in this turn, through the progress tool. */
+  progress: string | null
   isUpdating: boolean
   /**
    * `behind` and `failed`: the ledger may have missed a turn, so the next
@@ -308,7 +312,7 @@ export type DemoCopy = {
   notes: Record<string, RowNote>
   turns: Turns
   /** What the Map shows as running now: the main turn and its subagents. */
-  work: { isTurnRunning: boolean; subagents: Subagent[] }
+  work: { isTurnRunning: boolean; progress: string | null; subagents: Subagent[] }
 }
 
 declare module 'claude-code' {

@@ -7,8 +7,8 @@
 #
 # The agent suite is the agent that uses the inbox: the cases in evals/agent-cases.json on Claude Code with Opus,
 # Codex, or both. Each run gives the agent the shipped guidance and a stand-in MCP server named probe, and checks
-# its record and close calls and its reply. Run it before a release, and after a change to guidanceText, a tool
-# description or a tool answer.
+# its record, close and progress calls and its reply. Run it before a release, and after a change to guidanceText,
+# a tool description or a tool answer.
 #
 # Needs the claude CLI for Sonnet and Opus and the codex CLI, or CODEX_CLI_PATH, for Codex.
 #

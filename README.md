@@ -122,8 +122,9 @@ failing check, resolve conflicts, or merge.
 Where the session stands, for when you come back to it: its goal, what it's
 doing now, what's running, and its milestones, newest first. A milestone is a
 result the agent finished, a question you answered, or a finding it fixed.
-While the agent works on your message, the Now line reads "Working…", and
-each subagent it started shows what it is doing, then what it found.
+While the agent works on your message, the Now line says what it is doing, or
+"Working…", and each subagent it started shows what it is doing, then what it
+found.
 
 ### It keeps itself up to date
 

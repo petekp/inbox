@@ -53,7 +53,16 @@ export function noteSpawn(s: SessionState, taskName: string): SessionState {
 
 export function startSubagent(s: SessionState, agentId: string, now: number): SessionState {
   const [task = 'Subagent', ...spawnedTasks] = s.spawnedTasks
-  const started: Subagent = { id: agentId, task, state: 'running', step: null, result: null, startedAt: now, at: now }
+  const started: Subagent = {
+    id: agentId,
+    task,
+    state: 'running',
+    step: null,
+    progress: null,
+    result: null,
+    startedAt: now,
+    at: now,
+  }
 
   return { ...s, spawnedTasks, subagents: [...s.subagents.filter(x => x.id !== agentId), started] }
 }
@@ -61,7 +70,7 @@ export function startSubagent(s: SessionState, agentId: string, now: number): Se
 export function withSubagentChange(
   s: SessionState,
   agentId: string,
-  change: Partial<Pick<Subagent, 'state' | 'step' | 'result'>>,
+  change: Partial<Pick<Subagent, 'state' | 'step' | 'progress' | 'result'>>,
   now: number,
 ): SessionState {
   if (!s.subagents.some(x => x.id === agentId)) return s
@@ -320,7 +329,11 @@ export function viewOf(s: SessionState, now: number, holds: ReplyHolds = NO_HOLD
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now),
-    map: mapView(l, now, CODEX.agent, { isTurnRunning: s.presence.isTurnRunning, subagents: s.subagents }),
+    map: mapView(l, now, CODEX.agent, {
+      isTurnRunning: s.presence.isTurnRunning,
+      progress: s.presence.progress,
+      subagents: s.subagents,
+    }),
     at: now,
   }
 }

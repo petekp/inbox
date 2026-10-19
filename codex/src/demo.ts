@@ -13,7 +13,7 @@ export function demoState(now: number): SessionState {
     lastActions: d.lastActions,
     prViews: d.prViews,
     subagents: d.work.subagents,
-    presence: { ...s.presence, ...d.turns, isTurnRunning: d.work.isTurnRunning },
+    presence: { ...s.presence, ...d.turns, isTurnRunning: d.work.isTurnRunning, progress: d.work.progress },
     heard: { ...s.heard, startAt: now },
   }
 }

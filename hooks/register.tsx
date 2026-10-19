@@ -94,6 +94,7 @@ import {
   dialogActivity,
   dialogQuestions,
   guidanceText,
+  progressRule,
   promptNotes,
   screenText,
   START_TITLE,
@@ -197,7 +198,18 @@ import type {
   RowView,
   RowWait,
 } from './view'
-import { CLOSE_DESCRIPTION, CLOSE_SCHEMA, RECORD_SCHEMA, recordDescription, recordClose, recordItem } from './tools'
+import {
+  CLOSE_DESCRIPTION,
+  CLOSE_SCHEMA,
+  PROGRESS_SCHEMA,
+  RECORD_SCHEMA,
+  progressDescription,
+  progressResult,
+  progressText,
+  recordDescription,
+  recordClose,
+  recordItem,
+} from './tools'
 import type { UndoProps } from './undo-client'
 import { followTo, recordRows, isTabEmpty } from './arrivals'
 import { parseInline } from './inline'
@@ -218,6 +230,7 @@ const PRESENCE = atom(
     lastActiveAt: 0,
     isAway: false,
     isTurnRunning: false,
+    progress: null,
     isUpdating: false,
     ledgerState: 'current',
     turnsStarted: 0,
@@ -263,6 +276,7 @@ const PR_POLL_MS = 2 * 60_000
 
 const RECORD_TOOL = 'mcp__inbox__record'
 const CLOSE_TOOL = 'mcp__inbox__close'
+const PROGRESS_TOOL = 'mcp__inbox__progress'
 
 const PANE = 'inbox'
 const REPLY_ROWS = 3
@@ -1208,6 +1222,7 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
     update($, PRESENCE, p => ({
       ...p,
       isTurnRunning: p.isTurnRunning ?? false,
+      progress: p.progress ?? null,
       turnsStarted: p.turnsStarted ?? 1,
       turnsApplied: p.turnsApplied ?? 0,
     })),
@@ -2027,6 +2042,22 @@ async function pruneSubagents($: EngineInterface, before: number) {
   await update($, SUBAGENTS, list => list.filter(s => (s.state === 'running' ? !isLost(s) : s.at > before)))
 }
 
+/** `result` is the text the agent reads back. */
+async function showProgress($: EngineInterface, e: { agentId?: string }): Promise<string> {
+  const text = progressText(e as Record<string, unknown>)
+  if (text === null) return progressResult.empty
+  const agentId = e.agentId
+  if (!agentId) {
+    await update($, PRESENCE, p => ({ ...p, progress: text }))
+    return progressResult.shown(CLAUDE_CODE)
+  }
+  const isListed = (await read($, SUBAGENTS)).some(s => s.id === agentId)
+  if (!isListed) return progressResult.unlisted
+  await changeSubagent($, agentId, (s, now) => (s.progress === text ? s : { ...s, progress: text, at: now }))
+
+  return progressResult.shown(CLAUDE_CODE)
+}
+
 async function wakeForDone($: EngineInterface) {
   const owner = { id: sessionId, generation: conversation }
   const notificationId = crypto.randomUUID()
@@ -2544,7 +2575,7 @@ async function drawnState($: EngineInterface): Promise<
     $.clock.now(),
   ])
   const turns = { turnsStarted: presence.turnsStarted, turnsApplied: presence.turnsApplied }
-  const work = { isTurnRunning: presence.isTurnRunning, subagents }
+  const work = { isTurnRunning: presence.isTurnRunning, progress: presence.progress, subagents }
   const drawn = demo ?? { ledger, stop, prViews, lastActions, notes, turns, work }
 
   const isUnread = demo === null && unreadable === sessionId
@@ -2605,6 +2636,9 @@ async function initializeInbox($: EngineInterface) {
     registerInboxCommand($),
     $.tool.register({ name: 'record', description: recordText, inputSchema: RECORD_SCHEMA }).catch(refused),
     $.tool.register({ name: 'close', description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA }).catch(refused),
+    $.tool
+      .register({ name: 'progress', description: progressDescription(CLAUDE_CODE), inputSchema: PROGRESS_SCHEMA })
+      .catch(refused),
   ])
   // A pane kept across a hot reload is already drawn.
   if (toolsRefused) await redrawPane($)
@@ -2877,15 +2911,17 @@ export const register: Register = on => {
   })
 
   on('agent.spawn', async ($, e, next) => {
-    const r = await next(e)
+    const isListed = isOn && !e.parentAgentId
+    const r = await next(isListed ? { ...e, prompt: `${e.prompt}\n\n${progressRule(CLAUDE_CODE)}` } : e)
     const agentId = 'agentId' in r ? r.agentId : undefined
-    if (!isOn || e.parentAgentId || !agentId) return r
+    if (!isListed || !agentId) return r
     const now = await $.clock.now()
     const added: Subagent = {
       id: agentId,
       task: e.description || 'Subagent',
       state: 'running',
       step: null,
+      progress: null,
       result: null,
       startedAt: now,
       at: now,
@@ -2904,7 +2940,7 @@ export const register: Register = on => {
     // turn can end, since a reload can cut off its end-of-turn hook.
     const turnsStarted = (p: Presence) => (isOn ? p.turnsStarted + 1 : p.turnsStarted)
     await Promise.all([
-      update($, PRESENCE, p => ({ ...p, isTurnRunning: true, turnsStarted: turnsStarted(p) })),
+      update($, PRESENCE, p => ({ ...p, isTurnRunning: true, progress: null, turnsStarted: turnsStarted(p) })),
       isOn ? setStop($, null) : undefined,
       isOn ? read($, PRESENCE).then(p => pruneSubagents($, p.lastActiveAt)) : undefined,
     ])
@@ -2930,6 +2966,8 @@ export const register: Register = on => {
   on('tool.call', { tool: CLOSE_TOOL }, async ($, e) => ({
     result: await runTool($, recordClose, e as unknown as Record<string, unknown>),
   }))
+  on('tool.describe', { tool: PROGRESS_TOOL }, async ($, e, next) => ({ ...(await next(e)), isDeferred: false }))
+  on('tool.call', { tool: PROGRESS_TOOL }, async ($, e) => ({ result: await showProgress($, e) }))
 
   on('tool.call', async ($, e, next) => {
     if (!isOn) return next(e)
@@ -3021,7 +3059,10 @@ export const register: Register = on => {
         }))
       return r
     }
-    await Promise.all([update($, PRESENCE, p => ({ ...p, isTurnRunning: false })), closeDialogs($, null)])
+    await Promise.all([
+      update($, PRESENCE, p => ({ ...p, isTurnRunning: false, progress: null })),
+      closeDialogs($, null),
+    ])
     if (!isOn) return r
     void wakeForDone($).catch(() => undefined)
     void followNewRows($).catch(() => undefined)

@@ -734,7 +734,14 @@ function emptyState(sessionId) {
     told: TOLD_NOTHING,
     subagents: [],
     spawnedTasks: [],
-    presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: "current", isUpdating: false, isTurnRunning: false },
+    presence: {
+      turnsStarted: 0,
+      turnsApplied: 0,
+      ledgerState: "current",
+      isUpdating: false,
+      isTurnRunning: false,
+      progress: null
+    },
     pending: [],
     sent: [],
     lastActions: {},
@@ -989,6 +996,7 @@ var CODEX = {
   surface: "the Inbox tab",
   band: null,
   findingsIn: "the Findings section of the Inbox tab",
+  mapIn: "the Map section of the Inbox tab",
   intro: "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, and your findings, in the Inbox tab beside the conversation."
 };
 

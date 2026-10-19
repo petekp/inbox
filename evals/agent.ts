@@ -18,7 +18,7 @@ type Agent = 'claude' | 'codex'
 /** Patterns are case-insensitive regular expressions. */
 type Check =
   | {
-      calls: 'record' | 'close'
+      calls: 'record' | 'close' | 'progress'
       /** Matches the call's `kind`, as a whole. */
       kind?: string
       /** Matches each named argument. */
@@ -133,9 +133,9 @@ function sandbox(c: Case, agent: Agent) {
   return { dir, work, serverArgs, calls }
 }
 
-const PROBE_TOOLS = [`mcp__${PROBE}__record`, `mcp__${PROBE}__close`]
+const PROBE_TOOLS = [`mcp__${PROBE}__record`, `mcp__${PROBE}__close`, `mcp__${PROBE}__progress`]
 
-/** Throws unless the session has exactly the connected probe server and no tool besides its two. */
+/** Throws unless the session has exactly the connected probe server and no tool besides its own. */
 function assertOnlyProbe(init: Record<string, any> | undefined) {
   if (!init) throw new Error('claude printed no init event')
   const servers: { name: string; status: string }[] = init.mcp_servers ?? []
@@ -175,7 +175,7 @@ async function claudeIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome
       '--tools',
       '',
       '--allowedTools',
-      `mcp__${PROBE}__record,mcp__${PROBE}__close`,
+      PROBE_TOOLS.join(','),
       '--output-format',
       'stream-json',
       '--verbose',

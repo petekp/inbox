@@ -7,6 +7,7 @@ import type { LinksProps } from '../hooks/links-client'
 import type { RowProps } from '../hooks/row-client'
 import type { TabsProps } from '../hooks/tabs-client'
 import { demoView } from '../hooks/demo'
+import { CLAUDE_CODE, progressRule } from '../hooks/model-text'
 import { checkActions, prBlockActions, prCheckId, prThreadId, threadActions, threadSentIn } from '../hooks/pr-tab'
 import { failingChecks, waitingThreads } from '../hooks/prs'
 import { PRESS_GUARD_MS, QUEUED_AFTER_MS, SETTLED_MS, inboxView, perTurnStatus, rowKeyPlan } from '../hooks/view'
@@ -3035,7 +3036,7 @@ test('the desktop pane draws each action as one button and the tabs as one click
   expect(await pane.find({ key: 'close-pane' })).toBeUndefined()
 })
 
-test('the Map reads Working… while the main agent’s turn runs, until it ends or is interrupted, and not for a subagent’s turn', async ($, on) => {
+test('the Map reads Working…, or what the main agent said it is doing, while its turn runs, until it ends or is interrupted, and not for a subagent’s turn', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
@@ -3054,25 +3055,45 @@ test('the Map reads Working… while the main agent’s turn runs, until it ends
   expect(await pane.find(working)).toBeDefined()
   expect(await pane.find({ text: /No map yet/ })).toBeUndefined()
 
+  const r = await $.tool.call({ tool: 'mcp__inbox__progress', text: 'Reading the release notes' })
+  await clock.settle()
+  expect(r.result).toBe('Shown in the Map tab of the /inbox pane.')
+  expect(await pane.find({ text: 'Reading the release notes' })).toBeDefined()
+  expect(await pane.find(working)).toBeUndefined()
+
   await $.turn.complete({ answer: '', durationMs: 5, isAborted: true, turnId: 't1', reason: 'aborted' })
   await clock.settle()
   expect(await pane.find(working)).toBeUndefined()
+  expect(await pane.find({ text: 'Reading the release notes' })).toBeUndefined()
 })
 
-test('the Map lists each subagent the main turn started with its step, then its result until the next turn', async ($, on) => {
+test('the Map lists each subagent the main turn started with its step or its own progress, then its result until the next turn', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  on('agent.spawn', () => ({ model: 'sonnet', agentId: 'a1' }))
+  let spawned = ''
+  on('agent.spawn', ($, e) => {
+    spawned = e.prompt
+    return { model: 'sonnet', agentId: 'a1' }
+  })
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   const pane = await $.ui.mount(PANE)
   await pane.press({ key: 'tab-key-map' })
   await $.turn.start({ text: 'ship it', turnId: 't1' })
   await $.agent.spawn({ prompt: 'Find the export code.', description: 'Find the export code' } as never)
+  expect(spawned).toBe(`Find the export code.\n\n${progressRule(CLAUDE_CODE)}`)
   agents = [{ id: 'a1', status: 'running', description: 'Find the export code', type: 'general-purpose' } as AgentInfo]
   await $.tool.call({ tool: 'Read', file_path: '/repo/src/export.ts', agentId: 'a1' } as never)
   await clock.settle()
   expect(await pane.find({ text: 'Find the export code' })).toBeDefined()
   expect(await pane.find({ text: 'Reading export.ts' })).toBeDefined()
+
+  await $.tool.call({ tool: 'mcp__inbox__progress', text: 'Tracing the CSV path', agentId: 'a1' } as never)
+  await $.tool.call({ tool: 'Read', file_path: '/repo/src/csv.ts', agentId: 'a1' } as never)
+  await clock.settle()
+  expect(await pane.find({ text: 'Tracing the CSV path' })).toBeDefined()
+  expect(await pane.find({ text: 'Reading csv.ts' })).toBeUndefined()
+  const nested = await $.tool.call({ tool: 'mcp__inbox__progress', text: 'Deep in', agentId: 'a9' } as never)
+  expect(nested.result).toMatch(/^Not shown/)
 
   await $.turn.complete({
     answer: 'Found it in export.ts.\nDetails follow.',

@@ -442,12 +442,14 @@ export function demoView(now: number): DemoCopy {
     turns: { turnsStarted: 14, turnsApplied: 14 },
     work: {
       isTurnRunning: true,
+      progress: 'Wiring the pinch into the dismiss animation',
       subagents: [
         {
           id: 'sa1',
           task: 'Find where glances handle pinches',
           state: 'running',
           step: 'Reading GlanceView.swift',
+          progress: 'Tracing pinches from the gesture recognizer',
           result: null,
           startedAt: now - 2 * MIN,
           at: now - 10_000,
@@ -457,6 +459,7 @@ export function demoView(now: number): DemoCopy {
           task: 'Check the gesture tests',
           state: 'done',
           step: 'Run the gesture tests',
+          progress: null,
           result: 'All 12 gesture tests pass.',
           startedAt: now - 4 * MIN,
           at: now - MIN,

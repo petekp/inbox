@@ -57,9 +57,10 @@ stays in saved state because older versions read it. Each update sets it to
 the newest 4 milestones from DONE lines.
 
 **Subagent row**:
-A Map line for a subagent the main agent started: its task, then its latest
-step while it runs, or the first line of its final reply once it is done.
-Finished rows stay until the next main turn starts. Hosts keep them outside
+A Map line for a subagent the main agent started. It shows the task. While
+the subagent runs, the row shows what the subagent said it is doing through
+the `progress` tool, or else its latest step. Once it is done, the row shows
+the first line of its final reply. Finished rows stay until the next main turn starts. Hosts keep them outside
 the ledger, since the inbox model never reads them.
 
 **Milestone**:
@@ -71,7 +72,8 @@ no known time shows no age and sits below the timed ones.
 **Map**:
 A tab that shows a page instead of rows: the session's goal, where it stands,
 what runs and its milestones. It has no count and no presses. While the main
-agent's turn runs, its Now line reads "Working…" in place of the card's.
+agent's turn runs, its Now line replaces the card's: it reads what the agent
+last passed to the `progress` tool, or "Working…" before its first call.
 
 **New row**:
 A row a look lists for the first time since it last recorded its rows. A

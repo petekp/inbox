@@ -41,7 +41,12 @@ The latest "inbox:" text beside the user's prompt is the current state. It lists
 Close with mcp__inbox__close:
 - When the user's message answers an open item, close it first, before other work, with their answer.
 - When an item or finding is done or no longer applies, close it with a short reason, without waiting to be asked.
-The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.`;
+The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.
+
+${progressRule(host)}`;
+}
+function progressRule(host) {
+  return `On a task of several steps, call mcp__inbox__progress as you start each step, with what you are doing in at most 8 plain words, such as "Reading the gesture tests". The user sees it in ${host.mapIn} while you work. Your reply still says what you did.`;
 }
 var START_TITLE = 'inbox: where this session stands, as of the last reply. An "inbox:" text beside a later prompt replaces this.';
 var MAX_ACTIVITY = 40;
@@ -463,6 +468,7 @@ var CODEX = {
   surface: "the Inbox tab",
   band: null,
   findingsIn: "the Findings section of the Inbox tab",
+  mapIn: "the Map section of the Inbox tab",
   intro: "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, and your findings, in the Inbox tab beside the conversation."
 };
 
@@ -486,7 +492,16 @@ function noteSpawn(s, taskName) {
 }
 function startSubagent(s, agentId, now) {
   const [task = "Subagent", ...spawnedTasks] = s.spawnedTasks;
-  const started = { id: agentId, task, state: "running", step: null, result: null, startedAt: now, at: now };
+  const started = {
+    id: agentId,
+    task,
+    state: "running",
+    step: null,
+    progress: null,
+    result: null,
+    startedAt: now,
+    at: now
+  };
   return { ...s, spawnedTasks, subagents: [...s.subagents.filter((x) => x.id !== agentId), started] };
 }
 function withSubagentChange(s, agentId, change, now) {
@@ -630,7 +645,14 @@ function emptyState(sessionId) {
     told: TOLD_NOTHING,
     subagents: [],
     spawnedTasks: [],
-    presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: "current", isUpdating: false, isTurnRunning: false },
+    presence: {
+      turnsStarted: 0,
+      turnsApplied: 0,
+      ledgerState: "current",
+      isUpdating: false,
+      isTurnRunning: false,
+      progress: null
+    },
     pending: [],
     sent: [],
     lastActions: {},
@@ -941,7 +963,7 @@ async function handleHook(input, deps) {
         notes = r.notes;
         return input.agent_id ? r.state : noteHook(
           withoutSubagentsBefore(
-            { ...r.state, presence: { ...r.state.presence, isTurnRunning: true } },
+            { ...r.state, presence: { ...r.state.presence, isTurnRunning: true, progress: null } },
             s.heard.stopAt ?? 0
           ),
           "prompt",
@@ -1008,8 +1030,9 @@ async function handleHook(input, deps) {
     }
     case "SubagentStart": {
       const agentId = input.agent_id;
-      if (agentId) await updateState(dir, id, (s) => startSubagent(s, agentId, now()));
-      return null;
+      if (!agentId) return null;
+      await updateState(dir, id, (s) => startSubagent(s, agentId, now()));
+      return { hookSpecificOutput: { hookEventName: "SubagentStart", additionalContext: progressRule(CODEX) } };
     }
     case "SubagentStop": {
       const agentId = input.agent_id;
@@ -1021,7 +1044,7 @@ async function handleHook(input, deps) {
   return null;
 }
 function turnEnded(s) {
-  return { presence: { ...s.presence, isTurnRunning: false } };
+  return { presence: { ...s.presence, isTurnRunning: false, progress: null } };
 }
 function detachedUpdate(dir, env, script) {
   return (sessionId) => {

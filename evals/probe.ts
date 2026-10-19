@@ -7,7 +7,11 @@ import { CLAUDE_CODE } from '../hooks/model-text'
 import {
   CLOSE_DESCRIPTION,
   CLOSE_SCHEMA,
+  PROGRESS_SCHEMA,
   RECORD_SCHEMA,
+  progressDescription,
+  progressResult,
+  progressText,
   recordClose,
   recordDescription,
   recordItem,
@@ -23,14 +27,21 @@ let ledger = upgradeLedger({ ...EMPTY, ...state.ledger } as Ledger)
 const TOOLS = [
   { name: 'record', description: recordDescription(host), inputSchema: RECORD_SCHEMA },
   { name: 'close', description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA },
+  { name: 'progress', description: progressDescription(host), inputSchema: PROGRESS_SCHEMA },
 ]
+
+const showProgress = (h: typeof host, l: Ledger, args: Record<string, unknown>) => ({
+  ledger: l,
+  result: progressText(args) === null ? progressResult.empty : progressResult.shown(h),
+})
 
 function send(id: unknown, result: unknown) {
   process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id, result })}\n`)
 }
 
 function call(name: string, args: Record<string, unknown>): { text: string; isError: boolean } {
-  const tool = name === 'record' ? recordItem : name === 'close' ? recordClose : null
+  const tool =
+    name === 'record' ? recordItem : name === 'close' ? recordClose : name === 'progress' ? showProgress : null
   if (!tool) return { text: `Unknown tool: ${name}`, isError: true }
   const r = tool(host, ledger, args, Date.now())
   ledger = r.ledger

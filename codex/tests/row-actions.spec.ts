@@ -215,7 +215,14 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
   const state = emptyState('renderer')
   state.ledger = task().ledger
   state.heard.startAt = 1
-  state.presence = { turnsStarted: 1, turnsApplied: 1, isUpdating: false, ledgerState: 'current', isTurnRunning: false }
+  state.presence = {
+    turnsStarted: 1,
+    turnsApplied: 1,
+    isUpdating: false,
+    ledgerState: 'current',
+    isTurnRunning: false,
+    progress: null,
+  }
   document.body.innerHTML = '<div id="app"></div>'
   Object.defineProperty(window, '__inboxPage', { value: 'renderer-page', configurable: true })
   const media = window.matchMedia('(prefers-reduced-motion: reduce)')
