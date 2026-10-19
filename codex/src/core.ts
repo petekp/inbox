@@ -14,7 +14,7 @@ import type { InboxView, MapView, ReplyHolds } from '../../hooks/view'
 import { drawnPrs, itemPrSteps, linkedPrs, olderPrsText, threadSentIn } from '../../hooks/pr-tab'
 import { withArrival, withUnconfirmed } from '../../hooks/presses'
 import { prNeedsYou, prRefs } from '../../hooks/prs'
-import type { LastAction, PrView, Turns } from '../../types'
+import type { LastAction, PrView, Subagent, Turns } from '../../types'
 import { PRESS_TIMEOUT_MS, SETTLE_WINDOW_MS } from './settle'
 import type { Heard, SessionState } from './state'
 import { CODEX } from './texts'
@@ -34,6 +34,49 @@ export function startContext(s: SessionState, source: string | undefined): strin
   const parts = [source === 'resume' ? null : guidanceText(CODEX), carried].filter((x): x is string => x !== null)
 
   return parts.length > 0 ? parts.join('\n\n') : null
+}
+
+/** Codex hands a subagent's task to it encrypted, so its row reads the spawn call's task name, as "Probe note". */
+function taskLabel(taskName: string): string {
+  const words = taskName.replace(/^.*\//, '').replace(/[_-]+/g, ' ').trim()
+
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : 'Subagent'
+}
+
+/** A spawn call's task name, held until the SubagentStart it leads to, which names only the agent's id. */
+export function noteSpawn(s: SessionState, taskName: string): SessionState {
+  return { ...s, spawning: [...s.spawning, taskLabel(taskName)] }
+}
+
+export function startSubagent(s: SessionState, agentId: string, now: number): SessionState {
+  const [task = 'Subagent', ...spawning] = s.spawning
+  const started: Subagent = {
+    id: agentId,
+    task,
+    isBackground: false,
+    state: 'running',
+    step: null,
+    startedAt: now,
+    at: now,
+  }
+
+  return { ...s, spawning, subagents: [...s.subagents.filter(x => x.id !== agentId), started] }
+}
+
+export function changeSubagent(
+  s: SessionState,
+  agentId: string,
+  change: Partial<Pick<Subagent, 'state' | 'step'>>,
+  now: number,
+): SessionState {
+  if (!s.subagents.some(x => x.id === agentId)) return s
+
+  return { ...s, subagents: s.subagents.map(x => (x.id === agentId ? { ...x, ...change, at: now } : x)) }
+}
+
+/** Finished subagents leave when the main turn starts or ends; running ones stay. */
+export function settledSubagents(s: SessionState): SessionState {
+  return { ...s, subagents: s.subagents.filter(x => x.state === 'running') }
 }
 
 export function cleared(s: SessionState): SessionState {

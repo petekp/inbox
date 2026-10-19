@@ -24,7 +24,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|apply_patch|mcp__.*",
+        "matcher": "Bash|apply_patch|mcp__.*|.*spawn_agent",
         "hooks": [
           {
             "type": "command",
@@ -53,6 +53,30 @@
             "type": "command",
             "command": "\"${CODEX_MCP_NODE_PATH:-node}\" \"${PLUGIN_ROOT}/dist/hook.mjs\"",
             "statusMessage": "Inbox: noting the interrupt",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CODEX_MCP_NODE_PATH:-node}\" \"${PLUGIN_ROOT}/dist/hook.mjs\"",
+            "statusMessage": "Inbox: noting the subagent",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CODEX_MCP_NODE_PATH:-node}\" \"${PLUGIN_ROOT}/dist/hook.mjs\"",
+            "statusMessage": "Inbox: noting the subagent",
             "timeout": 3
           }
         ]

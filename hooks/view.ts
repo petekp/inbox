@@ -485,6 +485,11 @@ export function subagentStep(tool: string, input: Record<string, unknown>): stri
       return clipped('Reading', text('url').replace(/^https?:\/\//, ''))
     case 'Agent':
       return clipped('Starting', text('description'))
+    case 'apply_patch':
+      return clipped(
+        'Editing',
+        /^\*\*\* (?:Add|Update|Delete) File: (.+)$/m.exec(text('command'))?.[1]?.split('/').pop() ?? '',
+      )
   }
 
   return tool.startsWith('mcp__') ? clipLabel(`Using ${tool.split('__').pop()}`, STEP_MAX) : null

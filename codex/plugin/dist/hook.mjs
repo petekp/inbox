@@ -416,6 +416,37 @@ function isListTab(tab) {
 var ROW_TABS = TABS.filter(
   (t) => t.id === "needsYou" || t.id === "findings"
 );
+var STEP_MAX = 60;
+function subagentStep(tool, input) {
+  const text = (key) => typeof input[key] === "string" ? input[key].trim() : "";
+  const file = (key) => text(key).split("/").pop() ?? "";
+  const clipped = (prefix, value) => value ? clipLabel(`${prefix} ${value}`, STEP_MAX) : null;
+  switch (tool) {
+    case "Read":
+      return clipped("Reading", file("file_path"));
+    case "Edit":
+    case "Write":
+    case "NotebookEdit":
+      return clipped("Editing", file("file_path") || file("notebook_path"));
+    case "Grep":
+    case "Glob":
+      return clipped("Searching for", text("pattern"));
+    case "Bash":
+      return text("description") ? clipLabel(text("description"), STEP_MAX) : clipped("Running", text("command").split("\n")[0] ?? "");
+    case "WebSearch":
+      return clipped("Searching the web for", text("query"));
+    case "WebFetch":
+      return clipped("Reading", text("url").replace(/^https?:\/\//, ""));
+    case "Agent":
+      return clipped("Starting", text("description"));
+    case "apply_patch":
+      return clipped(
+        "Editing",
+        /^\*\*\* (?:Add|Update|Delete) File: (.+)$/m.exec(text("command"))?.[1]?.split("/").pop() ?? ""
+      );
+  }
+  return tool.startsWith("mcp__") ? clipLabel(`Using ${tool.split("__").pop()}`, STEP_MAX) : null;
+}
 
 // ../hooks/pr-tab.ts
 function linkedPrs(prs, refs) {
@@ -444,6 +475,33 @@ function startContext(s, source) {
   const carried = carryText(s.ledger, START_TITLE);
   const parts = [source === "resume" ? null : guidanceText(CODEX), carried].filter((x) => x !== null);
   return parts.length > 0 ? parts.join("\n\n") : null;
+}
+function taskLabel(taskName) {
+  const words2 = taskName.replace(/^.*\//, "").replace(/[_-]+/g, " ").trim();
+  return words2 ? words2.charAt(0).toUpperCase() + words2.slice(1) : "Subagent";
+}
+function noteSpawn(s, taskName) {
+  return { ...s, spawning: [...s.spawning, taskLabel(taskName)] };
+}
+function startSubagent(s, agentId, now) {
+  const [task = "Subagent", ...spawning] = s.spawning;
+  const started = {
+    id: agentId,
+    task,
+    isBackground: false,
+    state: "running",
+    step: null,
+    startedAt: now,
+    at: now
+  };
+  return { ...s, spawning, subagents: [...s.subagents.filter((x) => x.id !== agentId), started] };
+}
+function changeSubagent(s, agentId, change, now) {
+  if (!s.subagents.some((x) => x.id === agentId)) return s;
+  return { ...s, subagents: s.subagents.map((x) => x.id === agentId ? { ...x, ...change, at: now } : x) };
+}
+function settledSubagents(s) {
+  return { ...s, subagents: s.subagents.filter((x) => x.state === "running") };
 }
 function cleared(s) {
   return {
@@ -574,6 +632,7 @@ function emptyState(sessionId) {
     turn: { person: null, activity: [], press: null },
     told: TOLD_NOTHING,
     subagents: [],
+    spawning: [],
     presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: "current", isUpdating: false, isTurnRunning: false },
     pending: [],
     sent: [],
@@ -866,7 +925,11 @@ async function handleHook(input, deps) {
         dir,
         id,
         (s2) => noteHook(
-          withCli({ ...input.source === "clear" ? cleared(s2) : s2, root, ...endsTurn ? turnEnded(s2) : {} }),
+          withCli({
+            ...input.source === "clear" ? cleared(s2) : s2,
+            root,
+            ...endsTurn ? { ...turnEnded(s2), subagents: [], spawning: [] } : {}
+          }),
           "start",
           now()
         )
@@ -880,7 +943,7 @@ async function handleHook(input, deps) {
         const r = notePrompt(withCli(s), input.prompt ?? "", now());
         notes = r.notes;
         return input.agent_id ? r.state : noteHook(
-          { ...r.state, presence: { ...r.state.presence, isTurnRunning: true } },
+          settledSubagents({ ...r.state, presence: { ...r.state.presence, isTurnRunning: true } }),
           "prompt",
           now(),
           input.turn_id
@@ -892,6 +955,14 @@ async function handleHook(input, deps) {
       const tool = input.tool_name ?? "";
       const toolInput = input.tool_input ?? {};
       const command = typeof toolInput.command === "string" ? toolInput.command : "";
+      const agentId = input.agent_id;
+      const step = agentId ? subagentStep(tool, toolInput) : null;
+      if (agentId && step) await updateState(dir, id, (s) => changeSubagent(s, agentId, { step }, now()));
+      if (!agentId && /spawn_agent$/.test(tool) && typeof toolInput.task_name === "string") {
+        const taskName = toolInput.task_name;
+        await updateState(dir, id, (s) => noteSpawn(s, taskName));
+        return null;
+      }
       if (tool === "apply_patch") {
         const files = patchFiles(command).map((f) => resolve2(input.cwd || "/", f));
         await updateState(dir, id, (s) => files.reduce((x, f) => noteActivity(x, `edited ${f}`), s));
@@ -910,7 +981,7 @@ async function handleHook(input, deps) {
         id,
         (s) => noteHook(
           endTurn(
-            lines.reduce((x, line) => noteActivity(x, line), withCli({ ...s, ...turnEnded(s) })),
+            lines.reduce((x, line) => noteActivity(x, line), withCli(settledSubagents({ ...s, ...turnEnded(s) }))),
             reply,
             now()
           ),
@@ -922,7 +993,21 @@ async function handleHook(input, deps) {
       return null;
     }
     case "Interrupt": {
-      await updateState(dir, id, (s) => ({ ...s, ...turnEnded(s) }));
+      await updateState(dir, id, (s) => ({
+        ...s,
+        ...turnEnded(s),
+        subagents: s.subagents.map((x) => x.state === "running" ? { ...x, state: "stopped", at: now() } : x)
+      }));
+      return null;
+    }
+    case "SubagentStart": {
+      const agentId = input.agent_id;
+      if (agentId) await updateState(dir, id, (s) => startSubagent(s, agentId, now()));
+      return null;
+    }
+    case "SubagentStop": {
+      const agentId = input.agent_id;
+      if (agentId) await updateState(dir, id, (s) => changeSubagent(s, agentId, { state: "done" }, now()));
       return null;
     }
   }

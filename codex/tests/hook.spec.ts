@@ -115,6 +115,36 @@ test('the Map reads Working… from a main-agent prompt until Stop or Interrupt,
   assert.equal(await now(), null)
 })
 
+test('the Map lists a subagent from its spawn call’s task name, with its last step, until the main turn ends', async () => {
+  const dir = tempDir()
+  const deps = hookDeps(dir, () => 1000)
+  const rows = async () => viewOf(await readState(dir, 's1'), 1000).map.subagents?.rows ?? []
+
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
+  await handleHook(input('UserPromptSubmit', { prompt: 'Ship it', turn_id: 't1' }), deps)
+  await handleHook(
+    input('PreToolUse', { tool_name: 'collaborationspawn_agent', tool_input: { task_name: 'find_export_code' } }),
+    deps,
+  )
+  await handleHook(input('SubagentStart', { agent_id: 'a1' }), deps)
+  await handleHook(
+    input('PreToolUse', { tool_name: 'Bash', tool_input: { command: 'rg export src' }, agent_id: 'a1' }),
+    deps,
+  )
+  assert.deepEqual(
+    (await rows()).map(r => [r.mark, r.text, r.detail]),
+    [['•', 'Find export code', 'Running rg export src']],
+  )
+
+  await handleHook(input('SubagentStop', { agent_id: 'a1', last_assistant_message: 'Found it.' }), deps)
+  assert.deepEqual(
+    (await rows()).map(r => r.mark),
+    ['✓'],
+  )
+  await handleHook(input('Stop', { last_assistant_message: '', turn_id: 't1' }), deps)
+  assert.deepEqual(await rows(), [])
+})
+
 test('each hook records that it ran, with the turn UserPromptSubmit saw, and the tab reads the session as heard', async () => {
   const dir = tempDir()
   let clock = 1000

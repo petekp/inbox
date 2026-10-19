@@ -733,6 +733,7 @@ function emptyState(sessionId) {
     turn: { person: null, activity: [], press: null },
     told: TOLD_NOTHING,
     subagents: [],
+    spawning: [],
     presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: "current", isUpdating: false, isTurnRunning: false },
     pending: [],
     sent: [],

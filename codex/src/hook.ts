@@ -2,7 +2,21 @@ import { spawn } from 'node:child_process'
 import { resolve } from 'node:path'
 
 import { dialogActivity } from '../../hooks/model-text'
-import { activityOf, cleared, endTurn, noteActivity, noteHook, notePrompt, patchFiles, startContext } from './core'
+import { subagentStep } from '../../hooks/view'
+import {
+  activityOf,
+  changeSubagent,
+  cleared,
+  endTurn,
+  noteActivity,
+  noteHook,
+  notePrompt,
+  noteSpawn,
+  patchFiles,
+  settledSubagents,
+  startContext,
+  startSubagent,
+} from './core'
 import { updateState } from './state'
 import type { SessionState } from './state'
 import { dialogsInTurn, isNonInteractiveRun } from './transcript'
@@ -19,6 +33,7 @@ export type HookInput = {
   prompt?: string
   tool_name?: string
   tool_input?: Record<string, unknown>
+  tool_response?: unknown
   last_assistant_message?: string | null
 }
 
@@ -44,7 +59,11 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const endsTurn = input.source !== 'compact'
       const s = await updateState(dir, id, s =>
         noteHook(
-          withCli({ ...(input.source === 'clear' ? cleared(s) : s), root, ...(endsTurn ? turnEnded(s) : {}) }),
+          withCli({
+            ...(input.source === 'clear' ? cleared(s) : s),
+            root,
+            ...(endsTurn ? { ...turnEnded(s), subagents: [], spawning: [] } : {}),
+          }),
           'start',
           now(),
         ),
@@ -63,7 +82,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
         return input.agent_id
           ? r.state
           : noteHook(
-              { ...r.state, presence: { ...r.state.presence, isTurnRunning: true } },
+              settledSubagents({ ...r.state, presence: { ...r.state.presence, isTurnRunning: true } }),
               'prompt',
               now(),
               input.turn_id,
@@ -78,6 +97,15 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const tool = input.tool_name ?? ''
       const toolInput = input.tool_input ?? {}
       const command = typeof toolInput.command === 'string' ? toolInput.command : ''
+      const agentId = input.agent_id
+      const step = agentId ? subagentStep(tool, toolInput) : null
+      if (agentId && step) await updateState(dir, id, s => changeSubagent(s, agentId, { step }, now()))
+      if (!agentId && /spawn_agent$/.test(tool) && typeof toolInput.task_name === 'string') {
+        const taskName = toolInput.task_name
+        await updateState(dir, id, s => noteSpawn(s, taskName))
+
+        return null
+      }
       if (tool === 'apply_patch') {
         const files = patchFiles(command).map(f => resolve(input.cwd || '/', f))
         await updateState(dir, id, s => files.reduce((x, f) => noteActivity(x, `edited ${f}`), s))
@@ -96,7 +124,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const written = await updateState(dir, id, s =>
         noteHook(
           endTurn(
-            lines.reduce((x, line) => noteActivity(x, line), withCli({ ...s, ...turnEnded(s) })),
+            lines.reduce((x, line) => noteActivity(x, line), withCli(settledSubagents({ ...s, ...turnEnded(s) }))),
             reply,
             now(),
           ),
@@ -109,7 +137,23 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       return null
     }
     case 'Interrupt': {
-      await updateState(dir, id, s => ({ ...s, ...turnEnded(s) }))
+      await updateState(dir, id, s => ({
+        ...s,
+        ...turnEnded(s),
+        subagents: s.subagents.map(x => (x.state === 'running' ? { ...x, state: 'stopped' as const, at: now() } : x)),
+      }))
+
+      return null
+    }
+    case 'SubagentStart': {
+      const agentId = input.agent_id
+      if (agentId) await updateState(dir, id, s => startSubagent(s, agentId, now()))
+
+      return null
+    }
+    case 'SubagentStop': {
+      const agentId = input.agent_id
+      if (agentId) await updateState(dir, id, s => changeSubagent(s, agentId, { state: 'done' }, now()))
 
       return null
     }
