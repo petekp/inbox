@@ -2141,7 +2141,7 @@
         "results": 2
       },
       {
-        "result": "encoder"
+        "result": "encoder|quot|escap"
       },
       {
         "result": "PR.*48"
@@ -2326,7 +2326,7 @@
         "results": 2
       },
       {
-        "result": "encoder"
+        "result": "encoder|quot|escap"
       },
       {
         "result": "date|range"
