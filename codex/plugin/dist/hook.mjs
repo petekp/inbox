@@ -12,6 +12,9 @@ import { resolve as resolve2 } from "node:path";
 function clip(text, max) {
   return text.length <= max ? text : text.slice(0, max) + " \u2026[cut]";
 }
+function clipLabel(text, max) {
+  return text.length > max ? `${text.slice(0, max - 1)}\u2026` : text;
+}
 
 // ../hooks/model-text.ts
 var NL = "\n";
@@ -311,11 +314,8 @@ function howFromOutcome(outcome) {
   return "update";
 }
 var MILESTONE_TEXT_CHARS = 120;
-function clipTo(text, max) {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}\u2026`;
-}
 function doneMilestone(text, at) {
-  return { source: "done", text: clipTo(text, MILESTONE_TEXT_CHARS), detail: null, ref: null, at };
+  return { source: "done", text: clipLabel(text, MILESTONE_TEXT_CHARS), detail: null, ref: null, at };
 }
 var CLOSED_BY_CLAUDE = "closed by Claude";
 function pruneClosed(ledger, keep) {

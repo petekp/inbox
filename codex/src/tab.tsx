@@ -4,10 +4,10 @@ import type { ComponentChildren, JSX } from 'preact'
 import type { IconName } from './row-actions'
 
 import { closedState } from '../../hooks/ledger'
-import { ago } from '../../hooks/text'
+import { ago, clipLabel } from '../../hooks/text'
 import type { ClosedState } from '../../hooks/ledger'
 import { CLOSED_MARKS } from '../../hooks/view'
-import { capitalized, clipLabel, noteText, pendingResult, stepEffects } from '../../hooks/presses'
+import { capitalized, noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
 import {
   allRows,
@@ -918,8 +918,9 @@ const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as
 function stepLists(v: View): { lists: Lists; changed: Set<string> } {
   const now = Date.now()
   const lists = listsOf(v, shownSettled())
-  const rows = tab === 'prs' || tab === 'map' ? [] : lists.byTab[tab]
-  const openId = tab === 'map' ? undefined : rows[selectedIndex(rows, tab, v)]?.id
+  const t = listedTab()
+  const rows = t === null || t === 'prs' ? [] : lists.byTab[t]
+  const openId = t === null ? undefined : rows[selectedIndex(rows, t, v)]?.id
   const changed = new Set<string>()
   const kept = new Set<string>()
   for (const group of (Object.keys(LIST_OF) as Group[]).filter(g => TAB_OF[g] === tab)) {

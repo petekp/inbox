@@ -34,6 +34,9 @@ function numberBlocks(reply) {
   let n = 0;
   return reply.replace(FENCE, (block) => `[block ${n += 1}]${NL}${block}`);
 }
+function clipLabel(text, max) {
+  return text.length > max ? `${text.slice(0, max - 1)}\u2026` : text;
+}
 function clipMiddle(text, max, head) {
   if (text.length <= max) return text;
   return `${text.slice(0, head)}${NL}\u2026[cut]${NL}${text.slice(text.length - (max - head))}`;
@@ -265,11 +268,8 @@ var MILESTONE_TEXT_CHARS = 120;
 var MILESTONE_DETAIL_CHARS = 200;
 var TODO_OPTIONS = ["Proceed", "Not yet"];
 var BARE_YES = /^\s*(?:yes|yep|yeah|y|ok|okay|sure|go|go ahead|proceed|do it|continue|approved?|sounds good|sgtm|lgtm|all recommended|yes to all|ship it)\s*[.!]*\s*$/i;
-function clipTo(text, max) {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}\u2026`;
-}
 function doneMilestone(text, at) {
-  return { source: "done", text: clipTo(text, MILESTONE_TEXT_CHARS), detail: null, ref: null, at };
+  return { source: "done", text: clipLabel(text, MILESTONE_TEXT_CHARS), detail: null, ref: null, at };
 }
 function isTodoQuestion(item) {
   return item.options.length === TODO_OPTIONS.length && item.options.every((o, n) => o === TODO_OPTIONS[n]);
@@ -280,8 +280,8 @@ function answeredMilestone(item, answer, at) {
     return null;
   return {
     source: "answered",
-    text: clipTo(item.ask, MILESTONE_TEXT_CHARS),
-    detail: clipTo(text, MILESTONE_DETAIL_CHARS),
+    text: clipLabel(item.ask, MILESTONE_TEXT_CHARS),
+    detail: clipLabel(text, MILESTONE_DETAIL_CHARS),
     ref: item.id,
     at
   };
@@ -292,21 +292,25 @@ function foldedText(text) {
 function nextMilestoneId(milestones) {
   return `m${Math.max(0, ...milestones.map((m) => idNumber(m.id) || 0)) + 1}`;
 }
-function addMilestone(ledger, m) {
-  const isRepeat = ledger.milestones.some(
-    (x) => m.ref !== null ? x.source === m.source && x.ref === m.ref : m.source === "done" && foldedText(x.text) === foldedText(m.text)
+function addMilestone(milestones, m) {
+  const folded = foldedText(m.text);
+  const isRepeat = milestones.some(
+    (x) => m.ref !== null ? x.source === m.source && x.ref === m.ref : m.source === "done" && foldedText(x.text) === folded
   );
-  if (isRepeat) return ledger;
-  const all = [...ledger.milestones, { ...m, id: nextMilestoneId(ledger.milestones) }];
-  if (all.length <= MAX_MILESTONES) return { ...ledger, milestones: all };
+  if (isRepeat) return milestones;
+  const all = [...milestones, { ...m, id: nextMilestoneId(milestones) }];
+  if (all.length <= MAX_MILESTONES) return all;
   const oldest = all.reduce((a, b) => (a.at ?? -Infinity) <= (b.at ?? -Infinity) ? a : b);
-  return { ...ledger, milestones: all.filter((x) => x !== oldest) };
+  return all.filter((x) => x !== oldest);
+}
+function addMilestones(milestones, added) {
+  return added.reduce(addMilestone, milestones);
 }
 function removeMilestone(ledger, ref) {
   return ledger.milestones.some((m) => m.ref === ref) ? { ...ledger, milestones: ledger.milestones.filter((m) => m.ref !== ref) } : ledger;
 }
-function doneTexts(ledger) {
-  return ledger.milestones.filter((m) => m.source === "done").slice(-CARD_DONE).map((m) => m.text);
+function doneTexts(milestones) {
+  return milestones.filter((m) => m.source === "done").slice(-CARD_DONE).map((m) => m.text);
 }
 function isTakenUp(work, reply) {
   const key = [...keyWords(work)];
@@ -443,13 +447,6 @@ function applyExchangeUpdate(ledger, update, exchange, now, promptAt) {
   );
 }
 function applyUpdate(ledger, u, now, turn, promptAt = now, isCatchUp = false) {
-  const prev = ledger.card;
-  const card = {
-    goal: u.card.goal || prev?.goal || "",
-    done: prev?.done ?? [],
-    now: u.card.now || prev?.now || "",
-    running: u.card.running
-  };
   const stillAsked = new Set(u.updated.filter((c) => c.options || c.rec).map((c) => c.id));
   const closing = new Map(u.closed.filter((c) => !stillAsked.has(c.id)).map((c) => [c.id, c.outcome]));
   const closed = [...ledger.closed];
@@ -516,8 +513,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now, isCatchUp = false) {
   const answers = ledger.items.flatMap((i) => {
     const outcome = closing.get(i.id);
     const isAnswer = outcome !== void 0 && !isOvertaken(outcome) && !/^done\b/i.test(outcome);
-    const m = isAnswer ? answeredMilestone(i, outcome, now) : null;
-    return m ? [m] : [];
+    return isAnswer ? answeredMilestone(i, outcome, now) ?? [] : [];
   });
   const fixes = ledger.findings.flatMap((f) => {
     const outcome = closing.get(f.id);
@@ -525,8 +521,8 @@ function applyUpdate(ledger, u, now, turn, promptAt = now, isCatchUp = false) {
     return [
       {
         source: "fixed",
-        text: clipTo(f.title, MILESTONE_TEXT_CHARS),
-        detail: outcome.trim() === "" ? null : clipTo(outcome.trim(), MILESTONE_DETAIL_CHARS),
+        text: clipLabel(f.title, MILESTONE_TEXT_CHARS),
+        detail: outcome.trim() === "" ? null : clipLabel(outcome.trim(), MILESTONE_DETAIL_CHARS),
         ref: f.id,
         at: now
       }
@@ -534,18 +530,26 @@ function applyUpdate(ledger, u, now, turn, promptAt = now, isCatchUp = false) {
   });
   const results = u.done.slice(isCatchUp ? -DONE_PER_CATCH_UP : -DONE_PER_UPDATE).map((text) => doneMilestone(text, now));
   const written = [...answers, ...fixes, ...results].map((m, n) => ({ ...m, at: isCatchUp ? null : now + n }));
-  const withMilestones = written.reduce((l, m) => addMilestone(l, m), {
-    ...ledger,
-    card,
-    items: kept,
-    closed,
-    findings,
-    closedFindings,
-    nextId,
-    batchTurn: added > 0 ? turn : ledger.batchTurn
-  });
+  const milestones = addMilestones(ledger.milestones, written);
+  const prev = ledger.card;
+  const card = {
+    goal: u.card.goal || prev?.goal || "",
+    done: doneTexts(milestones),
+    now: u.card.now || prev?.now || "",
+    running: u.card.running
+  };
   return reopenAskedFindings(
-    { ...withMilestones, card: { ...card, done: doneTexts(withMilestones) } },
+    {
+      ...ledger,
+      card,
+      milestones,
+      items: kept,
+      closed,
+      findings,
+      closedFindings,
+      nextId,
+      batchTurn: added > 0 ? turn : ledger.batchTurn
+    },
     closed.slice(ledger.closed.length)
   );
 }

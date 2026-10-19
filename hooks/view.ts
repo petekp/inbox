@@ -15,7 +15,7 @@ import type {
   Turns,
 } from '../types'
 import { isLapsed, reopenFinding, reopenItem } from './ledger'
-import { ago } from './text'
+import { ago, clipLabel } from './text'
 import { questionNumbers } from './model-text'
 import type { ClosedState } from './ledger'
 import {
@@ -23,7 +23,6 @@ import {
   baseName,
   stepIconKind,
   capitalized,
-  clipLabel,
   isAwaitingReply,
   isFixSent,
   ISSUE_LABEL,
@@ -409,10 +408,10 @@ export const ROW_TABS = TABS.filter(
   (t): t is (typeof TABS)[number] & { id: 'needsYou' | 'findings' } => t.id === 'needsYou' || t.id === 'findings',
 )
 
-export type MapTone = 'done' | 'needsYou' | 'findings'
+type MapTone = 'done' | 'needsYou' | 'findings'
 export type MapRow = { id: string; tone: MapTone; text: string; detail: string | null; age: string }
-export type MapSection = { title: string; count: number; rows: MapRow[] }
-export type MapRunning = { id: string; text: string }
+type MapSection = { title: string; count: number; rows: MapRow[] }
+type MapRunning = { id: string; text: string }
 
 /** What the Map tab shows. Adapters draw it as it is. */
 export type MapView = {
@@ -427,7 +426,7 @@ export type MapView = {
   empty: { title: string; hint: string }
 }
 
-export const MAP_SHOWN = 30
+const MAP_SHOWN = 30
 const MAP_TONES: Record<Milestone['source'], MapTone> = {
   done: 'done',
   answered: 'needsYou',

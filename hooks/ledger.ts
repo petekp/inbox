@@ -1,6 +1,6 @@
 import type { Card, Closed, ClosedFinding, Finding, Help, Item, Ledger, Milestone } from '../types'
 import type { Host } from './model-text'
-import { codeBlocks } from './text'
+import { clipLabel, codeBlocks } from './text'
 
 /** How many saved sessions each host keeps; the newest by save time. */
 export const KEPT_SESSIONS = 40
@@ -357,14 +357,10 @@ const TODO_OPTIONS = ['Proceed', 'Not yet']
 const BARE_YES =
   /^\s*(?:yes|yep|yeah|y|ok|okay|sure|go|go ahead|proceed|do it|continue|approved?|sounds good|sgtm|lgtm|all recommended|yes to all|ship it)\s*[.!]*\s*$/i
 
-function clipTo(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}…`
-}
-
 type NewMilestone = Omit<Milestone, 'id'>
 
-export function doneMilestone(text: string, at: number | null): NewMilestone {
-  return { source: 'done', text: clipTo(text, MILESTONE_TEXT_CHARS), detail: null, ref: null, at }
+function doneMilestone(text: string, at: number | null): NewMilestone {
+  return { source: 'done', text: clipLabel(text, MILESTONE_TEXT_CHARS), detail: null, ref: null, at }
 }
 
 function isTodoQuestion(item: Pick<Item, 'options'>): boolean {
@@ -379,8 +375,8 @@ function answeredMilestone(item: Item, answer: string, at: number): NewMilestone
 
   return {
     source: 'answered',
-    text: clipTo(item.ask, MILESTONE_TEXT_CHARS),
-    detail: clipTo(text, MILESTONE_DETAIL_CHARS),
+    text: clipLabel(item.ask, MILESTONE_TEXT_CHARS),
+    detail: clipLabel(text, MILESTONE_DETAIL_CHARS),
     ref: item.id,
     at,
   }
@@ -395,33 +391,36 @@ function nextMilestoneId(milestones: Milestone[]): string {
 }
 
 /**
- * Adds a milestone unless the ledger already has it: an event milestone by its source and ref, a done milestone by
+ * Adds a milestone unless the list already has it: an event milestone by its source and ref, a done milestone by
  * its text, ignoring case, punctuation and spacing. Over the cap, the oldest goes: one with no time first.
  */
-export function addMilestone(ledger: Ledger, m: NewMilestone): Ledger {
-  const isRepeat = ledger.milestones.some(x =>
-    m.ref !== null
-      ? x.source === m.source && x.ref === m.ref
-      : m.source === 'done' && foldedText(x.text) === foldedText(m.text),
+function addMilestone(milestones: Milestone[], m: NewMilestone): Milestone[] {
+  const folded = foldedText(m.text)
+  const isRepeat = milestones.some(x =>
+    m.ref !== null ? x.source === m.source && x.ref === m.ref : m.source === 'done' && foldedText(x.text) === folded,
   )
-  if (isRepeat) return ledger
-  const all = [...ledger.milestones, { ...m, id: nextMilestoneId(ledger.milestones) }]
-  if (all.length <= MAX_MILESTONES) return { ...ledger, milestones: all }
+  if (isRepeat) return milestones
+  const all = [...milestones, { ...m, id: nextMilestoneId(milestones) }]
+  if (all.length <= MAX_MILESTONES) return all
   const oldest = all.reduce((a, b) => ((a.at ?? -Infinity) <= (b.at ?? -Infinity) ? a : b))
 
-  return { ...ledger, milestones: all.filter(x => x !== oldest) }
+  return all.filter(x => x !== oldest)
+}
+
+function addMilestones(milestones: Milestone[], added: NewMilestone[]): Milestone[] {
+  return added.reduce(addMilestone, milestones)
 }
 
 /** The one remover, for a result its owner undid: an answered item or a fixed finding that reopens. */
-export function removeMilestone(ledger: Ledger, ref: string): Ledger {
+function removeMilestone(ledger: Ledger, ref: string): Ledger {
   return ledger.milestones.some(m => m.ref === ref)
     ? { ...ledger, milestones: ledger.milestones.filter(m => m.ref !== ref) }
     : ledger
 }
 
 /** The newest results the model wrote, oldest first: the card's done list, which older versions read. */
-export function doneTexts(ledger: Pick<Ledger, 'milestones'>): string[] {
-  return ledger.milestones
+function doneTexts(milestones: Milestone[]): string[] {
+  return milestones
     .filter(m => m.source === 'done')
     .slice(-CARD_DONE)
     .map(m => m.text)
@@ -538,14 +537,17 @@ export type Closing = Pick<Closed, 'how' | 'outcome'>
 export function closeItem(ledger: Ledger, id: string, closing: Closing, now: number): Ledger {
   const items = ledger.items.filter(i => i.id === id)
   const records = items.map(i => closedRecord(i, closing, now))
-  const answers = closing.how === 'answered' ? items.map(i => answeredMilestone(i, closing.outcome, now)) : []
-  const closedLedger = answers.reduce<Ledger>((l, m) => (m ? addMilestone(l, m) : l), {
-    ...ledger,
-    items: ledger.items.filter(i => i.id !== id),
-    closed: [...ledger.closed, ...records],
-  })
+  const answers = closing.how === 'answered' ? items.flatMap(i => answeredMilestone(i, closing.outcome, now) ?? []) : []
 
-  return reopenAskedFindings(closedLedger, records)
+  return reopenAskedFindings(
+    {
+      ...ledger,
+      milestones: addMilestones(ledger.milestones, answers),
+      items: ledger.items.filter(i => i.id !== id),
+      closed: [...ledger.closed, ...records],
+    },
+    records,
+  )
 }
 
 /** `askedAs` is the id of the item that replaces the finding, kept on its close record. */
@@ -692,13 +694,6 @@ export function applyUpdate(
   promptAt = now,
   isCatchUp = false,
 ): Ledger {
-  const prev = ledger.card
-  const card: Card = {
-    goal: u.card.goal || prev?.goal || '',
-    done: prev?.done ?? [],
-    now: u.card.now || prev?.now || '',
-    running: u.card.running,
-  }
   const stillAsked = new Set(u.updated.filter(c => c.options || c.rec).map(c => c.id))
   const closing = new Map(u.closed.filter(c => !stillAsked.has(c.id)).map(c => [c.id, c.outcome]))
   const closed = [...ledger.closed]
@@ -773,9 +768,8 @@ export function applyUpdate(
   const answers = ledger.items.flatMap(i => {
     const outcome = closing.get(i.id)
     const isAnswer = outcome !== undefined && !isOvertaken(outcome) && !/^done\b/i.test(outcome)
-    const m = isAnswer ? answeredMilestone(i, outcome, now) : null
 
-    return m ? [m] : []
+    return isAnswer ? (answeredMilestone(i, outcome, now) ?? []) : []
   })
   const fixes = ledger.findings.flatMap((f): NewMilestone[] => {
     const outcome = closing.get(f.id)
@@ -784,8 +778,8 @@ export function applyUpdate(
     return [
       {
         source: 'fixed',
-        text: clipTo(f.title, MILESTONE_TEXT_CHARS),
-        detail: outcome.trim() === '' ? null : clipTo(outcome.trim(), MILESTONE_DETAIL_CHARS),
+        text: clipLabel(f.title, MILESTONE_TEXT_CHARS),
+        detail: outcome.trim() === '' ? null : clipLabel(outcome.trim(), MILESTONE_DETAIL_CHARS),
         ref: f.id,
         at: now,
       },
@@ -795,19 +789,27 @@ export function applyUpdate(
   // Each later line gets a later time, so one update's lines read newest first. A catch-up covers past turns,
   // so none of its lines has a known time.
   const written = [...answers, ...fixes, ...results].map((m, n) => ({ ...m, at: isCatchUp ? null : now + n }))
-  const withMilestones = written.reduce<Ledger>((l, m) => addMilestone(l, m), {
-    ...ledger,
-    card,
-    items: kept,
-    closed,
-    findings,
-    closedFindings,
-    nextId,
-    batchTurn: added > 0 ? turn : ledger.batchTurn,
-  })
+  const milestones = addMilestones(ledger.milestones, written)
+  const prev = ledger.card
+  const card: Card = {
+    goal: u.card.goal || prev?.goal || '',
+    done: doneTexts(milestones),
+    now: u.card.now || prev?.now || '',
+    running: u.card.running,
+  }
 
   return reopenAskedFindings(
-    { ...withMilestones, card: { ...card, done: doneTexts(withMilestones) } },
+    {
+      ...ledger,
+      card,
+      milestones,
+      items: kept,
+      closed,
+      findings,
+      closedFindings,
+      nextId,
+      batchTurn: added > 0 ? turn : ledger.batchTurn,
+    },
     closed.slice(ledger.closed.length),
   )
 }

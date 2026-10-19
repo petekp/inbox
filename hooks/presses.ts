@@ -2,10 +2,7 @@ import type { Closed, Delivery, Finding, Help, Item, LastAction, Ledger, LocalRe
 import { closeFinding, closeItem, reopenFinding, reopenItem } from './ledger'
 import type { Press } from './ledger'
 import { namedPrs, parseRef } from './prs'
-
-export function clipLabel(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text
-}
+import { clipLabel } from './text'
 
 export function baseName(path: string): string {
   return path.replace(/\/+$/, '').split('/').pop() ?? path

@@ -115,12 +115,11 @@ import {
   TURN_BOX_TOOL,
   turnBoxText,
 } from './claude'
-import { ago } from './text'
+import { ago, clipLabel } from './text'
 import {
   applyPress,
   baseName,
   capitalized,
-  clipLabel,
   demoRecord,
   demoTurns,
   doneWake,
@@ -4242,14 +4241,10 @@ export const register: Register = on => {
         </Text>
       ) : null,
     ]
-    const terminalTabsWidth = TABS.reduce((sum, t) => sum + tabText(t.id, t.label).length + 2 * TAB_PAD.length + 1, 1)
     const labelsWidth = TABS.reduce((sum, t) => sum + tabText(t.id, t.label).length, 0)
     const tabsFit = (r: { pad: string; gap: number; right: number }) =>
       labelsWidth + 2 * r.pad.length * TABS.length + r.gap * (TABS.length - 1) <= e.props.bodyColumns - 1 - r.right
-    const framedTabs =
-      terminalTabsWidth <= e.props.bodyColumns
-        ? FRAMED_TAB_LAYOUTS[0]!
-        : (FRAMED_TAB_LAYOUTS.slice(1).find(tabsFit) ?? FRAMED_TAB_LAYOUTS.at(-1)!)
+    const framedTabs = FRAMED_TAB_LAYOUTS.find(tabsFit) ?? FRAMED_TAB_LAYOUTS.at(-1)!
     const { pad } = framedTabs
     const inlineTabGap = [3, 2].find(gap => labelsWidth + gap * (TABS.length - 1) <= e.props.bodyColumns - 3) ?? 1
     const hasTabLine = !isInline && look !== 'desktop'
@@ -5078,25 +5073,21 @@ export const register: Register = on => {
         sections([...(prState.isGhMissing ? [ghMissingNotice()] : []), ...prGroups.map(prBlock), ...olderPrs()], 2)
       )
 
-    const map = mapView(ledger, now, CLAUDE_CODE.agent)
-    const mapTitleLine = (text: string, key: string, isBold: boolean) =>
-      look === 'desktop' ? (
-        desktopFrame({
-          key,
-          padY: 0,
-          children: (
-            <Text wrap="wrap" bold={isBold} {...(isBold ? {} : { color: pal.muted })}>
-              {text}
-            </Text>
-          ),
-        })
+    const mapTitleLine = (text: string, key: string, isBold: boolean) => {
+      const line = (
+        <Text wrap="wrap" bold={isBold} {...(isBold ? {} : { color: pal.muted })}>
+          {text}
+        </Text>
+      )
+
+      return look === 'desktop' ? (
+        desktopFrame({ key, padY: 0, children: line })
       ) : (
         <Box key={key} paddingLeft={TREE_LINE_AT}>
-          <Text wrap="wrap" bold={isBold} {...(isBold ? {} : { color: pal.muted })}>
-            {text}
-          </Text>
+          {line}
         </Box>
       )
+    }
     const mapTextRow = (id: string, text: string, pos: TreePos) =>
       look === 'desktop'
         ? desktopFrame({
@@ -5107,43 +5098,46 @@ export const register: Register = on => {
             children: <Text wrap="wrap">{text}</Text>,
           })
         : treeRow(pos, null, <Text wrap="wrap">{text}</Text>, `map-${id}`, 0, markColumns.textAt)
-    const milestoneRow = (m: MapRow, pos: TreePos) =>
-      look === 'desktop'
+    const milestoneRow = (m: MapRow, pos: TreePos) => {
+      const mark = <Text color={pal.mark[m.tone]}>✓</Text>
+      const age = <Text color={pal.age}>{m.age}</Text>
+      const lines = [
+        <Text key="text" wrap="wrap">
+          {m.text}
+        </Text>,
+        m.detail ? (
+          <Text key="detail" wrap="wrap" color={pal.muted}>
+            {m.detail}
+          </Text>
+        ) : null,
+      ]
+
+      return look === 'desktop'
         ? desktopFrame({
             key: `map-${m.id}`,
             indent: DESKTOP_MARK_CELLS,
             isMarkHung: false,
             padY: space.rowPad / 2,
-            mark: <Text color={pal.mark[m.tone]}>✓</Text>,
-            side: <Text color={pal.age}>{m.age}</Text>,
-            children: [
-              <Text wrap="wrap">{m.text}</Text>,
-              m.detail ? (
-                <Text wrap="wrap" color={pal.muted}>
-                  {m.detail}
-                </Text>
-              ) : null,
-            ],
+            mark,
+            side: age,
+            children: lines,
           })
         : treeRow(
             pos,
-            <Text color={pal.mark[m.tone]}>✓</Text>,
+            mark,
             <Box flexDirection="row">
               <Box flexDirection="column" flexGrow={1} flexShrink={1}>
-                <Text wrap="wrap">{m.text}</Text>
-                {m.detail ? (
-                  <Text wrap="wrap" color={pal.muted}>
-                    {m.detail}
-                  </Text>
-                ) : null}
+                {lines}
               </Box>
               <Box width={TERMINAL_SIDE_CELLS} flexShrink={0} justifyContent="flex-end" paddingRight={1}>
-                <Text color={pal.age}>{m.age}</Text>
+                {age}
               </Box>
             </Box>,
             `map-${m.id}`,
           )
+    }
     const mapPage = () => {
+      const map = mapView(ledger, now, CLAUDE_CODE.agent)
       if (map.isEmpty)
         return (
           <Box flexDirection="column" flexGrow={1}>
