@@ -9,8 +9,8 @@ import {
   START_TITLE,
   toolActivity,
 } from '../../hooks/model-text'
-import { inboxView, NO_HOLDS, perTurnStatus } from '../../hooks/view'
-import type { InboxView, ReplyHolds } from '../../hooks/view'
+import { inboxView, mapView, NO_HOLDS, perTurnStatus } from '../../hooks/view'
+import type { InboxView, MapView, ReplyHolds } from '../../hooks/view'
 import { drawnPrs, itemPrSteps, linkedPrs, olderPrsText, threadSentIn } from '../../hooks/pr-tab'
 import { withArrival, withUnconfirmed } from '../../hooks/presses'
 import { prNeedsYou, prRefs } from '../../hooks/prs'
@@ -216,6 +216,7 @@ export type View = InboxView & {
   /** The turn counts each row's feedback reads, as "Explaining…" until the reply to its press. */
   turns: Turns
   prs: PrTab
+  map: MapView
   at: number
 }
 
@@ -275,6 +276,7 @@ export function viewOf(s: SessionState, now: number, holds: ReplyHolds = NO_HOLD
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now),
+    map: mapView(l, now, CODEX.agent),
     at: now,
   }
 }

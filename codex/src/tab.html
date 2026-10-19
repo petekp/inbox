@@ -251,6 +251,15 @@
       .mark.error {
         color: var(--error-mark);
       }
+      .mark.tone-needsYou {
+        color: var(--needs-you);
+      }
+      .mark.tone-findings {
+        color: var(--findings);
+      }
+      .mark.tone-done {
+        color: var(--done);
+      }
       .side {
         align-self: start;
         margin-left: 12px;
@@ -654,6 +663,16 @@
         min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+      .map-goal,
+      .map-now {
+        padding: 0 14px 0 var(--text-x);
+        overflow-wrap: anywhere;
+      }
+      .map-goal {
+        margin: 0;
+        font-size: inherit;
+        font-weight: 600;
       }
       .earlier {
         padding: 2px 14px 2px var(--text-x);

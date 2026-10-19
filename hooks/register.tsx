@@ -29,6 +29,7 @@ import type {
   PressKind,
   RowNote,
   SentPrompt,
+  ShownTab,
   Stop,
   Tab,
 } from '../types'
@@ -142,6 +143,9 @@ import {
   DOT,
   drawnLists,
   emptyText,
+  isListTab,
+  LIST_TABS,
+  mapView,
   ROW_TABS,
   TABS,
   CLOSED_MARKS,
@@ -181,7 +185,17 @@ import {
   rowAfterClose,
   shortAgo,
 } from './view'
-import type { ActionEmphasis, ActionIcon, DrawnEntry, InboxView, ModLook, PlannedKey, RowView, RowWait } from './view'
+import type {
+  ActionEmphasis,
+  ActionIcon,
+  DrawnEntry,
+  InboxView,
+  MapRow,
+  ModLook,
+  PlannedKey,
+  RowView,
+  RowWait,
+} from './view'
 import { CLOSE_DESCRIPTION, CLOSE_SCHEMA, RECORD_SCHEMA, recordDescription, recordClose, recordItem } from './tools'
 import type { UndoProps } from './undo-client'
 import { followTo, recordRows, isTabEmpty } from './arrivals'
@@ -209,7 +223,7 @@ const PRESENCE = atom(
     minute: 0,
   } as Presence,
 )
-const TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'needsYou' as Tab)
+const TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'needsYou' as ShownTab)
 const NO_CURSOR: Cursor = { id: null, index: 0, openedAt: 0 }
 const NO_SELECTION: Record<Tab, Cursor> = { needsYou: NO_CURSOR, findings: NO_CURSOR, prs: NO_CURSOR }
 const SELECTION = atom({ plugin: 'inbox', key: 'selection' } as const, NO_SELECTION)
@@ -527,6 +541,15 @@ function paletteFor(theme: string, look: ModLook): Palette {
   return look === 'desktop' ? DESKTOP_PALETTE : (PALETTES[theme] ?? THEME_KEY_PALETTE)
 }
 const TAB_PAD = '  '
+/** The framed tabs' padding inside each tab, gap between tabs and right margin, from roomiest to tightest. */
+const FRAMED_TAB_LAYOUTS = [
+  { pad: TAB_PAD, gap: 1, right: 1 },
+  { pad: ' ', gap: 1, right: 1 },
+  { pad: ' ', gap: 0, right: 1 },
+  { pad: ' ', gap: 0, right: 0 },
+  { pad: '', gap: 1, right: 0 },
+  { pad: '', gap: 0, right: 0 },
+]
 const INLINE_RAIL_AT = 80
 const RAIL_GUTTER = 2
 const NEEDS_YOU_GROUPS: { kind: Item['kind']; title: string; list: 'questions' | 'tasks' }[] = [
@@ -1004,7 +1027,7 @@ async function runUpdate($: EngineInterface, owner: ConversationOwner, ex: Excha
 
 async function catchUp($: EngineInterface, owner: ConversationOwner): Promise<LedgerState> {
   const [ledger, shown] = await Promise.all([read($, LEDGER), screen($)])
-  const change = (l: Ledger, u: Update, now: number) => applyUpdate(l, u, now, l.turn)
+  const change = (l: Ledger, u: Update, now: number) => applyUpdate(l, u, now, l.turn, now, true)
   const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
   if (forked.isAnswered || forked.reason !== 'nothing-to-fork') return applyLedgerReply($, owner, forked, null, change)
   // A resumed conversation has no request of this process's to fork until its
@@ -1246,7 +1269,8 @@ function openPane($: EngineInterface) {
 }
 
 async function openTopRow($: EngineInterface) {
-  const [{ view, ledger, prViews: prState, lastActions, now }, tab] = await Promise.all([drawnState($), read($, TAB)])
+  const [{ view, ledger, prViews: prState, lastActions, now }, tab] = await Promise.all([drawnState($), readRowTab($)])
+  if (tab === null) return
   const prViews = drawnPrs(prState, ledger.prs, lastActions, now)
     .filter(x => !x.isSettled)
     .map(x => x.pr)
@@ -1311,11 +1335,18 @@ async function focusField($: EngineInterface, id: string) {
   await $.ui.focus({ requestId: PANE, key: `type-${id}` }).catch(() => undefined)
 }
 
-async function showTab($: EngineInterface, tab: Tab) {
+/** The shown tab when it lists rows; null on the Map tab, where no row is drawn, selected or scrolled to. */
+async function readRowTab($: EngineInterface): Promise<Tab | null> {
+  const tab = await read($, TAB)
+
+  return isListTab(tab) ? tab : null
+}
+
+async function showTab($: EngineInterface, tab: ShownTab) {
   cancelUndoScroll()
   if (tab === 'prs') await findPrs($)
   await update($, TAB, () => tab)
-  await scrollToOpenRow($, tab)
+  if (isListTab(tab)) await scrollToOpenRow($, tab)
 }
 
 /**
@@ -1502,8 +1533,8 @@ function settledScrollKey(key: string, layout: string): string {
 async function revealPendingUndo($: EngineInterface): Promise<boolean> {
   const pending = pendingUndoScroll
   if (!pending || !pending.revealUndo || !isInlineTerminalPane || pending.sessionId !== sessionId) return false
-  const [tab, selection, drawn] = await Promise.all([read($, TAB), read($, SELECTION), drawnState($)])
-  if (pendingUndoScroll !== pending) return false
+  const [tab, selection, drawn] = await Promise.all([readRowTab($), read($, SELECTION), drawnState($)])
+  if (pendingUndoScroll !== pending || tab === null) return false
   if (tab !== pending.tab || !sameCursor(selection[tab], pending.cursor) || drawn.now >= pending.expiresAt) return false
   const prs = drawnPrs(drawn.prViews, drawn.ledger.prs, drawn.lastActions, drawn.now)
   const key = settledScrollKey(
@@ -1515,8 +1546,8 @@ async function revealPendingUndo($: EngineInterface): Promise<boolean> {
 
 async function keepUndoVisible($: EngineInterface, key: string, block: UiScrollBlock, at: number, revision: number) {
   if (revision !== undoScrollRevision) return
-  const [tab, selection] = await Promise.all([read($, TAB), read($, SELECTION)])
-  if (revision !== undoScrollRevision) return
+  const [tab, selection] = await Promise.all([readRowTab($), read($, SELECTION)])
+  if (revision !== undoScrollRevision || tab === null) return
   const pending: PendingUndoScroll = {
     key,
     tab,
@@ -1534,10 +1565,10 @@ async function finishPendingUndoScroll($: EngineInterface) {
   const pending = pendingUndoScroll
   if (!pending) return
   const revision = undoScrollRevision
-  const [tab, selection, drawn] = await Promise.all([read($, TAB), read($, SELECTION), drawnState($)])
+  const [tab, selection, drawn] = await Promise.all([readRowTab($), read($, SELECTION), drawnState($)])
   if (pendingUndoScroll !== pending || revision !== undoScrollRevision) return
-  const cursor = selection[tab]
-  if (tab === pending.tab && isInlineTerminalPane && sessionId === pending.sessionId) {
+  const cursor = tab === null ? NO_CURSOR : selection[tab]
+  if (tab !== null && tab === pending.tab && isInlineTerminalPane && sessionId === pending.sessionId) {
     const prs = drawnPrs(drawn.prViews, drawn.ledger.prs, drawn.lastActions, drawn.now)
     const openId =
       cursor.id ??
@@ -1593,9 +1624,10 @@ async function scrollToOpenRow($: EngineInterface, tab: Tab, surface?: RenderSur
 async function selectClicked($: EngineInterface, id: string) {
   const [{ ledger, prViews: prState, lastActions, view, now }, tab, selection] = await Promise.all([
     drawnState($),
-    read($, TAB),
+    readRowTab($),
     read($, SELECTION),
   ])
+  if (tab === null) return
   const prViews = drawnPrs(prState, ledger.prs, lastActions, now)
     .filter(x => !x.isSettled)
     .map(x => x.pr)
@@ -1665,13 +1697,14 @@ function tabWaits(tab: Tab, view: InboxView, prViews: PrView[], lastActions: Rec
 }
 
 async function unlessGuarded($: EngineInterface, rowId: string, press: UiPressArgument, onPress: Action['onPress']) {
-  const [selection, tab, now] = await Promise.all([read($, SELECTION), read($, TAB), $.clock.now()])
-  const cursor = selection[tab]
+  const [selection, tab, now] = await Promise.all([read($, SELECTION), readRowTab($), $.clock.now()])
+  const cursor = tab === null ? NO_CURSOR : selection[tab]
   if (cursor.id !== rowId || !isGuarded(cursor.openedAt, now)) await onPress(press)
 }
 
 async function keepPressedOpen($: EngineInterface, id: string) {
-  const tab = await read($, TAB)
+  const tab = await readRowTab($)
+  if (tab === null) return
   await update($, SELECTION, s =>
     s[tab].id === null && s[tab].openedAt === 0 ? { ...s, [tab]: { id, index: 0, openedAt: 0 } } : s,
   )
@@ -1706,7 +1739,7 @@ function tabRowIds(view: InboxView, prViews: PrView[]): Record<Tab, string[]> {
  * that can add a row calls this.
  */
 async function followNewRows($: EngineInterface, isOpening = false) {
-  const [drawn, tab, unfolded, isShown] = await Promise.all([
+  const [drawn, shownTab, unfolded, isShown] = await Promise.all([
     drawnState($),
     read($, TAB),
     read($, UNFOLDED),
@@ -1734,8 +1767,10 @@ async function followNewRows($: EngineInterface, isOpening = false) {
       for (const { t, cursor } of keeps) if (s[t].id === null && s[t].openedAt === 0) kept[t] = cursor
       return kept
     })
-    if (isInlinePane && keeps.some(k => k.t === tab)) void scrollToOpenRow($, tab)
+    if (isInlinePane && isListTab(shownTab) && keeps.some(k => k.t === shownTab)) void scrollToOpenRow($, shownTab)
   }
+  if (!isListTab(shownTab)) return
+  const tab = shownTab
   const settled = new Set(settledRowIds(allRows(view)))
   const isEmpty =
     tab === 'prs'
@@ -1756,7 +1791,7 @@ async function followNewRows($: EngineInterface, isOpening = false) {
           hasBlocker: tab === 'needsYou' && (!!stop || isUnread),
         })
   const to = followTo(
-    TABS.map(t => t.id),
+    LIST_TABS,
     tab,
     isEmpty,
     isOpening ? { needsYou: ids.needsYou, findings: ids.findings, prs: [] } : added,
@@ -1774,8 +1809,13 @@ async function isPrsTabShown($: EngineInterface) {
 
 async function screen($: EngineInterface) {
   const tab = await read($, TAB)
+  const shown = TABS.find(t => t.id === tab)
 
-  return screenText(CLAUDE_CODE, await isPaneShown($), TABS.find(t => t.id === tab)?.label ?? tab)
+  return screenText(
+    CLAUDE_CODE,
+    await isPaneShown($),
+    shown ? { label: shown.label, isPage: !isListTab(shown.id) } : null,
+  )
 }
 
 async function closeTasksRunBy($: EngineInterface, command: string) {
@@ -2173,10 +2213,11 @@ async function undoKeyAfterPress(
 }
 
 async function shownWaits($: EngineInterface) {
-  const [{ ledger, prViews: prState, lastActions, view, now }, tab] = await Promise.all([drawnState($), read($, TAB)])
+  const [{ ledger, prViews: prState, lastActions, view, now }, tab] = await Promise.all([drawnState($), readRowTab($)])
   const prViews = drawnPrs(prState, ledger.prs, lastActions, now)
     .filter(x => !x.isSettled)
     .map(x => x.pr)
+  if (tab === null) return { tab, rows: [], ids: [] }
 
   return {
     tab,
@@ -2192,7 +2233,7 @@ async function openAfterClose(
   skipScroll = false,
 ): Promise<{ isMoved: boolean; undoBlock: UiScrollBlock }> {
   const [{ tab, rows, ids }, selection] = await Promise.all([shownWaits($), read($, SELECTION)])
-  if (!wasWaiting || selection[tab].id !== id || rows.find(r => r.id === id)?.isWaiting)
+  if (tab === null || !wasWaiting || selection[tab].id !== id || rows.find(r => r.id === id)?.isWaiting)
     return { isMoved: false, undoBlock: 'nearest' }
   const following = rowAfterClose(rows, id)
   const index = following === null ? -1 : ids.indexOf(following)
@@ -2211,7 +2252,8 @@ async function openAfterClose(
 }
 
 async function reopenPressed($: EngineInterface, id: string) {
-  const tab = await read($, TAB)
+  const tab = await readRowTab($)
+  if (tab === null) return
   await update($, SELECTION, s => ({ ...s, [tab]: { id, index: s[tab].index, openedAt: 0 } }))
 }
 
@@ -2404,22 +2446,24 @@ function desktopTabSizes(
     { padding: 0, gap: 0, hasCounts: true },
     { padding: 0, gap: 0, hasCounts: false },
   ]
+  const frameCells = (2 * FRAME_INSET_PT) / DESKTOP_CELL_PT
   const sizes = steps.map(({ padding, gap, hasCounts }) => ({
     widths: tabs.map(t => {
       const text = hasCounts && t.count > 0 ? `${t.label}${TAB_COUNT_GAP}${t.count}` : t.label
       // A tab's rounded frame insets its label FRAME_INSET_PT on each side, so its width adds those columns,
       // rounded up, to what the label needs. Narrower, the label wraps inside the tab.
-      return (
-        Math.ceil(text.length / DESKTOP_CHARS_PER_CELL) + Math.ceil((2 * FRAME_INSET_PT) / DESKTOP_CELL_PT) + padding
-      )
+      return Math.ceil(text.length / DESKTOP_CHARS_PER_CELL) + Math.ceil(frameCells) + padding
     }),
     gap,
     hasCounts,
   }))
+  const tightest = {
+    widths: tabs.map(t => Math.ceil(t.label.length / DESKTOP_CHARS_PER_CELL + frameCells)),
+    gap: 0,
+    hasCounts: false,
+  }
 
-  return (
-    sizes.find(s => s.widths.reduce((sum, w) => sum + w, 0) + s.gap * (s.widths.length - 1) <= columns) ?? sizes.at(-1)!
-  )
+  return sizes.find(s => s.widths.reduce((sum, w) => sum + w, 0) + s.gap * (s.widths.length - 1) <= columns) ?? tightest
 }
 
 async function drawnState(
@@ -3182,7 +3226,7 @@ export const register: Register = on => {
         : { rowPad: blankLine, settledPad: 0, buttonGap: 2, isFoldGapped: true }
     const [
       { ledger, prViews: prState, lastActions, notes, turns, stop, view, showsDemoNotices, isUnread, now },
-      tab,
+      shownTab,
       selection,
       theme,
       typing,
@@ -3205,12 +3249,14 @@ export const register: Register = on => {
     ])
     // A hot reload keeps TYPING but empties fieldSeeds, so an open field takes its seed again here.
     if (typing !== null && !fieldSeeds.has(typing)) fieldSeeds.set(typing, (await read($, DRAFTS))[typing]?.text ?? '')
+    const isMapShown = shownTab === 'map'
+    const tab: Tab = isListTab(shownTab) ? shownTab : 'needsYou'
     const size = isInline ? `${e.props.bodyColumns}x${e.props.scroll.bodyRows}` : null
     if (e.surface === 'terminal') terminalInlineSize = size
     if (size !== null && inlineSize !== null && size !== inlineSize) {
       const revision = undoScrollRevision
       later($, RESIZE_SCROLL_MS, () =>
-        revision === undoScrollRevision ? scrollToOpenRow($, tab, e.surface) : undefined,
+        revision === undoScrollRevision && !isMapShown ? scrollToOpenRow($, tab, e.surface) : undefined,
       )
     }
     inlineSize = size
@@ -3449,7 +3495,9 @@ export const register: Register = on => {
       findings: view.findings.count,
       prs: prGroups.filter(g => !g.isSettled && prNeedsYou(g.pr, isThreadSent)).length,
     }
-    const tabText = (id: Tab, label: string) => `${label}${tabCounts[id] > 0 ? ` ${tabCounts[id]}` : ''}`
+    const tabCount = (id: ShownTab) => (isListTab(id) ? tabCounts[id] : 0)
+    const tabTone = (id: ShownTab) => (isListTab(id) ? pal.tone[id] : undefined)
+    const tabText = (id: ShownTab, label: string) => `${label}${tabCount(id) > 0 ? ` ${tabCount(id)}` : ''}`
     const hasRail = isInline && look === 'terminal' && e.props.bodyColumns >= INLINE_RAIL_AT
     const railWidth = Math.max(...TABS.map(t => tabText(t.id, t.label).length)) + 2 * TAB_PAD.length
     const listColumns = e.props.bodyColumns - 2 - (hasRail ? railWidth + RAIL_GUTTER : 0)
@@ -4151,7 +4199,7 @@ export const register: Register = on => {
     const keyColumn = Math.max(...keyList.map(k => k.keys.length)) + 2
 
     const tabSizes = desktopTabSizes(
-      TABS.map(({ id, label }) => ({ label, count: tabCounts[id] })),
+      TABS.map(({ id, label }) => ({ label, count: tabCount(id) })),
       e.props.bodyColumns - 2,
     )
     const tabProps: TabsProps | null = hasClient
@@ -4159,11 +4207,11 @@ export const register: Register = on => {
           tabs: TABS.map(({ id, label }, n) => ({
             id,
             label,
-            count: tabSizes.hasCounts ? tabCounts[id] : 0,
-            countColor: pal.tone[id] ?? pal.mark[id],
+            count: tabSizes.hasCounts ? tabCount(id) : 0,
+            countColor: tabTone(id) ?? (isListTab(id) ? pal.mark[id] : pal.muted),
             width: tabSizes.widths[n]!,
           })),
-          shown: tab,
+          shown: shownTab,
           gap: tabSizes.gap,
           colors: {
             tab: pal.tab ?? null,
@@ -4191,7 +4239,15 @@ export const register: Register = on => {
       ) : null,
     ]
     const terminalTabsWidth = TABS.reduce((sum, t) => sum + tabText(t.id, t.label).length + 2 * TAB_PAD.length + 1, 1)
-    const pad = terminalTabsWidth <= e.props.bodyColumns ? TAB_PAD : ' '
+    const labelsWidth = TABS.reduce((sum, t) => sum + tabText(t.id, t.label).length, 0)
+    const tabsFit = (r: { pad: string; gap: number; right: number }) =>
+      labelsWidth + 2 * r.pad.length * TABS.length + r.gap * (TABS.length - 1) <= e.props.bodyColumns - 1 - r.right
+    const framedTabs =
+      terminalTabsWidth <= e.props.bodyColumns
+        ? FRAMED_TAB_LAYOUTS[0]!
+        : (FRAMED_TAB_LAYOUTS.slice(1).find(tabsFit) ?? FRAMED_TAB_LAYOUTS.at(-1)!)
+    const { pad } = framedTabs
+    const inlineTabGap = [3, 2].find(gap => labelsWidth + gap * (TABS.length - 1) <= e.props.bodyColumns - 3) ?? 1
     const hasTabLine = !isInline && look !== 'desktop'
     const tabLine = pal.tab ?? pal.divider
     // Terminal.app draws block characters from its font, which leaves a seam between a half block and the filled
@@ -4200,7 +4256,7 @@ export const register: Register = on => {
     const tabs = (
       <Box
         paddingLeft={isInline ? 2 : 1}
-        paddingRight={1}
+        paddingRight={isInline ? 1 : framedTabs.right}
         flexDirection="row"
         {...(hasTabLine ? { overflow: 'hidden' as const } : {})}
       >
@@ -4211,19 +4267,23 @@ export const register: Register = on => {
             <Text color={tabLine}>{'─'.repeat(e.props.bodyColumns)}</Text>
           </Box>
         ) : null}
-        <Box flexDirection="row" flexWrap="wrap" columnGap={isInline ? 3 : look === 'desktop' ? 2 : 1}>
+        <Box
+          flexDirection="row"
+          flexWrap="wrap"
+          columnGap={isInline ? inlineTabGap : look === 'desktop' ? 2 : framedTabs.gap}
+        >
           {hasClient && tabProps ? (
             <elements.Client key="tabs" module="./tabs-client.tsx" height={TAB_HEIGHT} props={tabProps} />
           ) : null}
           {tabProps
             ? null
             : TABS.map(({ id, label }) => {
-                const count = tabCounts[id]
+                const count = tabCount(id)
 
                 if (isInline)
                   return (
                     <Box key={`tab-block-${id}`} flexDirection="row">
-                      {tab === id ? (
+                      {shownTab === id ? (
                         <Text bold underline>
                           {label}
                         </Text>
@@ -4231,7 +4291,7 @@ export const register: Register = on => {
                         <Button plain key={`tab-${id}`} label={label} onPress={() => void showTab($, id)} />
                       )}
                       {count > 0 ? (
-                        <Text bold={tab === id} color={pal.tone[id]}>
+                        <Text bold={shownTab === id} color={tabTone(id)}>
                           {' '}
                           {count}
                         </Text>
@@ -4251,12 +4311,12 @@ export const register: Register = on => {
                     <Button
                       key={`tab-${id}`}
                       label={`${DESKTOP_TAB_PAD}${count > 0 ? `${label} ${count}` : label}${DESKTOP_TAB_PAD}`}
-                      {...(tab === id ? { variant: 'primary' as const } : {})}
+                      {...(shownTab === id ? { variant: 'primary' as const } : {})}
                       onPress={() => void showTab($, id)}
                     />
                   )
 
-                if (tab === id)
+                if (shownTab === id)
                   return (
                     <Box flexDirection="column" flexShrink={0}>
                       <Text color={pal.raised}>{(hasHalfLines ? '▄' : ' ').repeat(width)}</Text>
@@ -4266,7 +4326,7 @@ export const register: Register = on => {
                           {label}
                         </Text>
                         {count > 0 ? (
-                          <Text bold color={pal.tone[id] ?? pal.raisedText} backgroundColor={pal.raised}>
+                          <Text bold color={tabTone(id) ?? pal.raisedText} backgroundColor={pal.raised}>
                             {' '}
                             {count}
                           </Text>
@@ -4297,15 +4357,15 @@ export const register: Register = on => {
                       )}
                     </Button>
                     <Box flexDirection="row" backgroundColor={pal.tab}>
-                      <Button plain key={`tab-${id}-before`} label={pad} hover={raise} onPress={show} />
+                      {pad ? <Button plain key={`tab-${id}-before`} label={pad} hover={raise} onPress={show} /> : null}
                       <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show} />
                       {count > 0 ? (
-                        <Text color={pal.tone[id]} hover={raise}>
+                        <Text color={tabTone(id)} hover={raise}>
                           {' '}
                           {count}
                         </Text>
                       ) : null}
-                      <Button plain key={`tab-${id}-after`} label={pad} hover={raise} onPress={show} />
+                      {pad ? <Button plain key={`tab-${id}-after`} label={pad} hover={raise} onPress={show} /> : null}
                     </Box>
                     <Button plain key={`tab-${id}-below`} hover={edgeHover} onPress={show}>
                       {edgeFill ? (
@@ -4326,9 +4386,9 @@ export const register: Register = on => {
     const rail = (
       <Box flexDirection="column" flexShrink={0} paddingLeft={1} marginRight={RAIL_GUTTER}>
         {TABS.map(({ id, label }) => {
-          const count = tabCounts[id]
+          const count = tabCount(id)
           const fill = ' '.repeat(railWidth - tabText(id, label).length - TAB_PAD.length)
-          if (tab === id)
+          if (shownTab === id)
             return (
               <Text key={`rail-${id}`} backgroundColor={pal.raised}>
                 {TAB_PAD}
@@ -4336,7 +4396,7 @@ export const register: Register = on => {
                   {label}
                 </Text>
                 {count > 0 ? (
-                  <Text bold color={pal.tone[id] ?? pal.raisedText} backgroundColor={pal.raised}>
+                  <Text bold color={tabTone(id) ?? pal.raisedText} backgroundColor={pal.raised}>
                     {' '}
                     {count}
                   </Text>
@@ -4352,7 +4412,7 @@ export const register: Register = on => {
               <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show} />
               {count > 0 ? (
                 <Button plain key={`tab-${id}-count`} hover={raise} onPress={show}>
-                  <Text color={pal.tone[id]}> {count}</Text>
+                  <Text color={tabTone(id)}> {count}</Text>
                 </Button>
               ) : null}
               <Button plain key={`tab-${id}-after`} label={fill} hover={raise} onPress={show} />
@@ -5014,12 +5074,132 @@ export const register: Register = on => {
         sections([...(prState.isGhMissing ? [ghMissingNotice()] : []), ...prGroups.map(prBlock), ...olderPrs()], 2)
       )
 
+    const map = mapView(ledger, now, CLAUDE_CODE.agent)
+    const mapTitleLine = (text: string, key: string, isBold: boolean) =>
+      look === 'desktop' ? (
+        desktopFrame({
+          key,
+          padY: 0,
+          children: (
+            <Text wrap="wrap" bold={isBold} {...(isBold ? {} : { color: pal.muted })}>
+              {text}
+            </Text>
+          ),
+        })
+      ) : (
+        <Box key={key} paddingLeft={TREE_LINE_AT}>
+          <Text wrap="wrap" bold={isBold} {...(isBold ? {} : { color: pal.muted })}>
+            {text}
+          </Text>
+        </Box>
+      )
+    const mapTextRow = (id: string, text: string, pos: TreePos) =>
+      look === 'desktop'
+        ? desktopFrame({
+            key: `map-${id}`,
+            indent: DESKTOP_MARK_CELLS,
+            isMarkHung: false,
+            padY: space.rowPad / 2,
+            children: <Text wrap="wrap">{text}</Text>,
+          })
+        : treeRow(pos, null, <Text wrap="wrap">{text}</Text>, `map-${id}`, 0, markColumns.textAt)
+    const milestoneRow = (m: MapRow, pos: TreePos) =>
+      look === 'desktop'
+        ? desktopFrame({
+            key: `map-${m.id}`,
+            indent: DESKTOP_MARK_CELLS,
+            isMarkHung: false,
+            padY: space.rowPad / 2,
+            mark: <Text color={pal.mark[m.tone]}>✓</Text>,
+            side: <Text color={pal.age}>{m.age}</Text>,
+            children: [
+              <Text wrap="wrap">{m.text}</Text>,
+              m.detail ? (
+                <Text wrap="wrap" color={pal.muted}>
+                  {m.detail}
+                </Text>
+              ) : null,
+            ],
+          })
+        : treeRow(
+            pos,
+            <Text color={pal.mark[m.tone]}>✓</Text>,
+            <Box flexDirection="row">
+              <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+                <Text wrap="wrap">{m.text}</Text>
+                {m.detail ? (
+                  <Text wrap="wrap" color={pal.muted}>
+                    {m.detail}
+                  </Text>
+                ) : null}
+              </Box>
+              <Box width={TERMINAL_SIDE_CELLS} flexShrink={0} justifyContent="flex-end" paddingRight={1}>
+                <Text color={pal.age}>{m.age}</Text>
+              </Box>
+            </Box>,
+            `map-${m.id}`,
+          )
+    const mapPage = () => {
+      if (map.isEmpty)
+        return (
+          <Box flexDirection="column" flexGrow={1}>
+            {emptyState(map.empty)}
+          </Box>
+        )
+      const earlier = map.earlier
+      const running = map.running
+      const milestones = map.milestones
+
+      return sections([
+        ...(map.goal
+          ? [
+              <Box key="map-head" flexDirection="column">
+                {mapTitleLine(map.goal, 'map-goal', true)}
+                {map.now ? mapTitleLine(`Now${DOT}${map.now}`, 'map-now', false) : null}
+              </Box>,
+            ]
+          : []),
+        ...(running
+          ? [
+              section([
+                groupTitle(running.title, running.count),
+                ...titleGap(),
+                ...running.rows.map((r, n) => mapTextRow(r.id, r.text, childPos(n, running.rows.length))),
+              ]),
+            ]
+          : []),
+        ...(milestones
+          ? [
+              section([
+                groupTitle(milestones.title, milestones.count),
+                ...titleGap(),
+                ...milestones.rows.map((m, n) =>
+                  milestoneRow(m, earlier === null ? childPos(n, milestones.rows.length) : 'mid'),
+                ),
+                ...(earlier
+                  ? [
+                      treeRow(
+                        'last',
+                        null,
+                        <Text color={pal.muted}>{earlier}</Text>,
+                        'map-earlier',
+                        0,
+                        markColumns.textAt,
+                      ),
+                    ]
+                  : []),
+              ]),
+            ]
+          : []),
+      ])
+    }
+
     const move = (step: number) => {
       const to = Math.min(Math.max(at + step, 0), ids.length - 1)
       void select($, tab, ids[to] ?? '', to)
     }
     const moveKeys: KeyAction[] =
-      ids.length > 1 || (at < 0 && ids.length > 0)
+      !isMapShown && (ids.length > 1 || (at < 0 && ids.length > 0))
         ? [
             { key: 'next', label: 'Next', hotkey: 'j', kind: 'view', onPress: () => move(1) },
             { key: 'previous', label: 'Previous', hotkey: 'k', kind: 'view', onPress: () => move(-1) },
@@ -5033,14 +5213,20 @@ export const register: Register = on => {
       onPress: () => void showTab($, id),
     }))
 
-    const selectedRow = rows[tab][at]
+    const selectedRow = isMapShown ? undefined : rows[tab][at]
     const selectedActions = selectedRow ? rowActions(selectedRow) : null
     const rowKeys = selectedActions ? [...selectedActions.keys, ...selectedActions.more] : []
 
     // A pane takes a key
     // only as a Button's hotkey, so the tab keys, j, k and the selected row's keys
     // are Buttons in a hidden Box.
-    const tabView = tab === 'findings' ? findingsView() : tab === 'prs' ? prsView() : needsYouView()
+    const tabView = isMapShown
+      ? mapPage()
+      : tab === 'findings'
+        ? findingsView()
+        : tab === 'prs'
+          ? prsView()
+          : needsYouView()
     const drawn = (
       <Box flexDirection="column" minHeight={e.props.scroll.bodyRows} backgroundColor={pal.body}>
         {showsDemoNotices ? (

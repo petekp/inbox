@@ -7,8 +7,10 @@ import type {
   LastAction,
   Ledger,
   LocalResult,
+  Milestone,
   PressKind,
   RowNote,
+  ShownTab,
   Tab,
   Turns,
 } from '../types'
@@ -389,12 +391,95 @@ function stepKind(step: HelpStep): PressKind {
   return step.step.some(h => h.kind === 'run') ? 'handoff' : 'local'
 }
 
-export const TABS: readonly { id: Tab; label: string; hotkey: string }[] = [
+export const TABS: readonly { id: ShownTab; label: string; hotkey: string }[] = [
   { id: 'needsYou', label: 'Needs you', hotkey: '1' },
   { id: 'findings', label: 'Findings', hotkey: '2' },
   { id: 'prs', label: 'PRs', hotkey: '3' },
+  { id: 'map', label: 'Map', hotkey: '4' },
 ]
-export const ROW_TABS = TABS.filter((t): t is (typeof TABS)[number] & { id: 'needsYou' | 'findings' } => t.id !== 'prs')
+
+export const LIST_TABS: readonly Tab[] = TABS.map(t => t.id).filter(isListTab)
+
+/** Whether a shown tab lists rows. The Map tab shows a page, so it has no rows, count or cursor. */
+export function isListTab(tab: ShownTab): tab is Tab {
+  return tab !== 'map'
+}
+
+export const ROW_TABS = TABS.filter(
+  (t): t is (typeof TABS)[number] & { id: 'needsYou' | 'findings' } => t.id === 'needsYou' || t.id === 'findings',
+)
+
+export type MapTone = 'done' | 'needsYou' | 'findings'
+export type MapRow = { id: string; tone: MapTone; text: string; detail: string | null; age: string }
+export type MapSection = { title: string; count: number; rows: MapRow[] }
+export type MapRunning = { id: string; text: string }
+
+/** What the Map tab shows. Adapters draw it as it is. */
+export type MapView = {
+  /** True when there is no goal and no milestone; the tab shows `empty`. */
+  isEmpty: boolean
+  /** The session's goal; null until the person has asked for something. */
+  goal: string | null
+  now: string | null
+  running: { title: string; count: number; rows: MapRunning[] } | null
+  milestones: MapSection | null
+  /** The milestones past `MAP_SHOWN`, as "12 earlier"; null when all show. */
+  earlier: string | null
+  empty: { title: string; hint: string }
+}
+
+export const MAP_SHOWN = 30
+const MAP_TONES: Record<Milestone['source'], MapTone> = {
+  done: 'done',
+  answered: 'needsYou',
+  fixed: 'findings',
+}
+
+/** Timed milestones newest first, then the ones with no time in their stored order. */
+function newestFirst(milestones: Milestone[]): Milestone[] {
+  const timed = milestones.filter(m => m.at !== null).sort((a, b) => b.at! - a.at!)
+
+  return [...timed, ...milestones.filter(m => m.at === null)]
+}
+
+export function mapView(ledger: Pick<Ledger, 'card' | 'milestones'>, now: number, agent: string): MapView {
+  const card = ledger.card
+  const all = newestFirst(ledger.milestones)
+  const shown = all.slice(0, MAP_SHOWN)
+
+  return {
+    isEmpty: !card?.goal && all.length === 0,
+    goal: card?.goal || null,
+    now: card?.goal && card.now ? card.now : null,
+    running:
+      card?.goal && card.running.length > 0
+        ? {
+            title: 'Running',
+            count: card.running.length,
+            rows: card.running.map((text, n) => ({ id: `running-${n}`, text })),
+          }
+        : null,
+    milestones:
+      shown.length > 0
+        ? {
+            title: 'Milestones',
+            count: all.length,
+            rows: shown.map(m => ({
+              id: m.id,
+              tone: MAP_TONES[m.source],
+              text: m.text,
+              detail: m.detail,
+              age: m.at === null ? '' : shortAgo(Math.max(0, now - m.at)),
+            })),
+          }
+        : null,
+    earlier: earlierLabel(all.length, shown.length),
+    empty: {
+      title: 'No map yet',
+      hint: `When you give ${agent} a task, its goal and what it finishes show up here.`,
+    },
+  }
+}
 
 export function emptyText(tab: 'needsYou' | 'findings', agent: string): { title: string; hint: string } {
   return tab === 'needsYou'

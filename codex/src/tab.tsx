@@ -28,6 +28,7 @@ import {
   hasAge,
   heldReplies,
   isFailure,
+  isListTab,
   isGuarded,
   isWaitingRow,
   firstWaiting,
@@ -63,7 +64,7 @@ import {
 } from '../../hooks/pr-tab'
 import type { PrAction, PrPress } from '../../hooks/pr-tab'
 import { commentParts, failingChecks, readableComment, readiness, threadWhere, waitingThreads } from '../../hooks/prs'
-import type { Draft, Finding, PrCheck, PrThread, PrView } from '../../types'
+import type { Draft, Finding, PrCheck, PrThread, PrView, ShownTab, Tab as ListedTab } from '../../types'
 import { followTo } from '../../hooks/arrivals'
 import { parseInline } from '../../hooks/inline'
 import { isShownEmpty, newRows, openRows, TAB_IDS, TAB_OF } from './arrivals'
@@ -75,8 +76,6 @@ import type { RowState, RowTarget, RowTrack } from './rows'
 import { drawnSettled, POLL_MS, PRESS_TIMEOUT_MS, settledIds, settledSeen } from './settle'
 
 type Tone = 'needsYou' | 'issue' | 'findings' | 'done' | 'error'
-
-type ShownTab = Tab | 'prs'
 
 type Emphasis = ActionEmphasis
 
@@ -123,7 +122,13 @@ let stagedHostChanges: HostContext = {}
 let pollFailures = 0
 let readAt = 0
 let tab: ShownTab = 'needsYou'
-const selection: Record<ShownTab, { id: string; openedAt: number; index?: number } | null> = {
+
+/** The shown tab when it lists rows; null on the Map tab, where no row is drawn, selected or scrolled to. */
+function listedTab(): ListedTab | null {
+  return isListTab(tab) ? tab : null
+}
+
+const selection: Record<ListedTab, { id: string; openedAt: number; index?: number } | null> = {
   needsYou: null,
   findings: null,
   prs: null,
@@ -158,7 +163,7 @@ type Kept = {
   version: 1
   isDemo: boolean
   tab: ShownTab
-  selection: Record<ShownTab, string | null>
+  selection: Record<ListedTab, string | null>
   typing: string | null
   /** An earlier page kept each draft as its text alone. */
   drafts: [string, Draft | string][]
@@ -367,7 +372,7 @@ function applyView(next: View, seq: number) {
 }
 
 function follow(v: View, added: Record<Tab, string[]>) {
-  if (tab === 'prs') return
+  if (!isListTab(tab) || tab === 'prs') return
   const drawn = shownSettled()
   const to = followTo(TAB_IDS, tab, isShownEmpty(v, tab, drawn, unfolded), added)
   if (!to) return
@@ -576,7 +581,9 @@ async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void
   latestPress.set(rowId, seq)
   const isLatest = () => latestPress.get(rowId) === seq
   if (press.action !== 'undo' && !rowId.startsWith('pr:')) keepPressedOpen(rowId)
-  const wasWaiting = !!view && tabWaits(view, tab).some(r => r.id === rowId && r.isWaiting)
+  const waitingTab = listedTab()
+  const wasWaiting =
+    !!view && waitingTab !== null && tabWaits(view, waitingTab).some(r => r.id === rowId && r.isWaiting)
   sending.set(rowId, pending)
   errors.delete(rowId)
   notes.delete(rowId)
@@ -620,7 +627,7 @@ async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void
   }
 }
 
-function tabWaits(v: View, t: ShownTab): RowWait[] {
+function tabWaits(v: View, t: ListedTab): RowWait[] {
   return t === 'prs'
     ? prRowWaits(
         v.prs.drawn.filter(x => !x.isSettled).map(x => x.pr),
@@ -630,16 +637,17 @@ function tabWaits(v: View, t: ShownTab): RowWait[] {
 }
 
 function openAfterClose(v: View, id: string) {
-  if (selection[tab]?.id !== id) return
-  const rows = tabWaits(v, tab)
+  const t = listedTab()
+  if (t === null || selection[t]?.id !== id) return
+  const rows = tabWaits(v, t)
   if (rows.find(r => r.id === id)?.isWaiting) return
   const next = rowAfterClose(rows, id)
-  const index = next === null ? -1 : tabRows(v, tab).findIndex(r => r.id === next)
+  const index = next === null ? -1 : tabRows(v, t).findIndex(r => r.id === next)
   if (next === null || index < 0) {
-    selection[tab] = null
+    selection[t] = null
     return
   }
-  open(tab, next, index)
+  open(t, next, index)
   // After the press's own draw, which draws the row open.
   later(revealSelected, 0)
 }
@@ -878,7 +886,7 @@ function prRows(v: View): Row[] {
   return prPlan(v).rows
 }
 
-function tabRows(v: View, t: ShownTab): Row[] {
+function tabRows(v: View, t: ListedTab): Row[] {
   return t === 'prs' ? prRows(v) : listsOf(v, shownSettled()).byTab[t]
 }
 
@@ -910,8 +918,8 @@ const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as
 function stepLists(v: View): { lists: Lists; changed: Set<string> } {
   const now = Date.now()
   const lists = listsOf(v, shownSettled())
-  const rows = tab === 'prs' ? [] : lists.byTab[tab]
-  const openId = rows[selectedIndex(rows, tab, v)]?.id
+  const rows = tab === 'prs' || tab === 'map' ? [] : lists.byTab[tab]
+  const openId = tab === 'map' ? undefined : rows[selectedIndex(rows, tab, v)]?.id
   const changed = new Set<string>()
   const kept = new Set<string>()
   for (const group of (Object.keys(LIST_OF) as Group[]).filter(g => TAB_OF[g] === tab)) {
@@ -973,7 +981,7 @@ async function undo(r: RowView) {
   }
 }
 
-function selectedIndex(rows: Row[], t: ShownTab, v: View): number {
+function selectedIndex(rows: Row[], t: ListedTab, v: View): number {
   const s = selection[t]
   if (s) {
     const at = rows.findIndex(r => r.id === s.id)
@@ -987,13 +995,13 @@ function selectedIndex(rows: Row[], t: ShownTab, v: View): number {
   return id ? rows.findIndex(r => r.id === id) : -1
 }
 
-function open(t: ShownTab, id: string, index?: number) {
+function open(t: ListedTab, id: string, index?: number) {
   selection[t] = { id, openedAt: Date.now(), ...(index === undefined ? {} : { index }) }
   if (typing !== id) typing = null
   drawIn(PRESS_GUARD_MS)
 }
 
-function select(t: ShownTab, rows: Row[], index: number) {
+function select(t: ListedTab, rows: Row[], index: number) {
   const row = rows[index]
   if (!row) return
   open(t, row.id, index)
@@ -1001,11 +1009,14 @@ function select(t: ShownTab, rows: Row[], index: number) {
 }
 
 function keepPressedOpen(id: string) {
-  if (!selection[tab]) selection[tab] = { id, openedAt: 0 }
+  const t = listedTab()
+  if (t !== null && !selection[t]) selection[t] = { id, openedAt: 0 }
 }
 
 function isOpenGuarded(): boolean {
-  return isGuarded(selection[tab]?.openedAt ?? 0, Date.now())
+  const t = listedTab()
+
+  return t !== null && isGuarded(selection[t]?.openedAt ?? 0, Date.now())
 }
 
 function rowActions(row: Row): { keys: Key[]; more: Key[] } {
@@ -1227,6 +1238,63 @@ function Entries({ entries, group, all, now }: { entries: Entry[]; group: Group;
         )
       })}
     </div>
+  )
+}
+
+function MapTab({ map }: { map: View['map'] }) {
+  if (map.isEmpty)
+    return (
+      <div class="empty">
+        <div class="title">{map.empty.title}</div>
+        <div class="muted">{map.empty.hint}</div>
+      </div>
+    )
+  const { running, milestones, earlier } = map
+
+  return (
+    <main>
+      {map.goal ? (
+        <section>
+          <h1 class="map-goal">{map.goal}</h1>
+          {map.now ? <div class="map-now muted">{`Now${DOT}${map.now}`}</div> : null}
+        </section>
+      ) : null}
+      {running ? (
+        <section>
+          <GroupTitle title={running.title} count={running.count} />
+          <div class="list">
+            {running.rows.map(r => (
+              <div class="entry" key={r.id}>
+                <div class="row">
+                  <span class="mark"></span>
+                  <div class="content tight">{r.text}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+      {milestones ? (
+        <section>
+          <GroupTitle title={milestones.title} count={milestones.count} />
+          <div class="list">
+            {milestones.rows.map(m => (
+              <div class="entry" key={m.id}>
+                <div class="row">
+                  <span class={`mark tone-${m.tone}`}>✓</span>
+                  <div class="content tight">
+                    <div>{m.text}</div>
+                    {m.detail ? <div class="outcome">{m.detail}</div> : null}
+                  </div>
+                  <span class="side">{m.age}</span>
+                </div>
+              </div>
+            ))}
+            {earlier ? <div class="earlier muted">{earlier}</div> : null}
+          </div>
+        </section>
+      ) : null}
+    </main>
   )
 }
 
@@ -1678,7 +1746,7 @@ function Status({ v }: { v: View }) {
 }
 
 function TabBar({ v }: { v: View }) {
-  const counts: Record<ShownTab, number> = { needsYou: v.needsYou.count, findings: v.findings.count, prs: v.prs.count }
+  const counts: Record<ListedTab, number> = { needsYou: v.needsYou.count, findings: v.findings.count, prs: v.prs.count }
   const { error } = v.status
 
   return (
@@ -1694,7 +1762,7 @@ function TabBar({ v }: { v: View }) {
             }}
           >
             {t.label}
-            {counts[t.id] > 0 ? <span class={`count tone-${t.id}`}>{counts[t.id]}</span> : null}
+            {isListTab(t.id) && counts[t.id] > 0 ? <span class={`count tone-${t.id}`}>{counts[t.id]}</span> : null}
           </button>
         ))}
       </div>
@@ -1782,8 +1850,10 @@ function App({ lists }: { lists: Lists | null }): ComponentChildren {
         <NeedsYou v={v} lists={lists} now={now} />
       ) : tab === 'findings' ? (
         <Findings v={v} lists={lists} now={now} />
-      ) : (
+      ) : tab === 'prs' ? (
         <Prs v={v} now={now} />
+      ) : (
+        <MapTab map={v.map} />
       )}
       <footer>
         {isDemo || !DEMO_BUTTON ? null : (
@@ -2059,6 +2129,7 @@ document.addEventListener(
       draw()
       return
     }
+    if (!isListTab(tab)) return
     const rows = tabRows(view, tab)
     const at = selectedIndex(rows, tab, view)
     const move = e.key === 'j' || e.key === 'ArrowDown' ? 1 : e.key === 'k' || e.key === 'ArrowUp' ? -1 : 0

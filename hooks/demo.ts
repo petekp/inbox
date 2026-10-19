@@ -16,10 +16,59 @@ export function demoView(now: number): DemoCopy {
     ledger: {
       card: {
         goal: 'Add pinch-to-dismiss to glances',
-        done: ['A pinch dismisses the glance you look at', 'Dismissed glances fade out', 'PR #31 opened'],
+        done: [
+          'Traced the dismiss gesture to GlanceView',
+          'A pinch dismisses the glance you look at',
+          'PR #31 opened',
+          'Dismissed glances fade out',
+        ],
         now: 'Waiting on the dismiss gesture and a pairing',
         running: ['simulator: http://localhost:3000'],
       },
+      milestones: [
+        { id: 'm1', source: 'done', text: 'Found why glances lose their anchor', detail: null, ref: null, at: null },
+        {
+          id: 'm2',
+          source: 'done',
+          text: 'Traced the dismiss gesture to GlanceView',
+          detail: null,
+          ref: null,
+          at: now - 5 * 60 * MIN,
+        },
+        {
+          id: 'm3',
+          source: 'fixed',
+          text: 'The view redraws every glance when one changes',
+          detail: 'It now redraws only the glance that changed',
+          ref: 'd19',
+          at: now - 2 * 60 * MIN,
+        },
+        {
+          id: 'm4',
+          source: 'answered',
+          text: 'Track hands with the camera or the wristband?',
+          detail: 'Wristband',
+          ref: 'd5',
+          at: now - 90 * MIN,
+        },
+        {
+          id: 'm5',
+          source: 'done',
+          text: 'A pinch dismisses the glance you look at',
+          detail: null,
+          ref: null,
+          at: now - 75 * MIN,
+        },
+        {
+          id: 'm6',
+          source: 'done',
+          text: 'PR #31 opened',
+          detail: null,
+          ref: null,
+          at: now - 40 * MIN,
+        },
+        { id: 'm7', source: 'done', text: 'Dismissed glances fade out', detail: null, ref: null, at: now - 14 * MIN },
+      ],
       items: [
         {
           id: 'd11',

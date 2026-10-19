@@ -109,7 +109,9 @@ function surfaceAtStart(host) {
   return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
 }
 function screenText(host, isOpen, tab) {
-  return isOpen ? `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab} tab, ` : ""}listing every open item.` : `${surfaceAtStart(host)} is closed.`;
+  if (!isOpen) return `${surfaceAtStart(host)} is closed.`;
+  const opening = `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ""}`;
+  return tab?.isPage ? `${opening}showing the session's goal, where it stands now, and the results it has reached.` : `${opening}listing every open item.`;
 }
 function latestBatch(ledger) {
   return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
@@ -245,6 +247,7 @@ function promptNotes(host, ledger, prompt, told) {
 // ../hooks/ledger.ts
 var EMPTY = {
   card: null,
+  milestones: [],
   items: [],
   closed: [],
   findings: [],
@@ -263,6 +266,8 @@ function upgradeLedger(ledger) {
   const { notes, decided, ...rest } = ledger;
   return {
     ...rest,
+    // A ledger saved before milestones kept its results in the card; their times are unknown.
+    milestones: rest.milestones?.length ? rest.milestones : (rest.card?.done ?? []).map((text, n) => ({ ...doneMilestone(text, null), id: `m${n + 1}` })),
     findings: [...rest.findings ?? [], ...notes ?? []],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
@@ -304,6 +309,13 @@ function howFromOutcome(outcome) {
   if (outcome === "done" || outcome === "you ran it") return "done";
   if (outcome.startsWith(CLOSED_BY_CLAUDE)) return "claude";
   return "update";
+}
+var MILESTONE_TEXT_CHARS = 120;
+function clipTo(text, max) {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}\u2026`;
+}
+function doneMilestone(text, at) {
+  return { source: "done", text: clipTo(text, MILESTONE_TEXT_CHARS), detail: null, ref: null, at };
 }
 var CLOSED_BY_CLAUDE = "closed by Claude";
 function pruneClosed(ledger, keep) {
@@ -394,9 +406,16 @@ var SETTLED_MS = 5120;
 var TABS = [
   { id: "needsYou", label: "Needs you", hotkey: "1" },
   { id: "findings", label: "Findings", hotkey: "2" },
-  { id: "prs", label: "PRs", hotkey: "3" }
+  { id: "prs", label: "PRs", hotkey: "3" },
+  { id: "map", label: "Map", hotkey: "4" }
 ];
-var ROW_TABS = TABS.filter((t) => t.id !== "prs");
+var LIST_TABS = TABS.map((t) => t.id).filter(isListTab);
+function isListTab(tab) {
+  return tab !== "map";
+}
+var ROW_TABS = TABS.filter(
+  (t) => t.id === "needsYou" || t.id === "findings"
+);
 
 // ../hooks/pr-tab.ts
 function linkedPrs(prs, refs) {
