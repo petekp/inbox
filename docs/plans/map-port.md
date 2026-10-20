@@ -23,12 +23,12 @@ Each step needs the one before it. The sections below follow the same order and 
 
 ## The name
 
-"Map" is a working label. The feature will get another name, not yet chosen.
+The display name is **Progress**. The branch and this file keep the earlier working name, "map".
 
-- **Internal name: `overview`.** Every code identifier, stored value, FeatureId, eval case and new file uses it. Reason: it says what the page is, and nothing in `hooks`, `types`, `codex/src`, `omp/src` or `GLOSSARY.md` uses it today. `progress` already names the tool, `session` names `Session`, and `page` names the kind of tab.
+- **Internal name: `overview`.** Every code identifier, stored value, FeatureId, eval case and new file uses it. Reason: it says what the page is, and nothing in `hooks`, `types`, `codex/src`, `omp/src` or `GLOSSARY.md` uses it today. It stays `overview` though the tab is labeled Progress, because `progress` already names the tool and `presence.progress`. `session` names `Session`, and `page` names the kind of tab.
 - **The display name lives in one place:** the `label` of the overview entry in `TABS` in `hooks/view.ts`. All four looks draw the tab bar from `TABS`, and `screenText` takes the label from it.
 - **No text an agent reads names the tab.** The `progress` tool's description, its answers, its refusal and `progressRule` say where the text shows with `host.surface` ("the /inbox pane", "the Inbox tab", "the /inbox panel"). The empty page's text names no tab either.
-- **What choosing the name costs:** change that one label, update the docs, rerun `./scripts/eval.sh` (the label reaches the inbox model through `screenText`), and rerun the width checks in step 4. No agent-suite run and no subagent A/B run is needed, because no agent-read text changes.
+- **What a later rename costs:** change that one label, update the docs, rerun `./scripts/eval.sh` (the label reaches the inbox model through `screenText`), and rerun the width checks in step 4. No agent-suite run and no subagent A/B run is needed, because no agent-read text changes.
 - **Names in this plan that are not contracts:** type and function names, eval case ids, the Codex page's `sessionStorage` copy (it is removed on read and checked by version), the `map-port` branch and this file's name.
 
 **Stored and wire names, fixed now.** Each outlives the code or crosses a process boundary, so it must not change after it ships:
@@ -46,7 +46,7 @@ Each step needs the one before it. The sections below follow the same order and 
 ## Decide now
 
 1. **When does the overview tab reach `main`?**
-   - Recommended: keep every step on the `map-port` branch. Merge once, after the live pass passes in all four looks and the display name is chosen.
+   - Recommended: keep every step on the `map-port` branch. Merge once, after the live pass passes in all four looks.
    - Reason: `main` ships to every new install, and you said the feature is not ready. Steps 1, 3, 4, 6 and 8 change text a model reads, which would reach every install on push.
    - A setting to hide the tab instead would add an option nobody asked for, and code to remove later.
 2. **How does Codex learn a subagent's task name?**
@@ -55,12 +55,10 @@ Each step needs the one before it. The sections below follow the same order and 
    - Fallback, if step 0 finds no task name there: read the `spawn_agent` call from the parent's rollout. That fails for a subagent's own subagent, whose spawn call sits in the subagent's rollout, and it can run before the parent's row is written.
    - Last resort: a new PostToolUse entry matched only to `spawn_agent`, which reads the name from the tool's response. Each person must trust it before it runs, and `docs/plans/client-parity.md`'s "no PostToolUse hook" line would narrow to shell output. Approve it only if both reads fail.
    - Either way, no existing hook entry changes. A changed entry stops running until the person trusts it again, so widening today's PreToolUse matcher would switch off activity lines for every installed user.
-3. **What is the feature called?** (Open.)
-   - When: before step 9 writes the docs, and before the merge.
-   - Width limits, estimated from the sizing formulas and not yet measured:
-     - Desktop: about 6 letters or fewer keeps the Needs you and Findings counts at every pane width that keeps them today (36 columns). About 10 letters or fewer fits the narrowest pane (34 columns) at all.
-     - omp: each letter past 3 moves the tab line's fit from 57 columns and the "esc to close" hint from 72 columns up by one.
-     - Codex: four tabs need about 330 to 360 px with a 3-letter label. A longer label wraps the bar sooner.
+3. **What is the feature called?** Decided: Progress, 8 letters. Its width costs, estimated from the sizing formulas and not yet measured:
+   - Desktop: about 6 letters or fewer keeps the Needs you and Findings counts at every pane width that keeps them today (36 columns and up). With "Progress", the step that keeps the counts needs about 39 columns, so panes of 36 to 38 columns would lose counts they show today. The narrowest pane (34 columns) still fits the tabs without counts. Step 4 measures this. If the estimate holds, the choice between a shorter name and losing the counts at those widths goes back to you before the merge.
+   - omp: each letter past 3 moves the tab line's fit from 57 columns and the "esc to close" hint from 72 columns up by one. With "Progress", that is 62 and 77 columns.
+   - Codex: four tabs need about 330 to 360 px with a 3-letter label. "Progress" wraps the bar sooner. The bar wraps between tabs, never inside a label.
 
 "Milestones first" is already settled. It answered "Ship milestones before planned steps?", so planned steps stay out of scope.
 
@@ -172,7 +170,7 @@ An answered or fixed milestone goes away if its row reopens, since the result no
 
 **Behavior.**
 
-- A fourth tab, shown as "Map" until the name is chosen, with hotkey 4.
+- A fourth tab, labeled "Progress", with hotkey 4.
 - From the top: the goal in bold, then "Now · …", then Subagents, then Running (the card's background work), then Milestones. Reason: what changes while you watch sits at the top, and the record of results sits below it.
 - Milestones show the newest 30, then "N earlier".
 - Every milestone's ✓ takes the done tone. The detail says where it came from, as in "you answered" or "fixed". Reason: the Needs you tone is the inbox's "waits on you" color, and nothing on this page waits on you. A three-color legend would also teach a difference that changes nothing you do.
@@ -185,7 +183,7 @@ An answered or fixed milestone goes away if its row reopens, since the result no
 - **Terminal.** Port the map branch's page drawing (`mapPage`, `markedRow`, `mapTextRow`) into `hooks/register.tsx` under overview names. `readRowTab` guards every row path while the page shows. The docked terminal gets `FRAMED_TAB_LAYOUTS` from 5345f96 with 1dc3689's steps; map-port does not have it yet. The narrow tab bar keeps the joined band, as you chose.
 - **Desktop.** It shares `hooks/register.tsx` with the terminal. Two things differ:
   - The tabs are drawn in a Client (`hooks/tabs-client.tsx`), because the app's own pane tabs cannot be customized.
-  - Width. `desktopTabSizes` gets a new step before the one that drops the counts: keep the counts, frame only the shown tab, gap 1. Then 1dc3689's last step, with no counts and only the shown tab framed (`isEachFramed`). Reason: 1dc3689's ladder drops counts before it drops frames, so a fourth tab with no count would hide the Needs you and Findings counts at widths that show them today. Estimated with "Map": four framed tabs with counts need 43 columns, the new step 34, the last step 29. The narrowest pane gives 34. If the chosen name does not fit the new step, the overview tab's label shortens before the Needs you count goes.
+  - Width. `desktopTabSizes` gets a new step before the one that drops the counts: keep the counts, frame only the shown tab, gap 1. Then 1dc3689's last step, with no counts and only the shown tab framed (`isEachFramed`). Reason: 1dc3689's ladder drops counts before it drops frames, so a fourth tab with no count would hide the Needs you and Findings counts at widths that show them today. Estimated with "Map": four framed tabs with counts need 43 columns, the new step 34, the last step 29. The narrowest pane gives 34. "Progress" adds 5 columns to each: 48, 39 and 34. See "Decide now" for what that costs.
 - **Codex.** `OverviewTab` in `codex/src/tab.tsx`, with its CSS in `codex/src/tab.html`. Following new rows and j/k skip the page.
   - Page rows draw without the row motion in `codex/src/rows.ts`. Reason: nothing on the page can be pressed or worked through, so a moving row would only pull your eye from the rows that wait.
   - Width is the real limit. Four tabs need about 330 to 360 px, and MCP Apps design from 320 px. If the bar overflows, `.tabs` wraps between tabs, never inside a label, as the terminal's tabs wrap. Reason: a label broken across two lines is hard to read.
@@ -444,7 +442,7 @@ Every step runs `./scripts/check.sh`. After a shared-module change it rebuilds w
 1. **Milestones.** Ledger, upgrade, the catch-up flag and count, `systemText`, `buildPrompt`, `CATCH_UP`, `ledgerBlocks` and the `evals/run.ts` port. Checks are in the Milestones section.
 2. **Session fields, `OverviewPage` and the sample.** `isTurnRunning`, `progress` and `subagents` in `Session`, with their upgrades and their behavior in `cleared` and `forkedFrom`. `overviewPage` in `sessionView`. The new `DemoCopy` fields, `demoView` and `drawnSession`. `turnStarted` and `turnEnded` exist but no host calls them yet. Nothing new is drawn. Checks: `tests/session-script.ts` through `tests/session.test.ts`, `codex/tests/session.spec.ts` and `omp/tests/session.spec.ts`; loading a state saved by `main` in each host; loading the mod's saved sample copy.
 3. **Tab plumbing.** `PageTab`, `ShownTab`, `isListedTab`, `LISTED_TABS` and `ARRIVAL_TABS`. Every `Record<Tab>` site, `followTo`, omp's `bandLines`, the Codex renames, the new `screenText` argument and screen cases, the mod's `PAGE` atom, and Codex's saved `shownTab`. The overview entry is not in `TABS` yet, so no look draws it. The inbox model's `<screen>` text changes in Codex and omp. Checks: all test suites, the PR-arrival test in each host, and `./scripts/eval.sh`.
-4. **Draw the overview tab.** One commit per look adds that look's drawing with the page unreachable: the overview entry stays out of `TABS`, and the look's tests set the shown tab directly. Then one last commit adds the entry to `TABS`, adds `milestones` and `overview-tab` to `hooks/clients.ts`, and updates the demo test's tab order. Reason: every look reads the one shared `TABS`, so adding the entry gives every look the tab at once. Reverting that last commit takes the tab out of every look cleanly. If a look's tests cannot reach the page without a seam in production code, step 4 is one commit instead. Checks, with the working label and again with a 10-letter placeholder:
+4. **Draw the overview tab.** One commit per look adds that look's drawing with the page unreachable: the overview entry stays out of `TABS`, and the look's tests set the shown tab directly. Then one last commit adds the entry to `TABS`, adds `milestones` and `overview-tab` to `hooks/clients.ts`, and updates the demo test's tab order. Reason: every look reads the one shared `TABS`, so adding the entry gives every look the tab at once. Reverting that last commit takes the tab out of every look cleanly. If a look's tests cannot reach the page without a seam in production code, step 4 is one commit instead. Checks, with "Progress" and again with a 10-letter placeholder:
    - the demo test's tab order in `tests/hooks.test.ts`;
    - desktop at its narrowest pane, with counts, and at 36 and 43 columns;
    - the Codex tab measured in a local page that hosts the built tab, in both themes and with reduced motion, then in the Codex side panel;
@@ -454,9 +452,9 @@ Every step runs `./scripts/check.sh`. After a shared-module change it rebuilds w
 6. **The progress tool, main agent.** Every tool site, `Host.progressTool`, `progressRule`, `activityOf`, and the activity-line tests. The eval-suite line in `AGENTS.md` and the text in `scripts/eval.sh` name `progress`. Add `progress-tool`. Checks are in the progress tool section.
 7. **Subagent rows.** In each host, with omp's typed channel names. Add `subagent-rows` and its row.
 8. **Subagent progress.** Add `subagent-progress` and its row. Checks: the A/B runs and a live run in each look.
-9. **Docs and the full pass.** This step uses the chosen display name, and sets it in `TABS` if it differs from the working label. A label change reruns `./scripts/eval.sh` and step 4's width checks.
+9. **Docs and the full pass.** The docs call the tab Progress.
    - `docs/looks.md`: owner rows; the "A tab" and "A saved field" rows, which still name `PluginState` and miss most tab sites; the omp "Switching tabs" row (`1`, `2` and `3`); "Sessions with no screen"; and 96e68a0's wording.
-   - `GLOSSARY.md`: Milestone, the overview tab under its chosen name, Subagent row, Listed tab, Row tab and Page tab. Card, which says no look draws it. Pane, which lists three tabs.
+   - `GLOSSARY.md`: Milestone, the Progress tab, Subagent row, Listed tab, Row tab and Page tab. Card, which says no look draws it. Pane, which lists three tabs.
    - `README.md`: "three tabs" (line 109), the keys at lines 157 and 166, a section for the tab, and the step to trust the new Codex hooks.
    - `docs/plans/omp-look.md`: "three tabs" and "1, 2 and 3".
    - `docs/release.md`: "`1`, `2` and `3`" becomes "`1` to `4`". New live-pass rows: the overview tab; Working… (start, interrupt, compact); a subagent row (done, stopped, and a Codex follow-up turn); progress text; trusting the new Codex hooks. Under Saved state: a `main` session that loads with milestones seeded, and 0.2.10 loading state saved by this build with the page shown.
