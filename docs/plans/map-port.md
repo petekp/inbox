@@ -1,8 +1,8 @@
-# Map tab in every look
+# The overview tab in every look
 
 Status: proposed
 
-The Map is a fourth inbox tab. It shows the session's goal, what the agent is doing now, the subagents it started, and the results the session has reached. This plan builds it on the shared session code, so all four looks draw it from one `sessionView`: the Claude Code terminal, the Claude desktop app's pane, the Codex Inbox tab and the omp panel.
+The overview tab is a fourth inbox tab. It shows the session's goal, what the agent is doing now, the subagents it started, and the results the session has reached. This plan builds it on the shared session code, so all four looks draw it from one `sessionView`: the Claude Code terminal, the Claude desktop app's pane, the Codex Inbox tab and the omp panel.
 
 Every part ships in all four looks. A part ships one look short only when a host check (step 0) shows the host cannot support it. That gap then goes in `hooks/clients.ts` and in "Differences on purpose" in `docs/looks.md`, in the same step.
 
@@ -10,9 +10,9 @@ The build order:
 
 0. Host checks: short live runs that settle what each host can do.
 1. Milestones.
-2. Session fields, `MapView` and the sample's Map data. Nothing new is drawn yet.
+2. Session fields, `OverviewPage` and the sample's overview data. Nothing new is drawn yet.
 3. Tab plumbing: the types and filters a page tab needs.
-4. Draw the Map in each look.
+4. Draw the overview tab in each look.
 5. The "Working…" line.
 6. The `progress` tool for the main agent.
 7. Subagent rows.
@@ -21,17 +21,46 @@ The build order:
 
 Each step needs the one before it. The sections below follow the same order and name their step.
 
+## The name
+
+"Map" is a working label. The feature will get another name, not yet chosen.
+
+- **Internal name: `overview`.** Every code identifier, stored value, FeatureId, eval case and new file uses it. Reason: it says what the page is, and nothing in `hooks`, `types`, `codex/src`, `omp/src` or `GLOSSARY.md` uses it today. `progress` already names the tool, `session` names `Session`, and `page` names the kind of tab.
+- **The display name lives in one place:** the `label` of the overview entry in `TABS` in `hooks/view.ts`. All four looks draw the tab bar from `TABS`, and `screenText` takes the label from it.
+- **No text an agent reads names the tab.** The `progress` tool's description, its answers, its refusal and `progressRule` say where the text shows with `host.surface` ("the /inbox pane", "the Inbox tab", "the /inbox panel"). The empty page's text names no tab either.
+- **What choosing the name costs:** change that one label, update the docs, rerun `./scripts/eval.sh` (the label reaches the inbox model through `screenText`), and rerun the width checks in step 4. No agent-suite run and no subagent A/B run is needed, because no agent-read text changes.
+- **Names in this plan that are not contracts:** type and function names, eval case ids, the Codex page's `sessionStorage` copy (it is removed on read and checked by version), the `map-port` branch and this file's name.
+
+**Stored and wire names, fixed now.** Each outlives the code or crosses a process boundary, so it must not change after it ships:
+
+- The page tab id `'overview'`: in the mod's new `PAGE` atom, Codex's `SessionState.shownTab`, and the tab the Codex page sends with each view request.
+- The mod's atom key `page`, and Codex's field name `shownTab`.
+- `Ledger.milestones`, and `Milestone { text, source, at }` with `source` one of `done`, `answered`, `fixed`.
+- `presence.isTurnRunning` and `presence.progress` in `Session`.
+- `Session.subagents`, and `Subagent { id, task, state, step, progress, result, startedAt, at, transcriptPath }` with `state` one of `running`, `done`, `stopped`. `transcriptPath` is Codex's path to the subagent's rollout, named like `SessionState.transcriptPath`, and is null elsewhere.
+- The new `DemoCopy` fields `subagents` and `presence`, saved in the mod's DEMO atom.
+- The tool name `progress` with its one argument `text`. Claude Code and Codex see it as `mcp__inbox__progress`, omp as `progress`.
+- The FeatureIds `milestones`, `overview-tab`, `turn-working`, `progress-tool`, `subagent-rows` and `subagent-progress`. `scripts/check-structure.mjs` ties them to `docs/looks.md` rows.
+- The position of the two new Codex hook entries. Codex keys trust by an entry's event and position, so new entries are appended and existing ones never move.
+
 ## Decide now
 
-1. **When does the Map reach `main`?**
-   - Recommended: keep every step on the `map-port` branch. Merge once, after the live pass passes in all four looks.
-   - Reason: `main` ships to every new install, and you said the Map is not ready. Steps 1, 4, 6 and 8 change text a model reads, which would reach every install on push.
-   - A setting to hide the Map instead would add an option nobody asked for, and code to remove later.
+1. **When does the overview tab reach `main`?**
+   - Recommended: keep every step on the `map-port` branch. Merge once, after the live pass passes in all four looks and the display name is chosen.
+   - Reason: `main` ships to every new install, and you said the feature is not ready. Steps 1, 3, 4, 6 and 8 change text a model reads, which would reach every install on push.
+   - A setting to hide the tab instead would add an option nobody asked for, and code to remove later.
 2. **How does Codex learn a subagent's task name?**
    - Why it matters: a row named only "Subagent" tells you nothing.
-   - Recommended: read the `spawn_agent` call from the parent's rollout at SubagentStart. The rollout is the conversation file Codex writes. This adds no hook and follows your "rollout at Stop" choice for shell output.
-   - If step 0 finds the task text unreadable there (a map branch commit says it arrives encrypted), approve a new PostToolUse hook entry matched only to `spawn_agent`? It reads the name from the tool's response. It goes in `codex/plugin/hooks/hooks.json`, so each person must trust it before it runs. `docs/plans/client-parity.md` says Codex adds no PostToolUse hook; that line would narrow to shell output.
-   - Either way, no existing hook entry changes. Codex keys trust by an entry's event and position, and a changed entry stops running until the person trusts it again. Widening today's PreToolUse matcher would switch off activity lines for every installed user.
+   - Recommended: at SubagentStart, read the first row of the subagent's own rollout. The rollout is the conversation file Codex writes. Its first row, `session_meta`, names the spawn: `agent_path` ends in the task name, and `depth` says how deep the subagent sits. SubagentStart's `transcript_path` is that file, and Codex writes the row before the hook runs. Reason: it adds no hook, needs no name queue, and `depth` also drops nested subagents.
+   - Fallback, if step 0 finds no task name there: read the `spawn_agent` call from the parent's rollout. That fails for a subagent's own subagent, whose spawn call sits in the subagent's rollout, and it can run before the parent's row is written.
+   - Last resort: a new PostToolUse entry matched only to `spawn_agent`, which reads the name from the tool's response. Each person must trust it before it runs, and `docs/plans/client-parity.md`'s "no PostToolUse hook" line would narrow to shell output. Approve it only if both reads fail.
+   - Either way, no existing hook entry changes. A changed entry stops running until the person trusts it again, so widening today's PreToolUse matcher would switch off activity lines for every installed user.
+3. **What is the feature called?** (Open.)
+   - When: before step 9 writes the docs, and before the merge.
+   - Width limits, estimated from the sizing formulas and not yet measured:
+     - Desktop: about 6 letters or fewer keeps the Needs you and Findings counts at every pane width that keeps them today (36 columns). About 10 letters or fewer fits the narrowest pane (34 columns) at all.
+     - omp: each letter past 3 moves the tab line's fit from 57 columns and the "esc to close" hint from 72 columns up by one.
+     - Codex: four tabs need about 330 to 360 px with a 3-letter label. A longer label wraps the bar sooner.
 
 "Milestones first" is already settled. It answered "Ship milestones before planned steps?", so planned steps stay out of scope.
 
@@ -39,6 +68,7 @@ Each step needs the one before it. The sections below follow the same order and 
 
 Terms from `GLOSSARY.md`: Card, Band, Pane, New row, Catch-up, Host, Look, Difference on purpose and Parity record. The new ones:
 
+- **Overview tab:** the tab this plan adds. Its page shows the goal, the Now line, subagents and milestones.
 - **Ledger:** the saved record of a session's card, items, findings and closed records (`Ledger` in `types/index.d.ts`).
 - **Inbox model:** the model call after each reply that reads the exchange and updates the ledger.
 - **DONE line:** a line the inbox model writes for one result the agent finished.
@@ -47,10 +77,11 @@ Terms from `GLOSSARY.md`: Card, Band, Pane, New row, Catch-up, Host, Look, Diffe
 - **Milestone:** one result the session reached, with where it came from and when.
 - **Listed tab:** a tab of inbox rows you answer or close: Needs you and Findings.
 - **PRs tab:** the tab of your pull requests. Its rows can be new rows, but it has its own counts and buttons, so it is not a listed tab.
-- **Page tab:** a tab that shows a page instead of rows. It has no count, no buttons and no row selection. The Map is the only one.
-- **Subagent row:** one line on the Map for a subagent the main agent started.
+- **Row tab:** a tab of rows: Needs you, Findings and PRs. The shared type `Tab` names this set.
+- **Page tab:** a tab that shows a page instead of rows. It has no count, no buttons and no row selection. The overview tab is the only one.
+- **Subagent row:** one line on the overview page for a subagent the main agent started.
 - **Progress text:** a short line an agent sets with the `progress` tool to say what it is doing now.
-- **Rollout:** the file Codex writes for each conversation. The Codex host already reads it at Stop.
+- **Rollout:** the file Codex writes for each conversation, one JSON row per event. The Codex host already reads it at Stop. A subagent has its own rollout.
 - **Fork:** a conversation started from another one, which continues its ledger.
 - **Compact:** the host shortening the conversation's history. It is not a new session.
 - **Done message:** the message the inbox sends the agent about rows you marked done. It waits while a turn runs (`doneWake` in `hooks/presses.ts`).
@@ -62,26 +93,30 @@ Numbers in this plan (the cap of 200, the 30 shown, 60 characters, 8 words, the 
 
 ## Source commits
 
-The `map` branch holds the first build of this design. It cannot be cherry-picked: it forked before `hooks/session.ts`, the shared catch-up and omp existed. Each step ports from these commits and rebuilds the code on the current shape.
+The `map` branch holds the first build of this design. It cannot be cherry-picked: it forked before `hooks/session.ts`, the shared catch-up and omp existed. Each step ports from these commits and rebuilds the code on the current shape. Port each file from the map branch's head, so later fixes come along.
 
-| Commit  | What it holds                                                                         | What changes in the port                                                                            |
-| ------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| 3873967 | Milestones in the ledger                                                              | Catch-up count moves into `systemText`; the flag goes through `appliedCatchUp`.                     |
-| 5345f96 | The Map tab in three looks, and `FRAMED_TAB_LAYOUTS` for the docked terminal          | `MapView` moves into `sessionView`; omp gets its own drawing.                                       |
-| 6d1d6b5 | Evals, tests and docs                                                                 | The `evals/run.ts` changes port too.                                                                |
-| 1dc3689 | Four tabs fit the narrow desktop pane (`isEachFramed`) and the docked terminal steps  | Ported as is.                                                                                       |
-| a1bf881 | "Working…"                                                                            | State moves into `Session`, with one shared rule.                                                   |
-| 43e5386 | Subagent rows in the mod                                                              | Rows move into `Session`.                                                                           |
-| db9f1e8 | Subagent rows in Codex                                                                | Task name comes from the rollout, per decision 2.                                                   |
-| 1708383 | Kept finished rows, pruning                                                           | Running rows stop only at a host's start event.                                                     |
-| aeaf700 | The `progress` tool                                                                   | Rebuilt on the current private schemas in `hooks/tools.ts`, with a `Host.progressTool` name.        |
-| e4e0024 | The AGENTS.md "New features" rule                                                     | Lands in step 9, since you said it waits for the Map merge.                                        |
+| Commit  | What it holds                                                                        | What changes in the port                                                                        |
+| ------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| 3873967 | Milestones in the ledger                                                             | The DONE count moves into the prompts; the flag goes through `appliedCatchUp`.                  |
+| 5345f96 | The tab in three looks, and `FRAMED_TAB_LAYOUTS` for the docked terminal             | The page view moves into `sessionView`; omp gets its own drawing; every ✓ takes the done tone.  |
+| 6d1d6b5 | Evals, tests and docs                                                                | The `evals/run.ts` changes port too.                                                            |
+| 1dc3689 | Four tabs fit the narrow desktop pane (`isEachFramed`) and the docked terminal steps | Gains a step that keeps counts (see Desktop).                                                   |
+| f082c0e | Two eval cases accept quoting or escaping as the encoder result                      | Ported with the cases. Without it, two cases fail a right Codex answer.                         |
+| 96e68a0 | `docs/looks.md` wording for the docked tab layout                                    | Ported with the docs in step 9.                                                                 |
+| 85fbc30 | One `addMilestones` for `closeItem` and `applyUpdate`; page view built only on draw  | The ledger and page code port from this shape, not the one before it.                           |
+| a1bf881 | "Working…"                                                                           | State moves into `Session`, with one shared rule.                                               |
+| 43e5386 | Subagent rows in the mod                                                             | Rows move into `Session`.                                                                       |
+| db9f1e8 | Subagent rows in Codex                                                               | Task name and depth come from the subagent's rollout, per decision 2.                           |
+| 1708383 | Kept finished rows, pruning                                                          | Running rows stop only at a host's start event or from a rollout's abort row.                   |
+| aeaf700 | The `progress` tool                                                                  | Rebuilt on the current private schemas in `hooks/tools.ts`, with a `Host.progressTool` name.    |
+| be09fb8 | Codex SubagentStart names no parent                                                  | Replaced: the subagent's `session_meta` row gives `parent_thread_id` and `depth`.               |
+| e4e0024 | The AGENTS.md "New features" rule                                                    | Lands in step 9, since you said it waits for the merge.                                         |
 
 The map branch's `docs/plans/session-progress.md` and `docs/plans/multi-client-architecture.md` are not ported. This plan replaces them.
 
 ## Milestones (step 1)
 
-**Behavior.** The Map lists results newest first, with their ages. A milestone has one of three sources:
+**Behavior.** The overview page lists results newest first, with their ages. A milestone has one of three sources:
 
 - **done:** a DONE line from the inbox model.
 - **answered:** a question you answered.
@@ -93,128 +128,151 @@ An answered or fixed milestone goes away if its row reopens, since the result no
 
 **Owner.**
 
-- `hooks/ledger.ts`: `applyUpdate`, `upgradeLedger`, `doneTexts`, the cap and the duplicate rules.
-- `hooks/model-text.ts`: the DONE rule in `systemText`, and `ledgerBlocks`.
+- `hooks/ledger.ts`: `applyUpdate`, `addMilestones`, `upgradeLedger`, `doneTexts`, the cap and the duplicate rules.
+- `hooks/model-text.ts`: the DONE rule in `systemText`, the DONE count in `buildPrompt` and `CATCH_UP`, and `ledgerBlocks`.
 - `hooks/session.ts`: `appliedCatchUp` passes `isCatchUp` to `applyUpdate`. Today it passes no flag, so catch-up results would get per-reply times and the per-reply cap.
 
 **Stored state.**
 
 - `Milestone` and `Ledger.milestones` go in `types/index.d.ts`, with a default in `EMPTY`.
 - The list is capped at 200. Past the cap, the oldest goes first, and an untimed one goes before a timed one.
-- `upgradeLedger` seeds milestones from an old `card.done`, with no time.
+- `upgradeLedger` adds each `card.done` text that no done milestone has, untimed, under the existing duplicate rule. It compares clipped text, since `doneMilestone` clips. Reason: 0.2.10 keeps a saved `milestones` list but writes new results only to `card.done`. Seeding only an empty list would drop those results after a move back to this build. In normal use `card.done` equals the newest done milestones, so this adds nothing.
 - `card.done` stays as the newest 4 done milestones, built by `doneTexts`. Older builds and `carryText` still read it.
 - `forkedFrom` copies milestones with the ledger, since a fork shares its parent's past.
 - `cleared` resets them with the ledger.
 - `hasLedger` counts milestones. Today it checks only the card, items and findings, so a parent whose only record is its results reads as empty, and Codex and omp skip the fork copy. A test covers a parent with milestones and no card.
 - `isUnseen` counts milestones too, since a session with recorded results has been seen. A test covers it.
 
-**Catch-up count.** A catch-up may write up to 6 DONE lines; an update after one reply, up to 3. Reason: when you come back to a long conversation, 3 results are not enough to show where it stands.
+**Catch-up count.** A catch-up may write up to 6 DONE lines. An update after one reply may write up to 3. Reason: when you come back to a long conversation, 3 results are not enough to show where it stands.
 
-- The count becomes a parameter: `systemText(host, { isCatchUp })`. Each catch-up call site passes `true`: `catchUpPrompt`, which embeds `systemText` inline, and the system prompt for a catch-up in each host (`hooks/claude-host.ts`, `codex/src/update.ts`, `omp/src/host.ts`).
-- Reason: the model sees one count in each call. A separate "at most 6" sentence beside "At most 3 lines" would show it two counts that disagree.
+- The count goes in the prompt, not in `systemText`. `buildPrompt` states 3. `CATCH_UP`, the text both catch-up prompts share, states 6. `systemText`'s DONE rule says to write no more DONE lines than the prompt allows.
+- Reason: every host sends one fixed system text, through an `Ask` that takes only the prompt. Codex writes it to one instructions file that every session's update process shares. A count in the prompt reaches all three hosts and the eval runner with no new plumbing. Two system texts would need a flag through `Ask`, `askLedgerModel`, `codexAsk` and omp's ask, a second Codex instructions file so concurrent updates cannot overwrite each other's, and a per-case system prompt in `evals/run.ts`.
+- The model still sees one count in each call.
 - Catch-up results get no time, since the model cannot date them.
 
 **Model-read text.**
 
-- `systemText` gets the new DONE rule and a `<listed>` block of results already shown, so the model does not repeat them.
+- `systemText` gets the new DONE rule and a `<listed>` block of results listed before this exchange, so the model does not repeat them.
+- The DONE rule says: "Write no DONE line for an item you close with the person's answer, or for a finding you mark FIXED: the inbox lists those itself." Reason: `<listed>` is built before the update, so this exchange's answers and fixes are not in it. A rule that says they are listed would let the model write a FIXED line and a DONE line for one fix. `addMilestone` catches repeats only between done milestones, so code would not stop the second one.
 - `ledgerBlocks` drops DONE from `<card>` and adds `<listed>`: the newest 8, or all of them in a catch-up.
 
 **Checks.**
 
-- The ported ledger tests, plus a unit test that `appliedCatchUp` applies the catch-up count and leaves catch-up results untimed.
+- The ported ledger tests, plus:
+  - a unit test that `appliedCatchUp` applies the catch-up count and leaves catch-up results untimed;
+  - a round-trip test: a ledger saved with milestones, updated by 0.2.10's `applyUpdate`, then upgraded, keeps the new result.
 - Port the `evals/run.ts` changes: the `results`, `result` and `noResult` checks, `upgradeLedger` on case ledgers, and the catch-up flag on its `applyUpdate` call. Without them the ported cases do not type-check, and a catch-up case can never pass the cap of 3.
-- `./scripts/eval.sh` (inbox model, Sonnet and Codex) with the five cases from 6d1d6b5, plus one catch-up case that expects more than 3 results.
+- `./scripts/eval.sh` (inbox model, Sonnet and Codex) with:
+  - the five DONE cases from the map branch's head, which carry f082c0e's looser encoder patterns;
+  - one catch-up case that expects more than 3 results;
+  - one case where the reply fixes an open finding and the person answers an open item, expecting a FIXED line, a CLOSED line and `results: 0`.
 - An A/B run of the mod's `catchUpPrompt`. It runs on the agent's own model through `$.model.fork`, and no eval covers that path.
 
-## The Map tab (steps 2 to 4)
+## The overview tab (steps 2 to 4)
 
 **Behavior.**
 
-- A fourth tab, "Map", with hotkey 4.
+- A fourth tab, shown as "Map" until the name is chosen, with hotkey 4.
 - From the top: the goal in bold, then "Now · …", then Subagents, then Running (the card's background work), then Milestones. Reason: what changes while you watch sits at the top, and the record of results sits below it.
 - Milestones show the newest 30, then "N earlier".
-- Each milestone has a ✓, colored by source: the done tone, the Needs you tone for answered, the Findings tone for fixed.
-- When there is nothing yet, the tab reads "No map yet" with a hint.
-- The Map has no count, because nothing on it waits for you. A count would read as work to do.
-- The Map is never where the inbox moves you when rows arrive. Arrivals move you to rows that need you, and a result does not.
+- Every milestone's ✓ takes the done tone. The detail says where it came from, as in "you answered" or "fixed". Reason: the Needs you tone is the inbox's "waits on you" color, and nothing on this page waits on you. A three-color legend would also teach a difference that changes nothing you do.
+- When there is nothing yet, the page reads "Nothing here yet" with a hint. It names no tab, so a rename does not touch it.
+- The tab has no count, because nothing on it waits for you. A count would read as work to do.
+- The inbox never moves you to the overview tab when rows arrive. Arrivals move you to rows that need you, and a result does not. New PRs still move an empty tab to PRs, as today.
 
 **Per host.**
 
-- **Terminal.** Port `mapPage`, `markedRow` and `mapTextRow` into `hooks/register.tsx`. `readRowTab` guards every row path on the Map. The docked terminal gets `FRAMED_TAB_LAYOUTS` from 5345f96 with 1dc3689's steps; map-port does not have it yet. The narrow tab bar keeps the joined band, as you chose.
+- **Terminal.** Port the map branch's page drawing (`mapPage`, `markedRow`, `mapTextRow`) into `hooks/register.tsx` under overview names. `readRowTab` guards every row path while the page shows. The docked terminal gets `FRAMED_TAB_LAYOUTS` from 5345f96 with 1dc3689's steps; map-port does not have it yet. The narrow tab bar keeps the joined band, as you chose.
 - **Desktop.** It shares `hooks/register.tsx` with the terminal. Two things differ:
   - The tabs are drawn in a Client (`hooks/tabs-client.tsx`), because the app's own pane tabs cannot be customized.
-  - Four framed tabs need 37 columns, and the narrowest pane gives 34. So `desktopTabSizes` gets 1dc3689's last step, where only the shown tab keeps its frame (`isEachFramed`). Its widest case needs about 29 columns.
-- **Codex.** `MapTab` in `codex/src/tab.tsx`, with its CSS in `codex/src/tab.html`. Following new rows and j/k skip the Map.
-  - Map rows draw without the row motion in `codex/src/rows.ts`. Reason: nothing on the Map can be pressed or worked through, so a moving row would only pull your eye from the rows that wait.
+  - Width. `desktopTabSizes` gets a new step before the one that drops the counts: keep the counts, frame only the shown tab, gap 1. Then 1dc3689's last step, with no counts and only the shown tab framed (`isEachFramed`). Reason: 1dc3689's ladder drops counts before it drops frames, so a fourth tab with no count would hide the Needs you and Findings counts at widths that show them today. Estimated with "Map": four framed tabs with counts need 43 columns, the new step 34, the last step 29. The narrowest pane gives 34. If the chosen name does not fit the new step, the overview tab's label shortens before the Needs you count goes.
+- **Codex.** `OverviewTab` in `codex/src/tab.tsx`, with its CSS in `codex/src/tab.html`. Following new rows and j/k skip the page.
+  - Page rows draw without the row motion in `codex/src/rows.ts`. Reason: nothing on the page can be pressed or worked through, so a moving row would only pull your eye from the rows that wait.
   - Width is the real limit. Four tabs need about 330 to 360 px, and MCP Apps design from 320 px. If the bar overflows, `.tabs` wraps between tabs, never inside a label, as the terminal's tabs wrap. Reason: a label broken across two lines is hard to read.
-- **omp.** Draw `SessionView.map` in `omp/src/panel.ts`. The tab bar shows Map with no count and no tone. `bandLines` uses `LISTED_TABS`, so Map stays out of the band. `followRows` skips it.
-  - The tab line fits from about 57 columns, and the "esc to close" hint from about 72. Narrower, `fit()` cuts tab 4 with "…", but key 4 still opens it.
+- **omp.** Draw `SessionView.overview` in `omp/src/panel.ts`. The tab bar shows the tab with no count and no tone. `bandLines` uses `LISTED_TABS`, so the page stays out of the band. `followRows` skips it.
+  - The tab line fits from about 57 columns, and the "esc to close" hint from about 72. Narrower, the line drops the `[n]` brackets first, then zero counts. Only then does `fit()` cut, and the shown tab's label always stays visible. Reason: today `fit()` cuts from the right, so at 50 columns no letter of tab 4 shows, and while it is the shown tab the bar marks no tab at all. Tab still cycles to the page.
 
 **Owner.**
 
-- `hooks/view.ts`: `mapView`, `MapView`, `PageTab = 'map'`, `ShownTab = Tab | PageTab` and `isListedTab`.
+- `hooks/view.ts`: `overviewPage`, `OverviewPage`, `PageTab = 'overview'`, `ShownTab = Tab | PageTab`, `isListedTab`, and the overview entry in `TABS`, which holds the display label.
 - One name per set of tabs:
+  - `Tab` stays the row tabs: Needs you, Findings and PRs.
   - `ListedTab` stays the type for Needs you and Findings (`hooks/arrivals.ts`).
-  - `ROW_TABS` becomes `LISTED_TABS`, built as an inclusion filter. As today's exclusion filter (every tab but PRs), it would make Map a listed tab.
+  - `ROW_TABS` becomes `LISTED_TABS`, built as an inclusion filter. As today's exclusion filter (every tab but PRs), it would make the page a listed tab.
+  - `ARRIVAL_TABS` is every row tab, in `hooks/arrivals.ts`. It replaces Codex's local `ARRIVAL_TAB_IDS`.
   - In Codex, the local `Tab` (two tabs) becomes the shared `ListedTab`, `TAB_IDS` becomes `LISTED_TABS`, and the local `ShownTab` (three tabs) becomes the shared `Tab`. Today the same names mean different sets in Codex.
-- `hooks/session.ts`: `SessionView` gains `map`, built inside `sessionView`, so every host gets it.
-- `hooks/arrivals.ts`: `followTo` takes `LISTED_TABS`.
+- `hooks/session.ts`: `SessionView` gains `overview`, built inside `sessionView`, so every host gets it.
+- `hooks/arrivals.ts`: `followTo` takes `ARRIVAL_TABS` in every host. Reason: every host follows PRs today (`pr-arrivals` is `full` in all three), and `followTo` reads `rows[t]`, so a page tab with no rows record would throw. The page tab stays out by type.
 - `hooks/tones.ts`: no new tone. The tab bar takes a tone only from a tab with a count.
 - `screenText` takes `{ label, isPage }`, so the inbox model knows the pane shows the goal and results, not rows. Every caller changes: `endTurn`, the mod, Codex and omp.
 
 **Stored state.** Only the shown tab, which is UI state:
 
-- The mod's `TAB` atom, upgraded in `upgradeState`.
+- The mod: `TAB` keeps its type, `Tab`. A new `PAGE` atom (key `page`) holds `'overview'` while the page shows, else null. Reason: `$.state` survives a reload of the module, so after a downgrade with `/reload-plugins` an older build reads `TAB` and indexes `rows[tab]`, which throws for an unknown id. An older build ignores a key it does not know. This also returns you to the row tab you left. `upgradeState` and the mod's draw also map any `TAB` value that is not a row tab to Needs you, and any `PAGE` value not in `TABS` to null, so a later revert cannot crash this build either.
 - Codex: a new Codex-only `shownTab` beside `tabSeenAt` in `SessionState`, with its default in `emptyState`, typed in `Saved` and `upgraded`. The page adds it to the arguments it already sends with each view request, next to `replies`. The server saves it. The Stop hook (`endTurn` in `codex/src/core.ts`) and `codex/src/update.ts` pass it to `screenText`. Today Codex passes no tab, so its inbox model never hears which tab is shown.
-- The Codex page's kept state restores the tab from the shared `TABS`, not a hardcoded list.
+- The Codex page's kept state restores the tab only if it is in the shared `TABS`. It is written as version 2 while a page tab shows, so an older page, which checks `kept.version !== 1`, drops it.
 - omp: `PanelUi.tab`, held in memory. omp passes it to `screenText` and `endTurn`, where today it passes no tab.
 
 **Model-read text.**
 
-- `screenText` reaches the inbox model's `<screen>` block, not the agent. The model skips "anything the person already has on screen", so the Map wording can change what it records.
+- `screenText` reaches the inbox model's `<screen>` block, not the agent. The model skips "anything the person already has on screen", so the page wording can change what it records.
 - Sending the shown tab also changes Codex's and omp's `<screen>` text on Needs you and Findings.
-- `Host.mapIn` names where the Map is, in one pattern: "the Map tab of the /inbox pane" (Claude Code), "the Map tab of the Inbox tab" (Codex) and "the Map tab of the /inbox panel" (omp). The `progress` tool's answers and `progressRule` use it.
 
-**Checks.** `./scripts/eval.sh` (inbox model, Sonnet and Codex) in steps 3 and 4, with a case where the Map is shown and a new question must still be recorded. The step list below has the drawing checks.
+**Checks.**
+
+- `./scripts/eval.sh` (inbox model, Sonnet and Codex) in step 3, and again in step 4.
+- A case declares its screen as `{ isOpen, tab, isPage }`, and `evals/run.ts` builds the text with `screenText` for each agent's host. Reason: a hand-typed screen sentence would not follow a wording change or the rename, and today the Codex model reads the mod's "/inbox pane" text.
+- Step 3 adds one Codex case with the tab open on Needs you. Step 4 adds `overview-shown-records-question`: the page shows and a new question must still be recorded.
+- A test in each host that a new PR still moves an empty Needs you tab to PRs.
+- The step list below has the drawing checks.
 
 ## The sample (step 2)
 
-**Behavior.** The sample the inbox shows before a session has rows gains Map data: a goal, a Now line, one running and one finished subagent, and a few milestones. It shows you what the Map is for.
+**Behavior.** The sample the inbox shows before a session has rows gains overview data: a goal, a Now line, one running and one finished subagent, and a few milestones. It shows you what the page is for.
 
-**Per host.** All four looks draw the same sample, seeded in the shared `demoSession`. The terminal and desktop draw it through `drawnSession`. Codex builds its samples in memory, and omp draws from the shared sample.
+**Per host.** All four looks draw the same sample, built by `demoView`. The mod saves a copy of it and draws it through `drawnSession`. `demoSession` derives from `demoView`, and Codex and omp draw from `demoSession`.
 
-**Owner.** `demoSession` in `hooks/demo.ts`, plus `codex/src/demo.ts` and `omp/src/demo.ts` where they add host data.
+**Owner.**
 
-**Stored state.** Only the mod saves a sample copy, in its DEMO atom, checked by `isDemoCopy`. A copy saved without Map data is upgraded with empty Map data instead of thrown away, since saved state outlives the code.
+- `demoView` and `isDemoCopy` in `hooks/demo.ts`, and `demoSession`, which derives from `demoView`.
+- `DemoCopy` in `types/index.d.ts` gains `subagents` and `presence` (`isTurnRunning`, `progress`). Goal, Now text and milestones already come through `ledger`.
+- `drawnSession` in `hooks/register.tsx` overlays `subagents` and those presence fields. Today it overlays only the ledger, stop, PR views, last actions and turn counts, so the sample would show the live session's subagents and Working… state.
+- `codex/src/demo.ts` and `omp/src/demo.ts` only where they add host data.
+
+**Stored state.** Only the mod saves a sample copy, in its DEMO atom, checked by `isDemoCopy`. A copy saved without the new fields gets empty ones instead of being thrown away, since saved state outlives the code.
 
 ## Working… (fields in step 2, behavior in step 5)
 
-**Behavior.** While the main agent's turn runs, the Map's Now line reads "Working…", or the main agent's progress text. A subagent's turn does not set it. It clears when the turn ends, when you interrupt, and when a new session starts. A compact does not count as a new session.
+**Behavior.** While the main agent's turn runs, the Now line reads "Working…", or the main agent's progress text. A subagent's turn does not set it. It clears when the turn ends, when you interrupt, and when a new session starts. A compact does not count as a new session.
 
 **Per host.**
 
-- **Terminal and desktop.** They share `hooks/register.tsx`. Set at the main `turn.start`, cleared at the main `turn.complete`. The desktop pane redraws only on events, and both are events.
-- **Codex.** Set at a main-agent UserPromptSubmit. Cleared at Stop, at Interrupt, and at a SessionStart that is not a compact.
-  - Interrupt is a new entry in `codex/plugin/hooks/hooks.json`. Existing entries stay as they are.
-  - Stop does not run on an interrupt, so without a trusted Interrupt hook, "Working…" would stay until your next message.
-  - Fallback, if step 0 finds the rollout marks an aborted turn: each view request reads it, so the tab's 3 s poll (`codex/src/settle.ts`) clears "Working…".
-  - The same rollout read tells when the Interrupt hook is off: an aborted turn with no Interrupt heard makes `heardState` read `partial`, and the tab shows its existing hooks help. Without the rollout, an untrusted Interrupt hook cannot be told from a session where nobody interrupted.
-- **omp.** Set at `agent_start`. Cleared at `agent_end` when `willContinue` is false, which also fires on an abort.
+- **Terminal and desktop.** They share `hooks/register.tsx`.
+  - Set at the main `turn.start`, cleared at the main `turn.complete`. The desktop pane redraws only on events, and both are events.
+  - Cleared at load too: `bringBack` and the module's load reset `presence.isTurnRunning` and `presence.progress`, as `bringBack` already resets `stop` and `turn`. Reason: a reload or a quit can cut off `turn.complete`, and a saved true would then read Working… while idle, hold Done messages and stop the away tick. A turn the engine still runs sets the flag again at its next `turn.start`, which matches today's in-memory flag.
+- **Codex.** Set at a main-agent UserPromptSubmit. Cleared at Stop and at a SessionStart that is not a compact.
+  - Stop does not run on an interrupt. The rollout records an aborted turn as a `turn_aborted` row with reason `interrupted` (Codex `rollout/src/policy.rs`). So each view request and each press reads the rollout's tail before it reads the flag, and clears the flag when the last turn ended. The tab's 3 s poll (`codex/src/settle.ts`) then clears Working…, and the same read releases held Done messages, since `wakeForDone` runs after it.
+  - No Interrupt hook entry. Reason: in Codex, only the tab's view requests and presses read the flag, and both read the rollout first. A hook would add a trust step for each person and change nothing they see. Add one, appended with `timeout: 3` and a single state write, only if step 0 finds the abort row reaches the file more than one poll late. Codex gives an Interrupt hook 1 s by default and 3 s at most.
+  - A chat Codex quit during a turn has no end row. Codex runs no hook when a chat is opened, so Working… stays until the next message's SessionStart. Step 0 confirms this, and the `turn-working` row records it.
+- **omp.** Set at `agent_start`. Cleared at `agent_end` when `willContinue` is not true. Esc ends the run with `stopReason: 'aborted'` and still emits `agent_end` (omp `agent-session.ts`), so no fallback is needed.
   - Not `before_agent_start`: it can run twice for one prompt, and a press queued during a run arrives as `message_start` without it.
   - Not `turn_start`: it fires once per model call inside one run.
-  - Fallback, if step 0 finds Esc does not deliver `agent_end`: the host clears the flag when `ctx.isIdle()` reports idle at the next event it handles.
 
 **Owner.** One shared rule in `hooks/session.ts`: `turnStarted(s)` and `turnEnded(s)` set `presence.isTurnRunning`. Each host calls them from its own events.
 
 - In step 5, `SessionHost.isTurnRunning` switches its default to `presence.isTurnRunning`, and the mod's module-level `let isTurnRunning` goes away. This waits for step 5 because no host sets the field before then. Switching early would let Codex and omp send a Done message mid-turn.
 - This changes the shared rule that holds back Done messages (`wakeForDone`) and the mod's away tick. Today the default is "a prompt is recorded" (`s.turn.person !== null`). That misses a turn with no prompt, and in Codex it stays set after an interrupt.
-- `turn-working` covers Done-message timing too, since both read the same field. In Codex, an untrusted Interrupt hook with no rollout fallback also holds Done messages after an interrupt until the next prompt.
+- Codex's `isTurnRunning` reads the flag after the rollout read, so Done messages follow the same rule as the Now line.
 
 **Stored state.** `presence.isTurnRunning` and `presence.progress` in `Session`. `upgradeSession` defaults them to false and null. `cleared` resets both. `forkedFrom` takes neither, since the running turn belongs to the parent.
 
 **Model-read text.** None.
 
-**Checks.** `tests/hooks.test.ts`, `codex/tests/hook.spec.ts` and `omp/tests/host.spec.ts`, each with a `wakeForDone` case during a turn and after an interrupt. Then live in each look: start a turn, interrupt it, compact.
+**Checks.**
+
+- `tests/hooks.test.ts`, `codex/tests/hook.spec.ts` and `omp/tests/host.spec.ts`, each with a `wakeForDone` case during a turn and after an interrupt.
+- A test in each host that loads a session saved with the flag true. The mod clears it. Codex clears it when the rollout's last turn ended.
+- Live in each look: start a turn, interrupt it, compact.
 
 ## The progress tool (step 6)
 
@@ -222,7 +280,7 @@ An answered or fixed milestone goes away if its row reopens, since the result no
 
 - A main-agent call sets `presence.progress`, which replaces "Working…".
 - A subagent call sets its own row's progress (step 8).
-- A call from an agent with no row is refused with "Not shown: the Map lists only the main agent and the subagents it started."
+- A call from an agent with no row is refused with "Not shown: the inbox lists only the main agent and the subagents it started."
 - Repeating the same text writes nothing, so the age stays.
 
 **Per host.**
@@ -230,8 +288,8 @@ An answered or fixed milestone goes away if its row reopens, since the result no
 - **Terminal and desktop.** They share `hooks/register.tsx`. A `tool.describe` and `tool.call` handler for `progress`, with `isDeferred: false`. The `record` and `close` handlers return without passing the call on, so they never become activity lines for the inbox model. The `progress` handler does the same.
 - **Codex.** A `progress` case in `callTool` in `codex/src/server.ts`.
   - A call is the main agent's when its turn metadata has no `parent_thread_id`, fork or not. It does not go through `turnOf`, which drops every call in a forked chat.
-  - Keying: `sessionOf` reads `session_id` first. In a fork that may be the root chat's id, while the hooks key the fork's state by its own chat. Step 0 checks which ids a fork's call carries. If `session_id` is the root's, `progress` keys by `thread_id`.
-  - `record` and `close` have the same latent keying problem. That fix is its own change, raised separately.
+  - Keying follows the one rule step 0 sets (see "Codex session keys" in step 0).
+  - `activityOf` in `codex/src/core.ts` skips the inbox's own tools (`CODEX.recordTool`, `closeTool` and `progressTool`). Reason: PreToolUse matches `mcp__.*` and the Stop-time rollout read turns MCP calls into activity too, so today Codex shows its own record and close calls to the inbox model as the agent's work. `activityOf` serves both paths, and the hook entry stays as it is, so it keeps its trust. This also removes record and close lines from Codex's `<activity>`, so `./scripts/eval.sh` runs again.
 - **omp.** `tool()` in `omp/src/host.ts` takes the new name and label. Its `execute` calls `progressShown`.
 
 **Owner.**
@@ -239,6 +297,7 @@ An answered or fixed milestone goes away if its row reopens, since the result no
 - `hooks/tools.ts`: `agentTools` gains the progress entry, its schema and `progressResult`.
 - `hooks/session.ts`: a new `progressShown(s, caller, text)`. It does not go through `recorded`, which sends any name but `close` to `recordItem`.
 - `hooks/model-text.ts`: `Host.progressTool`, beside `recordTool` and `closeTool`, since omp's tools are bare names.
+- `codex/src/core.ts`: `activityOf`.
 
 Every site typed `'record' | 'close'` changes:
 
@@ -253,13 +312,18 @@ Every site typed `'record' | 'close'` changes:
 
 **Model-read text.**
 
-- The tool description: "at most 8 plain words… Call it as you start each step of a task that takes several steps, and skip it for one that takes one or two tool calls. Your reply still says what you did."
-- `progressRule` at the end of `guidanceText`, naming `host.progressTool` and `host.mapIn`.
+- The tool description: "at most 8 plain words… Call it as you start each step of a task that takes several steps, and skip it for one that takes one or two tool calls. Your reply still says what you did." It says the text shows in `host.surface` until your turn ends.
+- `progressRule` at the end of `guidanceText`, naming `host.progressTool` and `host.surface`.
 
 **Checks.**
 
-- A test in each host that a progress call adds no activity line.
-- `./scripts/eval.sh --suite agent --agent all`, with progress-multi-step (at least one call) and no-progress-one-liner (no calls).
+- A test in each host that a progress call adds no activity line. In Codex it covers the PreToolUse path and the rollout path.
+- `./scripts/eval.sh` after the `activityOf` change.
+- `./scripts/eval.sh --suite agent --agent all` with:
+  - `progress-multi-step`: at least one call and at most five, one per named step. Its prompt says file and shell tools are not connected, which is true only for Claude, so it runs for Claude only.
+  - `no-progress-one-liner`: no calls.
+  - For Codex and omp, a case built from `files`: read one file and answer, expecting no progress call.
+  - `{ calls: 'progress', max: 0 }` added to a few existing short record and close cases.
 - Live in each look.
 
 ## Subagent rows (fields in step 2, behavior in step 7)
@@ -277,18 +341,19 @@ Every site typed `'record' | 'close'` changes:
 **Per host.**
 
 - **Terminal and desktop.** They share `hooks/register.tsx`. `agent.spawn` adds a row only when there is no `parentAgentId`, so a nested subagent gets none. `tool.call` with `agentId` sets the step. A subagent's `turn.complete` sets done on an answer and stopped otherwise. `$.agent.list()` prunes rows the engine reports ended.
-- **Codex.** New SubagentStart and SubagentStop entries in `codex/plugin/hooks/hooks.json`, with an `agent_type` matcher so guardian reviews (Codex's own safety checks) get no row and no `progressRule`. A matcher keeps the rule out of their context; a check in code would run after the context is returned.
-  - SubagentStart starts a row, with the task name per decision 2.
-  - PreToolUse with `agent_id` sets the row's step and records no activity. Today it records activity for every call.
-  - UserPromptSubmit with `agent_id` leaves the main turn alone, if step 0 finds it fires. Otherwise a subagent's prompt would become the main turn's and set "Working…".
-  - SubagentStop ends the row. Interrupt stops every running row.
-  - What step 0 must settle: whether a subagent's rollout shows its parent (to drop nested subagents) and how it ended (to tell done from stopped).
-- **omp.** The parent extension listens on `pi.events` for `task:subagent:lifecycle` and `task:subagent:progress`. Started maps to running, completed to done, and failed or aborted to stopped. The step comes from `currentTool` or `lastIntent`. Only direct children reach the parent's bus, which matches the mod's rule.
-  - These channels are omp's internal names, not a typed extension API. A test reads the names from the installed omp package, so a rename fails the build.
+- **Codex.** New SubagentStart and SubagentStop entries in `codex/plugin/hooks/hooks.json`, appended after today's entries, with no matcher. Reason for no matcher: guardian reviews (Codex's own safety checks) never fire either event, so a matcher filters nothing. Codex matchers are Rust regexes with no lookahead, so "every type but guardian" cannot be written, and a list of allowed types would drop subagents with custom roles.
+  - SubagentStart starts a row, with the task name per decision 2. A `depth` above 1 gets no row, which matches the mod's rule. The row saves the hook's `transcript_path`, the subagent's own rollout, as `transcriptPath`.
+  - Any hook that carries the row's `agent_id` (PreToolUse, UserPromptSubmit) marks it running. PreToolUse also sets the step and records no activity; today it records activity for every call. Reason: SubagentStart fires once per subagent, but a later turn from `send_input`, `followup_task` or `resume_agent` runs without it. A hook for a pruned row adds it back from its `transcript_path`.
+  - UserPromptSubmit with `agent_id` returns no `inbox:` notes, and leaves `told`, `ledger.turn` and `turn.person` unchanged. Reason: today it runs `notePrompt` for every prompt, which hands the subagent the inbox notes and their close ids, moves `told` so the main agent can miss its next note, and adds the subagent's task to what the inbox model reads as the person's words.
+  - SubagentStop marks the row done. It fires only at the normal end of a subagent's turn.
+  - Stopped comes from the subagent's rollout. Codex runs no hook when a subagent's turn is aborted: Interrupt skips subagents, and an aborted turn returns before the stop hooks run. So the main Stop and each view request read each running row's rollout, and a `turn_aborted` row marks it stopped.
+  - SessionStart and Stop act only for the main agent. If step 0 finds either fires in a subagent or guardian thread, the hook reads the first row of the `transcript_path` rollout and ignores the event when it names a parent or a subagent source. Otherwise a subagent's start would clear Working… and stop every running row.
+- **omp.** The parent extension listens on `pi.events` for `task:subagent:lifecycle` and `task:subagent:progress`. Started maps to running, completed to done, and failed or aborted to stopped. The step comes from `currentTool` or `lastIntent`. Only direct children reach the parent's bus (omp `task/executor.ts`), which matches the mod's rule.
+  - These channels are omp's internal names, not a typed extension API. `omp/src/host.ts` takes them from the `@oh-my-pi/pi-coding-agent/task/types` subpath, or types them against pi-wire's `BusChannel`. A rename then fails `npm --prefix omp run types`. Reason for no test: `scripts/check-structure.mjs` lets only `omp/src/host.ts` import omp's packages, and reading the package files from a test would be a source-text check.
 
-**Owner.** `hooks/session.ts`: `subagentStarted`, `subagentStep`, `subagentEnded` and `subagentsBefore` for pruning. `hooks/view.ts`: `subagentStep` wording and the Map's Subagents section.
+**Owner.** `hooks/session.ts`: `subagentStarted`, `subagentStep`, `subagentEnded` and `subagentsBefore` for pruning. `hooks/view.ts`: `subagentStep` wording and the page's Subagents section. `codex/src/transcript.ts`: the `session_meta` read and the abort read.
 
-**Stored state.** `Session.subagents: Subagent[]`, with `Subagent { id, task, state, step, progress, result, startedAt, at }`. Codex's queue of spawned task names stays a Codex field on `SessionState`. The list lives in `Session`, not a host atom, for three reasons:
+**Stored state.** `Session.subagents: Subagent[]`, with `Subagent { id, task, state, step, progress, result, startedAt, at, transcriptPath }`. Codex needs no name queue, since each row reads its own name. The list lives in `Session`, not a host atom, for three reasons:
 
 - omp's `upgraded` drops any field outside `Session`.
 - Codex hooks run as separate processes and need it saved.
@@ -296,27 +361,31 @@ Every site typed `'record' | 'close'` changes:
 
 `upgradeSession` defaults it to empty. `cleared` empties it. `forkedFrom` does not copy it, since those subagents run under the parent.
 
-Running rows stop only at a host's start event, never on a state read. Codex and omp read state on every event, so a rule on read would stop every row each time.
+Running rows stop only at a host's start event or from an abort row in a Codex subagent's rollout, never on a plain state read. Codex and omp read state on every event, so a rule on read would stop every row each time.
 
 - The mod: at load, any running row `$.agent.list()` does not list becomes stopped.
-- Codex: a SessionStart that is not a compact, including a resume, stops every running row. A Codex subagent does not outlive the process that ran it.
+- Codex: a main-agent SessionStart that is not a compact, including a resume, stops every running row. A Codex subagent does not outlive the process that ran it.
 - omp: `session_start` and `session_switch` stop every running row.
 
 **Model-read text.** None of its own. The subagent receives `progressRule` (step 8).
 
-**Checks.** Tests in each host, then a live run with a real subagent in each look: done, stopped and interrupted.
+**Checks.**
+
+- Tests in each host. In Codex: a follow-up turn marks a done row running again; an abort row marks it stopped; a subagent's UserPromptSubmit returns no notes and changes no turn state.
+- A live run with a real subagent in each look: done, stopped, interrupted, and in Codex a follow-up turn.
 
 ## Subagent progress (step 8)
 
-**Behavior.** A subagent can set its own row's progress text. Its row then shows that text in place of its step, as you chose. A subagent reads no inbox guidance, so the host hands it `progressRule` when it starts.
+**Behavior.** A subagent can set its own row's progress text. Its row then shows that text in place of its step, as you chose. The host hands the subagent `progressRule` when it starts, since it is not known to read the inbox guidance.
 
 **Per host.**
 
 - **Terminal and desktop.** `agent.spawn` appends `progressRule` to the spawn prompt. A `tool.call` with `agentId` finds the row.
-- **Codex.** SubagentStart returns `progressRule` as `additionalContext`. The server reads `parent_thread_id` and `thread_id` from the turn metadata to find the row. Subagent hooks use the parent session's id, so the root session holds the rows, and `sessionOf` keying a subagent's call to the root session finds the right list.
-  - This needs a subagent to be offered plugin tools at all, `thread_id` to equal the hook's `agent_id`, and `additionalContext` to reach it. Step 0 checks all three.
-- **omp.** The child loads the parent's extensions, but `isUnattended` refuses every call today.
-  - Tell a subagent from print mode by its session file: a subagent's file sits in a folder whose name plus `.jsonl` is an existing session file. Print mode has no such parent.
+  - Step 0 checks whether a subagent's system prompt already holds `inbox:guidance` and whether it is offered the progress tool. If it holds the guidance, the append is dropped, and a `record` or `close` from a subagent is refused, as omp refuses it.
+- **Codex.** SubagentStart returns `progressRule` as `additionalContext`. The server reads `parent_thread_id` and `thread_id` from the turn metadata to find the row, keyed by the rule step 0 sets.
+  - This needs a subagent to be offered plugin tools at all, and `additionalContext` to reach it. Step 0 checks both. A subagent's hooks carry its thread id as `agent_id` (Codex `hook_runtime.rs`), so the row and the call share an id.
+- **omp.** The child loads the parent's extensions in a normal spawn, but `isUnattended` refuses every call today. A subagent started in plan mode, or from a restricted session, loads no extensions and no extension tools (omp `task/structured-subagent.ts`, `sdk.ts`). It cannot get `progress` or `progressRule`.
+  - Tell a subagent from print mode by its session file. omp writes a subagent's file as `<parent>/<agentId>.jsonl` beside `<parent>.jsonl` (omp `session-manager.ts`). Print mode has no such parent.
   - Allow `progress` alone in a subagent. Every other call is still refused, and print mode still skips everything.
   - The parent is that folder's name plus `.jsonl`, and the agent id is the file name. A child with no session file gets the refusal.
   - The child's `before_agent_start` adds `progressRule` alone, not `guidanceText`, which carries `record` and `close`.
@@ -326,27 +395,33 @@ Running rows stop only at a host's start event, never on a state read. Codex and
 
 **Stored state.** `Subagent.progress`.
 
-**Model-read text.** `progressRule`, delivered at the subagent's start. No eval harness runs a subagent today. Check it with A/B runs (`claude -p` and `codex exec`, several runs per version, as `AGENTS.md` describes) and count the calls.
+**Model-read text.** `progressRule`, delivered at the subagent's start. No eval harness runs a subagent. Check it with A/B runs, 5 runs per version in each host:
+
+- **The mod:** a copy of the mod patched to run under `claude -p` and to skip its `$.store` writes, as `AGENTS.md` describes, with no MCP server named `inbox`.
+- **Codex:** `codex exec` with `INBOX_IN_EXEC` set and a temporary `CODEX_HOME`, so the hook runs in an exec rollout and the installed plugin does not load.
+- **omp:** a child session that loads `evals/omp-probe.ts` in place of the inbox.
+- **Pass bar:** a subagent given a task of several steps calls `progress` at least once in 4 of 5 runs. No subagent calls `record` or `close` in any run. A subagent asked for an exact output returns it unchanged in every run, since the rule changes every subagent's prompt.
+
+Step 9 writes these prompts, the run count and the pass bar into `AGENTS.md`, so a later edit to `progressRule` reruns them.
 
 ## New features in `hooks/clients.ts`
 
 Each entry lands in the step that builds it, after its host check, together with its "Differences on purpose" row in `docs/looks.md`. `scripts/check-structure.mjs` fails a `different` or `unsupported` entry that has no row, so the two cannot land apart. Reasons must be plain string literals.
 
-| FeatureId           | claude-code | codex                       | omp                                    |
-| ------------------- | ----------- | --------------------------- | -------------------------------------- |
-| `milestones`        | full        | full                        | full                                   |
-| `map-tab`           | full        | full                        | full                                   |
-| `turn-working`      | full        | full; if not, `different` A | full                                   |
-| `progress-tool`     | full        | full                        | full                                   |
-| `subagent-rows`     | full        | per step 0, B               | full; if not, `unsupported` C          |
-| `subagent-progress` | full        | full; if not, `unsupported` D | full; if not, `unsupported` E       |
+| FeatureId           | claude-code | codex                         | omp                                            |
+| ------------------- | ----------- | ----------------------------- | ---------------------------------------------- |
+| `milestones`        | full        | full                          | full                                           |
+| `overview-tab`      | full        | full                          | full                                           |
+| `turn-working`      | full        | `different` A; maybe full     | full                                           |
+| `progress-tool`     | full        | full                          | full                                           |
+| `subagent-rows`     | full        | full; if not, `different` B   | full; if not, `unsupported` C                  |
+| `subagent-progress` | full        | full; if not, `unsupported` D | `different` E; if not even that, `unsupported` |
 
-- **A** (no abort marker in the rollout): "Codex runs a plugin hook only after the person trusts it, and Stop does not run on an interrupt, so until the Interrupt hook is trusted, Working stays after an interrupt until the next message."
-- **omp `turn-working`** stays full either way: the `ctx.isIdle()` fallback covers a missing `agent_end`.
-- **B** (Codex `subagent-rows`): `full` if the subagent's rollout shows its parent and how it ended. Otherwise `different`, with only the limits step 0 confirms, for example: "SubagentStop gives no end reason, so a finished subagent row reads done unless the person interrupted." If `agent_type` cannot tell guardian reviews from the agent's own subagents, `unsupported`: "Codex SubagentStart does not tell the agent's subagents from its own safety reviews."
+- **A** (a chat Codex quit during a turn): "Codex runs no hook when a chat is opened, so after Codex quits during a turn, Working… stays until the next message." If step 0 finds such a rollout does mark the turn ended, this becomes `full`.
+- **B** (Codex `subagent-rows`): `full` if step 0 confirms the abort row in a subagent's rollout, the hooks a follow-up turn runs, and an end row in a rollout Codex quit during a turn. Otherwise `different`, with only the limits step 0 confirms, for example: "Codex runs no hook when a chat is opened, so after Codex quits, a subagent row reads running until the next message."
 - **C** (frames do not reach `pi.events`): "omp sends an extension no event when a subagent starts or ends."
-- **D** (no plugin tools, no matching id, or no context in a subagent): the reason states which one step 0 found, for example: "Codex does not offer plugin tools to a subagent."
-- **E** (the child cannot find its parent, or its prompt edit has no effect): "An omp subagent's extension cannot tell which session started it."
+- **D** (no plugin tools or no context in a subagent): the reason states which one step 0 found, for example: "Codex does not offer plugin tools to a subagent."
+- **E** (omp `subagent-progress`): "omp starts a subagent in plan mode without extensions, so that subagent cannot set its progress." If the normal spawn also fails (the child cannot find its parent, or its prompt edit has no effect), `unsupported`: "An omp subagent's extension cannot tell which session started it."
 
 The map branch's `docs/looks.md` rows name tokens in backticks. Each must name one of these ids or lose its backticks, or `check-structure.mjs` fails. Its "screen text" difference is dropped, since Codex now sends its shown tab.
 
@@ -355,45 +430,50 @@ The map branch's `docs/looks.md` rows name tokens in backticks. Each must name o
 Every step runs `./scripts/check.sh`. After a shared-module change it rebuilds with `npm --prefix codex run build` and `npm --prefix omp run build`. Each commit stays on `map-port`. Rebase on `main` after each step, so the branch does not drift.
 
 0. **Host checks.** No shipped code. Run them in the inbox-ui VM (the Tart virtual machine with the Claude app, Codex and the mod installed), with an isolated config. Never let a test reach an MCP server named `inbox`.
-   - Codex: do Interrupt, SubagentStart and SubagentStop fire? With which `agent_type` for the agent's subagents and for guardian reviews? With which `session_id` and `agent_id`?
-   - Codex: does UserPromptSubmit fire for a subagent's prompt?
-   - Codex: is a subagent offered plugin tools? Does its metadata `thread_id` equal its hooks' `agent_id`? Does `additionalContext` reach it?
-   - Codex: can the parent's rollout give the `spawn_agent` task name at SubagentStart? Does a subagent's rollout show its parent and how it ended? Does the rollout mark an aborted turn?
-   - Codex: in a forked chat, which `session_id` and `thread_id` does a model's MCP call carry?
-   - omp: do `task:subagent:*` frames arrive on `pi.events`? Does Esc deliver `agent_end`? Can a child extension tell it is a subagent and find its parent? Does a child's `before_agent_start` prompt edit take effect?
-   - Record the Codex answers in `docs/reference/codex-plugins.md`. Record the omp answers in a new `docs/reference/omp.md`, since no omp reference exists.
-1. **Milestones.** Ledger, upgrade, the catch-up flag and count, `systemText`, `ledgerBlocks` and the `evals/run.ts` port. Checks are in the Milestones section.
-2. **Session fields, `MapView` and the sample.** `isTurnRunning`, `progress` and `subagents` in `Session`, with their upgrades and their behavior in `cleared` and `forkedFrom`. `mapView` in `sessionView`. `turnStarted` and `turnEnded` exist but no host calls them yet. Nothing new is drawn. Checks: `tests/session-script.ts` through `tests/session.test.ts`, `codex/tests/session.spec.ts` and `omp/tests/session.spec.ts`; loading a state saved by `main` in each host; loading the mod's saved sample copy.
-3. **Tab plumbing.** `PageTab`, `ShownTab`, `isListedTab` and `LISTED_TABS`. Every `Record<Tab>` site, `followTo`, omp's `bandLines`, the Codex renames, the new `screenText` argument, and Codex's saved `shownTab`. Map is not in `TABS` yet, so no look draws it. The inbox model's `<screen>` text changes in Codex and omp. Checks: all test suites, and `./scripts/eval.sh`.
-4. **Draw the Map.** Add Map to `TABS` and draw it, one commit per look, so a problem in one look can be reverted alone. Add `milestones` and `map-tab` to `hooks/clients.ts`. Checks:
+   - **Facts the source already settles.** Record them in `docs/reference/codex-plugins.md` and a new `docs/reference/omp.md` with their source lines, and run no live check for them:
+     - Codex (rust-v0.163.0): the rollout keeps `turn_aborted`; Interrupt skips subagents; SubagentStop fires only at a normal turn end; SubagentStart fires once per subagent and never for guardian reviews; a subagent's hooks carry its thread id as `agent_id`; a subagent's first `session_meta` row holds `parent_thread_id`, `depth` and `agent_path`; hook matchers are Rust regexes; an Interrupt hook gets 1 s by default and 3 s at most.
+     - omp (18.1.17): Esc emits `agent_end` with `stopReason: 'aborted'`; a subagent's session file is `<parent>/<agentId>.jsonl`; only direct children's frames reach the parent's `pi.events`; a plan-mode subagent loads no extensions.
+     - Fix `docs/reference/codex-plugins.md`'s line that forked threads keep the root's session id, if the fork check below disagrees.
+   - **Codex subagent hooks.** Does SubagentStart's `session_meta` row give the task name and `depth`? Which hooks fire when the main agent interrupts, closes or follows up a subagent? Does a main-turn interrupt stop spawned subagents? How soon after an abort does the `turn_aborted` row reach the file?
+   - **Codex subagent and guardian threads.** Do SessionStart, Stop, UserPromptSubmit or PreToolUse fire in a subagent thread or a guardian review? With which `session_id`, `agent_id`, `transcript_path` and `source`?
+   - **Codex subagent tools.** Is a subagent offered plugin tools? Does `additionalContext` from SubagentStart reach it?
+   - **Codex quit mid-turn.** Quit Codex during a turn and reopen the chat. Does the rollout show the turn ended?
+   - **Codex session keys.** In a forked chat, and in a subagent spawned inside a forked chat, log the hook input (`session_id`, `agent_id`, `transcript_path`) beside the MCP call's metadata (`session_id`, `thread_id`, `parent_thread_id`). Codex source (`session.rs`) gives a user fork its own session id and a subagent its parent's. Then write one keying rule that the hooks and the server both use for `progress`, subagent rows, `record` and `close`, before step 6. If the source holds, today's keying by `session_id` already is that rule.
+   - **The mod.** Does a subagent's system prompt hold `inbox:guidance`? Ask Claude to quote it from inside a subagent. Is the subagent offered the progress tool?
+   - **omp.** Do `task:subagent:*` frames arrive on `pi.events`? Does a child's `before_agent_start` prompt edit take effect? Is `progress` offered to a child in a normal spawn and in plan mode?
+1. **Milestones.** Ledger, upgrade, the catch-up flag and count, `systemText`, `buildPrompt`, `CATCH_UP`, `ledgerBlocks` and the `evals/run.ts` port. Checks are in the Milestones section.
+2. **Session fields, `OverviewPage` and the sample.** `isTurnRunning`, `progress` and `subagents` in `Session`, with their upgrades and their behavior in `cleared` and `forkedFrom`. `overviewPage` in `sessionView`. The new `DemoCopy` fields, `demoView` and `drawnSession`. `turnStarted` and `turnEnded` exist but no host calls them yet. Nothing new is drawn. Checks: `tests/session-script.ts` through `tests/session.test.ts`, `codex/tests/session.spec.ts` and `omp/tests/session.spec.ts`; loading a state saved by `main` in each host; loading the mod's saved sample copy.
+3. **Tab plumbing.** `PageTab`, `ShownTab`, `isListedTab`, `LISTED_TABS` and `ARRIVAL_TABS`. Every `Record<Tab>` site, `followTo`, omp's `bandLines`, the Codex renames, the new `screenText` argument and screen cases, the mod's `PAGE` atom, and Codex's saved `shownTab`. The overview entry is not in `TABS` yet, so no look draws it. The inbox model's `<screen>` text changes in Codex and omp. Checks: all test suites, the PR-arrival test in each host, and `./scripts/eval.sh`.
+4. **Draw the overview tab.** One commit per look adds that look's drawing with the page unreachable: the overview entry stays out of `TABS`, and the look's tests set the shown tab directly. Then one last commit adds the entry to `TABS`, adds `milestones` and `overview-tab` to `hooks/clients.ts`, and updates the demo test's tab order. Reason: every look reads the one shared `TABS`, so adding the entry gives every look the tab at once. Reverting that last commit takes the tab out of every look cleanly. If a look's tests cannot reach the page without a seam in production code, step 4 is one commit instead. Checks, with the working label and again with a 10-letter placeholder:
    - the demo test's tab order in `tests/hooks.test.ts`;
-   - desktop at its narrowest pane;
+   - desktop at its narrowest pane, with counts, and at 36 and 43 columns;
    - the Codex tab measured in a local page that hosts the built tab, in both themes and with reduced motion, then in the Codex side panel;
-   - omp at 50, 60 and 80 columns;
-   - `./scripts/eval.sh` with the Map-shown case.
-5. **The Working… line.** Host events in each host, the Codex Interrupt entry, the rollout fallback, the switch of `SessionHost.isTurnRunning`, and the removal of the mod's `let isTurnRunning`. Add `turn-working` and its row. Checks are in the Working… section.
-6. **The progress tool, main agent.** Every tool site, `Host.progressTool`, `progressRule`, and the activity-line tests. The eval-suite line in `AGENTS.md` and the text in `scripts/eval.sh` name `progress`. Add `progress-tool`. Checks are in the progress tool section.
-7. **Subagent rows.** In each host, with the omp channel-name test. Add `subagent-rows` and its row.
+   - omp at 50, 60 and 80 columns: the shown tab's label and all four labels, or their short forms, stay visible;
+   - `./scripts/eval.sh` with `overview-shown-records-question`.
+5. **The Working… line.** Host events in each host, the reset at load in the mod, the rollout read in Codex, the switch of `SessionHost.isTurnRunning`, and the removal of the mod's `let isTurnRunning`. Add `turn-working` and its row. Checks are in the Working… section.
+6. **The progress tool, main agent.** Every tool site, `Host.progressTool`, `progressRule`, `activityOf`, and the activity-line tests. The eval-suite line in `AGENTS.md` and the text in `scripts/eval.sh` name `progress`. Add `progress-tool`. Checks are in the progress tool section.
+7. **Subagent rows.** In each host, with omp's typed channel names. Add `subagent-rows` and its row.
 8. **Subagent progress.** Add `subagent-progress` and its row. Checks: the A/B runs and a live run in each look.
-9. **Docs and the full pass.**
-   - `docs/looks.md`: owner rows; the "A tab" and "A saved field" rows, which still name `PluginState` and miss most tab sites; the omp "Switching tabs" row (`1`, `2` and `3`); and "Sessions with no screen".
-   - `GLOSSARY.md`: Milestone, Map, Subagent row, Listed tab and Page tab. Card, which says no look draws it. Pane, which lists three tabs.
-   - `README.md`: "three tabs" (line 109), the keys at lines 157 and 166, a Map section, and the step to trust the new Codex hooks.
+9. **Docs and the full pass.** This step uses the chosen display name, and sets it in `TABS` if it differs from the working label. A label change reruns `./scripts/eval.sh` and step 4's width checks.
+   - `docs/looks.md`: owner rows; the "A tab" and "A saved field" rows, which still name `PluginState` and miss most tab sites; the omp "Switching tabs" row (`1`, `2` and `3`); "Sessions with no screen"; and 96e68a0's wording.
+   - `GLOSSARY.md`: Milestone, the overview tab under its chosen name, Subagent row, Listed tab, Row tab and Page tab. Card, which says no look draws it. Pane, which lists three tabs.
+   - `README.md`: "three tabs" (line 109), the keys at lines 157 and 166, a section for the tab, and the step to trust the new Codex hooks.
    - `docs/plans/omp-look.md`: "three tabs" and "1, 2 and 3".
-   - `docs/release.md`: "`1`, `2` and `3`" becomes "`1` to `4`". New live-pass rows: the Map; Working… (start, interrupt, compact); a subagent row (done and stopped); progress text; trusting the new Codex hooks; and, under Saved state, a `main` session that loads with milestones seeded.
-   - `AGENTS.md`: the "New features" rule from e4e0024, and a note on testing the subagent progress rule.
+   - `docs/release.md`: "`1`, `2` and `3`" becomes "`1` to `4`". New live-pass rows: the overview tab; Working… (start, interrupt, compact); a subagent row (done, stopped, and a Codex follow-up turn); progress text; trusting the new Codex hooks. Under Saved state: a `main` session that loads with milestones seeded, and 0.2.10 loading state saved by this build with the page shown.
+   - `AGENTS.md`: the "New features" rule from e4e0024, and the subagent A/B procedure from step 8.
    - Then every check in `docs/release.md`, the live pass in all four looks, the merge question, and the release notes.
 
 ## Risks
 
-- **Codex hook trust.** Interrupt, SubagentStart and SubagentStop stay off until you trust them. The README and the release notes say so.
-- **omp's internal channels.** omp could rename `task:subagent:*`. The step 7 test catches a rename at build time.
+- **Codex hook trust.** SubagentStart and SubagentStop stay off until you trust them. Without them Codex shows no subagent rows. The README and the release notes say so.
+- **omp's internal channels.** omp could rename `task:subagent:*`. The typed names in `omp/src/host.ts` fail the omp type check when it does.
 - **Codex width.** The Codex side panel's width is not documented. Four tabs may wrap there.
-- **Model behavior.** The new DONE rule could change which results the card keeps. The progress rule could make agents call a tool on short tasks. The evals cover both, but only for the main agent.
-- **Saved subagents.** Rows are now saved. Without the stop-at-start rule, a crash would leave rows running.
+- **Display name width.** The width limits in "Decide now" are estimates from the sizing formulas. A long name could cost the counts on desktop.
+- **Model behavior.** The new DONE rule could change which results the card keeps. The progress rule could make agents call a tool on short tasks. The evals measure the short-task line for Codex and omp only, since Claude runs the agent suite with no tools. The subagent A/B runs are the only check of the rule in subagents.
+- **Saved subagents.** Rows are now saved. Without the stop-at-start rule and the rollout read, a crash would leave rows running.
 
 ## Out of scope
 
 - Planned steps and a Next section, from a host plan tool or an inbox `plan` tool.
-- A Map across sessions.
+- An overview across sessions.
 - PR milestones. Codex now reads shell output at Stop, so this is possible in every host, but it is a separate feature.
