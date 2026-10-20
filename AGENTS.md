@@ -2,6 +2,10 @@
 
 The inbox is drawn in three looks: the Claude Code terminal, the Claude desktop app's pane, and the Codex tab. Before you change the UI or a rule, read [docs/looks.md](docs/looks.md). It says which file owns each rule, where the looks differ on purpose, and what to check after each kind of change. [GLOSSARY.md](GLOSSARY.md) defines the terms.
 
+## New features
+
+Design each feature for every client from the start: Claude Code in the terminal, the Claude desktop app, and Codex. Before building, work out how each host gets the events and data the feature needs, and put the logic they share in the owner `docs/looks.md` names. Leave a host out only when it cannot support the feature, and add that gap to "Differences on purpose" with its reason. Doing a host later is not a reason.
+
 ## Every change
 
 - The repo is public. Keep private paths, other people's names and session content out of commits.
