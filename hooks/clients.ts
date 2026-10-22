@@ -24,6 +24,7 @@ export type FeatureId =
   | 'exchange-trigger'
   | 'settle-window'
   | 'version-label'
+  | 'turn-working'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -46,6 +47,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'exchange-trigger': { kind: 'full' },
       'settle-window': { kind: 'full' },
       'version-label': { kind: 'full' },
+      'turn-working': { kind: 'full' },
     },
   },
   codex: {
@@ -101,6 +103,11 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason: 'The tab only learns of a close at its next poll, so the settle window adds two polls.',
       },
       'version-label': { kind: 'full' },
+      'turn-working': {
+        kind: 'different',
+        reason:
+          'Codex runs no hook when a chat is opened, and a turn it quits during has no end row in the rollout. So after Codex quits during a turn, Working… stays and Done messages wait until the next message.',
+      },
     },
   },
   omp: {
@@ -134,6 +141,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         kind: 'different',
         reason: "omp's panel footer ends with the inbox model's name, so the version follows it there.",
       },
+      'turn-working': { kind: 'full' },
     },
   },
 }

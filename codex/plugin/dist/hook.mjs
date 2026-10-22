@@ -623,6 +623,12 @@ function matchSent(s, text) {
     sentBy: sent ? { press: sent.press } : null
   };
 }
+function turnStarted(s) {
+  return { ...s, presence: { ...s.presence, isTurnRunning: true } };
+}
+function turnEnded(s) {
+  return { ...s, presence: { ...s.presence, isTurnRunning: false, statedStep: null } };
+}
 function startTurn(s) {
   return { ...s, presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }, stop: null };
 }
@@ -1074,6 +1080,7 @@ async function tailLines(path, bytes) {
     await file.close();
   }
 }
+var TURN_END_BYTES = 64 * 1024;
 async function turnIn(path, turnId) {
   const none = { dialogs: [], commands: [] };
   if (path === null) return none;
@@ -1289,10 +1296,15 @@ async function handleHook(input, deps) {
   switch (input.hook_event_name) {
     case "SessionStart": {
       const root = input.cwd ?? "";
+      const endsTurn = (s2) => input.source === "compact" ? s2 : turnEnded(s2);
       const s = await updateState(
         dir,
         id,
-        async (s2) => noteHook(withHost(await withHistory({ ...input.source === "clear" ? cleared(s2) : s2, root })), "start", now())
+        async (s2) => noteHook(
+          withHost(await withHistory(endsTurn({ ...input.source === "clear" ? cleared(s2) : s2, root }))),
+          "start",
+          now()
+        )
       );
       if (isMarkedBehind) deps.startUpdate(id);
       const context = startContext(CODEX, s, input.source);
@@ -1303,7 +1315,7 @@ async function handleHook(input, deps) {
       await updateState(dir, id, async (s) => {
         const r = notePrompt2(withHost(await withHistory(s)), input.prompt ?? "", now());
         notes = r.notes;
-        return input.agent_id ? r.state : noteHook(r.state, "prompt", now(), input.turn_id);
+        return input.agent_id ? r.state : noteHook(turnStarted(r.state), "prompt", now(), input.turn_id);
       });
       if (isMarkedBehind) deps.startUpdate(id);
       return notes.length === 0 ? null : { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: notes.join("\n\n") } };
@@ -1328,7 +1340,7 @@ async function handleHook(input, deps) {
       const written = await updateState(dir, id, async (s) => {
         const withLines = lines.reduce((x, line) => noteActivity(x, line), withHost(await withHistory(s)));
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines);
-        return noteHook(endTurn2(withOutput, reply, now()), "stop", now());
+        return noteHook(turnEnded(endTurn2(withOutput, reply, now())), "stop", now());
       });
       if (needsUpdate(written)) deps.startUpdate(id);
       return null;

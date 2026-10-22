@@ -1,7 +1,15 @@
 import { resolve } from 'node:path'
 
 import { dialogActivity } from '../../hooks/model-text'
-import { cleared, needsUpdate, noteActivity, noteCommandOutput, startContext } from '../../hooks/session'
+import {
+  cleared,
+  needsUpdate,
+  noteActivity,
+  noteCommandOutput,
+  startContext,
+  turnEnded,
+  turnStarted,
+} from '../../hooks/session'
 import { activityOf, endTurn, noteHook, notePrompt, patchFiles } from './core'
 import { withEarlierHistory } from './history'
 import { updateState } from './state'
@@ -62,8 +70,14 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
   switch (input.hook_event_name) {
     case 'SessionStart': {
       const root = input.cwd ?? ''
+      // Codex runs SessionStart after compacting too, in the middle of a turn.
+      const endsTurn = (s: SessionState) => (input.source === 'compact' ? s : turnEnded(s))
       const s = await updateState(dir, id, async s =>
-        noteHook(withHost(await withHistory({ ...(input.source === 'clear' ? cleared(s) : s), root })), 'start', now()),
+        noteHook(
+          withHost(await withHistory(endsTurn({ ...(input.source === 'clear' ? cleared(s) : s), root }))),
+          'start',
+          now(),
+        ),
       )
       if (isMarkedBehind) deps.startUpdate(id)
 
@@ -77,7 +91,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
         const r = notePrompt(withHost(await withHistory(s)), input.prompt ?? '', now())
         notes = r.notes
 
-        return input.agent_id ? r.state : noteHook(r.state, 'prompt', now(), input.turn_id)
+        return input.agent_id ? r.state : noteHook(turnStarted(r.state), 'prompt', now(), input.turn_id)
       })
       if (isMarkedBehind) deps.startUpdate(id)
 
@@ -108,7 +122,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
         const withLines = lines.reduce((x, line) => noteActivity(x, line), withHost(await withHistory(s)))
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines)
 
-        return noteHook(endTurn(withOutput, reply, now()), 'stop', now())
+        return noteHook(turnEnded(endTurn(withOutput, reply, now())), 'stop', now())
       })
       if (needsUpdate(written)) deps.startUpdate(id)
 

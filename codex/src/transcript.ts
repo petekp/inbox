@@ -183,6 +183,35 @@ async function tailLines(path: string, bytes: number): Promise<string[]> {
   }
 }
 
+const TURN_END_BYTES = 64 * 1024
+const TURN_EVENTS = new Set(['task_started', 'task_complete', 'turn_aborted'])
+
+/**
+ * Whether the rollout's last turn has ended. Codex runs no hook when a turn is interrupted, and the rollout ends that
+ * turn with a `turn_aborted` row. Only the last `TURN_END_BYTES` are read. False when they hold no turn row or the
+ * file cannot be read.
+ */
+export async function hasTurnEnded(path: string): Promise<boolean> {
+  try {
+    const lines = await tailLines(path, TURN_END_BYTES)
+    for (const line of lines.reverse()) {
+      if (!line.includes('"task_') && !line.includes('"turn_aborted"')) continue
+      let row: TranscriptLine
+      try {
+        row = JSON.parse(line) as TranscriptLine
+      } catch {
+        continue
+      }
+      const type = row.payload?.type
+      if (row.type === 'event_msg' && type !== undefined && TURN_EVENTS.has(type)) return type !== 'task_started'
+    }
+
+    return false
+  } catch {
+    return false
+  }
+}
+
 type TurnRows = { dialogs: DialogQuestion[][]; commands: FinishedCommand[] }
 
 /**

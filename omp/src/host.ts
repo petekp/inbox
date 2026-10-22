@@ -31,6 +31,8 @@ import {
   notePrompt,
   recorded,
   sessionView,
+  turnEnded,
+  turnStarted,
 } from '../../hooks/session'
 import type { SessionView } from '../../hooks/session'
 import {
@@ -590,6 +592,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
 
   const start = async (ctx: ExtensionContext, parentFile?: string) => {
     if (isUnattended(ctx)) return dropTools()
+    // No turn runs as a session starts, so a running turn saved here was cut off by a process that ended.
+    const id = sessionIdOf(ctx)
+    if ((await readState(dir, id).catch(() => null))?.presence.isTurnRunning)
+      await change(id, s => (s.presence.isTurnRunning ? turnEnded(s) : s)).catch(() => undefined)
     prepare(ctx)
     showBand(ctx)
     deps.background(
@@ -636,6 +642,12 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
           }
         : {}),
     }
+  })
+
+  // Not before_agent_start, which can run twice for one prompt and does not run for a queued message.
+  pi.on('agent_start', async (_event, ctx) => {
+    if (isUnattended(ctx)) return
+    await change(sessionIdOf(ctx), turnStarted).catch(() => undefined)
   })
 
   pi.on('turn_start', async (_event, ctx) => {
@@ -719,7 +731,9 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     // Escape on the ask dialog aborts the turn, so it ends with no reply text.
     const isDialogDismissed = event.messages.some(isDismissedAsk)
     const written = await change(id, s => ({
-      ...endTurn(OMP, s, reply, openPanels.has(id), { tab: screenTabOf(id), queuesEmptyReply: isDialogDismissed }),
+      ...turnEnded(
+        endTurn(OMP, s, reply, openPanels.has(id), { tab: screenTabOf(id), queuesEmptyReply: isDialogDismissed }),
+      ),
       stop,
     })).catch(() => null)
     if (!written) return

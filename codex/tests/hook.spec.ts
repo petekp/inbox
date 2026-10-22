@@ -96,6 +96,26 @@ test('a Stop notes the dialogs the agent opened in the ending turn as open, and 
   assert.deepEqual((await readState(dir, 's1')).pending[1]?.ex.activity, [])
 })
 
+test('a main-agent prompt reads Working… until Stop or a start that is not a compact, and a subagent prompt does not', async () => {
+  const dir = tempDir()
+  const deps = hookDeps(dir)
+  const now = async () => viewOf(await readState(dir, 's1'), 1000).progressPage.now
+
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
+  await handleHook(input('UserPromptSubmit', { prompt: 'Look around', agent_id: 'a1' }), deps)
+  assert.equal(await now(), null)
+  await handleHook(input('UserPromptSubmit', { prompt: 'Ship it', turn_id: 't1' }), deps)
+  assert.equal(await now(), 'Working…')
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'compact' }), deps)
+  assert.equal(await now(), 'Working…')
+  await handleHook(input('Stop', { last_assistant_message: '', turn_id: 't1' }), deps)
+  assert.equal(await now(), null)
+
+  await handleHook(input('UserPromptSubmit', { prompt: 'Ship it again', turn_id: 't2' }), deps)
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'resume' }), deps)
+  assert.equal(await now(), null)
+})
+
 test('each hook records that it ran, with the turn UserPromptSubmit saw, and the tab reads the session as heard', async () => {
   const dir = tempDir()
   let clock = 1000

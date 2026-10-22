@@ -63,6 +63,8 @@ import {
   recorded,
   sessionView,
   startTurn,
+  turnEnded,
+  turnStarted,
   upgradeSession,
   withNewPrRefs,
 } from './session'
@@ -585,7 +587,6 @@ const RAIL_GUTTER = 2
 const FOLD_KINDS: FoldKind[] = [...NEEDS_YOU_GROUPS.map(g => g.kind), 'issue', 'opportunity']
 const AWAY_MS = 15 * 60_000
 
-let isTurnRunning = false
 /** The conversation whose first prompt has had the card carried beside it. */
 let carriedFor: string | null = null
 /** Why the last conversation ended, until the next conversation loads. */
@@ -998,7 +999,6 @@ function hostOf($: EngineInterface, owner: Owner, surface?: UiPressArgument['sur
   return sessionHost($, owner, {
     update: change => commit($, owner, change),
     surface,
-    isTurnRunning: () => isTurnRunning,
     settleWindowMs: SETTLED_MS,
     onGhMissing: isGhMissing =>
       void commit($, owner, s =>
@@ -1009,10 +1009,10 @@ function hostOf($: EngineInterface, owner: Owner, surface?: UiPressArgument['sur
 
 async function tick($: EngineInterface) {
   const now = await $.clock.now()
-  const away = await read($, AWAY)
+  const [away, { presence }] = await Promise.all([read($, AWAY), read($, SESSION)])
   if (away.isAway) {
     await update($, AWAY, a => ({ ...a, minute: Math.floor(now / 60_000) }))
-  } else if (!isTurnRunning && away.lastActiveAt > 0 && now - away.lastActiveAt > AWAY_MS) {
+  } else if (!presence.isTurnRunning && away.lastActiveAt > 0 && now - away.lastActiveAt > AWAY_MS) {
     await update($, AWAY, a => ({ ...a, isAway: true, minute: Math.floor(now / 60_000) }))
   }
 }
@@ -2268,7 +2268,7 @@ async function applyConversation(
   // it, so an update in flight at load was cut off: record it as failed.
   // The theme read at the start is gone after /clear, so each conversation reads it.
   const [current] = await Promise.all([upgradeState($), syncTheme($)])
-  await replaceDrawn($, cutOffUpdate)
+  await replaceDrawn($, s => cutOffTurn(cutOffUpdate(s)))
   if (revision !== loadRevision) return
   const isFresh = current.turn === 0 && !current.card
   const isUnread =
@@ -2293,6 +2293,14 @@ async function applyConversation(
 /** An update a reload cut off reads as failed, so the next one catches up. */
 function cutOffUpdate<S extends Session>(s: S): S {
   return s.presence.isUpdating ? { ...s, presence: { ...s.presence, isUpdating: false, ledgerState: 'failed' } } : s
+}
+
+/**
+ * A reload or a quit can cut off a turn's end, so at load no turn runs. A turn the engine still runs sets it again at
+ * its next `turn.start`.
+ */
+function cutOffTurn<S extends Session>(s: S): S {
+  return s.presence.isTurnRunning || s.presence.statedStep !== null ? turnEnded(s) : s
 }
 
 /** Row presses keep only their PR records, whose rows outlive a conversation's items. */
@@ -2325,8 +2333,17 @@ async function bringBack(
         a.delivery?.state === 'queued' ? { ...a, delivery: { ...a.delivery, state: 'unconfirmed' as const } } : a,
       ]),
     )
-    // The stop and the running turn belong to the process that saved them.
-    return cutOffUpdate({ ...loaded, lastActions, sent: [], stop: null, turn: emptySession().turn })
+    // The stop and the turn belong to the process that saved them. Whether a turn runs now is this process's.
+    const { isTurnRunning, statedStep } = s.presence
+
+    return cutOffUpdate({
+      ...loaded,
+      lastActions,
+      sent: [],
+      stop: null,
+      turn: emptySession().turn,
+      presence: { ...loaded.presence, isTurnRunning, statedStep },
+    })
   })
   if (isBrought && !isFork)
     await update($, AWAY, a => (isLoading() ? { ...a, lastActiveAt: saved.savedAt, isAway: true } : a))
@@ -2495,14 +2512,13 @@ export const register: Register = on => {
 
   on('turn.start', async ($, e, next) => {
     if (e.agentId) return next(e)
-    isTurnRunning = true
     finalReply = null
     hasStopFromError = false
     // Counted here, before the
     // turn can end, since a reload can cut off its end-of-turn hook.
     if (isOn) {
       const before = await read($, SESSION)
-      await commit($, currentOwner(), startTurn)
+      await commit($, currentOwner(), s => turnStarted(startTurn(s)))
       if (before.stop) {
         stopGeneration++
         resuming = null
@@ -2626,10 +2642,10 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     const r = await next(e)
     if (e.agentId) return r
-    isTurnRunning = false
     askedCalls.clear()
     await closeDialogs($, null)
     if (!isOn) return r
+    await commit($, currentOwner(), turnEnded)
     if (e.reason === 'error' && !hasStopFromError) await setStopFromLastReply($)
     void wakeForDone($).catch(() => undefined)
     void followNewRows($).catch(() => undefined)

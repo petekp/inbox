@@ -77,8 +77,6 @@ export type SessionHost<S extends Session> = {
   settleWindowMs: number
   /** A new id for a delivery. */
   newId(): string
-  /** Whether a turn runs now, which holds a Done message back. Without it, a turn runs while the turn has a person's words. */
-  isTurnRunning?(s: S): boolean
 }
 
 /** What a host's catch-up found: the model's answer to apply, or why there is none. */
@@ -187,27 +185,19 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
 
 type WakeHost<S extends Session> = Pick<
   SessionHost<S>,
-  | 'now'
-  | 'read'
-  | 'update'
-  | 'deliver'
-  | 'prepare'
-  | 'settleWindowMs'
-  | 'newId'
-  | 'isTurnRunning'
-  | 'isDeliveryHeldUntilRun'
+  'now' | 'read' | 'update' | 'deliver' | 'prepare' | 'settleWindowMs' | 'newId' | 'isDeliveryHeldUntilRun'
 >
 
 /**
- * Tells the agent about rows closed with Done once their settle window has passed. A refused message
- * marks those rows with why, so they read "Not sent" and offer Undo.
+ * Tells the agent about rows closed with Done once their settle window has passed and no main-agent turn runs. A
+ * refused message marks those rows with why, so they read "Not sent" and offer Undo.
  */
 export async function wakeForDone<S extends Session>(host: WakeHost<S>): Promise<void> {
   const check = async (s: S) =>
     doneWake(s.ledger, {
       now: await host.now(),
       windowMs: host.settleWindowMs,
-      isTurnRunning: host.isTurnRunning ? host.isTurnRunning(s) : s.turn.person !== null,
+      isTurnRunning: s.presence.isTurnRunning,
     })
   if (!(await check(await host.read()))) return
   let attempt: { deliveryId: string; text: string } | null = null

@@ -16,6 +16,7 @@ import {
   SETTLED_MS,
   inboxView,
   perTurnStatus,
+  progressPage,
   rowKeyPlan,
 } from '../hooks/view'
 
@@ -595,6 +596,49 @@ test('a Done message another plugin rewrote to text a pending press also sent re
   const pane = await doneWakeAfterRewrite($, on, true)
   expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeDefined()
   await arrive($)
+})
+
+test('Working… shows from the main agent’s turn.start to its turn.complete, not for a subagent’s turn, a Done message waits for an interrupted turn to end, and a reload clears it', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let session: Parameters<typeof progressPage>[0] | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  const now = async () => progressPage(session!, 1_000_000).now
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  ledgerReply = 'NEW: do | - | Sign in to npm | - | -'
+  await $.prompt.submit({ text: 'publish it', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'publish it', turnId: 't1' })
+  expect(await now()).toBe('Working…')
+  await $.turn.complete({ answer: 'Sign in to npm.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  expect(await now()).toBe(null)
+
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'select-i1' })
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'done-i1' })
+  await $.turn.start({ text: 'Look around the repo', turnId: 's1', agentId: 'a1' })
+  await clock.settle()
+  expect(await now()).toBe(null)
+  await $.turn.start({ text: '', turnId: 't2' })
+  await clock.advance(SETTLED_MS)
+  expect(await now()).toBe('Working…')
+  expect(sent).toEqual([])
+
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: true, turnId: 't2', reason: 'aborted' })
+  await clock.settle()
+  expect(await now()).toBe(null)
+  expect(sent).toEqual(['Done: Sign in to npm'])
+
+  await $.turn.start({ text: '', turnId: 't3' })
+  expect(await now()).toBe('Working…')
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  expect(await now()).toBe(null)
 })
 
 for (const switchAt of [null, 'before-submit', 'during-submit'] as const)

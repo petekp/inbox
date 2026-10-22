@@ -573,6 +573,31 @@ async function withSteps() {
   return { inbox, stepPress }
 }
 
+test('Working… shows from agent_start to the run’s end, and a Done message waits for Esc to end the run', async () => {
+  const inbox = createInbox(pi(), deps())
+  const now = async () => (await inbox.screen(makeCtx())).view.progressPage.now
+  await prompt('hello')
+  await record({ kind: 'task', ask: 'Try the CLI by hand' })
+  await endAgent('Done.')
+  await settle()
+  await inbox.press(makeCtx(), { action: 'done', id: state().ledger.items[0].id }, NO_HOLDS)
+  await call('agent_start', { type: 'agent_start' })
+  expect(await now()).toBe('Working…')
+
+  clock += 5000
+  timers[0]!.fn()
+  await settle()
+  expect(sent).toEqual([])
+  await endAgent('', { willContinue: true })
+  expect(await now()).toBe('Working…')
+
+  await endAgent('', { messages: [{ role: 'assistant', content: [], stopReason: 'aborted' }] })
+  await settle()
+  expect(await now()).toBe('Waiting on one choice')
+  expect(sent).toHaveLength(1)
+  expect(sent[0]!.text).toContain('Try the CLI by hand')
+})
+
 test('a copy step hands the command to the clipboard and reports the copy', async () => {
   const { inbox, stepPress } = await withSteps()
   const outcome = await inbox.press(makeCtx(), stepPress(0), NO_HOLDS)
@@ -660,7 +685,7 @@ test('the /inbox command reports the counts, and /inbox demo reports the demo co
   expect(notices[1]).not.toBe(notices[0])
 })
 
-test('state from a crashed process that left an update running is cleared when the session starts', async () => {
+test('state from a crashed process that left an update or a turn running is cleared when the session starts', async () => {
   createInbox(pi(), deps())
   await prompt('hello')
   await endAgent('Done.')
@@ -668,13 +693,16 @@ test('state from a crashed process that left an update running is cleared when t
   const file = join(dir, 'sessions', 's1.json')
   const saved = state()
   const { writeFileSync } = await import('node:fs')
-  writeFileSync(file, JSON.stringify({ ...saved, presence: { ...saved.presence, isUpdating: true } }))
+  writeFileSync(
+    file,
+    JSON.stringify({ ...saved, presence: { ...saved.presence, isUpdating: true, isTurnRunning: true } }),
+  )
 
   handlers = new Map()
   createInbox(pi(), deps())
   await call('session_start', { type: 'session_start' })
   await settle()
-  expect(state().presence.isUpdating).toBe(false)
+  expect(state().presence).toMatchObject({ isUpdating: false, isTurnRunning: false })
 })
 
 const theme = {

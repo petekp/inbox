@@ -545,7 +545,6 @@ export function sessionHost(
     /** Changes the session, with what the drawing does after each write. */
     update: SessionHost<Session>['update']
     surface?: UiPressArgument['surface']
-    isTurnRunning: () => boolean
     settleWindowMs: number
     onGhMissing: (isMissing: boolean) => void
   },
@@ -589,7 +588,6 @@ export function sessionHost(
     },
     settleWindowMs: opts.settleWindowMs,
     newId: () => crypto.randomUUID(),
-    isTurnRunning: opts.isTurnRunning,
   }
 }
 

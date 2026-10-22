@@ -662,7 +662,50 @@ test('an open still pending after the press timeout shows nothing on its row, an
   assert.deepEqual([saved.lastActions.i1?.result, saved.lastActions.i2?.result], [pending(staleAt), pending(100)])
 })
 
-test('Done on a task Codex just left queues one message once Undo ends, unless a turn runs, and Undo then reads stale', async () => {
+test('a chat saved mid-turn reads Working… until a view or a press finds the turn ended in its rollout', async () => {
+  const dir = tempDir()
+  const rollout = join(dir, 'rollout.jsonl')
+  const turnRow = (type: string, turn: string) =>
+    JSON.stringify({ type: 'event_msg', payload: { type, turn_id: turn } })
+  writeFileSync(rollout, `${turnRow('task_started', 't1')}\n`)
+  const running = () =>
+    updateState(dir, 's1', s => ({
+      ...s,
+      transcriptPath: rollout,
+      presence: { ...s.presence, isTurnRunning: true },
+    }))
+  await running()
+  const handle = makeServer({
+    dir,
+    now: () => 100,
+    exec: fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec,
+    tabHtml: '<html></html>',
+    fallbackCli: async () => 'codex',
+  })
+  type Shown = { progressPage: { now: string | null } }
+  const call = (name: string, args: Record<string, unknown>) =>
+    handle({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name, arguments: args, _meta: { thread_id: 's1' } },
+    }) as Promise<{ result: { structuredContent: Shown & { view: Shown } } }>
+  const viewNow = async () => (await call('inbox_view', {})).result.structuredContent.progressPage.now
+
+  assert.equal(await viewNow(), 'Working…')
+  writeFileSync(rollout, `${turnRow('task_started', 't1')}\n${turnRow('task_complete', 't1')}\n`)
+  assert.equal(await viewNow(), null)
+  assert.equal((await readState(dir, 's1')).presence.isTurnRunning, false)
+
+  await running()
+  writeFileSync(rollout, `${turnRow('task_started', 't2')}\n`)
+  assert.equal(await viewNow(), 'Working…')
+  writeFileSync(rollout, `${turnRow('task_started', 't2')}\n${turnRow('turn_aborted', 't2')}\n`)
+  const pressed = await call('inbox_press', { press: { action: 'done', id: 'i1' }, thread: 'another chat' })
+  assert.equal(pressed.result.structuredContent.view.progressPage.now, null)
+})
+
+test('Done on a task Codex just left waits while a turn runs, queues one message once the rollout shows the turn interrupted, and Undo then reads stale', async () => {
   const dir = tempDir()
   const task = (id: string, ask: string, turn: number) => ({
     id,
@@ -676,10 +719,14 @@ test('Done on a task Codex just left queues one message once Undo ends, unless a
     turn,
     at: 1,
   })
+  const rollout = join(dir, 'rollout.jsonl')
+  const turnRow = (type: string) => JSON.stringify({ type: 'event_msg', payload: { type, turn_id: 't3' } })
+  writeFileSync(rollout, `${turnRow('task_started')}\n`)
   await updateState(dir, 's1', s => ({
     ...s,
     root: '/repo',
     cliPath: '/apps/codex',
+    transcriptPath: rollout,
     ledger: {
       ...s.ledger,
       turn: 2,
@@ -709,13 +756,13 @@ test('Done on a task Codex just left queues one message once Undo ends, unless a
 
   await call('inbox_press', { press: { action: 'done', id: 'i1' }, thread: 's1' })
   await call('inbox_press', { press: { action: 'done', id: 'i2' }, thread: 's1' })
-  await updateState(dir, 's1', s => ({ ...s, turn: { ...s.turn, person: 'keep going' } }))
+  await updateState(dir, 's1', s => ({ ...s, presence: { ...s.presence, isTurnRunning: true } }))
   t += SETTLE_WINDOW_MS
   await poll()
   const queued = () => runner.calls.filter(c => c[0] === '/apps/codex')
   assert.deepEqual(queued(), [])
 
-  await updateState(dir, 's1', s => ({ ...s, turn: { ...s.turn, person: null } }))
+  writeFileSync(rollout, `${turnRow('task_started')}\n${turnRow('turn_aborted')}\n`)
   await poll()
   await poll()
   assert.deepEqual(queued(), [['/apps/codex', 'queue', '--thread', 's1', '--message', 'Done: Sign in to npm']])

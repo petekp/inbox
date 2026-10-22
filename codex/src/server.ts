@@ -15,7 +15,7 @@ import type { TabView } from './core'
 import { demoState } from './demo'
 import { withEarlierHistory } from './history'
 import { codexStore } from './host'
-import { isUnseen, pressOn, recorded } from '../../hooks/session'
+import { isUnseen, pressOn, recorded, turnEnded } from '../../hooks/session'
 import type { SendOutcome } from '../../hooks/session'
 import { fetchPrs, prFetchTracker, press, wakeForDone as wakeSessionForDone } from '../../hooks/session-host'
 import type { SessionHost } from '../../hooks/session-host'
@@ -26,7 +26,7 @@ import { pruneSessions, readState, updateState } from './state'
 import { reconcileUpdateStatus } from './update'
 import type { SessionState } from './state'
 import { CODEX, INBOX_DESCRIPTION, inboxToolText, VIEW_DESCRIPTION } from './texts'
-import { rolloutFor } from './transcript'
+import { hasTurnEnded, rolloutFor } from './transcript'
 import type { LastAction, PrViews, RowNote } from '../../types'
 
 /** Codex keeps a tab's page by its address, even across server restarts, so a new build needs a new address for a new chat to load it. */
@@ -263,7 +263,17 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     }
   }
 
-  const wakeForDone = (id: string) => wakeSessionForDone(hostFor(id))
+  /** Ends a turn the rollout shows ended, since no hook runs when a turn is interrupted. */
+  async function endTurnIfEnded(id: string) {
+    const isRunning = (s: SessionState) => s.presence.isTurnRunning && s.transcriptPath !== null
+    if (!isRunning(await readState(dir, id))) return
+    await updateState(dir, id, async s => (isRunning(s) && (await hasTurnEnded(s.transcriptPath!)) ? turnEnded(s) : s))
+  }
+
+  const wakeForDone = async (id: string) => {
+    await endTurnIfEnded(id)
+    await wakeSessionForDone(hostFor(id))
+  }
 
   const currentPage = async () => (await deps.devPage?.()) ?? deps.tabHtml
 
@@ -293,6 +303,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   }
 
   async function onPress(id: string, p: RowPress | PrPress, thread: unknown, holds: ReplyHolds): Promise<PressReply> {
+    await endTurnIfEnded(id).catch(() => undefined)
     const outcome = await press(hostFor(id), p, thread !== id, holds)
     if (outcome.wakesForDone) setTimeout(() => void wakeForDone(id).catch(() => undefined), SETTLE_WINDOW_MS).unref()
     const { isUnconfirmed, wakesForDone: _wakes, ...rest } = outcome

@@ -1396,6 +1396,7 @@ async function tailLines(path, bytes) {
     await file.close();
   }
 }
+var TURN_END_BYTES = 64 * 1024;
 var ROLLOUT_BYTES = 8 * 1024 * 1024;
 var record = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
 var textOf = (v) => isText(v) ? v : "";

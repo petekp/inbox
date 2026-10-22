@@ -3104,6 +3104,12 @@ function matchSent(s, text) {
     sentBy: sent ? { press: sent.press } : null
   };
 }
+function turnStarted(s) {
+  return { ...s, presence: { ...s.presence, isTurnRunning: true } };
+}
+function turnEnded(s) {
+  return { ...s, presence: { ...s.presence, isTurnRunning: false, statedStep: null } };
+}
 function startTurn(s) {
   return { ...s, presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }, stop: null };
 }
@@ -3413,7 +3419,7 @@ async function wakeForDone(host) {
   const check = async (s) => doneWake(s.ledger, {
     now: await host.now(),
     windowMs: host.settleWindowMs,
-    isTurnRunning: host.isTurnRunning ? host.isTurnRunning(s) : s.turn.person !== null
+    isTurnRunning: s.presence.isTurnRunning
   });
   if (!await check(await host.read()))
     return;
@@ -5383,6 +5389,11 @@ function createInbox(pi, deps = defaultDeps) {
   const start = async (ctx, parentFile) => {
     if (isUnattended(ctx))
       return dropTools();
+    const id = sessionIdOf(ctx);
+    if ((await readState(dir, id).catch(() => null))?.presence.isTurnRunning)
+      await change(id, (s) => s.presence.isTurnRunning ? turnEnded(s) : s).catch(() => {
+        return;
+      });
     prepare(ctx);
     showBand(ctx);
     deps.background(continueFork(ctx, parentFile).catch(() => {
@@ -5425,6 +5436,13 @@ function createInbox(pi, deps = defaultDeps) {
         }
       } : {}
     };
+  });
+  pi.on("agent_start", async (_event, ctx) => {
+    if (isUnattended(ctx))
+      return;
+    await change(sessionIdOf(ctx), turnStarted).catch(() => {
+      return;
+    });
   });
   pi.on("turn_start", async (_event, ctx) => {
     noted = null;
@@ -5507,7 +5525,7 @@ function createInbox(pi, deps = defaultDeps) {
     const stop = await stopOf(last, deps.isUsageLimit, deps.now());
     const isDialogDismissed = event.messages.some(isDismissedAsk);
     const written = await change(id, (s) => ({
-      ...endTurn(OMP, s, reply, openPanels.has(id), { tab: screenTabOf(id), queuesEmptyReply: isDialogDismissed }),
+      ...turnEnded(endTurn(OMP, s, reply, openPanels.has(id), { tab: screenTabOf(id), queuesEmptyReply: isDialogDismissed })),
       stop
     })).catch(() => null);
     if (!written)
