@@ -41,7 +41,7 @@ The tab is called Progress everywhere: in its label, code identifiers, stored va
 
 - The page tab id `'progress'`: in the mod's new `PAGE` atom, Codex's `SessionState.shownTab`, and the tab the Codex page sends with each view request.
 - The mod's atom key `page`, and Codex's field name `shownTab`.
-- `Ledger.milestones`, and `Milestone { text, source, at }` with `source` one of `done`, `answered`, `fixed`.
+- `Ledger.milestones`, and `Milestone { id, source, text, detail, ref, at }` with `source` one of `done`, `answered`, `fixed`. `detail` is the person's answer or the change that fixed a finding. `ref` is the id of the item or finding, for those two sources. `at` is null when the time is unknown.
 - `presence.isTurnRunning` and `presence.statedStep` in `Session`.
 - `Session.subagents`, and `Subagent { id, task, state, toolStep, statedStep, result, startedAt, at, transcriptPath }` with `state` one of `running`, `done`, `stopped`. `transcriptPath` is Codex's path to the subagent's rollout, named like `SessionState.transcriptPath`, and is null elsewhere.
 - The new `DemoCopy` fields `subagents` and `presence`, saved in the mod's DEMO atom.
@@ -127,7 +127,7 @@ The map branch's `docs/plans/session-progress.md` and `docs/plans/multi-client-a
 - **answered:** a question you answered.
 - **fixed:** a finding closed as fixed.
 
-An answered or fixed milestone goes away if its row reopens, since the result no longer holds. A bare yes, a put-off and the Proceed/Not yet question add none, since they record no result.
+An answered or fixed milestone goes away if its row reopens, since the result no longer holds. A bare yes, a put-off, the "List the choices" answer and the Proceed/Not yet question add none, since they record no result.
 
 **Per host.** The code is shared, so it applies in the mod, Codex and omp alike. All three catch up through `appliedCatchUp`, so the catch-up count applies in each. Codex and omp upgrade saved state through `upgradeSession`, and the mod through `upgradeDrawn`, which calls it.
 
@@ -140,7 +140,7 @@ An answered or fixed milestone goes away if its row reopens, since the result no
 **Stored state.**
 
 - `Milestone` and `Ledger.milestones` go in `types/index.d.ts`, with a default in `EMPTY`.
-- The list is capped at 200. Past the cap, the oldest goes first, and an untimed one goes before a timed one.
+- The list is capped at 200. Past the cap, the oldest by place in the list goes first. A milestone the same update just added is never the one to go, so a catch-up on a full list keeps its results. `upgradeLedger` puts the results it seeds from `card.done`, which have no time, at the start of the list, so they go first.
 - `upgradeLedger` adds each `card.done` text that no done milestone has, untimed, under the existing duplicate rule. It compares clipped text, since `doneMilestone` clips. Reason: 0.2.10 keeps a saved `milestones` list but writes new results only to `card.done`. Seeding only an empty list would drop those results after a move back to this build. In normal use `card.done` equals the newest done milestones, so this adds nothing.
 - `card.done` stays as the newest 4 done milestones, built by `doneTexts`. Older builds and `carryText` still read it.
 - `forkedFrom` copies milestones with the ledger, since a fork shares its parent's past.

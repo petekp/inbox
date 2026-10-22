@@ -213,7 +213,7 @@ test('a ledger saved with milestones, then updated by 0.2.10, keeps the result 0
   const upgraded = upgradeLedger(byOlderBuild)
 
   expect(upgraded.milestones.map(m => [m.text, m.at])).toEqual([
-    ['Reducer built', 5],
     ['Tests added', null],
+    ['Reducer built', 5],
   ])
 })

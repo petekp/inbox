@@ -908,8 +908,8 @@ describe('milestones', () => {
     const upgraded = upgradeLedger(olderBuild)
 
     expect(upgraded.milestones.map(m => [m.text, m.at])).toEqual([
-      ['Reducer built', 5],
       ['Tests added', null],
+      ['Reducer built', 5],
     ])
     expect(upgradeLedger(upgraded).milestones).toEqual(upgraded.milestones)
   })
@@ -954,6 +954,19 @@ describe('milestones', () => {
     expect(closeItem(asked, 'i1', { how: 'answered', outcome: 'Not yet' }, 5).milestones).toEqual([])
     const todo = update({ ...EMPTY, turn: 1 }, 'GOAL: g\nTODO: Write the migration', 2)
     expect(closeItem(todo, 'i1', { how: 'answered', outcome: 'Proceed' }, 5).milestones).toEqual([])
+  })
+
+  test('asking for the choices adds no milestone, and the answer to the re-asked question adds one', () => {
+    const listed = closeItem(asked, 'i1', { how: 'answered', outcome: 'List the choices' }, 5)
+    expect(listed.milestones).toEqual([])
+
+    const again = update(
+      listed,
+      'GOAL: g\nNEW: decide | - | Rename greet.mjs to hello.mjs? | Yes, rename / No, keep | -',
+      6,
+    )
+    const answered = closeItem(again, 'i2', { how: 'answered', outcome: 'Yes, rename' }, 7)
+    expect(answered.milestones.map(m => [m.source, m.ref, m.detail])).toEqual([['answered', 'i2', 'Yes, rename']])
   })
 
   test('a CLOSED line with the answer adds one, and a done: line adds none', () => {
@@ -1029,6 +1042,41 @@ describe('milestones', () => {
     expect(over.milestones.map(m => m.text)).toContain('Old result 1')
     expect(over.milestones.map(m => m.text)).toContain('Result 0')
     expect(over.milestones.at(-1)?.text).toBe('The newest result')
+  })
+})
+
+describe('milestones at the cap', () => {
+  const full = (isTimed: boolean) => ({
+    ...EMPTY,
+    turn: 1,
+    milestones: Array.from({ length: 200 }, (_, n) => ({
+      id: `m${n + 1}`,
+      source: 'done' as const,
+      text: `Result ${n}`,
+      detail: null,
+      ref: null,
+      at: isTimed ? 100 + n : null,
+    })),
+  })
+
+  test('a catch-up on a full list keeps its six results and drops the oldest by place', () => {
+    const lines = [1, 2, 3, 4, 5, 6].map(n => `DONE: Caught up ${n}`).join('\n')
+    const caught = applyUpdate(full(true), parseReply(`GOAL: g\n${lines}`)!, 1000, 1, 1000, true)
+
+    expect(caught.milestones).toHaveLength(200)
+    expect(caught.milestones.slice(-6).map(m => m.text)).toEqual([1, 2, 3, 4, 5, 6].map(n => `Caught up ${n}`))
+    expect(caught.milestones[0]?.text).toBe('Result 6')
+  })
+
+  test('a seeded result with no time goes before timed ones', () => {
+    const upgraded = upgradeLedger({
+      ...full(true),
+      card: { goal: 'g', done: ['Seeded result'], now: '', running: [] },
+    })
+
+    expect(upgraded.milestones).toHaveLength(200)
+    expect(upgraded.milestones.map(m => m.text)).not.toContain('Seeded result')
+    expect(upgraded.milestones[0]?.text).toBe('Result 0')
   })
 })
 

@@ -86,7 +86,8 @@ function upgradeLedger(ledger) {
     ...rest,
     milestones: addMilestones(
       rest.milestones ?? [],
-      (rest.card?.done ?? []).map((text) => doneMilestone(text, null))
+      (rest.card?.done ?? []).map((text) => doneMilestone(text, null)),
+      "first"
     ),
     findings: [...rest.findings ?? [], ...notes ?? []],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
@@ -300,8 +301,8 @@ function isTodoQuestion(item) {
 }
 function answeredMilestone(item, answer, at) {
   const text = answer.trim();
-  if (item.kind !== "question" || isTodoQuestion(item) || text === "" || BARE_YES.test(text) || PUT_OFF.test(text))
-    return null;
+  const isNoResult = isTodoQuestion(item) || text === "" || BARE_YES.test(text) || PUT_OFF.test(text) || isAskedForChoices({ how: "answered", outcome: text });
+  if (item.kind !== "question" || isNoResult) return null;
   return {
     source: "answered",
     text: clipLabel(item.ask, MILESTONE_TEXT_CHARS),
@@ -316,19 +317,23 @@ function foldedText(text) {
 function nextMilestoneId(milestones) {
   return `m${Math.max(0, ...milestones.map((m) => idNumber(m.id) || 0)) + 1}`;
 }
-function addMilestone(milestones, m) {
+function isRepeatMilestone(milestones, m) {
   const folded = foldedText(m.text);
-  const isRepeat = milestones.some(
+  return milestones.some(
     (x) => m.ref !== null ? x.source === m.source && x.ref === m.ref : m.source === "done" && foldedText(x.text) === folded
   );
-  if (isRepeat) return milestones;
-  const all = [...milestones, { ...m, id: nextMilestoneId(milestones) }];
-  if (all.length <= MAX_MILESTONES) return all;
-  const oldest = all.reduce((a, b) => (a.at ?? -Infinity) <= (b.at ?? -Infinity) ? a : b);
-  return all.filter((x) => x !== oldest);
 }
-function addMilestones(milestones, added) {
-  return added.reduce(addMilestone, milestones);
+function addMilestones(milestones, added, place = "last") {
+  const fresh = added.reduce((all2, m) => {
+    const known = [...milestones, ...all2];
+    return isRepeatMilestone(known, m) ? all2 : [...all2, { ...m, id: nextMilestoneId(known) }];
+  }, []);
+  const all = place === "first" ? [...fresh, ...milestones] : [...milestones, ...fresh];
+  const over = all.length - MAX_MILESTONES;
+  if (over <= 0) return all;
+  const kept = place === "first" ? [] : fresh;
+  const evicted = new Set(all.filter((m) => !kept.includes(m)).slice(0, over));
+  return all.filter((m) => !evicted.has(m));
 }
 function removeMilestone(ledger, ref) {
   return ledger.milestones.some((m) => m.ref === ref) ? { ...ledger, milestones: ledger.milestones.filter((m) => m.ref !== ref) } : ledger;

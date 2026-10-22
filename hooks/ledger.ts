@@ -55,6 +55,7 @@ export function upgradeLedger(ledger: Ledger): Ledger {
     milestones: addMilestones(
       rest.milestones ?? [],
       (rest.card?.done ?? []).map(text => doneMilestone(text, null)),
+      'first',
     ),
     findings: [...(rest.findings ?? []), ...(notes ?? [])],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
@@ -369,11 +370,16 @@ function isTodoQuestion(item: Pick<Item, 'options'>): boolean {
   return item.options.length === TODO_OPTIONS.length && item.options.every((o, n) => o === TODO_OPTIONS[n])
 }
 
-/** The milestone for an item the person answered; null for a todo question, a bare yes and a put-off. */
+/** The milestone for an item the person answered; null for a todo question, a bare yes, a put-off and a request for the choices. */
 function answeredMilestone(item: Item, answer: string, at: number): NewMilestone | null {
   const text = answer.trim()
-  if (item.kind !== 'question' || isTodoQuestion(item) || text === '' || BARE_YES.test(text) || PUT_OFF.test(text))
-    return null
+  const isNoResult =
+    isTodoQuestion(item) ||
+    text === '' ||
+    BARE_YES.test(text) ||
+    PUT_OFF.test(text) ||
+    isAskedForChoices({ how: 'answered', outcome: text })
+  if (item.kind !== 'question' || isNoResult) return null
 
   return {
     source: 'answered',
@@ -392,25 +398,33 @@ function nextMilestoneId(milestones: Milestone[]): string {
   return `m${Math.max(0, ...milestones.map(m => idNumber(m.id) || 0)) + 1}`
 }
 
-/**
- * Adds a milestone unless the list already has it: an event milestone by its source and ref, a done milestone by
- * its text, ignoring case, punctuation and spacing. Over the cap, the oldest goes: one with no time first.
- */
-function addMilestone(milestones: Milestone[], m: NewMilestone): Milestone[] {
+function isRepeatMilestone(milestones: Milestone[], m: NewMilestone): boolean {
   const folded = foldedText(m.text)
-  const isRepeat = milestones.some(x =>
+
+  return milestones.some(x =>
     m.ref !== null ? x.source === m.source && x.ref === m.ref : m.source === 'done' && foldedText(x.text) === folded,
   )
-  if (isRepeat) return milestones
-  const all = [...milestones, { ...m, id: nextMilestoneId(milestones) }]
-  if (all.length <= MAX_MILESTONES) return all
-  const oldest = all.reduce((a, b) => ((a.at ?? -Infinity) <= (b.at ?? -Infinity) ? a : b))
-
-  return all.filter(x => x !== oldest)
 }
 
-function addMilestones(milestones: Milestone[], added: NewMilestone[]): Milestone[] {
-  return added.reduce(addMilestone, milestones)
+/**
+ * Adds each milestone unless the list already has it: an event milestone by its source and ref, a done milestone by
+ * its text, ignoring case, punctuation and spacing. The new ones go at the end, or at the start for `first`, which
+ * a seeded list uses so its untimed results go first. Over the cap, the oldest by place go. A milestone added by this
+ * call stays, so a catch-up on a full list keeps its results; `first` ones are not kept.
+ */
+function addMilestones(milestones: Milestone[], added: NewMilestone[], place: 'last' | 'first' = 'last'): Milestone[] {
+  const fresh = added.reduce<Milestone[]>((all, m) => {
+    const known = [...milestones, ...all]
+
+    return isRepeatMilestone(known, m) ? all : [...all, { ...m, id: nextMilestoneId(known) }]
+  }, [])
+  const all = place === 'first' ? [...fresh, ...milestones] : [...milestones, ...fresh]
+  const over = all.length - MAX_MILESTONES
+  if (over <= 0) return all
+  const kept = place === 'first' ? [] : fresh
+  const evicted = new Set(all.filter(m => !kept.includes(m)).slice(0, over))
+
+  return all.filter(m => !evicted.has(m))
 }
 
 /** The one remover, for a result its owner undid: an answered item or a fixed finding that reopens. */
@@ -518,7 +532,7 @@ function repeatsClosed(closed: Closed[], a: Update['added'][number], since: numb
 /** The answer the inbox model offers when an ask names no choices. It asks for the same question again, with them. */
 export const LIST_CHOICES = 'List the choices'
 
-export function isAskedForChoices(c: Closed): boolean {
+export function isAskedForChoices(c: Pick<Closed, 'how' | 'outcome'>): boolean {
   return c.how === 'answered' && c.outcome.trim().toLowerCase() === LIST_CHOICES.toLowerCase()
 }
 
