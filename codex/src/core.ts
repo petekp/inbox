@@ -1,7 +1,8 @@
 import { toolActivity } from '../../hooks/model-text'
 import { endTurn as endSessionTurn, notePrompt as notePromptIn, sessionView } from '../../hooks/session'
+import type { ScreenTab } from '../../hooks/model-text'
 import type { SessionView } from '../../hooks/session'
-import { NO_HOLDS } from '../../hooks/view'
+import { NO_HOLDS, TABS } from '../../hooks/view'
 import type { ReplyHolds } from '../../hooks/view'
 import { SETTLE_WINDOW_MS } from './settle'
 import type { Heard, SessionState } from './state'
@@ -11,6 +12,13 @@ const TAB_OPEN_MS = 15_000
 
 export function isTabOpen(s: SessionState, now: number): boolean {
   return now - s.tabSeenAt < TAB_OPEN_MS
+}
+
+/** The tab the Inbox tab shows, as the inbox model is told. */
+export function screenTabOf(s: SessionState): ScreenTab {
+  const shown = TABS.find(t => t.id === s.shownTab)
+
+  return { label: shown?.label ?? s.shownTab, isPage: s.shownTab === 'progress' }
 }
 
 export function notePrompt(s: SessionState, text: string, now: number): { state: SessionState; notes: string[] } {
@@ -28,7 +36,7 @@ export function patchFiles(patch: string): string[] {
 }
 
 export function endTurn(s: SessionState, reply: string, now: number): SessionState {
-  return endSessionTurn(CODEX, s, reply, isTabOpen(s, now))
+  return endSessionTurn(CODEX, s, reply, isTabOpen(s, now), { tab: screenTabOf(s) })
 }
 
 const MAX_PROMPT_TURNS = 10

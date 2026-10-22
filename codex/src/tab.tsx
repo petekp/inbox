@@ -21,7 +21,8 @@ import {
   emptyText,
   groupEmptyText,
   entryId,
-  TABS,
+  LISTED_TABS,
+  ROW_TABS,
   feedbackOf,
   feedbackText,
   fieldExit,
@@ -65,12 +66,11 @@ import {
 } from '../../hooks/pr-tab'
 import type { PrAction, PrPress } from '../../hooks/pr-tab'
 import { commentParts, failingChecks, readableComment, readiness, threadWhere, waitingThreads } from '../../hooks/prs'
-import type { Draft, Finding, PrCheck, PrThread, PrView } from '../../types'
-import { followTo } from '../../hooks/arrivals'
+import type { Draft, Finding, PrCheck, PrThread, PrView, Tab } from '../../types'
+import { ARRIVAL_TABS, followTo } from '../../hooks/arrivals'
 import { parseInline } from '../../hooks/inline'
-import { ARRIVAL_TAB_IDS, isShownEmpty, newRows, openRows, TAB_IDS, TAB_OF } from './arrivals'
-import type { ArrivalTab } from './arrivals'
-import type { FoldGroup, Group, SeenRows, Tab } from './arrivals'
+import { isShownEmpty, newRows, openRows, TAB_OF } from './arrivals'
+import type { FoldGroup, Group, SeenRows } from './arrivals'
 import type { TabView as View } from './core'
 import type { PressReply } from './server'
 import { ENTER_MS, EXIT_MS, isMoving, MOVE_MS, ROW_STATE_MS, stepRow } from './rows'
@@ -79,8 +79,6 @@ import { PRESS_TIMEOUT_MS } from '../../hooks/session'
 import { drawnSettled, POLL_MS, settledIds, settledSeen } from './settle'
 
 type Tone = 'needsYou' | 'issue' | 'findings' | 'done' | 'error'
-
-type ShownTab = Tab | 'prs'
 
 type Emphasis = ActionEmphasis
 
@@ -126,8 +124,8 @@ let hostContext: HostContext = {}
 let stagedHostChanges: HostContext = {}
 let pollFailures = 0
 let readAt = 0
-let tab: ShownTab = 'needsYou'
-const selection: Record<ShownTab, { id: string; openedAt: number; index?: number } | null> = {
+let tab: Tab = 'needsYou'
+const selection: Record<Tab, { id: string; openedAt: number; index?: number } | null> = {
   needsYou: null,
   findings: null,
   prs: null,
@@ -161,8 +159,8 @@ let viewGeneration = 0
 type Kept = {
   version: 1
   isDemo: boolean
-  tab: ShownTab
-  selection: Record<ShownTab, string | null>
+  tab: Tab
+  selection: Record<Tab, string | null>
   typing: string | null
   /** An earlier page kept each draft as its text alone. */
   drafts: [string, Draft | string][]
@@ -264,7 +262,7 @@ function restoreState(incoming?: Kept) {
   if (kept?.version !== 1) return
   isDemo = kept.isDemo
   tab = kept.tab
-  for (const t of [...TAB_IDS, 'prs'] as const) {
+  for (const t of ARRIVAL_TABS) {
     const id = kept.selection[t]
     selection[t] = id ? { id, openedAt: 0 } : null
   }
@@ -357,12 +355,12 @@ function applyView(next: View, seq: number) {
   view = next
   for (const { pr, isSettled } of next.prs.drawn)
     if (isSettled) drawIn(Math.max(0, SETTLED_MS - (next.at - (next.lastActions[prMarkId(pr.ref)]?.at ?? next.at))))
-  const isOpening = TAB_IDS.every(t => rowsSeen[t] === undefined)
+  const isOpening = LISTED_TABS.every(t => rowsSeen[t.id] === undefined)
   const rows = newRows(rowsSeen, next, next.isFetchingPrs)
   rowsSeen = rows.seen
   const added = [...rows.added.needsYou, ...rows.added.findings]
   for (const id of added) entering.add(id)
-  for (const t of TAB_IDS) {
+  for (const { id: t } of LISTED_TABS) {
     const id = !selection[t] && rows.added[t].length > 0 ? keptOpen(tabWaits(next, t), rows.added[t]) : null
     if (id) selection[t] = { id, openedAt: 0 }
   }
@@ -370,9 +368,9 @@ function applyView(next: View, seq: number) {
   draw()
 }
 
-function follow(v: View, added: Record<ArrivalTab, string[]>) {
+function follow(v: View, added: Record<Tab, string[]>) {
   const drawn = shownSettled()
-  const to = followTo(ARRIVAL_TAB_IDS, tab, isShownEmpty(v, tab, drawn, unfolded, v.isFetchingPrs), added)
+  const to = followTo(ARRIVAL_TABS, tab, isShownEmpty(v, tab, drawn, unfolded, v.isFetchingPrs), added)
   if (!to) return
   tab = to
   selection[to] = null
@@ -387,7 +385,7 @@ async function read() {
   const generation = viewGeneration
   const seq = ++requested
   try {
-    const next = await callTool<View>('inbox_view', { demo: isDemo, ...holds() }, READ_TIMEOUT_MS)
+    const next = await callTool<View>('inbox_view', { demo: isDemo, tab, ...holds() }, READ_TIMEOUT_MS)
     if (generation !== viewGeneration || seq < shown) return
     requestedPage = next.devPage
     if (updateError?.page !== requestedPage) updateError = null
@@ -623,7 +621,7 @@ async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void
   }
 }
 
-function tabWaits(v: View, t: ShownTab): RowWait[] {
+function tabWaits(v: View, t: Tab): RowWait[] {
   return t === 'prs'
     ? prRowWaits(
         v.prs.drawn.filter(x => !x.isSettled).map(x => x.pr),
@@ -881,7 +879,7 @@ function prRows(v: View): Row[] {
   return prPlan(v).rows
 }
 
-function tabRows(v: View, t: ShownTab): Row[] {
+function tabRows(v: View, t: Tab): Row[] {
   return t === 'prs' ? prRows(v) : listsOf(v, shownSettled()).byTab[t]
 }
 
@@ -976,7 +974,7 @@ async function undo(r: RowView) {
   }
 }
 
-function selectedIndex(rows: Row[], t: ShownTab, v: View): number {
+function selectedIndex(rows: Row[], t: Tab, v: View): number {
   const s = selection[t]
   if (s) {
     const at = rows.findIndex(r => r.id === s.id)
@@ -990,13 +988,13 @@ function selectedIndex(rows: Row[], t: ShownTab, v: View): number {
   return id ? rows.findIndex(r => r.id === id) : -1
 }
 
-function open(t: ShownTab, id: string, index?: number) {
+function open(t: Tab, id: string, index?: number) {
   selection[t] = { id, openedAt: Date.now(), ...(index === undefined ? {} : { index }) }
   if (typing !== id) typing = null
   drawIn(PRESS_GUARD_MS)
 }
 
-function select(t: ShownTab, rows: Row[], index: number) {
+function select(t: Tab, rows: Row[], index: number) {
   const row = rows[index]
   if (!row) return
   open(t, row.id, index)
@@ -1681,13 +1679,13 @@ function Status({ v }: { v: View }) {
 }
 
 function TabBar({ v }: { v: View }) {
-  const counts: Record<ShownTab, number> = { needsYou: v.needsYou.count, findings: v.findings.count, prs: v.prs.count }
+  const counts: Record<Tab, number> = { needsYou: v.needsYou.count, findings: v.findings.count, prs: v.prs.count }
   const { error } = v.status
 
   return (
     <nav>
       <div class="tabs">
-        {TABS.map(t => (
+        {ROW_TABS.map(t => (
           <button
             type="button"
             class={`tab ${tab === t.id ? 'shown' : ''}`}
@@ -2059,7 +2057,7 @@ document.addEventListener(
       }
       return
     }
-    const switched = TABS.find(t => t.hotkey === e.key)
+    const switched = ROW_TABS.find(t => t.hotkey === e.key)
     if (switched) {
       tab = switched.id
       draw()

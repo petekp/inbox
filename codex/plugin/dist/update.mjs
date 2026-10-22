@@ -789,7 +789,10 @@ function surfaceAtStart(host) {
   return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
 }
 function screenText(host, isOpen, tab) {
-  return isOpen ? `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab} tab, ` : ""}listing every open item.` : `${surfaceAtStart(host)} is closed.`;
+  if (!isOpen) return `${surfaceAtStart(host)} is closed.`;
+  if (tab?.isPage)
+    return `${surfaceAtStart(host)} is open beside the conversation, on its ${tab.label} tab, which shows the session's goal, subagents and results, not rows.`;
+  return `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ""}listing every open item.`;
 }
 function outcomeText(d) {
   if (d.how === "dismissed") return "dismissed by the user";
@@ -855,7 +858,14 @@ var TABS = [
   { id: "findings", label: "Findings", hotkey: "2" },
   { id: "prs", label: "PRs", hotkey: "3" }
 ];
-var ROW_TABS = TABS.filter((t) => t.id !== "prs");
+function isListedTab(tab) {
+  return tab === "needsYou" || tab === "findings";
+}
+function isRowTab(tab) {
+  return tab !== "progress";
+}
+var ROW_TABS = TABS.filter((t) => isRowTab(t.id));
+var LISTED_TABS = TABS.filter((t) => isListedTab(t.id));
 
 // ../hooks/session.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
@@ -1005,6 +1015,7 @@ function emptyState(sessionId) {
     cliPath: null,
     ...emptySession(),
     tabSeenAt: 0,
+    shownTab: "needsYou",
     heard: NOTHING_HEARD
   };
 }
@@ -1025,6 +1036,7 @@ function upgraded(saved, sessionId) {
       turn,
       pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex }))
     }),
+    shownTab: TABS.some((t) => t.id === saved.shownTab) ? saved.shownTab ?? base.shownTab : base.shownTab,
     // A file saved before the hooks kept this record came from hooks that ran, so it reads as heard.
     // Its turns were not recorded, so `promptAt` is set too: a tool call then falls back to the time rule.
     heard: saved.heard ? { ...NOTHING_HEARD, ...saved.heard } : {
@@ -1293,6 +1305,10 @@ var CODEX = {
 var TAB_OPEN_MS = 15e3;
 function isTabOpen(s, now) {
   return now - s.tabSeenAt < TAB_OPEN_MS;
+}
+function screenTabOf(s) {
+  const shown = TABS.find((t) => t.id === s.shownTab);
+  return { label: shown?.label ?? s.shownTab, isPage: s.shownTab === "progress" };
 }
 function activityOf(tool, input) {
   return toolActivity(tool, input);
@@ -1604,7 +1620,7 @@ var runUpdates2 = (dir, sessionId, ask, now) => runUpdates({
   catchUp: async (s) => askOverConversation(
     ask,
     s,
-    screenText(CODEX, isTabOpen(s, now()), null),
+    screenText(CODEX, isTabOpen(s, now()), screenTabOf(s)),
     (await readRollout(s.transcriptPath, s.root))?.conversation ?? null
   )
 });

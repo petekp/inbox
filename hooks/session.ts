@@ -9,7 +9,7 @@ import {
 } from './ledger'
 import type { Exchange, Press, Update } from './ledger'
 import { addActivity, carryText, guidanceText, promptNotes, screenText, START_TITLE, TOLD_NOTHING } from './model-text'
-import type { Host, Told } from './model-text'
+import type { Host, ScreenTab, Told } from './model-text'
 import {
   applyPrPress,
   drawnPrs,
@@ -346,7 +346,7 @@ export function endTurn<S extends Session>(
   s: S,
   reply: string,
   isOpen: boolean,
-  { tab = null, queuesEmptyReply = false }: { tab?: string | null; queuesEmptyReply?: boolean } = {},
+  { tab = null, queuesEmptyReply = false }: { tab?: ScreenTab | null; queuesEmptyReply?: boolean } = {},
 ): S {
   const refs = prRefs(reply)
   const base = {

@@ -1,6 +1,7 @@
 import type { Closed, Draft, FoldKind, Stop, Tab } from '../../types'
 import { version } from '../package.json'
 import {
+  ARRIVAL_TABS,
   closedGroups,
   followTo,
   isPrsTabEmpty,
@@ -41,8 +42,9 @@ import {
   NEEDS_YOU_GROUPS,
   QUEUED_AFTER_MS,
   ROW_COPY,
+  LISTED_TABS,
+  ROW_TABS,
   SETTLED_MS,
-  TABS,
   closedShown,
   closedTotal,
   earlierLabel,
@@ -614,8 +616,8 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
 
     return { ui: withSelection(base, selectable[wrapIndex(Math.max(0, at) + step, selectable.length)]!.id) }
   }
-  const tabs = TABS.map(t => t.id)
-  const pickedTab = TABS.find(t => t.hotkey === key)
+  const tabs = ROW_TABS.map(t => t.id)
+  const pickedTab = ROW_TABS.find(t => t.hotkey === key)
   if (key === 'tab' || key === 'shift+tab') {
     const step = key === 'tab' ? 1 : -1
 
@@ -686,8 +688,7 @@ export function followRows(
 ): { ui: PanelUi; seen: SeenRows } {
   const { listed, open } = tabRows(screen)
   const recorded = recordRows(seen, listed)
-  const tabs = TABS.map(t => t.id)
-  const to = followTo(tabs, ui.tab, isShownEmpty(screen, ui), isOpening ? open : recorded.added)
+  const to = followTo(ARRIVAL_TABS, ui.tab, isShownEmpty(screen, ui), isOpening ? open : recorded.added)
   if (to) return { ui: { ...withSelection(ui, null), tab: to }, seen: recorded.seen }
   const arrived = recorded.added[ui.tab]
   if (ui.selectedId !== null || arrived.length === 0) return { ui, seen: recorded.seen }
@@ -868,7 +869,7 @@ function tabBar(d: Draw): string {
     findings: screen.view.findings.count,
     prs: screen.view.prs.count,
   }
-  const tabs = TABS.map(t =>
+  const tabs = ROW_TABS.map(t =>
     t.id === ui.tab
       ? s.inverse(s.bold(` [${t.hotkey}] ${t.label} ${counts[t.id]} `))
       : ` ${s.dim(`[${t.hotkey}] ${t.label}`)} ${s.tone(t.id, String(counts[t.id]))} `,
@@ -948,8 +949,7 @@ function scrolled(body: string[], selectedAt: number[], room: number, s: Style):
 /** The band above the prompt: the two counts, and under them why the last turn stopped. */
 export function bandLines(screen: PanelScreen, width: number, now: number, style: Style): string[] {
   const { needsYou, findings } = screen.view
-  const counts = TABS.filter(t => t.id !== 'prs')
-    .map(t => ({ t, count: t.id === 'needsYou' ? needsYou.count : findings.count }))
+  const counts = LISTED_TABS.map(t => ({ t, count: t.id === 'needsYou' ? needsYou.count : findings.count }))
     .filter(x => x.count > 0)
     .map(x => `${style.dim(x.t.label)} ${style.tone(x.t.id, String(x.count))}`)
   const left = ` ${counts.length > 0 ? counts.join(` ${style.tone('sep', '·')} `) : style.dim('Nothing needed')}`

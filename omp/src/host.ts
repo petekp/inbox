@@ -15,7 +15,7 @@ import {
   systemText,
   toolActivity,
 } from '../../hooks/model-text'
-import type { DialogOutcome } from '../../hooks/model-text'
+import type { DialogOutcome, ScreenTab } from '../../hooks/model-text'
 import type { PrPress } from '../../hooks/pr-tab'
 import { ghFinder, ghIn } from '../../hooks/gh'
 import type { Run } from '../../hooks/gh'
@@ -46,8 +46,8 @@ import type { PressOutcome, SessionHost, UpdateHost } from '../../hooks/session-
 import { agentTools } from '../../hooks/tools'
 import { DARK_TONES, LIGHT_TONES } from '../../hooks/tones'
 import { clip } from '../../hooks/text'
-import { NO_HOLDS, RESUME_TEXT, SETTLED_MS } from '../../hooks/view'
-import type { ReplyHolds } from '../../hooks/view'
+import { NO_HOLDS, RESUME_TEXT, SETTLED_MS, TABS } from '../../hooks/view'
+import type { ReplyHolds, ShownTab } from '../../hooks/view'
 import { openTarget } from './commands'
 import { createPanel } from './controller'
 import type { PanelSource } from './controller'
@@ -103,6 +103,8 @@ export type Inbox = {
   screen(ctx: ExtensionContext, holds?: ReplyHolds): Promise<InboxScreen>
   /** Marks the panel open, and runs what a freshly opened panel needs: Done messages due, and a PR fetch when due. */
   openPanel(ctx: ExtensionContext): Promise<void>
+  /** Records the tab an open panel shows. */
+  showTab(ctx: ExtensionContext, tab: ShownTab): void
   closePanel(ctx: ExtensionContext): void
   fetchPrsWhenDue(ctx: ExtensionContext): void
   /** Calls `listener` after the session's saved state changes. Returns how to stop. */
@@ -380,7 +382,15 @@ export function styleOf(theme: OmpTheme): Style {
 
 export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inbox {
   const dir = deps.stateDir(pi)
-  const openPanels = new Set<string>()
+  /** The open panels, with the tab each shows. */
+  const openPanels = new Map<string, ShownTab>()
+
+  function screenTabOf(id: string): ScreenTab | null {
+    const tab = openPanels.get(id)
+    const shown = TABS.find(t => t.id === tab)
+
+    return tab === undefined ? null : { label: shown?.label ?? tab, isPage: tab === 'progress' }
+  }
   const prepared = new Set<string>()
   const prFetches = prFetchTracker(deps.now)
   const listeners = new Map<string, Set<() => void>>()
@@ -496,7 +506,8 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
 
     return {
       ...host,
-      catchUp: s => askOverConversation(host.ask, s, screenText(OMP, openPanels.has(id), null), conversationText(ctx)),
+      catchUp: s =>
+        askOverConversation(host.ask, s, screenText(OMP, openPanels.has(id), screenTabOf(id)), conversationText(ctx)),
     }
   }
 
@@ -708,7 +719,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     // Escape on the ask dialog aborts the turn, so it ends with no reply text.
     const isDialogDismissed = event.messages.some(isDismissedAsk)
     const written = await change(id, s => ({
-      ...endTurn(OMP, s, reply, openPanels.has(id), { queuesEmptyReply: isDialogDismissed }),
+      ...endTurn(OMP, s, reply, openPanels.has(id), { tab: screenTabOf(id), queuesEmptyReply: isDialogDismissed }),
       stop,
     })).catch(() => null)
     if (!written) return
@@ -761,9 +772,13 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       }
     },
     openPanel: async ctx => {
-      openPanels.add(sessionIdOf(ctx))
+      openPanels.set(sessionIdOf(ctx), 'needsYou')
       await wakeForDone(hostFor(ctx)).catch(() => undefined)
       fetchPrsWhenDue(ctx)
+    },
+    showTab: (ctx, tab) => {
+      const id = sessionIdOf(ctx)
+      if (openPanels.has(id)) openPanels.set(id, tab)
     },
     closePanel: ctx => {
       openPanels.delete(sessionIdOf(ctx))
@@ -795,6 +810,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     },
     resume: async () => inbox.resume(ctx),
     fetchPrsWhenDue: () => inbox.fetchPrsWhenDue(ctx),
+    shown: tab => inbox.showTab(ctx, tab),
     onChange: listener => inbox.onChange(ctx, listener),
   })
 

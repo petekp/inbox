@@ -8,7 +8,9 @@ import { demoView } from '../../hooks/demo'
 import { applyUpdate, parseReply } from '../../hooks/ledger'
 import { feedbackOf, QUEUED_AFTER_MS } from '../../hooks/view'
 import type { Feedback } from '../../hooks/view'
-import { noteHook, notePrompt, viewOf } from '../src/core'
+import { screenText } from '../../hooks/model-text'
+import { noteHook, notePrompt, screenTabOf, viewOf } from '../src/core'
+import { CODEX } from '../src/texts'
 import type { View } from '../src/core'
 import { makeServer, tabUri } from '../src/server'
 import { PRESS_TIMEOUT_MS } from '../../hooks/session'
@@ -394,6 +396,19 @@ test('the tab opens from the app-only inbox_view tool, and the model’s inbox t
   }
   assert.equal(readOlder.result.contents[0]?.uri, older)
   assert.match(readOlder.result.contents[0]?.text ?? '', /<html>/)
+})
+
+test('the view request saves the tab the page shows, ignores a name that is not a tab, and the inbox model is told the tab', async () => {
+  const { dir, call } = await setup(0)
+  assert.equal((await readState(dir, 's1')).shownTab, 'needsYou')
+  await call('inbox_view', { tab: 'prs' }, { thread_id: 's1' })
+  assert.equal((await readState(dir, 's1')).shownTab, 'prs')
+  await call('inbox_view', { tab: 'nowhere' }, { thread_id: 's1' })
+  assert.equal((await readState(dir, 's1')).shownTab, 'prs')
+  assert.equal(
+    screenText(CODEX, true, screenTabOf(await readState(dir, 's1'))),
+    'The Inbox tab is open beside the conversation, on its PRs tab, listing every open item.',
+  )
 })
 
 test('with no dev build, the view names the installed page and inbox_tab_page serves it, so a tab from an older build replaces itself', async () => {

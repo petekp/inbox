@@ -9,6 +9,7 @@ import type {
   LocalResult,
   PressKind,
   RowNote,
+  PageTab,
   Stop,
   Subagent,
   Tab,
@@ -17,6 +18,7 @@ import type {
 import { isLapsed, listResults, reopenFinding, reopenItem } from './ledger'
 import { ago } from './text'
 import { questionNumbers } from './model-text'
+import type { ListedTab } from './arrivals'
 import type { ClosedState } from './ledger'
 import {
   actionId,
@@ -439,12 +441,28 @@ function stepKind(step: HelpStep): PressKind {
   return step.step.some(h => h.kind === 'run') ? 'handoff' : 'local'
 }
 
-export const TABS: readonly { id: Tab; label: string; hotkey: string }[] = [
+/** Any tab a look can show: a row tab or a page tab. */
+export type ShownTab = Tab | PageTab
+
+export const TABS: readonly { id: ShownTab; label: string; hotkey: string }[] = [
   { id: 'needsYou', label: 'Needs you', hotkey: '1' },
   { id: 'findings', label: 'Findings', hotkey: '2' },
   { id: 'prs', label: 'PRs', hotkey: '3' },
 ]
-export const ROW_TABS = TABS.filter((t): t is (typeof TABS)[number] & { id: 'needsYou' | 'findings' } => t.id !== 'prs')
+/** Whether a shown tab lists rows you answer or close: Needs you and Findings. */
+export function isListedTab(tab: ShownTab): tab is ListedTab {
+  return tab === 'needsYou' || tab === 'findings'
+}
+
+/** Whether a shown tab is a row tab, which has rows, a count and a cursor. */
+export function isRowTab(tab: ShownTab): tab is Tab {
+  return tab !== 'progress'
+}
+
+/** The tabs that list rows: Needs you, Findings and PRs. */
+export const ROW_TABS = TABS.filter((t): t is (typeof TABS)[number] & { id: Tab } => isRowTab(t.id))
+
+export const LISTED_TABS = TABS.filter((t): t is (typeof TABS)[number] & { id: ListedTab } => isListedTab(t.id))
 
 /** A line on the Progress page. A null tone draws the mark muted. */
 export type ProgressRow = {

@@ -953,7 +953,11 @@ function surfaceAtStart(host) {
   return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
 }
 function screenText(host, isOpen, tab) {
-  return isOpen ? `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab} tab, ` : ""}listing every open item.` : `${surfaceAtStart(host)} is closed.`;
+  if (!isOpen)
+    return `${surfaceAtStart(host)} is closed.`;
+  if (tab?.isPage)
+    return `${surfaceAtStart(host)} is open beside the conversation, on its ${tab.label} tab, which shows the session's goal, subagents and results, not rows.`;
+  return `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ""}listing every open item.`;
 }
 function latestBatch(ledger) {
   return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
@@ -2101,7 +2105,14 @@ var TABS = [
   { id: "findings", label: "Findings", hotkey: "2" },
   { id: "prs", label: "PRs", hotkey: "3" }
 ];
-var ROW_TABS = TABS.filter((t) => t.id !== "prs");
+function isListedTab(tab) {
+  return tab === "needsYou" || tab === "findings";
+}
+function isRowTab(tab) {
+  return tab !== "progress";
+}
+var ROW_TABS = TABS.filter((t) => isRowTab(t.id));
+var LISTED_TABS = TABS.filter((t) => isListedTab(t.id));
 var MILESTONES_SHOWN = 30;
 var WORKING_TEXT = "Working\u2026";
 var SUBAGENT_MARKS = {
@@ -3659,6 +3670,7 @@ function recordRows(seen, listed) {
   }
   return { seen: next, added };
 }
+var ARRIVAL_TABS = ["needsYou", "findings", "prs"];
 function listedRowIds(v) {
   return {
     needsYou: [...v.needsYou.questions, ...v.needsYou.tasks].map((r) => r.id),
@@ -4089,8 +4101,8 @@ function handleKey(screen, ui, key, now, text) {
     const step = key === "up" || key === "k" ? -1 : 1;
     return { ui: withSelection(base, selectable[wrapIndex(Math.max(0, at) + step, selectable.length)].id) };
   }
-  const tabs = TABS.map((t) => t.id);
-  const pickedTab = TABS.find((t) => t.hotkey === key);
+  const tabs = ROW_TABS.map((t) => t.id);
+  const pickedTab = ROW_TABS.find((t) => t.hotkey === key);
   if (key === "tab" || key === "shift+tab") {
     const step = key === "tab" ? 1 : -1;
     return { ui: { ...withSelection(base, null), tab: tabs[wrapIndex(tabs.indexOf(base.tab) + step, tabs.length)] } };
@@ -4142,8 +4154,7 @@ function isShownEmpty(screen, ui) {
 function followRows(screen, ui, seen, isOpening, now) {
   const { listed, open } = tabRows(screen);
   const recorded2 = recordRows(seen, listed);
-  const tabs = TABS.map((t) => t.id);
-  const to = followTo(tabs, ui.tab, isShownEmpty(screen, ui), isOpening ? open : recorded2.added);
+  const to = followTo(ARRIVAL_TABS, ui.tab, isShownEmpty(screen, ui), isOpening ? open : recorded2.added);
   if (to)
     return { ui: { ...withSelection(ui, null), tab: to }, seen: recorded2.seen };
   const arrived = recorded2.added[ui.tab];
@@ -4286,7 +4297,7 @@ function tabBar(d) {
     findings: screen.view.findings.count,
     prs: screen.view.prs.count
   };
-  const tabs = TABS.map((t) => t.id === ui.tab ? s.inverse(s.bold(` [${t.hotkey}] ${t.label} ${counts[t.id]} `)) : ` ${s.dim(`[${t.hotkey}] ${t.label}`)} ${s.tone(t.id, String(counts[t.id]))} `).join(" ");
+  const tabs = ROW_TABS.map((t) => t.id === ui.tab ? s.inverse(s.bold(` [${t.hotkey}] ${t.label} ${counts[t.id]} `)) : ` ${s.dim(`[${t.hotkey}] ${t.label}`)} ${s.tone(t.id, String(counts[t.id]))} `).join(" ");
   return spread(` ${tabs}`, s.dim("esc to close "), d.width);
 }
 function footer(d) {
@@ -4351,7 +4362,7 @@ function scrolled(body, selectedAt, room, s) {
 }
 function bandLines(screen, width, now, style) {
   const { needsYou, findings } = screen.view;
-  const counts = TABS.filter((t) => t.id !== "prs").map((t) => ({ t, count: t.id === "needsYou" ? needsYou.count : findings.count })).filter((x) => x.count > 0).map((x) => `${style.dim(x.t.label)} ${style.tone(x.t.id, String(x.count))}`);
+  const counts = LISTED_TABS.map((t) => ({ t, count: t.id === "needsYou" ? needsYou.count : findings.count })).filter((x) => x.count > 0).map((x) => `${style.dim(x.t.label)} ${style.tone(x.t.id, String(x.count))}`);
   const left = ` ${counts.length > 0 ? counts.join(` ${style.tone("sep", "\xB7")} `) : style.dim("Nothing needed")}`;
   const countLine = spread(left, style.dim("/inbox to open "), width);
   const { stop } = screen;
@@ -4392,6 +4403,7 @@ function createPanel(deps) {
     ui = pressedId === undefined ? followed.ui : afterHandOff(next, followed.ui, pressedId, deps.now());
     seen = followed.seen;
     isOpening = false;
+    source.shown(ui.tab);
     syncAnimation();
     deps.requestRender();
   }
@@ -4423,6 +4435,7 @@ function createPanel(deps) {
         return;
       const result = handleKey(screen, ui, key, deps.now(), text);
       ui = result.ui;
+      source.shown(ui.tab);
       if (result.close)
         deps.close();
       if (result.press)
@@ -5024,6 +5037,7 @@ function demoSource(deps) {
     },
     resume: async () => null,
     fetchPrsWhenDue: () => {},
+    shown: () => {},
     onChange: (listener) => {
       listeners.add(listener);
       return () => void listeners.delete(listener);
@@ -5201,7 +5215,12 @@ function styleOf(theme) {
 }
 function createInbox(pi, deps = defaultDeps) {
   const dir = deps.stateDir(pi);
-  const openPanels = new Set;
+  const openPanels = new Map;
+  function screenTabOf(id) {
+    const tab = openPanels.get(id);
+    const shown = TABS.find((t) => t.id === tab);
+    return tab === undefined ? null : { label: shown?.label ?? tab, isPage: tab === "progress" };
+  }
   const prepared = new Set;
   const prFetches = prFetchTracker(deps.now);
   const listeners = new Map;
@@ -5296,7 +5315,7 @@ function createInbox(pi, deps = defaultDeps) {
     const id = sessionIdOf(ctx);
     return {
       ...host,
-      catchUp: (s) => askOverConversation(host.ask, s, screenText(OMP, openPanels.has(id), null), conversationText(ctx))
+      catchUp: (s) => askOverConversation(host.ask, s, screenText(OMP, openPanels.has(id), screenTabOf(id)), conversationText(ctx))
     };
   }
   async function catchUpUnseen(ctx) {
@@ -5488,7 +5507,7 @@ function createInbox(pi, deps = defaultDeps) {
     const stop = await stopOf(last, deps.isUsageLimit, deps.now());
     const isDialogDismissed = event.messages.some(isDismissedAsk);
     const written = await change(id, (s) => ({
-      ...endTurn(OMP, s, reply, openPanels.has(id), { queuesEmptyReply: isDialogDismissed }),
+      ...endTurn(OMP, s, reply, openPanels.has(id), { tab: screenTabOf(id), queuesEmptyReply: isDialogDismissed }),
       stop
     })).catch(() => null);
     if (!written)
@@ -5538,11 +5557,16 @@ function createInbox(pi, deps = defaultDeps) {
       };
     },
     openPanel: async (ctx) => {
-      openPanels.add(sessionIdOf(ctx));
+      openPanels.set(sessionIdOf(ctx), "needsYou");
       await wakeForDone(hostFor(ctx)).catch(() => {
         return;
       });
       fetchPrsWhenDue(ctx);
+    },
+    showTab: (ctx, tab) => {
+      const id = sessionIdOf(ctx);
+      if (openPanels.has(id))
+        openPanels.set(id, tab);
     },
     closePanel: (ctx) => {
       openPanels.delete(sessionIdOf(ctx));
@@ -5571,6 +5595,7 @@ function createInbox(pi, deps = defaultDeps) {
     },
     resume: async () => inbox.resume(ctx),
     fetchPrsWhenDue: () => inbox.fetchPrsWhenDue(ctx),
+    shown: (tab) => inbox.showTab(ctx, tab),
     onChange: (listener) => inbox.onChange(ctx, listener)
   });
   const hideBand = (ctx) => ctx.ui.setWidget(BAND_KEY, undefined);

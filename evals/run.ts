@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
 import { applyExchangeUpdate, applyUpdate, EMPTY, parseReply, upgradeLedger } from '../hooks/ledger'
-import { buildPrompt, CLAUDE_CODE, systemText, transcriptCatchUpPrompt } from '../hooks/model-text'
+import { buildPrompt, CLAUDE_CODE, screenText, systemText, transcriptCatchUpPrompt } from '../hooks/model-text'
 import { CODEX } from '../codex/src/texts'
 import type { Exchange, Update } from '../hooks/ledger'
 import type { Ledger } from '../types'
@@ -52,7 +52,9 @@ type Case = {
   name: string
   about: string
   ledger: Partial<Ledger>
-  exchange: Partial<Exchange> & { reply: string }
+  exchange: Partial<Omit<Exchange, 'screen'>> & { reply: string }
+  /** What the inbox shows, built with `screenText` for each agent's host. Closed when left out. */
+  screen?: { isOpen: boolean; tab?: string; isPage?: boolean }
   /** A conversation to catch the ledger up on, in place of the exchange's per-reply update. */
   catchUp?: string
   checks: Check[]
@@ -258,7 +260,11 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
     activity: [],
     turn: ledger.turn,
     press: null,
-    screen: agent === 'codex' ? 'The Inbox tab is closed.' : 'The /inbox pane is closed.',
+    screen: screenText(
+      agent === 'codex' ? CODEX : CLAUDE_CODE,
+      c.screen?.isOpen ?? false,
+      c.screen?.tab === undefined ? null : { label: c.screen.tab, isPage: c.screen.isPage ?? false },
+    ),
     ...c.exchange,
   }
   const prompt =

@@ -290,10 +290,15 @@ function surfaceAtStart(host: Host): string {
   return host.surface.charAt(0).toUpperCase() + host.surface.slice(1)
 }
 
-export function screenText(host: Host, isOpen: boolean, tab: string | null): string {
-  return isOpen
-    ? `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab} tab, ` : ''}listing every open item.`
-    : `${surfaceAtStart(host)} is closed.`
+/** The tab the inbox shows: its label, and whether it shows a page instead of rows. */
+export type ScreenTab = { label: string; isPage: boolean }
+
+export function screenText(host: Host, isOpen: boolean, tab: ScreenTab | null): string {
+  if (!isOpen) return `${surfaceAtStart(host)} is closed.`
+  if (tab?.isPage)
+    return `${surfaceAtStart(host)} is open beside the conversation, on its ${tab.label} tab, which shows the session's goal, subagents and results, not rows.`
+
+  return `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ''}listing every open item.`
 }
 
 export function latestBatch(ledger: Ledger): Item[] {

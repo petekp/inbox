@@ -28,6 +28,8 @@ import {
   upgradeSession,
 } from '../../hooks/session'
 import type { Session } from '../../hooks/session'
+import { TABS } from '../../hooks/view'
+import type { ShownTab } from '../../hooks/view'
 
 export type SessionState = Session & {
   version: 1
@@ -39,6 +41,8 @@ export type SessionState = Session & {
   /** The codex binary the desktop app runs, from the hooks' CODEX_CLI_PATH. */
   cliPath: string | null
   tabSeenAt: number
+  /** The tab the Inbox tab last showed, from its latest view request. Codex only. */
+  shownTab: ShownTab
   heard: Heard
 }
 
@@ -79,6 +83,7 @@ export function emptyState(sessionId: string): SessionState {
     cliPath: null,
     ...emptySession(),
     tabSeenAt: 0,
+    shownTab: 'needsYou',
     heard: NOTHING_HEARD,
   }
 }
@@ -115,6 +120,7 @@ function upgraded(saved: Saved, sessionId: string): SessionState {
       turn,
       pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex })),
     }),
+    shownTab: TABS.some(t => t.id === saved.shownTab) ? (saved.shownTab ?? base.shownTab) : base.shownTab,
     // A file saved before the hooks kept this record came from hooks that ran, so it reads as heard.
     // Its turns were not recorded, so `promptAt` is set too: a tool call then falls back to the time rule.
     heard: saved.heard

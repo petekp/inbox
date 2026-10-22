@@ -21,7 +21,7 @@ import {
   runUpdates as runSessionUpdates,
 } from '../../hooks/session-host'
 import type { Ask } from '../../hooks/session-host'
-import { isTabOpen } from './core'
+import { isTabOpen, screenTabOf } from './core'
 import { codexStore } from './host'
 import type { SessionState } from './state'
 import { CODEX } from './texts'
@@ -163,7 +163,7 @@ export const runUpdates = (dir: string, sessionId: string, ask: Ask, now: () => 
       askOverConversation(
         ask,
         s,
-        screenText(CODEX, isTabOpen(s, now()), null),
+        screenText(CODEX, isTabOpen(s, now()), screenTabOf(s)),
         (await readRollout(s.transcriptPath, s.root))?.conversation ?? null,
       ),
   })

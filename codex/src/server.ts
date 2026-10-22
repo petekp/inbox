@@ -19,8 +19,8 @@ import { isUnseen, pressOn, recorded } from '../../hooks/session'
 import type { SendOutcome } from '../../hooks/session'
 import { fetchPrs, prFetchTracker, press, wakeForDone as wakeSessionForDone } from '../../hooks/session-host'
 import type { SessionHost } from '../../hooks/session-host'
-import { NO_HOLDS, SETTLED_MS } from '../../hooks/view'
-import type { ReplyHolds } from '../../hooks/view'
+import { NO_HOLDS, SETTLED_MS, TABS } from '../../hooks/view'
+import type { ReplyHolds, ShownTab } from '../../hooks/view'
 import { SETTLE_WINDOW_MS } from './settle'
 import { pruneSessions, readState, updateState } from './state'
 import { reconcileUpdateStatus } from './update'
@@ -59,7 +59,12 @@ const toolsFor = (uri: string) => [
     description: VIEW_DESCRIPTION,
     inputSchema: {
       type: 'object',
-      properties: { demo: { type: 'boolean' }, replies: { type: 'object' }, discarded: { type: 'object' } },
+      properties: {
+        demo: { type: 'boolean' },
+        tab: { type: 'string' },
+        replies: { type: 'object' },
+        discarded: { type: 'object' },
+      },
     },
     _meta: {
       ui: { resourceUri: uri, visibility: ['app'] },
@@ -100,6 +105,11 @@ function holdsOf(args: Record<string, unknown>): ReplyHolds {
         )
 
   return { replies: times(args.replies), discarded: times(args.discarded) }
+}
+
+/** The tab the page says it shows, or null for anything that is not a tab. */
+function shownTabOf(raw: unknown): ShownTab | null {
+  return TABS.find(t => t.id === raw)?.id ?? null
 }
 
 function stamped(tabHtml: string): string {
@@ -379,6 +389,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
           ...s,
           heldRows: Object.keys(holds.replies),
           tabSeenAt: now(),
+          shownTab: shownTabOf(args.tab) ?? s.shownTab,
           prViews: { ...s.prViews, views: viewsStillShown(s.prViews, s.ledger.prs, s.lastActions, now()) },
         }))
         fetchPrsWhenDue(id, s)

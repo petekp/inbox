@@ -7,27 +7,20 @@ import {
   prRowIds,
   recordRows,
 } from '../../hooks/arrivals'
-import type { RowRecord } from '../../hooks/arrivals'
+import type { ListedTab, RowRecord } from '../../hooks/arrivals'
+import type { Tab } from '../../types'
 import type { SessionView } from '../../hooks/session'
 import type { InboxView } from '../../hooks/view'
 import type { HeardState } from './core'
 
-export type Tab = 'needsYou' | 'findings'
-
 export type Group = 'question' | 'task' | 'finding'
 export type FoldGroup = 'question' | 'task' | 'issue' | 'opportunity'
 
-export const TAB_OF: Record<Group, Tab> = { question: 'needsYou', task: 'needsYou', finding: 'findings' }
+export const TAB_OF: Record<Group, ListedTab> = { question: 'needsYou', task: 'needsYou', finding: 'findings' }
 
-export const TAB_IDS: Tab[] = ['needsYou', 'findings']
+export type SeenRows = RowRecord<Tab>
 
-export type ArrivalTab = Tab | 'prs'
-
-export const ARRIVAL_TAB_IDS: ArrivalTab[] = [...TAB_IDS, 'prs']
-
-export type SeenRows = RowRecord<ArrivalTab>
-
-export function openRows(v: InboxView): Record<ArrivalTab, string[]> {
+export function openRows(v: InboxView): Record<Tab, string[]> {
   return { ...openRowIds(v), prs: [] }
 }
 
@@ -35,13 +28,13 @@ export function newRows(
   seen: SeenRows,
   v: SessionView,
   isFetchingPrs: boolean,
-): { seen: SeenRows; added: Record<ArrivalTab, string[]> } {
+): { seen: SeenRows; added: Record<Tab, string[]> } {
   return recordRows(seen, { ...listedRowIds(v), prs: isFetchingPrs ? null : prRowIds(v.prs.drawn) })
 }
 
 export function isShownEmpty(
   v: SessionView & { heard: HeardState },
-  t: ArrivalTab,
+  t: Tab,
   drawn: ReadonlySet<string>,
   unfolded: ReadonlySet<FoldGroup>,
   isFetchingPrs: boolean,

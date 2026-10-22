@@ -278,6 +278,9 @@ export type OldPresence = Away & {
 
 export type Tab = 'needsYou' | 'findings' | 'prs'
 
+/** A tab that shows a page instead of rows. */
+export type PageTab = 'progress'
+
 /**
  * A tab's open row: its id, its position, and when a click or key opened it.
  * `id: null` with `openedAt: 0` means no row was opened in this conversation, so
@@ -404,6 +407,8 @@ declare module 'claude-code' {
       session: Session & { revision: number }
       away: Away
       tab: Tab
+      /** The page tab shown in place of `tab`, or null while a row tab shows. */
+      page: PageTab | null
       selection: Record<Tab, Cursor>
       dialogs: Dialog[]
       /** The row whose free-text field is open, if any. */

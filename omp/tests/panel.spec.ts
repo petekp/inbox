@@ -539,6 +539,17 @@ test('rows that arrive while Needs you shows only its empty text move the panel 
   expect(followRows(findingsOnly(), opened.ui, opened.seen, false, NOW).ui.tab).toBe('findings')
 })
 
+test('a PR that arrives while Needs you shows only its empty text moves the panel to PRs', () => {
+  const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
+  const opened = followRows(empty, INITIAL_UI, {}, true, NOW)
+  const withPr = screenOf({ view: sessionView(demoState(NOW), NOW, SETTLED_MS, true, NO_HOLDS) })
+  const prsOnly = {
+    ...withPr,
+    view: { ...withPr.view, needsYou: empty.view.needsYou, findings: empty.view.findings },
+  }
+  expect(followRows(prsOnly, opened.ui, opened.seen, false, NOW).ui.tab).toBe('prs')
+})
+
 test('a new row above the default selection leaves the selection on its row', () => {
   const s = demoState(NOW)
   const before = screenOf()

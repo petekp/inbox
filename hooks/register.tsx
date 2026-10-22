@@ -26,6 +26,7 @@ import type {
   PrViews,
   LastAction,
   PressKind,
+  PageTab,
   RowNote,
   Stop,
   Tab,
@@ -130,6 +131,7 @@ import {
   toolActivity,
   transcriptCatchUpPrompt,
   TOLD_NOTHING,
+  type ScreenTab,
   type Told,
 } from './model-text'
 import {
@@ -176,6 +178,8 @@ import {
   stopText,
   drawnLists,
   emptyText,
+  isRowTab,
+  LISTED_TABS,
   ROW_TABS,
   TABS,
   CLOSED_MARKS,
@@ -214,10 +218,21 @@ import {
   rowAfterClose,
   shortAgo,
 } from './view'
-import type { ActionEmphasis, ActionIcon, DrawnEntry, InboxView, ModLook, PlannedKey, RowView, RowWait } from './view'
+import type {
+  ActionEmphasis,
+  ActionIcon,
+  DrawnEntry,
+  InboxView,
+  ModLook,
+  PlannedKey,
+  RowView,
+  RowWait,
+  ShownTab,
+} from './view'
 import { agentTools, recordClose, recordItem } from './tools'
 import type { UndoProps } from './undo-client'
 import {
+  ARRIVAL_TABS,
   closedGroups,
   followTo,
   isPrsTabEmpty,
@@ -239,6 +254,11 @@ import type { RowProps } from './row-client'
 import { TAB_COUNT_GAP, TAB_HEIGHT, type TabsProps } from './tabs-client'
 
 const TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'needsYou' as Tab)
+/**
+ * The page tab shown in place of `TAB`, or null while a row tab shows. Kept apart from `TAB` so a build that
+ * does not know the page still reads a row tab there.
+ */
+const PAGE = atom({ plugin: 'inbox', key: 'page' } as const, null as PageTab | null)
 const NO_CURSOR: Cursor = { id: null, index: 0, openedAt: 0 }
 const NO_SELECTION: Record<Tab, Cursor> = { needsYou: NO_CURSOR, findings: NO_CURSOR, prs: NO_CURSOR }
 const SELECTION = atom({ plugin: 'inbox', key: 'selection' } as const, NO_SELECTION)
@@ -1022,7 +1042,12 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
   const now = await $.clock.now()
   const [session] = await Promise.all([
     upgradeDrawn($),
-    update($, TAB, t => ((t as string) === 'notes' ? 'findings' : (t as string) === 'waiting' ? 'needsYou' : t)),
+    update($, TAB, t => {
+      const renamed = (t as string) === 'notes' ? 'findings' : (t as string) === 'waiting' ? 'needsYou' : t
+
+      return ROW_TABS.some(r => r.id === renamed) ? renamed : 'needsYou'
+    }),
+    update($, PAGE, p => (TABS.some(t => t.id === p) ? p : null)),
     update($, SELECTION, ({ waiting, ...s }: Record<Tab, Cursor> & { waiting?: Cursor }) => {
       const cursors: Record<Tab, Cursor> = { ...NO_SELECTION, ...(waiting ? { needsYou: waiting } : {}), ...s }
       // A cursor saved before `openedAt` existed: no click opened its row in a way that still guards it.
@@ -1091,7 +1116,8 @@ async function openInbox($: EngineInterface) {
   // asking for the pane, and below 144 columns, once the person has closed it, leaves it unplaced.
   await openPane($)
   const { view } = await drawnState($)
-  if (view.needsYou.count > 0) await update($, TAB, () => 'needsYou' as const)
+  if (view.needsYou.count > 0)
+    await Promise.all([update($, TAB, () => 'needsYou' as const), update($, PAGE, () => null)])
   else if ((await read($, TAB)) === 'prs') await findPrs($)
   await followNewRows($, true)
   await openTopRow($)
@@ -1135,10 +1161,14 @@ async function focusField($: EngineInterface, id: string) {
   await $.ui.focus({ requestId: PANE, key: `type-${id}` }).catch(() => undefined)
 }
 
-async function showTab($: EngineInterface, tab: Tab) {
+async function showTab($: EngineInterface, tab: ShownTab) {
   cancelUndoScroll()
+  if (!isRowTab(tab)) {
+    await update($, PAGE, () => tab)
+    return
+  }
   if (tab === 'prs') await findPrs($)
-  await update($, TAB, () => tab)
+  await Promise.all([update($, TAB, () => tab), update($, PAGE, () => null)])
   await scrollToOpenRow($, tab)
 }
 
@@ -1510,7 +1540,7 @@ function newRows(isDemo: boolean, current: Record<Tab, string[] | null>): Record
 
 async function jumpTo($: EngineInterface, tab: Tab) {
   cancelUndoScroll()
-  await update($, TAB, () => tab)
+  await Promise.all([update($, TAB, () => tab), update($, PAGE, () => null)])
   await update($, SELECTION, s => ({ ...s, [tab]: NO_CURSOR }))
   await scrollToOpenRow($, tab)
 }
@@ -1530,9 +1560,10 @@ function tabRowIds(view: InboxView, prViews: PrView[]): Record<Tab, string[]> {
  * that can add a row calls this.
  */
 async function followNewRows($: EngineInterface, isOpening = false) {
-  const [drawn, tab, unfolded, isShown] = await Promise.all([
+  const [drawn, tab, page, unfolded, isShown] = await Promise.all([
     drawnState($),
     read($, TAB),
+    read($, PAGE),
     read($, UNFOLDED),
     isPaneShown($),
   ])
@@ -1568,12 +1599,8 @@ async function followNewRows($: EngineInterface, isOpening = false) {
           closed: closedGroups(view, tab, kind => unfolded.includes(kind)),
           hasBlocker: tab === 'needsYou' && (!!stop || isUnread),
         })
-  const to = followTo(
-    TABS.map(t => t.id),
-    tab,
-    isEmpty,
-    isOpening ? { ...openRowIds(view), prs: [] } : added,
-  )
+  if (page !== null) return
+  const to = followTo(ARRIVAL_TABS, tab, isEmpty, isOpening ? { ...openRowIds(view), prs: [] } : added)
   if (to) await jumpTo($, to)
 }
 
@@ -1585,10 +1612,16 @@ async function isPrsTabShown($: EngineInterface) {
   return (await read($, TAB)) === 'prs' && (await isPaneShown($))
 }
 
-async function screen($: EngineInterface) {
-  const tab = await read($, TAB)
+/** The tab the pane shows, as the inbox model is told: the page tab when one shows, else the row tab. */
+async function shownScreenTab($: EngineInterface): Promise<ScreenTab> {
+  const [page, tab] = await Promise.all([read($, PAGE), read($, TAB)])
+  const id = page ?? tab
 
-  return screenText(CLAUDE_CODE, await isPaneShown($), TABS.find(t => t.id === tab)?.label ?? tab)
+  return { label: TABS.find(t => t.id === id)?.label ?? id, isPage: page !== null }
+}
+
+async function screen($: EngineInterface) {
+  return screenText(CLAUDE_CODE, await isPaneShown($), await shownScreenTab($))
 }
 
 async function closeTasksRunBy($: EngineInterface, command: string) {
@@ -2574,8 +2607,8 @@ export const register: Register = on => {
     const isAnswered = e.reason === 'answer' && hasReply
     if (!isAnswered && !isDialogDismissed) return r
 
-    const [tab, isShown, now, before] = await Promise.all([
-      read($, TAB),
+    const [screenTab, isShown, now, before] = await Promise.all([
+      shownScreenTab($),
       isPaneShown($),
       $.clock.now(),
       read($, SESSION),
@@ -2584,9 +2617,7 @@ export const register: Register = on => {
     const queuesEmptyReply = isDialogDismissed
     resetTurn()
     await update($, AWAY, a => ({ ...a, lastActiveAt: now }))
-    await commit($, currentOwner(), s =>
-      endTurn(CLAUDE_CODE, s, reply, isShown, { tab: TABS.find(t => t.id === tab)?.label ?? tab, queuesEmptyReply }),
-    )
+    await commit($, currentOwner(), s => endTurn(CLAUDE_CODE, s, reply, isShown, { tab: screenTab, queuesEmptyReply }))
     updateLedger($)
     if (prRefs(reply).some(ref => !before.ledger.prs.includes(ref))) void fetchPrs($, await isPrsTabShown($))
 
@@ -2732,7 +2763,7 @@ export const register: Register = on => {
     // hides what the mods after this one draw there.
     const theirs = await next(e)
     const pal = paletteFor(theme, lookOf(e.surface))
-    const counts = ROW_TABS.filter(t => view[t.id].count > 0).map(t => (
+    const counts = LISTED_TABS.filter(t => view[t.id].count > 0).map(t => (
       <Text>
         <Text dimColor>{t.label} </Text>
         <Text color={pal.tone[t.id] ?? pal.mark[t.id]}>{view[t.id].count}</Text>
@@ -2842,7 +2873,7 @@ export const register: Register = on => {
         : { rowPad: blankLine, settledPad: 0, buttonGap: 2, isFoldGapped: true }
     const [
       { ledger, prViews: prState, lastActions, notes, turns, stop, view, showsDemoNotices, isUnread, now },
-      tab,
+      savedTab,
       selection,
       theme,
       typing,
@@ -2863,6 +2894,7 @@ export const register: Register = on => {
       read($, OPTIONS_SHOWN),
       $.env.get('TERM_PROGRAM'),
     ])
+    const tab: Tab = ROW_TABS.some(t => t.id === savedTab) ? savedTab : 'needsYou'
     // A hot reload keeps TYPING but empties fieldSeeds, so an open field takes its seed again here.
     if (typing !== null && !fieldSeeds.has(typing)) fieldSeeds.set(typing, (await read($, DRAFTS))[typing]?.text ?? '')
     const size = isInline ? `${e.props.bodyColumns}x${e.props.scroll.bodyRows}` : null
@@ -3111,7 +3143,7 @@ export const register: Register = on => {
     }
     const tabText = (id: Tab, label: string) => `${label}${tabCounts[id] > 0 ? ` ${tabCounts[id]}` : ''}`
     const hasRail = isInline && look === 'terminal' && e.props.bodyColumns >= INLINE_RAIL_AT
-    const railWidth = Math.max(...TABS.map(t => tabText(t.id, t.label).length)) + 2 * TAB_PAD.length
+    const railWidth = Math.max(...ROW_TABS.map(t => tabText(t.id, t.label).length)) + 2 * TAB_PAD.length
     const listColumns = e.props.bodyColumns - 2 - (hasRail ? railWidth + RAIL_GUTTER : 0)
     const ids = rows[tab].map(r => r.id)
     const indexOf = new Map(ids.map((id, n) => [id, n]))
@@ -3817,12 +3849,12 @@ export const register: Register = on => {
     const keyColumn = Math.max(...keyList.map(k => k.keys.length)) + 2
 
     const tabSizes = desktopTabSizes(
-      TABS.map(({ id, label }) => ({ label, count: tabCounts[id] })),
+      ROW_TABS.map(({ id, label }) => ({ label, count: tabCounts[id] })),
       e.props.bodyColumns - 2,
     )
     const tabProps: TabsProps | null = hasClient
       ? {
-          tabs: TABS.map(({ id, label }, n) => ({
+          tabs: ROW_TABS.map(({ id, label }, n) => ({
             id,
             label,
             count: tabSizes.hasCounts ? tabCounts[id] : 0,
@@ -3856,7 +3888,10 @@ export const register: Register = on => {
         </Text>
       ) : null,
     ]
-    const terminalTabsWidth = TABS.reduce((sum, t) => sum + tabText(t.id, t.label).length + 2 * TAB_PAD.length + 1, 1)
+    const terminalTabsWidth = ROW_TABS.reduce(
+      (sum, t) => sum + tabText(t.id, t.label).length + 2 * TAB_PAD.length + 1,
+      1,
+    )
     const pad = terminalTabsWidth <= e.props.bodyColumns ? TAB_PAD : ' '
     const hasTabLine = !isInline && look !== 'desktop'
     const tabLine = pal.tab ?? pal.divider
@@ -3883,7 +3918,7 @@ export const register: Register = on => {
           ) : null}
           {tabProps
             ? null
-            : TABS.map(({ id, label }) => {
+            : ROW_TABS.map(({ id, label }) => {
                 const count = tabCounts[id]
 
                 if (isInline)
@@ -3994,7 +4029,7 @@ export const register: Register = on => {
     const versionText = version ? faint(`v${version}`) : null
     const rail = (
       <Box flexDirection="column" flexShrink={0} paddingLeft={1} marginRight={RAIL_GUTTER}>
-        {TABS.map(({ id, label }) => {
+        {ROW_TABS.map(({ id, label }) => {
           const count = tabCounts[id]
           const fill = ' '.repeat(railWidth - tabText(id, label).length - TAB_PAD.length)
           if (tab === id)
