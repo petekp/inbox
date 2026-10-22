@@ -20,6 +20,7 @@ import {
   closeItem,
   closedState,
   listResults,
+  stampPressTurn,
   parseReply,
   reopenFinding,
   reopenItem,
@@ -1096,12 +1097,40 @@ describe('listResults', () => {
       },
     )
     if ('stale' in r) throw new Error('stale')
-    const next = { ...r.ledger, turn: r.ledger.turn + 1 }
-    const ledger = update(next, 'GOAL: g\nDONE: Added MIT license file', 6)
+    expect(r.ledger.milestones[0]?.turn).toBeUndefined()
+    const arrived = { ...stampPressTurn(r.ledger, 'i1', 4), turn: 4 }
+    const ledger = update(arrived, 'GOAL: g\nDONE: Added MIT license file', 6)
 
     expect(listResults(ledger.milestones).map(r => [r.source, r.merged])).toEqual([
       ['answered', ['Added MIT license file']],
     ])
+  })
+
+  test('a button-press answer whose message has not arrived merges with nothing', () => {
+    const r = applyPress(
+      asked,
+      undefined,
+      { action: 'answer', id: 'i1', option: 'MIT' },
+      {
+        now: 5,
+        turnsStarted: 3,
+        extraSteps: [],
+      },
+    )
+    if ('stale' in r) throw new Error('stale')
+    const ledger = update({ ...r.ledger, turn: 4 }, 'GOAL: g\nDONE: Added MIT license file', 6)
+
+    expect(listResults(ledger.milestones).map(r => r.source)).toEqual(['done', 'answered'])
+  })
+
+  test('a done line that shares only a generic verb with a fix stays apart', () => {
+    const fixed = update(
+      withFinding,
+      'GOAL: g\nFIXED: f2 | Added an Install section to the README with the npm command',
+      5,
+    )
+    const both = update(fixed, 'GOAL: g\nDONE: Added install tests for the CLI', 6)
+    expect(listResults(both.milestones).map(r => r.source)).toEqual(['done', 'fixed'])
   })
 
   test('results of different turns, results with no turn and results with other numbers never merge', () => {

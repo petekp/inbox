@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { flattenConversation } from '../hooks/conversation'
-import { EMPTY, applyUpdate, parseReply, upgradeLedger } from '../hooks/ledger'
+import { EMPTY, applyUpdate, listResults, parseReply, upgradeLedger } from '../hooks/ledger'
 import { CLAUDE_CODE } from '../hooks/model-text'
 import {
   appliedCatchUp,
@@ -13,6 +13,8 @@ import {
   isUnseen,
   noteCommandOutput,
   notePrompt,
+  pressOn,
+  recordPrompt,
   recorded,
   sessionView,
   turnEnded,
@@ -305,4 +307,36 @@ test('a sample saved without the progress fields is kept with them empty, and th
     'Fixed: It now redraws only the glance that changed',
   ])
   expect(page.now).toBe('Wiring the pinch into the dismiss animation')
+})
+
+test('two quick button answers and a typed message between them each get the turn their own message starts', () => {
+  const asked = applyUpdate(
+    { ...EMPTY, turn: 3 },
+    parseReply(
+      'GOAL: g\nNEW: decide | 1 | Which license should the CLI use? | MIT / Apache-2.0 | MIT\nNEW: decide | 2 | Which port should the server use? | 8080 / 9090 | 8080',
+    )!,
+    1,
+    3,
+  )
+  const answers = pressOn({ ...emptySession(), ledger: asked }, { action: 'answer', id: 'i1', option: 'MIT' }, 5)
+  if ('stale' in answers) throw new Error('stale')
+  const both = pressOn({ ...emptySession(), ledger: answers.ledger }, { action: 'answer', id: 'i2', option: '8080' }, 6)
+  if ('stale' in both) throw new Error('stale')
+  const arrive = (s: Session, press: { id: string; action: 'answer' } | null) =>
+    recordPrompt(CLAUDE_CODE, s, 'message', false, press ? { press } : null).state
+  const first = arrive({ ...emptySession(), ledger: both.ledger }, { id: 'i1', action: 'answer' })
+  const typed = arrive(first, null)
+  const second = arrive(typed, { id: 'i2', action: 'answer' })
+
+  expect(second.ledger.milestones.map(m => [m.ref, m.turn])).toEqual([
+    ['i1', 4],
+    ['i2', 6],
+  ])
+  const done = (turn: number, text: string) =>
+    applyUpdate({ ...second.ledger, turn }, parseReply(`GOAL: g\nDONE: ${text}`)!, 9, turn, 9)
+  const reply = done(6, 'Opened port 8080 for the server')
+  expect(listResults(reply.milestones).map(r => [r.ref, r.merged])).toEqual([
+    ['i2', ['Opened port 8080 for the server']],
+    ['i1', []],
+  ])
 })

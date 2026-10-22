@@ -1,4 +1,12 @@
-import { applyExchangeUpdate, applyUpdate, EMPTY, KEPT_SESSIONS, parseReply, upgradeLedger } from './ledger'
+import {
+  applyExchangeUpdate,
+  applyUpdate,
+  EMPTY,
+  KEPT_SESSIONS,
+  parseReply,
+  stampPressTurn,
+  upgradeLedger,
+} from './ledger'
 import type { Exchange, Press, Update } from './ledger'
 import { addActivity, carryText, guidanceText, promptNotes, screenText, START_TITLE, TOLD_NOTHING } from './model-text'
 import type { Host, Told } from './model-text'
@@ -274,7 +282,8 @@ export function recordPrompt<S extends Session>(
   isOpen: boolean,
   sentBy: SentBy | null,
 ): { state: S; notes: string[] } {
-  const ledger = { ...s.ledger, turn: s.ledger.turn + 1 }
+  const counted = { ...s.ledger, turn: s.ledger.turn + 1 }
+  const ledger = sentBy?.press?.action === 'answer' ? stampPressTurn(counted, sentBy.press.id, counted.turn) : counted
   const r = promptNotes(host, ledger, { text, isPress: sentBy !== null, isOpen }, s.told)
   const person = s.turn.person === null ? text : `${s.turn.person}\n\n${text}`
 

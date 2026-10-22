@@ -371,13 +371,15 @@ function addMilestones(milestones, added, place = "last") {
   const evicted = new Set(all.filter((m) => !kept.includes(m)).slice(0, over));
   return all.filter((m) => !evicted.has(m));
 }
+var GENERIC_VERBS = new Set(["added", "updated", "fixed", "created", "changed", "removed", "wrote", "set"]);
 function sharesWords(done, other) {
   const x = keyWords(done.text);
   const y = keyWords(`${other.text} ${other.detail ?? ""}`);
   if (hasNumberConflict(x, y))
     return false;
-  const shared = [...x].filter((w) => y.has(w)).length;
-  return shared >= 2 || shared >= 1 && x.size <= 2;
+  const own = [...x].filter((w) => !GENERIC_VERBS.has(w));
+  const shared = own.filter((w) => y.has(w)).length;
+  return shared >= 2 || shared >= 1 && own.length <= 2;
 }
 function listResults(milestones) {
   const events = milestones.filter((m) => m.source !== "done");
@@ -389,6 +391,12 @@ function listResults(milestones) {
       listed.find((l) => l.id === owner.id).merged.push(m.text);
   }
   return listed.reverse();
+}
+function stampPressTurn(ledger, ref, turn) {
+  const isUnstamped = (m) => m.source === "answered" && m.ref === ref && m.turn === undefined;
+  if (!ledger.milestones.some(isUnstamped))
+    return ledger;
+  return { ...ledger, milestones: ledger.milestones.map((m) => isUnstamped(m) ? { ...m, turn } : m) };
 }
 function removeMilestone(ledger, ref) {
   return ledger.milestones.some((m) => m.ref === ref) ? { ...ledger, milestones: ledger.milestones.filter((m) => m.ref !== ref) } : ledger;
@@ -479,7 +487,7 @@ function closeByAgent(host, ledger, id, how, now) {
 function closeItem(ledger, id, closing, now, turn = ledger.turn) {
   const items = ledger.items.filter((i) => i.id === id);
   const records = items.map((i) => closedRecord(i, closing, now));
-  const answers = closing.how === "answered" ? items.flatMap((i) => answeredMilestone(i, closing.outcome, now) ?? []).map((m) => ({ ...m, turn })) : [];
+  const answers = closing.how === "answered" ? items.flatMap((i) => answeredMilestone(i, closing.outcome, now) ?? []).map((m) => turn === null ? m : { ...m, turn }) : [];
   return reopenAskedFindings({
     ...ledger,
     milestones: addMilestones(ledger.milestones, answers),
@@ -1789,7 +1797,7 @@ function pressed(ledger, last, p, ctx) {
   if (!item)
     return p.action === "type" ? replyToClosed(ledger, p, record("handoff")) : stale;
   const answered = (answer) => ({
-    ledger: closeItem(ledger, item.id, { how: "answered", outcome: answer }, ctx.now, ledger.turn + 1),
+    ledger: closeItem(ledger, item.id, { how: "answered", outcome: answer }, ctx.now, null),
     last: record("mark"),
     effects: [{ kind: "send", text: messages.answer(item, answer), by: { id: item.id, action: "answer" } }]
   });
@@ -3089,7 +3097,8 @@ function startTurn(s) {
   return { ...s, presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }, stop: null };
 }
 function recordPrompt(host, s, text, isOpen, sentBy) {
-  const ledger = { ...s.ledger, turn: s.ledger.turn + 1 };
+  const counted = { ...s.ledger, turn: s.ledger.turn + 1 };
+  const ledger = sentBy?.press?.action === "answer" ? stampPressTurn(counted, sentBy.press.id, counted.turn) : counted;
   const r = promptNotes(host, ledger, { text, isPress: sentBy !== null, isOpen }, s.told);
   const person = s.turn.person === null ? text : `${s.turn.person}
 

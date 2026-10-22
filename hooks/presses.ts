@@ -791,7 +791,7 @@ function pressed(
   const item = ledger.items.find(i => i.id === p.id)
   if (!item) return p.action === 'type' ? replyToClosed(ledger, p, record('handoff')) : stale
   const answered = (answer: string): PressResult => ({
-    ledger: closeItem(ledger, item.id, { how: 'answered', outcome: answer }, ctx.now, ledger.turn + 1),
+    ledger: closeItem(ledger, item.id, { how: 'answered', outcome: answer }, ctx.now, null),
     last: record('mark'),
     effects: [{ kind: 'send', text: messages.answer(item, answer), by: { id: item.id, action: 'answer' } }],
   })

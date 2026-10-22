@@ -432,13 +432,16 @@ export type ListedResult = Milestone & {
   merged: string[]
 }
 
+const GENERIC_VERBS = new Set(['added', 'updated', 'fixed', 'created', 'changed', 'removed', 'wrote', 'set'])
+
 function sharesWords(done: Milestone, other: Milestone): boolean {
   const x = keyWords(done.text)
   const y = keyWords(`${other.text} ${other.detail ?? ''}`)
   if (hasNumberConflict(x, y)) return false
-  const shared = [...x].filter(w => y.has(w)).length
+  const own = [...x].filter(w => !GENERIC_VERBS.has(w))
+  const shared = own.filter(w => y.has(w)).length
 
-  return shared >= 2 || (shared >= 1 && x.size <= 2)
+  return shared >= 2 || (shared >= 1 && own.length <= 2)
 }
 
 /**
@@ -457,6 +460,14 @@ export function listResults(milestones: Milestone[]): ListedResult[] {
   }
 
   return listed.reverse()
+}
+
+/** Gives the answer a press closed the turn its message started, once the message arrives. */
+export function stampPressTurn(ledger: Ledger, ref: string, turn: number): Ledger {
+  const isUnstamped = (m: Milestone) => m.source === 'answered' && m.ref === ref && m.turn === undefined
+  if (!ledger.milestones.some(isUnstamped)) return ledger
+
+  return { ...ledger, milestones: ledger.milestones.map(m => (isUnstamped(m) ? { ...m, turn } : m)) }
 }
 
 /** The one remover, for a result its owner undid: an answered item or a fixed finding that reopens. */
@@ -626,13 +637,24 @@ export function closeByAgent(
 
 export type Closing = Pick<Closed, 'how' | 'outcome'>
 
-/** `turn` is the turn the answer belongs to. A press passes the next one, since the turn it starts is counted after it. */
-export function closeItem(ledger: Ledger, id: string, closing: Closing, now: number, turn = ledger.turn): Ledger {
+/**
+ * `turn` is the turn the answer belongs to. A press passes null: its message starts a turn that is not counted until
+ * the message arrives, and `stampPressTurn` then gives the answer its turn.
+ */
+export function closeItem(
+  ledger: Ledger,
+  id: string,
+  closing: Closing,
+  now: number,
+  turn: number | null = ledger.turn,
+): Ledger {
   const items = ledger.items.filter(i => i.id === id)
   const records = items.map(i => closedRecord(i, closing, now))
   const answers =
     closing.how === 'answered'
-      ? items.flatMap(i => answeredMilestone(i, closing.outcome, now) ?? []).map(m => ({ ...m, turn }))
+      ? items
+          .flatMap(i => answeredMilestone(i, closing.outcome, now) ?? [])
+          .map(m => (turn === null ? m : { ...m, turn }))
       : []
 
   return reopenAskedFindings(

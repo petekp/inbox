@@ -133,6 +133,11 @@ function addMilestones(milestones, added, place = "last") {
   const evicted = new Set(all.filter((m) => !kept.includes(m)).slice(0, over));
   return all.filter((m) => !evicted.has(m));
 }
+function stampPressTurn(ledger, ref, turn) {
+  const isUnstamped = (m) => m.source === "answered" && m.ref === ref && m.turn === void 0;
+  if (!ledger.milestones.some(isUnstamped)) return ledger;
+  return { ...ledger, milestones: ledger.milestones.map((m) => isUnstamped(m) ? { ...m, turn } : m) };
+}
 var CLOSED_BY_CLAUDE = "closed by Claude";
 function pruneClosed(ledger, keep) {
   const pruned = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id));
@@ -612,7 +617,8 @@ function startTurn(s) {
   return { ...s, presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }, stop: null };
 }
 function recordPrompt(host, s, text, isOpen, sentBy) {
-  const ledger = { ...s.ledger, turn: s.ledger.turn + 1 };
+  const counted = { ...s.ledger, turn: s.ledger.turn + 1 };
+  const ledger = sentBy?.press?.action === "answer" ? stampPressTurn(counted, sentBy.press.id, counted.turn) : counted;
   const r = promptNotes(host, ledger, { text, isPress: sentBy !== null, isOpen }, s.told);
   const person = s.turn.person === null ? text : `${s.turn.person}
 
