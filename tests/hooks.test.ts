@@ -3126,6 +3126,42 @@ test('a failed first save keeps the prior saved session intact', async ($, on) =
   expect(stored.get('s:session-1')).toBe(prior)
 })
 
+test('a session saved mid-turn by a process that ended loads with no turn running, and its Done message goes', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let session: Parameters<typeof progressPage>[0] | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  const task = {
+    ...SAVED_SESSION.ledger.items[0]!,
+    kind: 'task',
+    label: null,
+    ask: 'Sign in to npm',
+    options: [],
+    rec: null,
+  }
+  stored.set(
+    's:session-1',
+    JSON.stringify({
+      ...SAVED_SESSION,
+      ledger: { ...SAVED_SESSION.ledger, items: [task] },
+      presence: { isTurnRunning: true, statedStep: 'Publishing the package' },
+    }),
+  )
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  expect(progressPage(session!, 1_000_000).now).toBe('Waiting on a choice')
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'select-i1' })
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'done-i1' })
+  await clock.advance(SETTLED_MS)
+  expect(sent).toEqual(['Done: Sign in to npm'])
+})
+
 test('resuming a session waits for its in-flight save before loading it', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
