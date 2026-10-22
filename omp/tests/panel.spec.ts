@@ -637,25 +637,34 @@ test('keys on the Progress page select nothing and press nothing, and the footer
   expect(footer).not.toContain('scroll')
 })
 
-test('on a Progress page taller than the panel, ↑↓ and j/k scroll it by a line, up to its last line', () => {
+test('on a Progress page taller than the panel, each ↑↓ or j/k press shows one more or one fewer line, up to its last line', () => {
   const screen = screenOf()
-  const full = text(screen, onPage).split('\n')
-  const lastLine = full[full.length - 3]!
   const height = 14
-  const top = (ui: PanelUi) => drawPanel(screen, ui, 200, NOW, style, height).pageTop
-  const shown = (ui: PanelUi) => drawPanel(screen, ui, 200, NOW, style, height).lines.map(strip)
-  expect(shown(onPage).at(-1)).toContain('↑↓ scroll')
-  expect(shown(onPage).some(l => l.includes('↓ ') && l.includes('more lines'))).toBe(true)
+  const bodyOf = (lines: string[]) => {
+    const rule = lines.findLastIndex(l => /^─+$/.test(l))
+
+    return lines.slice(2, rule)
+  }
+  const page = bodyOf(text(screen, onPage, 80).split('\n'))
+  const drawnAt = (pageTop: number) => drawPanel(screen, { ...onPage, pageTop }, 80, NOW, style, height)
+  const shown = (pageTop: number) => bodyOf(drawnAt(pageTop).lines.map(strip))
+  const room = shown(0).length
+  const last = page.length - room + 1
+  expect(page.length).toBeGreaterThan(room)
+  expect(shown(0)).toEqual([...page.slice(0, room - 1), `  ↓ ${page.length - room + 1} more lines`])
+  expect(shown(1)).toEqual(['  ↑ 2 more lines', ...page.slice(2, room), `  ↓ ${page.length - room} more lines`])
+  expect(shown(last - 1)).toEqual([`  ↑ ${last} more lines`, ...page.slice(last, -1), '  ↓ 1 more line'])
+  expect(shown(last)).toEqual([`  ↑ ${last} more lines`, ...page.slice(last)])
+  expect(drawnAt(1000).pageTop).toBe(last)
+  for (let top = 0; top <= last; top++) {
+    const lines = shown(top).filter(l => !/^ {2}[↑↓] \d+ more line/.test(l))
+    expect(page.lastIndexOf(lines.at(-1)!)).toBe(room - 2 + top)
+  }
+  expect(drawnAt(0).lines.map(strip).at(-1)).toContain('↑↓ scroll')
   const down = keys(screen, onPage, 'down', 'j')
   expect(down.pageTop).toBe(2)
   expect(keys(screen, down, 'k').pageTop).toBe(1)
   expect(keys(screen, down, 'up', 'up', 'up').pageTop).toBe(0)
-  expect(shown(down)).toContain('  ↑ 2 more lines')
-  const end = { ...onPage, pageTop: 1000 }
-  expect(top(end)).toBeLessThan(full.length)
-  expect(shown(end)).toContain(lastLine)
-  expect(shown(end).some(l => l.includes('↓ ') && l.includes('more lines'))).toBe(false)
-  expect(shown({ ...end, pageTop: top(end) - 1 })).not.toContain(lastLine)
 })
 
 test('changing the shown tab starts the Progress page at its top', () => {

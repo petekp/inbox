@@ -4455,13 +4455,16 @@ function drawPanel(screen, ui, width, now, style, height) {
   const shown = body.length > room ? scrolled(body, selectedAt, room, style) : body;
   return { lines: [...head, ...shown, ...foot].map((l) => fit(l, width)), pageTop: ui.pageTop };
 }
+var moreLines = (arrow, n, s) => s.dim(`  ${arrow} ${n} more line${n === 1 ? "" : "s"}`);
 function pageWindow(body, top, room, s) {
-  const out = top > 0 ? [s.dim(`  \u2191 ${top} more lines`)] : [];
-  const rest = body.slice(top);
-  if (rest.length <= room - out.length)
-    return [...out, ...rest];
-  const fits = room - out.length - 1;
-  return [...out, ...rest.slice(0, fits), s.dim(`  \u2193 ${rest.length - fits} more lines`)];
+  const end = Math.min(body.length, room - 1 + top);
+  const below = body.length - end;
+  const start = end - (room - (top > 0 ? 1 : 0) - (below > 0 ? 1 : 0));
+  return [
+    ...top > 0 ? [moreLines("\u2191", start, s)] : [],
+    ...body.slice(start, end),
+    ...below > 0 ? [moreLines("\u2193", below, s)] : []
+  ];
 }
 function scrolled(body, selectedAt, room, s) {
   const [first = 0, last = 0] = selectedAt;

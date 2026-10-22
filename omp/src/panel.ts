@@ -1083,14 +1083,22 @@ export function drawPanel(
   return { lines: [...head, ...shown, ...foot].map(l => fit(l, width)), pageTop: ui.pageTop }
 }
 
-/** `room` lines of the page from line `top`, with a line for what is above and below. */
-function pageWindow(body: string[], top: number, room: number, s: Style): string[] {
-  const out = top > 0 ? [s.dim(`  ↑ ${top} more lines`)] : []
-  const rest = body.slice(top)
-  if (rest.length <= room - out.length) return [...out, ...rest]
-  const fits = room - out.length - 1
+const moreLines = (arrow: string, n: number, s: Style) => s.dim(`  ${arrow} ${n} more line${n === 1 ? '' : 's'}`)
 
-  return [...out, ...rest.slice(0, fits), s.dim(`  ↓ ${rest.length - fits} more lines`)]
+/**
+ * `room` lines of the page, `top` presses past its first screen. Each press shows one more line at the bottom, so the
+ * first press also hides the line the "↑" line takes, and the press before the end leaves "↓ 1 more line".
+ */
+function pageWindow(body: string[], top: number, room: number, s: Style): string[] {
+  const end = Math.min(body.length, room - 1 + top)
+  const below = body.length - end
+  const start = end - (room - (top > 0 ? 1 : 0) - (below > 0 ? 1 : 0))
+
+  return [
+    ...(top > 0 ? [moreLines('↑', start, s)] : []),
+    ...body.slice(start, end),
+    ...(below > 0 ? [moreLines('↓', below, s)] : []),
+  ]
 }
 
 function scrolled(body: string[], selectedAt: number[], room: number, s: Style): string[] {
