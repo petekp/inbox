@@ -448,6 +448,7 @@ export const TABS: readonly { id: ShownTab; label: string; hotkey: string }[] = 
   { id: 'needsYou', label: 'Needs you', hotkey: '1' },
   { id: 'findings', label: 'Findings', hotkey: '2' },
   { id: 'prs', label: 'PRs', hotkey: '3' },
+  { id: 'progress', label: 'Progress', hotkey: '4' },
 ]
 /** Whether a shown tab lists rows you answer or close: Needs you and Findings. */
 export function isListedTab(tab: ShownTab): tab is ListedTab {

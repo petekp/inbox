@@ -2,8 +2,7 @@ import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { Window } from 'happy-dom'
 import { EMPTY } from '../../hooks/ledger'
-import { DOT, TABS } from '../../hooks/view'
-import type { ShownTab } from '../../hooks/view'
+import { DOT } from '../../hooks/view'
 import { recordItem } from '../../hooks/tools'
 import { CODEX } from '../src/texts'
 import { emptyState } from '../src/state'
@@ -52,7 +51,6 @@ test('the Codex tab draws the Progress page from the view, and new rows, j and k
       transcriptPath: null,
     },
   ]
-  ;(TABS as { id: ShownTab; label: string; hotkey: string }[]).push({ id: 'progress', label: 'Progress', hotkey: '4' })
   document.body.innerHTML = '<div id="app"></div>'
   Object.defineProperty(window, '__inboxPage', { value: 'progress-page', configurable: true })
   Object.defineProperty(window, '__inboxKept', {

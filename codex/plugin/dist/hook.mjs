@@ -472,7 +472,8 @@ var SETTLED_MS = 5120;
 var TABS = [
   { id: "needsYou", label: "Needs you", hotkey: "1" },
   { id: "findings", label: "Findings", hotkey: "2" },
-  { id: "prs", label: "PRs", hotkey: "3" }
+  { id: "prs", label: "PRs", hotkey: "3" },
+  { id: "progress", label: "Progress", hotkey: "4" }
 ];
 function isListedTab(tab) {
   return tab === "needsYou" || tab === "findings";

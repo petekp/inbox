@@ -2075,6 +2075,47 @@
     ]
   },
   {
+    "name": "progress-shown-records-question",
+    "about": "With the Progress page shown, a new question that waits on the person is still recorded.",
+    "screen": { "isOpen": true, "tab": "Progress", "isPage": true },
+    "ledger": {
+      "turn": 6,
+      "nextId": 6,
+      "card": {
+        "goal": "Add caching to the product API",
+        "done": ["Profiled slow endpoints"],
+        "now": "Working on the cache layer",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i5",
+          "kind": "question",
+          "label": null,
+          "ask": "Should cache keys include the locale?",
+          "options": ["Yes", "No"],
+          "rec": null,
+          "helps": [],
+          "turn": 5,
+          "at": 5
+        }
+      ]
+    },
+    "exchange": {
+      "person": "ok, carry on",
+      "turn": 6,
+      "reply": "The cache layer is wired in behind a flag. Tests pass.\n\nOne decision blocks the rollout: should the cache expire entries after 5 minutes or after 1 hour? Prices change a few times a day, so I lean toward 5 minutes. I will not pick without you."
+    },
+    "checks": [
+      {
+        "open": "i5"
+      },
+      {
+        "new": "expire|minutes|hour"
+      }
+    ]
+  },
+  {
     "name": "agent-recorded-question-not-added-again",
     "about": "A question the agent recorded with its record tool is in <open>, so the reply that asks the same thing adds nothing.",
     "ledger": {

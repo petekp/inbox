@@ -3641,7 +3641,7 @@ test('the desktop pane draws each action as one button and the tabs as one click
 
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
   const { tabs, gap } = await tabBar()
-  expect(tabs.map(t => t.id)).toEqual(['needsYou', 'findings', 'prs'])
+  expect(tabs.map(t => t.id)).toEqual(['needsYou', 'findings', 'prs', 'progress'])
   await pane.pointer({ type: 'down', x: tabs[0]!.width + gap + tabs[1]!.width - 1, y: 1.1, button: 'left', in: 'tabs' })
   await clock.settle()
   expect((await tabBar()).shown).toBe('findings')
@@ -3999,7 +3999,7 @@ test('the Progress page says nothing is here yet before the session has a goal o
   expect(await desktop.find({ text: 'Nothing here yet' })).toBeDefined()
 })
 
-test('at 34 desktop columns the tabs keep their counts and frame only the shown tab, and the Progress page draws there', async ($, on) => {
+test('at 34 desktop columns the tabs drop their counts and frame only the shown tab, and the Progress page draws there', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   surfaces = ['desktop']
@@ -4020,9 +4020,10 @@ test('at 34 desktop columns the tabs keep their counts and frame only the shown 
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 34 } })
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
   expect((await tabBar()).tabs.map(t => [t.id, t.count])).toEqual([
-    ['needsYou', 2],
-    ['findings', 1],
+    ['needsYou', 0],
+    ['findings', 0],
     ['prs', 0],
+    ['progress', 0],
   ])
   expect((await tabBar()).isEachFramed).toBe(false)
   await pane.redraw({ ...PANE.props, bodyColumns: 69 })
