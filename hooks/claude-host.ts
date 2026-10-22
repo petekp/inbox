@@ -396,11 +396,13 @@ function settleRewrite(
 ): { state: Session; outcome: SendOutcome } | null {
   if ((stored.at.get(entered) ?? 0) <= since) return null
   const record = s.sent.find(x => x.deliveryId === deliveryId)
-  const at = record?.pressedAt ?? null
-  const rows = Object.entries(s.lastActions)
-    .filter(([_id, a]) => a.delivery && 'id' in a.delivery && a.delivery.id === deliveryId)
-    .map(([id]) => id)
-  const moved = at === null ? s.lastActions : withRewrite(s.lastActions, rows, at, text, entered, deliveryId)
+  const rows = Object.entries(s.lastActions).filter(
+    ([_id, a]) => a.delivery && 'id' in a.delivery && a.delivery.id === deliveryId,
+  )
+  const moved = rows.reduce(
+    (actions, [id, a]) => withRewrite(actions, [id], a.at, text, entered, deliveryId),
+    s.lastActions,
+  )
   const isConfirmed =
     !s.sent.some(x => x.deliveryId !== deliveryId && x.text === entered) && stored.by.get(entered)?.deliveryId === null
   if (isConfirmed)
@@ -408,7 +410,7 @@ function settleRewrite(
       state: {
         ...s,
         sent: s.sent.filter(x => x.deliveryId !== deliveryId),
-        lastActions: at === null ? moved : withArrival(moved, entered, at, deliveryId),
+        lastActions: withArrival(moved, entered, undefined, deliveryId),
         turn: { ...s.turn, press: s.turn.press ?? record?.press ?? null },
       },
       outcome: { state: 'accepted', queuedId: null },
@@ -418,7 +420,7 @@ function settleRewrite(
     state: {
       ...s,
       sent: s.sent.map(x => (x.deliveryId === deliveryId ? { ...x, text: entered } : x)),
-      lastActions: at === null ? moved : withUnconfirmed(moved, entered, at, deliveryId),
+      lastActions: withUnconfirmed(moved, entered, undefined, deliveryId),
     },
     outcome: { state: 'unconfirmed', reason: 'Another plugin changed the message' },
   }

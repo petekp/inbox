@@ -552,6 +552,51 @@ test('a Done message that waits for its prompt to run reads Queued, not Delivery
   await arrive($)
 })
 
+const doneWakeAfterRewrite = async ($: Engine, on: On, isMatched: boolean) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  ledgerReply = ['NEW: decide | 1 | Ship it? | yes / no | yes', 'NEW: do | - | Sign in to npm | - | -'].join('\n')
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'publish it', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'publish it', turnId: 't1' })
+  await $.turn.complete({
+    answer: 'Ship it? And sign in to npm first.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  if (isMatched) {
+    submitAnswer = 'hold'
+    inFlight.push(pane.press({ key: 'explain-i1-key' }))
+    await clock.settle()
+  }
+  await pane.press({ key: 'select-i2' })
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'done-i2' })
+  await clock.settle()
+  submitAnswer = { rewrite: isMatched ? held[0]!.text : 'Rewritten by another plugin' }
+  await clock.advance(SETTLED_MS)
+  await clock.advance(QUEUED_AFTER_MS)
+  await clock.settle()
+  await pane.press({ key: 'fold-task' })
+  return pane
+}
+
+test('a Done message another plugin rewrote reads as delivered once Claude runs it, not Queued', async ($, on) => {
+  const pane = await doneWakeAfterRewrite($, on, false)
+  expect(await pane.find({ text: /Queued/ })).toBeUndefined()
+  expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeUndefined()
+})
+
+test('a Done message another plugin rewrote to text a pending press also sent reads Delivery unconfirmed, not Queued', async ($, on) => {
+  const pane = await doneWakeAfterRewrite($, on, true)
+  expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeDefined()
+  await arrive($)
+})
+
 for (const switchAt of [null, 'before-submit', 'during-submit'] as const)
   test(`a refused Done batch stays recoverable after resume, with session switch during send: ${switchAt}`, async ($, on) => {
     const clock = mock.clock(on, { now: 1_000_000 })
