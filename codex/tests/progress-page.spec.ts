@@ -88,6 +88,7 @@ test('the Codex tab draws the Progress page from the view, and new rows, j and k
   for (const [key, value] of Object.entries(globals))
     Object.defineProperty(globalThis, key, { value, writable: true, configurable: true })
   const shownTabs: unknown[] = []
+  let isOlderServer = false
   window.parent.postMessage = message => {
     const request = message as {
       id?: number
@@ -107,6 +108,7 @@ test('the Codex tab draws the Progress page from the view, and new rows, j and k
         isFetchingPrs: false,
         isGhMissing: false,
       }
+      if (isOlderServer) Reflect.deleteProperty(view, 'progressPage')
       result = { structuredContent: view }
     } else throw new Error(`Unexpected request: ${request.method} ${request.params?.name ?? ''}`)
     queueMicrotask(() =>
@@ -162,6 +164,16 @@ test('the Codex tab draws the Progress page from the view, and new rows, j and k
     assert.equal(shownTab(), 'Findings1')
     assert.match(root.textContent ?? '', /The bar wraps at 320 px/)
     key('4')
+    assert.equal(shownTab(), 'Progress')
+    assert.ok(root.querySelector('.progress-goal'))
+
+    isOlderServer = true
+    await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
+    assert.equal(shownTab(), 'Needs you')
+    assert.equal(root.querySelector('.progress-goal'), null)
+    assert.equal(shownTabs.at(-1), 'progress')
+    isOlderServer = false
+    await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
     assert.equal(shownTab(), 'Progress')
     assert.ok(root.querySelector('.progress-goal'))
   } finally {

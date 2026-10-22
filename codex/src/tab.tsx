@@ -138,6 +138,11 @@ let stagedHostChanges: HostContext = {}
 let pollFailures = 0
 let readAt = 0
 let tab: ShownTab = 'needsYou'
+/** The tab drawn: the shown tab, or Needs you while the view has no Progress page, as from an older server. */
+function drawnTab(): ShownTab {
+  return tab === 'progress' && !view?.progressPage ? 'needsYou' : tab
+}
+
 const selection: Record<Tab, { id: string; openedAt: number; index?: number } | null> = {
   needsYou: null,
   findings: null,
@@ -592,7 +597,8 @@ async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void
   latestPress.set(rowId, seq)
   const isLatest = () => latestPress.get(rowId) === seq
   if (press.action !== 'undo' && !rowId.startsWith('pr:')) keepPressedOpen(rowId)
-  const wasWaiting = !!view && isRowTab(tab) && tabWaits(view, tab).some(r => r.id === rowId && r.isWaiting)
+  const t = drawnTab()
+  const wasWaiting = !!view && isRowTab(t) && tabWaits(view, t).some(r => r.id === rowId && r.isWaiting)
   sending.set(rowId, pending)
   errors.delete(rowId)
   notes.delete(rowId)
@@ -646,16 +652,17 @@ function tabWaits(v: View, t: Tab): RowWait[] {
 }
 
 function openAfterClose(v: View, id: string) {
-  if (!isRowTab(tab) || selection[tab]?.id !== id) return
-  const rows = tabWaits(v, tab)
+  const t = drawnTab()
+  if (!isRowTab(t) || selection[t]?.id !== id) return
+  const rows = tabWaits(v, t)
   if (rows.find(r => r.id === id)?.isWaiting) return
   const next = rowAfterClose(rows, id)
-  const index = next === null ? -1 : tabRows(v, tab).findIndex(r => r.id === next)
+  const index = next === null ? -1 : tabRows(v, t).findIndex(r => r.id === next)
   if (next === null || index < 0) {
-    selection[tab] = null
+    selection[t] = null
     return
   }
-  open(tab, next, index)
+  open(t, next, index)
   // After the press's own draw, which draws the row open.
   later(revealSelected, 0)
 }
@@ -926,11 +933,12 @@ const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as
 function stepLists(v: View): { lists: Lists; changed: Set<string> } {
   const now = Date.now()
   const lists = listsOf(v, shownSettled())
-  const rows = isListedTab(tab) ? lists.byTab[tab] : []
-  const openId = isRowTab(tab) ? rows[selectedIndex(rows, tab, v)]?.id : undefined
+  const t = drawnTab()
+  const rows = isListedTab(t) ? lists.byTab[t] : []
+  const openId = isRowTab(t) ? rows[selectedIndex(rows, t, v)]?.id : undefined
   const changed = new Set<string>()
   const kept = new Set<string>()
-  for (const group of (Object.keys(LIST_OF) as Group[]).filter(g => TAB_OF[g] === tab)) {
+  for (const group of (Object.keys(LIST_OF) as Group[]).filter(g => TAB_OF[g] === t)) {
     const listed = lists[LIST_OF[group]]
     const listedIds = new Set(listed.map(entryId))
     const entries = [...listed]
@@ -1017,11 +1025,14 @@ function select(t: Tab, rows: Row[], index: number) {
 }
 
 function keepPressedOpen(id: string) {
-  if (isRowTab(tab) && !selection[tab]) selection[tab] = { id, openedAt: 0 }
+  const t = drawnTab()
+  if (isRowTab(t) && !selection[t]) selection[t] = { id, openedAt: 0 }
 }
 
 function isOpenGuarded(): boolean {
-  return isRowTab(tab) && isGuarded(selection[tab]?.openedAt ?? 0, Date.now())
+  const t = drawnTab()
+
+  return isRowTab(t) && isGuarded(selection[t]?.openedAt ?? 0, Date.now())
 }
 
 function rowActions(row: Row): { keys: Key[]; more: Key[] } {
@@ -1272,7 +1283,7 @@ function ProgressTab({ page }: { page: ProgressPage }) {
   const { goal, now, subagents, running, milestones, earlier } = page
 
   return (
-    <main>
+    <main class="progress">
       {goal || now ? (
         <section>
           {goal ? <h1 class="progress-goal">{goal}</h1> : null}
@@ -1769,6 +1780,7 @@ function Status({ v }: { v: View }) {
 function TabBar({ v }: { v: View }) {
   const counts: Record<Tab, number> = { needsYou: v.needsYou.count, findings: v.findings.count, prs: v.prs.count }
   const { error } = v.status
+  const shown = drawnTab()
 
   return (
     <nav>
@@ -1776,7 +1788,7 @@ function TabBar({ v }: { v: View }) {
         {TABS.map(t => (
           <button
             type="button"
-            class={`tab ${tab === t.id ? 'shown' : ''}`}
+            class={`tab ${shown === t.id ? 'shown' : ''}`}
             onClick={() => {
               tab = t.id
               draw()
@@ -1855,6 +1867,7 @@ function App({ lists }: { lists: Lists | null }): ComponentChildren {
     ) : null
   const v = view
   const now = v.at
+  const shown = drawnTab()
 
   return (
     <>
@@ -1867,11 +1880,11 @@ function App({ lists }: { lists: Lists | null }): ComponentChildren {
         </div>
       ) : null}
       <TabBar v={v} />
-      {tab === 'needsYou' ? (
+      {shown === 'needsYou' ? (
         <NeedsYou v={v} lists={lists} now={now} />
-      ) : tab === 'findings' ? (
+      ) : shown === 'findings' ? (
         <Findings v={v} lists={lists} now={now} />
-      ) : tab === 'prs' ? (
+      ) : shown === 'prs' ? (
         <Prs v={v} now={now} />
       ) : (
         <ProgressTab page={v.progressPage} />
@@ -2153,13 +2166,14 @@ document.addEventListener(
       draw()
       return
     }
-    if (!isRowTab(tab)) return
-    const rows = tabRows(view, tab)
-    const at = selectedIndex(rows, tab, view)
+    const t = drawnTab()
+    if (!isRowTab(t)) return
+    const rows = tabRows(view, t)
+    const at = selectedIndex(rows, t, view)
     const move = e.key === 'j' || e.key === 'ArrowDown' ? 1 : e.key === 'k' || e.key === 'ArrowUp' ? -1 : 0
     if (move !== 0) {
       e.preventDefault()
-      select(tab, rows, Math.max(0, Math.min(rows.length - 1, at + move)))
+      select(t, rows, Math.max(0, Math.min(rows.length - 1, at + move)))
       revealSelected()
       return
     }
