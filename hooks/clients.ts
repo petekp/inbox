@@ -112,7 +112,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'turn-working': {
         kind: 'different',
         reason:
-          'Codex runs no hook when a chat is opened, and a turn it quits during has no end row in the rollout. So after Codex quits during a turn, Working… stays and Done messages wait until the next message.',
+          "Codex runs no hook when a chat is opened, and a turn whose app-server dies has no end row in the rollout. So after Codex's app-server dies during a turn, Working… stays and Done messages wait until the next message. Quitting the app, even with SIGKILL, ends the turn in the rollout.",
       },
     },
   },
