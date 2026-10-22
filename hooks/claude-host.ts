@@ -5,7 +5,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, UiCopyResult, UiPressArgument } from 'claude-code'
 
 import type { Away, LastAction, Ledger, OldPresence, PrViews, SentPrompt, Stop } from '../types'
-import { EMPTY, KEPT_SESSIONS, pruneClosed } from './ledger'
+import { EMPTY, KEPT_SESSIONS, pruneClosed, stampPressTurn } from './ledger'
 import { CLAUDE_CODE, systemText } from './model-text'
 import { SETTLED_MS } from './view'
 import { localPath, openCommands, withArrival, withRewrite, withUnconfirmed } from './presses'
@@ -409,6 +409,8 @@ function settleRewrite(
     return {
       state: {
         ...s,
+        ledger:
+          record?.press?.action === 'answer' ? stampPressTurn(s.ledger, record.press.id, s.ledger.turn) : s.ledger,
         sent: s.sent.filter(x => x.deliveryId !== deliveryId),
         lastActions: withArrival(moved, entered, undefined, deliveryId),
         turn: { ...s.turn, press: s.turn.press ?? record?.press ?? null },

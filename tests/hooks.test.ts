@@ -1746,6 +1746,34 @@ test('a uniquely rewritten Claude prompt is confirmed when its row enters before
   expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeUndefined()
 })
 
+test('a button answer another plugin rewrote gets the turn its row already counted', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let latest: { ledger: { turn: number; milestones: { ref: string | null; turn?: number }[] } } | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    latest = e.value
+    return next(e)
+  })
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  submitAnswer = { rewrite: 'Rewritten prompt' }
+  await pane.press({ key: 'answer-i1-0' })
+  await clock.settle()
+
+  const milestone = latest!.ledger.milestones.find(m => m.ref === 'i1')
+  expect(milestone?.turn).toBe(latest!.ledger.turn)
+})
+
 test('two Claude sends rewritten to the same text are each confirmed by their own row when they run in turn', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
