@@ -306,7 +306,7 @@ test('a sample saved without the progress fields is kept with them empty, and th
     'You answered: Wristband',
     'Fixed: It now redraws only the glance that changed',
   ])
-  expect(page.now).toBe('Wiring the pinch into the dismiss animation')
+  expect(page.now).toBe('Waiting on the dismiss gesture and a pairing')
 })
 
 test('two quick button answers and a typed message between them each get the turn their own message starts', () => {

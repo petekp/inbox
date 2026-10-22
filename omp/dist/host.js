@@ -4873,7 +4873,7 @@ function demoView(now) {
     notes: {},
     turns: { turnsStarted: 14, turnsApplied: 14 },
     subagents: SAMPLE_SUBAGENTS(now),
-    presence: { isTurnRunning: true, statedStep: "Wiring the pinch into the dismiss animation" }
+    presence: { isTurnRunning: false, statedStep: null }
   };
 }
 var SAMPLE_SUBAGENTS = (now) => [
