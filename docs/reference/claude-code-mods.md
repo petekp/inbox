@@ -399,6 +399,17 @@ Inference: a desktop app still on engine 2.1.289 lacks the first four. Declare t
 - Live: `DISABLE_TELEMETRY=1 claude plugin test` in an empty folder still printed "no hooks module to load". Not conclusive.
 - Changelog 2.1.290: "Fixed mods staying off for people who reach Claude through a gateway (`ANTHROPIC_BASE_URL` with `ANTHROPIC_AUTH_TOKEN`) and have no Anthropic account". [CL#2-1-290] So before 2.1.290 mods stayed off for those users. Inference: that bug may be the binary's "default" path when GrowthBook is off. No doc says mods are off on Bedrock, Agent Platform or Foundry today.
 
+## Subagents and the inbox's tools
+
+Checked on 2026-10-21 in the inbox-ui VM with Claude Code 2.1.306 (Haiku 5.5, a Claude Max sign-in, so the guard in key constraint 5 did not apply), in a tmux session in Terminal. The mod was a copy of `main` with the guidance in the `close` tool's description (#24, 6232d53), loaded with `CLAUDE_CODE_PLUGIN_DIRS` through a `--settings` file that disabled the installed inbox for that run. The main agent started one `general-purpose` subagent with the Agent tool.
+
+- **A subagent is offered the inbox's tools.** Its request carried 11 tools, including `mcp__inbox__record` and `mcp__inbox__close`. [live 2.1.306] Source: the `prompt_snapshot` attachment in the subagent's transcript, `step0/logs/cc1/7758fbd2-fd20-44e9-98c7-4213110b1ccb/subagents/agent-aa65ed97556a5c396.jsonl` in the VM share folder.
+- **Its `close` description carries the guidance.** The description was 4,055 characters and held the "# Inbox" guidance, as the main agent's did. The `record` description (1,329 characters) did not. The subagent's system prompt mentioned no inbox. [live 2.1.306] Same transcript. The main agent's session is `step0/logs/cc1/7758fbd2-fd20-44e9-98c7-4213110b1ccb.jsonl`.
+- **A subagent gets no `inbox:` card.** It receives no `prompt.submit`, so the card carried at the first one reaches the main agent only. [live 2.1.306] The same transcript holds no `inbox:` text.
+- **The main agent's quote of the description matched the subagent's** in the paragraphs I compared. The wire-level size and content come from the subagent's `prompt_snapshot` only.
+- **The tools a `step` tool would sit beside are `record` and `close`.** The other tools in that list were the engine's and the connectors'.
+- **Not checked:** whether `prompt.context` or `prompt.compose` run under a guard, and the Claude desktop app. The sign-in here was not a Team sign-in.
+
 ## Lifecycle: what fires and what resets
 
 Terms:
