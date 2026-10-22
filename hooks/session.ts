@@ -484,6 +484,8 @@ export function completedAttempt<S extends Session>(state: S, deliveryId: string
   if (outcome.state === 'accepted' && !earlierUnknown) {
     for (const [id, action] of delivered) lastActions = withAcceptedSend(lastActions, [id], action.at, text, deliveryId)
   }
+  if (outcome.state === 'accepted' && earlierUnknown)
+    lastActions = withUnconfirmed(lastActions, text, undefined, deliveryId)
   return {
     ...state,
     lastActions,

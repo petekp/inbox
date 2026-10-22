@@ -3057,6 +3057,8 @@ function completedAttempt(state, deliveryId, outcome) {
     for (const [id, action] of delivered)
       lastActions = withAcceptedSend(lastActions, [id], action.at, text, deliveryId);
   }
+  if (outcome.state === "accepted" && earlierUnknown)
+    lastActions = withUnconfirmed(lastActions, text, undefined, deliveryId);
   return {
     ...state,
     lastActions,
@@ -3309,7 +3311,7 @@ async function startPress(host, p, isStale, holds) {
       return next;
     return {
       ...next,
-      lastActions: withUnconfirmed(next.lastActions, firstSend.text, at2, deliveryId),
+      lastActions: host.isDeliveryHeldUntilRun ? next.lastActions : withUnconfirmed(next.lastActions, firstSend.text, at2, deliveryId),
       sent: [
         ...next.sent,
         {

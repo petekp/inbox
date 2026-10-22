@@ -57,6 +57,8 @@ export type SessionHost<S extends Session> = {
   ask: Ask
   /** Sends a message to the agent as if the person typed it. Runs outside a change, so it may change the session itself. */
   deliver(s: S, text: string, deliveryId: string): Promise<SendOutcome>
+  /** True when `deliver` returns only once the message runs, which can be a whole turn later. Until then its press reads Queued. */
+  isDeliveryHeldUntilRun?: boolean
   /** Throws when `deliver` could not start. Run before a sent record is saved, so a message that cannot go leaves no record. */
   prepare?(s: S): Promise<void>
   /** Opens a link or path, or copies text. Returns why it could not, or null. */
@@ -264,7 +266,10 @@ export type PressOutcome = {
   wakesForDone: boolean
 }
 
-type PressHost<S extends Session> = Pick<SessionHost<S>, 'now' | 'read' | 'update' | 'deliver' | 'perform' | 'newId'>
+type PressHost<S extends Session> = Pick<
+  SessionHost<S>,
+  'now' | 'read' | 'update' | 'deliver' | 'perform' | 'newId' | 'isDeliveryHeldUntilRun'
+>
 
 /** A press that is saved, with what it still runs. */
 export type StartedPress = {
@@ -344,7 +349,9 @@ export async function startPress<S extends Session>(
 
       return {
         ...next,
-        lastActions: withUnconfirmed(next.lastActions, firstSend.text, at, deliveryId),
+        lastActions: host.isDeliveryHeldUntilRun
+          ? next.lastActions
+          : withUnconfirmed(next.lastActions, firstSend.text, at, deliveryId),
         sent: [
           ...next.sent,
           {

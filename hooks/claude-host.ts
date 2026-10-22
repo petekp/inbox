@@ -563,6 +563,7 @@ export function sessionHost(
       return r.isAnswered ? r.text : null
     },
     deliver: (_s, text, deliveryId) => deliver($, owner, text, deliveryId),
+    isDeliveryHeldUntilRun: true,
     perform: async (_s, effect) => (opts.surface ? perform($, effect, opts.surface) : COPY_FAILURES['no-surface']),
     gh: {
       find: async () => {

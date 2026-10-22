@@ -44,8 +44,14 @@ let sent: string[] = []
 
 let ran: string[][] = []
 
+let pendingSubmit: (() => void) | undefined
+
 let submitAnswer:
-  'enter' | 'hold' | { drop: string; beforeDrop?: () => Promise<void> } | { rewrite: string; hold?: boolean } = 'enter'
+  | 'enter'
+  | 'hold'
+  | 'pending'
+  | { drop: string; beforeDrop?: () => Promise<void> }
+  | { rewrite: string; hold?: boolean } = 'enter'
 let held: { text: string; origin: PromptOrigin }[] = []
 let promptRows = 0
 
@@ -144,6 +150,7 @@ async function runStep($: Engine, index: number) {
 function world($: Engine, on: On, prompts: string[], vars: Record<string, string> = {}) {
   sent = []
   submitAnswer = 'enter'
+  pendingSubmit = undefined
   held = []
   ran = []
   toolVerdict = 'allow'
@@ -256,7 +263,10 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
       else await storePrompt($, rewritten)
       return { text: rewritten.text, context: e.context }
     }
-    if (submitAnswer === 'hold') held.push({ text: e.text, origin: e.origin })
+    if (submitAnswer === 'pending') {
+      await new Promise<void>(resolve => (pendingSubmit = resolve))
+      await storePrompt($, { text: e.text, origin: e.origin })
+    } else if (submitAnswer === 'hold') held.push({ text: e.text, origin: e.origin })
     else await storePrompt($, { text: e.text, origin: e.origin })
 
     return { text: e.text, context: e.context }
@@ -1421,6 +1431,36 @@ test('Discard ends a held row’s reply and folds it into Closed at once, and a 
   expect(await pane.find({ key: 'row-i1' })).toBeUndefined()
   expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
   expect(await pane.find({ text: /2 closed/ })).toBeDefined()
+})
+
+test('a press whose submit stays pending through a turn reads Queued, not Delivery unconfirmed, until the message runs', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  on('ui.focus', () => ({}))
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'desktop', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+
+  submitAnswer = 'pending'
+  const pressed = pane.press({ key: 'explain-i1-key' })
+  await clock.advance(QUEUED_AFTER_MS)
+  expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeUndefined()
+  expect(await pane.find({ text: /Queued:\sExplain$/ })).toBeDefined()
+
+  pendingSubmit?.()
+  await pressed
+  await clock.settle()
+  expect(await pane.find({ text: /Queued/ })).toBeUndefined()
+  expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeUndefined()
 })
 
 test('a press during a turn reads Queued until its prompt enters, and one that will not enter is undone with Not sent and [Try again]', async ($, on) => {
