@@ -2059,6 +2059,32 @@ repo, and a probe client speaking app-server JSON-RPC over stdio.
 | Listing translations | D/deploy/submission#translate-listing-text: importing translations "doesn't yet change the text shown in the Plugins Directory or listing API responses" | n/a | A documented feature that is not live yet. |
 | Transcript item fields (repo) | codex-plugin.md:325 lists five fields. Live uses `aggregated_output` and argv lists | Live | The plan's list is incomplete. |
 
+## Subagents, guardians and hooks (Progress tab step 0)
+
+Checked on 2026-10-21 against `rust-v0.163.0` (`8308618`). Paths are under `codex-rs/`. Live answers sit under "Live checks" in this section and name their version and log.
+
+### Facts from the source [source 0.163.0]
+
+- **A rollout keeps `turn_aborted`.** The rollout policy persists `EventMsg::TurnAborted` beside `TurnStarted` and `TurnComplete` (rollout/src/policy.rs:136-138).
+- **Interrupt skips subagents.** `run_turn_interrupt_hooks` returns at once when the turn's source is any `SessionSource::SubAgent` (core/src/hook_runtime.rs:507-509).
+- **An Interrupt hook gets 1 s by default and 3 s at most.** SessionEnd and Interrupt default to 1 s, clamp to 1-3 s, and warn when a hook asks for more (hooks/src/engine/discovery.rs:742-760; hooks/src/events/session_end.rs:20,23). Every other hook defaults to 600 s.
+- **SubagentStart fires once per spawned subagent, and never for a guardian review.** It runs from the pending session-start source. Only a `ThreadSpawn` subagent whose start source is `Startup` or `Fork` dispatches it. Any other subagent source, which includes the guardian's `SubAgentSource::Other`, returns without a hook (core/src/hook_runtime.rs:128-150; guardian source at core/src/guardian/review_session_setup.rs:218).
+- **SessionStart does not run in a subagent or guardian thread.** The same function returns for every `SubAgent` source that is not a `ThreadSpawn` start, and a `ThreadSpawn` start dispatches SubagentStart instead (core/src/hook_runtime.rs:133-150).
+- **SubagentStop runs only when a subagent's sampling loop ends.** The turn loop calls `run_turn_stop_hooks` only when there is no follow-up, and an aborted turn returns before that (core/src/session/turn.rs:718-725). For a `ThreadSpawn` source the hook is SubagentStop. For any other subagent source, Stop and SubagentStop both do nothing (core/src/hook_runtime.rs:400-440).
+- **Stop in a subagent is SubagentStop, with the parent's transcript.** SubagentStop's `transcript_path` is the parent's rollout, found by `parent_thread_id`. The subagent's own rollout comes as `agent_transcript_path` (core/src/hook_runtime.rs:401-433). SubagentStart's `transcript_path` is the subagent's own rollout (core/src/hook_runtime.rs:159).
+- **A subagent's hooks carry its thread id as `agent_id`.** `subagent_hook_context` sets `agent_id` to `sess.thread_id()` and `agent_type` to the role, or the default role name (core/src/hook_runtime.rs:1054-1061). PreToolUse, PostToolUse, PermissionRequest and UserPromptSubmit take this context from `thread_spawn_subagent_hook_context`, which is `Some` only for a `ThreadSpawn` subagent (core/src/hook_runtime.rs:199, :268, :310, :1042-1052).
+- **`session_id` on a subagent's hooks is the parent's, and a user fork gets its own.** A subagent (a non-root agent) takes the agent controller's session id. A forked or new root thread uses its own thread id (core/src/session/session.rs:928-950). `SessionMeta.session_id` is documented "equal to the root thread's ID" (protocol/src/protocol.rs:3252).
+- **A subagent's first `session_meta` row holds `parent_thread_id`, `depth` and `agent_path`.** `SessionMeta` has `parent_thread_id`, `source`, `agent_nickname`, `agent_role` and `agent_path` (protocol/src/protocol.rs:3245-3290). `depth` is not a top-level field. It sits in `source.subagent.thread_spawn.depth`, beside `parent_thread_id`, `agent_path`, `agent_nickname` and `agent_role` (protocol/src/protocol.rs:3030-3042). The Progress plan's "`session_meta` row holds `depth`" means that nested field.
+- **Hook matchers are Rust regexes with three shortcuts.** An empty pattern or `*` matches all. A pattern of only letters, digits, `_` and `|` is an exact match against each `|`-separated name. Anything else compiles as a `regex::Regex`, which has no lookahead (hooks/src/engine/matcher.rs:10-40).
+
+### Where the sources disagree
+
+- The app-server doc says "forked threads keep the session id of the root they came from" (L/app-server#start-or-resume-a-thread). The source gives a user fork its own session id (core/src/session/session.rs:946-950). The live fork check below settles it.
+
+### Live checks
+
+_Filled in by the live pass. Each answer names its version and log._
+
 ## Unknown, and how to check
 
 Each check below is concrete. Run it in a scratch `CODEX_HOME` where it would
