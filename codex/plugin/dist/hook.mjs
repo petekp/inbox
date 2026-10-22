@@ -481,7 +481,16 @@ function emptySession() {
     ledger: EMPTY,
     turn: NO_TURN,
     told: TOLD_NOTHING,
-    presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: "current", hasDroppedReply: false, isUpdating: false },
+    presence: {
+      turnsStarted: 0,
+      turnsApplied: 0,
+      ledgerState: "current",
+      hasDroppedReply: false,
+      isUpdating: false,
+      isTurnRunning: false,
+      statedStep: null
+    },
+    subagents: [],
     pending: [],
     sent: [],
     lastActions: {},
@@ -507,6 +516,11 @@ function upgradeSession(saved) {
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...saved.presence },
+    subagents: (saved.subagents ?? []).map((a) => ({
+      ...a,
+      statedStep: a.statedStep ?? null,
+      transcriptPath: a.transcriptPath ?? null
+    })),
     pending: saved.pending ?? [],
     sent: (saved.sent ?? []).map((x) => ({
       ...x,
@@ -553,7 +567,15 @@ function cleared(s) {
     turn: NO_TURN,
     told: { inbox: null, closed: [] },
     pending: [],
-    presence: { ...s.presence, ledgerState: "current", hasDroppedReply: false, turnsApplied: s.presence.turnsStarted },
+    subagents: [],
+    presence: {
+      ...s.presence,
+      ledgerState: "current",
+      hasDroppedReply: false,
+      turnsApplied: s.presence.turnsStarted,
+      isTurnRunning: false,
+      statedStep: null
+    },
     lastActions: {},
     stop: null
   };

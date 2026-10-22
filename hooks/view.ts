@@ -10,10 +10,11 @@ import type {
   PressKind,
   RowNote,
   Stop,
+  Subagent,
   Tab,
   Turns,
 } from '../types'
-import { isLapsed, reopenFinding, reopenItem } from './ledger'
+import { isLapsed, listResults, reopenFinding, reopenItem } from './ledger'
 import { ago } from './text'
 import { questionNumbers } from './model-text'
 import type { ClosedState } from './ledger'
@@ -444,6 +445,112 @@ export const TABS: readonly { id: Tab; label: string; hotkey: string }[] = [
   { id: 'prs', label: 'PRs', hotkey: '3' },
 ]
 export const ROW_TABS = TABS.filter((t): t is (typeof TABS)[number] & { id: 'needsYou' | 'findings' } => t.id !== 'prs')
+
+/** A line on the Progress page. A null tone draws the mark muted. */
+export type ProgressRow = {
+  id: string
+  mark: string
+  tone: 'done' | 'error' | null
+  text: string
+  detail: string | null
+  age: string
+}
+
+type ProgressSection = { title: string; count: number; rows: ProgressRow[] }
+
+/** What the Progress page shows. Every look draws it as it is. */
+export type ProgressPage = {
+  isEmpty: boolean
+  /** The session's goal; null until the person has asked for something. */
+  goal: string | null
+  /** The stated step or "Working…" while the main agent's turn runs, else the card's line; null when there is none. */
+  now: string | null
+  subagents: ProgressSection | null
+  running: { title: string; count: number; rows: { id: string; text: string }[] } | null
+  milestones: ProgressSection | null
+  /** The milestones past `MILESTONES_SHOWN`, as "12 earlier"; null when all show. */
+  earlier: string | null
+  empty: { title: string; hint: string }
+}
+
+export const MILESTONES_SHOWN = 30
+export const WORKING_TEXT = 'Working…'
+
+const SUBAGENT_MARKS: Record<Subagent['state'], Pick<ProgressRow, 'mark' | 'tone'>> = {
+  running: { mark: '●', tone: null },
+  done: { mark: '✓', tone: 'done' },
+  stopped: { mark: '✕', tone: 'error' },
+}
+
+/** Where a result came from, with its detail, since every result takes the same tone. */
+function milestoneDetail(m: { source: 'done' | 'answered' | 'fixed'; detail: string | null }): string | null {
+  if (m.source === 'done') return null
+  const source = m.source === 'answered' ? 'You answered' : 'Fixed'
+
+  return m.detail ? `${source}: ${m.detail}` : source
+}
+
+export function progressPage(
+  s: {
+    ledger: Pick<Ledger, 'card' | 'milestones'>
+    presence: { isTurnRunning: boolean; statedStep: string | null }
+    subagents: Subagent[]
+  },
+  now: number,
+): ProgressPage {
+  const { card, milestones } = s.ledger
+  const { isTurnRunning, statedStep } = s.presence
+  const results = listResults(milestones)
+  const shown = results.slice(0, MILESTONES_SHOWN)
+
+  return {
+    isEmpty: !card?.goal && results.length === 0 && !isTurnRunning && s.subagents.length === 0,
+    goal: card?.goal || null,
+    now: isTurnRunning ? (statedStep ?? WORKING_TEXT) : card?.goal && card.now ? card.now : null,
+    subagents:
+      s.subagents.length > 0
+        ? {
+            title: 'Subagents',
+            count: s.subagents.length,
+            rows: s.subagents.map(a => ({
+              id: a.id,
+              ...SUBAGENT_MARKS[a.state],
+              text: a.task,
+              detail: a.state === 'running' ? (a.statedStep ?? a.toolStep) : a.result,
+              age: shortAgo(Math.max(0, now - (a.state === 'running' ? a.startedAt : a.at))),
+            })),
+          }
+        : null,
+    running:
+      card?.goal && card.running.length > 0
+        ? {
+            title: 'Running',
+            count: card.running.length,
+            rows: card.running.map((text, n) => ({ id: `running-${n}`, text })),
+          }
+        : null,
+    milestones:
+      shown.length > 0
+        ? {
+            title: 'Milestones',
+            count: results.length,
+            rows: shown.map(m => ({
+              id: m.id,
+              mark: '✓',
+              tone: 'done',
+              text: m.text,
+              detail: milestoneDetail(m),
+              age: m.at === null ? '' : shortAgo(Math.max(0, now - m.at)),
+            })),
+          }
+        : null,
+    earlier: earlierLabel(results.length, shown.length),
+    empty: {
+      title: 'Nothing here yet',
+      hint: 'A task’s goal, its subagents and what it finishes show up here.',
+    },
+  }
+}
 
 export function emptyText(tab: 'needsYou' | 'findings', agent: string): { title: string; hint: string } {
   return tab === 'needsYou'

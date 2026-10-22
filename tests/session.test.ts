@@ -15,11 +15,15 @@ import {
   notePrompt,
   recorded,
   sessionView,
+  turnEnded,
+  turnStarted,
+  upgradeSession,
 } from '../hooks/session'
 import type { Session } from '../hooks/session'
 import { press, runUpdates, wakeForDone } from '../hooks/session-host'
 import type { CatchUpReply } from '../hooks/session-host'
 import { NO_HOLDS } from '../hooks/view'
+import { demoSession, demoView, isDemoCopy, upgradeDemoCopy } from '../hooks/demo'
 import { fakeHost } from './session-fake-host'
 import { runSessionScript } from './session-script'
 
@@ -216,4 +220,89 @@ test('a ledger saved with milestones, then updated by 0.2.10, keeps the result 0
     ['Tests added', null],
     ['Reducer built', 5],
   ])
+})
+
+const subagent = (over: Partial<Session['subagents'][number]>): Session['subagents'][number] => ({
+  id: 'a1',
+  task: 'Find the handler',
+  state: 'running',
+  toolStep: 'Reading handler.ts',
+  statedStep: null,
+  result: null,
+  startedAt: 1_000,
+  at: 5_000,
+  transcriptPath: null,
+  ...over,
+})
+
+test('the progress page is empty for a new session and reads Working… only while the main turn runs', () => {
+  const view = (s: Session) => sessionView(s, 10_000, 1000, true, NO_HOLDS).progressPage
+  const idle = emptySession()
+
+  expect(view(idle).isEmpty).toBe(true)
+  expect(view(turnStarted(idle)).isEmpty).toBe(false)
+  expect(view(turnStarted(idle)).now).toBe('Working…')
+  expect(view(turnEnded(turnStarted(idle))).now).toBeNull()
+  expect(
+    view({ ...turnStarted(idle), presence: { ...idle.presence, isTurnRunning: true, statedStep: 'Reading x' } }).now,
+  ).toBe('Reading x')
+  expect(
+    turnEnded({ ...idle, presence: { ...idle.presence, isTurnRunning: true, statedStep: 'Reading x' } }).presence,
+  ).toMatchObject({
+    isTurnRunning: false,
+    statedStep: null,
+  })
+})
+
+test('the progress page lists subagents with their step or result, and results with the done tone', () => {
+  const ledger = applyUpdate(EMPTY, parseReply('GOAL: g\nDONE: Reducer built')!, 5_000, 0)
+  const s: Session = {
+    ...emptySession(),
+    ledger,
+    subagents: [
+      subagent({}),
+      subagent({ id: 'a2', task: 'Run tests', state: 'done', result: 'All pass', startedAt: 2_000, at: 8_000 }),
+      subagent({ id: 'a3', task: 'Lint', state: 'stopped', at: 9_000 }),
+      subagent({ id: 'a4', task: 'Docs', statedStep: 'Writing the intro' }),
+    ],
+  }
+  const page = sessionView(s, 10_000, 1000, true, NO_HOLDS).progressPage
+
+  expect(page.subagents?.rows.map(r => [r.text, r.mark, r.detail])).toEqual([
+    ['Find the handler', '●', 'Reading handler.ts'],
+    ['Run tests', '✓', 'All pass'],
+    ['Lint', '✕', null],
+    ['Docs', '●', 'Writing the intro'],
+  ])
+  expect(page.milestones?.rows.map(r => [r.text, r.tone])).toEqual([['Reducer built', 'done']])
+})
+
+test('a session saved before the progress fields reads with them empty; a fork and a clear leave the running turn alone', () => {
+  const saved = { ...emptySession(), presence: { turnsStarted: 2 } } as never
+  const loaded = upgradeSession(saved)
+
+  expect(loaded.subagents).toEqual([])
+  expect(loaded.presence).toMatchObject({ turnsStarted: 2, isTurnRunning: false, statedStep: null })
+  const running = { ...turnStarted(emptySession()), subagents: [subagent({})] }
+  expect(forkedFrom(emptySession(), running).subagents).toEqual([])
+  expect(forkedFrom(emptySession(), running).presence.isTurnRunning).toBe(false)
+  expect(cleared(running)).toMatchObject({ subagents: [], presence: { isTurnRunning: false, statedStep: null } })
+})
+
+test('a sample saved without the progress fields is kept with them empty, and the sample session carries its own', () => {
+  const { subagents: _s, presence: _p, ...old } = demoView(1_000_000)
+
+  expect(isDemoCopy(old)).toBe(true)
+  expect(upgradeDemoCopy(old)).toMatchObject({ subagents: [], presence: { isTurnRunning: false, statedStep: null } })
+  const session = demoSession(1_000_000)
+  const page = sessionView(session, 1_000_000, 1000, true, NO_HOLDS).progressPage
+  expect(page.subagents?.rows.map(r => r.mark)).toEqual(['●', '✓'])
+  expect(page.milestones?.rows.map(r => r.detail)).toEqual([
+    null,
+    null,
+    null,
+    'You answered: Wristband',
+    'Fixed: It now redraws only the glance that changed',
+  ])
+  expect(page.now).toBe('Wiring the pinch into the dismiss animation')
 })

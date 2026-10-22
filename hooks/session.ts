@@ -17,9 +17,9 @@ import { applyPress, upgradeLastActions, withAcceptedSend, withArrival, withRewr
 import type { RowPress } from './presses'
 import { prNeedsYou, prRefs } from './prs'
 import { recordClose, recordItem } from './tools'
-import { inboxView, NO_HOLDS, perTurnStatus } from './view'
-import type { InboxView, ReplyHolds } from './view'
-import type { LastAction, Ledger, PrView, PrViews, RowNote, Session, Stop, Turns } from '../types'
+import { inboxView, NO_HOLDS, perTurnStatus, progressPage } from './view'
+import type { InboxView, ProgressPage, ReplyHolds } from './view'
+import type { LastAction, Ledger, PrView, PrViews, RowNote, Session, Stop, Subagent, Turns } from '../types'
 
 export type { Session } from '../types'
 
@@ -32,7 +32,16 @@ export function emptySession(): Session {
     ledger: EMPTY,
     turn: NO_TURN,
     told: TOLD_NOTHING,
-    presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: 'current', hasDroppedReply: false, isUpdating: false },
+    presence: {
+      turnsStarted: 0,
+      turnsApplied: 0,
+      ledgerState: 'current',
+      hasDroppedReply: false,
+      isUpdating: false,
+      isTurnRunning: false,
+      statedStep: null,
+    },
+    subagents: [],
     pending: [],
     sent: [],
     lastActions: {},
@@ -73,7 +82,9 @@ export function staleSessionFiles<F extends { name: string; mtimeMs: number }>(f
 export const PRESS_TIMEOUT_MS = 60_000
 
 /** A session's shared fields as any earlier build saved them, each possibly missing. */
-export type SavedSession = Partial<Omit<Session, 'turn' | 'told' | 'presence' | 'sent' | 'prViews'>> & {
+export type SavedSession = Partial<Omit<Session, 'turn' | 'told' | 'presence' | 'sent' | 'prViews' | 'subagents'>> & {
+  subagents?: (Omit<Subagent, 'statedStep' | 'transcriptPath'> &
+    Partial<Pick<Subagent, 'statedStep' | 'transcriptPath'>>)[]
   turn?: Partial<Session['turn']>
   told?: Partial<Told>
   presence?: Partial<Session['presence']>
@@ -96,6 +107,11 @@ export function upgradeSession(saved: SavedSession): Session {
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...saved.presence },
+    subagents: (saved.subagents ?? []).map(a => ({
+      ...a,
+      statedStep: a.statedStep ?? null,
+      transcriptPath: a.transcriptPath ?? null,
+    })),
     pending: saved.pending ?? [],
     sent: (saved.sent ?? []).map(x => ({
       ...x,
@@ -149,7 +165,15 @@ export function cleared<S extends Session>(s: S): S {
     turn: NO_TURN,
     told: { inbox: null, closed: [] },
     pending: [],
-    presence: { ...s.presence, ledgerState: 'current', hasDroppedReply: false, turnsApplied: s.presence.turnsStarted },
+    subagents: [],
+    presence: {
+      ...s.presence,
+      ledgerState: 'current',
+      hasDroppedReply: false,
+      turnsApplied: s.presence.turnsStarted,
+      isTurnRunning: false,
+      statedStep: null,
+    },
     lastActions: {},
     stop: null,
   }
@@ -222,6 +246,16 @@ export function matchSent<S extends Session>(s: S, text: string): { state: S; se
     state: { ...s, lastActions, sent: sent ? s.sent.filter((_x, i) => i !== sentAt) : s.sent },
     sentBy: sent ? { press: sent.press } : null,
   }
+}
+
+/** Marks the main agent's turn as running. A subagent's turn does not call it. */
+export function turnStarted<S extends Session>(s: S): S {
+  return { ...s, presence: { ...s.presence, isTurnRunning: true } }
+}
+
+/** Marks the main agent's turn as ended, and drops the step it stated. */
+export function turnEnded<S extends Session>(s: S): S {
+  return { ...s, presence: { ...s.presence, isTurnRunning: false, statedStep: null } }
 }
 
 /** Counts a turn that started, and clears the stop the last turn ended with. */
@@ -381,8 +415,8 @@ export function hasLedger(s: Session): boolean {
 }
 
 /**
- * A forked conversation continues its parent's ledger: the card, items, findings and closed records. It takes
- * nothing else, since presses, queued messages, the stop and the running turn belong to the parent. A fork that
+ * A forked conversation continues its parent's ledger: the card, items, findings, results and closed records. It
+ * takes nothing else, since presses, queued messages, the stop, the running turn and its subagents belong to the parent. A fork that
  * already has turns or a card keeps its own.
  */
 export function forkedFrom<S extends Session>(child: S, parent: Session): S {
@@ -548,6 +582,7 @@ export type SessionView = InboxView & {
   /** The turn counts each row's feedback reads, as "Explaining…" until the reply to its press. */
   turns: Turns
   prs: PrTab
+  progressPage: ProgressPage
 }
 
 function withoutStalePending(lastActions: Record<string, LastAction>, now: number): Record<string, LastAction> {
@@ -597,6 +632,7 @@ export function sessionView(
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now),
+    progressPage: progressPage(s, now),
   }
 }
 

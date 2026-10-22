@@ -371,6 +371,25 @@ function addMilestones(milestones, added, place = "last") {
   const evicted = new Set(all.filter((m) => !kept.includes(m)).slice(0, over));
   return all.filter((m) => !evicted.has(m));
 }
+function sharesWords(done, other) {
+  const x = keyWords(done.text);
+  const y = keyWords(`${other.text} ${other.detail ?? ""}`);
+  if (hasNumberConflict(x, y))
+    return false;
+  const shared = [...x].filter((w) => y.has(w)).length;
+  return shared >= 2 || shared >= 1 && x.size <= 2;
+}
+function listResults(milestones) {
+  const events = milestones.filter((m) => m.source !== "done");
+  const takenBy = (m) => m.source === "done" && m.turn !== undefined ? events.find((e) => e.turn === m.turn && sharesWords(m, e)) : undefined;
+  const listed = milestones.filter((m) => takenBy(m) === undefined).map((m) => ({ ...m, merged: [] }));
+  for (const m of milestones) {
+    const owner = takenBy(m);
+    if (owner)
+      listed.find((l) => l.id === owner.id).merged.push(m.text);
+  }
+  return listed.reverse();
+}
 function removeMilestone(ledger, ref) {
   return ledger.milestones.some((m) => m.ref === ref) ? { ...ledger, milestones: ledger.milestones.filter((m) => m.ref !== ref) } : ledger;
 }
@@ -1926,6 +1945,10 @@ function foldLabel(total) {
 function earlierLabel(total, shown) {
   return total > shown ? `${total - shown} earlier` : null;
 }
+function shortAgo(ms) {
+  const age = ago(ms);
+  return age === "just now" ? "now" : age.replace(/ ago$/, "");
+}
 function groupEmptyText(title) {
   return `No open ${title.toLowerCase()}`;
 }
@@ -2071,6 +2094,63 @@ var TABS = [
   { id: "prs", label: "PRs", hotkey: "3" }
 ];
 var ROW_TABS = TABS.filter((t) => t.id !== "prs");
+var MILESTONES_SHOWN = 30;
+var WORKING_TEXT = "Working\u2026";
+var SUBAGENT_MARKS = {
+  running: { mark: "\u25CF", tone: null },
+  done: { mark: "\u2713", tone: "done" },
+  stopped: { mark: "\u2715", tone: "error" }
+};
+function milestoneDetail(m) {
+  if (m.source === "done")
+    return null;
+  const source = m.source === "answered" ? "You answered" : "Fixed";
+  return m.detail ? `${source}: ${m.detail}` : source;
+}
+function progressPage(s, now) {
+  const { card, milestones } = s.ledger;
+  const { isTurnRunning, statedStep } = s.presence;
+  const results = listResults(milestones);
+  const shown = results.slice(0, MILESTONES_SHOWN);
+  return {
+    isEmpty: !card?.goal && results.length === 0 && !isTurnRunning && s.subagents.length === 0,
+    goal: card?.goal || null,
+    now: isTurnRunning ? statedStep ?? WORKING_TEXT : card?.goal && card.now ? card.now : null,
+    subagents: s.subagents.length > 0 ? {
+      title: "Subagents",
+      count: s.subagents.length,
+      rows: s.subagents.map((a) => ({
+        id: a.id,
+        ...SUBAGENT_MARKS[a.state],
+        text: a.task,
+        detail: a.state === "running" ? a.statedStep ?? a.toolStep : a.result,
+        age: shortAgo(Math.max(0, now - (a.state === "running" ? a.startedAt : a.at)))
+      }))
+    } : null,
+    running: card?.goal && card.running.length > 0 ? {
+      title: "Running",
+      count: card.running.length,
+      rows: card.running.map((text, n) => ({ id: `running-${n}`, text }))
+    } : null,
+    milestones: shown.length > 0 ? {
+      title: "Milestones",
+      count: results.length,
+      rows: shown.map((m) => ({
+        id: m.id,
+        mark: "\u2713",
+        tone: "done",
+        text: m.text,
+        detail: milestoneDetail(m),
+        age: m.at === null ? "" : shortAgo(Math.max(0, now - m.at))
+      }))
+    } : null,
+    earlier: earlierLabel(results.length, shown.length),
+    empty: {
+      title: "Nothing here yet",
+      hint: "A task\u2019s goal, its subagents and what it finishes show up here."
+    }
+  };
+}
 function emptyText(tab, agent) {
   return tab === "needsYou" ? { title: "Nothing needed.", hint: `${agent}'s questions and the tasks only you can do show up here.` } : { title: "No findings yet", hint: `${agent} flags issues and opportunities it spots beyond your task.` };
 }
@@ -2904,7 +2984,16 @@ function emptySession() {
     ledger: EMPTY,
     turn: NO_TURN,
     told: TOLD_NOTHING,
-    presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: "current", hasDroppedReply: false, isUpdating: false },
+    presence: {
+      turnsStarted: 0,
+      turnsApplied: 0,
+      ledgerState: "current",
+      hasDroppedReply: false,
+      isUpdating: false,
+      isTurnRunning: false,
+      statedStep: null
+    },
+    subagents: [],
     pending: [],
     sent: [],
     lastActions: {},
@@ -2939,6 +3028,11 @@ function upgradeSession(saved) {
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...saved.presence },
+    subagents: (saved.subagents ?? []).map((a) => ({
+      ...a,
+      statedStep: a.statedStep ?? null,
+      transcriptPath: a.transcriptPath ?? null
+    })),
     pending: saved.pending ?? [],
     sent: (saved.sent ?? []).map((x) => ({
       ...x,
@@ -3204,7 +3298,8 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     }),
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now)
+    prs: prTabOf(s, lastActions, now),
+    progressPage: progressPage(s, now)
   };
 }
 function prTabOf(s, lastActions, now) {
@@ -4355,7 +4450,8 @@ function demoSession(now) {
     ledger: d.ledger,
     lastActions: d.lastActions,
     prViews: d.prViews,
-    presence: { ...s.presence, ...d.turns }
+    presence: { ...s.presence, ...d.turns, ...d.presence },
+    subagents: d.subagents
   };
 }
 function demoView(now) {
@@ -4367,7 +4463,32 @@ function demoView(now) {
         now: "Waiting on the dismiss gesture and a pairing",
         running: ["simulator: http://localhost:3000"]
       },
-      milestones: ["A pinch dismisses the glance you look at", "Dismissed glances fade out", "PR #31 opened"].map((text, n) => ({ id: `m${n + 1}`, source: "done", text, detail: null, ref: null, at: now - (3 - n) * 30 * MIN })),
+      milestones: [
+        {
+          id: "m4",
+          source: "fixed",
+          text: "The view redraws every glance when one changes",
+          detail: "It now redraws only the glance that changed",
+          ref: "d19",
+          at: now - 2 * 60 * MIN
+        },
+        {
+          id: "m5",
+          source: "answered",
+          text: "Track hands with the camera or the wristband?",
+          detail: "Wristband",
+          ref: "d5",
+          at: now - 90 * MIN
+        },
+        ...["A pinch dismisses the glance you look at", "Dismissed glances fade out", "PR #31 opened"].map((text, n) => ({
+          id: `m${n + 1}`,
+          source: "done",
+          text,
+          detail: null,
+          ref: null,
+          at: now - (3 - n) * 30 * MIN
+        }))
+      ],
       items: [
         {
           id: "d11",
@@ -4741,9 +4862,35 @@ function demoView(now) {
       }
     },
     notes: {},
-    turns: { turnsStarted: 14, turnsApplied: 14 }
+    turns: { turnsStarted: 14, turnsApplied: 14 },
+    subagents: SAMPLE_SUBAGENTS(now),
+    presence: { isTurnRunning: true, statedStep: "Wiring the pinch into the dismiss animation" }
   };
 }
+var SAMPLE_SUBAGENTS = (now) => [
+  {
+    id: "sa1",
+    task: "Find where glances handle pinches",
+    state: "running",
+    toolStep: "Reading GlanceView.swift",
+    statedStep: "Tracing pinches from the gesture recognizer",
+    result: null,
+    startedAt: now - 2 * MIN,
+    at: now - 1e4,
+    transcriptPath: null
+  },
+  {
+    id: "sa2",
+    task: "Check the gesture tests",
+    state: "done",
+    toolStep: "Running the gesture tests",
+    statedStep: null,
+    result: "All 12 gesture tests pass.",
+    startedAt: now - 4 * MIN,
+    at: now - MIN,
+    transcriptPath: null
+  }
+];
 
 // src/state.ts
 import { mkdir, readdir, readFile, rename, stat as stat2, unlink, writeFile } from "fs/promises";

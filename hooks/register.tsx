@@ -68,7 +68,7 @@ import {
 import type { SentBy, Session } from './session'
 import { fetchPrs as fetchSessionPrs, runUpdates, startPress, wakeForDone as wakeSessionForDone } from './session-host'
 import type { CatchUpReply, SessionHost } from './session-host'
-import { demoView, isDemoCopy } from './demo'
+import { demoView, isDemoCopy, upgradeDemoCopy } from './demo'
 import type { Exchange, Press, Update } from './ledger'
 import {
   applyPrPress,
@@ -862,11 +862,19 @@ async function commit(
 /** The session a look draws: `session`, with the ledger, PR views, presses and turn counts of the sample while it shows. */
 function drawnSession(
   session: Session,
-  drawn: Pick<DemoCopy, 'ledger' | 'stop' | 'prViews' | 'lastActions' | 'turns'>,
+  drawn: Pick<DemoCopy, 'ledger' | 'stop' | 'prViews' | 'lastActions' | 'turns' | 'subagents' | 'presence'>,
 ): Session {
-  const { ledger, stop, prViews, lastActions, turns } = drawn
+  const { ledger, stop, prViews, lastActions, turns, subagents, presence } = drawn
 
-  return { ...session, ledger, stop, prViews, lastActions, presence: { ...session.presence, ...turns } }
+  return {
+    ...session,
+    ledger,
+    stop,
+    prViews,
+    lastActions,
+    subagents,
+    presence: { ...session.presence, ...turns, ...presence },
+  }
 }
 
 function redrawWhileLeaving($: EngineInterface, expiresAt: number) {
@@ -1029,7 +1037,7 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
       ),
     ),
     // A demo an earlier build seeded may lack a field this one draws, so it ends; /inbox demo seeds a new one.
-    update($, DEMO, d => (d === null || isDemoCopy(d) ? d : null)),
+    update($, DEMO, d => (d === null ? d : isDemoCopy(d) ? upgradeDemoCopy(d) : null)),
     // A draft saved as bare text began before now, so a row that closed before this load stays closed.
     update($, DRAFTS, (d: Record<string, Draft | string>) =>
       Object.fromEntries(
@@ -2049,9 +2057,18 @@ async function drawnState(
     // The minute tick while the person is away redraws the ages.
     read($, AWAY),
   ])
-  const { ledger, stop, prViews, lastActions, presence } = session
+  const { ledger, stop, prViews, lastActions, presence, subagents } = session
   const turns = { turnsStarted: presence.turnsStarted, turnsApplied: presence.turnsApplied }
-  const drawn = demo ?? { ledger, stop, prViews, lastActions, notes, turns }
+  const drawn: DemoCopy = demo ?? {
+    ledger,
+    stop,
+    prViews,
+    lastActions,
+    notes,
+    turns,
+    subagents,
+    presence: { isTurnRunning: presence.isTurnRunning, statedStep: presence.statedStep },
+  }
   const holds = { replies: heldReplies(typing, drafts), discarded }
 
   const isUnread = demo === null && unreadable === conversation.id

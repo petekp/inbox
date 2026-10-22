@@ -1,11 +1,14 @@
-import type { DemoCopy, Session } from '../types'
+import type { DemoCopy, Milestone, Session, Subagent } from '../types'
 import { emptySession } from './session'
 
 const MIN = 60_000
 const REPO = 'https://github.com/acme/visor'
 
+/** A saved sample as an earlier build seeded it, without the fields added since. */
+export type SavedDemoCopy = Omit<DemoCopy, 'subagents' | 'presence'> & Partial<Pick<DemoCopy, 'subagents' | 'presence'>>
+
 /** The demo's atom outlives a hot reload, so a copy an earlier build seeded may lack a field. */
-export function isDemoCopy(saved: unknown): saved is DemoCopy {
+export function isDemoCopy(saved: unknown): saved is SavedDemoCopy {
   if (!saved || typeof saved !== 'object') return false
   const d = saved as Record<string, unknown>
 
@@ -15,6 +18,15 @@ export function isDemoCopy(saved: unknown): saved is DemoCopy {
     hasMilestones &&
     ['ledger', 'prViews', 'lastActions', 'notes', 'turns'].every(k => d[k] !== null && typeof d[k] === 'object')
   )
+}
+
+/** A saved sample in the current shape: a field added since it was saved starts empty. */
+export function upgradeDemoCopy(saved: SavedDemoCopy): DemoCopy {
+  return {
+    ...saved,
+    subagents: saved.subagents ?? [],
+    presence: { isTurnRunning: false, statedStep: null, ...saved.presence },
+  }
 }
 
 /** The sample as a session a host can draw and press on. */
@@ -27,7 +39,8 @@ export function demoSession(now: number): Session {
     ledger: d.ledger,
     lastActions: d.lastActions,
     prViews: d.prViews,
-    presence: { ...s.presence, ...d.turns },
+    presence: { ...s.presence, ...d.turns, ...d.presence },
+    subagents: d.subagents,
   }
 }
 
@@ -40,9 +53,34 @@ export function demoView(now: number): DemoCopy {
         now: 'Waiting on the dismiss gesture and a pairing',
         running: ['simulator: http://localhost:3000'],
       },
-      milestones: ['A pinch dismisses the glance you look at', 'Dismissed glances fade out', 'PR #31 opened'].map(
-        (text, n) => ({ id: `m${n + 1}`, source: 'done', text, detail: null, ref: null, at: now - (3 - n) * 30 * MIN }),
-      ),
+      milestones: [
+        {
+          id: 'm4',
+          source: 'fixed',
+          text: 'The view redraws every glance when one changes',
+          detail: 'It now redraws only the glance that changed',
+          ref: 'd19',
+          at: now - 2 * 60 * MIN,
+        },
+        {
+          id: 'm5',
+          source: 'answered',
+          text: 'Track hands with the camera or the wristband?',
+          detail: 'Wristband',
+          ref: 'd5',
+          at: now - 90 * MIN,
+        },
+        ...['A pinch dismisses the glance you look at', 'Dismissed glances fade out', 'PR #31 opened'].map(
+          (text, n): Milestone => ({
+            id: `m${n + 1}`,
+            source: 'done',
+            text,
+            detail: null,
+            ref: null,
+            at: now - (3 - n) * 30 * MIN,
+          }),
+        ),
+      ],
       items: [
         {
           id: 'd11',
@@ -421,5 +459,32 @@ export function demoView(now: number): DemoCopy {
     },
     notes: {},
     turns: { turnsStarted: 14, turnsApplied: 14 },
+    subagents: SAMPLE_SUBAGENTS(now),
+    presence: { isTurnRunning: true, statedStep: 'Wiring the pinch into the dismiss animation' },
   }
 }
+
+const SAMPLE_SUBAGENTS = (now: number): Subagent[] => [
+  {
+    id: 'sa1',
+    task: 'Find where glances handle pinches',
+    state: 'running',
+    toolStep: 'Reading GlanceView.swift',
+    statedStep: 'Tracing pinches from the gesture recognizer',
+    result: null,
+    startedAt: now - 2 * MIN,
+    at: now - 10_000,
+    transcriptPath: null,
+  },
+  {
+    id: 'sa2',
+    task: 'Check the gesture tests',
+    state: 'done',
+    toolStep: 'Running the gesture tests',
+    statedStep: null,
+    result: 'All 12 gesture tests pass.',
+    startedAt: now - 4 * MIN,
+    at: now - MIN,
+    transcriptPath: null,
+  },
+]

@@ -316,6 +316,20 @@ test('a file saved before the rollout path and the dropped-reply flag existed re
   assert.equal(read.presence.hasDroppedReply, false)
 })
 
+test('a file saved before the progress fields reads with them empty', async t => {
+  const dir = tempDir()
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const initial = await updateState(dir, 's1', s => s)
+  const { subagents: _subagents, ...older } = initial
+  const { isTurnRunning: _running, statedStep: _step, ...presence } = initial.presence
+  await writeFile(statePath(dir, 's1'), JSON.stringify({ ...older, presence }))
+
+  const read = await readState(dir, 's1')
+  assert.deepEqual(read.subagents, [])
+  assert.equal(read.presence.isTurnRunning, false)
+  assert.equal(read.presence.statedStep, null)
+})
+
 test('older queued messages upgrade without inventing a press time or confirming same-time presses', async t => {
   const dir = tempDir()
   t.after(() => rm(dir, { recursive: true, force: true }))

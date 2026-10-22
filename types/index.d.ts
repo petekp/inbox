@@ -204,6 +204,28 @@ export type Milestone = {
   turn?: number
 }
 
+/**
+ * A subagent the main agent started. Hosts keep these in the session, outside the ledger, since the inbox model
+ * never reads them.
+ */
+export type Subagent = {
+  id: string
+  /** The subagent's task, as its start named it. */
+  task: string
+  state: 'running' | 'done' | 'stopped'
+  /** What it did last, worked out from its tool calls; null before its first one. */
+  toolStep: string | null
+  /** What it last said it is doing, through the `step` tool. A running row shows it in place of `toolStep`. */
+  statedStep: string | null
+  /** The first line of its final reply, once it is done. */
+  result: string | null
+  startedAt: number
+  /** When its state or step last changed. */
+  at: number
+  /** The path to the subagent's own rollout, for Codex; null elsewhere. */
+  transcriptPath: string | null
+}
+
 export type Ledger = {
   card: Card | null
   /** Results so far, oldest first. */
@@ -290,6 +312,8 @@ export type DemoCopy = {
   /** Each sample row's latest note, by the row's id. */
   notes: Record<string, RowNote>
   turns: Turns
+  subagents: Subagent[]
+  presence: Pick<Session['presence'], 'isTurnRunning' | 'statedStep'>
 }
 
 export type Exchange = {
@@ -334,7 +358,13 @@ export type Session = {
      */
     hasDroppedReply: boolean
     isUpdating: boolean
+    /** Whether the main agent's turn runs. A subagent's turn does not set it. */
+    isTurnRunning: boolean
+    /** What the main agent last said it is doing through the `step` tool, until its turn ends; null when it said nothing. */
+    statedStep: string | null
   }
+  /** The subagents the main agent started, oldest first. */
+  subagents: Subagent[]
   /**
    * Exchanges waiting for the inbox model, oldest first, with the turns started when each ended. `failed` marks
    * one whose first update failed: the next update tries it once more, then drops it.

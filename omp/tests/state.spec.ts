@@ -105,8 +105,11 @@ test('a file missing newer fields reads with their defaults', async () => {
     ledgerState: 'current',
     hasDroppedReply: false,
     isUpdating: false,
+    isTurnRunning: false,
+    statedStep: null,
   })
   expect(state.pending).toEqual([])
+  expect(state.subagents).toEqual([])
   expect(state.prViews.isFetching).toBe(false)
 })
 
