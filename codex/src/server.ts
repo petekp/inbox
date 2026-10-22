@@ -263,7 +263,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     }
   }
 
-  /** Ends a turn the rollout shows ended, since no hook runs when a turn is interrupted. */
+  /** Ends a turn the rollout shows ended, since Stop does not run for an interrupted turn. */
   async function endTurnIfEnded(id: string) {
     const isRunning = (s: SessionState) => s.presence.isTurnRunning && s.transcriptPath !== null
     if (!isRunning(await readState(dir, id))) return

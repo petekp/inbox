@@ -187,9 +187,9 @@ const TURN_END_BYTES = 64 * 1024
 const TURN_EVENTS = new Set(['task_started', 'task_complete', 'turn_aborted'])
 
 /**
- * Whether the rollout's last turn has ended. Codex runs no hook when a turn is interrupted, and the rollout ends that
- * turn with a `turn_aborted` row. Only the last `TURN_END_BYTES` are read. False when they hold no turn row or the
- * file cannot be read.
+ * Whether the rollout's last turn has ended. Stop does not run for an interrupted turn, and the rollout ends that turn
+ * with a `turn_aborted` row. Only the last `TURN_END_BYTES` are read. False when they hold no turn row or the file
+ * cannot be read.
  */
 export async function hasTurnEnded(path: string): Promise<boolean> {
   try {
