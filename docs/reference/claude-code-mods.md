@@ -405,7 +405,7 @@ Checked on 2026-10-21 in the inbox-ui VM with Claude Code 2.1.306 (Haiku 5.5, a 
 
 - **A subagent is offered the inbox's tools.** Its request carried 11 tools, including `mcp__inbox__record` and `mcp__inbox__close`. [live 2.1.306] Source: the `prompt_snapshot` attachment in the subagent's transcript, `step0/logs/cc1/7758fbd2-fd20-44e9-98c7-4213110b1ccb/subagents/agent-aa65ed97556a5c396.jsonl` in the VM share folder.
 - **Its `close` description carries the guidance.** The description was 4,055 characters and held the "# Inbox" guidance, as the main agent's did. The `record` description (1,329 characters) did not. The subagent's system prompt mentioned no inbox. [live 2.1.306] Same transcript. The main agent's session is `step0/logs/cc1/7758fbd2-fd20-44e9-98c7-4213110b1ccb.jsonl`.
-- **A subagent gets no `inbox:` card.** It receives no `prompt.submit`, so the card carried at the first one reaches the main agent only. [live 2.1.306] The same transcript holds no `inbox:` text.
+- **A subagent gets no `inbox:` card.** No card message appears in its transcript. The string `inbox:` there comes only from the `close` tool's description and the model's own quote of it. That it receives no `prompt.submit` is inferred; no event log was kept. [live 2.1.306] Same transcript.
 - **The main agent's quote of the description matched the subagent's** in the paragraphs I compared. The wire-level size and content come from the subagent's `prompt_snapshot` only.
 - **The tools a `step` tool would sit beside are `record` and `close`.** The other tools in that list were the engine's and the connectors'.
 - **Not checked:** whether `prompt.context` or `prompt.compose` run under a guard, and the Claude desktop app. The sign-in here was not a Team sign-in.
