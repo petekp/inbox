@@ -3725,7 +3725,8 @@ var INITIAL_UI = {
   notice: null,
   unfolded: [],
   resuming: null,
-  opened: null
+  opened: null,
+  pageTop: 0
 };
 function holdsOf(ui) {
   return { replies: heldReplies(ui.typing, ui.drafts), discarded: ui.discarded };
@@ -4075,6 +4076,7 @@ var focusOf = (line, ui) => ui.focus?.rowId === line.id ? Math.min(ui.focus.inde
 function withSelection(ui, id) {
   return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null };
 }
+var withTab = (ui, tab) => ({ ...withSelection(ui, null), tab, pageTop: 0 });
 function afterHandOff(screen, ui, id, now) {
   if (ui.selectedId !== id)
     return ui;
@@ -4132,6 +4134,9 @@ function handleKey(screen, ui, key, now, text) {
     return typingKey(base, base.typing, key, now, text);
   if (key === "escape")
     return { ui: base, close: true };
+  const isUp = key === "up" || key === "k";
+  if (!isRowTab(base.tab) && (isUp || key === "down" || key === "j"))
+    return { ui: { ...base, pageTop: Math.max(0, base.pageTop + (isUp ? -1 : 1)) } };
   const selectable = lines.filter(isSelectable);
   const at = selectable.findIndex((l) => l.id === selected?.id);
   if ((key === "up" || key === "k" || key === "down" || key === "j") && selectable.length > 0) {
@@ -4142,10 +4147,10 @@ function handleKey(screen, ui, key, now, text) {
   const pickedTab = TABS.find((t) => t.hotkey === key);
   if (key === "tab" || key === "shift+tab") {
     const step = key === "tab" ? 1 : -1;
-    return { ui: { ...withSelection(base, null), tab: tabs[wrapIndex(tabs.indexOf(base.tab) + step, tabs.length)] } };
+    return { ui: withTab(base, tabs[wrapIndex(tabs.indexOf(base.tab) + step, tabs.length)]) };
   }
   if (pickedTab)
-    return { ui: { ...withSelection(base, null), tab: pickedTab.id } };
+    return { ui: withTab(base, pickedTab.id) };
   if (key === "u") {
     const undoable = lines.filter((l) => l.settled?.undo).at(-1);
     const press2 = undoable?.settled?.undo;
@@ -4196,7 +4201,7 @@ function followRows(screen, ui, seen, isOpening, now) {
     return { ui, seen: recorded2.seen };
   const to = followTo(ARRIVAL_TABS, tab, isShownEmpty(screen, ui, tab), isOpening ? open : recorded2.added);
   if (to)
-    return { ui: { ...withSelection(ui, null), tab: to }, seen: recorded2.seen };
+    return { ui: withTab(ui, to), seen: recorded2.seen };
   const arrived = recorded2.added[tab];
   if (ui.selectedId !== null || arrived.length === 0)
     return { ui, seen: recorded2.seen };
@@ -4393,7 +4398,7 @@ function tabBar(d) {
     lengths[longest]--;
   }
 }
-function footer(d) {
+function footer(d, isPageScrolling) {
   const { screen, ui, width, now, style: s } = d;
   const out = [s.dim("\u2500".repeat(width))];
   const { status } = screen.view;
@@ -4405,7 +4410,7 @@ function footer(d) {
     out.push(...indented(status.error, 1, width, 2, (t) => s.tone("error", t)));
   if (ui.notice && now - ui.notice.at < SETTLED_MS)
     out.push(...indented(ui.notice.text, 1, width, 2, (t) => s.tone("error", t)));
-  const hints = ui.typing !== null ? [`\u21B5 ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch"] : ["tab switch"];
+  const hints = ui.typing !== null ? [`\u21B5 ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch"] : isPageScrolling ? ["\u2191\u2193 scroll", "tab switch"] : ["tab switch"];
   const model = `${screen.modelName ? `inbox model ${screen.modelName}` : "no inbox model: set @inbox"}  v${version} `;
   const hintLine = ` ${hints.map((h) => s.dim(h)).join(` ${s.tone("sep", "\xB7")} `)}`;
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2;
@@ -4415,7 +4420,7 @@ function footer(d) {
     out.push(fit(hintLine, width), fit(` ${s.dim(model.trimEnd())}`, width));
   return out;
 }
-function render(screen, ui, width, now, style, height) {
+function drawPanel(screen, ui, width, now, style, height) {
   const d = { screen, ui, width, now, style };
   const entries = entriesOf(screen, ui, ui.tab, now);
   const selected = resolveSelected(linesOf(entries), ui.selectedId);
@@ -4437,10 +4442,26 @@ function render(screen, ui, width, now, style, height) {
         selectedAt = [start, body.length - 1];
     }
   }
-  const foot = footer(d);
-  const room = height === undefined ? Infinity : Math.max(6, height - head.length - foot.length);
+  const roomBeside = (foot2) => height === undefined ? Infinity : Math.max(6, height - head.length - foot2.length);
+  const isPage = !isRowTab(ui.tab);
+  const isPageTaller = isPage && body.length > roomBeside(footer(d, false));
+  const foot = footer(d, isPageTaller);
+  const room = roomBeside(foot);
+  if (isPage) {
+    const top = Math.min(Math.max(0, ui.pageTop), body.length > room ? body.length - room + 1 : 0);
+    const shown2 = body.length > room ? pageWindow(body, top, room, style) : body;
+    return { lines: [...head, ...shown2, ...foot].map((l) => fit(l, width)), pageTop: top };
+  }
   const shown = body.length > room ? scrolled(body, selectedAt, room, style) : body;
-  return [...head, ...shown, ...foot].map((l) => fit(l, width));
+  return { lines: [...head, ...shown, ...foot].map((l) => fit(l, width)), pageTop: ui.pageTop };
+}
+function pageWindow(body, top, room, s) {
+  const out = top > 0 ? [s.dim(`  \u2191 ${top} more lines`)] : [];
+  const rest = body.slice(top);
+  if (rest.length <= room - out.length)
+    return [...out, ...rest];
+  const fits = room - out.length - 1;
+  return [...out, ...rest.slice(0, fits), s.dim(`  \u2193 ${rest.length - fits} more lines`)];
 }
 function scrolled(body, selectedAt, room, s) {
   const [first = 0, last = 0] = selectedAt;
@@ -4524,7 +4545,13 @@ function createPanel(deps) {
     await refresh("ref" in p ? undefined : p.id);
   }
   return {
-    render: (width) => screen ? render(screen, ui, width, deps.now(), style, deps.height()) : [" Loading\u2026"],
+    render(width) {
+      if (screen === null)
+        return [" Loading\u2026"];
+      const drawn = drawPanel(screen, ui, width, deps.now(), style, deps.height());
+      ui = { ...ui, pageTop: drawn.pageTop };
+      return drawn.lines;
+    },
     handleInput(key, text) {
       if (screen === null)
         return;

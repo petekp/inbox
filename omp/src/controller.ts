@@ -1,7 +1,7 @@
 import type { PrPress } from '../../hooks/pr-tab'
 import type { RowPress } from '../../hooks/presses'
 import type { ReplyHolds, ShownTab } from '../../hooks/view'
-import { INITIAL_UI, afterHandOff, followRows, handleKey, holdsOf, isAnimating, noticeFor, render } from './panel'
+import { INITIAL_UI, afterHandOff, drawPanel, followRows, handleKey, holdsOf, isAnimating, noticeFor } from './panel'
 import type { PanelPress, PanelScreen, PanelUi, SeenRows, Style } from './panel'
 
 const ANIMATION_MS = 200
@@ -100,7 +100,13 @@ export function createPanel(deps: PanelDeps): Panel {
   }
 
   return {
-    render: width => (screen ? render(screen, ui, width, deps.now(), style, deps.height()) : [' Loading…']),
+    render(width) {
+      if (screen === null) return [' Loading…']
+      const drawn = drawPanel(screen, ui, width, deps.now(), style, deps.height())
+      ui = { ...ui, pageTop: drawn.pageTop }
+
+      return drawn.lines
+    },
     handleInput(key, text) {
       if (screen === null) return
       const result = handleKey(screen, ui, key, deps.now(), text)

@@ -26,7 +26,7 @@ import {
 import type { RowView } from '../../hooks/view'
 import { sessionView } from '../../hooks/session'
 import { demoSource, demoState } from '../src/demo'
-import { INITIAL_UI, afterHandOff, bandLines, followRows, handleKey, holdsOf, render } from '../src/panel'
+import { INITIAL_UI, afterHandOff, bandLines, drawPanel, followRows, handleKey, holdsOf, render } from '../src/panel'
 import type { PanelScreen, PanelUi, Style } from '../src/panel'
 import { emptyState } from '../src/state'
 
@@ -629,11 +629,40 @@ test('keys on the Progress page select nothing and press nothing, and the footer
   for (const key of ['up', 'down', 'j', 'k', 'left', 'right', 'enter', 'u', 'r', 'd', 'x', 'a']) {
     const result = handleKey(screen, onPage, key, NOW)
     expect(result.press).toBeUndefined()
-    expect(result.ui).toEqual(onPage)
+    expect({ ...result.ui, pageTop: 0 }).toEqual(onPage)
   }
   const footer = text(screen, onPage).split('\n').at(-1)!
   expect(footer).toContain('tab switch')
   expect(footer).not.toContain('↵ press')
+  expect(footer).not.toContain('scroll')
+})
+
+test('on a Progress page taller than the panel, ↑↓ and j/k scroll it by a line, up to its last line', () => {
+  const screen = screenOf()
+  const full = text(screen, onPage).split('\n')
+  const lastLine = full[full.length - 3]!
+  const height = 14
+  const top = (ui: PanelUi) => drawPanel(screen, ui, 200, NOW, style, height).pageTop
+  const shown = (ui: PanelUi) => drawPanel(screen, ui, 200, NOW, style, height).lines.map(strip)
+  expect(shown(onPage).at(-1)).toContain('↑↓ scroll')
+  expect(shown(onPage).some(l => l.includes('↓ ') && l.includes('more lines'))).toBe(true)
+  const down = keys(screen, onPage, 'down', 'j')
+  expect(down.pageTop).toBe(2)
+  expect(keys(screen, down, 'k').pageTop).toBe(1)
+  expect(keys(screen, down, 'up', 'up', 'up').pageTop).toBe(0)
+  expect(shown(down)).toContain('  ↑ 2 more lines')
+  const end = { ...onPage, pageTop: 1000 }
+  expect(top(end)).toBeLessThan(full.length)
+  expect(shown(end)).toContain(lastLine)
+  expect(shown(end).some(l => l.includes('↓ ') && l.includes('more lines'))).toBe(false)
+  expect(shown({ ...end, pageTop: top(end) - 1 })).not.toContain(lastLine)
+})
+
+test('changing the shown tab starts the Progress page at its top', () => {
+  const screen = screenOf()
+  const scrolled = { ...onPage, pageTop: 3 }
+  for (const key of ['tab', 'shift+tab', ...TABS.map(t => t.hotkey)])
+    expect(keys(screen, scrolled, key).pageTop).toBe(0)
 })
 
 test('rows that arrive while the Progress page shows leave the panel on the page', () => {

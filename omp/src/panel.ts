@@ -124,6 +124,8 @@ export type PanelUi = {
   resuming: { stopAt: number; is: 'sending' } | { stopAt: number; is: 'refused'; why: string } | null
   /** A handed-off row the person opened again with Enter. Moving the selection off it folds it again. */
   opened: string | null
+  /** How many lines of the Progress page are scrolled above the panel. Drawing clamps it to the page's end. */
+  pageTop: number
 }
 
 export const INITIAL_UI: PanelUi = {
@@ -137,6 +139,7 @@ export const INITIAL_UI: PanelUi = {
   unfolded: [],
   resuming: null,
   opened: null,
+  pageTop: 0,
 }
 
 export function holdsOf(ui: Pick<PanelUi, 'typing' | 'drafts' | 'discarded'>): ReplyHolds {
@@ -585,6 +588,8 @@ function withSelection(ui: PanelUi, id: string | null): PanelUi {
   return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null }
 }
 
+const withTab = (ui: PanelUi, tab: ShownTab): PanelUi => ({ ...withSelection(ui, null), tab, pageTop: 0 })
+
 /**
  * After a press hands off the selected row, the selection moves to the next row that waits, as the terminal's does.
  * The row stays selected when none waits. A failed send leaves the row open, so it stays selected and unfolded.
@@ -651,6 +656,9 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
   const base: PanelUi = { ...ui, selectedId: selected?.id ?? null }
   if (base.typing !== null) return typingKey(base, base.typing, key, now, text)
   if (key === 'escape') return { ui: base, close: true }
+  const isUp = key === 'up' || key === 'k'
+  if (!isRowTab(base.tab) && (isUp || key === 'down' || key === 'j'))
+    return { ui: { ...base, pageTop: Math.max(0, base.pageTop + (isUp ? -1 : 1)) } }
   const selectable = lines.filter(isSelectable)
   const at = selectable.findIndex(l => l.id === selected?.id)
   if ((key === 'up' || key === 'k' || key === 'down' || key === 'j') && selectable.length > 0) {
@@ -663,9 +671,9 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
   if (key === 'tab' || key === 'shift+tab') {
     const step = key === 'tab' ? 1 : -1
 
-    return { ui: { ...withSelection(base, null), tab: tabs[wrapIndex(tabs.indexOf(base.tab) + step, tabs.length)]! } }
+    return { ui: withTab(base, tabs[wrapIndex(tabs.indexOf(base.tab) + step, tabs.length)]!) }
   }
-  if (pickedTab) return { ui: { ...withSelection(base, null), tab: pickedTab.id } }
+  if (pickedTab) return { ui: withTab(base, pickedTab.id) }
   if (key === 'u') {
     const undoable = lines.filter(l => l.settled?.undo).at(-1)
     const press = undoable?.settled?.undo
@@ -733,7 +741,7 @@ export function followRows(
   const { tab } = ui
   if (!isRowTab(tab)) return { ui, seen: recorded.seen }
   const to = followTo(ARRIVAL_TABS, tab, isShownEmpty(screen, ui, tab), isOpening ? open : recorded.added)
-  if (to) return { ui: { ...withSelection(ui, null), tab: to }, seen: recorded.seen }
+  if (to) return { ui: withTab(ui, to), seen: recorded.seen }
   const arrived = recorded.added[tab]
   if (ui.selectedId !== null || arrived.length === 0) return { ui, seen: recorded.seen }
   const kept = keptOpen(waitsOf(linesOf(entriesOf(screen, ui, tab, now))), arrived)
@@ -958,7 +966,7 @@ function tabCell(t: TabCell, label: string, form: TabForm, s: Style): string {
 
 /**
  * The tab line. As the panel narrows, it drops the `[n]` brackets, then zero counts, then cuts the other tabs' labels,
- * longest first. The shown tab's label is never cut.
+ * longest first. Only the final `fit()` in `render` cuts the shown tab's label, once the other labels are at their shortest.
  */
 function tabBar(d: Draw): string {
   const { screen, ui, width, style: s } = d
@@ -991,7 +999,7 @@ function tabBar(d: Draw): string {
   }
 }
 
-function footer(d: Draw): string[] {
+function footer(d: Draw, isPageScrolling: boolean): string[] {
   const { screen, ui, width, now, style: s } = d
   const out: string[] = [s.dim('─'.repeat(width))]
   const { status } = screen.view
@@ -1006,7 +1014,9 @@ function footer(d: Draw): string[] {
       ? [`↵ ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`]
       : isRowTab(ui.tab)
         ? ['←→ pick', '↵ press', '↑↓ move', 'tab switch']
-        : ['tab switch']
+        : isPageScrolling
+          ? ['↑↓ scroll', 'tab switch']
+          : ['tab switch']
   const model = `${screen.modelName ? `inbox model ${screen.modelName}` : 'no inbox model: set @inbox'}  v${version} `
   const hintLine = ` ${hints.map(h => s.dim(h)).join(` ${s.tone('sep', '·')} `)}`
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2
@@ -1025,6 +1035,18 @@ export function render(
   style: Style,
   height?: number,
 ): string[] {
+  return drawPanel(screen, ui, width, now, style, height).lines
+}
+
+/** The panel's lines, and the Progress page's scroll clamped to what the panel can show. */
+export function drawPanel(
+  screen: PanelScreen,
+  ui: PanelUi,
+  width: number,
+  now: number,
+  style: Style,
+  height?: number,
+): { lines: string[]; pageTop: number } {
   const d: Draw = { screen, ui, width, now, style }
   const entries = entriesOf(screen, ui, ui.tab, now)
   const selected = resolveSelected(linesOf(entries), ui.selectedId)
@@ -1044,11 +1066,31 @@ export function render(
       if (isSelected) selectedAt = [start, body.length - 1]
     }
   }
-  const foot = footer(d)
-  const room = height === undefined ? Infinity : Math.max(6, height - head.length - foot.length)
+  const roomBeside = (foot: string[]) =>
+    height === undefined ? Infinity : Math.max(6, height - head.length - foot.length)
+  const isPage = !isRowTab(ui.tab)
+  const isPageTaller = isPage && body.length > roomBeside(footer(d, false))
+  const foot = footer(d, isPageTaller)
+  const room = roomBeside(foot)
+  if (isPage) {
+    const top = Math.min(Math.max(0, ui.pageTop), body.length > room ? body.length - room + 1 : 0)
+    const shown = body.length > room ? pageWindow(body, top, room, style) : body
+
+    return { lines: [...head, ...shown, ...foot].map(l => fit(l, width)), pageTop: top }
+  }
   const shown = body.length > room ? scrolled(body, selectedAt, room, style) : body
 
-  return [...head, ...shown, ...foot].map(l => fit(l, width))
+  return { lines: [...head, ...shown, ...foot].map(l => fit(l, width)), pageTop: ui.pageTop }
+}
+
+/** `room` lines of the page from line `top`, with a line for what is above and below. */
+function pageWindow(body: string[], top: number, room: number, s: Style): string[] {
+  const out = top > 0 ? [s.dim(`  ↑ ${top} more lines`)] : []
+  const rest = body.slice(top)
+  if (rest.length <= room - out.length) return [...out, ...rest]
+  const fits = room - out.length - 1
+
+  return [...out, ...rest.slice(0, fits), s.dim(`  ↓ ${rest.length - fits} more lines`)]
 }
 
 function scrolled(body: string[], selectedAt: number[], room: number, s: Style): string[] {
