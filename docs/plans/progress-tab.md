@@ -134,7 +134,7 @@ An answered or fixed milestone goes away if its row reopens, since the result no
 **Owner.**
 
 - `hooks/ledger.ts`: `applyUpdate`, `addMilestones`, `upgradeLedger`, `doneTexts`, the cap and the duplicate rules.
-- `hooks/model-text.ts`: the DONE rule in `systemText`, the DONE count in `buildPrompt` and `CATCH_UP`, and `ledgerBlocks`.
+- `hooks/model-text.ts`: `RESULTS_SYSTEM`, `resultsPrompt` and `resultsCatchUpPrompt`. `hooks/ledger.ts:withResults` merges the results call into the update.
 - `hooks/session.ts`: `appliedCatchUp` passes `isCatchUp` to `applyUpdate`. Today it passes no flag, so catch-up results would get per-reply times and the per-reply cap.
 
 **Stored state.**
@@ -152,20 +152,17 @@ An answered or fixed milestone goes away if its row reopens, since the result no
 
 - A milestone has an optional `turn`, the conversation turn it was made in. `applyUpdate` stamps its exchange's turn. `closeItem` stamps `ledger.turn`. A button press stamps none; `recordPrompt` stamps its answered milestone with the turn its message starts, when the message arrives through the sent record, so until then it merges with nothing. A catch-up's results get none, and neither do milestones saved before `turn` existed. No upgrade is needed: those never merge.
 - `listResults` in `hooks/ledger.ts` returns the results newest first. A done milestone folds into an answered or fixed one of the same turn when their words overlap (two shared key words, or one when the line has at most two, not counting the generic verbs added, updated, fixed, created, changed, removed, wrote and set), unless they name different numbers. One answered or fixed result may take several DONE lines, kept in `merged`. Nothing draws it yet: `progressPage` calls it in step 2.
-- The stored DONE milestones, `card.done` and `<listed>` are unchanged.
+- The stored DONE milestones and `card.done` are unchanged.
 
-**Catch-up count.** A catch-up may write up to 6 DONE lines. An update after one reply may write up to 3. Reason: when you come back to a long conversation, 3 results are not enough to show where it stands.
+**Catch-up count.** A catch-up may write up to 6 DONE lines. An update after one reply may write up to 3. Reason: when you come back to a long conversation, 3 results are not enough to show where it stands. `applyUpdate` keeps the newest 3, or 6 for a catch-up, and `resultsPrompt` and `resultsCatchUpPrompt` state the same counts. Catch-up results get no time, since the model cannot date them.
 
-- The count goes in the prompt, not in `systemText`. `buildPrompt` states 3. `CATCH_UP`, the text both catch-up prompts share, states 6. `systemText`'s DONE rule says to write no more DONE lines than the prompt allows.
-- Reason: every host sends one fixed system text, through an `Ask` that takes only the prompt. Codex writes it to one instructions file that every session's update process shares. A count in the prompt reaches all three hosts and the eval runner with no new plumbing. Two system texts would need a flag through `Ask`, `askLedgerModel`, `codexAsk` and omp's ask, a second Codex instructions file so concurrent updates cannot overwrite each other's, and a per-case system prompt in `evals/run.ts`.
-- The model still sees one count in each call.
-- Catch-up results get no time, since the model cannot date them.
+**Model-read text.** Results come from a separate model call, so the ledger call's text stays what it was on `main`.
 
-**Model-read text.**
-
-- `systemText` gets the new DONE rule and a `<listed>` block of results listed before this exchange, so the model does not repeat them.
-- The DONE rule says: "Write no DONE line for an item you close with the person's answer, or for a finding you mark FIXED: the inbox lists those itself." Reason: `<listed>` is built before the update, so this exchange's answers and fixes are not in it. A rule that says they are listed would let the model write a FIXED line and a DONE line for one fix. `addMilestone` catches repeats only between done milestones, so code would not stop the second one.
-- `ledgerBlocks` drops DONE from `<card>` and adds `<listed>`: the newest 8, or all of them in a catch-up.
+- The ledger call reads `systemText` and `buildPrompt`, unchanged from `main`. Its DONE lines are dropped.
+- The results call reads `RESULTS_SYSTEM` with `resultsPrompt`, or `resultsCatchUpPrompt` for a catch-up. The prompt holds `<listed>` (the newest 8 results, or all in a catch-up), `<open>`, `<findings>`, `<person>`, `<activity>` and `<reply>` or `<conversation>`. Its rule says to write no DONE line for the work that answers an `<open>` item or fixes a `<finding>`, since the inbox lists those itself.
+- Both calls start together, so a reply waits for the slower one. `Ask` takes the system text with the prompt. `runUpdates` and `askOverConversation` make both calls, and `withResults` replaces the ledger update's DONE lines with the results call's. A failed results call leaves the ledger update applied with no new results. A failed ledger call fails the update as before.
+- Reason: a DONE rule inside the ledger call moved unrelated cases, such as dismissed questions, by 10 to 20 runs of 32 with each wording. A separate call lets the results wording change without retesting the ledger cases.
+- The mod's catch-up runs the ledger call as a fork of the conversation, and the results call over the transcript from `$.session.messages()`. With no transcript, it writes no results.
 
 **Checks.**
 
@@ -452,7 +449,7 @@ Every step runs `./scripts/check.sh`. After a shared-module change it rebuilds w
    - **Codex session keys.** In a forked chat, and in a subagent spawned inside a forked chat, log the hook input (`session_id`, `agent_id`, `transcript_path`) beside the MCP call's metadata (`session_id`, `thread_id`, `parent_thread_id`). Codex source (`session.rs`) gives a user fork its own session id and a subagent its parent's. Then write one keying rule that the hooks and the server both use for `step`, subagent rows, `record` and `close`, before step 6. If the source holds, today's keying by `session_id` already is that rule.
    - **The mod.** Does a subagent's system prompt hold `inbox:guidance`? Ask Claude to quote it from inside a subagent. Is the subagent offered the `step` tool?
    - **omp.** Do `task:subagent:*` frames arrive on `pi.events`? Does a child's `before_agent_start` prompt edit take effect? Is `step` offered to a child in a normal spawn and in plan mode?
-1. **Milestones.** Ledger, upgrade, the catch-up flag and count, `systemText`, `buildPrompt`, `CATCH_UP`, `ledgerBlocks` and the `evals/run.ts` port. Checks are in the Milestones section.
+1. **Milestones.** Ledger, upgrade, the catch-up flag and count, the results call and the `evals/run.ts` port. Checks are in the Milestones section.
 2. **Session fields, `ProgressPage` and the sample.** `isTurnRunning`, `statedStep` and `subagents` in `Session`, with their upgrades and their behavior in `cleared` and `forkedFrom`. `progressPage` in `sessionView`. The new `DemoCopy` fields, `demoView` and `drawnSession`. `turnStarted` and `turnEnded` exist but no host calls them yet. Nothing new is drawn. Checks: `tests/session-script.ts` through `tests/session.test.ts`, `codex/tests/session.spec.ts` and `omp/tests/session.spec.ts`; loading a state saved by `main` in each host; loading the mod's saved sample copy.
 3. **Tab plumbing.** `PageTab`, `ShownTab`, `isListedTab`, `LISTED_TABS` and `ARRIVAL_TABS`. Every `Record<Tab>` site, `followTo`, omp's `bandLines`, the Codex renames, the new `screenText` argument and screen cases, the mod's `PAGE` atom, and Codex's saved `shownTab`. The Progress entry is not in `TABS` yet, so no look draws it. The inbox model's `<screen>` text changes in Codex and omp. Checks: all test suites, the PR-arrival test in each host, and `./scripts/eval.sh`.
 4. **Draw the Progress tab.** One commit per look adds that look's drawing with the page unreachable: the Progress entry stays out of `TABS`, and the look's tests set the shown tab directly. Then one last commit adds the entry to `TABS`, adds `milestones` and `progress-tab` to `hooks/clients.ts`, and updates the demo test's tab order. Reason: every look reads the one shared `TABS`, so adding the entry gives every look the tab at once. Reverting that last commit takes the tab out of every look cleanly. If a look's tests cannot reach the page without a seam in production code, step 4 is one commit instead. Checks, with "Progress" and again with a 10-letter placeholder:

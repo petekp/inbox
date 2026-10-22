@@ -97,7 +97,7 @@ Change a rule in its owner. Do not change it in a reader.
 | Press guard | `hooks/view.ts:PRESS_GUARD_MS` | The terminal, desktop and Codex looks. omp takes keys only and has no guard. |
 | Row padding | `hooks/layout.ts:ROW_PAD_PT` | Desktop and Codex |
 | Demo data | `hooks/demo.ts:demoView`, `hooks/demo.ts:demoSession` | The mod's `/inbox demo`, `codex/src/demo.ts:demoState` and `omp/src/demo.ts:demoState` |
-| Model-read texts | `hooks/model-text.ts:guidanceText`, `hooks/model-text.ts:systemText`, `hooks/model-text.ts:inboxText`, `hooks/model-text.ts:promptNotes`, `hooks/tools.ts:recordDescription` | The mod, Codex and omp, each through its `Host` |
+| Model-read texts | `hooks/model-text.ts:guidanceText`, `hooks/model-text.ts:systemText`, `hooks/model-text.ts:RESULTS_SYSTEM`, `hooks/model-text.ts:resultsPrompt`, `hooks/model-text.ts:inboxText`, `hooks/model-text.ts:promptNotes`, `hooks/tools.ts:recordDescription` | The mod, Codex and omp, each through its `Host` |
 | Which features each host supports | `hooks/clients.ts:CLIENTS` | `scripts/check-structure.mjs:checkClients`, which fails when a feature that is not `full` has no row in "Differences on purpose" |
 | Saved state shapes and upgrades | `types/index.d.ts:Session`, `hooks/session.ts:upgradeSession`, `hooks/ledger.ts:upgradeLedger`, `hooks/presses.ts:upgradeLastActions` | Every host. The mod gathers the separate fields an earlier build kept into one session in `hooks/claude-host.ts:upgradeDrawn`, and upgrades its UI state in `hooks/register.tsx:upgradeState`. Codex and omp call `upgradeSession` from `codex/src/state.ts:upgraded` and `omp/src/state.ts:upgraded`. |
 | PR readiness and prompts | `hooks/prs.ts:readiness`, `hooks/prs.ts:prompts` | The mod, the Codex tab and the omp panel |
@@ -238,8 +238,8 @@ A host is a program that runs the inbox's agent: it reacts to events, keeps stat
 | `now` | The clock. |
 | `read`, `update` | Read the session, and change it under a lock. An external effect, such as a delivery, runs outside the change. |
 | `exclusive` | Runs the per-reply update unless another run holds the session. |
-| `catchUp` | Optional, on the update host. Has the inbox model read the whole conversation and returns its answer, or says the conversation is unreadable. Without it, a host only runs the pending exchanges. The mod forks the conversation, and Codex and omp pass their conversation text to `askOverConversation`. |
-| `ask` | Calls the inbox model with the prompt `buildPrompt` writes. Null when it fails. |
+| `catchUp` | Optional, on the update host. Has the inbox model read the whole conversation and returns its ledger answer and its results answer, or says the conversation is unreadable. Without it, a host only runs the pending exchanges. The mod forks the conversation, and Codex and omp pass their conversation text to `askOverConversation`. |
+| `ask` | Calls the inbox model with a prompt and the system text for it, and returns null when it fails. `runUpdates` calls it twice for a reply, in parallel: the ledger call with `systemText` and `buildPrompt`, and the results call with `RESULTS_SYSTEM` and `resultsPrompt`. `hooks/ledger.ts:withResults` replaces the ledger update's DONE lines with the results call's. |
 | `deliver` | Sends a message to the agent as if the person typed it. |
 | `prepare` | Throws when `deliver` could not start, before a sent record is saved. |
 | `perform` | Opens a link or path, or copies text. Returns why it could not, or null. |
