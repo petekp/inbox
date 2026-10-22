@@ -1080,7 +1080,7 @@ async function tailLines(path, bytes) {
     await file.close();
   }
 }
-var TURN_END_BYTES = 64 * 1024;
+var TURN_ROW_BYTES = 64 * 1024;
 async function turnIn(path, turnId) {
   const none = { dialogs: [], commands: [] };
   if (path === null) return none;

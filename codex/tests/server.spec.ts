@@ -705,6 +705,41 @@ test('a chat saved mid-turn reads Working… until a view or a press finds the t
   assert.equal(pressed.result.structuredContent.view.progressPage.now, null)
 })
 
+test('a turn another plugin’s Stop continues reads Working… again once a view finds it running in the rollout', async () => {
+  const dir = tempDir()
+  const rollout = join(dir, 'rollout.jsonl')
+  const turnRow = (type: string) => JSON.stringify({ type: 'event_msg', payload: { type, turn_id: 't1' } })
+  writeFileSync(rollout, '')
+  const deps = hookDeps(dir)
+  const handle = makeServer({
+    dir,
+    now: () => 100,
+    exec: fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec,
+    tabHtml: '<html></html>',
+    fallbackCli: async () => 'codex',
+  })
+  const viewNow = async () => {
+    const r = (await handle({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'inbox_view', arguments: {}, _meta: { thread_id: 's1' } },
+    })) as { result: { structuredContent: { progressPage: { now: string | null } } } }
+
+    return r.result.structuredContent.progressPage.now
+  }
+
+  await handleHook(input('UserPromptSubmit', { prompt: 'Ship it', turn_id: 't1', transcript_path: rollout }), deps)
+  assert.equal(await viewNow(), 'Working…')
+  writeFileSync(rollout, `${turnRow('task_started')}\n`)
+  await handleHook(input('Stop', { last_assistant_message: '', turn_id: 't1', transcript_path: rollout }), deps)
+  assert.equal((await readState(dir, 's1')).presence.isTurnRunning, false)
+  assert.equal(await viewNow(), 'Working…')
+
+  writeFileSync(rollout, `${turnRow('task_started')}\n${turnRow('task_complete')}\n`)
+  assert.equal(await viewNow(), null)
+})
+
 test('Done on a task Codex just left waits while a turn runs, queues one message once the rollout shows the turn interrupted, and Undo then reads stale', async () => {
   const dir = tempDir()
   const task = (id: string, ask: string, turn: number) => ({

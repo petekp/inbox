@@ -183,17 +183,18 @@ async function tailLines(path: string, bytes: number): Promise<string[]> {
   }
 }
 
-const TURN_END_BYTES = 64 * 1024
+const TURN_ROW_BYTES = 64 * 1024
 const TURN_EVENTS = new Set(['task_started', 'task_complete', 'turn_aborted'])
 
 /**
- * Whether the rollout's last turn has ended. Stop does not run for an interrupted turn, and the rollout ends that turn
- * with a `turn_aborted` row. Only the last `TURN_END_BYTES` are read. False when they hold no turn row or the file
- * cannot be read.
+ * Whether the rollout's last turn still runs: true after its `task_started` row, false after its `task_complete` or
+ * `turn_aborted` row. Stop does not run for an interrupted turn, and another plugin's Stop can continue a turn after
+ * the inbox's Stop ran, so only the rollout says whether the turn runs. Only the last `TURN_ROW_BYTES` are read. Null
+ * when they hold no turn row or the file cannot be read.
  */
-export async function hasTurnEnded(path: string): Promise<boolean> {
+export async function turnRunningIn(path: string): Promise<boolean | null> {
   try {
-    const lines = await tailLines(path, TURN_END_BYTES)
+    const lines = await tailLines(path, TURN_ROW_BYTES)
     for (const line of lines.reverse()) {
       if (!line.includes('"task_') && !line.includes('"turn_aborted"')) continue
       let row: TranscriptLine
@@ -203,12 +204,12 @@ export async function hasTurnEnded(path: string): Promise<boolean> {
         continue
       }
       const type = row.payload?.type
-      if (row.type === 'event_msg' && type !== undefined && TURN_EVENTS.has(type)) return type !== 'task_started'
+      if (row.type === 'event_msg' && type !== undefined && TURN_EVENTS.has(type)) return type === 'task_started'
     }
 
-    return false
+    return null
   } catch {
-    return false
+    return null
   }
 }
 
