@@ -3848,3 +3848,173 @@ test('a forked conversation keeps the parent’s findings and closed records, an
   await clock.advance(SETTLED_MS)
   expect(await contextOf()).toContain('- issue: Retry loop never backs off (close id: f1)')
 })
+
+function showProgressAtNextTabWrite(on: On) {
+  let isArmed = false
+  on('state.set', { plugin: 'inbox', key: 'page' } as const, ($, e, next) => {
+    const write = isArmed ? { ...e, value: 'progress' as const } : e
+    isArmed = false
+    return next(write)
+  })
+  return () => {
+    isArmed = true
+  }
+}
+
+test('the Progress page shows the goal, the Now line and the results in place of rows, leaves the row keys idle, and a row tab shows its rows again', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown: true, isFocused: true, isPlaced: true }] }))
+  const showProgress = showProgressAtNextTabWrite(on)
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
+
+  showProgress()
+  await pane.press({ key: 'tab-key-needsYou' })
+  expect((await pane.find({ key: 'progress-goal' }))?.text).toBe('Add a greeting CLI')
+  expect((await pane.find({ key: 'progress-now' }))?.text).toBe('Now\u2007·\u2002Waiting on two choices')
+  expect(await pane.find({ text: /^Plan written$/ })).toBeDefined()
+  expect(await pane.find({ text: /Use Node or Python\?/ })).toBeUndefined()
+  const rowKeys = async () =>
+    (await pane.findAll({ type: 'Button' }))
+      .map(b => b.key ?? '')
+      .filter(k => k.endsWith('-key') && !k.startsWith('tab-'))
+  expect(await rowKeys()).toEqual(['no-row-d-key', 'no-row-x-key'])
+  await pane.press({ key: 'next' })
+  await pane.press({ key: 'no-row-d-key' })
+  await $.tool.call({
+    tool: 'mcp__inbox__record',
+    kind: 'finding',
+    finding_kind: 'issue',
+    title: 'No lint script',
+    detail: 'Only tests run.',
+  })
+  await clock.settle()
+  expect(await pane.find({ key: 'progress-goal' })).toBeDefined()
+  expect(await rowKeys()).toEqual(['no-row-d-key', 'no-row-x-key'])
+
+  await pane.press({ key: 'tab-key-needsYou' })
+  expect(await pane.find({ key: 'progress-goal' })).toBeUndefined()
+  expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
+  await pane.press({ key: 'tab-findings' })
+  expect(await pane.find({ key: 'address-f3' })).toBeDefined()
+})
+
+test('the Progress page says nothing is here yet before the session has a goal or a result', async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  const showProgress = showProgressAtNextTabWrite(on)
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  const terminal = await $.ui.mount(PANE)
+  showProgress()
+  await terminal.press({ key: 'tab-key-needsYou' })
+  expect(await terminal.find({ text: 'Nothing here yet' })).toBeDefined()
+  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await desktop.find({ text: 'Nothing here yet' })).toBeDefined()
+})
+
+test('at the narrowest desktop pane the tabs keep their counts and frame only the shown tab, and the Progress page draws there', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  surfaces = ['desktop']
+  const showProgress = showProgressAtNextTabWrite(on)
+
+  await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  await $.tool.call({
+    tool: 'mcp__inbox__record',
+    kind: 'finding',
+    finding_kind: 'issue',
+    title: 'No lint script',
+    detail: 'Only tests run.',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 34 } })
+  const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+  expect((await tabBar()).tabs.map(t => [t.id, t.count])).toEqual([
+    ['needsYou', 2],
+    ['findings', 1],
+    ['prs', 0],
+  ])
+  expect((await tabBar()).isEachFramed).toBe(false)
+  await pane.redraw({ ...PANE.props, bodyColumns: 69 })
+  expect((await tabBar()).isEachFramed).toBe(true)
+
+  showProgress()
+  const { tabs, gap } = await tabBar()
+  await pane.pointer({ type: 'down', x: tabs[0]!.width + gap, y: 1, button: 'left', in: 'tabs' })
+  await clock.settle()
+  expect((await tabBar()).shown).toBe('progress')
+  expect((await pane.find({ key: 'progress-goal' }))?.text).toBe('Add a greeting CLI')
+  expect(await pane.find({ text: /^Plan written$/ })).toBeDefined()
+  expect(await pane.find({ key: 'select-f3' })).toBeUndefined()
+})
+
+test('a PR that arrives while the Needs you tab is empty moves the pane to the PRs tab', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown: true, isFocused: true, isPlaced: true }] }))
+  ledgerReply = 'NOW: Waiting on review'
+  let release = () => {}
+  let onFetched = () => {}
+  let isFetching = false
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, async ($, e, next) => {
+    const r = await next(e)
+    const wasFetching = isFetching
+    isFetching = e.value.prViews.isFetching
+    if (wasFetching && !isFetching) onFetched()
+    return r
+  })
+  ghAnswers.push(
+    {
+      match: argv => argv.includes('view') && argv.includes('12'),
+      stdout: JSON.stringify({
+        number: 12,
+        title: 'Add a greeting CLI',
+        url: 'https://github.com/acme/greet/pull/12',
+        isDraft: false,
+        state: 'OPEN',
+        baseRefName: 'main',
+        mergeable: 'MERGEABLE',
+        reviewDecision: 'REVIEW_REQUIRED',
+        statusCheckRollup: [],
+      }),
+      hold: () => new Promise(r => (release = r)),
+    },
+    {
+      match: argv => argv.includes('graphql'),
+      stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
+    },
+  )
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'inbox', args: '' } as never)
+  const pane = await $.ui.mount(PANE)
+  expect(await pane.find({ text: 'Nothing needed.' })).toBeDefined()
+  await $.prompt.submit({ text: 'open the PR', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Opened https://github.com/acme/greet/pull/12.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  expect(isFetching).toBe(true)
+  expect(await pane.find({ text: 'Nothing needed.' })).toBeDefined()
+
+  const fetched = new Promise<void>(r => (onFetched = r))
+  release()
+  await fetched
+  await clock.settle()
+  expect(await pane.find({ text: 'Nothing needed.' })).toBeUndefined()
+  expect(await pane.find({ text: /Add a greeting CLI/ })).toBeDefined()
+})
