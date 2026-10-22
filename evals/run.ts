@@ -4,7 +4,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
-import { applyExchangeUpdate, EMPTY, parseReply } from '../hooks/ledger'
+import { applyExchangeUpdate, applyUpdate, EMPTY, parseReply, upgradeLedger } from '../hooks/ledger'
 import { buildPrompt, CLAUDE_CODE, systemText, transcriptCatchUpPrompt } from '../hooks/model-text'
 import { CODEX } from '../codex/src/texts'
 import type { Exchange, Update } from '../hooks/ledger'
@@ -42,6 +42,11 @@ type Check =
   | { openItems: number }
   /** NEW lines the code dropped as repeats, which the other checks cannot see. */
   | { dropped: number }
+  /** The DONE lines this exchange added to the ledger's results, counted after the code's cap. */
+  | { results: number }
+  | { resultsAtLeast: number }
+  | { result: string }
+  | { noResult: string }
 
 type Case = {
   name: string
@@ -169,6 +174,8 @@ function failures(before: Ledger, after: Ledger, checks: Check[], masked: string
   const closedOutcome = (id: string) =>
     after.closed.find(c => c.id === id)?.outcome ?? after.closedFindings.find(f => f.id === id)?.outcome ?? null
   const finished = (after.card?.done ?? []).filter(line => !(before.card?.done ?? []).includes(line))
+  const results = after.milestones.filter(m => m.source === 'done' && !before.milestones.some(b => b.id === m.id))
+  const listed = () => results.map(m => `"${m.text}"`).join(', ')
   const newChecks = checks.filter((c): c is Extract<Check, { new: string }> => 'new' in c)
   const newMatches = matchEach(
     newChecks,
@@ -189,6 +196,13 @@ function failures(before: Ledger, after: Ledger, checks: Check[], masked: string
     } else if ('added' in c && added.length !== c.added) out.push(`${added.length} items added`)
     else if ('done' in c && !finished.some(line => has(c.done, line)))
       out.push(`no done line like /${c.done}/: ${finished.map(line => `"${line}"`).join(', ')}`)
+    else if ('results' in c && results.length !== c.results) out.push(`${results.length} results: ${listed()}`)
+    else if ('resultsAtLeast' in c && results.length < c.resultsAtLeast)
+      out.push(`${results.length} results, not ${c.resultsAtLeast} or more: ${listed()}`)
+    else if ('result' in c && !results.some(m => has(c.result, m.text)))
+      out.push(`no result like /${c.result}/: ${listed()}`)
+    else if ('noResult' in c && results.some(m => has(c.noResult, m.text)))
+      out.push(`a result like /${c.noResult}/: ${listed()}`)
     else if ('new' in c) {
       const match = newMatches.get(c)
       if (!match)
@@ -237,7 +251,7 @@ function maskedAsks(update: Update, before: Ledger, after: Ledger): string[] {
 }
 
 async function once(agent: Agent, c: Case, n: number): Promise<Result> {
-  const ledger = { ...EMPTY, ...c.ledger } as Ledger
+  const ledger = upgradeLedger({ ...EMPTY, ...c.ledger } as Ledger)
   const ex: Exchange = {
     person: null,
     trigger: null,
@@ -258,7 +272,10 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
   if (answer === null) return { ...base, error: `${agent} gave no answer`, failed: [], masked: [] }
   const update = parseReply(answer, c.catchUp ?? `${ex.reply}\n${ex.activity.join('\n')}`)
   if (update === null) return { ...base, error: null, failed: ['no answer the mod can read'], masked: [] }
-  const after = applyExchangeUpdate(ledger, update, ex, NOW, NOW)
+  const after =
+    c.catchUp === undefined
+      ? applyExchangeUpdate(ledger, update, ex, NOW, NOW)
+      : applyUpdate(ledger, update, NOW, ledger.turn, NOW, true)
 
   const masked = maskedAsks(update, ledger, after)
 

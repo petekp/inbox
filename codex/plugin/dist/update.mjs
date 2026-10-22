@@ -49,6 +49,9 @@ function numberBlocks(reply) {
 function clip(text, max) {
   return text.length <= max ? text : text.slice(0, max) + " \u2026[cut]";
 }
+function clipLabel(text, max) {
+  return text.length > max ? `${text.slice(0, max - 1)}\u2026` : text;
+}
 function clipMiddle(text, max, head) {
   if (text.length <= max) return text;
   return `${text.slice(0, head)}${NL}\u2026[cut]${NL}${text.slice(text.length - (max - head))}`;
@@ -57,6 +60,7 @@ function clipMiddle(text, max, head) {
 // ../hooks/ledger.ts
 var EMPTY = {
   card: null,
+  milestones: [],
   items: [],
   closed: [],
   findings: [],
@@ -80,6 +84,10 @@ function upgradeLedger(ledger) {
   const { notes, decided, ...rest } = ledger;
   return {
     ...rest,
+    milestones: addMilestones(
+      rest.milestones ?? [],
+      (rest.card?.done ?? []).map((text) => doneMilestone(text, null))
+    ),
     findings: [...rest.findings ?? [], ...notes ?? []],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
@@ -198,7 +206,8 @@ function dash(value) {
 var KEY_LINE = /^\s*[-*]?\s*(GOAL|DONE|NOW|RUNNING|CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:\s*(.*)$/;
 function parseReply(text, source = null) {
   const blocks = source === null ? [] : codeBlocks(source);
-  const card = { goal: "", done: [], now: "", running: [] };
+  const card = { goal: "", now: "", running: [] };
+  const done = [];
   const closed = [];
   const added = [];
   const helped = [];
@@ -218,7 +227,7 @@ function parseReply(text, source = null) {
     const value = dash(m[2]) ?? "";
     if (key === "GOAL") card.goal = value;
     else if (key === "NOW") card.now = value;
-    else if (key === "DONE" && value) card.done.push(value);
+    else if (key === "DONE" && value) done.push(value);
     else if (key === "RUNNING" && value) card.running.push(value);
     else if (key === "CLOSED" || key === "FIXED") {
       const [id, outcome] = value.split("|").map((s) => s.trim());
@@ -273,7 +282,59 @@ function parseReply(text, source = null) {
     const item = n ? added.indexOf(newLines[Number(n[1]) - 1]) : target.match(/\b(i\d+)\b/)?.[1];
     if (item !== void 0 && item !== -1) asked.push({ id, item });
   }
-  return seen === 0 ? null : { card: { ...card, done: card.done.slice(-4) }, closed, added, helped, updated, asked, todos };
+  return seen === 0 ? null : { card, done, closed, added, helped, updated, asked, todos };
+}
+var MAX_MILESTONES = 200;
+var DONE_PER_UPDATE = 3;
+var DONE_PER_CATCH_UP = 6;
+var CARD_DONE = 4;
+var MILESTONE_TEXT_CHARS = 120;
+var MILESTONE_DETAIL_CHARS = 200;
+var TODO_OPTIONS = ["Proceed", "Not yet"];
+var BARE_YES = /^\s*(?:yes|yep|yeah|y|ok|okay|sure|go|go ahead|proceed|do it|continue|approved?|sounds good|sgtm|lgtm|all recommended|yes to all|ship it)\s*[.!]*\s*$/i;
+function doneMilestone(text, at) {
+  return { source: "done", text: clipLabel(text, MILESTONE_TEXT_CHARS), detail: null, ref: null, at };
+}
+function isTodoQuestion(item) {
+  return item.options.length === TODO_OPTIONS.length && item.options.every((o, n) => o === TODO_OPTIONS[n]);
+}
+function answeredMilestone(item, answer, at) {
+  const text = answer.trim();
+  if (item.kind !== "question" || isTodoQuestion(item) || text === "" || BARE_YES.test(text) || PUT_OFF.test(text))
+    return null;
+  return {
+    source: "answered",
+    text: clipLabel(item.ask, MILESTONE_TEXT_CHARS),
+    detail: clipLabel(text, MILESTONE_DETAIL_CHARS),
+    ref: item.id,
+    at
+  };
+}
+function foldedText(text) {
+  return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+function nextMilestoneId(milestones) {
+  return `m${Math.max(0, ...milestones.map((m) => idNumber(m.id) || 0)) + 1}`;
+}
+function addMilestone(milestones, m) {
+  const folded = foldedText(m.text);
+  const isRepeat = milestones.some(
+    (x) => m.ref !== null ? x.source === m.source && x.ref === m.ref : m.source === "done" && foldedText(x.text) === folded
+  );
+  if (isRepeat) return milestones;
+  const all = [...milestones, { ...m, id: nextMilestoneId(milestones) }];
+  if (all.length <= MAX_MILESTONES) return all;
+  const oldest = all.reduce((a, b) => (a.at ?? -Infinity) <= (b.at ?? -Infinity) ? a : b);
+  return all.filter((x) => x !== oldest);
+}
+function addMilestones(milestones, added) {
+  return added.reduce(addMilestone, milestones);
+}
+function removeMilestone(ledger, ref) {
+  return ledger.milestones.some((m) => m.ref === ref) ? { ...ledger, milestones: ledger.milestones.filter((m) => m.ref !== ref) } : ledger;
+}
+function doneTexts(milestones) {
+  return milestones.filter((m) => m.source === "done").slice(-CARD_DONE).map((m) => m.text);
 }
 function isTakenUp(work, reply) {
   const key = [...keyWords(work)];
@@ -398,11 +459,14 @@ function reopenFinding(ledger, id) {
   const record2 = ledger.closedFindings.findLast((f) => f.id === id);
   if (!record2 || ledger.findings.some((f) => f.id === id)) return ledger;
   const { how: _how, outcome: _outcome, closedAt: _closedAt, ...finding } = record2;
-  return {
-    ...ledger,
-    findings: inIdOrder(ledger.findings, finding),
-    closedFindings: ledger.closedFindings.filter((f) => f.id !== id)
-  };
+  return removeMilestone(
+    {
+      ...ledger,
+      findings: inIdOrder(ledger.findings, finding),
+      closedFindings: ledger.closedFindings.filter((f) => f.id !== id)
+    },
+    id
+  );
 }
 function applyExchangeUpdate(ledger, update, exchange, now, promptAt) {
   const explainedId = exchange.press?.action === "explain" ? exchange.press.id : null;
@@ -420,26 +484,23 @@ var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no lo
 function isPersonsAnswer(outcome) {
   return outcome.trim() !== "" && !NOT_AN_ANSWER.test(outcome);
 }
-function applyUpdate(ledger, u, now, turn, promptAt = now) {
-  const prev = ledger.card;
-  const card = {
-    goal: u.card.goal || prev?.goal || "",
-    done: u.card.done.length > 0 ? u.card.done : prev?.done ?? [],
-    now: u.card.now || prev?.now || "",
-    running: u.card.running
-  };
+function applyUpdate(ledger, u, now, turn, promptAt = now, isCatchUp = false) {
   const stillAsked = new Set(u.updated.filter((c) => c.options || c.rec).map((c) => c.id));
   const closing = new Map(
     u.closed.filter((c) => !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome)).map((c) => [c.id, c.outcome])
   );
   const closed = [...ledger.closed];
   const items = [];
+  const answers = [];
   for (const item of ledger.items) {
     const outcome = closing.get(item.id);
     const helps = u.helped.filter((h) => h.id === item.id).reduce((all, h) => withHelp(all, h.help), item.helps);
     const isClosing = outcome !== void 0 && (item.from !== "record" || isPersonsAnswer(outcome));
-    if (isClosing) closed.push(closedRecord(item, { outcome, how: "update" }, now));
-    else items.push(withUpdate({ ...item, helps }, u.updated));
+    if (isClosing) {
+      closed.push(closedRecord(item, { outcome, how: "update" }, now));
+      const answer = isPersonsAnswer(outcome) ? answeredMilestone(item, outcome, now) : null;
+      if (answer) answers.push(answer);
+    } else items.push(withUpdate({ ...item, helps }, u.updated));
   }
   const recordedThisTurn = new Set(
     [...ledger.items, ...ledger.closed.flatMap((c) => c.item ?? [])].filter((i) => i.from === "record" && i.turn === turn).map((i) => i.kind)
@@ -475,7 +536,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
       kind: "question",
       label: null,
       ask: todoAsk(work),
-      options: ["Proceed", "Not yet"],
+      options: TODO_OPTIONS,
       rec: null
     };
     const isKnown = items.some((i) => restates(i.ask, work)) || ledger.findings.some((f) => restates(f.title, work)) || repeatsClosed(ledger.closed, { ...todo, helps: [] }, promptAt);
@@ -501,10 +562,34 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
     if (outcome !== void 0) return closeFinding(l, f.id, { outcome, how: "update" }, now);
     return asker ? closeFinding(l, f.id, { outcome: `asked as ${asker}`, how: "update" }, now, asker) : l;
   }, ledger);
+  const fixes = ledger.findings.flatMap((f) => {
+    const outcome = closing.get(f.id);
+    if (outcome === void 0 || isLapsed({ how: "update", outcome })) return [];
+    return [
+      {
+        source: "fixed",
+        text: clipLabel(f.title, MILESTONE_TEXT_CHARS),
+        detail: outcome.trim() === "" ? null : clipLabel(outcome.trim(), MILESTONE_DETAIL_CHARS),
+        ref: f.id,
+        at: now
+      }
+    ];
+  });
+  const results = u.done.slice(isCatchUp ? -DONE_PER_CATCH_UP : -DONE_PER_UPDATE).map((text) => doneMilestone(text, now));
+  const written = [...answers, ...fixes, ...results].map((m, n) => ({ ...m, at: isCatchUp ? null : now + n }));
+  const milestones = addMilestones(ledger.milestones, written);
+  const prev = ledger.card;
+  const card = {
+    goal: u.card.goal || prev?.goal || "",
+    done: doneTexts(milestones),
+    now: u.card.now || prev?.now || "",
+    running: u.card.running
+  };
   return reopenAskedFindings(
     {
       ...ledger,
       card,
+      milestones,
       items: kept,
       closed,
       findings,
@@ -540,6 +625,7 @@ function systemText(host) {
 
 Input:
 - <card>: the ledger before this exchange (may be empty)
+- <listed>: results already listed for the person, newest first
 - <open>: items still waiting on the person, as id | kind | label | ask | options | rec
 - <findings>: findings the agent recorded for the person to review later, outside the current task, each with an id
 - <decided>: items the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again.
@@ -551,7 +637,7 @@ Input:
 Answer with lines only, each starting with one of these keys. No other text.
 
 GOAL: what this session is for, at most 12 words. Keep the previous goal unless the person clearly changed direction. "-" until the person has asked for something.
-DONE: one finished outcome, at most 8 words. Up to 4 DONE lines, oldest first, keeping the most recent. Outcomes, not activity: "PR #12 opened", not "ran gh".
+DONE: one result the agent finished in this exchange, at most 8 words, past tense. A result is something that now holds: code written, a cause found, a decision made. Commands run, tests or checks passing, reading, searching, plans and steps in progress are not results. Write no DONE line when the exchange finished nothing. Write no more DONE lines than the prompt allows, oldest first. Never write a result <listed> already has, even reworded. Write no DONE line for an item you close with the person's answer, or for a finding you mark FIXED: the inbox lists those itself.
 NOW: where the work stands at the end of this reply, at most 12 words. Name what it waits on, if anything. "-" when no work has started.
 RUNNING: something still running that the person may open, as "name: URL or port". Dev servers, simulators, background jobs. Omit anything the agent stopped. Zero or more lines.
 CLOSED: <id> | the outcome, at most 8 words, in one of three forms. When the person answered in <person>, write their answer. Otherwise write "done: <what the agent did>" when the work is done, or "no longer applies: <what in the reply or <activity> made it moot>". An option the agent picked on its own, or an option the work made moot, is not the person's answer: write it in the "done:" or "no longer applies:" form. One line for each item in <open> the person answered in <person> (including "all recommended", "go", "yes to all", numbered answers), or that the reply or <activity> shows is done or no longer applies. A person asking what an item means has not answered it, and a reply explaining it does not close it. When <person> asks to run an item's command and the reply says it ran, that item is done. So is an item whose command the person ran themselves, per <person>, when its output shows it worked. An item that has nothing to do with this exchange stays open: being outside the current work, or not being mentioned, does not make it no longer apply.
@@ -584,11 +670,11 @@ TODO: <work>
 
 Write plainly. No jargon, no filler, no markdown.`;
 }
-var CATCH_UP = "The ledger below may have missed turns. Write a CLOSED line for every item in <open> that the conversation shows answered, done, dealt with, or no longer relevant, and a FIXED line for every finding in <findings> that it shows was fixed. Add as NEW only what still waits on the user and is not already in <open> or <findings>.";
+var CATCH_UP = `The ledger below may have missed turns. Write a CLOSED line for every item in <open> that the conversation shows answered, done, dealt with, or no longer relevant, and a FIXED line for every finding in <findings> that it shows was fixed. Add as NEW only what still waits on the user and is not already in <open> or <findings>. Write up to ${DONE_PER_CATCH_UP} DONE lines, for the results the conversation reached that <listed> lacks.`;
 function transcriptCatchUpPrompt(ledger, screen, transcript) {
   return [
     `Treat the conversation in <conversation> as the exchange. Its start may be cut. ${CATCH_UP}`,
-    ...ledgerBlocks(ledger),
+    ...ledgerBlocks(ledger, true),
     `<conversation>${NL3}${numberBlocks(transcript)}${NL3}</conversation>`,
     `<screen>${NL3}${screen}${NL3}</screen>`
   ].join(NL3);
@@ -657,13 +743,12 @@ function dialogActivity(questions, outcome) {
       return `${head}; still open, waiting on the user's answer`;
   }
 }
-function ledgerBlocks(ledger) {
-  const card = ledger.card ? [
-    `GOAL: ${ledger.card.goal}`,
-    ...ledger.card.done.map((d) => `DONE: ${d}`),
-    `NOW: ${ledger.card.now}`,
-    ...ledger.card.running.map((r) => `RUNNING: ${r}`)
-  ].join(NL3) : "";
+var LISTED_SHOWN = 8;
+function ledgerBlocks(ledger, isCatchUp = false) {
+  const card = ledger.card ? [`GOAL: ${ledger.card.goal}`, `NOW: ${ledger.card.now}`, ...ledger.card.running.map((r) => `RUNNING: ${r}`)].join(
+    NL3
+  ) : "";
+  const listed = ledger.milestones.slice(isCatchUp ? 0 : -LISTED_SHOWN).reverse().map((m) => m.text).join(NL3);
   const open2 = ledger.items.map(
     (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"}`
   ).join(NL3);
@@ -671,6 +756,7 @@ function ledgerBlocks(ledger) {
   const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL3);
   return [
     `<card>${NL3}${card}${NL3}</card>`,
+    `<listed>${NL3}${listed}${NL3}</listed>`,
     `<open>${NL3}${open2}${NL3}</open>`,
     `<findings>${NL3}${findings}${NL3}</findings>`,
     `<decided>${NL3}${closed}${NL3}</decided>`
@@ -683,7 +769,8 @@ function buildPrompt(ledger, ex) {
     `<person>${NL3}${clipMiddle(person, 4e3, 1500)}${NL3}</person>`,
     `<activity>${NL3}${clipMiddle(ex.activity.join(NL3), 2500, 500)}${NL3}</activity>`,
     `<reply>${NL3}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL3}</reply>`,
-    `<screen>${NL3}${ex.screen}${NL3}</screen>`
+    `<screen>${NL3}${ex.screen}${NL3}</screen>`,
+    `Write at most ${DONE_PER_UPDATE} DONE lines.`
   ].join(NL3);
 }
 function surfaceAtStart(host) {
@@ -861,7 +948,7 @@ function appliedCatchUp(s, begun, parsed, now) {
   const covered = new Set(begun.pending.map(pendingKey));
   return {
     ...s,
-    ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn) : s.ledger,
+    ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn, now, true) : s.ledger,
     pending: s.pending.filter((p) => !covered.has(pendingKey(p))),
     presence: {
       ...s.presence,

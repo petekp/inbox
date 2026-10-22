@@ -24,10 +24,14 @@ import { resolve as resolve3 } from "node:path";
 function clip(text, max) {
   return text.length <= max ? text : text.slice(0, max) + " \u2026[cut]";
 }
+function clipLabel(text, max) {
+  return text.length > max ? `${text.slice(0, max - 1)}\u2026` : text;
+}
 
 // ../hooks/ledger.ts
 var EMPTY = {
   card: null,
+  milestones: [],
   items: [],
   closed: [],
   findings: [],
@@ -46,6 +50,10 @@ function upgradeLedger(ledger) {
   const { notes, decided, ...rest } = ledger;
   return {
     ...rest,
+    milestones: addMilestones(
+      rest.milestones ?? [],
+      (rest.card?.done ?? []).map((text) => doneMilestone(text, null))
+    ),
     findings: [...rest.findings ?? [], ...notes ?? []],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
@@ -94,10 +102,39 @@ function howFromOutcome(outcome) {
   if (outcome.startsWith(CLOSED_BY_CLAUDE)) return "claude";
   return "update";
 }
+var MAX_MILESTONES = 200;
+var DONE_PER_CATCH_UP = 6;
+var MILESTONE_TEXT_CHARS = 120;
+function doneMilestone(text, at) {
+  return { source: "done", text: clipLabel(text, MILESTONE_TEXT_CHARS), detail: null, ref: null, at };
+}
+function foldedText(text) {
+  return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+function nextMilestoneId(milestones) {
+  return `m${Math.max(0, ...milestones.map((m) => idNumber(m.id) || 0)) + 1}`;
+}
+function addMilestone(milestones, m) {
+  const folded = foldedText(m.text);
+  const isRepeat = milestones.some(
+    (x) => m.ref !== null ? x.source === m.source && x.ref === m.ref : m.source === "done" && foldedText(x.text) === folded
+  );
+  if (isRepeat) return milestones;
+  const all = [...milestones, { ...m, id: nextMilestoneId(milestones) }];
+  if (all.length <= MAX_MILESTONES) return all;
+  const oldest = all.reduce((a, b) => (a.at ?? -Infinity) <= (b.at ?? -Infinity) ? a : b);
+  return all.filter((x) => x !== oldest);
+}
+function addMilestones(milestones, added) {
+  return added.reduce(addMilestone, milestones);
+}
 var CLOSED_BY_CLAUDE = "closed by Claude";
 function pruneClosed(ledger, keep) {
   const pruned = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id));
   return { ...ledger, closed: pruned(ledger.closed), closedFindings: pruned(ledger.closedFindings) };
+}
+function idNumber(id) {
+  return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
 }
 var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
 var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
@@ -133,6 +170,7 @@ Close with ${host.closeTool}:
 The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.`;
 }
 var START_TITLE = 'inbox: where this session stands, as of the last reply. An "inbox:" text beside a later prompt replaces this.';
+var CATCH_UP = `The ledger below may have missed turns. Write a CLOSED line for every item in <open> that the conversation shows answered, done, dealt with, or no longer relevant, and a FIXED line for every finding in <findings> that it shows was fixed. Add as NEW only what still waits on the user and is not already in <open> or <findings>. Write up to ${DONE_PER_CATCH_UP} DONE lines, for the results the conversation reached that <listed> lacks.`;
 var MAX_ACTIVITY = 40;
 function addActivity(activity, line) {
   return !line || activity.length >= MAX_ACTIVITY || activity.includes(line) ? activity : [...activity, line];
@@ -609,7 +647,7 @@ function needsUpdate(s) {
 }
 function hasLedger(s) {
   const { ledger } = s;
-  return ledger.card !== null || ledger.items.length > 0 || ledger.findings.length > 0;
+  return ledger.card !== null || ledger.items.length > 0 || ledger.findings.length > 0 || ledger.milestones.length > 0;
 }
 function forkedFrom(child, parent) {
   if (child.ledger.turn !== 0 || child.ledger.card) return child;
@@ -617,7 +655,7 @@ function forkedFrom(child, parent) {
 }
 function isUnseen(s) {
   const { ledger } = s;
-  return s.presence.turnsStarted === 0 && s.presence.ledgerState === "current" && s.pending.length === 0 && ledger.card === null && ledger.items.length === 0 && ledger.findings.length === 0;
+  return s.presence.turnsStarted === 0 && s.presence.ledgerState === "current" && s.pending.length === 0 && ledger.card === null && ledger.items.length === 0 && ledger.findings.length === 0 && ledger.milestones.length === 0;
 }
 
 // src/settle.ts

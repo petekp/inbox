@@ -9,7 +9,12 @@ export function isDemoCopy(saved: unknown): saved is DemoCopy {
   if (!saved || typeof saved !== 'object') return false
   const d = saved as Record<string, unknown>
 
-  return ['ledger', 'prViews', 'lastActions', 'notes', 'turns'].every(k => d[k] !== null && typeof d[k] === 'object')
+  const hasMilestones = Array.isArray((d.ledger as { milestones?: unknown } | null)?.milestones)
+
+  return (
+    hasMilestones &&
+    ['ledger', 'prViews', 'lastActions', 'notes', 'turns'].every(k => d[k] !== null && typeof d[k] === 'object')
+  )
 }
 
 /** The sample as a session a host can draw and press on. */
@@ -35,6 +40,9 @@ export function demoView(now: number): DemoCopy {
         now: 'Waiting on the dismiss gesture and a pairing',
         running: ['simulator: http://localhost:3000'],
       },
+      milestones: ['A pinch dismisses the glance you look at', 'Dismissed glances fade out', 'PR #31 opened'].map(
+        (text, n) => ({ id: `m${n + 1}`, source: 'done', text, detail: null, ref: null, at: now - (3 - n) * 30 * MIN }),
+      ),
       items: [
         {
           id: 'd11',

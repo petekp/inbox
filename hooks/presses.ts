@@ -4,10 +4,9 @@ import { closeFinding, closeItem, pruneClosed, reopenFinding, reopenItem } from 
 import type { Press } from './ledger'
 import { namedPrs, parseRef } from './prs'
 import type { Pressed } from './session'
+import { clipLabel } from './text'
 
-export function clipLabel(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text
-}
+export { clipLabel }
 
 export function baseName(path: string): string {
   return path.replace(/\/+$/, '').split('/').pop() ?? path

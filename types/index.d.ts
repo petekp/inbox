@@ -1,5 +1,6 @@
 export type Card = {
   goal: string
+  /** The newest 4 results the model wrote, oldest first: the milestones with source `done`. Older versions read it. */
   done: string[]
   now: string
   running: string[]
@@ -188,8 +189,23 @@ export type PrView = {
   error: string | null
 }
 
+/** One result the session reached. */
+export type Milestone = {
+  id: string
+  source: 'done' | 'answered' | 'fixed'
+  text: string
+  /** The person's answer, or the change that fixed a finding; null for the other sources. */
+  detail: string | null
+  /** The id of the item or finding, for the sources that have one. */
+  ref: string | null
+  /** When it happened; null when unknown, shown with no age. */
+  at: number | null
+}
+
 export type Ledger = {
   card: Card | null
+  /** Results so far, oldest first. */
+  milestones: Milestone[]
   items: Item[]
   closed: Closed[]
   findings: Finding[]

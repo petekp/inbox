@@ -1,8 +1,21 @@
 import { expect, test } from 'claude-code/testing'
 
 import { flattenConversation } from '../hooks/conversation'
+import { EMPTY, applyUpdate, parseReply, upgradeLedger } from '../hooks/ledger'
 import { CLAUDE_CODE } from '../hooks/model-text'
-import { emptySession, endTurn, noteCommandOutput, notePrompt, recorded, sessionView } from '../hooks/session'
+import {
+  appliedCatchUp,
+  cleared,
+  emptySession,
+  endTurn,
+  forkedFrom,
+  hasLedger,
+  isUnseen,
+  noteCommandOutput,
+  notePrompt,
+  recorded,
+  sessionView,
+} from '../hooks/session'
 import type { Session } from '../hooks/session'
 import { press, runUpdates, wakeForDone } from '../hooks/session-host'
 import type { CatchUpReply } from '../hooks/session-host'
@@ -162,4 +175,45 @@ test('the conversation keeps its newest lines when it is too long, and leaves ou
   expect(text.startsWith('(earlier conversation left out)')).toBe(true)
   expect(text.endsWith('Agent ran: step 19')).toBe(true)
   expect(text).not.toContain('inbox: nothing waits')
+})
+
+const withMilestone = (s: Session): Session => ({
+  ...s,
+  ledger: {
+    ...EMPTY,
+    milestones: [{ id: 'm1', source: 'done', text: 'Reducer built', detail: null, ref: null, at: 5 }],
+  },
+})
+
+test('a catch-up writes up to six results with no time, and an update after one reply keeps three', () => {
+  const lines = [1, 2, 3, 4, 5, 6, 7].map(n => `DONE: Result number ${n}`).join('\n')
+  const parsed = parseReply(`GOAL: g\n${lines}`)!
+  const caught = appliedCatchUp(emptySession(), emptySession(), parsed, 100)
+
+  expect(caught.ledger.milestones.map(m => [m.text, m.at])).toEqual(
+    [2, 3, 4, 5, 6, 7].map(n => [`Result number ${n}`, null]),
+  )
+  expect(applyUpdate(EMPTY, parsed, 100, 0).milestones).toHaveLength(3)
+})
+
+test('a session whose only record is a result has a ledger, is not unseen, is copied by a fork and is cleared', () => {
+  const parent = withMilestone(emptySession())
+
+  expect(hasLedger(emptySession())).toBe(false)
+  expect(isUnseen(emptySession())).toBe(true)
+  expect(hasLedger(parent)).toBe(true)
+  expect(isUnseen(parent)).toBe(false)
+  expect(forkedFrom(emptySession(), parent).ledger.milestones).toEqual(parent.ledger.milestones)
+  expect(cleared(parent).ledger.milestones).toEqual([])
+})
+
+test('a ledger saved with milestones, then updated by 0.2.10, keeps the result 0.2.10 wrote', () => {
+  const saved = applyUpdate(EMPTY, parseReply('GOAL: g\nDONE: Reducer built')!, 5, 0)
+  const byOlderBuild = { ...saved, card: { ...saved.card!, done: [...saved.card!.done, 'Tests added'] } }
+  const upgraded = upgradeLedger(byOlderBuild)
+
+  expect(upgraded.milestones.map(m => [m.text, m.at])).toEqual([
+    ['Reducer built', 5],
+    ['Tests added', null],
+  ])
 })

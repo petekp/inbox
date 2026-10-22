@@ -373,11 +373,11 @@ export function needsUpdate(s: Session): boolean {
   return s.pending.length > 0 || s.presence.ledgerState !== 'current'
 }
 
-/** Whether the session has a card, an item or a finding. */
+/** Whether the session has a card, an item, a finding or a milestone. */
 export function hasLedger(s: Session): boolean {
   const { ledger } = s
 
-  return ledger.card !== null || ledger.items.length > 0 || ledger.findings.length > 0
+  return ledger.card !== null || ledger.items.length > 0 || ledger.findings.length > 0 || ledger.milestones.length > 0
 }
 
 /**
@@ -401,7 +401,8 @@ export function isUnseen(s: Session): boolean {
     s.pending.length === 0 &&
     ledger.card === null &&
     ledger.items.length === 0 &&
-    ledger.findings.length === 0
+    ledger.findings.length === 0 &&
+    ledger.milestones.length === 0
   )
 }
 
@@ -419,7 +420,7 @@ export function appliedCatchUp<S extends Session>(s: S, begun: Session, parsed: 
 
   return {
     ...s,
-    ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn) : s.ledger,
+    ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn, now, true) : s.ledger,
     pending: s.pending.filter(p => !covered.has(pendingKey(p))),
     presence: {
       ...s.presence,
