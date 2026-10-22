@@ -15,6 +15,7 @@ Versions this file was checked against:
 | --- | --- |
 | Codex bundled in the ChatGPT desktop app on the test Mac | `codex-cli 0.160.1` (live) |
 | `codex` on the test Mac's `PATH` | `codex-cli 0.154.0` (live) |
+| Codex bundled in the ChatGPT desktop app 26.1016.51333 in the inbox-ui VM, Progress step 0 live checks | `codex-cli 0.163.0-alpha.11` (live 2026-10-21) |
 | Codex CLI 0.163.0 (`npm install @openai/codex@0.163.0` into a scratch folder, not the app) | `codex-cli 0.163.0` (live 2026-10-16) |
 | Codex bundled in the ChatGPT desktop app, second check | `0.162.0-alpha.17.2` (not run; the app still bundles it) |
 | Latest Codex CLI in the public changelog | 0.162.0, dated 2026-10-08 |
@@ -1388,7 +1389,13 @@ threads a root thread and its forks belong to. They differ after a fork.
   threads use their own thread id as the session id; forked threads keep the
   session id of the root they came from. Clients should read the session id
   from `thread.sessionId` instead of deriving it from the thread id."
-  (L/app-server#start-or-resume-a-thread) The `Thread` object also has
+  (L/app-server#start-or-resume-a-thread)
+  **A user fork has its own session id, unlike what the line above says.** [live 0.163.0-alpha.11]
+  `thread/fork` returned a thread whose `sessionId` equals its own id, and `forkedFromId` the base thread's id. The
+  fork's hooks (`session_id`) and the model's MCP calls (`x-codex-turn-metadata.session_id`) carried the fork's own id,
+  and SessionStart ran with `source: "fork"`. Log: `step0/logs/r5.rpc.jsonl`, `r5.hooks.jsonl`, `r5.mcp.jsonl`. The
+  source says the same (core/src/session/session.rs:928-950 [source 0.163.0]). The "root" in "root thread" is the
+  thread the person started a chat in. A subagent keeps the session id of the thread that spawned it. The `Thread` object also has
   `forkedFromId`, `parentThreadId` ("only be set if this thread is a
   subagent"), `ephemeral`, `section`, `projectId` [source]
   (GH/codex-rs/app-server-protocol/schema/typescript/v2/Thread.ts).
@@ -1426,18 +1433,18 @@ threads a root thread and its forks belong to. They differ after a fork.
   inventory for external MCP servers." [source] (GH/codex-rs/core/src/turn_metadata.rs:275-312)
 - **The inbox resolver.** `sessionOf` reads
   `x-codex-turn-metadata.session_id`, then `thread_id`, then `threadId`
-  (codex/src/server.ts:sessionOf). [inference] In a fork, `session_id` is the
-  root's. The inbox would then key state to the root and run
-  `codex queue --thread <root>`, sending a press to the wrong chat. Reading
-  `thread_id` first would key rows to the chat the person is in. Not checked
-  live.
+  (codex/src/server.ts:sessionOf). [live 0.163.0-alpha.11]
+  In a user fork, `session_id` and `thread_id` are both the fork's own id, so reading `session_id` first keys state to
+  the chat the person is in and `codex queue --thread <session_id>` reaches it (`step0/logs/r5.mcp.jsonl`). The earlier
+  inference that a fork sends the root's `session_id` was wrong. In a subagent, `session_id` is the spawning thread's
+  id and `thread_id` is the subagent's own.
 - **Live transcripts on the test Mac** [live 2026-10-08, 60 most recent,
   metadata only]: 9 top-level threads had `id == session_id` and
   `thread_source: "user"`. 51 were subagent threads with
   `source: {subagent: …}` and `thread_source` `guardian_review` (45) or
   `subagent` (6); in all of them `id != session_id`, and in 28
   `session_id == parent_thread_id`. Whether plugin hooks fire in those
-  threads, and with which id, is [unknown].
+  threads: see "Subagents, guardians and hooks" (answered live 2026-10-21).
 - A queued turn's `task_started` event in the rollout file has
   `turn_attribution.turn_trigger: "queue"`; the other turns have `null`
   [live 0.163.0]. The queue service starts the turn with
@@ -2083,7 +2090,26 @@ Checked on 2026-10-21 against `rust-v0.163.0` (`8308618`). Paths are under `code
 
 ### Live checks
 
-_Filled in by the live pass. Each answer names its version and log._
+Tested 2026-10-21 in the inbox-ui VM with `codex-cli 0.163.0-alpha.11`, the CLI bundled in ChatGPT app 26.1016.51333. Runs used a scratch `CODEX_HOME` with my own logging hooks on all 12 events and a stand-in MCP server named `probe`, not the inbox. `codex exec` runs used `--dangerously-bypass-hook-trust`. App-server runs used a probe client over stdio with trust entries for the logging hooks in the scratch `config.toml`. Logs are in the VM share folder under `step0/logs/`, named by run below. This build exposes `spawn_agent` (with `task_name`), `followup_task`, `interrupt_agent`, `list_agents`, `send_message` and `wait_agent`. It has no `send_input`, `close_agent` or `resume_agent` (`r2.out`, `r8.out`, also with `--enable multi_agent_v2`).
+
+- **The task name and depth are in the subagent's first rollout row, and the row is there when SubagentStart runs.** `session_meta.payload.agent_path` is `/root/<task_name>`, and `source.subagent.thread_spawn.depth` is 1. A subagent's own subagent has `agent_path` `/root/outer/inner`, `depth` 2, and `parent_thread_id` the outer's id. SubagentStart still fires for it, with the root's `session_id` (`r7.hooks.jsonl`, `r7-rollouts/`). The hook logger read the first row of `transcript_path` at SubagentStart time and found `agent_path` in it (`first.row0` in `r2.hooks.jsonl`).
+- **A subagent's rollout starts with two `session_meta` rows.** The first is its own. The second is its parent's, copied in (`r1-rollouts/`). Read only the first row.
+- **Hook input in a subagent.**
+  - SubagentStart: `session_id` is the spawning thread's, `agent_id` is the subagent's thread id, `agent_type` is `default`, `transcript_path` is the subagent's rollout.
+  - SubagentStop: `transcript_path` is the parent's rollout and `agent_transcript_path` the subagent's.
+  - PreToolUse and PostToolUse carry `agent_id`.
+  - SessionStart, Stop and UserPromptSubmit did not fire in a subagent (`r1`, `r2`, `r7` hooks logs).
+- **A follow-up turn runs no SubagentStart and no UserPromptSubmit.** `followup_task` on a finished subagent started a new turn. The first hook with the subagent's `agent_id` was a PreToolUse if the turn called a tool, or its SubagentStop when it did not (`r2.hooks.jsonl`, task_a). SubagentStop fired at the end of every turn.
+- **`interrupt_agent` aborts a subagent's turn and writes `turn_aborted`.** The row (`reason: "interrupted"`) was timestamped 59 ms after the parent's PreToolUse for `interrupt_agent`. The aborted turn got no SubagentStop and no Interrupt hook. A later `followup_task` started a new turn that ended with SubagentStop (`r2.hooks.jsonl`, `r2-rollouts/`).
+- **A main-turn interrupt writes its abort row at once and does not stop subagents.** `turn/interrupt` on the main turn fired the Interrupt hook 34 ms after the call and wrote the main rollout's `turn_aborted` row with a timestamp 35 ms after the call. A 20 ms file poller saw the row within 13 ms of its timestamp. The subagent, in a 120 s shell sleep, got no abort row, no PostToolUse and no SubagentStop for the 30 s the run kept watching (`r4.rpc.jsonl` rows with `kind: "rollout-row"`, `r4.hooks.jsonl`). The plan's "one poll late" threshold for an Interrupt hook entry is not reached.
+- **Guardian reviews fire no hooks of their own.** With `approvals_reviewer=auto_review` an escalated shell command made a guardian thread (`source: {subagent: {other: "guardian"}}`, `thread_source: "guardian_review"`, `parent_thread_id` and `session_id` the main thread's). It ran no SessionStart, UserPromptSubmit, PreToolUse, Stop or SubagentStart. The one hook around it was PermissionRequest, under the main thread's ids with no `agent_id` (`r3.hooks.jsonl`, `r3-rollouts/`). That guardian called no tools. One that does was not seen.
+- **A subagent is offered plugin tools, and SubagentStart `additionalContext` reaches it.** The subagent called `mcp__probe__step` and `mcp__probe__close`. A sentinel in SubagentStart's `additionalContext` appeared as a developer message in the subagent's rollout and not in the main rollout (`r1-rollouts/`, `default.mcp.jsonl`).
+- **Hook `tool_name` for the multi-agent tools is `collaborationspawn_agent`,** and likewise `collaborationwait_agent`, `collaborationfollowup_task`, `collaborationinterrupt_agent` (`r2.hooks.jsonl`). Other non-shell tools keep their plain names, such as `clocksleep`, and hooks fired for them in a subagent (`r8.hooks.jsonl`). The matcher text `spawn_agent` that L/hooks lists as an alias was not tried.
+- **MCP call metadata keys a call to the right row.** For the main agent: `session_id` equals `thread_id`, `thread_source: "user"`, no `parent_thread_id`. For a subagent: `session_id` is the spawning thread's, `thread_id` is the subagent's, `parent_thread_id` and `forked_from_thread_id` are the spawning thread's, `subagent_kind: "thread_spawn"`, `thread_source: "subagent"`. In a user fork's main agent, `forked_from_thread_id` is the base chat and `parent_thread_id` is absent (`r5.mcp.jsonl`).
+- **One keying rule fits hooks and server.** The conversation key is `session_id` in a hook and in `x-codex-turn-metadata`. A subagent's key is `agent_id` in a hook and `thread_id` in the metadata. The main agent is the call with no `agent_id`, and no `parent_thread_id`. A fork's main agent has `forked_from_thread_id` and no `parent_thread_id`. This held for a base thread, a fork, a subagent of the base thread and a subagent of a fork (`r1`, `r5`, `r7`). Today's keying by `session_id` is already this rule.
+- **MCP servers get env only from the plugin's `env_vars`.** The probe saw `STEP0_RUN` only after `env_vars = ["STEP0_RUN"]` (`r2.mcp.jsonl`).
+- **A quit during a turn leaves no end row and runs no hook on reopen.** `SIGKILL` of the app-server 20 s into a shell sleep, then a new app-server and `thread/resume`: the rollout's last rows were the tool call and its token usage, then `thread_settings_applied` written at resume. It had no `turn_aborted` or `task_complete` row. The resumed thread reported status `idle`. No SessionStart ran (`r6.rpc.jsonl`, `r6.hooks.jsonl`, `r6-sessions-all/`). This is a killed app-server, not the ChatGPT app quitting, so the app's own quit path was not seen.
+- **Hooks need trust in app-server, and the flag is a top-level option.** `codex --dangerously-bypass-hook-trust app-server` is rejected as `app-server --dangerously-bypass-hook-trust`. In app-server runs the flag did not start hooks. Trust entries in `config.toml` did (`h1.rpc.jsonl` has `hooks/list` with `trustStatus` and `currentHash`).
 
 ## Unknown, and how to check
 
@@ -2092,8 +2118,7 @@ otherwise write to real state.
 
 | Question | Check |
 | --- | --- |
-| Do plugin hooks fire in `guardian_review` and `subagent` threads, and with which `session_id`? Do they get Stop or only SubagentStop? Does UserPromptSubmit fire for subagent prompts? | Add a logging hook on every event, spawn a subagent and trigger a guardian review, then compare `session_id`, `agent_id` and the thread ids. |
-| Which id do forks send, and which does `codex queue --thread` need? | Fork a desktop chat (`/fork`, `/side`). Call an inbox tool from the fork and its tab, log `_meta` and hook input, then press a button in the fork. |
+| Does `codex queue --thread` need the fork's own id? (Forks send their own id in hooks and MCP calls: see "Session, thread and turn ids".) | Fork a desktop chat (`/fork`, `/side`), then press a button in the fork and see which chat receives the message. |
 | Do MCP server processes receive `PLUGIN_DATA`, `PLUGIN_ROOT`, `CLAUDE_PLUGIN_*`, `CODEX_CLI_PATH`, `CODEX_MCP_NODE_PATH`? | Log `process.env` keys at server start, in the desktop app and in the CLI. Repeat with a portable `mcp.json` (`type: "stdio"`). |
 | Is per-tool `approval_mode` honored in `.mcp.json`? Which `config.toml` key form works (`inbox` or `inbox@inbox`)? | Set `tools.inbox_press.approval_mode = "prompt"` in a scratch `.mcp.json`, call through app-server `mcpServer/tool/call`. Then try both `config.toml` forms. |
 | What do `auto` and `approve` mean exactly? Does `approve` override `destructiveHint: true`? | Give a test tool `destructiveHint: true` with `approve` and watch for a prompt. |
