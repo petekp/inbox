@@ -765,12 +765,12 @@ function ledgerBlocks(ledger, isCatchUp = false) {
 function buildPrompt(ledger, ex) {
   const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? "unknown"}.)`;
   return [
+    `Write at most ${DONE_PER_UPDATE} DONE lines.`,
     ...ledgerBlocks(ledger),
     `<person>${NL3}${clipMiddle(person, 4e3, 1500)}${NL3}</person>`,
     `<activity>${NL3}${clipMiddle(ex.activity.join(NL3), 2500, 500)}${NL3}</activity>`,
     `<reply>${NL3}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL3}</reply>`,
-    `<screen>${NL3}${ex.screen}${NL3}</screen>`,
-    `Write at most ${DONE_PER_UPDATE} DONE lines.`
+    `<screen>${NL3}${ex.screen}${NL3}</screen>`
   ].join(NL3);
 }
 function surfaceAtStart(host) {

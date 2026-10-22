@@ -253,12 +253,12 @@ export function buildPrompt(ledger: Ledger, ex: Exchange): string {
   const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? 'unknown'}.)`
 
   return [
+    `Write at most ${DONE_PER_UPDATE} DONE lines.`,
     ...ledgerBlocks(ledger),
     `<person>${NL}${clipMiddle(person, 4000, 1500)}${NL}</person>`,
     `<activity>${NL}${clipMiddle(ex.activity.join(NL), 2500, 500)}${NL}</activity>`,
     `<reply>${NL}${clipMiddle(numberBlocks(ex.reply), 12000, 4000)}${NL}</reply>`,
     `<screen>${NL}${ex.screen}${NL}</screen>`,
-    `Write at most ${DONE_PER_UPDATE} DONE lines.`,
   ].join(NL)
 }
 
