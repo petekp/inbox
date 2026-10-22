@@ -3,11 +3,12 @@ import { endTurn, notePrompt, recorded, sessionView } from '../hooks/session'
 import type { Session } from '../hooks/session'
 import { press, runUpdates } from '../hooks/session-host'
 import type { Ask, SessionHost } from '../hooks/session-host'
+import type { Host } from '../hooks/model-text'
 import { allRows, NO_HOLDS } from '../hooks/view'
 import type { Effect } from '../hooks/presses'
 
 export type ScriptedHost<S extends Session = Session> = {
-  host: SessionHost<S>
+  host: SessionHost<S> & { names: Host }
   delivered: string[]
   performed: Exclude<Effect, { kind: 'send' }>[]
 }
@@ -22,8 +23,9 @@ export function fakeHostWith<S extends Session>(
     let ids = 0
     const delivered: string[] = []
     const performed: Exclude<Effect, { kind: 'send' }>[] = []
-    const host: SessionHost<S> = {
+    const host: SessionHost<S> & { names: Host } = {
       ...storage,
+      names: CLAUDE_CODE,
       now: () => (clock += 10),
       ask,
       deliver: async (_s, text) => {

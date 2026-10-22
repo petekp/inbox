@@ -123,6 +123,8 @@ import {
   buildPrompt,
   cardCarryText,
   catchUpPrompt,
+  RESULTS_SYSTEM,
+  resultsCatchUpPrompt,
   CLAUDE_CODE,
   dialogActivity,
   dialogQuestions,
@@ -953,19 +955,34 @@ async function redrawAfterReload($: EngineInterface) {
  */
 async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpReply> {
   if (!isCurrent(owner)) return { kind: 'failed' }
-  const [{ ledger }, shown] = await Promise.all([read($, SESSION), screen($)])
-  const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
+  const [{ ledger }, shown, transcript] = await Promise.all([
+    read($, SESSION),
+    screen($),
+    $.session.messages().then(transcriptText),
+  ])
+  // The results call reads the transcript. With none to read, it writes no results.
+  const resultsText = async () => {
+    if (!transcript) return null
+    const r = await askLedgerModel($, resultsCatchUpPrompt(ledger, transcript), RESULTS_SYSTEM, 90_000).catch(
+      () => null,
+    )
+
+    return r?.isAnswered ? r.text : null
+  }
+  const [forked, results] = await Promise.all([
+    $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) }),
+    resultsText(),
+  ])
   if (!isCurrent(owner)) return { kind: 'failed' }
-  if (forked.isAnswered) return { kind: 'reply', text: forked.text, source: null }
+  if (forked.isAnswered) return { kind: 'reply', text: forked.text, source: null, results }
   // A fork has nothing to read until this process sends its first request,
   // as after a resume. The model then reads the transcript instead, uncached.
   if (forked.reason !== 'nothing-to-fork') return { kind: 'failed' }
-  const transcript = transcriptText(await $.session.messages())
   if (!transcript) return { kind: 'unreadable' }
-  const r = await askLedgerModel($, transcriptCatchUpPrompt(ledger, shown, transcript), 90_000)
+  const r = await askLedgerModel($, transcriptCatchUpPrompt(ledger, shown, transcript), systemText(CLAUDE_CODE), 90_000)
   if (!isCurrent(owner)) return { kind: 'failed' }
 
-  return r.isAnswered ? { kind: 'reply', text: r.text, source: transcript } : { kind: 'failed' }
+  return r.isAnswered ? { kind: 'reply', text: r.text, source: transcript, results } : { kind: 'failed' }
 }
 
 /**
@@ -987,7 +1004,7 @@ function updateLedger($: EngineInterface) {
   const owner = currentOwner()
   queue = queue.then(async () => {
     if (!isCurrent(owner)) return
-    await runUpdates({ ...hostOf($, owner), catchUp: () => catchUpReply($, owner) })
+    await runUpdates({ ...hostOf($, owner), names: CLAUDE_CODE, catchUp: () => catchUpReply($, owner) })
     if (isCurrent(owner)) void publishStatus($)
   })
   // A rejected link would skip every later update, so the chain swallows it.

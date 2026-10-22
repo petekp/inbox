@@ -94,7 +94,10 @@ test('a failed update catches up over the whole conversation instead of retrying
 
     return { ...finished, presence: { ...finished.presence, ledgerState: 'failed' as const } }
   })
-  await runUpdates({ ...host, ...reading({ kind: 'reply', text: LEDGER_REPLY, source: 'Person: go' }, calls) })
+  await runUpdates({
+    ...host,
+    ...reading({ kind: 'reply', text: LEDGER_REPLY, source: 'Person: go', results: null }, calls),
+  })
 
   const after = await host.read()
   expect(calls).toEqual({ catchUps: 1, asks: 0 })
@@ -121,7 +124,7 @@ test('a catch-up that gets no usable answer ends the run, and the next update tr
   const calls = { catchUps: 0, asks: 0 }
   const { host } = fakeHost(async () => null)
   await host.update(s => ({ ...s, presence: { ...s.presence, ledgerState: 'behind' as const } }))
-  await runUpdates({ ...host, ...reading({ kind: 'reply', text: 'not a ledger', source: null }, calls) })
+  await runUpdates({ ...host, ...reading({ kind: 'reply', text: 'not a ledger', source: null, results: null }, calls) })
   expect(calls.catchUps).toBe(1)
   expect((await host.read()).presence.ledgerState).toBe('failed')
 
@@ -136,7 +139,7 @@ test('an exchange that ends during a catch-up is still run afterward', async () 
     ...host,
     catchUp: async () => {
       await host.update(s => finishTurn(s, 'Which runtime?'))
-      return { kind: 'reply', text: 'GOAL: Add a greeting CLI', source: null }
+      return { kind: 'reply', text: 'GOAL: Add a greeting CLI', source: null, results: null }
     },
   })
 
@@ -165,7 +168,7 @@ test('a dropped reply keeps the warning through later good updates, until a catc
   expect(sessionView(kept, 0, host.settleWindowMs, false).status.error).not.toContain(retryPromise)
   expect(sessionView(kept, 0, host.settleWindowMs, true).status.error).toContain(retryPromise)
 
-  await runUpdates({ ...host, ...reading({ kind: 'reply', text: LEDGER_REPLY, source: null }, calls) })
+  await runUpdates({ ...host, ...reading({ kind: 'reply', text: LEDGER_REPLY, source: null, results: null }, calls) })
   expect((await host.read()).presence).toMatchObject({ ledgerState: 'current', hasDroppedReply: false })
   expect(calls.catchUps).toBe(1)
 })

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import {
   access,
   copyFile,
@@ -14,7 +14,7 @@ import {
 } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { screenText, systemText } from '../../hooks/model-text'
+import { screenText } from '../../hooks/model-text'
 import {
   askOverConversation,
   reconcileUpdateStatus as reconcileStatus,
@@ -97,13 +97,12 @@ async function keepNewerSignIn(link: string, auth: string): Promise<void> {
 
 /** Null when it fails. `personHome` is the person's Codex home, which holds their sign-in. */
 export function codexAsk(exec: Run, cli: string, dir: string, personHome: string): Ask {
-  return async prompt => {
+  return async (prompt, instructions) => {
     const work = join(dir, 'exec')
-    const system = join(dir, 'inbox-system.md')
+    const system = join(dir, `inbox-system-${createHash('sha256').update(instructions).digest('hex').slice(0, 12)}.md`)
     const out = join(work, `reply-${randomUUID()}.txt`)
     await mkdir(work, { recursive: true })
     const home = await modelHome(dir, personHome)
-    const instructions = systemText(CODEX)
     if ((await readFile(system, 'utf8').catch(() => '')) !== instructions) await writeFile(system, instructions)
     let off = [...OFF]
     for (let tries = 0; tries <= OFF.length; tries += 1) {
@@ -159,9 +158,11 @@ export const runUpdates = (dir: string, sessionId: string, ask: Ask, now: () => 
   runSessionUpdates({
     ...codexStore(dir, sessionId, now),
     ask,
+    names: CODEX,
     catchUp: async s =>
       askOverConversation(
         ask,
+        CODEX,
         s,
         screenText(CODEX, isTabOpen(s, now()), screenTabOf(s)),
         (await readRollout(s.transcriptPath, s.root))?.conversation ?? null,

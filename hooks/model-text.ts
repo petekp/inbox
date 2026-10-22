@@ -16,7 +16,6 @@ export function systemText(host: Host): string {
 
 Input:
 - <card>: the ledger before this exchange (may be empty)
-- <listed>: results already listed for the person, newest first
 - <open>: items still waiting on the person, as id | kind | label | ask | options | rec
 - <findings>: findings the agent recorded for the person to review later, outside the current task, each with an id
 - <decided>: items the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again.
@@ -28,7 +27,7 @@ Input:
 Answer with lines only, each starting with one of these keys. No other text.
 
 GOAL: what this session is for, at most 12 words. Keep the previous goal unless the person clearly changed direction. "-" until the person has asked for something.
-DONE: one result the agent finished in this exchange, at most 8 words, past tense: something that now holds, such as code written or a cause found. Commands run, checks passing and plans are not results. Write no DONE line when nothing finished, and no more than the prompt allows, oldest first. Never repeat a result <listed> has, even reworded. The inbox lists answered items and fixed findings itself: write no DONE line for an item you close or a finding you mark FIXED.
+DONE: one finished outcome, at most 8 words. Up to 4 DONE lines, oldest first, keeping the most recent. Outcomes, not activity: "PR #12 opened", not "ran gh".
 NOW: where the work stands at the end of this reply, at most 12 words. Name what it waits on, if anything. "-" when no work has started.
 RUNNING: something still running that the person may open, as "name: URL or port". Dev servers, simulators, background jobs. Omit anything the agent stopped. Zero or more lines.
 CLOSED: <id> | the outcome, at most 8 words, in one of three forms. When the person answered in <person>, write their answer. Otherwise write "done: <what the agent did>" when the work is done, or "no longer applies: <what in the reply or <activity> made it moot>". An option the agent picked on its own, or an option the work made moot, is not the person's answer: write it in the "done:" or "no longer applies:" form. One line for each item in <open> the person answered in <person> (including "all recommended", "go", "yes to all", numbered answers), or that the reply or <activity> shows is done or no longer applies. A person asking what an item means has not answered it, and a reply explaining it does not close it. When <person> asks to run an item's command and the reply says it ran, that item is done. So is an item whose command the person ran themselves, per <person>, when its output shows it worked. An item that has nothing to do with this exchange stays open: being outside the current work, or not being mentioned, does not make it no longer apply.
@@ -101,13 +100,14 @@ export function guidedCloseDescription(host: Host, description: string): string 
 export const START_TITLE =
   'inbox: where this session stands, as of the last reply. An "inbox:" text beside a later prompt replaces this.'
 
-const CATCH_UP = `The ledger below may have missed turns. Write a CLOSED line for every item in <open> that the conversation shows answered, done, dealt with, or no longer relevant, and a FIXED line for every finding in <findings> that it shows was fixed. Add as NEW only what still waits on the user and is not already in <open> or <findings>. Write up to ${DONE_PER_CATCH_UP} DONE lines, for the results the conversation reached that <listed> lacks.`
+const CATCH_UP =
+  'The ledger below may have missed turns. Write a CLOSED line for every item in <open> that the conversation shows answered, done, dealt with, or no longer relevant, and a FIXED line for every finding in <findings> that it shows was fixed. Add as NEW only what still waits on the user and is not already in <open> or <findings>.'
 
 export function catchUpPrompt(host: Host, ledger: Ledger, screen: string): string {
   return [
     'Pause the task. Do not use tools. Instead, act as the ledger keeper described below, over this whole conversation.',
     `Treat the whole conversation as the exchange. ${CATCH_UP}`,
-    ...ledgerBlocks(ledger, true),
+    ...ledgerBlocks(ledger),
     `<screen>${NL}${screen}${NL}</screen>`,
     'Code blocks here carry no [block N] marker, so a copy HELP must be one line of text.',
     '',
@@ -118,7 +118,7 @@ export function catchUpPrompt(host: Host, ledger: Ledger, screen: string): strin
 export function transcriptCatchUpPrompt(ledger: Ledger, screen: string, transcript: string): string {
   return [
     `Treat the conversation in <conversation> as the exchange. Its start may be cut. ${CATCH_UP}`,
-    ...ledgerBlocks(ledger, true),
+    ...ledgerBlocks(ledger),
     `<conversation>${NL}${numberBlocks(transcript)}${NL}</conversation>`,
     `<screen>${NL}${screen}${NL}</screen>`,
   ].join(NL)
@@ -214,20 +214,15 @@ export function dialogActivity(questions: DialogQuestion[], outcome: DialogOutco
   }
 }
 
-const LISTED_SHOWN = 8
-
-/** `<listed>` holds the newest milestones; a catch-up covers the whole conversation, so it holds all of them. */
-function ledgerBlocks(ledger: Ledger, isCatchUp = false): string[] {
+function ledgerBlocks(ledger: Ledger): string[] {
   const card = ledger.card
-    ? [`GOAL: ${ledger.card.goal}`, `NOW: ${ledger.card.now}`, ...ledger.card.running.map(r => `RUNNING: ${r}`)].join(
-        NL,
-      )
+    ? [
+        `GOAL: ${ledger.card.goal}`,
+        ...ledger.card.done.map(d => `DONE: ${d}`),
+        `NOW: ${ledger.card.now}`,
+        ...ledger.card.running.map(r => `RUNNING: ${r}`),
+      ].join(NL)
     : ''
-  const listed = ledger.milestones
-    .slice(isCatchUp ? 0 : -LISTED_SHOWN)
-    .reverse()
-    .map(m => m.text)
-    .join(NL)
   const open = ledger.items
     .map(
       i =>
@@ -242,7 +237,6 @@ function ledgerBlocks(ledger: Ledger, isCatchUp = false): string[] {
 
   return [
     `<card>${NL}${card}${NL}</card>`,
-    `<listed>${NL}${listed}${NL}</listed>`,
     `<open>${NL}${open}${NL}</open>`,
     `<findings>${NL}${findings}${NL}</findings>`,
     `<decided>${NL}${closed}${NL}</decided>`,
@@ -253,7 +247,6 @@ export function buildPrompt(ledger: Ledger, ex: Exchange): string {
   const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? 'unknown'}.)`
 
   return [
-    `Write at most ${DONE_PER_UPDATE} DONE lines.`,
     ...ledgerBlocks(ledger),
     `<person>${NL}${clipMiddle(person, 4000, 1500)}${NL}</person>`,
     `<activity>${NL}${clipMiddle(ex.activity.join(NL), 2500, 500)}${NL}</activity>`,
@@ -284,6 +277,60 @@ export const CLAUDE_CODE: Host = {
   closeTool: 'mcp__inbox__close',
   intro:
     "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox pane, and your findings, in the pane's Findings tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings.",
+}
+
+const LISTED_SHOWN = 8
+
+/** The system text of the call that writes the results, apart from the ledger call. */
+export const RESULTS_SYSTEM = `You keep the list of results for a person who works with a coding agent. They glance at it between tasks to see what the session has produced. You read one exchange and write the results it reached.
+
+Input:
+- <listed>: results already on the list, newest first
+- <open>: questions and tasks waiting on the person, as id | label | ask
+- <findings>: findings waiting for the person, as id | title
+- <person>: what the person just sent
+- <activity>: what the agent did this turn (files edited, commands, URLs)
+- <reply>: the agent's final reply
+
+Answer with lines only, each starting with DONE:. No other text.
+
+DONE: one result the agent finished, at most 8 words, past tense: something that now holds, such as code written, a cause found or a PR opened. Commands run, checks passing and plans are not results. Write no DONE line when nothing finished. Oldest first. Never repeat a result <listed> has, even reworded. The inbox lists an item the person answered and a finding the agent fixed itself: write no DONE line for the work that answers an <open> item or fixes a <finding>.`
+
+/** `<listed>` holds the newest results; a catch-up covers the whole conversation, so it holds all of them. */
+function resultsBlocks(ledger: Ledger, isCatchUp: boolean): string[] {
+  const listed = ledger.milestones
+    .slice(isCatchUp ? 0 : -LISTED_SHOWN)
+    .reverse()
+    .map(m => m.text)
+    .join(NL)
+  const open = ledger.items.map(i => `${i.id} | ${i.label ?? '-'} | ${i.ask}`).join(NL)
+  const findings = ledger.findings.map(f => `${f.id} | ${f.title}`).join(NL)
+
+  return [
+    `<listed>${NL}${listed}${NL}</listed>`,
+    `<open>${NL}${open}${NL}</open>`,
+    `<findings>${NL}${findings}${NL}</findings>`,
+  ]
+}
+
+export function resultsPrompt(ledger: Ledger, ex: Exchange): string {
+  const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? 'unknown'}.)`
+
+  return [
+    `Write at most ${DONE_PER_UPDATE} DONE lines.`,
+    ...resultsBlocks(ledger, false),
+    `<person>${NL}${clipMiddle(person, 4000, 1500)}${NL}</person>`,
+    `<activity>${NL}${clipMiddle(ex.activity.join(NL), 2500, 500)}${NL}</activity>`,
+    `<reply>${NL}${clipMiddle(numberBlocks(ex.reply), 12000, 4000)}${NL}</reply>`,
+  ].join(NL)
+}
+
+export function resultsCatchUpPrompt(ledger: Ledger, transcript: string): string {
+  return [
+    `Treat the conversation in <conversation> as the exchange. Its start may be cut. Write up to ${DONE_PER_CATCH_UP} DONE lines, for the results the conversation reached that <listed> lacks.`,
+    ...resultsBlocks(ledger, true),
+    `<conversation>${NL}${numberBlocks(transcript)}${NL}</conversation>`,
+  ].join(NL)
 }
 
 function surfaceAtStart(host: Host): string {

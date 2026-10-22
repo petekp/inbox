@@ -10,8 +10,11 @@ import { notePrompt, noteToolCall, viewOf } from '../src/core'
 import { handleHook } from '../src/hook'
 import { readState, statePath, updateState } from '../src/state'
 import { CODEX } from '../src/texts'
-import { runUpdates } from '../src/update'
-import { hookDeps, input, rolloutCopy, tempDir } from './helpers'
+import { runUpdates as runBothCalls } from '../src/update'
+import { hookDeps, input, ledgerOnly, rolloutCopy, tempDir } from './helpers'
+
+const runUpdates = (dir: string, id: string, ask: (prompt: string) => Promise<string | null>, now: () => number) =>
+  runBothCalls(dir, id, ledgerOnly(ask), now)
 
 test('a session starts with the guidance, records the prompt, and ends the turn into the update', async () => {
   const dir = tempDir()

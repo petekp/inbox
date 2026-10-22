@@ -4,8 +4,17 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
-import { applyExchangeUpdate, applyUpdate, EMPTY, parseReply, upgradeLedger } from '../hooks/ledger'
-import { buildPrompt, CLAUDE_CODE, screenText, systemText, transcriptCatchUpPrompt } from '../hooks/model-text'
+import { applyExchangeUpdate, applyUpdate, EMPTY, parseReply, upgradeLedger, withResults } from '../hooks/ledger'
+import {
+  buildPrompt,
+  CLAUDE_CODE,
+  RESULTS_SYSTEM,
+  resultsCatchUpPrompt,
+  resultsPrompt,
+  screenText,
+  systemText,
+  transcriptCatchUpPrompt,
+} from '../hooks/model-text'
 import { CODEX } from '../codex/src/texts'
 import type { Exchange, Update } from '../hooks/ledger'
 import type { Ledger } from '../types'
@@ -91,6 +100,7 @@ const about = provenance(
   {
     'systemText claude': systemText(CLAUDE_CODE),
     'systemText codex': systemText(CODEX),
+    'results systemText': RESULTS_SYSTEM,
     cases: readFileSync(values.cases, 'utf8'),
     models: JSON.stringify({ claude: CLAUDE_MODEL, codex: MODEL }),
     runner: readFileSync(process.argv[1]!, 'utf8'),
@@ -104,7 +114,7 @@ type Answer = { text: string | null; model: string | null; outputTokens: number 
 /**
  * Sonnet as the mod calls it: at low effort, and with no settings, so the runner's own CLAUDE.md never reaches it.
  */
-function claude(prompt: string): Promise<Answer> {
+function claude(prompt: string, system: string): Promise<Answer> {
   const cwd = mkdtempSync(join(tmpdir(), 'inbox-eval-claude-'))
 
   return new Promise<Answer>(resolve => {
@@ -123,7 +133,7 @@ function claude(prompt: string): Promise<Answer> {
         '--output-format',
         'json',
         '--system-prompt',
-        systemText(CLAUDE_CODE),
+        system,
       ],
       { maxBuffer: 1 << 22, timeout: 300_000, cwd },
       (err, out) => {
@@ -267,17 +277,25 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
     ),
     ...c.exchange,
   }
+  const host = agent === 'codex' ? CODEX : CLAUDE_CODE
   const prompt =
     c.catchUp === undefined ? buildPrompt(ledger, ex) : transcriptCatchUpPrompt(ledger, ex.screen, c.catchUp)
-  const {
-    text: answer,
-    model,
-    outputTokens,
-  } = agent === 'codex' ? { text: await askCodex(prompt), model: null, outputTokens: null } : await claude(prompt)
+  const resultsInput = c.catchUp === undefined ? resultsPrompt(ledger, ex) : resultsCatchUpPrompt(ledger, c.catchUp)
+  const ask = (input: string, system: string): Promise<Answer> =>
+    agent === 'codex'
+      ? askCodex(input, system).then(text => ({ text, model: null, outputTokens: null }))
+      : claude(input, system)
+  const [ledgerCall, resultsCall] = await Promise.all([
+    ask(prompt, systemText(host)),
+    ask(resultsInput, RESULTS_SYSTEM),
+  ])
+  const { text: answer, model, outputTokens } = ledgerCall
   const base = { ...job(agent, c, n), model, answer, outputTokens, attempts: 1, earlier: [], durationMs: 0 }
   if (answer === null) return { ...base, error: `${agent} gave no answer`, failed: [], masked: [] }
-  const update = parseReply(answer, c.catchUp ?? `${ex.reply}\n${ex.activity.join('\n')}`)
-  if (update === null) return { ...base, error: null, failed: ['no answer the mod can read'], masked: [] }
+  if (resultsCall.text === null) return { ...base, error: `${agent} gave no results answer`, failed: [], masked: [] }
+  const parsed = parseReply(answer, c.catchUp ?? `${ex.reply}\n${ex.activity.join('\n')}`)
+  if (parsed === null) return { ...base, error: null, failed: ['no answer the mod can read'], masked: [] }
+  const update = withResults(parsed, resultsCall.text)
   const after =
     c.catchUp === undefined
       ? applyExchangeUpdate(ledger, update, ex, NOW, NOW)

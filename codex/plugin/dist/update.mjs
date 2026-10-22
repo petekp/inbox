@@ -286,6 +286,13 @@ function parseReply(text, source = null) {
   return seen === 0 ? null : { card, done, closed, added, helped, updated, asked, todos };
 }
 var MAX_MILESTONES = 200;
+function withResults(update, resultsText) {
+  const done = (resultsText ?? "").split(NL2).flatMap((line) => {
+    const m = KEY_LINE.exec(line);
+    return m?.[1] === "DONE" ? dash(m[2] ?? "") ?? [] : [];
+  });
+  return { ...update, done };
+}
 var DONE_PER_UPDATE = 3;
 var DONE_PER_CATCH_UP = 6;
 var CARD_DONE = 4;
@@ -637,7 +644,6 @@ function systemText(host) {
 
 Input:
 - <card>: the ledger before this exchange (may be empty)
-- <listed>: results already listed for the person, newest first
 - <open>: items still waiting on the person, as id | kind | label | ask | options | rec
 - <findings>: findings the agent recorded for the person to review later, outside the current task, each with an id
 - <decided>: items the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again.
@@ -649,7 +655,7 @@ Input:
 Answer with lines only, each starting with one of these keys. No other text.
 
 GOAL: what this session is for, at most 12 words. Keep the previous goal unless the person clearly changed direction. "-" until the person has asked for something.
-DONE: one result the agent finished in this exchange, at most 8 words, past tense: something that now holds, such as code written or a cause found. Commands run, checks passing and plans are not results. Write no DONE line when nothing finished, and no more than the prompt allows, oldest first. Never repeat a result <listed> has, even reworded. The inbox lists answered items and fixed findings itself: write no DONE line for an item you close or a finding you mark FIXED.
+DONE: one finished outcome, at most 8 words. Up to 4 DONE lines, oldest first, keeping the most recent. Outcomes, not activity: "PR #12 opened", not "ran gh".
 NOW: where the work stands at the end of this reply, at most 12 words. Name what it waits on, if anything. "-" when no work has started.
 RUNNING: something still running that the person may open, as "name: URL or port". Dev servers, simulators, background jobs. Omit anything the agent stopped. Zero or more lines.
 CLOSED: <id> | the outcome, at most 8 words, in one of three forms. When the person answered in <person>, write their answer. Otherwise write "done: <what the agent did>" when the work is done, or "no longer applies: <what in the reply or <activity> made it moot>". An option the agent picked on its own, or an option the work made moot, is not the person's answer: write it in the "done:" or "no longer applies:" form. One line for each item in <open> the person answered in <person> (including "all recommended", "go", "yes to all", numbered answers), or that the reply or <activity> shows is done or no longer applies. A person asking what an item means has not answered it, and a reply explaining it does not close it. When <person> asks to run an item's command and the reply says it ran, that item is done. So is an item whose command the person ran themselves, per <person>, when its output shows it worked. An item that has nothing to do with this exchange stays open: being outside the current work, or not being mentioned, does not make it no longer apply.
@@ -682,11 +688,11 @@ TODO: <work>
 
 Write plainly. No jargon, no filler, no markdown.`;
 }
-var CATCH_UP = `The ledger below may have missed turns. Write a CLOSED line for every item in <open> that the conversation shows answered, done, dealt with, or no longer relevant, and a FIXED line for every finding in <findings> that it shows was fixed. Add as NEW only what still waits on the user and is not already in <open> or <findings>. Write up to ${DONE_PER_CATCH_UP} DONE lines, for the results the conversation reached that <listed> lacks.`;
+var CATCH_UP = "The ledger below may have missed turns. Write a CLOSED line for every item in <open> that the conversation shows answered, done, dealt with, or no longer relevant, and a FIXED line for every finding in <findings> that it shows was fixed. Add as NEW only what still waits on the user and is not already in <open> or <findings>.";
 function transcriptCatchUpPrompt(ledger, screen, transcript) {
   return [
     `Treat the conversation in <conversation> as the exchange. Its start may be cut. ${CATCH_UP}`,
-    ...ledgerBlocks(ledger, true),
+    ...ledgerBlocks(ledger),
     `<conversation>${NL3}${numberBlocks(transcript)}${NL3}</conversation>`,
     `<screen>${NL3}${screen}${NL3}</screen>`
   ].join(NL3);
@@ -755,12 +761,13 @@ function dialogActivity(questions, outcome) {
       return `${head}; still open, waiting on the user's answer`;
   }
 }
-var LISTED_SHOWN = 8;
-function ledgerBlocks(ledger, isCatchUp = false) {
-  const card = ledger.card ? [`GOAL: ${ledger.card.goal}`, `NOW: ${ledger.card.now}`, ...ledger.card.running.map((r) => `RUNNING: ${r}`)].join(
-    NL3
-  ) : "";
-  const listed = ledger.milestones.slice(isCatchUp ? 0 : -LISTED_SHOWN).reverse().map((m) => m.text).join(NL3);
+function ledgerBlocks(ledger) {
+  const card = ledger.card ? [
+    `GOAL: ${ledger.card.goal}`,
+    ...ledger.card.done.map((d) => `DONE: ${d}`),
+    `NOW: ${ledger.card.now}`,
+    ...ledger.card.running.map((r) => `RUNNING: ${r}`)
+  ].join(NL3) : "";
   const open2 = ledger.items.map(
     (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"}`
   ).join(NL3);
@@ -768,7 +775,6 @@ function ledgerBlocks(ledger, isCatchUp = false) {
   const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL3);
   return [
     `<card>${NL3}${card}${NL3}</card>`,
-    `<listed>${NL3}${listed}${NL3}</listed>`,
     `<open>${NL3}${open2}${NL3}</open>`,
     `<findings>${NL3}${findings}${NL3}</findings>`,
     `<decided>${NL3}${closed}${NL3}</decided>`
@@ -777,12 +783,52 @@ function ledgerBlocks(ledger, isCatchUp = false) {
 function buildPrompt(ledger, ex) {
   const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? "unknown"}.)`;
   return [
-    `Write at most ${DONE_PER_UPDATE} DONE lines.`,
     ...ledgerBlocks(ledger),
     `<person>${NL3}${clipMiddle(person, 4e3, 1500)}${NL3}</person>`,
     `<activity>${NL3}${clipMiddle(ex.activity.join(NL3), 2500, 500)}${NL3}</activity>`,
     `<reply>${NL3}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL3}</reply>`,
     `<screen>${NL3}${ex.screen}${NL3}</screen>`
+  ].join(NL3);
+}
+var LISTED_SHOWN = 8;
+var RESULTS_SYSTEM = `You keep the list of results for a person who works with a coding agent. They glance at it between tasks to see what the session has produced. You read one exchange and write the results it reached.
+
+Input:
+- <listed>: results already on the list, newest first
+- <open>: questions and tasks waiting on the person, as id | label | ask
+- <findings>: findings waiting for the person, as id | title
+- <person>: what the person just sent
+- <activity>: what the agent did this turn (files edited, commands, URLs)
+- <reply>: the agent's final reply
+
+Answer with lines only, each starting with DONE:. No other text.
+
+DONE: one result the agent finished, at most 8 words, past tense: something that now holds, such as code written, a cause found or a PR opened. Commands run, checks passing and plans are not results. Write no DONE line when nothing finished. Oldest first. Never repeat a result <listed> has, even reworded. The inbox lists an item the person answered and a finding the agent fixed itself: write no DONE line for the work that answers an <open> item or fixes a <finding>.`;
+function resultsBlocks(ledger, isCatchUp) {
+  const listed = ledger.milestones.slice(isCatchUp ? 0 : -LISTED_SHOWN).reverse().map((m) => m.text).join(NL3);
+  const open2 = ledger.items.map((i) => `${i.id} | ${i.label ?? "-"} | ${i.ask}`).join(NL3);
+  const findings = ledger.findings.map((f) => `${f.id} | ${f.title}`).join(NL3);
+  return [
+    `<listed>${NL3}${listed}${NL3}</listed>`,
+    `<open>${NL3}${open2}${NL3}</open>`,
+    `<findings>${NL3}${findings}${NL3}</findings>`
+  ];
+}
+function resultsPrompt(ledger, ex) {
+  const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? "unknown"}.)`;
+  return [
+    `Write at most ${DONE_PER_UPDATE} DONE lines.`,
+    ...resultsBlocks(ledger, false),
+    `<person>${NL3}${clipMiddle(person, 4e3, 1500)}${NL3}</person>`,
+    `<activity>${NL3}${clipMiddle(ex.activity.join(NL3), 2500, 500)}${NL3}</activity>`,
+    `<reply>${NL3}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL3}</reply>`
+  ].join(NL3);
+}
+function resultsCatchUpPrompt(ledger, transcript) {
+  return [
+    `Treat the conversation in <conversation> as the exchange. Its start may be cut. Write up to ${DONE_PER_CATCH_UP} DONE lines, for the results the conversation reached that <listed> lacks.`,
+    ...resultsBlocks(ledger, true),
+    `<conversation>${NL3}${numberBlocks(transcript)}${NL3}</conversation>`
   ].join(NL3);
 }
 function surfaceAtStart(host) {
@@ -950,7 +996,7 @@ function upgradeSession(saved) {
     stop: saved.stop ?? null
   };
 }
-function applied(s, reply, now, promptAt) {
+function applied(s, reply, results, now, promptAt) {
   const next = s.pending[0];
   if (!next) return s;
   const { ex } = next;
@@ -961,7 +1007,7 @@ function applied(s, reply, now, promptAt) {
       pending: [{ ...next, failed: true }, ...s.pending.slice(1)],
       presence: { ...s.presence, ledgerState: "failed" }
     };
-  const ledger = parsed ? applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt) : s.ledger;
+  const ledger = parsed ? applyExchangeUpdate(s.ledger, withResults(parsed, results), ex, now, promptAt) : s.ledger;
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed;
   return {
     ...s,
@@ -1227,7 +1273,7 @@ var run = (args, { cwd, timeoutMs, env }) => new Promise((resolve3) => {
 });
 
 // src/update.ts
-import { randomUUID as randomUUID2 } from "node:crypto";
+import { createHash as createHash2, randomUUID as randomUUID2 } from "node:crypto";
 import {
   access,
   copyFile,
@@ -1244,10 +1290,13 @@ import {
 import { join as join4 } from "node:path";
 
 // ../hooks/session-host.ts
-async function askOverConversation(ask, s, screen, conversation) {
+async function askOverConversation(ask, names, s, screen, conversation) {
   if (!conversation) return { kind: "unreadable" };
-  const text = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation)).catch(() => null);
-  return text === null ? { kind: "failed" } : { kind: "reply", text, source: conversation };
+  const [text, results] = await Promise.all([
+    ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names)).catch(() => null),
+    ask(resultsCatchUpPrompt(s.ledger, conversation), RESULTS_SYSTEM).catch(() => null)
+  ]);
+  return text === null ? { kind: "failed" } : { kind: "reply", text, source: conversation, results };
 }
 async function runUpdates(host) {
   let canCatchUp = host.catchUp !== void 0;
@@ -1265,7 +1314,8 @@ async function runUpdates(host) {
               canCatchUp = false;
               continue;
             }
-            const parsed = reply2.kind === "reply" ? parseReply(reply2.text, reply2.source) : null;
+            const ledgerUpdate = reply2.kind === "reply" ? parseReply(reply2.text, reply2.source) : null;
+            const parsed = ledgerUpdate && withResults(ledgerUpdate, reply2.kind === "reply" ? reply2.results : null);
             const at = await host.now();
             await host.update((x) => appliedCatchUp(x, s, parsed, at));
             if (!parsed) return "stop";
@@ -1273,9 +1323,12 @@ async function runUpdates(host) {
           }
           const next = s.pending[0];
           const promptAt = await host.now();
-          const reply = await host.ask(buildPrompt(s.ledger, next.ex)).catch(() => null);
+          const [reply, results] = await Promise.all([
+            host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names)).catch(() => null),
+            host.ask(resultsPrompt(s.ledger, next.ex), RESULTS_SYSTEM).catch(() => null)
+          ]);
           const after = await host.update(
-            async (x) => x.pending[0]?.turnsStarted === next.turnsStarted && x.pending[0].ex.turn === next.ex.turn ? applied(x, reply, await host.now(), promptAt) : x
+            async (x) => x.pending[0]?.turnsStarted === next.turnsStarted && x.pending[0].ex.turn === next.ex.turn ? applied(x, reply, results, await host.now(), promptAt) : x
           );
           if (after.pending[0]?.failed && !next.failed) return "stop";
         }
@@ -1564,13 +1617,12 @@ async function keepNewerSignIn(link, auth) {
   if (saved.mtimeMs > theirs.mtimeMs) await copyFile(link, auth);
 }
 function codexAsk(exec, cli, dir, personHome) {
-  return async (prompt) => {
+  return async (prompt, instructions) => {
     const work = join4(dir, "exec");
-    const system = join4(dir, "inbox-system.md");
+    const system = join4(dir, `inbox-system-${createHash2("sha256").update(instructions).digest("hex").slice(0, 12)}.md`);
     const out = join4(work, `reply-${randomUUID2()}.txt`);
     await mkdir2(work, { recursive: true });
     const home = await modelHome(dir, personHome);
-    const instructions = systemText(CODEX);
     if (await readFile2(system, "utf8").catch(() => "") !== instructions) await writeFile2(system, instructions);
     let off = [...OFF];
     for (let tries = 0; tries <= OFF.length; tries += 1) {
@@ -1619,8 +1671,10 @@ function codexAsk(exec, cli, dir, personHome) {
 var runUpdates2 = (dir, sessionId, ask, now) => runUpdates({
   ...codexStore(dir, sessionId, now),
   ask,
+  names: CODEX,
   catchUp: async (s) => askOverConversation(
     ask,
+    CODEX,
     s,
     screenText(CODEX, isTabOpen(s, now()), screenTabOf(s)),
     (await readRollout(s.transcriptPath, s.root))?.conversation ?? null

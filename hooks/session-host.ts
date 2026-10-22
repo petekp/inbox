@@ -1,5 +1,13 @@
-import { parseReply } from './ledger'
-import { buildPrompt, transcriptCatchUpPrompt } from './model-text'
+import { parseReply, withResults } from './ledger'
+import {
+  buildPrompt,
+  RESULTS_SYSTEM,
+  resultsCatchUpPrompt,
+  resultsPrompt,
+  systemText,
+  transcriptCatchUpPrompt,
+} from './model-text'
+import type { Host } from './model-text'
 import { fetchTracked, prRowId, splitLinked } from './pr-tab'
 import type { GhRun, PrPress } from './pr-tab'
 import {
@@ -43,7 +51,8 @@ export function exclusiveKeys(): {
   }
 }
 
-export type Ask = (prompt: string) => Promise<string | null>
+/** Calls the inbox model with `system` as its system text. Null when the call fails. */
+export type Ask = (prompt: string, system: string) => Promise<string | null>
 
 /** Everything a host supplies to run one session. A function here takes the members it uses. */
 export type SessionHost<S extends Session> = {
@@ -53,7 +62,7 @@ export type SessionHost<S extends Session> = {
   update(change: (s: S) => S | Promise<S>): Promise<S>
   /** Runs `fn` unless another run holds the session's per-reply update. */
   exclusive<T>(fn: () => Promise<T>): Promise<Exclusive<T>>
-  /** Calls the inbox model. Null when it fails. */
+  /** Calls the inbox model, once for the ledger and once for the results. Null when a call fails. */
   ask: Ask
   /** Sends a message to the agent as if the person typed it. Runs outside a change, so it may change the session itself. */
   deliver(s: S, text: string, deliveryId: string): Promise<SendOutcome>
@@ -82,13 +91,15 @@ export type SessionHost<S extends Session> = {
 /** What a host's catch-up found: the model's answer to apply, or why there is none. */
 export type CatchUpReply =
   /** `source` is the text the answer may quote code blocks from, or null when the model read the conversation itself. */
-  | { kind: 'reply'; text: string; source: string | null }
+  | { kind: 'reply'; text: string; source: string | null; results: string | null }
   /** The model gave no answer. */
   | { kind: 'failed' }
   /** There is no conversation to read, so the pending exchanges run instead. */
   | { kind: 'unreadable' }
 
 export type UpdateHost<S extends Session> = Pick<SessionHost<S>, 'now' | 'read' | 'update' | 'exclusive' | 'ask'> & {
+  /** The host's names, which the ledger call's system text uses. */
+  names: Host
   /**
    * Has the inbox model read the whole conversation, and returns its answer for `runUpdates` to apply. Absent when
    * the host cannot read the conversation.
@@ -102,14 +113,18 @@ export type UpdateHost<S extends Session> = Pick<SessionHost<S>, 'now' | 'read' 
  */
 export async function askOverConversation(
   ask: Ask,
+  names: Host,
   s: Session,
   screen: string,
   conversation: string | null,
 ): Promise<CatchUpReply> {
   if (!conversation) return { kind: 'unreadable' }
-  const text = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation)).catch(() => null)
+  const [text, results] = await Promise.all([
+    ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names)).catch(() => null),
+    ask(resultsCatchUpPrompt(s.ledger, conversation), RESULTS_SYSTEM).catch(() => null),
+  ])
 
-  return text === null ? { kind: 'failed' } : { kind: 'reply', text, source: conversation }
+  return text === null ? { kind: 'failed' } : { kind: 'reply', text, source: conversation, results }
 }
 
 export async function reconcileUpdateStatus<S extends Session>(
@@ -159,7 +174,8 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
               canCatchUp = false
               continue
             }
-            const parsed = reply.kind === 'reply' ? parseReply(reply.text, reply.source) : null
+            const ledgerUpdate = reply.kind === 'reply' ? parseReply(reply.text, reply.source) : null
+            const parsed = ledgerUpdate && withResults(ledgerUpdate, reply.kind === 'reply' ? reply.results : null)
             const at = await host.now()
             await host.update(x => appliedCatchUp(x, s, parsed, at))
             if (!parsed) return 'stop' as const
@@ -167,10 +183,13 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
           }
           const next = s.pending[0]!
           const promptAt = await host.now()
-          const reply = await host.ask(buildPrompt(s.ledger, next.ex)).catch(() => null)
+          const [reply, results] = await Promise.all([
+            host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names)).catch(() => null),
+            host.ask(resultsPrompt(s.ledger, next.ex), RESULTS_SYSTEM).catch(() => null),
+          ])
           const after = await host.update(async x =>
             x.pending[0]?.turnsStarted === next.turnsStarted && x.pending[0].ex.turn === next.ex.turn
-              ? applied(x, reply, await host.now(), promptAt)
+              ? applied(x, reply, results, await host.now(), promptAt)
               : x,
           )
           if (after.pending[0]?.failed && !next.failed) return 'stop' as const

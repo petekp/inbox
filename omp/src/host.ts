@@ -7,14 +7,7 @@ import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent'
 
 import { flattenConversation } from '../../hooks/conversation'
 import type { Turn } from '../../hooks/conversation'
-import {
-  dialogActivity,
-  dialogQuestions,
-  guidanceText,
-  screenText,
-  systemText,
-  toolActivity,
-} from '../../hooks/model-text'
+import { dialogActivity, dialogQuestions, guidanceText, screenText, toolActivity } from '../../hooks/model-text'
 import type { DialogOutcome, ScreenTab } from '../../hooks/model-text'
 import type { PrPress } from '../../hooks/pr-tab'
 import { ghFinder, ghIn } from '../../hooks/gh'
@@ -439,7 +432,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   }
 
   function askFor(ctx: ExtensionContext, id: string): SessionHost<OmpState>['ask'] {
-    return async prompt => {
+    return async (prompt, system) => {
       const model = inboxModel(ctx)
       if (!model) return null
       try {
@@ -448,7 +441,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         const reply = await deps.complete(
           model,
           {
-            systemPrompt: [systemText(OMP)],
+            systemPrompt: [system],
             messages: [{ role: 'user', content: prompt, timestamp: deps.now() }],
           },
           { apiKey, signal: AbortSignal.timeout(INBOX_MODEL_TIMEOUT_MS) },
@@ -508,8 +501,15 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
 
     return {
       ...host,
+      names: OMP,
       catchUp: s =>
-        askOverConversation(host.ask, s, screenText(OMP, openPanels.has(id), screenTabOf(id)), conversationText(ctx)),
+        askOverConversation(
+          host.ask,
+          OMP,
+          s,
+          screenText(OMP, openPanels.has(id), screenTabOf(id)),
+          conversationText(ctx),
+        ),
     }
   }
 

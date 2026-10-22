@@ -11,9 +11,13 @@ import type { Exchange } from '../../hooks/ledger'
 import { noteActivity } from '../../hooks/session'
 import { endTurn, notePrompt, viewOf } from '../src/core'
 import { readState, statePath, updateState } from '../src/state'
-import { runUpdates } from '../src/update'
+import { runUpdates as runBothCalls } from '../src/update'
 import { makeServer } from '../src/server'
-import { tempDir } from './helpers'
+import { RESULTS_SYSTEM } from '../../hooks/model-text'
+import { ledgerOnly, tempDir } from './helpers'
+
+const runUpdates = (dir: string, id: string, ask: (prompt: string) => Promise<string | null>, now: () => number) =>
+  runBothCalls(dir, id, ledgerOnly(ask), now)
 
 if (process.env.INBOX_STATUS_WORKER_DIR) {
   setInterval(() => undefined, 1_000)
@@ -63,6 +67,55 @@ test('a killed update worker leaves pending exchanges recoverable', async t => {
 
   assert.equal(calls, 1)
   assert.deepEqual((await readState(dir, 's1')).pending, [])
+})
+
+const LEDGER_ANSWER = 'GOAL: Ship\nDONE: Ledger call line\nNEW: decide | - | Deploy now? | Yes / No | Yes'
+
+async function updateWithResults(results: string | null) {
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({
+    ...s,
+    pending: [{ ex: ex(1, 'Built the deploy script. Should I deploy?'), turnsStarted: 1 }],
+  }))
+  const systems: string[] = []
+  await runBothCalls(
+    dir,
+    's1',
+    async (_prompt, system) => {
+      systems.push(system)
+
+      return system === RESULTS_SYSTEM ? results : LEDGER_ANSWER
+    },
+    () => 5,
+  )
+
+  return { state: await readState(dir, 's1'), systems }
+}
+
+test('a reply’s results come from the separate results call, and the ledger call’s own DONE lines are dropped', async () => {
+  const { state, systems } = await updateWithResults('DONE: Deploy script built')
+
+  assert.deepEqual(
+    state.ledger.milestones.map(m => m.text),
+    ['Deploy script built'],
+  )
+  assert.deepEqual(
+    state.ledger.items.map(i => i.ask),
+    ['Deploy now?'],
+  )
+  assert.equal(systems.length, 2)
+  assert.ok(systems.includes(RESULTS_SYSTEM))
+})
+
+test('a failed results call leaves the ledger update applied with no new results', async () => {
+  const { state } = await updateWithResults(null)
+
+  assert.deepEqual(state.ledger.milestones, [])
+  assert.deepEqual(
+    state.ledger.items.map(i => i.ask),
+    ['Deploy now?'],
+  )
+  assert.deepEqual(state.pending, [])
 })
 
 test('pending exchanges reach the ledger in order, a failed one waits for the next update, and a second failure drops it', async () => {

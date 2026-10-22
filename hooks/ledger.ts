@@ -349,6 +349,20 @@ export function parseReply(text: string, source: string | null = null): Update |
 }
 
 const MAX_MILESTONES = 200
+/**
+ * The update with its results replaced by the DONE lines of the separate results call's answer. The ledger call's own
+ * DONE lines are dropped. Null, a failed results call, leaves the update with no new results.
+ */
+export function withResults(update: Update, resultsText: string | null): Update {
+  const done = (resultsText ?? '').split(NL).flatMap(line => {
+    const m = KEY_LINE.exec(line)
+
+    return m?.[1] === 'DONE' ? (dash(m[2] ?? '') ?? []) : []
+  })
+
+  return { ...update, done }
+}
+
 /** How many DONE lines one update, and one catch-up, may add. The prompts state these counts. */
 export const DONE_PER_UPDATE = 3
 export const DONE_PER_CATCH_UP = 6

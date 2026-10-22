@@ -6,7 +6,7 @@ import type { EngineInterface, UiCopyResult, UiPressArgument } from 'claude-code
 
 import type { Away, LastAction, Ledger, OldPresence, PrViews, SentPrompt, Stop } from '../types'
 import { EMPTY, KEPT_SESSIONS, pruneClosed, stampPressTurn } from './ledger'
-import { CLAUDE_CODE, systemText } from './model-text'
+import { CLAUDE_CODE } from './model-text'
 import { SETTLED_MS } from './view'
 import { localPath, openCommands, withArrival, withRewrite, withUnconfirmed } from './presses'
 import type { Effect } from './presses'
@@ -432,10 +432,20 @@ const MODEL = 'sonnet'
 
 type ModelResult = Awaited<ReturnType<EngineInterface['model']['fork']>>
 
-export function askLedgerModel($: EngineInterface, prompt: string, timeoutMs: number): Promise<ModelResult> {
-  const system = [{ text: systemText(CLAUDE_CODE), cache: true as const }]
-
-  return $.model.complete({ model: MODEL, system, prompt, maxTokens: 1600, effort: 'low', timeoutMs })
+export function askLedgerModel(
+  $: EngineInterface,
+  prompt: string,
+  system: string,
+  timeoutMs: number,
+): Promise<ModelResult> {
+  return $.model.complete({
+    model: MODEL,
+    system: [{ text: system, cache: true as const }],
+    prompt,
+    maxTokens: 1600,
+    effort: 'low',
+    timeoutMs,
+  })
 }
 
 const COPY_FAILURES: Record<Extract<UiCopyResult, { isCopied: false }>['reason'], string> = {
@@ -561,8 +571,8 @@ export function sessionHost(
     },
     update: opts.update,
     exclusive: fn => updating.run(owner.id, fn),
-    ask: async prompt => {
-      const r = await askLedgerModel($, prompt, 45_000)
+    ask: async (prompt, system) => {
+      const r = await askLedgerModel($, prompt, system, 45_000)
       return r.isAnswered ? r.text : null
     },
     deliver: (_s, text, deliveryId) => deliver($, owner, text, deliveryId),

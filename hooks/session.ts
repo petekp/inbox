@@ -6,6 +6,7 @@ import {
   parseReply,
   stampPressTurn,
   upgradeLedger,
+  withResults,
 } from './ledger'
 import type { Exchange, Press, Update } from './ledger'
 import { addActivity, carryText, guidanceText, promptNotes, screenText, START_TITLE, TOLD_NOTHING } from './model-text'
@@ -370,9 +371,16 @@ export function endTurn<S extends Session>(
 
 /**
  * Applies the model's answer for the oldest pending exchange, and drops that exchange. One whose first update
- * failed stays pending, marked failed, for the next update to try again.
+ * failed stays pending, marked failed, for the next update to try again. `results` is the results call's answer,
+ * which gives the exchange its results; null when that call failed, which leaves the update with none.
  */
-export function applied<S extends Session>(s: S, reply: string | null, now: number, promptAt: number): S {
+export function applied<S extends Session>(
+  s: S,
+  reply: string | null,
+  results: string | null,
+  now: number,
+  promptAt: number,
+): S {
   const next = s.pending[0]
   if (!next) return s
   const { ex } = next
@@ -383,7 +391,7 @@ export function applied<S extends Session>(s: S, reply: string | null, now: numb
       pending: [{ ...next, failed: true }, ...s.pending.slice(1)],
       presence: { ...s.presence, ledgerState: 'failed' },
     }
-  const ledger = parsed ? applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt) : s.ledger
+  const ledger = parsed ? applyExchangeUpdate(s.ledger, withResults(parsed, results), ex, now, promptAt) : s.ledger
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed
 
   return {

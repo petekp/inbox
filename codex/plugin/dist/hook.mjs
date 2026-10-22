@@ -104,7 +104,6 @@ function howFromOutcome(outcome) {
   return "update";
 }
 var MAX_MILESTONES = 200;
-var DONE_PER_CATCH_UP = 6;
 var MILESTONE_TEXT_CHARS = 120;
 function doneMilestone(text, at) {
   return { source: "done", text: clipLabel(text, MILESTONE_TEXT_CHARS), detail: null, ref: null, at };
@@ -180,7 +179,6 @@ Close with ${host.closeTool}:
 The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.`;
 }
 var START_TITLE = 'inbox: where this session stands, as of the last reply. An "inbox:" text beside a later prompt replaces this.';
-var CATCH_UP = `The ledger below may have missed turns. Write a CLOSED line for every item in <open> that the conversation shows answered, done, dealt with, or no longer relevant, and a FIXED line for every finding in <findings> that it shows was fixed. Add as NEW only what still waits on the user and is not already in <open> or <findings>. Write up to ${DONE_PER_CATCH_UP} DONE lines, for the results the conversation reached that <listed> lacks.`;
 var MAX_ACTIVITY = 40;
 function addActivity(activity, line) {
   return !line || activity.length >= MAX_ACTIVITY || activity.includes(line) ? activity : [...activity, line];

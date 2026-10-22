@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url'
 
 import type { HookDeps, HookInput } from '../src/hook'
 import type { Run } from '../../hooks/gh'
+import { RESULTS_SYSTEM } from '../../hooks/model-text'
+import type { Ask } from '../../hooks/session-host'
 
 export function tempDir(): string {
   return mkdtempSync(join(tmpdir(), 'inbox-codex-'))
@@ -60,4 +62,9 @@ export function rolloutAt(
   writeFileSync(path, ext === 'jsonl' ? [JSON.stringify({ ...row, payload }), ...rest].join('\n') : 'compressed')
 
   return path
+}
+
+/** An inbox model whose results call fails, so a test sees only the ledger call's prompts. */
+export function ledgerOnly(ask: (prompt: string) => Promise<string | null>): Ask {
+  return (prompt, system) => (system === RESULTS_SYSTEM ? Promise.resolve(null) : ask(prompt))
 }

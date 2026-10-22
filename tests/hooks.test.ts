@@ -7,6 +7,7 @@ import type { LinksProps } from '../hooks/links-client'
 import type { RowProps } from '../hooks/row-client'
 import type { TabsProps } from '../hooks/tabs-client'
 import { demoView } from '../hooks/demo'
+import { RESULTS_SYSTEM } from '../hooks/model-text'
 import { checkActions, prBlockActions, prCheckId, prThreadId, threadActions, threadSentIn } from '../hooks/pr-tab'
 import { failingChecks, waitingThreads } from '../hooks/prs'
 import {
@@ -39,6 +40,8 @@ const BAND = {
 }
 
 let ledgerReply = LEDGER_REPLY
+let resultsReply: string | null = 'DONE: Plan written'
+let resultsPrompts: string[] = []
 let sessionId = 'session-1'
 
 let sent: string[] = []
@@ -171,6 +174,8 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   ghAnswers = []
   isGhMissing = false
   ledgerReply = LEDGER_REPLY
+  resultsReply = 'DONE: Plan written'
+  resultsPrompts = []
   sessionId = 'session-1'
   surfaces = []
   files = []
@@ -251,12 +256,15 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
     return { value: gh(e.argv) }
   })
   on('model.complete', ($, e) => {
-    prompts.push(e.prompt)
+    const isResults = (e.systemBlocks ?? []).some(block => block.text === RESULTS_SYSTEM) || e.system === RESULTS_SYSTEM
+    if (isResults) resultsPrompts.push(e.prompt)
+    else prompts.push(e.prompt)
+    if (isResults && resultsReply === null) return { deny: 'the results call failed' }
 
     return {
       value: {
         isAnswered: true,
-        text: ledgerReply,
+        text: isResults ? resultsReply! : ledgerReply,
         usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
       },
     }
@@ -1040,6 +1048,44 @@ test('the band keeps what the mods after the inbox draw there, with its counts a
   }
 })
 
+const replyWithResults = async ($: Engine, on: On, results: string | null) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  resultsReply = results
+  let session: { ledger: { milestones: { text: string }[]; items: { ask: string }[] } } | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Plan ready. Node or Python?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+
+  return session!.ledger
+}
+
+test('a reply’s results come from the separate results call, and the ledger call’s own DONE lines are dropped', async ($, on) => {
+  const ledger = await replyWithResults($, on, 'DONE: Greeting CLI scaffolded')
+
+  expect(ledger.milestones.map(m => m.text)).toEqual(['Greeting CLI scaffolded'])
+  expect(ledger.items.map(i => i.ask)).toEqual(['Use Node or Python?', 'Name the command greet?'])
+  expect(resultsPrompts).toHaveLength(1)
+})
+
+test('a failed results call leaves the ledger update applied with no new results', async ($, on) => {
+  const ledger = await replyWithResults($, on, null)
+
+  expect(ledger.milestones).toEqual([])
+  expect(ledger.items.map(i => i.ask)).toEqual(['Use Node or Python?', 'Name the command greet?'])
+})
+
 test('resumed into a conversation it cannot fork yet, it catches up from the transcript before any reply', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
@@ -1062,6 +1108,36 @@ test('resumed into a conversation it cannot fork yet, it catches up from the tra
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ text: /Use Node or Python\?/ })).toBeDefined()
   expect(await pane.find({ text: /update failed/ })).toBeUndefined()
+})
+
+test('a catch-up writes its results with a separate call over the transcript', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  resultsReply = 'DONE: Plan written\nDONE: Command named greet'
+  let session: { ledger: { milestones: { text: string; at: number | null }[] } } | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  on('session.turns', () => ({ value: 3 }))
+  on('model.fork', () => ({
+    value: {
+      isAnswered: true,
+      text: 'GOAL: Add a greeting CLI\nDONE: Ignored line from the ledger call\nNOW: Waiting',
+      usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    },
+  }))
+  const said = (role: 'user' | 'assistant', text: string) => ({ role, text, toolUses: [] as never[] })
+  transcriptRows = [said('user', 'Add a greeting CLI.'), said('assistant', 'The plan is written. Command named greet.')]
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+
+  expect(session!.ledger.milestones.map(m => [m.text, m.at])).toEqual([
+    ['Plan written', null],
+    ['Command named greet', null],
+  ])
+  expect(resultsPrompts.at(-1)).toContain('<conversation>\nPerson: Add a greeting CLI.')
 })
 
 test('after a failed update, the next reply catches up over the whole conversation', async ($, on) => {

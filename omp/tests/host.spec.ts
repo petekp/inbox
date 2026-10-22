@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { guidanceText, systemText } from '../../hooks/model-text'
+import { guidanceText, RESULTS_SYSTEM, systemText } from '../../hooks/model-text'
 import { NO_HOLDS } from '../../hooks/view'
 import { createInbox, stopOf } from '../src/host'
 import type { HostDeps } from '../src/host'
@@ -48,6 +48,8 @@ let models: Model[]
 let smolModel: Model | undefined
 let inboxRoleModel: Model | undefined
 let reply: string | Error
+let resultsReply: string | Error
+let resultsCompletions: { model: Model; system: string[]; prompt: string }[]
 let isIdle: boolean
 let execResults: Map<string, { code: number; stdout?: string; stderr?: string; killed?: boolean } | Error>
 let execCalls: { command: string; args: string[] }[]
@@ -107,14 +109,17 @@ const deps = (): HostDeps => ({
   settleWindowMs: 1000,
   home: '/home/me',
   complete: async (model, context) => {
-    completions.push({
+    const isResults = context.systemPrompt?.[0] === RESULTS_SYSTEM
+    const call = {
       model: model as never,
       system: context.systemPrompt ?? [],
       prompt: String((context.messages[0] as { content: unknown }).content),
-    })
-    if (reply instanceof Error) throw reply
+    }
+    ;(isResults ? resultsCompletions : completions).push(call)
+    const answer = isResults ? resultsReply : reply
+    if (answer instanceof Error) throw answer
 
-    return { stopReason: 'stop', content: [{ type: 'text', text: reply }] } as never
+    return { stopReason: 'stop', content: [{ type: 'text', text: answer }] } as never
   },
   copy: async text => {
     copied.push(text)
@@ -163,6 +168,8 @@ beforeEach(() => {
   smolModel = smol
   inboxRoleModel = undefined
   reply = MODEL_ANSWER
+  resultsReply = 'DONE: Plan written'
+  resultsCompletions = []
   isIdle = false
   execResults = new Map()
   execCalls = []
@@ -281,6 +288,29 @@ test('a turn that ends queues the exchange and the inbox model fills the ledger'
   expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Use Node or Python?'])
   expect(completions).toHaveLength(1)
   expect(completions[0]!.prompt).toContain('Plan written. Which runtime?')
+})
+
+test('a reply’s results come from the separate results call, and the ledger call’s own DONE lines are dropped', async () => {
+  createInbox(pi(), deps())
+  resultsReply = 'DONE: Greeting CLI scaffolded'
+  await prompt('Add a greeting CLI')
+  await endAgent('Plan written. Which runtime?')
+  await settle()
+  expect(state().ledger.milestones.map((m: { text: string }) => m.text)).toEqual(['Greeting CLI scaffolded'])
+  expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Use Node or Python?'])
+  expect(resultsCompletions).toHaveLength(1)
+  expect(resultsCompletions[0]!.prompt).toContain('Plan written. Which runtime?')
+})
+
+test('a failed results call leaves the ledger update applied with no new results', async () => {
+  createInbox(pi(), deps())
+  resultsReply = new Error('overloaded')
+  await prompt('Add a greeting CLI')
+  await endAgent('Plan written. Which runtime?')
+  await settle()
+  expect(state().pending).toEqual([])
+  expect(state().ledger.milestones).toEqual([])
+  expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Use Node or Python?'])
 })
 
 test('a settle that will continue does not end the turn', async () => {
