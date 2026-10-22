@@ -4021,7 +4021,38 @@ function pressFeedback(screen, id, now) {
   const f = feedbackOf(id, screen.view.lastActions[id], undefined, screen.view.turns, now);
   return f ? { text: feedbackText(f, AGENT), tone: feedbackTone(f) } : null;
 }
+var TITLE_AT = 6;
+function pageEntries(page) {
+  if (page.isEmpty)
+    return [
+      { kind: "note", text: page.empty.title, isStrong: true },
+      { kind: "note", text: page.empty.hint }
+    ];
+  const { subagents, running, milestones } = page;
+  const out = [];
+  if (page.goal)
+    out.push({ kind: "note", text: page.goal, isStrong: true });
+  if (page.now)
+    out.push({ kind: "note", text: `Now \xB7 ${page.now}` });
+  if (subagents) {
+    out.push({ kind: "heading", text: subagents.title, count: subagents.count });
+    out.push(...subagents.rows.map((row) => ({ kind: "page", row })));
+  }
+  if (running) {
+    out.push({ kind: "heading", text: running.title, count: running.count });
+    out.push(...running.rows.map((r) => ({ kind: "note", text: r.text, indent: TITLE_AT })));
+  }
+  if (milestones) {
+    out.push({ kind: "heading", text: milestones.title, count: milestones.count });
+    out.push(...milestones.rows.map((row) => ({ kind: "page", row })));
+  }
+  if (page.earlier)
+    out.push({ kind: "note", text: page.earlier, indent: TITLE_AT });
+  return out;
+}
 function entriesOf(screen, ui, tab, now) {
+  if (!isRowTab(tab))
+    return pageEntries(screen.view.progressPage);
   return tab === "prs" ? prEntries(screen, now) : rowEntries(screen, ui, tab);
 }
 var linesOf = (entries) => entries.flatMap((e) => e.kind === "row" ? [e.line] : []);
@@ -4107,8 +4138,8 @@ function handleKey(screen, ui, key, now, text) {
     const step = key === "up" || key === "k" ? -1 : 1;
     return { ui: withSelection(base, selectable[wrapIndex(Math.max(0, at) + step, selectable.length)].id) };
   }
-  const tabs = ROW_TABS.map((t) => t.id);
-  const pickedTab = ROW_TABS.find((t) => t.hotkey === key);
+  const tabs = TABS.map((t) => t.id);
+  const pickedTab = TABS.find((t) => t.hotkey === key);
   if (key === "tab" || key === "shift+tab") {
     const step = key === "tab" ? 1 : -1;
     return { ui: { ...withSelection(base, null), tab: tabs[wrapIndex(tabs.indexOf(base.tab) + step, tabs.length)] } };
@@ -4145,28 +4176,31 @@ function tabRows(screen) {
     open: { ...openRowIds(view), prs: [] }
   };
 }
-function isShownEmpty(screen, ui) {
+function isShownEmpty(screen, ui, tab) {
   const { view } = screen;
-  if (ui.tab === "prs")
+  if (tab === "prs")
     return isPrsTabEmpty(view.prs.drawn.length, screen.isFetchingPrs);
-  const rows = ui.tab === "needsYou" ? [...view.needsYou.questions, ...view.needsYou.tasks] : view.findings.rows;
+  const rows = tab === "needsYou" ? [...view.needsYou.questions, ...view.needsYou.tasks] : view.findings.rows;
   return isTabEmpty({
     rows,
     settled: new Set(rows.filter((r) => r.state.is === "settled").map((r) => r.id)),
-    closed: closedGroups(view, ui.tab, (kind) => ui.unfolded.includes(kind)),
-    hasBlocker: ui.tab === "needsYou" && screen.stop !== null
+    closed: closedGroups(view, tab, (kind) => ui.unfolded.includes(kind)),
+    hasBlocker: tab === "needsYou" && screen.stop !== null
   });
 }
 function followRows(screen, ui, seen, isOpening, now) {
   const { listed, open } = tabRows(screen);
   const recorded2 = recordRows(seen, listed);
-  const to = followTo(ARRIVAL_TABS, ui.tab, isShownEmpty(screen, ui), isOpening ? open : recorded2.added);
+  const { tab } = ui;
+  if (!isRowTab(tab))
+    return { ui, seen: recorded2.seen };
+  const to = followTo(ARRIVAL_TABS, tab, isShownEmpty(screen, ui, tab), isOpening ? open : recorded2.added);
   if (to)
     return { ui: { ...withSelection(ui, null), tab: to }, seen: recorded2.seen };
-  const arrived = recorded2.added[ui.tab];
+  const arrived = recorded2.added[tab];
   if (ui.selectedId !== null || arrived.length === 0)
     return { ui, seen: recorded2.seen };
-  const kept = keptOpen(waitsOf(linesOf(entriesOf(screen, ui, ui.tab, now))), arrived);
+  const kept = keptOpen(waitsOf(linesOf(entriesOf(screen, ui, tab, now))), arrived);
   return { ui: kept === null ? ui : { ...ui, selectedId: kept }, seen: recorded2.seen };
 }
 function isAnimating(screen, ui, now) {
@@ -4296,15 +4330,68 @@ function drawLine(line, isSelected, d) {
   }
   return out;
 }
+function drawPageRow(row, d) {
+  const { width, style: s } = d;
+  const mark = row.mark.padEnd(2);
+  const age = row.age ? `${s.dim(row.age)} ` : "";
+  const room = width - TITLE_AT - visibleLength(age) - 2;
+  const wrapped = wrapText(row.text, Math.max(10, room));
+  const [first = "", ...rest] = wrapped.slice(0, 3);
+  if (wrapped.length > 3)
+    rest[1] = `${rest[1].replace(/.$/, "")}\u2026`;
+  const out = [
+    spread(`   ${row.tone ? s.tone(row.tone, mark) : s.dim(mark)} ${first}`, age, width),
+    ...rest.map((l) => " ".repeat(TITLE_AT) + l)
+  ];
+  if (row.detail)
+    out.push(...indented(row.detail, TITLE_AT, width, 4, s.dim));
+  return out;
+}
+var TAB_FORMS = [
+  { isBracketed: true, isZeroShown: true },
+  { isBracketed: false, isZeroShown: true },
+  { isBracketed: false, isZeroShown: false }
+];
+var MIN_LABEL = 3;
+var cutLabel = (label, length) => [...label].length <= length ? label : `${[...label].slice(0, length - 1).join("")}\u2026`;
+function tabCell(t, label, form, s) {
+  const key = form.isBracketed ? `[${t.hotkey}]` : t.hotkey;
+  const count = t.count === null || t.count === 0 && !form.isZeroShown ? null : String(t.count);
+  if (t.isShown)
+    return s.inverse(s.bold(` ${key} ${label}${count === null ? "" : ` ${count}`} `));
+  const countText = count === null ? "" : ` ${t.tone ? s.tone(t.tone, count) : count}`;
+  return ` ${s.dim(`${key} ${label}`)}${countText} `;
+}
 function tabBar(d) {
-  const { screen, ui, style: s } = d;
+  const { screen, ui, width, style: s } = d;
   const counts = {
     needsYou: screen.view.needsYou.count,
     findings: screen.view.findings.count,
     prs: screen.view.prs.count
   };
-  const tabs = ROW_TABS.map((t) => t.id === ui.tab ? s.inverse(s.bold(` [${t.hotkey}] ${t.label} ${counts[t.id]} `)) : ` ${s.dim(`[${t.hotkey}] ${t.label}`)} ${s.tone(t.id, String(counts[t.id]))} `).join(" ");
-  return spread(` ${tabs}`, s.dim("esc to close "), d.width);
+  const tabs = TABS.map((t) => ({
+    ...t,
+    tone: isRowTab(t.id) ? t.id : null,
+    count: isRowTab(t.id) ? counts[t.id] : null,
+    isShown: t.id === ui.tab
+  }));
+  const lineOf = (form, lengths2) => ` ${tabs.map((t, i) => tabCell(t, cutLabel(t.label, lengths2[i]), form, s)).join(" ")}`;
+  const lengths = tabs.map((t) => [...t.label].length);
+  const hint = s.dim("esc to close ");
+  for (const form of TAB_FORMS) {
+    const line = lineOf(form, lengths);
+    if (visibleLength(line) <= width)
+      return spread(line, hint, width);
+  }
+  const narrowest = TAB_FORMS.at(-1);
+  for (;; ) {
+    const line = lineOf(narrowest, lengths);
+    const cuttable = tabs.map((t, i) => t.isShown || lengths[i] <= MIN_LABEL ? -1 : lengths[i]);
+    const longest = cuttable.indexOf(Math.max(...cuttable));
+    if (visibleLength(line) <= width || cuttable[longest] === -1)
+      return line;
+    lengths[longest]--;
+  }
 }
 function footer(d) {
   const { screen, ui, width, now, style: s } = d;
@@ -4318,7 +4405,7 @@ function footer(d) {
     out.push(...indented(status.error, 1, width, 2, (t) => s.tone("error", t)));
   if (ui.notice && now - ui.notice.at < SETTLED_MS)
     out.push(...indented(ui.notice.text, 1, width, 2, (t) => s.tone("error", t)));
-  const hints = ui.typing !== null ? [`\u21B5 ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch"];
+  const hints = ui.typing !== null ? [`\u21B5 ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch"] : ["tab switch"];
   const model = `${screen.modelName ? `inbox model ${screen.modelName}` : "no inbox model: set @inbox"}  v${version} `;
   const hintLine = ` ${hints.map((h) => s.dim(h)).join(` ${s.tone("sep", "\xB7")} `)}`;
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2;
@@ -4337,7 +4424,9 @@ function render(screen, ui, width, now, style, height) {
   let selectedAt = [0, 0];
   for (const e of entries) {
     if (e.kind === "heading")
-      body.push(` ${style.bold(e.text)}`);
+      body.push(` ${style.bold(e.text)}${e.count === undefined ? "" : style.dim(` \xB7 ${e.count}`)}`);
+    else if (e.kind === "page")
+      body.push(...drawPageRow(e.row, d));
     else if (e.kind === "note")
       body.push(...indented(e.text, e.indent ?? 1, width, 3, e.isStrong ? style.bold : style.dim));
     else {
