@@ -427,6 +427,38 @@ function addMilestones(milestones: Milestone[], added: NewMilestone[], place: 'l
   return all.filter(m => !evicted.has(m))
 }
 
+export type ListedResult = Milestone & {
+  /** The DONE lines this answered or fixed result took in, oldest first. */
+  merged: string[]
+}
+
+function sharesWords(done: Milestone, other: Milestone): boolean {
+  const x = keyWords(done.text)
+  const y = keyWords(`${other.text} ${other.detail ?? ''}`)
+  if (hasNumberConflict(x, y)) return false
+  const shared = [...x].filter(w => y.has(w)).length
+
+  return shared >= 2 || (shared >= 1 && x.size <= 2)
+}
+
+/**
+ * The results to show, newest first. A DONE line merges into an answered or fixed result of the same turn when their
+ * words overlap, since the model writes both for one piece of work. An answered or fixed result may take several.
+ * A result with no turn never merges.
+ */
+export function listResults(milestones: Milestone[]): ListedResult[] {
+  const events = milestones.filter(m => m.source !== 'done')
+  const takenBy = (m: Milestone) =>
+    m.source === 'done' && m.turn !== undefined ? events.find(e => e.turn === m.turn && sharesWords(m, e)) : undefined
+  const listed = milestones.filter(m => takenBy(m) === undefined).map((m): ListedResult => ({ ...m, merged: [] }))
+  for (const m of milestones) {
+    const owner = takenBy(m)
+    if (owner) listed.find(l => l.id === owner.id)!.merged.push(m.text)
+  }
+
+  return listed.reverse()
+}
+
 /** The one remover, for a result its owner undid: an answered item or a fixed finding that reopens. */
 function removeMilestone(ledger: Ledger, ref: string): Ledger {
   return ledger.milestones.some(m => m.ref === ref)
@@ -475,17 +507,24 @@ function keyWords(text: string): Set<string> {
   return new Set(words(text).filter(w => /\p{N}/u.test(w) || (w.length > 2 && !FILLER.has(w))))
 }
 
+function numbersOf(words: Set<string>): string {
+  return [...words]
+    .filter(w => /\p{N}/u.test(w))
+    .sort()
+    .join(' ')
+}
+
+/** Both texts name numbers, and not the same ones. */
+function hasNumberConflict(x: Set<string>, y: Set<string>): boolean {
+  return numbersOf(x) !== '' && numbersOf(y) !== '' && numbersOf(x) !== numbersOf(y)
+}
+
 function restates(a: string, b: string): boolean {
   const x = keyWords(a)
   const y = keyWords(b)
   const fewer = Math.min(x.size, y.size)
   const shared = [...x].filter(w => y.has(w)).length
-  const numbers = (words: Set<string>) =>
-    [...words]
-      .filter(w => /\p{N}/u.test(w))
-      .sort()
-      .join(' ')
-  if (numbers(x) !== '' && numbers(y) !== '' && numbers(x) !== numbers(y)) return false
+  if (hasNumberConflict(x, y)) return false
 
   return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b)
 }
@@ -587,10 +626,14 @@ export function closeByAgent(
 
 export type Closing = Pick<Closed, 'how' | 'outcome'>
 
-export function closeItem(ledger: Ledger, id: string, closing: Closing, now: number): Ledger {
+/** `turn` is the turn the answer belongs to. A press passes the next one, since the turn it starts is counted after it. */
+export function closeItem(ledger: Ledger, id: string, closing: Closing, now: number, turn = ledger.turn): Ledger {
   const items = ledger.items.filter(i => i.id === id)
   const records = items.map(i => closedRecord(i, closing, now))
-  const answers = closing.how === 'answered' ? items.flatMap(i => answeredMilestone(i, closing.outcome, now) ?? []) : []
+  const answers =
+    closing.how === 'answered'
+      ? items.flatMap(i => answeredMilestone(i, closing.outcome, now) ?? []).map(m => ({ ...m, turn }))
+      : []
 
   return reopenAskedFindings(
     {
@@ -863,7 +906,9 @@ export function applyUpdate(
   const results = u.done.slice(isCatchUp ? -DONE_PER_CATCH_UP : -DONE_PER_UPDATE).map(text => doneMilestone(text, now))
   // Each later line gets a later time, so one update's lines read newest first. A catch-up covers past turns,
   // so none of its lines has a known time.
-  const written = [...answers, ...fixes, ...results].map((m, n) => ({ ...m, at: isCatchUp ? null : now + n }))
+  const written = [...answers, ...fixes, ...results].map((m, n) =>
+    isCatchUp ? { ...m, at: null } : { ...m, at: now + n, turn },
+  )
   const milestones = addMilestones(ledger.milestones, written)
   const prev = ledger.card
   const card: Card = {

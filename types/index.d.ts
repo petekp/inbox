@@ -200,6 +200,8 @@ export type Milestone = {
   ref: string | null
   /** When it happened; null when unknown, shown with no age. */
   at: number | null
+  /** The conversation turn it was made in. Absent on a catch-up's results and on those saved before it existed. */
+  turn?: number
 }
 
 export type Ledger = {

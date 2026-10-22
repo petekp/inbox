@@ -405,13 +405,18 @@ var FILLER = new Set([
 function keyWords(text) {
   return new Set(words(text).filter((w) => /\p{N}/u.test(w) || w.length > 2 && !FILLER.has(w)));
 }
+function numbersOf(words2) {
+  return [...words2].filter((w) => /\p{N}/u.test(w)).sort().join(" ");
+}
+function hasNumberConflict(x, y) {
+  return numbersOf(x) !== "" && numbersOf(y) !== "" && numbersOf(x) !== numbersOf(y);
+}
 function restates(a, b) {
   const x = keyWords(a);
   const y = keyWords(b);
   const fewer = Math.min(x.size, y.size);
   const shared = [...x].filter((w) => y.has(w)).length;
-  const numbers = (words2) => [...words2].filter((w) => /\p{N}/u.test(w)).sort().join(" ");
-  if (numbers(x) !== "" && numbers(y) !== "" && numbers(x) !== numbers(y))
+  if (hasNumberConflict(x, y))
     return false;
   return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b);
 }
@@ -452,10 +457,10 @@ function closeByAgent(host, ledger, id, how, now) {
     return { ledger: closeFinding(ledger, id, closing, now), closed: "finding" };
   return { ledger, closed: null };
 }
-function closeItem(ledger, id, closing, now) {
+function closeItem(ledger, id, closing, now, turn = ledger.turn) {
   const items = ledger.items.filter((i) => i.id === id);
   const records = items.map((i) => closedRecord(i, closing, now));
-  const answers = closing.how === "answered" ? items.flatMap((i) => answeredMilestone(i, closing.outcome, now) ?? []) : [];
+  const answers = closing.how === "answered" ? items.flatMap((i) => answeredMilestone(i, closing.outcome, now) ?? []).map((m) => ({ ...m, turn })) : [];
   return reopenAskedFindings({
     ...ledger,
     milestones: addMilestones(ledger.milestones, answers),
@@ -645,7 +650,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now, isCatchUp = false) {
     ];
   });
   const results = u.done.slice(isCatchUp ? -DONE_PER_CATCH_UP : -DONE_PER_UPDATE).map((text) => doneMilestone(text, now));
-  const written = [...answers, ...fixes, ...results].map((m, n) => ({ ...m, at: isCatchUp ? null : now + n }));
+  const written = [...answers, ...fixes, ...results].map((m, n) => isCatchUp ? { ...m, at: null } : { ...m, at: now + n, turn });
   const milestones = addMilestones(ledger.milestones, written);
   const prev = ledger.card;
   const card = {
@@ -1765,7 +1770,7 @@ function pressed(ledger, last, p, ctx) {
   if (!item)
     return p.action === "type" ? replyToClosed(ledger, p, record("handoff")) : stale;
   const answered = (answer) => ({
-    ledger: closeItem(ledger, item.id, { how: "answered", outcome: answer }, ctx.now),
+    ledger: closeItem(ledger, item.id, { how: "answered", outcome: answer }, ctx.now, ledger.turn + 1),
     last: record("mark"),
     effects: [{ kind: "send", text: messages.answer(item, answer), by: { id: item.id, action: "answer" } }]
   });

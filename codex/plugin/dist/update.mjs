@@ -369,13 +369,18 @@ var FILLER = /* @__PURE__ */ new Set([
 function keyWords(text) {
   return new Set(words(text).filter((w) => new RegExp("\\p{N}", "u").test(w) || w.length > 2 && !FILLER.has(w)));
 }
+function numbersOf(words2) {
+  return [...words2].filter((w) => new RegExp("\\p{N}", "u").test(w)).sort().join(" ");
+}
+function hasNumberConflict(x, y) {
+  return numbersOf(x) !== "" && numbersOf(y) !== "" && numbersOf(x) !== numbersOf(y);
+}
 function restates(a, b) {
   const x = keyWords(a);
   const y = keyWords(b);
   const fewer = Math.min(x.size, y.size);
   const shared = [...x].filter((w) => y.has(w)).length;
-  const numbers = (words2) => [...words2].filter((w) => new RegExp("\\p{N}", "u").test(w)).sort().join(" ");
-  if (numbers(x) !== "" && numbers(y) !== "" && numbers(x) !== numbers(y)) return false;
+  if (hasNumberConflict(x, y)) return false;
   return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b);
 }
 function sameAsk(a, b) {
@@ -581,7 +586,9 @@ function applyUpdate(ledger, u, now, turn, promptAt = now, isCatchUp = false) {
     ];
   });
   const results = u.done.slice(isCatchUp ? -DONE_PER_CATCH_UP : -DONE_PER_UPDATE).map((text) => doneMilestone(text, now));
-  const written = [...answers, ...fixes, ...results].map((m, n) => ({ ...m, at: isCatchUp ? null : now + n }));
+  const written = [...answers, ...fixes, ...results].map(
+    (m, n) => isCatchUp ? { ...m, at: null } : { ...m, at: now + n, turn }
+  );
   const milestones = addMilestones(ledger.milestones, written);
   const prev = ledger.card;
   const card = {

@@ -148,6 +148,12 @@ An answered or fixed milestone goes away if its row reopens, since the result no
 - `hasLedger` counts milestones. Today it checks only the card, items and findings, so a parent whose only record is its results reads as empty, and Codex and omp skip the fork copy. A test covers a parent with milestones and no card.
 - `isUnseen` counts milestones too, since a session with recorded results has been seen. A test covers it.
 
+**Duplicate results.** The model sometimes writes a DONE line for the work behind an answer or a fix, which the inbox already lists. Wording does not stop it reliably, so the list merges them when it is read.
+
+- A milestone has an optional `turn`, the conversation turn it was made in. `applyUpdate` stamps its exchange's turn. `closeItem` stamps `ledger.turn`, and a button press passes `ledger.turn + 1`, since the turn that press starts is counted after it. A catch-up's results get none, and neither do milestones saved before `turn` existed. No upgrade is needed: those never merge.
+- `listResults` in `hooks/ledger.ts` returns the results newest first. A done milestone folds into an answered or fixed one of the same turn when their words overlap (two shared key words, or one when the line has at most two), unless they name different numbers. One answered or fixed result may take several DONE lines, kept in `merged`. Nothing draws it yet: `progressPage` calls it in step 2.
+- The stored DONE milestones, `card.done` and `<listed>` are unchanged.
+
 **Catch-up count.** A catch-up may write up to 6 DONE lines. An update after one reply may write up to 3. Reason: when you come back to a long conversation, 3 results are not enough to show where it stands.
 
 - The count goes in the prompt, not in `systemText`. `buildPrompt` states 3. `CATCH_UP`, the text both catch-up prompts share, states 6. `systemText`'s DONE rule says to write no more DONE lines than the prompt allows.

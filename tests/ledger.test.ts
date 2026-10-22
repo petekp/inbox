@@ -19,6 +19,7 @@ import {
   closeFinding,
   closeItem,
   closedState,
+  listResults,
   parseReply,
   reopenFinding,
   reopenItem,
@@ -1042,6 +1043,95 @@ describe('milestones', () => {
     expect(over.milestones.map(m => m.text)).toContain('Old result 1')
     expect(over.milestones.map(m => m.text)).toContain('Result 0')
     expect(over.milestones.at(-1)?.text).toBe('The newest result')
+  })
+})
+
+describe('listResults', () => {
+  const asked = applyUpdate(
+    { ...EMPTY, turn: 3 },
+    parseReply('GOAL: g\nNEW: decide | 1 | Which license should the CLI use? | MIT / Apache-2.0 | MIT')!,
+    1,
+    3,
+  )
+  const withFinding = addFinding(asked, {
+    kind: 'issue',
+    title: 'README has no install steps',
+    detail: '',
+    path: null,
+    at: 1,
+  }).ledger
+  const update = (ledger: typeof EMPTY, reply: string, now: number) =>
+    applyUpdate(ledger, parseReply(reply)!, now, ledger.turn, now)
+
+  test('a DONE line about the work behind an answer merges into the answer', () => {
+    const ledger = update(withFinding, 'GOAL: g\nCLOSED: i1 | MIT\nDONE: Added MIT license and package entry', 5)
+
+    expect(listResults(ledger.milestones).map(r => [r.source, r.merged])).toEqual([
+      ['answered', ['Added MIT license and package entry']],
+    ])
+  })
+
+  test('DONE lines about a fix merge into the fixed result, and an unrelated one stays', () => {
+    const ledger = update(
+      withFinding,
+      'GOAL: g\nFIXED: f2 | Added Install section\nDONE: Wrote the README install steps\nDONE: Added install steps to README\nDONE: Bumped the lockfile',
+      5,
+    )
+
+    expect(listResults(ledger.milestones).map(r => [r.source, r.text, r.merged])).toEqual([
+      ['done', 'Bumped the lockfile', []],
+      ['fixed', 'README has no install steps', ['Wrote the README install steps', 'Added install steps to README']],
+    ])
+  })
+
+  test('a button-press answer merges with the DONE line of the turn that follows it', () => {
+    const r = applyPress(
+      asked,
+      undefined,
+      { action: 'answer', id: 'i1', option: 'MIT' },
+      {
+        now: 5,
+        turnsStarted: 3,
+        extraSteps: [],
+      },
+    )
+    if ('stale' in r) throw new Error('stale')
+    const next = { ...r.ledger, turn: r.ledger.turn + 1 }
+    const ledger = update(next, 'GOAL: g\nDONE: Added MIT license file', 6)
+
+    expect(listResults(ledger.milestones).map(r => [r.source, r.merged])).toEqual([
+      ['answered', ['Added MIT license file']],
+    ])
+  })
+
+  test('results of different turns, results with no turn and results with other numbers never merge', () => {
+    const answered = closeItem(asked, 'i1', { how: 'answered', outcome: 'MIT' }, 5)
+    const later = update({ ...answered, turn: 4 }, 'GOAL: g\nDONE: Added MIT license file', 6)
+    expect(listResults(later.milestones).map(r => r.source)).toEqual(['done', 'answered'])
+
+    const untimed = { ...answered, milestones: answered.milestones.map(({ turn: _turn, ...m }) => m) }
+    const same = update(untimed, 'GOAL: g\nDONE: Added MIT license file', 6)
+    expect(listResults(same.milestones).map(r => r.source)).toEqual(['done', 'answered'])
+
+    const numbered = applyUpdate(
+      { ...EMPTY, turn: 3 },
+      parseReply('GOAL: g\nNEW: decide | - | Which port for server 8080? | 8080 / 9090 | 8080')!,
+      1,
+      3,
+    )
+    const port = update(
+      closeItem(numbered, 'i1', { how: 'answered', outcome: '8080' }, 5),
+      'GOAL: g\nDONE: Opened port 9090 for server',
+      6,
+    )
+    expect(listResults(port.milestones).map(r => r.source)).toEqual(['done', 'answered'])
+  })
+
+  test('a catch-up result has no turn and stays apart', () => {
+    const answered = closeItem(asked, 'i1', { how: 'answered', outcome: 'MIT' }, 5)
+    const caught = applyUpdate(answered, parseReply('GOAL: g\nDONE: Added MIT license file')!, 6, 3, 6, true)
+
+    expect(listResults(caught.milestones).map(r => r.source)).toEqual(['done', 'answered'])
   })
 })
 
