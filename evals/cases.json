@@ -2111,7 +2111,8 @@
         "open": "i5"
       },
       {
-        "new": "expire|minutes|hour"
+        "new": "expire|minutes|hour",
+        "kind": "question"
       }
     ]
   },

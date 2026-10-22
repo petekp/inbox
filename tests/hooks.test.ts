@@ -3929,23 +3929,10 @@ test('a forked conversation keeps the parent’s findings and closed records, an
   expect(await contextOf()).toContain('- issue: Retry loop never backs off (close id: f1)')
 })
 
-function showProgressAtNextTabWrite(on: On) {
-  let isArmed = false
-  on('state.set', { plugin: 'inbox', key: 'page' } as const, ($, e, next) => {
-    const write = isArmed ? { ...e, value: 'progress' as const } : e
-    isArmed = false
-    return next(write)
-  })
-  return () => {
-    isArmed = true
-  }
-}
-
 test('the Progress page shows the goal, the Now line and the results in place of rows, leaves the row keys idle, and a row tab shows its rows again', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown: true, isFocused: true, isPlaced: true }] }))
-  const showProgress = showProgressAtNextTabWrite(on)
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
@@ -3954,8 +3941,7 @@ test('the Progress page shows the goal, the Now line and the results in place of
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
 
-  showProgress()
-  await pane.press({ key: 'tab-key-needsYou' })
+  await pane.press({ key: 'tab-key-progress' })
   expect((await pane.find({ key: 'progress-goal' }))?.text).toBe('Add a greeting CLI')
   expect((await pane.find({ key: 'progress-now' }))?.text).toBe('Now\u2007·\u2002Waiting on two choices')
   expect(await pane.find({ text: /^Plan written$/ })).toBeDefined()
@@ -3988,12 +3974,10 @@ test('the Progress page shows the goal, the Now line and the results in place of
 test('the Progress page says nothing is here yet before the session has a goal or a result', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  const showProgress = showProgressAtNextTabWrite(on)
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   const terminal = await $.ui.mount(PANE)
-  showProgress()
-  await terminal.press({ key: 'tab-key-needsYou' })
+  await terminal.press({ key: 'tab-key-progress' })
   expect(await terminal.find({ text: 'Nothing here yet' })).toBeDefined()
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await desktop.find({ text: 'Nothing here yet' })).toBeDefined()
@@ -4003,7 +3987,6 @@ test('at 34 desktop columns the tabs drop their counts and frame only the shown 
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   surfaces = ['desktop']
-  const showProgress = showProgressAtNextTabWrite(on)
 
   await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
@@ -4029,9 +4012,9 @@ test('at 34 desktop columns the tabs drop their counts and frame only the shown 
   await pane.redraw({ ...PANE.props, bodyColumns: 69 })
   expect((await tabBar()).isEachFramed).toBe(true)
 
-  showProgress()
   const { tabs, gap } = await tabBar()
-  await pane.pointer({ type: 'down', x: tabs[0]!.width + gap, y: 1, button: 'left', in: 'tabs' })
+  const progressX = tabs.slice(0, 3).reduce((sum, t) => sum + t.width + gap, 0)
+  await pane.pointer({ type: 'down', x: progressX, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
   expect((await tabBar()).shown).toBe('progress')
   expect((await pane.find({ key: 'progress-goal' }))?.text).toBe('Add a greeting CLI')
