@@ -1154,7 +1154,7 @@ for (const failure of ['none', 'checkpoint', 'completion', 'queue', 'lookup'] as
           return '/codex'
         },
         exec: async argv => {
-          if (!argv.includes('queue')) return { code: 1, stdout: '', stderr: 'No external commands' }
+          if (!argv.includes('queue')) return { code: -1, stdout: '', stderr: 'No external commands' }
           queues++
           atDispatch = await readState(dir, 's1')
           if (failure === 'completion') mkdirSync(temporary)
