@@ -3919,7 +3919,7 @@ test('the Progress page says nothing is here yet before the session has a goal o
   expect(await desktop.find({ text: 'Nothing here yet' })).toBeDefined()
 })
 
-test('at the narrowest desktop pane the tabs keep their counts and frame only the shown tab, and the Progress page draws there', async ($, on) => {
+test('at 34 desktop columns the tabs keep their counts and frame only the shown tab, and the Progress page draws there', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   surfaces = ['desktop']

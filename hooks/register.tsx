@@ -3864,7 +3864,7 @@ export const register: Register = on => {
       )
     }
 
-    const isPrStatus = tab === 'prs' && prViews.length > 0
+    const isPrStatus = shownTab === 'prs' && prViews.length > 0
     const { isUpdating, error } = view.status
     const status = isPrStatus ? (prState.isFetching ? 'Refreshing PRs' : '') : isUpdating ? 'Updating…' : ''
 
@@ -4872,14 +4872,22 @@ export const register: Register = on => {
                 ),
                 ...(earlier
                   ? [
-                      treeRow(
-                        'last',
-                        null,
-                        <Text color={pal.muted}>{earlier}</Text>,
-                        'progress-earlier',
-                        0,
-                        markColumns.textAt,
-                      ),
+                      look === 'desktop'
+                        ? desktopFrame({
+                            key: 'progress-earlier',
+                            indent: DESKTOP_MARK_CELLS,
+                            isMarkHung: false,
+                            padY: space.rowPad / 2,
+                            children: <Text color={pal.muted}>{earlier}</Text>,
+                          })
+                        : treeRow(
+                            'last',
+                            null,
+                            <Text color={pal.muted}>{earlier}</Text>,
+                            'progress-earlier',
+                            0,
+                            markColumns.textAt,
+                          ),
                     ]
                   : []),
               ]),
