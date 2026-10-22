@@ -3223,7 +3223,10 @@ async function wakeForDone(host) {
         continue;
       const previous = lastActions[closed.id];
       const last = previous?.kind === "mark" && previous.action === "done" && previous.at === closed.at ? previous : recordPress("mark", "done", "Done", { now: closed.at, turnsStarted: s.presence.turnsStarted });
-      lastActions[closed.id] = { ...last, delivery: { state: "unconfirmed", message: wake.text, id: deliveryId } };
+      lastActions[closed.id] = {
+        ...last,
+        delivery: { state: host.isDeliveryHeldUntilRun ? "queued" : "unconfirmed", message: wake.text, id: deliveryId }
+      };
     }
     const next = {
       ...s,

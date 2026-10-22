@@ -44,15 +44,10 @@ let sent: string[] = []
 
 let ran: string[][] = []
 
-let pendingSubmit: (() => void) | undefined
-
 let submitAnswer:
-  | 'enter'
-  | 'hold'
-  | 'pending'
-  | { drop: string; beforeDrop?: () => Promise<void> }
-  | { rewrite: string; hold?: boolean } = 'enter'
-let held: { text: string; origin: PromptOrigin }[] = []
+  'enter' | 'hold' | { drop: string; beforeDrop?: () => Promise<void> } | { rewrite: string; hold?: boolean } = 'enter'
+let held: { text: string; origin: PromptOrigin; release: () => void }[] = []
+let inFlight: Promise<unknown>[] = []
 let promptRows = 0
 
 let toolVerdict: 'allow' | 'ask' = 'allow'
@@ -135,10 +130,25 @@ async function storePrompt($: Engine, prompt: { text: string; origin: PromptOrig
   await $.session.append(row)
 }
 
+async function storeHeld($: Engine, prompt: (typeof held)[number]) {
+  await storePrompt($, prompt)
+  prompt.release()
+}
+
 async function arrive($: Engine) {
   const prompts = held
   held = []
-  for (const p of prompts) await storePrompt($, p)
+  for (const p of prompts) await storeHeld($, p)
+  await Promise.all(inFlight)
+  inFlight = []
+}
+
+async function arriveFirst($: Engine) {
+  await storeHeld($, held.shift()!)
+}
+
+async function holdUntilStored(prompt: { text: string; origin: PromptOrigin }) {
+  await new Promise<void>(release => held.push({ ...prompt, release }))
 }
 
 async function runStep($: Engine, index: number) {
@@ -150,8 +160,8 @@ async function runStep($: Engine, index: number) {
 function world($: Engine, on: On, prompts: string[], vars: Record<string, string> = {}) {
   sent = []
   submitAnswer = 'enter'
-  pendingSubmit = undefined
   held = []
+  inFlight = []
   ran = []
   toolVerdict = 'allow'
   stepAnswers = []
@@ -259,14 +269,11 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
         return { drop: submitAnswer.drop }
       }
       const rewritten = { text: submitAnswer.rewrite, origin: e.origin }
-      if (submitAnswer.hold) held.push(rewritten)
+      if (submitAnswer.hold) await holdUntilStored(rewritten)
       else await storePrompt($, rewritten)
       return { text: rewritten.text, context: e.context }
     }
-    if (submitAnswer === 'pending') {
-      await new Promise<void>(resolve => (pendingSubmit = resolve))
-      await storePrompt($, { text: e.text, origin: e.origin })
-    } else if (submitAnswer === 'hold') held.push({ text: e.text, origin: e.origin })
+    if (submitAnswer === 'hold') await holdUntilStored({ text: e.text, origin: e.origin })
     else await storePrompt($, { text: e.text, origin: e.origin })
 
     return { text: e.text, context: e.context }
@@ -513,6 +520,36 @@ test('Done on a task Claude just left tells Claude once Undo ends, and a task fr
   await $.prompt.submit({ text: 'done, go ahead', wait: false, origin: { kind: 'composer' } })
   await clock.advance(SETTLED_MS)
   expect(sent).toHaveLength(1)
+})
+
+test('a Done message that waits for its prompt to run reads Queued, not Delivery unconfirmed', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  ledgerReply = 'NEW: do | - | Sign in to npm | - | -'
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'publish it', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'publish it', turnId: 't1' })
+  await $.turn.complete({
+    answer: 'Sign in to npm, then I publish.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'select-i1' })
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'done-i1' })
+  await clock.settle()
+
+  submitAnswer = 'hold'
+  await clock.advance(SETTLED_MS)
+  await clock.advance(QUEUED_AFTER_MS)
+  expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeUndefined()
+  await pane.press({ key: 'fold-task' })
+  expect(await pane.find({ text: /Queued/ })).toBeDefined()
+  await arrive($)
 })
 
 for (const switchAt of [null, 'before-submit', 'during-submit'] as const)
@@ -1450,14 +1487,13 @@ test('a press whose submit stays pending through a turn reads Queued, not Delive
   await clock.settle()
   const pane = await $.ui.mount(PANE)
 
-  submitAnswer = 'pending'
-  const pressed = pane.press({ key: 'explain-i1-key' })
+  submitAnswer = 'hold'
+  inFlight.push(pane.press({ key: 'explain-i1-key' }))
   await clock.advance(QUEUED_AFTER_MS)
   expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeUndefined()
   expect(await pane.find({ text: /Queued:\sExplain$/ })).toBeDefined()
 
-  pendingSubmit?.()
-  await pressed
+  await arrive($)
   await clock.settle()
   expect(await pane.find({ text: /Queued/ })).toBeUndefined()
   expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeUndefined()
@@ -1488,7 +1524,7 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
 
   submitAnswer = 'hold'
-  await pane.press({ key: 'explain-i1-key' })
+  inFlight.push(pane.press({ key: 'explain-i1-key' }))
   await clock.settle()
   expect(await pane.find({ text: /Queued/ })).toBeUndefined()
   await clock.advance(QUEUED_AFTER_MS)
@@ -1496,7 +1532,7 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   await pane.press({ key: 'select-i2' })
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
-  await pane.input({ key: 'type-i2', text: 'yes' })
+  inFlight.push(pane.input({ key: 'type-i2', text: 'yes' }))
   await clock.settle()
   await clock.advance(QUEUED_AFTER_MS)
   expect(await pane.find({ text: /Queued:\sReply/ })).toBeDefined()
@@ -1553,19 +1589,19 @@ test('an older identical Claude prompt leaves the newer press unconfirmed until 
   await clock.settle()
   const pane = await $.ui.mount(PANE)
   submitAnswer = 'hold'
-  await pane.press({ key: 'explain-i1-key' })
+  inFlight.push(pane.press({ key: 'explain-i1-key' }))
   await clock.advance(PRESS_GUARD_MS)
-  await pane.press({ key: 'explain-i1-key' })
+  inFlight.push(pane.press({ key: 'explain-i1-key' }))
   await clock.settle()
   expect(held).toHaveLength(2)
   expect(held[0]?.text).toBe(held[1]?.text)
 
-  await storePrompt($, held.shift()!)
+  await arriveFirst($)
   await clock.settle()
   expect(await pane.find({ text: /Delivery\s+unconfirmed:\s+Explain/ })).toBeDefined()
   expect(await pane.find({ text: /✓\sExplained/ })).toBeUndefined()
 
-  await storePrompt($, held.shift()!)
+  await arriveFirst($)
   await clock.settle()
   expect(await pane.find({ text: /Explaining…/ })).toBeDefined()
   expect(await pane.find({ text: /Delivery unconfirmed/ })).toBeUndefined()
@@ -1632,9 +1668,9 @@ test('a refused newer Claude send replaces ambiguity with Not sent after the old
   await clock.settle()
   const pane = await $.ui.mount(PANE)
   submitAnswer = 'hold'
-  await pane.press({ key: 'explain-i1-key' })
+  inFlight.push(pane.press({ key: 'explain-i1-key' }))
   await clock.advance(PRESS_GUARD_MS)
-  submitAnswer = { drop: 'a hook refused it', beforeDrop: () => storePrompt($, held.shift()!) }
+  submitAnswer = { drop: 'a hook refused it', beforeDrop: () => arriveFirst($) }
   await pane.press({ key: 'explain-i1-key' })
   await clock.settle()
 
@@ -1665,7 +1701,7 @@ test('a uniquely rewritten Claude prompt is confirmed when its row enters before
   expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeUndefined()
 })
 
-test('two Claude sends rewritten to the same text keep the second unconfirmed after one arrival', async ($, on) => {
+test('two Claude sends rewritten to the same text are each confirmed by their own row when they run in turn', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
 
@@ -1681,16 +1717,19 @@ test('two Claude sends rewritten to the same text keep the second unconfirmed af
   await clock.settle()
   const pane = await $.ui.mount(PANE)
   submitAnswer = { rewrite: 'Same rewritten prompt', hold: true }
-  await pane.press({ key: 'explain-i1-key' })
+  inFlight.push(pane.press({ key: 'explain-i1-key' }))
   await clock.advance(PRESS_GUARD_MS)
-  submitAnswer = { rewrite: 'Same rewritten prompt' }
-  await pane.press({ key: 'explain-i1-key' })
+  submitAnswer = { rewrite: 'Same rewritten prompt', hold: true }
+  inFlight.push(pane.press({ key: 'explain-i1-key' }))
   await clock.settle()
 
-  expect(await pane.find({ text: /Delivery\s+unconfirmed:\s+Explain/ })).toBeDefined()
+  await arriveFirst($)
+  await clock.settle()
+  expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeUndefined()
   await arrive($)
   await clock.settle()
   expect(await pane.find({ text: /Explaining…/ })).toBeDefined()
+  expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeUndefined()
 })
 
 test('an older Claude send with no saved receipt cannot acknowledge a new identical press after reload', async ($, on) => {
@@ -1715,21 +1754,21 @@ test('an older Claude send with no saved receipt cannot acknowledge a new identi
   await clock.settle()
   const pane = await $.ui.mount(PANE)
   submitAnswer = 'hold'
-  await pane.press({ key: 'explain-i1-key' })
+  inFlight.push(pane.press({ key: 'explain-i1-key' }))
   await clock.settle()
   clearSent = true
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.advance(PRESS_GUARD_MS)
-  await pane.press({ key: 'explain-i1-key' })
+  inFlight.push(pane.press({ key: 'explain-i1-key' }))
   await clock.settle()
   expect(held).toHaveLength(2)
 
-  await storePrompt($, held.shift()!)
+  await arriveFirst($)
   await clock.settle()
   expect(await pane.find({ text: /Delivery\s+unconfirmed:\s+Explain/ })).toBeDefined()
   expect(await pane.find({ text: /✓\sExplained/ })).toBeUndefined()
 
-  await storePrompt($, held.shift()!)
+  await arriveFirst($)
   await clock.settle()
   expect(await pane.find({ text: /Delivery\s+unconfirmed:\s+Explain/ })).toBeDefined()
 })
@@ -1772,7 +1811,7 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   expect(await band.find({ text: /Findings 1/ })).toBeDefined()
   await pane.press({ key: 'tab-needsYou' })
   submitAnswer = 'hold'
-  await pane.press({ key: 'explain-i1-key' })
+  inFlight.push(pane.press({ key: 'explain-i1-key' }))
   await clock.settle()
   await clock.advance(QUEUED_AFTER_MS)
   expect(await pane.find({ text: /^\u2007·\sQueued:\sExplain/ })).toBeDefined()
@@ -1810,6 +1849,7 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   await pane.press({ key: 'fold-issue' })
   expect(await pane.find({ text: /^README is stale$/ })).toBeDefined()
   expect(await pane.find({ text: /^Closed by Claude: fixed$/ })).toBeDefined()
+  await arrive($)
 })
 
 test('Dismiss settles a question in place with Undo, which brings it back open and selected, and a second close reaches Claude too', async ($, on) => {
@@ -2064,16 +2104,16 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   expect(await pane.find({ text: 'Not sent: a hook refused it' })).toBeDefined()
   expect((await pane.find({ key: 'address-T1-key' }))?.props.label).toBe('Address')
   submitAnswer = 'hold'
-  await pane.press({ key: 'retry-T1' })
+  inFlight.push(pane.press({ key: 'retry-T1' }))
   await clock.settle()
   await clock.advance(QUEUED_AFTER_MS)
   expect(await pane.find({ text: /^\u2007·\sQueued:\sAddress$/ })).toBeDefined()
   expect(await pane.find({ key: 'address-T1-key' })).toBeUndefined()
   await pane.press({ key: 'title-acme/greet#12 thread T1' })
   await clock.advance(PRESS_GUARD_MS)
-  await pane.press({ key: 'address-T1-key' })
+  inFlight.push(pane.press({ key: 'address-T1-key' }))
   await clock.settle()
-  await storePrompt($, held.shift()!)
+  await arriveFirst($)
   await clock.settle()
   expect(await pane.find({ text: /Delivery\s+unconfirmed:\s+Address/ })).toBeDefined()
   expect((await pane.find({ key: 'select-acme/greet#12 thread T1' }))?.props.label).toBe('◦')
