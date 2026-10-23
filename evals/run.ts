@@ -64,6 +64,7 @@ type Check =
   /** The DONE lines this exchange added to the ledger's results, counted after the code's cap. */
   | { results: number }
   | { resultsAtLeast: number }
+  | { resultsAtMost: number }
   | { result: string }
   | { noResult: string }
 
@@ -239,6 +240,8 @@ function failures(before: Ledger, after: Ledger, checks: Check[], masked: string
     else if ('results' in c && results.length !== c.results) out.push(`${results.length} results: ${listed()}`)
     else if ('resultsAtLeast' in c && results.length < c.resultsAtLeast)
       out.push(`${results.length} results, not ${c.resultsAtLeast} or more: ${listed()}`)
+    else if ('resultsAtMost' in c && results.length > c.resultsAtMost)
+      out.push(`${results.length} results, not ${c.resultsAtMost} or fewer: ${listed()}`)
     else if ('result' in c && !results.some(m => has(c.result, m.text)))
       out.push(`no result like /${c.result}/: ${listed()}`)
     else if ('noResult' in c && results.some(m => has(c.noResult, m.text)))

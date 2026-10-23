@@ -2744,8 +2744,8 @@
     ]
   },
   {
-    "name": "fixed-and-answered-add-no-result",
-    "about": "A reply that fixes an open finding while the person answers an open item gives a FIXED line and a CLOSED line, and no DONE line: the inbox lists both itself.",
+    "name": "fixed-finding-not-repeated-as-result",
+    "about": "A reply that fixes an open finding while the person answers an open item gives a FIXED line and a CLOSED line. The answered item records the choice, so one result may record that the answered work was done. A result that repeats the fixed finding is a repeat: the inbox lists the fix itself.",
     "ledger": {
       "turn": 7,
       "nextId": 4,
@@ -2795,7 +2795,10 @@
         "closed": "f3"
       },
       {
-        "results": 0
+        "resultsAtMost": 1
+      },
+      {
+        "noResult": "readme|install"
       }
     ]
   }
