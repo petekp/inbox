@@ -57,7 +57,9 @@ var EMPTY_OVERVIEW = {
   since: [],
   workstreams: [],
   earlier: [],
-  lastLookAt: null
+  lastLookAt: null,
+  look: null,
+  seen: { since: [], course: "" }
 };
 var LIST_KEYS = {
   QUEUE: "queue",
@@ -143,12 +145,20 @@ function parseOverview(text) {
 }
 function applyOverview(last, answer) {
   if (answer.kind === "unchanged") return last;
-  const earlier = last?.earlier ?? [];
-  const lastLookAt = last?.lastLookAt ?? null;
+  const kept = {
+    earlier: last?.earlier ?? [],
+    lastLookAt: last?.lastLookAt ?? null,
+    look: last?.look ?? null,
+    seen: last?.seen ?? EMPTY_OVERVIEW.seen
+  };
+  const since = answer.overview.since.filter((i) => !kept.seen.since.includes(itemKey(i)));
+  const isSeenCourse = kept.seen.course !== "" && answer.overview.course === kept.seen.course;
+  const course = isSeenCourse ? "" : answer.overview.course;
+  const written = { ...answer.overview, since };
   if (!answer.isNewTopic || last === null || last.headline === "")
-    return { ...answer.overview, course: answer.overview.course || last?.course || "", earlier, lastLookAt };
+    return { ...written, ...kept, course: course || last?.course || "" };
   const left = answer.folded || last.headline;
-  return { ...answer.overview, course: "", earlier: [...earlier, left].slice(-EARLIER_KEPT), lastLookAt };
+  return { ...written, ...kept, course: "", earlier: [...kept.earlier, left].slice(-EARLIER_KEPT) };
 }
 function isItem(value) {
   const item = value;
@@ -174,8 +184,26 @@ function upgradeOverview(saved) {
     since: itemsOf(o.since),
     workstreams: itemsOf(o.workstreams),
     earlier: Array.isArray(o.earlier) ? o.earlier.filter((e) => typeof e === "string") : [],
-    lastLookAt: typeof o.lastLookAt === "number" ? o.lastLookAt : null
+    lastLookAt: typeof o.lastLookAt === "number" ? o.lastLookAt : null,
+    look: lookOf(o.look),
+    seen: seenOf(o.seen)
   };
+}
+function lookOf(saved) {
+  const l = saved;
+  if (typeof l !== "object" || l === null || typeof l.startedAt !== "number") return null;
+  const away = AWAYS.find((a) => a === l.away);
+  return away === void 0 ? null : { startedAt: l.startedAt, away, since: strings(l.since), course: typeof l.course === "string" ? l.course : "" };
+}
+function seenOf(saved) {
+  const s = saved;
+  return { since: strings(s?.since), course: typeof s?.course === "string" ? s.course : "" };
+}
+function strings(value) {
+  return Array.isArray(value) ? value.filter((v) => typeof v === "string") : [];
+}
+function itemKey(i) {
+  return `${i.status}|${i.text}`;
 }
 function itemLine(key, i) {
   return `${key}: ${i.status} | ${i.text}${i.detail ? ` | ${i.detail}` : ""}`;
@@ -204,6 +232,7 @@ function sinceText(o) {
 }
 var HERE_MS = 5 * 6e4;
 var SHORT_MS = 60 * 6e4;
+var AWAYS = ["here", "short", "long"];
 
 // ../hooks/text.ts
 var NL2 = "\n";
@@ -894,7 +923,7 @@ STREAM: only in a coordinator session, in the same form as the other lists: one 
 Status is one of: working, queued, waits-on-you, waits-on-other, done, ruled-out, problem, unknown. Use waits-on-you when the agent cannot go on until the person acts, and waits-on-other for something else, such as a build. Use ruled-out for an approach tried or considered and dropped, and put the reason in the detail.
 
 Rules:
-- Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed.
+- Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed. The next rule wins over this one: when the guide as it was already repeats a fact in two lists, remove the repeat.
 - Do not write a question or task the agent put to the person, and do not say what the choice is. Say only that the work waits on the person, and stop.
 - Leave out that something was committed, pushed, merged or tested, in every line. Say what now works or is fixed.
 - Say each fact once, in the list that fits it best. Work that finished stays in QUEUE as done. WORKS holds only what works that QUEUE does not already name. What a stream is doing, and what it finished, stays on its STREAM line and is not written again in QUEUE, WORKS or OPEN. NEXT holds only what the queue does not already name. SINCE may repeat the other lists, since it says what changed.

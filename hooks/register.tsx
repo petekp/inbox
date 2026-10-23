@@ -57,7 +57,8 @@ import {
   emptySession,
   endTurn,
   forkedFrom,
-  lookedAway,
+  lookEndedOn,
+  lookStartedOn,
   noteActivity as noteTurnActivity,
   pressOn,
   recordPrompt,
@@ -1126,8 +1127,23 @@ async function runTool($: EngineInterface, tool: 'record' | 'close', input: Reco
  * Opens the pane, or raises it, asking for the keyboard. The surface grants
  * that only while the prompt holds the keys over an empty composer.
  */
-function openPane($: EngineInterface) {
-  return $.ui.open({ id: PANE, title: 'Inbox', focus: true, closeOnEscape: true })
+async function openPane($: EngineInterface) {
+  const opened = await $.ui.open({ id: PANE, title: 'Inbox', focus: true, closeOnEscape: true })
+  void syncLook($, true)
+
+  return opened
+}
+
+/**
+ * Starts a look while the Overview shows in the pane, and ends it when it stops showing there. Both are
+ * idempotent, so every place that opens, closes or changes the pane's page can call it. The sample leaves the
+ * real session's look alone.
+ */
+async function syncLook($: EngineInterface, isOpen?: boolean) {
+  if (await read($, DEMO)) return
+  const [page, isPaneOpen, now] = await Promise.all([read($, PAGE), isOpen ?? isPaneShown($), $.clock.now()])
+  const isShown = isPaneOpen && page === 'overview'
+  await commit($, currentOwner(), s => (isShown ? lookStartedOn(s, now) : lookEndedOn(s, now))).catch(() => undefined)
 }
 
 async function openTopRow($: EngineInterface) {
@@ -1156,6 +1172,7 @@ async function openInbox($: EngineInterface) {
   if (view.needsYou.count > 0)
     await Promise.all([update($, TAB, () => 'needsYou' as const), update($, PAGE, () => null)])
   else if ((await read($, TAB)) === 'prs') await findPrs($)
+  void syncLook($)
   await followNewRows($, true)
   await openTopRow($)
 }
@@ -1207,16 +1224,14 @@ async function readRowTab($: EngineInterface): Promise<Tab | null> {
 
 async function showTab($: EngineInterface, tab: ShownTab) {
   cancelUndoScroll()
-  if (tab !== 'overview' && (await read($, PAGE)) === 'overview') {
-    const now = await $.clock.now()
-    void commit($, currentOwner(), s => lookedAway(s, now)).catch(() => undefined)
-  }
   if (!isRowTab(tab)) {
     await update($, PAGE, () => tab)
+    void syncLook($)
     return
   }
   if (tab === 'prs') await findPrs($)
   await Promise.all([update($, TAB, () => tab), update($, PAGE, () => null)])
+  void syncLook($)
   await scrollToOpenRow($, tab)
 }
 
@@ -2186,6 +2201,7 @@ async function setDemo($: EngineInterface, isShown: boolean, isRecording = false
     update($, DEMO_RECORDING, () => isShown && isRecording),
   ])
   await Promise.all([update($, SELECTION, () => NO_SELECTION), update($, TYPING, () => null)])
+  void syncLook($)
   if (isShown) redrawWhileLeaving($, now + SETTLED_MS)
   if ((await read($, TAB)) === 'prs') await findPrs($)
   await followNewRows($, true)
@@ -2807,6 +2823,7 @@ export const register: Register = on => {
   on('ui.close', { id: PANE }, async ($, e, next) => {
     cancelUndoScroll()
     const r = await next(e)
+    void syncLook($, false)
     await update($, TYPING, () => null)
     await update($, FOLD_HOVER, () => null)
 

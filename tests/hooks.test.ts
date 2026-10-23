@@ -4069,7 +4069,14 @@ test('the Overview page shows the headline, the status and the queue in place of
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
 
+  const lookOf = () => {
+    const saved = [...stored].find(([k]) => k.startsWith('s:'))
+    return saved && JSON.parse(saved[1]).ledger.overview.look
+  }
+  expect(lookOf()).toBeNull()
   await pane.press({ key: 'tab-key-overview' })
+  await clock.settle()
+  expect(lookOf()).not.toBeNull()
   expect((await pane.find({ key: 'overview-headline' }))?.text).toBe('Adding a greeting CLI')
   expect((await pane.find({ key: 'overview-status' }))?.text).toBe('Waiting on two choices.')
   expect(await pane.find({ text: /^Plan written$/ })).toBeDefined()
@@ -4093,6 +4100,8 @@ test('the Overview page shows the headline, the status and the queue in place of
   expect(await rowKeys()).toEqual(['no-row-d-key', 'no-row-x-key'])
 
   await pane.press({ key: 'tab-key-needsYou' })
+  await clock.settle()
+  expect(lookOf()).toBeNull()
   expect(await pane.find({ key: 'overview-headline' })).toBeUndefined()
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
   await pane.press({ key: 'tab-findings' })

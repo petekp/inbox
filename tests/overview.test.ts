@@ -5,7 +5,8 @@ import {
   awayOf,
   EMPTY_OVERVIEW,
   HERE_MS,
-  looked,
+  lookEnded,
+  lookStarted,
   orderParts,
   parseOverview,
   SHORT_MS,
@@ -154,10 +155,12 @@ test('how long the person was away falls in three bands, and no earlier look cou
 })
 
 test('the work is running, stopped, finished or idle', () => {
-  const calm = { isTurnRunning: false, isStopped: false }
+  const calm = { isTurnRunning: false, isStopped: false, waitingOnYou: 0 }
   expect(workOf(guide(), { ...calm, isTurnRunning: true })).toBe('running')
   expect(workOf(guide(), { ...calm, isStopped: true })).toBe('stopped')
   expect(workOf(guide({ state: 'stuck' }), calm)).toBe('stopped')
+  expect(workOf(guide(), { ...calm, waitingOnYou: 2 })).toBe('stopped')
+  expect(workOf(guide(), { ...calm, isTurnRunning: true, waitingOnYou: 2 })).toBe('running')
   expect(workOf(guide({ queue: [{ status: 'waits-on-you', text: 'x', detail: null }] }), calm)).toBe('stopped')
   expect(workOf(guide({ state: 'finished' }), calm)).toBe('finished')
   expect(workOf(guide(), calm)).toBe('idle')
@@ -191,9 +194,10 @@ test('orders the parts for each pair of away and work, leaving out empty parts a
 })
 
 test('says nothing new when the person was away and nothing changed, and not while they are here', () => {
-  const calm = guide({ since: [] })
+  const calm = guide({ since: [], lastLookAt: 0 })
   expect(orderParts(calm, 'short', 'idle')).toEqual(['headline', 'quiet', 'queue', 'open'])
   expect(orderParts(calm, 'here', 'idle')).not.toContain('quiet')
+  expect(orderParts(guide({ since: [] }), 'long', 'idle')).not.toContain('quiet')
 })
 
 test('a changed course leads right after the headline, in any order', () => {
@@ -212,26 +216,44 @@ test('earlier topics come last, after every other part', () => {
   expect(orderParts(guide({ earlier: ['Fixed the total'] }), 'here', 'running').at(-1)).toBe('earlier')
 })
 
-test('a look clears what changed and the course, and records when', () => {
-  const seen = looked(guide({ course: 'Moved to streaming.' }), 5000)!
+test('a look keeps its away time and clears only what it showed, so a change that landed during it stays', () => {
+  const started = lookStarted(guide({ course: 'Moved to streaming.', lastLookAt: 0 }), SHORT_MS * 2)!
 
-  expect(seen.since).toEqual([])
-  expect(seen.course).toBe('')
-  expect(seen.lastLookAt).toBe(5000)
-  expect(seen.queue).toEqual(guide().queue)
-  expect(looked(null, 1)).toBeNull()
+  expect(started.look).toMatchObject({ away: 'long', startedAt: SHORT_MS * 2, course: 'Moved to streaming.' })
+  expect(lookStarted(started, SHORT_MS * 3)).toBe(started)
+  const landed = {
+    ...started,
+    since: [...started.since, { status: 'done' as const, text: 'Late change', detail: null }],
+  }
+  const ended = lookEnded(landed, 5000)!
+
+  expect(ended.since.map(i => i.text)).toEqual(['Late change'])
+  expect(ended.course).toBe('')
+  expect(ended.lastLookAt).toBe(5000)
+  expect(ended.look).toBeNull()
+  expect(ended.queue).toEqual(guide().queue)
+  expect(lookEnded(guide(), 5)).toEqual(guide())
+  expect(lookStarted(null, 1)).toBeNull()
 })
 
-test('the course stays through later replies until a look or a new topic, and a look time survives replies', () => {
-  const first = applyOverview(
-    { ...guide(), lastLookAt: 7 },
-    written('HEADLINE: Adding offline mode\nCOURSE: Moved to streaming.'),
-  )!
-  const next = applyOverview(first, written('HEADLINE: Adding offline mode'))!
+test('a course that changed during a look survives it', () => {
+  const started = lookStarted(guide({ course: 'First.' }), 1000)!
 
-  expect(next.course).toBe('Moved to streaming.')
-  expect(next.lastLookAt).toBe(7)
-  expect(applyOverview(next, written('TOPIC: new\nHEADLINE: Other'))!.course).toBe('')
+  expect(lookEnded({ ...started, course: 'Second.' }, 2000)!.course).toBe('Second.')
+})
+
+test('an answer from a call that began before a look ended does not write back what the look cleared', () => {
+  const started = lookStarted(guide({ course: 'Moved to streaming.' }), 1000)!
+  const ended = lookEnded(started, 2000)!
+  const answer = written(
+    'HEADLINE: Adding offline mode\nCOURSE: Moved to streaming.\nSINCE: done | Cache layer started\nSINCE: done | New change',
+  )
+  const after = applyOverview(ended, answer)!
+
+  expect(after.since.map(i => i.text)).toEqual(['New change'])
+  expect(after.course).toBe('')
+  expect(after.look).toBeNull()
+  expect(after.lastLookAt).toBe(2000)
 })
 
 test('the page counts what waits on the person and draws parts in order', () => {

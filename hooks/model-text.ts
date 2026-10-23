@@ -321,7 +321,7 @@ STREAM: only in a coordinator session, in the same form as the other lists: one 
 Status is one of: working, queued, waits-on-you, waits-on-other, done, ruled-out, problem, unknown. Use waits-on-you when the agent cannot go on until the person acts, and waits-on-other for something else, such as a build. Use ruled-out for an approach tried or considered and dropped, and put the reason in the detail.
 
 Rules:
-- Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed.
+- Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed. The next rule wins over this one: when the guide as it was already repeats a fact in two lists, remove the repeat.
 - Do not write a question or task the agent put to the person, and do not say what the choice is. Say only that the work waits on the person, and stop.
 - Leave out that something was committed, pushed, merged or tested, in every line. Say what now works or is fixed.
 - Say each fact once, in the list that fits it best. Work that finished stays in QUEUE as done. WORKS holds only what works that QUEUE does not already name. What a stream is doing, and what it finished, stays on its STREAM line and is not written again in QUEUE, WORKS or OPEN. NEXT holds only what the queue does not already name. SINCE may repeat the other lists, since it says what changed.

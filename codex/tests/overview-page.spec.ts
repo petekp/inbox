@@ -6,7 +6,7 @@ import { EMPTY_OVERVIEW } from '../../hooks/overview'
 import { recordItem } from '../../hooks/tools'
 import { CODEX } from '../src/texts'
 import { emptyState } from '../src/state'
-import { viewOf } from '../src/core'
+import { lookOnView, viewOf } from '../src/core'
 import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
 
@@ -160,4 +160,27 @@ test('the Codex tab draws the Overview page from the view, and new rows, j and k
       else Reflect.deleteProperty(globalThis, key)
     }
   }
+})
+
+test('a look starts when the tab shows the Overview, ends when it shows another tab, and ends at the last request when the pane closed', () => {
+  const state = emptyState('look')
+  state.ledger = {
+    ...EMPTY,
+    overview: { ...EMPTY_OVERVIEW, headline: 'h', since: [{ status: 'done', text: 'Changed', detail: null }] },
+  }
+  state.tabSeenAt = 1000
+  const open = lookOnView(state, 'overview', 2000)
+  assert.equal(open.ledger.overview?.look?.startedAt, 2000)
+
+  const seen = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 3000)
+  assert.equal(seen.ledger.overview?.look, null)
+  assert.equal(seen.ledger.overview?.lastLookAt, 3000)
+  assert.deepEqual(seen.ledger.overview?.since, [])
+
+  const closed = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 2000 + 60_000)
+  assert.equal(closed.ledger.overview?.lastLookAt, 2000)
+
+  const never = lookOnView(state, 'needsYou', 2000)
+  assert.equal(never.ledger.overview?.lastLookAt, null)
+  assert.equal(never.ledger.overview?.since.length, 1)
 })

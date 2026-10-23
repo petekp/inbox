@@ -72,6 +72,8 @@ export function demoView(now: number): DemoCopy {
         workstreams: [],
         earlier: [],
         lastLookAt: null,
+        look: null,
+        seen: { since: [], course: '' },
       },
       items: [
         {

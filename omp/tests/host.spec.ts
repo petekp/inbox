@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { guidanceText, OVERVIEW_SYSTEM, systemText } from '../../hooks/model-text'
+import { EMPTY_OVERVIEW } from '../../hooks/overview'
 import { NO_HOLDS } from '../../hooks/view'
 import { createInbox, stopOf } from '../src/host'
 import type { HostDeps } from '../src/host'
@@ -1066,4 +1067,28 @@ test('a failed catch-up is tried again at the next agent end, before the exchang
   expect(completions[1]!.prompt).toContain('<conversation>')
   expect(state().presence.ledgerState).toBe('current')
   expect(state().pending).toEqual([])
+})
+
+test('a look starts when the panel shows the Overview and ends on another tab or when the panel closes', async () => {
+  const inbox = createInbox(pi(), deps())
+  await prompt('hello')
+  const saved = state()
+  const overview = { ...EMPTY_OVERVIEW, headline: 'h', since: [{ status: 'done', text: 'Changed', detail: null }] }
+  writeFileSync(join(dir, 'sessions', 's1.json'), JSON.stringify({ ...saved, ledger: { ...saved.ledger, overview } }))
+  await inbox.openPanel(makeCtx())
+  inbox.showTab(makeCtx(), 'overview')
+  await settle()
+  expect(state().ledger.overview.look).not.toBeNull()
+
+  inbox.showTab(makeCtx(), 'needsYou')
+  await settle()
+  expect(state().ledger.overview.look).toBeNull()
+  expect(state().ledger.overview.since).toEqual([])
+  expect(state().ledger.overview.lastLookAt).not.toBeNull()
+
+  inbox.showTab(makeCtx(), 'overview')
+  await settle()
+  inbox.closePanel(makeCtx())
+  await settle()
+  expect(state().ledger.overview.look).toBeNull()
 })

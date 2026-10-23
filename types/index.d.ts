@@ -30,8 +30,22 @@ export type Overview = {
   workstreams: OverviewItem[]
   /** One line for each earlier topic, oldest first, saying where it was left. */
   earlier: string[]
-  /** When the person last looked: the last time the Overview tab stopped being shown. Null before the first look. */
+  /** When the person last looked: the last time a look ended. Null before the first look. */
   lastLookAt: number | null
+  /** The look in progress, while the Overview tab is shown. Null otherwise. */
+  look: OverviewLook | null
+  /** What the last look cleared, so an Overview call that began before it ended does not write it back. */
+  seen: { since: string[]; course: string }
+}
+
+/** What the page held when the tab was shown, and how long the person had been away then. */
+export type OverviewLook = {
+  startedAt: number
+  away: 'here' | 'short' | 'long'
+  /** The keys of the since items shown at the start. */
+  since: string[]
+  /** The course shown at the start. */
+  course: string
 }
 
 export type Item = {

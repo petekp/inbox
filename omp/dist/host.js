@@ -96,7 +96,9 @@ var EMPTY_OVERVIEW = {
   since: [],
   workstreams: [],
   earlier: [],
-  lastLookAt: null
+  lastLookAt: null,
+  look: null,
+  seen: { since: [], course: "" }
 };
 var LIST_KEYS = {
   QUEUE: "queue",
@@ -196,12 +198,20 @@ function parseOverview(text) {
 function applyOverview(last, answer) {
   if (answer.kind === "unchanged")
     return last;
-  const earlier = last?.earlier ?? [];
-  const lastLookAt = last?.lastLookAt ?? null;
+  const kept = {
+    earlier: last?.earlier ?? [],
+    lastLookAt: last?.lastLookAt ?? null,
+    look: last?.look ?? null,
+    seen: last?.seen ?? EMPTY_OVERVIEW.seen
+  };
+  const since = answer.overview.since.filter((i) => !kept.seen.since.includes(itemKey(i)));
+  const isSeenCourse = kept.seen.course !== "" && answer.overview.course === kept.seen.course;
+  const course = isSeenCourse ? "" : answer.overview.course;
+  const written = { ...answer.overview, since };
   if (!answer.isNewTopic || last === null || last.headline === "")
-    return { ...answer.overview, course: answer.overview.course || last?.course || "", earlier, lastLookAt };
+    return { ...written, ...kept, course: course || last?.course || "" };
   const left = answer.folded || last.headline;
-  return { ...answer.overview, course: "", earlier: [...earlier, left].slice(-EARLIER_KEPT), lastLookAt };
+  return { ...written, ...kept, course: "", earlier: [...kept.earlier, left].slice(-EARLIER_KEPT) };
 }
 function isItem(value) {
   const item = value;
@@ -228,8 +238,27 @@ function upgradeOverview(saved) {
     since: itemsOf(o.since),
     workstreams: itemsOf(o.workstreams),
     earlier: Array.isArray(o.earlier) ? o.earlier.filter((e) => typeof e === "string") : [],
-    lastLookAt: typeof o.lastLookAt === "number" ? o.lastLookAt : null
+    lastLookAt: typeof o.lastLookAt === "number" ? o.lastLookAt : null,
+    look: lookOf(o.look),
+    seen: seenOf(o.seen)
   };
+}
+function lookOf(saved) {
+  const l = saved;
+  if (typeof l !== "object" || l === null || typeof l.startedAt !== "number")
+    return null;
+  const away = AWAYS.find((a) => a === l.away);
+  return away === undefined ? null : { startedAt: l.startedAt, away, since: strings(l.since), course: typeof l.course === "string" ? l.course : "" };
+}
+function seenOf(saved) {
+  const s = saved;
+  return { since: strings(s?.since), course: typeof s?.course === "string" ? s.course : "" };
+}
+function strings(value) {
+  return Array.isArray(value) ? value.filter((v) => typeof v === "string") : [];
+}
+function itemKey(i) {
+  return `${i.status}|${i.text}`;
 }
 function itemLine(key, i) {
   return `${key}: ${i.status} | ${i.text}${i.detail ? ` | ${i.detail}` : ""}`;
@@ -257,11 +286,31 @@ function overviewText(o) {
 function sinceText(o) {
   return (o?.since ?? []).map((i) => itemLine("SINCE", i)).join(NL3);
 }
-function looked(o, now) {
-  return o === null ? null : { ...o, since: [], course: "", lastLookAt: now };
+function lookStarted(o, now) {
+  if (o === null || o.look !== null)
+    return o;
+  return {
+    ...o,
+    look: { startedAt: now, away: awayOf(o.lastLookAt, now), since: o.since.map(itemKey), course: o.course },
+    seen: { since: [], course: "" }
+  };
+}
+function lookEnded(o, at) {
+  if (o === null || o.look === null)
+    return o;
+  const { look } = o;
+  return {
+    ...o,
+    since: o.since.filter((i) => !look.since.includes(itemKey(i))),
+    course: o.course === look.course ? "" : o.course,
+    lastLookAt: at,
+    look: null,
+    seen: { since: look.since, course: look.course }
+  };
 }
 var HERE_MS = 5 * 60000;
 var SHORT_MS = 60 * 60000;
+var AWAYS = ["here", "short", "long"];
 function awayOf(lastLookAt, now) {
   if (lastLookAt === null)
     return "long";
@@ -272,14 +321,15 @@ function workOf(o, signals) {
   const waits = o.queue.some((i) => i.status === "waits-on-you");
   if (signals.isTurnRunning)
     return "running";
-  if (signals.isStopped || o.state === "stuck" || waits)
+  if (signals.isStopped || signals.waitingOnYou > 0 || o.state === "stuck" || waits)
     return "stopped";
   return o.state === "finished" ? "finished" : "idle";
 }
 function orderParts(o, away, work) {
   const hasQueued = o.queue.some((i) => i.status === "queued");
-  const quiet = o.since.length === 0 && o.course === "" && away !== "here" ? ["quiet"] : [];
-  const order = o.isCoordinator ? ["headline", "workstreams", "since", "queue", "next", "open"] : work === "running" && away === "here" ? ["headline", "queue"] : work === "stopped" ? ["headline", "status", "pointer", "since", "queue", "next", "open"] : work === "finished" ? ["headline", "status", "works", "open"] : away === "short" ? ["headline", ...quiet, "since", "queue", "open"] : ["headline", "status", ...quiet, "since", "queue", "next", "open"];
+  const isQuiet = o.since.length === 0 && o.course === "" && away !== "here" && o.lastLookAt !== null;
+  const quiet = isQuiet ? ["quiet"] : [];
+  const order = o.isCoordinator ? ["headline", "workstreams", "since", "queue", "next", "open"] : work === "running" && away === "here" ? ["headline", "queue"] : work === "stopped" ? ["headline", "status", "pointer", "since", "queue", "next", "open"] : work === "finished" ? ["headline", "status", o.works.length > 0 ? "works" : "queue", "open"] : away === "short" ? ["headline", ...quiet, "since", "queue", "open"] : ["headline", "status", ...quiet, "since", "queue", "next", "open"];
   const withCourse = o.course === "" ? order : [order[0], "course", ...order.slice(1)];
   const lists = {
     workstreams: o.workstreams.length > 0,
@@ -1089,7 +1139,7 @@ STREAM: only in a coordinator session, in the same form as the other lists: one 
 Status is one of: working, queued, waits-on-you, waits-on-other, done, ruled-out, problem, unknown. Use waits-on-you when the agent cannot go on until the person acts, and waits-on-other for something else, such as a build. Use ruled-out for an approach tried or considered and dropped, and put the reason in the detail.
 
 Rules:
-- Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed.
+- Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed. The next rule wins over this one: when the guide as it was already repeats a fact in two lists, remove the repeat.
 - Do not write a question or task the agent put to the person, and do not say what the choice is. Say only that the work waits on the person, and stop.
 - Leave out that something was committed, pushed, merged or tested, in every line. Say what now works or is fixed.
 - Say each fact once, in the list that fits it best. Work that finished stays in QUEUE as done. WORKS holds only what works that QUEUE does not already name. What a stream is doing, and what it finished, stays on its STREAM line and is not written again in QUEUE, WORKS or OPEN. NEXT holds only what the queue does not already name. SINCE may repeat the other lists, since it says what changed.
@@ -2305,7 +2355,7 @@ function overviewPage(s, now, waitingOnYou = 0) {
   const { overview } = s.ledger;
   const { isTurnRunning } = s.presence;
   const headline = overview?.headline || null;
-  const parts = overview ? orderParts(overview, awayOf(overview.lastLookAt, now), workOf(overview, { isTurnRunning, isStopped: Boolean(s.stop) })) : [];
+  const parts = overview ? orderParts(overview, overview.look?.away ?? awayOf(overview.lastLookAt, now), workOf(overview, { isTurnRunning, isStopped: Boolean(s.stop), waitingOnYou })) : [];
   const sections = overview ? parts.flatMap((id) => {
     const title = SECTION_TITLES[id];
     if (title === undefined)
@@ -3392,8 +3442,13 @@ function needsCatchUp(s) {
 function needsUpdate(s) {
   return s.pending.length > 0 || s.presence.ledgerState !== "current";
 }
-function lookedAway(s, now) {
-  return { ...s, ledger: { ...s.ledger, overview: looked(s.ledger.overview, now) } };
+function lookStartedOn(s, now) {
+  const overview = lookStarted(s.ledger.overview, now);
+  return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } };
+}
+function lookEndedOn(s, at) {
+  const overview = lookEnded(s.ledger.overview, at);
+  return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } };
 }
 function hasLedger(s) {
   const { ledger } = s;
@@ -4861,7 +4916,9 @@ function demoView(now) {
         since: [{ status: "done", text: "PR #31 opened", detail: null }],
         workstreams: [],
         earlier: [],
-        lastLookAt: null
+        lastLookAt: null,
+        look: null,
+        seen: { since: [], course: "" }
       },
       items: [
         {
@@ -5908,19 +5965,17 @@ function createInbox(pi, deps = defaultDeps) {
     },
     showTab: (ctx, tab) => {
       const id = sessionIdOf(ctx);
-      const was = openPanels.get(id);
       if (!openPanels.has(id))
         return;
+      const isChanged = openPanels.get(id) !== tab;
       openPanels.set(id, tab);
-      if (was === "overview" && tab !== "overview")
-        deps.background(change(id, (s) => lookedAway(s, deps.now())));
+      if (isChanged)
+        deps.background(change(id, (s) => tab === "overview" ? lookStartedOn(s, deps.now()) : lookEndedOn(s, deps.now())));
     },
     closePanel: (ctx) => {
       const id = sessionIdOf(ctx);
-      const was = openPanels.get(id);
       openPanels.delete(id);
-      if (was === "overview")
-        deps.background(change(id, (s) => lookedAway(s, deps.now())));
+      deps.background(change(id, (s) => lookEndedOn(s, deps.now())));
     },
     fetchPrsWhenDue,
     onChange: (ctx, listener) => {

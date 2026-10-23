@@ -18,7 +18,8 @@ import {
   forkedFrom,
   hasLedger,
   isUnseen,
-  lookedAway,
+  lookEndedOn,
+  lookStartedOn,
   needsUpdate,
   noteActivity,
   noteCommandOutput,
@@ -799,16 +800,18 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     },
     showTab: (ctx, tab) => {
       const id = sessionIdOf(ctx)
-      const was = openPanels.get(id)
       if (!openPanels.has(id)) return
+      const isChanged = openPanels.get(id) !== tab
       openPanels.set(id, tab)
-      if (was === 'overview' && tab !== 'overview') deps.background(change(id, s => lookedAway(s, deps.now())))
+      if (isChanged)
+        deps.background(
+          change(id, s => (tab === 'overview' ? lookStartedOn(s, deps.now()) : lookEndedOn(s, deps.now()))),
+        )
     },
     closePanel: ctx => {
       const id = sessionIdOf(ctx)
-      const was = openPanels.get(id)
       openPanels.delete(id)
-      if (was === 'overview') deps.background(change(id, s => lookedAway(s, deps.now())))
+      deps.background(change(id, s => lookEndedOn(s, deps.now())))
     },
     fetchPrsWhenDue,
     onChange: (ctx, listener) => {

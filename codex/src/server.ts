@@ -10,12 +10,12 @@ import type { PrPress } from '../../hooks/pr-tab'
 import { demoAfterPress, demoTurns, noteText, openTarget } from '../../hooks/presses'
 import type { PathProbe, RowPress } from '../../hooks/presses'
 import { agentTools } from '../../hooks/tools'
-import { heardState, noteToolCall, viewOf } from './core'
+import { heardState, lookOnView, noteToolCall, viewOf } from './core'
 import type { TabView } from './core'
 import { demoState } from './demo'
 import { withEarlierHistory } from './history'
 import { codexStore } from './host'
-import { isUnseen, lookedAway, pressOn, recorded, turnEnded, turnStarted } from '../../hooks/session'
+import { isUnseen, pressOn, recorded, turnEnded, turnStarted } from '../../hooks/session'
 import type { SendOutcome } from '../../hooks/session'
 import { fetchPrs, prFetchTracker, press, wakeForDone as wakeSessionForDone } from '../../hooks/session-host'
 import type { SessionHost } from '../../hooks/session-host'
@@ -402,7 +402,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         await catchUpOnOpen(id).catch(() => undefined)
         const shownTab = shownTabOf(args.tab)
         const s = await updateState(dir, id, s => ({
-          ...(s.shownTab === 'overview' && shownTab !== null && shownTab !== 'overview' ? lookedAway(s, now()) : s),
+          ...lookOnView(s, shownTab ?? s.shownTab, now()),
           heldRows: Object.keys(holds.replies),
           tabSeenAt: now(),
           shownTab: shownTab ?? s.shownTab,

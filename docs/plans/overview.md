@@ -159,10 +159,12 @@ A part with nothing in it is left out. The earlier lines come last. The cutoffs 
 The since list holds the changes after the last look. It starts over when the person looks.
 
 - The call rewrites the list after each reply, merging new changes into the unseen ones. This keeps it short after many replies.
-- A look ends when the person leaves the Overview tab or closes the pane while it shows. Code then stamps the time (`Overview.lastLookAt`), and clears the since list and the course. Away is measured from that time, so the order does not change while the tab is shown.
-- A reply that lands while the tab is shown is added to the since list and shows on the next look.
+- A look starts when the Overview tab is shown and ends when it stops being shown: a tab change, the pane closing, or the band opening the inbox. The start fixes the away time, so the order does not change while the tab is shown. It also records which since items and which course were shown.
+- The end clears only those items and that course, stamps `Overview.lastLookAt`, and remembers what it cleared in `Overview.seen`. A change that landed while the tab was shown stays for the next look. An Overview call that began before the look ended is applied without the cleared items and course.
+- "Nothing new since you looked." is not drawn before the first look.
+- A reply that lands while the tab is shown is added to the since list and shows at once.
 - The call writes COURSE only in the reply where the approach changed. The saved course stays through later replies until a look or a new topic clears it.
-- The mod ends a look in `showTab`, Codex in `inbox_view` when the tab changes, and omp in the controller's tab change and panel close. A Codex pane that is closed without changing tabs is not detected, so its look ends at the next tab change.
+- The mod syncs the look whenever the pane opens or closes or its page changes. Codex starts and ends it from each `inbox_view` request, and ends it at the last request's time when requests stopped. omp does it in `showTab` and `closePanel`. The sample never changes a look.
 - Each fact is written once: the call's rule is "each fact once, in the list that fits it best". `evals` checks that no two items in QUEUE, WORKS, OPEN, NEXT and STREAM say the same thing.
 
 ## A change of topic

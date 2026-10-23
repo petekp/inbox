@@ -1,5 +1,11 @@
 import { toolActivity } from '../../hooks/model-text'
-import { endTurn as endSessionTurn, notePrompt as notePromptIn, sessionView } from '../../hooks/session'
+import {
+  endTurn as endSessionTurn,
+  lookEndedOn,
+  lookStartedOn,
+  notePrompt as notePromptIn,
+  sessionView,
+} from '../../hooks/session'
 import type { ScreenTab } from '../../hooks/model-text'
 import type { SessionView } from '../../hooks/session'
 import { NO_HOLDS, TABS } from '../../hooks/view'
@@ -12,6 +18,18 @@ const TAB_OPEN_MS = 15_000
 
 export function isTabOpen(s: SessionState, now: number): boolean {
   return now - s.tabSeenAt < TAB_OPEN_MS
+}
+
+/**
+ * A view request from the Inbox tab, which names the tab it shows. A look ends when the tab shows another tab, and also
+ * when requests stopped for a while, since the pane was closed: it then ended when the last request came. A look
+ * starts when the tab shows the Overview.
+ */
+export function lookOnView(s: SessionState, shownTab: SessionState['shownTab'], now: number): SessionState {
+  const wasClosed = s.tabSeenAt > 0 && !isTabOpen(s, now)
+  const closed = wasClosed ? lookEndedOn(s, s.tabSeenAt) : s
+
+  return shownTab === 'overview' ? lookStartedOn(closed, now) : lookEndedOn(closed, now)
 }
 
 /** The tab the Inbox tab shows, as the inbox model is told. */

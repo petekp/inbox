@@ -1,4 +1,4 @@
-import type { Overview, OverviewItem, OverviewStatus } from '../types'
+import type { Overview, OverviewItem, OverviewLook, OverviewStatus } from '../types'
 
 export const HEADLINE_WORDS = 12
 export const ITEM_WORDS = 12
@@ -23,6 +23,8 @@ export const EMPTY_OVERVIEW: Overview = {
   workstreams: [],
   earlier: [],
   lastLookAt: null,
+  look: null,
+  seen: { since: [], course: '' },
 }
 
 const LIST_KEYS = {
@@ -141,13 +143,21 @@ export function parseOverview(text: string | null): OverviewAnswer | null {
 /** The Overview after an answer. A new topic folds the last headline into the earlier lines. */
 export function applyOverview(last: Overview | null, answer: OverviewAnswer): Overview | null {
   if (answer.kind === 'unchanged') return last
-  const earlier = last?.earlier ?? []
-  const lastLookAt = last?.lastLookAt ?? null
+  const kept = {
+    earlier: last?.earlier ?? [],
+    lastLookAt: last?.lastLookAt ?? null,
+    look: last?.look ?? null,
+    seen: last?.seen ?? EMPTY_OVERVIEW.seen,
+  }
+  const since = answer.overview.since.filter(i => !kept.seen.since.includes(itemKey(i)))
+  const isSeenCourse = kept.seen.course !== '' && answer.overview.course === kept.seen.course
+  const course = isSeenCourse ? '' : answer.overview.course
+  const written = { ...answer.overview, since }
   if (!answer.isNewTopic || last === null || last.headline === '')
-    return { ...answer.overview, course: answer.overview.course || last?.course || '', earlier, lastLookAt }
+    return { ...written, ...kept, course: course || last?.course || '' }
   const left = answer.folded || last.headline
 
-  return { ...answer.overview, course: '', earlier: [...earlier, left].slice(-EARLIER_KEPT), lastLookAt }
+  return { ...written, ...kept, course: '', earlier: [...kept.earlier, left].slice(-EARLIER_KEPT) }
 }
 
 function isItem(value: unknown): value is OverviewItem {
@@ -186,7 +196,34 @@ export function upgradeOverview(saved: unknown): Overview | null {
     workstreams: itemsOf(o.workstreams),
     earlier: Array.isArray(o.earlier) ? o.earlier.filter((e): e is string => typeof e === 'string') : [],
     lastLookAt: typeof o.lastLookAt === 'number' ? o.lastLookAt : null,
+    look: lookOf(o.look),
+    seen: seenOf(o.seen),
   }
+}
+
+function lookOf(saved: unknown): OverviewLook | null {
+  const l = saved as Partial<OverviewLook> | null | undefined
+  if (typeof l !== 'object' || l === null || typeof l.startedAt !== 'number') return null
+  const away = AWAYS.find(a => a === l.away)
+
+  return away === undefined
+    ? null
+    : { startedAt: l.startedAt, away, since: strings(l.since), course: typeof l.course === 'string' ? l.course : '' }
+}
+
+function seenOf(saved: unknown): Overview['seen'] {
+  const s = saved as Partial<Overview['seen']> | null | undefined
+
+  return { since: strings(s?.since), course: typeof s?.course === 'string' ? s.course : '' }
+}
+
+function strings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
+}
+
+/** What identifies a since item, so a look can tell the items it showed from ones that came after. */
+export function itemKey(i: OverviewItem): string {
+  return `${i.status}|${i.text}`
 }
 
 function itemLine(key: string, i: OverviewItem): string {
@@ -220,16 +257,44 @@ export function sinceText(o: Overview | null): string {
   return (o?.since ?? []).map(i => itemLine('SINCE', i)).join(NL)
 }
 
-/** The person looked: the tab stopped being shown. The changes and the course they saw start over. */
-export function looked(o: Overview | null, now: number): Overview | null {
-  return o === null ? null : { ...o, since: [], course: '', lastLookAt: now }
+/**
+ * The Overview tab is shown. The away time is fixed now, so the page keeps its order while it is shown. A look
+ * already in progress stays as it is.
+ */
+export function lookStarted(o: Overview | null, now: number): Overview | null {
+  if (o === null || o.look !== null) return o
+
+  return {
+    ...o,
+    look: { startedAt: now, away: awayOf(o.lastLookAt, now), since: o.since.map(itemKey), course: o.course },
+    seen: { since: [], course: '' },
+  }
+}
+
+/**
+ * The Overview tab is no longer shown, at `at`. Only the changes and the course the look showed start over: a change
+ * that landed while the tab was shown stays for the next look.
+ */
+export function lookEnded(o: Overview | null, at: number): Overview | null {
+  if (o === null || o.look === null) return o
+  const { look } = o
+
+  return {
+    ...o,
+    since: o.since.filter(i => !look.since.includes(itemKey(i))),
+    course: o.course === look.course ? '' : o.course,
+    lastLookAt: at,
+    look: null,
+    seen: { since: look.since, course: look.course },
+  }
 }
 
 /** How long the person was away, as the page orders itself by it. */
 export const HERE_MS = 5 * 60_000
 export const SHORT_MS = 60 * 60_000
 
-export type Away = 'here' | 'short' | 'long'
+const AWAYS = ['here', 'short', 'long'] as const
+export type Away = (typeof AWAYS)[number]
 export type Work = 'running' | 'stopped' | 'finished' | 'idle'
 
 export function awayOf(lastLookAt: number | null, now: number): Away {
@@ -239,11 +304,17 @@ export function awayOf(lastLookAt: number | null, now: number): Away {
   return gone < HERE_MS ? 'here' : gone < SHORT_MS ? 'short' : 'long'
 }
 
-/** Whether the work waits on the person: the guide says it is stuck, or an item waits on them, or a stop row shows. */
-export function workOf(o: Overview, signals: { isTurnRunning: boolean; isStopped: boolean }): Work {
+/**
+ * Whether the work waits on the person: a stop row shows, something in the inbox waits on them, the guide says it is
+ * stuck, or an item in it waits on them. The inbox count counts even when the guide says nothing about it.
+ */
+export function workOf(
+  o: Overview,
+  signals: { isTurnRunning: boolean; isStopped: boolean; waitingOnYou: number },
+): Work {
   const waits = o.queue.some(i => i.status === 'waits-on-you')
   if (signals.isTurnRunning) return 'running'
-  if (signals.isStopped || o.state === 'stuck' || waits) return 'stopped'
+  if (signals.isStopped || signals.waitingOnYou > 0 || o.state === 'stuck' || waits) return 'stopped'
 
   return o.state === 'finished' ? 'finished' : 'idle'
 }
@@ -268,7 +339,8 @@ export type PartId =
  */
 export function orderParts(o: Overview, away: Away, work: Work): PartId[] {
   const hasQueued = o.queue.some(i => i.status === 'queued')
-  const quiet: PartId[] = o.since.length === 0 && o.course === '' && away !== 'here' ? ['quiet'] : []
+  const isQuiet = o.since.length === 0 && o.course === '' && away !== 'here' && o.lastLookAt !== null
+  const quiet: PartId[] = isQuiet ? ['quiet'] : []
   const order: PartId[] = o.isCoordinator
     ? ['headline', 'workstreams', 'since', 'queue', 'next', 'open']
     : work === 'running' && away === 'here'
@@ -276,7 +348,7 @@ export function orderParts(o: Overview, away: Away, work: Work): PartId[] {
       : work === 'stopped'
         ? ['headline', 'status', 'pointer', 'since', 'queue', 'next', 'open']
         : work === 'finished'
-          ? ['headline', 'status', 'works', 'open']
+          ? ['headline', 'status', o.works.length > 0 ? 'works' : 'queue', 'open']
           : away === 'short'
             ? ['headline', ...quiet, 'since', 'queue', 'open']
             : ['headline', 'status', ...quiet, 'since', 'queue', 'next', 'open']

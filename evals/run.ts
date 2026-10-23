@@ -78,6 +78,8 @@ type Check =
   | { noTextWithAll: string[] }
   /** The answer stays on the same topic and writes no COURSE line. */
   | { sameTopicNoCourseLine: true }
+  /** The answer does not rewrite a course the guide already had: it leaves it out or writes the same one. */
+  | { courseKept: true }
   /** The answer starts a new topic with a FOLDED line that differs from the old headline. */
   | { foldsWithLine: true }
   /** No two SINCE items say the same thing. */
@@ -242,6 +244,7 @@ const OVERVIEW_KEYS = [
   'noOverviewItem',
   'noTextWithAll',
   'sameTopicNoCourseLine',
+  'courseKept',
   'foldsWithLine',
   'sinceNoRepeat',
   'workstreamsAtLeast',
@@ -267,6 +270,15 @@ const textsOf = (o: Overview): string[] => [
   ...o.earlier,
 ]
 
+/** Every text with an item's detail joined to its text, as a sentence the person reads. */
+const joinedTextsOf = (o: Overview): string[] => [
+  o.headline,
+  o.status,
+  o.course,
+  ...LISTS.flatMap(l => o[l].map(i => `${i.text} ${i.detail ?? ''}`.trim())),
+  ...o.earlier,
+]
+
 /** What an event list is made of: a command, a path, a commit, a ticket, a test run or a tool step. */
 const EVENT_PATTERNS: RegExp[] = [
   /`/,
@@ -277,6 +289,7 @@ const EVENT_PATTERNS: RegExp[] = [
   /\bcommit(?:s|ted|ting)?\b/i,
   /^(?:ran|run|edited|editing|opened|searched|grepped|installed|executed|called)\b/i,
   /\b(?:tests? (?:ran|run)|tool call|npm |git )\b/i,
+  /\b(?:pushed|merged|tested)\b/i,
 ]
 
 const WORD = /[\p{L}\p{N}]+/gu
@@ -288,6 +301,13 @@ function restatesText(text: string, other: string): boolean {
   const theirs = [...keyWordsOf(other)]
 
   return theirs.length >= 3 && theirs.filter(w => mine.has(w)).length / theirs.length >= 0.7
+}
+
+/** Whether the shorter of two items has most of its key words in the other, however short it is. */
+function repeatsFact(a: string, b: string): boolean {
+  const [short, long] = [keyWordsOf(a), keyWordsOf(b)].sort((x, y) => x.size - y.size) as [Set<string>, Set<string>]
+
+  return short.size >= 1 && [...short].filter(w => long.has(w)).length / short.size >= 0.7
 }
 
 function overviewFailures(c: OverviewCheck, after: Ledger, run: OverviewRun | null): string[] {
@@ -317,9 +337,16 @@ function overviewFailures(c: OverviewCheck, after: Ledger, run: OverviewRun | nu
       o[l].filter(i => i.status === c.status && re.test(i.text)).map(i => `${l} still has ${c.status}: "${i.text}"`),
     )
   }
+  if ('courseKept' in c) {
+    const a = run.answer
+    const was = run.before?.course ?? ''
+    return a.kind === 'unchanged' || a.overview.course === '' || a.overview.course === was
+      ? []
+      : [`the answer rewrote the course: "${a.overview.course}"`]
+  }
   if ('noTextWithAll' in c) {
     const words = c.noTextWithAll
-    return textsOf(o)
+    return joinedTextsOf(o)
       .filter(t => words.every(w => t.toLowerCase().includes(w.toLowerCase())))
       .map(t => `"${t}" names all of ${words.join(', ')}`)
   }
@@ -344,7 +371,7 @@ function overviewFailures(c: OverviewCheck, after: Ledger, run: OverviewRun | nu
           .slice(n + 1)
           .filter(b => !(a === o.queue && b === o.works))
           .flat()
-          .filter(y => restatesText(x.text, y.text) || restatesText(y.text, x.text))
+          .filter(y => repeatsFact(x.text, y.text))
           .map(y => `repeated across lists: "${x.text}" and "${y.text}"`),
       ),
     )

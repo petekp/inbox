@@ -17,7 +17,7 @@ import { applyPress, upgradeLastActions, withAcceptedSend, withArrival, withRewr
 import type { RowPress } from './presses'
 import { prNeedsYou, prRefs } from './prs'
 import { recordClose, recordItem } from './tools'
-import { applyOverview, looked } from './overview'
+import { applyOverview, lookEnded, lookStarted } from './overview'
 import type { OverviewAnswer } from './overview'
 import { inboxView, NO_HOLDS, overviewPage, perTurnStatus } from './view'
 import type { InboxView, OverviewPage, ReplyHolds } from './view'
@@ -430,12 +430,21 @@ export function needsUpdate(s: Session): boolean {
   return s.pending.length > 0 || s.presence.ledgerState !== 'current'
 }
 
-/** Whether the session has a card, an item, a finding or an Overview. */
-/** The person stopped looking at the Overview. */
-export function lookedAway<S extends { ledger: Ledger }>(s: S, now: number): S {
-  return { ...s, ledger: { ...s.ledger, overview: looked(s.ledger.overview, now) } }
+/** The Overview tab is shown: a look starts. */
+export function lookStartedOn<S extends { ledger: Ledger }>(s: S, now: number): S {
+  const overview = lookStarted(s.ledger.overview, now)
+
+  return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } }
 }
 
+/** The Overview tab stopped being shown at `at`: the look ends. */
+export function lookEndedOn<S extends { ledger: Ledger }>(s: S, at: number): S {
+  const overview = lookEnded(s.ledger.overview, at)
+
+  return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } }
+}
+
+/** Whether the session has a card, an item, a finding or an Overview. */
 export function hasLedger(s: Session): boolean {
   const { ledger } = s
 

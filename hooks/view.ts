@@ -541,8 +541,8 @@ export function overviewPage(
   const parts = overview
     ? orderParts(
         overview,
-        awayOf(overview.lastLookAt, now),
-        workOf(overview, { isTurnRunning, isStopped: Boolean(s.stop) }),
+        overview.look?.away ?? awayOf(overview.lastLookAt, now),
+        workOf(overview, { isTurnRunning, isStopped: Boolean(s.stop), waitingOnYou }),
       )
     : []
   const sections = overview

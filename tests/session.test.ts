@@ -236,11 +236,7 @@ test('the Overview page is empty for a new session and reads Working… only whi
   expect(view(turnStarted(idle)).isEmpty).toBe(false)
   expect(view(turnStarted(idle)).lead.find(l => l.id === 'status')?.text ?? null).toBe('Working…')
   expect(view(turnEnded(turnStarted(idle))).lead.find(l => l.id === 'status')?.text ?? null).toBeNull()
-  expect(view(withOverview(idle)).lead.map(l => l.text)).toEqual([
-    'Adding offline mode',
-    'Loading works offline.',
-    'Nothing new since you looked.',
-  ])
+  expect(view(withOverview(idle)).lead.map(l => l.text)).toEqual(['Adding offline mode', 'Loading works offline.'])
 })
 
 test('the Overview page draws each item with its mark and tone', () => {

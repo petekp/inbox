@@ -2958,5 +2958,105 @@
         "overview": "unchanged"
       }
     ]
+  },
+  {
+    "name": "overview-course-carries",
+    "about": "A course already reported stays through ordinary progress. The call neither rewrites nor drops it.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 1,
+      "overview": {
+        "isCoordinator": false,
+        "state": "on-track",
+        "headline": "Adding offline mode to the notes app",
+        "status": "Saving offline now goes through the file system.",
+        "course": "Moved to file-system sync because the browser database cannot hold attachments.",
+        "queue": [
+          {
+            "status": "working",
+            "text": "Save notes to the file system",
+            "detail": null
+          },
+          {
+            "status": "queued",
+            "text": "Merge saved notes when the connection returns",
+            "detail": null
+          }
+        ],
+        "works": [],
+        "open": [],
+        "next": [],
+        "since": [],
+        "workstreams": [],
+        "earlier": []
+      }
+    },
+    "exchange": {
+      "turn": 7,
+      "person": "Go on.",
+      "activity": ["edited src/storage/files.ts"],
+      "reply": "Saving a note to the file system now works, including attachments. Merging saved notes when the connection returns is next."
+    },
+    "checks": [
+      {
+        "courseKept": true
+      },
+      {
+        "course": true
+      },
+      {
+        "featureLevel": true
+      }
+    ]
+  },
+  {
+    "name": "overview-course-not-rewritten",
+    "about": "A reply that explains the earlier change again does not make the call write a new course.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 1,
+      "overview": {
+        "isCoordinator": false,
+        "state": "on-track",
+        "headline": "Adding offline mode to the notes app",
+        "status": "Saving offline now goes through the file system.",
+        "course": "Moved to file-system sync because the browser database cannot hold attachments.",
+        "queue": [
+          {
+            "status": "working",
+            "text": "Save notes to the file system",
+            "detail": null
+          },
+          {
+            "status": "queued",
+            "text": "Merge saved notes when the connection returns",
+            "detail": null
+          }
+        ],
+        "works": [],
+        "open": [],
+        "next": [],
+        "since": [],
+        "workstreams": [],
+        "earlier": []
+      }
+    },
+    "exchange": {
+      "turn": 7,
+      "person": "Why did we leave the browser database again?",
+      "activity": [],
+      "reply": "The browser database caps attachments at a few megabytes, so notes with images could not be saved. File-system sync has no such cap, which is why we moved to it. Saving notes to the file system is under way."
+    },
+    "checks": [
+      {
+        "courseKept": true
+      },
+      {
+        "course": true
+      },
+      {
+        "featureLevel": true
+      }
+    ]
   }
 ]
