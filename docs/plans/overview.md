@@ -1,6 +1,6 @@
 # The Overview tab in every look
 
-Status: proposed
+Status: building
 
 ## Summary
 
@@ -195,7 +195,7 @@ The `Working…` mark moves next to the headline. Code draws it from `isTurnRunn
 
 ## Stored state
 
-- `Ledger.milestones` is replaced by `Ledger.overview`, which holds the parts, the since list, the earlier lines, the coordinator flag, the course flag and the last look. A new field, `Session.hostTasks`, is the task list.
+- `Ledger.milestones` is replaced by `Ledger.overview`. Step 1 stores the parts as fields: the headline, the status and its state, the course text, one list for each list part, the earlier lines and the coordinator flag. The last look and the course flag are added in step 2. A new field, `Session.hostTasks`, is the task list.
 - `Ledger.overview` lives in the ledger so that `forkedFrom`, `cleared`, `hasLedger` and `isUnseen` carry it with the rest. A fork takes its parent's Overview. A `/clear` empties it.
 - The page tab id `overview` is stored in the mod's `PAGE` atom and in Codex's `shownTab`. It is final once released.
 - Main never stored `progress`, `shownTab`, `milestones`, `subagents` or `statedStep`. A trial build of the Progress tab may have. The Overview build ignores a `PAGE` or `shownTab` value it does not know, and drops `milestones`, `subagents` and `statedStep` when it loads. Step 1 tests this with a state saved by that trial build.
