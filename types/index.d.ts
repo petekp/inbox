@@ -1,10 +1,3 @@
-export type Card = {
-  goal: string
-  done: string[]
-  now: string
-  running: string[]
-}
-
 /** What an Overview item reports about a piece of work. */
 export type OverviewStatus =
   'working' | 'queued' | 'waits-on-you' | 'waits-on-other' | 'done' | 'ruled-out' | 'problem' | 'unknown'
@@ -232,7 +225,6 @@ export type PrView = {
 }
 
 export type Ledger = {
-  card: Card | null
   /** The session's Overview page; null until the Overview call writes one. */
   overview: Overview | null
   items: Item[]

@@ -324,7 +324,7 @@ test('a session file this build cannot read remains intact after a routine updat
   const dir = tempDir()
   const initial = await updateState(dir, 's1', s => ({
     ...s,
-    ledger: { ...s.ledger, card: { goal: 'Keep me', done: [], now: '', running: [] } },
+    ledger: { ...s.ledger, turn: 7 },
   }))
   const path = statePath(dir, 's1')
   for (const saved of [
@@ -421,8 +421,7 @@ const execDeps = (dir: string) => {
   return { ...deps, env: { ...deps.env, INBOX_IN_EXEC: '1' } }
 }
 
-const CATCH_UP_REPLY =
-  'GOAL: Toy calculator\nNOW: Waiting on a patch\nDONE: Listed the repo files\nNEW: decide | - | Allow edits? | Yes / No | Yes'
+const CATCH_UP_REPLY = 'NEW: decide | - | Allow edits? | Yes / No | Yes'
 
 test('a session resumed with earlier turns is marked behind at its first hook and catches up over the rollout', async () => {
   const dir = tempDir()
@@ -446,7 +445,6 @@ test('a session resumed with earlier turns is marked behind at its first hook an
   assert.equal(prompts.length, 1)
   assert.match(prompts[0] ?? '', /<conversation>\n[\s\S]*Person: List the files here and say what each does/)
   assert.equal(caught.presence.ledgerState, 'current')
-  assert.equal(caught.ledger.card?.goal, 'Toy calculator')
   assert.deepEqual(
     caught.ledger.items.map(i => i.ask),
     ['Allow edits?'],
@@ -471,7 +469,7 @@ test('a forked chat takes its parent’s ledger at its first hook, and catches u
   await updateState(dir, 'parent', s => ({
     ...s,
     presence: { ...s.presence, turnsStarted: 3, turnsApplied: 3 },
-    ledger: { ...s.ledger, turn: 3, card: { goal: 'Parent goal', done: [], now: '', running: [] }, nextId: 4 },
+    ledger: { ...s.ledger, turn: 3, nextId: 4 },
   }))
 
   await handleHook(
@@ -484,7 +482,6 @@ test('a forked chat takes its parent’s ledger at its first hook, and catches u
     deps,
   )
   const child = await readState(dir, 'child')
-  assert.equal(child.ledger.card?.goal, 'Parent goal')
   assert.equal(child.ledger.turn, 3)
   assert.equal(child.presence.turnsStarted, 0)
   assert.equal(child.presence.ledgerState, 'current')

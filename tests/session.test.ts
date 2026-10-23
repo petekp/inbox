@@ -144,7 +144,7 @@ test('an exchange that ends during a catch-up is still run afterward', async () 
     ...host,
     catchUp: async () => {
       await host.update(s => finishTurn(s, 'Which runtime?'))
-      return { kind: 'reply', text: 'GOAL: Add a greeting CLI', source: null, overview: async () => null }
+      return { kind: 'reply', text: 'NONE', source: null, overview: async () => null }
     },
   })
 

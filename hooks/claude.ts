@@ -174,5 +174,5 @@ export function statusLine(ledger: Ledger, stop: Stop | null, dialogs: Dialog[])
   const count = ledger.findings.length
   const findings = count === 0 ? null : `${count} finding${count === 1 ? '' : 's'}`
 
-  return [ledger.card?.now, findings].filter(Boolean).join(' · ')
+  return [ledger.overview?.headline, findings].filter(Boolean).join(' · ')
 }

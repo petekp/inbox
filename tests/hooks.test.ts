@@ -21,10 +21,7 @@ import {
   rowKeyPlan,
 } from '../hooks/view'
 
-const LEDGER_REPLY = `GOAL: Add a greeting CLI
-DONE: Plan written
-NOW: Waiting on two choices
-NEW: decide | 1 | Use Node or Python? | Node / Python | Node
+const LEDGER_REPLY = `NEW: decide | 1 | Use Node or Python? | Node / Python | Node
 NEW: decide | 2 | Name the command greet? | - | yes`
 
 const BAND = {
@@ -448,7 +445,6 @@ test('a question’s handle is the number a typed answer reaches, and the band c
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await reply('add a greeting cli', 't1')
   ledgerReply = [
-    'NOW: Waiting on the flags',
     'NEW: decide | 1 | Add a --loud flag? | yes / no | yes',
     'NEW: do | - | Run the load script | - | -',
     'HELP: new 2 | run | ./load.sh | load script',
@@ -725,8 +721,6 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   ledgerReply = [
-    'GOAL: Load the data',
-    'NOW: Waiting on the load script',
     'NEW: do | - | Run the load script | - | -',
     'HELP: new 1 | run | ./load.sh | load script',
     'HELP: new 1 | run | npm login | -',
@@ -786,7 +780,7 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   expect(await pane.find({ text: /Opened \.env\.local/ })).toBeUndefined()
   await pane.press({ key: 'title-i1' })
 
-  ledgerReply = 'NOW: The load script needs your password'
+  ledgerReply = 'NONE'
   await $.turn.start({ text: 'For "Run the load script", run this', turnId: 't2' })
   await $.turn.complete({ answer: 'It needs sudo.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
   await clock.settle()
@@ -798,7 +792,6 @@ test('a question with 7 options shows 4 until [All 7 options], draws its steps a
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   ledgerReply = [
-    'NOW: Waiting on a color',
     'NEW: decide | 1 | Which color? | Red / Orange / Yellow / Green / Blue / Indigo / Violet | Green',
     'HELP: new 1 | run | ./a.sh | a script',
     'HELP: new 1 | run | ./b.sh | b script',
@@ -843,8 +836,7 @@ test('a question with 7 options shows 4 until [All 7 options], draws its steps a
 test('last actions an earlier build saved convert once by the table, and a task handed off then still folds', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  ledgerReply =
-    'NOW: Waiting on the load script\nNEW: do | - | Run the load script | - | -\nHELP: new 1 | run | ./load.sh | load script'
+  ledgerReply = 'NEW: do | - | Run the load script | - | -\nHELP: new 1 | run | ./load.sh | load script'
   const at = 1_000_000
   const thread = (id: string) => `acme/greet#12 thread ${id}`
   const old: Record<string, Record<string, unknown>> = {
@@ -1204,7 +1196,7 @@ test('a catch-up writes its Overview with a separate call over the transcript', 
   on('model.fork', () => ({
     value: {
       isAnswered: true,
-      text: 'GOAL: Add a greeting CLI\nNOW: Waiting',
+      text: 'NONE',
       usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
     },
   }))
@@ -1224,7 +1216,7 @@ test('after a failed update, the next reply catches up over the whole conversati
   on('model.fork', () => ({
     value: {
       isAnswered: true,
-      text: 'GOAL: Ship the onboarding flow\nNOW: Waiting on copy review\nCLOSED: i1 | Node\nFIXED: f3 | fixed\nNEW: do | - | Review the welcome copy | - | -',
+      text: 'CLOSED: i1 | Node\nFIXED: f3 | fixed\nNEW: do | - | Review the welcome copy | - | -',
       usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
     },
   }))
@@ -1286,7 +1278,7 @@ test('a reload that cuts off the end-of-turn hook catches up on load, and a suba
     return {
       value: {
         isAnswered: true,
-        text: 'GOAL: Add a greeting CLI\nNOW: Waiting on the push\nNEW: decide | - | Push the branch to origin? | yes / no | yes',
+        text: 'NEW: decide | - | Push the branch to origin? | yes / no | yes',
         usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
       },
     }
@@ -2179,7 +2171,7 @@ test('once the person answers or closes the last waiting row, a row from a later
 test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, its buttons send its conflicts and thread and say so, and its failing check waits on the person', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  ledgerReply = 'NOW: Waiting on review\nNEW: do | - | Mark #12 ready for review | - | -'
+  ledgerReply = 'NEW: do | - | Mark #12 ready for review | - | -'
   let hasReply = false
   let isResolved = false
   let onFetched: (() => void) | undefined
@@ -3122,7 +3114,7 @@ test('/clear and /resume switch the inbox to the other conversation, and each ke
   await pane.press({ key: 'answer-i1-0' })
   await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
   await $.classic.SessionStart({ source: 'clear', session_id: 'session-2' })
-  ledgerReply = 'GOAL: Fix the build\nNOW: Waiting\nNEW: decide | 1 | Pin the Node version? | Yes / No | Yes'
+  ledgerReply = 'NEW: decide | 1 | Pin the Node version? | Yes / No | Yes'
   await turn('fix the build')
   expect(await pane.find({ text: /Pin the Node version\?/ })).toBeDefined()
   expect(await pane.find({ text: /✓/ })).toBeUndefined()
@@ -3141,7 +3133,7 @@ test('/clear and /resume switch the inbox to the other conversation, and each ke
   expect(await pane.find({ text: /Use Node or Python\?/ })).toBeUndefined()
 })
 
-test('where classic.SessionStart is skipped, the first prompt after /clear, /resume and /branch loads that conversation and carries its card', async ($, on) => {
+test('where classic.SessionStart is skipped, the first prompt after /clear, /resume and /branch loads that conversation and carries its open questions', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   const turn = async (text: string, reply: string) => {
@@ -3158,39 +3150,34 @@ test('where classic.SessionStart is skipped, the first prompt after /clear, /res
   }
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  await turn(
-    'add caching',
-    'GOAL: Add caching\nNOW: Waiting\nNEW: decide | 1 | Pick a cache? | Redis / Memory | Memory',
-  )
+  await turn('add caching', 'NEW: decide | 1 | Pick a cache? | Redis / Memory | Memory')
 
   const cleared = await contextOf('session-2', 'clear', 'start over')
   expect(cleared).not.toContain('Pick a cache?')
   expect(cleared).not.toContain('Add caching')
 
-  await turn('fix the build', 'GOAL: Fix the build\nNOW: Waiting\nNEW: decide | 1 | Pin Node? | Yes / No | Yes')
+  await turn('fix the build', 'NEW: decide | 1 | Pin Node? | Yes / No | Yes')
   const branched = await contextOf('session-3', 'resume', 'try another way')
   expect(branched).toContain('Pin Node?')
-  expect(branched).toContain('Goal: Fix the build')
 
   const resumed = await contextOf('session-1', 'resume', 'where were we?')
   expect(resumed).toContain('Pick a cache?')
-  expect(resumed).toContain('Goal: Add caching')
   expect(resumed).not.toContain('Pin Node?')
   const again = (await $.prompt.submit({ text: 'and now?', wait: false, origin: { kind: 'composer' } })).context ?? []
-  expect(again.join('\n')).not.toContain('Goal: Add caching')
+  expect(again.join('\n')).not.toContain('Pick a cache?')
 })
 
 test('a ledger update held during clear cannot write its old question into the new conversation', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  ledgerReply = 'GOAL: Old work\nNOW: Waiting\nNEW: decide | 1 | Old question? | Yes / No | Yes'
+  ledgerReply = 'NEW: decide | 1 | Old question? | Yes / No | Yes'
   let entered!: () => void
   let release!: () => void
   const inWrite = new Promise<void>(resolve => (entered = resolve))
   const held = new Promise<void>(resolve => (release = resolve))
   let didHold = false
   on('state.set', { plugin: 'inbox', key: 'session' } as const, async ($, e, next) => {
-    if (!didHold && e.value.ledger.card?.goal === 'Old work') {
+    if (!didHold && e.value.ledger.items.some(i => i.ask === 'Old question?')) {
       didHold = true
       entered()
       await held
@@ -3215,7 +3202,6 @@ test('a ledger update held during clear cannot write its old question into the n
 const SAVED_SESSION = {
   savedAt: 900_000,
   ledger: {
-    card: { goal: 'Add a greeting CLI', done: [], now: 'Waiting on a choice', running: [] },
     items: [
       {
         id: 'i1',
@@ -3559,7 +3545,7 @@ test('a saved session the store cannot read shows as unreadable, not empty, unti
   await clock.settle()
   expect(await pane.find({ text: 'Could not read the inbox.' })).toBeDefined()
 
-  ledgerReply = 'NOW: Looking at it'
+  ledgerReply = 'NONE'
   await $.prompt.submit({ text: 'keep going', wait: false, origin: { kind: 'composer' } })
   await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
   await $.tool.call({
@@ -4028,8 +4014,7 @@ test('a forked conversation keeps the parent’s findings and closed records, an
     title: 'Retry loop never backs off',
     detail: 'The fetch retry spins with no delay.',
   })
-  ledgerReply =
-    'GOAL: Fix retries\nNOW: Waiting\nASKED: f1 | new 1\nNEW: decide | 1 | Add a backoff to the retry loop? | Yes / No | Yes'
+  ledgerReply = 'ASKED: f1 | new 1\nNEW: decide | 1 | Add a backoff to the retry loop? | Yes / No | Yes'
   await $.prompt.submit({ text: 'fix the retries', wait: false, origin: { kind: 'composer' } })
   await $.turn.complete({ answer: 'Add a backoff?', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
@@ -4182,7 +4167,7 @@ test('a PR that arrives while the Needs you tab is empty moves the pane to the P
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown: true, isFocused: true, isPlaced: true }] }))
-  ledgerReply = 'NOW: Waiting on review'
+  ledgerReply = 'NONE'
   let release = () => {}
   let onFetched = () => {}
   let isFetching = false

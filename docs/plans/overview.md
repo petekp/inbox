@@ -43,7 +43,7 @@ The build order:
 
 ## Terms
 
-Terms from `GLOSSARY.md`: Card, Band, Pane, Catch-up, Host, Look, Difference on purpose and Parity record. The new ones:
+Terms from `GLOSSARY.md`: Band, Pane, Catch-up, Host, Look, Difference on purpose and Parity record. The new ones:
 
 - **Overview:** the tab this plan adds. Its page is made of parts.
 - **Part:** one block of the page, with a kind and either text or a list of items.
@@ -236,7 +236,7 @@ The Overview call's prompt is text a model reads. `AGENTS.md` names the checks.
 
 - The ledger call's text is unchanged until step 5.
 - Step 5 changes `systemText`, so it runs the whole `./scripts/eval.sh`. It compares each ledger case with the baselines before the change.
-- `carryText` and `cardCarryText` change in step 5. They are text the agent reads, so `./scripts/eval.sh --suite agent` runs too.
+- `carryText` and `overviewCarryText` (was `cardCarryText`) change in step 5. They are text the agent reads, so `./scripts/eval.sh --suite agent` runs too.
 - The eval harness (`evals/run.ts`) runs the Overview call as its second call. Its `results`, `result` and `noResult` checks, and the baselines for the DONE cases, go.
 - The new cases check the tab's shape with fixed rules, not a model judge.
 

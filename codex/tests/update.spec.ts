@@ -60,7 +60,7 @@ test('a killed update worker leaves pending exchanges recoverable', async t => {
     's1',
     async () => {
       calls += 1
-      return 'GOAL: Ship\nNEW: decide | - | Deploy now? | Yes / No | Yes'
+      return 'NEW: decide | - | Deploy now? | Yes / No | Yes'
     },
     () => 5,
   )
@@ -69,7 +69,7 @@ test('a killed update worker leaves pending exchanges recoverable', async t => {
   assert.deepEqual((await readState(dir, 's1')).pending, [])
 })
 
-const LEDGER_ANSWER = 'GOAL: Ship\nNEW: decide | - | Deploy now? | Yes / No | Yes'
+const LEDGER_ANSWER = 'NEW: decide | - | Deploy now? | Yes / No | Yes'
 
 async function updateWithOverview(overview: string | null) {
   const dir = tempDir()
@@ -147,7 +147,7 @@ test('a ledger update shows before its Overview call returns', async () => {
     dir,
     's1',
     async (prompt, system) => {
-      if (system !== OVERVIEW_SYSTEM) return 'GOAL: Ship\nCLOSED: i2 | MIT'
+      if (system !== OVERVIEW_SYSTEM) return 'CLOSED: i2 | MIT'
       overviewPrompt = prompt
       asked()
 
@@ -215,7 +215,7 @@ test('Overview calls run one after another, and the second reads the first oneâ€
       if (system !== OVERVIEW_SYSTEM) {
         ledgerCalls += 1
 
-        return `GOAL: Ship\nNEW: do | - | Task ${ledgerCalls} | - | -`
+        return `NEW: do | - | Task ${ledgerCalls} | - | -`
       }
       overviewPrompts.push(prompt)
       if (overviewPrompts.length === 1) {
@@ -261,7 +261,7 @@ test('three Overview calls write in the order their updates landed', async () =>
     dir,
     's1',
     async (_prompt, system) => {
-      if (system !== OVERVIEW_SYSTEM) return 'GOAL: Ship'
+      if (system !== OVERVIEW_SYSTEM) return 'NONE'
       overviewCalls += 1
       const mine = overviewCalls
       if (mine === 1) await held
@@ -293,7 +293,7 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     ],
   }))
   const prompts: string[] = []
-  const answers = ['GOAL: Ship\nNOW: Waiting on deploy\nNEW: decide | - | Deploy now? | Yes / No | Yes', null]
+  const answers = ['NEW: decide | - | Deploy now? | Yes / No | Yes', null]
   const ask = async (p: string) => (prompts.push(p), answers.shift() ?? null)
   assert.deepEqual(viewOf(await readState(dir, 's1'), 4).status, { isUpdating: false, error: null })
   await runUpdates(dir, 's1', ask, () => 5)
@@ -363,8 +363,8 @@ test('an Explain exchange keeps its question open while applying the rest of the
     ],
   }))
   const replies = [
-    'GOAL: Ship\nNEW: decide | - | Deploy now? | Yes / No | Yes\nNEW: do | - | Check the build | - | -',
-    'NOW: Waiting on deploy\nCLOSED: i1 | done: explained\nCLOSED: i2 | done: checked',
+    'NEW: decide | - | Deploy now? | Yes / No | Yes\nNEW: do | - | Check the build | - | -',
+    'CLOSED: i1 | done: explained\nCLOSED: i2 | done: checked',
   ]
   await runUpdates(
     dir,
@@ -381,7 +381,6 @@ test('an Explain exchange keeps its question open while applying the rest of the
     applied.ledger.closed.map(c => c.ask),
     ['Check the build'],
   )
-  assert.equal(applied.ledger.card?.now, 'Waiting on deploy')
   assert.deepEqual(applied.pending, [])
 })
 

@@ -46,7 +46,6 @@ type Check =
   | { open: string }
   | { closed: string; outcome?: string }
   | { added: number }
-  | { done: string }
   | { new: string; kind?: 'question' | 'task'; rec?: string | null; help?: string }
   | { notNew: string }
   | { noHelp: string }
@@ -417,7 +416,6 @@ function failures(
   const isOpen = (id: string) => after.items.some(i => i.id === id) || after.findings.some(f => f.id === id)
   const closedOutcome = (id: string) =>
     after.closed.find(c => c.id === id)?.outcome ?? after.closedFindings.find(f => f.id === id)?.outcome ?? null
-  const finished = (after.card?.done ?? []).filter(line => !(before.card?.done ?? []).includes(line))
   const newChecks = checks.filter((c): c is Extract<Check, { new: string }> => 'new' in c)
   const newMatches = matchEach(
     newChecks,
@@ -436,8 +434,6 @@ function failures(
       if (outcome === null) out.push(`${c.closed} still open`)
       else if (c.outcome && !has(c.outcome, outcome)) out.push(`${c.closed} closed as "${outcome}"`)
     } else if ('added' in c && added.length !== c.added) out.push(`${added.length} items added`)
-    else if ('done' in c && !finished.some(line => has(c.done, line)))
-      out.push(`no done line like /${c.done}/: ${finished.map(line => `"${line}"`).join(', ')}`)
     else if (isOverviewCheck(c)) out.push(...overviewFailures(c, after, overview))
     else if ('new' in c) {
       const match = newMatches.get(c)

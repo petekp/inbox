@@ -1364,13 +1364,12 @@ test('the tab’s first view of a forked chat gives it the parent’s ledger and
   await updateState(dir, 'parent', s => ({
     ...s,
     presence: { ...s.presence, turnsStarted: 3, turnsApplied: 3 },
-    ledger: { ...s.ledger, turn: 3, card: { goal: 'Parent goal', done: [], now: '', running: [] }, nextId: 4 },
+    ledger: { ...s.ledger, turn: 3, nextId: 4 },
   }))
   rolloutAt(home, 'fork', { forked_from_id: 'parent' })
   await call('inbox_view', 'fork')
 
   const s = await readState(dir, 'fork')
-  assert.equal(s.ledger.card?.goal, 'Parent goal')
   assert.equal(s.presence.ledgerState, 'current')
   assert.deepEqual(updates, [])
 })

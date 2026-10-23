@@ -55,12 +55,7 @@ export type Equal = (actual: unknown, expected: unknown, label: string) => void
 
 const SETTLE_WINDOW_MS = 1000
 
-const MODEL_ANSWER = [
-  'GOAL: Add a greeting CLI',
-  'DONE: Plan written',
-  'NOW: Waiting on one choice',
-  'NEW: decide | 1 | Use Node or Python? | Node / Python | Node',
-].join('\n')
+const MODEL_ANSWER = ['NEW: decide | 1 | Use Node or Python? | Node / Python | Node'].join('\n')
 
 export async function runSessionScript<S extends Session>(makeHost: MakeHost<S>, equal: Equal): Promise<void> {
   const { host, delivered, performed } = makeHost(async () => MODEL_ANSWER)

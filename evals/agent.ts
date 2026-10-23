@@ -17,7 +17,7 @@ import { parseArgs } from 'node:util'
 import { EMPTY } from '../hooks/ledger'
 import {
   CLAUDE_CODE,
-  cardCarryText,
+  overviewCarryText,
   closedText,
   guidanceText,
   guidedCloseDescription,
@@ -146,7 +146,7 @@ function guidance(host: Host): string {
 function message(c: Case, host: Host): string {
   if (!c.ledger) return c.prompt
   const ledger = { ...EMPTY, ...c.ledger } as Ledger
-  const carry = host === CLAUDE_CODE ? cardCarryText(ledger) : null
+  const carry = host === CLAUDE_CODE ? overviewCarryText(ledger) : null
   const notes = [carry, inboxText(host, ledger, false), closedText(ledger.closed)].filter(Boolean)
 
   return `${notes.join('\n')}\n\n${c.prompt}`

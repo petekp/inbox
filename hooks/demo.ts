@@ -45,12 +45,6 @@ export function demoSession(now: number): Session {
 export function demoView(now: number): DemoCopy {
   return {
     ledger: {
-      card: {
-        goal: 'Add pinch-to-dismiss to glances',
-        done: ['A pinch dismisses the glance you look at', 'Dismissed glances fade out', 'PR #31 opened'],
-        now: 'Waiting on the dismiss gesture and a pairing',
-        running: ['simulator: http://localhost:3000'],
-      },
       overview: {
         isCoordinator: false,
         state: 'on-track',

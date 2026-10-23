@@ -27,25 +27,18 @@ import {
 } from '../hooks/ledger'
 import { readCommandRow, resetTime, statusLine, stopKindOf } from '../hooks/claude'
 import { parseInline } from '../hooks/inline'
+import { EMPTY_OVERVIEW } from '../hooks/overview'
 import { applyPress } from '../hooks/presses'
 import { agentTools, recordClose, recordItem } from '../hooks/tools'
 import type { Item } from '../types'
 
-const REPLY = `GOAL: Move annotation queue logic into a tested reducer
-DONE: Reducer built on its own branch
-DONE: 422 unit tests pass
-NOW: Waiting on approval to run input tests
-RUNNING: vite dev: http://localhost:5173
-NEW: decide | 1 | Rename greet.mjs to hello.mjs? | Yes / No | yes
+const REPLY = `NEW: decide | 1 | Rename greet.mjs to hello.mjs? | Yes / No | yes
 NEW: decide | 2 | Cut CHANGELOG.md down to this release? | - | -
 NEW: do | - | Test pinch zoom on your Mac | - | -`
 
 describe('parseReply', () => {
   test('reads every key of the line format', () => {
     const u = parseReply(REPLY)
-    expect(u?.card.goal).toBe('Move annotation queue logic into a tested reducer')
-    expect(u?.card.done).toEqual(['Reducer built on its own branch', '422 unit tests pass'])
-    expect(u?.card.running).toEqual(['vite dev: http://localhost:5173'])
     expect(u?.added.map(a => [a.kind, a.label, a.rec])).toEqual([
       ['question', '1', 'Yes'],
       ['question', '2', null],
@@ -102,10 +95,16 @@ describe('parseReply', () => {
     expect(after.findings.map(f => f.id)).toEqual(['f4'])
   })
 
-  test('a key written as "-" adds nothing and keeps the card', () => {
-    const u = parseReply('GOAL: -\nNOW: -\nDONE: -\nRUNNING: -\nNEW: do | - | - | - | -')!
+  test('a key written as "-" adds nothing', () => {
+    const u = parseReply('NEW: do | - | - | - | -')!
     expect(u.added).toEqual([])
-    expect(u.card).toEqual({ goal: '', done: [], now: '', running: [] })
+  })
+
+  test('NONE is a valid answer that changes nothing, and an empty answer is not', () => {
+    const u = parseReply('NONE')!
+    expect(u.added).toEqual([])
+    expect(u.closed).toEqual([])
+    expect(parseReply('')).toBeNull()
   })
 
   test('keeps HELP lines quoted from the reply, attached to the item they name', () => {
@@ -191,20 +190,15 @@ describe('parseReply', () => {
     expect(u?.added[0]?.helps).toEqual([{ kind: 'run', command: './scripts/load.sh', name: 'load script' }])
   })
 
-  test('reads only the last answer when the model corrects itself and answers again', () => {
+  test('reads a line once when the model repeats its answer', () => {
     const u = parseReply(
       [
-        'GOAL: Ship the greeting CLI',
-        'DONE: Arg parser fixed',
         'NEW: do | - | Merge PR #41 | - | -',
         'Wait: that is not a new item. Corrected answer:',
-        'GOAL: Ship the greeting CLI',
-        'DONE: Arg parser fixed',
-        'NOW: Release build running',
+        'NEW: do | - | Merge PR #41 | - | -',
       ].join('\n'),
     )
-    expect(u?.card.done).toEqual(['Arg parser fixed'])
-    expect(u?.added).toEqual([])
+    expect(u?.added.map(a => a.ask)).toEqual(['Merge PR #41'])
   })
 
   test('a step whose command holds "|" keeps the whole command', () => {
@@ -283,7 +277,7 @@ describe('applyUpdate', () => {
 
     const second = applyUpdate(
       { ...first, turn: 2 },
-      parseReply('GOAL: same\nNOW: renamed\nCLOSED: i1 | yes, renamed\nNEW: decide | - | Push the branch? | - | yes')!,
+      parseReply('CLOSED: i1 | yes, renamed\nNEW: decide | - | Push the branch? | - | yes')!,
       2000,
       2,
     )
@@ -301,19 +295,18 @@ describe('applyUpdate', () => {
       },
     ])
     expect(latestBatch(second).map(i => i.id)).toEqual(['i4'])
-    expect(second.card?.done).toEqual(first.card?.done)
   })
 
   test('closes items left unanswered for more than 12 prompts as expired', () => {
     const first = applyUpdate({ ...EMPTY, turn: 1 }, parseReply(REPLY)!, 1, 1)
-    const later = applyUpdate({ ...first, turn: 14 }, parseReply('NOW: still going')!, 2, 14)
+    const later = applyUpdate({ ...first, turn: 14 }, parseReply('NONE')!, 2, 14)
     expect(later.items.length).toBe(0)
     expect(later.closed.map(d => [d.id, d.outcome])).toEqual([
       ['i1', 'expired, unanswered'],
       ['i2', 'expired, unanswered'],
       ['i3', 'expired, unanswered'],
     ])
-    expect(applyUpdate({ ...first, turn: 13 }, parseReply('NOW: still going')!, 2, 13).items.length).toBe(3)
+    expect(applyUpdate({ ...first, turn: 13 }, parseReply('NONE')!, 2, 13).items.length).toBe(3)
   })
 
   test('merges a reworded copy of an open item instead of adding it', () => {
@@ -529,7 +522,7 @@ describe('items the agent recorded', () => {
 
   test("one stays open after 12 prompts, when the update's items expire", () => {
     const both = applyUpdate(recorded(), parseReply('NEW: do | - | Sign in to npm | - | -')!, 1500, 1)
-    const later = applyUpdate({ ...both, turn: 14 }, parseReply('NOW: still going')!, 2000, 14)
+    const later = applyUpdate({ ...both, turn: 14 }, parseReply('NONE')!, 2000, 14)
     expect([later.items.map(i => i.id), later.closed.map(c => [c.id, c.how])]).toEqual([['i1'], [['i2', 'expired']]])
   })
 
@@ -791,7 +784,7 @@ describe('a finding replaced by a question', () => {
   })
 
   test('an update that closes the question as put off brings the finding back', () => {
-    const ledger = applyUpdate(asked(), parseReply('GOAL: g\nCLOSED: i2 | the person put it off for later')!, 8, 2)
+    const ledger = applyUpdate(asked(), parseReply('CLOSED: i2 | the person put it off for later')!, 8, 2)
     expect(ledger.findings.map(f => f.id)).toEqual(['f1'])
   })
 
@@ -972,7 +965,6 @@ describe('carryText', () => {
   test('is empty for an empty ledger and lists open items otherwise', () => {
     expect(carryText(EMPTY, 'T')).toBe(null)
     const text = carryText(applyUpdate(EMPTY, parseReply(REPLY)!, 1, 1), 'T')
-    expect(text).toContain('Goal: Move annotation queue logic')
     expect(text).toContain('(1) "Rename greet.mjs to hello.mjs?"')
   })
 })
@@ -1002,7 +994,7 @@ describe("the person's own commands", () => {
     const ledger = applyUpdate(
       EMPTY,
       parseReply(
-        'GOAL: Publish\nNOW: Waiting on sign-in\nNEW: do | - | Sign in to npm | - | -\nHELP: new 1 | run | npm login | sign-in\nNEW: do | - | Publish the package | - | -\nHELP: new 2 | run | npm publish | publish',
+        'NEW: do | - | Sign in to npm | - | -\nHELP: new 1 | run | npm login | sign-in\nNEW: do | - | Publish the package | - | -\nHELP: new 2 | run | npm publish | publish',
         reply,
       )!,
       1,
@@ -1017,13 +1009,10 @@ describe('statusLine', () => {
   test('names the first waiting item after the count, and says where the work stands when nothing waits', () => {
     const waiting = applyUpdate(EMPTY, parseReply(REPLY)!, 1, 1)
     expect(statusLine(waiting, null, [])).toBe('3 · Rename greet.mjs to hello.mjs?')
-    const settled = applyUpdate(
-      waiting,
-      parseReply('GOAL: g\nNOW: Reducer merged\nCLOSED: i1 | yes\nCLOSED: i2 | no\nCLOSED: i3 | done')!,
-      2,
-      2,
-    )
-    expect(statusLine(settled, null, [])).toBe('Reducer merged')
+    const settled = applyUpdate(waiting, parseReply('CLOSED: i1 | yes\nCLOSED: i2 | no\nCLOSED: i3 | done')!, 2, 2)
+    expect(statusLine(settled, null, [])).toBe('')
+    const described = { ...settled, overview: { ...EMPTY_OVERVIEW, headline: 'Reducer merged' } }
+    expect(statusLine(described, null, [])).toBe('Reducer merged')
     expect(statusLine(EMPTY, null, [])).toBe('')
   })
 

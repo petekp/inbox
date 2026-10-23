@@ -25,7 +25,6 @@ export function systemText(host: Host): string {
   return `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
 
 Input:
-- <card>: the ledger before this exchange (may be empty)
 - <open>: items still waiting on the person, as id | kind | label | ask | options | rec
 - <findings>: findings the agent recorded for the person to review later, outside the current task, each with an id
 - <decided>: items the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again.
@@ -34,12 +33,9 @@ Input:
 - <reply>: the agent's final reply
 - <screen>: what the person has on screen besides the conversation.${band}
 
-Answer with lines only, each starting with one of these keys. No other text.
+Answer with lines only, each starting with one of these keys. No other text. When nothing in the exchange changes the ledger, answer with the one line NONE.
 
-GOAL: what this session is for, at most 12 words. Keep the previous goal unless the person clearly changed direction. "-" until the person has asked for something.
-DONE: one finished outcome, at most 8 words. Up to 4 DONE lines, oldest first, keeping the most recent. Outcomes, not activity: "PR #12 opened", not "ran gh".
-NOW: where the work stands at the end of this reply, at most 12 words. Name what it waits on, if anything. "-" when no work has started.
-RUNNING: something still running that the person may open, as "name: URL or port". Dev servers, simulators, background jobs. Omit anything the agent stopped. Zero or more lines.
+NONE: nothing in the exchange changes the ledger. Write it alone.
 CLOSED: <id> | the outcome, at most 8 words, in one of three forms. When the person answered in <person>, write their answer. Otherwise write "done: <what the agent did>" when the work is done, or "no longer applies: <what in the reply or <activity> made it moot>". An option the agent picked on its own, or an option the work made moot, is not the person's answer: write it in the "done:" or "no longer applies:" form. One line for each item in <open> the person answered in <person> (including "all recommended", "go", "yes to all", numbered answers), or that the reply or <activity> shows is done or no longer applies. A person asking what an item means has not answered it, and a reply explaining it does not close it. When <person> asks to run an item's command and the reply says it ran, that item is done. So is an item whose command the person ran themselves, per <person>, when its output shows it worked. An item that has nothing to do with this exchange stays open: being outside the current work, or not being mentioned, does not make it no longer apply.
 FIXED: <id> | the change that fixed it, at most 8 words. One line for each finding in <findings> whose problem the reply, <activity> or <person> shows was fixed by a change to the work. Only a change fixes a finding. When the person puts a finding off, sets it aside or says it does not matter, write no FIXED line: it stays open until they dismiss it.
 ASKED: <id> | <item>
@@ -225,14 +221,6 @@ export function dialogActivity(questions: DialogQuestion[], outcome: DialogOutco
 }
 
 function ledgerBlocks(ledger: Ledger): string[] {
-  const card = ledger.card
-    ? [
-        `GOAL: ${ledger.card.goal}`,
-        ...ledger.card.done.map(d => `DONE: ${d}`),
-        `NOW: ${ledger.card.now}`,
-        ...ledger.card.running.map(r => `RUNNING: ${r}`),
-      ].join(NL)
-    : ''
   const open = ledger.items
     .map(
       i =>
@@ -246,7 +234,6 @@ function ledgerBlocks(ledger: Ledger): string[] {
     .join(NL)
 
   return [
-    `<card>${NL}${card}${NL}</card>`,
     `<open>${NL}${open}${NL}</open>`,
     `<findings>${NL}${findings}${NL}</findings>`,
     `<decided>${NL}${closed}${NL}</decided>`,
@@ -464,32 +451,28 @@ function findingLine(finding: Finding): string {
   return `- ${finding.kind}: ${finding.title} (close id: ${finding.id})`
 }
 
-function cardLines(ledger: Ledger): string[] {
-  const card = ledger.card
-  if (!card) return []
-  const out: string[] = []
-  if (card.goal) out.push(`Goal: ${card.goal}`)
-  if (card.done.length > 0) out.push(`Done: ${card.done.join('; ')}`)
-  if (card.now) out.push(`Now: ${card.now}`)
-  if (card.running.length > 0) out.push(`Running: ${card.running.join('; ')}`)
+/** What the Overview says the session is doing and how it is going. */
+function overviewLines(ledger: Ledger): string[] {
+  const overview = ledger.overview
+  if (!overview?.headline) return []
 
-  return out
+  return [`Working on: ${overview.headline}`, ...(overview.status ? [`Status: ${overview.status}`] : [])]
 }
 
-export const CARD_TITLE =
+export const CARRY_TITLE =
   'inbox: where the work stood at the last reply. The "inbox:" text beside this prompt lists what waits on the user and what was closed.'
 
 /** The mod's carry at a conversation's first prompt. The `inbox:` text beside that prompt already lists the open items and the closed ones. */
-export function cardCarryText(ledger: Ledger): string | null {
-  const lines = cardLines(ledger)
+export function overviewCarryText(ledger: Ledger): string | null {
+  const lines = overviewLines(ledger)
 
-  return lines.length === 0 ? null : [CARD_TITLE, ...lines].join(NL)
+  return lines.length === 0 ? null : [CARRY_TITLE, ...lines].join(NL)
 }
 
 export function carryText(ledger: Ledger, title: string): string | null {
   const findings = ledger.findings
-  if (!ledger.card && ledger.items.length === 0 && findings.length === 0) return null
-  const out = [title, ...cardLines(ledger)]
+  if (!ledger.overview?.headline && ledger.items.length === 0 && findings.length === 0) return null
+  const out = [title, ...overviewLines(ledger)]
   if (ledger.items.length > 0) {
     out.push('Waiting on the user:')
     for (const item of ledger.items) out.push(itemLine(item))

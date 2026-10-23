@@ -123,6 +123,7 @@ import {
   applyExchangeUpdate,
   closeItem,
   closedState,
+  isBlankLedger,
   readKind,
   tasksRunBy,
   upgradeLedger,
@@ -130,7 +131,7 @@ import {
 import {
   addActivity,
   buildPrompt,
-  cardCarryText,
+  overviewCarryText,
   catchUpPrompt,
   OVERVIEW_SYSTEM,
   overviewCatchUpPrompt,
@@ -2319,7 +2320,7 @@ async function applyConversation(
   const [current] = await Promise.all([upgradeState($), syncTheme($)])
   await replaceDrawn($, s => cutOffTurn(cutOffUpdate(s)))
   if (revision !== loadRevision) return
-  const isFresh = current.turn === 0 && !current.card
+  const isFresh = isBlankLedger(current)
   const isUnread =
     (await update($, UNREADABLE, u =>
       isLoading() ? (isFresh ? (saved === null ? id : null) : u === id ? u : null) : u,
@@ -2328,7 +2329,7 @@ async function applyConversation(
   if (saved !== null) await bringBack($, parent ?? saved.session, isLoading, parent !== undefined)
   if (!isLoading()) return
   const { ledger, presence } = await read($, SESSION)
-  const isEmpty = !ledger.card && ledger.items.length === 0
+  const isEmpty = isBlankLedger(ledger)
   const needsCatchUp =
     presence.ledgerState !== 'current' ||
     presence.turnsStarted > presence.turnsApplied ||
@@ -2373,7 +2374,7 @@ async function bringBack(
   let isBrought = false
   await replaceDrawn($, s => {
     isBrought = false
-    if (!isLoading() || s.ledger.turn !== 0 || s.ledger.card) return s
+    if (!isLoading() || !isBlankLedger(s.ledger)) return s
     isBrought = true
     if (isFork) return forkedFrom(s, loaded)
     const lastActions = Object.fromEntries(
@@ -2440,14 +2441,11 @@ async function readAgain($: EngineInterface) {
   if (saved !== null) {
     await update($, UNREADABLE, () => null)
     const current = (await read($, SESSION)).ledger
-    const hasRun = current.turn !== 0 || current.card !== null
+    const hasRun = current.turn !== 0 || current.overview !== null
     if (hasRun && saved.session) await restore($, saved.session)
     else await bringBack($, saved.session, () => conversation.id === id)
     const { ledger } = await read($, SESSION)
-    if (
-      (hasRun && saved.session) ||
-      (!ledger.card && ledger.items.length === 0 && (await $.session.turns().catch(() => 0)) > 0)
-    )
+    if ((hasRun && saved.session) || (isBlankLedger(ledger) && (await $.session.turns().catch(() => 0)) > 0))
       await catchUpNow($)
     void publishStatus($)
     if (ledger.prs.length > 0) void fetchPrs($, false)
@@ -2552,7 +2550,7 @@ export const register: Register = on => {
     const notes = await notePrompt($, e.text)
     if (carriedFor !== conversation.id) {
       carriedFor = conversation.id
-      const carry = cardCarryText((await read($, SESSION)).ledger)
+      const carry = overviewCarryText((await read($, SESSION)).ledger)
       if (carry) notes.unshift(carry)
     }
 
@@ -2864,7 +2862,7 @@ export const register: Register = on => {
     if (!isOn || e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const [{ ledger, stop, view, showsDemoNotices, now }, theme] = await Promise.all([drawnState($), read($, THEME)])
-    if (!stop && !ledger.card && ledger.items.length === 0 && ledger.findings.length === 0) return next(e)
+    if (!stop && isBlankLedger(ledger)) return next(e)
     // Every mod shares the band, and a tree without the drawing from next(e)
     // hides what the mods after this one draw there.
     const theirs = await next(e)

@@ -1,4 +1,12 @@
-import { applyExchangeUpdate, applyUpdate, EMPTY, KEPT_SESSIONS, parseReply, upgradeLedger } from './ledger'
+import {
+  applyExchangeUpdate,
+  applyUpdate,
+  EMPTY,
+  isBlankLedger,
+  KEPT_SESSIONS,
+  parseReply,
+  upgradeLedger,
+} from './ledger'
 import type { Exchange, Press, Update } from './ledger'
 import { addActivity, carryText, guidanceText, promptNotes, screenText, START_TITLE, TOLD_NOTHING } from './model-text'
 import type { Host, ScreenTab, Told } from './model-text'
@@ -448,20 +456,18 @@ export function lookEndedOn<S extends { ledger: Ledger }>(s: S, at: number): S {
   return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } }
 }
 
-/** Whether the session has a card, an item, a finding or an Overview. */
+/** Whether the session has anything recorded: an applied update, an item, a finding or an Overview. */
 export function hasLedger(s: Session): boolean {
-  const { ledger } = s
-
-  return ledger.card !== null || ledger.items.length > 0 || ledger.findings.length > 0 || ledger.overview !== null
+  return !isBlankLedger(s.ledger)
 }
 
 /**
- * A forked conversation continues its parent's ledger: the card, items, findings, Overview and closed records. It
- * takes nothing else, since presses, queued messages, the stop and the running turn belong to the parent. A fork that
- * already has turns or a card keeps its own.
+ * A forked conversation continues its parent's ledger: items, findings, Overview and closed records. It takes
+ * nothing else, since presses, queued messages, the stop and the running turn belong to the parent. A fork that
+ * already has turns or an Overview keeps its own.
  */
 export function forkedFrom<S extends Session>(child: S, parent: Session): S {
-  if (child.ledger.turn !== 0 || child.ledger.card) return child
+  if (!isBlankLedger(child.ledger)) return child
 
   return { ...child, ledger: parent.ledger }
 }
@@ -474,10 +480,7 @@ export function isUnseen(s: Session): boolean {
     s.presence.turnsStarted === 0 &&
     s.presence.ledgerState === 'current' &&
     s.pending.length === 0 &&
-    ledger.card === null &&
-    ledger.items.length === 0 &&
-    ledger.findings.length === 0 &&
-    ledger.overview === null
+    isBlankLedger(ledger)
   )
 }
 

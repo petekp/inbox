@@ -397,7 +397,6 @@ function orderParts(o, away, work) {
 // ../hooks/ledger.ts
 var KEPT_SESSIONS = 40;
 var EMPTY = {
-  card: null,
   overview: null,
   items: [],
   closed: [],
@@ -408,6 +407,9 @@ var EMPTY = {
   turn: 0,
   batchTurn: 0
 };
+function isBlankLedger(ledger) {
+  return ledger.turn === 0 && ledger.overview === null && ledger.items.length === 0 && ledger.findings.length === 0;
+}
 var NL5 = `
 `;
 var MAX_OPEN = 20;
@@ -425,6 +427,7 @@ function upgradeLedger(ledger) {
     notes,
     decided,
     milestones: _milestones,
+    card: _card,
     ...rest
   } = ledger;
   return {
@@ -554,10 +557,9 @@ function dash(value) {
   const v = (value ?? "").trim();
   return v === "" || v === "-" ? null : v;
 }
-var KEY_LINE2 = /^\s*[-*]?\s*(GOAL|DONE|NOW|RUNNING|CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:\s*(.*)$/;
+var KEY_LINE2 = /^\s*[-*]?\s*(NONE|CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:?\s*(.*)$/;
 function parseReply(text, source = null) {
   const blocks = source === null ? [] : codeBlocks(source);
-  const card = { goal: "", done: [], now: "", running: [] };
   const closed = [];
   const added = [];
   const helped = [];
@@ -567,24 +569,19 @@ function parseReply(text, source = null) {
   const todos = [];
   let seen = 0;
   const lines = text.split(NL5);
-  const lastGoal = lines.findLastIndex((line) => KEY_LINE2.exec(line)?.[1] === "GOAL");
+  const seenLines = new Set;
   const newLines = [];
-  for (const raw of lines.slice(Math.max(lastGoal, 0))) {
+  for (const raw of lines) {
     const m = KEY_LINE2.exec(raw);
-    if (!m)
+    if (!m || seenLines.has(raw.trim()))
       continue;
+    seenLines.add(raw.trim());
     seen += 1;
     const key = m[1];
     const value = dash(m[2]) ?? "";
-    if (key === "GOAL")
-      card.goal = value;
-    else if (key === "NOW")
-      card.now = value;
-    else if (key === "DONE" && value)
-      card.done.push(value);
-    else if (key === "RUNNING" && value)
-      card.running.push(value);
-    else if (key === "CLOSED" || key === "FIXED") {
+    if (key === "NONE")
+      continue;
+    if (key === "CLOSED" || key === "FIXED") {
       const [id, outcome] = value.split("|").map((s) => s.trim());
       if (id && /^f\d/.test(id) === (key === "FIXED"))
         closed.push({ id, outcome: outcome ?? "" });
@@ -643,7 +640,7 @@ function parseReply(text, source = null) {
     if (item !== undefined && item !== -1)
       asked.push({ id, item });
   }
-  return seen === 0 ? null : { card: { ...card, done: card.done.slice(-4) }, closed, added, helped, updated, asked, todos };
+  return seen === 0 ? null : { closed, added, helped, updated, asked, todos };
 }
 function isTakenUp(work, reply) {
   const key = [...keyWords(work)];
@@ -809,13 +806,6 @@ function isPersonsAnswer(outcome) {
   return outcome.trim() !== "" && !NOT_AN_ANSWER.test(outcome);
 }
 function applyUpdate(ledger, u, now, turn, promptAt = now) {
-  const prev = ledger.card;
-  const card = {
-    goal: u.card.goal || prev?.goal || "",
-    done: u.card.done.length > 0 ? u.card.done : prev?.done ?? [],
-    now: u.card.now || prev?.now || "",
-    running: u.card.running
-  };
   const stillAsked = new Set(u.updated.filter((c) => c.options || c.rec).map((c) => c.id));
   const closing = new Map(u.closed.filter((c) => !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome)).map((c) => [c.id, c.outcome]));
   const closed = [...ledger.closed];
@@ -896,7 +886,6 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
   }, ledger);
   return reopenAskedFindings({
     ...ledger,
-    card,
     items: kept,
     closed,
     findings,
@@ -982,7 +971,6 @@ function systemText(host) {
   return `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
 
 Input:
-- <card>: the ledger before this exchange (may be empty)
 - <open>: items still waiting on the person, as id | kind | label | ask | options | rec
 - <findings>: findings the agent recorded for the person to review later, outside the current task, each with an id
 - <decided>: items the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again.
@@ -991,12 +979,9 @@ Input:
 - <reply>: the agent's final reply
 - <screen>: what the person has on screen besides the conversation.${band}
 
-Answer with lines only, each starting with one of these keys. No other text.
+Answer with lines only, each starting with one of these keys. No other text. When nothing in the exchange changes the ledger, answer with the one line NONE.
 
-GOAL: what this session is for, at most 12 words. Keep the previous goal unless the person clearly changed direction. "-" until the person has asked for something.
-DONE: one finished outcome, at most 8 words. Up to 4 DONE lines, oldest first, keeping the most recent. Outcomes, not activity: "PR #12 opened", not "ran gh".
-NOW: where the work stands at the end of this reply, at most 12 words. Name what it waits on, if anything. "-" when no work has started.
-RUNNING: something still running that the person may open, as "name: URL or port". Dev servers, simulators, background jobs. Omit anything the agent stopped. Zero or more lines.
+NONE: nothing in the exchange changes the ledger. Write it alone.
 CLOSED: <id> | the outcome, at most 8 words, in one of three forms. When the person answered in <person>, write their answer. Otherwise write "done: <what the agent did>" when the work is done, or "no longer applies: <what in the reply or <activity> made it moot>". An option the agent picked on its own, or an option the work made moot, is not the person's answer: write it in the "done:" or "no longer applies:" form. One line for each item in <open> the person answered in <person> (including "all recommended", "go", "yes to all", numbered answers), or that the reply or <activity> shows is done or no longer applies. A person asking what an item means has not answered it, and a reply explaining it does not close it. When <person> asks to run an item's command and the reply says it ran, that item is done. So is an item whose command the person ran themselves, per <person>, when its output shows it worked. An item that has nothing to do with this exchange stays open: being outside the current work, or not being mentioned, does not make it no longer apply.
 FIXED: <id> | the change that fixed it, at most 8 words. One line for each finding in <findings> whose problem the reply, <activity> or <person> shows was fixed by a change to the work. Only a change fixes a finding. When the person puts a finding off, sets it aside or says it does not matter, write no FIXED line: it stays open until they dismiss it.
 ASKED: <id> | <item>
@@ -1130,17 +1115,10 @@ function dialogActivity(questions, outcome) {
   }
 }
 function ledgerBlocks(ledger) {
-  const card = ledger.card ? [
-    `GOAL: ${ledger.card.goal}`,
-    ...ledger.card.done.map((d) => `DONE: ${d}`),
-    `NOW: ${ledger.card.now}`,
-    ...ledger.card.running.map((r) => `RUNNING: ${r}`)
-  ].join(NL6) : "";
   const open = ledger.items.map((i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"}`).join(NL6);
   const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL6);
   const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL6);
   return [
-    `<card>${NL6}${card}${NL6}</card>`,
     `<open>${NL6}${open}${NL6}</open>`,
     `<findings>${NL6}${findings}${NL6}</findings>`,
     `<decided>${NL6}${closed}${NL6}</decided>`
@@ -3506,17 +3484,16 @@ function lookEndedOn(s, at) {
   return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } };
 }
 function hasLedger(s) {
-  const { ledger } = s;
-  return ledger.card !== null || ledger.items.length > 0 || ledger.findings.length > 0 || ledger.overview !== null;
+  return !isBlankLedger(s.ledger);
 }
 function forkedFrom(child, parent) {
-  if (child.ledger.turn !== 0 || child.ledger.card)
+  if (!isBlankLedger(child.ledger))
     return child;
   return { ...child, ledger: parent.ledger };
 }
 function isUnseen(s) {
   const { ledger } = s;
-  return s.presence.turnsStarted === 0 && s.presence.ledgerState === "current" && s.pending.length === 0 && ledger.card === null && ledger.items.length === 0 && ledger.findings.length === 0 && ledger.overview === null;
+  return s.presence.turnsStarted === 0 && s.presence.ledgerState === "current" && s.pending.length === 0 && isBlankLedger(ledger);
 }
 var pendingKey = (p) => `${p.turnsStarted}:${p.ex.turn}`;
 function appliedCatchUp(s, begun, parsed, now) {
@@ -4948,12 +4925,6 @@ function demoSession(now) {
 function demoView(now) {
   return {
     ledger: {
-      card: {
-        goal: "Add pinch-to-dismiss to glances",
-        done: ["A pinch dismisses the glance you look at", "Dismissed glances fade out", "PR #31 opened"],
-        now: "Waiting on the dismiss gesture and a pairing",
-        running: ["simulator: http://localhost:3000"]
-      },
       overview: {
         isCoordinator: false,
         state: "on-track",

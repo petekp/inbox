@@ -90,7 +90,6 @@ function clip(text, max) {
 
 // ../hooks/ledger.ts
 var EMPTY = {
-  card: null,
   overview: null,
   items: [],
   closed: [],
@@ -101,6 +100,9 @@ var EMPTY = {
   turn: 0,
   batchTurn: 0
 };
+function isBlankLedger(ledger) {
+  return ledger.turn === 0 && ledger.overview === null && ledger.items.length === 0 && ledger.findings.length === 0;
+}
 var MAX_CLOSED = 12;
 var EXPIRED = "expired, unanswered";
 function readKind(kind) {
@@ -111,6 +113,7 @@ function upgradeLedger(ledger) {
     notes,
     decided,
     milestones: _milestones,
+    card: _card,
     ...rest
   } = ledger;
   return {
@@ -412,20 +415,15 @@ function itemLine(item) {
 function findingLine(finding) {
   return `- ${finding.kind}: ${finding.title} (close id: ${finding.id})`;
 }
-function cardLines(ledger) {
-  const card = ledger.card;
-  if (!card) return [];
-  const out = [];
-  if (card.goal) out.push(`Goal: ${card.goal}`);
-  if (card.done.length > 0) out.push(`Done: ${card.done.join("; ")}`);
-  if (card.now) out.push(`Now: ${card.now}`);
-  if (card.running.length > 0) out.push(`Running: ${card.running.join("; ")}`);
-  return out;
+function overviewLines(ledger) {
+  const overview = ledger.overview;
+  if (!overview?.headline) return [];
+  return [`Working on: ${overview.headline}`, ...overview.status ? [`Status: ${overview.status}`] : []];
 }
 function carryText(ledger, title) {
   const findings = ledger.findings;
-  if (!ledger.card && ledger.items.length === 0 && findings.length === 0) return null;
-  const out = [title, ...cardLines(ledger)];
+  if (!ledger.overview?.headline && ledger.items.length === 0 && findings.length === 0) return null;
+  const out = [title, ...overviewLines(ledger)];
   if (ledger.items.length > 0) {
     out.push("Waiting on the user:");
     for (const item of ledger.items) out.push(itemLine(item));
@@ -789,16 +787,15 @@ function needsUpdate(s) {
   return s.pending.length > 0 || s.presence.ledgerState !== "current";
 }
 function hasLedger(s) {
-  const { ledger } = s;
-  return ledger.card !== null || ledger.items.length > 0 || ledger.findings.length > 0 || ledger.overview !== null;
+  return !isBlankLedger(s.ledger);
 }
 function forkedFrom(child, parent) {
-  if (child.ledger.turn !== 0 || child.ledger.card) return child;
+  if (!isBlankLedger(child.ledger)) return child;
   return { ...child, ledger: parent.ledger };
 }
 function isUnseen(s) {
   const { ledger } = s;
-  return s.presence.turnsStarted === 0 && s.presence.ledgerState === "current" && s.pending.length === 0 && ledger.card === null && ledger.items.length === 0 && ledger.findings.length === 0 && ledger.overview === null;
+  return s.presence.turnsStarted === 0 && s.presence.ledgerState === "current" && s.pending.length === 0 && isBlankLedger(ledger);
 }
 
 // src/settle.ts

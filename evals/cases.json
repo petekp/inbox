@@ -2228,9 +2228,6 @@
     },
     "checks": [
       {
-        "done": "yaml|loader"
-      },
-      {
         "new": "json|yaml",
         "kind": "question"
       }
