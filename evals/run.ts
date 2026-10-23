@@ -304,20 +304,14 @@ function restatesText(text: string, other: string): boolean {
 }
 
 /**
- * Whether two items say the same thing: the shorter has most of its key words in the other, however short it is.
- * An item named like a stream ("Parser: …") against a plain item repeats it only when the plain item is the stream's
- * name, so a step that names a stream, such as a review of it, is not a repeat.
+ * Whether two items say the same thing: the same words once a stream's "name: what it does" is cut to its name, so a
+ * one- or two-word item is compared too, or a restatement of most of the key words. A step that names a stream, such
+ * as a review of it, has other words and is not a repeat.
  */
 function repeatsFact(a: string, b: string): boolean {
-  const [named, other] = a.includes(':') !== b.includes(':') ? (a.includes(':') ? [a, b] : [b, a]) : [null, null]
-  if (named !== null && other !== null) {
-    const same = (x: string, y: string) => [...keyWordsOf(x)].sort().join(' ') === [...keyWordsOf(y)].sort().join(' ')
+  const key = (t: string) => [...keyWordsOf(t.split(':')[0]!)].sort().join(' ')
 
-    return same(named.split(':')[0]!, other) || restatesText(other, named) || restatesText(named, other)
-  }
-  const [short, long] = [keyWordsOf(a), keyWordsOf(b)].sort((x, y) => x.size - y.size) as [Set<string>, Set<string>]
-
-  return short.size >= 1 && [...short].filter(w => long.has(w)).length / short.size >= 0.7
+  return (key(a) !== '' && key(a) === key(b)) || restatesText(a, b) || restatesText(b, a)
 }
 
 function overviewFailures(c: OverviewCheck, after: Ledger, run: OverviewRun | null): string[] {
