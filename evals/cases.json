@@ -26,13 +26,13 @@
       ]
     },
     "exchange": {
-      "person": "Remind me what this question you asked me is about: why it came up, and what each choice would mean. Don't act on it yet.\n\"Which cache should the product API use?\"\nOptions: Redis / In-memory",
+      "person": "Remind me what this question you asked me is about: why it came up, what each choice would do, and which you would pick. Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply. Don't act on it yet.\n\"Which cache should the product API use?\"\nOptions: Redis / In-memory",
       "turn": 4,
       "press": {
         "id": "i3",
         "action": "explain"
       },
-      "reply": "This came up because /products takes 900 ms at p95, almost all of it in the same three queries.\n\n- **Redis**: a shared cache across all four API instances. Cache hits stay consistent, and a deploy doesn't empty it. It adds a service to run and about 1 ms per lookup.\n- **In-memory**: each instance keeps its own LRU. No new service, and lookups are near free. But each instance warms separately, and a price change can show stale for up to the TTL on some instances.\n\nI'd go with Redis: prices change during the day, and stale prices on some instances would confuse customers. I haven't changed anything yet."
+      "reply": "The product list is slow (almost a second) because it repeats the same three database lookups. Saving the answers fixes that, but the service runs on four servers and prices change during the day.\n\n```\nRedis:      server1..4 ──► one shared saved copy\nIn-memory:  server1 ► copy1   server2 ► copy2  ...\n```\n\n**Redis:** one shared copy, so a price change is updated once for all four servers.\n**In-memory:** simpler, but each server holds its own copy, so servers may show different prices for a while.\n\nI'd pick **Redis**: every customer sees the same price."
     },
     "checks": [
       {

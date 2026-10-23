@@ -1656,7 +1656,7 @@ test('a press resent after the app quit with its first delivery lost reads as de
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   const explain =
-    'Remind me what this question you asked me is about: why it came up, what each choice would mean, and which you would pick. Don\'t act on it yet.\n"Use Node or Python?"\nOptions: Node / Python'
+    'Remind me what this question you asked me is about: why it came up, what each choice would do, and which you would pick. Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply. Don\'t act on it yet.\n"Use Node or Python?"\nOptions: Node / Python'
   stored.set(
     's:session-1',
     JSON.stringify({

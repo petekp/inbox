@@ -1740,13 +1740,14 @@ function findingBody(finding) {
     ...finding.path ? [`File: ${finding.path}`] : []
   ];
 }
+var EXPLAIN_REPLY_FORM = "Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply.";
 var messages = {
   answer: (item, answer) => `Re "${item.ask}": ${answer}`,
   explain: (item) => {
-    const what = item.kind === "task" ? "this task you left for me is about: why it came up, and what each choice would mean" : "this question you asked me is about: why it came up, what each choice would mean, and which you would pick";
+    const what = item.kind === "task" ? "this task you left for me is about: why it came up, and what doing it involves" : "this question you asked me is about: why it came up, what each choice would do, and which you would pick";
     const options = item.options.length > 0 ? `
 Options: ${item.options.join(" / ")}` : "";
-    return `Remind me what ${what}. Don't act on it yet.
+    return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.
 "${item.ask}"${options}`;
   },
   run: (item, command) => `For "${item.ask}", run this:
@@ -1758,7 +1759,7 @@ ${command}
 ${asks.map((a) => `- ${a}`).join(`
 `)}`,
   finding: (finding, how, words2 = "") => {
-    const opening = how === "address" ? "Please address this finding you recorded:" : how === "issue" ? "Please file an issue for this finding you recorded, in the issue tracker you have tools for. First check whether one already exists, and if it does, use it instead of filing a duplicate. Then close the finding with the issue's key or number as the reason, and give me its link. If you have no tools for an issue tracker, say so and leave the finding open." : how === "explain" ? "Remind me what this finding you recorded is about: why it matters, what fixing it would involve, and whether you would fix it now. Don't act on it yet." : how === "discuss" ? "Let's talk through this finding you recorded before changing anything:" : "About this finding you recorded:";
+    const opening = how === "address" ? "Please address this finding you recorded:" : how === "issue" ? "Please file an issue for this finding you recorded, in the issue tracker you have tools for. First check whether one already exists, and if it does, use it instead of filing a duplicate. Then close the finding with the issue's key or number as the reason, and give me its link. If you have no tools for an issue tracker, say so and leave the finding open." : how === "explain" ? `Remind me what this finding you recorded is about: why it matters, what fixing it would involve, and whether you would fix it now. ${EXPLAIN_REPLY_FORM} Don't act on it yet.` : how === "discuss" ? "Let's talk through this finding you recorded before changing anything:" : "About this finding you recorded:";
     return [opening, ...findingBody(finding), ...how === "typed" ? ["", words2] : []].join(`
 `);
   }
