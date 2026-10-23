@@ -26,7 +26,8 @@ Version 2.1.309.
   - `TaskUpdate {taskId, status}` with `status` `in_progress` then `completed`. The ids were "1", "2", "3" in creation order.
 - With `CLAUDE_CODE_ENABLE_TASKS=1` alone, nothing was offered [live, `.scratch/ov/cc-CLAUDE_CODE_ENABLE_TASKS.jsonl`].
 - The interactive session that wrote this file was offered none of them. No local Claude Code transcript holds a call to any of them [live].
-- A mod sees a call through `tool.call`, which fires for every tool call, with the arguments as fields of the event (`docs/reference/claude-code-mods.md`, the Tools row). Reading these calls is the documented path. It has not been run [unknown].
+- The mod testing types give `TaskCreate` an input of `{subject, description, activeForm?, metadata?}` [source, `claude-code/testing` types]. The inbox reads `TaskCreate`, `TaskUpdate` and `TodoWrite` from the main agent's `tool.call` (`hooks/host-tasks.ts`). It takes a new task's id from a number in the tool's answer, else the next number after the highest kept. A real run has not confirmed either [unknown].
+- A mod sees a call through `tool.call`, which fires for every tool call, with the arguments as fields of the event (`docs/reference/claude-code-mods.md`, the Tools row). Reading these calls is the documented path. The inbox's reader is tested with stub calls only [unknown for a real run].
 - A task's text arrives only in `TaskCreate`. A `TaskUpdate` names the task by id. A reader must keep the id to text map itself. Whether ids restart after `/clear` is [unknown].
 - Settings hooks have `TaskCreated` and `TaskCompleted` events. The guard skips a mod's `classic.*` hooks, so a mod cannot use them (`docs/reference/claude-code-mods.md`).
 
@@ -38,6 +39,7 @@ Version 2.1.309.
 - No rollout from 2026 on this Mac holds an `update_plan` call [live].
 - Whether the Codex app offers `update_plan`, and which setting turns it on, are [unknown]. A 2026 transcript mentions `update_plan.enabled=true`. The binary has no string by that name.
 - The inbox's PreToolUse matcher is `Bash|apply_patch|mcp__.*`, so the hook never sees `update_plan`. Widening the matcher would stop the entry running until the person trusts it again (`docs/reference/codex-plugins.md`). The Stop hook already reads the turn's rows from the rollout (`codex/src/transcript.ts`), so that is the read path. It has not been run [unknown].
+- The inbox reads the last `update_plan` call of the ending turn at Stop (`codex/src/transcript.ts:turnIn`) and replaces its list with it. It is tested on a written rollout only [unknown for a real run].
 - The app's bundled Codex is 0.160.1 or later. This file's live runs used 0.154.0.
 
 ## omp
@@ -48,4 +50,4 @@ Source read in the `v18.12.3` tag, the same version as the `omp` on this Mac. Th
 - A task has `content`, `status` and an optional `blocker`. Status is `pending`, `in_progress`, `completed`, `abandoned` or `blocked`. Tasks sit in named phases (`tools/todo.ts`) [source].
 - Every successful call returns `details: {op, phases, storage}`, with the whole list after the call (`tools/todo.ts:761`) [source].
 - An extension's `tool_result` handler receives `toolName` and `details`. For `todo` the event is the custom form, `details: unknown` (`extensibility/extensions/types.ts:1419-1432`) [source]. The extension checks the shape itself.
-- Live capture of a `todo` result in an extension is [unknown].
+- The inbox's `tool_result` handler reads `details.phases` and replaces its list with every task in them (`omp/src/host.ts`). It is tested with a written `details` value only [unknown for a live capture].

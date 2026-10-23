@@ -1,6 +1,6 @@
 # The Overview tab in every look
 
-Status: building
+Status: building (steps 1 to 4 built)
 
 ## Summary
 
