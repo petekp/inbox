@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import type { On, PromptOrigin, RenderSurface } from 'claude-code'
+import type { On, PaneOpenArgs, PromptOrigin, RenderSurface } from 'claude-code'
 
 import type { FoldProps } from '../hooks/fold-client'
 import type { LinksProps } from '../hooks/links-client'
@@ -113,6 +113,7 @@ let storeSetRefusal: string | undefined
 let toolRefusal: string | undefined
 let commandRefusal: string | undefined
 let panesOpened: string[] = []
+let paneOpens: PaneOpenArgs[] = []
 
 async function runBeforeAct() {
   const act = beforeAct
@@ -185,6 +186,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   toolRefusal = undefined
   commandRefusal = undefined
   panesOpened = []
+  paneOpens = []
   on('store.get', async ($, e) => {
     if (e.key.startsWith('s:')) await storeHold?.()
     if (storeRefusal && e.key.startsWith('s:')) return { deny: storeRefusal }
@@ -226,6 +228,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   on('tool.register', ($, e) => (toolRefusal ? { deny: toolRefusal } : { value: { tool: `mcp__inbox__${e.name}` } }))
   on('ui.open', ($, e) => {
     panesOpened.push(e.id)
+    paneOpens.push(e)
     return { value: { isPlaced: true as const } }
   })
   on('ui.close', () => ({ value: undefined }))
@@ -1327,6 +1330,43 @@ test('t opens a field for the person’s own words: a question’s words go to C
   expect(await pane.find({ text: /Replied/ })).toBeDefined()
   await clock.advance(9000)
   expect(await pane.find({ text: /README is stale/ })).toBeDefined()
+})
+
+test('Escape in a reply field closes the field and keeps the pane and the draft', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  on('ui.focus', () => ({}))
+  on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown: true, isFocused: false, isPlaced: true }] }))
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'typekey-i1' })
+  await pane.input({ key: 'type-i1', text: 'Deno, actually', kind: 'change' })
+  await clock.settle()
+  expect(paneOpens.at(-1)?.closeOnEscape).toBeUndefined()
+
+  await pane.redraw({ ...PANE.props, isFocused: false })
+  await clock.settle()
+  expect(await pane.find({ key: 'type-i1' })).toBeUndefined()
+  expect(await pane.find({ key: 'row-i1' })).toBeDefined()
+  expect(paneOpens.at(-1)).toMatchObject({ id: 'inbox', closeOnEscape: true })
+  expect(paneOpens.at(-1)?.focus).toBeUndefined()
+
+  await pane.redraw({ ...PANE.props, isFocused: true })
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'typekey-i1' })
+  expect((await pane.find({ key: 'type-i1' }))?.props.value).toBe('Deno, actually')
+  expect(sent).toEqual([])
 })
 
 test('a press on a question Claude closed since the draw sends nothing and says so', async ($, on) => {

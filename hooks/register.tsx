@@ -642,6 +642,8 @@ function focusKeys(node: unknown, keys = new Set<string>()): Set<string> {
 let resuming: { is: 'sending' } | { is: 'refused'; why: string } | null = null
 let stopGeneration = 0
 const fieldSeeds = new Map<string, string>()
+let paneClosesOnEscape = true
+const paneHasKeys = new Map<RenderSurface, boolean>()
 
 function resetTurn() {
   sentBack = []
@@ -1057,9 +1059,23 @@ async function runTool($: EngineInterface, tool: 'record' | 'close', input: Reco
 /**
  * Opens the pane, or raises it, asking for the keyboard. The surface grants
  * that only while the prompt holds the keys over an empty composer.
+ *
+ * Escape closes a pane opened with `closeOnEscape` as its close mark does, and `ui.close` names both the
+ * person's. So while a reply field is open the pane opens without it: Escape then only hands the keys back,
+ * and the pane's render closes the field.
  */
-function openPane($: EngineInterface) {
-  return $.ui.open({ id: PANE, title: 'Inbox', focus: true, closeOnEscape: true })
+function openPane($: EngineInterface, isFieldOpen = false) {
+  paneClosesOnEscape = !isFieldOpen
+  return $.ui.open({ id: PANE, title: 'Inbox', focus: true, ...(isFieldOpen ? {} : { closeOnEscape: true as const }) })
+}
+
+/** Opens the open pane again, without asking for the keyboard, once a reply field opened or closed. */
+async function matchPaneEscape($: EngineInterface) {
+  const closesOnEscape = (await read($, TYPING)) === null
+  if (closesOnEscape === paneClosesOnEscape) return
+  paneClosesOnEscape = closesOnEscape
+  if (!(await $.ui.panes()).some(p => p.id === PANE)) return
+  await $.ui.open({ id: PANE, title: 'Inbox', ...(closesOnEscape ? { closeOnEscape: true as const } : {}) })
 }
 
 async function openTopRow($: EngineInterface) {
@@ -1124,7 +1140,7 @@ async function discardReply($: EngineInterface, id: string) {
 
 async function focusField($: EngineInterface, id: string) {
   // A click leaves the keys with the prompt, and `ui.focus` is refused in a pane that lacks them.
-  await openPane($)
+  await openPane($, true)
   await $.ui.focus({ requestId: PANE, key: `type-${id}` }).catch(() => undefined)
 }
 
@@ -2681,6 +2697,7 @@ export const register: Register = on => {
   on('ui.close', { id: PANE }, async ($, e, next) => {
     cancelUndoScroll()
     const r = await next(e)
+    paneHasKeys.clear()
     await update($, TYPING, () => null)
     await update($, FOLD_HOVER, () => null)
 
@@ -2789,6 +2806,9 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const hadKeys = paneHasKeys.get(e.surface) ?? false
+    paneHasKeys.set(e.surface, e.props.isFocused)
+    const isKeyboardHandedBack = hadKeys && !e.props.isFocused
     const elements = $.ui.resolve(e)
     const { Box, Button, Link, Markdown, Text } = elements
     // Desktop draws every Button as a native button, and only clicks reach the pane: no letters, key hints or hidden hotkeys.
@@ -2845,6 +2865,9 @@ export const register: Register = on => {
     ])
     // A hot reload keeps TYPING but empties fieldSeeds, so an open field takes its seed again here.
     if (typing !== null && !fieldSeeds.has(typing)) fieldSeeds.set(typing, (await read($, DRAFTS))[typing]?.text ?? '')
+    // Escape, or a click outside the pane, closes the field and keeps its draft, as Cancel does.
+    if (isKeyboardHandedBack && typing !== null) later($, 0, () => update($, TYPING, t => (t === typing ? null : t)))
+    if ((typing === null) !== paneClosesOnEscape) later($, 0, () => matchPaneEscape($))
     const size = isInline ? `${e.props.bodyColumns}x${e.props.scroll.bodyRows}` : null
     if (e.surface === 'terminal') terminalInlineSize = size
     if (size !== null && inlineSize !== null && size !== inlineSize) {
