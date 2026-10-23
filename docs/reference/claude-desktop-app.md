@@ -69,46 +69,60 @@ On 2026-10-21, inbox 0.2.10 ran in local Code-mode sessions of Claude desktop 3.
 
 ## Live checks on desktop 3.6556.2
 
-Checked on 2026-10-23 in the `inbox-ui` VM. The Claude Code there loads the inbox from `~/inbox`, the folder its directory marketplace points at, and not from the copy under `~/.claude/plugins/cache`. This pass copied `1b61c6f` into the cache copy, so it ran the older `~/inbox` build labelled 0.2.9. Checks of the app and engine hold; details of the inbox's own drawing came from that older build. The
-app had updated itself to `3.6556.2`; the request named 3.6556.1, which bundles
-engine 2.1.308 ("Bundled Claude Code version: 2.1.308."). The sessions ran
-engine 2.1.308, with Haiku 5.5 in Auto permission mode. The terminal `claude`
-in the VM is 2.1.309 and was not used.
+Checked on 2026-10-23 in the `inbox-ui` VM, twice. The VM's Claude Code loads
+the inbox from `~/inbox`, the folder its directory marketplace points at, and
+not from the copy under `~/.claude/plugins/cache`. The first pass copied the
+build into the cache copy, so it ran the older `~/inbox` build labelled 0.2.9.
+The second pass installed the host-check branch tip (`30b7ae5`, main's drawing
+code) in `~/inbox`; its footer read v0.2.10. The results below are from the
+second pass, and say where the first differed. The app was `3.6556.2`; the
+request named 3.6556.1, which bundles engine 2.1.308 ("Bundled Claude Code
+version: 2.1.308."). The sessions ran engine 2.1.308, with Haiku 5.5 in Auto
+permission mode. The terminal `claude` in the VM is 2.1.309 and was not used.
 
 - **Pane width.** Claude Code 2.1.305 caps the pane at 45% of the window width
-  (per the request). In the desktop app the docked pane opened at 37% of the
-  window, dragged to 87% of it (the conversation column shrank to about 12%), and to 28% at its narrowest. The inbox's rows
-  and buttons read well at all three, and nothing clipped. The 45% cap did not
-  show in the desktop app.
-- **Band, presses, copy, end.** The AbovePrompt band drew with "Nothing needed",
-  the demo counts and real counts. Explain, Done and answer presses showed
-  their result at once. A real Explain reached the session as a prompt with
-  `origin` `{kind: 'plugin', name: 'inbox', asUser: true}`, enqueued and dequeued
-  2 ms apart. `$.ui.copy` put the command on the VM's clipboard (`pbpaste`).
-  `/clear` ended the engine process and the pane and band went with it; the
-  saved session had no running turn, no pending update and no stop.
-- **Buttons moved after a demo Explain.** The older build drew the demo's
-  "Sample entry: nothing was sent." as an extra line under the title for 5 s,
-  and the buttons moved when it went. The note was removed on branch
-  `demo-explain`; a rerun on that build moved no button after the press.
-  Whether a real Copy's result line ("✓ Copied … Run it in Terminal.") vanishes
-  is not settled: it did on the older build and stayed 110 s on the newer one.
+  (per the request). In the desktop app the pane opened at 41% (the width the
+  app remembered; 37% on the first pass), dragged to 90% of the window (87%),
+  and to 28% at its narrowest. At 90% the conversation column shrank to a
+  sliver and its band and composer were cut off. The inbox's rows and buttons
+  read well at all widths, and nothing clipped. The 45% cap did not show.
+- **Band, presses, copy, end.** The AbovePrompt band drew with "Nothing
+  needed", the demo counts and real counts, and during a running turn. Explain,
+  Done and answer presses showed their result at once. A real Explain read
+  "Explaining…" then "✓ Explained" and moved no button. A real Done sent its
+  message with `origin` `{kind: 'plugin', name: 'inbox', asUser: true}`,
+  enqueued and dequeued 1 to 2 ms apart, and Claude replied. `$.ui.copy` put the
+  command on the VM's clipboard (`pbpaste`). `/clear` ended the engine process
+  and the pane and band went with it; the saved session had no running turn, no
+  pending update and no stop, and the app log showed no error.
+- **Buttons move after a press.** On main's code a demo Explain adds "Sample
+  entry: nothing was sent." under the title and moves the buttons down 30 pt,
+  and they move back at about 5 s. A demo answer puts the note above the list
+  and moves every row. Branch `demo-explain` removes the note; a rerun on it
+  moved no button after the press. A real Copy adds "✓ Copied … Run it in
+  Terminal." and moves the buttons down 50 pt. That line was gone within 1 s in
+  one session and stayed 7 s or more in another, on the same code. What decides
+  it is not known. A demo Done scrolled the pane about 225 pt to bring the next
+  open task into view.
 - **`allowManagedPermissionRulesOnly`.** The 3.1623.4 notes say: "Changed
   plugins that the app loads to ask before using the tools they pre-approve
   when your organization's Claude Code managed settings, such as
   `managed-settings.json`, set `allowManagedPermissionRulesOnly`." The inbox
   pre-approves nothing in its manifest. With that key set in a managed file, the
-  model's `record` and `close` calls completed with no permission prompt
-  (tool result 6 ms after the call), a Done press sent its message as a prompt
-  and the model replied, and Copy worked. The guard seated, and each skipped
-  `classic.SessionStart`, `prompt.context`, `prompt.compose` and
-  `classic.Stop` hook added an "inbox: its … hook was skipped" notice to the
-  conversation that also reached the model, once each. The settings reference
-  says the key makes managed settings the only source of permission rules and
-  drops `--allowedTools`.
-- Not checked: a permission prompt for an ordinary tool under that key; Talk
-  and answer presses under it; a press while a turn runs; quitting the app with
-  a session open; undo within its window.
+  model's `record` and `close` calls completed with no permission prompt, a Done
+  press sent its message as a prompt and the model replied, and Copy worked. The
+  managed file seated the guard, and a "its … hook was skipped" notice reached
+  the conversation and the model once: four of them (`classic.SessionStart`,
+  `prompt.context`, `prompt.compose`, `classic.Stop`) on the first pass, one
+  (`classic.SessionStart`) on the second. In the second pass's managed session
+  the band did not draw after the first turn, which had recorded two items, nor
+  after `/inbox` opened the pane. It drew once the next turn started. The cause
+  is not known. The settings reference says the key makes managed settings the
+  only source of permission rules and drops `--allowedTools`.
+- Not checked: a permission dialog for an ordinary tool under that key (`echo`
+  runs without one even in Manual mode); Talk and answer presses under it;
+  Undo in time; a press while a turn runs; quitting the app with a session open;
+  the light theme.
 
 ## Modes and tabs
 
