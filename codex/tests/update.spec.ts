@@ -175,6 +175,80 @@ test('a ledger update shows before its results call returns, and the results cal
   assert.ok((await readState(dir, 's1')).ledger.milestones.some(m => m.text === 'License file added'))
 })
 
+test('a ledger call with no answer runs no results call', async () => {
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({
+    ...s,
+    pending: [{ ex: ex(1, 'Built the deploy script.'), turnsStarted: 1 }],
+  }))
+  const systems: string[] = []
+  await runBothCalls(
+    dir,
+    's1',
+    async (_prompt, system) => {
+      systems.push(system)
+
+      return system === RESULTS_SYSTEM ? 'DONE: Deploy script built' : null
+    },
+    () => 5,
+  )
+
+  assert.equal(systems.includes(RESULTS_SYSTEM), false)
+  assert.deepEqual((await readState(dir, 's1')).ledger.milestones, [])
+})
+
+test('results calls run one after another, and the second reads the first one’s results', async () => {
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({
+    ...s,
+    presence: { ...s.presence, turnsStarted: 2 },
+    pending: [
+      { ex: ex(1, 'Built the deploy script.'), turnsStarted: 1 },
+      { ex: ex(2, 'Built the rollback script.'), turnsStarted: 2 },
+    ],
+  }))
+  const resultsPrompts: string[] = []
+  let release: () => void = () => undefined
+  const held = new Promise<void>(resolve => (release = resolve))
+  let ledgerCalls = 0
+  const running = runBothCalls(
+    dir,
+    's1',
+    async (prompt, system) => {
+      if (system !== RESULTS_SYSTEM) {
+        ledgerCalls += 1
+
+        return `GOAL: Ship\nNEW: do | - | Task ${ledgerCalls} | - | -`
+      }
+      resultsPrompts.push(prompt)
+      if (resultsPrompts.length === 1) {
+        await held
+
+        return 'DONE: Deploy script built'
+      }
+
+      return 'DONE: Rollback script built'
+    },
+    () => 5,
+  )
+  let shown = await readState(dir, 's1')
+  for (let waited = 0; shown.pending.length > 0 && waited < 300; waited += 1) {
+    await new Promise(resolve => setTimeout(resolve, 10))
+    shown = await readState(dir, 's1')
+  }
+  assert.equal(shown.pending.length, 0)
+  assert.equal(resultsPrompts.length, 1)
+  release()
+  await running
+
+  assert.equal(resultsPrompts.length, 2)
+  assert.ok((resultsPrompts[1] ?? '').includes('Deploy script built'))
+  assert.deepEqual(
+    (await readState(dir, 's1')).ledger.milestones.map(m => m.text),
+    ['Deploy script built', 'Rollback script built'],
+  )
+})
+
 test('pending exchanges reach the ledger in order, a failed one waits for the next update, and a second failure drops it', async () => {
   const dir = tempDir()
   await updateState(dir, 's1', s => ({

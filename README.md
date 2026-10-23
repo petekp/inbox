@@ -206,12 +206,10 @@ In Claude Code, the inbox adds two things:
 | What the inbox adds | Tokens | Cost at API prices |
 |---|---|---|
 | A Sonnet call after each of Claude's replies, to update the inbox | 3–4k in, about 2k of it cached. 100–250 out. | About 0.5¢ per reply, or 1¢ after 5 idle minutes |
-| A second, smaller Sonnet call, to write the results | About 0.5k in on a short exchange (measured in the eval run). 20–40 out. | A fraction of the first call's cost |
+| A second Sonnet call, to write the results | About 1.2k in on a short exchange (1,175–1,358 in four eval runs). 14–100 out. | Less than the first call, which reads about 3k in |
 | Its instructions and tools, sent with every request Claude makes | About 1,350, cached | Under 0.1¢ per request |
 
-In one long Opus session, this came to about 1% of the total cost. A shorter
-or cheaper session pays a larger share. On a Claude plan, these count toward
-your usage limits.
+On a Claude plan, these count toward your usage limits.
 
 In Codex, the update after each reply runs through the `codex` binary inside
 the desktop app, with your Codex sign-in. It makes two calls per reply. Each

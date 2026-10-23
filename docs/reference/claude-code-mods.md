@@ -1046,7 +1046,7 @@ Inference: the inbox must handle a thrown rejection, not only `isAnswered: false
 
 ### The README figures
 
-- README: "About 0.5¢ per reply, or 1¢ after 5 idle minutes"; instructions and tools "About 1,350, cached"; "about 1% of the total cost" in one long Opus session (`README.md:66-71`).
+- README: "About 0.5¢ per reply, or 1¢ after 5 idle minutes"; instructions and tools "About 1,350, cached".
 - Inference: a warm call (2k cached, 1.5k uncached, 100-250 out) at Sonnet 5.5 prices is 0.4-0.6¢. A cold call adds a 5-minute write, about 1¢. The figures match the Anthropic API. They are about 1.5 times low for Sonnet 4.5 or 4.6 on other providers.
 
 ### Where the cost shows up

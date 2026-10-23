@@ -25,6 +25,7 @@ import {
 import type { Effect, EffectHost, RowPress } from './presses'
 import {
   applied,
+  isReplyApplied,
   appliedCatchUp,
   appliedResults,
   completedAttempt,
@@ -57,6 +58,24 @@ export function exclusiveKeys(): {
       }
     },
     isHeld: key => held.has(key),
+  }
+}
+
+/** Keys whose runs go one after another in this process, each starting when the one before it has settled. */
+export function orderedKeys(): { run<T>(key: string, fn: () => Promise<T>): Promise<T> } {
+  const tails = new Map<string, Promise<unknown>>()
+
+  return {
+    run: (key, fn) => {
+      const result = (tails.get(key) ?? Promise.resolve()).then(fn)
+      const tail = result.catch(() => undefined)
+      tails.set(key, tail)
+      void tail.then(() => {
+        if (tails.get(key) === tail) tails.delete(key)
+      })
+
+      return result
+    },
   }
 }
 
@@ -120,6 +139,16 @@ export type UpdateHost<S extends Session> = Pick<SessionHost<S>, 'now' | 'read' 
    * the host cannot read the conversation.
    */
   catchUp?(s: S): Promise<CatchUpReply>
+  /**
+   * Runs `fn` once the session's earlier results calls have finished, so each reads the ledger after the one before
+   * it wrote its results. The wait is for results calls only: the lock and the ledger calls never queue behind it.
+   */
+  inOrder<T>(fn: () => Promise<T>): Promise<T>
+  /**
+   * Keeps the results calls running after `runUpdates` returns, so the next update starts at once. Absent: `runUpdates`
+   * returns only once they have finished, as a hook process must stay alive until its calls end.
+   */
+  background?(results: Promise<void>): void
 }
 
 /**
@@ -175,9 +204,10 @@ export async function reconcileUpdateStatus<S extends Session>(
  * again after the lock is released.
  *
  * Each update runs the ledger call first and applies its answer at once. Then the results call runs, with the
- * ledger the update produced and what it answered and fixed, and its results are written in a second change. That
- * call runs apart from the lock and from `isUpdating`: the next update does not wait for it, and `runUpdates`
- * returns only once every results call has finished.
+ * ledger as it stands once the earlier results calls have written theirs and what this update answered and fixed,
+ * and its results are written in a second change. Results calls run one after another, apart from the lock and from
+ * `isUpdating`: no ledger call waits for one. With `background`, `runUpdates` returns when the ledger work is done;
+ * without it, once every results call has finished.
  *
  * A catch-up that fails ends the run, and the next update tries it again. A conversation that cannot be read is not
  * tried again in this run. A ledger call that fails skips the results call.
@@ -193,14 +223,18 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
     before: Ledger,
     turn: number | null,
     ask: (ledger: Ledger, handled: Handled) => Promise<string | null>,
-  ) => {
-    const texts = resultLines(await ask(after.ledger, handledBy(before, after.ledger)).catch(() => null))
-    if (texts.length === 0) return
-    const at = await host.now()
-    await host.update(x => appliedResults(x, texts, at, turn, after.presence.turnsApplied))
-  }
+  ) =>
+    host.inOrder(async () => {
+      const { ledger } = await host.read()
+      const texts = resultLines(await ask(ledger, handledBy(before, after.ledger)).catch(() => null))
+      if (texts.length === 0) return
+      const at = await host.now()
+      await host.update(x => appliedResults(x, texts, at, turn, after.presence.turnsApplied))
+    })
   const followUp = (run: Promise<void>) => {
-    writing.push(run.catch(() => undefined))
+    const settled = run.catch(() => undefined)
+    if (host.background) host.background(settled)
+    else writing.push(settled)
   }
   try {
     while (hasWork(await host.read())) {
@@ -234,11 +268,11 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
             const after = await host.update(async x => {
               seen.before = null
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x
-              seen.before = x.ledger
+              if (isReplyApplied(x, reply)) seen.before = x.ledger
 
               return applied(x, reply, await host.now(), promptAt)
             })
-            if (seen.before && after.ledger !== seen.before)
+            if (seen.before)
               followUp(
                 writeResults(after, seen.before, next.ex.turn, (ledger, handled) =>
                   host.ask(resultsPrompt(ledger, handled, next.ex), RESULTS_SYSTEM),

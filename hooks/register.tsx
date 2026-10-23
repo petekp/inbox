@@ -69,7 +69,13 @@ import {
   withNewPrRefs,
 } from './session'
 import type { SentBy, Session, SessionView } from './session'
-import { fetchPrs as fetchSessionPrs, runUpdates, startPress, wakeForDone as wakeSessionForDone } from './session-host'
+import {
+  fetchPrs as fetchSessionPrs,
+  orderedKeys,
+  runUpdates,
+  startPress,
+  wakeForDone as wakeSessionForDone,
+} from './session-host'
 import type { AskCatchUpResults, CatchUpReply, SessionHost } from './session-host'
 import { demoView, isDemoCopy, upgradeDemoCopy } from './demo'
 import type { Exchange, Press, Update } from './ledger'
@@ -636,6 +642,8 @@ function suspendUndoReveal(): number {
 let loadRevision = 0
 let applyingConversation: Promise<void> = Promise.resolve()
 let queue: Promise<void> = Promise.resolve()
+/** The conversations whose results calls run one after another. They do not hold `queue`, so a ledger call never waits for one. */
+const resultsOrder = orderedKeys()
 let published: string | null = null
 let publishing: Promise<void> = Promise.resolve()
 let shellCommand: string | null = null
@@ -999,7 +1007,13 @@ function updateLedger($: EngineInterface) {
   const owner = currentOwner()
   queue = queue.then(async () => {
     if (!isCurrent(owner)) return
-    await runUpdates({ ...hostOf($, owner), names: CLAUDE_CODE, catchUp: () => catchUpReply($, owner) })
+    await runUpdates({
+      ...hostOf($, owner),
+      names: CLAUDE_CODE,
+      catchUp: () => catchUpReply($, owner),
+      inOrder: fn => resultsOrder.run(owner.id, fn),
+      background: results => void results,
+    })
     if (isCurrent(owner)) void publishStatus($)
   })
   // A rejected link would skip every later update, so the chain swallows it.

@@ -340,6 +340,43 @@ test('a ledger update shows before its results call returns, and the results cal
   expect(state().ledger.milestones.map((m: { text: string }) => m.text)).toContain('Command scaffolded')
 })
 
+test('a ledger call that fails runs no results call', async () => {
+  createInbox(pi(), deps())
+  reply = new Error('overloaded')
+  resultsReply = 'DONE: Greeting CLI scaffolded'
+  await prompt('Add a greeting CLI')
+  await endAgent('Plan written. Which runtime?')
+  await settle()
+  expect(resultsCompletions).toEqual([])
+  expect(state().ledger.milestones).toEqual([])
+})
+
+test('the next ledger update does not wait for an earlier results call, and results calls run one at a time', async () => {
+  createInbox(pi(), deps())
+  let release: () => void = () => undefined
+  resultsHold = new Promise<void>(resolve => (release = resolve))
+  resultsReply = 'DONE: Command scaffolded'
+  reply = 'NEW: do | - | Water the plants | - | -'
+  await prompt('Add a greeting CLI')
+  await endAgent('Plan written.')
+  for (let waited = 0; resultsCompletions.length < 1 && waited < 200; waited += 1)
+    await new Promise(resolve => setTimeout(resolve, 10))
+  reply = 'NEW: do | - | Feed the cat | - | -'
+  await prompt('And a name')
+  await endAgent('Named it.')
+  for (let waited = 0; completions.length < 2 && waited < 200; waited += 1)
+    await new Promise(resolve => setTimeout(resolve, 10))
+  await new Promise(resolve => setTimeout(resolve, 50))
+  expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Water the plants', 'Feed the cat'])
+  expect(resultsCompletions).toHaveLength(1)
+  release()
+  await settle()
+  for (let waited = 0; resultsCompletions.length < 2 && waited < 200; waited += 1)
+    await new Promise(resolve => setTimeout(resolve, 10))
+  expect(resultsCompletions).toHaveLength(2)
+  expect(resultsCompletions[1]!.prompt).toContain('Command scaffolded')
+})
+
 test('a settle that will continue does not end the turn', async () => {
   createInbox(pi(), deps())
   await prompt('Add a greeting CLI')

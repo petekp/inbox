@@ -23,6 +23,7 @@ import {
 import type { Ask } from '../../hooks/session-host'
 import { isTabOpen, screenTabOf } from './core'
 import { codexStore } from './host'
+import { statePath, withLock } from './state'
 import type { SessionState } from './state'
 import { CODEX } from './texts'
 import { readRollout } from './transcript'
@@ -31,6 +32,8 @@ import type { Run } from '../../hooks/gh'
 /** The inbox model, at low reasoning effort. gpt-6-luna is faster but closed a finding the reply only mentioned. */
 export const MODEL = 'gpt-6.1-sol'
 const TIMEOUT_MS = 120_000
+/** How long a results call waits for the earlier ones: a few calls at their longest. */
+const RESULTS_WAIT_MS = 4 * TIMEOUT_MS
 
 /** A release that drops one of these rejects it by name, so askModel drops any name rejected and tries again. */
 const OFF = [
@@ -159,6 +162,7 @@ export const runUpdates = (dir: string, sessionId: string, ask: Ask, now: () => 
     ...codexStore(dir, sessionId, now),
     ask,
     names: CODEX,
+    inOrder: fn => withLock(`${statePath(dir, sessionId)}.results`, fn, RESULTS_WAIT_MS),
     catchUp: async s =>
       askOverConversation(
         ask,

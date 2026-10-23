@@ -238,8 +238,10 @@ A host is a program that runs the inbox's agent: it reacts to events, keeps stat
 | `now` | The clock. |
 | `read`, `update` | Read the session, and change it under a lock. An external effect, such as a delivery, runs outside the change. |
 | `exclusive` | Runs the per-reply update unless another run holds the session. |
-| `catchUp` | Optional, on the update host. Has the inbox model read the whole conversation and returns its ledger answer and its results answer, or says the conversation is unreadable. Without it, a host only runs the pending exchanges. The mod forks the conversation, and Codex and omp pass their conversation text to `askOverConversation`. |
+| `catchUp` | Optional, on the update host. Has the inbox model read the whole conversation and returns its ledger answer and a function that asks the results call, which `runUpdates` calls once the catch-up has applied, or says the conversation is unreadable. Without it, a host only runs the pending exchanges. The mod forks the conversation, and Codex and omp pass their conversation text to `askOverConversation`. |
 | `ask` | Calls the inbox model with a prompt and the system text for it, and returns null when it fails. `runUpdates` calls it twice for a reply, one after the other: the ledger call with `systemText` and `buildPrompt`, whose update applies at once, then the results call with `RESULTS_SYSTEM` and `resultsPrompt`, whose lines `hooks/ledger.ts:addResults` writes to that turn. The ledger call's own DONE lines are dropped. |
+| `inOrder` | Required on the update host. Runs a results call after the earlier ones for the session have finished, so each reads the ledger after the one before it wrote its results. The mod and omp chain them in process. Codex takes a `.results` file lock, which waits up to 8 minutes. No ledger call and no lock waits on it. |
+| `background` | Optional, on the update host. Keeps results calls running after `runUpdates` returns, so the next ledger update starts at once. The mod and omp pass it. Codex omits it, so its hook process stays until the calls end. |
 | `deliver` | Sends a message to the agent as if the person typed it. |
 | `prepare` | Throws when `deliver` could not start, before a sent record is saved. |
 | `perform` | Opens a link or path, or copies text. Returns why it could not, or null. |

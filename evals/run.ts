@@ -297,6 +297,9 @@ type Result = Run & {
   resultsOutputTokens?: number | null
   resultsInputTokens?: number | null
   resultsCachedTokens?: number | null
+  /** How long each call took. The mod's limit applies to each call. */
+  ledgerMs?: number
+  resultsMs?: number
 }
 
 function maskedAsks(update: Update, before: Ledger, after: Ledger): string[] {
@@ -327,7 +330,9 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
     agent === 'codex'
       ? askCodex(input, system).then(text => ({ text, model: null, outputTokens: null }))
       : claude(input, system)
+  const ledgerStarted = Date.now()
   const ledgerCall = await ask(prompt, systemText(host))
+  const ledgerMs = Date.now() - ledgerStarted
   const { text: answer, model, outputTokens } = ledgerCall
   const base = {
     ...job(agent, c, n),
@@ -336,6 +341,7 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
     outputTokens,
     inputTokens: ledgerCall.inputTokens ?? null,
     cachedTokens: ledgerCall.cachedTokens ?? null,
+    ledgerMs,
     attempts: 1,
     earlier: [],
     durationMs: 0,
@@ -351,9 +357,11 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
   const handled = handledBy(ledger, applied)
   const resultsInput =
     c.catchUp === undefined ? resultsPrompt(applied, handled, ex) : resultsCatchUpPrompt(applied, handled, c.catchUp)
+  const resultsStarted = Date.now()
   const resultsCall = await ask(resultsInput, RESULTS_SYSTEM)
   const withAnswer = {
     ...base,
+    resultsMs: Date.now() - resultsStarted,
     resultsAnswer: resultsCall.text,
     resultsModel: resultsCall.model,
     resultsOutputTokens: resultsCall.outputTokens,
@@ -397,13 +405,15 @@ const judged = [...firstRuns, ...results]
 const verdict = report(agents, cases, judged, runs, MIN, readBaselines(about.suite), (_agent, _c, mine) => {
   const runs = mine as Result[]
   const masked = runs.reduce((sum, r) => sum + r.masked.length, 0)
-  const slow = runs.filter(r => r.durationMs > MOD_TIMEOUT_MS).length
+  const slow = runs.filter(
+    r => (r.ledgerMs ?? r.durationMs) > MOD_TIMEOUT_MS || (r.resultsMs ?? 0) > MOD_TIMEOUT_MS,
+  ).length
   const long = runs.filter(
     r => (r.outputTokens ?? 0) > MOD_MAX_TOKENS || (r.resultsOutputTokens ?? 0) > MOD_MAX_TOKENS,
   ).length
   const notes = [
     masked > 0 ? `${masked} NEW lines dropped by the code` : '',
-    slow > 0 ? `${slow} slower than the mod's ${MOD_TIMEOUT_MS / 1000} s limit` : '',
+    slow > 0 ? `${slow} with a call slower than the mod's ${MOD_TIMEOUT_MS / 1000} s limit` : '',
     long > 0 ? `${long} longer than the mod's ${MOD_MAX_TOKENS} tokens` : '',
   ].filter(Boolean)
 

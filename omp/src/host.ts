@@ -33,6 +33,7 @@ import {
   fetchPrs,
   prFetchTracker,
   press,
+  orderedKeys,
   reconcileUpdateStatus,
   runUpdates,
   wakeForDone,
@@ -456,6 +457,9 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     }
   }
 
+  /** The sessions whose results calls run one after another. They hold no lock, so a ledger call never waits for one. */
+  const resultsOrder = orderedKeys()
+
   function hostFor(ctx: ExtensionContext): SessionHost<OmpState> {
     const id = sessionIdOf(ctx)
 
@@ -502,6 +506,8 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     return {
       ...host,
       names: OMP,
+      inOrder: fn => resultsOrder.run(id, fn),
+      background: results => deps.background(results),
       catchUp: s =>
         askOverConversation(
           host.ask,

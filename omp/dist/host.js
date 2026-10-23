@@ -3251,13 +3251,20 @@ function endTurn(host, s, reply, isOpen, { tab = null, queuesEmptyReply = false 
   };
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] };
 }
+function parsedReply(ex, reply) {
+  return reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join(`
+`));
+}
+function isReplyApplied(s, reply) {
+  const next = s.pending[0];
+  return next !== undefined && parsedReply(next.ex, reply) !== null;
+}
 function applied(s, reply, now, promptAt) {
   const next = s.pending[0];
   if (!next)
     return s;
+  const parsed = parsedReply(next.ex, reply);
   const { ex } = next;
-  const parsed = reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join(`
-`));
   if (!parsed && !next.failed)
     return {
       ...s,
@@ -3438,6 +3445,23 @@ function exclusiveKeys() {
     isHeld: (key) => held.has(key)
   };
 }
+function orderedKeys() {
+  const tails = new Map;
+  return {
+    run: (key, fn) => {
+      const result = (tails.get(key) ?? Promise.resolve()).then(fn);
+      const tail = result.catch(() => {
+        return;
+      });
+      tails.set(key, tail);
+      tail.then(() => {
+        if (tails.get(key) === tail)
+          tails.delete(key);
+      });
+      return result;
+    }
+  };
+}
 async function askOverConversation(ask, names, s, screen, conversation) {
   if (!conversation)
     return { kind: "unreadable" };
@@ -3468,17 +3492,22 @@ async function runUpdates(host) {
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
   const writing = [];
-  const writeResults = async (after, before, turn, ask) => {
-    const texts = resultLines(await ask(after.ledger, handledBy(before, after.ledger)).catch(() => null));
+  const writeResults = async (after, before, turn, ask) => host.inOrder(async () => {
+    const { ledger } = await host.read();
+    const texts = resultLines(await ask(ledger, handledBy(before, after.ledger)).catch(() => null));
     if (texts.length === 0)
       return;
     const at = await host.now();
     await host.update((x) => appliedResults(x, texts, at, turn, after.presence.turnsApplied));
-  };
+  });
   const followUp = (run) => {
-    writing.push(run.catch(() => {
+    const settled = run.catch(() => {
       return;
-    }));
+    });
+    if (host.background)
+      host.background(settled);
+    else
+      writing.push(settled);
   };
   try {
     while (hasWork(await host.read())) {
@@ -3515,10 +3544,11 @@ async function runUpdates(host) {
               seen.before = null;
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn)
                 return x;
-              seen.before = x.ledger;
+              if (isReplyApplied(x, reply))
+                seen.before = x.ledger;
               return applied(x, reply, await host.now(), promptAt);
             });
-            if (seen.before && after.ledger !== seen.before)
+            if (seen.before)
               followUp(writeResults(after, seen.before, next.ex.turn, (ledger, handled) => host.ask(resultsPrompt(ledger, handled, next.ex), RESULTS_SYSTEM)));
             if (after.pending[0]?.failed && !next.failed)
               return "stop";
@@ -5522,6 +5552,7 @@ function createInbox(pi, deps = defaultDeps) {
       }
     };
   }
+  const resultsOrder = orderedKeys();
   function hostFor(ctx) {
     const id = sessionIdOf(ctx);
     return {
@@ -5560,6 +5591,8 @@ function createInbox(pi, deps = defaultDeps) {
     return {
       ...host,
       names: OMP,
+      inOrder: (fn) => resultsOrder.run(id, fn),
+      background: (results) => deps.background(results),
       catchUp: (s) => askOverConversation(host.ask, OMP, s, screenText(OMP, openPanels.has(id), screenTabOf(id)), conversationText(ctx))
     };
   }

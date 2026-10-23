@@ -1,14 +1,14 @@
 import { CLAUDE_CODE } from '../hooks/model-text'
 import { endTurn, notePrompt, recorded, sessionView } from '../hooks/session'
 import type { Session } from '../hooks/session'
-import { press, runUpdates } from '../hooks/session-host'
-import type { Ask, SessionHost } from '../hooks/session-host'
+import { orderedKeys, press, runUpdates } from '../hooks/session-host'
+import type { Ask, SessionHost, UpdateHost } from '../hooks/session-host'
 import type { Host } from '../hooks/model-text'
 import { allRows, NO_HOLDS } from '../hooks/view'
 import type { Effect } from '../hooks/presses'
 
 export type ScriptedHost<S extends Session = Session> = {
-  host: SessionHost<S> & { names: Host }
+  host: SessionHost<S> & Pick<UpdateHost<S>, 'inOrder'> & { names: Host }
   delivered: string[]
   performed: Exclude<Effect, { kind: 'send' }>[]
 }
@@ -21,11 +21,13 @@ export function fakeHostWith<S extends Session>(
   return ask => {
     let clock = 1_000_000
     let ids = 0
+    const order = orderedKeys()
     const delivered: string[] = []
     const performed: Exclude<Effect, { kind: 'send' }>[] = []
-    const host: SessionHost<S> & { names: Host } = {
+    const host: SessionHost<S> & Pick<UpdateHost<S>, 'inOrder'> & { names: Host } = {
       ...storage,
       names: CLAUDE_CODE,
+      inOrder: fn => order.run('session', fn),
       now: () => (clock += 10),
       ask,
       deliver: async (_s, text) => {

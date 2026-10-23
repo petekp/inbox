@@ -1025,11 +1025,18 @@ function upgradeSession(saved) {
     stop: saved.stop ?? null
   };
 }
+function parsedReply(ex, reply) {
+  return reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join("\n"));
+}
+function isReplyApplied(s, reply) {
+  const next = s.pending[0];
+  return next !== void 0 && parsedReply(next.ex, reply) !== null;
+}
 function applied(s, reply, now, promptAt) {
   const next = s.pending[0];
   if (!next) return s;
+  const parsed = parsedReply(next.ex, reply);
   const { ex } = next;
-  const parsed = reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join("\n"));
   if (!parsed && !next.failed)
     return {
       ...s,
@@ -1338,14 +1345,17 @@ async function runUpdates(host) {
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
   const writing = [];
-  const writeResults = async (after, before, turn, ask) => {
-    const texts = resultLines(await ask(after.ledger, handledBy(before, after.ledger)).catch(() => null));
+  const writeResults = async (after, before, turn, ask) => host.inOrder(async () => {
+    const { ledger } = await host.read();
+    const texts = resultLines(await ask(ledger, handledBy(before, after.ledger)).catch(() => null));
     if (texts.length === 0) return;
     const at = await host.now();
     await host.update((x) => appliedResults(x, texts, at, turn, after.presence.turnsApplied));
-  };
+  });
   const followUp = (run2) => {
-    writing.push(run2.catch(() => void 0));
+    const settled = run2.catch(() => void 0);
+    if (host.background) host.background(settled);
+    else writing.push(settled);
   };
   try {
     while (hasWork(await host.read())) {
@@ -1378,10 +1388,10 @@ async function runUpdates(host) {
             const after = await host.update(async (x) => {
               seen.before = null;
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x;
-              seen.before = x.ledger;
+              if (isReplyApplied(x, reply)) seen.before = x.ledger;
               return applied(x, reply, await host.now(), promptAt);
             });
-            if (seen.before && after.ledger !== seen.before)
+            if (seen.before)
               followUp(
                 writeResults(
                   after,
@@ -1633,6 +1643,7 @@ async function readRollout(path, cwd, currentTurnId) {
 // src/update.ts
 var MODEL = "gpt-6.1-sol";
 var TIMEOUT_MS = 12e4;
+var RESULTS_WAIT_MS = 4 * TIMEOUT_MS;
 var OFF = [
   "shell_tool",
   "unified_exec",
@@ -1735,6 +1746,7 @@ var runUpdates2 = (dir, sessionId, ask, now) => runUpdates({
   ...codexStore(dir, sessionId, now),
   ask,
   names: CODEX,
+  inOrder: (fn) => withLock(`${statePath(dir, sessionId)}.results`, fn, RESULTS_WAIT_MS),
   catchUp: async (s) => askOverConversation(
     ask,
     CODEX,

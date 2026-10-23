@@ -1051,10 +1051,11 @@ test('the band keeps what the mods after the inbox draw there, with its counts a
   }
 })
 
-const replyWithResults = async ($: Engine, on: On, results: string | null) => {
+const replyWithResults = async ($: Engine, on: On, results: string | null, ledgerAnswer = LEDGER_REPLY) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   resultsReply = results
+  ledgerReply = ledgerAnswer
   let session: { ledger: { milestones: { text: string }[]; items: { ask: string }[] } } | null = null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
     session = e.value as never
@@ -1120,6 +1121,44 @@ test('a ledger update shows before its results call returns, and the results cal
   release()
   await clock.settle()
   expect(session!.ledger.milestones.map(m => m.text)).toContain('Command scaffolded')
+})
+
+test('a ledger call that gives no usable answer runs no results call', async ($, on) => {
+  const ledger = await replyWithResults($, on, 'DONE: Greeting CLI scaffolded', 'not a ledger')
+
+  expect(resultsPrompts).toEqual([])
+  expect(ledger.milestones).toEqual([])
+})
+
+test('the next ledger update does not wait for an earlier results call, and results calls run one at a time', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let session: { ledger: { milestones: { text: string }[]; items: { ask: string }[] } } | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  const reply = async (text: string, turnId: string) => {
+    await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
+    await $.turn.start({ text, turnId })
+    await $.turn.complete({ answer: 'Noted.', durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+    await clock.settle()
+  }
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  let release: () => void = () => undefined
+  resultsHold = new Promise<void>(resolve => (release = resolve))
+  resultsReply = 'DONE: Command scaffolded'
+  ledgerReply = 'NEW: do | - | Water the plants | - | -'
+  await reply('add a greeting cli', 't1')
+  ledgerReply = 'NEW: do | - | Feed the cat | - | -'
+  await reply('and a name', 't2')
+
+  expect(session!.ledger.items.map(i => i.ask)).toEqual(['Water the plants', 'Feed the cat'])
+  expect(resultsPrompts).toHaveLength(1)
+  release()
+  await clock.settle()
+  expect(resultsPrompts).toHaveLength(2)
+  expect(resultsPrompts[1]).toContain('Command scaffolded')
 })
 
 test('resumed into a conversation it cannot fork yet, it catches up from the transcript before any reply', async ($, on) => {
