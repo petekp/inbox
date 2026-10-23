@@ -476,21 +476,16 @@ export type OverviewRow = {
   detail: string | null
 }
 
+/** One text line of the page: the headline, why the direction changed, how it is going, a pointer to the Inbox, or a quiet note. */
+export type OverviewLead = { id: 'headline' | 'course' | 'status' | 'pointer' | 'quiet'; text: string }
+
 export type OverviewSection = { id: string; title: string | null; rows: OverviewRow[] }
 
 /** What the Overview page shows. Every look draws it as it is. */
 export type OverviewPage = {
   isEmpty: boolean
-  /** The plain sentence naming what the session is doing; null until the person has asked for something. */
-  headline: string | null
-  /** "Working…" while the main agent's turn runs, else how it is going; null when there is none. */
-  now: string | null
-  /** Why the direction changed; null while it has not. */
-  course: string | null
-  /** Said in place of "Since you looked" when the person was away and nothing changed. */
-  quiet: string | null
-  /** How many things wait on the person, pointing to the Inbox; null when none. */
-  pointer: string | null
+  /** The text lines above the lists, in the order to draw them. */
+  lead: OverviewLead[]
   /** The parts in the order to draw them. A look draws these and no others. */
   parts: PartId[]
   sections: OverviewSection[]
@@ -527,6 +522,13 @@ export function pointerText(count: number): string | null {
   return count === 0 ? null : count === 1 ? '1 thing waits on you in Inbox.' : `${count} things wait on you in Inbox.`
 }
 
+/** `parts` with `id` placed after the headline and the course. */
+function withAfterHeading(parts: PartId[], id: PartId): PartId[] {
+  const at = parts.filter(p => p === 'headline' || p === 'course').length
+
+  return [...parts.slice(0, at), id, ...parts.slice(at)]
+}
+
 export function overviewPage(
   s: { ledger: Pick<Ledger, 'overview'>; presence: { isTurnRunning: boolean }; stop?: unknown },
   now: number,
@@ -557,13 +559,24 @@ export function overviewPage(
       })
     : []
 
+  const texts: Record<OverviewLead['id'], string | null> = {
+    headline,
+    course: overview?.course || null,
+    status: isTurnRunning ? WORKING_TEXT : overview?.status || null,
+    pointer: pointerText(waitingOnYou),
+    quiet: QUIET_TEXT,
+  }
+  const withWorking: PartId[] = isTurnRunning && !parts.includes('status') ? withAfterHeading(parts, 'status') : parts
+  const leadIds: PartId[] = overview ? withWorking : isTurnRunning ? ['status'] : []
+  const lead = leadIds.flatMap(id => {
+    const text = id in texts ? texts[id as OverviewLead['id']] : null
+
+    return text === null ? [] : [{ id: id as OverviewLead['id'], text }]
+  })
+
   return {
     isEmpty: headline === null && !isTurnRunning,
-    headline,
-    now: isTurnRunning ? WORKING_TEXT : parts.includes('status') ? overview?.status || null : null,
-    course: parts.includes('course') ? overview?.course || null : null,
-    quiet: parts.includes('quiet') ? QUIET_TEXT : null,
-    pointer: parts.includes('pointer') ? pointerText(waitingOnYou) : null,
+    lead,
     parts,
     sections,
     earlier: parts.includes('earlier') ? (overview?.earlier ?? []) : [],

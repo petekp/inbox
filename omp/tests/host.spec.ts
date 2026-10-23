@@ -668,7 +668,8 @@ async function withSteps() {
 
 test('Working… shows from agent_start to the run’s end, and a Done message waits for Esc to end the run', async () => {
   const inbox = createInbox(pi(), deps())
-  const now = async () => (await inbox.screen(makeCtx())).view.overviewPage.now
+  const now = async () =>
+    (await inbox.screen(makeCtx())).view.overviewPage.lead.find(l => l.id === 'status')?.text ?? null
   await prompt('hello')
   await record({ kind: 'task', ask: 'Try the CLI by hand' })
   await endAgent('Done.')

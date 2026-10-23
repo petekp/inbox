@@ -618,7 +618,7 @@ test('Working… shows from the main agent’s turn.start to its turn.complete, 
     session = e.value as never
     return next(e)
   })
-  const now = async () => overviewPage(session!, 1_000_000).now
+  const now = async () => overviewPage(session!, 1_000_000).lead.find(l => l.id === 'status')?.text ?? null
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   ledgerReply = 'NEW: do | - | Sign in to npm | - | -'
@@ -3279,7 +3279,7 @@ test('a session saved mid-turn by a process that ended loads with no turn runnin
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.settle()
-  expect(overviewPage(session!, 1_000_000).now).toBeNull()
+  expect(overviewPage(session!, 1_000_000).lead.find(l => l.id === 'status')?.text ?? null).toBeNull()
   const pane = await $.ui.mount(PANE)
   await pane.press({ key: 'select-i1' })
   await clock.advance(PRESS_GUARD_MS)
@@ -4071,7 +4071,7 @@ test('the Overview page shows the headline, the status and the queue in place of
 
   await pane.press({ key: 'tab-key-overview' })
   expect((await pane.find({ key: 'overview-headline' }))?.text).toBe('Adding a greeting CLI')
-  expect((await pane.find({ key: 'overview-now' }))?.text).toBe('Waiting on two choices.')
+  expect((await pane.find({ key: 'overview-status' }))?.text).toBe('Waiting on two choices.')
   expect(await pane.find({ text: /^Plan written$/ })).toBeDefined()
   expect(await pane.find({ text: /Use Node or Python\?/ })).toBeUndefined()
   const rowKeys = async () =>

@@ -586,8 +586,7 @@ test('the Overview page shows the headline, the status, then its sections in ord
   const lines = text(screen, onPage).split('\n')
   const at = (s: string) => lines.findIndex(l => l.includes(s))
   const order = [
-    page.headline!,
-    page.now!,
+    ...page.lead.map(l => l.text),
     ...page.sections.flatMap(part => [...(part.title ? [part.title] : []), ...part.rows.map(r => r.text)]),
   ].map(at)
   expect(order.every(n => n >= 0)).toBe(true)

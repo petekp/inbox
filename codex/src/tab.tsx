@@ -1279,15 +1279,23 @@ function OverviewTab({ page }: { page: OverviewPage }) {
         <div class="muted">{page.empty.hint}</div>
       </div>
     )
-  const { headline, now, course, sections, earlier } = page
+  const { lead, sections, earlier } = page
 
   return (
     <main class="overview">
-      {headline || now || course ? (
+      {lead.length > 0 ? (
         <section>
-          {headline ? <h1 class="overview-goal">{headline}</h1> : null}
-          {now ? <div class="overview-now muted">{now}</div> : null}
-          {course ? <div class="overview-now muted">{course}</div> : null}
+          {lead.map(line =>
+            line.id === 'headline' ? (
+              <h1 class="overview-goal" key={line.id}>
+                {line.text}
+              </h1>
+            ) : (
+              <div class="overview-now muted" key={line.id}>
+                {line.text}
+              </div>
+            ),
+          )}
         </section>
       ) : null}
       {sections.map(part => (

@@ -682,7 +682,7 @@ test('a chat saved mid-turn reads Working… until a view or a press finds the t
     tabHtml: '<html></html>',
     fallbackCli: async () => 'codex',
   })
-  type Shown = { overviewPage: { now: string | null } }
+  type Shown = { overviewPage: { lead: { id: string; text: string }[] } }
   const call = (name: string, args: Record<string, unknown>) =>
     handle({
       jsonrpc: '2.0',
@@ -690,7 +690,8 @@ test('a chat saved mid-turn reads Working… until a view or a press finds the t
       method: 'tools/call',
       params: { name, arguments: args, _meta: { thread_id: 's1' } },
     }) as Promise<{ result: { structuredContent: Shown & { view: Shown } } }>
-  const viewNow = async () => (await call('inbox_view', {})).result.structuredContent.overviewPage.now
+  const viewNow = async () =>
+    (await call('inbox_view', {})).result.structuredContent.overviewPage.lead.find(l => l.id === 'status')?.text ?? null
 
   assert.equal(await viewNow(), 'Working…')
   writeFileSync(rollout, `${turnRow('task_started', 't1')}\n${turnRow('task_complete', 't1')}\n`)
@@ -702,7 +703,7 @@ test('a chat saved mid-turn reads Working… until a view or a press finds the t
   assert.equal(await viewNow(), 'Working…')
   writeFileSync(rollout, `${turnRow('task_started', 't2')}\n${turnRow('turn_aborted', 't2')}\n`)
   const pressed = await call('inbox_press', { press: { action: 'done', id: 'i1' }, thread: 'another chat' })
-  assert.equal(pressed.result.structuredContent.view.overviewPage.now, null)
+  assert.equal(pressed.result.structuredContent.view.overviewPage.lead.find(l => l.id === 'status')?.text ?? null, null)
 })
 
 test('a turn another plugin’s Stop continues reads Working… again once a view finds it running in the rollout', async () => {
@@ -724,9 +725,9 @@ test('a turn another plugin’s Stop continues reads Working… again once a vie
       id: 1,
       method: 'tools/call',
       params: { name: 'inbox_view', arguments: {}, _meta: { thread_id: 's1' } },
-    })) as { result: { structuredContent: { overviewPage: { now: string | null } } } }
+    })) as { result: { structuredContent: { overviewPage: { lead: { id: string; text: string }[] } } } }
 
-    return r.result.structuredContent.overviewPage.now
+    return r.result.structuredContent.overviewPage.lead.find(l => l.id === 'status')?.text ?? null
   }
 
   await handleHook(input('UserPromptSubmit', { prompt: 'Ship it', turn_id: 't1', transcript_path: rollout }), deps)

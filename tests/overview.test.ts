@@ -241,17 +241,17 @@ test('the page counts what waits on the person and draws parts in order', () => 
   const stopped = { ledger: { overview: guide({ state: 'stuck', lastLookAt: 0 }) }, presence: { isTurnRunning: false } }
   const page = overviewPage(stopped, SHORT_MS * 2, 2)
 
-  expect(page.pointer).toBe('2 things wait on you in Inbox.')
-  expect(page.now).toBe('Going well.')
+  expect(page.lead.map(l => l.id)).toEqual(['headline', 'status', 'pointer'])
+  expect(page.lead[2]?.text).toBe('2 things wait on you in Inbox.')
+  expect(page.lead.find(l => l.id === 'status')?.text).toBe('Going well.')
   expect(page.sections.map(x => x.id)).toEqual(['since', 'queue', 'next', 'open'])
   const here = overviewPage({ ...stopped, presence: { isTurnRunning: true } }, 1000, 2)
-  expect(here.now).toBe('Working…')
-  expect(here.quiet).toBeNull()
+  expect(here.lead.map(l => l.text)).toEqual(['Adding offline mode', 'Working…'])
   const quiet = overviewPage(
     { ledger: { overview: guide({ since: [], lastLookAt: 0 }) }, presence: { isTurnRunning: false } },
     SHORT_MS / 2,
   )
-  expect(quiet.quiet).toBe(QUIET_TEXT)
+  expect(quiet.lead.map(l => l.text)).toEqual(['Adding offline mode', QUIET_TEXT])
 })
 
 test('a line that only starts with a key word is not a key line', () => {

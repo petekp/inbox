@@ -2296,6 +2296,10 @@ var QUIET_TEXT = "Nothing new since you looked.";
 function pointerText(count) {
   return count === 0 ? null : count === 1 ? "1 thing waits on you in Inbox." : `${count} things wait on you in Inbox.`;
 }
+function withAfterHeading(parts, id) {
+  const at = parts.filter((p) => p === "headline" || p === "course").length;
+  return [...parts.slice(0, at), id, ...parts.slice(at)];
+}
 function overviewPage(s, now, waitingOnYou = 0) {
   const { overview } = s.ledger;
   const { isTurnRunning } = s.presence;
@@ -2313,13 +2317,22 @@ function overviewPage(s, now, waitingOnYou = 0) {
     }));
     return rows.length > 0 ? [{ id, title, rows }] : [];
   }) : [];
+  const texts = {
+    headline,
+    course: overview?.course || null,
+    status: isTurnRunning ? WORKING_TEXT : overview?.status || null,
+    pointer: pointerText(waitingOnYou),
+    quiet: QUIET_TEXT
+  };
+  const withWorking = isTurnRunning && !parts.includes("status") ? withAfterHeading(parts, "status") : parts;
+  const leadIds = overview ? withWorking : isTurnRunning ? ["status"] : [];
+  const lead = leadIds.flatMap((id) => {
+    const text = id in texts ? texts[id] : null;
+    return text === null ? [] : [{ id, text }];
+  });
   return {
     isEmpty: headline === null && !isTurnRunning,
-    headline,
-    now: isTurnRunning ? WORKING_TEXT : parts.includes("status") ? overview?.status || null : null,
-    course: parts.includes("course") ? overview?.course || null : null,
-    quiet: parts.includes("quiet") ? QUIET_TEXT : null,
-    pointer: parts.includes("pointer") ? pointerText(waitingOnYou) : null,
+    lead,
     parts,
     sections,
     earlier: parts.includes("earlier") ? overview?.earlier ?? [] : [],
@@ -4255,12 +4268,8 @@ function pageEntries(page) {
       { kind: "note", text: page.empty.hint }
     ];
   const out = [];
-  if (page.headline)
-    out.push({ kind: "note", text: page.headline, isStrong: true });
-  if (page.now)
-    out.push({ kind: "note", text: page.now });
-  if (page.course)
-    out.push({ kind: "note", text: page.course });
+  for (const line of page.lead)
+    out.push({ kind: "note", text: line.text, isStrong: line.id === "headline" });
   for (const part of page.sections) {
     if (part.title)
       out.push({ kind: "heading", text: part.title, count: 0 });

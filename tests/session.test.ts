@@ -234,9 +234,13 @@ test('the Overview page is empty for a new session and reads Working… only whi
 
   expect(view(idle).isEmpty).toBe(true)
   expect(view(turnStarted(idle)).isEmpty).toBe(false)
-  expect(view(turnStarted(idle)).now).toBe('Working…')
-  expect(view(turnEnded(turnStarted(idle))).now).toBeNull()
-  expect(view(withOverview(idle))).toMatchObject({ headline: 'Adding offline mode', now: 'Loading works offline.' })
+  expect(view(turnStarted(idle)).lead.find(l => l.id === 'status')?.text ?? null).toBe('Working…')
+  expect(view(turnEnded(turnStarted(idle))).lead.find(l => l.id === 'status')?.text ?? null).toBeNull()
+  expect(view(withOverview(idle)).lead.map(l => l.text)).toEqual([
+    'Adding offline mode',
+    'Loading works offline.',
+    'Nothing new since you looked.',
+  ])
 })
 
 test('the Overview page draws each item with its mark and tone', () => {
@@ -289,6 +293,6 @@ test('a sample saved without an Overview is replaced, and the sample session car
   expect(upgradeDemoCopy(old)).toMatchObject({ presence: { isTurnRunning: false } })
   expect(isDemoCopy({ ...old, ledger: { ...old.ledger, overview: undefined } })).toBe(false)
   const page = sessionView(demoSession(1_000_000), 1_000_000, 1000, true, NO_HOLDS).overviewPage
-  expect(page.headline).toBe('Adding pinch-to-dismiss to glances')
+  expect(page.lead[0]?.text).toBe('Adding pinch-to-dismiss to glances')
   expect(page.sections.map(part => part.id)).toEqual(['since', 'queue', 'open'])
 })

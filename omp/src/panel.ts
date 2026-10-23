@@ -530,9 +530,7 @@ function pageEntries(page: OverviewPage): Entry[] {
       { kind: 'note', text: page.empty.hint },
     ]
   const out: Entry[] = []
-  if (page.headline) out.push({ kind: 'note', text: page.headline, isStrong: true })
-  if (page.now) out.push({ kind: 'note', text: page.now })
-  if (page.course) out.push({ kind: 'note', text: page.course })
+  for (const line of page.lead) out.push({ kind: 'note', text: line.text, isStrong: line.id === 'headline' })
   for (const part of page.sections) {
     if (part.title) out.push({ kind: 'heading', text: part.title, count: 0 })
     out.push(...part.rows.map((row): Entry => ({ kind: 'page', row })))

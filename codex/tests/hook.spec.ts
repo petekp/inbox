@@ -102,7 +102,8 @@ test('a Stop notes the dialogs the agent opened in the ending turn as open, and 
 test('a main-agent prompt reads Working… until Stop or a start that is not a compact, and a subagent prompt does not', async () => {
   const dir = tempDir()
   const deps = hookDeps(dir)
-  const now = async () => viewOf(await readState(dir, 's1'), 1000).overviewPage.now
+  const now = async () =>
+    viewOf(await readState(dir, 's1'), 1000).overviewPage.lead.find(l => l.id === 'status')?.text ?? null
 
   await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
   await handleHook(input('UserPromptSubmit', { prompt: 'Look around', agent_id: 'a1' }), deps)

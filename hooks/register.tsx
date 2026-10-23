@@ -4871,11 +4871,7 @@ export const register: Register = on => {
             {emptyState(page.empty)}
           </Box>
         )
-      const head = [
-        page.headline ? overviewTextLine(page.headline, 'overview-headline', true) : null,
-        page.now ? overviewTextLine(page.now, 'overview-now', false) : null,
-        page.course ? overviewTextLine(page.course, 'overview-course', false) : null,
-      ].filter(Boolean)
+      const head = page.lead.map(line => overviewTextLine(line.text, `overview-${line.id}`, line.id === 'headline'))
 
       return sections([
         ...(head.length > 0
