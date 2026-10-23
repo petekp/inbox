@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
 import { applyExchangeUpdate, applyUpdate, EMPTY, parseReply, upgradeLedger } from '../hooks/ledger'
@@ -130,7 +130,7 @@ const about = provenance(
       overviewPrompt(null, { turn: 1, person: 'p', activity: ['a'], reply: 'r' } as Exchange),
       overviewCatchUpPrompt(null, 'c'),
     ].join('\n'),
-    'overview parser': readFileSync(join(dirname(process.argv[1]!), '../hooks/overview.ts'), 'utf8'),
+    'overview parser': [parseOverview, applyOverview].map(String).join('\n'),
     cases: readFileSync(values.cases, 'utf8'),
     models: JSON.stringify({ claude: CLAUDE_MODEL, codex: MODEL }),
     runner: readFileSync(process.argv[1]!, 'utf8'),
