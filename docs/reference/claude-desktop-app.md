@@ -67,6 +67,47 @@ On 2026-10-21, inbox 0.2.10 ran in local Code-mode sessions of Claude desktop 3.
 - **Nested sessions.** A task Claude started in a nested session turned the inbox on there, with its own band and its own saved session. Its question stayed out of the parent session's inbox. Each nested session takes one of the 40 sessions the store keeps (`KEPT_SESSIONS`).
 - **Not seen:** a Copy action, and the sidebar.
 
+## Live checks on desktop 3.6556.2
+
+Checked on 2026-10-23 in the `inbox-ui` VM, at the inbox's commit `1b61c6f`. The
+app had updated itself to `3.6556.2`; the request named 3.6556.1, which bundles
+engine 2.1.308 ("Bundled Claude Code version: 2.1.308."). The sessions ran
+engine 2.1.308, with Haiku 5.5 in Auto permission mode. The terminal `claude`
+in the VM is 2.1.309 and was not used.
+
+- **Pane width.** Claude Code 2.1.305 caps the pane at 45% of the window width
+  (per the request). In the desktop app the docked pane opened at 37% of the
+  window, dragged to 87% of it, and to 28% at its narrowest. The inbox's rows
+  and buttons read well at all three, and nothing clipped. The 45% cap did not
+  show in the desktop app.
+- **Band, presses, copy, end.** The AbovePrompt band drew with "Nothing needed",
+  the demo counts and real counts. Explain, Done and answer presses showed
+  their result at once. A real Explain reached the session as a prompt with
+  `origin` `{kind: 'plugin', name: 'inbox', asUser: true}`, enqueued and dequeued
+  2 ms apart. `$.ui.copy` put the command on the VM's clipboard (`pbpaste`).
+  `/clear` ended the engine process and the pane and band went with it; the
+  saved session had no running turn, no pending update and no stop.
+- **Buttons move after a demo Explain.** After a demo Explain, the note line
+  under the title is replaced by "✓ Explained" on the title line, and the
+  buttons move up about 24 pt. Two clicks aimed at a button's old place did
+  nothing. A real Explain did not move them.
+- **`allowManagedPermissionRulesOnly`.** The 3.1623.4 notes say: "Changed
+  plugins that the app loads to ask before using the tools they pre-approve
+  when your organization's Claude Code managed settings, such as
+  `managed-settings.json`, set `allowManagedPermissionRulesOnly`." The inbox
+  pre-approves nothing in its manifest. With that key set in a managed file, the
+  model's `record` and `close` calls completed with no permission prompt
+  (tool result 6 ms after the call), a Done press sent its message as a prompt
+  and the model replied, and Copy worked. The guard seated, and each skipped
+  `classic.SessionStart`, `prompt.context`, `prompt.compose` and
+  `classic.Stop` hook added an "inbox: its … hook was skipped" notice to the
+  conversation that also reached the model, once each. The settings reference
+  says the key makes managed settings the only source of permission rules and
+  drops `--allowedTools`.
+- Not checked: a permission prompt for an ordinary tool under that key; Talk
+  and answer presses under it; a press while a turn runs; quitting the app with
+  a session open; undo within its window.
+
 ## Modes and tabs
 
 The public docs and the app disagree on naming.
@@ -348,7 +389,7 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 - The guard loads when "The machine has managed settings" or "The user is signed in to Claude Code with a Team or Enterprise plan" (https://code.claude.com/docs/en/plugins/mods/admin#know-what-happens-by-default, Markdown lines 58-63). There, a user's mod "can't change … the system prompt" or managed instructions (same page, line 64).
 - The guard's public source goes further than the docs. It skips every user-tier hook on `prompt.compose`, `prompt.context`, `prompt.section`, `skill.prompt`, `attribution.text`, `settings.read` and `classic.*` (anthropics/claude-code `mods/sec-default/hooks/register.ts` L24-32, main at commit 684800b, 2026-09-29). It also refuses a user mod's `$.tool.register` while managed settings set `allowedMcpServers` (same source, L39-50). Whether the shipped engine's guard matches this source is unknown.
 - Inference for the inbox where the guard loads: Claude would not get the inbox's guidance (`hooks/register.tsx:on('prompt.compose')`) or carry block (`hooks/register.tsx:on('prompt.context')`). The reload after `/clear` and `/resume` (`hooks/register.tsx:on('classic.SessionStart')`) and the `hooks/register.tsx:on('classic.PermissionRequest')` hook would not run. The band, pane and per-turn update would still run. Not verified live.
-- Inference: the app's parent settings may count as managed settings and so seat the guard. Unverified.
+- Live, 2026-10-23, desktop 3.6556.2 with engine 2.1.308: in a session with no managed settings file, the transcript held no guard text, so the app's parent settings did not seat the guard on that account. With `/Library/Application Support/ClaudeCode/managed-settings.json` present, the guard seated. See "Live checks on desktop 3.6556.2".
 
 ## /resume, moving sessions and Remote Control
 

@@ -1519,6 +1519,70 @@ The changelog page "is generated from the CHANGELOG.md on GitHub". On 2026-10-08
 - Built-in terminal UI competes for space: the fullscreen `/diff` panel needs "a terminal at least 110 columns wide" (Week 36), and the SendFeedback card sits "above your prompt" (Week 35). [WN-36; WN-35]
 - `claude plugin eval` (Week 37) scores a plugin against a no-plugin run. "Every run … is a real model call on your account." [WN-37]
 
+## Checked against Claude Code 2.1.309 and desktop 3.6556
+
+Checked on 2026-10-23. Claude Code 2.1.309 is the terminal version here
+(`claude --version`). The desktop live checks ran in the `inbox-ui` VM on app
+3.6556.2 with engine 2.1.308, and are in claude-desktop-app.md under "Live
+checks on desktop 3.6556.2". The entries are quoted from the desktop and
+Claude Code release notes named in the request.
+
+- **Pre-approved tools (desktop 3.1623.4).** "Changed plugins that the app
+  loads to ask before using the tools they pre-approve when your
+  organization's Claude Code managed settings, such as `managed-settings.json`,
+  set `allowManagedPermissionRulesOnly`." The inbox pre-approves nothing: it
+  has no skills, command files or agents, no `allowed-tools`, and `hooks/register.tsx`
+  has no `tool.check` that allows a call. Its `record` and `close` are answered
+  in `tool.call` with `{ result }`. Live, with the key set in a managed file
+  (engine 2.1.308), both completed with no prompt, and a pane press's
+  `$.prompt.submit` message ran. Not affected.
+- **Desktop smoke test (desktop 3.6556.1, "Bundled Claude Code version:
+  2.1.308.").** Band, pane, presses, `$.ui.copy` and `session.end` passed.
+  The pane opened at 37% of the window and could be dragged to 87%, so the
+  45% cap (Claude Code 2.1.305) did not show.
+- **Settings tab for folder marketplaces (desktop 3.6556.1, third-party
+  providers).** "Fixed plugins installed from a marketplace folder on this
+  computer having no Settings tab on their page in Customize, so Code tab
+  sessions ran them without the values they ask for. Values entered earlier in
+  a terminal must be entered again in that tab." The inbox declares no
+  `userConfig` (`.claude-plugin/plugin.json`), so it asks for no values. The
+  standard install uses the `petekp/inbox` Git marketplace. Not affected.
+  Open question 51 (below) stays open: it asks whether `userConfig` values
+  reach `register(on, options)` in Code mode, and this note adds that a Code
+  tab session of a folder-marketplace plugin could run without them on a
+  build older than the fix. A future inbox option needs a default for that
+  reason.
+- **Notes only, from the desktop notes.** Cowork plugins and skills now work
+  in scheduled tasks. A Cowork MCP tool that needs a person asks only on the
+  in-app card. `allowedPluginMarketplaces` checks `expectedName` when a source
+  moves, so the marketplace name `inbox` and the source `petekp/inbox` must
+  stay stable. A third-party local MCP server whose `env` uses only `${VAR}`
+  now runs. The inbox registers no MCP server of its own in Claude Code.
+- **Send now (2.1.309).** "Fixed ctrl+enter (send now) only queuing a message
+  when pressed before the response had started, and restarting a prompt's hooks
+  while leaving the message queued when pressed while those hooks were
+  running." The mod's `prompt.submit` hook is not idempotent. Each run adds one
+  to `ledger.turn` and appends the text to `turn.person`
+  (`hooks/session.ts:recordPrompt`), and `PromptSubmitInput` has no prompt id
+  to dedupe by. So on 2.1.308 and earlier, a restarted hook could count one
+  message twice. From 2.1.309 it runs once. The mod does not use
+  `prompt.compose` or `prompt.context`. Not reproduced live; no change.
+- **VS Code (2.1.309).** "[VSCode] Fixed a mod's 'From the … plugin' label
+  above the prompt being drawn over the slash command and @-mention menus."
+  The inbox does not draw in the VS Code chat panel (docs/looks.md), and
+  neither this Mac nor the VM has VS Code. Not checked.
+- **Notes only, from the 2.1.309 notes.** "Fixed a mod's `turn.step` hook that
+  names a model by alias, such as `haiku`, failing every request with a model
+  error": the inbox names `sonnet` in `$.model.complete`
+  (`hooks/claude-host.ts`), not in a `turn.step` hook. "Improved the error when
+  a hooks module is nested too deep to load: it now names the file": the
+  inbox's module is `hooks/register.tsx`. "Fixed plugins and skills synced from
+  claude.ai being removed, sometimes mid-session, after a disk read error."
+  PowerShell hooks exiting 2 now block (Windows only; the inbox has no
+  PowerShell hooks). "Fixed messages from a Claude Desktop-hosted session
+  sometimes being lost when its connection refreshed" and the desktop and
+  terminal account-mismatch fix reach desktop when it bundles 2.1.309.
+
 ## What this repo has verified, and what is stale
 
 ### How this machine loads the inbox
