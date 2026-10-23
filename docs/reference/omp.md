@@ -1,6 +1,6 @@
 # omp (oh-my-pi)
 
-Checked on 2026-10-21. This file records what omp lets the inbox's omp host do, with the source line or live log behind each fact. It covers the questions in step 0 of `docs/plans/progress-tab.md`.
+Checked on 2026-10-21. This file records what omp lets the inbox's omp host do, with the source line or live log behind each fact. It covers the host checks made before the Progress tab was built. The task list is in `task-lists.md`.
 
 omp is the `omp` coding agent from `can1357/oh-my-pi`. The inbox's omp host is an extension (`omp/src/host.ts`). It is the only file that imports omp packages.
 
