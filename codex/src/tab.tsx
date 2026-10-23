@@ -601,13 +601,13 @@ async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void
     if (!r.error && r.note !== 'stale' && r.delivery !== 'unconfirmed') onSent?.()
     if (!r.error && r.note !== 'stale' && r.delivery !== 'unconfirmed' && r.view && wasWaiting && typing !== rowId)
       openAfterClose(r.view, rowId)
-    const note = DEMO_RECORDING && r.note === 'sample' ? null : r.note
+    const { note } = r
     if (note && view && isListed(view, rowId)) {
-      notes.set(rowId, { text: noteText(note), at: Date.now() })
+      notes.set(rowId, { text: noteText(), at: Date.now() })
       drawIn(SETTLED_MS)
       if (note === 'stale' && press.action === 'type') typing = rowId
     } else if (note) {
-      lineNote = { text: noteText(note), at: Date.now() }
+      lineNote = { text: noteText(), at: Date.now() }
       drawIn(SETTLED_MS)
     }
   } catch {

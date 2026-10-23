@@ -405,7 +405,7 @@ function localText(r: LocalResult, look: Look): string {
 export function feedbackText(f: Feedback, look: Look): string {
   switch (f.is) {
     case 'note':
-      return noteText(f.note)
+      return noteText()
     case 'local':
       return localText(f.result, look)
     case 'queued':

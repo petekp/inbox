@@ -32,7 +32,7 @@ export function demoSource(deps: {
       const at = deps.now()
       const r = pressOn(state, p, at)
       if ('stale' in r) return { error: null, note: 'stale' }
-      const { isSample, ...after } = demoAfterPress(
+      const after = demoAfterPress(
         { lastActions: state.lastActions, turns: state.presence },
         r,
         new Set(Object.keys(holds.replies)),
@@ -50,7 +50,7 @@ export function demoSource(deps: {
         }, deps.settleWindowMs)
       changed()
 
-      return { error: null, note: isSample ? 'sample' : null }
+      return { error: null, note: null }
     },
     resume: async () => null,
     fetchPrsWhenDue: () => {},

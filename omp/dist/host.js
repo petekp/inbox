@@ -1423,8 +1423,8 @@ function refuseDoneNotification(ledger, notificationId, reason) {
   };
 }
 var STALE_TEXT = "This changed before your press. Nothing was sent.";
-function noteText(note) {
-  return note === "sample" ? "Sample entry: nothing was sent." : STALE_TEXT;
+function noteText() {
+  return STALE_TEXT;
 }
 function helpEffect(item, help) {
   switch (help.kind) {
@@ -1525,24 +1525,17 @@ function reopenOnFailure(ledger, id, at) {
   const closed = ledger.closed.findLast((c) => c.id === id);
   return closed?.item && closed.how === "answered" && closed.at === at ? reopenItem(ledger, id) : ledger;
 }
-function demoRecord(lasts, effects) {
-  return {
-    lasts: Object.fromEntries(Object.entries(lasts).flatMap(([id, { delivery: _unsent, ...l }]) => l.result === undefined ? [[id, l]] : [])),
-    isSample: effects.length > 0
-  };
-}
 function demoTurns(turns, effects, isReplied = false) {
   if (isReplied)
     return { ...turns, turnsApplied: turns.turnsStarted };
   return effects.some((e) => e.kind === "send") ? { ...turns, turnsStarted: turns.turnsStarted + 1 } : turns;
 }
 function demoAfterPress(before, r, held) {
-  const { lasts, isSample } = demoRecord(r.lasts, r.effects);
+  const lasts = Object.fromEntries(Object.entries(r.lasts).flatMap(([id, { delivery: _unsent, ...l }]) => l.result === undefined ? [[id, l]] : []));
   return {
     ledger: pruneClosed(r.ledger, held),
     lastActions: withLasts(before.lastActions, lasts, r.drop),
-    turns: demoTurns(before.turns, r.effects),
-    isSample
+    turns: demoTurns(before.turns, r.effects)
   };
 }
 async function runLocalEffects(host, effects, rowId, pending) {
@@ -1942,7 +1935,7 @@ function localText(r, look) {
 function feedbackText(f, look) {
   switch (f.is) {
     case "note":
-      return noteText(f.note);
+      return noteText();
     case "local":
       return localText(f.result, look);
     case "queued":
@@ -3963,7 +3956,7 @@ function isAnimating(screen, ui, now) {
   return rows.some((r) => r.state.is === "settled") || view.prs.drawn.some((p) => p.isSettled) || isPressMoving || isNoticeShown;
 }
 function noticeFor(outcome, now) {
-  const text = outcome.error ?? (outcome.note ? noteText(outcome.note) : null);
+  const text = outcome.error ?? (outcome.note ? noteText() : null);
   return text === null ? null : { text, at: now };
 }
 var ANSI = /\x1b\[[0-9;]*m/g;
@@ -4757,7 +4750,7 @@ function demoSource(deps) {
       const r = pressOn(state, p, at);
       if ("stale" in r)
         return { error: null, note: "stale" };
-      const { isSample, ...after } = demoAfterPress({ lastActions: state.lastActions, turns: state.presence }, r, new Set(Object.keys(holds.replies)));
+      const after = demoAfterPress({ lastActions: state.lastActions, turns: state.presence }, r, new Set(Object.keys(holds.replies)));
       state = {
         ...state,
         ledger: after.ledger,
@@ -4770,7 +4763,7 @@ function demoSource(deps) {
           changed();
         }, deps.settleWindowMs);
       changed();
-      return { error: null, note: isSample ? "sample" : null };
+      return { error: null, note: null };
     },
     resume: async () => null,
     fetchPrsWhenDue: () => {},

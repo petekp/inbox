@@ -527,8 +527,7 @@ test('a press in the demo changes only the demo, sends nothing into the conversa
   )
   assert.deepEqual(calls, [])
   assert.equal(r.result.structuredContent.view.needsYou.questions.find(q => q.id === first.id)?.state.is, 'settled')
-  assert.equal(r.result.structuredContent.note, 'sample')
-  assert.equal(r.result.content[0]?.text, 'Sample entry: nothing was sent.')
+  assert.equal(r.result.structuredContent.note, null)
   const copyTask = demo.result.structuredContent.needsYou.tasks.find(t =>
     t.steps[0]?.step.every(h => h.kind === 'copy'),
   )
@@ -538,7 +537,7 @@ test('a press in the demo changes only the demo, sends nothing into the conversa
     { press: { action: 'step', id: copyTask.id, step: 0, label: copyTask.steps[0]!.label }, thread: 's1', demo: true },
     { thread_id: 's1' },
   )
-  assert.equal(copied.result.structuredContent.note, 'sample')
+  assert.equal(copied.result.structuredContent.note, null)
   assert.equal((copied.result.structuredContent as unknown as { copy: unknown }).copy, null)
   assert.deepEqual(await readState(dir, 's1'), before)
 })
