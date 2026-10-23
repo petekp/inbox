@@ -1,3 +1,4 @@
+import type { HooksTrust } from './hook-trust'
 import { toolActivity } from '../../hooks/model-text'
 import { endTurn as endSessionTurn, notePrompt as notePromptIn, sessionView } from '../../hooks/session'
 import type { SessionView } from '../../hooks/session'
@@ -99,9 +100,11 @@ export type View = SessionView & {
  * Tabs open from older builds read it by this name.
  * `serverBuild` is the fingerprint build.mjs stamped into the running server. `serverLoadError` says why a newer
  * build of the server did not load. `isPluginFolderGone` says the server found no installed copy of itself, as after
- * an uninstall.
+ * an uninstall. `hooksTrust` says why Codex runs none of the inbox's hooks in this chat, when it has heard from none and
+ * Codex's own list of hooks names the cause.
  */
 export type TabView = View & {
+  hooksTrust?: HooksTrust
   thread: string
   devPage: string
   serverBuild?: string

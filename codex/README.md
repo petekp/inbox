@@ -32,8 +32,8 @@ Then, in the desktop app:
 
 To update, run `codex plugin marketplace upgrade`, then
 `codex plugin add inbox@inbox`, and start a new chat. Then trust the plugin's
-hooks again. Until you do, the hooks do not run, and the Inbox tab says it has
-not heard from the chat's hooks.
+hooks again. Until you do, the hooks do not run, and the Inbox tab says Codex
+stopped them.
 
 ## What it costs
 

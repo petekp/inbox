@@ -6,6 +6,7 @@ import { makeServer } from './server'
 import { devBuild } from './data-dir'
 import TAB_HTML from './tab.html'
 import { run } from './run'
+import { listHooksTrust } from './hook-trust'
 
 async function appCli(): Promise<string> {
   if (process.env.CODEX_CLI_PATH) return process.env.CODEX_CLI_PATH
@@ -51,6 +52,7 @@ export function createHandler(
     exec: run,
     tabHtml: TAB_HTML,
     fallbackCli: appCli,
+    hooksTrust: listHooksTrust,
     devPage: devPageIn(dir),
     build: SERVER_BUILD,
     loadError,
