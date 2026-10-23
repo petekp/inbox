@@ -69,7 +69,8 @@ type Check =
   | { sinceAtMost: number }
   /**
    * No two items of different lists, other than SINCE, say the same thing. Two pairs are not compared since the page
-   * never draws them together: QUEUE with WORKS, and QUEUE with NEXT while the queue has a queued item.
+   * never draws them together: QUEUE with WORKS, QUEUE with NEXT while the queue has a queued item, and WORKS in a
+   * coordinator session, whose page does not draw it.
    */
   | { partsNotRepeated: true }
   /** No item with this status matches the pattern in any list: finished work does not stay as under way. */
