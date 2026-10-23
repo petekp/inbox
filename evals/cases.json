@@ -2516,6 +2516,9 @@
       },
       {
         "sinceAtMost": 4
+      },
+      {
+        "partsNotRepeated": true
       }
     ]
   },
@@ -2638,6 +2641,9 @@
       },
       {
         "featureLevel": true
+      },
+      {
+        "partsNotRepeated": true
       }
     ]
   },
@@ -2667,6 +2673,9 @@
       },
       {
         "featureLevel": true
+      },
+      {
+        "partsNotRepeated": true
       }
     ]
   },
@@ -2777,6 +2786,9 @@
         "overviewItem": "parser",
         "list": "since",
         "status": "done"
+      },
+      {
+        "partsNotRepeated": true
       }
     ]
   },

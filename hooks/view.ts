@@ -16,6 +16,8 @@ import type {
   Turns,
 } from '../types'
 import { isLapsed, reopenFinding, reopenItem } from './ledger'
+import { awayOf, orderParts, workOf } from './overview'
+import type { PartId } from './overview'
 import { ago } from './text'
 import { questionNumbers } from './model-text'
 import type { ListedTab } from './arrivals'
@@ -485,6 +487,12 @@ export type OverviewPage = {
   now: string | null
   /** Why the direction changed; null while it has not. */
   course: string | null
+  /** Said in place of "Since you looked" when the person was away and nothing changed. */
+  quiet: string | null
+  /** How many things wait on the person, pointing to the Inbox; null when none. */
+  pointer: string | null
+  /** The parts in the order to draw them. A look draws these and no others. */
+  parts: PartId[]
   sections: OverviewSection[]
   /** One line for each earlier topic, oldest first. */
   earlier: string[]
@@ -504,42 +512,61 @@ const OVERVIEW_MARKS: Record<OverviewStatus, Pick<OverviewRow, 'mark' | 'tone'>>
   unknown: { mark: '?', tone: null },
 }
 
-const OVERVIEW_SECTIONS: { id: 'queue' | 'works' | 'open' | 'next' | 'since' | 'workstreams'; title: string | null }[] =
-  [
-    { id: 'workstreams', title: null },
-    { id: 'queue', title: null },
-    { id: 'since', title: 'Since you looked' },
-    { id: 'works', title: 'What works now' },
-    { id: 'open', title: 'Still open' },
-    { id: 'next', title: 'Next' },
-  ]
+const SECTION_TITLES: Partial<Record<PartId, string | null>> = {
+  workstreams: null,
+  queue: null,
+  since: 'Since you looked',
+  works: 'What works now',
+  open: 'Still open',
+  next: 'Next',
+}
+
+export const QUIET_TEXT = 'Nothing new since you looked.'
+
+export function pointerText(count: number): string | null {
+  return count === 0 ? null : count === 1 ? '1 thing waits on you in Inbox.' : `${count} things wait on you in Inbox.`
+}
 
 export function overviewPage(
-  s: { ledger: Pick<Ledger, 'overview'>; presence: { isTurnRunning: boolean } },
-  _now: number,
+  s: { ledger: Pick<Ledger, 'overview'>; presence: { isTurnRunning: boolean }; stop?: unknown },
+  now: number,
+  waitingOnYou = 0,
 ): OverviewPage {
   const { overview } = s.ledger
   const { isTurnRunning } = s.presence
   const headline = overview?.headline || null
+  const parts = overview
+    ? orderParts(
+        overview,
+        awayOf(overview.lastLookAt, now),
+        workOf(overview, { isTurnRunning, isStopped: Boolean(s.stop) }),
+      )
+    : []
+  const sections = overview
+    ? parts.flatMap(id => {
+        const title = SECTION_TITLES[id]
+        if (title === undefined) return []
+        const rows = overview[id as 'queue'].map((item, n) => ({
+          id: `${id}-${n}`,
+          ...OVERVIEW_MARKS[item.status],
+          text: item.text,
+          detail: item.detail,
+        }))
+
+        return rows.length > 0 ? [{ id, title, rows }] : []
+      })
+    : []
 
   return {
     isEmpty: headline === null && !isTurnRunning,
     headline,
-    now: isTurnRunning ? WORKING_TEXT : overview?.status || null,
-    course: overview?.course || null,
-    sections: overview
-      ? OVERVIEW_SECTIONS.flatMap(({ id, title }) => {
-          const rows = overview[id].map((item, n) => ({
-            id: `${id}-${n}`,
-            ...OVERVIEW_MARKS[item.status],
-            text: item.text,
-            detail: item.detail,
-          }))
-
-          return rows.length > 0 ? [{ id, title, rows }] : []
-        })
-      : [],
-    earlier: overview?.earlier ?? [],
+    now: isTurnRunning ? WORKING_TEXT : parts.includes('status') ? overview?.status || null : null,
+    course: parts.includes('course') ? overview?.course || null : null,
+    quiet: parts.includes('quiet') ? QUIET_TEXT : null,
+    pointer: parts.includes('pointer') ? pointerText(waitingOnYou) : null,
+    parts,
+    sections,
+    earlier: parts.includes('earlier') ? (overview?.earlier ?? []) : [],
     empty: {
       title: 'Overview',
       hint: "Where this session's work stands and where it's heading, so you can pick it up after a break. It fills in once the work starts.",

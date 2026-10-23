@@ -15,7 +15,7 @@ import type { TabView } from './core'
 import { demoState } from './demo'
 import { withEarlierHistory } from './history'
 import { codexStore } from './host'
-import { isUnseen, pressOn, recorded, turnEnded, turnStarted } from '../../hooks/session'
+import { isUnseen, lookedAway, pressOn, recorded, turnEnded, turnStarted } from '../../hooks/session'
 import type { SendOutcome } from '../../hooks/session'
 import { fetchPrs, prFetchTracker, press, wakeForDone as wakeSessionForDone } from '../../hooks/session-host'
 import type { SessionHost } from '../../hooks/session-host'
@@ -400,11 +400,12 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
           return { ...text('Inbox demo'), structuredContent: await served(demoOf(id), id, true, holds) }
         await wakeForDone(id).catch(() => undefined)
         await catchUpOnOpen(id).catch(() => undefined)
+        const shownTab = shownTabOf(args.tab)
         const s = await updateState(dir, id, s => ({
-          ...s,
+          ...(s.shownTab === 'overview' && shownTab !== null && shownTab !== 'overview' ? lookedAway(s, now()) : s),
           heldRows: Object.keys(holds.replies),
           tabSeenAt: now(),
-          shownTab: shownTabOf(args.tab) ?? s.shownTab,
+          shownTab: shownTab ?? s.shownTab,
           prViews: { ...s.prViews, views: viewsStillShown(s.prViews, s.ledger.prs, s.lastActions, now()) },
         }))
         fetchPrsWhenDue(id, s)

@@ -95,7 +95,8 @@ var EMPTY_OVERVIEW = {
   next: [],
   since: [],
   workstreams: [],
-  earlier: []
+  earlier: [],
+  lastLookAt: null
 };
 var LIST_KEYS = {
   QUEUE: "queue",
@@ -196,10 +197,11 @@ function applyOverview(last, answer) {
   if (answer.kind === "unchanged")
     return last;
   const earlier = last?.earlier ?? [];
+  const lastLookAt = last?.lastLookAt ?? null;
   if (!answer.isNewTopic || last === null || last.headline === "")
-    return { ...answer.overview, earlier };
+    return { ...answer.overview, course: answer.overview.course || last?.course || "", earlier, lastLookAt };
   const left = answer.folded || last.headline;
-  return { ...answer.overview, course: "", earlier: [...earlier, left].slice(-EARLIER_KEPT) };
+  return { ...answer.overview, course: "", earlier: [...earlier, left].slice(-EARLIER_KEPT), lastLookAt };
 }
 function isItem(value) {
   const item = value;
@@ -225,7 +227,8 @@ function upgradeOverview(saved) {
     next: itemsOf(o.next),
     since: itemsOf(o.since),
     workstreams: itemsOf(o.workstreams),
-    earlier: Array.isArray(o.earlier) ? o.earlier.filter((e) => typeof e === "string") : []
+    earlier: Array.isArray(o.earlier) ? o.earlier.filter((e) => typeof e === "string") : [],
+    lastLookAt: typeof o.lastLookAt === "number" ? o.lastLookAt : null
   };
 }
 function itemLine(key, i) {
@@ -253,6 +256,43 @@ function overviewText(o) {
 }
 function sinceText(o) {
   return (o?.since ?? []).map((i) => itemLine("SINCE", i)).join(NL3);
+}
+function looked(o, now) {
+  return o === null ? null : { ...o, since: [], course: "", lastLookAt: now };
+}
+var HERE_MS = 5 * 60000;
+var SHORT_MS = 60 * 60000;
+function awayOf(lastLookAt, now) {
+  if (lastLookAt === null)
+    return "long";
+  const gone = now - lastLookAt;
+  return gone < HERE_MS ? "here" : gone < SHORT_MS ? "short" : "long";
+}
+function workOf(o, signals) {
+  const waits = o.queue.some((i) => i.status === "waits-on-you");
+  if (signals.isTurnRunning)
+    return "running";
+  if (signals.isStopped || o.state === "stuck" || waits)
+    return "stopped";
+  return o.state === "finished" ? "finished" : "idle";
+}
+function orderParts(o, away, work) {
+  const hasQueued = o.queue.some((i) => i.status === "queued");
+  const quiet = o.since.length === 0 && o.course === "" && away !== "here" ? ["quiet"] : [];
+  const order = o.isCoordinator ? ["headline", "workstreams", "since", "queue", "next", "open"] : work === "running" && away === "here" ? ["headline", "queue"] : work === "stopped" ? ["headline", "status", "pointer", "since", "queue", "next", "open"] : work === "finished" ? ["headline", "status", "works", "open"] : away === "short" ? ["headline", ...quiet, "since", "queue", "open"] : ["headline", "status", ...quiet, "since", "queue", "next", "open"];
+  const withCourse = o.course === "" ? order : [order[0], "course", ...order.slice(1)];
+  const lists = {
+    workstreams: o.workstreams.length > 0,
+    queue: o.queue.length > 0,
+    works: o.works.length > 0,
+    open: o.open.length > 0,
+    next: o.next.length > 0 && !hasQueued,
+    since: o.since.length > 0,
+    headline: o.headline !== "",
+    status: o.status !== ""
+  };
+  const parts = withCourse.filter((p) => lists[p] ?? true);
+  return o.earlier.length > 0 ? [...parts, "earlier"] : parts;
 }
 
 // ../hooks/ledger.ts
@@ -1036,7 +1076,7 @@ TOPIC: same, or new when the work moved to a different task. Write new only for 
 STATE: on-track, stuck or finished
 HEADLINE: one plain sentence naming what the session is doing, at most ${HEADLINE_WORDS} words. "-" when no work has started.
 STATUS: how it is going, in one or two plain sentences, at most ${SENTENCE_WORDS} words. Say what it waits on, if anything.
-COURSE: only when the approach changed, in one or two sentences, at most ${SENTENCE_WORDS} words: what changed and why. A new step is not a change.
+COURSE: only in the reply where the approach changed, in one or two sentences, at most ${SENTENCE_WORDS} words: what changed and why. A new step is not a change. Leave the line out otherwise: the page keeps the last one until the person looks.
 FOLDED: only when TOPIC is new, one line saying what the old topic was and where it was left.
 Then lists, one item per line, each as KEY: status | text | detail, with the key on every line. The detail is optional. Text is at most ${ITEM_WORDS} words and detail at most ${DETAIL_WORDS}. At most ${LIST_ITEMS} items in a list.
 QUEUE: the work now: what is under way, what is queued behind it, what waits, and what just finished
@@ -1051,6 +1091,7 @@ Status is one of: working, queued, waits-on-you, waits-on-other, done, ruled-out
 Rules:
 - Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed.
 - Do not write a question or task the agent put to the person. Say the work waits, and stop.
+- Say each fact once, in the list that fits it best. Work that just finished goes in QUEUE or in WORKS, not both. What a stream is doing goes in STREAM, not again in QUEUE. SINCE may repeat the other lists, since it says what changed.
 - Leave a list out when it has nothing worth saying. Do not fill a list to fill it.`;
 function overviewBlocks(last) {
   return [`<last>${NL5}${overviewText(last)}${NL5}</last>`, `<unseen>${NL5}${sinceText(last)}${NL5}</unseen>`];
@@ -2243,33 +2284,45 @@ var OVERVIEW_MARKS = {
   problem: { mark: "!", tone: "issue" },
   unknown: { mark: "?", tone: null }
 };
-var OVERVIEW_SECTIONS = [
-  { id: "workstreams", title: null },
-  { id: "queue", title: null },
-  { id: "since", title: "Since you looked" },
-  { id: "works", title: "What works now" },
-  { id: "open", title: "Still open" },
-  { id: "next", title: "Next" }
-];
-function overviewPage(s, _now) {
+var SECTION_TITLES = {
+  workstreams: null,
+  queue: null,
+  since: "Since you looked",
+  works: "What works now",
+  open: "Still open",
+  next: "Next"
+};
+var QUIET_TEXT = "Nothing new since you looked.";
+function pointerText(count) {
+  return count === 0 ? null : count === 1 ? "1 thing waits on you in Inbox." : `${count} things wait on you in Inbox.`;
+}
+function overviewPage(s, now, waitingOnYou = 0) {
   const { overview } = s.ledger;
   const { isTurnRunning } = s.presence;
   const headline = overview?.headline || null;
+  const parts = overview ? orderParts(overview, awayOf(overview.lastLookAt, now), workOf(overview, { isTurnRunning, isStopped: Boolean(s.stop) })) : [];
+  const sections = overview ? parts.flatMap((id) => {
+    const title = SECTION_TITLES[id];
+    if (title === undefined)
+      return [];
+    const rows = overview[id].map((item, n) => ({
+      id: `${id}-${n}`,
+      ...OVERVIEW_MARKS[item.status],
+      text: item.text,
+      detail: item.detail
+    }));
+    return rows.length > 0 ? [{ id, title, rows }] : [];
+  }) : [];
   return {
     isEmpty: headline === null && !isTurnRunning,
     headline,
-    now: isTurnRunning ? WORKING_TEXT : overview?.status || null,
-    course: overview?.course || null,
-    sections: overview ? OVERVIEW_SECTIONS.flatMap(({ id, title }) => {
-      const rows = overview[id].map((item, n) => ({
-        id: `${id}-${n}`,
-        ...OVERVIEW_MARKS[item.status],
-        text: item.text,
-        detail: item.detail
-      }));
-      return rows.length > 0 ? [{ id, title, rows }] : [];
-    }) : [],
-    earlier: overview?.earlier ?? [],
+    now: isTurnRunning ? WORKING_TEXT : parts.includes("status") ? overview?.status || null : null,
+    course: parts.includes("course") ? overview?.course || null : null,
+    quiet: parts.includes("quiet") ? QUIET_TEXT : null,
+    pointer: parts.includes("pointer") ? pointerText(waitingOnYou) : null,
+    parts,
+    sections,
+    earlier: parts.includes("earlier") ? overview?.earlier ?? [] : [],
     empty: {
       title: "Overview",
       hint: "Where this session's work stands and where it's heading, so you can pick it up after a break. It fills in once the work starts."
@@ -3323,6 +3376,9 @@ function needsCatchUp(s) {
 function needsUpdate(s) {
   return s.pending.length > 0 || s.presence.ledgerState !== "current";
 }
+function lookedAway(s, now) {
+  return { ...s, ledger: { ...s.ledger, overview: looked(s.ledger.overview, now) } };
+}
 function hasLedger(s) {
   const { ledger } = s;
   return ledger.card !== null || ledger.items.length > 0 || ledger.findings.length > 0 || ledger.overview !== null;
@@ -3424,22 +3480,23 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     isFailed: s.presence.ledgerState === "failed",
     retries: canCatchUp || s.pending.length > 0
   };
+  const inbox = inboxView({
+    ledger: l,
+    lastActions,
+    notes,
+    turns: s.presence,
+    extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, l.prs)])),
+    settleWindowMs,
+    status: perTurnStatus(update),
+    now,
+    ...holds
+  });
   return {
-    ...inboxView({
-      ledger: l,
-      lastActions,
-      notes,
-      turns: s.presence,
-      extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, l.prs)])),
-      settleWindowMs,
-      status: perTurnStatus(update),
-      now,
-      ...holds
-    }),
+    ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now),
-    overviewPage: overviewPage(s, now)
+    overviewPage: overviewPage(s, now, inbox.needsYou.count)
   };
 }
 function prTabOf(s, lastActions, now) {
@@ -4791,7 +4848,8 @@ function demoView(now) {
         next: [],
         since: [{ status: "done", text: "PR #31 opened", detail: null }],
         workstreams: [],
-        earlier: []
+        earlier: [],
+        lastLookAt: null
       },
       items: [
         {
@@ -5838,11 +5896,19 @@ function createInbox(pi, deps = defaultDeps) {
     },
     showTab: (ctx, tab) => {
       const id = sessionIdOf(ctx);
-      if (openPanels.has(id))
-        openPanels.set(id, tab);
+      const was = openPanels.get(id);
+      if (!openPanels.has(id))
+        return;
+      openPanels.set(id, tab);
+      if (was === "overview" && tab !== "overview")
+        deps.background(change(id, (s) => lookedAway(s, deps.now())));
     },
     closePanel: (ctx) => {
-      openPanels.delete(sessionIdOf(ctx));
+      const id = sessionIdOf(ctx);
+      const was = openPanels.get(id);
+      openPanels.delete(id);
+      if (was === "overview")
+        deps.background(change(id, (s) => lookedAway(s, deps.now())));
     },
     fetchPrsWhenDue,
     onChange: (ctx, listener) => {

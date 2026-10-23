@@ -56,7 +56,8 @@ var EMPTY_OVERVIEW = {
   next: [],
   since: [],
   workstreams: [],
-  earlier: []
+  earlier: [],
+  lastLookAt: null
 };
 var LIST_KEYS = {
   QUEUE: "queue",
@@ -143,9 +144,11 @@ function parseOverview(text) {
 function applyOverview(last, answer) {
   if (answer.kind === "unchanged") return last;
   const earlier = last?.earlier ?? [];
-  if (!answer.isNewTopic || last === null || last.headline === "") return { ...answer.overview, earlier };
+  const lastLookAt = last?.lastLookAt ?? null;
+  if (!answer.isNewTopic || last === null || last.headline === "")
+    return { ...answer.overview, course: answer.overview.course || last?.course || "", earlier, lastLookAt };
   const left = answer.folded || last.headline;
-  return { ...answer.overview, course: "", earlier: [...earlier, left].slice(-EARLIER_KEPT) };
+  return { ...answer.overview, course: "", earlier: [...earlier, left].slice(-EARLIER_KEPT), lastLookAt };
 }
 function isItem(value) {
   const item = value;
@@ -170,7 +173,8 @@ function upgradeOverview(saved) {
     next: itemsOf(o.next),
     since: itemsOf(o.since),
     workstreams: itemsOf(o.workstreams),
-    earlier: Array.isArray(o.earlier) ? o.earlier.filter((e) => typeof e === "string") : []
+    earlier: Array.isArray(o.earlier) ? o.earlier.filter((e) => typeof e === "string") : [],
+    lastLookAt: typeof o.lastLookAt === "number" ? o.lastLookAt : null
   };
 }
 function itemLine(key, i) {
@@ -198,6 +202,8 @@ function overviewText(o) {
 function sinceText(o) {
   return (o?.since ?? []).map((i) => itemLine("SINCE", i)).join(NL);
 }
+var HERE_MS = 5 * 6e4;
+var SHORT_MS = 60 * 6e4;
 
 // ../hooks/text.ts
 var NL2 = "\n";
@@ -875,7 +881,7 @@ TOPIC: same, or new when the work moved to a different task. Write new only for 
 STATE: on-track, stuck or finished
 HEADLINE: one plain sentence naming what the session is doing, at most ${HEADLINE_WORDS} words. "-" when no work has started.
 STATUS: how it is going, in one or two plain sentences, at most ${SENTENCE_WORDS} words. Say what it waits on, if anything.
-COURSE: only when the approach changed, in one or two sentences, at most ${SENTENCE_WORDS} words: what changed and why. A new step is not a change.
+COURSE: only in the reply where the approach changed, in one or two sentences, at most ${SENTENCE_WORDS} words: what changed and why. A new step is not a change. Leave the line out otherwise: the page keeps the last one until the person looks.
 FOLDED: only when TOPIC is new, one line saying what the old topic was and where it was left.
 Then lists, one item per line, each as KEY: status | text | detail, with the key on every line. The detail is optional. Text is at most ${ITEM_WORDS} words and detail at most ${DETAIL_WORDS}. At most ${LIST_ITEMS} items in a list.
 QUEUE: the work now: what is under way, what is queued behind it, what waits, and what just finished
@@ -890,6 +896,7 @@ Status is one of: working, queued, waits-on-you, waits-on-other, done, ruled-out
 Rules:
 - Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed.
 - Do not write a question or task the agent put to the person. Say the work waits, and stop.
+- Say each fact once, in the list that fits it best. Work that just finished goes in QUEUE or in WORKS, not both. What a stream is doing goes in STREAM, not again in QUEUE. SINCE may repeat the other lists, since it says what changed.
 - Leave a list out when it has nothing worth saying. Do not fill a list to fill it.`;
 function overviewBlocks(last) {
   return [`<last>${NL4}${overviewText(last)}${NL4}</last>`, `<unseen>${NL4}${sinceText(last)}${NL4}</unseen>`];

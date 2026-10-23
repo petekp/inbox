@@ -22,6 +22,7 @@ export const EMPTY_OVERVIEW: Overview = {
   since: [],
   workstreams: [],
   earlier: [],
+  lastLookAt: null,
 }
 
 const LIST_KEYS = {
@@ -141,10 +142,12 @@ export function parseOverview(text: string | null): OverviewAnswer | null {
 export function applyOverview(last: Overview | null, answer: OverviewAnswer): Overview | null {
   if (answer.kind === 'unchanged') return last
   const earlier = last?.earlier ?? []
-  if (!answer.isNewTopic || last === null || last.headline === '') return { ...answer.overview, earlier }
+  const lastLookAt = last?.lastLookAt ?? null
+  if (!answer.isNewTopic || last === null || last.headline === '')
+    return { ...answer.overview, course: answer.overview.course || last?.course || '', earlier, lastLookAt }
   const left = answer.folded || last.headline
 
-  return { ...answer.overview, course: '', earlier: [...earlier, left].slice(-EARLIER_KEPT) }
+  return { ...answer.overview, course: '', earlier: [...earlier, left].slice(-EARLIER_KEPT), lastLookAt }
 }
 
 function isItem(value: unknown): value is OverviewItem {
@@ -182,6 +185,7 @@ export function upgradeOverview(saved: unknown): Overview | null {
     since: itemsOf(o.since),
     workstreams: itemsOf(o.workstreams),
     earlier: Array.isArray(o.earlier) ? o.earlier.filter((e): e is string => typeof e === 'string') : [],
+    lastLookAt: typeof o.lastLookAt === 'number' ? o.lastLookAt : null,
   }
 }
 
@@ -214,4 +218,80 @@ export function overviewText(o: Overview | null): string {
 /** The since list as the lines the call reads it and writes it back. */
 export function sinceText(o: Overview | null): string {
   return (o?.since ?? []).map(i => itemLine('SINCE', i)).join(NL)
+}
+
+/** The person looked: the tab stopped being shown. The changes and the course they saw start over. */
+export function looked(o: Overview | null, now: number): Overview | null {
+  return o === null ? null : { ...o, since: [], course: '', lastLookAt: now }
+}
+
+/** How long the person was away, as the page orders itself by it. */
+export const HERE_MS = 5 * 60_000
+export const SHORT_MS = 60 * 60_000
+
+export type Away = 'here' | 'short' | 'long'
+export type Work = 'running' | 'stopped' | 'finished' | 'idle'
+
+export function awayOf(lastLookAt: number | null, now: number): Away {
+  if (lastLookAt === null) return 'long'
+  const gone = now - lastLookAt
+
+  return gone < HERE_MS ? 'here' : gone < SHORT_MS ? 'short' : 'long'
+}
+
+/** Whether the work waits on the person: the guide says it is stuck, or an item waits on them, or a stop row shows. */
+export function workOf(o: Overview, signals: { isTurnRunning: boolean; isStopped: boolean }): Work {
+  const waits = o.queue.some(i => i.status === 'waits-on-you')
+  if (signals.isTurnRunning) return 'running'
+  if (signals.isStopped || o.state === 'stuck' || waits) return 'stopped'
+
+  return o.state === 'finished' ? 'finished' : 'idle'
+}
+
+export type PartId =
+  | 'headline'
+  | 'course'
+  | 'status'
+  | 'quiet'
+  | 'pointer'
+  | 'workstreams'
+  | 'queue'
+  | 'works'
+  | 'open'
+  | 'next'
+  | 'since'
+  | 'earlier'
+
+/**
+ * The parts to draw, in order, from the three signals. A changed direction leads. A part with nothing in it is
+ * left out, and `next` is left out while the queue has queued items, since they already say what comes next.
+ */
+export function orderParts(o: Overview, away: Away, work: Work): PartId[] {
+  const hasQueued = o.queue.some(i => i.status === 'queued')
+  const quiet: PartId[] = o.since.length === 0 && o.course === '' && away !== 'here' ? ['quiet'] : []
+  const order: PartId[] = o.isCoordinator
+    ? ['headline', 'workstreams', 'since', 'queue', 'next', 'open']
+    : work === 'running' && away === 'here'
+      ? ['headline', 'queue']
+      : work === 'stopped'
+        ? ['headline', 'status', 'pointer', 'since', 'queue', 'next', 'open']
+        : work === 'finished'
+          ? ['headline', 'status', 'works', 'open']
+          : away === 'short'
+            ? ['headline', ...quiet, 'since', 'queue', 'open']
+            : ['headline', 'status', ...quiet, 'since', 'queue', 'next', 'open']
+  const withCourse: PartId[] = o.course === '' ? order : [order[0]!, 'course', ...order.slice(1)]
+  const lists: Partial<Record<PartId, boolean>> = {
+    workstreams: o.workstreams.length > 0,
+    queue: o.queue.length > 0,
+    works: o.works.length > 0,
+    open: o.open.length > 0,
+    next: o.next.length > 0 && !hasQueued,
+    since: o.since.length > 0,
+    headline: o.headline !== '',
+    status: o.status !== '',
+  }
+  const parts = withCourse.filter(p => lists[p] ?? true)
+
+  return o.earlier.length > 0 ? [...parts, 'earlier'] : parts
 }

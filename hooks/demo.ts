@@ -71,6 +71,7 @@ export function demoView(now: number): DemoCopy {
         since: [{ status: 'done', text: 'PR #31 opened', detail: null }],
         workstreams: [],
         earlier: [],
+        lastLookAt: null,
       },
       items: [
         {

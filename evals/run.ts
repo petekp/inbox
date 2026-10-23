@@ -67,6 +67,8 @@ type Check =
   /** No text restates what an open item or finding of the ledger asks. */
   | { asksNotRestated: true }
   | { sinceAtMost: number }
+  /** No two items of different lists, other than SINCE, say the same thing. */
+  | { partsNotRepeated: true }
   /** No two SINCE items say the same thing. */
   | { sinceNoRepeat: true }
   | { workstreamsAtLeast: number }
@@ -220,6 +222,7 @@ const OVERVIEW_KEYS = [
   'featureLevel',
   'asksNotRestated',
   'sinceAtMost',
+  'partsNotRepeated',
   'sinceNoRepeat',
   'workstreamsAtLeast',
   'overviewItem',
@@ -288,6 +291,18 @@ function overviewFailures(c: OverviewCheck, after: Ledger, run: OverviewRun | nu
     return textsOf(o).flatMap(t => asks.filter(a => restatesText(t, a)).map(a => `"${t}" restates "${a}"`))
   }
   if ('sinceAtMost' in c) return o.since.length <= c.sinceAtMost ? [] : [`${o.since.length} since items`]
+  if ('partsNotRepeated' in c) {
+    const lists = [o.queue, o.works, o.open, o.next, o.workstreams]
+    return lists.flatMap((a, n) =>
+      a.flatMap(x =>
+        lists
+          .slice(n + 1)
+          .flat()
+          .filter(y => restatesText(x.text, y.text) || restatesText(y.text, x.text))
+          .map(y => `repeated across lists: "${x.text}" and "${y.text}"`),
+      ),
+    )
+  }
   if ('sinceNoRepeat' in c)
     return o.since.flatMap((a, n) =>
       o.since

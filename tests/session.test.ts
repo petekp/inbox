@@ -290,5 +290,5 @@ test('a sample saved without an Overview is replaced, and the sample session car
   expect(isDemoCopy({ ...old, ledger: { ...old.ledger, overview: undefined } })).toBe(false)
   const page = sessionView(demoSession(1_000_000), 1_000_000, 1000, true, NO_HOLDS).overviewPage
   expect(page.headline).toBe('Adding pinch-to-dismiss to glances')
-  expect(page.sections.map(part => part.id)).toEqual(['queue', 'since', 'works', 'open'])
+  expect(page.sections.map(part => part.id)).toEqual(['since', 'queue', 'open'])
 })

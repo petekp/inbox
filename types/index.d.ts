@@ -30,6 +30,8 @@ export type Overview = {
   workstreams: OverviewItem[]
   /** One line for each earlier topic, oldest first, saying where it was left. */
   earlier: string[]
+  /** When the person last looked: the last time the Overview tab stopped being shown. Null before the first look. */
+  lastLookAt: number | null
 }
 
 export type Item = {

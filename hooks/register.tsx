@@ -57,6 +57,7 @@ import {
   emptySession,
   endTurn,
   forkedFrom,
+  lookedAway,
   noteActivity as noteTurnActivity,
   pressOn,
   recordPrompt,
@@ -1206,6 +1207,10 @@ async function readRowTab($: EngineInterface): Promise<Tab | null> {
 
 async function showTab($: EngineInterface, tab: ShownTab) {
   cancelUndoScroll()
+  if (tab !== 'overview' && (await read($, PAGE)) === 'overview') {
+    const now = await $.clock.now()
+    void commit($, currentOwner(), s => lookedAway(s, now)).catch(() => undefined)
+  }
   if (!isRowTab(tab)) {
     await update($, PAGE, () => tab)
     return

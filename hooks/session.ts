@@ -17,7 +17,7 @@ import { applyPress, upgradeLastActions, withAcceptedSend, withArrival, withRewr
 import type { RowPress } from './presses'
 import { prNeedsYou, prRefs } from './prs'
 import { recordClose, recordItem } from './tools'
-import { applyOverview } from './overview'
+import { applyOverview, looked } from './overview'
 import type { OverviewAnswer } from './overview'
 import { inboxView, NO_HOLDS, overviewPage, perTurnStatus } from './view'
 import type { InboxView, OverviewPage, ReplyHolds } from './view'
@@ -431,6 +431,11 @@ export function needsUpdate(s: Session): boolean {
 }
 
 /** Whether the session has a card, an item, a finding or an Overview. */
+/** The person stopped looking at the Overview. */
+export function lookedAway<S extends { ledger: Ledger }>(s: S, now: number): S {
+  return { ...s, ledger: { ...s.ledger, overview: looked(s.ledger.overview, now) } }
+}
+
 export function hasLedger(s: Session): boolean {
   const { ledger } = s
 
@@ -640,22 +645,24 @@ export function sessionView(
     retries: canCatchUp || s.pending.length > 0,
   }
 
+  const inbox = inboxView({
+    ledger: l,
+    lastActions,
+    notes,
+    turns: s.presence,
+    extraSteps: Object.fromEntries(l.items.map(item => [item.id, itemPrSteps(item, s.prViews, l.prs)])),
+    settleWindowMs,
+    status: perTurnStatus(update),
+    now,
+    ...holds,
+  })
+
   return {
-    ...inboxView({
-      ledger: l,
-      lastActions,
-      notes,
-      turns: s.presence,
-      extraSteps: Object.fromEntries(l.items.map(item => [item.id, itemPrSteps(item, s.prViews, l.prs)])),
-      settleWindowMs,
-      status: perTurnStatus(update),
-      now,
-      ...holds,
-    }),
+    ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now),
-    overviewPage: overviewPage(s, now),
+    overviewPage: overviewPage(s, now, inbox.needsYou.count),
   }
 }
 
