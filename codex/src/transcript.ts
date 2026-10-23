@@ -78,19 +78,20 @@ async function namesIn(dir: string, pattern: RegExp): Promise<string[]> {
 }
 
 /**
- * A chat's rollout, found by its thread id in Codex's `sessions/YYYY/MM/DD/rollout-<time>-<thread id>.jsonl`. Null
- * when no readable file holds it, or when the newest one belongs to a subagent or a run no person chats in. A rollout
- * Codex has compressed (`.zst`) is not read. `cwd` is the folder the chat runs in, from its first row.
+ * A chat's rollout, found by its thread id in Codex's `sessions/YYYY/MM/DD/rollout-<time>-<thread id>.jsonl`. A chat
+ * Codex reverted continues in `rollout-<time>-<thread id>_<rollout id>.jsonl`, and the newest file wins. Null when no
+ * readable file holds it, or when the newest one belongs to a subagent or a run no person chats in. A rollout Codex has
+ * compressed (`.zst`) is not read. `cwd` is the folder the chat runs in, from its first row.
  */
 export async function rolloutFor(codexHome: string, threadId: string): Promise<{ path: string; cwd: string } | null> {
   if (threadId === '') return null
   const sessions = join(codexHome, 'sessions')
-  const suffix = `-${threadId}.jsonl`
+  const isOwnFile = (name: string) => name.endsWith(`-${threadId}.jsonl`) || name.includes(`-${threadId}_`)
   for (const year of await namesIn(sessions, /^\d{4}$/))
     for (const month of await namesIn(join(sessions, year), /^\d{2}$/))
       for (const day of await namesIn(join(sessions, year, month), /^\d{2}$/)) {
         const folder = join(sessions, year, month, day)
-        const [name] = (await namesIn(folder, /^rollout-.+\.jsonl$/)).filter(n => n.endsWith(suffix))
+        const [name] = (await namesIn(folder, /^rollout-.+\.jsonl$/)).filter(isOwnFile)
         if (name === undefined) continue
         const path = join(folder, name)
         const meta = await readSessionMeta(path)

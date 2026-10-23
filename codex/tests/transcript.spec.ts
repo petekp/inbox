@@ -149,6 +149,8 @@ test('rolloutFor finds a chat’s newest rollout by its thread id and reads its 
   rolloutAt(home, 'chat-2', {}, { day: '2026/10/21' })
 
   assert.deepEqual(await rolloutFor(home, 'chat-1'), { path: newest, cwd: '/repo' })
+  const reverted = rolloutAt(home, 'chat-1', { cwd: '/reverted' }, { day: '2026/10/22', rolloutId: 'rollout-2' })
+  assert.deepEqual(await rolloutFor(home, 'chat-1'), { path: reverted, cwd: '/reverted' })
   assert.equal(await rolloutFor(home, 'chat-3'), null)
   assert.equal(await rolloutFor(join(home, 'missing'), 'chat-1'), null)
   assert.equal(await rolloutFor(home, ''), null)
