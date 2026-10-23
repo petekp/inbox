@@ -69,7 +69,7 @@ On 2026-10-21, inbox 0.2.10 ran in local Code-mode sessions of Claude desktop 3.
 
 ## Live checks on desktop 3.6556.2
 
-Checked on 2026-10-23 in the `inbox-ui` VM, at the inbox's commit `1b61c6f`. The
+Checked on 2026-10-23 in the `inbox-ui` VM. The Claude Code there loads the inbox from `~/inbox`, the folder its directory marketplace points at, and not from the copy under `~/.claude/plugins/cache`. This pass copied `1b61c6f` into the cache copy, so it ran the older `~/inbox` build labelled 0.2.9. Checks of the app and engine hold; details of the inbox's own drawing came from that older build. The
 app had updated itself to `3.6556.2`; the request named 3.6556.1, which bundles
 engine 2.1.308 ("Bundled Claude Code version: 2.1.308."). The sessions ran
 engine 2.1.308, with Haiku 5.5 in Auto permission mode. The terminal `claude`
@@ -87,12 +87,12 @@ in the VM is 2.1.309 and was not used.
   2 ms apart. `$.ui.copy` put the command on the VM's clipboard (`pbpaste`).
   `/clear` ended the engine process and the pane and band went with it; the
   saved session had no running turn, no pending update and no stop.
-- **Buttons move after a result line goes.** A result line under a row's title
-  goes away a few seconds after a press, and the buttons move up about 24 pt.
-  It happened after a demo Explain ("Sample entry: nothing was sent.") and
-  after a real Copy ("✓ Copied … Run it in Terminal."). Three clicks aimed at
-  a button's old place did nothing; a click at the new place worked each time.
-  A real Explain did not move the buttons.
+- **Buttons moved after a demo Explain.** The older build drew the demo's
+  "Sample entry: nothing was sent." as an extra line under the title for 5 s,
+  and the buttons moved when it went. The note was removed on branch
+  `demo-explain`; a rerun on that build moved no button after the press.
+  Whether a real Copy's result line ("✓ Copied … Run it in Terminal.") vanishes
+  is not settled: it did on the older build and stayed 110 s on the newer one.
 - **`allowManagedPermissionRulesOnly`.** The 3.1623.4 notes say: "Changed
   plugins that the app loads to ask before using the tools they pre-approve
   when your organization's Claude Code managed settings, such as
