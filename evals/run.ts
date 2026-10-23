@@ -368,7 +368,13 @@ function overviewFailures(c: OverviewCheck, after: Ledger, run: OverviewRun | nu
   if ('sinceAtMost' in c) return o.since.length <= c.sinceAtMost ? [] : [`${o.since.length} since items`]
   if ('partsNotRepeated' in c) {
     const hasQueued = o.queue.some(i => i.status === 'queued')
-    const lists = [o.queue, o.works, o.open, ...(hasQueued ? [] : [o.next]), o.workstreams]
+    const lists = [
+      o.queue,
+      ...(o.isCoordinator ? [] : [o.works]),
+      o.open,
+      ...(hasQueued ? [] : [o.next]),
+      o.workstreams,
+    ]
     return lists.flatMap((a, n) =>
       a.flatMap(x =>
         lists
