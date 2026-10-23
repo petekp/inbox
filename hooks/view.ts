@@ -147,6 +147,7 @@ export const ROW_COPY = {
   send: 'Send',
   cancel: 'Cancel',
   discard: 'Discard',
+  clickField: 'Click the field to type',
   relevantFile: 'Relevant file: ',
   allOptions: (count: number) => `All ${count} options`,
 } as const

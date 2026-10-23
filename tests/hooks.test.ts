@@ -114,6 +114,7 @@ let toolRefusal: string | undefined
 let commandRefusal: string | undefined
 let panesOpened: string[] = []
 let paneOpens: PaneOpenArgs[] = []
+let paneState: { isShown: boolean; isFocused: boolean } | null = null
 
 async function runBeforeAct() {
   const act = beforeAct
@@ -187,6 +188,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   commandRefusal = undefined
   panesOpened = []
   paneOpens = []
+  paneState = null
   on('store.get', async ($, e) => {
     if (e.key.startsWith('s:')) await storeHold?.()
     if (storeRefusal && e.key.startsWith('s:')) return { deny: storeRefusal }
@@ -231,6 +233,9 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
     paneOpens.push(e)
     return { value: { isPlaced: true as const } }
   })
+  on('ui.panes', () => ({
+    value: paneState ? [{ id: 'inbox', title: 'Inbox', ...paneState, isPlaced: paneState.isShown }] : [],
+  }))
   on('ui.close', () => ({ value: undefined }))
   on('ui.toast', ($, e) => {
     toasts.push(e.text)
@@ -1129,7 +1134,7 @@ test('a reload that cuts off the end-of-turn hook catches up on load, and a suba
 test('the pane footer shows the version from the plugin manifest', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown: true, isFocused: true, isPlaced: true }] }))
+  paneState = { isShown: true, isFocused: true }
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'inbox', args: '' } as never)
@@ -1140,7 +1145,7 @@ test('the pane footer shows the version from the plugin manifest', async ($, on)
 test('a finding Claude records while the pane shows an empty tab brings the pane to it, and Fix hands it to Claude, settles its row as the choice made, and moves it to the Closed fold even when Claude’s reply leaves it open', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown: true, isFocused: true, isPlaced: true }] }))
+  paneState = { isShown: true, isFocused: true }
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'inbox', args: '' } as never)
@@ -1195,7 +1200,7 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
 test('a question Claude records waits in the pane with its recommendation, a repeat is not added, one the person dismissed is not recorded again, and one they answered with List the choices can be asked again with choices', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown: true, isFocused: true, isPlaced: true }] }))
+  paneState = { isShown: true, isFocused: true }
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'inbox', args: '' } as never)
@@ -1242,8 +1247,7 @@ test('a question Claude records waits in the pane with its recommendation, a rep
 test('/inbox opens on the tab that has rows when the tab it would show is empty', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  let isShown = false
-  on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown, isFocused: isShown, isPlaced: isShown }] }))
+  paneState = { isShown: false, isFocused: false }
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.tool.call({
@@ -1254,7 +1258,7 @@ test('/inbox opens on the tab that has rows when the tab it would show is empty'
     detail: 'Only tests run.',
   })
   await clock.settle()
-  isShown = true
+  paneState = { isShown: true, isFocused: true }
   await $.command.run({ command: 'inbox', args: '' } as never)
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ key: 'address-f1' })).toBeDefined()
@@ -1263,7 +1267,7 @@ test('/inbox opens on the tab that has rows when the tab it would show is empty'
 test('findings that arrive one by one after the pane moves to them keep the first one open', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown: true, isFocused: true, isPlaced: true }] }))
+  paneState = { isShown: true, isFocused: true }
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'inbox', args: '' } as never)
@@ -1346,7 +1350,7 @@ test('Escape in a reply field closes the field and keeps the pane and the draft'
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   on('ui.focus', () => ({}))
-  on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown: true, isFocused: false, isPlaced: true }] }))
+  paneState = { isShown: true, isFocused: false }
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
@@ -1377,6 +1381,34 @@ test('Escape in a reply field closes the field and keeps the pane and the draft'
   await pane.press({ key: 'typekey-i1' })
   expect((await replyField(pane, 'i1'))?.props.value).toBe('Deno, actually')
   expect(sent).toEqual([])
+})
+
+test('a reply field that opens without the keys says to click it, until it has them', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  paneState = { isShown: true, isFocused: false }
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+
+  const pane = await $.ui.mount({ ...PANE, props: { ...PANE.props, isFocused: false } })
+  await pane.press({ key: 'typekey-i1' })
+  await clock.settle()
+  expect(await replyField(pane, 'i1')).toBeDefined()
+  expect(await pane.find({ text: 'Click the field to type' })).toBeDefined()
+
+  await pane.redraw({ ...PANE.props, isFocused: true })
+  await clock.settle()
+  expect(await replyField(pane, 'i1')).toBeDefined()
+  expect(await pane.find({ text: 'Click the field to type' })).toBeUndefined()
 })
 
 test('a press on a question Claude closed since the draw sends nothing and says so', async ($, on) => {

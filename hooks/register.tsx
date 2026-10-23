@@ -644,6 +644,8 @@ let stopGeneration = 0
 /** Each row's latest reply field: its key, and the draft text it opened with. */
 const openFields = new Map<string, { key: string; seed: string }>()
 let paneClosesOnEscape = true
+/** The row whose field opened while the keys stayed elsewhere, as over text in the prompt. */
+let fieldWithoutKeys: string | null = null
 const paneHasKeys = new Map<RenderSurface, boolean>()
 
 function resetTurn() {
@@ -1155,7 +1157,15 @@ async function discardReply($: EngineInterface, id: string) {
 async function focusField($: EngineInterface, id: string) {
   // A click leaves the keys with the prompt, and `ui.focus` is refused in a pane that lacks them.
   await openPane($, true)
-  await $.ui.focus({ requestId: PANE, key: fieldKey(id) }).catch(() => undefined)
+  const isMoved = await $.ui.focus({ requestId: PANE, key: fieldKey(id) }).then(
+    r => r.deny === undefined,
+    () => false,
+  )
+  // A deny also comes when the field's `autoFocus` took the keys first, so the pane says whether it has them.
+  const isWithoutKeys = !isMoved && (await $.ui.panes()).some(p => p.id === PANE && !p.isFocused)
+  if (isWithoutKeys === (fieldWithoutKeys === id)) return
+  fieldWithoutKeys = isWithoutKeys ? id : null
+  await redraw($)
 }
 
 async function showTab($: EngineInterface, tab: Tab) {
@@ -2880,6 +2890,7 @@ export const register: Register = on => {
     // A hot reload keeps TYPING but empties openFields, so an open field takes its key and seed again here.
     if (typing !== null && !openFields.has(typing))
       openFields.set(typing, openedField(typing, (await read($, DRAFTS))[typing]))
+    if (e.props.isFocused || typing !== fieldWithoutKeys) fieldWithoutKeys = null
     // Escape, or a click outside the pane, closes the field and keeps its draft, as Cancel does.
     if (isKeyboardHandedBack && typing !== null) later($, 0, () => update($, TYPING, t => (t === typing ? null : t)))
     if ((typing === null) !== paneClosesOnEscape) later($, 0, () => matchPaneEscape($))
@@ -3612,6 +3623,7 @@ export const register: Register = on => {
       const status = [
         ...(row.fold?.note ? [{ text: row.fold.note, color: pal.muted }] : []),
         ...(f && !f.age ? [{ text: f.text, color: f.isFailure ? pal.tone.error : pal.muted }] : []),
+        ...(isTyping && fieldWithoutKeys === row.id ? [{ text: ROW_COPY.clickField, color: pal.muted }] : []),
       ]
 
       const textWidth = listColumns - 1 - columns.textAt
