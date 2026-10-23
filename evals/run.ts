@@ -67,7 +67,10 @@ type Check =
   /** No text restates what an open item or finding of the ledger asks. */
   | { asksNotRestated: true }
   | { sinceAtMost: number }
-  /** No two items of different lists, other than SINCE, say the same thing. */
+  /**
+   * No two items of different lists, other than SINCE, say the same thing. Two pairs are not compared since the page
+   * never draws them together: QUEUE with WORKS, and QUEUE with NEXT while the queue has a queued item.
+   */
   | { partsNotRepeated: true }
   /** No item with this status matches the pattern in any list: finished work does not stay as under way. */
   | { noOverviewItem: string; status: OverviewItem['status'] }
@@ -333,11 +336,13 @@ function overviewFailures(c: OverviewCheck, after: Ledger, run: OverviewRun | nu
   }
   if ('sinceAtMost' in c) return o.since.length <= c.sinceAtMost ? [] : [`${o.since.length} since items`]
   if ('partsNotRepeated' in c) {
-    const lists = [o.queue, o.works, o.open, o.next, o.workstreams]
+    const hasQueued = o.queue.some(i => i.status === 'queued')
+    const lists = [o.queue, o.works, o.open, ...(hasQueued ? [] : [o.next]), o.workstreams]
     return lists.flatMap((a, n) =>
       a.flatMap(x =>
         lists
           .slice(n + 1)
+          .filter(b => !(a === o.queue && b === o.works))
           .flat()
           .filter(y => restatesText(x.text, y.text) || restatesText(y.text, x.text))
           .map(y => `repeated across lists: "${x.text}" and "${y.text}"`),

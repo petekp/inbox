@@ -895,8 +895,9 @@ Status is one of: working, queued, waits-on-you, waits-on-other, done, ruled-out
 
 Rules:
 - Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed.
-- Do not write a question or task the agent put to the person. Say the work waits, and stop.
-- Say each fact once, in the list that fits it best. Work that just finished goes in QUEUE or in WORKS, not both. What a stream is doing goes in STREAM, not again in QUEUE or WORKS. NEXT holds only what the queue does not already name. SINCE may repeat the other lists, since it says what changed.
+- Do not write a question or task the agent put to the person, and do not say what the choice is. Say only that the work waits on the person, and stop.
+- Leave out that something was committed, pushed, merged or tested, in every line. Say what now works or is fixed.
+- Say each fact once, in the list that fits it best. Work that finished stays in QUEUE as done. WORKS holds only what works that QUEUE does not already name. What a stream is doing, and what it finished, stays on its STREAM line and is not written again in QUEUE, WORKS or OPEN. NEXT holds only what the queue does not already name. SINCE may repeat the other lists, since it says what changed.
 - Leave a list out when it has nothing worth saying. Do not fill a list to fill it.`;
 function overviewBlocks(last) {
   return [`<last>${NL4}${overviewText(last)}${NL4}</last>`, `<unseen>${NL4}${sinceText(last)}${NL4}</unseen>`];
