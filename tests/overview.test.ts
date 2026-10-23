@@ -301,3 +301,19 @@ test('a coordinator keeps its own steps in QUEUE and loses an item that only nam
   const plain = written('HEADLINE: h\nQUEUE: working | Parser rewrite\nSTREAM: working | Parser rewrite: x')
   expect(applyOverview(null, plain)!.queue).toHaveLength(1)
 })
+
+test('a gap separates lead lines after the first, and every section has a title', () => {
+  const stopped = {
+    ledger: { overview: guide({ state: 'stuck', course: 'Moved to streaming.', lastLookAt: 0 }) },
+    presence: { isTurnRunning: false },
+  }
+  const page = overviewPage(stopped, SHORT_MS * 2, 2)
+
+  expect(page.lead.map(l => [l.id, l.hasGapAbove])).toEqual([
+    ['headline', false],
+    ['course', false],
+    ['status', true],
+    ['pointer', true],
+  ])
+  expect(page.sections.every(part => part.title !== null)).toBe(true)
+})

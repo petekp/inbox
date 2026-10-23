@@ -2369,15 +2369,13 @@ function overviewPage(s, now, waitingOnYou = 0) {
     const title = SECTION_TITLES[id];
     if (title === undefined)
       return [];
-    const isFirstSection = parts.filter((p) => (p in SECTION_TITLES)).indexOf(id) === 0;
     const rows = overview[id].map((item, n) => ({
       id: `${id}-${n}`,
       ...OVERVIEW_MARKS[item.status],
       text: item.text,
       detail: item.detail
     }));
-    const named = isFirstSection && (id === "queue" || id === "workstreams") ? null : title;
-    return rows.length > 0 ? [{ id, title: named, rows }] : [];
+    return rows.length > 0 ? [{ id, title, rows }] : [];
   }) : [];
   const texts = {
     headline,
@@ -2390,8 +2388,8 @@ function overviewPage(s, now, waitingOnYou = 0) {
   const leadIds = overview ? withWorking : isTurnRunning ? ["status"] : [];
   const lead = leadIds.flatMap((id) => {
     const text = id in texts ? texts[id] : null;
-    return text === null ? [] : [{ id, text }];
-  });
+    return text === null ? [] : [{ id, text, hasGapAbove: false }];
+  }).map((line, n, all) => ({ ...line, hasGapAbove: n > 0 && all[n - 1].id !== "headline" }));
   return {
     isEmpty: headline === null && !isTurnRunning,
     lead,
@@ -4335,8 +4333,11 @@ function pageEntries(page) {
       { kind: "note", text: page.empty.hint }
     ];
   const out = [];
-  for (const line of page.lead)
+  for (const line of page.lead) {
+    if (line.hasGapAbove)
+      out.push({ kind: "note", text: "" });
     out.push({ kind: "note", text: line.text, isStrong: line.id === "headline" });
+  }
   for (const part of page.sections) {
     if (part.title)
       out.push({ kind: "heading", text: part.title });

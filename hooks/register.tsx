@@ -4824,19 +4824,28 @@ export const register: Register = on => {
         sections([...(prState.isGhMissing ? [ghMissingNotice()] : []), ...prGroups.map(prBlock), ...olderPrs()], 2)
       )
 
-    const overviewTextLine = (text: string, key: string, isBold: boolean) => {
+    const overviewTextLine = (text: string, key: string, isBold: boolean, hasGapAbove: boolean) => {
       const line = (
         <Text wrap="wrap" bold={isBold} {...(isBold ? {} : { color: pal.muted })}>
           {text}
         </Text>
       )
 
-      return look === 'desktop' ? (
-        desktopFrame({ key, padY: 0, children: line })
-      ) : (
-        <Box key={key} paddingLeft={TREE_LINE_AT}>
-          {line}
+      const framed =
+        look === 'desktop' ? (
+          desktopFrame({ key, padY: 0, children: line })
+        ) : (
+          <Box key={key} paddingLeft={TREE_LINE_AT}>
+            {line}
+          </Box>
+        )
+
+      return hasGapAbove ? (
+        <Box key={`${key}-gap`} marginTop={1} flexDirection="column">
+          {framed}
         </Box>
+      ) : (
+        framed
       )
     }
     const overviewTextRow = (id: string, text: string, pos: TreePos) =>
@@ -4888,7 +4897,9 @@ export const register: Register = on => {
             {emptyState(page.empty)}
           </Box>
         )
-      const head = page.lead.map(line => overviewTextLine(line.text, `overview-${line.id}`, line.id === 'headline'))
+      const head = page.lead.map(line =>
+        overviewTextLine(line.text, `overview-${line.id}`, line.id === 'headline', line.hasGapAbove),
+      )
 
       return sections([
         ...(head.length > 0

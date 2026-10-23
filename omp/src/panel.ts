@@ -530,7 +530,10 @@ function pageEntries(page: OverviewPage): Entry[] {
       { kind: 'note', text: page.empty.hint },
     ]
   const out: Entry[] = []
-  for (const line of page.lead) out.push({ kind: 'note', text: line.text, isStrong: line.id === 'headline' })
+  for (const line of page.lead) {
+    if (line.hasGapAbove) out.push({ kind: 'note', text: '' })
+    out.push({ kind: 'note', text: line.text, isStrong: line.id === 'headline' })
+  }
   for (const part of page.sections) {
     if (part.title) out.push({ kind: 'heading', text: part.title })
     out.push(...part.rows.map((row): Entry => ({ kind: 'page', row })))

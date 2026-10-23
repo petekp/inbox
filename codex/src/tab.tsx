@@ -1291,7 +1291,7 @@ function OverviewTab({ page }: { page: OverviewPage }) {
                 {line.text}
               </h1>
             ) : (
-              <div class="overview-now muted" key={line.id}>
+              <div class={line.hasGapAbove ? 'overview-now overview-gap muted' : 'overview-now muted'} key={line.id}>
                 {line.text}
               </div>
             ),

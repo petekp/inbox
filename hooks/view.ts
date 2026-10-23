@@ -477,7 +477,12 @@ export type OverviewRow = {
 }
 
 /** One text line of the page: the headline, why the direction changed, how it is going, a pointer to the Inbox, or a quiet note. */
-export type OverviewLead = { id: 'headline' | 'course' | 'status' | 'pointer' | 'quiet'; text: string }
+export type OverviewLead = {
+  id: 'headline' | 'course' | 'status' | 'pointer' | 'quiet'
+  text: string
+  /** Whether a blank line separates it from the line above, as when the status follows a course or the pointer follows the status. */
+  hasGapAbove: boolean
+}
 
 export type OverviewSection = { id: string; title: string | null; rows: OverviewRow[] }
 
@@ -507,7 +512,7 @@ const OVERVIEW_MARKS: Record<OverviewStatus, Pick<OverviewRow, 'mark' | 'tone'>>
   unknown: { mark: '?', tone: null },
 }
 
-/** A section's title. The first section needs none under the headline, so `workstreams` and `queue` name themselves only after another section. */
+/** A section's title. Every section has one, so rows never sit directly under the lead lines without a name. */
 const SECTION_TITLES: Partial<Record<PartId, string | null>> = {
   workstreams: 'Streams',
   queue: 'Work',
@@ -549,7 +554,7 @@ export function overviewPage(
     ? parts.flatMap(id => {
         const title = SECTION_TITLES[id]
         if (title === undefined) return []
-        const isFirstSection = parts.filter(p => p in SECTION_TITLES).indexOf(id) === 0
+
         const rows = overview[id as 'queue'].map((item, n) => ({
           id: `${id}-${n}`,
           ...OVERVIEW_MARKS[item.status],
@@ -557,9 +562,7 @@ export function overviewPage(
           detail: item.detail,
         }))
 
-        const named = isFirstSection && (id === 'queue' || id === 'workstreams') ? null : title
-
-        return rows.length > 0 ? [{ id, title: named, rows }] : []
+        return rows.length > 0 ? [{ id, title, rows }] : []
       })
     : []
 
@@ -572,11 +575,13 @@ export function overviewPage(
   }
   const withWorking: PartId[] = isTurnRunning && !parts.includes('status') ? withAfterHeading(parts, 'status') : parts
   const leadIds: PartId[] = overview ? withWorking : isTurnRunning ? ['status'] : []
-  const lead = leadIds.flatMap(id => {
-    const text = id in texts ? texts[id as OverviewLead['id']] : null
+  const lead = leadIds
+    .flatMap(id => {
+      const text = id in texts ? texts[id as OverviewLead['id']] : null
 
-    return text === null ? [] : [{ id: id as OverviewLead['id'], text }]
-  })
+      return text === null ? [] : [{ id: id as OverviewLead['id'], text, hasGapAbove: false }]
+    })
+    .map((line, n, all) => ({ ...line, hasGapAbove: n > 0 && all[n - 1]!.id !== 'headline' }))
 
   return {
     isEmpty: headline === null && !isTurnRunning,
