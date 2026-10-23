@@ -4,7 +4,17 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
-import { applyExchangeUpdate, applyUpdate, EMPTY, parseReply, upgradeLedger, withResults } from '../hooks/ledger'
+import {
+  addResults,
+  applyExchangeUpdate,
+  applyUpdate,
+  EMPTY,
+  handledBy,
+  parseReply,
+  resultLines,
+  upgradeLedger,
+  withoutResults,
+} from '../hooks/ledger'
 import {
   buildPrompt,
   CLAUDE_CODE,
@@ -310,15 +320,11 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
   const host = agent === 'codex' ? CODEX : CLAUDE_CODE
   const prompt =
     c.catchUp === undefined ? buildPrompt(ledger, ex) : transcriptCatchUpPrompt(ledger, ex.screen, c.catchUp)
-  const resultsInput = c.catchUp === undefined ? resultsPrompt(ledger, ex) : resultsCatchUpPrompt(ledger, c.catchUp)
   const ask = (input: string, system: string): Promise<Answer> =>
     agent === 'codex'
       ? askCodex(input, system).then(text => ({ text, model: null, outputTokens: null }))
       : claude(input, system)
-  const [ledgerCall, resultsCall] = await Promise.all([
-    ask(prompt, systemText(host)),
-    ask(resultsInput, RESULTS_SYSTEM),
-  ])
+  const ledgerCall = await ask(prompt, systemText(host))
   const { text: answer, model, outputTokens } = ledgerCall
   const base = {
     ...job(agent, c, n),
@@ -327,28 +333,36 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
     outputTokens,
     inputTokens: ledgerCall.inputTokens ?? null,
     cachedTokens: ledgerCall.cachedTokens ?? null,
-    resultsAnswer: resultsCall.text,
-    resultsModel: resultsCall.model,
-    resultsOutputTokens: resultsCall.outputTokens,
-    resultsInputTokens: resultsCall.inputTokens ?? null,
-    resultsCachedTokens: resultsCall.cachedTokens ?? null,
     attempts: 1,
     earlier: [],
     durationMs: 0,
   }
   if (answer === null) return { ...base, error: `${agent} gave no answer`, failed: [], masked: [] }
-  if (resultsCall.text === null) return { ...base, error: `${agent} gave no results answer`, failed: [], masked: [] }
   const parsed = parseReply(answer, c.catchUp ?? `${ex.reply}\n${ex.activity.join('\n')}`)
   if (parsed === null) return { ...base, error: null, failed: ['no answer the mod can read'], masked: [] }
-  const update = withResults(parsed, resultsCall.text)
-  const after =
+  const update = withoutResults(parsed)
+  const applied =
     c.catchUp === undefined
       ? applyExchangeUpdate(ledger, update, ex, NOW, NOW)
       : applyUpdate(ledger, update, NOW, ledger.turn, NOW, true)
-
+  const handled = handledBy(ledger, applied)
+  const resultsInput =
+    c.catchUp === undefined ? resultsPrompt(applied, handled, ex) : resultsCatchUpPrompt(applied, handled, c.catchUp)
+  const resultsCall = await ask(resultsInput, RESULTS_SYSTEM)
+  const withAnswer = {
+    ...base,
+    resultsAnswer: resultsCall.text,
+    resultsModel: resultsCall.model,
+    resultsOutputTokens: resultsCall.outputTokens,
+    resultsInputTokens: resultsCall.inputTokens ?? null,
+    resultsCachedTokens: resultsCall.cachedTokens ?? null,
+  }
+  if (resultsCall.text === null)
+    return { ...withAnswer, error: `${agent} gave no results answer`, failed: [], masked: [] }
+  const after = addResults(applied, resultLines(resultsCall.text), NOW, c.catchUp === undefined ? ex.turn : null)
   const masked = maskedAsks(update, ledger, after)
 
-  return { ...base, error: null, failed: failures(ledger, after, c.checks, masked), masked }
+  return { ...withAnswer, error: null, failed: failures(ledger, after, c.checks, masked), masked }
 }
 
 function job(agent: Agent, c: Case, n: number) {

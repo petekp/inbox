@@ -134,7 +134,7 @@ An answered or fixed milestone goes away if its row reopens, since the result no
 **Owner.**
 
 - `hooks/ledger.ts`: `applyUpdate`, `addMilestones`, `upgradeLedger`, `doneTexts`, the cap and the duplicate rules.
-- `hooks/model-text.ts`: `RESULTS_SYSTEM`, `resultsPrompt` and `resultsCatchUpPrompt`. `hooks/ledger.ts:withResults` merges the results call into the update.
+- `hooks/model-text.ts`: `RESULTS_SYSTEM`, `resultsPrompt` and `resultsCatchUpPrompt`. `hooks/ledger.ts:addResults` writes the results call's lines to the update's turn, and `handledBy` lists what the update answered and fixed for the results prompt.
 - `hooks/session.ts`: `appliedCatchUp` passes `isCatchUp` to `applyUpdate`. Today it passes no flag, so catch-up results would get per-reply times and the per-reply cap.
 
 **Stored state.**
@@ -160,7 +160,7 @@ An answered or fixed milestone goes away if its row reopens, since the result no
 
 - The ledger call reads `systemText` and `buildPrompt`, unchanged from `main`. Its DONE lines are dropped.
 - The results call reads `RESULTS_SYSTEM` with `resultsPrompt`, or `resultsCatchUpPrompt` for a catch-up. The prompt holds `<listed>` (the newest 8 results, or all in a catch-up), `<open>`, `<findings>`, `<person>`, `<activity>` and `<reply>` or `<conversation>`. Its rule says to write no DONE line for the work that answers an `<open>` item or fixes a `<finding>`, since the inbox lists those itself.
-- Both calls start together, so a reply waits for the slower one. `Ask` takes the system text with the prompt. `runUpdates` and `askOverConversation` make both calls, and `withResults` replaces the ledger update's DONE lines with the results call's. A failed results call leaves the ledger update applied with no new results. A failed ledger call fails the update as before.
+- The ledger call runs first and its update applies at once. Then the results call runs, over the updated ledger, with a `<handled>` block that names the questions the update answered and the findings it fixed. Its DONE lines are written in a second change, to the same turn's milestones (`appliedResults`), however many updates landed meanwhile. They are dropped when the session now has fewer applied turns than when the update landed, which means it was replaced by one that never applied that turn. The results call holds neither the update lock nor `isUpdating`: the next update does not wait for it, and `runUpdates` returns only after it ends. `Ask` takes the system text with the prompt. A failed results call leaves the ledger update applied with no new results. A failed ledger call skips the results call.
 - Reason: a DONE rule inside the ledger call moved unrelated cases, such as dismissed questions, by 10 to 20 runs of 32 with each wording. A separate call lets the results wording change without retesting the ledger cases.
 - The mod's catch-up runs the ledger call as a fork of the conversation, and the results call over the transcript from `$.session.messages()`. With no transcript, it writes no results.
 

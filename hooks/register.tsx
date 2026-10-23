@@ -70,7 +70,7 @@ import {
 } from './session'
 import type { SentBy, Session, SessionView } from './session'
 import { fetchPrs as fetchSessionPrs, runUpdates, startPress, wakeForDone as wakeSessionForDone } from './session-host'
-import type { CatchUpReply, SessionHost } from './session-host'
+import type { AskCatchUpResults, CatchUpReply, SessionHost } from './session-host'
 import { demoView, isDemoCopy, upgradeDemoCopy } from './demo'
 import type { Exchange, Press, Update } from './ledger'
 import {
@@ -961,18 +961,13 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
     $.session.messages().then(transcriptText),
   ])
   // The results call reads the transcript. With none to read, it writes no results.
-  const resultsText = async () => {
-    if (!transcript) return null
-    const r = await askLedgerModel($, resultsCatchUpPrompt(ledger, transcript), RESULTS_SYSTEM, 90_000).catch(
-      () => null,
-    )
+  const results: AskCatchUpResults = async (after, handled) => {
+    if (!transcript || !isCurrent(owner)) return null
+    const r = await askLedgerModel($, resultsCatchUpPrompt(after, handled, transcript), RESULTS_SYSTEM, 90_000)
 
-    return r?.isAnswered ? r.text : null
+    return r.isAnswered ? r.text : null
   }
-  const [forked, results] = await Promise.all([
-    $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) }),
-    resultsText(),
-  ])
+  const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
   if (!isCurrent(owner)) return { kind: 'failed' }
   if (forked.isAnswered) return { kind: 'reply', text: forked.text, source: null, results }
   // A fork has nothing to read until this process sends its first request,

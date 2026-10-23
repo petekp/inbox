@@ -239,7 +239,7 @@ A host is a program that runs the inbox's agent: it reacts to events, keeps stat
 | `read`, `update` | Read the session, and change it under a lock. An external effect, such as a delivery, runs outside the change. |
 | `exclusive` | Runs the per-reply update unless another run holds the session. |
 | `catchUp` | Optional, on the update host. Has the inbox model read the whole conversation and returns its ledger answer and its results answer, or says the conversation is unreadable. Without it, a host only runs the pending exchanges. The mod forks the conversation, and Codex and omp pass their conversation text to `askOverConversation`. |
-| `ask` | Calls the inbox model with a prompt and the system text for it, and returns null when it fails. `runUpdates` calls it twice for a reply, in parallel: the ledger call with `systemText` and `buildPrompt`, and the results call with `RESULTS_SYSTEM` and `resultsPrompt`. `hooks/ledger.ts:withResults` replaces the ledger update's DONE lines with the results call's. |
+| `ask` | Calls the inbox model with a prompt and the system text for it, and returns null when it fails. `runUpdates` calls it twice for a reply, one after the other: the ledger call with `systemText` and `buildPrompt`, whose update applies at once, then the results call with `RESULTS_SYSTEM` and `resultsPrompt`, whose lines `hooks/ledger.ts:addResults` writes to that turn. The ledger call's own DONE lines are dropped. |
 | `deliver` | Sends a message to the agent as if the person typed it. |
 | `prepare` | Throws when `deliver` could not start, before a sent record is saved. |
 | `perform` | Opens a link or path, or copies text. Returns why it could not, or null. |

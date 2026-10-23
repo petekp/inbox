@@ -49,6 +49,7 @@ let smolModel: Model | undefined
 let inboxRoleModel: Model | undefined
 let reply: string | Error
 let resultsReply: string | Error
+let resultsHold: Promise<void> | null
 let resultsCompletions: { model: Model; system: string[]; prompt: string }[]
 let isIdle: boolean
 let execResults: Map<string, { code: number; stdout?: string; stderr?: string; killed?: boolean } | Error>
@@ -116,6 +117,7 @@ const deps = (): HostDeps => ({
       prompt: String((context.messages[0] as { content: unknown }).content),
     }
     ;(isResults ? resultsCompletions : completions).push(call)
+    if (isResults) await resultsHold
     const answer = isResults ? resultsReply : reply
     if (answer instanceof Error) throw answer
 
@@ -169,6 +171,7 @@ beforeEach(() => {
   inboxRoleModel = undefined
   reply = MODEL_ANSWER
   resultsReply = 'DONE: Plan written'
+  resultsHold = null
   resultsCompletions = []
   isIdle = false
   execResults = new Map()
@@ -311,6 +314,30 @@ test('a failed results call leaves the ledger update applied with no new results
   expect(state().pending).toEqual([])
   expect(state().ledger.milestones).toEqual([])
   expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Use Node or Python?'])
+})
+
+test('a ledger update shows before its results call returns, and the results call skips what that update answered', async () => {
+  createInbox(pi(), deps())
+  reply = 'NEW: decide | 1 | Use Node or Python? | Node / Python | Node'
+  resultsReply = new Error('no results yet')
+  await prompt('Add a greeting CLI')
+  await endAgent('Plan written. Which runtime?')
+  await settle()
+  let release: () => void = () => undefined
+  resultsHold = new Promise<void>(resolve => (release = resolve))
+  resultsReply = 'DONE: Command scaffolded'
+  reply = 'CLOSED: i1 | Node chosen'
+  await prompt('Use Node')
+  await endAgent('Scaffolded the command with Node.')
+  for (let waited = 0; resultsCompletions.length < 2 && waited < 200; waited += 1)
+    await new Promise(resolve => setTimeout(resolve, 10))
+  expect(resultsCompletions).toHaveLength(2)
+  expect(state().ledger.items).toEqual([])
+  expect(state().ledger.milestones.map((m: { text: string }) => m.text)).not.toContain('Command scaffolded')
+  expect(resultsCompletions[1]!.prompt).toContain('<handled>\nanswered: Use Node or Python? | Node chosen\n</handled>')
+  release()
+  await settle()
+  expect(state().ledger.milestones.map((m: { text: string }) => m.text)).toContain('Command scaffolded')
 })
 
 test('a settle that will continue does not end the turn', async () => {

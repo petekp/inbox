@@ -118,6 +118,63 @@ test('a failed results call leaves the ledger update applied with no new results
   assert.deepEqual(state.pending, [])
 })
 
+test('a ledger update shows before its results call returns, and the results call skips what that update answered', async () => {
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: {
+      ...s.ledger,
+      items: [
+        {
+          id: 'i2',
+          kind: 'question',
+          label: '1',
+          ask: 'Which license should the CLI use?',
+          options: ['MIT', 'Apache-2.0'],
+          rec: 'MIT',
+          helps: [],
+          turn: 1,
+          at: 1,
+          from: 'update',
+        },
+      ],
+    },
+    pending: [{ ex: { ...ex(2, 'Added the MIT license.'), person: 'MIT' }, turnsStarted: 2 }],
+  }))
+  let resultsPrompt = ''
+  let release: (text: string) => void = () => undefined
+  const held = new Promise<string>(resolve => (release = resolve))
+  let asked: () => void = () => undefined
+  const resultsAsked = new Promise<void>(resolve => (asked = resolve))
+  const running = runBothCalls(
+    dir,
+    's1',
+    async (prompt, system) => {
+      if (system !== RESULTS_SYSTEM) return 'GOAL: Ship\nCLOSED: i2 | MIT'
+      resultsPrompt = prompt
+      asked()
+
+      return held
+    },
+    () => 5,
+  )
+  await resultsAsked
+  let shown = await readState(dir, 's1')
+  for (let waited = 0; shown.presence.isUpdating && waited < 200; waited += 1) {
+    await new Promise(resolve => setTimeout(resolve, 10))
+    shown = await readState(dir, 's1')
+  }
+
+  assert.deepEqual(shown.ledger.items, [])
+  assert.equal(shown.ledger.closed[0]?.outcome, 'MIT')
+  assert.equal(shown.presence.isUpdating, false)
+  assert.ok(resultsPrompt.includes('<handled>\nanswered: Which license should the CLI use? | MIT\n</handled>'))
+  release('DONE: License file added')
+  await running
+
+  assert.ok((await readState(dir, 's1')).ledger.milestones.some(m => m.text === 'License file added'))
+})
+
 test('pending exchanges reach the ledger in order, a failed one waits for the next update, and a second failure drops it', async () => {
   const dir = tempDir()
   await updateState(dir, 's1', s => ({

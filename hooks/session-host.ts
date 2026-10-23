@@ -1,4 +1,5 @@
-import { parseReply, withResults } from './ledger'
+import { handledBy, parseReply, resultLines } from './ledger'
+import type { Handled } from './ledger'
 import {
   buildPrompt,
   RESULTS_SYSTEM,
@@ -22,10 +23,18 @@ import {
   withUnconfirmed,
 } from './presses'
 import type { Effect, EffectHost, RowPress } from './presses'
-import { applied, appliedCatchUp, completedAttempt, needsCatchUp, pressOn, withFetchedPrs } from './session'
+import {
+  applied,
+  appliedCatchUp,
+  appliedResults,
+  completedAttempt,
+  needsCatchUp,
+  pressOn,
+  withFetchedPrs,
+} from './session'
 import type { Pressed, SendOutcome, Session } from './session'
 import type { ReplyHolds } from './view'
-import type { RowNote } from '../types'
+import type { Ledger, RowNote } from '../types'
 
 export type Exclusive<T> = { acquired: true; value: T } | { acquired: false }
 
@@ -88,10 +97,16 @@ export type SessionHost<S extends Session> = {
   newId(): string
 }
 
+/**
+ * Asks the results call for the catch-up's results, given the ledger with the catch-up applied and what it answered
+ * and fixed. Null when the call fails.
+ */
+export type AskCatchUpResults = (ledger: Ledger, handled: Handled) => Promise<string | null>
+
 /** What a host's catch-up found: the model's answer to apply, or why there is none. */
 export type CatchUpReply =
   /** `source` is the text the answer may quote code blocks from, or null when the model read the conversation itself. */
-  | { kind: 'reply'; text: string; source: string | null; results: string | null }
+  | { kind: 'reply'; text: string; source: string | null; results: AskCatchUpResults }
   /** The model gave no answer. */
   | { kind: 'failed' }
   /** There is no conversation to read, so the pending exchanges run instead. */
@@ -119,12 +134,16 @@ export async function askOverConversation(
   conversation: string | null,
 ): Promise<CatchUpReply> {
   if (!conversation) return { kind: 'unreadable' }
-  const [text, results] = await Promise.all([
-    ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names)).catch(() => null),
-    ask(resultsCatchUpPrompt(s.ledger, conversation), RESULTS_SYSTEM).catch(() => null),
-  ])
+  const text = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names)).catch(() => null)
 
-  return text === null ? { kind: 'failed' } : { kind: 'reply', text, source: conversation, results }
+  return text === null
+    ? { kind: 'failed' }
+    : {
+        kind: 'reply',
+        text,
+        source: conversation,
+        results: (ledger, handled) => ask(resultsCatchUpPrompt(ledger, handled, conversation), RESULTS_SYSTEM),
+      }
 }
 
 export async function reconcileUpdateStatus<S extends Session>(
@@ -155,50 +174,86 @@ export async function reconcileUpdateStatus<S extends Session>(
  * pending exchanges, oldest first. An update started meanwhile finds the lock held and exits, so the work is read
  * again after the lock is released.
  *
+ * Each update runs the ledger call first and applies its answer at once. Then the results call runs, with the
+ * ledger the update produced and what it answered and fixed, and its results are written in a second change. That
+ * call runs apart from the lock and from `isUpdating`: the next update does not wait for it, and `runUpdates`
+ * returns only once every results call has finished.
+ *
  * A catch-up that fails ends the run, and the next update tries it again. A conversation that cannot be read is not
- * tried again in this run.
+ * tried again in this run. A ledger call that fails skips the results call.
  */
 export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promise<void> {
   let canCatchUp = host.catchUp !== undefined
   const wantsCatchUp = (s: S) => canCatchUp && needsCatchUp(s)
   const hasWork = (s: S) => s.pending.length > 0 || wantsCatchUp(s)
-  while (hasWork(await host.read())) {
-    const held = await host.exclusive(async () => {
-      try {
-        for (;;) {
-          const s = await host.update(x => ({ ...x, presence: { ...x.presence, isUpdating: hasWork(x) } }))
-          if (!hasWork(s)) break
-          if (wantsCatchUp(s)) {
-            const reply = await host.catchUp!(s).catch((): CatchUpReply => ({ kind: 'failed' }))
-            if (reply.kind === 'unreadable') {
-              canCatchUp = false
+  const writing: Promise<void>[] = []
+  /** Runs the results call for an applied update and writes its lines to `turn`, or to a catch-up when null. */
+  const writeResults = async (
+    after: S,
+    before: Ledger,
+    turn: number | null,
+    ask: (ledger: Ledger, handled: Handled) => Promise<string | null>,
+  ) => {
+    const texts = resultLines(await ask(after.ledger, handledBy(before, after.ledger)).catch(() => null))
+    if (texts.length === 0) return
+    const at = await host.now()
+    await host.update(x => appliedResults(x, texts, at, turn, after.presence.turnsApplied))
+  }
+  const followUp = (run: Promise<void>) => {
+    writing.push(run.catch(() => undefined))
+  }
+  try {
+    while (hasWork(await host.read())) {
+      const held = await host.exclusive(async () => {
+        try {
+          for (;;) {
+            const s = await host.update(x => ({ ...x, presence: { ...x.presence, isUpdating: hasWork(x) } }))
+            if (!hasWork(s)) break
+            if (wantsCatchUp(s)) {
+              const reply = await host.catchUp!(s).catch((): CatchUpReply => ({ kind: 'failed' }))
+              if (reply.kind === 'unreadable') {
+                canCatchUp = false
+                continue
+              }
+              const parsed = reply.kind === 'reply' ? parseReply(reply.text, reply.source) : null
+              const at = await host.now()
+              const seen: { before: Ledger | null } = { before: null }
+              const after = await host.update(x => {
+                seen.before = x.ledger
+
+                return appliedCatchUp(x, s, parsed, at)
+              })
+              if (!parsed) return 'stop' as const
+              if (reply.kind === 'reply' && seen.before) followUp(writeResults(after, seen.before, null, reply.results))
               continue
             }
-            const ledgerUpdate = reply.kind === 'reply' ? parseReply(reply.text, reply.source) : null
-            const parsed = ledgerUpdate && withResults(ledgerUpdate, reply.kind === 'reply' ? reply.results : null)
-            const at = await host.now()
-            await host.update(x => appliedCatchUp(x, s, parsed, at))
-            if (!parsed) return 'stop' as const
-            continue
+            const next = s.pending[0]!
+            const promptAt = await host.now()
+            const reply = await host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names)).catch(() => null)
+            const seen: { before: Ledger | null } = { before: null }
+            const after = await host.update(async x => {
+              seen.before = null
+              if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x
+              seen.before = x.ledger
+
+              return applied(x, reply, await host.now(), promptAt)
+            })
+            if (seen.before && after.ledger !== seen.before)
+              followUp(
+                writeResults(after, seen.before, next.ex.turn, (ledger, handled) =>
+                  host.ask(resultsPrompt(ledger, handled, next.ex), RESULTS_SYSTEM),
+                ),
+              )
+            if (after.pending[0]?.failed && !next.failed) return 'stop' as const
           }
-          const next = s.pending[0]!
-          const promptAt = await host.now()
-          const [reply, results] = await Promise.all([
-            host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names)).catch(() => null),
-            host.ask(resultsPrompt(s.ledger, next.ex), RESULTS_SYSTEM).catch(() => null),
-          ])
-          const after = await host.update(async x =>
-            x.pending[0]?.turnsStarted === next.turnsStarted && x.pending[0].ex.turn === next.ex.turn
-              ? applied(x, reply, results, await host.now(), promptAt)
-              : x,
-          )
-          if (after.pending[0]?.failed && !next.failed) return 'stop' as const
+        } finally {
+          await host.update(x => ({ ...x, presence: { ...x.presence, isUpdating: false } }))
         }
-      } finally {
-        await host.update(x => ({ ...x, presence: { ...x.presence, isUpdating: false } }))
-      }
-    })
-    if (!held.acquired || held.value === 'stop') return
+      })
+      if (!held.acquired || held.value === 'stop') return
+    }
+  } finally {
+    await Promise.all(writing)
   }
 }
 

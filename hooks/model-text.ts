@@ -1,7 +1,7 @@
 import type { Closed, Finding, Item, Ledger, Told } from '../types'
 
 export type { Told } from '../types'
-import type { Exchange } from './ledger'
+import type { Exchange, Handled } from './ledger'
 import { DONE_PER_CATCH_UP, DONE_PER_UPDATE, isAskedForChoices, LIST_CHOICES } from './ledger'
 import { clip, clipMiddle, numberBlocks } from './text'
 
@@ -288,16 +288,17 @@ Input:
 - <listed>: results already on the list, newest first
 - <open>: questions and tasks waiting on the person, as id | label | ask
 - <findings>: findings waiting for the person, as id | title
+- <handled>: what the inbox already lists from this exchange: questions the person answered, as answered: ask | answer, and findings the agent fixed, as fixed: title
 - <person>: what the person just sent
 - <activity>: what the agent did this turn (files edited, commands, URLs)
 - <reply>: the agent's final reply
 
 Answer with lines only, each starting with DONE:. No other text.
 
-DONE: one result the agent finished, at most 8 words, past tense: something that now holds, such as code written, a cause found or a PR opened. Commands run, checks passing and plans are not results. Write no DONE line when nothing finished. Oldest first. Never repeat a result <listed> has, even reworded. The inbox lists an item the person answered and a finding the agent fixed itself: write no DONE line for the work that answers an <open> item or fixes a <finding>.`
+DONE: one result the agent finished, at most 8 words, past tense: something that now holds, such as code written, a cause found or a PR opened. Commands run, checks passing and plans are not results. Write no DONE line when nothing finished. Oldest first. Never repeat a result <listed> has, even reworded. The inbox already lists what <handled> names: write no DONE line for that work.`
 
 /** `<listed>` holds the newest results; a catch-up covers the whole conversation, so it holds all of them. */
-function resultsBlocks(ledger: Ledger, isCatchUp: boolean): string[] {
+function resultsBlocks(ledger: Ledger, handled: Handled, isCatchUp: boolean): string[] {
   const listed = ledger.milestones
     .slice(isCatchUp ? 0 : -LISTED_SHOWN)
     .reverse()
@@ -305,30 +306,36 @@ function resultsBlocks(ledger: Ledger, isCatchUp: boolean): string[] {
     .join(NL)
   const open = ledger.items.map(i => `${i.id} | ${i.label ?? '-'} | ${i.ask}`).join(NL)
   const findings = ledger.findings.map(f => `${f.id} | ${f.title}`).join(NL)
+  const done = [
+    ...handled.answered.map(a => `answered: ${a.ask} | ${a.outcome}`),
+    ...handled.fixed.map(title => `fixed: ${title}`),
+  ].join(NL)
 
   return [
     `<listed>${NL}${listed}${NL}</listed>`,
     `<open>${NL}${open}${NL}</open>`,
     `<findings>${NL}${findings}${NL}</findings>`,
+    `<handled>${NL}${done}${NL}</handled>`,
   ]
 }
 
-export function resultsPrompt(ledger: Ledger, ex: Exchange): string {
+/** `ledger` is the ledger with the exchange's update applied, and `handled` what that update answered and fixed. */
+export function resultsPrompt(ledger: Ledger, handled: Handled, ex: Exchange): string {
   const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? 'unknown'}.)`
 
   return [
     `Write at most ${DONE_PER_UPDATE} DONE lines.`,
-    ...resultsBlocks(ledger, false),
+    ...resultsBlocks(ledger, handled, false),
     `<person>${NL}${clipMiddle(person, 4000, 1500)}${NL}</person>`,
     `<activity>${NL}${clipMiddle(ex.activity.join(NL), 2500, 500)}${NL}</activity>`,
     `<reply>${NL}${clipMiddle(numberBlocks(ex.reply), 12000, 4000)}${NL}</reply>`,
   ].join(NL)
 }
 
-export function resultsCatchUpPrompt(ledger: Ledger, transcript: string): string {
+export function resultsCatchUpPrompt(ledger: Ledger, handled: Handled, transcript: string): string {
   return [
     `Treat the conversation in <conversation> as the exchange. Its start may be cut. Write up to ${DONE_PER_CATCH_UP} DONE lines, for the results the conversation reached that <listed> lacks.`,
-    ...resultsBlocks(ledger, true),
+    ...resultsBlocks(ledger, handled, true),
     `<conversation>${NL}${numberBlocks(transcript)}${NL}</conversation>`,
   ].join(NL)
 }

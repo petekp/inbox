@@ -1,10 +1,11 @@
 import { expect, test } from 'claude-code/testing'
 
 import { flattenConversation } from '../hooks/conversation'
-import { EMPTY, applyUpdate, listResults, parseReply, upgradeLedger } from '../hooks/ledger'
+import { EMPTY, applyUpdate, listResults, parseReply, resultLines, upgradeLedger } from '../hooks/ledger'
 import { CLAUDE_CODE } from '../hooks/model-text'
 import {
   appliedCatchUp,
+  appliedResults,
   cleared,
   emptySession,
   endTurn,
@@ -96,7 +97,7 @@ test('a failed update catches up over the whole conversation instead of retrying
   })
   await runUpdates({
     ...host,
-    ...reading({ kind: 'reply', text: LEDGER_REPLY, source: 'Person: go', results: null }, calls),
+    ...reading({ kind: 'reply', text: LEDGER_REPLY, source: 'Person: go', results: async () => null }, calls),
   })
 
   const after = await host.read()
@@ -124,7 +125,10 @@ test('a catch-up that gets no usable answer ends the run, and the next update tr
   const calls = { catchUps: 0, asks: 0 }
   const { host } = fakeHost(async () => null)
   await host.update(s => ({ ...s, presence: { ...s.presence, ledgerState: 'behind' as const } }))
-  await runUpdates({ ...host, ...reading({ kind: 'reply', text: 'not a ledger', source: null, results: null }, calls) })
+  await runUpdates({
+    ...host,
+    ...reading({ kind: 'reply', text: 'not a ledger', source: null, results: async () => null }, calls),
+  })
   expect(calls.catchUps).toBe(1)
   expect((await host.read()).presence.ledgerState).toBe('failed')
 
@@ -139,7 +143,7 @@ test('an exchange that ends during a catch-up is still run afterward', async () 
     ...host,
     catchUp: async () => {
       await host.update(s => finishTurn(s, 'Which runtime?'))
-      return { kind: 'reply', text: 'GOAL: Add a greeting CLI', source: null, results: null }
+      return { kind: 'reply', text: 'GOAL: Add a greeting CLI', source: null, results: async () => null }
     },
   })
 
@@ -168,7 +172,10 @@ test('a dropped reply keeps the warning through later good updates, until a catc
   expect(sessionView(kept, 0, host.settleWindowMs, false).status.error).not.toContain(retryPromise)
   expect(sessionView(kept, 0, host.settleWindowMs, true).status.error).toContain(retryPromise)
 
-  await runUpdates({ ...host, ...reading({ kind: 'reply', text: LEDGER_REPLY, source: null, results: null }, calls) })
+  await runUpdates({
+    ...host,
+    ...reading({ kind: 'reply', text: LEDGER_REPLY, source: null, results: async () => null }, calls),
+  })
   expect((await host.read()).presence).toMatchObject({ ledgerState: 'current', hasDroppedReply: false })
   expect(calls.catchUps).toBe(1)
 })
@@ -197,12 +204,28 @@ const withMilestone = (s: Session): Session => ({
 test('a catch-up writes up to six results with no time, and an update after one reply keeps three', () => {
   const lines = [1, 2, 3, 4, 5, 6, 7].map(n => `DONE: Result number ${n}`).join('\n')
   const parsed = parseReply(`GOAL: g\n${lines}`)!
-  const caught = appliedCatchUp(emptySession(), emptySession(), parsed, 100)
+  const caught = appliedResults(
+    appliedCatchUp(emptySession(), emptySession(), parsed, 100),
+    resultLines(lines),
+    100,
+    null,
+    0,
+  )
 
   expect(caught.ledger.milestones.map(m => [m.text, m.at])).toEqual(
     [2, 3, 4, 5, 6, 7].map(n => [`Result number ${n}`, null]),
   )
   expect(applyUpdate(EMPTY, parsed, 100, 0).milestones).toHaveLength(3)
+})
+
+test('results attach to the turn they came from after later updates, and are dropped when that turn is gone', () => {
+  const later = { ...emptySession(), presence: { ...emptySession().presence, turnsApplied: 5 } }
+
+  const attached = appliedResults(later, ['Reducer built'], 100, 3, 3)
+  expect(attached.ledger.milestones.map(m => [m.text, m.turn])).toEqual([['Reducer built', 3]])
+
+  const replaced = appliedResults(emptySession(), ['Reducer built'], 100, 3, 3)
+  expect(replaced.ledger.milestones).toEqual([])
 })
 
 test('a session whose only record is a result has a ledger, is not unseen, is copied by a fork and is cleared', () => {

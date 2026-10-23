@@ -349,18 +349,33 @@ export function parseReply(text: string, source: string | null = null): Update |
 }
 
 const MAX_MILESTONES = 200
-/**
- * The update with its results replaced by the DONE lines of the separate results call's answer. The ledger call's own
- * DONE lines are dropped. Null, a failed results call, leaves the update with no new results.
- */
-export function withResults(update: Update, resultsText: string | null): Update {
-  const done = (resultsText ?? '').split(NL).flatMap(line => {
+/** The DONE lines of the results call's answer, in order. Null, a failed results call, gives none. */
+export function resultLines(resultsText: string | null): string[] {
+  return (resultsText ?? '').split(NL).flatMap(line => {
     const m = KEY_LINE.exec(line)
 
     return m?.[1] === 'DONE' ? (dash(m[2] ?? '') ?? []) : []
   })
+}
 
-  return { ...update, done }
+/** The update without the ledger call's own DONE lines: the results call writes the results. */
+export function withoutResults(update: Update): Update {
+  return { ...update, done: [] }
+}
+
+/** What an update closed with the person's answer, and the findings it fixed. The results call must not repeat them. */
+export type Handled = { answered: { ask: string; outcome: string }[]; fixed: string[] }
+
+export function handledBy(before: Ledger, after: Ledger): Handled {
+  const answered = after.closed.filter(c => c.how === 'update' && !before.closed.some(b => b.id === c.id))
+  const fixed = after.closedFindings.filter(
+    f => f.how === 'update' && !isLapsed(f) && !before.closedFindings.some(b => b.id === f.id),
+  )
+
+  return {
+    answered: answered.map(c => ({ ask: c.ask, outcome: c.outcome })),
+    fixed: fixed.map(f => f.title),
+  }
 }
 
 /** How many DONE lines one update, and one catch-up, may add. The prompts state these counts. */
@@ -375,6 +390,10 @@ const BARE_YES =
   /^\s*(?:yes|yep|yeah|y|ok|okay|sure|go|go ahead|proceed|do it|continue|approved?|sounds good|sgtm|lgtm|all recommended|yes to all|ship it)\s*[.!]*\s*$/i
 
 type NewMilestone = Omit<Milestone, 'id'>
+
+function resultMilestones(texts: string[], isCatchUp: boolean): NewMilestone[] {
+  return texts.slice(isCatchUp ? -DONE_PER_CATCH_UP : -DONE_PER_UPDATE).map(text => doneMilestone(text, null))
+}
 
 function doneMilestone(text: string, at: number | null): NewMilestone {
   return { source: 'done', text: clipLabel(text, MILESTONE_TEXT_CHARS), detail: null, ref: null, at }
@@ -796,6 +815,21 @@ export function reopenFinding(ledger: Ledger, id: string): Ledger {
   )
 }
 
+/**
+ * Adds the results the results call wrote for an update that is already applied. `turn` is that update's turn, or null
+ * for a catch-up, whose results have no known time or turn. A result goes after the turn's other milestones, and one
+ * the list already has is skipped.
+ */
+export function addResults(ledger: Ledger, texts: string[], at: number, turn: number | null): Ledger {
+  const isCatchUp = turn === null
+  const taken = isCatchUp ? 0 : ledger.milestones.filter(m => m.turn === turn).length
+  const written = resultMilestones(texts, isCatchUp).map((m, n) => (isCatchUp ? m : { ...m, at: at + taken + n, turn }))
+  if (written.length === 0) return ledger
+  const milestones = addMilestones(ledger.milestones, written)
+
+  return { ...ledger, milestones, card: ledger.card && { ...ledger.card, done: doneTexts(milestones) } }
+}
+
 export function applyExchangeUpdate(
   ledger: Ledger,
   update: Update,
@@ -939,7 +973,7 @@ export function applyUpdate(
       },
     ]
   })
-  const results = u.done.slice(isCatchUp ? -DONE_PER_CATCH_UP : -DONE_PER_UPDATE).map(text => doneMilestone(text, now))
+  const results = resultMilestones(u.done, isCatchUp)
   // Each later line gets a later time, so one update's lines read newest first. A catch-up covers past turns,
   // so none of its lines has a known time.
   const written = [...answers, ...fixes, ...results].map((m, n) =>

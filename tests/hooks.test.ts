@@ -42,6 +42,7 @@ const BAND = {
 let ledgerReply = LEDGER_REPLY
 let resultsReply: string | null = 'DONE: Plan written'
 let resultsPrompts: string[] = []
+let resultsHold: Promise<void> | null = null
 let sessionId = 'session-1'
 
 let sent: string[] = []
@@ -176,6 +177,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   ledgerReply = LEDGER_REPLY
   resultsReply = 'DONE: Plan written'
   resultsPrompts = []
+  resultsHold = null
   sessionId = 'session-1'
   surfaces = []
   files = []
@@ -255,10 +257,11 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
     await ghAnswers.find(a => a.match(e.argv))?.hold?.()
     return { value: gh(e.argv) }
   })
-  on('model.complete', ($, e) => {
+  on('model.complete', async ($, e) => {
     const isResults = (e.systemBlocks ?? []).some(block => block.text === RESULTS_SYSTEM) || e.system === RESULTS_SYSTEM
     if (isResults) resultsPrompts.push(e.prompt)
     else prompts.push(e.prompt)
+    if (isResults) await resultsHold
     if (isResults && resultsReply === null) return { deny: 'the results call failed' }
 
     return {
@@ -1084,6 +1087,39 @@ test('a failed results call leaves the ledger update applied with no new results
 
   expect(ledger.milestones).toEqual([])
   expect(ledger.items.map(i => i.ask)).toEqual(['Use Node or Python?', 'Name the command greet?'])
+})
+
+test('a ledger update shows before its results call returns, and the results call skips what that update answered', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let session: { ledger: { milestones: { text: string }[]; items: { id: string }[] } } | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  const reply = async (text: string, turnId: string) => {
+    await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
+    await $.turn.start({ text, turnId })
+    await $.turn.complete({ answer: 'Noted.', durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+    await clock.settle()
+  }
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  ledgerReply = 'NEW: decide | 1 | Use Node or Python? | Node / Python | Node'
+  resultsReply = null
+  await reply('add a greeting cli', 't1')
+
+  let release: () => void = () => undefined
+  resultsHold = new Promise<void>(resolve => (release = resolve))
+  resultsReply = 'DONE: Command scaffolded'
+  ledgerReply = 'CLOSED: i1 | Node chosen'
+  await reply('use node', 't2')
+
+  expect(session!.ledger.items).toEqual([])
+  expect(session!.ledger.milestones.map(m => m.text)).not.toContain('Command scaffolded')
+  expect(resultsPrompts.at(-1)).toContain('<handled>\nanswered: Use Node or Python? | Node chosen\n</handled>')
+  release()
+  await clock.settle()
+  expect(session!.ledger.milestones.map(m => m.text)).toContain('Command scaffolded')
 })
 
 test('resumed into a conversation it cannot fork yet, it catches up from the transcript before any reply', async ($, on) => {

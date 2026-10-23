@@ -286,12 +286,24 @@ function parseReply(text, source = null) {
   return seen === 0 ? null : { card, done, closed, added, helped, updated, asked, todos };
 }
 var MAX_MILESTONES = 200;
-function withResults(update, resultsText) {
-  const done = (resultsText ?? "").split(NL2).flatMap((line) => {
+function resultLines(resultsText) {
+  return (resultsText ?? "").split(NL2).flatMap((line) => {
     const m = KEY_LINE.exec(line);
     return m?.[1] === "DONE" ? dash(m[2] ?? "") ?? [] : [];
   });
-  return { ...update, done };
+}
+function withoutResults(update) {
+  return { ...update, done: [] };
+}
+function handledBy(before, after) {
+  const answered = after.closed.filter((c) => c.how === "update" && !before.closed.some((b) => b.id === c.id));
+  const fixed = after.closedFindings.filter(
+    (f) => f.how === "update" && !isLapsed(f) && !before.closedFindings.some((b) => b.id === f.id)
+  );
+  return {
+    answered: answered.map((c) => ({ ask: c.ask, outcome: c.outcome })),
+    fixed: fixed.map((f) => f.title)
+  };
 }
 var DONE_PER_UPDATE = 3;
 var DONE_PER_CATCH_UP = 6;
@@ -300,6 +312,9 @@ var MILESTONE_TEXT_CHARS = 120;
 var MILESTONE_DETAIL_CHARS = 200;
 var TODO_OPTIONS = ["Proceed", "Not yet"];
 var BARE_YES = /^\s*(?:yes|yep|yeah|y|ok|okay|sure|go|go ahead|proceed|do it|continue|approved?|sounds good|sgtm|lgtm|all recommended|yes to all|ship it)\s*[.!]*\s*$/i;
+function resultMilestones(texts, isCatchUp) {
+  return texts.slice(isCatchUp ? -DONE_PER_CATCH_UP : -DONE_PER_UPDATE).map((text) => doneMilestone(text, null));
+}
 function doneMilestone(text, at) {
   return { source: "done", text: clipLabel(text, MILESTONE_TEXT_CHARS), detail: null, ref: null, at };
 }
@@ -485,6 +500,14 @@ function reopenFinding(ledger, id) {
     id
   );
 }
+function addResults(ledger, texts, at, turn) {
+  const isCatchUp = turn === null;
+  const taken = isCatchUp ? 0 : ledger.milestones.filter((m) => m.turn === turn).length;
+  const written = resultMilestones(texts, isCatchUp).map((m, n) => isCatchUp ? m : { ...m, at: at + taken + n, turn });
+  if (written.length === 0) return ledger;
+  const milestones = addMilestones(ledger.milestones, written);
+  return { ...ledger, milestones, card: ledger.card && { ...ledger.card, done: doneTexts(milestones) } };
+}
 function applyExchangeUpdate(ledger, update, exchange, now, promptAt) {
   const explainedId = exchange.press?.action === "explain" ? exchange.press.id : null;
   return applyUpdate(
@@ -592,7 +615,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now, isCatchUp = false) {
       }
     ];
   });
-  const results = u.done.slice(isCatchUp ? -DONE_PER_CATCH_UP : -DONE_PER_UPDATE).map((text) => doneMilestone(text, now));
+  const results = resultMilestones(u.done, isCatchUp);
   const written = [...answers, ...fixes, ...results].map(
     (m, n) => isCatchUp ? { ...m, at: null } : { ...m, at: now + n, turn }
   );
@@ -797,37 +820,43 @@ Input:
 - <listed>: results already on the list, newest first
 - <open>: questions and tasks waiting on the person, as id | label | ask
 - <findings>: findings waiting for the person, as id | title
+- <handled>: what the inbox already lists from this exchange: questions the person answered, as answered: ask | answer, and findings the agent fixed, as fixed: title
 - <person>: what the person just sent
 - <activity>: what the agent did this turn (files edited, commands, URLs)
 - <reply>: the agent's final reply
 
 Answer with lines only, each starting with DONE:. No other text.
 
-DONE: one result the agent finished, at most 8 words, past tense: something that now holds, such as code written, a cause found or a PR opened. Commands run, checks passing and plans are not results. Write no DONE line when nothing finished. Oldest first. Never repeat a result <listed> has, even reworded. The inbox lists an item the person answered and a finding the agent fixed itself: write no DONE line for the work that answers an <open> item or fixes a <finding>.`;
-function resultsBlocks(ledger, isCatchUp) {
+DONE: one result the agent finished, at most 8 words, past tense: something that now holds, such as code written, a cause found or a PR opened. Commands run, checks passing and plans are not results. Write no DONE line when nothing finished. Oldest first. Never repeat a result <listed> has, even reworded. The inbox already lists what <handled> names: write no DONE line for that work.`;
+function resultsBlocks(ledger, handled, isCatchUp) {
   const listed = ledger.milestones.slice(isCatchUp ? 0 : -LISTED_SHOWN).reverse().map((m) => m.text).join(NL3);
   const open2 = ledger.items.map((i) => `${i.id} | ${i.label ?? "-"} | ${i.ask}`).join(NL3);
   const findings = ledger.findings.map((f) => `${f.id} | ${f.title}`).join(NL3);
+  const done = [
+    ...handled.answered.map((a) => `answered: ${a.ask} | ${a.outcome}`),
+    ...handled.fixed.map((title) => `fixed: ${title}`)
+  ].join(NL3);
   return [
     `<listed>${NL3}${listed}${NL3}</listed>`,
     `<open>${NL3}${open2}${NL3}</open>`,
-    `<findings>${NL3}${findings}${NL3}</findings>`
+    `<findings>${NL3}${findings}${NL3}</findings>`,
+    `<handled>${NL3}${done}${NL3}</handled>`
   ];
 }
-function resultsPrompt(ledger, ex) {
+function resultsPrompt(ledger, handled, ex) {
   const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? "unknown"}.)`;
   return [
     `Write at most ${DONE_PER_UPDATE} DONE lines.`,
-    ...resultsBlocks(ledger, false),
+    ...resultsBlocks(ledger, handled, false),
     `<person>${NL3}${clipMiddle(person, 4e3, 1500)}${NL3}</person>`,
     `<activity>${NL3}${clipMiddle(ex.activity.join(NL3), 2500, 500)}${NL3}</activity>`,
     `<reply>${NL3}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL3}</reply>`
   ].join(NL3);
 }
-function resultsCatchUpPrompt(ledger, transcript) {
+function resultsCatchUpPrompt(ledger, handled, transcript) {
   return [
     `Treat the conversation in <conversation> as the exchange. Its start may be cut. Write up to ${DONE_PER_CATCH_UP} DONE lines, for the results the conversation reached that <listed> lacks.`,
-    ...resultsBlocks(ledger, true),
+    ...resultsBlocks(ledger, handled, true),
     `<conversation>${NL3}${numberBlocks(transcript)}${NL3}</conversation>`
   ].join(NL3);
 }
@@ -996,7 +1025,7 @@ function upgradeSession(saved) {
     stop: saved.stop ?? null
   };
 }
-function applied(s, reply, results, now, promptAt) {
+function applied(s, reply, now, promptAt) {
   const next = s.pending[0];
   if (!next) return s;
   const { ex } = next;
@@ -1007,7 +1036,7 @@ function applied(s, reply, results, now, promptAt) {
       pending: [{ ...next, failed: true }, ...s.pending.slice(1)],
       presence: { ...s.presence, ledgerState: "failed" }
     };
-  const ledger = parsed ? applyExchangeUpdate(s.ledger, withResults(parsed, results), ex, now, promptAt) : s.ledger;
+  const ledger = parsed ? applyExchangeUpdate(s.ledger, withoutResults(parsed), ex, now, promptAt) : s.ledger;
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed;
   return {
     ...s,
@@ -1021,6 +1050,10 @@ function applied(s, reply, results, now, promptAt) {
     }
   };
 }
+function appliedResults(s, texts, at, turn, appliedAfter) {
+  if (s.presence.turnsApplied < appliedAfter) return s;
+  return { ...s, ledger: addResults(s.ledger, texts, at, turn) };
+}
 function needsCatchUp(s) {
   const { presence } = s;
   const hasUnappliedTurn = s.pending.length === 0 && s.turn.person === null && presence.turnsStarted > presence.turnsApplied;
@@ -1031,7 +1064,7 @@ function appliedCatchUp(s, begun, parsed, now) {
   const covered = new Set(begun.pending.map(pendingKey));
   return {
     ...s,
-    ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn, now, true) : s.ledger,
+    ledger: parsed ? applyUpdate(s.ledger, withoutResults(parsed), now, s.ledger.turn, now, true) : s.ledger,
     pending: s.pending.filter((p) => !covered.has(pendingKey(p))),
     presence: {
       ...s.presence,
@@ -1292,51 +1325,81 @@ import { join as join4 } from "node:path";
 // ../hooks/session-host.ts
 async function askOverConversation(ask, names, s, screen, conversation) {
   if (!conversation) return { kind: "unreadable" };
-  const [text, results] = await Promise.all([
-    ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names)).catch(() => null),
-    ask(resultsCatchUpPrompt(s.ledger, conversation), RESULTS_SYSTEM).catch(() => null)
-  ]);
-  return text === null ? { kind: "failed" } : { kind: "reply", text, source: conversation, results };
+  const text = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names)).catch(() => null);
+  return text === null ? { kind: "failed" } : {
+    kind: "reply",
+    text,
+    source: conversation,
+    results: (ledger, handled) => ask(resultsCatchUpPrompt(ledger, handled, conversation), RESULTS_SYSTEM)
+  };
 }
 async function runUpdates(host) {
   let canCatchUp = host.catchUp !== void 0;
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
-  while (hasWork(await host.read())) {
-    const held = await host.exclusive(async () => {
-      try {
-        for (; ; ) {
-          const s = await host.update((x) => ({ ...x, presence: { ...x.presence, isUpdating: hasWork(x) } }));
-          if (!hasWork(s)) break;
-          if (wantsCatchUp(s)) {
-            const reply2 = await host.catchUp(s).catch(() => ({ kind: "failed" }));
-            if (reply2.kind === "unreadable") {
-              canCatchUp = false;
+  const writing = [];
+  const writeResults = async (after, before, turn, ask) => {
+    const texts = resultLines(await ask(after.ledger, handledBy(before, after.ledger)).catch(() => null));
+    if (texts.length === 0) return;
+    const at = await host.now();
+    await host.update((x) => appliedResults(x, texts, at, turn, after.presence.turnsApplied));
+  };
+  const followUp = (run2) => {
+    writing.push(run2.catch(() => void 0));
+  };
+  try {
+    while (hasWork(await host.read())) {
+      const held = await host.exclusive(async () => {
+        try {
+          for (; ; ) {
+            const s = await host.update((x) => ({ ...x, presence: { ...x.presence, isUpdating: hasWork(x) } }));
+            if (!hasWork(s)) break;
+            if (wantsCatchUp(s)) {
+              const reply2 = await host.catchUp(s).catch(() => ({ kind: "failed" }));
+              if (reply2.kind === "unreadable") {
+                canCatchUp = false;
+                continue;
+              }
+              const parsed = reply2.kind === "reply" ? parseReply(reply2.text, reply2.source) : null;
+              const at = await host.now();
+              const seen2 = { before: null };
+              const after2 = await host.update((x) => {
+                seen2.before = x.ledger;
+                return appliedCatchUp(x, s, parsed, at);
+              });
+              if (!parsed) return "stop";
+              if (reply2.kind === "reply" && seen2.before) followUp(writeResults(after2, seen2.before, null, reply2.results));
               continue;
             }
-            const ledgerUpdate = reply2.kind === "reply" ? parseReply(reply2.text, reply2.source) : null;
-            const parsed = ledgerUpdate && withResults(ledgerUpdate, reply2.kind === "reply" ? reply2.results : null);
-            const at = await host.now();
-            await host.update((x) => appliedCatchUp(x, s, parsed, at));
-            if (!parsed) return "stop";
-            continue;
+            const next = s.pending[0];
+            const promptAt = await host.now();
+            const reply = await host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names)).catch(() => null);
+            const seen = { before: null };
+            const after = await host.update(async (x) => {
+              seen.before = null;
+              if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x;
+              seen.before = x.ledger;
+              return applied(x, reply, await host.now(), promptAt);
+            });
+            if (seen.before && after.ledger !== seen.before)
+              followUp(
+                writeResults(
+                  after,
+                  seen.before,
+                  next.ex.turn,
+                  (ledger, handled) => host.ask(resultsPrompt(ledger, handled, next.ex), RESULTS_SYSTEM)
+                )
+              );
+            if (after.pending[0]?.failed && !next.failed) return "stop";
           }
-          const next = s.pending[0];
-          const promptAt = await host.now();
-          const [reply, results] = await Promise.all([
-            host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names)).catch(() => null),
-            host.ask(resultsPrompt(s.ledger, next.ex), RESULTS_SYSTEM).catch(() => null)
-          ]);
-          const after = await host.update(
-            async (x) => x.pending[0]?.turnsStarted === next.turnsStarted && x.pending[0].ex.turn === next.ex.turn ? applied(x, reply, results, await host.now(), promptAt) : x
-          );
-          if (after.pending[0]?.failed && !next.failed) return "stop";
+        } finally {
+          await host.update((x) => ({ ...x, presence: { ...x.presence, isUpdating: false } }));
         }
-      } finally {
-        await host.update((x) => ({ ...x, presence: { ...x.presence, isUpdating: false } }));
-      }
-    });
-    if (!held.acquired || held.value === "stop") return;
+      });
+      if (!held.acquired || held.value === "stop") return;
+    }
+  } finally {
+    await Promise.all(writing);
   }
 }
 
