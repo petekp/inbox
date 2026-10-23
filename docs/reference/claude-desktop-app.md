@@ -77,7 +77,7 @@ in the VM is 2.1.309 and was not used.
 
 - **Pane width.** Claude Code 2.1.305 caps the pane at 45% of the window width
   (per the request). In the desktop app the docked pane opened at 37% of the
-  window, dragged to 87% of it, and to 28% at its narrowest. The inbox's rows
+  window, dragged to 87% of it (the conversation column shrank to about 12%), and to 28% at its narrowest. The inbox's rows
   and buttons read well at all three, and nothing clipped. The 45% cap did not
   show in the desktop app.
 - **Band, presses, copy, end.** The AbovePrompt band drew with "Nothing needed",
@@ -87,10 +87,12 @@ in the VM is 2.1.309 and was not used.
   2 ms apart. `$.ui.copy` put the command on the VM's clipboard (`pbpaste`).
   `/clear` ended the engine process and the pane and band went with it; the
   saved session had no running turn, no pending update and no stop.
-- **Buttons move after a demo Explain.** After a demo Explain, the note line
-  under the title is replaced by "✓ Explained" on the title line, and the
-  buttons move up about 24 pt. Two clicks aimed at a button's old place did
-  nothing. A real Explain did not move them.
+- **Buttons move after a result line goes.** A result line under a row's title
+  goes away a few seconds after a press, and the buttons move up about 24 pt.
+  It happened after a demo Explain ("Sample entry: nothing was sent.") and
+  after a real Copy ("✓ Copied … Run it in Terminal."). Three clicks aimed at
+  a button's old place did nothing; a click at the new place worked each time.
+  A real Explain did not move the buttons.
 - **`allowManagedPermissionRulesOnly`.** The 3.1623.4 notes say: "Changed
   plugins that the app loads to ask before using the tools they pre-approve
   when your organization's Claude Code managed settings, such as
