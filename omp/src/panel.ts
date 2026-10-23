@@ -532,11 +532,11 @@ function pageEntries(page: OverviewPage): Entry[] {
   const out: Entry[] = []
   for (const line of page.lead) out.push({ kind: 'note', text: line.text, isStrong: line.id === 'headline' })
   for (const part of page.sections) {
-    if (part.title) out.push({ kind: 'heading', text: part.title, count: 0 })
+    if (part.title) out.push({ kind: 'heading', text: part.title })
     out.push(...part.rows.map((row): Entry => ({ kind: 'page', row })))
   }
   if (page.earlier.length > 0) {
-    out.push({ kind: 'heading', text: 'Earlier in this session', count: 0 })
+    out.push({ kind: 'heading', text: 'Earlier in this session' })
     out.push(...page.earlier.map((text): Entry => ({ kind: 'note', text, indent: TITLE_AT })))
   }
 

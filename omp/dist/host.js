@@ -2286,8 +2286,8 @@ var OVERVIEW_MARKS = {
   unknown: { mark: "?", tone: null }
 };
 var SECTION_TITLES = {
-  workstreams: null,
-  queue: null,
+  workstreams: "Streams",
+  queue: "Work",
   since: "Since you looked",
   works: "What works now",
   open: "Still open",
@@ -2310,13 +2310,15 @@ function overviewPage(s, now, waitingOnYou = 0) {
     const title = SECTION_TITLES[id];
     if (title === undefined)
       return [];
+    const isFirstSection = parts.filter((p) => (p in SECTION_TITLES)).indexOf(id) === 0;
     const rows = overview[id].map((item, n) => ({
       id: `${id}-${n}`,
       ...OVERVIEW_MARKS[item.status],
       text: item.text,
       detail: item.detail
     }));
-    return rows.length > 0 ? [{ id, title, rows }] : [];
+    const named = isFirstSection && (id === "queue" || id === "workstreams") ? null : title;
+    return rows.length > 0 ? [{ id, title: named, rows }] : [];
   }) : [];
   const texts = {
     headline,
@@ -4273,11 +4275,11 @@ function pageEntries(page) {
     out.push({ kind: "note", text: line.text, isStrong: line.id === "headline" });
   for (const part of page.sections) {
     if (part.title)
-      out.push({ kind: "heading", text: part.title, count: 0 });
+      out.push({ kind: "heading", text: part.title });
     out.push(...part.rows.map((row) => ({ kind: "page", row })));
   }
   if (page.earlier.length > 0) {
-    out.push({ kind: "heading", text: "Earlier in this session", count: 0 });
+    out.push({ kind: "heading", text: "Earlier in this session" });
     out.push(...page.earlier.map((text) => ({ kind: "note", text, indent: TITLE_AT })));
   }
   return out;

@@ -507,9 +507,10 @@ const OVERVIEW_MARKS: Record<OverviewStatus, Pick<OverviewRow, 'mark' | 'tone'>>
   unknown: { mark: '?', tone: null },
 }
 
+/** A section's title. The first section needs none under the headline, so `workstreams` and `queue` name themselves only after another section. */
 const SECTION_TITLES: Partial<Record<PartId, string | null>> = {
-  workstreams: null,
-  queue: null,
+  workstreams: 'Streams',
+  queue: 'Work',
   since: 'Since you looked',
   works: 'What works now',
   open: 'Still open',
@@ -548,6 +549,7 @@ export function overviewPage(
     ? parts.flatMap(id => {
         const title = SECTION_TITLES[id]
         if (title === undefined) return []
+        const isFirstSection = parts.filter(p => p in SECTION_TITLES).indexOf(id) === 0
         const rows = overview[id as 'queue'].map((item, n) => ({
           id: `${id}-${n}`,
           ...OVERVIEW_MARKS[item.status],
@@ -555,7 +557,9 @@ export function overviewPage(
           detail: item.detail,
         }))
 
-        return rows.length > 0 ? [{ id, title, rows }] : []
+        const named = isFirstSection && (id === 'queue' || id === 'workstreams') ? null : title
+
+        return rows.length > 0 ? [{ id, title: named, rows }] : []
       })
     : []
 
