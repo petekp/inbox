@@ -303,8 +303,18 @@ function restatesText(text: string, other: string): boolean {
   return theirs.length >= 3 && theirs.filter(w => mine.has(w)).length / theirs.length >= 0.7
 }
 
-/** Whether the shorter of two items has most of its key words in the other, however short it is. */
+/**
+ * Whether two items say the same thing: the shorter has most of its key words in the other, however short it is.
+ * An item named like a stream ("Parser: …") against a plain item repeats it only when the plain item is the stream's
+ * name, so a step that names a stream, such as a review of it, is not a repeat.
+ */
 function repeatsFact(a: string, b: string): boolean {
+  const [named, other] = a.includes(':') !== b.includes(':') ? (a.includes(':') ? [a, b] : [b, a]) : [null, null]
+  if (named !== null && other !== null) {
+    const same = (x: string, y: string) => [...keyWordsOf(x)].sort().join(' ') === [...keyWordsOf(y)].sort().join(' ')
+
+    return same(named.split(':')[0]!, other) || restatesText(other, named) || restatesText(named, other)
+  }
   const [short, long] = [keyWordsOf(a), keyWordsOf(b)].sort((x, y) => x.size - y.size) as [Set<string>, Set<string>]
 
   return short.size >= 1 && [...short].filter(w => long.has(w)).length / short.size >= 0.7
