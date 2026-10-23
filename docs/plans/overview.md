@@ -90,7 +90,7 @@ An item has a status:
 
 Each mark is drawn with a color and also reads alone, so the terminal and omp need no color to tell them apart. The glyphs differ in shape. Colors come from the existing tones in `hooks/tones.ts`: `waits-on-you` takes `needsYou`, `done` takes `done`, `problem` takes `issue`. The other five use the faint text color, so no tone is added. omp's light theme is checked in step 3.
 
-A text is at most 12 words and a detail at most 20. A list holds at most 6 items. The call sees these limits in its prompt, and code clips what exceeds them.
+The `course` and `status` texts are at most 30 words, in at most two sentences. The headline and each item's text are at most 12 words. A detail is at most 20. A list holds at most 6 items. The call sees these limits in its prompt, and code clips what exceeds them.
 
 ## The Overview call
 
@@ -141,8 +141,12 @@ A changed direction leads, whatever else is true. After it:
 | running | here | headline, queue, works |
 | running or idle | short | headline, since (or "Nothing new since you looked."), queue |
 | running or idle | long | headline, status, since, queue, next |
-| stopped | any | headline, status with the pointer, since, next |
+| stopped | any | headline, status with the pointer, since, queue, next |
 | finished | any | headline, status, works, open |
+
+The queue shows in every state except `finished`. In `stopped` it holds the ◆ item that says what the work waits on.
+
+`next` is drawn only when the queue has no queued (○) items. Otherwise the ○ items already say what comes next.
 
 A part with nothing in it is left out. The pointer line is drawn under the status when the work is stopped, and otherwise last. The cutoffs and the table are constants in a shared module, tested as a pure function. They are tuned in the trial build.
 
@@ -195,7 +199,7 @@ The `Working…` mark moves next to the headline. Code draws it from `isTurnRunn
 - `Ledger.overview` lives in the ledger so that `forkedFrom`, `cleared`, `hasLedger` and `isUnseen` carry it with the rest. A fork takes its parent's Overview. A `/clear` empties it.
 - The page tab id `overview` is stored in the mod's `PAGE` atom and in Codex's `shownTab`. It is final once released.
 - Main never stored `progress`, `shownTab`, `milestones`, `subagents` or `statedStep`. A trial build of the Progress tab may have. The Overview build ignores a `PAGE` or `shownTab` value it does not know, and drops `milestones`, `subagents` and `statedStep` when it loads. Step 1 tests this with a state saved by that trial build.
-- Step 6 checks that main's build loads a session record saved by this branch.
+- Step 3 checks that main's build loads a session record saved by this branch, before the trial build is frozen.
 
 The Overview is derived text, so a lost or stale one costs a better summary, not data. The next reply rewrites it. A catch-up writes it from the whole conversation.
 
@@ -242,19 +246,21 @@ The Overview call's prompt is text a model reads. `AGENTS.md` names the checks.
 
 ## Build steps and checks
 
-Every step runs `./scripts/check.sh`. After a shared-module change it rebuilds with `npm --prefix codex run build` and `npm --prefix omp run build`. Every commit stays on `progress-tab`, unpushed.
+Every step runs `./scripts/check.sh`. After a shared-module change it rebuilds with `npm --prefix codex run build` and `npm --prefix omp run build`. Every commit stays on `progress-tab`, unpushed. The work stops for review after step 1 and after step 3, with a report in `.scratch/REPORT.md` each time.
 
 1. **Parts, the call and the state.** Types, the line format and its parser, `Ledger.overview`, the prompt, the eval harness change and the seven cases, the upgrade, and the swap of the results call for the Overview call in all three hosts. Remove the milestones code and the results prompts. Nothing is drawn. Checks: unit tests of the parser and the clip; the model suite; a state saved by the Progress trial build loads without error.
 2. **Order and behavior.** The three signals, the order table, the last look, the since list, the course flag, topic folding and the coordinator order, as pure functions in a shared module, with tests for each row of the table.
-3. **Draw the tab.** One commit per look, then one that renames the entry in `TABS`. Rename the tab, the page view and the FeatureId. Draw the marks and the pointer line. Checks, in each look and each state:
+3. **Draw the tab, then freeze a trial build.** One commit per look, then one that renames the entry in `TABS`. Rename the tab, the page view and the FeatureId. Draw the marks and the pointer line. Checks, in each look and each state:
    - the demo test's tab order;
    - desktop at its narrowest pane, with counts, and at 36 and 43 columns, with the label "Overview";
    - the Codex tab measured in a local page that hosts the built tab, in both themes and with reduced motion;
    - omp at 50, 60 and 80 columns, in the dark and light themes;
    - the terminal with no color, read from the glyphs alone.
+
+   After the terminal look draws and the review passes, check that main's build loads a session record this branch saved. Then freeze a trial build in a detached worktree, `overview-try`, at the reviewed tip, so the person can use it while steps 4 to 6 continue.
 4. **Host task lists.** The three reads, `Session.hostTasks`, the `<tasks>` block and the `host-task-list` entry and rows. Live checks answer the two unknowns above.
 5. **Remove the old card fields.** Drop `GOAL`, `NOW`, `RUNNING` and `DONE` from the ledger call. Point the carry texts, the sidebar line (`hooks/claude.ts`) and `screenText` at the Overview. Replace the page hint. Run the whole model suite and the agent suite.
-6. **Docs and the full pass.** `docs/looks.md`, `GLOSSARY.md`, `README.md`, `docs/release.md`, `AGENTS.md`. Then every check in `docs/release.md` and the live pass in all four looks. Then the trial build for the person.
+6. **Docs and the full pass.** `docs/looks.md`, `GLOSSARY.md`, `README.md`, `docs/release.md`, `AGENTS.md`. Then every check in `docs/release.md` and the live pass in all four looks. Then a refreshed trial build.
 
 Readers of `card.goal` and their replacements:
 
