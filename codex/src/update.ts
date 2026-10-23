@@ -17,6 +17,7 @@ import { join } from 'node:path'
 import { screenText } from '../../hooks/model-text'
 import {
   askOverConversation,
+  orderedKeys,
   reconcileUpdateStatus as reconcileStatus,
   runUpdates as runSessionUpdates,
 } from '../../hooks/session-host'
@@ -34,6 +35,8 @@ export const MODEL = 'gpt-6.1-sol'
 const TIMEOUT_MS = 120_000
 /** How long a results call waits for the earlier ones: a few calls at their longest. */
 const RESULTS_WAIT_MS = 4 * TIMEOUT_MS
+/** Keeps one process's results calls in the order they arrived. The file lock orders them across processes. */
+const resultsOrder = orderedKeys()
 
 /** A release that drops one of these rejects it by name, so askModel drops any name rejected and tries again. */
 const OFF = [
@@ -162,7 +165,10 @@ export const runUpdates = (dir: string, sessionId: string, ask: Ask, now: () => 
     ...codexStore(dir, sessionId, now),
     ask,
     names: CODEX,
-    inOrder: fn => withLock(`${statePath(dir, sessionId)}.results`, fn, RESULTS_WAIT_MS),
+    inOrder: fn =>
+      resultsOrder.run(statePath(dir, sessionId), () =>
+        withLock(`${statePath(dir, sessionId)}.results`, fn, RESULTS_WAIT_MS),
+      ),
     catchUp: async s =>
       askOverConversation(
         ask,

@@ -1330,6 +1330,20 @@ import {
 import { join as join4 } from "node:path";
 
 // ../hooks/session-host.ts
+function orderedKeys() {
+  const tails = /* @__PURE__ */ new Map();
+  return {
+    run: (key, fn) => {
+      const result = (tails.get(key) ?? Promise.resolve()).then(fn);
+      const tail = result.catch(() => void 0);
+      tails.set(key, tail);
+      void tail.then(() => {
+        if (tails.get(key) === tail) tails.delete(key);
+      });
+      return result;
+    }
+  };
+}
 async function askOverConversation(ask, names, s, screen, conversation) {
   if (!conversation) return { kind: "unreadable" };
   const text = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names)).catch(() => null);
@@ -1644,6 +1658,7 @@ async function readRollout(path, cwd, currentTurnId) {
 var MODEL = "gpt-6.1-sol";
 var TIMEOUT_MS = 12e4;
 var RESULTS_WAIT_MS = 4 * TIMEOUT_MS;
+var resultsOrder = orderedKeys();
 var OFF = [
   "shell_tool",
   "unified_exec",
@@ -1746,7 +1761,10 @@ var runUpdates2 = (dir, sessionId, ask, now) => runUpdates({
   ...codexStore(dir, sessionId, now),
   ask,
   names: CODEX,
-  inOrder: (fn) => withLock(`${statePath(dir, sessionId)}.results`, fn, RESULTS_WAIT_MS),
+  inOrder: (fn) => resultsOrder.run(
+    statePath(dir, sessionId),
+    () => withLock(`${statePath(dir, sessionId)}.results`, fn, RESULTS_WAIT_MS)
+  ),
   catchUp: async (s) => askOverConversation(
     ask,
     CODEX,

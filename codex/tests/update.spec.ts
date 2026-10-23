@@ -249,6 +249,48 @@ test('results calls run one after another, and the second reads the first one’
   )
 })
 
+test('three results calls write in the order their updates landed', async () => {
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({
+    ...s,
+    presence: { ...s.presence, turnsStarted: 3 },
+    pending: [
+      { ex: ex(1, 'Built the first script.'), turnsStarted: 1 },
+      { ex: ex(2, 'Built the second script.'), turnsStarted: 2 },
+      { ex: ex(3, 'Built the third script.'), turnsStarted: 3 },
+    ],
+  }))
+  let release: () => void = () => undefined
+  const held = new Promise<void>(resolve => (release = resolve))
+  let resultsCalls = 0
+  const running = runBothCalls(
+    dir,
+    's1',
+    async (_prompt, system) => {
+      if (system !== RESULTS_SYSTEM) return 'GOAL: Ship'
+      resultsCalls += 1
+      const mine = resultsCalls
+      if (mine === 1) await held
+
+      return `DONE: Script ${mine} built`
+    },
+    () => 5,
+  )
+  let shown = await readState(dir, 's1')
+  for (let waited = 0; shown.pending.length > 0 && waited < 300; waited += 1) {
+    await new Promise(resolve => setTimeout(resolve, 10))
+    shown = await readState(dir, 's1')
+  }
+  await new Promise(resolve => setTimeout(resolve, 200))
+  release()
+  await running
+
+  assert.deepEqual(
+    (await readState(dir, 's1')).ledger.milestones.map(m => m.text),
+    ['Script 1 built', 'Script 2 built', 'Script 3 built'],
+  )
+})
+
 test('pending exchanges reach the ledger in order, a failed one waits for the next update, and a second failure drops it', async () => {
   const dir = tempDir()
   await updateState(dir, 's1', s => ({

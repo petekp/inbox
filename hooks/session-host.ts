@@ -146,7 +146,7 @@ export type UpdateHost<S extends Session> = Pick<SessionHost<S>, 'now' | 'read' 
   inOrder<T>(fn: () => Promise<T>): Promise<T>
   /**
    * Keeps the results calls running after `runUpdates` returns, so the next update starts at once. Absent: `runUpdates`
-   * returns only once they have finished, as a hook process must stay alive until its calls end.
+   * returns only once they have finished, as a Codex update process must stay alive until its calls end.
    */
   background?(results: Promise<void>): void
 }

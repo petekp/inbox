@@ -206,7 +206,7 @@ In Claude Code, the inbox adds two things:
 | What the inbox adds | Tokens | Cost at API prices |
 |---|---|---|
 | A Sonnet call after each of Claude's replies, to update the inbox | 3–4k in, about 2k of it cached. 100–250 out. | About 0.5¢ per reply, or 1¢ after 5 idle minutes |
-| A second Sonnet call, to write the results | About 1.2k in on a short exchange (1,175–1,358 in four eval runs). 14–100 out. | Less than the first call, which reads about 3k in |
+| A second Sonnet call, to write the results | About 1.2k in and 14–44 out on a short exchange (three eval runs: 1,175–1,214 in). A catch-up over a conversation reads more: 1,358 in and 100 out in the one run. | Less than the first call, which reads about 3k in |
 | Its instructions and tools, sent with every request Claude makes | About 1,350, cached | Under 0.1¢ per request |
 
 On a Claude plan, these count toward your usage limits.
