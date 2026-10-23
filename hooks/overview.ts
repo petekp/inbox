@@ -53,7 +53,7 @@ const STATES: readonly Overview['state'][] = ['on-track', 'stuck', 'finished']
 const BULLET_ITEM = /^\s*[-*]\s*[a-z-]+\s*\|/
 
 const KEY_LINE =
-  /^\s*[-*]?\s*(UNCHANGED|KIND|TOPIC|STATE|HEADLINE|STATUS|COURSE|FOLDED|QUEUE|WORKS|OPEN|NEXT|SINCE|STREAM)\s*:?\s*(.*)$/
+  /^\s*[-*]?\s*(UNCHANGED|KIND|TOPIC|STATE|HEADLINE|STATUS|COURSE|FOLDED|QUEUE|WORKS|OPEN|NEXT|SINCE|STREAM)\s*(?::\s*(.*)|$)/
 
 /** The first `limit` words of `text`, with an ellipsis when words were cut. */
 export function clipWords(text: string, limit: number): string {

@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { parseArgs } from 'node:util'
 
 import { applyExchangeUpdate, applyUpdate, EMPTY, parseReply, upgradeLedger } from '../hooks/ledger'
@@ -69,6 +69,14 @@ type Check =
   | { sinceAtMost: number }
   /** No two items of different lists, other than SINCE, say the same thing. */
   | { partsNotRepeated: true }
+  /** No item with this status matches the pattern in any list: finished work does not stay as under way. */
+  | { noOverviewItem: string; status: OverviewItem['status'] }
+  /** No text holds all of these words, as a paraphrase of a question that offers these choices would. */
+  | { noTextWithAll: string[] }
+  /** The answer stays on the same topic and writes no COURSE line. */
+  | { sameTopicNoCourseLine: true }
+  /** The answer starts a new topic with a FOLDED line that differs from the old headline. */
+  | { foldsWithLine: true }
   /** No two SINCE items say the same thing. */
   | { sinceNoRepeat: true }
   | { workstreamsAtLeast: number }
@@ -118,6 +126,11 @@ const about = provenance(
     'systemText claude': systemText(CLAUDE_CODE),
     'systemText codex': systemText(CODEX),
     'overview systemText': OVERVIEW_SYSTEM,
+    'overview prompts': [
+      overviewPrompt(null, { turn: 1, person: 'p', activity: ['a'], reply: 'r' } as Exchange),
+      overviewCatchUpPrompt(null, 'c'),
+    ].join('\n'),
+    'overview parser': readFileSync(join(dirname(process.argv[1]!), '../hooks/overview.ts'), 'utf8'),
     cases: readFileSync(values.cases, 'utf8'),
     models: JSON.stringify({ claude: CLAUDE_MODEL, codex: MODEL }),
     runner: readFileSync(process.argv[1]!, 'utf8'),
@@ -223,6 +236,10 @@ const OVERVIEW_KEYS = [
   'asksNotRestated',
   'sinceAtMost',
   'partsNotRepeated',
+  'noOverviewItem',
+  'noTextWithAll',
+  'sameTopicNoCourseLine',
+  'foldsWithLine',
   'sinceNoRepeat',
   'workstreamsAtLeast',
   'overviewItem',
@@ -253,7 +270,8 @@ const EVENT_PATTERNS: RegExp[] = [
   /\b[\w-]+\.(?:ts|tsx|js|jsx|json|md|mjs|swift|py|rs|go|sh|css|html)\b/i,
   /\b[0-9a-f]{7,40}\b/,
   /(?:^|\s)#\d+\b|\b[A-Z]{2,}-\d+\b/,
-  /\b\d+\s*(?:tests?|files?|commits?|lines?|calls?|ms|seconds?|minutes?)\b/i,
+  /\b\d+\s+(?:[\p{L}-]+\s+){0,2}(?:tests?|files?|commits?|lines?|calls?|ms|seconds?|minutes?|checks?)\b/iu,
+  /\bcommit(?:s|ted|ting)?\b/i,
   /^(?:ran|run|edited|editing|opened|searched|grepped|installed|executed|called)\b/i,
   /\b(?:tests? (?:ran|run)|tool call|npm |git )\b/i,
 ]
@@ -289,6 +307,29 @@ function overviewFailures(c: OverviewCheck, after: Ledger, run: OverviewRun | nu
   if ('asksNotRestated' in c) {
     const asks = [...after.items.map(i => i.ask), ...after.findings.map(f => f.title)]
     return textsOf(o).flatMap(t => asks.filter(a => restatesText(t, a)).map(a => `"${t}" restates "${a}"`))
+  }
+  if ('noOverviewItem' in c) {
+    const re = new RegExp(c.noOverviewItem, 'i')
+    return LISTS.flatMap(l =>
+      o[l].filter(i => i.status === c.status && re.test(i.text)).map(i => `${l} still has ${c.status}: "${i.text}"`),
+    )
+  }
+  if ('noTextWithAll' in c) {
+    const words = c.noTextWithAll
+    return textsOf(o)
+      .filter(t => words.every(w => t.toLowerCase().includes(w.toLowerCase())))
+      .map(t => `"${t}" names all of ${words.join(', ')}`)
+  }
+  if ('sameTopicNoCourseLine' in c) {
+    const a = run.answer
+    return a.kind === 'written' && !a.isNewTopic && a.overview.course === ''
+      ? []
+      : ['the answer started a new topic or wrote a COURSE line']
+  }
+  if ('foldsWithLine' in c) {
+    const a = run.answer
+    if (a.kind !== 'written' || !a.isNewTopic) return ['the answer did not start a new topic']
+    return a.folded !== '' && a.folded !== run.before?.headline ? [] : ['no FOLDED line beyond the old headline']
   }
   if ('sinceAtMost' in c) return o.since.length <= c.sinceAtMost ? [] : [`${o.since.length} since items`]
   if ('partsNotRepeated' in c) {

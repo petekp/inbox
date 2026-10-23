@@ -79,7 +79,7 @@ var STATUSES = [
 ];
 var STATES = ["on-track", "stuck", "finished"];
 var BULLET_ITEM = /^\s*[-*]\s*[a-z-]+\s*\|/;
-var KEY_LINE = /^\s*[-*]?\s*(UNCHANGED|KIND|TOPIC|STATE|HEADLINE|STATUS|COURSE|FOLDED|QUEUE|WORKS|OPEN|NEXT|SINCE|STREAM)\s*:?\s*(.*)$/;
+var KEY_LINE = /^\s*[-*]?\s*(UNCHANGED|KIND|TOPIC|STATE|HEADLINE|STATUS|COURSE|FOLDED|QUEUE|WORKS|OPEN|NEXT|SINCE|STREAM)\s*(?::\s*(.*)|$)/;
 function clipWords(text, limit) {
   const words2 = text.trim().split(/\s+/).filter(Boolean);
   return words2.length <= limit ? words2.join(" ") : `${words2.slice(0, limit).join(" ")}\u2026`;
@@ -896,7 +896,7 @@ Status is one of: working, queued, waits-on-you, waits-on-other, done, ruled-out
 Rules:
 - Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed.
 - Do not write a question or task the agent put to the person. Say the work waits, and stop.
-- Say each fact once, in the list that fits it best. Work that just finished goes in QUEUE or in WORKS, not both. What a stream is doing goes in STREAM, not again in QUEUE. SINCE may repeat the other lists, since it says what changed.
+- Say each fact once, in the list that fits it best. Work that just finished goes in QUEUE or in WORKS, not both. What a stream is doing goes in STREAM, not again in QUEUE or WORKS. NEXT holds only what the queue does not already name. SINCE may repeat the other lists, since it says what changed.
 - Leave a list out when it has nothing worth saying. Do not fill a list to fill it.`;
 function overviewBlocks(last) {
   return [`<last>${NL4}${overviewText(last)}${NL4}</last>`, `<unseen>${NL4}${sinceText(last)}${NL4}</unseen>`];

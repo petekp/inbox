@@ -253,3 +253,13 @@ test('the page counts what waits on the person and draws parts in order', () => 
   )
   expect(quiet.quiet).toBe(QUIET_TEXT)
 })
+
+test('a line that only starts with a key word is not a key line', () => {
+  const { overview } = written(
+    'HEADLINE: h\nSTATUS: fine\nOPENING the file went well\nNEXTSTEP is a word\nQUEUE:\n- working | a',
+  )
+
+  expect(overview.headline).toBe('h')
+  expect(overview.status).toBe('fine')
+  expect(overview.queue.map(i => i.text)).toEqual(['a'])
+})

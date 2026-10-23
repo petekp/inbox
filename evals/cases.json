@@ -2639,6 +2639,9 @@
       },
       {
         "partsNotRepeated": true
+      },
+      {
+        "sameTopicNoCourseLine": true
       }
     ]
   },
@@ -2784,6 +2787,10 @@
       },
       {
         "partsNotRepeated": true
+      },
+      {
+        "noOverviewItem": "parser",
+        "status": "working"
       }
     ]
   },
@@ -2843,6 +2850,9 @@
       },
       {
         "featureLevel": true
+      },
+      {
+        "noTextWithAll": ["keep", "skip"]
       }
     ]
   },
@@ -2888,6 +2898,9 @@
       },
       {
         "featureLevel": true
+      },
+      {
+        "foldsWithLine": true
       }
     ]
   },
