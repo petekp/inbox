@@ -820,14 +820,14 @@ Input:
 - <listed>: results already on the list, newest first
 - <open>: questions and tasks waiting on the person, as id | label | ask
 - <findings>: findings waiting for the person, as id | title
-- <handled>: what the inbox already lists from this exchange: questions the person answered, as answered: ask | answer, and findings the agent fixed, as fixed: title
+- <handled>: what the inbox already lists from this exchange, with the work the agent did for each: questions the person answered, as answered: ask | answer, and findings the agent fixed, as fixed: title
 - <person>: what the person just sent
 - <activity>: what the agent did this turn (files edited, commands, URLs)
 - <reply>: the agent's final reply
 
 Answer with lines only, each starting with DONE:. No other text.
 
-DONE: one result the agent finished, at most 8 words, past tense: something that now holds, such as code written, a cause found or a PR opened. Commands run, checks passing and plans are not results. Write no DONE line when nothing finished. Oldest first. Never repeat a result <listed> has, even reworded. The inbox already lists what <handled> names: write no DONE line for that work.`;
+DONE: one result the agent finished, at most 8 words, past tense: something that now holds, such as code written, a cause found or a PR opened. Commands run, checks passing and plans are not results. Write no DONE line when nothing finished. Oldest first. Never repeat a result <listed> has, even reworded. The inbox already lists everything <handled> names, so a result that carries out an answer or makes a fix there is already shown: write no DONE line for it, however you would word it.`;
 function resultsBlocks(ledger, handled, isCatchUp) {
   const listed = ledger.milestones.slice(isCatchUp ? 0 : -LISTED_SHOWN).reverse().map((m) => m.text).join(NL3);
   const open2 = ledger.items.map((i) => `${i.id} | ${i.label ?? "-"} | ${i.ask}`).join(NL3);
