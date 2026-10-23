@@ -1092,3 +1092,35 @@ test('a look starts when the panel shows the Overview and ends on another tab or
   await settle()
   expect(state().ledger.overview.look).toBeNull()
 })
+
+test('a todo result replaces the agent task list with the whole list it carries', async () => {
+  createInbox(pi(), deps())
+  await prompt('hello')
+  await call('tool_result', {
+    toolName: 'todo',
+    input: {},
+    content: [],
+    isError: false,
+    details: {
+      op: 'add',
+      phases: [
+        {
+          name: 'Fix',
+          tasks: [
+            { content: 'Read the parser', status: 'completed' },
+            { content: 'Fix it', status: 'in_progress' },
+          ],
+        },
+      ],
+    },
+  })
+  await settle()
+  expect(state().hostTasks).toEqual([
+    { id: '1', text: 'Read the parser', status: 'done' },
+    { id: '2', text: 'Fix it', status: 'in-progress' },
+  ])
+
+  await call('tool_result', { toolName: 'todo', input: {}, content: [], isError: false, details: {} })
+  await settle()
+  expect(state().hostTasks).toHaveLength(2)
+})

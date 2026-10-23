@@ -1,4 +1,4 @@
-import type { Closed, Finding, Item, Ledger, Overview, Told } from '../types'
+import type { Closed, Finding, HostTask, Item, Ledger, Overview, Told } from '../types'
 
 export type { Told } from '../types'
 import type { Exchange } from './ledger'
@@ -12,6 +12,7 @@ import {
   SENTENCE_WORDS,
   sinceText,
 } from './overview'
+import { tasksText } from './host-tasks'
 import { clip, clipMiddle, numberBlocks } from './text'
 
 const NL = '\n'
@@ -296,6 +297,7 @@ The guide is about the work. It is not a log of what the agent did, and it is no
 Input:
 - <last>: the guide as it was, in the same lines you write
 - <unseen>: the changes the person has not yet looked at, as SINCE lines
+- <tasks>: the agent's own task list, when it keeps one, as TASK lines. It is evidence for QUEUE, not the guide: write each item at the level of the feature, and leave a task out that is only a step of another.
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
 - <reply>: the agent's final reply
@@ -327,26 +329,32 @@ Rules:
 - Say each fact once, in the list that fits it best. Work that finished stays in QUEUE as done. WORKS holds only what works that QUEUE does not already name. What a stream is doing, and what it finished, stays on its STREAM line and is not written again in QUEUE, WORKS or OPEN. NEXT holds only what the queue does not already name. SINCE may repeat the other lists, since it says what changed.
 - Leave a list out when it has nothing worth saying. Do not fill a list to fill it.`
 
-function overviewBlocks(last: Overview | null): string[] {
-  return [`<last>${NL}${overviewText(last)}${NL}</last>`, `<unseen>${NL}${sinceText(last)}${NL}</unseen>`]
+function overviewBlocks(last: Overview | null, tasks: HostTask[]): string[] {
+  const list = tasksText(tasks)
+
+  return [
+    `<last>${NL}${overviewText(last)}${NL}</last>`,
+    `<unseen>${NL}${sinceText(last)}${NL}</unseen>`,
+    ...(list === '' ? [] : [`<tasks>${NL}${list}${NL}</tasks>`]),
+  ]
 }
 
 /** `last` is the Overview before the exchange. */
-export function overviewPrompt(last: Overview | null, ex: Exchange): string {
+export function overviewPrompt(last: Overview | null, ex: Exchange, tasks: HostTask[] = []): string {
   const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? 'unknown'}.)`
 
   return [
-    ...overviewBlocks(last),
+    ...overviewBlocks(last, tasks),
     `<person>${NL}${clipMiddle(person, 4000, 1500)}${NL}</person>`,
     `<activity>${NL}${clipMiddle(ex.activity.join(NL), 2500, 500)}${NL}</activity>`,
     `<reply>${NL}${clipMiddle(numberBlocks(ex.reply), 12000, 4000)}${NL}</reply>`,
   ].join(NL)
 }
 
-export function overviewCatchUpPrompt(last: Overview | null, transcript: string): string {
+export function overviewCatchUpPrompt(last: Overview | null, transcript: string, tasks: HostTask[] = []): string {
   return [
     'Treat the conversation in <conversation> as the exchange. Its start may be cut. Write the guide as it stands at the end of the conversation.',
-    ...overviewBlocks(last),
+    ...overviewBlocks(last, tasks),
     `<conversation>${NL}${numberBlocks(transcript)}${NL}</conversation>`,
   ].join(NL)
 }

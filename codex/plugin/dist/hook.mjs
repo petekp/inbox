@@ -173,6 +173,42 @@ var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
 var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
 var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
 
+// ../hooks/host-tasks.ts
+var STATUSES2 = {
+  pending: "pending",
+  in_progress: "in-progress",
+  "in-progress": "in-progress",
+  completed: "done",
+  done: "done",
+  abandoned: "dropped",
+  deleted: "dropped",
+  blocked: "blocked"
+};
+var statusOf = (raw) => STATUSES2[String(raw)] ?? "pending";
+var textOf = (raw) => typeof raw === "string" ? raw.trim() : "";
+var recordOf = (raw) => typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
+function codexPlanOf(args) {
+  const parsed = typeof args === "string" ? safeJson(args) : args;
+  const plan = recordOf(parsed).plan;
+  if (!Array.isArray(plan)) return null;
+  return plan.map((row, n) => ({ id: String(n + 1), text: textOf(recordOf(row).step), status: statusOf(recordOf(row).status) })).filter((t) => t.text !== "");
+}
+function safeJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+function upgradeHostTasks(saved) {
+  if (!Array.isArray(saved)) return [];
+  return saved.flatMap((raw) => {
+    const t = recordOf(raw);
+    const status = STATUSES2[String(t.status)];
+    return typeof t.id === "string" && typeof t.text === "string" && t.text !== "" && status ? [{ id: t.id, text: t.text, status }] : [];
+  });
+}
+
 // ../hooks/model-text.ts
 var NL = "\n";
 function guidanceText(host) {
@@ -274,6 +310,7 @@ The guide is about the work. It is not a log of what the agent did, and it is no
 Input:
 - <last>: the guide as it was, in the same lines you write
 - <unseen>: the changes the person has not yet looked at, as SINCE lines
+- <tasks>: the agent's own task list, when it keeps one, as TASK lines. It is evidence for QUEUE, not the guide: write each item at the level of the feature, and leave a task out that is only a step of another.
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
 - <reply>: the agent's final reply
@@ -569,7 +606,8 @@ function emptySession() {
     lastActions: {},
     heldRows: [],
     prViews: NO_PRS,
-    stop: null
+    stop: null,
+    hostTasks: []
   };
 }
 var SESSION_ID = /^[\w-]{1,100}$/;
@@ -624,7 +662,8 @@ function upgradeSession(saved) {
       ),
       isFetching: false
     },
-    stop: saved.stop ?? null
+    stop: saved.stop ?? null,
+    hostTasks: upgradeHostTasks(saved.hostTasks)
   };
 }
 function startContext(host, s, source) {
@@ -635,6 +674,7 @@ function startContext(host, s, source) {
 function cleared(s) {
   return {
     ...s,
+    hostTasks: [],
     ledger: EMPTY,
     turn: NO_TURN,
     told: { inbox: null, closed: [] },
@@ -1099,6 +1139,7 @@ async function forkedFromId(path) {
 var DIALOG_TOOL = "request_user_input_async";
 var TAIL_BYTES = 4 * 1024 * 1024;
 var SHELL_CALLS = /* @__PURE__ */ new Set(["shell", "shell_command", "exec_command", "container.exec"]);
+var PLAN_TOOL = "update_plan";
 var MARKERS = ['"task_started"', DIALOG_TOOL, '"CommandExecution"', '"function_call', '"local_shell_call'];
 var isText = (v) => typeof v === "string";
 function commandText(command) {
@@ -1143,12 +1184,12 @@ async function tailLines(path, bytes) {
 }
 var TURN_ROW_BYTES = 64 * 1024;
 async function turnIn(path, turnId) {
-  const none = { dialogs: [], commands: [] };
+  const none = { dialogs: [], commands: [], plan: null };
   if (path === null) return none;
   try {
     const lines = await tailLines(path, TAIL_BYTES);
     const byTurn = /* @__PURE__ */ new Map();
-    const newTurn = () => ({ dialogs: [], executions: [], calls: /* @__PURE__ */ new Map(), called: [] });
+    const newTurn = () => ({ dialogs: [], executions: [], calls: /* @__PURE__ */ new Map(), called: [], plan: null });
     let current = "";
     let newest = "";
     for (const line of lines) {
@@ -1172,6 +1213,8 @@ async function turnIn(path, turnId) {
       if (row.type === "event_msg" && p.type === "item_completed" && p.item?.type === "CommandExecution") {
         const output = p.item.aggregated_output;
         turn2.executions.push({ command: commandText(p.item.command), output: isText(output) ? output : "" });
+      } else if (row.type === "response_item" && p.type === "function_call" && p.name === PLAN_TOOL) {
+        turn2.plan = codexPlanOf(p.arguments) ?? turn2.plan;
       } else if (row.type === "response_item" && p.type === "function_call" && p.name === DIALOG_TOOL) {
         let args;
         try {
@@ -1193,7 +1236,8 @@ async function turnIn(path, turnId) {
     if (!turn) return none;
     return {
       dialogs: turn.dialogs.filter((questions) => questions.length > 0),
-      commands: turn.executions.length > 0 ? turn.executions : turn.called
+      commands: turn.executions.length > 0 ? turn.executions : turn.called,
+      plan: turn.plan
     };
   } catch {
     return none;
@@ -1201,11 +1245,11 @@ async function turnIn(path, turnId) {
 }
 var ROLLOUT_BYTES = 8 * 1024 * 1024;
 var record = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
-var textOf = (v) => isText(v) ? v : "";
-var contentText = (content) => (Array.isArray(content) ? content : []).map((part) => textOf(record(part).text)).filter(Boolean).join("\n").trim();
+var textOf2 = (v) => isText(v) ? v : "";
+var contentText = (content) => (Array.isArray(content) ? content : []).map((part) => textOf2(record(part).text)).filter(Boolean).join("\n").trim();
 var jsonRecord = (raw) => {
   try {
-    return record(JSON.parse(textOf(raw)));
+    return record(JSON.parse(textOf2(raw)));
   } catch {
     return {};
   }
@@ -1213,7 +1257,7 @@ var jsonRecord = (raw) => {
 var literalValue = (literal) => {
   if (literal === void 0) return null;
   try {
-    return textOf(JSON.parse(literal));
+    return textOf2(JSON.parse(literal));
   } catch {
     return null;
   }
@@ -1226,10 +1270,10 @@ var shellLines = (command) => {
 };
 var editLines = (patch, cwd) => patchFiles(patch).map((file) => `edited ${resolve2(cwd || "/", file)}`);
 function callLines(p, hasCommandRows, cwd) {
-  const name = textOf(p.name);
+  const name = textOf2(p.name);
   if (p.type === "local_shell_call") return hasCommandRows ? [] : shellLines(callCommand(p));
   if (p.type === "custom_tool_call" && name === "exec") {
-    const input = textOf(p.input);
+    const input = textOf2(p.input);
     const patch = literalValue(PATCH_ARGUMENT.exec(input)?.[1]);
     const command = literalValue(COMMAND_ARGUMENT.exec(input)?.[1]);
     return [...patch ? editLines(patch, cwd) : [], ...command && !hasCommandRows ? shellLines(command) : []];
@@ -1237,16 +1281,16 @@ function callLines(p, hasCommandRows, cwd) {
   if (p.type !== "function_call") return [];
   if (SHELL_CALLS.has(name)) return hasCommandRows ? [] : shellLines(callCommand(p));
   const args = jsonRecord(p.arguments);
-  if (name === "apply_patch") return editLines(textOf(args.input ?? args.patch ?? args.command), cwd);
+  if (name === "apply_patch") return editLines(textOf2(args.input ?? args.patch ?? args.command), cwd);
   if (name === "spawn_agent") {
-    const line2 = activityOf("Agent", { description: textOf(args.task_name) });
+    const line2 = activityOf("Agent", { description: textOf2(args.task_name) });
     return line2 ? [line2] : [];
   }
   if (name === DIALOG_TOOL) return [dialogActivity(dialogQuestions(args.questions), { kind: "open" })];
-  const line = activityOf(textOf(p.namespace).startsWith("mcp__") ? textOf(p.namespace) + name : name, {});
+  const line = activityOf(textOf2(p.namespace).startsWith("mcp__") ? textOf2(p.namespace) + name : name, {});
   return line ? [line] : [];
 }
-var isItem2 = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf(record(record(row.payload).item).type));
+var isItem2 = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf2(record(record(row.payload).item).type));
 function turnsOf(rows, cwd) {
   const hasMessageRows = rows.some((row) => isItem2(row, "UserMessage", "AgentMessage"));
   const hasCommandRows = rows.some((row) => isItem2(row, "CommandExecution"));
@@ -1292,7 +1336,7 @@ function rolloutTurns(lines, cwd) {
     }
     const p = record(row.payload);
     if (row.type === "event_msg" && p.type === "task_started") {
-      groups.push({ id: textOf(p.turn_id) || textOf(record(p.turn_attribution).turn_id), isComplete: false, rows: [] });
+      groups.push({ id: textOf2(p.turn_id) || textOf2(record(p.turn_attribution).turn_id), isComplete: false, rows: [] });
       continue;
     }
     if (groups.length === 0) groups.push({ id: "", isComplete: false, rows: [] });
@@ -1396,12 +1440,13 @@ async function handleHook(input, deps) {
     }
     case "Stop": {
       const reply = input.last_assistant_message ?? "";
-      const { dialogs, commands } = await turnIn(input.transcript_path, input.turn_id);
+      const { dialogs, commands, plan } = await turnIn(input.transcript_path, input.turn_id);
       const lines = dialogs.map((questions) => dialogActivity(questions, { kind: "open" }));
       const written = await updateState(dir, id, async (s) => {
         const withLines = lines.reduce((x, line) => noteActivity(x, line), withHost(await withHistory(s)));
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines);
-        return noteHook(turnEnded(endTurn2(withOutput, reply, now())), "stop", now());
+        const ended = noteHook(turnEnded(endTurn2(withOutput, reply, now())), "stop", now());
+        return plan === null ? ended : { ...ended, hostTasks: plan };
       });
       if (needsUpdate(written)) deps.startUpdate(id);
       return null;

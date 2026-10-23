@@ -340,6 +340,11 @@ export type Press = { id: string; action: 'answer' | 'explain' | 'run' | 'done' 
 /** The inbox text the agent last read beside a prompt, and the closed items it was told about. */
 export type Told = { inbox: string | null; closed: string[] }
 
+export type HostTaskStatus = 'pending' | 'in-progress' | 'done' | 'dropped' | 'blocked'
+
+/** One task of the agent's own task list, as its host reports it. */
+export type HostTask = { id: string; text: string; status: HostTaskStatus }
+
 /** One conversation's inbox: what every host saves and the shared session functions change. */
 export type Session = {
   ledger: Ledger
@@ -396,6 +401,8 @@ export type Session = {
   prViews: PrViews
   /** Why the last turn stopped, until the next turn starts. */
   stop: Stop | null
+  /** The agent's own task list, when its host reports one. Empty when the agent keeps none. */
+  hostTasks: HostTask[]
 }
 
 declare module 'claude-code' {

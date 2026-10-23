@@ -3058,5 +3058,57 @@
         "featureLevel": true
       }
     ]
+  },
+  {
+    "name": "overview-host-tasks",
+    "about": "The agent's own task list is evidence for the queue. Its steps become work at the level of the feature, not file names or commands.",
+    "ledger": {
+      "turn": 1,
+      "nextId": 1,
+      "overview": null
+    },
+    "hostTasks": [
+      {
+        "id": "1",
+        "text": "Read src/checkout/total.ts",
+        "status": "done"
+      },
+      {
+        "id": "2",
+        "text": "Move the coupon step ahead of the total in total.ts",
+        "status": "in-progress"
+      },
+      {
+        "id": "3",
+        "text": "Run the checkout tests",
+        "status": "pending"
+      },
+      {
+        "id": "4",
+        "text": "Check the total in a browser",
+        "status": "pending"
+      }
+    ],
+    "exchange": {
+      "turn": 1,
+      "person": "The checkout page sometimes shows the wrong total after a coupon is applied. Find out why and fix it.",
+      "activity": ["read src/checkout/total.ts", "edited src/checkout/total.ts"],
+      "reply": "The total was computed before the coupon applied. I have moved the coupon step ahead of it. Next I will check the total in a browser."
+    },
+    "checks": [
+      {
+        "overview": "written"
+      },
+      {
+        "featureLevel": true
+      },
+      {
+        "overviewItem": "browser|total",
+        "list": "queue"
+      },
+      {
+        "partsNotRepeated": true
+      }
+    ]
   }
 ]

@@ -19,7 +19,7 @@ import { applyOverview, parseOverview } from '../hooks/overview'
 import type { OverviewAnswer } from '../hooks/overview'
 import { CODEX } from '../codex/src/texts'
 import type { Exchange, Update } from '../hooks/ledger'
-import type { Ledger, Overview, OverviewItem } from '../types'
+import type { HostTask, Ledger, Overview, OverviewItem } from '../types'
 import { run } from '../codex/src/run'
 import { codexAsk, MODEL } from '../codex/src/update'
 import { codexCli } from './codex-cli'
@@ -97,6 +97,8 @@ type Case = {
   screen?: { isOpen: boolean; tab?: string; isPage?: boolean }
   /** A conversation to catch the ledger up on, in place of the exchange's per-reply update. */
   catchUp?: string
+  /** The agent's own task list the Overview call reads beside the exchange. */
+  hostTasks?: HostTask[]
   checks: Check[]
   min?: Partial<Record<Agent, number>>
 }
@@ -548,7 +550,9 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
   const needsOverview = c.checks.some(isOverviewCheck)
   if (!needsOverview) return { ...base, error: null, failed: failures(ledger, applied, c.checks, masked, null), masked }
   const overviewInput =
-    c.catchUp === undefined ? overviewPrompt(applied.overview, ex) : overviewCatchUpPrompt(applied.overview, c.catchUp)
+    c.catchUp === undefined
+      ? overviewPrompt(applied.overview, ex, c.hostTasks)
+      : overviewCatchUpPrompt(applied.overview, c.catchUp, c.hostTasks)
   const overviewStarted = Date.now()
   const overviewCall = await ask(overviewInput, OVERVIEW_SYSTEM)
   const withAnswer = {

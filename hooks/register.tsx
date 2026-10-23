@@ -80,6 +80,7 @@ import {
 } from './session-host'
 import type { AskCatchUpOverview, CatchUpReply, SessionHost } from './session-host'
 import { demoView, isDemoCopy, upgradeDemoCopy } from './demo'
+import { claudeTasksAfter } from './host-tasks'
 import type { Exchange, Press, Update } from './ledger'
 import {
   applyPrPress,
@@ -265,6 +266,9 @@ import type { FoldProps } from './fold-client'
 import type { LinksProps } from './links-client'
 import type { RowProps } from './row-client'
 import { TAB_COUNT_GAP, TAB_HEIGHT, type TabsProps } from './tabs-client'
+
+/** The tools Claude Code writes its own task list with. They are off unless the person turns them on. */
+const HOST_TASK_TOOLS: ReadonlySet<string> = new Set(['TaskCreate', 'TaskUpdate', 'TodoWrite'])
 
 const TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'needsYou' as Tab)
 /**
@@ -970,9 +974,9 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
     $.session.messages().then(transcriptText),
   ])
   // The Overview call reads the transcript. With none to read, it writes no Overview.
-  const overview: AskCatchUpOverview = async last => {
+  const overview: AskCatchUpOverview = async (last, tasks) => {
     if (!transcript || !isCurrent(owner)) return null
-    const r = await askLedgerModel($, overviewCatchUpPrompt(last, transcript), OVERVIEW_SYSTEM, 90_000)
+    const r = await askLedgerModel($, overviewCatchUpPrompt(last, transcript, tasks), OVERVIEW_SYSTEM, 90_000)
 
     return r.isAnswered ? r.text : null
   }
@@ -2615,6 +2619,16 @@ export const register: Register = on => {
       const outcome = dialogOutcome(ran)
       await noteActivity($, dialogActivity(dialogQuestions(input.questions), outcome))
       if (outcome.kind === 'dismissed') isDialogDismissed = true
+
+      return ran
+    }
+    if (HOST_TASK_TOOLS.has(String(e.tool))) {
+      const ran = await run()
+      const tool = String(e.tool)
+      await commit($, currentOwner(), s => ({
+        ...s,
+        hostTasks: claudeTasksAfter(s.hostTasks, tool, input, ran.text ?? null),
+      })).catch(() => undefined)
 
       return ran
     }

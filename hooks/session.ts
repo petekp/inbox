@@ -17,6 +17,7 @@ import { applyPress, upgradeLastActions, withAcceptedSend, withArrival, withRewr
 import type { RowPress } from './presses'
 import { prNeedsYou, prRefs } from './prs'
 import { recordClose, recordItem } from './tools'
+import { upgradeHostTasks } from './host-tasks'
 import { applyOverview, lookEnded, lookStarted } from './overview'
 import type { OverviewAnswer } from './overview'
 import { inboxView, NO_HOLDS, overviewPage, perTurnStatus } from './view'
@@ -48,6 +49,7 @@ export function emptySession(): Session {
     heldRows: [],
     prViews: NO_PRS,
     stop: null,
+    hostTasks: [],
   }
 }
 
@@ -146,6 +148,7 @@ export function upgradeSession(saved: SavedSession): Session {
       isFetching: false,
     },
     stop: saved.stop ?? null,
+    hostTasks: upgradeHostTasks(saved.hostTasks),
   }
 }
 
@@ -163,6 +166,7 @@ export function startContext(host: Host, s: Session, source: string | undefined)
 export function cleared<S extends Session>(s: S): S {
   return {
     ...s,
+    hostTasks: [],
     ledger: EMPTY,
     turn: NO_TURN,
     told: { inbox: null, closed: [] },

@@ -561,3 +561,47 @@ test('a new session, a compaction start, a subagent and a session with recorded 
   assert.equal((await readState(dir, 's4')).presence.ledgerState, 'current')
   assert.deepEqual(deps.updates, [])
 })
+
+test('a Stop reads the turn’s last update_plan into the agent task list, and a turn with no plan leaves it', async () => {
+  const dir = tempDir()
+  const transcript = join(tempDir(), 'rollout.jsonl')
+  const deps = hookDeps(dir)
+  const plan = (rows: unknown[]) => ({
+    type: 'response_item',
+    payload: { type: 'function_call', name: 'update_plan', arguments: JSON.stringify({ plan: rows }) },
+  })
+  writeFileSync(
+    transcript,
+    [
+      { type: 'event_msg', payload: { type: 'task_started', turn_id: 't1' } },
+      plan([{ step: 'Read the parser', status: 'in_progress' }]),
+      plan([
+        { step: 'Read the parser', status: 'completed' },
+        { step: 'Fix it', status: 'in_progress' },
+      ]),
+    ]
+      .map(row => JSON.stringify(row))
+      .join('\n'),
+  )
+
+  await handleHook(input('UserPromptSubmit', { prompt: 'Fix the parser', turn_id: 't1' }), deps)
+  await handleHook(
+    input('Stop', { turn_id: 't1', transcript_path: transcript, last_assistant_message: 'Working.' }),
+    deps,
+  )
+  assert.deepEqual((await readState(dir, 's1')).hostTasks, [
+    { id: '1', text: 'Read the parser', status: 'done' },
+    { id: '2', text: 'Fix it', status: 'in-progress' },
+  ])
+
+  await handleHook(input('UserPromptSubmit', { prompt: 'Go on', turn_id: 't2' }), deps)
+  await handleHook(
+    input('Stop', {
+      turn_id: 't2',
+      transcript_path: join(tempDir(), 'missing.jsonl'),
+      last_assistant_message: 'Done.',
+    }),
+    deps,
+  )
+  assert.equal((await readState(dir, 's1')).hostTasks.length, 2)
+})

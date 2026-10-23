@@ -35,7 +35,7 @@ import {
 } from './session'
 import type { Pressed, SendOutcome, Session } from './session'
 import type { ReplyHolds } from './view'
-import type { Overview, RowNote } from '../types'
+import type { HostTask, Overview, RowNote } from '../types'
 
 export type Exclusive<T> = { acquired: true; value: T } | { acquired: false }
 
@@ -120,7 +120,7 @@ export type SessionHost<S extends Session> = {
  * Asks the Overview call for the guide as the whole conversation leaves it, given the Overview before. Null when the
  * call fails.
  */
-export type AskCatchUpOverview = (last: Overview | null) => Promise<string | null>
+export type AskCatchUpOverview = (last: Overview | null, tasks: HostTask[]) => Promise<string | null>
 
 /** What a host's catch-up found: the model's answer to apply, or why there is none. */
 export type CatchUpReply =
@@ -171,7 +171,7 @@ export async function askOverConversation(
         kind: 'reply',
         text,
         source: conversation,
-        overview: last => ask(overviewCatchUpPrompt(last, conversation), OVERVIEW_SYSTEM),
+        overview: (last, tasks) => ask(overviewCatchUpPrompt(last, conversation, tasks), OVERVIEW_SYSTEM),
       }
 }
 
@@ -218,10 +218,10 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
   const hasWork = (s: S) => s.pending.length > 0 || wantsCatchUp(s)
   const writing: Promise<void>[] = []
   /** Runs the Overview call for an applied update and writes its answer. */
-  const writeOverview = async (after: S, ask: (last: Overview | null) => Promise<string | null>) =>
+  const writeOverview = async (after: S, ask: AskCatchUpOverview) =>
     host.inOrder(async () => {
-      const { ledger } = await host.read()
-      const answer = parseOverview(await ask(ledger.overview).catch(() => null))
+      const { ledger, hostTasks } = await host.read()
+      const answer = parseOverview(await ask(ledger.overview, hostTasks).catch(() => null))
       if (answer === null) return
       await host.update(x => appliedOverview(x, answer, after.presence.turnsApplied))
     })
@@ -262,7 +262,9 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
               return applied(x, reply, await host.now(), promptAt)
             })
             if (isApplied)
-              followUp(writeOverview(after, last => host.ask(overviewPrompt(last, next.ex), OVERVIEW_SYSTEM)))
+              followUp(
+                writeOverview(after, (last, tasks) => host.ask(overviewPrompt(last, next.ex, tasks), OVERVIEW_SYSTEM)),
+              )
             if (after.pending[0]?.failed && !next.failed) return 'stop' as const
           }
         } finally {

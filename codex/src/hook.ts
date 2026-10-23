@@ -116,13 +116,15 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
     }
     case 'Stop': {
       const reply = input.last_assistant_message ?? ''
-      const { dialogs, commands } = await turnIn(input.transcript_path, input.turn_id)
+      const { dialogs, commands, plan } = await turnIn(input.transcript_path, input.turn_id)
       const lines = dialogs.map(questions => dialogActivity(questions, { kind: 'open' }))
       const written = await updateState(dir, id, async s => {
         const withLines = lines.reduce((x, line) => noteActivity(x, line), withHost(await withHistory(s)))
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines)
 
-        return noteHook(turnEnded(endTurn(withOutput, reply, now())), 'stop', now())
+        const ended = noteHook(turnEnded(endTurn(withOutput, reply, now())), 'stop', now())
+
+        return plan === null ? ended : { ...ended, hostTasks: plan }
       })
       if (needsUpdate(written)) deps.startUpdate(id)
 

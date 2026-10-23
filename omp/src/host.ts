@@ -6,6 +6,7 @@ import type { AssistantMessage, Context, Model } from '@oh-my-pi/pi-ai'
 import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent'
 
 import { flattenConversation } from '../../hooks/conversation'
+import { ompTodoOf } from '../../hooks/host-tasks'
 import type { Turn } from '../../hooks/conversation'
 import { dialogActivity, dialogQuestions, guidanceText, screenText, toolActivity } from '../../hooks/model-text'
 import type { DialogOutcome, ScreenTab } from '../../hooks/model-text'
@@ -696,6 +697,16 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         return
       }
       if (isLinked) fetchPrsWhenDue(ctx)
+      return
+    }
+    if (event.toolName === 'todo') {
+      const tasks = ompTodoOf((event as { details?: unknown }).details)
+      if (tasks === null) return
+      try {
+        await change(sessionIdOf(ctx), s => ({ ...s, hostTasks: tasks }))
+      } catch {
+        return
+      }
       return
     }
     if (event.toolName !== 'ask') return

@@ -26,6 +26,7 @@ export type FeatureId =
   | 'version-label'
   | 'overview-tab'
   | 'turn-working'
+  | 'host-task-list'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -50,6 +51,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'version-label': { kind: 'full' },
       'overview-tab': { kind: 'full' },
       'turn-working': { kind: 'full' },
+      'host-task-list': { kind: 'full' },
     },
   },
   codex: {
@@ -111,6 +113,11 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           "Codex runs no hook when a chat is opened, and a turn whose app-server dies has no end row in the rollout. So after Codex's app-server dies during a turn, Working… stays and Done messages wait until the next message. Quitting the app, even with SIGKILL, ends the turn in the rollout.",
       },
+      'host-task-list': {
+        kind: 'different',
+        reason:
+          "Codex runs no hook for `update_plan`, and the inbox's tool matcher cannot be widened without every person trusting the hook again. So the plan is read from the rollout when the turn stops, and shows from the next Overview call. The tool is not offered by default in `codex exec`, and the app is not checked.",
+      },
     },
   },
   omp: {
@@ -146,6 +153,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'overview-tab': { kind: 'full' },
       'turn-working': { kind: 'full' },
+      'host-task-list': { kind: 'full' },
     },
   },
 }

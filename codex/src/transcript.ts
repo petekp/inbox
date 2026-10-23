@@ -4,9 +4,11 @@ import { open, readdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 import { flattenConversation } from '../../hooks/conversation'
+import { codexPlanOf } from '../../hooks/host-tasks'
 import type { Turn } from '../../hooks/conversation'
 import { addActivity, dialogActivity, dialogQuestions } from '../../hooks/model-text'
 import type { DialogQuestion } from '../../hooks/model-text'
+import type { HostTask } from '../../types'
 import { activityOf, patchFiles } from './core'
 
 type SessionMeta = {
@@ -126,6 +128,9 @@ type TranscriptLine = {
 }
 
 const SHELL_CALLS = new Set(['shell', 'shell_command', 'exec_command', 'container.exec'])
+/** The Codex tool that writes the agent's plan: the rows of the plan, each with a step and a status. */
+const PLAN_TOOL = 'update_plan'
+
 const MARKERS = ['"task_started"', DIALOG_TOOL, '"CommandExecution"', '"function_call', '"local_shell_call']
 
 const isText = (v: unknown): v is string => typeof v === 'string'
@@ -213,7 +218,7 @@ export async function turnRunningIn(path: string): Promise<boolean | null> {
   }
 }
 
-type TurnRows = { dialogs: DialogQuestion[][]; commands: FinishedCommand[] }
+type TurnRows = { dialogs: DialogQuestion[][]; commands: FinishedCommand[]; plan: HostTask[] | null }
 
 /**
  * What the agent did in a turn, oldest first, read from the transcript. Codex runs no hook for its dialog tool,
@@ -226,7 +231,7 @@ type TurnRows = { dialogs: DialogQuestion[][]; commands: FinishedCommand[] }
  * them. A turn with none falls back to older shell calls and their outputs.
  */
 export async function turnIn(path: string | null, turnId: string | undefined): Promise<TurnRows> {
-  const none: TurnRows = { dialogs: [], commands: [] }
+  const none: TurnRows = { dialogs: [], commands: [], plan: null }
   if (path === null) return none
   try {
     const lines = await tailLines(path, TAIL_BYTES)
@@ -235,9 +240,10 @@ export async function turnIn(path: string | null, turnId: string | undefined): P
       executions: FinishedCommand[]
       calls: Map<string, FinishedCommand>
       called: FinishedCommand[]
+      plan: HostTask[] | null
     }
     const byTurn = new Map<string, Turn>()
-    const newTurn = (): Turn => ({ dialogs: [], executions: [], calls: new Map(), called: [] })
+    const newTurn = (): Turn => ({ dialogs: [], executions: [], calls: new Map(), called: [], plan: null })
     let current = ''
     let newest = ''
     for (const line of lines) {
@@ -261,6 +267,8 @@ export async function turnIn(path: string | null, turnId: string | undefined): P
       if (row.type === 'event_msg' && p.type === 'item_completed' && p.item?.type === 'CommandExecution') {
         const output = p.item.aggregated_output
         turn.executions.push({ command: commandText(p.item.command), output: isText(output) ? output : '' })
+      } else if (row.type === 'response_item' && p.type === 'function_call' && p.name === PLAN_TOOL) {
+        turn.plan = codexPlanOf(p.arguments) ?? turn.plan
       } else if (row.type === 'response_item' && p.type === 'function_call' && p.name === DIALOG_TOOL) {
         let args: { questions?: unknown }
         try {
@@ -284,6 +292,7 @@ export async function turnIn(path: string | null, turnId: string | undefined): P
     return {
       dialogs: turn.dialogs.filter(questions => questions.length > 0),
       commands: turn.executions.length > 0 ? turn.executions : turn.called,
+      plan: turn.plan,
     }
   } catch {
     return none

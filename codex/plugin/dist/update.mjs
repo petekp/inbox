@@ -744,8 +744,34 @@ function isLapsed(d) {
   return closedState(d) !== "handled";
 }
 
-// ../hooks/model-text.ts
+// ../hooks/host-tasks.ts
 var NL4 = "\n";
+var TASKS_KEPT = 12;
+var STATUSES2 = {
+  pending: "pending",
+  in_progress: "in-progress",
+  "in-progress": "in-progress",
+  completed: "done",
+  done: "done",
+  abandoned: "dropped",
+  deleted: "dropped",
+  blocked: "blocked"
+};
+var recordOf = (raw) => typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
+function upgradeHostTasks(saved) {
+  if (!Array.isArray(saved)) return [];
+  return saved.flatMap((raw) => {
+    const t = recordOf(raw);
+    const status = STATUSES2[String(t.status)];
+    return typeof t.id === "string" && typeof t.text === "string" && t.text !== "" && status ? [{ id: t.id, text: t.text, status }] : [];
+  });
+}
+function tasksText(tasks) {
+  return tasks.slice(-TASKS_KEPT).map((t) => `TASK: ${t.status} | ${t.text}`).join(NL4);
+}
+
+// ../hooks/model-text.ts
+var NL5 = "\n";
 var MODEL_KIND = { question: "decide", task: "do" };
 function systemText(host) {
   const band = host.band ? ` They always see how many items are in <open> and <findings> in ${host.band}.` : "";
@@ -802,9 +828,9 @@ function transcriptCatchUpPrompt(ledger, screen, transcript) {
   return [
     `Treat the conversation in <conversation> as the exchange. Its start may be cut. ${CATCH_UP}`,
     ...ledgerBlocks(ledger),
-    `<conversation>${NL4}${numberBlocks(transcript)}${NL4}</conversation>`,
-    `<screen>${NL4}${screen}${NL4}</screen>`
-  ].join(NL4);
+    `<conversation>${NL5}${numberBlocks(transcript)}${NL5}</conversation>`,
+    `<screen>${NL5}${screen}${NL5}</screen>`
+  ].join(NL5);
 }
 var MAX_ACTIVITY = 40;
 function addActivity(activity, line) {
@@ -876,28 +902,28 @@ function ledgerBlocks(ledger) {
     ...ledger.card.done.map((d) => `DONE: ${d}`),
     `NOW: ${ledger.card.now}`,
     ...ledger.card.running.map((r) => `RUNNING: ${r}`)
-  ].join(NL4) : "";
+  ].join(NL5) : "";
   const open2 = ledger.items.map(
     (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"}`
-  ).join(NL4);
-  const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL4);
-  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL4);
+  ).join(NL5);
+  const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL5);
+  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL5);
   return [
-    `<card>${NL4}${card}${NL4}</card>`,
-    `<open>${NL4}${open2}${NL4}</open>`,
-    `<findings>${NL4}${findings}${NL4}</findings>`,
-    `<decided>${NL4}${closed}${NL4}</decided>`
+    `<card>${NL5}${card}${NL5}</card>`,
+    `<open>${NL5}${open2}${NL5}</open>`,
+    `<findings>${NL5}${findings}${NL5}</findings>`,
+    `<decided>${NL5}${closed}${NL5}</decided>`
   ];
 }
 function buildPrompt(ledger, ex) {
   const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? "unknown"}.)`;
   return [
     ...ledgerBlocks(ledger),
-    `<person>${NL4}${clipMiddle(person, 4e3, 1500)}${NL4}</person>`,
-    `<activity>${NL4}${clipMiddle(ex.activity.join(NL4), 2500, 500)}${NL4}</activity>`,
-    `<reply>${NL4}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL4}</reply>`,
-    `<screen>${NL4}${ex.screen}${NL4}</screen>`
-  ].join(NL4);
+    `<person>${NL5}${clipMiddle(person, 4e3, 1500)}${NL5}</person>`,
+    `<activity>${NL5}${clipMiddle(ex.activity.join(NL5), 2500, 500)}${NL5}</activity>`,
+    `<reply>${NL5}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL5}</reply>`,
+    `<screen>${NL5}${ex.screen}${NL5}</screen>`
+  ].join(NL5);
 }
 var OVERVIEW_SYSTEM = `You keep a one-page guide to a coding session, for the person who works with the agent. They read it when they come back, to see what the work is, how it is going and what comes next. You read the guide as it was and one exchange, and write the guide as it should be now.
 
@@ -906,6 +932,7 @@ The guide is about the work. It is not a log of what the agent did, and it is no
 Input:
 - <last>: the guide as it was, in the same lines you write
 - <unseen>: the changes the person has not yet looked at, as SINCE lines
+- <tasks>: the agent's own task list, when it keeps one, as TASK lines. It is evidence for QUEUE, not the guide: write each item at the level of the feature, and leave a task out that is only a step of another.
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
 - <reply>: the agent's final reply
@@ -936,24 +963,29 @@ Rules:
 - Leave out that something was committed, pushed, merged or tested, in every line. Say what now works or is fixed.
 - Say each fact once, in the list that fits it best. Work that finished stays in QUEUE as done. WORKS holds only what works that QUEUE does not already name. What a stream is doing, and what it finished, stays on its STREAM line and is not written again in QUEUE, WORKS or OPEN. NEXT holds only what the queue does not already name. SINCE may repeat the other lists, since it says what changed.
 - Leave a list out when it has nothing worth saying. Do not fill a list to fill it.`;
-function overviewBlocks(last) {
-  return [`<last>${NL4}${overviewText(last)}${NL4}</last>`, `<unseen>${NL4}${sinceText(last)}${NL4}</unseen>`];
+function overviewBlocks(last, tasks) {
+  const list = tasksText(tasks);
+  return [
+    `<last>${NL5}${overviewText(last)}${NL5}</last>`,
+    `<unseen>${NL5}${sinceText(last)}${NL5}</unseen>`,
+    ...list === "" ? [] : [`<tasks>${NL5}${list}${NL5}</tasks>`]
+  ];
 }
-function overviewPrompt(last, ex) {
+function overviewPrompt(last, ex, tasks = []) {
   const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? "unknown"}.)`;
   return [
-    ...overviewBlocks(last),
-    `<person>${NL4}${clipMiddle(person, 4e3, 1500)}${NL4}</person>`,
-    `<activity>${NL4}${clipMiddle(ex.activity.join(NL4), 2500, 500)}${NL4}</activity>`,
-    `<reply>${NL4}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL4}</reply>`
-  ].join(NL4);
+    ...overviewBlocks(last, tasks),
+    `<person>${NL5}${clipMiddle(person, 4e3, 1500)}${NL5}</person>`,
+    `<activity>${NL5}${clipMiddle(ex.activity.join(NL5), 2500, 500)}${NL5}</activity>`,
+    `<reply>${NL5}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL5}</reply>`
+  ].join(NL5);
 }
-function overviewCatchUpPrompt(last, transcript) {
+function overviewCatchUpPrompt(last, transcript, tasks = []) {
   return [
     "Treat the conversation in <conversation> as the exchange. Its start may be cut. Write the guide as it stands at the end of the conversation.",
-    ...overviewBlocks(last),
-    `<conversation>${NL4}${numberBlocks(transcript)}${NL4}</conversation>`
-  ].join(NL4);
+    ...overviewBlocks(last, tasks),
+    `<conversation>${NL5}${numberBlocks(transcript)}${NL5}</conversation>`
+  ].join(NL5);
 }
 function surfaceAtStart(host) {
   return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
@@ -1059,7 +1091,8 @@ function emptySession() {
     lastActions: {},
     heldRows: [],
     prViews: NO_PRS,
-    stop: null
+    stop: null,
+    hostTasks: []
   };
 }
 var SESSION_ID = /^[\w-]{1,100}$/;
@@ -1114,7 +1147,8 @@ function upgradeSession(saved) {
       ),
       isFetching: false
     },
-    stop: saved.stop ?? null
+    stop: saved.stop ?? null,
+    hostTasks: upgradeHostTasks(saved.hostTasks)
   };
 }
 function parsedReply(ex, reply) {
@@ -1450,7 +1484,7 @@ async function askOverConversation(ask, names, s, screen, conversation) {
     kind: "reply",
     text,
     source: conversation,
-    overview: (last) => ask(overviewCatchUpPrompt(last, conversation), OVERVIEW_SYSTEM)
+    overview: (last, tasks) => ask(overviewCatchUpPrompt(last, conversation, tasks), OVERVIEW_SYSTEM)
   };
 }
 async function runUpdates(host) {
@@ -1459,8 +1493,8 @@ async function runUpdates(host) {
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
   const writing = [];
   const writeOverview = async (after, ask) => host.inOrder(async () => {
-    const { ledger } = await host.read();
-    const answer = parseOverview(await ask(ledger.overview).catch(() => null));
+    const { ledger, hostTasks } = await host.read();
+    const answer = parseOverview(await ask(ledger.overview, hostTasks).catch(() => null));
     if (answer === null) return;
     await host.update((x) => appliedOverview(x, answer, after.presence.turnsApplied));
   });
@@ -1500,7 +1534,9 @@ async function runUpdates(host) {
               return applied(x, reply, await host.now(), promptAt);
             });
             if (isApplied)
-              followUp(writeOverview(after, (last) => host.ask(overviewPrompt(last, next.ex), OVERVIEW_SYSTEM)));
+              followUp(
+                writeOverview(after, (last, tasks) => host.ask(overviewPrompt(last, next.ex, tasks), OVERVIEW_SYSTEM))
+              );
             if (after.pending[0]?.failed && !next.failed) return "stop";
           }
         } finally {
@@ -1560,7 +1596,7 @@ import { open, readdir as readdir2 } from "node:fs/promises";
 import { join as join3, resolve as resolve2 } from "node:path";
 
 // ../hooks/conversation.ts
-var NL5 = "\n";
+var NL6 = "\n";
 var TRANSCRIPT_MAX = 8e4;
 var MESSAGE_MAX = 6e3;
 function flattenConversation(turns) {
@@ -1585,7 +1621,7 @@ function flattenConversation(turns) {
     }
     kept.push(line);
   }
-  return kept.reverse().join(NL5);
+  return kept.reverse().join(NL6);
 }
 
 // src/transcript.ts

@@ -4108,6 +4108,23 @@ test('the Overview page shows the headline, the status and the queue in place of
   expect(await pane.find({ key: 'address-f3' })).toBeDefined()
 })
 
+test('Claude Code task calls build the agent task list the Overview call reads', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'fix the parser', wait: false, origin: { kind: 'composer' } })
+  await $.tool.call({ tool: 'TaskCreate', subject: 'Read the parser', description: 'Read it' })
+  await $.tool.call({ tool: 'TaskCreate', subject: 'Fix the parser', description: 'Fix it' })
+  await $.tool.call({ tool: 'TaskUpdate', taskId: '1', status: 'completed' })
+  await clock.settle()
+  const saved = [...stored].find(([k]) => k.startsWith('s:'))
+  expect(saved && JSON.parse(saved[1]).hostTasks).toEqual([
+    { id: '1', text: 'Read the parser', status: 'done' },
+    { id: '2', text: 'Fix the parser', status: 'pending' },
+  ])
+})
+
 test('the Overview page says what it is for before the session has any work', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world($, on, [])
