@@ -48,6 +48,9 @@ const STATUSES: readonly OverviewStatus[] = [
 
 const STATES: readonly Overview['state'][] = ['on-track', 'stuck', 'finished']
 
+/** A bulleted item under a list key that stands alone on its line. */
+const BULLET_ITEM = /^\s*[-*]\s*[a-z-]+\s*\|/
+
 const KEY_LINE =
   /^\s*[-*]?\s*(UNCHANGED|KIND|TOPIC|STATE|HEADLINE|STATUS|COURSE|FOLDED|QUEUE|WORKS|OPEN|NEXT|SINCE|STREAM)\s*:?\s*(.*)$/
 
@@ -100,9 +103,15 @@ export function parseOverview(text: string | null): OverviewAnswer | null {
   let hasHeadline = false
   let isNewTopic = false
   let folded = ''
+  let current: OverviewItem[] | null = null
   for (const line of (text ?? '').split(NL)) {
     const m = KEY_LINE.exec(line)
-    if (!m) continue
+    if (!m) {
+      const item = current && BULLET_ITEM.test(line) ? itemOf(line.replace(/^\s*[-*]\s*/, '')) : null
+      if (current && item && current.length < LIST_ITEMS) current.push(item)
+      continue
+    }
+    current = null
     const key = m[1]!
     const value = (m[2] ?? '').trim()
     if (key === 'UNCHANGED') isUnchanged = true
@@ -119,6 +128,7 @@ export function parseOverview(text: string | null): OverviewAnswer | null {
       const item = itemOf(value)
       const list = lists[LIST_KEYS[key as keyof typeof LIST_KEYS]]
       if (item && list.length < LIST_ITEMS) list.push(item)
+      if (value === '') current = list
     }
   }
   if (isUnchanged && !hasHeadline) return { kind: 'unchanged' }

@@ -251,8 +251,8 @@ const EVENT_PATTERNS: RegExp[] = [
   /\b[0-9a-f]{7,40}\b/,
   /(?:^|\s)#\d+\b|\b[A-Z]{2,}-\d+\b/,
   /\b\d+\s*(?:tests?|files?|commits?|lines?|calls?|ms|seconds?|minutes?)\b/i,
-  /^(?:ran|run|read|reading|edited|editing|opened|searched|grepped|wrote|installed|executed|called|committed|pushed|checked)\b/i,
-  /\b(?:tests? (?:pass|passed|ran|run)|tool call|npm |git )\b/i,
+  /^(?:ran|run|edited|editing|opened|searched|grepped|installed|executed|called)\b/i,
+  /\b(?:tests? (?:ran|run)|tool call|npm |git )\b/i,
 ]
 
 const WORD = /[\p{L}\p{N}]+/gu

@@ -269,13 +269,13 @@ HEADLINE: one plain sentence naming what the session is doing, at most ${HEADLIN
 STATUS: how it is going, in one or two plain sentences, at most ${SENTENCE_WORDS} words. Say what it waits on, if anything.
 COURSE: only when the approach changed, in one or two sentences, at most ${SENTENCE_WORDS} words: what changed and why. A new step is not a change.
 FOLDED: only when TOPIC is new, one line saying what the old topic was and where it was left.
-Then lists, one item per line, as KEY: status | text | detail. The detail is optional. Text is at most ${ITEM_WORDS} words and detail at most ${DETAIL_WORDS}. At most ${LIST_ITEMS} items in a list.
+Then lists, one item per line, each as KEY: status | text | detail, with the key on every line. The detail is optional. Text is at most ${ITEM_WORDS} words and detail at most ${DETAIL_WORDS}. At most ${LIST_ITEMS} items in a list.
 QUEUE: the work now: what is under way, what is queued behind it, what waits, and what just finished
 WORKS: what holds now: what works, what exists
 OPEN: risks, problems and unknowns
 NEXT: what comes next
 SINCE: what changed since the person last looked. Start from <unseen>, merge this exchange into it, and keep it short.
-STREAM: only in a coordinator session: one line for each stream of work, saying what it is for and where it stands
+STREAM: only in a coordinator session, in the same form as the other lists: one line for each stream of work, saying what it is for and where it stands. Put the work handed out in STREAM, and use QUEUE only for the coordinator's own steps.
 
 Status is one of: working, queued, waits-on-you, waits-on-other, done, ruled-out, problem, unknown. Use waits-on-you when the agent cannot go on until the person acts, and waits-on-other for something else, such as a build. Use ruled-out for an approach tried or considered and dropped, and put the reason in the detail.
 

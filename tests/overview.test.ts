@@ -57,6 +57,14 @@ test('reads every line of the answer, tolerating dashes and bullets', () => {
   expect(overview.workstreams).toHaveLength(1)
 })
 
+test('reads a list written as a key alone on a line with bulleted items under it', () => {
+  const { overview } = written('HEADLINE: h\nQUEUE:\n- working | a\n- done | b | why\nWORKS:\n* done | c\nSTATUS: s')
+
+  expect(overview.queue.map(i => i.text)).toEqual(['a', 'b'])
+  expect(overview.works.map(i => i.text)).toEqual(['c'])
+  expect(overview.status).toBe('s')
+})
+
 test('clips texts to their word limits and lists to six items', () => {
   const long = (n: number) => Array.from({ length: n }, (_, i) => `w${i}`).join(' ')
   const items = Array.from({ length: 9 }, (_, i) => `QUEUE: queued | item ${i}`).join('\n')
