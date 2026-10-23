@@ -2605,11 +2605,6 @@
             "status": "queued",
             "text": "Merge saved notes when the connection returns",
             "detail": null
-          },
-          {
-            "status": "done",
-            "text": "Notes list loads offline",
-            "detail": null
           }
         ],
         "works": [

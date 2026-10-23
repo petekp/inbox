@@ -138,28 +138,32 @@ A changed direction leads, whatever else is true. After it:
 
 | Work | Away | Order |
 | --- | --- | --- |
-| running | here | headline, queue, works |
-| running or idle | short | headline, since (or "Nothing new since you looked."), queue |
-| running or idle | long | headline, status, since, queue, next |
-| stopped | any | headline, status with the pointer, since, queue, next |
+| running | here | headline, queue |
+| running or idle | short | headline, since (or "Nothing new since you looked."), queue, open |
+| running or idle | long | headline, status, since (or the same line), queue, next, open |
+| stopped | any | headline, status, pointer, since, queue, next, open |
 | finished | any | headline, status, works, open |
+
+The pointer is "N things wait on you in Inbox." with the count of open questions and tasks. It has no buttons and is left out when the count is 0. `open` stays in every state so a problem is never hidden. `works` shows only when the work is finished, since the queue's done items already say what works while work goes on.
 
 The queue shows in every state except `finished`. In `stopped` it holds the ◆ item that says what the work waits on.
 
 `next` is drawn only when the queue has no queued (○) items. Otherwise the ○ items already say what comes next.
 
-A part with nothing in it is left out. The pointer line is drawn under the status when the work is stopped, and otherwise last. The cutoffs and the table are constants in a shared module, tested as a pure function. They are tuned in the trial build.
+A part with nothing in it is left out. The earlier lines come last. The cutoffs and the table are constants in a shared module, tested as a pure function. They are tuned in the trial build.
 
-**Coordinator sessions** use a different order: headline, workstreams, since, next, stuck (the items of `open`). The model decides a session is a coordinator from what it does, as it hands out work and reviews the result. There is no flag. The view comes from what the coordinator itself knows, not from the other sessions' own tabs.
+**Coordinator sessions** use a different order: headline, workstreams, since, queue, next, open. The model decides a session is a coordinator from what it does, as it hands out work and reviews the result. There is no flag. The view comes from what the coordinator itself knows, not from the other sessions' own tabs.
 
 ## Since you looked
 
 The since list holds the changes after the last look. It starts over when the person looks.
 
 - The call rewrites the list after each reply, merging new changes into the unseen ones. This keeps it short after many replies.
-- Code stamps the last look when the tab is shown, and clears the since list and the course flag at that moment.
-- A reply that lands while the tab is shown is seen. It updates the page and adds nothing to the since list.
-- The course flag is set when the call reports a change of direction. It stays until the next look.
+- A look ends when the person leaves the Overview tab or closes the pane while it shows. Code then stamps the time (`Overview.lastLookAt`), and clears the since list and the course. Away is measured from that time, so the order does not change while the tab is shown.
+- A reply that lands while the tab is shown is added to the since list and shows on the next look.
+- The call writes COURSE only in the reply where the approach changed. The saved course stays through later replies until a look or a new topic clears it.
+- The mod ends a look in `showTab`, Codex in `inbox_view` when the tab changes, and omp in the controller's tab change and panel close. A Codex pane that is closed without changing tabs is not detected, so its look ends at the next tab change.
+- Each fact is written once: the call's rule is "each fact once, in the list that fits it best". `evals` checks that no two items in QUEUE, WORKS, OPEN, NEXT and STREAM say the same thing.
 
 ## A change of topic
 
@@ -195,7 +199,7 @@ The `Working…` mark moves next to the headline. Code draws it from `isTurnRunn
 
 ## Stored state
 
-- `Ledger.milestones` is replaced by `Ledger.overview`. Step 1 stores the parts as fields: the headline, the status and its state, the course text, one list for each list part, the earlier lines and the coordinator flag. The last look and the course flag are added in step 2. A new field, `Session.hostTasks`, is the task list.
+- `Ledger.milestones` is replaced by `Ledger.overview`. Step 1 stores the parts as fields: the headline, the status and its state, the course text, one list for each list part, the earlier lines and the coordinator flag. Step 2 adds `lastLookAt`; the course flag is whether `course` is set. A new field, `Session.hostTasks`, is the task list.
 - `Ledger.overview` lives in the ledger so that `forkedFrom`, `cleared`, `hasLedger` and `isUnseen` carry it with the rest. A fork takes its parent's Overview. A `/clear` empties it.
 - The page tab id `overview` is stored in the mod's `PAGE` atom and in Codex's `shownTab`. It is final once released.
 - Main never stored `progress`, `shownTab`, `milestones`, `subagents` or `statedStep`. A trial build of the Progress tab may have. The Overview build ignores a `PAGE` or `shownTab` value it does not know, and drops `milestones`, `subagents` and `statedStep` when it loads. Step 1 tests this with a state saved by that trial build.
