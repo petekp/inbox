@@ -285,3 +285,19 @@ test('a line that only starts with a key word is not a key line', () => {
   expect(overview.status).toBe('fine')
   expect(overview.queue.map(i => i.text)).toEqual(['a'])
 })
+
+test('a coordinator keeps its own steps in QUEUE and loses an item that only names a stream', () => {
+  const answer = written(
+    [
+      'KIND: coordinator',
+      'HEADLINE: Rewriting the import',
+      'QUEUE: working | Parser rewrite',
+      'QUEUE: queued | Review the parser rewrite',
+      'STREAM: working | Parser rewrite: reads the new format',
+    ].join('\n'),
+  )
+  expect(applyOverview(null, answer)!.queue.map(i => i.text)).toEqual(['Review the parser rewrite'])
+
+  const plain = written('HEADLINE: h\nQUEUE: working | Parser rewrite\nSTREAM: working | Parser rewrite: x')
+  expect(applyOverview(null, plain)!.queue).toHaveLength(1)
+})

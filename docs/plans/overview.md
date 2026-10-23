@@ -165,6 +165,7 @@ The since list holds the changes after the last look. It starts over when the pe
 - A reply that lands while the tab is shown is added to the since list and shows at once.
 - The call writes COURSE only in the reply where the approach changed. The saved course stays through later replies until a look or a new topic clears it.
 - The mod syncs the look whenever the pane opens or closes or its page changes. Codex starts and ends it from each `inbox_view` request, and ends it at the last request's time when requests stopped. omp does it in `showTab` and `closePanel`. The sample never changes a look.
+- A coordinator's QUEUE item that only names a stream is dropped in code when the answer is applied, since the STREAM line already says it.
 - Each fact is written once: the call's rule is "each fact once, in the list that fits it best". `evals` checks that no two items in QUEUE, WORKS, OPEN, NEXT and STREAM say the same thing.
 
 ## A change of topic

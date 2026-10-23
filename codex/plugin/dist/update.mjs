@@ -154,7 +154,7 @@ function applyOverview(last, answer) {
   const since = answer.overview.since.filter((i) => !kept.seen.since.includes(itemKey(i)));
   const isSeenCourse = kept.seen.course !== "" && answer.overview.course === kept.seen.course;
   const course = isSeenCourse ? "" : answer.overview.course;
-  const written = { ...answer.overview, since };
+  const written = { ...answer.overview, since, queue: withoutStreams(answer.overview) };
   if (!answer.isNewTopic || last === null || last.headline === "")
     return { ...written, ...kept, course: course || last?.course || "" };
   const left = answer.folded || last.headline;
@@ -201,6 +201,14 @@ function seenOf(saved) {
 }
 function strings(value) {
   return Array.isArray(value) ? value.filter((v) => typeof v === "string") : [];
+}
+function nameKey(text) {
+  return (text.split(":")[0].toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).sort().join(" ");
+}
+function withoutStreams(o) {
+  if (!o.isCoordinator) return o.queue;
+  const names = new Set(o.workstreams.map((i) => nameKey(i.text)));
+  return o.queue.filter((i) => !names.has(nameKey(i.text)));
 }
 function itemKey(i) {
   return `${i.status}|${i.text}`;

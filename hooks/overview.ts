@@ -152,7 +152,7 @@ export function applyOverview(last: Overview | null, answer: OverviewAnswer): Ov
   const since = answer.overview.since.filter(i => !kept.seen.since.includes(itemKey(i)))
   const isSeenCourse = kept.seen.course !== '' && answer.overview.course === kept.seen.course
   const course = isSeenCourse ? '' : answer.overview.course
-  const written = { ...answer.overview, since }
+  const written = { ...answer.overview, since, queue: withoutStreams(answer.overview) }
   if (!answer.isNewTopic || last === null || last.headline === '')
     return { ...written, ...kept, course: course || last?.course || '' }
   const left = answer.folded || last.headline
@@ -219,6 +219,29 @@ function seenOf(saved: unknown): Overview['seen'] {
 
 function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
+}
+
+/** The words of an item's name, which for a stream is the part before its colon. */
+function nameKey(text: string): string {
+  return (
+    text
+      .split(':')[0]!
+      .toLowerCase()
+      .match(/[\p{L}\p{N}]+/gu) ?? []
+  )
+    .sort()
+    .join(' ')
+}
+
+/**
+ * A coordinator's QUEUE holds its own steps. An item there that only names a stream repeats the STREAM line, so it is
+ * dropped, whichever of the two the call kept from the last guide.
+ */
+function withoutStreams(o: Overview): OverviewItem[] {
+  if (!o.isCoordinator) return o.queue
+  const names = new Set(o.workstreams.map(i => nameKey(i.text)))
+
+  return o.queue.filter(i => !names.has(nameKey(i.text)))
 }
 
 /** What identifies a since item, so a look can tell the items it showed from ones that came after. */
