@@ -36,8 +36,9 @@ To update, run `codex plugin marketplace upgrade`, then
 
 After each reply, the plugin asks a model to update the inbox. It runs the
 `codex` binary inside the desktop app, so it uses your Codex sign-in and
-counts toward your plan's usage: about 16,000 input tokens per reply, most of
-them the base instructions every `codex exec` call includes.
+counts toward your plan's usage. It makes two calls per reply. Each carries
+about 12,000 input tokens of base instructions, which every `codex exec` call
+includes, plus its own prompt. The earlier single call came to about 16,000.
 
 ## Needs
 

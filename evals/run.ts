@@ -109,7 +109,14 @@ const about = provenance(
 const path = resultsPath(values.out, about)
 const firstRuns = earlierRuns<Result>(values.with, about, path)
 
-type Answer = { text: string | null; model: string | null; outputTokens: number | null }
+type Answer = {
+  text: string | null
+  model: string | null
+  outputTokens: number | null
+  /** Input tokens the call read, cached ones included, and how many of them came from the cache. Codex reports none. */
+  inputTokens?: number | null
+  cachedTokens?: number | null
+}
 
 /**
  * Sonnet as the mod calls it: at low effort, and with no settings, so the runner's own CLAUDE.md never reaches it.
@@ -143,8 +150,19 @@ function claude(prompt: string, system: string): Promise<Answer> {
           const events = (Array.isArray(parsed) ? parsed : [parsed]) as Record<string, any>[]
           const result = events.find(e => e.type === 'result')
           const model = events.find(e => e.type === 'system' && e.subtype === 'init')?.model ?? null
-          const outputTokens = result?.usage?.output_tokens ?? null
-          resolve({ text: result && !result.is_error ? String(result.result) : null, model, outputTokens })
+          const usage = result?.usage
+          const outputTokens = usage?.output_tokens ?? null
+          const cachedTokens = usage ? (usage.cache_read_input_tokens ?? 0) : null
+          const inputTokens = usage
+            ? (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (cachedTokens ?? 0)
+            : null
+          resolve({
+            text: result && !result.is_error ? String(result.result) : null,
+            model,
+            outputTokens,
+            inputTokens,
+            cachedTokens,
+          })
         } catch {
           resolve({ text: null, model: null, outputTokens: null })
         }
@@ -254,7 +272,19 @@ function failures(before: Ledger, after: Ledger, checks: Check[], masked: string
  * `masked`: the asks of the update's NEW lines that never became an item, because the code took them for a repeat of a
  * closed item or an open one. For reading only: the checks see the ledger after the code.
  */
-type Result = Run & { answer: string | null; masked: string[]; outputTokens: number | null }
+type Result = Run & {
+  /** The ledger call's answer. Its DONE lines are dropped; the results come from `resultsAnswer`. */
+  answer: string | null
+  masked: string[]
+  outputTokens: number | null
+  inputTokens?: number | null
+  cachedTokens?: number | null
+  resultsAnswer?: string | null
+  resultsModel?: string | null
+  resultsOutputTokens?: number | null
+  resultsInputTokens?: number | null
+  resultsCachedTokens?: number | null
+}
 
 function maskedAsks(update: Update, before: Ledger, after: Ledger): string[] {
   const made = new Set(after.items.filter(i => !before.items.some(b => b.id === i.id)).map(i => i.ask))
@@ -290,7 +320,22 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
     ask(resultsInput, RESULTS_SYSTEM),
   ])
   const { text: answer, model, outputTokens } = ledgerCall
-  const base = { ...job(agent, c, n), model, answer, outputTokens, attempts: 1, earlier: [], durationMs: 0 }
+  const base = {
+    ...job(agent, c, n),
+    model,
+    answer,
+    outputTokens,
+    inputTokens: ledgerCall.inputTokens ?? null,
+    cachedTokens: ledgerCall.cachedTokens ?? null,
+    resultsAnswer: resultsCall.text,
+    resultsModel: resultsCall.model,
+    resultsOutputTokens: resultsCall.outputTokens,
+    resultsInputTokens: resultsCall.inputTokens ?? null,
+    resultsCachedTokens: resultsCall.cachedTokens ?? null,
+    attempts: 1,
+    earlier: [],
+    durationMs: 0,
+  }
   if (answer === null) return { ...base, error: `${agent} gave no answer`, failed: [], masked: [] }
   if (resultsCall.text === null) return { ...base, error: `${agent} gave no results answer`, failed: [], masked: [] }
   const parsed = parseReply(answer, c.catchUp ?? `${ex.reply}\n${ex.activity.join('\n')}`)
@@ -336,7 +381,9 @@ const verdict = report(agents, cases, judged, runs, MIN, readBaselines(about.sui
   const runs = mine as Result[]
   const masked = runs.reduce((sum, r) => sum + r.masked.length, 0)
   const slow = runs.filter(r => r.durationMs > MOD_TIMEOUT_MS).length
-  const long = runs.filter(r => (r.outputTokens ?? 0) > MOD_MAX_TOKENS).length
+  const long = runs.filter(
+    r => (r.outputTokens ?? 0) > MOD_MAX_TOKENS || (r.resultsOutputTokens ?? 0) > MOD_MAX_TOKENS,
+  ).length
   const notes = [
     masked > 0 ? `${masked} NEW lines dropped by the code` : '',
     slow > 0 ? `${slow} slower than the mod's ${MOD_TIMEOUT_MS / 1000} s limit` : '',

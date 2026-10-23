@@ -64,7 +64,6 @@ export function rolloutAt(
   return path
 }
 
-/** An inbox model whose results call fails, so a test sees only the ledger call's prompts. */
 export function ledgerOnly(ask: (prompt: string) => Promise<string | null>): Ask {
   return (prompt, system) => (system === RESULTS_SYSTEM ? Promise.resolve(null) : ask(prompt))
 }
