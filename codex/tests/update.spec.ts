@@ -13,7 +13,7 @@ import { endTurn, notePrompt, viewOf } from '../src/core'
 import { readState, statePath, updateState } from '../src/state'
 import { runUpdates as runBothCalls } from '../src/update'
 import { makeServer } from '../src/server'
-import { RESULTS_SYSTEM } from '../../hooks/model-text'
+import { OVERVIEW_SYSTEM } from '../../hooks/model-text'
 import { ledgerOnly, tempDir } from './helpers'
 
 const runUpdates = (dir: string, id: string, ask: (prompt: string) => Promise<string | null>, now: () => number) =>
@@ -69,9 +69,9 @@ test('a killed update worker leaves pending exchanges recoverable', async t => {
   assert.deepEqual((await readState(dir, 's1')).pending, [])
 })
 
-const LEDGER_ANSWER = 'GOAL: Ship\nDONE: Ledger call line\nNEW: decide | - | Deploy now? | Yes / No | Yes'
+const LEDGER_ANSWER = 'GOAL: Ship\nNEW: decide | - | Deploy now? | Yes / No | Yes'
 
-async function updateWithResults(results: string | null) {
+async function updateWithOverview(overview: string | null) {
   const dir = tempDir()
   await updateState(dir, 's1', s => ({
     ...s,
@@ -84,7 +84,7 @@ async function updateWithResults(results: string | null) {
     async (_prompt, system) => {
       systems.push(system)
 
-      return system === RESULTS_SYSTEM ? results : LEDGER_ANSWER
+      return system === OVERVIEW_SYSTEM ? overview : LEDGER_ANSWER
     },
     () => 5,
   )
@@ -92,25 +92,22 @@ async function updateWithResults(results: string | null) {
   return { state: await readState(dir, 's1'), systems }
 }
 
-test('a reply’s results come from the separate results call, and the ledger call’s own DONE lines are dropped', async () => {
-  const { state, systems } = await updateWithResults('DONE: Deploy script built')
+test('a reply’s Overview comes from the separate Overview call, after the ledger update', async () => {
+  const { state, systems } = await updateWithOverview('HEADLINE: Building the deploy script')
 
-  assert.deepEqual(
-    state.ledger.milestones.map(m => m.text),
-    ['Deploy script built'],
-  )
+  assert.equal(state.ledger.overview?.headline, 'Building the deploy script')
   assert.deepEqual(
     state.ledger.items.map(i => i.ask),
     ['Deploy now?'],
   )
   assert.equal(systems.length, 2)
-  assert.ok(systems.includes(RESULTS_SYSTEM))
+  assert.ok(systems.includes(OVERVIEW_SYSTEM))
 })
 
-test('a failed results call leaves the ledger update applied with no new results', async () => {
-  const { state } = await updateWithResults(null)
+test('a failed Overview call leaves the ledger update applied with no Overview', async () => {
+  const { state } = await updateWithOverview(null)
 
-  assert.deepEqual(state.ledger.milestones, [])
+  assert.equal(state.ledger.overview, null)
   assert.deepEqual(
     state.ledger.items.map(i => i.ask),
     ['Deploy now?'],
@@ -118,7 +115,7 @@ test('a failed results call leaves the ledger update applied with no new results
   assert.deepEqual(state.pending, [])
 })
 
-test('a ledger update shows before its results call returns, and the results call skips what that update answered', async () => {
+test('a ledger update shows before its Overview call returns', async () => {
   const dir = tempDir()
   await updateState(dir, 's1', s => ({
     ...s,
@@ -141,24 +138,24 @@ test('a ledger update shows before its results call returns, and the results cal
     },
     pending: [{ ex: { ...ex(2, 'Added the MIT license.'), person: 'MIT' }, turnsStarted: 2 }],
   }))
-  let resultsPrompt = ''
+  let overviewPrompt = ''
   let release: (text: string) => void = () => undefined
   const held = new Promise<string>(resolve => (release = resolve))
   let asked: () => void = () => undefined
-  const resultsAsked = new Promise<void>(resolve => (asked = resolve))
+  const overviewAsked = new Promise<void>(resolve => (asked = resolve))
   const running = runBothCalls(
     dir,
     's1',
     async (prompt, system) => {
-      if (system !== RESULTS_SYSTEM) return 'GOAL: Ship\nCLOSED: i2 | MIT'
-      resultsPrompt = prompt
+      if (system !== OVERVIEW_SYSTEM) return 'GOAL: Ship\nCLOSED: i2 | MIT'
+      overviewPrompt = prompt
       asked()
 
       return held
     },
     () => 5,
   )
-  await resultsAsked
+  await overviewAsked
   let shown = await readState(dir, 's1')
   for (let waited = 0; shown.presence.isUpdating && waited < 200; waited += 1) {
     await new Promise(resolve => setTimeout(resolve, 10))
@@ -168,14 +165,14 @@ test('a ledger update shows before its results call returns, and the results cal
   assert.deepEqual(shown.ledger.items, [])
   assert.equal(shown.ledger.closed[0]?.outcome, 'MIT')
   assert.equal(shown.presence.isUpdating, false)
-  assert.ok(resultsPrompt.includes('<handled>\nanswered: Which license should the CLI use? | MIT\n</handled>'))
-  release('DONE: License file added')
+  assert.ok(overviewPrompt.includes('<last>'))
+  release('HEADLINE: Adding a license')
   await running
 
-  assert.ok((await readState(dir, 's1')).ledger.milestones.some(m => m.text === 'License file added'))
+  assert.equal((await readState(dir, 's1')).ledger.overview?.headline, 'Adding a license')
 })
 
-test('a ledger call with no answer runs no results call', async () => {
+test('a ledger call with no answer runs no Overview call', async () => {
   const dir = tempDir()
   await updateState(dir, 's1', s => ({
     ...s,
@@ -188,16 +185,16 @@ test('a ledger call with no answer runs no results call', async () => {
     async (_prompt, system) => {
       systems.push(system)
 
-      return system === RESULTS_SYSTEM ? 'DONE: Deploy script built' : null
+      return system === OVERVIEW_SYSTEM ? 'HEADLINE: Building the deploy script' : null
     },
     () => 5,
   )
 
-  assert.equal(systems.includes(RESULTS_SYSTEM), false)
-  assert.deepEqual((await readState(dir, 's1')).ledger.milestones, [])
+  assert.equal(systems.includes(OVERVIEW_SYSTEM), false)
+  assert.equal((await readState(dir, 's1')).ledger.overview, null)
 })
 
-test('results calls run one after another, and the second reads the first one’s results', async () => {
+test('Overview calls run one after another, and the second reads the first one’s Overview', async () => {
   const dir = tempDir()
   await updateState(dir, 's1', s => ({
     ...s,
@@ -207,7 +204,7 @@ test('results calls run one after another, and the second reads the first one’
       { ex: ex(2, 'Built the rollback script.'), turnsStarted: 2 },
     ],
   }))
-  const resultsPrompts: string[] = []
+  const overviewPrompts: string[] = []
   let release: () => void = () => undefined
   const held = new Promise<void>(resolve => (release = resolve))
   let ledgerCalls = 0
@@ -215,19 +212,19 @@ test('results calls run one after another, and the second reads the first one’
     dir,
     's1',
     async (prompt, system) => {
-      if (system !== RESULTS_SYSTEM) {
+      if (system !== OVERVIEW_SYSTEM) {
         ledgerCalls += 1
 
         return `GOAL: Ship\nNEW: do | - | Task ${ledgerCalls} | - | -`
       }
-      resultsPrompts.push(prompt)
-      if (resultsPrompts.length === 1) {
+      overviewPrompts.push(prompt)
+      if (overviewPrompts.length === 1) {
         await held
 
-        return 'DONE: Deploy script built'
+        return 'HEADLINE: Deploy script built'
       }
 
-      return 'DONE: Rollback script built'
+      return 'HEADLINE: Rollback script built'
     },
     () => 5,
   )
@@ -237,19 +234,16 @@ test('results calls run one after another, and the second reads the first one’
     shown = await readState(dir, 's1')
   }
   assert.equal(shown.pending.length, 0)
-  assert.equal(resultsPrompts.length, 1)
+  assert.equal(overviewPrompts.length, 1)
   release()
   await running
 
-  assert.equal(resultsPrompts.length, 2)
-  assert.ok((resultsPrompts[1] ?? '').includes('Deploy script built'))
-  assert.deepEqual(
-    (await readState(dir, 's1')).ledger.milestones.map(m => m.text),
-    ['Deploy script built', 'Rollback script built'],
-  )
+  assert.equal(overviewPrompts.length, 2)
+  assert.ok((overviewPrompts[1] ?? '').includes('Deploy script built'))
+  assert.equal((await readState(dir, 's1')).ledger.overview?.headline, 'Rollback script built')
 })
 
-test('three results calls write in the order their updates landed', async () => {
+test('three Overview calls write in the order their updates landed', async () => {
   const dir = tempDir()
   await updateState(dir, 's1', s => ({
     ...s,
@@ -262,17 +256,17 @@ test('three results calls write in the order their updates landed', async () => 
   }))
   let release: () => void = () => undefined
   const held = new Promise<void>(resolve => (release = resolve))
-  let resultsCalls = 0
+  let overviewCalls = 0
   const running = runBothCalls(
     dir,
     's1',
     async (_prompt, system) => {
-      if (system !== RESULTS_SYSTEM) return 'GOAL: Ship'
-      resultsCalls += 1
-      const mine = resultsCalls
+      if (system !== OVERVIEW_SYSTEM) return 'GOAL: Ship'
+      overviewCalls += 1
+      const mine = overviewCalls
       if (mine === 1) await held
 
-      return `DONE: Script ${mine} built`
+      return `HEADLINE: Script ${mine} built`
     },
     () => 5,
   )
@@ -285,10 +279,7 @@ test('three results calls write in the order their updates landed', async () => 
   release()
   await running
 
-  assert.deepEqual(
-    (await readState(dir, 's1')).ledger.milestones.map(m => m.text),
-    ['Script 1 built', 'Script 2 built', 'Script 3 built'],
-  )
+  assert.equal((await readState(dir, 's1')).ledger.overview?.headline, 'Script 3 built')
 })
 
 test('pending exchanges reach the ledger in order, a failed one waits for the next update, and a second failure drops it', async () => {
@@ -325,7 +316,6 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     hasDroppedReply: false,
     isUpdating: false,
     isTurnRunning: false,
-    statedStep: null,
   })
   assert.equal(viewOf(kept, 5).status.isUpdating, false)
   assert.match(viewOf(kept, 5).status.error ?? '', /Last update failed.*retries after your next message/)
@@ -353,7 +343,6 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     hasDroppedReply: true,
     isUpdating: false,
     isTurnRunning: false,
-    statedStep: null,
   })
   assert.equal(viewOf(dropped, 6).status.isUpdating, false)
   assert.match(viewOf(dropped, 6).status.error ?? '', /Last update failed/)

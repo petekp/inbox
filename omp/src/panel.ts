@@ -72,8 +72,8 @@ import {
 import type {
   ClosedDelivery,
   Feedback,
-  ProgressPage,
-  ProgressRow,
+  OverviewPage,
+  OverviewRow,
   ReplyHolds,
   RowView,
   ShownTab,
@@ -124,7 +124,7 @@ export type PanelUi = {
   resuming: { stopAt: number; is: 'sending' } | { stopAt: number; is: 'refused'; why: string } | null
   /** A handed-off row the person opened again with Enter. Moving the selection off it folds it again. */
   opened: string | null
-  /** How many lines of the Progress page are scrolled above the panel. Drawing clamps it to the page's end. */
+  /** How many lines of the Overview page are scrolled above the panel. Drawing clamps it to the page's end. */
   pageTop: number
 }
 
@@ -194,7 +194,7 @@ type Entry =
   | { kind: 'heading'; text: string; count?: number }
   | { kind: 'note'; text: string; isStrong?: boolean; indent?: number }
   | { kind: 'row'; line: Line }
-  | { kind: 'page'; row: ProgressRow }
+  | { kind: 'page'; row: OverviewRow }
 
 const blankLine = (id: string): Line => ({
   id,
@@ -520,38 +520,33 @@ function pressFeedback(screen: PanelScreen, id: string, now: number): Line['feed
   return f ? { text: feedbackText(f, AGENT), tone: feedbackTone(f) } : null
 }
 
-/** Where a row's title starts, after the cursor and the mark. The Progress page's text, details and Running lines start here too. */
+/** Where a row's title starts, after the cursor and the mark. The Overview page's text and details start here too. */
 const TITLE_AT = 6
 
-function pageEntries(page: ProgressPage): Entry[] {
+function pageEntries(page: OverviewPage): Entry[] {
   if (page.isEmpty)
     return [
       { kind: 'note', text: page.empty.title, isStrong: true },
       { kind: 'note', text: page.empty.hint },
     ]
-  const { subagents, running, milestones } = page
   const out: Entry[] = []
-  if (page.goal) out.push({ kind: 'note', text: page.goal, isStrong: true })
-  if (page.now) out.push({ kind: 'note', text: `Now · ${page.now}` })
-  if (subagents) {
-    out.push({ kind: 'heading', text: subagents.title, count: subagents.count })
-    out.push(...subagents.rows.map((row): Entry => ({ kind: 'page', row })))
+  if (page.headline) out.push({ kind: 'note', text: page.headline, isStrong: true })
+  if (page.now) out.push({ kind: 'note', text: page.now })
+  if (page.course) out.push({ kind: 'note', text: page.course })
+  for (const part of page.sections) {
+    if (part.title) out.push({ kind: 'heading', text: part.title, count: 0 })
+    out.push(...part.rows.map((row): Entry => ({ kind: 'page', row })))
   }
-  if (running) {
-    out.push({ kind: 'heading', text: running.title, count: running.count })
-    out.push(...running.rows.map((r): Entry => ({ kind: 'note', text: r.text, indent: TITLE_AT })))
+  if (page.earlier.length > 0) {
+    out.push({ kind: 'heading', text: 'Earlier in this session', count: 0 })
+    out.push(...page.earlier.map((text): Entry => ({ kind: 'note', text, indent: TITLE_AT })))
   }
-  if (milestones) {
-    out.push({ kind: 'heading', text: milestones.title, count: milestones.count })
-    out.push(...milestones.rows.map((row): Entry => ({ kind: 'page', row })))
-  }
-  if (page.earlier) out.push({ kind: 'note', text: page.earlier, indent: TITLE_AT })
 
   return out
 }
 
 function entriesOf(screen: PanelScreen, ui: PanelUi, tab: ShownTab, now: number): Entry[] {
-  if (!isRowTab(tab)) return pageEntries(screen.view.progressPage)
+  if (!isRowTab(tab)) return pageEntries(screen.view.overviewPage)
 
   return tab === 'prs' ? prEntries(screen, now) : rowEntries(screen, ui, tab)
 }
@@ -914,17 +909,16 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   return out
 }
 
-/** A line on the Progress page: its mark, its text wrapped beside its age, and its detail under it. */
-function drawPageRow(row: ProgressRow, d: Draw): string[] {
+/** A line on the Overview page: its mark, its text wrapped, and its detail under it. */
+function drawPageRow(row: OverviewRow, d: Draw): string[] {
   const { width, style: s } = d
   const mark = row.mark.padEnd(2)
-  const age = row.age ? `${s.dim(row.age)} ` : ''
-  const room = width - TITLE_AT - visibleLength(age) - 2
+  const room = width - TITLE_AT - 2
   const wrapped = wrapText(row.text, Math.max(10, room))
   const [first = '', ...rest] = wrapped.slice(0, 3)
   if (wrapped.length > 3) rest[1] = `${rest[1]!.replace(/.$/, '')}…`
   const out = [
-    spread(`   ${row.tone ? s.tone(row.tone, mark) : s.dim(mark)} ${first}`, age, width),
+    `   ${row.tone ? s.tone(row.tone, mark) : s.dim(mark)} ${first}`,
     ...rest.map(l => ' '.repeat(TITLE_AT) + l),
   ]
   if (row.detail) out.push(...indented(row.detail, TITLE_AT, width, 4, s.dim))

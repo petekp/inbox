@@ -1,15 +1,16 @@
-import type { Card, Closed, ClosedFinding, Exchange, Finding, Help, Item, Ledger, Milestone, Press } from '../types'
+import type { Card, Closed, ClosedFinding, Exchange, Finding, Help, Item, Ledger, Press } from '../types'
 
 export type { Exchange, Press } from '../types'
 import type { Host } from './model-text'
-import { clipLabel, codeBlocks } from './text'
+import { upgradeOverview } from './overview'
+import { codeBlocks } from './text'
 
 /** How many saved sessions each host keeps; the newest by save time. */
 export const KEPT_SESSIONS = 40
 
 export const EMPTY: Ledger = {
   card: null,
-  milestones: [],
+  overview: null,
   items: [],
   closed: [],
   findings: [],
@@ -44,19 +45,23 @@ export function readKind(kind: string | null | undefined): Item['kind'] {
  * Findings were once saved as `notes`; items once had no time, and closed
  * items no kind or `how`, so an old closed item counts as a question. Closed
  * items were saved as `decided`, and kinds as `decide` and `do`. Closed
- * findings were once not kept. A version that saved a `milestones` list may still have written new results only to
- * the card, so each card result the list lacks is added to it, with no time.
+ * findings were once not kept.
  */
 export function upgradeLedger(ledger: Ledger): Ledger {
-  const { notes, decided, ...rest } = ledger as Ledger & { notes?: Finding[]; decided?: Ledger['closed'] }
+  const {
+    notes,
+    decided,
+    milestones: _milestones,
+    ...rest
+  } = ledger as Ledger & {
+    notes?: Finding[]
+    decided?: Ledger['closed']
+    milestones?: unknown
+  }
 
   return {
     ...rest,
-    milestones: addMilestones(
-      rest.milestones ?? [],
-      (rest.card?.done ?? []).map(text => doneMilestone(text, null)),
-      'first',
-    ),
+    overview: upgradeOverview(rest.overview),
     findings: [...(rest.findings ?? []), ...(notes ?? [])],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
@@ -141,9 +146,7 @@ const PERSON_ONLY_REASON =
   /credential|password|passphrase|secret|\btoken|\b2fa\b|\bmfa\b|\bdevice\b|phone|android|tablet|account|sign(?:ed)?[- ]?in|log(?:ged)?[- ]?in|only you|you hold|your (?:mac|machine|laptop|computer|keychain)|\bsudo\b/i
 
 export type Update = {
-  card: Omit<Card, 'done'>
-  /** The results the exchange finished, oldest first. */
-  done: string[]
+  card: Card
   closed: { id: string; outcome: string }[]
   added: (Omit<Item, 'id' | 'turn' | 'at' | 'helps' | 'from'> & { helps: Help[] })[]
   helped: { id: string; help: Help }[]
@@ -264,8 +267,7 @@ const KEY_LINE = /^\s*[-*]?\s*(GOAL|DONE|NOW|RUNNING|CLOSED|FIXED|ASKED|NEW|UPDA
  */
 export function parseReply(text: string, source: string | null = null): Update | null {
   const blocks = source === null ? [] : codeBlocks(source)
-  const card = { goal: '', now: '', running: [] as string[] }
-  const done: string[] = []
+  const card = { goal: '', done: [] as string[], now: '', running: [] as string[] }
   const closed: Update['closed'] = []
   const added: Update['added'] = []
   const helped: Update['helped'] = []
@@ -288,7 +290,7 @@ export function parseReply(text: string, source: string | null = null): Update |
     const value = dash(m[2]) ?? ''
     if (key === 'GOAL') card.goal = value
     else if (key === 'NOW') card.now = value
-    else if (key === 'DONE' && value) done.push(value)
+    else if (key === 'DONE' && value) card.done.push(value)
     else if (key === 'RUNNING' && value) card.running.push(value)
     else if (key === 'CLOSED' || key === 'FIXED') {
       const [id, outcome] = value.split('|').map(s => s.trim())
@@ -345,177 +347,9 @@ export function parseReply(text: string, source: string | null = null): Update |
     if (item !== undefined && item !== -1) asked.push({ id, item })
   }
 
-  return seen === 0 ? null : { card, done, closed, added, helped, updated, asked, todos }
-}
-
-const MAX_MILESTONES = 200
-/** The DONE lines of the results call's answer, in order. Null, a failed results call, gives none. */
-export function resultLines(resultsText: string | null): string[] {
-  return (resultsText ?? '').split(NL).flatMap(line => {
-    const m = KEY_LINE.exec(line)
-
-    return m?.[1] === 'DONE' ? (dash(m[2] ?? '') ?? []) : []
-  })
-}
-
-/** The update without the ledger call's own DONE lines: the results call writes the results. */
-export function withoutResults(update: Update): Update {
-  return { ...update, done: [] }
-}
-
-/** What an update closed with the person's answer, and the findings it fixed. The results call must not repeat them. */
-export type Handled = { answered: { ask: string; outcome: string }[]; fixed: string[] }
-
-export function handledBy(before: Ledger, after: Ledger): Handled {
-  const answered = after.closed.filter(c => c.how === 'update' && !before.closed.some(b => b.id === c.id))
-  const fixed = after.closedFindings.filter(
-    f => f.how === 'update' && !isLapsed(f) && !before.closedFindings.some(b => b.id === f.id),
-  )
-
-  return {
-    answered: answered.map(c => ({ ask: c.ask, outcome: c.outcome })),
-    fixed: fixed.map(f => f.title),
-  }
-}
-
-/** How many DONE lines one update, and one catch-up, may add. The prompts state these counts. */
-export const DONE_PER_UPDATE = 3
-export const DONE_PER_CATCH_UP = 6
-const CARD_DONE = 4
-const MILESTONE_TEXT_CHARS = 120
-const MILESTONE_DETAIL_CHARS = 200
-const TODO_OPTIONS = ['Proceed', 'Not yet']
-/** An answer that only says go ahead: it tells the person nothing the question did not. */
-const BARE_YES =
-  /^\s*(?:yes|yep|yeah|y|ok|okay|sure|go|go ahead|proceed|do it|continue|approved?|sounds good|sgtm|lgtm|all recommended|yes to all|ship it)\s*[.!]*\s*$/i
-
-type NewMilestone = Omit<Milestone, 'id'>
-
-function resultMilestones(texts: string[], isCatchUp: boolean): NewMilestone[] {
-  return texts.slice(isCatchUp ? -DONE_PER_CATCH_UP : -DONE_PER_UPDATE).map(text => doneMilestone(text, null))
-}
-
-function doneMilestone(text: string, at: number | null): NewMilestone {
-  return { source: 'done', text: clipLabel(text, MILESTONE_TEXT_CHARS), detail: null, ref: null, at }
-}
-
-function isTodoQuestion(item: Pick<Item, 'options'>): boolean {
-  return item.options.length === TODO_OPTIONS.length && item.options.every((o, n) => o === TODO_OPTIONS[n])
-}
-
-/** The milestone for an item the person answered; null for a todo question, a bare yes, a put-off and a request for the choices. */
-function answeredMilestone(item: Item, answer: string, at: number): NewMilestone | null {
-  const text = answer.trim()
-  const isNoResult =
-    isTodoQuestion(item) ||
-    text === '' ||
-    BARE_YES.test(text) ||
-    PUT_OFF.test(text) ||
-    isAskedForChoices({ how: 'answered', outcome: text })
-  if (item.kind !== 'question' || isNoResult) return null
-
-  return {
-    source: 'answered',
-    text: clipLabel(item.ask, MILESTONE_TEXT_CHARS),
-    detail: clipLabel(text, MILESTONE_DETAIL_CHARS),
-    ref: item.id,
-    at,
-  }
-}
-
-function foldedText(text: string): string {
-  return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '')
-}
-
-function nextMilestoneId(milestones: Milestone[]): string {
-  return `m${Math.max(0, ...milestones.map(m => idNumber(m.id) || 0)) + 1}`
-}
-
-function isRepeatMilestone(milestones: Milestone[], m: NewMilestone): boolean {
-  const folded = foldedText(m.text)
-
-  return milestones.some(x =>
-    m.ref !== null ? x.source === m.source && x.ref === m.ref : m.source === 'done' && foldedText(x.text) === folded,
-  )
-}
-
-/**
- * Adds each milestone unless the list already has it: an event milestone by its source and ref, a done milestone by
- * its text, ignoring case, punctuation and spacing. The new ones go at the end, or at the start for `first`, which
- * a seeded list uses so its untimed results go first. Over the cap, the oldest by place go. A milestone added by this
- * call stays, so a catch-up on a full list keeps its results; `first` ones are not kept.
- */
-function addMilestones(milestones: Milestone[], added: NewMilestone[], place: 'last' | 'first' = 'last'): Milestone[] {
-  const fresh = added.reduce<Milestone[]>((all, m) => {
-    const known = [...milestones, ...all]
-
-    return isRepeatMilestone(known, m) ? all : [...all, { ...m, id: nextMilestoneId(known) }]
-  }, [])
-  const all = place === 'first' ? [...fresh, ...milestones] : [...milestones, ...fresh]
-  const over = all.length - MAX_MILESTONES
-  if (over <= 0) return all
-  const kept = place === 'first' ? [] : fresh
-  const evicted = new Set(all.filter(m => !kept.includes(m)).slice(0, over))
-
-  return all.filter(m => !evicted.has(m))
-}
-
-export type ListedResult = Milestone & {
-  /** The DONE lines this answered or fixed result took in, oldest first. */
-  merged: string[]
-}
-
-const GENERIC_VERBS = new Set(['added', 'updated', 'fixed', 'created', 'changed', 'removed', 'wrote', 'set'])
-
-function sharesWords(done: Milestone, other: Milestone): boolean {
-  const x = keyWords(done.text)
-  const y = keyWords(`${other.text} ${other.detail ?? ''}`)
-  if (hasNumberConflict(x, y)) return false
-  const own = [...x].filter(w => !GENERIC_VERBS.has(w))
-  const shared = own.filter(w => y.has(w)).length
-
-  return shared >= 2 || (shared >= 1 && own.length <= 2)
-}
-
-/**
- * The results to show, newest first. A DONE line merges into an answered or fixed result of the same turn when their
- * words overlap, since the model writes both for one piece of work. An answered or fixed result may take several.
- * A result with no turn never merges.
- */
-export function listResults(milestones: Milestone[]): ListedResult[] {
-  const events = milestones.filter(m => m.source !== 'done')
-  const takenBy = (m: Milestone) =>
-    m.source === 'done' && m.turn !== undefined ? events.find(e => e.turn === m.turn && sharesWords(m, e)) : undefined
-  const listed = milestones.filter(m => takenBy(m) === undefined).map((m): ListedResult => ({ ...m, merged: [] }))
-  for (const m of milestones) {
-    const owner = takenBy(m)
-    if (owner) listed.find(l => l.id === owner.id)!.merged.push(m.text)
-  }
-
-  return listed.reverse()
-}
-
-/** Gives the answer a press closed the turn its message started, once the message arrives. */
-export function stampPressTurn(ledger: Ledger, ref: string, turn: number): Ledger {
-  const isUnstamped = (m: Milestone) => m.source === 'answered' && m.ref === ref && m.turn === undefined
-  if (!ledger.milestones.some(isUnstamped)) return ledger
-
-  return { ...ledger, milestones: ledger.milestones.map(m => (isUnstamped(m) ? { ...m, turn } : m)) }
-}
-
-/** The one remover, for a result its owner undid: an answered item or a fixed finding that reopens. */
-function removeMilestone(ledger: Ledger, ref: string): Ledger {
-  return ledger.milestones.some(m => m.ref === ref)
-    ? { ...ledger, milestones: ledger.milestones.filter(m => m.ref !== ref) }
-    : ledger
-}
-
-/** The newest results the model wrote, oldest first: the card's done list, which older versions read. */
-function doneTexts(milestones: Milestone[]): string[] {
-  return milestones
-    .filter(m => m.source === 'done')
-    .slice(-CARD_DONE)
-    .map(m => m.text)
+  return seen === 0
+    ? null
+    : { card: { ...card, done: card.done.slice(-4) }, closed, added, helped, updated, asked, todos }
 }
 
 function isTakenUp(work: string, reply: string | null): boolean {
@@ -551,24 +385,17 @@ function keyWords(text: string): Set<string> {
   return new Set(words(text).filter(w => /\p{N}/u.test(w) || (w.length > 2 && !FILLER.has(w))))
 }
 
-function numbersOf(words: Set<string>): string {
-  return [...words]
-    .filter(w => /\p{N}/u.test(w))
-    .sort()
-    .join(' ')
-}
-
-/** Both texts name numbers, and not the same ones. */
-function hasNumberConflict(x: Set<string>, y: Set<string>): boolean {
-  return numbersOf(x) !== '' && numbersOf(y) !== '' && numbersOf(x) !== numbersOf(y)
-}
-
 function restates(a: string, b: string): boolean {
   const x = keyWords(a)
   const y = keyWords(b)
   const fewer = Math.min(x.size, y.size)
   const shared = [...x].filter(w => y.has(w)).length
-  if (hasNumberConflict(x, y)) return false
+  const numbers = (words: Set<string>) =>
+    [...words]
+      .filter(w => /\p{N}/u.test(w))
+      .sort()
+      .join(' ')
+  if (numbers(x) !== '' && numbers(y) !== '' && numbers(x) !== numbers(y)) return false
 
   return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b)
 }
@@ -615,7 +442,7 @@ function repeatsClosed(closed: Closed[], a: Update['added'][number], since: numb
 /** The answer the inbox model offers when an ask names no choices. It asks for the same question again, with them. */
 export const LIST_CHOICES = 'List the choices'
 
-export function isAskedForChoices(c: Pick<Closed, 'how' | 'outcome'>): boolean {
+export function isAskedForChoices(c: Closed): boolean {
   return c.how === 'answered' && c.outcome.trim().toLowerCase() === LIST_CHOICES.toLowerCase()
 }
 
@@ -670,33 +497,11 @@ export function closeByAgent(
 
 export type Closing = Pick<Closed, 'how' | 'outcome'>
 
-/**
- * `turn` is the turn the answer belongs to. A press passes null: its message starts a turn that is not counted until
- * the message arrives, and `stampPressTurn` then gives the answer its turn.
- */
-export function closeItem(
-  ledger: Ledger,
-  id: string,
-  closing: Closing,
-  now: number,
-  turn: number | null = ledger.turn,
-): Ledger {
-  const items = ledger.items.filter(i => i.id === id)
-  const records = items.map(i => closedRecord(i, closing, now))
-  const answers =
-    closing.how === 'answered'
-      ? items
-          .flatMap(i => answeredMilestone(i, closing.outcome, now) ?? [])
-          .map(m => (turn === null ? m : { ...m, turn }))
-      : []
+export function closeItem(ledger: Ledger, id: string, closing: Closing, now: number): Ledger {
+  const records = ledger.items.filter(i => i.id === id).map(i => closedRecord(i, closing, now))
 
   return reopenAskedFindings(
-    {
-      ...ledger,
-      milestones: addMilestones(ledger.milestones, answers),
-      items: ledger.items.filter(i => i.id !== id),
-      closed: [...ledger.closed, ...records],
-    },
+    { ...ledger, items: ledger.items.filter(i => i.id !== id), closed: [...ledger.closed, ...records] },
     records,
   )
 }
@@ -793,10 +598,7 @@ export function reopenItem(ledger: Ledger, id: string): Ledger {
   const item = ledger.closed.findLast(c => c.id === id)?.item
   if (!item || ledger.items.some(i => i.id === id)) return ledger
 
-  return removeMilestone(
-    { ...ledger, items: inIdOrder(ledger.items, item), closed: ledger.closed.filter(c => c.id !== id) },
-    id,
-  )
+  return { ...ledger, items: inIdOrder(ledger.items, item), closed: ledger.closed.filter(c => c.id !== id) }
 }
 
 /** Reopens a closed finding and removes its close record. Unchanged when it is open or has no record. */
@@ -805,29 +607,11 @@ export function reopenFinding(ledger: Ledger, id: string): Ledger {
   if (!record || ledger.findings.some(f => f.id === id)) return ledger
   const { how: _how, outcome: _outcome, closedAt: _closedAt, ...finding } = record
 
-  return removeMilestone(
-    {
-      ...ledger,
-      findings: inIdOrder(ledger.findings, finding),
-      closedFindings: ledger.closedFindings.filter(f => f.id !== id),
-    },
-    id,
-  )
-}
-
-/**
- * Adds the results the results call wrote for an update that is already applied. `turn` is that update's turn, or null
- * for a catch-up, whose results have no known time or turn. A result goes after the turn's other milestones, and one
- * the list already has is skipped.
- */
-export function addResults(ledger: Ledger, texts: string[], at: number, turn: number | null): Ledger {
-  const isCatchUp = turn === null
-  const taken = isCatchUp ? 0 : ledger.milestones.filter(m => m.turn === turn).length
-  const written = resultMilestones(texts, isCatchUp).map((m, n) => (isCatchUp ? m : { ...m, at: at + taken + n, turn }))
-  if (written.length === 0) return ledger
-  const milestones = addMilestones(ledger.milestones, written)
-
-  return { ...ledger, milestones, card: ledger.card && { ...ledger.card, done: doneTexts(milestones) } }
+  return {
+    ...ledger,
+    findings: inIdOrder(ledger.findings, finding),
+    closedFindings: ledger.closedFindings.filter(f => f.id !== id),
+  }
 }
 
 export function applyExchangeUpdate(
@@ -864,30 +648,26 @@ function isPersonsAnswer(outcome: string): boolean {
  * The agent closes the items it recorded with its close tool, so a CLOSED line
  * closes one of those only with the person's answer.
  */
-export function applyUpdate(
-  ledger: Ledger,
-  u: Update,
-  now: number,
-  turn: number,
-  promptAt = now,
-  isCatchUp = false,
-): Ledger {
+export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number, promptAt = now): Ledger {
+  const prev = ledger.card
+  const card: Card = {
+    goal: u.card.goal || prev?.goal || '',
+    done: u.card.done.length > 0 ? u.card.done : (prev?.done ?? []),
+    now: u.card.now || prev?.now || '',
+    running: u.card.running,
+  }
   const stillAsked = new Set(u.updated.filter(c => c.options || c.rec).map(c => c.id))
   const closing = new Map(
     u.closed.filter(c => !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome)).map(c => [c.id, c.outcome]),
   )
   const closed = [...ledger.closed]
   const items: Item[] = []
-  const answers: NewMilestone[] = []
   for (const item of ledger.items) {
     const outcome = closing.get(item.id)
     const helps = u.helped.filter(h => h.id === item.id).reduce((all, h) => withHelp(all, h.help), item.helps)
     const isClosing = outcome !== undefined && (item.from !== 'record' || isPersonsAnswer(outcome))
-    if (isClosing) {
-      closed.push(closedRecord(item, { outcome, how: 'update' }, now))
-      const answer = isPersonsAnswer(outcome) ? answeredMilestone(item, outcome, now) : null
-      if (answer) answers.push(answer)
-    } else items.push(withUpdate({ ...item, helps }, u.updated))
+    if (isClosing) closed.push(closedRecord(item, { outcome, how: 'update' }, now))
+    else items.push(withUpdate({ ...item, helps }, u.updated))
   }
   const recordedThisTurn = new Set(
     [...ledger.items, ...ledger.closed.flatMap(c => c.item ?? [])]
@@ -926,7 +706,7 @@ export function applyUpdate(
       kind: 'question' as const,
       label: null,
       ask: todoAsk(work),
-      options: TODO_OPTIONS,
+      options: ['Proceed', 'Not yet'],
       rec: null,
     }
     const isKnown =
@@ -959,40 +739,10 @@ export function applyUpdate(
     return asker ? closeFinding(l, f.id, { outcome: `asked as ${asker}`, how: 'update' }, now, asker) : l
   }, ledger)
 
-  const fixes = ledger.findings.flatMap((f): NewMilestone[] => {
-    const outcome = closing.get(f.id)
-    if (outcome === undefined || isLapsed({ how: 'update', outcome })) return []
-
-    return [
-      {
-        source: 'fixed',
-        text: clipLabel(f.title, MILESTONE_TEXT_CHARS),
-        detail: outcome.trim() === '' ? null : clipLabel(outcome.trim(), MILESTONE_DETAIL_CHARS),
-        ref: f.id,
-        at: now,
-      },
-    ]
-  })
-  const results = resultMilestones(u.done, isCatchUp)
-  // Each later line gets a later time, so one update's lines read newest first. A catch-up covers past turns,
-  // so none of its lines has a known time.
-  const written = [...answers, ...fixes, ...results].map((m, n) =>
-    isCatchUp ? { ...m, at: null } : { ...m, at: now + n, turn },
-  )
-  const milestones = addMilestones(ledger.milestones, written)
-  const prev = ledger.card
-  const card: Card = {
-    goal: u.card.goal || prev?.goal || '',
-    done: doneTexts(milestones),
-    now: u.card.now || prev?.now || '',
-    running: u.card.running,
-  }
-
   return reopenAskedFindings(
     {
       ...ledger,
       card,
-      milestones,
       items: kept,
       closed,
       findings,

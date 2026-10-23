@@ -20,18 +20,59 @@ function detachedUpdate(dir, env, script) {
 // src/hook.ts
 import { resolve as resolve3 } from "node:path";
 
+// ../hooks/overview.ts
+var HEADLINE_WORDS = 12;
+var ITEM_WORDS = 12;
+var SENTENCE_WORDS = 30;
+var DETAIL_WORDS = 20;
+var LIST_ITEMS = 6;
+var STATUSES = [
+  "working",
+  "queued",
+  "waits-on-you",
+  "waits-on-other",
+  "done",
+  "ruled-out",
+  "problem",
+  "unknown"
+];
+var STATES = ["on-track", "stuck", "finished"];
+function isItem(value) {
+  const item = value;
+  return typeof item === "object" && item !== null && STATUSES.includes(item.status) && typeof item.text === "string" && (item.detail === null || typeof item.detail === "string");
+}
+function itemsOf(value) {
+  return Array.isArray(value) ? value.filter(isItem).slice(0, LIST_ITEMS) : [];
+}
+function upgradeOverview(saved) {
+  const o = saved;
+  if (typeof o !== "object" || o === null || typeof o.headline !== "string") return null;
+  const text = (value) => typeof value === "string" ? value : "";
+  return {
+    isCoordinator: o.isCoordinator === true,
+    state: STATES.find((s) => s === o.state) ?? "on-track",
+    headline: o.headline,
+    status: text(o.status),
+    course: text(o.course),
+    queue: itemsOf(o.queue),
+    works: itemsOf(o.works),
+    open: itemsOf(o.open),
+    next: itemsOf(o.next),
+    since: itemsOf(o.since),
+    workstreams: itemsOf(o.workstreams),
+    earlier: Array.isArray(o.earlier) ? o.earlier.filter((e) => typeof e === "string") : []
+  };
+}
+
 // ../hooks/text.ts
 function clip(text, max) {
   return text.length <= max ? text : text.slice(0, max) + " \u2026[cut]";
-}
-function clipLabel(text, max) {
-  return text.length > max ? `${text.slice(0, max - 1)}\u2026` : text;
 }
 
 // ../hooks/ledger.ts
 var EMPTY = {
   card: null,
-  milestones: [],
+  overview: null,
   items: [],
   closed: [],
   findings: [],
@@ -47,14 +88,15 @@ function readKind(kind) {
   return kind === "task" || kind === "do" ? "task" : "question";
 }
 function upgradeLedger(ledger) {
-  const { notes, decided, ...rest } = ledger;
+  const {
+    notes,
+    decided,
+    milestones: _milestones,
+    ...rest
+  } = ledger;
   return {
     ...rest,
-    milestones: addMilestones(
-      rest.milestones ?? [],
-      (rest.card?.done ?? []).map((text) => doneMilestone(text, null)),
-      "first"
-    ),
+    overview: upgradeOverview(rest.overview),
     findings: [...rest.findings ?? [], ...notes ?? []],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
@@ -103,47 +145,10 @@ function howFromOutcome(outcome) {
   if (outcome.startsWith(CLOSED_BY_CLAUDE)) return "claude";
   return "update";
 }
-var MAX_MILESTONES = 200;
-var MILESTONE_TEXT_CHARS = 120;
-function doneMilestone(text, at) {
-  return { source: "done", text: clipLabel(text, MILESTONE_TEXT_CHARS), detail: null, ref: null, at };
-}
-function foldedText(text) {
-  return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-}
-function nextMilestoneId(milestones) {
-  return `m${Math.max(0, ...milestones.map((m) => idNumber(m.id) || 0)) + 1}`;
-}
-function isRepeatMilestone(milestones, m) {
-  const folded = foldedText(m.text);
-  return milestones.some(
-    (x) => m.ref !== null ? x.source === m.source && x.ref === m.ref : m.source === "done" && foldedText(x.text) === folded
-  );
-}
-function addMilestones(milestones, added, place = "last") {
-  const fresh = added.reduce((all2, m) => {
-    const known = [...milestones, ...all2];
-    return isRepeatMilestone(known, m) ? all2 : [...all2, { ...m, id: nextMilestoneId(known) }];
-  }, []);
-  const all = place === "first" ? [...fresh, ...milestones] : [...milestones, ...fresh];
-  const over = all.length - MAX_MILESTONES;
-  if (over <= 0) return all;
-  const kept = place === "first" ? [] : fresh;
-  const evicted = new Set(all.filter((m) => !kept.includes(m)).slice(0, over));
-  return all.filter((m) => !evicted.has(m));
-}
-function stampPressTurn(ledger, ref, turn) {
-  const isUnstamped = (m) => m.source === "answered" && m.ref === ref && m.turn === void 0;
-  if (!ledger.milestones.some(isUnstamped)) return ledger;
-  return { ...ledger, milestones: ledger.milestones.map((m) => isUnstamped(m) ? { ...m, turn } : m) };
-}
 var CLOSED_BY_CLAUDE = "closed by Claude";
 function pruneClosed(ledger, keep) {
   const pruned = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id));
   return { ...ledger, closed: pruned(ledger.closed), closedFindings: pruned(ledger.closedFindings) };
-}
-function idNumber(id) {
-  return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
 }
 var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
 var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
@@ -243,13 +248,48 @@ function dialogActivity(questions, outcome) {
       return `${head}; still open, waiting on the user's answer`;
   }
 }
+var OVERVIEW_SYSTEM = `You keep a one-page guide to a coding session, for the person who works with the agent. They read it when they come back, to see what the work is, how it is going and what comes next. You read the guide as it was and one exchange, and write the guide as it should be now.
+
+The guide is about the work. It is not a log of what the agent did, and it is not a list of what waits on the person: the inbox lists that. Write at the level of the feature or the fix. Never write a command, a file name, a commit, a test run, a tool call or a ticket number, and leave out a number, an id or a time unless the person needs it to find the work again.
+
+Input:
+- <last>: the guide as it was, in the same lines you write
+- <unseen>: the changes the person has not yet looked at, as SINCE lines
+- <person>: what the person just sent
+- <activity>: what the agent did this turn
+- <reply>: the agent's final reply
+
+Answer with lines only. No other text. If the exchange changed nothing about the work, answer with the one line UNCHANGED.
+
+Otherwise write every line below that applies, in this order:
+KIND: session, or coordinator when the session hands out work and reviews what comes back instead of doing the work itself
+TOPIC: same, or new when the work moved to a different task. Write new only for a different task, not for the next step of the same one.
+STATE: on-track, stuck or finished
+HEADLINE: one plain sentence naming what the session is doing, at most ${HEADLINE_WORDS} words. "-" when no work has started.
+STATUS: how it is going, in one or two plain sentences, at most ${SENTENCE_WORDS} words. Say what it waits on, if anything.
+COURSE: only when the approach changed, in one or two sentences, at most ${SENTENCE_WORDS} words: what changed and why. A new step is not a change.
+FOLDED: only when TOPIC is new, one line saying what the old topic was and where it was left.
+Then lists, one item per line, as KEY: status | text | detail. The detail is optional. Text is at most ${ITEM_WORDS} words and detail at most ${DETAIL_WORDS}. At most ${LIST_ITEMS} items in a list.
+QUEUE: the work now: what is under way, what is queued behind it, what waits, and what just finished
+WORKS: what holds now: what works, what exists
+OPEN: risks, problems and unknowns
+NEXT: what comes next
+SINCE: what changed since the person last looked. Start from <unseen>, merge this exchange into it, and keep it short.
+STREAM: only in a coordinator session: one line for each stream of work, saying what it is for and where it stands
+
+Status is one of: working, queued, waits-on-you, waits-on-other, done, ruled-out, problem, unknown. Use waits-on-you when the agent cannot go on until the person acts, and waits-on-other for something else, such as a build. Use ruled-out for an approach tried or considered and dropped, and put the reason in the detail.
+
+Rules:
+- Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed.
+- Do not write a question or task the agent put to the person. Say the work waits, and stop.
+- Leave a list out when it has nothing worth saying. Do not fill a list to fill it.`;
 function surfaceAtStart(host) {
   return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
 }
 function screenText(host, isOpen, tab) {
   if (!isOpen) return `${surfaceAtStart(host)} is closed.`;
   if (tab?.isPage)
-    return `${surfaceAtStart(host)} is open beside the conversation, on its ${tab.label} tab, which shows the session's goal, subagents and results, not rows.`;
+    return `${surfaceAtStart(host)} is open beside the conversation, on its ${tab.label} tab, which shows a guide to the session's work, not rows.`;
   return `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ""}listing every open item.`;
 }
 function latestBatch(ledger) {
@@ -471,13 +511,13 @@ var TABS = [
   { id: "needsYou", label: "Needs you", hotkey: "1" },
   { id: "findings", label: "Findings", hotkey: "2" },
   { id: "prs", label: "PRs", hotkey: "3" },
-  { id: "progress", label: "Progress", hotkey: "4" }
+  { id: "overview", label: "Overview", hotkey: "4" }
 ];
 function isListedTab(tab) {
   return tab === "needsYou" || tab === "findings";
 }
 function isRowTab(tab) {
-  return tab !== "progress";
+  return tab !== "overview";
 }
 var ROW_TABS = TABS.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TABS.filter((t) => isListedTab(t.id));
@@ -501,10 +541,8 @@ function emptySession() {
       ledgerState: "current",
       hasDroppedReply: false,
       isUpdating: false,
-      isTurnRunning: false,
-      statedStep: null
+      isTurnRunning: false
     },
-    subagents: [],
     pending: [],
     sent: [],
     lastActions: {},
@@ -522,6 +560,10 @@ function missingAsNull(err) {
   if (err.code === "ENOENT") return null;
   throw err;
 }
+function withoutStatedStep(presence) {
+  const { statedStep: _statedStep, ...rest } = presence ?? {};
+  return rest;
+}
 function upgradeSession(saved) {
   const base = emptySession();
   const views = saved.prViews?.views ?? {};
@@ -529,12 +571,7 @@ function upgradeSession(saved) {
     ledger: saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger,
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
-    presence: { ...base.presence, ...saved.presence },
-    subagents: (saved.subagents ?? []).map((a) => ({
-      ...a,
-      statedStep: a.statedStep ?? null,
-      transcriptPath: a.transcriptPath ?? null
-    })),
+    presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
     pending: saved.pending ?? [],
     sent: (saved.sent ?? []).map((x) => ({
       ...x,
@@ -581,14 +618,12 @@ function cleared(s) {
     turn: NO_TURN,
     told: { inbox: null, closed: [] },
     pending: [],
-    subagents: [],
     presence: {
       ...s.presence,
       ledgerState: "current",
       hasDroppedReply: false,
       turnsApplied: s.presence.turnsStarted,
-      isTurnRunning: false,
-      statedStep: null
+      isTurnRunning: false
     },
     lastActions: {},
     stop: null
@@ -626,14 +661,13 @@ function turnStarted(s) {
   return { ...s, presence: { ...s.presence, isTurnRunning: true } };
 }
 function turnEnded(s) {
-  return { ...s, presence: { ...s.presence, isTurnRunning: false, statedStep: null } };
+  return { ...s, presence: { ...s.presence, isTurnRunning: false } };
 }
 function startTurn(s) {
   return { ...s, presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }, stop: null };
 }
 function recordPrompt(host, s, text, isOpen, sentBy) {
-  const counted = { ...s.ledger, turn: s.ledger.turn + 1 };
-  const ledger = sentBy?.press?.action === "answer" ? stampPressTurn(counted, sentBy.press.id, counted.turn) : counted;
+  const ledger = { ...s.ledger, turn: s.ledger.turn + 1 };
   const r = promptNotes(host, ledger, { text, isPress: sentBy !== null, isOpen }, s.told);
   const person = s.turn.person === null ? text : `${s.turn.person}
 
@@ -695,7 +729,7 @@ function needsUpdate(s) {
 }
 function hasLedger(s) {
   const { ledger } = s;
-  return ledger.card !== null || ledger.items.length > 0 || ledger.findings.length > 0 || ledger.milestones.length > 0;
+  return ledger.card !== null || ledger.items.length > 0 || ledger.findings.length > 0 || ledger.overview !== null;
 }
 function forkedFrom(child, parent) {
   if (child.ledger.turn !== 0 || child.ledger.card) return child;
@@ -703,7 +737,7 @@ function forkedFrom(child, parent) {
 }
 function isUnseen(s) {
   const { ledger } = s;
-  return s.presence.turnsStarted === 0 && s.presence.ledgerState === "current" && s.pending.length === 0 && ledger.card === null && ledger.items.length === 0 && ledger.findings.length === 0 && ledger.milestones.length === 0;
+  return s.presence.turnsStarted === 0 && s.presence.ledgerState === "current" && s.pending.length === 0 && ledger.card === null && ledger.items.length === 0 && ledger.findings.length === 0 && ledger.overview === null;
 }
 
 // src/settle.ts
@@ -728,7 +762,7 @@ function isTabOpen(s, now) {
 }
 function screenTabOf(s) {
   const shown = TABS.find((t) => t.id === s.shownTab);
-  return { label: shown?.label ?? s.shownTab, isPage: s.shownTab === "progress" };
+  return { label: shown?.label ?? s.shownTab, isPage: s.shownTab === "overview" };
 }
 function notePrompt2(s, text, now) {
   return notePrompt(CODEX, s, text, isTabOpen(s, now));
@@ -809,7 +843,14 @@ function upgraded(saved, sessionId) {
   if (saved.version !== void 0 && saved.version !== 1)
     throw new Error(`Unsupported inbox state version: ${saved.version}`);
   const base = emptyState(sessionId);
-  const { checks: _checks, snapshots: _snapshots, recordedRuns: _runs, top: _top, ...kept } = saved;
+  const {
+    checks: _checks,
+    snapshots: _snapshots,
+    recordedRuns: _runs,
+    top: _top,
+    subagents: _subagents,
+    ...kept
+  } = saved;
   const { sentBack: _sentBack, ...turn } = saved.turn ?? {};
   return {
     ...base,
@@ -1184,10 +1225,10 @@ function callLines(p, hasCommandRows, cwd) {
   const line = activityOf(textOf(p.namespace).startsWith("mcp__") ? textOf(p.namespace) + name : name, {});
   return line ? [line] : [];
 }
-var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf(record(record(row.payload).item).type));
+var isItem2 = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf(record(record(row.payload).item).type));
 function turnsOf(rows, cwd) {
-  const hasMessageRows = rows.some((row) => isItem(row, "UserMessage", "AgentMessage"));
-  const hasCommandRows = rows.some((row) => isItem(row, "CommandExecution"));
+  const hasMessageRows = rows.some((row) => isItem2(row, "UserMessage", "AgentMessage"));
+  const hasCommandRows = rows.some((row) => isItem2(row, "CommandExecution"));
   const turns = [];
   const agentTurn = () => {
     const last = turns.at(-1);
@@ -1207,9 +1248,9 @@ function turnsOf(rows, cwd) {
   for (const row of rows) {
     const p = record(row.payload);
     const item = record(p.item);
-    if (isItem(row, "UserMessage")) person(contentText(item.content));
-    else if (isItem(row, "AgentMessage")) turns.push({ role: "agent", text: contentText(item.content), activity: [] });
-    else if (isItem(row, "CommandExecution")) act(shellLines(commandText(item.command)));
+    if (isItem2(row, "UserMessage")) person(contentText(item.content));
+    else if (isItem2(row, "AgentMessage")) turns.push({ role: "agent", text: contentText(item.content), activity: [] });
+    else if (isItem2(row, "CommandExecution")) act(shellLines(commandText(item.command)));
     else if (row.type === "response_item") {
       if (p.type === "message" && !hasMessageRows && p.role === "user") person(contentText(p.content));
       else if (p.type === "message" && !hasMessageRows && p.role === "assistant")

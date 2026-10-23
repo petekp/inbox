@@ -36,31 +36,183 @@ import {
 import { homedir as homedir2 } from "node:os";
 import { basename, dirname, isAbsolute, join as join2, resolve } from "node:path";
 
-// ../hooks/text.ts
+// ../hooks/overview.ts
+var HEADLINE_WORDS = 12;
+var ITEM_WORDS = 12;
+var SENTENCE_WORDS = 30;
+var DETAIL_WORDS = 20;
+var LIST_ITEMS = 6;
+var EARLIER_KEPT = 6;
 var NL = "\n";
+var EMPTY_OVERVIEW = {
+  isCoordinator: false,
+  state: "on-track",
+  headline: "",
+  status: "",
+  course: "",
+  queue: [],
+  works: [],
+  open: [],
+  next: [],
+  since: [],
+  workstreams: [],
+  earlier: []
+};
+var LIST_KEYS = {
+  QUEUE: "queue",
+  WORKS: "works",
+  OPEN: "open",
+  NEXT: "next",
+  SINCE: "since",
+  STREAM: "workstreams"
+};
+var STATUSES = [
+  "working",
+  "queued",
+  "waits-on-you",
+  "waits-on-other",
+  "done",
+  "ruled-out",
+  "problem",
+  "unknown"
+];
+var STATES = ["on-track", "stuck", "finished"];
+var KEY_LINE = /^\s*[-*]?\s*(UNCHANGED|KIND|TOPIC|STATE|HEADLINE|STATUS|COURSE|FOLDED|QUEUE|WORKS|OPEN|NEXT|SINCE|STREAM)\s*:?\s*(.*)$/;
+function clipWords(text, limit) {
+  const words2 = text.trim().split(/\s+/).filter(Boolean);
+  return words2.length <= limit ? words2.join(" ") : `${words2.slice(0, limit).join(" ")}\u2026`;
+}
+function plain(value) {
+  const text = value.trim();
+  return text === "-" ? "" : text;
+}
+function itemOf(value) {
+  const [status, text, ...detail] = value.split("|").map((part) => part.trim());
+  const isStatus = (s) => STATUSES.includes(s);
+  if (!isStatus(status) || !text) return null;
+  const rest = plain(detail.join(" | "));
+  return { status, text: clipWords(text, ITEM_WORDS), detail: rest === "" ? null : clipWords(rest, DETAIL_WORDS) };
+}
+function parseOverview(text) {
+  const overview = { ...EMPTY_OVERVIEW };
+  const lists = {
+    queue: [],
+    works: [],
+    open: [],
+    next: [],
+    since: [],
+    workstreams: []
+  };
+  let isUnchanged = false;
+  let hasHeadline = false;
+  let isNewTopic = false;
+  let folded = "";
+  for (const line of (text ?? "").split(NL)) {
+    const m = KEY_LINE.exec(line);
+    if (!m) continue;
+    const key = m[1];
+    const value = (m[2] ?? "").trim();
+    if (key === "UNCHANGED") isUnchanged = true;
+    else if (key === "KIND") overview.isCoordinator = value.toLowerCase() === "coordinator";
+    else if (key === "TOPIC") isNewTopic = value.toLowerCase() === "new";
+    else if (key === "STATE") overview.state = STATES.find((s) => s === value.toLowerCase()) ?? "on-track";
+    else if (key === "HEADLINE") {
+      hasHeadline = true;
+      overview.headline = clipWords(plain(value), HEADLINE_WORDS);
+    } else if (key === "STATUS") overview.status = clipWords(plain(value), SENTENCE_WORDS);
+    else if (key === "COURSE") overview.course = clipWords(plain(value), SENTENCE_WORDS);
+    else if (key === "FOLDED") folded = clipWords(plain(value), ITEM_WORDS * 2);
+    else {
+      const item = itemOf(value);
+      const list = lists[LIST_KEYS[key]];
+      if (item && list.length < LIST_ITEMS) list.push(item);
+    }
+  }
+  if (isUnchanged && !hasHeadline) return { kind: "unchanged" };
+  if (!hasHeadline) return null;
+  return { kind: "written", overview: { ...overview, ...lists }, isNewTopic, folded };
+}
+function applyOverview(last, answer) {
+  if (answer.kind === "unchanged") return last;
+  const earlier = last?.earlier ?? [];
+  if (!answer.isNewTopic || last === null || last.headline === "") return { ...answer.overview, earlier };
+  const left = answer.folded || last.headline;
+  return { ...answer.overview, course: "", earlier: [...earlier, left].slice(-EARLIER_KEPT) };
+}
+function isItem(value) {
+  const item = value;
+  return typeof item === "object" && item !== null && STATUSES.includes(item.status) && typeof item.text === "string" && (item.detail === null || typeof item.detail === "string");
+}
+function itemsOf(value) {
+  return Array.isArray(value) ? value.filter(isItem).slice(0, LIST_ITEMS) : [];
+}
+function upgradeOverview(saved) {
+  const o = saved;
+  if (typeof o !== "object" || o === null || typeof o.headline !== "string") return null;
+  const text = (value) => typeof value === "string" ? value : "";
+  return {
+    isCoordinator: o.isCoordinator === true,
+    state: STATES.find((s) => s === o.state) ?? "on-track",
+    headline: o.headline,
+    status: text(o.status),
+    course: text(o.course),
+    queue: itemsOf(o.queue),
+    works: itemsOf(o.works),
+    open: itemsOf(o.open),
+    next: itemsOf(o.next),
+    since: itemsOf(o.since),
+    workstreams: itemsOf(o.workstreams),
+    earlier: Array.isArray(o.earlier) ? o.earlier.filter((e) => typeof e === "string") : []
+  };
+}
+function itemLine(key, i) {
+  return `${key}: ${i.status} | ${i.text}${i.detail ? ` | ${i.detail}` : ""}`;
+}
+function overviewText(o) {
+  if (o === null) return "(none yet)";
+  const lists = [
+    ["QUEUE", o.queue],
+    ["WORKS", o.works],
+    ["OPEN", o.open],
+    ["NEXT", o.next],
+    ["STREAM", o.workstreams]
+  ];
+  return [
+    `KIND: ${o.isCoordinator ? "coordinator" : "session"}`,
+    `STATE: ${o.state}`,
+    `HEADLINE: ${o.headline || "-"}`,
+    `STATUS: ${o.status || "-"}`,
+    ...o.course ? [`COURSE: ${o.course}`] : [],
+    ...lists.flatMap(([key, items]) => items.map((i) => itemLine(key, i))),
+    ...o.earlier.map((e) => `EARLIER: ${e}`)
+  ].join(NL);
+}
+function sinceText(o) {
+  return (o?.since ?? []).map((i) => itemLine("SINCE", i)).join(NL);
+}
+
+// ../hooks/text.ts
+var NL2 = "\n";
 var FENCE = /```[^\n]*\n([\s\S]*?)```/g;
 function codeBlocks(reply) {
   return [...reply.matchAll(FENCE)].map((m) => (m[1] ?? "").replace(/\n$/, ""));
 }
 function numberBlocks(reply) {
   let n = 0;
-  return reply.replace(FENCE, (block) => `[block ${n += 1}]${NL}${block}`);
+  return reply.replace(FENCE, (block) => `[block ${n += 1}]${NL2}${block}`);
 }
 function clip(text, max) {
   return text.length <= max ? text : text.slice(0, max) + " \u2026[cut]";
 }
-function clipLabel(text, max) {
-  return text.length > max ? `${text.slice(0, max - 1)}\u2026` : text;
-}
 function clipMiddle(text, max, head) {
   if (text.length <= max) return text;
-  return `${text.slice(0, head)}${NL}\u2026[cut]${NL}${text.slice(text.length - (max - head))}`;
+  return `${text.slice(0, head)}${NL2}\u2026[cut]${NL2}${text.slice(text.length - (max - head))}`;
 }
 
 // ../hooks/ledger.ts
 var EMPTY = {
   card: null,
-  milestones: [],
+  overview: null,
   items: [],
   closed: [],
   findings: [],
@@ -70,7 +222,7 @@ var EMPTY = {
   turn: 0,
   batchTurn: 0
 };
-var NL2 = "\n";
+var NL3 = "\n";
 var MAX_OPEN = 20;
 var STALE_AFTER = 12;
 var UNFOUNDED_MOOT = /^no longer applies:.*(\b(not|never) (related|relevant|addressed|mentioned|discussed|answered|raised|part of)\b|\bunrelated\b|\b(still|stays) open\b|\boutside (the|this)\b|\bnothing\b.*\b(touch|address|mention|relate))/i;
@@ -81,14 +233,15 @@ function readKind(kind) {
   return kind === "task" || kind === "do" ? "task" : "question";
 }
 function upgradeLedger(ledger) {
-  const { notes, decided, ...rest } = ledger;
+  const {
+    notes,
+    decided,
+    milestones: _milestones,
+    ...rest
+  } = ledger;
   return {
     ...rest,
-    milestones: addMilestones(
-      rest.milestones ?? [],
-      (rest.card?.done ?? []).map((text) => doneMilestone(text, null)),
-      "first"
-    ),
+    overview: upgradeOverview(rest.overview),
     findings: [...rest.findings ?? [], ...notes ?? []],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
@@ -204,11 +357,10 @@ function dash(value) {
   const v = (value ?? "").trim();
   return v === "" || v === "-" ? null : v;
 }
-var KEY_LINE = /^\s*[-*]?\s*(GOAL|DONE|NOW|RUNNING|CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:\s*(.*)$/;
+var KEY_LINE2 = /^\s*[-*]?\s*(GOAL|DONE|NOW|RUNNING|CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:\s*(.*)$/;
 function parseReply(text, source = null) {
   const blocks = source === null ? [] : codeBlocks(source);
-  const card = { goal: "", now: "", running: [] };
-  const done = [];
+  const card = { goal: "", done: [], now: "", running: [] };
   const closed = [];
   const added = [];
   const helped = [];
@@ -217,18 +369,18 @@ function parseReply(text, source = null) {
   const asks = [];
   const todos = [];
   let seen = 0;
-  const lines = text.split(NL2);
-  const lastGoal = lines.findLastIndex((line) => KEY_LINE.exec(line)?.[1] === "GOAL");
+  const lines = text.split(NL3);
+  const lastGoal = lines.findLastIndex((line) => KEY_LINE2.exec(line)?.[1] === "GOAL");
   const newLines = [];
   for (const raw of lines.slice(Math.max(lastGoal, 0))) {
-    const m = KEY_LINE.exec(raw);
+    const m = KEY_LINE2.exec(raw);
     if (!m) continue;
     seen += 1;
     const key = m[1];
     const value = dash(m[2]) ?? "";
     if (key === "GOAL") card.goal = value;
     else if (key === "NOW") card.now = value;
-    else if (key === "DONE" && value) done.push(value);
+    else if (key === "DONE" && value) card.done.push(value);
     else if (key === "RUNNING" && value) card.running.push(value);
     else if (key === "CLOSED" || key === "FIXED") {
       const [id, outcome] = value.split("|").map((s) => s.trim());
@@ -283,85 +435,7 @@ function parseReply(text, source = null) {
     const item = n ? added.indexOf(newLines[Number(n[1]) - 1]) : target.match(/\b(i\d+)\b/)?.[1];
     if (item !== void 0 && item !== -1) asked.push({ id, item });
   }
-  return seen === 0 ? null : { card, done, closed, added, helped, updated, asked, todos };
-}
-var MAX_MILESTONES = 200;
-function resultLines(resultsText) {
-  return (resultsText ?? "").split(NL2).flatMap((line) => {
-    const m = KEY_LINE.exec(line);
-    return m?.[1] === "DONE" ? dash(m[2] ?? "") ?? [] : [];
-  });
-}
-function withoutResults(update) {
-  return { ...update, done: [] };
-}
-function handledBy(before, after) {
-  const answered = after.closed.filter((c) => c.how === "update" && !before.closed.some((b) => b.id === c.id));
-  const fixed = after.closedFindings.filter(
-    (f) => f.how === "update" && !isLapsed(f) && !before.closedFindings.some((b) => b.id === f.id)
-  );
-  return {
-    answered: answered.map((c) => ({ ask: c.ask, outcome: c.outcome })),
-    fixed: fixed.map((f) => f.title)
-  };
-}
-var DONE_PER_UPDATE = 3;
-var DONE_PER_CATCH_UP = 6;
-var CARD_DONE = 4;
-var MILESTONE_TEXT_CHARS = 120;
-var MILESTONE_DETAIL_CHARS = 200;
-var TODO_OPTIONS = ["Proceed", "Not yet"];
-var BARE_YES = /^\s*(?:yes|yep|yeah|y|ok|okay|sure|go|go ahead|proceed|do it|continue|approved?|sounds good|sgtm|lgtm|all recommended|yes to all|ship it)\s*[.!]*\s*$/i;
-function resultMilestones(texts, isCatchUp) {
-  return texts.slice(isCatchUp ? -DONE_PER_CATCH_UP : -DONE_PER_UPDATE).map((text) => doneMilestone(text, null));
-}
-function doneMilestone(text, at) {
-  return { source: "done", text: clipLabel(text, MILESTONE_TEXT_CHARS), detail: null, ref: null, at };
-}
-function isTodoQuestion(item) {
-  return item.options.length === TODO_OPTIONS.length && item.options.every((o, n) => o === TODO_OPTIONS[n]);
-}
-function answeredMilestone(item, answer, at) {
-  const text = answer.trim();
-  const isNoResult = isTodoQuestion(item) || text === "" || BARE_YES.test(text) || PUT_OFF.test(text) || isAskedForChoices({ how: "answered", outcome: text });
-  if (item.kind !== "question" || isNoResult) return null;
-  return {
-    source: "answered",
-    text: clipLabel(item.ask, MILESTONE_TEXT_CHARS),
-    detail: clipLabel(text, MILESTONE_DETAIL_CHARS),
-    ref: item.id,
-    at
-  };
-}
-function foldedText(text) {
-  return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-}
-function nextMilestoneId(milestones) {
-  return `m${Math.max(0, ...milestones.map((m) => idNumber(m.id) || 0)) + 1}`;
-}
-function isRepeatMilestone(milestones, m) {
-  const folded = foldedText(m.text);
-  return milestones.some(
-    (x) => m.ref !== null ? x.source === m.source && x.ref === m.ref : m.source === "done" && foldedText(x.text) === folded
-  );
-}
-function addMilestones(milestones, added, place = "last") {
-  const fresh = added.reduce((all2, m) => {
-    const known = [...milestones, ...all2];
-    return isRepeatMilestone(known, m) ? all2 : [...all2, { ...m, id: nextMilestoneId(known) }];
-  }, []);
-  const all = place === "first" ? [...fresh, ...milestones] : [...milestones, ...fresh];
-  const over = all.length - MAX_MILESTONES;
-  if (over <= 0) return all;
-  const kept = place === "first" ? [] : fresh;
-  const evicted = new Set(all.filter((m) => !kept.includes(m)).slice(0, over));
-  return all.filter((m) => !evicted.has(m));
-}
-function removeMilestone(ledger, ref) {
-  return ledger.milestones.some((m) => m.ref === ref) ? { ...ledger, milestones: ledger.milestones.filter((m) => m.ref !== ref) } : ledger;
-}
-function doneTexts(milestones) {
-  return milestones.filter((m) => m.source === "done").slice(-CARD_DONE).map((m) => m.text);
+  return seen === 0 ? null : { card: { ...card, done: card.done.slice(-4) }, closed, added, helped, updated, asked, todos };
 }
 function isTakenUp(work, reply) {
   const key = [...keyWords(work)];
@@ -391,18 +465,13 @@ var FILLER = /* @__PURE__ */ new Set([
 function keyWords(text) {
   return new Set(words(text).filter((w) => new RegExp("\\p{N}", "u").test(w) || w.length > 2 && !FILLER.has(w)));
 }
-function numbersOf(words2) {
-  return [...words2].filter((w) => new RegExp("\\p{N}", "u").test(w)).sort().join(" ");
-}
-function hasNumberConflict(x, y) {
-  return numbersOf(x) !== "" && numbersOf(y) !== "" && numbersOf(x) !== numbersOf(y);
-}
 function restates(a, b) {
   const x = keyWords(a);
   const y = keyWords(b);
   const fewer = Math.min(x.size, y.size);
   const shared = [...x].filter((w) => y.has(w)).length;
-  if (hasNumberConflict(x, y)) return false;
+  const numbers = (words2) => [...words2].filter((w) => new RegExp("\\p{N}", "u").test(w)).sort().join(" ");
+  if (numbers(x) !== "" && numbers(y) !== "" && numbers(x) !== numbers(y)) return false;
   return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b);
 }
 function sameAsk(a, b) {
@@ -491,22 +560,11 @@ function reopenFinding(ledger, id) {
   const record2 = ledger.closedFindings.findLast((f) => f.id === id);
   if (!record2 || ledger.findings.some((f) => f.id === id)) return ledger;
   const { how: _how, outcome: _outcome, closedAt: _closedAt, ...finding } = record2;
-  return removeMilestone(
-    {
-      ...ledger,
-      findings: inIdOrder(ledger.findings, finding),
-      closedFindings: ledger.closedFindings.filter((f) => f.id !== id)
-    },
-    id
-  );
-}
-function addResults(ledger, texts, at, turn) {
-  const isCatchUp = turn === null;
-  const taken = isCatchUp ? 0 : ledger.milestones.filter((m) => m.turn === turn).length;
-  const written = resultMilestones(texts, isCatchUp).map((m, n) => isCatchUp ? m : { ...m, at: at + taken + n, turn });
-  if (written.length === 0) return ledger;
-  const milestones = addMilestones(ledger.milestones, written);
-  return { ...ledger, milestones, card: ledger.card && { ...ledger.card, done: doneTexts(milestones) } };
+  return {
+    ...ledger,
+    findings: inIdOrder(ledger.findings, finding),
+    closedFindings: ledger.closedFindings.filter((f) => f.id !== id)
+  };
 }
 function applyExchangeUpdate(ledger, update, exchange, now, promptAt) {
   const explainedId = exchange.press?.action === "explain" ? exchange.press.id : null;
@@ -524,23 +582,26 @@ var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no lo
 function isPersonsAnswer(outcome) {
   return outcome.trim() !== "" && !NOT_AN_ANSWER.test(outcome);
 }
-function applyUpdate(ledger, u, now, turn, promptAt = now, isCatchUp = false) {
+function applyUpdate(ledger, u, now, turn, promptAt = now) {
+  const prev = ledger.card;
+  const card = {
+    goal: u.card.goal || prev?.goal || "",
+    done: u.card.done.length > 0 ? u.card.done : prev?.done ?? [],
+    now: u.card.now || prev?.now || "",
+    running: u.card.running
+  };
   const stillAsked = new Set(u.updated.filter((c) => c.options || c.rec).map((c) => c.id));
   const closing = new Map(
     u.closed.filter((c) => !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome)).map((c) => [c.id, c.outcome])
   );
   const closed = [...ledger.closed];
   const items = [];
-  const answers = [];
   for (const item of ledger.items) {
     const outcome = closing.get(item.id);
     const helps = u.helped.filter((h) => h.id === item.id).reduce((all, h) => withHelp(all, h.help), item.helps);
     const isClosing = outcome !== void 0 && (item.from !== "record" || isPersonsAnswer(outcome));
-    if (isClosing) {
-      closed.push(closedRecord(item, { outcome, how: "update" }, now));
-      const answer = isPersonsAnswer(outcome) ? answeredMilestone(item, outcome, now) : null;
-      if (answer) answers.push(answer);
-    } else items.push(withUpdate({ ...item, helps }, u.updated));
+    if (isClosing) closed.push(closedRecord(item, { outcome, how: "update" }, now));
+    else items.push(withUpdate({ ...item, helps }, u.updated));
   }
   const recordedThisTurn = new Set(
     [...ledger.items, ...ledger.closed.flatMap((c) => c.item ?? [])].filter((i) => i.from === "record" && i.turn === turn).map((i) => i.kind)
@@ -576,7 +637,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now, isCatchUp = false) {
       kind: "question",
       label: null,
       ask: todoAsk(work),
-      options: TODO_OPTIONS,
+      options: ["Proceed", "Not yet"],
       rec: null
     };
     const isKnown = items.some((i) => restates(i.ask, work)) || ledger.findings.some((f) => restates(f.title, work)) || repeatsClosed(ledger.closed, { ...todo, helps: [] }, promptAt);
@@ -602,36 +663,10 @@ function applyUpdate(ledger, u, now, turn, promptAt = now, isCatchUp = false) {
     if (outcome !== void 0) return closeFinding(l, f.id, { outcome, how: "update" }, now);
     return asker ? closeFinding(l, f.id, { outcome: `asked as ${asker}`, how: "update" }, now, asker) : l;
   }, ledger);
-  const fixes = ledger.findings.flatMap((f) => {
-    const outcome = closing.get(f.id);
-    if (outcome === void 0 || isLapsed({ how: "update", outcome })) return [];
-    return [
-      {
-        source: "fixed",
-        text: clipLabel(f.title, MILESTONE_TEXT_CHARS),
-        detail: outcome.trim() === "" ? null : clipLabel(outcome.trim(), MILESTONE_DETAIL_CHARS),
-        ref: f.id,
-        at: now
-      }
-    ];
-  });
-  const results = resultMilestones(u.done, isCatchUp);
-  const written = [...answers, ...fixes, ...results].map(
-    (m, n) => isCatchUp ? { ...m, at: null } : { ...m, at: now + n, turn }
-  );
-  const milestones = addMilestones(ledger.milestones, written);
-  const prev = ledger.card;
-  const card = {
-    goal: u.card.goal || prev?.goal || "",
-    done: doneTexts(milestones),
-    now: u.card.now || prev?.now || "",
-    running: u.card.running
-  };
   return reopenAskedFindings(
     {
       ...ledger,
       card,
-      milestones,
       items: kept,
       closed,
       findings,
@@ -659,7 +694,7 @@ function isLapsed(d) {
 }
 
 // ../hooks/model-text.ts
-var NL3 = "\n";
+var NL4 = "\n";
 var MODEL_KIND = { question: "decide", task: "do" };
 function systemText(host) {
   const band = host.band ? ` They always see how many items are in <open> and <findings> in ${host.band}.` : "";
@@ -716,9 +751,9 @@ function transcriptCatchUpPrompt(ledger, screen, transcript) {
   return [
     `Treat the conversation in <conversation> as the exchange. Its start may be cut. ${CATCH_UP}`,
     ...ledgerBlocks(ledger),
-    `<conversation>${NL3}${numberBlocks(transcript)}${NL3}</conversation>`,
-    `<screen>${NL3}${screen}${NL3}</screen>`
-  ].join(NL3);
+    `<conversation>${NL4}${numberBlocks(transcript)}${NL4}</conversation>`,
+    `<screen>${NL4}${screen}${NL4}</screen>`
+  ].join(NL4);
 }
 var MAX_ACTIVITY = 40;
 function addActivity(activity, line) {
@@ -760,9 +795,9 @@ function dialogQuestions(raw) {
 }
 function dialogQuestionText(q) {
   const shown = q.options.slice(0, DIALOG_OPTIONS_SHOWN).map((label) => {
-    const plain = label.replace(RECOMMENDED_SUFFIX, "");
-    const text = clip(plain, DIALOG_OPTION_MAX);
-    return plain === label ? text : `${text} (recommended)`;
+    const plain2 = label.replace(RECOMMENDED_SUFFIX, "");
+    const text = clip(plain2, DIALOG_OPTION_MAX);
+    return plain2 === label ? text : `${text} (recommended)`;
   });
   const more = q.options.length > shown.length ? ` / and ${q.options.length - shown.length} more` : "";
   const options = shown.length > 0 ? ` (options: ${shown.join(" / ")}${more})` : "";
@@ -790,75 +825,82 @@ function ledgerBlocks(ledger) {
     ...ledger.card.done.map((d) => `DONE: ${d}`),
     `NOW: ${ledger.card.now}`,
     ...ledger.card.running.map((r) => `RUNNING: ${r}`)
-  ].join(NL3) : "";
+  ].join(NL4) : "";
   const open2 = ledger.items.map(
     (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"}`
-  ).join(NL3);
-  const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL3);
-  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL3);
+  ).join(NL4);
+  const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL4);
+  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL4);
   return [
-    `<card>${NL3}${card}${NL3}</card>`,
-    `<open>${NL3}${open2}${NL3}</open>`,
-    `<findings>${NL3}${findings}${NL3}</findings>`,
-    `<decided>${NL3}${closed}${NL3}</decided>`
+    `<card>${NL4}${card}${NL4}</card>`,
+    `<open>${NL4}${open2}${NL4}</open>`,
+    `<findings>${NL4}${findings}${NL4}</findings>`,
+    `<decided>${NL4}${closed}${NL4}</decided>`
   ];
 }
 function buildPrompt(ledger, ex) {
   const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? "unknown"}.)`;
   return [
     ...ledgerBlocks(ledger),
-    `<person>${NL3}${clipMiddle(person, 4e3, 1500)}${NL3}</person>`,
-    `<activity>${NL3}${clipMiddle(ex.activity.join(NL3), 2500, 500)}${NL3}</activity>`,
-    `<reply>${NL3}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL3}</reply>`,
-    `<screen>${NL3}${ex.screen}${NL3}</screen>`
-  ].join(NL3);
+    `<person>${NL4}${clipMiddle(person, 4e3, 1500)}${NL4}</person>`,
+    `<activity>${NL4}${clipMiddle(ex.activity.join(NL4), 2500, 500)}${NL4}</activity>`,
+    `<reply>${NL4}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL4}</reply>`,
+    `<screen>${NL4}${ex.screen}${NL4}</screen>`
+  ].join(NL4);
 }
-var LISTED_SHOWN = 8;
-var RESULTS_SYSTEM = `You keep the list of results for a person who works with a coding agent. They glance at it between tasks to see what the session has produced. You read one exchange and write the results it reached.
+var OVERVIEW_SYSTEM = `You keep a one-page guide to a coding session, for the person who works with the agent. They read it when they come back, to see what the work is, how it is going and what comes next. You read the guide as it was and one exchange, and write the guide as it should be now.
+
+The guide is about the work. It is not a log of what the agent did, and it is not a list of what waits on the person: the inbox lists that. Write at the level of the feature or the fix. Never write a command, a file name, a commit, a test run, a tool call or a ticket number, and leave out a number, an id or a time unless the person needs it to find the work again.
 
 Input:
-- <listed>: results already on the list, newest first
-- <open>: questions and tasks waiting on the person, as id | label | ask
-- <findings>: findings waiting for the person, as id | title
-- <handled>: what the inbox already lists from this exchange, with the work the agent did for each: questions the person answered, as answered: ask | answer, and findings the agent fixed, as fixed: title
+- <last>: the guide as it was, in the same lines you write
+- <unseen>: the changes the person has not yet looked at, as SINCE lines
 - <person>: what the person just sent
-- <activity>: what the agent did this turn (files edited, commands, URLs)
+- <activity>: what the agent did this turn
 - <reply>: the agent's final reply
 
-Answer with lines only, each starting with DONE:. No other text.
+Answer with lines only. No other text. If the exchange changed nothing about the work, answer with the one line UNCHANGED.
 
-DONE: one result the agent finished, at most 8 words, past tense: something that now holds, such as code written, a cause found or a PR opened. Commands run, checks passing and plans are not results. Write no DONE line when nothing finished. Oldest first. Never repeat a result <listed> has, even reworded. The inbox already lists everything <handled> names, so a result that carries out an answer or makes a fix there is already shown: write no DONE line for it, however you would word it.`;
-function resultsBlocks(ledger, handled, isCatchUp) {
-  const listed = ledger.milestones.slice(isCatchUp ? 0 : -LISTED_SHOWN).reverse().map((m) => m.text).join(NL3);
-  const open2 = ledger.items.map((i) => `${i.id} | ${i.label ?? "-"} | ${i.ask}`).join(NL3);
-  const findings = ledger.findings.map((f) => `${f.id} | ${f.title}`).join(NL3);
-  const done = [
-    ...handled.answered.map((a) => `answered: ${a.ask} | ${a.outcome}`),
-    ...handled.fixed.map((title) => `fixed: ${title}`)
-  ].join(NL3);
-  return [
-    `<listed>${NL3}${listed}${NL3}</listed>`,
-    `<open>${NL3}${open2}${NL3}</open>`,
-    `<findings>${NL3}${findings}${NL3}</findings>`,
-    `<handled>${NL3}${done}${NL3}</handled>`
-  ];
+Otherwise write every line below that applies, in this order:
+KIND: session, or coordinator when the session hands out work and reviews what comes back instead of doing the work itself
+TOPIC: same, or new when the work moved to a different task. Write new only for a different task, not for the next step of the same one.
+STATE: on-track, stuck or finished
+HEADLINE: one plain sentence naming what the session is doing, at most ${HEADLINE_WORDS} words. "-" when no work has started.
+STATUS: how it is going, in one or two plain sentences, at most ${SENTENCE_WORDS} words. Say what it waits on, if anything.
+COURSE: only when the approach changed, in one or two sentences, at most ${SENTENCE_WORDS} words: what changed and why. A new step is not a change.
+FOLDED: only when TOPIC is new, one line saying what the old topic was and where it was left.
+Then lists, one item per line, as KEY: status | text | detail. The detail is optional. Text is at most ${ITEM_WORDS} words and detail at most ${DETAIL_WORDS}. At most ${LIST_ITEMS} items in a list.
+QUEUE: the work now: what is under way, what is queued behind it, what waits, and what just finished
+WORKS: what holds now: what works, what exists
+OPEN: risks, problems and unknowns
+NEXT: what comes next
+SINCE: what changed since the person last looked. Start from <unseen>, merge this exchange into it, and keep it short.
+STREAM: only in a coordinator session: one line for each stream of work, saying what it is for and where it stands
+
+Status is one of: working, queued, waits-on-you, waits-on-other, done, ruled-out, problem, unknown. Use waits-on-you when the agent cannot go on until the person acts, and waits-on-other for something else, such as a build. Use ruled-out for an approach tried or considered and dropped, and put the reason in the detail.
+
+Rules:
+- Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed.
+- Do not write a question or task the agent put to the person. Say the work waits, and stop.
+- Leave a list out when it has nothing worth saying. Do not fill a list to fill it.`;
+function overviewBlocks(last) {
+  return [`<last>${NL4}${overviewText(last)}${NL4}</last>`, `<unseen>${NL4}${sinceText(last)}${NL4}</unseen>`];
 }
-function resultsPrompt(ledger, handled, ex) {
+function overviewPrompt(last, ex) {
   const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? "unknown"}.)`;
   return [
-    `Write at most ${DONE_PER_UPDATE} DONE lines.`,
-    ...resultsBlocks(ledger, handled, false),
-    `<person>${NL3}${clipMiddle(person, 4e3, 1500)}${NL3}</person>`,
-    `<activity>${NL3}${clipMiddle(ex.activity.join(NL3), 2500, 500)}${NL3}</activity>`,
-    `<reply>${NL3}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL3}</reply>`
-  ].join(NL3);
+    ...overviewBlocks(last),
+    `<person>${NL4}${clipMiddle(person, 4e3, 1500)}${NL4}</person>`,
+    `<activity>${NL4}${clipMiddle(ex.activity.join(NL4), 2500, 500)}${NL4}</activity>`,
+    `<reply>${NL4}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL4}</reply>`
+  ].join(NL4);
 }
-function resultsCatchUpPrompt(ledger, handled, transcript) {
+function overviewCatchUpPrompt(last, transcript) {
   return [
-    `Treat the conversation in <conversation> as the exchange. Its start may be cut. Write up to ${DONE_PER_CATCH_UP} DONE lines, for the results the conversation reached that <listed> lacks.`,
-    ...resultsBlocks(ledger, handled, true),
-    `<conversation>${NL3}${numberBlocks(transcript)}${NL3}</conversation>`
-  ].join(NL3);
+    "Treat the conversation in <conversation> as the exchange. Its start may be cut. Write the guide as it stands at the end of the conversation.",
+    ...overviewBlocks(last),
+    `<conversation>${NL4}${numberBlocks(transcript)}${NL4}</conversation>`
+  ].join(NL4);
 }
 function surfaceAtStart(host) {
   return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
@@ -866,7 +908,7 @@ function surfaceAtStart(host) {
 function screenText(host, isOpen, tab) {
   if (!isOpen) return `${surfaceAtStart(host)} is closed.`;
   if (tab?.isPage)
-    return `${surfaceAtStart(host)} is open beside the conversation, on its ${tab.label} tab, which shows the session's goal, subagents and results, not rows.`;
+    return `${surfaceAtStart(host)} is open beside the conversation, on its ${tab.label} tab, which shows a guide to the session's work, not rows.`;
   return `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ""}listing every open item.`;
 }
 function outcomeText(d) {
@@ -932,13 +974,13 @@ var TABS = [
   { id: "needsYou", label: "Needs you", hotkey: "1" },
   { id: "findings", label: "Findings", hotkey: "2" },
   { id: "prs", label: "PRs", hotkey: "3" },
-  { id: "progress", label: "Progress", hotkey: "4" }
+  { id: "overview", label: "Overview", hotkey: "4" }
 ];
 function isListedTab(tab) {
   return tab === "needsYou" || tab === "findings";
 }
 function isRowTab(tab) {
-  return tab !== "progress";
+  return tab !== "overview";
 }
 var ROW_TABS = TABS.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TABS.filter((t) => isListedTab(t.id));
@@ -957,10 +999,8 @@ function emptySession() {
       ledgerState: "current",
       hasDroppedReply: false,
       isUpdating: false,
-      isTurnRunning: false,
-      statedStep: null
+      isTurnRunning: false
     },
-    subagents: [],
     pending: [],
     sent: [],
     lastActions: {},
@@ -978,6 +1018,10 @@ function missingAsNull(err) {
   if (err.code === "ENOENT") return null;
   throw err;
 }
+function withoutStatedStep(presence) {
+  const { statedStep: _statedStep, ...rest } = presence ?? {};
+  return rest;
+}
 function upgradeSession(saved) {
   const base = emptySession();
   const views = saved.prViews?.views ?? {};
@@ -985,12 +1029,7 @@ function upgradeSession(saved) {
     ledger: saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger,
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
-    presence: { ...base.presence, ...saved.presence },
-    subagents: (saved.subagents ?? []).map((a) => ({
-      ...a,
-      statedStep: a.statedStep ?? null,
-      transcriptPath: a.transcriptPath ?? null
-    })),
+    presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
     pending: saved.pending ?? [],
     sent: (saved.sent ?? []).map((x) => ({
       ...x,
@@ -1043,7 +1082,7 @@ function applied(s, reply, now, promptAt) {
       pending: [{ ...next, failed: true }, ...s.pending.slice(1)],
       presence: { ...s.presence, ledgerState: "failed" }
     };
-  const ledger = parsed ? applyExchangeUpdate(s.ledger, withoutResults(parsed), ex, now, promptAt) : s.ledger;
+  const ledger = parsed ? applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt) : s.ledger;
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed;
   return {
     ...s,
@@ -1057,9 +1096,9 @@ function applied(s, reply, now, promptAt) {
     }
   };
 }
-function appliedResults(s, texts, at, turn, appliedAfter) {
+function appliedOverview(s, answer, appliedAfter) {
   if (s.presence.turnsApplied < appliedAfter) return s;
-  return { ...s, ledger: addResults(s.ledger, texts, at, turn) };
+  return { ...s, ledger: { ...s.ledger, overview: applyOverview(s.ledger.overview, answer) } };
 }
 function needsCatchUp(s) {
   const { presence } = s;
@@ -1071,7 +1110,7 @@ function appliedCatchUp(s, begun, parsed, now) {
   const covered = new Set(begun.pending.map(pendingKey));
   return {
     ...s,
-    ledger: parsed ? applyUpdate(s.ledger, withoutResults(parsed), now, s.ledger.turn, now, true) : s.ledger,
+    ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn, now) : s.ledger,
     pending: s.pending.filter((p) => !covered.has(pendingKey(p))),
     presence: {
       ...s.presence,
@@ -1113,7 +1152,14 @@ function upgraded(saved, sessionId) {
   if (saved.version !== void 0 && saved.version !== 1)
     throw new Error(`Unsupported inbox state version: ${saved.version}`);
   const base = emptyState(sessionId);
-  const { checks: _checks, snapshots: _snapshots, recordedRuns: _runs, top: _top, ...kept } = saved;
+  const {
+    checks: _checks,
+    snapshots: _snapshots,
+    recordedRuns: _runs,
+    top: _top,
+    subagents: _subagents,
+    ...kept
+  } = saved;
   const { sentBack: _sentBack, ...turn } = saved.turn ?? {};
   return {
     ...base,
@@ -1351,7 +1397,7 @@ async function askOverConversation(ask, names, s, screen, conversation) {
     kind: "reply",
     text,
     source: conversation,
-    results: (ledger, handled) => ask(resultsCatchUpPrompt(ledger, handled, conversation), RESULTS_SYSTEM)
+    overview: (last) => ask(overviewCatchUpPrompt(last, conversation), OVERVIEW_SYSTEM)
   };
 }
 async function runUpdates(host) {
@@ -1359,12 +1405,11 @@ async function runUpdates(host) {
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
   const writing = [];
-  const writeResults = async (after, before, turn, ask) => host.inOrder(async () => {
+  const writeOverview = async (after, ask) => host.inOrder(async () => {
     const { ledger } = await host.read();
-    const texts = resultLines(await ask(ledger, handledBy(before, after.ledger)).catch(() => null));
-    if (texts.length === 0) return;
-    const at = await host.now();
-    await host.update((x) => appliedResults(x, texts, at, turn, after.presence.turnsApplied));
+    const answer = parseOverview(await ask(ledger.overview).catch(() => null));
+    if (answer === null) return;
+    await host.update((x) => appliedOverview(x, answer, after.presence.turnsApplied));
   });
   const followUp = (run2) => {
     const settled = run2.catch(() => void 0);
@@ -1386,34 +1431,23 @@ async function runUpdates(host) {
               }
               const parsed = reply2.kind === "reply" ? parseReply(reply2.text, reply2.source) : null;
               const at = await host.now();
-              const seen2 = { before: null };
-              const after2 = await host.update((x) => {
-                seen2.before = x.ledger;
-                return appliedCatchUp(x, s, parsed, at);
-              });
+              const after2 = await host.update((x) => appliedCatchUp(x, s, parsed, at));
               if (!parsed) return "stop";
-              if (reply2.kind === "reply" && seen2.before) followUp(writeResults(after2, seen2.before, null, reply2.results));
+              if (reply2.kind === "reply") followUp(writeOverview(after2, reply2.overview));
               continue;
             }
             const next = s.pending[0];
             const promptAt = await host.now();
             const reply = await host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names)).catch(() => null);
-            const seen = { before: null };
+            let isApplied = false;
             const after = await host.update(async (x) => {
-              seen.before = null;
+              isApplied = false;
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x;
-              if (isReplyApplied(x, reply)) seen.before = x.ledger;
+              isApplied = isReplyApplied(x, reply);
               return applied(x, reply, await host.now(), promptAt);
             });
-            if (seen.before)
-              followUp(
-                writeResults(
-                  after,
-                  seen.before,
-                  next.ex.turn,
-                  (ledger, handled) => host.ask(resultsPrompt(ledger, handled, next.ex), RESULTS_SYSTEM)
-                )
-              );
+            if (isApplied)
+              followUp(writeOverview(after, (last) => host.ask(overviewPrompt(last, next.ex), OVERVIEW_SYSTEM)));
             if (after.pending[0]?.failed && !next.failed) return "stop";
           }
         } finally {
@@ -1449,7 +1483,7 @@ function isTabOpen(s, now) {
 }
 function screenTabOf(s) {
   const shown = TABS.find((t) => t.id === s.shownTab);
-  return { label: shown?.label ?? s.shownTab, isPage: s.shownTab === "progress" };
+  return { label: shown?.label ?? s.shownTab, isPage: s.shownTab === "overview" };
 }
 function activityOf(tool, input) {
   return toolActivity(tool, input);
@@ -1473,7 +1507,7 @@ import { open, readdir as readdir2 } from "node:fs/promises";
 import { join as join3, resolve as resolve2 } from "node:path";
 
 // ../hooks/conversation.ts
-var NL4 = "\n";
+var NL5 = "\n";
 var TRANSCRIPT_MAX = 8e4;
 var MESSAGE_MAX = 6e3;
 function flattenConversation(turns) {
@@ -1498,7 +1532,7 @@ function flattenConversation(turns) {
     }
     kept.push(line);
   }
-  return kept.reverse().join(NL4);
+  return kept.reverse().join(NL5);
 }
 
 // src/transcript.ts
@@ -1585,10 +1619,10 @@ function callLines(p, hasCommandRows, cwd) {
   const line = activityOf(textOf(p.namespace).startsWith("mcp__") ? textOf(p.namespace) + name : name, {});
   return line ? [line] : [];
 }
-var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf(record(record(row.payload).item).type));
+var isItem2 = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf(record(record(row.payload).item).type));
 function turnsOf(rows, cwd) {
-  const hasMessageRows = rows.some((row) => isItem(row, "UserMessage", "AgentMessage"));
-  const hasCommandRows = rows.some((row) => isItem(row, "CommandExecution"));
+  const hasMessageRows = rows.some((row) => isItem2(row, "UserMessage", "AgentMessage"));
+  const hasCommandRows = rows.some((row) => isItem2(row, "CommandExecution"));
   const turns = [];
   const agentTurn = () => {
     const last = turns.at(-1);
@@ -1608,9 +1642,9 @@ function turnsOf(rows, cwd) {
   for (const row of rows) {
     const p = record(row.payload);
     const item = record(p.item);
-    if (isItem(row, "UserMessage")) person(contentText(item.content));
-    else if (isItem(row, "AgentMessage")) turns.push({ role: "agent", text: contentText(item.content), activity: [] });
-    else if (isItem(row, "CommandExecution")) act(shellLines(commandText2(item.command)));
+    if (isItem2(row, "UserMessage")) person(contentText(item.content));
+    else if (isItem2(row, "AgentMessage")) turns.push({ role: "agent", text: contentText(item.content), activity: [] });
+    else if (isItem2(row, "CommandExecution")) act(shellLines(commandText2(item.command)));
     else if (row.type === "response_item") {
       if (p.type === "message" && !hasMessageRows && p.role === "user") person(contentText(p.content));
       else if (p.type === "message" && !hasMessageRows && p.role === "assistant")

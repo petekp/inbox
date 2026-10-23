@@ -24,8 +24,7 @@ export type FeatureId =
   | 'exchange-trigger'
   | 'settle-window'
   | 'version-label'
-  | 'milestones'
-  | 'progress-tab'
+  | 'overview-tab'
   | 'turn-working'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
@@ -49,8 +48,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'exchange-trigger': { kind: 'full' },
       'settle-window': { kind: 'full' },
       'version-label': { kind: 'full' },
-      milestones: { kind: 'full' },
-      'progress-tab': { kind: 'full' },
+      'overview-tab': { kind: 'full' },
       'turn-working': { kind: 'full' },
     },
   },
@@ -107,8 +105,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason: 'The tab only learns of a close at its next poll, so the settle window adds two polls.',
       },
       'version-label': { kind: 'full' },
-      milestones: { kind: 'full' },
-      'progress-tab': { kind: 'full' },
+      'overview-tab': { kind: 'full' },
       'turn-working': {
         kind: 'different',
         reason:
@@ -147,8 +144,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         kind: 'different',
         reason: "omp's panel footer ends with the inbox model's name, so the version follows it there.",
       },
-      milestones: { kind: 'full' },
-      'progress-tab': { kind: 'full' },
+      'overview-tab': { kind: 'full' },
       'turn-working': { kind: 'full' },
     },
   },

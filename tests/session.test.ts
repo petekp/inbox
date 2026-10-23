@@ -1,11 +1,12 @@
 import { expect, test } from 'claude-code/testing'
 
 import { flattenConversation } from '../hooks/conversation'
-import { EMPTY, applyUpdate, listResults, parseReply, resultLines, upgradeLedger } from '../hooks/ledger'
+import { EMPTY, applyUpdate, parseReply, upgradeLedger } from '../hooks/ledger'
+import { parseOverview } from '../hooks/overview'
 import { CLAUDE_CODE } from '../hooks/model-text'
 import {
   appliedCatchUp,
-  appliedResults,
+  appliedOverview,
   cleared,
   emptySession,
   endTurn,
@@ -97,7 +98,7 @@ test('a failed update catches up over the whole conversation instead of retrying
   })
   await runUpdates({
     ...host,
-    ...reading({ kind: 'reply', text: LEDGER_REPLY, source: 'Person: go', results: async () => null }, calls),
+    ...reading({ kind: 'reply', text: LEDGER_REPLY, source: 'Person: go', overview: async () => null }, calls),
   })
 
   const after = await host.read()
@@ -127,7 +128,7 @@ test('a catch-up that gets no usable answer ends the run, and the next update tr
   await host.update(s => ({ ...s, presence: { ...s.presence, ledgerState: 'behind' as const } }))
   await runUpdates({
     ...host,
-    ...reading({ kind: 'reply', text: 'not a ledger', source: null, results: async () => null }, calls),
+    ...reading({ kind: 'reply', text: 'not a ledger', source: null, overview: async () => null }, calls),
   })
   expect(calls.catchUps).toBe(1)
   expect((await host.read()).presence.ledgerState).toBe('failed')
@@ -143,7 +144,7 @@ test('an exchange that ends during a catch-up is still run afterward', async () 
     ...host,
     catchUp: async () => {
       await host.update(s => finishTurn(s, 'Which runtime?'))
-      return { kind: 'reply', text: 'GOAL: Add a greeting CLI', source: null, results: async () => null }
+      return { kind: 'reply', text: 'GOAL: Add a greeting CLI', source: null, overview: async () => null }
     },
   })
 
@@ -174,7 +175,7 @@ test('a dropped reply keeps the warning through later good updates, until a catc
 
   await runUpdates({
     ...host,
-    ...reading({ kind: 'reply', text: LEDGER_REPLY, source: null, results: async () => null }, calls),
+    ...reading({ kind: 'reply', text: LEDGER_REPLY, source: null, overview: async () => null }, calls),
   })
   expect((await host.read()).presence).toMatchObject({ ledgerState: 'current', hasDroppedReply: false })
   expect(calls.catchUps).toBe(1)
@@ -193,176 +194,101 @@ test('the conversation keeps its newest lines when it is too long, and leaves ou
   expect(text).not.toContain('inbox: nothing waits')
 })
 
-const withMilestone = (s: Session): Session => ({
+const overviewLines = [
+  'HEADLINE: Adding offline mode',
+  'STATUS: Loading works offline.',
+  'QUEUE: working | Save notes offline',
+].join('\n')
+const answer = parseOverview(overviewLines)!
+
+const withOverview = (s: Session): Session => ({
   ...s,
-  ledger: {
-    ...EMPTY,
-    milestones: [{ id: 'm1', source: 'done', text: 'Reducer built', detail: null, ref: null, at: 5 }],
-  },
+  ledger: { ...EMPTY, overview: applyOverviewOf(answer) },
 })
 
-test('a catch-up writes up to six results with no time, and an update after one reply keeps three', () => {
-  const lines = [1, 2, 3, 4, 5, 6, 7].map(n => `DONE: Result number ${n}`).join('\n')
-  const parsed = parseReply(`GOAL: g\n${lines}`)!
-  const caught = appliedResults(
-    appliedCatchUp(emptySession(), emptySession(), parsed, 100),
-    resultLines(lines),
-    100,
-    null,
-    0,
-  )
+function applyOverviewOf(a: NonNullable<ReturnType<typeof parseOverview>>) {
+  return a.kind === 'written' ? { ...a.overview, earlier: [] } : null
+}
 
-  expect(caught.ledger.milestones.map(m => [m.text, m.at])).toEqual(
-    [2, 3, 4, 5, 6, 7].map(n => [`Result number ${n}`, null]),
-  )
-  expect(applyUpdate(EMPTY, parsed, 100, 0).milestones).toHaveLength(3)
-})
-
-test('results attach to the turn they came from after later updates, and are dropped when that turn is gone', () => {
+test('an Overview answer is written to the ledger after later updates, and dropped when its update is gone', () => {
   const later = { ...emptySession(), presence: { ...emptySession().presence, turnsApplied: 5 } }
 
-  const attached = appliedResults(later, ['Reducer built'], 100, 3, 3)
-  expect(attached.ledger.milestones.map(m => [m.text, m.turn])).toEqual([['Reducer built', 3]])
-
-  const replaced = appliedResults(emptySession(), ['Reducer built'], 100, 3, 3)
-  expect(replaced.ledger.milestones).toEqual([])
+  expect(appliedOverview(later, answer, 3).ledger.overview?.headline).toBe('Adding offline mode')
+  expect(appliedOverview(emptySession(), answer, 3).ledger.overview).toBeNull()
 })
 
-test('a session whose only record is a result has a ledger, is not unseen, is copied by a fork and is cleared', () => {
-  const parent = withMilestone(emptySession())
+test('a session whose only record is an Overview has a ledger, is not unseen, is copied by a fork and is cleared', () => {
+  const parent = withOverview(emptySession())
 
   expect(hasLedger(emptySession())).toBe(false)
   expect(isUnseen(emptySession())).toBe(true)
   expect(hasLedger(parent)).toBe(true)
   expect(isUnseen(parent)).toBe(false)
-  expect(forkedFrom(emptySession(), parent).ledger.milestones).toEqual(parent.ledger.milestones)
-  expect(cleared(parent).ledger.milestones).toEqual([])
+  expect(forkedFrom(emptySession(), parent).ledger.overview).toEqual(parent.ledger.overview)
+  expect(cleared(parent).ledger.overview).toBeNull()
 })
 
-test('a ledger saved with milestones, then updated by 0.2.10, keeps the result 0.2.10 wrote', () => {
-  const saved = applyUpdate(EMPTY, parseReply('GOAL: g\nDONE: Reducer built')!, 5, 0)
-  const byOlderBuild = { ...saved, card: { ...saved.card!, done: [...saved.card!.done, 'Tests added'] } }
-  const upgraded = upgradeLedger(byOlderBuild)
-
-  expect(upgraded.milestones.map(m => [m.text, m.at])).toEqual([
-    ['Tests added', null],
-    ['Reducer built', 5],
-  ])
-})
-
-const subagent = (over: Partial<Session['subagents'][number]>): Session['subagents'][number] => ({
-  id: 'a1',
-  task: 'Find the handler',
-  state: 'running',
-  toolStep: 'Reading handler.ts',
-  statedStep: null,
-  result: null,
-  startedAt: 1_000,
-  at: 5_000,
-  transcriptPath: null,
-  ...over,
-})
-
-test('the progress page is empty for a new session and reads Working… only while the main turn runs', () => {
-  const view = (s: Session) => sessionView(s, 10_000, 1000, true, NO_HOLDS).progressPage
+test('the Overview page is empty for a new session and reads Working… only while the main turn runs', () => {
+  const view = (s: Session) => sessionView(s, 10_000, 1000, true, NO_HOLDS).overviewPage
   const idle = emptySession()
 
   expect(view(idle).isEmpty).toBe(true)
   expect(view(turnStarted(idle)).isEmpty).toBe(false)
   expect(view(turnStarted(idle)).now).toBe('Working…')
   expect(view(turnEnded(turnStarted(idle))).now).toBeNull()
-  expect(
-    view({ ...turnStarted(idle), presence: { ...idle.presence, isTurnRunning: true, statedStep: 'Reading x' } }).now,
-  ).toBe('Reading x')
-  expect(
-    turnEnded({ ...idle, presence: { ...idle.presence, isTurnRunning: true, statedStep: 'Reading x' } }).presence,
-  ).toMatchObject({
-    isTurnRunning: false,
-    statedStep: null,
-  })
+  expect(view(withOverview(idle))).toMatchObject({ headline: 'Adding offline mode', now: 'Loading works offline.' })
 })
 
-test('the progress page lists subagents with their step or result, and results with the done tone', () => {
-  const ledger = applyUpdate(EMPTY, parseReply('GOAL: g\nDONE: Reducer built')!, 5_000, 0)
-  const s: Session = {
-    ...emptySession(),
-    ledger,
-    subagents: [
-      subagent({}),
-      subagent({ id: 'a2', task: 'Run tests', state: 'done', result: 'All pass', startedAt: 2_000, at: 8_000 }),
-      subagent({ id: 'a3', task: 'Lint', state: 'stopped', at: 9_000 }),
-      subagent({ id: 'a4', task: 'Docs', statedStep: 'Writing the intro' }),
-    ],
-  }
-  const page = sessionView(s, 10_000, 1000, true, NO_HOLDS).progressPage
+test('the Overview page draws each item with its mark and tone', () => {
+  const lines = [
+    'HEADLINE: h',
+    'QUEUE: working | a',
+    'QUEUE: queued | b',
+    'QUEUE: waits-on-you | c',
+    'QUEUE: waits-on-other | d',
+    'QUEUE: done | e',
+    'QUEUE: ruled-out | f',
+    'OPEN: problem | g',
+    'OPEN: unknown | h',
+  ].join('\n')
+  const parsed = parseOverview(lines)!
+  const s = { ...emptySession(), ledger: { ...EMPTY, overview: applyOverviewOf(parsed) } }
+  const rows = sessionView(s, 0, 1000, true, NO_HOLDS).overviewPage.sections.flatMap(part => part.rows)
 
-  expect(page.subagents?.rows.map(r => [r.text, r.mark, r.detail])).toEqual([
-    ['Find the handler', '●', 'Reading handler.ts'],
-    ['Run tests', '✓', 'All pass'],
-    ['Lint', '✕', null],
-    ['Docs', '●', 'Writing the intro'],
+  expect(rows.map(r => [r.mark, r.tone])).toEqual([
+    ['●', null],
+    ['○', null],
+    ['◆', 'needsYou'],
+    ['◌', null],
+    ['✓', 'done'],
+    ['✗', null],
+    ['!', 'issue'],
+    ['?', null],
   ])
-  expect(page.milestones?.rows.map(r => [r.text, r.tone])).toEqual([['Reducer built', 'done']])
 })
 
-test('a session saved before the progress fields reads with them empty; a fork and a clear leave the running turn alone', () => {
-  const saved = { ...emptySession(), presence: { turnsStarted: 2 } } as never
-  const loaded = upgradeSession(saved)
+test('a session saved by the Progress trial build loads without its results, subagents and stated step', () => {
+  const saved = {
+    ...emptySession(),
+    ledger: { ...EMPTY, milestones: [{ id: 'm1', source: 'done', text: 'Reducer built' }] },
+    subagents: [{ id: 'a1', task: 'Find the handler' }],
+    presence: { turnsStarted: 2, isTurnRunning: true, statedStep: 'Reading x' },
+  } as never
+  const loaded = upgradeSession(saved) as unknown as Record<string, unknown>
 
-  expect(loaded.subagents).toEqual([])
-  expect(loaded.presence).toMatchObject({ turnsStarted: 2, isTurnRunning: false, statedStep: null })
-  const running = { ...turnStarted(emptySession()), subagents: [subagent({})] }
-  expect(forkedFrom(emptySession(), running).subagents).toEqual([])
-  expect(forkedFrom(emptySession(), running).presence.isTurnRunning).toBe(false)
-  expect(cleared(running)).toMatchObject({ subagents: [], presence: { isTurnRunning: false, statedStep: null } })
+  expect(loaded).not.toHaveProperty('subagents')
+  expect(loaded.ledger).not.toHaveProperty('milestones')
+  expect(loaded.presence).not.toHaveProperty('statedStep')
+  expect(loaded.presence).toMatchObject({ turnsStarted: 2, isTurnRunning: true })
 })
 
-test('a sample saved without the progress fields is kept with them empty, and the sample session carries its own', () => {
-  const { subagents: _s, presence: _p, ...old } = demoView(1_000_000)
+test('a sample saved without an Overview is replaced, and the sample session carries its own', () => {
+  const { presence: _p, ...old } = demoView(1_000_000)
 
   expect(isDemoCopy(old)).toBe(true)
-  expect(upgradeDemoCopy(old)).toMatchObject({ subagents: [], presence: { isTurnRunning: false, statedStep: null } })
-  const session = demoSession(1_000_000)
-  const page = sessionView(session, 1_000_000, 1000, true, NO_HOLDS).progressPage
-  expect(page.subagents?.rows.map(r => r.mark)).toEqual(['●', '✓'])
-  expect(page.milestones?.rows.map(r => r.detail)).toEqual([
-    null,
-    null,
-    null,
-    'You answered: Wristband',
-    'Fixed: It now redraws only the glance that changed',
-  ])
-  expect(page.now).toBe('Waiting on the dismiss gesture and a pairing')
-})
-
-test('two quick button answers and a typed message between them each get the turn their own message starts', () => {
-  const asked = applyUpdate(
-    { ...EMPTY, turn: 3 },
-    parseReply(
-      'GOAL: g\nNEW: decide | 1 | Which license should the CLI use? | MIT / Apache-2.0 | MIT\nNEW: decide | 2 | Which port should the server use? | 8080 / 9090 | 8080',
-    )!,
-    1,
-    3,
-  )
-  const answers = pressOn({ ...emptySession(), ledger: asked }, { action: 'answer', id: 'i1', option: 'MIT' }, 5)
-  if ('stale' in answers) throw new Error('stale')
-  const both = pressOn({ ...emptySession(), ledger: answers.ledger }, { action: 'answer', id: 'i2', option: '8080' }, 6)
-  if ('stale' in both) throw new Error('stale')
-  const arrive = (s: Session, press: { id: string; action: 'answer' } | null) =>
-    recordPrompt(CLAUDE_CODE, s, 'message', false, press ? { press } : null).state
-  const first = arrive({ ...emptySession(), ledger: both.ledger }, { id: 'i1', action: 'answer' })
-  const typed = arrive(first, null)
-  const second = arrive(typed, { id: 'i2', action: 'answer' })
-
-  expect(second.ledger.milestones.map(m => [m.ref, m.turn])).toEqual([
-    ['i1', 4],
-    ['i2', 6],
-  ])
-  const done = (turn: number, text: string) =>
-    applyUpdate({ ...second.ledger, turn }, parseReply(`GOAL: g\nDONE: ${text}`)!, 9, turn, 9)
-  const reply = done(6, 'Opened port 8080 for the server')
-  expect(listResults(reply.milestones).map(r => [r.ref, r.merged])).toEqual([
-    ['i2', ['Opened port 8080 for the server']],
-    ['i1', []],
-  ])
+  expect(upgradeDemoCopy(old)).toMatchObject({ presence: { isTurnRunning: false } })
+  expect(isDemoCopy({ ...old, ledger: { ...old.ledger, overview: undefined } })).toBe(false)
+  const page = sessionView(demoSession(1_000_000), 1_000_000, 1000, true, NO_HOLDS).overviewPage
+  expect(page.headline).toBe('Adding pinch-to-dismiss to glances')
+  expect(page.sections.map(part => part.id)).toEqual(['queue', 'since', 'works', 'open'])
 })

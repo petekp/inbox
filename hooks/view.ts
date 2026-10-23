@@ -11,11 +11,11 @@ import type {
   RowNote,
   PageTab,
   Stop,
-  Subagent,
+  OverviewStatus,
   Tab,
   Turns,
 } from '../types'
-import { isLapsed, listResults, reopenFinding, reopenItem } from './ledger'
+import { isLapsed, reopenFinding, reopenItem } from './ledger'
 import { ago } from './text'
 import { questionNumbers } from './model-text'
 import type { ListedTab } from './arrivals'
@@ -448,7 +448,7 @@ export const TABS: readonly { id: ShownTab; label: string; hotkey: string }[] = 
   { id: 'needsYou', label: 'Needs you', hotkey: '1' },
   { id: 'findings', label: 'Findings', hotkey: '2' },
   { id: 'prs', label: 'PRs', hotkey: '3' },
-  { id: 'progress', label: 'Progress', hotkey: '4' },
+  { id: 'overview', label: 'Overview', hotkey: '4' },
 ]
 /** Whether a shown tab lists rows you answer or close: Needs you and Findings. */
 export function isListedTab(tab: ShownTab): tab is ListedTab {
@@ -457,7 +457,7 @@ export function isListedTab(tab: ShownTab): tab is ListedTab {
 
 /** Whether a shown tab is a row tab, which has rows, a count and a cursor. */
 export function isRowTab(tab: ShownTab): tab is Tab {
-  return tab !== 'progress'
+  return tab !== 'overview'
 }
 
 /** The tabs that list rows: Needs you, Findings and PRs. */
@@ -465,108 +465,84 @@ export const ROW_TABS = TABS.filter((t): t is (typeof TABS)[number] & { id: Tab 
 
 export const LISTED_TABS = TABS.filter((t): t is (typeof TABS)[number] & { id: ListedTab } => isListedTab(t.id))
 
-/** A line on the Progress page. A null tone draws the mark muted. */
-export type ProgressRow = {
+/** A line on the Overview page. A null tone draws the mark muted. */
+export type OverviewRow = {
   id: string
   mark: string
-  tone: 'done' | 'error' | null
+  tone: 'needsYou' | 'done' | 'issue' | null
   text: string
   detail: string | null
-  age: string
 }
 
-type ProgressSection = { title: string; count: number; rows: ProgressRow[] }
+export type OverviewSection = { id: string; title: string | null; rows: OverviewRow[] }
 
-/** What the Progress page shows. Every look draws it as it is. */
-export type ProgressPage = {
+/** What the Overview page shows. Every look draws it as it is. */
+export type OverviewPage = {
   isEmpty: boolean
-  /** The session's goal; null until the person has asked for something. */
-  goal: string | null
-  /** The stated step or "Working…" while the main agent's turn runs, else the card's line; null when there is none. */
+  /** The plain sentence naming what the session is doing; null until the person has asked for something. */
+  headline: string | null
+  /** "Working…" while the main agent's turn runs, else how it is going; null when there is none. */
   now: string | null
-  subagents: ProgressSection | null
-  running: { title: string; count: number; rows: { id: string; text: string }[] } | null
-  milestones: ProgressSection | null
-  /** The milestones past `MILESTONES_SHOWN`, as "12 earlier"; null when all show. */
-  earlier: string | null
+  /** Why the direction changed; null while it has not. */
+  course: string | null
+  sections: OverviewSection[]
+  /** One line for each earlier topic, oldest first. */
+  earlier: string[]
   empty: { title: string; hint: string }
 }
 
-export const MILESTONES_SHOWN = 30
 export const WORKING_TEXT = 'Working…'
 
-const SUBAGENT_MARKS: Record<Subagent['state'], Pick<ProgressRow, 'mark' | 'tone'>> = {
-  running: { mark: '●', tone: null },
+const OVERVIEW_MARKS: Record<OverviewStatus, Pick<OverviewRow, 'mark' | 'tone'>> = {
+  working: { mark: '●', tone: null },
+  queued: { mark: '○', tone: null },
+  'waits-on-you': { mark: '◆', tone: 'needsYou' },
+  'waits-on-other': { mark: '◌', tone: null },
   done: { mark: '✓', tone: 'done' },
-  stopped: { mark: '✕', tone: 'error' },
+  'ruled-out': { mark: '✗', tone: null },
+  problem: { mark: '!', tone: 'issue' },
+  unknown: { mark: '?', tone: null },
 }
 
-/** Where a result came from, with its detail, since every result takes the same tone. */
-function milestoneDetail(m: { source: 'done' | 'answered' | 'fixed'; detail: string | null }): string | null {
-  if (m.source === 'done') return null
-  const source = m.source === 'answered' ? 'You answered' : 'Fixed'
+const OVERVIEW_SECTIONS: { id: 'queue' | 'works' | 'open' | 'next' | 'since' | 'workstreams'; title: string | null }[] =
+  [
+    { id: 'workstreams', title: null },
+    { id: 'queue', title: null },
+    { id: 'since', title: 'Since you looked' },
+    { id: 'works', title: 'What works now' },
+    { id: 'open', title: 'Still open' },
+    { id: 'next', title: 'Next' },
+  ]
 
-  return m.detail ? `${source}: ${m.detail}` : source
-}
-
-export function progressPage(
-  s: {
-    ledger: Pick<Ledger, 'card' | 'milestones'>
-    presence: { isTurnRunning: boolean; statedStep: string | null }
-    subagents: Subagent[]
-  },
-  now: number,
-): ProgressPage {
-  const { card, milestones } = s.ledger
-  const { isTurnRunning, statedStep } = s.presence
-  const results = listResults(milestones)
-  const shown = results.slice(0, MILESTONES_SHOWN)
+export function overviewPage(
+  s: { ledger: Pick<Ledger, 'overview'>; presence: { isTurnRunning: boolean } },
+  _now: number,
+): OverviewPage {
+  const { overview } = s.ledger
+  const { isTurnRunning } = s.presence
+  const headline = overview?.headline || null
 
   return {
-    isEmpty: !card?.goal && results.length === 0 && !isTurnRunning && s.subagents.length === 0,
-    goal: card?.goal || null,
-    now: isTurnRunning ? (statedStep ?? WORKING_TEXT) : card?.goal && card.now ? card.now : null,
-    subagents:
-      s.subagents.length > 0
-        ? {
-            title: 'Subagents',
-            count: s.subagents.length,
-            rows: s.subagents.map(a => ({
-              id: a.id,
-              ...SUBAGENT_MARKS[a.state],
-              text: a.task,
-              detail: a.state === 'running' ? (a.statedStep ?? a.toolStep) : a.result,
-              age: shortAgo(Math.max(0, now - (a.state === 'running' ? a.startedAt : a.at))),
-            })),
-          }
-        : null,
-    running:
-      card?.goal && card.running.length > 0
-        ? {
-            title: 'Running',
-            count: card.running.length,
-            rows: card.running.map((text, n) => ({ id: `running-${n}`, text })),
-          }
-        : null,
-    milestones:
-      shown.length > 0
-        ? {
-            title: 'Milestones',
-            count: results.length,
-            rows: shown.map(m => ({
-              id: m.id,
-              mark: '✓',
-              tone: 'done',
-              text: m.text,
-              detail: milestoneDetail(m),
-              age: m.at === null ? '' : shortAgo(Math.max(0, now - m.at)),
-            })),
-          }
-        : null,
-    earlier: earlierLabel(results.length, shown.length),
+    isEmpty: headline === null && !isTurnRunning,
+    headline,
+    now: isTurnRunning ? WORKING_TEXT : overview?.status || null,
+    course: overview?.course || null,
+    sections: overview
+      ? OVERVIEW_SECTIONS.flatMap(({ id, title }) => {
+          const rows = overview[id].map((item, n) => ({
+            id: `${id}-${n}`,
+            ...OVERVIEW_MARKS[item.status],
+            text: item.text,
+            detail: item.detail,
+          }))
+
+          return rows.length > 0 ? [{ id, title, rows }] : []
+        })
+      : [],
+    earlier: overview?.earlier ?? [],
     empty: {
-      title: 'Nothing here yet',
-      hint: 'A task’s goal, its subagents and what it finishes show up here.',
+      title: 'Overview',
+      hint: "Where this session's work stands and where it's heading, so you can pick it up after a break. It fills in once the work starts.",
     },
   }
 }

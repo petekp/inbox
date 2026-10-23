@@ -100,6 +100,7 @@ type Saved = Omit<Partial<SessionState>, 'turn' | 'pending' | 'sent'> & {
   snapshots?: unknown
   recordedRuns?: unknown
   top?: unknown
+  subagents?: unknown
   turn?: Partial<SessionState['turn']> & { sentBack?: unknown }
   pending?: { ex: Exchange & { checks?: unknown }; turnsStarted: number }[]
 }
@@ -109,7 +110,14 @@ function upgraded(saved: Saved, sessionId: string): SessionState {
   if (saved.version !== undefined && saved.version !== 1)
     throw new Error(`Unsupported inbox state version: ${saved.version}`)
   const base = emptyState(sessionId)
-  const { checks: _checks, snapshots: _snapshots, recordedRuns: _runs, top: _top, ...kept } = saved
+  const {
+    checks: _checks,
+    snapshots: _snapshots,
+    recordedRuns: _runs,
+    top: _top,
+    subagents: _subagents,
+    ...kept
+  } = saved
   const { sentBack: _sentBack, ...turn } = saved.turn ?? {}
 
   return {

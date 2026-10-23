@@ -1851,7 +1851,10 @@
   {
     "name": "on-screen-question-not-new",
     "about": "With the pane open, a reply that repeats a question the pane already lists adds nothing.",
-    "screen": { "isOpen": true, "tab": "Needs you" },
+    "screen": {
+      "isOpen": true,
+      "tab": "Needs you"
+    },
     "ledger": {
       "turn": 6,
       "nextId": 6,
@@ -1994,7 +1997,10 @@
   {
     "name": "real-question-with-pane-open-new",
     "about": "With the pane open, a real question the pane does not list is added.",
-    "screen": { "isOpen": true, "tab": "Needs you" },
+    "screen": {
+      "isOpen": true,
+      "tab": "Needs you"
+    },
     "ledger": {
       "turn": 6,
       "nextId": 6,
@@ -2035,7 +2041,10 @@
   {
     "name": "tab-open-needs-you-records-new-task",
     "about": "With the inbox open on its Needs you tab, a step only the person can do that the tab does not list is added.",
-    "screen": { "isOpen": true, "tab": "Needs you" },
+    "screen": {
+      "isOpen": true,
+      "tab": "Needs you"
+    },
     "ledger": {
       "turn": 6,
       "nextId": 6,
@@ -2075,9 +2084,13 @@
     ]
   },
   {
-    "name": "progress-shown-records-question",
-    "about": "With the Progress page shown, a new question that waits on the person is still recorded.",
-    "screen": { "isOpen": true, "tab": "Progress", "isPage": true },
+    "name": "overview-shown-records-question",
+    "about": "With the Overview page shown, a new question that waits on the person is still recorded.",
+    "screen": {
+      "isOpen": true,
+      "tab": "Overview",
+      "isPage": true
+    },
     "ledger": {
       "turn": 6,
       "nextId": 6,
@@ -2474,331 +2487,455 @@
     ]
   },
   {
-    "name": "encoder-fixed-and-pr-opened",
+    "name": "overview-feature-level",
+    "about": "A turn full of reads, edits, test runs and a commit still gives a guide at the level of the fix, with no commands, files, hashes or counts.",
     "ledger": {
-      "turn": 6,
-      "nextId": 3,
-      "card": {
-        "goal": "Add CSV export to the reports page",
-        "done": ["Export button added to reports page"],
-        "now": "Writing the CSV encoder",
-        "running": []
-      },
-      "milestones": [
-        {
-          "id": "m1",
-          "source": "done",
-          "text": "Export button added to reports page",
-          "detail": null,
-          "ref": null,
-          "at": null
-        }
-      ]
+      "turn": 1,
+      "nextId": 1,
+      "overview": null
     },
     "exchange": {
-      "person": "keep going",
-      "turn": 6,
+      "turn": 1,
+      "person": "The checkout page sometimes shows the wrong total after a coupon is applied. Find out why and fix it.",
       "activity": [
-        "edited src/export/csv.ts",
-        "edited src/export/csv.test.ts",
-        "ran: npm test -- csv",
-        "ran: gh pr create --title \"Add CSV export\" --body ..."
+        "read src/checkout/total.ts",
+        "read src/checkout/coupon.ts",
+        "ran grep -rn applyCoupon src/",
+        "edited src/checkout/total.ts",
+        "ran npm test -- checkout (14 passed)",
+        "ran git commit -m \"Recompute total after coupon\" (a3f9c21)"
       ],
-      "reply": "The CSV encoder now quotes commas, quotes and newlines, and all 14 tests pass. I opened PR #48 with the export button and the encoder. Next I'll add the date-range filter to the export."
+      "reply": "The total was computed before the coupon applied whenever the cart changed quickly. I moved the coupon step ahead of the total in total.ts, so the total is always recomputed after it. All 14 checkout tests pass and I committed it as a3f9c21. I have not tried it in a browser yet."
     },
-    "about": "Two finished results in one exchange give one DONE line each; passing tests are not a result; a PR the session opened is one.",
     "checks": [
       {
-        "results": 2
+        "overview": "written"
       },
       {
-        "result": "encoder|quot|escap"
+        "featureLevel": true
       },
       {
-        "result": "PR.*48"
-      },
-      {
-        "noResult": "test|pass"
+        "sinceAtMost": 4
       }
     ]
   },
   {
-    "name": "nothing-finished",
+    "name": "overview-direction-change",
+    "about": "The person redirects the approach. The guide reports a change of direction and why.",
     "ledger": {
-      "turn": 9,
-      "nextId": 3,
-      "card": {
-        "goal": "Add CSV export to the reports page",
-        "done": ["Export button added to reports page", "CSV encoder handles quoting", "PR #48 opened"],
-        "now": "Adding the date-range filter",
-        "running": []
-      },
-      "milestones": [
-        {
-          "id": "m1",
-          "source": "done",
-          "text": "Export button added to reports page",
-          "detail": null,
-          "ref": null,
-          "at": null
-        },
-        {
-          "id": "m2",
-          "source": "done",
-          "text": "CSV encoder handles quoting",
-          "detail": null,
-          "ref": null,
-          "at": null
-        },
-        {
-          "id": "m3",
-          "source": "done",
-          "text": "PR #48 opened",
-          "detail": null,
-          "ref": null,
-          "at": null
-        }
-      ]
+      "turn": 5,
+      "nextId": 1,
+      "overview": {
+        "isCoordinator": false,
+        "state": "on-track",
+        "headline": "Adding offline mode to the notes app",
+        "status": "The note list now loads without a connection. Saving offline is next.",
+        "course": "",
+        "queue": [
+          {
+            "status": "working",
+            "text": "Save notes while offline",
+            "detail": null
+          },
+          {
+            "status": "queued",
+            "text": "Merge saved notes when the connection returns",
+            "detail": null
+          },
+          {
+            "status": "done",
+            "text": "Notes list loads offline",
+            "detail": null
+          }
+        ],
+        "works": [
+          {
+            "status": "done",
+            "text": "Notes list loads offline",
+            "detail": null
+          }
+        ],
+        "open": [],
+        "next": [],
+        "since": [],
+        "workstreams": [],
+        "earlier": []
+      }
     },
     "exchange": {
-      "person": "why did you pick RFC 4180 quoting instead of escaping with backslashes?",
-      "turn": 9,
-      "activity": [],
-      "reply": "Excel, Numbers and Google Sheets all read RFC 4180 quoting, and none of them read backslash escapes. A field like `Smith, Jr.` would split into two columns with backslashes. I haven't changed anything."
+      "turn": 6,
+      "person": "Forget the browser database for saving offline. It cannot hold attachments. Sync through the file system instead.",
+      "activity": ["read src/storage/db.ts", "edited src/storage/db.ts"],
+      "reply": "Understood. I am dropping the browser database for saving offline, because it caps attachments at a few megabytes, and moving to file-system sync. The notes list keeps loading offline as before."
     },
-    "about": "An explanation that changed nothing gives no DONE line.",
     "checks": [
       {
-        "results": 0
+        "overview": "written"
+      },
+      {
+        "course": true
+      },
+      {
+        "featureLevel": true
       }
     ]
   },
   {
-    "name": "mentions-earlier-outcome",
+    "name": "overview-plain-progress-no-course",
+    "about": "Ordinary progress on the same plan is not a change of direction.",
     "ledger": {
-      "turn": 11,
-      "nextId": 3,
-      "card": {
-        "goal": "Add CSV export to the reports page",
-        "done": ["Export button added to reports page", "CSV encoder handles quoting", "PR #48 opened"],
-        "now": "Adding the date-range filter",
-        "running": []
-      },
-      "milestones": [
-        {
-          "id": "m1",
-          "source": "done",
-          "text": "Export button added to reports page",
-          "detail": null,
-          "ref": null,
-          "at": null
-        },
-        {
-          "id": "m2",
-          "source": "done",
-          "text": "CSV encoder handles quoting",
-          "detail": null,
-          "ref": null,
-          "at": null
-        },
-        {
-          "id": "m3",
-          "source": "done",
-          "text": "PR #48 opened",
-          "detail": null,
-          "ref": null,
-          "at": null
-        }
-      ]
+      "turn": 5,
+      "nextId": 1,
+      "overview": {
+        "isCoordinator": false,
+        "state": "on-track",
+        "headline": "Adding offline mode to the notes app",
+        "status": "The note list now loads without a connection. Saving offline is next.",
+        "course": "",
+        "queue": [
+          {
+            "status": "working",
+            "text": "Save notes while offline",
+            "detail": null
+          },
+          {
+            "status": "queued",
+            "text": "Merge saved notes when the connection returns",
+            "detail": null
+          },
+          {
+            "status": "done",
+            "text": "Notes list loads offline",
+            "detail": null
+          }
+        ],
+        "works": [
+          {
+            "status": "done",
+            "text": "Notes list loads offline",
+            "detail": null
+          }
+        ],
+        "open": [],
+        "next": [],
+        "since": [],
+        "workstreams": [],
+        "earlier": []
+      }
     },
     "exchange": {
-      "person": "status?",
-      "turn": 11,
-      "activity": ["edited src/export/range.ts", "ran: npm test"],
-      "reply": "PR #48 is still open with the button and the encoder. Since then I added the date-range filter: the export now takes a start and end date, and tests pass. Nothing waits on you."
+      "turn": 6,
+      "person": "Go on.",
+      "activity": ["edited src/storage/save.ts", "ran npm test -- storage (9 passed)"],
+      "reply": "Saving a note while offline now works and survives a restart. Merging saved notes when the connection returns is the next piece."
     },
-    "about": "A reply that mentions earlier results gives a DONE line only for the new one.",
     "checks": [
       {
-        "results": 1
+        "overview": "written"
       },
       {
-        "result": "date"
+        "course": false
       },
       {
-        "noResult": "PR|encoder|button"
+        "featureLevel": true
       }
     ]
   },
   {
-    "name": "activity-only",
+    "name": "overview-coordinator",
+    "about": "A session that hands out work and reviews what comes back is a coordinator, with a line for each stream of work.",
+    "ledger": {
+      "turn": 1,
+      "nextId": 1,
+      "overview": null
+    },
+    "exchange": {
+      "turn": 1,
+      "person": "Hand the three parts of the import rewrite to separate agents and review what they send back.",
+      "activity": ["started agent: parser rewrite", "started agent: error reporting", "started agent: progress bar"],
+      "reply": "Started three agents: the parser rewrite, error reporting and the progress bar. I will review each one when it reports back, starting with the parser, then check they work together."
+    },
+    "checks": [
+      {
+        "overview": "written"
+      },
+      {
+        "overviewKind": "coordinator"
+      },
+      {
+        "workstreamsAtLeast": 2
+      },
+      {
+        "featureLevel": true
+      }
+    ]
+  },
+  {
+    "name": "overview-single-task-not-coordinator",
+    "about": "A session that does the work itself is not a coordinator.",
+    "ledger": {
+      "turn": 1,
+      "nextId": 1,
+      "overview": null
+    },
+    "exchange": {
+      "turn": 1,
+      "person": "The import ignores a trailing comma in the header row. Fix it.",
+      "activity": ["read src/import/header.ts", "edited src/import/header.ts", "ran npm test -- import (6 passed)"],
+      "reply": "Fixed. A trailing comma in the header row is now ignored and the import reads the same columns as before."
+    },
+    "checks": [
+      {
+        "overview": "written"
+      },
+      {
+        "overviewKind": "session"
+      }
+    ]
+  },
+  {
+    "name": "overview-since-merges",
+    "about": "The unseen changes and the new exchange become one short list, with no repeated change.",
+    "ledger": {
+      "turn": 4,
+      "nextId": 1,
+      "overview": {
+        "isCoordinator": true,
+        "state": "on-track",
+        "headline": "Rewriting the import in three parts",
+        "status": "The parser is under way; the other two have started.",
+        "course": "",
+        "queue": [
+          {
+            "status": "working",
+            "text": "Parser rewrite",
+            "detail": null
+          },
+          {
+            "status": "working",
+            "text": "Error reporting",
+            "detail": null
+          },
+          {
+            "status": "working",
+            "text": "Progress bar",
+            "detail": null
+          }
+        ],
+        "works": [],
+        "open": [],
+        "next": [],
+        "since": [
+          {
+            "status": "working",
+            "text": "Parser rewrite under way",
+            "detail": null
+          },
+          {
+            "status": "working",
+            "text": "Error reporting started",
+            "detail": null
+          }
+        ],
+        "workstreams": [
+          {
+            "status": "working",
+            "text": "Parser rewrite: reads the new file format",
+            "detail": null
+          },
+          {
+            "status": "working",
+            "text": "Error reporting: shows why a row failed",
+            "detail": null
+          },
+          {
+            "status": "working",
+            "text": "Progress bar: shows the import advancing",
+            "detail": null
+          }
+        ],
+        "earlier": []
+      }
+    },
+    "exchange": {
+      "turn": 5,
+      "person": "Any news?",
+      "activity": ["read agent report: parser rewrite"],
+      "reply": "The parser rewrite is finished and reads the new file format. The error reporting agent is still working. The progress bar agent has not reported yet."
+    },
+    "checks": [
+      {
+        "overview": "written"
+      },
+      {
+        "sinceNoRepeat": true
+      },
+      {
+        "sinceAtMost": 4
+      },
+      {
+        "overviewItem": "parser",
+        "list": "since",
+        "status": "done"
+      }
+    ]
+  },
+  {
+    "name": "overview-ask-not-restated",
+    "about": "A question the agent put to the person stays in the inbox. The guide may say the work waits, and nothing more.",
     "ledger": {
       "turn": 3,
-      "nextId": 1,
-      "card": {
-        "goal": "Find why the login page is slow",
-        "done": [],
-        "now": "Profiling the login page",
-        "running": []
-      },
-      "milestones": []
-    },
-    "exchange": {
-      "person": "go",
-      "turn": 3,
-      "activity": ["ran: npm run build", "ran: npx lighthouse http://localhost:3000/login", "edited notes.md"],
-      "reply": "I ran Lighthouse on the login page. Largest contentful paint is 4.1 s, and 3.2 s of that is the 1.8 MB hero image. I haven't changed anything yet. Next I'll try serving it as AVIF at the displayed size."
-    },
-    "about": "Commands run and a profile read are activity; the finding is the result.",
-    "checks": [
-      {
-        "results": 1
-      },
-      {
-        "result": "hero|image"
-      },
-      {
-        "noResult": "lighthouse|ran"
-      }
-    ]
-  },
-  {
-    "name": "catch-up-lists-new-results-only",
-    "about": "A catch-up over several turns gives a DONE line for each new result, and none for one already listed or for activity.",
-    "ledger": {
-      "turn": 8,
-      "nextId": 1,
-      "card": {
-        "goal": "Add CSV export to the reports page",
-        "done": ["Export button added to reports page"],
-        "now": "Adding the encoder",
-        "running": []
-      },
-      "milestones": [
-        {
-          "id": "m1",
-          "source": "done",
-          "text": "Export button added to reports page",
-          "detail": null,
-          "ref": null,
-          "at": null
-        }
-      ]
-    },
-    "catchUp": "Person: add CSV export to the reports page\nAgent: I added the export button to the reports page. Next is the encoder.\nAgent edited src/export/button.tsx\nPerson: go\nAgent edited src/export/csv.ts\nAgent ran: npm test -- csv\nAgent: The CSV encoder now quotes commas, quotes and newlines, and all 14 tests pass.\nPerson: now filter by date\nAgent edited src/export/range.ts\nAgent ran: npm run lint\nAgent: The export takes a start and end date now. Lint is clean. Nothing waits on you.",
-    "exchange": {
-      "person": null,
-      "turn": 8,
-      "activity": [],
-      "reply": "(catch-up)"
-    },
-    "checks": [
-      {
-        "results": 2
-      },
-      {
-        "result": "encoder|quot|escap"
-      },
-      {
-        "result": "date|range"
-      },
-      {
-        "noResult": "button|test|pass|lint"
-      }
-    ]
-  },
-  {
-    "name": "catch-up-lists-many-results",
-    "about": "A catch-up over a long stretch of work gives a DONE line for each of the results it reached, past the 3 an update after one reply may write.",
-    "ledger": {
-      "turn": 14,
-      "nextId": 1,
-      "card": {
-        "goal": "Move the settings page to the new form library",
-        "done": [],
-        "now": "Moving the settings page",
-        "running": []
-      },
-      "milestones": []
-    },
-    "catchUp": "Person: move the settings page to the new form library\nAgent edited src/settings/Form.tsx\nAgent: The profile form uses the new library now.\nPerson: go on\nAgent edited src/settings/Notifications.tsx\nAgent: The notifications form uses it too.\nPerson: and billing\nAgent edited src/settings/Billing.tsx\nAgent: The billing form is moved, and I found the old validator rejected valid VAT numbers.\nPerson: fix that\nAgent edited src/settings/vat.ts\nAgent: The VAT check accepts every format in the spec now.\nPerson: and the tests\nAgent edited src/settings/settings.test.tsx\nAgent: I wrote tests for all four forms.\nPerson: drop the old library\nAgent edited package.json\nAgent: The old form library is removed from package.json.",
-    "exchange": {
-      "person": null,
-      "turn": 14,
-      "activity": [],
-      "reply": "(catch-up)"
-    },
-    "checks": [
-      {
-        "resultsAtLeast": 4
-      },
-      {
-        "result": "billing"
-      },
-      {
-        "result": "VAT"
-      },
-      {
-        "result": "librar"
-      }
-    ]
-  },
-  {
-    "name": "fixed-finding-not-repeated-as-result",
-    "about": "A reply that fixes an open finding while the person answers an open item gives a FIXED line and a CLOSED line. The answered item records the choice, so one result may record that the answered work was done. A result that repeats the fixed finding is a repeat: the inbox lists the fix itself.",
-    "ledger": {
-      "turn": 7,
-      "nextId": 4,
-      "card": {
-        "goal": "Ship the greeting CLI v1",
-        "done": ["Arg parser fixed"],
-        "now": "Preparing the release",
-        "running": []
+      "nextId": 2,
+      "overview": {
+        "isCoordinator": false,
+        "state": "on-track",
+        "headline": "Rewriting the import parser",
+        "status": "The new parser reads most files.",
+        "course": "",
+        "queue": [
+          {
+            "status": "working",
+            "text": "Handle rows the parser cannot read",
+            "detail": null
+          }
+        ],
+        "works": [],
+        "open": [],
+        "next": [],
+        "since": [],
+        "workstreams": [],
+        "earlier": []
       },
       "items": [
         {
-          "id": "i2",
+          "id": "i1",
           "kind": "question",
-          "label": "1",
-          "ask": "Which license should the CLI use?",
-          "options": ["MIT", "Apache-2.0"],
-          "rec": "MIT",
+          "label": null,
+          "ask": "Should the importer keep rows it cannot parse, or skip them?",
+          "options": ["Keep them", "Skip them"],
+          "rec": null,
           "helps": [],
-          "turn": 6,
+          "turn": 3,
           "at": 1,
-          "from": "update"
-        }
-      ],
-      "findings": [
-        {
-          "id": "f3",
-          "kind": "issue",
-          "title": "README has no install steps",
-          "detail": "New users cannot install the CLI from the README alone.",
-          "path": "README.md",
-          "at": 1
+          "from": "record"
         }
       ]
     },
     "exchange": {
-      "person": "MIT",
-      "turn": 7,
-      "activity": ["edited LICENSE", "edited package.json", "edited README.md"],
-      "reply": "Added the MIT license file and set it in package.json. I also added an Install section to the README with the npm command."
+      "turn": 3,
+      "person": "Continue with the parser.",
+      "activity": ["edited src/import/parser.ts"],
+      "reply": "The parser now reads every well-formed row. For a row it cannot parse I need a decision before I go on: should the importer keep those rows or skip them? I have asked you in the inbox."
     },
     "checks": [
       {
-        "closed": "i2",
-        "outcome": "MIT"
+        "overview": "written"
       },
       {
-        "closed": "f3"
+        "asksNotRestated": true
       },
       {
-        "resultsAtMost": 1
+        "featureLevel": true
+      }
+    ]
+  },
+  {
+    "name": "overview-new-topic-folds",
+    "about": "A different task starts a new topic. The old one folds into one earlier line.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 1,
+      "overview": {
+        "isCoordinator": false,
+        "state": "finished",
+        "headline": "Fixing the checkout total after a coupon",
+        "status": "The fix is committed and the checkout tests pass.",
+        "course": "",
+        "queue": [],
+        "works": [
+          {
+            "status": "done",
+            "text": "Total is recomputed after a coupon",
+            "detail": null
+          }
+        ],
+        "open": [],
+        "next": [],
+        "since": [],
+        "workstreams": [],
+        "earlier": []
+      }
+    },
+    "exchange": {
+      "turn": 7,
+      "person": "Different thing: the settings page needs a dark mode toggle.",
+      "activity": ["read src/settings/theme.ts"],
+      "reply": "Starting on the dark mode toggle in settings. First I am checking how the theme is stored."
+    },
+    "checks": [
+      {
+        "overview": "written"
       },
       {
-        "noResult": "readme|install"
+        "earlierAtLeast": 1
+      },
+      {
+        "featureLevel": true
+      }
+    ]
+  },
+  {
+    "name": "overview-nothing-changes",
+    "about": "A reply that changes nothing about the work leaves the guide as it was.",
+    "ledger": {
+      "turn": 5,
+      "nextId": 1,
+      "overview": {
+        "isCoordinator": false,
+        "state": "on-track",
+        "headline": "Adding offline mode to the notes app",
+        "status": "The note list now loads without a connection. Saving offline is next.",
+        "course": "",
+        "queue": [
+          {
+            "status": "working",
+            "text": "Save notes while offline",
+            "detail": null
+          },
+          {
+            "status": "queued",
+            "text": "Merge saved notes when the connection returns",
+            "detail": null
+          },
+          {
+            "status": "done",
+            "text": "Notes list loads offline",
+            "detail": null
+          }
+        ],
+        "works": [
+          {
+            "status": "done",
+            "text": "Notes list loads offline",
+            "detail": null
+          }
+        ],
+        "open": [],
+        "next": [],
+        "since": [],
+        "workstreams": [],
+        "earlier": []
+      }
+    },
+    "exchange": {
+      "turn": 6,
+      "person": "Thanks.",
+      "activity": [],
+      "reply": "You are welcome."
+    },
+    "checks": [
+      {
+        "overview": "unchanged"
       }
     ]
   }

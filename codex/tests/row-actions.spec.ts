@@ -221,7 +221,6 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
     turnsApplied: 1,
     isUpdating: false,
     isTurnRunning: false,
-    statedStep: null,
     ledgerState: 'current',
     hasDroppedReply: false,
   }

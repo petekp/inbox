@@ -18,7 +18,7 @@ export function isTabOpen(s: SessionState, now: number): boolean {
 export function screenTabOf(s: SessionState): ScreenTab {
   const shown = TABS.find(t => t.id === s.shownTab)
 
-  return { label: shown?.label ?? s.shownTab, isPage: s.shownTab === 'progress' }
+  return { label: shown?.label ?? s.shownTab, isPage: s.shownTab === 'overview' }
 }
 
 export function notePrompt(s: SessionState, text: string, now: number): { state: SessionState; notes: string[] } {

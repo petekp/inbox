@@ -385,7 +385,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const tab = openPanels.get(id)
     const shown = TABS.find(t => t.id === tab)
 
-    return tab === undefined ? null : { label: shown?.label ?? tab, isPage: tab === 'progress' }
+    return tab === undefined ? null : { label: shown?.label ?? tab, isPage: tab === 'overview' }
   }
   const prepared = new Set<string>()
   const prFetches = prFetchTracker(deps.now)

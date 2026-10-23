@@ -1,9 +1,35 @@
 export type Card = {
   goal: string
-  /** The newest 4 results the model wrote, oldest first: the milestones with source `done`. Older versions read it. */
   done: string[]
   now: string
   running: string[]
+}
+
+/** What an Overview item reports about a piece of work. */
+export type OverviewStatus =
+  'working' | 'queued' | 'waits-on-you' | 'waits-on-other' | 'done' | 'ruled-out' | 'problem' | 'unknown'
+
+export type OverviewItem = { status: OverviewStatus; text: string; detail: string | null }
+
+/** The Overview tab's parts as the Overview call last wrote them. Empty text and empty lists are left out when drawn. */
+export type Overview = {
+  /** Whether the session hands out work and reviews it, so its parts read as workstreams. */
+  isCoordinator: boolean
+  /** How the work is going. */
+  state: 'on-track' | 'stuck' | 'finished'
+  headline: string
+  status: string
+  /** Why the direction changed; empty while it has not. */
+  course: string
+  queue: OverviewItem[]
+  works: OverviewItem[]
+  open: OverviewItem[]
+  next: OverviewItem[]
+  /** The changes after the person's last look. */
+  since: OverviewItem[]
+  workstreams: OverviewItem[]
+  /** One line for each earlier topic, oldest first, saying where it was left. */
+  earlier: string[]
 }
 
 export type Item = {
@@ -189,47 +215,10 @@ export type PrView = {
   error: string | null
 }
 
-/** One result the session reached. */
-export type Milestone = {
-  id: string
-  source: 'done' | 'answered' | 'fixed'
-  text: string
-  /** The person's answer, or the change that fixed a finding; null for the other sources. */
-  detail: string | null
-  /** The id of the item or finding, for the sources that have one. */
-  ref: string | null
-  /** When it happened; null when unknown, shown with no age. */
-  at: number | null
-  /** The conversation turn it was made in. Absent on a catch-up's results and on those saved before it existed. */
-  turn?: number
-}
-
-/**
- * A subagent the main agent started. Hosts keep these in the session, outside the ledger, since the inbox model
- * never reads them.
- */
-export type Subagent = {
-  id: string
-  /** The subagent's task, as its start named it. */
-  task: string
-  state: 'running' | 'done' | 'stopped'
-  /** What it did last, worked out from its tool calls; null before its first one. */
-  toolStep: string | null
-  /** What it last said it is doing, through the `step` tool. A running row shows it in place of `toolStep`. */
-  statedStep: string | null
-  /** The first line of its final reply, once it is done. */
-  result: string | null
-  startedAt: number
-  /** When its state or step last changed. */
-  at: number
-  /** The path to the subagent's own rollout, for Codex; null elsewhere. */
-  transcriptPath: string | null
-}
-
 export type Ledger = {
   card: Card | null
-  /** Results so far, oldest first. */
-  milestones: Milestone[]
+  /** The session's Overview page; null until the Overview call writes one. */
+  overview: Overview | null
   items: Item[]
   closed: Closed[]
   findings: Finding[]
@@ -279,7 +268,7 @@ export type OldPresence = Away & {
 export type Tab = 'needsYou' | 'findings' | 'prs'
 
 /** A tab that shows a page instead of rows. */
-export type PageTab = 'progress'
+export type PageTab = 'overview'
 
 /**
  * A tab's open row: its id, its position, and when a click or key opened it.
@@ -315,8 +304,7 @@ export type DemoCopy = {
   /** Each sample row's latest note, by the row's id. */
   notes: Record<string, RowNote>
   turns: Turns
-  subagents: Subagent[]
-  presence: Pick<Session['presence'], 'isTurnRunning' | 'statedStep'>
+  presence: Pick<Session['presence'], 'isTurnRunning'>
 }
 
 export type Exchange = {
@@ -363,11 +351,7 @@ export type Session = {
     isUpdating: boolean
     /** Whether the main agent's turn runs. A subagent's turn does not set it. */
     isTurnRunning: boolean
-    /** What the main agent last said it is doing through the `step` tool, until its turn ends; null when it said nothing. */
-    statedStep: string | null
   }
-  /** The subagents the main agent started, oldest first. */
-  subagents: Subagent[]
   /**
    * Exchanges waiting for the inbox model, oldest first, with the turns started when each ended. `failed` marks
    * one whose first update failed: the next update tries it once more, then drops it.

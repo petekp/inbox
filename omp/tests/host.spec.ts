@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { guidanceText, RESULTS_SYSTEM, systemText } from '../../hooks/model-text'
+import { guidanceText, OVERVIEW_SYSTEM, systemText } from '../../hooks/model-text'
 import { NO_HOLDS } from '../../hooks/view'
 import { createInbox, stopOf } from '../src/host'
 import type { HostDeps } from '../src/host'
@@ -48,9 +48,9 @@ let models: Model[]
 let smolModel: Model | undefined
 let inboxRoleModel: Model | undefined
 let reply: string | Error
-let resultsReply: string | Error
-let resultsHold: Promise<void> | null
-let resultsCompletions: { model: Model; system: string[]; prompt: string }[]
+let overviewReply: string | Error
+let overviewHold: Promise<void> | null
+let overviewCompletions: { model: Model; system: string[]; prompt: string }[]
 let isIdle: boolean
 let execResults: Map<string, { code: number; stdout?: string; stderr?: string; killed?: boolean } | Error>
 let execCalls: { command: string; args: string[] }[]
@@ -110,15 +110,15 @@ const deps = (): HostDeps => ({
   settleWindowMs: 1000,
   home: '/home/me',
   complete: async (model, context) => {
-    const isResults = context.systemPrompt?.[0] === RESULTS_SYSTEM
+    const isOverview = context.systemPrompt?.[0] === OVERVIEW_SYSTEM
     const call = {
       model: model as never,
       system: context.systemPrompt ?? [],
       prompt: String((context.messages[0] as { content: unknown }).content),
     }
-    ;(isResults ? resultsCompletions : completions).push(call)
-    if (isResults) await resultsHold
-    const answer = isResults ? resultsReply : reply
+    ;(isOverview ? overviewCompletions : completions).push(call)
+    if (isOverview) await overviewHold
+    const answer = isOverview ? overviewReply : reply
     if (answer instanceof Error) throw answer
 
     return { stopReason: 'stop', content: [{ type: 'text', text: answer }] } as never
@@ -170,9 +170,9 @@ beforeEach(() => {
   smolModel = smol
   inboxRoleModel = undefined
   reply = MODEL_ANSWER
-  resultsReply = 'DONE: Plan written'
-  resultsHold = null
-  resultsCompletions = []
+  overviewReply = 'UNCHANGED'
+  overviewHold = null
+  overviewCompletions = []
   isIdle = false
   execResults = new Map()
   execCalls = []
@@ -293,73 +293,72 @@ test('a turn that ends queues the exchange and the inbox model fills the ledger'
   expect(completions[0]!.prompt).toContain('Plan written. Which runtime?')
 })
 
-test('a reply’s results come from the separate results call, and the ledger call’s own DONE lines are dropped', async () => {
+test('a reply’s Overview comes from the separate Overview call, after the ledger update', async () => {
   createInbox(pi(), deps())
-  resultsReply = 'DONE: Greeting CLI scaffolded'
+  overviewReply = 'HEADLINE: Adding a greeting CLI'
   await prompt('Add a greeting CLI')
   await endAgent('Plan written. Which runtime?')
   await settle()
-  expect(state().ledger.milestones.map((m: { text: string }) => m.text)).toEqual(['Greeting CLI scaffolded'])
+  expect(state().ledger.overview.headline).toBe('Adding a greeting CLI')
   expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Use Node or Python?'])
-  expect(resultsCompletions).toHaveLength(1)
-  expect(resultsCompletions[0]!.prompt).toContain('Plan written. Which runtime?')
+  expect(overviewCompletions).toHaveLength(1)
+  expect(overviewCompletions[0]!.prompt).toContain('Plan written. Which runtime?')
 })
 
-test('a failed results call leaves the ledger update applied with no new results', async () => {
+test('a failed Overview call leaves the ledger update applied with no Overview', async () => {
   createInbox(pi(), deps())
-  resultsReply = new Error('overloaded')
+  overviewReply = new Error('overloaded')
   await prompt('Add a greeting CLI')
   await endAgent('Plan written. Which runtime?')
   await settle()
   expect(state().pending).toEqual([])
-  expect(state().ledger.milestones).toEqual([])
+  expect(state().ledger.overview).toBeNull()
   expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Use Node or Python?'])
 })
 
-test('a ledger update shows before its results call returns, and the results call skips what that update answered', async () => {
+test('a ledger update shows before its Overview call returns', async () => {
   createInbox(pi(), deps())
   reply = 'NEW: decide | 1 | Use Node or Python? | Node / Python | Node'
-  resultsReply = new Error('no results yet')
+  overviewReply = new Error('no Overview yet')
   await prompt('Add a greeting CLI')
   await endAgent('Plan written. Which runtime?')
   await settle()
   let release: () => void = () => undefined
-  resultsHold = new Promise<void>(resolve => (release = resolve))
-  resultsReply = 'DONE: Command scaffolded'
+  overviewHold = new Promise<void>(resolve => (release = resolve))
+  overviewReply = 'HEADLINE: Scaffolding the command'
   reply = 'CLOSED: i1 | Node chosen'
   await prompt('Use Node')
   await endAgent('Scaffolded the command with Node.')
-  for (let waited = 0; resultsCompletions.length < 2 && waited < 200; waited += 1)
+  for (let waited = 0; overviewCompletions.length < 2 && waited < 200; waited += 1)
     await new Promise(resolve => setTimeout(resolve, 10))
-  expect(resultsCompletions).toHaveLength(2)
+  expect(overviewCompletions).toHaveLength(2)
   expect(state().ledger.items).toEqual([])
-  expect(state().ledger.milestones.map((m: { text: string }) => m.text)).not.toContain('Command scaffolded')
-  expect(resultsCompletions[1]!.prompt).toContain('<handled>\nanswered: Use Node or Python? | Node chosen\n</handled>')
+  expect(state().ledger.overview).toBeNull()
   release()
   await settle()
-  expect(state().ledger.milestones.map((m: { text: string }) => m.text)).toContain('Command scaffolded')
+  expect(state().ledger.overview.headline).toBe('Scaffolding the command')
 })
 
-test('a ledger call that fails runs no results call', async () => {
+test('a ledger call that fails runs no Overview call', async () => {
   createInbox(pi(), deps())
   reply = new Error('overloaded')
-  resultsReply = 'DONE: Greeting CLI scaffolded'
+  overviewReply = 'HEADLINE: Adding a greeting CLI'
   await prompt('Add a greeting CLI')
   await endAgent('Plan written. Which runtime?')
   await settle()
-  expect(resultsCompletions).toEqual([])
-  expect(state().ledger.milestones).toEqual([])
+  expect(overviewCompletions).toEqual([])
+  expect(state().ledger.overview).toBeNull()
 })
 
-test('the next ledger update does not wait for an earlier results call, and results calls run one at a time', async () => {
+test('the next ledger update does not wait for an earlier Overview call, and Overview calls run one at a time', async () => {
   createInbox(pi(), deps())
   let release: () => void = () => undefined
-  resultsHold = new Promise<void>(resolve => (release = resolve))
-  resultsReply = 'DONE: Command scaffolded'
+  overviewHold = new Promise<void>(resolve => (release = resolve))
+  overviewReply = 'HEADLINE: Scaffolding the command'
   reply = 'NEW: do | - | Water the plants | - | -'
   await prompt('Add a greeting CLI')
   await endAgent('Plan written.')
-  for (let waited = 0; resultsCompletions.length < 1 && waited < 200; waited += 1)
+  for (let waited = 0; overviewCompletions.length < 1 && waited < 200; waited += 1)
     await new Promise(resolve => setTimeout(resolve, 10))
   reply = 'NEW: do | - | Feed the cat | - | -'
   await prompt('And a name')
@@ -368,13 +367,13 @@ test('the next ledger update does not wait for an earlier results call, and resu
     await new Promise(resolve => setTimeout(resolve, 10))
   await new Promise(resolve => setTimeout(resolve, 50))
   expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Water the plants', 'Feed the cat'])
-  expect(resultsCompletions).toHaveLength(1)
+  expect(overviewCompletions).toHaveLength(1)
   release()
   await settle()
-  for (let waited = 0; resultsCompletions.length < 2 && waited < 200; waited += 1)
+  for (let waited = 0; overviewCompletions.length < 2 && waited < 200; waited += 1)
     await new Promise(resolve => setTimeout(resolve, 10))
-  expect(resultsCompletions).toHaveLength(2)
-  expect(resultsCompletions[1]!.prompt).toContain('Command scaffolded')
+  expect(overviewCompletions).toHaveLength(2)
+  expect(overviewCompletions[1]!.prompt).toContain('HEADLINE: Scaffolding the command')
 })
 
 test('a settle that will continue does not end the turn', async () => {
@@ -669,7 +668,7 @@ async function withSteps() {
 
 test('Working… shows from agent_start to the run’s end, and a Done message waits for Esc to end the run', async () => {
   const inbox = createInbox(pi(), deps())
-  const now = async () => (await inbox.screen(makeCtx())).view.progressPage.now
+  const now = async () => (await inbox.screen(makeCtx())).view.overviewPage.now
   await prompt('hello')
   await record({ kind: 'task', ask: 'Try the CLI by hand' })
   await endAgent('Done.')
@@ -687,7 +686,7 @@ test('Working… shows from agent_start to the run’s end, and a Done message w
 
   await endAgent('', { messages: [{ role: 'assistant', content: [], stopReason: 'aborted' }] })
   await settle()
-  expect(await now()).toBe('Waiting on one choice')
+  expect(await now()).toBeNull()
   expect(sent).toHaveLength(1)
   expect(sent[0]!.text).toContain('Try the CLI by hand')
 })

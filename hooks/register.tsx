@@ -76,7 +76,7 @@ import {
   startPress,
   wakeForDone as wakeSessionForDone,
 } from './session-host'
-import type { AskCatchUpResults, CatchUpReply, SessionHost } from './session-host'
+import type { AskCatchUpOverview, CatchUpReply, SessionHost } from './session-host'
 import { demoView, isDemoCopy, upgradeDemoCopy } from './demo'
 import type { Exchange, Press, Update } from './ledger'
 import {
@@ -129,8 +129,8 @@ import {
   buildPrompt,
   cardCarryText,
   catchUpPrompt,
-  RESULTS_SYSTEM,
-  resultsCatchUpPrompt,
+  OVERVIEW_SYSTEM,
+  overviewCatchUpPrompt,
   CLAUDE_CODE,
   dialogActivity,
   dialogQuestions,
@@ -235,7 +235,7 @@ import type {
   InboxView,
   ModLook,
   PlannedKey,
-  ProgressRow,
+  OverviewRow,
   RowView,
   RowWait,
   ShownTab,
@@ -642,7 +642,7 @@ function suspendUndoReveal(): number {
 let loadRevision = 0
 let applyingConversation: Promise<void> = Promise.resolve()
 let queue: Promise<void> = Promise.resolve()
-/** The conversations whose results calls run one after another. They do not hold `queue`, so a ledger call never waits for one. */
+/** The conversations whose Overview calls run one after another. They do not hold `queue`, so a ledger call never waits for one. */
 const resultsOrder = orderedKeys()
 let published: string | null = null
 let publishing: Promise<void> = Promise.resolve()
@@ -903,9 +903,9 @@ async function commit(
 /** The session a look draws: `session`, with the ledger, PR views, presses and turn counts of the sample while it shows. */
 function drawnSession(
   session: Session,
-  drawn: Pick<DemoCopy, 'ledger' | 'stop' | 'prViews' | 'lastActions' | 'turns' | 'subagents' | 'presence'>,
+  drawn: Pick<DemoCopy, 'ledger' | 'stop' | 'prViews' | 'lastActions' | 'turns' | 'presence'>,
 ): Session {
-  const { ledger, stop, prViews, lastActions, turns, subagents, presence } = drawn
+  const { ledger, stop, prViews, lastActions, turns, presence } = drawn
 
   return {
     ...session,
@@ -913,7 +913,6 @@ function drawnSession(
     stop,
     prViews,
     lastActions,
-    subagents,
     presence: { ...session.presence, ...turns, ...presence },
   }
 }
@@ -968,16 +967,16 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
     screen($),
     $.session.messages().then(transcriptText),
   ])
-  // The results call reads the transcript. With none to read, it writes no results.
-  const results: AskCatchUpResults = async (after, handled) => {
+  // The Overview call reads the transcript. With none to read, it writes no Overview.
+  const overview: AskCatchUpOverview = async last => {
     if (!transcript || !isCurrent(owner)) return null
-    const r = await askLedgerModel($, resultsCatchUpPrompt(after, handled, transcript), RESULTS_SYSTEM, 90_000)
+    const r = await askLedgerModel($, overviewCatchUpPrompt(last, transcript), OVERVIEW_SYSTEM, 90_000)
 
     return r.isAnswered ? r.text : null
   }
   const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
   if (!isCurrent(owner)) return { kind: 'failed' }
-  if (forked.isAnswered) return { kind: 'reply', text: forked.text, source: null, results }
+  if (forked.isAnswered) return { kind: 'reply', text: forked.text, source: null, overview }
   // A fork has nothing to read until this process sends its first request,
   // as after a resume. The model then reads the transcript instead, uncached.
   if (forked.reason !== 'nothing-to-fork') return { kind: 'failed' }
@@ -985,7 +984,7 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
   const r = await askLedgerModel($, transcriptCatchUpPrompt(ledger, shown, transcript), systemText(CLAUDE_CODE), 90_000)
   if (!isCurrent(owner)) return { kind: 'failed' }
 
-  return r.isAnswered ? { kind: 'reply', text: r.text, source: transcript, results } : { kind: 'failed' }
+  return r.isAnswered ? { kind: 'reply', text: r.text, source: transcript, overview } : { kind: 'failed' }
 }
 
 /**
@@ -1012,7 +1011,7 @@ function updateLedger($: EngineInterface) {
       names: CLAUDE_CODE,
       catchUp: () => catchUpReply($, owner),
       inOrder: fn => resultsOrder.run(owner.id, fn),
-      background: results => void results,
+      background: overviews => void overviews,
     })
     if (isCurrent(owner)) void publishStatus($)
   })
@@ -2146,7 +2145,7 @@ async function drawnState(
     // The minute tick while the person is away redraws the ages.
     read($, AWAY),
   ])
-  const { ledger, stop, prViews, lastActions, presence, subagents } = session
+  const { ledger, stop, prViews, lastActions, presence } = session
   const turns = { turnsStarted: presence.turnsStarted, turnsApplied: presence.turnsApplied }
   const drawn: DemoCopy = demo ?? {
     ledger,
@@ -2155,8 +2154,7 @@ async function drawnState(
     lastActions,
     notes,
     turns,
-    subagents,
-    presence: { isTurnRunning: presence.isTurnRunning, statedStep: presence.statedStep },
+    presence: { isTurnRunning: presence.isTurnRunning },
   }
   const holds = { replies: heldReplies(typing, drafts), discarded }
 
@@ -2326,7 +2324,7 @@ function cutOffUpdate<S extends Session>(s: S): S {
  * its next `turn.start`.
  */
 function cutOffTurn<S extends Session>(s: S): S {
-  return s.presence.isTurnRunning || s.presence.statedStep !== null ? turnEnded(s) : s
+  return s.presence.isTurnRunning ? turnEnded(s) : s
 }
 
 /** Row presses keep only their PR records, whose rows outlive a conversation's items. */
@@ -2360,7 +2358,7 @@ async function bringBack(
       ]),
     )
     // The stop and the turn belong to the process that saved them. Whether a turn runs now is this process's.
-    const { isTurnRunning, statedStep } = s.presence
+    const { isTurnRunning } = s.presence
 
     return cutOffUpdate({
       ...loaded,
@@ -2368,7 +2366,7 @@ async function bringBack(
       sent: [],
       stop: null,
       turn: emptySession().turn,
-      presence: { ...loaded.presence, isTurnRunning, statedStep },
+      presence: { ...loaded.presence, isTurnRunning },
     })
   })
   if (isBrought && !isFork)
@@ -2969,8 +2967,8 @@ export const register: Register = on => {
       $.env.get('TERM_PROGRAM'),
     ])
     const tab: Tab = ROW_TABS.some(t => t.id === savedTab) ? savedTab : 'needsYou'
-    const isProgressShown = savedPage === 'progress'
-    const shownTab: ShownTab = isProgressShown ? 'progress' : tab
+    const isOverviewShown = savedPage === 'overview'
+    const shownTab: ShownTab = isOverviewShown ? 'overview' : tab
     // A hot reload keeps TYPING but empties fieldSeeds, so an open field takes its seed again here.
     if (typing !== null && !fieldSeeds.has(typing)) fieldSeeds.set(typing, (await read($, DRAFTS))[typing]?.text ?? '')
     const size = isInline ? `${e.props.bodyColumns}x${e.props.scroll.bodyRows}` : null
@@ -2978,7 +2976,7 @@ export const register: Register = on => {
     if (size !== null && inlineSize !== null && size !== inlineSize) {
       const revision = undoScrollRevision
       later($, RESIZE_SCROLL_MS, () =>
-        revision === undoScrollRevision && !isProgressShown ? scrollToOpenRow($, tab, e.surface) : undefined,
+        revision === undoScrollRevision && !isOverviewShown ? scrollToOpenRow($, tab, e.surface) : undefined,
       )
     }
     inlineSize = size
@@ -3921,7 +3919,7 @@ export const register: Register = on => {
 
     const keyList = [
       { keys: TABS.map(t => t.hotkey).join(' '), does: 'Switch tabs' },
-      ...(isProgressShown ? [] : [{ keys: 'j k', does: 'Select the next or previous row' }]),
+      ...(isOverviewShown ? [] : [{ keys: 'j k', does: 'Select the next or previous row' }]),
       { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
     ]
     const keyColumn = Math.max(...keyList.map(k => k.keys.length)) + 2
@@ -4804,7 +4802,7 @@ export const register: Register = on => {
         sections([...(prState.isGhMissing ? [ghMissingNotice()] : []), ...prGroups.map(prBlock), ...olderPrs()], 2)
       )
 
-    const progressTitleLine = (text: string, key: string, isBold: boolean) => {
+    const overviewTextLine = (text: string, key: string, isBold: boolean) => {
       const line = (
         <Text wrap="wrap" bold={isBold} {...(isBold ? {} : { color: pal.muted })}>
           {text}
@@ -4819,19 +4817,18 @@ export const register: Register = on => {
         </Box>
       )
     }
-    const progressTextRow = (id: string, text: string, pos: TreePos) =>
+    const overviewTextRow = (id: string, text: string, pos: TreePos) =>
       look === 'desktop'
         ? desktopFrame({
-            key: `progress-${id}`,
+            key: `overview-${id}`,
             indent: DESKTOP_MARK_CELLS,
             isMarkHung: false,
             padY: space.rowPad / 2,
             children: <Text wrap="wrap">{text}</Text>,
           })
-        : treeRow(pos, null, <Text wrap="wrap">{text}</Text>, `progress-${id}`, 0, markColumns.textAt)
-    const markedRow = (m: ProgressRow, pos: TreePos) => {
+        : treeRow(pos, null, <Text wrap="wrap">{text}</Text>, `overview-${id}`, 0, markColumns.textAt)
+    const markedRow = (m: OverviewRow, pos: TreePos) => {
       const mark = <Text color={m.tone ? pal.mark[m.tone] : pal.muted}>{m.mark}</Text>
-      const age = <Text color={pal.age}>{m.age}</Text>
       const lines = [
         <Text key="text" wrap="wrap">
           {m.text}
@@ -4845,93 +4842,58 @@ export const register: Register = on => {
 
       return look === 'desktop'
         ? desktopFrame({
-            key: `progress-${m.id}`,
+            key: `overview-${m.id}`,
             indent: DESKTOP_MARK_CELLS,
             isMarkHung: false,
             padY: space.rowPad / 2,
             mark,
-            side: age,
             children: lines,
           })
         : treeRow(
             pos,
             mark,
-            <Box flexDirection="row">
-              <Box flexDirection="column" flexGrow={1} flexShrink={1}>
-                {lines}
-              </Box>
-              <Box width={TERMINAL_SIDE_CELLS} flexShrink={0} justifyContent="flex-end" paddingRight={1}>
-                {age}
-              </Box>
+            <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+              {lines}
             </Box>,
-            `progress-${m.id}`,
+            `overview-${m.id}`,
           )
     }
-    const progressView = () => {
-      const page = view.progressPage
+    const overviewView = () => {
+      const page = view.overviewPage
       if (page.isEmpty)
         return (
           <Box flexDirection="column" flexGrow={1}>
             {emptyState(page.empty)}
           </Box>
         )
-      const { subagents, running, milestones, earlier } = page
+      const head = [
+        page.headline ? overviewTextLine(page.headline, 'overview-headline', true) : null,
+        page.now ? overviewTextLine(page.now, 'overview-now', false) : null,
+        page.course ? overviewTextLine(page.course, 'overview-course', false) : null,
+      ].filter(Boolean)
 
       return sections([
-        ...(page.goal || page.now
+        ...(head.length > 0
           ? [
-              <Box key="progress-head" flexDirection="column">
-                {page.goal ? progressTitleLine(page.goal, 'progress-goal', true) : null}
-                {page.now ? progressTitleLine(`Now${DOT}${page.now}`, 'progress-now', false) : null}
+              <Box key="overview-head" flexDirection="column">
+                {head}
               </Box>,
             ]
           : []),
-        ...(subagents
+        ...page.sections.map(part =>
+          section([
+            ...(part.title ? [groupTitle(part.title, 0), ...titleGap()] : []),
+            ...part.rows.map((m, n) => markedRow(m, childPos(n, part.rows.length))),
+          ]),
+        ),
+        ...(page.earlier.length > 0
           ? [
               section([
-                groupTitle(subagents.title, subagents.count),
+                groupTitle('Earlier in this session', 0),
                 ...titleGap(),
-                ...subagents.rows.map((r, n) => markedRow(r, childPos(n, subagents.rows.length))),
-              ]),
-            ]
-          : []),
-        ...(running
-          ? [
-              section([
-                groupTitle(running.title, running.count),
-                ...titleGap(),
-                ...running.rows.map((r, n) => progressTextRow(r.id, r.text, childPos(n, running.rows.length))),
-              ]),
-            ]
-          : []),
-        ...(milestones
-          ? [
-              section([
-                groupTitle(milestones.title, milestones.count),
-                ...titleGap(),
-                ...milestones.rows.map((m, n) =>
-                  markedRow(m, earlier === null ? childPos(n, milestones.rows.length) : 'mid'),
+                ...page.earlier.map((text, n) =>
+                  overviewTextRow(`earlier-${n}`, text, childPos(n, page.earlier.length)),
                 ),
-                ...(earlier
-                  ? [
-                      look === 'desktop'
-                        ? desktopFrame({
-                            key: 'progress-earlier',
-                            indent: DESKTOP_MARK_CELLS,
-                            isMarkHung: false,
-                            padY: space.rowPad / 2,
-                            children: <Text color={pal.muted}>{earlier}</Text>,
-                          })
-                        : treeRow(
-                            'last',
-                            null,
-                            <Text color={pal.muted}>{earlier}</Text>,
-                            'progress-earlier',
-                            0,
-                            markColumns.textAt,
-                          ),
-                    ]
-                  : []),
               ]),
             ]
           : []),
@@ -4942,7 +4904,7 @@ export const register: Register = on => {
       const to = Math.min(Math.max(at + step, 0), ids.length - 1)
       void select($, tab, ids[to] ?? '', to)
     }
-    const canMove = !isProgressShown && (ids.length > 1 || (at < 0 && ids.length > 0))
+    const canMove = !isOverviewShown && (ids.length > 1 || (at < 0 && ids.length > 0))
     // Claude Code sends a key no Button binds to the prompt and gives it the keyboard, so the keys
     // stay bound when there is nothing to move to or close.
     const moveKeys: KeyAction[] = [
@@ -4963,7 +4925,7 @@ export const register: Register = on => {
       onPress: () => void showTab($, id),
     }))
 
-    const selectedRow = isProgressShown ? undefined : rows[tab][at]
+    const selectedRow = isOverviewShown ? undefined : rows[tab][at]
     const selectedActions = selectedRow ? rowActions(selectedRow) : null
     const closeKeysWithoutRow: KeyAction[] = ['d', 'x'].map(hotkey => ({
       key: `no-row-${hotkey}`,
@@ -4977,8 +4939,8 @@ export const register: Register = on => {
     // A pane takes a key
     // only as a Button's hotkey, so the tab keys, j, k and the selected row's keys
     // are Buttons in a hidden Box.
-    const tabView = isProgressShown
-      ? progressView()
+    const tabView = isOverviewShown
+      ? overviewView()
       : tab === 'findings'
         ? findingsView()
         : tab === 'prs'

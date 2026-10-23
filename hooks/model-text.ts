@@ -1,8 +1,17 @@
-import type { Closed, Finding, Item, Ledger, Told } from '../types'
+import type { Closed, Finding, Item, Ledger, Overview, Told } from '../types'
 
 export type { Told } from '../types'
-import type { Exchange, Handled } from './ledger'
-import { DONE_PER_CATCH_UP, DONE_PER_UPDATE, isAskedForChoices, LIST_CHOICES } from './ledger'
+import type { Exchange } from './ledger'
+import { isAskedForChoices, LIST_CHOICES } from './ledger'
+import {
+  DETAIL_WORDS,
+  HEADLINE_WORDS,
+  ITEM_WORDS,
+  LIST_ITEMS,
+  overviewText,
+  SENTENCE_WORDS,
+  sinceText,
+} from './overview'
 import { clip, clipMiddle, numberBlocks } from './text'
 
 const NL = '\n'
@@ -279,63 +288,63 @@ export const CLAUDE_CODE: Host = {
     "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox pane, and your findings, in the pane's Findings tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings.",
 }
 
-const LISTED_SHOWN = 8
+/** The system text of the call that writes the Overview page, apart from the ledger call. */
+export const OVERVIEW_SYSTEM = `You keep a one-page guide to a coding session, for the person who works with the agent. They read it when they come back, to see what the work is, how it is going and what comes next. You read the guide as it was and one exchange, and write the guide as it should be now.
 
-/** The system text of the call that writes the results, apart from the ledger call. */
-export const RESULTS_SYSTEM = `You keep the list of results for a person who works with a coding agent. They glance at it between tasks to see what the session has produced. You read one exchange and write the results it reached.
+The guide is about the work. It is not a log of what the agent did, and it is not a list of what waits on the person: the inbox lists that. Write at the level of the feature or the fix. Never write a command, a file name, a commit, a test run, a tool call or a ticket number, and leave out a number, an id or a time unless the person needs it to find the work again.
 
 Input:
-- <listed>: results already on the list, newest first
-- <open>: questions and tasks waiting on the person, as id | label | ask
-- <findings>: findings waiting for the person, as id | title
-- <handled>: what the inbox already lists from this exchange, with the work the agent did for each: questions the person answered, as answered: ask | answer, and findings the agent fixed, as fixed: title
+- <last>: the guide as it was, in the same lines you write
+- <unseen>: the changes the person has not yet looked at, as SINCE lines
 - <person>: what the person just sent
-- <activity>: what the agent did this turn (files edited, commands, URLs)
+- <activity>: what the agent did this turn
 - <reply>: the agent's final reply
 
-Answer with lines only, each starting with DONE:. No other text.
+Answer with lines only. No other text. If the exchange changed nothing about the work, answer with the one line UNCHANGED.
 
-DONE: one result the agent finished, at most 8 words, past tense: something that now holds, such as code written, a cause found or a PR opened. Commands run, checks passing and plans are not results. Write no DONE line when nothing finished. Oldest first. Never repeat a result <listed> has, even reworded. The inbox already lists everything <handled> names, so a result that carries out an answer or makes a fix there is already shown: write no DONE line for it, however you would word it.`
+Otherwise write every line below that applies, in this order:
+KIND: session, or coordinator when the session hands out work and reviews what comes back instead of doing the work itself
+TOPIC: same, or new when the work moved to a different task. Write new only for a different task, not for the next step of the same one.
+STATE: on-track, stuck or finished
+HEADLINE: one plain sentence naming what the session is doing, at most ${HEADLINE_WORDS} words. "-" when no work has started.
+STATUS: how it is going, in one or two plain sentences, at most ${SENTENCE_WORDS} words. Say what it waits on, if anything.
+COURSE: only when the approach changed, in one or two sentences, at most ${SENTENCE_WORDS} words: what changed and why. A new step is not a change.
+FOLDED: only when TOPIC is new, one line saying what the old topic was and where it was left.
+Then lists, one item per line, as KEY: status | text | detail. The detail is optional. Text is at most ${ITEM_WORDS} words and detail at most ${DETAIL_WORDS}. At most ${LIST_ITEMS} items in a list.
+QUEUE: the work now: what is under way, what is queued behind it, what waits, and what just finished
+WORKS: what holds now: what works, what exists
+OPEN: risks, problems and unknowns
+NEXT: what comes next
+SINCE: what changed since the person last looked. Start from <unseen>, merge this exchange into it, and keep it short.
+STREAM: only in a coordinator session: one line for each stream of work, saying what it is for and where it stands
 
-/** `<listed>` holds the newest results; a catch-up covers the whole conversation, so it holds all of them. */
-function resultsBlocks(ledger: Ledger, handled: Handled, isCatchUp: boolean): string[] {
-  const listed = ledger.milestones
-    .slice(isCatchUp ? 0 : -LISTED_SHOWN)
-    .reverse()
-    .map(m => m.text)
-    .join(NL)
-  const open = ledger.items.map(i => `${i.id} | ${i.label ?? '-'} | ${i.ask}`).join(NL)
-  const findings = ledger.findings.map(f => `${f.id} | ${f.title}`).join(NL)
-  const done = [
-    ...handled.answered.map(a => `answered: ${a.ask} | ${a.outcome}`),
-    ...handled.fixed.map(title => `fixed: ${title}`),
-  ].join(NL)
+Status is one of: working, queued, waits-on-you, waits-on-other, done, ruled-out, problem, unknown. Use waits-on-you when the agent cannot go on until the person acts, and waits-on-other for something else, such as a build. Use ruled-out for an approach tried or considered and dropped, and put the reason in the detail.
 
-  return [
-    `<listed>${NL}${listed}${NL}</listed>`,
-    `<open>${NL}${open}${NL}</open>`,
-    `<findings>${NL}${findings}${NL}</findings>`,
-    `<handled>${NL}${done}${NL}</handled>`,
-  ]
+Rules:
+- Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed.
+- Do not write a question or task the agent put to the person. Say the work waits, and stop.
+- Leave a list out when it has nothing worth saying. Do not fill a list to fill it.`
+
+function overviewBlocks(last: Overview | null): string[] {
+  return [`<last>${NL}${overviewText(last)}${NL}</last>`, `<unseen>${NL}${sinceText(last)}${NL}</unseen>`]
 }
 
-/** `ledger` is the ledger with the exchange's update applied, and `handled` what that update answered and fixed. */
-export function resultsPrompt(ledger: Ledger, handled: Handled, ex: Exchange): string {
+/** `last` is the Overview before the exchange. */
+export function overviewPrompt(last: Overview | null, ex: Exchange): string {
   const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? 'unknown'}.)`
 
   return [
-    `Write at most ${DONE_PER_UPDATE} DONE lines.`,
-    ...resultsBlocks(ledger, handled, false),
+    ...overviewBlocks(last),
     `<person>${NL}${clipMiddle(person, 4000, 1500)}${NL}</person>`,
     `<activity>${NL}${clipMiddle(ex.activity.join(NL), 2500, 500)}${NL}</activity>`,
     `<reply>${NL}${clipMiddle(numberBlocks(ex.reply), 12000, 4000)}${NL}</reply>`,
   ].join(NL)
 }
 
-export function resultsCatchUpPrompt(ledger: Ledger, handled: Handled, transcript: string): string {
+export function overviewCatchUpPrompt(last: Overview | null, transcript: string): string {
   return [
-    `Treat the conversation in <conversation> as the exchange. Its start may be cut. Write up to ${DONE_PER_CATCH_UP} DONE lines, for the results the conversation reached that <listed> lacks.`,
-    ...resultsBlocks(ledger, handled, true),
+    'Treat the conversation in <conversation> as the exchange. Its start may be cut. Write the guide as it stands at the end of the conversation.',
+    ...overviewBlocks(last),
     `<conversation>${NL}${numberBlocks(transcript)}${NL}</conversation>`,
   ].join(NL)
 }
@@ -350,7 +359,7 @@ export type ScreenTab = { label: string; isPage: boolean }
 export function screenText(host: Host, isOpen: boolean, tab: ScreenTab | null): string {
   if (!isOpen) return `${surfaceAtStart(host)} is closed.`
   if (tab?.isPage)
-    return `${surfaceAtStart(host)} is open beside the conversation, on its ${tab.label} tab, which shows the session's goal, subagents and results, not rows.`
+    return `${surfaceAtStart(host)} is open beside the conversation, on its ${tab.label} tab, which shows a guide to the session's work, not rows.`
 
   return `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ''}listing every open item.`
 }

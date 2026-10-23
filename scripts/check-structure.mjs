@@ -15,6 +15,7 @@ const SHARED = [
   'inline',
   'layout',
   'ledger',
+  'overview',
   'model-text',
   'pr-tab',
   'presses',

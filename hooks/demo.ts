@@ -1,21 +1,21 @@
-import type { DemoCopy, Milestone, Session, Subagent } from '../types'
+import type { DemoCopy, Session } from '../types'
 import { emptySession } from './session'
 
 const MIN = 60_000
 const REPO = 'https://github.com/acme/visor'
 
 /** A saved sample as an earlier build seeded it, without the fields added since. */
-export type SavedDemoCopy = Omit<DemoCopy, 'subagents' | 'presence'> & Partial<Pick<DemoCopy, 'subagents' | 'presence'>>
+export type SavedDemoCopy = Omit<DemoCopy, 'presence'> & Partial<Pick<DemoCopy, 'presence'>>
 
 /** The demo's atom outlives a hot reload, so a copy an earlier build seeded may lack a field. */
 export function isDemoCopy(saved: unknown): saved is SavedDemoCopy {
   if (!saved || typeof saved !== 'object') return false
   const d = saved as Record<string, unknown>
 
-  const hasMilestones = Array.isArray((d.ledger as { milestones?: unknown } | null)?.milestones)
+  const hasOverview = typeof (d.ledger as { overview?: unknown } | null)?.overview === 'object'
 
   return (
-    hasMilestones &&
+    hasOverview &&
     ['ledger', 'prViews', 'lastActions', 'notes', 'turns'].every(k => d[k] !== null && typeof d[k] === 'object')
   )
 }
@@ -24,8 +24,7 @@ export function isDemoCopy(saved: unknown): saved is SavedDemoCopy {
 export function upgradeDemoCopy(saved: SavedDemoCopy): DemoCopy {
   return {
     ...saved,
-    subagents: saved.subagents ?? [],
-    presence: { isTurnRunning: false, statedStep: null, ...saved.presence },
+    presence: { isTurnRunning: false, ...saved.presence },
   }
 }
 
@@ -40,7 +39,6 @@ export function demoSession(now: number): Session {
     lastActions: d.lastActions,
     prViews: d.prViews,
     presence: { ...s.presence, ...d.turns, ...d.presence },
-    subagents: d.subagents,
   }
 }
 
@@ -53,34 +51,27 @@ export function demoView(now: number): DemoCopy {
         now: 'Waiting on the dismiss gesture and a pairing',
         running: ['simulator: http://localhost:3000'],
       },
-      milestones: [
-        {
-          id: 'm4',
-          source: 'fixed',
-          text: 'The view redraws every glance when one changes',
-          detail: 'It now redraws only the glance that changed',
-          ref: 'd19',
-          at: now - 2 * 60 * MIN,
-        },
-        {
-          id: 'm5',
-          source: 'answered',
-          text: 'Track hands with the camera or the wristband?',
-          detail: 'Wristband',
-          ref: 'd5',
-          at: now - 90 * MIN,
-        },
-        ...['A pinch dismisses the glance you look at', 'Dismissed glances fade out', 'PR #31 opened'].map(
-          (text, n): Milestone => ({
-            id: `m${n + 1}`,
-            source: 'done',
-            text,
-            detail: null,
-            ref: null,
-            at: now - (3 - n) * 30 * MIN,
-          }),
-        ),
-      ],
+      overview: {
+        isCoordinator: false,
+        state: 'on-track',
+        headline: 'Adding pinch-to-dismiss to glances',
+        status: 'A pinch already dismisses a glance. Two design questions and the glasses pairing wait on you.',
+        course: '',
+        queue: [
+          { status: 'working', text: 'Finish the dismiss gesture', detail: 'The glance fades out as you pinch.' },
+          { status: 'queued', text: 'Try it on the paired glasses', detail: null },
+          { status: 'waits-on-you', text: 'Pair the glasses with this Mac', detail: null },
+          { status: 'done', text: 'A pinch dismisses the glance you look at', detail: null },
+        ],
+        works: [{ status: 'done', text: 'Dismissed glances fade out', detail: null }],
+        open: [
+          { status: 'unknown', text: 'Whether a flick feels better than a pinch', detail: 'Waits on your answer.' },
+        ],
+        next: [],
+        since: [{ status: 'done', text: 'PR #31 opened', detail: null }],
+        workstreams: [],
+        earlier: [],
+      },
       items: [
         {
           id: 'd11',
@@ -459,32 +450,6 @@ export function demoView(now: number): DemoCopy {
     },
     notes: {},
     turns: { turnsStarted: 14, turnsApplied: 14 },
-    subagents: SAMPLE_SUBAGENTS(now),
-    presence: { isTurnRunning: false, statedStep: null },
+    presence: { isTurnRunning: false },
   }
 }
-
-const SAMPLE_SUBAGENTS = (now: number): Subagent[] => [
-  {
-    id: 'sa1',
-    task: 'Find where glances handle pinches',
-    state: 'running',
-    toolStep: 'Reading GlanceView.swift',
-    statedStep: 'Tracing pinches from the gesture recognizer',
-    result: null,
-    startedAt: now - 2 * MIN,
-    at: now - 10_000,
-    transcriptPath: null,
-  },
-  {
-    id: 'sa2',
-    task: 'Check the gesture tests',
-    state: 'done',
-    toolStep: 'Running the gesture tests',
-    statedStep: null,
-    result: 'All 12 gesture tests pass.',
-    startedAt: now - 4 * MIN,
-    at: now - MIN,
-    transcriptPath: null,
-  },
-]

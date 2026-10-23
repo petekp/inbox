@@ -573,58 +573,49 @@ test('a new row above the default selection leaves the selection on its row', ()
   expect(followRows(after, INITIAL_UI, seen, false, NOW).ui.selectedId).toBe(selectedBefore)
 })
 
-const onPage: PanelUi = { ...INITIAL_UI, tab: 'progress' }
+const onPage: PanelUi = { ...INITIAL_UI, tab: 'overview' }
 const toneNamed: Style = { ...style, tone: (name, s) => `<${name}>${s}</${name}>` }
 const tabLine = (screen: PanelScreen, ui: PanelUi, width: number) =>
   strip(drawn(screen, ui, width)[0]!)
     .replace(/esc to close\s*$/, '')
     .trimEnd()
 
-test('the Progress page shows the goal, the Now line, then Subagents, Running and Milestones, newest first', () => {
+test('the Overview page shows the headline, the status, then its sections in order', () => {
   const screen = screenOf()
-  const page = screen.view.progressPage
-  const { subagents, running, milestones } = page
-  expect(subagents && running && milestones).toBeTruthy()
+  const page = screen.view.overviewPage
   const lines = text(screen, onPage).split('\n')
   const at = (s: string) => lines.findIndex(l => l.includes(s))
   const order = [
-    page.goal!,
-    `Now · ${page.now}`,
-    `Subagents · ${subagents!.count}`,
-    ...subagents!.rows.map(r => r.text),
-    `Running · ${running!.count}`,
-    ...running!.rows.map(r => r.text),
-    `Milestones · ${milestones!.count}`,
-    ...milestones!.rows.map(r => r.text),
+    page.headline!,
+    page.now!,
+    ...page.sections.flatMap(part => [...(part.title ? [part.title] : []), ...part.rows.map(r => r.text)]),
   ].map(at)
   expect(order.every(n => n >= 0)).toBe(true)
   expect(order).toEqual([...order].sort((a, b) => a - b))
-  for (const row of [...subagents!.rows, ...milestones!.rows]) {
-    const line = lines[at(row.text)]!
-    expect(line.trimEnd().endsWith(row.age)).toBe(true)
+  for (const row of page.sections.flatMap(part => part.rows))
     if (row.detail) expect(lines[at(row.text) + 1]).toContain(row.detail)
-  }
 })
 
-test('every milestone ✓ takes the done tone, and a running subagent’s mark is muted', () => {
+test('each item’s mark takes its tone, and a mark with no tone is muted', () => {
   const screen = screenOf()
-  const page = screen.view.progressPage
+  const rows = screen.view.overviewPage.sections.flatMap(part => part.rows)
   const lines = render(screen, onPage, 200, NOW, toneNamed)
   const lineOf = (s: string) => lines.find(l => l.includes(s))!
-  for (const m of page.milestones!.rows) expect(lineOf(m.text)).toContain('<done>✓ </done>')
-  const runningAgent = page.subagents!.rows.find(r => r.tone === null)!
-  expect(lineOf(runningAgent.text)).toContain(`${ESC}2m● ${ESC}22m`)
+  for (const row of rows.filter(r => r.tone !== null))
+    expect(lineOf(row.text)).toContain(`<${row.tone}>${row.mark} </${row.tone}>`)
+  const muted = rows.find(r => r.tone === null)!
+  expect(lineOf(muted.text)).toContain(`${ESC}2m${muted.mark} ${ESC}22m`)
 })
 
-test('a Progress page with nothing yet reads its empty text', () => {
+test('an Overview page with nothing yet reads its empty text', () => {
   const screen = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
-  const { empty } = screen.view.progressPage
-  expect(screen.view.progressPage.isEmpty).toBe(true)
+  const { empty } = screen.view.overviewPage
+  expect(screen.view.overviewPage.isEmpty).toBe(true)
   expect(text(screen, onPage)).toContain(empty.title)
   expect(text(screen, onPage)).toContain(empty.hint)
 })
 
-test('keys on the Progress page select nothing and press nothing, and the footer offers only tab', () => {
+test('keys on the Overview page select nothing and press nothing, and the footer offers only tab', () => {
   const screen = screenOf()
   for (const key of ['up', 'down', 'j', 'k', 'left', 'right', 'enter', 'u', 'r', 'd', 'x', 'a']) {
     const result = handleKey(screen, onPage, key, NOW)
@@ -637,7 +628,7 @@ test('keys on the Progress page select nothing and press nothing, and the footer
   expect(footer).not.toContain('scroll')
 })
 
-test('on a Progress page taller than the panel, each ↑↓ or j/k press shows one more or one fewer line, up to its last line', () => {
+test('on a Overview page taller than the panel, each ↑↓ or j/k press shows one more or one fewer line, up to its last line', () => {
   const screen = screenOf()
   const height = 14
   const bodyOf = (lines: string[]) => {
@@ -667,14 +658,14 @@ test('on a Progress page taller than the panel, each ↑↓ or j/k press shows o
   expect(keys(screen, down, 'up', 'up', 'up').pageTop).toBe(0)
 })
 
-test('changing the shown tab starts the Progress page at its top', () => {
+test('changing the shown tab starts the Overview page at its top', () => {
   const screen = screenOf()
   const scrolled = { ...onPage, pageTop: 3 }
   for (const key of ['tab', 'shift+tab', ...TABS.map(t => t.hotkey)])
     expect(keys(screen, scrolled, key).pageTop).toBe(0)
 })
 
-test('rows that arrive while the Progress page shows leave the panel on the page', () => {
+test('rows that arrive while the Overview page shows leave the panel on the page', () => {
   const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
   const opened = followRows(empty, onPage, {}, true, NOW)
   expect(opened.ui).toEqual(onPage)
@@ -711,7 +702,7 @@ test('the page tab draws no count', () => {
   for (const t of TABS.filter(t => !isRowTab(t.id))) expect(line).toMatch(new RegExp(`\\[${t.hotkey}\\] ${t.label} *$`))
 })
 
-test('no line on the Progress page is wider than the panel', () => {
+test('no line on the Overview page is wider than the panel', () => {
   const screen = screenOf()
   for (const width of [30, 50, 60, 80, 120])
     for (const line of drawn(screen, onPage, width)) expect([...strip(line)].length).toBeLessThanOrEqual(width)

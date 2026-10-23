@@ -4,30 +4,22 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
-import {
-  addResults,
-  applyExchangeUpdate,
-  applyUpdate,
-  EMPTY,
-  handledBy,
-  parseReply,
-  resultLines,
-  upgradeLedger,
-  withoutResults,
-} from '../hooks/ledger'
+import { applyExchangeUpdate, applyUpdate, EMPTY, parseReply, upgradeLedger } from '../hooks/ledger'
 import {
   buildPrompt,
   CLAUDE_CODE,
-  RESULTS_SYSTEM,
-  resultsCatchUpPrompt,
-  resultsPrompt,
+  OVERVIEW_SYSTEM,
+  overviewCatchUpPrompt,
+  overviewPrompt,
   screenText,
   systemText,
   transcriptCatchUpPrompt,
 } from '../hooks/model-text'
+import { applyOverview, parseOverview } from '../hooks/overview'
+import type { OverviewAnswer } from '../hooks/overview'
 import { CODEX } from '../codex/src/texts'
 import type { Exchange, Update } from '../hooks/ledger'
-import type { Ledger } from '../types'
+import type { Ledger, Overview, OverviewItem } from '../types'
 import { run } from '../codex/src/run'
 import { codexAsk, MODEL } from '../codex/src/update'
 import { codexCli } from './codex-cli'
@@ -48,6 +40,8 @@ import type { Job, Run } from './harness'
 type Agent = 'claude' | 'codex'
 
 /** Patterns are case-insensitive regular expressions. */
+type OverviewList = 'queue' | 'works' | 'open' | 'next' | 'since' | 'workstreams'
+
 type Check =
   | { open: string }
   | { closed: string; outcome?: string }
@@ -61,12 +55,22 @@ type Check =
   | { openItems: number }
   /** NEW lines the code dropped as repeats, which the other checks cannot see. */
   | { dropped: number }
-  /** The DONE lines this exchange added to the ledger's results, counted after the code's cap. */
-  | { results: number }
-  | { resultsAtLeast: number }
-  | { resultsAtMost: number }
-  | { result: string }
-  | { noResult: string }
+  /** The Overview call's answer: whether it changed the guide. */
+  | { overview: 'unchanged' | 'written' }
+  | { overviewKind: 'coordinator' | 'session' }
+  /** Whether the guide reports a change of direction. */
+  | { course: boolean }
+  /** The earlier lines the guide has after the exchange, at least this many. */
+  | { earlierAtLeast: number }
+  /** No text names a command, a file, a commit, a ticket, a test run or a tool step. */
+  | { featureLevel: true }
+  /** No text restates what an open item or finding of the ledger asks. */
+  | { asksNotRestated: true }
+  | { sinceAtMost: number }
+  /** No two SINCE items say the same thing. */
+  | { sinceNoRepeat: true }
+  | { workstreamsAtLeast: number }
+  | { overviewItem: string; list: OverviewList; status?: OverviewItem['status'] }
 
 type Case = {
   name: string
@@ -111,7 +115,7 @@ const about = provenance(
   {
     'systemText claude': systemText(CLAUDE_CODE),
     'systemText codex': systemText(CODEX),
-    'results systemText': RESULTS_SYSTEM,
+    'overview systemText': OVERVIEW_SYSTEM,
     cases: readFileSync(values.cases, 'utf8'),
     models: JSON.stringify({ claude: CLAUDE_MODEL, codex: MODEL }),
     runner: readFileSync(process.argv[1]!, 'utf8'),
@@ -208,15 +212,111 @@ function matchEach<C, I>(checks: C[], items: I[], fits: (c: C, i: I) => boolean)
   return new Map([...owner].map(([i, c]) => [c, i]))
 }
 
-function failures(before: Ledger, after: Ledger, checks: Check[], masked: string[]): string[] {
+const OVERVIEW_KEYS = [
+  'overview',
+  'overviewKind',
+  'course',
+  'earlierAtLeast',
+  'featureLevel',
+  'asksNotRestated',
+  'sinceAtMost',
+  'sinceNoRepeat',
+  'workstreamsAtLeast',
+  'overviewItem',
+] as const
+
+type OverviewCheck = Extract<Check, Partial<Record<(typeof OVERVIEW_KEYS)[number], unknown>>>
+
+function isOverviewCheck(c: Check): c is OverviewCheck {
+  return OVERVIEW_KEYS.some(k => k in c)
+}
+
+/** What the Overview call did in one run: its parsed answer and the guide after it. */
+type OverviewRun = { answer: OverviewAnswer | null; before: Overview | null; after: Overview | null }
+
+const LISTS: OverviewList[] = ['queue', 'works', 'open', 'next', 'since', 'workstreams']
+
+const textsOf = (o: Overview): string[] => [
+  o.headline,
+  o.status,
+  o.course,
+  ...LISTS.flatMap(l => o[l].flatMap(i => [i.text, i.detail ?? ''])),
+  ...o.earlier,
+]
+
+/** What an event list is made of: a command, a path, a commit, a ticket, a test run or a tool step. */
+const EVENT_PATTERNS: RegExp[] = [
+  /`/,
+  /\b[\w-]+\.(?:ts|tsx|js|jsx|json|md|mjs|swift|py|rs|go|sh|css|html)\b/i,
+  /\b[0-9a-f]{7,40}\b/,
+  /(?:^|\s)#\d+\b|\b[A-Z]{2,}-\d+\b/,
+  /\b\d+\s*(?:tests?|files?|commits?|lines?|calls?|ms|seconds?|minutes?)\b/i,
+  /^(?:ran|run|read|reading|edited|editing|opened|searched|grepped|wrote|installed|executed|called|committed|pushed|checked)\b/i,
+  /\b(?:tests? (?:pass|passed|ran|run)|tool call|npm |git )\b/i,
+]
+
+const WORD = /[\p{L}\p{N}]+/gu
+const keyWordsOf = (text: string) => new Set((text.toLowerCase().match(WORD) ?? []).filter(w => w.length > 3))
+
+/** Whether `text` has most of the key words of `other`, as a restatement does. */
+function restatesText(text: string, other: string): boolean {
+  const mine = keyWordsOf(text)
+  const theirs = [...keyWordsOf(other)]
+
+  return theirs.length >= 3 && theirs.filter(w => mine.has(w)).length / theirs.length >= 0.7
+}
+
+function overviewFailures(c: OverviewCheck, after: Ledger, run: OverviewRun | null): string[] {
+  if (run === null || run.answer === null) return ['no Overview answer the mod can read']
+  const o = run.after
+  if ('overview' in c) {
+    const kind = run.answer.kind
+    return kind === c.overview ? [] : [`the Overview call answered ${kind}, not ${c.overview}`]
+  }
+  if (o === null) return ['no Overview written']
+  if ('overviewKind' in c)
+    return (o.isCoordinator ? 'coordinator' : 'session') === c.overviewKind ? [] : [`kind is not ${c.overviewKind}`]
+  if ('course' in c)
+    return (o.course !== '') === c.course ? [] : [c.course ? 'no course reported' : `course reported: "${o.course}"`]
+  if ('earlierAtLeast' in c) return o.earlier.length >= c.earlierAtLeast ? [] : [`${o.earlier.length} earlier lines`]
+  if ('featureLevel' in c) {
+    const bad = textsOf(o).filter(t => EVENT_PATTERNS.some(re => re.test(t)))
+    return bad.map(t => `event text: "${t}"`)
+  }
+  if ('asksNotRestated' in c) {
+    const asks = [...after.items.map(i => i.ask), ...after.findings.map(f => f.title)]
+    return textsOf(o).flatMap(t => asks.filter(a => restatesText(t, a)).map(a => `"${t}" restates "${a}"`))
+  }
+  if ('sinceAtMost' in c) return o.since.length <= c.sinceAtMost ? [] : [`${o.since.length} since items`]
+  if ('sinceNoRepeat' in c)
+    return o.since.flatMap((a, n) =>
+      o.since
+        .slice(n + 1)
+        .filter(b => restatesText(a.text, b.text) || restatesText(b.text, a.text))
+        .map(b => `repeated: "${a.text}" and "${b.text}"`),
+    )
+  if ('workstreamsAtLeast' in c)
+    return o.workstreams.length >= c.workstreamsAtLeast ? [] : [`${o.workstreams.length} workstreams`]
+  const found = o[c.list].some(
+    i => new RegExp(c.overviewItem, 'i').test(i.text) && (!c.status || i.status === c.status),
+  )
+
+  return found ? [] : [`no ${c.list} item like /${c.overviewItem}/`]
+}
+
+function failures(
+  before: Ledger,
+  after: Ledger,
+  checks: Check[],
+  masked: string[],
+  overview: OverviewRun | null,
+): string[] {
   const has = (pattern: string, text: string | null) => text !== null && new RegExp(pattern, 'i').test(text)
   const added = after.items.filter(i => !before.items.some(b => b.id === i.id))
   const isOpen = (id: string) => after.items.some(i => i.id === id) || after.findings.some(f => f.id === id)
   const closedOutcome = (id: string) =>
     after.closed.find(c => c.id === id)?.outcome ?? after.closedFindings.find(f => f.id === id)?.outcome ?? null
   const finished = (after.card?.done ?? []).filter(line => !(before.card?.done ?? []).includes(line))
-  const results = after.milestones.filter(m => m.source === 'done' && !before.milestones.some(b => b.id === m.id))
-  const listed = () => results.map(m => `"${m.text}"`).join(', ')
   const newChecks = checks.filter((c): c is Extract<Check, { new: string }> => 'new' in c)
   const newMatches = matchEach(
     newChecks,
@@ -237,15 +337,7 @@ function failures(before: Ledger, after: Ledger, checks: Check[], masked: string
     } else if ('added' in c && added.length !== c.added) out.push(`${added.length} items added`)
     else if ('done' in c && !finished.some(line => has(c.done, line)))
       out.push(`no done line like /${c.done}/: ${finished.map(line => `"${line}"`).join(', ')}`)
-    else if ('results' in c && results.length !== c.results) out.push(`${results.length} results: ${listed()}`)
-    else if ('resultsAtLeast' in c && results.length < c.resultsAtLeast)
-      out.push(`${results.length} results, not ${c.resultsAtLeast} or more: ${listed()}`)
-    else if ('resultsAtMost' in c && results.length > c.resultsAtMost)
-      out.push(`${results.length} results, not ${c.resultsAtMost} or fewer: ${listed()}`)
-    else if ('result' in c && !results.some(m => has(c.result, m.text)))
-      out.push(`no result like /${c.result}/: ${listed()}`)
-    else if ('noResult' in c && results.some(m => has(c.noResult, m.text)))
-      out.push(`a result like /${c.noResult}/: ${listed()}`)
+    else if (isOverviewCheck(c)) out.push(...overviewFailures(c, after, overview))
     else if ('new' in c) {
       const match = newMatches.get(c)
       if (!match)
@@ -286,20 +378,20 @@ function failures(before: Ledger, after: Ledger, checks: Check[], masked: string
  * closed item or an open one. For reading only: the checks see the ledger after the code.
  */
 type Result = Run & {
-  /** The ledger call's answer. Its DONE lines are dropped; the results come from `resultsAnswer`. */
+  /** The ledger call's answer. The Overview comes from `overviewAnswer`. */
   answer: string | null
   masked: string[]
   outputTokens: number | null
   inputTokens?: number | null
   cachedTokens?: number | null
-  resultsAnswer?: string | null
-  resultsModel?: string | null
-  resultsOutputTokens?: number | null
-  resultsInputTokens?: number | null
-  resultsCachedTokens?: number | null
+  overviewAnswer?: string | null
+  overviewModel?: string | null
+  overviewOutputTokens?: number | null
+  overviewInputTokens?: number | null
+  overviewCachedTokens?: number | null
   /** How long each call took. The mod's limit applies to each call. */
   ledgerMs?: number
-  resultsMs?: number
+  overviewMs?: number
 }
 
 function maskedAsks(update: Update, before: Ledger, after: Ledger): string[] {
@@ -349,31 +441,37 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
   if (answer === null) return { ...base, error: `${agent} gave no answer`, failed: [], masked: [] }
   const parsed = parseReply(answer, c.catchUp ?? `${ex.reply}\n${ex.activity.join('\n')}`)
   if (parsed === null) return { ...base, error: null, failed: ['no answer the mod can read'], masked: [] }
-  const update = withoutResults(parsed)
   const applied =
     c.catchUp === undefined
-      ? applyExchangeUpdate(ledger, update, ex, NOW, NOW)
-      : applyUpdate(ledger, update, NOW, ledger.turn, NOW, true)
-  const handled = handledBy(ledger, applied)
-  const resultsInput =
-    c.catchUp === undefined ? resultsPrompt(applied, handled, ex) : resultsCatchUpPrompt(applied, handled, c.catchUp)
-  const resultsStarted = Date.now()
-  const resultsCall = await ask(resultsInput, RESULTS_SYSTEM)
+      ? applyExchangeUpdate(ledger, parsed, ex, NOW, NOW)
+      : applyUpdate(ledger, parsed, NOW, ledger.turn, NOW)
+  const masked = maskedAsks(parsed, ledger, applied)
+  const needsOverview = c.checks.some(isOverviewCheck)
+  if (!needsOverview) return { ...base, error: null, failed: failures(ledger, applied, c.checks, masked, null), masked }
+  const overviewInput =
+    c.catchUp === undefined ? overviewPrompt(applied.overview, ex) : overviewCatchUpPrompt(applied.overview, c.catchUp)
+  const overviewStarted = Date.now()
+  const overviewCall = await ask(overviewInput, OVERVIEW_SYSTEM)
   const withAnswer = {
     ...base,
-    resultsMs: Date.now() - resultsStarted,
-    resultsAnswer: resultsCall.text,
-    resultsModel: resultsCall.model,
-    resultsOutputTokens: resultsCall.outputTokens,
-    resultsInputTokens: resultsCall.inputTokens ?? null,
-    resultsCachedTokens: resultsCall.cachedTokens ?? null,
+    overviewMs: Date.now() - overviewStarted,
+    overviewAnswer: overviewCall.text,
+    overviewModel: overviewCall.model,
+    overviewOutputTokens: overviewCall.outputTokens,
+    overviewInputTokens: overviewCall.inputTokens ?? null,
+    overviewCachedTokens: overviewCall.cachedTokens ?? null,
   }
-  if (resultsCall.text === null)
-    return { ...withAnswer, error: `${agent} gave no results answer`, failed: [], masked: [] }
-  const after = addResults(applied, resultLines(resultsCall.text), NOW, c.catchUp === undefined ? ex.turn : null)
-  const masked = maskedAsks(update, ledger, after)
+  if (overviewCall.text === null)
+    return { ...withAnswer, error: `${agent} gave no Overview answer`, failed: [], masked: [] }
+  const overviewParsed = parseOverview(overviewCall.text)
+  const overview: OverviewRun = {
+    answer: overviewParsed,
+    before: applied.overview,
+    after: overviewParsed ? applyOverview(applied.overview, overviewParsed) : applied.overview,
+  }
+  const after = { ...applied, overview: overview.after }
 
-  return { ...withAnswer, error: null, failed: failures(ledger, after, c.checks, masked), masked }
+  return { ...withAnswer, error: null, failed: failures(ledger, after, c.checks, masked, overview), masked }
 }
 
 function job(agent: Agent, c: Case, n: number) {
@@ -406,10 +504,10 @@ const verdict = report(agents, cases, judged, runs, MIN, readBaselines(about.sui
   const runs = mine as Result[]
   const masked = runs.reduce((sum, r) => sum + r.masked.length, 0)
   const slow = runs.filter(
-    r => (r.ledgerMs ?? r.durationMs) > MOD_TIMEOUT_MS || (r.resultsMs ?? 0) > MOD_TIMEOUT_MS,
+    r => (r.ledgerMs ?? r.durationMs) > MOD_TIMEOUT_MS || (r.overviewMs ?? 0) > MOD_TIMEOUT_MS,
   ).length
   const long = runs.filter(
-    r => (r.outputTokens ?? 0) > MOD_MAX_TOKENS || (r.resultsOutputTokens ?? 0) > MOD_MAX_TOKENS,
+    r => (r.outputTokens ?? 0) > MOD_MAX_TOKENS || (r.overviewOutputTokens ?? 0) > MOD_MAX_TOKENS,
   ).length
   const notes = [
     masked > 0 ? `${masked} NEW lines dropped by the code` : '',

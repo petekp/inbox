@@ -54,8 +54,8 @@ import type {
   DrawnEntry,
   DrawnLists,
   Feedback,
-  ProgressPage,
-  ProgressRow,
+  OverviewPage,
+  OverviewRow,
   ReplyHolds,
   RowView,
   RowWait,
@@ -138,9 +138,9 @@ let stagedHostChanges: HostContext = {}
 let pollFailures = 0
 let readAt = 0
 let tab: ShownTab = 'needsYou'
-/** The tab drawn: the shown tab, or Needs you while the view has no Progress page, as from an older server. */
+/** The tab drawn: the shown tab, or Needs you while the view has no Overview page, as from an older server. */
 function drawnTab(): ShownTab {
-  return tab === 'progress' && !view?.progressPage ? 'needsYou' : tab
+  return tab === 'overview' && !view?.overviewPage ? 'needsYou' : tab
 }
 
 const selection: Record<Tab, { id: string; openedAt: number; index?: number } | null> = {
@@ -1257,7 +1257,7 @@ function Entries({ entries, group, all, now }: { entries: Entry[]; group: Group;
   )
 }
 
-function MarkedRow({ row }: { row: ProgressRow }) {
+function MarkedRow({ row }: { row: OverviewRow }) {
   return (
     <div class="entry">
       <div class="row">
@@ -1266,13 +1266,12 @@ function MarkedRow({ row }: { row: ProgressRow }) {
           <div>{row.text}</div>
           {row.detail ? <div class="outcome">{row.detail}</div> : null}
         </div>
-        <span class="side">{row.age}</span>
       </div>
     </div>
   )
 }
 
-function ProgressTab({ page }: { page: ProgressPage }) {
+function OverviewTab({ page }: { page: OverviewPage }) {
   if (page.isEmpty)
     return (
       <div class="empty">
@@ -1280,49 +1279,36 @@ function ProgressTab({ page }: { page: ProgressPage }) {
         <div class="muted">{page.empty.hint}</div>
       </div>
     )
-  const { goal, now, subagents, running, milestones, earlier } = page
+  const { headline, now, course, sections, earlier } = page
 
   return (
-    <main class="progress">
-      {goal || now ? (
+    <main class="overview">
+      {headline || now || course ? (
         <section>
-          {goal ? <h1 class="progress-goal">{goal}</h1> : null}
-          {now ? <div class="progress-now muted">{`Now${DOT}${now}`}</div> : null}
+          {headline ? <h1 class="overview-goal">{headline}</h1> : null}
+          {now ? <div class="overview-now muted">{now}</div> : null}
+          {course ? <div class="overview-now muted">{course}</div> : null}
         </section>
       ) : null}
-      {subagents ? (
-        <section>
-          <GroupTitle title={subagents.title} count={subagents.count} />
+      {sections.map(part => (
+        <section key={part.id}>
+          {part.title ? <GroupTitle title={part.title} count={0} /> : null}
           <div class="list">
-            {subagents.rows.map(r => (
+            {part.rows.map(r => (
               <MarkedRow key={r.id} row={r} />
             ))}
           </div>
         </section>
-      ) : null}
-      {running ? (
+      ))}
+      {earlier.length > 0 ? (
         <section>
-          <GroupTitle title={running.title} count={running.count} />
+          <GroupTitle title="Earlier in this session" count={0} />
           <div class="list">
-            {running.rows.map(r => (
-              <div class="entry" key={r.id}>
-                <div class="row">
-                  <span class="mark"></span>
-                  <div class="content tight">{r.text}</div>
-                </div>
+            {earlier.map((text, n) => (
+              <div class="earlier muted" key={n}>
+                {text}
               </div>
             ))}
-          </div>
-        </section>
-      ) : null}
-      {milestones ? (
-        <section>
-          <GroupTitle title={milestones.title} count={milestones.count} />
-          <div class="list">
-            {milestones.rows.map(r => (
-              <MarkedRow key={r.id} row={r} />
-            ))}
-            {earlier ? <div class="earlier muted">{earlier}</div> : null}
           </div>
         </section>
       ) : null}
@@ -1887,7 +1873,7 @@ function App({ lists }: { lists: Lists | null }): ComponentChildren {
       ) : shown === 'prs' ? (
         <Prs v={v} now={now} />
       ) : (
-        <ProgressTab page={v.progressPage} />
+        <OverviewTab page={v.overviewPage} />
       )}
       <footer>
         {isDemo || !DEMO_BUTTON ? null : (
