@@ -1,4 +1,15 @@
-import type { Closed, Delivery, Finding, Help, Item, LastAction, Ledger, LocalResult, Turns } from '../types'
+import type {
+  Closed,
+  Delivery,
+  DialogLink,
+  Finding,
+  Help,
+  Item,
+  LastAction,
+  Ledger,
+  LocalResult,
+  Turns,
+} from '../types'
 import type { Run } from './gh'
 import { closeFinding, closeItem, pruneClosed, reopenFinding, reopenItem } from './ledger'
 import type { Press } from './ledger'
@@ -860,8 +871,20 @@ function findingBody(finding: Finding): string[] {
 const EXPLAIN_REPLY_FORM =
   'Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply.'
 
+/**
+ * The message the Codex app sends when the person answers a dialog question. The app counts the question answered
+ * and closes the dialog only when a user message's whole text, trimmed, is this form and names the question's id.
+ */
+export function dialogReply(link: DialogLink, answer: string): string {
+  const questionItemId = JSON.stringify(['request_user_input_async', link.callId, link.index])
+  const reply = [{ questionItemId, question: link.question, answer }]
+
+  return `<send_user_message_question_reply>\n${JSON.stringify(reply)}\n</send_user_message_question_reply>`
+}
+
 export const messages = {
-  answer: (item: Item, answer: string) => `Re "${item.ask}": ${answer}`,
+  answer: (item: Item, answer: string) =>
+    item.dialog ? dialogReply(item.dialog, answer) : `Re "${item.ask}": ${answer}`,
   explain: (item: Item) => {
     const what =
       item.kind === 'task'

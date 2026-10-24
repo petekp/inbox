@@ -3,8 +3,9 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { EMPTY } from '../../hooks/ledger'
+import { addAgentItem, EMPTY } from '../../hooks/ledger'
 import { inboxText } from '../../hooks/model-text'
+import { applied } from '../../hooks/session'
 import { feedbackText } from '../../hooks/view'
 import { notePrompt, noteToolCall, viewOf } from '../src/core'
 import { handleHook } from '../src/hook'
@@ -94,6 +95,68 @@ test('a Stop notes the dialogs the agent opened in the ending turn as open, and 
     deps,
   )
   assert.deepEqual((await readState(dir, 's1')).pending[1]?.ex.activity, [])
+})
+
+test('a dialog question links to the question the agent recorded for it or the update added from it, in the same turn', async () => {
+  const dir = tempDir()
+  const transcript = join(tempDir(), 'rollout.jsonl')
+  const deps = hookDeps(dir)
+  const started = (turn: string) => ({ type: 'event_msg', payload: { type: 'task_started', turn_id: turn } })
+  const dialog = (callId: string, questions: unknown[]) => ({
+    type: 'response_item',
+    payload: {
+      type: 'function_call',
+      name: 'request_user_input_async',
+      call_id: callId,
+      arguments: JSON.stringify({ questions }),
+    },
+  })
+  const rows: unknown[] = []
+  const write = (...more: unknown[]) => {
+    rows.push(...more)
+    writeFileSync(transcript, rows.map(row => JSON.stringify(row)).join('\n'))
+  }
+  const applyAnswer = (answer: string) => updateState(dir, 's1', s => applied(s, `GOAL: Ship\n${answer}`, 2000, 2000))
+  const links = async () => (await readState(dir, 's1')).ledger.items.map(i => [i.ask, i.dialog ?? null])
+
+  await handleHook(input('UserPromptSubmit', { prompt: 'Fix the build', turn_id: 't1' }), deps)
+  write(
+    started('t1'),
+    dialog('call_a', [
+      { title: 'May I push the compiler fix to the PR?', options: ['Push now (Recommended)', 'Keep it local'] },
+      { title: 'Which branch gets the tag?', options: ['main', 'release'] },
+    ]),
+  )
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: addAgentItem(
+      s.ledger,
+      { kind: 'question', ask: 'Push the fix?', options: ['Push now', 'Keep it local'], rec: 'Push now', helps: [] },
+      1000,
+    ).ledger,
+  }))
+  await handleHook(
+    input('Stop', { turn_id: 't1', transcript_path: transcript, last_assistant_message: 'Asked.' }),
+    deps,
+  )
+  assert.deepEqual(await links(), [
+    ['Push the fix?', { callId: 'call_a', index: 0, question: 'May I push the compiler fix to the PR?' }],
+  ])
+  assert.equal((await readState(dir, 's1')).unlinkedDialogQuestions.length, 1)
+  await applyAnswer('NOW: Waiting')
+  assert.deepEqual((await readState(dir, 's1')).unlinkedDialogQuestions, [])
+
+  await handleHook(input('UserPromptSubmit', { prompt: 'Deploy it', turn_id: 't2' }), deps)
+  write(started('t2'), dialog('call_b', [{ title: 'Deploy to production now?', options: ['Deploy', 'Wait'] }]))
+  await handleHook(
+    input('Stop', { turn_id: 't2', transcript_path: transcript, last_assistant_message: 'Asked.' }),
+    deps,
+  )
+  await applyAnswer('NEW: decide | - | Deploy now? | Deploy / Wait | -')
+  assert.deepEqual((await links()).slice(1), [
+    ['Deploy now?', { callId: 'call_b', index: 0, question: 'Deploy to production now?' }],
+  ])
+  assert.deepEqual((await readState(dir, 's1')).unlinkedDialogQuestions, [])
 })
 
 test('each hook records that it ran, with the turn UserPromptSubmit saw, and the tab reads the session as heard', async () => {

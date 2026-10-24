@@ -160,7 +160,7 @@ const DIALOG_QUESTION_MAX = 200
 const DIALOG_OPTIONS_SHOWN = 6
 const DIALOG_OPTION_MAX = 60
 const DIALOG_ANSWER_MAX = 400
-const RECOMMENDED_SUFFIX = /\s*\(recommended\)\s*$/i
+export const RECOMMENDED_SUFFIX = /\s*\(recommended\)\s*$/i
 
 /**
  * The questions of a dialog tool's input. Claude's AskUserQuestion gives `question` and options with a `label`.

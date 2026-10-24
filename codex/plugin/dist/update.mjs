@@ -872,6 +872,29 @@ function appliedCatchUp(s, begun, parsed, now) {
   };
 }
 
+// src/dialogs.ts
+function optionsKey(options) {
+  return options.map((o) => o.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase()).sort().join("\n");
+}
+function copies(item, q) {
+  if (item.kind !== "question" || item.dialog || item.turn !== q.turn) return false;
+  const hasSameOptions = item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
+  return hasSameOptions || restates(item.ask, q.question);
+}
+function linkDialogs(s) {
+  if (s.unlinkedDialogQuestions.length === 0) return s;
+  let items = s.ledger.items;
+  const unlinked = [];
+  for (const q of s.unlinkedDialogQuestions) {
+    const at = items.findIndex((item) => copies(item, q));
+    if (at >= 0) {
+      const { options: _options, turn: _turn, ...link } = q;
+      items = items.map((item, i) => i === at ? { ...item, dialog: link } : item);
+    } else if (s.pending.some((p) => p.ex.turn === q.turn)) unlinked.push(q);
+  }
+  return { ...s, ledger: { ...s.ledger, items }, unlinkedDialogQuestions: unlinked };
+}
+
 // src/state.ts
 var NOTHING_HEARD = {
   startAt: null,
@@ -892,7 +915,8 @@ function emptyState(sessionId) {
     cliPath: null,
     ...emptySession(),
     tabSeenAt: 0,
-    heard: NOTHING_HEARD
+    heard: NOTHING_HEARD,
+    unlinkedDialogQuestions: []
   };
 }
 function statePath(dir, sessionId) {
@@ -1076,7 +1100,8 @@ async function updateState(dir, sessionId, change) {
     const { state: current, isSaved } = await readSaved(dir, sessionId);
     const changed = await change(current);
     if (isSaved && changed === current) return current;
-    const next = { ...changed, ledger: pruneClosed(changed.ledger, new Set(changed.heldRows)) };
+    const linked = linkDialogs(changed);
+    const next = { ...linked, ledger: pruneClosed(linked.ledger, new Set(linked.heldRows)) };
     const tmp = `${path}.${process.pid}.tmp`;
     await writeFile(tmp, JSON.stringify(next));
     await rename(tmp, path);

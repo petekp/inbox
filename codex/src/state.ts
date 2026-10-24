@@ -28,6 +28,8 @@ import {
   upgradeSession,
 } from '../../hooks/session'
 import type { Session } from '../../hooks/session'
+import { linkDialogs } from './dialogs'
+import type { UnlinkedDialogQuestion } from './dialogs'
 
 export type SessionState = Session & {
   version: 1
@@ -40,6 +42,8 @@ export type SessionState = Session & {
   cliPath: string | null
   tabSeenAt: number
   heard: Heard
+  /** Questions from dialogs the agent opened that no inbox item copies yet. */
+  unlinkedDialogQuestions: UnlinkedDialogQuestion[]
 }
 
 /**
@@ -80,6 +84,7 @@ export function emptyState(sessionId: string): SessionState {
     ...emptySession(),
     tabSeenAt: 0,
     heard: NOTHING_HEARD,
+    unlinkedDialogQuestions: [],
   }
 }
 
@@ -300,7 +305,8 @@ export async function tryWithLock<T>(
 }
 
 /**
- * Changes a session under its lock. Every save prunes the closed lists and keeps the records of `heldRows`.
+ * Changes a session under its lock. Every save links dialog questions to the items that copy them, and prunes the
+ * closed lists but keeps the records of `heldRows`.
  */
 export async function updateState(
   dir: string,
@@ -313,7 +319,8 @@ export async function updateState(
     const { state: current, isSaved } = await readSaved(dir, sessionId)
     const changed = await change(current)
     if (isSaved && changed === current) return current
-    const next = { ...changed, ledger: pruneClosed(changed.ledger, new Set(changed.heldRows)) }
+    const linked = linkDialogs(changed)
+    const next = { ...linked, ledger: pruneClosed(linked.ledger, new Set(linked.heldRows)) }
     const tmp = `${path}.${process.pid}.tmp`
     await writeFile(tmp, JSON.stringify(next))
     await rename(tmp, path)

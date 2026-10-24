@@ -1816,8 +1816,8 @@ at each Stop, to find the question dialogs the agent opened in the ending turn.
   JSON string `{"questions": [...]}`. Each question has a `title` and, in most,
   an `options` list of plain strings. A recommended option ends
   "(Recommended)". Its `function_call_output` holds only
-  whether the dialog was accepted. The person's answer arrives later as their
-  next prompt. The call rows carry no turn id. A turn starts at the
+  whether the dialog was accepted. The person's answer arrives later as a user
+  message (see "The dialog's reply"). The call rows carry no turn id. A turn starts at the
   `event_msg` row with `payload.type: "task_started"` and a `payload.turn_id`.
   [inference] That id is the `turn_id` the hooks get.
   `codex/src/transcript.ts:turnIn` reads the last 4 MB of the file and
@@ -1827,6 +1827,30 @@ at each Stop, to find the question dialogs the agent opened in the ending turn.
   dialog and then presses the dialog's close button, the call's output stays
   `{"accepted":true}` and no prompt follows. Neither the agent nor the inbox
   learns the answer, so every question in that dialog stays open.
+- **The dialog's reply** [live 2026-10-24, one rollout; source, ChatGPT.app
+  `app.asar` webview bundle, read 2026-10-24]. An answer in the dialog arrives
+  as a user message whose whole text is
+  `<send_user_message_question_reply>\n[{"questionItemId": …, "question": …, "answer": …}]\n</send_user_message_question_reply>`.
+  `questionItemId` is the string `JSON.stringify(["request_user_input_async",
+  <call_id>, <index>])`, with the call's `call_id` and the question's index in
+  its `questions`. While the dialog's turn runs, the app steers the reply into
+  that turn (seen 21 s after the call, with the same `turn_id`).
+  - The app counts a question answered only when a user message in its turn or
+    any later turn, trimmed, starts and ends with those tags and its JSON names
+    the question's id. It parses the JSON by cutting the tags off by their exact
+    lengths, so nothing may stand outside them.
+  - The dialog stays on screen until each of its questions is answered so or
+    skipped with the close button. It does not close when its turn ends. Only
+    its desktop notification ("Your assistant has a question") and the thread's
+    needs-input flag end with the turn.
+  - The close button sets a flag in the app's page and sends nothing. No
+    app-server method answers or closes the dialog. The tool's handler returns
+    `{"accepted":true}` at once and leaves no request open, and
+    `item/tool/requestUserInput` belongs to the blocking user-input tool.
+  - So the inbox sends its answer to a question linked to a dialog in this
+    form, through `codex queue` (`hooks/presses.ts:dialogReply`,
+    `codex/src/dialogs.ts:linkDialogs`). The app closes the dialog when the
+    queued message's turn starts, not while an earlier turn runs.
 - **Still plain JSONL** [live 2026-10-08]: 146 files in three days, none
   compressed, although `local_thread_store_compression` is on.
 - **Compression and file names** [live 2026-10-23, source 0.164.0]. Codex

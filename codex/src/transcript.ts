@@ -247,7 +247,13 @@ async function historyLines(path: string, bytes: number): Promise<string[]> {
   return parts.flat()
 }
 
-type TurnRows = { dialogs: DialogQuestion[][]; commands: FinishedCommand[] }
+/**
+ * A dialog the agent opened: its call's `call_id`, null when the row has none, and its questions in the call's order.
+ * Codex refuses a call with an empty question title, so a question's place here is its index in the call.
+ */
+export type Dialog = { callId: string | null; questions: DialogQuestion[] }
+
+type TurnRows = { dialogs: Dialog[]; commands: FinishedCommand[] }
 
 /**
  * What the agent did in a turn, oldest first, read from the transcript. Codex runs no hook for its dialog tool,
@@ -255,7 +261,7 @@ type TurnRows = { dialogs: DialogQuestion[][]; commands: FinishedCommand[] }
  * The turn is the one with `turnId`, or the newest when none is given. Only the last few megabytes are read. When
  * they hold no turn start, they count as the turn. A transcript that cannot be read gives an empty turn.
  *
- * `dialogs` holds the questions of each dialog, and the answer arrives later as the person's next prompt.
+ * `dialogs` holds each dialog the agent opened. Its answer arrives later, as a user message.
  * `commands` holds each shell command that finished. The `CommandExecution` rows of Codex CLI 0.163 and later give
  * them. A turn with none falls back to older shell calls and their outputs.
  */
@@ -265,7 +271,7 @@ export async function turnIn(path: string | null, turnId: string | undefined): P
   try {
     const lines = await tailLines(path, TAIL_BYTES)
     type Turn = {
-      dialogs: DialogQuestion[][]
+      dialogs: Dialog[]
       executions: FinishedCommand[]
       calls: Map<string, FinishedCommand>
       called: FinishedCommand[]
@@ -302,7 +308,7 @@ export async function turnIn(path: string | null, turnId: string | undefined): P
         } catch {
           continue
         }
-        turn.dialogs.push(dialogQuestions(args.questions))
+        turn.dialogs.push({ callId: p.call_id ?? null, questions: dialogQuestions(args.questions) })
       } else if (row.type === 'response_item' && (p.type === 'function_call' || p.type === 'local_shell_call')) {
         const command = callCommand(p)
         if (command !== '' && p.call_id) turn.calls.set(p.call_id, { command, output: '' })
@@ -316,7 +322,7 @@ export async function turnIn(path: string | null, turnId: string | undefined): P
     if (!turn) return none
 
     return {
-      dialogs: turn.dialogs.filter(questions => questions.length > 0),
+      dialogs: turn.dialogs.filter(d => d.questions.length > 0),
       commands: turn.executions.length > 0 ? turn.executions : turn.called,
     }
   } catch {

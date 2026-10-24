@@ -152,6 +152,31 @@ test('a press drawn in another thread, or on a row that changed, reads stale and
   assert.deepEqual(s.lastActions, before.lastActions)
 })
 
+test('an answer to a question linked to a dialog goes in the form the Codex app reads as its answer, reads Queued, and arrives as the press', async () => {
+  const { dir, calls, call } = await setup(0)
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: {
+      ...s.ledger,
+      items: s.ledger.items.map(i => ({ ...i, dialog: { callId: 'call_7', index: 1, question: 'Ship "v2" now?' } })),
+    },
+  }))
+  await call('inbox_press', ANSWER, { thread_id: 's1' })
+  const message = calls[0]?.[5] ?? ''
+  const open = '<send_user_message_question_reply>'
+  const close = '</send_user_message_question_reply>'
+  assert.ok(message.startsWith(open) && message.endsWith(close))
+  assert.deepEqual(JSON.parse(message.slice(open.length, -close.length)), [
+    { questionItemId: '["request_user_input_async","call_7",1]', question: 'Ship "v2" now?', answer: 'Yes' },
+  ])
+  assert.equal((await readState(dir, 's1')).lastActions.i1?.delivery?.state, 'queued')
+
+  await handleHook(input('UserPromptSubmit', { prompt: message, turn_id: 't2' }), hookDeps(dir))
+  const s = await readState(dir, 's1')
+  assert.deepEqual(s.turn.press, { id: 'i1', action: 'answer' })
+  assert.equal(s.lastActions.i1?.delivery?.state, 'arrived')
+})
+
 test('a press reads Explaining… at once, Queued once its message waits QUEUED_AFTER_MS for Codex to take it, then Explaining… until the reply, then ✓', async () => {
   const { dir, call } = await setup(0)
   const r = await call('inbox_press', { press: { action: 'explain', id: 'i1' }, thread: 's1' }, { thread_id: 's1' })

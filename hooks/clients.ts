@@ -14,6 +14,7 @@ export type FeatureId =
   | 'failed-update-recovery'
   | 'ledger-behind-state'
   | 'dialog-outcome'
+  | 'dialog-answer'
   | 'tool-output-urls'
   | 'pr-link-from-output'
   | 'pr-arrivals'
@@ -37,6 +38,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       'failed-update-recovery': { kind: 'full' },
       'ledger-behind-state': { kind: 'full' },
       'dialog-outcome': { kind: 'full' },
+      'dialog-answer': {
+        kind: 'different',
+        reason:
+          'The dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close.',
+      },
       'tool-output-urls': { kind: 'full' },
       'pr-link-from-output': { kind: 'full' },
       'pr-arrivals': { kind: 'full' },
@@ -71,6 +77,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           "Codex's dialog tool returns at once and the answer arrives as the person's next prompt, so a dialog is noted as open and its outcome is never recorded.",
       },
+      'dialog-answer': { kind: 'full' },
       'tool-output-urls': { kind: 'full' },
       'pr-link-from-output': {
         kind: 'different',
@@ -115,6 +122,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       'failed-update-recovery': { kind: 'full' },
       'ledger-behind-state': { kind: 'full' },
       'dialog-outcome': { kind: 'full' },
+      'dialog-answer': {
+        kind: 'different',
+        reason:
+          'The ask dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close.',
+      },
       'tool-output-urls': { kind: 'full' },
       'pr-link-from-output': { kind: 'full' },
       'pr-arrivals': { kind: 'full' },
