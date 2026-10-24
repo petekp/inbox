@@ -26,6 +26,11 @@ export type Item = {
   from: 'record' | 'update'
   /** The open Codex dialog question this item copies. Only the Codex host sets it. */
   dialog?: DialogLink
+  /**
+   * The agent marked it a design choice: its options are designs or approaches it could try and show side by side.
+   * Only these show Compare. An item saved before the mark kept this has none.
+   */
+  isDesignChoice?: boolean
   /** When the agent last recorded it again while it was open, as it does to report a comparison. */
   reportedAt?: number
 }

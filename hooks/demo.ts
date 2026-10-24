@@ -44,6 +44,7 @@ export function demoView(now: number): DemoCopy {
           ask: 'Dismiss a glance with a pinch, or a flick of the wrist?',
           options: ['Pinch', 'Flick'],
           rec: 'Pinch',
+          isDesignChoice: true,
           helps: [],
           turn: 14,
           at: now - 12 * MIN,

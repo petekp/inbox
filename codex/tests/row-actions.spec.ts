@@ -124,6 +124,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
         ask: 'Which option?',
         options: ['A', 'B', 'C', 'D', 'E', 'F'],
         rec: 'A',
+        isDesignChoice: true,
       },
     ],
   }

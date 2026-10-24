@@ -196,6 +196,8 @@ import {
   PERMISSION_FALLBACK_DELAY_MS,
   PRESS_GUARD_MS,
   QUEUED_AFTER_MS,
+  COMPARE_LIMIT_MS,
+  compareEndsAt,
   rowKeyPlan,
   settledLabel,
   actionLabel,
@@ -912,6 +914,8 @@ async function redrawAfterReload($: EngineInterface) {
   ]
   const latest = Math.max(...times)
   if (times.length > 0 && latest + SETTLED_MS > now) redrawWhileLeaving($, latest + SETTLED_MS)
+  const compareEnd = compareEndsAt(lastActions, now)
+  if (compareEnd !== null) later($, compareEnd - now, () => redraw($))
 }
 
 /**
@@ -1775,6 +1779,7 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   const { isMoved, undoBlock } = await openAfterClose($, rowId, wasWaiting, canRevealUndo)
   if (canRevealUndo) await keepUndoVisible($, undoKey, undoBlock, now, undoRevision)
   if (!('ref' in p) && p.action === 'done') later($, SETTLED_MS, () => wakeForDone($))
+  if (!('ref' in p) && p.action === 'compare') later($, COMPARE_LIMIT_MS, () => redraw($))
   if (!('ref' in p) && p.action === 'address') redrawWhileLeaving($, now + SETTLED_MS)
   if (isReplyToClosed && effects.length > 0) redrawWhileLeaving($, now + SETTLED_MS)
   if ('ref' in p && p.action === 'pr-dismiss') {

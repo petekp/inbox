@@ -608,7 +608,8 @@ function addAgentItem(ledger, entry, now) {
   const openItem = ledger.items[open];
   if (openItem) {
     const helps = entry.helps.reduce(withHelp, openItem.helps);
-    const reported = { ...openItem, helps, reportedAt: now };
+    const isDesignChoice = openItem.isDesignChoice === true || entry.isDesignChoice === true;
+    const reported = { ...openItem, helps, isDesignChoice, reportedAt: now };
     const items2 = ledger.items.map((i) => i === openItem ? reported : i);
     return {
       ledger: { ...ledger, items: items2 },
@@ -1812,6 +1813,11 @@ var CLOSED_MARKS = { handled: "\u2713", dismissed: "\u2715", lapsed: "" };
 var CLOSED_SHOWN = 3;
 var SETTLED_MS = 5120;
 var QUEUED_AFTER_MS = 1000;
+var COMPARE_LIMIT_MS = 30 * 60000;
+function compareEndsAt(lastActions, now) {
+  const ends = Object.values(lastActions).filter((l) => l.action === "compare").map((l) => l.at + COMPARE_LIMIT_MS).filter((at) => at > now);
+  return ends.length > 0 ? Math.min(...ends) : null;
+}
 function isQueuedAt(last, now) {
   return last?.delivery?.state === "queued" && now - last.at >= QUEUED_AFTER_MS;
 }
@@ -1904,7 +1910,7 @@ function needsYouOrder(ledger) {
   return { questions: newestReplyFirst("question"), tasks: newestReplyFirst("task") };
 }
 function showsCompare(item) {
-  return item.kind === "question" && item.options.length >= 2;
+  return item.kind === "question" && item.isDesignChoice === true && item.options.length >= 2;
 }
 function feedbackOf(id, last, note, turns, now, reportedAt) {
   const result = last?.result;
@@ -1922,9 +1928,12 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
     return { is: "notSent", reason: delivery.reason, retry: retryOf(id, last) };
   const isAwaiting = isAwaitingReply(last, turns);
   const isUnreported = last.action === "compare" && !(reportedAt !== undefined && reportedAt >= last.at);
+  const isPastLimit = now - last.at >= COMPARE_LIMIT_MS;
   const working = WORKING_LABELS[last.action];
-  if (last.kind === "talk" && working && (isAwaiting || isUnreported))
+  if (last.kind === "talk" && working && (isAwaiting || isUnreported && !isPastLimit))
     return { is: "working", label: working, at: last.at };
+  if (isUnreported)
+    return { is: "noComparison", at: last.at };
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last))
     return { is: "stillOpen", at: last.at };
   const isHandedStep = last.kind === "handoff" && last.action.startsWith("step-");
@@ -1995,6 +2004,8 @@ function feedbackText(f, look) {
       return f.label;
     case "stillOpen":
       return "Still open";
+    case "noComparison":
+      return "No comparison came back";
     case "closed":
       return f.label;
   }
@@ -2709,6 +2720,10 @@ var RECORD_SCHEMA = {
       items: { type: "string" },
       description: "For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link. For a question: up to 3 files or https links that help the user decide, such as a page comparing the options, each file as an absolute path."
     },
+    design_choice: {
+      type: "boolean",
+      description: "For a question: true when its options are designs or approaches you could try and show side by side, such as two layouts or two ways to build a feature. The user can then ask you to compare them. Leave it out for a fact, an approval or a preference."
+    },
     finding_kind: {
       type: "string",
       enum: ["issue", "opportunity"],
@@ -2781,7 +2796,8 @@ function recordItem(host, ledger, input, now) {
   const isUsable = (h) => input.kind === "task" || h.kind === "open" || h.kind === "link";
   const helps = steps2.flatMap((step) => stepHelp(step) ?? []).filter(isUsable).slice(0, MAX_STEPS);
   const leftOut = helps.length < steps2.length ? input.kind === "task" ? " Some steps were not a command, a file path or a link, so they are left out." : " Some steps were not an absolute file path or a link, so they are left out." : "";
-  const r = addAgentItem(ledger, { kind: input.kind, ask, options, rec, helps }, now);
+  const isDesignChoice = input.kind === "question" && input.design_choice === true;
+  const r = addAgentItem(ledger, { kind: input.kind, ask, options, rec, helps, isDesignChoice }, now);
   if (r.is === "open")
     return {
       ledger: r.ledger,
@@ -4225,6 +4241,7 @@ function createPanel(deps) {
   let ui = INITIAL_UI;
   let screen = null;
   let animation = null;
+  let compareEnd = null;
   let version2 = 0;
   let seen = {};
   let isOpening = true;
@@ -4237,6 +4254,14 @@ function createPanel(deps) {
       timers.stop(animation);
       animation = null;
     }
+    const now = deps.now();
+    const at = screen === null ? null : compareEndsAt(screen.view.lastActions, now);
+    if (compareEnd !== null && compareEnd.at !== at) {
+      timers.stop(compareEnd.timer);
+      compareEnd = null;
+    }
+    if (at !== null && compareEnd === null)
+      compareEnd = { at, timer: timers.every(() => void refresh(), at - now + ANIMATION_MS) };
   };
   async function refresh(pressedId) {
     const mine = ++version2;
@@ -4300,6 +4325,9 @@ function createPanel(deps) {
       if (animation !== null)
         timers.stop(animation);
       animation = null;
+      if (compareEnd !== null)
+        timers.stop(compareEnd.timer);
+      compareEnd = null;
     }
   };
 }
@@ -4336,6 +4364,7 @@ function demoView(now) {
           ask: "Dismiss a glance with a pinch, or a flick of the wrist?",
           options: ["Pinch", "Flick"],
           rec: "Pinch",
+          isDesignChoice: true,
           helps: [],
           turn: 14,
           at: now - 12 * MIN

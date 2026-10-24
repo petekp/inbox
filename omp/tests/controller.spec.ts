@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { SETTLED_MS } from '../../hooks/view'
+import { COMPARE_LIMIT_MS, SETTLED_MS } from '../../hooks/view'
 import { createPanel } from '../src/controller'
 import type { PanelSource } from '../src/controller'
 import { demoSource } from '../src/demo'
@@ -14,7 +14,8 @@ function open(overrides: Partial<PanelSource> = {}) {
   const timers: { fn: () => void; ms: number; stopped: boolean }[] = []
   const pressed: PanelPress[] = []
   const calls = { renders: 0, closes: 0, fetches: 0 }
-  const demo = demoSource({ now: () => now, after: () => {}, settleWindowMs: SETTLED_MS })
+  const replies: (() => void)[] = []
+  const demo = demoSource({ now: () => now, after: fn => void replies.push(fn), settleWindowMs: SETTLED_MS })
   const source: PanelSource = {
     ...demo,
     press: async (p, holds) => {
@@ -38,7 +39,7 @@ function open(overrides: Partial<PanelSource> = {}) {
     height: () => undefined,
   })
 
-  return { panel, timers, pressed, calls, advance: (ms: number) => void (now += ms) }
+  return { panel, timers, pressed, calls, replies, advance: (ms: number) => void (now += ms) }
 }
 
 const live = (timers: { fn: () => void; ms: number; stopped: boolean }[], ms: number) =>
@@ -98,6 +99,24 @@ test('the redraw timer runs only while something on the screen moves', async () 
   live(timers, 200)[0]!.fn()
   await flush()
   expect(live(timers, 200)).toHaveLength(0)
+})
+
+test('a Compare press with no report redraws the panel at its limit, reading No comparison came back', async () => {
+  const { panel, timers, pressed, replies, advance } = open()
+  await panel.start()
+  panel.handleInput('p')
+  await flush()
+  expect(pressed[0]).toMatchObject({ action: 'compare' })
+  for (const reply of replies.splice(0)) reply()
+  await flush()
+  expect(panel.render(80).join('\n')).toContain('Comparing…')
+  const limit = timers.filter(t => t.ms >= COMPARE_LIMIT_MS && !t.stopped)
+  expect(limit).toHaveLength(1)
+  advance(limit[0]!.ms)
+  limit[0]!.fn()
+  await flush()
+  expect(panel.render(120).join('\n')).toContain('No comparison came back')
+  expect(limit[0]!.stopped).toBe(true)
 })
 
 test('the panel checks the PRs every two minutes until it is disposed', async () => {

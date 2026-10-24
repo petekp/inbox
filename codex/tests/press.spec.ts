@@ -461,6 +461,7 @@ test('a question lists every option, folds those past the fourth of 7, marks the
           ...asked('i1', 'question', 1),
           options: colors,
           rec: 'Green',
+          isDesignChoice: true,
           helps: [{ kind: 'run', command: './a.sh', name: 'a script' }],
         },
       ],

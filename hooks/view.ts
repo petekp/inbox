@@ -65,6 +65,18 @@ export const SETTLED_MS = 5120
 export const PERMISSION_FALLBACK_DELAY_MS = 1500
 export const PRESS_GUARD_MS = 400
 export const QUEUED_AFTER_MS = 1000
+/** How long a Compare press waits for the agent to record the question again after its reply. */
+export const COMPARE_LIMIT_MS = 30 * 60_000
+
+/** When the soonest Compare press still inside its limit reaches it, so a look can redraw then. */
+export function compareEndsAt(lastActions: Record<string, LastAction>, now: number): number | null {
+  const ends = Object.values(lastActions)
+    .filter(l => l.action === 'compare')
+    .map(l => l.at + COMPARE_LIMIT_MS)
+    .filter(at => at > now)
+
+  return ends.length > 0 ? Math.min(...ends) : null
+}
 
 export function isQueuedAt(last: LastAction | undefined, now: number): boolean {
   return last?.delivery?.state === 'queued' && now - last.at >= QUEUED_AFTER_MS
@@ -127,6 +139,7 @@ export type Feedback =
   | { is: 'done'; label: string; at: number; isHandedStep?: true }
   | { is: 'working'; label: string; at: number }
   | { is: 'stillOpen'; at: number }
+  | { is: 'noComparison'; at: number }
   | { is: 'queued'; label: string; at: number }
   | { is: 'unconfirmed'; label: string; at: number }
   | { is: 'notSent'; reason: string; retry: RowPress | null }
@@ -308,8 +321,8 @@ function needsYouOrder(ledger: Ledger): { questions: Item[]; tasks: Item[] } {
   return { questions: newestReplyFirst('question'), tasks: newestReplyFirst('task') }
 }
 
-export function showsCompare(item: Pick<Item, 'kind' | 'options'>): boolean {
-  return item.kind === 'question' && item.options.length >= 2
+export function showsCompare(item: Pick<Item, 'kind' | 'options' | 'isDesignChoice'>): boolean {
+  return item.kind === 'question' && item.isDesignChoice === true && item.options.length >= 2
 }
 
 export function feedbackOf(
@@ -331,9 +344,11 @@ export function feedbackOf(
   if (delivery?.state === 'failed') return { is: 'notSent', reason: delivery.reason, retry: retryOf(id, last) }
   const isAwaiting = isAwaitingReply(last, turns)
   const isUnreported = last.action === 'compare' && !(reportedAt !== undefined && reportedAt >= last.at)
+  const isPastLimit = now - last.at >= COMPARE_LIMIT_MS
   const working = WORKING_LABELS[last.action]
-  if (last.kind === 'talk' && working && (isAwaiting || isUnreported))
+  if (last.kind === 'talk' && working && (isAwaiting || (isUnreported && !isPastLimit)))
     return { is: 'working', label: working, at: last.at }
+  if (isUnreported) return { is: 'noComparison', at: last.at }
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last)) return { is: 'stillOpen', at: last.at }
 
   const isHandedStep = last.kind === 'handoff' && last.action.startsWith('step-')
@@ -378,11 +393,15 @@ export function isFailure(f: Feedback | null): boolean {
 
 export function hasAge(
   f: Feedback,
-): f is Extract<Feedback, { is: 'done' | 'working' | 'stillOpen' | 'queued' | 'unconfirmed' | 'closed' }> {
+): f is Extract<
+  Feedback,
+  { is: 'done' | 'working' | 'stillOpen' | 'noComparison' | 'queued' | 'unconfirmed' | 'closed' }
+> {
   return (
     f.is === 'done' ||
     f.is === 'working' ||
     f.is === 'stillOpen' ||
+    f.is === 'noComparison' ||
     f.is === 'queued' ||
     f.is === 'unconfirmed' ||
     f.is === 'closed'
@@ -430,6 +449,8 @@ export function feedbackText(f: Feedback, look: Look): string {
       return f.label
     case 'stillOpen':
       return 'Still open'
+    case 'noComparison':
+      return 'No comparison came back'
     case 'closed':
       return f.label
   }

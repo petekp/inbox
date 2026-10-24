@@ -141,12 +141,14 @@ it, with its possible answers. The agent's recommended answer comes first.
 Press an answer and it goes to the agent as your message. You can also type
 your own reply, or press Explain to have the agent say more before you decide.
 
-When a question has two or more answers, Compare has the agent try each one
-against your code and reply with a table of how they differ. For a visual
+When the agent marks a question as a design choice, such as two layouts or two
+ways to build a feature, Compare has the agent try each answer against your
+code and reply with a table of how they differ. For a visual
 choice it also makes a page that shows them side by side, which opens from the
 question. Where the agent can run a subagent in the background, the
 comparison runs there, so you can keep working. The question reads
-"Comparing…" until the agent reports back.
+"Comparing…" until the agent reports back. After 30 minutes with no report, it
+reads "No comparison came back", and you can press Compare again.
 
 A task is something like signing in or adding an API key. It comes with
 buttons for its steps, such as copying a command or opening a file. In Claude

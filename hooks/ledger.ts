@@ -789,13 +789,13 @@ export type AgentItemResult =
   | { ledger: Ledger; is: 'closed'; record: Closed }
 
 /**
- * Adds a question or task the agent recorded. One that an open item restates adds its steps to that item and stamps
- * its `reportedAt`, and one that repeats a closed item is skipped, unless that item expired or the agent closed it.
+ * Adds a question or task the agent recorded. One that an open item restates adds its steps and its design-choice mark
+ * to that item and stamps its `reportedAt`, and one that repeats a closed item is skipped, unless that item expired or the agent closed it.
  * The list keeps its newest MAX_OPEN items. A finding the new ask restates closes, so one thing shows in one list.
  */
 export function addAgentItem(
   ledger: Ledger,
-  entry: Pick<Item, 'kind' | 'ask' | 'options' | 'rec' | 'helps'>,
+  entry: Pick<Item, 'kind' | 'ask' | 'options' | 'rec' | 'helps' | 'isDesignChoice'>,
   now: number,
 ): AgentItemResult {
   const candidate = { ...entry, label: null }
@@ -804,7 +804,8 @@ export function addAgentItem(
   const openItem = ledger.items[open]
   if (openItem) {
     const helps = entry.helps.reduce(withHelp, openItem.helps)
-    const reported = { ...openItem, helps, reportedAt: now }
+    const isDesignChoice = openItem.isDesignChoice === true || entry.isDesignChoice === true
+    const reported = { ...openItem, helps, isDesignChoice, reportedAt: now }
     const items = ledger.items.map(i => (i === openItem ? reported : i))
 
     return {

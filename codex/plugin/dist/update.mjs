@@ -758,6 +758,7 @@ var COMPARE_REQUEST = [
 // ../hooks/view.ts
 var CHOICE_KEYS = [..."abcfghilm"];
 var SETTLED_MS = 5120;
+var COMPARE_LIMIT_MS = 30 * 6e4;
 var TABS = [
   { id: "needsYou", label: "Needs you", hotkey: "1" },
   { id: "findings", label: "Findings", hotkey: "2" },

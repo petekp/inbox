@@ -164,6 +164,63 @@
     ]
   },
   {
+    "name": "record-design-choice",
+    "about": "A choice between two designs the agent could try is recorded as a question marked as a design choice.",
+    "prompt": "Task: add a settings page to the web app. Before you build it, I have to choose how its five sections are laid out: one long scrolling page, or a tab for each section. You recommend tabs, because two of the sections are long. Ask me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 1,
+        "match": {
+          "design_choice": "^true$"
+        }
+      },
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
+      },
+      {
+        "reply": "tab"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "record-fact-question-not-design-choice",
+    "about": "A question about a fact only the user knows is recorded without the design-choice mark.",
+    "prompt": "Task: deploy the API to staging. The deploy script needs the AWS region of the staging account, and nothing in the repo says which one it is. It is us-east-1 or eu-west-1. Ask me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 1
+      },
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 0,
+        "match": {
+          "design_choice": "true"
+        }
+      },
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
+      },
+      {
+        "reply": "region"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
     "name": "record-task",
     "about": "A step only the user can do is recorded as a task with its command and link, and given in the reply.",
     "prompt": "Task: deploy the docs site. You are blocked until I sign in: the Vercel CLI needs my account, and only I can do that. Tell me what to run (npx vercel login), and then to open https://vercel.com/acme/docs/settings to copy the project id back to you.",

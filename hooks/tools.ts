@@ -34,6 +34,11 @@ const RECORD_SCHEMA = {
       description:
         'For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link. For a question: up to 3 files or https links that help the user decide, such as a page comparing the options, each file as an absolute path.',
     },
+    design_choice: {
+      type: 'boolean',
+      description:
+        'For a question: true when its options are designs or approaches you could try and show side by side, such as two layouts or two ways to build a feature. The user can then ask you to compare them. Leave it out for a fact, an approval or a preference.',
+    },
     finding_kind: {
       type: 'string',
       enum: ['issue', 'opportunity'],
@@ -135,7 +140,8 @@ export function recordItem(
         : ' Some steps were not an absolute file path or a link, so they are left out.'
       : ''
 
-  const r = addAgentItem(ledger, { kind: input.kind, ask, options, rec, helps }, now)
+  const isDesignChoice = input.kind === 'question' && input.design_choice === true
+  const r = addAgentItem(ledger, { kind: input.kind, ask, options, rec, helps, isDesignChoice }, now)
   if (r.is === 'open')
     return {
       ledger: r.ledger,

@@ -16,6 +16,10 @@ _Avoid_: waiting
 Something the agent asked that only the person can answer.
 _Avoid_: decide, decision
 
+**Design choice**:
+A question the agent marked as one whose options it could try and show side by
+side, such as two layouts. Only these show Compare.
+
 **Task**:
 Something only the person can do, such as signing in.
 _Avoid_: do, todo
@@ -66,8 +70,9 @@ What an item or PR in the inbox says after the person presses one of its
 actions: a ✓ and the action in the past tense, as in "✓ Discussed · 1m ago".
 Explain and Discuss read "Explaining…" or "Discussing…" until the agent
 replies. Compare reads "Comparing…" until the agent records the question
-again, which can be turns later when a background subagent does the work. A
-row handed to the agent that its reply left open reads "Still open". Each
+again, which can be turns later when a background subagent does the work.
+After 30 minutes with no report, it reads "No comparison came back". A row
+handed to the agent that its reply left open reads "Still open". Each
 keeps only its latest.
 
 ### Looks and hosts
