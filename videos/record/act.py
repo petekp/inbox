@@ -1,12 +1,14 @@
 """Sends hand commands into the VM during a long take, and logs each on the recorder's clock.
 
-    python3 record/act.py <take> <command> [<command> ...]
-    python3 record/act.py <take> --mark <name>          logs a named moment, such as the end of a turn
+    python3 record/act.py <video> <take> <command> [<command> ...]
+    python3 record/act.py <video> <take> --mark <name>          logs a named moment, such as the end of a turn
 
 Each command is one hand.js command, such as "key b" or "type Rename chargeCard". The log is
-takes/<take>.acts.jsonl, one line per command, with the host time hand.js acknowledged it, which is
+takes/<video>/<take>.acts.jsonl, one line per command, with the host time hand.js acknowledged it, which is
 within a few milliseconds of the input event. Start the recorder for <take> separately and stop it
 with SIGINT.
+
+VM names the tart VM, inbox-ui by default. VM_HOST names its SSH address, admin@<ip> by default from `tart ip`.
 """
 import json
 import os
@@ -16,18 +18,20 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TAKES = os.path.join(os.path.dirname(HERE), 'takes')
+VM = os.environ.get('VM', 'inbox-ui')
 
 
 def vm_host():
     if os.environ.get('VM_HOST'):
         return os.environ['VM_HOST']
-    ip = subprocess.run(['tart', 'ip', 'inbox-ui'], capture_output=True, text=True, check=True).stdout.strip()
+    ip = subprocess.run(['tart', 'ip', VM], capture_output=True, text=True, check=True).stdout.strip()
     return f'admin@{ip}'
 
 
 def main():
-    take, *commands = sys.argv[1:]
-    log = open(os.path.join(TAKES, take + '.acts.jsonl'), 'a')
+    video, take, *commands = sys.argv[1:]
+    os.makedirs(os.path.join(TAKES, video), exist_ok=True)
+    log = open(os.path.join(TAKES, video, take + '.acts.jsonl'), 'a')
     if commands[:1] == ['--mark']:
         log.write(json.dumps({'mark': commands[1], 'at': time.monotonic()}) + '\n')
         return

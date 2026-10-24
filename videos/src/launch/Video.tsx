@@ -1,28 +1,27 @@
 import type { ReactNode } from 'react'
-import {
-  AbsoluteFill,
-  Easing,
-  getStaticFiles,
-  Html5Audio,
-  Img,
-  interpolate,
-  OffthreadVideo,
-  Sequence,
-  useVideoConfig,
-  staticFile,
-  useCurrentFrame,
-} from 'remotion'
+import { AbsoluteFill, Easing, Img, interpolate, OffthreadVideo, Sequence, staticFile, useCurrentFrame } from 'remotion'
 
-import { Pointer } from './Pointer'
-import type { ClickMark } from './Pointer'
+import { AppLabel } from '../shared/AppLabel'
+import { Caption } from '../shared/Caption'
+import { isCaptured, toClip as toClipOf } from '../shared/captures'
+import type { TakeInfo } from '../shared/captures'
+import { EndCard } from '../shared/EndCard'
+import { Footage } from '../shared/Footage'
+import type { Segment } from '../shared/Footage'
+import { SANS, useFonts } from '../shared/fonts'
+import { between, clamp01, easeInOut, framingAt } from '../shared/geometry'
+import type { Point, Rect } from '../shared/geometry'
+import { BACKGROUND, BAND, CAPTION_BAND } from '../shared/layout'
+import { Music } from '../shared/Music'
+import { Pointer } from '../shared/Pointer'
+import { pointerMarks, stateAt } from '../shared/states'
+import type { State } from '../shared/states'
 import TAKES from './takes.json'
 import type { ThreadStarts } from './thread'
-import { EndCard } from './EndCard'
-import { SANS, useFonts } from './fonts'
 import { MARKS, ThreadView } from './ThreadView'
 import {
-  clickAt,
-  DISSOLVE,
+  appIcon,
+  END_CARD,
   END_CARD_LEAD,
   FPS,
   frames,
@@ -30,68 +29,30 @@ import {
   LOOK_NAMES,
   LOOKS,
   MUSIC,
-  stateAt,
   takeClip,
   timeline,
-  totalFrames,
   WIDTH,
   WINDOWS,
 } from './timeline'
-import type {
-  CameraMove,
-  Introduction,
-  Look,
-  Placed,
-  Point,
-  Rect,
-  Segment,
-  SideBySideBeat,
-  SoloBeat,
-  State,
-  Variant,
-} from './timeline'
+import type { Introduction, Look, Placed, SideBySideBeat, SoloBeat, Variant } from './timeline'
 
-type TakeInfo = { width: number; height: number; window?: number[]; beatStartsAt?: number }
 const TAKE_INFO = TAKES as Record<string, TakeInfo | undefined>
 
-/** The app window's place on the VM's screen in every take so far, in points, for a take that doesn't record its own. */
-const USUAL_WINDOW = [0, 25, 1024]
-
-const BACKGROUND = '#0c0c0e'
 /** Terminal.app's background in the session take. */
 const TERMINAL_BACKGROUND = '#1a1a1a'
 const LOOK_COLORS: Record<Look, string> = { terminal: '#16241a', desktop: '#2a1f16', codex: '#161e2c' }
-/** The band above recorded footage that names its app, in pixels. */
-const BAND = 72
-/** How far footage blurs at the middle of a dissolve, in the clip's pixels. */
-const DISSOLVE_BLUR = 7
-/** The band below recorded footage that holds its caption, so the caption never covers what it describes, in pixels. */
-const CAPTION_BAND = 170
 /** The space around each window in beat 11's wide shot, as a share of the window's width. */
 const WIDE_MARGIN = 0.05
 
-export function Video({ variant }: { variant: Variant }) {
+/** The launch video's cut `cut`, one of `VARIANTS`. */
+export function Video({ cut }: { cut: string }) {
+  const variant = cut as Variant
   useFonts()
   const placed = timeline(variant)
   const starts = Object.fromEntries(placed.filter(b => b.kind === 'thread').map(b => [b.id, b.start])) as ThreadStarts
-  const length = totalFrames(placed)
   return (
     <AbsoluteFill style={{ backgroundColor: BACKGROUND, fontFamily: SANS, color: 'white' }}>
-      {isCaptured(MUSIC.src) && (
-        <Sequence name="music" from={frames(MUSIC.startsAt)}>
-          <Html5Audio
-            src={staticFile(MUSIC.src)}
-            trimBefore={frames(MUSIC.trimBefore)}
-            volume={f => {
-              const end = length - frames(MUSIC.startsAt)
-              return interpolate(f, [end - frames(MUSIC.fadeOut), end], [1, 0], {
-                extrapolateLeft: 'clamp',
-                extrapolateRight: 'clamp',
-              })
-            }}
-          />
-        </Sequence>
-      )}
+      <Music cue={MUSIC} />
       {placed.map((beat, i) => {
         const lead = beat.kind === 'end' ? END_CARD_LEAD : 0
         return (
@@ -112,7 +73,7 @@ export function Video({ variant }: { variant: Variant }) {
 function BeatView(props: { beat: Placed; previous: Placed | undefined; variant: Variant; starts: ThreadStarts }) {
   const { beat, previous, variant, starts } = props
   const t = useCurrentFrame() / FPS
-  const hasCaptions = variant !== 'captions-off'
+  const hasCaptions = variant !== 'launch-captions-off'
   return (
     <AbsoluteFill>
       {beat.kind === 'thread' && (
@@ -127,54 +88,16 @@ function BeatView(props: { beat: Placed; previous: Placed | undefined; variant: 
       {beat.kind === 'side-by-side' && (
         <SideBySideView beat={beat} previous={previous} t={t} hasCaptions={hasCaptions} />
       )}
-      {beat.kind === 'end' && <EndCard />}
+      {beat.kind === 'end' && <EndCard {...END_CARD} length={beat.length} />}
     </AbsoluteFill>
   )
 }
 
 /** Maps a VM screen point to pixels in a take's clip, or in a still of the same window. */
-function toClip(take: string | undefined, clipWidth: number) {
-  const [left = 0, top = 0, width = 1024] = (take && TAKE_INFO[take]?.window) || USUAL_WINDOW
-  const scale = clipWidth / width
-  return ([x, y]: Point) => ({ x: (x - left) * scale, y: (y - top) * scale })
-}
+const toClip = (take: string | undefined, clipWidth: number) => toClipOf(take ? TAKE_INFO[take] : undefined, clipWidth)
 
-/** An app's icon in public/icons/, which Git ignores, since each is its maker's trademark. */
-const appIcon = (look: Look) => `icons/${look}.png`
-
-/**
- * An app's icon and name, centered on `left` to `left + width` with its middle at `middle` px from the top. Without
- * the icon file, the name shows alone.
- */
-function AppLabel(props: { look: Look; left: number; width: number; middle?: number; opacity?: number }) {
-  const { look, left, width, middle = BAND / 2, opacity = 1 } = props
-  if (opacity <= 0) return null
-
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left,
-        width,
-        top: middle - 30,
-        height: 60,
-        opacity,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 14,
-        color: 'white',
-        fontSize: 32,
-        fontWeight: 600,
-        letterSpacing: -0.3,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {isCaptured(appIcon(look)) && <Img src={staticFile(appIcon(look))} style={{ width: 46, height: 46 }} />}
-      {LOOK_NAMES[look]}
-    </div>
-  )
-}
+/** An app's label: its icon and name. */
+const label = (look: Look) => ({ name: LOOK_NAMES[look], icon: appIcon(look) })
 
 /**
  * As beat 7 starts, the drawn thread leaves in `leaves` seconds, and the footage arrives from `from` over `arrives`
@@ -212,7 +135,14 @@ function SoloView(props: {
   const arriving = fromThread ? Easing.out(Easing.cubic)(clamp01((t - change.from) / change.arrives)) : 1
   const before = previous?.kind === 'solo' ? continuing(previous) : undefined
   const picture = (segments: Segment[]) => (
-    <Footage segments={segments} before={before} length={beat.length} width={clipSize.w} height={clipSize.h} />
+    <Footage
+      segments={segments}
+      before={before}
+      length={beat.length}
+      width={clipSize.w}
+      height={clipSize.h}
+      clip={takeClip}
+    />
   )
   return (
     <AbsoluteFill>
@@ -222,7 +152,7 @@ function SoloView(props: {
           transform: `translateY(${(1 - arriving) * -16}px)`,
         }}
       >
-        <AppLabel look={beat.look} left={0} width={WIDTH} />
+        <AppLabel {...label(beat.look)} left={0} width={WIDTH} />
       </div>
       <div
         style={{
@@ -270,30 +200,6 @@ function SoloView(props: {
       {hasCaptions && <Caption text={beat.caption} t={t} from={fromThread ? 0.4 : 0} to={beat.length} inBand />}
     </AbsoluteFill>
   )
-}
-
-/** The pointer's clicks and moves, from a beat's states, in screen pixels. */
-function pointerMarks(states: State[], onScreen: (p: Point) => { x: number; y: number }): ClickMark[] {
-  return states.flatMap(s => {
-    if (s.click) return [{ at: clickAt(s), ...onScreen(s.click), settle: s.settle }]
-    if (s.move) return [{ at: s.at, ...onScreen(s.move), press: false, settle: 0 }]
-    return []
-  })
-}
-
-const clamp01 = (p: number) => Math.min(1, Math.max(0, p))
-const easeInOut = (p: number) => Easing.inOut(Easing.cubic)(clamp01(p))
-
-/** The part of the take's clip the camera frames at second `t` of the beat. */
-function framingAt(moves: CameraMove[] | undefined, whole: Rect, t: number): Rect {
-  const first = moves?.[0]
-  if (!moves || !first) return whole
-  let framing = first.from ?? whole
-  for (const move of moves) {
-    if (t < move.at) break
-    framing = between(move.from ?? whole, move.to ?? whole, easeInOut((t - move.at) / move.length))
-  }
-  return framing
 }
 
 /** Where a solo beat's last stretch of footage would continue, so the next beat can dissolve from it. */
@@ -574,7 +480,7 @@ function SideBySideView(props: {
             }}
           >
             <AppLabel
-              look={look}
+              {...label(look)}
               left={i * width}
               width={boxWidth}
               middle={Math.max(BAND / 2, BAND + y - LABEL_GAP)}
@@ -612,7 +518,13 @@ function SideBySideView(props: {
                 )}
                 {isShrinking && before && leftOver > 0 && (
                   <div style={{ position: 'absolute', inset: 0, opacity: leftOver }}>
-                    <Footage segments={[before]} length={0.6} width={window.width} height={window.height} />
+                    <Footage
+                      segments={[before]}
+                      length={0.6}
+                      width={window.width}
+                      height={window.height}
+                      clip={takeClip}
+                    />
                   </div>
                 )}
               </div>
@@ -629,71 +541,6 @@ function SideBySideView(props: {
     </AbsoluteFill>
   )
 }
-
-function between(a: Rect, b: Rect, p: number): Rect {
-  const mix = (from: number, to: number) => from + (to - from) * p
-  return { x: mix(a.x, b.x), y: mix(a.y, b.y), w: mix(a.w, b.w), h: mix(a.h, b.h) }
-}
-
-/**
- * Each segment of a take, played from its point in the take until the next segment or the beat's end. Each segment
- * dissolves in over the one before it, and the first over `before`, the previous beat's footage, when there is one.
- */
-function Footage(props: { segments: Segment[]; before?: Segment; length: number; width: number; height: number }) {
-  const { segments, before, length, width, height } = props
-  const all = before ? [before, ...segments] : segments
-  return (
-    <>
-      {all.map((segment, i) => {
-        const next = all[i + 1]
-        const end = next ? next.at + DISSOLVE : length
-        return (
-          <Sequence
-            key={`${i}-${segment.take}-${segment.from}`}
-            from={frames(segment.at)}
-            durationInFrames={Math.max(1, frames(Math.min(end, length)) - frames(segment.at))}
-            layout="none"
-          >
-            <Dissolve isFirst={i === 0} handsOverAt={next ? next.at - segment.at : undefined}>
-              <OffthreadVideo
-                src={staticFile(takeClip(segment.take))}
-                trimBefore={frames(segment.from)}
-                muted
-                style={{ position: 'absolute', left: 0, top: 0, width, height, display: 'block' }}
-              />
-            </Dissolve>
-          </Sequence>
-        )
-      })}
-    </>
-  )
-}
-
-/**
- * A segment fading in over the one before it. Both blur briefly while they overlap, so two scrolls of the same text never
- * show sharp at once. `handsOverAt` is when the next segment starts, in seconds into this one.
- */
-function Dissolve(props: { isFirst: boolean; handsOverAt?: number; children: ReactNode }) {
-  const { isFirst, handsOverAt, children } = props
-  const t = useCurrentFrame() / useVideoConfig().fps
-  const arriving = isFirst ? 1 : clamp01(t / DISSOLVE)
-  const blurAt = (p: number) => DISSOLVE_BLUR * Math.sin(Math.PI * clamp01(p))
-  const blur = Math.max(
-    isFirst ? 0 : blurAt(t / DISSOLVE),
-    handsOverAt === undefined || t < handsOverAt ? 0 : blurAt((t - handsOverAt) / DISSOLVE),
-  )
-  return (
-    <div
-      style={{ position: 'absolute', inset: 0, opacity: arriving, filter: blur > 0.1 ? `blur(${blur}px)` : undefined }}
-    >
-      {children}
-    </div>
-  )
-}
-
-let captured: Set<string> | undefined
-/** Git ignores public/stills/ and public/takes/, so a checkout without the captures draws placeholders instead of failing to load. */
-const isCaptured = (still: string) => (captured ??= new Set(getStaticFiles().map(f => f.name))).has(still)
 
 /** A captured still when the state has one, else a placeholder that names the app and what it shows. */
 function Picture(props: {
@@ -806,66 +653,6 @@ function Drain({ state, t }: { state: State; t: number }) {
             backgroundColor: '#e8e8ee',
           }}
         />
-      </div>
-    </div>
-  )
-}
-
-/**
- * A caption that enters word by word from `from` seconds into its beat and leaves just before `to`, so a beat's caption
- * is gone before the next one enters. Under footage it sits in the band below the picture.
- */
-function Caption(props: { text: string; t: number; from: number; to: number; inBand?: boolean }) {
-  const { text, t, from, to, inBand = false } = props
-  const leaving = easeInOut((t - (to - 0.3)) / 0.3)
-  const pill = clamp01((t - from) / 0.25)
-  if (t < from || leaving >= 1) return null
-
-  const words = text.split(' ')
-  const place = inBand ? { top: HEIGHT - CAPTION_BAND, height: CAPTION_BAND - 6 } : { bottom: 72 }
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left: 120,
-        right: 120,
-        ...place,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        opacity: 1 - leaving,
-        transform: `translateY(${leaving * 14}px)`,
-      }}
-    >
-      <div style={{ fontSize: 48, lineHeight: 1.6, fontWeight: 600, textAlign: 'center', textWrap: 'balance' }}>
-        {/* A wrapped caption's box would keep the full width, so each line draws its own background. */}
-        <span
-          style={{
-            padding: '10px 30px',
-            borderRadius: 999,
-            backgroundColor: `rgba(0, 0, 0, ${0.72 * pill})`,
-            boxDecorationBreak: 'clone',
-            WebkitBoxDecorationBreak: 'clone',
-          }}
-        >
-          {words.map((word, i) => {
-            const shown = Easing.out(Easing.cubic)(clamp01((t - from - 0.05 - 0.035 * i) / 0.3))
-            return (
-              <span key={i}>
-                <span
-                  style={{
-                    display: 'inline-block',
-                    opacity: shown,
-                    transform: `translateY(${(1 - shown) * 18}px)`,
-                  }}
-                >
-                  {word}
-                </span>
-                {i < words.length - 1 ? ' ' : ''}
-              </span>
-            )
-          })}
-        </span>
       </div>
     </div>
   )

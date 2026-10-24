@@ -1,26 +1,43 @@
 import { useEffect, useRef } from 'react'
-import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from 'remotion'
+import { AbsoluteFill, Easing, interpolate, useCurrentFrame, useVideoConfig } from 'remotion'
 
 import { GEIST_MONO, SANS, useFonts } from './fonts'
-import { END_CARD, END_CARD_LEAD, FPS, HEIGHT, WIDTH } from './timeline'
 
-const SECONDS = 6
 /**
- * The lines of text in each app's column as beat 11 ends, left to right: the span they cover across the frame, and the
- * height of each line, in pixels. Measured from the footage's frame at 74.5 s. Each stream leaves one of these lines.
+ * Lines of text in the frame as the end card starts, each column's span across the frame and the height of each line,
+ * in pixels. Each stream leaves one of these lines, so the picture before the card reads as turning into light.
  */
-const ROW_LINES = [
-  { from: 90, to: 568, ys: [239, 264, 313, 338, 384, 410, 601, 674, 745] },
-  { from: 704, to: 1104, ys: [243, 295, 346, 467, 522, 566, 626, 653, 705] },
-  { from: 1360, to: 1768, ys: [242, 294, 345, 459, 506, 552, 613, 642, 694] },
-]
+export type RowLines = { from: number; to: number; ys: number[] }[]
+
+/** What an end card shows, and how it starts. */
+export type EndCardProps = {
+  /** The word typed at the middle, lowercase. */
+  word: string
+  /** The address under the word. */
+  repo: string
+  rowLines: RowLines
+  /** How long the card starts before its beat, over the beat before it, in seconds. */
+  lead: number
+  /** The card's beat, in seconds, over which the camera eases in. */
+  length: number
+}
+
+/** The frame the card draws in, and where its word sits. */
+type Frame = { width: number; height: number; fps: number; centerY: number; repoY: number }
+
 const STREAMS = 27
 const STRANDS = 3
-const CENTER_Y = 520
 const FLASH_AT = 2.5
-const WORD = { text: END_CARD.name.toLowerCase(), font: `600 220px ${GEIST_MONO}`, spacing: '-6px', size: 220 }
-const REPO_Y = Math.round(CENTER_Y + WORD.size * 0.55 + 90)
+const WORD_SIZE = 220
+const wordFont = `600 ${WORD_SIZE}px ${GEIST_MONO}`
+const WORD_SPACING = '-6px'
 const BLOOM_LEVELS = 6
+
+/** The word's middle sits at 520 px of a 1080 px frame, and the address under it. */
+function frameOf(width: number, height: number, fps: number): Frame {
+  const centerY = Math.round((height * 520) / 1080)
+  return { width, height, fps, centerY, repoY: Math.round(centerY + WORD_SIZE * 0.55 + 90) }
+}
 
 const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const
 const seeded = (i: number, n: number) => {
@@ -40,17 +57,17 @@ function depthOf(i: number) {
 }
 
 /** Each stream as two vec4s and a vec3: its path, its braid place and twist, its line of text and depth, and its color. */
-function streamData() {
+function streamData(f: Frame, rowLines: RowLines, lead: number) {
   const a: number[] = []
   const b: number[] = []
   const c: number[] = []
   const d: number[] = []
   for (let i = 0; i < STREAMS; i++) {
     const bundle = Math.floor(i / STRANDS)
-    const column = ROW_LINES[i % ROW_LINES.length]!
-    const slot = Math.floor(i / ROW_LINES.length)
+    const column = rowLines[i % rowLines.length]!
+    const slot = Math.floor(i / rowLines.length)
     a.push(
-      200 + seeded(i, 1) * (HEIGHT - 400),
+      200 + seeded(i, 1) * (f.height - 400),
       (seeded(i, 2) - 0.5) * 560,
       900 + seeded(i, 3) * 1200,
       -300 + seeded(i, 4) * 600,
@@ -64,7 +81,7 @@ function streamData() {
     c.push(
       column.from + (column.to - column.from) * (0.3 + 0.4 * seeded(i, 8)),
       column.ys[slot % column.ys.length]!,
-      -END_CARD_LEAD + 0.1 + (i % ROW_LINES.length) * 0.12 + seeded(i, 10) * 0.2,
+      -lead + 0.1 + (i % rowLines.length) * 0.12 + seeded(i, 10) * 0.2,
       depthOf(i),
     )
     d.push(seeded(i, 11), 0.003 + seeded(i, 13) * 0.006, 0.33 + seeded(i, 14) * 0.36)
@@ -77,7 +94,7 @@ in vec2 corner;
 void main() { gl_Position = vec4(corner, 0.0, 1.0); }`
 
 /** The light of every stream, in linear HDR, with the frame's top left at (0, 0) in pixels. */
-const SCENE = `#version 300 es
+const scene = (f: Frame) => `#version 300 es
 precision highp float;
 #define N ${STREAMS}
 #define PI 3.14159265
@@ -116,7 +133,7 @@ vec3 path(int i, float x, float t, float edge) {
   float held = (1.0 - ss(150.0, 700.0, abs(x - c.x))) * (1.0 - ss(0.1, 1.0, t - c.z));
   float noise = mix(wander, c.y, held);
   float angle = x * 0.0105 - t * 3.2 + b.z * 2.0 * PI / 3.0;
-  float braid = ${CENTER_Y}.0 + 42.0 * sin(angle) + b.w;
+  float braid = ${f.centerY}.0 + 42.0 * sin(angle) + b.w;
   float k = ss(edge - 380.0, edge + 380.0, x);
   return vec3(mix(noise, braid, k), k, mix(c.w, cos(angle) * 0.6, k));
 }
@@ -181,11 +198,11 @@ void main() {
   vec2 p = vec2(gl_FragCoord.x, res.y - gl_FragCoord.y);
   // A 180 degree shutter: three moments across half a frame.
   vec3 sum = vec3(0.0);
-  for (int j = 0; j < 3; j++) sum += light(p, t - float(j) * (0.5 / ${FPS}.0) / 2.0);
+  for (int j = 0; j < 3; j++) sum += light(p, t - float(j) * (0.5 / ${f.fps}.0) / 2.0);
   sum /= 3.0;
   // A faint haze around the braid, lit by it.
   float formed = ss(0.7, 2.5, t);
-  float haze = fbm(p * 0.0022 + vec2(t * 0.05, -t * 0.02)) * exp(-pow((p.y - ${CENTER_Y}.0) / 300.0, 2.0));
+  float haze = fbm(p * 0.0022 + vec2(t * 0.05, -t * 0.02)) * exp(-pow((p.y - ${f.centerY}.0) / 300.0, 2.0));
   sum += vec3(0.32, 0.22, 0.6) * haze * 0.22 * formed * (1.0 + flash);
   color = vec4(sum, 1.0);
 }`
@@ -238,7 +255,7 @@ void main() {
  * then the word, its cursor and the repo's address, grain and a vignette. Over beat 11, the background is transparent
  * and the light adds onto the footage.
  */
-const COMPOSITE = `#version 300 es
+const composite = (f: Frame) => `#version 300 es
 precision highp float;
 uniform vec2 res;
 uniform sampler2D scene;
@@ -271,7 +288,7 @@ vec3 hdrAt(vec2 uv) {
 
 void main() {
   vec2 p = vec2(gl_FragCoord.x, res.y - gl_FragCoord.y);
-  vec2 center = vec2(res.x / 2.0, ${CENTER_Y}.0);
+  vec2 center = vec2(res.x / 2.0, ${f.centerY}.0);
   vec2 q = center + (p - center) / zoom;
   vec2 uv = vec2(q.x, res.y - q.y) / res;
   vec2 tuv = vec2(q.x, res.y - q.y + wordShift) / res;
@@ -290,10 +307,10 @@ void main() {
 
   // The light dims around each letter, and the braid dims behind the whole word, so the word reads.
   hdr *= 1.0 - 0.92 * wordSoft * (1.0 - word);
-  vec2 wq = (q - vec2(res.x / 2.0, ${CENTER_Y}.0 - wordShift)) / vec2(560.0, 130.0);
+  vec2 wq = (q - vec2(res.x / 2.0, ${f.centerY}.0 - wordShift)) / vec2(560.0, 130.0);
   hdr *= 1.0 - 0.6 * wordA * exp(-dot(wq, wq));
   // The light dims behind the repo's address, so it reads.
-  vec2 r = (q - vec2(res.x / 2.0, ${REPO_Y}.0)) / vec2(380.0, 46.0);
+  vec2 r = (q - vec2(res.x / 2.0, ${f.repoY}.0)) / vec2(380.0, 46.0);
   hdr *= 1.0 - 0.85 * repoA * exp(-dot(r, r));
   // The word gives off light once the braid lights it.
   hdr += vec3(0.7, 0.66, 1.0) * wordSoft * lit * 0.25;
@@ -355,34 +372,34 @@ function target(gl: Gl, w: number, h: number): Target {
 }
 
 /** The word, its blurred copy and the repo's address, in the red, green and blue channels of one texture. */
-function textCanvas() {
+function textCanvas(f: Frame, word: string, repo: string) {
   const c = document.createElement('canvas')
-  c.width = WIDTH
-  c.height = HEIGHT
+  c.width = f.width
+  c.height = f.height
   const g = c.getContext('2d')!
   g.fillStyle = 'black'
-  g.fillRect(0, 0, WIDTH, HEIGHT)
+  g.fillRect(0, 0, f.width, f.height)
   g.globalCompositeOperation = 'lighter'
   g.textAlign = 'center'
   g.textBaseline = 'middle'
-  g.font = WORD.font
-  g.letterSpacing = WORD.spacing
+  g.font = wordFont
+  g.letterSpacing = WORD_SPACING
   g.fillStyle = '#ff0000'
-  g.fillText(WORD.text, WIDTH / 2, CENTER_Y)
+  g.fillText(word, f.width / 2, f.centerY)
   g.filter = 'blur(10px)'
   g.fillStyle = '#00ff00'
-  g.fillText(WORD.text, WIDTH / 2, CENTER_Y)
+  g.fillText(word, f.width / 2, f.centerY)
   g.filter = 'none'
-  const width = g.measureText(WORD.text).width
+  const width = g.measureText(word).width
   g.letterSpacing = '0px'
   g.font = `400 42px ${SANS}`
   g.fillStyle = '#0000ff'
-  g.fillText(END_CARD.repo, WIDTH / 2, REPO_Y)
-  const caret = [WIDTH / 2 + width / 2 + 18, CENTER_Y - WORD.size * 0.36, WORD.size * 0.5, WORD.size * 0.72] as const
+  g.fillText(repo, f.width / 2, f.repoY)
+  const caret = [f.width / 2 + width / 2 + 18, f.centerY - WORD_SIZE * 0.36, WORD_SIZE * 0.5, WORD_SIZE * 0.72] as const
   return { canvas: c, caret }
 }
 
-function setup(canvas: HTMLCanvasElement) {
+function setup(canvas: HTMLCanvasElement, f: Frame, card: EndCardProps) {
   const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, premultipliedAlpha: true, alpha: true })
   if (!gl) throw new Error('No WebGL2. Render with --gl=angle.')
   if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('No EXT_color_buffer_float')
@@ -392,16 +409,16 @@ function setup(canvas: HTMLCanvasElement) {
   gl.enableVertexAttribArray(0)
   gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
 
-  const scene = compile(gl, SCENE)
+  const sceneProgram = compile(gl, scene(f))
   const down = compile(gl, DOWN)
   const up = compile(gl, UP)
-  const composite = compile(gl, COMPOSITE)
-  const sceneTarget = target(gl, WIDTH, HEIGHT)
+  const compositeProgram = compile(gl, composite(f))
+  const sceneTarget = target(gl, f.width, f.height)
   const levels = Array.from({ length: BLOOM_LEVELS }, (_, i) =>
-    target(gl, Math.ceil(WIDTH / 2 ** (i + 1)), Math.ceil(HEIGHT / 2 ** (i + 1))),
+    target(gl, Math.ceil(f.width / 2 ** (i + 1)), Math.ceil(f.height / 2 ** (i + 1))),
   )
 
-  const { canvas: textSource, caret } = textCanvas()
+  const { canvas: textSource, caret } = textCanvas(f, card.word, card.repo)
   const text = gl.createTexture()!
   gl.bindTexture(gl.TEXTURE_2D, text)
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)
@@ -412,7 +429,7 @@ function setup(canvas: HTMLCanvasElement) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
 
-  const streams = streamData()
+  const streams = streamData(f, card.rowLines, card.lead)
 
   const bind = (unit: number, tex: WebGLTexture) => {
     gl.activeTexture(gl.TEXTURE0 + unit)
@@ -420,7 +437,7 @@ function setup(canvas: HTMLCanvasElement) {
   }
   const pass = (to: Target | null) => {
     gl.bindFramebuffer(gl.FRAMEBUFFER, to ? to.fb : null)
-    gl.viewport(0, 0, to ? to.w : WIDTH, to ? to.h : HEIGHT)
+    gl.viewport(0, 0, to ? to.w : f.width, to ? to.h : f.height)
     gl.drawArrays(gl.TRIANGLES, 0, 3)
   }
 
@@ -428,14 +445,14 @@ function setup(canvas: HTMLCanvasElement) {
     const flash = interpolate(t, [FLASH_AT - 0.1, FLASH_AT + 0.15, FLASH_AT + 1.4], [0, 1, 0], clamp)
     gl.disable(gl.BLEND)
 
-    gl.useProgram(scene.p)
-    gl.uniform2f(scene.u('res'), WIDTH, HEIGHT)
-    gl.uniform1f(scene.u('t'), t)
-    gl.uniform1f(scene.u('flash'), flash)
-    gl.uniform4fv(scene.u('sA'), streams.a)
-    gl.uniform4fv(scene.u('sB'), streams.b)
-    gl.uniform4fv(scene.u('sC'), streams.c)
-    gl.uniform3fv(scene.u('sD'), streams.d)
+    gl.useProgram(sceneProgram.p)
+    gl.uniform2f(sceneProgram.u('res'), f.width, f.height)
+    gl.uniform1f(sceneProgram.u('t'), t)
+    gl.uniform1f(sceneProgram.u('flash'), flash)
+    gl.uniform4fv(sceneProgram.u('sA'), streams.a)
+    gl.uniform4fv(sceneProgram.u('sB'), streams.b)
+    gl.uniform4fv(sceneProgram.u('sC'), streams.c)
+    gl.uniform3fv(sceneProgram.u('sD'), streams.d)
     pass(sceneTarget)
 
     gl.useProgram(down.p)
@@ -462,56 +479,60 @@ function setup(canvas: HTMLCanvasElement) {
     }
     gl.disable(gl.BLEND)
 
-    const backed = interpolate(t, [-END_CARD_LEAD + 0.15, 0.4], [0, 1], { ...clamp, easing: Easing.inOut(Easing.quad) })
+    const backed = interpolate(t, [-card.lead + 0.15, 0.4], [0, 1], { ...clamp, easing: Easing.inOut(Easing.quad) })
     const word = interpolate(t, [0.9, 1.7], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) })
     const isCaretOn = t < FLASH_AT || Math.floor(t * 2) % 2 === 0
-    gl.useProgram(composite.p)
+    gl.useProgram(compositeProgram.p)
     bind(0, sceneTarget.tex)
     bind(1, levels[0]!.tex)
     bind(2, levels[3]!.tex)
     bind(3, text)
-    gl.uniform1i(composite.u('scene'), 0)
-    gl.uniform1i(composite.u('bloom'), 1)
-    gl.uniform1i(composite.u('streakSrc'), 2)
-    gl.uniform1i(composite.u('text'), 3)
-    gl.uniform2f(composite.u('res'), WIDTH, HEIGHT)
-    gl.uniform1f(composite.u('t'), t)
-    gl.uniform1f(composite.u('frame'), frame)
-    gl.uniform1f(composite.u('backed'), backed)
-    gl.uniform1f(composite.u('zoom'), 1 + 0.045 * Easing.inOut(Easing.quad)(Math.min(1, Math.max(0, t) / SECONDS)))
-    gl.uniform1f(composite.u('wordA'), word)
-    gl.uniform1f(composite.u('wordShift'), (1 - word) * 30)
-    gl.uniform1f(composite.u('lit'), interpolate(t, [FLASH_AT - 0.1, FLASH_AT + 0.5], [0, 1], clamp))
-    gl.uniform1f(composite.u('flash'), flash)
-    gl.uniform4f(composite.u('caret'), ...caret)
-    gl.uniform1f(composite.u('caretA'), word * (isCaretOn ? 1 : 0.15))
-    gl.uniform1f(composite.u('repoA'), interpolate(t, [2.7, 3.2], [0, 1], clamp))
+    gl.uniform1i(compositeProgram.u('scene'), 0)
+    gl.uniform1i(compositeProgram.u('bloom'), 1)
+    gl.uniform1i(compositeProgram.u('streakSrc'), 2)
+    gl.uniform1i(compositeProgram.u('text'), 3)
+    gl.uniform2f(compositeProgram.u('res'), f.width, f.height)
+    gl.uniform1f(compositeProgram.u('t'), t)
+    gl.uniform1f(compositeProgram.u('frame'), frame)
+    gl.uniform1f(compositeProgram.u('backed'), backed)
+    gl.uniform1f(
+      compositeProgram.u('zoom'),
+      1 + 0.045 * Easing.inOut(Easing.quad)(Math.min(1, Math.max(0, t) / card.length)),
+    )
+    gl.uniform1f(compositeProgram.u('wordA'), word)
+    gl.uniform1f(compositeProgram.u('wordShift'), (1 - word) * 30)
+    gl.uniform1f(compositeProgram.u('lit'), interpolate(t, [FLASH_AT - 0.1, FLASH_AT + 0.5], [0, 1], clamp))
+    gl.uniform1f(compositeProgram.u('flash'), flash)
+    gl.uniform4f(compositeProgram.u('caret'), ...caret)
+    gl.uniform1f(compositeProgram.u('caretA'), word * (isCaretOn ? 1 : 0.15))
+    gl.uniform1f(compositeProgram.u('repoA'), interpolate(t, [2.7, 3.2], [0, 1], clamp))
     pass(null)
     gl.finish()
   }
 }
 
 /**
- * Beat 12. As beat 11's rows fade, streams of light pull out of them, flow across the frame and braid together through
- * the word "inbox", typed in mono with a block cursor. The repo's address appears under it. The card starts
- * END_CARD_LEAD seconds before its beat, over beat 11, and its background fades in under the light.
+ * The end card. As the picture before it fades, streams of light pull out of its lines of text, flow across the frame
+ * and braid together through the word, typed in mono with a block cursor. The repo's address appears under it. The
+ * card starts `lead` seconds before its beat, over the beat before it, and its background fades in under the light.
  */
-export function EndCard() {
+export function EndCard(card: EndCardProps) {
+  const { width, height, fps } = useVideoConfig()
   const frame = useCurrentFrame()
-  const t = frame / FPS - END_CARD_LEAD
+  const t = frame / fps - card.lead
   const canvas = useRef<HTMLCanvasElement>(null)
   const isReady = useFonts()
   const draw = useRef<ReturnType<typeof setup>>(undefined)
 
   useEffect(() => {
     if (!isReady || !canvas.current) return
-    draw.current ??= setup(canvas.current)
+    draw.current ??= setup(canvas.current, frameOf(width, height, fps), card)
     draw.current(t, frame)
-  }, [frame, t, isReady])
+  }, [frame, t, isReady, width, height, fps, card])
 
   return (
     <AbsoluteFill>
-      <canvas ref={canvas} width={WIDTH} height={HEIGHT} />
+      <canvas ref={canvas} width={width} height={height} />
     </AbsoluteFill>
   )
 }
