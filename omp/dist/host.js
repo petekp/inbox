@@ -1531,7 +1531,10 @@ function demoTurns(turns, effects, isReplied = false) {
   return effects.some((e) => e.kind === "send") ? { ...turns, turnsStarted: turns.turnsStarted + 1 } : turns;
 }
 function demoAfterPress(before, r, held) {
-  const lasts = Object.fromEntries(Object.entries(r.lasts).flatMap(([id, { delivery: _unsent, ...l }]) => l.result === undefined ? [[id, l]] : []));
+  const lasts = Object.fromEntries(Object.entries(r.lasts).map(([id, { delivery: _unsent, ...l }]) => [
+    id,
+    l.result?.state === "pending" ? { ...l, result: finishedResult(l.result, [], l.result.at) } : l
+  ]));
   return {
     ledger: pruneClosed(r.ledger, held),
     lastActions: withLasts(before.lastActions, lasts, r.drop),

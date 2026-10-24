@@ -2852,6 +2852,7 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   await pane.press({ key: 'tab-prs' })
   expect(await pane.find({ text: literal(demo.prViews.views[branchRef]!.title) })).toBeDefined()
   await pane.press({ key: `open-${branchRef}` })
+  expect(await pane.find({ text: /✓ Opened/ })).toBeDefined()
   await pane.press({ key: `dismiss-pr-${linkedRef}` })
   expect(await pane.find({ key: `settled-pr:${linkedRef}` })).toBeDefined()
   await clock.advance(SETTLED_MS)

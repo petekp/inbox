@@ -587,7 +587,10 @@ export function demoAfterPress(
   held: ReadonlySet<string>,
 ): { ledger: Ledger; lastActions: Record<string, LastAction>; turns: Turns } {
   const lasts = Object.fromEntries(
-    Object.entries(r.lasts).flatMap(([id, { delivery: _unsent, ...l }]) => (l.result === undefined ? [[id, l]] : [])),
+    Object.entries(r.lasts).map(([id, { delivery: _unsent, ...l }]) => [
+      id,
+      l.result?.state === 'pending' ? { ...l, result: finishedResult(l.result, [], l.result.at) } : l,
+    ]),
   )
 
   return {

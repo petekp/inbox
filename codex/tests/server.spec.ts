@@ -539,6 +539,12 @@ test('a press in the demo changes only the demo, sends nothing into the conversa
   )
   assert.equal(copied.result.structuredContent.note, null)
   assert.equal((copied.result.structuredContent as unknown as { copy: unknown }).copy, null)
+  const copiedRow = (
+    copied.result.structuredContent as unknown as {
+      view: { needsYou: { tasks: { id: string; feedback: { is: string; result?: { state: string } } | null }[] } }
+    }
+  ).view.needsYou.tasks.find(t => t.id === copyTask.id)
+  assert.deepEqual([copiedRow?.feedback?.is, copiedRow?.feedback?.result?.state], ['local', 'done'])
   assert.deepEqual(await readState(dir, 's1'), before)
 })
 
