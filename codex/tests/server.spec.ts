@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
@@ -1310,4 +1311,80 @@ test('a call the model makes does not catch up the chat', async () => {
 
   assert.equal((await readState(dir, 'c4')).presence.ledgerState, 'current')
   assert.deepEqual(updates, [])
+})
+
+test('a chat no hook has run in says why from Codex’s hook list, asks again only after the cache window, and says nothing when the list fails', async () => {
+  let t = 1000
+  const answers: ('untrusted' | 'modified' | 'trusted' | null)[] = ['untrusted', null, 'modified']
+  const asked: string[][] = []
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
+  const handle = makeServer({
+    dir,
+    now: () => t,
+    exec: fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec,
+    tabHtml: '',
+    fallbackCli: async () => 'codex',
+    hooksTrust: async (cli, cwd) => {
+      asked.push([cli, cwd])
+      return answers.shift() ?? null
+    },
+  })
+  const view = async () =>
+    (
+      (await handle({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'inbox_view', arguments: {}, _meta: { thread_id: 's1' } },
+      })) as { result: { structuredContent: { hooksTrust?: string } } }
+    ).result.structuredContent.hooksTrust
+  const settle = () => new Promise(resolve => setImmediate(resolve))
+
+  assert.equal(await view(), undefined)
+  await settle()
+  assert.equal(await view(), 'untrusted')
+  assert.equal(await view(), 'untrusted')
+  assert.deepEqual(asked, [['/apps/codex', '/repo']])
+
+  t += 30_000
+  assert.equal(await view(), 'untrusted')
+  await settle()
+  assert.equal(await view(), undefined)
+
+  t += 30_000
+  await view()
+  await settle()
+  assert.equal(await view(), 'modified')
+  assert.equal(asked.length, 3)
+
+  await updateState(dir, 's1', s => noteHook(s, 'start', t))
+  t += 30_000
+  assert.equal(await view(), undefined)
+  await settle()
+  assert.equal(asked.length, 3)
+})
+
+test('a chat whose folder is not known yet asks Codex’s hook list for the home folder', async () => {
+  const asked: string[] = []
+  const handle = makeServer({
+    dir: tempDir(),
+    now: () => 1000,
+    exec: fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec,
+    tabHtml: '',
+    fallbackCli: async () => 'codex',
+    hooksTrust: async (_cli, folder) => {
+      asked.push(folder)
+      return 'modified'
+    },
+  })
+  await handle({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'tools/call',
+    params: { name: 'inbox_view', arguments: {}, _meta: { thread_id: 'new' } },
+  })
+  await new Promise(resolve => setImmediate(resolve))
+
+  assert.deepEqual(asked, [homedir()])
 })

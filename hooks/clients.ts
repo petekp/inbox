@@ -24,6 +24,7 @@ export type FeatureId =
   | 'exchange-trigger'
   | 'settle-window'
   | 'version-label'
+  | 'hooks-need-trust'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -46,6 +47,10 @@ export const CLIENTS: Record<ClientId, Client> = {
       'exchange-trigger': { kind: 'full' },
       'settle-window': { kind: 'full' },
       'version-label': { kind: 'full' },
+      'hooks-need-trust': {
+        kind: 'unsupported',
+        reason: "Claude Code asks no one to trust a plugin's hooks, so no hook stops running for want of trust.",
+      },
     },
   },
   codex: {
@@ -101,6 +106,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason: 'The tab only learns of a close at its next poll, so the settle window adds two polls.',
       },
       'version-label': { kind: 'full' },
+      'hooks-need-trust': { kind: 'full' },
     },
   },
   omp: {
@@ -133,6 +139,10 @@ export const CLIENTS: Record<ClientId, Client> = {
       'version-label': {
         kind: 'different',
         reason: "omp's panel footer ends with the inbox model's name, so the version follows it there.",
+      },
+      'hooks-need-trust': {
+        kind: 'unsupported',
+        reason: "omp runs an installed extension's events without asking anyone to trust them.",
       },
     },
   },
