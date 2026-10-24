@@ -159,3 +159,4 @@ This is release tooling, so each piece needs Pete's yes before it is built:
 ## Follow-ups
 
 - **An `@inbox` check in omp.** Run omp with a fresh `HOME` and three configs: no `@inbox`, `@inbox` set to a working model, and `@inbox` set to a model omp cannot use. The panel footer must name the Sonnet, the working model, and the Sonnet again. It would catch a change that breaks the fall-through, or a footer that names a model the inbox does not call.
+- **Flaky omp host tests under `check.sh`.** On 2026-10-24, one of three runs failed two tests in `omp/tests/host.spec.ts`: "the band shows above the editor and redraws with the counts after a change" rendered an empty band, and "/inbox hides the band while the panel shows…" timed out after 5 s. `bun test --cwd omp tests` and a second `check.sh` passed. Make those tests wait on the state they read instead of a fixed tick, so a check that fails always means a real failure.

@@ -123,7 +123,7 @@ test('a dialog question links to the question the agent recorded for it or the u
   write(
     started('t1'),
     dialog('call_a', [
-      { title: 'May I push the compiler fix to the PR?', options: ['Push now (Recommended)', 'Keep it local'] },
+      { title: 'May I push the fix to the branch?', options: ['Push now (Recommended)', 'Keep it local'] },
       { title: 'Which branch gets the tag?', options: ['main', 'release'] },
     ]),
   )
@@ -140,7 +140,7 @@ test('a dialog question links to the question the agent recorded for it or the u
     deps,
   )
   assert.deepEqual(await links(), [
-    ['Push the fix?', { callId: 'call_a', index: 0, question: 'May I push the compiler fix to the PR?' }],
+    ['Push the fix?', { callId: 'call_a', index: 0, question: 'May I push the fix to the branch?' }],
   ])
   assert.equal((await readState(dir, 's1')).unlinkedDialogQuestions.length, 1)
   await applyAnswer('NOW: Waiting')
