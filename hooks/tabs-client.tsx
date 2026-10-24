@@ -13,6 +13,7 @@ export type TabsProps = {
   tabs: ClientTab[]
   shown: string
   gap: number
+  columns: number
   colors: { tab: string | null; raised: string; raisedText: string | null; muted: string | null }
 }
 
@@ -21,10 +22,29 @@ type State = { hover: string | null }
 export const TAB_HEIGHT = 1.5
 export const TAB_COUNT_GAP = '  '
 
+/** The tabs on each line: a tab that would pass `columns` starts the next line. */
+export function tabLines<T extends { width: number }>(tabs: T[], gap: number, columns: number): T[][] {
+  const lines: T[][] = []
+  let used = 0
+  for (const tab of tabs) {
+    const last = lines.at(-1)
+    if (last && used + gap + tab.width <= columns) {
+      last.push(tab)
+      used += gap + tab.width
+    } else {
+      lines.push([tab])
+      used = tab.width
+    }
+  }
+
+  return lines
+}
+
 function tabAt(props: TabsProps, x: number, y: number): string | null {
-  if (y < 0 || y >= TAB_HEIGHT) return null
+  const line = tabLines(props.tabs, props.gap, props.columns)[Math.floor(y / TAB_HEIGHT)]
+  if (y < 0 || !line) return null
   let left = 0
-  for (const tab of props.tabs) {
+  for (const tab of line) {
     if (x >= left && x < left + tab.width) return tab.id
     left += tab.width + props.gap
   }
@@ -43,33 +63,36 @@ const Tabs: ClientModule<TabsProps, State> = (props, surface) => {
   })
   const { colors } = props
 
-  return Box({
-    flexDirection: 'row',
-    gap: props.gap,
-    children: props.tabs.map(tab => {
-      const isShown = tab.id === props.shown
-      const isHovered = !isShown && tab.id === hover
-      const background = isShown ? colors.raised : isHovered ? (colors.tab ?? colors.raised) : null
-      const onRaised = background !== null && background === colors.raised ? colors.raisedText : null
-      const labelColor = onRaised ?? (isShown || isHovered ? null : colors.muted)
-      const count = Text({ color: tab.countColor, children: String(tab.count) })
+  const tabBox = (tab: ClientTab) => {
+    const isShown = tab.id === props.shown
+    const isHovered = !isShown && tab.id === hover
+    const background = isShown ? colors.raised : isHovered ? (colors.tab ?? colors.raised) : null
+    const onRaised = background !== null && background === colors.raised ? colors.raisedText : null
+    const labelColor = onRaised ?? (isShown || isHovered ? null : colors.muted)
+    const count = Text({ color: tab.countColor, children: String(tab.count) })
 
-      return Box({
-        key: tab.id,
-        width: tab.width,
-        height: TAB_HEIGHT,
-        borderStyle: 'single',
-        borderColor: '#0000',
-        alignItems: 'center',
-        justifyContent: 'center',
-        ...(background ? { backgroundColor: background } : {}),
-        children: Text({
-          ...(labelColor ? { color: labelColor } : {}),
-          bold: isShown,
-          children: tab.count > 0 ? [tab.label, TAB_COUNT_GAP, count] : tab.label,
-        }),
-      })
-    }),
+    return Box({
+      key: tab.id,
+      width: tab.width,
+      height: TAB_HEIGHT,
+      borderStyle: 'single',
+      borderColor: '#0000',
+      alignItems: 'center',
+      justifyContent: 'center',
+      ...(background ? { backgroundColor: background } : {}),
+      children: Text({
+        ...(labelColor ? { color: labelColor } : {}),
+        bold: isShown,
+        children: tab.count > 0 ? [tab.label, TAB_COUNT_GAP, count] : tab.label,
+      }),
+    })
+  }
+
+  return Box({
+    flexDirection: 'column',
+    children: tabLines(props.tabs, props.gap, props.columns).map((line, n) =>
+      Box({ key: `line-${n}`, flexDirection: 'row', gap: props.gap, children: line.map(tabBox) }),
+    ),
   })
 }
 
