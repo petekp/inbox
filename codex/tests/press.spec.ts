@@ -480,6 +480,7 @@ test('a question lists every option, folds those past the fourth of 7, marks the
       ['Run a script', 'handoff', false, false],
       ['Reply', 'mark', false, false],
       ['Explain', 'talk', false, false],
+      ['Compare', 'talk', false, false],
       ['Dismiss', 'mark', false, false],
     ],
   )

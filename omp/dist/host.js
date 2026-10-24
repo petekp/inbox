@@ -469,8 +469,9 @@ function reopenFinding(ledger, id) {
   };
 }
 function applyExchangeUpdate(ledger, update, exchange, now, promptAt) {
-  const explainedId = exchange.press?.action === "explain" ? exchange.press.id : null;
-  return applyUpdate(ledger, { ...update, closed: update.closed.filter((c) => c.id !== explainedId) }, now, exchange.turn, promptAt);
+  const press = exchange.press;
+  const talkedAboutId = press?.action === "explain" || press?.action === "compare" ? press.id : null;
+  return applyUpdate(ledger, { ...update, closed: update.closed.filter((c) => c.id !== talkedAboutId) }, now, exchange.turn, promptAt);
 }
 var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
 var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
@@ -605,8 +606,17 @@ function addAgentItem(ledger, entry, now) {
   const recordedThisTurn = new Set(ledger.items.filter((i) => i.turn === ledger.turn).map((i) => i.id));
   const open = matchOpen(ledger.items, candidate, recordedThisTurn);
   const openItem = ledger.items[open];
-  if (openItem)
-    return { ledger, is: "open", id: openItem.id };
+  if (openItem) {
+    const helps = entry.helps.reduce(withHelp, openItem.helps);
+    const reported = { ...openItem, helps, reportedAt: now };
+    const items2 = ledger.items.map((i) => i === openItem ? reported : i);
+    return {
+      ledger: { ...ledger, items: items2 },
+      is: "open",
+      id: openItem.id,
+      addedSteps: helps.length - openItem.helps.length
+    };
+  }
   const isAskable = (c) => c.how === "expired" || c.how === "claude";
   const repeated = ledger.closed.findLast((c) => !isAskable(c) && repeatsSettled(c, candidate));
   if (repeated)
@@ -1589,6 +1599,7 @@ function retryOf(id, last) {
     case "answer":
       return { action: "answer", id, option: last.text };
     case "explain":
+    case "compare":
     case "address":
     case "issue":
     case "discuss":
@@ -1693,6 +1704,12 @@ function pressed(ledger, last, p, ctx) {
         last: record("talk"),
         effects: [{ kind: "send", text: messages.explain(item), by: { id: item.id, action: "explain" } }]
       };
+    case "compare":
+      return {
+        ledger,
+        last: record("talk"),
+        effects: [{ kind: "send", text: messages.compare(item), by: { id: item.id, action: "compare" } }]
+      };
     case "done":
       return { ledger: closeItem(ledger, item.id, { how: "done", outcome: "done" }, ctx.now), last: null, effects: [] };
     case "dismiss":
@@ -1744,6 +1761,14 @@ function dialogReply(link, answer) {
 ${JSON.stringify(reply)}
 </send_user_message_question_reply>`;
 }
+var COMPARE_REQUEST = [
+  "Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.",
+  "For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session's data outside this repo.",
+  "Then reply with a table: one row per choice, and the few measures that tell them apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Add one line on anything you did not expect. After the table, give your pick and say whether it changed. When the choice is visual or has many states, also write one HTML page that shows the choices side by side.",
+  "When the comparison is done, call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps if you made one. That marks it compared. Call each choice by its name as listed."
+].join(`
+
+`);
 var messages = {
   answer: (item, answer) => item.dialog ? dialogReply(item.dialog, answer) : `Re "${item.ask}": ${answer}`,
   explain: (item) => {
@@ -1753,6 +1778,9 @@ Options: ${item.options.join(" / ")}` : "";
     return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.
 "${item.ask}"${options}`;
   },
+  compare: (item) => `${COMPARE_REQUEST}
+"${item.ask}"
+Options: ${item.options.join(" / ")}`,
   run: (item, command) => `For "${item.ask}", run this:
 \`\`\`
 ${command}
@@ -1875,7 +1903,10 @@ function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
   return { questions: newestReplyFirst("question"), tasks: newestReplyFirst("task") };
 }
-function feedbackOf(id, last, note, turns, now) {
+function showsCompare(item) {
+  return item.kind === "question" && item.options.length >= 2;
+}
+function feedbackOf(id, last, note, turns, now, reportedAt) {
   const result = last?.result;
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
     return { is: "note", note: note.note, at: note.at };
@@ -1890,8 +1921,9 @@ function feedbackOf(id, last, note, turns, now) {
   if (delivery?.state === "failed")
     return { is: "notSent", reason: delivery.reason, retry: retryOf(id, last) };
   const isAwaiting = isAwaitingReply(last, turns);
+  const isUnreported = last.action === "compare" && !(reportedAt !== undefined && reportedAt >= last.at);
   const working = WORKING_LABELS[last.action];
-  if (last.kind === "talk" && working && isAwaiting)
+  if (last.kind === "talk" && working && (isAwaiting || isUnreported))
     return { is: "working", label: working, at: last.at };
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last))
     return { is: "stillOpen", at: last.at };
@@ -1906,6 +1938,7 @@ function feedbackOf(id, last, note, turns, now) {
 var fixLabel = (f) => f.kind === "opportunity" ? "Do it" : "Fix";
 var WORKING_LABELS = {
   explain: "Explaining\u2026",
+  compare: "Comparing\u2026",
   discuss: "Discussing\u2026",
   "thread-discuss": "Discussing\u2026",
   "thread-draft": "Drafting a reply\u2026"
@@ -1915,6 +1948,7 @@ var DONE_LABELS = {
   issue: () => "Asked to file",
   discuss: () => "Discussed",
   explain: () => "Explained",
+  compare: () => "Compared",
   dismiss: () => "Dismissed",
   type: () => "Replied",
   "thread-address": () => "Addressed",
@@ -1985,13 +2019,21 @@ var ROW_TABS = TABS.filter((t) => t.id !== "prs");
 function emptyText(tab, agent) {
   return tab === "needsYou" ? { title: "Nothing needed.", hint: `${agent}'s questions and the tasks only you can do show up here.` } : { title: "No findings yet", hint: `${agent} flags issues and opportunities it spots beyond your task.` };
 }
-var FOLLOW_UPS = new Set(["type", "explain", "discuss", "dismiss", "discard"]);
+var FOLLOW_UPS = new Set([
+  "type",
+  "explain",
+  "compare",
+  "discuss",
+  "dismiss",
+  "discard"
+]);
 var ACTION_KEYS = {
   done: "d",
   address: "a",
   issue: "i",
   type: "t",
   explain: "e",
+  compare: "p",
   discuss: "d",
   dismiss: "x",
   discard: "x"
@@ -2002,7 +2044,7 @@ function actionsOf(row, last, state) {
     press,
     label: press.action !== "type" && last?.kind !== "local" && last?.delivery?.state !== "failed" && last?.action === actionId(press) ? `${label} again` : label,
     kind,
-    emphasis: flags.isPrimary || press.action === "done" || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
+    emphasis: flags.isPrimary || press.action === "done" || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
     ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps2[press.step]) ? { icon: stepIconKind(steps2[press.step]) } : {},
     isPrimary: flags.isPrimary ?? false,
     isFolded: flags.isFolded ?? false,
@@ -2043,6 +2085,7 @@ function actionsOf(row, last, state) {
     ...stepActions,
     action({ action: "type", id, text: "" }, "Reply", "mark"),
     action({ action: "explain", id }, "Explain", "talk"),
+    ...showsCompare(item) ? [action({ action: "compare", id }, "Compare", "talk")] : [],
     action({ action: "dismiss", id }, "Dismiss", "mark")
   ];
 }
@@ -2168,7 +2211,8 @@ function inboxView({
   const feedbackIn = (id, state) => {
     if (state.is === "settled")
       return null;
-    const f = feedbackOf(id, lastActions[id], notes[id], turns, now);
+    const reportedAt = ledger.items.find((i) => i.id === id)?.reportedAt;
+    const f = feedbackOf(id, lastActions[id], notes[id], turns, now, reportedAt);
     if (state.is !== "held")
       return f;
     const isFailedReply = f?.is === "notSent" && lastActions[id]?.action === "type" && lastActions[id].at >= state.at;
@@ -2663,7 +2707,7 @@ var RECORD_SCHEMA = {
     steps: {
       type: "array",
       items: { type: "string" },
-      description: "For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link."
+      description: "For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link. For a question: up to 3 files or https links that help the user decide, such as a page comparing the options, each file as an absolute path."
     },
     finding_kind: {
       type: "string",
@@ -2733,16 +2777,21 @@ function recordItem(host, ledger, input, now) {
   const rec = recInput === "" ? null : recommendedOption(options, recInput);
   if (recInput !== "" && rec === null)
     return { ledger, result: "Not recorded: rec must be one of the options." };
-  const steps2 = input.kind === "task" ? list(input.steps, MAX_STEPS + 3, 4000) : [];
-  const helps = steps2.flatMap((step) => stepHelp(step) ?? []).slice(0, MAX_STEPS);
+  const steps2 = list(input.steps, MAX_STEPS + 3, 4000);
+  const isUsable = (h) => input.kind === "task" || h.kind === "open" || h.kind === "link";
+  const helps = steps2.flatMap((step) => stepHelp(step) ?? []).filter(isUsable).slice(0, MAX_STEPS);
+  const leftOut = helps.length < steps2.length ? input.kind === "task" ? " Some steps were not a command, a file path or a link, so they are left out." : " Some steps were not an absolute file path or a link, so they are left out." : "";
   const r = addAgentItem(ledger, { kind: input.kind, ask, options, rec, helps }, now);
   if (r.is === "open")
-    return { ledger, result: "Already open." };
+    return {
+      ledger: r.ledger,
+      result: r.addedSteps > 0 ? `Already open. Added its new steps to it.${leftOut}` : `Already open.${leftOut}`
+    };
   if (r.is === "closed")
     return { ledger, result: `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.` };
   return {
     ledger: r.ledger,
-    result: `Recorded. The user sees it in ${host.surface}.` + (helps.length < steps2.length ? " Some steps were not a command, a file path or a link, so they are left out." : "") + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : "")
+    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : "")
   };
 }
 function recordFinding(host, ledger, input, now) {

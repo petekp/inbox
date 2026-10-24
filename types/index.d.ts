@@ -26,6 +26,8 @@ export type Item = {
   from: 'record' | 'update'
   /** The open Codex dialog question this item copies. Only the Codex host sets it. */
   dialog?: DialogLink
+  /** When the agent last recorded it again while it was open, as it does to report a comparison. */
+  reportedAt?: number
 }
 
 /**
@@ -294,7 +296,7 @@ export type Exchange = {
   screen: string
 }
 
-export type Press = { id: string; action: 'answer' | 'explain' | 'run' | 'done' }
+export type Press = { id: string; action: 'answer' | 'explain' | 'compare' | 'run' | 'done' }
 
 /** The inbox text the agent last read beside a prompt, and the closed items it was told about. */
 export type Told = { inbox: string | null; closed: string[] }

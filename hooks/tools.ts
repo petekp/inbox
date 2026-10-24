@@ -1,6 +1,6 @@
 import { addAgentItem, addFinding, closeByAgent, recommendedOption, stepHelp } from './ledger'
 import type { Host } from './model-text'
-import type { Closed, Ledger } from '../types'
+import type { Closed, Help, Ledger } from '../types'
 
 const NAME_BY_CONTENT = 'Name it by what it says, never by its id.'
 
@@ -32,7 +32,7 @@ const RECORD_SCHEMA = {
       type: 'array',
       items: { type: 'string' },
       description:
-        'For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link.',
+        'For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link. For a question: up to 3 files or https links that help the user decide, such as a page comparing the options, each file as an absolute path.',
     },
     finding_kind: {
       type: 'string',
@@ -122,11 +122,25 @@ export function recordItem(
   const recInput = input.kind === 'question' ? cut(input.rec, MAX_OPTION) : ''
   const rec = recInput === '' ? null : recommendedOption(options, recInput)
   if (recInput !== '' && rec === null) return { ledger, result: 'Not recorded: rec must be one of the options.' }
-  const steps = input.kind === 'task' ? list(input.steps, MAX_STEPS + 3, 4000) : []
-  const helps = steps.flatMap(step => stepHelp(step) ?? []).slice(0, MAX_STEPS)
+  const steps = list(input.steps, MAX_STEPS + 3, 4000)
+  const isUsable = (h: Help) => input.kind === 'task' || h.kind === 'open' || h.kind === 'link'
+  const helps = steps
+    .flatMap(step => stepHelp(step) ?? [])
+    .filter(isUsable)
+    .slice(0, MAX_STEPS)
+  const leftOut =
+    helps.length < steps.length
+      ? input.kind === 'task'
+        ? ' Some steps were not a command, a file path or a link, so they are left out.'
+        : ' Some steps were not an absolute file path or a link, so they are left out.'
+      : ''
 
   const r = addAgentItem(ledger, { kind: input.kind, ask, options, rec, helps }, now)
-  if (r.is === 'open') return { ledger, result: 'Already open.' }
+  if (r.is === 'open')
+    return {
+      ledger: r.ledger,
+      result: r.addedSteps > 0 ? `Already open. Added its new steps to it.${leftOut}` : `Already open.${leftOut}`,
+    }
   if (r.is === 'closed')
     return { ledger, result: `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.` }
 
@@ -134,9 +148,7 @@ export function recordItem(
     ledger: r.ledger,
     result:
       `Recorded. The user sees it in ${host.surface}.` +
-      (helps.length < steps.length
-        ? ' Some steps were not a command, a file path or a link, so they are left out.'
-        : '') +
+      leftOut +
       (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ''),
   }
 }

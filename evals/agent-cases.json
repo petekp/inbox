@@ -724,5 +724,53 @@
         "noIds": true
       }
     ]
+  },
+  {
+    "name": "record-repeat-adds-step",
+    "about": "After a Compare press, the agent records the open question again with the comparison page as an absolute path, and the record adds the page as a step.",
+    "ledger": {
+      "nextId": 4,
+      "turn": 2,
+      "items": [
+        {
+          "id": "i3",
+          "kind": "question",
+          "label": null,
+          "from": "record",
+          "ask": "Which cache should the product API use?",
+          "options": ["Redis", "In-memory"],
+          "rec": null,
+          "helps": [],
+          "turn": 1,
+          "at": 1
+        }
+      ]
+    },
+    "files": {
+      ".scratch/compare/caches.html": "<!doctype html><title>Caches</title><table><tr><th>Redis</th><th>In-memory</th></tr><tr><td>Same prices on all 4 instances</td><td>Up to 5 minutes of stale prices</td></tr></table>\n"
+    },
+    "prompt": "I pressed Compare on the open cache question. Your background subagent has reported back: with In-memory, each of the API's four instances can serve prices up to five minutes stale, and reads are 3 ms faster. With Redis, every instance serves the same prices. It wrote a side-by-side page at .scratch/compare/caches.html in this checkout. The Compare request said: \"When the comparison is done, call the inbox's record tool yourself with this question's ask and options as listed, and the page's absolute path in steps if you made one. That marks it compared.\" Finish the comparison now.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "min": 1,
+        "match": {
+          "steps": "^/\\S*caches\\.html"
+        },
+        "result": "^Already open\\. Added"
+      },
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
+      },
+      {
+        "reply": "redis"
+      },
+      {
+        "noIds": true
+      }
+    ]
   }
 ]

@@ -609,11 +609,12 @@ export function applyExchangeUpdate(
   now: number,
   promptAt: number,
 ): Ledger {
-  const explainedId = exchange.press?.action === 'explain' ? exchange.press.id : null
+  const press = exchange.press
+  const talkedAboutId = press?.action === 'explain' || press?.action === 'compare' ? press.id : null
 
   return applyUpdate(
     ledger,
-    { ...update, closed: update.closed.filter(c => c.id !== explainedId) },
+    { ...update, closed: update.closed.filter(c => c.id !== talkedAboutId) },
     now,
     exchange.turn,
     promptAt,
@@ -784,13 +785,13 @@ export function addFinding(
 
 export type AgentItemResult =
   | { ledger: Ledger; is: 'added'; id: string; expired: Item | null }
-  | { ledger: Ledger; is: 'open'; id: string }
+  | { ledger: Ledger; is: 'open'; id: string; addedSteps: number }
   | { ledger: Ledger; is: 'closed'; record: Closed }
 
 /**
- * Adds a question or task the agent recorded. One that an open item restates is skipped, and so is one that
- * repeats a closed item, unless that item expired or the agent closed it. The list keeps its newest MAX_OPEN
- * items. A finding the new ask restates closes, so one thing shows in one list.
+ * Adds a question or task the agent recorded. One that an open item restates adds its steps to that item and stamps
+ * its `reportedAt`, and one that repeats a closed item is skipped, unless that item expired or the agent closed it.
+ * The list keeps its newest MAX_OPEN items. A finding the new ask restates closes, so one thing shows in one list.
  */
 export function addAgentItem(
   ledger: Ledger,
@@ -801,7 +802,18 @@ export function addAgentItem(
   const recordedThisTurn = new Set(ledger.items.filter(i => i.turn === ledger.turn).map(i => i.id))
   const open = matchOpen(ledger.items, candidate, recordedThisTurn)
   const openItem = ledger.items[open]
-  if (openItem) return { ledger, is: 'open', id: openItem.id }
+  if (openItem) {
+    const helps = entry.helps.reduce(withHelp, openItem.helps)
+    const reported = { ...openItem, helps, reportedAt: now }
+    const items = ledger.items.map(i => (i === openItem ? reported : i))
+
+    return {
+      ledger: { ...ledger, items },
+      is: 'open',
+      id: openItem.id,
+      addedSteps: helps.length - openItem.helps.length,
+    }
+  }
   const isAskable = (c: Closed) => c.how === 'expired' || c.how === 'claude'
   const repeated = ledger.closed.findLast(c => !isAskable(c) && repeatsSettled(c, candidate))
   if (repeated) return { ledger, is: 'closed', record: repeated }

@@ -169,7 +169,10 @@ export function isFixSent(last: LastAction | undefined): last is LastAction {
 export type RowPress =
   | { action: 'answer'; id: string; option: string }
   | { action: 'type'; id: string; text: string }
-  | { action: 'explain' | 'done' | 'dismiss' | 'address' | 'issue' | 'discuss' | 'undo' | 'discard'; id: string }
+  | {
+      action: 'explain' | 'compare' | 'done' | 'dismiss' | 'address' | 'issue' | 'discuss' | 'undo' | 'discard'
+      id: string
+    }
   | { action: 'step'; id: string; step: number; label: string }
 
 export type PrActionId =
@@ -692,6 +695,7 @@ export function retryOf(id: string, last: LastAction): RowPress | null {
     case 'answer':
       return { action: 'answer', id, option: last.text }
     case 'explain':
+    case 'compare':
     case 'address':
     case 'issue':
     case 'discuss':
@@ -814,6 +818,12 @@ function pressed(
         last: record('talk'),
         effects: [{ kind: 'send', text: messages.explain(item), by: { id: item.id, action: 'explain' } }],
       }
+    case 'compare':
+      return {
+        ledger,
+        last: record('talk'),
+        effects: [{ kind: 'send', text: messages.compare(item), by: { id: item.id, action: 'compare' } }],
+      }
     case 'done':
       return { ledger: closeItem(ledger, item.id, { how: 'done', outcome: 'done' }, ctx.now), last: null, effects: [] }
     case 'dismiss':
@@ -882,6 +892,13 @@ export function dialogReply(link: DialogLink, answer: string): string {
   return `<send_user_message_question_reply>\n${JSON.stringify(reply)}\n</send_user_message_question_reply>`
 }
 
+const COMPARE_REQUEST = [
+  'Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.',
+  "For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session's data outside this repo.",
+  'Then reply with a table: one row per choice, and the few measures that tell them apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Add one line on anything you did not expect. After the table, give your pick and say whether it changed. When the choice is visual or has many states, also write one HTML page that shows the choices side by side.',
+  "When the comparison is done, call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps if you made one. That marks it compared. Call each choice by its name as listed.",
+].join('\n\n')
+
 export const messages = {
   answer: (item: Item, answer: string) =>
     item.dialog ? dialogReply(item.dialog, answer) : `Re "${item.ask}": ${answer}`,
@@ -894,6 +911,7 @@ export const messages = {
 
     return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.\n"${item.ask}"${options}`
   },
+  compare: (item: Item) => `${COMPARE_REQUEST}\n"${item.ask}"\nOptions: ${item.options.join(' / ')}`,
   run: (item: Item, command: string) => `For "${item.ask}", run this:\n\`\`\`\n${command}\n\`\`\``,
   taskReply: (item: Item, words: string) => `Re the task you left for me, "${item.ask}": ${words}`,
   done: (asks: string[]) => (asks.length === 1 ? `Done: ${asks[0]}` : `Done:\n${asks.map(a => `- ${a}`).join('\n')}`),

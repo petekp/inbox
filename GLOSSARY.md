@@ -65,8 +65,10 @@ arrives above the open row stays closed. Codex animates its entry.
 What an item or PR in the inbox says after the person presses one of its
 actions: a ✓ and the action in the past tense, as in "✓ Discussed · 1m ago".
 Explain and Discuss read "Explaining…" or "Discussing…" until the agent
-replies. A row handed to the agent that its reply left open reads "Still
-open". Each keeps only its latest.
+replies. Compare reads "Comparing…" until the agent records the question
+again, which can be turns later when a background subagent does the work. A
+row handed to the agent that its reply left open reads "Still open". Each
+keeps only its latest.
 
 ### Looks and hosts
 
