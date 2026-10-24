@@ -48,6 +48,24 @@ As in the launch video, no beat changes on a hard cut:
 - **The camera** frames the part that changes: the prompt in beat 1, the reply's question and the line above the prompt in beat 2, the open row in beats 3 and 4, and the whole window in beat 5.
 - **Keycaps** rise in at the bottom right of the picture as each key is pressed and fade after 0.6 s. Typed text shows as one cap, such as `/inbox`.
 
+### Caption options
+
+Pete asked for other captions. Each set fits the same beats and pictures, so only the words change. Option A is the set in the beat table above.
+
+- **A, what it does.** The viewer learns each thing the inbox does, beat by beat.
+- **B, the problem it solves.** The viewer recognizes missing a question in a long reply, and sees the inbox answer it without scrolling back.
+- **C, one key each.** For omp users who live in the terminal: every step is a single key.
+
+| Beat | A | B | C |
+| --- | --- | --- | --- |
+| 1 | Inbox is now in omp. | Inbox is now in omp. | Inbox, now in omp. |
+| 2 | Your agent's questions and findings wait above your prompt. | Questions are easy to miss in a long reply. Inbox keeps them above your prompt. | What your agent needs from you, counted above your prompt. |
+| 3 | Answer with one key. The agent gets it as your message. | Each comes with answers. Enter sends the selected one. | Enter answers. |
+| 4 | Issues your agent notices come with next steps. | Bugs your agent spots wait there too. One more key asks for the fix. | Enter asks the agent to fix it. |
+| 5 | Your agent keeps working with your answer. | You answered both without scrolling back. | Two keys, and your agent has both. |
+
+Every caption reads at no more than 14 characters a second, under the limit of 20.
+
 ## Picture
 
 - **One 16:9 master,** 1920 by 1080 at 60 fps. The cut's size is a setting in the video's timeline, so a 9:16 or square cut is a second entry in `VIDEO.cuts`.
@@ -77,7 +95,7 @@ To choose. Two options:
 
 ## Open decisions
 
-1. **The captions and the story above.**
+1. **The captions.** Option A, B or C under "Caption options", or a mix.
 2. **The length.** 30 seconds. A 15-second cut could keep beats 1, 3 and 6.
 3. **The format.** One 16:9 master first, with a 9:16 cut later for Reels, Shorts and TikTok.
 4. **The music.** See above.
