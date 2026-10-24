@@ -97,7 +97,7 @@ test('a Stop notes the dialogs the agent opened in the ending turn as open, and 
   assert.deepEqual((await readState(dir, 's1')).pending[1]?.ex.activity, [])
 })
 
-test('a dialog question links to the question the agent recorded for it or the update added from it, in the same turn', async () => {
+test('a dialog question links to the question the agent recorded for it or the update added from it, in the same turn, only when no other question shares the match', async () => {
   const dir = tempDir()
   const transcript = join(tempDir(), 'rollout.jsonl')
   const deps = hookDeps(dir)
@@ -118,6 +118,12 @@ test('a dialog question links to the question the agent recorded for it or the u
   }
   const applyAnswer = (answer: string) => updateState(dir, 's1', s => applied(s, `GOAL: Ship\n${answer}`, 2000, 2000))
   const links = async () => (await readState(dir, 's1')).ledger.items.map(i => [i.ask, i.dialog ?? null])
+  const linkedQuestions = async () => (await readState(dir, 's1')).dialogQuestions.map(q => q.itemId !== null)
+  const record = (ask: string, options: string[]) =>
+    updateState(dir, 's1', s => ({
+      ...s,
+      ledger: addAgentItem(s.ledger, { kind: 'question', ask, options, rec: null, helps: [] }, 1000).ledger,
+    }))
 
   await handleHook(input('UserPromptSubmit', { prompt: 'Fix the build', turn_id: 't1' }), deps)
   write(
@@ -127,14 +133,7 @@ test('a dialog question links to the question the agent recorded for it or the u
       { title: 'Which branch gets the tag?', options: ['main', 'release'] },
     ]),
   )
-  await updateState(dir, 's1', s => ({
-    ...s,
-    ledger: addAgentItem(
-      s.ledger,
-      { kind: 'question', ask: 'Push the fix?', options: ['Push now', 'Keep it local'], rec: 'Push now', helps: [] },
-      1000,
-    ).ledger,
-  }))
+  await record('Push the fix?', ['Push now', 'Keep it local'])
   await handleHook(
     input('Stop', { turn_id: 't1', transcript_path: transcript, last_assistant_message: 'Asked.' }),
     deps,
@@ -142,9 +141,9 @@ test('a dialog question links to the question the agent recorded for it or the u
   assert.deepEqual(await links(), [
     ['Push the fix?', { callId: 'call_a', index: 0, question: 'May I push the fix to the branch?' }],
   ])
-  assert.equal((await readState(dir, 's1')).unlinkedDialogQuestions.length, 1)
+  assert.deepEqual(await linkedQuestions(), [true, false])
   await applyAnswer('NOW: Waiting')
-  assert.deepEqual((await readState(dir, 's1')).unlinkedDialogQuestions, [])
+  assert.deepEqual(await linkedQuestions(), [])
 
   await handleHook(input('UserPromptSubmit', { prompt: 'Deploy it', turn_id: 't2' }), deps)
   write(started('t2'), dialog('call_b', [{ title: 'Deploy to production now?', options: ['Deploy', 'Wait'] }]))
@@ -156,7 +155,27 @@ test('a dialog question links to the question the agent recorded for it or the u
   assert.deepEqual((await links()).slice(1), [
     ['Deploy now?', { callId: 'call_b', index: 0, question: 'Deploy to production now?' }],
   ])
-  assert.deepEqual((await readState(dir, 's1')).unlinkedDialogQuestions, [])
+  assert.deepEqual(await linkedQuestions(), [])
+
+  await handleHook(input('UserPromptSubmit', { prompt: 'Clean up', turn_id: 't3' }), deps)
+  write(
+    started('t3'),
+    dialog('call_c', [
+      { title: 'Delete the old branch before merging?', options: ['Yes', 'No'] },
+      { title: 'Rename the main file?', options: ['Yes', 'No'] },
+    ]),
+  )
+  await record('Delete the old branch?', ['Yes', 'No'])
+  await record('Bump the version?', ['Yes', 'No'])
+  await handleHook(
+    input('Stop', { turn_id: 't3', transcript_path: transcript, last_assistant_message: 'Asked.' }),
+    deps,
+  )
+  assert.deepEqual((await links()).slice(2), [
+    ['Delete the old branch?', { callId: 'call_c', index: 0, question: 'Delete the old branch before merging?' }],
+    ['Bump the version?', null],
+  ])
+  assert.deepEqual(await linkedQuestions(), [true, false])
 })
 
 test('each hook records that it ran, with the turn UserPromptSubmit saw, and the tab reads the session as heard', async () => {

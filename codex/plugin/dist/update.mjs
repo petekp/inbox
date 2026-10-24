@@ -876,23 +876,38 @@ function appliedCatchUp(s, begun, parsed, now) {
 function optionsKey(options) {
   return options.map((o) => o.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase()).sort().join("\n");
 }
-function copies(item, q) {
-  if (item.kind !== "question" || item.dialog || item.turn !== q.turn) return false;
-  const hasSameOptions = item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
-  return hasSameOptions || restates(item.ask, q.question);
+function hasSameOptions(item, q) {
+  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
+}
+function copyOf(q, items, questions) {
+  const byOptions = items.filter((i) => hasSameOptions(i, q));
+  const [only] = byOptions;
+  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1) return only;
+  const pool = byOptions.length > 0 ? byOptions : items;
+  const byAsk = pool.filter((i) => restates(i.ask, q.question));
+  const [asked] = byAsk;
+  if (!asked || byAsk.length !== 1) return null;
+  const restated = questions.filter((o) => restates(asked.ask, o.question));
+  return restated.length === 1 ? asked : null;
 }
 function linkDialogs(s) {
-  if (s.unlinkedDialogQuestions.length === 0) return s;
+  if (s.dialogQuestions.length === 0) return s;
   let items = s.ledger.items;
-  const unlinked = [];
-  for (const q of s.unlinkedDialogQuestions) {
-    const at = items.findIndex((item) => copies(item, q));
-    if (at >= 0) {
-      const { options: _options, turn: _turn, ...link } = q;
-      items = items.map((item, i) => i === at ? { ...item, dialog: link } : item);
-    } else if (s.pending.some((p) => p.ex.turn === q.turn)) unlinked.push(q);
-  }
-  return { ...s, ledger: { ...s.ledger, items }, unlinkedDialogQuestions: unlinked };
+  const questions = s.dialogQuestions.map((q) => {
+    if (q.itemId !== null) return q;
+    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
+    const copy = copyOf(
+      q,
+      turnItems,
+      s.dialogQuestions.filter((o) => o.turn === q.turn)
+    );
+    if (!copy || copy.dialog) return q;
+    const link = { callId: q.callId, index: q.index, question: q.question };
+    items = items.map((i) => i.id === copy.id ? { ...i, dialog: link } : i);
+    return { ...q, itemId: copy.id };
+  });
+  const kept = questions.filter((q) => s.pending.some((p) => p.ex.turn === q.turn));
+  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
 }
 
 // src/state.ts
@@ -916,7 +931,7 @@ function emptyState(sessionId) {
     ...emptySession(),
     tabSeenAt: 0,
     heard: NOTHING_HEARD,
-    unlinkedDialogQuestions: []
+    dialogQuestions: []
   };
 }
 function statePath(dir, sessionId) {

@@ -29,7 +29,7 @@ import {
 } from '../../hooks/session'
 import type { Session } from '../../hooks/session'
 import { linkDialogs } from './dialogs'
-import type { UnlinkedDialogQuestion } from './dialogs'
+import type { TurnDialogQuestion } from './dialogs'
 
 export type SessionState = Session & {
   version: 1
@@ -42,8 +42,8 @@ export type SessionState = Session & {
   cliPath: string | null
   tabSeenAt: number
   heard: Heard
-  /** Questions from dialogs the agent opened that no inbox item copies yet. */
-  unlinkedDialogQuestions: UnlinkedDialogQuestion[]
+  /** The questions of dialogs the agent opened in turns whose update has not applied, linked or not. */
+  dialogQuestions: TurnDialogQuestion[]
 }
 
 /**
@@ -84,7 +84,7 @@ export function emptyState(sessionId: string): SessionState {
     ...emptySession(),
     tabSeenAt: 0,
     heard: NOTHING_HEARD,
-    unlinkedDialogQuestions: [],
+    dialogQuestions: [],
   }
 }
 
