@@ -1,39 +1,39 @@
 {
   "side-by-side-terminal": {
-    "src": "takes/side-by-side-terminal.mp4",
+    "src": "launch/takes/side-by-side-terminal.mp4",
     "width": 2620,
     "height": 1760,
     "window": [0, 25, 1024, 688],
     "beatStartsAt": 2.0093
   },
   "side-by-side-desktop": {
-    "src": "takes/side-by-side-desktop.mp4",
+    "src": "launch/takes/side-by-side-desktop.mp4",
     "width": 2620,
     "height": 1548,
     "window": [0, 25, 1024, 605],
     "beatStartsAt": 2.0382
   },
   "side-by-side-codex": {
-    "src": "takes/side-by-side-codex.mp4",
+    "src": "launch/takes/side-by-side-codex.mp4",
     "width": 2620,
     "height": 1552,
     "window": [0, 25, 1024, 607],
     "beatStartsAt": 2.0143
   },
   "session": {
-    "src": "takes/session.mp4",
+    "src": "launch/takes/session.mp4",
     "width": 2620,
     "height": 1760,
     "window": [0.0, 26.0, 1024.0, 688.0]
   },
   "session2": {
-    "src": "takes/session2.mp4",
+    "src": "launch/takes/session2.mp4",
     "width": 2620,
     "height": 1740,
     "window": [0, 25, 1024, 680]
   },
   "prs": {
-    "src": "takes/prs.mp4",
+    "src": "launch/takes/prs.mp4",
     "width": 2620,
     "height": 1740,
     "window": [0, 25, 1024, 680]

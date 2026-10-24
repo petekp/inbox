@@ -1,6 +1,6 @@
 # Launch video: how an agent should make the animatic
 
-Status: built. The animatic it recommends is the Remotion project in `launch-video/`.
+Status: built. The animatic it recommends is the `launch` video in the Remotion project in `videos/`.
 
 This is research for the [launch video](launch-video.md). It covers how a coding agent can build the video's animatic, check it and hand it off to the final recording. Sources were read on 2026-10-13, and the table at the end gives each one's date. "Older" marks a source from before 2025-10. "Undated" marks one with no date.
 

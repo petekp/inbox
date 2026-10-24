@@ -1,8 +1,14 @@
 // The launch video's beats, from the shot list in docs/plans/launch-video.md: each beat's length, its caption,
 // and what the screen shows from which second.
 
-import { EXIT_MS } from '../../codex/src/rows'
-import { SETTLED_MS } from '../../hooks/view'
+import { EXIT_MS } from '../../../codex/src/rows'
+import { SETTLED_MS } from '../../../hooks/view'
+import type { RowLines } from '../shared/EndCard'
+import type { CameraMove, Point, Rect } from '../shared/geometry'
+import type { Segment } from '../shared/Footage'
+import type { MusicCue } from '../shared/Music'
+import type { State } from '../shared/states'
+import type { CaptionSpan, Cut, VideoSpec } from '../shared/video'
 
 export const FPS = 60
 export const WIDTH = 1920
@@ -13,8 +19,8 @@ const SETTLE = SETTLED_MS / 1000
 /** How long a settled row then takes to leave in Codex, in seconds. */
 const CODEX_EXIT = EXIT_MS / 1000
 
-/** `captions-off` is `draft` with no captions, to check that the pictures carry the story. */
-export const VARIANTS = ['draft', 'captions-off'] as const
+/** `launch-captions-off` is `launch` with no captions, to check that the pictures carry the story. */
+export const VARIANTS = ['launch', 'launch-captions-off'] as const
 export type Variant = (typeof VARIANTS)[number]
 
 export type Look = 'terminal' | 'desktop' | 'codex'
@@ -24,11 +30,8 @@ export const LOOK_NAMES: Record<Look, string> = {
   desktop: 'Claude app',
   codex: 'Codex in the ChatGPT app',
 }
-
-export type Rect = { x: number; y: number; w: number; h: number }
-
-/** A point on the VM's screen, in points from its top left. */
-export type Point = [number, number]
+/** An app's icon in public/icons/. */
+export const appIcon = (look: Look) => `icons/${look}.png`
 
 /**
  * Each app's window still, in pixels, and where its inbox sits in it. `rows` runs from the left edge of the tabs to
@@ -58,40 +61,10 @@ export const WINDOWS: Record<Look, { width: number; height: number; inbox: Rect;
 }
 
 /** A still captured from the app's demo, in public/. */
-const still = (look: Look, state: string) => `stills/${look}/${state}.png`
-
-/** What the screen shows from `at` seconds into its beat until the next state. */
-export type State = {
-  at: number
-  /** What the screen shows, which a placeholder draws as its label. */
-  label: string
-  /** What the inbox docked beside the conversation shows. A placeholder then draws `label` as the conversation. */
-  pane?: string
-  /** Where the pointer clicks, in VM screen points. */
-  click?: Point
-  /** How long before the click the take moved the VM's pointer onto its target, in seconds. */
-  settle?: number
-  /** Where the pointer moves at `at`, without clicking, in VM screen points. */
-  move?: Point
-  /**
-   * Seconds from the click until its result shows, measured from takes. The click happens this much before `at`,
-   * so its result shows at `at`.
-   */
-  lead?: number
-  /** A captured still in public/, which replaces the placeholder. */
-  still?: string
-  /** A row that stays in place while this bar drains, such as Undo's. A placeholder draws the bar. */
-  drain?: { label: string; seconds: number }
-}
-
-/** When a state's click happens, in seconds into its beat. */
-export const clickAt = (s: State) => s.at - (s.lead ?? 0)
-
-/** From `at` seconds into its beat, the beat plays take `take` from `from` seconds into it. */
-export type Segment = { at: number; take: string; from: number }
+const still = (look: Look, state: string) => `launch/stills/${look}/${state}.png`
 
 /** A recorded take's clip in public/, which cut.py writes. */
-export const takeClip = (take: string) => `takes/${take}.mp4`
+export const takeClip = (take: string) => `launch/takes/${take}.mp4`
 
 /** Beats 1 to 6: the drawn thread, which src/thread.ts holds. */
 export type ThreadBeat = { kind: 'thread'; id: ThreadBeatId; number: number; length: number; caption: string }
@@ -115,9 +88,6 @@ export type SoloBeat = {
   /** Beat 7 only: how the inbox is shown the first time. */
   introduction?: Introduction
 }
-
-/** A camera move from one framing of the take's clip to another. A framing left out is the whole window. */
-export type CameraMove = { at: number; length: number; from?: Rect; to?: Rect }
 
 /**
  * The inbox's first appearance. The docked pane slides in and is named, the question is marked in the reply, then
@@ -169,10 +139,21 @@ export type Beat = ThreadBeat | SoloBeat | SideBySideBeat | EndCard
 /** A beat and where it starts in the video, in seconds. */
 export type Placed = Beat & { start: number }
 
-export const END_CARD = { name: 'Inbox', repo: 'github.com/petekp/inbox' }
-
 /** How long the end card starts before its beat, over beat 11's last moments, as beat 11's rows turn into its streams. */
 export const END_CARD_LEAD = 0.8
+
+/**
+ * The lines of text in each app's column as beat 11 ends, left to right: the span they cover across the frame, and the
+ * height of each line, in pixels. Measured from the footage's frame at 74.5 s. Each of the end card's streams leaves
+ * one of these lines.
+ */
+export const ROW_LINES: RowLines = [
+  { from: 90, to: 568, ys: [239, 264, 313, 338, 384, 410, 601, 674, 745] },
+  { from: 704, to: 1104, ys: [243, 295, 346, 467, 522, 566, 626, 653, 705] },
+  { from: 1360, to: 1768, ys: [242, 294, 345, 459, 506, 552, 613, 642, 694] },
+]
+
+export const END_CARD = { word: 'inbox', repo: 'github.com/petekp/inbox', rowLines: ROW_LINES, lead: END_CARD_LEAD }
 
 /**
  * The music, made in Suno, about 123 BPM. It starts `startsAt` seconds into the video, from `trimBefore` seconds into
@@ -180,10 +161,7 @@ export const END_CARD_LEAD = 0.8
  * full groove comes in at 31 s, as the inbox first appears, and it comes back from its breakdown at 62.2 s, as beat 11 pushes in. It fades out over the
  * video's last `fadeOut` seconds.
  */
-export const MUSIC = { src: 'music/focus-flow.mp3', startsAt: 0, trimBefore: 0.4, fadeOut: 4 }
-
-/** How long one stretch of footage takes to dissolve into the next, in seconds. */
-export const DISSOLVE = 0.25
+export const MUSIC: MusicCue = { src: 'music/focus-flow.mp3', startsAt: 0, trimBefore: 0.4, fadeOut: 4 }
 
 export const frames = (seconds: number) => Math.round(seconds * FPS)
 
@@ -200,11 +178,6 @@ export function timeline(_variant: Variant): Placed[] {
 export function totalFrames(placed: Placed[]): number {
   const last = placed[placed.length - 1]
   return last ? frames(last.start + last.length) : 0
-}
-
-/** The state shown `t` seconds into a beat: the last one that has started. */
-export function stateAt(states: State[], t: number): State | undefined {
-  return states.filter(s => s.at <= t).pop()
 }
 
 const thread = (number: number, id: ThreadBeatId, length: number, caption: string): ThreadBeat => ({
@@ -436,4 +409,83 @@ function sideBySide(): SideBySideBeat {
     takes: { terminal: 'side-by-side-terminal', desktop: 'side-by-side-desktop', codex: 'side-by-side-codex' },
     pointerFrom: { terminal: [800, 620], desktop: [800, 640], codex: [850, 640] },
   }
+}
+
+/** The captions of one variant, in seconds into the video. `launch-captions-off` has none. */
+function captionsOf(variant: Variant, placed: Placed[]): CaptionSpan[] {
+  if (variant === 'launch-captions-off') return []
+  return placed.flatMap(beat => {
+    const label = `beat ${beat.number}`
+    if (beat.kind === 'solo' || beat.kind === 'thread')
+      return [{ label, text: beat.caption, from: beat.start, to: beat.start + beat.length }]
+    if (beat.kind === 'side-by-side')
+      return [{ label, text: beat.caption, from: beat.start + beat.captionFrom, to: beat.start + beat.length }]
+    return []
+  })
+}
+
+/** Each beat's states, with a prefix naming the app when the beat shows several. */
+function stateLists(beat: Placed): [string, State[]][] {
+  if (beat.kind === 'solo') return [['', beat.states]]
+  if (beat.kind === 'side-by-side') return Object.entries(beat.states).map(([look, states]) => [`${look}: `, states])
+  return []
+}
+
+/** States that start after their beat ends never reach the screen, such as a settle running past the side-by-side beat. */
+function cutOff(placed: Placed[]): string[] {
+  return placed.flatMap(beat =>
+    stateLists(beat).flatMap(([prefix, states]) =>
+      states
+        .filter(s => s.at >= beat.length)
+        .map(
+          s =>
+            `beat ${beat.number}, ${prefix}"${s.label}" at ${s.at.toFixed(2)} s is cut off: the beat ends at ${beat.length} s`,
+        ),
+    ),
+  )
+}
+
+/** Stills at every state change and push-in, and at each caption's first and last frame. */
+function marksOf(placed: Placed[], captions: CaptionSpan[]): Cut['marks'] {
+  const marks: Cut['marks'] = []
+  for (const beat of placed) {
+    const lists =
+      beat.kind === 'solo' ? [beat.states] : beat.kind === 'side-by-side' ? [beat.states.terminal] : [[{ at: 0 }]]
+    for (const states of lists)
+      for (const s of states.filter(s => s.at < beat.length))
+        marks.push({ at: beat.start + s.at, name: `b${beat.number}-${'click' in s && s.click ? 'click' : 'state'}` })
+  }
+  for (const beat of placed)
+    if (beat.kind === 'side-by-side') {
+      marks.push({ at: beat.start + beat.pushInAt + beat.pushInLength / 2, name: `b${beat.number}-pushing-in` })
+      marks.push({
+        at: beat.start + beat.pushInAt + 2 * beat.stagger + beat.pushInLength,
+        name: `b${beat.number}-pushed-in`,
+      })
+    }
+  for (const c of captions) {
+    marks.push({ at: c.from, name: `${c.label.replace('beat ', 'b')}-caption-first` })
+    marks.push({ at: c.to - 1 / FPS, name: `${c.label.replace('beat ', 'b')}-caption-last` })
+  }
+  return marks
+}
+
+export const VIDEO: VideoSpec = {
+  id: 'launch',
+  cuts: VARIANTS.map(variant => {
+    const placed = timeline(variant)
+    const captions = captionsOf(variant, placed)
+    const stills = placed.flatMap(beat => stateLists(beat).flatMap(([, states]) => states.flatMap(s => s.still ?? [])))
+    return {
+      id: variant,
+      width: WIDTH,
+      height: HEIGHT,
+      fps: FPS,
+      frames: totalFrames(placed),
+      captions,
+      marks: marksOf(placed, captions),
+      stills: [...new Set(stills)],
+      notes: [...(captions.length === 0 ? ['captions hidden'] : []), ...cutOff(placed)],
+    }
+  }),
 }

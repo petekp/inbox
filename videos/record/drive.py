@@ -1,13 +1,15 @@
-"""Records one take of the side-by-side beat in the VM. It starts the window recorder on this Mac, sends each of the
-beat's clicks into the VM at the time the timeline gives it, and logs them on the recorder's clock.
+"""Records one take of a beat in the VM. It starts the window recorder on this Mac, sends each of the beat's clicks
+into the VM at the time the video's timeline gives it, and logs them on the recorder's clock.
 
-    python3 record/drive.py <look> [variant]      look: terminal, desktop or codex
+    python3 record/drive.py <video> <beat> [look] [cut]
 
-Before a take, set the app up in the VM with the inbox docked, in the demo, on Needs you with the
-first question open. The take is saved to takes/side-by-side-<look>.mov, with the recorder's sidecar and
-the click log beside it. cut.py turns it into the clip the video plays.
+<beat> is a beat's id in the video's timeline, such as side-by-side. A beat that shows several apps takes the app's
+look, such as terminal. Before a take, set the app up in the VM in the state the beat starts from. For the launch
+video's side-by-side beat, that is the inbox docked, in the demo, on Needs you with the first question open. The take
+is saved to takes/<video>/<beat>-<look>.mov, or takes/<video>/<beat>.mov, with the recorder's sidecar and the click
+log beside it. cut.py turns it into the clip the video plays.
 
-VM_HOST names the VM's SSH address, admin@<ip> by default from `tart ip inbox-ui`.
+VM names the tart VM, inbox-ui by default. VM_HOST names its SSH address, admin@<ip> by default from `tart ip`.
 """
 import json
 import os
@@ -18,9 +20,8 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-TAKES = os.path.join(ROOT, 'takes')
 RECORDER = os.path.join(ROOT, 'out', 'record')
-WINDOW = 'inbox-ui'
+VM = os.environ.get('VM', 'inbox-ui')
 # Seconds recorded before the beat's first frame and after its last.
 LEAD, TAIL = 2.0, 1.0
 # How long before each click the pointer moves onto its target, so the target's hover state is in the take when the
@@ -31,7 +32,7 @@ HOVER_LEAD = 0.3
 def vm_host():
     if os.environ.get('VM_HOST'):
         return os.environ['VM_HOST']
-    ip = subprocess.run(['tart', 'ip', WINDOW], capture_output=True, text=True, check=True).stdout.strip()
+    ip = subprocess.run(['tart', 'ip', VM], capture_output=True, text=True, check=True).stdout.strip()
     return f'admin@{ip}'
 
 
@@ -45,13 +46,14 @@ def front_window(host):
     return app, bounds
 
 
-def beat_states(look, variant):
-    """The side-by-side beat's states for one look, from the timeline that the video is rendered from."""
-    subprocess.run(['node', 'scripts/check.mjs'], cwd=ROOT, capture_output=True, check=True)
+def beat_states(video, beat_id, look, cut):
+    """One beat's states, for one look when the beat shows several, from the timeline the video is rendered from."""
+    subprocess.run(['node', 'scripts/check.mjs', video], cwd=ROOT, capture_output=True, check=True)
     code = (
-        "import { timeline } from './out/timeline.mjs'\n"
-        f"const beat = timeline({json.dumps(variant)}).find(b => b.kind === 'side-by-side')\n"
-        f"console.log(JSON.stringify({{ length: beat.length, states: beat.states[{json.dumps(look)}] }}))"
+        "import { TIMELINES } from './out/videos.mjs'\n"
+        f"const beat = TIMELINES[{json.dumps(video)}].timeline({json.dumps(cut)}).find(b => b.id === {json.dumps(beat_id)})\n"
+        f"const states = Array.isArray(beat.states) ? beat.states : beat.states[{json.dumps(look)}]\n"
+        "console.log(JSON.stringify({ length: beat.length, states }))"
     )
     out = subprocess.run(['node', '--input-type=module', '-e', code], cwd=ROOT, capture_output=True, text=True,
                          check=True).stdout
@@ -59,18 +61,19 @@ def beat_states(look, variant):
 
 
 def main():
-    look = sys.argv[1]
-    variant = sys.argv[2] if len(sys.argv) > 2 else 'draft'
-    beat = beat_states(look, variant)
+    video, beat_id, look, cut = (sys.argv[1:] + [None, None])[:4]
+    cut = cut or video
+    beat = beat_states(video, beat_id, look, cut)
     clicks = [s for s in beat['states'] if s.get('click') or s.get('move')]
 
     host = vm_host()
     app, bounds = front_window(host)
     print(f'{app} window at {bounds}', flush=True)
-    os.makedirs(TAKES, exist_ok=True)
-    name = f'side-by-side-{look}'
-    movie = os.path.join(TAKES, name + '.mov')
-    recorder = subprocess.Popen([RECORDER, WINDOW, movie], stdout=subprocess.PIPE, text=True)
+    takes = os.path.join(ROOT, 'takes', video)
+    os.makedirs(takes, exist_ok=True)
+    name = f'{beat_id}-{look}' if look else beat_id
+    movie = os.path.join(takes, name + '.mov')
+    recorder = subprocess.Popen([RECORDER, VM, movie], stdout=subprocess.PIPE, text=True)
     print(recorder.stdout.readline().strip(), flush=True)
     hand = subprocess.Popen(['ssh', '-o', 'BatchMode=yes', host, 'osascript -l JavaScript hand.js'],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
@@ -111,11 +114,13 @@ def main():
         hand.stdin.close()
         hand.wait()
 
-    sidecar = json.load(open(os.path.join(TAKES, name + '.json')))
+    sidecar = json.load(open(os.path.join(takes, name + '.json')))
     first = sidecar['firstFrameHostTime']
     record = {
+        'video': video,
+        'beat': beat_id,
         'look': look,
-        'variant': variant,
+        'cut': cut,
         'movie': os.path.basename(movie),
         'app': app,
         # The app window's bounds in VM screen points: x, y, w, h.
@@ -124,7 +129,7 @@ def main():
         'beatStartsAt': start - first,
         'presses': [{**p, 'due': p['due'] - first, 'sent': p['sent'] - first, 'acked': p['acked'] - first} for p in log],
     }
-    json.dump(record, open(os.path.join(TAKES, name + '.presses.json'), 'w'), indent=1)
+    json.dump(record, open(os.path.join(takes, name + '.presses.json'), 'w'), indent=1)
     print(f"beat starts {record['beatStartsAt']:.3f} s into {movie}")
 
 
