@@ -163,10 +163,11 @@ test('a reverted chat reads the kept turns of each rollout it continues, then it
     message('assistant', answer),
     completed(id),
   ]
+  const firstAsk = `First ask ${'é'.repeat(400)}`
   const first = write(
     '2026/10/20',
     'rollout-2026-10-20T05-01-10-chat-r.jsonl',
-    [meta(), ...turn('t1', 'First ask é', 'First answer')],
+    [meta(), ...turn('t1', firstAsk, 'First answer')],
     turn('t2', 'Reverted ask', 'Reverted answer'),
   )
   const second = write(
@@ -182,8 +183,8 @@ test('a reverted chat reads the kept turns of each rollout it continues, then it
   const persons = async (path: string) =>
     (await readRollout(path, '/repo'))?.conversation.split('\n').filter(line => line.startsWith('Person: '))
 
-  assert.deepEqual(await persons(second.path), ['Person: First ask é', 'Person: Second ask', 'Person: Also reverted'])
-  assert.deepEqual(await persons(third.path), ['Person: First ask é', 'Person: Second ask', 'Person: Third ask'])
+  assert.deepEqual(await persons(second.path), [`Person: ${firstAsk}`, 'Person: Second ask', 'Person: Also reverted'])
+  assert.deepEqual(await persons(third.path), [`Person: ${firstAsk}`, 'Person: Second ask', 'Person: Third ask'])
   assert.equal((await readRollout(third.path, '/repo'))?.earlierTurns, 3)
   rmSync(first.path)
   assert.deepEqual(await persons(third.path), ['Person: Second ask', 'Person: Third ask'])

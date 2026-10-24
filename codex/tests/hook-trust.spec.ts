@@ -23,6 +23,7 @@ test('listHooksTrust answers for the chat’s folder after an update deleted the
     cli,
     [
       `#!${process.execPath}`,
+      `process.cwd()`,
       `const rl = require('node:readline').createInterface({ input: process.stdin })`,
       `rl.on('line', line => {`,
       `  const m = JSON.parse(line)`,

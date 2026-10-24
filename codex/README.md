@@ -23,7 +23,7 @@ Then, in the desktop app:
 
 1. Trust the plugin's hooks. Codex runs a plugin's hooks only after you
    trust them. Since Codex 0.164.0 the trust covers every file in the plugin,
-   so Codex asks again after every update. Click the hook icon beside the
+   so an update stops the hooks until you trust them again. Click the hook icon beside the
    prompt's approval setting, then Allow all.
    The hooks give Codex the inbox at each prompt, record what it does, and
    update the inbox after each reply.
@@ -32,8 +32,9 @@ Then, in the desktop app:
 
 To update, run `codex plugin marketplace upgrade`, then
 `codex plugin add inbox@inbox`, and start a new chat. On Codex 0.164.0 and
-later, trust the plugin's hooks again. Until you do, the hooks do not run, and
-the Inbox tab says Codex stopped them.
+later, trust the plugin's hooks again: click the hook icon beside the prompt's
+approval setting, then Allow all. Until you do, the hooks do not run, and the
+Inbox tab says Codex stopped them.
 
 ## What it costs
 
