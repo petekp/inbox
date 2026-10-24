@@ -1,6 +1,6 @@
 # omp promo video
 
-Status: building. The render is `videos/out/omp.mp4`, 51.9 s, paced to the launch video. Pete approved the captions, the length, the music, omp's logo in the label and the sample project. The format uses the default below until Pete decides it.
+Status: built. The render is `videos/out/omp.mp4`, 51.9 s, paced to the launch video. Pete approved the render. It is a 16:9 master; a 9:16 cut is not made yet.
 
 A 52-second video that premieres the inbox in omp, a terminal coding agent. It shows one real omp session: the agent asks a question and notices an issue, both land above the prompt, and you answer and hand off the issue with single keys. It has no voiceover. Short captions carry the words, so it works muted in a feed.
 
