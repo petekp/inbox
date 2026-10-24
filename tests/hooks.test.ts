@@ -5,7 +5,7 @@ import type { On, PromptOrigin, RenderSurface } from 'claude-code'
 import type { FoldProps } from '../hooks/fold-client'
 import type { LinksProps } from '../hooks/links-client'
 import type { RowProps } from '../hooks/row-client'
-import type { TabsProps } from '../hooks/tabs-client'
+import { TAB_HEIGHT, tabLines, type TabsProps } from '../hooks/tabs-client'
 import { demoView } from '../hooks/demo'
 import { checkActions, prBlockActions, prCheckId, prThreadId, threadActions, threadSentIn } from '../hooks/pr-tab'
 import { failingChecks, waitingThreads } from '../hooks/prs'
@@ -3819,4 +3819,23 @@ test('a forked conversation keeps the parent’s findings and closed records, an
   await clock.settle()
   await clock.advance(SETTLED_MS)
   expect(await contextOf()).toContain('- issue: Retry loop never backs off (close id: f1)')
+})
+
+test('the desktop tabs that do not fit one line wrap, each line within the pane, and a tab on the second line takes its click', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  surfaces = ['desktop']
+  await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 26 } })
+  const tabBar = async () => await pane.find({ key: 'tabs' })
+  const { tabs, gap, columns } = (await tabBar())?.props.props as TabsProps
+  const lines = tabLines(tabs, gap, columns)
+  expect(lines.length).toBeGreaterThan(1)
+  for (const line of lines)
+    expect(line.reduce((sum, t) => sum + t.width, gap * (line.length - 1))).toBeLessThanOrEqual(columns)
+  expect((await tabBar())?.props.height).toBe(TAB_HEIGHT * lines.length)
+  const last = lines.at(-1)![0]!
+  await pane.pointer({ type: 'down', x: 1, y: TAB_HEIGHT * (lines.length - 1) + 1, button: 'left', in: 'tabs' })
+  await clock.settle()
+  expect(((await tabBar())?.props.props as TabsProps).shown).toBe(last.id)
 })

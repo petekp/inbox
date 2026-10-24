@@ -236,7 +236,7 @@ import type { ToneName } from './tones'
 import type { FoldProps } from './fold-client'
 import type { LinksProps } from './links-client'
 import type { RowProps } from './row-client'
-import { TAB_COUNT_GAP, TAB_HEIGHT, type TabsProps } from './tabs-client'
+import { TAB_COUNT_GAP, TAB_HEIGHT, tabLines, type TabsProps } from './tabs-client'
 
 const TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'needsYou' as Tab)
 const NO_CURSOR: Cursor = { id: null, index: 0, openedAt: 0 }
@@ -272,6 +272,7 @@ const CLOSE_TOOL = 'mcp__inbox__close'
 
 const PANE = 'inbox'
 const REPLY_ROWS = 3
+const DESKTOP_REPLY_ROWS = 2
 const DESKTOP_WIDE_AT = 50
 // About how many characters of desktop's proportional text fit in one column of `bodyColumns`: sentences and
 // the tab labels run 1.23 to 1.30, bold or not.
@@ -3565,7 +3566,7 @@ export const register: Register = on => {
             {...(fieldSeeds.get(row.id) ? { value: fieldSeeds.get(row.id) } : {})}
             submitLabel={look === 'desktop' ? ROW_COPY.send : 'send'}
             autoFocus
-            {...(look === 'terminal' ? { rows: REPLY_ROWS } : {})}
+            {...(look === 'terminal' ? { rows: REPLY_ROWS } : look === 'desktop' ? { rows: DESKTOP_REPLY_ROWS } : {})}
             onInput={(value: string) =>
               void update($, DRAFTS, d => ({ ...d, [row.id]: { text: value, since: d[row.id]?.since ?? now } }))
             }
@@ -3598,7 +3599,9 @@ export const register: Register = on => {
           {isTyping ? (
             look === 'desktop' ? (
               <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap} rowGap={1}>
-                <Box flexShrink={1}>{field}</Box>
+                <Box flexShrink={1} minWidth={0} overflow="hidden">
+                  {field}
+                </Box>
                 {/* The desktop Input supplies its own Send button. */}
                 {keyRow(
                   row.id,
@@ -3799,9 +3802,10 @@ export const register: Register = on => {
     ]
     const keyColumn = Math.max(...keyList.map(k => k.keys.length)) + 2
 
+    const tabColumns = e.props.bodyColumns - 2
     const tabSizes = desktopTabSizes(
       TABS.map(({ id, label }) => ({ label, count: tabCounts[id] })),
-      e.props.bodyColumns - 2,
+      tabColumns,
     )
     const tabProps: TabsProps | null = hasClient
       ? {
@@ -3814,6 +3818,7 @@ export const register: Register = on => {
           })),
           shown: tab,
           gap: tabSizes.gap,
+          columns: tabColumns,
           colors: {
             tab: pal.tab ?? null,
             raised: pal.raised,
@@ -3862,7 +3867,12 @@ export const register: Register = on => {
         ) : null}
         <Box flexDirection="row" flexWrap="wrap" columnGap={isInline ? 3 : look === 'desktop' ? 2 : 1}>
           {hasClient && tabProps ? (
-            <elements.Client key="tabs" module="./tabs-client.tsx" height={TAB_HEIGHT} props={tabProps} />
+            <elements.Client
+              key="tabs"
+              module="./tabs-client.tsx"
+              height={TAB_HEIGHT * tabLines(tabProps.tabs, tabProps.gap, tabProps.columns).length}
+              props={tabProps}
+            />
           ) : null}
           {tabProps
             ? null
