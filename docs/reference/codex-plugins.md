@@ -1842,8 +1842,22 @@ at each Stop, to find the question dialogs the agent opened in the ending turn.
   `rollout-<time>-<thread id>_<rollout id>.jsonl`, next to the earlier
   `rollout-<time>-<thread id>.jsonl` (rollout/src/rollout_file_name.rs). The
   newer file's `session_meta.id` is the thread id. Five such files exist here, the
-  oldest from Codex 0.153.4. Before 2026-10-23 `rolloutFor` matched only the
-  plain name, so it read the older file; it now takes the newest of both.
+  oldest from Codex 0.153.4. `rolloutFor` takes the newest of both.
+- **A reverted chat's history** [live 2026-10-23, source 0.164.0]. The newer
+  file holds only the turns after the revert. Its `session_meta` has
+  `history_mode: "paginated"` and `history_base`: `thread_id` (the rollout id
+  of the file it continues, which is the thread id for a chat's first file),
+  `end_ordinal_exclusive` and `end_byte_offset`. The chat's history is the
+  first `end_byte_offset` bytes of that file, then the newer file. Codex
+  follows `history_base` back until a file has none
+  (thread-store/src/local/rollout_lineage.rs `resolve_rollout_lineage`). On
+  this Mac, a reverted chat's base file kept rows 0 to 444 and held the
+  reverted turn after the offset, ending in `turn_aborted`; the newer file's
+  rows start at ordinal 445. `readRollout` reads the history the same way,
+  newest first, within its 8 MB budget, so a newer file over 8 MB is read
+  alone. A base file that is missing or compressed ends the history there:
+  the turns before the revert are then left out. Forked chats here carry no
+  `history_base`.
 - [inference] The format is moving: paginated history, `migrate-rollouts`,
   compression, `world_state`. This is the inbox's riskiest dependency. Each
   read needs a test that fails loudly and an "unknown" state in the UI.
@@ -2064,16 +2078,24 @@ This changes what the inbox's users must do after every update.
   In the failing thread above `inbox_view` returned `"heard":"none"` and the
   tab reads "The inbox has not heard from this chat's hooks."
   (codex/src/core.ts `heardState`, codex/src/tab.tsx `notHeardText`) [live
-  0.164.0]. It cannot tell never trusted from trust lost.
+  0.164.0]. `heard` alone cannot tell never trusted from trust lost, so the
+  tab also asks `hooks/list`, as the next point says.
 - `hooks/list` is not experimental (app-server-protocol common.rs:917), and
   the inbox's MCP server gets `CODEX_CLI_PATH`. The server now asks a
   short-lived `codex app-server` for `hooks/list` while a chat has heard from
-  no hook, at most every 30 s and without blocking a view, and the tab says
+  no hook, for the chat's folder or else the home folder, at most every 30 s and without blocking a view, and the tab says
   "Codex is not running the inbox's hooks yet." (`untrusted`) or "Codex stopped
   the inbox's hooks after an update." (`modified`). It keeps the "not heard"
   text when the call fails or the hooks read trusted. Checked on 0.164.0 in a
   scratch home, in both themes, in a local page that hosts the built tab
   (`codex/src/hook-trust.ts`).
+- The app-server starts in the home folder. The MCP server's own folder is the
+  plugin's version folder under `plugins/cache`, which an update deletes
+  while the server runs, and a process started there fails with `ENOENT`.
+  `hooks/list` loads each folder's config and lists the plugin hooks of the
+  person's installed plugins, so the home folder gives the user-level answer
+  (app-server `catalog_processor.rs` `hooks_list_response`) [source 0.164.0].
+  Not run live with the home folder.
 
 **Rollouts (PRs #54008, #55923, #55252, #53997, #55652, #54639, #55733, #55388)**
 
@@ -2100,7 +2122,8 @@ defaults."
 - Not checked live: `rollout/compress` on a real chat, and a resume of a
   compressed chat from the desktop app.
 - Changed: `rolloutFor` takes the `<thread id>_<rollout id>` file of a
-  reverted chat (codex/src/transcript.ts).
+  reverted chat, and `readRollout` reads the history it continues, as
+  "Transcripts" describes (codex/src/transcript.ts).
 
 **New hook events (#55144, #55657, #56044)**
 

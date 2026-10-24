@@ -1524,8 +1524,8 @@ The changelog page "is generated from the CHANGELOG.md on GitHub". On 2026-10-08
 Checked on 2026-10-23. Claude Code 2.1.309 is the terminal version here
 (`claude --version`). The desktop live checks ran in the `inbox-ui` VM on app
 3.6556.2 with engine 2.1.308, and are in claude-desktop-app.md under "Live
-checks on desktop 3.6556.2". The entries are quoted from the desktop and
-Claude Code release notes named in the request.
+checks on desktop 3.6556.2". The entries quote the desktop release notes of
+the version each names, and the Claude Code changelog.
 
 - **Pre-approved tools (desktop 3.1623.4).** "Changed plugins that the app
   loads to ask before using the tools they pre-approve when your
@@ -1536,10 +1536,14 @@ Claude Code release notes named in the request.
   in `tool.call` with `{ result }`. Live, with the key set in a managed file
   (engine 2.1.308), both completed with no prompt, and a pane press's
   `$.prompt.submit` message ran. Not affected.
-- **Desktop smoke test (desktop 3.6556.1, "Bundled Claude Code version:
-  2.1.308.").** Band, pane, presses, `$.ui.copy` and `session.end` passed.
-  The pane opened at 37% of the window and could be dragged to 87%, so the
-  45% cap (Claude Code 2.1.305) did not show.
+- **Desktop smoke test (desktop 3.6556.1 notes: "Bundled Claude Code version:
+  2.1.308.").** Run on app 3.6556.2 with engine 2.1.308. Band, pane, presses,
+  `$.ui.copy` and `/clear` passed. The pane opened at 41% of the window and
+  could be dragged from 28% to 90%. The 2.1.305 changelog's "Changed a mod's
+  docked pane to stay within 45% of the terminal's width" names the terminal,
+  and no such limit showed in the desktop app. A result line under a row,
+  such as a Copy's "✓ Copied …", moves the row's buttons when it comes and
+  goes.
 - **Settings tab for folder marketplaces (desktop 3.6556.1, third-party
   providers).** "Fixed plugins installed from a marketplace folder on this
   computer having no Settings tab on their page in Customize, so Code tab

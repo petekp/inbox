@@ -31,9 +31,9 @@ Then, in the desktop app:
    side panel, then choose More tools, then Inbox.
 
 To update, run `codex plugin marketplace upgrade`, then
-`codex plugin add inbox@inbox`, and start a new chat. Then trust the plugin's
-hooks again. Until you do, the hooks do not run, and the Inbox tab says Codex
-stopped them.
+`codex plugin add inbox@inbox`, and start a new chat. On Codex 0.164.0 and
+later, trust the plugin's hooks again. Until you do, the hooks do not run, and
+the Inbox tab says Codex stopped them.
 
 ## What it costs
 

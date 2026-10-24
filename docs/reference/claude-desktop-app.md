@@ -73,19 +73,21 @@ Checked on 2026-10-23 in the `inbox-ui` VM, twice. The VM's Claude Code loads
 the inbox from `~/inbox`, the folder its directory marketplace points at, and
 not from the copy under `~/.claude/plugins/cache`. The first pass copied the
 build into the cache copy, so it ran the older `~/inbox` build labelled 0.2.9.
-The second pass installed the host-check branch tip (`30b7ae5`, main's drawing
-code) in `~/inbox`; its footer read v0.2.10. The results below are from the
-second pass, and say where the first differed. The app was `3.6556.2`; the
-request named 3.6556.1, which bundles engine 2.1.308 ("Bundled Claude Code
-version: 2.1.308."). The sessions ran engine 2.1.308, with Haiku 5.5 in Auto
-permission mode. The terminal `claude` in the VM is 2.1.309 and was not used.
+The second pass installed a build with main's drawing code in `~/inbox`; its
+footer read v0.2.10. The results below are from the second pass, and say where
+the first differed. The app was `3.6556.2`. The 3.6556.1 release notes say
+"Bundled Claude Code version: 2.1.308.", and the sessions ran engine 2.1.308,
+with Haiku 5.5 in Auto permission mode. The terminal `claude` in the VM is
+2.1.309 and was not used.
 
-- **Pane width.** Claude Code 2.1.305 caps the pane at 45% of the window width
-  (per the request). In the desktop app the pane opened at 41% (the width the
-  app remembered; 37% on the first pass), dragged to 90% of the window (87%),
-  and to 28% at its narrowest. At 90% the conversation column shrank to a
-  sliver and its band and composer were cut off. The inbox's rows and buttons
-  read well at all widths, and nothing clipped. The 45% cap did not show.
+- **Pane width.** The Claude Code 2.1.305 changelog says: "Changed a mod's
+  docked pane to stay within 45% of the terminal's width, including a width
+  kept from a wider terminal". It names the terminal. In the desktop app the
+  pane opened at 41% of the window (the width the app remembered; 37% on the
+  first pass), dragged to 90% (87%), and to 28% at its narrowest. At 90% the
+  conversation column shrank to a sliver and its band and composer were cut
+  off. The inbox's rows and buttons read well at all widths, and nothing
+  clipped.
 - **Band, presses, copy, end.** The AbovePrompt band drew with "Nothing
   needed", the demo counts and real counts, and during a running turn. Explain,
   Done and answer presses showed their result at once. A real Explain read
@@ -98,8 +100,7 @@ permission mode. The terminal `claude` in the VM is 2.1.309 and was not used.
 - **Buttons move after a press.** On main's code a demo Explain adds "Sample
   entry: nothing was sent." under the title and moves the buttons down 30 pt,
   and they move back at about 5 s. A demo answer puts the note above the list
-  and moves every row. Branch `demo-explain` removes the note; a rerun on it
-  moved no button after the press. A real Copy adds "✓ Copied … Run it in
+  and moves every row. A real Copy adds "✓ Copied … Run it in
   Terminal." and moves the buttons down 50 pt. That line was gone within 1 s in
   one session and stayed 7 s or more in another, on the same code. What decides
   it is not known. A demo Done scrolled the pane about 225 pt to bring the next
@@ -404,7 +405,7 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 - `desktopSessionCleanupPeriodDays` sets an age limit for transcripts of sessions started or last continued in Claude Desktop or Cowork. Its default is `0`, "which sets no age limit". A transcript is deleted only once it is older than both this limit and `cleanupPeriodDays`. Needs 2.1.248 (https://code.claude.com/docs/en/settings-reference#desktopsessioncleanupperioddays).
 - The guard loads when "The machine has managed settings" or "The user is signed in to Claude Code with a Team or Enterprise plan" (https://code.claude.com/docs/en/plugins/mods/admin#know-what-happens-by-default, Markdown lines 58-63). There, a user's mod "can't change … the system prompt" or managed instructions (same page, line 64).
 - The guard's public source goes further than the docs. It skips every user-tier hook on `prompt.compose`, `prompt.context`, `prompt.section`, `skill.prompt`, `attribution.text`, `settings.read` and `classic.*` (anthropics/claude-code `mods/sec-default/hooks/register.ts` L24-32, main at commit 684800b, 2026-09-29). It also refuses a user mod's `$.tool.register` while managed settings set `allowedMcpServers` (same source, L39-50). Whether the shipped engine's guard matches this source is unknown.
-- Inference for the inbox where the guard loads: Claude would not get the inbox's guidance (`hooks/register.tsx:on('prompt.compose')`) or carry block (`hooks/register.tsx:on('prompt.context')`). The reload after `/clear` and `/resume` (`hooks/register.tsx:on('classic.SessionStart')`) and the `hooks/register.tsx:on('classic.PermissionRequest')` hook would not run. The band, pane and per-turn update would still run. Not verified live.
+- Inference for the inbox where the guard loads: Claude would not get the inbox's guidance (`hooks/register.tsx:on('prompt.compose')`) or carry block (`hooks/register.tsx:on('prompt.context')`). The reload after `/clear` and `/resume` (`hooks/register.tsx:on('classic.SessionStart')`) and the `hooks/register.tsx:on('classic.PermissionRequest')` hook would not run. The band, pane and per-turn update would still run. Live on desktop 3.6556.2 with a managed settings file, the model saw a "hook was skipped" notice for `classic.SessionStart` on a build with main's code, and for `classic.SessionStart`, `prompt.context`, `prompt.compose` and `classic.Stop` on the older 0.2.9 build. `record`, `close` and a pane press still worked. See `allowManagedPermissionRulesOnly` under "Live checks on desktop 3.6556.2".
 - Live, 2026-10-23, desktop 3.6556.2 with engine 2.1.308: in a session with no managed settings file, the transcript held no guard text, so the app's parent settings did not seat the guard on that account. With `/Library/Application Support/ClaudeCode/managed-settings.json` present, the guard seated. See "Live checks on desktop 3.6556.2".
 
 ## /resume, moving sessions and Remote Control

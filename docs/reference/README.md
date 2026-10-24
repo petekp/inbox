@@ -52,7 +52,7 @@ Notes:
 3. Chat ignores plugin hooks, mods and local MCP servers. Cowork loads hooks and local MCP servers when it runs on the person's machine; whether it runs mod `modules` is unknown. A local MCP server in `claude_desktop_config.json` or a `.mcpb` extension reaches Claude mode.
 4. Hooks run in the VS Code chat panel and nothing draws. Today the inbox's gate keeps it off there, so it makes no model call.
 5. The mod runs in the session on the host machine and draws only in that machine's terminal. A phone or claude.ai viewer sees no band or pane. Prompts typed there arrive with origin `bridge`, which the inbox counts as the person's words.
-6. Codex runs a plugin's hooks only after the person trusts each hook definition. A changed definition is skipped until trusted again.
+6. Codex runs a plugin's hooks only after the person trusts them. Before 0.164.0, the trust covered each hook definition, and a changed definition was skipped until trusted again. From 0.164.0 it covers every file in the plugin, so after any update every hook fails with `plugin contents changed; hook approval required` until trusted again. See "Codex CLI 0.164.0" in codex-plugins.md.
 7. Claude: `$.model.complete` uses "the user's plan or API key", and `sonnet` resolves to Sonnet 5.5, 4.6 or 4.5 by provider. Codex: `codex exec` reuses the person's saved Codex sign-in; it measured 21.5k input tokens per call, 12.5k at best.
 8. The inbox's cached call needs engine 2.1.292. The app's sessions ran 2.1.293; its 2.1.289 copy is older.
 9. A pane docks beside the transcript in a fullscreen terminal from 110 columns. Otherwise it is a framed region above the prompt. A pane the mod opens on its own waits for 144 columns, or 110 once the person has opened that pane.
