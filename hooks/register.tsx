@@ -641,7 +641,12 @@ function focusKeys(node: unknown, keys = new Set<string>()): Set<string> {
 
 let resuming: { is: 'sending' } | { is: 'refused'; why: string } | null = null
 let stopGeneration = 0
-const fieldSeeds = new Map<string, string>()
+/** Each row's latest reply field: its key, and the draft text it opened with. */
+const openFields = new Map<string, { key: string; seed: string }>()
+let paneClosesOnEscape = true
+/** The row whose field opened while the keys stayed elsewhere, as over text in the prompt. */
+let fieldWithoutKeys: string | null = null
+const paneHasKeys = new Map<RenderSurface, boolean>()
 
 function resetTurn() {
   sentBack = []
@@ -1057,9 +1062,23 @@ async function runTool($: EngineInterface, tool: 'record' | 'close', input: Reco
 /**
  * Opens the pane, or raises it, asking for the keyboard. The surface grants
  * that only while the prompt holds the keys over an empty composer.
+ *
+ * Escape closes a pane opened with `closeOnEscape` as its close mark does, and `ui.close` names both the
+ * person's. So while a reply field is open the pane opens without it: Escape then only hands the keys back,
+ * and the pane's render closes the field.
  */
-function openPane($: EngineInterface) {
-  return $.ui.open({ id: PANE, title: 'Inbox', focus: true, closeOnEscape: true })
+function openPane($: EngineInterface, isFieldOpen = false) {
+  paneClosesOnEscape = !isFieldOpen
+  return $.ui.open({ id: PANE, title: 'Inbox', focus: true, ...(isFieldOpen ? {} : { closeOnEscape: true as const }) })
+}
+
+/** Opens the open pane again, without asking for the keyboard, once a reply field opened or closed. */
+async function matchPaneEscape($: EngineInterface) {
+  const closesOnEscape = (await read($, TYPING)) === null
+  if (closesOnEscape === paneClosesOnEscape) return
+  paneClosesOnEscape = closesOnEscape
+  if (!(await $.ui.panes()).some(p => p.id === PANE)) return
+  await $.ui.open({ id: PANE, title: 'Inbox', ...(closesOnEscape ? { closeOnEscape: true as const } : {}) })
 }
 
 async function openTopRow($: EngineInterface) {
@@ -1099,17 +1118,30 @@ async function sendTyped($: EngineInterface, id: string, text: string, surface: 
   else await focusField($, id)
 }
 
+/**
+ * The engine keeps a field's typed text under its key after the field leaves the drawing. Enter
+ * empties it and a Button press does not. So each draft gets its own key, and the field a new draft
+ * opens starts empty.
+ */
+function openedField(id: string, draft: Draft | undefined) {
+  return { key: `type-${id}-${draft?.since ?? 0}`, seed: draft?.text ?? '' }
+}
+
+function fieldKey(id: string) {
+  return openFields.get(id)?.key ?? `type-${id}`
+}
+
 async function startTyping($: EngineInterface, id: string) {
   const now = await $.clock.now()
   const drafts = await update($, DRAFTS, d => (d[id] ? d : { ...d, [id]: { text: '', since: now } }))
-  fieldSeeds.set(id, drafts[id]?.text ?? '')
+  openFields.set(id, openedField(id, drafts[id]))
   await keepPressedOpen($, id)
   await update($, TYPING, () => id)
   await focusField($, id)
 }
 
 async function discardReply($: EngineInterface, id: string) {
-  fieldSeeds.delete(id)
+  openFields.delete(id)
   const now = await $.clock.now()
   await update($, DISCARDED, d => ({
     ...Object.fromEntries(Object.entries(d).filter(([, at]) => now - at < SETTLED_MS)),
@@ -1124,8 +1156,16 @@ async function discardReply($: EngineInterface, id: string) {
 
 async function focusField($: EngineInterface, id: string) {
   // A click leaves the keys with the prompt, and `ui.focus` is refused in a pane that lacks them.
-  await openPane($)
-  await $.ui.focus({ requestId: PANE, key: `type-${id}` }).catch(() => undefined)
+  await openPane($, true)
+  const isMoved = await $.ui.focus({ requestId: PANE, key: fieldKey(id) }).then(
+    r => r.deny === undefined,
+    () => false,
+  )
+  // A deny also comes when the field's `autoFocus` took the keys first, so the pane says whether it has them.
+  const isWithoutKeys = !isMoved && (await $.ui.panes()).some(p => p.id === PANE && !p.isFocused)
+  if (isWithoutKeys === (fieldWithoutKeys === id)) return
+  fieldWithoutKeys = isWithoutKeys ? id : null
+  await redraw($)
 }
 
 async function showTab($: EngineInterface, tab: Tab) {
@@ -2273,7 +2313,7 @@ async function forgetRowState($: EngineInterface) {
     update($, DISCARDED, () => ({})),
     update($, NOTES, () => ({})),
   ])
-  fieldSeeds.clear()
+  openFields.clear()
 }
 
 async function readAgain($: EngineInterface) {
@@ -2681,6 +2721,7 @@ export const register: Register = on => {
   on('ui.close', { id: PANE }, async ($, e, next) => {
     cancelUndoScroll()
     const r = await next(e)
+    paneHasKeys.clear()
     await update($, TYPING, () => null)
     await update($, FOLD_HOVER, () => null)
 
@@ -2789,6 +2830,9 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const hadKeys = paneHasKeys.get(e.surface) ?? false
+    paneHasKeys.set(e.surface, e.props.isFocused)
+    const isKeyboardHandedBack = hadKeys && !e.props.isFocused
     const elements = $.ui.resolve(e)
     const { Box, Button, Link, Markdown, Text } = elements
     // Desktop draws every Button as a native button, and only clicks reach the pane: no letters, key hints or hidden hotkeys.
@@ -2843,8 +2887,13 @@ export const register: Register = on => {
       read($, OPTIONS_SHOWN),
       $.env.get('TERM_PROGRAM'),
     ])
-    // A hot reload keeps TYPING but empties fieldSeeds, so an open field takes its seed again here.
-    if (typing !== null && !fieldSeeds.has(typing)) fieldSeeds.set(typing, (await read($, DRAFTS))[typing]?.text ?? '')
+    // A hot reload keeps TYPING but empties openFields, so an open field takes its key and seed again here.
+    if (typing !== null && !openFields.has(typing))
+      openFields.set(typing, openedField(typing, (await read($, DRAFTS))[typing]))
+    if (e.props.isFocused || typing !== fieldWithoutKeys) fieldWithoutKeys = null
+    // Escape, or a click outside the pane, closes the field and keeps its draft, as Cancel does.
+    if (isKeyboardHandedBack && typing !== null) later($, 0, () => update($, TYPING, t => (t === typing ? null : t)))
+    if ((typing === null) !== paneClosesOnEscape) later($, 0, () => matchPaneEscape($))
     const size = isInline ? `${e.props.bodyColumns}x${e.props.scroll.bodyRows}` : null
     if (e.surface === 'terminal') terminalInlineSize = size
     if (size !== null && inlineSize !== null && size !== inlineSize) {
@@ -3557,9 +3606,9 @@ export const register: Register = on => {
       const field =
         Input && isTyping ? (
           <Input
-            key={`type-${row.id}`}
+            key={fieldKey(row.id)}
             placeholder={row.typeHint}
-            {...(fieldSeeds.get(row.id) ? { value: fieldSeeds.get(row.id) } : {})}
+            {...(openFields.get(row.id)?.seed ? { value: openFields.get(row.id)?.seed } : {})}
             submitLabel={look === 'desktop' ? ROW_COPY.send : 'send'}
             autoFocus
             {...(look === 'terminal' ? { rows: REPLY_ROWS } : look === 'desktop' ? { rows: DESKTOP_REPLY_ROWS } : {})}
@@ -3574,6 +3623,7 @@ export const register: Register = on => {
       const status = [
         ...(row.fold?.note ? [{ text: row.fold.note, color: pal.muted }] : []),
         ...(f && !f.age ? [{ text: f.text, color: f.isFailure ? pal.tone.error : pal.muted }] : []),
+        ...(isTyping && fieldWithoutKeys === row.id ? [{ text: ROW_COPY.clickField, color: pal.muted }] : []),
       ]
 
       const textWidth = listColumns - 1 - columns.textAt
@@ -4763,9 +4813,10 @@ export const register: Register = on => {
     )
     if (look === 'desktop' && focusedKey !== null) {
       const keys = focusKeys(drawn)
-      const opensField = focusHint?.startsWith('type-') && keys.has(focusHint)
+      const hint = focusHint?.startsWith('type-') ? fieldKey(focusHint.slice('type-'.length)) : focusHint
+      const opensField = hint?.startsWith('type-') && keys.has(hint)
       if (!keys.has(focusedKey) || opensField) {
-        const focusKey = [focusHint, rowKeys[0]?.key, ...keys].find((k): k is string => !!k && keys.has(k)) ?? null
+        const focusKey = [hint, rowKeys[0]?.key, ...keys].find((k): k is string => !!k && keys.has(k)) ?? null
         focusedKey = focusKey
         focusHint = null
         // After this hook returns, since a focus asked from inside a drawing's own hook cannot wait on it.
