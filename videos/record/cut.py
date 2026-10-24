@@ -2,6 +2,7 @@
 src/<video>/takes.json.
 
     python3 record/cut.py <video> <take> [x y w h] [--mask x,y,w,h ...]
+    python3 record/cut.py <video> <take> [--redact FROM=TO ...]
 
 <take> is a name in takes/<video>/, such as side-by-side-terminal.
 
@@ -10,7 +11,10 @@ window's place on the VM's screen, and where the beat starts in the clip, go in 
 window's bounds in VM screen points. They default to the bounds drive.py logged, and a take act.py logged needs them.
 Each --mask covers a part of the window, in VM screen points, with the color just above it, such as an account picture.
 
-A terminal take, <take>.term.jsonl from term.py, becomes the screens and keys TerminalTake draws, as JSON.
+A terminal take, <take>.term.jsonl from term.py, becomes the screens and keys TerminalTake draws, as JSON. Each
+--redact replaces text the take must not show, such as a path with your user name, with shorter text. The cells it
+frees move to the end of the text on that row, before a box's right border, so the columns stay in place. They run in
+the order given, so give a longer text before a part of it.
 """
 import json
 import os
@@ -35,7 +39,9 @@ def even(n):
 def main():
     args = sys.argv[1:]
     masks = [tuple(float(v) for v in args[i + 1].split(',')) for i, a in enumerate(args) if a == '--mask']
-    args = [a for i, a in enumerate(args) if a != '--mask' and (i == 0 or args[i - 1] != '--mask')]
+    redactions = [tuple(args[i + 1].split('=', 1)) for i, a in enumerate(args) if a == '--redact']
+    args = [a for i, a in enumerate(args)
+            if a not in ('--mask', '--redact') and (i == 0 or args[i - 1] not in ('--mask', '--redact'))]
     video, take = args[0], args[1]
     args = args[1:]
     takes = os.path.join(ROOT, 'takes', video)
@@ -44,7 +50,7 @@ def main():
     os.makedirs(clips, exist_ok=True)
     terminal = os.path.join(takes, take + '.term.jsonl')
     if os.path.exists(terminal):
-        info = cut_terminal(terminal, os.path.join(clips, take + '.json'))
+        info = cut_terminal(terminal, os.path.join(clips, take + '.json'), redactions)
         write_index(index_path, take, {'src': f'{video}/takes/{take}.json', **info})
         return
     sidecar = json.load(open(os.path.join(takes, take + '.json')))
@@ -90,7 +96,23 @@ def write_index(path, take, info):
         f.write('\n')
 
 
-def cut_terminal(log_path, clip):
+def redact(line, redactions):
+    """Replaces each FROM in a captured row with its TO, and puts the cells it frees back before the row's last box
+    border, or at its end."""
+    for old, new in redactions:
+        count = line.count(old)
+        if count == 0:
+            continue
+        if len(new) > len(old):
+            sys.exit(f'cut: --redact {old}={new} would widen the row')
+        line = line.replace(old, new)
+        pad = ' ' * ((len(old) - len(new)) * count)
+        border = line.rfind('\u2502')
+        line = line[:border] + pad + line[border:] if border > line.rfind(new) else line + pad
+    return line
+
+
+def cut_terminal(log_path, clip, redactions):
     """Gathers term.py's log into one JSON file: the terminal's size, each screen and when it showed, and each key
     and mark, in seconds from the first screen."""
     entries = [json.loads(line) for line in open(log_path)]
@@ -103,7 +125,8 @@ def cut_terminal(log_path, clip):
     out = {
         'cols': header['cols'],
         'rows': header['rows'],
-        'screens': [{'t': at(e), 'lines': e['lines'], 'cursor': e['cursor']} for e in screens],
+        'screens': [{'t': at(e), 'lines': [redact(l, redactions) for l in e['lines']], 'cursor': e['cursor']}
+                    for e in screens],
         'keys': [{'t': at(e), 'key': e['key']} for e in events if 'key' in e],
         'marks': [{'t': at(e), 'mark': e['mark']} for e in events if 'mark' in e],
     }

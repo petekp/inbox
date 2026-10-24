@@ -5,6 +5,7 @@ A Remotion project that holds the inbox's videos. Remotion renders React compone
 The videos so far:
 
 - `launch`: the 81.5-second launch video. Its plan is [docs/plans/launch-video.md](../docs/plans/launch-video.md).
+- `omp`: a 30-second promo that premieres the inbox in omp. Its plan is [docs/plans/promo-omp.md](../docs/plans/promo-omp.md).
 
 ## Layout
 
@@ -31,6 +32,8 @@ The videos so far:
 | `Pointer.tsx` | A macOS arrow that glides to each click and dips with a ring. |
 | `Footage.tsx` | Stretches of a recorded take, each dissolving into the next under a brief blur. |
 | `TerminalTake.tsx` | A terminal take from `record/term.py`, drawn cell by cell in the app's own colors. |
+| `TerminalWindow.tsx` | A drawn macOS window around a terminal take, and stretches of the take that dissolve into each other. |
+| `KeyCaps.tsx` | A keycap for each key pressed, for a take driven by keys. |
 | `EndCard.tsx` | The WebGL end card: streams of light leave the last picture's lines of text and braid through a word, with an address under it. It needs Chrome's GPU backend, which `remotion.config.ts` sets to ANGLE. |
 | `Music.tsx` | A video's music, with its fade out. |
 | `fonts.ts` | Loads Geist and Geist Mono before a frame renders. |
@@ -78,8 +81,20 @@ The launch video's takes were recorded this way, in the `inbox-ui` tart VM. Its 
 
 Keys come on stdin, as `key Enter` or `type /inbox`. A line that starts with `@<seconds>` waits until that time, so a file of timed lines plays a scripted take. `TerminalTake` then draws the take in any font size, sharp at any frame size.
 
-Run an agent with a fresh `HOME`, so it reads none of your settings and writes nothing to your own inbox. omp starts a setup wizard in a fresh `HOME`, and its sign-in step opens a browser on this Mac. Write `setupVersion: 2` to `<HOME>/.omp/agent/config.yml` first to skip it.
+Run an agent with a fresh `HOME`, so it reads none of your settings and writes nothing to your own inbox. `record/omp-take.sh` starts omp that way, under the same sandbox as the agent evals, and says where to put that `HOME`. Its `.omp/agent/config.yml` should hold:
+
+```yaml
+setupVersion: 2
+startup:
+  setupWizard: false
+  checkUpdate: false
+  showSplash: false
+ask:
+  enabled: false
+```
+
+The wizard's sign-in step opens a browser on this Mac. omp's Ask tool opens a question dialog that answers the agent's question before the inbox can.
 
 ### The cut
 
-`record/cut.py <video> <take>` turns a take into the clip a video plays, in `public/<video>/takes/`, and records it in `src/<video>/takes.json`. A VM take is cropped to its app's window and resampled to 60 frames a second. A terminal take becomes the JSON `TerminalTake` reads.
+`record/cut.py <video> <take>` turns a take into the clip a video plays, in `public/<video>/takes/`, and records it in `src/<video>/takes.json`. A VM take is cropped to its app's window and resampled to 60 frames a second. A terminal take becomes the JSON `TerminalTake` reads. `--redact FROM=TO` replaces text the video must not show, such as a path with your user name, and keeps the columns in place.

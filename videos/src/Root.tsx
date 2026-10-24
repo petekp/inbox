@@ -2,10 +2,11 @@ import type { ComponentType } from 'react'
 import { Composition } from 'remotion'
 
 import { Video as Launch } from './launch/Video'
+import { Video as Omp } from './omp/Video'
 import { VIDEOS } from './videos'
 
 /** Each video's component, which draws one of its cuts by the cut's id. */
-const COMPONENTS: Record<string, ComponentType<{ cut: string }>> = { launch: Launch }
+const COMPONENTS: Record<string, ComponentType<{ cut: string }>> = { launch: Launch, omp: Omp }
 
 export function Root() {
   return (
