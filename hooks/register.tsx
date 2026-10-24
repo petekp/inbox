@@ -1839,7 +1839,7 @@ async function runDemoPress(
   if (!('ref' in p) && p.action === 'type') await update($, TYPING, t => (t === p.id ? null : t))
   let applied = { stale: true } as Applied
   let isClosing = false
-  const [isRecording, typing, drafts] = await Promise.all([read($, DEMO_RECORDING), read($, TYPING), read($, DRAFTS)])
+  const [typing, drafts] = await Promise.all([read($, TYPING), read($, DRAFTS)])
   const held = new Set(Object.keys(heldReplies(typing, drafts)))
   await update($, DEMO, d => {
     if (!d) return d
@@ -1862,13 +1862,9 @@ async function runDemoPress(
       hasNewClose(d.ledger, r.ledger) ||
       ('ref' in p ? p.action === 'pr-dismiss' : p.action === 'address') ||
       (!('ref' in p) && p.action === 'type' && !isOpenIn(d.ledger, p.id))
-    const { isSample, ...after } = demoAfterPress({ lastActions: d.lastActions, turns: d.turns }, r, held)
+    const after = demoAfterPress({ lastActions: d.lastActions, turns: d.turns }, r, held)
 
-    return {
-      ...d,
-      ...after,
-      notes: isSample && !isRecording ? { ...notes, [rowId]: { note: 'sample' as const, at: now } } : notes,
-    }
+    return { ...d, ...after, notes }
   })
   const pressed = applied
   if (!('ref' in p) && p.action === 'type')

@@ -716,11 +716,8 @@ export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): bool
 }
 
 /** The notice for a press the row cannot show: a failed send, or a press whose row had changed. */
-export function noticeFor(
-  outcome: { error: string | null; note: 'stale' | 'sample' | null },
-  now: number,
-): PanelUi['notice'] {
-  const text = outcome.error ?? (outcome.note ? noteText(outcome.note) : null)
+export function noticeFor(outcome: { error: string | null; note: 'stale' | null }, now: number): PanelUi['notice'] {
+  const text = outcome.error ?? (outcome.note ? noteText() : null)
 
   return text === null ? null : { text, at: now }
 }

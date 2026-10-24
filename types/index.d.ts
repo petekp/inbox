@@ -113,9 +113,9 @@ export type LocalResult = { state: 'pending' | 'done' | 'failed'; parts: LocalPa
 
 /**
  * A short note on a row that is not a press's result: a press that found its
- * row gone or changed, or a press on a sample entry, which sends nothing.
+ * row gone or changed.
  */
-export type RowNote = { note: 'stale' | 'sample'; at: number }
+export type RowNote = { note: 'stale'; at: number }
 
 /**
  * A reply the person began in a row's field and has not sent. `since` is when they began it, as the time of the

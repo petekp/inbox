@@ -1,4 +1,4 @@
-import type { Closed, Delivery, Finding, Help, Item, LastAction, Ledger, LocalResult, RowNote, Turns } from '../types'
+import type { Closed, Delivery, Finding, Help, Item, LastAction, Ledger, LocalResult, Turns } from '../types'
 import type { Run } from './gh'
 import { closeFinding, closeItem, pruneClosed, reopenFinding, reopenItem } from './ledger'
 import type { Press } from './ledger'
@@ -330,8 +330,8 @@ export function refuseDoneNotification(ledger: Ledger, notificationId: string, r
 
 const STALE_TEXT = 'This changed before your press. Nothing was sent.'
 
-export function noteText(note: RowNote['note']): string {
-  return note === 'sample' ? 'Sample entry: nothing was sent.' : STALE_TEXT
+export function noteText(): string {
+  return STALE_TEXT
 }
 
 function helpEffect(item: Item, help: Help): Effect {
@@ -570,18 +570,6 @@ export function reopenOnFailure(ledger: Ledger, id: string, at: number): Ledger 
   return closed?.item && closed.how === 'answered' && closed.at === at ? reopenItem(ledger, id) : ledger
 }
 
-export function demoRecord(
-  lasts: Record<string, LastAction>,
-  effects: Effect[],
-): { lasts: Record<string, LastAction>; isSample: boolean } {
-  return {
-    lasts: Object.fromEntries(
-      Object.entries(lasts).flatMap(([id, { delivery: _unsent, ...l }]) => (l.result === undefined ? [[id, l]] : [])),
-    ),
-    isSample: effects.length > 0,
-  }
-}
-
 export function demoTurns(turns: Turns, effects: Effect[], isReplied = false): Turns {
   if (isReplied) return { ...turns, turnsApplied: turns.turnsStarted }
 
@@ -590,21 +578,25 @@ export function demoTurns(turns: Turns, effects: Effect[], isReplied = false): T
 
 /**
  * The demo's state after a press: the press's ledger without records no reply holds, its last actions without
- * delivery marks, and a turn started when it sends. `isSample` is true when the press had an effect the demo
- * only pretends to run.
+ * delivery marks, and a turn started when it sends. The row shows what a real press shows, so its shape does not
+ * change when the press's own text goes.
  */
 export function demoAfterPress(
   before: { lastActions: Record<string, LastAction>; turns: Turns },
   r: Pressed,
   held: ReadonlySet<string>,
-): { ledger: Ledger; lastActions: Record<string, LastAction>; turns: Turns; isSample: boolean } {
-  const { lasts, isSample } = demoRecord(r.lasts, r.effects)
+): { ledger: Ledger; lastActions: Record<string, LastAction>; turns: Turns } {
+  const lasts = Object.fromEntries(
+    Object.entries(r.lasts).map(([id, { delivery: _unsent, ...l }]) => [
+      id,
+      l.result?.state === 'pending' ? { ...l, result: finishedResult(l.result, [], l.result.at) } : l,
+    ]),
+  )
 
   return {
     ledger: pruneClosed(r.ledger, held),
     lastActions: withLasts(before.lastActions, lasts, r.drop),
     turns: demoTurns(before.turns, r.effects),
-    isSample,
   }
 }
 

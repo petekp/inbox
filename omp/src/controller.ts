@@ -10,7 +10,7 @@ const PRS_CHECK_MS = 120_000
 /** What the panel needs from a session, so the live inbox and the demo can both supply it. */
 export type PanelSource = {
   screen(holds: ReplyHolds): Promise<PanelScreen>
-  press(p: RowPress | PrPress, holds: ReplyHolds): Promise<{ error: string | null; note: 'stale' | 'sample' | null }>
+  press(p: RowPress | PrPress, holds: ReplyHolds): Promise<{ error: string | null; note: 'stale' | null }>
   /** Sends the message that resumes a stopped turn. Returns why it could not, or null. */
   resume(): Promise<string | null>
   fetchPrsWhenDue(): void

@@ -2759,7 +2759,6 @@ test('a turn an API error ended shows its stop from the error text in the transc
 test('/inbox demo shows sample entries in every tab, presses change only its copy, and [Hide demo] goes back', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  const SAMPLE = 'Sample entry: nothing was sent.'
   const demo = demoView(1_000_000)
   const literal = (text: string) => new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
   const branchRef = demo.prViews.branchRef!
@@ -2818,14 +2817,11 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   expect(sent).toEqual([])
   expect(await pane.find({ key: 'answer-d11-0' })).toBeUndefined()
   expect(await pane.find({ text: demo.ledger.items.find(i => i.id === 'd11')!.options[0] })).toBeDefined()
-  expect(await pane.find({ text: SAMPLE })).toBeDefined()
 
   await pane.press({ key: 'title-d17' })
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'explain-d17-key' })
-  expect(await pane.find({ text: SAMPLE })).toBeDefined()
   await clock.advance(SETTLED_MS)
-  expect(await pane.find({ text: SAMPLE })).toBeUndefined()
   expect(await pane.find({ text: /✓\sExplain/ })).toBeDefined()
 
   await pane.press({ key: 'typekey-d17' })
@@ -2856,7 +2852,7 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   await pane.press({ key: 'tab-prs' })
   expect(await pane.find({ text: literal(demo.prViews.views[branchRef]!.title) })).toBeDefined()
   await pane.press({ key: `open-${branchRef}` })
-  expect(await pane.find({ text: SAMPLE })).toBeDefined()
+  expect(await pane.find({ text: /✓ Opened/ })).toBeDefined()
   await pane.press({ key: `dismiss-pr-${linkedRef}` })
   expect(await pane.find({ key: `settled-pr:${linkedRef}` })).toBeDefined()
   await clock.advance(SETTLED_MS)
@@ -2873,7 +2869,6 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   expect(await pane.find({ text: /Use Node or Python/ })).toBeDefined()
   expect(await pane.find({ key: 'explain-i1-key' })).toBeDefined()
   expect(await pane.find({ text: /Sample entries\./ })).toBeUndefined()
-  expect(await pane.find({ text: SAMPLE })).toBeUndefined()
   expect(await band.find({ text: /Needs you 2/ })).toBeDefined()
   const savedAfter = stored.get('s:session-1')!
   expect(savedAfter).toContain('Real branch work')
@@ -2899,7 +2894,6 @@ test('/inbox demo recording shows the sample entries without the notices that ma
   await clock.settle()
   expect(sent).toEqual([])
   expect(await pane.find({ key: 'answer-d11-0' })).toBeUndefined()
-  expect(await pane.find({ text: 'Sample entry: nothing was sent.' })).toBeUndefined()
 
   expect((await $.command.run({ command: 'inbox', args: 'demo' } as never)).text).toBe('Opened the inbox.')
   expect((await $.command.run({ command: 'inbox', args: 'demo' } as never)).text).toContain('Run /inbox demo again')

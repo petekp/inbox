@@ -359,7 +359,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     const s = demoOf(id)
     const r = thread === id ? pressOn(s, p, now()) : ({ stale: true } as const)
     if ('stale' in r) return { view: await served(s, id, true, holds), copy: null, error: null, note: 'stale' }
-    const { isSample, ...after } = demoAfterPress(
+    const after = demoAfterPress(
       { lastActions: s.lastActions, turns: s.presence },
       r,
       new Set(Object.keys(holds.replies)),
@@ -381,7 +381,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       view: await served(next, id, true, holds),
       copy: null,
       error: null,
-      note: isSample ? 'sample' : null,
+      note: null,
     }
   }
 
@@ -431,7 +431,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         const r = await (args.demo === true
           ? onDemoPress(id, p, args.thread, holds)
           : onPress(id, p, args.thread, holds))
-        return { ...text(r.error ?? (r.note ? noteText(r.note) : 'Done')), structuredContent: r }
+        return { ...text(r.error ?? (r.note ? noteText() : 'Done')), structuredContent: r }
       }
     }
 
