@@ -1,7 +1,7 @@
 // Reads Codex's session transcript, a JSONL file whose path every hook gets.
 
 import { open, readdir } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 import { flattenConversation } from '../../hooks/conversation'
 import type { Turn } from '../../hooks/conversation'
@@ -17,6 +17,7 @@ type SessionMeta = {
     forked_from_id?: unknown
     parent_thread_id?: unknown
     cwd?: unknown
+    history_base?: { thread_id?: unknown; end_byte_offset?: unknown }
   }
 }
 
@@ -77,30 +78,53 @@ async function namesIn(dir: string, pattern: RegExp): Promise<string[]> {
     .reverse()
 }
 
-/**
- * A chat's rollout, found by its thread id in Codex's `sessions/YYYY/MM/DD/rollout-<time>-<thread id>.jsonl`. A chat
- * Codex reverted continues in `rollout-<time>-<thread id>_<rollout id>.jsonl`, and the newest file wins. Null when no
- * readable file holds it, or when the newest one belongs to a subagent or a run no person chats in. A rollout Codex has
- * compressed (`.zst`) is not read. `cwd` is the folder the chat runs in, from its first row.
- */
-export async function rolloutFor(codexHome: string, threadId: string): Promise<{ path: string; cwd: string } | null> {
-  if (threadId === '') return null
-  const sessions = join(codexHome, 'sessions')
-  const isOwnFile = (name: string) => name.endsWith(`-${threadId}.jsonl`) || name.includes(`-${threadId}_`)
+/** The newest file under `sessions/YYYY/MM/DD/` whose name `isWanted` accepts. Null when there is none. */
+async function newestRollout(sessions: string, isWanted: (name: string) => boolean): Promise<string | null> {
   for (const year of await namesIn(sessions, /^\d{4}$/))
     for (const month of await namesIn(join(sessions, year), /^\d{2}$/))
       for (const day of await namesIn(join(sessions, year, month), /^\d{2}$/)) {
         const folder = join(sessions, year, month, day)
-        const [name] = (await namesIn(folder, /^rollout-.+\.jsonl$/)).filter(isOwnFile)
-        if (name === undefined) continue
-        const path = join(folder, name)
-        const meta = await readSessionMeta(path)
-        const isOwnChat = meta !== null && !meta.payload?.parent_thread_id && !isExecMeta(meta)
-
-        return isOwnChat ? { path, cwd: typeof meta.payload?.cwd === 'string' ? meta.payload.cwd : '' } : null
+        const [name] = (await namesIn(folder, /^rollout-.+\.jsonl$/)).filter(isWanted)
+        if (name !== undefined) return join(folder, name)
       }
 
   return null
+}
+
+/**
+ * A chat's rollout, found by its thread id in Codex's `sessions/YYYY/MM/DD/rollout-<time>-<thread id>.jsonl`. A chat
+ * Codex reverted continues in `rollout-<time>-<thread id>_<rollout id>.jsonl`, and the newest file wins: `readRollout`
+ * reads the history it continues. Null when no readable file holds it, or when the newest one belongs to a subagent or
+ * a run no person chats in. A rollout Codex has compressed (`.zst`) is not read. `cwd` is the folder the chat runs in,
+ * from its first row.
+ */
+export async function rolloutFor(codexHome: string, threadId: string): Promise<{ path: string; cwd: string } | null> {
+  if (threadId === '') return null
+  const path = await newestRollout(
+    join(codexHome, 'sessions'),
+    name => name.endsWith(`-${threadId}.jsonl`) || name.includes(`-${threadId}_`),
+  )
+  if (path === null) return null
+  const meta = await readSessionMeta(path)
+  const isOwnChat = meta !== null && !meta.payload?.parent_thread_id && !isExecMeta(meta)
+
+  return isOwnChat ? { path, cwd: typeof meta.payload?.cwd === 'string' ? meta.payload.cwd : '' } : null
+}
+
+/**
+ * The earlier rollout a reverted chat's rollout continues, and the byte offset where its kept history ends, from
+ * `history_base` in the first row. The base is named by its rollout id: a chat's first rollout has the thread id's
+ * name, and a later one ends in `_<rollout id>`. Null for a rollout that continues none, or whose base is not found.
+ */
+async function historyBase(path: string): Promise<{ path: string; end: number } | null> {
+  const base = (await readSessionMeta(path))?.payload?.history_base
+  const id = base?.thread_id
+  const end = base?.end_byte_offset
+  if (typeof id !== 'string' || id === '' || typeof end !== 'number' || end <= 0) return null
+  const sessions = dirname(dirname(dirname(dirname(path))))
+  const basePath = await newestRollout(sessions, name => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`))
+
+  return basePath === null ? null : { path: basePath, end }
 }
 
 const DIALOG_TOOL = 'request_user_input_async'
@@ -167,21 +191,60 @@ function callCommand(p: NonNullable<TranscriptLine['payload']>): string {
   }
 }
 
-/** The last `bytes` of a file as lines. A cut first line is dropped. */
-async function tailLines(path: string, bytes: number): Promise<string[]> {
+/**
+ * The last `bytes` before `end` in a file, as lines, with the offset they start at and the bytes read. A cut first line
+ * is dropped.
+ */
+async function linesBefore(
+  path: string,
+  bytes: number,
+  end = Infinity,
+): Promise<{ lines: string[]; start: number; read: number }> {
   const file = await open(path, 'r')
   try {
-    const { size } = await file.stat()
-    const start = Math.max(0, size - bytes)
-    const buf = Buffer.alloc(size - start)
+    const stop = Math.min(end, (await file.stat()).size)
+    const start = Math.max(0, stop - bytes)
+    const buf = Buffer.alloc(stop - start)
     const { bytesRead } = await file.read(buf, 0, buf.length, start)
     const lines = buf.subarray(0, bytesRead).toString('utf8').split('\n')
     if (start > 0) lines.shift()
 
-    return lines
+    return { lines, start, read: bytesRead }
   } finally {
     await file.close()
   }
+}
+
+/** The last `bytes` of a file as lines. A cut first line is dropped. */
+async function tailLines(path: string, bytes: number): Promise<string[]> {
+  return (await linesBefore(path, bytes)).lines
+}
+
+/**
+ * The newest `bytes` of a chat's history, as lines. A reverted chat's rollout holds only the turns after the revert,
+ * and its history goes on in the kept part of the rollout it continues, as Codex reads it in `rollout_lineage.rs`. An
+ * earlier rollout that cannot be found or read, such as a compressed one, ends the history there.
+ */
+async function historyLines(path: string, bytes: number): Promise<string[]> {
+  const first = await linesBefore(path, bytes)
+  const parts = [first.lines]
+  const seen = new Set([path])
+  let budget = bytes - first.read
+  let isWhole = first.start === 0
+  let current = path
+  while (isWhole && budget > 0) {
+    const base = await historyBase(current).catch(() => null)
+    if (base === null || seen.has(base.path)) break
+    seen.add(base.path)
+    const part = await linesBefore(base.path, budget, base.end).catch(() => null)
+    if (part === null) break
+    parts.unshift(part.lines)
+    budget -= part.read
+    isWhole = part.start === 0
+    current = base.path
+  }
+
+  return parts.flat()
 }
 
 type TurnRows = { dialogs: DialogQuestion[][]; commands: FinishedCommand[] }
@@ -417,14 +480,15 @@ export type Rollout = {
 }
 
 /**
- * The session's conversation, read from its rollout. A rollout over a few megabytes keeps its newest part. Codex does
+ * The session's conversation, read from its rollout and, for a reverted chat, the history it continues. A history over
+ * a few megabytes keeps its newest part. Codex does
  * not document the rollout, so a row of a kind not read is skipped. `currentTurnId` names the turn a hook runs in, which
  * is not an earlier turn. Null when the file cannot be read.
  */
 export async function readRollout(path: string | null, cwd: string, currentTurnId?: string): Promise<Rollout | null> {
   if (path === null) return null
   try {
-    const turns = rolloutTurns(await tailLines(path, ROLLOUT_BYTES), cwd)
+    const turns = rolloutTurns(await historyLines(path, ROLLOUT_BYTES), cwd)
     const earlier = turns.filter(
       t => t.id !== currentTurnId && (t.isComplete || t.turns.some(x => x.role === 'person')),
     )

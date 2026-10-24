@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { homedir } from 'node:os'
 
 /** Why Codex does not run the inbox's hooks: it never trusted them, or it trusted them before an update changed the plugin. */
 export type HooksTrust = 'untrusted' | 'modified'
@@ -19,14 +20,19 @@ export function trustOfHooks(hooks: ListedHook[]): HooksTrust | 'trusted' | null
 }
 
 /**
- * Asks a short-lived `codex app-server` for the hooks Codex lists for `cwd`, over stdio. `hooks/list` is a stable
- * app-server method. Null when the call cannot be made or answered in time.
+ * Asks a short-lived `codex app-server` for the hooks Codex lists for `folder`, over stdio. `hooks/list` is a stable
+ * app-server method. The server starts in the home folder, since the MCP server's own folder is the plugin's version
+ * folder, which an update deletes while the process runs. Null when the call cannot be made or answered in time.
  */
-export function listHooksTrust(cli: string, cwd: string, timeoutMs = 10_000): Promise<HooksTrust | 'trusted' | null> {
+export function listHooksTrust(
+  cli: string,
+  folder: string,
+  timeoutMs = 10_000,
+): Promise<HooksTrust | 'trusted' | null> {
   return new Promise(resolve => {
     let child: ReturnType<typeof spawn>
     try {
-      child = spawn(cli, ['app-server'], { cwd, stdio: ['pipe', 'pipe', 'ignore'] })
+      child = spawn(cli, ['app-server'], { cwd: homedir(), stdio: ['pipe', 'pipe', 'ignore'] })
     } catch {
       resolve(null)
       return
@@ -56,7 +62,7 @@ export function listHooksTrust(cli: string, cwd: string, timeoutMs = 10_000): Pr
         }
         if (message.id === 1) {
           child.stdin?.write(`${JSON.stringify({ method: 'initialized' })}\n`)
-          child.stdin?.write(`${JSON.stringify({ id: 2, method: 'hooks/list', params: { cwds: [cwd] } })}\n`)
+          child.stdin?.write(`${JSON.stringify({ id: 2, method: 'hooks/list', params: { cwds: [folder] } })}\n`)
         } else if (message.id === 2) {
           finish(trustOfHooks(message.result?.data?.flatMap(d => d.hooks ?? []) ?? []))
         }

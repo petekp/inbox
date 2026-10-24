@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { access, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { isAbsolute } from 'node:path'
 
 import { ghFinder, ghIn } from '../../hooks/gh'
@@ -121,10 +122,10 @@ export type ServerDeps = {
   fallbackCli: () => Promise<string>
   devPage?: () => Promise<string | null>
   /**
-   * What Codex lists for the inbox's hooks in a folder, or null when it cannot say. Without it, the tab does not say why
+   * What Codex lists for the inbox's hooks in a folder, the chat's or else the home folder, or null when it cannot say. Without it, the tab does not say why
    * a chat has heard from no hook.
    */
-  hooksTrust?: (cli: string, cwd: string) => Promise<HooksTrust | 'trusted' | null>
+  hooksTrust?: (cli: string, folder: string) => Promise<HooksTrust | 'trusted' | null>
   build?: string
   loadError?: () => string | null
   isPluginFolderGone?: () => boolean
@@ -204,7 +205,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       void (async () => {
         try {
           const cli = s.cliPath ?? (await deps.fallbackCli())
-          const answer = await ask(cli, s.root || process.cwd())
+          const answer = await ask(cli, s.root || homedir())
           hooksTrust = { at: now(), value: answer === 'untrusted' || answer === 'modified' ? answer : null }
         } catch {
           hooksTrust = { at: now(), value: null }

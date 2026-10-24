@@ -2,7 +2,7 @@
 
 // src/update-main.ts
 import { homedir as homedir3 } from "node:os";
-import { dirname as dirname2, join as join5 } from "node:path";
+import { dirname as dirname3, join as join5 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/data-dir.ts
@@ -1200,7 +1200,7 @@ function codexStore(dir, sessionId, now) {
 
 // src/transcript.ts
 import { open, readdir as readdir2 } from "node:fs/promises";
-import { join as join3, resolve as resolve2 } from "node:path";
+import { dirname as dirname2, join as join3, resolve as resolve2 } from "node:path";
 
 // ../hooks/conversation.ts
 var NL4 = "\n";
@@ -1232,6 +1232,45 @@ function flattenConversation(turns) {
 }
 
 // src/transcript.ts
+async function readSessionMeta(path) {
+  try {
+    const file = await open(path, "r");
+    try {
+      const buf = Buffer.alloc(64 * 1024);
+      const { bytesRead } = await file.read(buf, 0, buf.length, 0);
+      const first = buf.subarray(0, bytesRead).toString("utf8").split("\n")[0] ?? "";
+      const meta = JSON.parse(first);
+      return meta.type === "session_meta" ? meta : null;
+    } finally {
+      await file.close();
+    }
+  } catch {
+    return null;
+  }
+}
+async function namesIn(dir, pattern) {
+  const names = await readdir2(dir).catch(() => []);
+  return names.filter((n) => pattern.test(n)).sort().reverse();
+}
+async function newestRollout(sessions, isWanted) {
+  for (const year of await namesIn(sessions, /^\d{4}$/))
+    for (const month of await namesIn(join3(sessions, year), /^\d{2}$/))
+      for (const day of await namesIn(join3(sessions, year, month), /^\d{2}$/)) {
+        const folder = join3(sessions, year, month, day);
+        const [name] = (await namesIn(folder, /^rollout-.+\.jsonl$/)).filter(isWanted);
+        if (name !== void 0) return join3(folder, name);
+      }
+  return null;
+}
+async function historyBase(path) {
+  const base = (await readSessionMeta(path))?.payload?.history_base;
+  const id = base?.thread_id;
+  const end = base?.end_byte_offset;
+  if (typeof id !== "string" || id === "" || typeof end !== "number" || end <= 0) return null;
+  const sessions = dirname2(dirname2(dirname2(dirname2(path))));
+  const basePath = await newestRollout(sessions, (name) => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`));
+  return basePath === null ? null : { path: basePath, end };
+}
 var DIALOG_TOOL = "request_user_input_async";
 var TAIL_BYTES = 4 * 1024 * 1024;
 var SHELL_CALLS = /* @__PURE__ */ new Set(["shell", "shell_command", "exec_command", "container.exec"]);
@@ -1253,19 +1292,39 @@ function callCommand(p) {
     return "";
   }
 }
-async function tailLines(path, bytes) {
+async function linesBefore(path, bytes, end = Infinity) {
   const file = await open(path, "r");
   try {
-    const { size } = await file.stat();
-    const start = Math.max(0, size - bytes);
-    const buf = Buffer.alloc(size - start);
+    const stop = Math.min(end, (await file.stat()).size);
+    const start = Math.max(0, stop - bytes);
+    const buf = Buffer.alloc(stop - start);
     const { bytesRead } = await file.read(buf, 0, buf.length, start);
     const lines = buf.subarray(0, bytesRead).toString("utf8").split("\n");
     if (start > 0) lines.shift();
-    return lines;
+    return { lines, start, read: bytesRead };
   } finally {
     await file.close();
   }
+}
+async function historyLines(path, bytes) {
+  const first = await linesBefore(path, bytes);
+  const parts = [first.lines];
+  const seen = /* @__PURE__ */ new Set([path]);
+  let budget = bytes - first.read;
+  let isWhole = first.start === 0;
+  let current = path;
+  while (isWhole && budget > 0) {
+    const base = await historyBase(current).catch(() => null);
+    if (base === null || seen.has(base.path)) break;
+    seen.add(base.path);
+    const part = await linesBefore(base.path, budget, base.end).catch(() => null);
+    if (part === null) break;
+    parts.unshift(part.lines);
+    budget -= part.read;
+    isWhole = part.start === 0;
+    current = base.path;
+  }
+  return parts.flat();
 }
 var ROLLOUT_BYTES = 8 * 1024 * 1024;
 var record = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
@@ -1373,7 +1432,7 @@ function rolloutTurns(lines, cwd) {
 async function readRollout(path, cwd, currentTurnId) {
   if (path === null) return null;
   try {
-    const turns = rolloutTurns(await tailLines(path, ROLLOUT_BYTES), cwd);
+    const turns = rolloutTurns(await historyLines(path, ROLLOUT_BYTES), cwd);
     const earlier = turns.filter(
       (t) => t.id !== currentTurnId && (t.isComplete || t.turns.some((x) => x.role === "person"))
     );
@@ -1499,7 +1558,7 @@ var runUpdates2 = (dir, sessionId, ask, now) => runUpdates({
 // src/update-main.ts
 async function main() {
   const sessionId = process.argv[2] ?? "";
-  const dir = dataDir(process.env, dirname2(dirname2(fileURLToPath(import.meta.url))));
+  const dir = dataDir(process.env, dirname3(dirname3(fileURLToPath(import.meta.url))));
   const { cliPath } = await readState(dir, sessionId);
   const personHome = process.env.CODEX_HOME || join5(homedir3(), ".codex");
   await runUpdates2(dir, sessionId, codexAsk(run, cliPath ?? "codex", dir, personHome), Date.now);
