@@ -127,7 +127,7 @@ The PRs tab needs the GitHub CLI, `gh`, signed in.
 ## Using it
 
 Type `/inbox` in Claude Code or omp, or open the Inbox tab in the ChatGPT app. The
-inbox has three tabs.
+inbox has four tabs.
 
 ### Needs you
 
@@ -173,9 +173,21 @@ still open and what you answered, even after the conversation is compacted.
 Every press shows what it did right away. Discuss reads "Discussing…" until
 the agent replies, then "✓ Discussed".
 
+### Overview
+
+A guide to the session's work. It says what the session is doing, how it is
+going, what changed since you last looked, and what is next. When you step away
+and come back, it is the page to read first.
+
+After each reply, a second model call rewrites the page from the exchange and
+the agent's own task list. It keeps a direction line until the work changes
+direction. It shows the work, a pointer to what waits on you in Needs you, what
+works now, what is still open and what is next. It is not a log: it lists no
+events, and it leaves out what you have already seen.
+
 ### In each app
 
-- **Terminal:** each action shows the letter that runs it. `1`, `2` and `3`
+- **Terminal:** each action shows the letter that runs it. `1` to `4`
   switch tabs, and `j` and `k` move up and down. ctrl+x tab moves focus from
   the prompt to the line above it, then to the panel, then back to the prompt.
 - **Claude desktop app:** you click. Type `/inbox` to open the pane.
@@ -184,7 +196,7 @@ the agent replies, then "✓ Discussed".
 - **omp:** `/inbox` opens the panel over the conversation, and esc closes it.
   Each action shows the letter that runs it, and Reply is `r`. Arrow keys move
   between rows and between a row's buttons, and enter presses the focused
-  button. Tab, or `1`, `2` and `3`, switch tabs.
+  button. Tab, or `1` to `4`, switch tabs.
 
 In Claude Code, a line above your prompt counts what needs you and the
 findings waiting, with a button that opens the panel. When Claude stops on an

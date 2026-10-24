@@ -39,6 +39,12 @@ _Avoid_: note
 
 ### Surfaces
 
+**Overview**:
+The fourth tab, a guide to the session's work: what it is doing, how it is
+going, what changed since the person last looked, and what is next. The inbox
+model rewrites it after each reply, in a second call after the one that
+updates the rows. It is not a list of events.
+
 **Band**:
 In Claude Code, the line above the prompt with the Needs you and Findings
 counts and [Open inbox]. When the session stops, a second line says why, with
@@ -47,7 +53,7 @@ counts and no button, which says `/inbox` opens the panel.
 
 **Pane**:
 The `/inbox` panel beside the conversation in Claude Code, with its Needs
-you, Findings and PRs tabs. Codex shows the same tabs in its Inbox tab. omp
+you, Findings, PRs and Overview tabs. Codex shows the same tabs in its Inbox tab. omp
 shows them in an overlay that `/inbox` opens.
 
 **New row**:
