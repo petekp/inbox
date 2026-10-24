@@ -111,7 +111,7 @@ function TerminalBeatView(props: { beat: Placed & TerminalBeat; previous: Placed
   return (
     <AbsoluteFill>
       <div style={{ opacity: risen * (1 - fading) }}>
-        <AppLabel name="omp" icon="icons/omp.png" left={0} width={WIDTH} />
+        <AppLabel name="omp" icon="icons/omp.svg" left={0} width={WIDTH} />
       </div>
       <div
         style={{

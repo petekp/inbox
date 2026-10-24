@@ -89,8 +89,13 @@ export const frames = (seconds: number) => Math.round(seconds * FPS)
 const PACE = {
   /** From a beat's start, where its caption rises in, to its first key, so caption and screen never change at once. */
   captionFirst: 1.4,
-  /** A panel the next key acts on, from the moment it shows to the key, so the viewer reads it and what is selected. */
-  panelRead: 4,
+  /**
+   * The question panel, from the moment it shows to Enter: its question and four answers, 91 characters, read at the
+   * launch video's fastest caption rate of 11.4 characters a second.
+   */
+  questionRead: 8,
+  /** The issue panel, from the moment it shows to Enter on Fix: the issue's title and the selected Fix. */
+  issueRead: 5,
   /** After a key's result shows, before the next change. */
   afterResult: 2,
   /** Command text such as /inbox, typed at 8 characters a second instead of the take's 23. */
@@ -152,12 +157,12 @@ function beats(): Beat[] {
   const slashTyping = take(prompt.at + T.inboxTyped - prompt.from, T.inboxTyped, PACE.commandRate)
   const slashHeld = take(beatTimeOf(slashTyping, T.inboxTypedEnd), T.inboxTypedEnd, 0.4)
   const opening = take(beatTimeOf(slashHeld, T.panelOpened), T.panelOpened)
-  const asking = reach(beatTimeOf(opening, T.panelShows), T.panelShows, T.answered, PACE.panelRead)
+  const asking = reach(beatTimeOf(opening, T.panelShows), T.panelShows, T.answered, PACE.questionRead)
   const answering = take(beatTimeOf(asking, T.answered), T.answered)
   const beat3 = beatTimeOf(answering, T.answerShows) + PACE.afterResult
   // Beat 4. Tab, the issue held long enough to read its title and buttons, Enter on Fix, and both of its results.
   const switching = before(0, T.findings, PACE.captionFirst)
-  const issue = reach(beatTimeOf(switching, T.findingsShow), T.findingsShow, T.fixed, PACE.panelRead)
+  const issue = reach(beatTimeOf(switching, T.findingsShow), T.findingsShow, T.fixed, PACE.issueRead)
   const fixing = take(beatTimeOf(issue, T.fixed), T.fixed)
   const beat4 = beatTimeOf(fixing, T.queued) + 1.5
   // Beat 5. Esc, the line above the prompt, then the camera pulls back to the agent fixing gaze.js before the end card.
