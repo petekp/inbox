@@ -3,8 +3,11 @@ import { Easing } from 'remotion'
 import { clamp01 } from './geometry'
 import { SANS } from './fonts'
 
-/** A key pressed `at` seconds into its beat, and the label its cap shows, such as Enter or /inbox. */
-export type KeyPress = { at: number; label: string }
+/**
+ * A key pressed `at` seconds into its beat, and the label its cap shows, such as Enter or /inbox. `hold` keeps the cap
+ * up longer than HOLD, as typed text's cap stays up while it is typed.
+ */
+export type KeyPress = { at: number; label: string; hold?: number }
 
 /** How long a cap stays after its press, in seconds. */
 const HOLD = 0.6
@@ -23,7 +26,7 @@ export function KeyCaps(props: { presses: KeyPress[]; t: number; right: number; 
   if (!press) return null
 
   const age = t - press.at
-  const end = Math.min(press.at + HOLD + FADE, next?.at ?? Infinity)
+  const end = Math.min(press.at + (press.hold ?? HOLD) + FADE, next?.at ?? Infinity)
   if (t >= end) return null
   const risen = Easing.out(Easing.back(1.6))(clamp01(age / RISE))
   const fading = clamp01((t - (end - FADE)) / FADE)

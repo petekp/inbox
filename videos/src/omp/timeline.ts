@@ -1,12 +1,13 @@
 // The omp promo's beats, from docs/plans/promo-omp.md: each beat's length, its caption, the stretches of the session
 // take it shows, the keys pressed in it and where the camera frames.
 
-import type { Segment } from '../shared/Footage'
 import type { CameraMove, Rect } from '../shared/geometry'
 import type { KeyPress } from '../shared/KeyCaps'
 import { TITLE_BAR } from '../shared/layout'
 import type { MusicCue } from '../shared/Music'
 import type { TerminalFont } from '../shared/TerminalTake'
+import { beatTimeOf } from '../shared/terminal-time'
+import type { TerminalSegment } from '../shared/terminal-time'
 import type { CaptionSpan, VideoSpec } from '../shared/video'
 
 export const FPS = 60
@@ -56,7 +57,7 @@ export type TerminalBeat = {
   length: number
   caption: string
   /** Stretches of the session take, in seconds into it. */
-  footage: Segment[]
+  footage: TerminalSegment[]
   /** Keys pressed in the beat, from the take's log, in seconds into the beat. */
   keys: KeyPress[]
   /** The framing before the first camera move. Each move then goes from the framing before it. */
@@ -81,93 +82,147 @@ export const MUSIC: MusicCue = { src: 'music/focus-flow.mp3', startsAt: 0, trimB
 export const frames = (seconds: number) => Math.round(seconds * FPS)
 
 /**
- * Times in the session take, read from its log: the prompt's last letters, the agent's reply, and each key. The
- * agent's working time between them is skipped under dissolves.
+ * The launch video's pace, which every beat here holds to or exceeds. All in seconds.
+ * The launch video starts typing 1.6 s into its first beat, after its caption has been read, and sends 0.47 s after
+ * the last letter. Its pointer rests on each target 0.9 s before the click, and each result stays 1.4 s or longer.
  */
+const PACE = {
+  /** From a beat's start, where its caption rises in, to its first key, so caption and screen never change at once. */
+  captionFirst: 1.4,
+  /** A panel the next key acts on, from the moment it shows to the key, so the viewer reads it and what is selected. */
+  panelRead: 4,
+  /** After a key's result shows, before the next change. */
+  afterResult: 2,
+  /** Command text such as /inbox, typed at 8 characters a second instead of the take's 23. */
+  commandRate: 0.36,
+}
+
+/** Times in the session take, read from its log, for the keys and the screens they lead to. */
 const TAKE_TIMES = {
+  promptTyping: 8.2225,
   promptSent: 14.9512,
+  readsFiles: 18.64,
+  recordsBoth: 31.47,
+  replyEnds: 33.94,
   inboxTyped: 69.2219,
+  inboxTypedEnd: 69.49,
   panelOpened: 69.9416,
+  panelShows: 70.0,
   answered: 79.1743,
+  answerShows: 79.24,
   findings: 89.8225,
+  findingsShow: 89.87,
   fixed: 98.7184,
+  queued: 99.76,
   closed: 107.9464,
 }
 
-const take = (at: number, from: number): Segment => ({ at, take: 'session', from })
-/** A key pressed at `takeTime` in the take, in seconds into a beat whose segment plays `from` at `at`. */
-const key = (label: string, takeTime: number, segment: Segment): KeyPress => ({
-  at: segment.at + takeTime - segment.from,
+const take = (at: number, from: number, rate?: number): TerminalSegment =>
+  rate === undefined ? { at, take: 'session', from } : { at, take: 'session', from, rate }
+/** A key pressed at `takeTime` in the take, in seconds into a beat whose segment shows it. */
+const key = (label: string, takeTime: number, segment: TerminalSegment, hold?: number): KeyPress => ({
+  at: beatTimeOf(segment, takeTime),
   label,
+  ...(hold === undefined ? {} : { hold }),
 })
+/** A segment that starts `lead` seconds before take time `takeTime` shows, at `at` in the beat. */
+const before = (at: number, takeTime: number, lead: number): TerminalSegment => take(at, takeTime - lead)
+/**
+ * A segment from take time `from`, at `at` in the beat, that plays fast enough to reach take time `to` after `length`
+ * seconds. The panel stays still while it waits for a key, so the speed change shows no cut.
+ */
+const reach = (at: number, from: number, to: number, length: number): TerminalSegment =>
+  take(at, from, (to - from) / length)
 
 function beats(): Beat[] {
-  const typing = take(0, 10.75)
-  const opening = take(0, 68.85)
-  const answering = take(2, 78.4)
-  const switching = take(0, 89.45)
-  const fixing = take(2, 97.95)
-  const closing = take(0, 107.45)
+  const T = TAKE_TIMES
+  // Beat 1. The window rises in under the caption, the prompt is typed at the take's own 17.8 characters a second,
+  // close to the launch video's 17, and the agent starts.
+  const typing = before(0, T.promptTyping, 1.6)
+  const beat1 = 1.6 + (T.promptSent - T.promptTyping) + 1
+  // Beat 2. The agent works, reads both files and records both rows. The camera has settled on the line above the
+  // prompt before it changes, and holds after the reply ends.
+  const working = take(0, T.promptSent + 1)
+  const reading = before(0.8, T.readsFiles, 0.25)
+  const recording = before(3, T.recordsBoth, 1.2)
+  const beat2 = beatTimeOf(recording, T.replyEnds) + 1.5
+  // Beat 3. /inbox is typed slowly enough to read, held with omp's suggestion under it, and sent. The question and its
+  // answers hold, then Enter answers and its result holds.
+  const prompt = before(0, T.inboxTyped, PACE.captionFirst + 0.2)
+  const slashTyping = take(prompt.at + T.inboxTyped - prompt.from, T.inboxTyped, PACE.commandRate)
+  const slashHeld = take(beatTimeOf(slashTyping, T.inboxTypedEnd), T.inboxTypedEnd, 0.4)
+  const opening = take(beatTimeOf(slashHeld, T.panelOpened), T.panelOpened)
+  const asking = reach(beatTimeOf(opening, T.panelShows), T.panelShows, T.answered, PACE.panelRead)
+  const answering = take(beatTimeOf(asking, T.answered), T.answered)
+  const beat3 = beatTimeOf(answering, T.answerShows) + PACE.afterResult
+  // Beat 4. Tab, the issue held long enough to read its title and buttons, Enter on Fix, and both of its results.
+  const switching = before(0, T.findings, PACE.captionFirst)
+  const issue = reach(beatTimeOf(switching, T.findingsShow), T.findingsShow, T.fixed, PACE.panelRead)
+  const fixing = take(beatTimeOf(issue, T.fixed), T.fixed)
+  const beat4 = beatTimeOf(fixing, T.queued) + 1.5
+  // Beat 5. Esc, the line above the prompt, then the camera pulls back to the agent fixing gaze.js before the end card.
+  const closing = before(0, T.closed, PACE.captionFirst)
+  const closedAt = beatTimeOf(closing, T.closed)
   return [
     {
       kind: 'terminal',
       id: 'in-omp',
       number: 1,
-      length: 5,
+      length: beat1,
       caption: 'Inbox is now in omp.',
       footage: [typing],
-      keys: [key('Enter', TAKE_TIMES.promptSent, typing)],
+      keys: [key('Enter', T.promptSent, typing)],
       framing: TOP,
     },
     {
       kind: 'terminal',
       id: 'above-the-prompt',
       number: 2,
-      length: 5.6,
+      length: beat2,
       caption: 'Questions are easy to miss in a long reply. Inbox keeps them above your prompt.',
-      footage: [take(0, 15.05), take(1, 21.5), take(2, 31)],
+      footage: [working, reading, recording],
       keys: [],
       framing: TOP,
       camera: [
-        { at: 0, length: 0.7, from: TOP, to: MIDDLE },
-        { at: 2.6, length: 0.9, from: MIDDLE, to: BAND },
+        { at: 0.1, length: 0.7, from: TOP, to: MIDDLE },
+        { at: recording.at + 0.1, length: 0.8, from: MIDDLE, to: BAND },
       ],
     },
     {
       kind: 'terminal',
       id: 'answer',
       number: 3,
-      length: 5.2,
+      length: beat3,
       caption: 'Each comes with answers. Enter sends the selected one.',
-      footage: [opening, answering],
+      footage: [prompt, slashTyping, slashHeld, opening, asking, answering],
       keys: [
-        key('/inbox', TAKE_TIMES.inboxTyped, opening),
-        key('Enter', TAKE_TIMES.panelOpened, opening),
-        key('Enter', TAKE_TIMES.answered, answering),
+        key('/inbox', T.inboxTyped, slashTyping, 10),
+        key('Enter', T.panelOpened, opening),
+        key('Enter', T.answered, answering),
       ],
       framing: BAND,
-      camera: [{ at: 0, length: 0.6, from: BAND, to: LOWER }],
+      camera: [{ at: 0.2, length: 0.7, from: BAND, to: LOWER }],
     },
     {
       kind: 'terminal',
       id: 'fix',
       number: 4,
-      length: 4.8,
+      length: beat4,
       caption: 'Bugs your agent spots wait there too. One more key asks for the fix.',
-      footage: [switching, fixing],
-      keys: [key('Tab', TAKE_TIMES.findings, switching), key('Enter', TAKE_TIMES.fixed, fixing)],
+      footage: [switching, issue, fixing],
+      keys: [key('Tab', T.findings, switching), key('Enter', T.fixed, fixing)],
       framing: LOWER,
     },
     {
       kind: 'terminal',
       id: 'on-both',
       number: 5,
-      length: 3.5,
+      length: closedAt + 4.4,
       caption: 'Nothing waits on you. Your agent is on both.',
       footage: [closing],
-      keys: [key('Esc', TAKE_TIMES.closed, closing)],
+      keys: [key('Esc', T.closed, closing)],
       framing: LOWER,
-      camera: [{ at: 0.8, length: 1, from: LOWER, to: WHOLE }],
+      camera: [{ at: closedAt + 2, length: 1, from: LOWER, to: WHOLE }],
     },
     { kind: 'end', id: 'end-card', number: 6, length: 6 },
   ]

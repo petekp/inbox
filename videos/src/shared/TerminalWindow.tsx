@@ -1,10 +1,11 @@
 import { useCurrentFrame, useVideoConfig } from 'remotion'
 
 import { DISSOLVE } from './Footage'
-import type { Segment } from './Footage'
 import { SANS } from './fonts'
 import { clamp01 } from './geometry'
 import { TITLE_BAR } from './layout'
+import { continues, takeTimeIn } from './terminal-time'
+import type { TerminalSegment } from './terminal-time'
 import { TerminalTake } from './TerminalTake'
 import type { Palette, TerminalFont } from './TerminalTake'
 
@@ -62,46 +63,45 @@ export function TerminalWindow(props: {
 
 /**
  * Stretches of a terminal take: each segment plays the take from `from` seconds at `at` seconds into the beat, until
- * the next segment. Each segment dissolves in over the one before it under a brief blur, and the first over `before`,
- * the previous beat's last segment, when there is one.
+ * the next segment. A segment that jumps in the take dissolves in over the one before it under a brief blur. One that
+ * carries on, at another speed, follows it with no cut. The first dissolves in over `before`, where the previous beat's
+ * last segment would continue from this beat's start, when there is one.
  */
 export function TerminalFootage(props: {
   src: string
-  segments: Segment[]
-  before?: Segment
+  segments: TerminalSegment[]
+  before?: TerminalSegment
   font: TerminalFont
   palette?: Palette
 }) {
   const { src, segments, before, font, palette } = props
   const t = useCurrentFrame() / useVideoConfig().fps
-  const all = before ? [{ ...before, at: -Infinity }, ...segments] : segments
+  const all: TerminalSegment[] = before
+    ? [before, ...segments.map(s => ({ ...s, at: Math.max(s.at, 1e-6) }))]
+    : segments
   const current = all.filter(s => s.at <= t).length - 1
-  const shown = current < 0 ? [] : [current - 1, current].filter(i => i >= 0)
+  if (current < 0) return null
+  const segment = all[current]!
+  const previous = all[current - 1]
+  const isDissolving = previous !== undefined && !continues(previous, segment) && t - segment.at < DISSOLVE
+  const layers = isDissolving ? [previous, segment] : [segment]
+  const p = clamp01((t - segment.at) / DISSOLVE)
+  const blur = isDissolving ? DISSOLVE_BLUR * Math.sin(Math.PI * p) : 0
   return (
     <>
-      {shown.map(i => {
-        const segment = all[i]!
-        const next = all[i + 1]
-        const isArriving = i === current && i > 0 && t - segment.at < DISSOLVE
-        const isLeaving = next !== undefined && next.at <= t
-        if (isLeaving && t - next.at >= DISSOLVE) return null
-        const p = isArriving ? clamp01((t - segment.at) / DISSOLVE) : isLeaving ? clamp01((t - next.at) / DISSOLVE) : 1
-        const blur = isArriving || isLeaving ? DISSOLVE_BLUR * Math.sin(Math.PI * p) : 0
-        const at = segment.at === -Infinity ? 0 : segment.at
-        return (
-          <div
-            key={`${i}-${segment.from}`}
-            style={{
-              position: 'absolute',
-              inset: 0,
-              opacity: isArriving ? p : 1,
-              filter: blur > 0.1 ? `blur(${blur}px)` : undefined,
-            }}
-          >
-            <TerminalTake src={src} t={segment.from + (t - at)} font={font} palette={palette} showCursor={false} />
-          </div>
-        )
-      })}
+      {layers.map((layer, i) => (
+        <div
+          key={`${layer.at}-${layer.from}`}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            opacity: isDissolving && i === 1 ? p : 1,
+            filter: blur > 0.1 ? `blur(${blur}px)` : undefined,
+          }}
+        >
+          <TerminalTake src={src} t={takeTimeIn(layer, t)} font={font} palette={palette} showCursor={false} />
+        </div>
+      ))}
     </>
   )
 }

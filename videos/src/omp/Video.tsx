@@ -4,7 +4,6 @@ import { AppLabel } from '../shared/AppLabel'
 import { Caption } from '../shared/Caption'
 import { EndCard } from '../shared/EndCard'
 import type { RowLines } from '../shared/EndCard'
-import type { Segment } from '../shared/Footage'
 import { SANS, useFonts } from '../shared/fonts'
 import { clamp01, framingAt } from '../shared/geometry'
 import type { Rect } from '../shared/geometry'
@@ -12,6 +11,8 @@ import { KeyCaps } from '../shared/KeyCaps'
 import { BACKGROUND, BAND, CAPTION_BAND, TITLE_BAR } from '../shared/layout'
 import { Music } from '../shared/Music'
 import { DARK_PALETTE } from '../shared/TerminalTake'
+import { takeTimeIn } from '../shared/terminal-time'
+import type { TerminalSegment } from '../shared/terminal-time'
 import { TerminalFootage, TerminalWindow } from '../shared/TerminalWindow'
 import {
   captionEnd,
@@ -92,10 +93,10 @@ export function Video({ cut }: { cut: string }) {
 }
 
 /** Where the previous beat's last stretch of the take would continue, so this beat can dissolve from it. */
-function continuing(beat: Placed | undefined): Segment | undefined {
+function continuing(beat: Placed | undefined): TerminalSegment | undefined {
   if (beat?.kind !== 'terminal') return undefined
   const last = beat.footage[beat.footage.length - 1]
-  return last && { at: 0, take: last.take, from: last.from + beat.length - last.at }
+  return last && { ...last, at: 0, from: takeTimeIn(last, beat.length) }
 }
 
 function TerminalBeatView(props: { beat: Placed & TerminalBeat; previous: Placed | undefined; placed: Placed[] }) {
