@@ -124,7 +124,7 @@ export function upgradeSession(saved: SavedSession): Session {
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
-    pending: saved.pending ?? [],
+    pending: (saved.pending ?? []).map(p => ({ ...p, ex: { ...p.ex, tasks: p.ex.tasks ?? [] } })),
     sent: (saved.sent ?? []).map(x => ({
       ...x,
       row: x.row ?? null,
@@ -366,6 +366,7 @@ export function endTurn<S extends Session>(
     turn: s.ledger.turn,
     press: s.turn.press,
     screen: screenText(host, isOpen, tab),
+    tasks: s.hostTasks,
   }
 
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] }
@@ -462,14 +463,14 @@ export function hasLedger(s: Session): boolean {
 }
 
 /**
- * A forked conversation continues its parent's ledger: items, findings, Overview and closed records. It takes
+ * A forked conversation continues its parent's ledger: items, findings, Overview and closed records, and the agent's task list. It takes
  * nothing else, since presses, queued messages, the stop and the running turn belong to the parent. A fork that
  * already has turns or an Overview keeps its own.
  */
 export function forkedFrom<S extends Session>(child: S, parent: Session): S {
   if (!isBlankLedger(child.ledger)) return child
 
-  return { ...child, ledger: parent.ledger }
+  return { ...child, ledger: parent.ledger, hostTasks: parent.hostTasks }
 }
 
 /** Whether the inbox has recorded nothing of the session: no turn counted, no exchange waiting, an empty ledger. */

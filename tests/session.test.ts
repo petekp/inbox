@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { flattenConversation } from '../hooks/conversation'
 import { EMPTY, applyUpdate, parseReply, upgradeLedger } from '../hooks/ledger'
-import { parseOverview } from '../hooks/overview'
+import { EMPTY_OVERVIEW, parseOverview } from '../hooks/overview'
 import { CLAUDE_CODE } from '../hooks/model-text'
 import {
   appliedCatchUp,
@@ -19,6 +19,7 @@ import {
   recordPrompt,
   recorded,
   sessionView,
+  startContext,
   turnEnded,
   turnStarted,
   upgradeSession,
@@ -291,4 +292,29 @@ test('a sample saved without an Overview is replaced, and the sample session car
   const page = sessionView(demoSession(1_000_000), 1_000_000, 1000, true, NO_HOLDS).overviewPage
   expect(page.lead[0]?.text).toBe('Adding pinch-to-dismiss to glances')
   expect(page.sections.map(part => part.id)).toEqual(['since', 'queue', 'open'])
+})
+
+test('a conversation start carries the Overview headline and status, not on a resume the guidance, and nothing for an empty session', () => {
+  const described = emptySession()
+  const ledger = {
+    ...described.ledger,
+    overview: { ...EMPTY_OVERVIEW, headline: 'Adding caching', status: 'Waiting on a choice.' },
+  }
+  const carried = startContext(CLAUDE_CODE, { ...described, ledger }, 'resume')
+  expect(carried).toContain('Working on: Adding caching')
+  expect(carried).toContain('Status: Waiting on a choice.')
+  expect(startContext(CLAUDE_CODE, { ...described, ledger }, 'startup')).toContain('Working on: Adding caching')
+  expect(startContext(CLAUDE_CODE, described, 'resume')).toBeNull()
+})
+
+test('an applied model answer that changes nothing still makes the session seen, and a fork takes the parent task list', () => {
+  const begun = { ...emptySession(), presence: { ...emptySession().presence, turnsStarted: 1 } }
+  const prompted = { ...begun, ledger: { ...begun.ledger, turn: 1 } }
+  expect(hasLedger(prompted)).toBe(false)
+  const none = appliedCatchUp(prompted, prompted, parseReply('NONE'), 5)
+  expect(hasLedger(none)).toBe(true)
+  expect(isUnseen(none)).toBe(false)
+
+  const parent = { ...none, hostTasks: [{ id: '1', text: 'Fix it', status: 'pending' as const }] }
+  expect(forkedFrom(emptySession(), parent).hostTasks).toEqual(parent.hostTasks)
 })

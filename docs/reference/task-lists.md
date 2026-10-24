@@ -10,7 +10,7 @@ Tags: **[source]** read in code or a binary. **[live]** seen in a run, with its 
 | --- | --- | --- | --- |
 | Claude Code | `TaskCreate`, `TaskUpdate`, `TaskList`, `TaskGet`; also `TodoWrite` | No, on a first-party model | The mod's `tool.call` event, when the tools are on |
 | Codex | `update_plan` | No, with the default model in `codex exec`. The app is [unknown] | The rollout, at Stop |
-| omp | `todo` | Yes | The extension's `tool_result` event, which carries the whole list |
+| omp | `todo` | Yes | The session branch's entries, read at each reply and at a session start |
 
 Only omp offers a list by default. The queue therefore cannot depend on one. The Overview call writes the queue from the exchange in every host, and reads a host's list as extra input where one exists.
 
@@ -50,4 +50,5 @@ Source read in the `v18.12.3` tag, the same version as the `omp` on this Mac. Th
 - A task has `content`, `status` and an optional `blocker`. Status is `pending`, `in_progress`, `completed`, `abandoned` or `blocked`. Tasks sit in named phases (`tools/todo.ts`) [source].
 - Every successful call returns `details: {op, phases, storage}`, with the whole list after the call (`tools/todo.ts:761`) [source].
 - An extension's `tool_result` handler receives `toolName` and `details`. For `todo` the event is the custom form, `details: unknown` (`extensibility/extensions/types.ts:1419-1432`) [source]. The extension checks the shape itself.
-- The inbox's `tool_result` handler reads `details.phases` and replaces its list with every task in them (`omp/src/host.ts`). It is tested with a written `details` value only [unknown for a live capture].
+- A `/todo` edit does not run the tool. omp stores it as a `user_todo_edit` custom entry with the whole list in `data.phases`, and `getLatestTodoPhasesFromEntries` reads the newest of those entries and successful `todo` results on the branch (`tools/todo.ts:177-197`) [source]. A branch move or a fork changes which entries count.
+- The inbox reads the branch the same way at each reply and at a session start (`hooks/host-tasks.ts:ompTodoFromBranch`, called in `omp/src/host.ts`). It is tested with written entries only [unknown for a live capture].

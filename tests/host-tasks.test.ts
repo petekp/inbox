@@ -1,6 +1,13 @@
 import { expect, test } from 'claude-code/testing'
 
-import { claudeTasksAfter, codexPlanOf, ompTodoOf, tasksText, upgradeHostTasks } from '../hooks/host-tasks'
+import {
+  claudeTasksAfter,
+  codexPlanOf,
+  ompTodoFromBranch,
+  ompTodoOf,
+  tasksText,
+  upgradeHostTasks,
+} from '../hooks/host-tasks'
 import { overviewPrompt } from '../hooks/model-text'
 import type { HostTask } from '../types'
 
@@ -25,6 +32,46 @@ test('Claude Code tasks are created, then updated by id, and a TodoWrite call re
       null,
     ),
   ).toEqual([{ id: '1', text: 'Only one', status: 'pending' }])
+})
+
+test('a deleted task leaves the list, and a long list cuts finished tasks before the open ones', () => {
+  const tasks: HostTask[] = [
+    { id: '1', text: 'One', status: 'done' },
+    { id: '2', text: 'Two', status: 'pending' },
+  ]
+  expect(claudeTasksAfter(tasks, 'TaskUpdate', { taskId: '1', status: 'deleted' }, null)).toEqual([tasks[1]])
+
+  const long: HostTask[] = [
+    { id: '0', text: 'Open early', status: 'in-progress' },
+    ...Array.from({ length: 14 }, (_, n) => ({ id: String(n + 1), text: `Done ${n + 1}`, status: 'done' as const })),
+  ]
+  const lines = tasksText(long).split('\n')
+  expect(lines).toHaveLength(12)
+  expect(lines[0]).toBe('TASK: in-progress | Open early')
+  expect(lines.at(-1)).toBe('TASK: done | Done 14')
+})
+
+test('the omp list is the newest todo result or /todo edit on the branch', () => {
+  const result = (status: string, isError = false) => ({
+    type: 'message',
+    message: {
+      role: 'toolResult',
+      toolName: 'todo',
+      isError,
+      details: { phases: [{ tasks: [{ content: 'A', status }] }] },
+    },
+  })
+  const edit = {
+    type: 'custom',
+    customType: 'user_todo_edit',
+    data: { phases: [{ tasks: [{ content: 'B', status: 'pending' }] }] },
+  }
+  expect(ompTodoFromBranch([])).toEqual([])
+  expect(ompTodoFromBranch([result('pending'), result('completed')])).toEqual([{ id: '1', text: 'A', status: 'done' }])
+  expect(ompTodoFromBranch([result('pending'), edit])).toEqual([{ id: '1', text: 'B', status: 'pending' }])
+  expect(ompTodoFromBranch([result('pending'), result('completed', true)])).toEqual([
+    { id: '1', text: 'A', status: 'pending' },
+  ])
 })
 
 test('a Codex plan and an omp todo result each give the whole list, and anything else gives none', () => {
@@ -67,7 +114,7 @@ test('a saved list keeps only well-formed tasks, and the Overview call reads the
   expect(upgradeHostTasks(undefined)).toEqual([])
   expect(tasksText(saved)).toBe('TASK: done | Fine')
 
-  const ex = { turn: 1, person: 'go', trigger: null, activity: [], reply: 'ok', press: null, screen: '' }
+  const ex = { turn: 1, person: 'go', trigger: null, activity: [], reply: 'ok', press: null, screen: '', tasks: [] }
   expect(overviewPrompt(null, ex, saved)).toContain('<tasks>\nTASK: done | Fine\n</tasks>')
   expect(overviewPrompt(null, ex, [])).not.toContain('<tasks>')
 })

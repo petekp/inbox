@@ -184,7 +184,7 @@ Each host reads the list into `Session.hostTasks`, a list of `{ text, status }` 
 | --- | --- | --- |
 | Claude Code | `tool.call` for `TaskCreate` and `TaskUpdate`, keeping an id to text map | When the tools are on. They are off by default. |
 | Codex | The turn's `update_plan` rows in the rollout, at Stop | When the agent calls it. It is not offered by default. |
-| omp | The `todo` tool's `tool_result` `details.phases`, which hold the whole list | Always on |
+| omp | The newest `todo` result or `/todo` edit on the session branch | Always on |
 
 Only omp has a list most of the time. Claude Code and Codex are built anyway, since the code is small and a person can turn the tools on. `docs/reference/task-lists.md` has the sources. Each host's row in `docs/looks.md` says the list is usually empty there. The unknowns it lists are checked in step 4: whether Claude Code's task ids restart after `/clear`, and whether the Codex app offers `update_plan`.
 

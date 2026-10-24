@@ -648,7 +648,7 @@ test('on a Overview page taller than the panel, each ↑↓ or j/k press shows o
   expect(drawnAt(1000).pageTop).toBe(last)
   for (let top = 0; top <= last; top++) {
     const lines = shown(top).filter(l => !/^ {2}[↑↓] \d+ more line/.test(l))
-    expect(page.lastIndexOf(lines.at(-1)!)).toBe(room - 2 + top)
+    expect(page[room - 2 + top]).toBe(lines.at(-1))
   }
   expect(drawnAt(0).lines.map(strip).at(-1)).toContain('↑↓ scroll')
   const down = keys(screen, onPage, 'down', 'j')

@@ -10,7 +10,6 @@ const STATUSES: Record<string, HostTaskStatus> = {
   completed: 'done',
   done: 'done',
   abandoned: 'dropped',
-  deleted: 'dropped',
   blocked: 'blocked',
 }
 
@@ -49,6 +48,7 @@ export function claudeTasksAfter(
   }
   if (tool === 'TaskUpdate') {
     const id = String(input.taskId ?? '')
+    if (input.status === 'deleted') return tasks.filter(t => t.id !== id)
     const status = input.status === undefined ? null : statusOf(input.status)
     const text = textOf(input.subject)
 
@@ -84,6 +84,28 @@ export function ompTodoOf(details: unknown): HostTask[] | null {
     .filter(t => t.text !== '')
 }
 
+/**
+ * omp's list from a branch of session entries: the newest of a `/todo` edit and a successful `todo` result, as omp
+ * reads it (`getLatestTodoPhasesFromEntries`). Empty when the branch holds neither.
+ */
+export function ompTodoFromBranch(entries: readonly unknown[]): HostTask[] {
+  for (const raw of [...entries].reverse()) {
+    const entry = recordOf(raw)
+    if (entry.type === 'custom' && entry.customType === 'user_todo_edit') {
+      const tasks = ompTodoOf(entry.data)
+      if (tasks !== null) return tasks
+      continue
+    }
+    if (entry.type !== 'message') continue
+    const message = recordOf(entry.message)
+    if (message.role !== 'toolResult' || message.toolName !== 'todo' || message.isError) continue
+    const tasks = ompTodoOf(message.details)
+    if (tasks !== null) return tasks
+  }
+
+  return []
+}
+
 function safeJson(text: string): unknown {
   try {
     return JSON.parse(text)
@@ -106,10 +128,24 @@ export function upgradeHostTasks(saved: unknown): HostTask[] {
   })
 }
 
+/** At most the newest `TASKS_KEPT` tasks, cutting the oldest finished or dropped ones before any open one. */
+function keptTasks(tasks: HostTask[]): HostTask[] {
+  let toCut = tasks.length - TASKS_KEPT
+  if (toCut <= 0) return tasks
+  const kept = tasks.filter(t => {
+    const isFinished = t.status === 'done' || t.status === 'dropped'
+    if (!isFinished || toCut <= 0) return true
+    toCut -= 1
+
+    return false
+  })
+
+  return kept.slice(-TASKS_KEPT)
+}
+
 /** The agent's task list as the lines the Overview call reads. Empty when the agent keeps none. */
 export function tasksText(tasks: HostTask[]): string {
-  return tasks
-    .slice(-TASKS_KEPT)
+  return keptTasks(tasks)
     .map(t => `TASK: ${t.status} | ${t.text}`)
     .join(NL)
 }

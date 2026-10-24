@@ -6,7 +6,7 @@ import type { AssistantMessage, Context, Model } from '@oh-my-pi/pi-ai'
 import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent'
 
 import { flattenConversation } from '../../hooks/conversation'
-import { ompTodoOf } from '../../hooks/host-tasks'
+import { ompTodoFromBranch } from '../../hooks/host-tasks'
 import type { Turn } from '../../hooks/conversation'
 import { dialogActivity, dialogQuestions, guidanceText, screenText, toolActivity } from '../../hooks/model-text'
 import type { DialogOutcome, ScreenTab } from '../../hooks/model-text'
@@ -539,8 +539,8 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   }
 
   /**
-   * A forked session continues its parent's ledger, as the mod's fork does, when the parent saved one. The card, items
-   * and closed records carry over, so the fork's catch-up does not offer back what the person already closed.
+   * A forked session continues its parent's ledger, as the mod's fork does, when the parent saved one. The Overview, items,
+   * the task list and closed records carry over, so the fork's catch-up does not offer back what the person already closed.
    * A parent with no saved ledger leaves the fork to catch up over its branch.
    */
   async function continueFork(ctx: ExtensionContext, parentFile: string | undefined): Promise<void> {
@@ -609,6 +609,12 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     showBand(ctx)
     deps.background(
       continueFork(ctx, parentFile)
+        .catch(() => undefined)
+        .then(async () => {
+          const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
+          const saved = await readState(dir, id).catch(() => null)
+          if (hostTasks.length > 0 || (saved?.hostTasks.length ?? 0) > 0) await change(id, s => ({ ...s, hostTasks }))
+        })
         .catch(() => undefined)
         .then(() => catchUpUnseen(ctx)),
     )
@@ -699,16 +705,6 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       if (isLinked) fetchPrsWhenDue(ctx)
       return
     }
-    if (event.toolName === 'todo') {
-      const tasks = ompTodoOf((event as { details?: unknown }).details)
-      if (tasks === null) return
-      try {
-        await change(sessionIdOf(ctx), s => ({ ...s, hostTasks: tasks }))
-      } catch {
-        return
-      }
-      return
-    }
     if (event.toolName !== 'ask') return
     const questions = dialogQuestions((event.input as { questions?: unknown }).questions)
     await noteQuietly(ctx, dialogActivity(questions, askOutcome(event)))
@@ -749,9 +745,13 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const stop = await stopOf(last, deps.isUsageLimit, deps.now())
     // Escape on the ask dialog aborts the turn, so it ends with no reply text.
     const isDialogDismissed = event.messages.some(isDismissedAsk)
+    const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
     const written = await change(id, s => ({
       ...turnEnded(
-        endTurn(OMP, s, reply, openPanels.has(id), { tab: screenTabOf(id), queuesEmptyReply: isDialogDismissed }),
+        endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
+          tab: screenTabOf(id),
+          queuesEmptyReply: isDialogDismissed,
+        }),
       ),
       stop,
     })).catch(() => null)

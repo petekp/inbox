@@ -284,6 +284,7 @@ export function demoView(now: number): DemoCopy {
       nextId: 24,
       turn: 14,
       batchTurn: 14,
+      updates: 14,
     },
     stop: null,
     prViews: {

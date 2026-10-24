@@ -2214,7 +2214,7 @@
   },
   {
     "name": "catch-up-records-open-question-and-result",
-    "about": "A catch-up over a conversation the inbox never saw records the finished result as a DONE line and the question the last reply left open.",
+    "about": "A catch-up over a conversation the inbox never saw records the question the last reply left open, and its Overview does not leave the finished loader work under way.",
     "ledger": {
       "turn": 3,
       "nextId": 1
@@ -2230,6 +2230,16 @@
       {
         "new": "json|yaml",
         "kind": "question"
+      },
+      {
+        "overview": "written"
+      },
+      {
+        "noOverviewItem": "yaml|loader",
+        "status": "working"
+      },
+      {
+        "featureLevel": true
       }
     ]
   },
@@ -3084,6 +3094,11 @@
         "id": "4",
         "text": "Check the total in a browser",
         "status": "pending"
+      },
+      {
+        "id": "5",
+        "text": "Show the discount line on the receipt email",
+        "status": "pending"
       }
     ],
     "exchange": {
@@ -3101,6 +3116,10 @@
       },
       {
         "overviewItem": "browser|total",
+        "list": "queue"
+      },
+      {
+        "overviewItem": "receipt|email|discount",
         "list": "queue"
       },
       {

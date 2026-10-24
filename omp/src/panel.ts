@@ -535,10 +535,14 @@ function pageEntries(page: OverviewPage): Entry[] {
     out.push({ kind: 'note', text: line.text, isStrong: line.id === 'headline' })
   }
   for (const part of page.sections) {
-    if (part.title) out.push({ kind: 'heading', text: part.title })
+    if (part.title) {
+      if (out.length > 0) out.push({ kind: 'note', text: '' })
+      out.push({ kind: 'heading', text: part.title })
+    }
     out.push(...part.rows.map((row): Entry => ({ kind: 'page', row })))
   }
   if (page.earlier.length > 0) {
+    out.push({ kind: 'note', text: '' })
     out.push({ kind: 'heading', text: 'Earlier in this session' })
     out.push(...page.earlier.map((text): Entry => ({ kind: 'note', text, indent: TITLE_AT })))
   }

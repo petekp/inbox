@@ -98,10 +98,11 @@ var EMPTY = {
   prs: [],
   nextId: 1,
   turn: 0,
-  batchTurn: 0
+  batchTurn: 0,
+  updates: 0
 };
 function isBlankLedger(ledger) {
-  return ledger.turn === 0 && ledger.overview === null && ledger.items.length === 0 && ledger.findings.length === 0;
+  return ledger.updates === 0 && ledger.overview === null && ledger.items.length === 0 && ledger.findings.length === 0;
 }
 var MAX_CLOSED = 12;
 var EXPIRED = "expired, unanswered";
@@ -113,11 +114,13 @@ function upgradeLedger(ledger) {
     notes,
     decided,
     milestones: _milestones,
-    card: _card,
+    card,
     ...rest
   } = ledger;
+  const updates = typeof rest.updates === "number" ? rest.updates : card ? 1 : 0;
   return {
     ...rest,
+    updates,
     overview: upgradeOverview(rest.overview),
     findings: [...rest.findings ?? [], ...notes ?? []],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
@@ -184,7 +187,6 @@ var STATUSES2 = {
   completed: "done",
   done: "done",
   abandoned: "dropped",
-  deleted: "dropped",
   blocked: "blocked"
 };
 var statusOf = (raw) => STATUSES2[String(raw)] ?? "pending";
@@ -313,7 +315,7 @@ The guide is about the work. It is not a log of what the agent did, and it is no
 Input:
 - <last>: the guide as it was, in the same lines you write
 - <unseen>: the changes the person has not yet looked at, as SINCE lines
-- <tasks>: the agent's own task list, when it keeps one, as TASK lines. It is evidence for QUEUE, not the guide: write each item at the level of the feature. Write each in your own words as the outcome it reaches, not in the task's words: "Total correct after a coupon", not "Run the checkout tests". Leave out a task that is only a step of another.
+- <tasks>: the agent's own task list, when it keeps one, as TASK lines. It is evidence for QUEUE, not the guide: write each item at the level of the feature. Write each in your own words as the outcome it reaches, not in the task's words: "Reset emails reach the person", not "Run the mailer tests". Leave out a task that is only a step of another.
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
 - <reply>: the agent's final reply
@@ -629,7 +631,7 @@ function upgradeSession(saved) {
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
-    pending: saved.pending ?? [],
+    pending: (saved.pending ?? []).map((p) => ({ ...p, ex: { ...p.ex, tasks: p.ex.tasks ?? [] } })),
     sent: (saved.sent ?? []).map((x) => ({
       ...x,
       row: x.row ?? null,
@@ -779,7 +781,8 @@ function endTurn(host, s, reply, isOpen, { tab = null, queuesEmptyReply = false 
     reply,
     turn: s.ledger.turn,
     press: s.turn.press,
-    screen: screenText(host, isOpen, tab)
+    screen: screenText(host, isOpen, tab),
+    tasks: s.hostTasks
   };
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] };
 }
@@ -791,7 +794,7 @@ function hasLedger(s) {
 }
 function forkedFrom(child, parent) {
   if (!isBlankLedger(child.ledger)) return child;
-  return { ...child, ledger: parent.ledger };
+  return { ...child, ledger: parent.ledger, hostTasks: parent.hostTasks };
 }
 function isUnseen(s) {
   const { ledger } = s;

@@ -505,6 +505,7 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
     activity: [],
     turn: ledger.turn,
     press: null,
+    tasks: c.hostTasks ?? [],
     screen: screenText(
       agent === 'codex' ? CODEX : CLAUDE_CODE,
       c.screen?.isOpen ?? false,

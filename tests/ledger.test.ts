@@ -190,15 +190,22 @@ describe('parseReply', () => {
     expect(u?.added[0]?.helps).toEqual([{ kind: 'run', command: './scripts/load.sh', name: 'load script' }])
   })
 
-  test('reads a line once when the model repeats its answer', () => {
+  test('reads only the last answer when the model corrects itself and answers again', () => {
     const u = parseReply(
       [
         'NEW: do | - | Merge PR #41 | - | -',
+        'CLOSED: i1 | yes',
         'Wait: that is not a new item. Corrected answer:',
-        'NEW: do | - | Merge PR #41 | - | -',
+        'NONE',
       ].join('\n'),
     )
-    expect(u?.added.map(a => a.ask)).toEqual(['Merge PR #41'])
+    expect(u?.added).toEqual([])
+    expect(u?.closed).toEqual([])
+  })
+
+  test('prose that only starts like a key is not a key', () => {
+    expect(parseReply('NEWLY added: the parser\nUPDATED: the docs\nNEWS: none\nTODOS later')).toBeNull()
+    expect(parseReply('NONE of the above')).not.toBeNull()
   })
 
   test('a step whose command holds "|" keeps the whole command', () => {
@@ -842,6 +849,13 @@ describe('closedState', () => {
 })
 
 describe('upgradeLedger', () => {
+  test('a ledger saved with a card counts as one update applied, and one saved without counts none', () => {
+    const { updates: _updates, ...base } = EMPTY
+    expect(upgradeLedger({ ...base, card: { goal: 'g', done: [], now: '', running: [] } } as never).updates).toBe(1)
+    expect(upgradeLedger(base as never).updates).toBe(0)
+    expect(upgradeLedger({ ...base, updates: 4 } as never).updates).toBe(4)
+  })
+
   test('converts a ledger saved with `decided` and the kinds decide and do', () => {
     const item = { id: 'i1', label: null, ask: 'Push?', options: [], rec: null, helps: [], turn: 1, at: 5 }
     const record = { id: 'i3', ask: 'Login', outcome: 'done', how: 'done', at: 9 }
@@ -945,7 +959,7 @@ describe('buildPrompt', () => {
   test('a long reply keeps its opening and its closing question, and long activity keeps its latest lines', () => {
     const reply = `Summary of the work.\n${'Detail line.\n'.repeat(2000)}Ship it now, or wait for review?`
     const activity = Array.from({ length: 400 }, (_, i) => `edited file-${i}.ts`)
-    const ex = { person: 'go', trigger: null, activity, reply, turn: 1, press: null, screen: '' }
+    const ex = { person: 'go', trigger: null, activity, reply, turn: 1, press: null, screen: '', tasks: [] }
     const prompt = buildPrompt(EMPTY, ex)
     expect(prompt).toContain('Summary of the work.')
     expect(prompt).toContain('Ship it now, or wait for review?')

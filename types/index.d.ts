@@ -239,6 +239,8 @@ export type Ledger = {
   turn: number
   /** The turn whose reply added the newest items; 0 when none. */
   batchTurn: number
+  /** How many answers of the inbox model have been applied, including answers that changed nothing. */
+  updates: number
 }
 
 /** Why the session halted outside the conversation, from the error Claude Code classified it with. */
@@ -325,6 +327,8 @@ export type Exchange = {
   turn: number
   press: Press | null
   screen: string
+  /** The agent's own task list when the reply was written. */
+  tasks: HostTask[]
 }
 
 export type Press = { id: string; action: 'answer' | 'explain' | 'run' | 'done' }

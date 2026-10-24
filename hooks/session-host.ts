@@ -218,10 +218,10 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
   const hasWork = (s: S) => s.pending.length > 0 || wantsCatchUp(s)
   const writing: Promise<void>[] = []
   /** Runs the Overview call for an applied update and writes its answer. */
-  const writeOverview = async (after: S, ask: AskCatchUpOverview) =>
+  const writeOverview = async (after: S, ask: AskCatchUpOverview, tasks: HostTask[]) =>
     host.inOrder(async () => {
-      const { ledger, hostTasks } = await host.read()
-      const answer = parseOverview(await ask(ledger.overview, hostTasks).catch(() => null))
+      const { ledger } = await host.read()
+      const answer = parseOverview(await ask(ledger.overview, tasks).catch(() => null))
       if (answer === null) return
       await host.update(x => appliedOverview(x, answer, after.presence.turnsApplied))
     })
@@ -247,7 +247,7 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
               const at = await host.now()
               const after = await host.update(x => appliedCatchUp(x, s, parsed, at))
               if (!parsed) return 'stop' as const
-              if (reply.kind === 'reply') followUp(writeOverview(after, reply.overview))
+              if (reply.kind === 'reply') followUp(writeOverview(after, reply.overview, s.hostTasks))
               continue
             }
             const next = s.pending[0]!
@@ -263,7 +263,11 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
             })
             if (isApplied)
               followUp(
-                writeOverview(after, (last, tasks) => host.ask(overviewPrompt(last, next.ex, tasks), OVERVIEW_SYSTEM)),
+                writeOverview(
+                  after,
+                  (last, tasks) => host.ask(overviewPrompt(last, next.ex, tasks), OVERVIEW_SYSTEM),
+                  next.ex.tasks,
+                ),
               )
             if (after.pending[0]?.failed && !next.failed) return 'stop' as const
           }

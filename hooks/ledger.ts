@@ -18,11 +18,12 @@ export const EMPTY: Ledger = {
   nextId: 1,
   turn: 0,
   batchTurn: 0,
+  updates: 0,
 }
 
-/** Whether nothing has been recorded: no update applied, no Overview, no item and no finding. */
+/** Whether nothing has been recorded: no model answer applied, no Overview, no item and no finding. */
 export function isBlankLedger(ledger: Ledger): boolean {
-  return ledger.turn === 0 && ledger.overview === null && ledger.items.length === 0 && ledger.findings.length === 0
+  return ledger.updates === 0 && ledger.overview === null && ledger.items.length === 0 && ledger.findings.length === 0
 }
 
 const NL = '\n'
@@ -56,7 +57,7 @@ export function upgradeLedger(ledger: Ledger): Ledger {
     notes,
     decided,
     milestones: _milestones,
-    card: _card,
+    card,
     ...rest
   } = ledger as Ledger & {
     notes?: Finding[]
@@ -64,9 +65,11 @@ export function upgradeLedger(ledger: Ledger): Ledger {
     milestones?: unknown
     card?: unknown
   }
+  const updates = typeof rest.updates === 'number' ? rest.updates : card ? 1 : 0
 
   return {
     ...rest,
+    updates,
     overview: upgradeOverview(rest.overview),
     findings: [...(rest.findings ?? []), ...(notes ?? [])],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
@@ -263,7 +266,32 @@ function dash(value: string | undefined): string | null {
   return v === '' || v === '-' ? null : v
 }
 
-const KEY_LINE = /^\s*[-*]?\s*(NONE|CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:?\s*(.*)$/
+const KEY_LINE = /^\s*[-*]?\s*(?:(NONE)(?::|\s|$)|(CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:)\s*(.*)$/
+
+function keyOf(line: string): { key: string; value: string } | null {
+  const m = KEY_LINE.exec(line)
+
+  return m ? { key: (m[1] ?? m[2])!, value: m[3] ?? '' } : null
+}
+
+/**
+ * The model sometimes writes an answer, then a prose line that corrects it, and a whole second answer. The answer
+ * it settled on is the last run of key lines that follows a prose line after an earlier run.
+ */
+function lastAnswerStart(lines: string[]): number {
+  let start = 0
+  let hasKeys = false
+  let isAfterProse = false
+  lines.forEach((line, i) => {
+    if (keyOf(line)) {
+      if (hasKeys && isAfterProse) start = i
+      hasKeys = true
+      isAfterProse = false
+    } else if (line.trim() !== '') isAfterProse = true
+  })
+
+  return start
+}
 
 /**
  * Reads the model's line format; null when no known key appears. `source` is
@@ -281,16 +309,14 @@ export function parseReply(text: string, source: string | null = null): Update |
   const todos: string[] = []
   let seen = 0
   const lines = text.split(NL)
-  const seenLines = new Set<string>()
   const newLines: (Update['added'][number] | undefined)[] = []
 
-  for (const raw of lines) {
-    const m = KEY_LINE.exec(raw)
-    if (!m || seenLines.has(raw.trim())) continue
-    seenLines.add(raw.trim())
+  for (const raw of lines.slice(lastAnswerStart(lines))) {
+    const parsed = keyOf(raw)
+    if (!parsed) continue
     seen += 1
-    const key = m[1]
-    const value = dash(m[2]) ?? ''
+    const key = parsed.key
+    const value = dash(parsed.value) ?? ''
     if (key === 'NONE') continue
     if (key === 'CLOSED' || key === 'FIXED') {
       const [id, outcome] = value.split('|').map(s => s.trim())
@@ -739,6 +765,7 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
       closedFindings,
       nextId,
       batchTurn: added > 0 ? turn : ledger.batchTurn,
+      updates: ledger.updates + 1,
     },
     closed.slice(ledger.closed.length),
   )

@@ -48,7 +48,7 @@ import {
   settledIn,
   shortAgo,
 } from '../../hooks/view'
-import { ROW_PAD_PT } from '../../hooks/layout'
+import { LEAD_GAP_PT, ROW_PAD_PT } from '../../hooks/layout'
 import type {
   ActionEmphasis,
   DrawnEntry,
@@ -2074,6 +2074,7 @@ function revealSelected() {
 
 function applyPageVariables() {
   document.documentElement.style.setProperty('--row-pad', `${ROW_PAD_PT}px`)
+  document.documentElement.style.setProperty('--lead-gap', `${LEAD_GAP_PT}px`)
   document.documentElement.style.setProperty('--move', `${MOVE_MS}ms ${MOVE.easing}`)
   document.documentElement.style.setProperty('--enter', `${ENTER_MS}ms ${ENTER.easing}`)
 }

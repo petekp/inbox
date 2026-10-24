@@ -40,6 +40,7 @@ const ex = (turn: number, reply: string): Exchange => ({
   turn,
   press: null,
   screen: 'The Inbox tab is closed.',
+  tasks: [],
 })
 
 test('a killed update worker leaves pending exchanges recoverable', async t => {

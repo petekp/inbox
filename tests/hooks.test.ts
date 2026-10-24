@@ -57,6 +57,7 @@ let stepAnswers: { answer: string; callsTool?: true }[] = []
 let transcriptRows: { role: 'user' | 'assistant'; text: string; toolUses: never[] }[] = []
 
 let dialogAnswer: Record<string, unknown> = { result: 'ok', text: 'ok' }
+let otherToolAnswer: Record<string, unknown> = { result: 'ok', text: 'ok' }
 
 let isGhMissing = false
 
@@ -169,6 +170,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   stepAnswers = []
   transcriptRows = []
   dialogAnswer = { result: 'ok', text: 'ok' }
+  otherToolAnswer = { result: 'ok', text: 'ok' }
   ghAnswers = []
   isGhMissing = false
   ledgerReply = LEDGER_REPLY
@@ -313,7 +315,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
     return {}
   })
   on('tool.call', (_$, e) => {
-    if (e.tool !== 'AskUserQuestion') return { result: 'ok', text: 'ok' } as never
+    if (e.tool !== 'AskUserQuestion') return otherToolAnswer as never
     return dialogAnswer as never
   })
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
@@ -331,7 +333,7 @@ function sidebarLines(): string[] {
   return ran.filter(argv => argv[0] === 'herdr').map(argv => argv.find(a => a.startsWith('inbox='))?.slice(6) ?? '')
 }
 
-test('a reply becomes a card and open items, and "1. yes" carries the question', async ($, on) => {
+test('a reply becomes open items, and "1. yes" carries the question', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
   world($, on, prompts)
@@ -3136,8 +3138,9 @@ test('/clear and /resume switch the inbox to the other conversation, and each ke
 test('where classic.SessionStart is skipped, the first prompt after /clear, /resume and /branch loads that conversation and carries its open questions', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  const turn = async (text: string, reply: string) => {
+  const turn = async (text: string, reply: string, headline: string) => {
     ledgerReply = reply
+    overviewReply = `HEADLINE: ${headline}\nSTATUS: Waiting on an answer.`
     await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
     await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: text, reason: 'answer' })
     await clock.settle()
@@ -3150,21 +3153,26 @@ test('where classic.SessionStart is skipped, the first prompt after /clear, /res
   }
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  await turn('add caching', 'NEW: decide | 1 | Pick a cache? | Redis / Memory | Memory')
+  await turn('add caching', 'NEW: decide | 1 | Pick a cache? | Redis / Memory | Memory', 'Adding caching')
 
   const cleared = await contextOf('session-2', 'clear', 'start over')
   expect(cleared).not.toContain('Pick a cache?')
-  expect(cleared).not.toContain('Add caching')
+  expect(cleared).not.toContain('Adding caching')
 
-  await turn('fix the build', 'NEW: decide | 1 | Pin Node? | Yes / No | Yes')
+  await turn('fix the build', 'NEW: decide | 1 | Pin Node? | Yes / No | Yes', 'Fixing the build')
   const branched = await contextOf('session-3', 'resume', 'try another way')
   expect(branched).toContain('Pin Node?')
+  expect(branched).toContain('Working on: Fixing the build')
+  expect(branched).toContain('Status: Waiting on an answer.')
 
   const resumed = await contextOf('session-1', 'resume', 'where were we?')
   expect(resumed).toContain('Pick a cache?')
+  expect(resumed).toContain('Working on: Adding caching')
+  expect(resumed).not.toContain('Fixing the build')
   expect(resumed).not.toContain('Pin Node?')
   const again = (await $.prompt.submit({ text: 'and now?', wait: false, origin: { kind: 'composer' } })).context ?? []
   expect(again.join('\n')).not.toContain('Pick a cache?')
+  expect(again.join('\n')).not.toContain('Working on:')
 })
 
 test('a ledger update held during clear cannot write its old question into the new conversation', async ($, on) => {
@@ -4108,6 +4116,14 @@ test('Claude Code task calls build the agent task list the Overview call reads',
     { id: '1', text: 'Read the parser', status: 'done' },
     { id: '2', text: 'Fix the parser', status: 'pending' },
   ])
+
+  otherToolAnswer = { isError: true, result: 'Task not found', text: 'Task #7 not found' }
+  await $.tool.call({ tool: 'TaskCreate', subject: 'A task that failed', description: 'No' })
+  await $.tool.call({ tool: 'TaskUpdate', taskId: '2', status: 'completed' })
+  await clock.settle()
+  const after = [...stored].find(([k]) => k.startsWith('s:'))
+  expect(after && JSON.parse(after[1]).hostTasks).toHaveLength(2)
+  expect(after && JSON.parse(after[1]).hostTasks[1].status).toBe('pending')
 })
 
 test('the Overview page says what it is for before the session has any work', async ($, on) => {

@@ -5,6 +5,7 @@ import { test } from 'node:test'
 
 import { EMPTY } from '../../hooks/ledger'
 import { inboxText } from '../../hooks/model-text'
+import { EMPTY_OVERVIEW } from '../../hooks/overview'
 import { feedbackText } from '../../hooks/view'
 import { notePrompt, noteToolCall, viewOf } from '../src/core'
 import { handleHook } from '../src/hook'
@@ -97,6 +98,23 @@ test('a Stop notes the dialogs the agent opened in the ending turn as open, and 
     deps,
   )
   assert.deepEqual((await readState(dir, 's1')).pending[1]?.ex.activity, [])
+})
+
+test('a start after compaction carries the Overview headline and status', async () => {
+  const dir = tempDir()
+  const deps = hookDeps(dir)
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: {
+      ...s.ledger,
+      updates: 1,
+      overview: { ...EMPTY_OVERVIEW, headline: 'Adding caching', status: 'Waiting on a choice.' },
+    },
+  }))
+  const context = JSON.stringify(await handleHook(input('SessionStart', { cwd: '/repo', source: 'compact' }), deps))
+  assert.match(context, /Working on: Adding caching/)
+  assert.match(context, /Status: Waiting on a choice\./)
 })
 
 test('a main-agent prompt reads Working… until Stop or a start that is not a compact, and a subagent prompt does not', async () => {
@@ -469,7 +487,7 @@ test('a forked chat takes its parent’s ledger at its first hook, and catches u
   await updateState(dir, 'parent', s => ({
     ...s,
     presence: { ...s.presence, turnsStarted: 3, turnsApplied: 3 },
-    ledger: { ...s.ledger, turn: 3, nextId: 4 },
+    ledger: { ...s.ledger, turn: 3, updates: 1, nextId: 4 },
   }))
 
   await handleHook(

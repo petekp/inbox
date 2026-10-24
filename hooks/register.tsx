@@ -260,7 +260,7 @@ import {
 import { parseInline } from './inline'
 import type { Span } from './inline'
 import type { RowRecord } from './arrivals'
-import { ROW_PAD_PT } from './layout'
+import { LEAD_GAP_PT, ROW_PAD_PT } from './layout'
 import { DARK_DALTONIZED_TONES, DARK_TONES, LIGHT_DALTONIZED_TONES, LIGHT_TONES, toneColors } from './tones'
 import type { ToneName } from './tones'
 import type { FoldProps } from './fold-client'
@@ -602,7 +602,7 @@ const RAIL_GUTTER = 2
 const FOLD_KINDS: FoldKind[] = [...NEEDS_YOU_GROUPS.map(g => g.kind), 'issue', 'opportunity']
 const AWAY_MS = 15 * 60_000
 
-/** The conversation whose first prompt has had the card carried beside it. */
+/** The conversation whose first prompt has had the Overview's headline and status carried beside it. */
 let carriedFor: string | null = null
 /** Why the last conversation ended, until the next conversation loads. */
 let endReason: string | null = null
@@ -2441,7 +2441,7 @@ async function readAgain($: EngineInterface) {
   if (saved !== null) {
     await update($, UNREADABLE, () => null)
     const current = (await read($, SESSION)).ledger
-    const hasRun = current.turn !== 0 || current.overview !== null
+    const hasRun = current.turn !== 0 || !isBlankLedger(current)
     if (hasRun && saved.session) await restore($, saved.session)
     else await bringBack($, saved.session, () => conversation.id === id)
     const { ledger } = await read($, SESSION)
@@ -2623,10 +2623,12 @@ export const register: Register = on => {
     if (HOST_TASK_TOOLS.has(String(e.tool))) {
       const ran = await run()
       const tool = String(e.tool)
-      await commit($, currentOwner(), s => ({
-        ...s,
-        hostTasks: claudeTasksAfter(s.hostTasks, tool, input, ran.text ?? null),
-      })).catch(() => undefined)
+      const didRun = !ran.isError && typeof ran.deny !== 'string'
+      if (didRun)
+        await commit($, currentOwner(), s => ({
+          ...s,
+          hostTasks: claudeTasksAfter(s.hostTasks, tool, input, ran.text ?? null),
+        })).catch(() => undefined)
 
       return ran
     }
@@ -4853,7 +4855,11 @@ export const register: Register = on => {
         )
 
       return hasGapAbove ? (
-        <Box key={`${key}-gap`} marginTop={1} flexDirection="column">
+        <Box
+          key={`${key}-gap`}
+          marginTop={look === 'desktop' ? LEAD_GAP_PT / (DESKTOP_LINE_PT / 2) : 1}
+          flexDirection="column"
+        >
           {framed}
         </Box>
       ) : (

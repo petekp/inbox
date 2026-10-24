@@ -20,7 +20,7 @@ that updates the inbox after each reply, reads two.
 | Answer line (`answerNote`) | Claude | Beside a prompt that answers numbered items | Which items the numbers mean |
 | Start-of-context block (`carryText`) | Claude | At session start and after compaction | Goal, done, now, open items, findings, recently closed; a later inbox line replaces it |
 | Button messages | Claude, as your message | When you press | One action on one item, finding or PR row |
-| `systemText` | Inbox model | After each reply | Card, new items, closing items and findings |
+| `systemText` | Inbox model | After each reply | New items, closing items and findings |
 | `catchUpPrompt` | A fork of the conversation | After a failed update, or a mid-conversation load | Same as `systemText`, over the whole conversation |
 
 ## Done

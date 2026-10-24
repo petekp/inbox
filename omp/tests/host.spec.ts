@@ -1093,34 +1093,44 @@ test('a look starts when the panel shows the Overview and ends on another tab or
   expect(state().ledger.overview.look).toBeNull()
 })
 
-test('a todo result replaces the agent task list with the whole list it carries', async () => {
+test('the agent task list at a reply is the latest todo entry on the branch, including a /todo edit and a deleted list', async () => {
   createInbox(pi(), deps())
-  await prompt('hello')
-  await call('tool_result', {
-    toolName: 'todo',
-    input: {},
-    content: [],
-    isError: false,
-    details: {
-      op: 'add',
-      phases: [
-        {
-          name: 'Fix',
-          tasks: [
-            { content: 'Read the parser', status: 'completed' },
-            { content: 'Fix it', status: 'in_progress' },
-          ],
-        },
-      ],
+  const todo = (op: string, tasks: { content: string; status: string }[]) => ({
+    type: 'message',
+    message: {
+      role: 'toolResult',
+      toolName: 'todo',
+      isError: false,
+      details: { op, phases: [{ name: 'Fix', tasks }] },
     },
   })
+  branch = [
+    todo('add', [
+      { content: 'Read the parser', status: 'completed' },
+      { content: 'Fix it', status: 'in_progress' },
+    ]),
+  ]
+  await prompt('hello')
+  await endAgent('Working.')
   await settle()
   expect(state().hostTasks).toEqual([
     { id: '1', text: 'Read the parser', status: 'done' },
     { id: '2', text: 'Fix it', status: 'in-progress' },
   ])
 
-  await call('tool_result', { toolName: 'todo', input: {}, content: [], isError: false, details: {} })
+  branch.push({
+    type: 'custom',
+    customType: 'user_todo_edit',
+    data: { phases: [{ name: 'Fix', tasks: [{ content: 'Fix it', status: 'pending' }] }] },
+  })
+  await prompt('again')
+  await endAgent('Still working.')
   await settle()
-  expect(state().hostTasks).toHaveLength(2)
+  expect(state().hostTasks).toEqual([{ id: '1', text: 'Fix it', status: 'pending' }])
+
+  branch = []
+  await prompt('and again')
+  await endAgent('Done.')
+  await settle()
+  expect(state().hostTasks).toEqual([])
 })

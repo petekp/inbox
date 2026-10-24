@@ -85,7 +85,6 @@ var STATUSES = {
   completed: "done",
   done: "done",
   abandoned: "dropped",
-  deleted: "dropped",
   blocked: "blocked"
 };
 var statusOf = (raw) => STATUSES[String(raw)] ?? "pending";
@@ -101,6 +100,26 @@ function ompTodoOf(details) {
     status: statusOf(recordOf(task).status)
   })).filter((t) => t.text !== "");
 }
+function ompTodoFromBranch(entries) {
+  for (const raw of [...entries].reverse()) {
+    const entry = recordOf(raw);
+    if (entry.type === "custom" && entry.customType === "user_todo_edit") {
+      const tasks2 = ompTodoOf(entry.data);
+      if (tasks2 !== null)
+        return tasks2;
+      continue;
+    }
+    if (entry.type !== "message")
+      continue;
+    const message = recordOf(entry.message);
+    if (message.role !== "toolResult" || message.toolName !== "todo" || message.isError)
+      continue;
+    const tasks = ompTodoOf(message.details);
+    if (tasks !== null)
+      return tasks;
+  }
+  return [];
+}
 function upgradeHostTasks(saved) {
   if (!Array.isArray(saved))
     return [];
@@ -110,8 +129,21 @@ function upgradeHostTasks(saved) {
     return typeof t.id === "string" && typeof t.text === "string" && t.text !== "" && status ? [{ id: t.id, text: t.text, status }] : [];
   });
 }
+function keptTasks(tasks) {
+  let toCut = tasks.length - TASKS_KEPT;
+  if (toCut <= 0)
+    return tasks;
+  const kept = tasks.filter((t) => {
+    const isFinished = t.status === "done" || t.status === "dropped";
+    if (!isFinished || toCut <= 0)
+      return true;
+    toCut -= 1;
+    return false;
+  });
+  return kept.slice(-TASKS_KEPT);
+}
 function tasksText(tasks) {
-  return tasks.slice(-TASKS_KEPT).map((t) => `TASK: ${t.status} | ${t.text}`).join(NL3);
+  return keptTasks(tasks).map((t) => `TASK: ${t.status} | ${t.text}`).join(NL3);
 }
 
 // ../hooks/overview.ts
@@ -405,10 +437,11 @@ var EMPTY = {
   prs: [],
   nextId: 1,
   turn: 0,
-  batchTurn: 0
+  batchTurn: 0,
+  updates: 0
 };
 function isBlankLedger(ledger) {
-  return ledger.turn === 0 && ledger.overview === null && ledger.items.length === 0 && ledger.findings.length === 0;
+  return ledger.updates === 0 && ledger.overview === null && ledger.items.length === 0 && ledger.findings.length === 0;
 }
 var NL5 = `
 `;
@@ -427,11 +460,13 @@ function upgradeLedger(ledger) {
     notes,
     decided,
     milestones: _milestones,
-    card: _card,
+    card,
     ...rest
   } = ledger;
+  const updates = typeof rest.updates === "number" ? rest.updates : card ? 1 : 0;
   return {
     ...rest,
+    updates,
     overview: upgradeOverview(rest.overview),
     findings: [...rest.findings ?? [], ...notes ?? []],
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
@@ -557,7 +592,26 @@ function dash(value) {
   const v = (value ?? "").trim();
   return v === "" || v === "-" ? null : v;
 }
-var KEY_LINE2 = /^\s*[-*]?\s*(NONE|CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:?\s*(.*)$/;
+var KEY_LINE2 = /^\s*[-*]?\s*(?:(NONE)(?::|\s|$)|(CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:)\s*(.*)$/;
+function keyOf(line) {
+  const m = KEY_LINE2.exec(line);
+  return m ? { key: m[1] ?? m[2], value: m[3] ?? "" } : null;
+}
+function lastAnswerStart(lines) {
+  let start = 0;
+  let hasKeys = false;
+  let isAfterProse = false;
+  lines.forEach((line, i) => {
+    if (keyOf(line)) {
+      if (hasKeys && isAfterProse)
+        start = i;
+      hasKeys = true;
+      isAfterProse = false;
+    } else if (line.trim() !== "")
+      isAfterProse = true;
+  });
+  return start;
+}
 function parseReply(text, source = null) {
   const blocks = source === null ? [] : codeBlocks(source);
   const closed = [];
@@ -569,16 +623,14 @@ function parseReply(text, source = null) {
   const todos = [];
   let seen = 0;
   const lines = text.split(NL5);
-  const seenLines = new Set;
   const newLines = [];
-  for (const raw of lines) {
-    const m = KEY_LINE2.exec(raw);
-    if (!m || seenLines.has(raw.trim()))
+  for (const raw of lines.slice(lastAnswerStart(lines))) {
+    const parsed = keyOf(raw);
+    if (!parsed)
       continue;
-    seenLines.add(raw.trim());
     seen += 1;
-    const key = m[1];
-    const value = dash(m[2]) ?? "";
+    const key = parsed.key;
+    const value = dash(parsed.value) ?? "";
     if (key === "NONE")
       continue;
     if (key === "CLOSED" || key === "FIXED") {
@@ -619,9 +671,9 @@ function parseReply(text, source = null) {
     } else if (key === "HELP") {
       const [target, kind, ...tail] = value.split("|");
       const { help, name } = helpFields(tail, source);
-      const parsed = readHelp((kind ?? "").trim(), help, name, blocks, source);
-      if (parsed && target)
-        helps.push({ target: target.trim(), help: parsed });
+      const parsed2 = readHelp((kind ?? "").trim(), help, name, blocks, source);
+      if (parsed2 && target)
+        helps.push({ target: target.trim(), help: parsed2 });
     }
   }
   for (const { target, help } of helps) {
@@ -891,7 +943,8 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
     findings,
     closedFindings,
     nextId,
-    batchTurn: added > 0 ? turn : ledger.batchTurn
+    batchTurn: added > 0 ? turn : ledger.batchTurn,
+    updates: ledger.updates + 1
   }, closed.slice(ledger.closed.length));
 }
 function withUpdate(item, updated) {
@@ -1141,7 +1194,7 @@ The guide is about the work. It is not a log of what the agent did, and it is no
 Input:
 - <last>: the guide as it was, in the same lines you write
 - <unseen>: the changes the person has not yet looked at, as SINCE lines
-- <tasks>: the agent's own task list, when it keeps one, as TASK lines. It is evidence for QUEUE, not the guide: write each item at the level of the feature. Write each in your own words as the outcome it reaches, not in the task's words: "Total correct after a coupon", not "Run the checkout tests". Leave out a task that is only a step of another.
+- <tasks>: the agent's own task list, when it keeps one, as TASK lines. It is evidence for QUEUE, not the guide: write each item at the level of the feature. Write each in your own words as the outcome it reaches, not in the task's words: "Reset emails reach the person", not "Run the mailer tests". Leave out a task that is only a step of another.
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
 - <reply>: the agent's final reply
@@ -3306,7 +3359,7 @@ function upgradeSession(saved) {
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
-    pending: saved.pending ?? [],
+    pending: (saved.pending ?? []).map((p) => ({ ...p, ex: { ...p.ex, tasks: p.ex.tasks ?? [] } })),
     sent: (saved.sent ?? []).map((x) => ({
       ...x,
       row: x.row ?? null,
@@ -3424,7 +3477,8 @@ function endTurn(host, s, reply, isOpen, { tab = null, queuesEmptyReply = false 
     reply,
     turn: s.ledger.turn,
     press: s.turn.press,
-    screen: screenText(host, isOpen, tab)
+    screen: screenText(host, isOpen, tab),
+    tasks: s.hostTasks
   };
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] };
 }
@@ -3489,7 +3543,7 @@ function hasLedger(s) {
 function forkedFrom(child, parent) {
   if (!isBlankLedger(child.ledger))
     return child;
-  return { ...child, ledger: parent.ledger };
+  return { ...child, ledger: parent.ledger, hostTasks: parent.hostTasks };
 }
 function isUnseen(s) {
   const { ledger } = s;
@@ -3677,9 +3731,9 @@ async function runUpdates(host) {
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
   const writing = [];
-  const writeOverview = async (after, ask) => host.inOrder(async () => {
-    const { ledger, hostTasks } = await host.read();
-    const answer = parseOverview(await ask(ledger.overview, hostTasks).catch(() => null));
+  const writeOverview = async (after, ask, tasks) => host.inOrder(async () => {
+    const { ledger } = await host.read();
+    const answer = parseOverview(await ask(ledger.overview, tasks).catch(() => null));
     if (answer === null)
       return;
     await host.update((x) => appliedOverview(x, answer, after.presence.turnsApplied));
@@ -3713,7 +3767,7 @@ async function runUpdates(host) {
               if (!parsed)
                 return "stop";
               if (reply2.kind === "reply")
-                followUp(writeOverview(after2, reply2.overview));
+                followUp(writeOverview(after2, reply2.overview, s.hostTasks));
               continue;
             }
             const next = s.pending[0];
@@ -3728,7 +3782,7 @@ async function runUpdates(host) {
               return applied(x, reply, await host.now(), promptAt);
             });
             if (isApplied)
-              followUp(writeOverview(after, (last, tasks) => host.ask(overviewPrompt(last, next.ex, tasks), OVERVIEW_SYSTEM)));
+              followUp(writeOverview(after, (last, tasks) => host.ask(overviewPrompt(last, next.ex, tasks), OVERVIEW_SYSTEM), next.ex.tasks));
             if (after.pending[0]?.failed && !next.failed)
               return "stop";
           }
@@ -4364,11 +4418,15 @@ function pageEntries(page) {
     out.push({ kind: "note", text: line.text, isStrong: line.id === "headline" });
   }
   for (const part of page.sections) {
-    if (part.title)
+    if (part.title) {
+      if (out.length > 0)
+        out.push({ kind: "note", text: "" });
       out.push({ kind: "heading", text: part.title });
+    }
     out.push(...part.rows.map((row) => ({ kind: "page", row })));
   }
   if (page.earlier.length > 0) {
+    out.push({ kind: "note", text: "" });
     out.push({ kind: "heading", text: "Earlier in this session" });
     out.push(...page.earlier.map((text) => ({ kind: "note", text, indent: TITLE_AT })));
   }
@@ -5159,7 +5217,8 @@ function demoView(now) {
       prs: ["acme/visor#31", "acme/visor#29", "acme/visor#33"],
       nextId: 24,
       turn: 14,
-      batchTurn: 14
+      batchTurn: 14,
+      updates: 14
     },
     stop: null,
     prViews: {
@@ -5809,6 +5868,13 @@ function createInbox(pi, deps = defaultDeps) {
     showBand(ctx);
     deps.background(continueFork(ctx, parentFile).catch(() => {
       return;
+    }).then(async () => {
+      const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
+      const saved = await readState(dir, id).catch(() => null);
+      if (hostTasks.length > 0 || (saved?.hostTasks.length ?? 0) > 0)
+        await change(id, (s) => ({ ...s, hostTasks }));
+    }).catch(() => {
+      return;
     }).then(() => catchUpUnseen(ctx)));
   };
   pi.on("session_start", (_event, ctx) => start(ctx));
@@ -5898,17 +5964,6 @@ function createInbox(pi, deps = defaultDeps) {
         fetchPrsWhenDue(ctx);
       return;
     }
-    if (event.toolName === "todo") {
-      const tasks = ompTodoOf(event.details);
-      if (tasks === null)
-        return;
-      try {
-        await change(sessionIdOf(ctx), (s) => ({ ...s, hostTasks: tasks }));
-      } catch {
-        return;
-      }
-      return;
-    }
     if (event.toolName !== "ask")
       return;
     const questions = dialogQuestions(event.input.questions);
@@ -5946,8 +6001,12 @@ function createInbox(pi, deps = defaultDeps) {
     const reply = last ? textOfBlocks(last.content) : "";
     const stop = await stopOf(last, deps.isUsageLimit, deps.now());
     const isDialogDismissed = event.messages.some(isDismissedAsk);
+    const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
     const written = await change(id, (s) => ({
-      ...turnEnded(endTurn(OMP, s, reply, openPanels.has(id), { tab: screenTabOf(id), queuesEmptyReply: isDialogDismissed })),
+      ...turnEnded(endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
+        tab: screenTabOf(id),
+        queuesEmptyReply: isDialogDismissed
+      })),
       stop
     })).catch(() => null);
     if (!written)
