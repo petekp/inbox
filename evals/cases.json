@@ -1741,6 +1741,63 @@
     ]
   },
   {
+    "name": "dialog-dismissed-layout-is-design-choice",
+    "about": "A dismissed dialog whose options are two layouts the agent could try becomes a question marked as a design choice.",
+    "ledger": {
+      "turn": 3,
+      "nextId": 3,
+      "card": {
+        "goal": "Add a settings page",
+        "done": [],
+        "now": "Reading the settings code",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "add a settings page with the five sections",
+      "activity": [
+        "read src/settings/index.ts",
+        "asked the user in a dialog: \"Lay out the settings page as one scrolling page or a tab per section?\" (options: One scrolling page / A tab per section (recommended)); the user dismissed it without answering"
+      ],
+      "reply": "I haven't built the settings page yet. I'd go with a tab per section, since two sections are long. Tell me which layout you want and I'll build it."
+    },
+    "checks": [
+      {
+        "new": "layout|scroll|tab",
+        "kind": "question",
+        "design": true
+      }
+    ]
+  },
+  {
+    "name": "fact-question-is-not-design-choice",
+    "about": "A question about a fact only the person knows is not marked as a design choice.",
+    "ledger": {
+      "turn": 3,
+      "nextId": 3,
+      "card": {
+        "goal": "Deploy the API to staging",
+        "done": [],
+        "now": "Reading the deploy script",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "deploy the api to staging",
+      "activity": ["read scripts/deploy.sh"],
+      "reply": "The deploy script needs the AWS region of the staging account, and nothing in the repo says which one it is. Is it us-east-1 or eu-west-1? I'll run the deploy once you tell me."
+    },
+    "checks": [
+      {
+        "new": "region",
+        "kind": "question",
+        "design": false
+      }
+    ]
+  },
+  {
     "name": "dialog-escaped-no-reply",
     "about": "A dialog the person dismissed with Escape, which ends the turn with no reply, is still a question for them.",
     "ledger": {

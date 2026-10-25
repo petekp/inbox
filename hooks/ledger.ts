@@ -290,12 +290,18 @@ export function parseReply(text: string, source: string | null = null): Update |
       const fields = value.split('|')
       const isLabelSkipped = !dash(fields[2]) && /\s/.test((fields[1] ?? '').trim())
       const [kind, label, ask, ...rest] = (isLabelSkipped ? [fields[0], '-', ...fields.slice(1)] : fields).map(dash)
+      // A sixth field is the design mark only when it reads "design" or "-", so an answer written after a stray "|"
+      // in an older five-field line stays an answer.
+      const last = rest.at(-1)
+      const isDesignField = rest.length > 2 && (last === null || /^design$/i.test(last ?? ''))
+      if (isDesignField) rest.pop()
       const rec = rest.length > 1 ? rest.pop() : null
       if (!ask) {
         newLines.push(undefined)
         continue
       }
       const options = rest.flatMap(o => o?.split(/\s+\/\s+/) ?? []).filter(Boolean)
+      const isDesignChoice = isDesignField && last !== null && readKind(kind) === 'question'
       const item = {
         kind: readKind(kind),
         label: label ?? null,
@@ -303,6 +309,7 @@ export function parseReply(text: string, source: string | null = null): Update |
         options,
         rec: recommendedOption(options, rec ?? null),
         helps: [],
+        ...(isDesignChoice ? { isDesignChoice } : {}),
       }
       added.push(item)
       newLines.push(item)
@@ -676,7 +683,11 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
     const at = matchOpen(items, a, created)
     const restated = items[at]
     if (restated) {
-      items[at] = { ...restated, helps: a.helps.reduce((all, h) => withHelp(all, h), restated.helps) }
+      items[at] = {
+        ...restated,
+        helps: a.helps.reduce((all, h) => withHelp(all, h), restated.helps),
+        ...(a.isDesignChoice ? { isDesignChoice: true } : {}),
+      }
       addedIds.push(restated.id)
       continue
     }

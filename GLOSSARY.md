@@ -17,8 +17,9 @@ Something the agent asked that only the person can answer.
 _Avoid_: decide, decision
 
 **Design choice**:
-A question the agent marked as one whose options it could try and show side by
-side, such as two layouts. Only these show Compare.
+A question whose options the agent could try and show side by side, such as
+two layouts. The agent marks it when it records the question, and the inbox
+model marks a question it adds. Only these show Compare.
 
 **Task**:
 Something only the person can do, such as signing in.
