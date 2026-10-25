@@ -2510,11 +2510,11 @@ var DONE_LABELS = {
 function isFailure(f) {
   return f?.is === "notSent" || f?.is === "local" && f.result.state === "failed";
 }
-function hasAge(f) {
-  return f.is === "done" || f.is === "working" || f.is === "stillOpen" || f.is === "noComparison" || f.is === "queued" || f.is === "unconfirmed" || f.is === "closed";
+function isPressOut(f) {
+  return f?.is === "working" || f?.is === "queued" || f?.is === "unconfirmed";
 }
 function isStatusUnderActions(f, isOpen) {
-  return isOpen && f !== null && hasAge(f);
+  return isOpen && isPressOut(f);
 }
 var runIt = (look) => isTerminalLike(look) ? "Run it in a terminal, or type ! and paste." : "Run it in Terminal.";
 var VERBS = {
@@ -2854,8 +2854,7 @@ function inboxView({
   const rowOf = (row) => {
     const state = stateOf(row.id);
     const feedback = feedbackIn(row.id, state, row.item?.reportedAt);
-    const isPressOut = feedback?.is === "working" || feedback?.is === "queued" || feedback?.is === "unconfirmed";
-    const actions = actionsOf(row, lastActions[row.id], state, isPressOut);
+    const actions = actionsOf(row, lastActions[row.id], state, isPressOut(feedback));
     return {
       ...row,
       state,

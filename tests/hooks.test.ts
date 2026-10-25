@@ -2510,7 +2510,7 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   expect(await pane.find({ text: /✓\sAddress/ })).toBeUndefined()
   await arrive($)
   await clock.settle()
-  expect(await pane.find({ text: /^Addressed$/ })).toBeDefined()
+  expect(await pane.find({ text: /^\u2007·\sAddressed$/ })).toBeDefined()
 
   expect(await pane.find({ key: 'address-T1-key' })).toBeDefined()
   await clock.advance(PRESS_GUARD_MS)
