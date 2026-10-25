@@ -297,11 +297,11 @@ const DESKTOP_WIDEST_CHAR_PT = 12.6
 // A native Button's padding around its label, and its bolder primary label, measured live: 163 to 167 pt for
 // "Plain (recommended)", whose label is 130 pt in the regular weight.
 const DESKTOP_BUTTON_EXTRA_PT = 38
-/** Desktop cuts a follow-up label wider than its link, so its link is sized from each character's width. */
-function desktopTextCells(text: string): number {
+/** Desktop cuts a label wider than its control, so a control is sized from each character's width. */
+function desktopTextPt(text: string): number {
   let pt = 0
   for (const c of text) pt += DESKTOP_CHAR_PT.find(([chars]) => chars.includes(c))?.[1] ?? DESKTOP_WIDEST_CHAR_PT
-  return pt / DESKTOP_CELL_PT
+  return pt
 }
 const DESKTOP_TAB_PAD = '\u00a0'.repeat(3)
 const DESKTOP_LINE_PT = 19
@@ -3212,17 +3212,17 @@ export const register: Register = on => {
 
     const shownLabel = (a: Pick<KeyAction, 'label' | 'variant'>) =>
       actionLabel({ label: a.label, isPrimary: a.variant === 'primary' })
+    const desktopTextColumns = (rowId: string) =>
+      listColumns - DESKTOP_MARK_CELLS - markExtra(rowId) - DESKTOP_SIDE_CELLS - 1
     // An open desktop row's text column, less a cell, since the measured column ran up to 10 pt narrower than this.
-    const desktopRowTextPt = (rowId: string) =>
-      (listColumns - DESKTOP_MARK_CELLS - markExtra(rowId) - DESKTOP_SIDE_CELLS - 1) * DESKTOP_CELL_PT -
-      2 * FRAME_INSET_PT
+    const desktopRowTextPt = (rowId: string) => desktopTextColumns(rowId) * DESKTOP_CELL_PT - 2 * FRAME_INSET_PT
     const desktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) =>
       a.icon ? `${a.icon} ${shownLabel(a)}` : shownLabel(a)
     // A native Button cuts a label wider than its row. Where "(recommended)" would be cut, the primary fill alone
     // marks the recommended answer.
     const fittedDesktopLabel = (rowId: string, a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) => {
       const full = desktopLabel(a)
-      const isCut = desktopTextCells(full) * DESKTOP_CELL_PT + DESKTOP_BUTTON_EXTRA_PT > desktopRowTextPt(rowId)
+      const isCut = desktopTextPt(full) + DESKTOP_BUTTON_EXTRA_PT > desktopRowTextPt(rowId)
 
       const { variant: _variant, ...unmarked } = a
 
@@ -3268,10 +3268,10 @@ export const register: Register = on => {
       const props: LinksProps = {
         links: more.map(a => {
           const label = desktopLabel(a)
-          return { key: a.key, label, width: desktopTextCells(label) }
+          return { key: a.key, label, width: desktopTextPt(label) / DESKTOP_CELL_PT }
         }),
         gap: 1.5,
-        fallbackColumns: listColumns - DESKTOP_MARK_CELLS - DESKTOP_SIDE_CELLS - 1,
+        fallbackColumns: desktopTextColumns(rowId),
         isGuarded: isOpenGuarded,
         colors: { muted: pal.muted, hover: null },
       }
@@ -3696,12 +3696,9 @@ export const register: Register = on => {
       ]
 
       const textWidth = listColumns - 1 - columns.textAt
-      const titleWidth =
-        look === 'desktop' ? Math.floor(textWidth * DESKTOP_CHARS_PER_CELL) : textWidth - TERMINAL_SIDE_CELLS
+      const titleWidth = textWidth - TERMINAL_SIDE_CELLS
       const fitsTitleLine = (text: string) =>
-        look === 'desktop'
-          ? desktopTextCells(text) * DESKTOP_CELL_PT <= desktopRowTextPt(row.id)
-          : text.length <= titleWidth
+        look === 'desktop' ? desktopTextPt(text) <= desktopRowTextPt(row.id) : text.length <= titleWidth
       const shownAfter = titleAfter ? unbroken(titleAfter, row.title, fitsTitleLine) : ''
       const bodyLines =
         isSelected && isInline && look === 'terminal' && row.clippedBody
