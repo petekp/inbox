@@ -345,8 +345,8 @@ test('a session saved by an older build loads converted, as the mod converts its
   assert.equal(s.pending[0]?.ex.reply, 'Hello')
   assert.deepEqual(s.pending[0]?.ex.dismissedDialogs, [])
   assert.deepEqual(
-    ledger.items.map(i => [i.kind, i.at, i.optionDescriptions]),
-    [['question', null, {}]],
+    ledger.items.map(i => [i.kind, i.at]),
+    [['question', null]],
   )
   assert.deepEqual(
     ledger.closed.map(d => [d.id, d.kind, d.how]),
@@ -368,7 +368,6 @@ test('the inbox line Codex reads names the Inbox tab, never the mod’s /inbox p
         kind: 'question' as const,
         label: null,
         from: 'record' as const,
-        optionDescriptions: {},
         ask: 'Ship it?',
         options: ['Yes'],
         rec: null,

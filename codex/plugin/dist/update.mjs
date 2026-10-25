@@ -103,8 +103,7 @@ function upgradeItem(item) {
     kind: readKind(item.kind),
     at: item.at ?? null,
     rec: recommendedOption(item.options, item.rec),
-    from: item.from ?? "update",
-    optionDescriptions: item.optionDescriptions ?? {}
+    from: item.from ?? "update"
   };
 }
 function words(text) {
@@ -482,7 +481,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
       addedIds.push(null);
       continue;
     }
-    items.push({ ...a, id: `i${nextId}`, turn, at: now, from: "update", optionDescriptions: {} });
+    items.push({ ...a, id: `i${nextId}`, turn, at: now, from: "update" });
     addedIds.push(`i${nextId}`);
     created.add(`i${nextId}`);
     nextId += 1;
@@ -498,7 +497,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
     };
     const isKnown = items.some((i) => restates(i.ask, work)) || ledger.findings.some((f) => restates(f.title, work)) || repeatsClosed(ledger.closed, { ...todo, helps: [] }, promptAt);
     if (isKnown) continue;
-    items.push({ ...todo, helps: [], id: `i${nextId}`, turn, at: now, from: "update", optionDescriptions: {} });
+    items.push({ ...todo, helps: [], id: `i${nextId}`, turn, at: now, from: "update" });
     nextId += 1;
     added += 1;
   }

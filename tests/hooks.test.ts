@@ -480,7 +480,7 @@ test('a dialog reaches the model with its questions, whether answered or dismiss
       ),
     'aborted',
   )
-  expect(itemAsking('Clear stored data?')?.optionDescriptions).toEqual({})
+  expect(itemAsking('Clear stored data?')?.optionDescriptions).toBeUndefined()
 })
 
 test('a question’s handle is the number a typed answer reaches, and the band counts what the tab counts', async ($, on) => {

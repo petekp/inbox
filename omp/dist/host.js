@@ -121,8 +121,7 @@ function upgradeItem(item) {
     kind: readKind(item.kind),
     at: item.at ?? null,
     rec: recommendedOption(item.options, item.rec),
-    from: item.from ?? "update",
-    optionDescriptions: item.optionDescriptions ?? {}
+    from: item.from ?? "update"
   };
 }
 function words(text) {
@@ -538,7 +537,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
       addedIds.push(null);
       continue;
     }
-    items.push({ ...a, id: `i${nextId}`, turn, at: now, from: "update", optionDescriptions: {} });
+    items.push({ ...a, id: `i${nextId}`, turn, at: now, from: "update" });
     addedIds.push(`i${nextId}`);
     created.add(`i${nextId}`);
     nextId += 1;
@@ -555,7 +554,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
     const isKnown = items.some((i) => restates(i.ask, work)) || ledger.findings.some((f) => restates(f.title, work)) || repeatsClosed(ledger.closed, { ...todo, helps: [] }, promptAt);
     if (isKnown)
       continue;
-    items.push({ ...todo, helps: [], id: `i${nextId}`, turn, at: now, from: "update", optionDescriptions: {} });
+    items.push({ ...todo, helps: [], id: `i${nextId}`, turn, at: now, from: "update" });
     nextId += 1;
     added += 1;
   }
@@ -641,10 +640,7 @@ function addAgentItem(ledger, entry, now) {
   if (repeated)
     return { ledger, is: "closed", record: repeated };
   const id = `i${ledger.nextId}`;
-  const items = [
-    ...ledger.items,
-    { ...entry, label: null, id, turn: ledger.turn, at: now, from: "record", optionDescriptions: {} }
-  ];
+  const items = [...ledger.items, { ...entry, label: null, id, turn: ledger.turn, at: now, from: "record" }];
   const kept = items.slice(-MAX_OPEN);
   const dropped = items.filter((i) => !kept.includes(i));
   const closed = [...ledger.closed, ...dropped.map((i) => closedRecord(i, { outcome: EXPIRED, how: "expired" }, now))];
@@ -1931,12 +1927,13 @@ var ROW_COPY = {
   allOptions: (count) => `All ${count} options`
 };
 function optionDescriptionsOf(item, actions) {
-  if (!item)
+  const descriptions = item?.optionDescriptions;
+  if (!descriptions)
     return [];
   return actions.flatMap((a) => {
-    if (a.press.action !== "answer" || !Object.hasOwn(item.optionDescriptions, a.press.option))
+    if (a.press.action !== "answer" || !Object.hasOwn(descriptions, a.press.option))
       return [];
-    const description = item.optionDescriptions[a.press.option];
+    const description = descriptions[a.press.option];
     return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
   });
 }
@@ -4492,7 +4489,6 @@ function demoView(now) {
           kind: "question",
           label: "1",
           from: "update",
-          optionDescriptions: {},
           ask: "Dismiss a glance with a pinch, or a flick of the wrist?",
           options: ["Pinch", "Flick"],
           rec: "Pinch",
@@ -4506,7 +4502,6 @@ function demoView(now) {
           kind: "question",
           label: "2",
           from: "update",
-          optionDescriptions: {},
           ask: "Bring a dismissed glance back when you look at it?",
           options: ["Leave it gone", "Bring it back"],
           rec: "Leave it gone",
@@ -4519,7 +4514,6 @@ function demoView(now) {
           kind: "question",
           label: "3",
           from: "update",
-          optionDescriptions: {},
           ask: "Show glances while you are walking or driving?",
           options: ["Yes", "No"],
           rec: "No",
@@ -4532,7 +4526,6 @@ function demoView(now) {
           kind: "task",
           label: null,
           from: "record",
-          optionDescriptions: {},
           ask: "Put on the glasses and pair them with this Mac",
           options: [],
           rec: null,
@@ -4545,7 +4538,6 @@ function demoView(now) {
           kind: "question",
           label: null,
           from: "record",
-          optionDescriptions: {},
           ask: "What should the wake word be for the agent?",
           options: [],
           rec: null,
@@ -4558,7 +4550,6 @@ function demoView(now) {
           kind: "task",
           label: null,
           from: "record",
-          optionDescriptions: {},
           ask: "Check the glances outdoors in bright sun",
           options: [],
           rec: null,
@@ -4571,7 +4562,6 @@ function demoView(now) {
           kind: "task",
           label: null,
           from: "record",
-          optionDescriptions: {},
           ask: "Run the gesture tests and send back the failures",
           options: [],
           rec: null,
@@ -4584,7 +4574,6 @@ function demoView(now) {
           kind: "task",
           label: null,
           from: "record",
-          optionDescriptions: {},
           ask: "Calibrate eye tracking for the new lenses",
           options: [],
           rec: null,
@@ -4646,7 +4635,6 @@ function demoView(now) {
             kind: "question",
             label: null,
             from: "record",
-            optionDescriptions: {},
             ask: "Fade a glance when you look away?",
             options: ["Yes, fade it", "No, keep it solid"],
             rec: "Yes, fade it",

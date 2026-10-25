@@ -200,11 +200,12 @@ export type RowView = {
 export type OptionDescription = { label: string; description: string; isFolded: boolean }
 
 function optionDescriptionsOf(item: Item | null, actions: ActionView[]): OptionDescription[] {
-  if (!item) return []
+  const descriptions = item?.optionDescriptions
+  if (!descriptions) return []
 
   return actions.flatMap(a => {
-    if (a.press.action !== 'answer' || !Object.hasOwn(item.optionDescriptions, a.press.option)) return []
-    const description = item.optionDescriptions[a.press.option]!
+    if (a.press.action !== 'answer' || !Object.hasOwn(descriptions, a.press.option)) return []
+    const description = descriptions[a.press.option]!
 
     return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }]
   })

@@ -56,7 +56,6 @@ function withItems(): SessionState {
           kind: 'question',
           label: '1',
           from: 'update',
-          optionDescriptions: {},
           ask: 'Fix add.js or the test?',
           options: ['Fix add.js', 'Change test'],
           rec: 'Fix add.js',
@@ -69,7 +68,6 @@ function withItems(): SessionState {
           kind: 'task',
           label: null,
           from: 'record',
-          optionDescriptions: {},
           ask: 'Sign in to npm',
           options: [],
           rec: null,
@@ -389,7 +387,6 @@ function asked(id: string, kind: Item['kind'], turn: number): Item {
     helps: [],
     turn,
     at: turn,
-    optionDescriptions: {},
   }
 }
 

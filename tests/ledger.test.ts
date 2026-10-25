@@ -585,7 +585,6 @@ describe('reopening', () => {
     kind: 'question',
     label: null,
     from: 'record',
-    optionDescriptions: {},
     ask: `Ask ${id}?`,
     options,
     rec: null,

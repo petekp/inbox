@@ -69,8 +69,7 @@ function upgradeItem(item) {
     kind: readKind(item.kind),
     at: item.at ?? null,
     rec: recommendedOption(item.options, item.rec),
-    from: item.from ?? "update",
-    optionDescriptions: item.optionDescriptions ?? {}
+    from: item.from ?? "update"
   };
 }
 function words(text) {

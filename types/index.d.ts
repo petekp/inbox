@@ -35,9 +35,8 @@ export type Item = {
   reportedAt?: number
   /**
    * Each option's description, by its label as `options` has it, from a dismissed dialog question this item copies.
-   * Empty for an item that copies none, and for an item saved before the mod kept descriptions.
    */
-  optionDescriptions: Record<string, string>
+  optionDescriptions?: Record<string, string>
 }
 
 /**
