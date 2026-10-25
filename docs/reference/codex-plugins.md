@@ -1284,6 +1284,14 @@ without the model calling it. The Inbox tab is a thread entrypoint.
   stayed and swapped to the new page. So the inbox lists one fixed URI,
   `ui://inbox/view` (`TAB_ADDRESS`, codex/src/server.ts), and names each
   build's page separately (`pageName`).
+- **Live, so a new tab after an update starts on the previous build's page**
+  [live 2026-10-25, ChatGPT 26.1021.31345]. An Inbox tab opened after an
+  update, in a thread that had none, drew Codex's saved copy of the previous
+  build and swapped to the new page about 0.3 s later. Reopening the tab in a
+  thread that already had one drew the new page directly. So every new tab
+  after an update relies on `swapPage` (codex/src/tab.tsx). If the swap
+  fails, the tab stays on the previous build and says "Could not load the
+  inbox update."
 - **Historical document-replacement probe** [live 2026-10-10]. A tab that
   fetched a page through `tools/call` and ran `document.open`, `write` and
   `close` drew the new page. Its script sent `ui/initialize` again, Codex

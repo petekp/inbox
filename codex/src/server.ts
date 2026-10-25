@@ -32,7 +32,11 @@ import { rolloutFor, turnIn, turnRunningIn } from './transcript'
 import type { HooksTrust } from './hook-trust'
 import type { LastAction, PrViews, RowNote } from '../../types'
 
-/** The name a build's page goes by. A tab whose page has another name than the server's swaps to the server's page. */
+/**
+ * The name a build's page goes by. A tab whose page has another name than the server's swaps to the server's page.
+ * Tabs from earlier builds take only a name shaped `ui://inbox/tab-` and 12 hex digits (`swapPage` in tab.tsx), so the
+ * name keeps that shape.
+ */
 export function pageName(tabHtml: string): string {
   return `ui://inbox/tab-${createHash('sha256').update(tabHtml).digest('hex').slice(0, 12)}`
 }
