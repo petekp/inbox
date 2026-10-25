@@ -1,3 +1,4 @@
+import type { HooksTrust } from './hook-trust'
 import { toolActivity } from '../../hooks/model-text'
 import {
   endTurn as endSessionTurn,
@@ -93,6 +94,11 @@ export function isPromptMissed(h: Heard, turnId: string | null): boolean {
   return h.promptAt === null || (h.stopAt !== null && h.promptAt < h.stopAt)
 }
 
+/** Whether a prompt started a turn whose Stop has not run yet. */
+export function isTurnRunning(h: Heard): boolean {
+  return h.promptAt !== null && (h.stopAt === null || h.promptAt > h.stopAt)
+}
+
 export function noteToolCall(s: SessionState, turnId: string | null, now: number): SessionState {
   return isPromptMissed(s.heard, turnId) ? { ...s, heard: { ...s.heard, promptMissedAt: now } } : s
 }
@@ -125,9 +131,11 @@ export type View = SessionView & {
  * Tabs open from older builds read it by this name.
  * `serverBuild` is the fingerprint build.mjs stamped into the running server. `serverLoadError` says why a newer
  * build of the server did not load. `isPluginFolderGone` says the server found no installed copy of itself, as after
- * an uninstall.
+ * an uninstall. `hooksTrust` says why Codex runs none of the inbox's hooks in this chat, when it has heard from none and
+ * Codex's own list of hooks names the cause.
  */
 export type TabView = View & {
+  hooksTrust?: HooksTrust
   thread: string
   devPage: string
   serverBuild?: string

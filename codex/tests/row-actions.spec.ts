@@ -124,6 +124,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
         ask: 'Which option?',
         options: ['A', 'B', 'C', 'D', 'E', 'F'],
         rec: 'A',
+        isDesignChoice: true,
       },
     ],
   }
@@ -158,7 +159,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
   await act(drawQuestion)
   assert.deepEqual(
     buttons(root).map(b => b.textContent),
-    ['A (recommended)', 'B', 'C', 'D', 'All 6 options', 'Run tests', 'Reply', 'Explain', 'Dismiss'],
+    ['A (recommended)', 'B', 'C', 'D', 'All 6 options', 'Run tests', 'Reply', 'Explain', 'Compare', 'Dismiss'],
   )
   await act(() => named(root, 'All 6 options').click())
   assert.ok(named(root, 'F'))

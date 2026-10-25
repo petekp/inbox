@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
@@ -142,6 +142,54 @@ test('a rollout that cannot be read gives nothing', async () => {
   assert.equal(await readRollout(join(tempDir(), 'missing.jsonl'), '/repo', undefined), null)
 })
 
+test('a reverted chat reads the kept turns of each rollout it continues, then its own, and stops where a rollout is missing', async () => {
+  const home = tempDir()
+  const write = (day: string, name: string, kept: unknown[], dropped: unknown[] = []) => {
+    const folder = join(home, 'sessions', day)
+    mkdirSync(folder, { recursive: true })
+    const path = join(folder, name)
+    const keptText = `${rows(...kept)}\n`
+    writeFileSync(path, dropped.length > 0 ? `${keptText}${rows(...dropped)}\n` : keptText)
+
+    return { path, end: Buffer.byteLength(keptText) }
+  }
+  const meta = (base?: { id: string; end: number }) => ({
+    type: 'session_meta',
+    payload: { id: 'chat-r', ...(base ? { history_base: { thread_id: base.id, end_byte_offset: base.end } } : {}) },
+  })
+  const turn = (id: string, ask: string, answer: string) => [
+    started(id),
+    message('user', ask),
+    message('assistant', answer),
+    completed(id),
+  ]
+  const firstAsk = `First ask ${'é'.repeat(400)}`
+  const first = write(
+    '2026/10/20',
+    'rollout-2026-10-20T05-01-10-chat-r.jsonl',
+    [meta(), ...turn('t1', firstAsk, 'First answer')],
+    turn('t2', 'Reverted ask', 'Reverted answer'),
+  )
+  const second = write(
+    '2026/10/21',
+    'rollout-2026-10-21T05-01-10-chat-r_roll-2.jsonl',
+    [meta({ id: 'chat-r', end: first.end }), ...turn('t3', 'Second ask', 'Second answer')],
+    turn('t4', 'Also reverted', 'Also reverted answer'),
+  )
+  const third = write('2026/10/22', 'rollout-2026-10-22T05-01-10-chat-r_roll-3.jsonl', [
+    meta({ id: 'roll-2', end: second.end }),
+    ...turn('t5', 'Third ask', 'Third answer'),
+  ])
+  const persons = async (path: string) =>
+    (await readRollout(path, '/repo'))?.conversation.split('\n').filter(line => line.startsWith('Person: '))
+
+  assert.deepEqual(await persons(second.path), [`Person: ${firstAsk}`, 'Person: Second ask', 'Person: Also reverted'])
+  assert.deepEqual(await persons(third.path), [`Person: ${firstAsk}`, 'Person: Second ask', 'Person: Third ask'])
+  assert.equal((await readRollout(third.path, '/repo'))?.earlierTurns, 3)
+  rmSync(first.path)
+  assert.deepEqual(await persons(third.path), ['Person: Second ask', 'Person: Third ask'])
+})
+
 test('rolloutFor finds a chat’s newest rollout by its thread id and reads its folder', async () => {
   const home = tempDir()
   rolloutAt(home, 'chat-1', { cwd: '/old' }, { day: '2026/09/30' })
@@ -149,6 +197,8 @@ test('rolloutFor finds a chat’s newest rollout by its thread id and reads its 
   rolloutAt(home, 'chat-2', {}, { day: '2026/10/21' })
 
   assert.deepEqual(await rolloutFor(home, 'chat-1'), { path: newest, cwd: '/repo' })
+  const reverted = rolloutAt(home, 'chat-1', { cwd: '/reverted' }, { day: '2026/10/22', rolloutId: 'rollout-2' })
+  assert.deepEqual(await rolloutFor(home, 'chat-1'), { path: reverted, cwd: '/reverted' })
   assert.equal(await rolloutFor(home, 'chat-3'), null)
   assert.equal(await rolloutFor(join(home, 'missing'), 'chat-1'), null)
   assert.equal(await rolloutFor(home, ''), null)

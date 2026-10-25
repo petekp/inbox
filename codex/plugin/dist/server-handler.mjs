@@ -2,13 +2,14 @@
 
 // src/server-handler.ts
 import { readFile as readFile3, stat as stat3 } from "node:fs/promises";
-import { homedir as homedir2 } from "node:os";
+import { homedir as homedir4 } from "node:os";
 import { join as join4 } from "node:path";
 
 // src/server.ts
 import { createHash as createHash2, randomUUID as randomUUID2 } from "node:crypto";
 import { constants } from "node:fs";
 import { access, stat as stat2 } from "node:fs/promises";
+import { homedir as homedir2 } from "node:os";
 import { isAbsolute as isAbsolute2 } from "node:path";
 
 // ../hooks/gh.ts
@@ -186,6 +187,7 @@ function isBlankLedger(ledger) {
 var MAX_OPEN = 20;
 var MAX_CLOSED = 12;
 var EXPIRED = "expired, unanswered";
+var MAX_HELPS = 3;
 var MAX_FINDINGS = 30;
 function readKind(kind) {
   return kind === "task" || kind === "do" ? "task" : "question";
@@ -288,6 +290,25 @@ function escaped(text2) {
 }
 function commandText(text2) {
   return text2.trim().replace(/^!\s*/, "");
+}
+function commandOf(help) {
+  if (isCommand(help)) return help.command;
+  if (help.kind === "copy") return commandText(help.text);
+  return null;
+}
+function isCommand(help) {
+  return help.kind === "run" || help.kind === "terminal";
+}
+function helpTarget(help) {
+  if (help.kind === "open") return `open ${help.path}`;
+  if (help.kind === "link") return `link ${help.url}`;
+  return `command ${commandOf(help)}`;
+}
+function withHelp(helps, help) {
+  const command = commandOf(help);
+  const kept = isCommand(help) ? helps.filter((h) => h.kind !== "copy" || commandOf(h) !== command) : helps;
+  const isCovered = kept.some((h) => helpTarget(h) === helpTarget(help));
+  return isCovered || kept.length >= MAX_HELPS ? kept : [...kept, help];
 }
 var FILLER = /* @__PURE__ */ new Set([
   "the",
@@ -450,7 +471,19 @@ function addAgentItem(ledger, entry, now) {
   const recordedThisTurn = new Set(ledger.items.filter((i) => i.turn === ledger.turn).map((i) => i.id));
   const open2 = matchOpen(ledger.items, candidate, recordedThisTurn);
   const openItem = ledger.items[open2];
-  if (openItem) return { ledger, is: "open", id: openItem.id };
+  if (openItem) {
+    const helps = entry.helps.reduce(withHelp, openItem.helps);
+    const isDesignChoice = openItem.isDesignChoice === true || entry.isDesignChoice === true;
+    const reported = { ...openItem, helps, isDesignChoice, reportedAt: now };
+    const items2 = ledger.items.map((i) => i === openItem ? reported : i);
+    return {
+      ledger: { ...ledger, items: items2 },
+      is: "open",
+      id: openItem.id,
+      addedSteps: helps.length - openItem.helps.length,
+      isNewlyMarked: isDesignChoice && openItem.isDesignChoice !== true
+    };
+  }
   const isAskable = (c) => c.how === "expired" || c.how === "claude";
   const repeated = ledger.closed.findLast((c) => !isAskable(c) && repeatsSettled(c, candidate));
   if (repeated) return { ledger, is: "closed", record: repeated };
@@ -509,6 +542,7 @@ var THREADS_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
   viewer { login }
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
+      author { login }
       commits(last: 1) { nodes { commit { committedDate } } }
       reviewThreads(first: 100) {
         nodes {
@@ -564,13 +598,14 @@ function readView(ref, json) {
     return null;
   }
 }
-function readThreads(json) {
+function readThreadsAnswer(json) {
   try {
     const data = JSON.parse(json).data;
     const viewer = data?.viewer?.login;
     const pr = data?.repository?.pullRequest;
+    const author = pr?.author;
     const headAt = Date.parse(pr?.commits?.nodes?.[0]?.commit?.committedDate ?? "") || null;
-    return (pr?.reviewThreads?.nodes ?? []).filter((t) => !t.isResolved).map((t) => {
+    const threads = (pr?.reviewThreads?.nodes ?? []).filter((t) => !t.isResolved).map((t) => {
       const first = t.comments.nodes[0];
       const last = t.comments.totalCount > 1 ? t.last.nodes[0] : void 0;
       const reply = last ? {
@@ -594,9 +629,13 @@ function readThreads(json) {
         at: Date.parse(first?.createdAt ?? "") || null
       };
     });
+    return { threads, isYours: viewer === void 0 || author === void 0 ? null : author?.login === viewer };
   } catch {
-    return [];
+    return { threads: [], isYours: null };
   }
+}
+function isKeptPr(pr) {
+  return pr.isYours !== false && pr.wasSeenOpen;
 }
 function waitingThreads(pr) {
   return pr.threads.filter((t) => t.isWaiting);
@@ -883,8 +922,8 @@ function refuseDoneNotification(ledger, notificationId, reason) {
   };
 }
 var STALE_TEXT = "This changed before your press. Nothing was sent.";
-function noteText(note) {
-  return note === "sample" ? "Sample entry: nothing was sent." : STALE_TEXT;
+function noteText() {
+  return STALE_TEXT;
 }
 function helpEffect(item, help) {
   switch (help.kind) {
@@ -995,25 +1034,21 @@ function reopenOnFailure(ledger, id, at) {
   const closed = ledger.closed.findLast((c) => c.id === id);
   return closed?.item && closed.how === "answered" && closed.at === at ? reopenItem(ledger, id) : ledger;
 }
-function demoRecord(lasts, effects) {
-  return {
-    lasts: Object.fromEntries(
-      Object.entries(lasts).flatMap(([id, { delivery: _unsent, ...l }]) => l.result === void 0 ? [[id, l]] : [])
-    ),
-    isSample: effects.length > 0
-  };
-}
 function demoTurns(turns, effects, isReplied = false) {
   if (isReplied) return { ...turns, turnsApplied: turns.turnsStarted };
   return effects.some((e) => e.kind === "send") ? { ...turns, turnsStarted: turns.turnsStarted + 1 } : turns;
 }
 function demoAfterPress(before, r, held) {
-  const { lasts, isSample } = demoRecord(r.lasts, r.effects);
+  const lasts = Object.fromEntries(
+    Object.entries(r.lasts).map(([id, { delivery: _unsent, ...l }]) => [
+      id,
+      l.result?.state === "pending" ? { ...l, result: finishedResult(l.result, [], l.result.at) } : l
+    ])
+  );
   return {
     ledger: pruneClosed(r.ledger, held),
     lastActions: withLasts(before.lastActions, lasts, r.drop),
-    turns: demoTurns(before.turns, r.effects),
-    isSample
+    turns: demoTurns(before.turns, r.effects)
   };
 }
 async function runLocalEffects(host, effects, rowId, pending) {
@@ -1058,6 +1093,7 @@ function retryOf(id, last) {
     case "answer":
       return { action: "answer", id, option: last.text };
     case "explain":
+    case "compare":
     case "address":
     case "issue":
     case "discuss":
@@ -1085,7 +1121,12 @@ function recordPress(kind, action, text2, ctx) {
 }
 function pressed(ledger, last, p, ctx) {
   const stale = { stale: true };
-  const record2 = (kind) => recordPress(kind, actionId(p), pressText(p), ctx);
+  const answerMessage2 = ctx.answerMessage ?? messages.answer;
+  const isRepeat = last?.action === actionId(p) && last.kind !== "local" && last.delivery?.state !== "failed";
+  const record2 = (kind) => ({
+    ...recordPress(kind, actionId(p), pressText(p), ctx),
+    ...isRepeat ? { isRepeat: true } : {}
+  });
   const unchanged = { ledger, last: null, effects: [] };
   if (p.action === "undo") {
     if (ledger.findings.some((f) => f.id === p.id) && last?.action === "address" && !last.isKept)
@@ -1135,11 +1176,11 @@ function pressed(ledger, last, p, ctx) {
     }
   }
   const item = ledger.items.find((i) => i.id === p.id);
-  if (!item) return p.action === "type" ? replyToClosed(ledger, p, record2("handoff")) : stale;
+  if (!item) return p.action === "type" ? replyToClosed(ledger, p, record2("handoff"), answerMessage2) : stale;
   const answered = (answer) => ({
     ledger: closeItem(ledger, item.id, { how: "answered", outcome: answer }, ctx.now),
     last: record2("mark"),
-    effects: [{ kind: "send", text: messages.answer(item, answer), by: { id: item.id, action: "answer" } }]
+    effects: [{ kind: "send", text: answerMessage2(item, answer), by: { id: item.id, action: "answer" } }]
   });
   switch (p.action) {
     case "answer":
@@ -1147,7 +1188,7 @@ function pressed(ledger, last, p, ctx) {
     case "type": {
       const words2 = p.text.trim();
       if (!words2) return unchanged;
-      const text2 = item.kind === "question" ? messages.answer(item, words2) : messages.taskReply(item, words2);
+      const text2 = item.kind === "question" ? answerMessage2(item, words2) : messages.taskReply(item, words2);
       return { ledger, last: record2("handoff"), effects: [{ kind: "send", text: text2, by: null }] };
     }
     case "explain":
@@ -1155,6 +1196,12 @@ function pressed(ledger, last, p, ctx) {
         ledger,
         last: record2("talk"),
         effects: [{ kind: "send", text: messages.explain(item), by: { id: item.id, action: "explain" } }]
+      };
+    case "compare":
+      return {
+        ledger,
+        last: record2("talk"),
+        effects: [{ kind: "send", text: messages.compare(item), by: { id: item.id, action: "compare" } }]
       };
     case "done":
       return { ledger: closeItem(ledger, item.id, { how: "done", outcome: "done" }, ctx.now), last: null, effects: [] };
@@ -1183,11 +1230,11 @@ function pressed(ledger, last, p, ctx) {
       return stale;
   }
 }
-function replyToClosed(ledger, p, last) {
+function replyToClosed(ledger, p, last, answerMessage2) {
   const words2 = p.text.trim();
   const closed = ledger.closed.findLast((c) => c.id === p.id)?.item;
   const record2 = ledger.closedFindings.findLast((f) => f.id === p.id);
-  const text2 = closed ? closed.kind === "question" ? messages.answer(closed, words2) : messages.taskReply(closed, words2) : record2 ? messages.finding(record2, "typed", words2) : null;
+  const text2 = closed ? closed.kind === "question" ? answerMessage2(closed, words2) : messages.taskReply(closed, words2) : record2 ? messages.finding(record2, "typed", words2) : null;
   if (text2 === null) return { stale: true };
   if (!words2) return { ledger, last: null, effects: [] };
   return { ledger, last, effects: [{ kind: "send", text: text2, by: null }] };
@@ -1200,15 +1247,25 @@ function findingBody(finding) {
   ];
 }
 var EXPLAIN_REPLY_FORM = "Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply.";
+var COMPARE_REQUEST = [
+  "Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.",
+  "For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session's data outside this repo.",
+  "Then reply with a table: one row per choice, and the few measures that tell them apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Add one line on anything you did not expect. After the table, give your pick and say whether it changed. When the choice is visual or has many states, also write one HTML page that shows the choices side by side.",
+  "When the comparison is done, call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps if you made one. That marks it compared. Call each choice by its name as listed."
+].join("\n\n");
+function quotedAsk(item) {
+  return `"${item.ask}"${item.options.length > 0 ? `
+Options: ${item.options.join(" / ")}` : ""}`;
+}
 var messages = {
   answer: (item, answer) => `Re "${item.ask}": ${answer}`,
   explain: (item) => {
     const what = item.kind === "task" ? "this task you left for me is about: why it came up, and what doing it involves" : "this question you asked me is about: why it came up, what each choice would do, and which you would pick";
-    const options = item.options.length > 0 ? `
-Options: ${item.options.join(" / ")}` : "";
     return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.
-"${item.ask}"${options}`;
+${quotedAsk(item)}`;
   },
+  compare: (item) => `${COMPARE_REQUEST}
+${quotedAsk(item)}`,
   run: (item, command) => `For "${item.ask}", run this:
 \`\`\`
 ${command}
@@ -1235,7 +1292,22 @@ var STATUSES2 = {
   abandoned: "dropped",
   blocked: "blocked"
 };
+var statusOf = (raw) => STATUSES2[String(raw)] ?? "pending";
+var textOf = (raw) => typeof raw === "string" ? raw.trim() : "";
 var recordOf = (raw) => typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
+function codexPlanOf(args) {
+  const parsed = typeof args === "string" ? safeJson(args) : args;
+  const plan = recordOf(parsed).plan;
+  if (!Array.isArray(plan)) return null;
+  return plan.map((row, n) => ({ id: String(n + 1), text: textOf(recordOf(row).step), status: statusOf(recordOf(row).status) })).filter((t) => t.text !== "");
+}
+function safeJson(text2) {
+  try {
+    return JSON.parse(text2);
+  } catch {
+    return null;
+  }
+}
 function upgradeHostTasks(saved) {
   if (!Array.isArray(saved)) return [];
   return saved.flatMap((raw) => {
@@ -1278,10 +1350,18 @@ function dialogQuestions(raw) {
     const text2 = [fields.question, fields.title].find((v) => typeof v === "string" && v.trim() !== "");
     if (!text2) return [];
     const options = (Array.isArray(fields.options) ? fields.options : []).flatMap((o) => {
-      const label = typeof o === "string" ? o : o?.label;
-      return typeof label === "string" && label.trim() !== "" ? [label.trim()] : [];
+      const option = typeof o === "string" ? { label: o } : o ?? {};
+      const label = typeof option.label === "string" ? option.label.trim() : "";
+      const description = typeof option.description === "string" ? option.description.trim() : "";
+      return label === "" ? [] : [{ label, description }];
     });
-    return [{ question: text2.trim(), options }];
+    return [
+      {
+        question: text2.trim(),
+        options: options.map((o) => o.label),
+        descriptions: Object.fromEntries(options.filter((o) => o.description !== "").map((o) => [o.label, o.description]))
+      }
+    ];
   });
 }
 function dialogQuestionText(q) {
@@ -1378,6 +1458,7 @@ var TOLD_NOTHING = { inbox: null, closed: [] };
 
 // ../hooks/view.ts
 var OPTIONS_FOLD_AT = 5;
+var OPTION_LABEL_CHARS = 32;
 var CHOICE_KEYS = [..."abcfghilm"];
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
@@ -1385,6 +1466,7 @@ var FINDING_GROUPS = {
 };
 var SETTLED_MS = 5120;
 var QUEUED_AFTER_MS = 1e3;
+var COMPARE_LIMIT_MS = 30 * 6e4;
 function isQueuedAt(last, now) {
   return last?.delivery?.state === "queued" && now - last.at >= QUEUED_AFTER_MS;
 }
@@ -1398,9 +1480,19 @@ var ROW_COPY = {
   send: "Send",
   cancel: "Cancel",
   discard: "Discard",
+  clickField: "Click the field to type",
   relevantFile: "Relevant file: ",
   allOptions: (count) => `All ${count} options`
 };
+function optionDescriptionsOf(item, actions) {
+  const descriptions = item?.optionDescriptions;
+  if (!descriptions) return [];
+  return actions.flatMap((a) => {
+    if (a.press.action !== "answer" || !Object.hasOwn(descriptions, a.press.option)) return [];
+    const description = descriptions[a.press.option];
+    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
+  });
+}
 function isWaitingRow(row) {
   return row.state.is === "open";
 }
@@ -1410,7 +1502,10 @@ function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
   return { questions: newestReplyFirst("question"), tasks: newestReplyFirst("task") };
 }
-function feedbackOf(id, last, note, turns, now) {
+function showsCompare(item) {
+  return item.kind === "question" && item.isDesignChoice === true && item.options.length >= 2;
+}
+function feedbackOf(id, last, note, turns, now, reportedAt) {
   const result = last?.result;
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
     return { is: "note", note: note.note, at: note.at };
@@ -1421,8 +1516,12 @@ function feedbackOf(id, last, note, turns, now) {
   if (pending) return { is: pending, label: last.text, at: last.at };
   if (delivery?.state === "failed") return { is: "notSent", reason: delivery.reason, retry: retryOf(id, last) };
   const isAwaiting = isAwaitingReply(last, turns);
+  const isUnreported = last.action === "compare" && !(reportedAt !== void 0 && reportedAt >= last.at);
+  const isPastLimit = now - last.at >= COMPARE_LIMIT_MS;
   const working = WORKING_LABELS[last.action];
-  if (last.kind === "talk" && working && isAwaiting) return { is: "working", label: working, at: last.at };
+  if (last.kind === "talk" && working && (isAwaiting || isUnreported && !isPastLimit))
+    return { is: "working", label: working, at: last.at };
+  if (isUnreported) return { is: "noComparison", at: last.at };
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last)) return { is: "stillOpen", at: last.at };
   const isHandedStep = last.kind === "handoff" && last.action.startsWith("step-");
   return {
@@ -1435,6 +1534,7 @@ function feedbackOf(id, last, note, turns, now) {
 var fixLabel = (f) => f.kind === "opportunity" ? "Do it" : "Fix";
 var WORKING_LABELS = {
   explain: "Explaining\u2026",
+  compare: "Comparing\u2026",
   discuss: "Discussing\u2026",
   "thread-discuss": "Discussing\u2026",
   "thread-draft": "Drafting a reply\u2026"
@@ -1444,6 +1544,7 @@ var DONE_LABELS = {
   issue: () => "Asked to file",
   discuss: () => "Discussed",
   explain: () => "Explained",
+  compare: () => "Compared",
   dismiss: () => "Dismissed",
   type: () => "Replied",
   "thread-address": () => "Addressed",
@@ -1499,12 +1600,12 @@ function withAfterHeading(parts, id) {
 }
 function overviewPage(s, now, waitingOnYou = 0) {
   const { overview } = s.ledger;
-  const { isTurnRunning } = s.presence;
+  const { isTurnRunning: isTurnRunning2 } = s.presence;
   const headline = overview?.headline || null;
   const parts = overview ? orderParts(
     overview,
     overview.look?.away ?? awayOf(overview.lastLookAt, now),
-    workOf(overview, { isTurnRunning, isStopped: Boolean(s.stop), waitingOnYou })
+    workOf(overview, { isTurnRunning: isTurnRunning2, isStopped: Boolean(s.stop), waitingOnYou })
   ) : [];
   const sections = overview ? parts.flatMap((id) => {
     const title = SECTION_TITLES[id];
@@ -1520,18 +1621,18 @@ function overviewPage(s, now, waitingOnYou = 0) {
   const texts = {
     headline,
     course: overview?.course || null,
-    status: isTurnRunning ? WORKING_TEXT : overview?.status || null,
+    status: isTurnRunning2 ? WORKING_TEXT : overview?.status || null,
     pointer: pointerText(waitingOnYou),
     quiet: QUIET_TEXT
   };
-  const withWorking = isTurnRunning && !parts.includes("status") ? withAfterHeading(parts, "status") : parts;
-  const leadIds = overview ? withWorking : isTurnRunning ? ["status"] : [];
+  const withWorking = isTurnRunning2 && !parts.includes("status") ? withAfterHeading(parts, "status") : parts;
+  const leadIds = overview ? withWorking : isTurnRunning2 ? ["status"] : [];
   const lead = leadIds.flatMap((id) => {
     const text2 = id in texts ? texts[id] : null;
     return text2 === null ? [] : [{ id, text: text2, hasGapAbove: false }];
   }).map((line, n, all) => ({ ...line, hasGapAbove: n > 0 && all[n - 1].id !== "headline" }));
   return {
-    isEmpty: headline === null && !isTurnRunning,
+    isEmpty: headline === null && !isTurnRunning2,
     lead,
     parts,
     sections,
@@ -1542,24 +1643,32 @@ function overviewPage(s, now, waitingOnYou = 0) {
     }
   };
 }
-var FOLLOW_UPS = /* @__PURE__ */ new Set(["type", "explain", "discuss", "dismiss", "discard"]);
+var FOLLOW_UPS = /* @__PURE__ */ new Set([
+  "type",
+  "explain",
+  "compare",
+  "discuss",
+  "dismiss",
+  "discard"
+]);
 var ACTION_KEYS = {
   done: "d",
   address: "a",
   issue: "i",
   type: "t",
   explain: "e",
+  compare: "p",
   discuss: "d",
   dismiss: "x",
   discard: "x"
 };
-function actionsOf(row, last, state) {
+function actionsOf(row, last, state, isPressOut) {
   const { id, item, steps: steps2 } = row;
   const action = (press2, label, kind, flags = {}) => ({
     press: press2,
-    label: press2.action !== "type" && last?.kind !== "local" && last?.delivery?.state !== "failed" && last?.action === actionId(press2) ? `${label} again` : label,
+    label: press2.action !== "type" && (!isPressOut || last?.isRepeat === true) && last?.kind !== "local" && last?.delivery?.state !== "failed" && last?.action === actionId(press2) ? `${label} again` : label,
     kind,
-    emphasis: flags.isPrimary || press2.action === "done" || press2.action === "address" ? "primary" : press2.action === "discuss" || press2.action === "explain" || press2.action === "dismiss" || press2.action === "discard" ? "quiet" : "normal",
+    emphasis: flags.isPrimary || press2.action === "done" || press2.action === "address" ? "primary" : press2.action === "discuss" || press2.action === "explain" || press2.action === "compare" || press2.action === "dismiss" || press2.action === "discard" ? "quiet" : "normal",
     ...press2.action === "done" ? { icon: "done" } : press2.action === "step" && stepIconKind(steps2[press2.step]) ? { icon: stepIconKind(steps2[press2.step]) } : {},
     isPrimary: flags.isPrimary ?? false,
     isFolded: flags.isFolded ?? false,
@@ -1593,7 +1702,7 @@ function actionsOf(row, last, state) {
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
   return [
     ...options.map(
-      (option, n) => action({ action: "answer", id, option }, clipLabel(option, 32), "mark", {
+      (option, n) => action({ action: "answer", id, option }, clipLabel(option, OPTION_LABEL_CHARS), "mark", {
         isPrimary: option === item.rec,
         isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
       })
@@ -1601,6 +1710,7 @@ function actionsOf(row, last, state) {
     ...stepActions,
     action({ action: "type", id, text: "" }, "Reply", "mark"),
     action({ action: "explain", id }, "Explain", "talk"),
+    ...showsCompare(item) ? [action({ action: "compare", id }, "Compare", "talk")] : [],
     action({ action: "dismiss", id }, "Dismiss", "mark")
   ];
 }
@@ -1681,20 +1791,24 @@ function inboxView({
       };
     return isHandedOff(last, turns) ? { is: "handedOff" } : { is: "open" };
   };
-  const feedbackIn = (id, state) => {
+  const feedbackIn = (id, state, reportedAt) => {
     if (state.is === "settled") return null;
-    const f = feedbackOf(id, lastActions[id], notes[id], turns, now);
+    const f = feedbackOf(id, lastActions[id], notes[id], turns, now, reportedAt);
     if (state.is !== "held") return f;
     const isFailedReply = f?.is === "notSent" && lastActions[id]?.action === "type" && lastActions[id].at >= state.at;
     return f?.is === "note" || isFailedReply ? f : { is: "closed", label: state.label, at: state.at };
   };
   const rowOf = (row) => {
     const state = stateOf(row.id);
+    const feedback = feedbackIn(row.id, state, row.item?.reportedAt);
+    const isPressOut = feedback?.is === "working" || feedback?.is === "queued" || feedback?.is === "unconfirmed";
+    const actions = actionsOf(row, lastActions[row.id], state, isPressOut);
     return {
       ...row,
       state,
-      feedback: feedbackIn(row.id, state),
-      actions: actionsOf(row, lastActions[row.id], state)
+      feedback,
+      actions,
+      optionDescriptions: optionDescriptionsOf(row.item, actions)
     };
   };
   const itemRow = (item) => {
@@ -1791,17 +1905,22 @@ function itemPrSteps(item, prState, linked) {
     refs.map((ref) => ({ ref, url: prState.views[ref]?.url ?? null }))
   );
 }
-function splitLinked(linked) {
-  return { tracked: linked.slice(-MAX_PRS), older: linked.slice(0, Math.max(0, linked.length - MAX_PRS)) };
+function isLeftOut(prState, ref) {
+  const view = prState.views[ref];
+  return view !== void 0 && !isKeptPr(view);
 }
-function olderPrsText(linked) {
-  const { older } = splitLinked(linked);
+function splitLinked(prState, linked) {
+  const shown = linked.filter((ref) => !isLeftOut(prState, ref));
+  return { tracked: shown.slice(-MAX_PRS), older: shown.slice(0, Math.max(0, shown.length - MAX_PRS)) };
+}
+function olderPrsText(prState, linked) {
+  const { older } = splitLinked(prState, linked);
   if (older.length === 0) return null;
   const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
   return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
 }
 async function fetchTracked(gh, state, linked, findsBranchPr) {
-  const { tracked } = splitLinked(linked);
+  const { tracked } = splitLinked(state, linked);
   const branchTarget = findsBranchPr ? null : state.branchRef;
   const isBranchLinked = branchTarget !== null && tracked.includes(branchTarget);
   const [branch, ...rest] = await Promise.all([
@@ -1841,10 +1960,13 @@ async function fetchPr(gh, target, views, knownBranchRef) {
   if (!base)
     return previous ? { ...previous, error: view.stderr.trim().split("\n")[0] || "gh could not read the PR" } : null;
   const threads = early ?? await threadsOf(ref);
+  const answer = threads.exitCode === 0 ? readThreadsAnswer(threads.stdout) : null;
   return {
     ...base,
-    threads: threads.exitCode === 0 ? readThreads(threads.stdout) : previous?.threads ?? [],
-    error: threads.exitCode === 0 ? null : "could not read review threads"
+    threads: answer?.threads ?? previous?.threads ?? [],
+    isYours: answer?.isYours ?? previous?.isYours ?? null,
+    wasSeenOpen: base.state === "OPEN" || previous?.wasSeenOpen === true,
+    error: answer ? null : "could not read review threads"
   };
 }
 function urlRef(json) {
@@ -1876,7 +1998,10 @@ function threadSentIn(lastActions) {
   };
 }
 function isTracked(prState, linked, ref) {
-  return splitLinked(linked).tracked.includes(ref) || prState.branchRef === ref;
+  return splitLinked(prState, linked).tracked.includes(ref) || prState.branchRef === ref;
+}
+function keepsView(prState, linked, ref) {
+  return isTracked(prState, linked, ref) || linked.includes(ref) && isLeftOut(prState, ref);
 }
 function isDismissing(lastActions, ref, now) {
   const mark = lastActions[prMarkId(ref)];
@@ -2006,7 +2131,11 @@ var RECORD_SCHEMA = {
     steps: {
       type: "array",
       items: { type: "string" },
-      description: "For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link."
+      description: "For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link. For a question: up to 3 files or https links that help the user decide, such as a page comparing the options, each file as an absolute path."
+    },
+    design_choice: {
+      type: "boolean",
+      description: "For a question: true when its options are designs or approaches you could try and show side by side, such as two layouts or two ways to build a feature. The user can then ask you to compare them. Leave it out for a fact, an approval or a preference."
     },
     finding_kind: {
       type: "string",
@@ -2073,15 +2202,25 @@ function recordItem(host, ledger, input, now) {
   const recInput = input.kind === "question" ? cut(input.rec, MAX_OPTION) : "";
   const rec = recInput === "" ? null : recommendedOption(options, recInput);
   if (recInput !== "" && rec === null) return { ledger, result: "Not recorded: rec must be one of the options." };
-  const steps2 = input.kind === "task" ? list(input.steps, MAX_STEPS + 3, 4e3) : [];
-  const helps = steps2.flatMap((step) => stepHelp(step) ?? []).slice(0, MAX_STEPS);
-  const r = addAgentItem(ledger, { kind: input.kind, ask, options, rec, helps }, now);
-  if (r.is === "open") return { ledger, result: "Already open." };
+  const steps2 = list(input.steps, MAX_STEPS + 3, 4e3);
+  const isUsable = (h) => input.kind === "task" || h.kind === "open" || h.kind === "link";
+  const helps = steps2.flatMap((step) => stepHelp(step) ?? []).filter(isUsable).slice(0, MAX_STEPS);
+  const leftOut = helps.length < steps2.length ? input.kind === "task" ? " Some steps were not a command, a file path or a link, so they are left out." : " Some steps were not an absolute file path or a link, so they are left out." : "";
+  const isDesignChoice = input.kind === "question" && input.design_choice === true;
+  const r = addAgentItem(ledger, { kind: input.kind, ask, options, rec, helps, isDesignChoice }, now);
+  if (r.is === "open") {
+    const changes = [
+      ...r.addedSteps > 0 ? ["added its new steps"] : [],
+      ...r.isNewlyMarked ? ["marked it as a design choice"] : []
+    ];
+    const updated = changes.length > 0 ? ` and ${changes.join(" and ")}` : "";
+    return { ledger: r.ledger, result: `Already open, so this record updated it${updated}.${leftOut}` };
+  }
   if (r.is === "closed")
     return { ledger, result: `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.` };
   return {
     ledger: r.ledger,
-    result: `Recorded. The user sees it in ${host.surface}.` + (helps.length < steps2.length ? " Some steps were not a command, a file path or a link, so they are left out." : "") + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : "")
+    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : "")
   };
 }
 function recordFinding(host, ledger, input, now) {
@@ -2143,6 +2282,72 @@ function recordClose(host, ledger, input, now) {
   };
 }
 
+// ../hooks/dialogs.ts
+function optionKey(option) {
+  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
+}
+function optionsKey(options) {
+  return options.map(optionKey).sort().join("\n");
+}
+function hasSameOptions(item, q) {
+  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
+}
+function copyOf(q, items, questions) {
+  const byOptions = items.filter((i) => hasSameOptions(i, q));
+  const [only] = byOptions;
+  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1) return only;
+  const pool = byOptions.length > 0 ? byOptions : items;
+  const byAsk = pool.filter((i) => restates(i.ask, q.question));
+  const [asked] = byAsk;
+  if (!asked || byAsk.length !== 1) return null;
+  const restated = questions.filter((o) => restates(asked.ask, o.question));
+  return restated.length === 1 ? asked : null;
+}
+function descriptionsFor(options, descriptions) {
+  const byKey = new Map(Object.entries(descriptions).map(([label, text2]) => [optionKey(label), text2]));
+  const matched = options.flatMap((o) => {
+    const text2 = byKey.get(optionKey(o));
+    return text2 === void 0 ? [] : [[o, text2]];
+  });
+  return matched.length > 0 ? Object.fromEntries(matched) : null;
+}
+function asCopyOf(item, q) {
+  const descriptions = descriptionsFor(item.options, q.descriptions);
+  return {
+    ...item,
+    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
+    ...descriptions ? { optionDescriptions: descriptions } : {}
+  };
+}
+function linkDialogs(s) {
+  if (s.dialogQuestions.length === 0) return s;
+  let items = s.ledger.items;
+  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
+  const questions = s.dialogQuestions.map((q) => {
+    if (q.itemId !== null) return q;
+    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
+    const copy = copyOf(
+      q,
+      turnItems,
+      s.dialogQuestions.filter((o) => o.turn === q.turn)
+    );
+    if (!copy || copy.dialog || linked.has(copy.id)) return q;
+    linked.add(copy.id);
+    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
+    return { ...q, itemId: copy.id };
+  });
+  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
+  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
+}
+function noteDialog(s, callId, questions) {
+  const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
+  const added = questions.flatMap(
+    (q, index) => isNoted(index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]
+  );
+  if (added.length === 0) return s;
+  return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
+}
+
 // ../hooks/session.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
 var NO_TURN = { person: null, trigger: null, activity: [], press: null };
@@ -2165,7 +2370,8 @@ function emptySession() {
     heldRows: [],
     prViews: NO_PRS,
     stop: null,
-    hostTasks: []
+    hostTasks: [],
+    dialogQuestions: []
   };
 }
 var SESSION_ID = /^[\w-]{1,100}$/;
@@ -2210,12 +2416,14 @@ function upgradeSession(saved) {
     prViews: {
       ...NO_PRS,
       ...saved.prViews,
-      // Threads saved before their times and `isLinesChanged` existed.
+      // Views saved before `isYours` and `wasSeenOpen`, and threads saved before their times and `isLinesChanged` existed.
       views: Object.fromEntries(
         Object.entries(views).map(([ref, pr]) => [
           ref,
           {
             ...pr,
+            isYours: pr.isYours ?? null,
+            wasSeenOpen: pr.wasSeenOpen ?? pr.state === "OPEN",
             threads: pr.threads.map((t) => ({
               ...t,
               isLinesChanged: t.isLinesChanged ?? false,
@@ -2228,7 +2436,8 @@ function upgradeSession(saved) {
       isFetching: false
     },
     stop: saved.stop ?? null,
-    hostTasks: upgradeHostTasks(saved.hostTasks)
+    hostTasks: upgradeHostTasks(saved.hostTasks),
+    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
 }
 function turnStarted(s) {
@@ -2256,13 +2465,14 @@ function isUnseen(s) {
   const { ledger } = s;
   return s.presence.turnsStarted === 0 && s.presence.ledgerState === "current" && s.pending.length === 0 && isBlankLedger(ledger);
 }
-function pressOn(s, p, at, localPressId) {
+function pressOn(s, p, at, localPressId, answerMessage2) {
   const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId };
   if ("ref" in p) return applyPrPress(s.ledger, s.prViews, s.lastActions, p, ctx);
   const item = s.ledger.items.find((i) => i.id === p.id);
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
-    extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prs) : []
+    extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prs) : [],
+    answerMessage: answerMessage2
   });
   if ("stale" in r) return r;
   return {
@@ -2307,16 +2517,16 @@ function completedAttempt(state, deliveryId, outcome) {
 }
 function recorded(host, s, tool, args, now) {
   const r = (tool === "close" ? recordClose : recordItem)(host, s.ledger, args, now);
-  return { state: { ...s, ledger: r.ledger }, result: r.result };
+  return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result };
 }
 function withFetchedPrs(s, fetched, branchRef, at) {
+  const merged = { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false };
   const views = Object.fromEntries(
-    Object.entries(fetched).filter(([ref]) => isTracked({ ...s.prViews, branchRef }, s.ledger.prs, ref))
+    Object.entries(merged.views).filter(
+      ([ref]) => keepsView(merged, s.ledger.prs, ref) || isDismissing(s.lastActions, ref, at)
+    )
   );
-  const dismissing = Object.fromEntries(
-    Object.entries(s.prViews.views).filter(([ref]) => isDismissing(s.lastActions, ref, at))
-  );
-  return { ...s, prViews: { views: { ...dismissing, ...views }, branchRef, isFetching: false } };
+  return { ...s, prViews: { ...merged, views } };
 }
 function withoutStalePending(lastActions, now) {
   const isStale = (last) => last.result?.state === "pending" && now - last.result.at > PRESS_TIMEOUT_MS;
@@ -2362,7 +2572,7 @@ function prTabOf(s, lastActions, now) {
     drawn,
     branchRef: s.prViews.branchRef,
     count: drawn.filter((d) => !d.isSettled && prNeedsYou(d.pr, isSent)).length,
-    olderText: olderPrsText(s.ledger.prs)
+    olderText: olderPrsText(s.prViews, s.ledger.prs)
   };
 }
 
@@ -2433,6 +2643,9 @@ function isPromptMissed(h, turnId) {
   if (turnId !== null && (h.promptTurns.length > 0 || h.promptAt === null)) return !h.promptTurns.includes(turnId);
   return h.promptAt === null || h.stopAt !== null && h.promptAt < h.stopAt;
 }
+function isTurnRunning(h) {
+  return h.promptAt !== null && (h.stopAt === null || h.promptAt > h.stopAt);
+}
 function noteToolCall(s, turnId, now) {
   return isPromptMissed(s.heard, turnId) ? { ...s, heard: { ...s.heard, promptMissedAt: now } } : s;
 }
@@ -2497,6 +2710,7 @@ function demoView(now) {
           ask: "Dismiss a glance with a pinch, or a flick of the wrist?",
           options: ["Pinch", "Flick"],
           rec: "Pinch",
+          isDesignChoice: true,
           helps: [],
           turn: 14,
           at: now - 12 * MIN
@@ -2807,6 +3021,8 @@ function demoView(now) {
               at: now - 50 * MIN
             }
           ],
+          isYours: true,
+          wasSeenOpen: true,
           error: null
         },
         "acme/visor#29": {
@@ -2824,6 +3040,8 @@ function demoView(now) {
             { name: "unit tests", bucket: "pass", url: null }
           ],
           threads: [],
+          isYours: true,
+          wasSeenOpen: true,
           error: null
         },
         "acme/visor#33": {
@@ -2841,6 +3059,8 @@ function demoView(now) {
             { name: "unit tests", bucket: "pending", url: null }
           ],
           threads: [],
+          isYours: true,
+          wasSeenOpen: true,
           error: null
         }
       }
@@ -3149,9 +3369,24 @@ function demoState(now) {
   };
 }
 
+// src/dialogs.ts
+function dialogReply(link, answer) {
+  const questionItemId = JSON.stringify(["request_user_input_async", link.callId, link.index]);
+  const reply = [{ questionItemId, question: link.question, answer }];
+  return `<send_user_message_question_reply>
+${JSON.stringify(reply)}
+</send_user_message_question_reply>`;
+}
+function answerMessage(item, answer) {
+  return item.dialog ? dialogReply(item.dialog, answer) : messages.answer(item, answer);
+}
+function noteDialogs(s, dialogs) {
+  return dialogs.reduce((x, d) => d.callId === null ? x : noteDialog(x, d.callId, d.questions), s);
+}
+
 // src/transcript.ts
 import { open, readdir as readdir2 } from "node:fs/promises";
-import { join as join2, resolve as resolve2 } from "node:path";
+import { dirname as dirname2, join as join2, resolve as resolve2 } from "node:path";
 
 // ../hooks/conversation.ts
 var NL2 = "\n";
@@ -3210,26 +3445,41 @@ async function namesIn(dir, pattern) {
   const names = await readdir2(dir).catch(() => []);
   return names.filter((n) => pattern.test(n)).sort().reverse();
 }
-async function rolloutFor(codexHome, threadId) {
-  if (threadId === "") return null;
-  const sessions = join2(codexHome, "sessions");
-  const suffix = `-${threadId}.jsonl`;
+async function newestRollout(sessions, isWanted) {
   for (const year of await namesIn(sessions, /^\d{4}$/))
     for (const month of await namesIn(join2(sessions, year), /^\d{2}$/))
       for (const day of await namesIn(join2(sessions, year, month), /^\d{2}$/)) {
         const folder = join2(sessions, year, month, day);
-        const [name] = (await namesIn(folder, /^rollout-.+\.jsonl$/)).filter((n) => n.endsWith(suffix));
-        if (name === void 0) continue;
-        const path = join2(folder, name);
-        const meta = await readSessionMeta(path);
-        const isOwnChat = meta !== null && !meta.payload?.parent_thread_id && !isExecMeta(meta);
-        return isOwnChat ? { path, cwd: typeof meta.payload?.cwd === "string" ? meta.payload.cwd : "" } : null;
+        const [name] = (await namesIn(folder, /^rollout-.+\.jsonl$/)).filter(isWanted);
+        if (name !== void 0) return join2(folder, name);
       }
   return null;
+}
+async function rolloutFor(codexHome, threadId) {
+  if (threadId === "") return null;
+  const path = await newestRollout(
+    join2(codexHome, "sessions"),
+    (name) => name.endsWith(`-${threadId}.jsonl`) || name.includes(`-${threadId}_`)
+  );
+  if (path === null) return null;
+  const meta = await readSessionMeta(path);
+  const isOwnChat = meta !== null && !meta.payload?.parent_thread_id && !isExecMeta(meta);
+  return isOwnChat ? { path, cwd: typeof meta.payload?.cwd === "string" ? meta.payload.cwd : "" } : null;
+}
+async function historyBase(path) {
+  const base = (await readSessionMeta(path))?.payload?.history_base;
+  const id = base?.thread_id;
+  const end = base?.end_byte_offset;
+  if (typeof id !== "string" || id === "" || typeof end !== "number" || end <= 0) return null;
+  const sessions = dirname2(dirname2(dirname2(dirname2(path))));
+  const basePath = await newestRollout(sessions, (name) => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`));
+  return basePath === null ? null : { path: basePath, end };
 }
 var DIALOG_TOOL = "request_user_input_async";
 var TAIL_BYTES = 4 * 1024 * 1024;
 var SHELL_CALLS = /* @__PURE__ */ new Set(["shell", "shell_command", "exec_command", "container.exec"]);
+var PLAN_TOOL = "update_plan";
+var MARKERS = ['"task_started"', DIALOG_TOOL, '"CommandExecution"', '"function_call', '"local_shell_call'];
 var isText = (v) => typeof v === "string";
 function commandText2(command) {
   if (isText(command)) return command;
@@ -3237,6 +3487,15 @@ function commandText2(command) {
   const argv = command.filter(isText);
   const [, flag, script] = argv;
   return argv.length === 3 && flag?.startsWith("-") && flag.endsWith("c") && script !== void 0 ? script : argv.join(" ");
+}
+function outputText(output) {
+  if (!isText(output)) return "";
+  try {
+    const parsed = JSON.parse(output);
+    return isText(parsed.output) ? parsed.output : output;
+  } catch {
+    return output;
+  }
 }
 function callCommand(p) {
   if (p.type === "local_shell_call") return commandText2(p.action?.command);
@@ -3248,16 +3507,16 @@ function callCommand(p) {
     return "";
   }
 }
-async function tailLines(path, bytes) {
+async function linesBefore(path, bytes, end = Infinity) {
   const file = await open(path, "r");
   try {
-    const { size } = await file.stat();
-    const start = Math.max(0, size - bytes);
-    const buf = Buffer.alloc(size - start);
+    const stop = Math.min(end, (await file.stat()).size);
+    const start = Math.max(0, stop - bytes);
+    const buf = Buffer.alloc(stop - start);
     const { bytesRead } = await file.read(buf, 0, buf.length, start);
     const lines = buf.subarray(0, bytesRead).toString("utf8").split("\n");
     if (start > 0) lines.shift();
-    return lines;
+    return { lines, start, read: bytesRead };
   } finally {
     await file.close();
   }
@@ -3283,13 +3542,96 @@ async function turnRunningIn(path) {
     return null;
   }
 }
+async function tailLines(path, bytes) {
+  return (await linesBefore(path, bytes)).lines;
+}
+async function historyLines(path, bytes) {
+  const first = await linesBefore(path, bytes);
+  const parts = [first.lines];
+  const seen = /* @__PURE__ */ new Set([path]);
+  let budget = bytes - first.read;
+  let isWhole = first.start === 0;
+  let current = path;
+  while (isWhole && budget > 0) {
+    const base = await historyBase(current).catch(() => null);
+    if (base === null || seen.has(base.path)) break;
+    seen.add(base.path);
+    const part = await linesBefore(base.path, budget, base.end).catch(() => null);
+    if (part === null) break;
+    parts.unshift(part.lines);
+    budget -= part.read;
+    isWhole = part.start === 0;
+    current = base.path;
+  }
+  return parts.flat();
+}
+async function turnIn(path, turnId) {
+  const none = { dialogs: [], commands: [], plan: null };
+  if (path === null) return none;
+  try {
+    const lines = await tailLines(path, TAIL_BYTES);
+    const byTurn = /* @__PURE__ */ new Map();
+    const newTurn = () => ({ dialogs: [], executions: [], calls: /* @__PURE__ */ new Map(), called: [], plan: null });
+    let current = "";
+    let newest = "";
+    for (const line of lines) {
+      if (!MARKERS.some((m) => line.includes(m))) continue;
+      let row;
+      try {
+        row = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const p = row.payload;
+      if (!p) continue;
+      if (row.type === "event_msg" && p.type === "task_started" && p.turn_id) {
+        current = p.turn_id;
+        newest = current;
+        if (!byTurn.has(current)) byTurn.set(current, newTurn());
+        continue;
+      }
+      const turn2 = byTurn.get(current) ?? newTurn();
+      byTurn.set(current, turn2);
+      if (row.type === "event_msg" && p.type === "item_completed" && p.item?.type === "CommandExecution") {
+        const output = p.item.aggregated_output;
+        turn2.executions.push({ command: commandText2(p.item.command), output: isText(output) ? output : "" });
+      } else if (row.type === "response_item" && p.type === "function_call" && p.name === PLAN_TOOL) {
+        turn2.plan = codexPlanOf(p.arguments) ?? turn2.plan;
+      } else if (row.type === "response_item" && p.type === "function_call" && p.name === DIALOG_TOOL) {
+        let args;
+        try {
+          args = JSON.parse(isText(p.arguments) ? p.arguments : "");
+        } catch {
+          continue;
+        }
+        turn2.dialogs.push({ callId: p.call_id ?? null, questions: dialogQuestions(args.questions) });
+      } else if (row.type === "response_item" && (p.type === "function_call" || p.type === "local_shell_call")) {
+        const command = callCommand(p);
+        if (command !== "" && p.call_id) turn2.calls.set(p.call_id, { command, output: "" });
+      } else if (row.type === "response_item" && p.type === "function_call_output" && p.call_id) {
+        const call = turn2.calls.get(p.call_id);
+        if (call) turn2.called.push({ command: call.command, output: outputText(p.output) });
+      }
+    }
+    const wanted = newest === "" ? "" : turnId ?? newest;
+    const turn = byTurn.get(wanted);
+    if (!turn) return none;
+    return {
+      dialogs: turn.dialogs.filter((d) => d.questions.length > 0),
+      commands: turn.executions.length > 0 ? turn.executions : turn.called,
+      plan: turn.plan
+    };
+  } catch {
+    return none;
+  }
+}
 var ROLLOUT_BYTES = 8 * 1024 * 1024;
 var record = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
-var textOf = (v) => isText(v) ? v : "";
-var contentText = (content) => (Array.isArray(content) ? content : []).map((part) => textOf(record(part).text)).filter(Boolean).join("\n").trim();
+var textOf2 = (v) => isText(v) ? v : "";
+var contentText = (content) => (Array.isArray(content) ? content : []).map((part) => textOf2(record(part).text)).filter(Boolean).join("\n").trim();
 var jsonRecord = (raw) => {
   try {
-    return record(JSON.parse(textOf(raw)));
+    return record(JSON.parse(textOf2(raw)));
   } catch {
     return {};
   }
@@ -3297,7 +3639,7 @@ var jsonRecord = (raw) => {
 var literalValue = (literal) => {
   if (literal === void 0) return null;
   try {
-    return textOf(JSON.parse(literal));
+    return textOf2(JSON.parse(literal));
   } catch {
     return null;
   }
@@ -3310,10 +3652,10 @@ var shellLines = (command) => {
 };
 var editLines = (patch, cwd) => patchFiles(patch).map((file) => `edited ${resolve2(cwd || "/", file)}`);
 function callLines(p, hasCommandRows, cwd) {
-  const name = textOf(p.name);
+  const name = textOf2(p.name);
   if (p.type === "local_shell_call") return hasCommandRows ? [] : shellLines(callCommand(p));
   if (p.type === "custom_tool_call" && name === "exec") {
-    const input = textOf(p.input);
+    const input = textOf2(p.input);
     const patch = literalValue(PATCH_ARGUMENT.exec(input)?.[1]);
     const command = literalValue(COMMAND_ARGUMENT.exec(input)?.[1]);
     return [...patch ? editLines(patch, cwd) : [], ...command && !hasCommandRows ? shellLines(command) : []];
@@ -3321,16 +3663,16 @@ function callLines(p, hasCommandRows, cwd) {
   if (p.type !== "function_call") return [];
   if (SHELL_CALLS.has(name)) return hasCommandRows ? [] : shellLines(callCommand(p));
   const args = jsonRecord(p.arguments);
-  if (name === "apply_patch") return editLines(textOf(args.input ?? args.patch ?? args.command), cwd);
+  if (name === "apply_patch") return editLines(textOf2(args.input ?? args.patch ?? args.command), cwd);
   if (name === "spawn_agent") {
-    const line2 = activityOf("Agent", { description: textOf(args.task_name) });
+    const line2 = activityOf("Agent", { description: textOf2(args.task_name) });
     return line2 ? [line2] : [];
   }
   if (name === DIALOG_TOOL) return [dialogActivity(dialogQuestions(args.questions), { kind: "open" })];
-  const line = activityOf(textOf(p.namespace).startsWith("mcp__") ? textOf(p.namespace) + name : name, {});
+  const line = activityOf(textOf2(p.namespace).startsWith("mcp__") ? textOf2(p.namespace) + name : name, {});
   return line ? [line] : [];
 }
-var isItem2 = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf(record(record(row.payload).item).type));
+var isItem2 = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf2(record(record(row.payload).item).type));
 function turnsOf(rows, cwd) {
   const hasMessageRows = rows.some((row) => isItem2(row, "UserMessage", "AgentMessage"));
   const hasCommandRows = rows.some((row) => isItem2(row, "CommandExecution"));
@@ -3376,7 +3718,7 @@ function rolloutTurns(lines, cwd) {
     }
     const p = record(row.payload);
     if (row.type === "event_msg" && p.type === "task_started") {
-      groups.push({ id: textOf(p.turn_id) || textOf(record(p.turn_attribution).turn_id), isComplete: false, rows: [] });
+      groups.push({ id: textOf2(p.turn_id) || textOf2(record(p.turn_attribution).turn_id), isComplete: false, rows: [] });
       continue;
     }
     if (groups.length === 0) groups.push({ id: "", isComplete: false, rows: [] });
@@ -3389,7 +3731,7 @@ function rolloutTurns(lines, cwd) {
 async function readRollout(path, cwd, currentTurnId) {
   if (path === null) return null;
   try {
-    const turns = rolloutTurns(await tailLines(path, ROLLOUT_BYTES), cwd);
+    const turns = rolloutTurns(await historyLines(path, ROLLOUT_BYTES), cwd);
     const earlier = turns.filter(
       (t) => t.id !== currentTurnId && (t.isComplete || t.turns.some((x) => x.role === "person"))
     );
@@ -3546,7 +3888,7 @@ async function startPress(host, p, isStale, holds) {
     const s = { ...saved, heldRows: Object.keys(holds.replies) };
     if (note) return s;
     const at2 = await host.now();
-    const r2 = pressOn(s, p, at2, localPressId);
+    const r2 = pressOn(s, p, at2, localPressId, host.answerMessage);
     if ("stale" in r2) {
       note = "stale";
       return s;
@@ -3615,7 +3957,7 @@ var PRS_REFRESH_MS = 12e4;
 var NEW_PR_FETCH_MS = 15e3;
 function isPrFetchDue(s, lastFetchedAt, now) {
   if (lastFetchedAt === void 0) return true;
-  const hasNewPr = splitLinked(s.ledger.prs).tracked.some((ref) => !(ref in s.prViews.views));
+  const hasNewPr = splitLinked(s.prViews, s.ledger.prs).tracked.some((ref) => !(ref in s.prViews.views));
   return now - lastFetchedAt >= PRS_REFRESH_MS || hasNewPr && now - lastFetchedAt >= NEW_PR_FETCH_MS;
 }
 function prFetchTracker(now) {
@@ -3669,11 +4011,12 @@ var reconcileUpdateStatus2 = (dir, sessionId) => reconcileUpdateStatus(codexStor
 function tabUri(tabHtml) {
   return `ui://inbox/tab-${createHash2("sha256").update(tabHtml).digest("hex").slice(0, 12)}`;
 }
+var HOOKS_TRUST_CACHE_MS = 3e4;
 var TAB_MIME = "text/html;profile=mcp-app";
 var APP_ONLY = { ui: { visibility: ["app"] } };
 function viewsStillShown(prs, linked, lastActions, at) {
   return Object.fromEntries(
-    Object.entries(prs.views).filter(([ref]) => isTracked(prs, linked, ref) || isDismissing(lastActions, ref, at))
+    Object.entries(prs.views).filter(([ref]) => keepsView(prs, linked, ref) || isDismissing(lastActions, ref, at))
   );
 }
 var toolsFor = (uri) => [
@@ -3762,6 +4105,27 @@ function makeServer(deps) {
   const prunedFor = /* @__PURE__ */ new Set();
   const checkedOnOpen = /* @__PURE__ */ new Set();
   let isGhMissing = false;
+  let hooksTrust = null;
+  let isAskingHooks = false;
+  function hooksTrustNow(s) {
+    const { hooksTrust: ask } = deps;
+    if (!ask) return null;
+    if (!isAskingHooks && (hooksTrust === null || now() - hooksTrust.at >= HOOKS_TRUST_CACHE_MS)) {
+      isAskingHooks = true;
+      void (async () => {
+        try {
+          const cli = s.cliPath ?? await deps.fallbackCli();
+          const answer = await ask(cli, s.root || homedir2());
+          hooksTrust = { at: now(), value: answer === "untrusted" || answer === "modified" ? answer : null };
+        } catch {
+          hooksTrust = { at: now(), value: null };
+        } finally {
+          isAskingHooks = false;
+        }
+      })();
+    }
+    return hooksTrust?.value ?? null;
+  }
   async function catchUpOnOpen(id) {
     const { openCatchUp } = deps;
     if (!openCatchUp || checkedOnOpen.has(id)) return;
@@ -3821,7 +4185,8 @@ function makeServer(deps) {
         }
       },
       settleWindowMs: SETTLE_WINDOW_MS,
-      newId: randomUUID2
+      newId: randomUUID2,
+      answerMessage
     };
   };
   async function syncTurn(id) {
@@ -3843,8 +4208,11 @@ function makeServer(deps) {
   const served = async (s, id, isDemo = false, holds = NO_HOLDS) => {
     const loadError = deps.loadError?.();
     const current = !isDemo && s.presence.isUpdating ? await reconcileUpdateStatus2(dir, id) : s;
+    const view = viewOf(current, now(), holds);
+    const trust = !isDemo && view.heard === "none" ? hooksTrustNow(current) : null;
     return {
-      ...viewOf(current, now(), holds),
+      ...view,
+      ...trust ? { hooksTrust: trust } : {},
       thread: id,
       isFetchingPrs: !isDemo && prFetches.isFetching(id),
       isGhMissing: !isDemo && isGhMissing,
@@ -3854,8 +4222,18 @@ function makeServer(deps) {
       ...deps.isPluginFolderGone?.() ? { isPluginFolderGone: true } : {}
     };
   };
+  async function linkRunningDialogs(id, itemId) {
+    const s = await readState(dir, id);
+    const item = s.ledger.items.find((i) => i.id === itemId);
+    const canLink = item?.kind === "question" && !item.dialog && item.turn === s.ledger.turn && isTurnRunning(s.heard);
+    if (!canLink) return;
+    const { dialogs } = await turnIn(s.transcriptPath, void 0);
+    if (dialogs.length > 0) await updateState(dir, id, (x) => noteDialogs(x, dialogs));
+  }
   async function onPress(id, p, thread, holds) {
     await syncTurn(id).catch(() => void 0);
+    if (!("ref" in p) && (p.action === "answer" || p.action === "type"))
+      await linkRunningDialogs(id, p.id).catch(() => void 0);
     const outcome = await press(hostFor(id), p, thread !== id, holds);
     if (outcome.wakesForDone) setTimeout(() => void wakeForDone2(id).catch(() => void 0), SETTLE_WINDOW_MS).unref();
     const { isUnconfirmed, wakesForDone: _wakes, ...rest } = outcome;
@@ -3883,7 +4261,7 @@ function makeServer(deps) {
     const s = demoOf(id);
     const r = thread === id ? pressOn(s, p, now()) : { stale: true };
     if ("stale" in r) return { view: await served(s, id, true, holds), copy: null, error: null, note: "stale" };
-    const { isSample, ...after } = demoAfterPress(
+    const after = demoAfterPress(
       { lastActions: s.lastActions, turns: s.presence },
       r,
       new Set(Object.keys(holds.replies))
@@ -3904,7 +4282,7 @@ function makeServer(deps) {
       view: await served(next, id, true, holds),
       copy: null,
       error: null,
-      note: isSample ? "sample" : null
+      note: null
     };
   }
   async function callTool(name, args, id, turn) {
@@ -3948,7 +4326,7 @@ function makeServer(deps) {
         const p = args.press;
         const holds = holdsOf(args);
         const r = await (args.demo === true ? onDemoPress(id, p, args.thread, holds) : onPress(id, p, args.thread, holds));
-        return { ...text(r.error ?? (r.note ? noteText(r.note) : "Done")), structuredContent: r };
+        return { ...text(r.error ?? (r.note ? noteText() : "Done")), structuredContent: r };
       }
     }
     return { ...text(`Unknown tool: ${name}`), isError: true };
@@ -4015,7 +4393,7 @@ async function devBuild(dir) {
 }
 
 // src/tab.html
-var tab_default = '<!doctype html>\n<html lang="en">\n  <head>\n    <meta charset="utf-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1" />\n    <meta name="inbox-handoff" content="1" />\n    <title>Inbox</title>\n    <style id="inbox-style">\n      /* The host\'s variables when Codex passes them; otherwise the pane\'s own colors. */\n      :root {\n        color-scheme: light;\n        --bg: var(--color-background-primary, #ffffff);\n        --text: var(--color-text-primary, #1f1f1f);\n        --muted: var(--color-text-secondary, #595959);\n        --key: #243bf5; --amber: #745417; --findings: #7b00e8; --prs: #006363; --done: #25652f; --error: #a5293d; --error-mark: #a5293d;\n        --needs-you: var(--amber);\n        --issue: var(--amber);\n        --sans: var(--font-sans, -apple-system, system-ui, sans-serif);\n        --mono: var(--font-mono, ui-monospace, \'SF Mono\', Menlo, monospace);\n        --raised: color-mix(in srgb, var(--text) 9%, var(--bg));\n        --selected: color-mix(in srgb, var(--text) 6%, var(--bg));\n        --age: color-mix(in srgb, var(--muted) 90%, var(--bg));\n        --hover: color-mix(in srgb, var(--key) 14%, transparent);\n        --soft: color-mix(in oklab, var(--text) 8%, transparent);\n        --soft-hover: color-mix(in oklab, var(--text) 10%, transparent);\n        --row-hover: color-mix(in oklab, var(--soft) 50%, transparent);\n        --quick: 150ms ease;\n        --mark-x: 18px;\n        --text-x: 44px;\n      }\n      @media (prefers-color-scheme: dark) {\n        :root:not([data-theme=\'light\']) {\n          color-scheme: dark;\n          --bg: var(--color-background-primary, #171717);\n          --text: var(--color-text-primary, #ececec);\n          --muted: var(--color-text-secondary, #a8a8a8);\n          --key: #b1b9f9; --amber: #ffc107; --findings: #cab0ff; --prs: #8cc8c0; --done: #7ecd8f; --error: #ffa3b0; --error-mark: #ff6b80;\n          --raised: color-mix(in srgb, var(--text) 11%, var(--bg));\n          --selected: color-mix(in srgb, var(--text) 8%, var(--bg));\n          --age: color-mix(in srgb, var(--muted) 85%, var(--bg));\n          --soft: color-mix(in oklab, var(--text) 12%, transparent);\n          --soft-hover: color-mix(in oklab, var(--text) 14%, transparent);\n        }\n      }\n      :root[data-theme=\'dark\'] {\n        color-scheme: dark;\n        --key: #b1b9f9; --amber: #ffc107; --findings: #cab0ff; --prs: #8cc8c0; --done: #7ecd8f; --error: #ffa3b0; --error-mark: #ff6b80;\n        --raised: color-mix(in srgb, var(--text) 11%, var(--bg));\n        --selected: color-mix(in srgb, var(--text) 8%, var(--bg));\n        --age: color-mix(in srgb, var(--muted) 85%, var(--bg));\n        --soft: color-mix(in oklab, var(--text) 12%, transparent);\n        --soft-hover: color-mix(in oklab, var(--text) 14%, transparent);\n      }\n      * {\n        box-sizing: border-box;\n      }\n      body {\n        margin: 0;\n        background: var(--bg);\n        color: var(--text);\n        font: 13px/20px var(--sans);\n        -webkit-font-smoothing: antialiased;\n      }\n      button {\n        font: inherit;\n        color: inherit;\n        background: none;\n        border: none;\n        padding: 0;\n        text-align: left;\n      }\n      :focus-visible {\n        outline: 1.5px solid var(--key);\n        outline-offset: 1px;\n        border-radius: 4px;\n      }\n      .muted {\n        color: var(--muted);\n      }\n      .tone-needsYou {\n        color: var(--needs-you);\n      }\n      .tone-findings {\n        color: var(--findings);\n      }\n      .tone-prs {\n        color: var(--prs);\n      }\n      .tone-done {\n        color: var(--done);\n      }\n      .tone-error {\n        color: var(--error);\n      }\n      .notice {\n        padding: 10px 16px;\n        overflow-wrap: anywhere;\n      }\n      .error-strip {\n        display: flex;\n        align-items: center;\n        justify-content: space-between;\n        gap: 12px;\n        flex-basis: 100%;\n        margin: 4px 0 0;\n        padding: 8px 12px;\n        border-radius: 6px;\n        background: color-mix(in srgb, var(--error) 12%, var(--bg));\n        color: var(--error);\n        overflow-wrap: anywhere;\n      }\n      #app > .error-strip {\n        margin: 12px 12px 0;\n      }\n      .error-strip .key {\n        flex: none;\n        white-space: nowrap;\n        color: var(--text);\n      }\n\n      nav {\n        display: flex;\n        flex-wrap: wrap;\n        align-items: center;\n        gap: 4px 16px;\n        padding: 12px 12px 0;\n      }\n      .tabs {\n        display: flex;\n        flex-wrap: wrap;\n        gap: 4px;\n      }\n      .tab {\n        white-space: nowrap;\n        padding: 6px 12px;\n        border-radius: 6px;\n        color: var(--muted);\n      }\n      .tab:hover {\n        color: var(--text);\n      }\n      .tab.shown {\n        background: var(--raised);\n        color: var(--text);\n        font-weight: 600;\n      }\n      .tab .count {\n        font-weight: 600;\n        margin-left: 6px;\n      }\n      .status {\n        margin-left: auto;\n        color: var(--muted);\n        font-size: 12px;\n      }\n      .status-line {\n        flex-basis: 100%;\n        padding: 0 4px;\n        font-size: 12px;\n        overflow-wrap: anywhere;\n      }\n\n      main {\n        display: flex;\n        flex-direction: column;\n        padding: 8px 0 4px;\n      }\n      section {\n        position: relative;\n        padding: 10px 0;\n      }\n      section + section::before {\n        content: \'\';\n        position: absolute;\n        top: 0;\n        left: var(--text-x);\n        right: 0;\n        height: 1px;\n        background: var(--soft);\n      }\n      .group-title {\n        padding: 0 14px 6px var(--text-x);\n      }\n      .group-title b {\n        font-weight: 600;\n      }\n      .group-title .count {\n        color: var(--muted);\n        white-space: pre;\n      }\n\n      .pr-head,\n      .pr-status,\n      .pr-actions,\n      .pr-last {\n        padding: 0 14px 0 var(--text-x);\n        overflow-wrap: anywhere;\n      }\n      .pr-head {\n        font-weight: 600;\n      }\n      .pr-head .num,\n      .pr-head .pr-verdict {\n        font-weight: 400;\n      }\n      .pr-actions {\n        margin-top: 8px;\n      }\n      .pr-last {\n        margin-top: 6px;\n      }\n      .pr-groups {\n        margin-top: 12px;\n      }\n      .pr-groups .list {\n        --mark-x: 41px;\n        --text-x: 67px;\n      }\n      .pr-groups .group-title + .list {\n        margin-bottom: 6px;\n      }\n      .link {\n        padding: 0;\n        text-align: left;\n        text-decoration: underline;\n        text-decoration-color: color-mix(in oklab, var(--text) 30%, transparent);\n        text-underline-offset: 2px;\n      }\n      .link:hover {\n        text-decoration-color: currentColor;\n      }\n\n      .row {\n        display: grid;\n        grid-template-columns: calc(var(--text-x) - var(--mark-x)) minmax(0, 1fr) auto;\n        padding: var(--row-pad) 14px var(--row-pad) var(--mark-x);\n      }\n      .row.selected {\n        background-color: var(--selected);\n      }\n      .mark {\n        align-self: start;\n        padding-right: 8px;\n        text-align: center;\n        color: var(--muted);\n      }\n      .mark.done {\n        color: var(--done);\n      }\n      .mark.issue {\n        color: var(--issue);\n      }\n      .mark.error {\n        color: var(--error-mark);\n      }\n      .side {\n        align-self: start;\n        margin-left: 12px;\n        color: var(--age);\n        font-variant-numeric: tabular-nums;\n        white-space: nowrap;\n        text-align: right;\n      }\n      .side[data-room]::after {\n        content: attr(data-room);\n        display: block;\n        height: 0;\n        overflow: hidden;\n        visibility: hidden;\n      }\n      .side-label {\n        display: inline-block;\n        max-width: 11em;\n        overflow: hidden;\n        text-overflow: ellipsis;\n        vertical-align: bottom;\n        margin-right: 4px;\n      }\n      .row.collapsed:hover .side {\n        color: var(--muted);\n      }\n      .content {\n        min-width: 0;\n        display: flex;\n        flex-direction: column;\n      }\n      /* Its space above is padding, not a gap, so the row\'s height grows smoothly when the panel mounts. */\n      .panel {\n        display: flex;\n        flex-direction: column;\n        gap: 8px;\n        padding: 8px 0 2px;\n      }\n      .row > .panel {\n        grid-column: 2 / -1;\n      }\n      .content.tight {\n        display: flex;\n        flex-direction: column;\n        gap: 0;\n      }\n      .line {\n        display: flex;\n        flex-direction: column;\n        width: 100%;\n        min-width: 0;\n      }\n      .line .text {\n        min-width: 0;\n        overflow: hidden;\n        text-overflow: ellipsis;\n        display: -webkit-box;\n        -webkit-line-clamp: 2;\n        -webkit-box-orient: vertical;\n      }\n      .line .after {\n        color: var(--muted);\n      }\n      .row.collapsed .line .after:not(.tone-error) {\n        color: var(--age);\n      }\n      .row.collapsed:hover .line .after:not(.tone-error) {\n        color: var(--muted);\n      }\n      .line .after.tone-error {\n        color: var(--error);\n      }\n      .row.selected .line,\n      .row.closing .line {\n        display: block;\n      }\n      .row.selected .line .text,\n      .row.closing .line .text {\n        display: inline;\n        font-weight: 600;\n      }\n      .row.selected .line .after,\n      .row.closing .line .after {\n        white-space: normal;\n        font-weight: 400;\n      }\n      .line .lead {\n        color: var(--muted);\n        font-weight: 400;\n      }\n      .line .meta {\n        display: block;\n        color: var(--muted);\n        overflow: hidden;\n        text-overflow: ellipsis;\n        white-space: nowrap;\n      }\n      .row.collapsed:not(:hover) .line .meta {\n        color: var(--age);\n      }\n      .row.selected .line .meta {\n        display: none;\n      }\n      .quote {\n        white-space: pre-line;\n      }\n      .row.collapsed:hover {\n        background-color: var(--row-hover);\n      }\n      .still .row.collapsed:not(:active):hover {\n        background-color: transparent;\n      }\n      .still .fold:not(:active):hover {\n        color: var(--muted);\n      }\n      .title {\n        font-weight: 600;\n      }\n      .body {\n        overflow-wrap: anywhere;\n      }\n      .body p {\n        margin: 0;\n      }\n      .body p + p {\n        margin-top: 4px;\n      }\n      code {\n        padding: 1px 4px;\n        border-radius: 4px;\n        background: var(--soft);\n        font-family: var(--mono);\n      }\n      .keys {\n        display: flex;\n        flex-wrap: wrap;\n        align-items: center;\n        gap: 6px;\n      }\n      .key {\n        display: inline-flex;\n        align-items: center;\n        justify-content: center;\n        gap: 5px;\n        min-height: 26px;\n        padding: 3px 11px;\n        border: 1px solid color-mix(in oklab, var(--text) 28%, transparent);\n        border-radius: 13px;\n        background: transparent;\n        font-weight: 400;\n        text-align: center;\n        max-width: 100%;\n        white-space: normal;\n        overflow-wrap: anywhere;\n      }\n      .key:not(:disabled):hover {\n        background: var(--soft);\n      }\n      .key:focus-visible {\n        outline-width: 2px;\n        outline-offset: 2px;\n        border-radius: 13px;\n      }\n      .key.primary {\n        border-color: transparent;\n        background: var(--text);\n        color: var(--bg);\n      }\n      .key.primary:not(:disabled):hover {\n        background: color-mix(in srgb, var(--text) 82%, var(--bg));\n      }\n      .key .icon {\n        flex: none;\n        width: 14px;\n        height: 14px;\n      }\n      .key.ghost {\n        padding: 0 4px;\n        border-color: transparent;\n        background: none;\n        color: var(--muted);\n      }\n      .key.ghost:not(:disabled):hover {\n        background: none;\n        color: var(--text);\n      }\n      .actions {\n        display: flex;\n        flex-direction: column;\n        gap: 4px;\n      }\n      form {\n        display: flex;\n        align-items: center;\n        gap: 6px;\n      }\n      input {\n        flex: 1;\n        min-width: 0;\n        min-height: 28px;\n        font: inherit;\n        color: inherit;\n        background: transparent;\n        border: 1px solid color-mix(in oklab, var(--text) 15%, transparent);\n        border-radius: 10px;\n        padding: 4px 10px;\n      }\n      input::placeholder {\n        color: var(--muted);\n      }\n      /* The radius again, since :focus-visible sets 4px. */\n      input:focus,\n      textarea:focus {\n        outline: none;\n        border-color: color-mix(in oklab, var(--text) 32%, transparent);\n        border-radius: 10px;\n      }\n      textarea {\n        width: 100%;\n        font: 12px var(--mono);\n        color: inherit;\n        background: transparent;\n        border: 1px solid color-mix(in oklab, var(--text) 15%, transparent);\n        border-radius: 10px;\n      }\n\n      .group-end {\n        display: flex;\n        flex-direction: column;\n        justify-content: flex-end;\n      }\n      /* Keeps the fold\'s margin inside, so its height is the whole end\'s content height. */\n      .group-end-content {\n        display: flow-root;\n        position: relative;\n      }\n      .group-empty {\n        padding: var(--row-pad) 14px var(--row-pad) var(--text-x);\n        color: var(--muted);\n      }\n      .group-empty.leaving {\n        position: absolute;\n        inset: auto 0 100% 0;\n        pointer-events: none;\n        animation: fade-out var(--enter) forwards;\n      }\n      @keyframes fade-out {\n        to {\n          opacity: 0;\n        }\n      }\n      .fold {\n        display: block;\n        margin: 8px 0 0 calc(var(--mark-x) - 1px);\n        padding: 1px 4px;\n        border-radius: 5px;\n        color: var(--muted);\n      }\n      .fold:hover {\n        color: var(--text);\n      }\n      .fold .icon {\n        width: 12px;\n        height: 12px;\n        margin-right: calc(var(--text-x) - var(--mark-x) - 15px);\n        vertical-align: -1px;\n      }\n      .closed-list {\n        --mark-x: 41px;\n        --text-x: 67px;\n      }\n      /* The gap above a Closed list\'s rows is content, not padding, so the list opens from and closes to 0. */\n      .closed-list::before {\n        content: \'\';\n        display: block;\n        height: 4px;\n      }\n      .closed-list .row {\n        padding-top: calc(var(--row-pad) / 2);\n        padding-bottom: calc(var(--row-pad) / 2);\n      }\n      .outcome {\n        color: var(--age);\n      }\n      .settled-head {\n        display: flex;\n        align-items: center;\n        min-width: 0;\n      }\n      .row.settled.was-open {\n        transition: background-color var(--move);\n        @starting-style {\n          background-color: var(--selected);\n        }\n      }\n      .settled-line {\n        flex: 1;\n        min-width: 0;\n        overflow-wrap: anywhere;\n      }\n      .settled .outcome-label {\n        color: var(--muted);\n      }\n      /* The pill keeps the line\'s height, so the row does not grow. */\n      .key.undo {\n        flex: none;\n        white-space: nowrap;\n        border-color: transparent;\n        position: relative;\n        isolation: isolate;\n        overflow: hidden;\n        margin: -3px 0 -3px 12px;\n        background: color-mix(in oklab, var(--soft) 45%, transparent);\n      }\n      .key.undo.undoing {\n        color: var(--muted);\n      }\n      .key.undo.undoing .icon {\n        animation: undo-turn 900ms linear infinite;\n      }\n      @keyframes undo-turn {\n        to {\n          transform: rotate(-360deg);\n        }\n      }\n      .time-left {\n        position: absolute;\n        inset: 0;\n        z-index: -1;\n        background: var(--soft);\n        transform-origin: left;\n        animation-name: empty;\n        animation-timing-function: linear;\n        animation-fill-mode: forwards;\n      }\n      .key.undo:not(:disabled):hover .time-left {\n        background: var(--soft-hover);\n      }\n      .time-left.paused {\n        animation-play-state: paused;\n      }\n      @keyframes empty {\n        from {\n          transform: scaleX(1);\n        }\n        to {\n          transform: scaleX(0);\n        }\n      }\n      #app {\n        display: flex;\n        flex-direction: column;\n        min-height: 100vh;\n      }\n      .empty {\n        flex: 1;\n        display: flex;\n        flex-direction: column;\n        justify-content: center;\n        padding: 32px;\n        text-align: center;\n      }\n      .empty .title {\n        margin-bottom: 4px;\n      }\n      footer {\n        margin-top: auto;\n        display: flex;\n        flex-wrap: wrap;\n        justify-content: space-between;\n        gap: 4px 16px;\n        padding: 8px 16px 16px;\n        color: var(--muted);\n        font-size: 12px;\n      }\n      .footer-end {\n        display: flex;\n        gap: 16px;\n        margin-left: auto;\n      }\n      .version {\n        color: color-mix(in srgb, var(--muted) 50%, var(--bg));\n      }\n      .demo-toggle {\n        padding: 0 6px;\n        border-radius: 5px;\n        color: var(--muted);\n      }\n      .demo-toggle:hover {\n        color: var(--text);\n        background: var(--hover);\n      }\n      .demo-note {\n        display: flex;\n        align-items: center;\n        justify-content: space-between;\n        gap: 6px;\n        padding: 8px 12px 0;\n        font-size: 11px;\n        color: var(--muted);\n        white-space: nowrap;\n      }\n      .demo-note .key {\n        flex: none;\n        white-space: nowrap;\n        padding: 0;\n      }\n      .demo-note span {\n        min-width: 0;\n        overflow: hidden;\n        text-overflow: ellipsis;\n      }\n      .earlier {\n        padding: 2px 14px 2px var(--text-x);\n      }\n      .overview-goal,\n      .overview-now {\n        padding: 0 14px 0 var(--text-x);\n        overflow-wrap: anywhere;\n      }\n      .overview .content {\n        overflow-wrap: anywhere;\n      }\n      .overview-gap {\n        margin-top: var(--lead-gap);\n      }\n      .overview-goal {\n        margin: 0;\n        font-size: inherit;\n        font-weight: 600;\n      }\n      .status-line,\n      .demo-note,\n      .empty,\n      main,\n      form {\n        transition: opacity var(--quick);\n        @starting-style {\n          opacity: 0;\n        }\n      }\n      @media (prefers-reduced-motion: reduce) {\n        *,\n        *::before,\n        *::after {\n          transition-duration: 0s !important;\n        }\n        .time-left,\n        .key.undo.undoing .icon {\n          animation: none;\n        }\n      }\n    </style>\n  </head>\n  <body>\n    <div id="app"></div>\n    <script id="inbox-script">\n      "use strict";(()=>{var Je,k,Bn,Vi,Q,jn,Xn,Qn,Ct,Ye,_e,zn,Mt,Nt,Dt,qi,Xe={},Qe=[],Wi=/acit|ex(?:s|g|n|p|$)|rph|grid|ows|mnc|ntw|ine[ch]|zoo|^ord|itera/i,Ze=Array.isArray;function Y(e,t){for(var n in t)e[n]=t[n];return e}function Ft(e){e&&e.parentNode&&e.parentNode.removeChild(e)}function ji(e,t,n){var s,i,o,r={};for(o in t)o=="key"?s=t[o]:o=="ref"?i=t[o]:r[o]=t[o];if(arguments.length>2&&(r.children=arguments.length>3?Je.call(arguments,2):n),typeof e=="function"&&e.defaultProps!=null)for(o in e.defaultProps)r[o]===void 0&&(r[o]=e.defaultProps[o]);return Ge(e,r,s,i,null)}function Ge(e,t,n,s,i){var o={type:e,props:t,key:n,ref:s,__k:null,__:null,__b:0,__e:null,__c:null,constructor:void 0,__v:i??++Bn,__i:-1,__u:0};return i==null&&k.vnode!=null&&k.vnode(o),o}function $(e){return e.children}function Be(e,t){this.props=e,this.context=t}function ie(e,t){if(t==null)return e.__?ie(e.__,e.__i+1):null;for(var n;t<e.__k.length;t++)if((n=e.__k[t])!=null&&n.__e!=null)return n.__e;return typeof e.type=="function"?ie(e):null}function Ki(e){if(e.__P&&e.__d){var t=e.__v,n=t.__e,s=[],i=[],o=Y({},t);o.__v=t.__v+1,k.vnode&&k.vnode(o),Ht(e.__P,o,t,e.__n,e.__P.namespaceURI,32&t.__u?[n]:null,s,n??ie(t),!!(32&t.__u),i),o.__v=t.__v,o.__.__k[o.__i]=o,ns(s,o,i),t.__e=t.__=null,o.__e!=n&&Jn(o)}}function Jn(e){if((e=e.__)!=null&&e.__c!=null)return e.__e=e.__c.base=null,e.__k.some(function(t){if(t!=null&&t.__e!=null)return e.__e=e.__c.base=t.__e}),Jn(e)}function Kn(e){(!e.__d&&(e.__d=!0)&&Q.push(e)&&!ze.__r++||jn!=k.debounceRendering)&&((jn=k.debounceRendering)||Xn)(ze)}function ze(){try{for(var e,t=1;Q.length;)Q.length>t&&Q.sort(Qn),e=Q.shift(),t=Q.length,Ki(e)}finally{Q.length=ze.__r=0}}function Zn(e,t,n,s,i,o,r,l,u,d,p){var h,c,f,g,m,x,y=s&&s.__k||Qe,w=t.length;for(u=Yi(n,t,y,u,w),h=0;h<w;h++)(f=n.__k[h])!=null&&(c=f.__i!=-1&&y[f.__i]||Xe,f.__i=h,x=Ht(e,f,c,i,o,r,l,u,d,p),g=f.__e,f.ref&&c.ref!=f.ref&&(c.ref&&Ut(c.ref,null,f),p.push(f.ref,f.__c||g,f)),m==null&&g!=null&&(m=g),4&f.__u?(u=es(f,u,e),c.__e&&(c.__e=null)):typeof f.type=="function"&&x!==void 0?u=x:g&&(u=g.nextSibling),f.__u&=-7);return n.__e=m,u}function Yi(e,t,n,s,i){var o,r,l,u,d,p=n.length,h=p,c=0;for(e.__k=new Array(i),o=0;o<i;o++)(r=t[o])!=null&&typeof r!="boolean"&&typeof r!="function"?(typeof r=="string"||typeof r=="number"||typeof r=="bigint"||r.constructor==String?r=e.__k[o]=Ge(null,r,null,null,null):Ze(r)?r=e.__k[o]=Ge($,{children:r},null,null,null):r.constructor===void 0&&r.__b>0?r=e.__k[o]=Ge(r.type,r.props,r.key,r.ref?r.ref:null,r.__v):e.__k[o]=r,u=o+c,r.__=e,r.__b=e.__b+1,l=null,(d=r.__i=Gi(r,n,u,h))!=-1&&(h--,(l=n[d])&&(l.__u|=2)),l==null||l.__v==null?(d==-1&&(i>p?c--:i<p&&c++),typeof r.type!="function"&&(r.__u|=4)):d!=u&&(d==u-1?c--:d==u+1?c++:(d>u?c--:c++,r.__u|=4))):e.__k[o]=null;if(h)for(o=0;o<p;o++)(l=n[o])!=null&&(2&l.__u)==0&&(l.__e==s&&(s=ie(l)),is(l,l));return s}function es(e,t,n){var s,i;if(typeof e.type=="function"){for(s=e.__k,i=0;s&&i<s.length;i++)s[i]&&(s[i].__=e,t=es(s[i],t,n));return t}e.__e!=t&&(t&&e.type&&!t.parentNode&&(t=ie(e)),t=n.insertBefore(e.__e,t||null));do t=t&&t.nextSibling;while(t!=null&&t.nodeType==8);return t}function Gi(e,t,n,s){var i,o,r,l=e.key,u=e.type,d=t[n],p=d!=null&&(2&d.__u)==0;if(d===null&&l==null||p&&l==d.key&&u==d.type)return n;if(s>(p?1:0)){for(i=n-1,o=n+1;i>=0||o<t.length;)if((d=t[r=i>=0?i--:o++])!=null&&(2&d.__u)==0&&l==d.key&&u==d.type)return r}return-1}function Yn(e,t,n){t[0]=="-"?e.setProperty(t,n??""):e[t]=n==null?"":typeof n!="number"||Wi.test(t)?n:n+"px"}function Ke(e,t,n,s,i){var o,r;e:if(t=="style")if(typeof n=="string")e.style.cssText=n;else{if(typeof s=="string"&&(e.style.cssText=s=""),s)for(t in s)n&&t in n||Yn(e.style,t,"");if(n)for(t in n)s&&n[t]==s[t]||Yn(e.style,t,n[t])}else if(t[0]=="o"&&t[1]=="n")o=t!=(t=t.replace(zn,"$1")),r=t.toLowerCase(),t=r in e||t=="onFocusOut"||t=="onFocusIn"?r.slice(2):t.slice(2),e.l||(e.l={}),e.l[t+o]=n,n?s?n[_e]=s[_e]:(n[_e]=Mt,e.addEventListener(t,o?Dt:Nt,o)):e.removeEventListener(t,o?Dt:Nt,o);else{if(i=="http://www.w3.org/2000/svg")t=t.replace(/xlink(H|:h)/,"h").replace(/sName$/,"s");else if(t!="width"&&t!="height"&&t!="href"&&t!="list"&&t!="form"&&t!="tabIndex"&&t!="download"&&t!="rowSpan"&&t!="colSpan"&&t!="role"&&t!="popover"&&t in e)try{e[t]=n??"";break e}catch{}typeof n=="function"||(n==null||n===!1&&t[4]!="-"?e.removeAttribute(t):e.setAttribute(t,t=="popover"&&n==1?"":n))}}function Gn(e){return function(t){if(this.l){var n=this.l[t.type+e];if(t[Ye]==null)t[Ye]=Mt++;else if(t[Ye]<n[_e])return;return n(k.event?k.event(t):t)}}}function Ht(e,t,n,s,i,o,r,l,u,d){var p,h,c,f,g,m,x,y,w,E,K,D,R,je,fe,he,L=t.type;if(t.constructor!==void 0)return null;128&n.__u&&(u=!!(32&n.__u),o=[l=t.__e=n.__e]),(p=k.__b)&&p(t);e:if(typeof L=="function"){h=r.length;try{if(w=t.props,E=L.prototype&&L.prototype.render,K=(p=L.contextType)&&s[p.__c],D=p?K?K.props.value:p.__:s,n.__c?y=(c=t.__c=n.__c).__=c.__E:(E?t.__c=c=new L(w,D):(t.__c=c=new Be(w,D),c.constructor=L,c.render=Xi),K&&K.sub(c),c.state||(c.state={}),c.__n=s,f=c.__d=!0,c.__h=[],c._sb=[]),E&&c.__s==null&&(c.__s=c.state),E&&L.getDerivedStateFromProps!=null&&(c.__s==c.state&&(c.__s=Y({},c.__s)),Y(c.__s,L.getDerivedStateFromProps(w,c.__s))),g=c.props,m=c.state,c.__v=t,f)E&&L.getDerivedStateFromProps==null&&c.componentWillMount!=null&&c.componentWillMount(),E&&c.componentDidMount!=null&&c.__h.push(c.componentDidMount);else{if(E&&L.getDerivedStateFromProps==null&&w!==g&&c.componentWillReceiveProps!=null&&c.componentWillReceiveProps(w,D),t.__v==n.__v||!c.__e&&c.shouldComponentUpdate!=null&&c.shouldComponentUpdate(w,c.__s,D)===!1){t.__v!=n.__v&&(c.props=w,c.state=c.__s,c.__d=!1),t.__e=n.__e,t.__k=n.__k,t.__k.some(function(V){V&&(V.__=t)}),Qe.push.apply(c.__h,c._sb),c._sb=[],c.__h.length&&r.push(c),l=ie(n);break e}c.componentWillUpdate!=null&&c.componentWillUpdate(w,c.__s,D),E&&c.componentDidUpdate!=null&&c.__h.push(function(){c.componentDidUpdate(g,m,x)})}if(c.context=D,c.props=w,c.__P=e,c.__e=!1,R=k.__r,je=0,E)c.state=c.__s,c.__d=!1,R&&R(t),p=c.render(c.props,c.state,c.context),Qe.push.apply(c.__h,c._sb),c._sb=[];else do c.__d=!1,R&&R(t),p=c.render(c.props,c.state,c.context),c.state=c.__s;while(c.__d&&++je<25);c.state=c.__s,c.getChildContext!=null&&(s=Y(Y({},s),c.getChildContext())),E&&!f&&c.getSnapshotBeforeUpdate!=null&&(x=c.getSnapshotBeforeUpdate(g,m)),fe=p!=null&&p.type===$&&p.key==null?ss(p.props.children):p,l=Zn(e,Ze(fe)?fe:[fe],t,n,s,i,o,r,l,u,d),c.base=t.__e,t.__u&=-161,c.__h.length&&r.push(c),y&&(c.__E=c.__=null)}catch(V){if(r.length=h,t.__v=null,u||o!=null){if(V.then){for(t.__u|=u?160:128;l&&l.nodeType==8&&l.nextSibling;)l=l.nextSibling;o!=null&&(o[o.indexOf(l)]=null),t.__e=l}else if(o!=null)for(he=o.length;he--;)Ft(o[he])}else t.__e=n.__e;t.__k==null&&(t.__k=n.__k||[]),V.then||ts(t),k.__e(V,t,n)}}else o==null&&t.__v==n.__v?(t.__k=n.__k,t.__e=n.__e):l=t.__e=Bi(n.__e,t,n,s,i,o,r,u,d);return(p=k.diffed)&&p(t),128&t.__u?void 0:l}function ts(e){e&&(e.__c&&(e.__c.__e=!0),e.__k&&e.__k.some(ts))}function ns(e,t,n){for(var s=0;s<n.length;s++)Ut(n[s],n[++s],n[++s]);k.__c&&k.__c(t,e),e.some(function(i){try{e=i.__h,i.__h=[],e.some(function(o){o.call(i)})}catch(o){k.__e(o,i.__v)}})}function ss(e){return typeof e!="object"||e==null||e.__b>0?e:Ze(e)?e.map(ss):e.constructor!==void 0?null:Y({},e)}function Bi(e,t,n,s,i,o,r,l,u){var d,p,h,c,f,g,m,x=n.props||Xe,y=t.props,w=t.type;if(w=="svg"?i="http://www.w3.org/2000/svg":w=="math"?i="http://www.w3.org/1998/Math/MathML":i||(i="http://www.w3.org/1999/xhtml"),o!=null){for(d=0;d<o.length;d++)if((f=o[d])&&"setAttribute"in f==!!w&&(w?f.localName==w:f.nodeType==3)){e=f,o[d]=null;break}}if(e==null){if(w==null)return document.createTextNode(y);e=document.createElementNS(i,w,y.is&&y),l&&(k.__m&&k.__m(t,o),l=!1),o=null}if(w==null)x===y||l&&e.data==y||(e.data=y);else{if(o=w=="textarea"&&y.defaultValue!=null?null:o&&Je.call(e.childNodes),!l&&o!=null)for(x={},d=0;d<e.attributes.length;d++)x[(f=e.attributes[d]).name]=f.value;for(d in x)f=x[d],d=="dangerouslySetInnerHTML"?h=f:d=="children"||d in y||d=="value"&&"defaultValue"in y||d=="checked"&&"defaultChecked"in y||Ke(e,d,null,f,i);for(d in y)f=y[d],d=="children"?c=f:d=="dangerouslySetInnerHTML"?p=f:d=="value"?g=f:d=="checked"?m=f:l&&typeof f!="function"||x[d]===f||Ke(e,d,f,x[d],i);if(p)l||h&&(p.__html==h.__html||p.__html==e.innerHTML)||(e.innerHTML=p.__html),t.__k=[];else if(h&&(e.innerHTML=""),Zn(t.type=="template"?e.content:e,Ze(c)?c:[c],t,n,s,w=="foreignObject"?"http://www.w3.org/1999/xhtml":i,o,r,o?o[0]:n.__k&&ie(n,0),l,u),o!=null)for(d=o.length;d--;)Ft(o[d]);l&&w!="textarea"||(d="value",w=="progress"&&g==null?e.removeAttribute("value"):g!=null&&(g!==e[d]||w=="progress"&&!g||w=="option"&&g!=x[d])&&Ke(e,d,g,x[d],i),d="checked",m!=null&&m!=e[d]&&Ke(e,d,m,x[d],i))}return e}function Ut(e,t,n){try{if(typeof e=="function"){var s=typeof e.__u=="function";s&&e.__u(),s&&t==null||(e.__u=e(t))}else e.current=t}catch(i){k.__e(i,n)}}function is(e,t,n){var s,i;if(k.unmount&&k.unmount(e),(s=e.ref)&&(s.current&&s.current!=e.__e||Ut(s,null,t)),(s=e.__c)!=null){if(s.componentWillUnmount)try{s.componentWillUnmount()}catch(o){k.__e(o,t)}s.base=s.__P=s.__n=null}if(s=e.__k)for(i=0;i<s.length;i++)s[i]&&is(s[i],t,n||typeof e.type!="function");n||Ft(e.__e),e.__c=e.__=e.__e=void 0}function Xi(e,t,n){return this.constructor(e,n)}function Vt(e,t,n){var s,i,o,r;t==document&&(t=document.documentElement),k.__&&k.__(e,t),i=(s=typeof n=="function")?null:n&&n.__k||t.__k,o=[],r=[],Ht(t,e=(!s&&n||t).__k=ji($,null,[e]),i||Xe,Xe,t.namespaceURI,!s&&n?[n]:i?null:t.firstChild?Je.call(t.childNodes):null,o,!s&&n?n:i?i.__e:t.firstChild,s,r),ns(o,e,r),e.props.children=null}Je=Qe.slice,k={__e:function(e,t,n,s){for(var i,o,r;t=t.__;)if((i=t.__c)&&!i.__)try{if((o=i.constructor)&&o.getDerivedStateFromError!=null&&(i.setState(o.getDerivedStateFromError(e)),r=i.__d),i.componentDidCatch!=null&&(i.componentDidCatch(e,s||{}),r=i.__d),r)return i.__E=i}catch(l){e=l}throw e}},Bn=0,Vi=function(e){return e!=null&&e.constructor===void 0},Be.prototype.setState=function(e,t){var n;n=this.__s!=null&&this.__s!=this.state?this.__s:this.__s=Y({},this.state),typeof e=="function"&&(e=e(Y({},n),this.props)),e&&Y(n,e),e!=null&&this.__v&&(t&&this._sb.push(t),Kn(this))},Be.prototype.forceUpdate=function(e){this.__v&&(this.__e=!0,e&&this.__h.push(e),Kn(this))},Be.prototype.render=$,Q=[],Xn=typeof Promise=="function"?Promise.prototype.then.bind(Promise.resolve()):setTimeout,Qn=function(e,t){return e.__v.__b-t.__v.__b},ze.__r=0,Ct=Math.random().toString(8),Ye="__d"+Ct,_e="__a"+Ct,zn=/(PointerCapture)$|Capture$/i,Mt=0,Nt=Gn(!1),Dt=Gn(!0),qi=0;var os={name:"inbox",version:"0.2.10",description:"Collects what waits on you in a Codex session: questions, tasks, findings and PRs, in a tab beside the conversation",author:{name:"Pete Petrash"},repository:"https://github.com/petekp/inbox",license:"MIT",mcpServers:"./.mcp.json",hooks:"./hooks/hooks.json",interface:{displayName:"Inbox",shortDescription:"What waits on you in this conversation",developerName:"Pete Petrash",category:"Developer Tools",capabilities:["Interactive"]}};var Tr=5*6e4,Er=60*6e4;function G(e,t){return e.length>t?`${e.slice(0,t-1)}\\u2026`:e}function Re(e){let t=Math.round(e/6e4);if(t<1)return"just now";if(t<60)return`${t}m ago`;let n=Math.round(t/60);return n<48?`${n}h ago`:`${Math.round(n/24)}d ago`}var rs="no longer applies|replaced|superseded|moot",zi=new RegExp(`^(?:closed by \\\\w+: )?(?:${rs})`,"i"),Cr=new RegExp(`^\\\\s*(?:done\\\\s*:|(?:${rs}|no longer relevant|dealt with)\\\\b)`,"i");function qt(e){if(e.how==="dismissed")return"dismissed";if(e.how==="expired")return"lapsed";let t=zi.test(e.outcome);return(e.how==="claude"||e.how==="update")&&t?"lapsed":"handled"}var Br=`You keep a one-page guide to a coding session, for the person who works with the agent. They read it when they come back, to see what the work is, how it is going and what comes next. You read the guide as it was and one exchange, and write the guide as it should be now.\n\nThe guide is about the work. It is not a log of what the agent did, and it is not a list of what waits on the person: the inbox lists that. Write at the level of the feature or the fix. Never write a command, a file name, a commit, a test run, a tool call or a ticket number, and leave out a number, an id or a time unless the person needs it to find the work again.\n\nInput:\n- <last>: the guide as it was, in the same lines you write\n- <unseen>: the changes the person has not yet looked at, as SINCE lines\n- <tasks>: the agent\'s own task list, when it keeps one, as TASK lines. It is evidence for QUEUE, not the guide: write each item at the level of the feature. Write each in your own words as the outcome it reaches, not in the task\'s words: "Reset emails reach the person", not "Run the mailer tests". A queue item names a result, never an action that begins with Run, Check or Test. For a task that runs a command or a test, write the outcome it checks, or leave it out. Leave out a task that is only a step of another.\n- <person>: what the person just sent\n- <activity>: what the agent did this turn\n- <reply>: the agent\'s final reply\n\nAnswer with lines only. No other text. If the exchange changed nothing about the work, answer with the one line UNCHANGED.\n\nOtherwise write every line below that applies, in this order:\nKIND: session, or coordinator when the session hands out work and reviews what comes back instead of doing the work itself\nTOPIC: same, or new when the work moved to a different task. Write new only for a different task, not for the next step of the same one.\nSTATE: on-track, stuck or finished\nHEADLINE: one plain sentence naming what the session is doing, at most ${12} words. "-" when no work has started.\nSTATUS: how it is going, in one or two plain sentences, at most ${30} words. Say what it waits on, if anything.\nCOURSE: only in the reply where the approach changed, in one or two sentences, at most ${30} words: what changed and why. A new step is not a change. Leave the line out otherwise: the page keeps the last one until the person looks.\nFOLDED: only when TOPIC is new, one line saying what the old topic was and where it was left.\nThen lists, one item per line, each as KEY: status | text | detail, with the key on every line. The detail is optional. Text is at most ${12} words and detail at most ${20}. At most ${6} items in a list.\nQUEUE: the work now: what is under way, what is queued behind it, what waits, and what just finished\nWORKS: what holds now: what works, what exists\nOPEN: risks, problems and unknowns\nNEXT: what comes next\nSINCE: what changed since the person last looked. Start from <unseen>, merge this exchange into it, and keep it short.\nSTREAM: only in a coordinator session, in the same form as the other lists: one line for each stream of work, saying what it is for and where it stands. Put the work handed out in STREAM, and use QUEUE only for the coordinator\'s own steps, such as reviewing what a stream sends back. If a stream is already in QUEUE in the guide as it was, take it out of QUEUE.\n\nStatus is one of: working, queued, waits-on-you, waits-on-other, done, ruled-out, problem, unknown. Use waits-on-you when the agent cannot go on until the person acts, and waits-on-other for something else, such as a build. Use ruled-out for an approach tried or considered and dropped, and put the reason in the detail.\n\nRules:\n- Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed. The next rule wins over this one: when the guide as it was already repeats a fact in two lists, remove the repeat.\n- Do not write a question or task the agent put to the person, and do not say what the choice is. Say only that the work waits on the person, and stop.\n- Leave out that something was committed, pushed, merged or tested, in every line. Say what now works or is fixed.\n- Say each fact once, in the list that fits it best. Work that finished stays in QUEUE as done. WORKS holds only what works that QUEUE does not already name. What a stream is doing, and what it finished, stays on its STREAM line and is not written again in QUEUE, WORKS or OPEN. NEXT holds only what the queue does not already name. SINCE may repeat the other lists, since it says what changed.\n- Leave a list out when it has nothing worth saying. Do not fill a list to fill it.`;function z(e){return e.threads.filter(t=>t.isWaiting)}function jt(e,t){return z(e).filter(n=>!n.isLinesChanged&&!t(e,n))}function so(e){let t={pass:0,fail:0,pending:0,skip:0};for(let n of e.checks)t[n.bucket]+=1;return t}function io(e){return`${e} ${e===1?"thread":"threads"} waiting on you`}function Wt(e,t,n){return`${e} ${e===1?t:n}`}function et(e,t=()=>!1){let n=(m,x,y=[],w=": ")=>{let E=y.join(", "),K=m==="ready"?[]:y.filter(D=>!s.includes(D));return{status:m,text:E?`${x}${w}${E}`:x,head:x,unlisted:K}},s=[];if(e.state==="MERGED")return n("merged","Merged");if(e.state!=="OPEN")return n("closed","Closed");let{fail:i,pending:o}=so(e),r=z(e),l=jt(e,t).length,u=r.filter(m=>t(e,m)).length,d=r.filter(m=>m.isLinesChanged&&!t(e,m)).length,p=m=>m!==null,h=m=>(m===null||s.push(m),m),c=[e.mergeable==="CONFLICTING"?`conflicts with ${e.base}`:null,h(i>0?Wt(i,"failing check","failing checks"):null),e.reviewDecision==="CHANGES_REQUESTED"?"changes requested":null,h(l>0?io(l):null)].filter(p),f=[h(u>0?`${Wt(u,"thread","threads")} sent to Claude`:null),h(d>0?`${Wt(d,"thread","threads")} on changed lines`:null),e.reviewDecision==="REVIEW_REQUIRED"?"needs approval":null,o>0?`${o} ${o===1?"check":"checks"} running`:null].filter(p);if(e.isDraft)return n("draft","Draft",[...c,...f]);if(c.length>0)return n("blocked","Blocked",c);if(f.length>0)return n("waiting","Waiting",f);let g=e.reviewDecision==="APPROVED";return n("ready","Ready to merge",[...g?["approved"]:[],"checks pass","no threads waiting on you"],g?": ":", ")}var oo=/<\\/?(?:a|b|br|code|details|div|em|h[1-6]|hr|i|img|kbd|li|ol|p|pre|span|strong|sub|summary|sup|table|tbody|td|th|thead|tr|ul)\\b[^>]*>/g;function tt(e){return e.replace(/<!--[\\s\\S]*?-->/g,"").replace(oo,"").replace(/^[^\\S\\n]*Useful\\?[^\\S\\n]+React[^\\S\\n]+with[^\\S\\n]+\u{1F44D}[^\\S\\n]*\\/[^\\S\\n]*\u{1F44E}\\.?[^\\S\\n]*$/gmu,"").replace(/!\\[([^\\]]*)\\]\\([^)]*\\)/g,(t,n)=>n.replace(/\\s*badge$/i,"")).trim()}function Kt(e){return tt(e).replace(/\\[([^\\]]*)\\]\\([^)]*\\)/g,"$1").replace(/^\\s*(?:#{1,6}|>)\\s*/gm,"").replace(/\\*\\*|__|`/g,"").replace(/\\s+/g," ")}var Yt=120;function nt(e){let t=tt(e),[n="",...s]=t.split(`\n`),i=Kt(n).trim();return{head:i,rest:i.length>Yt?t:s.join(`\n`).trim()}}function st(e,t=e.path){return`${t}${e.line?`:${e.line}`:""}`}function ds(e){let t=Math.max(0,Math.round(e/1e3));return t<60?`${t}s`:`${Math.floor(t/60)}m ${t%60}s`}function ge(e){return e.checks.filter(t=>t.bucket==="fail")}function it(e){return e.replace(/\\/+$/,"").split("/").pop()??e}function cs(e,t){let n=e?.delivery?.state!=="failed"?e?.turnsStarted:void 0;return n!==void 0&&n<=t.turnsStarted&&t.turnsApplied<=n}function us(e){return e.startsWith("pr:")||e.includes(" ")}function ot(e,t){return!e.startsWith("pr:")&&t?.kind==="handoff"&&t.action!=="address"}function Gt(e){return e.action==="step"?`step-${e.step}`:e.action}function Bt(e){return e.charAt(0).toUpperCase()+e.slice(1)}var co="This changed before your press. Nothing was sent.";function Te(e){return e==="sample"?"Sample entry: nothing was sent.":co}function uo(e,t){switch(t.kind){case"run":return{kind:"send",text:fo.run(e,t.command),by:{id:e.id,action:"run"}};case"open":return{kind:"open",target:t.path,name:it(t.path)};case"link":return{kind:"open",target:t.url,name:t.name??t.url};case"copy":return{kind:"copy",text:t.text,name:t.name??"snippet",isCommand:!1};case"terminal":return{kind:"copy",text:t.command,name:t.name??G(t.command,32),isCommand:!0}}}function ps(e,t){return t.step.map(n=>uo(e,n))}function rt(e,t,n){return{state:"pending",parts:e.flatMap(s=>s.kind==="send"?[]:[{kind:s.kind,name:s.name,isCommand:s.kind==="copy"&&s.isCommand,error:null}]),at:t,...n?{pressId:n}:{}}}function fs(e,t){if(!/^[if]\\d+$/.test(e))return null;let n=/^step-(\\d+)$/.exec(t.action);if(n)return{action:"step",id:e,step:Number(n[1]),label:t.text};switch(t.action){case"answer":return{action:"answer",id:e,option:t.text};case"explain":case"address":case"issue":case"discuss":return{action:t.action,id:e};default:return null}}function po(e){return[`${e.kind==="issue"?"Issue":"Opportunity"}: ${e.title}`,e.detail,...e.path?[`File: ${e.path}`]:[]]}var ls="Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply.",fo={answer:(e,t)=>`Re "${e.ask}": ${t}`,explain:e=>{let t=e.kind==="task"?"this task you left for me is about: why it came up, and what doing it involves":"this question you asked me is about: why it came up, what each choice would do, and which you would pick",n=e.options.length>0?`\nOptions: ${e.options.join(" / ")}`:"";return`Remind me what ${t}. ${ls} Don\'t act on it yet.\n"${e.ask}"${n}`},run:(e,t)=>`For "${e.ask}", run this:\n\\`\\`\\`\n${t}\n\\`\\`\\``,taskReply:(e,t)=>`Re the task you left for me, "${e.ask}": ${t}`,done:e=>e.length===1?`Done: ${e[0]}`:`Done:\n${e.map(t=>`- ${t}`).join(`\n`)}`,finding:(e,t,n="")=>[t==="address"?"Please address this finding you recorded:":t==="issue"?"Please file an issue for this finding you recorded, in the issue tracker you have tools for. First check whether one already exists, and if it does, use it instead of filing a duplicate. Then close the finding with the issue\'s key or number as the reason, and give me its link. If you have no tools for an issue tracker, say so and leave the finding open.":t==="explain"?`Remind me what this finding you recorded is about: why it matters, what fixing it would involve, and whether you would fix it now. ${ls} Don\'t act on it yet.`:t==="discuss"?"Let\'s talk through this finding you recorded before changing anything:":"About this finding you recorded:",...po(e),...t==="typed"?["",n]:[]].join(`\n`)};var hs=[..."abcfghilm"],P="\\u2007\\xB7\\u2002",Ee={issue:{title:"Issues",mark:"\\u25B2",tone:"issue"},opportunity:{title:"Opportunities",mark:"\\u2726",tone:"done"}},gs=[{kind:"question",title:"Questions",list:"questions"},{kind:"task",title:"Tasks",list:"tasks"}],ms={handled:"\\u2713",dismissed:"\\u2715",lapsed:""},ho=3,_=5120;var Jt=400,go=1e3;function mo(e,t){return e?.delivery?.state==="queued"&&t-e.at>=go}function wo(e,t){return e?.delivery?.state==="unconfirmed"?"unconfirmed":mo(e,t)?"queued":null}function ws(e,t){return e>0&&t-e<Jt}function ys(e,t){return Object.fromEntries(Object.entries(t).flatMap(([n,s])=>n===e||s.text.trim()!==""?[[n,s.since]]:[]))}var bs=e=>e==="terminal"||e==="omp",oe={retry:"Try again",send:"Send",cancel:"Cancel",discard:"Discard",relevantFile:"Relevant file: ",allOptions:e=>`All ${e} options`};function Zt(e,t){if(e.state.is==="handedOff"&&e.feedback?.is!=="unconfirmed")return{text:"\\u2713",tone:"done"};if(e.finding){let n=Ee[e.finding.kind];return{text:n.mark,tone:n.tone}}return{text:bs(t)?e.handle:""}}function en(e,t){return e.replyKind==="answer"?"Your answer":`Your reply to ${t}`}function ks(e){return e.isPrimary?`${e.label} (recommended)`:e.label}function tn(e){return e.state.is==="held"?"discard":"cancel"}function at(e){return e.state.is==="open"}function xs(e,t){let n=e.feedback;return n?n.is==="done"&&e.state.is==="handedOff"?n.label:me(n,t):null}function Ae(e){return[...e.needsYou.questions,...e.needsYou.tasks,...e.findings.rows]}function vs(e){return e.filter(t=>t.state.is==="settled").map(t=>t.id)}function nn(e,t){return e.filter(n=>!t.has(n.id)).slice(0,ho)}function dt(e,t){return e.filter(n=>!t.has(n.id)).length}function Ss(e){return`${e} closed`}function _s(e,t){return e>t?`${e-t} earlier`:null}function re(e){let t=Re(e);return t==="just now"?"now":t.replace(/ ago$/,"")}function Rs(e){return`No open ${e.toLowerCase()}`}var Ts="Sample entries. Presses send nothing.";function Pe(e,t,n,s,i){let o=t?.result;if(n&&i-n.at<_&&n.at>=Math.max(t?.at??0,o?.at??0))return{is:"note",note:n.note,at:n.at};if(o&&(o.state!=="done"||i-o.at<_))return{is:"local",result:o};if(!t||t.kind==="local")return null;let r=t.delivery,l=wo(t,i);if(l)return{is:l,label:t.text,at:t.at};if(r?.state==="failed")return{is:"notSent",reason:r.reason,retry:fs(e,t)};let u=cs(t,s),d=yo[t.action];if(t.kind==="talk"&&d&&u)return{is:"working",label:d,at:t.at};if(!u&&!us(e)&&ot(e,t))return{is:"stillOpen",at:t.at};let p=t.kind==="handoff"&&t.action.startsWith("step-");return{is:"done",label:bo[t.action]?.(t.text)??t.text,at:t.at,...p?{isHandedStep:!0}:{}}}var yo={explain:"Explaining\\u2026",discuss:"Discussing\\u2026","thread-discuss":"Discussing\\u2026","thread-draft":"Drafting a reply\\u2026"},bo={address:()=>"Handed off",issue:()=>"Asked to file",discuss:()=>"Discussed",explain:()=>"Explained",dismiss:()=>"Dismissed",type:()=>"Replied","thread-address":()=>"Addressed","thread-discuss":()=>"Discussed","thread-draft":()=>"Drafted a reply","pr-conflicts":()=>"Asked to resolve conflicts","pr-merge":()=>"Asked to merge","pr-address-all":e=>e.replace(/^Address\\b/,"Addressed")};function sn(e){return e?.is==="notSent"||e?.is==="local"&&e.result.state==="failed"}function on(e){return e.is==="done"||e.is==="working"||e.is==="stillOpen"||e.is==="queued"||e.is==="unconfirmed"||e.is==="closed"}var ko=e=>bs(e)?"Run it in a terminal, or type ! and paste.":"Run it in Terminal.",Xt={open:{pending:"Opening",done:"Opened",failed:"open"},copy:{pending:"Copying",done:"Copied",failed:"copy"}};function xo(e,t){let s=e.parts.length>1&&e.parts.every(r=>r.kind==="open"&&r.error===null&&/^PR #\\d+$/.test(r.name))?[{...e.parts[0],name:`${e.parts.length} PRs`}]:e.parts;if(e.state==="pending")return`${s.map(r=>`${Xt[r.kind].pending} ${r.name}`).join(P)}\\u2026`;let i=s.map(r=>r.error===null?`${Xt[r.kind].done} ${r.name}`:`Could not ${Xt[r.kind].failed} ${r.name}: ${r.error}`).join(P);if(e.state==="failed")return i;let o=s.some(r=>r.kind==="copy"&&r.isCommand);return`\\u2713 ${i}${o?`. ${ko(t)}`:""}`}function me(e,t){switch(e.is){case"note":return Te(e.note);case"local":return xo(e.result,t);case"queued":return zt(e.is,e.label);case"unconfirmed":return zt(e.is,e.label);case"notSent":return`Not sent: ${e.reason}`;case"done":return e.isHandedStep?`\\u2713 Handed off: ${e.label}`:`\\u2713 ${e.label}`;case"working":return e.label;case"stillOpen":return"Still open";case"closed":return e.label}}function zt(e,t){return e==="queued"?`Queued: ${t}`:`Delivery unconfirmed: ${t}`}function rn(e,t){return t&&typeof t=="object"?`${e} \\xB7 Not sent: ${t.error}`:t===null?e:zt(t,e)}var we=[{id:"needsYou",label:"Needs you",hotkey:"1"},{id:"findings",label:"Findings",hotkey:"2"},{id:"prs",label:"PRs",hotkey:"3"},{id:"overview",label:"Overview",hotkey:"4"}];function an(e){return e==="needsYou"||e==="findings"}function M(e){return e!=="overview"}var va=we.filter(e=>M(e.id)),dn=we.filter(e=>an(e.id));function Le(e,t){return e==="needsYou"?{title:"Nothing needed.",hint:`${t}\'s questions and the tasks only you can do show up here.`}:{title:"No findings yet",hint:`${t} flags issues and opportunities it spots beyond your task.`}}function ln(e,t,n){let s=u=>u.flatMap(d=>{if(d.state.is==="settled")return t(d.id)?[{settled:d,state:d.state}]:[];let p=n(d);return p===null?[]:[{row:p}]}),i=s(e.needsYou.questions),o=s(e.needsYou.tasks),r=Object.keys(Ee).map(u=>({kind:u,title:Ee[u].title,entries:s(e.findings.rows.filter(d=>d.finding?.kind===u))})),l=r.flatMap(u=>u.entries);return{questions:i,tasks:o,findings:l,findingGroups:r,byTab:{needsYou:[...Qt(i),...Qt(o)],findings:Qt(l)}}}function ae(e){return"row"in e?e.row.id:e.settled.id}function Es(e){let t=ln(e,()=>!0,s=>s),n=s=>s.map(i=>"row"in i?{id:i.row.id,isWaiting:at(i.row)}:{id:i.settled.id,isWaiting:!1});return{needsYou:n([...t.questions,...t.tasks]),findings:n(t.findings)}}function cn(e){return e.find(t=>t.isWaiting)?.id??null}function As(e,t){return cn(e.filter(n=>!t.includes(n.id)))}function Ps(e,t){let n=e.findIndex(s=>s.id===t);return n<0?null:(e.slice(n+1).find(s=>s.isWaiting)??e.slice(0,n).reverse().find(s=>s.isWaiting))?.id??null}function Qt(e){return e.flatMap(t=>"row"in t?[t.row]:[])}function lt(e){return new Set(e.flatMap(t=>"settled"in t?[t.settled.id]:[]))}function Ls(e,t){let n=e.actions.filter(d=>t||!d.isFolded),s=e.actions.length-n.length,i=n.map(d=>d.press.action).lastIndexOf("answer"),o=[],r=[],l=e.feedback?.is==="notSent"?e.feedback.retry:null;if(l){let d=e.actions.find(p=>Gt(p.press)===Gt(l))?.kind??"talk";o.push({slot:"retry",press:l,kind:d,label:oe.retry,emphasis:"normal",icon:"retry"})}let u=0;for(let[d,p]of n.entries()){let{press:h}=p;if(h.action==="answer"||h.action==="step"){let c=u<hs.length?{hotkey:hs[u++]}:{};o.push({slot:"choice",action:{...p,press:h},...c}),d===i&&s>0&&o.push({slot:"allOptions",count:e.actions.filter(f=>f.press.action==="answer").length,label:oe.allOptions(e.actions.filter(f=>f.press.action==="answer").length),emphasis:"quiet"})}else p.hotkey&&(p.isFollowUp?r:o).push({slot:"action",action:p,hotkey:p.hotkey})}return{keys:o,more:r}}var vo=0;function a(e,t,n,s,i,o){t||(t={});var r,l,u=t;if("ref"in u)for(l in u={},t)l=="ref"?r=t[l]:u[l]=t[l];var d={type:e,props:u,key:n,ref:r,__k:null,__:null,__b:0,__e:null,__c:null,constructor:void 0,__v:--vo,__i:-1,__u:0,__source:i,__self:o};if(typeof e=="function"&&(r=e.defaultProps))for(l in r)u[l]===void 0&&(u[l]=r[l]);return k.vnode&&k.vnode(d),d}var So={check:"M20 6 9 17l-5-5",play:"M7 4.5v15l12-7.5z",copy:"M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1",open:"M7 17 17 7M8 7h9v9",retry:"M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5",undo:"M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11",right:"m9 18 6-6-6-6",down:"m6 9 6 6 6-6"},_o={done:"check",retry:"retry",open:"open",copy:"copy",run:"play"};function Oe({name:e}){return a("svg",{class:"icon",viewBox:"0 0 24 24",fill:"none",stroke:"currentColor","stroke-width":"2","stroke-linecap":"round","stroke-linejoin":"round","aria-hidden":"true",children:a("path",{d:So[e]})})}function Os(e,t,n){let s=Ls(e,t),i=o=>{if(o.slot==="retry")return{label:o.label,emphasis:o.emphasis,icon:o.icon,run:()=>n.press(o.press)};if(o.slot==="allOptions")return{label:o.label,emphasis:o.emphasis,run:n.showOptions};let r=o.action;return{label:ks(r),emphasis:r.emphasis,...o.hotkey?{hotkey:o.hotkey}:{},...r.icon?{icon:_o[r.icon]}:{},...r.press.action==="dismiss"?{isDismiss:!0}:{},run:r.press.action==="type"?n.reply:r.press.action==="discard"?n.discard:()=>n.press(r.press)}};return{keys:s.keys.map(i),more:s.more.map(i)}}function un({action:e,isBlocked:t}){return a("button",{type:"button",class:`${e.emphasis==="primary"?"key primary":e.emphasis==="quiet"?"key ghost":"key"}${e.isDismiss?" dismiss":""}`,disabled:t(),onClick:()=>{t()||e.run()},children:[e.icon?a(Oe,{name:e.icon}):null,e.label]})}function $s({actions:e,reply:t,isBlocked:n}){return t?a("div",{class:"actions",children:a("form",{onSubmit:s=>{s.preventDefault();let i=t.draft().trim();i&&t.send(i)},children:[a("input",{id:`type-${t.id}`,value:t.draft(),placeholder:t.hint,"aria-label":t.hint,onInput:s=>t.onDraft(s.currentTarget.value)}),a("button",{type:"submit",class:"key primary",children:oe.send}),a("button",{type:"button",class:"key ghost",onClick:t.onExit,children:oe[t.exit]})]})}):a("div",{class:"actions",children:e.length>0?a("div",{class:"keys",children:e.map(s=>a(un,{action:s,isBlocked:n}))}):null})}function le(e,t){return Is(e.ref,t.id)}function $e(e,t){return Cs(e.ref,t.name)}function Is(e,t){return`${e} thread ${t}`}function Cs(e,t){return`${e} check ${t}`}function q(e){return`pr:${e}`}var pn="The inbox could not find gh, so it cannot read your PRs.";function Ns(e){return`Your PRs show here when this ${e} opens or links one, or when your branch has one.`}var fn={threads:"Review threads",checks:"Failing checks"};function Ds(e,t,n){let s=ye(n)(e,t),i=!s&&t.isLinesChanged;return{showsCheck:To(n)(e,t),fold:s||i?t.isLinesChanged?{note:`Lines changed since this comment${P}still open on GitHub`}:{}:null,title:G(nt(t.body).head,Yt),meta:[st(t,it(t.path)),i?"Lines changed":"",t.reply?`@${t.reply.author}: ${Kt(t.reply.body)}`:`@${t.author}`].filter(Boolean).join(P)}}function Ms(e){return e.startedAt!==void 0&&e.finishedAt!==void 0?`Failed after ${ds(e.finishedAt-e.startedAt)}`:"Failed"}function ye(e){return(t,n)=>{let s=e[le(t,n)];return s?.kind==="handoff"&&s.delivery?.state!=="failed"&&s.at>((n.reply??n).at??0)}}function To(e){let t=ye(e);return(n,s)=>{let i=e[le(n,s)]?.delivery;return t(n,s)&&i?.state!=="unconfirmed"}}function Fs(e,t){let n=ye(t);return e.flatMap(s=>[...z(s).map(i=>({id:le(s,i),isWaiting:!n(s,i)})),...ge(s).map(i=>{let o=$e(s,i),r=t[o];return{id:o,isWaiting:!ot(o,r)||r?.delivery?.state==="failed"}})])}var Hs={ready:"done",blocked:"needsYou",waiting:null,draft:null,merged:"findings",closed:"error"};function hn(e,t,n,s=null){if(e?.delivery?.state!=="failed")return null;let i=e.action;return s!==null?i==="check-fix"?{press:{action:i,ref:t,check:s},kind:e.kind}:null:n!==null&&(i==="thread-address"||i==="thread-draft"||i==="thread-discuss")?{press:{action:i,ref:t,thread:n},kind:e.kind}:n===null&&(i==="pr-conflicts"||i==="pr-address-all"||i==="pr-merge")?{press:{action:i,ref:t},kind:e.kind}:null}function de(e,t,n,s){let i=e[t];return i?.action===n&&i.delivery?.state!=="failed"?`${s} again`:s}function gn(e){return e?[{press:e.press,label:"Try again",kind:e.kind,emphasis:"normal",icon:"retry"}]:[]}function mn(e,t,n){let s=Is(e.ref,t.id),i={ref:e.ref,thread:t.id};return[...gn(hn(n[s],e.ref,t.id)),{press:{action:"thread-address",...i},label:de(n,s,"thread-address","Address"),kind:"handoff",emphasis:"primary",hotkey:"a"},{press:{action:"thread-draft",...i},label:de(n,s,"thread-draft","Draft reply"),kind:"talk",emphasis:"normal",hotkey:"r"},{press:{action:"thread-open",...i},label:"Open comment",kind:"local",emphasis:"normal",icon:"open",hotkey:"o"},{press:{action:"thread-discuss",...i},label:de(n,s,"thread-discuss","Discuss"),kind:"talk",emphasis:"quiet",hotkey:"d",isFollowUp:!0}]}function Us(e,t,n){let s=Cs(e.ref,t.name),i={ref:e.ref,check:t.name};return[...gn(hn(n[s],e.ref,null,t.name)),{press:{action:"check-fix",...i},label:de(n,s,"check-fix","Fix"),kind:"handoff",emphasis:"primary",hotkey:"a"},{press:{action:"log",...i},label:"Open log",kind:"local",emphasis:"normal",icon:"open",hotkey:"o"}]}function Vs(e,t,n,s){let i=q(e.ref),{status:o}=et(e,t),r=jt(e,t).length,l=[...o==="ready"?[{press:{action:"pr-merge",ref:e.ref},label:de(s,i,"pr-merge","Merge"),kind:"handoff"}]:[],...e.state==="OPEN"&&e.mergeable==="CONFLICTING"?[{press:{action:"pr-conflicts",ref:e.ref},label:de(s,i,"pr-conflicts","Resolve conflicts"),kind:"handoff"}]:[],...r>1?[{press:{action:"pr-address-all",ref:e.ref},label:de(s,i,"pr-address-all",`Address all ${r} threads`),kind:"handoff"}]:[]];return[...gn(hn(s[i],e.ref,null)),...l.map((u,d)=>({...u,emphasis:d===0?"primary":"normal"})),{press:{action:"pr-open",ref:e.ref},label:"Open PR",kind:"local",emphasis:"normal",icon:"open"},...e.ref===n?[]:[{press:{action:"pr-dismiss",ref:e.ref},label:"Dismiss",kind:"mark",emphasis:"quiet"}]]}function qs(e,t){let n={...e},s={};for(let i of Object.keys(t)){let o=t[i],r=e[i];s[i]=o&&r?o.filter(l=>!r.has(l)):[],o&&(n[i]=new Set(o))}return{seen:n,added:s}}var wn=["needsYou","findings","prs"];function Ws(e){return{needsYou:[...e.needsYou.questions,...e.needsYou.tasks].map(t=>t.id),findings:e.findings.rows.map(t=>t.id)}}function js(e){let t=n=>n.filter(s=>s.state.is!=="settled").map(s=>s.id);return{needsYou:t([...e.needsYou.questions,...e.needsYou.tasks]),findings:t(e.findings.rows)}}function Ks(e,t,n){return t==="findings"?Object.keys(Ee).map(s=>({isUnfolded:n(s),rows:e.findings.closed.filter(i=>i.kind===s)})):gs.map(s=>({isUnfolded:n(s.kind),rows:e.needsYou.closed[s.list]}))}function Ys({rows:e,settled:t,closed:n,hasBlocker:s}){return!s&&!e.some(i=>i.state.is!=="settled"||t.has(i.id))&&!n.some(i=>i.isUnfolded&&i.rows.some(o=>!t.has(o.id)))}function Gs(e,t,n,s){return n?e.find(i=>i!==t&&s[i].length>0)??null:null}function Bs(e){return e.flatMap(({pr:t,isSettled:n})=>[q(t.ref),...n?[]:[...z(t).map(s=>le(t,s)),...ge(t).map(s=>$e(t,s))]])}function Xs(e,t){return e===0&&!t}var Eo=/`([^`\\n]+)`|\\*\\*(?=\\S)(.+?)(?<=\\S)\\*\\*(?!\\*)|~~(?=\\S)(.+?)(?<=\\S)~~|(?<![\\w*])\\*(?=\\S)([^*\\n]+?)(?<=\\S)\\*(?![\\w*])|(?<!\\w)_(?=\\S)([^_\\n]+?)(?<=\\S)_(?!\\w)|\\[([^\\]\\n]+)\\]\\((https:\\/\\/[^\\s)]+)\\)/g;function ct(e,t={}){let n=[],s=0;for(let i of e.matchAll(Eo)){i.index>s&&n.push({...t,text:e.slice(s,i.index)});let[,o,r,l,u,d,p,h]=i;o!==void 0?n.push({...t,text:o,code:!0}):r!==void 0?n.push(...ct(r,{...t,bold:!0})):l!==void 0?n.push(...ct(l,{...t,strike:!0})):u!==void 0||d!==void 0?n.push({...t,text:u??d??"",italic:!0}):n.push({...t,text:p??"",link:h}),s=i.index+i[0].length}return s<e.length&&n.push({...t,text:e.slice(s)}),n}var ut={question:"needsYou",task:"needsYou",finding:"findings"};function Qs(e){return{...js(e),prs:[]}}function zs(e,t,n){return qs(e,{...Ws(t),prs:n?null:Bs(t.prs.drawn)})}function Js(e,t,n,s,i){return t==="prs"?Xs(e.prs.drawn.length,i):Ys({rows:t==="findings"?e.findings.rows:[...e.needsYou.questions,...e.needsYou.tasks],settled:n,closed:Ks(e,t,o=>s.has(o)),hasBlocker:t==="needsYou"&&e.heard!=="heard"})}var pt={entering:300,opening:200,closing:200,settling:200,leaving:200,closed:0,open:0,settled:0,undoing:0};function ft(e){return pt[e]>0}function ei(e,t,n,s=!1,i=!1){let o=t==="undoing"?"settled":t;if(!e)return s&&!i&&(o==="closed"||o==="open")?{state:"entering",since:n,hasPanel:o==="open"}:Zs(void 0,o,t,n);let r=Ao(e)===o?e:Po(e,o,n);return ft(r.state)&&!i&&n-r.since<pt[r.state]?r:Zs(r,o,t,n)}function Ao({state:e,hasPanel:t}){switch(e){case"entering":return t?"open":"closed";case"opening":case"open":return"open";case"closing":case"closed":return"closed";case"settling":case"settled":case"undoing":return"settled";case"leaving":return"gone"}}function Po(e,t,n){switch(t){case"open":return{state:"opening",since:n,hasPanel:!0};case"closed":return e.state==="leaving"?{state:"entering",since:n,hasPanel:!1}:{state:"closing",since:n,hasPanel:e.hasPanel};case"settled":return{state:"settling",since:n,hasPanel:e.hasPanel};case"gone":return{state:"leaving",since:n,hasPanel:e.hasPanel}}}function Zs(e,t,n,s){if(t==="gone")return null;let i=n==="undoing"?"undoing":t;return e?.state===i?e:{state:i,since:s,hasPanel:i==="open"}}var yn=6e4;var ht=3e3,tl=_+2*ht;function ti(e){return vs(Ae(e))}function ni(e,t,n){return new Map(t.map(s=>[s,e.get(s)??n]))}function si(e,t,n=new Set){return new Set([...e].filter(([s,i])=>n.has(s)||t-i<_).map(([s])=>s))}var S=null,te=!1,ne=null,Ce=null,pi=!1,kt=!1,Ie=null,ii=!1,fi={},xn={},Lt=0,On=0,I="needsYou";function se(){return I==="overview"&&!S?.overviewPage?"needsYou":I}var A={needsYou:null,findings:null,prs:null},T=null,xt=!1,C=new Map,mt=new Map,vt=new Set,J=new Set,ve=new Map,wt="Sending\\u2026",bn=new Map,H=new Map,vn=new Map,De=new Map,ke=null,B=new Map,yt={},xe=new Set,U=new Set,bt=new Set,O=new Map,St=null,$n=0,Me=0,Fe=0,Z=0,oi="inbox-tab-kept",F=window,X=F.__inboxHandoff??null,W=X?.root??document.getElementById("app"),Ve=new AbortController,He=new Set,_t=new Set,ue=new Map,v=!1,N=X===null;X&&(X.dispose=In);function j(e,t){if(v)return 0;let n=window.setTimeout(()=>{He.delete(n),v||e()},t);return He.add(n),n}function Rt(e){e!==void 0&&(window.clearTimeout(e),He.delete(e))}function In(){if(!v){v=!0,Ve.abort();for(let e of He)window.clearTimeout(e);He.clear();for(let e of _t)e.onfinish=null,e.oncancel=null,e.cancel();_t.clear();for(let e of ue.values())e.reject(new Error("Inbox page replaced"));ue.clear(),Vt(null,W),N&&document.body.classList.remove("still")}}function $o(){return{version:M(I)?1:2,isDemo:te,tab:I,selection:{needsYou:A.needsYou?.id??null,findings:A.findings?.id??null,prs:A.prs?.id??null},typing:T,drafts:[...C],optionsShown:[...vt],unfolded:[...J]}}function hi(e){let t=e??F.__inboxKept??null;if(!e){delete F.__inboxKept;try{let n=sessionStorage.getItem(oi);sessionStorage.removeItem(oi),t??=n?JSON.parse(n):null}catch{}}if(!(t?.version!==1&&t?.version!==2)){te=t.isDemo,we.some(n=>n.id===t.tab)&&(I=t.tab);for(let n of wn){let s=t.selection[n];A[n]=s?{id:s,openedAt:0}:null}T=t.typing,xt=T!==null;for(let[n,s]of t.drafts)C.set(n,typeof s=="string"?{text:s,since:Date.now()}:s);for(let n of t.optionsShown)vt.add(n);for(let n of t.unfolded)for(let s of n==="finding"?["issue","opportunity"]:[n])J.add(s)}}function gi(e,t,n){return v?Promise.reject(new Error("Inbox page replaced")):new Promise((s,i)=>{let o=F.__inboxRequestId=(F.__inboxRequestId??Date.now())+1,r=n===void 0?void 0:j(()=>{ue.delete(o)&&i(new Error(`The inbox did not answer in ${Math.round(n/1e3)} s`))},n);ue.set(o,{resolve:s,reject:i,timer:r}),parent.postMessage({jsonrpc:"2.0",id:o,method:e,params:t},"*")})}window.addEventListener("message",e=>{if(v)return;let t=e.data;if(!(!t||t.jsonrpc!=="2.0")){if(t.id!=null&&!t.method&&ue.has(t.id)){let n=ue.get(t.id);ue.delete(t.id),Rt(n.timer),t.error?n.reject(t.error):n.resolve(t.result);return}t.method==="ui/notifications/host-context-changed"&&(N?Sn(t.params??{}):xn=Io(xn,t.params??{})),N&&t.id!=null&&t.method&&parent.postMessage({jsonrpc:"2.0",id:t.id,result:{}},"*")}},{signal:Ve.signal});function Sn(e){if(!(v||!N)){e.theme&&(document.documentElement.dataset.theme=e.theme);for(let[t,n]of Object.entries(e.styles?.variables??{}))document.documentElement.style.setProperty(t,n)}}function Io(e,t){return{...e,...t,styles:{...e.styles,...t.styles,variables:{...e.styles?.variables,...t.styles?.variables}}}}async function Cn(e,t={},n){let s=await gi("tools/call",{name:e,arguments:t},n);if(v)throw new Error("Inbox page replaced");if(!s||s.isError||s.structuredContent===void 0)throw new Error(s?.isError&&s.content?.[0]?.text||"The answer had nothing to show");return s.structuredContent}function mi(e,t){if(v||t<Me)return;Me=t,ne=null,Lt=0,On=Date.now();let n=B;B=ni(B,ti(e),Date.now()),[...B.keys()].some(r=>!n.has(r))&&Se(_),S=e;for(let{pr:r,isSettled:l}of e.prs.drawn)l&&Se(Math.max(0,_-(e.at-(e.lastActions[q(r.ref)]?.at??e.at))));let s=dn.every(r=>yt[r.id]===void 0),i=zs(yt,e,e.isFetchingPrs);yt=i.seen;let o=[...i.added.needsYou,...i.added.findings];for(let r of o)xe.add(r);for(let{id:r}of dn){let l=!A[r]&&i.added[r].length>0?As(Ot(e,r),i.added[r]):null;l&&(A[r]={id:l,openedAt:0})}Co(e,s?Qs(e):i.added),b()}function Co(e,t){if(!M(I))return;let n=Dn(),s=Gs(wn,I,Js(e,I,n,J,e.isFetchingPrs),t);s&&(I=s,A[s]=null)}var No=300,Do=2e3,Tt=3*ht;async function qe(){let e=Z,t=++$n;try{let n=await Cn("inbox_view",{demo:te,tab:I,...ki()},Tt);if(e!==Z||t<Me)return;ce=n.devPage,ee?.page!==ce&&(ee=null);let s=ce!==wi;s&&!ee&&yi(ce),Ce=n.isPluginFolderGone?{text:"The inbox plugin\'s files were moved or removed, so the server still runs the version Codex started with. Quit and reopen Codex to load the installed plugin.",isReloadable:!1}:n.serverLoadError?{text:`The inbox server could not load its new build, so it still runs the last one. ${n.serverLoadError}`,isReloadable:!1}:n.serverBuild!=="dd40b0436d48"&&!s?{text:"This tab and the inbox server are from different builds.",isReloadable:!0}:null,mi(n,t)}catch(n){if(v||e!==Z||t<Me)return;S?Lt++:ne=Mo(n),b()}}function Mo(e){let t=typeof e=="object"&&e!==null&&typeof e.message=="string"?e.message:String(e),n=G(t.replace(/^(Failed|Not done): /,"").replace(/\\s+/g," ").trim(),120)||"No reason given";return Bt(/[.!?\u2026]$/.test(n)?n:`${n}.`)}var wi=X?.page??F.__inboxPage,kn=!1,ce=null,ee=null;async function yi(e){if(kn||v||e===wi)return;kn=!0;let t=null,n=null,s=!1;try{let{html:i}=await Cn("inbox_tab_page",{},Tt);if(v||ce!==e)return;if(!/<\\/html>\\s*$/i.test(i))throw new Error("The new page is incomplete.");let o=new DOMParser().parseFromString(i,"text/html"),r=o.getElementById("app"),l=o.getElementById("inbox-style")??o.head.querySelector("style"),u=o.getElementById("inbox-script")??o.body.querySelector("script"),d=[...o.head.querySelectorAll("script")].map(R=>R.textContent?.match(/^\\s*window\\.__inboxPage\\s*=\\s*("[^"\\n]+")\\s*;?\\s*$/)?.[1]).find(R=>R!==void 0),p=d?JSON.parse(d):null,h=o.querySelector(\'meta[name="inbox-handoff"]\')?.getAttribute("content")==="1",c=document.getElementById("inbox-style"),f=document.getElementById("inbox-script");if(!(r instanceof HTMLDivElement)||r.childNodes.length>0||!(l instanceof HTMLStyleElement)||!l.textContent||!(u instanceof HTMLScriptElement)||u.src||!u.textContent||typeof p!="string"||p!==e||!/^ui:\\/\\/inbox\\/tab-[a-f0-9]{12}$/.test(p)||!h||!(c instanceof HTMLStyleElement)||!(f instanceof HTMLScriptElement))throw new Error("The new page is incomplete.");let g=document.createElement("div");g.id="app";let m=document.createElement("style");m.id="inbox-style",m.textContent=l.textContent,n=document.createElement("script"),n.id="inbox-script-candidate",n.textContent=u.textContent;let x,y=new Promise(R=>x=R);t={page:p,root:g,aborted:!1,ready:R=>{!t?.aborted&&F.__inboxHandoff===t&&x(R)}},F.__inboxHandoff=t,document.body.append(n);let w=(R,je)=>new Promise((fe,he)=>{let L=j(()=>he(new Error("The new page did not start.")),je);R.then(V=>{Rt(L),fe(V)},V=>{Rt(L),he(V)})}),E=await w(y,Do);if(!await w(E.initialize(),Tt))throw new Error("The new page could not connect.");let K=Date.now()+yn;for(;Fe>0&&Date.now()<K;)await new Promise(R=>j(R,30));if(Fe>0)throw new Error("The current press is still running.");if(v||ce!==e||t.aborted)return;let D=$o();W.replaceWith(g);try{c.replaceWith(m),E.activate(D),E.start()}catch(R){throw g.isConnected&&g.replaceWith(W),m.isConnected&&m.replaceWith(c),Wn(),R}In(),f.remove(),n.id="inbox-script",F.__inboxPage=p,s=!0}catch{!v&&ce===e&&(ee={page:e,text:"Could not load the inbox update."},b())}finally{if(t&&(t.aborted=!0,F.__inboxHandoff===t&&delete F.__inboxHandoff,!s))try{t.dispose?.()}catch{}s||n?.remove(),kn=!1}}async function bi(){Fe===0&&await qe(),j(bi,ht)}function Fo(e,t){return Ae(e).some(n=>n.id===t&&n.state.is!=="settled")||Ti(e).some(n=>n.id===t)||e.prs.drawn.some(n=>q(n.pr.ref)===t)}function Ho(e,t){return Ae(e).some(n=>n.id===t&&n.feedback?.is==="notSent")||Pe(t,e.lastActions[t],void 0,e.turns,e.at)?.is==="notSent"}async function pe(e,t,n,s=wt){if(v)return;let i=Z,o=++$n;bn.set(e,o);let r=()=>bn.get(e)===o;t.action!=="undo"&&!e.startsWith("pr:")&&Pi(e);let l=se(),u=!!S&&M(l)&&Ot(S,l).some(d=>d.id===e&&d.isWaiting);ve.set(e,s),H.delete(e),vn.delete(e),De.delete(e),b(),Fe++;try{let d=await Cn("inbox_press",{press:t,thread:S?.thread,demo:te,...ki()},yn);if(v||i!==Z||(d.copy&&await Vo(e,d.copy,r),v||i!==Z||!r()))return;d.view&&mi(d.view,o),d.error&&!(S&&Ho(S,e))&&H.set(e,d.error),!d.error&&d.note!=="stale"&&d.delivery!=="unconfirmed"&&n?.(),!d.error&&d.note!=="stale"&&d.delivery!=="unconfirmed"&&d.view&&u&&T!==e&&Uo(d.view,e);let p=d.note;p&&S&&Fo(S,e)?(vn.set(e,{text:Te(p),at:Date.now()}),Se(_),p==="stale"&&t.action==="type"&&(T=e)):p&&(ke={text:Te(p),at:Date.now()},Se(_))}catch{if(v||i!==Z||!r())return;H.set(e,"Action unconfirmed: the inbox did not answer.")}finally{Fe--,r()&&(bn.delete(e),ve.delete(e),b())}}function Ot(e,t){return t==="prs"?Fs(e.prs.drawn.filter(n=>!n.isSettled).map(n=>n.pr),e.lastActions):Es(e)[t]}function Uo(e,t){let n=se();if(!M(n)||A[n]?.id!==t)return;let s=Ot(e,n);if(s.find(r=>r.id===t)?.isWaiting)return;let i=Ps(s,t),o=i===null?-1:Ei(e,n).findIndex(r=>r.id===i);if(i===null||o<0){A[n]=null;return}$t(n,i,o),j(Fi,0)}async function Vo(e,t,n){try{await navigator.clipboard.writeText(t.text)}catch{if(!n())return;H.set(e,`Could not copy ${t.name}: this tab has no clipboard access`),De.set(e,t)}}function Nn(){return ys(T,Object.fromEntries(C))}function ki(){let e=Date.now();for(let[t,n]of mt)e-n>=_&&mt.delete(t);return{replies:Nn(),discarded:Object.fromEntries(mt)}}function xi(e,t){let n=C.get(e);pe(e,{action:"type",id:e,text:t},()=>{C.get(e)===n&&C.delete(e)})}function qo(e){Pi(e);let t=e in Nn();C.has(e)||C.set(e,{text:"",since:S?.at??Date.now()}),T=e,xt=!0,b(),!t&&(Me=++$n,qe())}function vi(e){mt.set(e,Date.now()),C.delete(e),T===e&&(T=null),b(),qe()}function Si(e){return Os(e,vt.has(e.id),{press:n=>{let s=n.action==="step"?e.steps[n.step]:void 0,o=e.actions.find(r=>r.press.action==="step"&&n.action==="step"&&r.press.step===n.step)?.kind==="local"&&e.item&&s?me({is:"local",result:rt(ps(e.item,s),Date.now())},"codex"):void 0;pe(e.id,n,void 0,o)},reply:()=>qo(e.id),discard:()=>vi(e.id),showOptions:()=>{vt.add(e.id),b()}})}function Wo(e,t){let n=Zt(t,"codex"),s=t.state.is==="handedOff",i=t.id;return{id:i,view:t,handle:n.text,handleTone:n.tone,...s?{fold:{}}:{},title:t.title,age:t.at===null?void 0:re(e.at-t.at),...Si(t),typing:{hint:en(t,"Codex"),send:o=>xi(i,o)},feedback:t.feedback}}function jo(e,t,n){let s=t.state.is==="handedOff",i=t.id,o=Zt(t,"codex");return{id:i,view:t,handle:o.text,handleTone:o.tone,kind:n.kind,...s?{fold:{}}:{},title:t.title,age:t.at===null?void 0:re(e.at-t.at),body:a("div",{children:[a("p",{style:{whiteSpace:"pre-line"},children:Tn(t.detail??"")}),n.path?a("p",{children:[a("span",{class:"muted",children:oe.relevantFile}),a("code",{title:n.path,children:t.fileName})]}):null]}),...Si(t),typing:{hint:en(t,"Codex"),send:r=>xi(i,r)},feedback:t.feedback}}function Et(e,t,n){return{...t.hotkey?{hotkey:t.hotkey}:{},label:t.label,emphasis:t.emphasis,...t.icon?{icon:t.icon}:{},...t.press.action==="pr-dismiss"?{isDismiss:!0}:{},run:()=>{pe(e,t.press,void 0,t.kind==="local"?n:void 0)}}}function At(e){let t=rt([{kind:"open",target:"",name:e}],Date.now());return me({is:"local",result:t},"codex")}function Ko(e,t,n){let s=le(t,n),i=Ds(t,n,e.lastActions),o=(u,d)=>()=>{pe(s,{action:u,ref:t.ref,thread:n.id},void 0,d)},r=st(n),{rest:l}=nt(n.body);return{id:s,handle:i.showsCheck?"\\u2713":"\\u25E6",handleTone:i.showsCheck?"done":void 0,...i.fold?{fold:i.fold}:{},title:i.title,meta:i.meta,age:n.at===null?void 0:re(e.at-n.at),body:a("div",{children:[l?a("p",{class:"quote",children:Tn(G(l,1200))}):null,a("p",{class:"muted",children:[a("button",{type:"button",class:"link",onClick:o("thread-open",At("the comment")),children:r}),`${P}@${n.author}`]}),n.reply?a("p",{class:"quote",children:[a("b",{children:["@",n.reply.author,":"]})," ",Tn(G(tt(n.reply.body),1200))]}):null]}),keys:mn(t,n,e.lastActions).flatMap(u=>u.isFollowUp?[]:[Et(s,u,At("the comment"))]),more:mn(t,n,e.lastActions).flatMap(u=>u.isFollowUp?[Et(s,u)]:[]),feedback:Pe(s,e.lastActions[s],void 0,e.turns,e.at)}}function Yo(e,t,n){let s=$e(t,n),i=Ms(n),o=n.url?"the log":`PR #${t.number}`;return{id:s,handle:"\\u2717",handleTone:"error",...n.workflow?{lead:`${n.workflow} /`}:{},title:n.name,meta:i,age:n.finishedAt===void 0?void 0:re(e.at-n.finishedAt),body:a("div",{class:"muted",children:i}),keys:Us(t,n,e.lastActions).map(r=>Et(s,r,At(o))),more:[],feedback:Pe(s,e.lastActions[s],void 0,e.turns,e.at)}}function _i(e,t){return On-(e.at-(e.lastActions[q(t.ref)]?.at??e.at))}function Ri(e){let t=[];for(let{pr:n,isSettled:s}of e.prs.drawn)if(s){let i=q(n.ref);(U.has(i)||Date.now()-_i(e,n)<_)&&t.push({pr:n,isSettled:s,threads:[],checks:[]})}else t.push({pr:n,isSettled:s,threads:z(n).map(i=>Ko(e,n,i)),checks:ge(n).map(i=>Yo(e,n,i))});return{blocks:t,rows:t.flatMap(n=>[...n.threads,...n.checks])}}function Ti(e){return Ri(e).rows}function Ei(e,t){return t==="prs"?Ti(e):Ai(e,Dn()).byTab[t]}function Ai(e,t){let n=Nn();return ln(e,s=>t.has(s),s=>s.state.is==="held"&&!(s.id in n)?null:s.item?Wo(e,s):s.finding?jo(e,s,s.finding):null)}function Dn(){return si(B,Date.now(),U)}var gt={question:"questions",task:"tasks",finding:"findings"};function Go(e){let t=Date.now(),n=Ai(e,Dn()),s=se(),i=an(s)?n.byTab[s]:[],o=M(s)?i[Mn(i,s,e)]?.id:void 0,r=new Set,l=new Set;for(let u of Object.keys(gt).filter(d=>ut[d]===s)){let d=n[gt[u]],p=new Set(d.map(ae)),h=[...d];for(let[f,g]of(St?.[gt[u]]??[]).entries()){let m=ae(g);!p.has(m)&&O.has(m)&&h.splice(Math.min(f,h.length),0,g)}let c=[];for(let f of h){let g=ae(f),m=O.get(g),x=p.has(g)?"settled"in f?U.has(g)?"undoing":"settled":g===o?"open":"closed":"gone",y=ei(m?.track,x,t,xe.has(g),It.matches);if(!y)continue;y!==m?.track&&r.add(g);let w=y.hasPanel?"row"in f&&p.has(g)?f.row:m?.openRow:void 0;O.set(g,{track:y,openRow:w}),l.add(g),c.push(f)}n[gt[u]]=c}n.findingGroups=n.findingGroups.map(u=>({...u,entries:n.findings.filter(d=>("row"in d?d.row.kind:d.settled.finding?.kind)===u.kind)}));for(let u of[...O.keys()])l.has(u)||O.delete(u);return{lists:n,changed:r}}async function Bo(e){if(U.has(e.id))return;let t=ut[e.type];U.add(e.id);try{await pe(e.id,{action:"undo",id:e.id},()=>$t(t,e.id))}finally{U.delete(e.id);let n=B.get(e.id),s=n!==void 0&&Date.now()-n<_,i=H.get(e.id);i&&!s&&(ke={text:i,at:Date.now(),isError:!0},Se(_)),n!==void 0&&!s&&B.set(e.id,Date.now()-_),b()}}function Mn(e,t,n){let s=A[t];if(s){let o=e.findIndex(l=>l.id===s.id);if(o>=0||O.has(s.id)||e.length===0)return o;let r=Math.min(s.index??0,e.length-1);return $t(t,e[r].id,r),r}let i=cn(Ot(n,t));return i?e.findIndex(o=>o.id===i):-1}function $t(e,t,n){A[e]={id:t,openedAt:Date.now(),...n===void 0?{}:{index:n}},T!==t&&(T=null),Se(Jt)}function Fn(e,t,n){let s=t[n];s&&($t(e,s.id,n),b())}function Pi(e){let t=se();M(t)&&!A[t]&&(A[t]={id:e,openedAt:0})}function Xo(){let e=se();return M(e)&&ws(A[e]?.openedAt??0,Date.now())}function Li(e){return e.typing&&T===e.id?{keys:[],more:[]}:{keys:e.keys,more:e.more}}function Qo({k:e}){return a(un,{action:e,isBlocked:()=>!1})}function zo(e){let t=e.feedback;return t?e.view?xs(e.view,"codex"):t.is==="done"&&e.handleTone==="done"?t.label:me(t,"codex"):null}function Hn(e){let t=vn.get(e);return t&&Date.now()-t.at<_?t.text:null}function Jo(e){return!H.has(e.id)&&Hn(e.id)===null&&!De.has(e.id)}function Oi({row:e,track:t,onSelect:n,now:s}){let i=t.hasPanel&&(t.state==="closing"||t.state==="leaving"),o=t.hasPanel&&!i,r=a("span",{class:`mark ${e.handleTone??""}`,children:e.handle}),l=ve.get(e.id),u=l===wt,d=Jo(e)?e.feedback:null,p=u?null:l??(d?zo(e):null),h=!l&&d&&on(d)?d.at:null,c=h!==null&&!o&&!i&&d?.is!=="queued"&&d?.is!=="unconfirmed",f=c?null:p,g=u?wt:h!==null?re(s-h):f?null:e.age,m=!l&&sn(e.feedback)?"error":void 0;return a("div",{class:`row ${o?"selected":"collapsed"}${i?" closing":""}`,onClick:o?void 0:n,children:[r,a("div",{class:"content",children:a("button",{type:"button",class:"line",...o?{tabIndex:-1,"aria-disabled":!0}:{"aria-expanded":!1},children:[a("span",{class:"text",children:[e.lead?a($,{children:[a("span",{class:"lead",children:e.lead})," "]}):null,e.title]}),e.meta?a("span",{class:"meta",children:e.meta}):null,f?a("span",{class:`after ${m?`tone-${m}`:""}`,children:o||i?`${P}${f}`:f}):null]})}),a("span",{class:"side","data-room":wt,children:[c?a("span",{class:"side-label",children:p}):null,g]}),o||i?a($i,{row:e,isClosing:i}):null]})}function $i({row:e,isClosing:t}){let{keys:n,more:s}=Li(e),i=De.get(e.id),o=Hn(e.id),r=!!e.typing&&T===e.id,l=[e.fold?.note?a("div",{class:"muted",children:e.fold.note}):null,o?a("div",{class:"muted",children:o}):null,H.has(e.id)?a("div",{class:"tone-error",children:H.get(e.id)}):null].filter(Boolean);return a("div",{class:t?"panel closing":"panel",inert:t,children:[e.body?a("div",{class:"body",children:e.body}):null,l.length>0?a("div",{children:l}):null,a($s,{actions:[...n,...s],reply:r?{id:e.id,hint:e.typing.hint,draft:()=>C.get(e.id)?.text??"",onDraft:u=>C.set(e.id,{text:u,since:C.get(e.id)?.since??S?.at??Date.now()}),send:u=>{T=null,e.typing.send(u)},exit:e.view?tn(e.view):"cancel",onExit:()=>{e.view&&tn(e.view)==="discard"?vi(e.id):(T=null,b())}}:null,isBlocked:Xo}),i?a("div",{children:[a("div",{class:"muted",children:["Copy ",i.name," from here:"]}),a("textarea",{rows:3,readOnly:!0,value:i.text,onFocus:u=>u.currentTarget.select()}),a("button",{type:"button",class:"key",onClick:()=>{De.delete(e.id),b()},children:"Close"})]}):null]})}function Zo({settled:e,panel:t}){let{state:n}=e;if(n.is!=="settled")return null;let s=B.get(e.id)??Date.now(),i=U.has(e.id),o=H.get(e.id);return a("div",{class:t?"row settled was-open":"row settled",children:[a("span",{class:"mark",children:n.delivery!==null?"":"\\u2713"}),a("div",{class:"content",children:[a("div",{class:"settled-head",children:[a("div",{class:"settled-line",children:[a("span",{class:"what",children:e.title}),a("span",{class:"outcome-label",children:[P,rn(n.label,n.delivery)]}),o?a("span",{class:"tone-error",children:[P,o]}):null]}),n.canUndo?a("button",{type:"button",class:i?"key undo undoing":"key undo",disabled:i,onClick:()=>{Bo(e)},children:[a("span",{class:i?"time-left paused":"time-left",style:{animationDuration:`${_}ms`},ref:r=>{r&&!r.style.animationDelay&&(r.style.animationDelay=`-${Math.max(0,Date.now()-s)}ms`)}},s),a(Oe,{name:"undo"}),"Undo"]}):null]}),t?a($i,{row:t,isClosing:!0}):null]})]})}function Ii({entries:e,group:t,all:n,now:s}){let i=ut[t];return e.length===0?null:a("div",{class:"list",children:e.map(o=>{let r=ae(o),l=O.get(r);return a("div",{class:"entry","data-motion":r,children:"row"in o?a(Oi,{row:o.row,track:l.track,now:s,onSelect:()=>Fn(i,n,n.indexOf(o.row))}):a(Zo,{settled:o.settled,panel:l.openRow})},r)})})}function er({row:e}){return a("div",{class:"entry",children:a("div",{class:"row",children:[a("span",{class:e.tone?`mark ${e.tone}`:"mark",children:e.mark}),a("div",{class:"content tight",children:[a("div",{children:e.text}),e.detail?a("div",{class:"outcome",children:e.detail}):null]})]})})}function tr({page:e}){if(e.isEmpty)return a("div",{class:"empty",children:[a("div",{class:"title",children:e.empty.title}),a("div",{class:"muted",children:e.empty.hint})]});let{lead:t,sections:n,earlier:s}=e;return a("main",{class:"overview",children:[t.length>0?a("section",{children:t.map(i=>i.id==="headline"?a("h1",{class:"overview-goal",children:i.text},i.id):a("div",{class:i.hasGapAbove?"overview-now overview-gap muted":"overview-now muted",children:i.text},i.id))}):null,n.map(i=>a("section",{children:[i.title?a(Ue,{title:i.title,count:0}):null,a("div",{class:"list",children:i.rows.map(o=>a(er,{row:o},o.id))})]},i.id)),s.length>0?a("section",{children:[a(Ue,{title:"Earlier in this session",count:0}),a("div",{class:"list",children:s.map((i,o)=>a("div",{class:"earlier muted",children:i},o))})]}):null]})}function Ue({title:e,count:t}){return a("div",{class:"group-title",children:[a("b",{children:e}),t>0?a("span",{class:"count",children:[P,t]}):null]})}function _n(e,t,n){return nn(e.needsYou.closed[t==="question"?"questions":"tasks"],lt(n)).map(s=>({id:s.id,ask:s.ask,outcomeLabel:s.outcomeLabel,state:qt(s),at:s.at,delivery:s.delivery}))}function ri({v:e,kind:t,entries:n,all:s,now:i}){let o=t==="question"?"Questions":"Tasks",r=Rn(n),l=_n(e,t,r),u=r.flatMap(d=>"row"in d?[d.row]:[]);return a("section",{children:[a(Ue,{title:o,count:u.filter(d=>d.view&&at(d.view)).length}),a(Ii,{entries:n,group:t,all:s,now:i}),a(Ni,{group:t,empty:Ci(o,r),closed:l,total:dt(e.needsYou.closed[t==="question"?"questions":"tasks"],lt(r)),now:i})]})}function Rn(e){return e.filter(t=>O.get(ae(t))?.track.state!=="leaving")}function Ci(e,t){let n=t.every(s=>O.get(ae(s))?.track.state==="entering");return t.length===0||n?{text:Rs(e),isLeaving:t.length>0}:null}function Tn(e){return ct(e).map(t=>{let n=t.code?a("code",{children:t.text}):t.text;return t.italic&&(n=a("i",{children:n})),t.bold&&(n=a("b",{children:n})),t.strike&&(n=a("s",{children:n})),t.link?a($,{children:[a("u",{children:n}),a("span",{class:"muted",children:[" ",t.link]})]}):n})}function Ni({group:e,empty:t,closed:n,total:s,now:i}){let o=_s(s,n.length),r=J.has(e),l=s>0&&(r||bt.has(e));return a($,{children:[a("div",{class:"group-end","data-motion":`end-${e}`,children:a("div",{class:"group-end-content",children:[t?a("div",{class:t.isLeaving?"group-empty leaving":"group-empty","aria-hidden":t.isLeaving,children:t.text}):null,s>0?a("button",{type:"button",class:"fold","data-fold":e,onClick:()=>xr(e),children:[a(Oe,{name:r?"down":"right"}),Ss(s)]}):null]})}),l?a("div",{class:"list closed-list","data-motion":`closed-${e}`,children:[n.map(u=>a("div",{class:"entry",children:a("div",{class:"row",children:[a("span",{class:"mark",children:u.delivery===null?ms[u.state]:""}),a("div",{class:"content tight",children:[a("div",{class:"muted",children:u.ask}),a("div",{class:"outcome",children:rn(u.outcomeLabel,u.delivery)}),u.delivery&&typeof u.delivery=="object"&&u.delivery.canUndo?a("button",{type:"button",disabled:ve.has(u.id),onClick:()=>pe(u.id,{id:u.id,action:"undo"}),children:"Undo"}):null]}),a("span",{class:"side",children:re(i-u.at)})]})},`closed-${u.id}`)),o?a("div",{class:"earlier muted",children:o}):null]}):null]})}function nr(e){return e.heard==="heard"?null:["The inbox has not heard from this chat\\u2019s hooks.",e.heard==="none"?"Codex runs a plugin\\u2019s hooks only after you trust them.":"Items from Codex\\u2019s replies are missing."]}function sr({v:e,lists:t,now:n}){let s=t.byTab.needsYou,i=t.questions.length===0&&t.tasks.length===0,o=_n(e,"question",t.questions).length>0||_n(e,"task",t.tasks).length>0,r=nr(e);return i&&!o?r?a("div",{class:"empty",children:[a("div",{class:"title",children:r[0]}),a("div",{class:"muted",children:r[1]})]}):a("div",{class:"empty",children:[a("div",{class:"title",children:Le("needsYou","Codex").title}),a("div",{class:"muted",children:Le("needsYou","Codex").hint})]}):a("main",{children:[r?a("section",{children:a("div",{class:"group-title",children:[r[0],a("div",{class:"muted",children:r[1]})]})}):null,a(ri,{v:e,kind:"question",entries:t.questions,all:s,now:n}),a(ri,{v:e,kind:"task",entries:t.tasks,all:s,now:n})]})}function ir({v:e,lists:t,now:n}){let s=lt(Rn(t.findings)),i=l=>e.findings.closed.filter(u=>u.kind===l),o=l=>nn(i(l),s).map(u=>({id:u.id,ask:u.title,outcomeLabel:u.outcomeLabel,state:qt(u),at:u.closedAt,delivery:u.delivery}));return t.findings.length===0&&dt(e.findings.closed,s)===0?a("div",{class:"empty",children:[a("div",{class:"title",children:Le("findings","Codex").title}),a("div",{class:"muted",children:Le("findings","Codex").hint})]}):a("main",{children:t.findingGroups.map(l=>{let u=Rn(l.entries),d=u.flatMap(p=>"row"in p?[p.row]:[]);return a("section",{children:[a(Ue,{title:l.title,count:d.filter(p=>p.view&&at(p.view)).length}),a(Ii,{entries:l.entries,group:"finding",all:t.byTab.findings,now:n}),a(Ni,{group:l.kind,empty:Ci(l.title,u),closed:o(l.kind),total:dt(i(l.kind),s),now:n})]})})})}function or({v:e,pr:t}){let n=q(t.ref),s=_i(e,t),i=U.has(n),o=H.get(n);return a("div",{class:"row settled",children:[a("span",{class:"mark",children:"\\u2713"}),a("div",{class:"content",children:a("div",{class:"settled-head",children:[a("div",{class:"settled-line",children:[a("span",{class:"what",children:[a("span",{class:"tone-prs",children:["#",t.number]})," ",t.title]}),a("span",{class:"outcome-label",children:`${P}Dismissed`}),o?a("span",{class:"tone-error",children:`${P}${o}`}):null]}),a("button",{type:"button",class:i?"key undo undoing":"key undo",disabled:i,onClick:()=>{rr(n,t.ref)},children:[a("span",{class:i?"time-left paused":"time-left",style:{animationDuration:`${_}ms`},ref:r=>{r&&!r.style.animationDelay&&(r.style.animationDelay=`-${Math.max(0,Date.now()-s)}ms`)}},s),a(Oe,{name:"undo"}),"Undo"]})]})})]})}async function rr(e,t){if(!U.has(e)){U.add(e);try{await pe(e,{action:"pr-undo",ref:t})}finally{U.delete(e),b()}}}function ar(e,t){let n=ve.get(t);if(n)return{text:n,isError:!1};let s=H.get(t);if(s)return{text:s,isError:!0};let i=Hn(t);if(i)return{text:i,isError:!1};let o=e.lastActions[t]?.action==="pr-dismiss"?null:Pe(t,e.lastActions[t],void 0,e.turns,e.at);if(!o)return null;let r=me(o,"codex");return{text:on(o)?`${r}${P}${Re(e.at-o.at)}`:r,isError:sn(o)}}function dr({v:e,pr:t,threads:n,checks:s,openId:i,all:o,now:r}){let l=ye(e.lastActions),{status:u,head:d,unlisted:p}=et(t,l),h=Hs[u],c=q(t.ref),f=Vs(t,l,e.prs.branchRef,e.lastActions).map(m=>Et(c,m,At(`PR #${t.number}`))),g=ar(e,c);return a("section",{children:[a("div",{class:"pr-head",children:[a("span",{class:"tone-prs num",children:["#",t.number]})," ",t.title," ",a("span",{class:h?`pr-verdict tone-${h}`:"pr-verdict muted",children:d}),a("span",{class:"pr-verdict muted",children:p.map(m=>`${P}${m}`).join("")})]}),t.error?a("div",{class:"pr-status tone-error",children:["Last refresh failed: ",t.error]}):null,a("div",{class:"pr-actions keys",children:f.map(m=>a(Qo,{k:m}))}),g?a("div",{class:g.isError?"pr-last tone-error":"pr-last muted",children:g.text}):null,a("div",{class:"pr-groups",children:[a(ai,{title:fn.threads,rows:n,all:o,openId:i,now:r}),a(ai,{title:fn.checks,rows:s,all:o,openId:i,now:r})]})]})}function ai({title:e,rows:t,all:n,openId:s,now:i}){return t.length===0?null:a($,{children:[a(Ue,{title:e,count:t.length}),a("div",{class:"list",children:t.map(o=>{let r=o.id===s;return a("div",{class:"entry",children:a(Oi,{row:o,track:{state:r?"open":"closed",since:0,hasPanel:r},now:i,onSelect:()=>Fn("prs",n,n.indexOf(o))})},o.id)})})]})}var lr=Ns("conversation");function cr({v:e,now:t}){let{blocks:n,rows:s}=Ri(e);if(n.length===0)return a("div",{class:"empty",children:[a("div",{class:"title",children:e.isFetchingPrs?"Checking for PRs\\u2026":"No PRs"}),a("div",{class:"muted",children:e.isGhMissing?pn:lr})]});let i=s[Mn(s,"prs",e)]?.id;return a("main",{children:[e.isGhMissing?a("section",{children:a("div",{class:"group-title muted",children:pn})}):null,n.map(o=>o.isSettled?a("section",{children:a(or,{v:e,pr:o.pr})}):a(dr,{...o,v:e,openId:i,all:s,now:t})),e.prs.olderText?a("section",{children:a("div",{class:"group-title muted",children:e.prs.olderText})}):null]})}var ur=6e4;function pr({v:e}){let t=Date.now()-On,n=Lt>=2?a("span",{class:t>ur?"tone-error":void 0,children:["Last read ",Re(t),P,"retrying"]}):e.status.isUpdating?"Updating\\u2026":null;return a("div",{class:"status",children:n})}function fr({v:e}){let t={needsYou:e.needsYou.count,findings:e.findings.count,prs:e.prs.count},{error:n}=e.status,s=se();return a("nav",{children:[a("div",{class:"tabs",children:we.map(i=>a("button",{type:"button",class:`tab ${s===i.id?"shown":""}`,onClick:()=>{I=i.id,b()},children:[i.label,M(i.id)&&t[i.id]>0?a("span",{class:`count tone-${i.id}`,children:t[i.id]}):null]}))}),Ce?Ce.isReloadable?a(En,{text:Ce.text,reload:()=>location.reload()}):a("div",{class:"status-line tone-error",children:Ce.text}):null,ee?a(En,{text:ee.text,label:"Retry",reload:()=>{let i=ee?.page;ee=null,b(),i&&yi(i)}}):null,n?a("div",{class:"status-line tone-error",children:n}):null,ke&&Date.now()-ke.at<_?a("div",{class:ke.isError?"status-line tone-error":"status-line muted",children:ke.text}):null]})}async function hr(){Z++,te=!te,ne=null,Lt=0,S=null,B=new Map,yt={},O.clear(),St=null,A.needsYou=null,A.findings=null,A.prs=null,T=null,b(),await qe()}function En({text:e,reload:t,label:n="Reload"}){return a("div",{class:"error-strip",children:[a("span",{children:e}),a("button",{type:"button",class:"key",onClick:t,children:n})]})}function gr({lists:e}){if(!S||!e)return ne!==null?a(En,{text:`Could not read the inbox. ${ne}`,reload:()=>{kt?qe():Pn()}}):pi?a("div",{class:"notice muted",children:"Loading\\u2026"}):null;let t=S,n=t.at,s=se();return a($,{children:[te?a("div",{class:"demo-note",children:[a("span",{children:Ts}),a("button",{type:"button",class:"key ghost",onClick:()=>{hr()},children:"Hide demo"})]}):null,a(fr,{v:t}),s==="needsYou"?a(sr,{v:t,lists:e,now:n}):s==="findings"?a(ir,{v:t,lists:e,now:n}):s==="prs"?a(cr,{v:t,now:n}):a(tr,{page:t.overviewPage}),a("footer",{children:[null,a("div",{class:"footer-end",children:[a(pr,{v:t}),a("span",{class:"version",children:["v",os.version]})]})]})]})}var Un={duration:300,easing:"cubic-bezier(.19, 1, .22, 1)"},Pt={duration:200,easing:"cubic-bezier(.65, 0, .35, 1)"},Vn={duration:200,easing:"cubic-bezier(.8, 0, .4, 1)",fill:"forwards"},It=matchMedia("(prefers-reduced-motion: reduce)");function mr(){let e=new Map;for(let t of W.querySelectorAll("[data-motion]"))e.set(t.dataset.motion,{el:t,height:t.getBoundingClientRect().height});return e}function wr(e,t,n,s){e.style.overflow="hidden",e.dataset.to=String(s);let i=e.animate(t,n);_t.add(i);let o=()=>{_t.delete(i),!v&&e.getAnimations().length===0&&Di(e)};i.onfinish=o,i.oncancel=o}function An(e){for(let t of e.getAnimations())t.cancel();Di(e)}function Di(e){e.style.overflow="",delete e.dataset.to}function qn(e){return[...e.children].reduce((t,n)=>t+n.getBoundingClientRect().height,0)}function We(e,t,n,s){let i=o=>({height:`${o.height}px`,opacity:o.opacity});wr(e,[i(t),i(n)],s,n.height)}function Mi(e,t){We(e,{height:0,opacity:0},{height:t,opacity:1},Un)}function yr(e,t){if(It.matches){xe.clear();return}let n=new Set([...t].map(i=>O.get(i)?.track.state)),s=n.has("leaving")?{...Vn,fill:"none"}:n.has("entering")?Un:Pt;for(let i of W.querySelectorAll("[data-motion]")){let o=i.dataset.motion,r=e.get(o);if(i.dataset.closing)continue;let l=O.get(o)?.track.state,u=!r||r.el!==i,d=()=>i.getAnimations().length>0||u?i.getBoundingClientRect().height:r.height;if(l&&t.has(o)&&br(i,l,d)||l==="closing"||l==="settling"||l==="leaving")continue;if(l&&!ft(l)&&!ve.has(o)){An(i);continue}let p=l||i.classList.contains("group-end")?qn(i):i.scrollHeight;if(u){!l&&xe.delete(o)&&Mi(i,p);continue}let h=i.getAnimations();if(h.length>0&&Math.abs(Number(i.dataset.to)-p)<1)continue;let c=d(),f=h.length>0?Number(getComputedStyle(i).opacity):1;for(let g of h)g.cancel();Math.abs(c-p)<1&&f>.99||We(i,{height:c,opacity:f},{height:p,opacity:1},l?Pt:s)}xe.clear()}function br(e,t,n){switch(t){case"opening":return!1;case"entering":return An(e),Mi(e,qn(e)),!0;case"closing":case"settling":return kr(e,di(e,n)),!0;case"leaving":{let s=di(e,n);for(let i of e.getAnimations())i.cancel();return We(e,s,{height:0,opacity:0},Vn),!0}default:return An(e),!0}}function di(e,t){return{height:t(),opacity:Number(getComputedStyle(e).opacity)}}function kr(e,t){let n=e.querySelector(".panel.closing"),s=e.querySelector(".row.closing");s?.classList.remove("closing"),n&&(n.style.display="none");let i=qn(e);n&&(n.style.display=""),s?.classList.add("closing");for(let o of e.getAnimations())o.cancel();We(e,t,{height:i,opacity:1},{...Pt,fill:"forwards"})}function xr(e){let t=W.querySelector(`[data-motion="closed-${e}"]`);if(!J.has(e)){J.add(e),bt.delete(e)&&t?delete t.dataset.closing:xe.add(`closed-${e}`),b();return}if(J.delete(e),!t||It.matches){b();return}bt.add(e),b(),t.dataset.closing="1";let n=t.getBoundingClientRect().height;for(let s of t.getAnimations())s.cancel();We(t,{height:n,opacity:1},{height:0,opacity:0},Vn),j(()=>{J.has(e)||!bt.delete(e)||b()},200)}function Fi(){v||(W.querySelector(".row.selected")?.scrollIntoView({block:"nearest"}),It.matches||j(()=>W.querySelector(".row.selected")?.scrollIntoView({block:"nearest"}),220))}function Wn(){document.documentElement.style.setProperty("--row-pad",`${8}px`),document.documentElement.style.setProperty("--lead-gap",`${9.5}px`),document.documentElement.style.setProperty("--move",`${200}ms ${Pt.easing}`),document.documentElement.style.setProperty("--enter",`${300}ms ${Un.easing}`)}var Hi=50;function Se(e){j(b,e+Hi)}var be=null;function vr(){let e=Date.now(),t=[...O.values()].flatMap(({track:s})=>ft(s.state)?[s.since+pt[s.state]]:[]);if(t.length===0)return;let n=Math.min(...t)+Hi;be&&be.at<=n||(be&&Rt(be.timer),be={at:n,timer:j(()=>{be=null,b()},n-e)})}function b(){if(v||!N)return;let e=mr(),t=S?Go(S):null;St=t?.lists??null,vr(),Vt(a(gr,{lists:St}),W),yr(e,t?.changed??new Set);let n=xt&&T?document.getElementById(`type-${T}`):null;n&&(xt=!1,n.focus())}var Ne=null;document.addEventListener("pointerdown",e=>{N&&(!(e.target instanceof Element)||!W.contains(e.target)||!e.target.closest(".list, .fold")||(Ne={x:e.clientX,y:e.clientY},document.body.classList.add("still")))},{signal:Ve.signal});document.addEventListener("pointermove",e=>{N&&(!Ne||Math.hypot(e.clientX-Ne.x,e.clientY-Ne.y)<3||(Ne=null,document.body.classList.remove("still")))},{signal:Ve.signal});document.addEventListener("keydown",e=>{if(!N||e.metaKey||e.ctrlKey||e.altKey||!S)return;let t=e.target;if(t?.closest("input, textarea")){e.key==="Escape"&&t.tagName==="INPUT"&&(T=null,b());return}let n=we.find(h=>h.hotkey===e.key);if(n){I=n.id,b();return}let s=se();if(!M(s))return;let i=Ei(S,s),o=Mn(i,s,S),r=e.key==="j"||e.key==="ArrowDown"?1:e.key==="k"||e.key==="ArrowUp"?-1:0;if(r!==0){e.preventDefault(),Fn(s,i,Math.max(0,Math.min(i.length-1,o+r))),Fi();return}let l=i[o];if(!l)return;let{keys:u,more:d}=Li(l),p=[...u,...d].find(h=>h.hotkey===e.key);p&&(e.preventDefault(),p.run())},{signal:Ve.signal});function Ui(){v||!N||!kt||ii||(ii=!0,Sn(fi),Sn(xn),parent.postMessage({jsonrpc:"2.0",method:"ui/notifications/initialized",params:{}},"*"),bi())}function Pn(){return v?Promise.resolve(!1):kt?Promise.resolve(!0):Ie||(ne=null,N&&b(),Ie=gi("ui/initialize",{protocolVersion:"2026-01-26",appInfo:{name:"inbox",version:"0.2.10"},appCapabilities:{tools:{}}},Tt).then(e=>v?!1:(fi=e?.hostContext??{},kt=!0,Ui(),!0)).catch(()=>(N&&!v&&(ne="The inbox could not connect to Codex.",b()),!1)).finally(()=>{Ie=null}),Ie)}function li(){Ui(),j(()=>{pi=!0,!S&&ne===null&&b()},No)}function Sr(e){if(v||!X||X.aborted)throw new Error("The new page stopped.");hi(e),N=!0,Wn(),b()}X?X.ready({initialize:Pn,activate:Sr,start:li,dispose:In}):(Wn(),hi(),Pn(),li());})();\n\n    </script>\n  </body>\n</html>\n';
+var tab_default = '<!doctype html>\n<html lang="en">\n  <head>\n    <meta charset="utf-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1" />\n    <meta name="inbox-handoff" content="1" />\n    <title>Inbox</title>\n    <style id="inbox-style">\n      /* The host\'s variables when Codex passes them; otherwise the pane\'s own colors. */\n      :root {\n        color-scheme: light;\n        --bg: var(--color-background-primary, #ffffff);\n        --text: var(--color-text-primary, #1f1f1f);\n        --muted: var(--color-text-secondary, #595959);\n        --key: #243bf5; --amber: #745417; --findings: #7b00e8; --prs: #006363; --done: #25652f; --error: #a5293d; --error-mark: #a5293d;\n        --needs-you: var(--amber);\n        --issue: var(--amber);\n        --sans: var(--font-sans, -apple-system, system-ui, sans-serif);\n        --mono: var(--font-mono, ui-monospace, \'SF Mono\', Menlo, monospace);\n        --raised: color-mix(in srgb, var(--text) 9%, var(--bg));\n        --selected: color-mix(in srgb, var(--text) 6%, var(--bg));\n        --age: color-mix(in srgb, var(--muted) 90%, var(--bg));\n        --hover: color-mix(in srgb, var(--key) 14%, transparent);\n        --soft: color-mix(in oklab, var(--text) 8%, transparent);\n        --soft-hover: color-mix(in oklab, var(--text) 10%, transparent);\n        --row-hover: color-mix(in oklab, var(--soft) 50%, transparent);\n        --quick: 150ms ease;\n        --mark-x: 18px;\n        --text-x: 44px;\n      }\n      @media (prefers-color-scheme: dark) {\n        :root:not([data-theme=\'light\']) {\n          color-scheme: dark;\n          --bg: var(--color-background-primary, #171717);\n          --text: var(--color-text-primary, #ececec);\n          --muted: var(--color-text-secondary, #a8a8a8);\n          --key: #b1b9f9; --amber: #ffc107; --findings: #cab0ff; --prs: #8cc8c0; --done: #7ecd8f; --error: #ffa3b0; --error-mark: #ff6b80;\n          --raised: color-mix(in srgb, var(--text) 11%, var(--bg));\n          --selected: color-mix(in srgb, var(--text) 8%, var(--bg));\n          --age: color-mix(in srgb, var(--muted) 85%, var(--bg));\n          --soft: color-mix(in oklab, var(--text) 12%, transparent);\n          --soft-hover: color-mix(in oklab, var(--text) 14%, transparent);\n        }\n      }\n      :root[data-theme=\'dark\'] {\n        color-scheme: dark;\n        --key: #b1b9f9; --amber: #ffc107; --findings: #cab0ff; --prs: #8cc8c0; --done: #7ecd8f; --error: #ffa3b0; --error-mark: #ff6b80;\n        --raised: color-mix(in srgb, var(--text) 11%, var(--bg));\n        --selected: color-mix(in srgb, var(--text) 8%, var(--bg));\n        --age: color-mix(in srgb, var(--muted) 85%, var(--bg));\n        --soft: color-mix(in oklab, var(--text) 12%, transparent);\n        --soft-hover: color-mix(in oklab, var(--text) 14%, transparent);\n      }\n      * {\n        box-sizing: border-box;\n      }\n      body {\n        margin: 0;\n        background: var(--bg);\n        color: var(--text);\n        font: 13px/20px var(--sans);\n        -webkit-font-smoothing: antialiased;\n      }\n      button {\n        font: inherit;\n        color: inherit;\n        background: none;\n        border: none;\n        padding: 0;\n        text-align: left;\n      }\n      :focus-visible {\n        outline: 1.5px solid var(--key);\n        outline-offset: 1px;\n        border-radius: 4px;\n      }\n      .muted {\n        color: var(--muted);\n      }\n      .tone-needsYou {\n        color: var(--needs-you);\n      }\n      .tone-findings {\n        color: var(--findings);\n      }\n      .tone-prs {\n        color: var(--prs);\n      }\n      .tone-done {\n        color: var(--done);\n      }\n      .tone-error {\n        color: var(--error);\n      }\n      .notice {\n        padding: 10px 16px;\n        overflow-wrap: anywhere;\n      }\n      .error-strip {\n        display: flex;\n        align-items: center;\n        justify-content: space-between;\n        gap: 12px;\n        flex-basis: 100%;\n        margin: 4px 0 0;\n        padding: 8px 12px;\n        border-radius: 6px;\n        background: color-mix(in srgb, var(--error) 12%, var(--bg));\n        color: var(--error);\n        overflow-wrap: anywhere;\n      }\n      #app > .error-strip {\n        margin: 12px 12px 0;\n      }\n      .error-strip .key {\n        flex: none;\n        white-space: nowrap;\n        color: var(--text);\n      }\n\n      nav {\n        display: flex;\n        flex-wrap: wrap;\n        align-items: center;\n        gap: 4px 16px;\n        padding: 12px 12px 0;\n      }\n      .tabs {\n        display: flex;\n        flex-wrap: wrap;\n        gap: 4px;\n      }\n      .tab {\n        white-space: nowrap;\n        padding: 6px 12px;\n        border-radius: 6px;\n        color: var(--muted);\n      }\n      .tab:hover {\n        color: var(--text);\n      }\n      .tab.shown {\n        background: var(--raised);\n        color: var(--text);\n        font-weight: 600;\n      }\n      .tab .count {\n        font-weight: 600;\n        margin-left: 6px;\n      }\n      .status {\n        margin-left: auto;\n        color: var(--muted);\n        font-size: 12px;\n      }\n      .status-line {\n        flex-basis: 100%;\n        padding: 0 4px;\n        font-size: 12px;\n        overflow-wrap: anywhere;\n      }\n\n      main {\n        display: flex;\n        flex-direction: column;\n        padding: 8px 0 4px;\n      }\n      section {\n        position: relative;\n        padding: 10px 0;\n      }\n      section + section::before {\n        content: \'\';\n        position: absolute;\n        top: 0;\n        left: var(--text-x);\n        right: 0;\n        height: 1px;\n        background: var(--soft);\n      }\n      .group-title {\n        padding: 0 14px 6px var(--text-x);\n      }\n      .group-title b {\n        font-weight: 600;\n      }\n      .group-title .count {\n        color: var(--muted);\n        white-space: pre;\n      }\n\n      .pr-head,\n      .pr-status,\n      .pr-actions,\n      .pr-last {\n        padding: 0 14px 0 var(--text-x);\n        overflow-wrap: anywhere;\n      }\n      .pr-head {\n        font-weight: 600;\n      }\n      .pr-head .num,\n      .pr-head .pr-verdict {\n        font-weight: 400;\n      }\n      .pr-actions {\n        margin-top: 8px;\n      }\n      .pr-last {\n        margin-top: 6px;\n      }\n      .pr-groups {\n        margin-top: 12px;\n      }\n      .pr-groups .list {\n        --mark-x: 41px;\n        --text-x: 67px;\n      }\n      .pr-groups .group-title + .list {\n        margin-bottom: 6px;\n      }\n      .link {\n        padding: 0;\n        text-align: left;\n        text-decoration: underline;\n        text-decoration-color: color-mix(in oklab, var(--text) 30%, transparent);\n        text-underline-offset: 2px;\n      }\n      .link:hover {\n        text-decoration-color: currentColor;\n      }\n\n      .row {\n        display: grid;\n        grid-template-columns: calc(var(--text-x) - var(--mark-x)) minmax(0, 1fr) auto;\n        padding: var(--row-pad) 14px var(--row-pad) var(--mark-x);\n      }\n      .row.selected {\n        background-color: var(--selected);\n      }\n      .mark {\n        align-self: start;\n        padding-right: 8px;\n        text-align: center;\n        color: var(--muted);\n      }\n      .mark.done {\n        color: var(--done);\n      }\n      .mark.issue {\n        color: var(--issue);\n      }\n      .mark.error {\n        color: var(--error-mark);\n      }\n      .side {\n        align-self: start;\n        margin-left: 12px;\n        color: var(--age);\n        font-variant-numeric: tabular-nums;\n        white-space: nowrap;\n        text-align: right;\n      }\n      .side[data-room]::after {\n        content: attr(data-room);\n        display: block;\n        height: 0;\n        overflow: hidden;\n        visibility: hidden;\n      }\n      .side-label {\n        display: inline-block;\n        max-width: 11em;\n        overflow: hidden;\n        text-overflow: ellipsis;\n        vertical-align: bottom;\n        margin-right: 4px;\n      }\n      .row.collapsed:hover .side {\n        color: var(--muted);\n      }\n      .content {\n        min-width: 0;\n        display: flex;\n        flex-direction: column;\n      }\n      /* Its space above is padding, not a gap, so the row\'s height grows smoothly when the panel mounts. */\n      .panel {\n        display: flex;\n        flex-direction: column;\n        gap: 8px;\n        padding: 8px 0 2px;\n      }\n      .row > .panel {\n        grid-column: 2 / -1;\n      }\n      .content.tight {\n        display: flex;\n        flex-direction: column;\n        gap: 0;\n      }\n      .line {\n        display: flex;\n        flex-direction: column;\n        width: 100%;\n        min-width: 0;\n      }\n      .line .text {\n        min-width: 0;\n        overflow: hidden;\n        text-overflow: ellipsis;\n        display: -webkit-box;\n        -webkit-line-clamp: 2;\n        -webkit-box-orient: vertical;\n      }\n      .line .after {\n        color: var(--muted);\n      }\n      .row.collapsed .line .after:not(.tone-error) {\n        color: var(--age);\n      }\n      .row.collapsed:hover .line .after:not(.tone-error) {\n        color: var(--muted);\n      }\n      .line .after.tone-error {\n        color: var(--error);\n      }\n      .row.selected .line,\n      .row.closing .line {\n        display: block;\n      }\n      .row.selected .line .text,\n      .row.closing .line .text {\n        display: inline;\n        font-weight: 600;\n      }\n      .row.selected .line .after,\n      .row.closing .line .after {\n        white-space: normal;\n        font-weight: 400;\n      }\n      .line .lead {\n        color: var(--muted);\n        font-weight: 400;\n      }\n      .line .meta {\n        display: block;\n        color: var(--muted);\n        overflow: hidden;\n        text-overflow: ellipsis;\n        white-space: nowrap;\n      }\n      .row.collapsed:not(:hover) .line .meta {\n        color: var(--age);\n      }\n      .row.selected .line .meta {\n        display: none;\n      }\n      .quote {\n        white-space: pre-line;\n      }\n      .row.collapsed:hover {\n        background-color: var(--row-hover);\n      }\n      .still .row.collapsed:not(:active):hover {\n        background-color: transparent;\n      }\n      .still .fold:not(:active):hover {\n        color: var(--muted);\n      }\n      .title {\n        font-weight: 600;\n      }\n      .body {\n        overflow-wrap: anywhere;\n      }\n      .body p {\n        margin: 0;\n      }\n      .body p + p {\n        margin-top: 4px;\n      }\n      .body .option-description {\n        overflow: hidden;\n        text-overflow: ellipsis;\n        white-space: nowrap;\n      }\n      .body .option-description + .option-description {\n        margin-top: 0;\n      }\n      code {\n        padding: 1px 4px;\n        border-radius: 4px;\n        background: var(--soft);\n        font-family: var(--mono);\n      }\n      .keys {\n        display: flex;\n        flex-wrap: wrap;\n        align-items: center;\n        gap: 6px;\n      }\n      .key {\n        display: inline-flex;\n        align-items: center;\n        justify-content: center;\n        gap: 5px;\n        min-height: 26px;\n        padding: 3px 11px;\n        border: 1px solid color-mix(in oklab, var(--text) 28%, transparent);\n        border-radius: 13px;\n        background: transparent;\n        font-weight: 400;\n        text-align: center;\n        max-width: 100%;\n        white-space: normal;\n        overflow-wrap: anywhere;\n      }\n      .key:not(:disabled):hover {\n        background: var(--soft);\n      }\n      .key:focus-visible {\n        outline-width: 2px;\n        outline-offset: 2px;\n        border-radius: 13px;\n      }\n      .key.primary {\n        border-color: transparent;\n        background: var(--text);\n        color: var(--bg);\n      }\n      .key.primary:not(:disabled):hover {\n        background: color-mix(in srgb, var(--text) 82%, var(--bg));\n      }\n      .key .icon {\n        flex: none;\n        width: 14px;\n        height: 14px;\n      }\n      .key.ghost {\n        padding: 0 4px;\n        border-color: transparent;\n        background: none;\n        color: var(--muted);\n      }\n      .key.ghost:not(:disabled):hover {\n        background: none;\n        color: var(--text);\n      }\n      .actions {\n        display: flex;\n        flex-direction: column;\n        gap: 4px;\n      }\n      form {\n        display: flex;\n        align-items: center;\n        gap: 6px;\n      }\n      input {\n        flex: 1;\n        min-width: 0;\n        min-height: 28px;\n        font: inherit;\n        color: inherit;\n        background: transparent;\n        border: 1px solid color-mix(in oklab, var(--text) 15%, transparent);\n        border-radius: 10px;\n        padding: 4px 10px;\n      }\n      input::placeholder {\n        color: var(--muted);\n      }\n      /* The radius again, since :focus-visible sets 4px. */\n      input:focus,\n      textarea:focus {\n        outline: none;\n        border-color: color-mix(in oklab, var(--text) 32%, transparent);\n        border-radius: 10px;\n      }\n      textarea {\n        width: 100%;\n        font: 12px var(--mono);\n        color: inherit;\n        background: transparent;\n        border: 1px solid color-mix(in oklab, var(--text) 15%, transparent);\n        border-radius: 10px;\n      }\n\n      .group-end {\n        display: flex;\n        flex-direction: column;\n        justify-content: flex-end;\n      }\n      /* Keeps the fold\'s margin inside, so its height is the whole end\'s content height. */\n      .group-end-content {\n        display: flow-root;\n        position: relative;\n      }\n      .group-empty {\n        padding: var(--row-pad) 14px var(--row-pad) var(--text-x);\n        color: var(--muted);\n      }\n      .group-empty.leaving {\n        position: absolute;\n        inset: auto 0 100% 0;\n        pointer-events: none;\n        animation: fade-out var(--enter) forwards;\n      }\n      @keyframes fade-out {\n        to {\n          opacity: 0;\n        }\n      }\n      .fold {\n        display: block;\n        margin: 8px 0 0 calc(var(--mark-x) - 1px);\n        padding: 1px 4px;\n        border-radius: 5px;\n        color: var(--muted);\n      }\n      .fold:hover {\n        color: var(--text);\n      }\n      .fold .icon {\n        width: 12px;\n        height: 12px;\n        margin-right: calc(var(--text-x) - var(--mark-x) - 15px);\n        vertical-align: -1px;\n      }\n      .closed-list {\n        --mark-x: 41px;\n        --text-x: 67px;\n      }\n      /* The gap above a Closed list\'s rows is content, not padding, so the list opens from and closes to 0. */\n      .closed-list::before {\n        content: \'\';\n        display: block;\n        height: 4px;\n      }\n      .closed-list .row {\n        padding-top: calc(var(--row-pad) / 2);\n        padding-bottom: calc(var(--row-pad) / 2);\n      }\n      .outcome {\n        color: var(--age);\n      }\n      .settled-head {\n        display: flex;\n        align-items: center;\n        min-width: 0;\n      }\n      .row.settled.was-open {\n        transition: background-color var(--move);\n        @starting-style {\n          background-color: var(--selected);\n        }\n      }\n      .settled-line {\n        flex: 1;\n        min-width: 0;\n        overflow-wrap: anywhere;\n      }\n      .settled .outcome-label {\n        color: var(--muted);\n      }\n      /* The pill keeps the line\'s height, so the row does not grow. */\n      .key.undo {\n        flex: none;\n        white-space: nowrap;\n        border-color: transparent;\n        position: relative;\n        isolation: isolate;\n        overflow: hidden;\n        margin: -3px 0 -3px 12px;\n        background: color-mix(in oklab, var(--soft) 45%, transparent);\n      }\n      .key.undo.undoing {\n        color: var(--muted);\n      }\n      .key.undo.undoing .icon {\n        animation: undo-turn 900ms linear infinite;\n      }\n      @keyframes undo-turn {\n        to {\n          transform: rotate(-360deg);\n        }\n      }\n      .time-left {\n        position: absolute;\n        inset: 0;\n        z-index: -1;\n        background: var(--soft);\n        transform-origin: left;\n        animation-name: empty;\n        animation-timing-function: linear;\n        animation-fill-mode: forwards;\n      }\n      .key.undo:not(:disabled):hover .time-left {\n        background: var(--soft-hover);\n      }\n      .time-left.paused {\n        animation-play-state: paused;\n      }\n      @keyframes empty {\n        from {\n          transform: scaleX(1);\n        }\n        to {\n          transform: scaleX(0);\n        }\n      }\n      #app {\n        display: flex;\n        flex-direction: column;\n        min-height: 100vh;\n      }\n      .empty {\n        flex: 1;\n        display: flex;\n        flex-direction: column;\n        justify-content: center;\n        padding: 32px;\n        text-align: center;\n      }\n      .empty .title {\n        margin-bottom: 4px;\n      }\n      footer {\n        margin-top: auto;\n        display: flex;\n        flex-wrap: wrap;\n        justify-content: space-between;\n        gap: 4px 16px;\n        padding: 8px 16px 16px;\n        color: var(--muted);\n        font-size: 12px;\n      }\n      .footer-end {\n        display: flex;\n        gap: 16px;\n        margin-left: auto;\n      }\n      .version {\n        color: color-mix(in srgb, var(--muted) 50%, var(--bg));\n      }\n      .demo-toggle {\n        padding: 0 6px;\n        border-radius: 5px;\n        color: var(--muted);\n      }\n      .demo-toggle:hover {\n        color: var(--text);\n        background: var(--hover);\n      }\n      .demo-note {\n        display: flex;\n        align-items: center;\n        justify-content: space-between;\n        gap: 6px;\n        padding: 8px 12px 0;\n        font-size: 11px;\n        color: var(--muted);\n        white-space: nowrap;\n      }\n      .demo-note .key {\n        flex: none;\n        white-space: nowrap;\n        padding: 0;\n      }\n      .demo-note span {\n        min-width: 0;\n        overflow: hidden;\n        text-overflow: ellipsis;\n      }\n      .earlier {\n        padding: 2px 14px 2px var(--text-x);\n      }\n      .overview-goal,\n      .overview-now {\n        padding: 0 14px 0 var(--text-x);\n        overflow-wrap: anywhere;\n      }\n      .overview .content {\n        overflow-wrap: anywhere;\n      }\n      .overview-gap {\n        margin-top: var(--lead-gap);\n      }\n      .overview-goal {\n        margin: 0;\n        font-size: inherit;\n        font-weight: 600;\n      }\n      .status-line,\n      .demo-note,\n      .empty,\n      main,\n      form {\n        transition: opacity var(--quick);\n        @starting-style {\n          opacity: 0;\n        }\n      }\n      @media (prefers-reduced-motion: reduce) {\n        *,\n        *::before,\n        *::after {\n          transition-duration: 0s !important;\n        }\n        .time-left,\n        .key.undo.undoing .icon {\n          animation: none;\n        }\n      }\n    </style>\n  </head>\n  <body>\n    <div id="app"></div>\n    <script id="inbox-script">\n      "use strict";(()=>{var Ze,x,Bn,Ko,X,jn,Qn,Xn,Dt,Ge,_e,zn,Ft,Nt,Mt,Yo,Xe={},ze=[],Go=/acit|ex(?:s|g|n|p|$)|rph|grid|ows|mnc|ntw|ine[ch]|zoo|^ord|itera/i,et=Array.isArray;function Y(e,t){for(var n in t)e[n]=t[n];return e}function Ht(e){e&&e.parentNode&&e.parentNode.removeChild(e)}function Bo(e,t,n){var s,o,i,r={};for(i in t)i=="key"?s=t[i]:i=="ref"?o=t[i]:r[i]=t[i];if(arguments.length>2&&(r.children=arguments.length>3?Ze.call(arguments,2):n),typeof e=="function"&&e.defaultProps!=null)for(i in e.defaultProps)r[i]===void 0&&(r[i]=e.defaultProps[i]);return Be(e,r,s,o,null)}function Be(e,t,n,s,o){var i={type:e,props:t,key:n,ref:s,__k:null,__:null,__b:0,__e:null,__c:null,constructor:void 0,__v:o??++Bn,__i:-1,__u:0};return o==null&&x.vnode!=null&&x.vnode(i),i}function I(e){return e.children}function Qe(e,t){this.props=e,this.context=t}function oe(e,t){if(t==null)return e.__?oe(e.__,e.__i+1):null;for(var n;t<e.__k.length;t++)if((n=e.__k[t])!=null&&n.__e!=null)return n.__e;return typeof e.type=="function"?oe(e):null}function Qo(e){if(e.__P&&e.__d){var t=e.__v,n=t.__e,s=[],o=[],i=Y({},t);i.__v=t.__v+1,x.vnode&&x.vnode(i),Ut(e.__P,i,t,e.__n,e.__P.namespaceURI,32&t.__u?[n]:null,s,n??oe(t),!!(32&t.__u),o),i.__v=t.__v,i.__.__k[i.__i]=i,ns(s,i,o),t.__e=t.__=null,i.__e!=n&&Jn(i)}}function Jn(e){if((e=e.__)!=null&&e.__c!=null)return e.__e=e.__c.base=null,e.__k.some(function(t){if(t!=null&&t.__e!=null)return e.__e=e.__c.base=t.__e}),Jn(e)}function Kn(e){(!e.__d&&(e.__d=!0)&&X.push(e)&&!Je.__r++||jn!=x.debounceRendering)&&((jn=x.debounceRendering)||Qn)(Je)}function Je(){try{for(var e,t=1;X.length;)X.length>t&&X.sort(Xn),e=X.shift(),t=X.length,Qo(e)}finally{X.length=Je.__r=0}}function Zn(e,t,n,s,o,i,r,l,u,d,p){var g,c,f,h,m,y,b=s&&s.__k||ze,w=t.length;for(u=Xo(n,t,b,u,w),g=0;g<w;g++)(f=n.__k[g])!=null&&(c=f.__i!=-1&&b[f.__i]||Xe,f.__i=g,y=Ut(e,f,c,o,i,r,l,u,d,p),h=f.__e,f.ref&&c.ref!=f.ref&&(c.ref&&Vt(c.ref,null,f),p.push(f.ref,f.__c||h,f)),m==null&&h!=null&&(m=h),4&f.__u?(u=es(f,u,e),c.__e&&(c.__e=null)):typeof f.type=="function"&&y!==void 0?u=y:h&&(u=h.nextSibling),f.__u&=-7);return n.__e=m,u}function Xo(e,t,n,s,o){var i,r,l,u,d,p=n.length,g=p,c=0;for(e.__k=new Array(o),i=0;i<o;i++)(r=t[i])!=null&&typeof r!="boolean"&&typeof r!="function"?(typeof r=="string"||typeof r=="number"||typeof r=="bigint"||r.constructor==String?r=e.__k[i]=Be(null,r,null,null,null):et(r)?r=e.__k[i]=Be(I,{children:r},null,null,null):r.constructor===void 0&&r.__b>0?r=e.__k[i]=Be(r.type,r.props,r.key,r.ref?r.ref:null,r.__v):e.__k[i]=r,u=i+c,r.__=e,r.__b=e.__b+1,l=null,(d=r.__i=zo(r,n,u,g))!=-1&&(g--,(l=n[d])&&(l.__u|=2)),l==null||l.__v==null?(d==-1&&(o>p?c--:o<p&&c++),typeof r.type!="function"&&(r.__u|=4)):d!=u&&(d==u-1?c--:d==u+1?c++:(d>u?c--:c++,r.__u|=4))):e.__k[i]=null;if(g)for(i=0;i<p;i++)(l=n[i])!=null&&(2&l.__u)==0&&(l.__e==s&&(s=oe(l)),os(l,l));return s}function es(e,t,n){var s,o;if(typeof e.type=="function"){for(s=e.__k,o=0;s&&o<s.length;o++)s[o]&&(s[o].__=e,t=es(s[o],t,n));return t}e.__e!=t&&(t&&e.type&&!t.parentNode&&(t=oe(e)),t=n.insertBefore(e.__e,t||null));do t=t&&t.nextSibling;while(t!=null&&t.nodeType==8);return t}function zo(e,t,n,s){var o,i,r,l=e.key,u=e.type,d=t[n],p=d!=null&&(2&d.__u)==0;if(d===null&&l==null||p&&l==d.key&&u==d.type)return n;if(s>(p?1:0)){for(o=n-1,i=n+1;o>=0||i<t.length;)if((d=t[r=o>=0?o--:i++])!=null&&(2&d.__u)==0&&l==d.key&&u==d.type)return r}return-1}function Yn(e,t,n){t[0]=="-"?e.setProperty(t,n??""):e[t]=n==null?"":typeof n!="number"||Go.test(t)?n:n+"px"}function Ye(e,t,n,s,o){var i,r;e:if(t=="style")if(typeof n=="string")e.style.cssText=n;else{if(typeof s=="string"&&(e.style.cssText=s=""),s)for(t in s)n&&t in n||Yn(e.style,t,"");if(n)for(t in n)s&&n[t]==s[t]||Yn(e.style,t,n[t])}else if(t[0]=="o"&&t[1]=="n")i=t!=(t=t.replace(zn,"$1")),r=t.toLowerCase(),t=r in e||t=="onFocusOut"||t=="onFocusIn"?r.slice(2):t.slice(2),e.l||(e.l={}),e.l[t+i]=n,n?s?n[_e]=s[_e]:(n[_e]=Ft,e.addEventListener(t,i?Mt:Nt,i)):e.removeEventListener(t,i?Mt:Nt,i);else{if(o=="http://www.w3.org/2000/svg")t=t.replace(/xlink(H|:h)/,"h").replace(/sName$/,"s");else if(t!="width"&&t!="height"&&t!="href"&&t!="list"&&t!="form"&&t!="tabIndex"&&t!="download"&&t!="rowSpan"&&t!="colSpan"&&t!="role"&&t!="popover"&&t in e)try{e[t]=n??"";break e}catch{}typeof n=="function"||(n==null||n===!1&&t[4]!="-"?e.removeAttribute(t):e.setAttribute(t,t=="popover"&&n==1?"":n))}}function Gn(e){return function(t){if(this.l){var n=this.l[t.type+e];if(t[Ge]==null)t[Ge]=Ft++;else if(t[Ge]<n[_e])return;return n(x.event?x.event(t):t)}}}function Ut(e,t,n,s,o,i,r,l,u,d){var p,g,c,f,h,m,y,b,w,E,K,N,R,Ke,fe,he,L=t.type;if(t.constructor!==void 0)return null;128&n.__u&&(u=!!(32&n.__u),i=[l=t.__e=n.__e]),(p=x.__b)&&p(t);e:if(typeof L=="function"){g=r.length;try{if(w=t.props,E=L.prototype&&L.prototype.render,K=(p=L.contextType)&&s[p.__c],N=p?K?K.props.value:p.__:s,n.__c?b=(c=t.__c=n.__c).__=c.__E:(E?t.__c=c=new L(w,N):(t.__c=c=new Qe(w,N),c.constructor=L,c.render=Zo),K&&K.sub(c),c.state||(c.state={}),c.__n=s,f=c.__d=!0,c.__h=[],c._sb=[]),E&&c.__s==null&&(c.__s=c.state),E&&L.getDerivedStateFromProps!=null&&(c.__s==c.state&&(c.__s=Y({},c.__s)),Y(c.__s,L.getDerivedStateFromProps(w,c.__s))),h=c.props,m=c.state,c.__v=t,f)E&&L.getDerivedStateFromProps==null&&c.componentWillMount!=null&&c.componentWillMount(),E&&c.componentDidMount!=null&&c.__h.push(c.componentDidMount);else{if(E&&L.getDerivedStateFromProps==null&&w!==h&&c.componentWillReceiveProps!=null&&c.componentWillReceiveProps(w,N),t.__v==n.__v||!c.__e&&c.shouldComponentUpdate!=null&&c.shouldComponentUpdate(w,c.__s,N)===!1){t.__v!=n.__v&&(c.props=w,c.state=c.__s,c.__d=!1),t.__e=n.__e,t.__k=n.__k,t.__k.some(function(V){V&&(V.__=t)}),ze.push.apply(c.__h,c._sb),c._sb=[],c.__h.length&&r.push(c),l=oe(n);break e}c.componentWillUpdate!=null&&c.componentWillUpdate(w,c.__s,N),E&&c.componentDidUpdate!=null&&c.__h.push(function(){c.componentDidUpdate(h,m,y)})}if(c.context=N,c.props=w,c.__P=e,c.__e=!1,R=x.__r,Ke=0,E)c.state=c.__s,c.__d=!1,R&&R(t),p=c.render(c.props,c.state,c.context),ze.push.apply(c.__h,c._sb),c._sb=[];else do c.__d=!1,R&&R(t),p=c.render(c.props,c.state,c.context),c.state=c.__s;while(c.__d&&++Ke<25);c.state=c.__s,c.getChildContext!=null&&(s=Y(Y({},s),c.getChildContext())),E&&!f&&c.getSnapshotBeforeUpdate!=null&&(y=c.getSnapshotBeforeUpdate(h,m)),fe=p!=null&&p.type===I&&p.key==null?ss(p.props.children):p,l=Zn(e,et(fe)?fe:[fe],t,n,s,o,i,r,l,u,d),c.base=t.__e,t.__u&=-161,c.__h.length&&r.push(c),b&&(c.__E=c.__=null)}catch(V){if(r.length=g,t.__v=null,u||i!=null){if(V.then){for(t.__u|=u?160:128;l&&l.nodeType==8&&l.nextSibling;)l=l.nextSibling;i!=null&&(i[i.indexOf(l)]=null),t.__e=l}else if(i!=null)for(he=i.length;he--;)Ht(i[he])}else t.__e=n.__e;t.__k==null&&(t.__k=n.__k||[]),V.then||ts(t),x.__e(V,t,n)}}else i==null&&t.__v==n.__v?(t.__k=n.__k,t.__e=n.__e):l=t.__e=Jo(n.__e,t,n,s,o,i,r,u,d);return(p=x.diffed)&&p(t),128&t.__u?void 0:l}function ts(e){e&&(e.__c&&(e.__c.__e=!0),e.__k&&e.__k.some(ts))}function ns(e,t,n){for(var s=0;s<n.length;s++)Vt(n[s],n[++s],n[++s]);x.__c&&x.__c(t,e),e.some(function(o){try{e=o.__h,o.__h=[],e.some(function(i){i.call(o)})}catch(i){x.__e(i,o.__v)}})}function ss(e){return typeof e!="object"||e==null||e.__b>0?e:et(e)?e.map(ss):e.constructor!==void 0?null:Y({},e)}function Jo(e,t,n,s,o,i,r,l,u){var d,p,g,c,f,h,m,y=n.props||Xe,b=t.props,w=t.type;if(w=="svg"?o="http://www.w3.org/2000/svg":w=="math"?o="http://www.w3.org/1998/Math/MathML":o||(o="http://www.w3.org/1999/xhtml"),i!=null){for(d=0;d<i.length;d++)if((f=i[d])&&"setAttribute"in f==!!w&&(w?f.localName==w:f.nodeType==3)){e=f,i[d]=null;break}}if(e==null){if(w==null)return document.createTextNode(b);e=document.createElementNS(o,w,b.is&&b),l&&(x.__m&&x.__m(t,i),l=!1),i=null}if(w==null)y===b||l&&e.data==b||(e.data=b);else{if(i=w=="textarea"&&b.defaultValue!=null?null:i&&Ze.call(e.childNodes),!l&&i!=null)for(y={},d=0;d<e.attributes.length;d++)y[(f=e.attributes[d]).name]=f.value;for(d in y)f=y[d],d=="dangerouslySetInnerHTML"?g=f:d=="children"||d in b||d=="value"&&"defaultValue"in b||d=="checked"&&"defaultChecked"in b||Ye(e,d,null,f,o);for(d in b)f=b[d],d=="children"?c=f:d=="dangerouslySetInnerHTML"?p=f:d=="value"?h=f:d=="checked"?m=f:l&&typeof f!="function"||y[d]===f||Ye(e,d,f,y[d],o);if(p)l||g&&(p.__html==g.__html||p.__html==e.innerHTML)||(e.innerHTML=p.__html),t.__k=[];else if(g&&(e.innerHTML=""),Zn(t.type=="template"?e.content:e,et(c)?c:[c],t,n,s,w=="foreignObject"?"http://www.w3.org/1999/xhtml":o,i,r,i?i[0]:n.__k&&oe(n,0),l,u),i!=null)for(d=i.length;d--;)Ht(i[d]);l&&w!="textarea"||(d="value",w=="progress"&&h==null?e.removeAttribute("value"):h!=null&&(h!==e[d]||w=="progress"&&!h||w=="option"&&h!=y[d])&&Ye(e,d,h,y[d],o),d="checked",m!=null&&m!=e[d]&&Ye(e,d,m,y[d],o))}return e}function Vt(e,t,n){try{if(typeof e=="function"){var s=typeof e.__u=="function";s&&e.__u(),s&&t==null||(e.__u=e(t))}else e.current=t}catch(o){x.__e(o,n)}}function os(e,t,n){var s,o;if(x.unmount&&x.unmount(e),(s=e.ref)&&(s.current&&s.current!=e.__e||Vt(s,null,t)),(s=e.__c)!=null){if(s.componentWillUnmount)try{s.componentWillUnmount()}catch(i){x.__e(i,t)}s.base=s.__P=s.__n=null}if(s=e.__k)for(o=0;o<s.length;o++)s[o]&&os(s[o],t,n||typeof e.type!="function");n||Ht(e.__e),e.__c=e.__=e.__e=void 0}function Zo(e,t,n){return this.constructor(e,n)}function qt(e,t,n){var s,o,i,r;t==document&&(t=document.documentElement),x.__&&x.__(e,t),o=(s=typeof n=="function")?null:n&&n.__k||t.__k,i=[],r=[],Ut(t,e=(!s&&n||t).__k=Bo(I,null,[e]),o||Xe,Xe,t.namespaceURI,!s&&n?[n]:o?null:t.firstChild?Ze.call(t.childNodes):null,i,!s&&n?n:o?o.__e:t.firstChild,s,r),ns(i,e,r),e.props.children=null}Ze=ze.slice,x={__e:function(e,t,n,s){for(var o,i,r;t=t.__;)if((o=t.__c)&&!o.__)try{if((i=o.constructor)&&i.getDerivedStateFromError!=null&&(o.setState(i.getDerivedStateFromError(e)),r=o.__d),o.componentDidCatch!=null&&(o.componentDidCatch(e,s||{}),r=o.__d),r)return o.__E=o}catch(l){e=l}throw e}},Bn=0,Ko=function(e){return e!=null&&e.constructor===void 0},Qe.prototype.setState=function(e,t){var n;n=this.__s!=null&&this.__s!=this.state?this.__s:this.__s=Y({},this.state),typeof e=="function"&&(e=e(Y({},n),this.props)),e&&Y(n,e),e!=null&&this.__v&&(t&&this._sb.push(t),Kn(this))},Qe.prototype.forceUpdate=function(e){this.__v&&(this.__e=!0,e&&this.__h.push(e),Kn(this))},Qe.prototype.render=I,X=[],Qn=typeof Promise=="function"?Promise.prototype.then.bind(Promise.resolve()):setTimeout,Xn=function(e,t){return e.__v.__b-t.__v.__b},Je.__r=0,Dt=Math.random().toString(8),Ge="__d"+Dt,_e="__a"+Dt,zn=/(PointerCapture)$|Capture$/i,Ft=0,Nt=Gn(!1),Mt=Gn(!0),Yo=0;var is={name:"inbox",version:"0.2.10",description:"Collects what waits on you in a Codex session: questions, tasks, findings and PRs, in a tab beside the conversation",author:{name:"Pete Petrash"},repository:"https://github.com/petekp/inbox",license:"MIT",mcpServers:"./.mcp.json",hooks:"./hooks/hooks.json",interface:{displayName:"Inbox",shortDescription:"What waits on you in this conversation",developerName:"Pete Petrash",category:"Developer Tools",capabilities:["Interactive"]}};var Ir=5*6e4,$r=60*6e4;function G(e,t){return e.length>t?`${e.slice(0,t-1)}\\u2026`:e}function Re(e){let t=Math.round(e/6e4);if(t<1)return"just now";if(t<60)return`${t}m ago`;let n=Math.round(t/60);return n<48?`${n}h ago`:`${Math.round(n/24)}d ago`}var rs="no longer applies|replaced|superseded|moot",ti=new RegExp(`^(?:closed by \\\\w+: )?(?:${rs})`,"i"),Ur=new RegExp(`^\\\\s*(?:done\\\\s*:|(?:${rs}|no longer relevant|dealt with)\\\\b)`,"i");function Wt(e){if(e.how==="dismissed")return"dismissed";if(e.how==="expired")return"lapsed";let t=ti.test(e.outcome);return(e.how==="claude"||e.how==="update")&&t?"lapsed":"handled"}var ea=`You keep a one-page guide to a coding session, for the person who works with the agent. They read it when they come back, to see what the work is, how it is going and what comes next. You read the guide as it was and one exchange, and write the guide as it should be now.\n\nThe guide is about the work. It is not a log of what the agent did, and it is not a list of what waits on the person: the inbox lists that. Write at the level of the feature or the fix. Never write a command, a file name, a commit, a test run, a tool call or a ticket number, and leave out a number, an id or a time unless the person needs it to find the work again.\n\nInput:\n- <last>: the guide as it was, in the same lines you write\n- <unseen>: the changes the person has not yet looked at, as SINCE lines\n- <tasks>: the agent\'s own task list, when it keeps one, as TASK lines. It is evidence for QUEUE, not the guide: write each item at the level of the feature. Write each in your own words as the outcome it reaches, not in the task\'s words: "Reset emails reach the person", not "Run the mailer tests". A queue item names a result, never an action that begins with Run, Check or Test. For a task that runs a command or a test, write the outcome it checks, or leave it out. Leave out a task that is only a step of another.\n- <person>: what the person just sent\n- <activity>: what the agent did this turn\n- <reply>: the agent\'s final reply\n\nAnswer with lines only. No other text. If the exchange changed nothing about the work, answer with the one line UNCHANGED.\n\nOtherwise write every line below that applies, in this order:\nKIND: session, or coordinator when the session hands out work and reviews what comes back instead of doing the work itself\nTOPIC: same, or new when the work moved to a different task. Write new only for a different task, not for the next step of the same one.\nSTATE: on-track, stuck or finished\nHEADLINE: one plain sentence naming what the session is doing, at most ${12} words. "-" when no work has started.\nSTATUS: how it is going, in one or two plain sentences, at most ${30} words. Say what it waits on, if anything.\nCOURSE: only in the reply where the approach changed, in one or two sentences, at most ${30} words: what changed and why. A new step is not a change. Leave the line out otherwise: the page keeps the last one until the person looks.\nFOLDED: only when TOPIC is new, one line saying what the old topic was and where it was left.\nThen lists, one item per line, each as KEY: status | text | detail, with the key on every line. The detail is optional. Text is at most ${12} words and detail at most ${20}. At most ${6} items in a list.\nQUEUE: the work now: what is under way, what is queued behind it, what waits, and what just finished\nWORKS: what holds now: what works, what exists\nOPEN: risks, problems and unknowns\nNEXT: what comes next\nSINCE: what changed since the person last looked. Start from <unseen>, merge this exchange into it, and keep it short.\nSTREAM: only in a coordinator session, in the same form as the other lists: one line for each stream of work, saying what it is for and where it stands. Put the work handed out in STREAM, and use QUEUE only for the coordinator\'s own steps, such as reviewing what a stream sends back. If a stream is already in QUEUE in the guide as it was, take it out of QUEUE.\n\nStatus is one of: working, queued, waits-on-you, waits-on-other, done, ruled-out, problem, unknown. Use waits-on-you when the agent cannot go on until the person acts, and waits-on-other for something else, such as a build. Use ruled-out for an approach tried or considered and dropped, and put the reason in the detail.\n\nRules:\n- Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed. The next rule wins over this one: when the guide as it was already repeats a fact in two lists, remove the repeat.\n- Do not write a question or task the agent put to the person, and do not say what the choice is. Say only that the work waits on the person, and stop.\n- Leave out that something was committed, pushed, merged or tested, in every line. Say what now works or is fixed.\n- Say each fact once, in the list that fits it best. Work that finished stays in QUEUE as done. WORKS holds only what works that QUEUE does not already name. What a stream is doing, and what it finished, stays on its STREAM line and is not written again in QUEUE, WORKS or OPEN. NEXT holds only what the queue does not already name. SINCE may repeat the other lists, since it says what changed.\n- Leave a list out when it has nothing worth saying. Do not fill a list to fill it.`;function z(e){return e.threads.filter(t=>t.isWaiting)}function Kt(e,t){return z(e).filter(n=>!n.isLinesChanged&&!t(e,n))}function ai(e){let t={pass:0,fail:0,pending:0,skip:0};for(let n of e.checks)t[n.bucket]+=1;return t}function di(e){return`${e} ${e===1?"thread":"threads"} waiting on you`}function jt(e,t,n){return`${e} ${e===1?t:n}`}function tt(e,t=()=>!1){let n=(m,y,b=[],w=": ")=>{let E=b.join(", "),K=m==="ready"?[]:b.filter(N=>!s.includes(N));return{status:m,text:E?`${y}${w}${E}`:y,head:y,unlisted:K}},s=[];if(e.state==="MERGED")return n("merged","Merged");if(e.state!=="OPEN")return n("closed","Closed");let{fail:o,pending:i}=ai(e),r=z(e),l=Kt(e,t).length,u=r.filter(m=>t(e,m)).length,d=r.filter(m=>m.isLinesChanged&&!t(e,m)).length,p=m=>m!==null,g=m=>(m===null||s.push(m),m),c=[e.mergeable==="CONFLICTING"?`conflicts with ${e.base}`:null,g(o>0?jt(o,"failing check","failing checks"):null),e.reviewDecision==="CHANGES_REQUESTED"?"changes requested":null,g(l>0?di(l):null)].filter(p),f=[g(u>0?`${jt(u,"thread","threads")} sent to Claude`:null),g(d>0?`${jt(d,"thread","threads")} on changed lines`:null),e.reviewDecision==="REVIEW_REQUIRED"?"needs approval":null,i>0?`${i} ${i===1?"check":"checks"} running`:null].filter(p);if(e.isDraft)return n("draft","Draft",[...c,...f]);if(c.length>0)return n("blocked","Blocked",c);if(f.length>0)return n("waiting","Waiting",f);let h=e.reviewDecision==="APPROVED";return n("ready","Ready to merge",[...h?["approved"]:[],"checks pass","no threads waiting on you"],h?": ":", ")}var li=/<\\/?(?:a|b|br|code|details|div|em|h[1-6]|hr|i|img|kbd|li|ol|p|pre|span|strong|sub|summary|sup|table|tbody|td|th|thead|tr|ul)\\b[^>]*>/g;function nt(e){return e.replace(/<!--[\\s\\S]*?-->/g,"").replace(li,"").replace(/^[^\\S\\n]*Useful\\?[^\\S\\n]+React[^\\S\\n]+with[^\\S\\n]+\u{1F44D}[^\\S\\n]*\\/[^\\S\\n]*\u{1F44E}\\.?[^\\S\\n]*$/gmu,"").replace(/!\\[([^\\]]*)\\]\\([^)]*\\)/g,(t,n)=>n.replace(/\\s*badge$/i,"")).trim()}function Yt(e){return nt(e).replace(/\\[([^\\]]*)\\]\\([^)]*\\)/g,"$1").replace(/^\\s*(?:#{1,6}|>)\\s*/gm,"").replace(/\\*\\*|__|`/g,"").replace(/\\s+/g," ")}var Gt=120;function st(e){let t=nt(e),[n="",...s]=t.split(`\n`),o=Yt(n).trim();return{head:o,rest:o.length>Gt?t:s.join(`\n`).trim()}}function ot(e,t=e.path){return`${t}${e.line?`:${e.line}`:""}`}function ds(e){let t=Math.max(0,Math.round(e/1e3));return t<60?`${t}s`:`${Math.floor(t/60)}m ${t%60}s`}function ge(e){return e.checks.filter(t=>t.bucket==="fail")}function it(e){return e.replace(/\\/+$/,"").split("/").pop()??e}function us(e,t){let n=e?.delivery?.state!=="failed"?e?.turnsStarted:void 0;return n!==void 0&&n<=t.turnsStarted&&t.turnsApplied<=n}function ps(e){return e.startsWith("pr:")||e.includes(" ")}function rt(e,t){return!e.startsWith("pr:")&&t?.kind==="handoff"&&t.action!=="address"}function Bt(e){return e.action==="step"?`step-${e.step}`:e.action}function Qt(e){return e.charAt(0).toUpperCase()+e.slice(1)}var fi="This changed before your press. Nothing was sent.";function Te(){return fi}function hi(e,t){switch(t.kind){case"run":return{kind:"send",text:wi.run(e,t.command),by:{id:e.id,action:"run"}};case"open":return{kind:"open",target:t.path,name:it(t.path)};case"link":return{kind:"open",target:t.url,name:t.name??t.url};case"copy":return{kind:"copy",text:t.text,name:t.name??"snippet",isCommand:!1};case"terminal":return{kind:"copy",text:t.command,name:t.name??G(t.command,32),isCommand:!0}}}function fs(e,t){return t.step.map(n=>hi(e,n))}function at(e,t,n){return{state:"pending",parts:e.flatMap(s=>s.kind==="send"?[]:[{kind:s.kind,name:s.name,isCommand:s.kind==="copy"&&s.isCommand,error:null}]),at:t,...n?{pressId:n}:{}}}function hs(e,t){if(!/^[if]\\d+$/.test(e))return null;let n=/^step-(\\d+)$/.exec(t.action);if(n)return{action:"step",id:e,step:Number(n[1]),label:t.text};switch(t.action){case"answer":return{action:"answer",id:e,option:t.text};case"explain":case"compare":case"address":case"issue":case"discuss":return{action:t.action,id:e};default:return null}}function gi(e){return[`${e.kind==="issue"?"Issue":"Opportunity"}: ${e.title}`,e.detail,...e.path?[`File: ${e.path}`]:[]]}var ls="Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply.",mi=["Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.","For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session\'s data outside this repo.","Then reply with a table: one row per choice, and the few measures that tell them apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Add one line on anything you did not expect. After the table, give your pick and say whether it changed. When the choice is visual or has many states, also write one HTML page that shows the choices side by side.","When the comparison is done, call the inbox\'s record tool yourself with this question\'s ask and options as listed below, and the page\'s absolute path in steps if you made one. That marks it compared. Call each choice by its name as listed."].join(`\n\n`);function cs(e){return`"${e.ask}"${e.options.length>0?`\nOptions: ${e.options.join(" / ")}`:""}`}var wi={answer:(e,t)=>`Re "${e.ask}": ${t}`,explain:e=>`Remind me what ${e.kind==="task"?"this task you left for me is about: why it came up, and what doing it involves":"this question you asked me is about: why it came up, what each choice would do, and which you would pick"}. ${ls} Don\'t act on it yet.\n${cs(e)}`,compare:e=>`${mi}\n${cs(e)}`,run:(e,t)=>`For "${e.ask}", run this:\n\\`\\`\\`\n${t}\n\\`\\`\\``,taskReply:(e,t)=>`Re the task you left for me, "${e.ask}": ${t}`,done:e=>e.length===1?`Done: ${e[0]}`:`Done:\n${e.map(t=>`- ${t}`).join(`\n`)}`,finding:(e,t,n="")=>[t==="address"?"Please address this finding you recorded:":t==="issue"?"Please file an issue for this finding you recorded, in the issue tracker you have tools for. First check whether one already exists, and if it does, use it instead of filing a duplicate. Then close the finding with the issue\'s key or number as the reason, and give me its link. If you have no tools for an issue tracker, say so and leave the finding open.":t==="explain"?`Remind me what this finding you recorded is about: why it matters, what fixing it would involve, and whether you would fix it now. ${ls} Don\'t act on it yet.`:t==="discuss"?"Let\'s talk through this finding you recorded before changing anything:":"About this finding you recorded:",...gi(e),...t==="typed"?["",n]:[]].join(`\n`)};var gs=[..."abcfghilm"],P="\\u2007\\xB7\\u2002",Ee={issue:{title:"Issues",mark:"\\u25B2",tone:"issue"},opportunity:{title:"Opportunities",mark:"\\u2726",tone:"done"}},ms=[{kind:"question",title:"Questions",list:"questions"},{kind:"task",title:"Tasks",list:"tasks"}],ws={handled:"\\u2713",dismissed:"\\u2715",lapsed:""},yi=3,_=5120;var Zt=400,bi=1e3,ki=30*6e4;function xi(e,t){return e?.delivery?.state==="queued"&&t-e.at>=bi}function vi(e,t){return e?.delivery?.state==="unconfirmed"?"unconfirmed":xi(e,t)?"queued":null}function ys(e,t){return e>0&&t-e<Zt}function bs(e,t){return Object.fromEntries(Object.entries(t).flatMap(([n,s])=>n===e||s.text.trim()!==""?[[n,s.since]]:[]))}var ks=e=>e==="terminal"||e==="omp",ie={retry:"Try again",send:"Send",cancel:"Cancel",discard:"Discard",clickField:"Click the field to type",relevantFile:"Relevant file: ",allOptions:e=>`All ${e} options`};function xs(e,t){return e.optionDescriptions.filter(n=>t||!n.isFolded)}function en(e,t){if(e.state.is==="handedOff"&&e.feedback?.is!=="unconfirmed")return{text:"\\u2713",tone:"done"};if(e.finding){let n=Ee[e.finding.kind];return{text:n.mark,tone:n.tone}}return{text:ks(t)?e.handle:""}}function tn(e,t){return e.replyKind==="answer"?"Your answer":`Your reply to ${t}`}function vs(e,t){if(!e.isPrimary)return e.label;let n=`${e.label} (recommended)`;return t&&!t(n)?e.label:n}function nn(e){return e.state.is==="held"?"discard":"cancel"}function dt(e){return e.state.is==="open"}function Ss(e,t){let n=e.feedback;return n?n.is==="done"&&e.state.is==="handedOff"?n.label:me(n,t):null}function Ae(e){return[...e.needsYou.questions,...e.needsYou.tasks,...e.findings.rows]}function _s(e){return e.filter(t=>t.state.is==="settled").map(t=>t.id)}function sn(e,t){return e.filter(n=>!t.has(n.id)).slice(0,yi)}function lt(e,t){return e.filter(n=>!t.has(n.id)).length}function Rs(e){return`${e} closed`}function Ts(e,t){return e>t?`${e-t} earlier`:null}function re(e){let t=Re(e);return t==="just now"?"now":t.replace(/ ago$/,"")}function Es(e){return`No open ${e.toLowerCase()}`}var As="Sample entries. Presses send nothing.";function Pe(e,t,n,s,o,i){let r=t?.result;if(n&&o-n.at<_&&n.at>=Math.max(t?.at??0,r?.at??0))return{is:"note",note:n.note,at:n.at};if(r&&(r.state!=="done"||o-r.at<_))return{is:"local",result:r};if(!t||t.kind==="local")return null;let l=t.delivery,u=vi(t,o);if(u)return{is:u,label:t.text,at:t.at};if(l?.state==="failed")return{is:"notSent",reason:l.reason,retry:hs(e,t)};let d=us(t,s),p=t.action==="compare"&&!(i!==void 0&&i>=t.at),g=o-t.at>=ki,c=Si[t.action];if(t.kind==="talk"&&c&&(d||p&&!g))return{is:"working",label:c,at:t.at};if(p)return{is:"noComparison",at:t.at};if(!d&&!ps(e)&&rt(e,t))return{is:"stillOpen",at:t.at};let f=t.kind==="handoff"&&t.action.startsWith("step-");return{is:"done",label:_i[t.action]?.(t.text)??t.text,at:t.at,...f?{isHandedStep:!0}:{}}}var Si={explain:"Explaining\\u2026",compare:"Comparing\\u2026",discuss:"Discussing\\u2026","thread-discuss":"Discussing\\u2026","thread-draft":"Drafting a reply\\u2026"},_i={address:()=>"Handed off",issue:()=>"Asked to file",discuss:()=>"Discussed",explain:()=>"Explained",compare:()=>"Compared",dismiss:()=>"Dismissed",type:()=>"Replied","thread-address":()=>"Addressed","thread-discuss":()=>"Discussed","thread-draft":()=>"Drafted a reply","pr-conflicts":()=>"Asked to resolve conflicts","pr-merge":()=>"Asked to merge","pr-address-all":e=>e.replace(/^Address\\b/,"Addressed")};function on(e){return e?.is==="notSent"||e?.is==="local"&&e.result.state==="failed"}function ct(e){return e.is==="done"||e.is==="working"||e.is==="stillOpen"||e.is==="noComparison"||e.is==="queued"||e.is==="unconfirmed"||e.is==="closed"}function Ps(e,t){return t&&e!==null&&ct(e)}var Ri=e=>ks(e)?"Run it in a terminal, or type ! and paste.":"Run it in Terminal.",Xt={open:{pending:"Opening",done:"Opened",failed:"open"},copy:{pending:"Copying",done:"Copied",failed:"copy"}};function Ti(e,t){let s=e.parts.length>1&&e.parts.every(r=>r.kind==="open"&&r.error===null&&/^PR #\\d+$/.test(r.name))?[{...e.parts[0],name:`${e.parts.length} PRs`}]:e.parts;if(e.state==="pending")return`${s.map(r=>`${Xt[r.kind].pending} ${r.name}`).join(P)}\\u2026`;let o=s.map(r=>r.error===null?`${Xt[r.kind].done} ${r.name}`:`Could not ${Xt[r.kind].failed} ${r.name}: ${r.error}`).join(P);if(e.state==="failed")return o;let i=s.some(r=>r.kind==="copy"&&r.isCommand);return`\\u2713 ${o}${i?`. ${Ri(t)}`:""}`}function me(e,t){switch(e.is){case"note":return Te();case"local":return Ti(e.result,t);case"queued":return Jt(e.is,e.label);case"unconfirmed":return Jt(e.is,e.label);case"notSent":return`Not sent: ${e.reason}`;case"done":return e.isHandedStep?`\\u2713 Handed off: ${e.label}`:`\\u2713 ${e.label}`;case"working":return e.label;case"stillOpen":return"Still open";case"noComparison":return"No comparison came back";case"closed":return e.label}}function Jt(e,t){return e==="queued"?`Queued: ${t}`:`Delivery unconfirmed: ${t}`}function rn(e,t){return t&&typeof t=="object"?`${e} \\xB7 Not sent: ${t.error}`:t===null?e:Jt(t,e)}var we=[{id:"needsYou",label:"Needs you",hotkey:"1"},{id:"findings",label:"Findings",hotkey:"2"},{id:"prs",label:"PRs",hotkey:"3"},{id:"overview",label:"Overview",hotkey:"4"}];function an(e){return e==="needsYou"||e==="findings"}function M(e){return e!=="overview"}var Aa=we.filter(e=>M(e.id)),dn=we.filter(e=>an(e.id));function Le(e,t){return e==="needsYou"?{title:"Nothing needed.",hint:`${t}\'s questions and the tasks only you can do show up here.`}:{title:"No findings yet",hint:`${t} flags issues and opportunities it spots beyond your task.`}}function ln(e,t,n){let s=u=>u.flatMap(d=>{if(d.state.is==="settled")return t(d.id)?[{settled:d,state:d.state}]:[];let p=n(d);return p===null?[]:[{row:p}]}),o=s(e.needsYou.questions),i=s(e.needsYou.tasks),r=Object.keys(Ee).map(u=>({kind:u,title:Ee[u].title,entries:s(e.findings.rows.filter(d=>d.finding?.kind===u))})),l=r.flatMap(u=>u.entries);return{questions:o,tasks:i,findings:l,findingGroups:r,byTab:{needsYou:[...zt(o),...zt(i)],findings:zt(l)}}}function ae(e){return"row"in e?e.row.id:e.settled.id}function Ls(e){let t=ln(e,()=>!0,s=>s),n=s=>s.map(o=>"row"in o?{id:o.row.id,isWaiting:dt(o.row)}:{id:o.settled.id,isWaiting:!1});return{needsYou:n([...t.questions,...t.tasks]),findings:n(t.findings)}}function cn(e){return e.find(t=>t.isWaiting)?.id??null}function Os(e,t){return cn(e.filter(n=>!t.includes(n.id)))}function Is(e,t){let n=e.findIndex(s=>s.id===t);return n<0?null:(e.slice(n+1).find(s=>s.isWaiting)??e.slice(0,n).reverse().find(s=>s.isWaiting))?.id??null}function zt(e){return e.flatMap(t=>"row"in t?[t.row]:[])}function ut(e){return new Set(e.flatMap(t=>"settled"in t?[t.settled.id]:[]))}function $s(e,t){let n=e.actions.filter(d=>t||!d.isFolded),s=e.actions.length-n.length,o=n.map(d=>d.press.action).lastIndexOf("answer"),i=[],r=[],l=e.feedback?.is==="notSent"?e.feedback.retry:null;if(l){let d=e.actions.find(p=>Bt(p.press)===Bt(l))?.kind??"talk";i.push({slot:"retry",press:l,kind:d,label:ie.retry,emphasis:"normal",icon:"retry"})}let u=0;for(let[d,p]of n.entries()){let{press:g}=p;if(g.action==="answer"||g.action==="step"){let c=u<gs.length?{hotkey:gs[u++]}:{};i.push({slot:"choice",action:{...p,press:g},...c}),d===o&&s>0&&i.push({slot:"allOptions",count:e.actions.filter(f=>f.press.action==="answer").length,label:ie.allOptions(e.actions.filter(f=>f.press.action==="answer").length),emphasis:"quiet"})}else p.hotkey&&(p.isFollowUp?r:i).push({slot:"action",action:p,hotkey:p.hotkey})}return{keys:i,more:r}}var Ei=0;function a(e,t,n,s,o,i){t||(t={});var r,l,u=t;if("ref"in u)for(l in u={},t)l=="ref"?r=t[l]:u[l]=t[l];var d={type:e,props:u,key:n,ref:r,__k:null,__:null,__b:0,__e:null,__c:null,constructor:void 0,__v:--Ei,__i:-1,__u:0,__source:o,__self:i};if(typeof e=="function"&&(r=e.defaultProps))for(l in r)u[l]===void 0&&(u[l]=r[l]);return x.vnode&&x.vnode(d),d}var Ai={check:"M20 6 9 17l-5-5",play:"M7 4.5v15l12-7.5z",copy:"M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1",open:"M7 17 17 7M8 7h9v9",retry:"M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5",undo:"M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11",right:"m9 18 6-6-6-6",down:"m6 9 6 6 6-6"},Pi={done:"check",retry:"retry",open:"open",copy:"copy",run:"play"};function Oe({name:e}){return a("svg",{class:"icon",viewBox:"0 0 24 24",fill:"none",stroke:"currentColor","stroke-width":"2","stroke-linecap":"round","stroke-linejoin":"round","aria-hidden":"true",children:a("path",{d:Ai[e]})})}function Cs(e,t,n){let s=$s(e,t),o=i=>{if(i.slot==="retry")return{label:i.label,emphasis:i.emphasis,icon:i.icon,run:()=>n.press(i.press)};if(i.slot==="allOptions")return{label:i.label,emphasis:i.emphasis,run:n.showOptions};let r=i.action;return{label:vs(r),emphasis:r.emphasis,...i.hotkey?{hotkey:i.hotkey}:{},...r.icon?{icon:Pi[r.icon]}:{},...r.press.action==="dismiss"?{isDismiss:!0}:{},run:r.press.action==="type"?n.reply:r.press.action==="discard"?n.discard:()=>n.press(r.press)}};return{keys:s.keys.map(o),more:s.more.map(o)}}function un({action:e,isBlocked:t}){return a("button",{type:"button",class:`${e.emphasis==="primary"?"key primary":e.emphasis==="quiet"?"key ghost":"key"}${e.isDismiss?" dismiss":""}`,disabled:t(),onClick:()=>{t()||e.run()},children:[e.icon?a(Oe,{name:e.icon}):null,e.label]})}function Ds({actions:e,reply:t,isBlocked:n}){return t?a("div",{class:"actions",children:a("form",{onSubmit:s=>{s.preventDefault();let o=t.draft().trim();o&&t.send(o)},children:[a("input",{id:`type-${t.id}`,value:t.draft(),placeholder:t.hint,"aria-label":t.hint,onInput:s=>t.onDraft(s.currentTarget.value)}),a("button",{type:"submit",class:"key primary",children:ie.send}),a("button",{type:"button",class:"key ghost",onClick:t.onExit,children:ie[t.exit]})]})}):a("div",{class:"actions",children:e.length>0?a("div",{class:"keys",children:e.map(s=>a(un,{action:s,isBlocked:n}))}):null})}function le(e,t){return Ns(e.ref,t.id)}function Ie(e,t){return Ms(e.ref,t.name)}function Ns(e,t){return`${e} thread ${t}`}function Ms(e,t){return`${e} check ${t}`}function q(e){return`pr:${e}`}var pn="The inbox could not find gh, so it cannot read your PRs.";function Fs(e){return`Your PRs show here when this ${e} opens or links one, or when your branch has one.`}var fn={threads:"Review threads",checks:"Failing checks"};function Hs(e,t,n){let s=ye(n)(e,t),o=!s&&t.isLinesChanged;return{showsCheck:Oi(n)(e,t),fold:s||o?t.isLinesChanged?{note:`Lines changed since this comment${P}still open on GitHub`}:{}:null,title:G(st(t.body).head,Gt),meta:[ot(t,it(t.path)),o?"Lines changed":"",t.reply?`@${t.reply.author}: ${Yt(t.reply.body)}`:`@${t.author}`].filter(Boolean).join(P)}}function Us(e){return e.startedAt!==void 0&&e.finishedAt!==void 0?`Failed after ${ds(e.finishedAt-e.startedAt)}`:"Failed"}function ye(e){return(t,n)=>{let s=e[le(t,n)];return s?.kind==="handoff"&&s.delivery?.state!=="failed"&&s.at>((n.reply??n).at??0)}}function Oi(e){let t=ye(e);return(n,s)=>{let o=e[le(n,s)]?.delivery;return t(n,s)&&o?.state!=="unconfirmed"}}function Vs(e,t){let n=ye(t);return e.flatMap(s=>[...z(s).map(o=>({id:le(s,o),isWaiting:!n(s,o)})),...ge(s).map(o=>{let i=Ie(s,o),r=t[i];return{id:i,isWaiting:!rt(i,r)||r?.delivery?.state==="failed"}})])}var qs={ready:"done",blocked:"needsYou",waiting:null,draft:null,merged:"findings",closed:"error"};function hn(e,t,n,s=null){if(e?.delivery?.state!=="failed")return null;let o=e.action;return s!==null?o==="check-fix"?{press:{action:o,ref:t,check:s},kind:e.kind}:null:n!==null&&(o==="thread-address"||o==="thread-draft"||o==="thread-discuss")?{press:{action:o,ref:t,thread:n},kind:e.kind}:n===null&&(o==="pr-conflicts"||o==="pr-address-all"||o==="pr-merge")?{press:{action:o,ref:t},kind:e.kind}:null}function de(e,t,n,s){let o=e[t];return o?.action===n&&o.delivery?.state!=="failed"?`${s} again`:s}function gn(e){return e?[{press:e.press,label:"Try again",kind:e.kind,emphasis:"normal",icon:"retry"}]:[]}function mn(e,t,n){let s=Ns(e.ref,t.id),o={ref:e.ref,thread:t.id};return[...gn(hn(n[s],e.ref,t.id)),{press:{action:"thread-address",...o},label:de(n,s,"thread-address","Address"),kind:"handoff",emphasis:"primary",hotkey:"a"},{press:{action:"thread-draft",...o},label:de(n,s,"thread-draft","Draft reply"),kind:"talk",emphasis:"normal",hotkey:"r"},{press:{action:"thread-open",...o},label:"Open comment",kind:"local",emphasis:"normal",icon:"open",hotkey:"o"},{press:{action:"thread-discuss",...o},label:de(n,s,"thread-discuss","Discuss"),kind:"talk",emphasis:"quiet",hotkey:"d",isFollowUp:!0}]}function Ws(e,t,n){let s=Ms(e.ref,t.name),o={ref:e.ref,check:t.name};return[...gn(hn(n[s],e.ref,null,t.name)),{press:{action:"check-fix",...o},label:de(n,s,"check-fix","Fix"),kind:"handoff",emphasis:"primary",hotkey:"a"},{press:{action:"log",...o},label:"Open log",kind:"local",emphasis:"normal",icon:"open",hotkey:"o"}]}function js(e,t,n,s){let o=q(e.ref),{status:i}=tt(e,t),r=Kt(e,t).length,l=[...i==="ready"?[{press:{action:"pr-merge",ref:e.ref},label:de(s,o,"pr-merge","Merge"),kind:"handoff"}]:[],...e.state==="OPEN"&&e.mergeable==="CONFLICTING"?[{press:{action:"pr-conflicts",ref:e.ref},label:de(s,o,"pr-conflicts","Resolve conflicts"),kind:"handoff"}]:[],...r>1?[{press:{action:"pr-address-all",ref:e.ref},label:de(s,o,"pr-address-all",`Address all ${r} threads`),kind:"handoff"}]:[]];return[...gn(hn(s[o],e.ref,null)),...l.map((u,d)=>({...u,emphasis:d===0?"primary":"normal"})),{press:{action:"pr-open",ref:e.ref},label:"Open PR",kind:"local",emphasis:"normal",icon:"open"},...e.ref===n?[]:[{press:{action:"pr-dismiss",ref:e.ref},label:"Dismiss",kind:"mark",emphasis:"quiet"}]]}function Ks(e,t){let n={...e},s={};for(let o of Object.keys(t)){let i=t[o],r=e[o];s[o]=i&&r?i.filter(l=>!r.has(l)):[],i&&(n[o]=new Set(i))}return{seen:n,added:s}}var wn=["needsYou","findings","prs"];function Ys(e){return{needsYou:[...e.needsYou.questions,...e.needsYou.tasks].map(t=>t.id),findings:e.findings.rows.map(t=>t.id)}}function Gs(e){let t=n=>n.filter(s=>s.state.is!=="settled").map(s=>s.id);return{needsYou:t([...e.needsYou.questions,...e.needsYou.tasks]),findings:t(e.findings.rows)}}function Bs(e,t,n){return t==="findings"?Object.keys(Ee).map(s=>({isUnfolded:n(s),rows:e.findings.closed.filter(o=>o.kind===s)})):ms.map(s=>({isUnfolded:n(s.kind),rows:e.needsYou.closed[s.list]}))}function Qs({rows:e,settled:t,closed:n,hasBlocker:s}){return!s&&!e.some(o=>o.state.is!=="settled"||t.has(o.id))&&!n.some(o=>o.isUnfolded&&o.rows.some(i=>!t.has(i.id)))}function Xs(e,t,n,s){return n?e.find(o=>o!==t&&s[o].length>0)??null:null}function zs(e){return e.flatMap(({pr:t,isSettled:n})=>[q(t.ref),...n?[]:[...z(t).map(s=>le(t,s)),...ge(t).map(s=>Ie(t,s))]])}function Js(e,t){return e===0&&!t}var Ii=/`([^`\\n]+)`|\\*\\*(?=\\S)(.+?)(?<=\\S)\\*\\*(?!\\*)|~~(?=\\S)(.+?)(?<=\\S)~~|(?<![\\w*])\\*(?=\\S)([^*\\n]+?)(?<=\\S)\\*(?![\\w*])|(?<!\\w)_(?=\\S)([^_\\n]+?)(?<=\\S)_(?!\\w)|\\[([^\\]\\n]+)\\]\\((https:\\/\\/[^\\s)]+)\\)/g;function pt(e,t={}){let n=[],s=0;for(let o of e.matchAll(Ii)){o.index>s&&n.push({...t,text:e.slice(s,o.index)});let[,i,r,l,u,d,p,g]=o;i!==void 0?n.push({...t,text:i,code:!0}):r!==void 0?n.push(...pt(r,{...t,bold:!0})):l!==void 0?n.push(...pt(l,{...t,strike:!0})):u!==void 0||d!==void 0?n.push({...t,text:u??d??"",italic:!0}):n.push({...t,text:p??"",link:g}),s=o.index+o[0].length}return s<e.length&&n.push({...t,text:e.slice(s)}),n}var ft={question:"needsYou",task:"needsYou",finding:"findings"};function Zs(e){return{...Gs(e),prs:[]}}function eo(e,t,n){return Ks(e,{...Ys(t),prs:n?null:zs(t.prs.drawn)})}function to(e,t,n,s,o){return t==="prs"?Js(e.prs.drawn.length,o):Qs({rows:t==="findings"?e.findings.rows:[...e.needsYou.questions,...e.needsYou.tasks],settled:n,closed:Bs(e,t,i=>s.has(i)),hasBlocker:t==="needsYou"&&e.heard!=="heard"})}var ht={entering:300,opening:200,closing:200,settling:200,leaving:200,closed:0,open:0,settled:0,undoing:0};function gt(e){return ht[e]>0}function so(e,t,n,s=!1,o=!1){let i=t==="undoing"?"settled":t;if(!e)return s&&!o&&(i==="closed"||i==="open")?{state:"entering",since:n,hasPanel:i==="open"}:no(void 0,i,t,n);let r=$i(e)===i?e:Ci(e,i,n);return gt(r.state)&&!o&&n-r.since<ht[r.state]?r:no(r,i,t,n)}function $i({state:e,hasPanel:t}){switch(e){case"entering":return t?"open":"closed";case"opening":case"open":return"open";case"closing":case"closed":return"closed";case"settling":case"settled":case"undoing":return"settled";case"leaving":return"gone"}}function Ci(e,t,n){switch(t){case"open":return{state:"opening",since:n,hasPanel:!0};case"closed":return e.state==="leaving"?{state:"entering",since:n,hasPanel:!1}:{state:"closing",since:n,hasPanel:e.hasPanel};case"settled":return{state:"settling",since:n,hasPanel:e.hasPanel};case"gone":return{state:"leaving",since:n,hasPanel:e.hasPanel}}}function no(e,t,n,s){if(t==="gone")return null;let o=n==="undoing"?"undoing":t;return e?.state===o?e:{state:o,since:s,hasPanel:o==="open"}}var yn=6e4;var mt=3e3,gl=_+2*mt;function oo(e){return _s(Ae(e))}function io(e,t,n){return new Map(t.map(s=>[s,e.get(s)??n]))}function ro(e,t,n=new Set){return new Set([...e].filter(([s,o])=>n.has(s)||t-o<_).map(([s])=>s))}var S=null,te=!1,ne=null,Ce=null,mo=!1,vt=!1,$e=null,ao=!1,wo={},xn={},Ot=0,On=0,$="needsYou";function se(){return $==="overview"&&!S?.overviewPage?"needsYou":$}var A={needsYou:null,findings:null,prs:null},T=null,St=!1,C=new Map,yt=new Map,Ne=new Set,J=new Set,ve=new Map,bt="Sending\\u2026",bn=new Map,H=new Map,vn=new Map,Me=new Map,ke=null,B=new Map,kt={},xe=new Set,U=new Set,xt=new Set,O=new Map,_t=null,In=0,Fe=0,He=0,Z=0,lo="inbox-tab-kept",F=window,Q=F.__inboxHandoff??null,W=Q?.root??document.getElementById("app"),qe=new AbortController,Ue=new Set,Rt=new Set,ue=new Map,v=!1,D=Q===null;Q&&(Q.dispose=$n);function j(e,t){if(v)return 0;let n=window.setTimeout(()=>{Ue.delete(n),v||e()},t);return Ue.add(n),n}function Tt(e){e!==void 0&&(window.clearTimeout(e),Ue.delete(e))}function $n(){if(!v){v=!0,qe.abort();for(let e of Ue)window.clearTimeout(e);Ue.clear();for(let e of Rt)e.onfinish=null,e.oncancel=null,e.cancel();Rt.clear();for(let e of ue.values())e.reject(new Error("Inbox page replaced"));ue.clear(),qt(null,W),D&&document.body.classList.remove("still")}}function Mi(){return{version:M($)?1:2,isDemo:te,tab:$,selection:{needsYou:A.needsYou?.id??null,findings:A.findings?.id??null,prs:A.prs?.id??null},typing:T,drafts:[...C],optionsShown:[...Ne],unfolded:[...J]}}function yo(e){let t=e??F.__inboxKept??null;if(!e){delete F.__inboxKept;try{let n=sessionStorage.getItem(lo);sessionStorage.removeItem(lo),t??=n?JSON.parse(n):null}catch{}}if(!(t?.version!==1&&t?.version!==2)){te=t.isDemo,we.some(n=>n.id===t.tab)&&($=t.tab);for(let n of wn){let s=t.selection[n];A[n]=s?{id:s,openedAt:0}:null}T=t.typing,St=T!==null;for(let[n,s]of t.drafts)C.set(n,typeof s=="string"?{text:s,since:Date.now()}:s);for(let n of t.optionsShown)Ne.add(n);for(let n of t.unfolded)for(let s of n==="finding"?["issue","opportunity"]:[n])J.add(s)}}function bo(e,t,n){return v?Promise.reject(new Error("Inbox page replaced")):new Promise((s,o)=>{let i=F.__inboxRequestId=(F.__inboxRequestId??Date.now())+1,r=n===void 0?void 0:j(()=>{ue.delete(i)&&o(new Error(`The inbox did not answer in ${Math.round(n/1e3)} s`))},n);ue.set(i,{resolve:s,reject:o,timer:r}),parent.postMessage({jsonrpc:"2.0",id:i,method:e,params:t},"*")})}window.addEventListener("message",e=>{if(v)return;let t=e.data;if(!(!t||t.jsonrpc!=="2.0")){if(t.id!=null&&!t.method&&ue.has(t.id)){let n=ue.get(t.id);ue.delete(t.id),Tt(n.timer),t.error?n.reject(t.error):n.resolve(t.result);return}t.method==="ui/notifications/host-context-changed"&&(D?Sn(t.params??{}):xn=Fi(xn,t.params??{})),D&&t.id!=null&&t.method&&parent.postMessage({jsonrpc:"2.0",id:t.id,result:{}},"*")}},{signal:qe.signal});function Sn(e){if(!(v||!D)){e.theme&&(document.documentElement.dataset.theme=e.theme);for(let[t,n]of Object.entries(e.styles?.variables??{}))document.documentElement.style.setProperty(t,n)}}function Fi(e,t){return{...e,...t,styles:{...e.styles,...t.styles,variables:{...e.styles?.variables,...t.styles?.variables}}}}async function Cn(e,t={},n){let s=await bo("tools/call",{name:e,arguments:t},n);if(v)throw new Error("Inbox page replaced");if(!s||s.isError||s.structuredContent===void 0)throw new Error(s?.isError&&s.content?.[0]?.text||"The answer had nothing to show");return s.structuredContent}function ko(e,t){if(v||t<Fe)return;Fe=t,ne=null,Ot=0,On=Date.now();let n=B;B=io(B,oo(e),Date.now()),[...B.keys()].some(r=>!n.has(r))&&Se(_),S=e;for(let{pr:r,isSettled:l}of e.prs.drawn)l&&Se(Math.max(0,_-(e.at-(e.lastActions[q(r.ref)]?.at??e.at))));let s=dn.every(r=>kt[r.id]===void 0),o=eo(kt,e,e.isFetchingPrs);kt=o.seen;let i=[...o.added.needsYou,...o.added.findings];for(let r of i)xe.add(r);for(let{id:r}of dn){let l=!A[r]&&o.added[r].length>0?Os(It(e,r),o.added[r]):null;l&&(A[r]={id:l,openedAt:0})}Hi(e,s?Zs(e):o.added),k()}function Hi(e,t){if(!M($))return;let n=Nn(),s=Xs(wn,$,to(e,$,n,J,e.isFetchingPrs),t);s&&($=s,A[s]=null)}var Ui=300,Vi=2e3,Et=3*mt;async function We(){let e=Z,t=++In;try{let n=await Cn("inbox_view",{demo:te,tab:$,..._o()},Et);if(e!==Z||t<Fe)return;ce=n.devPage,ee?.page!==ce&&(ee=null);let s=ce!==xo;s&&!ee&&vo(ce),Ce=n.isPluginFolderGone?{text:"The inbox plugin\'s files were moved or removed, so the server still runs the version Codex started with. Quit and reopen Codex to load the installed plugin.",isReloadable:!1}:n.serverLoadError?{text:`The inbox server could not load its new build, so it still runs the last one. ${n.serverLoadError}`,isReloadable:!1}:n.serverBuild!=="cc6d61031f29"&&!s?{text:"This tab and the inbox server are from different builds.",isReloadable:!0}:null,ko(n,t)}catch(n){if(v||e!==Z||t<Fe)return;S?Ot++:ne=qi(n),k()}}function qi(e){let t=typeof e=="object"&&e!==null&&typeof e.message=="string"?e.message:String(e),n=G(t.replace(/^(Failed|Not done): /,"").replace(/\\s+/g," ").trim(),120)||"No reason given";return Qt(/[.!?\u2026]$/.test(n)?n:`${n}.`)}var xo=Q?.page??F.__inboxPage,kn=!1,ce=null,ee=null;async function vo(e){if(kn||v||e===xo)return;kn=!0;let t=null,n=null,s=!1;try{let{html:o}=await Cn("inbox_tab_page",{},Et);if(v||ce!==e)return;if(!/<\\/html>\\s*$/i.test(o))throw new Error("The new page is incomplete.");let i=new DOMParser().parseFromString(o,"text/html"),r=i.getElementById("app"),l=i.getElementById("inbox-style")??i.head.querySelector("style"),u=i.getElementById("inbox-script")??i.body.querySelector("script"),d=[...i.head.querySelectorAll("script")].map(R=>R.textContent?.match(/^\\s*window\\.__inboxPage\\s*=\\s*("[^"\\n]+")\\s*;?\\s*$/)?.[1]).find(R=>R!==void 0),p=d?JSON.parse(d):null,g=i.querySelector(\'meta[name="inbox-handoff"]\')?.getAttribute("content")==="1",c=document.getElementById("inbox-style"),f=document.getElementById("inbox-script");if(!(r instanceof HTMLDivElement)||r.childNodes.length>0||!(l instanceof HTMLStyleElement)||!l.textContent||!(u instanceof HTMLScriptElement)||u.src||!u.textContent||typeof p!="string"||p!==e||!/^ui:\\/\\/inbox\\/tab-[a-f0-9]{12}$/.test(p)||!g||!(c instanceof HTMLStyleElement)||!(f instanceof HTMLScriptElement))throw new Error("The new page is incomplete.");let h=document.createElement("div");h.id="app";let m=document.createElement("style");m.id="inbox-style",m.textContent=l.textContent,n=document.createElement("script"),n.id="inbox-script-candidate",n.textContent=u.textContent;let y,b=new Promise(R=>y=R);t={page:p,root:h,aborted:!1,ready:R=>{!t?.aborted&&F.__inboxHandoff===t&&y(R)}},F.__inboxHandoff=t,document.body.append(n);let w=(R,Ke)=>new Promise((fe,he)=>{let L=j(()=>he(new Error("The new page did not start.")),Ke);R.then(V=>{Tt(L),fe(V)},V=>{Tt(L),he(V)})}),E=await w(b,Vi);if(!await w(E.initialize(),Et))throw new Error("The new page could not connect.");let K=Date.now()+yn;for(;He>0&&Date.now()<K;)await new Promise(R=>j(R,30));if(He>0)throw new Error("The current press is still running.");if(v||ce!==e||t.aborted)return;let N=Mi();W.replaceWith(h);try{c.replaceWith(m),E.activate(N),E.start()}catch(R){throw h.isConnected&&h.replaceWith(W),m.isConnected&&m.replaceWith(c),Wn(),R}$n(),f.remove(),n.id="inbox-script",F.__inboxPage=p,s=!0}catch{!v&&ce===e&&(ee={page:e,text:"Could not load the inbox update."},k())}finally{if(t&&(t.aborted=!0,F.__inboxHandoff===t&&delete F.__inboxHandoff,!s))try{t.dispose?.()}catch{}s||n?.remove(),kn=!1}}async function So(){He===0&&await We(),j(So,mt)}function Wi(e,t){return Ae(e).some(n=>n.id===t&&n.state.is!=="settled")||Lo(e).some(n=>n.id===t)||e.prs.drawn.some(n=>q(n.pr.ref)===t)}function ji(e,t){return Ae(e).some(n=>n.id===t&&n.feedback?.is==="notSent")||Pe(t,e.lastActions[t],void 0,e.turns,e.at)?.is==="notSent"}async function pe(e,t,n,s=bt){if(v)return;let o=Z,i=++In;bn.set(e,i);let r=()=>bn.get(e)===i;t.action!=="undo"&&!e.startsWith("pr:")&&$o(e);let l=se(),u=!!S&&M(l)&&It(S,l).some(d=>d.id===e&&d.isWaiting);ve.set(e,s),H.delete(e),vn.delete(e),Me.delete(e),k(),He++;try{let d=await Cn("inbox_press",{press:t,thread:S?.thread,demo:te,..._o()},yn);if(v||o!==Z||(d.copy&&await Yi(e,d.copy,r),v||o!==Z||!r()))return;d.view&&ko(d.view,i),d.error&&!(S&&ji(S,e))&&H.set(e,d.error),!d.error&&d.note!=="stale"&&d.delivery!=="unconfirmed"&&n?.(),!d.error&&d.note!=="stale"&&d.delivery!=="unconfirmed"&&d.view&&u&&T!==e&&Ki(d.view,e);let{note:p}=d;p&&S&&Wi(S,e)?(vn.set(e,{text:Te(),at:Date.now()}),Se(_),p==="stale"&&t.action==="type"&&(T=e)):p&&(ke={text:Te(),at:Date.now()},Se(_))}catch{if(v||o!==Z||!r())return;H.set(e,"Action unconfirmed: the inbox did not answer.")}finally{He--,r()&&(bn.delete(e),ve.delete(e),k())}}function It(e,t){return t==="prs"?Vs(e.prs.drawn.filter(n=>!n.isSettled).map(n=>n.pr),e.lastActions):Ls(e)[t]}function Ki(e,t){let n=se();if(!M(n)||A[n]?.id!==t)return;let s=It(e,n);if(s.find(r=>r.id===t)?.isWaiting)return;let o=Is(s,t),i=o===null?-1:Oo(e,n).findIndex(r=>r.id===o);if(o===null||i<0){A[n]=null;return}$t(n,o,i),j(qo,0)}async function Yi(e,t,n){try{await navigator.clipboard.writeText(t.text)}catch{if(!n())return;H.set(e,`Could not copy ${t.name}: this tab has no clipboard access`),Me.set(e,t)}}function Dn(){return bs(T,Object.fromEntries(C))}function _o(){let e=Date.now();for(let[t,n]of yt)e-n>=_&&yt.delete(t);return{replies:Dn(),discarded:Object.fromEntries(yt)}}function Ro(e,t){let n=C.get(e);pe(e,{action:"type",id:e,text:t},()=>{C.get(e)===n&&C.delete(e)})}function Gi(e){$o(e);let t=e in Dn();C.has(e)||C.set(e,{text:"",since:S?.at??Date.now()}),T=e,St=!0,k(),!t&&(Fe=++In,We())}function To(e){yt.set(e,Date.now()),C.delete(e),T===e&&(T=null),k(),We()}function Eo(e){return Cs(e,Ne.has(e.id),{press:n=>{let s=n.action==="step"?e.steps[n.step]:void 0,i=e.actions.find(r=>r.press.action==="step"&&n.action==="step"&&r.press.step===n.step)?.kind==="local"&&e.item&&s?me({is:"local",result:at(fs(e.item,s),Date.now())},"codex"):void 0;pe(e.id,n,void 0,i)},reply:()=>Gi(e.id),discard:()=>To(e.id),showOptions:()=>{Ne.add(e.id),k()}})}function Bi(e,t){let n=en(t,"codex"),s=t.state.is==="handedOff",o=t.id,i=xs(t,Ne.has(o));return{id:o,view:t,handle:n.text,handleTone:n.tone,...s?{fold:{}}:{},title:t.title,age:t.at===null?void 0:re(e.at-t.at),...i.length>0?{body:a("div",{children:i.map(r=>a("p",{class:"option-description",title:`${r.label}: ${r.description}`,children:[r.label,a("span",{class:"muted",children:[": ",r.description]})]}))})}:{},...Eo(t),typing:{hint:tn(t,"Codex"),send:r=>Ro(o,r)},feedback:t.feedback}}function Qi(e,t,n){let s=t.state.is==="handedOff",o=t.id,i=en(t,"codex");return{id:o,view:t,handle:i.text,handleTone:i.tone,kind:n.kind,...s?{fold:{}}:{},title:t.title,age:t.at===null?void 0:re(e.at-t.at),body:a("div",{children:[a("p",{style:{whiteSpace:"pre-line"},children:Tn(t.detail??"")}),n.path?a("p",{children:[a("span",{class:"muted",children:ie.relevantFile}),a("code",{title:n.path,children:t.fileName})]}):null]}),...Eo(t),typing:{hint:tn(t,"Codex"),send:r=>Ro(o,r)},feedback:t.feedback}}function At(e,t,n){return{...t.hotkey?{hotkey:t.hotkey}:{},label:t.label,emphasis:t.emphasis,...t.icon?{icon:t.icon}:{},...t.press.action==="pr-dismiss"?{isDismiss:!0}:{},run:()=>{pe(e,t.press,void 0,t.kind==="local"?n:void 0)}}}function Pt(e){let t=at([{kind:"open",target:"",name:e}],Date.now());return me({is:"local",result:t},"codex")}function Xi(e,t,n){let s=le(t,n),o=Hs(t,n,e.lastActions),i=(u,d)=>()=>{pe(s,{action:u,ref:t.ref,thread:n.id},void 0,d)},r=ot(n),{rest:l}=st(n.body);return{id:s,handle:o.showsCheck?"\\u2713":"\\u25E6",handleTone:o.showsCheck?"done":void 0,...o.fold?{fold:o.fold}:{},title:o.title,meta:o.meta,age:n.at===null?void 0:re(e.at-n.at),body:a("div",{children:[l?a("p",{class:"quote",children:Tn(G(l,1200))}):null,a("p",{class:"muted",children:[a("button",{type:"button",class:"link",onClick:i("thread-open",Pt("the comment")),children:r}),`${P}@${n.author}`]}),n.reply?a("p",{class:"quote",children:[a("b",{children:["@",n.reply.author,":"]})," ",Tn(G(nt(n.reply.body),1200))]}):null]}),keys:mn(t,n,e.lastActions).flatMap(u=>u.isFollowUp?[]:[At(s,u,Pt("the comment"))]),more:mn(t,n,e.lastActions).flatMap(u=>u.isFollowUp?[At(s,u)]:[]),feedback:Pe(s,e.lastActions[s],void 0,e.turns,e.at)}}function zi(e,t,n){let s=Ie(t,n),o=Us(n),i=n.url?"the log":`PR #${t.number}`;return{id:s,handle:"\\u2717",handleTone:"error",...n.workflow?{lead:`${n.workflow} /`}:{},title:n.name,meta:o,age:n.finishedAt===void 0?void 0:re(e.at-n.finishedAt),body:a("div",{class:"muted",children:o}),keys:Ws(t,n,e.lastActions).map(r=>At(s,r,Pt(i))),more:[],feedback:Pe(s,e.lastActions[s],void 0,e.turns,e.at)}}function Ao(e,t){return On-(e.at-(e.lastActions[q(t.ref)]?.at??e.at))}function Po(e){let t=[];for(let{pr:n,isSettled:s}of e.prs.drawn)if(s){let o=q(n.ref);(U.has(o)||Date.now()-Ao(e,n)<_)&&t.push({pr:n,isSettled:s,threads:[],checks:[]})}else t.push({pr:n,isSettled:s,threads:z(n).map(o=>Xi(e,n,o)),checks:ge(n).map(o=>zi(e,n,o))});return{blocks:t,rows:t.flatMap(n=>[...n.threads,...n.checks])}}function Lo(e){return Po(e).rows}function Oo(e,t){return t==="prs"?Lo(e):Io(e,Nn()).byTab[t]}function Io(e,t){let n=Dn();return ln(e,s=>t.has(s),s=>s.state.is==="held"&&!(s.id in n)?null:s.item?Bi(e,s):s.finding?Qi(e,s,s.finding):null)}function Nn(){return ro(B,Date.now(),U)}var wt={question:"questions",task:"tasks",finding:"findings"};function Ji(e){let t=Date.now(),n=Io(e,Nn()),s=se(),o=an(s)?n.byTab[s]:[],i=M(s)?o[Mn(o,s,e)]?.id:void 0,r=new Set,l=new Set;for(let u of Object.keys(wt).filter(d=>ft[d]===s)){let d=n[wt[u]],p=new Set(d.map(ae)),g=[...d];for(let[f,h]of(_t?.[wt[u]]??[]).entries()){let m=ae(h);!p.has(m)&&O.has(m)&&g.splice(Math.min(f,g.length),0,h)}let c=[];for(let f of g){let h=ae(f),m=O.get(h),y=p.has(h)?"settled"in f?U.has(h)?"undoing":"settled":h===i?"open":"closed":"gone",b=so(m?.track,y,t,xe.has(h),Ct.matches);if(!b)continue;b!==m?.track&&r.add(h);let w=b.hasPanel?"row"in f&&p.has(h)?f.row:m?.openRow:void 0;O.set(h,{track:b,openRow:w}),l.add(h),c.push(f)}n[wt[u]]=c}n.findingGroups=n.findingGroups.map(u=>({...u,entries:n.findings.filter(d=>("row"in d?d.row.kind:d.settled.finding?.kind)===u.kind)}));for(let u of[...O.keys()])l.has(u)||O.delete(u);return{lists:n,changed:r}}async function Zi(e){if(U.has(e.id))return;let t=ft[e.type];U.add(e.id);try{await pe(e.id,{action:"undo",id:e.id},()=>$t(t,e.id))}finally{U.delete(e.id);let n=B.get(e.id),s=n!==void 0&&Date.now()-n<_,o=H.get(e.id);o&&!s&&(ke={text:o,at:Date.now(),isError:!0},Se(_)),n!==void 0&&!s&&B.set(e.id,Date.now()-_),k()}}function Mn(e,t,n){let s=A[t];if(s){let i=e.findIndex(l=>l.id===s.id);if(i>=0||O.has(s.id)||e.length===0)return i;let r=Math.min(s.index??0,e.length-1);return $t(t,e[r].id,r),r}let o=cn(It(n,t));return o?e.findIndex(i=>i.id===o):-1}function $t(e,t,n){A[e]={id:t,openedAt:Date.now(),...n===void 0?{}:{index:n}},T!==t&&(T=null),Se(Zt)}function Fn(e,t,n){let s=t[n];s&&($t(e,s.id,n),k())}function $o(e){let t=se();M(t)&&!A[t]&&(A[t]={id:e,openedAt:0})}function er(){let e=se();return M(e)&&ys(A[e]?.openedAt??0,Date.now())}function Co(e){return e.typing&&T===e.id?{keys:[],more:[]}:{keys:e.keys,more:e.more}}function tr({k:e}){return a(un,{action:e,isBlocked:()=>!1})}function nr(e){let t=e.feedback;return t?e.view?Ss(e.view,"codex"):t.is==="done"&&e.handleTone==="done"?t.label:me(t,"codex"):null}function Hn(e){let t=vn.get(e);return t&&Date.now()-t.at<_?t.text:null}function sr(e){return!H.has(e.id)&&Hn(e.id)===null&&!Me.has(e.id)}function Do({row:e,track:t,onSelect:n,now:s}){let o=t.hasPanel&&(t.state==="closing"||t.state==="leaving"),i=t.hasPanel&&!o,r=a("span",{class:`mark ${e.handleTone??""}`,children:e.handle}),l=ve.get(e.id),u=l===bt,d=sr(e)?e.feedback:null,p=u?null:l??(d?nr(e):null),g=!l&&d&&ct(d)?d.at:null,c=g!==null&&!i&&!o&&d?.is!=="queued"&&d?.is!=="unconfirmed",f=!l&&Ps(d,i||o)?p:null,h=c||f?null:p,m=u?bt:g!==null?re(s-g):h?null:e.age,y=!l&&on(e.feedback)?"error":void 0;return a("div",{class:`row ${i?"selected":"collapsed"}${o?" closing":""}`,onClick:i?void 0:n,children:[r,a("div",{class:"content",children:a("button",{type:"button",class:"line",...i?{tabIndex:-1,"aria-disabled":!0}:{"aria-expanded":!1},children:[a("span",{class:"text",children:[e.lead?a(I,{children:[a("span",{class:"lead",children:e.lead})," "]}):null,e.title]}),e.meta?a("span",{class:"meta",children:e.meta}):null,h?a("span",{class:`after ${y?`tone-${y}`:""}`,children:i||o?`${P}${h}`:h}):null]})}),a("span",{class:"side","data-room":bt,children:[c?a("span",{class:"side-label",children:p}):null,m]}),i||o?a(No,{row:e,isClosing:o,status:f}):null]})}function No({row:e,isClosing:t,status:n}){let{keys:s,more:o}=Co(e),i=Me.get(e.id),r=Hn(e.id),l=!!e.typing&&T===e.id,u=[e.fold?.note?a("div",{class:"muted",children:e.fold.note}):null,r?a("div",{class:"muted",children:r}):null,H.has(e.id)?a("div",{class:"tone-error",children:H.get(e.id)}):null].filter(Boolean);return a("div",{class:t?"panel closing":"panel",inert:t,children:[e.body?a("div",{class:"body",children:e.body}):null,u.length>0?a("div",{children:u}):null,a(Ds,{actions:[...s,...o],reply:l?{id:e.id,hint:e.typing.hint,draft:()=>C.get(e.id)?.text??"",onDraft:d=>C.set(e.id,{text:d,since:C.get(e.id)?.since??S?.at??Date.now()}),send:d=>{T=null,e.typing.send(d)},exit:e.view?nn(e.view):"cancel",onExit:()=>{e.view&&nn(e.view)==="discard"?To(e.id):(T=null,k())}}:null,isBlocked:er}),n?a("div",{class:"muted",children:n}):null,i?a("div",{children:[a("div",{class:"muted",children:["Copy ",i.name," from here:"]}),a("textarea",{rows:3,readOnly:!0,value:i.text,onFocus:d=>d.currentTarget.select()}),a("button",{type:"button",class:"key",onClick:()=>{Me.delete(e.id),k()},children:"Close"})]}):null]})}function or({settled:e,panel:t}){let{state:n}=e;if(n.is!=="settled")return null;let s=B.get(e.id)??Date.now(),o=U.has(e.id),i=H.get(e.id);return a("div",{class:t?"row settled was-open":"row settled",children:[a("span",{class:"mark",children:n.delivery!==null?"":"\\u2713"}),a("div",{class:"content",children:[a("div",{class:"settled-head",children:[a("div",{class:"settled-line",children:[a("span",{class:"what",children:e.title}),a("span",{class:"outcome-label",children:[P,rn(n.label,n.delivery)]}),i?a("span",{class:"tone-error",children:[P,i]}):null]}),n.canUndo?a("button",{type:"button",class:o?"key undo undoing":"key undo",disabled:o,onClick:()=>{Zi(e)},children:[a("span",{class:o?"time-left paused":"time-left",style:{animationDuration:`${_}ms`},ref:r=>{r&&!r.style.animationDelay&&(r.style.animationDelay=`-${Math.max(0,Date.now()-s)}ms`)}},s),a(Oe,{name:"undo"}),"Undo"]}):null]}),t?a(No,{row:t,isClosing:!0}):null]})]})}function Mo({entries:e,group:t,all:n,now:s}){let o=ft[t];return e.length===0?null:a("div",{class:"list",children:e.map(i=>{let r=ae(i),l=O.get(r);return a("div",{class:"entry","data-motion":r,children:"row"in i?a(Do,{row:i.row,track:l.track,now:s,onSelect:()=>Fn(o,n,n.indexOf(i.row))}):a(or,{settled:i.settled,panel:l.openRow})},r)})})}function ir({row:e}){return a("div",{class:"entry",children:a("div",{class:"row",children:[a("span",{class:e.tone?`mark ${e.tone}`:"mark",children:e.mark}),a("div",{class:"content tight",children:[a("div",{children:e.text}),e.detail?a("div",{class:"outcome",children:e.detail}):null]})]})})}function rr({page:e}){if(e.isEmpty)return a("div",{class:"empty",children:[a("div",{class:"title",children:e.empty.title}),a("div",{class:"muted",children:e.empty.hint})]});let{lead:t,sections:n,earlier:s}=e;return a("main",{class:"overview",children:[t.length>0?a("section",{children:t.map(o=>o.id==="headline"?a("h1",{class:"overview-goal",children:o.text},o.id):a("div",{class:o.hasGapAbove?"overview-now overview-gap muted":"overview-now muted",children:o.text},o.id))}):null,n.map(o=>a("section",{children:[o.title?a(Ve,{title:o.title,count:0}):null,a("div",{class:"list",children:o.rows.map(i=>a(ir,{row:i},i.id))})]},o.id)),s.length>0?a("section",{children:[a(Ve,{title:"Earlier in this session",count:0}),a("div",{class:"list",children:s.map((o,i)=>a("div",{class:"earlier muted",children:o},i))})]}):null]})}function Ve({title:e,count:t}){return a("div",{class:"group-title",children:[a("b",{children:e}),t>0?a("span",{class:"count",children:[P,t]}):null]})}function _n(e,t,n){return sn(e.needsYou.closed[t==="question"?"questions":"tasks"],ut(n)).map(s=>({id:s.id,ask:s.ask,outcomeLabel:s.outcomeLabel,state:Wt(s),at:s.at,delivery:s.delivery}))}function co({v:e,kind:t,entries:n,all:s,now:o}){let i=t==="question"?"Questions":"Tasks",r=Rn(n),l=_n(e,t,r),u=r.flatMap(d=>"row"in d?[d.row]:[]);return a("section",{children:[a(Ve,{title:i,count:u.filter(d=>d.view&&dt(d.view)).length}),a(Mo,{entries:n,group:t,all:s,now:o}),a(Ho,{group:t,empty:Fo(i,r),closed:l,total:lt(e.needsYou.closed[t==="question"?"questions":"tasks"],ut(r)),now:o})]})}function Rn(e){return e.filter(t=>O.get(ae(t))?.track.state!=="leaving")}function Fo(e,t){let n=t.every(s=>O.get(ae(s))?.track.state==="entering");return t.length===0||n?{text:Es(e),isLeaving:t.length>0}:null}function Tn(e){return pt(e).map(t=>{let n=t.code?a("code",{children:t.text}):t.text;return t.italic&&(n=a("i",{children:n})),t.bold&&(n=a("b",{children:n})),t.strike&&(n=a("s",{children:n})),t.link?a(I,{children:[a("u",{children:n}),a("span",{class:"muted",children:[" ",t.link]})]}):n})}function Ho({group:e,empty:t,closed:n,total:s,now:o}){let i=Ts(s,n.length),r=J.has(e),l=s>0&&(r||xt.has(e));return a(I,{children:[a("div",{class:"group-end","data-motion":`end-${e}`,children:a("div",{class:"group-end-content",children:[t?a("div",{class:t.isLeaving?"group-empty leaving":"group-empty","aria-hidden":t.isLeaving,children:t.text}):null,s>0?a("button",{type:"button",class:"fold","data-fold":e,onClick:()=>Er(e),children:[a(Oe,{name:r?"down":"right"}),Rs(s)]}):null]})}),l?a("div",{class:"list closed-list","data-motion":`closed-${e}`,children:[n.map(u=>a("div",{class:"entry",children:a("div",{class:"row",children:[a("span",{class:"mark",children:u.delivery===null?ws[u.state]:""}),a("div",{class:"content tight",children:[a("div",{class:"muted",children:u.ask}),a("div",{class:"outcome",children:rn(u.outcomeLabel,u.delivery)}),u.delivery&&typeof u.delivery=="object"&&u.delivery.canUndo?a("button",{type:"button",disabled:ve.has(u.id),onClick:()=>pe(u.id,{id:u.id,action:"undo"}),children:"Undo"}):null]}),a("span",{class:"side",children:re(o-u.at)})]})},`closed-${u.id}`)),i?a("div",{class:"earlier muted",children:i}):null]}):null]})}var ar={untrusted:["Codex is not running the inbox\\u2019s hooks yet.","Click the hook icon beside the approval setting, then Allow all."],modified:["Codex stopped the inbox\\u2019s hooks after an update.","Trust them again: click the hook icon beside the approval setting, then Allow all."]};function dr(e){return e.heard==="heard"?null:e.heard==="none"&&e.hooksTrust?ar[e.hooksTrust]:["The inbox has not heard from this chat\\u2019s hooks.",e.heard==="none"?"Codex runs a plugin\\u2019s hooks only after you trust them.":"Items from Codex\\u2019s replies are missing."]}function lr({v:e,lists:t,now:n}){let s=t.byTab.needsYou,o=t.questions.length===0&&t.tasks.length===0,i=_n(e,"question",t.questions).length>0||_n(e,"task",t.tasks).length>0,r=dr(e);return o&&!i?r?a("div",{class:"empty",children:[a("div",{class:"title",children:r[0]}),a("div",{class:"muted",children:r[1]})]}):a("div",{class:"empty",children:[a("div",{class:"title",children:Le("needsYou","Codex").title}),a("div",{class:"muted",children:Le("needsYou","Codex").hint})]}):a("main",{children:[r?a("section",{children:a("div",{class:"group-title",children:[r[0],a("div",{class:"muted",children:r[1]})]})}):null,a(co,{v:e,kind:"question",entries:t.questions,all:s,now:n}),a(co,{v:e,kind:"task",entries:t.tasks,all:s,now:n})]})}function cr({v:e,lists:t,now:n}){let s=ut(Rn(t.findings)),o=l=>e.findings.closed.filter(u=>u.kind===l),i=l=>sn(o(l),s).map(u=>({id:u.id,ask:u.title,outcomeLabel:u.outcomeLabel,state:Wt(u),at:u.closedAt,delivery:u.delivery}));return t.findings.length===0&&lt(e.findings.closed,s)===0?a("div",{class:"empty",children:[a("div",{class:"title",children:Le("findings","Codex").title}),a("div",{class:"muted",children:Le("findings","Codex").hint})]}):a("main",{children:t.findingGroups.map(l=>{let u=Rn(l.entries),d=u.flatMap(p=>"row"in p?[p.row]:[]);return a("section",{children:[a(Ve,{title:l.title,count:d.filter(p=>p.view&&dt(p.view)).length}),a(Mo,{entries:l.entries,group:"finding",all:t.byTab.findings,now:n}),a(Ho,{group:l.kind,empty:Fo(l.title,u),closed:i(l.kind),total:lt(o(l.kind),s),now:n})]})})})}function ur({v:e,pr:t}){let n=q(t.ref),s=Ao(e,t),o=U.has(n),i=H.get(n);return a("div",{class:"row settled",children:[a("span",{class:"mark",children:"\\u2713"}),a("div",{class:"content",children:a("div",{class:"settled-head",children:[a("div",{class:"settled-line",children:[a("span",{class:"what",children:[a("span",{class:"tone-prs",children:["#",t.number]})," ",t.title]}),a("span",{class:"outcome-label",children:`${P}Dismissed`}),i?a("span",{class:"tone-error",children:`${P}${i}`}):null]}),a("button",{type:"button",class:o?"key undo undoing":"key undo",disabled:o,onClick:()=>{pr(n,t.ref)},children:[a("span",{class:o?"time-left paused":"time-left",style:{animationDuration:`${_}ms`},ref:r=>{r&&!r.style.animationDelay&&(r.style.animationDelay=`-${Math.max(0,Date.now()-s)}ms`)}},s),a(Oe,{name:"undo"}),"Undo"]})]})})]})}async function pr(e,t){if(!U.has(e)){U.add(e);try{await pe(e,{action:"pr-undo",ref:t})}finally{U.delete(e),k()}}}function fr(e,t){let n=ve.get(t);if(n)return{text:n,isError:!1};let s=H.get(t);if(s)return{text:s,isError:!0};let o=Hn(t);if(o)return{text:o,isError:!1};let i=e.lastActions[t]?.action==="pr-dismiss"?null:Pe(t,e.lastActions[t],void 0,e.turns,e.at);if(!i)return null;let r=me(i,"codex");return{text:ct(i)?`${r}${P}${Re(e.at-i.at)}`:r,isError:on(i)}}function hr({v:e,pr:t,threads:n,checks:s,openId:o,all:i,now:r}){let l=ye(e.lastActions),{status:u,head:d,unlisted:p}=tt(t,l),g=qs[u],c=q(t.ref),f=js(t,l,e.prs.branchRef,e.lastActions).map(m=>At(c,m,Pt(`PR #${t.number}`))),h=fr(e,c);return a("section",{children:[a("div",{class:"pr-head",children:[a("span",{class:"tone-prs num",children:["#",t.number]})," ",t.title," ",a("span",{class:g?`pr-verdict tone-${g}`:"pr-verdict muted",children:d}),a("span",{class:"pr-verdict muted",children:p.map(m=>`${P}${m}`).join("")})]}),t.error?a("div",{class:"pr-status tone-error",children:["Last refresh failed: ",t.error]}):null,a("div",{class:"pr-actions keys",children:f.map(m=>a(tr,{k:m}))}),h?a("div",{class:h.isError?"pr-last tone-error":"pr-last muted",children:h.text}):null,a("div",{class:"pr-groups",children:[a(uo,{title:fn.threads,rows:n,all:i,openId:o,now:r}),a(uo,{title:fn.checks,rows:s,all:i,openId:o,now:r})]})]})}function uo({title:e,rows:t,all:n,openId:s,now:o}){return t.length===0?null:a(I,{children:[a(Ve,{title:e,count:t.length}),a("div",{class:"list",children:t.map(i=>{let r=i.id===s;return a("div",{class:"entry",children:a(Do,{row:i,track:{state:r?"open":"closed",since:0,hasPanel:r},now:o,onSelect:()=>Fn("prs",n,n.indexOf(i))})},i.id)})})]})}var gr=Fs("conversation");function mr({v:e,now:t}){let{blocks:n,rows:s}=Po(e);if(n.length===0)return a("div",{class:"empty",children:[a("div",{class:"title",children:e.isFetchingPrs?"Checking for PRs\\u2026":"No PRs"}),a("div",{class:"muted",children:e.isGhMissing?pn:gr})]});let o=s[Mn(s,"prs",e)]?.id;return a("main",{children:[e.isGhMissing?a("section",{children:a("div",{class:"group-title muted",children:pn})}):null,n.map(i=>i.isSettled?a("section",{children:a(ur,{v:e,pr:i.pr})}):a(hr,{...i,v:e,openId:o,all:s,now:t})),e.prs.olderText?a("section",{children:a("div",{class:"group-title muted",children:e.prs.olderText})}):null]})}var wr=6e4;function yr({v:e}){let t=Date.now()-On,n=Ot>=2?a("span",{class:t>wr?"tone-error":void 0,children:["Last read ",Re(t),P,"retrying"]}):e.status.isUpdating?"Updating\\u2026":null;return a("div",{class:"status",children:n})}function br({v:e}){let t={needsYou:e.needsYou.count,findings:e.findings.count,prs:e.prs.count},{error:n}=e.status,s=se();return a("nav",{children:[a("div",{class:"tabs",children:we.map(o=>a("button",{type:"button",class:`tab ${s===o.id?"shown":""}`,onClick:()=>{$=o.id,k()},children:[o.label,M(o.id)&&t[o.id]>0?a("span",{class:`count tone-${o.id}`,children:t[o.id]}):null]}))}),Ce?Ce.isReloadable?a(En,{text:Ce.text,reload:()=>location.reload()}):a("div",{class:"status-line tone-error",children:Ce.text}):null,ee?a(En,{text:ee.text,label:"Retry",reload:()=>{let o=ee?.page;ee=null,k(),o&&vo(o)}}):null,n?a("div",{class:"status-line tone-error",children:n}):null,ke&&Date.now()-ke.at<_?a("div",{class:ke.isError?"status-line tone-error":"status-line muted",children:ke.text}):null]})}async function kr(){Z++,te=!te,ne=null,Ot=0,S=null,B=new Map,kt={},O.clear(),_t=null,A.needsYou=null,A.findings=null,A.prs=null,T=null,k(),await We()}function En({text:e,reload:t,label:n="Reload"}){return a("div",{class:"error-strip",children:[a("span",{children:e}),a("button",{type:"button",class:"key",onClick:t,children:n})]})}function xr({lists:e}){if(!S||!e)return ne!==null?a(En,{text:`Could not read the inbox. ${ne}`,reload:()=>{vt?We():Pn()}}):mo?a("div",{class:"notice muted",children:"Loading\\u2026"}):null;let t=S,n=t.at,s=se();return a(I,{children:[te?a("div",{class:"demo-note",children:[a("span",{children:As}),a("button",{type:"button",class:"key ghost",onClick:()=>{kr()},children:"Hide demo"})]}):null,a(br,{v:t}),s==="needsYou"?a(lr,{v:t,lists:e,now:n}):s==="findings"?a(cr,{v:t,lists:e,now:n}):s==="prs"?a(mr,{v:t,now:n}):a(rr,{page:t.overviewPage}),a("footer",{children:[null,a("div",{class:"footer-end",children:[a(yr,{v:t}),a("span",{class:"version",children:["v",is.version]})]})]})]})}var Un={duration:300,easing:"cubic-bezier(.19, 1, .22, 1)"},Lt={duration:200,easing:"cubic-bezier(.65, 0, .35, 1)"},Vn={duration:200,easing:"cubic-bezier(.8, 0, .4, 1)",fill:"forwards"},Ct=matchMedia("(prefers-reduced-motion: reduce)");function vr(){let e=new Map;for(let t of W.querySelectorAll("[data-motion]"))e.set(t.dataset.motion,{el:t,height:t.getBoundingClientRect().height});return e}function Sr(e,t,n,s){e.style.overflow="hidden",e.dataset.to=String(s);let o=e.animate(t,n);Rt.add(o);let i=()=>{Rt.delete(o),!v&&e.getAnimations().length===0&&Uo(e)};o.onfinish=i,o.oncancel=i}function An(e){for(let t of e.getAnimations())t.cancel();Uo(e)}function Uo(e){e.style.overflow="",delete e.dataset.to}function qn(e){return[...e.children].reduce((t,n)=>t+n.getBoundingClientRect().height,0)}function je(e,t,n,s){let o=i=>({height:`${i.height}px`,opacity:i.opacity});Sr(e,[o(t),o(n)],s,n.height)}function Vo(e,t){je(e,{height:0,opacity:0},{height:t,opacity:1},Un)}function _r(e,t){if(Ct.matches){xe.clear();return}let n=new Set([...t].map(o=>O.get(o)?.track.state)),s=n.has("leaving")?{...Vn,fill:"none"}:n.has("entering")?Un:Lt;for(let o of W.querySelectorAll("[data-motion]")){let i=o.dataset.motion,r=e.get(i);if(o.dataset.closing)continue;let l=O.get(i)?.track.state,u=!r||r.el!==o,d=()=>o.getAnimations().length>0||u?o.getBoundingClientRect().height:r.height;if(l&&t.has(i)&&Rr(o,l,d)||l==="closing"||l==="settling"||l==="leaving")continue;if(l&&!gt(l)&&!ve.has(i)){An(o);continue}let p=l||o.classList.contains("group-end")?qn(o):o.scrollHeight;if(u){!l&&xe.delete(i)&&Vo(o,p);continue}let g=o.getAnimations();if(g.length>0&&Math.abs(Number(o.dataset.to)-p)<1)continue;let c=d(),f=g.length>0?Number(getComputedStyle(o).opacity):1;for(let h of g)h.cancel();Math.abs(c-p)<1&&f>.99||je(o,{height:c,opacity:f},{height:p,opacity:1},l?Lt:s)}xe.clear()}function Rr(e,t,n){switch(t){case"opening":return!1;case"entering":return An(e),Vo(e,qn(e)),!0;case"closing":case"settling":return Tr(e,po(e,n)),!0;case"leaving":{let s=po(e,n);for(let o of e.getAnimations())o.cancel();return je(e,s,{height:0,opacity:0},Vn),!0}default:return An(e),!0}}function po(e,t){return{height:t(),opacity:Number(getComputedStyle(e).opacity)}}function Tr(e,t){let n=e.querySelector(".panel.closing"),s=e.querySelector(".row.closing");s?.classList.remove("closing"),n&&(n.style.display="none");let o=qn(e);n&&(n.style.display=""),s?.classList.add("closing");for(let i of e.getAnimations())i.cancel();je(e,t,{height:o,opacity:1},{...Lt,fill:"forwards"})}function Er(e){let t=W.querySelector(`[data-motion="closed-${e}"]`);if(!J.has(e)){J.add(e),xt.delete(e)&&t?delete t.dataset.closing:xe.add(`closed-${e}`),k();return}if(J.delete(e),!t||Ct.matches){k();return}xt.add(e),k(),t.dataset.closing="1";let n=t.getBoundingClientRect().height;for(let s of t.getAnimations())s.cancel();je(t,{height:n,opacity:1},{height:0,opacity:0},Vn),j(()=>{J.has(e)||!xt.delete(e)||k()},200)}function qo(){v||(W.querySelector(".row.selected")?.scrollIntoView({block:"nearest"}),Ct.matches||j(()=>W.querySelector(".row.selected")?.scrollIntoView({block:"nearest"}),220))}function Wn(){document.documentElement.style.setProperty("--row-pad",`${8}px`),document.documentElement.style.setProperty("--lead-gap",`${9.5}px`),document.documentElement.style.setProperty("--move",`${200}ms ${Lt.easing}`),document.documentElement.style.setProperty("--enter",`${300}ms ${Un.easing}`)}var Wo=50;function Se(e){j(k,e+Wo)}var be=null;function Ar(){let e=Date.now(),t=[...O.values()].flatMap(({track:s})=>gt(s.state)?[s.since+ht[s.state]]:[]);if(t.length===0)return;let n=Math.min(...t)+Wo;be&&be.at<=n||(be&&Tt(be.timer),be={at:n,timer:j(()=>{be=null,k()},n-e)})}function k(){if(v||!D)return;let e=vr(),t=S?Ji(S):null;_t=t?.lists??null,Ar(),qt(a(xr,{lists:_t}),W),_r(e,t?.changed??new Set);let n=St&&T?document.getElementById(`type-${T}`):null;n&&(St=!1,n.focus())}var De=null;document.addEventListener("pointerdown",e=>{D&&(!(e.target instanceof Element)||!W.contains(e.target)||!e.target.closest(".list, .fold")||(De={x:e.clientX,y:e.clientY},document.body.classList.add("still")))},{signal:qe.signal});document.addEventListener("pointermove",e=>{D&&(!De||Math.hypot(e.clientX-De.x,e.clientY-De.y)<3||(De=null,document.body.classList.remove("still")))},{signal:qe.signal});document.addEventListener("keydown",e=>{if(!D||e.metaKey||e.ctrlKey||e.altKey||!S)return;let t=e.target;if(t?.closest("input, textarea")){e.key==="Escape"&&t.tagName==="INPUT"&&(T=null,k());return}let n=we.find(g=>g.hotkey===e.key);if(n){$=n.id,k();return}let s=se();if(!M(s))return;let o=Oo(S,s),i=Mn(o,s,S),r=e.key==="j"||e.key==="ArrowDown"?1:e.key==="k"||e.key==="ArrowUp"?-1:0;if(r!==0){e.preventDefault(),Fn(s,o,Math.max(0,Math.min(o.length-1,i+r))),qo();return}let l=o[i];if(!l)return;let{keys:u,more:d}=Co(l),p=[...u,...d].find(g=>g.hotkey===e.key);p&&(e.preventDefault(),p.run())},{signal:qe.signal});function jo(){v||!D||!vt||ao||(ao=!0,Sn(wo),Sn(xn),parent.postMessage({jsonrpc:"2.0",method:"ui/notifications/initialized",params:{}},"*"),So())}function Pn(){return v?Promise.resolve(!1):vt?Promise.resolve(!0):$e||(ne=null,D&&k(),$e=bo("ui/initialize",{protocolVersion:"2026-01-26",appInfo:{name:"inbox",version:"0.2.10"},appCapabilities:{tools:{}}},Et).then(e=>v?!1:(wo=e?.hostContext??{},vt=!0,jo(),!0)).catch(()=>(D&&!v&&(ne="The inbox could not connect to Codex.",k()),!1)).finally(()=>{$e=null}),$e)}function fo(){jo(),j(()=>{mo=!0,!S&&ne===null&&k()},Ui)}function Pr(e){if(v||!Q||Q.aborted)throw new Error("The new page stopped.");yo(e),D=!0,Wn(),k()}Q?Q.ready({initialize:Pn,activate:Pr,start:fo,dispose:$n}):(Wn(),yo(),Pn(),fo());})();\n\n    </script>\n  </body>\n</html>\n';
 
 // src/run.ts
 import { execFile } from "node:child_process";
@@ -4032,6 +4410,66 @@ var run = (args, { cwd, timeoutMs, env }) => new Promise((resolve3) => {
   );
   child.stdin?.end();
 });
+
+// src/hook-trust.ts
+import { spawn } from "node:child_process";
+import { homedir as homedir3 } from "node:os";
+function trustOfHooks(hooks) {
+  const own = hooks.filter((h) => h.pluginId?.split("@")[0] === "inbox");
+  if (own.length === 0) return null;
+  if (own.some((h) => h.trustStatus === "modified")) return "modified";
+  if (own.some((h) => h.trustStatus === "untrusted")) return "untrusted";
+  return "trusted";
+}
+function listHooksTrust(cli, folder, timeoutMs = 1e4) {
+  return new Promise((resolve3) => {
+    let child;
+    try {
+      child = spawn(cli, ["app-server"], { cwd: homedir3(), stdio: ["pipe", "pipe", "ignore"] });
+    } catch {
+      resolve3(null);
+      return;
+    }
+    let buffer = "";
+    let isDone = false;
+    const finish = (result) => {
+      if (isDone) return;
+      isDone = true;
+      clearTimeout(timer);
+      child.kill();
+      resolve3(result);
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    child.on("error", () => finish(null));
+    child.on("exit", () => finish(null));
+    child.stdout?.on("data", (chunk) => {
+      buffer += String(chunk);
+      for (let end = buffer.indexOf("\n"); end >= 0; end = buffer.indexOf("\n")) {
+        const line = buffer.slice(0, end);
+        buffer = buffer.slice(end + 1);
+        let message;
+        try {
+          message = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (message.id === 1) {
+          child.stdin?.write(`${JSON.stringify({ method: "initialized" })}
+`);
+          child.stdin?.write(`${JSON.stringify({ id: 2, method: "hooks/list", params: { cwds: [folder] } })}
+`);
+        } else if (message.id === 2) {
+          finish(trustOfHooks(message.result?.data?.flatMap((d) => d.hooks ?? []) ?? []));
+        }
+      }
+    });
+    child.stdin?.on("error", () => finish(null));
+    child.stdin?.write(
+      `${JSON.stringify({ id: 1, method: "initialize", params: { clientInfo: { name: "inbox", version: "0" } } })}
+`
+    );
+  });
+}
 
 // src/server-handler.ts
 async function appCli() {
@@ -4063,12 +4501,13 @@ function createHandler(dir, loadError = () => null, isPluginFolderGone = () => f
     exec: run,
     tabHtml: tab_default,
     fallbackCli: appCli,
+    hooksTrust: listHooksTrust,
     devPage: devPageIn(dir),
-    build: "dd40b0436d48",
+    build: "cc6d61031f29",
     loadError,
     isPluginFolderGone,
     openCatchUp: startUpdate && {
-      codexHome: process.env.CODEX_HOME || join4(homedir2(), ".codex"),
+      codexHome: process.env.CODEX_HOME || join4(homedir4(), ".codex"),
       startUpdate
     }
   });

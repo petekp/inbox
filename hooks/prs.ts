@@ -36,6 +36,7 @@ export const THREADS_QUERY = `query($owner: String!, $repo: String!, $number: In
   viewer { login }
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
+      author { login }
       commits(last: 1) { nodes { commit { committedDate } } }
       reviewThreads(first: 100) {
         nodes {
@@ -80,7 +81,10 @@ function bucket(e: RollupEntry): PrCheck['bucket'] {
 }
 
 /** Reads `gh pr view --json VIEW_FIELDS` output; null when it is not that. */
-export function readView(ref: string, json: string): Omit<PrView, 'threads' | 'error'> | null {
+export function readView(
+  ref: string,
+  json: string,
+): Omit<PrView, 'threads' | 'isYours' | 'wasSeenOpen' | 'error'> | null {
   try {
     const v = JSON.parse(json) as Record<string, unknown>
     if (typeof v.number !== 'number') return null
@@ -133,6 +137,7 @@ type ThreadsAnswer = {
     viewer?: { login: string }
     repository?: {
       pullRequest?: {
+        author?: { login: string } | null
         commits?: { nodes?: { commit?: { committedDate?: string } }[] }
         reviewThreads?: { nodes?: ThreadNode[] }
       }
@@ -140,15 +145,20 @@ type ThreadsAnswer = {
   }
 }
 
-/** Reads the THREADS_QUERY answer: open threads only, oldest first. */
-export function readThreads(json: string): PrThread[] {
+/**
+ * Reads the THREADS_QUERY answer: its open threads, oldest first, and whether the viewer wrote the PR. `isYours` is
+ * null when the answer names no viewer or holds no author field. A null author is a deleted account's, so not the
+ * viewer's.
+ */
+export function readThreadsAnswer(json: string): { threads: PrThread[]; isYours: boolean | null } {
   try {
     const data = (JSON.parse(json) as ThreadsAnswer).data
     const viewer = data?.viewer?.login
     const pr = data?.repository?.pullRequest
+    const author = pr?.author
     const headAt = Date.parse(pr?.commits?.nodes?.[0]?.commit?.committedDate ?? '') || null
 
-    return (pr?.reviewThreads?.nodes ?? [])
+    const threads = (pr?.reviewThreads?.nodes ?? [])
       .filter(t => !t.isResolved)
       .map(t => {
         const first = t.comments.nodes[0]
@@ -179,9 +189,16 @@ export function readThreads(json: string): PrThread[] {
           at: Date.parse(first?.createdAt ?? '') || null,
         }
       })
+
+    return { threads, isYours: viewer === undefined || author === undefined ? null : author?.login === viewer }
   } catch {
-    return []
+    return { threads: [], isYours: null }
   }
+}
+
+/** Whether the PRs tab keeps a linked PR: the viewer wrote it, or GitHub did not say who did, and a fetch found it open. */
+export function isKeptPr(pr: PrView): boolean {
+  return pr.isYours !== false && pr.wasSeenOpen
 }
 
 export function waitingThreads(pr: PrView): PrThread[] {

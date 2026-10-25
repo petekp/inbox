@@ -1,6 +1,6 @@
 # Launch video
 
-Status: built. The video is ready to publish. The `draft` variant tells the story below with Pete's captions. Its sample project is Visor, an agent you wear in AR glasses. Its takes were recorded in the VM on main at `f75d5c4` with the AR demo rows, and every press in them is a click. Release v0.2.5 ships that build with those demo rows.
+Status: built. The video is ready to publish. The `launch` cut tells the story below with Pete's captions. Its sample project is Visor, an agent you wear in AR glasses. Its takes were recorded in the VM on main at `f75d5c4` with the AR demo rows, and every press in them is a click. Release v0.2.5 ships that build with those demo rows.
 
 An 81.5-second video. It shows how much an agent's thread asks you to track, then shows the inbox taking that over in all three apps. It has no voiceover. Short captions carry the words, so it works muted in a feed. Every press is a click, and the pointer is on screen.
 
@@ -57,9 +57,9 @@ Reason: a viewer can't type install commands from a video. The repo's README has
 
 The streams stand for the noise of the thread, and the braid for the inbox turning it into one signal. The word is lowercase Geist Mono with a block cursor, as typed at a prompt. The background is near-black with a faint violet and magenta bloom behind the word. Pete chose each of these from mocks.
 
-The end card is `launch-video/src/EndCard.tsx`, a WebGL 2 shader. Each stream is three fine threads of light, with each color channel set slightly apart, as light through a prism. The colors are magenta, violet, blue, cyan and amber. A few streams pass close to the lens, large and out of focus, and a few sit far behind. The light has bloom, motion blur, a horizontal lens streak that flares when the braid reaches the word, a slight color fringe toward the frame's edges, film grain and a vignette. Pete chose this look, "Fiber", over wide twisting ribbons. Every frame depends only on its time, so Remotion can render frames in any order.
+The end card is `videos/src/shared/EndCard.tsx`, a WebGL 2 shader. Each stream is three fine threads of light, with each color channel set slightly apart, as light through a prism. The colors are magenta, violet, blue, cyan and amber. A few streams pass close to the lens, large and out of focus, and a few sit far behind. The light has bloom, motion blur, a horizontal lens streak that flares when the braid reaches the word, a slight color fringe toward the frame's edges, film grain and a vignette. Pete chose this look, "Fiber", over wide twisting ribbons. Every frame depends only on its time, so Remotion can render frames in any order.
 
-Rendering needs Chrome's GPU backend. `launch-video/remotion.config.ts` sets it to ANGLE, for the studio and for renders.
+Rendering needs Chrome's GPU backend. `videos/remotion.config.ts` sets it to ANGLE, for the studio and for renders.
 
 ### How beats change
 
@@ -140,26 +140,26 @@ Checked on the demo:
 
 ### Synchronizing the three columns
 
-Record each app separately and line the three up in Remotion. `drive.py <app>` reads the beat's click times from the timeline file. The recorder writes the host time of its first frame, and the driver logs each click on the same clock, as Vignette's `media/trailer/record.swift` and `drive.py` do. `cut.py` reports the first frame that changes after each click, which is when its result shows. Each click's lead in the timeline should match it.
+Record each app separately and line the three up in Remotion. `drive.py launch side-by-side <app>` reads the beat's click times from the timeline file. The recorder writes the host time of its first frame, and the driver logs each click on the same clock, as Vignette's `media/trailer/record.swift` and `drive.py` do. `cut.py` reports the first frame that changes after each click, which is when its result shows. Each click's lead in the timeline should match it.
 
 ## Animatic
 
-The animatic is a Remotion project in `launch-video/`, with its own `package.json`. Remotion renders React components to video frame by frame. Pete bought a Company License for publishing the video. [launch-video-research.md](launch-video-research.md) has the research and the reasons.
+The animatic is the `launch` video in `videos/`, the Remotion project that holds the inbox's videos, with its own `package.json`. [videos/README.md](../../videos/README.md) describes the project and the parts every video shares. Remotion renders React components to video frame by frame. Pete bought a Company License for publishing the video. [launch-video-research.md](launch-video-research.md) has the research and the reasons.
 
-- **The timeline** is `launch-video/src/timeline.ts`. It holds each beat's caption, start and length, and each state's time, click and still. It imports `SETTLED_MS` from `hooks/view.ts` and `EXIT_MS` from `codex/src/rows.ts`, so a settled row holds for its real time.
-- **The drawn thread** is `src/thread.ts`, for its lines and when each appears, and `src/ThreadView.tsx`, which draws it. Its text is written for the video. Its questions, idea and unmentioned insight are the ones the real session brings to the inbox in beats 7 to 9.
-- **The pointer** is `src/Pointer.tsx`.
-- **Two variants.** `draft` is the video. `captions-off` is the same with no captions, to check that the pictures carry the story.
+- **The timeline** is `videos/src/launch/timeline.ts`. It holds each beat's caption, start and length, and each state's time, click and still. It imports `SETTLED_MS` from `hooks/view.ts` and `EXIT_MS` from `codex/src/rows.ts`, so a settled row holds for its real time.
+- **The drawn thread** is `videos/src/launch/thread.ts`, for its lines and when each appears, and `videos/src/launch/ThreadView.tsx`, which draws it. Its text is written for the video. Its questions, idea and unmentioned insight are the ones the real session brings to the inbox in beats 7 to 9.
+- **The pointer** is `videos/src/shared/Pointer.tsx`.
+- **Two cuts.** `launch` is the video. `launch-captions-off` is the same with no captions, to check that the pictures carry the story.
 - **Stills.** Beat 11 has stills captured from the demo in all three apps. A column whose take is missing shows them instead. A beat with no take and no still draws a placeholder that names its app and state.
-- **Where captures live.** Stills are in `launch-video/public/stills/<app>/<state>.png` and clips in `launch-video/public/takes/`. Git ignores both. The window sizes and inbox rectangles in `WINDOWS` are measured from the side-by-side takes, which the stills match within a few pixels. A take at another window size needs them measured again.
-- **App labels.** Each app's label is its icon and name. Beats 7 to 10 show it above the footage. In beat 11 it sits just above its window and fades as the camera pushes in. The icons are copied from the installed apps into `launch-video/public/icons/`, which Git ignores, since each is its maker's trademark. Pete checked each maker's brand rules.
-- **Looks.** The captions and labels are set in Geist, an open font under the SIL Open Font License, loaded in `src/fonts.ts`. The font files are committed in `public/fonts/` with the license in `OFL.txt`. The drawn thread stays in SF Mono, like the terminal it stands for. Each caption line is white text on its own dark pill, 48 px, centered at the bottom, so it reads muted at the size of a feed. Each column's app label sits in a pill above it. The pointer is the macOS arrow, since all three apps run on a Mac.
+- **Where captures live.** Stills are in `videos/public/launch/stills/<app>/<state>.png` and clips in `videos/public/launch/takes/`. Git ignores both. The window sizes and inbox rectangles in `WINDOWS` are measured from the side-by-side takes, which the stills match within a few pixels. A take at another window size needs them measured again.
+- **App labels.** Each app's label is its icon and name. Beats 7 to 10 show it above the footage. In beat 11 it sits just above its window and fades as the camera pushes in. The icons are copied from the installed apps into `videos/public/icons/`, which Git ignores, since each is its maker's trademark. Pete checked each maker's brand rules.
+- **Looks.** The captions and labels are set in Geist, an open font under the SIL Open Font License, loaded in `videos/src/shared/fonts.ts`. The font files are committed in `videos/public/fonts/` with the license in `OFL.txt`. The drawn thread stays in SF Mono, like the terminal it stands for. Each caption line is white text on its own dark pill, 48 px, centered at the bottom, so it reads muted at the size of a feed. Each column's app label sits in a pill above it. The pointer is the macOS arrow, since all three apps run on a Mac.
 
-To run it, install its tools once with `npm --prefix launch-video ci`. Then:
+To run it, install its tools once with `npm --prefix videos ci`. Then:
 
-- `npm --prefix launch-video run studio` opens Remotion Studio, which lists both variants.
-- `node launch-video/scripts/check.mjs` prints the caption report, the states each beat cuts off and any missing stills.
-- `node launch-video/scripts/check.mjs --render <variant>` also renders the variant to `launch-video/out/` and writes the checks below.
+- `npm --prefix videos run studio` opens Remotion Studio, which lists both cuts.
+- `node videos/scripts/check.mjs launch` prints the caption report, the states each beat cuts off and any missing stills.
+- `node videos/scripts/check.mjs --render <cut>` also renders the cut to `videos/out/` and writes the checks below.
 
 The agent checks each render:
 
@@ -170,9 +170,9 @@ The agent checks each render:
 
 ## The draft
 
-The draft is `launch-video/out/draft.mp4`, 81.5 seconds. The first draft, which told the earlier story, is kept beside it as `out/draft-1.mp4`. To render the draft again, run:
+The draft is 81.5 seconds. Renders made before the project moved to `videos/` are in `launch-video/out/` of the checkout that made them: the draft as `draft.mp4`, and the first draft, which told the earlier story, as `draft-1.mp4`. To render the draft again, to `videos/out/launch.mp4`, run:
 
-    node launch-video/scripts/check.mjs --render draft
+    node videos/scripts/check.mjs --render launch
 
 - **Beats 1 to 6** are the drawn thread.
 - **Beats 7 to 10** replay one session take in Claude Code, clicked with `act.py`.
@@ -182,14 +182,14 @@ The draft is `launch-video/out/draft.mp4`, 81.5 seconds. The first draft, which 
 
 ### How it is made
 
-The tools are in `launch-video/record/`. The takes are in `launch-video/takes/` and the cut clips in `launch-video/public/takes/`. Git ignores both.
+The tools are in `videos/record/`. The takes are in `videos/takes/launch/` and the cut clips in `videos/public/launch/takes/`. Git ignores both.
 
 **Every capture uses the newest build from main**, including changes not yet released. Before each recording session, build from main's HEAD and install it in the VM for Claude Code, the Claude app and Codex. Check that each app runs that commit, and note the commit beside the take. Takes recorded on an older build showed fixed bugs and had to be recorded again. Claude Code's GitHub install now updates only when `version` in `.claude-plugin/plugin.json` goes up, so it won't pick up unreleased commits. Copy main's files over the VM's installed copy instead, and compare their hashes with main's. Main at `f75d5c4` puts each key letter inside its button on every terminal row, and draws the inline pane's tabs in a column at its left from 80 columns. Takes from before it look different.
 
-1. **The demo without its notices.** In Claude Code and the Claude app, run `/inbox demo recording`. In Codex, build the tab with `INBOX_DEMO_RECORDING=1` in the VM's copy, then press Show demo. Either way the demo shows no notice line, no "Demo:" prefix, no Hide demo and no sample note. Never commit `plugin/dist` from that build. The VM needs a build of the inbox with this mode, which isn't released yet.
+1. **The demo without its notices.** In Claude Code and the Claude app, run `/inbox demo recording`. In Codex, build the tab with `INBOX_DEMO_RECORDING=1` in the VM's copy, then press Show demo. Either way the demo shows no notice line, no "Demo:" prefix and no Hide demo. Never commit `plugin/dist` from that build. The VM needs a build of the inbox with this mode, which isn't released yet.
 2. **The recorder.** `record.swift`, compiled to `out/record`, records the VM's window with ScreenCaptureKit and writes the host time of its first frame. A change in the VM shows in the recording within about 30 ms, with no pointer movement needed.
 3. **The hand.** `hand.js` runs in the VM, reads commands over one SSH connection, and posts each key or click within a few milliseconds.
-4. **Beat 11.** `drive.py <app>` plays the timeline's clicks for one app and logs them. Each click goes early by its lead, so its result shows on time. The leads in `LEADS` are measured from the takes. They differ between takes by up to 0.1 s, so read the frames around each click after a take. Start each take from a fresh demo, and wait about 5 s for the sample's answered row to settle:
+4. **Beat 11.** `drive.py launch side-by-side <app>` plays the timeline's clicks for one app and logs them. Each click goes early by its lead, so its result shows on time. The leads in `LEADS` are measured from the takes. They differ between takes by up to 0.1 s, so read the frames around each click after a take. Start each take from a fresh demo, and wait about 5 s for the sample's answered row to settle:
    - **Claude Code.** `/inbox demo recording` turns the demo off. Run it again to start fresh.
    - **The Claude app.** Start a new session and send one message. Then send `/inbox demo recording`. As a session's first message, `/inbox` is not recognized as a command.
    - **Codex.** The demo lives in the server's memory, one per conversation. Quit and reopen the ChatGPT app to start fresh, then press Show demo in the same conversation. Each launch reinstalls the inbox from GitHub over the copied build, so copy the recording build in again after the app opens and before opening the Inbox tab. A tab without Show demo is running the release.
@@ -198,11 +198,11 @@ The tools are in `launch-video/record/`. The takes are in `launch-video/takes/` 
    - **Before the take,** a setup prompt seeds the inbox with a question and findings: "Read src/glances.js and src/gaze.js. Don't change code yet. Ask me one question: should glances follow my head, or stay pinned where I leave them? If you notice a bug, or a chance to improve something, in those two files, record it as a finding." The two files hold one planted bug, in the gaze dwell timer, and one slow spot, the sort in `frame()`. With these files the setup gave one issue and one opportunity. Earlier versions of the files gave extra issues, so check the Findings count after the setup turn.
    - **The take's prompt** is "Rename onTap to onPinch in src/gestures.js and its callers, keeping onTap as an alias for now. Run the tests, summarize the change file by file, then ask me whether to keep the alias for one release." When the prompt asked the question first, the agent answered it itself and no question arrived.
    - **Click the prompt before typing.** The inbox pane keeps focus after a click in it, and a typed letter there presses the answer with that key.
-6. **The cut.** `cut.py` crops a take to its app window, resamples it to 60 fps, covers the Codex account picture, and writes the clip's size and window to `src/takes.json`.
+6. **The cut.** `cut.py` crops a take to its app window, resamples it to 60 fps, covers the Codex account picture, and writes the clip's size and window to `videos/src/launch/takes.json`.
 
 ### After a new take
 
-- After any new beat 11 take, measure the rows' lines of text in the frame at 74.5 s and update `ROW_LINES` in `launch-video/src/EndCard.tsx`, so each stream still starts on a line.
+- After any new beat 11 take, measure the rows' lines of text in the frame at 74.5 s and update `ROW_LINES` in `videos/src/launch/timeline.ts`, so each stream still starts on a line.
 
 ## Review of the second draft, 2026-10-15
 
@@ -234,7 +234,7 @@ The music is "Focus Flow", minimal 4/4 IDM at about 123 BPM, made by Pete in Sun
 - **Beat 11, at 62.2 s:** the groove comes back as the three apps push in.
 - **The end card:** it fades out over the last 4 s.
 
-`MUSIC` in `launch-video/src/timeline.ts` holds the file, both offsets and the fade. A beat before beat 7 that gets longer or shorter moves the picture against the track, so `startsAt` has to move by the same amount, and beat 1's send with it, to keep the reply on its hit. The file is `launch-video/public/music/focus-flow.mp3`, and Git ignores that folder, because the track is for the post and not for sharing in this repo.
+`MUSIC` in `videos/src/launch/timeline.ts` holds the file, both offsets and the fade. A beat before beat 7 that gets longer or shorter moves the picture against the track, so `startsAt` has to move by the same amount, and beat 1's send with it, to keep the reply on its hit. The file is `videos/public/music/focus-flow.mp3`, and Git ignores that folder, because the track is for the post and not for sharing in this repo.
 
 Suno's terms grant commercial use only on a paid plan. Pete confirmed the track was made on one.
 

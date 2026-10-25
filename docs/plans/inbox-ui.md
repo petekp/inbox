@@ -264,9 +264,9 @@ Keys supplement clickable actions, except Explain: it is key-only in terminal an
 
 `/inbox demo` in the mod shows sample entries. The Codex tab offers [Show demo] in dev builds and builds made with `INBOX_DEMO_BUTTON=1` or `INBOX_DEMO_RECORDING=1`.
 
-The normal demo shows `DEMO_NOTICE` from `hooks/view.ts` at the top: `Sample entries. Presses send nothing.` with a [Hide demo] button. The band starts its counts with `Demo:` and also has [Hide demo]. A press on a sample action reads on the row: `Sample entry: nothing was sent.`
+The normal demo shows `DEMO_NOTICE` from `hooks/view.ts` at the top: `Sample entries. Presses send nothing.` with a [Hide demo] button. The band starts its counts with `Demo:` and also has [Hide demo]. A press on a sample action shows on its row what a real press shows, such as "✓ Explained" or "✓ Copied x", and sends nothing.
 
-For a recording, `/inbox demo recording` hides those notices, the band's `Demo:` prefix, Hide demo and sample press notes. A Codex build made with `INBOX_DEMO_RECORDING=1` also hides the demo notice, Hide demo and sample press notes. Recording demos still use sample entries and send nothing.
+For a recording, `/inbox demo recording` hides those notices, the band's `Demo:` prefix and Hide demo. A Codex build made with `INBOX_DEMO_RECORDING=1` also hides the demo notice and Hide demo. Recording demos still use sample entries and send nothing.
 
 ## 3. Each look
 

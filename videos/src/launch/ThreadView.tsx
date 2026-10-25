@@ -1,6 +1,6 @@
 import { Easing } from 'remotion'
 
-import { SANS } from './fonts'
+import { SANS } from '../shared/fonts'
 import { floodRange, LINE_IN, promptText, threadLines } from './thread'
 import type { Mark, ThreadStarts, TimedLine } from './thread'
 

@@ -1,11 +1,12 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { Engine } from 'claude-code/testing'
-import type { On, PromptOrigin, RenderSurface } from 'claude-code'
+import type { Engine, Mounted } from 'claude-code/testing'
+import type { On, PaneOpenArgs, PromptOrigin, RenderSurface } from 'claude-code'
 
 import type { FoldProps } from '../hooks/fold-client'
 import type { LinksProps } from '../hooks/links-client'
 import type { RowProps } from '../hooks/row-client'
-import type { TabsProps } from '../hooks/tabs-client'
+import { TAB_HEIGHT, tabLines, type TabsProps } from '../hooks/tabs-client'
+import type { Item } from '../types'
 import { demoView } from '../hooks/demo'
 import { OVERVIEW_SYSTEM } from '../hooks/model-text'
 import { checkActions, prBlockActions, prCheckId, prThreadId, threadActions, threadSentIn } from '../hooks/pr-tab'
@@ -116,6 +117,8 @@ let storeSetRefusal: string | undefined
 let toolRefusal: string | undefined
 let commandRefusal: string | undefined
 let panesOpened: string[] = []
+let paneOpens: PaneOpenArgs[] = []
+let paneState: { isShown: boolean; isFocused: boolean } | null = null
 
 async function runBeforeAct() {
   const act = beforeAct
@@ -192,6 +195,8 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   toolRefusal = undefined
   commandRefusal = undefined
   panesOpened = []
+  paneOpens = []
+  paneState = null
   on('store.get', async ($, e) => {
     if (e.key.startsWith('s:')) await storeHold?.()
     if (storeRefusal && e.key.startsWith('s:')) return { deny: storeRefusal }
@@ -233,8 +238,12 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   on('tool.register', ($, e) => (toolRefusal ? { deny: toolRefusal } : { value: { tool: `mcp__inbox__${e.name}` } }))
   on('ui.open', ($, e) => {
     panesOpened.push(e.id)
+    paneOpens.push(e)
     return { value: { isPlaced: true as const } }
   })
+  on('ui.panes', () => ({
+    value: paneState ? [{ id: 'inbox', title: 'Inbox', ...paneState, isPlaced: paneState.isShown }] : [],
+  }))
   on('ui.close', () => ({ value: undefined }))
   on('ui.toast', ($, e) => {
     toasts.push(e.text)
@@ -329,6 +338,16 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   })
 }
 
+async function replyField(pane: Pick<Mounted, 'findAll'>, id: string) {
+  return (await pane.findAll({ type: 'Input' })).find(e => e.key?.startsWith(`type-${id}-`))
+}
+
+async function replyKey(pane: Pick<Mounted, 'findAll'>, id: string) {
+  const key = (await replyField(pane, id))?.key
+  if (!key) throw new Error(`no reply field on ${id}`)
+  return key
+}
+
 function sidebarLines(): string[] {
   return ran.filter(argv => argv[0] === 'herdr').map(argv => argv.find(a => a.startsWith('inbox='))?.slice(6) ?? '')
 }
@@ -396,11 +415,11 @@ test('a question the desktop app’s box shows reaches the update, even when the
   )
 })
 
-test('a dialog reaches the model with its questions, whether answered or dismissed', async ($, on) => {
+test('a dialog reaches the model with its questions, whether answered or dismissed, and a dismissed one’s copy, added by the update or recorded by Claude, shows its option descriptions', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
   world($, on, prompts)
-  const ask = (...questions: { question: string; options: { label: string }[] }[]) =>
+  const ask = (...questions: { question: string; options: { label: string; description?: string }[] }[]) =>
     $.tool.call({ tool: 'AskUserQuestion', questions } as never)
   const turn = async (turnId: string, dialog: () => Promise<unknown>, ending: 'answer' | 'aborted' = 'answer') => {
     await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
@@ -432,6 +451,74 @@ test('a dialog reaches the model with its questions, whether answered or dismiss
   dialogAnswer = { result: {}, text: 'Both answered' }
   await turn('t3', () => ask(push, { question: 'Which branch?', options: [{ label: 'main' }, { label: 'next' }] }))
   expect(prompts.at(-1)).toContain('Which branch?')
+
+  const itemAsking = (ask: string) =>
+    (JSON.parse(stored.get('s:session-1')!) as { ledger: { items: Item[] } }).ledger.items.find(i => i.ask === ask)
+  dialogAnswer = {
+    isError: true,
+    result: 'User declined to answer questions',
+    text: 'User declined to answer questions',
+  }
+  ledgerReply = 'NEW: decide | - | Deploy to staging? | Deploy / Hold | -'
+  const deploy = {
+    question: 'Deploy to staging now?',
+    options: [
+      { label: 'Deploy', description: 'Runs the staging pipeline' },
+      { label: 'Hold', description: 'Waits for the review' },
+    ],
+  }
+  await turn('t4', () => ask(deploy), 'aborted')
+  expect(prompts.at(-1)).not.toContain('Runs the staging pipeline')
+  const deployItem = itemAsking('Deploy to staging?')
+  expect(deployItem?.optionDescriptions).toEqual({ Deploy: 'Runs the staging pipeline', Hold: 'Waits for the review' })
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: `select-${deployItem?.id}` })
+  await clock.settle()
+  const texts = (await pane.findAll({ type: 'Text' })).map(t => t.text ?? '')
+  expect(texts).toContain('Deploy: Runs the staging pipeline')
+  expect(texts).toContain('Hold: Waits for the review')
+
+  ledgerReply = 'NEW: decide | - | Clear stored data? | Yes / No | -'
+  const yesNo = (yes: string, no: string) => [
+    { label: 'Yes', description: yes },
+    { label: 'No', description: no },
+  ]
+  await turn(
+    't5',
+    () =>
+      ask(
+        { question: 'Delete the cache?', options: yesNo('Removes cached builds', 'Keeps them') },
+        { question: 'Rebuild the index?', options: yesNo('Takes ten minutes', 'Uses the old index') },
+      ),
+    'aborted',
+  )
+  expect(itemAsking('Clear stored data?')?.optionDescriptions).toBeUndefined()
+
+  ledgerReply = 'NONE'
+  const port = {
+    question: 'Which port should the server use?',
+    options: [
+      { label: '3000', description: 'The default the docs use' },
+      { label: '8080', description: 'Free on the staging box' },
+    ],
+  }
+  await turn(
+    't6',
+    async () => {
+      await ask(port)
+      await $.tool.call({
+        tool: 'mcp__inbox__record',
+        kind: 'question',
+        ask: 'Which port should the server use?',
+        options: ['3000', '8080'],
+      } as never)
+    },
+    'aborted',
+  )
+  expect(itemAsking('Which port should the server use?')?.optionDescriptions).toEqual({
+    3000: 'The default the docs use',
+    8080: 'Free on the staging box',
+  })
 })
 
 test('a question’s handle is the number a typed answer reaches, and the band counts what the tab counts', async ($, on) => {
@@ -1308,7 +1395,7 @@ test('a reload that cuts off the end-of-turn hook catches up on load, and a suba
 test('the pane footer shows the version from the plugin manifest', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown: true, isFocused: true, isPlaced: true }] }))
+  paneState = { isShown: true, isFocused: true }
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'inbox', args: '' } as never)
@@ -1319,7 +1406,7 @@ test('the pane footer shows the version from the plugin manifest', async ($, on)
 test('a finding Claude records while the pane shows an empty tab brings the pane to it, and Fix hands it to Claude, settles its row as the choice made, and moves it to the Closed fold even when Claude’s reply leaves it open', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown: true, isFocused: true, isPlaced: true }] }))
+  paneState = { isShown: true, isFocused: true }
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'inbox', args: '' } as never)
@@ -1374,7 +1461,7 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
 test('a question Claude records waits in the pane with its recommendation, a repeat is not added, one the person dismissed is not recorded again, and one they answered with List the choices can be asked again with choices', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown: true, isFocused: true, isPlaced: true }] }))
+  paneState = { isShown: true, isFocused: true }
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'inbox', args: '' } as never)
@@ -1390,7 +1477,9 @@ test('a question Claude records waits in the pane with its recommendation, a rep
   expect(r.result).toBe('Recorded. The user sees it in the /inbox pane.')
   await clock.settle()
   expect(await pane.find({ text: /Which cache should the API use\?/ })).toBeDefined()
-  expect((await $.tool.call({ ...question, ask: 'Which cache should the API use?' })).result).toBe('Already open.')
+  expect((await $.tool.call({ ...question, ask: 'Which cache should the API use?' })).result).toBe(
+    'Already open, so this record updated it.',
+  )
   expect((await $.tool.call({ ...question, ask: 'Which cache should it use?', rec: 'Memcached' })).result).toBe(
     'Not recorded: rec must be one of the options.',
   )
@@ -1421,8 +1510,7 @@ test('a question Claude records waits in the pane with its recommendation, a rep
 test('/inbox opens on the tab that has rows when the tab it would show is empty', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  let isShown = false
-  on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown, isFocused: isShown, isPlaced: isShown }] }))
+  paneState = { isShown: false, isFocused: false }
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.tool.call({
@@ -1433,7 +1521,7 @@ test('/inbox opens on the tab that has rows when the tab it would show is empty'
     detail: 'Only tests run.',
   })
   await clock.settle()
-  isShown = true
+  paneState = { isShown: true, isFocused: true }
   await $.command.run({ command: 'inbox', args: '' } as never)
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ key: 'address-f1' })).toBeDefined()
@@ -1442,7 +1530,7 @@ test('/inbox opens on the tab that has rows when the tab it would show is empty'
 test('findings that arrive one by one after the pane moves to them keep the first one open', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown: true, isFocused: true, isPlaced: true }] }))
+  paneState = { isShown: true, isFocused: true }
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'inbox', args: '' } as never)
@@ -1485,23 +1573,23 @@ test('t opens a field for the person’s own words: a question’s words go to C
   })
 
   const pane = await $.ui.mount(PANE)
-  expect(await pane.find({ key: 'type-i1' })).toBeUndefined()
+  expect(await replyField(pane, 'i1')).toBeUndefined()
   await pane.press({ key: 'typekey-i1' })
-  await pane.input({ key: 'type-i1', text: ' ' })
+  await pane.input({ key: await replyKey(pane, 'i1'), text: ' ' })
   await clock.settle()
-  expect(await pane.find({ key: 'type-i1' })).toBeDefined()
+  expect(await replyField(pane, 'i1')).toBeDefined()
   await pane.press({ key: 'send-i1' })
   await clock.settle()
-  expect(await pane.find({ key: 'type-i1' })).toBeDefined()
-  await pane.input({ key: 'type-i1', text: 'Deno, actually', kind: 'change' })
+  expect(await replyField(pane, 'i1')).toBeDefined()
+  await pane.input({ key: await replyKey(pane, 'i1'), text: 'Deno, actually', kind: 'change' })
   await pane.press({ key: 'cancel-i1' })
-  expect(await pane.find({ key: 'type-i1' })).toBeUndefined()
+  expect(await replyField(pane, 'i1')).toBeUndefined()
   expect(sent).toEqual([])
   await pane.press({ key: 'select-i2' })
   await pane.press({ key: 'select-i1' })
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i1' })
-  expect((await pane.find({ key: 'type-i1' }))?.props.value).toBe('Deno, actually')
+  expect((await replyField(pane, 'i1'))?.props.value).toBe('Deno, actually')
   await pane.press({ key: 'send-i1' })
   expect(sent.at(-1)).toBe('Re "Use Node or Python?": Deno, actually')
   expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/^✓Use Node or Python\?\s·\sReplied/)
@@ -1511,7 +1599,7 @@ test('t opens a field for the person’s own words: a question’s words go to C
 
   await pane.press({ key: 'tab-findings' })
   await pane.press({ key: 'typekey-f3' })
-  await pane.input({ key: 'type-f3', text: 'Fix it after the CLI ships.' })
+  await pane.input({ key: await replyKey(pane, 'f3'), text: 'Fix it after the CLI ships.' })
   expect(sent.at(-1)).toBe(
     'About this finding you recorded:\nIssue: README is stale\nIt names the old command.\n\nFix it after the CLI ships.',
   )
@@ -1519,6 +1607,71 @@ test('t opens a field for the person’s own words: a question’s words go to C
   expect(await pane.find({ text: /Replied/ })).toBeDefined()
   await clock.advance(9000)
   expect(await pane.find({ text: /README is stale/ })).toBeDefined()
+})
+
+test('Escape in a reply field closes the field and keeps the pane and the draft', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  on('ui.focus', () => ({}))
+  paneState = { isShown: true, isFocused: false }
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'typekey-i1' })
+  await pane.input({ key: await replyKey(pane, 'i1'), text: 'Deno, actually', kind: 'change' })
+  await clock.settle()
+  expect(paneOpens.at(-1)?.closeOnEscape).toBeUndefined()
+
+  await pane.redraw({ ...PANE.props, isFocused: false })
+  await clock.settle()
+  expect(await replyField(pane, 'i1')).toBeUndefined()
+  expect(await pane.find({ key: 'row-i1' })).toBeDefined()
+  expect(paneOpens.at(-1)).toMatchObject({ id: 'inbox', closeOnEscape: true })
+  expect(paneOpens.at(-1)?.focus).toBeUndefined()
+
+  await pane.redraw({ ...PANE.props, isFocused: true })
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'typekey-i1' })
+  expect((await replyField(pane, 'i1'))?.props.value).toBe('Deno, actually')
+  expect(sent).toEqual([])
+})
+
+test('a reply field that opens without the keys says to click it, until it has them', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  paneState = { isShown: true, isFocused: false }
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+
+  const pane = await $.ui.mount({ ...PANE, props: { ...PANE.props, isFocused: false } })
+  await pane.press({ key: 'typekey-i1' })
+  await clock.settle()
+  expect(await replyField(pane, 'i1')).toBeDefined()
+  expect(await pane.find({ text: 'Click the field to type' })).toBeDefined()
+
+  await pane.redraw({ ...PANE.props, isFocused: true })
+  await clock.settle()
+  expect(await replyField(pane, 'i1')).toBeDefined()
+  expect(await pane.find({ text: 'Click the field to type' })).toBeUndefined()
 })
 
 test('a press on a question Claude closed since the draw sends nothing and says so', async ($, on) => {
@@ -1568,12 +1721,12 @@ test('a question Claude closes while the person types an answer stays in place w
   await pane.press({ key: 'select-i2' })
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
-  await pane.input({ key: 'type-i2', text: 'Call it hello', kind: 'change' })
+  await pane.input({ key: await replyKey(pane, 'i2'), text: 'Call it hello', kind: 'change' })
   await $.tool.call({ tool: 'mcp__inbox__close', id: 'i2', reason: 'settled in chat' } as never)
   await clock.settle()
   await clock.advance(9000)
 
-  expect(await pane.find({ key: 'type-i2' })).toBeDefined()
+  expect(await replyField(pane, 'i2')).toBeDefined()
   expect((await pane.find({ key: 'row-i2' }))?.text).toMatch(/Closed\sby\sClaude:\ssettled\sin\schat/)
   expect(await pane.find({ key: 'discard-i2' })).toBeDefined()
   expect(await pane.find({ key: 'cancel-i2' })).toBeUndefined()
@@ -1583,7 +1736,7 @@ test('a question Claude closes while the person types an answer stays in place w
   await pane.press({ key: 'send-i2' })
   await clock.settle()
   expect(sent.at(-1)).toBe('Re "Name the command greet?": Call it hello')
-  expect(await pane.find({ key: 'type-i2' })).toBeUndefined()
+  expect(await replyField(pane, 'i2')).toBeUndefined()
   expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
   expect(await pane.find({ text: /^Replied$/ })).toBeDefined()
   await clock.advance(9000)
@@ -1633,7 +1786,7 @@ test('a held row stays in place, and its reply still sends, after more items clo
   await pane.press({ key: 'select-i2' })
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
-  await pane.input({ key: 'type-i2', text: 'Call it hello', kind: 'change' })
+  await pane.input({ key: await replyKey(pane, 'i2'), text: 'Call it hello', kind: 'change' })
   await $.tool.call({
     tool: 'mcp__inbox__close',
     id: 'i2',
@@ -1648,7 +1801,7 @@ test('a held row stays in place, and its reply still sends, after more items clo
   await clock.advance(9000)
 
   expect(await pane.find({ text: /Renew the domain/ })).toBeUndefined()
-  expect(await pane.find({ key: 'type-i2' })).toBeDefined()
+  expect(await replyField(pane, 'i2')).toBeDefined()
   expect((await pane.find({ key: 'row-i2' }))?.text).toMatch(/Closed\sby\sClaude:\ssettled\sin\schat/)
   expect((await pane.find({ key: 'row-i2' }))?.text).toContain('Claude: settled in chat, since the team')
 
@@ -1675,18 +1828,18 @@ test('Discard ends a held row’s reply and folds it into Closed at once, and a 
   await clock.settle()
   const pane = await $.ui.mount(PANE)
   await pane.press({ key: 'typekey-i1' })
-  await pane.input({ key: 'type-i1', text: 'Deno, actually', kind: 'change' })
+  await pane.input({ key: await replyKey(pane, 'i1'), text: 'Deno, actually', kind: 'change' })
   await pane.press({ key: 'cancel-i1' })
   await pane.press({ key: 'select-i2' })
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
-  await pane.input({ key: 'type-i2', text: 'Call it hello', kind: 'change' })
+  await pane.input({ key: await replyKey(pane, 'i2'), text: 'Call it hello', kind: 'change' })
   await pane.press({ key: 'cancel-i2' })
   await $.tool.call({ tool: 'mcp__inbox__close', id: 'i2', reason: 'settled in chat' } as never)
   await clock.settle()
   await clock.advance(1000)
 
-  expect(await pane.find({ key: 'type-i2' })).toBeUndefined()
+  expect(await replyField(pane, 'i2')).toBeUndefined()
   expect((await pane.find({ key: 'row-i2' }))?.text).toMatch(/Closed\sby\sClaude:\ssettled\sin\schat/)
   await pane.press({ key: 'discard-i2' })
   await clock.settle()
@@ -1765,25 +1918,25 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   await clock.settle()
   expect(await pane.find({ text: /Queued/ })).toBeUndefined()
   await clock.advance(QUEUED_AFTER_MS)
-  expect(await pane.find({ text: /^\u2007·\sQueued:\sExplain$/ })).toBeDefined()
+  expect(await pane.find({ text: /^Queued:\sExplain$/ })).toBeDefined()
   await pane.press({ key: 'select-i2' })
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
-  inFlight.push(pane.input({ key: 'type-i2', text: 'yes' }))
+  inFlight.push(pane.input({ key: await replyKey(pane, 'i2'), text: 'yes' }))
   await clock.settle()
   await clock.advance(QUEUED_AFTER_MS)
   expect(await pane.find({ text: /Queued:\sReply/ })).toBeDefined()
   await arrive($)
   await clock.settle()
   await pane.press({ key: 'select-i1' })
-  expect(await pane.find({ text: /^\u2007·\sExplaining…$/ })).toBeDefined()
+  expect(await pane.find({ text: /^Explaining…$/ })).toBeDefined()
   expect(await pane.find({ text: /Queued/ })).toBeUndefined()
 
   submitAnswer = { drop: 'a hook refused it' }
   await pane.press({ key: 'select-i1' })
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i1' })
-  await pane.input({ key: 'type-i1', text: 'Deno, actually' })
+  await pane.input({ key: await replyKey(pane, 'i1'), text: 'Deno, actually' })
   await clock.settle()
   expect(sent.at(-1)).toBe('Re "Use Node or Python?": Deno, actually')
   expect(await pane.find({ key: 'row-i1' })).toBeDefined()
@@ -2044,14 +2197,14 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   await clock.settle()
   expect(sent.at(-1)).toContain("Let's talk through this finding you recorded")
   expect(await pane.find({ text: /Discussing…/ })).toBeDefined()
-  expect((await pane.find({ key: 'discuss-f3-key' }))?.props.label).toBe('Discuss again')
+  expect((await pane.find({ key: 'discuss-f3-key' }))?.props.label).toBe('Discuss')
   expect(await band.find({ text: /Findings 1/ })).toBeDefined()
   await pane.press({ key: 'tab-needsYou' })
   submitAnswer = 'hold'
   inFlight.push(pane.press({ key: 'explain-i1-key' }))
   await clock.settle()
   await clock.advance(QUEUED_AFTER_MS)
-  expect(await pane.find({ text: /^\u2007·\sQueued:\sExplain/ })).toBeDefined()
+  expect(await pane.find({ text: /^Queued:\sExplain$/ })).toBeDefined()
   expect((await close({ id: 'i1', answer: 'Deno' })).result).toBe(
     'Closed. The user sees it in the /inbox pane with its outcome. Name it by what it says, never by its id.',
   )
@@ -2357,7 +2510,7 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   expect(await pane.find({ text: /✓\sAddress/ })).toBeUndefined()
   await arrive($)
   await clock.settle()
-  expect(await pane.find({ text: /^\u2007·\sAddressed$/ })).toBeDefined()
+  expect(await pane.find({ text: /^Addressed$/ })).toBeDefined()
 
   expect(await pane.find({ key: 'address-T1-key' })).toBeDefined()
   await clock.advance(PRESS_GUARD_MS)
@@ -2427,6 +2580,73 @@ test('opening the PRs tab while another PR fetch runs still finds the branch’s
 
   expect(await pane.find({ text: /Linked work/ })).toBeDefined()
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
+})
+
+test('the PRs tab shows a linked PR only when the viewer wrote it and a fetch found it open, and keeps it once it merges, while a task naming a teammate’s PR keeps its Open PR step', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  ledgerReply = 'NEW: do | - | Review #20 | - | -'
+  const states: Record<string, string> = { '12': 'OPEN', '20': 'OPEN', '9': 'MERGED' }
+  const titles: Record<string, string> = { '12': 'Mine open', '20': 'Teammate open', '9': 'Mine merged' }
+  const authors: Record<string, string> = { '12': 'me', '20': 'sam', '9': 'me' }
+  for (const number of Object.keys(states))
+    ghAnswers.push(
+      {
+        match: argv => argv.includes('view') && argv.includes(number),
+        get stdout() {
+          return JSON.stringify({
+            number: Number(number),
+            title: titles[number],
+            url: `https://github.com/acme/greet/pull/${number}`,
+            isDraft: false,
+            state: states[number],
+            baseRefName: 'main',
+            mergeable: 'MERGEABLE',
+            reviewDecision: 'APPROVED',
+            statusCheckRollup: [],
+          })
+        },
+      },
+      {
+        match: argv => argv.includes('graphql') && argv.includes(`number=${number}`),
+        stdout: JSON.stringify({
+          data: {
+            viewer: { login: 'me' },
+            repository: { pullRequest: { author: { login: authors[number] }, reviewThreads: { nodes: [] } } },
+          },
+        }),
+      },
+    )
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'what changed?', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer:
+      'Opened https://github.com/acme/greet/pull/12. Sam has https://github.com/acme/greet/pull/20 open, and https://github.com/acme/greet/pull/9 merged last week.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  expect((await pane.find({ key: 'help-i1-0-key' }))?.props.label).toBe('Open PR #20')
+  await pane.press({ key: 'tab-prs' })
+  await clock.settle()
+
+  expect(await pane.find({ text: /Mine open/ })).toBeDefined()
+  expect(await pane.find({ text: /Teammate open/ })).toBeUndefined()
+  expect(await pane.find({ text: /Mine merged/ })).toBeUndefined()
+
+  states['12'] = 'MERGED'
+  await pane.press({ key: 'tab-needsYou' })
+  await pane.press({ key: 'tab-prs' })
+  await clock.settle()
+
+  expect(await pane.find({ text: /Mine open/ })).toBeDefined()
+  expect(await pane.find({ text: /Merged/ })).toBeDefined()
+  await pane.press({ key: 'tab-needsYou' })
+  expect((await pane.find({ key: 'help-i1-0-key' }))?.props.label).toBe('Open PR #20')
 })
 
 for (const surface of ['terminal', 'desktop'] as const) {
@@ -2951,7 +3171,6 @@ test('a turn an API error ended shows its stop from the error text in the transc
 test('/inbox demo shows sample entries in every tab, presses change only its copy, and [Hide demo] goes back', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  const SAMPLE = 'Sample entry: nothing was sent.'
   const demo = demoView(1_000_000)
   const literal = (text: string) => new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
   const branchRef = demo.prViews.branchRef!
@@ -3010,18 +3229,15 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   expect(sent).toEqual([])
   expect(await pane.find({ key: 'answer-d11-0' })).toBeUndefined()
   expect(await pane.find({ text: demo.ledger.items.find(i => i.id === 'd11')!.options[0] })).toBeDefined()
-  expect(await pane.find({ text: SAMPLE })).toBeDefined()
 
   await pane.press({ key: 'title-d17' })
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'explain-d17-key' })
-  expect(await pane.find({ text: SAMPLE })).toBeDefined()
   await clock.advance(SETTLED_MS)
-  expect(await pane.find({ text: SAMPLE })).toBeUndefined()
   expect(await pane.find({ text: /✓\sExplain/ })).toBeDefined()
 
   await pane.press({ key: 'typekey-d17' })
-  await pane.input({ key: 'type-d17', text: 'Done in both.' })
+  await pane.input({ key: await replyKey(pane, 'd17'), text: 'Done in both.' })
   await clock.settle()
   expect(await band.find({ text: /Needs you 6/ })).toBeDefined()
 
@@ -3048,7 +3264,7 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   await pane.press({ key: 'tab-prs' })
   expect(await pane.find({ text: literal(demo.prViews.views[branchRef]!.title) })).toBeDefined()
   await pane.press({ key: `open-${branchRef}` })
-  expect(await pane.find({ text: SAMPLE })).toBeDefined()
+  expect(await pane.find({ text: /✓ Opened/ })).toBeDefined()
   await pane.press({ key: `dismiss-pr-${linkedRef}` })
   expect(await pane.find({ key: `settled-pr:${linkedRef}` })).toBeDefined()
   await clock.advance(SETTLED_MS)
@@ -3065,7 +3281,6 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   expect(await pane.find({ text: /Use Node or Python/ })).toBeDefined()
   expect(await pane.find({ key: 'explain-i1-key' })).toBeDefined()
   expect(await pane.find({ text: /Sample entries\./ })).toBeUndefined()
-  expect(await pane.find({ text: SAMPLE })).toBeUndefined()
   expect(await band.find({ text: /Needs you 2/ })).toBeDefined()
   const savedAfter = stored.get('s:session-1')!
   expect(savedAfter).toContain('Real branch work')
@@ -3091,7 +3306,6 @@ test('/inbox demo recording shows the sample entries without the notices that ma
   await clock.settle()
   expect(sent).toEqual([])
   expect(await pane.find({ key: 'answer-d11-0' })).toBeUndefined()
-  expect(await pane.find({ text: 'Sample entry: nothing was sent.' })).toBeUndefined()
 
   expect((await $.command.run({ command: 'inbox', args: 'demo' } as never)).text).toBe('Opened the inbox.')
   expect((await $.command.run({ command: 'inbox', args: 'demo' } as never)).text).toContain('Run /inbox demo again')
@@ -3741,6 +3955,9 @@ test('the desktop pane draws each action as one button and the tabs as one click
   expect((await pane.find({ key: 'select-i2' }))?.type).toBe('Client')
   expect(await pane.find({ key: 'title-i2' })).toBeUndefined()
   expect(((await pane.find({ key: 'select-i2' }))?.props.props as RowProps).side).toBe('3m')
+  await pane.redraw({ ...PANE.props, bodyColumns: 26 })
+  const narrowed = await pane.find({ key: 'answer-i1-0' })
+  expect([narrowed?.props.label, narrowed?.props.variant]).toEqual(['Node', 'primary'])
   await pane.redraw({ ...PANE.props, bodyColumns: 69 })
 
   await pane.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: 'select-i2' })
@@ -4051,9 +4268,9 @@ test('a forked conversation keeps the parent’s findings and closed records, an
 test('the Overview page shows the headline, the status and the queue in place of rows, leaves the row keys idle, and a row tab shows its rows again', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
+  paneState = { isShown: true, isFocused: true }
   overviewReply =
     'HEADLINE: Adding a greeting CLI\nSTATUS: Waiting on two choices.\nQUEUE: waits-on-you | Pick a runtime\nQUEUE: done | Plan written'
-  on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown: true, isFocused: true, isPlaced: true }] }))
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
@@ -4182,7 +4399,7 @@ test('at 34 desktop columns the tabs drop their counts and frame only the shown 
 test('a PR that arrives while the Needs you tab is empty moves the pane to the PRs tab', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  on('ui.panes', () => ({ value: [{ id: 'inbox', title: 'Inbox', isShown: true, isFocused: true, isPlaced: true }] }))
+  paneState = { isShown: true, isFocused: true }
   ledgerReply = 'NONE'
   let release = () => {}
   let onFetched = () => {}
@@ -4238,4 +4455,23 @@ test('a PR that arrives while the Needs you tab is empty moves the pane to the P
   await clock.settle()
   expect(await pane.find({ text: 'Nothing needed.' })).toBeUndefined()
   expect(await pane.find({ text: /Add a greeting CLI/ })).toBeDefined()
+})
+
+test('the desktop tabs that do not fit one line wrap, each line within the pane, and a tab on the second line takes its click', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  surfaces = ['desktop']
+  await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 26 } })
+  const tabBar = async () => await pane.find({ key: 'tabs' })
+  const { tabs, gap, columns } = (await tabBar())?.props.props as TabsProps
+  const lines = tabLines(tabs, gap, columns)
+  expect(lines.length).toBeGreaterThan(1)
+  for (const line of lines)
+    expect(line.reduce((sum, t) => sum + t.width, gap * (line.length - 1))).toBeLessThanOrEqual(columns)
+  expect((await tabBar())?.props.height).toBe(TAB_HEIGHT * lines.length)
+  const last = lines.at(-1)![0]!
+  await pane.pointer({ type: 'down', x: 1, y: TAB_HEIGHT * (lines.length - 1) + 1, button: 'left', in: 'tabs' })
+  await clock.settle()
+  expect(((await tabBar())?.props.props as TabsProps).shown).toBe(last.id)
 })

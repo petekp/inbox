@@ -1,18 +1,20 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { access, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { isAbsolute } from 'node:path'
 
 import { ghFinder, ghIn } from '../../hooks/gh'
 import type { Run } from '../../hooks/gh'
-import { isDismissing, isTracked } from '../../hooks/pr-tab'
+import { isDismissing, keepsView } from '../../hooks/pr-tab'
 import type { PrPress } from '../../hooks/pr-tab'
 import { demoAfterPress, demoTurns, noteText, openTarget } from '../../hooks/presses'
 import type { PathProbe, RowPress } from '../../hooks/presses'
 import { agentTools } from '../../hooks/tools'
-import { heardState, lookOnView, noteToolCall, viewOf } from './core'
+import { heardState, isTurnRunning, lookOnView, noteToolCall, viewOf } from './core'
 import type { TabView } from './core'
 import { demoState } from './demo'
+import { answerMessage, noteDialogs } from './dialogs'
 import { withEarlierHistory } from './history'
 import { codexStore } from './host'
 import { isUnseen, pressOn, recorded, turnEnded, turnStarted } from '../../hooks/session'
@@ -26,13 +28,16 @@ import { pruneSessions, readState, updateState } from './state'
 import { reconcileUpdateStatus } from './update'
 import type { SessionState } from './state'
 import { CODEX, INBOX_DESCRIPTION, inboxToolText, VIEW_DESCRIPTION } from './texts'
-import { rolloutFor, turnRunningIn } from './transcript'
+import { rolloutFor, turnIn, turnRunningIn } from './transcript'
+import type { HooksTrust } from './hook-trust'
 import type { LastAction, PrViews, RowNote } from '../../types'
 
 /** Codex keeps a tab's page by its address, even across server restarts, so a new build needs a new address for a new chat to load it. */
 export function tabUri(tabHtml: string): string {
   return `ui://inbox/tab-${createHash('sha256').update(tabHtml).digest('hex').slice(0, 12)}`
 }
+/** How long an answer about the hooks' trust stands before a view asks Codex again. */
+const HOOKS_TRUST_CACHE_MS = 30_000
 const TAB_MIME = 'text/html;profile=mcp-app'
 
 const APP_ONLY = { ui: { visibility: ['app'] } }
@@ -44,7 +49,7 @@ function viewsStillShown(
   at: number,
 ): PrViews['views'] {
   return Object.fromEntries(
-    Object.entries(prs.views).filter(([ref]) => isTracked(prs, linked, ref) || isDismissing(lastActions, ref, at)),
+    Object.entries(prs.views).filter(([ref]) => keepsView(prs, linked, ref) || isDismissing(lastActions, ref, at)),
   )
 }
 
@@ -127,6 +132,11 @@ export type ServerDeps = {
   /** The codex binary to run `queue` with when no hook has named one yet. */
   fallbackCli: () => Promise<string>
   devPage?: () => Promise<string | null>
+  /**
+   * What Codex lists for the inbox's hooks in a folder, the chat's or else the home folder, or null when it cannot say. Without it, the tab does not say why
+   * a chat has heard from no hook.
+   */
+  hooksTrust?: (cli: string, folder: string) => Promise<HooksTrust | 'trusted' | null>
   build?: string
   loadError?: () => string | null
   isPluginFolderGone?: () => boolean
@@ -191,6 +201,33 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   const prunedFor = new Set<string>()
   const checkedOnOpen = new Set<string>()
   let isGhMissing = false
+  let hooksTrust: { at: number; value: HooksTrust | null } | null = null
+  let isAskingHooks = false
+
+  /**
+   * Why Codex does not run the inbox's hooks, from the last answer. When that answer is older than the cache window,
+   * a new call starts for the next view to read, so no view waits on it. A failed or unclear answer reads as null.
+   */
+  function hooksTrustNow(s: SessionState): HooksTrust | null {
+    const { hooksTrust: ask } = deps
+    if (!ask) return null
+    if (!isAskingHooks && (hooksTrust === null || now() - hooksTrust.at >= HOOKS_TRUST_CACHE_MS)) {
+      isAskingHooks = true
+      void (async () => {
+        try {
+          const cli = s.cliPath ?? (await deps.fallbackCli())
+          const answer = await ask(cli, s.root || homedir())
+          hooksTrust = { at: now(), value: answer === 'untrusted' || answer === 'modified' ? answer : null }
+        } catch {
+          hooksTrust = { at: now(), value: null }
+        } finally {
+          isAskingHooks = false
+        }
+      })()
+    }
+
+    return hooksTrust?.value ?? null
+  }
 
   /**
    * Codex runs no hook when a chat opens, so the tab's first view of a chat the inbox has not seen does what the
@@ -260,6 +297,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       },
       settleWindowMs: SETTLE_WINDOW_MS,
       newId: randomUUID,
+      answerMessage,
     }
   }
 
@@ -293,9 +331,12 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   ): Promise<TabView> => {
     const loadError = deps.loadError?.()
     const current = !isDemo && s.presence.isUpdating ? await reconcileUpdateStatus(dir, id) : s
+    const view = viewOf(current, now(), holds)
+    const trust = !isDemo && view.heard === 'none' ? hooksTrustNow(current) : null
 
     return {
-      ...viewOf(current, now(), holds),
+      ...view,
+      ...(trust ? { hooksTrust: trust } : {}),
       thread: id,
       isFetchingPrs: !isDemo && prFetches.isFetching(id),
       isGhMissing: !isDemo && isGhMissing,
@@ -306,8 +347,23 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     }
   }
 
+  /**
+   * Links the dialogs of the rollout's newest turn first, so an answer pressed while that turn runs answers its dialog.
+   * Stop notes a turn's dialogs, so only an unlinked question from the turn still running needs the rollout read.
+   */
+  async function linkRunningDialogs(id: string, itemId: string) {
+    const s = await readState(dir, id)
+    const item = s.ledger.items.find(i => i.id === itemId)
+    const canLink = item?.kind === 'question' && !item.dialog && item.turn === s.ledger.turn && isTurnRunning(s.heard)
+    if (!canLink) return
+    const { dialogs } = await turnIn(s.transcriptPath, undefined)
+    if (dialogs.length > 0) await updateState(dir, id, x => noteDialogs(x, dialogs))
+  }
+
   async function onPress(id: string, p: RowPress | PrPress, thread: unknown, holds: ReplyHolds): Promise<PressReply> {
     await syncTurn(id).catch(() => undefined)
+    if (!('ref' in p) && (p.action === 'answer' || p.action === 'type'))
+      await linkRunningDialogs(id, p.id).catch(() => undefined)
     const outcome = await press(hostFor(id), p, thread !== id, holds)
     if (outcome.wakesForDone) setTimeout(() => void wakeForDone(id).catch(() => undefined), SETTLE_WINDOW_MS).unref()
     const { isUnconfirmed, wakesForDone: _wakes, ...rest } = outcome
@@ -345,7 +401,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     const s = demoOf(id)
     const r = thread === id ? pressOn(s, p, now()) : ({ stale: true } as const)
     if ('stale' in r) return { view: await served(s, id, true, holds), copy: null, error: null, note: 'stale' }
-    const { isSample, ...after } = demoAfterPress(
+    const after = demoAfterPress(
       { lastActions: s.lastActions, turns: s.presence },
       r,
       new Set(Object.keys(holds.replies)),
@@ -367,7 +423,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       view: await served(next, id, true, holds),
       copy: null,
       error: null,
-      note: isSample ? 'sample' : null,
+      note: null,
     }
   }
 
@@ -419,7 +475,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         const r = await (args.demo === true
           ? onDemoPress(id, p, args.thread, holds)
           : onPress(id, p, args.thread, holds))
-        return { ...text(r.error ?? (r.note ? noteText(r.note) : 'Done')), structuredContent: r }
+        return { ...text(r.error ?? (r.note ? noteText() : 'Done')), structuredContent: r }
       }
     }
 

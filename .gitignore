@@ -17,13 +17,13 @@ codex/.dev/
 # Eval results, written on every run
 evals/results/
 
-# The launch video's tools, renders and captured stills, which its scripts make again
-launch-video/node_modules/
-launch-video/out/
-launch-video/public/stills/
-launch-video/takes/
-launch-video/public/takes/
+# The video project's tools, renders, takes and cut clips, which its scripts make again
+videos/node_modules/
+videos/out/
+videos/takes
+videos/public/*/takes
+videos/public/*/stills
 # Music licensed for the post, not for sharing in this repo
-launch-video/public/music/
+videos/public/music
 # App icons copied from the installed apps, which are their makers' trademarks
-launch-video/public/icons/
+videos/public/icons

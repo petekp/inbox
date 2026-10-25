@@ -1,4 +1,4 @@
-import type { Closed, ClosedFinding, Exchange, Finding, Help, Item, Ledger, Press } from '../types'
+import type { Closed, ClosedFinding, Exchange, Finding, Help, Item, Ledger, Press, PressKind } from '../types'
 
 export type { Exchange, Press } from '../types'
 import type { Host } from './model-text'
@@ -328,12 +328,18 @@ export function parseReply(text: string, source: string | null = null): Update |
       const fields = value.split('|')
       const isLabelSkipped = !dash(fields[2]) && /\s/.test((fields[1] ?? '').trim())
       const [kind, label, ask, ...rest] = (isLabelSkipped ? [fields[0], '-', ...fields.slice(1)] : fields).map(dash)
+      // A sixth field is the design mark only when it reads "design" or "-", so an answer written after a stray "|"
+      // in an older five-field line stays an answer.
+      const last = rest.at(-1)
+      const isDesignField = rest.length > 2 && (last === null || /^design$/i.test(last ?? ''))
+      if (isDesignField) rest.pop()
       const rec = rest.length > 1 ? rest.pop() : null
       if (!ask) {
         newLines.push(undefined)
         continue
       }
       const options = rest.flatMap(o => o?.split(/\s+\/\s+/) ?? []).filter(Boolean)
+      const isDesignChoice = isDesignField && last !== null && readKind(kind) === 'question'
       const item = {
         kind: readKind(kind),
         label: label ?? null,
@@ -341,6 +347,7 @@ export function parseReply(text: string, source: string | null = null): Update |
         options,
         rec: recommendedOption(options, rec ?? null),
         helps: [],
+        ...(isDesignChoice ? { isDesignChoice } : {}),
       }
       added.push(item)
       newLines.push(item)
@@ -409,7 +416,7 @@ function keyWords(text: string): Set<string> {
   return new Set(words(text).filter(w => /\p{N}/u.test(w) || (w.length > 2 && !FILLER.has(w))))
 }
 
-function restates(a: string, b: string): boolean {
+export function restates(a: string, b: string): boolean {
   const x = keyWords(a)
   const y = keyWords(b)
   const fewer = Math.min(x.size, y.size)
@@ -638,6 +645,15 @@ export function reopenFinding(ledger: Ledger, id: string): Ledger {
   }
 }
 
+/** The kind of each press that sends a message. A Talk press asks about its row, which its reply leaves open. */
+const SENT_PRESS_KINDS: Record<Press['action'], PressKind> = {
+  answer: 'mark',
+  explain: 'talk',
+  compare: 'talk',
+  run: 'handoff',
+  done: 'mark',
+}
+
 export function applyExchangeUpdate(
   ledger: Ledger,
   update: Update,
@@ -645,11 +661,12 @@ export function applyExchangeUpdate(
   now: number,
   promptAt: number,
 ): Ledger {
-  const explainedId = exchange.press?.action === 'explain' ? exchange.press.id : null
+  const press = exchange.press
+  const talkedAboutId = press && SENT_PRESS_KINDS[press.action] === 'talk' ? press.id : null
 
   return applyUpdate(
     ledger,
-    { ...update, closed: update.closed.filter(c => c.id !== explainedId) },
+    { ...update, closed: update.closed.filter(c => c.id !== talkedAboutId) },
     now,
     exchange.turn,
     promptAt,
@@ -704,7 +721,11 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
     const at = matchOpen(items, a, created)
     const restated = items[at]
     if (restated) {
-      items[at] = { ...restated, helps: a.helps.reduce((all, h) => withHelp(all, h), restated.helps) }
+      items[at] = {
+        ...restated,
+        helps: a.helps.reduce((all, h) => withHelp(all, h), restated.helps),
+        ...(a.isDesignChoice ? { isDesignChoice: true } : {}),
+      }
       addedIds.push(restated.id)
       continue
     }
@@ -813,24 +834,37 @@ export function addFinding(
 
 export type AgentItemResult =
   | { ledger: Ledger; is: 'added'; id: string; expired: Item | null }
-  | { ledger: Ledger; is: 'open'; id: string }
+  | { ledger: Ledger; is: 'open'; id: string; addedSteps: number; isNewlyMarked: boolean }
   | { ledger: Ledger; is: 'closed'; record: Closed }
 
 /**
- * Adds a question or task the agent recorded. One that an open item restates is skipped, and so is one that
- * repeats a closed item, unless that item expired or the agent closed it. The list keeps its newest MAX_OPEN
- * items. A finding the new ask restates closes, so one thing shows in one list.
+ * Adds a question or task the agent recorded. One that an open item restates adds its steps and its design-choice mark
+ * to that item and stamps its `reportedAt`, and one that repeats a closed item is skipped, unless that item expired or the agent closed it.
+ * The list keeps its newest MAX_OPEN items. A finding the new ask restates closes, so one thing shows in one list.
  */
 export function addAgentItem(
   ledger: Ledger,
-  entry: Pick<Item, 'kind' | 'ask' | 'options' | 'rec' | 'helps'>,
+  entry: Pick<Item, 'kind' | 'ask' | 'options' | 'rec' | 'helps' | 'isDesignChoice'>,
   now: number,
 ): AgentItemResult {
   const candidate = { ...entry, label: null }
   const recordedThisTurn = new Set(ledger.items.filter(i => i.turn === ledger.turn).map(i => i.id))
   const open = matchOpen(ledger.items, candidate, recordedThisTurn)
   const openItem = ledger.items[open]
-  if (openItem) return { ledger, is: 'open', id: openItem.id }
+  if (openItem) {
+    const helps = entry.helps.reduce(withHelp, openItem.helps)
+    const isDesignChoice = openItem.isDesignChoice === true || entry.isDesignChoice === true
+    const reported = { ...openItem, helps, isDesignChoice, reportedAt: now }
+    const items = ledger.items.map(i => (i === openItem ? reported : i))
+
+    return {
+      ledger: { ...ledger, items },
+      is: 'open',
+      id: openItem.id,
+      addedSteps: helps.length - openItem.helps.length,
+      isNewlyMarked: isDesignChoice && openItem.isDesignChoice !== true,
+    }
+  }
   const isAskable = (c: Closed) => c.how === 'expired' || c.how === 'claude'
   const repeated = ledger.closed.findLast(c => !isAskable(c) && repeatsSettled(c, candidate))
   if (repeated) return { ledger, is: 'closed', record: repeated }

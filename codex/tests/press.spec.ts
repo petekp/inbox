@@ -376,7 +376,18 @@ test('an open or copy on a handed-off task keeps it folded and out of the count,
 })
 
 function asked(id: string, kind: Item['kind'], turn: number): Item {
-  return { id, kind, label: null, from: 'record', ask: `Ask ${id}`, options: [], rec: null, helps: [], turn, at: turn }
+  return {
+    id,
+    kind,
+    label: null,
+    from: 'record',
+    ask: `Ask ${id}`,
+    options: [],
+    rec: null,
+    helps: [],
+    turn,
+    at: turn,
+  }
 }
 
 test('Needs you lists the newest reply first and keeps each older reply in the order it asked', () => {
@@ -461,6 +472,7 @@ test('a question lists every option, folds those past the fourth of 7, marks the
           ...asked('i1', 'question', 1),
           options: colors,
           rec: 'Green',
+          isDesignChoice: true,
           helps: [{ kind: 'run', command: './a.sh', name: 'a script' }],
         },
       ],
@@ -480,6 +492,7 @@ test('a question lists every option, folds those past the fourth of 7, marks the
       ['Run a script', 'handoff', false, false],
       ['Reply', 'mark', false, false],
       ['Explain', 'talk', false, false],
+      ['Compare', 'talk', false, false],
       ['Dismiss', 'mark', false, false],
     ],
   )
@@ -575,7 +588,7 @@ test('Fix hands a finding off and settles it as the choice made, then lists it i
   const discussed = viewOf(after(s, { action: 'discuss', id: 'f3' }), 60).findings
   assert.deepEqual(
     discussed.rows.map(r => [r.id, r.state.is, r.actions.find(a => a.press.action === 'discuss')?.label]),
-    [['f3', 'open', 'Discuss again']],
+    [['f3', 'open', 'Discuss']],
   )
   assert.equal(discussed.count, 1)
   const closedBy = { ...sent, ledger: recordClose(CODEX, sent.ledger, { id: 'f3', reason: 'fixed' }, 90).ledger }
@@ -891,6 +904,8 @@ test('a new PR counts as a new row, moves an empty tab to PRs, and counts nothin
     reviewDecision: '',
     checks: [],
     threads: [],
+    isYours: true,
+    wasSeenOpen: true,
     error: null,
   })
   const withPrs = (refs: string[]) => {

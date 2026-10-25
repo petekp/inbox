@@ -1,3 +1,4 @@
+import { linkDialogs } from './dialogs'
 import {
   applyExchangeUpdate,
   applyUpdate,
@@ -14,15 +15,15 @@ import {
   applyPrPress,
   drawnPrs,
   isDismissing,
-  isTracked,
   itemPrSteps,
+  keepsView,
   olderPrsText,
   linkedPrs,
   threadSentIn,
 } from './pr-tab'
 import type { Applied, PrPress } from './pr-tab'
 import { applyPress, upgradeLastActions, withAcceptedSend, withArrival, withRewrite, withUnconfirmed } from './presses'
-import type { RowPress } from './presses'
+import type { AnswerMessage, RowPress } from './presses'
 import { prNeedsYou, prRefs } from './prs'
 import { recordClose, recordItem } from './tools'
 import { upgradeHostTasks } from './host-tasks'
@@ -30,7 +31,7 @@ import { applyOverview, lookEnded, lookStarted } from './overview'
 import type { OverviewAnswer } from './overview'
 import { inboxView, NO_HOLDS, overviewPage, perTurnStatus } from './view'
 import type { InboxView, OverviewPage, ReplyHolds } from './view'
-import type { LastAction, Ledger, PrView, PrViews, RowNote, Session, Stop, Turns } from '../types'
+import type { LastAction, Ledger, PrView, PrViews, RowNote, Session, Stop, Turns, TurnDialogQuestion } from '../types'
 
 export type { Session } from '../types'
 
@@ -58,6 +59,7 @@ export function emptySession(): Session {
     prViews: NO_PRS,
     stop: null,
     hostTasks: [],
+    dialogQuestions: [],
   }
 }
 
@@ -92,8 +94,12 @@ export function staleSessionFiles<F extends { name: string; mtimeMs: number }>(f
 export const PRESS_TIMEOUT_MS = 60_000
 
 /** A session's shared fields as any earlier build saved them, each possibly missing. */
-export type SavedSession = Partial<Omit<Session, 'turn' | 'told' | 'presence' | 'sent' | 'prViews'>> & {
+export type SavedSession = Partial<
+  Omit<Session, 'turn' | 'told' | 'presence' | 'sent' | 'prViews' | 'dialogQuestions'>
+> & {
   turn?: Partial<Session['turn']>
+  /** Codex saved its dialog questions with no descriptions. */
+  dialogQuestions?: (Omit<TurnDialogQuestion, 'descriptions'> & Partial<Pick<TurnDialogQuestion, 'descriptions'>>)[]
   told?: Partial<Told>
   presence?: Partial<Session['presence']>
   sent?: (Pick<Session['sent'][number], 'text' | 'press' | 'at'> & Partial<Session['sent'][number]>)[]
@@ -138,12 +144,14 @@ export function upgradeSession(saved: SavedSession): Session {
     prViews: {
       ...NO_PRS,
       ...saved.prViews,
-      // Threads saved before their times and `isLinesChanged` existed.
+      // Views saved before `isYours` and `wasSeenOpen`, and threads saved before their times and `isLinesChanged` existed.
       views: Object.fromEntries(
         Object.entries(views).map(([ref, pr]) => [
           ref,
           {
             ...pr,
+            isYours: pr.isYours ?? null,
+            wasSeenOpen: pr.wasSeenOpen ?? pr.state === 'OPEN',
             threads: pr.threads.map(t => ({
               ...t,
               isLinesChanged: t.isLinesChanged ?? false,
@@ -157,6 +165,7 @@ export function upgradeSession(saved: SavedSession): Session {
     },
     stop: saved.stop ?? null,
     hostTasks: upgradeHostTasks(saved.hostTasks),
+    dialogQuestions: (saved.dialogQuestions ?? []).map(q => ({ ...q, descriptions: q.descriptions ?? {} })),
   }
 }
 
@@ -402,7 +411,7 @@ export function applied<S extends Session>(s: S, reply: string | null, now: numb
   const ledger = parsed ? applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt) : s.ledger
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed
 
-  return {
+  return linkDialogs({
     ...s,
     ledger,
     pending: s.pending.slice(1),
@@ -412,7 +421,7 @@ export function applied<S extends Session>(s: S, reply: string | null, now: numb
       hasDroppedReply,
       turnsApplied: Math.max(s.presence.turnsApplied, next.turnsStarted),
     },
-  }
+  })
 }
 
 /**
@@ -497,7 +506,7 @@ const pendingKey = (p: Session['pending'][number]) => `${p.turnsStarted}:${p.ex.
 export function appliedCatchUp<S extends Session>(s: S, begun: Session, parsed: Update | null, now: number): S {
   const covered = new Set(begun.pending.map(pendingKey))
 
-  return {
+  return linkDialogs({
     ...s,
     ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn, now) : s.ledger,
     pending: s.pending.filter(p => !covered.has(pendingKey(p))),
@@ -507,7 +516,7 @@ export function appliedCatchUp<S extends Session>(s: S, begun: Session, parsed: 
       hasDroppedReply: parsed ? false : s.presence.hasDroppedReply,
       turnsApplied: Math.max(s.presence.turnsApplied, begun.presence.turnsStarted),
     },
-  }
+  })
 }
 
 export type Pressed = Exclude<Applied, { stale: true }>
@@ -517,6 +526,7 @@ export function pressOn(
   p: RowPress | PrPress,
   at: number,
   localPressId?: string,
+  answerMessage?: AnswerMessage,
 ): Pressed | { stale: true } {
   const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId }
   if ('ref' in p) return applyPrPress(s.ledger, s.prViews, s.lastActions, p, ctx)
@@ -524,6 +534,7 @@ export function pressOn(
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
     extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prs) : [],
+    answerMessage,
   })
   if ('stale' in r) return r
 
@@ -592,24 +603,24 @@ export function recorded<S extends Session>(
 ): { state: S; result: string } {
   const r = (tool === 'close' ? recordClose : recordItem)(host, s.ledger, args, now)
 
-  return { state: { ...s, ledger: r.ledger }, result: r.result }
+  return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result }
 }
 
-/** Merges fetched PRs into the session. A view stays only while the ledger tracks it or its dismissal is still showing. */
+/** Merges fetched PRs into the session. A view stays while `keepsView` keeps it or its dismissal is still showing. */
 export function withFetchedPrs<S extends Session>(
   s: S,
   fetched: PrViews['views'],
   branchRef: string | null,
   at: number,
 ): S {
+  const merged = { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false }
   const views = Object.fromEntries(
-    Object.entries(fetched).filter(([ref]) => isTracked({ ...s.prViews, branchRef }, s.ledger.prs, ref)),
-  )
-  const dismissing = Object.fromEntries(
-    Object.entries(s.prViews.views).filter(([ref]) => isDismissing(s.lastActions, ref, at)),
+    Object.entries(merged.views).filter(
+      ([ref]) => keepsView(merged, s.ledger.prs, ref) || isDismissing(s.lastActions, ref, at),
+    ),
   )
 
-  return { ...s, prViews: { views: { ...dismissing, ...views }, branchRef, isFetching: false } }
+  return { ...s, prViews: { ...merged, views } }
 }
 
 type PrTab = {
@@ -691,6 +702,6 @@ function prTabOf(s: Session, lastActions: Record<string, LastAction>, now: numbe
     drawn,
     branchRef: s.prViews.branchRef,
     count: drawn.filter(d => !d.isSettled && prNeedsYou(d.pr, isSent)).length,
-    olderText: olderPrsText(s.ledger.prs),
+    olderText: olderPrsText(s.prViews, s.ledger.prs),
   }
 }

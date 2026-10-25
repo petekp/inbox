@@ -6,7 +6,7 @@
 codex/plugin/dist/
 codex/test-dist/
 codex/package-lock.json
-launch-video/package-lock.json
+videos/package-lock.json
 omp/bun.lock
 
 # Built by omp/build.ts

@@ -3,9 +3,11 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { EMPTY } from '../../hooks/ledger'
+import { linkDialogs } from '../../hooks/dialogs'
+import { addAgentItem, EMPTY } from '../../hooks/ledger'
 import { inboxText } from '../../hooks/model-text'
 import { EMPTY_OVERVIEW } from '../../hooks/overview'
+import { applied } from '../../hooks/session'
 import { feedbackText } from '../../hooks/view'
 import { notePrompt, noteToolCall, viewOf } from '../src/core'
 import { handleHook } from '../src/hook'
@@ -138,6 +140,85 @@ test('a main-agent prompt reads Working… until Stop or a start that is not a c
   assert.equal(await now(), null)
 })
 
+test('a dialog question links to the question the agent recorded for it or the update added from it, in the same turn, only when no other question shares the match', async () => {
+  const dir = tempDir()
+  const transcript = join(tempDir(), 'rollout.jsonl')
+  const deps = hookDeps(dir)
+  const started = (turn: string) => ({ type: 'event_msg', payload: { type: 'task_started', turn_id: turn } })
+  const dialog = (callId: string, questions: unknown[]) => ({
+    type: 'response_item',
+    payload: {
+      type: 'function_call',
+      name: 'request_user_input_async',
+      call_id: callId,
+      arguments: JSON.stringify({ questions }),
+    },
+  })
+  const rows: unknown[] = []
+  const write = (...more: unknown[]) => {
+    rows.push(...more)
+    writeFileSync(transcript, rows.map(row => JSON.stringify(row)).join('\n'))
+  }
+  const applyAnswer = (answer: string) => updateState(dir, 's1', s => applied(s, answer, 2000, 2000))
+  const links = async () => (await readState(dir, 's1')).ledger.items.map(i => [i.ask, i.dialog ?? null])
+  const linkedQuestions = async () => (await readState(dir, 's1')).dialogQuestions.map(q => q.itemId !== null)
+  const record = (ask: string, options: string[]) =>
+    updateState(dir, 's1', s => ({
+      ...s,
+      ledger: addAgentItem(s.ledger, { kind: 'question', ask, options, rec: null, helps: [] }, 1000).ledger,
+    }))
+
+  await handleHook(input('UserPromptSubmit', { prompt: 'Fix the build', turn_id: 't1' }), deps)
+  write(
+    started('t1'),
+    dialog('call_a', [
+      { title: 'May I push the fix to the branch?', options: ['Push now (Recommended)', 'Keep it local'] },
+      { title: 'Which branch gets the tag?', options: ['main', 'release'] },
+    ]),
+  )
+  await record('Push the fix?', ['Push now', 'Keep it local'])
+  await handleHook(
+    input('Stop', { turn_id: 't1', transcript_path: transcript, last_assistant_message: 'Asked.' }),
+    deps,
+  )
+  assert.deepEqual(await links(), [
+    ['Push the fix?', { callId: 'call_a', index: 0, question: 'May I push the fix to the branch?' }],
+  ])
+  assert.deepEqual(await linkedQuestions(), [true, false])
+  await applyAnswer('NONE')
+
+  await handleHook(input('UserPromptSubmit', { prompt: 'Deploy it', turn_id: 't2' }), deps)
+  write(started('t2'), dialog('call_b', [{ title: 'Deploy to production now?', options: ['Deploy', 'Wait'] }]))
+  await handleHook(
+    input('Stop', { turn_id: 't2', transcript_path: transcript, last_assistant_message: 'Asked.' }),
+    deps,
+  )
+  assert.deepEqual(await linkedQuestions(), [false])
+  await applyAnswer('NEW: decide | - | Deploy now? | Deploy / Wait | -')
+  assert.deepEqual((await links()).slice(1), [
+    ['Deploy now?', { callId: 'call_b', index: 0, question: 'Deploy to production now?' }],
+  ])
+  await handleHook(input('UserPromptSubmit', { prompt: 'Clean up', turn_id: 't3' }), deps)
+  write(
+    started('t3'),
+    dialog('call_c', [
+      { title: 'Delete the old branch before merging?', options: ['Yes', 'No'] },
+      { title: 'Rename the main file?', options: ['Yes', 'No'] },
+    ]),
+  )
+  await record('Delete the old branch?', ['Yes', 'No'])
+  await record('Bump the version?', ['Yes', 'No'])
+  await handleHook(
+    input('Stop', { turn_id: 't3', transcript_path: transcript, last_assistant_message: 'Asked.' }),
+    deps,
+  )
+  assert.deepEqual((await links()).slice(2), [
+    ['Delete the old branch?', { callId: 'call_c', index: 0, question: 'Delete the old branch before merging?' }],
+    ['Bump the version?', null],
+  ])
+  assert.deepEqual(await linkedQuestions(), [true, false])
+})
+
 test('each hook records that it ran, with the turn UserPromptSubmit saw, and the tab reads the session as heard', async () => {
   const dir = tempDir()
   let clock = 1000
@@ -230,6 +311,9 @@ test('a session saved by an older build loads converted, as the mod converts its
     recordedRuns: ['e1'],
     turn: { person: 'Run the tests', activity: [], press: null, sentBack: ['Tests pass.'] },
     sent: [{ text: 'Re "Ship it?": Yes', press: { id: 'i1', action: 'answer' }, at: 1 }],
+    dialogQuestions: [
+      { callId: 'call_1', index: 0, question: 'Ship it now?', options: ['Yes', 'No'], turn: 1, itemId: null },
+    ],
     pending: [
       {
         ex: {
@@ -298,6 +382,10 @@ test('a session saved by an older build loads converted, as the mod converts its
   assert.deepEqual(s.turn, { person: 'Run the tests', trigger: null, activity: [], press: null })
   assert.equal('checks' in (s.pending[0]?.ex ?? {}), false)
   assert.equal(s.pending[0]?.ex.reply, 'Hello')
+  assert.deepEqual(
+    linkDialogs(s).ledger.items.map(i => [i.id, i.dialog]),
+    [['i1', { callId: 'call_1', index: 0, question: 'Ship it now?' }]],
+  )
   assert.deepEqual(
     ledger.items.map(i => [i.kind, i.at]),
     [['question', null]],

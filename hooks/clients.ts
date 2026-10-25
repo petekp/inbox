@@ -14,6 +14,8 @@ export type FeatureId =
   | 'failed-update-recovery'
   | 'ledger-behind-state'
   | 'dialog-outcome'
+  | 'dialog-answer'
+  | 'dialog-descriptions'
   | 'tool-output-urls'
   | 'pr-link-from-output'
   | 'pr-arrivals'
@@ -27,6 +29,8 @@ export type FeatureId =
   | 'overview-tab'
   | 'turn-working'
   | 'host-task-list'
+  | 'hooks-need-trust'
+  | 'compare-in-background'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -39,6 +43,12 @@ export const CLIENTS: Record<ClientId, Client> = {
       'failed-update-recovery': { kind: 'full' },
       'ledger-behind-state': { kind: 'full' },
       'dialog-outcome': { kind: 'full' },
+      'dialog-answer': {
+        kind: 'different',
+        reason:
+          'The dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close.',
+      },
+      'dialog-descriptions': { kind: 'full' },
       'tool-output-urls': { kind: 'full' },
       'pr-link-from-output': { kind: 'full' },
       'pr-arrivals': { kind: 'full' },
@@ -52,6 +62,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       'overview-tab': { kind: 'full' },
       'turn-working': { kind: 'full' },
       'host-task-list': { kind: 'full' },
+      'hooks-need-trust': {
+        kind: 'unsupported',
+        reason: "Claude Code asks no one to trust a plugin's hooks, so no hook stops running for want of trust.",
+      },
+      'compare-in-background': { kind: 'full' },
     },
   },
   codex: {
@@ -70,8 +85,10 @@ export const CLIENTS: Record<ClientId, Client> = {
       'dialog-outcome': {
         kind: 'different',
         reason:
-          "Codex's dialog tool returns at once and the answer arrives as the person's next prompt, so a dialog is noted as open and its outcome is never recorded.",
+          "Codex's dialog tool returns at once and the answer arrives later as a user message, so a dialog is noted as open and its outcome is never recorded.",
       },
+      'dialog-answer': { kind: 'full' },
+      'dialog-descriptions': { kind: 'full' },
       'tool-output-urls': { kind: 'full' },
       'pr-link-from-output': {
         kind: 'different',
@@ -118,6 +135,12 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           "Codex runs no hook for `update_plan`, and the inbox's tool matcher cannot be widened without every person trusting the hook again. So the plan is read from the rollout when the turn stops, and shows from the next Overview call. The tool is not offered by default in `codex exec`, and the app is not checked.",
       },
+      'hooks-need-trust': { kind: 'full' },
+      'compare-in-background': {
+        kind: 'different',
+        reason:
+          "Codex's subagents are experimental and off by default, and no source says one can report after the agent's turn ends, so a comparison runs in the turn.",
+      },
     },
   },
   omp: {
@@ -126,6 +149,12 @@ export const CLIENTS: Record<ClientId, Client> = {
       'failed-update-recovery': { kind: 'full' },
       'ledger-behind-state': { kind: 'full' },
       'dialog-outcome': { kind: 'full' },
+      'dialog-answer': {
+        kind: 'different',
+        reason:
+          'The ask dialog blocks the turn, and the inbox copies a dialog only once it ended, so no open dialog is left for an inbox answer to close.',
+      },
+      'dialog-descriptions': { kind: 'full' },
       'tool-output-urls': { kind: 'full' },
       'pr-link-from-output': { kind: 'full' },
       'pr-arrivals': { kind: 'full' },
@@ -154,6 +183,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       'overview-tab': { kind: 'full' },
       'turn-working': { kind: 'full' },
       'host-task-list': { kind: 'full' },
+      'hooks-need-trust': {
+        kind: 'unsupported',
+        reason: "omp runs an installed extension's events without asking anyone to trust them.",
+      },
+      'compare-in-background': { kind: 'full' },
     },
   },
 }

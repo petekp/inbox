@@ -250,13 +250,13 @@ async function afterPresses(...presses: Parameters<ReturnType<typeof demoSource>
   }
 }
 
-test('a press that waits on the agent reads Explaining and its button reads again', async () => {
+test('a press that waits on the agent reads Explaining and its button keeps its label', async () => {
   const demo = await afterPresses({ action: 'explain', id: 'd11' })
   const screen = await demo.screen()
   const row = waiting(screen, 'd11')
   const out = text(screen, onRow(row))
   expect(out).toContain('Explaining…')
-  expect(out).toContain('Explain again')
+  expect(out).not.toContain('Explain again')
 })
 
 test('after the reply, an explained row that stays open reads its result', async () => {

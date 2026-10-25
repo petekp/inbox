@@ -42,6 +42,7 @@ import {
 import type { HelpStep, RowPress } from './presses'
 
 const OPTIONS_FOLD_AT = 5
+const OPTION_LABEL_CHARS = 32
 // The digits switch tabs, and the letters left out are the
 // keys of a Needs you row's other actions and of moving the selection.
 export const CHOICE_KEYS = [...'abcfghilm']
@@ -70,6 +71,18 @@ export const SETTLED_MS = 5120
 export const PERMISSION_FALLBACK_DELAY_MS = 1500
 export const PRESS_GUARD_MS = 400
 export const QUEUED_AFTER_MS = 1000
+/** How long a Compare press waits for the agent to record the question again after its reply. */
+export const COMPARE_LIMIT_MS = 30 * 60_000
+
+/** When the soonest Compare press still inside its limit reaches it, so a look can redraw then. */
+export function compareEndsAt(lastActions: Record<string, LastAction>, now: number): number | null {
+  const ends = Object.values(lastActions)
+    .filter(l => l.action === 'compare')
+    .map(l => l.at + COMPARE_LIMIT_MS)
+    .filter(at => at > now)
+
+  return ends.length > 0 ? Math.min(...ends) : null
+}
 
 export function isQueuedAt(last: LastAction | undefined, now: number): boolean {
   return last?.delivery?.state === 'queued' && now - last.at >= QUEUED_AFTER_MS
@@ -132,6 +145,7 @@ export type Feedback =
   | { is: 'done'; label: string; at: number; isHandedStep?: true }
   | { is: 'working'; label: string; at: number }
   | { is: 'stillOpen'; at: number }
+  | { is: 'noComparison'; at: number }
   | { is: 'queued'; label: string; at: number }
   | { is: 'unconfirmed'; label: string; at: number }
   | { is: 'notSent'; reason: string; retry: RowPress | null }
@@ -152,6 +166,7 @@ export const ROW_COPY = {
   send: 'Send',
   cancel: 'Cancel',
   discard: 'Discard',
+  clickField: 'Click the field to type',
   relevantFile: 'Relevant file: ',
   allOptions: (count: number) => `All ${count} options`,
 } as const
@@ -183,6 +198,27 @@ export type RowView = {
   state: RowState
   feedback: Feedback | null
   actions: ActionView[]
+  /** The description of each answer button that has one, in button order. A folded button's is folded with it. */
+  optionDescriptions: OptionDescription[]
+}
+
+export type OptionDescription = { label: string; description: string; isFolded: boolean }
+
+function optionDescriptionsOf(item: Item | null, actions: ActionView[]): OptionDescription[] {
+  const descriptions = item?.optionDescriptions
+  if (!descriptions) return []
+
+  return actions.flatMap(a => {
+    if (a.press.action !== 'answer' || !Object.hasOwn(descriptions, a.press.option)) return []
+    const description = descriptions[a.press.option]!
+
+    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }]
+  })
+}
+
+/** The option descriptions a row shows: all of them once its folded options show, else the unfolded ones. */
+export function shownOptionDescriptions(row: RowView, isShowingAll: boolean): OptionDescription[] {
+  return row.optionDescriptions.filter(o => isShowingAll || !o.isFolded)
 }
 
 export function rowMark(row: RowView, look: Look): { text: string; tone?: 'done' | 'issue' } {
@@ -198,8 +234,18 @@ export function replyHint(row: RowView, agent: string): string {
   return row.replyKind === 'answer' ? 'Your answer' : `Your reply to ${agent}`
 }
 
-export function actionLabel(action: Pick<ActionView, 'label' | 'isPrimary'>): string {
-  return action.isPrimary ? `${action.label} (recommended)` : action.label
+/**
+ * A look that fills the recommended answer's button passes `fits`, its own measure of whether a label fits that
+ * button. Where "(recommended)" would not fit, the fill alone marks the recommended answer.
+ */
+export function actionLabel(
+  action: Pick<ActionView, 'label' | 'isPrimary'>,
+  fits?: (label: string) => boolean,
+): string {
+  if (!action.isPrimary) return action.label
+  const marked = `${action.label} (recommended)`
+
+  return fits && !fits(marked) ? action.label : marked
 }
 
 export function fieldExit(row: RowView): 'cancel' | 'discard' {
@@ -312,12 +358,17 @@ function needsYouOrder(ledger: Ledger): { questions: Item[]; tasks: Item[] } {
   return { questions: newestReplyFirst('question'), tasks: newestReplyFirst('task') }
 }
 
+export function showsCompare(item: Pick<Item, 'kind' | 'options' | 'isDesignChoice'>): boolean {
+  return item.kind === 'question' && item.isDesignChoice === true && item.options.length >= 2
+}
+
 export function feedbackOf(
   id: string,
   last: LastAction | undefined,
   note: RowNote | undefined,
   turns: Turns,
   now: number,
+  reportedAt?: number,
 ): Feedback | null {
   const result = last?.result
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
@@ -329,8 +380,12 @@ export function feedbackOf(
   if (pending) return { is: pending, label: last.text, at: last.at }
   if (delivery?.state === 'failed') return { is: 'notSent', reason: delivery.reason, retry: retryOf(id, last) }
   const isAwaiting = isAwaitingReply(last, turns)
+  const isUnreported = last.action === 'compare' && !(reportedAt !== undefined && reportedAt >= last.at)
+  const isPastLimit = now - last.at >= COMPARE_LIMIT_MS
   const working = WORKING_LABELS[last.action]
-  if (last.kind === 'talk' && working && isAwaiting) return { is: 'working', label: working, at: last.at }
+  if (last.kind === 'talk' && working && (isAwaiting || (isUnreported && !isPastLimit)))
+    return { is: 'working', label: working, at: last.at }
+  if (isUnreported) return { is: 'noComparison', at: last.at }
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last)) return { is: 'stillOpen', at: last.at }
 
   const isHandedStep = last.kind === 'handoff' && last.action.startsWith('step-')
@@ -347,6 +402,7 @@ const fixLabel = (f: Pick<Finding, 'kind'>) => (f.kind === 'opportunity' ? 'Do i
 
 const WORKING_LABELS: Record<string, string> = {
   explain: 'Explaining…',
+  compare: 'Comparing…',
   discuss: 'Discussing…',
   'thread-discuss': 'Discussing…',
   'thread-draft': 'Drafting a reply…',
@@ -357,6 +413,7 @@ const DONE_LABELS: Record<string, (text: string) => string> = {
   issue: () => 'Asked to file',
   discuss: () => 'Discussed',
   explain: () => 'Explained',
+  compare: () => 'Compared',
   dismiss: () => 'Dismissed',
   type: () => 'Replied',
   'thread-address': () => 'Addressed',
@@ -373,15 +430,27 @@ export function isFailure(f: Feedback | null): boolean {
 
 export function hasAge(
   f: Feedback,
-): f is Extract<Feedback, { is: 'done' | 'working' | 'stillOpen' | 'queued' | 'unconfirmed' | 'closed' }> {
+): f is Extract<
+  Feedback,
+  { is: 'done' | 'working' | 'stillOpen' | 'noComparison' | 'queued' | 'unconfirmed' | 'closed' }
+> {
   return (
     f.is === 'done' ||
     f.is === 'working' ||
     f.is === 'stillOpen' ||
+    f.is === 'noComparison' ||
     f.is === 'queued' ||
     f.is === 'unconfirmed' ||
     f.is === 'closed'
   )
+}
+
+/**
+ * A press status, such as "Comparing…" or "✓ Compared", follows a closed row's title. An open row draws it under its
+ * buttons instead, so a status that wraps adds a line below them and never moves them.
+ */
+export function isStatusUnderActions(f: Feedback | null, isOpen: boolean): boolean {
+  return isOpen && f !== null && hasAge(f)
 }
 
 const runIt = (look: Look) =>
@@ -410,7 +479,7 @@ function localText(r: LocalResult, look: Look): string {
 export function feedbackText(f: Feedback, look: Look): string {
   switch (f.is) {
     case 'note':
-      return noteText(f.note)
+      return noteText()
     case 'local':
       return localText(f.result, look)
     case 'queued':
@@ -425,6 +494,8 @@ export function feedbackText(f: Feedback, look: Look): string {
       return f.label
     case 'stillOpen':
       return 'Still open'
+    case 'noComparison':
+      return 'No comparison came back'
     case 'closed':
       return f.label
   }
@@ -602,13 +673,21 @@ export function emptyText(tab: 'needsYou' | 'findings', agent: string): { title:
     : { title: 'No findings yet', hint: `${agent} flags issues and opportunities it spots beyond your task.` }
 }
 
-const FOLLOW_UPS: ReadonlySet<RowPress['action']> = new Set(['type', 'explain', 'discuss', 'dismiss', 'discard'])
+const FOLLOW_UPS: ReadonlySet<RowPress['action']> = new Set([
+  'type',
+  'explain',
+  'compare',
+  'discuss',
+  'dismiss',
+  'discard',
+])
 const ACTION_KEYS: Partial<Record<RowPress['action'], string>> = {
   done: 'd',
   address: 'a',
   issue: 'i',
   type: 't',
   explain: 'e',
+  compare: 'p',
   discuss: 'd',
   dismiss: 'x',
   discard: 'x',
@@ -618,6 +697,7 @@ function actionsOf(
   row: { id: string; item: Item | null; finding: Finding | null; steps: HelpStep[] },
   last: LastAction | undefined,
   state: RowState,
+  isPressOut: boolean,
 ): ActionView[] {
   const { id, item, steps } = row
   const action = (
@@ -629,6 +709,7 @@ function actionsOf(
     press,
     label:
       press.action !== 'type' &&
+      (!isPressOut || last?.isRepeat === true) &&
       last?.kind !== 'local' &&
       last?.delivery?.state !== 'failed' &&
       last?.action === actionId(press)
@@ -640,6 +721,7 @@ function actionsOf(
         ? 'primary'
         : press.action === 'discuss' ||
             press.action === 'explain' ||
+            press.action === 'compare' ||
             press.action === 'dismiss' ||
             press.action === 'discard'
           ? 'quiet'
@@ -683,7 +765,7 @@ function actionsOf(
 
   return [
     ...options.map((option, n) =>
-      action({ action: 'answer', id, option }, clipLabel(option, 32), 'mark', {
+      action({ action: 'answer', id, option }, clipLabel(option, OPTION_LABEL_CHARS), 'mark', {
         isPrimary: option === item.rec,
         isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1,
       }),
@@ -691,6 +773,7 @@ function actionsOf(
     ...stepActions,
     action({ action: 'type', id, text: '' }, 'Reply', 'mark'),
     action({ action: 'explain', id }, 'Explain', 'talk'),
+    ...(showsCompare(item) ? [action({ action: 'compare', id }, 'Compare', 'talk')] : []),
     action({ action: 'dismiss', id }, 'Dismiss', 'mark'),
   ]
 }
@@ -926,22 +1009,27 @@ export function inboxView({
 
     return isHandedOff(last, turns) ? { is: 'handedOff' } : { is: 'open' }
   }
-  const feedbackIn = (id: string, state: RowState): Feedback | null => {
+  const feedbackIn = (id: string, state: RowState, reportedAt: number | undefined): Feedback | null => {
     if (state.is === 'settled') return null
-    const f = feedbackOf(id, lastActions[id], notes[id], turns, now)
+    const f = feedbackOf(id, lastActions[id], notes[id], turns, now, reportedAt)
     if (state.is !== 'held') return f
     const isFailedReply = f?.is === 'notSent' && lastActions[id]?.action === 'type' && lastActions[id].at >= state.at
 
     return f?.is === 'note' || isFailedReply ? f : { is: 'closed', label: state.label, at: state.at }
   }
-  const rowOf = (row: Omit<RowView, 'state' | 'feedback' | 'actions'>): RowView => {
+  const rowOf = (row: Omit<RowView, 'state' | 'feedback' | 'actions' | 'optionDescriptions'>): RowView => {
     const state = stateOf(row.id)
+    const feedback = feedbackIn(row.id, state, row.item?.reportedAt)
+    // A button must keep its width while its press is out, or the buttons after it can move to another line.
+    const isPressOut = feedback?.is === 'working' || feedback?.is === 'queued' || feedback?.is === 'unconfirmed'
+    const actions = actionsOf(row, lastActions[row.id], state, isPressOut)
 
     return {
       ...row,
       state,
-      feedback: feedbackIn(row.id, state),
-      actions: actionsOf(row, lastActions[row.id], state),
+      feedback,
+      actions,
+      optionDescriptions: optionDescriptionsOf(row.item, actions),
     }
   }
   const itemRow = (item: Item): RowView => {

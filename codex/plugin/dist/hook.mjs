@@ -1,7 +1,7 @@
 // Built by codex/build.mjs from codex/src and hooks/. Do not edit.
 
 // src/hook-main.ts
-import { dirname as dirname2, join as join4 } from "node:path";
+import { dirname as dirname3, join as join4 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/detached-update.ts
@@ -170,6 +170,39 @@ function howFromOutcome(outcome) {
   if (outcome.startsWith(CLOSED_BY_CLAUDE)) return "claude";
   return "update";
 }
+var FILLER = /* @__PURE__ */ new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "use",
+  "into",
+  "from",
+  "that",
+  "this",
+  "your",
+  "you",
+  "should",
+  "make",
+  "add",
+  "all"
+]);
+function keyWords(text) {
+  return new Set(words(text).filter((w) => new RegExp("\\p{N}", "u").test(w) || w.length > 2 && !FILLER.has(w)));
+}
+function restates(a, b) {
+  const x = keyWords(a);
+  const y = keyWords(b);
+  const fewer = Math.min(x.size, y.size);
+  const shared = [...x].filter((w) => y.has(w)).length;
+  const numbers = (words2) => [...words2].filter((w) => new RegExp("\\p{N}", "u").test(w)).sort().join(" ");
+  if (numbers(x) !== "" && numbers(y) !== "" && numbers(x) !== numbers(y)) return false;
+  return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b);
+}
+function sameAsk(a, b) {
+  const norm = (s) => words(s).join(" ");
+  return norm(a) !== "" && norm(a) === norm(b);
+}
 var CLOSED_BY_CLAUDE = "closed by Claude";
 function pruneClosed(ledger, keep) {
   const pruned = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id));
@@ -276,10 +309,18 @@ function dialogQuestions(raw) {
     const text = [fields.question, fields.title].find((v) => typeof v === "string" && v.trim() !== "");
     if (!text) return [];
     const options = (Array.isArray(fields.options) ? fields.options : []).flatMap((o) => {
-      const label = typeof o === "string" ? o : o?.label;
-      return typeof label === "string" && label.trim() !== "" ? [label.trim()] : [];
+      const option = typeof o === "string" ? { label: o } : o ?? {};
+      const label = typeof option.label === "string" ? option.label.trim() : "";
+      const description = typeof option.description === "string" ? option.description.trim() : "";
+      return label === "" ? [] : [{ label, description }];
     });
-    return [{ question: text.trim(), options }];
+    return [
+      {
+        question: text.trim(),
+        options: options.map((o) => o.label),
+        descriptions: Object.fromEntries(options.filter((o) => o.description !== "").map((o) => [o.label, o.description]))
+      }
+    ];
   });
 }
 function dialogQuestionText(q) {
@@ -485,6 +526,72 @@ function promptNotes(host, ledger, prompt, told) {
   return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
 }
 
+// ../hooks/dialogs.ts
+function optionKey(option) {
+  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
+}
+function optionsKey(options) {
+  return options.map(optionKey).sort().join("\n");
+}
+function hasSameOptions(item, q) {
+  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
+}
+function copyOf(q, items, questions) {
+  const byOptions = items.filter((i) => hasSameOptions(i, q));
+  const [only] = byOptions;
+  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1) return only;
+  const pool = byOptions.length > 0 ? byOptions : items;
+  const byAsk = pool.filter((i) => restates(i.ask, q.question));
+  const [asked] = byAsk;
+  if (!asked || byAsk.length !== 1) return null;
+  const restated = questions.filter((o) => restates(asked.ask, o.question));
+  return restated.length === 1 ? asked : null;
+}
+function descriptionsFor(options, descriptions) {
+  const byKey = new Map(Object.entries(descriptions).map(([label, text]) => [optionKey(label), text]));
+  const matched = options.flatMap((o) => {
+    const text = byKey.get(optionKey(o));
+    return text === void 0 ? [] : [[o, text]];
+  });
+  return matched.length > 0 ? Object.fromEntries(matched) : null;
+}
+function asCopyOf(item, q) {
+  const descriptions = descriptionsFor(item.options, q.descriptions);
+  return {
+    ...item,
+    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
+    ...descriptions ? { optionDescriptions: descriptions } : {}
+  };
+}
+function linkDialogs(s) {
+  if (s.dialogQuestions.length === 0) return s;
+  let items = s.ledger.items;
+  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
+  const questions = s.dialogQuestions.map((q) => {
+    if (q.itemId !== null) return q;
+    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
+    const copy = copyOf(
+      q,
+      turnItems,
+      s.dialogQuestions.filter((o) => o.turn === q.turn)
+    );
+    if (!copy || copy.dialog || linked.has(copy.id)) return q;
+    linked.add(copy.id);
+    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
+    return { ...q, itemId: copy.id };
+  });
+  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
+  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
+}
+function noteDialog(s, callId, questions) {
+  const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
+  const added = questions.flatMap(
+    (q, index) => isNoted(index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]
+  );
+  if (added.length === 0) return s;
+  return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
+}
+
 // ../hooks/prs.ts
 var PR_URL = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g;
 function prRefs(text) {
@@ -561,10 +668,17 @@ function withUnconfirmed(lastActions, message, pressedAt, deliveryId) {
     ])
   );
 }
+var COMPARE_REQUEST = [
+  "Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.",
+  "For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session's data outside this repo.",
+  "Then reply with a table: one row per choice, and the few measures that tell them apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Add one line on anything you did not expect. After the table, give your pick and say whether it changed. When the choice is visual or has many states, also write one HTML page that shows the choices side by side.",
+  "When the comparison is done, call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps if you made one. That marks it compared. Call each choice by its name as listed."
+].join("\n\n");
 
 // ../hooks/view.ts
 var CHOICE_KEYS = [..."abcfghilm"];
 var SETTLED_MS = 5120;
+var COMPARE_LIMIT_MS = 30 * 6e4;
 var TABS = [
   { id: "needsYou", label: "Needs you", hotkey: "1" },
   { id: "findings", label: "Findings", hotkey: "2" },
@@ -607,7 +721,8 @@ function emptySession() {
     heldRows: [],
     prViews: NO_PRS,
     stop: null,
-    hostTasks: []
+    hostTasks: [],
+    dialogQuestions: []
   };
 }
 var SESSION_ID = /^[\w-]{1,100}$/;
@@ -645,12 +760,14 @@ function upgradeSession(saved) {
     prViews: {
       ...NO_PRS,
       ...saved.prViews,
-      // Threads saved before their times and `isLinesChanged` existed.
+      // Views saved before `isYours` and `wasSeenOpen`, and threads saved before their times and `isLinesChanged` existed.
       views: Object.fromEntries(
         Object.entries(views).map(([ref, pr]) => [
           ref,
           {
             ...pr,
+            isYours: pr.isYours ?? null,
+            wasSeenOpen: pr.wasSeenOpen ?? pr.state === "OPEN",
             threads: pr.threads.map((t) => ({
               ...t,
               isLinesChanged: t.isLinesChanged ?? false,
@@ -663,7 +780,8 @@ function upgradeSession(saved) {
       isFetching: false
     },
     stop: saved.stop ?? null,
-    hostTasks: upgradeHostTasks(saved.hostTasks)
+    hostTasks: upgradeHostTasks(saved.hostTasks),
+    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
 }
 function startContext(host, s, source) {
@@ -853,6 +971,11 @@ function heardState(h) {
   const isMissed = h.promptMissedAt !== null && (h.promptAt === null || h.promptMissedAt >= h.promptAt);
   const turns = h.promptTurns.length > 0 ? h.promptTurns.length : h.prompts;
   return h.startAt === null || isMissed || turns >= 2 && h.stops === 0 ? "partial" : "heard";
+}
+
+// src/dialogs.ts
+function noteDialogs(s, dialogs) {
+  return dialogs.reduce((x, d) => d.callId === null ? x : noteDialog(x, d.callId, d.questions), s);
 }
 
 // src/state.ts
@@ -1077,7 +1200,7 @@ async function updateState(dir, sessionId, change) {
 
 // src/transcript.ts
 import { open, readdir as readdir2 } from "node:fs/promises";
-import { join as join2, resolve as resolve2 } from "node:path";
+import { dirname as dirname2, join as join2, resolve as resolve2 } from "node:path";
 
 // ../hooks/conversation.ts
 var NL2 = "\n";
@@ -1136,6 +1259,29 @@ async function forkedFromId(path) {
   const id = (await readSessionMeta(path))?.payload?.forked_from_id;
   return typeof id === "string" && id !== "" ? id : null;
 }
+async function namesIn(dir, pattern) {
+  const names = await readdir2(dir).catch(() => []);
+  return names.filter((n) => pattern.test(n)).sort().reverse();
+}
+async function newestRollout(sessions, isWanted) {
+  for (const year of await namesIn(sessions, /^\d{4}$/))
+    for (const month of await namesIn(join2(sessions, year), /^\d{2}$/))
+      for (const day of await namesIn(join2(sessions, year, month), /^\d{2}$/)) {
+        const folder = join2(sessions, year, month, day);
+        const [name] = (await namesIn(folder, /^rollout-.+\.jsonl$/)).filter(isWanted);
+        if (name !== void 0) return join2(folder, name);
+      }
+  return null;
+}
+async function historyBase(path) {
+  const base = (await readSessionMeta(path))?.payload?.history_base;
+  const id = base?.thread_id;
+  const end = base?.end_byte_offset;
+  if (typeof id !== "string" || id === "" || typeof end !== "number" || end <= 0) return null;
+  const sessions = dirname2(dirname2(dirname2(dirname2(path))));
+  const basePath = await newestRollout(sessions, (name) => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`));
+  return basePath === null ? null : { path: basePath, end };
+}
 var DIALOG_TOOL = "request_user_input_async";
 var TAIL_BYTES = 4 * 1024 * 1024;
 var SHELL_CALLS = /* @__PURE__ */ new Set(["shell", "shell_command", "exec_command", "container.exec"]);
@@ -1168,21 +1314,44 @@ function callCommand(p) {
     return "";
   }
 }
-async function tailLines(path, bytes) {
+async function linesBefore(path, bytes, end = Infinity) {
   const file = await open(path, "r");
   try {
-    const { size } = await file.stat();
-    const start = Math.max(0, size - bytes);
-    const buf = Buffer.alloc(size - start);
+    const stop = Math.min(end, (await file.stat()).size);
+    const start = Math.max(0, stop - bytes);
+    const buf = Buffer.alloc(stop - start);
     const { bytesRead } = await file.read(buf, 0, buf.length, start);
     const lines = buf.subarray(0, bytesRead).toString("utf8").split("\n");
     if (start > 0) lines.shift();
-    return lines;
+    return { lines, start, read: bytesRead };
   } finally {
     await file.close();
   }
 }
 var TURN_ROW_BYTES = 64 * 1024;
+async function tailLines(path, bytes) {
+  return (await linesBefore(path, bytes)).lines;
+}
+async function historyLines(path, bytes) {
+  const first = await linesBefore(path, bytes);
+  const parts = [first.lines];
+  const seen = /* @__PURE__ */ new Set([path]);
+  let budget = bytes - first.read;
+  let isWhole = first.start === 0;
+  let current = path;
+  while (isWhole && budget > 0) {
+    const base = await historyBase(current).catch(() => null);
+    if (base === null || seen.has(base.path)) break;
+    seen.add(base.path);
+    const part = await linesBefore(base.path, budget, base.end).catch(() => null);
+    if (part === null) break;
+    parts.unshift(part.lines);
+    budget -= part.read;
+    isWhole = part.start === 0;
+    current = base.path;
+  }
+  return parts.flat();
+}
 async function turnIn(path, turnId) {
   const none = { dialogs: [], commands: [], plan: null };
   if (path === null) return none;
@@ -1222,7 +1391,7 @@ async function turnIn(path, turnId) {
         } catch {
           continue;
         }
-        turn2.dialogs.push(dialogQuestions(args.questions));
+        turn2.dialogs.push({ callId: p.call_id ?? null, questions: dialogQuestions(args.questions) });
       } else if (row.type === "response_item" && (p.type === "function_call" || p.type === "local_shell_call")) {
         const command = callCommand(p);
         if (command !== "" && p.call_id) turn2.calls.set(p.call_id, { command, output: "" });
@@ -1235,7 +1404,7 @@ async function turnIn(path, turnId) {
     const turn = byTurn.get(wanted);
     if (!turn) return none;
     return {
-      dialogs: turn.dialogs.filter((questions) => questions.length > 0),
+      dialogs: turn.dialogs.filter((d) => d.questions.length > 0),
       commands: turn.executions.length > 0 ? turn.executions : turn.called,
       plan: turn.plan
     };
@@ -1349,7 +1518,7 @@ function rolloutTurns(lines, cwd) {
 async function readRollout(path, cwd, currentTurnId) {
   if (path === null) return null;
   try {
-    const turns = rolloutTurns(await tailLines(path, ROLLOUT_BYTES), cwd);
+    const turns = rolloutTurns(await historyLines(path, ROLLOUT_BYTES), cwd);
     const earlier = turns.filter(
       (t) => t.id !== currentTurnId && (t.isComplete || t.turns.some((x) => x.role === "person"))
     );
@@ -1441,9 +1610,12 @@ async function handleHook(input, deps) {
     case "Stop": {
       const reply = input.last_assistant_message ?? "";
       const { dialogs, commands, plan } = await turnIn(input.transcript_path, input.turn_id);
-      const lines = dialogs.map((questions) => dialogActivity(questions, { kind: "open" }));
+      const lines = dialogs.map((d) => dialogActivity(d.questions, { kind: "open" }));
       const written = await updateState(dir, id, async (s) => {
-        const withLines = lines.reduce((x, line) => noteActivity(x, line), withHost(await withHistory(s)));
+        const withLines = lines.reduce(
+          (x, line) => noteActivity(x, line),
+          noteDialogs(withHost(await withHistory(s)), dialogs)
+        );
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines);
         const ended = noteHook(turnEnded(endTurn2(withOutput, reply, now())), "stop", now());
         return plan === null ? ended : { ...ended, hostTasks: plan };
@@ -1470,8 +1642,8 @@ function dataDir(env, pluginRoot) {
 async function main() {
   let raw = "";
   for await (const chunk of process.stdin) raw += chunk;
-  const dist = dirname2(fileURLToPath(import.meta.url));
-  const dir = dataDir(process.env, dirname2(dist));
+  const dist = dirname3(fileURLToPath(import.meta.url));
+  const dir = dataDir(process.env, dirname3(dist));
   const out = await handleHook(JSON.parse(raw), {
     dir,
     env: process.env,

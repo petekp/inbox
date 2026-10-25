@@ -1,4 +1,4 @@
-import type { Closed, Delivery, Finding, Help, Item, LastAction, Ledger, LocalResult, RowNote, Turns } from '../types'
+import type { Closed, Delivery, Finding, Help, Item, LastAction, Ledger, LocalResult, Turns } from '../types'
 import type { Run } from './gh'
 import { closeFinding, closeItem, pruneClosed, reopenFinding, reopenItem } from './ledger'
 import type { Press } from './ledger'
@@ -157,7 +157,10 @@ export function isFixSent(last: LastAction | undefined): last is LastAction {
 export type RowPress =
   | { action: 'answer'; id: string; option: string }
   | { action: 'type'; id: string; text: string }
-  | { action: 'explain' | 'done' | 'dismiss' | 'address' | 'issue' | 'discuss' | 'undo' | 'discard'; id: string }
+  | {
+      action: 'explain' | 'compare' | 'done' | 'dismiss' | 'address' | 'issue' | 'discuss' | 'undo' | 'discard'
+      id: string
+    }
   | { action: 'step'; id: string; step: number; label: string }
 
 export type PrActionId =
@@ -329,8 +332,8 @@ export function refuseDoneNotification(ledger: Ledger, notificationId: string, r
 
 const STALE_TEXT = 'This changed before your press. Nothing was sent.'
 
-export function noteText(note: RowNote['note']): string {
-  return note === 'sample' ? 'Sample entry: nothing was sent.' : STALE_TEXT
+export function noteText(): string {
+  return STALE_TEXT
 }
 
 function helpEffect(item: Item, help: Help): Effect {
@@ -404,7 +407,13 @@ export function applyPress(
   ledger: Ledger,
   last: LastAction | undefined,
   p: RowPress,
-  ctx: { now: number; turnsStarted: number; extraSteps: HelpStep[]; localPressId?: string },
+  ctx: {
+    now: number
+    turnsStarted: number
+    extraSteps: HelpStep[]
+    localPressId?: string
+    answerMessage?: AnswerMessage
+  },
 ): PressResult {
   const r = pressed(ledger, last, p, ctx)
 
@@ -569,18 +578,6 @@ export function reopenOnFailure(ledger: Ledger, id: string, at: number): Ledger 
   return closed?.item && closed.how === 'answered' && closed.at === at ? reopenItem(ledger, id) : ledger
 }
 
-export function demoRecord(
-  lasts: Record<string, LastAction>,
-  effects: Effect[],
-): { lasts: Record<string, LastAction>; isSample: boolean } {
-  return {
-    lasts: Object.fromEntries(
-      Object.entries(lasts).flatMap(([id, { delivery: _unsent, ...l }]) => (l.result === undefined ? [[id, l]] : [])),
-    ),
-    isSample: effects.length > 0,
-  }
-}
-
 export function demoTurns(turns: Turns, effects: Effect[], isReplied = false): Turns {
   if (isReplied) return { ...turns, turnsApplied: turns.turnsStarted }
 
@@ -589,21 +586,25 @@ export function demoTurns(turns: Turns, effects: Effect[], isReplied = false): T
 
 /**
  * The demo's state after a press: the press's ledger without records no reply holds, its last actions without
- * delivery marks, and a turn started when it sends. `isSample` is true when the press had an effect the demo
- * only pretends to run.
+ * delivery marks, and a turn started when it sends. The row shows what a real press shows, so its shape does not
+ * change when the press's own text goes.
  */
 export function demoAfterPress(
   before: { lastActions: Record<string, LastAction>; turns: Turns },
   r: Pressed,
   held: ReadonlySet<string>,
-): { ledger: Ledger; lastActions: Record<string, LastAction>; turns: Turns; isSample: boolean } {
-  const { lasts, isSample } = demoRecord(r.lasts, r.effects)
+): { ledger: Ledger; lastActions: Record<string, LastAction>; turns: Turns } {
+  const lasts = Object.fromEntries(
+    Object.entries(r.lasts).map(([id, { delivery: _unsent, ...l }]) => [
+      id,
+      l.result?.state === 'pending' ? { ...l, result: finishedResult(l.result, [], l.result.at) } : l,
+    ]),
+  )
 
   return {
     ledger: pruneClosed(r.ledger, held),
     lastActions: withLasts(before.lastActions, lasts, r.drop),
     turns: demoTurns(before.turns, r.effects),
-    isSample,
   }
 }
 
@@ -688,6 +689,7 @@ export function retryOf(id: string, last: LastAction): RowPress | null {
     case 'answer':
       return { action: 'answer', id, option: last.text }
     case 'explain':
+    case 'compare':
     case 'address':
     case 'issue':
     case 'discuss':
@@ -730,10 +732,21 @@ function pressed(
   ledger: Ledger,
   last: LastAction | undefined,
   p: RowPress,
-  ctx: { now: number; turnsStarted: number; extraSteps: HelpStep[]; localPressId?: string },
+  ctx: {
+    now: number
+    turnsStarted: number
+    extraSteps: HelpStep[]
+    localPressId?: string
+    answerMessage?: AnswerMessage
+  },
 ): PressResult {
   const stale = { stale: true as const }
-  const record = (kind: LastAction['kind']) => recordPress(kind, actionId(p), pressText(p), ctx)
+  const answerMessage = ctx.answerMessage ?? messages.answer
+  const isRepeat = last?.action === actionId(p) && last.kind !== 'local' && last.delivery?.state !== 'failed'
+  const record = (kind: LastAction['kind']) => ({
+    ...recordPress(kind, actionId(p), pressText(p), ctx),
+    ...(isRepeat ? { isRepeat: true as const } : {}),
+  })
   const unchanged = { ledger, last: null, effects: [] }
 
   if (p.action === 'undo') {
@@ -789,11 +802,11 @@ function pressed(
   }
 
   const item = ledger.items.find(i => i.id === p.id)
-  if (!item) return p.action === 'type' ? replyToClosed(ledger, p, record('handoff')) : stale
+  if (!item) return p.action === 'type' ? replyToClosed(ledger, p, record('handoff'), answerMessage) : stale
   const answered = (answer: string): PressResult => ({
     ledger: closeItem(ledger, item.id, { how: 'answered', outcome: answer }, ctx.now),
     last: record('mark'),
-    effects: [{ kind: 'send', text: messages.answer(item, answer), by: { id: item.id, action: 'answer' } }],
+    effects: [{ kind: 'send', text: answerMessage(item, answer), by: { id: item.id, action: 'answer' } }],
   })
   switch (p.action) {
     case 'answer':
@@ -801,7 +814,7 @@ function pressed(
     case 'type': {
       const words = p.text.trim()
       if (!words) return unchanged
-      const text = item.kind === 'question' ? messages.answer(item, words) : messages.taskReply(item, words)
+      const text = item.kind === 'question' ? answerMessage(item, words) : messages.taskReply(item, words)
       return { ledger, last: record('handoff'), effects: [{ kind: 'send', text, by: null }] }
     }
     case 'explain':
@@ -809,6 +822,12 @@ function pressed(
         ledger,
         last: record('talk'),
         effects: [{ kind: 'send', text: messages.explain(item), by: { id: item.id, action: 'explain' } }],
+      }
+    case 'compare':
+      return {
+        ledger,
+        last: record('talk'),
+        effects: [{ kind: 'send', text: messages.compare(item), by: { id: item.id, action: 'compare' } }],
       }
     case 'done':
       return { ledger: closeItem(ledger, item.id, { how: 'done', outcome: 'done' }, ctx.now), last: null, effects: [] }
@@ -839,13 +858,18 @@ function pressed(
 }
 
 /** Only a held row's field sends a typed reply to a closed row. The ledger stays as it is. */
-function replyToClosed(ledger: Ledger, p: Extract<RowPress, { action: 'type' }>, last: LastAction): PressResult {
+function replyToClosed(
+  ledger: Ledger,
+  p: Extract<RowPress, { action: 'type' }>,
+  last: LastAction,
+  answerMessage: AnswerMessage,
+): PressResult {
   const words = p.text.trim()
   const closed = ledger.closed.findLast(c => c.id === p.id)?.item
   const record = ledger.closedFindings.findLast(f => f.id === p.id)
   const text = closed
     ? closed.kind === 'question'
-      ? messages.answer(closed, words)
+      ? answerMessage(closed, words)
       : messages.taskReply(closed, words)
     : record
       ? messages.finding(record, 'typed', words)
@@ -867,6 +891,21 @@ function findingBody(finding: Finding): string[] {
 const EXPLAIN_REPLY_FORM =
   'Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply.'
 
+/** The message an answer to a question sends. A host whose agent reads answers in its own form supplies its own. */
+export type AnswerMessage = (item: Item, answer: string) => string
+
+const COMPARE_REQUEST = [
+  'Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.',
+  "For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session's data outside this repo.",
+  'Then reply with a table: one row per choice, and the few measures that tell them apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Add one line on anything you did not expect. After the table, give your pick and say whether it changed. When the choice is visual or has many states, also write one HTML page that shows the choices side by side.',
+  "When the comparison is done, call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps if you made one. That marks it compared. Call each choice by its name as listed.",
+].join('\n\n')
+
+/** A question or task as a message quotes it: its ask, then its options when it has some. */
+function quotedAsk(item: Item): string {
+  return `"${item.ask}"${item.options.length > 0 ? `\nOptions: ${item.options.join(' / ')}` : ''}`
+}
+
 export const messages = {
   answer: (item: Item, answer: string) => `Re "${item.ask}": ${answer}`,
   explain: (item: Item) => {
@@ -874,10 +913,10 @@ export const messages = {
       item.kind === 'task'
         ? 'this task you left for me is about: why it came up, and what doing it involves'
         : 'this question you asked me is about: why it came up, what each choice would do, and which you would pick'
-    const options = item.options.length > 0 ? `\nOptions: ${item.options.join(' / ')}` : ''
 
-    return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.\n"${item.ask}"${options}`
+    return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.\n${quotedAsk(item)}`
   },
+  compare: (item: Item) => `${COMPARE_REQUEST}\n${quotedAsk(item)}`,
   run: (item: Item, command: string) => `For "${item.ask}", run this:\n\`\`\`\n${command}\n\`\`\``,
   taskReply: (item: Item, words: string) => `Re the task you left for me, "${item.ask}": ${words}`,
   done: (asks: string[]) => (asks.length === 1 ? `Done: ${asks[0]}` : `Done:\n${asks.map(a => `- ${a}`).join('\n')}`),

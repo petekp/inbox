@@ -67,6 +67,64 @@ On 2026-10-21, inbox 0.2.10 ran in local Code-mode sessions of Claude desktop 3.
 - **Nested sessions.** A task Claude started in a nested session turned the inbox on there, with its own band and its own saved session. Its question stayed out of the parent session's inbox. Each nested session takes one of the 40 sessions the store keeps (`KEPT_SESSIONS`).
 - **Not seen:** a Copy action, and the sidebar.
 
+## Live checks on desktop 3.6556.2
+
+Checked on 2026-10-23 in the `inbox-ui` VM, twice. The VM's Claude Code loads
+the inbox from `~/inbox`, the folder its directory marketplace points at, and
+not from the copy under `~/.claude/plugins/cache`. The first pass copied the
+build into the cache copy, so it ran the older `~/inbox` build labelled 0.2.9.
+The second pass installed a build with main's drawing code in `~/inbox`; its
+footer read v0.2.10. The results below are from the second pass, and say where
+the first differed. The app was `3.6556.2`. The 3.6556.1 release notes say
+"Bundled Claude Code version: 2.1.308.", and the sessions ran engine 2.1.308,
+with Haiku 5.5 in Auto permission mode. The terminal `claude` in the VM is
+2.1.309 and was not used.
+
+- **Pane width.** The Claude Code 2.1.305 changelog says: "Changed a mod's
+  docked pane to stay within 45% of the terminal's width, including a width
+  kept from a wider terminal". It names the terminal. In the desktop app the
+  pane opened at 41% of the window (the width the app remembered; 37% on the
+  first pass), dragged to 90% (87%), and to 28% at its narrowest. At 90% the
+  conversation column shrank to a sliver and its band and composer were cut
+  off. The inbox's rows and buttons read well at all widths, and nothing
+  clipped.
+- **Band, presses, copy, end.** The AbovePrompt band drew with "Nothing
+  needed", the demo counts and real counts, and during a running turn. Explain,
+  Done and answer presses showed their result at once. A real Explain read
+  "Explaining…" then "✓ Explained" and moved no button. A real Done sent its
+  message with `origin` `{kind: 'plugin', name: 'inbox', asUser: true}`,
+  enqueued and dequeued 1 to 2 ms apart, and Claude replied. `$.ui.copy` put the
+  command on the VM's clipboard (`pbpaste`). `/clear` ended the engine process
+  and the pane and band went with it; the saved session had no running turn, no
+  pending update and no stop, and the app log showed no error.
+- **Buttons move after a press.** On main's code a demo Explain adds "Sample
+  entry: nothing was sent." under the title and moves the buttons down 30 pt,
+  and they move back at about 5 s. A demo answer puts the note above the list
+  and moves every row. A real Copy adds "✓ Copied … Run it in
+  Terminal." and moves the buttons down 50 pt. That line was gone within 1 s in
+  one session and stayed 7 s or more in another, on the same code. What decides
+  it is not known. A demo Done scrolled the pane about 225 pt to bring the next
+  open task into view.
+- **`allowManagedPermissionRulesOnly`.** The 3.1623.4 notes say: "Changed
+  plugins that the app loads to ask before using the tools they pre-approve
+  when your organization's Claude Code managed settings, such as
+  `managed-settings.json`, set `allowManagedPermissionRulesOnly`." The inbox
+  pre-approves nothing in its manifest. With that key set in a managed file, the
+  model's `record` and `close` calls completed with no permission prompt, a Done
+  press sent its message as a prompt and the model replied, and Copy worked. The
+  managed file seated the guard, and a "its … hook was skipped" notice reached
+  the conversation and the model once: four of them (`classic.SessionStart`,
+  `prompt.context`, `prompt.compose`, `classic.Stop`) on the first pass, one
+  (`classic.SessionStart`) on the second. In the second pass's managed session
+  the band did not draw after the first turn, which had recorded two items, nor
+  after `/inbox` opened the pane. It drew once the next turn started. The cause
+  is not known. The settings reference says the key makes managed settings the
+  only source of permission rules and drops `--allowedTools`.
+- Not checked: a permission dialog for an ordinary tool under that key (`echo`
+  runs without one even in Manual mode); Talk and answer presses under it;
+  Undo in time; a press while a turn runs; quitting the app with a session open;
+  the light theme.
+
 ## Modes and tabs
 
 The public docs and the app disagree on naming.
@@ -231,6 +289,7 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 | Pane size request | `rows` and `columns` on `$.ui.open` are requests. A size the person dragged wins. The dock ignores `rows`, and an inline pane ignores `columns`. | stated | types:7383-7402 (`PaneOpenArgs.rows`, `.columns`) |
 | Older desktop | Places no pane. `$.ui.open` answers `isPlaced: false` until a surface that places panes attaches. | stated | types:13994 (`UiOpenResult`) |
 | Engine pane tabs | The label is the pane's `title`, or its id, and nothing else. A title may hold emoji. Control characters are refused. Tabs exist only while 2 or more panes are open. A click on a tab switches panes, and the engine does that. Re-opening the same id changes the title. No prop styles, sizes, colors or replaces a tab. Whether desktop draws these tabs at all is unknown. | stated. No customization: inferred. Desktop drawing: unknown. | types:7342-7346 (`PaneOpenArgs.title`), 10249-10253 (`Pane.title`), 7333-7403 (`PaneOpenArgs`); mods.md:586 |
+| Pane body width and scrollbar | `bodyColumns` already leaves out the scrollbar's gutter: 42 at 41% and 26 at the narrowest dock, with or without a bar showing, and 1 to 2 more with overlay scrollbars (live, 2026-10-23, app 3.6556.2, engine 2.1.308). A column is about 8.5 pt there. A bar takes an 11 pt gutter, so the visible edge is 11 pt left of the no-bar edge, and content wider than the box is cut. | verified live | live |
 | Pane frame, close mark, tab row | Drawn by the engine, outside the mod's tree. Not counted in `bodyColumns` or `bodyRows`. No prop changes them. | stated; no prop: inferred | types:10262-10263 (`Pane.bodyColumns`), 10278-10280 (`Pane.scroll`) |
 | Layout units | The types say layout is in cells: the pane's pixels divided by the code font's character width and line height. They add "Cell-based until the first element lays out in pixels". But Text draws in a proportional font, and about 1.25 characters fit per column. The sources conflict, and the live result wins. | verified live; stated | live; types:10318-10323 (`RenderViewport`); mods.md:620 |
 | Viewport | At attach: `{ columns: 106, rows: 48, isFullscreen: true }`. The docs say `rows` is the whole window, not the pane. The types say that on a remote surface the viewport is the pane's width and height. Live, `columns` narrowed from 106 to 70 as the pane widened, so it tracks the transcript, not the mod pane. The types conflict with both the docs and the live result. | verified live; stated; conflicting | desktop.md:37, :51; mods.md:613; types:10321-10322 (`RenderViewport`) |
@@ -257,7 +316,7 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 | Button `action` chord | Terminal only. | stated | types:1083-1086 (`ButtonProps.action`); mods.md:662 |
 | Focus | The pane and the band each keep a focus ring. The `focus` request on open is not a grant. If the focused Button is missing from the next drawing, the app takes focus off the pane, and the next click only refocuses it (anthropics/claude-code#100874). Keeping the same key avoids this. `$.ui.focus` acts only in a site that holds the keyboard. | verified live; stated | live; types:13736-13739 (`UiFocusComponent`), 7350-7356 (`PaneOpenArgs.focus`), 13712 (`ui.focus`) |
 | Band (AbovePrompt) | Draws on desktop. `maxRows` was 12, where a 49-row terminal gave 19. `bodyColumns` shrank as the pane widened. The types explain why: the band's column is the transcript beside a docked pane, less 5 columns for `[-]`. The types describe the engine's `[-]` and `n more` rows without naming a surface. Past `maxRows`, desktop clips the band through the middle of a line and draws no `[-]` (2.1.295). Every mod shares the band. The band stays drawn below an open AskUserQuestion dialog, for the inbox and for a second mod alone (live, 2026-10-20, app 3.1623.0). While the app shows its recap card under a reply, a summary with suggested-reply buttons, it draws no band for any mod. The band hooks still run, with `hasSurvey` false, and closing the card brings the band back (live, 2026-10-20). | verified live; stated | desktop.md:52; types:10181-10188 (`AbovePrompt`), 10212-10216 (`AbovePrompt.bodyColumns`); mods.md:588-589, 615-617 |
-| Input, Select | Draw on desktop. Leaf elements with no width or style props. An Input keeps its own width, even inside a growing Box. Its `submitLabel` draws as a native button beside it; clicking that button runs `onSubmit`. At the narrowest pane, the Input and its button together ran about 30 px past a selected row's background, still inside the pane (live, 2026-10-20). On the first Reply, `autoFocus` and a successful `ui.focus` leave typing in the chat composer. Clicking the Input directly enables typing and preserves the composer draft. | verified live (Input, 2026-10-15, engine 2.1.299); stated | live; [anthropics/claude-code#100966](https://github.com/anthropics/claude-code/issues/100966); types:5441-5483 (`InputProps`), 10419-10458 (`SelectProps`); mods.md:640, 675 |
+| Input, Select | Draw on desktop. Leaf elements with no width or style props. An Input keeps its own width, even inside a growing Box. Its `submitLabel` draws as a native button beside it; clicking that button runs `onSubmit`. At the narrowest pane, the Input and its button together ran about 30 px past a selected row's background, still inside the pane (live, 2026-10-20). On the first Reply, `autoFocus` and a successful `ui.focus` leave typing in the chat composer. Clicking the Input directly enables typing and preserves the composer draft. A Reply field in a `flexShrink={1}` Box with `minWidth={0}` and `overflow="hidden"` shrinks below its 180 pt: 67 pt at the narrowest dock, with Send whole beside it (live, 2026-10-23, app 3.6556.2). A one-row field then shows only its first line, so the desktop field has `rows={2}`, which wraps. A `rows={2}` field alone keeps its fixed width. | verified live (Input, 2026-10-15, engine 2.1.299); stated | live; [anthropics/claude-code#100966](https://github.com/anthropics/claude-code/issues/100966); types:5441-5483 (`InputProps`), 10419-10458 (`SelectProps`); mods.md:640, 675 |
 | Link | Drawn as an anchor. The sources conflict: the types allow only `https:` on a remote surface. The docs also allow `http://localhost`, with no `@` and in canonical form. Anything else draws as plain text. The types leave where a click opens to the surface. Where it opens is untested. | stated, conflicting | types:5608-5619 (`LinkProps`); desktop.md:184; mods.md:683-684 |
 | Markdown | A leaf element. A link that is not https, http or file draws as text. The types describe `onLinkPress` clicks only for "the fullscreen terminal". Whether desktop sends link clicks to it is unknown. | stated; unknown | types:5688-5695 (`MarkdownProps.onLinkPress`); mods.md:687 |
 | Code | Colors come from the engine's highlighter, never the mod. | stated | types:1612-1614 (`CodeProps`) |
@@ -347,8 +406,9 @@ Read this before designing any desktop UI for the inbox. It lists what a mod can
 - `desktopSessionCleanupPeriodDays` sets an age limit for transcripts of sessions started or last continued in Claude Desktop or Cowork. Its default is `0`, "which sets no age limit". A transcript is deleted only once it is older than both this limit and `cleanupPeriodDays`. Needs 2.1.248 (https://code.claude.com/docs/en/settings-reference#desktopsessioncleanupperioddays).
 - The guard loads when "The machine has managed settings" or "The user is signed in to Claude Code with a Team or Enterprise plan" (https://code.claude.com/docs/en/plugins/mods/admin#know-what-happens-by-default, Markdown lines 58-63). There, a user's mod "can't change … the system prompt" or managed instructions (same page, line 64).
 - The guard's public source goes further than the docs. It skips every user-tier hook on `prompt.compose`, `prompt.context`, `prompt.section`, `skill.prompt`, `attribution.text`, `settings.read` and `classic.*` (anthropics/claude-code `mods/sec-default/hooks/register.ts` L24-32, main at commit 684800b, 2026-09-29). It also refuses a user mod's `$.tool.register` while managed settings set `allowedMcpServers` (same source, L39-50). Whether the shipped engine's guard matches this source is unknown.
-- Inference for the inbox where the guard loads: Claude would not get the inbox's guidance (`hooks/register.tsx:on('prompt.compose')`) or carry block (`hooks/register.tsx:on('prompt.context')`). The reload after `/clear` and `/resume` (`hooks/register.tsx:on('classic.SessionStart')`) and the `hooks/register.tsx:on('classic.PermissionRequest')` hook would not run. The band, pane and per-turn update would still run. Not verified live.
-- Inference: the app's parent settings may count as managed settings and so seat the guard. Unverified.
+- What this means for the inbox where the guard loads: the inbox uses no `prompt.compose` or `prompt.context` hook. Its guidance is in the `close` tool's description (`hooks/register.tsx:on('tool.describe')`), and its carry card is in the first prompt's added context (`hooks/register.tsx:on('prompt.submit')`). The guard passes both. It skips the reload after `/clear` and `/resume` (`hooks/register.tsx:on('classic.SessionStart')`), so the mod reloads at the first prompt after the switch. It also skips `hooks/register.tsx:on('classic.PermissionRequest')`, so the permission row comes from `tool.check`. The band, pane and per-turn update still run. See claude-code-mods.md, "What the guard's source skips (not in the docs)".
+- Live on desktop 3.6556.2 with a managed settings file, a build with main's code got one "hook was skipped" notice, for `classic.SessionStart`, and `record`, `close` and a pane press worked. The older 0.2.9 build, which still had `prompt.compose` and `prompt.context` hooks, got four notices: `classic.SessionStart`, `prompt.context`, `prompt.compose` and `classic.Stop`. See `allowManagedPermissionRulesOnly` under "Live checks on desktop 3.6556.2".
+- Live, 2026-10-23, desktop 3.6556.2 with engine 2.1.308: in a session with no managed settings file, the transcript held no guard text, so the app's parent settings did not seat the guard on that account. With `/Library/Application Support/ClaudeCode/managed-settings.json` present, the guard seated. See "Live checks on desktop 3.6556.2".
 
 ## /resume, moving sessions and Remote Control
 

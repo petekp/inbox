@@ -22,7 +22,7 @@ import {
   withLasts,
   withUnconfirmed,
 } from './presses'
-import type { Effect, EffectHost, RowPress } from './presses'
+import type { AnswerMessage, Effect, EffectHost, RowPress } from './presses'
 import {
   applied,
   isReplyApplied,
@@ -114,6 +114,10 @@ export type SessionHost<S extends Session> = {
   settleWindowMs: number
   /** A new id for a delivery. */
   newId(): string
+  /** The message an answer press sends, when the agent reads answers in its own form. */
+  answerMessage?: AnswerMessage
+  /** Whether a turn runs now, which holds a Done message back. Without it, a turn runs while the turn has a person's words. */
+  isTurnRunning?(s: S): boolean
 }
 
 /**
@@ -368,7 +372,7 @@ export type PressOutcome = {
 
 type PressHost<S extends Session> = Pick<
   SessionHost<S>,
-  'now' | 'read' | 'update' | 'deliver' | 'perform' | 'newId' | 'isDeliveryHeldUntilRun'
+  'now' | 'read' | 'update' | 'deliver' | 'perform' | 'newId' | 'isDeliveryHeldUntilRun' | 'answerMessage'
 >
 
 /** A press that is saved, with what it still runs. */
@@ -427,7 +431,7 @@ export async function startPress<S extends Session>(
       if (note) return s
       // Read under the lock, so the press is timed after every write that landed before it.
       const at = await host.now()
-      const r = pressOn(s, p, at, localPressId)
+      const r = pressOn(s, p, at, localPressId, host.answerMessage)
       if ('stale' in r) {
         note = 'stale'
         return s
@@ -515,7 +519,7 @@ const NEW_PR_FETCH_MS = 15_000
 /** True when the PRs are due for a fetch: none was fetched yet, the last is old, or a new tracked PR waits for its first. */
 export function isPrFetchDue(s: Session, lastFetchedAt: number | undefined, now: number): boolean {
   if (lastFetchedAt === undefined) return true
-  const hasNewPr = splitLinked(s.ledger.prs).tracked.some(ref => !(ref in s.prViews.views))
+  const hasNewPr = splitLinked(s.prViews, s.ledger.prs).tracked.some(ref => !(ref in s.prViews.views))
 
   return now - lastFetchedAt >= PRS_REFRESH_MS || (hasNewPr && now - lastFetchedAt >= NEW_PR_FETCH_MS)
 }

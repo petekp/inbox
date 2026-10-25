@@ -70,8 +70,10 @@ codex plugin add inbox@inbox
 
 Then, in the ChatGPT desktop app, trust the plugin's hooks: click the hook icon
 beside the prompt's approval setting, then Allow all. Codex runs a plugin's
-hooks only after you trust them. To open the inbox, press + at the top right
-of the window, then choose More tools, then Inbox.
+hooks only after you trust them. On Codex 0.164.0 and later, an update stops
+the hooks until you trust them again: after each update, click the hook icon
+and choose Allow all. To open the inbox, press + at the top right of the window, then choose
+More tools, then Inbox.
 
 [codex/README.md](codex/README.md) covers updating and running the `codex`
 command from inside the app.
@@ -138,6 +140,15 @@ each reply, a model reads what the agent wrote and records each question in
 it, with its possible answers. The agent's recommended answer comes first.
 Press an answer and it goes to the agent as your message. You can also type
 your own reply, or press Explain to have the agent say more before you decide.
+
+When a question is a design choice, such as two layouts or two ways to build a
+feature, Compare has the agent try each answer against your
+code and reply with a table of how they differ. For a visual
+choice it also makes a page that shows them side by side, which opens from the
+question. Where the agent can run a subagent in the background, the
+comparison runs there, so you can keep working. The question reads
+"Comparing…" until the agent reports back. After 30 minutes with no report, it
+reads "No comparison came back", and you can press Compare again.
 
 A task is something like signing in or adding an API key. It comes with
 buttons for its steps, such as copying a command or opening a file. In Claude
@@ -331,6 +342,13 @@ and omp installs it from a bundle, so rebuild the bundle after changing
 bun install --cwd omp --frozen-lockfile --ignore-scripts   # once
 npm --prefix omp run build
 ```
+
+Bun's bundler writes different output in different Bun versions. So the build
+runs the Bun version that `omp/package.json` pins, whichever Bun starts it, and
+the install above puts that Bun in `omp/node_modules`. The pin covers macOS on
+Apple silicon only. On another platform, add the matching `@oven/bun-*` package
+at the same version to the `devDependencies` in `omp/package.json`, or build
+with that Bun version installed.
 
 Try a build in omp with a fresh `HOME`, so it cannot touch your own omp
 settings or inbox: `env HOME=/path/to/empty/folder omp -e omp/src/host.ts`.

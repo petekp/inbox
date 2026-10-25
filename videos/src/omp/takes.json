@@ -1,0 +1,8 @@
+{
+  "session": {
+    "src": "omp/takes/session.json",
+    "kind": "terminal",
+    "cols": 100,
+    "rows": 30
+  }
+}

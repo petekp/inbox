@@ -51,14 +51,17 @@ export function rolloutAt(
   home: string,
   threadId: string,
   meta: Record<string, unknown> = {},
-  { day = '2026/10/20', ext = 'jsonl' }: { day?: string; ext?: string } = {},
+  { day = '2026/10/20', ext = 'jsonl', rolloutId }: { day?: string; ext?: string; rolloutId?: string } = {},
 ): string {
   const [first = '', ...rest] = readFileSync(ROLLOUT_FIXTURE, 'utf8').split('\n')
   const row = JSON.parse(first)
   const payload = { ...row.payload, id: threadId, originator: 'Codex Desktop', source: 'vscode', ...meta }
   const folder = join(home, 'sessions', day)
   mkdirSync(folder, { recursive: true })
-  const path = join(folder, `rollout-${day.replaceAll('/', '-')}T05-01-10-${threadId}.${ext}`)
+  const path = join(
+    folder,
+    `rollout-${day.replaceAll('/', '-')}T05-01-10-${threadId}${rolloutId ? `_${rolloutId}` : ''}.${ext}`,
+  )
   writeFileSync(path, ext === 'jsonl' ? [JSON.stringify({ ...row, payload }), ...rest].join('\n') : 'compressed')
 
   return path

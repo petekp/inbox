@@ -16,6 +16,11 @@ _Avoid_: waiting
 Something the agent asked that only the person can answer.
 _Avoid_: decide, decision
 
+**Design choice**:
+A question whose options the agent could try and show side by side, such as
+two layouts. The agent marks it when it records the question, and the inbox
+model marks a question it adds. Only these show Compare.
+
 **Task**:
 Something only the person can do, such as signing in.
 _Avoid_: do, todo
@@ -65,8 +70,13 @@ arrives above the open row stays closed. Codex animates its entry.
 What an item or PR in the inbox says after the person presses one of its
 actions: a ✓ and the action in the past tense, as in "✓ Discussed · 1m ago".
 Explain and Discuss read "Explaining…" or "Discussing…" until the agent
-replies. A row handed to the agent that its reply left open reads "Still
-open". Each keeps only its latest.
+replies. Compare reads "Comparing…" until the agent records the question
+again, which can be turns later when a background subagent does the work.
+After 30 minutes with no report, it reads "No comparison came back". A row
+handed to the agent that its reply left open reads "Still open". Each
+keeps only its latest. The pressed button reads "… again", as in "Explain
+again", once the press is no longer queued, unconfirmed or waiting on the
+agent. Until then it keeps its label, so its width holds.
 
 ### Looks and hosts
 

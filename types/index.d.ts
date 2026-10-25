@@ -60,6 +60,40 @@ export type Item = {
    * mod kept this reads as 'update'.
    */
   from: 'record' | 'update'
+  /** The open Codex dialog question this item copies. Only the Codex host sets it. */
+  dialog?: DialogLink
+  /**
+   * The agent marked it a design choice: its options are designs or approaches it could try and show side by side.
+   * Only these show Compare. An item saved before the mark kept this has none.
+   */
+  isDesignChoice?: boolean
+  /** When the agent last recorded it again while it was open, as it does to report a comparison. */
+  reportedAt?: number
+  /**
+   * Each option's description, by its label as `options` has it, from a dismissed dialog question this item copies.
+   */
+  optionDescriptions?: Record<string, string>
+}
+
+/**
+ * A question in a Codex `request_user_input_async` dialog: the call's `call_id`, the question's index in the call's
+ * `questions`, and its title.
+ */
+export type DialogLink = { callId: string; index: number; question: string }
+
+/** A question in an agent's dialog, with each option's description by its label. Codex's dialog gives none. */
+export type DialogQuestion = { question: string; options: string[]; descriptions: Record<string, string> }
+
+/**
+ * A dialog question from ledger turn `turn` that an item may copy: a question of a Codex dialog, which stays open, or
+ * of a dialog the person dismissed in another host. `callId` and `index` name a Codex dialog question, and `callId` is
+ * null in other hosts. `itemId` is the item that copies it, once linked.
+ */
+export type TurnDialogQuestion = DialogQuestion & {
+  callId: string | null
+  index: number
+  turn: number
+  itemId: string | null
 }
 
 /**
@@ -119,6 +153,8 @@ export type LastAction = {
   delivery?: Delivery
   /** Undo on a finding Fix handed off, which lists the row again while the agent works on it. */
   isKept?: true
+  /** It repeated the latest action, so its button keeps reading "… again" while the press is out. */
+  isRepeat?: true
 }
 
 /**
@@ -149,9 +185,9 @@ export type LocalResult = { state: 'pending' | 'done' | 'failed'; parts: LocalPa
 
 /**
  * A short note on a row that is not a press's result: a press that found its
- * row gone or changed, or a press on a sample entry, which sends nothing.
+ * row gone or changed.
  */
-export type RowNote = { note: 'stale' | 'sample'; at: number }
+export type RowNote = { note: 'stale'; at: number }
 
 /**
  * A reply the person began in a row's field and has not sent. `since` is when they began it, as the time of the
@@ -220,6 +256,10 @@ export type PrView = {
   reviewDecision: string
   checks: PrCheck[]
   threads: PrThread[]
+  /** Whether the person running gh wrote the PR; null when GitHub's answer did not say. */
+  isYours: boolean | null
+  /** Whether a fetch has found the PR open since the tab began tracking it; for a view saved before this field, whether that view was open. */
+  wasSeenOpen: boolean
   /** Why the last fetch failed; the rest is from the fetch before. */
   error: string | null
 }
@@ -232,7 +272,7 @@ export type Ledger = {
   findings: Finding[]
   /** Findings that closed, oldest first. Kept apart from `closed`, which the model-read texts list. */
   closedFindings: ClosedFinding[]
-  /** PRs this session created or linked, as "owner/repo#123". */
+  /** PRs this session created or linked, as "owner/repo#123", until the person dismisses one. The PRs tab leaves out those `isLeftOut` names. */
   prs: string[]
   nextId: number
   /** How many prompts the person has sent this session. */
@@ -331,7 +371,7 @@ export type Exchange = {
   tasks: HostTask[]
 }
 
-export type Press = { id: string; action: 'answer' | 'explain' | 'run' | 'done' }
+export type Press = { id: string; action: 'answer' | 'explain' | 'compare' | 'run' | 'done' }
 
 /** The inbox text the agent last read beside a prompt, and the closed items it was told about. */
 export type Told = { inbox: string | null; closed: string[] }
@@ -399,6 +439,11 @@ export type Session = {
   stop: Stop | null
   /** The agent's own task list, when its host reports one. Empty when the agent keeps none. */
   hostTasks: HostTask[]
+  /**
+   * The dialog questions an item may still copy: those of the current turn, and of a turn whose exchange waits for the
+   * per-reply update.
+   */
+  dialogQuestions: TurnDialogQuestion[]
 }
 
 declare module 'claude-code' {

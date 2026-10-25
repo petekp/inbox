@@ -313,9 +313,7 @@ export async function tryWithLock<T>(
   }
 }
 
-/**
- * Changes a session under its lock. Every save prunes the closed lists and keeps the records of `heldRows`.
- */
+/** Changes a session under its lock. Every save prunes the closed lists but keeps the records of `heldRows`. */
 export async function updateState(
   dir: string,
   sessionId: string,

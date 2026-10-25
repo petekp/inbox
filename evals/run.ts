@@ -46,7 +46,7 @@ type Check =
   | { open: string }
   | { closed: string; outcome?: string }
   | { added: number }
-  | { new: string; kind?: 'question' | 'task'; rec?: string | null; help?: string }
+  | { new: string; kind?: 'question' | 'task'; rec?: string | null; help?: string; design?: boolean }
   | { notNew: string }
   | { noHelp: string }
   | { item: string; rec?: string; options?: string }
@@ -424,7 +424,8 @@ function failures(
       has(c.new, i.ask) &&
       (!c.kind || i.kind === c.kind) &&
       (c.rec === undefined || (c.rec === null ? i.rec === null : has(c.rec, i.rec))) &&
-      (!c.help || i.helps.some(h => h.kind === c.help)),
+      (!c.help || i.helps.some(h => h.kind === c.help)) &&
+      (c.design === undefined || (i.isDesignChoice === true) === c.design),
   )
   const out: string[] = []
   for (const c of checks) {
@@ -439,7 +440,7 @@ function failures(
       const match = newMatches.get(c)
       if (!match)
         out.push(
-          `no new item like /${c.new}/: ${added.map(i => `"${i.ask}" kind=${i.kind} rec=${i.rec} helps=${i.helps.map(h => h.kind).join('+') || '-'}`).join(', ')}`,
+          `no new item like /${c.new}/: ${added.map(i => `"${i.ask}" kind=${i.kind} rec=${i.rec} design=${i.isDesignChoice === true} helps=${i.helps.map(h => h.kind).join('+') || '-'}`).join(', ')}`,
         )
     } else if ('notNew' in c && added.some(i => has(c.notNew, i.ask))) out.push(`added an item like /${c.notNew}/`)
     else if ('noHelp' in c && added.some(i => i.helps.some(h => h.kind === c.noHelp))) out.push(`a ${c.noHelp} step`)

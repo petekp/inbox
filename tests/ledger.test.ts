@@ -49,10 +49,25 @@ describe('parseReply', () => {
 
   test('an answer written after "|" instead of " / " stays an answer, not the recommendation', () => {
     const [item] = parseReply(
-      'NEW: decide | - | Which port? | Use another port / Stop docs site | Pick one for me | -',
+      'NEW: decide | - | Which port? | Use another port / Stop docs site | Pick one for me | - | -',
     )!.added
     expect(item?.options).toEqual(['Use another port', 'Stop docs site', 'Pick one for me'])
     expect(item?.rec).toBe(null)
+  })
+
+  test('a decide line whose sixth field reads design is a design choice, and a do line never is', () => {
+    const added = parseReply(
+      [
+        'NEW: decide | - | Which layout for settings? | One page / Tabs | Tabs | design',
+        'NEW: decide | - | Which region is staging in? | us-east-1 / eu-west-1 | - | -',
+        'NEW: do | - | Sign in to the registry | - | - | design',
+      ].join('\n'),
+    )!.added
+    expect(added.map(i => [i.rec, i.isDesignChoice === true])).toEqual([
+      ['Tabs', true],
+      [null, false],
+      [null, false],
+    ])
   })
 
   test('keeps a recommendation only as the answer it names, by its words or its letter', () => {

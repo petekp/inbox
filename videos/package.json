@@ -1,8 +1,8 @@
 {
-  "name": "inbox-launch-video",
+  "name": "inbox-videos",
   "private": true,
   "type": "module",
-  "description": "The launch video's animatic, rendered with Remotion from the timeline in src/timeline.ts",
+  "description": "The inbox's videos, rendered with Remotion. Each video's timeline is src/<video>/timeline.ts",
   "scripts": {
     "studio": "remotion studio",
     "check": "node scripts/check.mjs"

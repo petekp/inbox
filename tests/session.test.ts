@@ -27,7 +27,7 @@ import {
 import type { Session } from '../hooks/session'
 import { press, runUpdates, wakeForDone } from '../hooks/session-host'
 import type { CatchUpReply } from '../hooks/session-host'
-import { NO_HOLDS } from '../hooks/view'
+import { allRows, COMPARE_LIMIT_MS, feedbackText, NO_HOLDS } from '../hooks/view'
 import { demoSession, demoView, isDemoCopy, upgradeDemoCopy } from '../hooks/demo'
 import { fakeHost } from './session-fake-host'
 import { runSessionScript } from './session-script'
@@ -54,6 +54,68 @@ test('a refused Done message leaves its row reading Not sent, with Undo', async 
   expect(view.needsYou.closed.tasks.map(c => c.delivery)).toEqual([{ error: 'queue refused', canUndo: true }])
 })
 
+test('Compare reads Comparing… after its reply until the agent records the question again with its page, or until its limit passes', async () => {
+  const { host, delivered } = fakeHost(async () => 'NONE')
+  const record = async (args: Record<string, unknown>) => {
+    let result = ''
+    await host.update(async s => {
+      const r = recorded(CLAUDE_CODE, s, 'record', args, await host.now())
+      result = r.result
+      return r.state
+    })
+    return result
+  }
+  const turn = async (prompt: string, reply: string) => {
+    await host.update(s => notePrompt(CLAUDE_CODE, s, prompt, false).state)
+    await host.update(s => endTurn(CLAUDE_CODE, s, reply, false))
+    await runUpdates(host)
+  }
+  const question = {
+    kind: 'question',
+    ask: 'Which cache should the API use?',
+    options: ['Redis', 'In-memory'],
+    design_choice: true,
+  }
+  await host.update(s => notePrompt(CLAUDE_CODE, s, 'Add caching to the API', false).state)
+  await record(question)
+  await host.update(s => endTurn(CLAUDE_CODE, s, 'Which cache should the API use?', false))
+  await runUpdates(host)
+  const id = (await host.read()).ledger.items[0]!.id
+  const row = async (later = 0) => {
+    const view = sessionView(await host.read(), (await host.now()) + later, host.settleWindowMs, true)
+    const r = allRows(view).find(x => x.id === id)!
+
+    return { feedback: r.feedback && feedbackText(r.feedback, 'terminal'), actions: r.actions.map(a => a.label) }
+  }
+
+  await press(host, { action: 'compare', id }, false, NO_HOLDS)
+  await turn(delivered.at(-1)!, 'A subagent is comparing the two caches.')
+  expect(await row()).toEqual({
+    feedback: 'Comparing…',
+    actions: ['Redis', 'In-memory', 'Reply', 'Explain', 'Compare', 'Dismiss'],
+  })
+  expect(await row(COMPARE_LIMIT_MS)).toEqual({
+    feedback: 'No comparison came back',
+    actions: ['Redis', 'In-memory', 'Reply', 'Explain', 'Compare again', 'Dismiss'],
+  })
+
+  const reported = await record({ ...question, steps: ['/tmp/project/.scratch/compare/caches.html', 'npm test'] })
+  expect(reported).toBe(
+    'Already open, so this record updated it and added its new steps. Some steps were not an absolute file path or a link, so they are left out.',
+  )
+  expect(await row()).toEqual({
+    feedback: '✓ Compared',
+    actions: ['Redis', 'In-memory', 'Open caches.html', 'Reply', 'Explain', 'Compare again', 'Dismiss'],
+  })
+
+  await press(host, { action: 'compare', id }, false, NO_HOLDS)
+  await turn(delivered.at(-1)!, 'A subagent is comparing the two caches again.')
+  expect(await row()).toEqual({
+    feedback: 'Comparing…',
+    actions: ['Redis', 'In-memory', 'Open caches.html', 'Reply', 'Explain', 'Compare again', 'Dismiss'],
+  })
+})
+
 test('a command that prints local URLs notes each once, and gh pr create links the PR it names', () => {
   const printed = 'Local: http://localhost:5173/app\nAlso http://localhost:5173/app and http://api.localhost:3000.\n'
   const served = noteCommandOutput(emptySession(), 'npm run dev', printed)
@@ -78,8 +140,7 @@ test('a PR already linked keeps its place when gh pr create names it again with 
   expect(again.ledger.prs).toEqual(['acme/app#1', 'acme/app#2'])
 })
 
-const LEDGER_REPLY =
-  'GOAL: Add a greeting CLI\nNOW: Waiting on one choice\nNEW: decide | 1 | Use Node or Python? | Node / Python | Node'
+const LEDGER_REPLY = 'NEW: decide | 1 | Use Node or Python? | Node / Python | Node'
 
 const finishTurn = (s: Session, reply: string) =>
   endTurn(CLAUDE_CODE, notePrompt(CLAUDE_CODE, s, 'go', false).state, reply, false)

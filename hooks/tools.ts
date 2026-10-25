@@ -1,6 +1,6 @@
 import { addAgentItem, addFinding, closeByAgent, recommendedOption, stepHelp } from './ledger'
 import type { Host } from './model-text'
-import type { Closed, Ledger } from '../types'
+import type { Closed, Help, Ledger } from '../types'
 
 const NAME_BY_CONTENT = 'Name it by what it says, never by its id.'
 
@@ -32,7 +32,12 @@ const RECORD_SCHEMA = {
       type: 'array',
       items: { type: 'string' },
       description:
-        'For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link.',
+        'For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link. For a question: up to 3 files or https links that help the user decide, such as a page comparing the options, each file as an absolute path.',
+    },
+    design_choice: {
+      type: 'boolean',
+      description:
+        'For a question: true when its options are designs or approaches you could try and show side by side, such as two layouts or two ways to build a feature. The user can then ask you to compare them. Leave it out for a fact, an approval or a preference.',
     },
     finding_kind: {
       type: 'string',
@@ -122,11 +127,30 @@ export function recordItem(
   const recInput = input.kind === 'question' ? cut(input.rec, MAX_OPTION) : ''
   const rec = recInput === '' ? null : recommendedOption(options, recInput)
   if (recInput !== '' && rec === null) return { ledger, result: 'Not recorded: rec must be one of the options.' }
-  const steps = input.kind === 'task' ? list(input.steps, MAX_STEPS + 3, 4000) : []
-  const helps = steps.flatMap(step => stepHelp(step) ?? []).slice(0, MAX_STEPS)
+  const steps = list(input.steps, MAX_STEPS + 3, 4000)
+  const isUsable = (h: Help) => input.kind === 'task' || h.kind === 'open' || h.kind === 'link'
+  const helps = steps
+    .flatMap(step => stepHelp(step) ?? [])
+    .filter(isUsable)
+    .slice(0, MAX_STEPS)
+  const leftOut =
+    helps.length < steps.length
+      ? input.kind === 'task'
+        ? ' Some steps were not a command, a file path or a link, so they are left out.'
+        : ' Some steps were not an absolute file path or a link, so they are left out.'
+      : ''
 
-  const r = addAgentItem(ledger, { kind: input.kind, ask, options, rec, helps }, now)
-  if (r.is === 'open') return { ledger, result: 'Already open.' }
+  const isDesignChoice = input.kind === 'question' && input.design_choice === true
+  const r = addAgentItem(ledger, { kind: input.kind, ask, options, rec, helps, isDesignChoice }, now)
+  if (r.is === 'open') {
+    const changes = [
+      ...(r.addedSteps > 0 ? ['added its new steps'] : []),
+      ...(r.isNewlyMarked ? ['marked it as a design choice'] : []),
+    ]
+    const updated = changes.length > 0 ? ` and ${changes.join(' and ')}` : ''
+
+    return { ledger: r.ledger, result: `Already open, so this record updated it${updated}.${leftOut}` }
+  }
   if (r.is === 'closed')
     return { ledger, result: `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.` }
 
@@ -134,9 +158,7 @@ export function recordItem(
     ledger: r.ledger,
     result:
       `Recorded. The user sees it in ${host.surface}.` +
-      (helps.length < steps.length
-        ? ' Some steps were not a command, a file path or a link, so they are left out.'
-        : '') +
+      leftOut +
       (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ''),
   }
 }

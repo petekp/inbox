@@ -1,4 +1,4 @@
-import type { Closed, Finding, HostTask, Item, Ledger, Overview, Told } from '../types'
+import type { Closed, DialogQuestion, Finding, HostTask, Item, Ledger, Overview, Told } from '../types'
 
 export type { Told } from '../types'
 import type { Exchange } from './ledger'
@@ -25,7 +25,7 @@ export function systemText(host: Host): string {
   return `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
 
 Input:
-- <open>: items still waiting on the person, as id | kind | label | ask | options | rec
+- <open>: items still waiting on the person, as id | kind | label | ask | options | rec | design
 - <findings>: findings the agent recorded for the person to review later, outside the current task, each with an id
 - <decided>: items the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again.
 - <person>: what the person just sent, and the commands they ran themselves: "$ cmd" for a shell command, with its output, and "/name" for a slash command
@@ -40,13 +40,14 @@ CLOSED: <id> | the outcome, at most 8 words, in one of three forms. When the per
 FIXED: <id> | the change that fixed it, at most 8 words. One line for each finding in <findings> whose problem the reply, <activity> or <person> shows was fixed by a change to the work. Only a change fixes a finding. When the person puts a finding off, sets it aside or says it does not matter, write no FIXED line: it stays open until they dismiss it.
 ASKED: <id> | <item>
   For a finding in <findings> that a NEW line or an item in <open> asks the person about. item: "new N" for the Nth NEW line in your answer, or an id from <open>. The item takes the finding's place, so the person sees it once.
-NEW: <kind> | <label> | <ask> | <options> | <rec>
+NEW: <kind> | <label> | <ask> | <options> | <rec> | <design>
   One line per thing in <reply> that waits on the person and is not already in <open> or <findings>. A finding the agent recorded is not NEW unless the reply asks the person to decide or do something about it now; then also write an ASKED line for it. Also one line per dialog in <activity> that the person dismissed or left unanswered, with an ASKED line when the dialog asks about a finding. When the reply restates, rewords or narrows an item in <open>, it is not new: add HELP lines to that item's id instead.
   kind: "decide" (a choice, approval, or information only the person has, explicitly put to them, without which the agent cannot go on with its task) or "do" (an action only the person can take, without which the agent cannot continue or finish: sign in, run a command needing their password, test on their device, reply to a teammate).
   label: the reply's own number or id for it ("1", "D3"), or "-".
   ask: plain words, readable without the reply, at most 12 words, or up to 16 when 12 would lose meaning. Keep the question's meaning and every alternative it names. Replace any term the reply coined with what it means. Name an item or finding by what it says, never by its id: the person does not see ids.
   options: the answers the person can pick, separated by " / ", at most 5 words each; "-" for kind "do". For kind "decide", always at least one, so one press can answer. Use the choices the reply offers, plus the answer it recommends when that is not one of them. When the reply offers none, predict the answers the person would most likely give: the yes and the no for an approval or a yes-or-no question ("Approve / Not yet"); the 1 to 3 likeliest answers to an open question, from the conversation; or, when the conversation suggests no answer, what the person would most likely ask the agent to do instead ("${LIST_CHOICES}", "Pick one for me").
   rec: the option the reply states it recommends for this question ("I'd go with X", "I recommend X"), copied from options, or "-" when it states none for this question. A reason the reply gives for one answer is not a recommendation: it must say it recommends or prefers that answer.
+  design: "design" for a "decide" item whose options are designs or approaches the agent could try and show side by side, such as two layouts or two ways to build a feature. Otherwise "-", as for a fact, an approval or a preference.
   Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, edit a shared page) until the person agrees is a "decide" item ("Say when you want those committed"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
 UPDATE: <id> | <options> | <rec>
   For a "decide" item in <open> when the reply now offers it different answers, or states a recommendation for it that <open> does not show. options: the answers the person can now pick, as in NEW, or "-" to keep them. rec: as in NEW, or "-" to keep it. Rewording the question is not a change.
@@ -153,7 +154,7 @@ export function toolActivity(tool: string, input: Record<string, unknown>): stri
   return tool.startsWith('mcp__') ? `called ${tool.slice(5)}` : null
 }
 
-export type DialogQuestion = { question: string; options: string[] }
+export type { DialogQuestion }
 
 export type DialogOutcome =
   | { kind: 'answered'; answer: string }
@@ -166,11 +167,11 @@ const DIALOG_QUESTION_MAX = 200
 const DIALOG_OPTIONS_SHOWN = 6
 const DIALOG_OPTION_MAX = 60
 const DIALOG_ANSWER_MAX = 400
-const RECOMMENDED_SUFFIX = /\s*\(recommended\)\s*$/i
+export const RECOMMENDED_SUFFIX = /\s*\(recommended\)\s*$/i
 
 /**
- * The questions of a dialog tool's input. Claude's AskUserQuestion gives `question` and options with a `label`.
- * Codex's `request_user_input_async` gives `title` and plain option strings.
+ * The questions of a dialog tool's input. Claude's AskUserQuestion and omp's ask give `question` and options with a
+ * `label` and an optional `description`. Codex's `request_user_input_async` gives `title` and plain option strings.
  */
 export function dialogQuestions(raw: unknown): DialogQuestion[] {
   if (!Array.isArray(raw)) return []
@@ -180,12 +181,20 @@ export function dialogQuestions(raw: unknown): DialogQuestion[] {
     const text = [fields.question, fields.title].find((v): v is string => typeof v === 'string' && v.trim() !== '')
     if (!text) return []
     const options = (Array.isArray(fields.options) ? fields.options : []).flatMap((o: unknown) => {
-      const label = typeof o === 'string' ? o : (o as { label?: unknown } | null)?.label
+      const option = typeof o === 'string' ? { label: o } : ((o ?? {}) as { label?: unknown; description?: unknown })
+      const label = typeof option.label === 'string' ? option.label.trim() : ''
+      const description = typeof option.description === 'string' ? option.description.trim() : ''
 
-      return typeof label === 'string' && label.trim() !== '' ? [label.trim()] : []
+      return label === '' ? [] : [{ label, description }]
     })
 
-    return [{ question: text.trim(), options }]
+    return [
+      {
+        question: text.trim(),
+        options: options.map(o => o.label),
+        descriptions: Object.fromEntries(options.filter(o => o.description !== '').map(o => [o.label, o.description])),
+      },
+    ]
   })
 }
 
@@ -224,7 +233,7 @@ function ledgerBlocks(ledger: Ledger): string[] {
   const open = ledger.items
     .map(
       i =>
-        `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? '-'} | ${i.ask} | ${i.options.join(' / ') || '-'} | ${i.rec ?? '-'}`,
+        `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? '-'} | ${i.ask} | ${i.options.join(' / ') || '-'} | ${i.rec ?? '-'} | ${i.isDesignChoice ? 'design' : '-'}`,
     )
     .join(NL)
   const findings = ledger.findings.map(f => `${f.id} | ${f.kind}: ${f.title}`).join(NL)

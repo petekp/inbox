@@ -33,6 +33,7 @@ import {
   heldReplies,
   isFailure,
   isGuarded,
+  isStatusUnderActions,
   isWaitingRow,
   firstWaiting,
   keptOpen,
@@ -47,6 +48,7 @@ import {
   SETTLED_MS,
   settledIn,
   shortAgo,
+  shownOptionDescriptions,
 } from '../../hooks/view'
 import { LEAD_GAP_PT, ROW_PAD_PT } from '../../hooks/layout'
 import type {
@@ -620,13 +622,13 @@ async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void
     if (!r.error && r.note !== 'stale' && r.delivery !== 'unconfirmed') onSent?.()
     if (!r.error && r.note !== 'stale' && r.delivery !== 'unconfirmed' && r.view && wasWaiting && typing !== rowId)
       openAfterClose(r.view, rowId)
-    const note = DEMO_RECORDING && r.note === 'sample' ? null : r.note
+    const { note } = r
     if (note && view && isListed(view, rowId)) {
-      notes.set(rowId, { text: noteText(note), at: Date.now() })
+      notes.set(rowId, { text: noteText(), at: Date.now() })
       drawIn(SETTLED_MS)
       if (note === 'stale' && press.action === 'type') typing = rowId
     } else if (note) {
-      lineNote = { text: noteText(note), at: Date.now() }
+      lineNote = { text: noteText(), at: Date.now() }
       drawIn(SETTLED_MS)
     }
   } catch {
@@ -742,6 +744,7 @@ function itemRow(v: View, r: RowView): Row {
   const mark = rowMark(r, 'codex')
   const isHandedOff = r.state.is === 'handedOff'
   const id = r.id
+  const described = shownOptionDescriptions(r, optionsShown.has(id))
 
   return {
     id,
@@ -751,6 +754,20 @@ function itemRow(v: View, r: RowView): Row {
     ...(isHandedOff ? { fold: {} } : {}),
     title: r.title,
     age: r.at === null ? undefined : shortAgo(v.at - r.at),
+    ...(described.length > 0
+      ? {
+          body: (
+            <div>
+              {described.map(o => (
+                <p class="option-description" title={`${o.label}: ${o.description}`}>
+                  {o.label}
+                  <span class="muted">: {o.description}</span>
+                </p>
+              ))}
+            </div>
+          ),
+        }
+      : {}),
     ...rowKeys(r),
     typing: {
       hint: replyHint(r, 'Codex'),
@@ -1077,7 +1094,8 @@ function ListRow({ row, track, onSelect, now }: { row: Row; track: RowTrack; onS
   const label = isSending ? null : (pending ?? (f ? feedbackLabel(row) : null))
   const ageAt = !pending && f && hasAge(f) ? f.at : null
   const isInSide = ageAt !== null && !isSelected && !isClosing && f?.is !== 'queued' && f?.is !== 'unconfirmed'
-  const last = isInSide ? null : label
+  const statusUnder = !pending && isStatusUnderActions(f, isSelected || isClosing) ? label : null
+  const last = isInSide || statusUnder ? null : label
   const side = isSending ? SENDING : ageAt !== null ? shortAgo(now - ageAt) : last ? null : row.age
   const afterTone = !pending && isFailure(row.feedback) ? 'error' : undefined
 
@@ -1113,12 +1131,12 @@ function ListRow({ row, track, onSelect, now }: { row: Row; track: RowTrack; onS
         {isInSide ? <span class="side-label">{label}</span> : null}
         {side}
       </span>
-      {isSelected || isClosing ? <Panel row={row} isClosing={isClosing} /> : null}
+      {isSelected || isClosing ? <Panel row={row} isClosing={isClosing} status={statusUnder} /> : null}
     </div>
   )
 }
 
-function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
+function Panel({ row, isClosing, status }: { row: Row; isClosing: boolean; status?: string | null }) {
   const { keys, more } = rowActions(row)
   const copied = copies.get(row.id)
   const note = noteOf(row.id)
@@ -1160,6 +1178,7 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
         }
         isBlocked={isOpenGuarded}
       />
+      {status ? <div class="muted">{status}</div> : null}
       {copied ? (
         <div>
           <div class="muted">Copy {copied.name} from here:</div>
@@ -1485,8 +1504,20 @@ function GroupEnd({
   )
 }
 
+const HOOKS_TRUST_TEXT: Record<NonNullable<View['hooksTrust']>, [string, string]> = {
+  untrusted: [
+    'Codex is not running the inbox’s hooks yet.',
+    'Click the hook icon beside the approval setting, then Allow all.',
+  ],
+  modified: [
+    'Codex stopped the inbox’s hooks after an update.',
+    'Trust them again: click the hook icon beside the approval setting, then Allow all.',
+  ],
+}
+
 function notHeardText(v: View): [string, string] | null {
   if (v.heard === 'heard') return null
+  if (v.heard === 'none' && v.hooksTrust) return HOOKS_TRUST_TEXT[v.hooksTrust]
 
   return [
     'The inbox has not heard from this chat’s hooks.',

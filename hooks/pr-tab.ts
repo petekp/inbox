@@ -15,11 +15,12 @@ import {
   commentParts,
   failingChecks,
   inPrOrder,
+  isKeptPr,
   parseRef,
   prompts,
   prRefs,
   readiness,
-  readThreads,
+  readThreadsAnswer,
   readView,
   THREAD_TITLE_CHARS,
   threadsOnYou,
@@ -51,12 +52,24 @@ export function itemPrSteps(item: Item, prState: PrViews, linked: string[]): Hel
   )
 }
 
-export function splitLinked(linked: string[]): { tracked: string[]; older: string[] } {
-  return { tracked: linked.slice(-MAX_PRS), older: linked.slice(0, Math.max(0, linked.length - MAX_PRS)) }
+/**
+ * A linked PR the tab leaves out for good, by `isKeptPr`: its view says someone else wrote it, or that it was merged
+ * or closed before a fetch found it open. A fetch skips it, and a task naming it keeps its Open PR step.
+ */
+export function isLeftOut(prState: PrViews, ref: string): boolean {
+  const view = prState.views[ref]
+
+  return view !== undefined && !isKeptPr(view)
 }
 
-export function olderPrsText(linked: string[]): string | null {
-  const { older } = splitLinked(linked)
+export function splitLinked(prState: PrViews, linked: string[]): { tracked: string[]; older: string[] } {
+  const shown = linked.filter(ref => !isLeftOut(prState, ref))
+
+  return { tracked: shown.slice(-MAX_PRS), older: shown.slice(0, Math.max(0, shown.length - MAX_PRS)) }
+}
+
+export function olderPrsText(prState: PrViews, linked: string[]): string | null {
+  const { older } = splitLinked(prState, linked)
   if (older.length === 0) return null
   const numbers = older.map(ref => `#${parseRef(ref).number}`).reverse()
 
@@ -72,7 +85,7 @@ export async function fetchTracked(
   linked: string[],
   findsBranchPr: boolean,
 ): Promise<{ views: Record<string, PrView>; branchRef: string | null }> {
-  const { tracked } = splitLinked(linked)
+  const { tracked } = splitLinked(state, linked)
   const branchTarget = findsBranchPr ? null : state.branchRef
   const isBranchLinked = branchTarget !== null && tracked.includes(branchTarget)
   const [branch, ...rest] = await Promise.all([
@@ -125,11 +138,14 @@ export async function fetchPr(
   if (!base)
     return previous ? { ...previous, error: view.stderr.trim().split('\n')[0] || 'gh could not read the PR' } : null
   const threads = early ?? (await threadsOf(ref))
+  const answer = threads.exitCode === 0 ? readThreadsAnswer(threads.stdout) : null
 
   return {
     ...base,
-    threads: threads.exitCode === 0 ? readThreads(threads.stdout) : (previous?.threads ?? []),
-    error: threads.exitCode === 0 ? null : 'could not read review threads',
+    threads: answer?.threads ?? previous?.threads ?? [],
+    isYours: answer?.isYours ?? previous?.isYours ?? null,
+    wasSeenOpen: base.state === 'OPEN' || previous?.wasSeenOpen === true,
+    error: answer ? null : 'could not read review threads',
   }
 }
 
@@ -247,7 +263,12 @@ export function prRowWaits(prs: PrView[], lastActions: Record<string, LastAction
 }
 
 export function isTracked(prState: PrViews, linked: string[], ref: string): boolean {
-  return splitLinked(linked).tracked.includes(ref) || prState.branchRef === ref
+  return splitLinked(prState, linked).tracked.includes(ref) || prState.branchRef === ref
+}
+
+/** Whether the session keeps a PR's view: the tab tracks the PR, or it is linked and left out, which keeps a fetch from reading it again. */
+export function keepsView(prState: PrViews, linked: string[], ref: string): boolean {
+  return isTracked(prState, linked, ref) || (linked.includes(ref) && isLeftOut(prState, ref))
 }
 
 export function isDismissing(lastActions: Record<string, LastAction>, ref: string, now: number): boolean {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
@@ -151,6 +152,52 @@ test('a press drawn in another thread, or on a row that changed, reads stale and
   const s = await readState(dir, 's1')
   assert.deepEqual(s.sent, [])
   assert.deepEqual(s.lastActions, before.lastActions)
+})
+
+test('an answer pressed while the turn that opened a dialog still runs goes in the form the Codex app reads as the dialog’s answer, reads Queued, and arrives as the press', async () => {
+  const { dir, calls, call } = await setup(0)
+  const transcript = join(tempDir(), 'rollout.jsonl')
+  const questions = [
+    { title: 'Which name?', options: ['Ada', 'Grace'] },
+    { title: 'Ship "v2" now?', options: ['Yes (Recommended)', 'No'] },
+  ]
+  writeFileSync(
+    transcript,
+    [
+      { type: 'event_msg', payload: { type: 'task_started', turn_id: 't1' } },
+      {
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'request_user_input_async',
+          call_id: 'call_7',
+          arguments: JSON.stringify({ questions }),
+        },
+      },
+    ]
+      .map(row => JSON.stringify(row))
+      .join('\n'),
+  )
+  await updateState(dir, 's1', s => ({
+    ...s,
+    transcriptPath: transcript,
+    ledger: { ...s.ledger, turn: 1 },
+    heard: { ...s.heard, promptAt: 1 },
+  }))
+  await call('inbox_press', ANSWER, { thread_id: 's1' })
+  const message = calls[0]?.[5] ?? ''
+  const open = '<send_user_message_question_reply>'
+  const close = '</send_user_message_question_reply>'
+  assert.ok(message.startsWith(open) && message.endsWith(close))
+  assert.deepEqual(JSON.parse(message.slice(open.length, -close.length)), [
+    { questionItemId: '["request_user_input_async","call_7",1]', question: 'Ship "v2" now?', answer: 'Yes' },
+  ])
+  assert.equal((await readState(dir, 's1')).lastActions.i1?.delivery?.state, 'queued')
+
+  await handleHook(input('UserPromptSubmit', { prompt: message, turn_id: 't2' }), hookDeps(dir))
+  const s = await readState(dir, 's1')
+  assert.deepEqual(s.turn.press, { id: 'i1', action: 'answer' })
+  assert.equal(s.lastActions.i1?.delivery?.state, 'arrived')
 })
 
 test('a press reads Explaining… at once, Queued once its message waits QUEUED_AFTER_MS for Codex to take it, then Explaining… until the reply, then ✓', async () => {
@@ -541,8 +588,7 @@ test('a press in the demo changes only the demo, sends nothing into the conversa
   )
   assert.deepEqual(calls, [])
   assert.equal(r.result.structuredContent.view.needsYou.questions.find(q => q.id === first.id)?.state.is, 'settled')
-  assert.equal(r.result.structuredContent.note, 'sample')
-  assert.equal(r.result.content[0]?.text, 'Sample entry: nothing was sent.')
+  assert.equal(r.result.structuredContent.note, null)
   const copyTask = demo.result.structuredContent.needsYou.tasks.find(t =>
     t.steps[0]?.step.every(h => h.kind === 'copy'),
   )
@@ -552,8 +598,14 @@ test('a press in the demo changes only the demo, sends nothing into the conversa
     { press: { action: 'step', id: copyTask.id, step: 0, label: copyTask.steps[0]!.label }, thread: 's1', demo: true },
     { thread_id: 's1' },
   )
-  assert.equal(copied.result.structuredContent.note, 'sample')
+  assert.equal(copied.result.structuredContent.note, null)
   assert.equal((copied.result.structuredContent as unknown as { copy: unknown }).copy, null)
+  const copiedRow = (
+    copied.result.structuredContent as unknown as {
+      view: { needsYou: { tasks: { id: string; feedback: { is: string; result?: { state: string } } | null }[] } }
+    }
+  ).view.needsYou.tasks.find(t => t.id === copyTask.id)
+  assert.deepEqual([copiedRow?.feedback?.is, copiedRow?.feedback?.result?.state], ['local', 'done'])
   assert.deepEqual(await readState(dir, 's1'), before)
 })
 
@@ -1407,4 +1459,80 @@ test('a call the model makes does not catch up the chat', async () => {
 
   assert.equal((await readState(dir, 'c4')).presence.ledgerState, 'current')
   assert.deepEqual(updates, [])
+})
+
+test('a chat no hook has run in says why from Codex’s hook list, asks again only after the cache window, and says nothing when the list fails', async () => {
+  let t = 1000
+  const answers: ('untrusted' | 'modified' | 'trusted' | null)[] = ['untrusted', null, 'modified']
+  const asked: string[][] = []
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
+  const handle = makeServer({
+    dir,
+    now: () => t,
+    exec: fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec,
+    tabHtml: '',
+    fallbackCli: async () => 'codex',
+    hooksTrust: async (cli, cwd) => {
+      asked.push([cli, cwd])
+      return answers.shift() ?? null
+    },
+  })
+  const view = async () =>
+    (
+      (await handle({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'inbox_view', arguments: {}, _meta: { thread_id: 's1' } },
+      })) as { result: { structuredContent: { hooksTrust?: string } } }
+    ).result.structuredContent.hooksTrust
+  const settle = () => new Promise(resolve => setImmediate(resolve))
+
+  assert.equal(await view(), undefined)
+  await settle()
+  assert.equal(await view(), 'untrusted')
+  assert.equal(await view(), 'untrusted')
+  assert.deepEqual(asked, [['/apps/codex', '/repo']])
+
+  t += 30_000
+  assert.equal(await view(), 'untrusted')
+  await settle()
+  assert.equal(await view(), undefined)
+
+  t += 30_000
+  await view()
+  await settle()
+  assert.equal(await view(), 'modified')
+  assert.equal(asked.length, 3)
+
+  await updateState(dir, 's1', s => noteHook(s, 'start', t))
+  t += 30_000
+  assert.equal(await view(), undefined)
+  await settle()
+  assert.equal(asked.length, 3)
+})
+
+test('a chat whose folder is not known yet asks Codex’s hook list for the home folder', async () => {
+  const asked: string[] = []
+  const handle = makeServer({
+    dir: tempDir(),
+    now: () => 1000,
+    exec: fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec,
+    tabHtml: '',
+    fallbackCli: async () => 'codex',
+    hooksTrust: async (_cli, folder) => {
+      asked.push(folder)
+      return 'modified'
+    },
+  })
+  await handle({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'tools/call',
+    params: { name: 'inbox_view', arguments: {}, _meta: { thread_id: 'new' } },
+  })
+  await new Promise(resolve => setImmediate(resolve))
+
+  assert.deepEqual(asked, [homedir()])
 })

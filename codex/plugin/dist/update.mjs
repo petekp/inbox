@@ -2,7 +2,7 @@
 
 // src/update-main.ts
 import { homedir as homedir3 } from "node:os";
-import { dirname as dirname2, join as join5 } from "node:path";
+import { dirname as dirname3, join as join5 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/data-dir.ts
@@ -458,19 +458,24 @@ function parseReply(text, source = null) {
       const fields = value.split("|");
       const isLabelSkipped = !dash(fields[2]) && /\s/.test((fields[1] ?? "").trim());
       const [kind, label, ask, ...rest] = (isLabelSkipped ? [fields[0], "-", ...fields.slice(1)] : fields).map(dash);
+      const last = rest.at(-1);
+      const isDesignField = rest.length > 2 && (last === null || /^design$/i.test(last ?? ""));
+      if (isDesignField) rest.pop();
       const rec = rest.length > 1 ? rest.pop() : null;
       if (!ask) {
         newLines.push(void 0);
         continue;
       }
       const options = rest.flatMap((o) => o?.split(/\s+\/\s+/) ?? []).filter(Boolean);
+      const isDesignChoice = isDesignField && last !== null && readKind(kind) === "question";
       const item = {
         kind: readKind(kind),
         label: label ?? null,
         ask,
         options,
         rec: recommendedOption(options, rec ?? null),
-        helps: []
+        helps: [],
+        ...isDesignChoice ? { isDesignChoice } : {}
       };
       added.push(item);
       newLines.push(item);
@@ -632,11 +637,19 @@ function reopenFinding(ledger, id) {
     closedFindings: ledger.closedFindings.filter((f) => f.id !== id)
   };
 }
+var SENT_PRESS_KINDS = {
+  answer: "mark",
+  explain: "talk",
+  compare: "talk",
+  run: "handoff",
+  done: "mark"
+};
 function applyExchangeUpdate(ledger, update, exchange, now, promptAt) {
-  const explainedId = exchange.press?.action === "explain" ? exchange.press.id : null;
+  const press = exchange.press;
+  const talkedAboutId = press && SENT_PRESS_KINDS[press.action] === "talk" ? press.id : null;
   return applyUpdate(
     ledger,
-    { ...update, closed: update.closed.filter((c) => c.id !== explainedId) },
+    { ...update, closed: update.closed.filter((c) => c.id !== talkedAboutId) },
     now,
     exchange.turn,
     promptAt
@@ -677,7 +690,11 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
     const at = matchOpen(items, a, created);
     const restated = items[at];
     if (restated) {
-      items[at] = { ...restated, helps: a.helps.reduce((all, h) => withHelp(all, h), restated.helps) };
+      items[at] = {
+        ...restated,
+        helps: a.helps.reduce((all, h) => withHelp(all, h), restated.helps),
+        ...a.isDesignChoice ? { isDesignChoice: true } : {}
+      };
       addedIds.push(restated.id);
       continue;
     }
@@ -796,7 +813,7 @@ function systemText(host) {
   return `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
 
 Input:
-- <open>: items still waiting on the person, as id | kind | label | ask | options | rec
+- <open>: items still waiting on the person, as id | kind | label | ask | options | rec | design
 - <findings>: findings the agent recorded for the person to review later, outside the current task, each with an id
 - <decided>: items the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again.
 - <person>: what the person just sent, and the commands they ran themselves: "$ cmd" for a shell command, with its output, and "/name" for a slash command
@@ -811,13 +828,14 @@ CLOSED: <id> | the outcome, at most 8 words, in one of three forms. When the per
 FIXED: <id> | the change that fixed it, at most 8 words. One line for each finding in <findings> whose problem the reply, <activity> or <person> shows was fixed by a change to the work. Only a change fixes a finding. When the person puts a finding off, sets it aside or says it does not matter, write no FIXED line: it stays open until they dismiss it.
 ASKED: <id> | <item>
   For a finding in <findings> that a NEW line or an item in <open> asks the person about. item: "new N" for the Nth NEW line in your answer, or an id from <open>. The item takes the finding's place, so the person sees it once.
-NEW: <kind> | <label> | <ask> | <options> | <rec>
+NEW: <kind> | <label> | <ask> | <options> | <rec> | <design>
   One line per thing in <reply> that waits on the person and is not already in <open> or <findings>. A finding the agent recorded is not NEW unless the reply asks the person to decide or do something about it now; then also write an ASKED line for it. Also one line per dialog in <activity> that the person dismissed or left unanswered, with an ASKED line when the dialog asks about a finding. When the reply restates, rewords or narrows an item in <open>, it is not new: add HELP lines to that item's id instead.
   kind: "decide" (a choice, approval, or information only the person has, explicitly put to them, without which the agent cannot go on with its task) or "do" (an action only the person can take, without which the agent cannot continue or finish: sign in, run a command needing their password, test on their device, reply to a teammate).
   label: the reply's own number or id for it ("1", "D3"), or "-".
   ask: plain words, readable without the reply, at most 12 words, or up to 16 when 12 would lose meaning. Keep the question's meaning and every alternative it names. Replace any term the reply coined with what it means. Name an item or finding by what it says, never by its id: the person does not see ids.
   options: the answers the person can pick, separated by " / ", at most 5 words each; "-" for kind "do". For kind "decide", always at least one, so one press can answer. Use the choices the reply offers, plus the answer it recommends when that is not one of them. When the reply offers none, predict the answers the person would most likely give: the yes and the no for an approval or a yes-or-no question ("Approve / Not yet"); the 1 to 3 likeliest answers to an open question, from the conversation; or, when the conversation suggests no answer, what the person would most likely ask the agent to do instead ("${LIST_CHOICES}", "Pick one for me").
   rec: the option the reply states it recommends for this question ("I'd go with X", "I recommend X"), copied from options, or "-" when it states none for this question. A reason the reply gives for one answer is not a recommendation: it must say it recommends or prefers that answer.
+  design: "design" for a "decide" item whose options are designs or approaches the agent could try and show side by side, such as two layouts or two ways to build a feature. Otherwise "-", as for a fact, an approval or a preference.
   Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, edit a shared page) until the person agrees is a "decide" item ("Say when you want those committed"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
 UPDATE: <id> | <options> | <rec>
   For a "decide" item in <open> when the reply now offers it different answers, or states a recommendation for it that <open> does not show. options: the answers the person can now pick, as in NEW, or "-" to keep them. rec: as in NEW, or "-" to keep it. Rewording the question is not a change.
@@ -878,10 +896,18 @@ function dialogQuestions(raw) {
     const text = [fields.question, fields.title].find((v) => typeof v === "string" && v.trim() !== "");
     if (!text) return [];
     const options = (Array.isArray(fields.options) ? fields.options : []).flatMap((o) => {
-      const label = typeof o === "string" ? o : o?.label;
-      return typeof label === "string" && label.trim() !== "" ? [label.trim()] : [];
+      const option = typeof o === "string" ? { label: o } : o ?? {};
+      const label = typeof option.label === "string" ? option.label.trim() : "";
+      const description = typeof option.description === "string" ? option.description.trim() : "";
+      return label === "" ? [] : [{ label, description }];
     });
-    return [{ question: text.trim(), options }];
+    return [
+      {
+        question: text.trim(),
+        options: options.map((o) => o.label),
+        descriptions: Object.fromEntries(options.filter((o) => o.description !== "").map((o) => [o.label, o.description]))
+      }
+    ];
   });
 }
 function dialogQuestionText(q) {
@@ -912,7 +938,7 @@ function dialogActivity(questions, outcome) {
 }
 function ledgerBlocks(ledger) {
   const open2 = ledger.items.map(
-    (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"}`
+    (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`
   ).join(NL5);
   const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL5);
   const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL5);
@@ -1010,6 +1036,64 @@ function outcomeText(d) {
 }
 var TOLD_NOTHING = { inbox: null, closed: [] };
 
+// ../hooks/dialogs.ts
+function optionKey(option) {
+  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
+}
+function optionsKey(options) {
+  return options.map(optionKey).sort().join("\n");
+}
+function hasSameOptions(item, q) {
+  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
+}
+function copyOf(q, items, questions) {
+  const byOptions = items.filter((i) => hasSameOptions(i, q));
+  const [only] = byOptions;
+  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1) return only;
+  const pool = byOptions.length > 0 ? byOptions : items;
+  const byAsk = pool.filter((i) => restates(i.ask, q.question));
+  const [asked] = byAsk;
+  if (!asked || byAsk.length !== 1) return null;
+  const restated = questions.filter((o) => restates(asked.ask, o.question));
+  return restated.length === 1 ? asked : null;
+}
+function descriptionsFor(options, descriptions) {
+  const byKey = new Map(Object.entries(descriptions).map(([label, text]) => [optionKey(label), text]));
+  const matched = options.flatMap((o) => {
+    const text = byKey.get(optionKey(o));
+    return text === void 0 ? [] : [[o, text]];
+  });
+  return matched.length > 0 ? Object.fromEntries(matched) : null;
+}
+function asCopyOf(item, q) {
+  const descriptions = descriptionsFor(item.options, q.descriptions);
+  return {
+    ...item,
+    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
+    ...descriptions ? { optionDescriptions: descriptions } : {}
+  };
+}
+function linkDialogs(s) {
+  if (s.dialogQuestions.length === 0) return s;
+  let items = s.ledger.items;
+  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
+  const questions = s.dialogQuestions.map((q) => {
+    if (q.itemId !== null) return q;
+    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
+    const copy = copyOf(
+      q,
+      turnItems,
+      s.dialogQuestions.filter((o) => o.turn === q.turn)
+    );
+    if (!copy || copy.dialog || linked.has(copy.id)) return q;
+    linked.add(copy.id);
+    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
+    return { ...q, itemId: copy.id };
+  });
+  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
+  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
+}
+
 // ../hooks/presses.ts
 var HANDOFF_IDS = /^(address|type|step-\d+|thread-address|pr-conflicts|pr-address-all)$/;
 var PR_RENAMES = [
@@ -1058,10 +1142,17 @@ function upgradeLastActions(saved) {
     })
   );
 }
+var COMPARE_REQUEST = [
+  "Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.",
+  "For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session's data outside this repo.",
+  "Then reply with a table: one row per choice, and the few measures that tell them apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Add one line on anything you did not expect. After the table, give your pick and say whether it changed. When the choice is visual or has many states, also write one HTML page that shows the choices side by side.",
+  "When the comparison is done, call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps if you made one. That marks it compared. Call each choice by its name as listed."
+].join("\n\n");
 
 // ../hooks/view.ts
 var CHOICE_KEYS = [..."abcfghilm"];
 var SETTLED_MS = 5120;
+var COMPARE_LIMIT_MS = 30 * 6e4;
 var TABS = [
   { id: "needsYou", label: "Needs you", hotkey: "1" },
   { id: "findings", label: "Findings", hotkey: "2" },
@@ -1099,7 +1190,8 @@ function emptySession() {
     heldRows: [],
     prViews: NO_PRS,
     stop: null,
-    hostTasks: []
+    hostTasks: [],
+    dialogQuestions: []
   };
 }
 var SESSION_ID = /^[\w-]{1,100}$/;
@@ -1137,12 +1229,14 @@ function upgradeSession(saved) {
     prViews: {
       ...NO_PRS,
       ...saved.prViews,
-      // Threads saved before their times and `isLinesChanged` existed.
+      // Views saved before `isYours` and `wasSeenOpen`, and threads saved before their times and `isLinesChanged` existed.
       views: Object.fromEntries(
         Object.entries(views).map(([ref, pr]) => [
           ref,
           {
             ...pr,
+            isYours: pr.isYours ?? null,
+            wasSeenOpen: pr.wasSeenOpen ?? pr.state === "OPEN",
             threads: pr.threads.map((t) => ({
               ...t,
               isLinesChanged: t.isLinesChanged ?? false,
@@ -1155,7 +1249,8 @@ function upgradeSession(saved) {
       isFetching: false
     },
     stop: saved.stop ?? null,
-    hostTasks: upgradeHostTasks(saved.hostTasks)
+    hostTasks: upgradeHostTasks(saved.hostTasks),
+    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
 }
 function parsedReply(ex, reply) {
@@ -1178,7 +1273,7 @@ function applied(s, reply, now, promptAt) {
     };
   const ledger = parsed ? applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt) : s.ledger;
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed;
-  return {
+  return linkDialogs({
     ...s,
     ledger,
     pending: s.pending.slice(1),
@@ -1188,7 +1283,7 @@ function applied(s, reply, now, promptAt) {
       hasDroppedReply,
       turnsApplied: Math.max(s.presence.turnsApplied, next.turnsStarted)
     }
-  };
+  });
 }
 function appliedOverview(s, answer, appliedAfter) {
   if (s.presence.turnsApplied < appliedAfter) return s;
@@ -1202,7 +1297,7 @@ function needsCatchUp(s) {
 var pendingKey = (p) => `${p.turnsStarted}:${p.ex.turn}`;
 function appliedCatchUp(s, begun, parsed, now) {
   const covered = new Set(begun.pending.map(pendingKey));
-  return {
+  return linkDialogs({
     ...s,
     ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn, now) : s.ledger,
     pending: s.pending.filter((p) => !covered.has(pendingKey(p))),
@@ -1212,7 +1307,7 @@ function appliedCatchUp(s, begun, parsed, now) {
       hasDroppedReply: parsed ? false : s.presence.hasDroppedReply,
       turnsApplied: Math.max(s.presence.turnsApplied, begun.presence.turnsStarted)
     }
-  };
+  });
 }
 
 // src/state.ts
@@ -1604,7 +1699,7 @@ function codexStore(dir, sessionId, now) {
 
 // src/transcript.ts
 import { open, readdir as readdir2 } from "node:fs/promises";
-import { join as join3, resolve as resolve2 } from "node:path";
+import { dirname as dirname2, join as join3, resolve as resolve2 } from "node:path";
 
 // ../hooks/conversation.ts
 var NL6 = "\n";
@@ -1636,6 +1731,45 @@ function flattenConversation(turns) {
 }
 
 // src/transcript.ts
+async function readSessionMeta(path) {
+  try {
+    const file = await open(path, "r");
+    try {
+      const buf = Buffer.alloc(64 * 1024);
+      const { bytesRead } = await file.read(buf, 0, buf.length, 0);
+      const first = buf.subarray(0, bytesRead).toString("utf8").split("\n")[0] ?? "";
+      const meta = JSON.parse(first);
+      return meta.type === "session_meta" ? meta : null;
+    } finally {
+      await file.close();
+    }
+  } catch {
+    return null;
+  }
+}
+async function namesIn(dir, pattern) {
+  const names = await readdir2(dir).catch(() => []);
+  return names.filter((n) => pattern.test(n)).sort().reverse();
+}
+async function newestRollout(sessions, isWanted) {
+  for (const year of await namesIn(sessions, /^\d{4}$/))
+    for (const month of await namesIn(join3(sessions, year), /^\d{2}$/))
+      for (const day of await namesIn(join3(sessions, year, month), /^\d{2}$/)) {
+        const folder = join3(sessions, year, month, day);
+        const [name] = (await namesIn(folder, /^rollout-.+\.jsonl$/)).filter(isWanted);
+        if (name !== void 0) return join3(folder, name);
+      }
+  return null;
+}
+async function historyBase(path) {
+  const base = (await readSessionMeta(path))?.payload?.history_base;
+  const id = base?.thread_id;
+  const end = base?.end_byte_offset;
+  if (typeof id !== "string" || id === "" || typeof end !== "number" || end <= 0) return null;
+  const sessions = dirname2(dirname2(dirname2(dirname2(path))));
+  const basePath = await newestRollout(sessions, (name) => name.endsWith(`-${id}.jsonl`) || name.endsWith(`_${id}.jsonl`));
+  return basePath === null ? null : { path: basePath, end };
+}
 var DIALOG_TOOL = "request_user_input_async";
 var TAIL_BYTES = 4 * 1024 * 1024;
 var SHELL_CALLS = /* @__PURE__ */ new Set(["shell", "shell_command", "exec_command", "container.exec"]);
@@ -1657,21 +1791,41 @@ function callCommand(p) {
     return "";
   }
 }
-async function tailLines(path, bytes) {
+async function linesBefore(path, bytes, end = Infinity) {
   const file = await open(path, "r");
   try {
-    const { size } = await file.stat();
-    const start = Math.max(0, size - bytes);
-    const buf = Buffer.alloc(size - start);
+    const stop = Math.min(end, (await file.stat()).size);
+    const start = Math.max(0, stop - bytes);
+    const buf = Buffer.alloc(stop - start);
     const { bytesRead } = await file.read(buf, 0, buf.length, start);
     const lines = buf.subarray(0, bytesRead).toString("utf8").split("\n");
     if (start > 0) lines.shift();
-    return lines;
+    return { lines, start, read: bytesRead };
   } finally {
     await file.close();
   }
 }
 var TURN_ROW_BYTES = 64 * 1024;
+async function historyLines(path, bytes) {
+  const first = await linesBefore(path, bytes);
+  const parts = [first.lines];
+  const seen = /* @__PURE__ */ new Set([path]);
+  let budget = bytes - first.read;
+  let isWhole = first.start === 0;
+  let current = path;
+  while (isWhole && budget > 0) {
+    const base = await historyBase(current).catch(() => null);
+    if (base === null || seen.has(base.path)) break;
+    seen.add(base.path);
+    const part = await linesBefore(base.path, budget, base.end).catch(() => null);
+    if (part === null) break;
+    parts.unshift(part.lines);
+    budget -= part.read;
+    isWhole = part.start === 0;
+    current = base.path;
+  }
+  return parts.flat();
+}
 var ROLLOUT_BYTES = 8 * 1024 * 1024;
 var record = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
 var textOf = (v) => isText(v) ? v : "";
@@ -1778,7 +1932,7 @@ function rolloutTurns(lines, cwd) {
 async function readRollout(path, cwd, currentTurnId) {
   if (path === null) return null;
   try {
-    const turns = rolloutTurns(await tailLines(path, ROLLOUT_BYTES), cwd);
+    const turns = rolloutTurns(await historyLines(path, ROLLOUT_BYTES), cwd);
     const earlier = turns.filter(
       (t) => t.id !== currentTurnId && (t.isComplete || t.turns.some((x) => x.role === "person"))
     );
@@ -1911,7 +2065,7 @@ var runUpdates2 = (dir, sessionId, ask, now) => runUpdates({
 // src/update-main.ts
 async function main() {
   const sessionId = process.argv[2] ?? "";
-  const dir = dataDir(process.env, dirname2(dirname2(fileURLToPath(import.meta.url))));
+  const dir = dataDir(process.env, dirname3(dirname3(fileURLToPath(import.meta.url))));
   const { cliPath } = await readState(dir, sessionId);
   const personHome = process.env.CODEX_HOME || join5(homedir3(), ".codex");
   await runUpdates2(dir, sessionId, codexAsk(run, cliPath ?? "codex", dir, personHome), Date.now);

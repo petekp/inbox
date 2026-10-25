@@ -81,6 +81,7 @@ import {
 import type { AskCatchUpOverview, CatchUpReply, SessionHost } from './session-host'
 import { demoView, isDemoCopy, upgradeDemoCopy } from './demo'
 import { claudeTasksAfter } from './host-tasks'
+import { noteDialog } from './dialogs'
 import type { Exchange, Press, Update } from './ledger'
 import {
   applyPrPress,
@@ -209,11 +210,13 @@ import {
   hasAge,
   heldReplies,
   isFailure,
+  isStatusUnderActions,
   isWaitingRow,
   isGuarded,
   PERMISSION_FALLBACK_DELAY_MS,
   PRESS_GUARD_MS,
   QUEUED_AFTER_MS,
+  compareEndsAt,
   rowKeyPlan,
   settledLabel,
   actionLabel,
@@ -231,6 +234,7 @@ import {
   listWaits,
   rowAfterClose,
   shortAgo,
+  shownOptionDescriptions,
 } from './view'
 import type {
   ActionEmphasis,
@@ -266,7 +270,7 @@ import type { ToneName } from './tones'
 import type { FoldProps } from './fold-client'
 import type { LinksProps } from './links-client'
 import type { RowProps } from './row-client'
-import { TAB_COUNT_GAP, TAB_HEIGHT, type TabsProps } from './tabs-client'
+import { TAB_COUNT_GAP, TAB_HEIGHT, tabLines, type TabsProps } from './tabs-client'
 
 /** The tools Claude Code writes its own task list with. They are off unless the person turns them on. */
 const HOST_TASK_TOOLS: ReadonlySet<string> = new Set(['TaskCreate', 'TaskUpdate', 'TodoWrite'])
@@ -310,12 +314,34 @@ const CLOSE_TOOL = 'mcp__inbox__close'
 
 const PANE = 'inbox'
 const REPLY_ROWS = 3
+const DESKTOP_REPLY_ROWS = 2
 const DESKTOP_WIDE_AT = 50
 // About how many characters of desktop's proportional text fit in one column of `bodyColumns`: sentences and
 // the tab labels run 1.23 to 1.30, bold or not.
 const DESKTOP_CHARS_PER_CELL = 1.25
 // A lower guess for text that must stay one line, since desktop wraps text that is too long.
 const DESKTOP_CLIP_CHARS_PER_CELL = 1.1
+// The widest character in each group, in points, in the pane's 13 pt system font as AppKit measures it. Any other
+// character counts as the widest group, so an estimate is never narrower than the text.
+const DESKTOP_CHAR_GROUPS: [chars: string, pt: number][] = [
+  ["ijl|I ',.:;/\\!", 4],
+  ['ftr()[]{}', 4.9],
+  ['aceksvxyz-*"`?1J', 7.4],
+  ['bdghnopqu_EFL27', 7.95],
+  ['ABKPRSTVXYZ0345689#$+<=>^~', 8.8],
+  ['CDGHNOQUw&', 10],
+]
+const DESKTOP_CHAR_PT = new Map(DESKTOP_CHAR_GROUPS.flatMap(([chars, pt]) => [...chars].map(c => [c, pt] as const)))
+const DESKTOP_WIDEST_CHAR_PT = 12.6
+// A native Button's padding around its label, and its bolder primary label, measured live: 163 to 167 pt for
+// "Plain (recommended)", whose label is 130 pt in the regular weight.
+const DESKTOP_BUTTON_EXTRA_PT = 38
+/** Desktop cuts a label wider than its control, so a control is sized from each character's width. */
+function desktopTextPt(text: string): number {
+  let pt = 0
+  for (const c of text) pt += DESKTOP_CHAR_PT.get(c) ?? DESKTOP_WIDEST_CHAR_PT
+  return pt
+}
 const DESKTOP_TAB_PAD = '\u00a0'.repeat(3)
 const DESKTOP_LINE_PT = 19
 // One column of `bodyColumns` in the Claude app pane, in points: 15.8 px at 2x.
@@ -688,7 +714,12 @@ function focusKeys(node: unknown, keys = new Set<string>()): Set<string> {
 
 let resuming: { is: 'sending' } | { is: 'refused'; why: string } | null = null
 let stopGeneration = 0
-const fieldSeeds = new Map<string, string>()
+/** Each row's latest reply field: its key, and the draft text it opened with. */
+const openFields = new Map<string, { key: string; seed: string }>()
+let paneClosesOnEscape = true
+/** The row whose field opened while the keys stayed elsewhere, as over text in the prompt. */
+let fieldWithoutKeys: string | null = null
+const paneHasKeys = new Map<RenderSurface, boolean>()
 
 function resetTurn() {
   sentBack = []
@@ -948,6 +979,21 @@ function later($: EngineInterface, waitMs: number, run: () => unknown) {
   })().catch(() => undefined)
 }
 
+let compareRedrawAt: number | null = null
+
+/** Redraws when the soonest Compare press reaches its limit, then waits for the next one. */
+async function redrawAtCompareEnd($: EngineInterface) {
+  const { lastActions, now } = await drawnState($)
+  const at = compareEndsAt(lastActions, now)
+  if (at === null || (compareRedrawAt !== null && compareRedrawAt <= at)) return
+  compareRedrawAt = at
+  later($, at - now, async () => {
+    compareRedrawAt = null
+    await redraw($)
+    await redrawAtCompareEnd($)
+  })
+}
+
 async function redrawAfterReload($: EngineInterface) {
   const { ledger, lastActions, notes, now } = await drawnState($)
   const times = [
@@ -961,6 +1007,7 @@ async function redrawAfterReload($: EngineInterface) {
   ]
   const latest = Math.max(...times)
   if (times.length > 0 && latest + SETTLED_MS > now) redrawWhileLeaving($, latest + SETTLED_MS)
+  await redrawAtCompareEnd($)
 }
 
 /**
@@ -1131,10 +1178,20 @@ async function runTool($: EngineInterface, tool: 'record' | 'close', input: Reco
 /**
  * Opens the pane, or raises it, asking for the keyboard. The surface grants
  * that only while the prompt holds the keys over an empty composer.
+ *
+ * Escape closes a pane opened with `closeOnEscape` as its close mark does, and `ui.close` names both the
+ * person's. So while a reply field is open the pane opens without it: Escape then only hands the keys back,
+ * and the pane's render closes the field.
  */
-async function openPane($: EngineInterface) {
-  const opened = await $.ui.open({ id: PANE, title: 'Inbox', focus: true, closeOnEscape: true })
-  void syncLook($, true)
+function openPane($: EngineInterface, isFieldOpen = false) {
+  paneClosesOnEscape = !isFieldOpen
+  const opened = $.ui.open({
+    id: PANE,
+    title: 'Inbox',
+    focus: true,
+    ...(isFieldOpen ? {} : { closeOnEscape: true as const }),
+  })
+  void opened.then(() => syncLook($, true)).catch(() => undefined)
 
   return opened
 }
@@ -1149,6 +1206,15 @@ async function syncLook($: EngineInterface, isOpen?: boolean) {
   const [page, isPaneOpen, now] = await Promise.all([read($, PAGE), isOpen ?? isPaneShown($), $.clock.now()])
   const isShown = isPaneOpen && page === 'overview'
   await commit($, currentOwner(), s => (isShown ? lookStartedOn(s, now) : lookEndedOn(s, now))).catch(() => undefined)
+}
+
+/** Opens the open pane again, without asking for the keyboard, once a reply field opened or closed. */
+async function matchPaneEscape($: EngineInterface) {
+  const closesOnEscape = (await read($, TYPING)) === null
+  if (closesOnEscape === paneClosesOnEscape) return
+  paneClosesOnEscape = closesOnEscape
+  if (!(await $.ui.panes()).some(p => p.id === PANE)) return
+  await $.ui.open({ id: PANE, title: 'Inbox', ...(closesOnEscape ? { closeOnEscape: true as const } : {}) })
 }
 
 async function openTopRow($: EngineInterface) {
@@ -1191,17 +1257,30 @@ async function sendTyped($: EngineInterface, id: string, text: string, surface: 
   else await focusField($, id)
 }
 
+/**
+ * The engine keeps a field's typed text under its key after the field leaves the drawing. Enter
+ * empties it and a Button press does not. So each draft gets its own key, and the field a new draft
+ * opens starts empty.
+ */
+function openedField(id: string, draft: Draft | undefined) {
+  return { key: `type-${id}-${draft?.since ?? 0}`, seed: draft?.text ?? '' }
+}
+
+function fieldKey(id: string) {
+  return openFields.get(id)?.key ?? `type-${id}`
+}
+
 async function startTyping($: EngineInterface, id: string) {
   const now = await $.clock.now()
   const drafts = await update($, DRAFTS, d => (d[id] ? d : { ...d, [id]: { text: '', since: now } }))
-  fieldSeeds.set(id, drafts[id]?.text ?? '')
+  openFields.set(id, openedField(id, drafts[id]))
   await keepPressedOpen($, id)
   await update($, TYPING, () => id)
   await focusField($, id)
 }
 
 async function discardReply($: EngineInterface, id: string) {
-  fieldSeeds.delete(id)
+  openFields.delete(id)
   const now = await $.clock.now()
   await update($, DISCARDED, d => ({
     ...Object.fromEntries(Object.entries(d).filter(([, at]) => now - at < SETTLED_MS)),
@@ -1216,8 +1295,16 @@ async function discardReply($: EngineInterface, id: string) {
 
 async function focusField($: EngineInterface, id: string) {
   // A click leaves the keys with the prompt, and `ui.focus` is refused in a pane that lacks them.
-  await openPane($)
-  await $.ui.focus({ requestId: PANE, key: `type-${id}` }).catch(() => undefined)
+  await openPane($, true)
+  const isMoved = await $.ui.focus({ requestId: PANE, key: fieldKey(id) }).then(
+    r => r.deny === undefined,
+    () => false,
+  )
+  // A deny also comes when the field's `autoFocus` took the keys first, so the pane says whether it has them.
+  const isWithoutKeys = !isMoved && (await $.ui.panes()).some(p => p.id === PANE && !p.isFocused)
+  if (isWithoutKeys === (fieldWithoutKeys === id)) return
+  fieldWithoutKeys = isWithoutKeys ? id : null
+  await redraw($)
 }
 
 /** The shown row tab; null while the Progress page shows, where no row is drawn, selected or scrolled to. */
@@ -1845,6 +1932,7 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   const { isMoved, undoBlock } = await openAfterClose($, rowId, wasWaiting, canRevealUndo)
   if (canRevealUndo) await keepUndoVisible($, undoKey, undoBlock, now, undoRevision)
   if (!('ref' in p) && p.action === 'done') later($, SETTLED_MS, () => wakeForDone($))
+  if (!('ref' in p) && p.action === 'compare') void redrawAtCompareEnd($).catch(() => undefined)
   if (!('ref' in p) && p.action === 'address') redrawWhileLeaving($, now + SETTLED_MS)
   if (isReplyToClosed && effects.length > 0) redrawWhileLeaving($, now + SETTLED_MS)
   if ('ref' in p && p.action === 'pr-dismiss') {
@@ -1951,7 +2039,7 @@ async function runDemoPress(
   if (!('ref' in p) && p.action === 'type') await update($, TYPING, t => (t === p.id ? null : t))
   let applied = { stale: true } as Applied
   let isClosing = false
-  const [isRecording, typing, drafts] = await Promise.all([read($, DEMO_RECORDING), read($, TYPING), read($, DRAFTS)])
+  const [typing, drafts] = await Promise.all([read($, TYPING), read($, DRAFTS)])
   const held = new Set(Object.keys(heldReplies(typing, drafts)))
   await update($, DEMO, d => {
     if (!d) return d
@@ -1974,13 +2062,9 @@ async function runDemoPress(
       hasNewClose(d.ledger, r.ledger) ||
       ('ref' in p ? p.action === 'pr-dismiss' : p.action === 'address') ||
       (!('ref' in p) && p.action === 'type' && !isOpenIn(d.ledger, p.id))
-    const { isSample, ...after } = demoAfterPress({ lastActions: d.lastActions, turns: d.turns }, r, held)
+    const after = demoAfterPress({ lastActions: d.lastActions, turns: d.turns }, r, held)
 
-    return {
-      ...d,
-      ...after,
-      notes: isSample && !isRecording ? { ...notes, [rowId]: { note: 'sample' as const, at: now } } : notes,
-    }
+    return { ...d, ...after, notes }
   })
   const pressed = applied
   if (!('ref' in p) && p.action === 'type')
@@ -2247,6 +2331,7 @@ async function initializeInbox($: EngineInterface) {
   await upgradeState($)
   isOn = true
   toolsRefused = false
+  compareRedrawAt = null
   const refused = () => {
     toolsRefused = true
   }
@@ -2423,7 +2508,7 @@ async function forgetRowState($: EngineInterface) {
     update($, DISCARDED, () => ({})),
     update($, NOTES, () => ({})),
   ])
-  fieldSeeds.clear()
+  openFields.clear()
 }
 
 async function readAgain($: EngineInterface) {
@@ -2615,8 +2700,14 @@ export const register: Register = on => {
       await openDialog($, { kind: 'question', text: question, key })
       const ran = await run()
       const outcome = dialogOutcome(ran)
-      await noteActivity($, dialogActivity(dialogQuestions(input.questions), outcome))
-      if (outcome.kind === 'dismissed') isDialogDismissed = true
+      const asked = dialogQuestions(input.questions)
+      const isDismissed = outcome.kind === 'dismissed'
+      if (isDismissed) isDialogDismissed = true
+      const line = dialogActivity(asked, outcome)
+      await commit($, currentOwner(), s => {
+        const noted = noteTurnActivity(s, line)
+        return isDismissed ? noteDialog(noted, null, asked) : noted
+      }).catch(() => undefined)
 
       return ran
     }
@@ -2838,6 +2929,7 @@ export const register: Register = on => {
     cancelUndoScroll()
     const r = await next(e)
     void syncLook($, false)
+    paneHasKeys.clear()
     await update($, TYPING, () => null)
     await update($, FOLD_HOVER, () => null)
 
@@ -2946,6 +3038,9 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const hadKeys = paneHasKeys.get(e.surface) ?? false
+    paneHasKeys.set(e.surface, e.props.isFocused)
+    const isKeyboardHandedBack = hadKeys && !e.props.isFocused
     const elements = $.ui.resolve(e)
     const { Box, Button, Link, Markdown, Text } = elements
     // Desktop draws every Button as a native button, and only clicks reach the pane: no letters, key hints or hidden hotkeys.
@@ -2958,13 +3053,18 @@ export const register: Register = on => {
     const isAgeInSide = look === 'terminal'
     const isAgeDropped = isNarrowDesktop || isAgeInSide
     const glued = (after: string) => after.replace(/(?<=.)[ \u2002]/gs, c => (c === ' ' ? '\u00a0' : '\u2007'))
-    // The Codex tab wraps a suffix too long for one line between words, so this does too.
-    const unbroken = (after: string, width: number) => {
-      const firstBreak = after.indexOf(' ')
+    // The Codex tab wraps a suffix too long for one line between words, so this does too. A glued suffix wider than a
+    // line together with the title's last word, which DOT's leading figure space holds to it, is broken mid-word.
+    const unbroken = (after: string, title: string, fits: (text: string) => boolean) => {
+      const lastWord = title.slice(Math.max(0, title.trimEnd().lastIndexOf(' ') + 1))
+      if (fits(lastWord + after)) return glued(after)
+      const dot = after.startsWith(DOT) ? DOT : ''
+      const rest = after.slice(dot.length)
+      const firstBreak = rest.indexOf(' ')
 
-      return after.length <= width || firstBreak < 0
-        ? glued(after)
-        : glued(after.slice(0, firstBreak)) + after.slice(firstBreak)
+      return (
+        dot + (fits(rest) || firstBreak < 0 ? glued(rest) : glued(rest.slice(0, firstBreak)) + rest.slice(firstBreak))
+      )
     }
     const isInline = e.props.placement === 'inline'
     isInlinePane = isInline
@@ -3005,8 +3105,13 @@ export const register: Register = on => {
     const tab: Tab = ROW_TABS.some(t => t.id === savedTab) ? savedTab : 'needsYou'
     const isOverviewShown = savedPage === 'overview'
     const shownTab: ShownTab = isOverviewShown ? 'overview' : tab
-    // A hot reload keeps TYPING but empties fieldSeeds, so an open field takes its seed again here.
-    if (typing !== null && !fieldSeeds.has(typing)) fieldSeeds.set(typing, (await read($, DRAFTS))[typing]?.text ?? '')
+    // A hot reload keeps TYPING but empties openFields, so an open field takes its key and seed again here.
+    if (typing !== null && !openFields.has(typing))
+      openFields.set(typing, openedField(typing, (await read($, DRAFTS))[typing]))
+    if (e.props.isFocused || typing !== fieldWithoutKeys) fieldWithoutKeys = null
+    // Escape, or a click outside the pane, closes the field and keeps its draft, as Cancel does.
+    if (isKeyboardHandedBack && typing !== null) later($, 0, () => update($, TYPING, t => (t === typing ? null : t)))
+    if ((typing === null) !== paneClosesOnEscape) later($, 0, () => matchPaneEscape($))
     const size = isInline ? `${e.props.bodyColumns}x${e.props.scroll.bodyRows}` : null
     if (e.surface === 'terminal') terminalInlineSize = size
     if (size !== null && inlineSize !== null && size !== inlineSize) {
@@ -3274,8 +3379,19 @@ export const register: Register = on => {
 
     const shownLabel = (a: Pick<KeyAction, 'label' | 'variant'>) =>
       actionLabel({ label: a.label, isPrimary: a.variant === 'primary' })
+    const desktopTextColumns = (rowId: string) =>
+      listColumns - DESKTOP_MARK_CELLS - markExtra(rowId) - DESKTOP_SIDE_CELLS - 1
+    // An open desktop row's text column, less a cell, since the measured column ran up to 10 pt narrower than this.
+    const desktopRowTextPt = (rowId: string) => desktopTextColumns(rowId) * DESKTOP_CELL_PT - 2 * FRAME_INSET_PT
     const desktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) =>
       a.icon ? `${a.icon} ${shownLabel(a)}` : shownLabel(a)
+    // A native Button cuts a label wider than its row.
+    const fittedDesktopLabel = (rowId: string, a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) => {
+      const icon = a.icon ? `${a.icon} ` : ''
+      const fits = (label: string) => desktopTextPt(icon + label) + DESKTOP_BUTTON_EXTRA_PT <= desktopRowTextPt(rowId)
+
+      return icon + actionLabel({ label: a.label, isPrimary: a.variant === 'primary' }, fits)
+    }
     const keyedButton =
       (rowId: string, isFollowUp = false) =>
       ({ hotkey, kind: _kind, emphasis, icon, ...action }: KeyAction) => {
@@ -3285,7 +3401,7 @@ export const register: Register = on => {
           <Button
             {...action}
             {...(isFollowUp ? { plain: true } : emphasis === 'primary' ? { variant: 'primary' as const } : {})}
-            label={desktopLabel({ ...action, ...(icon ? { icon } : {}) })}
+            label={fittedDesktopLabel(rowId, { ...action, ...(icon ? { icon } : {}) })}
             {...(isOpenGuarded ? { dimColor: true } : {})}
             onPress={press => unlessGuarded($, rowId, press, action.onPress)}
           />
@@ -3316,10 +3432,10 @@ export const register: Register = on => {
       const props: LinksProps = {
         links: more.map(a => {
           const label = desktopLabel(a)
-          return { key: a.key, label, width: label.length / DESKTOP_CHARS_PER_CELL + 0.5 }
+          return { key: a.key, label, width: desktopTextPt(label) / DESKTOP_CELL_PT }
         }),
         gap: 1.5,
-        fallbackColumns: listColumns - DESKTOP_MARK_CELLS - DESKTOP_SIDE_CELLS - 1,
+        fallbackColumns: desktopTextColumns(rowId),
         isGuarded: isOpenGuarded,
         colors: { muted: pal.muted, hover: null },
       }
@@ -3427,8 +3543,9 @@ export const register: Register = on => {
                 : feedbackText(f, look),
             age: ago(now - f.at),
             isFailure: false,
+            feedback: f,
           }
-        : { text: feedbackText(f, look), age: '', isFailure: isFailure(f) }
+        : { text: feedbackText(f, look), age: '', isFailure: isFailure(f), feedback: f }
     }
     const lastActionText = (id: string) => {
       const f = feedbackLabel(id)
@@ -3721,12 +3838,12 @@ export const register: Register = on => {
       const field =
         Input && isTyping ? (
           <Input
-            key={`type-${row.id}`}
+            key={fieldKey(row.id)}
             placeholder={row.typeHint}
-            {...(fieldSeeds.get(row.id) ? { value: fieldSeeds.get(row.id) } : {})}
+            {...(openFields.get(row.id)?.seed ? { value: openFields.get(row.id)?.seed } : {})}
             submitLabel={look === 'desktop' ? ROW_COPY.send : 'send'}
             autoFocus
-            {...(look === 'terminal' ? { rows: REPLY_ROWS } : {})}
+            {...(look === 'terminal' ? { rows: REPLY_ROWS } : look === 'desktop' ? { rows: DESKTOP_REPLY_ROWS } : {})}
             onInput={(value: string) =>
               void update($, DRAFTS, d => ({ ...d, [row.id]: { text: value, since: d[row.id]?.since ?? now } }))
             }
@@ -3734,32 +3851,53 @@ export const register: Register = on => {
           />
         ) : null
       const f = feedbackLabel(row.id, row)
-      const titleAfter = pressedAge(row) ?? (isAgeInSide ? undefined : row.titleAfter)
+      const isStatusUnder = f !== null && isStatusUnderActions(f.feedback, isSelected)
+      const titleAfter = (isStatusUnder ? null : pressedAge(row)) ?? (isAgeInSide ? undefined : row.titleAfter)
       const status = [
         ...(row.fold?.note ? [{ text: row.fold.note, color: pal.muted }] : []),
         ...(f && !f.age ? [{ text: f.text, color: f.isFailure ? pal.tone.error : pal.muted }] : []),
+        ...(isTyping && fieldWithoutKeys === row.id ? [{ text: ROW_COPY.clickField, color: pal.muted }] : []),
       ]
 
       const textWidth = listColumns - 1 - columns.textAt
-      const titleWidth =
-        look === 'desktop' ? Math.floor(textWidth * DESKTOP_CHARS_PER_CELL) : textWidth - TERMINAL_SIDE_CELLS
-      const shownAfter = titleAfter ? unbroken(titleAfter, titleWidth) : ''
+      const titleWidth = textWidth - TERMINAL_SIDE_CELLS
+      const fitsTitleLine = (text: string) =>
+        look === 'desktop' ? desktopTextPt(text) <= desktopRowTextPt(row.id) : text.length <= titleWidth
+      const shownAfter = titleAfter ? unbroken(titleAfter, row.title, fitsTitleLine) : ''
       const bodyLines =
         isSelected && isInline && look === 'terminal' && row.clippedBody
           ? e.props.scroll.bodyRows -
             2 * space.rowPad -
             lineCount(`${row.title}${shownAfter}`, titleWidth) -
             status.length -
-            keyLines(keys, more, textWidth)
+            keyLines(keys, more, textWidth) -
+            (isStatusUnder ? lineCount(f.text, textWidth) : 0)
           : null
       const body =
         bodyLines !== null && row.clippedBody && row.body ? row.clippedBody(bodyLines, textWidth) : (row.body ?? null)
+      const described = row.view ? shownOptionDescriptions(row.view, optionsShown.includes(row.id)) : []
+      const descriptionsBlock =
+        described.length > 0 ? (
+          <Box flexDirection="column" marginTop={blankLine}>
+            {described.map(o => {
+              const line = clipLabel(`${o.label}: ${o.description}`, look === 'desktop' ? titleWidth : textWidth)
+              return (
+                <Text wrap="truncate-end">
+                  <Text>{line.slice(0, o.label.length)}</Text>
+                  <Text color={pal.muted}>{line.slice(o.label.length)}</Text>
+                </Text>
+              )
+            })}
+          </Box>
+        ) : null
       const keysBlock = (
         <Box flexDirection="column" marginTop={blankLine}>
           {isTyping ? (
             look === 'desktop' ? (
               <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap} rowGap={1}>
-                <Box flexShrink={1}>{field}</Box>
+                <Box flexShrink={1} minWidth={0} overflow="hidden">
+                  {field}
+                </Box>
                 {/* The desktop Input supplies its own Send button. */}
                 {keyRow(
                   row.id,
@@ -3774,6 +3912,11 @@ export const register: Register = on => {
           ) : (
             [keyRow(row.id, keys), keyRow(row.id, more)]
           )}
+          {isStatusUnder ? (
+            <Text color={pal.muted} wrap="wrap">
+              {f.text}
+            </Text>
+          ) : null}
         </Box>
       )
       // The `view-` Box is what select() scrolls into view. Drawn on the selected row alone, so the key exists only
@@ -3792,10 +3935,13 @@ export const register: Register = on => {
             <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1} />,
             <Text wrap="wrap">
               <Text bold>{row.title}</Text>
-              {f?.age ? <Text color={pal.muted}>{unbroken(`${DOT}${f.text}`, titleWidth)}</Text> : null}
+              {f?.age && !isStatusUnder ? (
+                <Text color={pal.muted}>{unbroken(`${DOT}${f.text}`, row.title, fitsTitleLine)}</Text>
+              ) : null}
             </Text>,
             row.subtitle ?? null,
             row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null,
+            descriptionsBlock,
             status.length > 0 ? (
               <Box flexDirection="column" marginTop={blankLine}>
                 {status.map(st => (
@@ -3848,6 +3994,7 @@ export const register: Register = on => {
               )}
               {row.subtitle}
               {body ? <Box marginTop={blankLine}>{body}</Box> : null}
+              {descriptionsBlock}
               {status.length > 0 ? (
                 <Box flexDirection="column" marginTop={blankLine}>
                   {status.map(s => (
@@ -3960,9 +4107,10 @@ export const register: Register = on => {
     ]
     const keyColumn = Math.max(...keyList.map(k => k.keys.length)) + 2
 
+    const tabColumns = e.props.bodyColumns - 2
     const tabSizes = desktopTabSizes(
       TABS.map(({ id, label }) => ({ label, count: tabCount(id), isShown: id === shownTab })),
-      e.props.bodyColumns - 2,
+      tabColumns,
     )
     const tabProps: TabsProps | null = hasClient
       ? {
@@ -3976,6 +4124,7 @@ export const register: Register = on => {
           shown: shownTab,
           gap: tabSizes.gap,
           isEachFramed: tabSizes.isEachFramed,
+          columns: tabColumns,
           colors: {
             tab: pal.tab ?? null,
             raised: pal.raised,
@@ -4032,7 +4181,12 @@ export const register: Register = on => {
           columnGap={isInline ? inlineTabGap : look === 'desktop' ? 2 : framedTabs.gap}
         >
           {hasClient && tabProps ? (
-            <elements.Client key="tabs" module="./tabs-client.tsx" height={TAB_HEIGHT} props={tabProps} />
+            <elements.Client
+              key="tabs"
+              module="./tabs-client.tsx"
+              height={TAB_HEIGHT * tabLines(tabProps.tabs, tabProps.gap, tabProps.columns).length}
+              props={tabProps}
+            />
           ) : null}
           {tabProps
             ? null
@@ -4808,7 +4962,7 @@ export const register: Register = on => {
       )
     }
     const olderPrs = () => {
-      const text = olderPrsText(ledger.prs)
+      const text = olderPrsText(prState, ledger.prs)
       if (!text) return []
       const line = (
         <Text color={pal.muted} wrap="wrap">
@@ -5042,9 +5196,10 @@ export const register: Register = on => {
     )
     if (look === 'desktop' && focusedKey !== null) {
       const keys = focusKeys(drawn)
-      const opensField = focusHint?.startsWith('type-') && keys.has(focusHint)
+      const hint = focusHint?.startsWith('type-') ? fieldKey(focusHint.slice('type-'.length)) : focusHint
+      const opensField = hint?.startsWith('type-') && keys.has(hint)
       if (!keys.has(focusedKey) || opensField) {
-        const focusKey = [focusHint, rowKeys[0]?.key, ...keys].find((k): k is string => !!k && keys.has(k)) ?? null
+        const focusKey = [hint, rowKeys[0]?.key, ...keys].find((k): k is string => !!k && keys.has(k)) ?? null
         focusedKey = focusKey
         focusHint = null
         // After this hook returns, since a focus asked from inside a drawing's own hook cannot wait on it.
