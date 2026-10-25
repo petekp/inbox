@@ -285,7 +285,7 @@ const DESKTOP_CHARS_PER_CELL = 1.25
 const DESKTOP_CLIP_CHARS_PER_CELL = 1.1
 // The widest character in each group, in points, in the pane's 13 pt system font as AppKit measures it. Any other
 // character counts as the widest group, so an estimate is never narrower than the text.
-const DESKTOP_CHAR_PT: [chars: string, pt: number][] = [
+const DESKTOP_CHAR_GROUPS: [chars: string, pt: number][] = [
   ["ijl|I ',.:;/\\!", 4],
   ['ftr()[]{}', 4.9],
   ['aceksvxyz-*"`?1J', 7.4],
@@ -293,6 +293,7 @@ const DESKTOP_CHAR_PT: [chars: string, pt: number][] = [
   ['ABKPRSTVXYZ0345689#$+<=>^~', 8.8],
   ['CDGHNOQUw&', 10],
 ]
+const DESKTOP_CHAR_PT = new Map(DESKTOP_CHAR_GROUPS.flatMap(([chars, pt]) => [...chars].map(c => [c, pt] as const)))
 const DESKTOP_WIDEST_CHAR_PT = 12.6
 // A native Button's padding around its label, and its bolder primary label, measured live: 163 to 167 pt for
 // "Plain (recommended)", whose label is 130 pt in the regular weight.
@@ -300,7 +301,7 @@ const DESKTOP_BUTTON_EXTRA_PT = 38
 /** Desktop cuts a label wider than its control, so a control is sized from each character's width. */
 function desktopTextPt(text: string): number {
   let pt = 0
-  for (const c of text) pt += DESKTOP_CHAR_PT.find(([chars]) => chars.includes(c))?.[1] ?? DESKTOP_WIDEST_CHAR_PT
+  for (const c of text) pt += DESKTOP_CHAR_PT.get(c) ?? DESKTOP_WIDEST_CHAR_PT
   return pt
 }
 const DESKTOP_TAB_PAD = '\u00a0'.repeat(3)
@@ -3222,11 +3223,11 @@ export const register: Register = on => {
     // marks the recommended answer.
     const fittedDesktopLabel = (rowId: string, a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) => {
       const full = desktopLabel(a)
+      if (a.variant !== 'primary') return full
       const isCut = desktopTextPt(full) + DESKTOP_BUTTON_EXTRA_PT > desktopRowTextPt(rowId)
-
       const { variant: _variant, ...unmarked } = a
 
-      return a.variant === 'primary' && isCut ? desktopLabel(unmarked) : full
+      return isCut ? desktopLabel(unmarked) : full
     }
     const keyedButton =
       (rowId: string, isFollowUp = false) =>
