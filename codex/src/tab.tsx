@@ -1524,12 +1524,10 @@ function notHeardText(v: View): [string, string] | null {
   if (v.heard === 'heard') return null
   if (v.heard === 'none' && v.hooksTrust) return HOOKS_TRUST_TEXT[v.hooksTrust]
 
-  return [
-    'The inbox has not heard from this chat’s hooks.',
-    v.heard === 'none'
-      ? 'Codex runs a plugin’s hooks only after you trust them.'
-      : 'Items from Codex’s replies are missing.',
-  ]
+  if (v.heard === 'none')
+    return ['The inbox starts with your next message.', 'Codex’s hooks send it each message and reply.']
+
+  return ['The inbox has not heard from this chat’s hooks.', 'Items from Codex’s replies are missing.']
 }
 
 function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number }) {

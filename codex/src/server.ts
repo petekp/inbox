@@ -38,6 +38,8 @@ export function tabUri(tabHtml: string): string {
 }
 /** How long an answer about the hooks' trust stands before a view asks Codex again. */
 const HOOKS_TRUST_CACHE_MS = 30_000
+/** How long an answer that Codex does not run the hooks stands, so its notice leaves soon after the person trusts them. */
+const HOOKS_STOPPED_CACHE_MS = 5_000
 const TAB_MIME = 'text/html;profile=mcp-app'
 
 const APP_ONLY = { ui: { visibility: ['app'] } }
@@ -211,7 +213,8 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   function hooksTrustNow(s: SessionState): HooksTrust | null {
     const { hooksTrust: ask } = deps
     if (!ask) return null
-    if (!isAskingHooks && (hooksTrust === null || now() - hooksTrust.at >= HOOKS_TRUST_CACHE_MS)) {
+    const cacheMs = hooksTrust?.value ? HOOKS_STOPPED_CACHE_MS : HOOKS_TRUST_CACHE_MS
+    if (!isAskingHooks && (hooksTrust === null || now() - hooksTrust.at >= cacheMs)) {
       isAskingHooks = true
       void (async () => {
         try {
