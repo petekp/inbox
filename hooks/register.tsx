@@ -273,7 +273,7 @@ import {
 import { parseInline } from './inline'
 import type { Span } from './inline'
 import type { RowRecord } from './arrivals'
-import { LEAD_GAP_PT, ROW_PAD_PT } from './layout'
+import { LEAD_GAP_PT, OVERVIEW_ROW_PAD_PT, ROW_PAD_PT } from './layout'
 import { DARK_DALTONIZED_TONES, DARK_TONES, LIGHT_DALTONIZED_TONES, LIGHT_TONES, toneColors } from './tones'
 import type { ToneName } from './tones'
 import type { FoldProps } from './fold-client'
@@ -5051,7 +5051,7 @@ export const register: Register = on => {
             key: `overview-${m.id}`,
             indent: DESKTOP_MARK_CELLS,
             isMarkHung: false,
-            padY: space.rowPad / 2,
+            padY: OVERVIEW_ROW_PAD_PT / DESKTOP_LINE_PT,
             mark,
             children: lines,
           })
