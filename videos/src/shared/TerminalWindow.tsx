@@ -1,6 +1,6 @@
 import { useCurrentFrame, useVideoConfig } from 'remotion'
 
-import { DISSOLVE } from './Footage'
+import { DISSOLVE, dissolveBlur } from './Footage'
 import { SANS } from './fonts'
 import { clamp01 } from './geometry'
 import { TITLE_BAR } from './layout'
@@ -86,7 +86,7 @@ export function TerminalFootage(props: {
   const isDissolving = previous !== undefined && !continues(previous, segment) && t - segment.at < DISSOLVE
   const layers = isDissolving ? [previous, segment] : [segment]
   const p = clamp01((t - segment.at) / DISSOLVE)
-  const blur = isDissolving ? DISSOLVE_BLUR * Math.sin(Math.PI * p) : 0
+  const blur = isDissolving ? dissolveBlur(p, DISSOLVE_BLUR) : 0
   return (
     <>
       {layers.map((layer, i) => (

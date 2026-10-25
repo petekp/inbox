@@ -8,11 +8,8 @@ import type { CameraMove, Point, Rect } from '../shared/geometry'
 import type { Segment } from '../shared/Footage'
 import type { MusicCue } from '../shared/Music'
 import type { State } from '../shared/states'
+import { captionMarks, FPS, HEIGHT, place, totalFrames, WIDTH } from '../shared/video'
 import type { CaptionSpan, Cut, VideoSpec } from '../shared/video'
-
-export const FPS = 60
-export const WIDTH = 1920
-export const HEIGHT = 1080
 
 /** How long a closed row stays in place, and Undo drains, in all three apps, in seconds. */
 const SETTLE = SETTLED_MS / 1000
@@ -139,9 +136,6 @@ export type Beat = ThreadBeat | SoloBeat | SideBySideBeat | EndCard
 /** A beat and where it starts in the video, in seconds. */
 export type Placed = Beat & { start: number }
 
-/** How long the end card starts before its beat, over beat 11's last moments, as beat 11's rows turn into its streams. */
-export const END_CARD_LEAD = 0.8
-
 /**
  * The lines of text in each app's column as beat 11 ends, left to right: the span they cover across the frame, and the
  * height of each line, in pixels. Measured from the footage's frame at 74.5 s. Each of the end card's streams leaves
@@ -153,8 +147,6 @@ export const ROW_LINES: RowLines = [
   { from: 1360, to: 1768, ys: [242, 294, 345, 459, 506, 552, 613, 642, 694] },
 ]
 
-export const END_CARD = { word: 'inbox', repo: 'github.com/petekp/inbox', rowLines: ROW_LINES, lead: END_CARD_LEAD }
-
 /**
  * The music, made in Suno, about 123 BPM. It starts `startsAt` seconds into the video, from `trimBefore` seconds into
  * the track. Its strong hits then land at 0.6 s and at 4.45 s, as the agent replies. Its
@@ -163,21 +155,9 @@ export const END_CARD = { word: 'inbox', repo: 'github.com/petekp/inbox', rowLin
  */
 export const MUSIC: MusicCue = { src: 'music/focus-flow.mp3', startsAt: 0, trimBefore: 0.4, fadeOut: 4 }
 
-export const frames = (seconds: number) => Math.round(seconds * FPS)
-
 /** The beats of one variant, each placed after the one before. */
 export function timeline(_variant: Variant): Placed[] {
-  let start = 0
-  return beats().map(beat => {
-    const placed = { ...beat, start }
-    start += beat.length
-    return placed
-  })
-}
-
-export function totalFrames(placed: Placed[]): number {
-  const last = placed[placed.length - 1]
-  return last ? frames(last.start + last.length) : 0
+  return place(beats())
 }
 
 const thread = (number: number, id: ThreadBeatId, length: number, caption: string): ThreadBeat => ({
@@ -445,7 +425,7 @@ function cutOff(placed: Placed[]): string[] {
   )
 }
 
-/** Stills at every state change and push-in, and at each caption's first and last frame. */
+/** Stills at every state change and push-in, and at each caption's first and last moments. */
 function marksOf(placed: Placed[], captions: CaptionSpan[]): Cut['marks'] {
   const marks: Cut['marks'] = []
   for (const beat of placed) {
@@ -463,11 +443,7 @@ function marksOf(placed: Placed[], captions: CaptionSpan[]): Cut['marks'] {
         name: `b${beat.number}-pushed-in`,
       })
     }
-  for (const c of captions) {
-    marks.push({ at: c.from, name: `${c.label.replace('beat ', 'b')}-caption-first` })
-    marks.push({ at: c.to - 1 / FPS, name: `${c.label.replace('beat ', 'b')}-caption-last` })
-  }
-  return marks
+  return [...marks, ...captionMarks(captions, FPS)]
 }
 
 export const VIDEO: VideoSpec = {
@@ -481,7 +457,7 @@ export const VIDEO: VideoSpec = {
       width: WIDTH,
       height: HEIGHT,
       fps: FPS,
-      frames: totalFrames(placed),
+      frames: totalFrames(placed, FPS),
       captions,
       marks: marksOf(placed, captions),
       stills: [...new Set(stills)],

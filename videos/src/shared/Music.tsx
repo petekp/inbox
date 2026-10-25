@@ -1,6 +1,7 @@
 import { Html5Audio, interpolate, Sequence, staticFile, useVideoConfig } from 'remotion'
 
 import { isCaptured } from './captures'
+import { frames } from './video'
 
 /**
  * A video's music: the file in public/music/, which Git ignores, starting `startsAt` seconds into the video from
@@ -11,17 +12,16 @@ export type MusicCue = { src: string; startsAt: number; trimBefore: number; fade
 /** Plays the cue, or nothing when its file is missing. */
 export function Music({ cue }: { cue: MusicCue }) {
   const { fps, durationInFrames } = useVideoConfig()
-  const frames = (seconds: number) => Math.round(seconds * fps)
   if (!isCaptured(cue.src)) return null
 
   return (
-    <Sequence name="music" from={frames(cue.startsAt)}>
+    <Sequence name="music" from={frames(cue.startsAt, fps)}>
       <Html5Audio
         src={staticFile(cue.src)}
-        trimBefore={frames(cue.trimBefore)}
+        trimBefore={frames(cue.trimBefore, fps)}
         volume={f => {
-          const end = durationInFrames - frames(cue.startsAt)
-          return interpolate(f, [end - frames(cue.fadeOut), end], [1, 0], {
+          const end = durationInFrames - frames(cue.startsAt, fps)
+          return interpolate(f, [end - frames(cue.fadeOut, fps), end], [1, 0], {
             extrapolateLeft: 'clamp',
             extrapolateRight: 'clamp',
           })

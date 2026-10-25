@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { OffthreadVideo, Sequence, staticFile, useCurrentFrame, useVideoConfig } from 'remotion'
 
 import { clamp01 } from './geometry'
+import { frames } from './video'
 
 /** From `at` seconds into its beat, the beat plays take `take` from `from` seconds into it. */
 export type Segment = { at: number; take: string; from: number }
@@ -10,6 +11,9 @@ export type Segment = { at: number; take: string; from: number }
 export const DISSOLVE = 0.25
 /** How far footage blurs at the middle of a dissolve, in the clip's pixels. */
 const DISSOLVE_BLUR = 7
+
+/** A dissolve's blur `p` of the way through it: none at either end, and `most` at its middle. */
+export const dissolveBlur = (p: number, most: number) => most * Math.sin(Math.PI * clamp01(p))
 
 /**
  * Each segment of a take, played from its point in the take until the next segment or the beat's end. Each segment
@@ -26,7 +30,6 @@ export function Footage(props: {
 }) {
   const { segments, before, length, width, height, clip } = props
   const { fps } = useVideoConfig()
-  const frames = (seconds: number) => Math.round(seconds * fps)
   const all = before ? [before, ...segments] : segments
   return (
     <>
@@ -36,14 +39,14 @@ export function Footage(props: {
         return (
           <Sequence
             key={`${i}-${segment.take}-${segment.from}`}
-            from={frames(segment.at)}
-            durationInFrames={Math.max(1, frames(Math.min(end, length)) - frames(segment.at))}
+            from={frames(segment.at, fps)}
+            durationInFrames={Math.max(1, frames(Math.min(end, length), fps) - frames(segment.at, fps))}
             layout="none"
           >
             <Dissolve isFirst={i === 0} handsOverAt={next ? next.at - segment.at : undefined}>
               <OffthreadVideo
                 src={staticFile(clip(segment.take))}
-                trimBefore={frames(segment.from)}
+                trimBefore={frames(segment.from, fps)}
                 muted
                 style={{ position: 'absolute', left: 0, top: 0, width, height, display: 'block' }}
               />
@@ -63,10 +66,9 @@ function Dissolve(props: { isFirst: boolean; handsOverAt?: number; children: Rea
   const { isFirst, handsOverAt, children } = props
   const t = useCurrentFrame() / useVideoConfig().fps
   const arriving = isFirst ? 1 : clamp01(t / DISSOLVE)
-  const blurAt = (p: number) => DISSOLVE_BLUR * Math.sin(Math.PI * clamp01(p))
   const blur = Math.max(
-    isFirst ? 0 : blurAt(t / DISSOLVE),
-    handsOverAt === undefined || t < handsOverAt ? 0 : blurAt((t - handsOverAt) / DISSOLVE),
+    isFirst ? 0 : dissolveBlur(t / DISSOLVE, DISSOLVE_BLUR),
+    handsOverAt === undefined || t < handsOverAt ? 0 : dissolveBlur((t - handsOverAt) / DISSOLVE, DISSOLVE_BLUR),
   )
   return (
     <div

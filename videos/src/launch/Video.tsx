@@ -1,39 +1,27 @@
 import type { ReactNode } from 'react'
-import { AbsoluteFill, Easing, Img, interpolate, OffthreadVideo, Sequence, staticFile, useCurrentFrame } from 'remotion'
+import { AbsoluteFill, Easing, Img, interpolate, OffthreadVideo, staticFile, useCurrentFrame } from 'remotion'
 
 import { AppLabel } from '../shared/AppLabel'
+import { Beats } from '../shared/Beats'
 import { Caption } from '../shared/Caption'
 import { isCaptured, toClip as toClipOf } from '../shared/captures'
 import type { TakeInfo } from '../shared/captures'
 import { EndCard } from '../shared/EndCard'
 import { Footage } from '../shared/Footage'
 import type { Segment } from '../shared/Footage'
-import { SANS, useFonts } from '../shared/fonts'
-import { between, clamp01, easeInOut, framingAt } from '../shared/geometry'
+import { SANS } from '../shared/fonts'
+import { between, clamp01, easeInOut, fit, framingAt } from '../shared/geometry'
 import type { Point, Rect } from '../shared/geometry'
-import { BACKGROUND, BAND, CAPTION_BAND } from '../shared/layout'
-import { Music } from '../shared/Music'
+import { BAND, PICTURE } from '../shared/layout'
 import { Pointer } from '../shared/Pointer'
 import { pointerMarks, stateAt } from '../shared/states'
 import type { State } from '../shared/states'
+import { continuing } from '../shared/terminal-time'
+import { END_CARD, END_CARD_LEAD, FPS, frames, HEIGHT, WIDTH } from '../shared/video'
 import TAKES from './takes.json'
 import type { ThreadStarts } from './thread'
 import { MARKS, ThreadView } from './ThreadView'
-import {
-  appIcon,
-  END_CARD,
-  END_CARD_LEAD,
-  FPS,
-  frames,
-  HEIGHT,
-  LOOK_NAMES,
-  LOOKS,
-  MUSIC,
-  takeClip,
-  timeline,
-  WIDTH,
-  WINDOWS,
-} from './timeline'
+import { appIcon, LOOK_NAMES, LOOKS, MUSIC, ROW_LINES, takeClip, timeline, WINDOWS } from './timeline'
 import type { Introduction, Look, Placed, SideBySideBeat, SoloBeat, Variant } from './timeline'
 
 const TAKE_INFO = TAKES as Record<string, TakeInfo | undefined>
@@ -47,26 +35,12 @@ const WIDE_MARGIN = 0.05
 /** The launch video's cut `cut`, one of `VARIANTS`. */
 export function Video({ cut }: { cut: string }) {
   const variant = cut as Variant
-  useFonts()
   const placed = timeline(variant)
   const starts = Object.fromEntries(placed.filter(b => b.kind === 'thread').map(b => [b.id, b.start])) as ThreadStarts
   return (
-    <AbsoluteFill style={{ backgroundColor: BACKGROUND, fontFamily: SANS, color: 'white' }}>
-      <Music cue={MUSIC} />
-      {placed.map((beat, i) => {
-        const lead = beat.kind === 'end' ? END_CARD_LEAD : 0
-        return (
-          <Sequence
-            key={beat.id}
-            name={`${beat.number} ${beat.id}`}
-            from={frames(beat.start - lead)}
-            durationInFrames={frames(beat.start + beat.length) - frames(beat.start - lead)}
-          >
-            <BeatView beat={beat} previous={placed[i - 1]} variant={variant} starts={starts} />
-          </Sequence>
-        )
-      })}
-    </AbsoluteFill>
+    <Beats placed={placed} music={MUSIC}>
+      {(beat, previous) => <BeatView beat={beat} previous={previous} variant={variant} starts={starts} />}
+    </Beats>
   )
 }
 
@@ -88,7 +62,7 @@ function BeatView(props: { beat: Placed; previous: Placed | undefined; variant: 
       {beat.kind === 'side-by-side' && (
         <SideBySideView beat={beat} previous={previous} t={t} hasCaptions={hasCaptions} />
       )}
-      {beat.kind === 'end' && <EndCard {...END_CARD} length={beat.length} />}
+      {beat.kind === 'end' && <EndCard {...END_CARD} rowLines={ROW_LINES} length={beat.length} />}
     </AbsoluteFill>
   )
 }
@@ -114,26 +88,21 @@ function SoloView(props: {
 }) {
   const { beat, previous, starts, t, hasCaptions } = props
   const footage = beat.footage?.every(s => isCaptured(takeClip(s.take))) ? beat.footage : undefined
-  const area = { x: 0, y: BAND, w: WIDTH, h: HEIGHT - BAND - CAPTION_BAND }
   const take = footage?.[0]?.take
   const clip = take ? TAKE_INFO[take] : undefined
   const clipSize = { w: clip?.width ?? WINDOWS[beat.look].width, h: clip?.height ?? WINDOWS[beat.look].height }
   const framing = framingAt(beat.camera, { x: 0, y: 0, w: clipSize.w, h: clipSize.h }, t)
-  const scale = Math.min(area.w / framing.w, area.h / framing.h)
-  const offset = {
-    x: area.w / 2 - (framing.x + framing.w / 2) * scale,
-    y: area.h / 2 - (framing.y + framing.h / 2) * scale,
-  }
+  const at = fit(PICTURE, framing)
   const map = toClip(take, clipSize.w)
   const onScreen = (p: Point) => {
     const c = map(p)
-    return { x: area.x + offset.x + c.x * scale, y: area.y + offset.y + c.y * scale }
+    return { x: at.x + c.x * at.scale, y: at.y + c.y * at.scale }
   }
   const clicks = pointerMarks(beat.states, onScreen)
   const fromThread = previous?.kind === 'thread'
   const change = THREAD_TO_FOOTAGE
   const arriving = fromThread ? Easing.out(Easing.cubic)(clamp01((t - change.from) / change.arrives)) : 1
-  const before = previous?.kind === 'solo' ? continuing(previous) : undefined
+  const before = previous?.kind === 'solo' ? continuing(previous.footage, previous.length) : undefined
   const picture = (segments: Segment[]) => (
     <Footage
       segments={segments}
@@ -157,10 +126,10 @@ function SoloView(props: {
       <div
         style={{
           position: 'absolute',
-          left: area.x,
-          top: area.y,
-          width: area.w,
-          height: area.h,
+          left: PICTURE.x,
+          top: PICTURE.y,
+          width: PICTURE.w,
+          height: PICTURE.h,
           overflow: 'hidden',
           opacity: arriving,
         }}
@@ -172,7 +141,7 @@ function SoloView(props: {
             height: clipSize.h,
             overflow: 'hidden',
             transformOrigin: '0 0',
-            transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale * (1.03 - 0.03 * arriving)})`,
+            transform: `translate(${at.x - PICTURE.x}px, ${at.y - PICTURE.y}px) scale(${at.scale * (1.03 - 0.03 * arriving)})`,
           }}
         >
           {footage ? (
@@ -186,7 +155,7 @@ function SoloView(props: {
               picture={picture(footage)}
               t={t}
               length={beat.length}
-              scale={scale}
+              scale={at.scale}
               clipWidth={clipSize.w}
               clipHeight={clipSize.h}
             />
@@ -200,12 +169,6 @@ function SoloView(props: {
       {hasCaptions && <Caption text={beat.caption} t={t} from={fromThread ? 0.4 : 0} to={beat.length} inBand />}
     </AbsoluteFill>
   )
-}
-
-/** Where a solo beat's last stretch of footage would continue, so the next beat can dissolve from it. */
-function continuing(beat: Placed & SoloBeat): Segment | undefined {
-  const last = beat.footage?.[beat.footage.length - 1]
-  return last && { at: 0, take: last.take, from: last.from + beat.length - last.at }
 }
 
 /**
@@ -412,7 +375,7 @@ function SideBySideView(props: {
   const width = WIDTH / LOOKS.length
   const height = HEIGHT - BAND
   const fromSolo = previous?.kind === 'solo' ? previous : undefined
-  const before = fromSolo && continuing(fromSolo)
+  const before = fromSolo && continuing(fromSolo.footage, fromSolo.length)
   return (
     <AbsoluteFill>
       {LOOKS.map((look, i) => {
@@ -440,17 +403,12 @@ function SideBySideView(props: {
         const isShrinking = i === 0 && fromSolo !== undefined
         const shrunk = isShrinking ? easeInOut(t / beat.landAt[look]) : 1
         const boxWidth = WIDTH + (width - WIDTH) * shrunk
-        const columnScale = Math.min(width / shown.w, height / shown.h)
-        const columnX = width / 2 - (shown.x + shown.w / 2) * columnScale
-        const columnY = height / 2 - (shown.y + shown.h / 2) * columnScale
-        // The terminal starts where beat 10 left it: the whole window, above the caption band.
-        const fullHeight = height - CAPTION_BAND
-        const fullScale = Math.min(WIDTH / window.width, fullHeight / window.height)
-        const fullX = (WIDTH - window.width * fullScale) / 2
-        const fullY = (fullHeight - window.height * fullScale) / 2
-        const scale = fullScale + (columnScale - fullScale) * shrunk
-        const x = fullX + (columnX - fullX) * shrunk
-        const y = fullY + (columnY - fullY) * shrunk
+        const column = fit({ x: 0, y: 0, w: width, h: height }, shown)
+        // The terminal starts where beat 10 left it: the whole window, in the picture above the caption band.
+        const full = fit({ x: 0, y: 0, w: PICTURE.w, h: PICTURE.h }, { x: 0, y: 0, w: window.width, h: window.height })
+        const scale = full.scale + (column.scale - full.scale) * shrunk
+        const x = full.x + (column.x - full.x) * shrunk
+        const y = full.y + (column.y - full.y) * shrunk
         const arrived =
           i === 0 || !fromSolo ? 1 : Easing.out(Easing.cubic)(clamp01((t - (beat.landAt[look] - SLIDE_IN)) / SLIDE_IN))
         // Beat 10's take gives way to this beat's while the terminal is moving fastest, under a brief blur, so two
@@ -502,7 +460,7 @@ function SideBySideView(props: {
                 {isRecorded ? (
                   <OffthreadVideo
                     src={staticFile(takeClip(take))}
-                    trimBefore={frames(takeStart)}
+                    trimBefore={frames(takeStart, FPS)}
                     muted
                     style={{ width: window.width, height: window.height, display: 'block' }}
                   />

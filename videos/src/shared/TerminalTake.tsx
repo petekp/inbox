@@ -10,10 +10,13 @@ export type TerminalClip = {
   cols: number
   rows: number
   /** Each row as tmux captured it, with its colors as escape sequences, and the cursor's column, row and visibility. */
-  screens: { t: number; lines: string[]; cursor: [number, number, boolean] }[]
+  screens: Screen[]
   keys: { t: number; key: string }[]
   marks: { t: number; mark: string }[]
 }
+
+/** One captured screen of a take. */
+type Screen = { t: number; lines: string[]; cursor: [number, number, boolean] }
 
 /** The terminal's colors: its default text and background, and the 16 ANSI colors, normal then bright. */
 export type Palette = { foreground: string; background: string; ansi: string[] }
@@ -46,22 +49,29 @@ export const DARK_PALETTE: Palette = {
 export type TerminalFont = { family: string; size: number; lineHeight: number }
 export const TERMINAL_FONT: TerminalFont = { family: 'Menlo, monospace', size: 24, lineHeight: 1.25 }
 
-const clips = new Map<string, Promise<TerminalClip>>()
+const loading = new Map<string, Promise<TerminalClip>>()
+const loaded = new Map<string, TerminalClip>()
 
-/** Loads a take's clip from public/, holding the render until it has loaded. */
+/** Loads a take's clip from public/. A clip not loaded yet holds the render until it has. */
 export function useTerminalClip(src: string): TerminalClip | undefined {
-  const [clip, setClip] = useState<TerminalClip>()
-  const [handle] = useState(() => delayRender(`Loading ${src}`))
+  const [clip, setClip] = useState(() => loaded.get(src))
+  const [handle] = useState(() => (loaded.has(src) ? undefined : delayRender(`Loading ${src}`)))
   useEffect(() => {
-    if (!clips.has(src))
-      clips.set(
+    if (handle === undefined) return
+    if (!loading.has(src))
+      loading.set(
         src,
-        fetch(staticFile(src)).then(r => r.json() as Promise<TerminalClip>),
+        fetch(staticFile(src))
+          .then(r => r.json() as Promise<TerminalClip>)
+          .then(json => {
+            loaded.set(src, json)
+            return json
+          }),
       )
-    clips
+    loading
       .get(src)!
-      .then(loaded => {
-        setClip(loaded)
+      .then(json => {
+        setClip(json)
         continueRender(handle)
       })
       .catch(err => cancelRender(err))
@@ -70,11 +80,18 @@ export function useTerminalClip(src: string): TerminalClip | undefined {
 }
 
 let measure: CanvasRenderingContext2D | undefined
-/** The width of one cell in the font, measured, so a run of text lands on its columns. */
+const cellWidths = new Map<string, number>()
+/** The width of one cell in the font, measured once per font, so a run of text lands on its columns. */
 export function cellWidth(font: TerminalFont): number {
-  measure ??= document.createElement('canvas').getContext('2d')!
-  measure.font = `${font.size}px ${font.family}`
-  return measure.measureText('M'.repeat(100)).width / 100
+  const key = `${font.size}px ${font.family}`
+  let width = cellWidths.get(key)
+  if (width === undefined) {
+    measure ??= document.createElement('canvas').getContext('2d')!
+    measure.font = key
+    width = measure.measureText('M'.repeat(100)).width / 100
+    cellWidths.set(key, width)
+  }
+  return width
 }
 
 /** The take's size in pixels, drawn in `font`. */
@@ -124,8 +141,8 @@ export function TerminalTake(props: {
         overflow: 'hidden',
       }}
     >
-      {screen.lines.map((line, row) =>
-        runsOf(line).map(run => (
+      {screenRuns(screen).map((runs, row) =>
+        runs.map(run => (
           <div
             key={`${row}-${run.col}`}
             style={{
@@ -193,6 +210,17 @@ function widthOf(ch: string): number {
     (code >= 0xffe0 && code <= 0xffe6) ||
     (code >= 0x20000 && code <= 0x3fffd)
   return isWide ? 2 : 1
+}
+
+const runsByScreen = new WeakMap<Screen, Run[][]>()
+/** Each row of a screen split into runs, once per screen. */
+function screenRuns(screen: Screen): Run[][] {
+  let runs = runsByScreen.get(screen)
+  if (!runs) {
+    runs = screen.lines.map(runsOf)
+    runsByScreen.set(screen, runs)
+  }
+  return runs
 }
 
 /** Splits one captured row into runs, applying its SGR sequences and dropping other escapes, such as OSC 8 links. */

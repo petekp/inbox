@@ -36,11 +36,12 @@ The videos so far:
 | `KeyCaps.tsx` | A keycap for each key pressed, for a take driven by keys. |
 | `EndCard.tsx` | The WebGL end card: streams of light leave the last picture's lines of text and braid through a word, with an address under it. It needs Chrome's GPU backend, which `remotion.config.ts` sets to ANGLE. |
 | `Music.tsx` | A video's music, with its fade out. |
+| `Beats.tsx` | A video's frame: its background, its music, and each beat from its start, with the end card starting early over the beat before it. |
 | `fonts.ts` | Loads Geist and Geist Mono before a frame renders. |
-| `states.ts`, `geometry.ts` | What the screen shows when, clicks, and camera moves across a take. |
+| `states.ts`, `geometry.ts` | What the screen shows when, clicks, camera moves across a take, and how a framing fits the picture. |
 | `captures.ts` | Whether a capture is present, so a checkout without one draws a placeholder. |
-| `layout.ts` | The background and the bands above and below footage. |
-| `video.ts` | The shape of `VIDEO`: each cut's id, size, frame rate, frames, captions, still marks and notes. |
+| `layout.ts` | The background, the bands above and below footage, and the picture between them. |
+| `video.ts` | The shape of `VIDEO`: each cut's id, size, frame rate, frames, captions, still marks and notes. Also what every timeline shares: the 16:9 master's size and frame rate, placing beats one after another, the end card's word and address, and the stills at each caption. |
 
 ## Adding a video
 
