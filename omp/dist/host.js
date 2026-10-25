@@ -1786,18 +1786,19 @@ var COMPARE_REQUEST = [
 ].join(`
 
 `);
+function quotedAsk(item) {
+  return `"${item.ask}"${item.options.length > 0 ? `
+Options: ${item.options.join(" / ")}` : ""}`;
+}
 var messages = {
   answer: (item, answer) => `Re "${item.ask}": ${answer}`,
   explain: (item) => {
     const what = item.kind === "task" ? "this task you left for me is about: why it came up, and what doing it involves" : "this question you asked me is about: why it came up, what each choice would do, and which you would pick";
-    const options = item.options.length > 0 ? `
-Options: ${item.options.join(" / ")}` : "";
     return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.
-"${item.ask}"${options}`;
+${quotedAsk(item)}`;
   },
   compare: (item) => `${COMPARE_REQUEST}
-"${item.ask}"
-Options: ${item.options.join(" / ")}`,
+${quotedAsk(item)}`,
   run: (item, command) => `For "${item.ask}", run this:
 \`\`\`
 ${command}

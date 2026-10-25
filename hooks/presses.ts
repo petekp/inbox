@@ -902,6 +902,11 @@ const COMPARE_REQUEST = [
   "When the comparison is done, call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps if you made one. That marks it compared. Call each choice by its name as listed.",
 ].join('\n\n')
 
+/** A question or task as a message quotes it: its ask, then its options when it has some. */
+function quotedAsk(item: Item): string {
+  return `"${item.ask}"${item.options.length > 0 ? `\nOptions: ${item.options.join(' / ')}` : ''}`
+}
+
 export const messages = {
   answer: (item: Item, answer: string) => `Re "${item.ask}": ${answer}`,
   explain: (item: Item) => {
@@ -909,11 +914,10 @@ export const messages = {
       item.kind === 'task'
         ? 'this task you left for me is about: why it came up, and what doing it involves'
         : 'this question you asked me is about: why it came up, what each choice would do, and which you would pick'
-    const options = item.options.length > 0 ? `\nOptions: ${item.options.join(' / ')}` : ''
 
-    return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.\n"${item.ask}"${options}`
+    return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.\n${quotedAsk(item)}`
   },
-  compare: (item: Item) => `${COMPARE_REQUEST}\n"${item.ask}"\nOptions: ${item.options.join(' / ')}`,
+  compare: (item: Item) => `${COMPARE_REQUEST}\n${quotedAsk(item)}`,
   run: (item: Item, command: string) => `For "${item.ask}", run this:\n\`\`\`\n${command}\n\`\`\``,
   taskReply: (item: Item, words: string) => `Re the task you left for me, "${item.ask}": ${words}`,
   done: (asks: string[]) => (asks.length === 1 ? `Done: ${asks[0]}` : `Done:\n${asks.map(a => `- ${a}`).join('\n')}`),
