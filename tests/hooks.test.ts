@@ -1936,7 +1936,7 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   await clock.settle()
   expect(sent.at(-1)).toContain("Let's talk through this finding you recorded")
   expect(await pane.find({ text: /Discussing…/ })).toBeDefined()
-  expect((await pane.find({ key: 'discuss-f3-key' }))?.props.label).toBe('Discuss again')
+  expect((await pane.find({ key: 'discuss-f3-key' }))?.props.label).toBe('Discuss')
   expect(await band.find({ text: /Findings 1/ })).toBeDefined()
   await pane.press({ key: 'tab-needsYou' })
   submitAnswer = 'hold'

@@ -74,7 +74,9 @@ replies. Compare reads "Comparing…" until the agent records the question
 again, which can be turns later when a background subagent does the work.
 After 30 minutes with no report, it reads "No comparison came back". A row
 handed to the agent that its reply left open reads "Still open". Each
-keeps only its latest.
+keeps only its latest. The pressed button reads "… again", as in "Explain
+again", once the press is no longer queued, unconfirmed or waiting on the
+agent. Until then it keeps its label, so its width holds.
 
 ### Looks and hosts
 

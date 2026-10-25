@@ -577,7 +577,7 @@ test('Fix hands a finding off and settles it as the choice made, then lists it i
   const discussed = viewOf(after(s, { action: 'discuss', id: 'f3' }), 60).findings
   assert.deepEqual(
     discussed.rows.map(r => [r.id, r.state.is, r.actions.find(a => a.press.action === 'discuss')?.label]),
-    [['f3', 'open', 'Discuss again']],
+    [['f3', 'open', 'Discuss']],
   )
   assert.equal(discussed.count, 1)
   const closedBy = { ...sent, ledger: recordClose(CODEX, sent.ledger, { id: 'f3', reason: 'fixed' }, 90).ledger }

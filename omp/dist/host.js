@@ -2061,11 +2061,11 @@ var ACTION_KEYS = {
   dismiss: "x",
   discard: "x"
 };
-function actionsOf(row, last, state) {
+function actionsOf(row, last, state, isPressOut) {
   const { id, item, steps: steps2 } = row;
   const action = (press, label, kind, flags = {}) => ({
     press,
-    label: press.action !== "type" && last?.kind !== "local" && last?.delivery?.state !== "failed" && last?.action === actionId(press) ? `${label} again` : label,
+    label: press.action !== "type" && !isPressOut && last?.kind !== "local" && last?.delivery?.state !== "failed" && last?.action === actionId(press) ? `${label} again` : label,
     kind,
     emphasis: flags.isPrimary || press.action === "done" || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
     ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps2[press.step]) ? { icon: stepIconKind(steps2[press.step]) } : {},
@@ -2243,11 +2243,13 @@ function inboxView({
   };
   const rowOf = (row) => {
     const state = stateOf(row.id);
+    const feedback = feedbackIn(row.id, state);
+    const isPressOut = feedback?.is === "working" || feedback?.is === "queued" || feedback?.is === "unconfirmed";
     return {
       ...row,
       state,
-      feedback: feedbackIn(row.id, state),
-      actions: actionsOf(row, lastActions[row.id], state)
+      feedback,
+      actions: actionsOf(row, lastActions[row.id], state, isPressOut)
     };
   };
   const itemRow = (item) => {

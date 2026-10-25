@@ -70,7 +70,7 @@ test('Compare reads Comparing… after its reply until the agent records the que
   await turn(delivered.at(-1)!, 'A subagent is comparing the two caches.')
   expect(await row()).toEqual({
     feedback: 'Comparing…',
-    actions: ['Redis', 'In-memory', 'Reply', 'Explain', 'Compare again', 'Dismiss'],
+    actions: ['Redis', 'In-memory', 'Reply', 'Explain', 'Compare', 'Dismiss'],
   })
   expect(await row(COMPARE_LIMIT_MS)).toEqual({
     feedback: 'No comparison came back',

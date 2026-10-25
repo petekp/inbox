@@ -506,6 +506,7 @@ function actionsOf(
   row: { id: string; item: Item | null; finding: Finding | null; steps: HelpStep[] },
   last: LastAction | undefined,
   state: RowState,
+  isPressOut: boolean,
 ): ActionView[] {
   const { id, item, steps } = row
   const action = (
@@ -517,6 +518,7 @@ function actionsOf(
     press,
     label:
       press.action !== 'type' &&
+      !isPressOut &&
       last?.kind !== 'local' &&
       last?.delivery?.state !== 'failed' &&
       last?.action === actionId(press)
@@ -827,12 +829,15 @@ export function inboxView({
   }
   const rowOf = (row: Omit<RowView, 'state' | 'feedback' | 'actions'>): RowView => {
     const state = stateOf(row.id)
+    const feedback = feedbackIn(row.id, state)
+    // A button must keep its width while its press is out, or the buttons after it can move to another line.
+    const isPressOut = feedback?.is === 'working' || feedback?.is === 'queued' || feedback?.is === 'unconfirmed'
 
     return {
       ...row,
       state,
-      feedback: feedbackIn(row.id, state),
-      actions: actionsOf(row, lastActions[row.id], state),
+      feedback,
+      actions: actionsOf(row, lastActions[row.id], state, isPressOut),
     }
   }
   const itemRow = (item: Item): RowView => {
