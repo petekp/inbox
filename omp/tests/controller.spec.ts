@@ -47,7 +47,7 @@ const live = (timers: { fn: () => void; ms: number; stopped: boolean }[], ms: nu
 
 test('the panel shows a loading line until the first screen arrives', async () => {
   const { panel } = open()
-  expect(panel.render(80).join('\n')).toContain('Loading…')
+  expect(panel.render(80).join('\n')).toContain('Reading the inbox…')
   await panel.start()
   expect(panel.render(80).join('\n')).toContain('Needs you')
 })

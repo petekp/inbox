@@ -258,13 +258,13 @@ test('an answer from a call that began before a look ended does not write back w
 
 test('the page counts what waits on the person and draws parts in order', () => {
   expect(pointerText(0)).toBeNull()
-  expect(pointerText(1)).toBe('1 thing waits on you in Inbox.')
-  expect(pointerText(3)).toBe('3 things wait on you in Inbox.')
+  expect(pointerText(1)).toBe('Needs you has 1 item.')
+  expect(pointerText(3)).toBe('Needs you has 3 items.')
   const stopped = { ledger: { overview: guide({ state: 'stuck', lastLookAt: 0 }) }, presence: { isTurnRunning: false } }
   const page = overviewPage(stopped, SHORT_MS * 2, 2)
 
   expect(page.lead.map(l => l.id)).toEqual(['headline', 'status', 'pointer'])
-  expect(page.lead[2]?.text).toBe('2 things wait on you in Inbox.')
+  expect(page.lead[2]?.text).toBe('Needs you has 2 items.')
   expect(page.lead.find(l => l.id === 'status')?.text).toBe('Going well.')
   expect(page.sections.map(x => x.id)).toEqual(['since', 'queue', 'next', 'open'])
   const here = overviewPage({ ...stopped, presence: { isTurnRunning: true } }, 1000, 2)

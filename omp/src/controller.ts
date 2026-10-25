@@ -1,7 +1,7 @@
 import { prRowId } from '../../hooks/pr-tab'
 import type { PrPress } from '../../hooks/pr-tab'
 import type { RowPress } from '../../hooks/presses'
-import { compareEndsAt } from '../../hooks/view'
+import { READING_TEXT, compareEndsAt } from '../../hooks/view'
 import type { ReplyHolds, ShownTab } from '../../hooks/view'
 import {
   INITIAL_UI,
@@ -125,7 +125,7 @@ export function createPanel(deps: PanelDeps): Panel {
 
   return {
     render(width) {
-      if (screen === null) return [' Loading…']
+      if (screen === null) return [` ${READING_TEXT}`]
       const drawn = drawPanel(screen, ui, width, deps.now(), style, deps.height())
       ui = { ...ui, pageTop: drawn.pageTop }
 

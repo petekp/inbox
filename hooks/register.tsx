@@ -232,6 +232,7 @@ import {
   rowMark,
   rowFeedbackText,
   ROW_COPY,
+  READING_TEXT,
   rowsIn,
   SETTLED_MS,
   settledIn,
@@ -2309,7 +2310,7 @@ function registerInboxCommand($: EngineInterface) {
   return $.command
     .register({
       name: 'inbox',
-      description: 'Show where this session stands and what is waiting on you',
+      description: 'Show where this session stands and what waits on you',
       immediate: true,
     })
     .catch(() => undefined)
@@ -4751,7 +4752,7 @@ export const register: Register = on => {
             section(
               <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingLeft={2}>
                 {isReadingAgain ? (
-                  <Text color={pal.muted}>Reading the inbox…</Text>
+                  <Text color={pal.muted}>{READING_TEXT}</Text>
                 ) : (
                   <Text color={pal.tone.error}>Could not read the inbox.</Text>
                 )}
@@ -4903,7 +4904,7 @@ export const register: Register = on => {
               </Text>
               {prState.isFetching ? <Text color={pal.muted}>Refreshing…</Text> : null}
               <Box flexDirection="row">
-                <Button key={`refresh-${pr.ref}`} label="Retry" onPress={() => void findPrs($)} />
+                <Button key={`refresh-${pr.ref}`} label={ROW_COPY.retry} onPress={() => void findPrs($)} />
               </Box>
             </Box>
           ) : null}

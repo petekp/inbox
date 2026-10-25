@@ -135,7 +135,7 @@ A step with several helps of one kind gets one note: `✓ Opened 3 PRs`. A mixed
 - Queued feedback appears after one second while arrival is pending, as `Queued: Yes, rename` or `Queued: Explain`. During that first second, the row shows its normal press feedback.
 - An answered question closes and leaves the count. A hand-off folds. A Talk send keeps the row open.
 - A matched arrival clears Queued. An answered question then reads `✓ Yes, rename`. Explain and Discuss keep their working text until the agent's reply.
-- An ambiguous arrival shows `Delivery unconfirmed: <action>` immediately. Open rows, settled rows and Closed folds retain that status with no success mark.
+- An ambiguous arrival shows `Not confirmed: <action>` immediately. Open rows, settled rows and Closed folds retain that status with no success mark.
 - A failed send reopens a closed question or unfolds a handed-off row. It reads `Not sent: <reason>` in red. A repeatable press offers [Try again]; a typed reply keeps its draft for Reply.
 - With no arrival event, Queued remains and its age grows. An ambiguous arrival remains unconfirmed until a later event can confirm its saved send.
 
@@ -237,7 +237,7 @@ An expired item closes as `Expired`. The rule behind it, 12 prompts or more than
 | Findings, empty | `No findings yet` and `Claude flags issues and opportunities it spots beyond your task.` |
 | PRs, empty | `No PRs` and `Your PRs show here when this session opens or links one, or when your branch has one.` |
 | PRs, loading | `Checking for PRs…` |
-| View loading | `Loading…`, in the HTML view only |
+| View loading | `Reading the inbox…` |
 | PR refresh failed | `Last refresh failed: <reason>` and [Retry] |
 | Inbox unreadable, mod | `Could not read the inbox.` and [Try again] |
 | Inbox unreadable, Codex | `Could not read the inbox. <reason>` and [Reload] |
@@ -264,7 +264,7 @@ Keys supplement clickable actions, except Explain: it is key-only in terminal an
 
 `/inbox demo` in the mod shows sample entries. The Codex tab offers [Show demo] in dev builds and builds made with `INBOX_DEMO_BUTTON=1` or `INBOX_DEMO_RECORDING=1`.
 
-The normal demo shows `DEMO_NOTICE` from `hooks/view.ts` at the top: `Sample entries. Presses send nothing.` with a [Hide demo] button. The band starts its counts with `Demo:` and also has [Hide demo]. A press on a sample action shows on its row what a real press shows, such as "✓ Explained" or "✓ Copied x", and sends nothing.
+The normal demo shows `DEMO_NOTICE` from `hooks/view.ts` at the top: `Sample entries. Buttons here send nothing.` with a [Hide demo] button. The band starts its counts with `Demo:` and also has [Hide demo]. A press on a sample action shows on its row what a real press shows, such as "✓ Explained" or "✓ Copied x", and sends nothing.
 
 For a recording, `/inbox demo recording` hides those notices, the band's `Demo:` prefix and Hide demo. A Codex build made with `INBOX_DEMO_RECORDING=1` also hides the demo notice and Hide demo. Recording demos still use sample entries and send nothing.
 
@@ -448,17 +448,17 @@ A failed `codex queue` shows `Not sent: <reason>` in red. Repeatable presses off
 Needs you then reads, above its rows or in place of the empty text:
 
 ```
+Items from Codex's replies are missing.
 The inbox has not heard from this chat's hooks.
-Codex runs a plugin's hooks only after you trust them.
 ```
 
-When only some hooks are missing, the second line names the cost: `Items from Codex's replies are missing.` The text names no place to approve hooks, because no source or live check shows one in the desktop app.
+When no hook has run yet, it reads `The inbox starts with your next message.` When Codex reports the hooks untrusted or stopped by an update, it says so and names the hook icon, as "Hooks need trust" in `docs/looks.md` describes.
 
 **States.**
 
 | State | Text | Trigger |
 |---|---|---|
-| Loading | `Loading…` | Before the first view arrives |
+| Loading | `Reading the inbox…` | Before the first view arrives |
 | Unreadable | `Could not read the inbox. <reason>` and [Reload] | The first read fails, so there is no view to show |
 | No connection | `Could not read the inbox. The inbox could not connect to Codex.` and [Reload] | The `ui/initialize` request fails |
 | Polls failing | Muted `Last read 1m ago · retrying` at the footer's right, red after a minute | Two later polls fail while a view is shown |

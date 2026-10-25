@@ -932,7 +932,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   }
 
   pi.registerCommand('inbox', {
-    description: 'Show what waits on you',
+    description: 'Show where this session stands and what waits on you',
     handler: async (args, ctx) => {
       const isDemo = args.trim() === 'demo'
       if (ctx.mode === 'tui') return openPanelUi(ctx, isDemo)

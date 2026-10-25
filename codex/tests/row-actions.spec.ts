@@ -458,7 +458,7 @@ test('the built tab starts without randomUUID and reloads without losing its hos
       /(<script id="inbox-script">)[\s\S]*?(<\/script>)/,
       '$1throw new Error("broken candidate");$2',
     )
-    await until(() => button('Retry') !== undefined)
+    await until(() => button('Try again') !== undefined)
     assert.equal(document.getElementById('app'), workingRoot)
     assert.equal(document.querySelector('input')?.value, 'Keep these exact words')
     assert.equal(document.activeElement, input)
@@ -487,7 +487,7 @@ test('the built tab starts without randomUUID and reloads without losing its hos
     button('Reply')!.click()
     assert.equal(document.querySelector('input')?.value, 'Keep these exact words')
     button('Send')!.click()
-    await until(() => document.getElementById('app')?.textContent?.includes('Delivery unconfirmed') ?? false)
+    await until(() => document.getElementById('app')?.textContent?.includes('Not confirmed') ?? false)
     assert.match(document.querySelector('.row.selected')?.textContent ?? '', /Check the build/)
     button('Reply')!.click()
     assert.equal(document.querySelector('input')?.value, 'Keep these exact words')

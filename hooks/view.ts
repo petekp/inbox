@@ -357,7 +357,8 @@ export function stopFix(stop: Stop): string {
   }
 }
 
-export const DEMO_NOTICE = 'Sample entries. Presses send nothing.'
+export const DEMO_NOTICE = 'Sample entries. Buttons here send nothing.'
+export const READING_TEXT = 'Reading the inbox…'
 
 const UPDATE_FAILED = 'Last update failed. Items from that reply may be missing.'
 const UPDATE_RETRIES = ' It retries after your next message.'
@@ -528,7 +529,7 @@ export function feedbackText(f: Feedback, look: Look): string {
 }
 
 function deliveryLabel(state: 'queued' | 'unconfirmed', label: string): string {
-  return state === 'queued' ? `Queued: ${label}` : `Delivery unconfirmed: ${label}`
+  return state === 'queued' ? `Queued: ${label}` : `Not confirmed: ${label}`
 }
 
 /** A settled row's mark: ✓ once nothing it sent is on its way, else blank. */
@@ -646,7 +647,7 @@ const SECTION_TITLES: Partial<Record<PartId, string | null>> = {
 export const QUIET_TEXT = 'Nothing new since you looked.'
 
 export function pointerText(count: number): string | null {
-  return count === 0 ? null : count === 1 ? '1 thing waits on you in Inbox.' : `${count} things wait on you in Inbox.`
+  return count === 0 ? null : count === 1 ? 'Needs you has 1 item.' : `Needs you has ${count} items.`
 }
 
 /** `parts` with `id` placed after the headline and the course. */
@@ -712,14 +713,14 @@ export function overviewPage(
     earlier: parts.includes('earlier') ? (overview?.earlier ?? []) : [],
     empty: {
       title: 'Overview',
-      hint: "Where this session's work stands and where it's heading, so you can pick it up after a break. It fills in once the work starts.",
+      hint: "Where the work stands and where it's heading. It fills in once the work starts.",
     },
   }
 }
 
 export function emptyText(tab: 'needsYou' | 'findings', agent: string): { title: string; hint: string } {
   return tab === 'needsYou'
-    ? { title: 'Nothing needed.', hint: `${agent}'s questions and the tasks only you can do show up here.` }
+    ? { title: 'Nothing needed', hint: `${agent}'s questions and the tasks only you can do show up here.` }
     : { title: 'No findings yet', hint: `${agent} flags issues and opportunities it spots beyond your task.` }
 }
 

@@ -2454,7 +2454,8 @@ function stopFix(stop) {
       return "Send a message to resume.";
   }
 }
-var DEMO_NOTICE = "Sample entries. Presses send nothing.";
+var DEMO_NOTICE = "Sample entries. Buttons here send nothing.";
+var READING_TEXT = "Reading the inbox\u2026";
 var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
 var UPDATE_RETRIES = " It retries after your next message.";
 function needsYouOrder(ledger) {
@@ -2572,7 +2573,7 @@ function feedbackText(f, look) {
   }
 }
 function deliveryLabel(state, label) {
-  return state === "queued" ? `Queued: ${label}` : `Delivery unconfirmed: ${label}`;
+  return state === "queued" ? `Queued: ${label}` : `Not confirmed: ${label}`;
 }
 function settledMark(delivery) {
   return delivery === null ? "\u2713" : "";
@@ -2629,7 +2630,7 @@ var SECTION_TITLES = {
 };
 var QUIET_TEXT = "Nothing new since you looked.";
 function pointerText(count) {
-  return count === 0 ? null : count === 1 ? "1 thing waits on you in Inbox." : `${count} things wait on you in Inbox.`;
+  return count === 0 ? null : count === 1 ? "Needs you has 1 item." : `Needs you has ${count} items.`;
 }
 function withAfterHeading(parts, id) {
   const at = parts.filter((p) => p === "headline" || p === "course").length;
@@ -2673,12 +2674,12 @@ function overviewPage(s, now, waitingOnYou = 0) {
     earlier: parts.includes("earlier") ? overview?.earlier ?? [] : [],
     empty: {
       title: "Overview",
-      hint: "Where this session's work stands and where it's heading, so you can pick it up after a break. It fills in once the work starts."
+      hint: "Where the work stands and where it's heading. It fills in once the work starts."
     }
   };
 }
 function emptyText(tab, agent) {
-  return tab === "needsYou" ? { title: "Nothing needed.", hint: `${agent}'s questions and the tasks only you can do show up here.` } : { title: "No findings yet", hint: `${agent} flags issues and opportunities it spots beyond your task.` };
+  return tab === "needsYou" ? { title: "Nothing needed", hint: `${agent}'s questions and the tasks only you can do show up here.` } : { title: "No findings yet", hint: `${agent} flags issues and opportunities it spots beyond your task.` };
 }
 var FOLLOW_UPS = new Set([
   "type",
@@ -5250,7 +5251,7 @@ function createPanel(deps) {
   return {
     render(width) {
       if (screen === null)
-        return [" Loading\u2026"];
+        return [` ${READING_TEXT}`];
       const drawn = drawPanel(screen, ui, width, deps.now(), style, deps.height());
       ui = { ...ui, pageTop: drawn.pageTop };
       return drawn.lines;
@@ -6501,7 +6502,7 @@ function createInbox(pi, deps = defaultDeps) {
     }
   }
   pi.registerCommand("inbox", {
-    description: "Show what waits on you",
+    description: "Show where this session stands and what waits on you",
     handler: async (args, ctx) => {
       const isDemo = args.trim() === "demo";
       if (ctx.mode === "tui")

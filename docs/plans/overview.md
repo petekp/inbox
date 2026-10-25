@@ -73,7 +73,7 @@ A part has a `kind`. Text parts hold one short text. List parts hold items.
 | `next` | What comes next. | Model |
 | `since` | What changed after the last look. | Model writes, code clears |
 | `workstreams` | In a coordinator session: one line per stream of work. | Model |
-| `pointer` | "N things wait on you in Inbox." No buttons. Left out when nothing waits. | Code |
+| `pointer` | "Needs you has N items." No buttons. Left out when nothing waits. | Code |
 
 An item has a status:
 
@@ -144,7 +144,7 @@ A changed direction leads, whatever else is true. After it:
 | stopped | any | headline, status, pointer, since, queue, next, open |
 | finished | any | headline, status, works, open |
 
-The pointer is "N things wait on you in Inbox." with the count of open questions and tasks. It has no buttons and is left out when the count is 0. `open` stays in every state so a problem is never hidden. `works` shows only when the work is finished, since the queue's done items already say what works while work goes on.
+The pointer is "Needs you has N items." with the count of open questions and tasks. It has no buttons and is left out when the count is 0. `open` stays in every state so a problem is never hidden. `works` shows only when the work is finished, since the queue's done items already say what works while work goes on.
 
 The queue shows in every state except `finished`. In `stopped` it holds the ◆ item that says what the work waits on.
 
@@ -174,7 +174,7 @@ When the call reports a new topic, the old arc folds into one line under "Earlie
 
 ## The empty page
 
-Before any work starts, the page says what the tab is and how it helps, in one or two plain lines. It does not name a tab or use the word "goal". It reads: "Where this session's work stands and where it's heading, so you can pick it up after a break. It fills in once the work starts." The words go through `refine-prose` when they are built.
+Before any work starts, the page says what the tab is, in one or two plain lines. It does not name a tab or use the word "goal". It reads: "Where the work stands and where it's heading. It fills in once the work starts." The words go through `refine-prose` when they are built.
 
 ## Host task lists
 
