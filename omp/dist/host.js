@@ -5223,8 +5223,8 @@ function createPanel(deps) {
 // ../hooks/demo.ts
 var MIN = 60000;
 var REPO = "https://github.com/acme/visor";
-function demoSession(now) {
-  const d = demoView(now);
+function demoSession(now, agent) {
+  const d = demoView(now, agent);
   const s = emptySession();
   return {
     ...s,
@@ -5234,7 +5234,7 @@ function demoSession(now) {
     presence: { ...s.presence, ...d.turns, ...d.presence }
   };
 }
-function demoView(now) {
+function demoView(now, agent) {
   return {
     ledger: {
       overview: {
@@ -5389,7 +5389,7 @@ function demoView(now) {
           id: "d7",
           kind: "question",
           ask: "Fall back to voice when your hands are busy?",
-          outcome: "closed by Claude: no longer applies: voice already takes over when no hand is seen",
+          outcome: `closed by ${agent}: no longer applies: voice already takes over when no hand is seen`,
           how: "claude",
           at: now - 30 * MIN
         },
@@ -5465,7 +5465,7 @@ function demoView(now) {
           path: "src/view/Glance.tsx",
           at: now - 4 * 60 * MIN,
           how: "claude",
-          outcome: "closed by Claude: fixed, it now redraws only the glance that changed",
+          outcome: `closed by ${agent}: fixed, it now redraws only the glance that changed`,
           closedAt: now - 2 * 60 * MIN
         }
       ],
@@ -5731,9 +5731,20 @@ async function pruneSessions(dir, keep) {
   }
 }
 
+// src/texts.ts
+var OMP = {
+  agent: "omp",
+  surface: "the /inbox panel",
+  band: "a band above their prompt",
+  findingsIn: "the Findings tab of the /inbox panel",
+  recordTool: "record",
+  closeTool: "close",
+  intro: "The inbox extension shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox panel, and your findings, in the panel's Findings tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings."
+};
+
 // src/demo.ts
 function demoState(now) {
-  return { ...emptyState("demo"), ...demoSession(now) };
+  return { ...emptyState("demo"), ...demoSession(now, OMP.agent) };
 }
 function demoSource(deps) {
   let state = demoState(deps.now());
@@ -5777,17 +5788,6 @@ function demoSource(deps) {
     }
   };
 }
-
-// src/texts.ts
-var OMP = {
-  agent: "omp",
-  surface: "the /inbox panel",
-  band: "a band above their prompt",
-  findingsIn: "the Findings tab of the /inbox panel",
-  recordTool: "record",
-  closeTool: "close",
-  intro: "The inbox extension shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox panel, and your findings, in the panel's Findings tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings."
-};
 
 // src/host.ts
 var INBOX_MODEL_TIMEOUT_MS = 120000;

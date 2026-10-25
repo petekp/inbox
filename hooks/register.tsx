@@ -2286,7 +2286,7 @@ async function setDemo($: EngineInterface, isShown: boolean, isRecording = false
   cancelUndoScroll()
   const now = await $.clock.now()
   await Promise.all([
-    update($, DEMO, () => (isShown ? demoView(now) : null)),
+    update($, DEMO, () => (isShown ? demoView(now, CLAUDE_CODE.agent) : null)),
     update($, DEMO_RECORDING, () => isShown && isRecording),
   ])
   await Promise.all([update($, SELECTION, () => NO_SELECTION), update($, TYPING, () => null)])

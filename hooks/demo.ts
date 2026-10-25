@@ -29,8 +29,8 @@ export function upgradeDemoCopy(saved: SavedDemoCopy): DemoCopy {
 }
 
 /** The sample as a session a host can draw and press on. */
-export function demoSession(now: number): Session {
-  const d = demoView(now)
+export function demoSession(now: number, agent: string): Session {
+  const d = demoView(now, agent)
   const s = emptySession()
 
   return {
@@ -42,7 +42,8 @@ export function demoSession(now: number): Session {
   }
 }
 
-export function demoView(now: number): DemoCopy {
+/** The sample. `agent` names the agent that closed its closed items, as a real close does. */
+export function demoView(now: number, agent: string): DemoCopy {
   return {
     ledger: {
       overview: {
@@ -197,7 +198,7 @@ export function demoView(now: number): DemoCopy {
           id: 'd7',
           kind: 'question',
           ask: 'Fall back to voice when your hands are busy?',
-          outcome: 'closed by Claude: no longer applies: voice already takes over when no hand is seen',
+          outcome: `closed by ${agent}: no longer applies: voice already takes over when no hand is seen`,
           how: 'claude',
           at: now - 30 * MIN,
         },
@@ -277,7 +278,7 @@ export function demoView(now: number): DemoCopy {
           path: 'src/view/Glance.tsx',
           at: now - 4 * 60 * MIN,
           how: 'claude',
-          outcome: 'closed by Claude: fixed, it now redraws only the glance that changed',
+          outcome: `closed by ${agent}: fixed, it now redraws only the glance that changed`,
           closedAt: now - 2 * 60 * MIN,
         },
       ],

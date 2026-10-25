@@ -177,7 +177,7 @@ test('a rejected local effect records failure on the pressed row', async () => {
 })
 
 test('a review thread that stopped waiting rejects a stale Address press', () => {
-  const d = demoView(100)
+  const d = demoView(100, 'Codex')
   const pr = Object.values(d.prViews.views).find(v => v.threads.some(t => t.isWaiting))!
   const thread = pr.threads.find(t => t.isWaiting)!
   const resolved = { ...pr, threads: pr.threads.map(t => (t.id === thread.id ? { ...t, isWaiting: false } : t)) }

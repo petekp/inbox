@@ -4,9 +4,10 @@ import { pressOn, sessionView } from '../../hooks/session'
 import type { PanelSource } from './controller'
 import { emptyState } from './state'
 import type { OmpState } from './state'
+import { OMP } from './texts'
 
 export function demoState(now: number): OmpState {
-  return { ...emptyState('demo'), ...demoSession(now) }
+  return { ...emptyState('demo'), ...demoSession(now, OMP.agent) }
 }
 
 /** A panel source over the shared demo data. A press changes the sample and sends nothing. */

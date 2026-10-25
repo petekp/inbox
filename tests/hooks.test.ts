@@ -3172,7 +3172,7 @@ test('a turn an API error ended shows its stop from the error text in the transc
 test('/inbox demo shows sample entries in every tab, presses change only its copy, and [Hide demo] goes back', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  const demo = demoView(1_000_000)
+  const demo = demoView(1_000_000, 'Claude')
   const literal = (text: string) => new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
   const branchRef = demo.prViews.branchRef!
   const linkedRef = demo.ledger.prs.find(ref => ref !== branchRef)!
@@ -3291,7 +3291,7 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
 test('/inbox demo recording shows the sample entries without the notices that mark them as samples', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  const demo = demoView(1_000_000)
+  const demo = demoView(1_000_000, 'Claude')
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
 
   expect((await $.command.run({ command: 'inbox', args: 'demo recording' } as never)).text).toContain('for a recording')
@@ -4063,7 +4063,7 @@ const inOrder = (drawn: string[], plan: string[]) => {
 }
 
 test('no two buttons on a row share a hotkey, for every row kind in the demo', async () => {
-  const { ledger, lastActions, notes, turns, prViews } = demoView(1_000_000)
+  const { ledger, lastActions, notes, turns, prViews } = demoView(1_000_000, 'Claude')
   const view = inboxView({
     ledger,
     lastActions,
@@ -4106,7 +4106,7 @@ test('every row in the demo, on every tab, draws its plan’s buttons in the pla
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'inbox', args: 'demo' } as never)
 
-  const { ledger, lastActions, notes, turns, prViews } = demoView(1_000_000)
+  const { ledger, lastActions, notes, turns, prViews } = demoView(1_000_000, 'Claude')
   const view = inboxView({
     ledger,
     lastActions,
