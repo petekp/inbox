@@ -3,3 +3,6 @@ export const ROW_PAD_PT = 8
 
 /** The gap above a lead line of the Overview page that follows the status, in points: half of the desktop pane's 19-point line. */
 export const LEAD_GAP_PT = 9.5
+
+/** The padding above and below a row on the Overview page, in points, so its rows sit half a desktop line apart. */
+export const OVERVIEW_ROW_PAD_PT = LEAD_GAP_PT / 2
