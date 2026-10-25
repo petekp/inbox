@@ -257,6 +257,11 @@ export function isWaitingRow(row: RowView): boolean {
   return row.state.is === 'open'
 }
 
+/** The count a group's title shows: its rows that wait on the person. A look draws no count when it is 0. */
+export function waitingCount(rows: readonly (RowView | undefined)[]): number {
+  return rows.filter(r => r !== undefined && isWaitingRow(r)).length
+}
+
 export function rowFeedbackText(row: RowView, look: Look): string | null {
   const f = row.feedback
   return f ? (f.is === 'done' && row.state.is === 'handedOff' ? f.label : feedbackText(f, look)) : null

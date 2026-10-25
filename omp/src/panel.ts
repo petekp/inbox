@@ -62,6 +62,7 @@ import {
   isResumable,
   isStatusUnderActions,
   isWaitingRow,
+  waitingCount,
   keptOpen,
   replyHint,
   rowAfterClose,
@@ -346,7 +347,7 @@ function closedLines(d: ClosedLine): Line {
 function groupEntries(g: Group, unfolded: readonly FoldKind[]): Entry[] {
   const settled = settledIn(g)
   const total = closedTotal(g.closed, settled)
-  const out: Entry[] = [{ kind: 'heading', text: g.title }]
+  const out: Entry[] = [{ kind: 'heading', text: g.title, count: waitingCount(g.rows) }]
   out.push(...g.rows.map((row): Entry => ({ kind: 'row', line: lineOfRow(row) })))
   if (g.rows.length === 0) out.push({ kind: 'note', text: groupEmptyText(g.title), indent: 3 })
   if (total === 0) return out
@@ -474,7 +475,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
       },
     })
     const threads = waitingThreads(pr)
-    if (threads.length > 0) out.push({ kind: 'heading', text: PR_GROUP_TITLES.threads })
+    if (threads.length > 0) out.push({ kind: 'heading', text: PR_GROUP_TITLES.threads, count: threads.length })
     for (const t of threads) {
       const id = prThreadId(pr, t)
       const text = threadRowText(pr, t, lastActions)
@@ -493,7 +494,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
       })
     }
     const checks = failingChecks(pr)
-    if (checks.length > 0) out.push({ kind: 'heading', text: PR_GROUP_TITLES.checks })
+    if (checks.length > 0) out.push({ kind: 'heading', text: PR_GROUP_TITLES.checks, count: checks.length })
     for (const c of checks) {
       const id = prCheckId(pr, c)
       out.push({
@@ -960,13 +961,9 @@ type TabCell = {
 }
 
 /** One form of the tab line. Each later form is narrower. */
-type TabForm = { isBracketed: boolean; isZeroShown: boolean }
+type TabForm = { isBracketed: boolean }
 
-const TAB_FORMS: readonly TabForm[] = [
-  { isBracketed: true, isZeroShown: true },
-  { isBracketed: false, isZeroShown: true },
-  { isBracketed: false, isZeroShown: false },
-]
+const TAB_FORMS: readonly TabForm[] = [{ isBracketed: true }, { isBracketed: false }]
 /** The fewest letters a cut label keeps, its ellipsis included. */
 const MIN_LABEL = 3
 
@@ -975,7 +972,7 @@ const cutLabel = (label: string, length: number) =>
 
 function tabCell(t: TabCell, label: string, form: TabForm, s: Style): string {
   const key = form.isBracketed ? `[${t.hotkey}]` : t.hotkey
-  const count = t.count === null || (t.count === 0 && !form.isZeroShown) ? null : String(t.count)
+  const count = t.count ? String(t.count) : null
   if (t.isShown) return s.inverse(s.bold(` ${key} ${label}${count === null ? '' : ` ${count}`} `))
   const countText = count === null ? '' : ` ${t.tone ? s.tone(t.tone, count) : count}`
 
@@ -983,7 +980,7 @@ function tabCell(t: TabCell, label: string, form: TabForm, s: Style): string {
 }
 
 /**
- * The tab line. As the panel narrows, it drops the `[n]` brackets, then zero counts, then cuts the other tabs' labels,
+ * The tab line. As the panel narrows, it drops the `[n]` brackets, then cuts the other tabs' labels,
  * longest first. Only the final `fit()` in `render` cuts the shown tab's label, once the other labels are at their shortest.
  */
 function tabBar(d: Draw): string {
@@ -1074,8 +1071,7 @@ export function drawPanel(
   const body: string[] = []
   let selectedAt = [0, 0]
   for (const e of entries) {
-    if (e.kind === 'heading')
-      body.push(` ${style.bold(e.text)}${e.count === undefined ? '' : style.dim(` · ${e.count}`)}`)
+    if (e.kind === 'heading') body.push(` ${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`)
     else if (e.kind === 'page') body.push(...drawPageRow(e.row, d))
     else if (e.kind === 'note')
       body.push(...indented(e.text, e.indent ?? 1, width, 3, e.isStrong ? style.bold : style.dim))

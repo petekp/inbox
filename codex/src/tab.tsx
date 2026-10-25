@@ -34,7 +34,7 @@ import {
   isFailure,
   isGuarded,
   isStatusUnderActions,
-  isWaitingRow,
+  waitingCount,
   firstWaiting,
   keptOpen,
   footerStatus,
@@ -1390,7 +1390,7 @@ function ItemGroup({
 
   return (
     <section>
-      <GroupTitle title={title} count={rows.filter(r => r.view && isWaitingRow(r.view)).length} />
+      <GroupTitle title={title} count={waitingCount(rows.map(r => r.view))} />
       <Entries entries={entries} group={kind} all={all} now={now} />
       <GroupEnd
         group={kind}
@@ -1592,7 +1592,7 @@ function Findings({ v, lists, now }: { v: View; lists: Lists; now: number }) {
         const rows = rest.flatMap(x => ('row' in x ? [x.row] : []))
         return (
           <section>
-            <GroupTitle title={g.title} count={rows.filter(r => r.view && isWaitingRow(r.view)).length} />
+            <GroupTitle title={g.title} count={waitingCount(rows.map(r => r.view))} />
             <Entries entries={g.entries} group="finding" all={lists.byTab.findings} now={now} />
             <GroupEnd
               group={g.kind}

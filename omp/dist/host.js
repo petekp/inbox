@@ -2401,6 +2401,9 @@ function actionLabel(action, fits) {
 function isWaitingRow(row) {
   return row.state.is === "open";
 }
+function waitingCount(rows) {
+  return rows.filter((r) => r !== undefined && isWaitingRow(r)).length;
+}
 function rowFeedbackText(row, look) {
   const f = row.feedback;
   return f ? f.is === "done" && row.state.is === "handedOff" ? f.label : feedbackText(f, look) : null;
@@ -4473,7 +4476,7 @@ function closedLines(d) {
 function groupEntries(g, unfolded) {
   const settled = settledIn(g);
   const total = closedTotal(g.closed, settled);
-  const out = [{ kind: "heading", text: g.title }];
+  const out = [{ kind: "heading", text: g.title, count: waitingCount(g.rows) }];
   out.push(...g.rows.map((row) => ({ kind: "row", line: lineOfRow(row) })));
   if (g.rows.length === 0)
     out.push({ kind: "note", text: groupEmptyText(g.title), indent: 3 });
@@ -4595,7 +4598,7 @@ function prEntries(screen, now) {
     });
     const threads = waitingThreads(pr);
     if (threads.length > 0)
-      out.push({ kind: "heading", text: PR_GROUP_TITLES.threads });
+      out.push({ kind: "heading", text: PR_GROUP_TITLES.threads, count: threads.length });
     for (const t of threads) {
       const id = prThreadId(pr, t);
       const text = threadRowText(pr, t, lastActions);
@@ -4615,7 +4618,7 @@ function prEntries(screen, now) {
     }
     const checks = failingChecks(pr);
     if (checks.length > 0)
-      out.push({ kind: "heading", text: PR_GROUP_TITLES.checks });
+      out.push({ kind: "heading", text: PR_GROUP_TITLES.checks, count: checks.length });
     for (const c of checks) {
       const id = prCheckId(pr, c);
       out.push({
@@ -4981,16 +4984,12 @@ function drawPageRow(row, d) {
     out.push(...indented(row.detail, TITLE_AT, width, 4, s.dim));
   return out;
 }
-var TAB_FORMS = [
-  { isBracketed: true, isZeroShown: true },
-  { isBracketed: false, isZeroShown: true },
-  { isBracketed: false, isZeroShown: false }
-];
+var TAB_FORMS = [{ isBracketed: true }, { isBracketed: false }];
 var MIN_LABEL = 3;
 var cutLabel = (label, length) => [...label].length <= length ? label : `${[...label].slice(0, length - 1).join("")}\u2026`;
 function tabCell(t, label, form, s) {
   const key = form.isBracketed ? `[${t.hotkey}]` : t.hotkey;
-  const count = t.count === null || t.count === 0 && !form.isZeroShown ? null : String(t.count);
+  const count = t.count ? String(t.count) : null;
   if (t.isShown)
     return s.inverse(s.bold(` ${key} ${label}${count === null ? "" : ` ${count}`} `));
   const countText = count === null ? "" : ` ${t.tone ? s.tone(t.tone, count) : count}`;
@@ -5061,7 +5060,7 @@ function drawPanel(screen, ui, width, now, style, height) {
   let selectedAt = [0, 0];
   for (const e of entries) {
     if (e.kind === "heading")
-      body.push(` ${style.bold(e.text)}${e.count === undefined ? "" : style.dim(` \xB7 ${e.count}`)}`);
+      body.push(` ${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
     else if (e.kind === "page")
       body.push(...drawPageRow(e.row, d));
     else if (e.kind === "note")

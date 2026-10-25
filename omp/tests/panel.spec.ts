@@ -695,7 +695,7 @@ test('rows that arrive while the Overview page shows leave the panel on the page
   expect(followRows(findingsOnly(), opened.ui, opened.seen, false, NOW).ui).toEqual(onPage)
 })
 
-test('a narrowing tab line drops the brackets, then zero counts, then cuts other labels, never the shown one', () => {
+test('a narrowing tab line drops the brackets, then cuts other labels, never the shown one, and draws no zero count', () => {
   const zeros = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
   for (const screen of [screenOf(), zeros])
     for (const shown of TABS) {
@@ -705,11 +705,7 @@ test('a narrowing tab line drops the brackets, then zero counts, then cuts other
       const bare = tabLine(screen, ui, full - 1)
       expect(bare).not.toContain('[')
       expect(bare).not.toContain('…')
-      const unzeroed = tabLine(screen, ui, bare.length)
-      if (screen === zeros) {
-        expect(unzeroed).not.toMatch(/ 0 /)
-        expect(unzeroed).not.toContain('…')
-      }
+      if (screen === zeros) expect(tabLine(screen, ui, 200)).not.toMatch(/ 0 /)
       for (const width of [45, 50, 60, 80])
         for (const t of TABS) {
           const line = tabLine(screen, ui, width).replace(/[[\]]/g, '')

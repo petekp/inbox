@@ -85,6 +85,7 @@ Change a rule in its owner. Do not change it in a reader.
 | Needs you order and count | `hooks/view.ts:needsYouOrder`, `hooks/view.ts:inboxView` | All four looks, the band and the status line |
 | Question handles | `hooks/model-text.ts:questionNumbers`, read by `hooks/view.ts:inboxView` | The terminal and omp looks. They draw `1)` or `•`. Desktop and Codex draw no handle on a question. |
 | Needs you groups | `hooks/view.ts:NEEDS_YOU_GROUPS` | The mod and omp. The Codex tab names the groups in `codex/src/tab.tsx`. |
+| A group title's count: its rows that wait on the person, and no count at 0. A tab's count is drawn only above 0. | `hooks/view.ts:waitingCount` | All four looks. A PR group counts its rows. |
 | Finding groups and handles | `hooks/view.ts:FINDING_GROUPS`, `hooks/view.ts:drawnLists` | All four looks. Each lists findings under an Issues and an Opportunities title and draws the kind's mark as the handle. A handed-off finding draws ✓ instead. |
 | Row state | `hooks/view.ts:RowState`, `hooks/presses.ts:isHandedOff` | All four looks |
 | The status line under the inbox: Updating…, Refreshing PRs… and a failed update | `hooks/view.ts:footerStatus` | All four looks. Codex shows its own failed-read line before it. |

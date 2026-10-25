@@ -211,7 +211,7 @@ import {
   heldReplies,
   isFailure,
   isStatusUnderActions,
-  isWaitingRow,
+  waitingCount,
   isGuarded,
   PERMISSION_FALLBACK_DELAY_MS,
   PRESS_GUARD_MS,
@@ -4734,7 +4734,7 @@ export const register: Register = on => {
 
         return [
           section([
-            groupTitle(g.title, g.rows.filter(r => r.view && isWaitingRow(r.view)).length),
+            groupTitle(g.title, waitingCount(g.rows.map(r => r.view))),
             ...titleGap(),
             ...(open.length > 0 ? open : [groupEmpty(g.title)]),
             ...tail,
@@ -4817,7 +4817,7 @@ export const register: Register = on => {
           delivery: f.delivery,
         }))
         return section([
-          groupTitle(g.title, rowsIn(g.entries).filter(r => r.view && isWaitingRow(r.view)).length),
+          groupTitle(g.title, waitingCount(rowsIn(g.entries).map(r => r.view))),
           ...titleGap(),
           ...(g.entries.length === 0 ? [groupEmpty(g.title)] : []),
           ...divided(
