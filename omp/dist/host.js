@@ -2404,6 +2404,9 @@ function isWaitingRow(row) {
 function waitingCount(rows) {
   return rows.filter((r) => r !== undefined && isWaitingRow(r)).length;
 }
+function markedFeedbackText(f, mark, look) {
+  return f.is === "done" && mark === "\u2713" ? f.label : feedbackText(f, look);
+}
 function rowFeedbackText(row, look) {
   const f = row.feedback;
   return f ? f.is === "done" && row.state.is === "handedOff" ? f.label : feedbackText(f, look) : null;
@@ -4660,7 +4663,7 @@ function prEntries(screen, now) {
           title: text.title,
           isDim: text.fold !== null,
           detail: [text.meta, text.fold?.note].filter(Boolean).join(" \xB7 ") || null,
-          feedback: pressFeedback(screen, id, now),
+          feedback: pressFeedback(screen, id, now, text.mark.text),
           buttons: prButtons(threadActions(pr, t, presses)),
           isWaiting: isWaiting(id),
           isFolded: text.fold !== null
@@ -4681,7 +4684,7 @@ function prEntries(screen, now) {
           lead: markLead(text.mark),
           title: text.lead ? `${text.lead} / ${text.title}` : text.title,
           detail: text.meta,
-          feedback: pressFeedback(screen, id, now),
+          feedback: pressFeedback(screen, id, now, text.mark.text),
           buttons: prButtons(checkActions(pr, c, presses)),
           isWaiting: isWaiting(id)
         }
@@ -4692,9 +4695,9 @@ function prEntries(screen, now) {
     out.push({ kind: "note", text: prs.olderText });
   return out;
 }
-function pressFeedback(screen, id, now) {
+function pressFeedback(screen, id, now, mark = "") {
   const f = feedbackOf(id, screen.view.lastActions[id], undefined, screen.view.turns, now);
-  return f ? { text: feedbackText(f, AGENT), tone: feedbackTone(f), source: f } : null;
+  return f ? { text: markedFeedbackText(f, mark, AGENT), tone: feedbackTone(f), source: f } : null;
 }
 var TITLE_AT = 6;
 function pageEntries(page) {

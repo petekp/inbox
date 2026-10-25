@@ -27,6 +27,7 @@ import {
   TABS,
   feedbackOf,
   feedbackText,
+  markedFeedbackText,
   fieldExit,
   foldLabel,
   hasAge,
@@ -1074,11 +1075,7 @@ function feedbackLabel(row: Row): string | null {
   const f = row.feedback
   if (!f) return null
 
-  return row.view
-    ? rowFeedbackText(row.view, 'codex')
-    : f.is === 'done' && row.handleTone === 'done'
-      ? f.label
-      : feedbackText(f, 'codex')
+  return row.view ? rowFeedbackText(row.view, 'codex') : markedFeedbackText(f, row.handle ?? '', 'codex')
 }
 
 function noteOf(id: string): string | null {

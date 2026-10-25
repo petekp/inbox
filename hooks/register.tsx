@@ -212,6 +212,7 @@ import {
   foldLabel,
   feedbackOf,
   feedbackText,
+  markedFeedbackText,
   fieldExit,
   hasAge,
   heldReplies,
@@ -3544,11 +3545,7 @@ export const register: Register = on => {
 
       return hasAge(f)
         ? {
-            text: row?.view
-              ? rowFeedbackText(row.view, look)!
-              : f.is === 'done' && row?.handle === '✓'
-                ? f.label
-                : feedbackText(f, look),
+            text: row?.view ? rowFeedbackText(row.view, look)! : markedFeedbackText(f, row?.handle ?? '', look),
             age: ago(now - f.at),
             isFailure: false,
             feedback: f,
