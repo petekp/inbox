@@ -1108,13 +1108,14 @@ function readView(ref, json) {
     return null;
   }
 }
-function readThreads(json) {
+function readThreadsAnswer(json) {
   try {
     const data = JSON.parse(json).data;
     const viewer = data?.viewer?.login;
     const pr = data?.repository?.pullRequest;
+    const author = pr?.author;
     const headAt = Date.parse(pr?.commits?.nodes?.[0]?.commit?.committedDate ?? "") || null;
-    return (pr?.reviewThreads?.nodes ?? []).filter((t) => !t.isResolved).map((t) => {
+    const threads = (pr?.reviewThreads?.nodes ?? []).filter((t) => !t.isResolved).map((t) => {
       const first = t.comments.nodes[0];
       const last = t.comments.totalCount > 1 ? t.last.nodes[0] : undefined;
       const reply = last ? {
@@ -1138,18 +1139,9 @@ function readThreads(json) {
         at: Date.parse(first?.createdAt ?? "") || null
       };
     });
+    return { threads, isYours: viewer === undefined || author === undefined ? null : author?.login === viewer };
   } catch {
-    return [];
-  }
-}
-function readIsYours(json) {
-  try {
-    const data = JSON.parse(json).data;
-    const viewer = data?.viewer?.login;
-    const author = data?.repository?.pullRequest?.author;
-    return viewer === undefined || author === undefined ? null : author?.login === viewer;
-  } catch {
-    return null;
+    return { threads: [], isYours: null };
   }
 }
 function isKeptPr(pr) {
@@ -2423,13 +2415,13 @@ async function fetchPr(gh, target, views, knownBranchRef) {
     return previous ? { ...previous, error: view.stderr.trim().split(`
 `)[0] || "gh could not read the PR" } : null;
   const threads = early ?? await threadsOf(ref);
-  const isRead = threads.exitCode === 0;
+  const answer = threads.exitCode === 0 ? readThreadsAnswer(threads.stdout) : null;
   return {
     ...base,
-    threads: isRead ? readThreads(threads.stdout) : previous?.threads ?? [],
-    isYours: (isRead ? readIsYours(threads.stdout) : null) ?? previous?.isYours ?? null,
+    threads: answer?.threads ?? previous?.threads ?? [],
+    isYours: answer?.isYours ?? previous?.isYours ?? null,
     wasSeenOpen: base.state === "OPEN" || previous?.wasSeenOpen === true,
-    error: isRead ? null : "could not read review threads"
+    error: answer ? null : "could not read review threads"
   };
 }
 function urlRef(json) {

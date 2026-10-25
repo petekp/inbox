@@ -20,8 +20,7 @@ import {
   prompts,
   prRefs,
   readiness,
-  readIsYours,
-  readThreads,
+  readThreadsAnswer,
   readView,
   THREAD_TITLE_CHARS,
   threadsOnYou,
@@ -139,14 +138,14 @@ export async function fetchPr(
   if (!base)
     return previous ? { ...previous, error: view.stderr.trim().split('\n')[0] || 'gh could not read the PR' } : null
   const threads = early ?? (await threadsOf(ref))
-  const isRead = threads.exitCode === 0
+  const answer = threads.exitCode === 0 ? readThreadsAnswer(threads.stdout) : null
 
   return {
     ...base,
-    threads: isRead ? readThreads(threads.stdout) : (previous?.threads ?? []),
-    isYours: (isRead ? readIsYours(threads.stdout) : null) ?? previous?.isYours ?? null,
+    threads: answer?.threads ?? previous?.threads ?? [],
+    isYours: answer?.isYours ?? previous?.isYours ?? null,
     wasSeenOpen: base.state === 'OPEN' || previous?.wasSeenOpen === true,
-    error: isRead ? null : 'could not read review threads',
+    error: answer ? null : 'could not read review threads',
   }
 }
 

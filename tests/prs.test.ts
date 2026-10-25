@@ -6,7 +6,7 @@ import {
   prRefs,
   prNeedsYou,
   prompts,
-  readThreads,
+  readThreadsAnswer,
   readView,
   readableComment,
   readiness,
@@ -134,7 +134,7 @@ describe('prs', () => {
 
   test('a PR press quotes each review comment line and clips a long comment', () => {
     const view = readView('acme/greet#12', VIEW)!
-    const [thread] = readThreads(THREADS)
+    const [thread] = readThreadsAnswer(THREADS).threads
     const long = { ...thread!, body: `First line\nSecond line ${'x'.repeat(3000)}`, reply: null }
     const message = prompts.address({ ...view, threads: [], isYours: true, wasSeenOpen: true, error: null }, [long])
     expect(message).toContain('> First line\n> Second line')
@@ -160,7 +160,7 @@ describe('prs', () => {
       [undefined, undefined, undefined],
       [undefined, undefined, undefined],
     ])
-    const threads = readThreads(THREADS)
+    const threads = readThreadsAnswer(THREADS).threads
     expect(threads[0]?.reply?.body).toBe('Quote the name.')
     expect(threads.map(t => t.at)).toEqual([Date.parse('2026-10-08T09:30:00Z'), null, null])
     expect(threads[0]?.reply?.at).toBe(Date.parse('2026-10-08T10:00:00Z'))
@@ -205,13 +205,19 @@ describe('prs', () => {
           },
         },
       })
-    expect(readThreads(outdated('2026-10-08T11:00:00Z'))[0]?.isLinesChanged).toBe(true)
-    expect(readThreads(outdated('2026-10-08T13:00:00Z'))[0]?.isLinesChanged).toBe(false)
+    expect(readThreadsAnswer(outdated('2026-10-08T11:00:00Z')).threads[0]?.isLinesChanged).toBe(true)
+    expect(readThreadsAnswer(outdated('2026-10-08T13:00:00Z')).threads[0]?.isLinesChanged).toBe(false)
   })
 
   test('a thread sent to Claude stops waiting on the person and waits on others; a failing check always waits', () => {
     const view = readView('acme/greet#12', VIEW)!
-    const pr = { ...view, threads: readThreads(THREADS).slice(0, 1), isYours: true, wasSeenOpen: true, error: null }
+    const pr = {
+      ...view,
+      threads: readThreadsAnswer(THREADS).threads.slice(0, 1),
+      isYours: true,
+      wasSeenOpen: true,
+      error: null,
+    }
     const sent = () => true
     expect(prNeedsYou(pr, sent)).toBe(true)
     expect(readiness(pr, sent).text).toBe('Blocked: 1 failing check, changes requested')

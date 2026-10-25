@@ -145,15 +145,20 @@ type ThreadsAnswer = {
   }
 }
 
-/** Reads the THREADS_QUERY answer: open threads only, oldest first. */
-export function readThreads(json: string): PrThread[] {
+/**
+ * Reads the THREADS_QUERY answer: its open threads, oldest first, and whether the viewer wrote the PR. `isYours` is
+ * null when the answer names no viewer or holds no author field. A null author is a deleted account's, so not the
+ * viewer's.
+ */
+export function readThreadsAnswer(json: string): { threads: PrThread[]; isYours: boolean | null } {
   try {
     const data = (JSON.parse(json) as ThreadsAnswer).data
     const viewer = data?.viewer?.login
     const pr = data?.repository?.pullRequest
+    const author = pr?.author
     const headAt = Date.parse(pr?.commits?.nodes?.[0]?.commit?.committedDate ?? '') || null
 
-    return (pr?.reviewThreads?.nodes ?? [])
+    const threads = (pr?.reviewThreads?.nodes ?? [])
       .filter(t => !t.isResolved)
       .map(t => {
         const first = t.comments.nodes[0]
@@ -184,24 +189,10 @@ export function readThreads(json: string): PrThread[] {
           at: Date.parse(first?.createdAt ?? '') || null,
         }
       })
-  } catch {
-    return []
-  }
-}
 
-/**
- * Whether the viewer wrote the PR, from the THREADS_QUERY answer. Null when the answer names no viewer or holds no
- * author field. A null author is a deleted account's, so not the viewer's.
- */
-export function readIsYours(json: string): boolean | null {
-  try {
-    const data = (JSON.parse(json) as ThreadsAnswer).data
-    const viewer = data?.viewer?.login
-    const author = data?.repository?.pullRequest?.author
-
-    return viewer === undefined || author === undefined ? null : author?.login === viewer
+    return { threads, isYours: viewer === undefined || author === undefined ? null : author?.login === viewer }
   } catch {
-    return null
+    return { threads: [], isYours: null }
   }
 }
 
