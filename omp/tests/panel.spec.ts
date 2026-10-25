@@ -459,7 +459,7 @@ test('the PRs tab says when gh is missing and when there are no PRs', () => {
 
 test('an empty Needs you tab explains itself', () => {
   const empty = { ...screenOf(), view: sessionView(emptyState('s'), NOW, SETTLED_MS, true) }
-  expect(text(empty, INITIAL_UI)).toContain('Nothing needed.')
+  expect(text(empty, INITIAL_UI)).toContain('Nothing needed')
 })
 
 test('the footer names the inbox model, or says there is none', () => {
@@ -487,7 +487,7 @@ test('the footer shows the version after the inbox model, beside the hints or on
 })
 
 test('the demo says its presses send nothing', () => {
-  expect(text(screenOf({ isDemo: true }), INITIAL_UI)).toContain('Presses send nothing.')
+  expect(text(screenOf({ isDemo: true }), INITIAL_UI)).toContain('Buttons here send nothing.')
 })
 
 test('the band shows both counts and how to open the inbox', () => {

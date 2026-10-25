@@ -882,7 +882,7 @@ test('/inbox demo draws the shared demo data and sends nothing', async () => {
   await until(() => components.length > 0)
   await tick()
   const panel = components[0]
-  expect(panel.render(100).join('\n')).toContain('Presses send nothing.')
+  expect(panel.render(100).join('\n')).toContain('Buttons here send nothing.')
   panel.handleInput('enter')
   await tick()
   expect(sent).toEqual([])

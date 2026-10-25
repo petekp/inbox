@@ -620,7 +620,7 @@ test('Done on a task Claude just left tells Claude once Undo ends, and a task fr
   expect(sent).toHaveLength(1)
 })
 
-test('a Done message that waits for its prompt to run reads Queued, not Delivery unconfirmed', async ($, on) => {
+test('a Done message that waits for its prompt to run reads Queued instead of Not confirmed', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   ledgerReply = 'NEW: do | - | Sign in to npm | - | -'
@@ -644,7 +644,7 @@ test('a Done message that waits for its prompt to run reads Queued, not Delivery
   submitAnswer = 'hold'
   await clock.advance(SETTLED_MS)
   await clock.advance(QUEUED_AFTER_MS)
-  expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeUndefined()
+  expect(await pane.find({ text: /Not\s+confirmed/ })).toBeUndefined()
   await pane.press({ key: 'fold-task' })
   expect(await pane.find({ text: /Queued/ })).toBeDefined()
   await arrive($)
@@ -686,12 +686,12 @@ const doneWakeAfterRewrite = async ($: Engine, on: On, isMatched: boolean) => {
 test('a Done message another plugin rewrote reads as delivered once Claude runs it, not Queued', async ($, on) => {
   const pane = await doneWakeAfterRewrite($, on, false)
   expect(await pane.find({ text: /Queued/ })).toBeUndefined()
-  expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeUndefined()
+  expect(await pane.find({ text: /Not\s+confirmed/ })).toBeUndefined()
 })
 
-test('a Done message another plugin rewrote to text a pending press also sent reads Delivery unconfirmed, not Queued', async ($, on) => {
+test('a Done message another plugin rewrote to text a pending press also sent reads Not confirmed, not Queued', async ($, on) => {
   const pane = await doneWakeAfterRewrite($, on, true)
-  expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeDefined()
+  expect(await pane.find({ text: /Not\s+confirmed/ })).toBeDefined()
   await arrive($)
 })
 
@@ -1411,7 +1411,7 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'inbox', args: '' } as never)
   const pane = await $.ui.mount(PANE)
-  expect(await pane.find({ text: /^Nothing needed\.$/ })).toBeDefined()
+  expect(await pane.find({ text: /^Nothing needed$/ })).toBeDefined()
   const r = await $.tool.call({
     tool: 'mcp__inbox__record',
     kind: 'finding',
@@ -1860,7 +1860,7 @@ test('Discard ends a held row’s reply and folds it into Closed at once, and a 
   expect(await pane.find({ text: /2 closed/ })).toBeDefined()
 })
 
-test('a press whose submit stays pending through a turn reads Queued, not Delivery unconfirmed, until the message runs', async ($, on) => {
+test('a press whose submit stays pending through a turn reads Queued instead of Not confirmed until the message runs', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   on('ui.focus', () => ({}))
@@ -1880,13 +1880,13 @@ test('a press whose submit stays pending through a turn reads Queued, not Delive
   submitAnswer = 'hold'
   inFlight.push(pane.press({ key: 'explain-i1-key' }))
   await clock.advance(QUEUED_AFTER_MS)
-  expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeUndefined()
+  expect(await pane.find({ text: /Not\s+confirmed/ })).toBeUndefined()
   expect(await pane.find({ text: /Queued:\sExplain$/ })).toBeDefined()
 
   await arrive($)
   await clock.settle()
   expect(await pane.find({ text: /Queued/ })).toBeUndefined()
-  expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeUndefined()
+  expect(await pane.find({ text: /Not\s+confirmed/ })).toBeUndefined()
 })
 
 test('a press during a turn reads Queued until its prompt enters, and one that will not enter is undone with Not sent and [Try again]', async ($, on) => {
@@ -1988,13 +1988,13 @@ test('an older identical Claude prompt leaves the newer press unconfirmed until 
 
   await arriveFirst($)
   await clock.settle()
-  expect(await pane.find({ text: /Delivery\s+unconfirmed:\s+Explain/ })).toBeDefined()
+  expect(await pane.find({ text: /Not\s+confirmed:\s+Explain/ })).toBeDefined()
   expect(await pane.find({ text: /✓\sExplained/ })).toBeUndefined()
 
   await arriveFirst($)
   await clock.settle()
   expect(await pane.find({ text: /Explaining…/ })).toBeDefined()
-  expect(await pane.find({ text: /Delivery unconfirmed/ })).toBeUndefined()
+  expect(await pane.find({ text: /Not confirmed/ })).toBeUndefined()
 })
 
 test('a press resent after the app quit with its first delivery lost reads as delivered once Claude gets it', async ($, on) => {
@@ -2032,14 +2032,14 @@ test('a press resent after the app quit with its first delivery lost reads as de
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.settle()
   const pane = await $.ui.mount(PANE)
-  expect(await pane.find({ text: /Delivery\s+unconfirmed:\s+Explain/ })).toBeDefined()
+  expect(await pane.find({ text: /Not\s+confirmed:\s+Explain/ })).toBeDefined()
 
   await pane.press({ key: 'explain-i1-key' })
   await clock.settle()
   expect(sent.at(-1)).toBe(explain)
   await clock.advance(QUEUED_AFTER_MS)
   expect(await pane.find({ text: /Explaining…/ })).toBeDefined()
-  expect(await pane.find({ text: /Delivery unconfirmed|Queued/ })).toBeUndefined()
+  expect(await pane.find({ text: /Not confirmed|Queued/ })).toBeUndefined()
 })
 
 test('a refused newer Claude send replaces ambiguity with Not sent after the older prompt enters', async ($, on) => {
@@ -2065,7 +2065,7 @@ test('a refused newer Claude send replaces ambiguity with Not sent after the old
   await clock.settle()
 
   expect(await pane.find({ text: /Not\s+sent:\s+a hook refused it/ })).toBeDefined()
-  expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeUndefined()
+  expect(await pane.find({ text: /Not\s+confirmed/ })).toBeUndefined()
 })
 
 test('a uniquely rewritten Claude prompt is confirmed when its row enters before submit returns', async ($, on) => {
@@ -2088,7 +2088,7 @@ test('a uniquely rewritten Claude prompt is confirmed when its row enters before
   await clock.settle()
 
   expect(await pane.find({ text: /Explaining…/ })).toBeDefined()
-  expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeUndefined()
+  expect(await pane.find({ text: /Not\s+confirmed/ })).toBeUndefined()
 })
 
 test('two Claude sends rewritten to the same text are each confirmed by their own row when they run in turn', async ($, on) => {
@@ -2115,11 +2115,11 @@ test('two Claude sends rewritten to the same text are each confirmed by their ow
 
   await arriveFirst($)
   await clock.settle()
-  expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeUndefined()
+  expect(await pane.find({ text: /Not\s+confirmed/ })).toBeUndefined()
   await arrive($)
   await clock.settle()
   expect(await pane.find({ text: /Explaining…/ })).toBeDefined()
-  expect(await pane.find({ text: /Delivery\s+unconfirmed/ })).toBeUndefined()
+  expect(await pane.find({ text: /Not\s+confirmed/ })).toBeUndefined()
 })
 
 test('an older Claude send with no saved receipt cannot acknowledge a new identical press after reload', async ($, on) => {
@@ -2155,12 +2155,12 @@ test('an older Claude send with no saved receipt cannot acknowledge a new identi
 
   await arriveFirst($)
   await clock.settle()
-  expect(await pane.find({ text: /Delivery\s+unconfirmed:\s+Explain/ })).toBeDefined()
+  expect(await pane.find({ text: /Not\s+confirmed:\s+Explain/ })).toBeDefined()
   expect(await pane.find({ text: /✓\sExplained/ })).toBeUndefined()
 
   await arriveFirst($)
   await clock.settle()
-  expect(await pane.find({ text: /Delivery\s+unconfirmed:\s+Explain/ })).toBeDefined()
+  expect(await pane.find({ text: /Not\s+confirmed:\s+Explain/ })).toBeDefined()
 })
 
 test('Claude closes an item or finding that no longer applies, by the id it reads beside the prompt', async ($, on) => {
@@ -2505,7 +2505,7 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   await clock.settle()
   await arriveFirst($)
   await clock.settle()
-  expect(await pane.find({ text: /Delivery\s+unconfirmed:\s+Address/ })).toBeDefined()
+  expect(await pane.find({ text: /Not\s+confirmed:\s+Address/ })).toBeDefined()
   expect((await pane.find({ key: 'address-T1-key' }))?.props.label).toBe('Address again')
   expect((await pane.find({ key: 'select-acme/greet#12 thread T1' }))?.props.label).toBe('◦')
   expect(await pane.find({ text: /✓\sAddress/ })).toBeUndefined()
@@ -3224,7 +3224,7 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   expect((await $.command.run({ command: 'inbox', args: 'demo' } as never)).text).toContain('Showing sample entries')
   const pane = await $.ui.mount(PANE)
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  expect(await pane.find({ text: 'Sample entries. Presses send nothing.' })).toBeDefined()
+  expect(await pane.find({ text: 'Sample entries. Buttons here send nothing.' })).toBeDefined()
   expect(await pane.find({ text: /Use Node or Python/ })).toBeUndefined()
   expect(await band.find({ text: /^Demo: Needs you 7/ })).toBeDefined()
   for (const view of [pane, band]) expect(await view.find({ key: 'hide-demo' })).toBeDefined()
@@ -4457,7 +4457,7 @@ test('a PR that arrives while the Needs you tab is empty moves the pane to the P
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'inbox', args: '' } as never)
   const pane = await $.ui.mount(PANE)
-  expect(await pane.find({ text: 'Nothing needed.' })).toBeDefined()
+  expect(await pane.find({ text: 'Nothing needed' })).toBeDefined()
   await $.prompt.submit({ text: 'open the PR', wait: false, origin: { kind: 'composer' } })
   await $.turn.complete({
     answer: 'Opened https://github.com/acme/greet/pull/12.',
@@ -4468,13 +4468,13 @@ test('a PR that arrives while the Needs you tab is empty moves the pane to the P
   })
   await clock.settle()
   expect(isFetching).toBe(true)
-  expect(await pane.find({ text: 'Nothing needed.' })).toBeDefined()
+  expect(await pane.find({ text: 'Nothing needed' })).toBeDefined()
 
   const fetched = new Promise<void>(r => (onFetched = r))
   release()
   await fetched
   await clock.settle()
-  expect(await pane.find({ text: 'Nothing needed.' })).toBeUndefined()
+  expect(await pane.find({ text: 'Nothing needed' })).toBeUndefined()
   expect(await pane.find({ text: /Add a greeting CLI/ })).toBeDefined()
 })
 

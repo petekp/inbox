@@ -47,6 +47,7 @@ import {
   rowFeedbackText,
   settledLabel,
   ROW_COPY,
+  READING_TEXT,
   SETTLED_MS,
   settledIn,
   shortAgo,
@@ -422,7 +423,7 @@ async function read() {
     if (isPageOld && !updateError) void swapPage(requestedPage)
     serverNote = next.isPluginFolderGone
       ? {
-          text: "The inbox plugin's files were moved or removed, so the server still runs the version Codex started with. Quit and reopen Codex to load the installed plugin.",
+          text: 'Quit and reopen Codex to load the installed inbox. Its files were moved or removed, so it still runs the version Codex started with.',
           isReloadable: false,
         }
       : next.serverLoadError
@@ -640,7 +641,7 @@ async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void
     }
   } catch {
     if (isDisposed || generation !== viewGeneration || !isLatest()) return
-    errors.set(rowId, 'Action unconfirmed: the inbox did not answer.')
+    errors.set(rowId, 'Not confirmed: the inbox did not answer.')
   } finally {
     activePresses--
     if (isLatest()) {
@@ -1334,7 +1335,7 @@ function OverviewTab({ page }: { page: OverviewPage }) {
       ))}
       {earlier.length > 0 ? (
         <section>
-          <GroupTitle title="Earlier in this session" count={0} />
+          <GroupTitle title="Earlier in this chat" count={0} />
           <div class="list">
             {earlier.map((text, n) => (
               <div class="earlier muted" key={n}>
@@ -1511,23 +1512,22 @@ function GroupEnd({
 
 const HOOKS_TRUST_TEXT: Record<NonNullable<View['hooksTrust']>, [string, string]> = {
   untrusted: [
-    'Codex is not running the inbox’s hooks yet.',
+    'The inbox stays empty until Codex runs its hooks.',
     'Click the hook icon beside the approval setting, then Allow all.',
   ],
   modified: [
-    'Codex stopped the inbox’s hooks after an update.',
-    'Trust them again: click the hook icon beside the approval setting, then Allow all.',
+    'Codex stopped the inbox’s hooks when the inbox updated.',
+    'To trust them again, click the hook icon beside the approval setting, then Allow all.',
   ],
 }
 
-function notHeardText(v: View): [string, string] | null {
+function notHeardText(v: View): [string, string?] | null {
   if (v.heard === 'heard') return null
   if (v.heard === 'none' && v.hooksTrust) return HOOKS_TRUST_TEXT[v.hooksTrust]
 
-  if (v.heard === 'none')
-    return ['The inbox starts with your next message.', 'Codex’s hooks send it each message and reply.']
+  if (v.heard === 'none') return ['The inbox starts with your next message.']
 
-  return ['The inbox has not heard from this chat’s hooks.', 'Items from Codex’s replies are missing.']
+  return ['Items from Codex’s replies are missing.', 'The inbox has not heard from this chat’s hooks.']
 }
 
 function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number }) {
@@ -1540,7 +1540,7 @@ function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number }) {
     return notHeard ? (
       <div class="empty">
         <div class="title">{notHeard[0]}</div>
-        <div class="muted">{notHeard[1]}</div>
+        {notHeard[1] ? <div class="muted">{notHeard[1]}</div> : null}
       </div>
     ) : (
       <div class="empty">
@@ -1555,7 +1555,7 @@ function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number }) {
         <section>
           <div class="group-title">
             {notHeard[0]}
-            <div class="muted">{notHeard[1]}</div>
+            {notHeard[1] ? <div class="muted">{notHeard[1]}</div> : null}
           </div>
         </section>
       ) : null}
@@ -1752,7 +1752,7 @@ function PrRows({
 
 function Prs({ v, now }: { v: View; now: number }) {
   const { blocks, rows } = prPlan(v)
-  const empty = prsEmptyText({ isFetching: v.isFetchingPrs, isGhMissing: v.isGhMissing }, 'conversation')
+  const empty = prsEmptyText({ isFetching: v.isFetchingPrs, isGhMissing: v.isGhMissing }, 'chat')
   if (blocks.length === 0)
     return (
       <div class="empty">
@@ -1840,7 +1840,7 @@ function TabBar({ v }: { v: View }) {
       {updateError ? (
         <ErrorStrip
           text={updateError.text}
-          label="Retry"
+          label={ROW_COPY.retry}
           reload={() => {
             const page = updateError?.page
             updateError = null
@@ -1894,7 +1894,7 @@ function App({ lists }: { lists: Lists | null }): ComponentChildren {
         reload={() => void (isConnected ? read() : initialize())}
       />
     ) : isLoadingShown ? (
-      <div class="notice muted">Loading…</div>
+      <div class="notice muted">{READING_TEXT}</div>
     ) : null
   const v = view
   const now = v.at

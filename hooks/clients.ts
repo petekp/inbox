@@ -98,7 +98,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'pr-arrivals': { kind: 'full' },
       'prs-empty-hint': {
         kind: 'different',
-        reason: 'The Codex app calls a chat a conversation, so its hint says conversation where the mod says session.',
+        reason: 'The Codex app calls a conversation a chat, so its hint says chat where the mod says session.',
       },
       'link-open-rule': {
         kind: 'different',
