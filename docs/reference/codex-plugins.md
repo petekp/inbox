@@ -1849,8 +1849,17 @@ at each Stop, to find the question dialogs the agent opened in the ending turn.
     `item/tool/requestUserInput` belongs to the blocking user-input tool.
   - So the inbox sends its answer to a question linked to a dialog in this
     form, through `codex queue` (`hooks/presses.ts:dialogReply`,
-    `codex/src/dialogs.ts:linkDialogs`). The app closes the dialog when the
-    queued message's turn starts, not while an earlier turn runs.
+    `codex/src/dialogs.ts:linkDialogs`). An answer press first links the
+    dialogs of the rollout's newest turn, so an answer pressed while the
+    dialog's turn runs is linked too (`codex/src/server.ts:linkRunningDialogs`).
+  - [live 2026-10-25, ChatGPT app in the inbox-ui VM, GPT-6.1 Sol] An inbox
+    answer sent in this form closes the dialog when its queued turn starts. In
+    an idle thread that was about 1 s after the press. With the dialog's turn
+    still running, the dialog stayed open until that turn ended, more than
+    70 s later, and closed as the queued reply's turn started. The app draws the
+    message as a question-and-answer bubble, not as raw tags. Codex passes the
+    text unchanged to `UserPromptSubmit`'s `prompt`, so the press's delivery
+    reads arrived. The agent took it as the answer both times.
 - **Still plain JSONL** [live 2026-10-08]: 146 files in three days, none
   compressed, although `local_thread_store_compression` is on.
 - **Compression and file names** [live 2026-10-23, source 0.164.0]. Codex
