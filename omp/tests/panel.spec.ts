@@ -163,19 +163,20 @@ test('a button letter presses that button', () => {
 test('Tab and Shift+Tab cycle through every tab in order, and each digit picks its tab', () => {
   const screen = screenOf()
   const ids = TABS.map(t => t.id)
+  const start = ids.indexOf(INITIAL_UI.tab)
   const cycled = ids.map((_, n) => keys(screen, INITIAL_UI, ...ids.slice(0, n).map(() => 'tab')).tab)
-  expect(cycled).toEqual(ids)
-  expect(keys(screen, INITIAL_UI, ...ids.map(() => 'tab')).tab).toBe('needsYou')
-  expect(keys(screen, INITIAL_UI, 'shift+tab').tab).toBe(ids.at(-1)!)
+  expect(cycled).toEqual([...ids.slice(start), ...ids.slice(0, start)])
+  expect(keys(screen, INITIAL_UI, ...ids.map(() => 'tab')).tab).toBe(INITIAL_UI.tab)
+  expect(keys(screen, INITIAL_UI, 'shift+tab').tab).toBe(ids.at(start - 1)!)
   for (const t of TABS) expect(keys(screen, keys(screen, INITIAL_UI, 'tab'), t.hotkey).tab).toBe(t.id)
 })
 
 test('the selected tab draws inverse and the others draw their counts', () => {
   const screen = screenOf()
-  const bar = drawn(screen, keys(screen, INITIAL_UI, '2'))[0]!
-  expect(bar).toContain(`${ESC}7m${ESC}1m [2] Findings ${screen.view.findings.count} `)
-  expect(strip(bar)).toContain(`[1] Needs you ${screen.view.needsYou.count}`)
-  expect(strip(bar)).toContain(`[3] PRs ${screen.view.prs.count}`)
+  const bar = drawn(screen, keys(screen, INITIAL_UI, '3'))[0]!
+  expect(bar).toContain(`${ESC}7m${ESC}1m [3] Findings ${screen.view.findings.count} `)
+  expect(strip(bar)).toContain(`[2] Needs you ${screen.view.needsYou.count}`)
+  expect(strip(bar)).toContain(`[4] PRs ${screen.view.prs.count}`)
   expect(strip(bar)).toContain('esc to close')
 })
 
@@ -724,7 +725,8 @@ test('a narrowing tab line drops the brackets, then cuts other labels, never the
 test('the page tab draws no count', () => {
   const screen = screenOf()
   const line = tabLine(screen, INITIAL_UI, 200)
-  for (const t of TABS.filter(t => !isRowTab(t.id))) expect(line).toMatch(new RegExp(`\\[${t.hotkey}\\] ${t.label} *$`))
+  for (const t of TABS.filter(t => !isRowTab(t.id)))
+    expect(line).toMatch(new RegExp(`\\[${t.hotkey}\\] ${t.label}(?: +\\[| *$)`))
 })
 
 test('no line on the Overview page is wider than the panel', () => {

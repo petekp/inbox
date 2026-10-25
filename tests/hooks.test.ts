@@ -2659,21 +2659,26 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
     await $.session.start({ cwd: '/tmp/project', surface, isInteractive: true })
     const pane = await $.ui.mount({ ...PANE, surface })
-    const show = async (index: number, id: string) => {
+    const show = async (id: string) => {
       if (surface === 'terminal') return pane.press({ key: `tab-${id}` })
       const { tabs, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
-      const x = tabs.slice(0, index).reduce((sum, t) => sum + t.width + gap, 0)
+      const x = tabs
+        .slice(
+          0,
+          tabs.findIndex(t => t.id === id),
+        )
+        .reduce((sum, t) => sum + t.width + gap, 0)
 
       return pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
     }
-    await show(2, 'prs')
+    await show('prs')
     await clock.settle()
     expect(await pane.find({ text: notice })).toBeDefined()
 
     isGhMissing = false
-    await show(0, 'needsYou')
+    await show('needsYou')
     await clock.settle()
-    await show(2, 'prs')
+    await show('prs')
     await clock.settle()
     expect(await pane.find({ text: /No PRs/ })).toBeDefined()
     expect(await pane.find({ text: notice })).toBeUndefined()
@@ -3979,8 +3984,9 @@ test('the desktop pane draws each action as one button and the tabs as one click
 
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
   const { tabs, gap } = await tabBar()
-  expect(tabs.map(t => t.id)).toEqual(['needsYou', 'findings', 'prs', 'overview'])
-  await pane.pointer({ type: 'down', x: tabs[0]!.width + gap + tabs[1]!.width - 1, y: 1.1, button: 'left', in: 'tabs' })
+  expect(tabs.map(t => t.id)).toEqual(['overview', 'needsYou', 'findings', 'prs'])
+  const findingsEnd = tabs[0]!.width + gap + tabs[1]!.width + gap + tabs[2]!.width
+  await pane.pointer({ type: 'down', x: findingsEnd - 1, y: 1.1, button: 'left', in: 'tabs' })
   await clock.settle()
   expect((await tabBar()).shown).toBe('findings')
   await pane.pointer({ type: 'down', x: tabs[0]!.width, y: 1, button: 'left', in: 'tabs' })
@@ -4159,12 +4165,17 @@ test('every row in the demo, on every tab, draws its plan’s buttons in the pla
       const texts = (await pane.findAll({ type: 'Text' })).map(t => t.text ?? '')
       return { buttons, controls, texts }
     }
-    for (const [n, tab] of tabs.entries()) {
+    for (const tab of tabs) {
       if (look === 'terminal') {
         if (await pane.find({ key: `tab-${tab.id}` })) await pane.press({ key: `tab-${tab.id}` })
       } else {
         const { tabs: bar, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
-        const x = bar.slice(0, n).reduce((sum, t) => sum + t.width + gap, 0)
+        const x = bar
+          .slice(
+            0,
+            bar.findIndex(t => t.id === tab.id),
+          )
+          .reduce((sum, t) => sum + t.width + gap, 0)
         await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
       }
       await clock.settle()
@@ -4193,7 +4204,12 @@ test('every row in the demo, on every tab, draws its plan’s buttons in the pla
     if (look === 'terminal') await pane.press({ key: 'tab-prs' })
     else {
       const { tabs: bar, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
-      const x = bar.slice(0, 2).reduce((sum, t) => sum + t.width + gap, 0)
+      const x = bar
+        .slice(
+          0,
+          bar.findIndex(t => t.id === 'prs'),
+        )
+        .reduce((sum, t) => sum + t.width + gap, 0)
       await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
     }
     await clock.settle()
@@ -4380,18 +4396,20 @@ test('at 34 desktop columns the tabs drop their counts and frame only the shown 
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 34 } })
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
   expect((await tabBar()).tabs.map(t => [t.id, t.count])).toEqual([
+    ['overview', 0],
     ['needsYou', 0],
     ['findings', 0],
     ['prs', 0],
-    ['overview', 0],
   ])
   expect((await tabBar()).isEachFramed).toBe(false)
   await pane.redraw({ ...PANE.props, bodyColumns: 69 })
   expect((await tabBar()).isEachFramed).toBe(true)
 
   const { tabs, gap } = await tabBar()
-  const overviewX = tabs.slice(0, 3).reduce((sum, t) => sum + t.width + gap, 0)
-  await pane.pointer({ type: 'down', x: overviewX, y: 1, button: 'left', in: 'tabs' })
+  await pane.pointer({ type: 'down', x: tabs[1]!.width + gap, y: 1, button: 'left', in: 'tabs' })
+  await clock.settle()
+  expect((await tabBar()).shown).toBe('needsYou')
+  await pane.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
   expect((await tabBar()).shown).toBe('overview')
   expect((await pane.find({ key: 'overview-headline' }))?.text).toBe('Adding a greeting CLI')
