@@ -2,9 +2,26 @@
 
 import { restates } from '../../hooks/ledger'
 import { RECOMMENDED_SUFFIX } from '../../hooks/model-text'
+import { messages } from '../../hooks/presses'
 import type { Session } from '../../hooks/session'
 import type { DialogLink, Item } from '../../types'
 import type { Dialog } from './transcript'
+
+/**
+ * The message the Codex app sends when the person answers a dialog question. The app counts the question answered
+ * and closes the dialog only when a user message's whole text, trimmed, is this form and names the question's id.
+ */
+export function dialogReply(link: DialogLink, answer: string): string {
+  const questionItemId = JSON.stringify(['request_user_input_async', link.callId, link.index])
+  const reply = [{ questionItemId, question: link.question, answer }]
+
+  return `<send_user_message_question_reply>\n${JSON.stringify(reply)}\n</send_user_message_question_reply>`
+}
+
+/** An answer to a question linked to an open dialog question goes in the dialog's form, which closes the dialog. */
+export function answerMessage(item: Item, answer: string): string {
+  return item.dialog ? dialogReply(item.dialog, answer) : messages.answer(item, answer)
+}
 
 /**
  * A question from a dialog the agent opened in the ledger turn `turn`, and the id of the item linked to it, or null.

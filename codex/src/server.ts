@@ -14,7 +14,7 @@ import { agentTools } from '../../hooks/tools'
 import { heardState, noteToolCall, viewOf } from './core'
 import type { TabView } from './core'
 import { demoState } from './demo'
-import { noteDialogs } from './dialogs'
+import { answerMessage, noteDialogs } from './dialogs'
 import { withEarlierHistory } from './history'
 import { codexStore } from './host'
 import { isUnseen, pressOn, recorded } from '../../hooks/session'
@@ -287,6 +287,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       },
       settleWindowMs: SETTLE_WINDOW_MS,
       newId: randomUUID,
+      answerMessage,
     }
   }
 
