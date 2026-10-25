@@ -27,3 +27,16 @@ export function framingAt(moves: CameraMove[] | undefined, whole: Rect, t: numbe
   }
   return framing
 }
+
+/**
+ * The scale that fits `framing` inside `area`, centered, and where the framed picture's origin then lands, in the
+ * area's coordinates.
+ */
+export function fit(area: Rect, framing: Rect): { scale: number; x: number; y: number } {
+  const scale = Math.min(area.w / framing.w, area.h / framing.h)
+  return {
+    scale,
+    x: area.x + area.w / 2 - (framing.x + framing.w / 2) * scale,
+    y: area.y + area.h / 2 - (framing.y + framing.h / 2) * scale,
+  }
+}

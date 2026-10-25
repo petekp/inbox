@@ -10,9 +10,9 @@ import { EndCard } from '../shared/EndCard'
 import { Footage } from '../shared/Footage'
 import type { Segment } from '../shared/Footage'
 import { SANS } from '../shared/fonts'
-import { between, clamp01, easeInOut, framingAt } from '../shared/geometry'
+import { between, clamp01, easeInOut, fit, framingAt } from '../shared/geometry'
 import type { Point, Rect } from '../shared/geometry'
-import { BAND, CAPTION_BAND } from '../shared/layout'
+import { BAND, PICTURE } from '../shared/layout'
 import { Pointer } from '../shared/Pointer'
 import { pointerMarks, stateAt } from '../shared/states'
 import type { State } from '../shared/states'
@@ -87,20 +87,15 @@ function SoloView(props: {
 }) {
   const { beat, previous, starts, t, hasCaptions } = props
   const footage = beat.footage?.every(s => isCaptured(takeClip(s.take))) ? beat.footage : undefined
-  const area = { x: 0, y: BAND, w: WIDTH, h: HEIGHT - BAND - CAPTION_BAND }
   const take = footage?.[0]?.take
   const clip = take ? TAKE_INFO[take] : undefined
   const clipSize = { w: clip?.width ?? WINDOWS[beat.look].width, h: clip?.height ?? WINDOWS[beat.look].height }
   const framing = framingAt(beat.camera, { x: 0, y: 0, w: clipSize.w, h: clipSize.h }, t)
-  const scale = Math.min(area.w / framing.w, area.h / framing.h)
-  const offset = {
-    x: area.w / 2 - (framing.x + framing.w / 2) * scale,
-    y: area.h / 2 - (framing.y + framing.h / 2) * scale,
-  }
+  const at = fit(PICTURE, framing)
   const map = toClip(take, clipSize.w)
   const onScreen = (p: Point) => {
     const c = map(p)
-    return { x: area.x + offset.x + c.x * scale, y: area.y + offset.y + c.y * scale }
+    return { x: at.x + c.x * at.scale, y: at.y + c.y * at.scale }
   }
   const clicks = pointerMarks(beat.states, onScreen)
   const fromThread = previous?.kind === 'thread'
@@ -130,10 +125,10 @@ function SoloView(props: {
       <div
         style={{
           position: 'absolute',
-          left: area.x,
-          top: area.y,
-          width: area.w,
-          height: area.h,
+          left: PICTURE.x,
+          top: PICTURE.y,
+          width: PICTURE.w,
+          height: PICTURE.h,
           overflow: 'hidden',
           opacity: arriving,
         }}
@@ -145,7 +140,7 @@ function SoloView(props: {
             height: clipSize.h,
             overflow: 'hidden',
             transformOrigin: '0 0',
-            transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale * (1.03 - 0.03 * arriving)})`,
+            transform: `translate(${at.x - PICTURE.x}px, ${at.y - PICTURE.y}px) scale(${at.scale * (1.03 - 0.03 * arriving)})`,
           }}
         >
           {footage ? (
@@ -159,7 +154,7 @@ function SoloView(props: {
               picture={picture(footage)}
               t={t}
               length={beat.length}
-              scale={scale}
+              scale={at.scale}
               clipWidth={clipSize.w}
               clipHeight={clipSize.h}
             />
@@ -413,17 +408,12 @@ function SideBySideView(props: {
         const isShrinking = i === 0 && fromSolo !== undefined
         const shrunk = isShrinking ? easeInOut(t / beat.landAt[look]) : 1
         const boxWidth = WIDTH + (width - WIDTH) * shrunk
-        const columnScale = Math.min(width / shown.w, height / shown.h)
-        const columnX = width / 2 - (shown.x + shown.w / 2) * columnScale
-        const columnY = height / 2 - (shown.y + shown.h / 2) * columnScale
-        // The terminal starts where beat 10 left it: the whole window, above the caption band.
-        const fullHeight = height - CAPTION_BAND
-        const fullScale = Math.min(WIDTH / window.width, fullHeight / window.height)
-        const fullX = (WIDTH - window.width * fullScale) / 2
-        const fullY = (fullHeight - window.height * fullScale) / 2
-        const scale = fullScale + (columnScale - fullScale) * shrunk
-        const x = fullX + (columnX - fullX) * shrunk
-        const y = fullY + (columnY - fullY) * shrunk
+        const column = fit({ x: 0, y: 0, w: width, h: height }, shown)
+        // The terminal starts where beat 10 left it: the whole window, in the picture above the caption band.
+        const full = fit({ x: 0, y: 0, w: PICTURE.w, h: PICTURE.h }, { x: 0, y: 0, w: window.width, h: window.height })
+        const scale = full.scale + (column.scale - full.scale) * shrunk
+        const x = full.x + (column.x - full.x) * shrunk
+        const y = full.y + (column.y - full.y) * shrunk
         const arrived =
           i === 0 || !fromSolo ? 1 : Easing.out(Easing.cubic)(clamp01((t - (beat.landAt[look] - SLIDE_IN)) / SLIDE_IN))
         // Beat 10's take gives way to this beat's while the terminal is moving fastest, under a brief blur, so two

@@ -5,39 +5,26 @@ import { Beats } from '../shared/Beats'
 import { Caption } from '../shared/Caption'
 import { EndCard } from '../shared/EndCard'
 import type { RowLines } from '../shared/EndCard'
-import { clamp01, framingAt } from '../shared/geometry'
-import type { Rect } from '../shared/geometry'
+import { clamp01, fit, framingAt } from '../shared/geometry'
 import { KeyCaps } from '../shared/KeyCaps'
-import { BAND, CAPTION_BAND, TITLE_BAR } from '../shared/layout'
+import { CAPTION_BAND, PICTURE, TITLE_BAR } from '../shared/layout'
 import { DARK_PALETTE } from '../shared/TerminalTake'
 import { takeTimeIn } from '../shared/terminal-time'
 import type { TerminalSegment } from '../shared/terminal-time'
 import { TerminalFootage, TerminalWindow } from '../shared/TerminalWindow'
-import { END_CARD, END_CARD_LEAD, FPS, HEIGHT, WIDTH } from '../shared/video'
+import { END_CARD, END_CARD_LEAD, FPS, WIDTH } from '../shared/video'
 import { captionEnd, CELL, FONT, MUSIC, TAKE, timeline, WINDOW, WINDOW_TITLE } from './timeline'
 import type { Cut, Placed, TerminalBeat } from './timeline'
 
-/** The picture between the app band and the caption band. */
-const AREA = { x: 0, y: BAND, w: WIDTH, h: HEIGHT - BAND - CAPTION_BAND }
 /** How long the window takes to rise in at the start, in seconds. */
 const RISE = 0.6
-
-/** Where the window sits and how large, for a framing of it: the framing fills the picture, centered. */
-function placement(framing: Rect) {
-  const scale = Math.min(AREA.w / framing.w, AREA.h / framing.h)
-  return {
-    scale,
-    x: AREA.x + AREA.w / 2 - (framing.x + framing.w / 2) * scale,
-    y: AREA.y + AREA.h / 2 - (framing.y + framing.h / 2) * scale,
-  }
-}
 
 /**
  * The lines the end card's streams leave: three spans across the terminal's text, on rows that hold text as beat 5
  * ends, where the camera has pulled back to the whole window.
  */
 function rowLinesAt(beat: TerminalBeat): RowLines {
-  const at = placement(framingAt(beat.camera, beat.framing, beat.length))
+  const at = fit(PICTURE, framingAt(beat.camera, beat.framing, beat.length))
   const x = (col: number) => at.x + col * CELL.w * at.scale
   const y = (row: number) => Math.round(at.y + (TITLE_BAR + (row + 0.5) * CELL.h) * at.scale)
   const ys = [0, 2, 4, 9, 12, 15, 18, 21, 28].map(y)
@@ -77,7 +64,7 @@ function TerminalBeatView(props: { beat: Placed & TerminalBeat; previous: Placed
   const t = useCurrentFrame() / FPS
   const isFirst = previous === undefined
   const risen = isFirst ? Easing.out(Easing.cubic)(clamp01(t / RISE)) : 1
-  const at = placement(framingAt(beat.camera, beat.framing, t))
+  const at = fit(PICTURE, framingAt(beat.camera, beat.framing, t))
   // As the end card starts over the last beat, the window dims and sinks back while its lines turn into light.
   const next = placed[placed.indexOf(beat) + 1]
   const fading = next?.kind === 'end' ? clamp01((t - (beat.length - END_CARD_LEAD)) / 0.6) : 0
@@ -89,10 +76,10 @@ function TerminalBeatView(props: { beat: Placed & TerminalBeat; previous: Placed
       <div
         style={{
           position: 'absolute',
-          left: AREA.x,
-          top: AREA.y,
-          width: AREA.w,
-          height: AREA.h,
+          left: PICTURE.x,
+          top: PICTURE.y,
+          width: PICTURE.w,
+          height: PICTURE.h,
           overflow: 'hidden',
           opacity: risen * (1 - fading),
           filter: fading > 0 ? `blur(${fading * 10}px) brightness(${1 - 0.5 * fading})` : undefined,
@@ -104,7 +91,7 @@ function TerminalBeatView(props: { beat: Placed & TerminalBeat; previous: Placed
             left: 0,
             top: 0,
             transformOrigin: '0 0',
-            transform: `translate(${at.x - AREA.x}px, ${at.y - AREA.y + (1 - risen) * 40}px) scale(${at.scale})`,
+            transform: `translate(${at.x - PICTURE.x}px, ${at.y - PICTURE.y + (1 - risen) * 40}px) scale(${at.scale})`,
           }}
         >
           <TerminalWindow
