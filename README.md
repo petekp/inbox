@@ -331,6 +331,13 @@ bun install --cwd omp --frozen-lockfile --ignore-scripts   # once
 npm --prefix omp run build
 ```
 
+Bun's bundler writes different output in different Bun versions. So the build
+runs the Bun version that `omp/package.json` pins, whichever Bun starts it, and
+the install above puts that Bun in `omp/node_modules`. The pin covers macOS on
+Apple silicon only. On another platform, add the matching `@oven/bun-*` package
+at the same version to the `devDependencies` in `omp/package.json`, or build
+with that Bun version installed.
+
 Try a build in omp with a fresh `HOME`, so it cannot touch your own omp
 settings or inbox: `env HOME=/path/to/empty/folder omp -e omp/src/host.ts`.
 
