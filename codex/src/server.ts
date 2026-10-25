@@ -289,7 +289,13 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         preparedCli = s.cliPath ?? (await deps.fallbackCli())
       },
       deliver: (s, message) => queueMessage(s, message, preparedCli),
-      perform: async (s, e) => (e.kind === 'copy' ? null : open(s, e.target)),
+      perform: async (s, e) => {
+        if (e.kind === 'refresh-prs') {
+          await prFetches.fetchNow(id, () => fetchPrs(hostFor(id), true))
+          return null
+        }
+        return e.kind === 'copy' ? null : open(s, e.target)
+      },
       gh: {
         find: gh.find,
         forget: gh.forget,

@@ -485,6 +485,7 @@ const runIt = (look: Look) =>
 const VERBS = {
   open: { pending: 'Opening', done: 'Opened', failed: 'open' },
   copy: { pending: 'Copying', done: 'Copied', failed: 'copy' },
+  'refresh-prs': { pending: 'Refreshing', done: 'Refreshed', failed: 'refresh' },
 }
 
 function localText(r: LocalResult, look: Look): string {

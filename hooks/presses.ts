@@ -172,6 +172,7 @@ export type PrActionId =
   | 'pr-address-all'
   | 'pr-merge'
   | 'pr-open'
+  | 'pr-refresh'
   | 'pr-dismiss'
   | 'check-fix'
   | 'log'
@@ -278,6 +279,7 @@ export type Effect =
   | { kind: 'send'; text: string; by: Press | null }
   | { kind: 'open'; target: string; name: string }
   | { kind: 'copy'; text: string; name: string; isCommand: boolean }
+  | { kind: 'refresh-prs'; name: string }
 
 /**
  * `last` null leaves the row's last action as it was.
@@ -610,7 +612,7 @@ export function demoAfterPress(
 
 export type EffectHost = {
   now(): Promise<number> | number
-  /** Opens or copies. Returns why it could not, or null. */
+  /** Opens, copies or refreshes PRs. Returns why it could not, or null. */
   perform(e: Exclude<Effect, { kind: 'send' }>): Promise<string | null>
   send(
     e: Extract<Effect, { kind: 'send' }>,

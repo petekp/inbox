@@ -2795,22 +2795,24 @@ test('a PR’s Dismiss settles its block with Undo, which brings it back, a read
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
 
   expect(await pane.find({ text: 'Last refresh failed: HTTP 502' })).toBeDefined()
-  expect(await pane.find({ text: 'Refreshing…' })).toBeUndefined()
+  expect((await pane.find({ key: 'refresh-acme/greet#13' }))?.props.label).toBe('Refresh PRs')
   branchFails = undefined
   branchHold = true
   const lookups = () => ran.filter(argv => argv[0] === 'gh' && argv.includes('view')).length
   const before = lookups()
-  await pane.press({ key: 'refresh-acme/greet#13' })
+  const refreshing = pane.press({ key: 'refresh-acme/greet#13' })
   await clock.settle()
   expect(await pane.find({ text: 'Last refresh failed: HTTP 502' })).toBeDefined()
-  expect(await pane.find({ text: 'Refreshing…' })).toBeDefined()
+  expect(await pane.find({ text: 'Refreshing PRs…' })).toBeDefined()
   expect(await pane.find({ key: 'refresh-acme/greet#13' })).toBeDefined()
   branchHold = false
   releaseBranch()
+  await refreshing
   await clock.settle()
   expect(lookups()).toBe(before + 1)
-  expect(await pane.find({ text: 'Refreshing…' })).toBeUndefined()
+  expect(await pane.find({ text: '✓ Refreshed PRs' })).toBeDefined()
   expect(await pane.find({ text: /Last refresh failed/ })).toBeUndefined()
+  expect(await pane.find({ key: 'refresh-acme/greet#13' })).toBeUndefined()
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
 })
 

@@ -473,7 +473,7 @@ async function openPath($: EngineInterface, raw: string): Promise<string | null>
 
 async function perform(
   $: EngineInterface,
-  effect: Exclude<Effect, { kind: 'send' }>,
+  effect: Extract<Effect, { kind: 'open' | 'copy' }>,
   surface: UiPressArgument['surface'],
 ): Promise<string | null> {
   try {
@@ -555,6 +555,8 @@ export function sessionHost(
     surface?: UiPressArgument['surface']
     settleWindowMs: number
     onGhMissing: (isMissing: boolean) => void
+    /** Fetches the session's PRs, and resolves once that fetch ends. */
+    refreshPrs: () => Promise<void>
   },
 ): SessionHost<Session> {
   // gh is taken to start until a run fails. Then `find` asks it for its version, which only an unstartable gh refuses.
@@ -575,7 +577,13 @@ export function sessionHost(
     },
     deliver: (_s, text, deliveryId) => deliver($, owner, text, deliveryId),
     isDeliveryHeldUntilRun: true,
-    perform: async (_s, effect) => (opts.surface ? perform($, effect, opts.surface) : COPY_FAILURES['no-surface']),
+    perform: async (_s, effect) => {
+      if (effect.kind === 'refresh-prs') {
+        await opts.refreshPrs()
+        return null
+      }
+      return opts.surface ? perform($, effect, opts.surface) : COPY_FAILURES['no-surface']
+    },
     gh: {
       find: async () => {
         if (ghFound === undefined) ghFound = (await isGhUnstartable($)) ? null : 'gh'
