@@ -60,6 +60,23 @@
         color: var(--text);
         font: 13px/20px var(--sans);
         -webkit-font-smoothing: antialiased;
+        cursor: default;
+        user-select: none;
+      }
+      /* Text a person may copy: what an item, PR or Overview line says, an error, and the reply field. */
+      .overview-goal,
+      .overview-now,
+      .overview .content,
+      .earlier,
+      .body,
+      .panel .muted,
+      .settled-line .what,
+      .pr-head,
+      .tone-error,
+      input,
+      textarea {
+        cursor: auto;
+        user-select: text;
       }
       button {
         font: inherit;
