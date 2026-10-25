@@ -54,6 +54,7 @@ import {
   feedbackText,
   firstWaiting,
   foldLabel,
+  footerStatus,
   groupEmptyText,
   heldReplies,
   isFailure,
@@ -1019,11 +1020,13 @@ function tabBar(d: Draw): string {
 function footer(d: Draw, isPageScrolling: boolean): string[] {
   const { screen, ui, width, now, style: s } = d
   const out: string[] = [s.dim('─'.repeat(width))]
-  const { status } = screen.view
+  const status = footerStatus(ui.tab, screen.view.status, {
+    isFetching: screen.isFetchingPrs,
+    hasPrs: screen.view.prs.drawn.length > 0,
+  })
   if (screen.isDemo) out.push(fit(` ${s.dim(DEMO_NOTICE)}`, width))
-  if (ui.tab === 'prs' ? screen.isFetchingPrs : status.isUpdating)
-    out.push(` ${s.dim(ui.tab === 'prs' ? 'Refreshing PRs…' : 'Updating…')}`)
-  if (ui.tab !== 'prs' && status.error) out.push(...indented(status.error, 1, width, 2, t => s.tone('error', t)))
+  if (status.text) out.push(` ${s.dim(status.text)}`)
+  if (status.error) out.push(...indented(status.error, 1, width, 2, t => s.tone('error', t)))
   if (ui.notice && now - ui.notice.at < SETTLED_MS)
     out.push(...indented(ui.notice.text, 1, width, 2, t => s.tone('error', t)))
   const hints =

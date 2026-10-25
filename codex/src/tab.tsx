@@ -37,6 +37,7 @@ import {
   isWaitingRow,
   firstWaiting,
   keptOpen,
+  footerStatus,
   listWaits,
   PRESS_GUARD_MS,
   rowAfterClose,
@@ -1788,6 +1789,10 @@ function Prs({ v, now }: { v: View; now: number }) {
 
 const LATE_READ_MS = 60_000
 
+function footerOf(v: View) {
+  return footerStatus(drawnTab(), v.status, { isFetching: v.isFetchingPrs, hasPrs: v.prs.drawn.length > 0 })
+}
+
 function Status({ v }: { v: View }) {
   const sinceRead = Date.now() - readAt
   const status =
@@ -1796,16 +1801,16 @@ function Status({ v }: { v: View }) {
         Last read {ago(sinceRead)}
         {DOT}retrying
       </span>
-    ) : v.status.isUpdating ? (
-      'Updating…'
-    ) : null
+    ) : (
+      footerOf(v).text
+    )
 
   return <div class="status">{status}</div>
 }
 
 function TabBar({ v }: { v: View }) {
   const counts: Record<Tab, number> = { needsYou: v.needsYou.count, findings: v.findings.count, prs: v.prs.count }
-  const { error } = v.status
+  const { error } = footerOf(v)
   const shown = drawnTab()
 
   return (

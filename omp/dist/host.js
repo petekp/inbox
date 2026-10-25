@@ -2949,6 +2949,13 @@ function heldLabel(c) {
     return `Answered: ${c.outcome}`;
   return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
 }
+function footerStatus(tab, status, prs) {
+  if (tab === "prs")
+    return { text: prs.isFetching && prs.hasPrs ? REFRESHING_PRS_TEXT : null, error: null };
+  return { text: status.isUpdating ? UPDATING_TEXT : null, error: status.error };
+}
+var UPDATING_TEXT = "Updating\u2026";
+var REFRESHING_PRS_TEXT = "Refreshing PRs\u2026";
 function perTurnStatus(update) {
   return {
     isUpdating: update.isUpdating,
@@ -5023,12 +5030,15 @@ function tabBar(d) {
 function footer(d, isPageScrolling) {
   const { screen, ui, width, now, style: s } = d;
   const out = [s.dim("\u2500".repeat(width))];
-  const { status } = screen.view;
+  const status = footerStatus(ui.tab, screen.view.status, {
+    isFetching: screen.isFetchingPrs,
+    hasPrs: screen.view.prs.drawn.length > 0
+  });
   if (screen.isDemo)
     out.push(fit(` ${s.dim(DEMO_NOTICE)}`, width));
-  if (ui.tab === "prs" ? screen.isFetchingPrs : status.isUpdating)
-    out.push(` ${s.dim(ui.tab === "prs" ? "Refreshing PRs\u2026" : "Updating\u2026")}`);
-  if (ui.tab !== "prs" && status.error)
+  if (status.text)
+    out.push(` ${s.dim(status.text)}`);
+  if (status.error)
     out.push(...indented(status.error, 1, width, 2, (t) => s.tone("error", t)));
   if (ui.notice && now - ui.notice.at < SETTLED_MS)
     out.push(...indented(ui.notice.text, 1, width, 2, (t) => s.tone("error", t)));

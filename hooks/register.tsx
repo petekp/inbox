@@ -230,6 +230,7 @@ import {
   settledRowIds,
   allRows,
   firstWaiting,
+  footerStatus,
   keptOpen,
   listWaits,
   rowAfterClose,
@@ -4088,9 +4089,11 @@ export const register: Register = on => {
       )
     }
 
-    const isPrStatus = shownTab === 'prs' && prViews.length > 0
-    const { isUpdating, error } = view.status
-    const status = isPrStatus ? (prState.isFetching ? 'Refreshing PRs' : '') : isUpdating ? 'Updating…' : ''
+    const shownStatus = footerStatus(shownTab, view.status, {
+      isFetching: prState.isFetching,
+      hasPrs: prViews.length > 0,
+    })
+    const status = shownStatus.text ?? ''
 
     const drawnIds = new Set([
       ...Object.values(rows).flatMap(list => list.map(r => r.id)),
@@ -4135,9 +4138,9 @@ export const register: Register = on => {
         }
       : null
     const statusLines = [
-      !isPrStatus && error ? (
+      shownStatus.error ? (
         <Text color={pal.tone.error} wrap="wrap">
-          {error}
+          {shownStatus.error}
         </Text>
       ) : null,
       toolsRefused ? (

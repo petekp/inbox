@@ -1144,6 +1144,24 @@ function heldLabel(c: Pick<Closed, 'how' | 'outcome'>): string {
   return c.how === 'claude' ? capitalized(c.outcome) : `Closed: ${c.outcome}`
 }
 
+/**
+ * The status line under the inbox for the shown tab. The PRs tab says when PRs refresh, and only once it lists some,
+ * since an empty PRs tab already reads "Checking for PRs…". A failed ledger update is about rows, so it shows on every
+ * tab but the PRs tab.
+ */
+export function footerStatus(
+  tab: ShownTab,
+  status: ItemStatus,
+  prs: { isFetching: boolean; hasPrs: boolean },
+): { text: string | null; error: string | null } {
+  if (tab === 'prs') return { text: prs.isFetching && prs.hasPrs ? REFRESHING_PRS_TEXT : null, error: null }
+
+  return { text: status.isUpdating ? UPDATING_TEXT : null, error: status.error }
+}
+
+export const UPDATING_TEXT = 'Updating…'
+export const REFRESHING_PRS_TEXT = 'Refreshing PRs…'
+
 export function perTurnStatus(update: { isUpdating: boolean; isFailed: boolean; retries: boolean }): ItemStatus {
   return {
     isUpdating: update.isUpdating,
