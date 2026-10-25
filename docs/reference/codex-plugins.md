@@ -1271,8 +1271,17 @@ without the model calling it. The Inbox tab is a thread entrypoint.
 - **Live, Codex keeps a tab's page by its URI across server restarts**
   [live 2026-10-10]. A test build ran in the server Codex started for a new
   chat, and that chat's tab drew the old page. Under a new URI, a new chat's
-  tab drew the test build. The inbox's URI now carries a hash of the page
-  (`tabUri`, codex/src/server.ts).
+  tab drew the test build.
+- **Live, Codex removes an open tab when a later tool list names another URI
+  for its entrypoint** [live 2026-10-25, ChatGPT 26.1021.31345]. After a
+  reinstall, the next thread change started a new server process and loaded
+  the MCP server catalog. Every open Inbox frame whose `inbox_view` URI the
+  new list no longer named was torn down ("Revoked app sandbox registration
+  … shouldRemoveFrame=true") and showed "Couldn't display Inbox"; Try again
+  failed the same way. With the URI unchanged across builds, the frame
+  stayed and swapped to the new page. So the inbox lists one fixed URI,
+  `ui://inbox/view` (`TAB_ADDRESS`, codex/src/server.ts), and names each
+  build's page separately (`pageName`).
 - **Historical document-replacement probe** [live 2026-10-10]. A tab that
   fetched a page through `tools/call` and ran `document.open`, `write` and
   `close` drew the new page. Its script sent `ui/initialize` again, Codex
@@ -1382,7 +1391,7 @@ without the model calling it. The Inbox tab is a thread entrypoint.
 - Neither lists Codex or Claude Code. Whether Claude Code or the Claude
   desktop app's Code mode renders MCP Apps is not answered here.
 - [inference] Of the inbox's MCP surface, only `_meta["openai/ui"].entrypoints`
-  is OpenAI-specific (codex/src/server.ts:toolsFor). The same `ui://inbox/tab-…`
+  is OpenAI-specific (codex/src/server.ts:TOOLS). The same `ui://inbox/view`
   resource could render in other MCP Apps hosts, opened by the model and
   inline.
 

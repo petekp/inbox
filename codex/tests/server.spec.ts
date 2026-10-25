@@ -13,7 +13,7 @@ import { screenText } from '../../hooks/model-text'
 import { noteHook, notePrompt, screenTabOf, viewOf } from '../src/core'
 import { CODEX } from '../src/texts'
 import type { View } from '../src/core'
-import { makeServer, tabUri } from '../src/server'
+import { makeServer, pageName } from '../src/server'
 import { PRESS_TIMEOUT_MS } from '../../hooks/session'
 import { SETTLE_WINDOW_MS } from '../src/settle'
 import { readState, statePath, updateState } from '../src/state'
@@ -429,15 +429,14 @@ test('the tab opens from the app-only inbox_view tool, and the model’s inbox t
   assert.equal(tool('inbox')?._meta, undefined)
   assert.equal(tool('inbox_view')?.title, 'Inbox')
   assert.deepEqual(tool('inbox_view')?._meta, {
-    ui: { resourceUri: tabUri('<html></html>'), visibility: ['app'] },
+    ui: { resourceUri: 'ui://inbox/view', visibility: ['app'] },
     'openai/ui': { entrypoints: [{ type: 'thread' }] },
   })
-  assert.notEqual(tabUri('<html></html>'), tabUri('<html>changed</html>'))
   const read = (await handle({ jsonrpc: '2.0', id: 2, method: 'resources/read' })) as {
     result: { contents: { uri: string }[] }
   }
-  assert.equal(read.result.contents[0]?.uri, tabUri('<html></html>'))
-  const older = tabUri('<html>older</html>')
+  assert.equal(read.result.contents[0]?.uri, 'ui://inbox/view')
+  const older = pageName('<html>older</html>')
   const readOlder = (await handle({ jsonrpc: '2.0', id: 3, method: 'resources/read', params: { uri: older } })) as {
     result: { contents: { uri: string; text: string }[] }
   }
@@ -463,7 +462,7 @@ test('with no dev build, the view names the installed page and inbox_tab_page se
   const view = (await call('inbox_view', {}, { thread_id: 's1' })) as unknown as {
     result: { structuredContent: { devPage: string } }
   }
-  assert.equal(view.result.structuredContent.devPage, tabUri('<html></html>'))
+  assert.equal(view.result.structuredContent.devPage, pageName('<html></html>'))
   const page = (await call('inbox_tab_page', {}, { thread_id: 's1' })) as unknown as {
     result: { structuredContent: { html: string } }
   }
