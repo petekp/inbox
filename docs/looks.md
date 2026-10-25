@@ -256,11 +256,14 @@ A host is a program that runs the inbox's agent: it reacts to events, keeps stat
 | `inOrder` | Required on the update host. Runs an Overview call after the earlier ones for the session have finished, so each reads the Overview the one before wrote. The mod and omp chain them in process. Codex chains calls in process, then takes a `.results` file lock, which waits up to 8 minutes. The lock does not queue across processes, so Overview calls waiting in two update processes can run in either order. That needs a second update process to start while the first still waits on its Overview calls. No ledger call and no lock waits on it. |
 | `background` | Optional, on the update host. Keeps Overview calls running after `runUpdates` returns, so the next ledger update starts at once. The mod and omp pass it. Codex omits it, so its detached update process stays until the calls end. |
 | `deliver` | Sends a message to the agent as if the person typed it. |
+| `isDeliveryHeldUntilRun` | Optional. True when `deliver` returns only once the message runs, which can be a whole turn later. Until then the press reads Queued. The mod sets it. |
 | `prepare` | Throws when `deliver` could not start, before a sent record is saved. |
 | `perform` | Opens a link or path, or copies text. Returns why it could not, or null. |
 | `gh` | Finds gh, drops the one it kept, runs gh for the session, and reports when none starts. |
 | `settleWindowMs`, `newId` | The settle window before Done tells the agent, and delivery ids. |
-| `isTurnRunning` | Optional. Whether a turn runs now, which holds a Done message back. Without it, a turn runs while the turn has a person's words. |
+| `answerMessage` | Optional. Builds the message an answer press sends when the agent reads answers in its own form. Codex sets it for a question linked to an open dialog. |
+
+A host reports a running turn by calling `hooks/session.ts:turnStarted` and `turnEnded`, which set `presence.isTurnRunning`. A running turn holds a Done message back and shows Working… in the Overview.
 
 The host's state type extends `Session` from `hooks/session.ts`. It adds its own fields, and upgrades a state saved by an earlier build, as `omp/src/state.ts:upgraded` does.
 

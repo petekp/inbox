@@ -11,7 +11,7 @@ import type { PrPress } from '../../hooks/pr-tab'
 import { demoAfterPress, demoTurns, noteText, openTarget } from '../../hooks/presses'
 import type { PathProbe, RowPress } from '../../hooks/presses'
 import { agentTools } from '../../hooks/tools'
-import { heardState, isTurnRunning, lookOnView, noteToolCall, viewOf } from './core'
+import { heardState, lookOnView, noteToolCall, viewOf } from './core'
 import type { TabView } from './core'
 import { demoState } from './demo'
 import { answerMessage, noteDialogs } from './dialogs'
@@ -354,7 +354,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   async function linkRunningDialogs(id: string, itemId: string) {
     const s = await readState(dir, id)
     const item = s.ledger.items.find(i => i.id === itemId)
-    const canLink = item?.kind === 'question' && !item.dialog && item.turn === s.ledger.turn && isTurnRunning(s.heard)
+    const canLink = item?.kind === 'question' && !item.dialog && item.turn === s.ledger.turn && s.presence.isTurnRunning
     if (!canLink) return
     const { dialogs } = await turnIn(s.transcriptPath, undefined)
     if (dialogs.length > 0) await updateState(dir, id, x => noteDialogs(x, dialogs))
