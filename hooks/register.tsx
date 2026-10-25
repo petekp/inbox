@@ -3219,15 +3219,12 @@ export const register: Register = on => {
     const desktopRowTextPt = (rowId: string) => desktopTextColumns(rowId) * DESKTOP_CELL_PT - 2 * FRAME_INSET_PT
     const desktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) =>
       a.icon ? `${a.icon} ${shownLabel(a)}` : shownLabel(a)
-    // A native Button cuts a label wider than its row. Where "(recommended)" would be cut, the primary fill alone
-    // marks the recommended answer.
+    // A native Button cuts a label wider than its row.
     const fittedDesktopLabel = (rowId: string, a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) => {
-      const full = desktopLabel(a)
-      if (a.variant !== 'primary') return full
-      const isCut = desktopTextPt(full) + DESKTOP_BUTTON_EXTRA_PT > desktopRowTextPt(rowId)
-      const { variant: _variant, ...unmarked } = a
+      const icon = a.icon ? `${a.icon} ` : ''
+      const fits = (label: string) => desktopTextPt(icon + label) + DESKTOP_BUTTON_EXTRA_PT <= desktopRowTextPt(rowId)
 
-      return isCut ? desktopLabel(unmarked) : full
+      return icon + actionLabel({ label: a.label, isPrimary: a.variant === 'primary' }, fits)
     }
     const keyedButton =
       (rowId: string, isFollowUp = false) =>

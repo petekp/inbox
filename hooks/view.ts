@@ -229,8 +229,18 @@ export function replyHint(row: RowView, agent: string): string {
   return row.replyKind === 'answer' ? 'Your answer' : `Your reply to ${agent}`
 }
 
-export function actionLabel(action: Pick<ActionView, 'label' | 'isPrimary'>): string {
-  return action.isPrimary ? `${action.label} (recommended)` : action.label
+/**
+ * A look that fills the recommended answer's button passes `fits`, its own measure of whether a label fits that
+ * button. Where "(recommended)" would not fit, the fill alone marks the recommended answer.
+ */
+export function actionLabel(
+  action: Pick<ActionView, 'label' | 'isPrimary'>,
+  fits?: (label: string) => boolean,
+): string {
+  if (!action.isPrimary) return action.label
+  const marked = `${action.label} (recommended)`
+
+  return fits && !fits(marked) ? action.label : marked
 }
 
 export function fieldExit(row: RowView): 'cancel' | 'discard' {
