@@ -3074,8 +3074,9 @@ var PR_GROUP_TITLES = { threads: "Review threads", checks: "Failing checks" };
 function threadRowText(pr, t, lastActions) {
   const isSent = threadSentIn(lastActions)(pr, t);
   const isChanged = !isSent && t.isLinesChanged;
+  const showsCheck = threadShowsCheckIn(lastActions)(pr, t);
   return {
-    showsCheck: threadShowsCheckIn(lastActions)(pr, t),
+    mark: showsCheck ? { text: "\u2713", tone: "done" } : { text: "\u25E6", tone: null },
     fold: isSent || isChanged ? t.isLinesChanged ? { note: `Lines changed since this comment${DOT}still open on GitHub` } : {} : null,
     title: clipLabel(commentParts(t.body).head, THREAD_TITLE_CHARS),
     meta: [
@@ -3084,6 +3085,9 @@ function threadRowText(pr, t, lastActions) {
       t.reply ? `@${t.reply.author}: ${commentLine(t.reply.body)}` : `@${t.author}`
     ].filter(Boolean).join(DOT)
   };
+}
+function checkRowText(c) {
+  return { mark: { text: "\u2717", tone: "error" }, lead: c.workflow || null, title: c.name, meta: checkRunText(c) };
 }
 function checkRunText(c) {
   return c.startedAt !== undefined && c.finishedAt !== undefined ? `Failed after ${took(c.finishedAt - c.startedAt)}` : "Failed";
@@ -3100,6 +3104,17 @@ function threadShowsCheckIn(lastActions) {
     const delivery = lastActions[prThreadId(pr, t)]?.delivery;
     return isSent(pr, t) && delivery?.state !== "unconfirmed";
   };
+}
+function prRowWaits(prs, lastActions) {
+  const isSent = threadSentIn(lastActions);
+  return prs.flatMap((pr) => [
+    ...waitingThreads(pr).map((t) => ({ id: prThreadId(pr, t), isWaiting: !isSent(pr, t) })),
+    ...failingChecks(pr).map((c) => {
+      const id = prCheckId(pr, c);
+      const last = lastActions[id];
+      return { id, isWaiting: !isFoldingPress(id, last) || last?.delivery?.state === "failed" };
+    })
+  ]);
 }
 function isTracked(prState, linked, ref) {
   return splitLinked(prState, linked).tracked.includes(ref) || prState.branchRef === ref;
@@ -4562,6 +4577,9 @@ function prEntries(screen, now) {
   const { prs, lastActions, turns } = screen.view;
   const isSent = threadSentIn(lastActions);
   const presses = { lastActions, turns, now };
+  const waits = prRowWaits(prs.drawn.filter((d) => !d.isSettled).map((d) => d.pr), lastActions);
+  const isWaiting = (id) => waits.some((w) => w.id === id && w.isWaiting);
+  const markLead = (mark) => ({ text: mark.text, tone: mark.tone ?? "sep" });
   const out = [];
   if (screen.isGhMissing)
     out.push({ kind: "note", text: GH_MISSING_TEXT });
@@ -4593,7 +4611,8 @@ function prEntries(screen, now) {
         status: { text: head, tone: PR_TONES[status], rest: unlisted.map((r) => ` \xB7 ${r}`).join("") },
         feedback: f,
         detail: pr.error ? `Last refresh failed: ${pr.error}` : null,
-        buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses))
+        buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses)),
+        isWaiting: false
       }
     });
     const threads = waitingThreads(pr);
@@ -4607,12 +4626,14 @@ function prEntries(screen, now) {
         line: {
           ...blankLine(id),
           depth: 1,
-          lead: { text: "\u2022", tone: "sep" },
+          lead: markLead(text.mark),
           title: text.title,
           isDim: text.fold !== null,
           detail: [text.meta, text.fold?.note].filter(Boolean).join(" \xB7 ") || null,
           feedback: pressFeedback(screen, id, now),
-          buttons: prButtons(threadActions(pr, t, presses))
+          buttons: prButtons(threadActions(pr, t, presses)),
+          isWaiting: isWaiting(id),
+          isFolded: text.fold !== null
         }
       });
     }
@@ -4621,16 +4642,18 @@ function prEntries(screen, now) {
       out.push({ kind: "heading", text: PR_GROUP_TITLES.checks, count: checks.length });
     for (const c of checks) {
       const id = prCheckId(pr, c);
+      const text = checkRowText(c);
       out.push({
         kind: "row",
         line: {
           ...blankLine(id),
           depth: 1,
-          lead: { text: "\u2022", tone: "sep" },
-          title: c.name,
-          detail: checkRunText(c),
+          lead: markLead(text.mark),
+          title: text.lead ? `${text.lead} / ${text.title}` : text.title,
+          detail: text.meta,
           feedback: pressFeedback(screen, id, now),
-          buttons: prButtons(checkActions(pr, c, presses))
+          buttons: prButtons(checkActions(pr, c, presses)),
+          isWaiting: isWaiting(id)
         }
       });
     }

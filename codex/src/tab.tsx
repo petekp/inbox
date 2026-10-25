@@ -67,7 +67,9 @@ import type {
 } from '../../hooks/view'
 import {
   checkActions,
-  checkRunText,
+  checkRowText,
+  PR_QUOTE_CHARS,
+  splitFollowUps,
   GH_MISSING_TEXT,
   PR_GROUP_TITLES,
   PR_TONES,
@@ -843,15 +845,15 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
 
   return {
     id,
-    handle: text.showsCheck ? '✓' : '◦',
-    handleTone: text.showsCheck ? 'done' : undefined,
+    handle: text.mark.text,
+    handleTone: text.mark.tone ?? undefined,
     ...(text.fold ? { fold: text.fold } : {}),
     title: text.title,
     meta: text.meta,
     age: t.at === null ? undefined : shortAgo(v.at - t.at),
     body: (
       <div>
-        {rest ? <p class="quote">{inlineHtml(clipLabel(rest, 1200))}</p> : null}
+        {rest ? <p class="quote">{inlineHtml(clipLabel(rest, PR_QUOTE_CHARS))}</p> : null}
         <p class="muted">
           <button type="button" class="link" onClick={press('thread-open', opening('the comment'))}>
             {where}
@@ -860,28 +862,29 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
         </p>
         {t.reply ? (
           <p class="quote">
-            <b>@{t.reply.author}:</b> {inlineHtml(clipLabel(readableComment(t.reply.body), 1200))}
+            <b>@{t.reply.author}:</b> {inlineHtml(clipLabel(readableComment(t.reply.body), PR_QUOTE_CHARS))}
           </p>
         ) : null}
       </div>
     ),
-    keys: threadActions(pr, t, pressesOf(v)).flatMap(a => (a.isFollowUp ? [] : [prKey(id, a, opening('the comment'))])),
-    more: threadActions(pr, t, pressesOf(v)).flatMap(a => (a.isFollowUp ? [prKey(id, a)] : [])),
+    keys: splitFollowUps(threadActions(pr, t, pressesOf(v))).keys.map(a => prKey(id, a, opening('the comment'))),
+    more: splitFollowUps(threadActions(pr, t, pressesOf(v))).more.map(a => prKey(id, a)),
     feedback: feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at),
   }
 }
 
 function prCheckRow(v: View, pr: PrView, c: PrCheck): Row {
   const id = prCheckId(pr, c)
-  const ran = checkRunText(c)
+  const text = checkRowText(c)
+  const ran = text.meta
   const target = c.url ? 'the log' : `PR #${pr.number}`
 
   return {
     id,
-    handle: '✗',
-    handleTone: 'error',
-    ...(c.workflow ? { lead: `${c.workflow} /` } : {}),
-    title: c.name,
+    handle: text.mark.text,
+    handleTone: text.mark.tone ?? undefined,
+    ...(text.lead ? { lead: `${text.lead} /` } : {}),
+    title: text.title,
     meta: ran,
     age: c.finishedAt === undefined ? undefined : shortAgo(v.at - c.finishedAt),
     body: <div class="muted">{ran}</div>,

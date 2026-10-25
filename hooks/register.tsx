@@ -86,7 +86,9 @@ import type { Exchange, Press, Update } from './ledger'
 import {
   applyPrPress,
   checkActions,
-  checkRunText,
+  checkRowText,
+  PR_QUOTE_CHARS,
+  splitFollowUps,
   drawnPrs,
   fetchTracked,
   isDismissing,
@@ -3253,20 +3255,20 @@ export const register: Register = on => {
     })
     const checkRowBase = (pr: PrView, c: PrCheck): Row => ({
       id: prCheckId(pr, c),
-      handle: '✗',
-      handleTone: 'error',
+      handle: checkRowText(c).mark.text,
+      handleTone: checkRowText(c).mark.tone ?? undefined,
       title: c.name,
       line: { text: c.name },
       body: null,
       keys: () => checkActions(pr, c, presses).map(a => prKeyAction(a, `${pr.ref}-${c.name}`)),
     })
     const checkRow = (pr: PrView, c: PrCheck): Row => {
-      const ran = checkRunText(c)
+      const { lead, meta } = checkRowText(c)
       return {
         ...checkRowBase(pr, c),
         ...(c.finishedAt !== undefined ? { at: c.finishedAt } : {}),
-        line: { ...(c.workflow ? { before: `${c.workflow} / ` } : {}), text: c.name, after: ran },
-        subtitle: <Text color={pal.muted}>{c.workflow ? `${c.workflow}${DOT}${ran}` : ran}</Text>,
+        line: { ...(lead ? { before: `${lead} / ` } : {}), text: c.name, after: meta },
+        subtitle: <Text color={pal.muted}>{lead ? `${lead}${DOT}${meta}` : meta}</Text>,
       }
     }
     const threadRow = (pr: PrView, t: PrThread): Row => {
@@ -3282,10 +3284,10 @@ export const register: Register = on => {
       )
       const comment = (
         <Box flexDirection="column">
-          {rest ? <Markdown text={clipLabel(rest, 1200)} /> : null}
+          {rest ? <Markdown text={clipLabel(rest, PR_QUOTE_CHARS)} /> : null}
           {where}
           {t.reply ? (
-            <Markdown text={`**@${t.reply.author}:** ${clipLabel(readableComment(t.reply.body), 1200)}`} />
+            <Markdown text={`**@${t.reply.author}:** ${clipLabel(readableComment(t.reply.body), PR_QUOTE_CHARS)}`} />
           ) : null}
         </Box>
       )
@@ -3315,8 +3317,8 @@ export const register: Register = on => {
 
       return {
         id,
-        handle: text.showsCheck ? '✓' : '◦',
-        handleTone: text.showsCheck ? 'done' : undefined,
+        handle: text.mark.text,
+        handleTone: text.mark.tone ?? undefined,
         ...(text.fold ? { fold: text.fold } : {}),
         title: text.title,
         ...(t.at === null ? {} : { at: t.at }),
@@ -3327,8 +3329,8 @@ export const register: Register = on => {
         },
         body: comment,
         clippedBody: clippedComment,
-        keys: () => threadActions(pr, t, presses).flatMap(a => (a.isFollowUp ? [] : [prKeyAction(a, t.id)])),
-        moreKeys: () => threadActions(pr, t, presses).flatMap(a => (a.isFollowUp ? [prKeyAction(a, t.id)] : [])),
+        keys: () => splitFollowUps(threadActions(pr, t, presses)).keys.map(a => prKeyAction(a, t.id)),
+        moreKeys: () => splitFollowUps(threadActions(pr, t, presses)).more.map(a => prKeyAction(a, t.id)),
       }
     }
 

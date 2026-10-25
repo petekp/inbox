@@ -4,6 +4,7 @@ import {
   GH_MISSING_TEXT,
   checkActions,
   prBlockActions,
+  prMarkId,
   prsEmptyHint,
   threadActions,
   threadSentIn,
@@ -68,10 +69,13 @@ function plannedLabels(row: RowView): string[] {
   )
 }
 
-function buttonLine(screen: PanelScreen, ui: PanelUi): string {
-  return text(screen, ui)
+const buttonLines = (screen: PanelScreen, ui: PanelUi) =>
+  text(screen, ui)
     .split('\n')
-    .find(l => l.includes('↵ ') && !l.includes('↵ press'))!
+    .filter(l => l.includes('↵ ') && !l.includes('↵ press'))
+
+function buttonLine(screen: PanelScreen, ui: PanelUi): string {
+  return buttonLines(screen, ui)[0]!
 }
 
 test('a selected row draws its buttons in the shared key plan order', () => {
@@ -418,9 +422,10 @@ test('PR buttons follow the shared plan order for the block, its threads and its
     ...failingChecks(pr).map(c => checkActions(pr, c, presses)),
   ]
   expect(plans.length).toBeGreaterThan(3)
-  let ui: PanelUi = { ...INITIAL_UI, tab: 'prs' }
+  let ui: PanelUi = { ...INITIAL_UI, tab: 'prs', selectedId: prMarkId(pr.ref) }
   for (const plan of plans) {
-    const line = buttonLine(screen, ui)
+    const opened = buttonLines(screen, ui).length === 0 ? keys(screen, ui, 'enter') : ui
+    const line = buttonLine(screen, opened)
     let from = 0
     for (const { label } of plan) {
       const at = line.indexOf(label, from)
@@ -431,13 +436,12 @@ test('PR buttons follow the shared plan order for the block, its threads and its
   }
 })
 
-test('a PR thread press goes through the PR press', () => {
+test('the PRs tab opens on the first thread that waits, and its press goes through the PR press', () => {
   const screen = screenOf()
   const ui = { ...INITIAL_UI, tab: 'prs' as const }
-  const down = keys(screen, ui, 'down')
-  const result = handleKey(screen, down, 'a', NOW)
+  const result = handleKey(screen, ui, 'a', NOW)
   expect(result.press).toMatchObject({ action: 'thread-address' })
-  expect(handleKey(screen, down, 'enter', NOW).press).toMatchObject({ action: 'thread-address' })
+  expect(handleKey(screen, ui, 'enter', NOW).press).toMatchObject({ action: 'thread-address' })
 })
 
 test('the PRs tab says when gh is missing and when there are no PRs', () => {

@@ -19,16 +19,17 @@ import {
   PR_GROUP_TITLES,
   PR_TONES,
   checkActions,
-  checkRunText,
+  checkRowText,
   prBlockActions,
   prCheckId,
   prMarkId,
+  prRowWaits,
   prThreadId,
   threadActions,
   threadRowText,
   threadSentIn,
 } from '../../hooks/pr-tab'
-import type { PrAction, PrPress } from '../../hooks/pr-tab'
+import type { PrAction, PrPress, PrRowMark } from '../../hooks/pr-tab'
 import { failingChecks, readiness, waitingThreads } from '../../hooks/prs'
 import { capitalized, noteText } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
@@ -441,6 +442,12 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
   const { prs, lastActions, turns } = screen.view
   const isSent = threadSentIn(lastActions)
   const presses = { lastActions, turns, now }
+  const waits = prRowWaits(
+    prs.drawn.filter(d => !d.isSettled).map(d => d.pr),
+    lastActions,
+  )
+  const isWaiting = (id: string) => waits.some(w => w.id === id && w.isWaiting)
+  const markLead = (mark: PrRowMark): Lead => ({ text: mark.text, tone: mark.tone ?? 'sep' })
   const out: Entry[] = []
   if (screen.isGhMissing) out.push({ kind: 'note', text: GH_MISSING_TEXT })
   for (const { pr, isSettled } of prs.drawn) {
@@ -472,6 +479,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
         feedback: f,
         detail: pr.error ? `Last refresh failed: ${pr.error}` : null,
         buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses)),
+        isWaiting: false,
       },
     })
     const threads = waitingThreads(pr)
@@ -484,12 +492,14 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
         line: {
           ...blankLine(id),
           depth: 1,
-          lead: { text: '•', tone: 'sep' },
+          lead: markLead(text.mark),
           title: text.title,
           isDim: text.fold !== null,
           detail: [text.meta, text.fold?.note].filter(Boolean).join(' · ') || null,
           feedback: pressFeedback(screen, id, now),
           buttons: prButtons(threadActions(pr, t, presses)),
+          isWaiting: isWaiting(id),
+          isFolded: text.fold !== null,
         },
       })
     }
@@ -497,16 +507,18 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
     if (checks.length > 0) out.push({ kind: 'heading', text: PR_GROUP_TITLES.checks, count: checks.length })
     for (const c of checks) {
       const id = prCheckId(pr, c)
+      const text = checkRowText(c)
       out.push({
         kind: 'row',
         line: {
           ...blankLine(id),
           depth: 1,
-          lead: { text: '•', tone: 'sep' },
-          title: c.name,
-          detail: checkRunText(c),
+          lead: markLead(text.mark),
+          title: text.lead ? `${text.lead} / ${text.title}` : text.title,
+          detail: text.meta,
           feedback: pressFeedback(screen, id, now),
           buttons: prButtons(checkActions(pr, c, presses)),
+          isWaiting: isWaiting(id),
         },
       })
     }

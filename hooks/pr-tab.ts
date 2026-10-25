@@ -187,8 +187,12 @@ export function prsEmptyHint(place: string): string {
 export const PR_GROUP_TITLES = { threads: 'Review threads', checks: 'Failing checks' }
 
 /** What a review thread's row says, for each look to draw in its own controls. */
+/** The mark before a PR row's title, and its tone. */
+export type PrRowMark = { text: string; tone: 'done' | 'error' | null }
+
 export type ThreadRowText = {
-  showsCheck: boolean
+  /** ✓ once the agent has the thread and its message arrived, else ◦. */
+  mark: PrRowMark
   /** Null while the thread waits on the person. */
   fold: { note?: string } | null
   title: string
@@ -199,8 +203,10 @@ export function threadRowText(pr: PrView, t: PrThread, lastActions: Record<strin
   const isSent = threadSentIn(lastActions)(pr, t)
   const isChanged = !isSent && t.isLinesChanged
 
+  const showsCheck = threadShowsCheckIn(lastActions)(pr, t)
+
   return {
-    showsCheck: threadShowsCheckIn(lastActions)(pr, t),
+    mark: showsCheck ? { text: '✓', tone: 'done' } : { text: '◦', tone: null },
     fold:
       isSent || isChanged
         ? t.isLinesChanged
@@ -216,6 +222,19 @@ export function threadRowText(pr: PrView, t: PrThread, lastActions: Record<strin
       .filter(Boolean)
       .join(DOT),
   }
+}
+
+/** What a failing check's row says. `lead` names its workflow, drawn before the check's name. */
+export function checkRowText(c: PrCheck): { mark: PrRowMark; lead: string | null; title: string; meta: string } {
+  return { mark: { text: '✗', tone: 'error' }, lead: c.workflow || null, title: c.name, meta: checkRunText(c) }
+}
+
+/** How many characters of a review comment, or of its latest reply, an open thread row shows. */
+export const PR_QUOTE_CHARS = 1200
+
+/** A row's actions split into the buttons it draws and the follow-ups drawn after them, as Discuss is. */
+export function splitFollowUps<A extends { isFollowUp?: boolean }>(actions: A[]): { keys: A[]; more: A[] } {
+  return { keys: actions.filter(a => !a.isFollowUp), more: actions.filter(a => a.isFollowUp) }
 }
 
 export function checkRunText(c: PrCheck): string {
