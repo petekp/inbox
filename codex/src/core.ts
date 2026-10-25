@@ -68,6 +68,11 @@ export function isPromptMissed(h: Heard, turnId: string | null): boolean {
   return h.promptAt === null || (h.stopAt !== null && h.promptAt < h.stopAt)
 }
 
+/** Whether a prompt started a turn whose Stop has not run yet. */
+export function isTurnRunning(h: Heard): boolean {
+  return h.promptAt !== null && (h.stopAt === null || h.promptAt > h.stopAt)
+}
+
 export function noteToolCall(s: SessionState, turnId: string | null, now: number): SessionState {
   return isPromptMissed(s.heard, turnId) ? { ...s, heard: { ...s.heard, promptMissedAt: now } } : s
 }

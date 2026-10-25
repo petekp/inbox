@@ -176,7 +176,12 @@ test('an answer pressed while the turn that opened a dialog still runs goes in t
       .map(row => JSON.stringify(row))
       .join('\n'),
   )
-  await updateState(dir, 's1', s => ({ ...s, transcriptPath: transcript, ledger: { ...s.ledger, turn: 1 } }))
+  await updateState(dir, 's1', s => ({
+    ...s,
+    transcriptPath: transcript,
+    ledger: { ...s.ledger, turn: 1 },
+    heard: { ...s.heard, promptAt: 1 },
+  }))
   await call('inbox_press', ANSWER, { thread_id: 's1' })
   const message = calls[0]?.[5] ?? ''
   const open = '<send_user_message_question_reply>'
