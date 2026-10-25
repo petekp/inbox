@@ -4730,7 +4730,7 @@ export const register: Register = on => {
       )
     }
     const olderPrs = () => {
-      const text = olderPrsText(ledger.prs)
+      const text = olderPrsText(prState, ledger.prs)
       if (!text) return []
       const line = (
         <Text color={pal.muted} wrap="wrap">

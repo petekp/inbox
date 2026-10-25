@@ -79,7 +79,6 @@ var EMPTY = {
   findings: [],
   closedFindings: [],
   prs: [],
-  prLinks: [],
   nextId: 1,
   turn: 0,
   batchTurn: 0
@@ -100,7 +99,6 @@ function upgradeLedger(ledger) {
   const { notes, decided, ...rest } = ledger;
   return {
     ...rest,
-    prLinks: rest.prLinks ?? rest.prs ?? [],
     findings: [...rest.findings ?? [], ...notes ?? []],
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
     items: rest.items.map(upgradeItem),
@@ -2365,18 +2363,23 @@ function itemPrSteps(item, prState, linked) {
   const refs = prState.branchRef ? [...linked, prState.branchRef] : linked;
   return prSteps(item, refs.map((ref) => ({ ref, url: prState.views[ref]?.url ?? null })));
 }
-function splitLinked(linked) {
-  return { tracked: linked.slice(-MAX_PRS), older: linked.slice(0, Math.max(0, linked.length - MAX_PRS)) };
+function isLeftOut(prState, ref) {
+  const view = prState.views[ref];
+  return view !== undefined && !isKeptPr(view);
 }
-function olderPrsText(linked) {
-  const { older } = splitLinked(linked);
+function splitLinked(prState, linked) {
+  const shown = linked.filter((ref) => !isLeftOut(prState, ref));
+  return { tracked: shown.slice(-MAX_PRS), older: shown.slice(0, Math.max(0, shown.length - MAX_PRS)) };
+}
+function olderPrsText(prState, linked) {
+  const { older } = splitLinked(prState, linked);
   if (older.length === 0)
     return null;
   const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
   return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
 }
 async function fetchTracked(gh, state, linked, findsBranchPr) {
-  const { tracked } = splitLinked(linked);
+  const { tracked } = splitLinked(state, linked);
   const branchTarget = findsBranchPr ? null : state.branchRef;
   const isBranchLinked = branchTarget !== null && tracked.includes(branchTarget);
   const [branch, ...rest] = await Promise.all([
@@ -2487,7 +2490,10 @@ function threadShowsCheckIn(lastActions) {
   };
 }
 function isTracked(prState, linked, ref) {
-  return splitLinked(linked).tracked.includes(ref) || prState.branchRef === ref;
+  return splitLinked(prState, linked).tracked.includes(ref) || prState.branchRef === ref;
+}
+function keepsView(prState, linked, ref) {
+  return isTracked(prState, linked, ref) || linked.includes(ref) && isLeftOut(prState, ref);
 }
 function isDismissing(lastActions, ref, now) {
   const mark = lastActions[prMarkId(ref)];
@@ -2974,7 +2980,7 @@ function upgradeSession(saved) {
         {
           ...pr,
           isYours: pr.isYours ?? null,
-          wasSeenOpen: pr.wasSeenOpen ?? false,
+          wasSeenOpen: pr.wasSeenOpen ?? pr.state === "OPEN",
           threads: pr.threads.map((t) => ({
             ...t,
             isLinesChanged: t.isLinesChanged ?? false,
@@ -3044,7 +3050,7 @@ function commandFindings(command, output) {
 }
 function withNewPrRefs(ledger, refs) {
   const fresh = refs.filter((ref) => !ledger.prs.includes(ref));
-  return fresh.length === 0 ? ledger : { ...ledger, prs: linkedPrs(ledger.prs, fresh), prLinks: linkedPrs(ledger.prLinks, fresh) };
+  return fresh.length === 0 ? ledger : { ...ledger, prs: linkedPrs(ledger.prs, fresh) };
 }
 function noteCommandOutput(s, command, output) {
   const found = commandFindings(command, output);
@@ -3056,7 +3062,7 @@ function endTurn(host, s, reply, isOpen, { tab = null, queuesEmptyReply = false 
   const refs = prRefs(reply);
   const base = {
     ...s,
-    ledger: refs.length > 0 ? { ...s.ledger, prs: linkedPrs(s.ledger.prs, refs), prLinks: linkedPrs(s.ledger.prLinks, refs) } : s.ledger,
+    ledger: refs.length > 0 ? { ...s.ledger, prs: linkedPrs(s.ledger.prs, refs) } : s.ledger,
     turn: NO_TURN
   };
   if (reply.trim() === "" && !queuesEmptyReply)
@@ -3142,7 +3148,7 @@ function pressOn(s, p, at, localPressId, answerMessage) {
   const item = s.ledger.items.find((i) => i.id === p.id);
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
-    extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prLinks) : [],
+    extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prs) : [],
     answerMessage
   });
   if ("stale" in r)
@@ -3188,11 +3194,9 @@ function recorded(host, s, tool, args, now) {
   return { state: { ...s, ledger: r.ledger }, result: r.result };
 }
 function withFetchedPrs(s, fetched, branchRef, at) {
-  const leaving = Object.values(fetched).filter((pr) => pr.error === null && !isKeptPr(pr)).map((pr) => pr.ref);
-  const ledger = leaving.length === 0 ? s.ledger : { ...s.ledger, prs: s.ledger.prs.filter((ref) => !leaving.includes(ref)) };
-  const views = Object.fromEntries(Object.entries(fetched).filter(([ref]) => isTracked({ ...s.prViews, branchRef }, ledger.prs, ref)));
-  const dismissing = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isDismissing(s.lastActions, ref, at)));
-  return { ...s, ledger, prViews: { views: { ...dismissing, ...views }, branchRef, isFetching: false } };
+  const merged = { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false };
+  const views = Object.fromEntries(Object.entries(merged.views).filter(([ref]) => keepsView(merged, s.ledger.prs, ref) || isDismissing(s.lastActions, ref, at)));
+  return { ...s, prViews: { ...merged, views } };
 }
 function withoutStalePending(lastActions, now) {
   const isStale = (last) => last.result?.state === "pending" && now - last.result.at > PRESS_TIMEOUT_MS;
@@ -3217,7 +3221,7 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
       lastActions,
       notes,
       turns: s.presence,
-      extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, l.prLinks)])),
+      extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, l.prs)])),
       settleWindowMs,
       status: perTurnStatus(update),
       now,
@@ -3235,7 +3239,7 @@ function prTabOf(s, lastActions, now) {
     drawn,
     branchRef: s.prViews.branchRef,
     count: drawn.filter((d) => !d.isSettled && prNeedsYou(d.pr, isSent)).length,
-    olderText: olderPrsText(s.ledger.prs)
+    olderText: olderPrsText(s.prViews, s.ledger.prs)
   };
 }
 
@@ -3482,7 +3486,7 @@ var NEW_PR_FETCH_MS = 15000;
 function isPrFetchDue(s, lastFetchedAt, now) {
   if (lastFetchedAt === undefined)
     return true;
-  const hasNewPr = splitLinked(s.ledger.prs).tracked.some((ref) => !(ref in s.prViews.views));
+  const hasNewPr = splitLinked(s.prViews, s.ledger.prs).tracked.some((ref) => !(ref in s.prViews.views));
   return now - lastFetchedAt >= PRS_REFRESH_MS || hasNewPr && now - lastFetchedAt >= NEW_PR_FETCH_MS;
 }
 function prFetchTracker(now) {
@@ -4609,7 +4613,6 @@ function demoView(now) {
         }
       ],
       prs: ["acme/visor#31", "acme/visor#29", "acme/visor#33"],
-      prLinks: ["acme/visor#31", "acme/visor#29", "acme/visor#33"],
       nextId: 24,
       turn: 14,
       batchTurn: 14

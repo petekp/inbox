@@ -203,7 +203,7 @@ export type PrView = {
   threads: PrThread[]
   /** Whether the person running gh wrote the PR; null when GitHub's answer did not say. */
   isYours: boolean | null
-  /** Whether a fetch has found the PR open since the tab began tracking it; false for a view saved before this field. */
+  /** Whether a fetch has found the PR open since the tab began tracking it; for a view saved before this field, whether that view was open. */
   wasSeenOpen: boolean
   /** Why the last fetch failed; the rest is from the fetch before. */
   error: string | null
@@ -216,10 +216,8 @@ export type Ledger = {
   findings: Finding[]
   /** Findings that closed, oldest first. Kept apart from `closed`, which the model-read texts list. */
   closedFindings: ClosedFinding[]
-  /** PRs the PRs tab tracks, as "owner/repo#123": ones this session created or linked, until a fetch drops one or the person dismisses it. */
+  /** PRs this session created or linked, as "owner/repo#123", until the person dismisses one. The PRs tab leaves out those `isLeftOut` names. */
   prs: string[]
-  /** Every PR this session created or linked, as "owner/repo#123", for a task's Open PR step. A fetch or Dismiss never removes one. */
-  prLinks: string[]
   nextId: number
   /** How many prompts the person has sent this session. */
   turn: number

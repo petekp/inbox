@@ -248,7 +248,6 @@ export function demoView(now: number): DemoCopy {
         },
       ],
       prs: ['acme/visor#31', 'acme/visor#29', 'acme/visor#33'],
-      prLinks: ['acme/visor#31', 'acme/visor#29', 'acme/visor#33'],
       nextId: 24,
       turn: 14,
       batchTurn: 14,

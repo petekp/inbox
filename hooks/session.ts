@@ -6,8 +6,8 @@ import {
   applyPrPress,
   drawnPrs,
   isDismissing,
-  isTracked,
   itemPrSteps,
+  keepsView,
   olderPrsText,
   linkedPrs,
   threadSentIn,
@@ -15,7 +15,7 @@ import {
 import type { Applied, PrPress } from './pr-tab'
 import { applyPress, upgradeLastActions, withAcceptedSend, withArrival, withRewrite, withUnconfirmed } from './presses'
 import type { AnswerMessage, RowPress } from './presses'
-import { isKeptPr, prNeedsYou, prRefs } from './prs'
+import { prNeedsYou, prRefs } from './prs'
 import { recordClose, recordItem } from './tools'
 import { inboxView, NO_HOLDS, perTurnStatus } from './view'
 import type { InboxView, ReplyHolds } from './view'
@@ -117,7 +117,7 @@ export function upgradeSession(saved: SavedSession): Session {
           {
             ...pr,
             isYours: pr.isYours ?? null,
-            wasSeenOpen: pr.wasSeenOpen ?? false,
+            wasSeenOpen: pr.wasSeenOpen ?? pr.state === 'OPEN',
             threads: pr.threads.map(t => ({
               ...t,
               isLinesChanged: t.isLinesChanged ?? false,
@@ -283,9 +283,7 @@ export function commandFindings(command: string, output: string): { lines: strin
 export function withNewPrRefs(ledger: Ledger, refs: string[]): Ledger {
   const fresh = refs.filter(ref => !ledger.prs.includes(ref))
 
-  return fresh.length === 0
-    ? ledger
-    : { ...ledger, prs: linkedPrs(ledger.prs, fresh), prLinks: linkedPrs(ledger.prLinks, fresh) }
+  return fresh.length === 0 ? ledger : { ...ledger, prs: linkedPrs(ledger.prs, fresh) }
 }
 
 /** Notes a finished shell command's findings: its activity lines, and its PRs linked to the session. */
@@ -312,10 +310,7 @@ export function endTurn<S extends Session>(
   const refs = prRefs(reply)
   const base = {
     ...s,
-    ledger:
-      refs.length > 0
-        ? { ...s.ledger, prs: linkedPrs(s.ledger.prs, refs), prLinks: linkedPrs(s.ledger.prLinks, refs) }
-        : s.ledger,
+    ledger: refs.length > 0 ? { ...s.ledger, prs: linkedPrs(s.ledger.prs, refs) } : s.ledger,
     turn: NO_TURN,
   }
   if (reply.trim() === '' && !queuesEmptyReply) return base
@@ -451,7 +446,7 @@ export function pressOn(
   const item = s.ledger.items.find(i => i.id === p.id)
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
-    extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prLinks) : [],
+    extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prs) : [],
     answerMessage,
   })
   if ('stale' in r) return r
@@ -524,29 +519,21 @@ export function recorded<S extends Session>(
   return { state: { ...s, ledger: r.ledger }, result: r.result }
 }
 
-/**
- * Merges fetched PRs into the session. The ledger stops tracking a linked PR that a fetch read in full and the tab
- * does not keep, by `isKeptPr`. A view stays only while the ledger tracks it or its dismissal is still showing.
- */
+/** Merges fetched PRs into the session. A view stays while `keepsView` keeps it or its dismissal is still showing. */
 export function withFetchedPrs<S extends Session>(
   s: S,
   fetched: PrViews['views'],
   branchRef: string | null,
   at: number,
 ): S {
-  const leaving = Object.values(fetched)
-    .filter(pr => pr.error === null && !isKeptPr(pr))
-    .map(pr => pr.ref)
-  const ledger =
-    leaving.length === 0 ? s.ledger : { ...s.ledger, prs: s.ledger.prs.filter(ref => !leaving.includes(ref)) }
+  const merged = { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false }
   const views = Object.fromEntries(
-    Object.entries(fetched).filter(([ref]) => isTracked({ ...s.prViews, branchRef }, ledger.prs, ref)),
-  )
-  const dismissing = Object.fromEntries(
-    Object.entries(s.prViews.views).filter(([ref]) => isDismissing(s.lastActions, ref, at)),
+    Object.entries(merged.views).filter(
+      ([ref]) => keepsView(merged, s.ledger.prs, ref) || isDismissing(s.lastActions, ref, at),
+    ),
   )
 
-  return { ...s, ledger, prViews: { views: { ...dismissing, ...views }, branchRef, isFetching: false } }
+  return { ...s, prViews: { ...merged, views } }
 }
 
 type PrTab = {
@@ -604,7 +591,7 @@ export function sessionView(
       lastActions,
       notes,
       turns: s.presence,
-      extraSteps: Object.fromEntries(l.items.map(item => [item.id, itemPrSteps(item, s.prViews, l.prLinks)])),
+      extraSteps: Object.fromEntries(l.items.map(item => [item.id, itemPrSteps(item, s.prViews, l.prs)])),
       settleWindowMs,
       status: perTurnStatus(update),
       now,
@@ -624,6 +611,6 @@ function prTabOf(s: Session, lastActions: Record<string, LastAction>, now: numbe
     drawn,
     branchRef: s.prViews.branchRef,
     count: drawn.filter(d => !d.isSettled && prNeedsYou(d.pr, isSent)).length,
-    olderText: olderPrsText(s.ledger.prs),
+    olderText: olderPrsText(s.prViews, s.ledger.prs),
   }
 }
