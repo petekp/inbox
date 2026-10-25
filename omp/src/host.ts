@@ -17,6 +17,7 @@ import {
 } from '../../hooks/model-text'
 import type { DialogOutcome } from '../../hooks/model-text'
 import type { PrPress } from '../../hooks/pr-tab'
+import { noteDialog } from '../../hooks/dialogs'
 import { ghFinder, ghIn } from '../../hooks/gh'
 import type { Run } from '../../hooks/gh'
 import type { RowPress } from '../../hooks/presses'
@@ -669,7 +670,12 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     }
     if (event.toolName !== 'ask') return
     const questions = dialogQuestions((event.input as { questions?: unknown }).questions)
-    await noteQuietly(ctx, dialogActivity(questions, askOutcome(event)))
+    const outcome = askOutcome(event)
+    const line = dialogActivity(questions, outcome)
+    await change(sessionIdOf(ctx), s => {
+      const noted = noteActivity(s, line)
+      return outcome.kind === 'dismissed' ? noteDialog(noted, null, questions) : noted
+    }).catch(() => undefined)
   })
 
   /**

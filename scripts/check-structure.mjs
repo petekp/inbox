@@ -11,6 +11,7 @@ const SHARED = [
   'clients',
   'conversation',
   'demo',
+  'dialogs',
   'gh',
   'inline',
   'layout',

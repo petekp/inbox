@@ -69,6 +69,7 @@ import type { SentBy, Session } from './session'
 import { fetchPrs as fetchSessionPrs, runUpdates, startPress, wakeForDone as wakeSessionForDone } from './session-host'
 import type { CatchUpReply, SessionHost } from './session-host'
 import { demoView, isDemoCopy } from './demo'
+import { noteDialog } from './dialogs'
 import type { Exchange, Press, Update } from './ledger'
 import {
   applyPrPress,
@@ -214,6 +215,7 @@ import {
   listWaits,
   rowAfterClose,
   shortAgo,
+  shownOptionDescriptions,
 } from './view'
 import type { ActionEmphasis, ActionIcon, DrawnEntry, InboxView, ModLook, PlannedKey, RowView, RowWait } from './view'
 import { agentTools, recordClose, recordItem } from './tools'
@@ -2545,8 +2547,14 @@ export const register: Register = on => {
       await openDialog($, { kind: 'question', text: question, key })
       const ran = await run()
       const outcome = dialogOutcome(ran)
-      await noteActivity($, dialogActivity(dialogQuestions(input.questions), outcome))
-      if (outcome.kind === 'dismissed') isDialogDismissed = true
+      const asked = dialogQuestions(input.questions)
+      const isDismissed = outcome.kind === 'dismissed'
+      if (isDismissed) isDialogDismissed = true
+      const line = dialogActivity(asked, outcome)
+      await commit($, currentOwner(), s => {
+        const noted = noteTurnActivity(s, line)
+        return isDismissed ? noteDialog(noted, null, asked) : noted
+      }).catch(() => undefined)
 
       return ran
     }
@@ -3676,6 +3684,21 @@ export const register: Register = on => {
           : null
       const body =
         bodyLines !== null && row.clippedBody && row.body ? row.clippedBody(bodyLines, textWidth) : (row.body ?? null)
+      const described = row.view ? shownOptionDescriptions(row.view, optionsShown.includes(row.id)) : []
+      const descriptionsBlock =
+        described.length > 0 ? (
+          <Box flexDirection="column" marginTop={blankLine}>
+            {described.map(o => {
+              const line = clipLabel(`${o.label}: ${o.description}`, look === 'desktop' ? titleWidth : textWidth)
+              return (
+                <Text wrap="truncate-end">
+                  <Text>{line.slice(0, o.label.length)}</Text>
+                  <Text color={pal.muted}>{line.slice(o.label.length)}</Text>
+                </Text>
+              )
+            })}
+          </Box>
+        ) : null
       const keysBlock = (
         <Box flexDirection="column" marginTop={blankLine}>
           {isTyping ? (
@@ -3720,6 +3743,7 @@ export const register: Register = on => {
             </Text>,
             row.subtitle ?? null,
             row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null,
+            descriptionsBlock,
             status.length > 0 ? (
               <Box flexDirection="column" marginTop={blankLine}>
                 {status.map(st => (
@@ -3772,6 +3796,7 @@ export const register: Register = on => {
               )}
               {row.subtitle}
               {body ? <Box marginTop={blankLine}>{body}</Box> : null}
+              {descriptionsBlock}
               {status.length > 0 ? (
                 <Box flexDirection="column" marginTop={blankLine}>
                   {status.map(s => (

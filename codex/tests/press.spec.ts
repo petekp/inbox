@@ -376,7 +376,18 @@ test('an open or copy on a handed-off task keeps it folded and out of the count,
 })
 
 function asked(id: string, kind: Item['kind'], turn: number): Item {
-  return { id, kind, label: null, from: 'record', ask: `Ask ${id}`, options: [], rec: null, helps: [], turn, at: turn }
+  return {
+    id,
+    kind,
+    label: null,
+    from: 'record',
+    ask: `Ask ${id}`,
+    options: [],
+    rec: null,
+    helps: [],
+    turn,
+    at: turn,
+  }
 }
 
 test('Needs you lists the newest reply first and keeps each older reply in the order it asked', () => {

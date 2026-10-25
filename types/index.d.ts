@@ -33,6 +33,10 @@ export type Item = {
   isDesignChoice?: boolean
   /** When the agent last recorded it again while it was open, as it does to report a comparison. */
   reportedAt?: number
+  /**
+   * Each option's description, by its label as `options` has it, from a dismissed dialog question this item copies.
+   */
+  optionDescriptions?: Record<string, string>
 }
 
 /**
@@ -40,6 +44,21 @@ export type Item = {
  * `questions`, and its title.
  */
 export type DialogLink = { callId: string; index: number; question: string }
+
+/** A question in an agent's dialog, with each option's description by its label. Codex's dialog gives none. */
+export type DialogQuestion = { question: string; options: string[]; descriptions: Record<string, string> }
+
+/**
+ * A dialog question from ledger turn `turn` that an item may copy: a question of a Codex dialog, which stays open, or
+ * of a dialog the person dismissed in another host. `callId` and `index` name a Codex dialog question, and `callId` is
+ * null in other hosts. `itemId` is the item that copies it, once linked.
+ */
+export type TurnDialogQuestion = DialogQuestion & {
+  callId: string | null
+  index: number
+  turn: number
+  itemId: string | null
+}
 
 /**
  * A one-press step toward finishing an item. The mod never runs a command:
@@ -366,6 +385,11 @@ export type Session = {
   prViews: PrViews
   /** Why the last turn stopped, until the next turn starts. */
   stop: Stop | null
+  /**
+   * The dialog questions an item may still copy: those of the current turn, and of a turn whose exchange waits for the
+   * per-reply update.
+   */
+  dialogQuestions: TurnDialogQuestion[]
 }
 
 declare module 'claude-code' {

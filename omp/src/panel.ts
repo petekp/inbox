@@ -845,6 +845,8 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   if (line.detail && (isSelected || line.isDetailShown)) out.push(...indented(line.detail, indent, width, 4, s.dim))
   if (!isSelected) return out
   if (line.file) out.push(' '.repeat(indent) + s.tone('accent', line.file))
+  for (const o of line.row?.optionDescriptions ?? [])
+    out.push(fit(' '.repeat(indent) + o.label + s.dim(`: ${o.description}`), width))
   // As in the terminal, an open reply field replaces the row's buttons: Enter sends, so no button reads as focused.
   if (line.buttons.length > 0 && ui.typing !== line.id) out.push(...buttonLines(line, ui, indent - 1, width, s))
   if (ui.typing === line.id) {

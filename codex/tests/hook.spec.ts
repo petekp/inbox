@@ -3,6 +3,7 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
+import { linkDialogs } from '../../hooks/dialogs'
 import { addAgentItem, EMPTY } from '../../hooks/ledger'
 import { inboxText } from '../../hooks/model-text'
 import { applied } from '../../hooks/session'
@@ -145,18 +146,17 @@ test('a dialog question links to the question the agent recorded for it or the u
   await applyAnswer('NOW: Waiting')
 
   await handleHook(input('UserPromptSubmit', { prompt: 'Deploy it', turn_id: 't2' }), deps)
-  assert.deepEqual(await linkedQuestions(), [])
   write(started('t2'), dialog('call_b', [{ title: 'Deploy to production now?', options: ['Deploy', 'Wait'] }]))
   await handleHook(
     input('Stop', { turn_id: 't2', transcript_path: transcript, last_assistant_message: 'Asked.' }),
     deps,
   )
+  assert.deepEqual(await linkedQuestions(), [false])
   await applyAnswer('NEW: decide | - | Deploy now? | Deploy / Wait | -')
   assert.deepEqual((await links()).slice(1), [
     ['Deploy now?', { callId: 'call_b', index: 0, question: 'Deploy to production now?' }],
   ])
   await handleHook(input('UserPromptSubmit', { prompt: 'Clean up', turn_id: 't3' }), deps)
-  assert.deepEqual(await linkedQuestions(), [])
   write(
     started('t3'),
     dialog('call_c', [
@@ -269,6 +269,9 @@ test('a session saved by an older build loads converted, as the mod converts its
     recordedRuns: ['e1'],
     turn: { person: 'Run the tests', activity: [], press: null, sentBack: ['Tests pass.'] },
     sent: [{ text: 'Re "Ship it?": Yes', press: { id: 'i1', action: 'answer' }, at: 1 }],
+    dialogQuestions: [
+      { callId: 'call_1', index: 0, question: 'Ship it now?', options: ['Yes', 'No'], turn: 1, itemId: null },
+    ],
     pending: [
       {
         ex: {
@@ -337,6 +340,10 @@ test('a session saved by an older build loads converted, as the mod converts its
   assert.deepEqual(s.turn, { person: 'Run the tests', trigger: null, activity: [], press: null })
   assert.equal('checks' in (s.pending[0]?.ex ?? {}), false)
   assert.equal(s.pending[0]?.ex.reply, 'Hello')
+  assert.deepEqual(
+    linkDialogs(s).ledger.items.map(i => [i.id, i.dialog]),
+    [['i1', { callId: 'call_1', index: 0, question: 'Ship it now?' }]],
+  )
   assert.deepEqual(
     ledger.items.map(i => [i.kind, i.at]),
     [['question', null]],

@@ -796,10 +796,18 @@ function dialogQuestions(raw) {
     if (!text)
       return [];
     const options = (Array.isArray(fields.options) ? fields.options : []).flatMap((o) => {
-      const label = typeof o === "string" ? o : o?.label;
-      return typeof label === "string" && label.trim() !== "" ? [label.trim()] : [];
+      const option = typeof o === "string" ? { label: o } : o ?? {};
+      const label = typeof option.label === "string" ? option.label.trim() : "";
+      const description = typeof option.description === "string" ? option.description.trim() : "";
+      return label === "" ? [] : [{ label, description }];
     });
-    return [{ question: text.trim(), options }];
+    return [
+      {
+        question: text.trim(),
+        options: options.map((o) => o.label),
+        descriptions: Object.fromEntries(options.filter((o) => o.description !== "").map((o) => [o.label, o.description]))
+      }
+    ];
   });
 }
 function dialogQuestionText(q) {
@@ -987,6 +995,73 @@ function promptNotes(host, ledger, prompt, told) {
     return { notes, told };
   notes.push(closed ? `${inbox}${NL4}${closed}` : inbox);
   return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
+}
+
+// ../hooks/dialogs.ts
+function optionKey(option) {
+  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
+}
+function optionsKey(options) {
+  return options.map(optionKey).sort().join(`
+`);
+}
+function hasSameOptions(item, q) {
+  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
+}
+function copyOf(q, items, questions) {
+  const byOptions = items.filter((i) => hasSameOptions(i, q));
+  const [only] = byOptions;
+  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1)
+    return only;
+  const pool = byOptions.length > 0 ? byOptions : items;
+  const byAsk = pool.filter((i) => restates(i.ask, q.question));
+  const [asked] = byAsk;
+  if (!asked || byAsk.length !== 1)
+    return null;
+  const restated = questions.filter((o) => restates(asked.ask, o.question));
+  return restated.length === 1 ? asked : null;
+}
+function descriptionsFor(options, descriptions) {
+  const byKey = new Map(Object.entries(descriptions).map(([label, text]) => [optionKey(label), text]));
+  const matched = options.flatMap((o) => {
+    const text = byKey.get(optionKey(o));
+    return text === undefined ? [] : [[o, text]];
+  });
+  return matched.length > 0 ? Object.fromEntries(matched) : null;
+}
+function asCopyOf(item, q) {
+  const descriptions = descriptionsFor(item.options, q.descriptions);
+  return {
+    ...item,
+    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
+    ...descriptions ? { optionDescriptions: descriptions } : {}
+  };
+}
+function linkDialogs(s) {
+  if (s.dialogQuestions.length === 0)
+    return s;
+  let items = s.ledger.items;
+  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
+  const questions = s.dialogQuestions.map((q) => {
+    if (q.itemId !== null)
+      return q;
+    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
+    const copy = copyOf(q, turnItems, s.dialogQuestions.filter((o) => o.turn === q.turn));
+    if (!copy || copy.dialog || linked.has(copy.id))
+      return q;
+    linked.add(copy.id);
+    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
+    return { ...q, itemId: copy.id };
+  });
+  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
+  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
+}
+function noteDialog(s, callId, questions) {
+  const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
+  const added = questions.flatMap((q, index) => isNoted(index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]);
+  if (added.length === 0)
+    return s;
+  return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
 }
 
 // ../hooks/gh.ts
@@ -1822,6 +1897,7 @@ ${asks.map((a) => `- ${a}`).join(`
 
 // ../hooks/view.ts
 var OPTIONS_FOLD_AT = 5;
+var OPTION_LABEL_CHARS = 32;
 var CHOICE_KEYS = [..."abcfghilm"];
 var DOT = "\u2007\xB7\u2002";
 var FINDING_GROUPS = {
@@ -1863,6 +1939,17 @@ var ROW_COPY = {
   relevantFile: "Relevant file: ",
   allOptions: (count) => `All ${count} options`
 };
+function optionDescriptionsOf(item, actions) {
+  const descriptions = item?.optionDescriptions;
+  if (!descriptions)
+    return [];
+  return actions.flatMap((a) => {
+    if (a.press.action !== "answer" || !Object.hasOwn(descriptions, a.press.option))
+      return [];
+    const description = descriptions[a.press.option];
+    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
+  });
+}
 function rowMark(row, look) {
   if (row.state.is === "handedOff" && row.feedback?.is !== "unconfirmed")
     return { text: "\u2713", tone: "done" };
@@ -2112,7 +2199,7 @@ function actionsOf(row, last, state, isPressOut) {
   const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
   return [
-    ...options.map((option, n) => action({ action: "answer", id, option }, clipLabel(option, 32), "mark", {
+    ...options.map((option, n) => action({ action: "answer", id, option }, clipLabel(option, OPTION_LABEL_CHARS), "mark", {
       isPrimary: option === item.rec,
       isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
     })),
@@ -2255,11 +2342,13 @@ function inboxView({
     const state = stateOf(row.id);
     const feedback = feedbackIn(row.id, state, row.item?.reportedAt);
     const isPressOut = feedback?.is === "working" || feedback?.is === "queued" || feedback?.is === "unconfirmed";
+    const actions = actionsOf(row, lastActions[row.id], state, isPressOut);
     return {
       ...row,
       state,
       feedback,
-      actions: actionsOf(row, lastActions[row.id], state, isPressOut)
+      actions,
+      optionDescriptions: optionDescriptionsOf(row.item, actions)
     };
   };
   const itemRow = (item) => {
@@ -2924,7 +3013,8 @@ function emptySession() {
     lastActions: {},
     heldRows: [],
     prViews: NO_PRS,
-    stop: null
+    stop: null,
+    dialogQuestions: []
   };
 }
 var SESSION_ID = /^[\w-]{1,100}$/;
@@ -2983,7 +3073,8 @@ function upgradeSession(saved) {
       ])),
       isFetching: false
     },
-    stop: saved.stop ?? null
+    stop: saved.stop ?? null,
+    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
 }
 function notePrompt(host, s, text, isOpen) {
@@ -3085,7 +3176,7 @@ function applied(s, reply, now, promptAt) {
     };
   const ledger = parsed ? applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt) : s.ledger;
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed;
-  return {
+  return linkDialogs({
     ...s,
     ledger,
     pending: s.pending.slice(1),
@@ -3095,7 +3186,7 @@ function applied(s, reply, now, promptAt) {
       hasDroppedReply,
       turnsApplied: Math.max(s.presence.turnsApplied, next.turnsStarted)
     }
-  };
+  });
 }
 function needsCatchUp(s) {
   const { presence } = s;
@@ -3121,7 +3212,7 @@ function isUnseen(s) {
 var pendingKey = (p) => `${p.turnsStarted}:${p.ex.turn}`;
 function appliedCatchUp(s, begun, parsed, now) {
   const covered = new Set(begun.pending.map(pendingKey));
-  return {
+  return linkDialogs({
     ...s,
     ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn) : s.ledger,
     pending: s.pending.filter((p) => !covered.has(pendingKey(p))),
@@ -3131,7 +3222,7 @@ function appliedCatchUp(s, begun, parsed, now) {
       hasDroppedReply: parsed ? false : s.presence.hasDroppedReply,
       turnsApplied: Math.max(s.presence.turnsApplied, begun.presence.turnsStarted)
     }
-  };
+  });
 }
 function pressOn(s, p, at, localPressId, answerMessage) {
   const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId };
@@ -3183,7 +3274,7 @@ function completedAttempt(state, deliveryId, outcome) {
 }
 function recorded(host, s, tool, args, now) {
   const r = (tool === "close" ? recordClose : recordItem)(host, s.ledger, args, now);
-  return { state: { ...s, ledger: r.ledger }, result: r.result };
+  return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result };
 }
 function withFetchedPrs(s, fetched, branchRef, at) {
   const merged = { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false };
@@ -4181,6 +4272,8 @@ function drawLine(line, isSelected, d) {
     return out;
   if (line.file)
     out.push(" ".repeat(indent) + s.tone("accent", line.file));
+  for (const o of line.row?.optionDescriptions ?? [])
+    out.push(fit(" ".repeat(indent) + o.label + s.dim(`: ${o.description}`), width));
   if (line.buttons.length > 0 && ui.typing !== line.id)
     out.push(...buttonLines(line, ui, indent - 1, width, s));
   if (ui.typing === line.id) {
@@ -5332,7 +5425,14 @@ function createInbox(pi, deps = defaultDeps) {
     if (event.toolName !== "ask")
       return;
     const questions = dialogQuestions(event.input.questions);
-    await noteQuietly(ctx, dialogActivity(questions, askOutcome(event)));
+    const outcome = askOutcome(event);
+    const line = dialogActivity(questions, outcome);
+    await change(sessionIdOf(ctx), (s) => {
+      const noted = noteActivity(s, line);
+      return outcome.kind === "dismissed" ? noteDialog(noted, null, questions) : noted;
+    }).catch(() => {
+      return;
+    });
   });
   pi.on("message_start", async (event, ctx) => {
     const message = event.message;
