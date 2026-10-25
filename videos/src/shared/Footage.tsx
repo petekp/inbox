@@ -12,6 +12,9 @@ export const DISSOLVE = 0.25
 /** How far footage blurs at the middle of a dissolve, in the clip's pixels. */
 const DISSOLVE_BLUR = 7
 
+/** A dissolve's blur `p` of the way through it: none at either end, and `most` at its middle. */
+export const dissolveBlur = (p: number, most: number) => most * Math.sin(Math.PI * clamp01(p))
+
 /**
  * Each segment of a take, played from its point in the take until the next segment or the beat's end. Each segment
  * dissolves in over the one before it, and the first over `before`, the previous beat's footage, when there is one.
@@ -63,10 +66,9 @@ function Dissolve(props: { isFirst: boolean; handsOverAt?: number; children: Rea
   const { isFirst, handsOverAt, children } = props
   const t = useCurrentFrame() / useVideoConfig().fps
   const arriving = isFirst ? 1 : clamp01(t / DISSOLVE)
-  const blurAt = (p: number) => DISSOLVE_BLUR * Math.sin(Math.PI * clamp01(p))
   const blur = Math.max(
-    isFirst ? 0 : blurAt(t / DISSOLVE),
-    handsOverAt === undefined || t < handsOverAt ? 0 : blurAt((t - handsOverAt) / DISSOLVE),
+    isFirst ? 0 : dissolveBlur(t / DISSOLVE, DISSOLVE_BLUR),
+    handsOverAt === undefined || t < handsOverAt ? 0 : dissolveBlur((t - handsOverAt) / DISSOLVE, DISSOLVE_BLUR),
   )
   return (
     <div
