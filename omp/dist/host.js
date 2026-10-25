@@ -5417,11 +5417,13 @@ function createInbox(pi, deps = defaultDeps) {
       return;
     const questions = dialogQuestions(event.input.questions);
     const outcome = askOutcome(event);
-    await noteQuietly(ctx, dialogActivity(questions, outcome));
-    if (outcome.kind === "dismissed")
-      await change(sessionIdOf(ctx), (s) => noteDismissedDialog(s, questions)).catch(() => {
-        return;
-      });
+    const line = dialogActivity(questions, outcome);
+    await change(sessionIdOf(ctx), (s) => {
+      const noted = noteActivity(s, line);
+      return outcome.kind === "dismissed" ? noteDismissedDialog(noted, questions) : noted;
+    }).catch(() => {
+      return;
+    });
   });
   pi.on("message_start", async (event, ctx) => {
     const message = event.message;

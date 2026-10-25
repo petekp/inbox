@@ -671,9 +671,11 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     if (event.toolName !== 'ask') return
     const questions = dialogQuestions((event.input as { questions?: unknown }).questions)
     const outcome = askOutcome(event)
-    await noteQuietly(ctx, dialogActivity(questions, outcome))
-    if (outcome.kind === 'dismissed')
-      await change(sessionIdOf(ctx), s => noteDismissedDialog(s, questions)).catch(() => undefined)
+    const line = dialogActivity(questions, outcome)
+    await change(sessionIdOf(ctx), s => {
+      const noted = noteActivity(s, line)
+      return outcome.kind === 'dismissed' ? noteDismissedDialog(noted, questions) : noted
+    }).catch(() => undefined)
   })
 
   /**

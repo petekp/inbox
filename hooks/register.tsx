@@ -2548,11 +2548,13 @@ export const register: Register = on => {
       const ran = await run()
       const outcome = dialogOutcome(ran)
       const asked = dialogQuestions(input.questions)
-      await noteActivity($, dialogActivity(asked, outcome))
-      if (outcome.kind === 'dismissed') {
-        isDialogDismissed = true
-        await commit($, currentOwner(), s => noteDismissedDialog(s, asked)).catch(() => undefined)
-      }
+      const isDismissed = outcome.kind === 'dismissed'
+      if (isDismissed) isDialogDismissed = true
+      const line = dialogActivity(asked, outcome)
+      await commit($, currentOwner(), s => {
+        const noted = noteTurnActivity(s, line)
+        return isDismissed ? noteDismissedDialog(noted, asked) : noted
+      }).catch(() => undefined)
 
       return ran
     }
