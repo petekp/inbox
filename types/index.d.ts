@@ -33,6 +33,11 @@ export type Item = {
   isDesignChoice?: boolean
   /** When the agent last recorded it again while it was open, as it does to report a comparison. */
   reportedAt?: number
+  /**
+   * Each option's description, by its label as `options` has it, from a dismissed dialog question this item copies.
+   * Empty for an item that copies none, and for an item saved before the mod kept descriptions.
+   */
+  optionDescriptions: Record<string, string>
 }
 
 /**
@@ -40,6 +45,9 @@ export type Item = {
  * `questions`, and its title.
  */
 export type DialogLink = { callId: string; index: number; question: string }
+
+/** A question in an agent's dialog, with each option's description by its label. Codex's dialog gives none. */
+export type DialogQuestion = { question: string; options: string[]; descriptions: Record<string, string> }
 
 /**
  * A one-press step toward finishing an item. The mod never runs a command:
@@ -305,6 +313,8 @@ export type Exchange = {
   turn: number
   press: Press | null
   screen: string
+  /** The questions of dialogs the person dismissed in the turn. */
+  dismissedDialogs: DialogQuestion[]
 }
 
 export type Press = { id: string; action: 'answer' | 'explain' | 'compare' | 'run' | 'done' }
@@ -322,6 +332,7 @@ export type Session = {
     trigger: string | null
     activity: string[]
     press: Press | null
+    dismissedDialogs: DialogQuestion[]
   }
   /** The inbox text the agent last read beside a prompt, and the closed items it was told about. */
   told: Told

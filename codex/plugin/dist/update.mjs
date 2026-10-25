@@ -103,7 +103,8 @@ function upgradeItem(item) {
     kind: readKind(item.kind),
     at: item.at ?? null,
     rec: recommendedOption(item.options, item.rec),
-    from: item.from ?? "update"
+    from: item.from ?? "update",
+    optionDescriptions: item.optionDescriptions ?? {}
   };
 }
 function words(text) {
@@ -481,7 +482,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
       addedIds.push(null);
       continue;
     }
-    items.push({ ...a, id: `i${nextId}`, turn, at: now, from: "update" });
+    items.push({ ...a, id: `i${nextId}`, turn, at: now, from: "update", optionDescriptions: {} });
     addedIds.push(`i${nextId}`);
     created.add(`i${nextId}`);
     nextId += 1;
@@ -497,7 +498,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
     };
     const isKnown = items.some((i) => restates(i.ask, work)) || ledger.findings.some((f) => restates(f.title, work)) || repeatsClosed(ledger.closed, { ...todo, helps: [] }, promptAt);
     if (isKnown) continue;
-    items.push({ ...todo, helps: [], id: `i${nextId}`, turn, at: now, from: "update" });
+    items.push({ ...todo, helps: [], id: `i${nextId}`, turn, at: now, from: "update", optionDescriptions: {} });
     nextId += 1;
     added += 1;
   }
@@ -643,10 +644,18 @@ function dialogQuestions(raw) {
     const text = [fields.question, fields.title].find((v) => typeof v === "string" && v.trim() !== "");
     if (!text) return [];
     const options = (Array.isArray(fields.options) ? fields.options : []).flatMap((o) => {
-      const label = typeof o === "string" ? o : o?.label;
-      return typeof label === "string" && label.trim() !== "" ? [label.trim()] : [];
+      const option = typeof o === "string" ? { label: o } : o ?? {};
+      const label = typeof option.label === "string" ? option.label.trim() : "";
+      const description = typeof option.description === "string" ? option.description.trim() : "";
+      return label === "" ? [] : [{ label, description }];
     });
-    return [{ question: text.trim(), options }];
+    return [
+      {
+        question: text.trim(),
+        options: options.map((o) => o.label),
+        descriptions: Object.fromEntries(options.filter((o) => o.description !== "").map((o) => [o.label, o.description]))
+      }
+    ];
   });
 }
 function dialogQuestionText(q) {
@@ -717,6 +726,55 @@ function outcomeText(d) {
 }
 var TOLD_NOTHING = { inbox: null, closed: [] };
 
+// ../hooks/dialogs.ts
+function optionKey(option) {
+  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
+}
+function optionsKey(options) {
+  return options.map(optionKey).sort().join("\n");
+}
+function hasSameOptions(item, q) {
+  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
+}
+function copyOf(q, items, questions) {
+  const byOptions = items.filter((i) => hasSameOptions(i, q));
+  const [only] = byOptions;
+  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1) return only;
+  const pool = byOptions.length > 0 ? byOptions : items;
+  const byAsk = pool.filter((i) => restates(i.ask, q.question));
+  const [asked] = byAsk;
+  if (!asked || byAsk.length !== 1) return null;
+  const restated = questions.filter((o) => restates(asked.ask, o.question));
+  return restated.length === 1 ? asked : null;
+}
+function withOptionDescriptions(before, after, turn, dismissed) {
+  const described = dismissed.filter((q) => Object.keys(q.descriptions).length > 0);
+  if (described.length === 0) return after;
+  const added = new Set(after.items.map((i) => i.id).filter((id) => !before.items.some((i) => i.id === id)));
+  const turnQuestions = after.items.filter((i) => i.kind === "question" && i.turn === turn);
+  const descriptionsById = /* @__PURE__ */ new Map();
+  for (const q of described) {
+    const copy = copyOf(q, turnQuestions, dismissed);
+    if (!copy || !added.has(copy.id)) continue;
+    const byKey = new Map(Object.entries(q.descriptions).map(([label, text]) => [optionKey(label), text]));
+    const descriptions = Object.fromEntries(
+      copy.options.flatMap((o) => {
+        const text = byKey.get(optionKey(o));
+        return text === void 0 ? [] : [[o, text]];
+      })
+    );
+    if (Object.keys(descriptions).length > 0) descriptionsById.set(copy.id, descriptions);
+  }
+  if (descriptionsById.size === 0) return after;
+  return {
+    ...after,
+    items: after.items.map((i) => {
+      const descriptions = descriptionsById.get(i.id);
+      return descriptions ? { ...i, optionDescriptions: descriptions } : i;
+    })
+  };
+}
+
 // ../hooks/presses.ts
 var HANDOFF_IDS = /^(address|type|step-\d+|thread-address|pr-conflicts|pr-address-all)$/;
 var PR_RENAMES = [
@@ -785,7 +843,7 @@ var ROW_TABS = TABS.filter((t) => t.id !== "prs");
 
 // ../hooks/session.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
-var NO_TURN = { person: null, trigger: null, activity: [], press: null };
+var NO_TURN = { person: null, trigger: null, activity: [], press: null, dismissedDialogs: [] };
 function emptySession() {
   return {
     ledger: EMPTY,
@@ -817,7 +875,7 @@ function upgradeSession(saved) {
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...saved.presence },
-    pending: saved.pending ?? [],
+    pending: (saved.pending ?? []).map((p) => ({ ...p, ex: { ...p.ex, dismissedDialogs: p.ex.dismissedDialogs ?? [] } })),
     sent: (saved.sent ?? []).map((x) => ({
       ...x,
       row: x.row ?? null,
@@ -864,7 +922,12 @@ function applied(s, reply, now, promptAt) {
       pending: [{ ...next, failed: true }, ...s.pending.slice(1)],
       presence: { ...s.presence, ledgerState: "failed" }
     };
-  const ledger = parsed ? applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt) : s.ledger;
+  const ledger = parsed ? withOptionDescriptions(
+    s.ledger,
+    applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt),
+    ex.turn,
+    ex.dismissedDialogs
+  ) : s.ledger;
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed;
   return {
     ...s,
@@ -900,23 +963,6 @@ function appliedCatchUp(s, begun, parsed, now) {
 }
 
 // src/dialogs.ts
-function optionsKey(options) {
-  return options.map((o) => o.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase()).sort().join("\n");
-}
-function hasSameOptions(item, q) {
-  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
-}
-function copyOf(q, items, questions) {
-  const byOptions = items.filter((i) => hasSameOptions(i, q));
-  const [only] = byOptions;
-  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1) return only;
-  const pool = byOptions.length > 0 ? byOptions : items;
-  const byAsk = pool.filter((i) => restates(i.ask, q.question));
-  const [asked] = byAsk;
-  if (!asked || byAsk.length !== 1) return null;
-  const restated = questions.filter((o) => restates(asked.ask, o.question));
-  return restated.length === 1 ? asked : null;
-}
 function linkDialogs(s) {
   if (s.dialogQuestions.length === 0) return s;
   let items = s.ledger.items;

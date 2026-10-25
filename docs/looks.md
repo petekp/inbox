@@ -26,6 +26,7 @@ Shared modules are in `hooks/`. Every host consumes them, directly or through a 
 | `hooks/pr-tab.ts` | Shared module. The PRs tab's rules: fetching each tracked PR through a host's gh runner, which PRs the tab draws, its row ids, and what each PR press does. |
 | `hooks/tools.ts` | Shared module. The record and close tools, and `agentTools`, the one list of their names, descriptions and schemas that every host and eval probe registers. |
 | `hooks/demo.ts` | Shared module. Sample data for `/inbox demo` and the Codex demo. |
+| `hooks/dialogs.ts` | Shared module. Finds the inbox question that copies an agent's dialog question, and gives it the dialog's option descriptions. |
 | `hooks/layout.ts` | Shared module. Sizes the desktop look and the Codex tab share. |
 | `hooks/tones.ts` | Shared module. Status colors for native marks and terminal palettes. The Codex build writes them into CSS, and omp draws them as true color. |
 | `hooks/inline.ts` | Shared module. Inline markdown in the agent's text, as spans each look draws. |

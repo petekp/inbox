@@ -1,7 +1,6 @@
 // Links an inbox question to the open Codex dialog question it copies, so answering it in the inbox answers the dialog.
 
-import { restates } from '../../hooks/ledger'
-import { RECOMMENDED_SUFFIX } from '../../hooks/model-text'
+import { copyOf } from '../../hooks/dialogs'
 import { messages } from '../../hooks/presses'
 import type { Session } from '../../hooks/session'
 import type { DialogLink, Item } from '../../types'
@@ -47,35 +46,6 @@ export function noteDialogs<S extends WithDialogs>(s: S, dialogs: Dialog[]): S {
   if (questions.length === 0) return s
 
   return { ...s, dialogQuestions: [...s.dialogQuestions, ...questions] }
-}
-
-function optionsKey(options: string[]): string {
-  return options
-    .map(o => o.replace(RECOMMENDED_SUFFIX, '').trim().toLowerCase())
-    .sort()
-    .join('\n')
-}
-
-function hasSameOptions(item: Item, q: TurnDialogQuestion): boolean {
-  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options)
-}
-
-/**
- * The item that copies `q`, when exactly one does. Options alone pick it only when no other item of the turn has those
- * options and no other dialog question of the turn has the item's. Otherwise the item's ask must restate `q`'s title,
- * and no other dialog question's title.
- */
-function copyOf(q: TurnDialogQuestion, items: Item[], questions: TurnDialogQuestion[]): Item | null {
-  const byOptions = items.filter(i => hasSameOptions(i, q))
-  const [only] = byOptions
-  if (only && byOptions.length === 1 && questions.filter(o => hasSameOptions(only, o)).length === 1) return only
-  const pool = byOptions.length > 0 ? byOptions : items
-  const byAsk = pool.filter(i => restates(i.ask, q.question))
-  const [asked] = byAsk
-  if (!asked || byAsk.length !== 1) return null
-  const restated = questions.filter(o => restates(asked.ask, o.question))
-
-  return restated.length === 1 ? asked : null
 }
 
 /**

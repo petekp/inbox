@@ -6,6 +6,7 @@ import type { FoldProps } from '../hooks/fold-client'
 import type { LinksProps } from '../hooks/links-client'
 import type { RowProps } from '../hooks/row-client'
 import { TAB_HEIGHT, tabLines, type TabsProps } from '../hooks/tabs-client'
+import type { Item } from '../types'
 import { demoView } from '../hooks/demo'
 import { checkActions, prBlockActions, prCheckId, prThreadId, threadActions, threadSentIn } from '../hooks/pr-tab'
 import { failingChecks, waitingThreads } from '../hooks/prs'
@@ -402,11 +403,11 @@ test('a question the desktop app’s box shows reaches the update, even when the
   )
 })
 
-test('a dialog reaches the model with its questions, whether answered or dismissed', async ($, on) => {
+test('a dialog reaches the model with its questions, whether answered or dismissed, and a dismissed one’s copy shows its option descriptions', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
   world($, on, prompts)
-  const ask = (...questions: { question: string; options: { label: string }[] }[]) =>
+  const ask = (...questions: { question: string; options: { label: string; description?: string }[] }[]) =>
     $.tool.call({ tool: 'AskUserQuestion', questions } as never)
   const turn = async (turnId: string, dialog: () => Promise<unknown>, ending: 'answer' | 'aborted' = 'answer') => {
     await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
@@ -438,6 +439,48 @@ test('a dialog reaches the model with its questions, whether answered or dismiss
   dialogAnswer = { result: {}, text: 'Both answered' }
   await turn('t3', () => ask(push, { question: 'Which branch?', options: [{ label: 'main' }, { label: 'next' }] }))
   expect(prompts.at(-1)).toContain('Which branch?')
+
+  const itemAsking = (ask: string) =>
+    (JSON.parse(stored.get('s:session-1')!) as { ledger: { items: Item[] } }).ledger.items.find(i => i.ask === ask)
+  dialogAnswer = {
+    isError: true,
+    result: 'User declined to answer questions',
+    text: 'User declined to answer questions',
+  }
+  ledgerReply = 'NOW: Waiting on staging\nNEW: decide | - | Deploy to staging? | Deploy / Hold | -'
+  const deploy = {
+    question: 'Deploy to staging now?',
+    options: [
+      { label: 'Deploy', description: 'Runs the staging pipeline' },
+      { label: 'Hold', description: 'Waits for the review' },
+    ],
+  }
+  await turn('t4', () => ask(deploy), 'aborted')
+  expect(prompts.at(-1)).not.toContain('Runs the staging pipeline')
+  const deployItem = itemAsking('Deploy to staging?')
+  expect(deployItem?.optionDescriptions).toEqual({ Deploy: 'Runs the staging pipeline', Hold: 'Waits for the review' })
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: `select-${deployItem?.id}` })
+  await clock.settle()
+  const texts = (await pane.findAll({ type: 'Text' })).map(t => t.text ?? '')
+  expect(texts).toContain('Deploy: Runs the staging pipeline')
+  expect(texts).toContain('Hold: Waits for the review')
+
+  ledgerReply = 'NOW: Waiting on the cache\nNEW: decide | - | Clear stored data? | Yes / No | -'
+  const yesNo = (yes: string, no: string) => [
+    { label: 'Yes', description: yes },
+    { label: 'No', description: no },
+  ]
+  await turn(
+    't5',
+    () =>
+      ask(
+        { question: 'Delete the cache?', options: yesNo('Removes cached builds', 'Keeps them') },
+        { question: 'Rebuild the index?', options: yesNo('Takes ten minutes', 'Uses the old index') },
+      ),
+    'aborted',
+  )
+  expect(itemAsking('Clear stored data?')?.optionDescriptions).toEqual({})
 })
 
 test('a question’s handle is the number a typed answer reaches, and the band counts what the tab counts', async ($, on) => {

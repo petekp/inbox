@@ -57,6 +57,7 @@ import {
   endTurn,
   forkedFrom,
   noteActivity as noteTurnActivity,
+  noteDismissedDialog,
   pressOn,
   recordPrompt,
   recorded,
@@ -214,6 +215,7 @@ import {
   listWaits,
   rowAfterClose,
   shortAgo,
+  shownOptionDescriptions,
 } from './view'
 import type { ActionEmphasis, ActionIcon, DrawnEntry, InboxView, ModLook, PlannedKey, RowView, RowWait } from './view'
 import { agentTools, recordClose, recordItem } from './tools'
@@ -2545,8 +2547,12 @@ export const register: Register = on => {
       await openDialog($, { kind: 'question', text: question, key })
       const ran = await run()
       const outcome = dialogOutcome(ran)
-      await noteActivity($, dialogActivity(dialogQuestions(input.questions), outcome))
-      if (outcome.kind === 'dismissed') isDialogDismissed = true
+      const asked = dialogQuestions(input.questions)
+      await noteActivity($, dialogActivity(asked, outcome))
+      if (outcome.kind === 'dismissed') {
+        isDialogDismissed = true
+        await commit($, currentOwner(), s => noteDismissedDialog(s, asked)).catch(() => undefined)
+      }
 
       return ran
     }
@@ -3676,6 +3682,21 @@ export const register: Register = on => {
           : null
       const body =
         bodyLines !== null && row.clippedBody && row.body ? row.clippedBody(bodyLines, textWidth) : (row.body ?? null)
+      const described = row.view ? shownOptionDescriptions(row.view, optionsShown.includes(row.id)) : []
+      const descriptionsBlock =
+        described.length > 0 ? (
+          <Box flexDirection="column" marginTop={blankLine}>
+            {described.map(o => {
+              const line = clipLabel(`${o.label}: ${o.description}`, look === 'desktop' ? titleWidth : textWidth)
+              return (
+                <Text wrap="truncate-end">
+                  <Text>{line.slice(0, o.label.length)}</Text>
+                  <Text color={pal.muted}>{line.slice(o.label.length)}</Text>
+                </Text>
+              )
+            })}
+          </Box>
+        ) : null
       const keysBlock = (
         <Box flexDirection="column" marginTop={blankLine}>
           {isTyping ? (
@@ -3720,6 +3741,7 @@ export const register: Register = on => {
             </Text>,
             row.subtitle ?? null,
             row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null,
+            descriptionsBlock,
             status.length > 0 ? (
               <Box flexDirection="column" marginTop={blankLine}>
                 {status.map(st => (
@@ -3772,6 +3794,7 @@ export const register: Register = on => {
               )}
               {row.subtitle}
               {body ? <Box marginTop={blankLine}>{body}</Box> : null}
+              {descriptionsBlock}
               {status.length > 0 ? (
                 <Box flexDirection="column" marginTop={blankLine}>
                   {status.map(s => (

@@ -34,6 +34,7 @@ function task() {
         kind: 'task' as const,
         label: null,
         from: 'record',
+        optionDescriptions: {},
         ask: 'Check the build',
         options: [],
         rec: null,

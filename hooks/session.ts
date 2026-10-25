@@ -1,3 +1,4 @@
+import { withOptionDescriptions } from './dialogs'
 import { applyExchangeUpdate, applyUpdate, EMPTY, KEPT_SESSIONS, parseReply, upgradeLedger } from './ledger'
 import type { Exchange, Press, Update } from './ledger'
 import { addActivity, carryText, guidanceText, promptNotes, screenText, START_TITLE, TOLD_NOTHING } from './model-text'
@@ -19,13 +20,13 @@ import { prNeedsYou, prRefs } from './prs'
 import { recordClose, recordItem } from './tools'
 import { inboxView, NO_HOLDS, perTurnStatus } from './view'
 import type { InboxView, ReplyHolds } from './view'
-import type { LastAction, Ledger, PrView, PrViews, RowNote, Session, Stop, Turns } from '../types'
+import type { DialogQuestion, LastAction, Ledger, PrView, PrViews, RowNote, Session, Stop, Turns } from '../types'
 
 export type { Session } from '../types'
 
 const NO_PRS: PrViews = { views: {}, branchRef: null, isFetching: false }
 
-const NO_TURN: Session['turn'] = { person: null, trigger: null, activity: [], press: null }
+const NO_TURN: Session['turn'] = { person: null, trigger: null, activity: [], press: null, dismissedDialogs: [] }
 
 export function emptySession(): Session {
   return {
@@ -73,8 +74,11 @@ export function staleSessionFiles<F extends { name: string; mtimeMs: number }>(f
 export const PRESS_TIMEOUT_MS = 60_000
 
 /** A session's shared fields as any earlier build saved them, each possibly missing. */
-export type SavedSession = Partial<Omit<Session, 'turn' | 'told' | 'presence' | 'sent' | 'prViews'>> & {
+export type SavedSession = Partial<Omit<Session, 'turn' | 'told' | 'presence' | 'pending' | 'sent' | 'prViews'>> & {
   turn?: Partial<Session['turn']>
+  pending?: (Omit<Session['pending'][number], 'ex'> & {
+    ex: Omit<Exchange, 'dismissedDialogs'> & Partial<Pick<Exchange, 'dismissedDialogs'>>
+  })[]
   told?: Partial<Told>
   presence?: Partial<Session['presence']>
   sent?: (Pick<Session['sent'][number], 'text' | 'press' | 'at'> & Partial<Session['sent'][number]>)[]
@@ -96,7 +100,7 @@ export function upgradeSession(saved: SavedSession): Session {
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...saved.presence },
-    pending: saved.pending ?? [],
+    pending: (saved.pending ?? []).map(p => ({ ...p, ex: { ...p.ex, dismissedDialogs: p.ex.dismissedDialogs ?? [] } })),
     sent: (saved.sent ?? []).map(x => ({
       ...x,
       row: x.row ?? null,
@@ -264,6 +268,13 @@ export function noteActivity<S extends Session>(s: S, line: string | null): S {
   return { ...s, turn: { ...s.turn, activity } }
 }
 
+/** Keeps a dismissed dialog's questions for the turn's update, which may add them as items. */
+export function noteDismissedDialog<S extends Session>(s: S, questions: DialogQuestion[]): S {
+  if (questions.length === 0) return s
+
+  return { ...s, turn: { ...s.turn, dismissedDialogs: [...s.turn.dismissedDialogs, ...questions] } }
+}
+
 export const LOCAL_URL = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|[\w.-]+\.localhost)(?::\d+)?[^\s"'`)\]]*/g
 
 const PR_CREATE = /\bgh\s+pr\s+create\b/
@@ -322,6 +333,7 @@ export function endTurn<S extends Session>(
     turn: s.ledger.turn,
     press: s.turn.press,
     screen: screenText(host, isOpen, tab),
+    dismissedDialogs: s.turn.dismissedDialogs,
   }
 
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] }
@@ -342,7 +354,14 @@ export function applied<S extends Session>(s: S, reply: string | null, now: numb
       pending: [{ ...next, failed: true }, ...s.pending.slice(1)],
       presence: { ...s.presence, ledgerState: 'failed' },
     }
-  const ledger = parsed ? applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt) : s.ledger
+  const ledger = parsed
+    ? withOptionDescriptions(
+        s.ledger,
+        applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt),
+        ex.turn,
+        ex.dismissedDialogs,
+      )
+    : s.ledger
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed
 
   return {

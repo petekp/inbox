@@ -37,6 +37,7 @@ import {
 import type { HelpStep, RowPress } from './presses'
 
 const OPTIONS_FOLD_AT = 5
+const OPTION_LABEL_CHARS = 32
 // The digits switch tabs, and the letters left out are the
 // keys of a Needs you row's other actions and of moving the selection.
 export const CHOICE_KEYS = [...'abcfghilm']
@@ -192,6 +193,26 @@ export type RowView = {
   state: RowState
   feedback: Feedback | null
   actions: ActionView[]
+  /** The description of each answer button that has one, in button order. A folded button's is folded with it. */
+  optionDescriptions: OptionDescription[]
+}
+
+export type OptionDescription = { label: string; description: string; isFolded: boolean }
+
+function optionDescriptionsOf(item: Item | null, actions: ActionView[]): OptionDescription[] {
+  if (!item) return []
+
+  return actions.flatMap(a => {
+    if (a.press.action !== 'answer' || !Object.hasOwn(item.optionDescriptions, a.press.option)) return []
+    const description = item.optionDescriptions[a.press.option]!
+
+    return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }]
+  })
+}
+
+/** The option descriptions a row shows: all of them once its folded options show, else the unfolded ones. */
+export function shownOptionDescriptions(row: RowView, isShowingAll: boolean): OptionDescription[] {
+  return row.optionDescriptions.filter(o => isShowingAll || !o.isFolded)
 }
 
 export function rowMark(row: RowView, look: Look): { text: string; tone?: 'done' | 'issue' } {
@@ -574,7 +595,7 @@ function actionsOf(
 
   return [
     ...options.map((option, n) =>
-      action({ action: 'answer', id, option }, clipLabel(option, 32), 'mark', {
+      action({ action: 'answer', id, option }, clipLabel(option, OPTION_LABEL_CHARS), 'mark', {
         isPrimary: option === item.rec,
         isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1,
       }),
@@ -826,17 +847,19 @@ export function inboxView({
 
     return f?.is === 'note' || isFailedReply ? f : { is: 'closed', label: state.label, at: state.at }
   }
-  const rowOf = (row: Omit<RowView, 'state' | 'feedback' | 'actions'>): RowView => {
+  const rowOf = (row: Omit<RowView, 'state' | 'feedback' | 'actions' | 'optionDescriptions'>): RowView => {
     const state = stateOf(row.id)
     const feedback = feedbackIn(row.id, state, row.item?.reportedAt)
     // A button must keep its width while its press is out, or the buttons after it can move to another line.
     const isPressOut = feedback?.is === 'working' || feedback?.is === 'queued' || feedback?.is === 'unconfirmed'
+    const actions = actionsOf(row, lastActions[row.id], state, isPressOut)
 
     return {
       ...row,
       state,
       feedback,
-      actions: actionsOf(row, lastActions[row.id], state, isPressOut),
+      actions,
+      optionDescriptions: optionDescriptionsOf(row.item, actions),
     }
   }
   const itemRow = (item: Item): RowView => {

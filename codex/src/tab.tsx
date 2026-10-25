@@ -44,6 +44,7 @@ import {
   SETTLED_MS,
   settledIn,
   shortAgo,
+  shownOptionDescriptions,
 } from '../../hooks/view'
 import { ROW_PAD_PT } from '../../hooks/layout'
 import type { ActionEmphasis, DrawnEntry, DrawnLists, Feedback, ReplyHolds, RowView, RowWait } from '../../hooks/view'
@@ -722,6 +723,7 @@ function itemRow(v: View, r: RowView): Row {
   const mark = rowMark(r, 'codex')
   const isHandedOff = r.state.is === 'handedOff'
   const id = r.id
+  const described = shownOptionDescriptions(r, optionsShown.has(id))
 
   return {
     id,
@@ -731,6 +733,20 @@ function itemRow(v: View, r: RowView): Row {
     ...(isHandedOff ? { fold: {} } : {}),
     title: r.title,
     age: r.at === null ? undefined : shortAgo(v.at - r.at),
+    ...(described.length > 0
+      ? {
+          body: (
+            <div>
+              {described.map(o => (
+                <p class="option-description" title={`${o.label}: ${o.description}`}>
+                  {o.label}
+                  <span class="muted">: {o.description}</span>
+                </p>
+              ))}
+            </div>
+          ),
+        }
+      : {}),
     ...rowKeys(r),
     typing: {
       hint: replyHint(r, 'Codex'),

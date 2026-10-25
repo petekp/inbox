@@ -246,6 +246,7 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
     turn: ledger.turn,
     press: null,
     screen: agent === 'codex' ? 'The Inbox tab is closed.' : 'The /inbox pane is closed.',
+    dismissedDialogs: [],
     ...c.exchange,
   }
   const prompt =
