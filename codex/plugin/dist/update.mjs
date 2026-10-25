@@ -872,6 +872,44 @@ function appliedCatchUp(s, begun, parsed, now) {
   };
 }
 
+// src/dialogs.ts
+function optionsKey(options) {
+  return options.map((o) => o.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase()).sort().join("\n");
+}
+function hasSameOptions(item, q) {
+  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
+}
+function copyOf(q, items, questions) {
+  const byOptions = items.filter((i) => hasSameOptions(i, q));
+  const [only] = byOptions;
+  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1) return only;
+  const pool = byOptions.length > 0 ? byOptions : items;
+  const byAsk = pool.filter((i) => restates(i.ask, q.question));
+  const [asked] = byAsk;
+  if (!asked || byAsk.length !== 1) return null;
+  const restated = questions.filter((o) => restates(asked.ask, o.question));
+  return restated.length === 1 ? asked : null;
+}
+function linkDialogs(s) {
+  if (s.dialogQuestions.length === 0) return s;
+  let items = s.ledger.items;
+  const questions = s.dialogQuestions.map((q) => {
+    if (q.itemId !== null) return q;
+    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
+    const copy = copyOf(
+      q,
+      turnItems,
+      s.dialogQuestions.filter((o) => o.turn === q.turn)
+    );
+    if (!copy || copy.dialog) return q;
+    const link = { callId: q.callId, index: q.index, question: q.question };
+    items = items.map((i) => i.id === copy.id ? { ...i, dialog: link } : i);
+    return { ...q, itemId: copy.id };
+  });
+  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
+  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
+}
+
 // src/state.ts
 var NOTHING_HEARD = {
   startAt: null,
@@ -892,7 +930,8 @@ function emptyState(sessionId) {
     cliPath: null,
     ...emptySession(),
     tabSeenAt: 0,
-    heard: NOTHING_HEARD
+    heard: NOTHING_HEARD,
+    dialogQuestions: []
   };
 }
 function statePath(dir, sessionId) {
@@ -1076,7 +1115,8 @@ async function updateState(dir, sessionId, change) {
     const { state: current, isSaved } = await readSaved(dir, sessionId);
     const changed = await change(current);
     if (isSaved && changed === current) return current;
-    const next = { ...changed, ledger: pruneClosed(changed.ledger, new Set(changed.heldRows)) };
+    const linked = linkDialogs(changed);
+    const next = { ...linked, ledger: pruneClosed(linked.ledger, new Set(linked.heldRows)) };
     const tmp = `${path}.${process.pid}.tmp`;
     await writeFile(tmp, JSON.stringify(next));
     await rename(tmp, path);

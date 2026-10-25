@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { dialogActivity } from '../../hooks/model-text'
 import { cleared, needsUpdate, noteActivity, noteCommandOutput, startContext } from '../../hooks/session'
 import { activityOf, endTurn, noteHook, notePrompt, patchFiles } from './core'
+import { noteDialogs } from './dialogs'
 import { withEarlierHistory } from './history'
 import { updateState } from './state'
 import type { SessionState } from './state'
@@ -103,9 +104,12 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
     case 'Stop': {
       const reply = input.last_assistant_message ?? ''
       const { dialogs, commands } = await turnIn(input.transcript_path, input.turn_id)
-      const lines = dialogs.map(questions => dialogActivity(questions, { kind: 'open' }))
+      const lines = dialogs.map(d => dialogActivity(d.questions, { kind: 'open' }))
       const written = await updateState(dir, id, async s => {
-        const withLines = lines.reduce((x, line) => noteActivity(x, line), withHost(await withHistory(s)))
+        const withLines = lines.reduce(
+          (x, line) => noteActivity(x, line),
+          noteDialogs(withHost(await withHistory(s)), dialogs),
+        )
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines)
 
         return noteHook(endTurn(withOutput, reply, now()), 'stop', now())

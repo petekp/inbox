@@ -373,7 +373,7 @@ function keyWords(text: string): Set<string> {
   return new Set(words(text).filter(w => /\p{N}/u.test(w) || (w.length > 2 && !FILLER.has(w))))
 }
 
-function restates(a: string, b: string): boolean {
+export function restates(a: string, b: string): boolean {
   const x = keyWords(a)
   const y = keyWords(b)
   const fewer = Math.min(x.size, y.size)

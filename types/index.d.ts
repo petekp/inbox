@@ -24,7 +24,15 @@ export type Item = {
    * mod kept this reads as 'update'.
    */
   from: 'record' | 'update'
+  /** The open Codex dialog question this item copies. Only the Codex host sets it. */
+  dialog?: DialogLink
 }
+
+/**
+ * A question in a Codex `request_user_input_async` dialog: the call's `call_id`, the question's index in the call's
+ * `questions`, and its title.
+ */
+export type DialogLink = { callId: string; index: number; question: string }
 
 /**
  * A one-press step toward finishing an item. The mod never runs a command:

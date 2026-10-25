@@ -1737,8 +1737,15 @@ function findingBody(finding) {
   ];
 }
 var EXPLAIN_REPLY_FORM = "Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply.";
+function dialogReply(link, answer) {
+  const questionItemId = JSON.stringify(["request_user_input_async", link.callId, link.index]);
+  const reply = [{ questionItemId, question: link.question, answer }];
+  return `<send_user_message_question_reply>
+${JSON.stringify(reply)}
+</send_user_message_question_reply>`;
+}
 var messages = {
-  answer: (item, answer) => `Re "${item.ask}": ${answer}`,
+  answer: (item, answer) => item.dialog ? dialogReply(item.dialog, answer) : `Re "${item.ask}": ${answer}`,
   explain: (item) => {
     const what = item.kind === "task" ? "this task you left for me is about: why it came up, and what doing it involves" : "this question you asked me is about: why it came up, what each choice would do, and which you would pick";
     const options = item.options.length > 0 ? `
