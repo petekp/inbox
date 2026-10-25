@@ -2892,13 +2892,18 @@ export const register: Register = on => {
     const isAgeInSide = look === 'terminal'
     const isAgeDropped = isNarrowDesktop || isAgeInSide
     const glued = (after: string) => after.replace(/(?<=.)[ \u2002]/gs, c => (c === ' ' ? '\u00a0' : '\u2007'))
-    // The Codex tab wraps a suffix too long for one line between words, so this does too.
-    const unbroken = (after: string, width: number) => {
-      const firstBreak = after.indexOf(' ')
+    // The Codex tab wraps a suffix too long for one line between words, so this does too. A glued suffix wider than a
+    // line together with the title's last word, which DOT's leading figure space holds to it, is broken mid-word.
+    const unbroken = (after: string, title: string, fits: (text: string) => boolean) => {
+      const lastWord = title.slice(Math.max(0, title.trimEnd().lastIndexOf(' ') + 1))
+      if (fits(lastWord + after)) return glued(after)
+      const dot = after.startsWith(DOT) ? DOT : ''
+      const rest = after.slice(dot.length)
+      const firstBreak = rest.indexOf(' ')
 
-      return after.length <= width || firstBreak < 0
-        ? glued(after)
-        : glued(after.slice(0, firstBreak)) + after.slice(firstBreak)
+      return (
+        dot + (fits(rest) || firstBreak < 0 ? glued(rest) : glued(rest.slice(0, firstBreak)) + rest.slice(firstBreak))
+      )
     }
     const isInline = e.props.placement === 'inline'
     isInlinePane = isInline
@@ -3690,7 +3695,11 @@ export const register: Register = on => {
       const textWidth = listColumns - 1 - columns.textAt
       const titleWidth =
         look === 'desktop' ? Math.floor(textWidth * DESKTOP_CHARS_PER_CELL) : textWidth - TERMINAL_SIDE_CELLS
-      const shownAfter = titleAfter ? unbroken(titleAfter, titleWidth) : ''
+      const fitsTitleLine = (text: string) =>
+        look === 'desktop'
+          ? desktopTextCells(text) * DESKTOP_CELL_PT <= desktopRowTextPt(row.id)
+          : text.length <= titleWidth
+      const shownAfter = titleAfter ? unbroken(titleAfter, row.title, fitsTitleLine) : ''
       const bodyLines =
         isSelected && isInline && look === 'terminal' && row.clippedBody
           ? e.props.scroll.bodyRows -
@@ -3756,7 +3765,7 @@ export const register: Register = on => {
             <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1} />,
             <Text wrap="wrap">
               <Text bold>{row.title}</Text>
-              {f?.age ? <Text color={pal.muted}>{unbroken(`${DOT}${f.text}`, titleWidth)}</Text> : null}
+              {f?.age ? <Text color={pal.muted}>{unbroken(`${DOT}${f.text}`, row.title, fitsTitleLine)}</Text> : null}
             </Text>,
             row.subtitle ?? null,
             row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null,
