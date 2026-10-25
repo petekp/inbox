@@ -706,8 +706,11 @@ function heardState(h) {
 // src/dialogs.ts
 function noteDialogs(s, dialogs) {
   const turn = s.ledger.turn;
+  const isNoted = (callId, index) => s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
   const questions = dialogs.flatMap(
-    ({ callId, questions: questions2 }) => callId === null ? [] : questions2.map((q, index) => ({ callId, index, question: q.question, options: q.options, turn, itemId: null }))
+    ({ callId, questions: questions2 }) => callId === null ? [] : questions2.flatMap(
+      (q, index) => isNoted(callId, index) ? [] : [{ callId, index, question: q.question, options: q.options, turn, itemId: null }]
+    )
   );
   if (questions.length === 0) return s;
   return { ...s, dialogQuestions: [...s.dialogQuestions, ...questions] };
@@ -745,7 +748,7 @@ function linkDialogs(s) {
     items = items.map((i) => i.id === copy.id ? { ...i, dialog: link } : i);
     return { ...q, itemId: copy.id };
   });
-  const kept = questions.filter((q) => s.pending.some((p) => p.ex.turn === q.turn));
+  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
   return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
 }
 

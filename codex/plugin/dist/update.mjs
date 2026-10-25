@@ -906,7 +906,7 @@ function linkDialogs(s) {
     items = items.map((i) => i.id === copy.id ? { ...i, dialog: link } : i);
     return { ...q, itemId: copy.id };
   });
-  const kept = questions.filter((q) => s.pending.some((p) => p.ex.turn === q.turn));
+  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
   return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
 }
 

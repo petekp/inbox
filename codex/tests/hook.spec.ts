@@ -143,9 +143,9 @@ test('a dialog question links to the question the agent recorded for it or the u
   ])
   assert.deepEqual(await linkedQuestions(), [true, false])
   await applyAnswer('NOW: Waiting')
-  assert.deepEqual(await linkedQuestions(), [])
 
   await handleHook(input('UserPromptSubmit', { prompt: 'Deploy it', turn_id: 't2' }), deps)
+  assert.deepEqual(await linkedQuestions(), [])
   write(started('t2'), dialog('call_b', [{ title: 'Deploy to production now?', options: ['Deploy', 'Wait'] }]))
   await handleHook(
     input('Stop', { turn_id: 't2', transcript_path: transcript, last_assistant_message: 'Asked.' }),
@@ -155,9 +155,8 @@ test('a dialog question links to the question the agent recorded for it or the u
   assert.deepEqual((await links()).slice(1), [
     ['Deploy now?', { callId: 'call_b', index: 0, question: 'Deploy to production now?' }],
   ])
-  assert.deepEqual(await linkedQuestions(), [])
-
   await handleHook(input('UserPromptSubmit', { prompt: 'Clean up', turn_id: 't3' }), deps)
+  assert.deepEqual(await linkedQuestions(), [])
   write(
     started('t3'),
     dialog('call_c', [

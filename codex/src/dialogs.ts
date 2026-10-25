@@ -13,13 +13,19 @@ export type TurnDialogQuestion = DialogLink & { options: string[]; turn: number;
 
 type WithDialogs = Session & { dialogQuestions: TurnDialogQuestion[] }
 
-/** Adds the questions of the dialogs the agent opened in the turn that is ending. */
+/** Adds the questions of dialogs the agent opened in the current turn, skipping those already noted. */
 export function noteDialogs<S extends WithDialogs>(s: S, dialogs: Dialog[]): S {
   const turn = s.ledger.turn
+  const isNoted = (callId: string, index: number) =>
+    s.dialogQuestions.some(q => q.callId === callId && q.index === index)
   const questions = dialogs.flatMap(({ callId, questions }) =>
     callId === null
       ? []
-      : questions.map((q, index) => ({ callId, index, question: q.question, options: q.options, turn, itemId: null })),
+      : questions.flatMap((q, index) =>
+          isNoted(callId, index)
+            ? []
+            : [{ callId, index, question: q.question, options: q.options, turn, itemId: null }],
+        ),
   )
   if (questions.length === 0) return s
 
@@ -58,8 +64,8 @@ function copyOf(q: TurnDialogQuestion, items: Item[], questions: TurnDialogQuest
 /**
  * Links each dialog question to the open question that copies it, from the same ledger turn: one the agent recorded,
  * or one the per-reply update added from the dialog's activity line. A question whose copy is ambiguous stays
- * unlinked, so its answer goes as a plain message. A turn's questions are dropped once no exchange of that turn waits
- * for the update, since no item for them can come after that.
+ * unlinked, so its answer goes as a plain message. A past turn's questions are dropped once no exchange of that turn
+ * waits for the update, since no item for them can come after that.
  */
 export function linkDialogs<S extends WithDialogs>(s: S): S {
   if (s.dialogQuestions.length === 0) return s
@@ -78,7 +84,7 @@ export function linkDialogs<S extends WithDialogs>(s: S): S {
 
     return { ...q, itemId: copy.id }
   })
-  const kept = questions.filter(q => s.pending.some(p => p.ex.turn === q.turn))
+  const kept = questions.filter(q => q.turn === s.ledger.turn || s.pending.some(p => p.ex.turn === q.turn))
 
   return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept }
 }

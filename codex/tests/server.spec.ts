@@ -152,15 +152,31 @@ test('a press drawn in another thread, or on a row that changed, reads stale and
   assert.deepEqual(s.lastActions, before.lastActions)
 })
 
-test('an answer to a question linked to a dialog goes in the form the Codex app reads as its answer, reads Queued, and arrives as the press', async () => {
+test('an answer pressed while the turn that opened a dialog still runs goes in the form the Codex app reads as the dialog’s answer, reads Queued, and arrives as the press', async () => {
   const { dir, calls, call } = await setup(0)
-  await updateState(dir, 's1', s => ({
-    ...s,
-    ledger: {
-      ...s.ledger,
-      items: s.ledger.items.map(i => ({ ...i, dialog: { callId: 'call_7', index: 1, question: 'Ship "v2" now?' } })),
-    },
-  }))
+  const transcript = join(tempDir(), 'rollout.jsonl')
+  const questions = [
+    { title: 'Which name?', options: ['Ada', 'Grace'] },
+    { title: 'Ship "v2" now?', options: ['Yes (Recommended)', 'No'] },
+  ]
+  writeFileSync(
+    transcript,
+    [
+      { type: 'event_msg', payload: { type: 'task_started', turn_id: 't1' } },
+      {
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'request_user_input_async',
+          call_id: 'call_7',
+          arguments: JSON.stringify({ questions }),
+        },
+      },
+    ]
+      .map(row => JSON.stringify(row))
+      .join('\n'),
+  )
+  await updateState(dir, 's1', s => ({ ...s, transcriptPath: transcript, ledger: { ...s.ledger, turn: 1 } }))
   await call('inbox_press', ANSWER, { thread_id: 's1' })
   const message = calls[0]?.[5] ?? ''
   const open = '<send_user_message_question_reply>'
