@@ -1498,9 +1498,10 @@ test('a chat no hook has run in says why from Codex’s hook list, asks again wi
   t += 5_000
   assert.equal(await view(), 'untrusted')
   await settle()
-  assert.equal(await view(), 'trusted')
+  assert.equal(await view(), undefined)
   t += 5_000
-  assert.equal(await view(), 'trusted')
+  await view()
+  await settle()
   assert.equal(asked.length, 2)
 
   t += 30_000

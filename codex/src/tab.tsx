@@ -94,7 +94,6 @@ import { parseInline } from '../../hooks/inline'
 import { isShownEmpty, newRows, openRows, TAB_OF } from './arrivals'
 import type { FoldGroup, Group, SeenRows } from './arrivals'
 import type { TabView as View } from './core'
-import type { HooksTrust } from './hook-trust'
 import type { PressReply } from './server'
 import { ENTER_MS, EXIT_MS, isMoving, MOVE_MS, ROW_STATE_MS, stepRow } from './rows'
 import type { RowState, RowTarget, RowTrack } from './rows'
@@ -1510,7 +1509,7 @@ function GroupEnd({
   )
 }
 
-const HOOKS_TRUST_TEXT: Record<HooksTrust, [string, string]> = {
+const HOOKS_TRUST_TEXT: Record<NonNullable<View['hooksTrust']>, [string, string]> = {
   untrusted: [
     'Codex is not running the inbox’s hooks yet.',
     'Click the hook icon beside the approval setting, then Allow all.',
@@ -1523,16 +1522,12 @@ const HOOKS_TRUST_TEXT: Record<HooksTrust, [string, string]> = {
 
 function notHeardText(v: View): [string, string] | null {
   if (v.heard === 'heard') return null
-  const trust = v.heard === 'none' ? v.hooksTrust : undefined
-  if (trust === 'trusted') return null
-  if (trust) return HOOKS_TRUST_TEXT[trust]
+  if (v.heard === 'none' && v.hooksTrust) return HOOKS_TRUST_TEXT[v.hooksTrust]
 
-  return [
-    'The inbox has not heard from this chat’s hooks.',
-    v.heard === 'none'
-      ? 'Codex runs a plugin’s hooks only after you trust them.'
-      : 'Items from Codex’s replies are missing.',
-  ]
+  if (v.heard === 'none')
+    return ['The inbox starts with your next message.', 'Codex’s hooks send it each message and reply.']
+
+  return ['The inbox has not heard from this chat’s hooks.', 'Items from Codex’s replies are missing.']
 }
 
 function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number }) {
