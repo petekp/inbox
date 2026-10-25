@@ -721,11 +721,11 @@ test('the band shows above the editor and redraws with the counts after a change
   expect(widgets).toHaveLength(1)
   expect(widgets[0]).toMatchObject({ key: 'inbox-band', options: { placement: 'aboveEditor' } })
   const band = (widgets[0]!.content as any)({ requestRender: () => renders.count++ }, theme)
-  await tick()
+  await until(() => band.render(80).join('').includes('Nothing needed'))
   expect(band.render(80).join('')).toContain('Nothing needed')
   const before = renders.count
   await record({ kind: 'task', ask: 'Try the CLI by hand' }, ctx)
-  await tick()
+  await until(() => renders.count > before)
   expect(renders.count).toBeGreaterThan(before)
   expect(band.render(80).join('')).toContain('Needs you')
   expect(band.render(80).join('')).toContain('/inbox to open')
@@ -748,7 +748,6 @@ test('/inbox hides the band while the panel shows, draws the session, presses, a
   const panel = components[0]
   await until(() => !panel.render(80).join('\n').includes('Loading'))
   expect(panel.render(80).join('\n')).toContain('Try the CLI by hand')
-  await tick()
   panel.handleInput('d')
   await until(() => state().ledger.closed.length > 0)
   expect(state().ledger.closed.map((c: { ask: string }) => c.ask)).toEqual(['Try the CLI by hand'])
