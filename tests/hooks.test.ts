@@ -4287,12 +4287,18 @@ test('a forked conversation keeps the parent’s findings and closed records, an
   expect(await contextOf()).toContain('- issue: Retry loop never backs off (close id: f1)')
 })
 
-test('a working item’s mark on the Overview moves each frame while a turn runs, and stays still once the turn ends', async ($, on) => {
+test('a stream’s mark on the Overview moves each frame, and any other working item’s only while a turn runs', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   paneState = { isShown: true, isFocused: true }
-  overviewReply =
-    'HEADLINE: Adding a greeting CLI\nSTATUS: Writing the parser.\nQUEUE: working | Write the parser\nQUEUE: queued | Add a --loud flag'
+  overviewReply = [
+    'KIND: coordinator',
+    'HEADLINE: Adding a greeting CLI',
+    'STATUS: Writing the parser.',
+    'QUEUE: working | Write the help text',
+    'QUEUE: queued | Add a --loud flag',
+    'STREAM: working | Parser: reads the new format',
+  ].join('\n')
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
@@ -4301,27 +4307,38 @@ test('a working item’s mark on the Overview moves each frame while a turn runs
   const pane = await $.ui.mount(PANE)
   await pane.press({ key: 'tab-key-overview' })
   await clock.settle()
-  const marks = async () =>
-    [...((await pane.find({ key: 'overview-queue-0' }))?.text ?? '')].filter(c => RUNNING_FRAMES.some(f => f === c))
-  expect(await marks()).toEqual(['●'])
+  const markOf = async (key: string) =>
+    [...((await pane.find({ key }))?.text ?? '')].filter(c => RUNNING_FRAMES.some(f => f === c)).join('')
+  const frames = async () => {
+    const stream: string[] = []
+    const queue: string[] = []
+    const moving: string[] = []
+    for (let n = 0; n < RUNNING_FRAMES.length; n++) {
+      stream.push(await markOf('overview-workstreams-0'))
+      queue.push(await markOf('overview-queue-0'))
+      moving.push(runningMark(clock.now()))
+      await clock.advance(RUNNING_FRAME_MS)
+    }
+    expect(new Set(moving).size).toBeGreaterThan(1)
+
+    return { stream, queue, moving, still: moving.map(() => '●') }
+  }
+
+  const idle = await frames()
+  expect(idle.stream).toEqual(idle.moving)
+  expect(idle.queue).toEqual(idle.still)
 
   await $.turn.start({ text: 'go on', turnId: 't2' })
   await clock.settle()
-  const shown: string[] = []
-  const expected: string[] = []
-  for (let n = 0; n < RUNNING_FRAMES.length; n++) {
-    shown.push(...(await marks()))
-    expected.push(runningMark(clock.now()))
-    await clock.advance(RUNNING_FRAME_MS)
-  }
-  expect(shown).toEqual(expected)
-  expect(new Set(shown).size).toBeGreaterThan(1)
+  const running = await frames()
+  expect(running.stream).toEqual(running.moving)
+  expect(running.queue).toEqual(running.moving)
 
   await $.turn.complete({ answer: 'Parser written.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
   await clock.settle()
-  expect(await marks()).toEqual(['●'])
-  await clock.advance(RUNNING_FRAME_MS)
-  expect(await marks()).toEqual(['●'])
+  const ended = await frames()
+  expect(ended.stream).toEqual(ended.moving)
+  expect(ended.queue).toEqual(ended.still)
 })
 
 test('the Overview page shows the headline, the status and the queue in place of rows, leaves the row keys idle, and a row tab shows its rows again', async ($, on) => {
