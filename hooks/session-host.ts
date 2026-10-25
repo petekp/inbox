@@ -116,8 +116,6 @@ export type SessionHost<S extends Session> = {
   newId(): string
   /** The message an answer press sends, when the agent reads answers in its own form. */
   answerMessage?: AnswerMessage
-  /** Whether a turn runs now, which holds a Done message back. Without it, a turn runs while the turn has a person's words. */
-  isTurnRunning?(s: S): boolean
 }
 
 /**

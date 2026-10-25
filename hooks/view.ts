@@ -257,6 +257,16 @@ export function isWaitingRow(row: RowView): boolean {
   return row.state.is === 'open'
 }
 
+/** The count a group's title shows: its rows that wait on the person. A look draws no count when it is 0. */
+export function waitingCount(rows: readonly (RowView | undefined)[]): number {
+  return rows.filter(r => r !== undefined && isWaitingRow(r)).length
+}
+
+/** A press result's text on a row with no row view, as a PR row. A row already marked ✓ shows a done result's bare label. */
+export function markedFeedbackText(f: Feedback, mark: string, look: Look): string {
+  return f.is === 'done' && mark === '✓' ? f.label : feedbackText(f, look)
+}
+
 export function rowFeedbackText(row: RowView, look: Look): string | null {
   const f = row.feedback
   return f ? (f.is === 'done' && row.state.is === 'handedOff' ? f.label : feedbackText(f, look)) : null
@@ -519,6 +529,30 @@ export function feedbackText(f: Feedback, look: Look): string {
 
 function deliveryLabel(state: 'queued' | 'unconfirmed', label: string): string {
   return state === 'queued' ? `Queued: ${label}` : `Delivery unconfirmed: ${label}`
+}
+
+/** A settled row's mark: ✓ once nothing it sent is on its way, else blank. */
+export function settledMark(delivery: ClosedDelivery): string {
+  return delivery === null ? '✓' : ''
+}
+
+/** A closed row's mark: blank while what it sent is on its way. */
+export function closedMark(state: ClosedState, delivery: ClosedDelivery): string {
+  return delivery === null ? CLOSED_MARKS[state] : ''
+}
+
+/** Whether a closed row offers Undo after its notification was refused. */
+export function canUndoRefused(delivery: ClosedDelivery): boolean {
+  return delivery !== null && typeof delivery === 'object' && delivery.canUndo
+}
+
+/**
+ * The tone of a settled row's label: done once nothing it sent is on its way and the row did not lapse, so a
+ * "Not sent" or unconfirmed result never reads as success. A look that draws the label as muted text after the
+ * title draws it muted either way.
+ */
+export function settledTone(state: { delivery: ClosedDelivery; isLapsed: boolean }): 'done' | 'muted' {
+  return state.delivery === null && !state.isLapsed ? 'done' : 'muted'
 }
 
 export function settledLabel(label: string, delivery: ClosedDelivery): string {
@@ -1142,6 +1176,24 @@ function heldLabel(c: Pick<Closed, 'how' | 'outcome'>): string {
   if (c.how === 'answered') return `Answered: ${c.outcome}`
 
   return c.how === 'claude' ? capitalized(c.outcome) : `Closed: ${c.outcome}`
+}
+
+const UPDATING_TEXT = 'Updating…'
+const REFRESHING_PRS_TEXT = 'Refreshing PRs…'
+
+/**
+ * The status line under the inbox for the shown tab. The PRs tab says when PRs refresh, and only once it lists some,
+ * since an empty PRs tab already reads "Checking for PRs…". A failed ledger update is about rows, so it shows on every
+ * tab but the PRs tab.
+ */
+export function footerStatus(
+  tab: ShownTab,
+  status: ItemStatus,
+  prs: { isFetching: boolean; hasPrs: boolean },
+): { text: string | null; error: string | null } {
+  if (tab === 'prs') return { text: prs.isFetching && prs.hasPrs ? REFRESHING_PRS_TEXT : null, error: null }
+
+  return { text: status.isUpdating ? UPDATING_TEXT : null, error: status.error }
 }
 
 export function perTurnStatus(update: { isUpdating: boolean; isFailed: boolean; retries: boolean }): ItemStatus {

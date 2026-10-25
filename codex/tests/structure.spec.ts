@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { test } from 'node:test'
 import type { TestContext } from 'node:test'
@@ -73,10 +82,21 @@ function fixture(t: TestContext) {
     }),
   )
 
+  const withFileRows = (unmapped: string[]) => {
+    const files = ['hooks', 'codex/src', 'omp/src']
+      .filter(dir => existsSync(join(root, dir)))
+      .flatMap(dir => readdirSync(join(root, dir)).map(entry => `${dir}/${entry}`))
+      .filter(path => /\.(?:ts|tsx|html)$/.test(path) && !path.endsWith('.d.ts') && !unmapped.includes(path))
+    const looks = readFileSync(join(root, 'docs/looks.md'), 'utf8')
+    write('docs/looks.md', `## Files\n\n${files.map(path => `| \`${path}\` | a |`).join('\n')}\n\n${looks}`)
+  }
+
   return {
     write,
-    check: () =>
-      spawnSync(process.execPath, [join(root, 'scripts/check-structure.mjs')], { cwd: root, encoding: 'utf8' }),
+    check: ({ unmapped = [] }: { unmapped?: string[] } = {}) => {
+      withFileRows(unmapped)
+      return spawnSync(process.execPath, [join(root, 'scripts/check-structure.mjs')], { cwd: root, encoding: 'utf8' })
+    },
   }
 }
 
@@ -243,6 +263,14 @@ test('the structure gate permits the runtime loader to import its hot-reload han
   f.write('codex/src/server-main.ts', 'export function load(url: string) { return import(url) }\n')
   const result = f.check()
   assert.equal(result.status, 0, result.stdout + result.stderr)
+})
+
+test('the structure gate rejects a source file that has no Files row in docs/looks.md', t => {
+  const f = fixture(t)
+  f.write('codex/src/consumer.ts', 'export const value = 1\n')
+  const result = f.check({ unmapped: ['codex/src/consumer.ts'] })
+  assert.equal(result.status, 1, result.stdout + result.stderr)
+  assert.ok(result.stdout.includes('no Files row for codex/src/consumer.ts'), result.stdout + result.stderr)
 })
 
 test('the structure gate accepts a feature that is not full when each table that covers the host names it', t => {

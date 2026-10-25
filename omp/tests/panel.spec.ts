@@ -4,6 +4,7 @@ import {
   GH_MISSING_TEXT,
   checkActions,
   prBlockActions,
+  prMarkId,
   prsEmptyHint,
   threadActions,
   threadSentIn,
@@ -68,10 +69,13 @@ function plannedLabels(row: RowView): string[] {
   )
 }
 
-function buttonLine(screen: PanelScreen, ui: PanelUi): string {
-  return text(screen, ui)
+const buttonLines = (screen: PanelScreen, ui: PanelUi) =>
+  text(screen, ui)
     .split('\n')
-    .find(l => l.includes('↵ ') && !l.includes('↵ press'))!
+    .filter(l => l.includes('↵ ') && !l.includes('↵ press'))
+
+function buttonLine(screen: PanelScreen, ui: PanelUi): string {
+  return buttonLines(screen, ui)[0]!
 }
 
 test('a selected row draws its buttons in the shared key plan order', () => {
@@ -418,9 +422,10 @@ test('PR buttons follow the shared plan order for the block, its threads and its
     ...failingChecks(pr).map(c => checkActions(pr, c, presses)),
   ]
   expect(plans.length).toBeGreaterThan(3)
-  let ui: PanelUi = { ...INITIAL_UI, tab: 'prs' }
+  let ui: PanelUi = { ...INITIAL_UI, tab: 'prs', selectedId: prMarkId(pr.ref) }
   for (const plan of plans) {
-    const line = buttonLine(screen, ui)
+    const opened = buttonLines(screen, ui).length === 0 ? keys(screen, ui, 'enter') : ui
+    const line = buttonLine(screen, opened)
     let from = 0
     for (const { label } of plan) {
       const at = line.indexOf(label, from)
@@ -431,13 +436,14 @@ test('PR buttons follow the shared plan order for the block, its threads and its
   }
 })
 
-test('a PR thread press goes through the PR press', () => {
+test('the PRs tab opens on the first thread that waits, and its press goes through the PR press', () => {
   const screen = screenOf()
+  const { pr } = screen.view.prs.drawn[0]!
+  const first = waitingThreads(pr).find(t => !threadSentIn(screen.view.lastActions)(pr, t))!
   const ui = { ...INITIAL_UI, tab: 'prs' as const }
-  const down = keys(screen, ui, 'down')
-  const result = handleKey(screen, down, 'a', NOW)
-  expect(result.press).toMatchObject({ action: 'thread-address' })
-  expect(handleKey(screen, down, 'enter', NOW).press).toMatchObject({ action: 'thread-address' })
+  const result = handleKey(screen, ui, 'a', NOW)
+  expect(result.press).toMatchObject({ action: 'thread-address', thread: first.id })
+  expect(handleKey(screen, ui, 'enter', NOW).press).toMatchObject({ action: 'thread-address' })
 })
 
 test('the PRs tab says when gh is missing and when there are no PRs', () => {
@@ -695,7 +701,7 @@ test('rows that arrive while the Overview page shows leave the panel on the page
   expect(followRows(findingsOnly(), opened.ui, opened.seen, false, NOW).ui).toEqual(onPage)
 })
 
-test('a narrowing tab line drops the brackets, then zero counts, then cuts other labels, never the shown one', () => {
+test('a narrowing tab line drops the brackets, then cuts other labels, never the shown one, and draws no zero count', () => {
   const zeros = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
   for (const screen of [screenOf(), zeros])
     for (const shown of TABS) {
@@ -705,11 +711,7 @@ test('a narrowing tab line drops the brackets, then zero counts, then cuts other
       const bare = tabLine(screen, ui, full - 1)
       expect(bare).not.toContain('[')
       expect(bare).not.toContain('…')
-      const unzeroed = tabLine(screen, ui, bare.length)
-      if (screen === zeros) {
-        expect(unzeroed).not.toMatch(/ 0 /)
-        expect(unzeroed).not.toContain('…')
-      }
+      if (screen === zeros) expect(tabLine(screen, ui, 200)).not.toMatch(/ 0 /)
       for (const width of [45, 50, 60, 80])
         for (const t of TABS) {
           const line = tabLine(screen, ui, width).replace(/[[\]]/g, '')

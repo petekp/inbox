@@ -7,7 +7,7 @@ import type { IconName } from './row-actions'
 import { closedState } from '../../hooks/ledger'
 import { ago } from '../../hooks/text'
 import type { ClosedState } from '../../hooks/ledger'
-import { CLOSED_MARKS } from '../../hooks/view'
+import { canUndoRefused, closedMark, settledMark } from '../../hooks/view'
 import { capitalized, clipLabel, noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
 import {
@@ -27,6 +27,7 @@ import {
   TABS,
   feedbackOf,
   feedbackText,
+  markedFeedbackText,
   fieldExit,
   foldLabel,
   hasAge,
@@ -34,9 +35,10 @@ import {
   isFailure,
   isGuarded,
   isStatusUnderActions,
-  isWaitingRow,
+  waitingCount,
   firstWaiting,
   keptOpen,
+  footerStatus,
   listWaits,
   PRESS_GUARD_MS,
   rowAfterClose,
@@ -66,7 +68,9 @@ import type {
 } from '../../hooks/view'
 import {
   checkActions,
-  checkRunText,
+  checkRowText,
+  PR_QUOTE_CHARS,
+  splitFollowUps,
   GH_MISSING_TEXT,
   PR_GROUP_TITLES,
   PR_TONES,
@@ -74,7 +78,9 @@ import {
   prCheckId,
   prMarkId,
   prRowWaits,
-  prsEmptyHint,
+  prsEmptyText,
+  prRefreshFailedText,
+  PR_DISMISSED_LABEL,
   prThreadId,
   threadActions,
   threadRowText,
@@ -839,18 +845,19 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
       void act(id, { action, ref: pr.ref, thread: t.id }, undefined, pending)
   const where = threadWhere(t)
   const { rest } = commentParts(t.body)
+  const actions = splitFollowUps(threadActions(pr, t, pressesOf(v)))
 
   return {
     id,
-    handle: text.showsCheck ? '✓' : '◦',
-    handleTone: text.showsCheck ? 'done' : undefined,
+    handle: text.mark.text,
+    handleTone: text.mark.tone ?? undefined,
     ...(text.fold ? { fold: text.fold } : {}),
     title: text.title,
     meta: text.meta,
     age: t.at === null ? undefined : shortAgo(v.at - t.at),
     body: (
       <div>
-        {rest ? <p class="quote">{inlineHtml(clipLabel(rest, 1200))}</p> : null}
+        {rest ? <p class="quote">{inlineHtml(clipLabel(rest, PR_QUOTE_CHARS))}</p> : null}
         <p class="muted">
           <button type="button" class="link" onClick={press('thread-open', opening('the comment'))}>
             {where}
@@ -859,28 +866,29 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
         </p>
         {t.reply ? (
           <p class="quote">
-            <b>@{t.reply.author}:</b> {inlineHtml(clipLabel(readableComment(t.reply.body), 1200))}
+            <b>@{t.reply.author}:</b> {inlineHtml(clipLabel(readableComment(t.reply.body), PR_QUOTE_CHARS))}
           </p>
         ) : null}
       </div>
     ),
-    keys: threadActions(pr, t, pressesOf(v)).flatMap(a => (a.isFollowUp ? [] : [prKey(id, a, opening('the comment'))])),
-    more: threadActions(pr, t, pressesOf(v)).flatMap(a => (a.isFollowUp ? [prKey(id, a)] : [])),
+    keys: actions.keys.map(a => prKey(id, a, opening('the comment'))),
+    more: actions.more.map(a => prKey(id, a)),
     feedback: feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at),
   }
 }
 
 function prCheckRow(v: View, pr: PrView, c: PrCheck): Row {
   const id = prCheckId(pr, c)
-  const ran = checkRunText(c)
+  const text = checkRowText(c)
+  const ran = text.meta
   const target = c.url ? 'the log' : `PR #${pr.number}`
 
   return {
     id,
-    handle: '✗',
-    handleTone: 'error',
-    ...(c.workflow ? { lead: `${c.workflow} /` } : {}),
-    title: c.name,
+    handle: text.mark.text,
+    handleTone: text.mark.tone ?? undefined,
+    ...(text.lead ? { lead: `${text.lead} /` } : {}),
+    title: text.title,
     meta: ran,
     age: c.finishedAt === undefined ? undefined : shortAgo(v.at - c.finishedAt),
     body: <div class="muted">{ran}</div>,
@@ -1067,11 +1075,7 @@ function feedbackLabel(row: Row): string | null {
   const f = row.feedback
   if (!f) return null
 
-  return row.view
-    ? rowFeedbackText(row.view, 'codex')
-    : f.is === 'done' && row.handleTone === 'done'
-      ? f.label
-      : feedbackText(f, 'codex')
+  return row.view ? rowFeedbackText(row.view, 'codex') : markedFeedbackText(f, row.handle, 'codex')
 }
 
 function noteOf(id: string): string | null {
@@ -1209,7 +1213,7 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
 
   return (
     <div class={panel ? 'row settled was-open' : 'row settled'}>
-      <span class="mark">{state.delivery !== null ? '' : '✓'}</span>
+      <span class="mark">{settledMark(state.delivery)}</span>
       <div class="content">
         <div class="settled-head">
           <div class="settled-line">
@@ -1389,7 +1393,7 @@ function ItemGroup({
 
   return (
     <section>
-      <GroupTitle title={title} count={rows.filter(r => r.view && isWaitingRow(r.view)).length} />
+      <GroupTitle title={title} count={waitingCount(rows.map(r => r.view))} />
       <Entries entries={entries} group={kind} all={all} now={now} />
       <GroupEnd
         group={kind}
@@ -1480,11 +1484,11 @@ function GroupEnd({
           {closed.map(d => (
             <div class="entry" key={`closed-${d.id}`}>
               <div class="row">
-                <span class="mark">{d.delivery === null ? CLOSED_MARKS[d.state] : ''}</span>
+                <span class="mark">{closedMark(d.state, d.delivery)}</span>
                 <div class="content tight">
                   <div class="muted">{d.ask}</div>
                   <div class="outcome">{settledLabel(d.outcomeLabel, d.delivery)}</div>
-                  {d.delivery && typeof d.delivery === 'object' && d.delivery.canUndo ? (
+                  {canUndoRefused(d.delivery) ? (
                     <button
                       type="button"
                       disabled={sending.has(d.id)}
@@ -1591,7 +1595,7 @@ function Findings({ v, lists, now }: { v: View; lists: Lists; now: number }) {
         const rows = rest.flatMap(x => ('row' in x ? [x.row] : []))
         return (
           <section>
-            <GroupTitle title={g.title} count={rows.filter(r => r.view && isWaitingRow(r.view)).length} />
+            <GroupTitle title={g.title} count={waitingCount(rows.map(r => r.view))} />
             <Entries entries={g.entries} group="finding" all={lists.byTab.findings} now={now} />
             <GroupEnd
               group={g.kind}
@@ -1622,7 +1626,7 @@ function SettledPr({ v, pr }: { v: View; pr: PrView }) {
             <span class="what">
               <span class="tone-prs">#{pr.number}</span> {pr.title}
             </span>
-            <span class="outcome-label">{`${DOT}Dismissed`}</span>
+            <span class="outcome-label">{`${DOT}${PR_DISMISSED_LABEL}`}</span>
             {error ? <span class="tone-error">{`${DOT}${error}`}</span> : null}
           </div>
           <button
@@ -1699,7 +1703,7 @@ function PrBlock({
         <span class={tone ? `pr-verdict tone-${tone}` : 'pr-verdict muted'}>{head}</span>
         <span class="pr-verdict muted">{unlisted.map(r => `${DOT}${r}`).join('')}</span>
       </div>
-      {pr.error ? <div class="pr-status tone-error">Last refresh failed: {pr.error}</div> : null}
+      {pr.error ? <div class="pr-status tone-error">{prRefreshFailedText(pr.error)}</div> : null}
       <div class="pr-actions keys">
         {keys.map(k => (
           <KeyButton k={k} />
@@ -1748,15 +1752,14 @@ function PrRows({
   )
 }
 
-const PRS_HINT = prsEmptyHint('conversation')
-
 function Prs({ v, now }: { v: View; now: number }) {
   const { blocks, rows } = prPlan(v)
+  const empty = prsEmptyText({ isFetching: v.isFetchingPrs, isGhMissing: v.isGhMissing }, 'conversation')
   if (blocks.length === 0)
     return (
       <div class="empty">
-        <div class="title">{v.isFetchingPrs ? 'Checking for PRs…' : 'No PRs'}</div>
-        <div class="muted">{v.isGhMissing ? GH_MISSING_TEXT : PRS_HINT}</div>
+        <div class="title">{empty.title}</div>
+        <div class="muted">{empty.hint}</div>
       </div>
     )
   const openId = rows[selectedIndex(rows, 'prs', v)]?.id
@@ -1788,6 +1791,10 @@ function Prs({ v, now }: { v: View; now: number }) {
 
 const LATE_READ_MS = 60_000
 
+function footerOf(v: View) {
+  return footerStatus(drawnTab(), v.status, { isFetching: v.isFetchingPrs, hasPrs: v.prs.drawn.length > 0 })
+}
+
 function Status({ v }: { v: View }) {
   const sinceRead = Date.now() - readAt
   const status =
@@ -1796,16 +1803,16 @@ function Status({ v }: { v: View }) {
         Last read {ago(sinceRead)}
         {DOT}retrying
       </span>
-    ) : v.status.isUpdating ? (
-      'Updating…'
-    ) : null
+    ) : (
+      footerOf(v).text
+    )
 
   return <div class="status">{status}</div>
 }
 
 function TabBar({ v }: { v: View }) {
   const counts: Record<Tab, number> = { needsYou: v.needsYou.count, findings: v.findings.count, prs: v.prs.count }
-  const { error } = v.status
+  const { error } = footerOf(v)
   const shown = drawnTab()
 
   return (

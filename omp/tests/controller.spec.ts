@@ -84,6 +84,18 @@ test('a failed send shows its reason below the rows', async () => {
   expect(panel.render(80).join('\n')).toContain('Not sent: omp is busy')
 })
 
+test('after Address on a PR thread, the selection moves to the next PR row that waits', async () => {
+  const { panel, pressed } = open()
+  await panel.start()
+  for (const key of ['3', 'a', 'enter', 'a']) {
+    panel.handleInput(key)
+    await flush()
+  }
+  expect(pressed).toHaveLength(2)
+  expect(pressed[0]).toMatchObject({ action: 'thread-address' })
+  expect(pressed[1]).toMatchObject({ action: 'thread-address', thread: 'DT4' })
+})
+
 test('Esc closes the panel', async () => {
   const { panel, calls } = open()
   await panel.start()

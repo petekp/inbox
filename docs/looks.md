@@ -32,6 +32,7 @@ Shared modules are in `hooks/`. Every host consumes them, directly or through a 
 | `hooks/layout.ts` | Shared module. Sizes the desktop look and the Codex tab share. |
 | `hooks/tones.ts` | Shared module. Status colors for native marks and terminal palettes. The Codex build writes them into CSS, and omp draws them as true color. |
 | `hooks/inline.ts` | Shared module. Inline markdown in the agent's text, as spans each look draws. |
+| `hooks/claude-host.ts` | Mod host. Where Claude Code keeps the session, how each conversation's session is saved, and the mod's `SessionHost`. |
 | `hooks/register.tsx` | Mod adapter. Draws the terminal and desktop looks, and also runs the band, the PRs tab, the per-reply update and the press runner. |
 | `hooks/tabs-client.tsx` | Mod only. A Client region for the desktop tab bar, so each tab takes clicks over its whole shape. |
 | `hooks/row-client.tsx` | Mod only. A Client region for a closed row in the desktop pane. |
@@ -59,6 +60,10 @@ Shared modules are in `hooks/`. Every host consumes them, directly or through a 
 | `codex/src/demo.ts` | Codex host. Turns the shared demo data into a session. |
 | `codex/src/transcript.ts` | Codex host. Reads the Codex session transcript. |
 | `codex/src/run.ts` | Codex host. Runs a command with Node. |
+| `codex/src/dialogs.ts` | Codex host. Notes the dialogs a Codex turn opened, and words an inbox answer in the dialog's reply form. |
+| `codex/src/history.ts` | Codex host. On the first sight of a session, takes a forked chat's ledger from its parent, or marks a session with earlier turns `behind`. |
+| `codex/src/hook-trust.ts` | Codex host. Whether Codex trusts the inbox's hooks, from the hooks Codex lists. |
+| `codex/src/detached-update.ts` | Codex host. Starts the update in a detached process, so a long model call still finishes. |
 | `omp/src/host.ts` | omp host. The only file that imports omp's packages. Wires omp's events to the shared session modules, registers the `record` and `close` tools and the `/inbox` command, shows the band, and supplies omp's `SessionHost`. |
 | `omp/src/state.ts` | omp host. One JSON file per session under omp's agent folder, with a lock held in the process. `OmpState` extends the shared `Session`. |
 | `omp/src/commands.ts` | omp host. Opens links and paths for omp's `SessionHost`. |
@@ -80,11 +85,14 @@ Change a rule in its owner. Do not change it in a reader.
 | Needs you order and count | `hooks/view.ts:needsYouOrder`, `hooks/view.ts:inboxView` | All four looks, the band and the status line |
 | Question handles | `hooks/model-text.ts:questionNumbers`, read by `hooks/view.ts:inboxView` | The terminal and omp looks. They draw `1)` or `•`. Desktop and Codex draw no handle on a question. |
 | Needs you groups | `hooks/view.ts:NEEDS_YOU_GROUPS` | The mod and omp. The Codex tab names the groups in `codex/src/tab.tsx`. |
+| A group title's count: its rows that wait on the person | `hooks/view.ts:waitingCount` | All four looks. A PR group counts its rows. Every look draws no count, on a group title or a tab, at 0. |
 | Finding groups and handles | `hooks/view.ts:FINDING_GROUPS`, `hooks/view.ts:drawnLists` | All four looks. Each lists findings under an Issues and an Opportunities title and draws the kind's mark as the handle. A handed-off finding draws ✓ instead. |
 | Row state | `hooks/view.ts:RowState`, `hooks/presses.ts:isHandedOff` | All four looks |
+| A closed or settled row's mark, its refused-notification Undo, and a settled label's tone | `hooks/view.ts:closedMark`, `hooks/view.ts:settledMark`, `hooks/view.ts:canUndoRefused`, `hooks/view.ts:settledTone` | All four looks. The terminal and omp draw a settled label in the done tone only once nothing it sent is on its way. Desktop and Codex draw it as muted text after the title. |
+| The status line under the inbox: Updating…, Refreshing PRs… and a failed update | `hooks/view.ts:footerStatus` | All four looks. Codex shows its own failed-read line before it. |
 | Which row opens: by default, when rows arrive above it, and after a press closes the open row | `hooks/view.ts:firstWaiting`, `hooks/view.ts:keptOpen`, `hooks/view.ts:rowAfterClose` | All four looks. omp uses `firstWaiting` and `rowAfterClose` to pick the selected row, and `keptOpen` to keep it when rows arrive above it. |
 | Held rows: which closed rows stay in place while the person replies, what their reply sends, and which closed records a prune keeps | `hooks/view.ts:heldReplies`, `hooks/view.ts:inboxView`, `hooks/view.ts:fieldExit`, `hooks/presses.ts:applyPress`, `hooks/ledger.ts:pruneClosed` | All four looks. The mod passes its open field, drafts and discarded replies. `hooks/claude-host.ts:changeSession` prunes each write, and also keeps the closed record of a row a press settled less than `SETTLED_MS` ago, since the pane still draws it. The omp panel holds its field and drafts in its ui state and passes them with each screen and press. The Codex tab sends its replies and discarded replies with each view and press. The Codex server saves those replies' rows as `heldRows`, and `codex/src/state.ts:updateState` keeps their closed records when it prunes each write. Each view or press replaces `heldRows`, since Codex shows one tab per thread, as `tabSeenAt` also assumes. |
-| Feedback text | `hooks/view.ts:feedbackText`, `hooks/view.ts:feedbackOf` | Terminal and desktop through the pane, Codex through the tab, omp through the panel |
+| Feedback text | `hooks/view.ts:feedbackText`, `hooks/view.ts:feedbackOf`, `hooks/view.ts:markedFeedbackText` | Terminal and desktop through the pane, Codex through the tab, omp through the panel |
 | Done labels | `hooks/view.ts:DONE_LABELS` | All four looks |
 | Closed-row outcome labels | `hooks/view.ts:outcomeLabel`, set on each closed entry by `hooks/view.ts:inboxView` | All four looks |
 | Row content and reply intent | `hooks/view.ts:RowView`, `hooks/view.ts:rowMark`, `hooks/view.ts:replyHint`, `hooks/view.ts:rowFeedbackText` | All four looks |
@@ -116,6 +124,7 @@ Change a rule in its owner. Do not change it in a reader.
 | PR presses, which PRs the tab draws, which linked PRs it keeps, and how a PR is fetched | `hooks/pr-tab.ts:applyPrPress`, `hooks/pr-tab.ts:drawnPrs`, `hooks/prs.ts:isKeptPr`, `hooks/pr-tab.ts:isLeftOut`, `hooks/pr-tab.ts:keepsView`, `hooks/pr-tab.ts:fetchTracked` | The mod, the Codex server and omp's host. Each fetch runs through `hooks/session-host.ts:fetchPrs`, and the Codex server prunes views on each tab view with `keepsView`. |
 | Missing-gh notice text | `hooks/pr-tab.ts:GH_MISSING_TEXT` | All four looks. The mod sets `PrViews.isGhMissing` when `gh --version` cannot start after a failed fetch. The Codex server and omp set their own flag from `hooks/gh.ts:ghFinder`, and look for gh again after a fetch where a gh run ended with code -1. |
 | PR button order, labels, emphasis and icon kind | `hooks/pr-tab.ts:threadActions`, `hooks/pr-tab.ts:checkActions`, `hooks/pr-tab.ts:prBlockActions` | All four looks |
+| A PR row's mark, title and meta line, which PR rows wait, and which buttons are follow-ups | `hooks/pr-tab.ts:threadRowText`, `hooks/pr-tab.ts:checkRowText`, `hooks/pr-tab.ts:prRowWaits`, `hooks/pr-tab.ts:splitFollowUps`, `hooks/pr-tab.ts:PR_QUOTE_CHARS` | All four looks. A PR's own row never waits, so the PRs tab opens on its first thread that waits. |
 
 Some content and host bookkeeping still have two copies. These are remaining work in `docs/plans/three-looks.md`.
 
@@ -193,7 +202,7 @@ A row that covers a host difference names its feature id in backticks in the fir
 | Dialog outcome (`dialog-outcome`) | The activity line says whether the person answered or dismissed the dialog. | Same as terminal. | The line says the dialog is open. | Codex's dialog tool returns at once, and the answer arrives later as a user message. | `hooks/claude.ts:dialogOutcome`, `codex/src/transcript.ts:turnIn` |
 | Answering a dialog's copy (`dialog-answer`) | The inbox copies a dialog only once it ended, so an inbox answer is sent as `Re "…": answer`. | Same as terminal. | An inbox question linked to an open dialog question sends its answer in the dialog's reply form, which closes the dialog when the message runs. | Claude Code's dialog blocks the turn. Codex's stays open after its tool returns, until a reply in its form names it. | `hooks/dialogs.ts:linkDialogs`, `codex/src/dialogs.ts:answerMessage` |
 | Shell output (`tool-output-urls`, `pr-link-from-output`) | A local URL in a command's output becomes a "URL in output:" activity line. The output of `gh pr create` links the PR it names, as the command finishes. | Same as terminal. | Same lines and links, read from the rollout at Stop. The PR is linked when the turn ends. | Codex runs no hook for a long command's output, so the Stop hook reads the turn's `CommandExecution` rows from the rollout, or older shell calls and their outputs. | `hooks/session.ts:commandFindings`, `hooks/session.ts:noteCommandOutput`, `codex/src/transcript.ts:turnIn` |
-| PRs empty hint (`prs-empty-hint`) | "when this session opens or links one". | Same as terminal. | "when this conversation opens or links one". | The Codex app calls a chat a conversation. | `hooks/register.tsx:fetchPrsNow`, `codex/src/tab.tsx:PRS_HINT` |
+| PRs empty hint (`prs-empty-hint`) | "when this session opens or links one". | Same as terminal. | "when this conversation opens or links one". | The Codex app calls a chat a conversation. | `hooks/pr-tab.ts:prsEmptyText`, `codex/src/tab.tsx:Prs` |
 | Which links a row opens (`link-open-rule`) | Any link with a scheme, and anything else as a path. | Same as terminal. | Only https links, and anything else as a path. | The product keeps each host's rule. | `hooks/claude-host.ts:perform`, `hooks/presses.ts:openTarget` |
 | Compare in the background (`compare-in-background`) | The Compare message asks the agent to hand the comparison to a background subagent. The agent's turn ends, and the subagent reports in a later turn. The row reads "Comparing…" until the agent records the question again. After 30 minutes with no report, it reads "No comparison came back". | Same as terminal. | The comparison runs in the agent's turn. The row reads "Comparing…" through the turn, then until the agent records the question again or 30 minutes have passed since the press. | Codex's subagents are experimental and off by default, and no source says one can report after the agent's turn ends. Claude Code's background subagents report in a later turn. Not checked live. | `hooks/presses.ts:messages.compare`, `hooks/view.ts:feedbackOf`, `hooks/ledger.ts:addAgentItem` |
 | Turn with no prompt (`exchange-trigger`) | The exchange names the prompt's origin for a turn the person did not start. | Same as terminal. | The exchange reads "unknown". | A Codex hook names no source for a turn that has no prompt. | `hooks/session.ts:endTurn` |
@@ -225,6 +234,7 @@ omp draws the terminal's text and handles, with its own keys and a panel it owns
 | Install | The marketplace copies only `omp/`, so the extension is a bundle with the shared modules inside. | An omp plugin cannot import `../hooks` once installed. | `omp/build.ts`, `.omp-plugin/marketplace.json` |
 | Catch-up and a behind ledger (`catch-up`, `ledger-behind-state`, `failed-update-recovery`) | The same rule as the mod. `session_start`, `session_switch` and `session_branch` mark the ledger `behind` when the branch has turns and the inbox has recorded none, and start an update that reads the branch from the last `/clear`. | `ctx.sessionManager.getBranch()` returns the whole stored conversation, so the update reads that. A fork, a `/btw` promotion or a branch into a new session copies its parent's saved ledger when there is one, and does not catch up. | `hooks/session-host.ts:runUpdates`, `omp/src/host.ts:conversationOf`, `omp/src/host.ts:createInbox` |
 | Which links a row opens (`link-open-rule`) | Only https links, and anything else as a path. The terminal opens any link with a scheme. | The product keeps each host's rule. | `omp/src/commands.ts:openTarget`, `hooks/presses.ts:openTarget` |
+| Review thread rows | A thread's row draws the comment's first line as its title and one detail line: where it is, the latest reply or the author, and a lines-changed note. The rest of the comment and the reply's full text are not drawn. Open comment opens it on GitHub. | The panel draws each row as a title and one detail line, with no body. | `omp/src/panel.ts:prEntries` |
 | Turn with no prompt (`exchange-trigger`) | Every turn has the prompt's words, so no exchange reads "unknown". | `before_agent_start` carries only the prompt text. | `hooks/session.ts:endTurn` |
 
 A refused Done notification stays visible in its task's Closed entry as
@@ -256,11 +266,14 @@ A host is a program that runs the inbox's agent: it reacts to events, keeps stat
 | `inOrder` | Required on the update host. Runs an Overview call after the earlier ones for the session have finished, so each reads the Overview the one before wrote. The mod and omp chain them in process. Codex chains calls in process, then takes a `.results` file lock, which waits up to 8 minutes. The lock does not queue across processes, so Overview calls waiting in two update processes can run in either order. That needs a second update process to start while the first still waits on its Overview calls. No ledger call and no lock waits on it. |
 | `background` | Optional, on the update host. Keeps Overview calls running after `runUpdates` returns, so the next ledger update starts at once. The mod and omp pass it. Codex omits it, so its detached update process stays until the calls end. |
 | `deliver` | Sends a message to the agent as if the person typed it. |
+| `isDeliveryHeldUntilRun` | Optional. True when `deliver` returns only once the message runs, which can be a whole turn later. Until then the press reads Queued. The mod sets it. |
 | `prepare` | Throws when `deliver` could not start, before a sent record is saved. |
 | `perform` | Opens a link or path, or copies text. Returns why it could not, or null. |
 | `gh` | Finds gh, drops the one it kept, runs gh for the session, and reports when none starts. |
 | `settleWindowMs`, `newId` | The settle window before Done tells the agent, and delivery ids. |
-| `isTurnRunning` | Optional. Whether a turn runs now, which holds a Done message back. Without it, a turn runs while the turn has a person's words. |
+| `answerMessage` | Optional. Builds the message an answer press sends when the agent reads answers in its own form. Codex sets it for a question linked to an open dialog. |
+
+A host reports a running turn by calling `hooks/session.ts:turnStarted` and `turnEnded`, which set `presence.isTurnRunning`. A running turn holds a Done message back and shows Working… in the Overview.
 
 The host's state type extends `Session` from `hooks/session.ts`. It adds its own fields, and upgrades a state saved by an earlier build, as `omp/src/state.ts:upgraded` does.
 

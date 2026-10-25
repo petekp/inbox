@@ -2401,6 +2401,12 @@ function actionLabel(action, fits) {
 function isWaitingRow(row) {
   return row.state.is === "open";
 }
+function waitingCount(rows) {
+  return rows.filter((r) => r !== undefined && isWaitingRow(r)).length;
+}
+function markedFeedbackText(f, mark, look) {
+  return f.is === "done" && mark === "\u2713" ? f.label : feedbackText(f, look);
+}
 function rowFeedbackText(row, look) {
   const f = row.feedback;
   return f ? f.is === "done" && row.state.is === "handedOff" ? f.label : feedbackText(f, look) : null;
@@ -2567,6 +2573,18 @@ function feedbackText(f, look) {
 }
 function deliveryLabel(state, label) {
   return state === "queued" ? `Queued: ${label}` : `Delivery unconfirmed: ${label}`;
+}
+function settledMark(delivery) {
+  return delivery === null ? "\u2713" : "";
+}
+function closedMark(state, delivery) {
+  return delivery === null ? CLOSED_MARKS[state] : "";
+}
+function canUndoRefused(delivery) {
+  return delivery !== null && typeof delivery === "object" && delivery.canUndo;
+}
+function settledTone(state) {
+  return state.delivery === null && !state.isLapsed ? "done" : "muted";
 }
 function settledLabel(label, delivery) {
   if (delivery && typeof delivery === "object")
@@ -2949,6 +2967,13 @@ function heldLabel(c) {
     return `Answered: ${c.outcome}`;
   return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
 }
+var UPDATING_TEXT = "Updating\u2026";
+var REFRESHING_PRS_TEXT = "Refreshing PRs\u2026";
+function footerStatus(tab, status, prs) {
+  if (tab === "prs")
+    return { text: prs.isFetching && prs.hasPrs ? REFRESHING_PRS_TEXT : null, error: null };
+  return { text: status.isUpdating ? UPDATING_TEXT : null, error: status.error };
+}
 function perTurnStatus(update) {
   return {
     isUpdating: update.isUpdating,
@@ -3060,12 +3085,23 @@ var GH_MISSING_TEXT = "The inbox could not find gh, so it cannot read your PRs."
 function prsEmptyHint(place) {
   return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
 }
+function prsEmptyText(prs, place) {
+  return {
+    title: prs.isFetching ? "Checking for PRs\u2026" : "No PRs",
+    hint: prs.isGhMissing ? GH_MISSING_TEXT : prsEmptyHint(place)
+  };
+}
+function prRefreshFailedText(error) {
+  return `Last refresh failed: ${error}`;
+}
+var PR_DISMISSED_LABEL = "Dismissed";
 var PR_GROUP_TITLES = { threads: "Review threads", checks: "Failing checks" };
 function threadRowText(pr, t, lastActions) {
   const isSent = threadSentIn(lastActions)(pr, t);
   const isChanged = !isSent && t.isLinesChanged;
+  const showsCheck = threadShowsCheckIn(lastActions)(pr, t);
   return {
-    showsCheck: threadShowsCheckIn(lastActions)(pr, t),
+    mark: showsCheck ? { text: "\u2713", tone: "done" } : { text: "\u25E6", tone: null },
     fold: isSent || isChanged ? t.isLinesChanged ? { note: `Lines changed since this comment${DOT}still open on GitHub` } : {} : null,
     title: clipLabel(commentParts(t.body).head, THREAD_TITLE_CHARS),
     meta: [
@@ -3074,6 +3110,9 @@ function threadRowText(pr, t, lastActions) {
       t.reply ? `@${t.reply.author}: ${commentLine(t.reply.body)}` : `@${t.author}`
     ].filter(Boolean).join(DOT)
   };
+}
+function checkRowText(c) {
+  return { mark: { text: "\u2717", tone: "error" }, lead: c.workflow || null, title: c.name, meta: checkRunText(c) };
 }
 function checkRunText(c) {
   return c.startedAt !== undefined && c.finishedAt !== undefined ? `Failed after ${took(c.finishedAt - c.startedAt)}` : "Failed";
@@ -3090,6 +3129,17 @@ function threadShowsCheckIn(lastActions) {
     const delivery = lastActions[prThreadId(pr, t)]?.delivery;
     return isSent(pr, t) && delivery?.state !== "unconfirmed";
   };
+}
+function prRowWaits(prs, lastActions) {
+  const isSent = threadSentIn(lastActions);
+  return prs.flatMap((pr) => [
+    ...waitingThreads(pr).map((t) => ({ id: prThreadId(pr, t), isWaiting: !isSent(pr, t) })),
+    ...failingChecks(pr).map((c) => {
+      const id = prCheckId(pr, c);
+      const last = lastActions[id];
+      return { id, isWaiting: !isFoldingPress(id, last) || last?.delivery?.state === "failed" };
+    })
+  ]);
 }
 function isTracked(prState, linked, ref) {
   return splitLinked(prState, linked).tracked.includes(ref) || prState.branchRef === ref;
@@ -3327,7 +3377,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
         return stale;
       return applied({
         ledger: { ...ledger, prs: ledger.prs.filter((r) => r !== p.ref) },
-        lasts: { [markId]: record(markId, "mark", p.action, "Dismissed") }
+        lasts: { [markId]: record(markId, "mark", p.action, PR_DISMISSED_LABEL) }
       });
     case "check-fix": {
       const check = pr.checks.find((c) => c.name === p.check && c.bucket === "fail");
@@ -4420,7 +4470,7 @@ function lineOfRow(row) {
   const f = row.feedback;
   const state = row.state;
   const undo = row.actions.find((a) => a.press.action === "undo");
-  const settledLead = state.is === "settled" ? state.delivery !== null ? { text: " ", tone: null } : { text: "\u2713", tone: "sep" } : null;
+  const settledLead = state.is === "settled" ? { text: settledMark(state.delivery) || " ", tone: "sep" } : null;
   return {
     ...blankLine(row.id),
     lead: settledLead ?? leadOf(row),
@@ -4430,7 +4480,11 @@ function lineOfRow(row) {
     detail: row.detail,
     file: row.fileName,
     feedback: feedbackLabel && f ? { text: feedbackLabel, tone: feedbackTone(f), source: f } : null,
-    settled: state.is === "settled" ? { label: settledLabel(state.label, state.delivery), undo: state.canUndo && undo ? undo.press : null } : null,
+    settled: state.is === "settled" ? {
+      label: settledLabel(state.label, state.delivery),
+      tone: settledTone(state),
+      undo: state.canUndo && undo ? undo.press : null
+    } : null,
     buttons: state.is === "settled" ? [] : rowButtons(row),
     row,
     isWaiting: isWaitingRow(row),
@@ -4442,7 +4496,7 @@ var isGroupEmpty = (g) => g.rows.length === 0 && closedTotal(g.closed, settledIn
 var closedId = (id) => `closed ${id}`;
 var foldId = (kind) => `fold ${kind}`;
 function closedLines(d) {
-  const canUndo = d.delivery !== null && typeof d.delivery === "object" && d.delivery.canUndo;
+  const canUndo = canUndoRefused(d.delivery);
   const undo = {
     label: "Undo",
     key: null,
@@ -4453,7 +4507,7 @@ function closedLines(d) {
   return {
     ...blankLine(closedId(d.id)),
     depth: 1,
-    lead: { text: d.delivery === null ? CLOSED_MARKS[closedState(d)] : "", tone: null },
+    lead: { text: closedMark(closedState(d), d.delivery), tone: null },
     title: d.title,
     isDim: true,
     age: d.at,
@@ -4466,7 +4520,7 @@ function closedLines(d) {
 function groupEntries(g, unfolded) {
   const settled = settledIn(g);
   const total = closedTotal(g.closed, settled);
-  const out = [{ kind: "heading", text: g.title }];
+  const out = [{ kind: "heading", text: g.title, count: waitingCount(g.rows) }];
   out.push(...g.rows.map((row) => ({ kind: "row", line: lineOfRow(row) })));
   if (g.rows.length === 0)
     out.push({ kind: "note", text: groupEmptyText(g.title), indent: 3 });
@@ -4552,7 +4606,17 @@ function prEntries(screen, now) {
   const { prs, lastActions, turns } = screen.view;
   const isSent = threadSentIn(lastActions);
   const presses = { lastActions, turns, now };
+  const waits = prRowWaits(prs.drawn.filter((d) => !d.isSettled).map((d) => d.pr), lastActions);
+  const isWaiting = (id) => waits.some((w) => w.id === id && w.isWaiting);
+  const markLead = (mark) => ({ text: mark.text, tone: mark.tone ?? "sep" });
   const out = [];
+  if (prs.drawn.length === 0) {
+    const empty = prsEmptyText({ isFetching: screen.isFetchingPrs, isGhMissing: screen.isGhMissing }, "session");
+    return [
+      { kind: "note", text: empty.title, isStrong: true },
+      { kind: "note", text: empty.hint }
+    ];
+  }
   if (screen.isGhMissing)
     out.push({ kind: "note", text: GH_MISSING_TEXT });
   for (const { pr, isSettled } of prs.drawn) {
@@ -4566,7 +4630,7 @@ function prEntries(screen, now) {
           lead,
           title: pr.title,
           isDim: true,
-          settled: { label: "Dismissed", undo: { action: "pr-undo", ref: pr.ref } }
+          settled: { label: PR_DISMISSED_LABEL, tone: "done", undo: { action: "pr-undo", ref: pr.ref } }
         }
       });
       continue;
@@ -4582,13 +4646,14 @@ function prEntries(screen, now) {
         title: pr.title,
         status: { text: head, tone: PR_TONES[status], rest: unlisted.map((r) => ` \xB7 ${r}`).join("") },
         feedback: f,
-        detail: pr.error ? `Last refresh failed: ${pr.error}` : null,
-        buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses))
+        detail: pr.error ? prRefreshFailedText(pr.error) : null,
+        buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses)),
+        isWaiting: false
       }
     });
     const threads = waitingThreads(pr);
     if (threads.length > 0)
-      out.push({ kind: "heading", text: PR_GROUP_TITLES.threads });
+      out.push({ kind: "heading", text: PR_GROUP_TITLES.threads, count: threads.length });
     for (const t of threads) {
       const id = prThreadId(pr, t);
       const text = threadRowText(pr, t, lastActions);
@@ -4597,45 +4662,45 @@ function prEntries(screen, now) {
         line: {
           ...blankLine(id),
           depth: 1,
-          lead: { text: "\u2022", tone: "sep" },
+          lead: markLead(text.mark),
           title: text.title,
           isDim: text.fold !== null,
           detail: [text.meta, text.fold?.note].filter(Boolean).join(" \xB7 ") || null,
-          feedback: pressFeedback(screen, id, now),
-          buttons: prButtons(threadActions(pr, t, presses))
+          feedback: pressFeedback(screen, id, now, text.mark.text),
+          buttons: prButtons(threadActions(pr, t, presses)),
+          isWaiting: isWaiting(id),
+          isFolded: text.fold !== null
         }
       });
     }
     const checks = failingChecks(pr);
     if (checks.length > 0)
-      out.push({ kind: "heading", text: PR_GROUP_TITLES.checks });
+      out.push({ kind: "heading", text: PR_GROUP_TITLES.checks, count: checks.length });
     for (const c of checks) {
       const id = prCheckId(pr, c);
+      const text = checkRowText(c);
       out.push({
         kind: "row",
         line: {
           ...blankLine(id),
           depth: 1,
-          lead: { text: "\u2022", tone: "sep" },
-          title: c.name,
-          detail: checkRunText(c),
-          feedback: pressFeedback(screen, id, now),
-          buttons: prButtons(checkActions(pr, c, presses))
+          lead: markLead(text.mark),
+          title: text.lead ? `${text.lead} / ${text.title}` : text.title,
+          detail: text.meta,
+          feedback: pressFeedback(screen, id, now, text.mark.text),
+          buttons: prButtons(checkActions(pr, c, presses)),
+          isWaiting: isWaiting(id)
         }
       });
     }
   }
   if (prs.olderText)
     out.push({ kind: "note", text: prs.olderText });
-  if (prs.drawn.length === 0 && !screen.isGhMissing) {
-    out.push({ kind: "note", text: screen.isFetchingPrs ? "Checking for PRs\u2026" : "No PRs", isStrong: true });
-    out.push({ kind: "note", text: prsEmptyHint("session") });
-  }
   return out;
 }
-function pressFeedback(screen, id, now) {
+function pressFeedback(screen, id, now, mark = "") {
   const f = feedbackOf(id, screen.view.lastActions[id], undefined, screen.view.turns, now);
-  return f ? { text: feedbackText(f, AGENT), tone: feedbackTone(f), source: f } : null;
+  return f ? { text: markedFeedbackText(f, mark, AGENT), tone: feedbackTone(f), source: f } : null;
 }
 var TITLE_AT = 6;
 function pageEntries(page) {
@@ -4691,14 +4756,17 @@ function withSelection(ui, id) {
   return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null };
 }
 var withTab = (ui, tab) => ({ ...withSelection(ui, null), tab, pageTop: 0 });
+function isLineWaiting(screen, ui, id, now) {
+  return waitsOf(linesOf(entriesOf(screen, ui, ui.tab, now))).some((w) => w.id === id && w.isWaiting);
+}
 function afterHandOff(screen, ui, id, now) {
   if (ui.selectedId !== id)
     return ui;
   const lines = linesOf(entriesOf(screen, ui, ui.tab, now));
-  const line = lines.find((l) => l.id === id);
-  if (!line?.isFolded)
+  const waits = waitsOf(lines);
+  if (!lines.some((l) => l.id === id) || waits.some((w) => w.id === id && w.isWaiting))
     return ui;
-  const next = rowAfterClose(waitsOf(lines), id);
+  const next = rowAfterClose(waits, id);
   return next === null ? { ...ui, focus: null, opened: null } : withSelection(ui, next);
 }
 function activate(screen, ui, line, button, now) {
@@ -4929,7 +4997,7 @@ function drawLine(line, isSelected, d) {
   const out = [];
   const status = line.status ? `  ${line.status.tone ? s.tone(line.status.tone, line.status.text) : s.dim(line.status.text)}${s.dim(line.status.rest)}` : "";
   const statusUnder = line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(line.feedback.source, isSelected) ? line.feedback : null;
-  const after = line.settled ? `  ${s.tone("done", line.settled.label)}${line.settled.undo ? `  ${s.dim("u Undo")}` : ""}` : line.feedback && !statusUnder ? `  ${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
+  const after = line.settled ? `  ${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim("u Undo")}` : ""}` : line.feedback && !statusUnder ? `  ${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const title = line.isDim ? s.dim(line.title) : isSelected ? s.bold(line.title) : line.title;
   const cursor = isSelected ? s.tone("accent", "\u25B8") : " ";
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
@@ -4974,16 +5042,12 @@ function drawPageRow(row, d) {
     out.push(...indented(row.detail, TITLE_AT, width, 4, s.dim));
   return out;
 }
-var TAB_FORMS = [
-  { isBracketed: true, isZeroShown: true },
-  { isBracketed: false, isZeroShown: true },
-  { isBracketed: false, isZeroShown: false }
-];
+var TAB_FORMS = [{ isBracketed: true }, { isBracketed: false }];
 var MIN_LABEL = 3;
 var cutLabel = (label, length) => [...label].length <= length ? label : `${[...label].slice(0, length - 1).join("")}\u2026`;
 function tabCell(t, label, form, s) {
   const key = form.isBracketed ? `[${t.hotkey}]` : t.hotkey;
-  const count = t.count === null || t.count === 0 && !form.isZeroShown ? null : String(t.count);
+  const count = t.count ? String(t.count) : null;
   if (t.isShown)
     return s.inverse(s.bold(` ${key} ${label}${count === null ? "" : ` ${count}`} `));
   const countText = count === null ? "" : ` ${t.tone ? s.tone(t.tone, count) : count}`;
@@ -5023,12 +5087,15 @@ function tabBar(d) {
 function footer(d, isPageScrolling) {
   const { screen, ui, width, now, style: s } = d;
   const out = [s.dim("\u2500".repeat(width))];
-  const { status } = screen.view;
+  const status = footerStatus(ui.tab, screen.view.status, {
+    isFetching: screen.isFetchingPrs,
+    hasPrs: screen.view.prs.drawn.length > 0
+  });
   if (screen.isDemo)
     out.push(fit(` ${s.dim(DEMO_NOTICE)}`, width));
-  if (ui.tab === "prs" ? screen.isFetchingPrs : status.isUpdating)
-    out.push(` ${s.dim(ui.tab === "prs" ? "Refreshing PRs\u2026" : "Updating\u2026")}`);
-  if (ui.tab !== "prs" && status.error)
+  if (status.text)
+    out.push(` ${s.dim(status.text)}`);
+  if (status.error)
     out.push(...indented(status.error, 1, width, 2, (t) => s.tone("error", t)));
   if (ui.notice && now - ui.notice.at < SETTLED_MS)
     out.push(...indented(ui.notice.text, 1, width, 2, (t) => s.tone("error", t)));
@@ -5051,7 +5118,7 @@ function drawPanel(screen, ui, width, now, style, height) {
   let selectedAt = [0, 0];
   for (const e of entries) {
     if (e.kind === "heading")
-      body.push(` ${style.bold(e.text)}${e.count === undefined ? "" : style.dim(` \xB7 ${e.count}`)}`);
+      body.push(` ${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
     else if (e.kind === "page")
       body.push(...drawPageRow(e.row, d));
     else if (e.kind === "note")
@@ -5166,6 +5233,8 @@ function createPanel(deps) {
   async function press(p) {
     if (p.action === "resume")
       return resume();
+    const rowId = "ref" in p ? prRowId(p) : p.id;
+    const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now());
     const outcome = await source.press(p, holdsOf(ui)).catch((err) => ({
       error: err instanceof Error ? err.message : String(err),
       note: null
@@ -5176,7 +5245,7 @@ function createPanel(deps) {
     const notice = noticeFor(outcome, now);
     if (notice)
       ui = { ...ui, notice };
-    await refresh("ref" in p ? undefined : p.id);
+    await refresh(wasWaiting ? rowId : undefined);
   }
   return {
     render(width) {
@@ -5223,8 +5292,8 @@ function createPanel(deps) {
 // ../hooks/demo.ts
 var MIN = 60000;
 var REPO = "https://github.com/acme/visor";
-function demoSession(now) {
-  const d = demoView(now);
+function demoSession(now, agent) {
+  const d = demoView(now, agent);
   const s = emptySession();
   return {
     ...s,
@@ -5234,7 +5303,7 @@ function demoSession(now) {
     presence: { ...s.presence, ...d.turns, ...d.presence }
   };
 }
-function demoView(now) {
+function demoView(now, agent) {
   return {
     ledger: {
       overview: {
@@ -5389,7 +5458,7 @@ function demoView(now) {
           id: "d7",
           kind: "question",
           ask: "Fall back to voice when your hands are busy?",
-          outcome: "closed by Claude: no longer applies: voice already takes over when no hand is seen",
+          outcome: `closed by ${agent}: no longer applies: voice already takes over when no hand is seen`,
           how: "claude",
           at: now - 30 * MIN
         },
@@ -5465,7 +5534,7 @@ function demoView(now) {
           path: "src/view/Glance.tsx",
           at: now - 4 * 60 * MIN,
           how: "claude",
-          outcome: "closed by Claude: fixed, it now redraws only the glance that changed",
+          outcome: `closed by ${agent}: fixed, it now redraws only the glance that changed`,
           closedAt: now - 2 * 60 * MIN
         }
       ],
@@ -5731,9 +5800,20 @@ async function pruneSessions(dir, keep) {
   }
 }
 
+// src/texts.ts
+var OMP = {
+  agent: "omp",
+  surface: "the /inbox panel",
+  band: "a band above their prompt",
+  findingsIn: "the Findings tab of the /inbox panel",
+  recordTool: "record",
+  closeTool: "close",
+  intro: "The inbox extension shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox panel, and your findings, in the panel's Findings tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings."
+};
+
 // src/demo.ts
 function demoState(now) {
-  return { ...emptyState("demo"), ...demoSession(now) };
+  return { ...emptyState("demo"), ...demoSession(now, OMP.agent) };
 }
 function demoSource(deps) {
   let state = demoState(deps.now());
@@ -5777,17 +5857,6 @@ function demoSource(deps) {
     }
   };
 }
-
-// src/texts.ts
-var OMP = {
-  agent: "omp",
-  surface: "the /inbox panel",
-  band: "a band above their prompt",
-  findingsIn: "the Findings tab of the /inbox panel",
-  recordTool: "record",
-  closeTool: "close",
-  intro: "The inbox extension shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox panel, and your findings, in the panel's Findings tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings."
-};
 
 // src/host.ts
 var INBOX_MODEL_TIMEOUT_MS = 120000;

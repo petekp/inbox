@@ -345,12 +345,12 @@ test('a session saved by the Progress trial build loads without its results, sub
 })
 
 test('a sample saved without an Overview is replaced, and the sample session carries its own', () => {
-  const { presence: _p, ...old } = demoView(1_000_000)
+  const { presence: _p, ...old } = demoView(1_000_000, 'Claude')
 
   expect(isDemoCopy(old)).toBe(true)
   expect(upgradeDemoCopy(old)).toMatchObject({ presence: { isTurnRunning: false } })
   expect(isDemoCopy({ ...old, ledger: { ...old.ledger, overview: undefined } })).toBe(false)
-  const page = sessionView(demoSession(1_000_000), 1_000_000, 1000, true, NO_HOLDS).overviewPage
+  const page = sessionView(demoSession(1_000_000, 'Claude'), 1_000_000, 1000, true, NO_HOLDS).overviewPage
   expect(page.lead[0]?.text).toBe('Adding pinch-to-dismiss to glances')
   expect(page.sections.map(part => part.id)).toEqual(['since', 'queue', 'open'])
 })

@@ -86,7 +86,9 @@ import type { Exchange, Press, Update } from './ledger'
 import {
   applyPrPress,
   checkActions,
-  checkRunText,
+  checkRowText,
+  PR_QUOTE_CHARS,
+  splitFollowUps,
   drawnPrs,
   fetchTracked,
   isDismissing,
@@ -104,7 +106,9 @@ import {
   threadRowText,
   threadSentIn,
   GH_MISSING_TEXT,
-  prsEmptyHint,
+  prsEmptyText,
+  prRefreshFailedText,
+  PR_DISMISSED_LABEL,
 } from './pr-tab'
 import type { Applied, GhRun, PrAction, PrPress } from './pr-tab'
 import {
@@ -197,7 +201,10 @@ import {
   LISTED_TABS,
   ROW_TABS,
   TABS,
-  CLOSED_MARKS,
+  canUndoRefused,
+  closedMark,
+  settledMark,
+  settledTone,
   DEMO_NOTICE,
   groupEmptyText,
   closedTotal,
@@ -206,12 +213,13 @@ import {
   foldLabel,
   feedbackOf,
   feedbackText,
+  markedFeedbackText,
   fieldExit,
   hasAge,
   heldReplies,
   isFailure,
   isStatusUnderActions,
-  isWaitingRow,
+  waitingCount,
   isGuarded,
   PERMISSION_FALLBACK_DELAY_MS,
   PRESS_GUARD_MS,
@@ -230,6 +238,7 @@ import {
   settledRowIds,
   allRows,
   firstWaiting,
+  footerStatus,
   keptOpen,
   listWaits,
   rowAfterClose,
@@ -2286,7 +2295,7 @@ async function setDemo($: EngineInterface, isShown: boolean, isRecording = false
   cancelUndoScroll()
   const now = await $.clock.now()
   await Promise.all([
-    update($, DEMO, () => (isShown ? demoView(now) : null)),
+    update($, DEMO, () => (isShown ? demoView(now, CLAUDE_CODE.agent) : null)),
     update($, DEMO_RECORDING, () => isShown && isRecording),
   ])
   await Promise.all([update($, SELECTION, () => NO_SELECTION), update($, TYPING, () => null)])
@@ -3252,20 +3261,20 @@ export const register: Register = on => {
     })
     const checkRowBase = (pr: PrView, c: PrCheck): Row => ({
       id: prCheckId(pr, c),
-      handle: '✗',
-      handleTone: 'error',
+      handle: checkRowText(c).mark.text,
+      handleTone: checkRowText(c).mark.tone ?? undefined,
       title: c.name,
       line: { text: c.name },
       body: null,
       keys: () => checkActions(pr, c, presses).map(a => prKeyAction(a, `${pr.ref}-${c.name}`)),
     })
     const checkRow = (pr: PrView, c: PrCheck): Row => {
-      const ran = checkRunText(c)
+      const { lead, meta } = checkRowText(c)
       return {
         ...checkRowBase(pr, c),
         ...(c.finishedAt !== undefined ? { at: c.finishedAt } : {}),
-        line: { ...(c.workflow ? { before: `${c.workflow} / ` } : {}), text: c.name, after: ran },
-        subtitle: <Text color={pal.muted}>{c.workflow ? `${c.workflow}${DOT}${ran}` : ran}</Text>,
+        line: { ...(lead ? { before: `${lead} / ` } : {}), text: c.name, after: meta },
+        subtitle: <Text color={pal.muted}>{lead ? `${lead}${DOT}${meta}` : meta}</Text>,
       }
     }
     const threadRow = (pr: PrView, t: PrThread): Row => {
@@ -3281,10 +3290,10 @@ export const register: Register = on => {
       )
       const comment = (
         <Box flexDirection="column">
-          {rest ? <Markdown text={clipLabel(rest, 1200)} /> : null}
+          {rest ? <Markdown text={clipLabel(rest, PR_QUOTE_CHARS)} /> : null}
           {where}
           {t.reply ? (
-            <Markdown text={`**@${t.reply.author}:** ${clipLabel(readableComment(t.reply.body), 1200)}`} />
+            <Markdown text={`**@${t.reply.author}:** ${clipLabel(readableComment(t.reply.body), PR_QUOTE_CHARS)}`} />
           ) : null}
         </Box>
       )
@@ -3314,8 +3323,8 @@ export const register: Register = on => {
 
       return {
         id,
-        handle: text.showsCheck ? '✓' : '◦',
-        handleTone: text.showsCheck ? 'done' : undefined,
+        handle: text.mark.text,
+        handleTone: text.mark.tone ?? undefined,
         ...(text.fold ? { fold: text.fold } : {}),
         title: text.title,
         ...(t.at === null ? {} : { at: t.at }),
@@ -3326,8 +3335,8 @@ export const register: Register = on => {
         },
         body: comment,
         clippedBody: clippedComment,
-        keys: () => threadActions(pr, t, presses).flatMap(a => (a.isFollowUp ? [] : [prKeyAction(a, t.id)])),
-        moreKeys: () => threadActions(pr, t, presses).flatMap(a => (a.isFollowUp ? [prKeyAction(a, t.id)] : [])),
+        keys: () => splitFollowUps(threadActions(pr, t, presses)).keys.map(a => prKeyAction(a, t.id)),
+        moreKeys: () => splitFollowUps(threadActions(pr, t, presses)).more.map(a => prKeyAction(a, t.id)),
       }
     }
 
@@ -3537,11 +3546,7 @@ export const register: Register = on => {
 
       return hasAge(f)
         ? {
-            text: row?.view
-              ? rowFeedbackText(row.view, look)!
-              : f.is === 'done' && row?.handle === '✓'
-                ? f.label
-                : feedbackText(f, look),
+            text: row?.view ? rowFeedbackText(row.view, look)! : markedFeedbackText(f, row?.handle ?? '', look),
             age: ago(now - f.at),
             isFailure: false,
             feedback: f,
@@ -4088,9 +4093,11 @@ export const register: Register = on => {
       )
     }
 
-    const isPrStatus = shownTab === 'prs' && prViews.length > 0
-    const { isUpdating, error } = view.status
-    const status = isPrStatus ? (prState.isFetching ? 'Refreshing PRs' : '') : isUpdating ? 'Updating…' : ''
+    const shownStatus = footerStatus(shownTab, view.status, {
+      isFetching: prState.isFetching,
+      hasPrs: prViews.length > 0,
+    })
+    const status = shownStatus.text ?? ''
 
     const drawnIds = new Set([
       ...Object.values(rows).flatMap(list => list.map(r => r.id)),
@@ -4135,9 +4142,9 @@ export const register: Register = on => {
         }
       : null
     const statusLines = [
-      !isPrStatus && error ? (
+      shownStatus.error ? (
         <Text color={pal.tone.error} wrap="wrap">
-          {error}
+          {shownStatus.error}
         </Text>
       ) : null,
       toolsRefused ? (
@@ -4456,9 +4463,7 @@ export const register: Register = on => {
               </Box>,
             ]
     const refusedUndo = (d: ClosedLine) =>
-      d.delivery && typeof d.delivery === 'object' && d.delivery.canUndo
-        ? undoButton({ id: d.id, action: 'undo' }, null)
-        : null
+      canUndoRefused(d.delivery) ? undoButton({ id: d.id, action: 'undo' }, null) : null
     const closedRow = (d: ClosedLine, pos: TreePos) =>
       look === 'desktop'
         ? desktopFrame({
@@ -4466,7 +4471,7 @@ export const register: Register = on => {
             indent: DESKTOP_MARK_CELLS,
             isMarkHung: false,
             padY: space.rowPad / 2,
-            mark: <Text color={pal.age}>{d.delivery === null ? CLOSED_MARKS[closedState(d)] : ' '}</Text>,
+            mark: <Text color={pal.age}>{closedMark(closedState(d), d.delivery) || ' '}</Text>,
             side: <Text color={pal.age}>{shortAgo(now - d.at)}</Text>,
             children: [
               <Text wrap="wrap" color={pal.muted}>
@@ -4480,7 +4485,7 @@ export const register: Register = on => {
           })
         : treeRow(
             pos,
-            <Text color={pal.muted}>{d.delivery === null ? CLOSED_MARKS[closedState(d)] : ' '}</Text>,
+            <Text color={pal.muted}>{closedMark(closedState(d), d.delivery) || ' '}</Text>,
             <Box flexDirection="row">
               <Box flexDirection="column" flexGrow={1} flexShrink={1}>
                 <Text wrap="wrap" color={pal.muted}>
@@ -4669,7 +4674,7 @@ export const register: Register = on => {
                 width={1}
               />
             ) : null}
-            <Text wrap="wrap" color={delivery !== null || isLapsed ? pal.muted : pal.tone.done}>
+            <Text wrap="wrap" color={settledTone({ delivery, isLapsed }) === 'done' ? pal.tone.done : pal.muted}>
               {settledLabel(outcome, delivery)}
             </Text>
             {undo ? undoButton(undo, at) : null}
@@ -4687,7 +4692,7 @@ export const register: Register = on => {
         return desktopFrame({
           key: `settled-${r.id}`,
           markCells: DESKTOP_MARK_CELLS + markExtra(r.id),
-          mark: state.delivery !== null ? null : <Text color={pal.muted}>✓</Text>,
+          mark: settledMark(state.delivery) ? <Text color={pal.muted}>{settledMark(state.delivery)}</Text> : null,
           side: undo ? undoButton(undo, state.at) : null,
           padY: space.settledPad,
           isCentered: true,
@@ -4701,7 +4706,7 @@ export const register: Register = on => {
         })
       }
       const content = settledContent(r.title, state.label, state.at, undo, state.delivery, state.isLapsed)
-      const mark = state.delivery !== null ? <Text> </Text> : <Text color={pal.muted}>✓</Text>
+      const mark = <Text color={pal.muted}>{settledMark(state.delivery) || ' '}</Text>
       return (
         <Box key={`settled-${r.id}`} flexDirection="column" paddingY={space.settledPad}>
           {treeRow(pos, mark, content, undefined, 0, undefined, markExtra(r.id))}
@@ -4731,7 +4736,7 @@ export const register: Register = on => {
 
         return [
           section([
-            groupTitle(g.title, g.rows.filter(r => r.view && isWaitingRow(r.view)).length),
+            groupTitle(g.title, waitingCount(g.rows.map(r => r.view))),
             ...titleGap(),
             ...(open.length > 0 ? open : [groupEmpty(g.title)]),
             ...tail,
@@ -4814,7 +4819,7 @@ export const register: Register = on => {
           delivery: f.delivery,
         }))
         return section([
-          groupTitle(g.title, rowsIn(g.entries).filter(r => r.view && isWaitingRow(r.view)).length),
+          groupTitle(g.title, waitingCount(rowsIn(g.entries).map(r => r.view))),
           ...titleGap(),
           ...(g.entries.length === 0 ? [groupEmpty(g.title)] : []),
           ...divided(
@@ -4838,7 +4843,7 @@ export const register: Register = on => {
           <Text color={pal.muted}>✓</Text>,
           settledContent(
             `#${pr.number} ${pr.title}`,
-            'Dismissed',
+            PR_DISMISSED_LABEL,
             lastActions[prMarkId(pr.ref)]?.at ?? now,
             {
               action: 'pr-undo',
@@ -4894,7 +4899,7 @@ export const register: Register = on => {
           {pr.error ? (
             <Box flexDirection="column">
               <Text color={pal.tone.error} wrap="wrap">
-                Last refresh failed: {pr.error}
+                {prRefreshFailedText(pr.error)}
               </Text>
               {prState.isFetching ? <Text color={pal.muted}>Refreshing…</Text> : null}
               <Box flexDirection="row">
@@ -4982,10 +4987,9 @@ export const register: Register = on => {
     const prsView = () =>
       prGroups.length === 0 ? (
         <Box flexDirection="column" flexGrow={1}>
-          {emptyState({
-            title: prState.isFetching ? 'Checking for PRs…' : 'No PRs',
-            hint: prState.isGhMissing ? GH_MISSING_TEXT : prsEmptyHint('session'),
-          })}
+          {emptyState(
+            prsEmptyText({ isFetching: prState.isFetching, isGhMissing: Boolean(prState.isGhMissing) }, 'session'),
+          )}
         </Box>
       ) : (
         sections([...(prState.isGhMissing ? [ghMissingNotice()] : []), ...prGroups.map(prBlock), ...olderPrs()], 2)

@@ -1022,7 +1022,7 @@ test('gh is found again at another path after the first one stops starting', asy
 
 test('a PR press sends its prompt through codex queue and records the press on its row', async () => {
   const { dir, calls, call } = await prServer(ghAnswer)
-  const d = demoView(100)
+  const d = demoView(100, 'Codex')
   await updateState(dir, 's1', s => ({ ...s, ledger: { ...s.ledger, prs: d.ledger.prs }, prViews: d.prViews }))
   const pr = Object.values(d.prViews.views).find(v => v.threads.some(t => t.isWaiting))!
   const thread = pr.threads.find(t => t.isWaiting)!
@@ -1042,7 +1042,7 @@ test('a PR press sends its prompt through codex queue and records the press on i
 test('a bulk PR prompt arrives on every affected row without acknowledging a newer thread press', async () => {
   let at = 100
   const { dir, call } = await prServer(ghAnswer, () => at)
-  const d = demoView(100)
+  const d = demoView(100, 'Codex')
   const pr = Object.values(d.prViews.views).find(
     v => v.threads.filter(t => t.isWaiting && !t.isLinesChanged).length >= 2,
   )!
@@ -1181,7 +1181,7 @@ test('more than twenty unmatched identical sends retain the old receipt before t
 
 test('tracked PR steps are drawn and open the same linked and branch PRs without duplicate links', async () => {
   const { dir, calls, call } = await prServer(ghAnswer)
-  const d = demoView(100)
+  const d = demoView(100, 'Codex')
   assert.ok(d.prViews.branchRef)
   const branch = d.prViews.views[d.prViews.branchRef]!
   const linked = d.ledger.prs.map(ref => d.prViews.views[ref]).find(pr => pr && pr.ref !== branch.ref)!
@@ -1225,7 +1225,7 @@ test('a PR press with an unknown queue outcome keeps its receipt and unconfirmed
   const { dir, call } = await prServer(args =>
     args[1] === 'queue' ? { code: 1, stdout: '', stderr: 'no such thread' } : ghAnswer(args),
   )
-  const d = demoView(100)
+  const d = demoView(100, 'Codex')
   await updateState(dir, 's1', s => ({ ...s, ledger: { ...s.ledger, prs: d.ledger.prs }, prViews: d.prViews }))
   const ref = Object.values(d.prViews.views).find(v => v.mergeable === 'CONFLICTING')!.ref
   const r = await call('inbox_press', { press: { action: 'pr-conflicts', ref }, thread: 's1' })
@@ -1249,7 +1249,7 @@ test('dismissing a linked PR unlinks it, and its view leaves once its settled bl
       method: 'tools/call',
       params: { name, arguments: args, _meta: { thread_id: 's1' } },
     }) as Promise<PrReply>
-  const d = demoView(100)
+  const d = demoView(100, 'Codex')
   await updateState(dir, 's1', s => ({
     ...s,
     ledger: { ...s.ledger, prs: d.ledger.prs },

@@ -113,7 +113,7 @@ Every press is one of five kinds. The kind decides what the screen shows at once
 | **Hand-off** | Sends a message that gives the work to the agent. | The row closes to its one line, its handle a ✓, and leaves the count. Its age reads the press, as `Run load script · 1m ago`. Unconfirmed delivery replaces the feedback and removes the ✓. The next row that waits opens. It stays closed after the agent's reply, and the re-entry rule below says when it counts again. A PR block, which is always open, records `✓ Asked to resolve conflicts` on the block. |
 | **Local** | Opens or copies on the person's machine. | A note on the row at once: `Opening settings.json…` or `Copying npm test…`. The result replaces it: `✓ Opened settings.json`, or in red, `Could not open settings.json: it was moved`. |
 | **Mark** | Changes state, and sends nothing while it can be undone. | The row settles in place with the Mark's own label, `✓ Done` or `✓ Dismissed`, and an [Undo] button, then leaves after 5.12 s. The next row that waits opens. |
-| **View** | Changes only what is on screen, or reloads it. | The change itself: a view opens or closes, a row unfolds, a tab switches, a status reads `Refreshing PRs`. |
+| **View** | Changes only what is on screen, or reloads it. | The change itself: a view opens or closes, a row unfolds, a tab switches, a status reads `Refreshing PRs…`. |
 
 The View kind covers [Open inbox], the tab buttons, [All 7 options], the Closed fold, Show demo and Hide demo, Undo and Retry. [Try again] repeats a failed press, so it takes that press's kind.
 
@@ -219,9 +219,9 @@ The UI reads one status record for items and one for PRs. The status shows only 
 |---|---|
 | `isUpdating`, optional | `Updating…` |
 | `error`, optional, with the source's own text | The text in red, under the tabs |
-| PR `isFetching` | `Refreshing PRs` |
+| PR `isFetching` | `Refreshing PRs…` |
 
-The PRs tab shows the PR status. The other tabs show the item status. The mod picks between them where it draws the footer status. The Codex tab shows `Updating…` at the footer's right. While polls fail it shows `Last read 1m ago · retrying` there instead, muted, and red after a minute.
+The PRs tab shows the PR status. The other tabs show the item status. `hooks/view.ts:footerStatus` picks between them for every look. The Codex tab shows its status at the footer's right. While polls fail it shows `Last read 1m ago · retrying` there instead, muted, and red after a minute.
 
 The UI names the result, not the model call or tool. The failure text is `Last update failed. Items from that reply may be missing.` A stopped worker shows that error. An active update shows `Updating…` and hides the prior error.
 

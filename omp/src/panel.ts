@@ -15,20 +15,23 @@ import type { RowRecord } from '../../hooks/arrivals'
 import { closedState } from '../../hooks/ledger'
 import {
   GH_MISSING_TEXT,
-  prsEmptyHint,
+  prsEmptyText,
+  prRefreshFailedText,
+  PR_DISMISSED_LABEL,
   PR_GROUP_TITLES,
   PR_TONES,
   checkActions,
-  checkRunText,
+  checkRowText,
   prBlockActions,
   prCheckId,
   prMarkId,
+  prRowWaits,
   prThreadId,
   threadActions,
   threadRowText,
   threadSentIn,
 } from '../../hooks/pr-tab'
-import type { PrAction, PrPress } from '../../hooks/pr-tab'
+import type { PrAction, PrPress, PrRowMark } from '../../hooks/pr-tab'
 import { failingChecks, readiness, waitingThreads } from '../../hooks/prs'
 import { capitalized, noteText } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
@@ -36,7 +39,10 @@ import type { SessionView } from '../../hooks/session'
 import type { ToneName } from '../../hooks/tones'
 import { ago } from '../../hooks/text'
 import {
-  CLOSED_MARKS,
+  canUndoRefused,
+  closedMark,
+  settledMark,
+  settledTone,
   DEMO_NOTICE,
   FINDING_GROUPS,
   NEEDS_YOU_GROUPS,
@@ -51,9 +57,10 @@ import {
   earlierLabel,
   emptyText,
   feedbackOf,
-  feedbackText,
+  markedFeedbackText,
   firstWaiting,
   foldLabel,
+  footerStatus,
   groupEmptyText,
   heldReplies,
   isFailure,
@@ -61,6 +68,7 @@ import {
   isResumable,
   isStatusUnderActions,
   isWaitingRow,
+  waitingCount,
   keptOpen,
   replyHint,
   rowAfterClose,
@@ -177,7 +185,7 @@ type Line = {
   file: string | null
   feedback: { text: string; tone: Tone | null; source: Feedback | null } | null
   /** Set once the row has closed and its label shows until it leaves. */
-  settled: { label: string; undo: PanelPress | null } | null
+  settled: { label: string; tone: 'done' | 'muted'; undo: PanelPress | null } | null
   buttons: Button[]
   row: RowView | null
   /** The group a Closed line folds. Enter unfolds or folds it. */
@@ -275,9 +283,8 @@ function lineOfRow(row: RowView): Line {
   const state = row.state
   const undo = row.actions.find(a => a.press.action === 'undo')
 
-  // As in the terminal, a settled row is marked done once nothing it sent is still on its way.
   const settledLead: Lead | null =
-    state.is === 'settled' ? (state.delivery !== null ? { text: ' ', tone: null } : { text: '✓', tone: 'sep' }) : null
+    state.is === 'settled' ? { text: settledMark(state.delivery) || ' ', tone: 'sep' } : null
 
   return {
     ...blankLine(row.id),
@@ -291,7 +298,11 @@ function lineOfRow(row: RowView): Line {
     feedback: feedbackLabel && f ? { text: feedbackLabel, tone: feedbackTone(f), source: f } : null,
     settled:
       state.is === 'settled'
-        ? { label: settledLabel(state.label, state.delivery), undo: state.canUndo && undo ? undo.press : null }
+        ? {
+            label: settledLabel(state.label, state.delivery),
+            tone: settledTone(state),
+            undo: state.canUndo && undo ? undo.press : null,
+          }
         : null,
     buttons: state.is === 'settled' ? [] : rowButtons(row),
     row,
@@ -319,7 +330,7 @@ const closedId = (id: string) => `closed ${id}`
 const foldId = (kind: FoldKind) => `fold ${kind}`
 
 function closedLines(d: ClosedLine): Line {
-  const canUndo = d.delivery !== null && typeof d.delivery === 'object' && d.delivery.canUndo
+  const canUndo = canUndoRefused(d.delivery)
   const undo: Button = {
     label: 'Undo',
     key: null,
@@ -331,7 +342,7 @@ function closedLines(d: ClosedLine): Line {
   return {
     ...blankLine(closedId(d.id)),
     depth: 1,
-    lead: { text: d.delivery === null ? CLOSED_MARKS[closedState(d)] : '', tone: null },
+    lead: { text: closedMark(closedState(d), d.delivery), tone: null },
     title: d.title,
     isDim: true,
     age: d.at,
@@ -345,7 +356,7 @@ function closedLines(d: ClosedLine): Line {
 function groupEntries(g: Group, unfolded: readonly FoldKind[]): Entry[] {
   const settled = settledIn(g)
   const total = closedTotal(g.closed, settled)
-  const out: Entry[] = [{ kind: 'heading', text: g.title }]
+  const out: Entry[] = [{ kind: 'heading', text: g.title, count: waitingCount(g.rows) }]
   out.push(...g.rows.map((row): Entry => ({ kind: 'row', line: lineOfRow(row) })))
   if (g.rows.length === 0) out.push({ kind: 'note', text: groupEmptyText(g.title), indent: 3 })
   if (total === 0) return out
@@ -439,7 +450,20 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
   const { prs, lastActions, turns } = screen.view
   const isSent = threadSentIn(lastActions)
   const presses = { lastActions, turns, now }
+  const waits = prRowWaits(
+    prs.drawn.filter(d => !d.isSettled).map(d => d.pr),
+    lastActions,
+  )
+  const isWaiting = (id: string) => waits.some(w => w.id === id && w.isWaiting)
+  const markLead = (mark: PrRowMark): Lead => ({ text: mark.text, tone: mark.tone ?? 'sep' })
   const out: Entry[] = []
+  if (prs.drawn.length === 0) {
+    const empty = prsEmptyText({ isFetching: screen.isFetchingPrs, isGhMissing: screen.isGhMissing }, 'session')
+    return [
+      { kind: 'note', text: empty.title, isStrong: true },
+      { kind: 'note', text: empty.hint },
+    ]
+  }
   if (screen.isGhMissing) out.push({ kind: 'note', text: GH_MISSING_TEXT })
   for (const { pr, isSettled } of prs.drawn) {
     const markId = prMarkId(pr.ref)
@@ -452,7 +476,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
           lead,
           title: pr.title,
           isDim: true,
-          settled: { label: 'Dismissed', undo: { action: 'pr-undo', ref: pr.ref } },
+          settled: { label: PR_DISMISSED_LABEL, tone: 'done', undo: { action: 'pr-undo', ref: pr.ref } },
         },
       })
       continue
@@ -468,12 +492,13 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
         title: pr.title,
         status: { text: head, tone: PR_TONES[status], rest: unlisted.map(r => ` · ${r}`).join('') },
         feedback: f,
-        detail: pr.error ? `Last refresh failed: ${pr.error}` : null,
+        detail: pr.error ? prRefreshFailedText(pr.error) : null,
         buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses)),
+        isWaiting: false,
       },
     })
     const threads = waitingThreads(pr)
-    if (threads.length > 0) out.push({ kind: 'heading', text: PR_GROUP_TITLES.threads })
+    if (threads.length > 0) out.push({ kind: 'heading', text: PR_GROUP_TITLES.threads, count: threads.length })
     for (const t of threads) {
       const id = prThreadId(pr, t)
       const text = threadRowText(pr, t, lastActions)
@@ -482,46 +507,46 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
         line: {
           ...blankLine(id),
           depth: 1,
-          lead: { text: '•', tone: 'sep' },
+          lead: markLead(text.mark),
           title: text.title,
           isDim: text.fold !== null,
           detail: [text.meta, text.fold?.note].filter(Boolean).join(' · ') || null,
-          feedback: pressFeedback(screen, id, now),
+          feedback: pressFeedback(screen, id, now, text.mark.text),
           buttons: prButtons(threadActions(pr, t, presses)),
+          isWaiting: isWaiting(id),
+          isFolded: text.fold !== null,
         },
       })
     }
     const checks = failingChecks(pr)
-    if (checks.length > 0) out.push({ kind: 'heading', text: PR_GROUP_TITLES.checks })
+    if (checks.length > 0) out.push({ kind: 'heading', text: PR_GROUP_TITLES.checks, count: checks.length })
     for (const c of checks) {
       const id = prCheckId(pr, c)
+      const text = checkRowText(c)
       out.push({
         kind: 'row',
         line: {
           ...blankLine(id),
           depth: 1,
-          lead: { text: '•', tone: 'sep' },
-          title: c.name,
-          detail: checkRunText(c),
-          feedback: pressFeedback(screen, id, now),
+          lead: markLead(text.mark),
+          title: text.lead ? `${text.lead} / ${text.title}` : text.title,
+          detail: text.meta,
+          feedback: pressFeedback(screen, id, now, text.mark.text),
           buttons: prButtons(checkActions(pr, c, presses)),
+          isWaiting: isWaiting(id),
         },
       })
     }
   }
   if (prs.olderText) out.push({ kind: 'note', text: prs.olderText })
-  if (prs.drawn.length === 0 && !screen.isGhMissing) {
-    out.push({ kind: 'note', text: screen.isFetchingPrs ? 'Checking for PRs…' : 'No PRs', isStrong: true })
-    out.push({ kind: 'note', text: prsEmptyHint('session') })
-  }
 
   return out
 }
 
-function pressFeedback(screen: PanelScreen, id: string, now: number): Line['feedback'] {
+function pressFeedback(screen: PanelScreen, id: string, now: number, mark = ''): Line['feedback'] {
   const f = feedbackOf(id, screen.view.lastActions[id], undefined, screen.view.turns, now)
 
-  return f ? { text: feedbackText(f, AGENT), tone: feedbackTone(f), source: f } : null
+  return f ? { text: markedFeedbackText(f, mark, AGENT), tone: feedbackTone(f), source: f } : null
 }
 
 /** Where a row's title starts, after the cursor and the mark. The Overview page's text and details start here too. */
@@ -594,16 +619,21 @@ function withSelection(ui: PanelUi, id: string | null): PanelUi {
 
 const withTab = (ui: PanelUi, tab: ShownTab): PanelUi => ({ ...withSelection(ui, null), tab, pageTop: 0 })
 
+/** Whether the line `id` on the shown tab waits on the person. */
+export function isLineWaiting(screen: PanelScreen, ui: PanelUi, id: string, now: number): boolean {
+  return waitsOf(linesOf(entriesOf(screen, ui, ui.tab, now))).some(w => w.id === id && w.isWaiting)
+}
+
 /**
- * After a press hands off the selected row, the selection moves to the next row that waits, as the terminal's does.
- * The row stays selected when none waits. A failed send leaves the row open, so it stays selected and unfolded.
+ * After a press stops the selected row from waiting, the selection moves to the next row that waits, as the
+ * terminal's does. The row stays selected when none waits. A failed send leaves the row waiting, so it stays selected.
  */
 export function afterHandOff(screen: PanelScreen, ui: PanelUi, id: string, now: number): PanelUi {
   if (ui.selectedId !== id) return ui
   const lines = linesOf(entriesOf(screen, ui, ui.tab, now))
-  const line = lines.find(l => l.id === id)
-  if (!line?.isFolded) return ui
-  const next = rowAfterClose(waitsOf(lines), id)
+  const waits = waitsOf(lines)
+  if (!lines.some(l => l.id === id) || waits.some(w => w.id === id && w.isWaiting)) return ui
+  const next = rowAfterClose(waits, id)
 
   return next === null ? { ...ui, focus: null, opened: null } : withSelection(ui, next)
 }
@@ -903,7 +933,7 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
       ? line.feedback
       : null
   const after = line.settled
-    ? `  ${s.tone('done', line.settled.label)}${line.settled.undo ? `  ${s.dim('u Undo')}` : ''}`
+    ? `  ${line.settled.tone === 'done' ? s.tone('done', line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim('u Undo')}` : ''}`
     : line.feedback && !statusUnder
       ? `  ${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}`
       : ''
@@ -959,13 +989,9 @@ type TabCell = {
 }
 
 /** One form of the tab line. Each later form is narrower. */
-type TabForm = { isBracketed: boolean; isZeroShown: boolean }
+type TabForm = { isBracketed: boolean }
 
-const TAB_FORMS: readonly TabForm[] = [
-  { isBracketed: true, isZeroShown: true },
-  { isBracketed: false, isZeroShown: true },
-  { isBracketed: false, isZeroShown: false },
-]
+const TAB_FORMS: readonly TabForm[] = [{ isBracketed: true }, { isBracketed: false }]
 /** The fewest letters a cut label keeps, its ellipsis included. */
 const MIN_LABEL = 3
 
@@ -974,7 +1000,7 @@ const cutLabel = (label: string, length: number) =>
 
 function tabCell(t: TabCell, label: string, form: TabForm, s: Style): string {
   const key = form.isBracketed ? `[${t.hotkey}]` : t.hotkey
-  const count = t.count === null || (t.count === 0 && !form.isZeroShown) ? null : String(t.count)
+  const count = t.count ? String(t.count) : null
   if (t.isShown) return s.inverse(s.bold(` ${key} ${label}${count === null ? '' : ` ${count}`} `))
   const countText = count === null ? '' : ` ${t.tone ? s.tone(t.tone, count) : count}`
 
@@ -982,7 +1008,7 @@ function tabCell(t: TabCell, label: string, form: TabForm, s: Style): string {
 }
 
 /**
- * The tab line. As the panel narrows, it drops the `[n]` brackets, then zero counts, then cuts the other tabs' labels,
+ * The tab line. As the panel narrows, it drops the `[n]` brackets, then cuts the other tabs' labels,
  * longest first. Only the final `fit()` in `render` cuts the shown tab's label, once the other labels are at their shortest.
  */
 function tabBar(d: Draw): string {
@@ -1019,11 +1045,13 @@ function tabBar(d: Draw): string {
 function footer(d: Draw, isPageScrolling: boolean): string[] {
   const { screen, ui, width, now, style: s } = d
   const out: string[] = [s.dim('─'.repeat(width))]
-  const { status } = screen.view
+  const status = footerStatus(ui.tab, screen.view.status, {
+    isFetching: screen.isFetchingPrs,
+    hasPrs: screen.view.prs.drawn.length > 0,
+  })
   if (screen.isDemo) out.push(fit(` ${s.dim(DEMO_NOTICE)}`, width))
-  if (ui.tab === 'prs' ? screen.isFetchingPrs : status.isUpdating)
-    out.push(` ${s.dim(ui.tab === 'prs' ? 'Refreshing PRs…' : 'Updating…')}`)
-  if (ui.tab !== 'prs' && status.error) out.push(...indented(status.error, 1, width, 2, t => s.tone('error', t)))
+  if (status.text) out.push(` ${s.dim(status.text)}`)
+  if (status.error) out.push(...indented(status.error, 1, width, 2, t => s.tone('error', t)))
   if (ui.notice && now - ui.notice.at < SETTLED_MS)
     out.push(...indented(ui.notice.text, 1, width, 2, t => s.tone('error', t)))
   const hints =
@@ -1071,8 +1099,7 @@ export function drawPanel(
   const body: string[] = []
   let selectedAt = [0, 0]
   for (const e of entries) {
-    if (e.kind === 'heading')
-      body.push(` ${style.bold(e.text)}${e.count === undefined ? '' : style.dim(` · ${e.count}`)}`)
+    if (e.kind === 'heading') body.push(` ${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`)
     else if (e.kind === 'page') body.push(...drawPageRow(e.row, d))
     else if (e.kind === 'note')
       body.push(...indented(e.text, e.indent ?? 1, width, 3, e.isStrong ? style.bold : style.dim))
