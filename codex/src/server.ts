@@ -29,7 +29,7 @@ import { reconcileUpdateStatus } from './update'
 import type { SessionState } from './state'
 import { CODEX, INBOX_DESCRIPTION, inboxToolText, VIEW_DESCRIPTION } from './texts'
 import { rolloutFor, turnIn, turnRunningIn } from './transcript'
-import type { HooksTrust } from './hook-trust'
+import type { HooksTrustAnswer } from './hook-trust'
 import type { LastAction, PrViews, RowNote } from '../../types'
 
 /** Codex keeps a tab's page by its address, even across server restarts, so a new build needs a new address for a new chat to load it. */
@@ -38,6 +38,8 @@ export function tabUri(tabHtml: string): string {
 }
 /** How long an answer about the hooks' trust stands before a view asks Codex again. */
 const HOOKS_TRUST_CACHE_MS = 30_000
+/** How long an answer that Codex does not run the hooks stands, so the notice leaves soon after the person trusts them. */
+const HOOKS_UNTRUSTED_CACHE_MS = 5_000
 const TAB_MIME = 'text/html;profile=mcp-app'
 
 const APP_ONLY = { ui: { visibility: ['app'] } }
@@ -136,7 +138,7 @@ export type ServerDeps = {
    * What Codex lists for the inbox's hooks in a folder, the chat's or else the home folder, or null when it cannot say. Without it, the tab does not say why
    * a chat has heard from no hook.
    */
-  hooksTrust?: (cli: string, folder: string) => Promise<HooksTrust | 'trusted' | null>
+  hooksTrust?: (cli: string, folder: string) => Promise<HooksTrustAnswer | null>
   build?: string
   loadError?: () => string | null
   isPluginFolderGone?: () => boolean
@@ -201,23 +203,25 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   const prunedFor = new Set<string>()
   const checkedOnOpen = new Set<string>()
   let isGhMissing = false
-  let hooksTrust: { at: number; value: HooksTrust | null } | null = null
+  let hooksTrust: { at: number; value: HooksTrustAnswer | null } | null = null
   let isAskingHooks = false
 
   /**
-   * Why Codex does not run the inbox's hooks, from the last answer. When that answer is older than the cache window,
-   * a new call starts for the next view to read, so no view waits on it. A failed or unclear answer reads as null.
+   * Codex's last answer about the inbox's hooks. When that answer is older than its cache window, a new call starts
+   * for the next view to read, so no view waits on it. A failed or unclear answer reads as null.
    */
-  function hooksTrustNow(s: SessionState): HooksTrust | null {
+  function hooksTrustNow(s: SessionState): HooksTrustAnswer | null {
     const { hooksTrust: ask } = deps
     if (!ask) return null
-    if (!isAskingHooks && (hooksTrust === null || now() - hooksTrust.at >= HOOKS_TRUST_CACHE_MS)) {
+    const isHooksStopped = hooksTrust?.value === 'untrusted' || hooksTrust?.value === 'modified'
+    const cacheMs = isHooksStopped ? HOOKS_UNTRUSTED_CACHE_MS : HOOKS_TRUST_CACHE_MS
+    if (!isAskingHooks && (hooksTrust === null || now() - hooksTrust.at >= cacheMs)) {
       isAskingHooks = true
       void (async () => {
         try {
           const cli = s.cliPath ?? (await deps.fallbackCli())
           const answer = await ask(cli, s.root || homedir())
-          hooksTrust = { at: now(), value: answer === 'untrusted' || answer === 'modified' ? answer : null }
+          hooksTrust = { at: now(), value: answer }
         } catch {
           hooksTrust = { at: now(), value: null }
         } finally {

@@ -1,4 +1,4 @@
-import type { HooksTrust } from './hook-trust'
+import type { HooksTrustAnswer } from './hook-trust'
 import { toolActivity } from '../../hooks/model-text'
 import {
   endTurn as endSessionTurn,
@@ -126,11 +126,11 @@ export type View = SessionView & {
  * Tabs open from older builds read it by this name.
  * `serverBuild` is the fingerprint build.mjs stamped into the running server. `serverLoadError` says why a newer
  * build of the server did not load. `isPluginFolderGone` says the server found no installed copy of itself, as after
- * an uninstall. `hooksTrust` says why Codex runs none of the inbox's hooks in this chat, when it has heard from none and
- * Codex's own list of hooks names the cause.
+ * an uninstall. `hooksTrust` is Codex's answer about the inbox's hooks, sent while the inbox has heard from none in this
+ * chat: why Codex runs none of them, or `trusted` once the person trusted them and they have not run yet.
  */
 export type TabView = View & {
-  hooksTrust?: HooksTrust
+  hooksTrust?: HooksTrustAnswer
   thread: string
   devPage: string
   serverBuild?: string
