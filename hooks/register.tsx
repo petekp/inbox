@@ -234,6 +234,9 @@ import {
   ROW_COPY,
   READING_TEXT,
   rowsIn,
+  RUNNING_FRAME_MS,
+  RUNNING_PULSE_MS,
+  runningMark,
   SETTLED_MS,
   settledIn,
   settledRowIds,
@@ -401,6 +404,18 @@ function toneSvg(tone: ToneName, mark: string): string {
       ? `<text class="mark" x="0" y="${height / 2}" dominant-baseline="central">${escapeXml(mark)}</text>`
       : `<g class="mark">${shape}</g>`) +
     `</svg>`
+  )
+}
+/** A running mark on desktop: a dot that fades and returns. SMIL runs it, since a pane redraw loop stops clicks there. */
+function runningSvg(): string {
+  const width = DESKTOP_CELL_PT
+  const height = DESKTOP_LINE_PT
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+    `<style>.mark{fill:#595959}@media (prefers-color-scheme: dark){.mark{fill:#a8a8a8}}</style>` +
+    `<circle class="mark" cx="${width / 2}" cy="${height / 2}" r="3.5">` +
+    `<animate attributeName="opacity" values="1;0.3;1" dur="${RUNNING_PULSE_MS}ms" repeatCount="indefinite"/>` +
+    `</circle></svg>`
   )
 }
 /**
@@ -980,6 +995,27 @@ function redrawWhileLeaving($: EngineInterface, expiresAt: number) {
     await openLeftRows($)
     await finishPendingUndoScroll($)
   })().catch(() => undefined)
+}
+
+let runningMarkTimer: Timer | null = null
+let isRunningMarkDrawn = false
+
+/**
+ * Redraws the terminal pane each frame while it shows a running mark. A tick that follows no such drawing stops the
+ * timer, as when the pane closed or left the Overview. Desktop runs no loop, as `redrawWhileLeaving` says why.
+ */
+function animateRunningMarks($: EngineInterface, isDrawn: boolean) {
+  isRunningMarkDrawn = isDrawn
+  if (!isDrawn || runningMarkTimer !== null) return
+  runningMarkTimer = $.clock.every(RUNNING_FRAME_MS, () => {
+    if (!isRunningMarkDrawn || paneLook === 'desktop') {
+      runningMarkTimer?.cancel()
+      runningMarkTimer = null
+      return
+    }
+    isRunningMarkDrawn = false
+    void redraw($).catch(() => undefined)
+  })
 }
 
 function later($: EngineInterface, waitMs: number, run: () => unknown) {
@@ -3115,6 +3151,8 @@ export const register: Register = on => {
     const tab: Tab = ROW_TABS.some(t => t.id === savedTab) ? savedTab : 'needsYou'
     const isOverviewShown = savedPage === 'overview'
     const shownTab: ShownTab = isOverviewShown ? 'overview' : tab
+    const isRunningMarkShown = isOverviewShown && view.overviewPage.sections.some(p => p.rows.some(r => r.isRunning))
+    if (look === 'terminal') animateRunningMarks($, isRunningMarkShown)
     // A hot reload keeps TYPING but empties openFields, so an open field takes its key and seed again here.
     if (typing !== null && !openFields.has(typing))
       openFields.set(typing, openedField(typing, (await read($, DRAFTS))[typing]))
@@ -5035,7 +5073,16 @@ export const register: Register = on => {
           })
         : treeRow(pos, null, <Text wrap="wrap">{text}</Text>, `overview-${id}`, 0, markColumns.textAt)
     const markedRow = (m: OverviewRow, pos: TreePos) => {
-      const mark = <Text color={m.tone ? pal.mark[m.tone] : pal.muted}>{m.mark}</Text>
+      const RunningSvg = m.isRunning && look === 'desktop' && 'Svg' in elements ? elements.Svg : null
+      const mark = RunningSvg ? (
+        <Box width={1} height={1} flexShrink={0}>
+          <RunningSvg source={runningSvg()} alt={m.mark} width={DESKTOP_CELL_PT} height={DESKTOP_LINE_PT} />
+        </Box>
+      ) : (
+        <Text color={m.tone ? pal.mark[m.tone] : pal.muted}>
+          {m.isRunning && look === 'terminal' ? runningMark(now) : m.mark}
+        </Text>
+      )
       const lines = [
         <Text key="text" wrap="wrap">
           {m.text}

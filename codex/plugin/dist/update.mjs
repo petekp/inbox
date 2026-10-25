@@ -1167,6 +1167,9 @@ function isRowTab(tab) {
 }
 var ROW_TABS = TABS.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TABS.filter((t) => isListedTab(t.id));
+var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
+var RUNNING_FRAME_MS = 300;
+var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 
 // ../hooks/session.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };

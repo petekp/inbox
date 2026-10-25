@@ -45,6 +45,7 @@ import {
   replyHint,
   rowMark,
   rowFeedbackText,
+  RUNNING_PULSE_MS,
   settledLabel,
   ROW_COPY,
   READING_TEXT,
@@ -1282,11 +1283,20 @@ function Entries({ entries, group, all, now }: { entries: Entry[]; group: Group;
   )
 }
 
+/** Starts every running mark's pulse at the page's time origin, so a mark drawn at a later poll moves in step. */
+function pulseInStep(el: HTMLElement | null) {
+  for (const a of el?.getAnimations?.() ?? []) a.startTime = 0
+}
+
 function MarkedRow({ row }: { row: OverviewRow }) {
+  const markClass = ['mark', row.tone, row.isRunning ? 'running' : null].filter(Boolean).join(' ')
+
   return (
     <div class="entry">
       <div class="row">
-        <span class={row.tone ? `mark ${row.tone}` : 'mark'}>{row.mark}</span>
+        <span class={markClass} ref={row.isRunning ? pulseInStep : undefined}>
+          {row.mark}
+        </span>
         <div class="content tight">
           <div>{row.text}</div>
           {row.detail ? <div class="outcome">{row.detail}</div> : null}
@@ -2113,6 +2123,7 @@ function applyPageVariables() {
   document.documentElement.style.setProperty('--row-pad', `${ROW_PAD_PT}px`)
   document.documentElement.style.setProperty('--lead-gap', `${LEAD_GAP_PT}px`)
   document.documentElement.style.setProperty('--overview-row-pad', `${OVERVIEW_ROW_PAD_PT}px`)
+  document.documentElement.style.setProperty('--pulse', `${RUNNING_PULSE_MS}ms`)
   document.documentElement.style.setProperty('--move', `${MOVE_MS}ms ${MOVE.easing}`)
   document.documentElement.style.setProperty('--enter', `${ENTER_MS}ms ${ENTER.easing}`)
 }

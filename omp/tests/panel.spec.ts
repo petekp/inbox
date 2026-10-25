@@ -633,7 +633,7 @@ test('each item’s mark takes its tone, and a mark with no tone is muted', () =
   const lineOf = (s: string) => lines.find(l => l.includes(s))!
   for (const row of rows.filter(r => r.tone !== null))
     expect(lineOf(row.text)).toContain(`<${row.tone}>${row.mark} </${row.tone}>`)
-  const muted = rows.find(r => r.tone === null)!
+  const muted = rows.find(r => r.tone === null && !r.isRunning)!
   expect(lineOf(muted.text)).toContain(`${ESC}2m${muted.mark} ${ESC}22m`)
 })
 

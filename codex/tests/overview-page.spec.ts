@@ -117,7 +117,7 @@ test('the Codex tab draws the Overview page from the view, and new rows, j and k
         r.querySelector('.content')?.textContent,
       ]),
       [
-        ['mark', '●', 'Check the omp panelReading the draw code'],
+        ['mark running', '●', 'Check the omp panelReading the draw code'],
         ['mark needsYou', '◆', 'Pick the label'],
         ['mark done', '✓', 'Built the page'],
       ],

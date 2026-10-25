@@ -75,6 +75,7 @@ import {
   rowFeedbackText,
   rowKeyPlan,
   rowMark,
+  runningMark,
   settledLabel,
   stopFix,
   stopText,
@@ -802,6 +803,11 @@ export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): bool
   )
 }
 
+/** Whether the Overview is shown with a running mark, whose frame moves with the clock. */
+export function isRunningMarkShown(screen: PanelScreen, ui: PanelUi): boolean {
+  return !isRowTab(ui.tab) && screen.view.overviewPage.sections.some(p => p.rows.some(r => r.isRunning))
+}
+
 /** The notice for a press the row cannot show: a failed send, or a press whose row had changed. */
 export function noticeFor(outcome: { error: string | null; note: 'stale' | null }, now: number): PanelUi['notice'] {
   const text = outcome.error ?? (outcome.note ? noteText() : null)
@@ -964,8 +970,8 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
 
 /** A line on the Overview page: its mark, its text wrapped, and its detail under it. */
 function drawPageRow(row: OverviewRow, d: Draw): string[] {
-  const { width, style: s } = d
-  const mark = row.mark.padEnd(2)
+  const { width, now, style: s } = d
+  const mark = (row.isRunning ? runningMark(now) : row.mark).padEnd(2)
   const room = width - TITLE_AT - 2
   const wrapped = wrapText(row.text, Math.max(10, room))
   const [first = '', ...rest] = wrapped.slice(0, 3)
