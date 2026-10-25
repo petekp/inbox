@@ -201,7 +201,9 @@ import {
   LISTED_TABS,
   ROW_TABS,
   TABS,
-  CLOSED_MARKS,
+  canUndoRefused,
+  closedMark,
+  settledTone,
   DEMO_NOTICE,
   groupEmptyText,
   closedTotal,
@@ -4463,9 +4465,7 @@ export const register: Register = on => {
               </Box>,
             ]
     const refusedUndo = (d: ClosedLine) =>
-      d.delivery && typeof d.delivery === 'object' && d.delivery.canUndo
-        ? undoButton({ id: d.id, action: 'undo' }, null)
-        : null
+      canUndoRefused(d.delivery) ? undoButton({ id: d.id, action: 'undo' }, null) : null
     const closedRow = (d: ClosedLine, pos: TreePos) =>
       look === 'desktop'
         ? desktopFrame({
@@ -4473,7 +4473,7 @@ export const register: Register = on => {
             indent: DESKTOP_MARK_CELLS,
             isMarkHung: false,
             padY: space.rowPad / 2,
-            mark: <Text color={pal.age}>{d.delivery === null ? CLOSED_MARKS[closedState(d)] : ' '}</Text>,
+            mark: <Text color={pal.age}>{closedMark(closedState(d), d.delivery) || ' '}</Text>,
             side: <Text color={pal.age}>{shortAgo(now - d.at)}</Text>,
             children: [
               <Text wrap="wrap" color={pal.muted}>
@@ -4487,7 +4487,7 @@ export const register: Register = on => {
           })
         : treeRow(
             pos,
-            <Text color={pal.muted}>{d.delivery === null ? CLOSED_MARKS[closedState(d)] : ' '}</Text>,
+            <Text color={pal.muted}>{closedMark(closedState(d), d.delivery) || ' '}</Text>,
             <Box flexDirection="row">
               <Box flexDirection="column" flexGrow={1} flexShrink={1}>
                 <Text wrap="wrap" color={pal.muted}>
@@ -4676,7 +4676,7 @@ export const register: Register = on => {
                 width={1}
               />
             ) : null}
-            <Text wrap="wrap" color={delivery !== null || isLapsed ? pal.muted : pal.tone.done}>
+            <Text wrap="wrap" color={settledTone({ delivery, isLapsed }) === 'done' ? pal.tone.done : pal.muted}>
               {settledLabel(outcome, delivery)}
             </Text>
             {undo ? undoButton(undo, at) : null}

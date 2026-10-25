@@ -39,7 +39,9 @@ import type { SessionView } from '../../hooks/session'
 import type { ToneName } from '../../hooks/tones'
 import { ago } from '../../hooks/text'
 import {
-  CLOSED_MARKS,
+  canUndoRefused,
+  closedMark,
+  settledTone,
   DEMO_NOTICE,
   FINDING_GROUPS,
   NEEDS_YOU_GROUPS,
@@ -182,7 +184,7 @@ type Line = {
   file: string | null
   feedback: { text: string; tone: Tone | null; source: Feedback | null } | null
   /** Set once the row has closed and its label shows until it leaves. */
-  settled: { label: string; undo: PanelPress | null } | null
+  settled: { label: string; tone: 'done' | 'muted'; undo: PanelPress | null } | null
   buttons: Button[]
   row: RowView | null
   /** The group a Closed line folds. Enter unfolds or folds it. */
@@ -296,7 +298,11 @@ function lineOfRow(row: RowView): Line {
     feedback: feedbackLabel && f ? { text: feedbackLabel, tone: feedbackTone(f), source: f } : null,
     settled:
       state.is === 'settled'
-        ? { label: settledLabel(state.label, state.delivery), undo: state.canUndo && undo ? undo.press : null }
+        ? {
+            label: settledLabel(state.label, state.delivery),
+            tone: settledTone(state),
+            undo: state.canUndo && undo ? undo.press : null,
+          }
         : null,
     buttons: state.is === 'settled' ? [] : rowButtons(row),
     row,
@@ -324,7 +330,7 @@ const closedId = (id: string) => `closed ${id}`
 const foldId = (kind: FoldKind) => `fold ${kind}`
 
 function closedLines(d: ClosedLine): Line {
-  const canUndo = d.delivery !== null && typeof d.delivery === 'object' && d.delivery.canUndo
+  const canUndo = canUndoRefused(d.delivery)
   const undo: Button = {
     label: 'Undo',
     key: null,
@@ -336,7 +342,7 @@ function closedLines(d: ClosedLine): Line {
   return {
     ...blankLine(closedId(d.id)),
     depth: 1,
-    lead: { text: d.delivery === null ? CLOSED_MARKS[closedState(d)] : '', tone: null },
+    lead: { text: closedMark(closedState(d), d.delivery), tone: null },
     title: d.title,
     isDim: true,
     age: d.at,
@@ -470,7 +476,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
           lead,
           title: pr.title,
           isDim: true,
-          settled: { label: PR_DISMISSED_LABEL, undo: { action: 'pr-undo', ref: pr.ref } },
+          settled: { label: PR_DISMISSED_LABEL, tone: 'done', undo: { action: 'pr-undo', ref: pr.ref } },
         },
       })
       continue
@@ -922,7 +928,7 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
       ? line.feedback
       : null
   const after = line.settled
-    ? `  ${s.tone('done', line.settled.label)}${line.settled.undo ? `  ${s.dim('u Undo')}` : ''}`
+    ? `  ${line.settled.tone === 'done' ? s.tone('done', line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim('u Undo')}` : ''}`
     : line.feedback && !statusUnder
       ? `  ${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}`
       : ''

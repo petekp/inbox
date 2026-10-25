@@ -526,6 +526,25 @@ function deliveryLabel(state: 'queued' | 'unconfirmed', label: string): string {
   return state === 'queued' ? `Queued: ${label}` : `Delivery unconfirmed: ${label}`
 }
 
+/** A closed row's mark: blank while what it sent is on its way. */
+export function closedMark(state: ClosedState, delivery: ClosedDelivery): string {
+  return delivery === null ? CLOSED_MARKS[state] : ''
+}
+
+/** Whether a closed row offers Undo after its notification was refused. */
+export function canUndoRefused(delivery: ClosedDelivery): boolean {
+  return delivery !== null && typeof delivery === 'object' && delivery.canUndo
+}
+
+/**
+ * The tone of a settled row's label: done once nothing it sent is on its way and the row did not lapse, so a
+ * "Not sent" or unconfirmed result never reads as success. A look that draws the label as muted text after the
+ * title draws it muted either way.
+ */
+export function settledTone(state: { delivery: ClosedDelivery; isLapsed: boolean }): 'done' | 'muted' {
+  return state.delivery === null && !state.isLapsed ? 'done' : 'muted'
+}
+
 export function settledLabel(label: string, delivery: ClosedDelivery): string {
   if (delivery && typeof delivery === 'object') return `${label} · Not sent: ${delivery.error}`
   return delivery === null ? label : deliveryLabel(delivery, label)

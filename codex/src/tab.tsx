@@ -7,7 +7,7 @@ import type { IconName } from './row-actions'
 import { closedState } from '../../hooks/ledger'
 import { ago } from '../../hooks/text'
 import type { ClosedState } from '../../hooks/ledger'
-import { CLOSED_MARKS } from '../../hooks/view'
+import { canUndoRefused, closedMark } from '../../hooks/view'
 import { capitalized, clipLabel, noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
 import {
@@ -1486,11 +1486,11 @@ function GroupEnd({
           {closed.map(d => (
             <div class="entry" key={`closed-${d.id}`}>
               <div class="row">
-                <span class="mark">{d.delivery === null ? CLOSED_MARKS[d.state] : ''}</span>
+                <span class="mark">{closedMark(d.state, d.delivery)}</span>
                 <div class="content tight">
                   <div class="muted">{d.ask}</div>
                   <div class="outcome">{settledLabel(d.outcomeLabel, d.delivery)}</div>
-                  {d.delivery && typeof d.delivery === 'object' && d.delivery.canUndo ? (
+                  {canUndoRefused(d.delivery) ? (
                     <button
                       type="button"
                       disabled={sending.has(d.id)}

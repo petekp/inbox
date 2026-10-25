@@ -2571,6 +2571,15 @@ function feedbackText(f, look) {
 function deliveryLabel(state, label) {
   return state === "queued" ? `Queued: ${label}` : `Delivery unconfirmed: ${label}`;
 }
+function closedMark(state, delivery) {
+  return delivery === null ? CLOSED_MARKS[state] : "";
+}
+function canUndoRefused(delivery) {
+  return delivery !== null && typeof delivery === "object" && delivery.canUndo;
+}
+function settledTone(state) {
+  return state.delivery === null && !state.isLapsed ? "done" : "muted";
+}
 function settledLabel(label, delivery) {
   if (delivery && typeof delivery === "object")
     return `${label} \xB7 Not sent: ${delivery.error}`;
@@ -4465,7 +4474,11 @@ function lineOfRow(row) {
     detail: row.detail,
     file: row.fileName,
     feedback: feedbackLabel && f ? { text: feedbackLabel, tone: feedbackTone(f), source: f } : null,
-    settled: state.is === "settled" ? { label: settledLabel(state.label, state.delivery), undo: state.canUndo && undo ? undo.press : null } : null,
+    settled: state.is === "settled" ? {
+      label: settledLabel(state.label, state.delivery),
+      tone: settledTone(state),
+      undo: state.canUndo && undo ? undo.press : null
+    } : null,
     buttons: state.is === "settled" ? [] : rowButtons(row),
     row,
     isWaiting: isWaitingRow(row),
@@ -4477,7 +4490,7 @@ var isGroupEmpty = (g) => g.rows.length === 0 && closedTotal(g.closed, settledIn
 var closedId = (id) => `closed ${id}`;
 var foldId = (kind) => `fold ${kind}`;
 function closedLines(d) {
-  const canUndo = d.delivery !== null && typeof d.delivery === "object" && d.delivery.canUndo;
+  const canUndo = canUndoRefused(d.delivery);
   const undo = {
     label: "Undo",
     key: null,
@@ -4488,7 +4501,7 @@ function closedLines(d) {
   return {
     ...blankLine(closedId(d.id)),
     depth: 1,
-    lead: { text: d.delivery === null ? CLOSED_MARKS[closedState(d)] : "", tone: null },
+    lead: { text: closedMark(closedState(d), d.delivery), tone: null },
     title: d.title,
     isDim: true,
     age: d.at,
@@ -4611,7 +4624,7 @@ function prEntries(screen, now) {
           lead,
           title: pr.title,
           isDim: true,
-          settled: { label: PR_DISMISSED_LABEL, undo: { action: "pr-undo", ref: pr.ref } }
+          settled: { label: PR_DISMISSED_LABEL, tone: "done", undo: { action: "pr-undo", ref: pr.ref } }
         }
       });
       continue;
@@ -4975,7 +4988,7 @@ function drawLine(line, isSelected, d) {
   const out = [];
   const status = line.status ? `  ${line.status.tone ? s.tone(line.status.tone, line.status.text) : s.dim(line.status.text)}${s.dim(line.status.rest)}` : "";
   const statusUnder = line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(line.feedback.source, isSelected) ? line.feedback : null;
-  const after = line.settled ? `  ${s.tone("done", line.settled.label)}${line.settled.undo ? `  ${s.dim("u Undo")}` : ""}` : line.feedback && !statusUnder ? `  ${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
+  const after = line.settled ? `  ${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim("u Undo")}` : ""}` : line.feedback && !statusUnder ? `  ${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const title = line.isDim ? s.dim(line.title) : isSelected ? s.bold(line.title) : line.title;
   const cursor = isSelected ? s.tone("accent", "\u25B8") : " ";
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
