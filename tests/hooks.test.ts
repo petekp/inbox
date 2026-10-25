@@ -2484,7 +2484,7 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   expect(sent.at(-1)).toContain("Let's talk through this review comment on PR #12")
   await clock.settle()
   expect(await pane.find({ text: /Discussing…/ })).toBeDefined()
-  expect((await pane.find({ key: 'discuss-T1' }))?.props.label).toMatch(/Discuss again$/)
+  expect((await pane.find({ key: 'discuss-T1' }))?.props.label).toMatch(/\bDiscuss$/)
   submitAnswer = { drop: 'a hook refused it' }
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'address-T1' })
@@ -2506,11 +2506,12 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   await arriveFirst($)
   await clock.settle()
   expect(await pane.find({ text: /Delivery\s+unconfirmed:\s+Address/ })).toBeDefined()
+  expect((await pane.find({ key: 'address-T1-key' }))?.props.label).toBe('Address again')
   expect((await pane.find({ key: 'select-acme/greet#12 thread T1' }))?.props.label).toBe('◦')
   expect(await pane.find({ text: /✓\sAddress/ })).toBeUndefined()
   await arrive($)
   await clock.settle()
-  expect(await pane.find({ text: /^Addressed$/ })).toBeDefined()
+  expect(await pane.find({ text: /^\u2007·\sAddressed$/ })).toBeDefined()
 
   expect(await pane.find({ key: 'address-T1-key' })).toBeDefined()
   await clock.advance(PRESS_GUARD_MS)
@@ -4084,10 +4085,11 @@ test('no two buttons on a row share a hotkey, for every row kind in the demo', a
     }
   })
   const isSent = threadSentIn(lastActions)
+  const presses = { lastActions, turns, now: 1_000_000 }
   const prRows = Object.values(prViews.views).flatMap(pr => [
-    { id: `PR #${pr.number}`, actions: prBlockActions(pr, isSent, prViews.branchRef, lastActions) },
-    ...waitingThreads(pr).map(t => ({ id: prThreadId(pr, t), actions: threadActions(pr, t, lastActions) })),
-    ...failingChecks(pr).map(c => ({ id: prCheckId(pr, c), actions: checkActions(pr, c, lastActions) })),
+    { id: `PR #${pr.number}`, actions: prBlockActions(pr, isSent, prViews.branchRef, presses) },
+    ...waitingThreads(pr).map(t => ({ id: prThreadId(pr, t), actions: threadActions(pr, t, presses) })),
+    ...failingChecks(pr).map(c => ({ id: prCheckId(pr, c), actions: checkActions(pr, c, presses) })),
   ])
   const rows = [
     ...itemRows,
@@ -4197,8 +4199,9 @@ test('every row in the demo, on every tab, draws its plan’s buttons in the pla
     await clock.settle()
     const prs = Object.values(prViews.views)
     const isSent = threadSentIn(lastActions)
+    const presses = { lastActions, turns, now: 1_000_000 }
     for (const pr of prs) {
-      const labels = prBlockActions(pr, isSent, prViews.branchRef, lastActions).map(a => a.label)
+      const labels = prBlockActions(pr, isSent, prViews.branchRef, presses).map(a => a.label)
       const { buttons } = await drawn()
       expect(
         buttons.filter(b => b.key.endsWith(`-${pr.ref}`)).map(b => b.label),
@@ -4206,8 +4209,8 @@ test('every row in the demo, on every tab, draws its plan’s buttons in the pla
       ).toEqual(labels)
     }
     const prRows = prs.flatMap(pr => [
-      ...waitingThreads(pr).map(t => ({ id: prThreadId(pr, t), labels: threadActions(pr, t, lastActions) })),
-      ...failingChecks(pr).map(c => ({ id: prCheckId(pr, c), labels: checkActions(pr, c, lastActions) })),
+      ...waitingThreads(pr).map(t => ({ id: prThreadId(pr, t), labels: threadActions(pr, t, presses) })),
+      ...failingChecks(pr).map(c => ({ id: prCheckId(pr, c), labels: checkActions(pr, c, presses) })),
     ])
     let checked = 0
     for (const row of prRows) {

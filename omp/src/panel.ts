@@ -436,8 +436,9 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
 }
 
 function prEntries(screen: PanelScreen, now: number): Entry[] {
-  const { prs, lastActions } = screen.view
+  const { prs, lastActions, turns } = screen.view
   const isSent = threadSentIn(lastActions)
+  const presses = { lastActions, turns, now }
   const out: Entry[] = []
   if (screen.isGhMissing) out.push({ kind: 'note', text: GH_MISSING_TEXT })
   for (const { pr, isSettled } of prs.drawn) {
@@ -468,7 +469,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
         status: { text: head, tone: PR_TONES[status], rest: unlisted.map(r => ` · ${r}`).join('') },
         feedback: f,
         detail: pr.error ? `Last refresh failed: ${pr.error}` : null,
-        buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, lastActions)),
+        buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses)),
       },
     })
     const threads = waitingThreads(pr)
@@ -486,7 +487,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
           isDim: text.fold !== null,
           detail: [text.meta, text.fold?.note].filter(Boolean).join(' · ') || null,
           feedback: pressFeedback(screen, id, now),
-          buttons: prButtons(threadActions(pr, t, lastActions)),
+          buttons: prButtons(threadActions(pr, t, presses)),
         },
       })
     }
@@ -503,7 +504,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
           title: c.name,
           detail: checkRunText(c),
           feedback: pressFeedback(screen, id, now),
-          buttons: prButtons(checkActions(pr, c, lastActions)),
+          buttons: prButtons(checkActions(pr, c, presses)),
         },
       })
     }

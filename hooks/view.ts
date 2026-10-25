@@ -34,6 +34,7 @@ import {
   isFoldingPress,
   isHandedOff,
   isPrRowId,
+  isRepeatOf,
   isUndoable,
   noteText,
   retryOf,
@@ -445,12 +446,27 @@ export function hasAge(
   )
 }
 
+export function isPressOut(f: Feedback | null): boolean {
+  return f?.is === 'working' || f?.is === 'queued' || f?.is === 'unconfirmed'
+}
+
 /**
- * A press status, such as "Comparing…" or "✓ Compared", follows a closed row's title. An open row draws it under its
- * buttons instead, so a status that wraps adds a line below them and never moves them.
+ * Whether a button reads "… again". A first press gains "again" only once it settles, so its button keeps its width
+ * while the press is out. A repeat press keeps "again" throughout.
+ */
+export function isAgain(last: LastAction | undefined, action: string, isOut: boolean): boolean {
+  return isRepeatOf(last, action) && (!isOut || last?.isRepeat === true)
+}
+
+/** What a PR row's buttons read their presses from. */
+export type PressState = Pick<ViewInput, 'lastActions' | 'turns' | 'now'>
+
+/**
+ * A press status follows the row's title. While the press is out, an open row draws its status, such as "Comparing…",
+ * under its buttons instead, so a status that wraps adds a line below them and never moves them.
  */
 export function isStatusUnderActions(f: Feedback | null, isOpen: boolean): boolean {
-  return isOpen && f !== null && hasAge(f)
+  return isOpen && isPressOut(f)
 }
 
 const runIt = (look: Look) =>
@@ -697,7 +713,7 @@ function actionsOf(
   row: { id: string; item: Item | null; finding: Finding | null; steps: HelpStep[] },
   last: LastAction | undefined,
   state: RowState,
-  isPressOut: boolean,
+  isOut: boolean,
 ): ActionView[] {
   const { id, item, steps } = row
   const action = (
@@ -707,14 +723,7 @@ function actionsOf(
     flags: Partial<Pick<ActionView, 'isPrimary' | 'isFolded'>> = {},
   ): ActionView => ({
     press,
-    label:
-      press.action !== 'type' &&
-      (!isPressOut || last?.isRepeat === true) &&
-      last?.kind !== 'local' &&
-      last?.delivery?.state !== 'failed' &&
-      last?.action === actionId(press)
-        ? `${label} again`
-        : label,
+    label: press.action !== 'type' && isAgain(last, actionId(press), isOut) ? `${label} again` : label,
     kind,
     emphasis:
       flags.isPrimary || press.action === 'done' || press.action === 'address'
@@ -1021,8 +1030,7 @@ export function inboxView({
     const state = stateOf(row.id)
     const feedback = feedbackIn(row.id, state, row.item?.reportedAt)
     // A button must keep its width while its press is out, or the buttons after it can move to another line.
-    const isPressOut = feedback?.is === 'working' || feedback?.is === 'queued' || feedback?.is === 'unconfirmed'
-    const actions = actionsOf(row, lastActions[row.id], state, isPressOut)
+    const actions = actionsOf(row, lastActions[row.id], state, isPressOut(feedback))
 
     return {
       ...row,

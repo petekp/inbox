@@ -408,13 +408,14 @@ test('a failed send shows why and offers Try again first', () => {
 
 test('PR buttons follow the shared plan order for the block, its threads and its checks', () => {
   const screen = screenOf()
-  const { lastActions, prs } = screen.view
+  const { lastActions, turns, prs } = screen.view
   const { pr } = prs.drawn[0]!
   const isSent = threadSentIn(lastActions)
+  const presses = { lastActions, turns, now: NOW }
   const plans = [
-    prBlockActions(pr, isSent, prs.branchRef, lastActions),
-    ...waitingThreads(pr).map(t => threadActions(pr, t, lastActions)),
-    ...failingChecks(pr).map(c => checkActions(pr, c, lastActions)),
+    prBlockActions(pr, isSent, prs.branchRef, presses),
+    ...waitingThreads(pr).map(t => threadActions(pr, t, presses)),
+    ...failingChecks(pr).map(c => checkActions(pr, c, presses)),
   ]
   expect(plans.length).toBeGreaterThan(3)
   let ui: PanelUi = { ...INITIAL_UI, tab: 'prs' }
