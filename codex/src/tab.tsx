@@ -30,6 +30,7 @@ import {
   heldReplies,
   isFailure,
   isGuarded,
+  isStatusUnderActions,
   isWaitingRow,
   firstWaiting,
   keptOpen,
@@ -1069,7 +1070,8 @@ function ListRow({ row, track, onSelect, now }: { row: Row; track: RowTrack; onS
   const label = isSending ? null : (pending ?? (f ? feedbackLabel(row) : null))
   const ageAt = !pending && f && hasAge(f) ? f.at : null
   const isInSide = ageAt !== null && !isSelected && !isClosing && f?.is !== 'queued' && f?.is !== 'unconfirmed'
-  const last = isInSide ? null : label
+  const statusUnder = !pending && isStatusUnderActions(f, isSelected || isClosing) ? label : null
+  const last = isInSide || statusUnder ? null : label
   const side = isSending ? SENDING : ageAt !== null ? shortAgo(now - ageAt) : last ? null : row.age
   const afterTone = !pending && isFailure(row.feedback) ? 'error' : undefined
 
@@ -1105,12 +1107,12 @@ function ListRow({ row, track, onSelect, now }: { row: Row; track: RowTrack; onS
         {isInSide ? <span class="side-label">{label}</span> : null}
         {side}
       </span>
-      {isSelected || isClosing ? <Panel row={row} isClosing={isClosing} /> : null}
+      {isSelected || isClosing ? <Panel row={row} isClosing={isClosing} status={statusUnder} /> : null}
     </div>
   )
 }
 
-function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
+function Panel({ row, isClosing, status }: { row: Row; isClosing: boolean; status?: string | null }) {
   const { keys, more } = rowActions(row)
   const copied = copies.get(row.id)
   const note = noteOf(row.id)
@@ -1152,6 +1154,7 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
         }
         isBlocked={isOpenGuarded}
       />
+      {status ? <div class="muted">{status}</div> : null}
       {copied ? (
         <div>
           <div class="muted">Copy {copied.name} from here:</div>

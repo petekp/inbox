@@ -55,6 +55,7 @@ import {
   heldReplies,
   isFailure,
   isResumable,
+  isStatusUnderActions,
   isWaitingRow,
   keptOpen,
   replyHint,
@@ -159,7 +160,7 @@ type Line = {
   age: number | null
   detail: string | null
   file: string | null
-  feedback: { text: string; tone: Tone | null } | null
+  feedback: { text: string; tone: Tone | null; source: Feedback | null } | null
   /** Set once the row has closed and its label shows until it leaves. */
   settled: { label: string; undo: PanelPress | null } | null
   buttons: Button[]
@@ -271,7 +272,7 @@ function lineOfRow(row: RowView): Line {
     age: f?.is === 'done' ? f.at : row.at,
     detail: row.detail,
     file: row.fileName,
-    feedback: feedbackLabel && f ? { text: feedbackLabel, tone: feedbackTone(f) } : null,
+    feedback: feedbackLabel && f ? { text: feedbackLabel, tone: feedbackTone(f), source: f } : null,
     settled:
       state.is === 'settled'
         ? { label: settledLabel(state.label, state.delivery), undo: state.canUndo && undo ? undo.press : null }
@@ -318,7 +319,7 @@ function closedLines(d: ClosedLine): Line {
     title: d.title,
     isDim: true,
     age: d.at,
-    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: null },
+    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: null, source: null },
     buttons: canUndo ? [undo] : [],
     isStatic: !canUndo,
     isWaiting: false,
@@ -376,7 +377,8 @@ function stopEntries(screen: PanelScreen, ui: PanelUi): Entry[] {
         status: { text: `${capitalized(stopText(stop))}.`, tone: 'error', rest: '' },
         age: stop.at,
         detail: canResume ? null : stopFix(stop),
-        feedback: resuming?.is === 'refused' ? { text: `Not sent: ${resuming.why}`, tone: 'error' } : null,
+        feedback:
+          resuming?.is === 'refused' ? { text: `Not sent: ${resuming.why}`, tone: 'error', source: null } : null,
         buttons: canResume ? [resume] : [],
         isStatic: !canResume,
         isWaiting: canResume,
@@ -502,7 +504,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
 function pressFeedback(screen: PanelScreen, id: string, now: number): Line['feedback'] {
   const f = feedbackOf(id, screen.view.lastActions[id], undefined, screen.view.turns, now)
 
-  return f ? { text: feedbackText(f, AGENT), tone: feedbackTone(f) } : null
+  return f ? { text: feedbackText(f, AGENT), tone: feedbackTone(f), source: f } : null
 }
 
 function entriesOf(screen: PanelScreen, ui: PanelUi, tab: Tab, now: number): Entry[] {
@@ -831,9 +833,16 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   const status = line.status
     ? `  ${line.status.tone ? s.tone(line.status.tone, line.status.text) : s.dim(line.status.text)}${s.dim(line.status.rest)}`
     : ''
+  const statusUnder =
+    line.feedback &&
+    line.settled === null &&
+    !isShut(line, ui) &&
+    isStatusUnderActions(line.feedback.source, isSelected)
+      ? line.feedback
+      : null
   const after = line.settled
     ? `  ${s.tone('done', line.settled.label)}${line.settled.undo ? `  ${s.dim('u Undo')}` : ''}`
-    : line.feedback
+    : line.feedback && !statusUnder
       ? `  ${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}`
       : ''
   const title = line.isDim ? s.dim(line.title) : isSelected ? s.bold(line.title) : line.title
@@ -856,6 +865,7 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
     const field = wrapText(`${text}\u0000`, Math.max(10, width - indent - 1))
     out.push(...field.map(l => ' '.repeat(indent) + l.replace('\u0000', s.inverse(' '))))
   }
+  if (statusUnder) out.push(...indented(statusUnder.text, indent, width, 4, feedbackPaint(statusUnder.tone, s)))
 
   return out
 }

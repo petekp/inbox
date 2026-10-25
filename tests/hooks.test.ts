@@ -1726,7 +1726,7 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   await clock.settle()
   expect(await pane.find({ text: /Queued/ })).toBeUndefined()
   await clock.advance(QUEUED_AFTER_MS)
-  expect(await pane.find({ text: /^\u2007·\sQueued:\sExplain$/ })).toBeDefined()
+  expect(await pane.find({ text: /^Queued:\sExplain$/ })).toBeDefined()
   await pane.press({ key: 'select-i2' })
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
@@ -1737,7 +1737,7 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   await arrive($)
   await clock.settle()
   await pane.press({ key: 'select-i1' })
-  expect(await pane.find({ text: /^\u2007·\sExplaining…$/ })).toBeDefined()
+  expect(await pane.find({ text: /^Explaining…$/ })).toBeDefined()
   expect(await pane.find({ text: /Queued/ })).toBeUndefined()
 
   submitAnswer = { drop: 'a hook refused it' }
@@ -2012,7 +2012,7 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   inFlight.push(pane.press({ key: 'explain-i1-key' }))
   await clock.settle()
   await clock.advance(QUEUED_AFTER_MS)
-  expect(await pane.find({ text: /^\u2007·\sQueued:\sExplain/ })).toBeDefined()
+  expect(await pane.find({ text: /^Queued:\sExplain$/ })).toBeDefined()
   expect((await close({ id: 'i1', answer: 'Deno' })).result).toBe(
     'Closed. The user sees it in the /inbox pane with its outcome. Name it by what it says, never by its id.',
   )
@@ -2318,7 +2318,7 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   expect(await pane.find({ text: /✓\sAddress/ })).toBeUndefined()
   await arrive($)
   await clock.settle()
-  expect(await pane.find({ text: /^\u2007·\sAddressed$/ })).toBeDefined()
+  expect(await pane.find({ text: /^Addressed$/ })).toBeDefined()
 
   expect(await pane.find({ key: 'address-T1-key' })).toBeDefined()
   await clock.advance(PRESS_GUARD_MS)

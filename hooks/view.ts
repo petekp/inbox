@@ -430,6 +430,14 @@ export function hasAge(
   )
 }
 
+/**
+ * A press status, such as "Comparing…" or "✓ Compared", follows a closed row's title. An open row draws it under its
+ * buttons instead, so a status that wraps adds a line below them and never moves them.
+ */
+export function isStatusUnderActions(f: Feedback | null, isOpen: boolean): boolean {
+  return isOpen && f !== null && hasAge(f)
+}
+
 const runIt = (look: Look) =>
   isTerminalLike(look) ? 'Run it in a terminal, or type ! and paste.' : 'Run it in Terminal.'
 const VERBS = {

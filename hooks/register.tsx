@@ -192,6 +192,7 @@ import {
   hasAge,
   heldReplies,
   isFailure,
+  isStatusUnderActions,
   isWaitingRow,
   isGuarded,
   PERMISSION_FALLBACK_DELAY_MS,
@@ -3378,8 +3379,9 @@ export const register: Register = on => {
                 : feedbackText(f, look),
             age: ago(now - f.at),
             isFailure: false,
+            feedback: f,
           }
-        : { text: feedbackText(f, look), age: '', isFailure: isFailure(f) }
+        : { text: feedbackText(f, look), age: '', isFailure: isFailure(f), feedback: f }
     }
     const lastActionText = (id: string) => {
       const f = feedbackLabel(id)
@@ -3685,7 +3687,8 @@ export const register: Register = on => {
           />
         ) : null
       const f = feedbackLabel(row.id, row)
-      const titleAfter = pressedAge(row) ?? (isAgeInSide ? undefined : row.titleAfter)
+      const isStatusUnder = f !== null && isStatusUnderActions(f.feedback, isSelected)
+      const titleAfter = (isStatusUnder ? null : pressedAge(row)) ?? (isAgeInSide ? undefined : row.titleAfter)
       const status = [
         ...(row.fold?.note ? [{ text: row.fold.note, color: pal.muted }] : []),
         ...(f && !f.age ? [{ text: f.text, color: f.isFailure ? pal.tone.error : pal.muted }] : []),
@@ -3706,7 +3709,8 @@ export const register: Register = on => {
             2 * space.rowPad -
             lineCount(`${row.title}${shownAfter}`, titleWidth) -
             status.length -
-            keyLines(keys, more, textWidth)
+            keyLines(keys, more, textWidth) -
+            (isStatusUnder ? lineCount(f.text, textWidth) : 0)
           : null
       const body =
         bodyLines !== null && row.clippedBody && row.body ? row.clippedBody(bodyLines, textWidth) : (row.body ?? null)
@@ -3747,6 +3751,11 @@ export const register: Register = on => {
           ) : (
             [keyRow(row.id, keys), keyRow(row.id, more)]
           )}
+          {isStatusUnder ? (
+            <Text color={pal.muted} wrap="wrap">
+              {f.text}
+            </Text>
+          ) : null}
         </Box>
       )
       // The `view-` Box is what select() scrolls into view. Drawn on the selected row alone, so the key exists only
@@ -3765,7 +3774,9 @@ export const register: Register = on => {
             <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1} />,
             <Text wrap="wrap">
               <Text bold>{row.title}</Text>
-              {f?.age ? <Text color={pal.muted}>{unbroken(`${DOT}${f.text}`, row.title, fitsTitleLine)}</Text> : null}
+              {f?.age && !isStatusUnder ? (
+                <Text color={pal.muted}>{unbroken(`${DOT}${f.text}`, row.title, fitsTitleLine)}</Text>
+              ) : null}
             </Text>,
             row.subtitle ?? null,
             row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null,
