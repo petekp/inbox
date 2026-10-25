@@ -43,6 +43,7 @@ import {
   ROW_COPY,
   SETTLED_MS,
   TABS,
+  actionLabel,
   closedShown,
   closedTotal,
   earlierLabel,
@@ -787,12 +788,19 @@ function indented(
 
 type Draw = { screen: PanelScreen; ui: PanelUi; width: number; now: number; style: Style }
 
-function buttonCell(b: Button, isFocused: boolean, s: Style): string {
-  if (isFocused) return s.inverse(s.bold(` ↵ ${b.label} `))
+function buttonCell(b: Button, isFocused: boolean, s: Style, mark = ''): string {
+  if (isFocused) return s.inverse(s.bold(` ↵ ${b.label}${mark} `))
   if (b.isFollowUp) return s.dim(b.key ? ` ${b.key} ${b.label} ` : ` ${b.label} `)
-  const label = b.isRecommended ? s.underline(b.label) : b.label
+  const label = (b.isRecommended ? s.underline(b.label) : b.label) + mark
 
   return b.key ? ` ${s.bold(b.key)} ${label} ` : ` ${label} `
+}
+
+/** What `actionLabel` adds to the label, measured on the focused cell, the widest form, alone on a line. */
+function labelMark(b: Button, room: number, s: Style): string {
+  const fits = (label: string) => visibleLength(buttonCell({ ...b, label }, true, s)) <= room
+
+  return actionLabel({ label: b.label, isPrimary: b.isRecommended }, fits).slice(b.label.length)
 }
 
 function buttonLines(line: Line, ui: PanelUi, indent: number, width: number, s: Style): string[] {
@@ -801,7 +809,7 @@ function buttonLines(line: Line, ui: PanelUi, indent: number, width: number, s: 
   let current = ' '.repeat(indent)
   let used = indent
   line.buttons.forEach((b, i) => {
-    const cell = buttonCell(b, i === focused, s)
+    const cell = buttonCell(b, i === focused, s, labelMark(b, width - indent, s))
     const size = visibleLength(cell)
     if (used + size > width && used > indent) {
       out.push(current)

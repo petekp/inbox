@@ -1962,6 +1962,12 @@ function rowMark(row, look) {
 function replyHint(row, agent) {
   return row.replyKind === "answer" ? "Your answer" : `Your reply to ${agent}`;
 }
+function actionLabel(action, fits) {
+  if (!action.isPrimary)
+    return action.label;
+  const marked = `${action.label} (recommended)`;
+  return fits && !fits(marked) ? action.label : marked;
+}
 function isWaitingRow(row) {
   return row.state.is === "open";
 }
@@ -4225,13 +4231,17 @@ function indented(text, indent, width, maxLines, paint) {
     shown[maxLines - 1] = `${shown[maxLines - 1].replace(/.$/, "")}\u2026`;
   return shown.map((l) => " ".repeat(indent) + paint(l));
 }
-function buttonCell(b, isFocused, s) {
+function buttonCell(b, isFocused, s, mark = "") {
   if (isFocused)
-    return s.inverse(s.bold(` \u21B5 ${b.label} `));
+    return s.inverse(s.bold(` \u21B5 ${b.label}${mark} `));
   if (b.isFollowUp)
     return s.dim(b.key ? ` ${b.key} ${b.label} ` : ` ${b.label} `);
-  const label = b.isRecommended ? s.underline(b.label) : b.label;
+  const label = (b.isRecommended ? s.underline(b.label) : b.label) + mark;
   return b.key ? ` ${s.bold(b.key)} ${label} ` : ` ${label} `;
+}
+function labelMark(b, room, s) {
+  const fits = (label) => visibleLength(buttonCell({ ...b, label }, true, s)) <= room;
+  return actionLabel({ label: b.label, isPrimary: b.isRecommended }, fits).slice(b.label.length);
 }
 function buttonLines(line, ui, indent, width, s) {
   const focused = focusOf(line, ui);
@@ -4239,7 +4249,7 @@ function buttonLines(line, ui, indent, width, s) {
   let current = " ".repeat(indent);
   let used = indent;
   line.buttons.forEach((b, i) => {
-    const cell = buttonCell(b, i === focused, s);
+    const cell = buttonCell(b, i === focused, s, labelMark(b, width - indent, s));
     const size = visibleLength(cell);
     if (used + size > width && used > indent) {
       out.push(current);

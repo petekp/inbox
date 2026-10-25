@@ -98,6 +98,29 @@ test('the recommended option is underlined when another button has focus', () =>
   expect(drawn(screen, ui).some(l => l.includes(`${ESC}4m${row.item!.rec}${ESC}24m`))).toBe(true)
 })
 
+test('the recommended option ends "(recommended)", outside its underline, and no other option does', () => {
+  const screen = screenOf()
+  const row = firstQuestion(screen)
+  expect(buttonLine(screen, onRow(row))).toContain(`↵ ${row.item!.rec} (recommended) `)
+  const moved = drawn(screen, keys(screen, onRow(row), 'right')).join('\n')
+  expect(moved).toContain(`${ESC}4m${row.item!.rec}${ESC}24m (recommended) `)
+  expect(strip(moved).match(/\(recommended\)/g)).toHaveLength(1)
+})
+
+test('the recommended option drops "(recommended)" only where its button would not fit a line of its own', () => {
+  const screen = screenOf()
+  const row = firstQuestion(screen)
+  const wide = buttonLine(screen, onRow(row))
+  const tight = wide.indexOf('(recommended) ') + '(recommended) '.length
+  expect(text(screen, onRow(row), tight)).toContain(`${row.item!.rec} (recommended)`)
+  expect(text(screen, keys(screen, onRow(row), 'right'), tight)).toContain(`${row.item!.rec} (recommended)`)
+  expect(text(screen, onRow(row), tight - 1)).toContain(`↵ ${row.item!.rec} `)
+  expect(text(screen, onRow(row), tight - 1)).not.toContain('(recommended)')
+  expect(drawn(screen, keys(screen, onRow(row), 'right'), tight - 1).join('\n')).toContain(
+    `${ESC}4m${row.item!.rec}${ESC}24m `,
+  )
+})
+
 test('Enter on the opening focus answers with the recommended option', () => {
   const screen = screenOf()
   const row = firstQuestion(screen)
