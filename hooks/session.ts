@@ -6,8 +6,8 @@ import {
   applyPrPress,
   drawnPrs,
   isDismissing,
-  isTracked,
   itemPrSteps,
+  keepsView,
   olderPrsText,
   linkedPrs,
   threadSentIn,
@@ -110,12 +110,14 @@ export function upgradeSession(saved: SavedSession): Session {
     prViews: {
       ...NO_PRS,
       ...saved.prViews,
-      // Threads saved before their times and `isLinesChanged` existed.
+      // Views saved before `isYours` and `wasSeenOpen`, and threads saved before their times and `isLinesChanged` existed.
       views: Object.fromEntries(
         Object.entries(views).map(([ref, pr]) => [
           ref,
           {
             ...pr,
+            isYours: pr.isYours ?? null,
+            wasSeenOpen: pr.wasSeenOpen ?? pr.state === 'OPEN',
             threads: pr.threads.map(t => ({
               ...t,
               isLinesChanged: t.isLinesChanged ?? false,
@@ -517,21 +519,21 @@ export function recorded<S extends Session>(
   return { state: { ...s, ledger: r.ledger }, result: r.result }
 }
 
-/** Merges fetched PRs into the session. A view stays only while the ledger tracks it or its dismissal is still showing. */
+/** Merges fetched PRs into the session. A view stays while `keepsView` keeps it or its dismissal is still showing. */
 export function withFetchedPrs<S extends Session>(
   s: S,
   fetched: PrViews['views'],
   branchRef: string | null,
   at: number,
 ): S {
+  const merged = { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false }
   const views = Object.fromEntries(
-    Object.entries(fetched).filter(([ref]) => isTracked({ ...s.prViews, branchRef }, s.ledger.prs, ref)),
-  )
-  const dismissing = Object.fromEntries(
-    Object.entries(s.prViews.views).filter(([ref]) => isDismissing(s.lastActions, ref, at)),
+    Object.entries(merged.views).filter(
+      ([ref]) => keepsView(merged, s.ledger.prs, ref) || isDismissing(s.lastActions, ref, at),
+    ),
   )
 
-  return { ...s, prViews: { views: { ...dismissing, ...views }, branchRef, isFetching: false } }
+  return { ...s, prViews: { ...merged, views } }
 }
 
 type PrTab = {
@@ -609,6 +611,6 @@ function prTabOf(s: Session, lastActions: Record<string, LastAction>, now: numbe
     drawn,
     branchRef: s.prViews.branchRef,
     count: drawn.filter(d => !d.isSettled && prNeedsYou(d.pr, isSent)).length,
-    olderText: olderPrsText(s.ledger.prs),
+    olderText: olderPrsText(s.prViews, s.ledger.prs),
   }
 }

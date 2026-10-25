@@ -898,6 +898,8 @@ test('a new PR counts as a new row, moves an empty tab to PRs, and counts nothin
     reviewDecision: '',
     checks: [],
     threads: [],
+    isYours: true,
+    wasSeenOpen: true,
     error: null,
   })
   const withPrs = (refs: string[]) => {

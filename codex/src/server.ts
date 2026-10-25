@@ -6,7 +6,7 @@ import { isAbsolute } from 'node:path'
 
 import { ghFinder, ghIn } from '../../hooks/gh'
 import type { Run } from '../../hooks/gh'
-import { isDismissing, isTracked } from '../../hooks/pr-tab'
+import { isDismissing, keepsView } from '../../hooks/pr-tab'
 import type { PrPress } from '../../hooks/pr-tab'
 import { demoAfterPress, demoTurns, noteText, openTarget } from '../../hooks/presses'
 import type { PathProbe, RowPress } from '../../hooks/presses'
@@ -49,7 +49,7 @@ function viewsStillShown(
   at: number,
 ): PrViews['views'] {
   return Object.fromEntries(
-    Object.entries(prs.views).filter(([ref]) => isTracked(prs, linked, ref) || isDismissing(lastActions, ref, at)),
+    Object.entries(prs.views).filter(([ref]) => keepsView(prs, linked, ref) || isDismissing(lastActions, ref, at)),
   )
 }
 

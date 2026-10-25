@@ -1047,6 +1047,7 @@ var THREADS_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
   viewer { login }
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
+      author { login }
       commits(last: 1) { nodes { commit { committedDate } } }
       reviewThreads(first: 100) {
         nodes {
@@ -1107,13 +1108,14 @@ function readView(ref, json) {
     return null;
   }
 }
-function readThreads(json) {
+function readThreadsAnswer(json) {
   try {
     const data = JSON.parse(json).data;
     const viewer = data?.viewer?.login;
     const pr = data?.repository?.pullRequest;
+    const author = pr?.author;
     const headAt = Date.parse(pr?.commits?.nodes?.[0]?.commit?.committedDate ?? "") || null;
-    return (pr?.reviewThreads?.nodes ?? []).filter((t) => !t.isResolved).map((t) => {
+    const threads = (pr?.reviewThreads?.nodes ?? []).filter((t) => !t.isResolved).map((t) => {
       const first = t.comments.nodes[0];
       const last = t.comments.totalCount > 1 ? t.last.nodes[0] : undefined;
       const reply = last ? {
@@ -1137,9 +1139,13 @@ function readThreads(json) {
         at: Date.parse(first?.createdAt ?? "") || null
       };
     });
+    return { threads, isYours: viewer === undefined || author === undefined ? null : author?.login === viewer };
   } catch {
-    return [];
+    return { threads: [], isYours: null };
   }
+}
+function isKeptPr(pr) {
+  return pr.isYours !== false && pr.wasSeenOpen;
 }
 function waitingThreads(pr) {
   return pr.threads.filter((t) => t.isWaiting);
@@ -2349,18 +2355,23 @@ function itemPrSteps(item, prState, linked) {
   const refs = prState.branchRef ? [...linked, prState.branchRef] : linked;
   return prSteps(item, refs.map((ref) => ({ ref, url: prState.views[ref]?.url ?? null })));
 }
-function splitLinked(linked) {
-  return { tracked: linked.slice(-MAX_PRS), older: linked.slice(0, Math.max(0, linked.length - MAX_PRS)) };
+function isLeftOut(prState, ref) {
+  const view = prState.views[ref];
+  return view !== undefined && !isKeptPr(view);
 }
-function olderPrsText(linked) {
-  const { older } = splitLinked(linked);
+function splitLinked(prState, linked) {
+  const shown = linked.filter((ref) => !isLeftOut(prState, ref));
+  return { tracked: shown.slice(-MAX_PRS), older: shown.slice(0, Math.max(0, shown.length - MAX_PRS)) };
+}
+function olderPrsText(prState, linked) {
+  const { older } = splitLinked(prState, linked);
   if (older.length === 0)
     return null;
   const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
   return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
 }
 async function fetchTracked(gh, state, linked, findsBranchPr) {
-  const { tracked } = splitLinked(linked);
+  const { tracked } = splitLinked(state, linked);
   const branchTarget = findsBranchPr ? null : state.branchRef;
   const isBranchLinked = branchTarget !== null && tracked.includes(branchTarget);
   const [branch, ...rest] = await Promise.all([
@@ -2404,10 +2415,13 @@ async function fetchPr(gh, target, views, knownBranchRef) {
     return previous ? { ...previous, error: view.stderr.trim().split(`
 `)[0] || "gh could not read the PR" } : null;
   const threads = early ?? await threadsOf(ref);
+  const answer = threads.exitCode === 0 ? readThreadsAnswer(threads.stdout) : null;
   return {
     ...base,
-    threads: threads.exitCode === 0 ? readThreads(threads.stdout) : previous?.threads ?? [],
-    error: threads.exitCode === 0 ? null : "could not read review threads"
+    threads: answer?.threads ?? previous?.threads ?? [],
+    isYours: answer?.isYours ?? previous?.isYours ?? null,
+    wasSeenOpen: base.state === "OPEN" || previous?.wasSeenOpen === true,
+    error: answer ? null : "could not read review threads"
   };
 }
 function urlRef(json) {
@@ -2468,7 +2482,10 @@ function threadShowsCheckIn(lastActions) {
   };
 }
 function isTracked(prState, linked, ref) {
-  return splitLinked(linked).tracked.includes(ref) || prState.branchRef === ref;
+  return splitLinked(prState, linked).tracked.includes(ref) || prState.branchRef === ref;
+}
+function keepsView(prState, linked, ref) {
+  return isTracked(prState, linked, ref) || linked.includes(ref) && isLeftOut(prState, ref);
 }
 function isDismissing(lastActions, ref, now) {
   const mark = lastActions[prMarkId(ref)];
@@ -2954,6 +2971,8 @@ function upgradeSession(saved) {
         ref,
         {
           ...pr,
+          isYours: pr.isYours ?? null,
+          wasSeenOpen: pr.wasSeenOpen ?? pr.state === "OPEN",
           threads: pr.threads.map((t) => ({
             ...t,
             isLinesChanged: t.isLinesChanged ?? false,
@@ -3167,9 +3186,9 @@ function recorded(host, s, tool, args, now) {
   return { state: { ...s, ledger: r.ledger }, result: r.result };
 }
 function withFetchedPrs(s, fetched, branchRef, at) {
-  const views = Object.fromEntries(Object.entries(fetched).filter(([ref]) => isTracked({ ...s.prViews, branchRef }, s.ledger.prs, ref)));
-  const dismissing = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isDismissing(s.lastActions, ref, at)));
-  return { ...s, prViews: { views: { ...dismissing, ...views }, branchRef, isFetching: false } };
+  const merged = { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false };
+  const views = Object.fromEntries(Object.entries(merged.views).filter(([ref]) => keepsView(merged, s.ledger.prs, ref) || isDismissing(s.lastActions, ref, at)));
+  return { ...s, prViews: { ...merged, views } };
 }
 function withoutStalePending(lastActions, now) {
   const isStale = (last) => last.result?.state === "pending" && now - last.result.at > PRESS_TIMEOUT_MS;
@@ -3212,7 +3231,7 @@ function prTabOf(s, lastActions, now) {
     drawn,
     branchRef: s.prViews.branchRef,
     count: drawn.filter((d) => !d.isSettled && prNeedsYou(d.pr, isSent)).length,
-    olderText: olderPrsText(s.ledger.prs)
+    olderText: olderPrsText(s.prViews, s.ledger.prs)
   };
 }
 
@@ -3459,7 +3478,7 @@ var NEW_PR_FETCH_MS = 15000;
 function isPrFetchDue(s, lastFetchedAt, now) {
   if (lastFetchedAt === undefined)
     return true;
-  const hasNewPr = splitLinked(s.ledger.prs).tracked.some((ref) => !(ref in s.prViews.views));
+  const hasNewPr = splitLinked(s.prViews, s.ledger.prs).tracked.some((ref) => !(ref in s.prViews.views));
   return now - lastFetchedAt >= PRS_REFRESH_MS || hasNewPr && now - lastFetchedAt >= NEW_PR_FETCH_MS;
 }
 function prFetchTracker(now) {
@@ -4696,6 +4715,8 @@ function demoView(now) {
               at: now - 50 * MIN
             }
           ],
+          isYours: true,
+          wasSeenOpen: true,
           error: null
         },
         "acme/visor#29": {
@@ -4713,6 +4734,8 @@ function demoView(now) {
             { name: "unit tests", bucket: "pass", url: null }
           ],
           threads: [],
+          isYours: true,
+          wasSeenOpen: true,
           error: null
         },
         "acme/visor#33": {
@@ -4730,6 +4753,8 @@ function demoView(now) {
             { name: "unit tests", bucket: "pending", url: null }
           ],
           threads: [],
+          isYours: true,
+          wasSeenOpen: true,
           error: null
         }
       }

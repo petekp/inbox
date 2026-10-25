@@ -358,6 +358,8 @@ export function demoView(now: number): DemoCopy {
               at: now - 50 * MIN,
             },
           ],
+          isYours: true,
+          wasSeenOpen: true,
           error: null,
         },
         'acme/visor#29': {
@@ -375,6 +377,8 @@ export function demoView(now: number): DemoCopy {
             { name: 'unit tests', bucket: 'pass', url: null },
           ],
           threads: [],
+          isYours: true,
+          wasSeenOpen: true,
           error: null,
         },
         'acme/visor#33': {
@@ -392,6 +396,8 @@ export function demoView(now: number): DemoCopy {
             { name: 'unit tests', bucket: 'pending', url: null },
           ],
           threads: [],
+          isYours: true,
+          wasSeenOpen: true,
           error: null,
         },
       },

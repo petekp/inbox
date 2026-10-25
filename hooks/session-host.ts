@@ -428,7 +428,7 @@ const NEW_PR_FETCH_MS = 15_000
 /** True when the PRs are due for a fetch: none was fetched yet, the last is old, or a new tracked PR waits for its first. */
 export function isPrFetchDue(s: Session, lastFetchedAt: number | undefined, now: number): boolean {
   if (lastFetchedAt === undefined) return true
-  const hasNewPr = splitLinked(s.ledger.prs).tracked.some(ref => !(ref in s.prViews.views))
+  const hasNewPr = splitLinked(s.prViews, s.ledger.prs).tracked.some(ref => !(ref in s.prViews.views))
 
   return now - lastFetchedAt >= PRS_REFRESH_MS || (hasNewPr && now - lastFetchedAt >= NEW_PR_FETCH_MS)
 }
