@@ -967,7 +967,7 @@ describe('buildPrompt', () => {
   test('a long reply keeps its opening and its closing question, and long activity keeps its latest lines', () => {
     const reply = `Summary of the work.\n${'Detail line.\n'.repeat(2000)}Ship it now, or wait for review?`
     const activity = Array.from({ length: 400 }, (_, i) => `edited file-${i}.ts`)
-    const ex = { person: 'go', trigger: null, activity, reply, turn: 1, press: null, screen: '', dismissedDialogs: [] }
+    const ex = { person: 'go', trigger: null, activity, reply, turn: 1, press: null, screen: '' }
     const prompt = buildPrompt(EMPTY, ex)
     expect(prompt).toContain('Summary of the work.')
     expect(prompt).toContain('Ship it now, or wait for review?')

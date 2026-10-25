@@ -1849,7 +1849,7 @@ at each Stop, to find the question dialogs the agent opened in the ending turn.
     `item/tool/requestUserInput` belongs to the blocking user-input tool.
   - So the inbox sends its answer to a question linked to a dialog in this
     form, through `codex queue` (`codex/src/dialogs.ts:dialogReply`,
-    `codex/src/dialogs.ts:linkDialogs`). An answer press first links the
+    `hooks/dialogs.ts:linkDialogs`). An answer press first links the
     dialogs of the rollout's newest turn, so an answer pressed while the
     dialog's turn runs is linked too (`codex/src/server.ts:linkRunningDialogs`).
   - [live 2026-10-25, ChatGPT app in the inbox-ui VM, GPT-6.1 Sol] An inbox

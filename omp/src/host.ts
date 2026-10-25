@@ -17,6 +17,7 @@ import {
 } from '../../hooks/model-text'
 import type { DialogOutcome } from '../../hooks/model-text'
 import type { PrPress } from '../../hooks/pr-tab'
+import { noteDialog } from '../../hooks/dialogs'
 import { ghFinder, ghIn } from '../../hooks/gh'
 import type { Run } from '../../hooks/gh'
 import type { RowPress } from '../../hooks/presses'
@@ -28,7 +29,6 @@ import {
   needsUpdate,
   noteActivity,
   noteCommandOutput,
-  noteDismissedDialog,
   notePrompt,
   recorded,
   sessionView,
@@ -674,7 +674,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const line = dialogActivity(questions, outcome)
     await change(sessionIdOf(ctx), s => {
       const noted = noteActivity(s, line)
-      return outcome.kind === 'dismissed' ? noteDismissedDialog(noted, questions) : noted
+      return outcome.kind === 'dismissed' ? noteDialog(noted, null, questions) : noted
     }).catch(() => undefined)
   })
 

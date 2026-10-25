@@ -403,7 +403,7 @@ test('a question the desktop app’s box shows reaches the update, even when the
   )
 })
 
-test('a dialog reaches the model with its questions, whether answered or dismissed, and a dismissed one’s copy shows its option descriptions', async ($, on) => {
+test('a dialog reaches the model with its questions, whether answered or dismissed, and a dismissed one’s copy, added by the update or recorded by Claude, shows its option descriptions', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
   world($, on, prompts)
@@ -481,6 +481,32 @@ test('a dialog reaches the model with its questions, whether answered or dismiss
     'aborted',
   )
   expect(itemAsking('Clear stored data?')?.optionDescriptions).toBeUndefined()
+
+  ledgerReply = 'NOW: Waiting on the port'
+  const port = {
+    question: 'Which port should the server use?',
+    options: [
+      { label: '3000', description: 'The default the docs use' },
+      { label: '8080', description: 'Free on the staging box' },
+    ],
+  }
+  await turn(
+    't6',
+    async () => {
+      await ask(port)
+      await $.tool.call({
+        tool: 'mcp__inbox__record',
+        kind: 'question',
+        ask: 'Which port should the server use?',
+        options: ['3000', '8080'],
+      } as never)
+    },
+    'aborted',
+  )
+  expect(itemAsking('Which port should the server use?')?.optionDescriptions).toEqual({
+    3000: 'The default the docs use',
+    8080: 'Free on the staging box',
+  })
 })
 
 test('a question’s handle is the number a typed answer reaches, and the band counts what the tab counts', async ($, on) => {

@@ -746,32 +746,41 @@ function copyOf(q, items, questions) {
   const restated = questions.filter((o) => restates(asked.ask, o.question));
   return restated.length === 1 ? asked : null;
 }
-function withOptionDescriptions(before, after, turn, dismissed) {
-  const described = dismissed.filter((q) => Object.keys(q.descriptions).length > 0);
-  if (described.length === 0) return after;
-  const added = new Set(after.items.map((i) => i.id).filter((id) => !before.items.some((i) => i.id === id)));
-  const turnQuestions = after.items.filter((i) => i.kind === "question" && i.turn === turn);
-  const descriptionsById = /* @__PURE__ */ new Map();
-  for (const q of described) {
-    const copy = copyOf(q, turnQuestions, dismissed);
-    if (!copy || !added.has(copy.id)) continue;
-    const byKey = new Map(Object.entries(q.descriptions).map(([label, text]) => [optionKey(label), text]));
-    const descriptions = Object.fromEntries(
-      copy.options.flatMap((o) => {
-        const text = byKey.get(optionKey(o));
-        return text === void 0 ? [] : [[o, text]];
-      })
-    );
-    if (Object.keys(descriptions).length > 0) descriptionsById.set(copy.id, descriptions);
-  }
-  if (descriptionsById.size === 0) return after;
+function descriptionsFor(options, descriptions) {
+  const byKey = new Map(Object.entries(descriptions).map(([label, text]) => [optionKey(label), text]));
+  const matched = options.flatMap((o) => {
+    const text = byKey.get(optionKey(o));
+    return text === void 0 ? [] : [[o, text]];
+  });
+  return matched.length > 0 ? Object.fromEntries(matched) : null;
+}
+function asCopyOf(item, q) {
+  const descriptions = descriptionsFor(item.options, q.descriptions);
   return {
-    ...after,
-    items: after.items.map((i) => {
-      const descriptions = descriptionsById.get(i.id);
-      return descriptions ? { ...i, optionDescriptions: descriptions } : i;
-    })
+    ...item,
+    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
+    ...descriptions ? { optionDescriptions: descriptions } : {}
   };
+}
+function linkDialogs(s) {
+  if (s.dialogQuestions.length === 0) return s;
+  let items = s.ledger.items;
+  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
+  const questions = s.dialogQuestions.map((q) => {
+    if (q.itemId !== null) return q;
+    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
+    const copy = copyOf(
+      q,
+      turnItems,
+      s.dialogQuestions.filter((o) => o.turn === q.turn)
+    );
+    if (!copy || copy.dialog || linked.has(copy.id)) return q;
+    linked.add(copy.id);
+    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
+    return { ...q, itemId: copy.id };
+  });
+  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
+  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
 }
 
 // ../hooks/presses.ts
@@ -842,7 +851,7 @@ var ROW_TABS = TABS.filter((t) => t.id !== "prs");
 
 // ../hooks/session.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
-var NO_TURN = { person: null, trigger: null, activity: [], press: null, dismissedDialogs: [] };
+var NO_TURN = { person: null, trigger: null, activity: [], press: null };
 function emptySession() {
   return {
     ledger: EMPTY,
@@ -854,7 +863,8 @@ function emptySession() {
     lastActions: {},
     heldRows: [],
     prViews: NO_PRS,
-    stop: null
+    stop: null,
+    dialogQuestions: []
   };
 }
 var SESSION_ID = /^[\w-]{1,100}$/;
@@ -874,7 +884,7 @@ function upgradeSession(saved) {
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...saved.presence },
-    pending: (saved.pending ?? []).map((p) => ({ ...p, ex: { ...p.ex, dismissedDialogs: p.ex.dismissedDialogs ?? [] } })),
+    pending: saved.pending ?? [],
     sent: (saved.sent ?? []).map((x) => ({
       ...x,
       row: x.row ?? null,
@@ -907,7 +917,8 @@ function upgradeSession(saved) {
       ),
       isFetching: false
     },
-    stop: saved.stop ?? null
+    stop: saved.stop ?? null,
+    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
 }
 function applied(s, reply, now, promptAt) {
@@ -921,14 +932,9 @@ function applied(s, reply, now, promptAt) {
       pending: [{ ...next, failed: true }, ...s.pending.slice(1)],
       presence: { ...s.presence, ledgerState: "failed" }
     };
-  const ledger = parsed ? withOptionDescriptions(
-    s.ledger,
-    applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt),
-    ex.turn,
-    ex.dismissedDialogs
-  ) : s.ledger;
+  const ledger = parsed ? applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt) : s.ledger;
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed;
-  return {
+  return linkDialogs({
     ...s,
     ledger,
     pending: s.pending.slice(1),
@@ -938,7 +944,7 @@ function applied(s, reply, now, promptAt) {
       hasDroppedReply,
       turnsApplied: Math.max(s.presence.turnsApplied, next.turnsStarted)
     }
-  };
+  });
 }
 function needsCatchUp(s) {
   const { presence } = s;
@@ -948,7 +954,7 @@ function needsCatchUp(s) {
 var pendingKey = (p) => `${p.turnsStarted}:${p.ex.turn}`;
 function appliedCatchUp(s, begun, parsed, now) {
   const covered = new Set(begun.pending.map(pendingKey));
-  return {
+  return linkDialogs({
     ...s,
     ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn) : s.ledger,
     pending: s.pending.filter((p) => !covered.has(pendingKey(p))),
@@ -958,28 +964,7 @@ function appliedCatchUp(s, begun, parsed, now) {
       hasDroppedReply: parsed ? false : s.presence.hasDroppedReply,
       turnsApplied: Math.max(s.presence.turnsApplied, begun.presence.turnsStarted)
     }
-  };
-}
-
-// src/dialogs.ts
-function linkDialogs(s) {
-  if (s.dialogQuestions.length === 0) return s;
-  let items = s.ledger.items;
-  const questions = s.dialogQuestions.map((q) => {
-    if (q.itemId !== null) return q;
-    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
-    const copy = copyOf(
-      q,
-      turnItems,
-      s.dialogQuestions.filter((o) => o.turn === q.turn)
-    );
-    if (!copy || copy.dialog) return q;
-    const link = { callId: q.callId, index: q.index, question: q.question };
-    items = items.map((i) => i.id === copy.id ? { ...i, dialog: link } : i);
-    return { ...q, itemId: copy.id };
   });
-  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
-  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
 }
 
 // src/state.ts
@@ -1002,8 +987,7 @@ function emptyState(sessionId) {
     cliPath: null,
     ...emptySession(),
     tabSeenAt: 0,
-    heard: NOTHING_HEARD,
-    dialogQuestions: []
+    heard: NOTHING_HEARD
   };
 }
 function statePath(dir, sessionId) {
@@ -1187,8 +1171,7 @@ async function updateState(dir, sessionId, change) {
     const { state: current, isSaved } = await readSaved(dir, sessionId);
     const changed = await change(current);
     if (isSaved && changed === current) return current;
-    const linked = linkDialogs(changed);
-    const next = { ...linked, ledger: pruneClosed(linked.ledger, new Set(linked.heldRows)) };
+    const next = { ...changed, ledger: pruneClosed(changed.ledger, new Set(changed.heldRows)) };
     const tmp = `${path}.${process.pid}.tmp`;
     await writeFile(tmp, JSON.stringify(next));
     await rename(tmp, path);

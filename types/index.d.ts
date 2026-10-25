@@ -49,6 +49,18 @@ export type DialogLink = { callId: string; index: number; question: string }
 export type DialogQuestion = { question: string; options: string[]; descriptions: Record<string, string> }
 
 /**
+ * A dialog question from ledger turn `turn` that an item may copy: a question of a Codex dialog, which stays open, or
+ * of a dialog the person dismissed in another host. `callId` and `index` name a Codex dialog question, and `callId` is
+ * null in other hosts. `itemId` is the item that copies it, once linked.
+ */
+export type TurnDialogQuestion = DialogQuestion & {
+  callId: string | null
+  index: number
+  turn: number
+  itemId: string | null
+}
+
+/**
  * A one-press step toward finishing an item. The mod never runs a command:
  * `run` asks Claude to run it, under the usual permission checks, and
  * `terminal` copies one that only the person can run.
@@ -312,8 +324,6 @@ export type Exchange = {
   turn: number
   press: Press | null
   screen: string
-  /** The questions of dialogs the person dismissed in the turn. */
-  dismissedDialogs: DialogQuestion[]
 }
 
 export type Press = { id: string; action: 'answer' | 'explain' | 'compare' | 'run' | 'done' }
@@ -331,7 +341,6 @@ export type Session = {
     trigger: string | null
     activity: string[]
     press: Press | null
-    dismissedDialogs: DialogQuestion[]
   }
   /** The inbox text the agent last read beside a prompt, and the closed items it was told about. */
   told: Told
@@ -376,6 +385,11 @@ export type Session = {
   prViews: PrViews
   /** Why the last turn stopped, until the next turn starts. */
   stop: Stop | null
+  /**
+   * The dialog questions an item may still copy: those of the current turn, and of a turn whose exchange waits for the
+   * per-reply update.
+   */
+  dialogQuestions: TurnDialogQuestion[]
 }
 
 declare module 'claude-code' {

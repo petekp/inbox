@@ -997,6 +997,73 @@ function promptNotes(host, ledger, prompt, told) {
   return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
 }
 
+// ../hooks/dialogs.ts
+function optionKey(option) {
+  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
+}
+function optionsKey(options) {
+  return options.map(optionKey).sort().join(`
+`);
+}
+function hasSameOptions(item, q) {
+  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
+}
+function copyOf(q, items, questions) {
+  const byOptions = items.filter((i) => hasSameOptions(i, q));
+  const [only] = byOptions;
+  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1)
+    return only;
+  const pool = byOptions.length > 0 ? byOptions : items;
+  const byAsk = pool.filter((i) => restates(i.ask, q.question));
+  const [asked] = byAsk;
+  if (!asked || byAsk.length !== 1)
+    return null;
+  const restated = questions.filter((o) => restates(asked.ask, o.question));
+  return restated.length === 1 ? asked : null;
+}
+function descriptionsFor(options, descriptions) {
+  const byKey = new Map(Object.entries(descriptions).map(([label, text]) => [optionKey(label), text]));
+  const matched = options.flatMap((o) => {
+    const text = byKey.get(optionKey(o));
+    return text === undefined ? [] : [[o, text]];
+  });
+  return matched.length > 0 ? Object.fromEntries(matched) : null;
+}
+function asCopyOf(item, q) {
+  const descriptions = descriptionsFor(item.options, q.descriptions);
+  return {
+    ...item,
+    ...q.callId === null ? {} : { dialog: { callId: q.callId, index: q.index, question: q.question } },
+    ...descriptions ? { optionDescriptions: descriptions } : {}
+  };
+}
+function linkDialogs(s) {
+  if (s.dialogQuestions.length === 0)
+    return s;
+  let items = s.ledger.items;
+  const linked = new Set(s.dialogQuestions.flatMap((q) => q.itemId ?? []));
+  const questions = s.dialogQuestions.map((q) => {
+    if (q.itemId !== null)
+      return q;
+    const turnItems = items.filter((i) => i.kind === "question" && i.turn === q.turn);
+    const copy = copyOf(q, turnItems, s.dialogQuestions.filter((o) => o.turn === q.turn));
+    if (!copy || copy.dialog || linked.has(copy.id))
+      return q;
+    linked.add(copy.id);
+    items = items.map((i) => i.id === copy.id ? asCopyOf(i, q) : i);
+    return { ...q, itemId: copy.id };
+  });
+  const kept = questions.filter((q) => q.turn === s.ledger.turn || s.pending.some((p) => p.ex.turn === q.turn));
+  return { ...s, ledger: { ...s.ledger, items }, dialogQuestions: kept };
+}
+function noteDialog(s, callId, questions) {
+  const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
+  const added = questions.flatMap((q, index) => isNoted(index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]);
+  if (added.length === 0)
+    return s;
+  return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
+}
+
 // ../hooks/gh.ts
 var CANDIDATES = ["gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"];
 var GH_TIMEOUT_MS = 20000;
@@ -1027,60 +1094,6 @@ function ghIn(exec, bin, cwd, onUnstartable) {
     if (r.code === UNSTARTABLE_CODE)
       onUnstartable();
     return { exitCode: r.code, stdout: r.stdout, stderr: r.stderr };
-  };
-}
-
-// ../hooks/dialogs.ts
-function optionKey(option) {
-  return option.replace(RECOMMENDED_SUFFIX, "").trim().toLowerCase();
-}
-function optionsKey(options) {
-  return options.map(optionKey).sort().join(`
-`);
-}
-function hasSameOptions(item, q) {
-  return item.options.length > 0 && optionsKey(item.options) === optionsKey(q.options);
-}
-function copyOf(q, items, questions) {
-  const byOptions = items.filter((i) => hasSameOptions(i, q));
-  const [only] = byOptions;
-  if (only && byOptions.length === 1 && questions.filter((o) => hasSameOptions(only, o)).length === 1)
-    return only;
-  const pool = byOptions.length > 0 ? byOptions : items;
-  const byAsk = pool.filter((i) => restates(i.ask, q.question));
-  const [asked] = byAsk;
-  if (!asked || byAsk.length !== 1)
-    return null;
-  const restated = questions.filter((o) => restates(asked.ask, o.question));
-  return restated.length === 1 ? asked : null;
-}
-function withOptionDescriptions(before, after, turn, dismissed) {
-  const described = dismissed.filter((q) => Object.keys(q.descriptions).length > 0);
-  if (described.length === 0)
-    return after;
-  const added = new Set(after.items.map((i) => i.id).filter((id) => !before.items.some((i) => i.id === id)));
-  const turnQuestions = after.items.filter((i) => i.kind === "question" && i.turn === turn);
-  const descriptionsById = new Map;
-  for (const q of described) {
-    const copy = copyOf(q, turnQuestions, dismissed);
-    if (!copy || !added.has(copy.id))
-      continue;
-    const byKey = new Map(Object.entries(q.descriptions).map(([label, text]) => [optionKey(label), text]));
-    const descriptions = Object.fromEntries(copy.options.flatMap((o) => {
-      const text = byKey.get(optionKey(o));
-      return text === undefined ? [] : [[o, text]];
-    }));
-    if (Object.keys(descriptions).length > 0)
-      descriptionsById.set(copy.id, descriptions);
-  }
-  if (descriptionsById.size === 0)
-    return after;
-  return {
-    ...after,
-    items: after.items.map((i) => {
-      const descriptions = descriptionsById.get(i.id);
-      return descriptions ? { ...i, optionDescriptions: descriptions } : i;
-    })
   };
 }
 
@@ -2988,7 +3001,7 @@ function recordClose(host, ledger, input, now) {
 
 // ../hooks/session.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
-var NO_TURN = { person: null, trigger: null, activity: [], press: null, dismissedDialogs: [] };
+var NO_TURN = { person: null, trigger: null, activity: [], press: null };
 function emptySession() {
   return {
     ledger: EMPTY,
@@ -3000,7 +3013,8 @@ function emptySession() {
     lastActions: {},
     heldRows: [],
     prViews: NO_PRS,
-    stop: null
+    stop: null,
+    dialogQuestions: []
   };
 }
 var SESSION_ID = /^[\w-]{1,100}$/;
@@ -3029,7 +3043,7 @@ function upgradeSession(saved) {
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...saved.presence },
-    pending: (saved.pending ?? []).map((p) => ({ ...p, ex: { ...p.ex, dismissedDialogs: p.ex.dismissedDialogs ?? [] } })),
+    pending: saved.pending ?? [],
     sent: (saved.sent ?? []).map((x) => ({
       ...x,
       row: x.row ?? null,
@@ -3059,7 +3073,8 @@ function upgradeSession(saved) {
       ])),
       isFetching: false
     },
-    stop: saved.stop ?? null
+    stop: saved.stop ?? null,
+    dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
 }
 function notePrompt(host, s, text, isOpen) {
@@ -3108,11 +3123,6 @@ function noteActivity(s, line) {
     return s;
   return { ...s, turn: { ...s.turn, activity } };
 }
-function noteDismissedDialog(s, questions) {
-  if (questions.length === 0)
-    return s;
-  return { ...s, turn: { ...s.turn, dismissedDialogs: [...s.turn.dismissedDialogs, ...questions] } };
-}
 var LOCAL_URL = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|[\w.-]+\.localhost)(?::\d+)?[^\s"'`)\]]*/g;
 var PR_CREATE = /\bgh\s+pr\s+create\b/;
 function commandFindings(command, output) {
@@ -3147,8 +3157,7 @@ function endTurn(host, s, reply, isOpen, { tab = null, queuesEmptyReply = false 
     reply,
     turn: s.ledger.turn,
     press: s.turn.press,
-    screen: screenText(host, isOpen, tab),
-    dismissedDialogs: s.turn.dismissedDialogs
+    screen: screenText(host, isOpen, tab)
   };
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] };
 }
@@ -3165,9 +3174,9 @@ function applied(s, reply, now, promptAt) {
       pending: [{ ...next, failed: true }, ...s.pending.slice(1)],
       presence: { ...s.presence, ledgerState: "failed" }
     };
-  const ledger = parsed ? withOptionDescriptions(s.ledger, applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt), ex.turn, ex.dismissedDialogs) : s.ledger;
+  const ledger = parsed ? applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt) : s.ledger;
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed;
-  return {
+  return linkDialogs({
     ...s,
     ledger,
     pending: s.pending.slice(1),
@@ -3177,7 +3186,7 @@ function applied(s, reply, now, promptAt) {
       hasDroppedReply,
       turnsApplied: Math.max(s.presence.turnsApplied, next.turnsStarted)
     }
-  };
+  });
 }
 function needsCatchUp(s) {
   const { presence } = s;
@@ -3203,7 +3212,7 @@ function isUnseen(s) {
 var pendingKey = (p) => `${p.turnsStarted}:${p.ex.turn}`;
 function appliedCatchUp(s, begun, parsed, now) {
   const covered = new Set(begun.pending.map(pendingKey));
-  return {
+  return linkDialogs({
     ...s,
     ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn) : s.ledger,
     pending: s.pending.filter((p) => !covered.has(pendingKey(p))),
@@ -3213,7 +3222,7 @@ function appliedCatchUp(s, begun, parsed, now) {
       hasDroppedReply: parsed ? false : s.presence.hasDroppedReply,
       turnsApplied: Math.max(s.presence.turnsApplied, begun.presence.turnsStarted)
     }
-  };
+  });
 }
 function pressOn(s, p, at, localPressId, answerMessage) {
   const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId };
@@ -3265,7 +3274,7 @@ function completedAttempt(state, deliveryId, outcome) {
 }
 function recorded(host, s, tool, args, now) {
   const r = (tool === "close" ? recordClose : recordItem)(host, s.ledger, args, now);
-  return { state: { ...s, ledger: r.ledger }, result: r.result };
+  return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result };
 }
 function withFetchedPrs(s, fetched, branchRef, at) {
   const merged = { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false };
@@ -5420,7 +5429,7 @@ function createInbox(pi, deps = defaultDeps) {
     const line = dialogActivity(questions, outcome);
     await change(sessionIdOf(ctx), (s) => {
       const noted = noteActivity(s, line);
-      return outcome.kind === "dismissed" ? noteDismissedDialog(noted, questions) : noted;
+      return outcome.kind === "dismissed" ? noteDialog(noted, null, questions) : noted;
     }).catch(() => {
       return;
     });

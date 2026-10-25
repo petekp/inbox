@@ -57,7 +57,6 @@ import {
   endTurn,
   forkedFrom,
   noteActivity as noteTurnActivity,
-  noteDismissedDialog,
   pressOn,
   recordPrompt,
   recorded,
@@ -70,6 +69,7 @@ import type { SentBy, Session } from './session'
 import { fetchPrs as fetchSessionPrs, runUpdates, startPress, wakeForDone as wakeSessionForDone } from './session-host'
 import type { CatchUpReply, SessionHost } from './session-host'
 import { demoView, isDemoCopy } from './demo'
+import { noteDialog } from './dialogs'
 import type { Exchange, Press, Update } from './ledger'
 import {
   applyPrPress,
@@ -2553,7 +2553,7 @@ export const register: Register = on => {
       const line = dialogActivity(asked, outcome)
       await commit($, currentOwner(), s => {
         const noted = noteTurnActivity(s, line)
-        return isDismissed ? noteDismissedDialog(noted, asked) : noted
+        return isDismissed ? noteDialog(noted, null, asked) : noted
       }).catch(() => undefined)
 
       return ran
