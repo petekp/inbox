@@ -518,7 +518,7 @@ function actionsOf(
     press,
     label:
       press.action !== 'type' &&
-      !isPressOut &&
+      (!isPressOut || last?.isRepeat === true) &&
       last?.kind !== 'local' &&
       last?.delivery?.state !== 'failed' &&
       last?.action === actionId(press)

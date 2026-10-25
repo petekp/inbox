@@ -98,6 +98,8 @@ export type LastAction = {
   delivery?: Delivery
   /** Undo on a finding Fix handed off, which lists the row again while the agent works on it. */
   isKept?: true
+  /** It repeated the latest action, so its button keeps reading "… again" while the press is out. */
+  isRepeat?: true
 }
 
 /**

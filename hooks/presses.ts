@@ -741,7 +741,11 @@ function pressed(
   ctx: { now: number; turnsStarted: number; extraSteps: HelpStep[]; localPressId?: string },
 ): PressResult {
   const stale = { stale: true as const }
-  const record = (kind: LastAction['kind']) => recordPress(kind, actionId(p), pressText(p), ctx)
+  const isRepeat = last?.action === actionId(p) && last.kind !== 'local' && last.delivery?.state !== 'failed'
+  const record = (kind: LastAction['kind']) => ({
+    ...recordPress(kind, actionId(p), pressText(p), ctx),
+    ...(isRepeat ? { isRepeat: true as const } : {}),
+  })
   const unchanged = { ledger, last: null, effects: [] }
 
   if (p.action === 'undo') {

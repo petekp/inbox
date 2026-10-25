@@ -85,6 +85,13 @@ test('Compare reads Comparing… after its reply until the agent records the que
     feedback: '✓ Compared',
     actions: ['Redis', 'In-memory', 'Open caches.html', 'Reply', 'Explain', 'Compare again', 'Dismiss'],
   })
+
+  await press(host, { action: 'compare', id }, false, NO_HOLDS)
+  await turn(delivered.at(-1)!, 'A subagent is comparing the two caches again.')
+  expect(await row()).toEqual({
+    feedback: 'Comparing…',
+    actions: ['Redis', 'In-memory', 'Open caches.html', 'Reply', 'Explain', 'Compare again', 'Dismiss'],
+  })
 })
 
 test('a command that prints local URLs notes each once, and gh pr create links the PR it names', () => {

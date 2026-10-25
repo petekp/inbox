@@ -1642,7 +1642,11 @@ function recordPress(kind, action, text, ctx) {
 }
 function pressed(ledger, last, p, ctx) {
   const stale = { stale: true };
-  const record = (kind) => recordPress(kind, actionId(p), pressText(p), ctx);
+  const isRepeat = last?.action === actionId(p) && last.kind !== "local" && last.delivery?.state !== "failed";
+  const record = (kind) => ({
+    ...recordPress(kind, actionId(p), pressText(p), ctx),
+    ...isRepeat ? { isRepeat: true } : {}
+  });
   const unchanged = { ledger, last: null, effects: [] };
   if (p.action === "undo") {
     if (ledger.findings.some((f) => f.id === p.id) && last?.action === "address" && !last.isKept)
@@ -2065,7 +2069,7 @@ function actionsOf(row, last, state, isPressOut) {
   const { id, item, steps: steps2 } = row;
   const action = (press, label, kind, flags = {}) => ({
     press,
-    label: press.action !== "type" && !isPressOut && last?.kind !== "local" && last?.delivery?.state !== "failed" && last?.action === actionId(press) ? `${label} again` : label,
+    label: press.action !== "type" && (!isPressOut || last?.isRepeat === true) && last?.kind !== "local" && last?.delivery?.state !== "failed" && last?.action === actionId(press) ? `${label} again` : label,
     kind,
     emphasis: flags.isPrimary || press.action === "done" || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
     ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps2[press.step]) ? { icon: stepIconKind(steps2[press.step]) } : {},
