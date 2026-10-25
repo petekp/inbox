@@ -511,6 +511,11 @@ test('the footer shows the version after the inbox model, beside the hints or on
     .map(strip)
     .slice(-2)
   expect(marked?.trimEnd()).toEndWith(`inbox model Claude Sonnet 4.5  v${version} · next`)
+  const narrowWidth = ` inbox model Claude Sonnet 4.5  v${version} · next`.length - 1
+  const narrow = drawn(screenOf({ isNextBuild: true }), INITIAL_UI, narrowWidth)
+    .map(strip)
+    .at(-1)
+  expect(narrow?.trimEnd()).toEndWith(`inbox model Claude Sonnet 4.5  v${version}`)
 })
 
 test('the demo says its presses send nothing', () => {

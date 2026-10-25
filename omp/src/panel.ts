@@ -1064,7 +1064,9 @@ function footer(d: Draw, isPageScrolling: boolean): string[] {
         : isPageScrolling
           ? ['↑↓ scroll', 'tab switch']
           : ['tab switch']
-  const model = `${screen.modelName ? `inbox model ${screen.modelName}` : 'no inbox model: set @inbox'}  ${versionLabel(version, screen.isNextBuild === true)} `
+  const modelText = screen.modelName ? `inbox model ${screen.modelName}` : 'no inbox model: set @inbox'
+  const label = versionLabel(version, screen.isNextBuild === true, l => visibleLength(` ${modelText}  ${l}`) <= width)
+  const model = `${modelText}  ${label} `
   const hintLine = ` ${hints.map(h => s.dim(h)).join(` ${s.tone('sep', '·')} `)}`
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2
   if (fitsBesideHints) out.push(spread(hintLine, s.dim(model), width))

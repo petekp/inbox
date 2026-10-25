@@ -359,6 +359,10 @@ const DESKTOP_LINE_PT = 19
 // One column of `bodyColumns` in the Claude app pane, in points: 15.8 px at 2x.
 const DESKTOP_CELL_PT = 7.9
 const UNDO_CELLS = 9
+const FOOTER_PAD_X = 1
+const FOOTER_ROW_GAP = 3
+const FOOTER_END_GAP = 2
+const KEYS_LABEL_COLUMNS = '▴ Keys'.length
 const UNDO_HEIGHT_PT = 23
 /**
  * The app draws an Svg as an image, which runs SMIL animation, so the fill moves
@@ -4319,7 +4323,13 @@ export const register: Register = on => {
     const faint = (text: string) =>
       look === 'desktop' ? <Text color={pal.age}>{text}</Text> : <Text dimColor>{text}</Text>
     const statusText = faint(status)
-    const versionText = version ? faint(versionLabel(version, isNextBuild)) : null
+    const footerColumns = e.props.bodyColumns - 4 * FOOTER_PAD_X
+    const footerGaps = FOOTER_ROW_GAP + FOOTER_END_GAP
+    const footerFits = (label: string) =>
+      look === 'desktop'
+        ? Math.ceil((desktopTextPt(status) + desktopTextPt(label)) / DESKTOP_CELL_PT) + footerGaps <= footerColumns
+        : KEYS_LABEL_COLUMNS + status.length + label.length + footerGaps <= footerColumns
+    const versionText = version ? faint(versionLabel(version, isNextBuild, footerFits)) : null
     const rail = (
       <Box flexDirection="column" flexShrink={0} paddingLeft={1} marginRight={RAIL_GUTTER}>
         {TABS.map(({ id, label }) => {
@@ -4364,8 +4374,8 @@ export const register: Register = on => {
       </Box>
     ) : null
     const footer = (
-      <Box flexDirection="column" paddingX={1} paddingTop={blankLine}>
-        <Box flexDirection="row" paddingX={1} justifyContent="space-between" columnGap={3}>
+      <Box flexDirection="column" paddingX={FOOTER_PAD_X} paddingTop={blankLine}>
+        <Box flexDirection="row" paddingX={FOOTER_PAD_X} justifyContent="space-between" columnGap={FOOTER_ROW_GAP}>
           {look === 'desktop' ? (
             <Box />
           ) : (
@@ -4377,7 +4387,7 @@ export const register: Register = on => {
               onPress={() => void update($, IS_KEY_LIST_SHOWN, shown => !shown)}
             />
           )}
-          <Box flexDirection="row" columnGap={2}>
+          <Box flexDirection="row" columnGap={FOOTER_END_GAP}>
             {statusText}
             {versionText}
           </Box>
