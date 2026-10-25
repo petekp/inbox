@@ -1274,8 +1274,10 @@ without the model calling it. The Inbox tab is a thread entrypoint.
   tab drew the test build.
 - **Live, Codex removes an open tab when a later tool list names another URI
   for its entrypoint** [live 2026-10-25, ChatGPT 26.1021.31345]. After a
-  reinstall, the next thread change started a new server process and loaded
-  the MCP server catalog. Every open Inbox frame whose `inbox_view` URI the
+  reinstall whose server handler changed, a later thread change, not always
+  the first, started a new server process and loaded the MCP server catalog.
+  A reinstall that changed only the hook bundle, or changed nothing, started
+  none. Every open Inbox frame whose `inbox_view` URI the
   new list no longer named was torn down ("Revoked app sandbox registration
   … shouldRemoveFrame=true") and showed "Couldn't display Inbox"; Try again
   failed the same way. With the URI unchanged across builds, the frame
