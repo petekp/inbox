@@ -619,16 +619,21 @@ function withSelection(ui: PanelUi, id: string | null): PanelUi {
 
 const withTab = (ui: PanelUi, tab: ShownTab): PanelUi => ({ ...withSelection(ui, null), tab, pageTop: 0 })
 
+/** Whether the line `id` on the shown tab waits on the person. */
+export function isLineWaiting(screen: PanelScreen, ui: PanelUi, id: string, now: number): boolean {
+  return waitsOf(linesOf(entriesOf(screen, ui, ui.tab, now))).some(w => w.id === id && w.isWaiting)
+}
+
 /**
- * After a press hands off the selected row, the selection moves to the next row that waits, as the terminal's does.
- * The row stays selected when none waits. A failed send leaves the row open, so it stays selected and unfolded.
+ * After a press stops the selected row from waiting, the selection moves to the next row that waits, as the
+ * terminal's does. The row stays selected when none waits. A failed send leaves the row waiting, so it stays selected.
  */
 export function afterHandOff(screen: PanelScreen, ui: PanelUi, id: string, now: number): PanelUi {
   if (ui.selectedId !== id) return ui
   const lines = linesOf(entriesOf(screen, ui, ui.tab, now))
-  const line = lines.find(l => l.id === id)
-  if (!line?.isFolded) return ui
-  const next = rowAfterClose(waitsOf(lines), id)
+  const waits = waitsOf(lines)
+  if (!lines.some(l => l.id === id) || waits.some(w => w.id === id && w.isWaiting)) return ui
+  const next = rowAfterClose(waits, id)
 
   return next === null ? { ...ui, focus: null, opened: null } : withSelection(ui, next)
 }

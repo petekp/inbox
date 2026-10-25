@@ -438,9 +438,11 @@ test('PR buttons follow the shared plan order for the block, its threads and its
 
 test('the PRs tab opens on the first thread that waits, and its press goes through the PR press', () => {
   const screen = screenOf()
+  const { pr } = screen.view.prs.drawn[0]!
+  const first = waitingThreads(pr).find(t => !threadSentIn(screen.view.lastActions)(pr, t))!
   const ui = { ...INITIAL_UI, tab: 'prs' as const }
   const result = handleKey(screen, ui, 'a', NOW)
-  expect(result.press).toMatchObject({ action: 'thread-address' })
+  expect(result.press).toMatchObject({ action: 'thread-address', thread: first.id })
   expect(handleKey(screen, ui, 'enter', NOW).press).toMatchObject({ action: 'thread-address' })
 })
 

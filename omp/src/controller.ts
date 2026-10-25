@@ -1,3 +1,4 @@
+import { prRowId } from '../../hooks/pr-tab'
 import type { PrPress } from '../../hooks/pr-tab'
 import type { RowPress } from '../../hooks/presses'
 import { compareEndsAt } from '../../hooks/view'
@@ -10,6 +11,7 @@ import {
   handleKey,
   holdsOf,
   isAnimating,
+  isLineWaiting,
   noticeFor,
   render,
 } from './panel'
@@ -84,6 +86,7 @@ export function createPanel(deps: PanelDeps): Panel {
   }
 
   /** Draws the session's latest screen. `pressedId` names the row a press just changed, so a hand-off moves on. */
+  /** `pressedId` names a row that waited before its press, so the selection may move on from it. */
   async function refresh(pressedId?: string): Promise<void> {
     const mine = ++version
     const next = await source.screen(holdsOf(ui)).catch(() => null)
@@ -107,6 +110,8 @@ export function createPanel(deps: PanelDeps): Panel {
 
   async function press(p: PanelPress): Promise<void> {
     if (p.action === 'resume') return resume()
+    const rowId = 'ref' in p ? prRowId(p) : p.id
+    const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now())
     const outcome = await source.press(p, holdsOf(ui)).catch((err: unknown) => ({
       error: err instanceof Error ? err.message : String(err),
       note: null,
@@ -116,7 +121,7 @@ export function createPanel(deps: PanelDeps): Panel {
       ui = { ...ui, drafts: { ...ui.drafts, [p.id]: { text: p.text, since: now } } }
     const notice = noticeFor(outcome, now)
     if (notice) ui = { ...ui, notice }
-    await refresh('ref' in p ? undefined : p.id)
+    await refresh(wasWaiting ? rowId : undefined)
   }
 
   return {

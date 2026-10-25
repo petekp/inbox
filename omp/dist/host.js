@@ -2961,13 +2961,13 @@ function heldLabel(c) {
     return `Answered: ${c.outcome}`;
   return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
 }
+var UPDATING_TEXT = "Updating\u2026";
+var REFRESHING_PRS_TEXT = "Refreshing PRs\u2026";
 function footerStatus(tab, status, prs) {
   if (tab === "prs")
     return { text: prs.isFetching && prs.hasPrs ? REFRESHING_PRS_TEXT : null, error: null };
   return { text: status.isUpdating ? UPDATING_TEXT : null, error: status.error };
 }
-var UPDATING_TEXT = "Updating\u2026";
-var REFRESHING_PRS_TEXT = "Refreshing PRs\u2026";
 function perTurnStatus(update) {
   return {
     isUpdating: update.isUpdating,
@@ -4750,14 +4750,17 @@ function withSelection(ui, id) {
   return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null };
 }
 var withTab = (ui, tab) => ({ ...withSelection(ui, null), tab, pageTop: 0 });
+function isLineWaiting(screen, ui, id, now) {
+  return waitsOf(linesOf(entriesOf(screen, ui, ui.tab, now))).some((w) => w.id === id && w.isWaiting);
+}
 function afterHandOff(screen, ui, id, now) {
   if (ui.selectedId !== id)
     return ui;
   const lines = linesOf(entriesOf(screen, ui, ui.tab, now));
-  const line = lines.find((l) => l.id === id);
-  if (!line?.isFolded)
+  const waits = waitsOf(lines);
+  if (!lines.some((l) => l.id === id) || waits.some((w) => w.id === id && w.isWaiting))
     return ui;
-  const next = rowAfterClose(waitsOf(lines), id);
+  const next = rowAfterClose(waits, id);
   return next === null ? { ...ui, focus: null, opened: null } : withSelection(ui, next);
 }
 function activate(screen, ui, line, button, now) {
@@ -5224,6 +5227,8 @@ function createPanel(deps) {
   async function press(p) {
     if (p.action === "resume")
       return resume();
+    const rowId = "ref" in p ? prRowId(p) : p.id;
+    const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now());
     const outcome = await source.press(p, holdsOf(ui)).catch((err) => ({
       error: err instanceof Error ? err.message : String(err),
       note: null
@@ -5234,7 +5239,7 @@ function createPanel(deps) {
     const notice = noticeFor(outcome, now);
     if (notice)
       ui = { ...ui, notice };
-    await refresh("ref" in p ? undefined : p.id);
+    await refresh(wasWaiting ? rowId : undefined);
   }
   return {
     render(width) {
