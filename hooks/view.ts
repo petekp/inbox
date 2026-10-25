@@ -262,7 +262,7 @@ export function waitingCount(rows: readonly (RowView | undefined)[]): number {
   return rows.filter(r => r !== undefined && isWaitingRow(r)).length
 }
 
-/** A press result's text on a row with no row view, as a PR row. A row already marked ✓ drops the ✓ from a done result. */
+/** A press result's text on a row with no row view, as a PR row. A row already marked ✓ shows a done result's bare label. */
 export function markedFeedbackText(f: Feedback, mark: string, look: Look): string {
   return f.is === 'done' && mark === '✓' ? f.label : feedbackText(f, look)
 }
@@ -529,6 +529,11 @@ export function feedbackText(f: Feedback, look: Look): string {
 
 function deliveryLabel(state: 'queued' | 'unconfirmed', label: string): string {
   return state === 'queued' ? `Queued: ${label}` : `Delivery unconfirmed: ${label}`
+}
+
+/** A settled row's mark: ✓ once nothing it sent is on its way, else blank. */
+export function settledMark(delivery: ClosedDelivery): string {
+  return delivery === null ? '✓' : ''
 }
 
 /** A closed row's mark: blank while what it sent is on its way. */

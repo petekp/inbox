@@ -2574,6 +2574,9 @@ function feedbackText(f, look) {
 function deliveryLabel(state, label) {
   return state === "queued" ? `Queued: ${label}` : `Delivery unconfirmed: ${label}`;
 }
+function settledMark(delivery) {
+  return delivery === null ? "\u2713" : "";
+}
 function closedMark(state, delivery) {
   return delivery === null ? CLOSED_MARKS[state] : "";
 }
@@ -4467,7 +4470,7 @@ function lineOfRow(row) {
   const f = row.feedback;
   const state = row.state;
   const undo = row.actions.find((a) => a.press.action === "undo");
-  const settledLead = state.is === "settled" ? state.delivery !== null ? { text: " ", tone: null } : { text: "\u2713", tone: "sep" } : null;
+  const settledLead = state.is === "settled" ? { text: settledMark(state.delivery) || " ", tone: "sep" } : null;
   return {
     ...blankLine(row.id),
     lead: settledLead ?? leadOf(row),

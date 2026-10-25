@@ -41,6 +41,7 @@ import { ago } from '../../hooks/text'
 import {
   canUndoRefused,
   closedMark,
+  settledMark,
   settledTone,
   DEMO_NOTICE,
   FINDING_GROUPS,
@@ -282,9 +283,8 @@ function lineOfRow(row: RowView): Line {
   const state = row.state
   const undo = row.actions.find(a => a.press.action === 'undo')
 
-  // As in the terminal, a settled row is marked done once nothing it sent is still on its way.
   const settledLead: Lead | null =
-    state.is === 'settled' ? (state.delivery !== null ? { text: ' ', tone: null } : { text: '✓', tone: 'sep' }) : null
+    state.is === 'settled' ? { text: settledMark(state.delivery) || ' ', tone: 'sep' } : null
 
   return {
     ...blankLine(row.id),

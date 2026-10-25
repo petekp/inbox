@@ -85,8 +85,7 @@ export function createPanel(deps: PanelDeps): Panel {
       compareEnd = { at, timer: timers.every(() => void refresh(), at - now + ANIMATION_MS) }
   }
 
-  /** Draws the session's latest screen. `pressedId` names the row a press just changed, so a hand-off moves on. */
-  /** `pressedId` names a row that waited before its press, so the selection may move on from it. */
+  /** Draws the session's latest screen. `pressedId` names a row that waited before its press, so the selection may move on from it. */
   async function refresh(pressedId?: string): Promise<void> {
     const mine = ++version
     const next = await source.screen(holdsOf(ui)).catch(() => null)

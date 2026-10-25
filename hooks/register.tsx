@@ -203,6 +203,7 @@ import {
   TABS,
   canUndoRefused,
   closedMark,
+  settledMark,
   settledTone,
   DEMO_NOTICE,
   groupEmptyText,
@@ -4691,7 +4692,7 @@ export const register: Register = on => {
         return desktopFrame({
           key: `settled-${r.id}`,
           markCells: DESKTOP_MARK_CELLS + markExtra(r.id),
-          mark: state.delivery !== null ? null : <Text color={pal.muted}>✓</Text>,
+          mark: settledMark(state.delivery) ? <Text color={pal.muted}>{settledMark(state.delivery)}</Text> : null,
           side: undo ? undoButton(undo, state.at) : null,
           padY: space.settledPad,
           isCentered: true,
@@ -4705,7 +4706,7 @@ export const register: Register = on => {
         })
       }
       const content = settledContent(r.title, state.label, state.at, undo, state.delivery, state.isLapsed)
-      const mark = state.delivery !== null ? <Text> </Text> : <Text color={pal.muted}>✓</Text>
+      const mark = <Text color={pal.muted}>{settledMark(state.delivery) || ' '}</Text>
       return (
         <Box key={`settled-${r.id}`} flexDirection="column" paddingY={space.settledPad}>
           {treeRow(pos, mark, content, undefined, 0, undefined, markExtra(r.id))}

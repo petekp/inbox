@@ -13,7 +13,7 @@ Shared modules decide the inbox's behavior and content. Each adapter maps that d
 - **Shared PR rules.** Both hosts use `hooks/pr-tab.ts` for fetching, tracking, presses and PR-opening help. Press validation uses the same help steps as the view. Arrival acknowledgement updates every matching row of a bulk press and preserves newer presses. Both hosts retain sent-prompt records; ambiguous delivery stays visible in open rows and Closed folds, as the look map defines.
 - **Shared update and Undo bookkeeping.** `applyExchangeUpdate` applies reply data and `addActivity` owns the activity limit and duplicate filter. Press results name actual reopened rows, so hosts clear closed-note acknowledgements only for those rows. Retry scheduling stays with each host.
 - **Import checks.** The structure checker parses source and resolves literal import targets. It follows local dependencies from nested Codex sources and tests, shared build inputs and type imports. Shared restrictions continue through type bridges. Nested functions cannot imitate the runtime loader exception. The checker tests invoke the real command against disposable fixtures.
-- **Shared status line, counts and PR row text.** `footerStatus` decides the status line under the inbox. `waitingCount` gives a group title's count. `threadRowText`, `checkRowText`, `prRowWaits`, `prsEmptyText` and `splitFollowUps` decide a PR row's mark, text, whether it waits and which buttons are follow-ups. `closedMark`, `canUndoRefused` and `settledTone` decide a closed row's mark, its refused-notification Undo and a settled label's tone. omp draws from all of them.
+- **Shared status line, counts and PR row text.** `footerStatus` decides the status line under the inbox. `waitingCount` gives a group title's count. `threadRowText`, `checkRowText`, `prRowWaits`, `prsEmptyText` and `splitFollowUps` decide a PR row's mark, text, whether it waits and which buttons are follow-ups; omp reads `isFollowUp` itself. `closedMark`, `settledMark`, `canUndoRefused` and `settledTone` decide a closed or settled row's mark, its refused-notification Undo and a settled label's tone. omp draws from all of them.
 - **Codex row-action components.** The tab uses production components in `codex/src/row-actions.tsx`. Mounted tests cover action order, emphasis and guarded clicks. A mounted real-tab test covers reply focus, hidden shortcuts, draft preservation and sending through its host bridge. Full polling, selection, PR drawing and measured motion still need separate proof.
 
 ## Remaining work
@@ -25,7 +25,7 @@ Shared modules decide the inbox's behavior and content. Each adapter maps that d
 
 ### Known copies and differences
 
-Each entry names what is written more than once or differs between looks, the owner it belongs in, and what goes wrong while it stays.
+Each entry names what is written more than once or differs between looks, and the owner it belongs in.
 
 - **Clock-driven redraws.** The mod arms a timer per press kind, omp restates the Queued and settled thresholds in `isAnimating`, and Codex checks `SETTLED_MS` inline on each poll. A shared `nextChangeAt(view, now)` in `hooks/view.ts` would give the mod and omp one timer. Until then a new timed state in the view redraws in omp and not in the mod.
 - **Done wake delay.** After a Done press the mod waits exactly the settle window, omp 250 ms more, and Codex two polls more. Codex also does not wake at turn end. One delay helper in `hooks/session-host.ts`, with Codex's longer window recorded as a host limit, would stop the mod's timer from landing on the window's edge and skipping a wake.
@@ -40,7 +40,8 @@ Each entry names what is written more than once or differs between looks, the ow
 - **Load-time repair.** The mod, Codex and omp each repair a session cut off by a quit, with their own order and guards. One `afterRestart(s)` in `hooks/session.ts` would decide it.
 - **Following new rows.** Each host rebuilds whether the shown tab is empty and where to move, with different blockers. The arrival module should take the host's blocker and return the move.
 - **The turn-end sequence.** Each host ends a turn, queues the exchange, records the stop and tasks and wakes for Done in its own order. A shared step for the parts every host does would stop a host from leaving one out.
-- **Press feedback text.** Each look composes a PR row's pending text, age and done label itself. One function returning text, age and tone would remove the copies.
+- **Press feedback text.** Each look composes a PR row's pending text and age itself. One function returning text, age and tone would remove the copies.
+- **Retrying a PR's failed refresh.** Only the terminal and desktop draw Refreshing… and a Retry button under a PR's refresh failure. Codex and omp draw the failure text alone, so the person cannot retry from there. Retry belongs in `prBlockActions`, drawn by every look.
 - **Stop presentation.** The band, the stop row and Resume are composed per host, and `Stop.detail` is a free string the classifiers copy words into. A typed stop reason would let `stopText` stop parsing it.
 - **Saved-state stores.** `codex/src/state.ts` and `omp/src/state.ts` repeat the file store, pruning and session-file sweep, and the mod prunes differently. Export the version check from `hooks/session.ts` first.
 - **Host wire formats in shared files.** Claude's task parser and tool names, Codex's plan parser and dialog link fields sit in `hooks/`. Each belongs in its host, with the core taking normalized tasks, activity lines and dialog questions.

@@ -93,7 +93,7 @@ test('after Address on a PR thread, the selection moves to the next PR row that 
   }
   expect(pressed).toHaveLength(2)
   expect(pressed[0]).toMatchObject({ action: 'thread-address' })
-  expect(pressed[1]).not.toEqual(pressed[0])
+  expect(pressed[1]).toMatchObject({ action: 'thread-address', thread: 'DT4' })
 })
 
 test('Esc closes the panel', async () => {

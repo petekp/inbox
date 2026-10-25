@@ -7,7 +7,7 @@ import type { IconName } from './row-actions'
 import { closedState } from '../../hooks/ledger'
 import { ago } from '../../hooks/text'
 import type { ClosedState } from '../../hooks/ledger'
-import { canUndoRefused, closedMark } from '../../hooks/view'
+import { canUndoRefused, closedMark, settledMark } from '../../hooks/view'
 import { capitalized, clipLabel, noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
 import {
@@ -1075,7 +1075,7 @@ function feedbackLabel(row: Row): string | null {
   const f = row.feedback
   if (!f) return null
 
-  return row.view ? rowFeedbackText(row.view, 'codex') : markedFeedbackText(f, row.handle ?? '', 'codex')
+  return row.view ? rowFeedbackText(row.view, 'codex') : markedFeedbackText(f, row.handle, 'codex')
 }
 
 function noteOf(id: string): string | null {
@@ -1213,7 +1213,7 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
 
   return (
     <div class={panel ? 'row settled was-open' : 'row settled'}>
-      <span class="mark">{state.delivery !== null ? '' : '✓'}</span>
+      <span class="mark">{settledMark(state.delivery)}</span>
       <div class="content">
         <div class="settled-head">
           <div class="settled-line">
