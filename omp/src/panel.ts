@@ -15,7 +15,9 @@ import type { RowRecord } from '../../hooks/arrivals'
 import { closedState } from '../../hooks/ledger'
 import {
   GH_MISSING_TEXT,
-  prsEmptyHint,
+  prsEmptyText,
+  prRefreshFailedText,
+  PR_DISMISSED_LABEL,
   PR_GROUP_TITLES,
   PR_TONES,
   checkActions,
@@ -449,6 +451,13 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
   const isWaiting = (id: string) => waits.some(w => w.id === id && w.isWaiting)
   const markLead = (mark: PrRowMark): Lead => ({ text: mark.text, tone: mark.tone ?? 'sep' })
   const out: Entry[] = []
+  if (prs.drawn.length === 0) {
+    const empty = prsEmptyText({ isFetching: screen.isFetchingPrs, isGhMissing: screen.isGhMissing }, 'session')
+    return [
+      { kind: 'note', text: empty.title, isStrong: true },
+      { kind: 'note', text: empty.hint },
+    ]
+  }
   if (screen.isGhMissing) out.push({ kind: 'note', text: GH_MISSING_TEXT })
   for (const { pr, isSettled } of prs.drawn) {
     const markId = prMarkId(pr.ref)
@@ -461,7 +470,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
           lead,
           title: pr.title,
           isDim: true,
-          settled: { label: 'Dismissed', undo: { action: 'pr-undo', ref: pr.ref } },
+          settled: { label: PR_DISMISSED_LABEL, undo: { action: 'pr-undo', ref: pr.ref } },
         },
       })
       continue
@@ -477,7 +486,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
         title: pr.title,
         status: { text: head, tone: PR_TONES[status], rest: unlisted.map(r => ` · ${r}`).join('') },
         feedback: f,
-        detail: pr.error ? `Last refresh failed: ${pr.error}` : null,
+        detail: pr.error ? prRefreshFailedText(pr.error) : null,
         buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses)),
         isWaiting: false,
       },
@@ -524,10 +533,6 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
     }
   }
   if (prs.olderText) out.push({ kind: 'note', text: prs.olderText })
-  if (prs.drawn.length === 0 && !screen.isGhMissing) {
-    out.push({ kind: 'note', text: screen.isFetchingPrs ? 'Checking for PRs…' : 'No PRs', isStrong: true })
-    out.push({ kind: 'note', text: prsEmptyHint('session') })
-  }
 
   return out
 }

@@ -77,7 +77,9 @@ import {
   prCheckId,
   prMarkId,
   prRowWaits,
-  prsEmptyHint,
+  prsEmptyText,
+  prRefreshFailedText,
+  PR_DISMISSED_LABEL,
   prThreadId,
   threadActions,
   threadRowText,
@@ -1626,7 +1628,7 @@ function SettledPr({ v, pr }: { v: View; pr: PrView }) {
             <span class="what">
               <span class="tone-prs">#{pr.number}</span> {pr.title}
             </span>
-            <span class="outcome-label">{`${DOT}Dismissed`}</span>
+            <span class="outcome-label">{`${DOT}${PR_DISMISSED_LABEL}`}</span>
             {error ? <span class="tone-error">{`${DOT}${error}`}</span> : null}
           </div>
           <button
@@ -1703,7 +1705,7 @@ function PrBlock({
         <span class={tone ? `pr-verdict tone-${tone}` : 'pr-verdict muted'}>{head}</span>
         <span class="pr-verdict muted">{unlisted.map(r => `${DOT}${r}`).join('')}</span>
       </div>
-      {pr.error ? <div class="pr-status tone-error">Last refresh failed: {pr.error}</div> : null}
+      {pr.error ? <div class="pr-status tone-error">{prRefreshFailedText(pr.error)}</div> : null}
       <div class="pr-actions keys">
         {keys.map(k => (
           <KeyButton k={k} />
@@ -1752,15 +1754,14 @@ function PrRows({
   )
 }
 
-const PRS_HINT = prsEmptyHint('conversation')
-
 function Prs({ v, now }: { v: View; now: number }) {
   const { blocks, rows } = prPlan(v)
+  const empty = prsEmptyText({ isFetching: v.isFetchingPrs, isGhMissing: v.isGhMissing }, 'conversation')
   if (blocks.length === 0)
     return (
       <div class="empty">
-        <div class="title">{v.isFetchingPrs ? 'Checking for PRs…' : 'No PRs'}</div>
-        <div class="muted">{v.isGhMissing ? GH_MISSING_TEXT : PRS_HINT}</div>
+        <div class="title">{empty.title}</div>
+        <div class="muted">{empty.hint}</div>
       </div>
     )
   const openId = rows[selectedIndex(rows, 'prs', v)]?.id

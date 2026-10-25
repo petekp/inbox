@@ -184,6 +184,22 @@ export function prsEmptyHint(place: string): string {
   return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`
 }
 
+/** What an empty PRs tab says. With gh missing, its hint is the missing-gh text. */
+export function prsEmptyText(prs: { isFetching: boolean; isGhMissing: boolean }, place: string) {
+  return {
+    title: prs.isFetching ? 'Checking for PRs…' : 'No PRs',
+    hint: prs.isGhMissing ? GH_MISSING_TEXT : prsEmptyHint(place),
+  }
+}
+
+/** The line a PR block shows when its last refresh failed. */
+export function prRefreshFailedText(error: string): string {
+  return `Last refresh failed: ${error}`
+}
+
+/** The label of a dismissed PR's block while its Undo lasts. */
+export const PR_DISMISSED_LABEL = 'Dismissed'
+
 export const PR_GROUP_TITLES = { threads: 'Review threads', checks: 'Failing checks' }
 
 /** What a review thread's row says, for each look to draw in its own controls. */
@@ -599,7 +615,7 @@ export function applyPrPress(
       if (!ledger.prs.includes(p.ref) || prState.branchRef === p.ref) return stale
       return applied({
         ledger: { ...ledger, prs: ledger.prs.filter(r => r !== p.ref) },
-        lasts: { [markId]: record(markId, 'mark', p.action, 'Dismissed') },
+        lasts: { [markId]: record(markId, 'mark', p.action, PR_DISMISSED_LABEL) },
       })
     case 'check-fix': {
       const check = pr.checks.find(c => c.name === p.check && c.bucket === 'fail')

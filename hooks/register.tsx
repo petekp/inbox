@@ -106,7 +106,9 @@ import {
   threadRowText,
   threadSentIn,
   GH_MISSING_TEXT,
-  prsEmptyHint,
+  prsEmptyText,
+  prRefreshFailedText,
+  PR_DISMISSED_LABEL,
 } from './pr-tab'
 import type { Applied, GhRun, PrAction, PrPress } from './pr-tab'
 import {
@@ -4843,7 +4845,7 @@ export const register: Register = on => {
           <Text color={pal.muted}>✓</Text>,
           settledContent(
             `#${pr.number} ${pr.title}`,
-            'Dismissed',
+            PR_DISMISSED_LABEL,
             lastActions[prMarkId(pr.ref)]?.at ?? now,
             {
               action: 'pr-undo',
@@ -4899,7 +4901,7 @@ export const register: Register = on => {
           {pr.error ? (
             <Box flexDirection="column">
               <Text color={pal.tone.error} wrap="wrap">
-                Last refresh failed: {pr.error}
+                {prRefreshFailedText(pr.error)}
               </Text>
               {prState.isFetching ? <Text color={pal.muted}>Refreshing…</Text> : null}
               <Box flexDirection="row">
@@ -4987,10 +4989,9 @@ export const register: Register = on => {
     const prsView = () =>
       prGroups.length === 0 ? (
         <Box flexDirection="column" flexGrow={1}>
-          {emptyState({
-            title: prState.isFetching ? 'Checking for PRs…' : 'No PRs',
-            hint: prState.isGhMissing ? GH_MISSING_TEXT : prsEmptyHint('session'),
-          })}
+          {emptyState(
+            prsEmptyText({ isFetching: prState.isFetching, isGhMissing: Boolean(prState.isGhMissing) }, 'session'),
+          )}
         </Box>
       ) : (
         sections([...(prState.isGhMissing ? [ghMissingNotice()] : []), ...prGroups.map(prBlock), ...olderPrs()], 2)

@@ -3070,6 +3070,16 @@ var GH_MISSING_TEXT = "The inbox could not find gh, so it cannot read your PRs."
 function prsEmptyHint(place) {
   return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
 }
+function prsEmptyText(prs, place) {
+  return {
+    title: prs.isFetching ? "Checking for PRs\u2026" : "No PRs",
+    hint: prs.isGhMissing ? GH_MISSING_TEXT : prsEmptyHint(place)
+  };
+}
+function prRefreshFailedText(error) {
+  return `Last refresh failed: ${error}`;
+}
+var PR_DISMISSED_LABEL = "Dismissed";
 var PR_GROUP_TITLES = { threads: "Review threads", checks: "Failing checks" };
 function threadRowText(pr, t, lastActions) {
   const isSent = threadSentIn(lastActions)(pr, t);
@@ -3352,7 +3362,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
         return stale;
       return applied({
         ledger: { ...ledger, prs: ledger.prs.filter((r) => r !== p.ref) },
-        lasts: { [markId]: record(markId, "mark", p.action, "Dismissed") }
+        lasts: { [markId]: record(markId, "mark", p.action, PR_DISMISSED_LABEL) }
       });
     case "check-fix": {
       const check = pr.checks.find((c) => c.name === p.check && c.bucket === "fail");
@@ -4581,6 +4591,13 @@ function prEntries(screen, now) {
   const isWaiting = (id) => waits.some((w) => w.id === id && w.isWaiting);
   const markLead = (mark) => ({ text: mark.text, tone: mark.tone ?? "sep" });
   const out = [];
+  if (prs.drawn.length === 0) {
+    const empty = prsEmptyText({ isFetching: screen.isFetchingPrs, isGhMissing: screen.isGhMissing }, "session");
+    return [
+      { kind: "note", text: empty.title, isStrong: true },
+      { kind: "note", text: empty.hint }
+    ];
+  }
   if (screen.isGhMissing)
     out.push({ kind: "note", text: GH_MISSING_TEXT });
   for (const { pr, isSettled } of prs.drawn) {
@@ -4594,7 +4611,7 @@ function prEntries(screen, now) {
           lead,
           title: pr.title,
           isDim: true,
-          settled: { label: "Dismissed", undo: { action: "pr-undo", ref: pr.ref } }
+          settled: { label: PR_DISMISSED_LABEL, undo: { action: "pr-undo", ref: pr.ref } }
         }
       });
       continue;
@@ -4610,7 +4627,7 @@ function prEntries(screen, now) {
         title: pr.title,
         status: { text: head, tone: PR_TONES[status], rest: unlisted.map((r) => ` \xB7 ${r}`).join("") },
         feedback: f,
-        detail: pr.error ? `Last refresh failed: ${pr.error}` : null,
+        detail: pr.error ? prRefreshFailedText(pr.error) : null,
         buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses)),
         isWaiting: false
       }
@@ -4660,10 +4677,6 @@ function prEntries(screen, now) {
   }
   if (prs.olderText)
     out.push({ kind: "note", text: prs.olderText });
-  if (prs.drawn.length === 0 && !screen.isGhMissing) {
-    out.push({ kind: "note", text: screen.isFetchingPrs ? "Checking for PRs\u2026" : "No PRs", isStrong: true });
-    out.push({ kind: "note", text: prsEmptyHint("session") });
-  }
   return out;
 }
 function pressFeedback(screen, id, now) {
