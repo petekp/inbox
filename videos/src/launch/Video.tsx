@@ -16,24 +16,11 @@ import { Music } from '../shared/Music'
 import { Pointer } from '../shared/Pointer'
 import { pointerMarks, stateAt } from '../shared/states'
 import type { State } from '../shared/states'
+import { END_CARD, END_CARD_LEAD, FPS, frames, HEIGHT, WIDTH } from '../shared/video'
 import TAKES from './takes.json'
 import type { ThreadStarts } from './thread'
 import { MARKS, ThreadView } from './ThreadView'
-import {
-  appIcon,
-  END_CARD,
-  END_CARD_LEAD,
-  FPS,
-  frames,
-  HEIGHT,
-  LOOK_NAMES,
-  LOOKS,
-  MUSIC,
-  takeClip,
-  timeline,
-  WIDTH,
-  WINDOWS,
-} from './timeline'
+import { appIcon, LOOK_NAMES, LOOKS, MUSIC, ROW_LINES, takeClip, timeline, WINDOWS } from './timeline'
 import type { Introduction, Look, Placed, SideBySideBeat, SoloBeat, Variant } from './timeline'
 
 const TAKE_INFO = TAKES as Record<string, TakeInfo | undefined>
@@ -59,8 +46,8 @@ export function Video({ cut }: { cut: string }) {
           <Sequence
             key={beat.id}
             name={`${beat.number} ${beat.id}`}
-            from={frames(beat.start - lead)}
-            durationInFrames={frames(beat.start + beat.length) - frames(beat.start - lead)}
+            from={frames(beat.start - lead, FPS)}
+            durationInFrames={frames(beat.start + beat.length, FPS) - frames(beat.start - lead, FPS)}
           >
             <BeatView beat={beat} previous={placed[i - 1]} variant={variant} starts={starts} />
           </Sequence>
@@ -88,7 +75,7 @@ function BeatView(props: { beat: Placed; previous: Placed | undefined; variant: 
       {beat.kind === 'side-by-side' && (
         <SideBySideView beat={beat} previous={previous} t={t} hasCaptions={hasCaptions} />
       )}
-      {beat.kind === 'end' && <EndCard {...END_CARD} length={beat.length} />}
+      {beat.kind === 'end' && <EndCard {...END_CARD} rowLines={ROW_LINES} length={beat.length} />}
     </AbsoluteFill>
   )
 }
@@ -502,7 +489,7 @@ function SideBySideView(props: {
                 {isRecorded ? (
                   <OffthreadVideo
                     src={staticFile(takeClip(take))}
-                    trimBefore={frames(takeStart)}
+                    trimBefore={frames(takeStart, FPS)}
                     muted
                     style={{ width: window.width, height: window.height, display: 'block' }}
                   />

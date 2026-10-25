@@ -40,7 +40,7 @@ The videos so far:
 | `states.ts`, `geometry.ts` | What the screen shows when, clicks, and camera moves across a take. |
 | `captures.ts` | Whether a capture is present, so a checkout without one draws a placeholder. |
 | `layout.ts` | The background and the bands above and below footage. |
-| `video.ts` | The shape of `VIDEO`: each cut's id, size, frame rate, frames, captions, still marks and notes. |
+| `video.ts` | The shape of `VIDEO`: each cut's id, size, frame rate, frames, captions, still marks and notes. Also what every timeline shares: the 16:9 master's size and frame rate, placing beats one after another, the end card's word and address, and the stills at each caption. |
 
 ## Adding a video
 

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { OffthreadVideo, Sequence, staticFile, useCurrentFrame, useVideoConfig } from 'remotion'
 
 import { clamp01 } from './geometry'
+import { frames } from './video'
 
 /** From `at` seconds into its beat, the beat plays take `take` from `from` seconds into it. */
 export type Segment = { at: number; take: string; from: number }
@@ -26,7 +27,6 @@ export function Footage(props: {
 }) {
   const { segments, before, length, width, height, clip } = props
   const { fps } = useVideoConfig()
-  const frames = (seconds: number) => Math.round(seconds * fps)
   const all = before ? [before, ...segments] : segments
   return (
     <>
@@ -36,14 +36,14 @@ export function Footage(props: {
         return (
           <Sequence
             key={`${i}-${segment.take}-${segment.from}`}
-            from={frames(segment.at)}
-            durationInFrames={Math.max(1, frames(Math.min(end, length)) - frames(segment.at))}
+            from={frames(segment.at, fps)}
+            durationInFrames={Math.max(1, frames(Math.min(end, length), fps) - frames(segment.at, fps))}
             layout="none"
           >
             <Dissolve isFirst={i === 0} handsOverAt={next ? next.at - segment.at : undefined}>
               <OffthreadVideo
                 src={staticFile(clip(segment.take))}
-                trimBefore={frames(segment.from)}
+                trimBefore={frames(segment.from, fps)}
                 muted
                 style={{ position: 'absolute', left: 0, top: 0, width, height, display: 'block' }}
               />

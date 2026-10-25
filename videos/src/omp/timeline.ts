@@ -8,11 +8,8 @@ import type { MusicCue } from '../shared/Music'
 import type { TerminalFont } from '../shared/TerminalTake'
 import { beatTimeOf } from '../shared/terminal-time'
 import type { TerminalSegment } from '../shared/terminal-time'
+import { captionMarks, END_CARD_LEAD, FPS, HEIGHT, place, totalFrames, WIDTH } from '../shared/video'
 import type { CaptionSpan, VideoSpec } from '../shared/video'
-
-export const FPS = 60
-export const WIDTH = 1920
-export const HEIGHT = 1080
 
 export const CUTS = ['omp'] as const
 export type Cut = (typeof CUTS)[number]
@@ -69,17 +66,11 @@ export type EndBeat = { kind: 'end'; id: string; number: number; length: number 
 export type Beat = TerminalBeat | EndBeat
 export type Placed = Beat & { start: number }
 
-/** How long the end card starts before its beat, over beat 5's last moments, as its lines turn into streams. */
-export const END_CARD_LEAD = 0.8
-export const END_CARD = { word: 'inbox', repo: 'github.com/petekp/inbox', lead: END_CARD_LEAD }
-
 /**
  * "Focus Flow", the launch video's track, from where its full groove comes in, 31 s into the launch video and 31.4 s
  * into the track. The two videos then sound like one series.
  */
 export const MUSIC: MusicCue = { src: 'music/focus-flow.mp3', startsAt: 0, trimBefore: 31.4, fadeOut: 4 }
-
-export const frames = (seconds: number) => Math.round(seconds * FPS)
 
 /**
  * The launch video's pace, which every beat here holds to or exceeds. All in seconds.
@@ -234,17 +225,7 @@ function beats(): Beat[] {
 }
 
 export function timeline(_cut: Cut): Placed[] {
-  let start = 0
-  return beats().map(beat => {
-    const placed = { ...beat, start }
-    start += beat.length
-    return placed
-  })
-}
-
-export function totalFrames(placed: Placed[]): number {
-  const last = placed[placed.length - 1]
-  return last ? frames(last.start + last.length) : 0
+  return place(beats())
 }
 
 /** When a terminal beat's caption leaves: before the end card starts over the last beat. */
@@ -282,16 +263,13 @@ export const VIDEO: VideoSpec = {
           ]
         : [{ at: beat.start + 3.5, name: `b${beat.number}-address` }]),
     ])
-    for (const c of captions) {
-      marks.push({ at: c.from + 0.6, name: `${c.label.replace('beat ', 'b')}-caption-first` })
-      marks.push({ at: c.to - 1 / FPS, name: `${c.label.replace('beat ', 'b')}-caption-last` })
-    }
+    marks.push(...captionMarks(captions, FPS))
     return {
       id: cut,
       width: WIDTH,
       height: HEIGHT,
       fps: FPS,
-      frames: totalFrames(placed),
+      frames: totalFrames(placed, FPS),
       captions,
       marks,
       stills: [],

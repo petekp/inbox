@@ -14,22 +14,8 @@ import { DARK_PALETTE } from '../shared/TerminalTake'
 import { takeTimeIn } from '../shared/terminal-time'
 import type { TerminalSegment } from '../shared/terminal-time'
 import { TerminalFootage, TerminalWindow } from '../shared/TerminalWindow'
-import {
-  captionEnd,
-  CELL,
-  END_CARD,
-  END_CARD_LEAD,
-  FONT,
-  FPS,
-  frames,
-  HEIGHT,
-  MUSIC,
-  TAKE,
-  timeline,
-  WIDTH,
-  WINDOW,
-  WINDOW_TITLE,
-} from './timeline'
+import { END_CARD, END_CARD_LEAD, FPS, frames, HEIGHT, WIDTH } from '../shared/video'
+import { captionEnd, CELL, FONT, MUSIC, TAKE, timeline, WINDOW, WINDOW_TITLE } from './timeline'
 import type { Cut, Placed, TerminalBeat } from './timeline'
 
 /** The picture between the app band and the caption band. */
@@ -77,8 +63,8 @@ export function Video({ cut }: { cut: string }) {
           <Sequence
             key={beat.id}
             name={`${beat.number} ${beat.id}`}
-            from={frames(beat.start - lead)}
-            durationInFrames={frames(beat.start + beat.length) - frames(beat.start - lead)}
+            from={frames(beat.start - lead, FPS)}
+            durationInFrames={frames(beat.start + beat.length, FPS) - frames(beat.start - lead, FPS)}
           >
             {beat.kind === 'terminal' ? (
               <TerminalBeatView beat={beat} previous={placed[i - 1]} placed={placed} />

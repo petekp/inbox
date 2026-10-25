@@ -23,3 +23,43 @@ export type Cut = {
 
 /** A caption and when it is on screen, in seconds into the cut. `label` names its beat in the check's report. */
 export type CaptionSpan = { label: string; text: string; from: number; to: number }
+
+/** The 16:9 master's size and frame rate, which every video's cuts use so far. */
+export const WIDTH = 1920
+export const HEIGHT = 1080
+export const FPS = 60
+
+/** `seconds` as a whole number of frames at `fps`. */
+export const frames = (seconds: number, fps: number) => Math.round(seconds * fps)
+
+/** Each beat with where it starts, in seconds: each one after the one before, from 0. */
+export function place<B extends { length: number }>(beats: B[]): (B & { start: number })[] {
+  let start = 0
+  return beats.map(beat => {
+    const placed = { ...beat, start }
+    start += beat.length
+    return placed
+  })
+}
+
+/** The frames from the first beat's start to the last beat's end. */
+export function totalFrames(placed: { start: number; length: number }[], fps: number): number {
+  const last = placed[placed.length - 1]
+  return last ? frames(last.start + last.length, fps) : 0
+}
+
+/** How long the end card starts before its beat, over the last moments of the beat before it, in seconds. */
+export const END_CARD_LEAD = 0.8
+/** The end card's word and the address under it. */
+export const END_CARD = { word: 'inbox', repo: 'github.com/petekp/inbox', lead: END_CARD_LEAD }
+
+/** A still at each caption's first moment, once its words have risen in, and at its last frame. */
+export function captionMarks(captions: CaptionSpan[], fps: number): Cut['marks'] {
+  return captions.flatMap(c => {
+    const beat = c.label.replace('beat ', 'b')
+    return [
+      { at: c.from + 0.6, name: `${beat}-caption-first` },
+      { at: c.to - 1 / fps, name: `${beat}-caption-last` },
+    ]
+  })
+}
