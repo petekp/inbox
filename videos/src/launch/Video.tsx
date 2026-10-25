@@ -16,6 +16,7 @@ import { BAND, PICTURE } from '../shared/layout'
 import { Pointer } from '../shared/Pointer'
 import { pointerMarks, stateAt } from '../shared/states'
 import type { State } from '../shared/states'
+import { continuing } from '../shared/terminal-time'
 import { END_CARD, END_CARD_LEAD, FPS, frames, HEIGHT, WIDTH } from '../shared/video'
 import TAKES from './takes.json'
 import type { ThreadStarts } from './thread'
@@ -101,7 +102,7 @@ function SoloView(props: {
   const fromThread = previous?.kind === 'thread'
   const change = THREAD_TO_FOOTAGE
   const arriving = fromThread ? Easing.out(Easing.cubic)(clamp01((t - change.from) / change.arrives)) : 1
-  const before = previous?.kind === 'solo' ? continuing(previous) : undefined
+  const before = previous?.kind === 'solo' ? continuing(previous.footage, previous.length) : undefined
   const picture = (segments: Segment[]) => (
     <Footage
       segments={segments}
@@ -168,12 +169,6 @@ function SoloView(props: {
       {hasCaptions && <Caption text={beat.caption} t={t} from={fromThread ? 0.4 : 0} to={beat.length} inBand />}
     </AbsoluteFill>
   )
-}
-
-/** Where a solo beat's last stretch of footage would continue, so the next beat can dissolve from it. */
-function continuing(beat: Placed & SoloBeat): Segment | undefined {
-  const last = beat.footage?.[beat.footage.length - 1]
-  return last && { at: 0, take: last.take, from: last.from + beat.length - last.at }
 }
 
 /**
@@ -380,7 +375,7 @@ function SideBySideView(props: {
   const width = WIDTH / LOOKS.length
   const height = HEIGHT - BAND
   const fromSolo = previous?.kind === 'solo' ? previous : undefined
-  const before = fromSolo && continuing(fromSolo)
+  const before = fromSolo && continuing(fromSolo.footage, fromSolo.length)
   return (
     <AbsoluteFill>
       {LOOKS.map((look, i) => {

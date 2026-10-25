@@ -9,8 +9,7 @@ import { clamp01, fit, framingAt } from '../shared/geometry'
 import { KeyCaps } from '../shared/KeyCaps'
 import { CAPTION_BAND, PICTURE, TITLE_BAR } from '../shared/layout'
 import { DARK_PALETTE } from '../shared/TerminalTake'
-import { takeTimeIn } from '../shared/terminal-time'
-import type { TerminalSegment } from '../shared/terminal-time'
+import { continuing } from '../shared/terminal-time'
 import { TerminalFootage, TerminalWindow } from '../shared/TerminalWindow'
 import { END_CARD, END_CARD_LEAD, FPS, WIDTH } from '../shared/video'
 import { captionEnd, CELL, FONT, MUSIC, TAKE, timeline, WINDOW, WINDOW_TITLE } from './timeline'
@@ -50,13 +49,6 @@ export function Video({ cut }: { cut: string }) {
       }
     </Beats>
   )
-}
-
-/** Where the previous beat's last stretch of the take would continue, so this beat can dissolve from it. */
-function continuing(beat: Placed | undefined): TerminalSegment | undefined {
-  if (beat?.kind !== 'terminal') return undefined
-  const last = beat.footage[beat.footage.length - 1]
-  return last && { ...last, at: 0, from: takeTimeIn(last, beat.length) }
 }
 
 function TerminalBeatView(props: { beat: Placed & TerminalBeat; previous: Placed | undefined; placed: Placed[] }) {
@@ -101,7 +93,12 @@ function TerminalBeatView(props: { beat: Placed & TerminalBeat; previous: Placed
             background={DARK_PALETTE.background}
           >
             <div style={{ position: 'relative', height: WINDOW.height - TITLE_BAR }}>
-              <TerminalFootage src={TAKE.src} segments={beat.footage} before={continuing(previous)} font={FONT} />
+              <TerminalFootage
+                src={TAKE.src}
+                segments={beat.footage}
+                before={previous?.kind === 'terminal' ? continuing(previous.footage, previous.length) : undefined}
+                font={FONT}
+              />
             </div>
           </TerminalWindow>
         </div>
