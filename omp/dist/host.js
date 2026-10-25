@@ -615,7 +615,8 @@ function addAgentItem(ledger, entry, now) {
       ledger: { ...ledger, items: items2 },
       is: "open",
       id: openItem.id,
-      addedSteps: helps.length - openItem.helps.length
+      addedSteps: helps.length - openItem.helps.length,
+      isNewlyMarked: isDesignChoice && openItem.isDesignChoice !== true
     };
   }
   const isAskable = (c) => c.how === "expired" || c.how === "claude";
@@ -2798,11 +2799,14 @@ function recordItem(host, ledger, input, now) {
   const leftOut = helps.length < steps2.length ? input.kind === "task" ? " Some steps were not a command, a file path or a link, so they are left out." : " Some steps were not an absolute file path or a link, so they are left out." : "";
   const isDesignChoice = input.kind === "question" && input.design_choice === true;
   const r = addAgentItem(ledger, { kind: input.kind, ask, options, rec, helps, isDesignChoice }, now);
-  if (r.is === "open")
-    return {
-      ledger: r.ledger,
-      result: r.addedSteps > 0 ? `Already open. Added its new steps to it.${leftOut}` : `Already open.${leftOut}`
-    };
+  if (r.is === "open") {
+    const changes = [
+      ...r.addedSteps > 0 ? ["added its new steps"] : [],
+      ...r.isNewlyMarked ? ["marked it as a design choice"] : []
+    ];
+    const updated = changes.length > 0 ? ` and ${changes.join(" and ")}` : "";
+    return { ledger: r.ledger, result: `Already open, so this record updated it${updated}.${leftOut}` };
+  }
   if (r.is === "closed")
     return { ledger, result: `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.` };
   return {

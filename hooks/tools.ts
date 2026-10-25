@@ -142,11 +142,15 @@ export function recordItem(
 
   const isDesignChoice = input.kind === 'question' && input.design_choice === true
   const r = addAgentItem(ledger, { kind: input.kind, ask, options, rec, helps, isDesignChoice }, now)
-  if (r.is === 'open')
-    return {
-      ledger: r.ledger,
-      result: r.addedSteps > 0 ? `Already open. Added its new steps to it.${leftOut}` : `Already open.${leftOut}`,
-    }
+  if (r.is === 'open') {
+    const changes = [
+      ...(r.addedSteps > 0 ? ['added its new steps'] : []),
+      ...(r.isNewlyMarked ? ['marked it as a design choice'] : []),
+    ]
+    const updated = changes.length > 0 ? ` and ${changes.join(' and ')}` : ''
+
+    return { ledger: r.ledger, result: `Already open, so this record updated it${updated}.${leftOut}` }
+  }
   if (r.is === 'closed')
     return { ledger, result: `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.` }
 

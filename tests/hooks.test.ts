@@ -1216,7 +1216,9 @@ test('a question Claude records waits in the pane with its recommendation, a rep
   expect(r.result).toBe('Recorded. The user sees it in the /inbox pane.')
   await clock.settle()
   expect(await pane.find({ text: /Which cache should the API use\?/ })).toBeDefined()
-  expect((await $.tool.call({ ...question, ask: 'Which cache should the API use?' })).result).toBe('Already open.')
+  expect((await $.tool.call({ ...question, ask: 'Which cache should the API use?' })).result).toBe(
+    'Already open, so this record updated it.',
+  )
   expect((await $.tool.call({ ...question, ask: 'Which cache should it use?', rec: 'Memcached' })).result).toBe(
     'Not recorded: rec must be one of the options.',
   )

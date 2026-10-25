@@ -815,7 +815,7 @@
         "match": {
           "steps": "^/\\S*caches\\.html"
         },
-        "result": "^Already open\\. Added"
+        "result": "^Already open, so this record updated it and added"
       },
       {
         "calls": "record",

@@ -79,7 +79,7 @@ test('Compare reads Comparing… after its reply until the agent records the que
 
   const reported = await record({ ...question, steps: ['/tmp/project/.scratch/compare/caches.html', 'npm test'] })
   expect(reported).toBe(
-    'Already open. Added its new steps to it. Some steps were not an absolute file path or a link, so they are left out.',
+    'Already open, so this record updated it and added its new steps. Some steps were not an absolute file path or a link, so they are left out.',
   )
   expect(await row()).toEqual({
     feedback: '✓ Compared',

@@ -785,7 +785,7 @@ export function addFinding(
 
 export type AgentItemResult =
   | { ledger: Ledger; is: 'added'; id: string; expired: Item | null }
-  | { ledger: Ledger; is: 'open'; id: string; addedSteps: number }
+  | { ledger: Ledger; is: 'open'; id: string; addedSteps: number; isNewlyMarked: boolean }
   | { ledger: Ledger; is: 'closed'; record: Closed }
 
 /**
@@ -813,6 +813,7 @@ export function addAgentItem(
       is: 'open',
       id: openItem.id,
       addedSteps: helps.length - openItem.helps.length,
+      isNewlyMarked: isDesignChoice && openItem.isDesignChoice !== true,
     }
   }
   const isAskable = (c: Closed) => c.how === 'expired' || c.how === 'claude'
