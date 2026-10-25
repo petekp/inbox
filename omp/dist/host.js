@@ -1,6 +1,5 @@
 // @bun
-// Built by omp/build.ts from omp/src and hooks/. Do not edit.
-var __require = import.meta.require;
+// Built by omp/build.ts with Bun 1.4.4 from omp/src and hooks/. Do not edit.
 
 // src/host.ts
 import { randomUUID } from "crypto";
@@ -354,7 +353,7 @@ function restates(a, b) {
   const y = keyWords(b);
   const fewer = Math.min(x.size, y.size);
   const shared = [...x].filter((w) => y.has(w)).length;
-  const numbers = (words2) => [...words2].filter((w) => /\p{N}/u.test(w)).sort().join(" ");
+  const numbers = (words) => [...words].filter((w) => /\p{N}/u.test(w)).sort().join(" ");
   if (numbers(x) !== "" && numbers(y) !== "" && numbers(x) !== numbers(y))
     return false;
   return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b);
@@ -564,7 +563,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
     if (asker && finding && asksAbout(asker, finding, true))
       askedBy.set(a.id, asker.id);
   }
-  for (const i of kept.filter((i2) => created.has(i2.id)))
+  for (const i of kept.filter((i) => created.has(i.id)))
     for (const f of ledger.findings)
       if (!askedBy.has(f.id) && asksAbout(i, f))
         askedBy.set(f.id, i.id);
@@ -620,9 +619,9 @@ function addAgentItem(ledger, entry, now) {
     const helps = entry.helps.reduce(withHelp, openItem.helps);
     const isDesignChoice = openItem.isDesignChoice === true || entry.isDesignChoice === true;
     const reported = { ...openItem, helps, isDesignChoice, reportedAt: now };
-    const items2 = ledger.items.map((i) => i === openItem ? reported : i);
+    const items = ledger.items.map((i) => i === openItem ? reported : i);
     return {
-      ledger: { ...ledger, items: items2 },
+      ledger: { ...ledger, items },
       is: "open",
       id: openItem.id,
       addedSteps: helps.length - openItem.helps.length,
@@ -1291,11 +1290,11 @@ function openCommands(path, isFile, isExecutable) {
 }
 var OPEN_TIMEOUT_MS = 1e4;
 async function openTarget(run, probe, target, root, home) {
-  const open = (argv2) => run(argv2, { cwd: "/", timeoutMs: OPEN_TIMEOUT_MS });
-  const failure = (r2) => r2.stderr.trim() || `open exited ${r2.code}`;
+  const open = (argv) => run(argv, { cwd: "/", timeoutMs: OPEN_TIMEOUT_MS });
+  const failure = (r) => r.stderr.trim() || `open exited ${r.code}`;
   if (/^https:\/\//.test(target)) {
-    const r2 = await open(["open", target]);
-    return r2.code === 0 ? null : failure(r2);
+    const r = await open(["open", target]);
+    return r.code === 0 ? null : failure(r);
   }
   const path = localPath(target, root || "/", home);
   const info = await probe.stat(path);
@@ -1395,10 +1394,10 @@ function upgradedLastAction(key, old) {
   if (action === null)
     return null;
   const { isHandoff, ...kept } = old;
-  const isHandedOff2 = isHandoff ?? HANDOFF_IDS.test(action);
+  const isHandedOff = isHandoff ?? HANDOFF_IDS.test(action);
   return {
     ...kept,
-    kind: isHandedOff2 ? "handoff" : "talk",
+    kind: isHandedOff ? "handoff" : "talk",
     action,
     text: /^Sent to (Claude|Codex) to /.test(old.text) ? "Address" : old.text.replace(/ sent$/, "")
   };
@@ -1684,8 +1683,8 @@ function pressed(ledger, last, p, ctx) {
       case "discuss":
         return sendFinding("talk", messages.finding(finding, "discuss"));
       case "type": {
-        const words2 = p.text.trim();
-        return words2 ? sendFinding("handoff", messages.finding(finding, "typed", words2)) : unchanged;
+        const words = p.text.trim();
+        return words ? sendFinding("handoff", messages.finding(finding, "typed", words)) : unchanged;
       }
       case "dismiss":
         return {
@@ -1709,10 +1708,10 @@ function pressed(ledger, last, p, ctx) {
     case "answer":
       return item.options.includes(p.option) ? answered(p.option) : stale;
     case "type": {
-      const words2 = p.text.trim();
-      if (!words2)
+      const words = p.text.trim();
+      if (!words)
         return unchanged;
-      const text = item.kind === "question" ? messages.answer(item, words2) : messages.taskReply(item, words2);
+      const text = item.kind === "question" ? messages.answer(item, words) : messages.taskReply(item, words);
       return { ledger, last: record("handoff"), effects: [{ kind: "send", text, by: null }] };
     }
     case "explain":
@@ -1753,13 +1752,13 @@ function pressed(ledger, last, p, ctx) {
   }
 }
 function replyToClosed(ledger, p, last) {
-  const words2 = p.text.trim();
+  const words = p.text.trim();
   const closed = ledger.closed.findLast((c) => c.id === p.id)?.item;
   const record = ledger.closedFindings.findLast((f) => f.id === p.id);
-  const text = closed ? closed.kind === "question" ? messages.answer(closed, words2) : messages.taskReply(closed, words2) : record ? messages.finding(record, "typed", words2) : null;
+  const text = closed ? closed.kind === "question" ? messages.answer(closed, words) : messages.taskReply(closed, words) : record ? messages.finding(record, "typed", words) : null;
   if (text === null)
     return { stale: true };
-  if (!words2)
+  if (!words)
     return { ledger, last: null, effects: [] };
   return { ledger, last, effects: [{ kind: "send", text, by: null }] };
 }
@@ -1802,13 +1801,13 @@ Options: ${item.options.join(" / ")}`,
 \`\`\`
 ${command}
 \`\`\``,
-  taskReply: (item, words2) => `Re the task you left for me, "${item.ask}": ${words2}`,
+  taskReply: (item, words) => `Re the task you left for me, "${item.ask}": ${words}`,
   done: (asks) => asks.length === 1 ? `Done: ${asks[0]}` : `Done:
 ${asks.map((a) => `- ${a}`).join(`
 `)}`,
-  finding: (finding, how, words2 = "") => {
+  finding: (finding, how, words = "") => {
     const opening = how === "address" ? "Please address this finding you recorded:" : how === "issue" ? "Please file an issue for this finding you recorded, in the issue tracker you have tools for. First check whether one already exists, and if it does, use it instead of filing a duplicate. Then close the finding with the issue's key or number as the reason, and give me its link. If you have no tools for an issue tracker, say so and leave the finding open." : how === "explain" ? `Remind me what this finding you recorded is about: why it matters, what fixing it would involve, and whether you would fix it now. ${EXPLAIN_REPLY_FORM} Don't act on it yet.` : how === "discuss" ? "Let's talk through this finding you recorded before changing anything:" : "About this finding you recorded:";
-    return [opening, ...findingBody(finding), ...how === "typed" ? ["", words2] : []].join(`
+    return [opening, ...findingBody(finding), ...how === "typed" ? ["", words] : []].join(`
 `);
   }
 };
@@ -1999,8 +1998,8 @@ function localText(r, look) {
   const text = parts.map((p) => p.error === null ? `${VERBS[p.kind].done} ${p.name}` : `Could not ${VERBS[p.kind].failed} ${p.name}: ${p.error}`).join(DOT);
   if (r.state === "failed")
     return text;
-  const isCommand2 = parts.some((p) => p.kind === "copy" && p.isCommand);
-  return `\u2713 ${text}${isCommand2 ? `. ${runIt(look)}` : ""}`;
+  const isCommand = parts.some((p) => p.kind === "copy" && p.isCommand);
+  return `\u2713 ${text}${isCommand ? `. ${runIt(look)}` : ""}`;
 }
 function feedbackText(f, look) {
   switch (f.is) {
@@ -2066,13 +2065,13 @@ var ACTION_KEYS = {
   discard: "x"
 };
 function actionsOf(row, last, state, isPressOut) {
-  const { id, item, steps: steps2 } = row;
+  const { id, item, steps } = row;
   const action = (press, label, kind, flags = {}) => ({
     press,
     label: press.action !== "type" && (!isPressOut || last?.isRepeat === true) && last?.kind !== "local" && last?.delivery?.state !== "failed" && last?.action === actionId(press) ? `${label} again` : label,
     kind,
     emphasis: flags.isPrimary || press.action === "done" || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
-    ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps2[press.step]) ? { icon: stepIconKind(steps2[press.step]) } : {},
+    ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps[press.step]) ? { icon: stepIconKind(steps[press.step]) } : {},
     isPrimary: flags.isPrimary ?? false,
     isFolded: flags.isFolded ?? false,
     isFollowUp: FOLLOW_UPS.has(press.action),
@@ -2085,7 +2084,7 @@ function actionsOf(row, last, state, isPressOut) {
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       action({ action: "discard", id }, ROW_COPY.discard, "view")
     ];
-  const stepActions = steps2.map((s, n) => action({ action: "step", id, step: n, label: s.label }, s.label, stepKind(s)));
+  const stepActions = steps.map((s, n) => action({ action: "step", id, step: n, label: s.label }, s.label, stepKind(s)));
   if (!item)
     return [
       action({ action: "address", id }, row.finding ? fixLabel(row.finding) : "Fix", "handoff"),
@@ -2197,11 +2196,11 @@ function inboxView({
   const { questions, tasks } = needsYouOrder(placed);
   const numbers = questionNumbers(ledger, ledger.turn + 1);
   const stateOf = (id) => {
-    const closed2 = placedItems.get(id) ?? placedFindings.get(id);
-    if (closed2) {
-      const at = closedAt(closed2);
-      const last2 = lastActions[id];
-      const reply = replyAfter(closed2);
+    const closed = placedItems.get(id) ?? placedFindings.get(id);
+    if (closed) {
+      const at = closedAt(closed);
+      const last = lastActions[id];
+      const reply = replyAfter(closed);
       if (reply)
         return {
           is: "settled",
@@ -2211,15 +2210,15 @@ function inboxView({
           delivery: pendingDeliveryAt(reply, now),
           isLapsed: false
         };
-      if (isHeld(closed2))
-        return { is: "held", label: heldLabel(closed2), at };
+      if (isHeld(closed))
+        return { is: "held", label: heldLabel(closed), at };
       return {
         is: "settled",
-        label: outcomeLabel(closed2),
+        label: outcomeLabel(closed),
         at,
-        canUndo: isUndoable(closed2),
-        isLapsed: isLapsed(closed2),
-        delivery: "doneNotification" in closed2 && closed2.doneNotification?.error !== undefined ? { error: closed2.doneNotification.error, canUndo: isUndoable(closed2) } : (closed2.how === "answered" || closed2.how === "done") && last2?.kind === "mark" && last2.at === at ? pendingDeliveryAt(last2, now) : null
+        canUndo: isUndoable(closed),
+        isLapsed: isLapsed(closed),
+        delivery: "doneNotification" in closed && closed.doneNotification?.error !== undefined ? { error: closed.doneNotification.error, canUndo: isUndoable(closed) } : (closed.how === "answered" || closed.how === "done") && last?.kind === "mark" && last.at === at ? pendingDeliveryAt(last, now) : null
       };
     }
     const last = lastActions[id];
@@ -2374,8 +2373,8 @@ async function fetchTracked(gh, state, linked, findsBranchPr) {
   return { views, branchRef: findsBranchPr ? branch?.ref ?? null : state.branchRef };
 }
 async function fetchPr(gh, target, views, knownBranchRef) {
-  const threadsOf = (ref2) => {
-    const r = parseRef(ref2);
+  const threadsOf = (ref) => {
+    const r = parseRef(ref);
     return gh([
       "api",
       "graphql",
@@ -2810,10 +2809,10 @@ function recordItem(host, ledger, input, now) {
   const rec = recInput === "" ? null : recommendedOption(options, recInput);
   if (recInput !== "" && rec === null)
     return { ledger, result: "Not recorded: rec must be one of the options." };
-  const steps2 = list(input.steps, MAX_STEPS + 3, 4000);
+  const steps = list(input.steps, MAX_STEPS + 3, 4000);
   const isUsable = (h) => input.kind === "task" || h.kind === "open" || h.kind === "link";
-  const helps = steps2.flatMap((step) => stepHelp(step) ?? []).filter(isUsable).slice(0, MAX_STEPS);
-  const leftOut = helps.length < steps2.length ? input.kind === "task" ? " Some steps were not a command, a file path or a link, so they are left out." : " Some steps were not an absolute file path or a link, so they are left out." : "";
+  const helps = steps.flatMap((step) => stepHelp(step) ?? []).filter(isUsable).slice(0, MAX_STEPS);
+  const leftOut = helps.length < steps.length ? input.kind === "task" ? " Some steps were not a command, a file path or a link, so they are left out." : " Some steps were not an absolute file path or a link, so they are left out." : "";
   const isDesignChoice = input.kind === "question" && input.design_choice === true;
   const r = addAgentItem(ledger, { kind: input.kind, ask, options, rec, helps, isDesignChoice }, now);
   if (r.is === "open") {
@@ -3264,12 +3263,12 @@ async function runUpdates(host) {
           if (!hasWork(s))
             break;
           if (wantsCatchUp(s)) {
-            const reply2 = await host.catchUp(s).catch(() => ({ kind: "failed" }));
-            if (reply2.kind === "unreadable") {
+            const reply = await host.catchUp(s).catch(() => ({ kind: "failed" }));
+            if (reply.kind === "unreadable") {
               canCatchUp = false;
               continue;
             }
-            const parsed = reply2.kind === "reply" ? parseReply(reply2.text, reply2.source) : null;
+            const parsed = reply.kind === "reply" ? parseReply(reply.text, reply.source) : null;
             const at = await host.now();
             await host.update((x) => appliedCatchUp(x, s, parsed, at));
             if (!parsed)
@@ -3356,10 +3355,10 @@ async function startPress(host, p, isStale, holds) {
   let copy = null;
   let error = null;
   let note = isStale ? "stale" : null;
-  const pressed2 = {};
+  const pressed = {};
   const effectHost = {
     now: host.now,
-    deliveryId: () => pressed2.deliveryId ?? host.newId(),
+    deliveryId: () => pressed.deliveryId ?? host.newId(),
     perform: async (e) => {
       if (e.kind === "copy")
         copy = { text: e.text, name: e.name };
@@ -3381,31 +3380,31 @@ async function startPress(host, p, isStale, holds) {
   };
   await host.update(async (saved) => {
     note = isStale ? "stale" : null;
-    Object.assign(pressed2, { r: undefined, at: undefined, deliveryId: undefined });
+    Object.assign(pressed, { r: undefined, at: undefined, deliveryId: undefined });
     const s = { ...saved, heldRows: Object.keys(holds.replies) };
     if (note)
       return s;
-    const at2 = await host.now();
-    const r2 = pressOn(s, p, at2, localPressId);
-    if ("stale" in r2) {
+    const at = await host.now();
+    const r = pressOn(s, p, at, localPressId);
+    if ("stale" in r) {
       note = "stale";
       return s;
     }
-    const firstSend = r2.effects.find((e) => e.kind === "send");
+    const firstSend = r.effects.find((e) => e.kind === "send");
     const deliveryId = firstSend ? host.newId() : undefined;
-    const pressLasts = firstSend && deliveryId ? withDeliveryId(r2.lasts, Object.keys(r2.lasts), at2, firstSend.text, deliveryId) : r2.lasts;
+    const pressLasts = firstSend && deliveryId ? withDeliveryId(r.lasts, Object.keys(r.lasts), at, firstSend.text, deliveryId) : r.lasts;
     const next = {
       ...s,
-      ledger: r2.ledger,
-      lastActions: withLasts(s.lastActions, pressLasts, r2.drop),
-      told: r2.reopenedId ? { ...s.told, closed: s.told.closed.filter((id) => id !== r2.reopenedId) } : s.told
+      ledger: r.ledger,
+      lastActions: withLasts(s.lastActions, pressLasts, r.drop),
+      told: r.reopenedId ? { ...s.told, closed: s.told.closed.filter((id) => id !== r.reopenedId) } : s.told
     };
-    Object.assign(pressed2, { r: r2, at: at2, deliveryId });
+    Object.assign(pressed, { r, at, deliveryId });
     if (!firstSend || !deliveryId)
       return next;
     return {
       ...next,
-      lastActions: host.isDeliveryHeldUntilRun ? next.lastActions : withUnconfirmed(next.lastActions, firstSend.text, at2, deliveryId),
+      lastActions: host.isDeliveryHeldUntilRun ? next.lastActions : withUnconfirmed(next.lastActions, firstSend.text, at, deliveryId),
       sent: [
         ...next.sent,
         {
@@ -3414,18 +3413,18 @@ async function startPress(host, p, isStale, holds) {
           at: await host.now(),
           row: rowId,
           queuedId: null,
-          pressedAt: at2,
+          pressedAt: at,
           deliveryId,
           phase: "attempting"
         }
       ]
     };
   }).catch((err) => {
-    pressed2.r = undefined;
+    pressed.r = undefined;
     error = `Not sent: ${err instanceof Error ? err.message : String(err)}`;
   });
-  const r = pressed2.r;
-  const at = pressed2.at;
+  const r = pressed.r;
+  const at = pressed.at;
   if (!r || at === undefined)
     return {
       effects: null,
@@ -3645,14 +3644,14 @@ function rowButtons(row) {
       return [];
     if (k.slot === "retry")
       return [{ label: k.label, key: null, press: k.press, isRecommended: false, isFollowUp: false }];
-    const { press: press2 } = k.action;
-    const key = press2.action === "type" ? REPLY_KEY : k.hotkey ?? null;
+    const { press } = k.action;
+    const key = press.action === "type" ? REPLY_KEY : k.hotkey ?? null;
     return [
       {
         label: k.action.label,
         key,
-        press: press2,
-        isRecommended: k.slot === "choice" && press2.action === "answer" && press2.option === recommended,
+        press,
+        isRecommended: k.slot === "choice" && press.action === "answer" && press.option === recommended,
         isFollowUp: k.slot === "action" && k.action.isFollowUp
       }
     ];
@@ -3930,24 +3929,24 @@ function afterHandOff(screen, ui, id, now) {
   return next === null ? { ...ui, focus: null, opened: null } : withSelection(ui, next);
 }
 function activate(screen, ui, line, button, now) {
-  const { press: press2 } = button;
-  if (press2.action === "resume") {
+  const { press } = button;
+  if (press.action === "resume") {
     const { stop } = screen;
     const isSending = ui.resuming?.is === "sending" && ui.resuming.stopAt === stop?.at;
     if (!stop || isSending)
       return { ui };
-    return { ui: { ...ui, focus: null, resuming: { stopAt: stop.at, is: "sending" } }, press: press2 };
+    return { ui: { ...ui, focus: null, resuming: { stopAt: stop.at, is: "sending" } }, press };
   }
-  if (!("ref" in press2) && press2.action === "type") {
+  if (!("ref" in press) && press.action === "type") {
     const draft = ui.drafts[line.id] ?? { text: "", since: now };
     return { ui: { ...ui, typing: line.id, focus: null, drafts: { ...ui.drafts, [line.id]: draft } } };
   }
-  if (!("ref" in press2) && press2.action === "discard") {
+  if (!("ref" in press) && press.action === "discard") {
     const { [line.id]: _discarded, ...drafts } = ui.drafts;
     const recent = Object.entries(ui.discarded).filter(([, at]) => now - at < SETTLED_MS);
     return { ui: { ...ui, focus: null, drafts, discarded: { ...Object.fromEntries(recent), [line.id]: now } } };
   }
-  return { ui: { ...ui, focus: null }, press: press2 };
+  return { ui: { ...ui, focus: null }, press };
 }
 function typingKey(ui, id, key, now, text) {
   const draft = ui.drafts[id] ?? { text: "", since: now };
@@ -3992,9 +3991,9 @@ function handleKey(screen, ui, key, now, text) {
     return { ui: { ...withSelection(base, null), tab: pickedTab.id } };
   if (key === "u") {
     const undoable = lines.filter((l) => l.settled?.undo).at(-1);
-    const press2 = undoable?.settled?.undo;
-    if (undoable && press2)
-      return { ui: withSelection(base, undoable.id), press: press2 };
+    const press = undoable?.settled?.undo;
+    if (undoable && press)
+      return { ui: withSelection(base, undoable.id), press };
     return { ui: base };
   }
   if (selected?.fold && key === "enter") {
@@ -4034,16 +4033,16 @@ function isShownEmpty(screen, ui) {
 }
 function followRows(screen, ui, seen, isOpening, now) {
   const { listed, open } = tabRows(screen);
-  const recorded2 = recordRows(seen, listed);
+  const recorded = recordRows(seen, listed);
   const tabs = TABS.map((t) => t.id);
-  const to = followTo(tabs, ui.tab, isShownEmpty(screen, ui), isOpening ? open : recorded2.added);
+  const to = followTo(tabs, ui.tab, isShownEmpty(screen, ui), isOpening ? open : recorded.added);
   if (to)
-    return { ui: { ...withSelection(ui, null), tab: to }, seen: recorded2.seen };
-  const arrived = recorded2.added[ui.tab];
+    return { ui: { ...withSelection(ui, null), tab: to }, seen: recorded.seen };
+  const arrived = recorded.added[ui.tab];
   if (ui.selectedId !== null || arrived.length === 0)
-    return { ui, seen: recorded2.seen };
+    return { ui, seen: recorded.seen };
   const kept = keptOpen(waitsOf(linesOf(entriesOf(screen, ui, ui.tab, now))), arrived);
-  return { ui: kept === null ? ui : { ...ui, selectedId: kept }, seen: recorded2.seen };
+  return { ui: kept === null ? ui : { ...ui, selectedId: kept }, seen: recorded.seen };
 }
 function isAnimating(screen, ui, now) {
   const { view } = screen;
@@ -4235,12 +4234,12 @@ function scrolled(body, selectedAt, room, s) {
   if (last > start + room - 2)
     start = Math.min(Math.max(first, last - room + 2), body.length - room);
   const end = start + room;
-  const clip2 = body.slice(start, end);
+  const clip = body.slice(start, end);
   if (start > 0)
-    clip2[0] = s.dim(`  \u2191 ${start} more lines`);
+    clip[0] = s.dim(`  \u2191 ${start} more lines`);
   if (end < body.length)
-    clip2[clip2.length - 1] = s.dim(`  \u2193 ${body.length - end} more lines`);
-  return clip2;
+    clip[clip.length - 1] = s.dim(`  \u2193 ${body.length - end} more lines`);
+  return clip;
 }
 function bandLines(screen, width, now, style) {
   const { needsYou, findings } = screen.view;
@@ -4263,7 +4262,7 @@ function createPanel(deps) {
   let screen = null;
   let animation = null;
   let compareEnd = null;
-  let version2 = 0;
+  let version = 0;
   let seen = {};
   let isOpening = true;
   const stops = [];
@@ -4285,9 +4284,9 @@ function createPanel(deps) {
       compareEnd = { at, timer: timers.every(() => void refresh(), at - now + ANIMATION_MS) };
   };
   async function refresh(pressedId) {
-    const mine = ++version2;
+    const mine = ++version;
     const next = await source.screen(holdsOf(ui)).catch(() => null);
-    if (mine !== version2 || next === null)
+    if (mine !== version || next === null)
       return;
     screen = next;
     const followed = followRows(next, ui, seen, isOpening, deps.now());
@@ -4303,7 +4302,7 @@ function createPanel(deps) {
       ui = { ...ui, resuming: { stopAt: ui.resuming.stopAt, is: "refused", why } };
     await refresh();
   }
-  async function press2(p) {
+  async function press(p) {
     if (p.action === "resume")
       return resume();
     const outcome = await source.press(p, holdsOf(ui)).catch((err) => ({
@@ -4328,7 +4327,7 @@ function createPanel(deps) {
       if (result.close)
         deps.close();
       if (result.press)
-        press2(result.press);
+        press(result.press);
       else
         refresh();
       deps.requestRender();
@@ -4340,7 +4339,7 @@ function createPanel(deps) {
       await refresh();
     },
     dispose() {
-      version2++;
+      version++;
       for (const stop of stops.splice(0))
         stop();
       if (animation !== null)
@@ -4960,9 +4959,9 @@ function textOfBlocks(content) {
   return content.flatMap((b) => b.type === "text" && typeof b.text === "string" ? [b.text] : []).join(`
 `);
 }
-function lastAssistant(messages2) {
-  for (let i = messages2.length - 1;i >= 0; i -= 1) {
-    const m = messages2[i];
+function lastAssistant(messages) {
+  for (let i = messages.length - 1;i >= 0; i -= 1) {
+    const m = messages[i];
     if (m?.role === "assistant" && Array.isArray(m.content))
       return m;
   }
@@ -5017,9 +5016,9 @@ function isDismissedAsk(message) {
 }
 function conversationOf(entries) {
   const path = entries;
-  const messages2 = path.slice(path.findLastIndex((e) => e.type === "reset_boundary") + 1).flatMap((e) => e.type === "message" && e.message ? [e.message] : []);
-  const results = new Map(messages2.flatMap((m) => m.role === "toolResult" && typeof m.toolCallId === "string" ? [[m.toolCallId, m]] : []));
-  return messages2.flatMap((m) => {
+  const messages = path.slice(path.findLastIndex((e) => e.type === "reset_boundary") + 1).flatMap((e) => e.type === "message" && e.message ? [e.message] : []);
+  const results = new Map(messages.flatMap((m) => m.role === "toolResult" && typeof m.toolCallId === "string" ? [[m.toolCallId, m]] : []));
+  return messages.flatMap((m) => {
     if (m.role === "user" && m.synthetic !== true)
       return [{ role: "person", text: userText(m.content), activity: [] }];
     if (m.role === "bashExecution" && typeof m.command === "string")
@@ -5241,9 +5240,9 @@ function createInbox(pi, deps = defaultDeps) {
     const guidance = guidanceText(OMP);
     const systemPrompt = event.systemPrompt.includes(guidance) ? event.systemPrompt : [...event.systemPrompt, guidance];
     if (noted?.id !== id || noted.prompt !== event.prompt) {
-      const notes2 = await arrive(id, event.prompt).catch(() => null);
-      if (notes2)
-        noted = { id, prompt: event.prompt, notes: notes2 };
+      const notes = await arrive(id, event.prompt).catch(() => null);
+      if (notes)
+        noted = { id, prompt: event.prompt, notes };
     }
     const notes = noted?.notes ?? [];
     return {
@@ -5503,11 +5502,11 @@ function host_default(pi) {
   createInbox(pi);
 }
 export {
-  styleOf,
-  stopOf,
-  sessionIdInFile,
-  inboxModel,
-  host_default as default,
+  conversationOf,
   createInbox,
-  conversationOf
+  host_default as default,
+  inboxModel,
+  sessionIdInFile,
+  stopOf,
+  styleOf
 };
