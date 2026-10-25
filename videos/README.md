@@ -36,6 +36,7 @@ The videos so far:
 | `KeyCaps.tsx` | A keycap for each key pressed, for a take driven by keys. |
 | `EndCard.tsx` | The WebGL end card: streams of light leave the last picture's lines of text and braid through a word, with an address under it. It needs Chrome's GPU backend, which `remotion.config.ts` sets to ANGLE. |
 | `Music.tsx` | A video's music, with its fade out. |
+| `Beats.tsx` | A video's frame: its background, its music, and each beat from its start, with the end card starting early over the beat before it. |
 | `fonts.ts` | Loads Geist and Geist Mono before a frame renders. |
 | `states.ts`, `geometry.ts` | What the screen shows when, clicks, and camera moves across a take. |
 | `captures.ts` | Whether a capture is present, so a checkout without one draws a placeholder. |

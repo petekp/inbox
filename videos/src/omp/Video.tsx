@@ -1,20 +1,19 @@
-import { AbsoluteFill, Easing, Sequence, useCurrentFrame } from 'remotion'
+import { AbsoluteFill, Easing, useCurrentFrame } from 'remotion'
 
 import { AppLabel } from '../shared/AppLabel'
+import { Beats } from '../shared/Beats'
 import { Caption } from '../shared/Caption'
 import { EndCard } from '../shared/EndCard'
 import type { RowLines } from '../shared/EndCard'
-import { SANS, useFonts } from '../shared/fonts'
 import { clamp01, framingAt } from '../shared/geometry'
 import type { Rect } from '../shared/geometry'
 import { KeyCaps } from '../shared/KeyCaps'
-import { BACKGROUND, BAND, CAPTION_BAND, TITLE_BAR } from '../shared/layout'
-import { Music } from '../shared/Music'
+import { BAND, CAPTION_BAND, TITLE_BAR } from '../shared/layout'
 import { DARK_PALETTE } from '../shared/TerminalTake'
 import { takeTimeIn } from '../shared/terminal-time'
 import type { TerminalSegment } from '../shared/terminal-time'
 import { TerminalFootage, TerminalWindow } from '../shared/TerminalWindow'
-import { END_CARD, END_CARD_LEAD, FPS, frames, HEIGHT, WIDTH } from '../shared/video'
+import { END_CARD, END_CARD_LEAD, FPS, HEIGHT, WIDTH } from '../shared/video'
 import { captionEnd, CELL, FONT, MUSIC, TAKE, timeline, WINDOW, WINDOW_TITLE } from './timeline'
 import type { Cut, Placed, TerminalBeat } from './timeline'
 
@@ -51,30 +50,18 @@ function rowLinesAt(beat: TerminalBeat): RowLines {
 
 /** The omp promo's cut `cut`, one of `CUTS`. */
 export function Video({ cut }: { cut: string }) {
-  useFonts()
   const placed = timeline(cut as Cut)
   const last = placed.filter((b): b is Placed & TerminalBeat => b.kind === 'terminal').pop()
   return (
-    <AbsoluteFill style={{ backgroundColor: BACKGROUND, fontFamily: SANS, color: 'white' }}>
-      <Music cue={MUSIC} />
-      {placed.map((beat, i) => {
-        const lead = beat.kind === 'end' ? END_CARD_LEAD : 0
-        return (
-          <Sequence
-            key={beat.id}
-            name={`${beat.number} ${beat.id}`}
-            from={frames(beat.start - lead, FPS)}
-            durationInFrames={frames(beat.start + beat.length, FPS) - frames(beat.start - lead, FPS)}
-          >
-            {beat.kind === 'terminal' ? (
-              <TerminalBeatView beat={beat} previous={placed[i - 1]} placed={placed} />
-            ) : (
-              last && <EndCard {...END_CARD} rowLines={rowLinesAt(last)} length={beat.length} />
-            )}
-          </Sequence>
+    <Beats placed={placed} music={MUSIC}>
+      {(beat, previous) =>
+        beat.kind === 'terminal' ? (
+          <TerminalBeatView beat={beat} previous={previous} placed={placed} />
+        ) : (
+          last && <EndCard {...END_CARD} rowLines={rowLinesAt(last)} length={beat.length} />
         )
-      })}
-    </AbsoluteFill>
+      }
+    </Beats>
   )
 }
 

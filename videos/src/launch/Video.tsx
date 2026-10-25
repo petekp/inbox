@@ -1,18 +1,18 @@
 import type { ReactNode } from 'react'
-import { AbsoluteFill, Easing, Img, interpolate, OffthreadVideo, Sequence, staticFile, useCurrentFrame } from 'remotion'
+import { AbsoluteFill, Easing, Img, interpolate, OffthreadVideo, staticFile, useCurrentFrame } from 'remotion'
 
 import { AppLabel } from '../shared/AppLabel'
+import { Beats } from '../shared/Beats'
 import { Caption } from '../shared/Caption'
 import { isCaptured, toClip as toClipOf } from '../shared/captures'
 import type { TakeInfo } from '../shared/captures'
 import { EndCard } from '../shared/EndCard'
 import { Footage } from '../shared/Footage'
 import type { Segment } from '../shared/Footage'
-import { SANS, useFonts } from '../shared/fonts'
+import { SANS } from '../shared/fonts'
 import { between, clamp01, easeInOut, framingAt } from '../shared/geometry'
 import type { Point, Rect } from '../shared/geometry'
-import { BACKGROUND, BAND, CAPTION_BAND } from '../shared/layout'
-import { Music } from '../shared/Music'
+import { BAND, CAPTION_BAND } from '../shared/layout'
 import { Pointer } from '../shared/Pointer'
 import { pointerMarks, stateAt } from '../shared/states'
 import type { State } from '../shared/states'
@@ -34,26 +34,12 @@ const WIDE_MARGIN = 0.05
 /** The launch video's cut `cut`, one of `VARIANTS`. */
 export function Video({ cut }: { cut: string }) {
   const variant = cut as Variant
-  useFonts()
   const placed = timeline(variant)
   const starts = Object.fromEntries(placed.filter(b => b.kind === 'thread').map(b => [b.id, b.start])) as ThreadStarts
   return (
-    <AbsoluteFill style={{ backgroundColor: BACKGROUND, fontFamily: SANS, color: 'white' }}>
-      <Music cue={MUSIC} />
-      {placed.map((beat, i) => {
-        const lead = beat.kind === 'end' ? END_CARD_LEAD : 0
-        return (
-          <Sequence
-            key={beat.id}
-            name={`${beat.number} ${beat.id}`}
-            from={frames(beat.start - lead, FPS)}
-            durationInFrames={frames(beat.start + beat.length, FPS) - frames(beat.start - lead, FPS)}
-          >
-            <BeatView beat={beat} previous={placed[i - 1]} variant={variant} starts={starts} />
-          </Sequence>
-        )
-      })}
-    </AbsoluteFill>
+    <Beats placed={placed} music={MUSIC}>
+      {(beat, previous) => <BeatView beat={beat} previous={previous} variant={variant} starts={starts} />}
+    </Beats>
   )
 }
 
