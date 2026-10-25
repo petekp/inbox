@@ -65,6 +65,18 @@ export const SETTLED_MS = 5120
 export const PERMISSION_FALLBACK_DELAY_MS = 1500
 export const PRESS_GUARD_MS = 400
 export const QUEUED_AFTER_MS = 1000
+/** How long a Compare press waits for the agent to record the question again after its reply. */
+export const COMPARE_LIMIT_MS = 30 * 60_000
+
+/** When the soonest Compare press still inside its limit reaches it, so a look can redraw then. */
+export function compareEndsAt(lastActions: Record<string, LastAction>, now: number): number | null {
+  const ends = Object.values(lastActions)
+    .filter(l => l.action === 'compare')
+    .map(l => l.at + COMPARE_LIMIT_MS)
+    .filter(at => at > now)
+
+  return ends.length > 0 ? Math.min(...ends) : null
+}
 
 export function isQueuedAt(last: LastAction | undefined, now: number): boolean {
   return last?.delivery?.state === 'queued' && now - last.at >= QUEUED_AFTER_MS
@@ -127,6 +139,7 @@ export type Feedback =
   | { is: 'done'; label: string; at: number; isHandedStep?: true }
   | { is: 'working'; label: string; at: number }
   | { is: 'stillOpen'; at: number }
+  | { is: 'noComparison'; at: number }
   | { is: 'queued'; label: string; at: number }
   | { is: 'unconfirmed'; label: string; at: number }
   | { is: 'notSent'; reason: string; retry: RowPress | null }
@@ -308,12 +321,17 @@ function needsYouOrder(ledger: Ledger): { questions: Item[]; tasks: Item[] } {
   return { questions: newestReplyFirst('question'), tasks: newestReplyFirst('task') }
 }
 
+export function showsCompare(item: Pick<Item, 'kind' | 'options' | 'isDesignChoice'>): boolean {
+  return item.kind === 'question' && item.isDesignChoice === true && item.options.length >= 2
+}
+
 export function feedbackOf(
   id: string,
   last: LastAction | undefined,
   note: RowNote | undefined,
   turns: Turns,
   now: number,
+  reportedAt?: number,
 ): Feedback | null {
   const result = last?.result
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
@@ -325,8 +343,12 @@ export function feedbackOf(
   if (pending) return { is: pending, label: last.text, at: last.at }
   if (delivery?.state === 'failed') return { is: 'notSent', reason: delivery.reason, retry: retryOf(id, last) }
   const isAwaiting = isAwaitingReply(last, turns)
+  const isUnreported = last.action === 'compare' && !(reportedAt !== undefined && reportedAt >= last.at)
+  const isPastLimit = now - last.at >= COMPARE_LIMIT_MS
   const working = WORKING_LABELS[last.action]
-  if (last.kind === 'talk' && working && isAwaiting) return { is: 'working', label: working, at: last.at }
+  if (last.kind === 'talk' && working && (isAwaiting || (isUnreported && !isPastLimit)))
+    return { is: 'working', label: working, at: last.at }
+  if (isUnreported) return { is: 'noComparison', at: last.at }
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last)) return { is: 'stillOpen', at: last.at }
 
   const isHandedStep = last.kind === 'handoff' && last.action.startsWith('step-')
@@ -343,6 +365,7 @@ const fixLabel = (f: Pick<Finding, 'kind'>) => (f.kind === 'opportunity' ? 'Do i
 
 const WORKING_LABELS: Record<string, string> = {
   explain: 'Explaining…',
+  compare: 'Comparing…',
   discuss: 'Discussing…',
   'thread-discuss': 'Discussing…',
   'thread-draft': 'Drafting a reply…',
@@ -353,6 +376,7 @@ const DONE_LABELS: Record<string, (text: string) => string> = {
   issue: () => 'Asked to file',
   discuss: () => 'Discussed',
   explain: () => 'Explained',
+  compare: () => 'Compared',
   dismiss: () => 'Dismissed',
   type: () => 'Replied',
   'thread-address': () => 'Addressed',
@@ -369,11 +393,15 @@ export function isFailure(f: Feedback | null): boolean {
 
 export function hasAge(
   f: Feedback,
-): f is Extract<Feedback, { is: 'done' | 'working' | 'stillOpen' | 'queued' | 'unconfirmed' | 'closed' }> {
+): f is Extract<
+  Feedback,
+  { is: 'done' | 'working' | 'stillOpen' | 'noComparison' | 'queued' | 'unconfirmed' | 'closed' }
+> {
   return (
     f.is === 'done' ||
     f.is === 'working' ||
     f.is === 'stillOpen' ||
+    f.is === 'noComparison' ||
     f.is === 'queued' ||
     f.is === 'unconfirmed' ||
     f.is === 'closed'
@@ -421,6 +449,8 @@ export function feedbackText(f: Feedback, look: Look): string {
       return f.label
     case 'stillOpen':
       return 'Still open'
+    case 'noComparison':
+      return 'No comparison came back'
     case 'closed':
       return f.label
   }
@@ -452,13 +482,21 @@ export function emptyText(tab: 'needsYou' | 'findings', agent: string): { title:
     : { title: 'No findings yet', hint: `${agent} flags issues and opportunities it spots beyond your task.` }
 }
 
-const FOLLOW_UPS: ReadonlySet<RowPress['action']> = new Set(['type', 'explain', 'discuss', 'dismiss', 'discard'])
+const FOLLOW_UPS: ReadonlySet<RowPress['action']> = new Set([
+  'type',
+  'explain',
+  'compare',
+  'discuss',
+  'dismiss',
+  'discard',
+])
 const ACTION_KEYS: Partial<Record<RowPress['action'], string>> = {
   done: 'd',
   address: 'a',
   issue: 'i',
   type: 't',
   explain: 'e',
+  compare: 'p',
   discuss: 'd',
   dismiss: 'x',
   discard: 'x',
@@ -468,6 +506,7 @@ function actionsOf(
   row: { id: string; item: Item | null; finding: Finding | null; steps: HelpStep[] },
   last: LastAction | undefined,
   state: RowState,
+  isPressOut: boolean,
 ): ActionView[] {
   const { id, item, steps } = row
   const action = (
@@ -479,6 +518,7 @@ function actionsOf(
     press,
     label:
       press.action !== 'type' &&
+      (!isPressOut || last?.isRepeat === true) &&
       last?.kind !== 'local' &&
       last?.delivery?.state !== 'failed' &&
       last?.action === actionId(press)
@@ -490,6 +530,7 @@ function actionsOf(
         ? 'primary'
         : press.action === 'discuss' ||
             press.action === 'explain' ||
+            press.action === 'compare' ||
             press.action === 'dismiss' ||
             press.action === 'discard'
           ? 'quiet'
@@ -541,6 +582,7 @@ function actionsOf(
     ...stepActions,
     action({ action: 'type', id, text: '' }, 'Reply', 'mark'),
     action({ action: 'explain', id }, 'Explain', 'talk'),
+    ...(showsCompare(item) ? [action({ action: 'compare', id }, 'Compare', 'talk')] : []),
     action({ action: 'dismiss', id }, 'Dismiss', 'mark'),
   ]
 }
@@ -778,7 +820,8 @@ export function inboxView({
   }
   const feedbackIn = (id: string, state: RowState): Feedback | null => {
     if (state.is === 'settled') return null
-    const f = feedbackOf(id, lastActions[id], notes[id], turns, now)
+    const reportedAt = ledger.items.find(i => i.id === id)?.reportedAt
+    const f = feedbackOf(id, lastActions[id], notes[id], turns, now, reportedAt)
     if (state.is !== 'held') return f
     const isFailedReply = f?.is === 'notSent' && lastActions[id]?.action === 'type' && lastActions[id].at >= state.at
 
@@ -786,12 +829,15 @@ export function inboxView({
   }
   const rowOf = (row: Omit<RowView, 'state' | 'feedback' | 'actions'>): RowView => {
     const state = stateOf(row.id)
+    const feedback = feedbackIn(row.id, state)
+    // A button must keep its width while its press is out, or the buttons after it can move to another line.
+    const isPressOut = feedback?.is === 'working' || feedback?.is === 'queued' || feedback?.is === 'unconfirmed'
 
     return {
       ...row,
       state,
-      feedback: feedbackIn(row.id, state),
-      actions: actionsOf(row, lastActions[row.id], state),
+      feedback,
+      actions: actionsOf(row, lastActions[row.id], state, isPressOut),
     }
   }
   const itemRow = (item: Item): RowView => {

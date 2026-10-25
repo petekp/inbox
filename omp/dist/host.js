@@ -266,19 +266,25 @@ function parseReply(text, source = null) {
       const fields = value.split("|");
       const isLabelSkipped = !dash(fields[2]) && /\s/.test((fields[1] ?? "").trim());
       const [kind, label, ask, ...rest] = (isLabelSkipped ? [fields[0], "-", ...fields.slice(1)] : fields).map(dash);
+      const last = rest.at(-1);
+      const isDesignField = rest.length > 2 && (last === null || /^design$/i.test(last ?? ""));
+      if (isDesignField)
+        rest.pop();
       const rec = rest.length > 1 ? rest.pop() : null;
       if (!ask) {
         newLines.push(undefined);
         continue;
       }
       const options = rest.flatMap((o) => o?.split(/\s+\/\s+/) ?? []).filter(Boolean);
+      const isDesignChoice = isDesignField && last !== null && readKind(kind) === "question";
       const item = {
         kind: readKind(kind),
         label: label ?? null,
         ask,
         options,
         rec: recommendedOption(options, rec ?? null),
-        helps: []
+        helps: [],
+        ...isDesignChoice ? { isDesignChoice } : {}
       };
       added.push(item);
       newLines.push(item);
@@ -469,8 +475,9 @@ function reopenFinding(ledger, id) {
   };
 }
 function applyExchangeUpdate(ledger, update, exchange, now, promptAt) {
-  const explainedId = exchange.press?.action === "explain" ? exchange.press.id : null;
-  return applyUpdate(ledger, { ...update, closed: update.closed.filter((c) => c.id !== explainedId) }, now, exchange.turn, promptAt);
+  const press = exchange.press;
+  const talkedAboutId = press?.action === "explain" || press?.action === "compare" ? press.id : null;
+  return applyUpdate(ledger, { ...update, closed: update.closed.filter((c) => c.id !== talkedAboutId) }, now, exchange.turn, promptAt);
 }
 var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
 var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
@@ -512,7 +519,11 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
     const at = matchOpen(items, a, created);
     const restated = items[at];
     if (restated) {
-      items[at] = { ...restated, helps: a.helps.reduce((all, h) => withHelp(all, h), restated.helps) };
+      items[at] = {
+        ...restated,
+        helps: a.helps.reduce((all, h) => withHelp(all, h), restated.helps),
+        ...a.isDesignChoice ? { isDesignChoice: true } : {}
+      };
       addedIds.push(restated.id);
       continue;
     }
@@ -605,8 +616,19 @@ function addAgentItem(ledger, entry, now) {
   const recordedThisTurn = new Set(ledger.items.filter((i) => i.turn === ledger.turn).map((i) => i.id));
   const open = matchOpen(ledger.items, candidate, recordedThisTurn);
   const openItem = ledger.items[open];
-  if (openItem)
-    return { ledger, is: "open", id: openItem.id };
+  if (openItem) {
+    const helps = entry.helps.reduce(withHelp, openItem.helps);
+    const isDesignChoice = openItem.isDesignChoice === true || entry.isDesignChoice === true;
+    const reported = { ...openItem, helps, isDesignChoice, reportedAt: now };
+    const items2 = ledger.items.map((i) => i === openItem ? reported : i);
+    return {
+      ledger: { ...ledger, items: items2 },
+      is: "open",
+      id: openItem.id,
+      addedSteps: helps.length - openItem.helps.length,
+      isNewlyMarked: isDesignChoice && openItem.isDesignChoice !== true
+    };
+  }
   const isAskable = (c) => c.how === "expired" || c.how === "claude";
   const repeated = ledger.closed.findLast((c) => !isAskable(c) && repeatsSettled(c, candidate));
   if (repeated)
@@ -653,7 +675,7 @@ function systemText(host) {
 
 Input:
 - <card>: the ledger before this exchange (may be empty)
-- <open>: items still waiting on the person, as id | kind | label | ask | options | rec
+- <open>: items still waiting on the person, as id | kind | label | ask | options | rec | design
 - <findings>: findings the agent recorded for the person to review later, outside the current task, each with an id
 - <decided>: items the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again.
 - <person>: what the person just sent, and the commands they ran themselves: "$ cmd" for a shell command, with its output, and "/name" for a slash command
@@ -671,13 +693,14 @@ CLOSED: <id> | the outcome, at most 8 words, in one of three forms. When the per
 FIXED: <id> | the change that fixed it, at most 8 words. One line for each finding in <findings> whose problem the reply, <activity> or <person> shows was fixed by a change to the work. Only a change fixes a finding. When the person puts a finding off, sets it aside or says it does not matter, write no FIXED line: it stays open until they dismiss it.
 ASKED: <id> | <item>
   For a finding in <findings> that a NEW line or an item in <open> asks the person about. item: "new N" for the Nth NEW line in your answer, or an id from <open>. The item takes the finding's place, so the person sees it once.
-NEW: <kind> | <label> | <ask> | <options> | <rec>
+NEW: <kind> | <label> | <ask> | <options> | <rec> | <design>
   One line per thing in <reply> that waits on the person and is not already in <open> or <findings>. A finding the agent recorded is not NEW unless the reply asks the person to decide or do something about it now; then also write an ASKED line for it. Also one line per dialog in <activity> that the person dismissed or left unanswered, with an ASKED line when the dialog asks about a finding. When the reply restates, rewords or narrows an item in <open>, it is not new: add HELP lines to that item's id instead.
   kind: "decide" (a choice, approval, or information only the person has, explicitly put to them, without which the agent cannot go on with its task) or "do" (an action only the person can take, without which the agent cannot continue or finish: sign in, run a command needing their password, test on their device, reply to a teammate).
   label: the reply's own number or id for it ("1", "D3"), or "-".
   ask: plain words, readable without the reply, at most 12 words, or up to 16 when 12 would lose meaning. Keep the question's meaning and every alternative it names. Replace any term the reply coined with what it means. Name an item or finding by what it says, never by its id: the person does not see ids.
   options: the answers the person can pick, separated by " / ", at most 5 words each; "-" for kind "do". For kind "decide", always at least one, so one press can answer. Use the choices the reply offers, plus the answer it recommends when that is not one of them. When the reply offers none, predict the answers the person would most likely give: the yes and the no for an approval or a yes-or-no question ("Approve / Not yet"); the 1 to 3 likeliest answers to an open question, from the conversation; or, when the conversation suggests no answer, what the person would most likely ask the agent to do instead ("${LIST_CHOICES}", "Pick one for me").
   rec: the option the reply states it recommends for this question ("I'd go with X", "I recommend X"), copied from options, or "-" when it states none for this question. A reason the reply gives for one answer is not a recommendation: it must say it recommends or prefers that answer.
+  design: "design" for a "decide" item whose options are designs or approaches the agent could try and show side by side, such as two layouts or two ways to build a feature. Otherwise "-", as for a fact, an approval or a preference.
   Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, edit a shared page) until the person agrees is a "decide" item ("Say when you want those committed"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
 UPDATE: <id> | <options> | <rec>
   For a "decide" item in <open> when the reply now offers it different answers, or states a recommendation for it that <open> does not show. options: the answers the person can now pick, as in NEW, or "-" to keep them. rec: as in NEW, or "-" to keep it. Rewording the question is not a change.
@@ -806,7 +829,7 @@ function ledgerBlocks(ledger) {
     `NOW: ${ledger.card.now}`,
     ...ledger.card.running.map((r) => `RUNNING: ${r}`)
   ].join(NL4) : "";
-  const open = ledger.items.map((i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"}`).join(NL4);
+  const open = ledger.items.map((i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`).join(NL4);
   const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL4);
   const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL4);
   return [
@@ -1589,6 +1612,7 @@ function retryOf(id, last) {
     case "answer":
       return { action: "answer", id, option: last.text };
     case "explain":
+    case "compare":
     case "address":
     case "issue":
     case "discuss":
@@ -1618,7 +1642,11 @@ function recordPress(kind, action, text, ctx) {
 }
 function pressed(ledger, last, p, ctx) {
   const stale = { stale: true };
-  const record = (kind) => recordPress(kind, actionId(p), pressText(p), ctx);
+  const isRepeat = last?.action === actionId(p) && last.kind !== "local" && last.delivery?.state !== "failed";
+  const record = (kind) => ({
+    ...recordPress(kind, actionId(p), pressText(p), ctx),
+    ...isRepeat ? { isRepeat: true } : {}
+  });
   const unchanged = { ledger, last: null, effects: [] };
   if (p.action === "undo") {
     if (ledger.findings.some((f) => f.id === p.id) && last?.action === "address" && !last.isKept)
@@ -1693,6 +1721,12 @@ function pressed(ledger, last, p, ctx) {
         last: record("talk"),
         effects: [{ kind: "send", text: messages.explain(item), by: { id: item.id, action: "explain" } }]
       };
+    case "compare":
+      return {
+        ledger,
+        last: record("talk"),
+        effects: [{ kind: "send", text: messages.compare(item), by: { id: item.id, action: "compare" } }]
+      };
     case "done":
       return { ledger: closeItem(ledger, item.id, { how: "done", outcome: "done" }, ctx.now), last: null, effects: [] };
     case "dismiss":
@@ -1744,6 +1778,14 @@ function dialogReply(link, answer) {
 ${JSON.stringify(reply)}
 </send_user_message_question_reply>`;
 }
+var COMPARE_REQUEST = [
+  "Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.",
+  "For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session's data outside this repo.",
+  "Then reply with a table: one row per choice, and the few measures that tell them apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Add one line on anything you did not expect. After the table, give your pick and say whether it changed. When the choice is visual or has many states, also write one HTML page that shows the choices side by side.",
+  "When the comparison is done, call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps if you made one. That marks it compared. Call each choice by its name as listed."
+].join(`
+
+`);
 var messages = {
   answer: (item, answer) => item.dialog ? dialogReply(item.dialog, answer) : `Re "${item.ask}": ${answer}`,
   explain: (item) => {
@@ -1753,6 +1795,9 @@ Options: ${item.options.join(" / ")}` : "";
     return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.
 "${item.ask}"${options}`;
   },
+  compare: (item) => `${COMPARE_REQUEST}
+"${item.ask}"
+Options: ${item.options.join(" / ")}`,
   run: (item, command) => `For "${item.ask}", run this:
 \`\`\`
 ${command}
@@ -1784,6 +1829,11 @@ var CLOSED_MARKS = { handled: "\u2713", dismissed: "\u2715", lapsed: "" };
 var CLOSED_SHOWN = 3;
 var SETTLED_MS = 5120;
 var QUEUED_AFTER_MS = 1000;
+var COMPARE_LIMIT_MS = 30 * 60000;
+function compareEndsAt(lastActions, now) {
+  const ends = Object.values(lastActions).filter((l) => l.action === "compare").map((l) => l.at + COMPARE_LIMIT_MS).filter((at) => at > now);
+  return ends.length > 0 ? Math.min(...ends) : null;
+}
 function isQueuedAt(last, now) {
   return last?.delivery?.state === "queued" && now - last.at >= QUEUED_AFTER_MS;
 }
@@ -1875,7 +1925,10 @@ function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
   return { questions: newestReplyFirst("question"), tasks: newestReplyFirst("task") };
 }
-function feedbackOf(id, last, note, turns, now) {
+function showsCompare(item) {
+  return item.kind === "question" && item.isDesignChoice === true && item.options.length >= 2;
+}
+function feedbackOf(id, last, note, turns, now, reportedAt) {
   const result = last?.result;
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
     return { is: "note", note: note.note, at: note.at };
@@ -1890,9 +1943,13 @@ function feedbackOf(id, last, note, turns, now) {
   if (delivery?.state === "failed")
     return { is: "notSent", reason: delivery.reason, retry: retryOf(id, last) };
   const isAwaiting = isAwaitingReply(last, turns);
+  const isUnreported = last.action === "compare" && !(reportedAt !== undefined && reportedAt >= last.at);
+  const isPastLimit = now - last.at >= COMPARE_LIMIT_MS;
   const working = WORKING_LABELS[last.action];
-  if (last.kind === "talk" && working && isAwaiting)
+  if (last.kind === "talk" && working && (isAwaiting || isUnreported && !isPastLimit))
     return { is: "working", label: working, at: last.at };
+  if (isUnreported)
+    return { is: "noComparison", at: last.at };
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last))
     return { is: "stillOpen", at: last.at };
   const isHandedStep = last.kind === "handoff" && last.action.startsWith("step-");
@@ -1906,6 +1963,7 @@ function feedbackOf(id, last, note, turns, now) {
 var fixLabel = (f) => f.kind === "opportunity" ? "Do it" : "Fix";
 var WORKING_LABELS = {
   explain: "Explaining\u2026",
+  compare: "Comparing\u2026",
   discuss: "Discussing\u2026",
   "thread-discuss": "Discussing\u2026",
   "thread-draft": "Drafting a reply\u2026"
@@ -1915,6 +1973,7 @@ var DONE_LABELS = {
   issue: () => "Asked to file",
   discuss: () => "Discussed",
   explain: () => "Explained",
+  compare: () => "Compared",
   dismiss: () => "Dismissed",
   type: () => "Replied",
   "thread-address": () => "Addressed",
@@ -1961,6 +2020,8 @@ function feedbackText(f, look) {
       return f.label;
     case "stillOpen":
       return "Still open";
+    case "noComparison":
+      return "No comparison came back";
     case "closed":
       return f.label;
   }
@@ -1985,24 +2046,32 @@ var ROW_TABS = TABS.filter((t) => t.id !== "prs");
 function emptyText(tab, agent) {
   return tab === "needsYou" ? { title: "Nothing needed.", hint: `${agent}'s questions and the tasks only you can do show up here.` } : { title: "No findings yet", hint: `${agent} flags issues and opportunities it spots beyond your task.` };
 }
-var FOLLOW_UPS = new Set(["type", "explain", "discuss", "dismiss", "discard"]);
+var FOLLOW_UPS = new Set([
+  "type",
+  "explain",
+  "compare",
+  "discuss",
+  "dismiss",
+  "discard"
+]);
 var ACTION_KEYS = {
   done: "d",
   address: "a",
   issue: "i",
   type: "t",
   explain: "e",
+  compare: "p",
   discuss: "d",
   dismiss: "x",
   discard: "x"
 };
-function actionsOf(row, last, state) {
+function actionsOf(row, last, state, isPressOut) {
   const { id, item, steps: steps2 } = row;
   const action = (press, label, kind, flags = {}) => ({
     press,
-    label: press.action !== "type" && last?.kind !== "local" && last?.delivery?.state !== "failed" && last?.action === actionId(press) ? `${label} again` : label,
+    label: press.action !== "type" && (!isPressOut || last?.isRepeat === true) && last?.kind !== "local" && last?.delivery?.state !== "failed" && last?.action === actionId(press) ? `${label} again` : label,
     kind,
-    emphasis: flags.isPrimary || press.action === "done" || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
+    emphasis: flags.isPrimary || press.action === "done" || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
     ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps2[press.step]) ? { icon: stepIconKind(steps2[press.step]) } : {},
     isPrimary: flags.isPrimary ?? false,
     isFolded: flags.isFolded ?? false,
@@ -2043,6 +2112,7 @@ function actionsOf(row, last, state) {
     ...stepActions,
     action({ action: "type", id, text: "" }, "Reply", "mark"),
     action({ action: "explain", id }, "Explain", "talk"),
+    ...showsCompare(item) ? [action({ action: "compare", id }, "Compare", "talk")] : [],
     action({ action: "dismiss", id }, "Dismiss", "mark")
   ];
 }
@@ -2168,7 +2238,8 @@ function inboxView({
   const feedbackIn = (id, state) => {
     if (state.is === "settled")
       return null;
-    const f = feedbackOf(id, lastActions[id], notes[id], turns, now);
+    const reportedAt = ledger.items.find((i) => i.id === id)?.reportedAt;
+    const f = feedbackOf(id, lastActions[id], notes[id], turns, now, reportedAt);
     if (state.is !== "held")
       return f;
     const isFailedReply = f?.is === "notSent" && lastActions[id]?.action === "type" && lastActions[id].at >= state.at;
@@ -2176,11 +2247,13 @@ function inboxView({
   };
   const rowOf = (row) => {
     const state = stateOf(row.id);
+    const feedback = feedbackIn(row.id, state);
+    const isPressOut = feedback?.is === "working" || feedback?.is === "queued" || feedback?.is === "unconfirmed";
     return {
       ...row,
       state,
-      feedback: feedbackIn(row.id, state),
-      actions: actionsOf(row, lastActions[row.id], state)
+      feedback,
+      actions: actionsOf(row, lastActions[row.id], state, isPressOut)
     };
   };
   const itemRow = (item) => {
@@ -2663,7 +2736,11 @@ var RECORD_SCHEMA = {
     steps: {
       type: "array",
       items: { type: "string" },
-      description: "For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link."
+      description: "For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link. For a question: up to 3 files or https links that help the user decide, such as a page comparing the options, each file as an absolute path."
+    },
+    design_choice: {
+      type: "boolean",
+      description: "For a question: true when its options are designs or approaches you could try and show side by side, such as two layouts or two ways to build a feature. The user can then ask you to compare them. Leave it out for a fact, an approval or a preference."
     },
     finding_kind: {
       type: "string",
@@ -2733,16 +2810,25 @@ function recordItem(host, ledger, input, now) {
   const rec = recInput === "" ? null : recommendedOption(options, recInput);
   if (recInput !== "" && rec === null)
     return { ledger, result: "Not recorded: rec must be one of the options." };
-  const steps2 = input.kind === "task" ? list(input.steps, MAX_STEPS + 3, 4000) : [];
-  const helps = steps2.flatMap((step) => stepHelp(step) ?? []).slice(0, MAX_STEPS);
-  const r = addAgentItem(ledger, { kind: input.kind, ask, options, rec, helps }, now);
-  if (r.is === "open")
-    return { ledger, result: "Already open." };
+  const steps2 = list(input.steps, MAX_STEPS + 3, 4000);
+  const isUsable = (h) => input.kind === "task" || h.kind === "open" || h.kind === "link";
+  const helps = steps2.flatMap((step) => stepHelp(step) ?? []).filter(isUsable).slice(0, MAX_STEPS);
+  const leftOut = helps.length < steps2.length ? input.kind === "task" ? " Some steps were not a command, a file path or a link, so they are left out." : " Some steps were not an absolute file path or a link, so they are left out." : "";
+  const isDesignChoice = input.kind === "question" && input.design_choice === true;
+  const r = addAgentItem(ledger, { kind: input.kind, ask, options, rec, helps, isDesignChoice }, now);
+  if (r.is === "open") {
+    const changes = [
+      ...r.addedSteps > 0 ? ["added its new steps"] : [],
+      ...r.isNewlyMarked ? ["marked it as a design choice"] : []
+    ];
+    const updated = changes.length > 0 ? ` and ${changes.join(" and ")}` : "";
+    return { ledger: r.ledger, result: `Already open, so this record updated it${updated}.${leftOut}` };
+  }
   if (r.is === "closed")
     return { ledger, result: `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.` };
   return {
     ledger: r.ledger,
-    result: `Recorded. The user sees it in ${host.surface}.` + (helps.length < steps2.length ? " Some steps were not a command, a file path or a link, so they are left out." : "") + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : "")
+    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : "")
   };
 }
 function recordFinding(host, ledger, input, now) {
@@ -4176,6 +4262,7 @@ function createPanel(deps) {
   let ui = INITIAL_UI;
   let screen = null;
   let animation = null;
+  let compareEnd = null;
   let version2 = 0;
   let seen = {};
   let isOpening = true;
@@ -4188,6 +4275,14 @@ function createPanel(deps) {
       timers.stop(animation);
       animation = null;
     }
+    const now = deps.now();
+    const at = screen === null ? null : compareEndsAt(screen.view.lastActions, now);
+    if (compareEnd !== null && compareEnd.at !== at) {
+      timers.stop(compareEnd.timer);
+      compareEnd = null;
+    }
+    if (at !== null && compareEnd === null)
+      compareEnd = { at, timer: timers.every(() => void refresh(), at - now + ANIMATION_MS) };
   };
   async function refresh(pressedId) {
     const mine = ++version2;
@@ -4251,6 +4346,9 @@ function createPanel(deps) {
       if (animation !== null)
         timers.stop(animation);
       animation = null;
+      if (compareEnd !== null)
+        timers.stop(compareEnd.timer);
+      compareEnd = null;
     }
   };
 }
@@ -4287,6 +4385,7 @@ function demoView(now) {
           ask: "Dismiss a glance with a pinch, or a flick of the wrist?",
           options: ["Pinch", "Flick"],
           rec: "Pinch",
+          isDesignChoice: true,
           helps: [],
           turn: 14,
           at: now - 12 * MIN

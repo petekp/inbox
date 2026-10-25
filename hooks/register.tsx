@@ -196,6 +196,8 @@ import {
   PERMISSION_FALLBACK_DELAY_MS,
   PRESS_GUARD_MS,
   QUEUED_AFTER_MS,
+  COMPARE_LIMIT_MS,
+  compareEndsAt,
   rowKeyPlan,
   settledLabel,
   actionLabel,
@@ -279,6 +281,23 @@ const DESKTOP_WIDE_AT = 50
 const DESKTOP_CHARS_PER_CELL = 1.25
 // A lower guess for text that must stay one line, since desktop wraps text that is too long.
 const DESKTOP_CLIP_CHARS_PER_CELL = 1.1
+// The widest character in each group, in points, in the pane's 13 pt system font as AppKit measures it. Any other
+// character counts as the widest group, so an estimate is never narrower than the text.
+const DESKTOP_CHAR_PT: [chars: string, pt: number][] = [
+  ["ijl|I ',.:;/\\!", 4],
+  ['ftr()[]{}', 4.9],
+  ['aceksvxyz-*"`?1J', 7.4],
+  ['bdghnopqu_EFL27', 7.95],
+  ['ABKPRSTVXYZ0345689#$+<=>^~', 8.8],
+  ['CDGHNOQUw&', 10],
+]
+const DESKTOP_WIDEST_CHAR_PT = 12.6
+/** Desktop cuts a follow-up label wider than its link, so its link is sized from each character's width. */
+function desktopTextCells(text: string): number {
+  let pt = 0
+  for (const c of text) pt += DESKTOP_CHAR_PT.find(([chars]) => chars.includes(c))?.[1] ?? DESKTOP_WIDEST_CHAR_PT
+  return pt / DESKTOP_CELL_PT
+}
 const DESKTOP_TAB_PAD = '\u00a0'.repeat(3)
 const DESKTOP_LINE_PT = 19
 // One column of `bodyColumns` in the Claude app pane, in points: 15.8 px at 2x.
@@ -912,6 +931,8 @@ async function redrawAfterReload($: EngineInterface) {
   ]
   const latest = Math.max(...times)
   if (times.length > 0 && latest + SETTLED_MS > now) redrawWhileLeaving($, latest + SETTLED_MS)
+  const compareEnd = compareEndsAt(lastActions, now)
+  if (compareEnd !== null) later($, compareEnd - now, () => redraw($))
 }
 
 /**
@@ -1775,6 +1796,7 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   const { isMoved, undoBlock } = await openAfterClose($, rowId, wasWaiting, canRevealUndo)
   if (canRevealUndo) await keepUndoVisible($, undoKey, undoBlock, now, undoRevision)
   if (!('ref' in p) && p.action === 'done') later($, SETTLED_MS, () => wakeForDone($))
+  if (!('ref' in p) && p.action === 'compare') later($, COMPARE_LIMIT_MS, () => redraw($))
   if (!('ref' in p) && p.action === 'address') redrawWhileLeaving($, now + SETTLED_MS)
   if (isReplyToClosed && effects.length > 0) redrawWhileLeaving($, now + SETTLED_MS)
   if ('ref' in p && p.action === 'pr-dismiss') {
@@ -3201,7 +3223,7 @@ export const register: Register = on => {
       const props: LinksProps = {
         links: more.map(a => {
           const label = desktopLabel(a)
-          return { key: a.key, label, width: label.length / DESKTOP_CHARS_PER_CELL + 0.5 }
+          return { key: a.key, label, width: desktopTextCells(label) }
         }),
         gap: 1.5,
         fallbackColumns: listColumns - DESKTOP_MARK_CELLS - DESKTOP_SIDE_CELLS - 1,

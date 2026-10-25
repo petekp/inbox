@@ -1216,7 +1216,9 @@ test('a question Claude records waits in the pane with its recommendation, a rep
   expect(r.result).toBe('Recorded. The user sees it in the /inbox pane.')
   await clock.settle()
   expect(await pane.find({ text: /Which cache should the API use\?/ })).toBeDefined()
-  expect((await $.tool.call({ ...question, ask: 'Which cache should the API use?' })).result).toBe('Already open.')
+  expect((await $.tool.call({ ...question, ask: 'Which cache should the API use?' })).result).toBe(
+    'Already open, so this record updated it.',
+  )
   expect((await $.tool.call({ ...question, ask: 'Which cache should it use?', rec: 'Memcached' })).result).toBe(
     'Not recorded: rec must be one of the options.',
   )
@@ -1934,7 +1936,7 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   await clock.settle()
   expect(sent.at(-1)).toContain("Let's talk through this finding you recorded")
   expect(await pane.find({ text: /Discussing…/ })).toBeDefined()
-  expect((await pane.find({ key: 'discuss-f3-key' }))?.props.label).toBe('Discuss again')
+  expect((await pane.find({ key: 'discuss-f3-key' }))?.props.label).toBe('Discuss')
   expect(await band.find({ text: /Findings 1/ })).toBeDefined()
   await pane.press({ key: 'tab-needsYou' })
   submitAnswer = 'hold'

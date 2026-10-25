@@ -26,6 +26,13 @@ export type Item = {
   from: 'record' | 'update'
   /** The open Codex dialog question this item copies. Only the Codex host sets it. */
   dialog?: DialogLink
+  /**
+   * The agent marked it a design choice: its options are designs or approaches it could try and show side by side.
+   * Only these show Compare. An item saved before the mark kept this has none.
+   */
+  isDesignChoice?: boolean
+  /** When the agent last recorded it again while it was open, as it does to report a comparison. */
+  reportedAt?: number
 }
 
 /**
@@ -91,6 +98,8 @@ export type LastAction = {
   delivery?: Delivery
   /** Undo on a finding Fix handed off, which lists the row again while the agent works on it. */
   isKept?: true
+  /** It repeated the latest action, so its button keeps reading "… again" while the press is out. */
+  isRepeat?: true
 }
 
 /**
@@ -294,7 +303,7 @@ export type Exchange = {
   screen: string
 }
 
-export type Press = { id: string; action: 'answer' | 'explain' | 'run' | 'done' }
+export type Press = { id: string; action: 'answer' | 'explain' | 'compare' | 'run' | 'done' }
 
 /** The inbox text the agent last read beside a prompt, and the closed items it was told about. */
 export type Told = { inbox: string | null; closed: string[] }

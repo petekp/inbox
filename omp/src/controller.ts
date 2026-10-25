@@ -1,5 +1,6 @@
 import type { PrPress } from '../../hooks/pr-tab'
 import type { RowPress } from '../../hooks/presses'
+import { compareEndsAt } from '../../hooks/view'
 import type { ReplyHolds } from '../../hooks/view'
 import { INITIAL_UI, afterHandOff, followRows, handleKey, holdsOf, isAnimating, noticeFor, render } from './panel'
 import type { PanelPress, PanelScreen, PanelUi, SeenRows, Style } from './panel'
@@ -47,6 +48,7 @@ export function createPanel(deps: PanelDeps): Panel {
   let ui: PanelUi = INITIAL_UI
   let screen: PanelScreen | null = null
   let animation: unknown = null
+  let compareEnd: { at: number; timer: unknown } | null = null
   let version = 0
   let seen: SeenRows = {}
   let isOpening = true
@@ -59,6 +61,14 @@ export function createPanel(deps: PanelDeps): Panel {
       timers.stop(animation)
       animation = null
     }
+    const now = deps.now()
+    const at = screen === null ? null : compareEndsAt(screen.view.lastActions, now)
+    if (compareEnd !== null && compareEnd.at !== at) {
+      timers.stop(compareEnd.timer)
+      compareEnd = null
+    }
+    if (at !== null && compareEnd === null)
+      compareEnd = { at, timer: timers.every(() => void refresh(), at - now + ANIMATION_MS) }
   }
 
   /** Draws the session's latest screen. `pressedId` names the row a press just changed, so a hand-off moves on. */
@@ -118,6 +128,8 @@ export function createPanel(deps: PanelDeps): Panel {
       for (const stop of stops.splice(0)) stop()
       if (animation !== null) timers.stop(animation)
       animation = null
+      if (compareEnd !== null) timers.stop(compareEnd.timer)
+      compareEnd = null
     },
   }
 }
