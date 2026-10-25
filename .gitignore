@@ -1,6 +1,10 @@
 # Types the engine writes beside a loaded mod
 .claude-plugin/types/
 
+# Written by the maintainer's script that keeps a daily-build checkout on the next branch, into the root, codex/plugin
+# and omp, so each look's version label says "next" (NEXT_BUILD_MARK in hooks/view.ts)
+.next-build
+
 # Throwaway scripts that import the mod's code, so they live inside the repo
 .scratch/
 

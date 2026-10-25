@@ -78,6 +78,7 @@ import {
   settledLabel,
   stopFix,
   stopText,
+  versionLabel,
 } from '../../hooks/view'
 import type {
   ClosedDelivery,
@@ -101,6 +102,7 @@ export type PanelScreen = {
   isFetchingPrs: boolean
   /** Why the last turn stopped, until the next turn starts. */
   stop: Stop | null
+  isNextBuild?: boolean
   isDemo?: boolean
 }
 
@@ -1062,7 +1064,7 @@ function footer(d: Draw, isPageScrolling: boolean): string[] {
         : isPageScrolling
           ? ['↑↓ scroll', 'tab switch']
           : ['tab switch']
-  const model = `${screen.modelName ? `inbox model ${screen.modelName}` : 'no inbox model: set @inbox'}  v${version} `
+  const model = `${screen.modelName ? `inbox model ${screen.modelName}` : 'no inbox model: set @inbox'}  ${versionLabel(version, screen.isNextBuild === true)} `
   const hintLine = ` ${hints.map(h => s.dim(h)).join(` ${s.tone('sep', '·')} `)}`
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2
   if (fitsBesideHints) out.push(spread(hintLine, s.dim(model), width))
