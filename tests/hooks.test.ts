@@ -3727,6 +3727,9 @@ test('the desktop pane draws each action as one button and the tabs as one click
   expect((await pane.find({ key: 'select-i2' }))?.type).toBe('Client')
   expect(await pane.find({ key: 'title-i2' })).toBeUndefined()
   expect(((await pane.find({ key: 'select-i2' }))?.props.props as RowProps).side).toBe('3m')
+  await pane.redraw({ ...PANE.props, bodyColumns: 26 })
+  const narrowed = await pane.find({ key: 'answer-i1-0' })
+  expect([narrowed?.props.label, narrowed?.props.variant]).toEqual(['Node', 'primary'])
   await pane.redraw({ ...PANE.props, bodyColumns: 69 })
 
   await pane.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: 'select-i2' })
