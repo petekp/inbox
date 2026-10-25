@@ -2236,10 +2236,9 @@ function inboxView({
       };
     return isHandedOff(last, turns) ? { is: "handedOff" } : { is: "open" };
   };
-  const feedbackIn = (id, state) => {
+  const feedbackIn = (id, state, reportedAt) => {
     if (state.is === "settled")
       return null;
-    const reportedAt = ledger.items.find((i) => i.id === id)?.reportedAt;
     const f = feedbackOf(id, lastActions[id], notes[id], turns, now, reportedAt);
     if (state.is !== "held")
       return f;
@@ -2248,7 +2247,7 @@ function inboxView({
   };
   const rowOf = (row) => {
     const state = stateOf(row.id);
-    const feedback = feedbackIn(row.id, state);
+    const feedback = feedbackIn(row.id, state, row.item?.reportedAt);
     const isPressOut = feedback?.is === "working" || feedback?.is === "queued" || feedback?.is === "unconfirmed";
     return {
       ...row,

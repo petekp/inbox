@@ -818,9 +818,8 @@ export function inboxView({
 
     return isHandedOff(last, turns) ? { is: 'handedOff' } : { is: 'open' }
   }
-  const feedbackIn = (id: string, state: RowState): Feedback | null => {
+  const feedbackIn = (id: string, state: RowState, reportedAt: number | undefined): Feedback | null => {
     if (state.is === 'settled') return null
-    const reportedAt = ledger.items.find(i => i.id === id)?.reportedAt
     const f = feedbackOf(id, lastActions[id], notes[id], turns, now, reportedAt)
     if (state.is !== 'held') return f
     const isFailedReply = f?.is === 'notSent' && lastActions[id]?.action === 'type' && lastActions[id].at >= state.at
@@ -829,7 +828,7 @@ export function inboxView({
   }
   const rowOf = (row: Omit<RowView, 'state' | 'feedback' | 'actions'>): RowView => {
     const state = stateOf(row.id)
-    const feedback = feedbackIn(row.id, state)
+    const feedback = feedbackIn(row.id, state, row.item?.reportedAt)
     // A button must keep its width while its press is out, or the buttons after it can move to another line.
     const isPressOut = feedback?.is === 'working' || feedback?.is === 'queued' || feedback?.is === 'unconfirmed'
 
