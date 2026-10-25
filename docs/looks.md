@@ -32,6 +32,7 @@ Shared modules are in `hooks/`. Every host consumes them, directly or through a 
 | `hooks/layout.ts` | Shared module. Sizes the desktop look and the Codex tab share. |
 | `hooks/tones.ts` | Shared module. Status colors for native marks and terminal palettes. The Codex build writes them into CSS, and omp draws them as true color. |
 | `hooks/inline.ts` | Shared module. Inline markdown in the agent's text, as spans each look draws. |
+| `hooks/claude-host.ts` | Mod host. Where Claude Code keeps the session, how each conversation's session is saved, and the mod's `SessionHost`. |
 | `hooks/register.tsx` | Mod adapter. Draws the terminal and desktop looks, and also runs the band, the PRs tab, the per-reply update and the press runner. |
 | `hooks/tabs-client.tsx` | Mod only. A Client region for the desktop tab bar, so each tab takes clicks over its whole shape. |
 | `hooks/row-client.tsx` | Mod only. A Client region for a closed row in the desktop pane. |
@@ -59,6 +60,10 @@ Shared modules are in `hooks/`. Every host consumes them, directly or through a 
 | `codex/src/demo.ts` | Codex host. Turns the shared demo data into a session. |
 | `codex/src/transcript.ts` | Codex host. Reads the Codex session transcript. |
 | `codex/src/run.ts` | Codex host. Runs a command with Node. |
+| `codex/src/dialogs.ts` | Codex host. Notes the dialogs a Codex turn opened, and words an inbox answer in the dialog's reply form. |
+| `codex/src/history.ts` | Codex host. On the first sight of a session, takes a forked chat's ledger from its parent, or marks a session with earlier turns `behind`. |
+| `codex/src/hook-trust.ts` | Codex host. Whether Codex trusts the inbox's hooks, from the hooks Codex lists. |
+| `codex/src/detached-update.ts` | Codex host. Starts the update in a detached process, so a long model call still finishes. |
 | `omp/src/host.ts` | omp host. The only file that imports omp's packages. Wires omp's events to the shared session modules, registers the `record` and `close` tools and the `/inbox` command, shows the band, and supplies omp's `SessionHost`. |
 | `omp/src/state.ts` | omp host. One JSON file per session under omp's agent folder, with a lock held in the process. `OmpState` extends the shared `Session`. |
 | `omp/src/commands.ts` | omp host. Opens links and paths for omp's `SessionHost`. |

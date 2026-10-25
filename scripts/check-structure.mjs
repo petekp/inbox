@@ -263,8 +263,17 @@ function checkDocs() {
   }
 }
 
+// Type shims declare a module's shape and hold no code, so they need no row.
+const isMapped = path => /\.(?:ts|tsx|html)$/.test(path) && !path.endsWith('.d.ts')
+
 function checkLookMap() {
   const map = 'docs/looks.md'
+  const rows = new Set([...read(map).matchAll(/^\| `([^`]+)` \|/gm)].map(m => m[1]))
+  for (const dir of ['hooks', 'codex/src', 'omp/src'].filter(exists))
+    for (const entry of readdirSync(join(ROOT, dir))) {
+      const path = `${dir}/${entry}`
+      if (isMapped(path) && !rows.has(path)) errors.push(`${map} has no Files row for ${path}.`)
+    }
   for (const m of read(map).matchAll(/`([\w./-]+\.[a-z]+):([\w.]+)`/g)) {
     const [, path, symbol] = m
     if (!exists(path)) continue
