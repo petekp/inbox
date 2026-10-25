@@ -31,8 +31,8 @@ import {
   waitingThreads,
 } from './prs'
 import type { IsThreadSent, PrStatus } from './prs'
-import { DOT, SETTLED_MS } from './view'
-import type { ActionEmphasis, RowWait } from './view'
+import { DOT, SETTLED_MS, feedbackOf, isAgain, isPressOut } from './view'
+import type { ActionEmphasis, PressState, RowWait } from './view'
 
 export const MAX_PRS = 12
 
@@ -352,32 +352,33 @@ export type PrAction = {
   isFollowUp?: boolean
 }
 
-function again(lastActions: Record<string, LastAction>, rowId: string, action: PrActionId, label: string): string {
-  const last = lastActions[rowId]
+function again(presses: PressState, rowId: string, action: PrActionId, label: string): string {
+  const last = presses.lastActions[rowId]
+  const isOut = isPressOut(feedbackOf(rowId, last, undefined, presses.turns, presses.now))
 
-  return last?.action === action && last.delivery?.state !== 'failed' ? `${label} again` : label
+  return isAgain(last, action, isOut) ? `${label} again` : label
 }
 
 function retryAction(retry: { press: PrPress; kind: PressKind } | null): PrAction[] {
   return retry ? [{ press: retry.press, label: 'Try again', kind: retry.kind, emphasis: 'normal', icon: 'retry' }] : []
 }
 
-export function threadActions(pr: PrView, t: PrThread, lastActions: Record<string, LastAction>): PrAction[] {
+export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrAction[] {
   const id = threadRowId(pr.ref, t.id)
   const on = { ref: pr.ref, thread: t.id }
 
   return [
-    ...retryAction(prRetryOf(lastActions[id], pr.ref, t.id)),
+    ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, t.id)),
     {
       press: { action: 'thread-address', ...on },
-      label: again(lastActions, id, 'thread-address', 'Address'),
+      label: again(presses, id, 'thread-address', 'Address'),
       kind: 'handoff',
       emphasis: 'primary',
       hotkey: 'a',
     },
     {
       press: { action: 'thread-draft', ...on },
-      label: again(lastActions, id, 'thread-draft', 'Draft reply'),
+      label: again(presses, id, 'thread-draft', 'Draft reply'),
       kind: 'talk',
       emphasis: 'normal',
       hotkey: 'r',
@@ -392,7 +393,7 @@ export function threadActions(pr: PrView, t: PrThread, lastActions: Record<strin
     },
     {
       press: { action: 'thread-discuss', ...on },
-      label: again(lastActions, id, 'thread-discuss', 'Discuss'),
+      label: again(presses, id, 'thread-discuss', 'Discuss'),
       kind: 'talk',
       emphasis: 'quiet',
       hotkey: 'd',
@@ -401,15 +402,15 @@ export function threadActions(pr: PrView, t: PrThread, lastActions: Record<strin
   ]
 }
 
-export function checkActions(pr: PrView, c: PrCheck, lastActions: Record<string, LastAction>): PrAction[] {
+export function checkActions(pr: PrView, c: PrCheck, presses: PressState): PrAction[] {
   const id = checkRowId(pr.ref, c.name)
   const on = { ref: pr.ref, check: c.name }
 
   return [
-    ...retryAction(prRetryOf(lastActions[id], pr.ref, null, c.name)),
+    ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, null, c.name)),
     {
       press: { action: 'check-fix', ...on },
-      label: again(lastActions, id, 'check-fix', 'Fix'),
+      label: again(presses, id, 'check-fix', 'Fix'),
       kind: 'handoff',
       emphasis: 'primary',
       hotkey: 'a',
@@ -432,7 +433,7 @@ export function prBlockActions(
   pr: PrView,
   isThreadSent: IsThreadSent,
   branchRef: string | null,
-  lastActions: Record<string, LastAction>,
+  presses: PressState,
 ): PrAction[] {
   const id = prMarkId(pr.ref)
   const { status } = readiness(pr, isThreadSent)
@@ -442,7 +443,7 @@ export function prBlockActions(
       ? [
           {
             press: { action: 'pr-merge' as const, ref: pr.ref },
-            label: again(lastActions, id, 'pr-merge', 'Merge'),
+            label: again(presses, id, 'pr-merge', 'Merge'),
             kind: 'handoff' as const,
           },
         ]
@@ -451,7 +452,7 @@ export function prBlockActions(
       ? [
           {
             press: { action: 'pr-conflicts' as const, ref: pr.ref },
-            label: again(lastActions, id, 'pr-conflicts', 'Resolve conflicts'),
+            label: again(presses, id, 'pr-conflicts', 'Resolve conflicts'),
             kind: 'handoff' as const,
           },
         ]
@@ -460,7 +461,7 @@ export function prBlockActions(
       ? [
           {
             press: { action: 'pr-address-all' as const, ref: pr.ref },
-            label: again(lastActions, id, 'pr-address-all', `Address all ${waitingOn} threads`),
+            label: again(presses, id, 'pr-address-all', `Address all ${waitingOn} threads`),
             kind: 'handoff' as const,
           },
         ]
@@ -468,7 +469,7 @@ export function prBlockActions(
   ]
 
   return [
-    ...retryAction(prRetryOf(lastActions[id], pr.ref, null)),
+    ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, null)),
     ...moves.map((m, n): PrAction => ({ ...m, emphasis: n === 0 ? 'primary' : 'normal' })),
     { press: { action: 'pr-open', ref: pr.ref }, label: 'Open PR', kind: 'local', emphasis: 'normal', icon: 'open' },
     ...(pr.ref === branchRef
@@ -512,8 +513,8 @@ export function applyPrPress(
     return applied({ ledger: { ...ledger, prs: [...ledger.prs, p.ref] }, drop: [markId] })
   }
   if (!pr || !isTracked(prState, ledger.prs, p.ref)) return stale
-  const record = (kind: 'talk' | 'handoff' | 'mark', action: PrActionId, text: string) =>
-    recordPress(kind, action, text, ctx)
+  const record = (rowId: string, kind: 'talk' | 'handoff' | 'mark', action: PrActionId, text: string) =>
+    recordPress(kind, action, text, ctx, lastActions[rowId])
   const send = (text: string): Effect => ({ kind: 'send', text, by: null })
   const open = (rowId: string, text: string, url: string, name: string): Applied => {
     const effects: Effect[] = [{ kind: 'open', target: url, name }]
@@ -533,29 +534,35 @@ export function applyPrPress(
       if (p.action === 'thread-open') return open(id, 'Open', t.reply?.url || t.url || pr.url, 'the comment')
       if (p.action === 'thread-address')
         return applied({
-          lasts: { [id]: record('handoff', p.action, 'Address') },
+          lasts: { [id]: record(id, 'handoff', p.action, 'Address') },
           effects: [send(prompts.address(pr, [t]))],
         })
       if (p.action === 'thread-draft')
         return applied({
-          lasts: { [id]: record('talk', p.action, 'Draft reply') },
+          lasts: { [id]: record(id, 'talk', p.action, 'Draft reply') },
           effects: [send(prompts.draft(pr, t))],
         })
-      return applied({ lasts: { [id]: record('talk', p.action, 'Discuss') }, effects: [send(prompts.discuss(pr, t))] })
+      return applied({
+        lasts: { [id]: record(id, 'talk', p.action, 'Discuss') },
+        effects: [send(prompts.discuss(pr, t))],
+      })
     }
     case 'pr-conflicts':
       if (pr.state !== 'OPEN' || pr.mergeable !== 'CONFLICTING') return stale
       return applied({
-        lasts: { [markId]: record('handoff', p.action, 'Resolve conflicts') },
+        lasts: { [markId]: record(markId, 'handoff', p.action, 'Resolve conflicts') },
         effects: [send(prompts.resolve(pr))],
       })
     case 'pr-address-all': {
       const waiting = threadsOnYou(pr, threadSentIn(lastActions))
       if (waiting.length === 0) return stale
-      const threads = waiting.map(t => [prThreadId(pr, t), record('handoff', 'thread-address', 'Address')])
+      const threads = waiting.map(t => {
+        const id = prThreadId(pr, t)
+        return [id, record(id, 'handoff', 'thread-address', 'Address')]
+      })
       return applied({
         lasts: {
-          [markId]: record('handoff', p.action, `Address all ${waiting.length} threads`),
+          [markId]: record(markId, 'handoff', p.action, `Address all ${waiting.length} threads`),
           ...Object.fromEntries(threads),
         },
         effects: [send(prompts.address(pr, waiting))],
@@ -563,20 +570,24 @@ export function applyPrPress(
     }
     case 'pr-merge':
       if (readiness(pr, threadSentIn(lastActions)).status !== 'ready') return stale
-      return applied({ lasts: { [markId]: record('handoff', p.action, 'Merge') }, effects: [send(prompts.merge(pr))] })
+      return applied({
+        lasts: { [markId]: record(markId, 'handoff', p.action, 'Merge') },
+        effects: [send(prompts.merge(pr))],
+      })
     case 'pr-open':
       return open(markId, 'Open PR', pr.url, `PR #${pr.number}`)
     case 'pr-dismiss':
       if (!ledger.prs.includes(p.ref) || prState.branchRef === p.ref) return stale
       return applied({
         ledger: { ...ledger, prs: ledger.prs.filter(r => r !== p.ref) },
-        lasts: { [markId]: record('mark', p.action, 'Dismissed') },
+        lasts: { [markId]: record(markId, 'mark', p.action, 'Dismissed') },
       })
     case 'check-fix': {
       const check = pr.checks.find(c => c.name === p.check && c.bucket === 'fail')
       if (!check) return stale
+      const id = prCheckId(pr, check)
       return applied({
-        lasts: { [prCheckId(pr, check)]: record('handoff', p.action, 'Fix') },
+        lasts: { [id]: record(id, 'handoff', p.action, 'Fix') },
         effects: [send(prompts.fixCheck(pr, check))],
       })
     }

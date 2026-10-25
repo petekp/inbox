@@ -3239,6 +3239,7 @@ export const register: Register = on => {
       moreKeys: () => rowKeyActions($, r, true).more,
     })
     const isThreadSent = threadSentIn(lastActions)
+    const presses = { lastActions, turns, now }
     const prPress = (p: PrPress) => (press: UiPressArgument) => runPress($, p, press.surface)
     const prKeyAction = (a: PrAction, row: string): KeyAction => ({
       key: `${a.icon === 'retry' ? 'retry' : PR_KEYS[a.press.action]}-${row}`,
@@ -3256,7 +3257,7 @@ export const register: Register = on => {
       title: c.name,
       line: { text: c.name },
       body: null,
-      keys: () => checkActions(pr, c, lastActions).map(a => prKeyAction(a, `${pr.ref}-${c.name}`)),
+      keys: () => checkActions(pr, c, presses).map(a => prKeyAction(a, `${pr.ref}-${c.name}`)),
     })
     const checkRow = (pr: PrView, c: PrCheck): Row => {
       const ran = checkRunText(c)
@@ -3325,8 +3326,8 @@ export const register: Register = on => {
         },
         body: comment,
         clippedBody: clippedComment,
-        keys: () => threadActions(pr, t, lastActions).flatMap(a => (a.isFollowUp ? [] : [prKeyAction(a, t.id)])),
-        moreKeys: () => threadActions(pr, t, lastActions).flatMap(a => (a.isFollowUp ? [prKeyAction(a, t.id)] : [])),
+        keys: () => threadActions(pr, t, presses).flatMap(a => (a.isFollowUp ? [] : [prKeyAction(a, t.id)])),
+        moreKeys: () => threadActions(pr, t, presses).flatMap(a => (a.isFollowUp ? [prKeyAction(a, t.id)] : [])),
       }
     }
 
@@ -4878,9 +4879,7 @@ export const register: Register = on => {
       const { status, head: statusHead, unlisted } = readiness(pr, isThreadSent)
       const tone = PR_TONES[status]
       const prLast = lastActions[prMarkId(pr.ref)]?.action === 'pr-dismiss' ? null : lastActionText(prMarkId(pr.ref))
-      const prActions = prBlockActions(pr, isThreadSent, prState.branchRef, lastActions).map(a =>
-        prKeyAction(a, pr.ref),
-      )
+      const prActions = prBlockActions(pr, isThreadSent, prState.branchRef, presses).map(a => prKeyAction(a, pr.ref))
 
       const titleLine = (
         <Text wrap="wrap">

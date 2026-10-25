@@ -719,13 +719,27 @@ export function withLasts(
   return merged
 }
 
+/** Whether `last` pressed this action and did not fail, so a press of it now repeats it. */
+export function isRepeatOf(last: LastAction | undefined, action: string): boolean {
+  return last?.action === action && last.kind !== 'local' && last.delivery?.state !== 'failed'
+}
+
+/** `previous` is the row's last press before this one. */
 export function recordPress(
   kind: LastAction['kind'],
   action: string,
   text: string,
   ctx: { now: number; turnsStarted: number },
+  previous?: LastAction,
 ): LastAction {
-  return { kind, action, text, at: ctx.now, turnsStarted: ctx.turnsStarted }
+  return {
+    kind,
+    action,
+    text,
+    at: ctx.now,
+    turnsStarted: ctx.turnsStarted,
+    ...(isRepeatOf(previous, action) ? { isRepeat: true as const } : {}),
+  }
 }
 
 function pressed(
@@ -742,11 +756,7 @@ function pressed(
 ): PressResult {
   const stale = { stale: true as const }
   const answerMessage = ctx.answerMessage ?? messages.answer
-  const isRepeat = last?.action === actionId(p) && last.kind !== 'local' && last.delivery?.state !== 'failed'
-  const record = (kind: LastAction['kind']) => ({
-    ...recordPress(kind, actionId(p), pressText(p), ctx),
-    ...(isRepeat ? { isRepeat: true as const } : {}),
-  })
+  const record = (kind: LastAction['kind']) => recordPress(kind, actionId(p), pressText(p), ctx, last)
   const unchanged = { ledger, last: null, effects: [] }
 
   if (p.action === 'undo') {
