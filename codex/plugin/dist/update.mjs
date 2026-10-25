@@ -1154,10 +1154,10 @@ var CHOICE_KEYS = [..."abcfghilm"];
 var SETTLED_MS = 5120;
 var COMPARE_LIMIT_MS = 30 * 6e4;
 var TABS = [
-  { id: "needsYou", label: "Needs you", hotkey: "1" },
-  { id: "findings", label: "Findings", hotkey: "2" },
-  { id: "prs", label: "PRs", hotkey: "3" },
-  { id: "overview", label: "Overview", hotkey: "4" }
+  { id: "overview", label: "Overview", hotkey: "1" },
+  { id: "needsYou", label: "Needs you", hotkey: "2" },
+  { id: "findings", label: "Findings", hotkey: "3" },
+  { id: "prs", label: "PRs", hotkey: "4" }
 ];
 function isListedTab(tab) {
   return tab === "needsYou" || tab === "findings";

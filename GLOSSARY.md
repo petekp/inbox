@@ -45,7 +45,7 @@ _Avoid_: note
 ### Surfaces
 
 **Overview**:
-The fourth tab, a guide to the session's work: what it is doing, how it is
+The first tab, a guide to the session's work: what it is doing, how it is
 going, what changed since the person last looked, and what is next. The inbox
 model rewrites it after each reply, in a second call after the one that
 updates the rows. It is not a list of events.

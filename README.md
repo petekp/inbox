@@ -131,6 +131,18 @@ The PRs tab needs the GitHub CLI, `gh`, signed in.
 Type `/inbox` in Claude Code or omp, or open the Inbox tab in the ChatGPT app. The
 inbox has four tabs.
 
+### Overview
+
+A guide to the session's work. It says what the session is doing, how it is
+going, what changed since you last looked, and what is next. When you step away
+and come back, it is the page to read first.
+
+After each reply, a second model call rewrites the page from the exchange and
+the agent's own task list. It keeps a direction line until the work changes
+direction. It shows the work, a pointer to what waits on you in Needs you, what
+works now, what is still open and what is next. It is not a log: it lists no
+events, and it leaves out what you have already seen.
+
 ### Needs you
 
 Questions the agent asked you, and tasks only you can do.
@@ -183,18 +195,6 @@ still open and what you answered, even after the conversation is compacted.
 
 Every press shows what it did right away. Discuss reads "Discussing…" until
 the agent replies, then "✓ Discussed".
-
-### Overview
-
-A guide to the session's work. It says what the session is doing, how it is
-going, what changed since you last looked, and what is next. When you step away
-and come back, it is the page to read first.
-
-After each reply, a second model call rewrites the page from the exchange and
-the agent's own task list. It keeps a direction line until the work changes
-direction. It shows the work, a pointer to what waits on you in Needs you, what
-works now, what is still open and what is next. It is not a log: it lists no
-events, and it leaves out what you have already seen.
 
 ### In each app
 

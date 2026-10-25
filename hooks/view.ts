@@ -568,10 +568,10 @@ function stepKind(step: HelpStep): PressKind {
 export type ShownTab = Tab | PageTab
 
 export const TABS: readonly { id: ShownTab; label: string; hotkey: string }[] = [
-  { id: 'needsYou', label: 'Needs you', hotkey: '1' },
-  { id: 'findings', label: 'Findings', hotkey: '2' },
-  { id: 'prs', label: 'PRs', hotkey: '3' },
-  { id: 'overview', label: 'Overview', hotkey: '4' },
+  { id: 'overview', label: 'Overview', hotkey: '1' },
+  { id: 'needsYou', label: 'Needs you', hotkey: '2' },
+  { id: 'findings', label: 'Findings', hotkey: '3' },
+  { id: 'prs', label: 'PRs', hotkey: '4' },
 ]
 /** Whether a shown tab lists rows you answer or close: Needs you and Findings. */
 export function isListedTab(tab: ShownTab): tab is ListedTab {

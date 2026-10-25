@@ -4,7 +4,7 @@ Status: building (steps 1 to 4 built)
 
 ## Summary
 
-The Overview tab is the inbox's fourth tab. It is a guide to the session's work, not a list of what waits on the person. It answers four questions:
+The Overview tab is the inbox's first tab. It is a guide to the session's work, not a list of what waits on the person. It answers four questions:
 
 - What is the session doing, and why?
 - How is it going?
