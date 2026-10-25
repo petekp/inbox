@@ -408,15 +408,22 @@ function toneSvg(tone: ToneName, mark: string): string {
     `</svg>`
   )
 }
-/** A running mark on desktop: a dot that fades and returns. SMIL runs it, since a pane redraw loop stops clicks there. */
-function runningSvg(): string {
-  const width = DESKTOP_CELL_PT
+/** The pane's ● and ○ glyphs, as measured in the app: 11 pt across, centred 6.55 pt into the mark column. */
+const MARK_GLYPH_PT = 11
+const MARK_GLYPH_MID_PT = 6.55
+const RUNNING_SVG_CELLS = 2
+/**
+ * A running mark on desktop: a dot that fades and returns. SMIL runs it, since a pane redraw loop stops clicks there.
+ * Each pane redraw starts the animation again, so it begins at the clock's point in the pulse.
+ */
+function runningSvg(now: number): string {
+  const width = RUNNING_SVG_CELLS * DESKTOP_CELL_PT
   const height = DESKTOP_LINE_PT
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
     `<style>.mark{fill:#595959}@media (prefers-color-scheme: dark){.mark{fill:#a8a8a8}}</style>` +
-    `<circle class="mark" cx="${width / 2}" cy="${height / 2}" r="3.5">` +
-    `<animate attributeName="opacity" values="1;0.3;1" dur="${RUNNING_PULSE_MS}ms" repeatCount="indefinite"/>` +
+    `<circle class="mark" cx="${MARK_GLYPH_MID_PT}" cy="${height / 2}" r="${MARK_GLYPH_PT / 2}">` +
+    `<animate attributeName="opacity" values="1;0.3;1" dur="${RUNNING_PULSE_MS}ms" begin="-${now % RUNNING_PULSE_MS}ms" repeatCount="indefinite"/>` +
     `</circle></svg>`
   )
 }
@@ -5078,8 +5085,13 @@ export const register: Register = on => {
     const markedRow = (m: OverviewRow, pos: TreePos) => {
       const RunningSvg = m.isRunning && look === 'desktop' && 'Svg' in elements ? elements.Svg : null
       const mark = RunningSvg ? (
-        <Box width={1} height={1} flexShrink={0}>
-          <RunningSvg source={runningSvg()} alt={m.mark} width={DESKTOP_CELL_PT} height={DESKTOP_LINE_PT} />
+        <Box width={RUNNING_SVG_CELLS} height={1} flexShrink={0}>
+          <RunningSvg
+            source={runningSvg(now)}
+            alt={m.mark}
+            width={RUNNING_SVG_CELLS * DESKTOP_CELL_PT}
+            height={DESKTOP_LINE_PT}
+          />
         </Box>
       ) : (
         <Text color={m.tone ? pal.mark[m.tone] : pal.muted}>
