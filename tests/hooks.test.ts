@@ -2321,6 +2321,68 @@ test('opening the PRs tab while another PR fetch runs still finds the branch’s
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
 })
 
+test('the PRs tab shows a linked PR only when the viewer wrote it and a fetch found it open, and keeps it once it merges', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  const states: Record<string, string> = { '12': 'OPEN', '20': 'OPEN', '9': 'MERGED' }
+  const titles: Record<string, string> = { '12': 'Mine open', '20': 'Teammate open', '9': 'Mine merged' }
+  const authors: Record<string, string> = { '12': 'me', '20': 'sam', '9': 'me' }
+  for (const number of Object.keys(states))
+    ghAnswers.push(
+      {
+        match: argv => argv.includes('view') && argv.includes(number),
+        get stdout() {
+          return JSON.stringify({
+            number: Number(number),
+            title: titles[number],
+            url: `https://github.com/acme/greet/pull/${number}`,
+            isDraft: false,
+            state: states[number],
+            baseRefName: 'main',
+            mergeable: 'MERGEABLE',
+            reviewDecision: 'APPROVED',
+            statusCheckRollup: [],
+          })
+        },
+      },
+      {
+        match: argv => argv.includes('graphql') && argv.includes(`number=${number}`),
+        stdout: JSON.stringify({
+          data: {
+            viewer: { login: 'me' },
+            repository: { pullRequest: { author: { login: authors[number] }, reviewThreads: { nodes: [] } } },
+          },
+        }),
+      },
+    )
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'what changed?', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer:
+      'Opened https://github.com/acme/greet/pull/12. Sam has https://github.com/acme/greet/pull/20 open, and https://github.com/acme/greet/pull/9 merged last week.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-prs' })
+  await clock.settle()
+
+  expect(await pane.find({ text: /Mine open/ })).toBeDefined()
+  expect(await pane.find({ text: /Teammate open/ })).toBeUndefined()
+  expect(await pane.find({ text: /Mine merged/ })).toBeUndefined()
+
+  states['12'] = 'MERGED'
+  await pane.press({ key: 'tab-needsYou' })
+  await pane.press({ key: 'tab-prs' })
+  await clock.settle()
+
+  expect(await pane.find({ text: /Mine open/ })).toBeDefined()
+  expect(await pane.find({ text: /Merged/ })).toBeDefined()
+})
+
 for (const surface of ['terminal', 'desktop'] as const) {
   test(`the ${surface} PRs tab says gh is missing until gh starts again`, async ($, on) => {
     const clock = mock.clock(on, { now: 1_000_000 })

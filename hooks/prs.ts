@@ -36,6 +36,7 @@ export const THREADS_QUERY = `query($owner: String!, $repo: String!, $number: In
   viewer { login }
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
+      author { login }
       commits(last: 1) { nodes { commit { committedDate } } }
       reviewThreads(first: 100) {
         nodes {
@@ -80,7 +81,10 @@ function bucket(e: RollupEntry): PrCheck['bucket'] {
 }
 
 /** Reads `gh pr view --json VIEW_FIELDS` output; null when it is not that. */
-export function readView(ref: string, json: string): Omit<PrView, 'threads' | 'error'> | null {
+export function readView(
+  ref: string,
+  json: string,
+): Omit<PrView, 'threads' | 'isYours' | 'wasSeenOpen' | 'error'> | null {
   try {
     const v = JSON.parse(json) as Record<string, unknown>
     if (typeof v.number !== 'number') return null
@@ -133,6 +137,7 @@ type ThreadsAnswer = {
     viewer?: { login: string }
     repository?: {
       pullRequest?: {
+        author?: { login: string } | null
         commits?: { nodes?: { commit?: { committedDate?: string } }[] }
         reviewThreads?: { nodes?: ThreadNode[] }
       }
@@ -182,6 +187,27 @@ export function readThreads(json: string): PrThread[] {
   } catch {
     return []
   }
+}
+
+/**
+ * Whether the viewer wrote the PR, from the THREADS_QUERY answer. Null when the answer names no viewer or holds no
+ * author field. A null author is a deleted account's, so not the viewer's.
+ */
+export function readIsYours(json: string): boolean | null {
+  try {
+    const data = (JSON.parse(json) as ThreadsAnswer).data
+    const viewer = data?.viewer?.login
+    const author = data?.repository?.pullRequest?.author
+
+    return viewer === undefined || author === undefined ? null : author?.login === viewer
+  } catch {
+    return null
+  }
+}
+
+/** Whether the PRs tab keeps a linked PR: the viewer wrote it, or GitHub did not say who did, and a fetch found it open. */
+export function isKeptPr(pr: PrView): boolean {
+  return pr.isYours !== false && pr.wasSeenOpen
 }
 
 export function waitingThreads(pr: PrView): PrThread[] {

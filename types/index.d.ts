@@ -201,6 +201,10 @@ export type PrView = {
   reviewDecision: string
   checks: PrCheck[]
   threads: PrThread[]
+  /** Whether the person running gh wrote the PR; null when GitHub's answer did not say. */
+  isYours: boolean | null
+  /** Whether a fetch has found the PR open since the tab began tracking it; false for a view saved before this field. */
+  wasSeenOpen: boolean
   /** Why the last fetch failed; the rest is from the fetch before. */
   error: string | null
 }

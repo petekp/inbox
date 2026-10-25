@@ -15,7 +15,7 @@ import {
 import type { Applied, PrPress } from './pr-tab'
 import { applyPress, upgradeLastActions, withAcceptedSend, withArrival, withRewrite, withUnconfirmed } from './presses'
 import type { AnswerMessage, RowPress } from './presses'
-import { prNeedsYou, prRefs } from './prs'
+import { isKeptPr, prNeedsYou, prRefs } from './prs'
 import { recordClose, recordItem } from './tools'
 import { inboxView, NO_HOLDS, perTurnStatus } from './view'
 import type { InboxView, ReplyHolds } from './view'
@@ -110,12 +110,14 @@ export function upgradeSession(saved: SavedSession): Session {
     prViews: {
       ...NO_PRS,
       ...saved.prViews,
-      // Threads saved before their times and `isLinesChanged` existed.
+      // Views saved before `isYours` and `wasSeenOpen`, and threads saved before their times and `isLinesChanged` existed.
       views: Object.fromEntries(
         Object.entries(views).map(([ref, pr]) => [
           ref,
           {
             ...pr,
+            isYours: pr.isYours ?? null,
+            wasSeenOpen: pr.wasSeenOpen ?? false,
             threads: pr.threads.map(t => ({
               ...t,
               isLinesChanged: t.isLinesChanged ?? false,
@@ -517,21 +519,29 @@ export function recorded<S extends Session>(
   return { state: { ...s, ledger: r.ledger }, result: r.result }
 }
 
-/** Merges fetched PRs into the session. A view stays only while the ledger tracks it or its dismissal is still showing. */
+/**
+ * Merges fetched PRs into the session. The ledger stops tracking a linked PR that a fetch read in full and the tab
+ * does not keep, by `isKeptPr`. A view stays only while the ledger tracks it or its dismissal is still showing.
+ */
 export function withFetchedPrs<S extends Session>(
   s: S,
   fetched: PrViews['views'],
   branchRef: string | null,
   at: number,
 ): S {
+  const leaving = Object.values(fetched)
+    .filter(pr => pr.error === null && !isKeptPr(pr))
+    .map(pr => pr.ref)
+  const ledger =
+    leaving.length === 0 ? s.ledger : { ...s.ledger, prs: s.ledger.prs.filter(ref => !leaving.includes(ref)) }
   const views = Object.fromEntries(
-    Object.entries(fetched).filter(([ref]) => isTracked({ ...s.prViews, branchRef }, s.ledger.prs, ref)),
+    Object.entries(fetched).filter(([ref]) => isTracked({ ...s.prViews, branchRef }, ledger.prs, ref)),
   )
   const dismissing = Object.fromEntries(
     Object.entries(s.prViews.views).filter(([ref]) => isDismissing(s.lastActions, ref, at)),
   )
 
-  return { ...s, prViews: { views: { ...dismissing, ...views }, branchRef, isFetching: false } }
+  return { ...s, ledger, prViews: { views: { ...dismissing, ...views }, branchRef, isFetching: false } }
 }
 
 type PrTab = {

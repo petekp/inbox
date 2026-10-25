@@ -1047,6 +1047,7 @@ var THREADS_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
   viewer { login }
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
+      author { login }
       commits(last: 1) { nodes { commit { committedDate } } }
       reviewThreads(first: 100) {
         nodes {
@@ -1140,6 +1141,19 @@ function readThreads(json) {
   } catch {
     return [];
   }
+}
+function readIsYours(json) {
+  try {
+    const data = JSON.parse(json).data;
+    const viewer = data?.viewer?.login;
+    const author = data?.repository?.pullRequest?.author;
+    return viewer === undefined || author === undefined ? null : author?.login === viewer;
+  } catch {
+    return null;
+  }
+}
+function isKeptPr(pr) {
+  return pr.isYours !== false && pr.wasSeenOpen;
 }
 function waitingThreads(pr) {
   return pr.threads.filter((t) => t.isWaiting);
@@ -2404,10 +2418,13 @@ async function fetchPr(gh, target, views, knownBranchRef) {
     return previous ? { ...previous, error: view.stderr.trim().split(`
 `)[0] || "gh could not read the PR" } : null;
   const threads = early ?? await threadsOf(ref);
+  const isRead = threads.exitCode === 0;
   return {
     ...base,
-    threads: threads.exitCode === 0 ? readThreads(threads.stdout) : previous?.threads ?? [],
-    error: threads.exitCode === 0 ? null : "could not read review threads"
+    threads: isRead ? readThreads(threads.stdout) : previous?.threads ?? [],
+    isYours: (isRead ? readIsYours(threads.stdout) : null) ?? previous?.isYours ?? null,
+    wasSeenOpen: base.state === "OPEN" || previous?.wasSeenOpen === true,
+    error: isRead ? null : "could not read review threads"
   };
 }
 function urlRef(json) {
@@ -2954,6 +2971,8 @@ function upgradeSession(saved) {
         ref,
         {
           ...pr,
+          isYours: pr.isYours ?? null,
+          wasSeenOpen: pr.wasSeenOpen ?? false,
           threads: pr.threads.map((t) => ({
             ...t,
             isLinesChanged: t.isLinesChanged ?? false,
@@ -3167,9 +3186,11 @@ function recorded(host, s, tool, args, now) {
   return { state: { ...s, ledger: r.ledger }, result: r.result };
 }
 function withFetchedPrs(s, fetched, branchRef, at) {
-  const views = Object.fromEntries(Object.entries(fetched).filter(([ref]) => isTracked({ ...s.prViews, branchRef }, s.ledger.prs, ref)));
+  const leaving = Object.values(fetched).filter((pr) => pr.error === null && !isKeptPr(pr)).map((pr) => pr.ref);
+  const ledger = leaving.length === 0 ? s.ledger : { ...s.ledger, prs: s.ledger.prs.filter((ref) => !leaving.includes(ref)) };
+  const views = Object.fromEntries(Object.entries(fetched).filter(([ref]) => isTracked({ ...s.prViews, branchRef }, ledger.prs, ref)));
   const dismissing = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isDismissing(s.lastActions, ref, at)));
-  return { ...s, prViews: { views: { ...dismissing, ...views }, branchRef, isFetching: false } };
+  return { ...s, ledger, prViews: { views: { ...dismissing, ...views }, branchRef, isFetching: false } };
 }
 function withoutStalePending(lastActions, now) {
   const isStale = (last) => last.result?.state === "pending" && now - last.result.at > PRESS_TIMEOUT_MS;
@@ -4696,6 +4717,8 @@ function demoView(now) {
               at: now - 50 * MIN
             }
           ],
+          isYours: true,
+          wasSeenOpen: true,
           error: null
         },
         "acme/visor#29": {
@@ -4713,6 +4736,8 @@ function demoView(now) {
             { name: "unit tests", bucket: "pass", url: null }
           ],
           threads: [],
+          isYours: true,
+          wasSeenOpen: true,
           error: null
         },
         "acme/visor#33": {
@@ -4730,6 +4755,8 @@ function demoView(now) {
             { name: "unit tests", bucket: "pending", url: null }
           ],
           threads: [],
+          isYours: true,
+          wasSeenOpen: true,
           error: null
         }
       }
