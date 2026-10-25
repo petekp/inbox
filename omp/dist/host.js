@@ -1937,9 +1937,6 @@ function optionDescriptionsOf(item, actions) {
     return [{ label: clipLabel(a.press.option, OPTION_LABEL_CHARS), description, isFolded: a.isFolded }];
   });
 }
-function shownOptionDescriptions(row, isShowingAll) {
-  return row.optionDescriptions.filter((o) => isShowingAll || !o.isFolded);
-}
 function rowMark(row, look) {
   if (row.state.is === "handedOff" && row.feedback?.is !== "unconfirmed")
     return { text: "\u2713", tone: "done" };
@@ -4266,7 +4263,7 @@ function drawLine(line, isSelected, d) {
     return out;
   if (line.file)
     out.push(" ".repeat(indent) + s.tone("accent", line.file));
-  for (const o of line.row ? shownOptionDescriptions(line.row, true) : [])
+  for (const o of line.row?.optionDescriptions ?? [])
     out.push(fit(" ".repeat(indent) + o.label + s.dim(`: ${o.description}`), width));
   if (line.buttons.length > 0 && ui.typing !== line.id)
     out.push(...buttonLines(line, ui, indent - 1, width, s));
