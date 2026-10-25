@@ -202,14 +202,14 @@ export const PR_DISMISSED_LABEL = 'Dismissed'
 
 export const PR_GROUP_TITLES = { threads: 'Review threads', checks: 'Failing checks' }
 
-/** What a review thread's row says, for each look to draw in its own controls. */
 /** The mark before a PR row's title, and its tone. */
 export type PrRowMark = { text: string; tone: 'done' | 'error' | null }
 
+/** What a review thread's row says, for each look to draw in its own controls. */
 export type ThreadRowText = {
   /** ✓ once the agent has the thread and its message arrived, else ◦. */
   mark: PrRowMark
-  /** Null while the thread waits on the person. */
+  /** Set when the row folds to one line: the agent has the thread, or its lines changed since the comment. */
   fold: { note?: string } | null
   title: string
   meta: string

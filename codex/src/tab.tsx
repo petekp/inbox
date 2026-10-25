@@ -844,6 +844,7 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
       void act(id, { action, ref: pr.ref, thread: t.id }, undefined, pending)
   const where = threadWhere(t)
   const { rest } = commentParts(t.body)
+  const actions = splitFollowUps(threadActions(pr, t, pressesOf(v)))
 
   return {
     id,
@@ -869,8 +870,8 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
         ) : null}
       </div>
     ),
-    keys: splitFollowUps(threadActions(pr, t, pressesOf(v))).keys.map(a => prKey(id, a, opening('the comment'))),
-    more: splitFollowUps(threadActions(pr, t, pressesOf(v))).more.map(a => prKey(id, a)),
+    keys: actions.keys.map(a => prKey(id, a, opening('the comment'))),
+    more: actions.more.map(a => prKey(id, a)),
     feedback: feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at),
   }
 }

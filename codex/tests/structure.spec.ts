@@ -86,7 +86,7 @@ function fixture(t: TestContext) {
     const files = ['hooks', 'codex/src', 'omp/src']
       .filter(dir => existsSync(join(root, dir)))
       .flatMap(dir => readdirSync(join(root, dir)).map(entry => `${dir}/${entry}`))
-      .filter(path => /\.(?:ts|tsx)$/.test(path) && !unmapped.includes(path))
+      .filter(path => /\.(?:ts|tsx|html)$/.test(path) && !path.endsWith('.d.ts') && !unmapped.includes(path))
     const looks = readFileSync(join(root, 'docs/looks.md'), 'utf8')
     write('docs/looks.md', `## Files\n\n${files.map(path => `| \`${path}\` | a |`).join('\n')}\n\n${looks}`)
   }

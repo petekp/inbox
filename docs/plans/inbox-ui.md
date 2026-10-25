@@ -221,7 +221,7 @@ The UI reads one status record for items and one for PRs. The status shows only 
 | `error`, optional, with the source's own text | The text in red, under the tabs |
 | PR `isFetching` | `Refreshing PRs…` |
 
-The PRs tab shows the PR status. The other tabs show the item status. The mod picks between them where it draws the footer status. The Codex tab shows `Updating…` at the footer's right. While polls fail it shows `Last read 1m ago · retrying` there instead, muted, and red after a minute.
+The PRs tab shows the PR status. The other tabs show the item status. `hooks/view.ts:footerStatus` picks between them for every look. The Codex tab shows its status at the footer's right. While polls fail it shows `Last read 1m ago · retrying` there instead, muted, and red after a minute.
 
 The UI names the result, not the model call or tool. The failure text is `Last update failed. Items from that reply may be missing.` A stopped worker shows that error. An active update shows `Updating…` and hides the prior error.
 
