@@ -20,6 +20,9 @@ import {
   perTurnStatus,
   overviewPage,
   rowKeyPlan,
+  RUNNING_FRAME_MS,
+  RUNNING_FRAMES,
+  runningMark,
 } from '../hooks/view'
 
 const LEDGER_REPLY = `NEW: decide | 1 | Use Node or Python? | Node / Python | Node
@@ -4282,6 +4285,43 @@ test('a forked conversation keeps the parent’s findings and closed records, an
   await clock.settle()
   await clock.advance(SETTLED_MS)
   expect(await contextOf()).toContain('- issue: Retry loop never backs off (close id: f1)')
+})
+
+test('a working item’s mark on the Overview moves each frame while a turn runs, and stays still once the turn ends', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  paneState = { isShown: true, isFocused: true }
+  overviewReply =
+    'HEADLINE: Adding a greeting CLI\nSTATUS: Writing the parser.\nQUEUE: working | Write the parser\nQUEUE: queued | Add a --loud flag'
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-key-overview' })
+  await clock.settle()
+  const marks = async () =>
+    [...((await pane.find({ key: 'overview-queue-0' }))?.text ?? '')].filter(c => RUNNING_FRAMES.some(f => f === c))
+  expect(await marks()).toEqual(['●'])
+
+  await $.turn.start({ text: 'go on', turnId: 't2' })
+  await clock.settle()
+  const shown: string[] = []
+  const expected: string[] = []
+  for (let n = 0; n < RUNNING_FRAMES.length; n++) {
+    shown.push(...(await marks()))
+    expected.push(runningMark(clock.now()))
+    await clock.advance(RUNNING_FRAME_MS)
+  }
+  expect(shown).toEqual(expected)
+  expect(new Set(shown).size).toBeGreaterThan(1)
+
+  await $.turn.complete({ answer: 'Parser written.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
+  await clock.settle()
+  expect(await marks()).toEqual(['●'])
+  await clock.advance(RUNNING_FRAME_MS)
+  expect(await marks()).toEqual(['●'])
 })
 
 test('the Overview page shows the headline, the status and the queue in place of rows, leaves the row keys idle, and a row tab shows its rows again', async ($, on) => {

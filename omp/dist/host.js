@@ -2631,6 +2631,9 @@ var SECTION_TITLES = {
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
+function hasRunningMark(page) {
+  return page.sections.some((p) => p.rows.some((r) => r.isRunning));
+}
 function runningMark(now) {
   return RUNNING_FRAMES[Math.floor(now / RUNNING_FRAME_MS) % RUNNING_FRAMES.length];
 }
@@ -2654,7 +2657,7 @@ function overviewPage(s, now, waitingOnYou = 0) {
     const rows = overview[id].map((item, n) => ({
       id: `${id}-${n}`,
       ...OVERVIEW_MARKS[item.status],
-      isRunning: item.status === "working",
+      isRunning: item.status === "working" && (id === "workstreams" || isTurnRunning),
       text: item.text,
       detail: item.detail
     }));
@@ -4906,7 +4909,7 @@ function isAnimating(screen, ui, now) {
   return rows.some((r) => r.state.is === "settled") || view.prs.drawn.some((p) => p.isSettled) || isPressMoving || isNoticeShown;
 }
 function isRunningMarkShown(screen, ui) {
-  return !isRowTab(ui.tab) && screen.view.overviewPage.sections.some((p) => p.rows.some((r) => r.isRunning));
+  return !isRowTab(ui.tab) && hasRunningMark(screen.view.overviewPage);
 }
 function noticeFor(outcome, now) {
   const text = outcome.error ?? (outcome.note ? noteText() : null);

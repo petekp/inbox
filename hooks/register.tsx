@@ -234,6 +234,7 @@ import {
   ROW_COPY,
   READING_TEXT,
   rowsIn,
+  hasRunningMark,
   RUNNING_FRAME_MS,
   RUNNING_PULSE_MS,
   runningMark,
@@ -304,6 +305,7 @@ const DRAFTS = atom({ plugin: 'inbox', key: 'drafts' } as const, {} as Record<st
 const DISCARDED = atom({ plugin: 'inbox', key: 'discarded' } as const, {} as Record<string, number>)
 const NOTES = atom({ plugin: 'inbox', key: 'notes' } as const, {} as Record<string, RowNote>)
 const REDRAW = atom({ plugin: 'inbox', key: 'redraw' } as const, 0)
+const RUNNING_FRAME = atom({ plugin: 'inbox', key: 'runningFrame' } as const, 0)
 const SESSION = atom({ plugin: 'inbox', key: 'session' } as const, NO_SESSION)
 const AWAY = atom({ plugin: 'inbox', key: 'away' } as const, PRESENT)
 const UNREADABLE = atom({ plugin: 'inbox', key: 'unreadable' } as const, null as string | null)
@@ -1014,7 +1016,7 @@ function animateRunningMarks($: EngineInterface, isDrawn: boolean) {
       return
     }
     isRunningMarkDrawn = false
-    void redraw($).catch(() => undefined)
+    void update($, RUNNING_FRAME, n => n + 1).catch(() => undefined)
   })
 }
 
@@ -3147,11 +3149,12 @@ export const register: Register = on => {
       read($, IS_KEY_LIST_SHOWN),
       read($, OPTIONS_SHOWN),
       $.env.get('TERM_PROGRAM'),
+      read($, RUNNING_FRAME),
     ])
     const tab: Tab = ROW_TABS.some(t => t.id === savedTab) ? savedTab : 'needsYou'
     const isOverviewShown = savedPage === 'overview'
     const shownTab: ShownTab = isOverviewShown ? 'overview' : tab
-    const isRunningMarkShown = isOverviewShown && view.overviewPage.sections.some(p => p.rows.some(r => r.isRunning))
+    const isRunningMarkShown = isOverviewShown && hasRunningMark(view.overviewPage)
     if (look === 'terminal') animateRunningMarks($, isRunningMarkShown)
     // A hot reload keeps TYPING but empties openFields, so an open field takes its key and seed again here.
     if (typing !== null && !openFields.has(typing))

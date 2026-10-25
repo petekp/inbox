@@ -75,6 +75,7 @@ import {
   rowFeedbackText,
   rowKeyPlan,
   rowMark,
+  hasRunningMark,
   runningMark,
   settledLabel,
   stopFix,
@@ -805,7 +806,7 @@ export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): bool
 
 /** Whether the Overview is shown with a running mark, whose frame moves with the clock. */
 export function isRunningMarkShown(screen: PanelScreen, ui: PanelUi): boolean {
-  return !isRowTab(ui.tab) && screen.view.overviewPage.sections.some(p => p.rows.some(r => r.isRunning))
+  return !isRowTab(ui.tab) && hasRunningMark(screen.view.overviewPage)
 }
 
 /** The notice for a press the row cannot show: a failed send, or a press whose row had changed. */

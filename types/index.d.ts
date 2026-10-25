@@ -481,6 +481,8 @@ declare module 'claude-code' {
       unreadable: string | null
       /** A fresh value redraws the pane, as when a row's note or a Queued label is due. */
       redraw: number
+      /** A fresh value redraws only the pane, for the next frame of a running mark. */
+      runningFrame: number
       /** Builds before the shared session kept the session in these fields. `upgradeDrawn` moves them into `session`. */
       ledger: Ledger
       presence: OldPresence
