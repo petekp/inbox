@@ -473,9 +473,16 @@ function reopenFinding(ledger, id) {
     closedFindings: ledger.closedFindings.filter((f) => f.id !== id)
   };
 }
+var SENT_PRESS_KINDS = {
+  answer: "mark",
+  explain: "talk",
+  compare: "talk",
+  run: "handoff",
+  done: "mark"
+};
 function applyExchangeUpdate(ledger, update, exchange, now, promptAt) {
   const press = exchange.press;
-  const talkedAboutId = press?.action === "explain" || press?.action === "compare" ? press.id : null;
+  const talkedAboutId = press && SENT_PRESS_KINDS[press.action] === "talk" ? press.id : null;
   return applyUpdate(ledger, { ...update, closed: update.closed.filter((c) => c.id !== talkedAboutId) }, now, exchange.turn, promptAt);
 }
 var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
@@ -1641,6 +1648,7 @@ function recordPress(kind, action, text, ctx) {
 }
 function pressed(ledger, last, p, ctx) {
   const stale = { stale: true };
+  const answerMessage = ctx.answerMessage ?? messages.answer;
   const isRepeat = last?.action === actionId(p) && last.kind !== "local" && last.delivery?.state !== "failed";
   const record = (kind) => ({
     ...recordPress(kind, actionId(p), pressText(p), ctx),
@@ -1698,11 +1706,11 @@ function pressed(ledger, last, p, ctx) {
   }
   const item = ledger.items.find((i) => i.id === p.id);
   if (!item)
-    return p.action === "type" ? replyToClosed(ledger, p, record("handoff")) : stale;
+    return p.action === "type" ? replyToClosed(ledger, p, record("handoff"), answerMessage) : stale;
   const answered = (answer) => ({
     ledger: closeItem(ledger, item.id, { how: "answered", outcome: answer }, ctx.now),
     last: record("mark"),
-    effects: [{ kind: "send", text: messages.answer(item, answer), by: { id: item.id, action: "answer" } }]
+    effects: [{ kind: "send", text: answerMessage(item, answer), by: { id: item.id, action: "answer" } }]
   });
   switch (p.action) {
     case "answer":
@@ -1711,7 +1719,7 @@ function pressed(ledger, last, p, ctx) {
       const words = p.text.trim();
       if (!words)
         return unchanged;
-      const text = item.kind === "question" ? messages.answer(item, words) : messages.taskReply(item, words);
+      const text = item.kind === "question" ? answerMessage(item, words) : messages.taskReply(item, words);
       return { ledger, last: record("handoff"), effects: [{ kind: "send", text, by: null }] };
     }
     case "explain":
@@ -1751,11 +1759,11 @@ function pressed(ledger, last, p, ctx) {
       return stale;
   }
 }
-function replyToClosed(ledger, p, last) {
+function replyToClosed(ledger, p, last, answerMessage) {
   const words = p.text.trim();
   const closed = ledger.closed.findLast((c) => c.id === p.id)?.item;
   const record = ledger.closedFindings.findLast((f) => f.id === p.id);
-  const text = closed ? closed.kind === "question" ? messages.answer(closed, words) : messages.taskReply(closed, words) : record ? messages.finding(record, "typed", words) : null;
+  const text = closed ? closed.kind === "question" ? answerMessage(closed, words) : messages.taskReply(closed, words) : record ? messages.finding(record, "typed", words) : null;
   if (text === null)
     return { stale: true };
   if (!words)
@@ -1770,13 +1778,6 @@ function findingBody(finding) {
   ];
 }
 var EXPLAIN_REPLY_FORM = "Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply.";
-function dialogReply(link, answer) {
-  const questionItemId = JSON.stringify(["request_user_input_async", link.callId, link.index]);
-  const reply = [{ questionItemId, question: link.question, answer }];
-  return `<send_user_message_question_reply>
-${JSON.stringify(reply)}
-</send_user_message_question_reply>`;
-}
 var COMPARE_REQUEST = [
   "Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.",
   "For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session's data outside this repo.",
@@ -1785,18 +1786,19 @@ var COMPARE_REQUEST = [
 ].join(`
 
 `);
+function quotedAsk(item) {
+  return `"${item.ask}"${item.options.length > 0 ? `
+Options: ${item.options.join(" / ")}` : ""}`;
+}
 var messages = {
-  answer: (item, answer) => item.dialog ? dialogReply(item.dialog, answer) : `Re "${item.ask}": ${answer}`,
+  answer: (item, answer) => `Re "${item.ask}": ${answer}`,
   explain: (item) => {
     const what = item.kind === "task" ? "this task you left for me is about: why it came up, and what doing it involves" : "this question you asked me is about: why it came up, what each choice would do, and which you would pick";
-    const options = item.options.length > 0 ? `
-Options: ${item.options.join(" / ")}` : "";
     return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.
-"${item.ask}"${options}`;
+${quotedAsk(item)}`;
   },
   compare: (item) => `${COMPARE_REQUEST}
-"${item.ask}"
-Options: ${item.options.join(" / ")}`,
+${quotedAsk(item)}`,
   run: (item, command) => `For "${item.ask}", run this:
 \`\`\`
 ${command}
@@ -2234,10 +2236,9 @@ function inboxView({
       };
     return isHandedOff(last, turns) ? { is: "handedOff" } : { is: "open" };
   };
-  const feedbackIn = (id, state) => {
+  const feedbackIn = (id, state, reportedAt) => {
     if (state.is === "settled")
       return null;
-    const reportedAt = ledger.items.find((i) => i.id === id)?.reportedAt;
     const f = feedbackOf(id, lastActions[id], notes[id], turns, now, reportedAt);
     if (state.is !== "held")
       return f;
@@ -2246,7 +2247,7 @@ function inboxView({
   };
   const rowOf = (row) => {
     const state = stateOf(row.id);
-    const feedback = feedbackIn(row.id, state);
+    const feedback = feedbackIn(row.id, state, row.item?.reportedAt);
     const isPressOut = feedback?.is === "working" || feedback?.is === "queued" || feedback?.is === "unconfirmed";
     return {
       ...row,
@@ -3113,14 +3114,15 @@ function appliedCatchUp(s, begun, parsed, now) {
     }
   };
 }
-function pressOn(s, p, at, localPressId) {
+function pressOn(s, p, at, localPressId, answerMessage) {
   const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId };
   if ("ref" in p)
     return applyPrPress(s.ledger, s.prViews, s.lastActions, p, ctx);
   const item = s.ledger.items.find((i) => i.id === p.id);
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
-    extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prs) : []
+    extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prs) : [],
+    answerMessage
   });
   if ("stale" in r)
     return r;
@@ -3385,7 +3387,7 @@ async function startPress(host, p, isStale, holds) {
     if (note)
       return s;
     const at = await host.now();
-    const r = pressOn(s, p, at, localPressId);
+    const r = pressOn(s, p, at, localPressId, host.answerMessage);
     if ("stale" in r) {
       note = "stale";
       return s;

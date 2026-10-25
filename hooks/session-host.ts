@@ -13,7 +13,7 @@ import {
   withLasts,
   withUnconfirmed,
 } from './presses'
-import type { Effect, EffectHost, RowPress } from './presses'
+import type { AnswerMessage, Effect, EffectHost, RowPress } from './presses'
 import { applied, appliedCatchUp, completedAttempt, needsCatchUp, pressOn, withFetchedPrs } from './session'
 import type { Pressed, SendOutcome, Session } from './session'
 import type { ReplyHolds } from './view'
@@ -77,6 +77,8 @@ export type SessionHost<S extends Session> = {
   settleWindowMs: number
   /** A new id for a delivery. */
   newId(): string
+  /** The message an answer press sends, when the agent reads answers in its own form. */
+  answerMessage?: AnswerMessage
   /** Whether a turn runs now, which holds a Done message back. Without it, a turn runs while the turn has a person's words. */
   isTurnRunning?(s: S): boolean
 }
@@ -279,7 +281,7 @@ export type PressOutcome = {
 
 type PressHost<S extends Session> = Pick<
   SessionHost<S>,
-  'now' | 'read' | 'update' | 'deliver' | 'perform' | 'newId' | 'isDeliveryHeldUntilRun'
+  'now' | 'read' | 'update' | 'deliver' | 'perform' | 'newId' | 'isDeliveryHeldUntilRun' | 'answerMessage'
 >
 
 /** A press that is saved, with what it still runs. */
@@ -338,7 +340,7 @@ export async function startPress<S extends Session>(
       if (note) return s
       // Read under the lock, so the press is timed after every write that landed before it.
       const at = await host.now()
-      const r = pressOn(s, p, at, localPressId)
+      const r = pressOn(s, p, at, localPressId, host.answerMessage)
       if ('stale' in r) {
         note = 'stale'
         return s

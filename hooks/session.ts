@@ -14,7 +14,7 @@ import {
 } from './pr-tab'
 import type { Applied, PrPress } from './pr-tab'
 import { applyPress, upgradeLastActions, withAcceptedSend, withArrival, withRewrite, withUnconfirmed } from './presses'
-import type { RowPress } from './presses'
+import type { AnswerMessage, RowPress } from './presses'
 import { prNeedsYou, prRefs } from './prs'
 import { recordClose, recordItem } from './tools'
 import { inboxView, NO_HOLDS, perTurnStatus } from './view'
@@ -437,6 +437,7 @@ export function pressOn(
   p: RowPress | PrPress,
   at: number,
   localPressId?: string,
+  answerMessage?: AnswerMessage,
 ): Pressed | { stale: true } {
   const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId }
   if ('ref' in p) return applyPrPress(s.ledger, s.prViews, s.lastActions, p, ctx)
@@ -444,6 +445,7 @@ export function pressOn(
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
     extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prs) : [],
+    answerMessage,
   })
   if ('stale' in r) return r
 

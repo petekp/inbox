@@ -11,10 +11,10 @@ import type { PrPress } from '../../hooks/pr-tab'
 import { demoAfterPress, demoTurns, noteText, openTarget } from '../../hooks/presses'
 import type { PathProbe, RowPress } from '../../hooks/presses'
 import { agentTools } from '../../hooks/tools'
-import { heardState, noteToolCall, viewOf } from './core'
+import { heardState, isTurnRunning, noteToolCall, viewOf } from './core'
 import type { TabView } from './core'
 import { demoState } from './demo'
-import { noteDialogs } from './dialogs'
+import { answerMessage, noteDialogs } from './dialogs'
 import { withEarlierHistory } from './history'
 import { codexStore } from './host'
 import { isUnseen, pressOn, recorded } from '../../hooks/session'
@@ -287,6 +287,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       },
       settleWindowMs: SETTLE_WINDOW_MS,
       newId: randomUUID,
+      answerMessage,
     }
   }
 
@@ -322,16 +323,22 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     }
   }
 
-  /** Links the dialogs of the rollout's newest turn first, so an answer pressed while that turn runs answers its dialog. */
-  async function linkRunningDialogs(id: string) {
-    const { transcriptPath } = await readState(dir, id)
-    const { dialogs } = await turnIn(transcriptPath, undefined)
-    if (dialogs.length > 0) await updateState(dir, id, s => noteDialogs(s, dialogs))
+  /**
+   * Links the dialogs of the rollout's newest turn first, so an answer pressed while that turn runs answers its dialog.
+   * Stop notes a turn's dialogs, so only an unlinked question from the turn still running needs the rollout read.
+   */
+  async function linkRunningDialogs(id: string, itemId: string) {
+    const s = await readState(dir, id)
+    const item = s.ledger.items.find(i => i.id === itemId)
+    const canLink = item?.kind === 'question' && !item.dialog && item.turn === s.ledger.turn && isTurnRunning(s.heard)
+    if (!canLink) return
+    const { dialogs } = await turnIn(s.transcriptPath, undefined)
+    if (dialogs.length > 0) await updateState(dir, id, x => noteDialogs(x, dialogs))
   }
 
   async function onPress(id: string, p: RowPress | PrPress, thread: unknown, holds: ReplyHolds): Promise<PressReply> {
     if (!('ref' in p) && (p.action === 'answer' || p.action === 'type'))
-      await linkRunningDialogs(id).catch(() => undefined)
+      await linkRunningDialogs(id, p.id).catch(() => undefined)
     const outcome = await press(hostFor(id), p, thread !== id, holds)
     if (outcome.wakesForDone) setTimeout(() => void wakeForDone(id).catch(() => undefined), SETTLE_WINDOW_MS).unref()
     const { isUnconfirmed, wakesForDone: _wakes, ...rest } = outcome

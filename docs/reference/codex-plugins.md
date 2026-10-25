@@ -1848,7 +1848,7 @@ at each Stop, to find the question dialogs the agent opened in the ending turn.
     `{"accepted":true}` at once and leaves no request open, and
     `item/tool/requestUserInput` belongs to the blocking user-input tool.
   - So the inbox sends its answer to a question linked to a dialog in this
-    form, through `codex queue` (`hooks/presses.ts:dialogReply`,
+    form, through `codex queue` (`codex/src/dialogs.ts:dialogReply`,
     `codex/src/dialogs.ts:linkDialogs`). An answer press first links the
     dialogs of the rollout's newest turn, so an answer pressed while the
     dialog's turn runs is linked too (`codex/src/server.ts:linkRunningDialogs`).
