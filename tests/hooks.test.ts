@@ -2321,9 +2321,10 @@ test('opening the PRs tab while another PR fetch runs still finds the branch’s
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
 })
 
-test('the PRs tab shows a linked PR only when the viewer wrote it and a fetch found it open, and keeps it once it merges', async ($, on) => {
+test('the PRs tab shows a linked PR only when the viewer wrote it and a fetch found it open, and keeps it once it merges, while a task naming a teammate’s PR keeps its Open PR step', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
+  ledgerReply = 'NEW: do | - | Review #20 | - | -'
   const states: Record<string, string> = { '12': 'OPEN', '20': 'OPEN', '9': 'MERGED' }
   const titles: Record<string, string> = { '12': 'Mine open', '20': 'Teammate open', '9': 'Mine merged' }
   const authors: Record<string, string> = { '12': 'me', '20': 'sam', '9': 'me' }
@@ -2366,7 +2367,9 @@ test('the PRs tab shows a linked PR only when the viewer wrote it and a fetch fo
     turnId: 't1',
     reason: 'answer',
   })
+  await clock.settle()
   const pane = await $.ui.mount(PANE)
+  expect((await pane.find({ key: 'help-i1-0-key' }))?.props.label).toBe('Open PR #20')
   await pane.press({ key: 'tab-prs' })
   await clock.settle()
 
@@ -2381,6 +2384,8 @@ test('the PRs tab shows a linked PR only when the viewer wrote it and a fetch fo
 
   expect(await pane.find({ text: /Mine open/ })).toBeDefined()
   expect(await pane.find({ text: /Merged/ })).toBeDefined()
+  await pane.press({ key: 'tab-needsYou' })
+  expect((await pane.find({ key: 'help-i1-0-key' }))?.props.label).toBe('Open PR #20')
 })
 
 for (const surface of ['terminal', 'desktop'] as const) {

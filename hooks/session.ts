@@ -283,7 +283,9 @@ export function commandFindings(command: string, output: string): { lines: strin
 export function withNewPrRefs(ledger: Ledger, refs: string[]): Ledger {
   const fresh = refs.filter(ref => !ledger.prs.includes(ref))
 
-  return fresh.length === 0 ? ledger : { ...ledger, prs: linkedPrs(ledger.prs, fresh) }
+  return fresh.length === 0
+    ? ledger
+    : { ...ledger, prs: linkedPrs(ledger.prs, fresh), prLinks: linkedPrs(ledger.prLinks, fresh) }
 }
 
 /** Notes a finished shell command's findings: its activity lines, and its PRs linked to the session. */
@@ -310,7 +312,10 @@ export function endTurn<S extends Session>(
   const refs = prRefs(reply)
   const base = {
     ...s,
-    ledger: refs.length > 0 ? { ...s.ledger, prs: linkedPrs(s.ledger.prs, refs) } : s.ledger,
+    ledger:
+      refs.length > 0
+        ? { ...s.ledger, prs: linkedPrs(s.ledger.prs, refs), prLinks: linkedPrs(s.ledger.prLinks, refs) }
+        : s.ledger,
     turn: NO_TURN,
   }
   if (reply.trim() === '' && !queuesEmptyReply) return base
@@ -446,7 +451,7 @@ export function pressOn(
   const item = s.ledger.items.find(i => i.id === p.id)
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
-    extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prs) : [],
+    extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prLinks) : [],
     answerMessage,
   })
   if ('stale' in r) return r
@@ -599,7 +604,7 @@ export function sessionView(
       lastActions,
       notes,
       turns: s.presence,
-      extraSteps: Object.fromEntries(l.items.map(item => [item.id, itemPrSteps(item, s.prViews, l.prs)])),
+      extraSteps: Object.fromEntries(l.items.map(item => [item.id, itemPrSteps(item, s.prViews, l.prLinks)])),
       settleWindowMs,
       status: perTurnStatus(update),
       now,

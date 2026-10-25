@@ -33,6 +33,7 @@ var EMPTY = {
   findings: [],
   closedFindings: [],
   prs: [],
+  prLinks: [],
   nextId: 1,
   turn: 0,
   batchTurn: 0
@@ -46,6 +47,8 @@ function upgradeLedger(ledger) {
   const { notes, decided, ...rest } = ledger;
   return {
     ...rest,
+    // A ledger saved before `prLinks` kept only `prs`, which lacks the PRs the person dismissed.
+    prLinks: rest.prLinks ?? rest.prs ?? [],
     findings: [...rest.findings ?? [], ...notes ?? []],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
@@ -619,7 +622,7 @@ function commandFindings(command, output) {
 }
 function withNewPrRefs(ledger, refs) {
   const fresh = refs.filter((ref) => !ledger.prs.includes(ref));
-  return fresh.length === 0 ? ledger : { ...ledger, prs: linkedPrs(ledger.prs, fresh) };
+  return fresh.length === 0 ? ledger : { ...ledger, prs: linkedPrs(ledger.prs, fresh), prLinks: linkedPrs(ledger.prLinks, fresh) };
 }
 function noteCommandOutput(s, command, output) {
   const found = commandFindings(command, output);
@@ -631,7 +634,7 @@ function endTurn(host, s, reply, isOpen, { tab = null, queuesEmptyReply = false 
   const refs = prRefs(reply);
   const base = {
     ...s,
-    ledger: refs.length > 0 ? { ...s.ledger, prs: linkedPrs(s.ledger.prs, refs) } : s.ledger,
+    ledger: refs.length > 0 ? { ...s.ledger, prs: linkedPrs(s.ledger.prs, refs), prLinks: linkedPrs(s.ledger.prLinks, refs) } : s.ledger,
     turn: NO_TURN
   };
   if (reply.trim() === "" && !queuesEmptyReply) return base;

@@ -216,8 +216,10 @@ export type Ledger = {
   findings: Finding[]
   /** Findings that closed, oldest first. Kept apart from `closed`, which the model-read texts list. */
   closedFindings: ClosedFinding[]
-  /** PRs this session created or linked, as "owner/repo#123". */
+  /** PRs the PRs tab tracks, as "owner/repo#123": ones this session created or linked, until a fetch drops one or the person dismisses it. */
   prs: string[]
+  /** Every PR this session created or linked, as "owner/repo#123", for a task's Open PR step. A fetch or Dismiss never removes one. */
+  prLinks: string[]
   nextId: number
   /** How many prompts the person has sent this session. */
   turn: number

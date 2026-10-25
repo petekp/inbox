@@ -79,6 +79,7 @@ var EMPTY = {
   findings: [],
   closedFindings: [],
   prs: [],
+  prLinks: [],
   nextId: 1,
   turn: 0,
   batchTurn: 0
@@ -99,6 +100,7 @@ function upgradeLedger(ledger) {
   const { notes, decided, ...rest } = ledger;
   return {
     ...rest,
+    prLinks: rest.prLinks ?? rest.prs ?? [],
     findings: [...rest.findings ?? [], ...notes ?? []],
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
     items: rest.items.map(upgradeItem),
@@ -3042,7 +3044,7 @@ function commandFindings(command, output) {
 }
 function withNewPrRefs(ledger, refs) {
   const fresh = refs.filter((ref) => !ledger.prs.includes(ref));
-  return fresh.length === 0 ? ledger : { ...ledger, prs: linkedPrs(ledger.prs, fresh) };
+  return fresh.length === 0 ? ledger : { ...ledger, prs: linkedPrs(ledger.prs, fresh), prLinks: linkedPrs(ledger.prLinks, fresh) };
 }
 function noteCommandOutput(s, command, output) {
   const found = commandFindings(command, output);
@@ -3054,7 +3056,7 @@ function endTurn(host, s, reply, isOpen, { tab = null, queuesEmptyReply = false 
   const refs = prRefs(reply);
   const base = {
     ...s,
-    ledger: refs.length > 0 ? { ...s.ledger, prs: linkedPrs(s.ledger.prs, refs) } : s.ledger,
+    ledger: refs.length > 0 ? { ...s.ledger, prs: linkedPrs(s.ledger.prs, refs), prLinks: linkedPrs(s.ledger.prLinks, refs) } : s.ledger,
     turn: NO_TURN
   };
   if (reply.trim() === "" && !queuesEmptyReply)
@@ -3140,7 +3142,7 @@ function pressOn(s, p, at, localPressId, answerMessage) {
   const item = s.ledger.items.find((i) => i.id === p.id);
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
-    extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prs) : [],
+    extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prLinks) : [],
     answerMessage
   });
   if ("stale" in r)
@@ -3215,7 +3217,7 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
       lastActions,
       notes,
       turns: s.presence,
-      extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, l.prs)])),
+      extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, l.prLinks)])),
       settleWindowMs,
       status: perTurnStatus(update),
       now,
@@ -4607,6 +4609,7 @@ function demoView(now) {
         }
       ],
       prs: ["acme/visor#31", "acme/visor#29", "acme/visor#33"],
+      prLinks: ["acme/visor#31", "acme/visor#29", "acme/visor#33"],
       nextId: 24,
       turn: 14,
       batchTurn: 14

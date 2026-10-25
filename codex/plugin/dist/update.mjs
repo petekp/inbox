@@ -62,6 +62,7 @@ var EMPTY = {
   findings: [],
   closedFindings: [],
   prs: [],
+  prLinks: [],
   nextId: 1,
   turn: 0,
   batchTurn: 0
@@ -80,6 +81,8 @@ function upgradeLedger(ledger) {
   const { notes, decided, ...rest } = ledger;
   return {
     ...rest,
+    // A ledger saved before `prLinks` kept only `prs`, which lacks the PRs the person dismissed.
+    prLinks: rest.prLinks ?? rest.prs ?? [],
     findings: [...rest.findings ?? [], ...notes ?? []],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
