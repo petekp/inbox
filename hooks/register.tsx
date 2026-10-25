@@ -196,7 +196,6 @@ import {
   PERMISSION_FALLBACK_DELAY_MS,
   PRESS_GUARD_MS,
   QUEUED_AFTER_MS,
-  COMPARE_LIMIT_MS,
   compareEndsAt,
   rowKeyPlan,
   settledLabel,
@@ -918,6 +917,21 @@ function later($: EngineInterface, waitMs: number, run: () => unknown) {
   })().catch(() => undefined)
 }
 
+let compareRedrawAt: number | null = null
+
+/** Redraws when the soonest Compare press reaches its limit, then waits for the next one. */
+async function redrawAtCompareEnd($: EngineInterface) {
+  const { lastActions, now } = await drawnState($)
+  const at = compareEndsAt(lastActions, now)
+  if (at === null || (compareRedrawAt !== null && compareRedrawAt <= at)) return
+  compareRedrawAt = at
+  later($, at - now, async () => {
+    compareRedrawAt = null
+    await redraw($)
+    await redrawAtCompareEnd($)
+  })
+}
+
 async function redrawAfterReload($: EngineInterface) {
   const { ledger, lastActions, notes, now } = await drawnState($)
   const times = [
@@ -931,8 +945,7 @@ async function redrawAfterReload($: EngineInterface) {
   ]
   const latest = Math.max(...times)
   if (times.length > 0 && latest + SETTLED_MS > now) redrawWhileLeaving($, latest + SETTLED_MS)
-  const compareEnd = compareEndsAt(lastActions, now)
-  if (compareEnd !== null) later($, compareEnd - now, () => redraw($))
+  await redrawAtCompareEnd($)
 }
 
 /**
@@ -1796,7 +1809,7 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   const { isMoved, undoBlock } = await openAfterClose($, rowId, wasWaiting, canRevealUndo)
   if (canRevealUndo) await keepUndoVisible($, undoKey, undoBlock, now, undoRevision)
   if (!('ref' in p) && p.action === 'done') later($, SETTLED_MS, () => wakeForDone($))
-  if (!('ref' in p) && p.action === 'compare') later($, COMPARE_LIMIT_MS, () => redraw($))
+  if (!('ref' in p) && p.action === 'compare') void redrawAtCompareEnd($).catch(() => undefined)
   if (!('ref' in p) && p.action === 'address') redrawWhileLeaving($, now + SETTLED_MS)
   if (isReplyToClosed && effects.length > 0) redrawWhileLeaving($, now + SETTLED_MS)
   if ('ref' in p && p.action === 'pr-dismiss') {
@@ -2176,6 +2189,7 @@ async function initializeInbox($: EngineInterface) {
   await upgradeState($)
   isOn = true
   toolsRefused = false
+  compareRedrawAt = null
   const refused = () => {
     toolsRefused = true
   }
