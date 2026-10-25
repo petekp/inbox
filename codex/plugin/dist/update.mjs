@@ -409,9 +409,16 @@ function reopenFinding(ledger, id) {
     closedFindings: ledger.closedFindings.filter((f) => f.id !== id)
   };
 }
+var SENT_PRESS_KINDS = {
+  answer: "mark",
+  explain: "talk",
+  compare: "talk",
+  run: "handoff",
+  done: "mark"
+};
 function applyExchangeUpdate(ledger, update, exchange, now, promptAt) {
   const press = exchange.press;
-  const talkedAboutId = press?.action === "explain" || press?.action === "compare" ? press.id : null;
+  const talkedAboutId = press && SENT_PRESS_KINDS[press.action] === "talk" ? press.id : null;
   return applyUpdate(
     ledger,
     { ...update, closed: update.closed.filter((c) => c.id !== talkedAboutId) },

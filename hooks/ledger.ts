@@ -1,4 +1,4 @@
-import type { Card, Closed, ClosedFinding, Exchange, Finding, Help, Item, Ledger, Press } from '../types'
+import type { Card, Closed, ClosedFinding, Exchange, Finding, Help, Item, Ledger, Press, PressKind } from '../types'
 
 export type { Exchange, Press } from '../types'
 import type { Host } from './model-text'
@@ -609,6 +609,15 @@ export function reopenFinding(ledger: Ledger, id: string): Ledger {
   }
 }
 
+/** The kind of each press that sends a message. A Talk press asks about its row, which its reply leaves open. */
+const SENT_PRESS_KINDS: Record<Press['action'], PressKind> = {
+  answer: 'mark',
+  explain: 'talk',
+  compare: 'talk',
+  run: 'handoff',
+  done: 'mark',
+}
+
 export function applyExchangeUpdate(
   ledger: Ledger,
   update: Update,
@@ -617,7 +626,7 @@ export function applyExchangeUpdate(
   promptAt: number,
 ): Ledger {
   const press = exchange.press
-  const talkedAboutId = press?.action === 'explain' || press?.action === 'compare' ? press.id : null
+  const talkedAboutId = press && SENT_PRESS_KINDS[press.action] === 'talk' ? press.id : null
 
   return applyUpdate(
     ledger,
