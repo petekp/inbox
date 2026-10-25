@@ -2080,6 +2080,12 @@ var DONE_LABELS = {
 function isFailure(f) {
   return f?.is === "notSent" || f?.is === "local" && f.result.state === "failed";
 }
+function hasAge(f) {
+  return f.is === "done" || f.is === "working" || f.is === "stillOpen" || f.is === "noComparison" || f.is === "queued" || f.is === "unconfirmed" || f.is === "closed";
+}
+function isStatusUnderActions(f, isOpen) {
+  return isOpen && f !== null && hasAge(f);
+}
 var runIt = (look) => isTerminalLike(look) ? "Run it in a terminal, or type ! and paste." : "Run it in Terminal.";
 var VERBS = {
   open: { pending: "Opening", done: "Opened", failed: "open" },
@@ -3800,7 +3806,7 @@ function lineOfRow(row) {
     age: f?.is === "done" ? f.at : row.at,
     detail: row.detail,
     file: row.fileName,
-    feedback: feedbackLabel && f ? { text: feedbackLabel, tone: feedbackTone(f) } : null,
+    feedback: feedbackLabel && f ? { text: feedbackLabel, tone: feedbackTone(f), source: f } : null,
     settled: state.is === "settled" ? { label: settledLabel(state.label, state.delivery), undo: state.canUndo && undo ? undo.press : null } : null,
     buttons: state.is === "settled" ? [] : rowButtons(row),
     row,
@@ -3828,7 +3834,7 @@ function closedLines(d) {
     title: d.title,
     isDim: true,
     age: d.at,
-    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: null },
+    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: null, source: null },
     buttons: canUndo ? [undo] : [],
     isStatic: !canUndo,
     isWaiting: false
@@ -3887,7 +3893,7 @@ function stopEntries(screen, ui) {
         status: { text: `${capitalized(stopText(stop))}.`, tone: "error", rest: "" },
         age: stop.at,
         detail: canResume ? null : stopFix(stop),
-        feedback: resuming?.is === "refused" ? { text: `Not sent: ${resuming.why}`, tone: "error" } : null,
+        feedback: resuming?.is === "refused" ? { text: `Not sent: ${resuming.why}`, tone: "error", source: null } : null,
         buttons: canResume ? [resume] : [],
         isStatic: !canResume,
         isWaiting: canResume,
@@ -4005,7 +4011,7 @@ function prEntries(screen, now) {
 }
 function pressFeedback(screen, id, now) {
   const f = feedbackOf(id, screen.view.lastActions[id], undefined, screen.view.turns, now);
-  return f ? { text: feedbackText(f, AGENT), tone: feedbackTone(f) } : null;
+  return f ? { text: feedbackText(f, AGENT), tone: feedbackTone(f), source: f } : null;
 }
 function entriesOf(screen, ui, tab, now) {
   return tab === "prs" ? prEntries(screen, now) : rowEntries(screen, ui, tab);
@@ -4258,7 +4264,8 @@ function drawLine(line, isSelected, d) {
   const pad = line.depth * 2;
   const out = [];
   const status = line.status ? `  ${line.status.tone ? s.tone(line.status.tone, line.status.text) : s.dim(line.status.text)}${s.dim(line.status.rest)}` : "";
-  const after = line.settled ? `  ${s.tone("done", line.settled.label)}${line.settled.undo ? `  ${s.dim("u Undo")}` : ""}` : line.feedback ? `  ${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
+  const statusUnder = line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(line.feedback.source, isSelected) ? line.feedback : null;
+  const after = line.settled ? `  ${s.tone("done", line.settled.label)}${line.settled.undo ? `  ${s.dim("u Undo")}` : ""}` : line.feedback && !statusUnder ? `  ${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const title = line.isDim ? s.dim(line.title) : isSelected ? s.bold(line.title) : line.title;
   const cursor = isSelected ? s.tone("accent", "\u25B8") : " ";
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
@@ -4283,6 +4290,8 @@ function drawLine(line, isSelected, d) {
     const field = wrapText(`${text}\x00`, Math.max(10, width - indent - 1));
     out.push(...field.map((l) => " ".repeat(indent) + l.replace("\x00", s.inverse(" "))));
   }
+  if (statusUnder)
+    out.push(...indented(statusUnder.text, indent, width, 4, feedbackPaint(statusUnder.tone, s)));
   return out;
 }
 function tabBar(d) {

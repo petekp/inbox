@@ -229,8 +229,18 @@ export function replyHint(row: RowView, agent: string): string {
   return row.replyKind === 'answer' ? 'Your answer' : `Your reply to ${agent}`
 }
 
-export function actionLabel(action: Pick<ActionView, 'label' | 'isPrimary'>): string {
-  return action.isPrimary ? `${action.label} (recommended)` : action.label
+/**
+ * A look that fills the recommended answer's button passes `fits`, its own measure of whether a label fits that
+ * button. Where "(recommended)" would not fit, the fill alone marks the recommended answer.
+ */
+export function actionLabel(
+  action: Pick<ActionView, 'label' | 'isPrimary'>,
+  fits?: (label: string) => boolean,
+): string {
+  if (!action.isPrimary) return action.label
+  const marked = `${action.label} (recommended)`
+
+  return fits && !fits(marked) ? action.label : marked
 }
 
 export function fieldExit(row: RowView): 'cancel' | 'discard' {
@@ -428,6 +438,14 @@ export function hasAge(
     f.is === 'unconfirmed' ||
     f.is === 'closed'
   )
+}
+
+/**
+ * A press status, such as "Comparing…" or "✓ Compared", follows a closed row's title. An open row draws it under its
+ * buttons instead, so a status that wraps adds a line below them and never moves them.
+ */
+export function isStatusUnderActions(f: Feedback | null, isOpen: boolean): boolean {
+  return isOpen && f !== null && hasAge(f)
 }
 
 const runIt = (look: Look) =>

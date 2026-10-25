@@ -1726,7 +1726,7 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   await clock.settle()
   expect(await pane.find({ text: /Queued/ })).toBeUndefined()
   await clock.advance(QUEUED_AFTER_MS)
-  expect(await pane.find({ text: /^\u2007·\sQueued:\sExplain$/ })).toBeDefined()
+  expect(await pane.find({ text: /^Queued:\sExplain$/ })).toBeDefined()
   await pane.press({ key: 'select-i2' })
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
@@ -1737,7 +1737,7 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   await arrive($)
   await clock.settle()
   await pane.press({ key: 'select-i1' })
-  expect(await pane.find({ text: /^\u2007·\sExplaining…$/ })).toBeDefined()
+  expect(await pane.find({ text: /^Explaining…$/ })).toBeDefined()
   expect(await pane.find({ text: /Queued/ })).toBeUndefined()
 
   submitAnswer = { drop: 'a hook refused it' }
@@ -2012,7 +2012,7 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   inFlight.push(pane.press({ key: 'explain-i1-key' }))
   await clock.settle()
   await clock.advance(QUEUED_AFTER_MS)
-  expect(await pane.find({ text: /^\u2007·\sQueued:\sExplain/ })).toBeDefined()
+  expect(await pane.find({ text: /^Queued:\sExplain$/ })).toBeDefined()
   expect((await close({ id: 'i1', answer: 'Deno' })).result).toBe(
     'Closed. The user sees it in the /inbox pane with its outcome. Name it by what it says, never by its id.',
   )
@@ -2318,7 +2318,7 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   expect(await pane.find({ text: /✓\sAddress/ })).toBeUndefined()
   await arrive($)
   await clock.settle()
-  expect(await pane.find({ text: /^\u2007·\sAddressed$/ })).toBeDefined()
+  expect(await pane.find({ text: /^Addressed$/ })).toBeDefined()
 
   expect(await pane.find({ key: 'address-T1-key' })).toBeDefined()
   await clock.advance(PRESS_GUARD_MS)
@@ -3727,6 +3727,9 @@ test('the desktop pane draws each action as one button and the tabs as one click
   expect((await pane.find({ key: 'select-i2' }))?.type).toBe('Client')
   expect(await pane.find({ key: 'title-i2' })).toBeUndefined()
   expect(((await pane.find({ key: 'select-i2' }))?.props.props as RowProps).side).toBe('3m')
+  await pane.redraw({ ...PANE.props, bodyColumns: 26 })
+  const narrowed = await pane.find({ key: 'answer-i1-0' })
+  expect([narrowed?.props.label, narrowed?.props.variant]).toEqual(['Node', 'primary'])
   await pane.redraw({ ...PANE.props, bodyColumns: 69 })
 
   await pane.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: 'select-i2' })

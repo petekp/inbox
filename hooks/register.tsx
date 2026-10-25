@@ -192,6 +192,7 @@ import {
   hasAge,
   heldReplies,
   isFailure,
+  isStatusUnderActions,
   isWaitingRow,
   isGuarded,
   PERMISSION_FALLBACK_DELAY_MS,
@@ -284,7 +285,7 @@ const DESKTOP_CHARS_PER_CELL = 1.25
 const DESKTOP_CLIP_CHARS_PER_CELL = 1.1
 // The widest character in each group, in points, in the pane's 13 pt system font as AppKit measures it. Any other
 // character counts as the widest group, so an estimate is never narrower than the text.
-const DESKTOP_CHAR_PT: [chars: string, pt: number][] = [
+const DESKTOP_CHAR_GROUPS: [chars: string, pt: number][] = [
   ["ijl|I ',.:;/\\!", 4],
   ['ftr()[]{}', 4.9],
   ['aceksvxyz-*"`?1J', 7.4],
@@ -292,12 +293,16 @@ const DESKTOP_CHAR_PT: [chars: string, pt: number][] = [
   ['ABKPRSTVXYZ0345689#$+<=>^~', 8.8],
   ['CDGHNOQUw&', 10],
 ]
+const DESKTOP_CHAR_PT = new Map(DESKTOP_CHAR_GROUPS.flatMap(([chars, pt]) => [...chars].map(c => [c, pt] as const)))
 const DESKTOP_WIDEST_CHAR_PT = 12.6
-/** Desktop cuts a follow-up label wider than its link, so its link is sized from each character's width. */
-function desktopTextCells(text: string): number {
+// A native Button's padding around its label, and its bolder primary label, measured live: 163 to 167 pt for
+// "Plain (recommended)", whose label is 130 pt in the regular weight.
+const DESKTOP_BUTTON_EXTRA_PT = 38
+/** Desktop cuts a label wider than its control, so a control is sized from each character's width. */
+function desktopTextPt(text: string): number {
   let pt = 0
-  for (const c of text) pt += DESKTOP_CHAR_PT.find(([chars]) => chars.includes(c))?.[1] ?? DESKTOP_WIDEST_CHAR_PT
-  return pt / DESKTOP_CELL_PT
+  for (const c of text) pt += DESKTOP_CHAR_PT.get(c) ?? DESKTOP_WIDEST_CHAR_PT
+  return pt
 }
 const DESKTOP_TAB_PAD = '\u00a0'.repeat(3)
 const DESKTOP_LINE_PT = 19
@@ -2889,13 +2894,18 @@ export const register: Register = on => {
     const isAgeInSide = look === 'terminal'
     const isAgeDropped = isNarrowDesktop || isAgeInSide
     const glued = (after: string) => after.replace(/(?<=.)[ \u2002]/gs, c => (c === ' ' ? '\u00a0' : '\u2007'))
-    // The Codex tab wraps a suffix too long for one line between words, so this does too.
-    const unbroken = (after: string, width: number) => {
-      const firstBreak = after.indexOf(' ')
+    // The Codex tab wraps a suffix too long for one line between words, so this does too. A glued suffix wider than a
+    // line together with the title's last word, which DOT's leading figure space holds to it, is broken mid-word.
+    const unbroken = (after: string, title: string, fits: (text: string) => boolean) => {
+      const lastWord = title.slice(Math.max(0, title.trimEnd().lastIndexOf(' ') + 1))
+      if (fits(lastWord + after)) return glued(after)
+      const dot = after.startsWith(DOT) ? DOT : ''
+      const rest = after.slice(dot.length)
+      const firstBreak = rest.indexOf(' ')
 
-      return after.length <= width || firstBreak < 0
-        ? glued(after)
-        : glued(after.slice(0, firstBreak)) + after.slice(firstBreak)
+      return (
+        dot + (fits(rest) || firstBreak < 0 ? glued(rest) : glued(rest.slice(0, firstBreak)) + rest.slice(firstBreak))
+      )
     }
     const isInline = e.props.placement === 'inline'
     isInlinePane = isInline
@@ -3203,8 +3213,19 @@ export const register: Register = on => {
 
     const shownLabel = (a: Pick<KeyAction, 'label' | 'variant'>) =>
       actionLabel({ label: a.label, isPrimary: a.variant === 'primary' })
+    const desktopTextColumns = (rowId: string) =>
+      listColumns - DESKTOP_MARK_CELLS - markExtra(rowId) - DESKTOP_SIDE_CELLS - 1
+    // An open desktop row's text column, less a cell, since the measured column ran up to 10 pt narrower than this.
+    const desktopRowTextPt = (rowId: string) => desktopTextColumns(rowId) * DESKTOP_CELL_PT - 2 * FRAME_INSET_PT
     const desktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) =>
       a.icon ? `${a.icon} ${shownLabel(a)}` : shownLabel(a)
+    // A native Button cuts a label wider than its row.
+    const fittedDesktopLabel = (rowId: string, a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) => {
+      const icon = a.icon ? `${a.icon} ` : ''
+      const fits = (label: string) => desktopTextPt(icon + label) + DESKTOP_BUTTON_EXTRA_PT <= desktopRowTextPt(rowId)
+
+      return icon + actionLabel({ label: a.label, isPrimary: a.variant === 'primary' }, fits)
+    }
     const keyedButton =
       (rowId: string, isFollowUp = false) =>
       ({ hotkey, kind: _kind, emphasis, icon, ...action }: KeyAction) => {
@@ -3214,7 +3235,7 @@ export const register: Register = on => {
           <Button
             {...action}
             {...(isFollowUp ? { plain: true } : emphasis === 'primary' ? { variant: 'primary' as const } : {})}
-            label={desktopLabel({ ...action, ...(icon ? { icon } : {}) })}
+            label={fittedDesktopLabel(rowId, { ...action, ...(icon ? { icon } : {}) })}
             {...(isOpenGuarded ? { dimColor: true } : {})}
             onPress={press => unlessGuarded($, rowId, press, action.onPress)}
           />
@@ -3245,10 +3266,10 @@ export const register: Register = on => {
       const props: LinksProps = {
         links: more.map(a => {
           const label = desktopLabel(a)
-          return { key: a.key, label, width: desktopTextCells(label) }
+          return { key: a.key, label, width: desktopTextPt(label) / DESKTOP_CELL_PT }
         }),
         gap: 1.5,
-        fallbackColumns: listColumns - DESKTOP_MARK_CELLS - DESKTOP_SIDE_CELLS - 1,
+        fallbackColumns: desktopTextColumns(rowId),
         isGuarded: isOpenGuarded,
         colors: { muted: pal.muted, hover: null },
       }
@@ -3356,8 +3377,9 @@ export const register: Register = on => {
                 : feedbackText(f, look),
             age: ago(now - f.at),
             isFailure: false,
+            feedback: f,
           }
-        : { text: feedbackText(f, look), age: '', isFailure: isFailure(f) }
+        : { text: feedbackText(f, look), age: '', isFailure: isFailure(f), feedback: f }
     }
     const lastActionText = (id: string) => {
       const f = feedbackLabel(id)
@@ -3663,7 +3685,8 @@ export const register: Register = on => {
           />
         ) : null
       const f = feedbackLabel(row.id, row)
-      const titleAfter = pressedAge(row) ?? (isAgeInSide ? undefined : row.titleAfter)
+      const isStatusUnder = f !== null && isStatusUnderActions(f.feedback, isSelected)
+      const titleAfter = (isStatusUnder ? null : pressedAge(row)) ?? (isAgeInSide ? undefined : row.titleAfter)
       const status = [
         ...(row.fold?.note ? [{ text: row.fold.note, color: pal.muted }] : []),
         ...(f && !f.age ? [{ text: f.text, color: f.isFailure ? pal.tone.error : pal.muted }] : []),
@@ -3671,16 +3694,18 @@ export const register: Register = on => {
       ]
 
       const textWidth = listColumns - 1 - columns.textAt
-      const titleWidth =
-        look === 'desktop' ? Math.floor(textWidth * DESKTOP_CHARS_PER_CELL) : textWidth - TERMINAL_SIDE_CELLS
-      const shownAfter = titleAfter ? unbroken(titleAfter, titleWidth) : ''
+      const titleWidth = textWidth - TERMINAL_SIDE_CELLS
+      const fitsTitleLine = (text: string) =>
+        look === 'desktop' ? desktopTextPt(text) <= desktopRowTextPt(row.id) : text.length <= titleWidth
+      const shownAfter = titleAfter ? unbroken(titleAfter, row.title, fitsTitleLine) : ''
       const bodyLines =
         isSelected && isInline && look === 'terminal' && row.clippedBody
           ? e.props.scroll.bodyRows -
             2 * space.rowPad -
             lineCount(`${row.title}${shownAfter}`, titleWidth) -
             status.length -
-            keyLines(keys, more, textWidth)
+            keyLines(keys, more, textWidth) -
+            (isStatusUnder ? lineCount(f.text, textWidth) : 0)
           : null
       const body =
         bodyLines !== null && row.clippedBody && row.body ? row.clippedBody(bodyLines, textWidth) : (row.body ?? null)
@@ -3721,6 +3746,11 @@ export const register: Register = on => {
           ) : (
             [keyRow(row.id, keys), keyRow(row.id, more)]
           )}
+          {isStatusUnder ? (
+            <Text color={pal.muted} wrap="wrap">
+              {f.text}
+            </Text>
+          ) : null}
         </Box>
       )
       // The `view-` Box is what select() scrolls into view. Drawn on the selected row alone, so the key exists only
@@ -3739,7 +3769,9 @@ export const register: Register = on => {
             <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1} />,
             <Text wrap="wrap">
               <Text bold>{row.title}</Text>
-              {f?.age ? <Text color={pal.muted}>{unbroken(`${DOT}${f.text}`, titleWidth)}</Text> : null}
+              {f?.age && !isStatusUnder ? (
+                <Text color={pal.muted}>{unbroken(`${DOT}${f.text}`, row.title, fitsTitleLine)}</Text>
+              ) : null}
             </Text>,
             row.subtitle ?? null,
             row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null,
