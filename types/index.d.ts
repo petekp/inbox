@@ -1,8 +1,44 @@
-export type Card = {
-  goal: string
-  done: string[]
-  now: string
-  running: string[]
+/** What an Overview item reports about a piece of work. */
+export type OverviewStatus =
+  'working' | 'queued' | 'waits-on-you' | 'waits-on-other' | 'done' | 'ruled-out' | 'problem' | 'unknown'
+
+export type OverviewItem = { status: OverviewStatus; text: string; detail: string | null }
+
+/** The Overview tab's parts as the Overview call last wrote them. Empty text and empty lists are left out when drawn. */
+export type Overview = {
+  /** Whether the session hands out work and reviews it, so its parts read as workstreams. */
+  isCoordinator: boolean
+  /** How the work is going. */
+  state: 'on-track' | 'stuck' | 'finished'
+  headline: string
+  status: string
+  /** Why the direction changed; empty while it has not. */
+  course: string
+  queue: OverviewItem[]
+  works: OverviewItem[]
+  open: OverviewItem[]
+  next: OverviewItem[]
+  /** The changes after the person's last look. */
+  since: OverviewItem[]
+  workstreams: OverviewItem[]
+  /** One line for each earlier topic, oldest first, saying where it was left. */
+  earlier: string[]
+  /** When the person last looked: the last time a look ended. Null before the first look. */
+  lastLookAt: number | null
+  /** The look in progress, while the Overview tab is shown. Null otherwise. */
+  look: OverviewLook | null
+  /** What the last look cleared, so an Overview call that began before it ended does not write it back. */
+  seen: { since: string[]; course: string }
+}
+
+/** What the page held when the tab was shown, and how long the person had been away then. */
+export type OverviewLook = {
+  startedAt: number
+  away: 'here' | 'short' | 'long'
+  /** The keys of the since items shown at the start. */
+  since: string[]
+  /** The course shown at the start. */
+  course: string
 }
 
 export type Item = {
@@ -229,7 +265,8 @@ export type PrView = {
 }
 
 export type Ledger = {
-  card: Card | null
+  /** The session's Overview page; null until the Overview call writes one. */
+  overview: Overview | null
   items: Item[]
   closed: Closed[]
   findings: Finding[]
@@ -242,6 +279,8 @@ export type Ledger = {
   turn: number
   /** The turn whose reply added the newest items; 0 when none. */
   batchTurn: number
+  /** How many answers of the inbox model have been applied, including answers that changed nothing. */
+  updates: number
 }
 
 /** Why the session halted outside the conversation, from the error Claude Code classified it with. */
@@ -278,6 +317,9 @@ export type OldPresence = Away & {
 
 export type Tab = 'needsYou' | 'findings' | 'prs'
 
+/** A tab that shows a page instead of rows. */
+export type PageTab = 'overview'
+
 /**
  * A tab's open row: its id, its position, and when a click or key opened it.
  * `id: null` with `openedAt: 0` means no row was opened in this conversation, so
@@ -312,6 +354,7 @@ export type DemoCopy = {
   /** Each sample row's latest note, by the row's id. */
   notes: Record<string, RowNote>
   turns: Turns
+  presence: Pick<Session['presence'], 'isTurnRunning'>
 }
 
 export type Exchange = {
@@ -324,12 +367,19 @@ export type Exchange = {
   turn: number
   press: Press | null
   screen: string
+  /** The agent's own task list when the reply was written. */
+  tasks: HostTask[]
 }
 
 export type Press = { id: string; action: 'answer' | 'explain' | 'compare' | 'run' | 'done' }
 
 /** The inbox text the agent last read beside a prompt, and the closed items it was told about. */
 export type Told = { inbox: string | null; closed: string[] }
+
+export type HostTaskStatus = 'pending' | 'in-progress' | 'done' | 'dropped' | 'blocked'
+
+/** One task of the agent's own task list, as its host reports it. */
+export type HostTask = { id: string; text: string; status: HostTaskStatus }
 
 /** One conversation's inbox: what every host saves and the shared session functions change. */
 export type Session = {
@@ -356,6 +406,8 @@ export type Session = {
      */
     hasDroppedReply: boolean
     isUpdating: boolean
+    /** Whether the main agent's turn runs. A subagent's turn does not set it. */
+    isTurnRunning: boolean
   }
   /**
    * Exchanges waiting for the inbox model, oldest first, with the turns started when each ended. `failed` marks
@@ -385,6 +437,8 @@ export type Session = {
   prViews: PrViews
   /** Why the last turn stopped, until the next turn starts. */
   stop: Stop | null
+  /** The agent's own task list, when its host reports one. Empty when the agent keeps none. */
+  hostTasks: HostTask[]
   /**
    * The dialog questions an item may still copy: those of the current turn, and of a turn whose exchange waits for the
    * per-reply update.
@@ -401,6 +455,8 @@ declare module 'claude-code' {
       session: Session & { revision: number }
       away: Away
       tab: Tab
+      /** The page tab shown in place of `tab`, or null while a row tab shows. */
+      page: PageTab | null
       selection: Record<Tab, Cursor>
       dialogs: Dialog[]
       /** The row whose free-text field is open, if any. */

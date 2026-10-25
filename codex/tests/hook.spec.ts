@@ -6,14 +6,18 @@ import { test } from 'node:test'
 import { linkDialogs } from '../../hooks/dialogs'
 import { addAgentItem, EMPTY } from '../../hooks/ledger'
 import { inboxText } from '../../hooks/model-text'
+import { EMPTY_OVERVIEW } from '../../hooks/overview'
 import { applied } from '../../hooks/session'
 import { feedbackText } from '../../hooks/view'
 import { notePrompt, noteToolCall, viewOf } from '../src/core'
 import { handleHook } from '../src/hook'
 import { readState, statePath, updateState } from '../src/state'
 import { CODEX } from '../src/texts'
-import { runUpdates } from '../src/update'
-import { hookDeps, input, rolloutCopy, tempDir } from './helpers'
+import { runUpdates as runBothCalls } from '../src/update'
+import { hookDeps, input, ledgerOnly, rolloutCopy, tempDir } from './helpers'
+
+const runUpdates = (dir: string, id: string, ask: (prompt: string) => Promise<string | null>, now: () => number) =>
+  runBothCalls(dir, id, ledgerOnly(ask), now)
 
 test('a session starts with the guidance, records the prompt, and ends the turn into the update', async () => {
   const dir = tempDir()
@@ -98,6 +102,44 @@ test('a Stop notes the dialogs the agent opened in the ending turn as open, and 
   assert.deepEqual((await readState(dir, 's1')).pending[1]?.ex.activity, [])
 })
 
+test('a start after compaction carries the Overview headline and status', async () => {
+  const dir = tempDir()
+  const deps = hookDeps(dir)
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: {
+      ...s.ledger,
+      updates: 1,
+      overview: { ...EMPTY_OVERVIEW, headline: 'Adding caching', status: 'Waiting on a choice.' },
+    },
+  }))
+  const context = JSON.stringify(await handleHook(input('SessionStart', { cwd: '/repo', source: 'compact' }), deps))
+  assert.match(context, /Working on: Adding caching/)
+  assert.match(context, /Status: Waiting on a choice\./)
+})
+
+test('a main-agent prompt reads Working… until Stop or a start that is not a compact, and a subagent prompt does not', async () => {
+  const dir = tempDir()
+  const deps = hookDeps(dir)
+  const now = async () =>
+    viewOf(await readState(dir, 's1'), 1000).overviewPage.lead.find(l => l.id === 'status')?.text ?? null
+
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
+  await handleHook(input('UserPromptSubmit', { prompt: 'Look around', agent_id: 'a1' }), deps)
+  assert.equal(await now(), null)
+  await handleHook(input('UserPromptSubmit', { prompt: 'Ship it', turn_id: 't1' }), deps)
+  assert.equal(await now(), 'Working…')
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'compact' }), deps)
+  assert.equal(await now(), 'Working…')
+  await handleHook(input('Stop', { last_assistant_message: '', turn_id: 't1' }), deps)
+  assert.equal(await now(), null)
+
+  await handleHook(input('UserPromptSubmit', { prompt: 'Ship it again', turn_id: 't2' }), deps)
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'resume' }), deps)
+  assert.equal(await now(), null)
+})
+
 test('a dialog question links to the question the agent recorded for it or the update added from it, in the same turn, only when no other question shares the match', async () => {
   const dir = tempDir()
   const transcript = join(tempDir(), 'rollout.jsonl')
@@ -117,7 +159,7 @@ test('a dialog question links to the question the agent recorded for it or the u
     rows.push(...more)
     writeFileSync(transcript, rows.map(row => JSON.stringify(row)).join('\n'))
   }
-  const applyAnswer = (answer: string) => updateState(dir, 's1', s => applied(s, `GOAL: Ship\n${answer}`, 2000, 2000))
+  const applyAnswer = (answer: string) => updateState(dir, 's1', s => applied(s, answer, 2000, 2000))
   const links = async () => (await readState(dir, 's1')).ledger.items.map(i => [i.ask, i.dialog ?? null])
   const linkedQuestions = async () => (await readState(dir, 's1')).dialogQuestions.map(q => q.itemId !== null)
   const record = (ask: string, options: string[]) =>
@@ -143,7 +185,7 @@ test('a dialog question links to the question the agent recorded for it or the u
     ['Push the fix?', { callId: 'call_a', index: 0, question: 'May I push the fix to the branch?' }],
   ])
   assert.deepEqual(await linkedQuestions(), [true, false])
-  await applyAnswer('NOW: Waiting')
+  await applyAnswer('NONE')
 
   await handleHook(input('UserPromptSubmit', { prompt: 'Deploy it', turn_id: 't2' }), deps)
   write(started('t2'), dialog('call_b', [{ title: 'Deploy to production now?', options: ['Deploy', 'Wait'] }]))
@@ -388,7 +430,7 @@ test('a session file this build cannot read remains intact after a routine updat
   const dir = tempDir()
   const initial = await updateState(dir, 's1', s => ({
     ...s,
-    ledger: { ...s.ledger, card: { goal: 'Keep me', done: [], now: '', running: [] } },
+    ledger: { ...s.ledger, turn: 7 },
   }))
   const path = statePath(dir, 's1')
   for (const saved of [
@@ -485,8 +527,7 @@ const execDeps = (dir: string) => {
   return { ...deps, env: { ...deps.env, INBOX_IN_EXEC: '1' } }
 }
 
-const CATCH_UP_REPLY =
-  'GOAL: Toy calculator\nNOW: Waiting on a patch\nDONE: Listed the repo files\nNEW: decide | - | Allow edits? | Yes / No | Yes'
+const CATCH_UP_REPLY = 'NEW: decide | - | Allow edits? | Yes / No | Yes'
 
 test('a session resumed with earlier turns is marked behind at its first hook and catches up over the rollout', async () => {
   const dir = tempDir()
@@ -510,7 +551,6 @@ test('a session resumed with earlier turns is marked behind at its first hook an
   assert.equal(prompts.length, 1)
   assert.match(prompts[0] ?? '', /<conversation>\n[\s\S]*Person: List the files here and say what each does/)
   assert.equal(caught.presence.ledgerState, 'current')
-  assert.equal(caught.ledger.card?.goal, 'Toy calculator')
   assert.deepEqual(
     caught.ledger.items.map(i => i.ask),
     ['Allow edits?'],
@@ -535,7 +575,7 @@ test('a forked chat takes its parent’s ledger at its first hook, and catches u
   await updateState(dir, 'parent', s => ({
     ...s,
     presence: { ...s.presence, turnsStarted: 3, turnsApplied: 3 },
-    ledger: { ...s.ledger, turn: 3, card: { goal: 'Parent goal', done: [], now: '', running: [] }, nextId: 4 },
+    ledger: { ...s.ledger, turn: 3, updates: 1, nextId: 4 },
   }))
 
   await handleHook(
@@ -548,7 +588,6 @@ test('a forked chat takes its parent’s ledger at its first hook, and catches u
     deps,
   )
   const child = await readState(dir, 'child')
-  assert.equal(child.ledger.card?.goal, 'Parent goal')
   assert.equal(child.ledger.turn, 3)
   assert.equal(child.presence.turnsStarted, 0)
   assert.equal(child.presence.ledgerState, 'current')
@@ -624,4 +663,48 @@ test('a new session, a compaction start, a subagent and a session with recorded 
   )
   assert.equal((await readState(dir, 's4')).presence.ledgerState, 'current')
   assert.deepEqual(deps.updates, [])
+})
+
+test('a Stop reads the turn’s last update_plan into the agent task list, and a turn with no plan leaves it', async () => {
+  const dir = tempDir()
+  const transcript = join(tempDir(), 'rollout.jsonl')
+  const deps = hookDeps(dir)
+  const plan = (rows: unknown[]) => ({
+    type: 'response_item',
+    payload: { type: 'function_call', name: 'update_plan', arguments: JSON.stringify({ plan: rows }) },
+  })
+  writeFileSync(
+    transcript,
+    [
+      { type: 'event_msg', payload: { type: 'task_started', turn_id: 't1' } },
+      plan([{ step: 'Read the parser', status: 'in_progress' }]),
+      plan([
+        { step: 'Read the parser', status: 'completed' },
+        { step: 'Fix it', status: 'in_progress' },
+      ]),
+    ]
+      .map(row => JSON.stringify(row))
+      .join('\n'),
+  )
+
+  await handleHook(input('UserPromptSubmit', { prompt: 'Fix the parser', turn_id: 't1' }), deps)
+  await handleHook(
+    input('Stop', { turn_id: 't1', transcript_path: transcript, last_assistant_message: 'Working.' }),
+    deps,
+  )
+  assert.deepEqual((await readState(dir, 's1')).hostTasks, [
+    { id: '1', text: 'Read the parser', status: 'done' },
+    { id: '2', text: 'Fix it', status: 'in-progress' },
+  ])
+
+  await handleHook(input('UserPromptSubmit', { prompt: 'Go on', turn_id: 't2' }), deps)
+  await handleHook(
+    input('Stop', {
+      turn_id: 't2',
+      transcript_path: join(tempDir(), 'missing.jsonl'),
+      last_assistant_message: 'Done.',
+    }),
+    deps,
+  )
+  assert.equal((await readState(dir, 's1')).hostTasks.length, 2)
 })

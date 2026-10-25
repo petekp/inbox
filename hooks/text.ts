@@ -16,6 +16,10 @@ export function clip(text: string, max: number): string {
   return text.length <= max ? text : text.slice(0, max) + ' …[cut]'
 }
 
+export function clipLabel(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text
+}
+
 export function clipMiddle(text: string, max: number, head: number): string {
   if (text.length <= max) return text
 

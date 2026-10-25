@@ -26,6 +26,9 @@ export type FeatureId =
   | 'exchange-trigger'
   | 'settle-window'
   | 'version-label'
+  | 'overview-tab'
+  | 'turn-working'
+  | 'host-task-list'
   | 'hooks-need-trust'
   | 'compare-in-background'
 
@@ -56,6 +59,9 @@ export const CLIENTS: Record<ClientId, Client> = {
       'exchange-trigger': { kind: 'full' },
       'settle-window': { kind: 'full' },
       'version-label': { kind: 'full' },
+      'overview-tab': { kind: 'full' },
+      'turn-working': { kind: 'full' },
+      'host-task-list': { kind: 'full' },
       'hooks-need-trust': {
         kind: 'unsupported',
         reason: "Claude Code asks no one to trust a plugin's hooks, so no hook stops running for want of trust.",
@@ -118,6 +124,17 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason: 'The tab only learns of a close at its next poll, so the settle window adds two polls.',
       },
       'version-label': { kind: 'full' },
+      'overview-tab': { kind: 'full' },
+      'turn-working': {
+        kind: 'different',
+        reason:
+          "Codex runs no hook when a chat is opened, and a turn whose app-server dies has no end row in the rollout. So after Codex's app-server dies during a turn, Working… stays and Done messages wait until the next message. Quitting the app, even with SIGKILL, ends the turn in the rollout.",
+      },
+      'host-task-list': {
+        kind: 'different',
+        reason:
+          "Codex runs no hook for `update_plan`, and the inbox's tool matcher cannot be widened without every person trusting the hook again. So the plan is read from the rollout when the turn stops, and shows from the next Overview call. The tool is not offered by default in `codex exec`, and the app is not checked.",
+      },
       'hooks-need-trust': { kind: 'full' },
       'compare-in-background': {
         kind: 'different',
@@ -163,6 +180,9 @@ export const CLIENTS: Record<ClientId, Client> = {
         kind: 'different',
         reason: "omp's panel footer ends with the inbox model's name, so the version follows it there.",
       },
+      'overview-tab': { kind: 'full' },
+      'turn-working': { kind: 'full' },
+      'host-task-list': { kind: 'full' },
       'hooks-need-trust': {
         kind: 'unsupported',
         reason: "omp runs an installed extension's events without asking anyone to trust them.",

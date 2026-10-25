@@ -21,6 +21,9 @@ import {
   emptyText,
   groupEmptyText,
   entryId,
+  isListedTab,
+  isRowTab,
+  LISTED_TABS,
   TABS,
   feedbackOf,
   feedbackText,
@@ -47,8 +50,19 @@ import {
   shortAgo,
   shownOptionDescriptions,
 } from '../../hooks/view'
-import { ROW_PAD_PT } from '../../hooks/layout'
-import type { ActionEmphasis, DrawnEntry, DrawnLists, Feedback, ReplyHolds, RowView, RowWait } from '../../hooks/view'
+import { LEAD_GAP_PT, ROW_PAD_PT } from '../../hooks/layout'
+import type {
+  ActionEmphasis,
+  DrawnEntry,
+  DrawnLists,
+  Feedback,
+  OverviewPage,
+  OverviewRow,
+  ReplyHolds,
+  RowView,
+  RowWait,
+  ShownTab,
+} from '../../hooks/view'
 import {
   checkActions,
   checkRunText,
@@ -67,12 +81,11 @@ import {
 } from '../../hooks/pr-tab'
 import type { PrAction, PrPress } from '../../hooks/pr-tab'
 import { commentParts, failingChecks, readableComment, readiness, threadWhere, waitingThreads } from '../../hooks/prs'
-import type { Draft, Finding, PrCheck, PrThread, PrView } from '../../types'
-import { followTo } from '../../hooks/arrivals'
+import type { Draft, Finding, PrCheck, PrThread, PrView, Tab } from '../../types'
+import { ARRIVAL_TABS, followTo } from '../../hooks/arrivals'
 import { parseInline } from '../../hooks/inline'
-import { ARRIVAL_TAB_IDS, isShownEmpty, newRows, openRows, TAB_IDS, TAB_OF } from './arrivals'
-import type { ArrivalTab } from './arrivals'
-import type { FoldGroup, Group, SeenRows, Tab } from './arrivals'
+import { isShownEmpty, newRows, openRows, TAB_OF } from './arrivals'
+import type { FoldGroup, Group, SeenRows } from './arrivals'
 import type { TabView as View } from './core'
 import type { PressReply } from './server'
 import { ENTER_MS, EXIT_MS, isMoving, MOVE_MS, ROW_STATE_MS, stepRow } from './rows'
@@ -81,8 +94,6 @@ import { PRESS_TIMEOUT_MS } from '../../hooks/session'
 import { drawnSettled, POLL_MS, settledIds, settledSeen } from './settle'
 
 type Tone = 'needsYou' | 'issue' | 'findings' | 'done' | 'error'
-
-type ShownTab = Tab | 'prs'
 
 type Emphasis = ActionEmphasis
 
@@ -129,7 +140,12 @@ let stagedHostChanges: HostContext = {}
 let pollFailures = 0
 let readAt = 0
 let tab: ShownTab = 'needsYou'
-const selection: Record<ShownTab, { id: string; openedAt: number; index?: number } | null> = {
+/** The tab drawn: the shown tab, or Needs you while the view has no Overview page, as from an older server. */
+function drawnTab(): ShownTab {
+  return tab === 'overview' && !view?.overviewPage ? 'needsYou' : tab
+}
+
+const selection: Record<Tab, { id: string; openedAt: number; index?: number } | null> = {
   needsYou: null,
   findings: null,
   prs: null,
@@ -161,10 +177,11 @@ let activePresses = 0
 let viewGeneration = 0
 
 type Kept = {
-  version: 1
+  /** 2 while a page tab shows. An older page reads only version 1, so it drops the whole kept state instead of a tab it cannot draw. */
+  version: 1 | 2
   isDemo: boolean
   tab: ShownTab
-  selection: Record<ShownTab, string | null>
+  selection: Record<Tab, string | null>
   typing: string | null
   /** An earlier page kept each draft as its text alone. */
   drafts: [string, Draft | string][]
@@ -238,7 +255,7 @@ function dispose() {
 
 function capturedState(): Kept {
   return {
-    version: 1,
+    version: isRowTab(tab) ? 1 : 2,
     isDemo,
     tab,
     selection: {
@@ -263,10 +280,10 @@ function restoreState(incoming?: Kept) {
       kept ??= raw ? (JSON.parse(raw) as Kept) : null
     } catch {}
   }
-  if (kept?.version !== 1) return
+  if (kept?.version !== 1 && kept?.version !== 2) return
   isDemo = kept.isDemo
-  tab = kept.tab
-  for (const t of [...TAB_IDS, 'prs'] as const) {
+  if (TABS.some(t => t.id === kept.tab)) tab = kept.tab
+  for (const t of ARRIVAL_TABS) {
     const id = kept.selection[t]
     selection[t] = id ? { id, openedAt: 0 } : null
   }
@@ -359,12 +376,12 @@ function applyView(next: View, seq: number) {
   view = next
   for (const { pr, isSettled } of next.prs.drawn)
     if (isSettled) drawIn(Math.max(0, SETTLED_MS - (next.at - (next.lastActions[prMarkId(pr.ref)]?.at ?? next.at))))
-  const isOpening = TAB_IDS.every(t => rowsSeen[t] === undefined)
+  const isOpening = LISTED_TABS.every(t => rowsSeen[t.id] === undefined)
   const rows = newRows(rowsSeen, next, next.isFetchingPrs)
   rowsSeen = rows.seen
   const added = [...rows.added.needsYou, ...rows.added.findings]
   for (const id of added) entering.add(id)
-  for (const t of TAB_IDS) {
+  for (const { id: t } of LISTED_TABS) {
     const id = !selection[t] && rows.added[t].length > 0 ? keptOpen(tabWaits(next, t), rows.added[t]) : null
     if (id) selection[t] = { id, openedAt: 0 }
   }
@@ -372,9 +389,10 @@ function applyView(next: View, seq: number) {
   draw()
 }
 
-function follow(v: View, added: Record<ArrivalTab, string[]>) {
+function follow(v: View, added: Record<Tab, string[]>) {
+  if (!isRowTab(tab)) return
   const drawn = shownSettled()
-  const to = followTo(ARRIVAL_TAB_IDS, tab, isShownEmpty(v, tab, drawn, unfolded, v.isFetchingPrs), added)
+  const to = followTo(ARRIVAL_TABS, tab, isShownEmpty(v, tab, drawn, unfolded, v.isFetchingPrs), added)
   if (!to) return
   tab = to
   selection[to] = null
@@ -389,7 +407,7 @@ async function read() {
   const generation = viewGeneration
   const seq = ++requested
   try {
-    const next = await callTool<View>('inbox_view', { demo: isDemo, ...holds() }, READ_TIMEOUT_MS)
+    const next = await callTool<View>('inbox_view', { demo: isDemo, tab, ...holds() }, READ_TIMEOUT_MS)
     if (generation !== viewGeneration || seq < shown) return
     requestedPage = next.devPage
     if (updateError?.page !== requestedPage) updateError = null
@@ -581,7 +599,8 @@ async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void
   latestPress.set(rowId, seq)
   const isLatest = () => latestPress.get(rowId) === seq
   if (press.action !== 'undo' && !rowId.startsWith('pr:')) keepPressedOpen(rowId)
-  const wasWaiting = !!view && tabWaits(view, tab).some(r => r.id === rowId && r.isWaiting)
+  const t = drawnTab()
+  const wasWaiting = !!view && isRowTab(t) && tabWaits(view, t).some(r => r.id === rowId && r.isWaiting)
   sending.set(rowId, pending)
   errors.delete(rowId)
   notes.delete(rowId)
@@ -625,7 +644,7 @@ async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void
   }
 }
 
-function tabWaits(v: View, t: ShownTab): RowWait[] {
+function tabWaits(v: View, t: Tab): RowWait[] {
   return t === 'prs'
     ? prRowWaits(
         v.prs.drawn.filter(x => !x.isSettled).map(x => x.pr),
@@ -635,16 +654,17 @@ function tabWaits(v: View, t: ShownTab): RowWait[] {
 }
 
 function openAfterClose(v: View, id: string) {
-  if (selection[tab]?.id !== id) return
-  const rows = tabWaits(v, tab)
+  const t = drawnTab()
+  if (!isRowTab(t) || selection[t]?.id !== id) return
+  const rows = tabWaits(v, t)
   if (rows.find(r => r.id === id)?.isWaiting) return
   const next = rowAfterClose(rows, id)
-  const index = next === null ? -1 : tabRows(v, tab).findIndex(r => r.id === next)
+  const index = next === null ? -1 : tabRows(v, t).findIndex(r => r.id === next)
   if (next === null || index < 0) {
-    selection[tab] = null
+    selection[t] = null
     return
   }
-  open(tab, next, index)
+  open(t, next, index)
   // After the press's own draw, which draws the row open.
   later(revealSelected, 0)
 }
@@ -898,7 +918,7 @@ function prRows(v: View): Row[] {
   return prPlan(v).rows
 }
 
-function tabRows(v: View, t: ShownTab): Row[] {
+function tabRows(v: View, t: Tab): Row[] {
   return t === 'prs' ? prRows(v) : listsOf(v, shownSettled()).byTab[t]
 }
 
@@ -930,11 +950,12 @@ const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as
 function stepLists(v: View): { lists: Lists; changed: Set<string> } {
   const now = Date.now()
   const lists = listsOf(v, shownSettled())
-  const rows = tab === 'prs' ? [] : lists.byTab[tab]
-  const openId = rows[selectedIndex(rows, tab, v)]?.id
+  const t = drawnTab()
+  const rows = isListedTab(t) ? lists.byTab[t] : []
+  const openId = isRowTab(t) ? rows[selectedIndex(rows, t, v)]?.id : undefined
   const changed = new Set<string>()
   const kept = new Set<string>()
-  for (const group of (Object.keys(LIST_OF) as Group[]).filter(g => TAB_OF[g] === tab)) {
+  for (const group of (Object.keys(LIST_OF) as Group[]).filter(g => TAB_OF[g] === t)) {
     const listed = lists[LIST_OF[group]]
     const listedIds = new Set(listed.map(entryId))
     const entries = [...listed]
@@ -993,7 +1014,7 @@ async function undo(r: RowView) {
   }
 }
 
-function selectedIndex(rows: Row[], t: ShownTab, v: View): number {
+function selectedIndex(rows: Row[], t: Tab, v: View): number {
   const s = selection[t]
   if (s) {
     const at = rows.findIndex(r => r.id === s.id)
@@ -1007,13 +1028,13 @@ function selectedIndex(rows: Row[], t: ShownTab, v: View): number {
   return id ? rows.findIndex(r => r.id === id) : -1
 }
 
-function open(t: ShownTab, id: string, index?: number) {
+function open(t: Tab, id: string, index?: number) {
   selection[t] = { id, openedAt: Date.now(), ...(index === undefined ? {} : { index }) }
   if (typing !== id) typing = null
   drawIn(PRESS_GUARD_MS)
 }
 
-function select(t: ShownTab, rows: Row[], index: number) {
+function select(t: Tab, rows: Row[], index: number) {
   const row = rows[index]
   if (!row) return
   open(t, row.id, index)
@@ -1021,11 +1042,14 @@ function select(t: ShownTab, rows: Row[], index: number) {
 }
 
 function keepPressedOpen(id: string) {
-  if (!selection[tab]) selection[tab] = { id, openedAt: 0 }
+  const t = drawnTab()
+  if (isRowTab(t) && !selection[t]) selection[t] = { id, openedAt: 0 }
 }
 
 function isOpenGuarded(): boolean {
-  return isGuarded(selection[tab]?.openedAt ?? 0, Date.now())
+  const t = drawnTab()
+
+  return isRowTab(t) && isGuarded(selection[t]?.openedAt ?? 0, Date.now())
 }
 
 function rowActions(row: Row): { keys: Key[]; more: Key[] } {
@@ -1249,6 +1273,73 @@ function Entries({ entries, group, all, now }: { entries: Entry[]; group: Group;
         )
       })}
     </div>
+  )
+}
+
+function MarkedRow({ row }: { row: OverviewRow }) {
+  return (
+    <div class="entry">
+      <div class="row">
+        <span class={row.tone ? `mark ${row.tone}` : 'mark'}>{row.mark}</span>
+        <div class="content tight">
+          <div>{row.text}</div>
+          {row.detail ? <div class="outcome">{row.detail}</div> : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function OverviewTab({ page }: { page: OverviewPage }) {
+  if (page.isEmpty)
+    return (
+      <div class="empty">
+        <div class="title">{page.empty.title}</div>
+        <div class="muted">{page.empty.hint}</div>
+      </div>
+    )
+  const { lead, sections, earlier } = page
+
+  return (
+    <main class="overview">
+      {lead.length > 0 ? (
+        <section>
+          {lead.map(line =>
+            line.id === 'headline' ? (
+              <h1 class="overview-goal" key={line.id}>
+                {line.text}
+              </h1>
+            ) : (
+              <div class={line.hasGapAbove ? 'overview-now overview-gap muted' : 'overview-now muted'} key={line.id}>
+                {line.text}
+              </div>
+            ),
+          )}
+        </section>
+      ) : null}
+      {sections.map(part => (
+        <section key={part.id}>
+          {part.title ? <GroupTitle title={part.title} count={0} /> : null}
+          <div class="list">
+            {part.rows.map(r => (
+              <MarkedRow key={r.id} row={r} />
+            ))}
+          </div>
+        </section>
+      ))}
+      {earlier.length > 0 ? (
+        <section>
+          <GroupTitle title="Earlier in this session" count={0} />
+          <div class="list">
+            {earlier.map((text, n) => (
+              <div class="earlier muted" key={n}>
+                {text}
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </main>
   )
 }
 
@@ -1712,8 +1803,9 @@ function Status({ v }: { v: View }) {
 }
 
 function TabBar({ v }: { v: View }) {
-  const counts: Record<ShownTab, number> = { needsYou: v.needsYou.count, findings: v.findings.count, prs: v.prs.count }
+  const counts: Record<Tab, number> = { needsYou: v.needsYou.count, findings: v.findings.count, prs: v.prs.count }
   const { error } = v.status
+  const shown = drawnTab()
 
   return (
     <nav>
@@ -1721,14 +1813,14 @@ function TabBar({ v }: { v: View }) {
         {TABS.map(t => (
           <button
             type="button"
-            class={`tab ${tab === t.id ? 'shown' : ''}`}
+            class={`tab ${shown === t.id ? 'shown' : ''}`}
             onClick={() => {
               tab = t.id
               draw()
             }}
           >
             {t.label}
-            {counts[t.id] > 0 ? <span class={`count tone-${t.id}`}>{counts[t.id]}</span> : null}
+            {isRowTab(t.id) && counts[t.id] > 0 ? <span class={`count tone-${t.id}`}>{counts[t.id]}</span> : null}
           </button>
         ))}
       </div>
@@ -1800,6 +1892,7 @@ function App({ lists }: { lists: Lists | null }): ComponentChildren {
     ) : null
   const v = view
   const now = v.at
+  const shown = drawnTab()
 
   return (
     <>
@@ -1812,12 +1905,14 @@ function App({ lists }: { lists: Lists | null }): ComponentChildren {
         </div>
       ) : null}
       <TabBar v={v} />
-      {tab === 'needsYou' ? (
+      {shown === 'needsYou' ? (
         <NeedsYou v={v} lists={lists} now={now} />
-      ) : tab === 'findings' ? (
+      ) : shown === 'findings' ? (
         <Findings v={v} lists={lists} now={now} />
-      ) : (
+      ) : shown === 'prs' ? (
         <Prs v={v} now={now} />
+      ) : (
+        <OverviewTab page={v.overviewPage} />
       )}
       <footer>
         {isDemo || !DEMO_BUTTON ? null : (
@@ -2010,6 +2105,7 @@ function revealSelected() {
 
 function applyPageVariables() {
   document.documentElement.style.setProperty('--row-pad', `${ROW_PAD_PT}px`)
+  document.documentElement.style.setProperty('--lead-gap', `${LEAD_GAP_PT}px`)
   document.documentElement.style.setProperty('--move', `${MOVE_MS}ms ${MOVE.easing}`)
   document.documentElement.style.setProperty('--enter', `${ENTER_MS}ms ${ENTER.easing}`)
 }
@@ -2096,12 +2192,14 @@ document.addEventListener(
       draw()
       return
     }
-    const rows = tabRows(view, tab)
-    const at = selectedIndex(rows, tab, view)
+    const t = drawnTab()
+    if (!isRowTab(t)) return
+    const rows = tabRows(view, t)
+    const at = selectedIndex(rows, t, view)
     const move = e.key === 'j' || e.key === 'ArrowDown' ? 1 : e.key === 'k' || e.key === 'ArrowUp' ? -1 : 0
     if (move !== 0) {
       e.preventDefault()
-      select(tab, rows, Math.max(0, Math.min(rows.length - 1, at + move)))
+      select(t, rows, Math.max(0, Math.min(rows.length - 1, at + move)))
       revealSelected()
       return
     }

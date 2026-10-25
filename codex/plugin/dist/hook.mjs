@@ -20,6 +20,69 @@ function detachedUpdate(dir, env, script) {
 // src/hook.ts
 import { resolve as resolve3 } from "node:path";
 
+// ../hooks/overview.ts
+var HEADLINE_WORDS = 12;
+var ITEM_WORDS = 12;
+var SENTENCE_WORDS = 30;
+var DETAIL_WORDS = 20;
+var LIST_ITEMS = 6;
+var STATUSES = [
+  "working",
+  "queued",
+  "waits-on-you",
+  "waits-on-other",
+  "done",
+  "ruled-out",
+  "problem",
+  "unknown"
+];
+var STATES = ["on-track", "stuck", "finished"];
+function isItem(value) {
+  const item = value;
+  return typeof item === "object" && item !== null && STATUSES.includes(item.status) && typeof item.text === "string" && (item.detail === null || typeof item.detail === "string");
+}
+function itemsOf(value) {
+  return Array.isArray(value) ? value.filter(isItem).slice(0, LIST_ITEMS) : [];
+}
+function upgradeOverview(saved) {
+  const o = saved;
+  if (typeof o !== "object" || o === null || typeof o.headline !== "string") return null;
+  const text = (value) => typeof value === "string" ? value : "";
+  return {
+    isCoordinator: o.isCoordinator === true,
+    state: STATES.find((s) => s === o.state) ?? "on-track",
+    headline: o.headline,
+    status: text(o.status),
+    course: text(o.course),
+    queue: itemsOf(o.queue),
+    works: itemsOf(o.works),
+    open: itemsOf(o.open),
+    next: itemsOf(o.next),
+    since: itemsOf(o.since),
+    workstreams: itemsOf(o.workstreams),
+    earlier: Array.isArray(o.earlier) ? o.earlier.filter((e) => typeof e === "string") : [],
+    lastLookAt: typeof o.lastLookAt === "number" ? o.lastLookAt : null,
+    look: lookOf(o.look),
+    seen: seenOf(o.seen)
+  };
+}
+function lookOf(saved) {
+  const l = saved;
+  if (typeof l !== "object" || l === null || typeof l.startedAt !== "number") return null;
+  const away = AWAYS.find((a) => a === l.away);
+  return away === void 0 ? null : { startedAt: l.startedAt, away, since: strings(l.since), course: typeof l.course === "string" ? l.course : "" };
+}
+function seenOf(saved) {
+  const s = saved;
+  return { since: strings(s?.since), course: typeof s?.course === "string" ? s.course : "" };
+}
+function strings(value) {
+  return Array.isArray(value) ? value.filter((v) => typeof v === "string") : [];
+}
+var HERE_MS = 5 * 6e4;
+var SHORT_MS = 60 * 6e4;
+var AWAYS = ["here", "short", "long"];
+
 // ../hooks/text.ts
 function clip(text, max) {
   return text.length <= max ? text : text.slice(0, max) + " \u2026[cut]";
@@ -27,7 +90,7 @@ function clip(text, max) {
 
 // ../hooks/ledger.ts
 var EMPTY = {
-  card: null,
+  overview: null,
   items: [],
   closed: [],
   findings: [],
@@ -35,17 +98,30 @@ var EMPTY = {
   prs: [],
   nextId: 1,
   turn: 0,
-  batchTurn: 0
+  batchTurn: 0,
+  updates: 0
 };
+function isBlankLedger(ledger) {
+  return ledger.updates === 0 && ledger.overview === null && ledger.items.length === 0 && ledger.findings.length === 0;
+}
 var MAX_CLOSED = 12;
 var EXPIRED = "expired, unanswered";
 function readKind(kind) {
   return kind === "task" || kind === "do" ? "task" : "question";
 }
 function upgradeLedger(ledger) {
-  const { notes, decided, ...rest } = ledger;
+  const {
+    notes,
+    decided,
+    milestones: _milestones,
+    card,
+    ...rest
+  } = ledger;
+  const updates = typeof rest.updates === "number" ? rest.updates : card ? 1 : 0;
   return {
     ...rest,
+    updates,
+    overview: upgradeOverview(rest.overview),
     findings: [...rest.findings ?? [], ...notes ?? []],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
@@ -135,6 +211,41 @@ function pruneClosed(ledger, keep) {
 var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
 var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
 var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
+
+// ../hooks/host-tasks.ts
+var STATUSES2 = {
+  pending: "pending",
+  in_progress: "in-progress",
+  "in-progress": "in-progress",
+  completed: "done",
+  done: "done",
+  abandoned: "dropped",
+  blocked: "blocked"
+};
+var statusOf = (raw) => STATUSES2[String(raw)] ?? "pending";
+var textOf = (raw) => typeof raw === "string" ? raw.trim() : "";
+var recordOf = (raw) => typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
+function codexPlanOf(args) {
+  const parsed = typeof args === "string" ? safeJson(args) : args;
+  const plan = recordOf(parsed).plan;
+  if (!Array.isArray(plan)) return null;
+  return plan.map((row, n) => ({ id: String(n + 1), text: textOf(recordOf(row).step), status: statusOf(recordOf(row).status) })).filter((t) => t.text !== "");
+}
+function safeJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+function upgradeHostTasks(saved) {
+  if (!Array.isArray(saved)) return [];
+  return saved.flatMap((raw) => {
+    const t = recordOf(raw);
+    const status = STATUSES2[String(t.status)];
+    return typeof t.id === "string" && typeof t.text === "string" && t.text !== "" && status ? [{ id: t.id, text: t.text, status }] : [];
+  });
+}
 
 // ../hooks/model-text.ts
 var NL = "\n";
@@ -238,11 +349,52 @@ function dialogActivity(questions, outcome) {
       return `${head}; still open, waiting on the user's answer`;
   }
 }
+var OVERVIEW_SYSTEM = `You keep a one-page guide to a coding session, for the person who works with the agent. They read it when they come back, to see what the work is, how it is going and what comes next. You read the guide as it was and one exchange, and write the guide as it should be now.
+
+The guide is about the work. It is not a log of what the agent did, and it is not a list of what waits on the person: the inbox lists that. Write at the level of the feature or the fix. Never write a command, a file name, a commit, a test run, a tool call or a ticket number, and leave out a number, an id or a time unless the person needs it to find the work again.
+
+Input:
+- <last>: the guide as it was, in the same lines you write
+- <unseen>: the changes the person has not yet looked at, as SINCE lines
+- <tasks>: the agent's own task list, when it keeps one, as TASK lines. It is evidence for QUEUE, not the guide: write each item at the level of the feature. Write each in your own words as the outcome it reaches, not in the task's words: "Reset emails reach the person", not "Run the mailer tests". A queue item names a result, never an action that begins with Run, Check or Test. For a task that runs a command or a test, write the outcome it checks, or leave it out. Leave out a task that is only a step of another.
+- <person>: what the person just sent
+- <activity>: what the agent did this turn
+- <reply>: the agent's final reply
+
+Answer with lines only. No other text. If the exchange changed nothing about the work, answer with the one line UNCHANGED.
+
+Otherwise write every line below that applies, in this order:
+KIND: session, or coordinator when the session hands out work and reviews what comes back instead of doing the work itself
+TOPIC: same, or new when the work moved to a different task. Write new only for a different task, not for the next step of the same one.
+STATE: on-track, stuck or finished
+HEADLINE: one plain sentence naming what the session is doing, at most ${HEADLINE_WORDS} words. "-" when no work has started.
+STATUS: how it is going, in one or two plain sentences, at most ${SENTENCE_WORDS} words. Say what it waits on, if anything.
+COURSE: only in the reply where the approach changed, in one or two sentences, at most ${SENTENCE_WORDS} words: what changed and why. A new step is not a change. Leave the line out otherwise: the page keeps the last one until the person looks.
+FOLDED: only when TOPIC is new, one line saying what the old topic was and where it was left.
+Then lists, one item per line, each as KEY: status | text | detail, with the key on every line. The detail is optional. Text is at most ${ITEM_WORDS} words and detail at most ${DETAIL_WORDS}. At most ${LIST_ITEMS} items in a list.
+QUEUE: the work now: what is under way, what is queued behind it, what waits, and what just finished
+WORKS: what holds now: what works, what exists
+OPEN: risks, problems and unknowns
+NEXT: what comes next
+SINCE: what changed since the person last looked. Start from <unseen>, merge this exchange into it, and keep it short.
+STREAM: only in a coordinator session, in the same form as the other lists: one line for each stream of work, saying what it is for and where it stands. Put the work handed out in STREAM, and use QUEUE only for the coordinator's own steps, such as reviewing what a stream sends back. If a stream is already in QUEUE in the guide as it was, take it out of QUEUE.
+
+Status is one of: working, queued, waits-on-you, waits-on-other, done, ruled-out, problem, unknown. Use waits-on-you when the agent cannot go on until the person acts, and waits-on-other for something else, such as a build. Use ruled-out for an approach tried or considered and dropped, and put the reason in the detail.
+
+Rules:
+- Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed. The next rule wins over this one: when the guide as it was already repeats a fact in two lists, remove the repeat.
+- Do not write a question or task the agent put to the person, and do not say what the choice is. Say only that the work waits on the person, and stop.
+- Leave out that something was committed, pushed, merged or tested, in every line. Say what now works or is fixed.
+- Say each fact once, in the list that fits it best. Work that finished stays in QUEUE as done. WORKS holds only what works that QUEUE does not already name. What a stream is doing, and what it finished, stays on its STREAM line and is not written again in QUEUE, WORKS or OPEN. NEXT holds only what the queue does not already name. SINCE may repeat the other lists, since it says what changed.
+- Leave a list out when it has nothing worth saying. Do not fill a list to fill it.`;
 function surfaceAtStart(host) {
   return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
 }
 function screenText(host, isOpen, tab) {
-  return isOpen ? `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab} tab, ` : ""}listing every open item.` : `${surfaceAtStart(host)} is closed.`;
+  if (!isOpen) return `${surfaceAtStart(host)} is closed.`;
+  if (tab?.isPage)
+    return `${surfaceAtStart(host)} is open beside the conversation, on its ${tab.label} tab, which shows a guide to the session's work, not rows.`;
+  return `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ""}listing every open item.`;
 }
 function latestBatch(ledger) {
   return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
@@ -306,20 +458,15 @@ function itemLine(item) {
 function findingLine(finding) {
   return `- ${finding.kind}: ${finding.title} (close id: ${finding.id})`;
 }
-function cardLines(ledger) {
-  const card = ledger.card;
-  if (!card) return [];
-  const out = [];
-  if (card.goal) out.push(`Goal: ${card.goal}`);
-  if (card.done.length > 0) out.push(`Done: ${card.done.join("; ")}`);
-  if (card.now) out.push(`Now: ${card.now}`);
-  if (card.running.length > 0) out.push(`Running: ${card.running.join("; ")}`);
-  return out;
+function overviewLines(ledger) {
+  const overview = ledger.overview;
+  if (!overview?.headline) return [];
+  return [`Working on: ${overview.headline}`, ...overview.status ? [`Status: ${overview.status}`] : []];
 }
 function carryText(ledger, title) {
   const findings = ledger.findings;
-  if (!ledger.card && ledger.items.length === 0 && findings.length === 0) return null;
-  const out = [title, ...cardLines(ledger)];
+  if (!ledger.overview?.headline && ledger.items.length === 0 && findings.length === 0) return null;
+  const out = [title, ...overviewLines(ledger)];
   if (ledger.items.length > 0) {
     out.push("Waiting on the user:");
     for (const item of ledger.items) out.push(itemLine(item));
@@ -535,9 +682,17 @@ var COMPARE_LIMIT_MS = 30 * 6e4;
 var TABS = [
   { id: "needsYou", label: "Needs you", hotkey: "1" },
   { id: "findings", label: "Findings", hotkey: "2" },
-  { id: "prs", label: "PRs", hotkey: "3" }
+  { id: "prs", label: "PRs", hotkey: "3" },
+  { id: "overview", label: "Overview", hotkey: "4" }
 ];
-var ROW_TABS = TABS.filter((t) => t.id !== "prs");
+function isListedTab(tab) {
+  return tab === "needsYou" || tab === "findings";
+}
+function isRowTab(tab) {
+  return tab !== "overview";
+}
+var ROW_TABS = TABS.filter((t) => isRowTab(t.id));
+var LISTED_TABS = TABS.filter((t) => isListedTab(t.id));
 
 // ../hooks/pr-tab.ts
 function linkedPrs(prs, refs) {
@@ -552,13 +707,21 @@ function emptySession() {
     ledger: EMPTY,
     turn: NO_TURN,
     told: TOLD_NOTHING,
-    presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: "current", hasDroppedReply: false, isUpdating: false },
+    presence: {
+      turnsStarted: 0,
+      turnsApplied: 0,
+      ledgerState: "current",
+      hasDroppedReply: false,
+      isUpdating: false,
+      isTurnRunning: false
+    },
     pending: [],
     sent: [],
     lastActions: {},
     heldRows: [],
     prViews: NO_PRS,
     stop: null,
+    hostTasks: [],
     dialogQuestions: []
   };
 }
@@ -571,6 +734,10 @@ function missingAsNull(err) {
   if (err.code === "ENOENT") return null;
   throw err;
 }
+function withoutStatedStep(presence) {
+  const { statedStep: _statedStep, ...rest } = presence ?? {};
+  return rest;
+}
 function upgradeSession(saved) {
   const base = emptySession();
   const views = saved.prViews?.views ?? {};
@@ -578,8 +745,8 @@ function upgradeSession(saved) {
     ledger: saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger,
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
-    presence: { ...base.presence, ...saved.presence },
-    pending: saved.pending ?? [],
+    presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
+    pending: (saved.pending ?? []).map((p) => ({ ...p, ex: { ...p.ex, tasks: p.ex.tasks ?? [] } })),
     sent: (saved.sent ?? []).map((x) => ({
       ...x,
       row: x.row ?? null,
@@ -613,6 +780,7 @@ function upgradeSession(saved) {
       isFetching: false
     },
     stop: saved.stop ?? null,
+    hostTasks: upgradeHostTasks(saved.hostTasks),
     dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
 }
@@ -624,11 +792,18 @@ function startContext(host, s, source) {
 function cleared(s) {
   return {
     ...s,
+    hostTasks: [],
     ledger: EMPTY,
     turn: NO_TURN,
     told: { inbox: null, closed: [] },
     pending: [],
-    presence: { ...s.presence, ledgerState: "current", hasDroppedReply: false, turnsApplied: s.presence.turnsStarted },
+    presence: {
+      ...s.presence,
+      ledgerState: "current",
+      hasDroppedReply: false,
+      turnsApplied: s.presence.turnsStarted,
+      isTurnRunning: false
+    },
     lastActions: {},
     stop: null
   };
@@ -660,6 +835,12 @@ function matchSent(s, text) {
     state: { ...s, lastActions, sent: sent ? s.sent.filter((_x, i) => i !== sentAt) : s.sent },
     sentBy: sent ? { press: sent.press } : null
   };
+}
+function turnStarted(s) {
+  return { ...s, presence: { ...s.presence, isTurnRunning: true } };
+}
+function turnEnded(s) {
+  return { ...s, presence: { ...s.presence, isTurnRunning: false } };
 }
 function startTurn(s) {
   return { ...s, presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }, stop: null };
@@ -718,7 +899,8 @@ function endTurn(host, s, reply, isOpen, { tab = null, queuesEmptyReply = false 
     reply,
     turn: s.ledger.turn,
     press: s.turn.press,
-    screen: screenText(host, isOpen, tab)
+    screen: screenText(host, isOpen, tab),
+    tasks: s.hostTasks
   };
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] };
 }
@@ -726,16 +908,15 @@ function needsUpdate(s) {
   return s.pending.length > 0 || s.presence.ledgerState !== "current";
 }
 function hasLedger(s) {
-  const { ledger } = s;
-  return ledger.card !== null || ledger.items.length > 0 || ledger.findings.length > 0;
+  return !isBlankLedger(s.ledger);
 }
 function forkedFrom(child, parent) {
-  if (child.ledger.turn !== 0 || child.ledger.card) return child;
-  return { ...child, ledger: parent.ledger };
+  if (!isBlankLedger(child.ledger)) return child;
+  return { ...child, ledger: parent.ledger, hostTasks: parent.hostTasks };
 }
 function isUnseen(s) {
   const { ledger } = s;
-  return s.presence.turnsStarted === 0 && s.presence.ledgerState === "current" && s.pending.length === 0 && ledger.card === null && ledger.items.length === 0 && ledger.findings.length === 0;
+  return s.presence.turnsStarted === 0 && s.presence.ledgerState === "current" && s.pending.length === 0 && isBlankLedger(ledger);
 }
 
 // src/settle.ts
@@ -758,6 +939,10 @@ var TAB_OPEN_MS = 15e3;
 function isTabOpen(s, now) {
   return now - s.tabSeenAt < TAB_OPEN_MS;
 }
+function screenTabOf(s) {
+  const shown = TABS.find((t) => t.id === s.shownTab);
+  return { label: shown?.label ?? s.shownTab, isPage: s.shownTab === "overview" };
+}
 function notePrompt2(s, text, now) {
   return notePrompt(CODEX, s, text, isTabOpen(s, now));
 }
@@ -768,7 +953,7 @@ function patchFiles(patch) {
   return [...patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((m) => (m[1] ?? "").trim()).filter(Boolean);
 }
 function endTurn2(s, reply, now) {
-  return endTurn(CODEX, s, reply, isTabOpen(s, now));
+  return endTurn(CODEX, s, reply, isTabOpen(s, now), { tab: screenTabOf(s) });
 }
 var MAX_PROMPT_TURNS = 10;
 function noteHook(s, hook, now, turnId) {
@@ -831,6 +1016,7 @@ function emptyState(sessionId) {
     cliPath: null,
     ...emptySession(),
     tabSeenAt: 0,
+    shownTab: "needsYou",
     heard: NOTHING_HEARD
   };
 }
@@ -841,7 +1027,14 @@ function upgraded(saved, sessionId) {
   if (saved.version !== void 0 && saved.version !== 1)
     throw new Error(`Unsupported inbox state version: ${saved.version}`);
   const base = emptyState(sessionId);
-  const { checks: _checks, snapshots: _snapshots, recordedRuns: _runs, top: _top, ...kept } = saved;
+  const {
+    checks: _checks,
+    snapshots: _snapshots,
+    recordedRuns: _runs,
+    top: _top,
+    subagents: _subagents,
+    ...kept
+  } = saved;
   const { sentBack: _sentBack, ...turn } = saved.turn ?? {};
   return {
     ...base,
@@ -851,6 +1044,7 @@ function upgraded(saved, sessionId) {
       turn,
       pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex }))
     }),
+    shownTab: TABS.some((t) => t.id === saved.shownTab) ? saved.shownTab ?? base.shownTab : base.shownTab,
     // A file saved before the hooks kept this record came from hooks that ran, so it reads as heard.
     // Its turns were not recorded, so `promptAt` is set too: a tool call then falls back to the time rule.
     heard: saved.heard ? { ...NOTHING_HEARD, ...saved.heard } : {
@@ -1091,6 +1285,7 @@ async function historyBase(path) {
 var DIALOG_TOOL = "request_user_input_async";
 var TAIL_BYTES = 4 * 1024 * 1024;
 var SHELL_CALLS = /* @__PURE__ */ new Set(["shell", "shell_command", "exec_command", "container.exec"]);
+var PLAN_TOOL = "update_plan";
 var MARKERS = ['"task_started"', DIALOG_TOOL, '"CommandExecution"', '"function_call', '"local_shell_call'];
 var isText = (v) => typeof v === "string";
 function commandText(command) {
@@ -1133,6 +1328,7 @@ async function linesBefore(path, bytes, end = Infinity) {
     await file.close();
   }
 }
+var TURN_ROW_BYTES = 64 * 1024;
 async function tailLines(path, bytes) {
   return (await linesBefore(path, bytes)).lines;
 }
@@ -1157,12 +1353,12 @@ async function historyLines(path, bytes) {
   return parts.flat();
 }
 async function turnIn(path, turnId) {
-  const none = { dialogs: [], commands: [] };
+  const none = { dialogs: [], commands: [], plan: null };
   if (path === null) return none;
   try {
     const lines = await tailLines(path, TAIL_BYTES);
     const byTurn = /* @__PURE__ */ new Map();
-    const newTurn = () => ({ dialogs: [], executions: [], calls: /* @__PURE__ */ new Map(), called: [] });
+    const newTurn = () => ({ dialogs: [], executions: [], calls: /* @__PURE__ */ new Map(), called: [], plan: null });
     let current = "";
     let newest = "";
     for (const line of lines) {
@@ -1186,6 +1382,8 @@ async function turnIn(path, turnId) {
       if (row.type === "event_msg" && p.type === "item_completed" && p.item?.type === "CommandExecution") {
         const output = p.item.aggregated_output;
         turn2.executions.push({ command: commandText(p.item.command), output: isText(output) ? output : "" });
+      } else if (row.type === "response_item" && p.type === "function_call" && p.name === PLAN_TOOL) {
+        turn2.plan = codexPlanOf(p.arguments) ?? turn2.plan;
       } else if (row.type === "response_item" && p.type === "function_call" && p.name === DIALOG_TOOL) {
         let args;
         try {
@@ -1207,7 +1405,8 @@ async function turnIn(path, turnId) {
     if (!turn) return none;
     return {
       dialogs: turn.dialogs.filter((d) => d.questions.length > 0),
-      commands: turn.executions.length > 0 ? turn.executions : turn.called
+      commands: turn.executions.length > 0 ? turn.executions : turn.called,
+      plan: turn.plan
     };
   } catch {
     return none;
@@ -1215,11 +1414,11 @@ async function turnIn(path, turnId) {
 }
 var ROLLOUT_BYTES = 8 * 1024 * 1024;
 var record = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
-var textOf = (v) => isText(v) ? v : "";
-var contentText = (content) => (Array.isArray(content) ? content : []).map((part) => textOf(record(part).text)).filter(Boolean).join("\n").trim();
+var textOf2 = (v) => isText(v) ? v : "";
+var contentText = (content) => (Array.isArray(content) ? content : []).map((part) => textOf2(record(part).text)).filter(Boolean).join("\n").trim();
 var jsonRecord = (raw) => {
   try {
-    return record(JSON.parse(textOf(raw)));
+    return record(JSON.parse(textOf2(raw)));
   } catch {
     return {};
   }
@@ -1227,7 +1426,7 @@ var jsonRecord = (raw) => {
 var literalValue = (literal) => {
   if (literal === void 0) return null;
   try {
-    return textOf(JSON.parse(literal));
+    return textOf2(JSON.parse(literal));
   } catch {
     return null;
   }
@@ -1240,10 +1439,10 @@ var shellLines = (command) => {
 };
 var editLines = (patch, cwd) => patchFiles(patch).map((file) => `edited ${resolve2(cwd || "/", file)}`);
 function callLines(p, hasCommandRows, cwd) {
-  const name = textOf(p.name);
+  const name = textOf2(p.name);
   if (p.type === "local_shell_call") return hasCommandRows ? [] : shellLines(callCommand(p));
   if (p.type === "custom_tool_call" && name === "exec") {
-    const input = textOf(p.input);
+    const input = textOf2(p.input);
     const patch = literalValue(PATCH_ARGUMENT.exec(input)?.[1]);
     const command = literalValue(COMMAND_ARGUMENT.exec(input)?.[1]);
     return [...patch ? editLines(patch, cwd) : [], ...command && !hasCommandRows ? shellLines(command) : []];
@@ -1251,19 +1450,19 @@ function callLines(p, hasCommandRows, cwd) {
   if (p.type !== "function_call") return [];
   if (SHELL_CALLS.has(name)) return hasCommandRows ? [] : shellLines(callCommand(p));
   const args = jsonRecord(p.arguments);
-  if (name === "apply_patch") return editLines(textOf(args.input ?? args.patch ?? args.command), cwd);
+  if (name === "apply_patch") return editLines(textOf2(args.input ?? args.patch ?? args.command), cwd);
   if (name === "spawn_agent") {
-    const line2 = activityOf("Agent", { description: textOf(args.task_name) });
+    const line2 = activityOf("Agent", { description: textOf2(args.task_name) });
     return line2 ? [line2] : [];
   }
   if (name === DIALOG_TOOL) return [dialogActivity(dialogQuestions(args.questions), { kind: "open" })];
-  const line = activityOf(textOf(p.namespace).startsWith("mcp__") ? textOf(p.namespace) + name : name, {});
+  const line = activityOf(textOf2(p.namespace).startsWith("mcp__") ? textOf2(p.namespace) + name : name, {});
   return line ? [line] : [];
 }
-var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf(record(record(row.payload).item).type));
+var isItem2 = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf2(record(record(row.payload).item).type));
 function turnsOf(rows, cwd) {
-  const hasMessageRows = rows.some((row) => isItem(row, "UserMessage", "AgentMessage"));
-  const hasCommandRows = rows.some((row) => isItem(row, "CommandExecution"));
+  const hasMessageRows = rows.some((row) => isItem2(row, "UserMessage", "AgentMessage"));
+  const hasCommandRows = rows.some((row) => isItem2(row, "CommandExecution"));
   const turns = [];
   const agentTurn = () => {
     const last = turns.at(-1);
@@ -1283,9 +1482,9 @@ function turnsOf(rows, cwd) {
   for (const row of rows) {
     const p = record(row.payload);
     const item = record(p.item);
-    if (isItem(row, "UserMessage")) person(contentText(item.content));
-    else if (isItem(row, "AgentMessage")) turns.push({ role: "agent", text: contentText(item.content), activity: [] });
-    else if (isItem(row, "CommandExecution")) act(shellLines(commandText(item.command)));
+    if (isItem2(row, "UserMessage")) person(contentText(item.content));
+    else if (isItem2(row, "AgentMessage")) turns.push({ role: "agent", text: contentText(item.content), activity: [] });
+    else if (isItem2(row, "CommandExecution")) act(shellLines(commandText(item.command)));
     else if (row.type === "response_item") {
       if (p.type === "message" && !hasMessageRows && p.role === "user") person(contentText(p.content));
       else if (p.type === "message" && !hasMessageRows && p.role === "assistant")
@@ -1306,7 +1505,7 @@ function rolloutTurns(lines, cwd) {
     }
     const p = record(row.payload);
     if (row.type === "event_msg" && p.type === "task_started") {
-      groups.push({ id: textOf(p.turn_id) || textOf(record(p.turn_attribution).turn_id), isComplete: false, rows: [] });
+      groups.push({ id: textOf2(p.turn_id) || textOf2(record(p.turn_attribution).turn_id), isComplete: false, rows: [] });
       continue;
     }
     if (groups.length === 0) groups.push({ id: "", isComplete: false, rows: [] });
@@ -1371,10 +1570,15 @@ async function handleHook(input, deps) {
   switch (input.hook_event_name) {
     case "SessionStart": {
       const root = input.cwd ?? "";
+      const endsTurn = (s2) => input.source === "compact" ? s2 : turnEnded(s2);
       const s = await updateState(
         dir,
         id,
-        async (s2) => noteHook(withHost(await withHistory({ ...input.source === "clear" ? cleared(s2) : s2, root })), "start", now())
+        async (s2) => noteHook(
+          withHost(await withHistory(endsTurn({ ...input.source === "clear" ? cleared(s2) : s2, root }))),
+          "start",
+          now()
+        )
       );
       if (isMarkedBehind) deps.startUpdate(id);
       const context = startContext(CODEX, s, input.source);
@@ -1385,7 +1589,7 @@ async function handleHook(input, deps) {
       await updateState(dir, id, async (s) => {
         const r = notePrompt2(withHost(await withHistory(s)), input.prompt ?? "", now());
         notes = r.notes;
-        return input.agent_id ? r.state : noteHook(r.state, "prompt", now(), input.turn_id);
+        return input.agent_id ? r.state : noteHook(turnStarted(r.state), "prompt", now(), input.turn_id);
       });
       if (isMarkedBehind) deps.startUpdate(id);
       return notes.length === 0 ? null : { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: notes.join("\n\n") } };
@@ -1405,7 +1609,7 @@ async function handleHook(input, deps) {
     }
     case "Stop": {
       const reply = input.last_assistant_message ?? "";
-      const { dialogs, commands } = await turnIn(input.transcript_path, input.turn_id);
+      const { dialogs, commands, plan } = await turnIn(input.transcript_path, input.turn_id);
       const lines = dialogs.map((d) => dialogActivity(d.questions, { kind: "open" }));
       const written = await updateState(dir, id, async (s) => {
         const withLines = lines.reduce(
@@ -1413,7 +1617,8 @@ async function handleHook(input, deps) {
           noteDialogs(withHost(await withHistory(s)), dialogs)
         );
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines);
-        return noteHook(endTurn2(withOutput, reply, now()), "stop", now());
+        const ended = noteHook(turnEnded(endTurn2(withOutput, reply, now())), "stop", now());
+        return plan === null ? ended : { ...ended, hostTasks: plan };
       });
       if (needsUpdate(written)) deps.startUpdate(id);
       return null;

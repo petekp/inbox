@@ -8,6 +8,7 @@ import type { RowProps } from '../hooks/row-client'
 import { TAB_HEIGHT, tabLines, type TabsProps } from '../hooks/tabs-client'
 import type { Item } from '../types'
 import { demoView } from '../hooks/demo'
+import { OVERVIEW_SYSTEM } from '../hooks/model-text'
 import { checkActions, prBlockActions, prCheckId, prThreadId, threadActions, threadSentIn } from '../hooks/pr-tab'
 import { failingChecks, waitingThreads } from '../hooks/prs'
 import {
@@ -17,13 +18,11 @@ import {
   SETTLED_MS,
   inboxView,
   perTurnStatus,
+  overviewPage,
   rowKeyPlan,
 } from '../hooks/view'
 
-const LEDGER_REPLY = `GOAL: Add a greeting CLI
-DONE: Plan written
-NOW: Waiting on two choices
-NEW: decide | 1 | Use Node or Python? | Node / Python | Node
+const LEDGER_REPLY = `NEW: decide | 1 | Use Node or Python? | Node / Python | Node
 NEW: decide | 2 | Name the command greet? | - | yes`
 
 const BAND = {
@@ -39,6 +38,9 @@ const BAND = {
 }
 
 let ledgerReply = LEDGER_REPLY
+let overviewReply: string | null = 'UNCHANGED'
+let overviewPrompts: string[] = []
+let overviewHold: Promise<void> | null = null
 let sessionId = 'session-1'
 
 let sent: string[] = []
@@ -56,6 +58,7 @@ let stepAnswers: { answer: string; callsTool?: true }[] = []
 let transcriptRows: { role: 'user' | 'assistant'; text: string; toolUses: never[] }[] = []
 
 let dialogAnswer: Record<string, unknown> = { result: 'ok', text: 'ok' }
+let otherToolAnswer: Record<string, unknown> = { result: 'ok', text: 'ok' }
 
 let isGhMissing = false
 
@@ -170,9 +173,13 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   stepAnswers = []
   transcriptRows = []
   dialogAnswer = { result: 'ok', text: 'ok' }
+  otherToolAnswer = { result: 'ok', text: 'ok' }
   ghAnswers = []
   isGhMissing = false
   ledgerReply = LEDGER_REPLY
+  overviewReply = 'UNCHANGED'
+  overviewPrompts = []
+  overviewHold = null
   sessionId = 'session-1'
   surfaces = []
   files = []
@@ -258,13 +265,18 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
     await ghAnswers.find(a => a.match(e.argv))?.hold?.()
     return { value: gh(e.argv) }
   })
-  on('model.complete', ($, e) => {
-    prompts.push(e.prompt)
+  on('model.complete', async ($, e) => {
+    const isOverview =
+      (e.systemBlocks ?? []).some(block => block.text === OVERVIEW_SYSTEM) || e.system === OVERVIEW_SYSTEM
+    if (isOverview) overviewPrompts.push(e.prompt)
+    else prompts.push(e.prompt)
+    if (isOverview) await overviewHold
+    if (isOverview && overviewReply === null) return { deny: 'the Overview call failed' }
 
     return {
       value: {
         isAnswered: true,
-        text: ledgerReply,
+        text: isOverview ? overviewReply! : ledgerReply,
         usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
       },
     }
@@ -312,7 +324,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
     return {}
   })
   on('tool.call', (_$, e) => {
-    if (e.tool !== 'AskUserQuestion') return { result: 'ok', text: 'ok' } as never
+    if (e.tool !== 'AskUserQuestion') return otherToolAnswer as never
     return dialogAnswer as never
   })
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
@@ -340,7 +352,7 @@ function sidebarLines(): string[] {
   return ran.filter(argv => argv[0] === 'herdr').map(argv => argv.find(a => a.startsWith('inbox='))?.slice(6) ?? '')
 }
 
-test('a reply becomes a card and open items, and "1. yes" carries the question', async ($, on) => {
+test('a reply becomes open items, and "1. yes" carries the question', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
   world($, on, prompts)
@@ -447,7 +459,7 @@ test('a dialog reaches the model with its questions, whether answered or dismiss
     result: 'User declined to answer questions',
     text: 'User declined to answer questions',
   }
-  ledgerReply = 'NOW: Waiting on staging\nNEW: decide | - | Deploy to staging? | Deploy / Hold | -'
+  ledgerReply = 'NEW: decide | - | Deploy to staging? | Deploy / Hold | -'
   const deploy = {
     question: 'Deploy to staging now?',
     options: [
@@ -466,7 +478,7 @@ test('a dialog reaches the model with its questions, whether answered or dismiss
   expect(texts).toContain('Deploy: Runs the staging pipeline')
   expect(texts).toContain('Hold: Waits for the review')
 
-  ledgerReply = 'NOW: Waiting on the cache\nNEW: decide | - | Clear stored data? | Yes / No | -'
+  ledgerReply = 'NEW: decide | - | Clear stored data? | Yes / No | -'
   const yesNo = (yes: string, no: string) => [
     { label: 'Yes', description: yes },
     { label: 'No', description: no },
@@ -482,7 +494,7 @@ test('a dialog reaches the model with its questions, whether answered or dismiss
   )
   expect(itemAsking('Clear stored data?')?.optionDescriptions).toBeUndefined()
 
-  ledgerReply = 'NOW: Waiting on the port'
+  ledgerReply = 'NONE'
   const port = {
     question: 'Which port should the server use?',
     options: [
@@ -522,7 +534,6 @@ test('a question’s handle is the number a typed answer reaches, and the band c
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await reply('add a greeting cli', 't1')
   ledgerReply = [
-    'NOW: Waiting on the flags',
     'NEW: decide | 1 | Add a --loud flag? | yes / no | yes',
     'NEW: do | - | Run the load script | - | -',
     'HELP: new 2 | run | ./load.sh | load script',
@@ -684,6 +695,49 @@ test('a Done message another plugin rewrote to text a pending press also sent re
   await arrive($)
 })
 
+test('Working… shows from the main agent’s turn.start to its turn.complete, not for a subagent’s turn, a Done message waits for an interrupted turn to end, and a reload clears it', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let session: Parameters<typeof overviewPage>[0] | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  const now = async () => overviewPage(session!, 1_000_000).lead.find(l => l.id === 'status')?.text ?? null
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  ledgerReply = 'NEW: do | - | Sign in to npm | - | -'
+  await $.prompt.submit({ text: 'publish it', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'publish it', turnId: 't1' })
+  expect(await now()).toBe('Working…')
+  await $.turn.complete({ answer: 'Sign in to npm.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  expect(await now()).toBe(null)
+
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'select-i1' })
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'done-i1' })
+  await $.turn.start({ text: 'Look around the repo', turnId: 's1', agentId: 'a1' })
+  await clock.settle()
+  expect(await now()).toBe(null)
+  await $.turn.start({ text: '', turnId: 't2' })
+  await clock.advance(SETTLED_MS)
+  expect(await now()).toBe('Working…')
+  expect(sent).toEqual([])
+
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: true, turnId: 't2', reason: 'aborted' })
+  await clock.settle()
+  expect(await now()).toBe(null)
+  expect(sent).toEqual(['Done: Sign in to npm'])
+
+  await $.turn.start({ text: '', turnId: 't3' })
+  expect(await now()).toBe('Working…')
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  expect(await now()).toBe(null)
+})
+
 for (const switchAt of [null, 'before-submit', 'during-submit'] as const)
   test(`a refused Done batch stays recoverable after resume, with session switch during send: ${switchAt}`, async ($, on) => {
     const clock = mock.clock(on, { now: 1_000_000 })
@@ -756,8 +810,6 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   ledgerReply = [
-    'GOAL: Load the data',
-    'NOW: Waiting on the load script',
     'NEW: do | - | Run the load script | - | -',
     'HELP: new 1 | run | ./load.sh | load script',
     'HELP: new 1 | run | npm login | -',
@@ -817,7 +869,7 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   expect(await pane.find({ text: /Opened \.env\.local/ })).toBeUndefined()
   await pane.press({ key: 'title-i1' })
 
-  ledgerReply = 'NOW: The load script needs your password'
+  ledgerReply = 'NONE'
   await $.turn.start({ text: 'For "Run the load script", run this', turnId: 't2' })
   await $.turn.complete({ answer: 'It needs sudo.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
   await clock.settle()
@@ -829,7 +881,6 @@ test('a question with 7 options shows 4 until [All 7 options], draws its steps a
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   ledgerReply = [
-    'NOW: Waiting on a color',
     'NEW: decide | 1 | Which color? | Red / Orange / Yellow / Green / Blue / Indigo / Violet | Green',
     'HELP: new 1 | run | ./a.sh | a script',
     'HELP: new 1 | run | ./b.sh | b script',
@@ -874,8 +925,7 @@ test('a question with 7 options shows 4 until [All 7 options], draws its steps a
 test('last actions an earlier build saved convert once by the table, and a task handed off then still folds', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  ledgerReply =
-    'NOW: Waiting on the load script\nNEW: do | - | Run the load script | - | -\nHELP: new 1 | run | ./load.sh | load script'
+  ledgerReply = 'NEW: do | - | Run the load script | - | -\nHELP: new 1 | run | ./load.sh | load script'
   const at = 1_000_000
   const thread = (id: string) => `acme/greet#12 thread ${id}`
   const old: Record<string, Record<string, unknown>> = {
@@ -1083,6 +1133,121 @@ test('the band keeps what the mods after the inbox draw there, with its counts a
   }
 })
 
+const replyWithOverview = async ($: Engine, on: On, overview: string | null, ledgerAnswer = LEDGER_REPLY) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  overviewReply = overview
+  ledgerReply = ledgerAnswer
+  let session: { ledger: { overview: { headline: string } | null; items: { ask: string }[] } } | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Plan ready. Node or Python?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+
+  return session!.ledger
+}
+
+test('a reply’s Overview comes from the separate Overview call, after the ledger update', async ($, on) => {
+  const ledger = await replyWithOverview($, on, 'HEADLINE: Adding a greeting CLI\nSTATUS: Planning.')
+
+  expect(ledger.overview?.headline).toBe('Adding a greeting CLI')
+  expect(ledger.items.map(i => i.ask)).toEqual(['Use Node or Python?', 'Name the command greet?'])
+  expect(overviewPrompts).toHaveLength(1)
+})
+
+test('a failed Overview call leaves the ledger update applied and no Overview', async ($, on) => {
+  const ledger = await replyWithOverview($, on, null)
+
+  expect(ledger.overview).toBeNull()
+  expect(ledger.items.map(i => i.ask)).toEqual(['Use Node or Python?', 'Name the command greet?'])
+})
+
+test('an Overview answer of UNCHANGED leaves the last Overview as it was', async ($, on) => {
+  const ledger = await replyWithOverview($, on, 'UNCHANGED')
+
+  expect(ledger.overview).toBeNull()
+})
+
+test('a ledger update shows before its Overview call returns', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let session: { ledger: { overview: { headline: string } | null; items: { id: string }[] } } | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  const reply = async (text: string, turnId: string) => {
+    await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
+    await $.turn.start({ text, turnId })
+    await $.turn.complete({ answer: 'Noted.', durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+    await clock.settle()
+  }
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  ledgerReply = 'NEW: decide | 1 | Use Node or Python? | Node / Python | Node'
+  await reply('add a greeting cli', 't1')
+
+  let release: () => void = () => undefined
+  overviewHold = new Promise<void>(resolve => (release = resolve))
+  overviewReply = 'HEADLINE: Scaffolding the command'
+  ledgerReply = 'CLOSED: i1 | Node chosen'
+  await reply('use node', 't2')
+
+  expect(session!.ledger.items).toEqual([])
+  expect(session!.ledger.overview).toBeNull()
+  expect(overviewPrompts.at(-1)).not.toContain('Use Node or Python?')
+  release()
+  await clock.settle()
+  expect(session!.ledger.overview?.headline).toBe('Scaffolding the command')
+})
+
+test('a ledger call that gives no usable answer runs no Overview call', async ($, on) => {
+  const ledger = await replyWithOverview($, on, 'HEADLINE: Adding a greeting CLI', 'not a ledger')
+
+  expect(overviewPrompts).toEqual([])
+  expect(ledger.overview).toBeNull()
+})
+
+test('the next ledger update does not wait for an earlier Overview call, and Overview calls run one at a time', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let session: { ledger: { overview: { headline: string } | null; items: { ask: string }[] } } | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  const reply = async (text: string, turnId: string) => {
+    await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
+    await $.turn.start({ text, turnId })
+    await $.turn.complete({ answer: 'Noted.', durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+    await clock.settle()
+  }
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  let release: () => void = () => undefined
+  overviewHold = new Promise<void>(resolve => (release = resolve))
+  overviewReply = 'HEADLINE: Scaffolding the command'
+  ledgerReply = 'NEW: do | - | Water the plants | - | -'
+  await reply('add a greeting cli', 't1')
+  ledgerReply = 'NEW: do | - | Feed the cat | - | -'
+  await reply('and a name', 't2')
+
+  expect(session!.ledger.items.map(i => i.ask)).toEqual(['Water the plants', 'Feed the cat'])
+  expect(overviewPrompts).toHaveLength(1)
+  release()
+  await clock.settle()
+  expect(overviewPrompts).toHaveLength(2)
+  expect(overviewPrompts[1]).toContain('HEADLINE: Scaffolding the command')
+})
+
 test('resumed into a conversation it cannot fork yet, it catches up from the transcript before any reply', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
@@ -1107,13 +1272,40 @@ test('resumed into a conversation it cannot fork yet, it catches up from the tra
   expect(await pane.find({ text: /update failed/ })).toBeUndefined()
 })
 
+test('a catch-up writes its Overview with a separate call over the transcript', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  overviewReply = 'HEADLINE: Adding a greeting CLI\nSTATUS: The plan is written.'
+  let session: { ledger: { overview: { headline: string; status: string } | null } } | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  on('session.turns', () => ({ value: 3 }))
+  on('model.fork', () => ({
+    value: {
+      isAnswered: true,
+      text: 'NONE',
+      usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    },
+  }))
+  const said = (role: 'user' | 'assistant', text: string) => ({ role, text, toolUses: [] as never[] })
+  transcriptRows = [said('user', 'Add a greeting CLI.'), said('assistant', 'The plan is written. Command named greet.')]
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+
+  expect(session!.ledger.overview).toMatchObject({ headline: 'Adding a greeting CLI', status: 'The plan is written.' })
+  expect(overviewPrompts.at(-1)).toContain('<conversation>\nPerson: Add a greeting CLI.')
+})
+
 test('after a failed update, the next reply catches up over the whole conversation', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   on('model.fork', () => ({
     value: {
       isAnswered: true,
-      text: 'GOAL: Ship the onboarding flow\nNOW: Waiting on copy review\nCLOSED: i1 | Node\nFIXED: f3 | fixed\nNEW: do | - | Review the welcome copy | - | -',
+      text: 'CLOSED: i1 | Node\nFIXED: f3 | fixed\nNEW: do | - | Review the welcome copy | - | -',
       usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
     },
   }))
@@ -1175,7 +1367,7 @@ test('a reload that cuts off the end-of-turn hook catches up on load, and a suba
     return {
       value: {
         isAnswered: true,
-        text: 'GOAL: Add a greeting CLI\nNOW: Waiting on the push\nNEW: decide | - | Push the branch to origin? | yes / no | yes',
+        text: 'NEW: decide | - | Push the branch to origin? | yes / no | yes',
         usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
       },
     }
@@ -2134,7 +2326,7 @@ test('once the person answers or closes the last waiting row, a row from a later
 test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, its buttons send its conflicts and thread and say so, and its failing check waits on the person', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  ledgerReply = 'NOW: Waiting on review\nNEW: do | - | Mark #12 ready for review | - | -'
+  ledgerReply = 'NEW: do | - | Mark #12 ready for review | - | -'
   let hasReply = false
   let isResolved = false
   let onFetched: (() => void) | undefined
@@ -3138,7 +3330,7 @@ test('/clear and /resume switch the inbox to the other conversation, and each ke
   await pane.press({ key: 'answer-i1-0' })
   await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
   await $.classic.SessionStart({ source: 'clear', session_id: 'session-2' })
-  ledgerReply = 'GOAL: Fix the build\nNOW: Waiting\nNEW: decide | 1 | Pin the Node version? | Yes / No | Yes'
+  ledgerReply = 'NEW: decide | 1 | Pin the Node version? | Yes / No | Yes'
   await turn('fix the build')
   expect(await pane.find({ text: /Pin the Node version\?/ })).toBeDefined()
   expect(await pane.find({ text: /✓/ })).toBeUndefined()
@@ -3157,11 +3349,12 @@ test('/clear and /resume switch the inbox to the other conversation, and each ke
   expect(await pane.find({ text: /Use Node or Python\?/ })).toBeUndefined()
 })
 
-test('where classic.SessionStart is skipped, the first prompt after /clear, /resume and /branch loads that conversation and carries its card', async ($, on) => {
+test('where classic.SessionStart is skipped, the first prompt after /clear, /resume and /branch loads that conversation and carries its open questions', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  const turn = async (text: string, reply: string) => {
+  const turn = async (text: string, reply: string, headline: string) => {
     ledgerReply = reply
+    overviewReply = `HEADLINE: ${headline}\nSTATUS: Waiting on an answer.`
     await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
     await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: text, reason: 'answer' })
     await clock.settle()
@@ -3174,39 +3367,39 @@ test('where classic.SessionStart is skipped, the first prompt after /clear, /res
   }
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  await turn(
-    'add caching',
-    'GOAL: Add caching\nNOW: Waiting\nNEW: decide | 1 | Pick a cache? | Redis / Memory | Memory',
-  )
+  await turn('add caching', 'NEW: decide | 1 | Pick a cache? | Redis / Memory | Memory', 'Adding caching')
 
   const cleared = await contextOf('session-2', 'clear', 'start over')
   expect(cleared).not.toContain('Pick a cache?')
-  expect(cleared).not.toContain('Add caching')
+  expect(cleared).not.toContain('Adding caching')
 
-  await turn('fix the build', 'GOAL: Fix the build\nNOW: Waiting\nNEW: decide | 1 | Pin Node? | Yes / No | Yes')
+  await turn('fix the build', 'NEW: decide | 1 | Pin Node? | Yes / No | Yes', 'Fixing the build')
   const branched = await contextOf('session-3', 'resume', 'try another way')
   expect(branched).toContain('Pin Node?')
-  expect(branched).toContain('Goal: Fix the build')
+  expect(branched).toContain('Working on: Fixing the build')
+  expect(branched).toContain('Status: Waiting on an answer.')
 
   const resumed = await contextOf('session-1', 'resume', 'where were we?')
   expect(resumed).toContain('Pick a cache?')
-  expect(resumed).toContain('Goal: Add caching')
+  expect(resumed).toContain('Working on: Adding caching')
+  expect(resumed).not.toContain('Fixing the build')
   expect(resumed).not.toContain('Pin Node?')
   const again = (await $.prompt.submit({ text: 'and now?', wait: false, origin: { kind: 'composer' } })).context ?? []
-  expect(again.join('\n')).not.toContain('Goal: Add caching')
+  expect(again.join('\n')).not.toContain('Pick a cache?')
+  expect(again.join('\n')).not.toContain('Working on:')
 })
 
 test('a ledger update held during clear cannot write its old question into the new conversation', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  ledgerReply = 'GOAL: Old work\nNOW: Waiting\nNEW: decide | 1 | Old question? | Yes / No | Yes'
+  ledgerReply = 'NEW: decide | 1 | Old question? | Yes / No | Yes'
   let entered!: () => void
   let release!: () => void
   const inWrite = new Promise<void>(resolve => (entered = resolve))
   const held = new Promise<void>(resolve => (release = resolve))
   let didHold = false
   on('state.set', { plugin: 'inbox', key: 'session' } as const, async ($, e, next) => {
-    if (!didHold && e.value.ledger.card?.goal === 'Old work') {
+    if (!didHold && e.value.ledger.items.some(i => i.ask === 'Old question?')) {
       didHold = true
       entered()
       await held
@@ -3231,7 +3424,6 @@ test('a ledger update held during clear cannot write its old question into the n
 const SAVED_SESSION = {
   savedAt: 900_000,
   ledger: {
-    card: { goal: 'Add a greeting CLI', done: [], now: 'Waiting on a choice', running: [] },
     items: [
       {
         id: 'i1',
@@ -3266,6 +3458,42 @@ test('a failed first save keeps the prior saved session intact', async ($, on) =
   await $.turn.complete({ answer: 'New reply.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
   expect(stored.get('s:session-1')).toBe(prior)
+})
+
+test('a session saved mid-turn by a process that ended loads with no turn running, and its Done message goes', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let session: Parameters<typeof overviewPage>[0] | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  const task = {
+    ...SAVED_SESSION.ledger.items[0]!,
+    kind: 'task',
+    label: null,
+    ask: 'Sign in to npm',
+    options: [],
+    rec: null,
+  }
+  stored.set(
+    's:session-1',
+    JSON.stringify({
+      ...SAVED_SESSION,
+      ledger: { ...SAVED_SESSION.ledger, items: [task] },
+      presence: { isTurnRunning: true },
+    }),
+  )
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  expect(overviewPage(session!, 1_000_000).lead.find(l => l.id === 'status')?.text ?? null).toBeNull()
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'select-i1' })
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'done-i1' })
+  await clock.advance(SETTLED_MS)
+  expect(sent).toEqual(['Done: Sign in to npm'])
 })
 
 test('resuming a session waits for its in-flight save before loading it', async ($, on) => {
@@ -3539,7 +3767,7 @@ test('a saved session the store cannot read shows as unreadable, not empty, unti
   await clock.settle()
   expect(await pane.find({ text: 'Could not read the inbox.' })).toBeDefined()
 
-  ledgerReply = 'NOW: Looking at it'
+  ledgerReply = 'NONE'
   await $.prompt.submit({ text: 'keep going', wait: false, origin: { kind: 'composer' } })
   await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
   await $.tool.call({
@@ -3750,7 +3978,7 @@ test('the desktop pane draws each action as one button and the tabs as one click
 
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
   const { tabs, gap } = await tabBar()
-  expect(tabs.map(t => t.id)).toEqual(['needsYou', 'findings', 'prs'])
+  expect(tabs.map(t => t.id)).toEqual(['needsYou', 'findings', 'prs', 'overview'])
   await pane.pointer({ type: 'down', x: tabs[0]!.width + gap + tabs[1]!.width - 1, y: 1.1, button: 'left', in: 'tabs' })
   await clock.settle()
   expect((await tabBar()).shown).toBe('findings')
@@ -4011,8 +4239,7 @@ test('a forked conversation keeps the parent’s findings and closed records, an
     title: 'Retry loop never backs off',
     detail: 'The fetch retry spins with no delay.',
   })
-  ledgerReply =
-    'GOAL: Fix retries\nNOW: Waiting\nASKED: f1 | new 1\nNEW: decide | 1 | Add a backoff to the retry loop? | Yes / No | Yes'
+  ledgerReply = 'ASKED: f1 | new 1\nNEW: decide | 1 | Add a backoff to the retry loop? | Yes / No | Yes'
   await $.prompt.submit({ text: 'fix the retries', wait: false, origin: { kind: 'composer' } })
   await $.turn.complete({ answer: 'Add a backoff?', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
@@ -4036,6 +4263,198 @@ test('a forked conversation keeps the parent’s findings and closed records, an
   await clock.settle()
   await clock.advance(SETTLED_MS)
   expect(await contextOf()).toContain('- issue: Retry loop never backs off (close id: f1)')
+})
+
+test('the Overview page shows the headline, the status and the queue in place of rows, leaves the row keys idle, and a row tab shows its rows again', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  paneState = { isShown: true, isFocused: true }
+  overviewReply =
+    'HEADLINE: Adding a greeting CLI\nSTATUS: Waiting on two choices.\nQUEUE: waits-on-you | Pick a runtime\nQUEUE: done | Plan written'
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
+
+  const lookOf = () => {
+    const saved = [...stored].find(([k]) => k.startsWith('s:'))
+    return saved && JSON.parse(saved[1]).ledger.overview.look
+  }
+  expect(lookOf()).toBeNull()
+  await pane.press({ key: 'tab-key-overview' })
+  await clock.settle()
+  expect(lookOf()).not.toBeNull()
+  expect((await pane.find({ key: 'overview-headline' }))?.text).toBe('Adding a greeting CLI')
+  expect((await pane.find({ key: 'overview-status' }))?.text).toBe('Waiting on two choices.')
+  expect(await pane.find({ text: /^Plan written$/ })).toBeDefined()
+  expect(await pane.find({ text: /Use Node or Python\?/ })).toBeUndefined()
+  const rowKeys = async () =>
+    (await pane.findAll({ type: 'Button' }))
+      .map(b => b.key ?? '')
+      .filter(k => k.endsWith('-key') && !k.startsWith('tab-'))
+  expect(await rowKeys()).toEqual(['no-row-d-key', 'no-row-x-key'])
+  await pane.press({ key: 'next' })
+  await pane.press({ key: 'no-row-d-key' })
+  await $.tool.call({
+    tool: 'mcp__inbox__record',
+    kind: 'finding',
+    finding_kind: 'issue',
+    title: 'No lint script',
+    detail: 'Only tests run.',
+  })
+  await clock.settle()
+  expect(await pane.find({ key: 'overview-headline' })).toBeDefined()
+  expect(await rowKeys()).toEqual(['no-row-d-key', 'no-row-x-key'])
+
+  await pane.press({ key: 'tab-key-needsYou' })
+  await clock.settle()
+  expect(lookOf()).toBeNull()
+  expect(await pane.find({ key: 'overview-headline' })).toBeUndefined()
+  expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
+  await pane.press({ key: 'tab-findings' })
+  expect(await pane.find({ key: 'address-f3' })).toBeDefined()
+})
+
+test('Claude Code task calls build the agent task list the Overview call reads', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'fix the parser', wait: false, origin: { kind: 'composer' } })
+  await $.tool.call({ tool: 'TaskCreate', subject: 'Read the parser', description: 'Read it' })
+  await $.tool.call({ tool: 'TaskCreate', subject: 'Fix the parser', description: 'Fix it' })
+  await $.tool.call({ tool: 'TaskUpdate', taskId: '1', status: 'completed' })
+  await clock.settle()
+  const saved = [...stored].find(([k]) => k.startsWith('s:'))
+  expect(saved && JSON.parse(saved[1]).hostTasks).toEqual([
+    { id: '1', text: 'Read the parser', status: 'done' },
+    { id: '2', text: 'Fix the parser', status: 'pending' },
+  ])
+
+  otherToolAnswer = { isError: true, result: 'Task not found', text: 'Task #7 not found' }
+  await $.tool.call({ tool: 'TaskCreate', subject: 'A task that failed', description: 'No' })
+  await $.tool.call({ tool: 'TaskUpdate', taskId: '2', status: 'completed' })
+  await clock.settle()
+  const after = [...stored].find(([k]) => k.startsWith('s:'))
+  expect(after && JSON.parse(after[1]).hostTasks).toHaveLength(2)
+  expect(after && JSON.parse(after[1]).hostTasks[1].status).toBe('pending')
+})
+
+test('the Overview page says what it is for before the session has any work', async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  const terminal = await $.ui.mount(PANE)
+  await terminal.press({ key: 'tab-key-overview' })
+  expect(await terminal.find({ text: /It fills in once the work starts/ })).toBeDefined()
+  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await desktop.find({ text: /It fills in once the work starts/ })).toBeDefined()
+})
+
+test('at 34 desktop columns the tabs drop their counts and frame only the shown tab, and the Overview page draws there', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  overviewReply =
+    'HEADLINE: Adding a greeting CLI\nSTATUS: Waiting on two choices.\nQUEUE: waits-on-you | Pick a runtime\nQUEUE: done | Plan written'
+  surfaces = ['desktop']
+
+  await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  await $.tool.call({
+    tool: 'mcp__inbox__record',
+    kind: 'finding',
+    finding_kind: 'issue',
+    title: 'No lint script',
+    detail: 'Only tests run.',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 34 } })
+  const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+  expect((await tabBar()).tabs.map(t => [t.id, t.count])).toEqual([
+    ['needsYou', 0],
+    ['findings', 0],
+    ['prs', 0],
+    ['overview', 0],
+  ])
+  expect((await tabBar()).isEachFramed).toBe(false)
+  await pane.redraw({ ...PANE.props, bodyColumns: 69 })
+  expect((await tabBar()).isEachFramed).toBe(true)
+
+  const { tabs, gap } = await tabBar()
+  const overviewX = tabs.slice(0, 3).reduce((sum, t) => sum + t.width + gap, 0)
+  await pane.pointer({ type: 'down', x: overviewX, y: 1, button: 'left', in: 'tabs' })
+  await clock.settle()
+  expect((await tabBar()).shown).toBe('overview')
+  expect((await pane.find({ key: 'overview-headline' }))?.text).toBe('Adding a greeting CLI')
+  expect(await pane.find({ text: /^Plan written$/ })).toBeDefined()
+  expect(await pane.find({ key: 'select-f3' })).toBeUndefined()
+})
+
+test('a PR that arrives while the Needs you tab is empty moves the pane to the PRs tab', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  paneState = { isShown: true, isFocused: true }
+  ledgerReply = 'NONE'
+  let release = () => {}
+  let onFetched = () => {}
+  let isFetching = false
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, async ($, e, next) => {
+    const r = await next(e)
+    const wasFetching = isFetching
+    isFetching = e.value.prViews.isFetching
+    if (wasFetching && !isFetching) onFetched()
+    return r
+  })
+  ghAnswers.push(
+    {
+      match: argv => argv.includes('view') && argv.includes('12'),
+      stdout: JSON.stringify({
+        number: 12,
+        title: 'Add a greeting CLI',
+        url: 'https://github.com/acme/greet/pull/12',
+        isDraft: false,
+        state: 'OPEN',
+        baseRefName: 'main',
+        mergeable: 'MERGEABLE',
+        reviewDecision: 'REVIEW_REQUIRED',
+        statusCheckRollup: [],
+      }),
+      hold: () => new Promise(r => (release = r)),
+    },
+    {
+      match: argv => argv.includes('graphql'),
+      stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
+    },
+  )
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'inbox', args: '' } as never)
+  const pane = await $.ui.mount(PANE)
+  expect(await pane.find({ text: 'Nothing needed.' })).toBeDefined()
+  await $.prompt.submit({ text: 'open the PR', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Opened https://github.com/acme/greet/pull/12.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  expect(isFetching).toBe(true)
+  expect(await pane.find({ text: 'Nothing needed.' })).toBeDefined()
+
+  const fetched = new Promise<void>(r => (onFetched = r))
+  release()
+  await fetched
+  await clock.settle()
+  expect(await pane.find({ text: 'Nothing needed.' })).toBeUndefined()
+  expect(await pane.find({ text: /Add a greeting CLI/ })).toBeDefined()
 })
 
 test('the desktop tabs that do not fit one line wrap, each line within the pane, and a tab on the second line takes its click', async ($, on) => {

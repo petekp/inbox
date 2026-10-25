@@ -1,6 +1,7 @@
 import type { Closed, Draft, FoldKind, Stop, Tab } from '../../types'
 import { version } from '../package.json'
 import {
+  ARRIVAL_TABS,
   closedGroups,
   followTo,
   isPrsTabEmpty,
@@ -41,6 +42,7 @@ import {
   NEEDS_YOU_GROUPS,
   QUEUED_AFTER_MS,
   ROW_COPY,
+  LISTED_TABS,
   SETTLED_MS,
   TABS,
   closedShown,
@@ -54,6 +56,7 @@ import {
   groupEmptyText,
   heldReplies,
   isFailure,
+  isRowTab,
   isResumable,
   isStatusUnderActions,
   isWaitingRow,
@@ -67,7 +70,15 @@ import {
   stopFix,
   stopText,
 } from '../../hooks/view'
-import type { ClosedDelivery, Feedback, ReplyHolds, RowView } from '../../hooks/view'
+import type {
+  ClosedDelivery,
+  Feedback,
+  OverviewPage,
+  OverviewRow,
+  ReplyHolds,
+  RowView,
+  ShownTab,
+} from '../../hooks/view'
 
 export type ResumePress = { action: 'resume' }
 export type PanelPress = RowPress | PrPress | ResumePress
@@ -96,7 +107,7 @@ export type Style = {
 }
 
 export type PanelUi = {
-  tab: Tab
+  tab: ShownTab
   selectedId: string | null
   /** The focused button of one row. Another row's focus starts at its recommended option. */
   focus: { rowId: string; index: number } | null
@@ -114,6 +125,8 @@ export type PanelUi = {
   resuming: { stopAt: number; is: 'sending' } | { stopAt: number; is: 'refused'; why: string } | null
   /** A handed-off row the person opened again with Enter. Moving the selection off it folds it again. */
   opened: string | null
+  /** How many lines of the Overview page are scrolled above the panel. Drawing clamps it to the page's end. */
+  pageTop: number
 }
 
 export const INITIAL_UI: PanelUi = {
@@ -127,6 +140,7 @@ export const INITIAL_UI: PanelUi = {
   unfolded: [],
   resuming: null,
   opened: null,
+  pageTop: 0,
 }
 
 export function holdsOf(ui: Pick<PanelUi, 'typing' | 'drafts' | 'discarded'>): ReplyHolds {
@@ -178,9 +192,10 @@ type Line = {
 }
 
 type Entry =
-  | { kind: 'heading'; text: string }
+  | { kind: 'heading'; text: string; count?: number }
   | { kind: 'note'; text: string; isStrong?: boolean; indent?: number }
   | { kind: 'row'; line: Line }
+  | { kind: 'page'; row: OverviewRow }
 
 const blankLine = (id: string): Line => ({
   id,
@@ -507,7 +522,39 @@ function pressFeedback(screen: PanelScreen, id: string, now: number): Line['feed
   return f ? { text: feedbackText(f, AGENT), tone: feedbackTone(f), source: f } : null
 }
 
-function entriesOf(screen: PanelScreen, ui: PanelUi, tab: Tab, now: number): Entry[] {
+/** Where a row's title starts, after the cursor and the mark. The Overview page's text and details start here too. */
+const TITLE_AT = 6
+
+function pageEntries(page: OverviewPage): Entry[] {
+  if (page.isEmpty)
+    return [
+      { kind: 'note', text: page.empty.title, isStrong: true },
+      { kind: 'note', text: page.empty.hint },
+    ]
+  const out: Entry[] = []
+  for (const line of page.lead) {
+    if (line.hasGapAbove) out.push({ kind: 'note', text: '' })
+    out.push({ kind: 'note', text: line.text, isStrong: line.id === 'headline' })
+  }
+  for (const part of page.sections) {
+    if (part.title) {
+      if (out.length > 0) out.push({ kind: 'note', text: '' })
+      out.push({ kind: 'heading', text: part.title })
+    }
+    out.push(...part.rows.map((row): Entry => ({ kind: 'page', row })))
+  }
+  if (page.earlier.length > 0) {
+    out.push({ kind: 'note', text: '' })
+    out.push({ kind: 'heading', text: 'Earlier in this session' })
+    out.push(...page.earlier.map((text): Entry => ({ kind: 'note', text, indent: TITLE_AT })))
+  }
+
+  return out
+}
+
+function entriesOf(screen: PanelScreen, ui: PanelUi, tab: ShownTab, now: number): Entry[] {
+  if (!isRowTab(tab)) return pageEntries(screen.view.overviewPage)
+
   return tab === 'prs' ? prEntries(screen, now) : rowEntries(screen, ui, tab)
 }
 
@@ -542,6 +589,8 @@ export type KeyResult = { ui: PanelUi; press?: PanelPress; close?: true }
 function withSelection(ui: PanelUi, id: string | null): PanelUi {
   return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null }
 }
+
+const withTab = (ui: PanelUi, tab: ShownTab): PanelUi => ({ ...withSelection(ui, null), tab, pageTop: 0 })
 
 /**
  * After a press hands off the selected row, the selection moves to the next row that waits, as the terminal's does.
@@ -609,6 +658,9 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
   const base: PanelUi = { ...ui, selectedId: selected?.id ?? null }
   if (base.typing !== null) return typingKey(base, base.typing, key, now, text)
   if (key === 'escape') return { ui: base, close: true }
+  const isUp = key === 'up' || key === 'k'
+  if (!isRowTab(base.tab) && (isUp || key === 'down' || key === 'j'))
+    return { ui: { ...base, pageTop: Math.max(0, base.pageTop + (isUp ? -1 : 1)) } }
   const selectable = lines.filter(isSelectable)
   const at = selectable.findIndex(l => l.id === selected?.id)
   if ((key === 'up' || key === 'k' || key === 'down' || key === 'j') && selectable.length > 0) {
@@ -621,9 +673,9 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
   if (key === 'tab' || key === 'shift+tab') {
     const step = key === 'tab' ? 1 : -1
 
-    return { ui: { ...withSelection(base, null), tab: tabs[wrapIndex(tabs.indexOf(base.tab) + step, tabs.length)]! } }
+    return { ui: withTab(base, tabs[wrapIndex(tabs.indexOf(base.tab) + step, tabs.length)]!) }
   }
-  if (pickedTab) return { ui: { ...withSelection(base, null), tab: pickedTab.id } }
+  if (pickedTab) return { ui: withTab(base, pickedTab.id) }
   if (key === 'u') {
     const undoable = lines.filter(l => l.settled?.undo).at(-1)
     const press = undoable?.settled?.undo
@@ -662,15 +714,15 @@ function tabRows(screen: PanelScreen): { listed: Record<Tab, string[] | null>; o
   }
 }
 
-function isShownEmpty(screen: PanelScreen, ui: PanelUi): boolean {
+function isShownEmpty(screen: PanelScreen, ui: PanelUi, tab: Tab): boolean {
   const { view } = screen
-  if (ui.tab === 'prs') return isPrsTabEmpty(view.prs.drawn.length, screen.isFetchingPrs)
-  const rows = ui.tab === 'needsYou' ? [...view.needsYou.questions, ...view.needsYou.tasks] : view.findings.rows
+  if (tab === 'prs') return isPrsTabEmpty(view.prs.drawn.length, screen.isFetchingPrs)
+  const rows = tab === 'needsYou' ? [...view.needsYou.questions, ...view.needsYou.tasks] : view.findings.rows
   return isTabEmpty({
     rows,
     settled: new Set(rows.filter(r => r.state.is === 'settled').map(r => r.id)),
-    closed: closedGroups(view, ui.tab, kind => ui.unfolded.includes(kind)),
-    hasBlocker: ui.tab === 'needsYou' && screen.stop !== null,
+    closed: closedGroups(view, tab, kind => ui.unfolded.includes(kind)),
+    hasBlocker: tab === 'needsYou' && screen.stop !== null,
   })
 }
 
@@ -688,12 +740,13 @@ export function followRows(
 ): { ui: PanelUi; seen: SeenRows } {
   const { listed, open } = tabRows(screen)
   const recorded = recordRows(seen, listed)
-  const tabs = TABS.map(t => t.id)
-  const to = followTo(tabs, ui.tab, isShownEmpty(screen, ui), isOpening ? open : recorded.added)
-  if (to) return { ui: { ...withSelection(ui, null), tab: to }, seen: recorded.seen }
-  const arrived = recorded.added[ui.tab]
+  const { tab } = ui
+  if (!isRowTab(tab)) return { ui, seen: recorded.seen }
+  const to = followTo(ARRIVAL_TABS, tab, isShownEmpty(screen, ui, tab), isOpening ? open : recorded.added)
+  if (to) return { ui: withTab(ui, to), seen: recorded.seen }
+  const arrived = recorded.added[tab]
   if (ui.selectedId !== null || arrived.length === 0) return { ui, seen: recorded.seen }
-  const kept = keptOpen(waitsOf(linesOf(entriesOf(screen, ui, ui.tab, now))), arrived)
+  const kept = keptOpen(waitsOf(linesOf(entriesOf(screen, ui, tab, now))), arrived)
 
   return { ui: kept === null ? ui : { ...ui, selectedId: kept }, seen: recorded.seen }
 }
@@ -870,23 +923,91 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   return out
 }
 
+/** A line on the Overview page: its mark, its text wrapped, and its detail under it. */
+function drawPageRow(row: OverviewRow, d: Draw): string[] {
+  const { width, style: s } = d
+  const mark = row.mark.padEnd(2)
+  const room = width - TITLE_AT - 2
+  const wrapped = wrapText(row.text, Math.max(10, room))
+  const [first = '', ...rest] = wrapped.slice(0, 3)
+  if (wrapped.length > 3) rest[1] = `${rest[1]!.replace(/.$/, '')}…`
+  const out = [
+    `   ${row.tone ? s.tone(row.tone, mark) : s.dim(mark)} ${first}`,
+    ...rest.map(l => ' '.repeat(TITLE_AT) + l),
+  ]
+  if (row.detail) out.push(...indented(row.detail, TITLE_AT, width, 4, s.dim))
+
+  return out
+}
+
+type TabCell = {
+  id: ShownTab
+  hotkey: string
+  label: string
+  tone: ToneName | null
+  count: number | null
+  isShown: boolean
+}
+
+/** One form of the tab line. Each later form is narrower. */
+type TabForm = { isBracketed: boolean; isZeroShown: boolean }
+
+const TAB_FORMS: readonly TabForm[] = [
+  { isBracketed: true, isZeroShown: true },
+  { isBracketed: false, isZeroShown: true },
+  { isBracketed: false, isZeroShown: false },
+]
+/** The fewest letters a cut label keeps, its ellipsis included. */
+const MIN_LABEL = 3
+
+const cutLabel = (label: string, length: number) =>
+  [...label].length <= length ? label : `${[...label].slice(0, length - 1).join('')}…`
+
+function tabCell(t: TabCell, label: string, form: TabForm, s: Style): string {
+  const key = form.isBracketed ? `[${t.hotkey}]` : t.hotkey
+  const count = t.count === null || (t.count === 0 && !form.isZeroShown) ? null : String(t.count)
+  if (t.isShown) return s.inverse(s.bold(` ${key} ${label}${count === null ? '' : ` ${count}`} `))
+  const countText = count === null ? '' : ` ${t.tone ? s.tone(t.tone, count) : count}`
+
+  return ` ${s.dim(`${key} ${label}`)}${countText} `
+}
+
+/**
+ * The tab line. As the panel narrows, it drops the `[n]` brackets, then zero counts, then cuts the other tabs' labels,
+ * longest first. Only the final `fit()` in `render` cuts the shown tab's label, once the other labels are at their shortest.
+ */
 function tabBar(d: Draw): string {
-  const { screen, ui, style: s } = d
+  const { screen, ui, width, style: s } = d
   const counts: Record<Tab, number> = {
     needsYou: screen.view.needsYou.count,
     findings: screen.view.findings.count,
     prs: screen.view.prs.count,
   }
-  const tabs = TABS.map(t =>
-    t.id === ui.tab
-      ? s.inverse(s.bold(` [${t.hotkey}] ${t.label} ${counts[t.id]} `))
-      : ` ${s.dim(`[${t.hotkey}] ${t.label}`)} ${s.tone(t.id, String(counts[t.id]))} `,
-  ).join(' ')
-
-  return spread(` ${tabs}`, s.dim('esc to close '), d.width)
+  const tabs: TabCell[] = TABS.map(t => ({
+    ...t,
+    tone: isRowTab(t.id) ? t.id : null,
+    count: isRowTab(t.id) ? counts[t.id] : null,
+    isShown: t.id === ui.tab,
+  }))
+  const lineOf = (form: TabForm, lengths: number[]) =>
+    ` ${tabs.map((t, i) => tabCell(t, cutLabel(t.label, lengths[i]!), form, s)).join(' ')}`
+  const lengths = tabs.map(t => [...t.label].length)
+  const hint = s.dim('esc to close ')
+  for (const form of TAB_FORMS) {
+    const line = lineOf(form, lengths)
+    if (visibleLength(line) <= width) return spread(line, hint, width)
+  }
+  const narrowest = TAB_FORMS.at(-1)!
+  for (;;) {
+    const line = lineOf(narrowest, lengths)
+    const cuttable = tabs.map((t, i) => (t.isShown || lengths[i]! <= MIN_LABEL ? -1 : lengths[i]!))
+    const longest = cuttable.indexOf(Math.max(...cuttable))
+    if (visibleLength(line) <= width || cuttable[longest] === -1) return line
+    lengths[longest]!--
+  }
 }
 
-function footer(d: Draw): string[] {
+function footer(d: Draw, isPageScrolling: boolean): string[] {
   const { screen, ui, width, now, style: s } = d
   const out: string[] = [s.dim('─'.repeat(width))]
   const { status } = screen.view
@@ -899,7 +1020,11 @@ function footer(d: Draw): string[] {
   const hints =
     ui.typing !== null
       ? [`↵ ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`]
-      : ['←→ pick', '↵ press', '↑↓ move', 'tab switch']
+      : isRowTab(ui.tab)
+        ? ['←→ pick', '↵ press', '↑↓ move', 'tab switch']
+        : isPageScrolling
+          ? ['↑↓ scroll', 'tab switch']
+          : ['tab switch']
   const model = `${screen.modelName ? `inbox model ${screen.modelName}` : 'no inbox model: set @inbox'}  v${version} `
   const hintLine = ` ${hints.map(h => s.dim(h)).join(` ${s.tone('sep', '·')} `)}`
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2
@@ -918,6 +1043,18 @@ export function render(
   style: Style,
   height?: number,
 ): string[] {
+  return drawPanel(screen, ui, width, now, style, height).lines
+}
+
+/** The panel's lines, and the Progress page's scroll clamped to what the panel can show. */
+export function drawPanel(
+  screen: PanelScreen,
+  ui: PanelUi,
+  width: number,
+  now: number,
+  style: Style,
+  height?: number,
+): { lines: string[]; pageTop: number } {
   const d: Draw = { screen, ui, width, now, style }
   const entries = entriesOf(screen, ui, ui.tab, now)
   const selected = resolveSelected(linesOf(entries), ui.selectedId)
@@ -925,7 +1062,9 @@ export function render(
   const body: string[] = []
   let selectedAt = [0, 0]
   for (const e of entries) {
-    if (e.kind === 'heading') body.push(` ${style.bold(e.text)}`)
+    if (e.kind === 'heading')
+      body.push(` ${style.bold(e.text)}${e.count === undefined ? '' : style.dim(` · ${e.count}`)}`)
+    else if (e.kind === 'page') body.push(...drawPageRow(e.row, d))
     else if (e.kind === 'note')
       body.push(...indented(e.text, e.indent ?? 1, width, 3, e.isStrong ? style.bold : style.dim))
     else {
@@ -935,11 +1074,39 @@ export function render(
       if (isSelected) selectedAt = [start, body.length - 1]
     }
   }
-  const foot = footer(d)
-  const room = height === undefined ? Infinity : Math.max(6, height - head.length - foot.length)
+  const roomBeside = (foot: string[]) =>
+    height === undefined ? Infinity : Math.max(6, height - head.length - foot.length)
+  const isPage = !isRowTab(ui.tab)
+  const isPageTaller = isPage && body.length > roomBeside(footer(d, false))
+  const foot = footer(d, isPageTaller)
+  const room = roomBeside(foot)
+  if (isPage) {
+    const top = Math.min(Math.max(0, ui.pageTop), body.length > room ? body.length - room + 1 : 0)
+    const shown = body.length > room ? pageWindow(body, top, room, style) : body
+
+    return { lines: [...head, ...shown, ...foot].map(l => fit(l, width)), pageTop: top }
+  }
   const shown = body.length > room ? scrolled(body, selectedAt, room, style) : body
 
-  return [...head, ...shown, ...foot].map(l => fit(l, width))
+  return { lines: [...head, ...shown, ...foot].map(l => fit(l, width)), pageTop: ui.pageTop }
+}
+
+const moreLines = (arrow: string, n: number, s: Style) => s.dim(`  ${arrow} ${n} more line${n === 1 ? '' : 's'}`)
+
+/**
+ * `room` lines of the page, `top` presses past its first screen. Each press shows one more line at the bottom, so the
+ * first press also hides the line the "↑" line takes, and the press before the end leaves "↓ 1 more line".
+ */
+function pageWindow(body: string[], top: number, room: number, s: Style): string[] {
+  const end = Math.min(body.length, room - 1 + top)
+  const below = body.length - end
+  const start = end - (room - (top > 0 ? 1 : 0) - (below > 0 ? 1 : 0))
+
+  return [
+    ...(top > 0 ? [moreLines('↑', start, s)] : []),
+    ...body.slice(start, end),
+    ...(below > 0 ? [moreLines('↓', below, s)] : []),
+  ]
 }
 
 function scrolled(body: string[], selectedAt: number[], room: number, s: Style): string[] {
@@ -957,8 +1124,7 @@ function scrolled(body: string[], selectedAt: number[], room: number, s: Style):
 /** The band above the prompt: the two counts, and under them why the last turn stopped. */
 export function bandLines(screen: PanelScreen, width: number, now: number, style: Style): string[] {
   const { needsYou, findings } = screen.view
-  const counts = TABS.filter(t => t.id !== 'prs')
-    .map(t => ({ t, count: t.id === 'needsYou' ? needsYou.count : findings.count }))
+  const counts = LISTED_TABS.map(t => ({ t, count: t.id === 'needsYou' ? needsYou.count : findings.count }))
     .filter(x => x.count > 0)
     .map(x => `${style.dim(x.t.label)} ${style.tone(x.t.id, String(x.count))}`)
   const left = ` ${counts.length > 0 ? counts.join(` ${style.tone('sep', '·')} `) : style.dim('Nothing needed')}`

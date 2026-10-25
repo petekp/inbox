@@ -9,7 +9,9 @@ import { demoView } from '../../hooks/demo'
 import { applyUpdate, parseReply } from '../../hooks/ledger'
 import { feedbackOf, QUEUED_AFTER_MS } from '../../hooks/view'
 import type { Feedback } from '../../hooks/view'
-import { noteHook, notePrompt, viewOf } from '../src/core'
+import { screenText } from '../../hooks/model-text'
+import { noteHook, notePrompt, screenTabOf, viewOf } from '../src/core'
+import { CODEX } from '../src/texts'
 import type { View } from '../src/core'
 import { makeServer, tabUri } from '../src/server'
 import { PRESS_TIMEOUT_MS } from '../../hooks/session'
@@ -443,6 +445,19 @@ test('the tab opens from the app-only inbox_view tool, and the model’s inbox t
   assert.match(readOlder.result.contents[0]?.text ?? '', /<html>/)
 })
 
+test('the view request saves the tab the page shows, ignores a name that is not a tab, and the inbox model is told the tab', async () => {
+  const { dir, call } = await setup(0)
+  assert.equal((await readState(dir, 's1')).shownTab, 'needsYou')
+  await call('inbox_view', { tab: 'prs' }, { thread_id: 's1' })
+  assert.equal((await readState(dir, 's1')).shownTab, 'prs')
+  await call('inbox_view', { tab: 'nowhere' }, { thread_id: 's1' })
+  assert.equal((await readState(dir, 's1')).shownTab, 'prs')
+  assert.equal(
+    screenText(CODEX, true, screenTabOf(await readState(dir, 's1'))),
+    'The Inbox tab is open beside the conversation, on its PRs tab, listing every open item.',
+  )
+})
+
 test('with no dev build, the view names the installed page and inbox_tab_page serves it, so a tab from an older build replaces itself', async () => {
   const { call } = await setup(0)
   const view = (await call('inbox_view', {}, { thread_id: 's1' })) as unknown as {
@@ -699,7 +714,86 @@ test('an open still pending after the press timeout shows nothing on its row, an
   assert.deepEqual([saved.lastActions.i1?.result, saved.lastActions.i2?.result], [pending(staleAt), pending(100)])
 })
 
-test('Done on a task Codex just left queues one message once Undo ends, unless a turn runs, and Undo then reads stale', async () => {
+test('a chat saved mid-turn reads Working… until a view or a press finds the turn ended in its rollout', async () => {
+  const dir = tempDir()
+  const rollout = join(dir, 'rollout.jsonl')
+  const turnRow = (type: string, turn: string) =>
+    JSON.stringify({ type: 'event_msg', payload: { type, turn_id: turn } })
+  writeFileSync(rollout, `${turnRow('task_started', 't1')}\n`)
+  const running = () =>
+    updateState(dir, 's1', s => ({
+      ...s,
+      transcriptPath: rollout,
+      presence: { ...s.presence, isTurnRunning: true },
+    }))
+  await running()
+  const handle = makeServer({
+    dir,
+    now: () => 100,
+    exec: fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec,
+    tabHtml: '<html></html>',
+    fallbackCli: async () => 'codex',
+  })
+  type Shown = { overviewPage: { lead: { id: string; text: string }[] } }
+  const call = (name: string, args: Record<string, unknown>) =>
+    handle({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name, arguments: args, _meta: { thread_id: 's1' } },
+    }) as Promise<{ result: { structuredContent: Shown & { view: Shown } } }>
+  const viewNow = async () =>
+    (await call('inbox_view', {})).result.structuredContent.overviewPage.lead.find(l => l.id === 'status')?.text ?? null
+
+  assert.equal(await viewNow(), 'Working…')
+  writeFileSync(rollout, `${turnRow('task_started', 't1')}\n${turnRow('task_complete', 't1')}\n`)
+  assert.equal(await viewNow(), null)
+  assert.equal((await readState(dir, 's1')).presence.isTurnRunning, false)
+
+  await running()
+  writeFileSync(rollout, `${turnRow('task_started', 't2')}\n`)
+  assert.equal(await viewNow(), 'Working…')
+  writeFileSync(rollout, `${turnRow('task_started', 't2')}\n${turnRow('turn_aborted', 't2')}\n`)
+  const pressed = await call('inbox_press', { press: { action: 'done', id: 'i1' }, thread: 'another chat' })
+  assert.equal(pressed.result.structuredContent.view.overviewPage.lead.find(l => l.id === 'status')?.text ?? null, null)
+})
+
+test('a turn another plugin’s Stop continues reads Working… again once a view finds it running in the rollout', async () => {
+  const dir = tempDir()
+  const rollout = join(dir, 'rollout.jsonl')
+  const turnRow = (type: string) => JSON.stringify({ type: 'event_msg', payload: { type, turn_id: 't1' } })
+  writeFileSync(rollout, '')
+  const deps = hookDeps(dir)
+  const handle = makeServer({
+    dir,
+    now: () => 100,
+    exec: fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec,
+    tabHtml: '<html></html>',
+    fallbackCli: async () => 'codex',
+  })
+  const viewNow = async () => {
+    const r = (await handle({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'inbox_view', arguments: {}, _meta: { thread_id: 's1' } },
+    })) as { result: { structuredContent: { overviewPage: { lead: { id: string; text: string }[] } } } }
+
+    return r.result.structuredContent.overviewPage.lead.find(l => l.id === 'status')?.text ?? null
+  }
+
+  await handleHook(input('UserPromptSubmit', { prompt: 'Ship it', turn_id: 't1', transcript_path: rollout }), deps)
+  assert.equal(await viewNow(), 'Working…')
+  writeFileSync(rollout, `${turnRow('task_started')}\n`)
+  await handleHook(input('Stop', { last_assistant_message: '', turn_id: 't1', transcript_path: rollout }), deps)
+  assert.equal((await readState(dir, 's1')).presence.isTurnRunning, false)
+  assert.equal(await viewNow(), 'Working…')
+
+  writeFileSync(rollout, `${turnRow('task_started')}\n${turnRow('task_complete')}\n`)
+  assert.equal(await viewNow(), null)
+})
+
+test('Done on a task Codex just left waits while a turn runs, queues one message once the rollout shows the turn interrupted, and Undo then reads stale', async () => {
   const dir = tempDir()
   const task = (id: string, ask: string, turn: number) => ({
     id,
@@ -713,10 +807,14 @@ test('Done on a task Codex just left queues one message once Undo ends, unless a
     turn,
     at: 1,
   })
+  const rollout = join(dir, 'rollout.jsonl')
+  const turnRow = (type: string) => JSON.stringify({ type: 'event_msg', payload: { type, turn_id: 't3' } })
+  writeFileSync(rollout, `${turnRow('task_started')}\n`)
   await updateState(dir, 's1', s => ({
     ...s,
     root: '/repo',
     cliPath: '/apps/codex',
+    transcriptPath: rollout,
     ledger: {
       ...s.ledger,
       turn: 2,
@@ -746,13 +844,13 @@ test('Done on a task Codex just left queues one message once Undo ends, unless a
 
   await call('inbox_press', { press: { action: 'done', id: 'i1' }, thread: 's1' })
   await call('inbox_press', { press: { action: 'done', id: 'i2' }, thread: 's1' })
-  await updateState(dir, 's1', s => ({ ...s, turn: { ...s.turn, person: 'keep going' } }))
+  await updateState(dir, 's1', s => ({ ...s, presence: { ...s.presence, isTurnRunning: true } }))
   t += SETTLE_WINDOW_MS
   await poll()
   const queued = () => runner.calls.filter(c => c[0] === '/apps/codex')
   assert.deepEqual(queued(), [])
 
-  await updateState(dir, 's1', s => ({ ...s, turn: { ...s.turn, person: null } }))
+  writeFileSync(rollout, `${turnRow('task_started')}\n${turnRow('turn_aborted')}\n`)
   await poll()
   await poll()
   assert.deepEqual(queued(), [['/apps/codex', 'queue', '--thread', 's1', '--message', 'Done: Sign in to npm']])
@@ -1318,13 +1416,12 @@ test('the tab’s first view of a forked chat gives it the parent’s ledger and
   await updateState(dir, 'parent', s => ({
     ...s,
     presence: { ...s.presence, turnsStarted: 3, turnsApplied: 3 },
-    ledger: { ...s.ledger, turn: 3, card: { goal: 'Parent goal', done: [], now: '', running: [] }, nextId: 4 },
+    ledger: { ...s.ledger, turn: 3, updates: 1, nextId: 4 },
   }))
   rolloutAt(home, 'fork', { forked_from_id: 'parent' })
   await call('inbox_view', 'fork')
 
   const s = await readState(dir, 'fork')
-  assert.equal(s.ledger.card?.goal, 'Parent goal')
   assert.equal(s.presence.ledgerState, 'current')
   assert.deepEqual(updates, [])
 })

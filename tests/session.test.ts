@@ -1,12 +1,34 @@
 import { expect, test } from 'claude-code/testing'
 
 import { flattenConversation } from '../hooks/conversation'
+import { EMPTY, applyUpdate, parseReply, upgradeLedger } from '../hooks/ledger'
+import { EMPTY_OVERVIEW, parseOverview } from '../hooks/overview'
 import { CLAUDE_CODE } from '../hooks/model-text'
-import { emptySession, endTurn, noteCommandOutput, notePrompt, recorded, sessionView } from '../hooks/session'
+import {
+  appliedCatchUp,
+  appliedOverview,
+  cleared,
+  emptySession,
+  endTurn,
+  forkedFrom,
+  hasLedger,
+  isUnseen,
+  noteCommandOutput,
+  notePrompt,
+  pressOn,
+  recordPrompt,
+  recorded,
+  sessionView,
+  startContext,
+  turnEnded,
+  turnStarted,
+  upgradeSession,
+} from '../hooks/session'
 import type { Session } from '../hooks/session'
 import { press, runUpdates, wakeForDone } from '../hooks/session-host'
 import type { CatchUpReply } from '../hooks/session-host'
 import { allRows, COMPARE_LIMIT_MS, feedbackText, NO_HOLDS } from '../hooks/view'
+import { demoSession, demoView, isDemoCopy, upgradeDemoCopy } from '../hooks/demo'
 import { fakeHost } from './session-fake-host'
 import { runSessionScript } from './session-script'
 
@@ -33,7 +55,7 @@ test('a refused Done message leaves its row reading Not sent, with Undo', async 
 })
 
 test('Compare reads Comparing… after its reply until the agent records the question again with its page, or until its limit passes', async () => {
-  const { host, delivered } = fakeHost(async () => 'GOAL: Pick a cache\nNOW: Comparing the caches')
+  const { host, delivered } = fakeHost(async () => 'NONE')
   const record = async (args: Record<string, unknown>) => {
     let result = ''
     await host.update(async s => {
@@ -118,8 +140,7 @@ test('a PR already linked keeps its place when gh pr create names it again with 
   expect(again.ledger.prs).toEqual(['acme/app#1', 'acme/app#2'])
 })
 
-const LEDGER_REPLY =
-  'GOAL: Add a greeting CLI\nNOW: Waiting on one choice\nNEW: decide | 1 | Use Node or Python? | Node / Python | Node'
+const LEDGER_REPLY = 'NEW: decide | 1 | Use Node or Python? | Node / Python | Node'
 
 const finishTurn = (s: Session, reply: string) =>
   endTurn(CLAUDE_CODE, notePrompt(CLAUDE_CODE, s, 'go', false).state, reply, false)
@@ -137,7 +158,10 @@ test('a failed update catches up over the whole conversation instead of retrying
 
     return { ...finished, presence: { ...finished.presence, ledgerState: 'failed' as const } }
   })
-  await runUpdates({ ...host, ...reading({ kind: 'reply', text: LEDGER_REPLY, source: 'Person: go' }, calls) })
+  await runUpdates({
+    ...host,
+    ...reading({ kind: 'reply', text: LEDGER_REPLY, source: 'Person: go', overview: async () => null }, calls),
+  })
 
   const after = await host.read()
   expect(calls).toEqual({ catchUps: 1, asks: 0 })
@@ -164,7 +188,10 @@ test('a catch-up that gets no usable answer ends the run, and the next update tr
   const calls = { catchUps: 0, asks: 0 }
   const { host } = fakeHost(async () => null)
   await host.update(s => ({ ...s, presence: { ...s.presence, ledgerState: 'behind' as const } }))
-  await runUpdates({ ...host, ...reading({ kind: 'reply', text: 'not a ledger', source: null }, calls) })
+  await runUpdates({
+    ...host,
+    ...reading({ kind: 'reply', text: 'not a ledger', source: null, overview: async () => null }, calls),
+  })
   expect(calls.catchUps).toBe(1)
   expect((await host.read()).presence.ledgerState).toBe('failed')
 
@@ -179,7 +206,7 @@ test('an exchange that ends during a catch-up is still run afterward', async () 
     ...host,
     catchUp: async () => {
       await host.update(s => finishTurn(s, 'Which runtime?'))
-      return { kind: 'reply', text: 'GOAL: Add a greeting CLI', source: null }
+      return { kind: 'reply', text: 'NONE', source: null, overview: async () => null }
     },
   })
 
@@ -208,7 +235,10 @@ test('a dropped reply keeps the warning through later good updates, until a catc
   expect(sessionView(kept, 0, host.settleWindowMs, false).status.error).not.toContain(retryPromise)
   expect(sessionView(kept, 0, host.settleWindowMs, true).status.error).toContain(retryPromise)
 
-  await runUpdates({ ...host, ...reading({ kind: 'reply', text: LEDGER_REPLY, source: null }, calls) })
+  await runUpdates({
+    ...host,
+    ...reading({ kind: 'reply', text: LEDGER_REPLY, source: null, overview: async () => null }, calls),
+  })
   expect((await host.read()).presence).toMatchObject({ ledgerState: 'current', hasDroppedReply: false })
   expect(calls.catchUps).toBe(1)
 })
@@ -224,4 +254,128 @@ test('the conversation keeps its newest lines when it is too long, and leaves ou
   expect(text.startsWith('(earlier conversation left out)')).toBe(true)
   expect(text.endsWith('Agent ran: step 19')).toBe(true)
   expect(text).not.toContain('inbox: nothing waits')
+})
+
+const overviewLines = [
+  'HEADLINE: Adding offline mode',
+  'STATUS: Loading works offline.',
+  'QUEUE: working | Save notes offline',
+].join('\n')
+const answer = parseOverview(overviewLines)!
+
+const withOverview = (s: Session): Session => ({
+  ...s,
+  ledger: { ...EMPTY, overview: applyOverviewOf(answer) },
+})
+
+function applyOverviewOf(a: NonNullable<ReturnType<typeof parseOverview>>) {
+  return a.kind === 'written' ? { ...a.overview, earlier: [] } : null
+}
+
+test('an Overview answer is written to the ledger after later updates, and dropped when its update is gone', () => {
+  const later = { ...emptySession(), presence: { ...emptySession().presence, turnsApplied: 5 } }
+
+  expect(appliedOverview(later, answer, 3).ledger.overview?.headline).toBe('Adding offline mode')
+  expect(appliedOverview(emptySession(), answer, 3).ledger.overview).toBeNull()
+})
+
+test('a session whose only record is an Overview has a ledger, is not unseen, is copied by a fork and is cleared', () => {
+  const parent = withOverview(emptySession())
+
+  expect(hasLedger(emptySession())).toBe(false)
+  expect(isUnseen(emptySession())).toBe(true)
+  expect(hasLedger(parent)).toBe(true)
+  expect(isUnseen(parent)).toBe(false)
+  expect(forkedFrom(emptySession(), parent).ledger.overview).toEqual(parent.ledger.overview)
+  expect(cleared(parent).ledger.overview).toBeNull()
+})
+
+test('the Overview page is empty for a new session and reads Working… only while the main turn runs', () => {
+  const view = (s: Session) => sessionView(s, 10_000, 1000, true, NO_HOLDS).overviewPage
+  const idle = emptySession()
+
+  expect(view(idle).isEmpty).toBe(true)
+  expect(view(turnStarted(idle)).isEmpty).toBe(false)
+  expect(view(turnStarted(idle)).lead.find(l => l.id === 'status')?.text ?? null).toBe('Working…')
+  expect(view(turnEnded(turnStarted(idle))).lead.find(l => l.id === 'status')?.text ?? null).toBeNull()
+  expect(view(withOverview(idle)).lead.map(l => l.text)).toEqual(['Adding offline mode', 'Loading works offline.'])
+})
+
+test('the Overview page draws each item with its mark and tone', () => {
+  const lines = [
+    'HEADLINE: h',
+    'QUEUE: working | a',
+    'QUEUE: queued | b',
+    'QUEUE: waits-on-you | c',
+    'QUEUE: waits-on-other | d',
+    'QUEUE: done | e',
+    'QUEUE: ruled-out | f',
+    'OPEN: problem | g',
+    'OPEN: unknown | h',
+  ].join('\n')
+  const parsed = parseOverview(lines)!
+  const s = { ...emptySession(), ledger: { ...EMPTY, overview: applyOverviewOf(parsed) } }
+  const rows = sessionView(s, 0, 1000, true, NO_HOLDS).overviewPage.sections.flatMap(part => part.rows)
+
+  expect(rows.map(r => [r.mark, r.tone])).toEqual([
+    ['●', null],
+    ['○', null],
+    ['◆', 'needsYou'],
+    ['◌', null],
+    ['✓', 'done'],
+    ['✗', null],
+    ['!', 'issue'],
+    ['?', null],
+  ])
+})
+
+test('a session saved by the Progress trial build loads without its results, subagents and stated step', () => {
+  const saved = {
+    ...emptySession(),
+    ledger: { ...EMPTY, milestones: [{ id: 'm1', source: 'done', text: 'Reducer built' }] },
+    subagents: [{ id: 'a1', task: 'Find the handler' }],
+    presence: { turnsStarted: 2, isTurnRunning: true, statedStep: 'Reading x' },
+  } as never
+  const loaded = upgradeSession(saved) as unknown as Record<string, unknown>
+
+  expect(loaded).not.toHaveProperty('subagents')
+  expect(loaded.ledger).not.toHaveProperty('milestones')
+  expect(loaded.presence).not.toHaveProperty('statedStep')
+  expect(loaded.presence).toMatchObject({ turnsStarted: 2, isTurnRunning: true })
+})
+
+test('a sample saved without an Overview is replaced, and the sample session carries its own', () => {
+  const { presence: _p, ...old } = demoView(1_000_000)
+
+  expect(isDemoCopy(old)).toBe(true)
+  expect(upgradeDemoCopy(old)).toMatchObject({ presence: { isTurnRunning: false } })
+  expect(isDemoCopy({ ...old, ledger: { ...old.ledger, overview: undefined } })).toBe(false)
+  const page = sessionView(demoSession(1_000_000), 1_000_000, 1000, true, NO_HOLDS).overviewPage
+  expect(page.lead[0]?.text).toBe('Adding pinch-to-dismiss to glances')
+  expect(page.sections.map(part => part.id)).toEqual(['since', 'queue', 'open'])
+})
+
+test('a conversation start carries the Overview headline and status, not on a resume the guidance, and nothing for an empty session', () => {
+  const described = emptySession()
+  const ledger = {
+    ...described.ledger,
+    overview: { ...EMPTY_OVERVIEW, headline: 'Adding caching', status: 'Waiting on a choice.' },
+  }
+  const carried = startContext(CLAUDE_CODE, { ...described, ledger }, 'resume')
+  expect(carried).toContain('Working on: Adding caching')
+  expect(carried).toContain('Status: Waiting on a choice.')
+  expect(startContext(CLAUDE_CODE, { ...described, ledger }, 'startup')).toContain('Working on: Adding caching')
+  expect(startContext(CLAUDE_CODE, described, 'resume')).toBeNull()
+})
+
+test('an applied model answer that changes nothing still makes the session seen, and a fork takes the parent task list', () => {
+  const begun = { ...emptySession(), presence: { ...emptySession().presence, turnsStarted: 1 } }
+  const prompted = { ...begun, ledger: { ...begun.ledger, turn: 1 } }
+  expect(hasLedger(prompted)).toBe(false)
+  const none = appliedCatchUp(prompted, prompted, parseReply('NONE'), 5)
+  expect(hasLedger(none)).toBe(true)
+  expect(isUnseen(none)).toBe(false)
+
+  const parent = { ...none, hostTasks: [{ id: '1', text: 'Fix it', status: 'pending' as const }] }
+  expect(forkedFrom(emptySession(), parent).hostTasks).toEqual(parent.hostTasks)
 })

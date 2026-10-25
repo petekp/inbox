@@ -58,7 +58,7 @@ claude plugin marketplace update inbox
 claude plugin update inbox
 ```
 
-- It makes one Sonnet call after each of Claude's replies. See [Cost](#cost).
+- It makes two Sonnet calls after each of Claude's replies, one for the list and one for the results. See [Cost](#cost).
 - It was built and tested with Claude Code 2.1.300.
 
 ### Codex
@@ -96,7 +96,7 @@ omp plugin marketplace update inbox-omp
 omp plugin upgrade inbox@inbox-omp
 ```
 
-After each reply, the inbox makes one model call to update the list. It uses
+After each reply, the inbox makes two model calls, one to update the list and one to write the results. It uses
 the first of these that your omp can run:
 
 1. The model your `@inbox` role names.
@@ -129,7 +129,7 @@ The PRs tab needs the GitHub CLI, `gh`, signed in.
 ## Using it
 
 Type `/inbox` in Claude Code or omp, or open the Inbox tab in the ChatGPT app. The
-inbox has three tabs.
+inbox has four tabs.
 
 ### Needs you
 
@@ -184,9 +184,21 @@ still open and what you answered, even after the conversation is compacted.
 Every press shows what it did right away. Discuss reads "Discussing…" until
 the agent replies, then "✓ Discussed".
 
+### Overview
+
+A guide to the session's work. It says what the session is doing, how it is
+going, what changed since you last looked, and what is next. When you step away
+and come back, it is the page to read first.
+
+After each reply, a second model call rewrites the page from the exchange and
+the agent's own task list. It keeps a direction line until the work changes
+direction. It shows the work, a pointer to what waits on you in Needs you, what
+works now, what is still open and what is next. It is not a log: it lists no
+events, and it leaves out what you have already seen.
+
 ### In each app
 
-- **Terminal:** each action shows the letter that runs it. `1`, `2` and `3`
+- **Terminal:** each action shows the letter that runs it. `1` to `4`
   switch tabs, and `j` and `k` move up and down. ctrl+x tab moves focus from
   the prompt to the line above it, then to the panel, then back to the prompt.
 - **Claude desktop app:** you click. Type `/inbox` to open the pane.
@@ -195,7 +207,7 @@ the agent replies, then "✓ Discussed".
 - **omp:** `/inbox` opens the panel over the conversation, and esc closes it.
   Each action shows the letter that runs it, and Reply is `r`. Arrow keys move
   between rows and between a row's buttons, and enter presses the focused
-  button. Tab, or `1`, `2` and `3`, switch tabs.
+  button. Tab, or `1` to `4`, switch tabs.
 
 In Claude Code, a line above your prompt counts what needs you and the
 findings waiting, with a button that opens the panel. When Claude stops on an
@@ -217,16 +229,16 @@ In Claude Code, the inbox adds two things:
 | What the inbox adds | Tokens | Cost at API prices |
 |---|---|---|
 | A Sonnet call after each of Claude's replies, to update the inbox | 3–4k in, about 2k of it cached. 100–250 out. | About 0.5¢ per reply, or 1¢ after 5 idle minutes |
+| A second Sonnet call, to write the results | About 1.2k in and 14–44 out on a short exchange (three eval runs: 1,175–1,214 in). A catch-up over a conversation reads more: 1,358 in and 100 out in the one run. | Less than the first call, which reads about 3k in |
 | Its instructions and tools, sent with every request Claude makes | About 1,350, cached | Under 0.1¢ per request |
 
-In one long Opus session, this came to about 1% of the total cost. A shorter
-or cheaper session pays a larger share. On a Claude plan, these count toward
-your usage limits.
+On a Claude plan, these count toward your usage limits.
 
 In Codex, the update after each reply runs through the `codex` binary inside
-the desktop app, with your Codex sign-in. It uses about 16,000 input tokens
-per reply, most of them the base instructions every `codex exec` call
-includes. It counts toward your plan's usage.
+the desktop app, with your Codex sign-in. It makes two calls per reply. Each
+carries about 12,000 input tokens of base instructions, which every
+`codex exec` call includes, plus its own prompt. The earlier single call came
+to about 16,000. It counts toward your plan's usage.
 
 ## What it runs, sends and changes
 
@@ -237,12 +249,12 @@ uses, and holds the same things as the Claude Code request.
 
 **What leaves your machine.** Three things, and nothing else:
 
-- After each of Claude's replies, the inbox sends one Sonnet request to
-  Anthropic through Claude Code's own model connection. It holds your last
+- After each of Claude's replies, the inbox sends two Sonnet requests to
+  Anthropic through Claude Code's own model connection. Both hold your last
   prompt, Claude's reply, the inbox's open items, and a line for each tool
   Claude ran. A tool line reads like `ran: npm test` or
   `edited src/app.ts`. [Cost](#cost) gives the request's size.
-- When the inbox may have missed a turn, it asks the same model to update it
+- When the inbox may have missed a turn, it asks the same model, with the same two calls, to update it
   from the whole conversation. It forks the conversation for this, or reads
   the transcript after a resume.
 - To fill the PRs tab, it runs read-only `gh` queries: `gh pr view`, and

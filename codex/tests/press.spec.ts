@@ -28,8 +28,8 @@ import {
 } from '../../hooks/view'
 import type { RowView, RowWait } from '../../hooks/view'
 import type { Item, LastAction, LocalResult } from '../../types'
-import { followTo } from '../../hooks/arrivals'
-import { ARRIVAL_TAB_IDS, isShownEmpty, newRows, openRows } from '../src/arrivals'
+import { ARRIVAL_TABS, followTo } from '../../hooks/arrivals'
+import { isShownEmpty, newRows, openRows } from '../src/arrivals'
 import { endTurn, noteHook, notePrompt, noteToolCall, viewOf } from '../src/core'
 import { demoState } from '../src/demo'
 import { EXIT_MS, ROW_STATE_MS, stepRow } from '../src/rows'
@@ -865,7 +865,7 @@ test('the tab moves from an empty Needs you to Findings when it opens on a findi
   assert.deepEqual(next.added, { needsYou: [], findings: ['f1'], prs: [] })
   const followed = (state: SessionState) =>
     followTo(
-      ARRIVAL_TAB_IDS,
+      ARRIVAL_TABS,
       'needsYou',
       isShownEmpty(viewOf(state, 20), 'needsYou', new Set(), new Set(), false),
       next.added,
@@ -873,12 +873,7 @@ test('the tab moves from an empty Needs you to Findings when it opens on a findi
   assert.equal(followed(withFinding), 'findings')
   const opened = viewOf(withFinding, 20)
   assert.equal(
-    followTo(
-      ARRIVAL_TAB_IDS,
-      'needsYou',
-      isShownEmpty(opened, 'needsYou', new Set(), new Set(), false),
-      openRows(opened),
-    ),
+    followTo(ARRIVAL_TABS, 'needsYou', isShownEmpty(opened, 'needsYou', new Set(), new Set(), false), openRows(opened)),
     'findings',
   )
   assert.equal(viewOf({ ...withFinding, heard: NOTHING_HEARD }, 20).heard, 'none')
@@ -924,7 +919,7 @@ test('a new PR counts as a new row, moves an empty tab to PRs, and counts nothin
   const arrived = newRows(first.seen, withPrs(['a/b#1']), false)
   assert.equal(arrived.added.prs.length, 1)
   const followed = (shown: 'needsYou' | 'prs', v: ReturnType<typeof withPrs>, added: typeof arrived.added) =>
-    followTo(ARRIVAL_TAB_IDS, shown, isShownEmpty(v, shown, new Set(), new Set(), false), added)
+    followTo(ARRIVAL_TABS, shown, isShownEmpty(v, shown, new Set(), new Set(), false), added)
   assert.equal(followed('needsYou', withPrs(['a/b#1']), arrived.added), 'prs')
   assert.equal(followed('needsYou', withPrs(['a/b#1']), openRows(withPrs(['a/b#1']))), null)
   assert.equal(followed('prs', withPrs(['a/b#1']), arrived.added), null)

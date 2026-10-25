@@ -399,6 +399,17 @@ Inference: a desktop app still on engine 2.1.289 lacks the first four. Declare t
 - Live: `DISABLE_TELEMETRY=1 claude plugin test` in an empty folder still printed "no hooks module to load". Not conclusive.
 - Changelog 2.1.290: "Fixed mods staying off for people who reach Claude through a gateway (`ANTHROPIC_BASE_URL` with `ANTHROPIC_AUTH_TOKEN`) and have no Anthropic account". [CL#2-1-290] So before 2.1.290 mods stayed off for those users. Inference: that bug may be the binary's "default" path when GrowthBook is off. No doc says mods are off on Bedrock, Agent Platform or Foundry today.
 
+## Subagents and the inbox's tools
+
+Checked on 2026-10-21 in the inbox-ui VM with Claude Code 2.1.306 (Haiku 5.5, a Claude Max sign-in, so the guard in key constraint 5 did not apply), in a tmux session in Terminal. The mod was a copy of `main` with the guidance in the `close` tool's description (#24, 6232d53), loaded with `CLAUDE_CODE_PLUGIN_DIRS` through a `--settings` file that disabled the installed inbox for that run. The main agent started one `general-purpose` subagent with the Agent tool.
+
+- **A subagent is offered the inbox's tools.** Its request carried 11 tools, including `mcp__inbox__record` and `mcp__inbox__close`. [live 2.1.306] Source: the `prompt_snapshot` attachment in the subagent's transcript, `step0/logs/cc1/7758fbd2-fd20-44e9-98c7-4213110b1ccb/subagents/agent-aa65ed97556a5c396.jsonl` in the VM share folder.
+- **Its `close` description carries the guidance.** The description was 4,055 characters and held the "# Inbox" guidance, as the main agent's did. The `record` description (1,329 characters) did not. The subagent's system prompt mentioned no inbox. [live 2.1.306] Same transcript. The main agent's session is `step0/logs/cc1/7758fbd2-fd20-44e9-98c7-4213110b1ccb.jsonl`.
+- **A subagent gets no `inbox:` card.** No card message appears in its transcript. The string `inbox:` there comes only from the `close` tool's description and the model's own quote of it. That it receives no `prompt.submit` is inferred; no event log was kept. [live 2.1.306] Same transcript.
+- **The main agent's quote of the description matched the subagent's** in the paragraphs I compared. The wire-level size and content come from the subagent's `prompt_snapshot` only.
+- **The tools a `step` tool would sit beside are `record` and `close`.** The other tools in that list were the engine's and the connectors'.
+- **Not checked:** whether `prompt.context` or `prompt.compose` run under a guard, and the Claude desktop app. The sign-in here was not a Team sign-in.
+
 ## Lifecycle: what fires and what resets
 
 Terms:
@@ -996,7 +1007,7 @@ No public doc mentions mods, `$.model.complete` or `$.model.fork` in its billing
 - Inference: it bills like the session. A subscriber's call draws on the five-hour and weekly windows, which are "shared with Claude chat and Cowork" on Team and Enterprise. An API or cloud user pays per token. [COST#claude-for-teams-and-enterprise] The README says "On a Claude plan, these count toward your usage limits" (`README.md:70-71`). No doc confirms it.
 - Model-specific limits exist: "'You've hit your Opus limit' or 'You've hit your Sonnet limit'". [COST#when-a-developer-asks-about-a-limit] Inference: a person working on Opus can hit the Sonnet limit, so only the inbox's call fails. The types report that as `isAnswered: false` with `reason: 'api-error'` and an `error` such as `rate_limit`. [T: `ModelCompleteResult`]
 - Claude Code's own prompt suggestions skip "while your account is close to or at its usage limit". [COST#background-token-usage] A mod can read `$.session.usage().rateLimits` (`percentUsed`). The list is "empty off a subscription". [T: `session.usage`]
-- The inbox's call: `MODEL = 'sonnet'` (`hooks/register.tsx:MODEL`); one cached `system` block, `maxTokens: 1600`, `effort: 'low'` (`hooks/register.tsx:askLedgerModel`); a 45-second timeout (`hooks/register.tsx:runUpdate`). The catch-up uses `$.model.fork` (`hooks/register.tsx:catchUp`).
+- The inbox's two calls (the ledger call and the results call, each through `askLedgerModel`): `MODEL = 'sonnet'` (`hooks/register.tsx:MODEL`); one cached `system` block, `maxTokens: 1600`, `effort: 'low'` (`hooks/register.tsx:askLedgerModel`); a 45-second timeout (`hooks/register.tsx:runUpdate`). The catch-up uses `$.model.fork` (`hooks/register.tsx:catchUp`).
 
 ### `sonnet` is not one model
 
@@ -1035,7 +1046,7 @@ Inference: the inbox must handle a thrown rejection, not only `isAnswered: false
 
 ### The README figures
 
-- README: "About 0.5¢ per reply, or 1¢ after 5 idle minutes"; instructions and tools "About 1,350, cached"; "about 1% of the total cost" in one long Opus session (`README.md:66-71`).
+- README: "About 0.5¢ per reply, or 1¢ after 5 idle minutes"; instructions and tools "About 1,350, cached".
 - Inference: a warm call (2k cached, 1.5k uncached, 100-250 out) at Sonnet 5.5 prices is 0.4-0.6¢. A cold call adds a 5-minute write, about 1¢. The figures match the Anthropic API. They are about 1.5 times low for Sonnet 4.5 or 4.6 on other providers.
 
 ### Where the cost shows up

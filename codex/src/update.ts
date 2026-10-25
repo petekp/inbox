@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import {
   access,
   copyFile,
@@ -14,15 +14,17 @@ import {
 } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { screenText, systemText } from '../../hooks/model-text'
+import { screenText } from '../../hooks/model-text'
 import {
   askOverConversation,
+  orderedKeys,
   reconcileUpdateStatus as reconcileStatus,
   runUpdates as runSessionUpdates,
 } from '../../hooks/session-host'
 import type { Ask } from '../../hooks/session-host'
-import { isTabOpen } from './core'
+import { isTabOpen, screenTabOf } from './core'
 import { codexStore } from './host'
+import { statePath, withLock } from './state'
 import type { SessionState } from './state'
 import { CODEX } from './texts'
 import { readRollout } from './transcript'
@@ -31,6 +33,10 @@ import type { Run } from '../../hooks/gh'
 /** The inbox model, at low reasoning effort. gpt-6-luna is faster but closed a finding the reply only mentioned. */
 export const MODEL = 'gpt-6.1-sol'
 const TIMEOUT_MS = 120_000
+/** How long a results call waits for the earlier ones: a few calls at their longest. */
+const RESULTS_WAIT_MS = 4 * TIMEOUT_MS
+/** Keeps one process's results calls in the order they arrived. The file lock orders them across processes. */
+const resultsOrder = orderedKeys()
 
 /** A release that drops one of these rejects it by name, so askModel drops any name rejected and tries again. */
 const OFF = [
@@ -97,13 +103,12 @@ async function keepNewerSignIn(link: string, auth: string): Promise<void> {
 
 /** Null when it fails. `personHome` is the person's Codex home, which holds their sign-in. */
 export function codexAsk(exec: Run, cli: string, dir: string, personHome: string): Ask {
-  return async prompt => {
+  return async (prompt, instructions) => {
     const work = join(dir, 'exec')
-    const system = join(dir, 'inbox-system.md')
+    const system = join(dir, `inbox-system-${createHash('sha256').update(instructions).digest('hex').slice(0, 12)}.md`)
     const out = join(work, `reply-${randomUUID()}.txt`)
     await mkdir(work, { recursive: true })
     const home = await modelHome(dir, personHome)
-    const instructions = systemText(CODEX)
     if ((await readFile(system, 'utf8').catch(() => '')) !== instructions) await writeFile(system, instructions)
     let off = [...OFF]
     for (let tries = 0; tries <= OFF.length; tries += 1) {
@@ -159,11 +164,17 @@ export const runUpdates = (dir: string, sessionId: string, ask: Ask, now: () => 
   runSessionUpdates({
     ...codexStore(dir, sessionId, now),
     ask,
+    names: CODEX,
+    inOrder: fn =>
+      resultsOrder.run(statePath(dir, sessionId), () =>
+        withLock(`${statePath(dir, sessionId)}.results`, fn, RESULTS_WAIT_MS),
+      ),
     catchUp: async s =>
       askOverConversation(
         ask,
+        CODEX,
         s,
-        screenText(CODEX, isTabOpen(s, now()), null),
+        screenText(CODEX, isTabOpen(s, now()), screenTabOf(s)),
         (await readRollout(s.transcriptPath, s.root))?.conversation ?? null,
       ),
   })

@@ -1,8 +1,16 @@
 import { linkDialogs } from './dialogs'
-import { applyExchangeUpdate, applyUpdate, EMPTY, KEPT_SESSIONS, parseReply, upgradeLedger } from './ledger'
+import {
+  applyExchangeUpdate,
+  applyUpdate,
+  EMPTY,
+  isBlankLedger,
+  KEPT_SESSIONS,
+  parseReply,
+  upgradeLedger,
+} from './ledger'
 import type { Exchange, Press, Update } from './ledger'
 import { addActivity, carryText, guidanceText, promptNotes, screenText, START_TITLE, TOLD_NOTHING } from './model-text'
-import type { Host, Told } from './model-text'
+import type { Host, ScreenTab, Told } from './model-text'
 import {
   applyPrPress,
   drawnPrs,
@@ -18,8 +26,11 @@ import { applyPress, upgradeLastActions, withAcceptedSend, withArrival, withRewr
 import type { AnswerMessage, RowPress } from './presses'
 import { prNeedsYou, prRefs } from './prs'
 import { recordClose, recordItem } from './tools'
-import { inboxView, NO_HOLDS, perTurnStatus } from './view'
-import type { InboxView, ReplyHolds } from './view'
+import { upgradeHostTasks } from './host-tasks'
+import { applyOverview, lookEnded, lookStarted } from './overview'
+import type { OverviewAnswer } from './overview'
+import { inboxView, NO_HOLDS, overviewPage, perTurnStatus } from './view'
+import type { InboxView, OverviewPage, ReplyHolds } from './view'
 import type { LastAction, Ledger, PrView, PrViews, RowNote, Session, Stop, Turns, TurnDialogQuestion } from '../types'
 
 export type { Session } from '../types'
@@ -33,13 +44,21 @@ export function emptySession(): Session {
     ledger: EMPTY,
     turn: NO_TURN,
     told: TOLD_NOTHING,
-    presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: 'current', hasDroppedReply: false, isUpdating: false },
+    presence: {
+      turnsStarted: 0,
+      turnsApplied: 0,
+      ledgerState: 'current',
+      hasDroppedReply: false,
+      isUpdating: false,
+      isTurnRunning: false,
+    },
     pending: [],
     sent: [],
     lastActions: {},
     heldRows: [],
     prViews: NO_PRS,
     stop: null,
+    hostTasks: [],
     dialogQuestions: [],
   }
 }
@@ -87,6 +106,15 @@ export type SavedSession = Partial<
   prViews?: Partial<PrViews>
 }
 
+/** A saved presence without `statedStep`, which a build of the Progress tab saved and nothing reads. */
+function withoutStatedStep(presence: SavedSession['presence']): SavedSession['presence'] {
+  const { statedStep: _statedStep, ...rest } = (presence ?? {}) as Partial<Session['presence']> & {
+    statedStep?: unknown
+  }
+
+  return rest
+}
+
 /**
  * A saved session's shared fields in the current shape. A sent record saved before the
  * row and delivery fields existed changes no row when its message arrives.
@@ -101,8 +129,8 @@ export function upgradeSession(saved: SavedSession): Session {
       : base.ledger,
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
-    presence: { ...base.presence, ...saved.presence },
-    pending: saved.pending ?? [],
+    presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
+    pending: (saved.pending ?? []).map(p => ({ ...p, ex: { ...p.ex, tasks: p.ex.tasks ?? [] } })),
     sent: (saved.sent ?? []).map(x => ({
       ...x,
       row: x.row ?? null,
@@ -136,6 +164,7 @@ export function upgradeSession(saved: SavedSession): Session {
       isFetching: false,
     },
     stop: saved.stop ?? null,
+    hostTasks: upgradeHostTasks(saved.hostTasks),
     dialogQuestions: (saved.dialogQuestions ?? []).map(q => ({ ...q, descriptions: q.descriptions ?? {} })),
   }
 }
@@ -154,11 +183,18 @@ export function startContext(host: Host, s: Session, source: string | undefined)
 export function cleared<S extends Session>(s: S): S {
   return {
     ...s,
+    hostTasks: [],
     ledger: EMPTY,
     turn: NO_TURN,
     told: { inbox: null, closed: [] },
     pending: [],
-    presence: { ...s.presence, ledgerState: 'current', hasDroppedReply: false, turnsApplied: s.presence.turnsStarted },
+    presence: {
+      ...s.presence,
+      ledgerState: 'current',
+      hasDroppedReply: false,
+      turnsApplied: s.presence.turnsStarted,
+      isTurnRunning: false,
+    },
     lastActions: {},
     stop: null,
   }
@@ -231,6 +267,16 @@ export function matchSent<S extends Session>(s: S, text: string): { state: S; se
     state: { ...s, lastActions, sent: sent ? s.sent.filter((_x, i) => i !== sentAt) : s.sent },
     sentBy: sent ? { press: sent.press } : null,
   }
+}
+
+/** Marks the main agent's turn as running. A subagent's turn does not call it. */
+export function turnStarted<S extends Session>(s: S): S {
+  return { ...s, presence: { ...s.presence, isTurnRunning: true } }
+}
+
+/** Marks the main agent's turn as ended. */
+export function turnEnded<S extends Session>(s: S): S {
+  return { ...s, presence: { ...s.presence, isTurnRunning: false } }
 }
 
 /** Counts a turn that started, and clears the stop the last turn ended with. */
@@ -312,7 +358,7 @@ export function endTurn<S extends Session>(
   s: S,
   reply: string,
   isOpen: boolean,
-  { tab = null, queuesEmptyReply = false }: { tab?: string | null; queuesEmptyReply?: boolean } = {},
+  { tab = null, queuesEmptyReply = false }: { tab?: ScreenTab | null; queuesEmptyReply?: boolean } = {},
 ): S {
   const refs = prRefs(reply)
   const base = {
@@ -329,20 +375,33 @@ export function endTurn<S extends Session>(
     turn: s.ledger.turn,
     press: s.turn.press,
     screen: screenText(host, isOpen, tab),
+    tasks: s.hostTasks,
   }
 
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] }
 }
 
+function parsedReply(ex: Exchange, reply: string | null) {
+  return reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join('\n'))
+}
+
+/** Does `applied` add this answer to the ledger? False when there is no pending exchange or the answer cannot be read. */
+export function isReplyApplied(s: Session, reply: string | null): boolean {
+  const next = s.pending[0]
+
+  return next !== undefined && parsedReply(next.ex, reply) !== null
+}
+
 /**
  * Applies the model's answer for the oldest pending exchange, and drops that exchange. One whose first update
- * failed stays pending, marked failed, for the next update to try again.
+ * failed stays pending, marked failed, for the next update to try again. The Overview call's answer goes in
+ * separately, through `appliedOverview`.
  */
 export function applied<S extends Session>(s: S, reply: string | null, now: number, promptAt: number): S {
   const next = s.pending[0]
   if (!next) return s
+  const parsed = parsedReply(next.ex, reply)
   const { ex } = next
-  const parsed = reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join('\n'))
   if (!parsed && !next.failed)
     return {
       ...s,
@@ -366,6 +425,17 @@ export function applied<S extends Session>(s: S, reply: string | null, now: numb
 }
 
 /**
+ * Writes the Overview call's answer for an update that is already applied. `appliedAfter` is the session's
+ * `turnsApplied` when the update landed. The answer is dropped when the session now has fewer applied turns than that:
+ * it was replaced by one that never applied this update.
+ */
+export function appliedOverview<S extends Session>(s: S, answer: OverviewAnswer, appliedAfter: number): S {
+  if (s.presence.turnsApplied < appliedAfter) return s
+
+  return { ...s, ledger: { ...s.ledger, overview: applyOverview(s.ledger.overview, answer) } }
+}
+
+/**
  * Whether the ledger may have missed a turn: a failed or behind update, or turns that started with no exchange
  * waiting. Not while a turn runs, since that turn has not ended yet.
  */
@@ -382,22 +452,34 @@ export function needsUpdate(s: Session): boolean {
   return s.pending.length > 0 || s.presence.ledgerState !== 'current'
 }
 
-/** Whether the session has a card, an item or a finding. */
-export function hasLedger(s: Session): boolean {
-  const { ledger } = s
+/** The Overview tab is shown: a look starts. */
+export function lookStartedOn<S extends { ledger: Ledger }>(s: S, now: number): S {
+  const overview = lookStarted(s.ledger.overview, now)
 
-  return ledger.card !== null || ledger.items.length > 0 || ledger.findings.length > 0
+  return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } }
+}
+
+/** The Overview tab stopped being shown at `at`: the look ends. */
+export function lookEndedOn<S extends { ledger: Ledger }>(s: S, at: number): S {
+  const overview = lookEnded(s.ledger.overview, at)
+
+  return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } }
+}
+
+/** Whether the session has anything recorded: an applied update, an item, a finding or an Overview. */
+export function hasLedger(s: Session): boolean {
+  return !isBlankLedger(s.ledger)
 }
 
 /**
- * A forked conversation continues its parent's ledger: the card, items, findings and closed records. It takes
+ * A forked conversation continues its parent's ledger: items, findings, Overview and closed records, and the agent's task list. It takes
  * nothing else, since presses, queued messages, the stop and the running turn belong to the parent. A fork that
- * already has turns or a card keeps its own.
+ * already has turns or an Overview keeps its own.
  */
 export function forkedFrom<S extends Session>(child: S, parent: Session): S {
-  if (child.ledger.turn !== 0 || child.ledger.card) return child
+  if (!isBlankLedger(child.ledger)) return child
 
-  return { ...child, ledger: parent.ledger }
+  return { ...child, ledger: parent.ledger, hostTasks: parent.hostTasks }
 }
 
 /** Whether the inbox has recorded nothing of the session: no turn counted, no exchange waiting, an empty ledger. */
@@ -408,9 +490,7 @@ export function isUnseen(s: Session): boolean {
     s.presence.turnsStarted === 0 &&
     s.presence.ledgerState === 'current' &&
     s.pending.length === 0 &&
-    ledger.card === null &&
-    ledger.items.length === 0 &&
-    ledger.findings.length === 0
+    isBlankLedger(ledger)
   )
 }
 
@@ -428,7 +508,7 @@ export function appliedCatchUp<S extends Session>(s: S, begun: Session, parsed: 
 
   return linkDialogs({
     ...s,
-    ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn) : s.ledger,
+    ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn, now) : s.ledger,
     pending: s.pending.filter(p => !covered.has(pendingKey(p))),
     presence: {
       ...s.presence,
@@ -558,6 +638,7 @@ export type SessionView = InboxView & {
   /** The turn counts each row's feedback reads, as "Explaining…" until the reply to its press. */
   turns: Turns
   prs: PrTab
+  overviewPage: OverviewPage
 }
 
 function withoutStalePending(lastActions: Record<string, LastAction>, now: number): Record<string, LastAction> {
@@ -592,21 +673,24 @@ export function sessionView(
     retries: canCatchUp || s.pending.length > 0,
   }
 
+  const inbox = inboxView({
+    ledger: l,
+    lastActions,
+    notes,
+    turns: s.presence,
+    extraSteps: Object.fromEntries(l.items.map(item => [item.id, itemPrSteps(item, s.prViews, l.prs)])),
+    settleWindowMs,
+    status: perTurnStatus(update),
+    now,
+    ...holds,
+  })
+
   return {
-    ...inboxView({
-      ledger: l,
-      lastActions,
-      notes,
-      turns: s.presence,
-      extraSteps: Object.fromEntries(l.items.map(item => [item.id, itemPrSteps(item, s.prViews, l.prs)])),
-      settleWindowMs,
-      status: perTurnStatus(update),
-      now,
-      ...holds,
-    }),
+    ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now),
+    overviewPage: overviewPage(s, now, inbox.needsYou.count),
   }
 }
 

@@ -26,6 +26,7 @@ import type {
   PrViews,
   LastAction,
   PressKind,
+  PageTab,
   RowNote,
   Stop,
   Tab,
@@ -56,19 +57,30 @@ import {
   emptySession,
   endTurn,
   forkedFrom,
+  lookEndedOn,
+  lookStartedOn,
   noteActivity as noteTurnActivity,
   pressOn,
   recordPrompt,
   recorded,
   sessionView,
   startTurn,
+  turnEnded,
+  turnStarted,
   upgradeSession,
   withNewPrRefs,
 } from './session'
-import type { SentBy, Session } from './session'
-import { fetchPrs as fetchSessionPrs, runUpdates, startPress, wakeForDone as wakeSessionForDone } from './session-host'
-import type { CatchUpReply, SessionHost } from './session-host'
-import { demoView, isDemoCopy } from './demo'
+import type { SentBy, Session, SessionView } from './session'
+import {
+  fetchPrs as fetchSessionPrs,
+  orderedKeys,
+  runUpdates,
+  startPress,
+  wakeForDone as wakeSessionForDone,
+} from './session-host'
+import type { AskCatchUpOverview, CatchUpReply, SessionHost } from './session-host'
+import { demoView, isDemoCopy, upgradeDemoCopy } from './demo'
+import { claudeTasksAfter } from './host-tasks'
 import { noteDialog } from './dialogs'
 import type { Exchange, Press, Update } from './ledger'
 import {
@@ -112,6 +124,7 @@ import {
   applyExchangeUpdate,
   closeItem,
   closedState,
+  isBlankLedger,
   readKind,
   tasksRunBy,
   upgradeLedger,
@@ -119,8 +132,10 @@ import {
 import {
   addActivity,
   buildPrompt,
-  cardCarryText,
+  overviewCarryText,
   catchUpPrompt,
+  OVERVIEW_SYSTEM,
+  overviewCatchUpPrompt,
   CLAUDE_CODE,
   dialogActivity,
   dialogQuestions,
@@ -131,6 +146,7 @@ import {
   toolActivity,
   transcriptCatchUpPrompt,
   TOLD_NOTHING,
+  type ScreenTab,
   type Told,
 } from './model-text'
 import {
@@ -177,6 +193,8 @@ import {
   stopText,
   drawnLists,
   emptyText,
+  isRowTab,
+  LISTED_TABS,
   ROW_TABS,
   TABS,
   CLOSED_MARKS,
@@ -218,10 +236,22 @@ import {
   shortAgo,
   shownOptionDescriptions,
 } from './view'
-import type { ActionEmphasis, ActionIcon, DrawnEntry, InboxView, ModLook, PlannedKey, RowView, RowWait } from './view'
+import type {
+  ActionEmphasis,
+  ActionIcon,
+  DrawnEntry,
+  InboxView,
+  ModLook,
+  PlannedKey,
+  OverviewRow,
+  RowView,
+  RowWait,
+  ShownTab,
+} from './view'
 import { agentTools, recordClose, recordItem } from './tools'
 import type { UndoProps } from './undo-client'
 import {
+  ARRIVAL_TABS,
   closedGroups,
   followTo,
   isPrsTabEmpty,
@@ -234,7 +264,7 @@ import {
 import { parseInline } from './inline'
 import type { Span } from './inline'
 import type { RowRecord } from './arrivals'
-import { ROW_PAD_PT } from './layout'
+import { LEAD_GAP_PT, ROW_PAD_PT } from './layout'
 import { DARK_DALTONIZED_TONES, DARK_TONES, LIGHT_DALTONIZED_TONES, LIGHT_TONES, toneColors } from './tones'
 import type { ToneName } from './tones'
 import type { FoldProps } from './fold-client'
@@ -242,7 +272,15 @@ import type { LinksProps } from './links-client'
 import type { RowProps } from './row-client'
 import { TAB_COUNT_GAP, TAB_HEIGHT, tabLines, type TabsProps } from './tabs-client'
 
+/** The tools Claude Code writes its own task list with. They are off unless the person turns them on. */
+const HOST_TASK_TOOLS: ReadonlySet<string> = new Set(['TaskCreate', 'TaskUpdate', 'TodoWrite'])
+
 const TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'needsYou' as Tab)
+/**
+ * The page tab shown in place of `TAB`, or null while a row tab shows. Kept apart from `TAB` so a build that
+ * does not know the page still reads a row tab there.
+ */
+const PAGE = atom({ plugin: 'inbox', key: 'page' } as const, null as PageTab | null)
 const NO_CURSOR: Cursor = { id: null, index: 0, openedAt: 0 }
 const NO_SELECTION: Record<Tab, Cursor> = { needsYou: NO_CURSOR, findings: NO_CURSOR, prs: NO_CURSOR }
 const SELECTION = atom({ plugin: 'inbox', key: 'selection' } as const, NO_SELECTION)
@@ -576,13 +614,21 @@ function paletteFor(theme: string, look: ModLook): Palette {
   return look === 'desktop' ? DESKTOP_PALETTE : (PALETTES[theme] ?? THEME_KEY_PALETTE)
 }
 const TAB_PAD = '  '
+/** The docked terminal tabs' padding inside each tab, gap between tabs and right margin, from roomiest to tightest. */
+const FRAMED_TAB_LAYOUTS = [
+  { pad: TAB_PAD, gap: 1, right: 1 },
+  { pad: ' ', gap: 1, right: 1 },
+  { pad: ' ', gap: 0, right: 1 },
+  { pad: ' ', gap: 0, right: 0 },
+  { pad: '', gap: 1, right: 0 },
+  { pad: '', gap: 0, right: 0 },
+]
 const INLINE_RAIL_AT = 80
 const RAIL_GUTTER = 2
 const FOLD_KINDS: FoldKind[] = [...NEEDS_YOU_GROUPS.map(g => g.kind), 'issue', 'opportunity']
 const AWAY_MS = 15 * 60_000
 
-let isTurnRunning = false
-/** The conversation whose first prompt has had the card carried beside it. */
+/** The conversation whose first prompt has had the Overview's headline and status carried beside it. */
 let carriedFor: string | null = null
 /** Why the last conversation ended, until the next conversation loads. */
 let endReason: string | null = null
@@ -629,6 +675,8 @@ function suspendUndoReveal(): number {
 let loadRevision = 0
 let applyingConversation: Promise<void> = Promise.resolve()
 let queue: Promise<void> = Promise.resolve()
+/** The conversations whose Overview calls run one after another. They do not hold `queue`, so a ledger call never waits for one. */
+const resultsOrder = orderedKeys()
 let published: string | null = null
 let publishing: Promise<void> = Promise.resolve()
 let shellCommand: string | null = null
@@ -893,11 +941,18 @@ async function commit(
 /** The session a look draws: `session`, with the ledger, PR views, presses and turn counts of the sample while it shows. */
 function drawnSession(
   session: Session,
-  drawn: Pick<DemoCopy, 'ledger' | 'stop' | 'prViews' | 'lastActions' | 'turns'>,
+  drawn: Pick<DemoCopy, 'ledger' | 'stop' | 'prViews' | 'lastActions' | 'turns' | 'presence'>,
 ): Session {
-  const { ledger, stop, prViews, lastActions, turns } = drawn
+  const { ledger, stop, prViews, lastActions, turns, presence } = drawn
 
-  return { ...session, ledger, stop, prViews, lastActions, presence: { ...session.presence, ...turns } }
+  return {
+    ...session,
+    ledger,
+    stop,
+    prViews,
+    lastActions,
+    presence: { ...session.presence, ...turns, ...presence },
+  }
 }
 
 function redrawWhileLeaving($: EngineInterface, expiresAt: number) {
@@ -961,19 +1016,29 @@ async function redrawAfterReload($: EngineInterface) {
  */
 async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpReply> {
   if (!isCurrent(owner)) return { kind: 'failed' }
-  const [{ ledger }, shown] = await Promise.all([read($, SESSION), screen($)])
+  const [{ ledger }, shown, transcript] = await Promise.all([
+    read($, SESSION),
+    screen($),
+    $.session.messages().then(transcriptText),
+  ])
+  // The Overview call reads the transcript. With none to read, it writes no Overview.
+  const overview: AskCatchUpOverview = async (last, tasks) => {
+    if (!transcript || !isCurrent(owner)) return null
+    const r = await askLedgerModel($, overviewCatchUpPrompt(last, transcript, tasks), OVERVIEW_SYSTEM, 90_000)
+
+    return r.isAnswered ? r.text : null
+  }
   const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
   if (!isCurrent(owner)) return { kind: 'failed' }
-  if (forked.isAnswered) return { kind: 'reply', text: forked.text, source: null }
+  if (forked.isAnswered) return { kind: 'reply', text: forked.text, source: null, overview }
   // A fork has nothing to read until this process sends its first request,
   // as after a resume. The model then reads the transcript instead, uncached.
   if (forked.reason !== 'nothing-to-fork') return { kind: 'failed' }
-  const transcript = transcriptText(await $.session.messages())
   if (!transcript) return { kind: 'unreadable' }
-  const r = await askLedgerModel($, transcriptCatchUpPrompt(ledger, shown, transcript), 90_000)
+  const r = await askLedgerModel($, transcriptCatchUpPrompt(ledger, shown, transcript), systemText(CLAUDE_CODE), 90_000)
   if (!isCurrent(owner)) return { kind: 'failed' }
 
-  return r.isAnswered ? { kind: 'reply', text: r.text, source: transcript } : { kind: 'failed' }
+  return r.isAnswered ? { kind: 'reply', text: r.text, source: transcript, overview } : { kind: 'failed' }
 }
 
 /**
@@ -995,7 +1060,13 @@ function updateLedger($: EngineInterface) {
   const owner = currentOwner()
   queue = queue.then(async () => {
     if (!isCurrent(owner)) return
-    await runUpdates({ ...hostOf($, owner), catchUp: () => catchUpReply($, owner) })
+    await runUpdates({
+      ...hostOf($, owner),
+      names: CLAUDE_CODE,
+      catchUp: () => catchUpReply($, owner),
+      inOrder: fn => resultsOrder.run(owner.id, fn),
+      background: overviews => void overviews,
+    })
     if (isCurrent(owner)) void publishStatus($)
   })
   // A rejected link would skip every later update, so the chain swallows it.
@@ -1007,7 +1078,6 @@ function hostOf($: EngineInterface, owner: Owner, surface?: UiPressArgument['sur
   return sessionHost($, owner, {
     update: change => commit($, owner, change),
     surface,
-    isTurnRunning: () => isTurnRunning,
     settleWindowMs: SETTLED_MS,
     onGhMissing: isGhMissing =>
       void commit($, owner, s =>
@@ -1018,10 +1088,10 @@ function hostOf($: EngineInterface, owner: Owner, surface?: UiPressArgument['sur
 
 async function tick($: EngineInterface) {
   const now = await $.clock.now()
-  const away = await read($, AWAY)
+  const [away, { presence }] = await Promise.all([read($, AWAY), read($, SESSION)])
   if (away.isAway) {
     await update($, AWAY, a => ({ ...a, minute: Math.floor(now / 60_000) }))
-  } else if (!isTurnRunning && away.lastActiveAt > 0 && now - away.lastActiveAt > AWAY_MS) {
+  } else if (!presence.isTurnRunning && away.lastActiveAt > 0 && now - away.lastActiveAt > AWAY_MS) {
     await update($, AWAY, a => ({ ...a, isAway: true, minute: Math.floor(now / 60_000) }))
   }
 }
@@ -1061,7 +1131,12 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
   const now = await $.clock.now()
   const [session] = await Promise.all([
     upgradeDrawn($),
-    update($, TAB, t => ((t as string) === 'notes' ? 'findings' : (t as string) === 'waiting' ? 'needsYou' : t)),
+    update($, TAB, t => {
+      const renamed = (t as string) === 'notes' ? 'findings' : (t as string) === 'waiting' ? 'needsYou' : t
+
+      return ROW_TABS.some(r => r.id === renamed) ? renamed : 'needsYou'
+    }),
+    update($, PAGE, p => (TABS.some(t => t.id === p) ? p : null)),
     update($, SELECTION, ({ waiting, ...s }: Record<Tab, Cursor> & { waiting?: Cursor }) => {
       const cursors: Record<Tab, Cursor> = { ...NO_SELECTION, ...(waiting ? { needsYou: waiting } : {}), ...s }
       // A cursor saved before `openedAt` existed: no click opened its row in a way that still guards it.
@@ -1076,7 +1151,7 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
       ),
     ),
     // A demo an earlier build seeded may lack a field this one draws, so it ends; /inbox demo seeds a new one.
-    update($, DEMO, d => (d === null || isDemoCopy(d) ? d : null)),
+    update($, DEMO, d => (d === null ? d : isDemoCopy(d) ? upgradeDemoCopy(d) : null)),
     // A draft saved as bare text began before now, so a row that closed before this load stays closed.
     update($, DRAFTS, (d: Record<string, Draft | string>) =>
       Object.fromEntries(
@@ -1110,7 +1185,27 @@ async function runTool($: EngineInterface, tool: 'record' | 'close', input: Reco
  */
 function openPane($: EngineInterface, isFieldOpen = false) {
   paneClosesOnEscape = !isFieldOpen
-  return $.ui.open({ id: PANE, title: 'Inbox', focus: true, ...(isFieldOpen ? {} : { closeOnEscape: true as const }) })
+  const opened = $.ui.open({
+    id: PANE,
+    title: 'Inbox',
+    focus: true,
+    ...(isFieldOpen ? {} : { closeOnEscape: true as const }),
+  })
+  void opened.then(() => syncLook($, true)).catch(() => undefined)
+
+  return opened
+}
+
+/**
+ * Starts a look while the Overview shows in the pane, and ends it when it stops showing there. Both are
+ * idempotent, so every place that opens, closes or changes the pane's page can call it. The sample leaves the
+ * real session's look alone.
+ */
+async function syncLook($: EngineInterface, isOpen?: boolean) {
+  if (await read($, DEMO)) return
+  const [page, isPaneOpen, now] = await Promise.all([read($, PAGE), isOpen ?? isPaneShown($), $.clock.now()])
+  const isShown = isPaneOpen && page === 'overview'
+  await commit($, currentOwner(), s => (isShown ? lookStartedOn(s, now) : lookEndedOn(s, now))).catch(() => undefined)
 }
 
 /** Opens the open pane again, without asking for the keyboard, once a reply field opened or closed. */
@@ -1123,7 +1218,8 @@ async function matchPaneEscape($: EngineInterface) {
 }
 
 async function openTopRow($: EngineInterface) {
-  const [{ view, ledger, prViews: prState, lastActions, now }, tab] = await Promise.all([drawnState($), read($, TAB)])
+  const [{ view, ledger, prViews: prState, lastActions, now }, tab] = await Promise.all([drawnState($), readRowTab($)])
+  if (tab === null) return
   const prViews = drawnPrs(prState, ledger.prs, lastActions, now)
     .filter(x => !x.isSettled)
     .map(x => x.pr)
@@ -1144,8 +1240,10 @@ async function openInbox($: EngineInterface) {
   // asking for the pane, and below 144 columns, once the person has closed it, leaves it unplaced.
   await openPane($)
   const { view } = await drawnState($)
-  if (view.needsYou.count > 0) await update($, TAB, () => 'needsYou' as const)
+  if (view.needsYou.count > 0)
+    await Promise.all([update($, TAB, () => 'needsYou' as const), update($, PAGE, () => null)])
   else if ((await read($, TAB)) === 'prs') await findPrs($)
+  void syncLook($)
   await followNewRows($, true)
   await openTopRow($)
 }
@@ -1209,10 +1307,23 @@ async function focusField($: EngineInterface, id: string) {
   await redraw($)
 }
 
-async function showTab($: EngineInterface, tab: Tab) {
+/** The shown row tab; null while the Progress page shows, where no row is drawn, selected or scrolled to. */
+async function readRowTab($: EngineInterface): Promise<Tab | null> {
+  const [page, tab] = await Promise.all([read($, PAGE), read($, TAB)])
+
+  return page === null ? tab : null
+}
+
+async function showTab($: EngineInterface, tab: ShownTab) {
   cancelUndoScroll()
+  if (!isRowTab(tab)) {
+    await update($, PAGE, () => tab)
+    void syncLook($)
+    return
+  }
   if (tab === 'prs') await findPrs($)
-  await update($, TAB, () => tab)
+  await Promise.all([update($, TAB, () => tab), update($, PAGE, () => null)])
+  void syncLook($)
   await scrollToOpenRow($, tab)
 }
 
@@ -1400,8 +1511,8 @@ function settledScrollKey(key: string, layout: string): string {
 async function revealPendingUndo($: EngineInterface): Promise<boolean> {
   const pending = pendingUndoScroll
   if (!pending || !pending.revealUndo || !isInlineTerminalPane || pending.sessionId !== conversation.id) return false
-  const [tab, selection, drawn] = await Promise.all([read($, TAB), read($, SELECTION), drawnState($)])
-  if (pendingUndoScroll !== pending) return false
+  const [tab, selection, drawn] = await Promise.all([readRowTab($), read($, SELECTION), drawnState($)])
+  if (pendingUndoScroll !== pending || tab === null) return false
   if (tab !== pending.tab || !sameCursor(selection[tab], pending.cursor) || drawn.now >= pending.expiresAt) return false
   const prs = drawnPrs(drawn.prViews, drawn.ledger.prs, drawn.lastActions, drawn.now)
   const key = settledScrollKey(
@@ -1413,8 +1524,8 @@ async function revealPendingUndo($: EngineInterface): Promise<boolean> {
 
 async function keepUndoVisible($: EngineInterface, key: string, block: UiScrollBlock, at: number, revision: number) {
   if (revision !== undoScrollRevision) return
-  const [tab, selection] = await Promise.all([read($, TAB), read($, SELECTION)])
-  if (revision !== undoScrollRevision) return
+  const [tab, selection] = await Promise.all([readRowTab($), read($, SELECTION)])
+  if (revision !== undoScrollRevision || tab === null) return
   const pending: PendingUndoScroll = {
     key,
     tab,
@@ -1432,10 +1543,10 @@ async function finishPendingUndoScroll($: EngineInterface) {
   const pending = pendingUndoScroll
   if (!pending) return
   const revision = undoScrollRevision
-  const [tab, selection, drawn] = await Promise.all([read($, TAB), read($, SELECTION), drawnState($)])
+  const [tab, selection, drawn] = await Promise.all([readRowTab($), read($, SELECTION), drawnState($)])
   if (pendingUndoScroll !== pending || revision !== undoScrollRevision) return
-  const cursor = selection[tab]
-  if (tab === pending.tab && isInlineTerminalPane && conversation.id === pending.sessionId) {
+  const cursor = tab === null ? NO_CURSOR : selection[tab]
+  if (tab !== null && tab === pending.tab && isInlineTerminalPane && conversation.id === pending.sessionId) {
     const prs = drawnPrs(drawn.prViews, drawn.ledger.prs, drawn.lastActions, drawn.now)
     const openId =
       cursor.id ??
@@ -1491,9 +1602,10 @@ async function scrollToOpenRow($: EngineInterface, tab: Tab, surface?: RenderSur
 async function selectClicked($: EngineInterface, id: string) {
   const [{ ledger, prViews: prState, lastActions, view, now }, tab, selection] = await Promise.all([
     drawnState($),
-    read($, TAB),
+    readRowTab($),
     read($, SELECTION),
   ])
+  if (tab === null) return
   const prViews = drawnPrs(prState, ledger.prs, lastActions, now)
     .filter(x => !x.isSettled)
     .map(x => x.pr)
@@ -1563,13 +1675,14 @@ function tabWaits(tab: Tab, view: InboxView, prViews: PrView[], lastActions: Rec
 }
 
 async function unlessGuarded($: EngineInterface, rowId: string, press: UiPressArgument, onPress: Action['onPress']) {
-  const [selection, tab, now] = await Promise.all([read($, SELECTION), read($, TAB), $.clock.now()])
-  const cursor = selection[tab]
+  const [selection, tab, now] = await Promise.all([read($, SELECTION), readRowTab($), $.clock.now()])
+  const cursor = tab === null ? NO_CURSOR : selection[tab]
   if (cursor.id !== rowId || !isGuarded(cursor.openedAt, now)) await onPress(press)
 }
 
 async function keepPressedOpen($: EngineInterface, id: string) {
-  const tab = await read($, TAB)
+  const tab = await readRowTab($)
+  if (tab === null) return
   await update($, SELECTION, s =>
     s[tab].id === null && s[tab].openedAt === 0 ? { ...s, [tab]: { id, index: 0, openedAt: 0 } } : s,
   )
@@ -1584,7 +1697,7 @@ function newRows(isDemo: boolean, current: Record<Tab, string[] | null>): Record
 
 async function jumpTo($: EngineInterface, tab: Tab) {
   cancelUndoScroll()
-  await update($, TAB, () => tab)
+  await Promise.all([update($, TAB, () => tab), update($, PAGE, () => null)])
   await update($, SELECTION, s => ({ ...s, [tab]: NO_CURSOR }))
   await scrollToOpenRow($, tab)
 }
@@ -1604,9 +1717,10 @@ function tabRowIds(view: InboxView, prViews: PrView[]): Record<Tab, string[]> {
  * that can add a row calls this.
  */
 async function followNewRows($: EngineInterface, isOpening = false) {
-  const [drawn, tab, unfolded, isShown] = await Promise.all([
+  const [drawn, tab, page, unfolded, isShown] = await Promise.all([
     drawnState($),
     read($, TAB),
+    read($, PAGE),
     read($, UNFOLDED),
     isPaneShown($),
   ])
@@ -1642,12 +1756,8 @@ async function followNewRows($: EngineInterface, isOpening = false) {
           closed: closedGroups(view, tab, kind => unfolded.includes(kind)),
           hasBlocker: tab === 'needsYou' && (!!stop || isUnread),
         })
-  const to = followTo(
-    TABS.map(t => t.id),
-    tab,
-    isEmpty,
-    isOpening ? { ...openRowIds(view), prs: [] } : added,
-  )
+  if (page !== null) return
+  const to = followTo(ARRIVAL_TABS, tab, isEmpty, isOpening ? { ...openRowIds(view), prs: [] } : added)
   if (to) await jumpTo($, to)
 }
 
@@ -1656,13 +1766,19 @@ async function isPaneShown($: EngineInterface) {
 }
 
 async function isPrsTabShown($: EngineInterface) {
-  return (await read($, TAB)) === 'prs' && (await isPaneShown($))
+  return (await readRowTab($)) === 'prs' && (await isPaneShown($))
+}
+
+/** The tab the pane shows, as the inbox model is told: the page tab when one shows, else the row tab. */
+async function shownScreenTab($: EngineInterface): Promise<ScreenTab> {
+  const [page, tab] = await Promise.all([read($, PAGE), read($, TAB)])
+  const id = page ?? tab
+
+  return { label: TABS.find(t => t.id === id)?.label ?? id, isPage: page !== null }
 }
 
 async function screen($: EngineInterface) {
-  const tab = await read($, TAB)
-
-  return screenText(CLAUDE_CODE, await isPaneShown($), TABS.find(t => t.id === tab)?.label ?? tab)
+  return screenText(CLAUDE_CODE, await isPaneShown($), await shownScreenTab($))
 }
 
 async function closeTasksRunBy($: EngineInterface, command: string) {
@@ -1860,10 +1976,11 @@ async function undoKeyAfterPress(
 }
 
 async function shownWaits($: EngineInterface) {
-  const [{ ledger, prViews: prState, lastActions, view, now }, tab] = await Promise.all([drawnState($), read($, TAB)])
+  const [{ ledger, prViews: prState, lastActions, view, now }, tab] = await Promise.all([drawnState($), readRowTab($)])
   const prViews = drawnPrs(prState, ledger.prs, lastActions, now)
     .filter(x => !x.isSettled)
     .map(x => x.pr)
+  if (tab === null) return { tab, rows: [], ids: [] }
 
   return {
     tab,
@@ -1879,7 +1996,7 @@ async function openAfterClose(
   skipScroll = false,
 ): Promise<{ isMoved: boolean; undoBlock: UiScrollBlock }> {
   const [{ tab, rows, ids }, selection] = await Promise.all([shownWaits($), read($, SELECTION)])
-  if (!wasWaiting || selection[tab].id !== id || rows.find(r => r.id === id)?.isWaiting)
+  if (tab === null || !wasWaiting || selection[tab].id !== id || rows.find(r => r.id === id)?.isWaiting)
     return { isMoved: false, undoBlock: 'nearest' }
   const following = rowAfterClose(rows, id)
   const index = following === null ? -1 : ids.indexOf(following)
@@ -1898,7 +2015,8 @@ async function openAfterClose(
 }
 
 async function reopenPressed($: EngineInterface, id: string) {
-  const tab = await read($, TAB)
+  const tab = await readRowTab($)
+  if (tab === null) return
   await update($, SELECTION, s => ({ ...s, [tab]: { id, index: s[tab].index, openedAt: 0 } }))
 }
 
@@ -2084,36 +2202,44 @@ type ClosedLine = Pick<Closed, 'id' | 'ask' | 'at' | 'how' | 'outcome'> & {
 }
 
 function desktopTabSizes(
-  tabs: { label: string; count: number }[],
+  tabs: { label: string; count: number; isShown: boolean }[],
   columns: number,
-): { widths: number[]; gap: number; hasCounts: boolean } {
+): { widths: number[]; gap: number; hasCounts: boolean; isEachFramed: boolean } {
   const steps = [
-    { padding: 1, gap: 1, hasCounts: true },
-    { padding: 0, gap: 1, hasCounts: true },
-    { padding: 0, gap: 0, hasCounts: true },
-    { padding: 0, gap: 0, hasCounts: false },
+    { padding: 1, gap: 1, hasCounts: true, isEachFramed: true },
+    { padding: 0, gap: 1, hasCounts: true, isEachFramed: true },
+    { padding: 0, gap: 0, hasCounts: true, isEachFramed: true },
+    { padding: 0, gap: 1, hasCounts: true, isEachFramed: false },
+    { padding: 0, gap: 0, hasCounts: false, isEachFramed: true },
+    { padding: 1, gap: 0, hasCounts: false, isEachFramed: false },
   ]
-  const sizes = steps.map(({ padding, gap, hasCounts }) => ({
+  const sizes = steps.map(({ padding, gap, hasCounts, isEachFramed }) => ({
     widths: tabs.map(t => {
       const text = hasCounts && t.count > 0 ? `${t.label}${TAB_COUNT_GAP}${t.count}` : t.label
+      const isFramed = isEachFramed || t.isShown
       // A tab's rounded frame insets its label FRAME_INSET_PT on each side, so its width adds those columns,
       // rounded up, to what the label needs. Narrower, the label wraps inside the tab.
       return (
-        Math.ceil(text.length / DESKTOP_CHARS_PER_CELL) + Math.ceil((2 * FRAME_INSET_PT) / DESKTOP_CELL_PT) + padding
+        Math.ceil(text.length / DESKTOP_CHARS_PER_CELL) +
+        (isFramed ? Math.ceil((2 * FRAME_INSET_PT) / DESKTOP_CELL_PT) : 0) +
+        padding
       )
     }),
     gap,
     hasCounts,
+    isEachFramed,
   }))
+  const fits = (s: (typeof sizes)[number]) =>
+    s.widths.reduce((sum, w) => sum + w, 0) + s.gap * (s.widths.length - 1) <= columns
 
-  return (
-    sizes.find(s => s.widths.reduce((sum, w) => sum + w, 0) + s.gap * (s.widths.length - 1) <= columns) ?? sizes.at(-1)!
-  )
+  return sizes.find(fits) ?? sizes.at(-1)!
 }
 
 async function drawnState(
   $: EngineInterface,
-): Promise<DemoCopy & { view: InboxView; isDemo: boolean; showsDemoNotices: boolean; isUnread: boolean; now: number }> {
+): Promise<
+  DemoCopy & { view: SessionView; isDemo: boolean; showsDemoNotices: boolean; isUnread: boolean; now: number }
+> {
   const [session, notes, demo, isDemoRecording, unreadable, typing, drafts, discarded, now] = await Promise.all([
     read($, SESSION),
     read($, NOTES),
@@ -2130,7 +2256,15 @@ async function drawnState(
   ])
   const { ledger, stop, prViews, lastActions, presence } = session
   const turns = { turnsStarted: presence.turnsStarted, turnsApplied: presence.turnsApplied }
-  const drawn = demo ?? { ledger, stop, prViews, lastActions, notes, turns }
+  const drawn: DemoCopy = demo ?? {
+    ledger,
+    stop,
+    prViews,
+    lastActions,
+    notes,
+    turns,
+    presence: { isTurnRunning: presence.isTurnRunning },
+  }
   const holds = { replies: heldReplies(typing, drafts), discarded }
 
   const isUnread = demo === null && unreadable === conversation.id
@@ -2156,6 +2290,7 @@ async function setDemo($: EngineInterface, isShown: boolean, isRecording = false
     update($, DEMO_RECORDING, () => isShown && isRecording),
   ])
   await Promise.all([update($, SELECTION, () => NO_SELECTION), update($, TYPING, () => null)])
+  void syncLook($)
   if (isShown) redrawWhileLeaving($, now + SETTLED_MS)
   if ((await read($, TAB)) === 'prs') await findPrs($)
   await followNewRows($, true)
@@ -2268,9 +2403,9 @@ async function applyConversation(
   // it, so an update in flight at load was cut off: record it as failed.
   // The theme read at the start is gone after /clear, so each conversation reads it.
   const [current] = await Promise.all([upgradeState($), syncTheme($)])
-  await replaceDrawn($, cutOffUpdate)
+  await replaceDrawn($, s => cutOffTurn(cutOffUpdate(s)))
   if (revision !== loadRevision) return
-  const isFresh = current.turn === 0 && !current.card
+  const isFresh = isBlankLedger(current)
   const isUnread =
     (await update($, UNREADABLE, u =>
       isLoading() ? (isFresh ? (saved === null ? id : null) : u === id ? u : null) : u,
@@ -2279,7 +2414,7 @@ async function applyConversation(
   if (saved !== null) await bringBack($, parent ?? saved.session, isLoading, parent !== undefined)
   if (!isLoading()) return
   const { ledger, presence } = await read($, SESSION)
-  const isEmpty = !ledger.card && ledger.items.length === 0
+  const isEmpty = isBlankLedger(ledger)
   const needsCatchUp =
     presence.ledgerState !== 'current' ||
     presence.turnsStarted > presence.turnsApplied ||
@@ -2293,6 +2428,14 @@ async function applyConversation(
 /** An update a reload cut off reads as failed, so the next one catches up. */
 function cutOffUpdate<S extends Session>(s: S): S {
   return s.presence.isUpdating ? { ...s, presence: { ...s.presence, isUpdating: false, ledgerState: 'failed' } } : s
+}
+
+/**
+ * A reload or a quit can cut off a turn's end, so at load no turn runs. A turn the engine still runs sets it again at
+ * its next `turn.start`.
+ */
+function cutOffTurn<S extends Session>(s: S): S {
+  return s.presence.isTurnRunning ? turnEnded(s) : s
 }
 
 /** Row presses keep only their PR records, whose rows outlive a conversation's items. */
@@ -2316,7 +2459,7 @@ async function bringBack(
   let isBrought = false
   await replaceDrawn($, s => {
     isBrought = false
-    if (!isLoading() || s.ledger.turn !== 0 || s.ledger.card) return s
+    if (!isLoading() || !isBlankLedger(s.ledger)) return s
     isBrought = true
     if (isFork) return forkedFrom(s, loaded)
     const lastActions = Object.fromEntries(
@@ -2325,8 +2468,17 @@ async function bringBack(
         a.delivery?.state === 'queued' ? { ...a, delivery: { ...a.delivery, state: 'unconfirmed' as const } } : a,
       ]),
     )
-    // The stop and the running turn belong to the process that saved them.
-    return cutOffUpdate({ ...loaded, lastActions, sent: [], stop: null, turn: emptySession().turn })
+    // The stop and the turn belong to the process that saved them. Whether a turn runs now is this process's.
+    const { isTurnRunning } = s.presence
+
+    return cutOffUpdate({
+      ...loaded,
+      lastActions,
+      sent: [],
+      stop: null,
+      turn: emptySession().turn,
+      presence: { ...loaded.presence, isTurnRunning },
+    })
   })
   if (isBrought && !isFork)
     await update($, AWAY, a => (isLoading() ? { ...a, lastActiveAt: saved.savedAt, isAway: true } : a))
@@ -2374,14 +2526,11 @@ async function readAgain($: EngineInterface) {
   if (saved !== null) {
     await update($, UNREADABLE, () => null)
     const current = (await read($, SESSION)).ledger
-    const hasRun = current.turn !== 0 || current.card !== null
+    const hasRun = current.turn !== 0 || !isBlankLedger(current)
     if (hasRun && saved.session) await restore($, saved.session)
     else await bringBack($, saved.session, () => conversation.id === id)
     const { ledger } = await read($, SESSION)
-    if (
-      (hasRun && saved.session) ||
-      (!ledger.card && ledger.items.length === 0 && (await $.session.turns().catch(() => 0)) > 0)
-    )
+    if ((hasRun && saved.session) || (isBlankLedger(ledger) && (await $.session.turns().catch(() => 0)) > 0))
       await catchUpNow($)
     void publishStatus($)
     if (ledger.prs.length > 0) void fetchPrs($, false)
@@ -2486,7 +2635,7 @@ export const register: Register = on => {
     const notes = await notePrompt($, e.text)
     if (carriedFor !== conversation.id) {
       carriedFor = conversation.id
-      const carry = cardCarryText((await read($, SESSION)).ledger)
+      const carry = overviewCarryText((await read($, SESSION)).ledger)
       if (carry) notes.unshift(carry)
     }
 
@@ -2495,14 +2644,13 @@ export const register: Register = on => {
 
   on('turn.start', async ($, e, next) => {
     if (e.agentId) return next(e)
-    isTurnRunning = true
     finalReply = null
     hasStopFromError = false
     // Counted here, before the
     // turn can end, since a reload can cut off its end-of-turn hook.
     if (isOn) {
       const before = await read($, SESSION)
-      await commit($, currentOwner(), startTurn)
+      await commit($, currentOwner(), s => turnStarted(startTurn(s)))
       if (before.stop) {
         stopGeneration++
         resuming = null
@@ -2560,6 +2708,18 @@ export const register: Register = on => {
         const noted = noteTurnActivity(s, line)
         return isDismissed ? noteDialog(noted, null, asked) : noted
       }).catch(() => undefined)
+
+      return ran
+    }
+    if (HOST_TASK_TOOLS.has(String(e.tool))) {
+      const ran = await run()
+      const tool = String(e.tool)
+      const didRun = !ran.isError && typeof ran.deny !== 'string'
+      if (didRun)
+        await commit($, currentOwner(), s => ({
+          ...s,
+          hostTasks: claudeTasksAfter(s.hostTasks, tool, input, ran.text ?? null),
+        })).catch(() => undefined)
 
       return ran
     }
@@ -2632,10 +2792,10 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     const r = await next(e)
     if (e.agentId) return r
-    isTurnRunning = false
     askedCalls.clear()
     await closeDialogs($, null)
     if (!isOn) return r
+    await commit($, currentOwner(), turnEnded)
     if (e.reason === 'error' && !hasStopFromError) await setStopFromLastReply($)
     void wakeForDone($).catch(() => undefined)
     void followNewRows($).catch(() => undefined)
@@ -2643,8 +2803,8 @@ export const register: Register = on => {
     const isAnswered = e.reason === 'answer' && hasReply
     if (!isAnswered && !isDialogDismissed) return r
 
-    const [tab, isShown, now, before] = await Promise.all([
-      read($, TAB),
+    const [screenTab, isShown, now, before] = await Promise.all([
+      shownScreenTab($),
       isPaneShown($),
       $.clock.now(),
       read($, SESSION),
@@ -2653,9 +2813,7 @@ export const register: Register = on => {
     const queuesEmptyReply = isDialogDismissed
     resetTurn()
     await update($, AWAY, a => ({ ...a, lastActiveAt: now }))
-    await commit($, currentOwner(), s =>
-      endTurn(CLAUDE_CODE, s, reply, isShown, { tab: TABS.find(t => t.id === tab)?.label ?? tab, queuesEmptyReply }),
-    )
+    await commit($, currentOwner(), s => endTurn(CLAUDE_CODE, s, reply, isShown, { tab: screenTab, queuesEmptyReply }))
     updateLedger($)
     if (prRefs(reply).some(ref => !before.ledger.prs.includes(ref))) void fetchPrs($, await isPrsTabShown($))
 
@@ -2770,6 +2928,7 @@ export const register: Register = on => {
   on('ui.close', { id: PANE }, async ($, e, next) => {
     cancelUndoScroll()
     const r = await next(e)
+    void syncLook($, false)
     paneHasKeys.clear()
     await update($, TYPING, () => null)
     await update($, FOLD_HOVER, () => null)
@@ -2797,12 +2956,12 @@ export const register: Register = on => {
     if (!isOn || e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const [{ ledger, stop, view, showsDemoNotices, now }, theme] = await Promise.all([drawnState($), read($, THEME)])
-    if (!stop && !ledger.card && ledger.items.length === 0 && ledger.findings.length === 0) return next(e)
+    if (!stop && isBlankLedger(ledger)) return next(e)
     // Every mod shares the band, and a tree without the drawing from next(e)
     // hides what the mods after this one draw there.
     const theirs = await next(e)
     const pal = paletteFor(theme, lookOf(e.surface))
-    const counts = ROW_TABS.filter(t => view[t.id].count > 0).map(t => (
+    const counts = LISTED_TABS.filter(t => view[t.id].count > 0).map(t => (
       <Text>
         <Text dimColor>{t.label} </Text>
         <Text color={pal.tone[t.id] ?? pal.mark[t.id]}>{view[t.id].count}</Text>
@@ -2920,7 +3079,8 @@ export const register: Register = on => {
         : { rowPad: blankLine, settledPad: 0, buttonGap: 2, isFoldGapped: true }
     const [
       { ledger, prViews: prState, lastActions, notes, turns, stop, view, showsDemoNotices, isUnread, now },
-      tab,
+      savedTab,
+      savedPage,
       selection,
       theme,
       typing,
@@ -2932,6 +3092,7 @@ export const register: Register = on => {
     ] = await Promise.all([
       drawnState($),
       read($, TAB),
+      read($, PAGE),
       read($, SELECTION),
       read($, THEME),
       read($, TYPING),
@@ -2941,6 +3102,9 @@ export const register: Register = on => {
       read($, OPTIONS_SHOWN),
       $.env.get('TERM_PROGRAM'),
     ])
+    const tab: Tab = ROW_TABS.some(t => t.id === savedTab) ? savedTab : 'needsYou'
+    const isOverviewShown = savedPage === 'overview'
+    const shownTab: ShownTab = isOverviewShown ? 'overview' : tab
     // A hot reload keeps TYPING but empties openFields, so an open field takes its key and seed again here.
     if (typing !== null && !openFields.has(typing))
       openFields.set(typing, openedField(typing, (await read($, DRAFTS))[typing]))
@@ -2953,7 +3117,7 @@ export const register: Register = on => {
     if (size !== null && inlineSize !== null && size !== inlineSize) {
       const revision = undoScrollRevision
       later($, RESIZE_SCROLL_MS, () =>
-        revision === undoScrollRevision ? scrollToOpenRow($, tab, e.surface) : undefined,
+        revision === undoScrollRevision && !isOverviewShown ? scrollToOpenRow($, tab, e.surface) : undefined,
       )
     }
     inlineSize = size
@@ -3192,7 +3356,9 @@ export const register: Register = on => {
       findings: view.findings.count,
       prs: prGroups.filter(g => !g.isSettled && prNeedsYou(g.pr, isThreadSent)).length,
     }
-    const tabText = (id: Tab, label: string) => `${label}${tabCounts[id] > 0 ? ` ${tabCounts[id]}` : ''}`
+    const tabCount = (id: ShownTab) => (isRowTab(id) ? tabCounts[id] : 0)
+    const tabTone = (id: ShownTab) => (isRowTab(id) ? pal.tone[id] : undefined)
+    const tabText = (id: ShownTab, label: string) => `${label}${tabCount(id) > 0 ? ` ${tabCount(id)}` : ''}`
     const hasRail = isInline && look === 'terminal' && e.props.bodyColumns >= INLINE_RAIL_AT
     const railWidth = Math.max(...TABS.map(t => tabText(t.id, t.label).length)) + 2 * TAB_PAD.length
     const listColumns = e.props.bodyColumns - 2 - (hasRail ? railWidth + RAIL_GUTTER : 0)
@@ -3921,7 +4087,7 @@ export const register: Register = on => {
       )
     }
 
-    const isPrStatus = tab === 'prs' && prViews.length > 0
+    const isPrStatus = shownTab === 'prs' && prViews.length > 0
     const { isUpdating, error } = view.status
     const status = isPrStatus ? (prState.isFetching ? 'Refreshing PRs' : '') : isUpdating ? 'Updating…' : ''
 
@@ -3936,14 +4102,14 @@ export const register: Register = on => {
 
     const keyList = [
       { keys: TABS.map(t => t.hotkey).join(' '), does: 'Switch tabs' },
-      { keys: 'j k', does: 'Select the next or previous row' },
+      ...(isOverviewShown ? [] : [{ keys: 'j k', does: 'Select the next or previous row' }]),
       { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
     ]
     const keyColumn = Math.max(...keyList.map(k => k.keys.length)) + 2
 
     const tabColumns = e.props.bodyColumns - 2
     const tabSizes = desktopTabSizes(
-      TABS.map(({ id, label }) => ({ label, count: tabCounts[id] })),
+      TABS.map(({ id, label }) => ({ label, count: tabCount(id), isShown: id === shownTab })),
       tabColumns,
     )
     const tabProps: TabsProps | null = hasClient
@@ -3951,12 +4117,13 @@ export const register: Register = on => {
           tabs: TABS.map(({ id, label }, n) => ({
             id,
             label,
-            count: tabSizes.hasCounts ? tabCounts[id] : 0,
-            countColor: pal.tone[id] ?? pal.mark[id],
+            count: tabSizes.hasCounts ? tabCount(id) : 0,
+            countColor: isRowTab(id) ? (pal.tone[id] ?? pal.mark[id]) : pal.muted,
             width: tabSizes.widths[n]!,
           })),
-          shown: tab,
+          shown: shownTab,
           gap: tabSizes.gap,
+          isEachFramed: tabSizes.isEachFramed,
           columns: tabColumns,
           colors: {
             tab: pal.tab ?? null,
@@ -3983,8 +4150,12 @@ export const register: Register = on => {
         </Text>
       ) : null,
     ]
-    const terminalTabsWidth = TABS.reduce((sum, t) => sum + tabText(t.id, t.label).length + 2 * TAB_PAD.length + 1, 1)
-    const pad = terminalTabsWidth <= e.props.bodyColumns ? TAB_PAD : ' '
+    const labelsWidth = TABS.reduce((sum, t) => sum + tabText(t.id, t.label).length, 0)
+    const tabsFit = (r: { pad: string; gap: number; right: number }) =>
+      labelsWidth + 2 * r.pad.length * TABS.length + r.gap * (TABS.length - 1) <= e.props.bodyColumns - 1 - r.right
+    const framedTabs = FRAMED_TAB_LAYOUTS.find(tabsFit) ?? FRAMED_TAB_LAYOUTS.at(-1)!
+    const { pad } = framedTabs
+    const inlineTabGap = [3, 2].find(gap => labelsWidth + gap * (TABS.length - 1) <= e.props.bodyColumns - 3) ?? 1
     const hasTabLine = !isInline && look !== 'desktop'
     const tabLine = pal.tab ?? pal.divider
     // Terminal.app draws block characters from its font, which leaves a seam between a half block and the filled
@@ -3993,7 +4164,7 @@ export const register: Register = on => {
     const tabs = (
       <Box
         paddingLeft={isInline ? 2 : 1}
-        paddingRight={1}
+        paddingRight={isInline ? 1 : framedTabs.right}
         flexDirection="row"
         {...(hasTabLine ? { overflow: 'hidden' as const } : {})}
       >
@@ -4004,7 +4175,11 @@ export const register: Register = on => {
             <Text color={tabLine}>{'─'.repeat(e.props.bodyColumns)}</Text>
           </Box>
         ) : null}
-        <Box flexDirection="row" flexWrap="wrap" columnGap={isInline ? 3 : look === 'desktop' ? 2 : 1}>
+        <Box
+          flexDirection="row"
+          flexWrap="wrap"
+          columnGap={isInline ? inlineTabGap : look === 'desktop' ? 2 : framedTabs.gap}
+        >
           {hasClient && tabProps ? (
             <elements.Client
               key="tabs"
@@ -4016,12 +4191,12 @@ export const register: Register = on => {
           {tabProps
             ? null
             : TABS.map(({ id, label }) => {
-                const count = tabCounts[id]
+                const count = tabCount(id)
 
                 if (isInline)
                   return (
                     <Box key={`tab-block-${id}`} flexDirection="row">
-                      {tab === id ? (
+                      {shownTab === id ? (
                         <Text bold underline>
                           {label}
                         </Text>
@@ -4029,7 +4204,7 @@ export const register: Register = on => {
                         <Button plain key={`tab-${id}`} label={label} onPress={() => void showTab($, id)} />
                       )}
                       {count > 0 ? (
-                        <Text bold={tab === id} color={pal.tone[id]}>
+                        <Text bold={shownTab === id} color={tabTone(id)}>
                           {' '}
                           {count}
                         </Text>
@@ -4049,12 +4224,12 @@ export const register: Register = on => {
                     <Button
                       key={`tab-${id}`}
                       label={`${DESKTOP_TAB_PAD}${count > 0 ? `${label} ${count}` : label}${DESKTOP_TAB_PAD}`}
-                      {...(tab === id ? { variant: 'primary' as const } : {})}
+                      {...(shownTab === id ? { variant: 'primary' as const } : {})}
                       onPress={() => void showTab($, id)}
                     />
                   )
 
-                if (tab === id)
+                if (shownTab === id)
                   return (
                     <Box flexDirection="column" flexShrink={0}>
                       <Text color={pal.raised}>{(hasHalfLines ? '▄' : ' ').repeat(width)}</Text>
@@ -4064,7 +4239,7 @@ export const register: Register = on => {
                           {label}
                         </Text>
                         {count > 0 ? (
-                          <Text bold color={pal.tone[id] ?? pal.raisedText} backgroundColor={pal.raised}>
+                          <Text bold color={tabTone(id) ?? pal.raisedText} backgroundColor={pal.raised}>
                             {' '}
                             {count}
                           </Text>
@@ -4095,15 +4270,15 @@ export const register: Register = on => {
                       )}
                     </Button>
                     <Box flexDirection="row" backgroundColor={pal.tab}>
-                      <Button plain key={`tab-${id}-before`} label={pad} hover={raise} onPress={show} />
+                      {pad ? <Button plain key={`tab-${id}-before`} label={pad} hover={raise} onPress={show} /> : null}
                       <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show} />
                       {count > 0 ? (
-                        <Text color={pal.tone[id]} hover={raise}>
+                        <Text color={tabTone(id)} hover={raise}>
                           {' '}
                           {count}
                         </Text>
                       ) : null}
-                      <Button plain key={`tab-${id}-after`} label={pad} hover={raise} onPress={show} />
+                      {pad ? <Button plain key={`tab-${id}-after`} label={pad} hover={raise} onPress={show} /> : null}
                     </Box>
                     <Button plain key={`tab-${id}-below`} hover={edgeHover} onPress={show}>
                       {edgeFill ? (
@@ -4127,9 +4302,9 @@ export const register: Register = on => {
     const rail = (
       <Box flexDirection="column" flexShrink={0} paddingLeft={1} marginRight={RAIL_GUTTER}>
         {TABS.map(({ id, label }) => {
-          const count = tabCounts[id]
+          const count = tabCount(id)
           const fill = ' '.repeat(railWidth - tabText(id, label).length - TAB_PAD.length)
-          if (tab === id)
+          if (shownTab === id)
             return (
               <Text key={`rail-${id}`} backgroundColor={pal.raised}>
                 {TAB_PAD}
@@ -4137,7 +4312,7 @@ export const register: Register = on => {
                   {label}
                 </Text>
                 {count > 0 ? (
-                  <Text bold color={pal.tone[id] ?? pal.raisedText} backgroundColor={pal.raised}>
+                  <Text bold color={tabTone(id) ?? pal.raisedText} backgroundColor={pal.raised}>
                     {' '}
                     {count}
                   </Text>
@@ -4153,7 +4328,7 @@ export const register: Register = on => {
               <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show} />
               {count > 0 ? (
                 <Button plain key={`tab-${id}-count`} hover={raise} onPress={show}>
-                  <Text color={pal.tone[id]}> {count}</Text>
+                  <Text color={tabTone(id)}> {count}</Text>
                 </Button>
               ) : null}
               <Button plain key={`tab-${id}-after`} label={fill} hover={raise} onPress={show} />
@@ -4817,11 +4992,120 @@ export const register: Register = on => {
         sections([...(prState.isGhMissing ? [ghMissingNotice()] : []), ...prGroups.map(prBlock), ...olderPrs()], 2)
       )
 
+    const overviewTextLine = (text: string, key: string, isBold: boolean, hasGapAbove: boolean) => {
+      const line = (
+        <Text wrap="wrap" bold={isBold} {...(isBold ? {} : { color: pal.muted })}>
+          {text}
+        </Text>
+      )
+
+      const framed =
+        look === 'desktop' ? (
+          desktopFrame({ key, padY: 0, children: line })
+        ) : (
+          <Box key={key} paddingLeft={TREE_LINE_AT}>
+            {line}
+          </Box>
+        )
+
+      return hasGapAbove ? (
+        <Box
+          key={`${key}-gap`}
+          marginTop={look === 'desktop' ? LEAD_GAP_PT / (DESKTOP_LINE_PT / 2) : 1}
+          flexDirection="column"
+        >
+          {framed}
+        </Box>
+      ) : (
+        framed
+      )
+    }
+    const overviewTextRow = (id: string, text: string, pos: TreePos) =>
+      look === 'desktop'
+        ? desktopFrame({
+            key: `overview-${id}`,
+            indent: DESKTOP_MARK_CELLS,
+            isMarkHung: false,
+            padY: space.rowPad / 2,
+            children: <Text wrap="wrap">{text}</Text>,
+          })
+        : treeRow(pos, null, <Text wrap="wrap">{text}</Text>, `overview-${id}`, 0, markColumns.textAt)
+    const markedRow = (m: OverviewRow, pos: TreePos) => {
+      const mark = <Text color={m.tone ? pal.mark[m.tone] : pal.muted}>{m.mark}</Text>
+      const lines = [
+        <Text key="text" wrap="wrap">
+          {m.text}
+        </Text>,
+        m.detail ? (
+          <Text key="detail" wrap="wrap" color={pal.muted}>
+            {m.detail}
+          </Text>
+        ) : null,
+      ]
+
+      return look === 'desktop'
+        ? desktopFrame({
+            key: `overview-${m.id}`,
+            indent: DESKTOP_MARK_CELLS,
+            isMarkHung: false,
+            padY: space.rowPad / 2,
+            mark,
+            children: lines,
+          })
+        : treeRow(
+            pos,
+            mark,
+            <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+              {lines}
+            </Box>,
+            `overview-${m.id}`,
+          )
+    }
+    const overviewView = () => {
+      const page = view.overviewPage
+      if (page.isEmpty)
+        return (
+          <Box flexDirection="column" flexGrow={1}>
+            {emptyState(page.empty)}
+          </Box>
+        )
+      const head = page.lead.map(line =>
+        overviewTextLine(line.text, `overview-${line.id}`, line.id === 'headline', line.hasGapAbove),
+      )
+
+      return sections([
+        ...(head.length > 0
+          ? [
+              <Box key="overview-head" flexDirection="column">
+                {head}
+              </Box>,
+            ]
+          : []),
+        ...page.sections.map(part =>
+          section([
+            ...(part.title ? [groupTitle(part.title, 0), ...titleGap()] : []),
+            ...part.rows.map((m, n) => markedRow(m, childPos(n, part.rows.length))),
+          ]),
+        ),
+        ...(page.earlier.length > 0
+          ? [
+              section([
+                groupTitle('Earlier in this session', 0),
+                ...titleGap(),
+                ...page.earlier.map((text, n) =>
+                  overviewTextRow(`earlier-${n}`, text, childPos(n, page.earlier.length)),
+                ),
+              ]),
+            ]
+          : []),
+      ])
+    }
+
     const move = (step: number) => {
       const to = Math.min(Math.max(at + step, 0), ids.length - 1)
       void select($, tab, ids[to] ?? '', to)
     }
-    const canMove = ids.length > 1 || (at < 0 && ids.length > 0)
+    const canMove = !isOverviewShown && (ids.length > 1 || (at < 0 && ids.length > 0))
     // Claude Code sends a key no Button binds to the prompt and gives it the keyboard, so the keys
     // stay bound when there is nothing to move to or close.
     const moveKeys: KeyAction[] = [
@@ -4842,7 +5126,7 @@ export const register: Register = on => {
       onPress: () => void showTab($, id),
     }))
 
-    const selectedRow = rows[tab][at]
+    const selectedRow = isOverviewShown ? undefined : rows[tab][at]
     const selectedActions = selectedRow ? rowActions(selectedRow) : null
     const closeKeysWithoutRow: KeyAction[] = ['d', 'x'].map(hotkey => ({
       key: `no-row-${hotkey}`,
@@ -4856,7 +5140,13 @@ export const register: Register = on => {
     // A pane takes a key
     // only as a Button's hotkey, so the tab keys, j, k and the selected row's keys
     // are Buttons in a hidden Box.
-    const tabView = tab === 'findings' ? findingsView() : tab === 'prs' ? prsView() : needsYouView()
+    const tabView = isOverviewShown
+      ? overviewView()
+      : tab === 'findings'
+        ? findingsView()
+        : tab === 'prs'
+          ? prsView()
+          : needsYouView()
     const drawn = (
       <Box flexDirection="column" minHeight={e.props.scroll.bodyRows} backgroundColor={pal.body}>
         {showsDemoNotices ? (

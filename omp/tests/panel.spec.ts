@@ -12,11 +12,21 @@ import { version } from '../package.json'
 import { failingChecks, waitingThreads } from '../../hooks/prs'
 import type { LastAction, Stop } from '../../types'
 import { closeItem } from '../../hooks/ledger'
-import { CLOSED_SHOWN, SETTLED_MS, NO_HOLDS, allRows, earlierLabel, foldLabel, rowKeyPlan } from '../../hooks/view'
+import {
+  CLOSED_SHOWN,
+  SETTLED_MS,
+  NO_HOLDS,
+  TABS,
+  allRows,
+  earlierLabel,
+  foldLabel,
+  isRowTab,
+  rowKeyPlan,
+} from '../../hooks/view'
 import type { RowView } from '../../hooks/view'
 import { sessionView } from '../../hooks/session'
 import { demoSource, demoState } from '../src/demo'
-import { INITIAL_UI, afterHandOff, bandLines, followRows, handleKey, holdsOf, render } from '../src/panel'
+import { INITIAL_UI, afterHandOff, bandLines, drawPanel, followRows, handleKey, holdsOf, render } from '../src/panel'
 import type { PanelScreen, PanelUi, Style } from '../src/panel'
 import { emptyState } from '../src/state'
 
@@ -123,15 +133,14 @@ test('a button letter presses that button', () => {
   expect(handleKey(screen, onRow(row), 'x', NOW).press).toEqual({ action: 'dismiss', id: row.id })
 })
 
-test('Tab, Shift+Tab and the digits switch tabs', () => {
+test('Tab and Shift+Tab cycle through every tab in order, and each digit picks its tab', () => {
   const screen = screenOf()
-  expect(keys(screen, INITIAL_UI, 'tab').tab).toBe('findings')
-  expect(keys(screen, INITIAL_UI, 'tab', 'tab').tab).toBe('prs')
-  expect(keys(screen, INITIAL_UI, 'tab', 'tab', 'tab').tab).toBe('needsYou')
-  expect(keys(screen, INITIAL_UI, 'shift+tab').tab).toBe('prs')
-  expect(keys(screen, INITIAL_UI, '2').tab).toBe('findings')
-  expect(keys(screen, INITIAL_UI, '3').tab).toBe('prs')
-  expect(keys(screen, keys(screen, INITIAL_UI, '3'), '1').tab).toBe('needsYou')
+  const ids = TABS.map(t => t.id)
+  const cycled = ids.map((_, n) => keys(screen, INITIAL_UI, ...ids.slice(0, n).map(() => 'tab')).tab)
+  expect(cycled).toEqual(ids)
+  expect(keys(screen, INITIAL_UI, ...ids.map(() => 'tab')).tab).toBe('needsYou')
+  expect(keys(screen, INITIAL_UI, 'shift+tab').tab).toBe(ids.at(-1)!)
+  for (const t of TABS) expect(keys(screen, keys(screen, INITIAL_UI, 'tab'), t.hotkey).tab).toBe(t.id)
 })
 
 test('the selected tab draws inverse and the others draw their counts', () => {
@@ -539,6 +548,17 @@ test('rows that arrive while Needs you shows only its empty text move the panel 
   expect(followRows(findingsOnly(), opened.ui, opened.seen, false, NOW).ui.tab).toBe('findings')
 })
 
+test('a PR that arrives while Needs you shows only its empty text moves the panel to PRs', () => {
+  const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
+  const opened = followRows(empty, INITIAL_UI, {}, true, NOW)
+  const withPr = screenOf({ view: sessionView(demoState(NOW), NOW, SETTLED_MS, true, NO_HOLDS) })
+  const prsOnly = {
+    ...withPr,
+    view: { ...withPr.view, needsYou: empty.view.needsYou, findings: empty.view.findings },
+  }
+  expect(followRows(prsOnly, opened.ui, opened.seen, false, NOW).ui.tab).toBe('prs')
+})
+
 test('a new row above the default selection leaves the selection on its row', () => {
   const s = demoState(NOW)
   const before = screenOf()
@@ -551,4 +571,138 @@ test('a new row above the default selection leaves the selection on its row', ()
   })
   expect(handleKey(after, INITIAL_UI, 'noop', NOW).ui.selectedId).toBe('new-question')
   expect(followRows(after, INITIAL_UI, seen, false, NOW).ui.selectedId).toBe(selectedBefore)
+})
+
+const onPage: PanelUi = { ...INITIAL_UI, tab: 'overview' }
+const toneNamed: Style = { ...style, tone: (name, s) => `<${name}>${s}</${name}>` }
+const tabLine = (screen: PanelScreen, ui: PanelUi, width: number) =>
+  strip(drawn(screen, ui, width)[0]!)
+    .replace(/esc to close\s*$/, '')
+    .trimEnd()
+
+test('the Overview page shows the headline, the status, then its sections in order', () => {
+  const screen = screenOf()
+  const page = screen.view.overviewPage
+  const lines = text(screen, onPage).split('\n')
+  const at = (s: string) => lines.findIndex(l => l.includes(s))
+  const order = [
+    ...page.lead.map(l => l.text),
+    ...page.sections.flatMap(part => [...(part.title ? [part.title] : []), ...part.rows.map(r => r.text)]),
+  ].map(at)
+  expect(order.every(n => n >= 0)).toBe(true)
+  expect(order).toEqual([...order].sort((a, b) => a - b))
+  for (const row of page.sections.flatMap(part => part.rows))
+    if (row.detail) expect(lines[at(row.text) + 1]).toContain(row.detail)
+})
+
+test('each item’s mark takes its tone, and a mark with no tone is muted', () => {
+  const screen = screenOf()
+  const rows = screen.view.overviewPage.sections.flatMap(part => part.rows)
+  const lines = render(screen, onPage, 200, NOW, toneNamed)
+  const lineOf = (s: string) => lines.find(l => l.includes(s))!
+  for (const row of rows.filter(r => r.tone !== null))
+    expect(lineOf(row.text)).toContain(`<${row.tone}>${row.mark} </${row.tone}>`)
+  const muted = rows.find(r => r.tone === null)!
+  expect(lineOf(muted.text)).toContain(`${ESC}2m${muted.mark} ${ESC}22m`)
+})
+
+test('an Overview page with nothing yet reads its empty text', () => {
+  const screen = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
+  const { empty } = screen.view.overviewPage
+  expect(screen.view.overviewPage.isEmpty).toBe(true)
+  expect(text(screen, onPage)).toContain(empty.title)
+  expect(text(screen, onPage)).toContain(empty.hint)
+})
+
+test('keys on the Overview page select nothing and press nothing, and the footer offers only tab', () => {
+  const screen = screenOf()
+  for (const key of ['up', 'down', 'j', 'k', 'left', 'right', 'enter', 'u', 'r', 'd', 'x', 'a']) {
+    const result = handleKey(screen, onPage, key, NOW)
+    expect(result.press).toBeUndefined()
+    expect({ ...result.ui, pageTop: 0 }).toEqual(onPage)
+  }
+  const footer = text(screen, onPage).split('\n').at(-1)!
+  expect(footer).toContain('tab switch')
+  expect(footer).not.toContain('↵ press')
+  expect(footer).not.toContain('scroll')
+})
+
+test('on a Overview page taller than the panel, each ↑↓ or j/k press shows one more or one fewer line, up to its last line', () => {
+  const screen = screenOf()
+  const height = 14
+  const bodyOf = (lines: string[]) => {
+    const rule = lines.findLastIndex(l => /^─+$/.test(l))
+
+    return lines.slice(2, rule)
+  }
+  const page = bodyOf(text(screen, onPage, 80).split('\n'))
+  const drawnAt = (pageTop: number) => drawPanel(screen, { ...onPage, pageTop }, 80, NOW, style, height)
+  const shown = (pageTop: number) => bodyOf(drawnAt(pageTop).lines.map(strip))
+  const room = shown(0).length
+  const last = page.length - room + 1
+  expect(page.length).toBeGreaterThan(room)
+  expect(shown(0)).toEqual([...page.slice(0, room - 1), `  ↓ ${page.length - room + 1} more lines`])
+  expect(shown(1)).toEqual(['  ↑ 2 more lines', ...page.slice(2, room), `  ↓ ${page.length - room} more lines`])
+  expect(shown(last - 1)).toEqual([`  ↑ ${last} more lines`, ...page.slice(last, -1), '  ↓ 1 more line'])
+  expect(shown(last)).toEqual([`  ↑ ${last} more lines`, ...page.slice(last)])
+  expect(drawnAt(1000).pageTop).toBe(last)
+  for (let top = 0; top <= last; top++) {
+    const lines = shown(top).filter(l => !/^ {2}[↑↓] \d+ more line/.test(l))
+    expect(page[room - 2 + top]).toBe(lines.at(-1))
+  }
+  expect(drawnAt(0).lines.map(strip).at(-1)).toContain('↑↓ scroll')
+  const down = keys(screen, onPage, 'down', 'j')
+  expect(down.pageTop).toBe(2)
+  expect(keys(screen, down, 'k').pageTop).toBe(1)
+  expect(keys(screen, down, 'up', 'up', 'up').pageTop).toBe(0)
+})
+
+test('changing the shown tab starts the Overview page at its top', () => {
+  const screen = screenOf()
+  const scrolled = { ...onPage, pageTop: 3 }
+  for (const key of ['tab', 'shift+tab', ...TABS.map(t => t.hotkey)])
+    expect(keys(screen, scrolled, key).pageTop).toBe(0)
+})
+
+test('rows that arrive while the Overview page shows leave the panel on the page', () => {
+  const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
+  const opened = followRows(empty, onPage, {}, true, NOW)
+  expect(opened.ui).toEqual(onPage)
+  expect(followRows(findingsOnly(), opened.ui, opened.seen, false, NOW).ui).toEqual(onPage)
+})
+
+test('a narrowing tab line drops the brackets, then zero counts, then cuts other labels, never the shown one', () => {
+  const zeros = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
+  for (const screen of [screenOf(), zeros])
+    for (const shown of TABS) {
+      const ui = { ...INITIAL_UI, tab: shown.id }
+      const full = tabLine(screen, ui, 200).length + 1
+      expect(tabLine(screen, ui, full)).toContain(`[${shown.hotkey}] ${shown.label}`)
+      const bare = tabLine(screen, ui, full - 1)
+      expect(bare).not.toContain('[')
+      expect(bare).not.toContain('…')
+      const unzeroed = tabLine(screen, ui, bare.length)
+      if (screen === zeros) {
+        expect(unzeroed).not.toMatch(/ 0 /)
+        expect(unzeroed).not.toContain('…')
+      }
+      for (const width of [45, 50, 60, 80])
+        for (const t of TABS) {
+          const line = tabLine(screen, ui, width).replace(/[[\]]/g, '')
+          const letters = t.id === shown.id ? t.label : [...t.label].slice(0, 2).join('')
+          expect(line).toContain(`${t.hotkey} ${letters}`)
+        }
+    }
+})
+
+test('the page tab draws no count', () => {
+  const screen = screenOf()
+  const line = tabLine(screen, INITIAL_UI, 200)
+  for (const t of TABS.filter(t => !isRowTab(t.id))) expect(line).toMatch(new RegExp(`\\[${t.hotkey}\\] ${t.label} *$`))
+})
+
+test('no line on the Overview page is wider than the panel', () => {
+  const screen = screenOf()
+  for (const width of [30, 50, 60, 80, 120])
+    for (const line of drawn(screen, onPage, width)) expect([...strip(line)].length).toBeLessThanOrEqual(width)
 })

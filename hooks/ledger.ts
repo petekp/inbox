@@ -1,14 +1,15 @@
-import type { Card, Closed, ClosedFinding, Exchange, Finding, Help, Item, Ledger, Press, PressKind } from '../types'
+import type { Closed, ClosedFinding, Exchange, Finding, Help, Item, Ledger, Press, PressKind } from '../types'
 
 export type { Exchange, Press } from '../types'
 import type { Host } from './model-text'
+import { upgradeOverview } from './overview'
 import { codeBlocks } from './text'
 
 /** How many saved sessions each host keeps; the newest by save time. */
 export const KEPT_SESSIONS = 40
 
 export const EMPTY: Ledger = {
-  card: null,
+  overview: null,
   items: [],
   closed: [],
   findings: [],
@@ -17,6 +18,12 @@ export const EMPTY: Ledger = {
   nextId: 1,
   turn: 0,
   batchTurn: 0,
+  updates: 0,
+}
+
+/** Whether nothing has been recorded: no model answer applied, no Overview, no item and no finding. */
+export function isBlankLedger(ledger: Ledger): boolean {
+  return ledger.updates === 0 && ledger.overview === null && ledger.items.length === 0 && ledger.findings.length === 0
 }
 
 const NL = '\n'
@@ -46,10 +53,24 @@ export function readKind(kind: string | null | undefined): Item['kind'] {
  * findings were once not kept.
  */
 export function upgradeLedger(ledger: Ledger): Ledger {
-  const { notes, decided, ...rest } = ledger as Ledger & { notes?: Finding[]; decided?: Ledger['closed'] }
+  const {
+    notes,
+    decided,
+    milestones: _milestones,
+    card,
+    ...rest
+  } = ledger as Ledger & {
+    notes?: Finding[]
+    decided?: Ledger['closed']
+    milestones?: unknown
+    card?: unknown
+  }
+  const updates = typeof rest.updates === 'number' ? rest.updates : card ? 1 : 0
 
   return {
     ...rest,
+    updates,
+    overview: upgradeOverview(rest.overview),
     findings: [...(rest.findings ?? []), ...(notes ?? [])],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
@@ -134,7 +155,6 @@ const PERSON_ONLY_REASON =
   /credential|password|passphrase|secret|\btoken|\b2fa\b|\bmfa\b|\bdevice\b|phone|android|tablet|account|sign(?:ed)?[- ]?in|log(?:ged)?[- ]?in|only you|you hold|your (?:mac|machine|laptop|computer|keychain)|\bsudo\b/i
 
 export type Update = {
-  card: Card
   closed: { id: string; outcome: string }[]
   added: (Omit<Item, 'id' | 'turn' | 'at' | 'helps' | 'from'> & { helps: Help[] })[]
   helped: { id: string; help: Help }[]
@@ -246,7 +266,32 @@ function dash(value: string | undefined): string | null {
   return v === '' || v === '-' ? null : v
 }
 
-const KEY_LINE = /^\s*[-*]?\s*(GOAL|DONE|NOW|RUNNING|CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:\s*(.*)$/
+const KEY_LINE = /^\s*[-*]?\s*(?:(NONE)(?::|\s|$)|(CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:)\s*(.*)$/
+
+function keyOf(line: string): { key: string; value: string } | null {
+  const m = KEY_LINE.exec(line)
+
+  return m ? { key: (m[1] ?? m[2])!, value: m[3] ?? '' } : null
+}
+
+/**
+ * The model sometimes writes an answer, then a prose line that corrects it, and a whole second answer. The answer
+ * it settled on is the last run of key lines that follows a prose line after an earlier run.
+ */
+function lastAnswerStart(lines: string[]): number {
+  let start = 0
+  let hasKeys = false
+  let isAfterProse = false
+  lines.forEach((line, i) => {
+    if (keyOf(line)) {
+      if (hasKeys && isAfterProse) start = i
+      hasKeys = true
+      isAfterProse = false
+    } else if (line.trim() !== '') isAfterProse = true
+  })
+
+  return start
+}
 
 /**
  * Reads the model's line format; null when no known key appears. `source` is
@@ -255,7 +300,6 @@ const KEY_LINE = /^\s*[-*]?\s*(GOAL|DONE|NOW|RUNNING|CLOSED|FIXED|ASKED|NEW|UPDA
  */
 export function parseReply(text: string, source: string | null = null): Update | null {
   const blocks = source === null ? [] : codeBlocks(source)
-  const card = { goal: '', done: [] as string[], now: '', running: [] as string[] }
   const closed: Update['closed'] = []
   const added: Update['added'] = []
   const helped: Update['helped'] = []
@@ -265,22 +309,16 @@ export function parseReply(text: string, source: string | null = null): Update |
   const todos: string[] = []
   let seen = 0
   const lines = text.split(NL)
-  // The model sometimes writes an answer, then a correction and a whole second answer. Each answer starts with
-  // GOAL, so only the lines from the last GOAL on are the answer it settled on.
-  const lastGoal = lines.findLastIndex(line => KEY_LINE.exec(line)?.[1] === 'GOAL')
   const newLines: (Update['added'][number] | undefined)[] = []
 
-  for (const raw of lines.slice(Math.max(lastGoal, 0))) {
-    const m = KEY_LINE.exec(raw)
-    if (!m) continue
+  for (const raw of lines.slice(lastAnswerStart(lines))) {
+    const parsed = keyOf(raw)
+    if (!parsed) continue
     seen += 1
-    const key = m[1]
-    const value = dash(m[2]) ?? ''
-    if (key === 'GOAL') card.goal = value
-    else if (key === 'NOW') card.now = value
-    else if (key === 'DONE' && value) card.done.push(value)
-    else if (key === 'RUNNING' && value) card.running.push(value)
-    else if (key === 'CLOSED' || key === 'FIXED') {
+    const key = parsed.key
+    const value = dash(parsed.value) ?? ''
+    if (key === 'NONE') continue
+    if (key === 'CLOSED' || key === 'FIXED') {
       const [id, outcome] = value.split('|').map(s => s.trim())
       if (id && /^f\d/.test(id) === (key === 'FIXED')) closed.push({ id, outcome: outcome ?? '' })
     } else if (key === 'ASKED') {
@@ -342,9 +380,7 @@ export function parseReply(text: string, source: string | null = null): Update |
     if (item !== undefined && item !== -1) asked.push({ id, item })
   }
 
-  return seen === 0
-    ? null
-    : { card: { ...card, done: card.done.slice(-4) }, closed, added, helped, updated, asked, todos }
+  return seen === 0 ? null : { closed, added, helped, updated, asked, todos }
 }
 
 function isTakenUp(work: string, reply: string | null): boolean {
@@ -654,13 +690,6 @@ function isPersonsAnswer(outcome: string): boolean {
  * closes one of those only with the person's answer.
  */
 export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number, promptAt = now): Ledger {
-  const prev = ledger.card
-  const card: Card = {
-    goal: u.card.goal || prev?.goal || '',
-    done: u.card.done.length > 0 ? u.card.done : (prev?.done ?? []),
-    now: u.card.now || prev?.now || '',
-    running: u.card.running,
-  }
   const stillAsked = new Set(u.updated.filter(c => c.options || c.rec).map(c => c.id))
   const closing = new Map(
     u.closed.filter(c => !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome)).map(c => [c.id, c.outcome]),
@@ -751,13 +780,13 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
   return reopenAskedFindings(
     {
       ...ledger,
-      card,
       items: kept,
       closed,
       findings,
       closedFindings,
       nextId,
       batchTurn: added > 0 ? turn : ledger.batchTurn,
+      updates: ledger.updates + 1,
     },
     closed.slice(ledger.closed.length),
   )

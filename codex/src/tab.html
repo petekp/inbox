@@ -127,9 +127,11 @@
       }
       .tabs {
         display: flex;
+        flex-wrap: wrap;
         gap: 4px;
       }
       .tab {
+        white-space: nowrap;
         padding: 6px 12px;
         border-radius: 6px;
         color: var(--muted);
@@ -673,6 +675,22 @@
       }
       .earlier {
         padding: 2px 14px 2px var(--text-x);
+      }
+      .overview-goal,
+      .overview-now {
+        padding: 0 14px 0 var(--text-x);
+        overflow-wrap: anywhere;
+      }
+      .overview .content {
+        overflow-wrap: anywhere;
+      }
+      .overview-gap {
+        margin-top: var(--lead-gap);
+      }
+      .overview-goal {
+        margin: 0;
+        font-size: inherit;
+        font-weight: 600;
       }
       .status-line,
       .demo-note,

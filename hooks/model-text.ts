@@ -1,8 +1,18 @@
-import type { Closed, DialogQuestion, Finding, Item, Ledger, Told } from '../types'
+import type { Closed, DialogQuestion, Finding, HostTask, Item, Ledger, Overview, Told } from '../types'
 
 export type { Told } from '../types'
 import type { Exchange } from './ledger'
 import { isAskedForChoices, LIST_CHOICES } from './ledger'
+import {
+  DETAIL_WORDS,
+  HEADLINE_WORDS,
+  ITEM_WORDS,
+  LIST_ITEMS,
+  overviewText,
+  SENTENCE_WORDS,
+  sinceText,
+} from './overview'
+import { tasksText } from './host-tasks'
 import { clip, clipMiddle, numberBlocks } from './text'
 
 const NL = '\n'
@@ -15,7 +25,6 @@ export function systemText(host: Host): string {
   return `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
 
 Input:
-- <card>: the ledger before this exchange (may be empty)
 - <open>: items still waiting on the person, as id | kind | label | ask | options | rec | design
 - <findings>: findings the agent recorded for the person to review later, outside the current task, each with an id
 - <decided>: items the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again.
@@ -24,12 +33,9 @@ Input:
 - <reply>: the agent's final reply
 - <screen>: what the person has on screen besides the conversation.${band}
 
-Answer with lines only, each starting with one of these keys. No other text.
+Answer with lines only, each starting with one of these keys. No other text. When nothing in the exchange changes the ledger, answer with the one line NONE.
 
-GOAL: what this session is for, at most 12 words. Keep the previous goal unless the person clearly changed direction. "-" until the person has asked for something.
-DONE: one finished outcome, at most 8 words. Up to 4 DONE lines, oldest first, keeping the most recent. Outcomes, not activity: "PR #12 opened", not "ran gh".
-NOW: where the work stands at the end of this reply, at most 12 words. Name what it waits on, if anything. "-" when no work has started.
-RUNNING: something still running that the person may open, as "name: URL or port". Dev servers, simulators, background jobs. Omit anything the agent stopped. Zero or more lines.
+NONE: nothing in the exchange changes the ledger. Write it alone.
 CLOSED: <id> | the outcome, at most 8 words, in one of three forms. When the person answered in <person>, write their answer. Otherwise write "done: <what the agent did>" when the work is done, or "no longer applies: <what in the reply or <activity> made it moot>". An option the agent picked on its own, or an option the work made moot, is not the person's answer: write it in the "done:" or "no longer applies:" form. One line for each item in <open> the person answered in <person> (including "all recommended", "go", "yes to all", numbered answers), or that the reply or <activity> shows is done or no longer applies. A person asking what an item means has not answered it, and a reply explaining it does not close it. When <person> asks to run an item's command and the reply says it ran, that item is done. So is an item whose command the person ran themselves, per <person>, when its output shows it worked. An item that has nothing to do with this exchange stays open: being outside the current work, or not being mentioned, does not make it no longer apply.
 FIXED: <id> | the change that fixed it, at most 8 words. One line for each finding in <findings> whose problem the reply, <activity> or <person> shows was fixed by a change to the work. Only a change fixes a finding. When the person puts a finding off, sets it aside or says it does not matter, write no FIXED line: it stays open until they dismiss it.
 ASKED: <id> | <item>
@@ -224,14 +230,6 @@ export function dialogActivity(questions: DialogQuestion[], outcome: DialogOutco
 }
 
 function ledgerBlocks(ledger: Ledger): string[] {
-  const card = ledger.card
-    ? [
-        `GOAL: ${ledger.card.goal}`,
-        ...ledger.card.done.map(d => `DONE: ${d}`),
-        `NOW: ${ledger.card.now}`,
-        ...ledger.card.running.map(r => `RUNNING: ${r}`),
-      ].join(NL)
-    : ''
   const open = ledger.items
     .map(
       i =>
@@ -245,7 +243,6 @@ function ledgerBlocks(ledger: Ledger): string[] {
     .join(NL)
 
   return [
-    `<card>${NL}${card}${NL}</card>`,
     `<open>${NL}${open}${NL}</open>`,
     `<findings>${NL}${findings}${NL}</findings>`,
     `<decided>${NL}${closed}${NL}</decided>`,
@@ -288,14 +285,89 @@ export const CLAUDE_CODE: Host = {
     "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox pane, and your findings, in the pane's Findings tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings.",
 }
 
+/** The system text of the call that writes the Overview page, apart from the ledger call. */
+export const OVERVIEW_SYSTEM = `You keep a one-page guide to a coding session, for the person who works with the agent. They read it when they come back, to see what the work is, how it is going and what comes next. You read the guide as it was and one exchange, and write the guide as it should be now.
+
+The guide is about the work. It is not a log of what the agent did, and it is not a list of what waits on the person: the inbox lists that. Write at the level of the feature or the fix. Never write a command, a file name, a commit, a test run, a tool call or a ticket number, and leave out a number, an id or a time unless the person needs it to find the work again.
+
+Input:
+- <last>: the guide as it was, in the same lines you write
+- <unseen>: the changes the person has not yet looked at, as SINCE lines
+- <tasks>: the agent's own task list, when it keeps one, as TASK lines. It is evidence for QUEUE, not the guide: write each item at the level of the feature. Write each in your own words as the outcome it reaches, not in the task's words: "Reset emails reach the person", not "Run the mailer tests". A queue item names a result, never an action that begins with Run, Check or Test. For a task that runs a command or a test, write the outcome it checks, or leave it out. Leave out a task that is only a step of another.
+- <person>: what the person just sent
+- <activity>: what the agent did this turn
+- <reply>: the agent's final reply
+
+Answer with lines only. No other text. If the exchange changed nothing about the work, answer with the one line UNCHANGED.
+
+Otherwise write every line below that applies, in this order:
+KIND: session, or coordinator when the session hands out work and reviews what comes back instead of doing the work itself
+TOPIC: same, or new when the work moved to a different task. Write new only for a different task, not for the next step of the same one.
+STATE: on-track, stuck or finished
+HEADLINE: one plain sentence naming what the session is doing, at most ${HEADLINE_WORDS} words. "-" when no work has started.
+STATUS: how it is going, in one or two plain sentences, at most ${SENTENCE_WORDS} words. Say what it waits on, if anything.
+COURSE: only in the reply where the approach changed, in one or two sentences, at most ${SENTENCE_WORDS} words: what changed and why. A new step is not a change. Leave the line out otherwise: the page keeps the last one until the person looks.
+FOLDED: only when TOPIC is new, one line saying what the old topic was and where it was left.
+Then lists, one item per line, each as KEY: status | text | detail, with the key on every line. The detail is optional. Text is at most ${ITEM_WORDS} words and detail at most ${DETAIL_WORDS}. At most ${LIST_ITEMS} items in a list.
+QUEUE: the work now: what is under way, what is queued behind it, what waits, and what just finished
+WORKS: what holds now: what works, what exists
+OPEN: risks, problems and unknowns
+NEXT: what comes next
+SINCE: what changed since the person last looked. Start from <unseen>, merge this exchange into it, and keep it short.
+STREAM: only in a coordinator session, in the same form as the other lists: one line for each stream of work, saying what it is for and where it stands. Put the work handed out in STREAM, and use QUEUE only for the coordinator's own steps, such as reviewing what a stream sends back. If a stream is already in QUEUE in the guide as it was, take it out of QUEUE.
+
+Status is one of: working, queued, waits-on-you, waits-on-other, done, ruled-out, problem, unknown. Use waits-on-you when the agent cannot go on until the person acts, and waits-on-other for something else, such as a build. Use ruled-out for an approach tried or considered and dropped, and put the reason in the detail.
+
+Rules:
+- Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed. The next rule wins over this one: when the guide as it was already repeats a fact in two lists, remove the repeat.
+- Do not write a question or task the agent put to the person, and do not say what the choice is. Say only that the work waits on the person, and stop.
+- Leave out that something was committed, pushed, merged or tested, in every line. Say what now works or is fixed.
+- Say each fact once, in the list that fits it best. Work that finished stays in QUEUE as done. WORKS holds only what works that QUEUE does not already name. What a stream is doing, and what it finished, stays on its STREAM line and is not written again in QUEUE, WORKS or OPEN. NEXT holds only what the queue does not already name. SINCE may repeat the other lists, since it says what changed.
+- Leave a list out when it has nothing worth saying. Do not fill a list to fill it.`
+
+function overviewBlocks(last: Overview | null, tasks: HostTask[]): string[] {
+  const list = tasksText(tasks)
+
+  return [
+    `<last>${NL}${overviewText(last)}${NL}</last>`,
+    `<unseen>${NL}${sinceText(last)}${NL}</unseen>`,
+    ...(list === '' ? [] : [`<tasks>${NL}${list}${NL}</tasks>`]),
+  ]
+}
+
+/** `last` is the Overview before the exchange. */
+export function overviewPrompt(last: Overview | null, ex: Exchange, tasks: HostTask[] = []): string {
+  const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? 'unknown'}.)`
+
+  return [
+    ...overviewBlocks(last, tasks),
+    `<person>${NL}${clipMiddle(person, 4000, 1500)}${NL}</person>`,
+    `<activity>${NL}${clipMiddle(ex.activity.join(NL), 2500, 500)}${NL}</activity>`,
+    `<reply>${NL}${clipMiddle(numberBlocks(ex.reply), 12000, 4000)}${NL}</reply>`,
+  ].join(NL)
+}
+
+export function overviewCatchUpPrompt(last: Overview | null, transcript: string, tasks: HostTask[] = []): string {
+  return [
+    'Treat the conversation in <conversation> as the exchange. Its start may be cut. Write the guide as it stands at the end of the conversation.',
+    ...overviewBlocks(last, tasks),
+    `<conversation>${NL}${numberBlocks(transcript)}${NL}</conversation>`,
+  ].join(NL)
+}
+
 function surfaceAtStart(host: Host): string {
   return host.surface.charAt(0).toUpperCase() + host.surface.slice(1)
 }
 
-export function screenText(host: Host, isOpen: boolean, tab: string | null): string {
-  return isOpen
-    ? `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab} tab, ` : ''}listing every open item.`
-    : `${surfaceAtStart(host)} is closed.`
+/** The tab the inbox shows: its label, and whether it shows a page instead of rows. */
+export type ScreenTab = { label: string; isPage: boolean }
+
+export function screenText(host: Host, isOpen: boolean, tab: ScreenTab | null): string {
+  if (!isOpen) return `${surfaceAtStart(host)} is closed.`
+  if (tab?.isPage)
+    return `${surfaceAtStart(host)} is open beside the conversation, on its ${tab.label} tab, which shows a guide to the session's work, not rows.`
+
+  return `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ''}listing every open item.`
 }
 
 export function latestBatch(ledger: Ledger): Item[] {
@@ -388,32 +460,28 @@ function findingLine(finding: Finding): string {
   return `- ${finding.kind}: ${finding.title} (close id: ${finding.id})`
 }
 
-function cardLines(ledger: Ledger): string[] {
-  const card = ledger.card
-  if (!card) return []
-  const out: string[] = []
-  if (card.goal) out.push(`Goal: ${card.goal}`)
-  if (card.done.length > 0) out.push(`Done: ${card.done.join('; ')}`)
-  if (card.now) out.push(`Now: ${card.now}`)
-  if (card.running.length > 0) out.push(`Running: ${card.running.join('; ')}`)
+/** What the Overview says the session is doing and how it is going. */
+function overviewLines(ledger: Ledger): string[] {
+  const overview = ledger.overview
+  if (!overview?.headline) return []
 
-  return out
+  return [`Working on: ${overview.headline}`, ...(overview.status ? [`Status: ${overview.status}`] : [])]
 }
 
-export const CARD_TITLE =
+export const CARRY_TITLE =
   'inbox: where the work stood at the last reply. The "inbox:" text beside this prompt lists what waits on the user and what was closed.'
 
 /** The mod's carry at a conversation's first prompt. The `inbox:` text beside that prompt already lists the open items and the closed ones. */
-export function cardCarryText(ledger: Ledger): string | null {
-  const lines = cardLines(ledger)
+export function overviewCarryText(ledger: Ledger): string | null {
+  const lines = overviewLines(ledger)
 
-  return lines.length === 0 ? null : [CARD_TITLE, ...lines].join(NL)
+  return lines.length === 0 ? null : [CARRY_TITLE, ...lines].join(NL)
 }
 
 export function carryText(ledger: Ledger, title: string): string | null {
   const findings = ledger.findings
-  if (!ledger.card && ledger.items.length === 0 && findings.length === 0) return null
-  const out = [title, ...cardLines(ledger)]
+  if (!ledger.overview?.headline && ledger.items.length === 0 && findings.length === 0) return null
+  const out = [title, ...overviewLines(ledger)]
   if (ledger.items.length > 0) {
     out.push('Waiting on the user:')
     for (const item of ledger.items) out.push(itemLine(item))

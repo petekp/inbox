@@ -36,27 +36,233 @@ import {
 import { homedir as homedir2 } from "node:os";
 import { basename, dirname, isAbsolute, join as join2, resolve } from "node:path";
 
-// ../hooks/text.ts
+// ../hooks/overview.ts
+var HEADLINE_WORDS = 12;
+var ITEM_WORDS = 12;
+var SENTENCE_WORDS = 30;
+var DETAIL_WORDS = 20;
+var LIST_ITEMS = 6;
+var EARLIER_KEPT = 6;
 var NL = "\n";
+var EMPTY_OVERVIEW = {
+  isCoordinator: false,
+  state: "on-track",
+  headline: "",
+  status: "",
+  course: "",
+  queue: [],
+  works: [],
+  open: [],
+  next: [],
+  since: [],
+  workstreams: [],
+  earlier: [],
+  lastLookAt: null,
+  look: null,
+  seen: { since: [], course: "" }
+};
+var LIST_KEYS = {
+  QUEUE: "queue",
+  WORKS: "works",
+  OPEN: "open",
+  NEXT: "next",
+  SINCE: "since",
+  STREAM: "workstreams"
+};
+var STATUSES = [
+  "working",
+  "queued",
+  "waits-on-you",
+  "waits-on-other",
+  "done",
+  "ruled-out",
+  "problem",
+  "unknown"
+];
+var STATES = ["on-track", "stuck", "finished"];
+var BULLET_ITEM = /^\s*[-*]\s*[a-z-]+\s*\|/;
+var KEY_LINE = /^\s*[-*]?\s*(UNCHANGED|KIND|TOPIC|STATE|HEADLINE|STATUS|COURSE|FOLDED|QUEUE|WORKS|OPEN|NEXT|SINCE|STREAM)\s*(?::\s*(.*)|$)/;
+function clipWords(text, limit) {
+  const words2 = text.trim().split(/\s+/).filter(Boolean);
+  return words2.length <= limit ? words2.join(" ") : `${words2.slice(0, limit).join(" ")}\u2026`;
+}
+function plain(value) {
+  const text = value.trim();
+  return text === "-" ? "" : text;
+}
+function itemOf(value) {
+  const [status, text, ...detail] = value.split("|").map((part) => part.trim());
+  const isStatus = (s) => STATUSES.includes(s);
+  if (!isStatus(status) || !text) return null;
+  const rest = plain(detail.join(" | "));
+  return { status, text: clipWords(text, ITEM_WORDS), detail: rest === "" ? null : clipWords(rest, DETAIL_WORDS) };
+}
+function parseOverview(text) {
+  const overview = { ...EMPTY_OVERVIEW };
+  const lists = {
+    queue: [],
+    works: [],
+    open: [],
+    next: [],
+    since: [],
+    workstreams: []
+  };
+  let isUnchanged = false;
+  let hasHeadline = false;
+  let isNewTopic = false;
+  let folded = "";
+  let current = null;
+  for (const line of (text ?? "").split(NL)) {
+    const m = KEY_LINE.exec(line);
+    if (!m) {
+      const item = current && BULLET_ITEM.test(line) ? itemOf(line.replace(/^\s*[-*]\s*/, "")) : null;
+      if (current && item && current.length < LIST_ITEMS) current.push(item);
+      continue;
+    }
+    current = null;
+    const key = m[1];
+    const value = (m[2] ?? "").trim();
+    if (key === "UNCHANGED") isUnchanged = true;
+    else if (key === "KIND") overview.isCoordinator = value.toLowerCase() === "coordinator";
+    else if (key === "TOPIC") isNewTopic = value.toLowerCase() === "new";
+    else if (key === "STATE") overview.state = STATES.find((s) => s === value.toLowerCase()) ?? "on-track";
+    else if (key === "HEADLINE") {
+      hasHeadline = true;
+      overview.headline = clipWords(plain(value), HEADLINE_WORDS);
+    } else if (key === "STATUS") overview.status = clipWords(plain(value), SENTENCE_WORDS);
+    else if (key === "COURSE") overview.course = clipWords(plain(value), SENTENCE_WORDS);
+    else if (key === "FOLDED") folded = clipWords(plain(value), ITEM_WORDS * 2);
+    else {
+      const item = itemOf(value);
+      const list = lists[LIST_KEYS[key]];
+      if (item && list.length < LIST_ITEMS) list.push(item);
+      if (value === "") current = list;
+    }
+  }
+  if (isUnchanged && !hasHeadline) return { kind: "unchanged" };
+  if (!hasHeadline) return null;
+  return { kind: "written", overview: { ...overview, ...lists }, isNewTopic, folded };
+}
+function applyOverview(last, answer) {
+  if (answer.kind === "unchanged") return last;
+  const kept = {
+    earlier: last?.earlier ?? [],
+    lastLookAt: last?.lastLookAt ?? null,
+    look: last?.look ?? null,
+    seen: last?.seen ?? EMPTY_OVERVIEW.seen
+  };
+  const since = answer.overview.since.filter((i) => !kept.seen.since.includes(itemKey(i)));
+  const isSeenCourse = kept.seen.course !== "" && answer.overview.course === kept.seen.course;
+  const course = isSeenCourse ? "" : answer.overview.course;
+  const written = { ...answer.overview, since, queue: withoutStreams(answer.overview) };
+  if (!answer.isNewTopic || last === null || last.headline === "")
+    return { ...written, ...kept, course: course || last?.course || "" };
+  const left = answer.folded || last.headline;
+  return { ...written, ...kept, course: "", earlier: [...kept.earlier, left].slice(-EARLIER_KEPT) };
+}
+function isItem(value) {
+  const item = value;
+  return typeof item === "object" && item !== null && STATUSES.includes(item.status) && typeof item.text === "string" && (item.detail === null || typeof item.detail === "string");
+}
+function itemsOf(value) {
+  return Array.isArray(value) ? value.filter(isItem).slice(0, LIST_ITEMS) : [];
+}
+function upgradeOverview(saved) {
+  const o = saved;
+  if (typeof o !== "object" || o === null || typeof o.headline !== "string") return null;
+  const text = (value) => typeof value === "string" ? value : "";
+  return {
+    isCoordinator: o.isCoordinator === true,
+    state: STATES.find((s) => s === o.state) ?? "on-track",
+    headline: o.headline,
+    status: text(o.status),
+    course: text(o.course),
+    queue: itemsOf(o.queue),
+    works: itemsOf(o.works),
+    open: itemsOf(o.open),
+    next: itemsOf(o.next),
+    since: itemsOf(o.since),
+    workstreams: itemsOf(o.workstreams),
+    earlier: Array.isArray(o.earlier) ? o.earlier.filter((e) => typeof e === "string") : [],
+    lastLookAt: typeof o.lastLookAt === "number" ? o.lastLookAt : null,
+    look: lookOf(o.look),
+    seen: seenOf(o.seen)
+  };
+}
+function lookOf(saved) {
+  const l = saved;
+  if (typeof l !== "object" || l === null || typeof l.startedAt !== "number") return null;
+  const away = AWAYS.find((a) => a === l.away);
+  return away === void 0 ? null : { startedAt: l.startedAt, away, since: strings(l.since), course: typeof l.course === "string" ? l.course : "" };
+}
+function seenOf(saved) {
+  const s = saved;
+  return { since: strings(s?.since), course: typeof s?.course === "string" ? s.course : "" };
+}
+function strings(value) {
+  return Array.isArray(value) ? value.filter((v) => typeof v === "string") : [];
+}
+function nameKey(text) {
+  return (text.split(":")[0].toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).sort().join(" ");
+}
+function withoutStreams(o) {
+  if (!o.isCoordinator) return o.queue;
+  const names = new Set(o.workstreams.map((i) => nameKey(i.text)));
+  return o.queue.filter((i) => !names.has(nameKey(i.text)));
+}
+function itemKey(i) {
+  return `${i.status}|${i.text}`;
+}
+function itemLine(key, i) {
+  return `${key}: ${i.status} | ${i.text}${i.detail ? ` | ${i.detail}` : ""}`;
+}
+function overviewText(o) {
+  if (o === null) return "(none yet)";
+  const lists = [
+    ["QUEUE", o.queue],
+    ["WORKS", o.works],
+    ["OPEN", o.open],
+    ["NEXT", o.next],
+    ["STREAM", o.workstreams]
+  ];
+  return [
+    `KIND: ${o.isCoordinator ? "coordinator" : "session"}`,
+    `STATE: ${o.state}`,
+    `HEADLINE: ${o.headline || "-"}`,
+    `STATUS: ${o.status || "-"}`,
+    ...o.course ? [`COURSE: ${o.course}`] : [],
+    ...lists.flatMap(([key, items]) => items.map((i) => itemLine(key, i))),
+    ...o.earlier.map((e) => `EARLIER: ${e}`)
+  ].join(NL);
+}
+function sinceText(o) {
+  return (o?.since ?? []).map((i) => itemLine("SINCE", i)).join(NL);
+}
+var HERE_MS = 5 * 6e4;
+var SHORT_MS = 60 * 6e4;
+var AWAYS = ["here", "short", "long"];
+
+// ../hooks/text.ts
+var NL2 = "\n";
 var FENCE = /```[^\n]*\n([\s\S]*?)```/g;
 function codeBlocks(reply) {
   return [...reply.matchAll(FENCE)].map((m) => (m[1] ?? "").replace(/\n$/, ""));
 }
 function numberBlocks(reply) {
   let n = 0;
-  return reply.replace(FENCE, (block) => `[block ${n += 1}]${NL}${block}`);
+  return reply.replace(FENCE, (block) => `[block ${n += 1}]${NL2}${block}`);
 }
 function clip(text, max) {
   return text.length <= max ? text : text.slice(0, max) + " \u2026[cut]";
 }
 function clipMiddle(text, max, head) {
   if (text.length <= max) return text;
-  return `${text.slice(0, head)}${NL}\u2026[cut]${NL}${text.slice(text.length - (max - head))}`;
+  return `${text.slice(0, head)}${NL2}\u2026[cut]${NL2}${text.slice(text.length - (max - head))}`;
 }
 
 // ../hooks/ledger.ts
 var EMPTY = {
-  card: null,
+  overview: null,
   items: [],
   closed: [],
   findings: [],
@@ -64,9 +270,10 @@ var EMPTY = {
   prs: [],
   nextId: 1,
   turn: 0,
-  batchTurn: 0
+  batchTurn: 0,
+  updates: 0
 };
-var NL2 = "\n";
+var NL3 = "\n";
 var MAX_OPEN = 20;
 var STALE_AFTER = 12;
 var UNFOUNDED_MOOT = /^no longer applies:.*(\b(not|never) (related|relevant|addressed|mentioned|discussed|answered|raised|part of)\b|\bunrelated\b|\b(still|stays) open\b|\boutside (the|this)\b|\bnothing\b.*\b(touch|address|mention|relate))/i;
@@ -77,9 +284,18 @@ function readKind(kind) {
   return kind === "task" || kind === "do" ? "task" : "question";
 }
 function upgradeLedger(ledger) {
-  const { notes, decided, ...rest } = ledger;
+  const {
+    notes,
+    decided,
+    milestones: _milestones,
+    card,
+    ...rest
+  } = ledger;
+  const updates = typeof rest.updates === "number" ? rest.updates : card ? 1 : 0;
   return {
     ...rest,
+    updates,
+    overview: upgradeOverview(rest.overview),
     findings: [...rest.findings ?? [], ...notes ?? []],
     // reopenFinding puts these back, so a conversion added for findings must run on them too.
     closedFindings: (rest.closedFindings ?? []).map(upgradeClosedFinding),
@@ -195,10 +411,26 @@ function dash(value) {
   const v = (value ?? "").trim();
   return v === "" || v === "-" ? null : v;
 }
-var KEY_LINE = /^\s*[-*]?\s*(GOAL|DONE|NOW|RUNNING|CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:\s*(.*)$/;
+var KEY_LINE2 = /^\s*[-*]?\s*(?:(NONE)(?::|\s|$)|(CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:)\s*(.*)$/;
+function keyOf(line) {
+  const m = KEY_LINE2.exec(line);
+  return m ? { key: m[1] ?? m[2], value: m[3] ?? "" } : null;
+}
+function lastAnswerStart(lines) {
+  let start = 0;
+  let hasKeys = false;
+  let isAfterProse = false;
+  lines.forEach((line, i) => {
+    if (keyOf(line)) {
+      if (hasKeys && isAfterProse) start = i;
+      hasKeys = true;
+      isAfterProse = false;
+    } else if (line.trim() !== "") isAfterProse = true;
+  });
+  return start;
+}
 function parseReply(text, source = null) {
   const blocks = source === null ? [] : codeBlocks(source);
-  const card = { goal: "", done: [], now: "", running: [] };
   const closed = [];
   const added = [];
   const helped = [];
@@ -207,20 +439,16 @@ function parseReply(text, source = null) {
   const asks = [];
   const todos = [];
   let seen = 0;
-  const lines = text.split(NL2);
-  const lastGoal = lines.findLastIndex((line) => KEY_LINE.exec(line)?.[1] === "GOAL");
+  const lines = text.split(NL3);
   const newLines = [];
-  for (const raw of lines.slice(Math.max(lastGoal, 0))) {
-    const m = KEY_LINE.exec(raw);
-    if (!m) continue;
+  for (const raw of lines.slice(lastAnswerStart(lines))) {
+    const parsed = keyOf(raw);
+    if (!parsed) continue;
     seen += 1;
-    const key = m[1];
-    const value = dash(m[2]) ?? "";
-    if (key === "GOAL") card.goal = value;
-    else if (key === "NOW") card.now = value;
-    else if (key === "DONE" && value) card.done.push(value);
-    else if (key === "RUNNING" && value) card.running.push(value);
-    else if (key === "CLOSED" || key === "FIXED") {
+    const key = parsed.key;
+    const value = dash(parsed.value) ?? "";
+    if (key === "NONE") continue;
+    if (key === "CLOSED" || key === "FIXED") {
       const [id, outcome] = value.split("|").map((s) => s.trim());
       if (id && /^f\d/.test(id) === (key === "FIXED")) closed.push({ id, outcome: outcome ?? "" });
     } else if (key === "ASKED") {
@@ -261,8 +489,8 @@ function parseReply(text, source = null) {
     } else if (key === "HELP") {
       const [target, kind, ...tail] = value.split("|");
       const { help, name } = helpFields(tail, source);
-      const parsed = readHelp((kind ?? "").trim(), help, name, blocks, source);
-      if (parsed && target) helps.push({ target: target.trim(), help: parsed });
+      const parsed2 = readHelp((kind ?? "").trim(), help, name, blocks, source);
+      if (parsed2 && target) helps.push({ target: target.trim(), help: parsed2 });
     }
   }
   for (const { target, help } of helps) {
@@ -278,7 +506,7 @@ function parseReply(text, source = null) {
     const item = n ? added.indexOf(newLines[Number(n[1]) - 1]) : target.match(/\b(i\d+)\b/)?.[1];
     if (item !== void 0 && item !== -1) asked.push({ id, item });
   }
-  return seen === 0 ? null : { card: { ...card, done: card.done.slice(-4) }, closed, added, helped, updated, asked, todos };
+  return seen === 0 ? null : { closed, added, helped, updated, asked, todos };
 }
 function isTakenUp(work, reply) {
   const key = [...keyWords(work)];
@@ -434,13 +662,6 @@ function isPersonsAnswer(outcome) {
   return outcome.trim() !== "" && !NOT_AN_ANSWER.test(outcome);
 }
 function applyUpdate(ledger, u, now, turn, promptAt = now) {
-  const prev = ledger.card;
-  const card = {
-    goal: u.card.goal || prev?.goal || "",
-    done: u.card.done.length > 0 ? u.card.done : prev?.done ?? [],
-    now: u.card.now || prev?.now || "",
-    running: u.card.running
-  };
   const stillAsked = new Set(u.updated.filter((c) => c.options || c.rec).map((c) => c.id));
   const closing = new Map(
     u.closed.filter((c) => !stillAsked.has(c.id) && !UNFOUNDED_MOOT.test(c.outcome)).map((c) => [c.id, c.outcome])
@@ -521,13 +742,13 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
   return reopenAskedFindings(
     {
       ...ledger,
-      card,
       items: kept,
       closed,
       findings,
       closedFindings,
       nextId,
-      batchTurn: added > 0 ? turn : ledger.batchTurn
+      batchTurn: added > 0 ? turn : ledger.batchTurn,
+      updates: ledger.updates + 1
     },
     closed.slice(ledger.closed.length)
   );
@@ -548,15 +769,50 @@ function isLapsed(d) {
   return closedState(d) !== "handled";
 }
 
+// ../hooks/host-tasks.ts
+var NL4 = "\n";
+var TASKS_KEPT = 12;
+var STATUSES2 = {
+  pending: "pending",
+  in_progress: "in-progress",
+  "in-progress": "in-progress",
+  completed: "done",
+  done: "done",
+  abandoned: "dropped",
+  blocked: "blocked"
+};
+var recordOf = (raw) => typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
+function upgradeHostTasks(saved) {
+  if (!Array.isArray(saved)) return [];
+  return saved.flatMap((raw) => {
+    const t = recordOf(raw);
+    const status = STATUSES2[String(t.status)];
+    return typeof t.id === "string" && typeof t.text === "string" && t.text !== "" && status ? [{ id: t.id, text: t.text, status }] : [];
+  });
+}
+function keptTasks(tasks) {
+  let toCut = tasks.length - TASKS_KEPT;
+  if (toCut <= 0) return tasks;
+  const kept = tasks.filter((t) => {
+    const isFinished = t.status === "done" || t.status === "dropped";
+    if (!isFinished || toCut <= 0) return true;
+    toCut -= 1;
+    return false;
+  });
+  return kept.slice(-TASKS_KEPT);
+}
+function tasksText(tasks) {
+  return keptTasks(tasks).map((t) => `TASK: ${t.status} | ${t.text}`).join(NL4);
+}
+
 // ../hooks/model-text.ts
-var NL3 = "\n";
+var NL5 = "\n";
 var MODEL_KIND = { question: "decide", task: "do" };
 function systemText(host) {
   const band = host.band ? ` They always see how many items are in <open> and <findings> in ${host.band}.` : "";
   return `You keep a short ledger for a person who works with a coding agent across many parallel sessions. They glance at your ledger between tasks, or after time away, to see where this session stands. You read one exchange and update the ledger.
 
 Input:
-- <card>: the ledger before this exchange (may be empty)
 - <open>: items still waiting on the person, as id | kind | label | ask | options | rec | design
 - <findings>: findings the agent recorded for the person to review later, outside the current task, each with an id
 - <decided>: items the person already settled, and how. Never add one of these again as NEW, even when the reply asks it again.
@@ -565,12 +821,9 @@ Input:
 - <reply>: the agent's final reply
 - <screen>: what the person has on screen besides the conversation.${band}
 
-Answer with lines only, each starting with one of these keys. No other text.
+Answer with lines only, each starting with one of these keys. No other text. When nothing in the exchange changes the ledger, answer with the one line NONE.
 
-GOAL: what this session is for, at most 12 words. Keep the previous goal unless the person clearly changed direction. "-" until the person has asked for something.
-DONE: one finished outcome, at most 8 words. Up to 4 DONE lines, oldest first, keeping the most recent. Outcomes, not activity: "PR #12 opened", not "ran gh".
-NOW: where the work stands at the end of this reply, at most 12 words. Name what it waits on, if anything. "-" when no work has started.
-RUNNING: something still running that the person may open, as "name: URL or port". Dev servers, simulators, background jobs. Omit anything the agent stopped. Zero or more lines.
+NONE: nothing in the exchange changes the ledger. Write it alone.
 CLOSED: <id> | the outcome, at most 8 words, in one of three forms. When the person answered in <person>, write their answer. Otherwise write "done: <what the agent did>" when the work is done, or "no longer applies: <what in the reply or <activity> made it moot>". An option the agent picked on its own, or an option the work made moot, is not the person's answer: write it in the "done:" or "no longer applies:" form. One line for each item in <open> the person answered in <person> (including "all recommended", "go", "yes to all", numbered answers), or that the reply or <activity> shows is done or no longer applies. A person asking what an item means has not answered it, and a reply explaining it does not close it. When <person> asks to run an item's command and the reply says it ran, that item is done. So is an item whose command the person ran themselves, per <person>, when its output shows it worked. An item that has nothing to do with this exchange stays open: being outside the current work, or not being mentioned, does not make it no longer apply.
 FIXED: <id> | the change that fixed it, at most 8 words. One line for each finding in <findings> whose problem the reply, <activity> or <person> shows was fixed by a change to the work. Only a change fixes a finding. When the person puts a finding off, sets it aside or says it does not matter, write no FIXED line: it stays open until they dismiss it.
 ASKED: <id> | <item>
@@ -607,9 +860,9 @@ function transcriptCatchUpPrompt(ledger, screen, transcript) {
   return [
     `Treat the conversation in <conversation> as the exchange. Its start may be cut. ${CATCH_UP}`,
     ...ledgerBlocks(ledger),
-    `<conversation>${NL3}${numberBlocks(transcript)}${NL3}</conversation>`,
-    `<screen>${NL3}${screen}${NL3}</screen>`
-  ].join(NL3);
+    `<conversation>${NL5}${numberBlocks(transcript)}${NL5}</conversation>`,
+    `<screen>${NL5}${screen}${NL5}</screen>`
+  ].join(NL5);
 }
 var MAX_ACTIVITY = 40;
 function addActivity(activity, line) {
@@ -659,9 +912,9 @@ function dialogQuestions(raw) {
 }
 function dialogQuestionText(q) {
   const shown = q.options.slice(0, DIALOG_OPTIONS_SHOWN).map((label) => {
-    const plain = label.replace(RECOMMENDED_SUFFIX, "");
-    const text = clip(plain, DIALOG_OPTION_MAX);
-    return plain === label ? text : `${text} (recommended)`;
+    const plain2 = label.replace(RECOMMENDED_SUFFIX, "");
+    const text = clip(plain2, DIALOG_OPTION_MAX);
+    return plain2 === label ? text : `${text} (recommended)`;
   });
   const more = q.options.length > shown.length ? ` / and ${q.options.length - shown.length} more` : "";
   const options = shown.length > 0 ? ` (options: ${shown.join(" / ")}${more})` : "";
@@ -684,39 +937,97 @@ function dialogActivity(questions, outcome) {
   }
 }
 function ledgerBlocks(ledger) {
-  const card = ledger.card ? [
-    `GOAL: ${ledger.card.goal}`,
-    ...ledger.card.done.map((d) => `DONE: ${d}`),
-    `NOW: ${ledger.card.now}`,
-    ...ledger.card.running.map((r) => `RUNNING: ${r}`)
-  ].join(NL3) : "";
   const open2 = ledger.items.map(
     (i) => `${i.id} | ${MODEL_KIND[i.kind]} | ${i.label ?? "-"} | ${i.ask} | ${i.options.join(" / ") || "-"} | ${i.rec ?? "-"} | ${i.isDesignChoice ? "design" : "-"}`
-  ).join(NL3);
-  const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL3);
-  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL3);
+  ).join(NL5);
+  const findings = ledger.findings.map((f) => `${f.id} | ${f.kind}: ${f.title}`).join(NL5);
+  const closed = ledger.closed.filter((d) => d.how !== "expired" && !isAskedForChoices(d)).map((d) => `${d.ask} \u2192 ${outcomeText(d)}`).join(NL5);
   return [
-    `<card>${NL3}${card}${NL3}</card>`,
-    `<open>${NL3}${open2}${NL3}</open>`,
-    `<findings>${NL3}${findings}${NL3}</findings>`,
-    `<decided>${NL3}${closed}${NL3}</decided>`
+    `<open>${NL5}${open2}${NL5}</open>`,
+    `<findings>${NL5}${findings}${NL5}</findings>`,
+    `<decided>${NL5}${closed}${NL5}</decided>`
   ];
 }
 function buildPrompt(ledger, ex) {
   const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? "unknown"}.)`;
   return [
     ...ledgerBlocks(ledger),
-    `<person>${NL3}${clipMiddle(person, 4e3, 1500)}${NL3}</person>`,
-    `<activity>${NL3}${clipMiddle(ex.activity.join(NL3), 2500, 500)}${NL3}</activity>`,
-    `<reply>${NL3}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL3}</reply>`,
-    `<screen>${NL3}${ex.screen}${NL3}</screen>`
-  ].join(NL3);
+    `<person>${NL5}${clipMiddle(person, 4e3, 1500)}${NL5}</person>`,
+    `<activity>${NL5}${clipMiddle(ex.activity.join(NL5), 2500, 500)}${NL5}</activity>`,
+    `<reply>${NL5}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL5}</reply>`,
+    `<screen>${NL5}${ex.screen}${NL5}</screen>`
+  ].join(NL5);
+}
+var OVERVIEW_SYSTEM = `You keep a one-page guide to a coding session, for the person who works with the agent. They read it when they come back, to see what the work is, how it is going and what comes next. You read the guide as it was and one exchange, and write the guide as it should be now.
+
+The guide is about the work. It is not a log of what the agent did, and it is not a list of what waits on the person: the inbox lists that. Write at the level of the feature or the fix. Never write a command, a file name, a commit, a test run, a tool call or a ticket number, and leave out a number, an id or a time unless the person needs it to find the work again.
+
+Input:
+- <last>: the guide as it was, in the same lines you write
+- <unseen>: the changes the person has not yet looked at, as SINCE lines
+- <tasks>: the agent's own task list, when it keeps one, as TASK lines. It is evidence for QUEUE, not the guide: write each item at the level of the feature. Write each in your own words as the outcome it reaches, not in the task's words: "Reset emails reach the person", not "Run the mailer tests". A queue item names a result, never an action that begins with Run, Check or Test. For a task that runs a command or a test, write the outcome it checks, or leave it out. Leave out a task that is only a step of another.
+- <person>: what the person just sent
+- <activity>: what the agent did this turn
+- <reply>: the agent's final reply
+
+Answer with lines only. No other text. If the exchange changed nothing about the work, answer with the one line UNCHANGED.
+
+Otherwise write every line below that applies, in this order:
+KIND: session, or coordinator when the session hands out work and reviews what comes back instead of doing the work itself
+TOPIC: same, or new when the work moved to a different task. Write new only for a different task, not for the next step of the same one.
+STATE: on-track, stuck or finished
+HEADLINE: one plain sentence naming what the session is doing, at most ${HEADLINE_WORDS} words. "-" when no work has started.
+STATUS: how it is going, in one or two plain sentences, at most ${SENTENCE_WORDS} words. Say what it waits on, if anything.
+COURSE: only in the reply where the approach changed, in one or two sentences, at most ${SENTENCE_WORDS} words: what changed and why. A new step is not a change. Leave the line out otherwise: the page keeps the last one until the person looks.
+FOLDED: only when TOPIC is new, one line saying what the old topic was and where it was left.
+Then lists, one item per line, each as KEY: status | text | detail, with the key on every line. The detail is optional. Text is at most ${ITEM_WORDS} words and detail at most ${DETAIL_WORDS}. At most ${LIST_ITEMS} items in a list.
+QUEUE: the work now: what is under way, what is queued behind it, what waits, and what just finished
+WORKS: what holds now: what works, what exists
+OPEN: risks, problems and unknowns
+NEXT: what comes next
+SINCE: what changed since the person last looked. Start from <unseen>, merge this exchange into it, and keep it short.
+STREAM: only in a coordinator session, in the same form as the other lists: one line for each stream of work, saying what it is for and where it stands. Put the work handed out in STREAM, and use QUEUE only for the coordinator's own steps, such as reviewing what a stream sends back. If a stream is already in QUEUE in the guide as it was, take it out of QUEUE.
+
+Status is one of: working, queued, waits-on-you, waits-on-other, done, ruled-out, problem, unknown. Use waits-on-you when the agent cannot go on until the person acts, and waits-on-other for something else, such as a build. Use ruled-out for an approach tried or considered and dropped, and put the reason in the detail.
+
+Rules:
+- Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed. The next rule wins over this one: when the guide as it was already repeats a fact in two lists, remove the repeat.
+- Do not write a question or task the agent put to the person, and do not say what the choice is. Say only that the work waits on the person, and stop.
+- Leave out that something was committed, pushed, merged or tested, in every line. Say what now works or is fixed.
+- Say each fact once, in the list that fits it best. Work that finished stays in QUEUE as done. WORKS holds only what works that QUEUE does not already name. What a stream is doing, and what it finished, stays on its STREAM line and is not written again in QUEUE, WORKS or OPEN. NEXT holds only what the queue does not already name. SINCE may repeat the other lists, since it says what changed.
+- Leave a list out when it has nothing worth saying. Do not fill a list to fill it.`;
+function overviewBlocks(last, tasks) {
+  const list = tasksText(tasks);
+  return [
+    `<last>${NL5}${overviewText(last)}${NL5}</last>`,
+    `<unseen>${NL5}${sinceText(last)}${NL5}</unseen>`,
+    ...list === "" ? [] : [`<tasks>${NL5}${list}${NL5}</tasks>`]
+  ];
+}
+function overviewPrompt(last, ex, tasks = []) {
+  const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? "unknown"}.)`;
+  return [
+    ...overviewBlocks(last, tasks),
+    `<person>${NL5}${clipMiddle(person, 4e3, 1500)}${NL5}</person>`,
+    `<activity>${NL5}${clipMiddle(ex.activity.join(NL5), 2500, 500)}${NL5}</activity>`,
+    `<reply>${NL5}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL5}</reply>`
+  ].join(NL5);
+}
+function overviewCatchUpPrompt(last, transcript, tasks = []) {
+  return [
+    "Treat the conversation in <conversation> as the exchange. Its start may be cut. Write the guide as it stands at the end of the conversation.",
+    ...overviewBlocks(last, tasks),
+    `<conversation>${NL5}${numberBlocks(transcript)}${NL5}</conversation>`
+  ].join(NL5);
 }
 function surfaceAtStart(host) {
   return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
 }
 function screenText(host, isOpen, tab) {
-  return isOpen ? `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab} tab, ` : ""}listing every open item.` : `${surfaceAtStart(host)} is closed.`;
+  if (!isOpen) return `${surfaceAtStart(host)} is closed.`;
+  if (tab?.isPage)
+    return `${surfaceAtStart(host)} is open beside the conversation, on its ${tab.label} tab, which shows a guide to the session's work, not rows.`;
+  return `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ""}listing every open item.`;
 }
 function outcomeText(d) {
   if (d.how === "dismissed") return "dismissed by the user";
@@ -845,9 +1156,17 @@ var COMPARE_LIMIT_MS = 30 * 6e4;
 var TABS = [
   { id: "needsYou", label: "Needs you", hotkey: "1" },
   { id: "findings", label: "Findings", hotkey: "2" },
-  { id: "prs", label: "PRs", hotkey: "3" }
+  { id: "prs", label: "PRs", hotkey: "3" },
+  { id: "overview", label: "Overview", hotkey: "4" }
 ];
-var ROW_TABS = TABS.filter((t) => t.id !== "prs");
+function isListedTab(tab) {
+  return tab === "needsYou" || tab === "findings";
+}
+function isRowTab(tab) {
+  return tab !== "overview";
+}
+var ROW_TABS = TABS.filter((t) => isRowTab(t.id));
+var LISTED_TABS = TABS.filter((t) => isListedTab(t.id));
 
 // ../hooks/session.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
@@ -857,13 +1176,21 @@ function emptySession() {
     ledger: EMPTY,
     turn: NO_TURN,
     told: TOLD_NOTHING,
-    presence: { turnsStarted: 0, turnsApplied: 0, ledgerState: "current", hasDroppedReply: false, isUpdating: false },
+    presence: {
+      turnsStarted: 0,
+      turnsApplied: 0,
+      ledgerState: "current",
+      hasDroppedReply: false,
+      isUpdating: false,
+      isTurnRunning: false
+    },
     pending: [],
     sent: [],
     lastActions: {},
     heldRows: [],
     prViews: NO_PRS,
     stop: null,
+    hostTasks: [],
     dialogQuestions: []
   };
 }
@@ -876,6 +1203,10 @@ function missingAsNull(err) {
   if (err.code === "ENOENT") return null;
   throw err;
 }
+function withoutStatedStep(presence) {
+  const { statedStep: _statedStep, ...rest } = presence ?? {};
+  return rest;
+}
 function upgradeSession(saved) {
   const base = emptySession();
   const views = saved.prViews?.views ?? {};
@@ -883,8 +1214,8 @@ function upgradeSession(saved) {
     ledger: saved.ledger ? { ...base.ledger, ...upgradeLedger({ ...saved.ledger, items: saved.ledger.items ?? [] }) } : base.ledger,
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
-    presence: { ...base.presence, ...saved.presence },
-    pending: saved.pending ?? [],
+    presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
+    pending: (saved.pending ?? []).map((p) => ({ ...p, ex: { ...p.ex, tasks: p.ex.tasks ?? [] } })),
     sent: (saved.sent ?? []).map((x) => ({
       ...x,
       row: x.row ?? null,
@@ -918,14 +1249,22 @@ function upgradeSession(saved) {
       isFetching: false
     },
     stop: saved.stop ?? null,
+    hostTasks: upgradeHostTasks(saved.hostTasks),
     dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
+}
+function parsedReply(ex, reply) {
+  return reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join("\n"));
+}
+function isReplyApplied(s, reply) {
+  const next = s.pending[0];
+  return next !== void 0 && parsedReply(next.ex, reply) !== null;
 }
 function applied(s, reply, now, promptAt) {
   const next = s.pending[0];
   if (!next) return s;
+  const parsed = parsedReply(next.ex, reply);
   const { ex } = next;
-  const parsed = reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join("\n"));
   if (!parsed && !next.failed)
     return {
       ...s,
@@ -946,6 +1285,10 @@ function applied(s, reply, now, promptAt) {
     }
   });
 }
+function appliedOverview(s, answer, appliedAfter) {
+  if (s.presence.turnsApplied < appliedAfter) return s;
+  return { ...s, ledger: { ...s.ledger, overview: applyOverview(s.ledger.overview, answer) } };
+}
 function needsCatchUp(s) {
   const { presence } = s;
   const hasUnappliedTurn = s.pending.length === 0 && s.turn.person === null && presence.turnsStarted > presence.turnsApplied;
@@ -956,7 +1299,7 @@ function appliedCatchUp(s, begun, parsed, now) {
   const covered = new Set(begun.pending.map(pendingKey));
   return linkDialogs({
     ...s,
-    ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn) : s.ledger,
+    ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn, now) : s.ledger,
     pending: s.pending.filter((p) => !covered.has(pendingKey(p))),
     presence: {
       ...s.presence,
@@ -987,6 +1330,7 @@ function emptyState(sessionId) {
     cliPath: null,
     ...emptySession(),
     tabSeenAt: 0,
+    shownTab: "needsYou",
     heard: NOTHING_HEARD
   };
 }
@@ -997,7 +1341,14 @@ function upgraded(saved, sessionId) {
   if (saved.version !== void 0 && saved.version !== 1)
     throw new Error(`Unsupported inbox state version: ${saved.version}`);
   const base = emptyState(sessionId);
-  const { checks: _checks, snapshots: _snapshots, recordedRuns: _runs, top: _top, ...kept } = saved;
+  const {
+    checks: _checks,
+    snapshots: _snapshots,
+    recordedRuns: _runs,
+    top: _top,
+    subagents: _subagents,
+    ...kept
+  } = saved;
   const { sentBack: _sentBack, ...turn } = saved.turn ?? {};
   return {
     ...base,
@@ -1007,6 +1358,7 @@ function upgraded(saved, sessionId) {
       turn,
       pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex }))
     }),
+    shownTab: TABS.some((t) => t.id === saved.shownTab) ? saved.shownTab ?? base.shownTab : base.shownTab,
     // A file saved before the hooks kept this record came from hooks that ran, so it reads as heard.
     // Its turns were not recorded, so `promptAt` is set too: a tool call then falls back to the time rule.
     heard: saved.heard ? { ...NOTHING_HEARD, ...saved.heard } : {
@@ -1196,7 +1548,7 @@ var run = (args, { cwd, timeoutMs, env }) => new Promise((resolve3) => {
 });
 
 // src/update.ts
-import { randomUUID as randomUUID2 } from "node:crypto";
+import { createHash as createHash2, randomUUID as randomUUID2 } from "node:crypto";
 import {
   access,
   copyFile,
@@ -1213,46 +1565,94 @@ import {
 import { join as join4 } from "node:path";
 
 // ../hooks/session-host.ts
-async function askOverConversation(ask, s, screen, conversation) {
+function orderedKeys() {
+  const tails = /* @__PURE__ */ new Map();
+  return {
+    run: (key, fn) => {
+      const result = (tails.get(key) ?? Promise.resolve()).then(fn);
+      const tail = result.catch(() => void 0);
+      tails.set(key, tail);
+      void tail.then(() => {
+        if (tails.get(key) === tail) tails.delete(key);
+      });
+      return result;
+    }
+  };
+}
+async function askOverConversation(ask, names, s, screen, conversation) {
   if (!conversation) return { kind: "unreadable" };
-  const text = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation)).catch(() => null);
-  return text === null ? { kind: "failed" } : { kind: "reply", text, source: conversation };
+  const text = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names)).catch(() => null);
+  return text === null ? { kind: "failed" } : {
+    kind: "reply",
+    text,
+    source: conversation,
+    overview: (last, tasks) => ask(overviewCatchUpPrompt(last, conversation, tasks), OVERVIEW_SYSTEM)
+  };
 }
 async function runUpdates(host) {
   let canCatchUp = host.catchUp !== void 0;
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
-  while (hasWork(await host.read())) {
-    const held = await host.exclusive(async () => {
-      try {
-        for (; ; ) {
-          const s = await host.update((x) => ({ ...x, presence: { ...x.presence, isUpdating: hasWork(x) } }));
-          if (!hasWork(s)) break;
-          if (wantsCatchUp(s)) {
-            const reply2 = await host.catchUp(s).catch(() => ({ kind: "failed" }));
-            if (reply2.kind === "unreadable") {
-              canCatchUp = false;
+  const writing = [];
+  const writeOverview = async (after, ask, tasks) => host.inOrder(async () => {
+    const { ledger } = await host.read();
+    const answer = parseOverview(await ask(ledger.overview, tasks).catch(() => null));
+    if (answer === null) return;
+    await host.update((x) => appliedOverview(x, answer, after.presence.turnsApplied));
+  });
+  const followUp = (run2) => {
+    const settled = run2.catch(() => void 0);
+    if (host.background) host.background(settled);
+    else writing.push(settled);
+  };
+  try {
+    while (hasWork(await host.read())) {
+      const held = await host.exclusive(async () => {
+        try {
+          for (; ; ) {
+            const s = await host.update((x) => ({ ...x, presence: { ...x.presence, isUpdating: hasWork(x) } }));
+            if (!hasWork(s)) break;
+            if (wantsCatchUp(s)) {
+              const reply2 = await host.catchUp(s).catch(() => ({ kind: "failed" }));
+              if (reply2.kind === "unreadable") {
+                canCatchUp = false;
+                continue;
+              }
+              const parsed = reply2.kind === "reply" ? parseReply(reply2.text, reply2.source) : null;
+              const at = await host.now();
+              const after2 = await host.update((x) => appliedCatchUp(x, s, parsed, at));
+              if (!parsed) return "stop";
+              if (reply2.kind === "reply") followUp(writeOverview(after2, reply2.overview, s.hostTasks));
               continue;
             }
-            const parsed = reply2.kind === "reply" ? parseReply(reply2.text, reply2.source) : null;
-            const at = await host.now();
-            await host.update((x) => appliedCatchUp(x, s, parsed, at));
-            if (!parsed) return "stop";
-            continue;
+            const next = s.pending[0];
+            const promptAt = await host.now();
+            const reply = await host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names)).catch(() => null);
+            let isApplied = false;
+            const after = await host.update(async (x) => {
+              isApplied = false;
+              if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x;
+              isApplied = isReplyApplied(x, reply);
+              return applied(x, reply, await host.now(), promptAt);
+            });
+            if (isApplied)
+              followUp(
+                writeOverview(
+                  after,
+                  (last, tasks) => host.ask(overviewPrompt(last, next.ex, tasks), OVERVIEW_SYSTEM),
+                  next.ex.tasks
+                )
+              );
+            if (after.pending[0]?.failed && !next.failed) return "stop";
           }
-          const next = s.pending[0];
-          const promptAt = await host.now();
-          const reply = await host.ask(buildPrompt(s.ledger, next.ex)).catch(() => null);
-          const after = await host.update(
-            async (x) => x.pending[0]?.turnsStarted === next.turnsStarted && x.pending[0].ex.turn === next.ex.turn ? applied(x, reply, await host.now(), promptAt) : x
-          );
-          if (after.pending[0]?.failed && !next.failed) return "stop";
+        } finally {
+          await host.update((x) => ({ ...x, presence: { ...x.presence, isUpdating: false } }));
         }
-      } finally {
-        await host.update((x) => ({ ...x, presence: { ...x.presence, isUpdating: false } }));
-      }
-    });
-    if (!held.acquired || held.value === "stop") return;
+      });
+      if (!held.acquired || held.value === "stop") return;
+    }
+  } finally {
+    await Promise.all(writing);
   }
 }
 
@@ -1276,6 +1676,10 @@ var TAB_OPEN_MS = 15e3;
 function isTabOpen(s, now) {
   return now - s.tabSeenAt < TAB_OPEN_MS;
 }
+function screenTabOf(s) {
+  const shown = TABS.find((t) => t.id === s.shownTab);
+  return { label: shown?.label ?? s.shownTab, isPage: s.shownTab === "overview" };
+}
 function activityOf(tool, input) {
   return toolActivity(tool, input);
 }
@@ -1298,7 +1702,7 @@ import { open, readdir as readdir2 } from "node:fs/promises";
 import { dirname as dirname2, join as join3, resolve as resolve2 } from "node:path";
 
 // ../hooks/conversation.ts
-var NL4 = "\n";
+var NL6 = "\n";
 var TRANSCRIPT_MAX = 8e4;
 var MESSAGE_MAX = 6e3;
 function flattenConversation(turns) {
@@ -1323,7 +1727,7 @@ function flattenConversation(turns) {
     }
     kept.push(line);
   }
-  return kept.reverse().join(NL4);
+  return kept.reverse().join(NL6);
 }
 
 // src/transcript.ts
@@ -1401,6 +1805,7 @@ async function linesBefore(path, bytes, end = Infinity) {
     await file.close();
   }
 }
+var TURN_ROW_BYTES = 64 * 1024;
 async function historyLines(path, bytes) {
   const first = await linesBefore(path, bytes);
   const parts = [first.lines];
@@ -1468,10 +1873,10 @@ function callLines(p, hasCommandRows, cwd) {
   const line = activityOf(textOf(p.namespace).startsWith("mcp__") ? textOf(p.namespace) + name : name, {});
   return line ? [line] : [];
 }
-var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf(record(record(row.payload).item).type));
+var isItem2 = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf(record(record(row.payload).item).type));
 function turnsOf(rows, cwd) {
-  const hasMessageRows = rows.some((row) => isItem(row, "UserMessage", "AgentMessage"));
-  const hasCommandRows = rows.some((row) => isItem(row, "CommandExecution"));
+  const hasMessageRows = rows.some((row) => isItem2(row, "UserMessage", "AgentMessage"));
+  const hasCommandRows = rows.some((row) => isItem2(row, "CommandExecution"));
   const turns = [];
   const agentTurn = () => {
     const last = turns.at(-1);
@@ -1491,9 +1896,9 @@ function turnsOf(rows, cwd) {
   for (const row of rows) {
     const p = record(row.payload);
     const item = record(p.item);
-    if (isItem(row, "UserMessage")) person(contentText(item.content));
-    else if (isItem(row, "AgentMessage")) turns.push({ role: "agent", text: contentText(item.content), activity: [] });
-    else if (isItem(row, "CommandExecution")) act(shellLines(commandText2(item.command)));
+    if (isItem2(row, "UserMessage")) person(contentText(item.content));
+    else if (isItem2(row, "AgentMessage")) turns.push({ role: "agent", text: contentText(item.content), activity: [] });
+    else if (isItem2(row, "CommandExecution")) act(shellLines(commandText2(item.command)));
     else if (row.type === "response_item") {
       if (p.type === "message" && !hasMessageRows && p.role === "user") person(contentText(p.content));
       else if (p.type === "message" && !hasMessageRows && p.role === "assistant")
@@ -1540,6 +1945,8 @@ async function readRollout(path, cwd, currentTurnId) {
 // src/update.ts
 var MODEL = "gpt-6.1-sol";
 var TIMEOUT_MS = 12e4;
+var RESULTS_WAIT_MS = 4 * TIMEOUT_MS;
+var resultsOrder = orderedKeys();
 var OFF = [
   "shell_tool",
   "unified_exec",
@@ -1587,13 +1994,12 @@ async function keepNewerSignIn(link, auth) {
   if (saved.mtimeMs > theirs.mtimeMs) await copyFile(link, auth);
 }
 function codexAsk(exec, cli, dir, personHome) {
-  return async (prompt) => {
+  return async (prompt, instructions) => {
     const work = join4(dir, "exec");
-    const system = join4(dir, "inbox-system.md");
+    const system = join4(dir, `inbox-system-${createHash2("sha256").update(instructions).digest("hex").slice(0, 12)}.md`);
     const out = join4(work, `reply-${randomUUID2()}.txt`);
     await mkdir2(work, { recursive: true });
     const home = await modelHome(dir, personHome);
-    const instructions = systemText(CODEX);
     if (await readFile2(system, "utf8").catch(() => "") !== instructions) await writeFile2(system, instructions);
     let off = [...OFF];
     for (let tries = 0; tries <= OFF.length; tries += 1) {
@@ -1642,10 +2048,16 @@ function codexAsk(exec, cli, dir, personHome) {
 var runUpdates2 = (dir, sessionId, ask, now) => runUpdates({
   ...codexStore(dir, sessionId, now),
   ask,
+  names: CODEX,
+  inOrder: (fn) => resultsOrder.run(
+    statePath(dir, sessionId),
+    () => withLock(`${statePath(dir, sessionId)}.results`, fn, RESULTS_WAIT_MS)
+  ),
   catchUp: async (s) => askOverConversation(
     ask,
+    CODEX,
     s,
-    screenText(CODEX, isTabOpen(s, now()), null),
+    screenText(CODEX, isTabOpen(s, now()), screenTabOf(s)),
     (await readRollout(s.transcriptPath, s.root))?.conversation ?? null
   )
 });

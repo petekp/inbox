@@ -2,7 +2,7 @@ import { failingChecks, waitingThreads } from './prs'
 import { prCheckId, prMarkId, prThreadId } from './pr-tab'
 import { FINDING_GROUPS, NEEDS_YOU_GROUPS } from './view'
 import type { InboxView, RowView } from './view'
-import type { Finding, FoldKind, PrView } from '../types'
+import type { Finding, FoldKind, PrView, Tab } from '../types'
 
 export type RowRecord<T extends string> = Partial<Record<T, ReadonlySet<string>>>
 
@@ -28,6 +28,9 @@ export function recordRows<T extends string>(
 }
 
 export type ListedTab = 'needsYou' | 'findings'
+
+/** The tabs a look moves between when rows arrive: every row tab. A page tab has no rows to arrive. */
+export const ARRIVAL_TABS: readonly Tab[] = ['needsYou', 'findings', 'prs']
 
 /** Each tab's row ids in a view, settled rows included, so a row Undo brings back is not new. */
 export function listedRowIds(v: InboxView): Record<ListedTab, string[]> {

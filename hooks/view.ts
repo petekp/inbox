@@ -9,13 +9,18 @@ import type {
   LocalResult,
   PressKind,
   RowNote,
+  PageTab,
   Stop,
+  OverviewStatus,
   Tab,
   Turns,
 } from '../types'
 import { isLapsed, reopenFinding, reopenItem } from './ledger'
+import { awayOf, orderParts, workOf } from './overview'
+import type { PartId } from './overview'
 import { ago } from './text'
 import { questionNumbers } from './model-text'
+import type { ListedTab } from './arrivals'
 import type { ClosedState } from './ledger'
 import {
   actionId,
@@ -509,12 +514,158 @@ function stepKind(step: HelpStep): PressKind {
   return step.step.some(h => h.kind === 'run') ? 'handoff' : 'local'
 }
 
-export const TABS: readonly { id: Tab; label: string; hotkey: string }[] = [
+/** Any tab a look can show: a row tab or a page tab. */
+export type ShownTab = Tab | PageTab
+
+export const TABS: readonly { id: ShownTab; label: string; hotkey: string }[] = [
   { id: 'needsYou', label: 'Needs you', hotkey: '1' },
   { id: 'findings', label: 'Findings', hotkey: '2' },
   { id: 'prs', label: 'PRs', hotkey: '3' },
+  { id: 'overview', label: 'Overview', hotkey: '4' },
 ]
-export const ROW_TABS = TABS.filter((t): t is (typeof TABS)[number] & { id: 'needsYou' | 'findings' } => t.id !== 'prs')
+/** Whether a shown tab lists rows you answer or close: Needs you and Findings. */
+export function isListedTab(tab: ShownTab): tab is ListedTab {
+  return tab === 'needsYou' || tab === 'findings'
+}
+
+/** Whether a shown tab is a row tab, which has rows, a count and a cursor. */
+export function isRowTab(tab: ShownTab): tab is Tab {
+  return tab !== 'overview'
+}
+
+/** The tabs that list rows: Needs you, Findings and PRs. */
+export const ROW_TABS = TABS.filter((t): t is (typeof TABS)[number] & { id: Tab } => isRowTab(t.id))
+
+export const LISTED_TABS = TABS.filter((t): t is (typeof TABS)[number] & { id: ListedTab } => isListedTab(t.id))
+
+/** A line on the Overview page. A null tone draws the mark muted. */
+export type OverviewRow = {
+  id: string
+  mark: string
+  tone: 'needsYou' | 'done' | 'issue' | null
+  text: string
+  detail: string | null
+}
+
+/** One text line of the page: the headline, why the direction changed, how it is going, a pointer to the Inbox, or a quiet note. */
+export type OverviewLead = {
+  id: 'headline' | 'course' | 'status' | 'pointer' | 'quiet'
+  text: string
+  /** Whether a blank line separates it from the line above, as when the status follows a course or the pointer follows the status. */
+  hasGapAbove: boolean
+}
+
+export type OverviewSection = { id: string; title: string | null; rows: OverviewRow[] }
+
+/** What the Overview page shows. Every look draws it as it is. */
+export type OverviewPage = {
+  isEmpty: boolean
+  /** The text lines above the lists, in the order to draw them. */
+  lead: OverviewLead[]
+  /** The parts in the order to draw them. A look draws these and no others. */
+  parts: PartId[]
+  sections: OverviewSection[]
+  /** One line for each earlier topic, oldest first. */
+  earlier: string[]
+  empty: { title: string; hint: string }
+}
+
+export const WORKING_TEXT = 'Working…'
+
+const OVERVIEW_MARKS: Record<OverviewStatus, Pick<OverviewRow, 'mark' | 'tone'>> = {
+  working: { mark: '●', tone: null },
+  queued: { mark: '○', tone: null },
+  'waits-on-you': { mark: '◆', tone: 'needsYou' },
+  'waits-on-other': { mark: '◌', tone: null },
+  done: { mark: '✓', tone: 'done' },
+  'ruled-out': { mark: '✗', tone: null },
+  problem: { mark: '!', tone: 'issue' },
+  unknown: { mark: '?', tone: null },
+}
+
+/** A section's title. Every section has one, so rows never sit directly under the lead lines without a name. */
+const SECTION_TITLES: Partial<Record<PartId, string | null>> = {
+  workstreams: 'Streams',
+  queue: 'Work',
+  since: 'Since you looked',
+  works: 'What works now',
+  open: 'Still open',
+  next: 'Next',
+}
+
+export const QUIET_TEXT = 'Nothing new since you looked.'
+
+export function pointerText(count: number): string | null {
+  return count === 0 ? null : count === 1 ? '1 thing waits on you in Inbox.' : `${count} things wait on you in Inbox.`
+}
+
+/** `parts` with `id` placed after the headline and the course. */
+function withAfterHeading(parts: PartId[], id: PartId): PartId[] {
+  const at = parts.filter(p => p === 'headline' || p === 'course').length
+
+  return [...parts.slice(0, at), id, ...parts.slice(at)]
+}
+
+export function overviewPage(
+  s: { ledger: Pick<Ledger, 'overview'>; presence: { isTurnRunning: boolean }; stop?: unknown },
+  now: number,
+  waitingOnYou = 0,
+): OverviewPage {
+  const { overview } = s.ledger
+  const { isTurnRunning } = s.presence
+  const headline = overview?.headline || null
+  const parts = overview
+    ? orderParts(
+        overview,
+        overview.look?.away ?? awayOf(overview.lastLookAt, now),
+        workOf(overview, { isTurnRunning, isStopped: Boolean(s.stop), waitingOnYou }),
+      )
+    : []
+  const sections = overview
+    ? parts.flatMap(id => {
+        const title = SECTION_TITLES[id]
+        if (title === undefined) return []
+
+        const rows = overview[id as 'queue'].map((item, n) => ({
+          id: `${id}-${n}`,
+          ...OVERVIEW_MARKS[item.status],
+          text: item.text,
+          detail: item.detail,
+        }))
+
+        return rows.length > 0 ? [{ id, title, rows }] : []
+      })
+    : []
+
+  const texts: Record<OverviewLead['id'], string | null> = {
+    headline,
+    course: overview?.course || null,
+    status: isTurnRunning ? WORKING_TEXT : overview?.status || null,
+    pointer: pointerText(waitingOnYou),
+    quiet: QUIET_TEXT,
+  }
+  const withWorking: PartId[] = isTurnRunning && !parts.includes('status') ? withAfterHeading(parts, 'status') : parts
+  const leadIds: PartId[] = overview ? withWorking : isTurnRunning ? ['status'] : []
+  const lead = leadIds
+    .flatMap(id => {
+      const text = id in texts ? texts[id as OverviewLead['id']] : null
+
+      return text === null ? [] : [{ id: id as OverviewLead['id'], text, hasGapAbove: false }]
+    })
+    .map((line, n, all) => ({ ...line, hasGapAbove: n > 0 && all[n - 1]!.id !== 'headline' }))
+
+  return {
+    isEmpty: headline === null && !isTurnRunning,
+    lead,
+    parts,
+    sections,
+    earlier: parts.includes('earlier') ? (overview?.earlier ?? []) : [],
+    empty: {
+      title: 'Overview',
+      hint: "Where this session's work stands and where it's heading, so you can pick it up after a break. It fills in once the work starts.",
+    },
+  }
+}
 
 export function emptyText(tab: 'needsYou' | 'findings', agent: string): { title: string; hint: string } {
   return tab === 'needsYou'

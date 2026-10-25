@@ -6,16 +6,10 @@ import type { AssistantMessage, Context, Model } from '@oh-my-pi/pi-ai'
 import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent'
 
 import { flattenConversation } from '../../hooks/conversation'
+import { ompTodoFromBranch } from '../../hooks/host-tasks'
 import type { Turn } from '../../hooks/conversation'
-import {
-  dialogActivity,
-  dialogQuestions,
-  guidanceText,
-  screenText,
-  systemText,
-  toolActivity,
-} from '../../hooks/model-text'
-import type { DialogOutcome } from '../../hooks/model-text'
+import { dialogActivity, dialogQuestions, guidanceText, screenText, toolActivity } from '../../hooks/model-text'
+import type { DialogOutcome, ScreenTab } from '../../hooks/model-text'
 import type { PrPress } from '../../hooks/pr-tab'
 import { noteDialog } from '../../hooks/dialogs'
 import { ghFinder, ghIn } from '../../hooks/gh'
@@ -26,12 +20,16 @@ import {
   forkedFrom,
   hasLedger,
   isUnseen,
+  lookEndedOn,
+  lookStartedOn,
   needsUpdate,
   noteActivity,
   noteCommandOutput,
   notePrompt,
   recorded,
   sessionView,
+  turnEnded,
+  turnStarted,
 } from '../../hooks/session'
 import type { SessionView } from '../../hooks/session'
 import {
@@ -39,6 +37,7 @@ import {
   fetchPrs,
   prFetchTracker,
   press,
+  orderedKeys,
   reconcileUpdateStatus,
   runUpdates,
   wakeForDone,
@@ -47,8 +46,8 @@ import type { PressOutcome, SessionHost, UpdateHost } from '../../hooks/session-
 import { agentTools } from '../../hooks/tools'
 import { DARK_TONES, LIGHT_TONES } from '../../hooks/tones'
 import { clip } from '../../hooks/text'
-import { NO_HOLDS, RESUME_TEXT, SETTLED_MS } from '../../hooks/view'
-import type { ReplyHolds } from '../../hooks/view'
+import { NO_HOLDS, RESUME_TEXT, SETTLED_MS, TABS } from '../../hooks/view'
+import type { ReplyHolds, ShownTab } from '../../hooks/view'
 import { openTarget } from './commands'
 import { createPanel } from './controller'
 import type { PanelSource } from './controller'
@@ -104,6 +103,8 @@ export type Inbox = {
   screen(ctx: ExtensionContext, holds?: ReplyHolds): Promise<InboxScreen>
   /** Marks the panel open, and runs what a freshly opened panel needs: Done messages due, and a PR fetch when due. */
   openPanel(ctx: ExtensionContext): Promise<void>
+  /** Records the tab an open panel shows. */
+  showTab(ctx: ExtensionContext, tab: ShownTab): void
   closePanel(ctx: ExtensionContext): void
   fetchPrsWhenDue(ctx: ExtensionContext): void
   /** Calls `listener` after the session's saved state changes. Returns how to stop. */
@@ -381,7 +382,15 @@ export function styleOf(theme: OmpTheme): Style {
 
 export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inbox {
   const dir = deps.stateDir(pi)
-  const openPanels = new Set<string>()
+  /** The open panels, with the tab each shows. */
+  const openPanels = new Map<string, ShownTab>()
+
+  function screenTabOf(id: string): ScreenTab | null {
+    const tab = openPanels.get(id)
+    const shown = TABS.find(t => t.id === tab)
+
+    return tab === undefined ? null : { label: shown?.label ?? tab, isPage: tab === 'overview' }
+  }
   const prepared = new Set<string>()
   const prFetches = prFetchTracker(deps.now)
   const listeners = new Map<string, Set<() => void>>()
@@ -428,7 +437,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   }
 
   function askFor(ctx: ExtensionContext, id: string): SessionHost<OmpState>['ask'] {
-    return async prompt => {
+    return async (prompt, system) => {
       const model = inboxModel(ctx)
       if (!model) return null
       try {
@@ -437,7 +446,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         const reply = await deps.complete(
           model,
           {
-            systemPrompt: [systemText(OMP)],
+            systemPrompt: [system],
             messages: [{ role: 'user', content: prompt, timestamp: deps.now() }],
           },
           { apiKey, signal: AbortSignal.timeout(INBOX_MODEL_TIMEOUT_MS) },
@@ -451,6 +460,9 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       }
     }
   }
+
+  /** The sessions whose results calls run one after another. They hold no lock, so a ledger call never waits for one. */
+  const resultsOrder = orderedKeys()
 
   function hostFor(ctx: ExtensionContext): SessionHost<OmpState> {
     const id = sessionIdOf(ctx)
@@ -497,7 +509,17 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
 
     return {
       ...host,
-      catchUp: s => askOverConversation(host.ask, s, screenText(OMP, openPanels.has(id), null), conversationText(ctx)),
+      names: OMP,
+      inOrder: fn => resultsOrder.run(id, fn),
+      background: results => deps.background(results),
+      catchUp: s =>
+        askOverConversation(
+          host.ask,
+          OMP,
+          s,
+          screenText(OMP, openPanels.has(id), screenTabOf(id)),
+          conversationText(ctx),
+        ),
     }
   }
 
@@ -518,8 +540,8 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   }
 
   /**
-   * A forked session continues its parent's ledger, as the mod's fork does, when the parent saved one. The card, items
-   * and closed records carry over, so the fork's catch-up does not offer back what the person already closed.
+   * A forked session continues its parent's ledger, as the mod's fork does, when the parent saved one. The Overview, items,
+   * the task list and closed records carry over, so the fork's catch-up does not offer back what the person already closed.
    * A parent with no saved ledger leaves the fork to catch up over its branch.
    */
   async function continueFork(ctx: ExtensionContext, parentFile: string | undefined): Promise<void> {
@@ -580,10 +602,20 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
 
   const start = async (ctx: ExtensionContext, parentFile?: string) => {
     if (isUnattended(ctx)) return dropTools()
+    // No turn runs as a session starts, so a running turn saved here was cut off by a process that ended.
+    const id = sessionIdOf(ctx)
+    if ((await readState(dir, id).catch(() => null))?.presence.isTurnRunning)
+      await change(id, s => (s.presence.isTurnRunning ? turnEnded(s) : s)).catch(() => undefined)
     prepare(ctx)
     showBand(ctx)
     deps.background(
       continueFork(ctx, parentFile)
+        .catch(() => undefined)
+        .then(async () => {
+          const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
+          const saved = await readState(dir, id).catch(() => null)
+          if (hostTasks.length > 0 || (saved?.hostTasks.length ?? 0) > 0) await change(id, s => ({ ...s, hostTasks }))
+        })
         .catch(() => undefined)
         .then(() => catchUpUnseen(ctx)),
     )
@@ -626,6 +658,12 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
           }
         : {}),
     }
+  })
+
+  // Not before_agent_start, which can run twice for one prompt and does not run for a queued message.
+  pi.on('agent_start', async (_event, ctx) => {
+    if (isUnattended(ctx)) return
+    await change(sessionIdOf(ctx), turnStarted).catch(() => undefined)
   })
 
   pi.on('turn_start', async (_event, ctx) => {
@@ -713,8 +751,14 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const stop = await stopOf(last, deps.isUsageLimit, deps.now())
     // Escape on the ask dialog aborts the turn, so it ends with no reply text.
     const isDialogDismissed = event.messages.some(isDismissedAsk)
+    const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
     const written = await change(id, s => ({
-      ...endTurn(OMP, s, reply, openPanels.has(id), { queuesEmptyReply: isDialogDismissed }),
+      ...turnEnded(
+        endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
+          tab: screenTabOf(id),
+          queuesEmptyReply: isDialogDismissed,
+        }),
+      ),
       stop,
     })).catch(() => null)
     if (!written) return
@@ -767,12 +811,24 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       }
     },
     openPanel: async ctx => {
-      openPanels.add(sessionIdOf(ctx))
+      openPanels.set(sessionIdOf(ctx), 'needsYou')
       await wakeForDone(hostFor(ctx)).catch(() => undefined)
       fetchPrsWhenDue(ctx)
     },
+    showTab: (ctx, tab) => {
+      const id = sessionIdOf(ctx)
+      if (!openPanels.has(id)) return
+      const isChanged = openPanels.get(id) !== tab
+      openPanels.set(id, tab)
+      if (isChanged)
+        deps.background(
+          change(id, s => (tab === 'overview' ? lookStartedOn(s, deps.now()) : lookEndedOn(s, deps.now()))),
+        )
+    },
     closePanel: ctx => {
-      openPanels.delete(sessionIdOf(ctx))
+      const id = sessionIdOf(ctx)
+      openPanels.delete(id)
+      deps.background(change(id, s => lookEndedOn(s, deps.now())))
     },
     fetchPrsWhenDue,
     onChange: (ctx, listener) => {
@@ -801,6 +857,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     },
     resume: async () => inbox.resume(ctx),
     fetchPrsWhenDue: () => inbox.fetchPrsWhenDue(ctx),
+    shown: tab => inbox.showTab(ctx, tab),
     onChange: listener => inbox.onChange(ctx, listener),
   })
 

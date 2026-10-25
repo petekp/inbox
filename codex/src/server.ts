@@ -11,24 +11,24 @@ import type { PrPress } from '../../hooks/pr-tab'
 import { demoAfterPress, demoTurns, noteText, openTarget } from '../../hooks/presses'
 import type { PathProbe, RowPress } from '../../hooks/presses'
 import { agentTools } from '../../hooks/tools'
-import { heardState, isTurnRunning, noteToolCall, viewOf } from './core'
+import { heardState, isTurnRunning, lookOnView, noteToolCall, viewOf } from './core'
 import type { TabView } from './core'
 import { demoState } from './demo'
 import { answerMessage, noteDialogs } from './dialogs'
 import { withEarlierHistory } from './history'
 import { codexStore } from './host'
-import { isUnseen, pressOn, recorded } from '../../hooks/session'
+import { isUnseen, pressOn, recorded, turnEnded, turnStarted } from '../../hooks/session'
 import type { SendOutcome } from '../../hooks/session'
 import { fetchPrs, prFetchTracker, press, wakeForDone as wakeSessionForDone } from '../../hooks/session-host'
 import type { SessionHost } from '../../hooks/session-host'
-import { NO_HOLDS, SETTLED_MS } from '../../hooks/view'
-import type { ReplyHolds } from '../../hooks/view'
+import { NO_HOLDS, SETTLED_MS, TABS } from '../../hooks/view'
+import type { ReplyHolds, ShownTab } from '../../hooks/view'
 import { SETTLE_WINDOW_MS } from './settle'
 import { pruneSessions, readState, updateState } from './state'
 import { reconcileUpdateStatus } from './update'
 import type { SessionState } from './state'
 import { CODEX, INBOX_DESCRIPTION, inboxToolText, VIEW_DESCRIPTION } from './texts'
-import { rolloutFor, turnIn } from './transcript'
+import { rolloutFor, turnIn, turnRunningIn } from './transcript'
 import type { HooksTrust } from './hook-trust'
 import type { LastAction, PrViews, RowNote } from '../../types'
 
@@ -64,7 +64,12 @@ const toolsFor = (uri: string) => [
     description: VIEW_DESCRIPTION,
     inputSchema: {
       type: 'object',
-      properties: { demo: { type: 'boolean' }, replies: { type: 'object' }, discarded: { type: 'object' } },
+      properties: {
+        demo: { type: 'boolean' },
+        tab: { type: 'string' },
+        replies: { type: 'object' },
+        discarded: { type: 'object' },
+      },
     },
     _meta: {
       ui: { resourceUri: uri, visibility: ['app'] },
@@ -105,6 +110,11 @@ function holdsOf(args: Record<string, unknown>): ReplyHolds {
         )
 
   return { replies: times(args.replies), discarded: times(args.discarded) }
+}
+
+/** The tab the page says it shows, or null for anything that is not a tab. */
+function shownTabOf(raw: unknown): ShownTab | null {
+  return TABS.find(t => t.id === raw)?.id ?? null
 }
 
 function stamped(tabHtml: string): string {
@@ -291,7 +301,21 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     }
   }
 
-  const wakeForDone = (id: string) => wakeSessionForDone(hostFor(id))
+  /** Sets whether a turn runs from the rollout's last turn row, read inside the state lock so no hook writes between. */
+  async function syncTurn(id: string) {
+    if ((await readState(dir, id)).transcriptPath === null) return
+    await updateState(dir, id, async s => {
+      const isRunning = s.transcriptPath === null ? null : await turnRunningIn(s.transcriptPath)
+      if (isRunning === null || isRunning === s.presence.isTurnRunning) return s
+
+      return isRunning ? turnStarted(s) : turnEnded(s)
+    })
+  }
+
+  const wakeForDone = async (id: string) => {
+    await syncTurn(id)
+    await wakeSessionForDone(hostFor(id))
+  }
 
   const currentPage = async () => (await deps.devPage?.()) ?? deps.tabHtml
 
@@ -337,6 +361,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   }
 
   async function onPress(id: string, p: RowPress | PrPress, thread: unknown, holds: ReplyHolds): Promise<PressReply> {
+    await syncTurn(id).catch(() => undefined)
     if (!('ref' in p) && (p.action === 'answer' || p.action === 'type'))
       await linkRunningDialogs(id, p.id).catch(() => undefined)
     const outcome = await press(hostFor(id), p, thread !== id, holds)
@@ -431,10 +456,12 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
           return { ...text('Inbox demo'), structuredContent: await served(demoOf(id), id, true, holds) }
         await wakeForDone(id).catch(() => undefined)
         await catchUpOnOpen(id).catch(() => undefined)
+        const shownTab = shownTabOf(args.tab)
         const s = await updateState(dir, id, s => ({
-          ...s,
+          ...lookOnView(s, shownTab ?? s.shownTab, now()),
           heldRows: Object.keys(holds.replies),
           tabSeenAt: now(),
+          shownTab: shownTab ?? s.shownTab,
           prViews: { ...s.prViews, views: viewsStillShown(s.prViews, s.ledger.prs, s.lastActions, now()) },
         }))
         fetchPrsWhenDue(id, s)

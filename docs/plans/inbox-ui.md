@@ -13,8 +13,8 @@ The facts behind it are in [docs/reference/](../reference/README.md), checked on
 - **Item**: a question the agent asked, or a task only the person can do.
 - **Row**: one entry in a list. A row is an item, a finding, a PR, a PR check or a review thread.
 - **Need you**: the rows the Needs you tab counts. Section 2.1 defines it.
-- **Per-turn update**: a model call after each reply that adds and closes items. It adds the items the agent did not record with its `record` tool, and writes the card.
-- **Card goal and current step**: the per-turn update's one-line summary of the session: what it is for, and what the agent is doing now.
+- **Per-turn update**: a model call after each reply that adds and closes items. It adds the items the agent did not record with its `record` tool. The Overview call that follows writes the session's headline and status.
+- **Headline and status**: the Overview call's one-line summary of the session: what it is for, and what the agent is doing now.
 - **Mod**: the Claude Code plugin in `hooks/` that draws the band and pane.
 - **Band**: the mod's lines above the prompt.
 - **Pane**: the mod's `/inbox` view.
@@ -42,7 +42,7 @@ Each drawn action is clickable. Keys are an extra where the host supports them. 
 
 ### 2.1 What comes first
 
-The count of what needs the person and the top row come first. The card goal and current step go to the agent, in the carry text. Every platform already shows which session waits on the person. The inbox adds the item itself.
+The count of what needs the person and the top row come first. The headline and status go to the agent, in the carry text. Every platform already shows which session waits on the person. The inbox adds the item itself.
 
 The count is named by its tab, Needs you. The band reads tab names with counts, and an empty inbox reads "Nothing needs you".
 
@@ -88,7 +88,7 @@ The Codex tab draws its lists flat, with no tree lines, in the app's sans font. 
 
 The Closed fold's outcomes are the answer itself ("Yes, rename"), "Done", "You ran it", "Dismissed", "Expired", "Closed by Claude: <reason>", and the per-turn update's own outcome text. A finding that Fix handed off lists as "Fix" or "Do it".
 
-No view shows the card goal and step. The band shows only counts, and the pane only rows. The Codex tab has no band, and its tab labels carry the counts, so it draws no count or goal line either.
+Only the Overview tab shows the headline and status. The band shows only counts, and the other tabs only rows. The Codex tab has no band, and its tab labels carry the counts, so it draws no count or headline either.
 
 **Question numbers.** Typing "1 yes" in the prompt answers a numbered question through `hooks/model-text.ts:answerNote`. That function maps a typed number to the agent's latest batch of questions: by the agent's own label when it gave one, else by position in the batch. It does this only when that batch came from the reply just before.
 
@@ -295,7 +295,7 @@ Needs you 2 · Findings 1                                [Open inbox]
 Stopped 1m ago: API error (overloaded). [Resume]
 ```
 
-The band falls back to the engine default when the mod is off, a survey shows, or the session has no stop, card, items or findings. Unreadable saved items and blocked inbox tools show only in the pane.
+The band falls back to the engine default when the mod is off, a survey shows, or the session has no stop, Overview, items or findings. Unreadable saved items and blocked inbox tools show only in the pane.
 
 **The pane.** Raised tabs when docked, "a: Label" on each action, j and k, 1 2 3 for tabs, ctrl+x tab, Esc, and the Keys drawer.
 

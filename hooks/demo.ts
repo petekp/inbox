@@ -4,12 +4,28 @@ import { emptySession } from './session'
 const MIN = 60_000
 const REPO = 'https://github.com/acme/visor'
 
+/** A saved sample as an earlier build seeded it, without the fields added since. */
+export type SavedDemoCopy = Omit<DemoCopy, 'presence'> & Partial<Pick<DemoCopy, 'presence'>>
+
 /** The demo's atom outlives a hot reload, so a copy an earlier build seeded may lack a field. */
-export function isDemoCopy(saved: unknown): saved is DemoCopy {
+export function isDemoCopy(saved: unknown): saved is SavedDemoCopy {
   if (!saved || typeof saved !== 'object') return false
   const d = saved as Record<string, unknown>
 
-  return ['ledger', 'prViews', 'lastActions', 'notes', 'turns'].every(k => d[k] !== null && typeof d[k] === 'object')
+  const hasOverview = typeof (d.ledger as { overview?: unknown } | null)?.overview === 'object'
+
+  return (
+    hasOverview &&
+    ['ledger', 'prViews', 'lastActions', 'notes', 'turns'].every(k => d[k] !== null && typeof d[k] === 'object')
+  )
+}
+
+/** A saved sample in the current shape: a field added since it was saved starts empty. */
+export function upgradeDemoCopy(saved: SavedDemoCopy): DemoCopy {
+  return {
+    ...saved,
+    presence: { isTurnRunning: false, ...saved.presence },
+  }
 }
 
 /** The sample as a session a host can draw and press on. */
@@ -22,18 +38,36 @@ export function demoSession(now: number): Session {
     ledger: d.ledger,
     lastActions: d.lastActions,
     prViews: d.prViews,
-    presence: { ...s.presence, ...d.turns },
+    presence: { ...s.presence, ...d.turns, ...d.presence },
   }
 }
 
 export function demoView(now: number): DemoCopy {
   return {
     ledger: {
-      card: {
-        goal: 'Add pinch-to-dismiss to glances',
-        done: ['A pinch dismisses the glance you look at', 'Dismissed glances fade out', 'PR #31 opened'],
-        now: 'Waiting on the dismiss gesture and a pairing',
-        running: ['simulator: http://localhost:3000'],
+      overview: {
+        isCoordinator: false,
+        state: 'on-track',
+        headline: 'Adding pinch-to-dismiss to glances',
+        status: 'A pinch already dismisses a glance. Two design questions and the glasses pairing wait on you.',
+        course: '',
+        queue: [
+          { status: 'working', text: 'Finish the dismiss gesture', detail: 'The glance fades out as you pinch.' },
+          { status: 'queued', text: 'Try it on the paired glasses', detail: null },
+          { status: 'waits-on-you', text: 'Pair the glasses with this Mac', detail: null },
+          { status: 'done', text: 'A pinch dismisses the glance you look at', detail: null },
+        ],
+        works: [{ status: 'done', text: 'Dismissed glances fade out', detail: null }],
+        open: [
+          { status: 'unknown', text: 'Whether a flick feels better than a pinch', detail: 'Waits on your answer.' },
+        ],
+        next: [],
+        since: [{ status: 'done', text: 'PR #31 opened', detail: null }],
+        workstreams: [],
+        earlier: [],
+        lastLookAt: null,
+        look: null,
+        seen: { since: [], course: '' },
       },
       items: [
         {
@@ -251,6 +285,7 @@ export function demoView(now: number): DemoCopy {
       nextId: 24,
       turn: 14,
       batchTurn: 14,
+      updates: 14,
     },
     stop: null,
     prViews: {
@@ -420,5 +455,6 @@ export function demoView(now: number): DemoCopy {
     },
     notes: {},
     turns: { turnsStarted: 14, turnsApplied: 14 },
+    presence: { isTurnRunning: false },
   }
 }

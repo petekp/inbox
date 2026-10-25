@@ -3,7 +3,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { guidanceText, systemText } from '../../hooks/model-text'
+import { guidanceText, OVERVIEW_SYSTEM, systemText } from '../../hooks/model-text'
+import { EMPTY_OVERVIEW } from '../../hooks/overview'
 import { NO_HOLDS } from '../../hooks/view'
 import { createInbox, stopOf } from '../src/host'
 import type { HostDeps } from '../src/host'
@@ -11,12 +12,7 @@ import { OMP } from '../src/texts'
 
 type Handler = (event: any, ctx: any) => unknown
 
-const MODEL_ANSWER = [
-  'GOAL: Add a greeting CLI',
-  'DONE: Plan written',
-  'NOW: Waiting on one choice',
-  'NEW: decide | 1 | Use Node or Python? | Node / Python | Node',
-].join('\n')
+const MODEL_ANSWER = ['NEW: decide | 1 | Use Node or Python? | Node / Python | Node'].join('\n')
 
 type Model = { id: string; name: string; provider: string; identity: { family?: string; revision?: string } }
 const sonnet: Model = {
@@ -48,6 +44,9 @@ let models: Model[]
 let smolModel: Model | undefined
 let inboxRoleModel: Model | undefined
 let reply: string | Error
+let overviewReply: string | Error
+let overviewHold: Promise<void> | null
+let overviewCompletions: { model: Model; system: string[]; prompt: string }[]
 let isIdle: boolean
 let execResults: Map<string, { code: number; stdout?: string; stderr?: string; killed?: boolean } | Error>
 let execCalls: { command: string; args: string[] }[]
@@ -107,14 +106,18 @@ const deps = (): HostDeps => ({
   settleWindowMs: 1000,
   home: '/home/me',
   complete: async (model, context) => {
-    completions.push({
+    const isOverview = context.systemPrompt?.[0] === OVERVIEW_SYSTEM
+    const call = {
       model: model as never,
       system: context.systemPrompt ?? [],
       prompt: String((context.messages[0] as { content: unknown }).content),
-    })
-    if (reply instanceof Error) throw reply
+    }
+    ;(isOverview ? overviewCompletions : completions).push(call)
+    if (isOverview) await overviewHold
+    const answer = isOverview ? overviewReply : reply
+    if (answer instanceof Error) throw answer
 
-    return { stopReason: 'stop', content: [{ type: 'text', text: reply }] } as never
+    return { stopReason: 'stop', content: [{ type: 'text', text: answer }] } as never
   },
   copy: async text => {
     copied.push(text)
@@ -163,6 +166,9 @@ beforeEach(() => {
   smolModel = smol
   inboxRoleModel = undefined
   reply = MODEL_ANSWER
+  overviewReply = 'UNCHANGED'
+  overviewHold = null
+  overviewCompletions = []
   isIdle = false
   execResults = new Map()
   execCalls = []
@@ -281,6 +287,89 @@ test('a turn that ends queues the exchange and the inbox model fills the ledger'
   expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Use Node or Python?'])
   expect(completions).toHaveLength(1)
   expect(completions[0]!.prompt).toContain('Plan written. Which runtime?')
+})
+
+test('a reply’s Overview comes from the separate Overview call, after the ledger update', async () => {
+  createInbox(pi(), deps())
+  overviewReply = 'HEADLINE: Adding a greeting CLI'
+  await prompt('Add a greeting CLI')
+  await endAgent('Plan written. Which runtime?')
+  await settle()
+  expect(state().ledger.overview.headline).toBe('Adding a greeting CLI')
+  expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Use Node or Python?'])
+  expect(overviewCompletions).toHaveLength(1)
+  expect(overviewCompletions[0]!.prompt).toContain('Plan written. Which runtime?')
+})
+
+test('a failed Overview call leaves the ledger update applied with no Overview', async () => {
+  createInbox(pi(), deps())
+  overviewReply = new Error('overloaded')
+  await prompt('Add a greeting CLI')
+  await endAgent('Plan written. Which runtime?')
+  await settle()
+  expect(state().pending).toEqual([])
+  expect(state().ledger.overview).toBeNull()
+  expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Use Node or Python?'])
+})
+
+test('a ledger update shows before its Overview call returns', async () => {
+  createInbox(pi(), deps())
+  reply = 'NEW: decide | 1 | Use Node or Python? | Node / Python | Node'
+  overviewReply = new Error('no Overview yet')
+  await prompt('Add a greeting CLI')
+  await endAgent('Plan written. Which runtime?')
+  await settle()
+  let release: () => void = () => undefined
+  overviewHold = new Promise<void>(resolve => (release = resolve))
+  overviewReply = 'HEADLINE: Scaffolding the command'
+  reply = 'CLOSED: i1 | Node chosen'
+  await prompt('Use Node')
+  await endAgent('Scaffolded the command with Node.')
+  for (let waited = 0; overviewCompletions.length < 2 && waited < 200; waited += 1)
+    await new Promise(resolve => setTimeout(resolve, 10))
+  expect(overviewCompletions).toHaveLength(2)
+  expect(state().ledger.items).toEqual([])
+  expect(state().ledger.overview).toBeNull()
+  release()
+  await settle()
+  expect(state().ledger.overview.headline).toBe('Scaffolding the command')
+})
+
+test('a ledger call that fails runs no Overview call', async () => {
+  createInbox(pi(), deps())
+  reply = new Error('overloaded')
+  overviewReply = 'HEADLINE: Adding a greeting CLI'
+  await prompt('Add a greeting CLI')
+  await endAgent('Plan written. Which runtime?')
+  await settle()
+  expect(overviewCompletions).toEqual([])
+  expect(state().ledger.overview).toBeNull()
+})
+
+test('the next ledger update does not wait for an earlier Overview call, and Overview calls run one at a time', async () => {
+  createInbox(pi(), deps())
+  let release: () => void = () => undefined
+  overviewHold = new Promise<void>(resolve => (release = resolve))
+  overviewReply = 'HEADLINE: Scaffolding the command'
+  reply = 'NEW: do | - | Water the plants | - | -'
+  await prompt('Add a greeting CLI')
+  await endAgent('Plan written.')
+  for (let waited = 0; overviewCompletions.length < 1 && waited < 200; waited += 1)
+    await new Promise(resolve => setTimeout(resolve, 10))
+  reply = 'NEW: do | - | Feed the cat | - | -'
+  await prompt('And a name')
+  await endAgent('Named it.')
+  for (let waited = 0; completions.length < 2 && waited < 200; waited += 1)
+    await new Promise(resolve => setTimeout(resolve, 10))
+  await new Promise(resolve => setTimeout(resolve, 50))
+  expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Water the plants', 'Feed the cat'])
+  expect(overviewCompletions).toHaveLength(1)
+  release()
+  await settle()
+  for (let waited = 0; overviewCompletions.length < 2 && waited < 200; waited += 1)
+    await new Promise(resolve => setTimeout(resolve, 10))
+  expect(overviewCompletions).toHaveLength(2)
+  expect(overviewCompletions[1]!.prompt).toContain('HEADLINE: Scaffolding the command')
 })
 
 test('a settle that will continue does not end the turn', async () => {
@@ -573,6 +662,32 @@ async function withSteps() {
   return { inbox, stepPress }
 }
 
+test('Working… shows from agent_start to the run’s end, and a Done message waits for Esc to end the run', async () => {
+  const inbox = createInbox(pi(), deps())
+  const now = async () =>
+    (await inbox.screen(makeCtx())).view.overviewPage.lead.find(l => l.id === 'status')?.text ?? null
+  await prompt('hello')
+  await record({ kind: 'task', ask: 'Try the CLI by hand' })
+  await endAgent('Done.')
+  await settle()
+  await inbox.press(makeCtx(), { action: 'done', id: state().ledger.items[0].id }, NO_HOLDS)
+  await call('agent_start', { type: 'agent_start' })
+  expect(await now()).toBe('Working…')
+
+  clock += 5000
+  timers[0]!.fn()
+  await settle()
+  expect(sent).toEqual([])
+  await endAgent('', { willContinue: true })
+  expect(await now()).toBe('Working…')
+
+  await endAgent('', { messages: [{ role: 'assistant', content: [], stopReason: 'aborted' }] })
+  await settle()
+  expect(await now()).toBeNull()
+  expect(sent).toHaveLength(1)
+  expect(sent[0]!.text).toContain('Try the CLI by hand')
+})
+
 test('a copy step hands the command to the clipboard and reports the copy', async () => {
   const { inbox, stepPress } = await withSteps()
   const outcome = await inbox.press(makeCtx(), stepPress(0), NO_HOLDS)
@@ -660,7 +775,7 @@ test('the /inbox command reports the counts, and /inbox demo reports the demo co
   expect(notices[1]).not.toBe(notices[0])
 })
 
-test('state from a crashed process that left an update running is cleared when the session starts', async () => {
+test('state from a crashed process that left an update or a turn running is cleared when the session starts', async () => {
   createInbox(pi(), deps())
   await prompt('hello')
   await endAgent('Done.')
@@ -668,13 +783,16 @@ test('state from a crashed process that left an update running is cleared when t
   const file = join(dir, 'sessions', 's1.json')
   const saved = state()
   const { writeFileSync } = await import('node:fs')
-  writeFileSync(file, JSON.stringify({ ...saved, presence: { ...saved.presence, isUpdating: true } }))
+  writeFileSync(
+    file,
+    JSON.stringify({ ...saved, presence: { ...saved.presence, isUpdating: true, isTurnRunning: true } }),
+  )
 
   handlers = new Map()
   createInbox(pi(), deps())
   await call('session_start', { type: 'session_start' })
   await settle()
-  expect(state().presence.isUpdating).toBe(false)
+  expect(state().presence).toMatchObject({ isUpdating: false, isTurnRunning: false })
 })
 
 const theme = {
@@ -943,4 +1061,70 @@ test('a failed catch-up is tried again at the next agent end, before the exchang
   expect(completions[1]!.prompt).toContain('<conversation>')
   expect(state().presence.ledgerState).toBe('current')
   expect(state().pending).toEqual([])
+})
+
+test('a look starts when the panel shows the Overview and ends on another tab or when the panel closes', async () => {
+  const inbox = createInbox(pi(), deps())
+  await prompt('hello')
+  const saved = state()
+  const overview = { ...EMPTY_OVERVIEW, headline: 'h', since: [{ status: 'done', text: 'Changed', detail: null }] }
+  writeFileSync(join(dir, 'sessions', 's1.json'), JSON.stringify({ ...saved, ledger: { ...saved.ledger, overview } }))
+  await inbox.openPanel(makeCtx())
+  inbox.showTab(makeCtx(), 'overview')
+  await settle()
+  expect(state().ledger.overview.look).not.toBeNull()
+
+  inbox.showTab(makeCtx(), 'needsYou')
+  await settle()
+  expect(state().ledger.overview.look).toBeNull()
+  expect(state().ledger.overview.since).toEqual([])
+  expect(state().ledger.overview.lastLookAt).not.toBeNull()
+
+  inbox.showTab(makeCtx(), 'overview')
+  await settle()
+  inbox.closePanel(makeCtx())
+  await settle()
+  expect(state().ledger.overview.look).toBeNull()
+})
+
+test('the agent task list at a reply is the latest todo entry on the branch, including a /todo edit and a deleted list', async () => {
+  createInbox(pi(), deps())
+  const todo = (op: string, tasks: { content: string; status: string }[]) => ({
+    type: 'message',
+    message: {
+      role: 'toolResult',
+      toolName: 'todo',
+      isError: false,
+      details: { op, phases: [{ name: 'Fix', tasks }] },
+    },
+  })
+  branch = [
+    todo('add', [
+      { content: 'Read the parser', status: 'completed' },
+      { content: 'Fix it', status: 'in_progress' },
+    ]),
+  ]
+  await prompt('hello')
+  await endAgent('Working.')
+  await settle()
+  expect(state().hostTasks).toEqual([
+    { id: '1', text: 'Read the parser', status: 'done' },
+    { id: '2', text: 'Fix it', status: 'in-progress' },
+  ])
+
+  branch.push({
+    type: 'custom',
+    customType: 'user_todo_edit',
+    data: { phases: [{ name: 'Fix', tasks: [{ content: 'Fix it', status: 'pending' }] }] },
+  })
+  await prompt('again')
+  await endAgent('Still working.')
+  await settle()
+  expect(state().hostTasks).toEqual([{ id: '1', text: 'Fix it', status: 'pending' }])
+
+  branch = []
+  await prompt('and again')
+  await endAgent('Done.')
+  await settle()
+  expect(state().hostTasks).toEqual([])
 })

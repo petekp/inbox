@@ -1,8 +1,18 @@
 import type { PrPress } from '../../hooks/pr-tab'
 import type { RowPress } from '../../hooks/presses'
 import { compareEndsAt } from '../../hooks/view'
-import type { ReplyHolds } from '../../hooks/view'
-import { INITIAL_UI, afterHandOff, followRows, handleKey, holdsOf, isAnimating, noticeFor, render } from './panel'
+import type { ReplyHolds, ShownTab } from '../../hooks/view'
+import {
+  INITIAL_UI,
+  afterHandOff,
+  drawPanel,
+  followRows,
+  handleKey,
+  holdsOf,
+  isAnimating,
+  noticeFor,
+  render,
+} from './panel'
 import type { PanelPress, PanelScreen, PanelUi, SeenRows, Style } from './panel'
 
 const ANIMATION_MS = 200
@@ -15,6 +25,8 @@ export type PanelSource = {
   /** Sends the message that resumes a stopped turn. Returns why it could not, or null. */
   resume(): Promise<string | null>
   fetchPrsWhenDue(): void
+  /** Tells the session which tab the panel shows, for the inbox model's note on what the person sees. */
+  shown(tab: ShownTab): void
   /** Calls `listener` after the session's saved state changes. Returns how to stop. */
   onChange(listener: () => void): () => void
 }
@@ -81,6 +93,7 @@ export function createPanel(deps: PanelDeps): Panel {
     ui = pressedId === undefined ? followed.ui : afterHandOff(next, followed.ui, pressedId, deps.now())
     seen = followed.seen
     isOpening = false
+    source.shown(ui.tab)
     syncAnimation()
     deps.requestRender()
   }
@@ -107,11 +120,18 @@ export function createPanel(deps: PanelDeps): Panel {
   }
 
   return {
-    render: width => (screen ? render(screen, ui, width, deps.now(), style, deps.height()) : [' Loading…']),
+    render(width) {
+      if (screen === null) return [' Loading…']
+      const drawn = drawPanel(screen, ui, width, deps.now(), style, deps.height())
+      ui = { ...ui, pageTop: drawn.pageTop }
+
+      return drawn.lines
+    },
     handleInput(key, text) {
       if (screen === null) return
       const result = handleKey(screen, ui, key, deps.now(), text)
       ui = result.ui
+      source.shown(ui.tab)
       if (result.close) deps.close()
       if (result.press) void press(result.press)
       else void refresh()

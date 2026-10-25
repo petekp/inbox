@@ -1,5 +1,14 @@
 import { parseReply } from './ledger'
-import { buildPrompt, transcriptCatchUpPrompt } from './model-text'
+import { parseOverview } from './overview'
+import {
+  buildPrompt,
+  OVERVIEW_SYSTEM,
+  overviewCatchUpPrompt,
+  overviewPrompt,
+  systemText,
+  transcriptCatchUpPrompt,
+} from './model-text'
+import type { Host } from './model-text'
 import { fetchTracked, prRowId, splitLinked } from './pr-tab'
 import type { GhRun, PrPress } from './pr-tab'
 import {
@@ -14,10 +23,19 @@ import {
   withUnconfirmed,
 } from './presses'
 import type { AnswerMessage, Effect, EffectHost, RowPress } from './presses'
-import { applied, appliedCatchUp, completedAttempt, needsCatchUp, pressOn, withFetchedPrs } from './session'
+import {
+  applied,
+  isReplyApplied,
+  appliedCatchUp,
+  appliedOverview,
+  completedAttempt,
+  needsCatchUp,
+  pressOn,
+  withFetchedPrs,
+} from './session'
 import type { Pressed, SendOutcome, Session } from './session'
 import type { ReplyHolds } from './view'
-import type { RowNote } from '../types'
+import type { HostTask, Overview, RowNote } from '../types'
 
 export type Exclusive<T> = { acquired: true; value: T } | { acquired: false }
 
@@ -43,7 +61,26 @@ export function exclusiveKeys(): {
   }
 }
 
-export type Ask = (prompt: string) => Promise<string | null>
+/** Keys whose runs go one after another in this process, each starting when the one before it has settled. */
+export function orderedKeys(): { run<T>(key: string, fn: () => Promise<T>): Promise<T> } {
+  const tails = new Map<string, Promise<unknown>>()
+
+  return {
+    run: (key, fn) => {
+      const result = (tails.get(key) ?? Promise.resolve()).then(fn)
+      const tail = result.catch(() => undefined)
+      tails.set(key, tail)
+      void tail.then(() => {
+        if (tails.get(key) === tail) tails.delete(key)
+      })
+
+      return result
+    },
+  }
+}
+
+/** Calls the inbox model with `system` as its system text. Null when the call fails. */
+export type Ask = (prompt: string, system: string) => Promise<string | null>
 
 /** Everything a host supplies to run one session. A function here takes the members it uses. */
 export type SessionHost<S extends Session> = {
@@ -53,7 +90,7 @@ export type SessionHost<S extends Session> = {
   update(change: (s: S) => S | Promise<S>): Promise<S>
   /** Runs `fn` unless another run holds the session's per-reply update. */
   exclusive<T>(fn: () => Promise<T>): Promise<Exclusive<T>>
-  /** Calls the inbox model. Null when it fails. */
+  /** Calls the inbox model, once for the ledger and once for the Overview. Null when a call fails. */
   ask: Ask
   /** Sends a message to the agent as if the person typed it. Runs outside a change, so it may change the session itself. */
   deliver(s: S, text: string, deliveryId: string): Promise<SendOutcome>
@@ -83,21 +120,39 @@ export type SessionHost<S extends Session> = {
   isTurnRunning?(s: S): boolean
 }
 
+/**
+ * Asks the Overview call for the guide as the whole conversation leaves it, given the Overview before. Null when the
+ * call fails.
+ */
+export type AskCatchUpOverview = (last: Overview | null, tasks: HostTask[]) => Promise<string | null>
+
 /** What a host's catch-up found: the model's answer to apply, or why there is none. */
 export type CatchUpReply =
   /** `source` is the text the answer may quote code blocks from, or null when the model read the conversation itself. */
-  | { kind: 'reply'; text: string; source: string | null }
+  | { kind: 'reply'; text: string; source: string | null; overview: AskCatchUpOverview }
   /** The model gave no answer. */
   | { kind: 'failed' }
   /** There is no conversation to read, so the pending exchanges run instead. */
   | { kind: 'unreadable' }
 
 export type UpdateHost<S extends Session> = Pick<SessionHost<S>, 'now' | 'read' | 'update' | 'exclusive' | 'ask'> & {
+  /** The host's names, which the ledger call's system text uses. */
+  names: Host
   /**
    * Has the inbox model read the whole conversation, and returns its answer for `runUpdates` to apply. Absent when
    * the host cannot read the conversation.
    */
   catchUp?(s: S): Promise<CatchUpReply>
+  /**
+   * Runs `fn` once the session's earlier Overview calls have finished, so each reads the Overview the one before
+   * wrote. The wait is for Overview calls only: the lock and the ledger calls never queue behind it.
+   */
+  inOrder<T>(fn: () => Promise<T>): Promise<T>
+  /**
+   * Keeps the Overview calls running after `runUpdates` returns, so the next update starts at once. Absent: `runUpdates`
+   * returns only once they have finished, as a Codex update process must stay alive until its calls end.
+   */
+  background?(overviews: Promise<void>): void
 }
 
 /**
@@ -106,14 +161,22 @@ export type UpdateHost<S extends Session> = Pick<SessionHost<S>, 'now' | 'read' 
  */
 export async function askOverConversation(
   ask: Ask,
+  names: Host,
   s: Session,
   screen: string,
   conversation: string | null,
 ): Promise<CatchUpReply> {
   if (!conversation) return { kind: 'unreadable' }
-  const text = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation)).catch(() => null)
+  const text = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names)).catch(() => null)
 
-  return text === null ? { kind: 'failed' } : { kind: 'reply', text, source: conversation }
+  return text === null
+    ? { kind: 'failed' }
+    : {
+        kind: 'reply',
+        text,
+        source: conversation,
+        overview: (last, tasks) => ask(overviewCatchUpPrompt(last, conversation, tasks), OVERVIEW_SYSTEM),
+      }
 }
 
 export async function reconcileUpdateStatus<S extends Session>(
@@ -144,72 +207,100 @@ export async function reconcileUpdateStatus<S extends Session>(
  * pending exchanges, oldest first. An update started meanwhile finds the lock held and exits, so the work is read
  * again after the lock is released.
  *
+ * Each update runs the ledger call first and applies its answer at once. Then the Overview call runs, with the
+ * Overview as it stands once the earlier Overview calls have written theirs, and its answer is written in a second
+ * change. Overview calls run one after another, apart from the lock and from `isUpdating`: no ledger call waits for
+ * one. With `background`, `runUpdates` returns when the ledger work is done; without it, once every Overview call has
+ * finished.
+ *
  * A catch-up that fails ends the run, and the next update tries it again. A conversation that cannot be read is not
- * tried again in this run.
+ * tried again in this run. A ledger call that fails skips the Overview call.
  */
 export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promise<void> {
   let canCatchUp = host.catchUp !== undefined
   const wantsCatchUp = (s: S) => canCatchUp && needsCatchUp(s)
   const hasWork = (s: S) => s.pending.length > 0 || wantsCatchUp(s)
-  while (hasWork(await host.read())) {
-    const held = await host.exclusive(async () => {
-      try {
-        for (;;) {
-          const s = await host.update(x => ({ ...x, presence: { ...x.presence, isUpdating: hasWork(x) } }))
-          if (!hasWork(s)) break
-          if (wantsCatchUp(s)) {
-            const reply = await host.catchUp!(s).catch((): CatchUpReply => ({ kind: 'failed' }))
-            if (reply.kind === 'unreadable') {
-              canCatchUp = false
+  const writing: Promise<void>[] = []
+  /** Runs the Overview call for an applied update and writes its answer. */
+  const writeOverview = async (after: S, ask: AskCatchUpOverview, tasks: HostTask[]) =>
+    host.inOrder(async () => {
+      const { ledger } = await host.read()
+      const answer = parseOverview(await ask(ledger.overview, tasks).catch(() => null))
+      if (answer === null) return
+      await host.update(x => appliedOverview(x, answer, after.presence.turnsApplied))
+    })
+  const followUp = (run: Promise<void>) => {
+    const settled = run.catch(() => undefined)
+    if (host.background) host.background(settled)
+    else writing.push(settled)
+  }
+  try {
+    while (hasWork(await host.read())) {
+      const held = await host.exclusive(async () => {
+        try {
+          for (;;) {
+            const s = await host.update(x => ({ ...x, presence: { ...x.presence, isUpdating: hasWork(x) } }))
+            if (!hasWork(s)) break
+            if (wantsCatchUp(s)) {
+              const reply = await host.catchUp!(s).catch((): CatchUpReply => ({ kind: 'failed' }))
+              if (reply.kind === 'unreadable') {
+                canCatchUp = false
+                continue
+              }
+              const parsed = reply.kind === 'reply' ? parseReply(reply.text, reply.source) : null
+              const at = await host.now()
+              const after = await host.update(x => appliedCatchUp(x, s, parsed, at))
+              if (!parsed) return 'stop' as const
+              if (reply.kind === 'reply') followUp(writeOverview(after, reply.overview, s.hostTasks))
               continue
             }
-            const parsed = reply.kind === 'reply' ? parseReply(reply.text, reply.source) : null
-            const at = await host.now()
-            await host.update(x => appliedCatchUp(x, s, parsed, at))
-            if (!parsed) return 'stop' as const
-            continue
+            const next = s.pending[0]!
+            const promptAt = await host.now()
+            const reply = await host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names)).catch(() => null)
+            let isApplied = false as boolean
+            const after = await host.update(async x => {
+              isApplied = false
+              if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x
+              isApplied = isReplyApplied(x, reply)
+
+              return applied(x, reply, await host.now(), promptAt)
+            })
+            if (isApplied)
+              followUp(
+                writeOverview(
+                  after,
+                  (last, tasks) => host.ask(overviewPrompt(last, next.ex, tasks), OVERVIEW_SYSTEM),
+                  next.ex.tasks,
+                ),
+              )
+            if (after.pending[0]?.failed && !next.failed) return 'stop' as const
           }
-          const next = s.pending[0]!
-          const promptAt = await host.now()
-          const reply = await host.ask(buildPrompt(s.ledger, next.ex)).catch(() => null)
-          const after = await host.update(async x =>
-            x.pending[0]?.turnsStarted === next.turnsStarted && x.pending[0].ex.turn === next.ex.turn
-              ? applied(x, reply, await host.now(), promptAt)
-              : x,
-          )
-          if (after.pending[0]?.failed && !next.failed) return 'stop' as const
+        } finally {
+          await host.update(x => ({ ...x, presence: { ...x.presence, isUpdating: false } }))
         }
-      } finally {
-        await host.update(x => ({ ...x, presence: { ...x.presence, isUpdating: false } }))
-      }
-    })
-    if (!held.acquired || held.value === 'stop') return
+      })
+      if (!held.acquired || held.value === 'stop') return
+    }
+  } finally {
+    await Promise.all(writing)
   }
 }
 
 type WakeHost<S extends Session> = Pick<
   SessionHost<S>,
-  | 'now'
-  | 'read'
-  | 'update'
-  | 'deliver'
-  | 'prepare'
-  | 'settleWindowMs'
-  | 'newId'
-  | 'isTurnRunning'
-  | 'isDeliveryHeldUntilRun'
+  'now' | 'read' | 'update' | 'deliver' | 'prepare' | 'settleWindowMs' | 'newId' | 'isDeliveryHeldUntilRun'
 >
 
 /**
- * Tells the agent about rows closed with Done once their settle window has passed. A refused message
- * marks those rows with why, so they read "Not sent" and offer Undo.
+ * Tells the agent about rows closed with Done once their settle window has passed and no main-agent turn runs. A
+ * refused message marks those rows with why, so they read "Not sent" and offer Undo.
  */
 export async function wakeForDone<S extends Session>(host: WakeHost<S>): Promise<void> {
   const check = async (s: S) =>
     doneWake(s.ledger, {
       now: await host.now(),
       windowMs: host.settleWindowMs,
-      isTurnRunning: host.isTurnRunning ? host.isTurnRunning(s) : s.turn.person !== null,
+      isTurnRunning: s.presence.isTurnRunning,
     })
   if (!(await check(await host.read()))) return
   let attempt: { deliveryId: string; text: string } | null = null

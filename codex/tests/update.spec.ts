@@ -11,9 +11,13 @@ import type { Exchange } from '../../hooks/ledger'
 import { noteActivity } from '../../hooks/session'
 import { endTurn, notePrompt, viewOf } from '../src/core'
 import { readState, statePath, updateState } from '../src/state'
-import { runUpdates } from '../src/update'
+import { runUpdates as runBothCalls } from '../src/update'
 import { makeServer } from '../src/server'
-import { tempDir } from './helpers'
+import { OVERVIEW_SYSTEM } from '../../hooks/model-text'
+import { ledgerOnly, tempDir } from './helpers'
+
+const runUpdates = (dir: string, id: string, ask: (prompt: string) => Promise<string | null>, now: () => number) =>
+  runBothCalls(dir, id, ledgerOnly(ask), now)
 
 if (process.env.INBOX_STATUS_WORKER_DIR) {
   setInterval(() => undefined, 1_000)
@@ -36,6 +40,7 @@ const ex = (turn: number, reply: string): Exchange => ({
   turn,
   press: null,
   screen: 'The Inbox tab is closed.',
+  tasks: [],
 })
 
 test('a killed update worker leaves pending exchanges recoverable', async t => {
@@ -56,13 +61,226 @@ test('a killed update worker leaves pending exchanges recoverable', async t => {
     's1',
     async () => {
       calls += 1
-      return 'GOAL: Ship\nNEW: decide | - | Deploy now? | Yes / No | Yes'
+      return 'NEW: decide | - | Deploy now? | Yes / No | Yes'
     },
     () => 5,
   )
 
   assert.equal(calls, 1)
   assert.deepEqual((await readState(dir, 's1')).pending, [])
+})
+
+const LEDGER_ANSWER = 'NEW: decide | - | Deploy now? | Yes / No | Yes'
+
+async function updateWithOverview(overview: string | null) {
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({
+    ...s,
+    pending: [{ ex: ex(1, 'Built the deploy script. Should I deploy?'), turnsStarted: 1 }],
+  }))
+  const systems: string[] = []
+  await runBothCalls(
+    dir,
+    's1',
+    async (_prompt, system) => {
+      systems.push(system)
+
+      return system === OVERVIEW_SYSTEM ? overview : LEDGER_ANSWER
+    },
+    () => 5,
+  )
+
+  return { state: await readState(dir, 's1'), systems }
+}
+
+test('a reply’s Overview comes from the separate Overview call, after the ledger update', async () => {
+  const { state, systems } = await updateWithOverview('HEADLINE: Building the deploy script')
+
+  assert.equal(state.ledger.overview?.headline, 'Building the deploy script')
+  assert.deepEqual(
+    state.ledger.items.map(i => i.ask),
+    ['Deploy now?'],
+  )
+  assert.equal(systems.length, 2)
+  assert.ok(systems.includes(OVERVIEW_SYSTEM))
+})
+
+test('a failed Overview call leaves the ledger update applied with no Overview', async () => {
+  const { state } = await updateWithOverview(null)
+
+  assert.equal(state.ledger.overview, null)
+  assert.deepEqual(
+    state.ledger.items.map(i => i.ask),
+    ['Deploy now?'],
+  )
+  assert.deepEqual(state.pending, [])
+})
+
+test('a ledger update shows before its Overview call returns', async () => {
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: {
+      ...s.ledger,
+      items: [
+        {
+          id: 'i2',
+          kind: 'question',
+          label: '1',
+          ask: 'Which license should the CLI use?',
+          options: ['MIT', 'Apache-2.0'],
+          rec: 'MIT',
+          helps: [],
+          turn: 1,
+          at: 1,
+          from: 'update',
+        },
+      ],
+    },
+    pending: [{ ex: { ...ex(2, 'Added the MIT license.'), person: 'MIT' }, turnsStarted: 2 }],
+  }))
+  let overviewPrompt = ''
+  let release: (text: string) => void = () => undefined
+  const held = new Promise<string>(resolve => (release = resolve))
+  let asked: () => void = () => undefined
+  const overviewAsked = new Promise<void>(resolve => (asked = resolve))
+  const running = runBothCalls(
+    dir,
+    's1',
+    async (prompt, system) => {
+      if (system !== OVERVIEW_SYSTEM) return 'CLOSED: i2 | MIT'
+      overviewPrompt = prompt
+      asked()
+
+      return held
+    },
+    () => 5,
+  )
+  await overviewAsked
+  let shown = await readState(dir, 's1')
+  for (let waited = 0; shown.presence.isUpdating && waited < 200; waited += 1) {
+    await new Promise(resolve => setTimeout(resolve, 10))
+    shown = await readState(dir, 's1')
+  }
+
+  assert.deepEqual(shown.ledger.items, [])
+  assert.equal(shown.ledger.closed[0]?.outcome, 'MIT')
+  assert.equal(shown.presence.isUpdating, false)
+  assert.ok(overviewPrompt.includes('<last>'))
+  release('HEADLINE: Adding a license')
+  await running
+
+  assert.equal((await readState(dir, 's1')).ledger.overview?.headline, 'Adding a license')
+})
+
+test('a ledger call with no answer runs no Overview call', async () => {
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({
+    ...s,
+    pending: [{ ex: ex(1, 'Built the deploy script.'), turnsStarted: 1 }],
+  }))
+  const systems: string[] = []
+  await runBothCalls(
+    dir,
+    's1',
+    async (_prompt, system) => {
+      systems.push(system)
+
+      return system === OVERVIEW_SYSTEM ? 'HEADLINE: Building the deploy script' : null
+    },
+    () => 5,
+  )
+
+  assert.equal(systems.includes(OVERVIEW_SYSTEM), false)
+  assert.equal((await readState(dir, 's1')).ledger.overview, null)
+})
+
+test('Overview calls run one after another, and the second reads the first one’s Overview', async () => {
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({
+    ...s,
+    presence: { ...s.presence, turnsStarted: 2 },
+    pending: [
+      { ex: ex(1, 'Built the deploy script.'), turnsStarted: 1 },
+      { ex: ex(2, 'Built the rollback script.'), turnsStarted: 2 },
+    ],
+  }))
+  const overviewPrompts: string[] = []
+  let release: () => void = () => undefined
+  const held = new Promise<void>(resolve => (release = resolve))
+  let ledgerCalls = 0
+  const running = runBothCalls(
+    dir,
+    's1',
+    async (prompt, system) => {
+      if (system !== OVERVIEW_SYSTEM) {
+        ledgerCalls += 1
+
+        return `NEW: do | - | Task ${ledgerCalls} | - | -`
+      }
+      overviewPrompts.push(prompt)
+      if (overviewPrompts.length === 1) {
+        await held
+
+        return 'HEADLINE: Deploy script built'
+      }
+
+      return 'HEADLINE: Rollback script built'
+    },
+    () => 5,
+  )
+  let shown = await readState(dir, 's1')
+  for (let waited = 0; shown.pending.length > 0 && waited < 300; waited += 1) {
+    await new Promise(resolve => setTimeout(resolve, 10))
+    shown = await readState(dir, 's1')
+  }
+  assert.equal(shown.pending.length, 0)
+  assert.equal(overviewPrompts.length, 1)
+  release()
+  await running
+
+  assert.equal(overviewPrompts.length, 2)
+  assert.ok((overviewPrompts[1] ?? '').includes('Deploy script built'))
+  assert.equal((await readState(dir, 's1')).ledger.overview?.headline, 'Rollback script built')
+})
+
+test('three Overview calls write in the order their updates landed', async () => {
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({
+    ...s,
+    presence: { ...s.presence, turnsStarted: 3 },
+    pending: [
+      { ex: ex(1, 'Built the first script.'), turnsStarted: 1 },
+      { ex: ex(2, 'Built the second script.'), turnsStarted: 2 },
+      { ex: ex(3, 'Built the third script.'), turnsStarted: 3 },
+    ],
+  }))
+  let release: () => void = () => undefined
+  const held = new Promise<void>(resolve => (release = resolve))
+  let overviewCalls = 0
+  const running = runBothCalls(
+    dir,
+    's1',
+    async (_prompt, system) => {
+      if (system !== OVERVIEW_SYSTEM) return 'NONE'
+      overviewCalls += 1
+      const mine = overviewCalls
+      if (mine === 1) await held
+
+      return `HEADLINE: Script ${mine} built`
+    },
+    () => 5,
+  )
+  let shown = await readState(dir, 's1')
+  for (let waited = 0; shown.pending.length > 0 && waited < 300; waited += 1) {
+    await new Promise(resolve => setTimeout(resolve, 10))
+    shown = await readState(dir, 's1')
+  }
+  await new Promise(resolve => setTimeout(resolve, 200))
+  release()
+  await running
+
+  assert.equal((await readState(dir, 's1')).ledger.overview?.headline, 'Script 3 built')
 })
 
 test('pending exchanges reach the ledger in order, a failed one waits for the next update, and a second failure drops it', async () => {
@@ -76,7 +294,7 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     ],
   }))
   const prompts: string[] = []
-  const answers = ['GOAL: Ship\nNOW: Waiting on deploy\nNEW: decide | - | Deploy now? | Yes / No | Yes', null]
+  const answers = ['NEW: decide | - | Deploy now? | Yes / No | Yes', null]
   const ask = async (p: string) => (prompts.push(p), answers.shift() ?? null)
   assert.deepEqual(viewOf(await readState(dir, 's1'), 4).status, { isUpdating: false, error: null })
   await runUpdates(dir, 's1', ask, () => 5)
@@ -98,6 +316,7 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     ledgerState: 'failed',
     hasDroppedReply: false,
     isUpdating: false,
+    isTurnRunning: false,
   })
   assert.equal(viewOf(kept, 5).status.isUpdating, false)
   assert.match(viewOf(kept, 5).status.error ?? '', /Last update failed.*retries after your next message/)
@@ -124,6 +343,7 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     ledgerState: 'failed',
     hasDroppedReply: true,
     isUpdating: false,
+    isTurnRunning: false,
   })
   assert.equal(viewOf(dropped, 6).status.isUpdating, false)
   assert.match(viewOf(dropped, 6).status.error ?? '', /Last update failed/)
@@ -144,8 +364,8 @@ test('an Explain exchange keeps its question open while applying the rest of the
     ],
   }))
   const replies = [
-    'GOAL: Ship\nNEW: decide | - | Deploy now? | Yes / No | Yes\nNEW: do | - | Check the build | - | -',
-    'NOW: Waiting on deploy\nCLOSED: i1 | done: explained\nCLOSED: i2 | done: checked',
+    'NEW: decide | - | Deploy now? | Yes / No | Yes\nNEW: do | - | Check the build | - | -',
+    'CLOSED: i1 | done: explained\nCLOSED: i2 | done: checked',
   ]
   await runUpdates(
     dir,
@@ -162,7 +382,6 @@ test('an Explain exchange keeps its question open while applying the rest of the
     applied.ledger.closed.map(c => c.ask),
     ['Check the build'],
   )
-  assert.equal(applied.ledger.card?.now, 'Waiting on deploy')
   assert.deepEqual(applied.pending, [])
 })
 

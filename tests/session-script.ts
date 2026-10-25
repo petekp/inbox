@@ -1,13 +1,14 @@
 import { CLAUDE_CODE } from '../hooks/model-text'
 import { endTurn, notePrompt, recorded, sessionView } from '../hooks/session'
 import type { Session } from '../hooks/session'
-import { press, runUpdates } from '../hooks/session-host'
-import type { Ask, SessionHost } from '../hooks/session-host'
+import { orderedKeys, press, runUpdates } from '../hooks/session-host'
+import type { Ask, SessionHost, UpdateHost } from '../hooks/session-host'
+import type { Host } from '../hooks/model-text'
 import { allRows, NO_HOLDS } from '../hooks/view'
 import type { Effect } from '../hooks/presses'
 
 export type ScriptedHost<S extends Session = Session> = {
-  host: SessionHost<S>
+  host: SessionHost<S> & Pick<UpdateHost<S>, 'inOrder'> & { names: Host }
   delivered: string[]
   performed: Exclude<Effect, { kind: 'send' }>[]
 }
@@ -20,10 +21,13 @@ export function fakeHostWith<S extends Session>(
   return ask => {
     let clock = 1_000_000
     let ids = 0
+    const order = orderedKeys()
     const delivered: string[] = []
     const performed: Exclude<Effect, { kind: 'send' }>[] = []
-    const host: SessionHost<S> = {
+    const host: SessionHost<S> & Pick<UpdateHost<S>, 'inOrder'> & { names: Host } = {
       ...storage,
+      names: CLAUDE_CODE,
+      inOrder: fn => order.run('session', fn),
       now: () => (clock += 10),
       ask,
       deliver: async (_s, text) => {
@@ -51,12 +55,7 @@ export type Equal = (actual: unknown, expected: unknown, label: string) => void
 
 const SETTLE_WINDOW_MS = 1000
 
-const MODEL_ANSWER = [
-  'GOAL: Add a greeting CLI',
-  'DONE: Plan written',
-  'NOW: Waiting on one choice',
-  'NEW: decide | 1 | Use Node or Python? | Node / Python | Node',
-].join('\n')
+const MODEL_ANSWER = ['NEW: decide | 1 | Use Node or Python? | Node / Python | Node'].join('\n')
 
 export async function runSessionScript<S extends Session>(makeHost: MakeHost<S>, equal: Equal): Promise<void> {
   const { host, delivered, performed } = makeHost(async () => MODEL_ANSWER)
