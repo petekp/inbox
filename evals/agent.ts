@@ -234,6 +234,7 @@ async function claudeIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome
     [
       'claude',
       '-p',
+      '--no-session-persistence',
       '--model',
       CLAUDE_MODEL,
       '--strict-mcp-config',
