@@ -3569,7 +3569,6 @@ export const register: Register = on => {
       actionLines(keys.map(terminalKeyCells), more.map(terminalKeyCells), {
         width,
         gap: space.buttonGap,
-        followUpGap: space.buttonGap,
         // keyRow's `·` and the gap after it.
         separator: 1 + space.buttonGap,
       })

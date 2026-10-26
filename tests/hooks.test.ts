@@ -4331,7 +4331,7 @@ test('every row in the demo, on every tab, draws its plan’s buttons in the pla
 })
 
 test('a row’s follow-ups stay on its buttons’ last line only when all of them fit there, and otherwise start the next line together', async () => {
-  const spacing = { gap: 1, followUpGap: 1, separator: 0 }
+  const spacing = { gap: 1, separator: 0 }
   expect(actionLines([4, 4], [3, 3], { ...spacing, width: 20 })).toEqual({
     lines: [[0, 1, 2, 3]],
     isFollowUpLineNew: false,

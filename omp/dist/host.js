@@ -2885,7 +2885,7 @@ function rowKeyPlan(r, isAllShown) {
   }
   return { keys, more };
 }
-function actionLines(keys, more, { width, gap, followUpGap, separator }) {
+function actionLines(keys, more, { width, gap, separator }) {
   const lines = [];
   let used = 0;
   const place = (at, size, before) => {
@@ -2899,14 +2899,14 @@ function actionLines(keys, more, { width, gap, followUpGap, separator }) {
     }
   };
   keys.forEach((size, i) => place(i, size, gap));
-  const followUpsWidth = more.reduce((sum, size) => sum + size, followUpGap * Math.max(0, more.length - 1));
+  const followUpsWidth = more.reduce((sum, size) => sum + size, gap * Math.max(0, more.length - 1));
   const isFollowUpLineNew = keys.length > 0 && more.length > 0 && used + gap + separator + followUpsWidth > width;
   more.forEach((size, i) => {
     if (i === 0 && isFollowUpLineNew) {
       lines.push([keys.length]);
       used = size;
     } else
-      place(keys.length + i, size, i === 0 ? gap + separator : followUpGap);
+      place(keys.length + i, size, i === 0 ? gap + separator : gap);
   });
   return { lines, isFollowUpLineNew };
 }
@@ -5227,7 +5227,6 @@ function buttonLines(line, ui, indent, width, s) {
   const { lines } = actionLines(sizes.slice(0, keyCount), sizes.slice(keyCount), {
     width: width - indent,
     gap: 0,
-    followUpGap: 0,
     separator: 0
   });
   return lines.map((at) => " ".repeat(indent) + at.map((i) => cells[i]).join(""));
