@@ -246,9 +246,11 @@ import {
   footerStatus,
   keptOpen,
   listWaits,
+  NEXT_BUILD_MARK,
   rowAfterClose,
   shortAgo,
   shownOptionDescriptions,
+  versionLabel,
 } from './view'
 import type {
   ActionEmphasis,
@@ -717,6 +719,7 @@ let shellCommand: string | null = null
 let toolsRefused = false
 let isReadingAgain = false
 let version: string | null = null
+let isNextBuild = false
 /**
  * The desktop app takes the focus off the pane when the Button holding it leaves the drawing, and
  * the next click there only brings it back (anthropics/claude-code#100874).
@@ -2382,6 +2385,7 @@ async function readVersion($: EngineInterface) {
   } catch {
     version = null
   }
+  isNextBuild = await $.fs.exists(`${$.plugin.root}/${NEXT_BUILD_MARK}`).catch(() => false)
 }
 
 async function initializeInbox($: EngineInterface) {
@@ -4363,7 +4367,7 @@ export const register: Register = on => {
     const faint = (text: string) =>
       look === 'desktop' ? <Text color={pal.age}>{text}</Text> : <Text dimColor>{text}</Text>
     const statusText = faint(status)
-    const versionText = version ? faint(`v${version}`) : null
+    const versionText = version ? faint(versionLabel(version, isNextBuild)) : null
     const rail = (
       <Box flexDirection="column" flexShrink={0} paddingLeft={1} marginRight={RAIL_GUTTER}>
         {TABS.map(({ id, label }) => {
