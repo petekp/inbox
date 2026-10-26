@@ -2692,7 +2692,6 @@ function overviewPage(s, now, waitingOnYou = 0) {
   return {
     isEmpty: headline === null && !isTurnRunning,
     lead,
-    parts,
     sections,
     earlier: parts.includes("earlier") ? overview?.earlier ?? [] : [],
     empty: {

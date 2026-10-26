@@ -654,8 +654,6 @@ export type OverviewPage = {
   isEmpty: boolean
   /** The text lines above the lists, in the order to draw them. */
   lead: OverviewLead[]
-  /** The parts in the order to draw them. A look draws these and no others. */
-  parts: PartId[]
   sections: OverviewSection[]
   /** One line for each earlier topic, oldest first. */
   earlier: string[]
@@ -772,7 +770,6 @@ export function overviewPage(
   return {
     isEmpty: headline === null && !isTurnRunning,
     lead,
-    parts,
     sections,
     earlier: parts.includes('earlier') ? (overview?.earlier ?? []) : [],
     empty: {
