@@ -115,7 +115,7 @@ test('the Codex tab draws the Overview page from the view, and new rows, j and k
   try {
     await import('../src/tab')
     await until(() => root.querySelector('.overview-goal') !== null)
-    assert.deepEqual(tabLabels(), ['Overview', 'Asks', 'Findings', 'PRs'])
+    assert.deepEqual(tabLabels(), ['Overview', 'Asks', 'Finds', 'PRs'])
     assert.deepEqual(
       [...root.querySelectorAll('.tab')].map(b => [
         b.getAttribute('title'),
@@ -152,10 +152,10 @@ test('the Codex tab draws the Overview page from the view, and new rows, j and k
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
     assert.equal(shownTab(), 'Overview')
     assert.equal(root.querySelector('.row.selected'), null)
-    assert.deepEqual(tabLabels(), ['Overview', 'Asks', 'Findings1', 'PRs'])
+    assert.deepEqual(tabLabels(), ['Overview', 'Asks', 'Finds1', 'PRs'])
 
     key('3')
-    assert.equal(shownTab(), 'Findings1')
+    assert.equal(shownTab(), 'Finds1')
     assert.match(root.textContent ?? '', /The bar wraps at 320 px/)
     key('1')
     assert.equal(shownTab(), 'Overview')
