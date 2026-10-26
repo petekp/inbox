@@ -3210,29 +3210,31 @@ function prRetryOf(last, ref, thread, check = null) {
     return { press: { action: a, ref }, kind: last.kind };
   return null;
 }
-function again(presses, rowId, action, label) {
+function lastPressOf(presses, rowId) {
   const last = presses.lastActions[rowId];
-  const isOut = isPressOut(feedbackOf(rowId, last, undefined, presses.turns, presses.now));
-  return isAgain(last, action, isOut) ? `${label} again` : label;
+  return { last, isOut: isPressOut(feedbackOf(rowId, last, undefined, presses.turns, presses.now)) };
+}
+function again(row, action, label) {
+  return isAgain(row.last, action, row.isOut) ? `${label} again` : label;
 }
 function retryAction(retry) {
   return retry ? [{ press: retry.press, label: "Try again", kind: retry.kind, emphasis: "normal", icon: "retry", isRetry: true }] : [];
 }
 function threadActions(pr, t, presses) {
-  const id = threadRowId(pr.ref, t.id);
+  const row = lastPressOf(presses, threadRowId(pr.ref, t.id));
   const on = { ref: pr.ref, thread: t.id };
   return [
-    ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, t.id)),
+    ...retryAction(prRetryOf(row.last, pr.ref, t.id)),
     {
       press: { action: "thread-address", ...on },
-      label: again(presses, id, "thread-address", "Address"),
+      label: again(row, "thread-address", "Address"),
       kind: "handoff",
       emphasis: "primary",
       hotkey: "a"
     },
     {
       press: { action: "thread-draft", ...on },
-      label: again(presses, id, "thread-draft", "Draft reply"),
+      label: again(row, "thread-draft", "Draft reply"),
       kind: "talk",
       emphasis: "normal",
       hotkey: "r"
@@ -3247,7 +3249,7 @@ function threadActions(pr, t, presses) {
     },
     {
       press: { action: "thread-discuss", ...on },
-      label: again(presses, id, "thread-discuss", "Discuss"),
+      label: again(row, "thread-discuss", "Discuss"),
       kind: "talk",
       emphasis: "quiet",
       hotkey: "d",
@@ -3256,13 +3258,13 @@ function threadActions(pr, t, presses) {
   ];
 }
 function checkActions(pr, c, presses) {
-  const id = checkRowId(pr.ref, c.name);
+  const row = lastPressOf(presses, checkRowId(pr.ref, c.name));
   const on = { ref: pr.ref, check: c.name };
   return [
-    ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, null, c.name)),
+    ...retryAction(prRetryOf(row.last, pr.ref, null, c.name)),
     {
       press: { action: "check-fix", ...on },
-      label: again(presses, id, "check-fix", "Fix"),
+      label: again(row, "check-fix", "Fix"),
       kind: "handoff",
       emphasis: "primary",
       hotkey: "a"
@@ -3278,28 +3280,28 @@ function checkActions(pr, c, presses) {
   ];
 }
 function prBlockActions(pr, isThreadSent, branchRef, presses) {
-  const id = prMarkId(pr.ref);
+  const row = lastPressOf(presses, prMarkId(pr.ref));
   const { status } = readiness(pr, isThreadSent);
   const waitingOn = threadsOnYou(pr, isThreadSent).length;
   const moves = [
     ...status === "ready" ? [
       {
         press: { action: "pr-merge", ref: pr.ref },
-        label: again(presses, id, "pr-merge", "Merge"),
+        label: again(row, "pr-merge", "Merge"),
         kind: "handoff"
       }
     ] : [],
     ...pr.state === "OPEN" && pr.mergeable === "CONFLICTING" ? [
       {
         press: { action: "pr-conflicts", ref: pr.ref },
-        label: again(presses, id, "pr-conflicts", "Resolve conflicts"),
+        label: again(row, "pr-conflicts", "Resolve conflicts"),
         kind: "handoff"
       }
     ] : [],
     ...waitingOn > 1 ? [
       {
         press: { action: "pr-address-all", ref: pr.ref },
-        label: again(presses, id, "pr-address-all", `Address all ${waitingOn} threads`),
+        label: again(row, "pr-address-all", `Address all ${waitingOn} threads`),
         kind: "handoff"
       }
     ] : []
@@ -3314,7 +3316,7 @@ function prBlockActions(pr, isThreadSent, branchRef, presses) {
         icon: "retry"
       }
     ] : [],
-    ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, null)),
+    ...retryAction(prRetryOf(row.last, pr.ref, null)),
     ...moves.map((m, n) => ({ ...m, emphasis: n === 0 ? "primary" : "normal" })),
     { press: { action: "pr-open", ref: pr.ref }, label: "Open PR", kind: "local", emphasis: "normal", icon: "open" },
     ...pr.ref === branchRef ? [] : [

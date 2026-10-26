@@ -429,11 +429,17 @@ export type PrAction = {
   isRetry?: boolean
 }
 
-function again(presses: PressState, rowId: string, action: PrActionId, label: string): string {
-  const last = presses.lastActions[rowId]
-  const isOut = isPressOut(feedbackOf(rowId, last, undefined, presses.turns, presses.now))
+/** A row's last press, and whether it is still out, which the row's button labels read. */
+type LastPress = { last: LastAction | undefined; isOut: boolean }
 
-  return isAgain(last, action, isOut) ? `${label} again` : label
+function lastPressOf(presses: PressState, rowId: string): LastPress {
+  const last = presses.lastActions[rowId]
+
+  return { last, isOut: isPressOut(feedbackOf(rowId, last, undefined, presses.turns, presses.now)) }
+}
+
+function again(row: LastPress, action: PrActionId, label: string): string {
+  return isAgain(row.last, action, row.isOut) ? `${label} again` : label
 }
 
 function retryAction(retry: { press: PrPress; kind: PressKind } | null): PrAction[] {
@@ -443,21 +449,21 @@ function retryAction(retry: { press: PrPress; kind: PressKind } | null): PrActio
 }
 
 export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrAction[] {
-  const id = threadRowId(pr.ref, t.id)
+  const row = lastPressOf(presses, threadRowId(pr.ref, t.id))
   const on = { ref: pr.ref, thread: t.id }
 
   return [
-    ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, t.id)),
+    ...retryAction(prRetryOf(row.last, pr.ref, t.id)),
     {
       press: { action: 'thread-address', ...on },
-      label: again(presses, id, 'thread-address', 'Address'),
+      label: again(row, 'thread-address', 'Address'),
       kind: 'handoff',
       emphasis: 'primary',
       hotkey: 'a',
     },
     {
       press: { action: 'thread-draft', ...on },
-      label: again(presses, id, 'thread-draft', 'Draft reply'),
+      label: again(row, 'thread-draft', 'Draft reply'),
       kind: 'talk',
       emphasis: 'normal',
       hotkey: 'r',
@@ -472,7 +478,7 @@ export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrA
     },
     {
       press: { action: 'thread-discuss', ...on },
-      label: again(presses, id, 'thread-discuss', 'Discuss'),
+      label: again(row, 'thread-discuss', 'Discuss'),
       kind: 'talk',
       emphasis: 'quiet',
       hotkey: 'd',
@@ -482,14 +488,14 @@ export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrA
 }
 
 export function checkActions(pr: PrView, c: PrCheck, presses: PressState): PrAction[] {
-  const id = checkRowId(pr.ref, c.name)
+  const row = lastPressOf(presses, checkRowId(pr.ref, c.name))
   const on = { ref: pr.ref, check: c.name }
 
   return [
-    ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, null, c.name)),
+    ...retryAction(prRetryOf(row.last, pr.ref, null, c.name)),
     {
       press: { action: 'check-fix', ...on },
-      label: again(presses, id, 'check-fix', 'Fix'),
+      label: again(row, 'check-fix', 'Fix'),
       kind: 'handoff',
       emphasis: 'primary',
       hotkey: 'a',
@@ -514,7 +520,7 @@ export function prBlockActions(
   branchRef: string | null,
   presses: PressState,
 ): PrAction[] {
-  const id = prMarkId(pr.ref)
+  const row = lastPressOf(presses, prMarkId(pr.ref))
   const { status } = readiness(pr, isThreadSent)
   const waitingOn = threadsOnYou(pr, isThreadSent).length
   const moves: Omit<PrAction, 'emphasis'>[] = [
@@ -522,7 +528,7 @@ export function prBlockActions(
       ? [
           {
             press: { action: 'pr-merge' as const, ref: pr.ref },
-            label: again(presses, id, 'pr-merge', 'Merge'),
+            label: again(row, 'pr-merge', 'Merge'),
             kind: 'handoff' as const,
           },
         ]
@@ -531,7 +537,7 @@ export function prBlockActions(
       ? [
           {
             press: { action: 'pr-conflicts' as const, ref: pr.ref },
-            label: again(presses, id, 'pr-conflicts', 'Resolve conflicts'),
+            label: again(row, 'pr-conflicts', 'Resolve conflicts'),
             kind: 'handoff' as const,
           },
         ]
@@ -540,7 +546,7 @@ export function prBlockActions(
       ? [
           {
             press: { action: 'pr-address-all' as const, ref: pr.ref },
-            label: again(presses, id, 'pr-address-all', `Address all ${waitingOn} threads`),
+            label: again(row, 'pr-address-all', `Address all ${waitingOn} threads`),
             kind: 'handoff' as const,
           },
         ]
@@ -559,7 +565,7 @@ export function prBlockActions(
           },
         ]
       : []),
-    ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, null)),
+    ...retryAction(prRetryOf(row.last, pr.ref, null)),
     ...moves.map((m, n): PrAction => ({ ...m, emphasis: n === 0 ? 'primary' : 'normal' })),
     { press: { action: 'pr-open', ref: pr.ref }, label: 'Open PR', kind: 'local', emphasis: 'normal', icon: 'open' },
     ...(pr.ref === branchRef
