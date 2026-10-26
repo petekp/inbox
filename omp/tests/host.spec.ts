@@ -9,6 +9,7 @@ import { NO_HOLDS } from '../../hooks/view'
 import { createInbox, stopOf } from '../src/host'
 import type { HostDeps } from '../src/host'
 import { OMP } from '../src/texts'
+import { reportedTokens } from '../../tests/session-script'
 
 type Handler = (event: any, ctx: any) => unknown
 
@@ -912,19 +913,7 @@ test('a turn that ends on an error saves why it stopped, and the next turn clear
 const herdrReports = () =>
   execCalls
     .filter(c => c.command === 'herdr')
-    .map(c => ({
-      target: c.args.slice(0, 5).join(' '),
-      tokens: Object.fromEntries(
-        c.args.flatMap((arg, n): [string, string | null][] => {
-          const next = c.args[n + 1] ?? ''
-          if (arg === '--clear-token') return [[next, null]]
-          if (arg !== '--token') return []
-          const at = next.indexOf('=')
-
-          return [[next.slice(0, at), next.slice(at + 1)]]
-        }),
-      ),
-    }))
+    .map(c => ({ target: c.args.slice(0, 5).join(' '), tokens: reportedTokens(c.args) }))
 
 test('in a Herdr pane, each change reports the tab counts, a stop replaces them until it clears, and shutdown clears every token', async () => {
   createInbox(pi(), { ...deps(), herdrPane: 'p1' })
