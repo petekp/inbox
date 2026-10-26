@@ -136,6 +136,7 @@
       }
 
       nav {
+        container: tab-bar / inline-size;
         display: flex;
         flex-wrap: wrap;
         align-items: center;
@@ -148,6 +149,7 @@
         gap: 4px;
       }
       .tab {
+        position: relative;
         white-space: nowrap;
         padding: 6px 12px;
         border-radius: 6px;
@@ -164,6 +166,23 @@
       .tab .count {
         font-weight: 600;
         margin-left: 6px;
+      }
+      /* --muted is see-through in the Codex app, and a color emoji takes its color's transparency. */
+      .tab-symbol {
+        display: none;
+        color: var(--text);
+      }
+      @container tab-bar (width < 366px) {
+        .tab-symbol {
+          display: inline;
+        }
+        .tab-word {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          overflow: hidden;
+          clip-path: inset(50%);
+        }
       }
       .status {
         margin-left: auto;

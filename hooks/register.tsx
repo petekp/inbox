@@ -165,7 +165,7 @@ import {
   TURN_BOX_TOOL,
   turnBoxText,
 } from './claude'
-import { ago } from './text'
+import { ago, cellWidth } from './text'
 import {
   applyPress,
   baseName,
@@ -202,6 +202,8 @@ import {
   LISTED_TABS,
   ROW_TABS,
   TABS,
+  fitTabs,
+  tabName,
   canUndoRefused,
   closedMark,
   settledMark,
@@ -265,6 +267,7 @@ import type {
   RowView,
   RowWait,
   ShownTab,
+  TabNaming,
 } from './view'
 import { agentTools, recordClose, recordItem } from './tools'
 import type { UndoProps } from './undo-client'
@@ -659,8 +662,9 @@ const FRAMED_TAB_LAYOUTS = [
   { pad: ' ', gap: 0, right: 1 },
   { pad: ' ', gap: 0, right: 0 },
   { pad: '', gap: 1, right: 0 },
-  { pad: '', gap: 0, right: 0 },
 ]
+/** The inline tab row's gaps between tabs, from roomiest to tightest. */
+const INLINE_TAB_GAPS = [3, 2, 1]
 const INLINE_RAIL_AT = 80
 const RAIL_GUTTER = 2
 const FOLD_KINDS: FoldKind[] = [...NEEDS_YOU_GROUPS.map(g => g.kind), 'issue', 'opportunity']
@@ -2265,37 +2269,35 @@ type ClosedLine = Pick<Closed, 'id' | 'ask' | 'at' | 'how' | 'outcome'> & {
 }
 
 function desktopTabSizes(
-  tabs: { label: string; count: number; isShown: boolean }[],
+  tabs: { label: string; symbol: string; count: number; isShown: boolean }[],
   columns: number,
-): { widths: number[]; gap: number; hasCounts: boolean; isEachFramed: boolean } {
+): { widths: number[]; gap: number; isEachFramed: boolean; naming: TabNaming } {
   const steps = [
-    { padding: 1, gap: 1, hasCounts: true, isEachFramed: true },
-    { padding: 0, gap: 1, hasCounts: true, isEachFramed: true },
-    { padding: 0, gap: 0, hasCounts: true, isEachFramed: true },
-    { padding: 0, gap: 1, hasCounts: true, isEachFramed: false },
-    { padding: 0, gap: 0, hasCounts: false, isEachFramed: true },
-    { padding: 1, gap: 0, hasCounts: false, isEachFramed: false },
+    { padding: 1, gap: 1, isEachFramed: true },
+    { padding: 0, gap: 1, isEachFramed: true },
+    { padding: 0, gap: 0, isEachFramed: true },
+    { padding: 0, gap: 1, isEachFramed: false },
   ]
-  const sizes = steps.map(({ padding, gap, hasCounts, isEachFramed }) => ({
-    widths: tabs.map(t => {
-      const text = hasCounts && t.count > 0 ? `${t.label}${TAB_COUNT_GAP}${t.count}` : t.label
+  const widthsOf = (naming: TabNaming, { padding, isEachFramed }: (typeof steps)[number]) =>
+    tabs.map(t => {
+      const name = tabName(t, naming)
+      const text = t.count > 0 ? `${name}${TAB_COUNT_GAP}${t.count}` : name
       const isFramed = isEachFramed || t.isShown
       // A tab's rounded frame insets its label FRAME_INSET_PT on each side, so its width adds those columns,
       // rounded up, to what the label needs. Narrower, the label wraps inside the tab.
       return (
-        Math.ceil(text.length / DESKTOP_CHARS_PER_CELL) +
+        Math.ceil(cellWidth(text) / DESKTOP_CHARS_PER_CELL) +
         (isFramed ? Math.ceil((2 * FRAME_INSET_PT) / DESKTOP_CELL_PT) : 0) +
         padding
       )
-    }),
-    gap,
-    hasCounts,
-    isEachFramed,
-  }))
-  const fits = (s: (typeof sizes)[number]) =>
-    s.widths.reduce((sum, w) => sum + w, 0) + s.gap * (s.widths.length - 1) <= columns
+    })
+  const { naming, layout } = fitTabs(steps, (naming, step) => {
+    const widths = widthsOf(naming, step)
 
-  return sizes.find(fits) ?? sizes.at(-1)!
+    return widths.reduce((sum, w) => sum + w, 0) + step.gap * (widths.length - 1) <= columns
+  })
+
+  return { widths: widthsOf(naming, layout), gap: layout.gap, isEachFramed: layout.isEachFramed, naming }
 }
 
 async function drawnState(
@@ -3431,9 +3433,9 @@ export const register: Register = on => {
     }
     const tabCount = (id: ShownTab) => (isRowTab(id) ? tabCounts[id] : 0)
     const tabTone = (id: ShownTab) => (isRowTab(id) ? pal.tone[id] : undefined)
-    const tabText = (id: ShownTab, label: string) => `${label}${tabCount(id) > 0 ? ` ${tabCount(id)}` : ''}`
+    const tabText = (id: ShownTab, name: string) => `${name}${tabCount(id) > 0 ? ` ${tabCount(id)}` : ''}`
     const hasRail = isInline && look === 'terminal' && e.props.bodyColumns >= INLINE_RAIL_AT
-    const railWidth = Math.max(...TABS.map(t => tabText(t.id, t.label).length)) + 2 * TAB_PAD.length
+    const railWidth = Math.max(...TABS.map(t => cellWidth(tabText(t.id, t.label)))) + 2 * TAB_PAD.length
     const listColumns = e.props.bodyColumns - 2 - (hasRail ? railWidth + RAIL_GUTTER : 0)
     const ids = rows[tab].map(r => r.id)
     const indexOf = new Map(ids.map((id, n) => [id, n]))
@@ -4181,16 +4183,16 @@ export const register: Register = on => {
 
     const tabColumns = e.props.bodyColumns - 2
     const tabSizes = desktopTabSizes(
-      TABS.map(({ id, label }) => ({ label, count: tabCount(id), isShown: id === shownTab })),
+      TABS.map(t => ({ ...t, count: tabCount(t.id), isShown: t.id === shownTab })),
       tabColumns,
     )
     const tabProps: TabsProps | null = hasClient
       ? {
-          tabs: TABS.map(({ id, label }, n) => ({
-            id,
-            label,
-            count: tabSizes.hasCounts ? tabCount(id) : 0,
-            countColor: isRowTab(id) ? (pal.tone[id] ?? pal.mark[id]) : pal.muted,
+          tabs: TABS.map((t, n) => ({
+            id: t.id,
+            label: tabName(t, tabSizes.naming),
+            count: tabCount(t.id),
+            countColor: isRowTab(t.id) ? (pal.tone[t.id] ?? pal.mark[t.id]) : pal.muted,
             width: tabSizes.widths[n]!,
           })),
           shown: shownTab,
@@ -4222,12 +4224,20 @@ export const register: Register = on => {
         </Text>
       ) : null,
     ]
-    const labelsWidth = TABS.reduce((sum, t) => sum + tabText(t.id, t.label).length, 0)
-    const tabsFit = (r: { pad: string; gap: number; right: number }) =>
-      labelsWidth + 2 * r.pad.length * TABS.length + r.gap * (TABS.length - 1) <= e.props.bodyColumns - 1 - r.right
-    const framedTabs = FRAMED_TAB_LAYOUTS.find(tabsFit) ?? FRAMED_TAB_LAYOUTS.at(-1)!
-    const { pad } = framedTabs
-    const inlineTabGap = [3, 2].find(gap => labelsWidth + gap * (TABS.length - 1) <= e.props.bodyColumns - 3) ?? 1
+    const namesWidth = (naming: TabNaming) =>
+      TABS.reduce((sum, t) => sum + cellWidth(tabText(t.id, tabName(t, naming))), 0)
+    const framedTabs = fitTabs(
+      FRAMED_TAB_LAYOUTS,
+      (naming, r) =>
+        namesWidth(naming) + 2 * r.pad.length * TABS.length + r.gap * (TABS.length - 1) <=
+        e.props.bodyColumns - 1 - r.right,
+    )
+    const { pad } = framedTabs.layout
+    const inlineTabs = fitTabs(
+      INLINE_TAB_GAPS,
+      (naming, gap) => namesWidth(naming) + gap * (TABS.length - 1) <= e.props.bodyColumns - 3,
+    )
+    const tabNaming = isInline ? inlineTabs.naming : look === 'desktop' ? tabSizes.naming : framedTabs.naming
     const hasTabLine = !isInline && look !== 'desktop'
     const tabLine = pal.tab ?? pal.divider
     // Terminal.app draws block characters from its font, which leaves a seam between a half block and the filled
@@ -4236,7 +4246,7 @@ export const register: Register = on => {
     const tabs = (
       <Box
         paddingLeft={isInline ? 2 : 1}
-        paddingRight={isInline ? 1 : framedTabs.right}
+        paddingRight={isInline ? 1 : framedTabs.layout.right}
         flexDirection="row"
         {...(hasTabLine ? { overflow: 'hidden' as const } : {})}
       >
@@ -4250,7 +4260,7 @@ export const register: Register = on => {
         <Box
           flexDirection="row"
           flexWrap="wrap"
-          columnGap={isInline ? inlineTabGap : look === 'desktop' ? 2 : framedTabs.gap}
+          columnGap={isInline ? inlineTabs.layout : look === 'desktop' ? 2 : framedTabs.layout.gap}
         >
           {hasClient && tabProps ? (
             <elements.Client
@@ -4262,7 +4272,9 @@ export const register: Register = on => {
           ) : null}
           {tabProps
             ? null
-            : TABS.map(({ id, label }) => {
+            : TABS.map(t => {
+                const { id } = t
+                const label = tabName(t, tabNaming)
                 const count = tabCount(id)
 
                 if (isInline)
@@ -4284,7 +4296,7 @@ export const register: Register = on => {
                     </Box>
                   )
 
-                const width = tabText(id, label).length + 2 * pad.length
+                const width = cellWidth(tabText(id, label)) + 2 * pad.length
 
                 // The key stays the
                 // same in every drawing: the app takes the focus off the pane when the element holding
@@ -4375,7 +4387,7 @@ export const register: Register = on => {
       <Box flexDirection="column" flexShrink={0} paddingLeft={1} marginRight={RAIL_GUTTER}>
         {TABS.map(({ id, label }) => {
           const count = tabCount(id)
-          const fill = ' '.repeat(railWidth - tabText(id, label).length - TAB_PAD.length)
+          const fill = ' '.repeat(railWidth - cellWidth(tabText(id, label)) - TAB_PAD.length)
           if (shownTab === id)
             return (
               <Text key={`rail-${id}`} backgroundColor={pal.raised}>
