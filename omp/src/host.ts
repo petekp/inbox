@@ -484,13 +484,9 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
 
         return why === null ? { state: 'accepted', queuedId: null } : { state: 'rejected', reason: why }
       },
-      perform: async (_s, effect) => {
-        if (effect.kind === 'refresh-prs') {
-          await prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true))
-          return null
-        }
-        return effect.kind === 'copy' ? deps.copy(effect.text) : openTarget(run, effect.target, ctx.cwd, deps.home)
-      },
+      perform: async (_s, effect) =>
+        effect.kind === 'copy' ? deps.copy(effect.text) : openTarget(run, effect.target, ctx.cwd, deps.home),
+      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true)),
       gh: {
         find: gh.find,
         forget: gh.forget,

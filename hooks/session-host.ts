@@ -98,11 +98,10 @@ export type SessionHost<S extends Session> = {
   isDeliveryHeldUntilRun?: boolean
   /** Throws when `deliver` could not start. Run before a sent record is saved, so a message that cannot go leaves no record. */
   prepare?(s: S): Promise<void>
-  /**
-   * Opens a link or path, copies text, or refreshes the PRs and returns once the refresh ends. Returns why it could not,
-   * or null. A refresh that fails returns null, since each PR's own error says why.
-   */
-  perform(s: S, effect: Exclude<Effect, { kind: 'send' }>): Promise<string | null>
+  /** Opens a link or path, or copies text. Returns why it could not, or null. */
+  perform(s: S, effect: Extract<Effect, { kind: 'open' | 'copy' }>): Promise<string | null>
+  /** Fetches the session's PRs, and resolves once that fetch ends. A failed fetch resolves too, since each PR's own error says why. */
+  refreshPrs(): Promise<void>
   gh: {
     /** The gh to run, or null when none starts. */
     find(): Promise<string | null>
@@ -373,7 +372,15 @@ export type PressOutcome = {
 
 type PressHost<S extends Session> = Pick<
   SessionHost<S>,
-  'now' | 'read' | 'update' | 'deliver' | 'perform' | 'newId' | 'isDeliveryHeldUntilRun' | 'answerMessage'
+  | 'now'
+  | 'read'
+  | 'update'
+  | 'deliver'
+  | 'perform'
+  | 'refreshPrs'
+  | 'newId'
+  | 'isDeliveryHeldUntilRun'
+  | 'answerMessage'
 >
 
 /** A press that is saved, with what it still runs. */
@@ -406,6 +413,10 @@ export async function startPress<S extends Session>(
     now: host.now,
     deliveryId: () => pressed.deliveryId ?? host.newId(),
     perform: async e => {
+      if (e.kind === 'refresh-prs') {
+        await host.refreshPrs()
+        return null
+      }
       if (e.kind === 'copy') copy = { text: e.text, name: e.name }
       return host.perform(await host.read(), e)
     },

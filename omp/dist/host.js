@@ -4184,6 +4184,10 @@ async function startPress(host, p, isStale, holds) {
     now: host.now,
     deliveryId: () => pressed.deliveryId ?? host.newId(),
     perform: async (e) => {
+      if (e.kind === "refresh-prs") {
+        await host.refreshPrs();
+        return null;
+      }
       if (e.kind === "copy")
         copy = { text: e.text, name: e.name };
       return host.perform(await host.read(), e);
@@ -6145,13 +6149,8 @@ function createInbox(pi, deps = defaultDeps) {
         const why = sendToAgent(ctx, text);
         return why === null ? { state: "accepted", queuedId: null } : { state: "rejected", reason: why };
       },
-      perform: async (_s, effect) => {
-        if (effect.kind === "refresh-prs") {
-          await prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true));
-          return null;
-        }
-        return effect.kind === "copy" ? deps.copy(effect.text) : openTarget2(run, effect.target, ctx.cwd, deps.home);
-      },
+      perform: async (_s, effect) => effect.kind === "copy" ? deps.copy(effect.text) : openTarget2(run, effect.target, ctx.cwd, deps.home),
+      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true)),
       gh: {
         find: gh.find,
         forget: gh.forget,
