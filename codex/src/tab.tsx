@@ -7,7 +7,7 @@ import type { IconName } from './row-actions'
 import { closedState } from '../../hooks/ledger'
 import { ago } from '../../hooks/text'
 import type { ClosedState } from '../../hooks/ledger'
-import { canUndoRefused, closedMark, settledMark } from '../../hooks/view'
+import { canUndoRefused, closedMark, settledMark, versionLabel } from '../../hooks/view'
 import { capitalized, clipLabel, noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { Effect, RowPress } from '../../hooks/presses'
 import {
@@ -166,7 +166,8 @@ const drafts = new Map<string, Draft>()
 const discarded = new Map<string, number>()
 const optionsShown = new Set<string>()
 const unfolded = new Set<FoldGroup>()
-const sending = new Map<string, string>()
+/** A press on its way: its pending Local result, or null for a message, which reads SENDING. */
+const sending = new Map<string, Feedback | null>()
 const SENDING = 'Sending…'
 const latestPress = new Map<string, number>()
 const errors = new Map<string, string>()
@@ -602,7 +603,7 @@ function isNotSent(v: View, id: string): boolean {
   )
 }
 
-async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void, pending = SENDING) {
+async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void, pending: Feedback | null = null) {
   if (isDisposed) return
   const generation = viewGeneration
   const seq = ++requested
@@ -734,10 +735,10 @@ function rowKeys(r: RowView): { keys: Key[]; more: Key[] } {
     press: p => {
       const step = p.action === 'step' ? r.steps[p.step] : undefined
       const action = r.actions.find(a => a.press.action === 'step' && p.action === 'step' && a.press.step === p.step)
-      const pending =
+      const pending: Feedback | null =
         action?.kind === 'local' && r.item && step
-          ? feedbackText({ is: 'local', result: pendingResult(stepEffects(r.item, step), Date.now()) }, 'codex')
-          : undefined
+          ? { is: 'local', result: pendingResult(stepEffects(r.item, step), Date.now()) }
+          : null
       void act(r.id, p, undefined, pending)
     },
     reply: () => startTyping(r.id),
@@ -823,30 +824,31 @@ function findingRow(v: View, r: RowView, f: Finding): Row {
 
 const pressesOf = (v: View): PressState => ({ lastActions: v.lastActions, turns: v.turns, now: v.at })
 
-function prKey(rowId: string, a: PrAction, pending?: string): Key {
+function prKey(rowId: string, a: PrAction, pending: Feedback | null): Key {
   return {
     ...(a.hotkey ? { hotkey: a.hotkey } : {}),
     label: a.label,
     emphasis: a.emphasis,
     ...(a.icon ? { icon: a.icon } : {}),
     ...(a.press.action === 'pr-dismiss' ? { isDismiss: true } : {}),
-    run: () => void act(rowId, a.press, undefined, a.kind === 'local' ? pending : undefined),
+    run: () => void act(rowId, a.press, undefined, a.kind === 'local' ? pending : null),
   }
 }
 
-function pendingText(effect: Effect): string {
-  return feedbackText({ is: 'local', result: pendingResult([effect], Date.now()) }, 'codex')
+function pendingLocal(effect: Effect): Feedback {
+  return { is: 'local', result: pendingResult([effect], Date.now()) }
 }
 
-function opening(name: string): string {
-  return pendingText({ kind: 'open', target: '', name })
+function opening(name: string): Feedback {
+  return pendingLocal({ kind: 'open', target: '', name })
 }
 
 function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
   const id = prThreadId(pr, t)
   const text = threadRowText(pr, t, v.lastActions)
   const press =
-    (action: 'thread-address' | 'thread-draft' | 'thread-discuss' | 'thread-open', pending?: string) => () =>
+    (action: 'thread-address' | 'thread-draft' | 'thread-discuss' | 'thread-open', pending: Feedback | null = null) =>
+    () =>
       void act(id, { action, ref: pr.ref, thread: t.id }, undefined, pending)
   const where = threadWhere(t)
   const { rest } = commentParts(t.body)
@@ -877,7 +879,7 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
       </div>
     ),
     keys: actions.keys.map(a => prKey(id, a, opening('the comment'))),
-    more: actions.more.map(a => prKey(id, a)),
+    more: actions.more.map(a => prKey(id, a, null)),
     feedback: feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at),
   }
 }
@@ -1098,16 +1100,17 @@ function ListRow({ row, track, onSelect, now }: { row: Row; track: RowTrack; onS
   const isSelected = track.hasPanel && !isClosing
   const handle = <span class={`mark ${row.handleTone ?? ''}`}>{row.handle}</span>
 
-  const pending = sending.get(row.id)
-  const isSending = pending === SENDING
+  const isPressing = sending.has(row.id)
+  const pending = sending.get(row.id) ?? null
+  const isSending = isPressing && pending === null
   const f = isFeedbackShown(row) ? row.feedback : null
-  const label = isSending ? null : (pending ?? (f ? feedbackLabel(row) : null))
-  const ageAt = !pending && f && hasAge(f) ? f.at : null
+  const label = isSending ? null : pending ? feedbackText(pending, 'codex') : f ? feedbackLabel(row) : null
+  const ageAt = !isPressing && f && hasAge(f) ? f.at : null
   const isInSide = ageAt !== null && !isSelected && !isClosing && f?.is !== 'queued' && f?.is !== 'unconfirmed'
-  const statusUnder = !pending && isStatusUnderActions(f, isSelected || isClosing) ? label : null
+  const statusUnder = !isSending && isStatusUnderActions(pending ?? f, isSelected || isClosing) ? label : null
   const last = isInSide || statusUnder ? null : label
   const side = isSending ? SENDING : ageAt !== null ? shortAgo(now - ageAt) : last ? null : row.age
-  const afterTone = !pending && isFailure(row.feedback) ? 'error' : undefined
+  const afterTone = !isPressing && isFailure(row.feedback) ? 'error' : undefined
 
   return (
     <div
@@ -1675,8 +1678,10 @@ async function undoPr(id: string, ref: string) {
 }
 
 function prLastLine(v: View, id: string): { text: string; isError: boolean } | null {
-  const pending = sending.get(id)
-  if (pending) return { text: pending, isError: false }
+  if (sending.has(id)) {
+    const pending = sending.get(id)
+    return { text: pending ? feedbackText(pending, 'codex') : SENDING, isError: false }
+  }
   const error = errors.get(id)
   if (error) return { text: error, isError: true }
   const note = noteOf(id)
@@ -1703,7 +1708,7 @@ function PrBlock({
   const tone = PR_TONES[status]
   const id = prMarkId(pr.ref)
   const keys = prBlockActions(pr, isSent, v.prs.branchRef, pressesOf(v)).map(a =>
-    prKey(id, a, a.press.action === 'pr-refresh' ? pendingText(PR_REFRESH) : opening(`PR #${pr.number}`)),
+    prKey(id, a, a.press.action === 'pr-refresh' ? pendingLocal(PR_REFRESH) : opening(`PR #${pr.number}`)),
   )
   const last = prLastLine(v, id)
 
@@ -1941,7 +1946,7 @@ function App({ lists }: { lists: Lists | null }): ComponentChildren {
         )}
         <div class="footer-end">
           <Status v={v} />
-          <span class="version">v{manifest.version}</span>
+          <span class="version">{versionLabel(manifest.version, v.isNextBuild === true)}</span>
         </div>
       </footer>
     </>

@@ -105,6 +105,7 @@ const deps = (): HostDeps => ({
   })(),
   settleWindowMs: 1000,
   home: '/home/me',
+  isNextBuild: false,
   complete: async (model, context) => {
     const isOverview = context.systemPrompt?.[0] === OVERVIEW_SYSTEM
     const call = {
@@ -864,7 +865,7 @@ test('/inbox hides the band while the panel shows, draws the session, presses, a
   await until(() => components.length > 0)
   expect(widgets.at(-1)).toMatchObject({ key: 'inbox-band', content: undefined })
   const panel = components[0]
-  await until(() => !panel.render(80).join('\n').includes('Loading'))
+  await until(() => panel.render(80).join('\n').includes('Try the CLI by hand'))
   expect(panel.render(80).join('\n')).toContain('Try the CLI by hand')
   panel.handleInput('d')
   await until(() => state().ledger.closed.length > 0)

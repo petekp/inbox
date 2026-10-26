@@ -360,6 +360,16 @@ export function stopFix(stop: Stop): string {
 export const DEMO_NOTICE = 'Sample entries. Buttons here send nothing.'
 export const READING_TEXT = 'Reading the inbox…'
 
+/**
+ * A checkout that follows the `next` branch can hold this file in each folder a host installs or loads: the repo root,
+ * `codex/plugin` and `omp`. Git ignores it, and the Codex and omp installs copy it.
+ */
+export const NEXT_BUILD_MARK = '.next-build'
+
+export function versionLabel(version: string, isNextBuild: boolean): string {
+  return isNextBuild ? `v${version} · next` : `v${version}`
+}
+
 const UPDATE_FAILED = 'Last update failed. Items from that reply may be missing.'
 const UPDATE_RETRIES = ' It retries after your next message.'
 
@@ -458,7 +468,12 @@ export function hasAge(
 }
 
 export function isPressOut(f: Feedback | null): boolean {
-  return f?.is === 'working' || f?.is === 'queued' || f?.is === 'unconfirmed'
+  return (
+    f?.is === 'working' ||
+    f?.is === 'queued' ||
+    f?.is === 'unconfirmed' ||
+    (f?.is === 'local' && f.result.state === 'pending')
+  )
 }
 
 /**
@@ -478,6 +493,15 @@ export type PressState = Pick<ViewInput, 'lastActions' | 'turns' | 'now'>
  */
 export function isStatusUnderActions(f: Feedback | null, isOpen: boolean): boolean {
   return isOpen && isPressOut(f)
+}
+
+/**
+ * Whether a row in the terminal and desktop looks draws a press status after its title, once
+ * `isStatusUnderActions` has placed a press that is out. A status with an age and a Local result that did not fail
+ * do. A failure takes its own line above an open row's buttons, in the error color.
+ */
+export function isAfterTitle(f: Feedback): boolean {
+  return hasAge(f) || (f.is === 'local' && f.result.state !== 'failed')
 }
 
 const runIt = (look: Look) =>

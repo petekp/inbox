@@ -256,7 +256,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
     copied.push(e.text)
     return { value: { isCopied: true as const } }
   })
-  on('fs.exists', ($, e) => ({ value: files.includes(e.path) }))
+  on('fs.exists', ($, e) => ({ value: files.some(f => e.path.endsWith(f)) }))
   on('fs.read', ($, e) => {
     if (!e.path.endsWith('/.claude-plugin/plugin.json')) throw new Error(`ENOENT: ${e.path}`)
     return { value: JSON.stringify({ name: 'inbox', version: '1.2.3' }) }
@@ -846,7 +846,11 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   await pane.press({ key: 'help-i1-1' })
   await clock.settle()
   expect(copied).toEqual(['npm login'])
-  expect(await pane.find({ text: '✓ Copied npm login. Run it in a terminal, or type ! and paste.' })).toBeDefined()
+  expect(
+    await pane.find({
+      text: /^\u2007·\s✓\sCopied\snpm\slogin\.\sRun\sit\sin\sa\sterminal,\sor\stype\s!\sand\spaste\.$/,
+    }),
+  ).toBeDefined()
   await pane.press({ key: 'help-i1-2' })
   await clock.settle()
   const red = (await pane.find({ type: 'Text', text: 'Could not open load.md: it no longer exists' }))?.props.color
@@ -864,7 +868,8 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   expect(copied.at(-1)).toBe('API_KEY=x')
   expect(ran.at(-1)).toEqual(['open', '/tmp/project/.env.local'])
   expect(
-    (await pane.find({ type: 'Text', text: '✓ Copied env line\u2007·\u2002Opened .env.local' }))?.props.color,
+    (await pane.find({ type: 'Text', text: /^\u2007·\s✓\sCopied\senv\sline\u2007·\sOpened\s\.env\.local$/ }))?.props
+      .color,
   ).not.toBe(red)
   expect((await pane.find({ type: 'Text', text: /Could not open load\.md/ }))?.props.color).toBe(red)
   expect((await pane.find({ key: 'help-i2-0-key' }))?.props.label).toBe('Copy env line and open .env.local')
@@ -1404,6 +1409,18 @@ test('the pane footer shows the version from the plugin manifest', async ($, on)
   await $.command.run({ command: 'inbox', args: '' } as never)
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ text: 'v1.2.3' })).toBeDefined()
+})
+
+test('the pane footer marks a build that follows the next branch', async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  files = ['/.next-build']
+  paneState = { isShown: true, isFocused: true }
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'inbox', args: '' } as never)
+  const pane = await $.ui.mount(PANE)
+  expect(await pane.find({ text: 'v1.2.3 · next' })).toBeDefined()
 })
 
 test('a finding Claude records while the pane shows an empty tab brings the pane to it, and Fix hands it to Claude, settles its row as the choice made, and moves it to the Closed fold even when Claude’s reply leaves it open', async ($, on) => {
@@ -2435,10 +2452,16 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   await clock.settle()
   expect(ran.at(-1)).toEqual(['open', 'https://github.com/acme/greet/pull/12'])
   expect(await pane.find({ text: 'Opening PR #12…' })).toBeDefined()
+  expect(await pane.find({ text: /\u2007·\sOpening/ })).toBeUndefined()
+  await clock.advance(SETTLED_MS / 2)
   opened()
   await pressing
   await clock.settle()
-  expect(await pane.find({ text: '✓ Opened PR #12' })).toBeDefined()
+  expect(await pane.find({ text: /^ ·\s✓\sOpened\sPR\s#12$/ })).toBeDefined()
+  await clock.advance(SETTLED_MS / 2 + 1)
+  expect(await pane.find({ text: /✓\sOpened\sPR\s#12$/ })).toBeDefined()
+  await clock.advance(SETTLED_MS / 2)
+  expect(await pane.find({ text: /✓\sOpened\sPR\s#12$/ })).toBeUndefined()
   ghAnswers.pop()
 
   await pane.press({ key: 'tab-prs' })
@@ -2455,10 +2478,10 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   expect((await pane.find({ key: 'resolve-acme/greet#12' }))?.props.label).toBe('Resolve conflicts again')
 
   const muted = (await pane.find({ type: 'Text', text: /conflicts with main$/ }))?.props.color
-  expect(await pane.find({ text: '✓ Opened PR #12' })).toBeUndefined()
+  expect(await pane.find({ text: /✓\sOpened\sPR\s#12$/ })).toBeUndefined()
   await pane.press({ key: 'open-acme/greet#12' })
   await clock.settle()
-  expect(await pane.find({ text: '✓ Opened PR #12' })).toBeDefined()
+  expect(await pane.find({ text: /✓\sOpened\sPR\s#12$/ })).toBeDefined()
   ghAnswers.push({ match: argv => argv[0] === 'open', stdout: '', fails: 'no browser' })
   await pane.press({ key: 'open-acme/greet#12' })
   await clock.settle()
@@ -2480,7 +2503,7 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   await pane.press({ key: 'log-acme/greet#12-test-key' })
   await clock.settle()
   expect(ran.at(-1)).toEqual(['open', 'https://github.com/acme/greet/actions/runs/7/job/1'])
-  expect(await pane.find({ text: '✓ Opened the log' })).toBeDefined()
+  expect(await pane.find({ text: /^\u2007·\s✓\sOpened\sthe\slog$/ })).toBeDefined()
 
   await pane.press({ key: 'previous' })
   await pane.press({ key: 'discuss-T1-key' })
@@ -2522,7 +2545,7 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   await pane.press({ key: 'open-T1' })
   await clock.settle()
   expect(ran.at(-1)).toEqual(['open', 'https://github.com/acme/greet/pull/12#r1'])
-  expect(await pane.find({ text: '✓ Opened the comment' })).toBeDefined()
+  expect(await pane.find({ text: /^\u2007·\s✓\sOpened\sthe\scomment$/ })).toBeDefined()
   expect(await pane.find({ text: /^ 1$/ })).toBeDefined()
   hasReply = true
   await pane.press({ key: 'tab-findings' })

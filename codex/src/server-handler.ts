@@ -1,12 +1,15 @@
+import { existsSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { makeServer } from './server'
 import { devBuild } from './data-dir'
 import TAB_HTML from './tab.html'
 import { run } from './run'
 import { listHooksTrust } from './hook-trust'
+import { NEXT_BUILD_MARK } from '../../hooks/view'
 
 async function appCli(): Promise<string> {
   if (process.env.CODEX_CLI_PATH) return process.env.CODEX_CLI_PATH
@@ -57,6 +60,7 @@ export function createHandler(
     build: SERVER_BUILD,
     loadError,
     isPluginFolderGone,
+    isNextBuild: existsSync(join(dirname(dirname(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK)),
     openCatchUp: startUpdate && {
       codexHome: process.env.CODEX_HOME || join(homedir(), '.codex'),
       startUpdate,

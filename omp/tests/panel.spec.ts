@@ -507,6 +507,10 @@ test('the footer shows the version after the inbox model, beside the hints or on
   const [hints, named] = lastLines(60)
   expect(hints).not.toContain(`v${version}`)
   expect(named?.trimEnd()).toEndWith(`inbox model Claude Sonnet 4.5  v${version}`)
+  const [, marked] = drawn(screenOf({ isNextBuild: true }), INITIAL_UI, 140)
+    .map(strip)
+    .slice(-2)
+  expect(marked?.trimEnd()).toEndWith(`inbox model Claude Sonnet 4.5  v${version} · next`)
 })
 
 test('the demo says its presses send nothing', () => {
