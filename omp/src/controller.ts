@@ -14,7 +14,6 @@ import {
   isLineWaiting,
   isRunningMarkShown,
   noticeFor,
-  render,
 } from './panel'
 import type { PanelPress, PanelScreen, PanelUi, SeenRows, Style } from './panel'
 

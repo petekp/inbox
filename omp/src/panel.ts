@@ -1014,7 +1014,7 @@ function tabCell(t: TabCell, label: string, form: TabForm, s: Style): string {
 
 /**
  * The tab line. As the panel narrows, it drops the `[n]` brackets, then cuts the other tabs' labels,
- * longest first. Only the final `fit()` in `render` cuts the shown tab's label, once the other labels are at their shortest.
+ * longest first. Only the final `fit()` in `drawPanel` cuts the shown tab's label, once the other labels are at their shortest.
  */
 function tabBar(d: Draw): string {
   const { screen, ui, width, style: s } = d
