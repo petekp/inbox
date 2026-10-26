@@ -1,6 +1,8 @@
 # Releasing
 
-Run every check below on `main` before you bump the version. A new install takes `main` as soon as it is pushed. An existing install updates only when the version changes, so the bump is what ships a build to most people.
+Pull requests merge into the `next` branch. A release fast-forwards `main` to `next`. A new install takes `main` as soon as it is pushed. An existing install updates only when the version changes, so the bump is what ships a build to most people.
+
+Run the automated checks on the `next` commit you will release, before `main` moves.
 
 ## 1. Run the automated checks
 
@@ -16,14 +18,14 @@ The evals call models, so they take a while and use your plans.
 
 ## 2. List what changed
 
-Run `git log --oneline v<last version>..main`. For each change, find its row in "After you change X, check Y" in [looks.md](looks.md), and add that row's checks to the live pass.
+Run `git log --oneline v<last version>..next`. For each change, find its row in "After you change X, check Y" in [looks.md](looks.md), and add that row's checks to the live pass.
 
 ## 3. Prepare a test machine
 
 Use a Mac or a macOS VM other than the one you work on, so the pass cannot touch your real inbox. It needs Claude Code, the Claude desktop app and the ChatGPT app, each signed in, and `gh` installed and signed in. It also needs a sample project whose GitHub remote has an open PR, for the PRs check. Install the previous release there and use it in at least four sessions, so each look can open a different one with saved state. omp needs to be installed and signed in to a provider.
 
 1. Copy the saved state aside. The mod keeps it in `~/.claude/plugins/store/`, in the file whose name starts with `inbox`. Codex keeps one file per session in `~/.codex/plugins/data/inbox-inbox/sessions/`. Note which version wrote them.
-2. Install `main` as the README's Install section says. Remove the plugin first in both agents, since an install with the same version label does not update.
+2. Fast-forward `main` to the `next` commit you checked, and push it with `git push origin <commit>:main`. Then install `main` as the README's Install section says. Remove the plugin first in both agents, since an install with the same version label does not update.
 3. Confirm each agent runs `main`. Compare a few installed files with `git show main:<path>`: Claude Code's copy is at the `installPath` in `~/.claude/plugins/installed_plugins.json`, and Codex's is in `~/.codex/plugins/cache/inbox/inbox/<version>/`. The ChatGPT app reinstalls the plugin from GitHub when it opens, so check Codex's copy after the app is open.
 4. Trust the Codex plugin's hooks, as the README says.
 
@@ -70,5 +72,5 @@ Installs update as soon as the bump is pushed, so the release notes are written 
 1. Write the release notes to a file outside the repo, with the `release-notes` skill from [petekp/claude-code-setup](https://github.com/petekp/claude-code-setup/tree/main/skills/release-notes). Without it, use its order: one line on the effect people will notice most, what they'll notice in each look, how to update in each agent, then the technical changes.
 2. Set the new version in `.claude-plugin/plugin.json`, `codex/plugin/.codex-plugin/plugin.json`, `serverInfo` in `codex/src/server.ts`, `appInfo` in `codex/src/tab.tsx` and `version` in `omp/package.json`.
 3. Run `npm --prefix codex run build` and `npm --prefix omp run build`, then `./scripts/check.sh`.
-4. Commit as "Bump to x.y.z", tag it `vx.y.z`, and push both.
+4. Commit as "Bump to x.y.z" on `next`, and tag it `vx.y.z`. Push `next`, the tag, and the same commit to `main`.
 5. Publish the release at once with `gh release create vx.y.z --notes-file <notes file>`.
