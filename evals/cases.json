@@ -343,6 +343,46 @@
     }
   },
   {
+    "name": "dismissed-question-other-subject-added",
+    "about": "A question that shares the words of a dismissed question but asks about something else is added.",
+    "ledger": {
+      "turn": 3,
+      "nextId": 4,
+      "card": {
+        "goal": "Prepare the package for publishing",
+        "done": ["Filled in the package description"],
+        "now": "Setting up package.json",
+        "running": []
+      },
+      "items": [],
+      "closed": [
+        {
+          "id": "i3",
+          "kind": "question",
+          "ask": "Which license should package.json use?",
+          "how": "dismissed",
+          "outcome": "dismissed",
+          "at": 4
+        }
+      ]
+    },
+    "exchange": {
+      "person": "skip the license for now, keep going",
+      "turn": 3,
+      "activity": ["edited: package.json"],
+      "reply": "Left the license out. One more field before I publish: which engines should package.json use, Node 20 and up or Node 22 and up? I'd go with Node 20 and up: it is the oldest Node release still supported."
+    },
+    "checks": [
+      {
+        "new": "engines|node",
+        "rec": "20"
+      },
+      {
+        "dropped": 0
+      }
+    ]
+  },
+  {
     "name": "stated-recommendation-kept",
     "about": "A stated recommendation becomes the item's rec.",
     "ledger": {
@@ -2332,7 +2372,7 @@
     },
     "checks": [
       {
-        "new": "size",
+        "new": "size|\\d\\s?mb",
         "rec": "64"
       },
       {

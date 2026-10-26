@@ -532,6 +532,12 @@ function restates(a, b) {
   if (numbers(x) !== "" && numbers(y) !== "" && numbers(x) !== numbers(y)) return false;
   return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b);
 }
+function repeatsSubject(a, b) {
+  const x = keyWords(a);
+  const y = keyWords(b);
+  const within = (inner, outer) => [...inner].every((w) => outer.has(w));
+  return sameAsk(a, b) || restates(a, b) && (within(x, y) || within(y, x));
+}
 function sameAsk(a, b) {
   const norm = (s) => words(s).join(" ");
   return norm(a) !== "" && norm(a) === norm(b);
@@ -552,7 +558,8 @@ function isAskedForChoices(c) {
 }
 function repeatsSettled(c, a) {
   if (isAskedForChoices(c)) return false;
-  return c.how === "answered" ? c.id === a.label || sameAsk(c.ask, a.ask) : matchOpen([c], a) >= 0;
+  if (c.how === "answered") return c.id === a.label || sameAsk(c.ask, a.ask);
+  return c.id === a.label || sameAsk(c.ask, a.ask) || c.kind === a.kind && repeatsSubject(c.ask, a.ask);
 }
 function closedRecord(item, closing, now) {
   const { id, kind, ask, label } = item;
