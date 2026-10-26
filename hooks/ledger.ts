@@ -493,12 +493,14 @@ export function isAskedForChoices(c: Closed): boolean {
 /**
  * An answered question repeats only in the same words or label: a follow-up shares its words but asks something new,
  * as "Which cache size should the product API use?" after "Which cache should the product API use?". A dismissed or
- * handled item repeats in other words too. A question answered with LIST_CHOICES repeats nothing.
+ * handled item repeats in other words too, as `repeatsSubject` says: "Which engines should package.json use?" does not
+ * repeat "Which license should package.json use?". A question answered with LIST_CHOICES repeats nothing.
  */
 function repeatsSettled(c: Closed, a: Update['added'][number]): boolean {
   if (isAskedForChoices(c)) return false
+  if (c.how === 'answered') return c.id === a.label || sameAsk(c.ask, a.ask)
 
-  return c.how === 'answered' ? c.id === a.label || sameAsk(c.ask, a.ask) : matchOpen([c], a) >= 0
+  return c.id === a.label || sameAsk(c.ask, a.ask) || (c.kind === a.kind && repeatsSubject(c.ask, a.ask))
 }
 
 function closedRecord(item: Item, closing: Closing, now: number): Closed {

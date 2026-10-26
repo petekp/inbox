@@ -764,7 +764,9 @@ function isAskedForChoices(c) {
 function repeatsSettled(c, a) {
   if (isAskedForChoices(c))
     return false;
-  return c.how === "answered" ? c.id === a.label || sameAsk(c.ask, a.ask) : matchOpen([c], a) >= 0;
+  if (c.how === "answered")
+    return c.id === a.label || sameAsk(c.ask, a.ask);
+  return c.id === a.label || sameAsk(c.ask, a.ask) || c.kind === a.kind && repeatsSubject(c.ask, a.ask);
 }
 function closedRecord(item, closing, now) {
   const { id, kind, ask, label } = item;
