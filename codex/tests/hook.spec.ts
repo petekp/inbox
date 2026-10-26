@@ -64,6 +64,24 @@ test('a session starts with the guidance, records the prompt, and ends the turn 
   assert.deepEqual(deps.updates, ['s1'])
 })
 
+test('a hook without CODEX_CLI_PATH saves the CLI the app names in CODEX_APP_RUNTIME_CLI_PATH, and CODEX_CLI_PATH wins when both are set', async () => {
+  const dir = tempDir()
+  const transcript = join(tempDir(), 'rollout.jsonl')
+  const start = (id: string, env: NodeJS.ProcessEnv) =>
+    handleHook(input('SessionStart', { session_id: id, cwd: tempDir(), transcript_path: transcript }), {
+      ...hookDeps(dir),
+      env,
+    })
+
+  await start('app', { CODEX_APP_RUNTIME_CLI_PATH: '/app/codex' })
+  await start('override', { CODEX_CLI_PATH: '/person/codex', CODEX_APP_RUNTIME_CLI_PATH: '/app/codex' })
+  await start('unnamed', {})
+
+  assert.equal((await readState(dir, 'app')).cliPath, '/app/codex')
+  assert.equal((await readState(dir, 'override')).cliPath, '/person/codex')
+  assert.equal((await readState(dir, 'unnamed')).cliPath, null)
+})
+
 test('a Stop notes the dialogs the agent opened in the ending turn as open, and leaves earlier turns out', async () => {
   const dir = tempDir()
   const transcript = join(tempDir(), 'rollout.jsonl')

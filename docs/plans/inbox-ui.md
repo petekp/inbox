@@ -34,7 +34,7 @@ The mod draws the terminal and desktop looks. One HTML view draws the Codex tab.
 
 **Desktop.** The same band and pane, drawn for clicks. Actions are native buttons with no key letters. A tab, a closed row and a Closed fold line each take a click anywhere on them. The shown tab is a rounded raised segment with a bold label. The app's own ✕ closes the pane. Nothing depends on a key.
 
-**Codex.** The Inbox thread tab has the same rows as the pane and three tabs: Asks, Findings and PRs. A send shows `Sending…` while the server accepts it, then the shared delivery feedback in section 2.3. An empty tab tells "the inbox has not heard from this chat's hooks" apart from "nothing needs you". The model's `inbox` tool returns text only, so it does not mount the full tab inline.
+**Codex.** The Inbox thread tab has the same rows as the pane and three tabs: Asks, Finds and PRs. A send shows `Sending…` while the server accepts it, then the shared delivery feedback in section 2.3. An empty tab tells "the inbox has not heard from this chat's hooks" apart from "nothing needs you". The model's `inbox` tool returns text only, so it does not mount the full tab inline.
 
 Each drawn action is clickable. Keys are an extra where the host supports them. Explain is key-only in terminal and Codex; desktop draws it because its action keys do nothing.
 
@@ -51,7 +51,7 @@ The count is named by its tab, Asks. The band reads tab names with counts, and a
 - open questions;
 - open tasks not handed off.
 
-It leaves out findings, PR rows, handed-off rows and the stop line. A queued send (2.3) counts as pressed: an answered question is closed and leaves, and a handed-off row leaves, while a row with a queued talk send stays in the count. The Findings tab has its own count. The PRs tab counts the open PRs that need the person: a merge conflict, a failing check, requested changes or a thread waiting on them.
+It leaves out findings, PR rows, handed-off rows and the stop line. A queued send (2.3) counts as pressed: an answered question is closed and leaves, and a handed-off row leaves, while a row with a queued talk send stays in the count. The Finds tab has its own count. The PRs tab counts the open PRs that need the person: a merge conflict, a failing check, requested changes or a thread waiting on them.
 
 **The order of the Asks list.** The top row is the first row of this list. [Open inbox] opens the pane with it open.
 
@@ -72,7 +72,7 @@ A row has two forms:
 |---|---|---|---|
 | Question | Asks | `ask · 3m ago`. The terminal adds `1)` or `•` before it (see numbers below) | Full ask, one button per option with the recommended one first, styled primary and labeled "(recommended)", help steps |
 | Task | Asks | `ask · 3m ago`. The terminal adds `•` before it | Help steps (open, copy, run, terminal, link), "Open PR #N" when the ask names a tracked PR |
-| Finding | Findings, under Issues or Opportunities | The kind's mark as the handle (▲ for an issue, ✦ for an opportunity), the title and the age | Detail, and "Relevant file: " with the file's base name |
+| Finding | Finds, under Issues or Opportunities | The kind's mark as the handle (▲ for an issue, ✦ for an opportunity), the title and the age | Detail, and "Relevant file: " with the file's base name |
 | PR block | PRs | Always open: `#12 title`, readiness, one line of facts | PR actions |
 | PR check | PRs, inside the PR block | Two lines: `✗ Failing check`, then the check's name. | Fix, Open log |
 | Review thread | PRs | Two lines: `◦ Review thread · 2h ago`, with the comment count and "outdated" when they apply, then `api.ts:40 latest comment` | Comments as Markdown, and the file:line as a link to the comment. Open comment opens the same page |
@@ -234,7 +234,7 @@ An expired item closes as `Expired`. The rule behind it, 12 prompts or more than
 | State | Text |
 |---|---|
 | Asks, empty | A title, `Nothing needs you.`, and a hint line: `Claude's questions and the tasks only you can do show up here.` (`Codex's` in the Codex tab) |
-| Findings, empty | `No findings yet` and `Claude flags issues and opportunities it spots beyond your task.` |
+| Finds, empty | `No findings yet` and `Claude flags issues and opportunities it spots beyond your task.` |
 | PRs, empty | `No PRs` and `Your PRs show here when this session opens or links one, or when your branch has one.` |
 | PRs, loading | `Checking for PRs…` |
 | View loading | `Reading the inbox…` |
@@ -278,12 +278,12 @@ For a recording, `/inbox demo recording` hides those notices, the band's `Demo:`
 - The `/inbox` pane. It docks beside the transcript in a fullscreen terminal from 110 columns, and is otherwise a framed region above the prompt.
 - The Herdr sidebar line. It is the only place that names an open permission prompt or AskUserQuestion dialog.
 
-**The band.** One line: the counts for Asks and Findings, with [Open inbox] at the right end. Each count reads as its tab does: the tab's name, muted, then the count in the tab's color. The button opens the pane with the top row open. The line is the same while Claude works and when the person comes back after a break.
+**The band.** One line: the counts for Asks and Finds, with [Open inbox] at the right end. Each count reads as its tab does: the tab's name, muted, then the count in the tab's color. The button opens the pane with the top row open. The line is the same while Claude works and when the person comes back after a break.
 
 ```
-Asks 2 · Findings 1                                     [Open inbox]
+Asks 2 · Finds 1                                        [Open inbox]
 Nothing needs you                                       [Open inbox]
-Demo: Asks 7 · Findings 4                   [Hide demo] [Open inbox]
+Demo: Asks 7 · Finds 4                      [Hide demo] [Open inbox]
 ```
 
 A count of zero drops out. During `/inbox demo` the line starts with "Demo:", so the sample counts do not pass for real ones.
@@ -291,7 +291,7 @@ A count of zero drops out. During `/inbox demo` the line starts with "Demo:", so
 A stop draws a second line under the counts, so [Open inbox] does not move. It starts with "Stopped 1m ago:" in red. An API error adds [Resume], which reads "Resuming…" under the same key while it sends.
 
 ```
-Asks 2 · Findings 1                                     [Open inbox]
+Asks 2 · Finds 1                                        [Open inbox]
 Stopped 1m ago: API error (overloaded). [Resume]
 ```
 
@@ -300,7 +300,7 @@ The band falls back to the engine default when the mod is off, a survey shows, o
 **The pane.** Raised tabs when docked, "a: Label" on each action, j and k, 1 2 3 for tabs, ctrl+x tab, Esc, and the Keys drawer.
 
 ```
- Asks 3 │ Findings 2 │ PRs 1
+ Asks 3 │ Finds 2 │ PRs 1
  ─────────────────────────────────────────────────────────
  ! Stopped 3m ago: sign-in expired. Run /login, then send
    a message.
@@ -332,7 +332,7 @@ The mod picks the desktop drawing on each draw from `e.surface === 'desktop'`, n
 **The pane at 36 columns.**
 
 ```
-Asks 3  [Findings 2]  [PRs]
+Asks 3  [Finds 2]  [PRs]
 Questions
 1) Rename the table to accou…
    Rename the users table to
@@ -403,7 +403,7 @@ The tool is split because the tab is already where the person acts. Codex mounts
 **First thing seen.** The Asks tab with its top row open.
 
 ```
- [Asks 2] [Findings 1] [PRs]
+ [Asks 2] [Finds 1] [PRs]
  ──────────────────────────────────────────────────────
  Questions
  1) Use "inbox" or "attention" for the name?     2m ago
@@ -417,7 +417,7 @@ The tool is split because the tab is already where the person acts. Codex mounts
 
 The footer holds the status at its right. [Show demo] at its left follows the build settings in section 2.10. A read error or a note takes its own line under the tabs, so the status never moves the tabs. Codex's Activity view already shows which chat waits.
 
-**Tabs.** Asks, Findings and PRs. The PRs tab has the same PR blocks as the pane (2.4). The server runs gh in the session's folder and refetches a view when the last fetch is over 2 minutes old.
+**Tabs.** Asks, Finds and PRs. The PRs tab has the same PR blocks as the pane (2.4). The server runs gh in the session's folder and refetches a view when the last fetch is over 2 minutes old.
 
 **Rows, groups and behavior.**
 

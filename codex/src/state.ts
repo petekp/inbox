@@ -31,6 +31,9 @@ import type { Session } from '../../hooks/session'
 import { isShownTab } from '../../hooks/view'
 import type { ShownTab } from '../../hooks/view'
 
+/** A failed `codex exec` call: when it ended, the binary it ran, its exit code, and the end of its stderr. */
+export type ModelFailure = { at: number; cli: string; code: number; stderr: string }
+
 export type SessionState = Session & {
   version: 1
   sessionId: string
@@ -38,8 +41,10 @@ export type SessionState = Session & {
   /** The session's rollout file, from the latest hook input that named one. Null until a hook does. */
   transcriptPath: string | null
   home: string
-  /** The codex binary the desktop app runs, from the hooks' CODEX_CLI_PATH. */
+  /** The codex binary the desktop app runs, as a hook's environment names it or the server found it. */
   cliPath: string | null
+  /** The inbox model's last failed call. Null until a call fails. */
+  lastModelFailure: ModelFailure | null
   tabSeenAt: number
   /** The tab the Inbox tab last showed, from its latest view request. Codex only. */
   shownTab: ShownTab
@@ -86,6 +91,7 @@ export function emptyState(sessionId: string): SessionState {
     transcriptPath: null,
     home: homedir(),
     cliPath: null,
+    lastModelFailure: null,
     ...emptySession(),
     tabSeenAt: 0,
     shownTab: 'needsYou',

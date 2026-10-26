@@ -2658,7 +2658,7 @@ function stepKind(step) {
 var TABS = [
   { id: "overview", label: "Overview", symbol: "\uD83E\uDDED", hotkey: "1" },
   { id: "needsYou", label: "Asks", symbol: "\uD83D\uDE4B", hotkey: "2" },
-  { id: "findings", label: "Findings", symbol: "\uD83D\uDD0D", hotkey: "3" },
+  { id: "findings", label: "Finds", symbol: "\uD83D\uDD0D", hotkey: "3" },
   { id: "prs", label: "PRs", symbol: "\uD83D\uDD00", hotkey: "4" }
 ];
 var TAB_NAMINGS = ["words", "symbols"];
@@ -6057,10 +6057,10 @@ var OMP = {
   agent: "omp",
   surface: "the /inbox panel",
   band: "a band above their prompt",
-  findingsIn: "the Findings tab of the /inbox panel",
+  findingsIn: "the Finds tab of the /inbox panel",
   recordTool: "record",
   closeTool: "close",
-  intro: "The inbox extension shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox panel, and your findings, in the panel's Findings tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings."
+  intro: "The inbox extension shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox panel, and your findings, in the panel's Finds tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings."
 };
 
 // src/demo.ts
@@ -6788,7 +6788,7 @@ function createInbox(pi, deps = defaultDeps) {
         return openPanelUi(ctx, isDemo);
       const screen = isDemo ? await demoSource({ now: deps.now, after: () => {}, settleWindowMs: deps.settleWindowMs }).screen(NO_HOLDS) : await inbox.screen(ctx);
       const { needsYou, findings } = screen.view;
-      ctx.ui.notify(`Asks ${needsYou.count}, Findings ${findings.count}`, "info");
+      ctx.ui.notify(`Asks ${needsYou.count}, Finds ${findings.count}`, "info");
     }
   });
   return inbox;

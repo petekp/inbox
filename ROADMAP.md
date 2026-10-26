@@ -2,8 +2,8 @@
 
 Planned work, not built yet.
 
-- **Claude's calls replace Findings.** A finding outside the task is a call
-  Claude made: to leave it for now. The Findings tab becomes a list of calls
+- **Claude's calls replace Finds.** A finding outside the task is a call
+  Claude made: to leave it for now. The Finds tab becomes a list of calls
   you might make differently, shown as "question → choice, not
   alternative". Pressing the alternative switches it, and `e` explains it.
   A call leaves the list half a day after Claude made it.

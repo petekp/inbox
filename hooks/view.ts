@@ -653,7 +653,7 @@ export type ShownTab = Tab | PageTab
 export const TABS: readonly { id: ShownTab; label: string; symbol: string; hotkey: string }[] = [
   { id: 'overview', label: 'Overview', symbol: '\u{1F9ED}', hotkey: '1' },
   { id: 'needsYou', label: 'Asks', symbol: '\u{1F64B}', hotkey: '2' },
-  { id: 'findings', label: 'Findings', symbol: '\u{1F50D}', hotkey: '3' },
+  { id: 'findings', label: 'Finds', symbol: '\u{1F50D}', hotkey: '3' },
   { id: 'prs', label: 'PRs', symbol: '\u{1F500}', hotkey: '4' },
 ]
 
@@ -683,7 +683,7 @@ export function fitTabs<L>(
 
   return { naming: 'symbols', layout: layouts.at(-1)! }
 }
-/** Whether a shown tab lists rows you answer or close: Asks and Findings. */
+/** Whether a shown tab lists rows you answer or close: Asks and Finds. */
 export function isListedTab(tab: ShownTab): tab is ListedTab {
   return tab === 'needsYou' || tab === 'findings'
 }
@@ -703,7 +703,7 @@ export function screenTabOf(tab: ShownTab): ScreenTab {
   return { label: TABS.find(t => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) }
 }
 
-/** The tabs that list rows: Asks, Findings and PRs. */
+/** The tabs that list rows: Asks, Finds and PRs. */
 export const ROW_TABS = TABS.filter((t): t is (typeof TABS)[number] & { id: Tab } => isRowTab(t.id))
 
 export const LISTED_TABS = TABS.filter((t): t is (typeof TABS)[number] & { id: ListedTab } => isListedTab(t.id))

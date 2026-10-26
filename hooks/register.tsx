@@ -1205,7 +1205,7 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
         Object.entries(cursors).map(([t, c]) => [t, { ...c, openedAt: c.openedAt ?? 0 }]),
       ) as Record<Tab, Cursor>
     }),
-    // Old builds saved the group kinds as `decide` and `do`, and Findings' one fold as `finding`, now one per kind.
+    // Old builds saved the group kinds as `decide` and `do`, and the Finds tab's one fold as `finding`, now one per kind.
     update($, UNFOLDED, u =>
       u.flatMap((k: string): FoldKind[] =>
         k === 'finding' ? ['issue', 'opportunity'] : k === 'issue' || k === 'opportunity' ? [k] : [readKind(k)],

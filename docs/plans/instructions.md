@@ -3,7 +3,7 @@
 Status: building. The decisions below are not settled.
 
 Goal: each instruction the mod gives has one role, each rule is written in one
-place, and findings reach the Findings tab at the right time and leave it with
+place, and findings reach the Finds tab at the right time and leave it with
 a record.
 
 ## What each instruction is for
@@ -81,10 +81,10 @@ that updates the inbox after each reply, reads two.
 
 ## Still open
 
-1. **The roadmap would replace Findings.** ROADMAP.md plans "Claude's calls
-   replace Findings": the tab becomes a list of calls Claude made, shown as
+1. **The roadmap would replace Finds.** ROADMAP.md plans "Claude's calls
+   replace Finds": the tab becomes a list of calls Claude made, shown as
    "question → choice, not alternative". That is a different purpose from the
-   one agreed for Findings.
+   one agreed for Finds.
 2. **Nothing measures misses.** A finding Claude never records leaves no
    trace.
 
@@ -94,4 +94,4 @@ model re-added a dismissed question in 4 of 5 runs.
 
 ## Decisions
 
-1. Roadmap: drop "Claude's calls replace Findings", or keep it?
+1. Roadmap: drop "Claude's calls replace Finds", or keep it?

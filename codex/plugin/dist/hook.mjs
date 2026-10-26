@@ -1056,7 +1056,7 @@ function stepKind(step) {
 var TABS = [
   { id: "overview", label: "Overview", symbol: "\u{1F9ED}", hotkey: "1" },
   { id: "needsYou", label: "Asks", symbol: "\u{1F64B}", hotkey: "2" },
-  { id: "findings", label: "Findings", symbol: "\u{1F50D}", hotkey: "3" },
+  { id: "findings", label: "Finds", symbol: "\u{1F50D}", hotkey: "3" },
   { id: "prs", label: "PRs", symbol: "\u{1F500}", hotkey: "4" }
 ];
 function isListedTab(tab) {
@@ -1738,6 +1738,7 @@ function emptyState(sessionId) {
     transcriptPath: null,
     home: homedir(),
     cliPath: null,
+    lastModelFailure: null,
     ...emptySession(),
     tabSeenAt: 0,
     shownTab: "needsYou",
@@ -1950,7 +1951,7 @@ var CODEX = {
   agent: "Codex",
   surface: "the Inbox tab",
   band: null,
-  findingsIn: "the Findings section of the Inbox tab",
+  findingsIn: "the Finds section of the Inbox tab",
   recordTool: "mcp__inbox__record",
   closeTool: "mcp__inbox__close",
   intro: "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, and your findings, in the Inbox tab beside the conversation."
@@ -2118,6 +2119,11 @@ function herdrOnWrite(env, run2, dir, now) {
 
 // src/hook.ts
 import { resolve as resolve3 } from "node:path";
+
+// src/cli.ts
+function namedCli(env) {
+  return env.CODEX_CLI_PATH || env.CODEX_APP_RUNTIME_CLI_PATH || null;
+}
 
 // src/dialogs.ts
 function noteDialogs(s, dialogs) {
@@ -2476,7 +2482,7 @@ async function handleHook(input, deps) {
   const { dir, env, now } = deps;
   if (!id || !env.INBOX_IN_EXEC && await isNonInteractiveRun(input.transcript_path)) return null;
   const { update: write } = codexStore(dir, id, now, deps.onWrite);
-  const cliPath = env.CODEX_CLI_PATH || null;
+  const cliPath = namedCli(env);
   const withCli = (s) => cliPath && s.cliPath !== cliPath ? { ...s, cliPath } : s;
   const rolloutPath = input.agent_id ? null : input.transcript_path;
   const withRollout = (s) => rolloutPath !== null && s.transcriptPath !== rolloutPath ? { ...s, transcriptPath: rolloutPath } : s;

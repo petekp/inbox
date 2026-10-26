@@ -205,7 +205,7 @@ type Kept = {
   /** An earlier page kept each draft as its text alone. */
   drafts: [string, Draft | string][]
   optionsShown: string[]
-  /** An earlier page kept 'finding' for the one fold Findings had. */
+  /** An earlier page kept 'finding' for the one fold the Finds tab had. */
   unfolded: (FoldGroup | 'finding')[]
 }
 type CandidatePage = {

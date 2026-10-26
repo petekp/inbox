@@ -42,7 +42,7 @@ Claude mode is the desktop app's chat side. It runs no hooks and no mods. The in
 
 ```
 ┌───────────────────────────────────────────────┐
-│ Asks 2 · Findings 1              as of 2m ago │
+│ Asks 2 · Finds 1                 as of 2m ago │
 │ Postgres or SQLite for the cache?             │
 │ Add STRIPE_KEY to .env                        │
 │ Retry loop never backs off                    │
@@ -56,7 +56,7 @@ Claude mode is the desktop app's chat side. It runs no hooks and no mods. The in
 
 **Older cards.** Each show call mounts a new card, and old ones stay in the transcript. A card draws from its tool result at once. While it is the newest card it polls and stays live. Once a newer card exists, it draws one muted line, `Moved to a newer card below`, with no buttons, and stops polling. A stored chat mounts its cards again when the person scrolls to them. Such a card draws collapsed until its first poll says whether it is still the newest, so it never flashes old counts.
 
-**Full view.** [Open inbox] asks for fullscreen. The composer stays visible below it. The layout matches the Codex tab: Asks and Findings tabs, the same rows, one open row. There is no PRs tab, because a chat has no repo or branch.
+**Full view.** [Open inbox] asks for fullscreen. The composer stays visible below it. The layout matches the Codex tab: Asks and Finds tabs, the same rows, one open row. There is no PRs tab, because a chat has no repo or branch.
 
 If the host does not grant fullscreen, the card stays a summary with no [Open inbox]. Answers, Done and Dismiss then go through the composer, and Claude closes items with its tools. An expanded card with clickable rows would break the inline guidance: at most 2 actions, no drill-ins, no nested scrolling.
 

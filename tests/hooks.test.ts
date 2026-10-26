@@ -1131,14 +1131,14 @@ test('the band is [Open inbox] and the counts, the same while working and after 
 
   const standing = await band()
   expect(await standing.find({ key: 'open-inbox' })).toBeDefined()
-  expect(await standing.find({ text: /^Asks 2\u2007·\u2002Findings 1$/ })).toBeDefined()
+  expect(await standing.find({ text: /^Asks 2\u2007·\u2002Finds 1$/ })).toBeDefined()
   expect(await standing.find({ text: /Use Node or Python|Add a greeting CLI|Waiting on two choices/ })).toBeUndefined()
 
   const working = await band({ isWorking: true })
-  expect(await working.find({ text: /^Asks 2\u2007·\u2002Findings 1$/ })).toBeDefined()
+  expect(await working.find({ text: /^Asks 2\u2007·\u2002Finds 1$/ })).toBeDefined()
 
   await clock.advance(16 * 60_000)
-  expect(await standing.find({ text: /^Asks 2\u2007·\u2002Findings 1$/ })).toBeDefined()
+  expect(await standing.find({ text: /^Asks 2\u2007·\u2002Finds 1$/ })).toBeDefined()
   expect(await standing.find({ text: /Plan written|last active/ })).toBeUndefined()
 
   const pane = await $.ui.mount(PANE)
@@ -1476,12 +1476,12 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
     detail: 'The fetch retry spins with no delay and can hammer the API.',
     path: 'src/api.ts',
   })
-  expect(r.result).toBe('Recorded. The user sees it in the Findings tab of the /inbox pane.')
+  expect(r.result).toBe('Recorded. The user sees it in the Finds tab of the /inbox pane.')
   await clock.settle()
   expect(await pane.find({ text: /Retry loop never backs off/ })).toBeDefined()
 
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  expect(await band.find({ text: /Findings 1/ })).toBeDefined()
+  expect(await band.find({ text: /Finds 1/ })).toBeDefined()
 
   await pane.press({ key: 'address-f1' })
   expect(sent.at(-1)).toContain('Please address this finding you recorded:\nIssue: Retry loop never backs off')
@@ -1489,7 +1489,7 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
   expect(await pane.find({ key: 'settled-f1' })).toBeDefined()
   expect(await pane.find({ text: /^Fix$/ })).toBeDefined()
   expect(await pane.find({ key: 'undo-f1' })).toBeDefined()
-  expect(await band.find({ text: /Findings 1/ })).toBeUndefined()
+  expect(await band.find({ text: /Finds 1/ })).toBeUndefined()
   await clock.advance(9000)
   expect(await pane.find({ key: 'settled-f1' })).toBeUndefined()
   expect(await pane.find({ text: /1 closed/ })).toBeDefined()
@@ -1497,7 +1497,7 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
   await $.turn.start({ text: sent.at(-1) ?? '', turnId: 't1' })
   await $.turn.complete({ answer: 'Added a backoff.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
-  expect(await band.find({ text: /Findings 1/ })).toBeUndefined()
+  expect(await band.find({ text: /Finds 1/ })).toBeUndefined()
   await pane.press({ key: 'tab-findings' })
   await clock.settle()
   expect(await pane.find({ key: 'address-f1-key' })).toBeUndefined()
@@ -2258,7 +2258,7 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   expect(sent.at(-1)).toContain("Let's talk through this finding you recorded")
   expect(await pane.find({ text: /Discussing…/ })).toBeDefined()
   expect((await pane.find({ key: 'discuss-f3-key' }))?.props.label).toBe('Discuss')
-  expect(await band.find({ text: /Findings 1/ })).toBeDefined()
+  expect(await band.find({ text: /Finds 1/ })).toBeDefined()
   await pane.press({ key: 'tab-needsYou' })
   submitAnswer = 'hold'
   inFlight.push(pane.press({ key: 'explain-i1-key' }))

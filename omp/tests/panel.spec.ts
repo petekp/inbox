@@ -199,7 +199,7 @@ test('Tab and Shift+Tab cycle through every tab in order, and each digit picks i
 test('the selected tab draws inverse and the others draw their counts', () => {
   const screen = screenOf()
   const bar = drawn(screen, keys(screen, INITIAL_UI, '3'))[0]!
-  expect(bar).toContain(`${ESC}7m${ESC}1m [3] Findings ${screen.view.findings.count} `)
+  expect(bar).toContain(`${ESC}7m${ESC}1m [3] Finds ${screen.view.findings.count} `)
   expect(strip(bar)).toContain(`[2] Asks ${screen.view.needsYou.count}`)
   expect(strip(bar)).toContain(`[4] PRs ${screen.view.prs.count}`)
   expect(strip(bar)).toContain('esc to close')
@@ -546,7 +546,7 @@ test('the band shows both counts and how to open the inbox', () => {
   const screen = screenOf()
   const band = strip(bandLines(screen, 80, NOW, style)[0]!)
   expect(band).toContain(`Asks ${screen.view.needsYou.count}`)
-  expect(band).toContain(`Findings ${screen.view.findings.count}`)
+  expect(band).toContain(`Finds ${screen.view.findings.count}`)
   expect(band).toContain('/inbox to open')
 })
 

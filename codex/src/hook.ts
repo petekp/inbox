@@ -10,6 +10,7 @@ import {
   turnEnded,
   turnStarted,
 } from '../../hooks/session'
+import { namedCli } from './cli'
 import { activityOf, endTurn, noteHook, notePrompt, patchFiles } from './core'
 import { noteDialogs } from './dialogs'
 import { withEarlierHistory } from './history'
@@ -48,7 +49,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
   // INBOX_IN_EXEC lets a test drive a whole session through `codex exec`.
   if (!id || (!env.INBOX_IN_EXEC && (await isNonInteractiveRun(input.transcript_path)))) return null
   const { update: write } = codexStore(dir, id, now, deps.onWrite)
-  const cliPath = env.CODEX_CLI_PATH || null
+  const cliPath = namedCli(env)
   const withCli = (s: SessionState): SessionState => (cliPath && s.cliPath !== cliPath ? { ...s, cliPath } : s)
   // A subagent's hook names its own rollout, not the session's.
   const rolloutPath = input.agent_id ? null : input.transcript_path

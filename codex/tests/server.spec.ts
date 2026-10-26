@@ -18,6 +18,7 @@ import { PRESS_TIMEOUT_MS } from '../../hooks/session'
 import { SETTLE_WINDOW_MS } from '../src/settle'
 import { readState, statePath, updateState } from '../src/state'
 import { handleHook } from '../src/hook'
+import { findCli } from '../src/cli'
 import { fakeRunner, hookDeps, input, rolloutAt, tempDir } from './helpers'
 
 async function setup(queueCode: number, now = () => 100, fallbackCli = async () => 'codex') {
@@ -1351,6 +1352,15 @@ for (const failure of ['none', 'checkpoint', 'completion', 'queue', 'lookup'] as
     )
   })
 }
+
+test('a server whose environment names no CLI runs its parent when that is a codex, else the codex on PATH', async () => {
+  const parents: Record<string, string> = { '42': '/apps/CodexCLI.app/Contents/MacOS/codex', '43': '/bin/zsh' }
+  const { exec } = fakeRunner(args => ({ code: 0, stdout: `${parents[args.at(-1) ?? ''] ?? ''}\n`, stderr: '' }))
+
+  assert.equal(await findCli({}, exec, 42), '/apps/CodexCLI.app/Contents/MacOS/codex')
+  assert.equal(await findCli({}, exec, 43), 'codex')
+  assert.equal(await findCli({ CODEX_APP_RUNTIME_CLI_PATH: '/app/codex' }, exec, 43), '/app/codex')
+})
 
 function openSetup() {
   const dir = tempDir()

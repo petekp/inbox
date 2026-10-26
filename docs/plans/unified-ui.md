@@ -8,7 +8,7 @@ This proposal concerns the hierarchy and fitting of native drawings. A shared de
 
 ## Current structure
 
-- Asks has Questions and Tasks. Findings has Issues and Opportunities. Each group has its own Closed fold.
+- Asks has Questions and Tasks. Finds has Issues and Opportunities. Each group has its own Closed fold.
 - Shared helpers choose row marks, reply hints, action labels and feedback. Fold labels count all closed rows outside the settle window and say how many earlier rows are not shown.
 - Action emphasis and action order are separate fields. Retry leads a failed row. Options or help steps precede Done or Fix. The desktop renderer follows the shared key plan.
 - The recommended option says "(recommended)" in every look. Done, Fix and Do it have primary emphasis on desktop and Codex. A terminal Button uses its plain native form.
