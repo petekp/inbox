@@ -1,7 +1,7 @@
 import { prRowId } from '../../hooks/pr-tab'
 import type { PrPress } from '../../hooks/pr-tab'
 import type { RowPress } from '../../hooks/presses'
-import { READING_TEXT, compareEndsAt } from '../../hooks/view'
+import { READING_TEXT, compareEndsAt, RUNNING_FRAME_MS } from '../../hooks/view'
 import type { ReplyHolds, ShownTab } from '../../hooks/view'
 import {
   INITIAL_UI,
@@ -12,6 +12,7 @@ import {
   holdsOf,
   isAnimating,
   isLineWaiting,
+  isRunningMarkShown,
   noticeFor,
   render,
 } from './panel'
@@ -62,6 +63,8 @@ export function createPanel(deps: PanelDeps): Panel {
   let ui: PanelUi = INITIAL_UI
   let screen: PanelScreen | null = null
   let animation: unknown = null
+  /** Redraws without reading the session again, since a running mark's frame needs only the clock. */
+  let frames: unknown = null
   let compareEnd: { at: number; timer: unknown } | null = null
   let version = 0
   let seen: SeenRows = {}
@@ -74,6 +77,12 @@ export function createPanel(deps: PanelDeps): Panel {
     if (!isMoving && animation !== null) {
       timers.stop(animation)
       animation = null
+    }
+    const hasFrames = screen !== null && isRunningMarkShown(screen, ui)
+    if (hasFrames && frames === null) frames = timers.every(() => deps.requestRender(), RUNNING_FRAME_MS)
+    if (!hasFrames && frames !== null) {
+      timers.stop(frames)
+      frames = null
     }
     const now = deps.now()
     const at = screen === null ? null : compareEndsAt(screen.view.lastActions, now)
@@ -152,6 +161,8 @@ export function createPanel(deps: PanelDeps): Panel {
       for (const stop of stops.splice(0)) stop()
       if (animation !== null) timers.stop(animation)
       animation = null
+      if (frames !== null) timers.stop(frames)
+      frames = null
       if (compareEnd !== null) timers.stop(compareEnd.timer)
       compareEnd = null
     },

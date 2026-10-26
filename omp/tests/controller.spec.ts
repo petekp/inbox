@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { COMPARE_LIMIT_MS, SETTLED_MS } from '../../hooks/view'
+import { COMPARE_LIMIT_MS, RUNNING_FRAME_MS, SETTLED_MS } from '../../hooks/view'
 import { createPanel } from '../src/controller'
 import type { PanelSource } from '../src/controller'
 import { demoSource } from '../src/demo'
@@ -111,6 +111,39 @@ test('the redraw timer runs only while something on the screen moves', async () 
   live(timers, 200)[0]!.fn()
   await flush()
   expect(live(timers, 200)).toHaveLength(0)
+})
+
+test('the frame timer runs while the Overview shows a running mark, re-renders without reading the session, and stops on another tab and on dispose', async () => {
+  const demo = demoSource({ now: () => 0, after: () => undefined, settleWindowMs: SETTLED_MS })
+  let reads = 0
+  const { panel, timers, calls } = open({
+    screen: async holds => {
+      reads++
+      const s = await demo.screen(holds)
+      const page = s.view.overviewPage
+      const sections = page.sections.map(p => ({ ...p, rows: p.rows.map(r => ({ ...r, isRunning: r.mark === '●' })) }))
+
+      return { ...s, view: { ...s.view, overviewPage: { ...page, sections } } }
+    },
+  })
+  await panel.start()
+  expect(live(timers, RUNNING_FRAME_MS)).toHaveLength(0)
+  panel.handleInput('1')
+  await flush()
+  const frames = live(timers, RUNNING_FRAME_MS)
+  expect(frames).toHaveLength(1)
+  const [rendersBefore, readsBefore] = [calls.renders, reads]
+  frames[0]!.fn()
+  expect(calls.renders).toBe(rendersBefore + 1)
+  expect(reads).toBe(readsBefore)
+  panel.handleInput('2')
+  await flush()
+  expect(frames[0]!.stopped).toBe(true)
+  panel.handleInput('1')
+  await flush()
+  expect(live(timers, RUNNING_FRAME_MS)).toHaveLength(1)
+  panel.dispose()
+  expect(live(timers, RUNNING_FRAME_MS)).toHaveLength(0)
 })
 
 test('a Compare press with no report redraws the panel at its limit, reading No comparison came back', async () => {

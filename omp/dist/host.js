@@ -2635,6 +2635,15 @@ var SECTION_TITLES = {
   open: "Still open",
   next: "Next"
 };
+var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
+var RUNNING_FRAME_MS = 300;
+var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
+function hasRunningMark(page) {
+  return page.sections.some((p) => p.rows.some((r) => r.isRunning));
+}
+function runningMark(now) {
+  return RUNNING_FRAMES[Math.floor(now / RUNNING_FRAME_MS) % RUNNING_FRAMES.length];
+}
 var QUIET_TEXT = "Nothing new since you looked.";
 function pointerText(count) {
   return count === 0 ? null : count === 1 ? "Needs you has 1 item." : `Needs you has ${count} items.`;
@@ -2655,6 +2664,7 @@ function overviewPage(s, now, waitingOnYou = 0) {
     const rows = overview[id].map((item, n) => ({
       id: `${id}-${n}`,
       ...OVERVIEW_MARKS[item.status],
+      isRunning: item.status === "working" && (id === "workstreams" || isTurnRunning),
       text: item.text,
       detail: item.detail
     }));
@@ -4923,6 +4933,9 @@ function isAnimating(screen, ui, now) {
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS;
   return rows.some((r) => r.state.is === "settled") || view.prs.drawn.some((p) => p.isSettled) || isPressMoving || isNoticeShown;
 }
+function isRunningMarkShown(screen, ui) {
+  return !isRowTab(ui.tab) && hasRunningMark(screen.view.overviewPage);
+}
 function noticeFor(outcome, now) {
   const text = outcome.error ?? (outcome.note ? noteText() : null);
   return text === null ? null : { text, at: now };
@@ -5053,8 +5066,8 @@ function drawLine(line, isSelected, d) {
   return out;
 }
 function drawPageRow(row, d) {
-  const { width, style: s } = d;
-  const mark = row.mark.padEnd(2);
+  const { width, now, style: s } = d;
+  const mark = (row.isRunning ? runningMark(now) : row.mark).padEnd(2);
   const room = width - TITLE_AT - 2;
   const wrapped = wrapText(row.text, Math.max(10, room));
   const [first = "", ...rest] = wrapped.slice(0, 3);
@@ -5214,6 +5227,7 @@ function createPanel(deps) {
   let ui = INITIAL_UI;
   let screen = null;
   let animation = null;
+  let frames = null;
   let compareEnd = null;
   let version = 0;
   let seen = {};
@@ -5226,6 +5240,13 @@ function createPanel(deps) {
     if (!isMoving && animation !== null) {
       timers.stop(animation);
       animation = null;
+    }
+    const hasFrames = screen !== null && isRunningMarkShown(screen, ui);
+    if (hasFrames && frames === null)
+      frames = timers.every(() => deps.requestRender(), RUNNING_FRAME_MS);
+    if (!hasFrames && frames !== null) {
+      timers.stop(frames);
+      frames = null;
     }
     const now = deps.now();
     const at = screen === null ? null : compareEndsAt(screen.view.lastActions, now);
@@ -5308,6 +5329,9 @@ function createPanel(deps) {
       if (animation !== null)
         timers.stop(animation);
       animation = null;
+      if (frames !== null)
+        timers.stop(frames);
+      frames = null;
       if (compareEnd !== null)
         timers.stop(compareEnd.timer);
       compareEnd = null;

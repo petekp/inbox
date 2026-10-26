@@ -605,6 +605,11 @@ export type OverviewRow = {
   id: string
   mark: string
   tone: 'needsYou' | 'done' | 'issue' | null
+  /**
+   * Whether the work is running now, so a look animates the mark. A stream runs in its own session, so its status
+   * holds while this one is idle. Any other row runs only while this session's turn does.
+   */
+  isRunning: boolean
   text: string
   detail: string | null
 }
@@ -655,6 +660,23 @@ const SECTION_TITLES: Partial<Record<PartId, string | null>> = {
   next: 'Next',
 }
 
+/** The marks a running row cycles through in the text looks, one each `RUNNING_FRAME_MS`. */
+export const RUNNING_FRAMES = ['●', '◉', '◎', '◉'] as const
+
+export const RUNNING_FRAME_MS = 300
+
+/** One pulse of a running mark, which the Codex tab and the desktop pane draw as a fade. */
+export const RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS
+
+export function hasRunningMark(page: OverviewPage): boolean {
+  return page.sections.some(p => p.rows.some(r => r.isRunning))
+}
+
+/** A running row's mark at `now`. Every mark on a page takes its frame from the clock, so all of them move together. */
+export function runningMark(now: number): string {
+  return RUNNING_FRAMES[Math.floor(now / RUNNING_FRAME_MS) % RUNNING_FRAMES.length]!
+}
+
 export const QUIET_TEXT = 'Nothing new since you looked.'
 
 export function pointerText(count: number): string | null {
@@ -691,6 +713,7 @@ export function overviewPage(
         const rows = overview[id as 'queue'].map((item, n) => ({
           id: `${id}-${n}`,
           ...OVERVIEW_MARKS[item.status],
+          isRunning: item.status === 'working' && (id === 'workstreams' || isTurnRunning),
           text: item.text,
           detail: item.detail,
         }))
