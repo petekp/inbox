@@ -1904,6 +1904,25 @@ async function withLock(path, fn, waitMs = LOCK_WAIT_MS) {
     await removeOwnedLock(path, target, owner, owner);
   }
 }
+async function tryWithLock(path, fn) {
+  let acquired = false;
+  try {
+    return {
+      acquired: true,
+      value: await withLock(
+        path,
+        () => {
+          acquired = true;
+          return fn();
+        },
+        0
+      )
+    };
+  } catch (err) {
+    if (!acquired && err instanceof LockBusyError) return { acquired: false };
+    throw err;
+  }
+}
 async function updateState(dir, sessionId, change) {
   const path = statePath(dir, sessionId);
   return withLock(`${path}.lock`, async () => {
@@ -2056,6 +2075,19 @@ function herdrReporter() {
 }
 
 // src/host.ts
+function codexStore(dir, sessionId, now, onWrite = async () => {
+}) {
+  return {
+    now,
+    read: () => readState(dir, sessionId),
+    update: async (change) => {
+      const s = await updateState(dir, sessionId, change);
+      await onWrite(s);
+      return s;
+    },
+    exclusive: (fn) => tryWithLock(`${statePath(dir, sessionId)}.updating`, fn)
+  };
+}
 function herdrOnWrite(env, run2, dir, now) {
   const pane = env.HERDR_PANE_ID;
   const report = herdrReporter();
@@ -2428,11 +2460,7 @@ async function handleHook(input, deps) {
   const id = input.session_id;
   const { dir, env, now } = deps;
   if (!id || !env.INBOX_IN_EXEC && await isNonInteractiveRun(input.transcript_path)) return null;
-  const write = async (change) => {
-    const s = await updateState(dir, id, change);
-    await deps.onWrite(s);
-    return s;
-  };
+  const { update: write } = codexStore(dir, id, now, deps.onWrite);
   const cliPath = env.CODEX_CLI_PATH || null;
   const withCli = (s) => cliPath && s.cliPath !== cliPath ? { ...s, cliPath } : s;
   const rolloutPath = input.agent_id ? null : input.transcript_path;
