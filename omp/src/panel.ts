@@ -175,6 +175,8 @@ type Button = {
   press: PanelPress
   isRecommended: boolean
   isFollowUp: boolean
+  /** Its press is out, so it draws dim and its key does nothing. */
+  isOut?: boolean
 }
 
 type Lead = { text: string; tone: Tone | null }
@@ -262,6 +264,7 @@ function rowButtons(row: RowView): Button[] {
         press,
         isRecommended: k.slot === 'choice' && press.action === 'answer' && press.option === recommended,
         isFollowUp: k.slot === 'action' && k.action.isFollowUp,
+        isOut: k.action.isOut,
       },
     ]
   })
@@ -274,6 +277,7 @@ function prButtons(actions: PrAction[]): Button[] {
     press: a.press,
     isRecommended: false,
     isFollowUp: a.isFollowUp === true,
+    isOut: a.isOut,
   }))
 }
 
@@ -646,6 +650,7 @@ export function afterHandOff(screen: PanelScreen, ui: PanelUi, id: string, now: 
 
 function activate(screen: PanelScreen, ui: PanelUi, line: Line, button: Button, now: number): KeyResult {
   const { press } = button
+  if (button.isOut) return { ui }
   if (press.action === 'resume') {
     const { stop } = screen
     const isSending = ui.resuming?.is === 'sending' && ui.resuming.stopAt === stop?.at
@@ -882,7 +887,8 @@ function indented(
 type Draw = { screen: PanelScreen; ui: PanelUi; width: number; now: number; style: Style }
 
 function buttonCell(b: Button, isFocused: boolean, s: Style, mark = ''): string {
-  if (isFocused) return s.inverse(s.bold(` ↵ ${b.label}${mark} `))
+  if (isFocused) return s.inverse(b.isOut ? s.dim(` ↵ ${b.label}${mark} `) : s.bold(` ↵ ${b.label}${mark} `))
+  if (b.isOut && !b.isFollowUp) return s.dim(b.key ? ` ${b.key} ${b.label}${mark} ` : ` ${b.label}${mark} `)
   if (b.isFollowUp) return s.dim(b.key ? ` ${b.key} ${b.label} ` : ` ${b.label} `)
   const label = (b.isRecommended ? s.underline(b.label) : b.label) + mark
 
