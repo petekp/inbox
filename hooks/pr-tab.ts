@@ -23,7 +23,7 @@ import {
   waitingThreads,
 } from './prs'
 import type { IsThreadSent, PrStatus } from './prs'
-import { DOT, SETTLED_MS, feedbackIn, isAgain, outAction, pressOutAction } from './view'
+import { DOT, SETTLED_MS, isAgain, outAction, pressFeedbackIn, pressOutAction } from './view'
 import type { ActionEmphasis, PressState, RowWait } from './view'
 
 export const MAX_PRS = 12
@@ -445,7 +445,7 @@ type LastPress = { last: LastAction | undefined; pressing: string | null; out: s
 
 function lastPressOf(presses: PressState, rowId: string): LastPress {
   const last = presses.lastActions[rowId]
-  const feedback = feedbackIn(rowId, { is: 'open' }, last, presses.notes?.[rowId], presses.turns, presses.now)
+  const feedback = pressFeedbackIn(rowId, { is: 'open' }, last, presses.turns, presses.now)
 
   return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) }
 }

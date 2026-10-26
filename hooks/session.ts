@@ -38,7 +38,7 @@ import { recordClose, recordItem } from './tools'
 import { upgradeHostTasks } from './host-tasks'
 import { applyOverview, lookEnded, lookStarted } from './overview'
 import type { OverviewAnswer } from './overview'
-import { allRows, feedbackIn, inboxView, NO_HOLDS, outAction, overviewPage, perTurnStatus } from './view'
+import { allRows, inboxView, NO_HOLDS, outAction, overviewPage, perTurnStatus, pressFeedbackIn } from './view'
 import type { InboxView, OverviewPage, ReplyHolds, RowState } from './view'
 import type { LastAction, Ledger, PrView, PrViews, RowNote, Session, Stop, Turns, TurnDialogQuestion } from '../types'
 
@@ -536,8 +536,8 @@ export function appliedCatchUp<S extends Session>(s: S, begun: Session, parsed: 
 
 export type Pressed = Exclude<Applied, { stale: true }>
 
-/** What a look draws a session's rows with besides the session: the settle window, the reply holds and the notes. */
-export type DrawnWith = { settleWindowMs: number; holds: ReplyHolds; notes?: Record<string, RowNote> }
+/** What a look draws a session's rows with besides the session: the settle window and the reply holds. */
+export type DrawnWith = { settleWindowMs: number; holds: ReplyHolds }
 
 /**
  * A press of an action whose button the look draws as out, since its earlier press is still out. It changes nothing,
@@ -545,12 +545,11 @@ export type DrawnWith = { settleWindowMs: number; holds: ReplyHolds; notes?: Rec
  */
 function isRepeatWhileOut(s: Session, p: RowPress | PrPress, at: number, drawn: DrawnWith): boolean {
   const rowId = pressRowId(p)
-  const notes = drawn.notes ?? {}
-  const view = sessionView(s, at, drawn.settleWindowMs, false, drawn.holds, notes)
+  const view = sessionView(s, at, drawn.settleWindowMs, false, drawn.holds)
   const row = allRows(view).find(r => r.id === rowId)
   const last = view.lastActions[rowId]
   const state: RowState = row?.state ?? { is: 'open' }
-  const feedback = feedbackIn(rowId, state, last, notes[rowId], s.presence, at, row?.item?.reportedAt)
+  const feedback = pressFeedbackIn(rowId, state, last, s.presence, at, row?.item?.reportedAt)
 
   return outAction(last, feedback) === actionId(p)
 }

@@ -117,7 +117,7 @@ test('Compare reads Comparing… after its reply until the agent records the que
   })
 })
 
-test('a press sends nothing while its button draws as out, and sends once a newer note shows on its row', async () => {
+test('while a press is out, its button stays out and a second press sends nothing, even when a newer note shows on the row', async () => {
   const { host } = fakeHost(async () => null)
   const question = { kind: 'question', ask: 'Ship it?', options: ['Yes', 'No'] }
   await host.update(s => recorded(CLAUDE_CODE, s, 'record', question, 1).state)
@@ -125,18 +125,17 @@ test('a press sends nothing while its button draws as out, and sends once a newe
   await press(host, { action: 'explain', id }, false, NO_HOLDS)
   const s = await host.read()
   const at = await host.now()
-  const explainAgain = (notes: Record<string, RowNote>) => {
+  const explainOf = (notes: Record<string, RowNote>) => {
     const row = allRows(sessionView(s, at, host.settleWindowMs, true, NO_HOLDS, notes)).find(r => r.id === id)!
-    const r = pressOn(s, { action: 'explain', id }, at, { settleWindowMs: host.settleWindowMs, holds: NO_HOLDS, notes })
+    const explain = row.actions.find(a => a.press.action === 'explain')!
 
-    return {
-      isOut: row.actions.find(a => a.press.action === 'explain')!.isOut,
-      sends: 'stale' in r ? null : r.effects.map(e => e.kind),
-    }
+    return { feedback: row.feedback?.is, label: explain.label, isOut: explain.isOut }
   }
+  const again = pressOn(s, { action: 'explain', id }, at, { settleWindowMs: host.settleWindowMs, holds: NO_HOLDS })
 
-  expect(explainAgain({})).toEqual({ isOut: true, sends: [] })
-  expect(explainAgain({ [id]: { note: 'stale', at } })).toEqual({ isOut: false, sends: ['send'] })
+  expect('stale' in again ? null : again.effects).toEqual([])
+  expect(explainOf({})).toEqual({ feedback: 'working', label: 'Explain', isOut: true })
+  expect(explainOf({ [id]: { note: 'stale', at } })).toEqual({ feedback: 'note', label: 'Explain', isOut: true })
 })
 
 test('a command that prints local URLs notes each once, and gh pr create links the PR it names', () => {

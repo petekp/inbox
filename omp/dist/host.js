@@ -2544,6 +2544,9 @@ function feedbackIn(id, state, last, note, turns, now, reportedAt) {
   const isFailedReply = f?.is === "notSent" && last?.action === "type" && last.at >= state.at;
   return f?.is === "note" || isFailedReply ? f : { is: "closed", label: state.label, at: state.at };
 }
+function pressFeedbackIn(id, state, last, turns, now, reportedAt) {
+  return feedbackIn(id, state, last, undefined, turns, now, reportedAt);
+}
 var fixLabel = (f) => f.kind === "opportunity" ? "Do it" : "Fix";
 var WORKING_LABELS = {
   explain: "Explaining\u2026",
@@ -2986,8 +2989,9 @@ function inboxView({
   };
   const rowOf = (row) => {
     const state = stateOf(row.id);
-    const feedback = feedbackIn(row.id, state, lastActions[row.id], notes[row.id], turns, now, row.item?.reportedAt);
-    const actions = actionsOf(row, lastActions[row.id], state, feedback);
+    const last = lastActions[row.id];
+    const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt);
+    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt));
     return {
       ...row,
       state,
@@ -3398,7 +3402,7 @@ function prRetryOf(last, ref, thread, check = null) {
 }
 function lastPressOf(presses, rowId) {
   const last = presses.lastActions[rowId];
-  const feedback = feedbackIn(rowId, { is: "open" }, last, presses.notes?.[rowId], presses.turns, presses.now);
+  const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
   return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
 }
 function again(row, action, label) {
@@ -4080,12 +4084,11 @@ function appliedCatchUp(s, begun, parsed, now) {
 }
 function isRepeatWhileOut(s, p, at, drawn) {
   const rowId = pressRowId(p);
-  const notes = drawn.notes ?? {};
-  const view = sessionView(s, at, drawn.settleWindowMs, false, drawn.holds, notes);
+  const view = sessionView(s, at, drawn.settleWindowMs, false, drawn.holds);
   const row = allRows(view).find((r) => r.id === rowId);
   const last = view.lastActions[rowId];
   const state = row?.state ?? { is: "open" };
-  const feedback = feedbackIn(rowId, state, last, notes[rowId], s.presence, at, row?.item?.reportedAt);
+  const feedback = pressFeedbackIn(rowId, state, last, s.presence, at, row?.item?.reportedAt);
   return outAction(last, feedback) === actionId(p);
 }
 function pressOn(s, p, at, drawn, localPressId, answerMessage) {
@@ -4382,7 +4385,7 @@ async function wakeForDone(host, current) {
     return outcome.state === "rejected" ? { ...after, ledger: refuseDoneNotification(after.ledger, sending.deliveryId, outcome.reason) } : after;
   });
 }
-async function startPress(host, p, isStale, holds, notes = {}) {
+async function startPress(host, p, isStale, holds) {
   const rowId = pressRowId(p);
   const localPressId = host.newId();
   let isUnconfirmed = false;
@@ -4424,7 +4427,7 @@ async function startPress(host, p, isStale, holds, notes = {}) {
     if (note)
       return s;
     const at = await host.now();
-    const r = pressOn(s, p, at, { settleWindowMs: host.settleWindowMs, holds, notes }, localPressId, host.answerMessage);
+    const r = pressOn(s, p, at, { settleWindowMs: host.settleWindowMs, holds }, localPressId, host.answerMessage);
     if ("stale" in r) {
       note = "stale";
       return s;

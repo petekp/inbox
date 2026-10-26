@@ -1010,6 +1010,9 @@ function feedbackIn(id, state, last, note, turns, now, reportedAt) {
   const isFailedReply = f?.is === "notSent" && last?.action === "type" && last.at >= state.at;
   return f?.is === "note" || isFailedReply ? f : { is: "closed", label: state.label, at: state.at };
 }
+function pressFeedbackIn(id, state, last, turns, now, reportedAt) {
+  return feedbackIn(id, state, last, void 0, turns, now, reportedAt);
+}
 var fixLabel = (f) => f.kind === "opportunity" ? "Do it" : "Fix";
 var WORKING_LABELS = {
   explain: "Explaining\u2026",
@@ -1301,8 +1304,9 @@ function inboxView({
   };
   const rowOf = (row) => {
     const state = stateOf(row.id);
-    const feedback = feedbackIn(row.id, state, lastActions[row.id], notes[row.id], turns, now, row.item?.reportedAt);
-    const actions = actionsOf(row, lastActions[row.id], state, feedback);
+    const last = lastActions[row.id];
+    const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt);
+    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt));
     return {
       ...row,
       state,

@@ -443,6 +443,21 @@ export function feedbackIn(
   return f?.is === 'note' || isFailedReply ? f : { is: 'closed', label: state.label, at: state.at }
 }
 
+/**
+ * The feedback a row's buttons read their press from: the row's feedback without its note. A note, such as a stale
+ * press's, does not end a press that is out, so its button stays out and ignores another press.
+ */
+export function pressFeedbackIn(
+  id: string,
+  state: RowState,
+  last: LastAction | undefined,
+  turns: Turns,
+  now: number,
+  reportedAt?: number,
+): Feedback | null {
+  return feedbackIn(id, state, last, undefined, turns, now, reportedAt)
+}
+
 const fixLabel = (f: Pick<Finding, 'kind'>) => (f.kind === 'opportunity' ? 'Do it' : 'Fix')
 
 const WORKING_LABELS: Record<string, string> = {
@@ -526,7 +541,7 @@ export function isAgain(last: LastAction | undefined, action: string, isOut: boo
 }
 
 /** What a PR row's buttons read their presses from. */
-export type PressState = Pick<ViewInput, 'lastActions' | 'turns' | 'now'> & Partial<Pick<ViewInput, 'notes'>>
+export type PressState = Pick<ViewInput, 'lastActions' | 'turns' | 'now'>
 
 /**
  * A press status follows the row's title. While the press is out, an open row draws its status, such as "Comparing…",
@@ -1229,9 +1244,10 @@ export function inboxView({
   }
   const rowOf = (row: Omit<RowView, 'state' | 'feedback' | 'actions' | 'optionDescriptions'>): RowView => {
     const state = stateOf(row.id)
-    const feedback = feedbackIn(row.id, state, lastActions[row.id], notes[row.id], turns, now, row.item?.reportedAt)
+    const last = lastActions[row.id]
+    const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt)
     // A button must keep its width while its press is out, or the buttons after it can move to another line.
-    const actions = actionsOf(row, lastActions[row.id], state, feedback)
+    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt))
 
     return {
       ...row,
