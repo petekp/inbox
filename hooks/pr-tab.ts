@@ -1,6 +1,6 @@
 import type { Item, LastAction, Ledger, PressKind, PrCheck, PrThread, PrView, PrViews } from '../types'
 import { baseName, isFoldingPress, localLast, pendingResult, prSteps, recordPress, withQueued } from './presses'
-import type { Effect, HelpStep, PrActionId } from './presses'
+import type { Effect, HelpStep, PrActionId, RowPress } from './presses'
 import { clipLabel } from './text'
 import {
   commentLine,
@@ -23,7 +23,7 @@ import {
   waitingThreads,
 } from './prs'
 import type { IsThreadSent, PrStatus } from './prs'
-import { DOT, SETTLED_MS, feedbackOf, isAgain, outAction, pressOutAction } from './view'
+import { DOT, SETTLED_MS, isAgain, outAction, pressFeedbackIn, pressOutAction } from './view'
 import type { ActionEmphasis, PressState, RowWait } from './view'
 
 export const MAX_PRS = 12
@@ -397,6 +397,10 @@ export function prRowId(p: PrPress): string {
   return prMarkId(p.ref)
 }
 
+export function pressRowId(p: RowPress | PrPress): string {
+  return 'ref' in p ? prRowId(p) : p.id
+}
+
 function prRetryOf(
   last: LastAction | undefined,
   ref: string,
@@ -441,7 +445,7 @@ type LastPress = { last: LastAction | undefined; pressing: string | null; out: s
 
 function lastPressOf(presses: PressState, rowId: string): LastPress {
   const last = presses.lastActions[rowId]
-  const feedback = feedbackOf(rowId, last, undefined, presses.turns, presses.now)
+  const feedback = pressFeedbackIn(rowId, { is: 'open' }, last, presses.turns, presses.now)
 
   return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) }
 }

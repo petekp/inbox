@@ -27,6 +27,7 @@ import {
   runningMark,
   TABS,
 } from '../hooks/view'
+import { reportedTokens } from './session-script'
 
 const LEDGER_REPLY = `NEW: decide | 1 | Use Node or Python? | Node / Python | Node
 NEW: decide | 2 | Name the command greet? | - | yes`
@@ -355,20 +356,7 @@ async function replyKey(pane: Pick<Mounted, 'findAll'>, id: string) {
 }
 
 function sidebarReports(): Record<string, string | null>[] {
-  return ran
-    .filter(argv => argv[0] === 'herdr')
-    .map(argv =>
-      Object.fromEntries(
-        argv.flatMap((arg, n): [string, string | null][] => {
-          const next = argv[n + 1] ?? ''
-          if (arg === '--clear-token') return [[next, null]]
-          if (arg !== '--token') return []
-          const at = next.indexOf('=')
-
-          return [[next.slice(0, at), next.slice(at + 1)]]
-        }),
-      ),
-    )
+  return ran.filter(argv => argv[0] === 'herdr').map(reportedTokens)
 }
 
 function sidebarLines(): string[] {
@@ -4331,7 +4319,7 @@ test('every row in the demo, on every tab, draws its plan’s buttons in the pla
 })
 
 test('a row’s follow-ups stay on its buttons’ last line only when all of them fit there, and otherwise start the next line together', async () => {
-  const spacing = { gap: 1, followUpGap: 1, separator: 0 }
+  const spacing = { gap: 1, separator: 0 }
   expect(actionLines([4, 4], [3, 3], { ...spacing, width: 20 })).toEqual({
     lines: [[0, 1, 2, 3]],
     isFollowUpLineNew: false,

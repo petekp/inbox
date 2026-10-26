@@ -3,6 +3,7 @@ import type { Run } from './gh'
 import { closeFinding, closeItem, pruneClosed, reopenFinding, reopenItem } from './ledger'
 import type { Press } from './ledger'
 import { namedPrs, parseRef } from './prs'
+import type { PrPress } from './pr-tab'
 import type { Pressed } from './session'
 import { clipLabel } from './text'
 
@@ -175,7 +176,7 @@ export type PrActionId =
   | 'check-fix'
   | 'log'
 
-export function actionId(p: RowPress | { action: PrActionId }): string {
+export function actionId(p: RowPress | PrPress): string {
   return p.action === 'step' ? `step-${p.step}` : p.action
 }
 

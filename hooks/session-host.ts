@@ -9,7 +9,7 @@ import {
   transcriptCatchUpPrompt,
 } from './model-text'
 import type { Host } from './model-text'
-import { fetchTracked, prRowId, splitLinked } from './pr-tab'
+import { fetchTracked, pressRowId, splitLinked } from './pr-tab'
 import type { GhRun, PrPress } from './pr-tab'
 import {
   doneWake,
@@ -383,6 +383,7 @@ type PressHost<S extends Session> = Pick<
   | 'newId'
   | 'isDeliveryHeldUntilRun'
   | 'answerMessage'
+  | 'settleWindowMs'
 >
 
 /** A press that is saved, with what it still runs. */
@@ -395,7 +396,8 @@ export type StartedPress = {
 
 /**
  * Applies and saves a press. When it sends a message, the sent record is saved with it. A look can update its own
- * drawing before `finish` delivers, since a host's delivery can run the host's own handlers before it returns.
+ * drawing before `finish` delivers, since a host's delivery can run the host's own handlers before it returns. `holds`
+ * are the reply holds the look draws the rows with, so a press whose button draws as out sends nothing.
  */
 export async function startPress<S extends Session>(
   host: PressHost<S>,
@@ -403,7 +405,7 @@ export async function startPress<S extends Session>(
   isStale: boolean,
   holds: ReplyHolds,
 ): Promise<StartedPress> {
-  const rowId = 'ref' in p ? prRowId(p) : p.id
+  const rowId = pressRowId(p)
   const localPressId = host.newId()
   let isUnconfirmed = false
   let isRowFailed = false
@@ -445,7 +447,7 @@ export async function startPress<S extends Session>(
       if (note) return s
       // Read under the lock, so the press is timed after every write that landed before it.
       const at = await host.now()
-      const r = pressOn(s, p, at, localPressId, host.answerMessage)
+      const r = pressOn(s, p, at, { settleWindowMs: host.settleWindowMs, holds }, localPressId, host.answerMessage)
       if ('stale' in r) {
         note = 'stale'
         return s

@@ -26,12 +26,13 @@ import {
   upgradeLedger,
 } from '../hooks/ledger'
 import { readCommandRow, resetTime, stopKindOf } from '../hooks/claude'
-import { statusLine } from '../hooks/herdr'
+import { herdrTokens } from '../hooks/herdr'
 import { parseInline } from '../hooks/inline'
 import { EMPTY_OVERVIEW } from '../hooks/overview'
 import { applyPress } from '../hooks/presses'
+import { emptySession, sessionView } from '../hooks/session'
 import { agentTools, recordClose, recordItem } from '../hooks/tools'
-import type { Item } from '../types'
+import type { Dialog, Item, Ledger, Stop } from '../types'
 
 const REPLY = `NEW: decide | 1 | Rename greet.mjs to hello.mjs? | Yes / No | yes
 NEW: decide | 2 | Cut CHANGELOG.md down to this release? | - | -
@@ -1068,23 +1069,26 @@ describe("the person's own commands", () => {
   })
 })
 
-describe('statusLine', () => {
+describe('the Herdr status line', () => {
+  const statusOf = (ledger: Ledger, stop: Stop | null, dialogs: Dialog[]) =>
+    herdrTokens(ledger, stop, sessionView({ ...emptySession(), ledger }, 3, 0, false), dialogs).inbox ?? ''
+
   test('names the first waiting item after the count, and says where the work stands when nothing waits', () => {
     const waiting = applyUpdate(EMPTY, parseReply(REPLY)!, 1, 1)
-    expect(statusLine(waiting, null, [])).toBe('3 · Rename greet.mjs to hello.mjs?')
+    expect(statusOf(waiting, null, [])).toBe('3 · Rename greet.mjs to hello.mjs?')
     const settled = applyUpdate(waiting, parseReply('CLOSED: i1 | yes\nCLOSED: i2 | no\nCLOSED: i3 | done')!, 2, 2)
-    expect(statusLine(settled, null, [])).toBe('')
+    expect(statusOf(settled, null, [])).toBe('')
     const described = { ...settled, overview: { ...EMPTY_OVERVIEW, headline: 'Reducer merged' } }
-    expect(statusLine(described, null, [])).toBe('Reducer merged')
-    expect(statusLine(EMPTY, null, [])).toBe('')
+    expect(statusOf(described, null, [])).toBe('Reducer merged')
+    expect(statusOf(EMPTY, null, [])).toBe('')
   })
 
   test('puts a stop and its fix first, then an open dialog', () => {
     const waiting = applyUpdate(EMPTY, parseReply(REPLY)!, 1, 1)
     const dialog = { kind: 'permission' as const, text: 'push main to origin', key: 'Bash command=git push' }
-    expect(statusLine(waiting, null, [dialog])).toBe('Allow push main to origin?')
+    expect(statusOf(waiting, null, [dialog])).toBe('Allow push main to origin?')
     expect(
-      statusLine(
+      statusOf(
         waiting,
         { kind: stopKindOf('authentication_failed', ''), detail: 'authentication_failed', resets: null, at: 1 },
         [dialog],
@@ -1095,7 +1099,7 @@ describe('statusLine', () => {
   test('tells a reached usage limit, with its reset time, from a busy server', () => {
     const limit = "You've hit your weekly limit · resets 7:33pm (America/Los_Angeles)"
     expect(stopKindOf('rate_limit', limit)).toBe('usage-limit')
-    expect(statusLine(EMPTY, { kind: 'usage-limit', detail: 'rate_limit', resets: resetTime(limit), at: 1 }, [])).toBe(
+    expect(statusOf(EMPTY, { kind: 'usage-limit', detail: 'rate_limit', resets: resetTime(limit), at: 1 }, [])).toBe(
       '! Limit: resets 7:33pm',
     )
     expect(stopKindOf('rate_limit', 'API Error: Server is temporarily limiting requests (not your usage limit)')).toBe(

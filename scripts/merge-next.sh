@@ -4,6 +4,7 @@
 # (codex/build.mjs) and omp/dist (omp/build.ts). The Codex tab page is one long line of
 # codex/plugin/dist/server-handler.mjs, so two branches that change what the tab draws conflict on that line.
 #
+# - Nothing to merge: says so and exits 0, without rebuilding or checking.
 # - A clean merge: rebuilds anyway, since a text merge of two bundles can be wrong without conflicting, and commits
 #   any bundle the rebuild changed as its own commit.
 # - Only bundles conflict: rebuilds them and finishes the merge commit.
@@ -122,6 +123,7 @@ else
         fail "Commit them or move them aside first."
     fi
     git fetch origin
+    before=$(git rev-parse HEAD)
     if ! git merge --no-edit "$from"; then
         is_merging || fail "Git could not merge $from."
         conflicts=$(git diff --name-only --diff-filter=U | sources_only)
@@ -133,22 +135,26 @@ else
         fi
         echo "Only bundles conflict."
     fi
+    if ! is_merging && [ "$(git rev-parse HEAD)" = "$before" ]; then
+        echo "Nothing merged from $from, so nothing to rebuild or check."
+        exit 0
+    fi
 fi
 
 if is_merging; then
     rebuild ||
         fail "The build failed, and the merge is still in progress. Fix the sources, stage them with git add, then run $SCRIPT --continue."
-    git add -- $(git ls-files -- $BUNDLE_DIRS | sort -u)
-    git commit --no-edit --cleanup=strip
 else
     rebuild || fail "The build failed after the merge. Fix the sources, commit them, then run $SCRIPT again."
-    rebuilt=$(git diff --name-only -- $BUNDLE_DIRS)
-    if [ -n "$rebuilt" ]; then
-        git add -- $rebuilt
-        git commit -m "Rebuild the bundles after merging $from"
-    else
-        echo "The rebuild changed no bundle."
-    fi
+fi
+# git add -u stages a bundle in conflict as rebuilt, which resolves it.
+git add -u -- $BUNDLE_DIRS
+if is_merging; then
+    git commit --no-edit --cleanup=strip
+elif git diff --cached --quiet; then
+    echo "The rebuild changed no bundle."
+else
+    git commit -m "Rebuild the bundles after merging $from"
 fi
 
 mkdir -p .scratch

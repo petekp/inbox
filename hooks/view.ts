@@ -422,6 +422,42 @@ export function feedbackOf(
   }
 }
 
+/**
+ * The feedback a row draws in its state. A settled row draws none. A held row draws why it closed, unless a note shows
+ * or a reply sent since the close failed.
+ */
+export function feedbackIn(
+  id: string,
+  state: RowState,
+  last: LastAction | undefined,
+  note: RowNote | undefined,
+  turns: Turns,
+  now: number,
+  reportedAt?: number,
+): Feedback | null {
+  if (state.is === 'settled') return null
+  const f = feedbackOf(id, last, note, turns, now, reportedAt)
+  if (state.is !== 'held') return f
+  const isFailedReply = f?.is === 'notSent' && last?.action === 'type' && last.at >= state.at
+
+  return f?.is === 'note' || isFailedReply ? f : { is: 'closed', label: state.label, at: state.at }
+}
+
+/**
+ * The feedback a row's buttons read their press from: the row's feedback without its note. A note, such as a stale
+ * press's, does not end a press that is out, so its button stays out and ignores another press.
+ */
+export function pressFeedbackIn(
+  id: string,
+  state: RowState,
+  last: LastAction | undefined,
+  turns: Turns,
+  now: number,
+  reportedAt?: number,
+): Feedback | null {
+  return feedbackIn(id, state, last, undefined, turns, now, reportedAt)
+}
+
 const fixLabel = (f: Pick<Finding, 'kind'>) => (f.kind === 'opportunity' ? 'Do it' : 'Fix')
 
 const WORKING_LABELS: Record<string, string> = {
@@ -1075,7 +1111,7 @@ export function rowKeyPlan(r: RowView, isAllShown: boolean): { keys: PlannedKey[
 }
 
 /** Widths in a look's own unit. `separator` is the extra room a look draws between the buttons and the follow-ups when they share a line. */
-export type ActionSpacing = { width: number; gap: number; followUpGap: number; separator: number }
+export type ActionSpacing = { width: number; gap: number; separator: number }
 
 /**
  * Lays out a row's buttons, then its follow-ups, filling each line before the next. The follow-ups stay on the
@@ -1085,7 +1121,7 @@ export type ActionSpacing = { width: number; gap: number; followUpGap: number; s
 export function actionLines(
   keys: readonly number[],
   more: readonly number[],
-  { width, gap, followUpGap, separator }: ActionSpacing,
+  { width, gap, separator }: ActionSpacing,
 ): { lines: number[][]; isFollowUpLineNew: boolean } {
   const lines: number[][] = []
   let used = 0
@@ -1100,13 +1136,13 @@ export function actionLines(
     }
   }
   keys.forEach((size, i) => place(i, size, gap))
-  const followUpsWidth = more.reduce((sum, size) => sum + size, followUpGap * Math.max(0, more.length - 1))
+  const followUpsWidth = more.reduce((sum, size) => sum + size, gap * Math.max(0, more.length - 1))
   const isFollowUpLineNew = keys.length > 0 && more.length > 0 && used + gap + separator + followUpsWidth > width
   more.forEach((size, i) => {
     if (i === 0 && isFollowUpLineNew) {
       lines.push([keys.length])
       used = size
-    } else place(keys.length + i, size, i === 0 ? gap + separator : followUpGap)
+    } else place(keys.length + i, size, i === 0 ? gap + separator : gap)
   })
 
   return { lines, isFollowUpLineNew }
@@ -1206,19 +1242,12 @@ export function inboxView({
 
     return isHandedOff(last, turns) ? { is: 'handedOff' } : { is: 'open' }
   }
-  const feedbackIn = (id: string, state: RowState, reportedAt: number | undefined): Feedback | null => {
-    if (state.is === 'settled') return null
-    const f = feedbackOf(id, lastActions[id], notes[id], turns, now, reportedAt)
-    if (state.is !== 'held') return f
-    const isFailedReply = f?.is === 'notSent' && lastActions[id]?.action === 'type' && lastActions[id].at >= state.at
-
-    return f?.is === 'note' || isFailedReply ? f : { is: 'closed', label: state.label, at: state.at }
-  }
   const rowOf = (row: Omit<RowView, 'state' | 'feedback' | 'actions' | 'optionDescriptions'>): RowView => {
     const state = stateOf(row.id)
-    const feedback = feedbackIn(row.id, state, row.item?.reportedAt)
+    const last = lastActions[row.id]
+    const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt)
     // A button must keep its width while its press is out, or the buttons after it can move to another line.
-    const actions = actionsOf(row, lastActions[row.id], state, feedback)
+    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt))
 
     return {
       ...row,

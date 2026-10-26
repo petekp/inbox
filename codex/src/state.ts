@@ -49,6 +49,11 @@ export type SessionState = Session & {
   /** The tab the Inbox tab last showed, from its latest view request. Codex only. */
   shownTab: ShownTab
   heard: Heard
+  /**
+   * The newest report a hook or an update sent to the session's Herdr pane: its key from `herdrReportKey`, and its
+   * `seq`. Each runs in its own process, so this is how a later one knows its report would change nothing.
+   */
+  herdrReport?: { key: string; seq: number }
 }
 
 /**

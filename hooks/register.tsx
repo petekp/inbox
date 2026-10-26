@@ -99,7 +99,7 @@ import {
   prBlockActions,
   prCheckId,
   prMarkId,
-  prRowId,
+  pressRowId,
   prRowWaits,
   prThreadId,
   threadActions,
@@ -1932,10 +1932,6 @@ function leavePr($: EngineInterface, ref: string, at: number) {
   )
 }
 
-function pressRowId(p: RowPress | PrPress): string {
-  return 'ref' in p ? prRowId(p) : p.id
-}
-
 /** Tells Claude about rows closed with Done once their settle window has passed, unless a turn runs. */
 async function wakeForDone($: EngineInterface) {
   await wakeSessionForDone(hostOf($, currentOwner()))
@@ -2110,8 +2106,9 @@ async function runDemoPress(
   if (!('ref' in p) && p.action === 'type') await update($, TYPING, t => (t === p.id ? null : t))
   let applied = { stale: true } as Applied
   let isClosing = false
-  const [typing, drafts] = await Promise.all([read($, TYPING), read($, DRAFTS)])
-  const held = new Set(Object.keys(heldReplies(typing, drafts)))
+  const [typing, drafts, discarded] = await Promise.all([read($, TYPING), read($, DRAFTS), read($, DISCARDED)])
+  const holds = { replies: heldReplies(typing, drafts), discarded }
+  const held = new Set(Object.keys(holds.replies))
   await update($, DEMO, d => {
     if (!d) return d
     const sample = emptySession()
@@ -2125,6 +2122,7 @@ async function runDemoPress(
       },
       p,
       now,
+      { settleWindowMs: SETTLED_MS, holds },
     )
     applied = r
     const { [rowId]: _replaced, ...notes } = d.notes
@@ -3558,12 +3556,11 @@ export const register: Register = on => {
       keys.flatMap(({ key, hotkey, kind: _kind, emphasis: _emphasis, icon: _icon, isOut: _isOut, ...k }) =>
         hotkey ? [<Button key={`${key}${suffix}`} plain hotkey={hotkey} {...k} label={shownLabel(k)} />] : [],
       )
-    const terminalKeyCells = (k: KeyAction) => (k.hotkey ? k.hotkey.length + 2 : 0) + shownLabel(k).length
+    const terminalKeyCells = (k: KeyAction) => (k.hotkey ? k.hotkey.length + 2 : 0) + cellWidth(shownLabel(k))
     const terminalActionLines = (keys: KeyAction[], more: KeyAction[], width: number) =>
       actionLines(keys.map(terminalKeyCells), more.map(terminalKeyCells), {
         width,
         gap: space.buttonGap,
-        followUpGap: space.buttonGap,
         // keyRow's `·` and the gap after it.
         separator: 1 + space.buttonGap,
       })

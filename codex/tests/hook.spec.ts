@@ -17,6 +17,7 @@ import { readState, statePath, updateState } from '../src/state'
 import { CODEX } from '../src/texts'
 import { runUpdates as runBothCalls } from '../src/update'
 import { fakeRunner, hookDeps, input, ledgerOnly, rolloutCopy, tempDir } from './helpers'
+import { reportedTokens } from '../../tests/session-script'
 
 const runUpdates = (
   dir: string,
@@ -588,14 +589,46 @@ test('a session resumed with earlier turns is marked behind at its first hook an
 
   const reports = herdr.calls.map(args => args.join(' '))
   assert.ok(reports.every(r => r.startsWith('herdr pane report-metadata p1 --source inbox ')))
-  assert.match(reports[0] ?? '', /--clear-token inbox-stop --clear-token inbox-needs-you --clear-token inbox-findings/)
-  assert.match(reports.at(-1) ?? '', /--token inbox=Allow edits\? --clear-token inbox-stop --token inbox-needs-you=1 /)
+  const tokens = herdr.calls.map(reportedTokens)
+  const cleared = {
+    inbox: null,
+    'inbox-stop': null,
+    'inbox-needs-you': null,
+    'inbox-findings': null,
+    'inbox-prs': null,
+  }
+  assert.deepEqual(tokens[0], cleared)
+  assert.deepEqual(tokens.at(-1), { ...cleared, inbox: 'Allow edits?', 'inbox-needs-you': '1' })
   const seqs = herdr.calls.map(args => Number(args[args.indexOf('--seq') + 1]))
   assert.deepEqual(
     seqs,
     [...seqs].sort((a, b) => a - b),
   )
   assert.equal(new Set(seqs).size, seqs.length)
+})
+
+test('a hook in a new process sends no Herdr report that would change nothing, and reports a change the MCP server made', async () => {
+  const dir = tempDir()
+  const herdr = fakeRunner(() => ({ code: 0, stdout: '', stderr: '' }))
+  let at = 100
+  const hookProcess = () => ({
+    ...hookDeps(dir),
+    onWrite: herdrOnWrite({ HERDR_PANE_ID: 'p1' }, herdr.exec, dir, () => ++at),
+  })
+  const toolUse = input('PreToolUse', { tool_name: 'Bash', tool_input: { command: 'ls' } })
+
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), hookProcess())
+  await handleHook(toolUse, hookProcess())
+  assert.equal(herdr.calls.length, 1)
+
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: addAgentItem(s.ledger, { kind: 'question', ask: 'Ship it?', options: [], rec: null, helps: [] }, 1000)
+      .ledger,
+  }))
+  await handleHook(toolUse, hookProcess())
+  assert.equal(herdr.calls.length, 2)
+  assert.equal(reportedTokens(herdr.calls[1]!)['inbox-needs-you'], '1')
 })
 
 function forkRollout(parentId: string): string {

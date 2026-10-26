@@ -19,7 +19,7 @@ import {
   keepsView,
   olderPrsText,
   linkedPrs,
-  prRowId,
+  pressRowId,
   threadSentIn,
 } from './pr-tab'
 import type { Applied, PrPress } from './pr-tab'
@@ -38,8 +38,8 @@ import { recordClose, recordItem } from './tools'
 import { upgradeHostTasks } from './host-tasks'
 import { applyOverview, lookEnded, lookStarted } from './overview'
 import type { OverviewAnswer } from './overview'
-import { feedbackOf, inboxView, NO_HOLDS, outAction, overviewPage, perTurnStatus } from './view'
-import type { InboxView, OverviewPage, ReplyHolds } from './view'
+import { allRows, inboxView, NO_HOLDS, outAction, overviewPage, perTurnStatus, pressFeedbackIn } from './view'
+import type { InboxView, OverviewPage, ReplyHolds, RowState } from './view'
 import type { LastAction, Ledger, PrView, PrViews, RowNote, Session, Stop, Turns, TurnDialogQuestion } from '../types'
 
 export type { Session } from '../types'
@@ -536,26 +536,33 @@ export function appliedCatchUp<S extends Session>(s: S, begun: Session, parsed: 
 
 export type Pressed = Exclude<Applied, { stale: true }>
 
-/** A press of the action whose press is still out on its row. It changes nothing, so a second press sends nothing. */
-function isRepeatWhileOut(s: Session, p: RowPress | PrPress, at: number): boolean {
-  const rowId = 'ref' in p ? prRowId(p) : p.id
-  const saved = s.lastActions[rowId]
-  const last = saved && withoutStaleResult(saved, at)
-  const reportedAt = 'ref' in p ? undefined : s.ledger.items.find(i => i.id === p.id)?.reportedAt
+/** What a look draws a session's rows with besides the session: the settle window and the reply holds. */
+export type DrawnWith = { settleWindowMs: number; holds: ReplyHolds }
 
-  const pressed = 'ref' in p ? p.action : actionId(p)
+/**
+ * A press of an action whose button the look draws as out, since its earlier press is still out. It changes nothing,
+ * so a second press sends nothing.
+ */
+function isRepeatWhileOut(s: Session, p: RowPress | PrPress, at: number, drawn: DrawnWith): boolean {
+  const rowId = pressRowId(p)
+  const view = sessionView(s, at, drawn.settleWindowMs, false, drawn.holds)
+  const row = allRows(view).find(r => r.id === rowId)
+  const last = view.lastActions[rowId]
+  const state: RowState = row?.state ?? { is: 'open' }
+  const feedback = pressFeedbackIn(rowId, state, last, s.presence, at, row?.item?.reportedAt)
 
-  return outAction(last, feedbackOf(rowId, last, undefined, s.presence, at, reportedAt)) === pressed
+  return outAction(last, feedback) === actionId(p)
 }
 
 export function pressOn(
   s: Session,
   p: RowPress | PrPress,
   at: number,
+  drawn: DrawnWith,
   localPressId?: string,
   answerMessage?: AnswerMessage,
 ): Pressed | { stale: true } {
-  if (isRepeatWhileOut(s, p, at)) return { ledger: s.ledger, lasts: {}, drop: [], effects: [] }
+  if (isRepeatWhileOut(s, p, at, drawn)) return { ledger: s.ledger, lasts: {}, drop: [], effects: [] }
   const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId }
   if ('ref' in p) return applyPrPress(s.ledger, s.prViews, s.lastActions, p, ctx)
   const item = s.ledger.items.find(i => i.id === p.id)

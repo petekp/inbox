@@ -28,37 +28,38 @@ export const CLEARED_TOKENS: HerdrTokens = Object.fromEntries(
 
 export const HERDR_TIMEOUT_MS = 5000
 
-function stopShort(stop: Stop): string {
+function stopLine(stop: Stop): string {
   switch (stop.kind) {
     case 'sign-in':
-      return 'Signed out: /login'
+      return '! Signed out: /login'
     case 'billing':
-      return 'Billing problem'
+      return '! Billing problem'
     case 'usage-limit':
-      return stop.resets ? `Limit: resets ${stop.resets}` : 'Usage limit reached'
+      return stop.resets ? `! Limit: resets ${stop.resets}` : '! Usage limit reached'
     default:
-      return 'API error: resume'
+      return '! API error: resume'
   }
-}
-
-function stopLine(stop: Stop): string {
-  return `! ${stopShort(stop)}`
 }
 
 function dialogText(dialog: Dialog): string {
   return dialog.kind === 'permission' ? `Allow ${dialog.text}?` : dialog.text
 }
 
-export function statusLine(ledger: Ledger, stop: Stop | null, dialogs: readonly Dialog[]): string {
+/**
+ * What the status line reads when no stop or dialog leads it: the first ask that waits, how many asks and findings
+ * wait, and the Overview's headline.
+ */
+export type StatusInput = { firstAsk: string | null; asks: number; findings: number; headline: string | null }
+
+export function statusLine(stop: Stop | null, dialogs: readonly Dialog[], input: StatusInput): string {
   if (stop) return stopLine(stop)
   const dialog = dialogs[0]
   if (dialog) return dialogText(dialog)
-  const first = ledger.items[0]
-  if (first) return ledger.items.length > 1 ? `${ledger.items.length} · ${first.ask}` : first.ask
-  const count = ledger.findings.length
-  const findings = count === 0 ? null : `${count} finding${count === 1 ? '' : 's'}`
+  const { firstAsk, asks, findings, headline } = input
+  if (firstAsk !== null) return asks > 1 ? `${asks} · ${firstAsk}` : firstAsk
+  const findingsText = findings === 0 ? null : `${findings} finding${findings === 1 ? '' : 's'}`
 
-  return [ledger.overview?.headline, findings].filter(Boolean).join(' · ')
+  return [headline, findingsText].filter(Boolean).join(' · ')
 }
 
 /**
@@ -72,10 +73,12 @@ export function herdrTokens(
   view: SessionView,
   dialogs: readonly Dialog[],
 ): HerdrTokens {
-  const items = [...view.needsYou.questions, ...view.needsYou.tasks]
-    .filter(isWaitingRow)
-    .flatMap(r => (r.item ? [r.item] : []))
-  const findings = view.findings.rows.filter(isWaitingRow).flatMap(r => (r.finding ? [r.finding] : []))
+  const input: StatusInput = {
+    firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
+    asks: view.needsYou.count,
+    findings: view.findings.count,
+    headline: ledger.overview?.headline ?? null,
+  }
   const counts = ROW_TABS.map(t => {
     const count = view[t.id].count
 
@@ -83,7 +86,7 @@ export function herdrTokens(
   })
 
   return {
-    [STATUS_TOKEN]: statusLine({ ...ledger, items, findings }, stop, dialogs) || null,
+    [STATUS_TOKEN]: statusLine(stop, dialogs, input) || null,
     [STOP_TOKEN]: stop ? stopLine(stop) : null,
     ...Object.fromEntries(counts),
   }
@@ -109,6 +112,11 @@ export function herdrReport(pane: string, tokens: HerdrTokens, seq?: number): st
   ]
 }
 
+/** What a report sets, whatever its `seq`. Two reports with the same key show the same sidebar. */
+export function herdrReportKey(pane: string, tokens: HerdrTokens): string {
+  return herdrReport(pane, tokens).join('\n')
+}
+
 /** A report for a pane, or null when the session runs in no Herdr pane. */
 export type HerdrReport = { pane: string; tokens: HerdrTokens; seq?: number } | null
 
@@ -128,7 +136,7 @@ export function herdrReporter(): (
       .then(async () => {
         const r = await report()
         if (!r) return
-        const key = herdrReport(r.pane, r.tokens).join('\n')
+        const key = herdrReportKey(r.pane, r.tokens)
         if (key === sent) return
         sent = key
         await send(herdrReport(r.pane, r.tokens, r.seq))

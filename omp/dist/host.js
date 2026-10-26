@@ -2442,6 +2442,9 @@ function rowFeedbackText(row, look) {
   const f = row.feedback;
   return f ? f.is === "done" && row.state.is === "handedOff" ? f.label : feedbackText(f, look) : null;
 }
+function allRows(v) {
+  return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows];
+}
 function closedShown(closed, drawnSettled) {
   return closed.filter((d) => !drawnSettled.has(d.id)).slice(0, CLOSED_SHOWN);
 }
@@ -2531,6 +2534,18 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
     at: last.at,
     ...isHandedStep ? { isHandedStep: true } : {}
   };
+}
+function feedbackIn(id, state, last, note, turns, now, reportedAt) {
+  if (state.is === "settled")
+    return null;
+  const f = feedbackOf(id, last, note, turns, now, reportedAt);
+  if (state.is !== "held")
+    return f;
+  const isFailedReply = f?.is === "notSent" && last?.action === "type" && last.at >= state.at;
+  return f?.is === "note" || isFailedReply ? f : { is: "closed", label: state.label, at: state.at };
+}
+function pressFeedbackIn(id, state, last, turns, now, reportedAt) {
+  return feedbackIn(id, state, last, undefined, turns, now, reportedAt);
 }
 var fixLabel = (f) => f.kind === "opportunity" ? "Do it" : "Fix";
 var WORKING_LABELS = {
@@ -2873,7 +2888,7 @@ function rowKeyPlan(r, isAllShown) {
   }
   return { keys, more };
 }
-function actionLines(keys, more, { width, gap, followUpGap, separator }) {
+function actionLines(keys, more, { width, gap, separator }) {
   const lines = [];
   let used = 0;
   const place = (at, size, before) => {
@@ -2887,14 +2902,14 @@ function actionLines(keys, more, { width, gap, followUpGap, separator }) {
     }
   };
   keys.forEach((size, i) => place(i, size, gap));
-  const followUpsWidth = more.reduce((sum, size) => sum + size, followUpGap * Math.max(0, more.length - 1));
+  const followUpsWidth = more.reduce((sum, size) => sum + size, gap * Math.max(0, more.length - 1));
   const isFollowUpLineNew = keys.length > 0 && more.length > 0 && used + gap + separator + followUpsWidth > width;
   more.forEach((size, i) => {
     if (i === 0 && isFollowUpLineNew) {
       lines.push([keys.length]);
       used = size;
     } else
-      place(keys.length + i, size, i === 0 ? gap + separator : followUpGap);
+      place(keys.length + i, size, i === 0 ? gap + separator : gap);
   });
   return { lines, isFollowUpLineNew };
 }
@@ -2972,19 +2987,11 @@ function inboxView({
       };
     return isHandedOff(last, turns) ? { is: "handedOff" } : { is: "open" };
   };
-  const feedbackIn = (id, state, reportedAt) => {
-    if (state.is === "settled")
-      return null;
-    const f = feedbackOf(id, lastActions[id], notes[id], turns, now, reportedAt);
-    if (state.is !== "held")
-      return f;
-    const isFailedReply = f?.is === "notSent" && lastActions[id]?.action === "type" && lastActions[id].at >= state.at;
-    return f?.is === "note" || isFailedReply ? f : { is: "closed", label: state.label, at: state.at };
-  };
   const rowOf = (row) => {
     const state = stateOf(row.id);
-    const feedback = feedbackIn(row.id, state, row.item?.reportedAt);
-    const actions = actionsOf(row, lastActions[row.id], state, feedback);
+    const last = lastActions[row.id];
+    const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt);
+    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt));
     return {
       ...row,
       state,
@@ -3094,46 +3101,46 @@ var COUNT_TOKENS = {
 };
 var CLEARED_TOKENS = Object.fromEntries([STATUS_TOKEN, STOP_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null]));
 var HERDR_TIMEOUT_MS = 5000;
-function stopShort(stop) {
+function stopLine(stop) {
   switch (stop.kind) {
     case "sign-in":
-      return "Signed out: /login";
+      return "! Signed out: /login";
     case "billing":
-      return "Billing problem";
+      return "! Billing problem";
     case "usage-limit":
-      return stop.resets ? `Limit: resets ${stop.resets}` : "Usage limit reached";
+      return stop.resets ? `! Limit: resets ${stop.resets}` : "! Usage limit reached";
     default:
-      return "API error: resume";
+      return "! API error: resume";
   }
-}
-function stopLine(stop) {
-  return `! ${stopShort(stop)}`;
 }
 function dialogText(dialog) {
   return dialog.kind === "permission" ? `Allow ${dialog.text}?` : dialog.text;
 }
-function statusLine(ledger, stop, dialogs) {
+function statusLine(stop, dialogs, input) {
   if (stop)
     return stopLine(stop);
   const dialog = dialogs[0];
   if (dialog)
     return dialogText(dialog);
-  const first = ledger.items[0];
-  if (first)
-    return ledger.items.length > 1 ? `${ledger.items.length} \xB7 ${first.ask}` : first.ask;
-  const count = ledger.findings.length;
-  const findings = count === 0 ? null : `${count} finding${count === 1 ? "" : "s"}`;
-  return [ledger.overview?.headline, findings].filter(Boolean).join(" \xB7 ");
+  const { firstAsk, asks, findings, headline } = input;
+  if (firstAsk !== null)
+    return asks > 1 ? `${asks} \xB7 ${firstAsk}` : firstAsk;
+  const findingsText = findings === 0 ? null : `${findings} finding${findings === 1 ? "" : "s"}`;
+  return [headline, findingsText].filter(Boolean).join(" \xB7 ");
 }
 function herdrTokens(ledger, stop, view, dialogs) {
-  const items = [...view.needsYou.questions, ...view.needsYou.tasks].filter(isWaitingRow).flatMap((r) => r.item ? [r.item] : []);
-  const findings = view.findings.rows.filter(isWaitingRow).flatMap((r) => r.finding ? [r.finding] : []);
+  const input = {
+    firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
+    asks: view.needsYou.count,
+    findings: view.findings.count,
+    headline: ledger.overview?.headline ?? null
+  };
   const counts = ROW_TABS.map((t) => {
     const count = view[t.id].count;
     return [COUNT_TOKENS[t.id], stop || count === 0 ? null : String(count)];
   });
   return {
-    [STATUS_TOKEN]: statusLine({ ...ledger, items, findings }, stop, dialogs) || null,
+    [STATUS_TOKEN]: statusLine(stop, dialogs, input) || null,
     [STOP_TOKEN]: stop ? stopLine(stop) : null,
     ...Object.fromEntries(counts)
   };
@@ -3150,6 +3157,10 @@ function herdrReport(pane, tokens, seq) {
     ...seq === undefined ? [] : ["--seq", String(seq)]
   ];
 }
+function herdrReportKey(pane, tokens) {
+  return herdrReport(pane, tokens).join(`
+`);
+}
 function herdrReporter() {
   let sent = null;
   let sending = Promise.resolve();
@@ -3158,8 +3169,7 @@ function herdrReporter() {
       const r = await report();
       if (!r)
         return;
-      const key = herdrReport(r.pane, r.tokens).join(`
-`);
+      const key = herdrReportKey(r.pane, r.tokens);
       if (key === sent)
         return;
       sent = key;
@@ -3375,6 +3385,9 @@ function prRowId(p) {
     return threadRowId(p.ref, p.thread);
   return prMarkId(p.ref);
 }
+function pressRowId(p) {
+  return "ref" in p ? prRowId(p) : p.id;
+}
 function prRetryOf(last, ref, thread, check = null) {
   if (last?.delivery?.state !== "failed")
     return null;
@@ -3389,7 +3402,7 @@ function prRetryOf(last, ref, thread, check = null) {
 }
 function lastPressOf(presses, rowId) {
   const last = presses.lastActions[rowId];
-  const feedback = feedbackOf(rowId, last, undefined, presses.turns, presses.now);
+  const feedback = pressFeedbackIn(rowId, { is: "open" }, last, presses.turns, presses.now);
   return { last, pressing: pressOutAction(last, feedback), out: outAction(last, feedback) };
 }
 function again(row, action, label) {
@@ -4069,16 +4082,17 @@ function appliedCatchUp(s, begun, parsed, now) {
     }
   });
 }
-function isRepeatWhileOut(s, p, at) {
-  const rowId = "ref" in p ? prRowId(p) : p.id;
-  const saved = s.lastActions[rowId];
-  const last = saved && withoutStaleResult(saved, at);
-  const reportedAt = "ref" in p ? undefined : s.ledger.items.find((i) => i.id === p.id)?.reportedAt;
-  const pressed = "ref" in p ? p.action : actionId(p);
-  return outAction(last, feedbackOf(rowId, last, undefined, s.presence, at, reportedAt)) === pressed;
+function isRepeatWhileOut(s, p, at, drawn) {
+  const rowId = pressRowId(p);
+  const view = sessionView(s, at, drawn.settleWindowMs, false, drawn.holds);
+  const row = allRows(view).find((r) => r.id === rowId);
+  const last = view.lastActions[rowId];
+  const state = row?.state ?? { is: "open" };
+  const feedback = pressFeedbackIn(rowId, state, last, s.presence, at, row?.item?.reportedAt);
+  return outAction(last, feedback) === actionId(p);
 }
-function pressOn(s, p, at, localPressId, answerMessage) {
-  if (isRepeatWhileOut(s, p, at))
+function pressOn(s, p, at, drawn, localPressId, answerMessage) {
+  if (isRepeatWhileOut(s, p, at, drawn))
     return { ledger: s.ledger, lasts: {}, drop: [], effects: [] };
   const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId };
   if ("ref" in p)
@@ -4372,7 +4386,7 @@ async function wakeForDone(host, current) {
   });
 }
 async function startPress(host, p, isStale, holds) {
-  const rowId = "ref" in p ? prRowId(p) : p.id;
+  const rowId = pressRowId(p);
   const localPressId = host.newId();
   let isUnconfirmed = false;
   let isRowFailed = false;
@@ -4413,7 +4427,7 @@ async function startPress(host, p, isStale, holds) {
     if (note)
       return s;
     const at = await host.now();
-    const r = pressOn(s, p, at, localPressId, host.answerMessage);
+    const r = pressOn(s, p, at, { settleWindowMs: host.settleWindowMs, holds }, localPressId, host.answerMessage);
     if ("stale" in r) {
       note = "stale";
       return s;
@@ -5219,7 +5233,6 @@ function buttonLines(line, ui, indent, width, s) {
   const { lines } = actionLines(sizes.slice(0, keyCount), sizes.slice(keyCount), {
     width: width - indent,
     gap: 0,
-    followUpGap: 0,
     separator: 0
   });
   return lines.map((at) => " ".repeat(indent) + at.map((i) => cells[i]).join(""));
@@ -5465,7 +5478,7 @@ function createPanel(deps) {
   async function press(p) {
     if (p.action === "resume")
       return resume();
-    const rowId = "ref" in p ? prRowId(p) : p.id;
+    const rowId = pressRowId(p);
     const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now());
     const sentDraft = !("ref" in p) && p.action === "type" ? ui.drafts[p.id] : undefined;
     const outcome = await source.press(p, holdsOf(ui)).catch((err) => ({
@@ -6070,7 +6083,7 @@ function demoSource(deps) {
     }),
     press: async (p, holds) => {
       const at = deps.now();
-      const r = pressOn(state, p, at);
+      const r = pressOn(state, p, at, { settleWindowMs: deps.settleWindowMs, holds });
       if ("stale" in r)
         return { error: null, note: "stale", isUnconfirmed: false };
       const after = demoAfterPress({ lastActions: state.lastActions, turns: state.presence }, r, new Set(Object.keys(holds.replies)));

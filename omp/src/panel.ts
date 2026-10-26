@@ -912,7 +912,6 @@ function buttonLines(line: Line, ui: PanelUi, indent: number, width: number, s: 
   const { lines } = actionLines(sizes.slice(0, keyCount), sizes.slice(keyCount), {
     width: width - indent,
     gap: 0,
-    followUpGap: 0,
     separator: 0,
   })
 

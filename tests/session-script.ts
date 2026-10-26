@@ -157,3 +157,16 @@ export async function runSessionScript<S extends Session>(makeHost: MakeHost<S>,
   equal(undoneAnswer.note, 'stale', 'Undo on a row the agent already has')
   equal((await snapshot()).delivered, [ANSWER], 'Undo sends nothing')
 }
+
+export function reportedTokens(argv: readonly string[]): Record<string, string | null> {
+  return Object.fromEntries(
+    argv.flatMap((arg, n): [string, string | null][] => {
+      const next = argv[n + 1] ?? ''
+      if (arg === '--clear-token') return [[next, null]]
+      if (arg !== '--token') return []
+      const at = next.indexOf('=')
+
+      return [[next.slice(0, at), next.slice(at + 1)]]
+    }),
+  )
+}
