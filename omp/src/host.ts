@@ -865,7 +865,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     press: async (p, holds) => {
       const outcome = await inbox.press(ctx, p, holds)
 
-      return { error: outcome.error, note: outcome.note }
+      return { error: outcome.error, note: outcome.note, isUnconfirmed: outcome.isUnconfirmed }
     },
     resume: async () => inbox.resume(ctx),
     fetchPrsWhenDue: () => inbox.fetchPrsWhenDue(ctx),

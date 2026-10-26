@@ -1985,6 +1985,41 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   expect(await pane.find({ key: 'row-i1' })).toBeUndefined()
 })
 
+test('a reply another plugin rewrote to the text of a pending press reads Not confirmed and keeps its draft', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  on('ui.focus', () => ({}))
+  let drafts: unknown = null
+  on('state.set', { plugin: 'inbox', key: 'drafts' } as const, ($, e, next) => {
+    drafts = e.value
+    return next(e)
+  })
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  submitAnswer = 'hold'
+  inFlight.push(pane.press({ key: 'explain-i1-key' }))
+  await clock.settle()
+  await pane.press({ key: 'select-i2' })
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'typekey-i2' })
+  submitAnswer = { rewrite: held[0]!.text }
+  await pane.input({ key: await replyKey(pane, 'i2'), text: 'greet is fine' })
+  await clock.settle()
+  expect(await pane.find({ text: /Not\s+confirmed/ })).toBeDefined()
+  expect(drafts).toEqual({ i2: { text: 'greet is fine', since: expect.any(Number) } })
+  await arrive($)
+})
+
 test('an older identical Claude prompt leaves the newer press unconfirmed until its prompt enters', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])

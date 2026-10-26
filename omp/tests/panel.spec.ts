@@ -214,7 +214,7 @@ test('r opens a reply field in place of the buttons, and Enter sends the typed w
   const sent = handleKey(screen, ui, 'enter', NOW)
   expect(sent.press).toEqual({ action: 'type', id: row.id, text: 'hi a' })
   expect(sent.ui.typing).toBeNull()
-  expect(sent.ui.drafts[row.id]).toBeUndefined()
+  expect(sent.ui.drafts[row.id]?.text).toBe('hi a')
 })
 
 test('Enter in an empty reply field sends nothing', () => {
