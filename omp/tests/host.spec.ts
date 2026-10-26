@@ -926,7 +926,7 @@ const herdrReports = () =>
       ),
     }))
 
-test('in a Herdr pane, each change reports the tab counts and the stop, and shutdown clears every token', async () => {
+test('in a Herdr pane, each change reports the tab counts, a stop replaces them until it clears, and shutdown clears every token', async () => {
   createInbox(pi(), { ...deps(), herdrPane: 'p1' })
   const cleared = {
     inbox: null,
@@ -951,9 +951,17 @@ test('in a Herdr pane, each change reports the tab counts and the stop, and shut
 
   await endOnError({ errorStatus: 401, errorMessage: 'invalid x-api-key' })
   await settle()
-  expect(herdrReports().at(-1)?.tokens).toMatchObject({
+  expect(herdrReports().at(-1)?.tokens).toEqual({
+    ...cleared,
+    inbox: '! Signed out: /login',
     'inbox-stop': '! Signed out: /login',
+  })
+  await call('turn_start', { type: 'turn_start' })
+  await settle()
+  expect(herdrReports().at(-1)?.tokens).toMatchObject({
+    'inbox-stop': null,
     'inbox-needs-you': '\u{1F64B} 1',
+    'inbox-findings': '\u{1F50D} 1',
   })
 
   const reports = herdrReports().length

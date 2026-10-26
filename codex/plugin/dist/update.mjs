@@ -2378,7 +2378,7 @@ function herdrTokens(ledger, stop, view, dialogs) {
   const findings = view.findings.rows.filter(isWaitingRow).flatMap((r) => r.finding ? [r.finding] : []);
   const counts = ROW_TABS.map((t) => {
     const count = view[t.id].count;
-    return [COUNT_TOKENS[t.id], count === 0 ? null : `${t.symbol} ${count}`];
+    return [COUNT_TOKENS[t.id], stop || count === 0 ? null : `${t.symbol} ${count}`];
   });
   return {
     [STATUS_TOKEN]: statusLine({ ...ledger, items, findings }, stop, dialogs) || null,

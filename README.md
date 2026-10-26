@@ -222,7 +222,7 @@ sidebar, as pane tokens:
 |---|---|
 | `inbox` | What waits on you, in one line |
 | `inbox-needs-you`, `inbox-findings`, `inbox-prs` | The tab's symbol and count, such as `🙋 2`. Empty when the tab has nothing waiting. |
-| `inbox-stop` | Why the agent stopped |
+| `inbox-stop` | Why the agent stopped. The count tokens stay empty until the stop clears, so the sidebar has room for it. |
 
 To show the counts in each tab's color, add this row to `rows` under
 `[ui.sidebar.agents]` in Herdr's config:

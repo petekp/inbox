@@ -61,7 +61,11 @@ export function statusLine(ledger: Ledger, stop: Stop | null, dialogs: readonly 
   return [ledger.overview?.headline, findings].filter(Boolean).join(' · ')
 }
 
-/** The tokens for a session, with each tab's count as its tab shows it. A tab with nothing waiting clears its token. */
+/**
+ * The tokens for a session, with each tab's count as its tab shows it. A tab with nothing waiting clears its token. A
+ * stop clears every count: Herdr shortens a token to fit its row, and a 25-column sidebar cuts the stop to "! Signe…"
+ * beside two counts.
+ */
 export function herdrTokens(
   ledger: Ledger,
   stop: Stop | null,
@@ -75,7 +79,7 @@ export function herdrTokens(
   const counts = ROW_TABS.map(t => {
     const count = view[t.id].count
 
-    return [COUNT_TOKENS[t.id], count === 0 ? null : `${t.symbol} ${count}`]
+    return [COUNT_TOKENS[t.id], stop || count === 0 ? null : `${t.symbol} ${count}`]
   })
 
   return {
