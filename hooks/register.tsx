@@ -3564,7 +3564,7 @@ export const register: Register = on => {
       keys.flatMap(({ key, hotkey, kind: _kind, emphasis: _emphasis, icon: _icon, isOut: _isOut, ...k }) =>
         hotkey ? [<Button key={`${key}${suffix}`} plain hotkey={hotkey} {...k} label={shownLabel(k)} />] : [],
       )
-    const terminalKeyCells = (k: KeyAction) => (k.hotkey ? k.hotkey.length + 2 : 0) + shownLabel(k).length
+    const terminalKeyCells = (k: KeyAction) => (k.hotkey ? k.hotkey.length + 2 : 0) + cellWidth(shownLabel(k))
     const terminalActionLines = (keys: KeyAction[], more: KeyAction[], width: number) =>
       actionLines(keys.map(terminalKeyCells), more.map(terminalKeyCells), {
         width,
