@@ -37,7 +37,7 @@ import { capitalized, noteText } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
 import type { SessionView } from '../../hooks/session'
 import type { ToneName } from '../../hooks/tones'
-import { ago } from '../../hooks/text'
+import { ago, clipLabel } from '../../hooks/text'
 import {
   canUndoRefused,
   closedMark,
@@ -1003,9 +1003,6 @@ const TAB_FORMS: readonly TabForm[] = [{ isBracketed: true }, { isBracketed: fal
 /** The fewest letters a cut label keeps, its ellipsis included. */
 const MIN_LABEL = 3
 
-const cutLabel = (label: string, length: number) =>
-  [...label].length <= length ? label : `${[...label].slice(0, length - 1).join('')}…`
-
 function tabCell(t: TabCell, label: string, form: TabForm, s: Style): string {
   const key = form.isBracketed ? `[${t.hotkey}]` : t.hotkey
   const count = t.count ? String(t.count) : null
@@ -1033,7 +1030,7 @@ function tabBar(d: Draw): string {
     isShown: t.id === ui.tab,
   }))
   const lineOf = (form: TabForm, lengths: number[]) =>
-    ` ${tabs.map((t, i) => tabCell(t, cutLabel(t.label, lengths[i]!), form, s)).join(' ')}`
+    ` ${tabs.map((t, i) => tabCell(t, clipLabel(t.label, lengths[i]!), form, s)).join(' ')}`
   const lengths = tabs.map(t => [...t.label].length)
   const hint = s.dim('esc to close ')
   for (const form of TAB_FORMS) {

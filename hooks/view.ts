@@ -18,7 +18,7 @@ import type {
 import { isLapsed, reopenFinding, reopenItem } from './ledger'
 import { awayOf, orderParts, workOf } from './overview'
 import type { PartId } from './overview'
-import { ago } from './text'
+import { ago, clipLabel } from './text'
 import { questionNumbers } from './model-text'
 import type { ScreenTab } from './model-text'
 import type { ListedTab } from './arrivals'
@@ -28,7 +28,6 @@ import {
   baseName,
   stepIconKind,
   capitalized,
-  clipLabel,
   isAwaitingReply,
   isFixSent,
   ISSUE_LABEL,

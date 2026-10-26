@@ -5,10 +5,10 @@ import type { ComponentChildren, JSX } from 'preact'
 import type { IconName } from './row-actions'
 
 import { closedState } from '../../hooks/ledger'
-import { ago } from '../../hooks/text'
+import { ago, clipLabel } from '../../hooks/text'
 import type { ClosedState } from '../../hooks/ledger'
 import { canUndoRefused, closedMark, settledMark, versionLabel } from '../../hooks/view'
-import { capitalized, clipLabel, noteText, pendingResult, stepEffects } from '../../hooks/presses'
+import { capitalized, noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { Effect, RowPress } from '../../hooks/presses'
 import {
   allRows,

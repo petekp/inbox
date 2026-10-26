@@ -165,12 +165,11 @@ import {
   TURN_BOX_TOOL,
   turnBoxText,
 } from './claude'
-import { ago } from './text'
+import { ago, clipLabel } from './text'
 import {
   applyPress,
   baseName,
   capitalized,
-  clipLabel,
   demoAfterPress,
   demoTurns,
   doneWake,

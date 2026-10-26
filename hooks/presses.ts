@@ -6,8 +6,6 @@ import { namedPrs, parseRef } from './prs'
 import type { Pressed } from './session'
 import { clipLabel } from './text'
 
-export { clipLabel }
-
 export function baseName(path: string): string {
   return path.replace(/\/+$/, '').split('/').pop() ?? path
 }

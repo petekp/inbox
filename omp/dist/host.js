@@ -5093,7 +5093,6 @@ function drawPageRow(row, d) {
 }
 var TAB_FORMS = [{ isBracketed: true }, { isBracketed: false }];
 var MIN_LABEL = 3;
-var cutLabel = (label, length) => [...label].length <= length ? label : `${[...label].slice(0, length - 1).join("")}\u2026`;
 function tabCell(t, label, form, s) {
   const key = form.isBracketed ? `[${t.hotkey}]` : t.hotkey;
   const count = t.count ? String(t.count) : null;
@@ -5115,7 +5114,7 @@ function tabBar(d) {
     count: isRowTab(t.id) ? counts[t.id] : null,
     isShown: t.id === ui.tab
   }));
-  const lineOf = (form, lengths) => ` ${tabs.map((t, i) => tabCell(t, cutLabel(t.label, lengths[i]), form, s)).join(" ")}`;
+  const lineOf = (form, lengths) => ` ${tabs.map((t, i) => tabCell(t, clipLabel(t.label, lengths[i]), form, s)).join(" ")}`;
   const lengths = tabs.map((t) => [...t.label].length);
   const hint = s.dim("esc to close ");
   for (const form of TAB_FORMS) {

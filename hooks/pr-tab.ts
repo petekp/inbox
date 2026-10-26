@@ -1,15 +1,7 @@
 import type { Item, LastAction, Ledger, PressKind, PrCheck, PrThread, PrView, PrViews } from '../types'
-import {
-  baseName,
-  clipLabel,
-  isFoldingPress,
-  localLast,
-  pendingResult,
-  prSteps,
-  recordPress,
-  withQueued,
-} from './presses'
+import { baseName, isFoldingPress, localLast, pendingResult, prSteps, recordPress, withQueued } from './presses'
 import type { Effect, HelpStep, PrActionId } from './presses'
+import { clipLabel } from './text'
 import {
   commentLine,
   commentParts,
