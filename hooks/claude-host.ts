@@ -577,13 +577,8 @@ export function sessionHost(
     },
     deliver: (_s, text, deliveryId) => deliver($, owner, text, deliveryId),
     isDeliveryHeldUntilRun: true,
-    perform: async (_s, effect) => {
-      if (effect.kind === 'refresh-prs') {
-        await opts.refreshPrs()
-        return null
-      }
-      return opts.surface ? perform($, effect, opts.surface) : COPY_FAILURES['no-surface']
-    },
+    perform: async (_s, effect) => (opts.surface ? perform($, effect, opts.surface) : COPY_FAILURES['no-surface']),
+    refreshPrs: opts.refreshPrs,
     gh: {
       find: async () => {
         if (ghFound === undefined) ghFound = (await isGhUnstartable($)) ? null : 'gh'

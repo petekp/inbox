@@ -18,8 +18,9 @@ import type {
 import { isLapsed, reopenFinding, reopenItem } from './ledger'
 import { awayOf, orderParts, workOf } from './overview'
 import type { PartId } from './overview'
-import { ago } from './text'
+import { ago, clipLabel } from './text'
 import { questionNumbers } from './model-text'
+import type { ScreenTab } from './model-text'
 import type { ListedTab } from './arrivals'
 import type { ClosedState } from './ledger'
 import {
@@ -27,7 +28,6 @@ import {
   baseName,
   stepIconKind,
   capitalized,
-  clipLabel,
   isAwaitingReply,
   isFixSent,
   ISSUE_LABEL,
@@ -262,9 +262,9 @@ export function waitingCount(rows: readonly (RowView | undefined)[]): number {
   return rows.filter(r => r !== undefined && isWaitingRow(r)).length
 }
 
-/** A press result's text on a row with no row view, as a PR row. A row already marked ✓ shows a done result's bare label. */
-export function markedFeedbackText(f: Feedback, mark: string, look: Look): string {
-  return f.is === 'done' && mark === '✓' ? f.label : feedbackText(f, look)
+/** A press result's text on a row with no row view, as a PR row. A row whose mark says done shows a done result's bare label. */
+export function markedFeedbackText(f: Feedback, isMarkDone: boolean, look: Look): string {
+  return f.is === 'done' && isMarkDone ? f.label : feedbackText(f, look)
 }
 
 export function rowFeedbackText(row: RowView, look: Look): string | null {
@@ -637,6 +637,16 @@ export function isRowTab(tab: ShownTab): tab is Tab {
   return tab !== 'overview'
 }
 
+/** Whether a saved or sent value names a tab a look can show. */
+export function isShownTab(raw: unknown): raw is ShownTab {
+  return TABS.some(t => t.id === raw)
+}
+
+/** The tab a look shows, as the inbox model is told. */
+export function screenTabOf(tab: ShownTab): ScreenTab {
+  return { label: TABS.find(t => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) }
+}
+
 /** The tabs that list rows: Needs you, Findings and PRs. */
 export const ROW_TABS = TABS.filter((t): t is (typeof TABS)[number] & { id: Tab } => isRowTab(t.id))
 
@@ -664,15 +674,13 @@ export type OverviewLead = {
   hasGapAbove: boolean
 }
 
-export type OverviewSection = { id: string; title: string | null; rows: OverviewRow[] }
+export type OverviewSection = { id: string; title: string; rows: OverviewRow[] }
 
 /** What the Overview page shows. Every look draws it as it is. */
 export type OverviewPage = {
   isEmpty: boolean
   /** The text lines above the lists, in the order to draw them. */
   lead: OverviewLead[]
-  /** The parts in the order to draw them. A look draws these and no others. */
-  parts: PartId[]
   sections: OverviewSection[]
   /** One line for each earlier topic, oldest first. */
   earlier: string[]
@@ -693,13 +701,18 @@ const OVERVIEW_MARKS: Record<OverviewStatus, Pick<OverviewRow, 'mark' | 'tone'>>
 }
 
 /** A section's title. Every section has one, so rows never sit directly under the lead lines without a name. */
-const SECTION_TITLES: Partial<Record<PartId, string | null>> = {
+const SECTION_TITLES: Partial<Record<PartId, string>> = {
   workstreams: 'Streams',
   queue: 'Work',
   since: 'Since you looked',
   works: 'What works now',
   open: 'Still open',
   next: 'Next',
+}
+
+/** The heading over the Overview's earlier topics. `place` is the host's word for a conversation with the agent. */
+export function earlierTitle(place: string): string {
+  return `Earlier in this ${place}`
 }
 
 /** The marks a running row cycles through in the text looks, one each `RUNNING_FRAME_MS`. */
@@ -784,7 +797,6 @@ export function overviewPage(
   return {
     isEmpty: headline === null && !isTurnRunning,
     lead,
-    parts,
     sections,
     earlier: parts.includes('earlier') ? (overview?.earlier ?? []) : [],
     empty: {

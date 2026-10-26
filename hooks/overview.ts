@@ -1,4 +1,5 @@
 import type { Overview, OverviewItem, OverviewLook, OverviewStatus } from '../types'
+import { dash } from './text'
 
 export const HEADLINE_WORDS = 12
 export const ITEM_WORDS = 12
@@ -27,16 +28,20 @@ export const EMPTY_OVERVIEW: Overview = {
   seen: { since: [], course: '' },
 }
 
-const LIST_KEYS = {
+/** The Overview's item lists. */
+export const LIST_KEYS = ['queue', 'works', 'open', 'next', 'since', 'workstreams'] as const
+
+export type ListKey = (typeof LIST_KEYS)[number]
+
+/** The list each of the call's list keys writes. */
+const LIST_OF_KEY = {
   QUEUE: 'queue',
   WORKS: 'works',
   OPEN: 'open',
   NEXT: 'next',
   SINCE: 'since',
   STREAM: 'workstreams',
-} as const
-
-type ListKey = (typeof LIST_KEYS)[keyof typeof LIST_KEYS]
+} as const satisfies Record<string, ListKey>
 
 const STATUSES: readonly OverviewStatus[] = [
   'working',
@@ -64,19 +69,13 @@ export function clipWords(text: string, limit: number): string {
   return words.length <= limit ? words.join(' ') : `${words.slice(0, limit).join(' ')}…`
 }
 
-function plain(value: string): string {
-  const text = value.trim()
-
-  return text === '-' ? '' : text
-}
-
 function itemOf(value: string): OverviewItem | null {
   const [status, text, ...detail] = value.split('|').map(part => part.trim())
   const isStatus = (s: string | undefined): s is OverviewStatus => STATUSES.includes(s as OverviewStatus)
   if (!isStatus(status) || !text) return null
-  const rest = plain(detail.join(' | '))
+  const rest = dash(detail.join(' | '))
 
-  return { status, text: clipWords(text, ITEM_WORDS), detail: rest === '' ? null : clipWords(rest, DETAIL_WORDS) }
+  return { status, text: clipWords(text, ITEM_WORDS), detail: rest === null ? null : clipWords(rest, DETAIL_WORDS) }
 }
 
 /** What the Overview call answered: nothing to change, or a whole new Overview. */
@@ -94,14 +93,7 @@ export type OverviewAnswer =
 /** Parses the Overview call's lines. Null when the answer has neither UNCHANGED nor a headline. */
 export function parseOverview(text: string | null): OverviewAnswer | null {
   const overview: Overview = { ...EMPTY_OVERVIEW }
-  const lists: Record<ListKey, OverviewItem[]> = {
-    queue: [],
-    works: [],
-    open: [],
-    next: [],
-    since: [],
-    workstreams: [],
-  }
+  const lists = Object.fromEntries(LIST_KEYS.map(k => [k, [] as OverviewItem[]])) as Record<ListKey, OverviewItem[]>
   let isUnchanged = false
   let hasHeadline = false
   let isNewTopic = false
@@ -123,13 +115,13 @@ export function parseOverview(text: string | null): OverviewAnswer | null {
     else if (key === 'STATE') overview.state = STATES.find(s => s === value.toLowerCase()) ?? 'on-track'
     else if (key === 'HEADLINE') {
       hasHeadline = true
-      overview.headline = clipWords(plain(value), HEADLINE_WORDS)
-    } else if (key === 'STATUS') overview.status = clipWords(plain(value), SENTENCE_WORDS)
-    else if (key === 'COURSE') overview.course = clipWords(plain(value), SENTENCE_WORDS)
-    else if (key === 'FOLDED') folded = clipWords(plain(value), ITEM_WORDS * 2)
+      overview.headline = clipWords(dash(value) ?? '', HEADLINE_WORDS)
+    } else if (key === 'STATUS') overview.status = clipWords(dash(value) ?? '', SENTENCE_WORDS)
+    else if (key === 'COURSE') overview.course = clipWords(dash(value) ?? '', SENTENCE_WORDS)
+    else if (key === 'FOLDED') folded = clipWords(dash(value) ?? '', ITEM_WORDS * 2)
     else {
       const item = itemOf(value)
-      const list = lists[LIST_KEYS[key as keyof typeof LIST_KEYS]]
+      const list = lists[LIST_OF_KEY[key as keyof typeof LIST_OF_KEY]]
       if (item && list.length < LIST_ITEMS) list.push(item)
       if (value === '') current = list
     }
@@ -180,7 +172,6 @@ function itemsOf(value: unknown): OverviewItem[] {
 export function upgradeOverview(saved: unknown): Overview | null {
   const o = saved as Partial<Record<keyof Overview, unknown>> | null | undefined
   if (typeof o !== 'object' || o === null || typeof o.headline !== 'string') return null
-  const text = (value: unknown) => (typeof value === 'string' ? value : '')
 
   return {
     isCoordinator: o.isCoordinator === true,
@@ -188,13 +179,8 @@ export function upgradeOverview(saved: unknown): Overview | null {
     headline: o.headline,
     status: text(o.status),
     course: text(o.course),
-    queue: itemsOf(o.queue),
-    works: itemsOf(o.works),
-    open: itemsOf(o.open),
-    next: itemsOf(o.next),
-    since: itemsOf(o.since),
-    workstreams: itemsOf(o.workstreams),
-    earlier: Array.isArray(o.earlier) ? o.earlier.filter((e): e is string => typeof e === 'string') : [],
+    ...(Object.fromEntries(LIST_KEYS.map(k => [k, itemsOf(o[k])])) as Record<ListKey, OverviewItem[]>),
+    earlier: strings(o.earlier),
     lastLookAt: typeof o.lastLookAt === 'number' ? o.lastLookAt : null,
     look: lookOf(o.look),
     seen: seenOf(o.seen),
@@ -206,15 +192,17 @@ function lookOf(saved: unknown): OverviewLook | null {
   if (typeof l !== 'object' || l === null || typeof l.startedAt !== 'number') return null
   const away = AWAYS.find(a => a === l.away)
 
-  return away === undefined
-    ? null
-    : { startedAt: l.startedAt, away, since: strings(l.since), course: typeof l.course === 'string' ? l.course : '' }
+  return away === undefined ? null : { startedAt: l.startedAt, away, since: strings(l.since), course: text(l.course) }
 }
 
 function seenOf(saved: unknown): Overview['seen'] {
   const s = saved as Partial<Overview['seen']> | null | undefined
 
-  return { since: strings(s?.since), course: typeof s?.course === 'string' ? s.course : '' }
+  return { since: strings(s?.since), course: text(s?.course) }
+}
+
+function text(value: unknown): string {
+  return typeof value === 'string' ? value : ''
 }
 
 function strings(value: unknown): string[] {

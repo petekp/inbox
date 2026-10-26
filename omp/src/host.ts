@@ -8,7 +8,7 @@ import type { AssistantMessage, Context, Model } from '@oh-my-pi/pi-ai'
 import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent'
 
 import { flattenConversation } from '../../hooks/conversation'
-import { ompTodoFromBranch } from '../../hooks/host-tasks'
+import { isSameTaskList, ompTodoFromBranch } from '../../hooks/host-tasks'
 import type { Turn } from '../../hooks/conversation'
 import { dialogActivity, dialogQuestions, guidanceText, screenText, toolActivity } from '../../hooks/model-text'
 import type { DialogOutcome, ScreenTab } from '../../hooks/model-text'
@@ -23,7 +23,6 @@ import {
   hasLedger,
   isUnseen,
   lookEndedOn,
-  lookStartedOn,
   needsUpdate,
   noteActivity,
   noteCommandOutput,
@@ -32,6 +31,8 @@ import {
   sessionView,
   turnEnded,
   turnStarted,
+  cutOffTurn,
+  withLook,
 } from '../../hooks/session'
 import type { SessionView } from '../../hooks/session'
 import {
@@ -48,7 +49,7 @@ import type { PressOutcome, SessionHost, UpdateHost } from '../../hooks/session-
 import { agentTools } from '../../hooks/tools'
 import { DARK_TONES, LIGHT_TONES } from '../../hooks/tones'
 import { clip } from '../../hooks/text'
-import { NEXT_BUILD_MARK, NO_HOLDS, RESUME_TEXT, SETTLED_MS, TABS } from '../../hooks/view'
+import { NEXT_BUILD_MARK, NO_HOLDS, RESUME_TEXT, SETTLED_MS, screenTabOf } from '../../hooks/view'
 import type { ReplyHolds, ShownTab } from '../../hooks/view'
 import { openTarget } from './commands'
 import { createPanel } from './controller'
@@ -391,11 +392,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   /** The open panels, with the tab each shows. */
   const openPanels = new Map<string, ShownTab>()
 
-  function screenTabOf(id: string): ScreenTab | null {
+  function panelScreenTab(id: string): ScreenTab | null {
     const tab = openPanels.get(id)
-    const shown = TABS.find(t => t.id === tab)
 
-    return tab === undefined ? null : { label: shown?.label ?? tab, isPage: tab === 'overview' }
+    return tab === undefined ? null : screenTabOf(tab)
   }
   const prepared = new Set<string>()
   const prFetches = prFetchTracker(deps.now)
@@ -484,13 +484,9 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
 
         return why === null ? { state: 'accepted', queuedId: null } : { state: 'rejected', reason: why }
       },
-      perform: async (_s, effect) => {
-        if (effect.kind === 'refresh-prs') {
-          await prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true))
-          return null
-        }
-        return effect.kind === 'copy' ? deps.copy(effect.text) : openTarget(run, effect.target, ctx.cwd, deps.home)
-      },
+      perform: async (_s, effect) =>
+        effect.kind === 'copy' ? deps.copy(effect.text) : openTarget(run, effect.target, ctx.cwd, deps.home),
+      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true)),
       gh: {
         find: gh.find,
         forget: gh.forget,
@@ -528,7 +524,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
           host.ask,
           OMP,
           s,
-          screenText(OMP, openPanels.has(id), screenTabOf(id)),
+          screenText(OMP, openPanels.has(id), panelScreenTab(id)),
           conversationText(ctx),
         ),
     }
@@ -616,7 +612,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     // No turn runs as a session starts, so a running turn saved here was cut off by a process that ended.
     const id = sessionIdOf(ctx)
     if ((await readState(dir, id).catch(() => null))?.presence.isTurnRunning)
-      await change(id, s => (s.presence.isTurnRunning ? turnEnded(s) : s)).catch(() => undefined)
+      await change(id, cutOffTurn).catch(() => undefined)
     prepare(ctx)
     showBand(ctx)
     deps.background(
@@ -625,7 +621,8 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         .then(async () => {
           const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
           const saved = await readState(dir, id).catch(() => null)
-          if (hostTasks.length > 0 || (saved?.hostTasks.length ?? 0) > 0) await change(id, s => ({ ...s, hostTasks }))
+          if (hostTasks.length > 0 || (saved?.hostTasks.length ?? 0) > 0)
+            await change(id, s => (isSameTaskList(s.hostTasks, hostTasks) ? s : { ...s, hostTasks }))
         })
         .catch(() => undefined)
         .then(() => catchUpUnseen(ctx)),
@@ -766,7 +763,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const written = await change(id, s => ({
       ...turnEnded(
         endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
-          tab: screenTabOf(id),
+          tab: panelScreenTab(id),
           queuesEmptyReply: isDialogDismissed,
         }),
       ),
@@ -832,10 +829,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       if (!openPanels.has(id)) return
       const isChanged = openPanels.get(id) !== tab
       openPanels.set(id, tab)
-      if (isChanged)
-        deps.background(
-          change(id, s => (tab === 'overview' ? lookStartedOn(s, deps.now()) : lookEndedOn(s, deps.now()))),
-        )
+      if (isChanged) deps.background(change(id, s => withLook(s, tab === 'overview', deps.now())))
     },
     closePanel: ctx => {
       const id = sessionIdOf(ctx)

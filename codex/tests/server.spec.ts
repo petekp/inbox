@@ -7,10 +7,10 @@ import { test } from 'node:test'
 
 import { demoView } from '../../hooks/demo'
 import { applyUpdate, parseReply } from '../../hooks/ledger'
-import { feedbackOf, feedbackText, QUEUED_AFTER_MS } from '../../hooks/view'
+import { feedbackOf, feedbackText, QUEUED_AFTER_MS, screenTabOf } from '../../hooks/view'
 import type { Feedback } from '../../hooks/view'
 import { screenText } from '../../hooks/model-text'
-import { noteHook, notePrompt, screenTabOf, viewOf } from '../src/core'
+import { noteHook, notePrompt, viewOf } from '../src/core'
 import { CODEX } from '../src/texts'
 import type { View } from '../src/core'
 import { makeServer, pageName } from '../src/server'
@@ -452,7 +452,7 @@ test('the view request saves the tab the page shows, ignores a name that is not 
   await call('inbox_view', { tab: 'nowhere' }, { thread_id: 's1' })
   assert.equal((await readState(dir, 's1')).shownTab, 'prs')
   assert.equal(
-    screenText(CODEX, true, screenTabOf(await readState(dir, 's1'))),
+    screenText(CODEX, true, screenTabOf((await readState(dir, 's1')).shownTab)),
     'The Inbox tab is open beside the conversation, on its PRs tab, listing every open item.',
   )
 })

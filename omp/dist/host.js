@@ -19,6 +19,10 @@ function numberBlocks(reply) {
   let n = 0;
   return reply.replace(FENCE, (block) => `[block ${n += 1}]${NL}${block}`);
 }
+function dash(value) {
+  const v = (value ?? "").trim();
+  return v === "" || v === "-" ? null : v;
+}
 function clip(text, max) {
   return text.length <= max ? text : text.slice(0, max) + " \u2026[cut]";
 }
@@ -117,19 +121,19 @@ var STATUSES = {
 var statusOf = (raw) => STATUSES[String(raw)] ?? "pending";
 var textOf = (raw) => typeof raw === "string" ? raw.trim() : "";
 var recordOf = (raw) => typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
+function numberedTasks(rows, textKey) {
+  return rows.map(recordOf).map((row, n) => ({ id: String(n + 1), text: textOf(row[textKey]), status: statusOf(row.status) })).filter((t) => t.text !== "");
+}
 function ompTodoOf(details) {
   const phases = recordOf(details).phases;
   if (!Array.isArray(phases))
     return null;
-  return phases.flatMap((phase) => Array.isArray(recordOf(phase).tasks) ? recordOf(phase).tasks : []).map((task, n) => ({
-    id: String(n + 1),
-    text: textOf(recordOf(task).content),
-    status: statusOf(recordOf(task).status)
-  })).filter((t) => t.text !== "");
+  const tasks = phases.flatMap((phase) => Array.isArray(recordOf(phase).tasks) ? recordOf(phase).tasks : []);
+  return numberedTasks(tasks, "content");
 }
 function ompTodoFromBranch(entries) {
-  for (const raw of [...entries].reverse()) {
-    const entry = recordOf(raw);
+  for (let n = entries.length - 1;n >= 0; n--) {
+    const entry = recordOf(entries[n]);
     if (entry.type === "custom" && entry.customType === "user_todo_edit") {
       const tasks = ompTodoOf(entry.data);
       if (tasks !== null)
@@ -146,6 +150,9 @@ function ompTodoFromBranch(entries) {
       return tasks;
   }
   return [];
+}
+function isSameTaskList(a, b) {
+  return a.length === b.length && a.every((t, n) => t.id === b[n]?.id && t.text === b[n]?.text && t.status === b[n]?.status);
 }
 function upgradeHostTasks(saved) {
   if (!Array.isArray(saved))
@@ -199,7 +206,8 @@ var EMPTY_OVERVIEW = {
   look: null,
   seen: { since: [], course: "" }
 };
-var LIST_KEYS = {
+var LIST_KEYS = ["queue", "works", "open", "next", "since", "workstreams"];
+var LIST_OF_KEY = {
   QUEUE: "queue",
   WORKS: "works",
   OPEN: "open",
@@ -224,28 +232,17 @@ function clipWords(text, limit) {
   const words = text.trim().split(/\s+/).filter(Boolean);
   return words.length <= limit ? words.join(" ") : `${words.slice(0, limit).join(" ")}\u2026`;
 }
-function plain(value) {
-  const text = value.trim();
-  return text === "-" ? "" : text;
-}
 function itemOf(value) {
   const [status, text, ...detail] = value.split("|").map((part) => part.trim());
   const isStatus = (s) => STATUSES2.includes(s);
   if (!isStatus(status) || !text)
     return null;
-  const rest = plain(detail.join(" | "));
-  return { status, text: clipWords(text, ITEM_WORDS), detail: rest === "" ? null : clipWords(rest, DETAIL_WORDS) };
+  const rest = dash(detail.join(" | "));
+  return { status, text: clipWords(text, ITEM_WORDS), detail: rest === null ? null : clipWords(rest, DETAIL_WORDS) };
 }
 function parseOverview(text) {
   const overview = { ...EMPTY_OVERVIEW };
-  const lists = {
-    queue: [],
-    works: [],
-    open: [],
-    next: [],
-    since: [],
-    workstreams: []
-  };
+  const lists = Object.fromEntries(LIST_KEYS.map((k) => [k, []]));
   let isUnchanged = false;
   let hasHeadline = false;
   let isNewTopic = false;
@@ -272,16 +269,16 @@ function parseOverview(text) {
       overview.state = STATES.find((s) => s === value.toLowerCase()) ?? "on-track";
     else if (key === "HEADLINE") {
       hasHeadline = true;
-      overview.headline = clipWords(plain(value), HEADLINE_WORDS);
+      overview.headline = clipWords(dash(value) ?? "", HEADLINE_WORDS);
     } else if (key === "STATUS")
-      overview.status = clipWords(plain(value), SENTENCE_WORDS);
+      overview.status = clipWords(dash(value) ?? "", SENTENCE_WORDS);
     else if (key === "COURSE")
-      overview.course = clipWords(plain(value), SENTENCE_WORDS);
+      overview.course = clipWords(dash(value) ?? "", SENTENCE_WORDS);
     else if (key === "FOLDED")
-      folded = clipWords(plain(value), ITEM_WORDS * 2);
+      folded = clipWords(dash(value) ?? "", ITEM_WORDS * 2);
     else {
       const item = itemOf(value);
-      const list = lists[LIST_KEYS[key]];
+      const list = lists[LIST_OF_KEY[key]];
       if (item && list.length < LIST_ITEMS)
         list.push(item);
       if (value === "")
@@ -323,20 +320,14 @@ function upgradeOverview(saved) {
   const o = saved;
   if (typeof o !== "object" || o === null || typeof o.headline !== "string")
     return null;
-  const text = (value) => typeof value === "string" ? value : "";
   return {
     isCoordinator: o.isCoordinator === true,
     state: STATES.find((s) => s === o.state) ?? "on-track",
     headline: o.headline,
     status: text(o.status),
     course: text(o.course),
-    queue: itemsOf(o.queue),
-    works: itemsOf(o.works),
-    open: itemsOf(o.open),
-    next: itemsOf(o.next),
-    since: itemsOf(o.since),
-    workstreams: itemsOf(o.workstreams),
-    earlier: Array.isArray(o.earlier) ? o.earlier.filter((e) => typeof e === "string") : [],
+    ...Object.fromEntries(LIST_KEYS.map((k) => [k, itemsOf(o[k])])),
+    earlier: strings(o.earlier),
     lastLookAt: typeof o.lastLookAt === "number" ? o.lastLookAt : null,
     look: lookOf(o.look),
     seen: seenOf(o.seen)
@@ -347,11 +338,14 @@ function lookOf(saved) {
   if (typeof l !== "object" || l === null || typeof l.startedAt !== "number")
     return null;
   const away = AWAYS.find((a) => a === l.away);
-  return away === undefined ? null : { startedAt: l.startedAt, away, since: strings(l.since), course: typeof l.course === "string" ? l.course : "" };
+  return away === undefined ? null : { startedAt: l.startedAt, away, since: strings(l.since), course: text(l.course) };
 }
 function seenOf(saved) {
   const s = saved;
-  return { since: strings(s?.since), course: typeof s?.course === "string" ? s.course : "" };
+  return { since: strings(s?.since), course: text(s?.course) };
+}
+function text(value) {
+  return typeof value === "string" ? value : "";
 }
 function strings(value) {
   return Array.isArray(value) ? value.filter((v) => typeof v === "string") : [];
@@ -614,10 +608,6 @@ function withHelp(helps, help) {
   const kept = isCommand(help) ? helps.filter((h) => h.kind !== "copy" || commandOf(h) !== command) : helps;
   const isCovered = kept.some((h) => helpTarget(h) === helpTarget(help));
   return isCovered || kept.length >= MAX_HELPS ? kept : [...kept, help];
-}
-function dash(value) {
-  const v = (value ?? "").trim();
-  return v === "" || v === "-" ? null : v;
 }
 var KEY_LINE2 = /^\s*[-*]?\s*(?:(NONE)(?::|\s|$)|(CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:)\s*(.*)$/;
 function keyOf(line) {
@@ -2443,8 +2433,8 @@ function isWaitingRow(row) {
 function waitingCount(rows) {
   return rows.filter((r) => r !== undefined && isWaitingRow(r)).length;
 }
-function markedFeedbackText(f, mark, look) {
-  return f.is === "done" && mark === "\u2713" ? f.label : feedbackText(f, look);
+function markedFeedbackText(f, isMarkDone, look) {
+  return f.is === "done" && isMarkDone ? f.label : feedbackText(f, look);
 }
 function rowFeedbackText(row, look) {
   const f = row.feedback;
@@ -2662,6 +2652,9 @@ function isListedTab(tab) {
 function isRowTab(tab) {
   return tab !== "overview";
 }
+function screenTabOf(tab) {
+  return { label: TABS.find((t) => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) };
+}
 var ROW_TABS = TABS.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TABS.filter((t) => isListedTab(t.id));
 var WORKING_TEXT = "Working\u2026";
@@ -2683,6 +2676,9 @@ var SECTION_TITLES = {
   open: "Still open",
   next: "Next"
 };
+function earlierTitle(place) {
+  return `Earlier in this ${place}`;
+}
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
@@ -2734,7 +2730,6 @@ function overviewPage(s, now, waitingOnYou = 0) {
   return {
     isEmpty: headline === null && !isTurnRunning,
     lead,
-    parts,
     sections,
     earlier: parts.includes("earlier") ? overview?.earlier ?? [] : [],
     empty: {
@@ -3169,7 +3164,7 @@ function threadRowText(pr, t, lastActions) {
   const isChanged = !isSent && t.isLinesChanged;
   const showsCheck = threadShowsCheckIn(lastActions)(pr, t);
   return {
-    mark: showsCheck ? { text: "\u2713", tone: "done" } : { text: "\u25E6", tone: null },
+    mark: showsCheck ? { text: "\u2713", tone: "done", isDone: true } : { text: "\u25E6", tone: null, isDone: false },
     fold: isSent || isChanged ? t.isLinesChanged ? { note: `Lines changed since this comment${DOT}still open on GitHub` } : {} : null,
     title: clipLabel(commentParts(t.body).head, THREAD_TITLE_CHARS),
     meta: [
@@ -3180,7 +3175,12 @@ function threadRowText(pr, t, lastActions) {
   };
 }
 function checkRowText(c) {
-  return { mark: { text: "\u2717", tone: "error" }, lead: c.workflow || null, title: c.name, meta: checkRunText(c) };
+  return {
+    mark: { text: "\u2717", tone: "error", isDone: false },
+    lead: c.workflow || null,
+    title: c.name,
+    meta: checkRunText(c)
+  };
 }
 function checkRunText(c) {
   return c.startedAt !== undefined && c.finishedAt !== undefined ? `Failed after ${took(c.finishedAt - c.startedAt)}` : "Failed";
@@ -3230,6 +3230,15 @@ var PR_TONES = {
   merged: "findings",
   closed: "error"
 };
+function commentEffect(pr, t) {
+  return { kind: "open", target: t.reply?.url || t.url || pr.url, name: "the comment" };
+}
+function prPageEffect(pr) {
+  return { kind: "open", target: pr.url, name: `PR #${pr.number}` };
+}
+function logEffect(pr, check) {
+  return { kind: "open", target: check.url ?? pr.url, name: check.url ? "the log" : `PR #${pr.number}` };
+}
 function prRowId(p) {
   if ("check" in p)
     return checkRowId(p.ref, p.check);
@@ -3249,29 +3258,31 @@ function prRetryOf(last, ref, thread, check = null) {
     return { press: { action: a, ref }, kind: last.kind };
   return null;
 }
-function again(presses, rowId, action, label) {
+function lastPressOf(presses, rowId) {
   const last = presses.lastActions[rowId];
-  const isOut = isPressOut(feedbackOf(rowId, last, undefined, presses.turns, presses.now));
-  return isAgain(last, action, isOut) ? `${label} again` : label;
+  return { last, isOut: isPressOut(feedbackOf(rowId, last, undefined, presses.turns, presses.now)) };
+}
+function again(row, action, label) {
+  return isAgain(row.last, action, row.isOut) ? `${label} again` : label;
 }
 function retryAction(retry) {
-  return retry ? [{ press: retry.press, label: "Try again", kind: retry.kind, emphasis: "normal", icon: "retry" }] : [];
+  return retry ? [{ press: retry.press, label: "Try again", kind: retry.kind, emphasis: "normal", icon: "retry", isRetry: true }] : [];
 }
 function threadActions(pr, t, presses) {
-  const id = threadRowId(pr.ref, t.id);
+  const row = lastPressOf(presses, threadRowId(pr.ref, t.id));
   const on = { ref: pr.ref, thread: t.id };
   return [
-    ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, t.id)),
+    ...retryAction(prRetryOf(row.last, pr.ref, t.id)),
     {
       press: { action: "thread-address", ...on },
-      label: again(presses, id, "thread-address", "Address"),
+      label: again(row, "thread-address", "Address"),
       kind: "handoff",
       emphasis: "primary",
       hotkey: "a"
     },
     {
       press: { action: "thread-draft", ...on },
-      label: again(presses, id, "thread-draft", "Draft reply"),
+      label: again(row, "thread-draft", "Draft reply"),
       kind: "talk",
       emphasis: "normal",
       hotkey: "r"
@@ -3286,7 +3297,7 @@ function threadActions(pr, t, presses) {
     },
     {
       press: { action: "thread-discuss", ...on },
-      label: again(presses, id, "thread-discuss", "Discuss"),
+      label: again(row, "thread-discuss", "Discuss"),
       kind: "talk",
       emphasis: "quiet",
       hotkey: "d",
@@ -3295,13 +3306,13 @@ function threadActions(pr, t, presses) {
   ];
 }
 function checkActions(pr, c, presses) {
-  const id = checkRowId(pr.ref, c.name);
+  const row = lastPressOf(presses, checkRowId(pr.ref, c.name));
   const on = { ref: pr.ref, check: c.name };
   return [
-    ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, null, c.name)),
+    ...retryAction(prRetryOf(row.last, pr.ref, null, c.name)),
     {
       press: { action: "check-fix", ...on },
-      label: again(presses, id, "check-fix", "Fix"),
+      label: again(row, "check-fix", "Fix"),
       kind: "handoff",
       emphasis: "primary",
       hotkey: "a"
@@ -3317,28 +3328,28 @@ function checkActions(pr, c, presses) {
   ];
 }
 function prBlockActions(pr, isThreadSent, branchRef, presses) {
-  const id = prMarkId(pr.ref);
+  const row = lastPressOf(presses, prMarkId(pr.ref));
   const { status } = readiness(pr, isThreadSent);
   const waitingOn = threadsOnYou(pr, isThreadSent).length;
   const moves = [
     ...status === "ready" ? [
       {
         press: { action: "pr-merge", ref: pr.ref },
-        label: again(presses, id, "pr-merge", "Merge"),
+        label: again(row, "pr-merge", "Merge"),
         kind: "handoff"
       }
     ] : [],
     ...pr.state === "OPEN" && pr.mergeable === "CONFLICTING" ? [
       {
         press: { action: "pr-conflicts", ref: pr.ref },
-        label: again(presses, id, "pr-conflicts", "Resolve conflicts"),
+        label: again(row, "pr-conflicts", "Resolve conflicts"),
         kind: "handoff"
       }
     ] : [],
     ...waitingOn > 1 ? [
       {
         press: { action: "pr-address-all", ref: pr.ref },
-        label: again(presses, id, "pr-address-all", `Address all ${waitingOn} threads`),
+        label: again(row, "pr-address-all", `Address all ${waitingOn} threads`),
         kind: "handoff"
       }
     ] : []
@@ -3353,7 +3364,7 @@ function prBlockActions(pr, isThreadSent, branchRef, presses) {
         icon: "retry"
       }
     ] : [],
-    ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, null)),
+    ...retryAction(prRetryOf(row.last, pr.ref, null)),
     ...moves.map((m, n) => ({ ...m, emphasis: n === 0 ? "primary" : "normal" })),
     { press: { action: "pr-open", ref: pr.ref }, label: "Open PR", kind: "local", emphasis: "normal", icon: "open" },
     ...pr.ref === branchRef ? [] : [
@@ -3401,7 +3412,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
         return stale;
       const id = prThreadId(pr, t);
       if (p.action === "thread-open")
-        return local(id, "Open", { kind: "open", target: t.reply?.url || t.url || pr.url, name: "the comment" });
+        return local(id, "Open", commentEffect(pr, t));
       if (p.action === "thread-address")
         return applied({
           lasts: { [id]: record(id, "handoff", p.action, "Address") },
@@ -3448,7 +3459,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
         effects: [send(prompts.merge(pr))]
       });
     case "pr-open":
-      return local(markId, "Open PR", { kind: "open", target: pr.url, name: `PR #${pr.number}` });
+      return local(markId, "Open PR", prPageEffect(pr));
     case "pr-refresh":
       return local(markId, PR_REFRESH_LABEL, PR_REFRESH);
     case "pr-dismiss":
@@ -3472,11 +3483,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
       const check = pr.checks.find((c) => c.name === p.check);
       if (!check)
         return stale;
-      return local(prCheckId(pr, check), "Open log", {
-        kind: "open",
-        target: check.url ?? pr.url,
-        name: check.url ? "the log" : `PR #${pr.number}`
-      });
+      return local(prCheckId(pr, check), "Open log", logEffect(pr, check));
     }
   }
 }
@@ -3782,6 +3789,9 @@ function turnStarted(s) {
 function turnEnded(s) {
   return { ...s, presence: { ...s.presence, isTurnRunning: false } };
 }
+function cutOffTurn(s) {
+  return s.presence.isTurnRunning ? turnEnded(s) : s;
+}
 function startTurn(s) {
   return { ...s, presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }, stop: null };
 }
@@ -3850,15 +3860,10 @@ function parsedReply(ex, reply) {
   return reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join(`
 `));
 }
-function isReplyApplied(s, reply) {
-  const next = s.pending[0];
-  return next !== undefined && parsedReply(next.ex, reply) !== null;
-}
-function applied(s, reply, now, promptAt) {
+function applied(s, parsed, now, promptAt) {
   const next = s.pending[0];
   if (!next)
     return s;
-  const parsed = parsedReply(next.ex, reply);
   const { ex } = next;
   if (!parsed && !next.failed)
     return {
@@ -3900,6 +3905,9 @@ function lookStartedOn(s, now) {
 function lookEndedOn(s, at) {
   const overview = lookEnded(s.ledger.overview, at);
   return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } };
+}
+function withLook(s, isOverviewShown, now) {
+  return isOverviewShown ? lookStartedOn(s, now) : lookEndedOn(s, now);
 }
 function hasLedger(s) {
   return !isBlankLedger(s.ledger);
@@ -4138,13 +4146,14 @@ async function runUpdates(host) {
             const next = s.pending[0];
             const promptAt = await host.now();
             const reply = await host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names)).catch(() => null);
+            const parsed = parsedReply(next.ex, reply);
             let isApplied = false;
             const after = await host.update(async (x) => {
               isApplied = false;
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn)
                 return x;
-              isApplied = isReplyApplied(x, reply);
-              return applied(x, reply, await host.now(), promptAt);
+              isApplied = parsed !== null;
+              return applied(x, parsed, await host.now(), promptAt);
             });
             if (isApplied)
               followUp(writeOverview(after, (last, tasks) => host.ask(overviewPrompt(last, next.ex, tasks), OVERVIEW_SYSTEM), next.ex.tasks));
@@ -4162,13 +4171,13 @@ async function runUpdates(host) {
     await Promise.all(writing);
   }
 }
-async function wakeForDone(host) {
+async function wakeForDone(host, current) {
   const check = async (s) => doneWake(s.ledger, {
     now: await host.now(),
     windowMs: host.settleWindowMs,
     isTurnRunning: s.presence.isTurnRunning
   });
-  if (!await check(await host.read()))
+  if (!await check(current ?? await host.read()))
     return;
   let attempt = null;
   await host.update(async (s) => {
@@ -4232,6 +4241,10 @@ async function startPress(host, p, isStale, holds) {
     now: host.now,
     deliveryId: () => pressed.deliveryId ?? host.newId(),
     perform: async (e) => {
+      if (e.kind === "refresh-prs") {
+        await host.refreshPrs();
+        return null;
+      }
       if (e.kind === "copy")
         copy = { text: e.text, name: e.name };
       return host.perform(await host.read(), e);
@@ -4424,7 +4437,7 @@ function recordRows(seen, listed) {
   }
   return { seen: next, added };
 }
-var ARRIVAL_TABS = ["needsYou", "findings", "prs"];
+var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
 function listedRowIds(v) {
   return {
     needsYou: [...v.needsYou.questions, ...v.needsYou.tasks].map((r) => r.id),
@@ -4750,7 +4763,7 @@ function prEntries(screen, now) {
           title: text.title,
           isDim: text.fold !== null,
           detail: [text.meta, text.fold?.note].filter(Boolean).join(" \xB7 ") || null,
-          feedback: pressFeedback(screen, id, now, text.mark.text),
+          feedback: pressFeedback(screen, id, now, text.mark.isDone),
           buttons: prButtons(threadActions(pr, t, presses)),
           isWaiting: isWaiting(id),
           isFolded: text.fold !== null
@@ -4771,7 +4784,7 @@ function prEntries(screen, now) {
           lead: markLead(text.mark),
           title: text.lead ? `${text.lead} / ${text.title}` : text.title,
           detail: text.meta,
-          feedback: pressFeedback(screen, id, now, text.mark.text),
+          feedback: pressFeedback(screen, id, now, text.mark.isDone),
           buttons: prButtons(checkActions(pr, c, presses)),
           isWaiting: isWaiting(id)
         }
@@ -4782,9 +4795,9 @@ function prEntries(screen, now) {
     out.push({ kind: "note", text: prs.olderText });
   return out;
 }
-function pressFeedback(screen, id, now, mark = "") {
+function pressFeedback(screen, id, now, isMarkDone = false) {
   const f = feedbackOf(id, screen.view.lastActions[id], undefined, screen.view.turns, now);
-  return f ? { text: markedFeedbackText(f, mark, AGENT), tone: feedbackTone(f), source: f } : null;
+  return f ? { text: markedFeedbackText(f, isMarkDone, AGENT), tone: feedbackTone(f), source: f } : null;
 }
 var TITLE_AT = 6;
 function pageEntries(page) {
@@ -4800,16 +4813,14 @@ function pageEntries(page) {
     out.push({ kind: "note", text: line.text, isStrong: line.id === "headline" });
   }
   for (const part of page.sections) {
-    if (part.title) {
-      if (out.length > 0)
-        out.push({ kind: "note", text: "" });
-      out.push({ kind: "heading", text: part.title });
-    }
+    if (out.length > 0)
+      out.push({ kind: "note", text: "" });
+    out.push({ kind: "heading", text: part.title });
     out.push(...part.rows.map((row) => ({ kind: "page", row })));
   }
   if (page.earlier.length > 0) {
     out.push({ kind: "note", text: "" });
-    out.push({ kind: "heading", text: "Earlier in this session" });
+    out.push({ kind: "heading", text: earlierTitle("session") });
     out.push(...page.earlier.map((text) => ({ kind: "note", text, indent: TITLE_AT })));
   }
   return out;
@@ -5385,7 +5396,7 @@ function demoSession(now, agent) {
     ledger: d.ledger,
     lastActions: d.lastActions,
     prViews: d.prViews,
-    presence: { ...s.presence, ...d.turns, ...d.presence }
+    presence: { ...s.presence, ...d.turns }
   };
 }
 function demoView(now, agent) {
@@ -5796,8 +5807,7 @@ function demoView(now, agent) {
       }
     },
     notes: {},
-    turns: { turnsStarted: 14, turnsApplied: 14 },
-    presence: { isTurnRunning: false }
+    turns: { turnsStarted: 14, turnsApplied: 14 }
   };
 }
 
@@ -6105,10 +6115,9 @@ function styleOf(theme) {
 function createInbox(pi, deps = defaultDeps) {
   const dir = deps.stateDir(pi);
   const openPanels = new Map;
-  function screenTabOf(id) {
+  function panelScreenTab(id) {
     const tab = openPanels.get(id);
-    const shown = TABS.find((t) => t.id === tab);
-    return tab === undefined ? null : { label: shown?.label ?? tab, isPage: tab === "overview" };
+    return tab === undefined ? null : screenTabOf(tab);
   }
   const prepared = new Set;
   const prFetches = prFetchTracker(deps.now);
@@ -6180,13 +6189,8 @@ function createInbox(pi, deps = defaultDeps) {
         const why = sendToAgent(ctx, text);
         return why === null ? { state: "accepted", queuedId: null } : { state: "rejected", reason: why };
       },
-      perform: async (_s, effect) => {
-        if (effect.kind === "refresh-prs") {
-          await prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true));
-          return null;
-        }
-        return effect.kind === "copy" ? deps.copy(effect.text) : openTarget2(run, effect.target, ctx.cwd, deps.home);
-      },
+      perform: async (_s, effect) => effect.kind === "copy" ? deps.copy(effect.text) : openTarget2(run, effect.target, ctx.cwd, deps.home),
+      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true)),
       gh: {
         find: gh.find,
         forget: gh.forget,
@@ -6214,7 +6218,7 @@ function createInbox(pi, deps = defaultDeps) {
       names: OMP,
       inOrder: (fn) => resultsOrder.run(id, fn),
       background: (results) => deps.background(results),
-      catchUp: (s) => askOverConversation(host.ask, OMP, s, screenText(OMP, openPanels.has(id), screenTabOf(id)), conversationText(ctx))
+      catchUp: (s) => askOverConversation(host.ask, OMP, s, screenText(OMP, openPanels.has(id), panelScreenTab(id)), conversationText(ctx))
     };
   }
   async function catchUpUnseen(ctx) {
@@ -6284,7 +6288,7 @@ function createInbox(pi, deps = defaultDeps) {
       return dropTools();
     const id = sessionIdOf(ctx);
     if ((await readState(dir, id).catch(() => null))?.presence.isTurnRunning)
-      await change(id, (s) => s.presence.isTurnRunning ? turnEnded(s) : s).catch(() => {
+      await change(id, cutOffTurn).catch(() => {
         return;
       });
     prepare(ctx);
@@ -6295,7 +6299,7 @@ function createInbox(pi, deps = defaultDeps) {
       const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
       const saved = await readState(dir, id).catch(() => null);
       if (hostTasks.length > 0 || (saved?.hostTasks.length ?? 0) > 0)
-        await change(id, (s) => ({ ...s, hostTasks }));
+        await change(id, (s) => isSameTaskList(s.hostTasks, hostTasks) ? s : { ...s, hostTasks });
     }).catch(() => {
       return;
     }).then(() => catchUpUnseen(ctx)));
@@ -6434,7 +6438,7 @@ function createInbox(pi, deps = defaultDeps) {
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
     const written = await change(id, (s) => ({
       ...turnEnded(endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
-        tab: screenTabOf(id),
+        tab: panelScreenTab(id),
         queuesEmptyReply: isDialogDismissed
       })),
       stop
@@ -6500,7 +6504,7 @@ function createInbox(pi, deps = defaultDeps) {
       const isChanged = openPanels.get(id) !== tab;
       openPanels.set(id, tab);
       if (isChanged)
-        deps.background(change(id, (s) => tab === "overview" ? lookStartedOn(s, deps.now()) : lookEndedOn(s, deps.now())));
+        deps.background(change(id, (s) => withLook(s, tab === "overview", deps.now())));
     },
     closePanel: (ctx) => {
       const id = sessionIdOf(ctx);

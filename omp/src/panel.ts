@@ -41,6 +41,7 @@ import { ago, cellWidth, cutToCells } from '../../hooks/text'
 import {
   canUndoRefused,
   closedMark,
+  earlierTitle,
   settledMark,
   settledTone,
   DEMO_NOTICE,
@@ -518,7 +519,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
           title: text.title,
           isDim: text.fold !== null,
           detail: [text.meta, text.fold?.note].filter(Boolean).join(' · ') || null,
-          feedback: pressFeedback(screen, id, now, text.mark.text),
+          feedback: pressFeedback(screen, id, now, text.mark.isDone),
           buttons: prButtons(threadActions(pr, t, presses)),
           isWaiting: isWaiting(id),
           isFolded: text.fold !== null,
@@ -538,7 +539,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
           lead: markLead(text.mark),
           title: text.lead ? `${text.lead} / ${text.title}` : text.title,
           detail: text.meta,
-          feedback: pressFeedback(screen, id, now, text.mark.text),
+          feedback: pressFeedback(screen, id, now, text.mark.isDone),
           buttons: prButtons(checkActions(pr, c, presses)),
           isWaiting: isWaiting(id),
         },
@@ -550,10 +551,10 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
   return out
 }
 
-function pressFeedback(screen: PanelScreen, id: string, now: number, mark = ''): Line['feedback'] {
+function pressFeedback(screen: PanelScreen, id: string, now: number, isMarkDone = false): Line['feedback'] {
   const f = feedbackOf(id, screen.view.lastActions[id], undefined, screen.view.turns, now)
 
-  return f ? { text: markedFeedbackText(f, mark, AGENT), tone: feedbackTone(f), source: f } : null
+  return f ? { text: markedFeedbackText(f, isMarkDone, AGENT), tone: feedbackTone(f), source: f } : null
 }
 
 /** Where a row's title starts, after the cursor and the mark. The Overview page's text and details start here too. */
@@ -571,15 +572,13 @@ function pageEntries(page: OverviewPage): Entry[] {
     out.push({ kind: 'note', text: line.text, isStrong: line.id === 'headline' })
   }
   for (const part of page.sections) {
-    if (part.title) {
-      if (out.length > 0) out.push({ kind: 'note', text: '' })
-      out.push({ kind: 'heading', text: part.title })
-    }
+    if (out.length > 0) out.push({ kind: 'note', text: '' })
+    out.push({ kind: 'heading', text: part.title })
     out.push(...part.rows.map((row): Entry => ({ kind: 'page', row })))
   }
   if (page.earlier.length > 0) {
     out.push({ kind: 'note', text: '' })
-    out.push({ kind: 'heading', text: 'Earlier in this session' })
+    out.push({ kind: 'heading', text: earlierTitle('session') })
     out.push(...page.earlier.map((text): Entry => ({ kind: 'note', text, indent: TITLE_AT })))
   }
 
@@ -1015,7 +1014,7 @@ function tabCell(t: TabCell, name: string, form: TabForm, s: Style): string {
 
 /**
  * The tab line. As the panel narrows, it drops the `[n]` brackets, then names the tabs by their symbols, with and then
- * without brackets. Narrower still, the final `fit()` in `render` cuts the line's end.
+ * without brackets. Narrower still, the final `fit()` in `drawPanel` cuts the line's end.
  */
 function tabBar(d: Draw): string {
   const { screen, ui, width, style: s } = d
@@ -1078,7 +1077,7 @@ export function render(
   return drawPanel(screen, ui, width, now, style, height).lines
 }
 
-/** The panel's lines, and the Progress page's scroll clamped to what the panel can show. */
+/** The panel's lines, and the Overview page's scroll clamped to what the panel can show. */
 export function drawPanel(
   screen: PanelScreen,
   ui: PanelUi,

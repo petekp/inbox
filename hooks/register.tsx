@@ -57,8 +57,6 @@ import {
   emptySession,
   endTurn,
   forkedFrom,
-  lookEndedOn,
-  lookStartedOn,
   noteActivity as noteTurnActivity,
   pressOn,
   recordPrompt,
@@ -68,6 +66,8 @@ import {
   turnEnded,
   turnStarted,
   upgradeSession,
+  cutOffTurn,
+  withLook,
   withNewPrRefs,
 } from './session'
 import type { SentBy, Session, SessionView } from './session'
@@ -79,7 +79,7 @@ import {
   wakeForDone as wakeSessionForDone,
 } from './session-host'
 import type { AskCatchUpOverview, CatchUpReply, SessionHost } from './session-host'
-import { demoView, isDemoCopy, upgradeDemoCopy } from './demo'
+import { demoView, isDemoCopy } from './demo'
 import { claudeTasksAfter } from './host-tasks'
 import { noteDialog } from './dialogs'
 import type { Exchange, Press, Update } from './ledger'
@@ -165,12 +165,11 @@ import {
   TURN_BOX_TOOL,
   turnBoxText,
 } from './claude'
-import { ago, cellWidth } from './text'
+import { ago, cellWidth, clipLabel } from './text'
 import {
   applyPress,
   baseName,
   capitalized,
-  clipLabel,
   demoAfterPress,
   demoTurns,
   doneWake,
@@ -197,10 +196,12 @@ import {
   stopFix,
   stopText,
   drawnLists,
+  earlierTitle,
   emptyText,
   isRowTab,
+  isShownTab,
   LISTED_TABS,
-  ROW_TABS,
+  screenTabOf,
   TABS,
   fitTabs,
   tabName,
@@ -981,12 +982,16 @@ async function commit(
   return after
 }
 
-/** The session a look draws: `session`, with the ledger, PR views, presses and turn counts of the sample while it shows. */
+/**
+ * The session a look draws: `session`, with the ledger, PR views, presses and turn counts of the sample while it shows.
+ * No turn runs in the sample.
+ */
 function drawnSession(
   session: Session,
-  drawn: Pick<DemoCopy, 'ledger' | 'stop' | 'prViews' | 'lastActions' | 'turns' | 'presence'>,
+  drawn: Pick<DemoCopy, 'ledger' | 'stop' | 'prViews' | 'lastActions' | 'turns'>,
+  isDemo: boolean,
 ): Session {
-  const { ledger, stop, prViews, lastActions, turns, presence } = drawn
+  const { ledger, stop, prViews, lastActions, turns } = drawn
 
   return {
     ...session,
@@ -994,7 +999,7 @@ function drawnSession(
     stop,
     prViews,
     lastActions,
-    presence: { ...session.presence, ...turns, ...presence },
+    presence: { ...session.presence, ...turns, ...(isDemo ? { isTurnRunning: false } : {}) },
   }
 }
 
@@ -1199,9 +1204,9 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
     update($, TAB, t => {
       const renamed = (t as string) === 'notes' ? 'findings' : (t as string) === 'waiting' ? 'needsYou' : t
 
-      return ROW_TABS.some(r => r.id === renamed) ? renamed : 'needsYou'
+      return isShownTab(renamed) && isRowTab(renamed) ? renamed : 'needsYou'
     }),
-    update($, PAGE, p => (TABS.some(t => t.id === p) ? p : null)),
+    update($, PAGE, p => (isShownTab(p) ? p : null)),
     update($, SELECTION, ({ waiting, ...s }: Record<Tab, Cursor> & { waiting?: Cursor }) => {
       const cursors: Record<Tab, Cursor> = { ...NO_SELECTION, ...(waiting ? { needsYou: waiting } : {}), ...s }
       // A cursor saved before `openedAt` existed: no click opened its row in a way that still guards it.
@@ -1216,7 +1221,7 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
       ),
     ),
     // A demo an earlier build seeded may lack a field this one draws, so it ends; /inbox demo seeds a new one.
-    update($, DEMO, d => (d === null ? d : isDemoCopy(d) ? upgradeDemoCopy(d) : null)),
+    update($, DEMO, d => (d === null || isDemoCopy(d) ? d : null)),
     // A draft saved as bare text began before now, so a row that closed before this load stays closed.
     update($, DRAFTS, (d: Record<string, Draft | string>) =>
       Object.fromEntries(
@@ -1268,9 +1273,15 @@ function openPane($: EngineInterface, isFieldOpen = false) {
  */
 async function syncLook($: EngineInterface, isOpen?: boolean) {
   if (await read($, DEMO)) return
-  const [page, isPaneOpen, now] = await Promise.all([read($, PAGE), isOpen ?? isPaneShown($), $.clock.now()])
+  const [page, isPaneOpen, now, drawn] = await Promise.all([
+    read($, PAGE),
+    isOpen ?? isPaneShown($),
+    $.clock.now(),
+    read($, SESSION).then(upgradeSession),
+  ])
   const isShown = isPaneOpen && page === 'overview'
-  await commit($, currentOwner(), s => (isShown ? lookStartedOn(s, now) : lookEndedOn(s, now))).catch(() => undefined)
+  if (withLook(drawn, isShown, now) === drawn) return
+  await commit($, currentOwner(), s => withLook(s, isShown, now)).catch(() => undefined)
 }
 
 /** Opens the open pane again, without asking for the keyboard, once a reply field opened or closed. */
@@ -1305,8 +1316,7 @@ async function openInbox($: EngineInterface) {
   // asking for the pane, and below 144 columns, once the person has closed it, leaves it unplaced.
   await openPane($)
   const { view } = await drawnState($)
-  if (view.needsYou.count > 0)
-    await Promise.all([update($, TAB, () => 'needsYou' as const), update($, PAGE, () => null)])
+  if (view.needsYou.count > 0) await writeRowTab($, 'needsYou')
   else if ((await read($, TAB)) === 'prs') await findPrs($)
   void syncLook($)
   await followNewRows($, true)
@@ -1372,7 +1382,12 @@ async function focusField($: EngineInterface, id: string) {
   await redraw($)
 }
 
-/** The shown row tab; null while the Progress page shows, where no row is drawn, selected or scrolled to. */
+/** Shows the row tab `tab`, leaving any page tab. */
+async function writeRowTab($: EngineInterface, tab: Tab) {
+  await Promise.all([update($, TAB, () => tab), update($, PAGE, () => null)])
+}
+
+/** The shown row tab; null while the Overview page shows, where no row is drawn, selected or scrolled to. */
 async function readRowTab($: EngineInterface): Promise<Tab | null> {
   const [page, tab] = await Promise.all([read($, PAGE), read($, TAB)])
 
@@ -1387,7 +1402,7 @@ async function showTab($: EngineInterface, tab: ShownTab) {
     return
   }
   if (tab === 'prs') await findPrs($)
-  await Promise.all([update($, TAB, () => tab), update($, PAGE, () => null)])
+  await writeRowTab($, tab)
   void syncLook($)
   await scrollToOpenRow($, tab)
 }
@@ -1762,7 +1777,7 @@ function newRows(isDemo: boolean, current: Record<Tab, string[] | null>): Record
 
 async function jumpTo($: EngineInterface, tab: Tab) {
   cancelUndoScroll()
-  await Promise.all([update($, TAB, () => tab), update($, PAGE, () => null)])
+  await writeRowTab($, tab)
   await update($, SELECTION, s => ({ ...s, [tab]: NO_CURSOR }))
   await scrollToOpenRow($, tab)
 }
@@ -1837,9 +1852,8 @@ async function isPrsTabShown($: EngineInterface) {
 /** The tab the pane shows, as the inbox model is told: the page tab when one shows, else the row tab. */
 async function shownScreenTab($: EngineInterface): Promise<ScreenTab> {
   const [page, tab] = await Promise.all([read($, PAGE), read($, TAB)])
-  const id = page ?? tab
 
-  return { label: TABS.find(t => t.id === id)?.label ?? id, isPage: page !== null }
+  return screenTabOf(page ?? tab)
 }
 
 async function screen($: EngineInterface) {
@@ -2328,13 +2342,19 @@ async function drawnState(
     lastActions,
     notes,
     turns,
-    presence: { isTurnRunning: presence.isTurnRunning },
   }
   const holds = { replies: heldReplies(typing, drafts), discarded }
 
   const isUnread = demo === null && unreadable === conversation.id
 
-  const view = sessionView(drawnSession(session, drawn), now, SETTLED_MS, CAN_CATCH_UP, holds, drawn.notes)
+  const view = sessionView(
+    drawnSession(session, drawn, demo !== null),
+    now,
+    SETTLED_MS,
+    CAN_CATCH_UP,
+    holds,
+    drawn.notes,
+  )
 
   return {
     ...drawn,
@@ -2494,14 +2514,6 @@ async function applyConversation(
 /** An update a reload cut off reads as failed, so the next one catches up. */
 function cutOffUpdate<S extends Session>(s: S): S {
   return s.presence.isUpdating ? { ...s, presence: { ...s.presence, isUpdating: false, ledgerState: 'failed' } } : s
-}
-
-/**
- * A reload or a quit can cut off a turn's end, so at load no turn runs. A turn the engine still runs sets it again at
- * its next `turn.start`.
- */
-function cutOffTurn<S extends Session>(s: S): S {
-  return s.presence.isTurnRunning ? turnEnded(s) : s
 }
 
 /** Row presses keep only their PR records, whose rows outlive a conversation's items. */
@@ -2961,9 +2973,9 @@ export const register: Register = on => {
     const r = await next(e)
     if (e.requestId !== PANE) return r
     const data = e.data as { tab?: unknown; isUnfolded?: unknown; hover?: unknown; key?: unknown } | null
-    const shown = TABS.find(t => t.id === data?.tab)
+    const shown = isShownTab(data?.tab) ? data.tab : null
     const followUp = typeof data?.key === 'string' ? followUpPresses.get(data.key) : undefined
-    if (e.element === 'tabs' && shown) await showTab($, shown.id)
+    if (e.element === 'tabs' && shown) await showTab($, shown)
     else if (e.element.startsWith('undo-') && followUp && typeof data?.key === 'string')
       followUp({
         plugin: 'inbox',
@@ -3169,7 +3181,7 @@ export const register: Register = on => {
       $.env.get('TERM_PROGRAM'),
       read($, RUNNING_FRAME),
     ])
-    const tab: Tab = ROW_TABS.some(t => t.id === savedTab) ? savedTab : 'needsYou'
+    const tab: Tab = isShownTab(savedTab) && isRowTab(savedTab) ? savedTab : 'needsYou'
     const isOverviewShown = savedPage === 'overview'
     const shownTab: ShownTab = isOverviewShown ? 'overview' : tab
     const isRunningMarkShown = isOverviewShown && hasRunningMark(view.overviewPage)
@@ -3239,6 +3251,8 @@ export const register: Register = on => {
       handle: string
       /** A Button takes no color, so this handle is Text and only the row's text selects it. */
       handleTone?: Tone
+      /** A PR row's mark says its work is done. */
+      isMarkDone?: boolean
       title: string
       titleAfter?: string
       at?: number
@@ -3312,7 +3326,7 @@ export const register: Register = on => {
     const prPress = (p: PrPress) => (press: UiPressArgument) => runPress($, p, press.surface)
     const prKeyAction = (a: PrAction, row: string): KeyAction => {
       // A failed send's Try again repeats its button's press, so it needs a key of its own.
-      const isResend = a.icon === 'retry' && a.press.action !== 'pr-refresh'
+      const isResend = a.isRetry === true
 
       return {
         key: `${isResend ? 'retry' : PR_KEYS[a.press.action]}-${row}`,
@@ -3324,22 +3338,19 @@ export const register: Register = on => {
         onPress: prPress(a.press),
       }
     }
-    const checkRowBase = (pr: PrView, c: PrCheck): Row => ({
-      id: prCheckId(pr, c),
-      handle: checkRowText(c).mark.text,
-      handleTone: checkRowText(c).mark.tone ?? undefined,
-      title: c.name,
-      line: { text: c.name },
-      body: null,
-      keys: () => checkActions(pr, c, presses).map(a => prKeyAction(a, `${pr.ref}-${c.name}`)),
-    })
     const checkRow = (pr: PrView, c: PrCheck): Row => {
-      const { lead, meta } = checkRowText(c)
+      const { mark, lead, title, meta } = checkRowText(c)
       return {
-        ...checkRowBase(pr, c),
+        id: prCheckId(pr, c),
+        handle: mark.text,
+        handleTone: mark.tone ?? undefined,
+        isMarkDone: mark.isDone,
+        title,
         ...(c.finishedAt !== undefined ? { at: c.finishedAt } : {}),
-        line: { ...(lead ? { before: `${lead} / ` } : {}), text: c.name, after: meta },
+        line: { ...(lead ? { before: `${lead} / ` } : {}), text: title, after: meta },
         subtitle: <Text color={pal.muted}>{lead ? `${lead}${DOT}${meta}` : meta}</Text>,
+        body: null,
+        keys: () => checkActions(pr, c, presses).map(a => prKeyAction(a, `${pr.ref}-${c.name}`)),
       }
     }
     const threadRow = (pr: PrView, t: PrThread): Row => {
@@ -3385,11 +3396,13 @@ export const register: Register = on => {
         )
       }
       const text = threadRowText(pr, t, lastActions)
+      const actions = splitFollowUps(threadActions(pr, t, presses))
 
       return {
         id,
         handle: text.mark.text,
         handleTone: text.mark.tone ?? undefined,
+        isMarkDone: text.mark.isDone,
         ...(text.fold ? { fold: text.fold } : {}),
         title: text.title,
         ...(t.at === null ? {} : { at: t.at }),
@@ -3400,20 +3413,21 @@ export const register: Register = on => {
         },
         body: comment,
         clippedBody: clippedComment,
-        keys: () => splitFollowUps(threadActions(pr, t, presses)).keys.map(a => prKeyAction(a, t.id)),
-        moreKeys: () => splitFollowUps(threadActions(pr, t, presses)).more.map(a => prKeyAction(a, t.id)),
+        keys: () => actions.keys.map(a => prKeyAction(a, t.id)),
+        moreKeys: () => actions.more.map(a => prKeyAction(a, t.id)),
       }
     }
 
     type Entry = DrawnEntry<Row>
+    // The Overview draws no rows, so none are built while it shows.
     const lists = drawnLists(
       view,
       () => true,
-      r => (r.item ? itemRow(r) : r.finding ? findingRow(r) : null),
+      r => (isOverviewShown ? null : r.item ? itemRow(r) : r.finding ? findingRow(r) : null),
     )
     const needsYouGroups = NEEDS_YOU_GROUPS.map(g => ({ ...g, entries: lists[g.list], rows: rowsIn(lists[g.list]) }))
     const findingEntries = lists.findings
-    const prGroups = shownPrs
+    const prGroups = (isOverviewShown ? [] : shownPrs)
       .map(({ pr, isSettled }) => ({
         pr,
         isSettled,
@@ -3429,7 +3443,7 @@ export const register: Register = on => {
     const tabCounts: Record<Tab, number> = {
       needsYou: view.needsYou.count,
       findings: view.findings.count,
-      prs: prGroups.filter(g => !g.isSettled && prNeedsYou(g.pr, isThreadSent)).length,
+      prs: shownPrs.filter(x => !x.isSettled && prNeedsYou(x.pr, isThreadSent)).length,
     }
     const tabCount = (id: ShownTab) => (isRowTab(id) ? tabCounts[id] : 0)
     const tabTone = (id: ShownTab) => (isRowTab(id) ? pal.tone[id] : undefined)
@@ -3440,15 +3454,17 @@ export const register: Register = on => {
     const ids = rows[tab].map(r => r.id)
     const indexOf = new Map(ids.map((id, n) => [id, n]))
     const cursor = selection[tab]
-    const settledIds = new Set(settledRowIds(allRows(view)))
-    const top = firstWaiting(
-      tabWaits(
-        tab,
-        view,
-        shownPrs.filter(x => !x.isSettled).map(x => x.pr),
-        lastActions,
-      ),
-    )
+    const settledIds = new Set(isOverviewShown ? [] : settledRowIds(allRows(view)))
+    const top = isOverviewShown
+      ? null
+      : firstWaiting(
+          tabWaits(
+            tab,
+            view,
+            shownPrs.filter(x => !x.isSettled).map(x => x.pr),
+            lastActions,
+          ),
+        )
     const at = selectedIndex(ids, cursor, top, id => settledIds.has(id))
     const isOpenGuarded = isGuarded(cursor.openedAt, now)
 
@@ -3611,7 +3627,7 @@ export const register: Register = on => {
 
       return hasAge(f)
         ? {
-            text: row?.view ? rowFeedbackText(row.view, look)! : markedFeedbackText(f, row?.handle ?? '', look),
+            text: row?.view ? rowFeedbackText(row.view, look)! : markedFeedbackText(f, row?.isMarkDone ?? false, look),
             age: ago(now - f.at),
             isAfterTitle: true,
             isFailure: false,
@@ -4165,10 +4181,8 @@ export const register: Register = on => {
     })
     const status = shownStatus.text ?? ''
 
-    const drawnIds = new Set([
-      ...Object.values(rows).flatMap(list => list.map(r => r.id)),
-      ...prViews.map(pr => prMarkId(pr.ref)),
-    ])
+    const openIds = openRowIds(view)
+    const drawnIds = new Set([...openIds.needsYou, ...openIds.findings, ...prRowIds(shownPrs)])
     const lineNote = Object.entries(notes)
       .filter(([id, n]) => !drawnIds.has(id) && now - n.at < SETTLED_MS)
       .map(([, n]) => n)
@@ -5172,14 +5186,15 @@ export const register: Register = on => {
           : []),
         ...page.sections.map(part =>
           section([
-            ...(part.title ? [groupTitle(part.title, 0), ...titleGap()] : []),
+            groupTitle(part.title, 0),
+            ...titleGap(),
             ...part.rows.map((m, n) => markedRow(m, childPos(n, part.rows.length))),
           ]),
         ),
         ...(page.earlier.length > 0
           ? [
               section([
-                groupTitle('Earlier in this session', 0),
+                groupTitle(earlierTitle('session'), 0),
                 ...titleGap(),
                 ...page.earlier.map((text, n) =>
                   overviewTextRow(`earlier-${n}`, text, childPos(n, page.earlier.length)),

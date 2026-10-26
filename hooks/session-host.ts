@@ -25,7 +25,7 @@ import {
 import type { AnswerMessage, Effect, EffectHost, RowPress } from './presses'
 import {
   applied,
-  isReplyApplied,
+  parsedReply,
   appliedCatchUp,
   appliedOverview,
   completedAttempt,
@@ -98,11 +98,10 @@ export type SessionHost<S extends Session> = {
   isDeliveryHeldUntilRun?: boolean
   /** Throws when `deliver` could not start. Run before a sent record is saved, so a message that cannot go leaves no record. */
   prepare?(s: S): Promise<void>
-  /**
-   * Opens a link or path, copies text, or refreshes the PRs and returns once the refresh ends. Returns why it could not,
-   * or null. A refresh that fails returns null, since each PR's own error says why.
-   */
-  perform(s: S, effect: Exclude<Effect, { kind: 'send' }>): Promise<string | null>
+  /** Opens a link or path, or copies text. Returns why it could not, or null. */
+  perform(s: S, effect: Extract<Effect, { kind: 'open' | 'copy' }>): Promise<string | null>
+  /** Fetches the session's PRs, and resolves once that fetch ends. A failed fetch resolves too, since each PR's own error says why. */
+  refreshPrs(): Promise<void>
   gh: {
     /** The gh to run, or null when none starts. */
     find(): Promise<string | null>
@@ -258,13 +257,14 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
             const next = s.pending[0]!
             const promptAt = await host.now()
             const reply = await host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names)).catch(() => null)
+            const parsed = parsedReply(next.ex, reply)
             let isApplied = false as boolean
             const after = await host.update(async x => {
               isApplied = false
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x
-              isApplied = isReplyApplied(x, reply)
+              isApplied = parsed !== null
 
-              return applied(x, reply, await host.now(), promptAt)
+              return applied(x, parsed, await host.now(), promptAt)
             })
             if (isApplied)
               followUp(
@@ -294,16 +294,17 @@ type WakeHost<S extends Session> = Pick<
 
 /**
  * Tells the agent about rows closed with Done once their settle window has passed and no main-agent turn runs. A
- * refused message marks those rows with why, so they read "Not sent" and offer Undo.
+ * refused message marks those rows with why, so they read "Not sent" and offer Undo. `current` is the session when the
+ * host has just read it.
  */
-export async function wakeForDone<S extends Session>(host: WakeHost<S>): Promise<void> {
+export async function wakeForDone<S extends Session>(host: WakeHost<S>, current?: S): Promise<void> {
   const check = async (s: S) =>
     doneWake(s.ledger, {
       now: await host.now(),
       windowMs: host.settleWindowMs,
       isTurnRunning: s.presence.isTurnRunning,
     })
-  if (!(await check(await host.read()))) return
+  if (!(await check(current ?? (await host.read())))) return
   let attempt: { deliveryId: string; text: string } | null = null
   await host.update(async s => {
     // A host may run the change again on a newer session, which can have nothing left to send.
@@ -373,7 +374,15 @@ export type PressOutcome = {
 
 type PressHost<S extends Session> = Pick<
   SessionHost<S>,
-  'now' | 'read' | 'update' | 'deliver' | 'perform' | 'newId' | 'isDeliveryHeldUntilRun' | 'answerMessage'
+  | 'now'
+  | 'read'
+  | 'update'
+  | 'deliver'
+  | 'perform'
+  | 'refreshPrs'
+  | 'newId'
+  | 'isDeliveryHeldUntilRun'
+  | 'answerMessage'
 >
 
 /** A press that is saved, with what it still runs. */
@@ -406,6 +415,10 @@ export async function startPress<S extends Session>(
     now: host.now,
     deliveryId: () => pressed.deliveryId ?? host.newId(),
     perform: async e => {
+      if (e.kind === 'refresh-prs') {
+        await host.refreshPrs()
+        return null
+      }
       if (e.kind === 'copy') copy = { text: e.text, name: e.name }
       return host.perform(await host.read(), e)
     },

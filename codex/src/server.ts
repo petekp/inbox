@@ -21,7 +21,7 @@ import { isUnseen, pressOn, recorded, turnEnded, turnStarted } from '../../hooks
 import type { SendOutcome } from '../../hooks/session'
 import { fetchPrs, prFetchTracker, press, wakeForDone as wakeSessionForDone } from '../../hooks/session-host'
 import type { SessionHost } from '../../hooks/session-host'
-import { NO_HOLDS, SETTLED_MS, TABS } from '../../hooks/view'
+import { NO_HOLDS, SETTLED_MS, isShownTab } from '../../hooks/view'
 import type { ReplyHolds, ShownTab } from '../../hooks/view'
 import { SETTLE_WINDOW_MS } from './settle'
 import { pruneSessions, readState, updateState } from './state'
@@ -126,7 +126,7 @@ function holdsOf(args: Record<string, unknown>): ReplyHolds {
 
 /** The tab the page says it shows, or null for anything that is not a tab. */
 function shownTabOf(raw: unknown): ShownTab | null {
-  return TABS.find(t => t.id === raw)?.id ?? null
+  return isShownTab(raw) ? raw : null
 }
 
 function stamped(tabHtml: string): string {
@@ -298,13 +298,8 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         preparedCli = s.cliPath ?? (await deps.fallbackCli())
       },
       deliver: (s, message) => queueMessage(s, message, preparedCli),
-      perform: async (s, e) => {
-        if (e.kind === 'refresh-prs') {
-          await prFetches.fetchNow(id, () => fetchPrs(hostFor(id), true))
-          return null
-        }
-        return e.kind === 'copy' ? null : open(s, e.target)
-      },
+      perform: async (s, e) => (e.kind === 'copy' ? null : open(s, e.target)),
+      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(id), true)),
       gh: {
         find: gh.find,
         forget: gh.forget,
@@ -320,9 +315,8 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   }
 
   /** Sets whether a turn runs from the rollout's last turn row, read inside the state lock so no hook writes between. */
-  async function syncTurn(id: string) {
-    if ((await readState(dir, id)).transcriptPath === null) return
-    await updateState(dir, id, async s => {
+  async function syncTurn(id: string): Promise<SessionState> {
+    return updateState(dir, id, async s => {
       const isRunning = s.transcriptPath === null ? null : await turnRunningIn(s.transcriptPath)
       if (isRunning === null || isRunning === s.presence.isTurnRunning) return s
 
@@ -331,8 +325,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   }
 
   const wakeForDone = async (id: string) => {
-    await syncTurn(id)
-    await wakeSessionForDone(hostFor(id))
+    await wakeSessionForDone(hostFor(id), await syncTurn(id))
   }
 
   const currentPage = async () => (await deps.devPage?.()) ?? deps.tabHtml

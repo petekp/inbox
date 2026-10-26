@@ -1,15 +1,7 @@
 import type { Item, LastAction, Ledger, PressKind, PrCheck, PrThread, PrView, PrViews } from '../types'
-import {
-  baseName,
-  clipLabel,
-  isFoldingPress,
-  localLast,
-  pendingResult,
-  prSteps,
-  recordPress,
-  withQueued,
-} from './presses'
+import { baseName, isFoldingPress, localLast, pendingResult, prSteps, recordPress, withQueued } from './presses'
 import type { Effect, HelpStep, PrActionId } from './presses'
+import { clipLabel } from './text'
 import {
   commentLine,
   commentParts,
@@ -210,8 +202,8 @@ export const PR_DISMISSED_LABEL = 'Dismissed'
 
 export const PR_GROUP_TITLES = { threads: 'Review threads', checks: 'Failing checks' }
 
-/** The mark before a PR row's title, and its tone. */
-export type PrRowMark = { text: string; tone: 'done' | 'error' | null }
+/** The mark before a PR row's title, its tone, and whether it says the row's work is done. */
+export type PrRowMark = { text: string; tone: 'done' | 'error' | null; isDone: boolean }
 
 /** What a review thread's row says, for each look to draw in its own controls. */
 export type ThreadRowText = {
@@ -230,7 +222,7 @@ export function threadRowText(pr: PrView, t: PrThread, lastActions: Record<strin
   const showsCheck = threadShowsCheckIn(lastActions)(pr, t)
 
   return {
-    mark: showsCheck ? { text: '✓', tone: 'done' } : { text: '◦', tone: null },
+    mark: showsCheck ? { text: '✓', tone: 'done', isDone: true } : { text: '◦', tone: null, isDone: false },
     fold:
       isSent || isChanged
         ? t.isLinesChanged
@@ -250,7 +242,12 @@ export function threadRowText(pr: PrView, t: PrThread, lastActions: Record<strin
 
 /** What a failing check's row says. `lead` names its workflow, drawn before the check's name. */
 export function checkRowText(c: PrCheck): { mark: PrRowMark; lead: string | null; title: string; meta: string } {
-  return { mark: { text: '✗', tone: 'error' }, lead: c.workflow || null, title: c.name, meta: checkRunText(c) }
+  return {
+    mark: { text: '✗', tone: 'error', isDone: false },
+    lead: c.workflow || null,
+    title: c.name,
+    meta: checkRunText(c),
+  }
 }
 
 /** How many characters of a review comment, or of its latest reply, an open thread row shows. */
@@ -361,6 +358,38 @@ export type Applied =
   | { ledger: Ledger; lasts: Record<string, LastAction>; drop: string[]; effects: Effect[]; reopenedId?: string }
   | { stale: true }
 
+function commentEffect(pr: PrView, t: PrThread): Effect {
+  return { kind: 'open', target: t.reply?.url || t.url || pr.url, name: 'the comment' }
+}
+
+function prPageEffect(pr: PrView): Effect {
+  return { kind: 'open', target: pr.url, name: `PR #${pr.number}` }
+}
+
+function logEffect(pr: PrView, check: PrCheck): Effect {
+  return { kind: 'open', target: check.url ?? pr.url, name: check.url ? 'the log' : `PR #${pr.number}` }
+}
+
+/** The open or refresh a Local PR press runs. Null for a press that sends or marks, or whose row is gone. */
+export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
+  switch (p.action) {
+    case 'thread-open': {
+      const t = pr.threads.find(x => x.id === p.thread)
+      return t ? commentEffect(pr, t) : null
+    }
+    case 'pr-open':
+      return prPageEffect(pr)
+    case 'pr-refresh':
+      return PR_REFRESH
+    case 'log': {
+      const check = pr.checks.find(c => c.name === p.check)
+      return check ? logEffect(pr, check) : null
+    }
+    default:
+      return null
+  }
+}
+
 export function prRowId(p: PrPress): string {
   if ('check' in p) return checkRowId(p.ref, p.check)
   if ('thread' in p) return threadRowId(p.ref, p.thread)
@@ -396,35 +425,45 @@ export type PrAction = {
   icon?: 'retry' | 'open'
   hotkey?: string
   isFollowUp?: boolean
+  /** A failed send's Try again, which repeats its button's press. */
+  isRetry?: boolean
 }
 
-function again(presses: PressState, rowId: string, action: PrActionId, label: string): string {
-  const last = presses.lastActions[rowId]
-  const isOut = isPressOut(feedbackOf(rowId, last, undefined, presses.turns, presses.now))
+/** A row's last press, and whether it is still out, which the row's button labels read. */
+type LastPress = { last: LastAction | undefined; isOut: boolean }
 
-  return isAgain(last, action, isOut) ? `${label} again` : label
+function lastPressOf(presses: PressState, rowId: string): LastPress {
+  const last = presses.lastActions[rowId]
+
+  return { last, isOut: isPressOut(feedbackOf(rowId, last, undefined, presses.turns, presses.now)) }
+}
+
+function again(row: LastPress, action: PrActionId, label: string): string {
+  return isAgain(row.last, action, row.isOut) ? `${label} again` : label
 }
 
 function retryAction(retry: { press: PrPress; kind: PressKind } | null): PrAction[] {
-  return retry ? [{ press: retry.press, label: 'Try again', kind: retry.kind, emphasis: 'normal', icon: 'retry' }] : []
+  return retry
+    ? [{ press: retry.press, label: 'Try again', kind: retry.kind, emphasis: 'normal', icon: 'retry', isRetry: true }]
+    : []
 }
 
 export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrAction[] {
-  const id = threadRowId(pr.ref, t.id)
+  const row = lastPressOf(presses, threadRowId(pr.ref, t.id))
   const on = { ref: pr.ref, thread: t.id }
 
   return [
-    ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, t.id)),
+    ...retryAction(prRetryOf(row.last, pr.ref, t.id)),
     {
       press: { action: 'thread-address', ...on },
-      label: again(presses, id, 'thread-address', 'Address'),
+      label: again(row, 'thread-address', 'Address'),
       kind: 'handoff',
       emphasis: 'primary',
       hotkey: 'a',
     },
     {
       press: { action: 'thread-draft', ...on },
-      label: again(presses, id, 'thread-draft', 'Draft reply'),
+      label: again(row, 'thread-draft', 'Draft reply'),
       kind: 'talk',
       emphasis: 'normal',
       hotkey: 'r',
@@ -439,7 +478,7 @@ export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrA
     },
     {
       press: { action: 'thread-discuss', ...on },
-      label: again(presses, id, 'thread-discuss', 'Discuss'),
+      label: again(row, 'thread-discuss', 'Discuss'),
       kind: 'talk',
       emphasis: 'quiet',
       hotkey: 'd',
@@ -449,14 +488,14 @@ export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrA
 }
 
 export function checkActions(pr: PrView, c: PrCheck, presses: PressState): PrAction[] {
-  const id = checkRowId(pr.ref, c.name)
+  const row = lastPressOf(presses, checkRowId(pr.ref, c.name))
   const on = { ref: pr.ref, check: c.name }
 
   return [
-    ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, null, c.name)),
+    ...retryAction(prRetryOf(row.last, pr.ref, null, c.name)),
     {
       press: { action: 'check-fix', ...on },
-      label: again(presses, id, 'check-fix', 'Fix'),
+      label: again(row, 'check-fix', 'Fix'),
       kind: 'handoff',
       emphasis: 'primary',
       hotkey: 'a',
@@ -481,7 +520,7 @@ export function prBlockActions(
   branchRef: string | null,
   presses: PressState,
 ): PrAction[] {
-  const id = prMarkId(pr.ref)
+  const row = lastPressOf(presses, prMarkId(pr.ref))
   const { status } = readiness(pr, isThreadSent)
   const waitingOn = threadsOnYou(pr, isThreadSent).length
   const moves: Omit<PrAction, 'emphasis'>[] = [
@@ -489,7 +528,7 @@ export function prBlockActions(
       ? [
           {
             press: { action: 'pr-merge' as const, ref: pr.ref },
-            label: again(presses, id, 'pr-merge', 'Merge'),
+            label: again(row, 'pr-merge', 'Merge'),
             kind: 'handoff' as const,
           },
         ]
@@ -498,7 +537,7 @@ export function prBlockActions(
       ? [
           {
             press: { action: 'pr-conflicts' as const, ref: pr.ref },
-            label: again(presses, id, 'pr-conflicts', 'Resolve conflicts'),
+            label: again(row, 'pr-conflicts', 'Resolve conflicts'),
             kind: 'handoff' as const,
           },
         ]
@@ -507,7 +546,7 @@ export function prBlockActions(
       ? [
           {
             press: { action: 'pr-address-all' as const, ref: pr.ref },
-            label: again(presses, id, 'pr-address-all', `Address all ${waitingOn} threads`),
+            label: again(row, 'pr-address-all', `Address all ${waitingOn} threads`),
             kind: 'handoff' as const,
           },
         ]
@@ -526,7 +565,7 @@ export function prBlockActions(
           },
         ]
       : []),
-    ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, null)),
+    ...retryAction(prRetryOf(row.last, pr.ref, null)),
     ...moves.map((m, n): PrAction => ({ ...m, emphasis: n === 0 ? 'primary' : 'normal' })),
     { press: { action: 'pr-open', ref: pr.ref }, label: 'Open PR', kind: 'local', emphasis: 'normal', icon: 'open' },
     ...(pr.ref === branchRef
@@ -588,8 +627,7 @@ export function applyPrPress(
       if (!t) return stale
       if (p.action === 'thread-address' && !t.isWaiting) return stale
       const id = prThreadId(pr, t)
-      if (p.action === 'thread-open')
-        return local(id, 'Open', { kind: 'open', target: t.reply?.url || t.url || pr.url, name: 'the comment' })
+      if (p.action === 'thread-open') return local(id, 'Open', commentEffect(pr, t))
       if (p.action === 'thread-address')
         return applied({
           lasts: { [id]: record(id, 'handoff', p.action, 'Address') },
@@ -633,7 +671,7 @@ export function applyPrPress(
         effects: [send(prompts.merge(pr))],
       })
     case 'pr-open':
-      return local(markId, 'Open PR', { kind: 'open', target: pr.url, name: `PR #${pr.number}` })
+      return local(markId, 'Open PR', prPageEffect(pr))
     case 'pr-refresh':
       return local(markId, PR_REFRESH_LABEL, PR_REFRESH)
     case 'pr-dismiss':
@@ -654,11 +692,7 @@ export function applyPrPress(
     case 'log': {
       const check = pr.checks.find(c => c.name === p.check)
       if (!check) return stale
-      return local(prCheckId(pr, check), 'Open log', {
-        kind: 'open',
-        target: check.url ?? pr.url,
-        name: check.url ? 'the log' : `PR #${pr.number}`,
-      })
+      return local(prCheckId(pr, check), 'Open log', logEffect(pr, check))
     }
   }
 }
