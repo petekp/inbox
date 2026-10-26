@@ -589,6 +589,30 @@ test('a session resumed with earlier turns is marked behind at its first hook an
   assert.equal(new Set(seqs).size, seqs.length)
 })
 
+test('a hook in a new process sends no Herdr report that would change nothing, and reports a change the MCP server made', async () => {
+  const dir = tempDir()
+  const herdr = fakeRunner(() => ({ code: 0, stdout: '', stderr: '' }))
+  let at = 100
+  const hookProcess = () => ({
+    ...hookDeps(dir),
+    onWrite: herdrOnWrite({ HERDR_PANE_ID: 'p1' }, herdr.exec, dir, () => ++at),
+  })
+  const toolUse = input('PreToolUse', { tool_name: 'Bash', tool_input: { command: 'ls' } })
+
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), hookProcess())
+  await handleHook(toolUse, hookProcess())
+  assert.equal(herdr.calls.length, 1)
+
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: addAgentItem(s.ledger, { kind: 'question', ask: 'Ship it?', options: [], rec: null, helps: [] }, 1000)
+      .ledger,
+  }))
+  await handleHook(toolUse, hookProcess())
+  assert.equal(herdr.calls.length, 2)
+  assert.equal(reportedTokens(herdr.calls[1]!)['inbox-needs-you'], '1')
+})
+
 function forkRollout(parentId: string): string {
   const [first, ...rest] = readFileSync(rolloutCopy(), 'utf8').split('\n')
   const meta = JSON.parse(first ?? '')

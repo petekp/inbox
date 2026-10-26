@@ -2058,6 +2058,9 @@ function herdrReport(pane, tokens, seq) {
     ...seq === void 0 ? [] : ["--seq", String(seq)]
   ];
 }
+function herdrReportKey(pane, tokens) {
+  return herdrReport(pane, tokens).join("\n");
+}
 function herdrReporter() {
   let sent = null;
   let sending = Promise.resolve();
@@ -2065,7 +2068,7 @@ function herdrReporter() {
     sending = sending.then(async () => {
       const r = await report();
       if (!r) return;
-      const key = herdrReport(r.pane, r.tokens).join("\n");
+      const key = herdrReportKey(r.pane, r.tokens);
       if (key === sent) return;
       sent = key;
       await send(herdrReport(r.pane, r.tokens, r.seq));
@@ -2093,10 +2096,18 @@ function herdrOnWrite(env, run2, dir, now) {
   const report = herdrReporter();
   return async (s) => {
     if (!pane) return;
-    const at = now();
+    const seq = now();
+    const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, seq), []);
+    const key = herdrReportKey(pane, tokens);
+    if (key === s.herdrReport?.key) return;
     await report(
       (args) => run2(args, { cwd: dir, timeoutMs: HERDR_TIMEOUT_MS }),
-      async () => ({ pane, tokens: herdrTokens(s.ledger, s.stop, viewOf(s, at), []), seq: at })
+      async () => ({ pane, tokens, seq })
+    );
+    await updateState(
+      dir,
+      s.sessionId,
+      (saved) => saved.herdrReport && saved.herdrReport.seq >= seq ? saved : { ...saved, herdrReport: { key, seq } }
     );
   };
 }

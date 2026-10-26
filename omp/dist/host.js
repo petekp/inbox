@@ -3153,6 +3153,10 @@ function herdrReport(pane, tokens, seq) {
     ...seq === undefined ? [] : ["--seq", String(seq)]
   ];
 }
+function herdrReportKey(pane, tokens) {
+  return herdrReport(pane, tokens).join(`
+`);
+}
 function herdrReporter() {
   let sent = null;
   let sending = Promise.resolve();
@@ -3161,8 +3165,7 @@ function herdrReporter() {
       const r = await report();
       if (!r)
         return;
-      const key = herdrReport(r.pane, r.tokens).join(`
-`);
+      const key = herdrReportKey(r.pane, r.tokens);
       if (key === sent)
         return;
       sent = key;

@@ -112,6 +112,11 @@ export function herdrReport(pane: string, tokens: HerdrTokens, seq?: number): st
   ]
 }
 
+/** What a report sets, whatever its `seq`. Two reports with the same key show the same sidebar. */
+export function herdrReportKey(pane: string, tokens: HerdrTokens): string {
+  return herdrReport(pane, tokens).join('\n')
+}
+
 /** A report for a pane, or null when the session runs in no Herdr pane. */
 export type HerdrReport = { pane: string; tokens: HerdrTokens; seq?: number } | null
 
@@ -131,7 +136,7 @@ export function herdrReporter(): (
       .then(async () => {
         const r = await report()
         if (!r) return
-        const key = herdrReport(r.pane, r.tokens).join('\n')
+        const key = herdrReportKey(r.pane, r.tokens)
         if (key === sent) return
         sent = key
         await send(herdrReport(r.pane, r.tokens, r.seq))
