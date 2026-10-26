@@ -5156,7 +5156,8 @@ export const register: Register = on => {
           : []),
         ...page.sections.map(part =>
           section([
-            ...(part.title ? [groupTitle(part.title, 0), ...titleGap()] : []),
+            groupTitle(part.title, 0),
+            ...titleGap(),
             ...part.rows.map((m, n) => markedRow(m, childPos(n, part.rows.length))),
           ]),
         ),

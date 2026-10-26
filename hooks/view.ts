@@ -647,7 +647,7 @@ export type OverviewLead = {
   hasGapAbove: boolean
 }
 
-export type OverviewSection = { id: string; title: string | null; rows: OverviewRow[] }
+export type OverviewSection = { id: string; title: string; rows: OverviewRow[] }
 
 /** What the Overview page shows. Every look draws it as it is. */
 export type OverviewPage = {
@@ -674,7 +674,7 @@ const OVERVIEW_MARKS: Record<OverviewStatus, Pick<OverviewRow, 'mark' | 'tone'>>
 }
 
 /** A section's title. Every section has one, so rows never sit directly under the lead lines without a name. */
-const SECTION_TITLES: Partial<Record<PartId, string | null>> = {
+const SECTION_TITLES: Partial<Record<PartId, string>> = {
   workstreams: 'Streams',
   queue: 'Work',
   since: 'Since you looked',

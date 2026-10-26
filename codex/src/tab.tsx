@@ -1346,7 +1346,7 @@ function OverviewTab({ page }: { page: OverviewPage }) {
       ) : null}
       {sections.map(part => (
         <section key={part.id}>
-          {part.title ? <GroupTitle title={part.title} count={0} /> : null}
+          <GroupTitle title={part.title} count={0} />
           <div class="list">
             {part.rows.map(r => (
               <MarkedRow key={r.id} row={r} />
