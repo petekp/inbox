@@ -115,7 +115,7 @@ omp and pi change their extension API often. Keeping every omp import in `host.t
 
 ### The omp look
 
-The panel follows the throwaway extension's design, rewritten in `omp/src/panel.ts` with tests. It has three tabs: Asks, Findings and PRs. These differ from the terminal look on purpose:
+The panel follows the throwaway extension's design, rewritten in `omp/src/panel.ts` with tests. It has three tabs: Asks, Finds and PRs. These differ from the terminal look on purpose:
 
 - Enter presses the focused button. A row opens with its recommended option focused.
 - ← and → move between a row's buttons, and wrap at either end.
