@@ -2524,7 +2524,7 @@ function isFailure(f) {
   return f?.is === "notSent" || f?.is === "local" && f.result.state === "failed";
 }
 function isPressOut(f) {
-  return f?.is === "working" || f?.is === "queued" || f?.is === "unconfirmed";
+  return f?.is === "working" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";
 }
 function isAgain(last, action, isOut) {
   return isRepeatOf(last, action) && (!isOut || last?.isRepeat === true);

@@ -458,7 +458,12 @@ export function hasAge(
 }
 
 export function isPressOut(f: Feedback | null): boolean {
-  return f?.is === 'working' || f?.is === 'queued' || f?.is === 'unconfirmed'
+  return (
+    f?.is === 'working' ||
+    f?.is === 'queued' ||
+    f?.is === 'unconfirmed' ||
+    (f?.is === 'local' && f.result.state === 'pending')
+  )
 }
 
 /**
@@ -478,6 +483,15 @@ export type PressState = Pick<ViewInput, 'lastActions' | 'turns' | 'now'>
  */
 export function isStatusUnderActions(f: Feedback | null, isOpen: boolean): boolean {
   return isOpen && isPressOut(f)
+}
+
+/**
+ * Whether a row in the terminal and desktop looks draws a press status after its title, once
+ * `isStatusUnderActions` has placed a press that is out. A status with an age and a Local result that did not fail
+ * do. A failure takes its own line above an open row's buttons, in the error color.
+ */
+export function isAfterTitle(f: Feedback): boolean {
+  return hasAge(f) || (f.is === 'local' && f.result.state !== 'failed')
 }
 
 const runIt = (look: Look) =>
