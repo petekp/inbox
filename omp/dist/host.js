@@ -95,15 +95,15 @@ var STATUSES = {
 var statusOf = (raw) => STATUSES[String(raw)] ?? "pending";
 var textOf = (raw) => typeof raw === "string" ? raw.trim() : "";
 var recordOf = (raw) => typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
+function numberedTasks(rows, textKey) {
+  return rows.map(recordOf).map((row, n) => ({ id: String(n + 1), text: textOf(row[textKey]), status: statusOf(row.status) })).filter((t) => t.text !== "");
+}
 function ompTodoOf(details) {
   const phases = recordOf(details).phases;
   if (!Array.isArray(phases))
     return null;
-  return phases.flatMap((phase) => Array.isArray(recordOf(phase).tasks) ? recordOf(phase).tasks : []).map((task, n) => ({
-    id: String(n + 1),
-    text: textOf(recordOf(task).content),
-    status: statusOf(recordOf(task).status)
-  })).filter((t) => t.text !== "");
+  const tasks = phases.flatMap((phase) => Array.isArray(recordOf(phase).tasks) ? recordOf(phase).tasks : []);
+  return numberedTasks(tasks, "content");
 }
 function ompTodoFromBranch(entries) {
   for (const raw of [...entries].reverse()) {

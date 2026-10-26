@@ -20,6 +20,14 @@ const textOf = (raw: unknown): string => (typeof raw === 'string' ? raw.trim() :
 const recordOf = (raw: unknown): Record<string, unknown> =>
   typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
 
+/** A whole list's rows as tasks numbered from 1 in the list's order. A row with no text under `textKey` is left out. */
+function numberedTasks(rows: unknown[], textKey: string): HostTask[] {
+  return rows
+    .map(recordOf)
+    .map((row, n) => ({ id: String(n + 1), text: textOf(row[textKey]), status: statusOf(row.status) }))
+    .filter(t => t.text !== '')
+}
+
 /**
  * Claude Code's task list after one tool call. `TaskCreate` adds a task and `TaskUpdate` changes one by its id, so a
  * task's text is kept here. `TodoWrite` writes the whole list. The id of a new task is the number in the tool's
@@ -32,11 +40,7 @@ export function claudeTasksAfter(
   answer: string | null,
 ): HostTask[] {
   if (tool === 'TodoWrite') {
-    const todos = Array.isArray(input.todos) ? input.todos.map(recordOf) : []
-
-    return todos
-      .map((t, n) => ({ id: String(n + 1), text: textOf(t.content), status: statusOf(t.status) }))
-      .filter(t => t.text !== '')
+    return numberedTasks(Array.isArray(input.todos) ? input.todos : [], 'content')
   }
   if (tool === 'TaskCreate') {
     const text = textOf(input.subject) || textOf(input.description)
@@ -64,9 +68,7 @@ export function codexPlanOf(args: unknown): HostTask[] | null {
   const plan = recordOf(parsed).plan
   if (!Array.isArray(plan)) return null
 
-  return plan
-    .map((row, n) => ({ id: String(n + 1), text: textOf(recordOf(row).step), status: statusOf(recordOf(row).status) }))
-    .filter(t => t.text !== '')
+  return numberedTasks(plan, 'step')
 }
 
 /** omp's list from the details of a `todo` result, which hold every phase and its tasks. Null when they hold none. */
@@ -74,14 +76,11 @@ export function ompTodoOf(details: unknown): HostTask[] | null {
   const phases = recordOf(details).phases
   if (!Array.isArray(phases)) return null
 
-  return phases
-    .flatMap(phase => (Array.isArray(recordOf(phase).tasks) ? (recordOf(phase).tasks as unknown[]) : []))
-    .map((task, n) => ({
-      id: String(n + 1),
-      text: textOf(recordOf(task).content),
-      status: statusOf(recordOf(task).status),
-    }))
-    .filter(t => t.text !== '')
+  const tasks = phases.flatMap(phase =>
+    Array.isArray(recordOf(phase).tasks) ? (recordOf(phase).tasks as unknown[]) : [],
+  )
+
+  return numberedTasks(tasks, 'content')
 }
 
 /**

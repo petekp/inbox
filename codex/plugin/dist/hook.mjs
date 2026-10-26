@@ -223,11 +223,14 @@ var STATUSES2 = {
 var statusOf = (raw) => STATUSES2[String(raw)] ?? "pending";
 var textOf = (raw) => typeof raw === "string" ? raw.trim() : "";
 var recordOf = (raw) => typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
+function numberedTasks(rows, textKey) {
+  return rows.map(recordOf).map((row, n) => ({ id: String(n + 1), text: textOf(row[textKey]), status: statusOf(row.status) })).filter((t) => t.text !== "");
+}
 function codexPlanOf(args) {
   const parsed = typeof args === "string" ? safeJson(args) : args;
   const plan = recordOf(parsed).plan;
   if (!Array.isArray(plan)) return null;
-  return plan.map((row, n) => ({ id: String(n + 1), text: textOf(recordOf(row).step), status: statusOf(recordOf(row).status) })).filter((t) => t.text !== "");
+  return numberedTasks(plan, "step");
 }
 function safeJson(text2) {
   try {
