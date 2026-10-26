@@ -315,9 +315,8 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   }
 
   /** Sets whether a turn runs from the rollout's last turn row, read inside the state lock so no hook writes between. */
-  async function syncTurn(id: string) {
-    if ((await readState(dir, id)).transcriptPath === null) return
-    await updateState(dir, id, async s => {
+  async function syncTurn(id: string): Promise<SessionState> {
+    return updateState(dir, id, async s => {
       const isRunning = s.transcriptPath === null ? null : await turnRunningIn(s.transcriptPath)
       if (isRunning === null || isRunning === s.presence.isTurnRunning) return s
 
@@ -326,8 +325,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   }
 
   const wakeForDone = async (id: string) => {
-    await syncTurn(id)
-    await wakeSessionForDone(hostFor(id))
+    await wakeSessionForDone(hostFor(id), await syncTurn(id))
   }
 
   const currentPage = async () => (await deps.devPage?.()) ?? deps.tabHtml

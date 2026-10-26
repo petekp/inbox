@@ -4121,13 +4121,13 @@ async function runUpdates(host) {
     await Promise.all(writing);
   }
 }
-async function wakeForDone(host) {
+async function wakeForDone(host, current) {
   const check = async (s) => doneWake(s.ledger, {
     now: await host.now(),
     windowMs: host.settleWindowMs,
     isTurnRunning: s.presence.isTurnRunning
   });
-  if (!await check(await host.read()))
+  if (!await check(current ?? await host.read()))
     return;
   let attempt = null;
   await host.update(async (s) => {

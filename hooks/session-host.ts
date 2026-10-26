@@ -294,16 +294,17 @@ type WakeHost<S extends Session> = Pick<
 
 /**
  * Tells the agent about rows closed with Done once their settle window has passed and no main-agent turn runs. A
- * refused message marks those rows with why, so they read "Not sent" and offer Undo.
+ * refused message marks those rows with why, so they read "Not sent" and offer Undo. `current` is the session when the
+ * host has just read it.
  */
-export async function wakeForDone<S extends Session>(host: WakeHost<S>): Promise<void> {
+export async function wakeForDone<S extends Session>(host: WakeHost<S>, current?: S): Promise<void> {
   const check = async (s: S) =>
     doneWake(s.ledger, {
       now: await host.now(),
       windowMs: host.settleWindowMs,
       isTurnRunning: s.presence.isTurnRunning,
     })
-  if (!(await check(await host.read()))) return
+  if (!(await check(current ?? (await host.read())))) return
   let attempt: { deliveryId: string; text: string } | null = null
   await host.update(async s => {
     // A host may run the change again on a newer session, which can have nothing left to send.
