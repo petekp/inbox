@@ -4,20 +4,13 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { findCli } from './cli'
 import { makeServer } from './server'
 import { devBuild } from './data-dir'
 import TAB_HTML from './tab.html'
 import { run } from './run'
 import { listHooksTrust } from './hook-trust'
 import { NEXT_BUILD_MARK } from '../../hooks/view'
-
-async function appCli(): Promise<string> {
-  if (process.env.CODEX_CLI_PATH) return process.env.CODEX_CLI_PATH
-  const r = await run(['ps', '-o', 'comm=', '-p', String(process.ppid)], { cwd: '/', timeoutMs: 5000 })
-  const path = r.stdout.trim()
-
-  return r.code === 0 && /(^|\/)codex$/.test(path) ? path : 'codex'
-}
 
 function devPageIn(dir: string): () => Promise<string | null> {
   let cached: { path: string; mtimeMs: number; html: string } | null = null
@@ -54,7 +47,7 @@ export function createHandler(
     now: Date.now,
     exec: run,
     tabHtml: TAB_HTML,
-    fallbackCli: appCli,
+    fallbackCli: () => findCli(process.env, run, process.ppid),
     hooksTrust: listHooksTrust,
     devPage: devPageIn(dir),
     build: SERVER_BUILD,

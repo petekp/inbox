@@ -5,6 +5,18 @@ import { homedir as homedir3 } from "node:os";
 import { dirname as dirname3, join as join5 } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// src/cli.ts
+function namedCli(env) {
+  return env.CODEX_CLI_PATH || env.CODEX_APP_RUNTIME_CLI_PATH || null;
+}
+async function findCli(env, exec, parentPid) {
+  const named = namedCli(env);
+  if (named) return named;
+  const r = await exec(["ps", "-o", "comm=", "-p", String(parentPid)], { cwd: "/", timeoutMs: 5e3 });
+  const parent = r.stdout.trim();
+  return r.code === 0 && /(^|\/)codex$/.test(parent) ? parent : "codex";
+}
+
 // src/data-dir.ts
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -2093,6 +2105,7 @@ function emptyState(sessionId) {
     transcriptPath: null,
     home: homedir2(),
     cliPath: null,
+    lastModelFailure: null,
     ...emptySession(),
     tabSeenAt: 0,
     shownTab: "needsYou",
@@ -2865,7 +2878,9 @@ async function keepNewerSignIn(link, auth) {
   const theirs = await stat2(auth);
   if (saved.mtimeMs > theirs.mtimeMs) await copyFile(link, auth);
 }
-function codexAsk(exec, cli, dir, personHome) {
+var FAILURE_TAIL_CHARS = 2e3;
+function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
+}) {
   return async (prompt, instructions) => {
     const work = join4(dir, "exec");
     const system = join4(dir, `inbox-system-${createHash2("sha256").update(instructions).digest("hex").slice(0, 12)}.md`);
@@ -2909,14 +2924,17 @@ function codexAsk(exec, cli, dir, personHome) {
         off = off.filter((f) => f !== unknown);
         continue;
       }
-      if (r.code !== 0) return null;
-      const text2 = await readFile2(out, "utf8").catch(() => null);
+      const text2 = r.code === 0 ? await readFile2(out, "utf8").catch(() => null) : null;
       await rm(out, { force: true });
+      if (text2 === null) await onFailure({ cli, code: r.code, stderr: r.stderr.slice(-FAILURE_TAIL_CHARS) });
       return text2;
     }
     return null;
   };
 }
+var recordModelFailure = (dir, sessionId, now) => async (failure) => {
+  await updateState(dir, sessionId, (s) => ({ ...s, lastModelFailure: { ...failure, at: now() } }));
+};
 var runUpdates2 = (dir, sessionId, ask, now, onWrite) => runUpdates({
   ...codexStore(dir, sessionId, now, onWrite),
   ask,
@@ -2939,8 +2957,9 @@ async function main() {
   const sessionId = process.argv[2] ?? "";
   const dir = dataDir(process.env, dirname3(dirname3(fileURLToPath(import.meta.url))));
   const { cliPath } = await readState(dir, sessionId);
+  const cli = cliPath ?? await findCli(process.env, run, process.ppid);
   const personHome = process.env.CODEX_HOME || join5(homedir3(), ".codex");
-  const ask = codexAsk(run, cliPath ?? "codex", dir, personHome);
+  const ask = codexAsk(run, cli, dir, personHome, recordModelFailure(dir, sessionId, Date.now));
   await runUpdates2(dir, sessionId, ask, Date.now, herdrOnWrite(process.env, run, dir, Date.now));
 }
 main().catch(() => process.exit(0));

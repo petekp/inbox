@@ -1734,6 +1734,7 @@ function emptyState(sessionId) {
     transcriptPath: null,
     home: homedir(),
     cliPath: null,
+    lastModelFailure: null,
     ...emptySession(),
     tabSeenAt: 0,
     shownTab: "needsYou",
@@ -2071,6 +2072,11 @@ function herdrOnWrite(env, run2, dir, now) {
 
 // src/hook.ts
 import { resolve as resolve3 } from "node:path";
+
+// src/cli.ts
+function namedCli(env) {
+  return env.CODEX_CLI_PATH || env.CODEX_APP_RUNTIME_CLI_PATH || null;
+}
 
 // src/dialogs.ts
 function noteDialogs(s, dialogs) {
@@ -2433,7 +2439,7 @@ async function handleHook(input, deps) {
     await deps.onWrite(s);
     return s;
   };
-  const cliPath = env.CODEX_CLI_PATH || null;
+  const cliPath = namedCli(env);
   const withCli = (s) => cliPath && s.cliPath !== cliPath ? { ...s, cliPath } : s;
   const rolloutPath = input.agent_id ? null : input.transcript_path;
   const withRollout = (s) => rolloutPath !== null && s.transcriptPath !== rolloutPath ? { ...s, transcriptPath: rolloutPath } : s;
