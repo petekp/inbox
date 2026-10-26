@@ -34,7 +34,7 @@ export function demoSource(deps: {
     press: async (p, holds) => {
       const at = deps.now()
       const r = pressOn(state, p, at)
-      if ('stale' in r) return { error: null, note: 'stale' }
+      if ('stale' in r) return { error: null, note: 'stale', isUnconfirmed: false }
       const after = demoAfterPress(
         { lastActions: state.lastActions, turns: state.presence },
         r,
@@ -53,7 +53,7 @@ export function demoSource(deps: {
         }, deps.settleWindowMs)
       changed()
 
-      return { error: null, note: null }
+      return { error: null, note: null, isUnconfirmed: false }
     },
     resume: async () => null,
     fetchPrsWhenDue: () => {},
