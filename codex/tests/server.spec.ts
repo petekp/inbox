@@ -7,6 +7,7 @@ import { test } from 'node:test'
 
 import { demoView } from '../../hooks/demo'
 import { applyUpdate, parseReply } from '../../hooks/ledger'
+import { EMPTY_OVERVIEW } from '../../hooks/overview'
 import { feedbackOf, feedbackText, QUEUED_AFTER_MS, screenTabOf } from '../../hooks/view'
 import type { Feedback } from '../../hooks/view'
 import { screenText } from '../../hooks/model-text'
@@ -21,7 +22,7 @@ import { handleHook } from '../src/hook'
 import { findCli } from '../src/cli'
 import { fakeRunner, hookDeps, input, rolloutAt, tempDir } from './helpers'
 
-async function setup(queueCode: number, now = () => 100, fallbackCli = async () => 'codex') {
+async function setup(queueCode: number, now = () => 100, fallbackCli = async () => 'codex', isNextBuild = false) {
   const dir = tempDir()
   await updateState(dir, 's1', s => ({
     ...s,
@@ -57,6 +58,7 @@ async function setup(queueCode: number, now = () => 100, fallbackCli = async () 
     exec: runner.exec,
     tabHtml: '<html></html>',
     fallbackCli,
+    isNextBuild,
   })
   const call = (name: string, args: Record<string, unknown>, meta: Record<string, unknown>) =>
     handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args, _meta: meta } }) as Promise<{
@@ -456,6 +458,31 @@ test('the view request saves the tab the page shows, ignores a name that is not 
     screenText(CODEX, true, screenTabOf((await readState(dir, 's1')).shownTab)),
     'The Inbox tab is open beside the conversation, on its PRs tab, listing every open item.',
   )
+})
+
+test('a release build saves its first tab for an Overview the page names, and starts no look, while a next build saves the Overview', async () => {
+  const withOverview = async (isNextBuild: boolean) => {
+    const server = await setup(
+      0,
+      () => 100,
+      async () => 'codex',
+      isNextBuild,
+    )
+    await updateState(server.dir, 's1', s => ({
+      ...s,
+      ledger: { ...s.ledger, overview: { ...EMPTY_OVERVIEW, headline: 'h' } },
+    }))
+    await server.call('inbox_view', { tab: 'overview' }, { thread_id: 's1' })
+
+    return readState(server.dir, 's1')
+  }
+  const release = await withOverview(false)
+  assert.equal(release.shownTab, 'needsYou')
+  assert.equal(release.ledger.overview?.look, null)
+
+  const next = await withOverview(true)
+  assert.equal(next.shownTab, 'overview')
+  assert.equal(next.ledger.overview?.look?.startedAt, 100)
 })
 
 test('with no dev build, the view names the installed page and inbox_tab_page serves it, so a tab from an older build replaces itself', async () => {

@@ -2655,12 +2655,18 @@ function settledLabel(label, delivery) {
 function stepKind(step) {
   return step.step.some((h) => h.kind === "run") ? "handoff" : "local";
 }
-var TABS = [
-  { id: "overview", label: "Overview", symbol: "\uD83E\uDDED", hotkey: "1" },
-  { id: "needsYou", label: "Asks", symbol: "\uD83D\uDE4B", hotkey: "2" },
-  { id: "findings", label: "Finds", symbol: "\uD83D\uDD0D", hotkey: "3" },
-  { id: "prs", label: "PRs", symbol: "\uD83D\uDD00", hotkey: "4" }
+var TAB_NAMES = [
+  { id: "overview", label: "Overview", symbol: "\uD83E\uDDED" },
+  { id: "needsYou", label: "Asks", symbol: "\uD83D\uDE4B" },
+  { id: "findings", label: "Finds", symbol: "\uD83D\uDD0D" },
+  { id: "prs", label: "PRs", symbol: "\uD83D\uDD00" }
 ];
+var numbered = (tabs) => tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }));
+var NEXT_BUILD_TABS = numbered(TAB_NAMES);
+var RELEASE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview"));
+function shownTabs(isNextBuild) {
+  return isNextBuild ? NEXT_BUILD_TABS : RELEASE_TABS;
+}
 var TAB_NAMINGS = ["words", "symbols"];
 function tabName(tab, naming) {
   return naming === "words" ? tab.label : tab.symbol;
@@ -2679,10 +2685,10 @@ function isRowTab(tab) {
   return tab !== "overview";
 }
 function screenTabOf(tab) {
-  return { label: TABS.find((t) => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) };
+  return { label: TAB_NAMES.find((t) => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) };
 }
-var ROW_TABS = TABS.filter((t) => isRowTab(t.id));
-var LISTED_TABS = TABS.filter((t) => isListedTab(t.id));
+var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
+var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 var WORKING_TEXT = "Working\u2026";
 var OVERVIEW_MARKS = {
   working: { mark: "\u25CF", tone: null },
@@ -5080,8 +5086,9 @@ function handleKey(screen, ui, key, now, text) {
     const step = key === "up" || key === "k" ? -1 : 1;
     return { ui: withSelection(base, selectable[wrapIndex(Math.max(0, at) + step, selectable.length)].id) };
   }
-  const tabs = TABS.map((t) => t.id);
-  const pickedTab = TABS.find((t) => t.hotkey === key);
+  const shown = shownTabs(screen.isNextBuild === true);
+  const tabs = shown.map((t) => t.id);
+  const pickedTab = shown.find((t) => t.hotkey === key);
   if (key === "tab" || key === "shift+tab") {
     const step = key === "tab" ? 1 : -1;
     return { ui: withTab(base, tabs[wrapIndex(tabs.indexOf(base.tab) + step, tabs.length)]) };
@@ -5311,7 +5318,7 @@ function tabBar(d) {
     findings: screen.view.findings.count,
     prs: screen.view.prs.count
   };
-  const tabs = TABS.map((t) => ({
+  const tabs = shownTabs(screen.isNextBuild === true).map((t) => ({
     ...t,
     tone: isRowTab(t.id) ? t.id : null,
     count: isRowTab(t.id) ? counts[t.id] : null,

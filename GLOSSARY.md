@@ -50,10 +50,11 @@ _Avoid_: Findings, as the tab's name. A find, for one finding.
 ### Surfaces
 
 **Overview**:
-The first tab, a guide to the session's work: what it is doing, how it is
-going, what changed since the person last looked, and what is next. The inbox
-model rewrites it after each reply, in a second call after the one that
-updates the rows. It is not a list of events.
+The first tab on a next build: a guide to the session's work, what it is
+doing, how it is going, what changed since the person last looked, and what is
+next. A release build does not draw it. The inbox model still rewrites it after
+each reply, in a second call after the one that updates the rows. It is not a
+list of events.
 
 **Band**:
 In Claude Code, the line above the prompt with the Asks and Finds
@@ -63,12 +64,12 @@ counts and no button, which says `/inbox` opens the panel.
 
 **Pane**:
 The `/inbox` panel beside the conversation in Claude Code, with its Asks,
-Finds, PRs and Overview tabs. Codex shows the same tabs in its Inbox tab. omp
+Finds and PRs tabs, and an Overview tab before them on a next build. Codex shows the same tabs in its Inbox tab. omp
 shows them in an overlay that `/inbox` opens.
 
 **Tab symbol**:
 The emoji a tab shows in place of its words when the words don't fit,
-followed by its count, as "🔍 4". `symbol` in `TABS` in `hooks/view.ts`.
+followed by its count, as "🔍 4". `symbol` in `TAB_NAMES` in `hooks/view.ts`.
 
 **New row**:
 A row a look lists for the first time since it last recorded its rows. A
@@ -132,7 +133,8 @@ warning stays until a clear.
 **Next build**:
 A checkout that follows the `next` branch and holds `NEXT_BUILD_MARK`, a file
 Git ignores, in each folder a host loads or installs. Each look's version label
-adds "next" on one. `hooks/view.ts:versionLabel`.
+adds "next" on one, and only a next build draws the Overview tab.
+`hooks/view.ts:versionLabel`, `hooks/view.ts:shownTabs`.
 
 **Parity record**:
 `hooks/clients.ts`. It lists, for each host, whether each feature is `full`,

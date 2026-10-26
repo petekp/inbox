@@ -17,7 +17,7 @@ import {
   CLOSED_SHOWN,
   SETTLED_MS,
   NO_HOLDS,
-  TABS,
+  shownTabs,
   allRows,
   earlierLabel,
   foldLabel,
@@ -185,23 +185,28 @@ test('a button letter presses that button', () => {
   expect(handleKey(screen, onRow(row), 'x', NOW).press).toEqual({ action: 'dismiss', id: row.id })
 })
 
-test('Tab and Shift+Tab cycle through every tab in order, and each digit picks its tab', () => {
-  const screen = screenOf()
-  const ids = TABS.map(t => t.id)
-  const start = ids.indexOf(INITIAL_UI.tab)
-  const cycled = ids.map((_, n) => keys(screen, INITIAL_UI, ...ids.slice(0, n).map(() => 'tab')).tab)
-  expect(cycled).toEqual([...ids.slice(start), ...ids.slice(0, start)])
-  expect(keys(screen, INITIAL_UI, ...ids.map(() => 'tab')).tab).toBe(INITIAL_UI.tab)
-  expect(keys(screen, INITIAL_UI, 'shift+tab').tab).toBe(ids.at(start - 1)!)
-  for (const t of TABS) expect(keys(screen, keys(screen, INITIAL_UI, 'tab'), t.hotkey).tab).toBe(t.id)
-})
+for (const isNextBuild of [false, true])
+  test(`on a ${isNextBuild ? 'next' : 'release'} build, Tab and Shift+Tab cycle through the build's tabs in order, and each digit picks its tab`, () => {
+    const screen = screenOf({ isNextBuild })
+    const tabs = shownTabs(isNextBuild)
+    const ids = tabs.map(t => t.id)
+    expect(ids.includes('overview')).toBe(isNextBuild)
+    const start = ids.indexOf(INITIAL_UI.tab)
+    const cycled = ids.map((_, n) => keys(screen, INITIAL_UI, ...ids.slice(0, n).map(() => 'tab')).tab)
+    expect(cycled).toEqual([...ids.slice(start), ...ids.slice(0, start)])
+    expect(keys(screen, INITIAL_UI, ...ids.map(() => 'tab')).tab).toBe(INITIAL_UI.tab)
+    expect(keys(screen, INITIAL_UI, 'shift+tab').tab).toBe(ids.at(start - 1)!)
+    for (const t of tabs) expect(keys(screen, keys(screen, INITIAL_UI, 'tab'), t.hotkey).tab).toBe(t.id)
+    expect(keys(screen, INITIAL_UI, '1').tab).toBe(isNextBuild ? 'overview' : 'needsYou')
+    expect(keys(screen, INITIAL_UI, String(tabs.length + 1)).tab).toBe(INITIAL_UI.tab)
+  })
 
 test('the selected tab draws inverse and the others draw their counts', () => {
   const screen = screenOf()
-  const bar = drawn(screen, keys(screen, INITIAL_UI, '3'))[0]!
-  expect(bar).toContain(`${ESC}7m${ESC}1m [3] Finds ${screen.view.findings.count} `)
-  expect(strip(bar)).toContain(`[2] Asks ${screen.view.needsYou.count}`)
-  expect(strip(bar)).toContain(`[4] PRs ${screen.view.prs.count}`)
+  const bar = drawn(screen, keys(screen, INITIAL_UI, '2'))[0]!
+  expect(bar).toContain(`${ESC}7m${ESC}1m [2] Finds ${screen.view.findings.count} `)
+  expect(strip(bar)).toContain(`[1] Asks ${screen.view.needsYou.count}`)
+  expect(strip(bar)).toContain(`[3] PRs ${screen.view.prs.count}`)
   expect(strip(bar)).toContain('esc to close')
 })
 
@@ -741,9 +746,9 @@ test('on a Overview page taller than the panel, each ↑↓ or j/k press shows o
 })
 
 test('changing the shown tab starts the Overview page at its top', () => {
-  const screen = screenOf()
+  const screen = screenOf({ isNextBuild: true })
   const scrolled = { ...onPage, pageTop: 3 }
-  for (const key of ['tab', 'shift+tab', ...TABS.map(t => t.hotkey)])
+  for (const key of ['tab', 'shift+tab', ...shownTabs(true).map(t => t.hotkey)])
     expect(keys(screen, scrolled, key).pageTop).toBe(0)
 })
 
@@ -754,43 +759,49 @@ test('rows that arrive while the Overview page shows leave the panel on the page
   expect(followRows(findingsOnly(), opened.ui, opened.seen, false, NOW).ui).toEqual(onPage)
 })
 
-test('a narrowing tab line drops the brackets, then names every tab by its symbol, and draws no zero count', () => {
-  const zeros = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
-  for (const screen of [screenOf(), zeros])
-    for (const shown of TABS) {
-      const ui = { ...INITIAL_UI, tab: shown.id }
-      const wordsAt = cellWidth(tabLine(screen, ui, 200)) + 1
-      expect(tabLine(screen, ui, wordsAt)).toContain(`[${shown.hotkey}] ${shown.label}`)
-      const bare = tabLine(screen, ui, wordsAt - 1)
-      expect(bare).not.toContain('[')
-      expect(bare).toContain(`${shown.hotkey} ${shown.label}`)
-      const symbolsAt = cellWidth(bare) - 1
-      expect(tabLine(screen, ui, symbolsAt)).toContain(`[${shown.hotkey}] ${shown.symbol}`)
-      if (screen === zeros) expect(tabLine(screen, ui, 200)).not.toMatch(/ 0 /)
-      for (const width of [34, symbolsAt]) {
-        const line = tabLine(screen, ui, width).replace(/[[\]]/g, '')
-        expect(line).not.toContain('…')
-        for (const t of TABS) {
-          expect(line).toContain(`${t.hotkey} ${t.symbol}`)
-          expect(line).not.toContain(t.label)
+for (const isNextBuild of [false, true])
+  test(`on a ${isNextBuild ? 'next' : 'release'} build, a narrowing tab line drops the brackets, then names every tab by its symbol, and draws no zero count`, () => {
+    const tabs = shownTabs(isNextBuild)
+    const zeros = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS), isNextBuild })
+    for (const screen of [screenOf({ isNextBuild }), zeros])
+      for (const shown of tabs) {
+        const ui = { ...INITIAL_UI, tab: shown.id }
+        const wordsAt = cellWidth(tabLine(screen, ui, 200)) + 1
+        expect(tabLine(screen, ui, wordsAt)).toContain(`[${shown.hotkey}] ${shown.label}`)
+        const bare = tabLine(screen, ui, wordsAt - 1)
+        expect(bare).not.toContain('[')
+        expect(bare).toContain(`${shown.hotkey} ${shown.label}`)
+        const symbolsAt = cellWidth(bare) - 1
+        const symbols = tabLine(screen, ui, symbolsAt)
+        expect(symbols.replace(/[[\]]/g, '')).toContain(`${shown.hotkey} ${shown.symbol}`)
+        if (isNextBuild) expect(symbols).toContain(`[${shown.hotkey}] ${shown.symbol}`)
+        if (screen === zeros) expect(tabLine(screen, ui, 200)).not.toMatch(/ 0 /)
+        for (const width of isNextBuild ? [34, symbolsAt] : [symbolsAt]) {
+          const line = tabLine(screen, ui, width).replace(/[[\]]/g, '')
+          expect(line).not.toContain('…')
+          for (const t of tabs) {
+            expect(line).toContain(`${t.hotkey} ${t.symbol}`)
+            expect(line).not.toContain(t.label)
+          }
         }
+        expect(tabLine(screen, ui, 200)).not.toContain(isNextBuild ? '[5]' : 'Overview')
       }
-    }
-})
+  })
 
 test('the tab line counts each symbol as two cells, so it fits the panel and keeps "esc to close" whole', () => {
-  for (const shown of TABS)
-    for (let width = 34; width <= 120; width++) {
-      const bar = strip(drawn(screenOf(), { ...INITIAL_UI, tab: shown.id }, width)[0]!)
-      expect(cellWidth(bar)).toBeLessThanOrEqual(width)
-      if (bar.includes('esc')) expect(bar.trimEnd()).toEndWith('esc to close')
-    }
+  for (const isNextBuild of [false, true])
+    for (const shown of shownTabs(isNextBuild))
+      for (let width = 34; width <= 120; width++) {
+        const bar = strip(drawn(screenOf({ isNextBuild }), { ...INITIAL_UI, tab: shown.id }, width)[0]!)
+        expect(cellWidth(bar)).toBeLessThanOrEqual(width)
+        if (bar.includes('esc')) expect(bar.trimEnd()).toEndWith('esc to close')
+      }
 })
 
 test('the page tab draws no count', () => {
-  const screen = screenOf()
+  const screen = screenOf({ isNextBuild: true })
   const line = tabLine(screen, INITIAL_UI, 200)
-  for (const t of TABS.filter(t => !isRowTab(t.id)))
+  for (const t of shownTabs(true).filter(t => !isRowTab(t.id)))
     expect(line).toMatch(new RegExp(`\\[${t.hotkey}\\] ${t.label}(?: +\\[| *$)`))
 })
 

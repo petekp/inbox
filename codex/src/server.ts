@@ -21,7 +21,7 @@ import { isUnseen, pressOn, recorded, turnEnded, turnStarted } from '../../hooks
 import type { SendOutcome } from '../../hooks/session'
 import { fetchPrs, prFetchTracker, press, wakeForDone as wakeSessionForDone } from '../../hooks/session-host'
 import type { SessionHost } from '../../hooks/session-host'
-import { NO_HOLDS, SETTLED_MS, isShownTab } from '../../hooks/view'
+import { NO_HOLDS, SETTLED_MS, drawnTabOf, isShownTab } from '../../hooks/view'
 import type { ReplyHolds, ShownTab } from '../../hooks/view'
 import { SETTLE_WINDOW_MS } from './settle'
 import { pruneSessions, readState, updateState } from './state'
@@ -469,14 +469,18 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
           return { ...text('Inbox demo'), structuredContent: await served(demoOf(id), id, true, holds) }
         await wakeForDone(id).catch(() => undefined)
         await catchUpOnOpen(id).catch(() => undefined)
-        const shownTab = shownTabOf(args.tab)
-        const s = await updateState(dir, id, s => ({
-          ...lookOnView(s, shownTab ?? s.shownTab, now()),
-          heldRows: Object.keys(holds.replies),
-          tabSeenAt: now(),
-          shownTab: shownTab ?? s.shownTab,
-          prViews: { ...s.prViews, views: viewsStillShown(s.prViews, s.ledger.prs, s.lastActions, now()) },
-        }))
+        const sentTab = shownTabOf(args.tab)
+        const s = await updateState(dir, id, s => {
+          const shownTab = drawnTabOf(sentTab ?? s.shownTab, deps.isNextBuild === true)
+
+          return {
+            ...lookOnView(s, shownTab, now()),
+            heldRows: Object.keys(holds.replies),
+            tabSeenAt: now(),
+            shownTab,
+            prViews: { ...s.prViews, views: viewsStillShown(s.prViews, s.ledger.prs, s.lastActions, now()) },
+          }
+        })
         fetchPrsWhenDue(id, s)
         return { ...text('Inbox view'), structuredContent: await served(s, id, false, holds) }
       }

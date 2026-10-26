@@ -202,7 +202,8 @@ import {
   isShownTab,
   LISTED_TABS,
   screenTabOf,
-  TABS,
+  shownTabs,
+  drawnTabOf,
   fitTabs,
   tabName,
   canUndoRefused,
@@ -1265,7 +1266,7 @@ function openPane($: EngineInterface, isFieldOpen = false) {
 async function syncLook($: EngineInterface, isOpen?: boolean) {
   if (await read($, DEMO)) return
   const [page, isPaneOpen, now, drawn] = await Promise.all([
-    read($, PAGE),
+    readPage($),
     isOpen ?? isPaneShown($),
     $.clock.now(),
     read($, SESSION).then(upgradeSession),
@@ -1378,9 +1379,16 @@ async function writeRowTab($: EngineInterface, tab: Tab) {
   await Promise.all([update($, TAB, () => tab), update($, PAGE, () => null)])
 }
 
+/** The page tab the pane shows, or null. A saved page this build does not draw reads as null and stays saved. */
+async function readPage($: EngineInterface): Promise<PageTab | null> {
+  const page = await read($, PAGE)
+
+  return page !== null && drawnTabOf(page, isNextBuild) === page ? page : null
+}
+
 /** The shown row tab; null while the Overview page shows, where no row is drawn, selected or scrolled to. */
 async function readRowTab($: EngineInterface): Promise<Tab | null> {
-  const [page, tab] = await Promise.all([read($, PAGE), read($, TAB)])
+  const [page, tab] = await Promise.all([readPage($), read($, TAB)])
 
   return page === null ? tab : null
 }
@@ -1791,7 +1799,7 @@ async function followNewRows($: EngineInterface, isOpening = false) {
   const [drawn, tab, page, unfolded, isShown] = await Promise.all([
     drawnState($),
     read($, TAB),
-    read($, PAGE),
+    readPage($),
     read($, UNFOLDED),
     isPaneShown($),
   ])
@@ -1842,7 +1850,7 @@ async function isPrsTabShown($: EngineInterface) {
 
 /** The tab the pane shows, as the inbox model is told: the page tab when one shows, else the row tab. */
 async function shownScreenTab($: EngineInterface): Promise<ScreenTab> {
-  const [page, tab] = await Promise.all([read($, PAGE), read($, TAB)])
+  const [page, tab] = await Promise.all([readPage($), read($, TAB)])
 
   return screenTabOf(page ?? tab)
 }
@@ -2403,8 +2411,9 @@ async function readVersion($: EngineInterface) {
 }
 
 async function initializeInbox($: EngineInterface) {
-  // A hot reload keeps state an older build wrote. Draws start once isOn is set, and they read the current shape.
-  await upgradeState($)
+  // A hot reload keeps state an older build wrote. Draws start once isOn is set, and they read the current shape and
+  // the tabs that the next-build mark decides.
+  await Promise.all([upgradeState($), readVersion($)])
   isOn = true
   toolsRefused = false
   compareRedrawAt = null
@@ -2413,7 +2422,6 @@ async function initializeInbox($: EngineInterface) {
   }
   await Promise.all([
     registerInboxCommand($),
-    readVersion($),
     ...agentTools(CLAUDE_CODE).map(tool => $.tool.register(tool).catch(refused)),
   ])
   // A pane kept across a hot reload is already drawn.
@@ -3160,7 +3168,7 @@ export const register: Register = on => {
     ] = await Promise.all([
       drawnState($),
       read($, TAB),
-      read($, PAGE),
+      readPage($),
       read($, SELECTION),
       read($, THEME),
       read($, TYPING),
@@ -3174,6 +3182,7 @@ export const register: Register = on => {
     const tab: Tab = isShownTab(savedTab) && isRowTab(savedTab) ? savedTab : 'needsYou'
     const isOverviewShown = savedPage === 'overview'
     const shownTab: ShownTab = isOverviewShown ? 'overview' : tab
+    const tabList = shownTabs(isNextBuild)
     const isRunningMarkShown = isOverviewShown && hasRunningMark(view.overviewPage)
     if (look === 'terminal') animateRunningMarks($, isRunningMarkShown)
     // A hot reload keeps TYPING but empties openFields, so an open field takes its key and seed again here.
@@ -3440,7 +3449,7 @@ export const register: Register = on => {
     const tabTone = (id: ShownTab) => (isRowTab(id) ? pal.tone[id] : undefined)
     const tabText = (id: ShownTab, name: string) => `${name}${tabCount(id) > 0 ? ` ${tabCount(id)}` : ''}`
     const hasRail = isInline && look === 'terminal' && e.props.bodyColumns >= INLINE_RAIL_AT
-    const railWidth = Math.max(...TABS.map(t => cellWidth(tabText(t.id, t.label)))) + 2 * TAB_PAD.length
+    const railWidth = Math.max(...tabList.map(t => cellWidth(tabText(t.id, t.label)))) + 2 * TAB_PAD.length
     const listColumns = e.props.bodyColumns - 2 - (hasRail ? railWidth + RAIL_GUTTER : 0)
     const ids = rows[tab].map(r => r.id)
     const indexOf = new Map(ids.map((id, n) => [id, n]))
@@ -4180,7 +4189,7 @@ export const register: Register = on => {
       .sort((a, b) => b.at - a.at)[0]
 
     const keyList = [
-      { keys: TABS.map(t => t.hotkey).join(' '), does: 'Switch tabs' },
+      { keys: tabList.map(t => t.hotkey).join(' '), does: 'Switch tabs' },
       ...(isOverviewShown ? [] : [{ keys: 'j k', does: 'Select the next or previous row' }]),
       { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
     ]
@@ -4188,12 +4197,12 @@ export const register: Register = on => {
 
     const tabColumns = e.props.bodyColumns - 2
     const tabSizes = desktopTabSizes(
-      TABS.map(t => ({ ...t, count: tabCount(t.id), isShown: t.id === shownTab })),
+      tabList.map(t => ({ ...t, count: tabCount(t.id), isShown: t.id === shownTab })),
       tabColumns,
     )
     const tabProps: TabsProps | null = hasClient
       ? {
-          tabs: TABS.map((t, n) => ({
+          tabs: tabList.map((t, n) => ({
             id: t.id,
             label: tabName(t, tabSizes.naming),
             count: tabCount(t.id),
@@ -4230,17 +4239,17 @@ export const register: Register = on => {
       ) : null,
     ]
     const namesWidth = (naming: TabNaming) =>
-      TABS.reduce((sum, t) => sum + cellWidth(tabText(t.id, tabName(t, naming))), 0)
+      tabList.reduce((sum, t) => sum + cellWidth(tabText(t.id, tabName(t, naming))), 0)
     const framedTabs = fitTabs(
       FRAMED_TAB_LAYOUTS,
       (naming, r) =>
-        namesWidth(naming) + 2 * r.pad.length * TABS.length + r.gap * (TABS.length - 1) <=
+        namesWidth(naming) + 2 * r.pad.length * tabList.length + r.gap * (tabList.length - 1) <=
         e.props.bodyColumns - 1 - r.right,
     )
     const { pad } = framedTabs.layout
     const inlineTabs = fitTabs(
       INLINE_TAB_GAPS,
-      (naming, gap) => namesWidth(naming) + gap * (TABS.length - 1) <= e.props.bodyColumns - 3,
+      (naming, gap) => namesWidth(naming) + gap * (tabList.length - 1) <= e.props.bodyColumns - 3,
     )
     const tabNaming = isInline ? inlineTabs.naming : look === 'desktop' ? tabSizes.naming : framedTabs.naming
     const hasTabLine = !isInline && look !== 'desktop'
@@ -4277,7 +4286,7 @@ export const register: Register = on => {
           ) : null}
           {tabProps
             ? null
-            : TABS.map(t => {
+            : tabList.map(t => {
                 const { id } = t
                 const label = tabName(t, tabNaming)
                 const count = tabCount(id)
@@ -4390,7 +4399,7 @@ export const register: Register = on => {
     const versionText = version ? faint(versionLabel(version, isNextBuild)) : null
     const rail = (
       <Box flexDirection="column" flexShrink={0} paddingLeft={1} marginRight={RAIL_GUTTER}>
-        {TABS.map(({ id, label }) => {
+        {tabList.map(({ id, label }) => {
           const count = tabCount(id)
           const fill = ' '.repeat(railWidth - cellWidth(tabText(id, label)) - TAB_PAD.length)
           if (shownTab === id)
@@ -5214,7 +5223,7 @@ export const register: Register = on => {
         onPress: () => (canMove ? move(-1) : undefined),
       },
     ]
-    const tabKeys: KeyAction[] = TABS.map(({ id, label, hotkey }) => ({
+    const tabKeys: KeyAction[] = tabList.map(({ id, label, hotkey }) => ({
       key: `tab-key-${id}`,
       label,
       hotkey,

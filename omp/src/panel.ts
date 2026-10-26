@@ -51,7 +51,7 @@ import {
   ROW_COPY,
   LISTED_TABS,
   SETTLED_MS,
-  TABS,
+  shownTabs,
   actionLabel,
   actionLines,
   fitTabs,
@@ -711,8 +711,9 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
 
     return { ui: withSelection(base, selectable[wrapIndex(Math.max(0, at) + step, selectable.length)]!.id) }
   }
-  const tabs = TABS.map(t => t.id)
-  const pickedTab = TABS.find(t => t.hotkey === key)
+  const shown = shownTabs(screen.isNextBuild === true)
+  const tabs = shown.map(t => t.id)
+  const pickedTab = shown.find(t => t.hotkey === key)
   if (key === 'tab' || key === 'shift+tab') {
     const step = key === 'tab' ? 1 : -1
 
@@ -1024,7 +1025,7 @@ function tabBar(d: Draw): string {
     findings: screen.view.findings.count,
     prs: screen.view.prs.count,
   }
-  const tabs: TabCell[] = TABS.map(t => ({
+  const tabs: TabCell[] = shownTabs(screen.isNextBuild === true).map(t => ({
     ...t,
     tone: isRowTab(t.id) ? t.id : null,
     count: isRowTab(t.id) ? counts[t.id] : null,

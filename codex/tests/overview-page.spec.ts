@@ -4,7 +4,7 @@ import { Window } from 'happy-dom'
 import { EMPTY } from '../../hooks/ledger'
 import { EMPTY_OVERVIEW } from '../../hooks/overview'
 import { recordItem } from '../../hooks/tools'
-import { TABS } from '../../hooks/view'
+import { shownTabs } from '../../hooks/view'
 import { CODEX } from '../src/texts'
 import { emptyState } from '../src/state'
 import { lookOnView, viewOf } from '../src/core'
@@ -15,7 +15,7 @@ const window = new Window()
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
 
-test('the Codex tab draws the Overview page from the view, and new rows, j and k leave it in place', async () => {
+test('the Codex tab draws the Overview page from a next build’s view, and new rows, j and k leave it in place, while a release build’s view draws Asks for it', async () => {
   const now = Date.now()
   const state = emptyState('overview')
   state.heard.startAt = 1
@@ -67,8 +67,9 @@ test('the Codex tab draws the Overview page from the view, and new rows, j and k
   const previous = new Map(Object.keys(globals).map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]))
   for (const [key, value] of Object.entries(globals))
     Object.defineProperty(globalThis, key, { value, writable: true, configurable: true })
-  const shownTabs: unknown[] = []
+  const sentTabs: unknown[] = []
   let isOlderServer = false
+  let isNextBuild = true
   window.parent.postMessage = message => {
     const request = message as {
       id?: number
@@ -79,7 +80,7 @@ test('the Codex tab draws the Overview page from the view, and new rows, j and k
     let result: unknown
     if (request.method === 'ui/initialize') result = {}
     else if (request.params?.name === 'inbox_view') {
-      shownTabs.push(request.params.arguments?.tab)
+      sentTabs.push(request.params.arguments?.tab)
       const view: TabView = {
         ...viewOf(state, Date.now()),
         thread: state.sessionId,
@@ -87,6 +88,7 @@ test('the Codex tab draws the Overview page from the view, and new rows, j and k
         serverBuild: SERVER_BUILD,
         isFetchingPrs: false,
         isGhMissing: false,
+        ...(isNextBuild ? { isNextBuild: true } : {}),
       }
       if (isOlderServer) Reflect.deleteProperty(view, 'overviewPage')
       result = { structuredContent: view }
@@ -121,10 +123,10 @@ test('the Codex tab draws the Overview page from the view, and new rows, j and k
         b.getAttribute('title'),
         b.querySelector('.tab-symbol')?.textContent,
       ]),
-      TABS.map(t => [t.label, t.symbol]),
+      shownTabs(true).map(t => [t.label, t.symbol]),
     )
     assert.equal(shownTab(), 'Overview')
-    assert.equal(shownTabs[0], 'overview')
+    assert.equal(sentTabs[0], 'overview')
     assert.equal(root.querySelector('.overview-goal')?.textContent, 'Shipping the Overview tab')
     assert.equal(root.querySelector('.overview-now')?.textContent, 'Working…')
     assert.deepEqual(
@@ -165,11 +167,32 @@ test('the Codex tab draws the Overview page from the view, and new rows, j and k
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
     assert.equal(shownTab(), 'Asks')
     assert.equal(root.querySelector('.overview-goal'), null)
-    assert.equal(shownTabs.at(-1), 'overview')
+    assert.equal(sentTabs.at(-1), 'overview')
     isOlderServer = false
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
     assert.equal(shownTab(), 'Overview')
     assert.ok(root.querySelector('.overview-goal'))
+
+    isNextBuild = false
+    await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
+    assert.deepEqual(tabLabels(), ['Asks', 'Finds1', 'PRs'])
+    assert.deepEqual(
+      [...root.querySelectorAll('.tab')].map(b => b.getAttribute('title')),
+      shownTabs(false).map(t => t.label),
+    )
+    assert.equal(shownTab(), 'Asks')
+    assert.equal(root.querySelector('.overview-goal'), null)
+    key('4')
+    assert.equal(shownTab(), 'Asks')
+    isNextBuild = true
+    await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
+    assert.equal(shownTab(), 'Overview')
+    isNextBuild = false
+    await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
+    key('3')
+    assert.equal(shownTab(), 'PRs')
+    key('1')
+    assert.equal(shownTab(), 'Asks')
   } finally {
     await window.happyDOM.abort()
     for (const [key, descriptor] of previous) {

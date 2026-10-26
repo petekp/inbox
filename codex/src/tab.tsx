@@ -26,7 +26,8 @@ import {
   isRowTab,
   isShownTab,
   LISTED_TABS,
-  TABS,
+  shownTabs,
+  drawnTabOf,
   feedbackOf,
   feedbackText,
   markedFeedbackText,
@@ -155,9 +156,11 @@ let stagedHostChanges: HostContext = {}
 let pollFailures = 0
 let readAt = 0
 let tab: ShownTab = 'needsYou'
-/** The tab drawn: the shown tab, or Asks while the view has no Overview page, as from an older server. */
+/** The tab drawn: the shown tab when the view's build draws it, else the build's first tab, and Asks while the view has no Overview page, as from an older server. */
 function drawnTab(): ShownTab {
-  return tab === 'overview' && !view?.overviewPage ? 'needsYou' : tab
+  const drawn = drawnTabOf(tab, view?.isNextBuild === true)
+
+  return drawn === 'overview' && !view?.overviewPage ? 'needsYou' : drawn
 }
 
 const selection: Record<Tab, { id: string; openedAt: number; index?: number } | null> = {
@@ -409,9 +412,10 @@ function applyView(next: View, seq: number) {
 }
 
 function follow(v: View, added: Record<Tab, string[]>) {
-  if (!isRowTab(tab)) return
+  const shownTab = drawnTab()
+  if (!isRowTab(shownTab)) return
   const drawn = shownSettled()
-  const to = followTo(ARRIVAL_TABS, tab, isShownEmpty(v, tab, drawn, unfolded, v.isFetchingPrs), added)
+  const to = followTo(ARRIVAL_TABS, shownTab, isShownEmpty(v, shownTab, drawn, unfolded, v.isFetchingPrs), added)
   if (!to) return
   tab = to
   selection[to] = null
@@ -1841,7 +1845,7 @@ function TabBar({ v }: { v: View }) {
   return (
     <nav>
       <div class="tabs">
-        {TABS.map(t => (
+        {shownTabs(v.isNextBuild === true).map(t => (
           <button
             type="button"
             class={`tab ${shown === t.id ? 'shown' : ''}`}
@@ -2223,7 +2227,7 @@ document.addEventListener(
       }
       return
     }
-    const switched = TABS.find(t => t.hotkey === e.key)
+    const switched = shownTabs(view.isNextBuild === true).find(t => t.hotkey === e.key)
     if (switched) {
       tab = switched.id
       draw()
