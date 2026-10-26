@@ -1074,6 +1074,44 @@ export function rowKeyPlan(r: RowView, isAllShown: boolean): { keys: PlannedKey[
   return { keys, more }
 }
 
+/** Widths in a look's own unit. `separator` is the extra room a look draws between the buttons and the follow-ups when they share a line. */
+export type ActionSpacing = { width: number; gap: number; followUpGap: number; separator: number }
+
+/**
+ * Lays out a row's buttons, then its follow-ups, filling each line before the next. The follow-ups stay on the
+ * buttons' last line only when all of them fit there. Otherwise they start the next line together, and wrap among
+ * themselves. Each line lists indexes into the buttons followed by the follow-ups.
+ */
+export function actionLines(
+  keys: readonly number[],
+  more: readonly number[],
+  { width, gap, followUpGap, separator }: ActionSpacing,
+): { lines: number[][]; isFollowUpLineNew: boolean } {
+  const lines: number[][] = []
+  let used = 0
+  const place = (at: number, size: number, before: number) => {
+    const line = lines.at(-1)
+    if (line && used + before + size <= width) {
+      line.push(at)
+      used += before + size
+    } else {
+      lines.push([at])
+      used = size
+    }
+  }
+  keys.forEach((size, i) => place(i, size, gap))
+  const followUpsWidth = more.reduce((sum, size) => sum + size, followUpGap * Math.max(0, more.length - 1))
+  const isFollowUpLineNew = keys.length > 0 && more.length > 0 && used + gap + separator + followUpsWidth > width
+  more.forEach((size, i) => {
+    if (i === 0 && isFollowUpLineNew) {
+      lines.push([keys.length])
+      used = size
+    } else place(keys.length + i, size, i === 0 ? gap + separator : followUpGap)
+  })
+
+  return { lines, isFollowUpLineNew }
+}
+
 export function inboxView({
   ledger,
   lastActions,

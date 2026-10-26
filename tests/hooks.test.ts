@@ -21,6 +21,7 @@ import {
   perTurnStatus,
   overviewPage,
   rowKeyPlan,
+  actionLines,
   RUNNING_FRAME_MS,
   RUNNING_FRAMES,
   runningMark,
@@ -4273,6 +4274,128 @@ test('every row in the demo, on every tab, draws its plan’s buttons in the pla
       checked++
     }
     expect(checked, `${look} PR rows checked`).toBeGreaterThan(1)
+  }
+})
+
+test('a row’s follow-ups stay on its buttons’ last line only when all of them fit there, and otherwise start the next line together', async () => {
+  const spacing = { gap: 1, followUpGap: 1, separator: 0 }
+  expect(actionLines([4, 4], [3, 3], { ...spacing, width: 20 })).toEqual({
+    lines: [[0, 1, 2, 3]],
+    isFollowUpLineNew: false,
+  })
+  expect(actionLines([4, 4], [3, 3], { ...spacing, width: 14 })).toEqual({
+    lines: [
+      [0, 1],
+      [2, 3],
+    ],
+    isFollowUpLineNew: true,
+  })
+  expect(actionLines([4, 4], [3, 3], { ...spacing, width: 5 })).toEqual({
+    lines: [[0], [1], [2], [3]],
+    isFollowUpLineNew: true,
+  })
+  expect(actionLines([6, 6], [1, 1], { ...spacing, width: 10 })).toEqual({
+    lines: [[0], [1, 2, 3]],
+    isFollowUpLineNew: false,
+  })
+  expect(actionLines([6, 6], [1, 1], { ...spacing, separator: 1, width: 10 })).toEqual({
+    lines: [[0], [1], [2, 3]],
+    isFollowUpLineNew: true,
+  })
+  expect(actionLines([], [3, 3], { ...spacing, width: 5 })).toEqual({ lines: [[0], [1]], isFollowUpLineNew: false })
+})
+
+test('in the terminal and desktop looks, an open row’s follow-ups are never split between rows: the terminal gives them a row of their own when they do not fit after its buttons, and desktop’s links box asks for the width of all of them', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'inbox', args: 'demo' } as never)
+  const { ledger, lastActions, notes, turns } = demoView(1_000_000, 'Claude')
+  const view = inboxView({
+    ledger,
+    lastActions,
+    notes,
+    turns,
+    extraSteps: {},
+    settleWindowMs: SETTLED_MS,
+    status: perTurnStatus({ isUpdating: false, isFailed: false, retries: true }),
+    now: 1_000_000,
+    replies: {},
+    discarded: {},
+  })
+  const row = view.findings.rows.find(r => r.state.is === 'open')!
+  const plan = rowKeyPlan(row, false)
+  const labelsOf = (planned: typeof plan.keys) =>
+    planned.flatMap(k => (k.slot === 'action' || k.slot === 'choice' ? [k.action.label] : []))
+  const buttonLabels = labelsOf(plan.keys)
+  const followUpLabels = labelsOf(plan.more)
+  expect(buttonLabels.length).toBeGreaterThan(0)
+  expect(followUpLabels.length).toBeGreaterThan(1)
+  const textOf = (node: unknown): string =>
+    typeof node === 'string' ? node : ((node as { children?: unknown[] } | null)?.children ?? []).map(textOf).join('')
+  const shownLabels = (node: unknown): string[] => {
+    if (typeof node !== 'object' || node === null) return []
+    const el = node as { type?: string; props?: Record<string, unknown>; children?: unknown[] }
+    if (el.type === 'Client')
+      return ((el.props?.props as Partial<LinksProps> | undefined)?.links ?? []).map(l => l.label)
+    if (el.type === 'Button') return [typeof el.props?.label === 'string' ? el.props.label : textOf(el)]
+    return (el.children ?? []).flatMap(shownLabels)
+  }
+  const holds = (shown: string[], label: string) => shown.some(s => s.endsWith(label))
+
+  for (const look of ['terminal', 'desktop'] as const) {
+    const pane =
+      look === 'terminal'
+        ? await $.ui.mount(PANE)
+        : await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 120 } })
+    if (look === 'terminal') await pane.press({ key: 'tab-findings' })
+    else {
+      const { tabs: bar, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+      const x = bar
+        .slice(
+          0,
+          bar.findIndex(t => t.id === 'findings'),
+        )
+        .reduce((sum, t) => sum + t.width + gap, 0)
+      await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+    }
+    await clock.settle()
+    await clock.advance(PRESS_GUARD_MS)
+    if (await pane.find({ key: `select-${row.id}` }))
+      if (look === 'terminal') await pane.press({ key: `select-${row.id}` })
+      else await pane.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: `select-${row.id}` })
+    await clock.settle()
+
+    const forms = new Set<string>()
+    for (let columns = 26; columns <= 120; columns++) {
+      await pane.redraw({ ...PANE.props, bodyColumns: columns })
+      const rows = (await pane.findAll({ type: 'Box' }))
+        .filter(b => b.props.flexWrap === 'wrap')
+        .map(b => b.children.flatMap(shownLabels))
+        .filter(shown => followUpLabels.some(l => holds(shown, l)))
+      expect(rows, `${look} at ${columns} columns`).toHaveLength(1)
+      expect(
+        followUpLabels.every(l => holds(rows[0]!, l)),
+        `${look} at ${columns} columns: ${rows[0]!.join(', ')}`,
+      ).toBe(true)
+      if (look === 'desktop') {
+        const followUpButtons = (await pane.findAll({ type: 'Button' })).filter(b =>
+          followUpLabels.some(l => holds(shownLabels(b), l)),
+        )
+        expect(followUpButtons, `desktop at ${columns} columns draws its follow-ups as links`).toHaveLength(0)
+        const linksBox = (await pane.findAll({ type: 'Box' })).find(b =>
+          b.children.some(c => (c as { props?: { key?: string } }).props?.key === `links-${row.id}`),
+        )!
+        const { links, gap } = (await pane.find({ key: `links-${row.id}` }))?.props.props as LinksProps
+        expect(
+          [linksBox.props.width, linksBox.props.flexShrink, linksBox.props.minWidth],
+          `desktop at ${columns} columns`,
+        ).toEqual([Math.ceil(links.reduce((sum, l) => sum + l.width, gap * (links.length - 1))), 1, 0])
+      }
+      forms.add(buttonLabels.some(l => holds(rows[0]!, l)) ? 'shared' : 'own')
+    }
+    expect([...forms].sort(), look).toEqual(look === 'terminal' ? ['own', 'shared'] : ['shared'])
+    await pane.unmount()
   }
 })
 

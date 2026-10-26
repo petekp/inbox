@@ -97,6 +97,30 @@ test('a selected row draws its buttons in the shared key plan order', () => {
   }
 })
 
+test('a row’s follow-ups share its buttons’ last line only when all of them fit there, and otherwise start a line of their own together', () => {
+  const screen = screenOf()
+  const row = screen.view.findings.rows.find(r => r.state.is === 'open')!
+  const ui: PanelUi = { ...onRow(row), tab: 'findings', opened: row.id }
+  const { keys, more } = rowKeyPlan(row, true)
+  const labelsOf = (planned: typeof keys) =>
+    planned.flatMap(k => (k.slot === 'action' || k.slot === 'choice' ? [k.action.label] : []))
+  const buttons = labelsOf(keys)
+  const followUps = labelsOf(more)
+  const lineOf = (lines: string[], label: string) => lines.findIndex(l => new RegExp(`(↵|\\w) ${label} `).test(l))
+  const forms = new Set<string>()
+  for (let width = 30; width <= 120; width++) {
+    const lines = text(screen, ui, width).split('\n')
+    const lastButton = lineOf(lines, buttons.at(-1)!)
+    const followUpLines = followUps.map(label => lineOf(lines, label))
+    expect(lastButton, `at ${width} columns`).toBeGreaterThan(0)
+    if (followUpLines[0] === lastButton) {
+      expect(followUpLines, `at ${width} columns`).toEqual(followUps.map(() => lastButton))
+      forms.add('shared')
+    } else forms.add('own')
+  }
+  expect([...forms].sort()).toEqual(['own', 'shared'])
+})
+
 test('a question opens with its recommended option focused and underlined', () => {
   const screen = screenOf()
   const row = firstQuestion(screen)

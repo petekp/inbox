@@ -2873,6 +2873,31 @@ function rowKeyPlan(r, isAllShown) {
   }
   return { keys, more };
 }
+function actionLines(keys, more, { width, gap, followUpGap, separator }) {
+  const lines = [];
+  let used = 0;
+  const place = (at, size, before) => {
+    const line = lines.at(-1);
+    if (line && used + before + size <= width) {
+      line.push(at);
+      used += before + size;
+    } else {
+      lines.push([at]);
+      used = size;
+    }
+  };
+  keys.forEach((size, i) => place(i, size, gap));
+  const followUpsWidth = more.reduce((sum, size) => sum + size, followUpGap * Math.max(0, more.length - 1));
+  const isFollowUpLineNew = keys.length > 0 && more.length > 0 && used + gap + separator + followUpsWidth > width;
+  more.forEach((size, i) => {
+    if (i === 0 && isFollowUpLineNew) {
+      lines.push([keys.length]);
+      used = size;
+    } else
+      place(keys.length + i, size, i === 0 ? gap + separator : followUpGap);
+  });
+  return { lines, isFollowUpLineNew };
+}
 function inboxView({
   ledger,
   lastActions,
@@ -5100,22 +5125,17 @@ function labelMark(b, room, s) {
 }
 function buttonLines(line, ui, indent, width, s) {
   const focused = focusOf(line, ui);
-  const out = [];
-  let current = " ".repeat(indent);
-  let used = indent;
-  line.buttons.forEach((b, i) => {
-    const cell = buttonCell(b, i === focused, s, labelMark(b, width - indent, s));
-    const size = visibleLength(cell);
-    if (used + size > width && used > indent) {
-      out.push(current);
-      current = " ".repeat(indent);
-      used = indent;
-    }
-    current += cell;
-    used += size;
+  const cells = line.buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)));
+  const sizes = cells.map(visibleLength);
+  const firstFollowUp = line.buttons.findIndex((b) => b.isFollowUp);
+  const keyCount = firstFollowUp < 0 ? cells.length : firstFollowUp;
+  const { lines } = actionLines(sizes.slice(0, keyCount), sizes.slice(keyCount), {
+    width: width - indent,
+    gap: 0,
+    followUpGap: 0,
+    separator: 0
   });
-  out.push(current);
-  return out;
+  return lines.map((at) => " ".repeat(indent) + at.map((i) => cells[i]).join(""));
 }
 function leadText(lead, s) {
   const padded = lead.text.padEnd(2);
