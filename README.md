@@ -166,7 +166,7 @@ A task is something like signing in or adding an API key. It comes with
 buttons for its steps, such as copying a command or opening a file. In Claude
 Code, running the command with `!` closes the task once it succeeds.
 
-### Findings
+### Finds
 
 Bugs, risks and ideas the agent noticed outside the task it's working on. The
 agent records them and carries on with its task, and you decide later which
@@ -221,7 +221,7 @@ sidebar, as pane tokens:
 | Token | Holds |
 |---|---|
 | `inbox` | What waits on you, in one line |
-| `inbox-needs-you`, `inbox-findings`, `inbox-prs` | The tab's count alone, such as `2`. `inbox-needs-you` is the Asks tab's. Empty when the tab has nothing waiting. |
+| `inbox-needs-you`, `inbox-findings`, `inbox-prs` | The tab's count alone, such as `2`. `inbox-needs-you` is the Asks tab's, and `inbox-findings` the Finds tab's. Empty when the tab has nothing waiting. |
 | `inbox-stop` | Why the agent stopped. The count tokens stay empty until the stop clears, so the sidebar has room for it. |
 
 To tell the counts apart by each tab's color, add this row to `rows` under

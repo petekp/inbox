@@ -773,7 +773,7 @@ test('the /inbox command reports the counts, and /inbox demo reports the demo co
   await record({ kind: 'task', ask: 'Try the CLI by hand' })
   await commands.get('inbox').handler('', makeCtx())
   await commands.get('inbox').handler('demo', makeCtx())
-  expect(notices[0]).toBe('Asks 1, Findings 0')
+  expect(notices[0]).toBe('Asks 1, Finds 0')
   expect(notices[1]).not.toBe(notices[0])
 })
 

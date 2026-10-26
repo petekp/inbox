@@ -278,11 +278,11 @@ export const CLAUDE_CODE: Host = {
   agent: 'Claude',
   surface: 'the /inbox pane',
   band: 'a band above their prompt',
-  findingsIn: 'the Findings tab of the /inbox pane',
+  findingsIn: 'the Finds tab of the /inbox pane',
   recordTool: 'mcp__inbox__record',
   closeTool: 'mcp__inbox__close',
   intro:
-    "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox pane, and your findings, in the pane's Findings tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings.",
+    "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox pane, and your findings, in the pane's Finds tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings.",
 }
 
 /** The system text of the call that writes the Overview page, apart from the ledger call. */

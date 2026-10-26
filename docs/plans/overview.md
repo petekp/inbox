@@ -285,7 +285,7 @@ Readers of `card.goal` and their replacements:
 - **Merging an unseen list.** The call may drop an old change by mistake. The since case checks one merge. The trial shows more.
 - **Stale queue marks.** The queue updates after each reply, so a ● can be wrong between replies. The page shows `Working…` from the live turn state to cover the gap.
 - **Ledger evals move in step 5.** A new rule in the ledger call's text has moved unrelated ledger cases by 10 to 20 runs of 32. Step 5 compares against the baselines and stops if a case drops.
-- **Width.** The label "Overview" is 8 letters, as "Progress" was. The desktop pane at 36 to 38 columns may lose the Asks and Findings counts. Step 3 measures it. If it does, the choice between a shorter label and losing the counts goes to the person.
+- **Width.** The label "Overview" is 8 letters, as "Progress" was. The desktop pane at 36 to 38 columns may lose the Asks and Finds counts. Step 3 measures it. If it does, the choice between a shorter label and losing the counts goes to the person.
 
 ## Out of scope
 

@@ -6,7 +6,7 @@ export const CODEX: Host = {
   agent: 'Codex',
   surface: 'the Inbox tab',
   band: null,
-  findingsIn: 'the Findings section of the Inbox tab',
+  findingsIn: 'the Finds section of the Inbox tab',
   recordTool: 'mcp__inbox__record',
   closeTool: 'mcp__inbox__close',
   intro:

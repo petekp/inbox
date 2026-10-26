@@ -1503,7 +1503,7 @@ function stepKind(step) {
 var TABS = [
   { id: "overview", label: "Overview", symbol: "\u{1F9ED}", hotkey: "1" },
   { id: "needsYou", label: "Asks", symbol: "\u{1F64B}", hotkey: "2" },
-  { id: "findings", label: "Findings", symbol: "\u{1F50D}", hotkey: "3" },
+  { id: "findings", label: "Finds", symbol: "\u{1F50D}", hotkey: "3" },
   { id: "prs", label: "PRs", symbol: "\u{1F500}", hotkey: "4" }
 ];
 function isListedTab(tab) {
@@ -2318,7 +2318,7 @@ var CODEX = {
   agent: "Codex",
   surface: "the Inbox tab",
   band: null,
-  findingsIn: "the Findings section of the Inbox tab",
+  findingsIn: "the Finds section of the Inbox tab",
   recordTool: "mcp__inbox__record",
   closeTool: "mcp__inbox__close",
   intro: "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, and your findings, in the Inbox tab beside the conversation."
