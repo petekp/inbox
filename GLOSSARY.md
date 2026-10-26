@@ -61,6 +61,10 @@ The `/inbox` panel beside the conversation in Claude Code, with its Needs
 you, Findings, PRs and Overview tabs. Codex shows the same tabs in its Inbox tab. omp
 shows them in an overlay that `/inbox` opens.
 
+**Tab symbol**:
+The emoji a tab shows in place of its words when the words don't fit,
+followed by its count, as "🔍 4". `symbol` in `TABS` in `hooks/view.ts`.
+
 **New row**:
 A row a look lists for the first time since it last recorded its rows. A
 look showing an empty tab can move to a tab where rows arrived. A row that

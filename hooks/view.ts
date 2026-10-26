@@ -593,7 +593,7 @@ function stepKind(step: HelpStep): PressKind {
 /** Any tab a look can show: a row tab or a page tab. */
 export type ShownTab = Tab | PageTab
 
-/** A tab's words name it everywhere. A look draws its symbol in their place where the words do not fit. */
+/** The band and the inbox model always read a tab's words. A look draws its symbol in their place where the words do not fit. */
 export const TABS: readonly { id: ShownTab; label: string; symbol: string; hotkey: string }[] = [
   { id: 'overview', label: 'Overview', symbol: '\u{1F9ED}', hotkey: '1' },
   { id: 'needsYou', label: 'Needs you', symbol: '\u{1F64B}', hotkey: '2' },
