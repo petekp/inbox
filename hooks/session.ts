@@ -466,6 +466,11 @@ export function lookEndedOn<S extends { ledger: Ledger }>(s: S, at: number): S {
   return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } }
 }
 
+/** Starts a look while the Overview is shown, and ends it otherwise. */
+export function withLook<S extends { ledger: Ledger }>(s: S, isOverviewShown: boolean, now: number): S {
+  return isOverviewShown ? lookStartedOn(s, now) : lookEndedOn(s, now)
+}
+
 /** Whether the session has anything recorded: an applied update, an item, a finding or an Overview. */
 export function hasLedger(s: Session): boolean {
   return !isBlankLedger(s.ledger)

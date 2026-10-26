@@ -3,9 +3,9 @@ import { toolActivity } from '../../hooks/model-text'
 import {
   endTurn as endSessionTurn,
   lookEndedOn,
-  lookStartedOn,
   notePrompt as notePromptIn,
   sessionView,
+  withLook,
 } from '../../hooks/session'
 import type { SessionView } from '../../hooks/session'
 import { NO_HOLDS, screenTabOf } from '../../hooks/view'
@@ -29,7 +29,7 @@ export function lookOnView(s: SessionState, shownTab: SessionState['shownTab'], 
   const wasClosed = s.tabSeenAt > 0 && !isTabOpen(s, now)
   const closed = wasClosed ? lookEndedOn(s, s.tabSeenAt) : s
 
-  return shownTab === 'overview' ? lookStartedOn(closed, now) : lookEndedOn(closed, now)
+  return withLook(closed, shownTab === 'overview', now)
 }
 
 export function notePrompt(s: SessionState, text: string, now: number): { state: SessionState; notes: string[] } {

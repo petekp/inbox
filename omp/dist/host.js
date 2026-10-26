@@ -3856,6 +3856,9 @@ function lookEndedOn(s, at) {
   const overview = lookEnded(s.ledger.overview, at);
   return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } };
 }
+function withLook(s, isOverviewShown, now) {
+  return isOverviewShown ? lookStartedOn(s, now) : lookEndedOn(s, now);
+}
 function hasLedger(s) {
   return !isBlankLedger(s.ledger);
 }
@@ -6466,7 +6469,7 @@ function createInbox(pi, deps = defaultDeps) {
       const isChanged = openPanels.get(id) !== tab;
       openPanels.set(id, tab);
       if (isChanged)
-        deps.background(change(id, (s) => tab === "overview" ? lookStartedOn(s, deps.now()) : lookEndedOn(s, deps.now())));
+        deps.background(change(id, (s) => withLook(s, tab === "overview", deps.now())));
     },
     closePanel: (ctx) => {
       const id = sessionIdOf(ctx);

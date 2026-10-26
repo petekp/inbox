@@ -23,7 +23,6 @@ import {
   hasLedger,
   isUnseen,
   lookEndedOn,
-  lookStartedOn,
   needsUpdate,
   noteActivity,
   noteCommandOutput,
@@ -32,6 +31,7 @@ import {
   sessionView,
   turnEnded,
   turnStarted,
+  withLook,
 } from '../../hooks/session'
 import type { SessionView } from '../../hooks/session'
 import {
@@ -827,10 +827,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       if (!openPanels.has(id)) return
       const isChanged = openPanels.get(id) !== tab
       openPanels.set(id, tab)
-      if (isChanged)
-        deps.background(
-          change(id, s => (tab === 'overview' ? lookStartedOn(s, deps.now()) : lookEndedOn(s, deps.now()))),
-        )
+      if (isChanged) deps.background(change(id, s => withLook(s, tab === 'overview', deps.now())))
     },
     closePanel: ctx => {
       const id = sessionIdOf(ctx)

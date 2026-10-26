@@ -57,8 +57,6 @@ import {
   emptySession,
   endTurn,
   forkedFrom,
-  lookEndedOn,
-  lookStartedOn,
   noteActivity as noteTurnActivity,
   pressOn,
   recordPrompt,
@@ -68,6 +66,7 @@ import {
   turnEnded,
   turnStarted,
   upgradeSession,
+  withLook,
   withNewPrRefs,
 } from './session'
 import type { SentBy, Session, SessionView } from './session'
@@ -1266,7 +1265,7 @@ async function syncLook($: EngineInterface, isOpen?: boolean) {
   if (await read($, DEMO)) return
   const [page, isPaneOpen, now] = await Promise.all([read($, PAGE), isOpen ?? isPaneShown($), $.clock.now()])
   const isShown = isPaneOpen && page === 'overview'
-  await commit($, currentOwner(), s => (isShown ? lookStartedOn(s, now) : lookEndedOn(s, now))).catch(() => undefined)
+  await commit($, currentOwner(), s => withLook(s, isShown, now)).catch(() => undefined)
 }
 
 /** Opens the open pane again, without asking for the keyboard, once a reply field opened or closed. */
