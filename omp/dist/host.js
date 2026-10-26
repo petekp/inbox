@@ -3810,15 +3810,10 @@ function parsedReply(ex, reply) {
   return reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join(`
 `));
 }
-function isReplyApplied(s, reply) {
-  const next = s.pending[0];
-  return next !== undefined && parsedReply(next.ex, reply) !== null;
-}
-function applied(s, reply, now, promptAt) {
+function applied(s, parsed, now, promptAt) {
   const next = s.pending[0];
   if (!next)
     return s;
-  const parsed = parsedReply(next.ex, reply);
   const { ex } = next;
   if (!parsed && !next.failed)
     return {
@@ -4101,13 +4096,14 @@ async function runUpdates(host) {
             const next = s.pending[0];
             const promptAt = await host.now();
             const reply = await host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names)).catch(() => null);
+            const parsed = parsedReply(next.ex, reply);
             let isApplied = false;
             const after = await host.update(async (x) => {
               isApplied = false;
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn)
                 return x;
-              isApplied = isReplyApplied(x, reply);
-              return applied(x, reply, await host.now(), promptAt);
+              isApplied = parsed !== null;
+              return applied(x, parsed, await host.now(), promptAt);
             });
             if (isApplied)
               followUp(writeOverview(after, (last, tasks) => host.ask(overviewPrompt(last, next.ex, tasks), OVERVIEW_SYSTEM), next.ex.tasks));

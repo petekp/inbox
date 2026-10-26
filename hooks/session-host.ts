@@ -25,7 +25,7 @@ import {
 import type { AnswerMessage, Effect, EffectHost, RowPress } from './presses'
 import {
   applied,
-  isReplyApplied,
+  parsedReply,
   appliedCatchUp,
   appliedOverview,
   completedAttempt,
@@ -257,13 +257,14 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
             const next = s.pending[0]!
             const promptAt = await host.now()
             const reply = await host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names)).catch(() => null)
+            const parsed = parsedReply(next.ex, reply)
             let isApplied = false as boolean
             const after = await host.update(async x => {
               isApplied = false
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x
-              isApplied = isReplyApplied(x, reply)
+              isApplied = parsed !== null
 
-              return applied(x, reply, await host.now(), promptAt)
+              return applied(x, parsed, await host.now(), promptAt)
             })
             if (isApplied)
               followUp(

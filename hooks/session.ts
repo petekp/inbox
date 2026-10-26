@@ -389,26 +389,19 @@ export function endTurn<S extends Session>(
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] }
 }
 
-function parsedReply(ex: Exchange, reply: string | null) {
+/** The model's answer for `ex`, parsed. Null when there is no answer or it cannot be read. */
+export function parsedReply(ex: Exchange, reply: string | null): Update | null {
   return reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join('\n'))
 }
 
-/** Does `applied` add this answer to the ledger? False when there is no pending exchange or the answer cannot be read. */
-export function isReplyApplied(s: Session, reply: string | null): boolean {
-  const next = s.pending[0]
-
-  return next !== undefined && parsedReply(next.ex, reply) !== null
-}
-
 /**
- * Applies the model's answer for the oldest pending exchange, and drops that exchange. One whose first update
- * failed stays pending, marked failed, for the next update to try again. The Overview call's answer goes in
- * separately, through `appliedOverview`.
+ * Applies the model's parsed answer for the oldest pending exchange, and drops that exchange. An answer that could not
+ * be read is null: an exchange whose first update failed stays pending, marked failed, for the next update to try
+ * again. The Overview call's answer goes in separately, through `appliedOverview`.
  */
-export function applied<S extends Session>(s: S, reply: string | null, now: number, promptAt: number): S {
+export function applied<S extends Session>(s: S, parsed: Update | null, now: number, promptAt: number): S {
   const next = s.pending[0]
   if (!next) return s
-  const parsed = parsedReply(next.ex, reply)
   const { ex } = next
   if (!parsed && !next.failed)
     return {
