@@ -8,7 +8,7 @@ import { closedState } from '../../hooks/ledger'
 import { ago, clipLabel } from '../../hooks/text'
 import type { ClosedState } from '../../hooks/ledger'
 import { canUndoRefused, closedMark, settledMark, versionLabel } from '../../hooks/view'
-import { capitalized, noteText, pendingResult, stepEffects } from '../../hooks/presses'
+import { capitalized, isPressConfirmed, noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { Effect, RowPress } from '../../hooks/presses'
 import {
   allRows,
@@ -633,10 +633,10 @@ async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void
     if (isDisposed || generation !== viewGeneration || !isLatest()) return
     if (r.view) applyView(r.view, seq)
     if (r.error && !(view && isNotSent(view, rowId))) errors.set(rowId, r.error)
+    const isConfirmed = isPressConfirmed({ error: r.error, note: r.note, isUnconfirmed: r.delivery === 'unconfirmed' })
     // After the view, so `onSent` reads the rows as they are after the press.
-    if (!r.error && r.note !== 'stale' && r.delivery !== 'unconfirmed') onSent?.()
-    if (!r.error && r.note !== 'stale' && r.delivery !== 'unconfirmed' && r.view && wasWaiting && typing !== rowId)
-      openAfterClose(r.view, rowId)
+    if (isConfirmed) onSent?.()
+    if (isConfirmed && r.view && wasWaiting && typing !== rowId) openAfterClose(r.view, rowId)
     const { note } = r
     if (note && view && isListed(view, rowId)) {
       notes.set(rowId, { text: noteText(), at: Date.now() })

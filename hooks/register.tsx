@@ -173,6 +173,7 @@ import {
   demoAfterPress,
   demoTurns,
   doneWake,
+  isPressConfirmed,
   localPath,
   markSentToAgent,
   refuseDoneNotification,
@@ -1955,6 +1956,10 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   if (await read($, DEMO)) return runDemoPress($, p, wasWaiting, undoRevision, surface)
   const [now, { ledger }] = await Promise.all([$.clock.now(), read($, SESSION)])
   const draft = !('ref' in p) && p.action === 'type' ? (await read($, DRAFTS))[p.id] : undefined
+  const keepReply = () =>
+    !('ref' in p) && p.action === 'type'
+      ? update($, DRAFTS, d => (d[p.id] ? d : { ...d, [p.id]: { text: p.text, since: draft?.since ?? now } }))
+      : undefined
   const isReplyToClosed = !('ref' in p) && p.action === 'type' && !isOpenIn(ledger, p.id)
   if (!('ref' in p) && p.action === 'type') {
     // A held row stays drawn by its draft's words once its field closes, until the press records its reply.
@@ -1971,13 +1976,10 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   })
   const effects = started.effects
   if (!effects) {
-    if ((await started.finish()).note !== 'stale') return
-    await Promise.all([
-      update($, NOTES, n => ({ ...n, [rowId]: { note: 'stale' as const, at: now } })),
-      'id' in p && p.action === 'type'
-        ? update($, DRAFTS, d => ({ ...d, [p.id]: { text: p.text, since: d[p.id]?.since ?? now } }))
-        : undefined,
-    ])
+    const outcome = await started.finish()
+    if (!isPressConfirmed(outcome)) await keepReply()
+    if (outcome.note !== 'stale') return
+    await update($, NOTES, n => ({ ...n, [rowId]: { note: 'stale' as const, at: now } }))
     later($, SETTLED_MS, () =>
       update($, NOTES, n => {
         if (n[rowId]?.at !== now) return n
@@ -2020,9 +2022,8 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   if (sends) later($, QUEUED_AFTER_MS, () => redraw($))
   const outcome = await started.finish()
   if (effects.some(e => e.kind !== 'send')) later($, SETTLED_MS, () => redraw($))
+  if (!isPressConfirmed(outcome)) await keepReply()
   if (!outcome.isRowFailed) return
-  if (!('ref' in p) && p.action === 'type')
-    await update($, DRAFTS, d => (d[p.id] ? d : { ...d, [p.id]: { text: p.text, since: draft?.since ?? now } }))
   if (isMoved) {
     cancelUndoScroll()
     await reopenPressed($, rowId)
