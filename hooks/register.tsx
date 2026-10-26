@@ -1268,8 +1268,14 @@ function openPane($: EngineInterface, isFieldOpen = false) {
  */
 async function syncLook($: EngineInterface, isOpen?: boolean) {
   if (await read($, DEMO)) return
-  const [page, isPaneOpen, now] = await Promise.all([read($, PAGE), isOpen ?? isPaneShown($), $.clock.now()])
+  const [page, isPaneOpen, now, drawn] = await Promise.all([
+    read($, PAGE),
+    isOpen ?? isPaneShown($),
+    $.clock.now(),
+    read($, SESSION).then(upgradeSession),
+  ])
   const isShown = isPaneOpen && page === 'overview'
+  if (withLook(drawn, isShown, now) === drawn) return
   await commit($, currentOwner(), s => withLook(s, isShown, now)).catch(() => undefined)
 }
 
