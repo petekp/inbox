@@ -52,28 +52,36 @@ test('the panel shows a loading line until the first screen arrives', async () =
   expect(panel.render(80).join('\n')).toContain('Needs you')
 })
 
-test('a reply typed in the panel reaches the source as a type press', async () => {
-  const { panel, pressed } = open()
-  await panel.start()
-  for (const [key, text] of [['r'], ['h', 'h'], ['i', 'i'], ['enter']] as [string, string?][]) {
+async function replyThenReopen(panel: ReturnType<typeof open>['panel'], reply: string): Promise<string> {
+  const typed = [...reply].map(ch => [ch, ch])
+  for (const [key, text] of [['r'], ...typed, ['enter']] as [string, string?][]) {
     panel.handleInput(key, text)
     await flush()
   }
-  expect(pressed).toHaveLength(1)
+  panel.handleInput('r')
+  await flush()
+  const lines = panel.render(80)
+
+  return lines[lines.findIndex(l => l.includes('Your answer:')) + 1]!.trim()
+}
+
+test('a reply typed in the panel reaches the source as a type press, and Reply then opens an empty field', async () => {
+  const { panel, pressed } = open()
+  await panel.start()
+  expect(await replyThenReopen(panel, 'hi')).toBe('')
   expect(pressed[0]).toMatchObject({ action: 'type', text: 'hi' })
 })
 
 test('a type press the source calls stale keeps the draft in the field', async () => {
   const { panel } = open({ press: async () => ({ error: null, note: 'stale' }) })
   await panel.start()
-  for (const [key, text] of [['r'], ['o', 'o'], ['enter']] as [string, string?][]) {
-    panel.handleInput(key, text)
-    await flush()
-  }
-  panel.handleInput('r')
-  await flush()
-  expect(panel.render(80).join('\n')).toContain('Your answer:')
-  expect(panel.render(80).join('\n')).toContain('o')
+  expect(await replyThenReopen(panel, 'oh')).toBe('oh')
+})
+
+test('a type press whose send fails keeps the draft in the field', async () => {
+  const { panel } = open({ press: async () => ({ error: 'Not sent: omp is busy', note: null }) })
+  await panel.start()
+  expect(await replyThenReopen(panel, 'oh')).toBe('oh')
 })
 
 test('a failed send shows its reason below the rows', async () => {

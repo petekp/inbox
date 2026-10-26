@@ -124,7 +124,7 @@ export type PanelUi = {
   focus: { rowId: string; index: number } | null
   /** The row whose reply field is open. */
   typing: string | null
-  /** Replies begun and not sent, by row id. Cancelling the field keeps its draft. */
+  /** Replies begun and not sent, by row id. Cancelling the field keeps its draft, and so does a failed or stale send. */
   drafts: Record<string, Draft>
   /** Rows whose draft the person discarded, and when. */
   discarded: Record<string, number>
@@ -672,9 +672,8 @@ function typingKey(ui: PanelUi, id: string, key: string, now: number, text: stri
   if (key === 'escape') return { ui: { ...ui, typing: null } }
   if (key === 'enter') {
     if (draft.text.trim() === '') return { ui }
-    const { [id]: _sent, ...drafts } = ui.drafts
 
-    return { ui: { ...ui, typing: null, drafts }, press: { action: 'type', id, text: draft.text } }
+    return { ui: { ...ui, typing: null }, press: { action: 'type', id, text: draft.text } }
   }
   if (key === 'backspace') return edit([...draft.text].slice(0, -1).join(''))
   if (text !== undefined) return edit(draft.text + text.replace(/[\r\n]+/g, ' '))

@@ -120,13 +120,18 @@ export function createPanel(deps: PanelDeps): Panel {
     if (p.action === 'resume') return resume()
     const rowId = 'ref' in p ? prRowId(p) : p.id
     const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now())
+    const sentDraft = !('ref' in p) && p.action === 'type' ? ui.drafts[p.id] : undefined
     const outcome = await source.press(p, holdsOf(ui)).catch((err: unknown) => ({
       error: err instanceof Error ? err.message : String(err),
       note: null,
     }))
     const now = deps.now()
-    if (!('ref' in p) && p.action === 'type' && outcome.note === 'stale')
-      ui = { ...ui, drafts: { ...ui.drafts, [p.id]: { text: p.text, since: now } } }
+    const isSent = outcome.error === null && outcome.note !== 'stale'
+    const isDraftUnedited = sentDraft !== undefined && ui.drafts[rowId] === sentDraft
+    if (isSent && isDraftUnedited) {
+      const { [rowId]: _sent, ...drafts } = ui.drafts
+      ui = { ...ui, drafts }
+    }
     const notice = noticeFor(outcome, now)
     if (notice) ui = { ...ui, notice }
     await refresh(wasWaiting ? rowId : undefined)
