@@ -32,10 +32,20 @@ import { rolloutFor, turnIn, turnRunningIn } from './transcript'
 import type { HooksTrust } from './hook-trust'
 import type { LastAction, PrViews, RowNote } from '../../types'
 
-/** Codex keeps a tab's page by its address, even across server restarts, so a new build needs a new address for a new chat to load it. */
-export function tabUri(tabHtml: string): string {
+/**
+ * The name a build's page goes by. A tab whose page has another name than the server's swaps to the server's page.
+ * Tabs from earlier builds take only a name shaped `ui://inbox/tab-` and 12 hex digits (`swapPage` in tab.tsx), so the
+ * name keeps that shape.
+ */
+export function pageName(tabHtml: string): string {
   return `ui://inbox/tab-${createHash('sha256').update(tabHtml).digest('hex').slice(0, 12)}`
 }
+
+/**
+ * Codex removes an open tab once the server's tool list names another address for its page, so every build lists
+ * this one. A tab then swaps to the new build's page itself.
+ */
+const TAB_ADDRESS = 'ui://inbox/view'
 /** How long an answer about the hooks' trust stands before a view asks Codex again. */
 const HOOKS_TRUST_CACHE_MS = 30_000
 /** How long an answer that Codex does not run the hooks stands, so its notice leaves soon after the person trusts them. */
@@ -55,7 +65,7 @@ function viewsStillShown(
   )
 }
 
-const toolsFor = (uri: string) => [
+const TOOLS = [
   ...agentTools(CODEX),
   // No resourceUri: Codex mounts every model-called MCP App inline in the transcript.
   { name: 'inbox', description: INBOX_DESCRIPTION, inputSchema: { type: 'object', properties: {} } },
@@ -74,7 +84,7 @@ const toolsFor = (uri: string) => [
       },
     },
     _meta: {
-      ui: { resourceUri: uri, visibility: ['app'] },
+      ui: { resourceUri: TAB_ADDRESS, visibility: ['app'] },
       'openai/ui': { entrypoints: [{ type: 'thread' }] },
     },
   },
@@ -122,7 +132,7 @@ function shownTabOf(raw: unknown): ShownTab | null {
 function stamped(tabHtml: string): string {
   return tabHtml.replace(
     '</head>',
-    () => `<script>window.__inboxPage = ${JSON.stringify(tabUri(tabHtml))}</script></head>`,
+    () => `<script>window.__inboxPage = ${JSON.stringify(pageName(tabHtml))}</script></head>`,
   )
 }
 
@@ -197,8 +207,6 @@ export type PressReply = {
 
 export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<string, unknown> | null> {
   const { dir, now } = deps
-  const uri = tabUri(deps.tabHtml)
-  const tools = toolsFor(uri)
   const gh = ghFinder(deps.exec)
   const prFetches = prFetchTracker(now)
   const prunedFor = new Set<string>()
@@ -350,7 +358,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       thread: id,
       isFetchingPrs: !isDemo && prFetches.isFetching(id),
       isGhMissing: !isDemo && isGhMissing,
-      devPage: tabUri(await currentPage()),
+      devPage: pageName(await currentPage()),
       ...(deps.build ? { serverBuild: deps.build } : {}),
       ...(loadError ? { serverLoadError: loadError } : {}),
       ...(deps.isPluginFolderGone?.() ? { isPluginFolderGone: true } : {}),
@@ -504,7 +512,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
           serverInfo: { name: 'inbox', version: '0.2.10' },
         })
       case 'tools/list':
-        return ok({ tools })
+        return ok({ tools: TOOLS })
       case 'tools/call': {
         const name = String(params?.name ?? '')
         const args = (params?.arguments ?? {}) as Record<string, unknown>
@@ -521,17 +529,21 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         }
       }
       case 'resources/list':
-        return ok({ resources: [{ uri, name: 'Inbox', mimeType: TAB_MIME }] })
+        return ok({ resources: [{ uri: TAB_ADDRESS, name: 'Inbox', mimeType: TAB_MIME }] })
       case 'resources/templates/list':
         return ok({ resourceTemplates: [] })
       case 'resources/read': {
-        // Codex asks by the address from the tools/list it read when the server started, and drops the frame when
-        // the reply names another. A build loaded since then has a new address, so answer under the one asked for.
+        // Codex drops the frame when the reply names another address than the one it asked for, and a tab opened
+        // under an older build asks by that build's address.
         const asked = String(params?.uri ?? '')
 
         return ok({
           contents: [
-            { uri: asked.startsWith('ui://inbox/tab-') ? asked : uri, mimeType: TAB_MIME, text: stamped(deps.tabHtml) },
+            {
+              uri: asked.startsWith('ui://inbox/') ? asked : TAB_ADDRESS,
+              mimeType: TAB_MIME,
+              text: stamped(deps.tabHtml),
+            },
           ],
         })
       }
