@@ -31,6 +31,7 @@ import {
   sessionView,
   turnEnded,
   turnStarted,
+  cutOffTurn,
   withLook,
 } from '../../hooks/session'
 import type { SessionView } from '../../hooks/session'
@@ -611,7 +612,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     // No turn runs as a session starts, so a running turn saved here was cut off by a process that ended.
     const id = sessionIdOf(ctx)
     if ((await readState(dir, id).catch(() => null))?.presence.isTurnRunning)
-      await change(id, s => (s.presence.isTurnRunning ? turnEnded(s) : s)).catch(() => undefined)
+      await change(id, cutOffTurn).catch(() => undefined)
     prepare(ctx)
     showBand(ctx)
     deps.background(

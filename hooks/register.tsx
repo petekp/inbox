@@ -66,6 +66,7 @@ import {
   turnEnded,
   turnStarted,
   upgradeSession,
+  cutOffTurn,
   withLook,
   withNewPrRefs,
 } from './session'
@@ -2490,14 +2491,6 @@ async function applyConversation(
 /** An update a reload cut off reads as failed, so the next one catches up. */
 function cutOffUpdate<S extends Session>(s: S): S {
   return s.presence.isUpdating ? { ...s, presence: { ...s.presence, isUpdating: false, ledgerState: 'failed' } } : s
-}
-
-/**
- * A reload or a quit can cut off a turn's end, so at load no turn runs. A turn the engine still runs sets it again at
- * its next `turn.start`.
- */
-function cutOffTurn<S extends Session>(s: S): S {
-  return s.presence.isTurnRunning ? turnEnded(s) : s
 }
 
 /** Row presses keep only their PR records, whose rows outlive a conversation's items. */

@@ -3737,6 +3737,9 @@ function turnStarted(s) {
 function turnEnded(s) {
   return { ...s, presence: { ...s.presence, isTurnRunning: false } };
 }
+function cutOffTurn(s) {
+  return s.presence.isTurnRunning ? turnEnded(s) : s;
+}
 function startTurn(s) {
   return { ...s, presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }, stop: null };
 }
@@ -6253,7 +6256,7 @@ function createInbox(pi, deps = defaultDeps) {
       return dropTools();
     const id = sessionIdOf(ctx);
     if ((await readState(dir, id).catch(() => null))?.presence.isTurnRunning)
-      await change(id, (s) => s.presence.isTurnRunning ? turnEnded(s) : s).catch(() => {
+      await change(id, cutOffTurn).catch(() => {
         return;
       });
     prepare(ctx);

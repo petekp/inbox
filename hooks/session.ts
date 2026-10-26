@@ -279,6 +279,14 @@ export function turnEnded<S extends Session>(s: S): S {
   return { ...s, presence: { ...s.presence, isTurnRunning: false } }
 }
 
+/**
+ * A reload or a quit can cut off a turn's end, so at load no turn runs. A turn the agent still runs sets it again at
+ * its next start.
+ */
+export function cutOffTurn<S extends Session>(s: S): S {
+  return s.presence.isTurnRunning ? turnEnded(s) : s
+}
+
 /** Counts a turn that started, and clears the stop the last turn ended with. */
 export function startTurn<S extends Session>(s: S): S {
   return { ...s, presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }, stop: null }
