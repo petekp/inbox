@@ -13,6 +13,7 @@ import {
 import { activityOf, endTurn, noteHook, notePrompt, patchFiles } from './core'
 import { noteDialogs } from './dialogs'
 import { withEarlierHistory } from './history'
+import type { OnWrite } from './host'
 import { updateState } from './state'
 import type { SessionState } from './state'
 import { CODEX } from './texts'
@@ -38,6 +39,7 @@ export type HookDeps = {
   env: NodeJS.ProcessEnv
   now: () => number
   startUpdate: (sessionId: string) => void
+  onWrite: OnWrite
 }
 
 export async function handleHook(input: HookInput, deps: HookDeps): Promise<Record<string, unknown> | null> {
@@ -45,6 +47,12 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
   const { dir, env, now } = deps
   // INBOX_IN_EXEC lets a test drive a whole session through `codex exec`.
   if (!id || (!env.INBOX_IN_EXEC && (await isNonInteractiveRun(input.transcript_path)))) return null
+  const write = async (change: (s: SessionState) => SessionState | Promise<SessionState>) => {
+    const s = await updateState(dir, id, change)
+    await deps.onWrite(s)
+
+    return s
+  }
   const cliPath = env.CODEX_CLI_PATH || null
   const withCli = (s: SessionState): SessionState => (cliPath && s.cliPath !== cliPath ? { ...s, cliPath } : s)
   // A subagent's hook names its own rollout, not the session's.
@@ -73,7 +81,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const root = input.cwd ?? ''
       // Codex runs SessionStart after compacting too, in the middle of a turn.
       const endsTurn = (s: SessionState) => (input.source === 'compact' ? s : turnEnded(s))
-      const s = await updateState(dir, id, async s =>
+      const s = await write(async s =>
         noteHook(
           withHost(await withHistory(endsTurn({ ...(input.source === 'clear' ? cleared(s) : s), root }))),
           'start',
@@ -88,7 +96,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
     }
     case 'UserPromptSubmit': {
       let notes: string[] = []
-      await updateState(dir, id, async s => {
+      await write(async s => {
         const r = notePrompt(withHost(await withHistory(s)), input.prompt ?? '', now())
         notes = r.notes
 
@@ -106,12 +114,12 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const command = typeof toolInput.command === 'string' ? toolInput.command : ''
       if (tool === 'apply_patch') {
         const files = patchFiles(command).map(f => resolve(input.cwd || '/', f))
-        await updateState(dir, id, s => files.reduce((x, f) => noteActivity(x, `edited ${f}`), withRollout(s)))
+        await write(s => files.reduce((x, f) => noteActivity(x, `edited ${f}`), withRollout(s)))
 
         return null
       }
       const line = activityOf(tool, toolInput)
-      if (line) await updateState(dir, id, s => noteActivity(withRollout(s), line))
+      if (line) await write(s => noteActivity(withRollout(s), line))
 
       return null
     }
@@ -119,7 +127,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const reply = input.last_assistant_message ?? ''
       const { dialogs, commands, plan } = await turnIn(input.transcript_path, input.turn_id)
       const lines = dialogs.map(d => dialogActivity(d.questions, { kind: 'open' }))
-      const written = await updateState(dir, id, async s => {
+      const written = await write(async s => {
         const withLines = lines.reduce(
           (x, line) => noteActivity(x, line),
           noteDialogs(withHost(await withHistory(s)), dialogs),

@@ -3084,6 +3084,93 @@ function perTurnStatus(update) {
   };
 }
 
+// ../hooks/herdr.ts
+var STATUS_TOKEN = "inbox";
+var STOP_TOKEN = "inbox-stop";
+var COUNT_TOKENS = {
+  needsYou: "inbox-needs-you",
+  findings: "inbox-findings",
+  prs: "inbox-prs"
+};
+var CLEARED_TOKENS = Object.fromEntries([STATUS_TOKEN, STOP_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null]));
+var HERDR_TIMEOUT_MS = 5000;
+function stopShort(stop) {
+  switch (stop.kind) {
+    case "sign-in":
+      return "Signed out: /login";
+    case "billing":
+      return "Billing problem";
+    case "usage-limit":
+      return stop.resets ? `Limit: resets ${stop.resets}` : "Usage limit reached";
+    default:
+      return "API error: resume";
+  }
+}
+function stopLine(stop) {
+  return `! ${stopShort(stop)}`;
+}
+function dialogText(dialog) {
+  return dialog.kind === "permission" ? `Allow ${dialog.text}?` : dialog.text;
+}
+function statusLine(ledger, stop, dialogs) {
+  if (stop)
+    return stopLine(stop);
+  const dialog = dialogs[0];
+  if (dialog)
+    return dialogText(dialog);
+  const first = ledger.items[0];
+  if (first)
+    return ledger.items.length > 1 ? `${ledger.items.length} \xB7 ${first.ask}` : first.ask;
+  const count = ledger.findings.length;
+  const findings = count === 0 ? null : `${count} finding${count === 1 ? "" : "s"}`;
+  return [ledger.overview?.headline, findings].filter(Boolean).join(" \xB7 ");
+}
+function herdrTokens(ledger, stop, view, dialogs) {
+  const items = [...view.needsYou.questions, ...view.needsYou.tasks].filter(isWaitingRow).flatMap((r) => r.item ? [r.item] : []);
+  const findings = view.findings.rows.filter(isWaitingRow).flatMap((r) => r.finding ? [r.finding] : []);
+  const counts = ROW_TABS.map((t) => {
+    const count = view[t.id].count;
+    return [COUNT_TOKENS[t.id], stop || count === 0 ? null : `${t.symbol} ${count}`];
+  });
+  return {
+    [STATUS_TOKEN]: statusLine({ ...ledger, items, findings }, stop, dialogs) || null,
+    [STOP_TOKEN]: stop ? stopLine(stop) : null,
+    ...Object.fromEntries(counts)
+  };
+}
+function herdrReport(pane, tokens, seq) {
+  return [
+    "herdr",
+    "pane",
+    "report-metadata",
+    pane,
+    "--source",
+    "inbox",
+    ...Object.entries(tokens).flatMap(([name, value]) => value === null ? ["--clear-token", name] : ["--token", `${name}=${value}`]),
+    ...seq === undefined ? [] : ["--seq", String(seq)]
+  ];
+}
+function herdrReporter() {
+  let sent = null;
+  let sending = Promise.resolve();
+  return (send, report) => {
+    sending = sending.then(async () => {
+      const r = await report();
+      if (!r)
+        return;
+      const key = herdrReport(r.pane, r.tokens).join(`
+`);
+      if (key === sent)
+        return;
+      sent = key;
+      await send(herdrReport(r.pane, r.tokens, r.seq));
+    }).catch(() => {
+      return;
+    });
+    return sending;
+  };
+}
+
 // ../hooks/pr-tab.ts
 var MAX_PRS = 12;
 function linkedPrs(prs, refs) {
@@ -6049,7 +6136,8 @@ var defaultDeps = {
   background: (work) => void work.catch(() => {
     return;
   }),
-  isUsageLimit: isUsageLimitOutcome
+  isUsageLimit: isUsageLimitOutcome,
+  herdrPane: process.env.HERDR_PANE_ID || null
 };
 var messageOf = (err) => err instanceof Error ? err.message : String(err);
 function isUnattended(ctx) {
@@ -6181,7 +6269,10 @@ function createInbox(pi, deps = defaultDeps) {
   const listeners = new Map;
   let noted = null;
   let isGhMissing = false;
-  const notifyChanged = (id) => listeners.get(id)?.forEach((listener) => listener());
+  const notifyChanged = (id) => {
+    listeners.get(id)?.forEach((listener) => listener());
+    reportCounts(id);
+  };
   const change = async (id, fn) => {
     let isChanged = false;
     const saved = await updateState(dir, id, async (current) => {
@@ -6203,6 +6294,19 @@ function createInbox(pi, deps = defaultDeps) {
     }
   };
   const gh = ghFinder(run);
+  const reportToHerdr = herdrReporter();
+  let shownId = null;
+  const sendToHerdr = (args) => run(args, { cwd: deps.home, timeoutMs: HERDR_TIMEOUT_MS });
+  function reportCounts(id) {
+    const pane = deps.herdrPane;
+    if (!pane || id !== shownId)
+      return;
+    deps.background(reportToHerdr(sendToHerdr, async () => {
+      const s = await readState(dir, id);
+      const view = sessionView(s, deps.now(), deps.settleWindowMs, true);
+      return { pane, tokens: herdrTokens(s.ledger, s.stop, view, []) };
+    }));
+  }
   const sendToAgent = (ctx, text) => {
     try {
       pi.sendUserMessage(text, ctx.isIdle() ? undefined : { deliverAs: "followUp" });
@@ -6344,6 +6448,8 @@ function createInbox(pi, deps = defaultDeps) {
     if (isUnattended(ctx))
       return dropTools();
     const id = sessionIdOf(ctx);
+    shownId = id;
+    reportCounts(id);
     if ((await readState(dir, id).catch(() => null))?.presence.isTurnRunning)
       await change(id, cutOffTurn).catch(() => {
         return;
@@ -6364,12 +6470,17 @@ function createInbox(pi, deps = defaultDeps) {
   pi.on("session_start", (_event, ctx) => start(ctx));
   pi.on("session_switch", (event, ctx) => start(ctx, event.reason === "fork" ? event.previousSessionFile : undefined));
   pi.on("session_branch", (event, ctx) => start(ctx, event.previousSessionFile));
-  pi.on("session_shutdown", (_event, ctx) => {
+  pi.on("session_shutdown", async (_event, ctx) => {
     const id = sessionIdOf(ctx);
     openPanels.delete(id);
     prepared.delete(id);
     if (noted?.id === id)
       noted = null;
+    const pane = deps.herdrPane;
+    if (id !== shownId || !pane)
+      return;
+    shownId = null;
+    await reportToHerdr(sendToHerdr, async () => ({ pane, tokens: CLEARED_TOKENS }));
   });
   pi.on("before_agent_start", async (event, ctx) => {
     if (isUnattended(ctx))

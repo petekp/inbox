@@ -158,13 +158,13 @@ import {
   dialogOutcome,
   resetTime,
   readCommandRow,
-  statusLine,
   stopKindOf,
   stopOfMessage,
   transcriptText,
   TURN_BOX_TOOL,
   turnBoxText,
 } from './claude'
+import { CLEARED_TOKENS, HERDR_TIMEOUT_MS, herdrReporter, herdrTokens } from './herdr'
 import { ago, cellWidth, clipLabel } from './text'
 import {
   applyPress,
@@ -722,8 +722,7 @@ let applyingConversation: Promise<void> = Promise.resolve()
 let queue: Promise<void> = Promise.resolve()
 /** The conversations whose Overview calls run one after another. They do not hold `queue`, so a ledger call never waits for one. */
 const resultsOrder = orderedKeys()
-let published: string | null = null
-let publishing: Promise<void> = Promise.resolve()
+const reportToHerdr = herdrReporter()
 let shellCommand: string | null = null
 let toolsRefused = false
 let isReadingAgain = false
@@ -796,28 +795,18 @@ async function syncTheme($: EngineInterface) {
 }
 
 function publishStatus($: EngineInterface, isEnding = false): Promise<void> {
-  publishing = publishing
-    .then(async () => {
+  return reportToHerdr(
+    args => $.process.run(args, { timeoutMs: HERDR_TIMEOUT_MS }),
+    async () => {
       const pane = await $.env.get('HERDR_PANE_ID')
-      if (!pane) return
+      if (!pane) return null
+      if (isEnding) return { pane, tokens: CLEARED_TOKENS }
       const [session, dialogs, now] = await Promise.all([read($, SESSION), read($, DIALOGS), $.clock.now()])
-      const { ledger, stop } = session
-      const { needsYou, findings } = sessionView(session, now, SETTLED_MS, CAN_CATCH_UP)
-      const items = [...needsYou.questions, ...needsYou.tasks]
-        .filter(r => r.state.is === 'open')
-        .flatMap(r => (r.item ? [r.item] : []))
-      const open = findings.rows.filter(r => r.state.is === 'open').flatMap(r => (r.finding ? [r.finding] : []))
-      const line = isEnding ? '' : statusLine({ ...ledger, items, findings: open }, stop, dialogs)
-      if (line === published) return
-      published = line
-      const token = line ? ['--token', `inbox=${line}`] : ['--clear-token', 'inbox']
-      await $.process.run(['herdr', 'pane', 'report-metadata', pane, '--source', 'inbox', ...token], {
-        timeoutMs: 5000,
-      })
-    })
-    .catch(() => undefined)
+      const view = sessionView(session, now, SETTLED_MS, CAN_CATCH_UP)
 
-  return publishing
+      return { pane, tokens: herdrTokens(session.ledger, session.stop, view, dialogs) }
+    },
+  )
 }
 
 async function setStop($: EngineInterface, stop: Stop | null) {

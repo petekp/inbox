@@ -354,9 +354,32 @@ async function replyKey(pane: Pick<Mounted, 'findAll'>, id: string) {
   return key
 }
 
-function sidebarLines(): string[] {
-  return ran.filter(argv => argv[0] === 'herdr').map(argv => argv.find(a => a.startsWith('inbox='))?.slice(6) ?? '')
+function sidebarReports(): Record<string, string | null>[] {
+  return ran
+    .filter(argv => argv[0] === 'herdr')
+    .map(argv =>
+      Object.fromEntries(
+        argv.flatMap((arg, n): [string, string | null][] => {
+          const next = argv[n + 1] ?? ''
+          if (arg === '--clear-token') return [[next, null]]
+          if (arg !== '--token') return []
+          const at = next.indexOf('=')
+
+          return [[next.slice(0, at), next.slice(at + 1)]]
+        }),
+      ),
+    )
 }
+
+function sidebarLines(): string[] {
+  return sidebarReports().map(tokens => tokens.inbox ?? '')
+}
+
+function sidebarTokens(): Record<string, string | null> {
+  return sidebarReports().at(-1) ?? {}
+}
+
+const NO_COUNTS = { 'inbox-stop': null, 'inbox-needs-you': null, 'inbox-findings': null, 'inbox-prs': null }
 
 test('a reply becomes open items, and "1. yes" carries the question', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -538,6 +561,8 @@ test('a question’s handle is the number a typed answer reaches, and the band c
   }
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  expect(sidebarTokens()).toEqual({ inbox: null, ...NO_COUNTS })
   await reply('add a greeting cli', 't1')
   ledgerReply = [
     'NEW: decide | 1 | Add a --loud flag? | yes / no | yes',
@@ -560,6 +585,7 @@ test('a question’s handle is the number a typed answer reaches, and the band c
   ])
   expect(await band.find({ text: /Needs you 6/ })).toBeDefined()
   expect(await pane.find({ text: /^ 6$/ })).toBeDefined()
+  expect(sidebarTokens()).toMatchObject({ ...NO_COUNTS, 'inbox-needs-you': '\u{1F64B} 6' })
 
   const answered = await $.prompt.submit({ text: '1. yes', wait: false, origin: { kind: 'composer' } })
   expect(answered.context?.join('\n')).toContain('1 → "Add a --loud flag?"')
@@ -571,6 +597,7 @@ test('a question’s handle is the number a typed answer reaches, and the band c
   await clock.settle()
   expect(await band.find({ text: /Needs you 5/ })).toBeDefined()
   expect(await pane.find({ text: /^ 5$/ })).toBeDefined()
+  expect(sidebarTokens()).toMatchObject({ ...NO_COUNTS, 'inbox-needs-you': '\u{1F64B} 5' })
 
   ledgerReply = ['NEW: do | - | Water the plants | - | -', 'NEW: decide | 1 | Ship it? | yes / no | yes'].join('\n')
   await reply('ship it', 't3')
@@ -579,6 +606,24 @@ test('a question’s handle is the number a typed answer reaches, and the band c
   ledgerReply = 'NEW: do | - | Feed the cat | - | -'
   await reply('one more task', 't4')
   expect(sidebarLines().at(-1)).toBe('9 · Ship it?')
+  await $.tool.call({
+    tool: 'mcp__inbox__record',
+    kind: 'finding',
+    finding_kind: 'issue',
+    title: 'README is stale',
+    detail: 'Old name.',
+  })
+  await clock.settle()
+  expect(sidebarTokens()).toEqual({
+    ...NO_COUNTS,
+    inbox: '9 · Ship it?',
+    'inbox-needs-you': '\u{1F64B} 9',
+    'inbox-findings': '\u{1F50D} 1',
+  })
+
+  await $.session.end({ reason: 'other', sessionId: 'session-1' } as never)
+  await clock.settle()
+  expect(sidebarTokens()).toEqual({ inbox: null, ...NO_COUNTS })
 })
 
 test('Done on a task Claude just left tells Claude once Undo ends, and a task from an earlier reply or one already read stays silent', async ($, on) => {
@@ -2352,7 +2397,8 @@ test('once the person answers or closes the last waiting row, a row from a later
 
 test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, its buttons send its conflicts and thread and say so, and its failing check waits on the person', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world($, on, [])
+  const vars: Record<string, string> = {}
+  world($, on, [], vars)
   ledgerReply = 'NEW: do | - | Mark #12 ready for review | - | -'
   let hasReply = false
   let isResolved = false
@@ -2566,6 +2612,11 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   await pane.press({ key: 'address-T1-key' })
   expect(sent.length).toBe(sends)
   expect(await pane.find({ text: /^This changed before your press\. Nothing was sent\.$/ })).toBeDefined()
+
+  vars.HERDR_PANE_ID = 'p1'
+  await $.command.run({ command: 'inbox', args: '' } as never)
+  await clock.settle()
+  expect(sidebarTokens()['inbox-prs']).toBe('\u{1F500} 1')
 })
 
 test('opening the PRs tab while another PR fetch runs still finds the branch’s PR', async ($, on) => {
@@ -3046,6 +3097,7 @@ test('a stop and an open permission prompt lead the sidebar line until they clea
   await $.classic.StopFailure({ error: 'authentication_failed' } as never)
   await clock.settle()
   expect(sidebarLines().at(-1)).toBe('! Signed out: /login')
+  expect(sidebarTokens()).toMatchObject({ ...NO_COUNTS, 'inbox-stop': '! Signed out: /login' })
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await band.find({ text: /Run \/login, then send a message to resume\./ })).toBeDefined()
   expect(await band.find({ key: 'open-inbox' })).toBeDefined()
@@ -3057,6 +3109,7 @@ test('a stop and an open permission prompt lead the sidebar line until they clea
   await clock.settle()
   expect(await band.find({ text: /Stopped/ })).toBeUndefined()
   expect(sidebarLines().at(-1)).toBe('')
+  expect(sidebarTokens()).toMatchObject(NO_COUNTS)
 
   await $.classic.StopFailure({ error: 'server_error' } as never)
   await clock.settle()

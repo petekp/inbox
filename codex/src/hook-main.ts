@@ -2,9 +2,11 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { detachedUpdate } from './detached-update'
+import { herdrOnWrite } from './host'
 import { handleHook } from './hook'
 import type { HookInput } from './hook'
 import { dataDir } from './data-dir'
+import { run } from './run'
 
 async function main() {
   let raw = ''
@@ -16,6 +18,7 @@ async function main() {
     env: process.env,
     now: Date.now,
     startUpdate: detachedUpdate(dir, process.env, join(dist, 'update.mjs')),
+    onWrite: herdrOnWrite(process.env, run, dir, Date.now),
   })
   if (out) process.stdout.write(JSON.stringify(out))
 }

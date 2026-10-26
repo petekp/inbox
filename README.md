@@ -213,8 +213,31 @@ In Claude Code, a line above your prompt counts what needs you and the
 findings waiting, with a button that opens the panel. When Claude stops on an
 error, a second line says why, with a Resume button after an API error. The
 ChatGPT app has no such line. omp has a line with the same counts. It says
-`/inbox` opens the panel, and it has no stop line. Inside the Herdr terminal, the counts also show
-in its sidebar.
+`/inbox` opens the panel, and it has no stop line.
+
+Inside a Herdr pane, Claude Code, omp and the Codex CLI also report to Herdr's
+sidebar, as pane tokens:
+
+| Token | Holds |
+|---|---|
+| `inbox` | What waits on you, in one line |
+| `inbox-needs-you`, `inbox-findings`, `inbox-prs` | The tab's symbol and count, such as `🙋 2`. Empty when the tab has nothing waiting. |
+| `inbox-stop` | Why the agent stopped. The count tokens stay empty until the stop clears, so the sidebar has room for it. |
+
+To show the counts in each tab's color, add this row to `rows` under
+`[ui.sidebar.agents]` in Herdr's config:
+
+```toml
+[
+  { token = "$inbox-stop", fg = "#ffa3b0" },
+  { token = "$inbox-needs-you", fg = "#ffc107" },
+  { token = "$inbox-findings", fg = "#cab0ff" },
+  { token = "$inbox-prs", fg = "#8cc8c0" },
+],
+```
+
+Herdr puts ` · ` between the tokens that have a value, and leaves the line out
+when none has one.
 
 To see every part with sample items in Claude Code, run `/inbox demo`. Presses
 on them change only the samples and send nothing. Press Hide demo, or run the
@@ -268,7 +291,7 @@ uses, and holds the same things as the Claude Code request.
 | `gh` | To fill the PRs tab |
 | `open` | When you press a button that opens a link, file or folder |
 | `test -x` | Before opening a file. An executable file is shown in Finder, not run. |
-| `herdr pane report-metadata` | Only inside the Herdr terminal, to show the inbox's counts in its sidebar |
+| `herdr pane report-metadata` | Only inside a Herdr pane, to show what waits on you and each tab's count in Herdr's sidebar |
 
 **Messages it sends as you.** When you press an answer or action button, the
 inbox sends Claude a message in your name. The message is the answer you

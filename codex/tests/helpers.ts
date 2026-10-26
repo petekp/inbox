@@ -30,6 +30,7 @@ export function hookDeps(dir: string, now = () => 1000): HookDeps & { updates: s
     env: { CODEX_CLI_PATH: '/apps/codex' },
     now,
     startUpdate: id => updates.push(id),
+    onWrite: async () => {},
     updates,
   }
 }
