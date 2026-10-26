@@ -13,6 +13,7 @@ const SHARED = [
   'demo',
   'dialogs',
   'gh',
+  'herdr',
   'inline',
   'layout',
   'ledger',

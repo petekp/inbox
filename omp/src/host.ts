@@ -15,6 +15,7 @@ import type { DialogOutcome, ScreenTab } from '../../hooks/model-text'
 import type { PrPress } from '../../hooks/pr-tab'
 import { noteDialog } from '../../hooks/dialogs'
 import { ghFinder, ghIn } from '../../hooks/gh'
+import { CLEARED_TOKENS, HERDR_TIMEOUT_MS, herdrReporter, herdrTokens } from '../../hooks/herdr'
 import type { Run } from '../../hooks/gh'
 import type { RowPress } from '../../hooks/presses'
 import {
@@ -91,6 +92,8 @@ export type HostDeps = {
   background: (work: Promise<unknown>) => void
   /** Whether a failed request hit the account's usage limit, by omp's own rule. */
   isUsageLimit: (status: number | undefined, message: string) => Promise<boolean>
+  /** The Herdr pane omp runs in, from `HERDR_PANE_ID`, or null outside Herdr. */
+  herdrPane: string | null
 }
 
 /** The view a look draws, with the facts about the host that the shared view does not hold. */
@@ -167,6 +170,7 @@ const defaultDeps: HostDeps = {
   copy: copyToClipboard,
   background: work => void work.catch(() => undefined),
   isUsageLimit: isUsageLimitOutcome,
+  herdrPane: process.env.HERDR_PANE_ID || null,
 }
 
 const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err))
@@ -403,8 +407,11 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   let noted: { id: string; prompt: string; notes: string[] } | null = null
   let isGhMissing = false
 
-  /** Changes a session's saved state, then tells whoever draws it. */
-  const notifyChanged = (id: string) => listeners.get(id)?.forEach(listener => listener())
+  /** Changes a session's saved state, then tells whoever draws it and the Herdr pane. */
+  const notifyChanged = (id: string) => {
+    listeners.get(id)?.forEach(listener => listener())
+    reportCounts(id)
+  }
 
   const change = async (id: string, fn: Parameters<typeof updateState>[2]) => {
     let isChanged = false
@@ -430,6 +437,24 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     }
   }
   const gh = ghFinder(run)
+
+  const reportToHerdr = herdrReporter()
+  /** The session omp shows now. Only it reports to the pane. */
+  let shownId: string | null = null
+  const sendToHerdr = (args: string[]) => run(args, { cwd: deps.home, timeoutMs: HERDR_TIMEOUT_MS })
+
+  function reportCounts(id: string): void {
+    const pane = deps.herdrPane
+    if (!pane || id !== shownId) return
+    deps.background(
+      reportToHerdr(sendToHerdr, async () => {
+        const s = await readState(dir, id)
+        const view = sessionView(s, deps.now(), deps.settleWindowMs, true)
+
+        return { pane, tokens: herdrTokens(s.ledger, s.stop, view, []) }
+      }),
+    )
+  }
 
   /** Sends text to the agent as if the person typed it. Returns why it could not, or null. */
   const sendToAgent = (ctx: ExtensionContext, text: string): string | null => {
@@ -611,6 +636,8 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     if (isUnattended(ctx)) return dropTools()
     // No turn runs as a session starts, so a running turn saved here was cut off by a process that ended.
     const id = sessionIdOf(ctx)
+    shownId = id
+    reportCounts(id)
     if ((await readState(dir, id).catch(() => null))?.presence.isTurnRunning)
       await change(id, cutOffTurn).catch(() => undefined)
     prepare(ctx)
@@ -633,11 +660,15 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   // A `/btw` promotion, a fork from an entry and a command's branch give the session a new id, with the old file as
   // `previousSessionFile`. A `/branch` in the same file keeps the id, and the fork step then finds nothing to copy.
   pi.on('session_branch', (event, ctx) => start(ctx, event.previousSessionFile))
-  pi.on('session_shutdown', (_event, ctx) => {
+  pi.on('session_shutdown', async (_event, ctx) => {
     const id = sessionIdOf(ctx)
     openPanels.delete(id)
     prepared.delete(id)
     if (noted?.id === id) noted = null
+    const pane = deps.herdrPane
+    if (id !== shownId || !pane) return
+    shownId = null
+    await reportToHerdr(sendToHerdr, async () => ({ pane, tokens: CLEARED_TOKENS }))
   })
 
   pi.on('before_agent_start', async (event, ctx) => {

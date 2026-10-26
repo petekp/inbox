@@ -11,13 +11,20 @@ import { applied, parsedReply } from '../../hooks/session'
 import { feedbackText } from '../../hooks/view'
 import { notePrompt, noteToolCall, viewOf } from '../src/core'
 import { handleHook } from '../src/hook'
+import { herdrOnWrite } from '../src/host'
+import type { OnWrite } from '../src/host'
 import { readState, statePath, updateState } from '../src/state'
 import { CODEX } from '../src/texts'
 import { runUpdates as runBothCalls } from '../src/update'
-import { hookDeps, input, ledgerOnly, rolloutCopy, tempDir } from './helpers'
+import { fakeRunner, hookDeps, input, ledgerOnly, rolloutCopy, tempDir } from './helpers'
 
-const runUpdates = (dir: string, id: string, ask: (prompt: string) => Promise<string | null>, now: () => number) =>
-  runBothCalls(dir, id, ledgerOnly(ask), now)
+const runUpdates = (
+  dir: string,
+  id: string,
+  ask: (prompt: string) => Promise<string | null>,
+  now: () => number,
+  onWrite?: OnWrite,
+) => runBothCalls(dir, id, ledgerOnly(ask), now, onWrite)
 
 test('a session starts with the guidance, records the prompt, and ends the turn into the update', async () => {
   const dir = tempDir()
@@ -530,9 +537,12 @@ const execDeps = (dir: string) => {
 
 const CATCH_UP_REPLY = 'NEW: decide | - | Allow edits? | Yes / No | Yes'
 
-test('a session resumed with earlier turns is marked behind at its first hook and catches up over the rollout', async () => {
+test('a session resumed with earlier turns is marked behind at its first hook and catches up over the rollout, and each write reports to its Herdr pane', async () => {
   const dir = tempDir()
-  const deps = execDeps(dir)
+  const herdr = fakeRunner(() => ({ code: 0, stdout: '', stderr: '' }))
+  let at = 100
+  const onWrite = herdrOnWrite({ HERDR_PANE_ID: 'p1' }, herdr.exec, dir, () => ++at)
+  const deps = { ...execDeps(dir), onWrite }
   const transcript = rolloutCopy()
   const prompts: string[] = []
 
@@ -547,6 +557,7 @@ test('a session resumed with earlier turns is marked behind at its first hook an
     's1',
     async prompt => (prompts.push(prompt), CATCH_UP_REPLY),
     () => 7,
+    onWrite,
   )
   const caught = await readState(dir, 's1')
   assert.equal(prompts.length, 1)
@@ -556,6 +567,20 @@ test('a session resumed with earlier turns is marked behind at its first hook an
     caught.ledger.items.map(i => i.ask),
     ['Allow edits?'],
   )
+
+  const reports = herdr.calls.map(args => args.join(' '))
+  assert.ok(reports.every(r => r.startsWith('herdr pane report-metadata p1 --source inbox ')))
+  assert.match(reports[0] ?? '', /--clear-token inbox-stop --clear-token inbox-needs-you --clear-token inbox-findings/)
+  assert.match(
+    reports.at(-1) ?? '',
+    /--token inbox=Allow edits\? --clear-token inbox-stop --token inbox-needs-you=\u{1F64B} 1 /u,
+  )
+  const seqs = herdr.calls.map(args => Number(args[args.indexOf('--seq') + 1]))
+  assert.deepEqual(
+    seqs,
+    [...seqs].sort((a, b) => a - b),
+  )
+  assert.equal(new Set(seqs).size, seqs.length)
 })
 
 function forkRollout(parentId: string): string {

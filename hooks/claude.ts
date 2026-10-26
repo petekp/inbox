@@ -1,5 +1,5 @@
 import type { SessionMessage } from 'claude-code'
-import type { Dialog, Ledger, Stop } from '../types'
+import type { Stop } from '../types'
 import { dialogActivity, dialogQuestions, toolActivity } from './model-text'
 import type { DialogOutcome } from './model-text'
 import { flattenConversation } from './conversation'
@@ -146,33 +146,4 @@ export function stopOfMessage(message: string): Pick<Stop, 'kind' | 'detail' | '
 
 export function resetTime(message: string): string | null {
   return message.match(/\bresets\s+(?:at\s+)?([^·(\n]+?)\s*(?:\(|·|$)/i)?.[1]?.trim() ?? null
-}
-
-function stopShort(stop: Stop): string {
-  switch (stop.kind) {
-    case 'sign-in':
-      return 'Signed out: /login'
-    case 'billing':
-      return 'Billing problem'
-    case 'usage-limit':
-      return stop.resets ? `Limit: resets ${stop.resets}` : 'Usage limit reached'
-    default:
-      return 'API error: resume'
-  }
-}
-
-function dialogText(dialog: Dialog): string {
-  return dialog.kind === 'permission' ? `Allow ${dialog.text}?` : dialog.text
-}
-
-export function statusLine(ledger: Ledger, stop: Stop | null, dialogs: Dialog[]): string {
-  if (stop) return `! ${stopShort(stop)}`
-  const dialog = dialogs[0]
-  if (dialog) return dialogText(dialog)
-  const first = ledger.items[0]
-  if (first) return ledger.items.length > 1 ? `${ledger.items.length} · ${first.ask}` : first.ask
-  const count = ledger.findings.length
-  const findings = count === 0 ? null : `${count} finding${count === 1 ? '' : 's'}`
-
-  return [ledger.overview?.headline, findings].filter(Boolean).join(' · ')
 }

@@ -129,6 +129,7 @@ const deps = (): HostDeps => ({
     background.push(work.catch(() => undefined))
   },
   isUsageLimit: async (_status, message) => /usage limit/i.test(message),
+  herdrPane: null,
 })
 
 const settle = async () => {
@@ -906,6 +907,62 @@ test('a turn that ends on an error saves why it stopped, and the next turn clear
   expect((await inbox.screen(makeCtx())).stop).toMatchObject({ kind: 'sign-in', detail: '401' })
   await call('turn_start', { type: 'turn_start' })
   expect(state().stop).toBeNull()
+})
+
+const herdrReports = () =>
+  execCalls
+    .filter(c => c.command === 'herdr')
+    .map(c => ({
+      target: c.args.slice(0, 5).join(' '),
+      tokens: Object.fromEntries(
+        c.args.flatMap((arg, n): [string, string | null][] => {
+          const next = c.args[n + 1] ?? ''
+          if (arg === '--clear-token') return [[next, null]]
+          if (arg !== '--token') return []
+          const at = next.indexOf('=')
+
+          return [[next.slice(0, at), next.slice(at + 1)]]
+        }),
+      ),
+    }))
+
+test('in a Herdr pane, each change reports the tab counts and the stop, and shutdown clears every token', async () => {
+  createInbox(pi(), { ...deps(), herdrPane: 'p1' })
+  const cleared = {
+    inbox: null,
+    'inbox-stop': null,
+    'inbox-needs-you': null,
+    'inbox-findings': null,
+    'inbox-prs': null,
+  }
+  await call('session_start', { type: 'session_start' })
+  await settle()
+  expect(herdrReports().at(-1)).toEqual({ target: 'pane report-metadata p1 --source inbox', tokens: cleared })
+
+  await record({ kind: 'question', ask: 'Ship it?', options: ['yes', 'no'] })
+  await record({ kind: 'finding', title: 'The retry loop never ends', detail: 'It retries forever on a 401.' })
+  await settle()
+  expect(herdrReports().at(-1)?.tokens).toEqual({
+    ...cleared,
+    inbox: 'Ship it?',
+    'inbox-needs-you': '\u{1F64B} 1',
+    'inbox-findings': '\u{1F50D} 1',
+  })
+
+  await endOnError({ errorStatus: 401, errorMessage: 'invalid x-api-key' })
+  await settle()
+  expect(herdrReports().at(-1)?.tokens).toMatchObject({
+    'inbox-stop': '! Signed out: /login',
+    'inbox-needs-you': '\u{1F64B} 1',
+  })
+
+  const reports = herdrReports().length
+  await record({ kind: 'task', ask: 'Sign in again' }, makeCtx('other'))
+  await settle()
+  expect(herdrReports()).toHaveLength(reports)
+
+  await call('session_shutdown', { type: 'session_shutdown' })
+  expect(herdrReports().at(-1)?.tokens).toEqual(cleared)
 })
 
 test('a stop is a usage limit, a sign-in or an API error, from the failed message', async () => {

@@ -25,6 +25,7 @@ import type { Ask } from '../../hooks/session-host'
 import { screenTabOf } from '../../hooks/view'
 import { isTabOpen } from './core'
 import { codexStore } from './host'
+import type { OnWrite } from './host'
 import { statePath, withLock } from './state'
 import type { SessionState } from './state'
 import { CODEX } from './texts'
@@ -161,9 +162,15 @@ export function codexAsk(exec: Run, cli: string, dir: string, personHome: string
 export const reconcileUpdateStatus = (dir: string, sessionId: string): Promise<SessionState> =>
   reconcileStatus(codexStore(dir, sessionId, Date.now))
 
-export const runUpdates = (dir: string, sessionId: string, ask: Ask, now: () => number): Promise<void> =>
+export const runUpdates = (
+  dir: string,
+  sessionId: string,
+  ask: Ask,
+  now: () => number,
+  onWrite?: OnWrite,
+): Promise<void> =>
   runSessionUpdates({
-    ...codexStore(dir, sessionId, now),
+    ...codexStore(dir, sessionId, now, onWrite),
     ask,
     names: CODEX,
     inOrder: fn =>

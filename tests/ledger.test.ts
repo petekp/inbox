@@ -25,7 +25,8 @@ import {
   tasksRunBy,
   upgradeLedger,
 } from '../hooks/ledger'
-import { readCommandRow, resetTime, statusLine, stopKindOf } from '../hooks/claude'
+import { readCommandRow, resetTime, stopKindOf } from '../hooks/claude'
+import { statusLine } from '../hooks/herdr'
 import { parseInline } from '../hooks/inline'
 import { EMPTY_OVERVIEW } from '../hooks/overview'
 import { applyPress } from '../hooks/presses'
