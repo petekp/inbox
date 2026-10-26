@@ -231,6 +231,7 @@ import {
   QUEUED_AFTER_MS,
   compareEndsAt,
   rowKeyPlan,
+  actionLines,
   settledLabel,
   actionLabel,
   replyHint,
@@ -369,6 +370,7 @@ const DESKTOP_TAB_PAD = '\u00a0'.repeat(3)
 const DESKTOP_LINE_PT = 19
 // One column of `bodyColumns` in the Claude app pane, in points: 15.8 px at 2x.
 const DESKTOP_CELL_PT = 7.9
+const DESKTOP_LINK_GAP_CELLS = 1.5
 const UNDO_CELLS = 9
 const UNDO_HEIGHT_PT = 23
 /**
@@ -3522,15 +3524,19 @@ export const register: Register = on => {
             ...(a.isOut ? { isOut: true } : {}),
           }
         }),
-        gap: 1.5,
+        gap: DESKTOP_LINK_GAP_CELLS,
         fallbackColumns: desktopTextColumns(rowId),
         isGuarded: isOpenGuarded,
         colors: { muted: pal.muted, hover: null },
       }
 
-      // A Client takes no flexShrink or minWidth, so this Box gives it the room left on its line.
+      const linksWidth = Math.ceil(props.links.reduce((sum, l) => sum + l.width, props.gap * (props.links.length - 1)))
+
+      // A Client takes no flexShrink or minWidth, so this Box gives it the room left on its line. In the Claude app,
+      // the wrapping row moves a Box this wide to the next line whole when the room left is narrower, and then shrinks
+      // it to the line.
       return (
-        <Box flexGrow={1} flexShrink={1} minWidth={0}>
+        <Box flexGrow={1} flexShrink={1} minWidth={0} width={linksWidth}>
           <elements.Client key={`links-${rowId}`} module="./links-client.tsx" width="100%" props={props} />
         </Box>
       )
@@ -3552,34 +3558,27 @@ export const register: Register = on => {
       keys.flatMap(({ key, hotkey, kind: _kind, emphasis: _emphasis, icon: _icon, isOut: _isOut, ...k }) =>
         hotkey ? [<Button key={`${key}${suffix}`} plain hotkey={hotkey} {...k} label={shownLabel(k)} />] : [],
       )
-    const keysWidth = (keys: KeyAction[], more: KeyAction[]) => {
-      const all = [...keys, ...more]
-      const dot = keys.length > 0 && more.length > 0 ? 3 : 0
-
-      return (
-        all.reduce((w, k) => w + (k.hotkey ? k.hotkey.length + 2 : 0) + shownLabel(k).length, 0) +
-        2 * Math.max(0, all.length - 1) +
-        dot
+    const terminalKeyCells = (k: KeyAction) => (k.hotkey ? k.hotkey.length + 2 : 0) + shownLabel(k).length
+    const terminalActionLines = (keys: KeyAction[], more: KeyAction[], width: number) =>
+      actionLines(keys.map(terminalKeyCells), more.map(terminalKeyCells), {
+        width,
+        gap: space.buttonGap,
+        followUpGap: space.buttonGap,
+        // keyRow's `·` and the gap after it.
+        separator: 1 + space.buttonGap,
+      })
+    const keyLines = (keys: KeyAction[], more: KeyAction[], width: number) =>
+      terminalActionLines(keys, more, width).lines.length
+    // Desktop's links Box wraps as a whole by its own width, so only the terminal draws a second row.
+    const actionRows = (rowId: string, keys: KeyAction[], more: KeyAction[], terminalWidth: number) =>
+      look === 'terminal' && terminalActionLines(keys, more, terminalWidth).isFollowUpLineNew ? (
+        <Box flexDirection="column">
+          {keyRow(rowId, keys)}
+          {keyRow(rowId, [], more)}
+        </Box>
+      ) : (
+        keyRow(rowId, keys, more)
       )
-    }
-    const keyLines = (keys: KeyAction[], more: KeyAction[], width: number) => {
-      if (keysWidth(keys, more) <= width) return 1
-      const wrappedLines = (actions: KeyAction[]) => {
-        let lines = 0
-        let used = 0
-        for (const k of actions) {
-          const w = (k.hotkey ? k.hotkey.length + 2 : 0) + shownLabel(k).length
-          if (used > 0 && used + 2 + w <= width) used += 2 + w
-          else {
-            lines++
-            used = w
-          }
-        }
-        return lines
-      }
-
-      return wrappedLines(keys) + wrappedLines(more)
-    }
     const pressable = (keys: KeyAction[]) => keys.filter(k => Input || !k.key.startsWith('typekey-'))
     const leaveBar = (at: number) => {
       if (look !== 'terminal') return null
@@ -3992,10 +3991,8 @@ export const register: Register = on => {
             ) : (
               [field, keyRow(row.id, fieldActions(row))]
             )
-          ) : look === 'desktop' || keysWidth(keys, more) <= textWidth ? (
-            keyRow(row.id, keys, more)
           ) : (
-            [keyRow(row.id, keys), keyRow(row.id, more)]
+            actionRows(row.id, keys, more, textWidth)
           )}
           {isStatusUnder ? (
             <Text color={pal.muted} wrap="wrap">

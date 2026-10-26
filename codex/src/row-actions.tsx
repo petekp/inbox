@@ -108,11 +108,13 @@ export function ActionButton({ action, isBlocked }: { action: RowAction; isBlock
 }
 
 export function RowActions({
-  actions,
+  keys,
+  more,
   reply,
   isBlocked,
 }: {
-  actions: RowAction[]
+  keys: RowAction[]
+  more: RowAction[]
   reply: Reply | null
   isBlocked: () => boolean
 }) {
@@ -144,11 +146,18 @@ export function RowActions({
     )
   return (
     <div class="actions">
-      {actions.length > 0 ? (
+      {keys.length + more.length > 0 ? (
         <div class="keys">
-          {actions.map(action => (
+          {keys.map(action => (
             <ActionButton action={action} isBlocked={isBlocked} />
           ))}
+          {more.length > 0 ? (
+            <div class="follow-ups">
+              {more.map(action => (
+                <ActionButton action={action} isBlocked={isBlocked} />
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
