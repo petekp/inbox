@@ -366,15 +366,8 @@ export const READING_TEXT = 'Reading the inbox…'
  */
 export const NEXT_BUILD_MARK = '.next-build'
 
-/** The version alone when the full label does not `fit`, since a footer too narrow for it wraps it at a space. */
-export function versionLabel(
-  version: string,
-  isNextBuild: boolean,
-  fits: (label: string) => boolean = () => true,
-): string {
-  const full = isNextBuild ? `v${version} · next` : `v${version}`
-
-  return fits(full) ? full : `v${version}`
+export function versionLabel(version: string, isNextBuild: boolean): string {
+  return isNextBuild ? `v${version} · next` : `v${version}`
 }
 
 const UPDATE_FAILED = 'Last update failed. Items from that reply may be missing.'

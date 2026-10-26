@@ -4492,63 +4492,6 @@ test('a PR that arrives while the Needs you tab is empty moves the pane to the P
   expect(await pane.find({ text: /Add a greeting CLI/ })).toBeDefined()
 })
 
-test('at 34 desktop columns a next build drops "next" from the version label while PRs refresh, so the label never wraps', async ($, on) => {
-  const clock = mock.clock(on, { now: 1_000_000 })
-  world($, on, [])
-  files = ['/.next-build']
-  surfaces = ['desktop']
-  ledgerReply = 'NONE'
-  let isHeld = false
-  ghAnswers.push(
-    {
-      match: argv => argv.includes('view') && argv.includes('12'),
-      stdout: JSON.stringify({
-        number: 12,
-        title: 'Add a greeting CLI',
-        url: 'https://github.com/acme/greet/pull/12',
-        isDraft: false,
-        state: 'OPEN',
-        baseRefName: 'main',
-        mergeable: 'MERGEABLE',
-        reviewDecision: 'REVIEW_REQUIRED',
-        statusCheckRollup: [],
-      }),
-      hold: () => (isHeld ? new Promise(() => {}) : Promise.resolve()),
-    },
-    {
-      match: argv => argv.includes('graphql'),
-      stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
-    },
-  )
-  const reply = async (turnId: string) => {
-    await $.prompt.submit({ text: 'open the PR', wait: false, origin: { kind: 'composer' } })
-    await $.turn.complete({
-      answer: 'Opened https://github.com/acme/greet/pull/12.',
-      durationMs: 5,
-      isAborted: false,
-      turnId,
-      reason: 'answer',
-    })
-    await clock.settle()
-  }
-
-  await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
-  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 34 } })
-  await reply('t1')
-  const { tabs, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
-  const prsAt = tabs.slice(0, 3).reduce((x, t) => x + t.width + gap, 0)
-  await pane.pointer({ type: 'down', x: prsAt, y: 1, button: 'left', in: 'tabs' })
-  await clock.settle()
-  expect(await pane.find({ text: /Add a greeting CLI/ })).toBeDefined()
-  isHeld = true
-  await clock.advance(120_000)
-  expect(await pane.find({ text: 'Refreshing PRs…' })).toBeDefined()
-  expect(await pane.find({ text: /^v1\.2\.3$/ })).toBeDefined()
-  expect(await pane.find({ text: /next/ })).toBeUndefined()
-  await pane.redraw({ ...PANE.props, bodyColumns: 69 })
-  expect(await pane.find({ text: 'v1.2.3 · next' })).toBeDefined()
-})
-
 test('the desktop tabs that do not fit one line wrap, each line within the pane, and a tab on the second line takes its click', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
