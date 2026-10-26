@@ -729,6 +729,12 @@ function restates(a, b) {
     return false;
   return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b);
 }
+function repeatsSubject(a, b) {
+  const x = keyWords(a);
+  const y = keyWords(b);
+  const within = (inner, outer) => [...inner].every((w) => outer.has(w));
+  return sameAsk(a, b) || restates(a, b) && (within(x, y) || within(y, x));
+}
 function sameAsk(a, b) {
   const norm = (s) => words(s).join(" ");
   return norm(a) !== "" && norm(a) === norm(b);
@@ -967,7 +973,7 @@ function addFinding(ledger, finding) {
   const same = ledger.findings.find((f) => sameAsk(f.title, finding.title)) ?? ledger.items.find((i) => restates(i.ask, finding.title));
   if (same)
     return { ledger, id: same.id, isAdded: false, expired: null, dismissed: null };
-  const dismissed = ledger.closedFindings.findLast((f) => f.how === "dismissed" && (sameAsk(f.title, finding.title) || restates(f.title, finding.title))) ?? null;
+  const dismissed = ledger.closedFindings.findLast((f) => f.how === "dismissed" && repeatsSubject(f.title, finding.title)) ?? null;
   if (dismissed)
     return { ledger, id: dismissed.id, isAdded: false, expired: null, dismissed };
   const id = `f${ledger.nextId}`;
