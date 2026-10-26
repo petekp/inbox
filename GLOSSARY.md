@@ -8,9 +8,10 @@ runs in Claude Code, in Codex, or in omp.
 
 ### What waits on the person
 
-**Needs you**:
+**Asks**:
 Everything that waits on the person: open questions, and their tasks.
-_Avoid_: waiting
+Its tab's id is `needsYou`.
+_Avoid_: Needs you, waiting
 
 **Question**:
 Something the agent asked that only the person can answer.
@@ -34,7 +35,7 @@ _Avoid_: decided
 A closed item or finding that stays in place while the person replies to it.
 A row is held when its reply field is open or its draft holds unsent words,
 and the reply began before the close. It shows why it closed, does not count
-toward Needs you, and offers Reply and Discard. After its reply sends, it
+toward Asks, and offers Reply and Discard. After its reply sends, it
 shows its settled form, then folds into the Closed fold. After Discard, it
 folds at once.
 
@@ -51,14 +52,14 @@ model rewrites it after each reply, in a second call after the one that
 updates the rows. It is not a list of events.
 
 **Band**:
-In Claude Code, the line above the prompt with the Needs you and Findings
+In Claude Code, the line above the prompt with the Asks and Findings
 counts and [Open inbox]. When the session stops, a second line says why, with
 [Resume] after an API error. Codex has no band. omp has a band with the same
 counts and no button, which says `/inbox` opens the panel.
 
 **Pane**:
-The `/inbox` panel beside the conversation in Claude Code, with its Needs
-you, Findings, PRs and Overview tabs. Codex shows the same tabs in its Inbox tab. omp
+The `/inbox` panel beside the conversation in Claude Code, with its Asks,
+Findings, PRs and Overview tabs. Codex shows the same tabs in its Inbox tab. omp
 shows them in an overlay that `/inbox` opens.
 
 **Tab symbol**:

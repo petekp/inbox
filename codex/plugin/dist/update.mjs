@@ -1490,7 +1490,7 @@ function stepKind(step) {
 }
 var TABS = [
   { id: "overview", label: "Overview", symbol: "\u{1F9ED}", hotkey: "1" },
-  { id: "needsYou", label: "Needs you", symbol: "\u{1F64B}", hotkey: "2" },
+  { id: "needsYou", label: "Asks", symbol: "\u{1F64B}", hotkey: "2" },
   { id: "findings", label: "Findings", symbol: "\u{1F50D}", hotkey: "3" },
   { id: "prs", label: "PRs", symbol: "\u{1F500}", hotkey: "4" }
 ];
@@ -1532,7 +1532,7 @@ var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 var QUIET_TEXT = "Nothing new since you looked.";
 function pointerText(count) {
-  return count === 0 ? null : count === 1 ? "Needs you has 1 item." : `Needs you has ${count} items.`;
+  return count === 0 ? null : count === 1 ? "Asks has 1 item." : `Asks has ${count} items.`;
 }
 function withAfterHeading(parts, id) {
   const at = parts.filter((p) => p === "headline" || p === "course").length;
@@ -1828,7 +1828,7 @@ function inboxView({
   };
 }
 function outcomeLabel(c) {
-  return c.askedAs ? "Now a question in Needs you" : capitalized(c.outcome);
+  return c.askedAs ? "Now a question in Asks" : capitalized(c.outcome);
 }
 function heldLabel(c) {
   if (c.how === "answered") return `Answered: ${c.outcome}`;
@@ -2378,7 +2378,7 @@ function herdrTokens(ledger, stop, view, dialogs) {
   const findings = view.findings.rows.filter(isWaitingRow).flatMap((r) => r.finding ? [r.finding] : []);
   const counts = ROW_TABS.map((t) => {
     const count = view[t.id].count;
-    return [COUNT_TOKENS[t.id], stop || count === 0 ? null : `${t.symbol} ${count}`];
+    return [COUNT_TOKENS[t.id], stop || count === 0 ? null : String(count)];
   });
   return {
     [STATUS_TOKEN]: statusLine({ ...ledger, items, findings }, stop, dialogs) || null,

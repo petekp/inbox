@@ -33,7 +33,7 @@ Terms follow `GLOSSARY.md`. "The mod" is the Claude Code mod in this repo.
   starts several MCP server processes per session. Each of them reads and
   writes the session's state file under a lock.
 - **The first version** includes the findings and close tools, the inbox
-  texts, the per-reply update, and the Inbox tab with Needs you and
+  texts, the per-reply update, and the Inbox tab with Asks and
   Findings. The PRs tab comes later.
 
 ## What a Codex plugin can do
@@ -101,7 +101,7 @@ status line item.
 
 **Do:** the plugin's MCP server registers an `inbox.tab` tool with a thread
 entrypoint and a `ui://inbox/tab` resource. The person opens it as a tab
-beside the conversation, one instance per thread. It shows Needs you and
+beside the conversation, one instance per thread. It shows Asks and
 Findings, with the status at the right of the tab row.
 
 - **Buttons:** a press calls an app-only tool, and the MCP server runs
@@ -265,7 +265,7 @@ Includes:
 4. `GUIDANCE`, the start-of-context block, the inbox line and the answer line,
    through hooks.
 5. The per-reply update with `codex exec`, using the measured text and model.
-6. The Inbox tab, with Needs you, Findings, answer and dismiss
+6. The Inbox tab, with Asks, Findings, answer and dismiss
    buttons, Address it and Discuss, and the last action on each row.
 
 Leaves out, in order of value: the PRs tab, the card after time away, the

@@ -2642,7 +2642,7 @@ function stepKind(step) {
 }
 var TABS = [
   { id: "overview", label: "Overview", symbol: "\uD83E\uDDED", hotkey: "1" },
-  { id: "needsYou", label: "Needs you", symbol: "\uD83D\uDE4B", hotkey: "2" },
+  { id: "needsYou", label: "Asks", symbol: "\uD83D\uDE4B", hotkey: "2" },
   { id: "findings", label: "Findings", symbol: "\uD83D\uDD0D", hotkey: "3" },
   { id: "prs", label: "PRs", symbol: "\uD83D\uDD00", hotkey: "4" }
 ];
@@ -2701,7 +2701,7 @@ function runningMark(now) {
 }
 var QUIET_TEXT = "Nothing new since you looked.";
 function pointerText(count) {
-  return count === 0 ? null : count === 1 ? "Needs you has 1 item." : `Needs you has ${count} items.`;
+  return count === 0 ? null : count === 1 ? "Asks has 1 item." : `Asks has ${count} items.`;
 }
 function withAfterHeading(parts, id) {
   const at = parts.filter((p) => p === "headline" || p === "course").length;
@@ -3063,7 +3063,7 @@ function inboxView({
   };
 }
 function outcomeLabel(c) {
-  return c.askedAs ? "Now a question in Needs you" : capitalized(c.outcome);
+  return c.askedAs ? "Now a question in Asks" : capitalized(c.outcome);
 }
 function heldLabel(c) {
   if (c.how === "answered")
@@ -3130,7 +3130,7 @@ function herdrTokens(ledger, stop, view, dialogs) {
   const findings = view.findings.rows.filter(isWaitingRow).flatMap((r) => r.finding ? [r.finding] : []);
   const counts = ROW_TABS.map((t) => {
     const count = view[t.id].count;
-    return [COUNT_TOKENS[t.id], stop || count === 0 ? null : `${t.symbol} ${count}`];
+    return [COUNT_TOKENS[t.id], stop || count === 0 ? null : String(count)];
   });
   return {
     [STATUS_TOKEN]: statusLine({ ...ledger, items, findings }, stop, dialogs) || null,
@@ -6775,7 +6775,7 @@ function createInbox(pi, deps = defaultDeps) {
         return openPanelUi(ctx, isDemo);
       const screen = isDemo ? await demoSource({ now: deps.now, after: () => {}, settleWindowMs: deps.settleWindowMs }).screen(NO_HOLDS) : await inbox.screen(ctx);
       const { needsYou, findings } = screen.view;
-      ctx.ui.notify(`Needs you ${needsYou.count}, Findings ${findings.count}`, "info");
+      ctx.ui.notify(`Asks ${needsYou.count}, Findings ${findings.count}`, "info");
     }
   });
   return inbox;

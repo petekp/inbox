@@ -401,7 +401,7 @@ test('a reply becomes open items, and "1. yes" carries the question', async ($, 
   expect(prompts[0]).toContain('<person>\nadd a greeting cli\n</person>')
 
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
-  expect(await band.find({ text: /Needs you 2/ })).toBeDefined()
+  expect(await band.find({ text: /Asks 2/ })).toBeDefined()
   expect(await band.find({ text: /Use Node or Python\?|Name the command greet\?/ })).toBeUndefined()
 
   const answered = await $.prompt.submit({ text: '1. node\n2. yes', wait: false, origin: { kind: 'composer' } })
@@ -583,9 +583,9 @@ test('a question’s handle is the number a typed answer reaches, and the band c
     '•',
     '•',
   ])
-  expect(await band.find({ text: /Needs you 6/ })).toBeDefined()
+  expect(await band.find({ text: /Asks 6/ })).toBeDefined()
   expect(await pane.find({ text: /^ 6$/ })).toBeDefined()
-  expect(sidebarTokens()).toMatchObject({ ...NO_COUNTS, 'inbox-needs-you': '\u{1F64B} 6' })
+  expect(sidebarTokens()).toMatchObject({ ...NO_COUNTS, 'inbox-needs-you': '6' })
 
   const answered = await $.prompt.submit({ text: '1. yes', wait: false, origin: { kind: 'composer' } })
   expect(answered.context?.join('\n')).toContain('1 → "Add a --loud flag?"')
@@ -595,9 +595,9 @@ test('a question’s handle is the number a typed answer reaches, and the band c
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'help-i4-0' })
   await clock.settle()
-  expect(await band.find({ text: /Needs you 5/ })).toBeDefined()
+  expect(await band.find({ text: /Asks 5/ })).toBeDefined()
   expect(await pane.find({ text: /^ 5$/ })).toBeDefined()
-  expect(sidebarTokens()).toMatchObject({ ...NO_COUNTS, 'inbox-needs-you': '\u{1F64B} 5' })
+  expect(sidebarTokens()).toMatchObject({ ...NO_COUNTS, 'inbox-needs-you': '5' })
 
   ledgerReply = ['NEW: do | - | Water the plants | - | -', 'NEW: decide | 1 | Ship it? | yes / no | yes'].join('\n')
   await reply('ship it', 't3')
@@ -617,8 +617,8 @@ test('a question’s handle is the number a typed answer reaches, and the band c
   expect(sidebarTokens()).toEqual({
     ...NO_COUNTS,
     inbox: '9 · Ship it?',
-    'inbox-needs-you': '\u{1F64B} 9',
-    'inbox-findings': '\u{1F50D} 1',
+    'inbox-needs-you': '9',
+    'inbox-findings': '1',
   })
 
   await $.session.end({ reason: 'other', sessionId: 'session-1' } as never)
@@ -879,14 +879,14 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   await clock.settle()
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   const pane = await $.ui.mount(PANE)
-  expect(await band.find({ text: /Needs you 2/ })).toBeDefined()
+  expect(await band.find({ text: /Asks 2/ })).toBeDefined()
 
   await pane.press({ key: 'help-i1-0' })
   await clock.settle()
   expect(sent.at(-1)).toContain('./load.sh')
   expect(await pane.find({ text: /Run load script/ })).toBeDefined()
   expect(await pane.find({ key: 'help-i1-1' })).toBeUndefined()
-  expect(await band.find({ text: /Needs you 1/ })).toBeDefined()
+  expect(await band.find({ text: /Asks 1/ })).toBeDefined()
   expect(await pane.find({ key: 'help-i2-0' })).toBeDefined()
 
   await pane.press({ key: 'title-i1' })
@@ -904,7 +904,7 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   const red = (await pane.find({ type: 'Text', text: 'Could not open load.md: it no longer exists' }))?.props.color
   expect(red).toBeDefined()
   expect(toasts).toEqual([])
-  expect(await band.find({ text: /Needs you 1/ })).toBeDefined()
+  expect(await band.find({ text: /Asks 1/ })).toBeDefined()
   await clock.advance(SETTLED_MS)
   expect(await pane.find({ text: 'Could not open load.md: it no longer exists' })).toBeDefined()
 
@@ -930,7 +930,7 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   await $.turn.complete({ answer: 'It needs sudo.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
   await clock.settle()
   expect((await pane.find({ key: 'help-i1-0-key' }))?.props.label).toBe('Run load script again')
-  expect(await band.find({ text: /Needs you 2/ })).toBeDefined()
+  expect(await band.find({ text: /Asks 2/ })).toBeDefined()
 })
 
 test('a question with 7 options shows 4 until [All 7 options], draws its steps after them, and letters only the first 9', async ($, on) => {
@@ -1103,7 +1103,7 @@ test('last actions an earlier build saved convert once by the table, and a task 
   const pane = await $.ui.mount(PANE)
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await pane.find({ text: /Run load script/ })).toBeDefined()
-  expect(await band.find({ text: /Needs you/ })).toBeUndefined()
+  expect(await band.find({ text: /Asks/ })).toBeUndefined()
   await clock.advance(SETTLED_MS)
   await pane.press({ key: 'tab-findings' })
   expect((await pane.find({ key: 'fold-issue' }))?.props.label).toBe('▾ 1 closed')
@@ -1143,14 +1143,14 @@ test('the band is [Open inbox] and the counts, the same while working and after 
 
   const standing = await band()
   expect(await standing.find({ key: 'open-inbox' })).toBeDefined()
-  expect(await standing.find({ text: /^Needs you 2\u2007·\u2002Findings 1$/ })).toBeDefined()
+  expect(await standing.find({ text: /^Asks 2\u2007·\u2002Findings 1$/ })).toBeDefined()
   expect(await standing.find({ text: /Use Node or Python|Add a greeting CLI|Waiting on two choices/ })).toBeUndefined()
 
   const working = await band({ isWorking: true })
-  expect(await working.find({ text: /^Needs you 2\u2007·\u2002Findings 1$/ })).toBeDefined()
+  expect(await working.find({ text: /^Asks 2\u2007·\u2002Findings 1$/ })).toBeDefined()
 
   await clock.advance(16 * 60_000)
-  expect(await standing.find({ text: /^Needs you 2\u2007·\u2002Findings 1$/ })).toBeDefined()
+  expect(await standing.find({ text: /^Asks 2\u2007·\u2002Findings 1$/ })).toBeDefined()
   expect(await standing.find({ text: /Plan written|last active/ })).toBeUndefined()
 
   const pane = await $.ui.mount(PANE)
@@ -1174,7 +1174,7 @@ test('the band keeps what the mods after the inbox draw there, with its counts a
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const band = await $.ui.mount({ plugin: 'inbox', surface, ...BAND })
-    expect(await band.find({ text: /^Needs you 2$/ })).toBeDefined()
+    expect(await band.find({ text: /^Asks 2$/ })).toBeDefined()
     expect(await band.find({ text: 'Heads up' })).toBeDefined()
     await band.unmount()
   }
@@ -1798,7 +1798,7 @@ test('a question Claude closes while the person types an answer stays in place w
   expect((await pane.find({ key: 'row-i2' }))?.text).toMatch(/Closed\sby\sClaude:\ssettled\sin\schat/)
   expect(await pane.find({ key: 'discard-i2' })).toBeDefined()
   expect(await pane.find({ key: 'cancel-i2' })).toBeUndefined()
-  expect(await band.find({ text: /Needs you 1/ })).toBeDefined()
+  expect(await band.find({ text: /Asks 1/ })).toBeDefined()
   expect(await pane.find({ text: /closed/ })).toBeUndefined()
 
   await pane.press({ key: 'send-i2' })
@@ -2014,7 +2014,7 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   expect(sent.at(-1)).toBe('Re "Use Node or Python?": Node')
   expect(await pane.find({ key: 'row-i1' })).toBeDefined()
   expect(await pane.find({ text: 'Not sent: a hook refused it' })).toBeDefined()
-  expect(await band.find({ text: /Needs you 1/ })).toBeDefined()
+  expect(await band.find({ text: /Asks 1/ })).toBeDefined()
   expect((await pane.find({ key: 'answer-i1-0-key' }))?.props.label).toBe('Node (recommended)')
 
   submitAnswer = 'enter'
@@ -2616,7 +2616,7 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   vars.HERDR_PANE_ID = 'p1'
   await $.command.run({ command: 'inbox', args: '' } as never)
   await clock.settle()
-  expect(sidebarTokens()['inbox-prs']).toBe('\u{1F500} 1')
+  expect(sidebarTokens()['inbox-prs']).toBe('1')
 })
 
 test('opening the PRs tab while another PR fetch runs still finds the branch’s PR', async ($, on) => {
@@ -3310,7 +3310,7 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await pane.find({ text: 'Sample entries. Buttons here send nothing.' })).toBeDefined()
   expect(await pane.find({ text: /Use Node or Python/ })).toBeUndefined()
-  expect(await band.find({ text: /^Demo: Needs you 7/ })).toBeDefined()
+  expect(await band.find({ text: /^Demo: Asks 7/ })).toBeDefined()
   for (const view of [pane, band]) expect(await view.find({ key: 'hide-demo' })).toBeDefined()
 
   await clock.advance(PRESS_GUARD_MS)
@@ -3329,7 +3329,7 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   await pane.press({ key: 'typekey-d17' })
   await pane.input({ key: await replyKey(pane, 'd17'), text: 'Done in both.' })
   await clock.settle()
-  expect(await band.find({ text: /Needs you 6/ })).toBeDefined()
+  expect(await band.find({ text: /Asks 6/ })).toBeDefined()
 
   await pane.press({ key: 'title-d14' })
   await clock.advance(PRESS_GUARD_MS)
@@ -3339,10 +3339,10 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   expect(await pane.find({ key: 'settled-d14' })).toBeDefined()
   const doneTask = literal(demo.ledger.items.find(i => i.id === 'd14')!.ask)
   expect(await pane.find({ text: doneTask })).toBeDefined()
-  expect(await band.find({ text: /Needs you 5/ })).toBeDefined()
+  expect(await band.find({ text: /Asks 5/ })).toBeDefined()
   await pane.press({ key: 'undo-d14' })
   expect(await pane.find({ key: 'done-d14' })).toBeDefined()
-  expect(await band.find({ text: /Needs you 6/ })).toBeDefined()
+  expect(await band.find({ text: /Asks 6/ })).toBeDefined()
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'done-d14' })
   await clock.advance(SETTLED_MS)
@@ -3371,7 +3371,7 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   expect(await pane.find({ text: /Use Node or Python/ })).toBeDefined()
   expect(await pane.find({ key: 'explain-i1-key' })).toBeDefined()
   expect(await pane.find({ text: /Sample entries\./ })).toBeUndefined()
-  expect(await band.find({ text: /Needs you 2/ })).toBeDefined()
+  expect(await band.find({ text: /Asks 2/ })).toBeDefined()
   const savedAfter = stored.get('s:session-1')!
   expect(savedAfter).toContain('Real branch work')
   expect(savedAfter).not.toContain(demo.ledger.items[0]!.ask)
@@ -3388,7 +3388,7 @@ test('/inbox demo recording shows the sample entries without the notices that ma
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await pane.find({ text: demo.ledger.items.find(i => i.id === 'd11')!.options[0] })).toBeDefined()
   expect(await pane.find({ text: /Sample entries\./ })).toBeUndefined()
-  expect(await band.find({ text: /^Needs you 7/ })).toBeDefined()
+  expect(await band.find({ text: /^Asks 7/ })).toBeDefined()
   for (const view of [pane, band]) expect(await view.find({ key: 'hide-demo' })).toBeUndefined()
 
   await clock.advance(PRESS_GUARD_MS)
@@ -3400,7 +3400,7 @@ test('/inbox demo recording shows the sample entries without the notices that ma
   expect((await $.command.run({ command: 'inbox', args: 'demo' } as never)).text).toBe('Opened the inbox.')
   expect((await $.command.run({ command: 'inbox', args: 'demo' } as never)).text).toContain('Run /inbox demo again')
   expect(await pane.find({ text: /Sample entries\./ })).toBeDefined()
-  expect(await band.find({ text: /^Demo: Needs you 7/ })).toBeDefined()
+  expect(await band.find({ text: /^Demo: Asks 7/ })).toBeDefined()
 })
 
 test('/clear and /resume switch the inbox to the other conversation, and each keeps its saved items', async ($, on) => {
@@ -3974,7 +3974,7 @@ test('a refused inbox command registration leaves normal desktop startup and sav
     cwd: '/tmp/project',
   })
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'desktop', ...BAND })
-  expect(await band.find({ text: /Needs you 1/ })).toBeDefined()
+  expect(await band.find({ text: /Asks 1/ })).toBeDefined()
   expect(
     (await $.prompt.submit({ text: 'continue', wait: false, origin: { kind: 'composer' } })).context?.join('\n'),
   ).toContain('Use Node or Python?')
@@ -4001,7 +4001,7 @@ for (const isAttachedFirst of [true, false]) {
 
     expect(prompts.length).toBe(1)
     const band = await $.ui.mount({ plugin: 'inbox', surface: 'desktop', ...BAND })
-    expect(await band.find({ text: /Needs you 2/ })).toBeDefined()
+    expect(await band.find({ text: /Asks 2/ })).toBeDefined()
   })
 }
 
@@ -4471,7 +4471,7 @@ test('a forked conversation keeps the parent’s findings and closed records, an
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ text: /Add a backoff to the retry loop\?/ })).toBeDefined()
   await pane.press({ key: 'tab-findings' })
-  expect((await pane.find({ key: 'settled-f1' }))?.text).toContain('Now a question in Needs you')
+  expect((await pane.find({ key: 'settled-f1' }))?.text).toContain('Now a question in Asks')
   await pane.press({ key: 'tab-needsYou' })
   const contextOf = async () =>
     ((await $.prompt.submit({ text: 'where are we?', wait: false, origin: { kind: 'composer' } })).context ?? []).join(
@@ -4634,7 +4634,7 @@ test('the Overview page says what it is for before the session has any work', as
   expect(await desktop.find({ text: /It fills in once the work starts/ })).toBeDefined()
 })
 
-test('at 34 desktop columns the tabs show their symbols with their counts, at 69 their words, and the Overview page draws there', async ($, on) => {
+test('at 31 desktop columns the tabs show their symbols with their counts, at 69 their words, and the Overview page draws there', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   overviewReply =
@@ -4653,7 +4653,7 @@ test('at 34 desktop columns the tabs show their symbols with their counts, at 69
     detail: 'Only tests run.',
   })
   await clock.settle()
-  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 34 } })
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 31 } })
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
   expect((await tabBar()).tabs.map(t => [t.id, t.label, t.count])).toEqual(
     TABS.map(t => [t.id, t.symbol, t.id === 'needsYou' ? 2 : t.id === 'findings' ? 1 : 0]),
@@ -4702,7 +4702,7 @@ test('the terminal tabs show their words down to the narrowest pane they fit, do
   }
 })
 
-test('a PR that arrives while the Needs you tab is empty moves the pane to the PRs tab', async ($, on) => {
+test('a PR that arrives while the Asks tab is empty moves the pane to the PRs tab', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   paneState = { isShown: true, isFocused: true }

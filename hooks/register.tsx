@@ -1186,7 +1186,7 @@ async function notePrompt(
 
 /**
  * A reload keeps $.state, so a running session can still hold its parts in the separate fields of an older build,
- * `notes` as its tab, and the Needs you tab as `waiting`, and drafts saved as bare text.
+ * `notes` as its tab, and the Asks tab as `waiting`, and drafts saved as bare text.
  */
 async function upgradeState($: EngineInterface): Promise<Ledger> {
   const now = await $.clock.now()

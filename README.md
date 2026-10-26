@@ -139,11 +139,11 @@ and come back, it is the page to read first.
 
 After each reply, a second model call rewrites the page from the exchange and
 the agent's own task list. It keeps a direction line until the work changes
-direction. It shows the work, a pointer to what waits on you in Needs you, what
+direction. It shows the work, a pointer to what waits on you in Asks, what
 works now, what is still open and what is next. It is not a log: it lists no
 events, and it leaves out what you have already seen.
 
-### Needs you
+### Asks
 
 Questions the agent asked you, and tasks only you can do.
 
@@ -221,10 +221,10 @@ sidebar, as pane tokens:
 | Token | Holds |
 |---|---|
 | `inbox` | What waits on you, in one line |
-| `inbox-needs-you`, `inbox-findings`, `inbox-prs` | The tab's symbol and count, such as `🙋 2`. Empty when the tab has nothing waiting. |
+| `inbox-needs-you`, `inbox-findings`, `inbox-prs` | The tab's count alone, such as `2`. `inbox-needs-you` is the Asks tab's. Empty when the tab has nothing waiting. |
 | `inbox-stop` | Why the agent stopped. The count tokens stay empty until the stop clears, so the sidebar has room for it. |
 
-To show the counts in each tab's color, add this row to `rows` under
+To tell the counts apart by each tab's color, add this row to `rows` under
 `[ui.sidebar.agents]` in Herdr's config:
 
 ```toml

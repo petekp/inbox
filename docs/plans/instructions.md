@@ -33,7 +33,7 @@ that updates the inbox after each reply, reads two.
 - The recording bar: Claude checks a finding once before recording it. A
   problem in its own change, a check it could run, progress, and anything only
   the user can do or decide are not findings. Claude fixes, runs, says or asks
-  them instead, so a blocker reaches Needs you as a question or task.
+  them instead, so a blocker reaches Asks as a question or task.
 - The bar excludes "anything the user already decided", not "anything already
   discussed".
 - Claude reads "Closed" everywhere: the inbox line and the start-of-context

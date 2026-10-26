@@ -773,7 +773,7 @@ test('the /inbox command reports the counts, and /inbox demo reports the demo co
   await record({ kind: 'task', ask: 'Try the CLI by hand' })
   await commands.get('inbox').handler('', makeCtx())
   await commands.get('inbox').handler('demo', makeCtx())
-  expect(notices[0]).toBe('Needs you 1, Findings 0')
+  expect(notices[0]).toBe('Asks 1, Findings 0')
   expect(notices[1]).not.toBe(notices[0])
 })
 
@@ -847,7 +847,7 @@ test('the band shows above the editor and redraws with the counts after a change
   await record({ kind: 'task', ask: 'Try the CLI by hand' }, ctx)
   await until(() => renders.count > before)
   expect(renders.count).toBeGreaterThan(before)
-  expect(band.render(80).join('')).toContain('Needs you')
+  expect(band.render(80).join('')).toContain('Asks')
   expect(band.render(80).join('')).toContain('/inbox to open')
 })
 
@@ -945,8 +945,8 @@ test('in a Herdr pane, each change reports the tab counts, a stop replaces them 
   expect(herdrReports().at(-1)?.tokens).toEqual({
     ...cleared,
     inbox: 'Ship it?',
-    'inbox-needs-you': '\u{1F64B} 1',
-    'inbox-findings': '\u{1F50D} 1',
+    'inbox-needs-you': '1',
+    'inbox-findings': '1',
   })
 
   await endOnError({ errorStatus: 401, errorMessage: 'invalid x-api-key' })
@@ -960,8 +960,8 @@ test('in a Herdr pane, each change reports the tab counts, a stop replaces them 
   await settle()
   expect(herdrReports().at(-1)?.tokens).toMatchObject({
     'inbox-stop': null,
-    'inbox-needs-you': '\u{1F64B} 1',
-    'inbox-findings': '\u{1F50D} 1',
+    'inbox-needs-you': '1',
+    'inbox-findings': '1',
   })
 
   const reports = herdrReports().length
