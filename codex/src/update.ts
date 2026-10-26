@@ -26,8 +26,8 @@ import { screenTabOf } from '../../hooks/view'
 import { isTabOpen } from './core'
 import { codexStore } from './host'
 import type { OnWrite } from './host'
-import { statePath, withLock } from './state'
-import type { SessionState } from './state'
+import { statePath, updateState, withLock } from './state'
+import type { ModelFailure, SessionState } from './state'
 import { CODEX } from './texts'
 import { readRollout } from './transcript'
 import type { Run } from '../../hooks/gh'
@@ -103,8 +103,20 @@ async function keepNewerSignIn(link: string, auth: string): Promise<void> {
   if (saved.mtimeMs > theirs.mtimeMs) await copyFile(link, auth)
 }
 
-/** Null when it fails. `personHome` is the person's Codex home, which holds their sign-in. */
-export function codexAsk(exec: Run, cli: string, dir: string, personHome: string): Ask {
+/** How much of a failed call's stderr is kept: its end, where codex prints the error. */
+const FAILURE_TAIL_CHARS = 2000
+
+/**
+ * Null when it fails, after passing the failure to `onFailure`. `personHome` is the person's Codex home, which holds
+ * their sign-in.
+ */
+export function codexAsk(
+  exec: Run,
+  cli: string,
+  dir: string,
+  personHome: string,
+  onFailure: (failure: Omit<ModelFailure, 'at'>) => Promise<void> = async () => {},
+): Ask {
   return async (prompt, instructions) => {
     const work = join(dir, 'exec')
     const system = join(dir, `inbox-system-${createHash('sha256').update(instructions).digest('hex').slice(0, 12)}.md`)
@@ -148,9 +160,9 @@ export function codexAsk(exec: Run, cli: string, dir: string, personHome: string
         off = off.filter(f => f !== unknown)
         continue
       }
-      if (r.code !== 0) return null
-      const text = await readFile(out, 'utf8').catch(() => null)
+      const text = r.code === 0 ? await readFile(out, 'utf8').catch(() => null) : null
       await rm(out, { force: true })
+      if (text === null) await onFailure({ cli, code: r.code, stderr: r.stderr.slice(-FAILURE_TAIL_CHARS) })
 
       return text
     }
@@ -158,6 +170,13 @@ export function codexAsk(exec: Run, cli: string, dir: string, personHome: string
     return null
   }
 }
+
+/** Saves a failed call as the session's `lastModelFailure`. */
+export const recordModelFailure =
+  (dir: string, sessionId: string, now: () => number) =>
+  async (failure: Omit<ModelFailure, 'at'>): Promise<void> => {
+    await updateState(dir, sessionId, s => ({ ...s, lastModelFailure: { ...failure, at: now() } }))
+  }
 
 export const reconcileUpdateStatus = (dir: string, sessionId: string): Promise<SessionState> =>
   reconcileStatus(codexStore(dir, sessionId, Date.now))

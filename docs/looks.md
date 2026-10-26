@@ -54,13 +54,14 @@ Shared modules are in `hooks/`. Every host consumes them, directly or through a 
 | `codex/src/server.ts` | Codex host. The MCP server: tools, and the host bindings for presses, open, queue and the background fetch of the session's PRs, which run in `hooks/session-host.ts`. |
 | `codex/src/server-main.ts` | Codex host. The loader that Codex starts once per app launch. |
 | `codex/src/server-handler.ts` | Codex host. The request handler the loader reloads. |
-| `codex/src/update.ts` | Codex host. Binds `hooks/session-host.ts` update flows to `codex exec`. |
+| `codex/src/update.ts` | Codex host. Binds `hooks/session-host.ts` update flows to `codex exec`. Saves a failed call as the session's `lastModelFailure`. |
 | `codex/src/update-main.ts` | Codex host. Entry point for the update process. |
 | `codex/src/hook.ts` | Codex host. The hook logic that changes session state. |
 | `codex/src/hook-main.ts` | Codex host. Entry point for the hooks. |
 | `codex/src/demo.ts` | Codex host. Turns the shared demo data into a session. |
 | `codex/src/transcript.ts` | Codex host. Reads the Codex session transcript. |
 | `codex/src/run.ts` | Codex host. Runs a command with Node. |
+| `codex/src/cli.ts` | Codex host. Finds the codex binary the app runs. The hooks, the server and the update process share it. |
 | `codex/src/dialogs.ts` | Codex host. Notes the dialogs a Codex turn opened, and words an inbox answer in the dialog's reply form. |
 | `codex/src/history.ts` | Codex host. On the first sight of a session, takes a forked chat's ledger from its parent, or marks a session with earlier turns `behind`. |
 | `codex/src/hook-trust.ts` | Codex host. Whether Codex trusts the inbox's hooks, from the hooks Codex lists. |

@@ -11,10 +11,11 @@ import type { Exchange } from '../../hooks/ledger'
 import { noteActivity } from '../../hooks/session'
 import { endTurn, notePrompt, viewOf } from '../src/core'
 import { readState, statePath, updateState } from '../src/state'
-import { runUpdates as runBothCalls } from '../src/update'
+import { codexAsk, recordModelFailure, runUpdates as runBothCalls } from '../src/update'
+import { findCli } from '../src/cli'
 import { makeServer } from '../src/server'
 import { OVERVIEW_SYSTEM } from '../../hooks/model-text'
-import { ledgerOnly, tempDir } from './helpers'
+import { fakeRunner, ledgerOnly, tempDir } from './helpers'
 
 const runUpdates = (dir: string, id: string, ask: (prompt: string) => Promise<string | null>, now: () => number) =>
   runBothCalls(dir, id, ledgerOnly(ask), now)
@@ -348,6 +349,48 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
   assert.equal(viewOf(dropped, 6).status.isUpdating, false)
   assert.match(viewOf(dropped, 6).status.error ?? '', /Last update failed/)
   assert.doesNotMatch(viewOf(dropped, 6).status.error ?? '', /retry/)
+})
+
+test('an update for a session with no saved CLI runs the CLI its environment names, else the codex on PATH', async () => {
+  const { exec } = fakeRunner(() => ({ code: 0, stdout: 'node\n', stderr: '' }))
+
+  assert.equal(await findCli({ CODEX_APP_RUNTIME_CLI_PATH: '/app/codex' }, exec, 1), '/app/codex')
+  assert.equal(
+    await findCli({ CODEX_CLI_PATH: '/person/codex', CODEX_APP_RUNTIME_CLI_PATH: '/app/codex' }, exec, 1),
+    '/person/codex',
+  )
+  assert.equal(await findCli({}, exec, 1), 'codex')
+})
+
+test('a failed update saves the CLI it ran, its exit code and the end of its stderr beside the failed state', async t => {
+  const dir = tempDir()
+  const personHome = tempDir()
+  t.after(() => Promise.all([dir, personHome].map(d => rm(d, { recursive: true, force: true }))))
+  await updateState(dir, 's1', s => ({ ...s, pending: [{ ex: ex(1, 'Should I deploy?'), turnsStarted: 1 }] }))
+  const error = 'ERROR: {"status":400,"error":{"code":"model_not_found"}}\n'
+  const stderr = `${'session header and prompt\n'.repeat(500)}${error}`
+  const { exec } = fakeRunner(() => ({ code: 1, stdout: '', stderr }))
+
+  await runBothCalls(
+    dir,
+    's1',
+    codexAsk(
+      exec,
+      '/old/codex',
+      dir,
+      personHome,
+      recordModelFailure(dir, 's1', () => 7),
+    ),
+    () => 7,
+  )
+
+  const s = await readState(dir, 's1')
+  assert.equal(s.presence.ledgerState, 'failed')
+  assert.equal(s.lastModelFailure?.cli, '/old/codex')
+  assert.equal(s.lastModelFailure?.code, 1)
+  assert.equal(s.lastModelFailure?.at, 7)
+  assert.ok(s.lastModelFailure?.stderr.endsWith(error))
+  assert.ok(s.lastModelFailure.stderr.length < stderr.length)
 })
 
 test('an Explain exchange keeps its question open while applying the rest of the model update', async () => {
