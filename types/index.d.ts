@@ -172,7 +172,7 @@ export type Delivery =
 export type SentPrompt = { id: string; sessionId: string; text: string; pressedAt: number | null }
 
 export type LocalPart = {
-  kind: 'open' | 'copy'
+  kind: 'open' | 'copy' | 'refresh-prs'
   name: string
   /** A command only the person can run, so the row says where to run it. */
   isCommand: boolean
