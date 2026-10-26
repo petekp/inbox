@@ -31,7 +31,7 @@ export function codexStore(
 /**
  * Reports each written state to the Herdr pane in `env`. Codex runs a hook with its own environment, so the hooks of a
  * Codex CLI in a Herdr pane, and the update a hook starts, know the pane. Hooks and updates run in separate processes,
- * so each report carries the time of its write as `seq`, and Herdr drops one older than a report it already took.
+ * so each report carries the time of its write as `seq`, and Herdr drops one whose `seq` is not above the last it took.
  */
 export function herdrOnWrite(env: NodeJS.ProcessEnv, run: Run, dir: string, now: () => number): OnWrite {
   const pane = env.HERDR_PANE_ID
