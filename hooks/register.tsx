@@ -1311,8 +1311,7 @@ async function openInbox($: EngineInterface) {
   // asking for the pane, and below 144 columns, once the person has closed it, leaves it unplaced.
   await openPane($)
   const { view } = await drawnState($)
-  if (view.needsYou.count > 0)
-    await Promise.all([update($, TAB, () => 'needsYou' as const), update($, PAGE, () => null)])
+  if (view.needsYou.count > 0) await writeRowTab($, 'needsYou')
   else if ((await read($, TAB)) === 'prs') await findPrs($)
   void syncLook($)
   await followNewRows($, true)
@@ -1378,6 +1377,11 @@ async function focusField($: EngineInterface, id: string) {
   await redraw($)
 }
 
+/** Shows the row tab `tab`, leaving any page tab. */
+async function writeRowTab($: EngineInterface, tab: Tab) {
+  await Promise.all([update($, TAB, () => tab), update($, PAGE, () => null)])
+}
+
 /** The shown row tab; null while the Overview page shows, where no row is drawn, selected or scrolled to. */
 async function readRowTab($: EngineInterface): Promise<Tab | null> {
   const [page, tab] = await Promise.all([read($, PAGE), read($, TAB)])
@@ -1393,7 +1397,7 @@ async function showTab($: EngineInterface, tab: ShownTab) {
     return
   }
   if (tab === 'prs') await findPrs($)
-  await Promise.all([update($, TAB, () => tab), update($, PAGE, () => null)])
+  await writeRowTab($, tab)
   void syncLook($)
   await scrollToOpenRow($, tab)
 }
@@ -1768,7 +1772,7 @@ function newRows(isDemo: boolean, current: Record<Tab, string[] | null>): Record
 
 async function jumpTo($: EngineInterface, tab: Tab) {
   cancelUndoScroll()
-  await Promise.all([update($, TAB, () => tab), update($, PAGE, () => null)])
+  await writeRowTab($, tab)
   await update($, SELECTION, s => ({ ...s, [tab]: NO_CURSOR }))
   await scrollToOpenRow($, tab)
 }
