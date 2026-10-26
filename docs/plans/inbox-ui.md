@@ -59,7 +59,7 @@ It leaves out findings, PR rows, handed-off rows and the stop line. A queued sen
 2. Questions from older replies, newest reply first and each reply in its original order.
 3. Tasks not handed off, newest reply first and each reply in its original order.
 
-The Herdr sidebar line names the latest reply's first question through `hooks/claude.ts:statusLine`. The band shows counts. The pane orders questions by reply, and its terminal handles use the numbered-answer mapping below.
+The Herdr sidebar line names the latest reply's first question through `hooks/herdr.ts:statusLine`. The band shows counts. The pane orders questions by reply, and its terminal handles use the numbered-answer mapping below.
 
 ### 2.2 Row types
 
