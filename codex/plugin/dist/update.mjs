@@ -1165,6 +1165,12 @@ function isListedTab(tab) {
 function isRowTab(tab) {
   return tab !== "overview";
 }
+function isShownTab(raw) {
+  return TABS.some((t) => t.id === raw);
+}
+function screenTabOf(tab) {
+  return { label: TABS.find((t) => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) };
+}
 var ROW_TABS = TABS.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TABS.filter((t) => isListedTab(t.id));
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
@@ -1361,7 +1367,7 @@ function upgraded(saved, sessionId) {
       turn,
       pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex }))
     }),
-    shownTab: TABS.some((t) => t.id === saved.shownTab) ? saved.shownTab ?? base.shownTab : base.shownTab,
+    shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
     // A file saved before the hooks kept this record came from hooks that ran, so it reads as heard.
     // Its turns were not recorded, so `promptAt` is set too: a tool call then falls back to the time rule.
     heard: saved.heard ? { ...NOTHING_HEARD, ...saved.heard } : {
@@ -1678,10 +1684,6 @@ var CODEX = {
 var TAB_OPEN_MS = 15e3;
 function isTabOpen(s, now) {
   return now - s.tabSeenAt < TAB_OPEN_MS;
-}
-function screenTabOf(s) {
-  const shown = TABS.find((t) => t.id === s.shownTab);
-  return { label: shown?.label ?? s.shownTab, isPage: s.shownTab === "overview" };
 }
 function activityOf(tool, input) {
   return toolActivity(tool, input);
@@ -2060,7 +2062,7 @@ var runUpdates2 = (dir, sessionId, ask, now) => runUpdates({
     ask,
     CODEX,
     s,
-    screenText(CODEX, isTabOpen(s, now()), screenTabOf(s)),
+    screenText(CODEX, isTabOpen(s, now()), screenTabOf(s.shownTab)),
     (await readRollout(s.transcriptPath, s.root))?.conversation ?? null
   )
 });

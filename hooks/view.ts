@@ -20,6 +20,7 @@ import { awayOf, orderParts, workOf } from './overview'
 import type { PartId } from './overview'
 import { ago } from './text'
 import { questionNumbers } from './model-text'
+import type { ScreenTab } from './model-text'
 import type { ListedTab } from './arrivals'
 import type { ClosedState } from './ledger'
 import {
@@ -607,6 +608,16 @@ export function isListedTab(tab: ShownTab): tab is ListedTab {
 /** Whether a shown tab is a row tab, which has rows, a count and a cursor. */
 export function isRowTab(tab: ShownTab): tab is Tab {
   return tab !== 'overview'
+}
+
+/** Whether a saved or sent value names a tab a look can show. */
+export function isShownTab(raw: unknown): raw is ShownTab {
+  return TABS.some(t => t.id === raw)
+}
+
+/** The tab a look shows, as the inbox model is told. */
+export function screenTabOf(tab: ShownTab): ScreenTab {
+  return { label: TABS.find(t => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) }
 }
 
 /** The tabs that list rows: Needs you, Findings and PRs. */

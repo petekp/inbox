@@ -48,7 +48,7 @@ import type { PressOutcome, SessionHost, UpdateHost } from '../../hooks/session-
 import { agentTools } from '../../hooks/tools'
 import { DARK_TONES, LIGHT_TONES } from '../../hooks/tones'
 import { clip } from '../../hooks/text'
-import { NEXT_BUILD_MARK, NO_HOLDS, RESUME_TEXT, SETTLED_MS, TABS } from '../../hooks/view'
+import { NEXT_BUILD_MARK, NO_HOLDS, RESUME_TEXT, SETTLED_MS, screenTabOf } from '../../hooks/view'
 import type { ReplyHolds, ShownTab } from '../../hooks/view'
 import { openTarget } from './commands'
 import { createPanel } from './controller'
@@ -391,11 +391,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   /** The open panels, with the tab each shows. */
   const openPanels = new Map<string, ShownTab>()
 
-  function screenTabOf(id: string): ScreenTab | null {
+  function panelScreenTab(id: string): ScreenTab | null {
     const tab = openPanels.get(id)
-    const shown = TABS.find(t => t.id === tab)
 
-    return tab === undefined ? null : { label: shown?.label ?? tab, isPage: tab === 'overview' }
+    return tab === undefined ? null : screenTabOf(tab)
   }
   const prepared = new Set<string>()
   const prFetches = prFetchTracker(deps.now)
@@ -524,7 +523,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
           host.ask,
           OMP,
           s,
-          screenText(OMP, openPanels.has(id), screenTabOf(id)),
+          screenText(OMP, openPanels.has(id), panelScreenTab(id)),
           conversationText(ctx),
         ),
     }
@@ -762,7 +761,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const written = await change(id, s => ({
       ...turnEnded(
         endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
-          tab: screenTabOf(id),
+          tab: panelScreenTab(id),
           queuesEmptyReply: isDialogDismissed,
         }),
       ),

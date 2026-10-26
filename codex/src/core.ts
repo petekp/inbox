@@ -7,9 +7,8 @@ import {
   notePrompt as notePromptIn,
   sessionView,
 } from '../../hooks/session'
-import type { ScreenTab } from '../../hooks/model-text'
 import type { SessionView } from '../../hooks/session'
-import { NO_HOLDS, TABS } from '../../hooks/view'
+import { NO_HOLDS, screenTabOf } from '../../hooks/view'
 import type { ReplyHolds } from '../../hooks/view'
 import { SETTLE_WINDOW_MS } from './settle'
 import type { Heard, SessionState } from './state'
@@ -33,13 +32,6 @@ export function lookOnView(s: SessionState, shownTab: SessionState['shownTab'], 
   return shownTab === 'overview' ? lookStartedOn(closed, now) : lookEndedOn(closed, now)
 }
 
-/** The tab the Inbox tab shows, as the inbox model is told. */
-export function screenTabOf(s: SessionState): ScreenTab {
-  const shown = TABS.find(t => t.id === s.shownTab)
-
-  return { label: shown?.label ?? s.shownTab, isPage: s.shownTab === 'overview' }
-}
-
 export function notePrompt(s: SessionState, text: string, now: number): { state: SessionState; notes: string[] } {
   return notePromptIn(CODEX, s, text, isTabOpen(s, now))
 }
@@ -55,7 +47,7 @@ export function patchFiles(patch: string): string[] {
 }
 
 export function endTurn(s: SessionState, reply: string, now: number): SessionState {
-  return endSessionTurn(CODEX, s, reply, isTabOpen(s, now), { tab: screenTabOf(s) })
+  return endSessionTurn(CODEX, s, reply, isTabOpen(s, now), { tab: screenTabOf(s.shownTab) })
 }
 
 const MAX_PROMPT_TURNS = 10

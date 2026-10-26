@@ -198,8 +198,9 @@ import {
   drawnLists,
   emptyText,
   isRowTab,
+  isShownTab,
   LISTED_TABS,
-  ROW_TABS,
+  screenTabOf,
   TABS,
   canUndoRefused,
   closedMark,
@@ -1194,9 +1195,9 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
     update($, TAB, t => {
       const renamed = (t as string) === 'notes' ? 'findings' : (t as string) === 'waiting' ? 'needsYou' : t
 
-      return ROW_TABS.some(r => r.id === renamed) ? renamed : 'needsYou'
+      return isShownTab(renamed) && isRowTab(renamed) ? renamed : 'needsYou'
     }),
-    update($, PAGE, p => (TABS.some(t => t.id === p) ? p : null)),
+    update($, PAGE, p => (isShownTab(p) ? p : null)),
     update($, SELECTION, ({ waiting, ...s }: Record<Tab, Cursor> & { waiting?: Cursor }) => {
       const cursors: Record<Tab, Cursor> = { ...NO_SELECTION, ...(waiting ? { needsYou: waiting } : {}), ...s }
       // A cursor saved before `openedAt` existed: no click opened its row in a way that still guards it.
@@ -1832,9 +1833,8 @@ async function isPrsTabShown($: EngineInterface) {
 /** The tab the pane shows, as the inbox model is told: the page tab when one shows, else the row tab. */
 async function shownScreenTab($: EngineInterface): Promise<ScreenTab> {
   const [page, tab] = await Promise.all([read($, PAGE), read($, TAB)])
-  const id = page ?? tab
 
-  return { label: TABS.find(t => t.id === id)?.label ?? id, isPage: page !== null }
+  return screenTabOf(page ?? tab)
 }
 
 async function screen($: EngineInterface) {
@@ -2958,9 +2958,9 @@ export const register: Register = on => {
     const r = await next(e)
     if (e.requestId !== PANE) return r
     const data = e.data as { tab?: unknown; isUnfolded?: unknown; hover?: unknown; key?: unknown } | null
-    const shown = TABS.find(t => t.id === data?.tab)
+    const shown = isShownTab(data?.tab) ? data.tab : null
     const followUp = typeof data?.key === 'string' ? followUpPresses.get(data.key) : undefined
-    if (e.element === 'tabs' && shown) await showTab($, shown.id)
+    if (e.element === 'tabs' && shown) await showTab($, shown)
     else if (e.element.startsWith('undo-') && followUp && typeof data?.key === 'string')
       followUp({
         plugin: 'inbox',
@@ -3166,7 +3166,7 @@ export const register: Register = on => {
       $.env.get('TERM_PROGRAM'),
       read($, RUNNING_FRAME),
     ])
-    const tab: Tab = ROW_TABS.some(t => t.id === savedTab) ? savedTab : 'needsYou'
+    const tab: Tab = isShownTab(savedTab) && isRowTab(savedTab) ? savedTab : 'needsYou'
     const isOverviewShown = savedPage === 'overview'
     const shownTab: ShownTab = isOverviewShown ? 'overview' : tab
     const isRunningMarkShown = isOverviewShown && hasRunningMark(view.overviewPage)

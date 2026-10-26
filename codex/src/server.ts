@@ -21,7 +21,7 @@ import { isUnseen, pressOn, recorded, turnEnded, turnStarted } from '../../hooks
 import type { SendOutcome } from '../../hooks/session'
 import { fetchPrs, prFetchTracker, press, wakeForDone as wakeSessionForDone } from '../../hooks/session-host'
 import type { SessionHost } from '../../hooks/session-host'
-import { NO_HOLDS, SETTLED_MS, TABS } from '../../hooks/view'
+import { NO_HOLDS, SETTLED_MS, isShownTab } from '../../hooks/view'
 import type { ReplyHolds, ShownTab } from '../../hooks/view'
 import { SETTLE_WINDOW_MS } from './settle'
 import { pruneSessions, readState, updateState } from './state'
@@ -126,7 +126,7 @@ function holdsOf(args: Record<string, unknown>): ReplyHolds {
 
 /** The tab the page says it shows, or null for anything that is not a tab. */
 function shownTabOf(raw: unknown): ShownTab | null {
-  return TABS.find(t => t.id === raw)?.id ?? null
+  return isShownTab(raw) ? raw : null
 }
 
 function stamped(tabHtml: string): string {

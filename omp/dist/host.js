@@ -2614,6 +2614,9 @@ function isListedTab(tab) {
 function isRowTab(tab) {
   return tab !== "overview";
 }
+function screenTabOf(tab) {
+  return { label: TABS.find((t) => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) };
+}
 var ROW_TABS = TABS.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TABS.filter((t) => isListedTab(t.id));
 var WORKING_TEXT = "Working\u2026";
@@ -6074,10 +6077,9 @@ function styleOf(theme) {
 function createInbox(pi, deps = defaultDeps) {
   const dir = deps.stateDir(pi);
   const openPanels = new Map;
-  function screenTabOf(id) {
+  function panelScreenTab(id) {
     const tab = openPanels.get(id);
-    const shown = TABS.find((t) => t.id === tab);
-    return tab === undefined ? null : { label: shown?.label ?? tab, isPage: tab === "overview" };
+    return tab === undefined ? null : screenTabOf(tab);
   }
   const prepared = new Set;
   const prFetches = prFetchTracker(deps.now);
@@ -6178,7 +6180,7 @@ function createInbox(pi, deps = defaultDeps) {
       names: OMP,
       inOrder: (fn) => resultsOrder.run(id, fn),
       background: (results) => deps.background(results),
-      catchUp: (s) => askOverConversation(host.ask, OMP, s, screenText(OMP, openPanels.has(id), screenTabOf(id)), conversationText(ctx))
+      catchUp: (s) => askOverConversation(host.ask, OMP, s, screenText(OMP, openPanels.has(id), panelScreenTab(id)), conversationText(ctx))
     };
   }
   async function catchUpUnseen(ctx) {
@@ -6398,7 +6400,7 @@ function createInbox(pi, deps = defaultDeps) {
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
     const written = await change(id, (s) => ({
       ...turnEnded(endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
-        tab: screenTabOf(id),
+        tab: panelScreenTab(id),
         queuesEmptyReply: isDialogDismissed
       })),
       stop

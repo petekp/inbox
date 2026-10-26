@@ -691,6 +691,12 @@ function isListedTab(tab) {
 function isRowTab(tab) {
   return tab !== "overview";
 }
+function isShownTab(raw) {
+  return TABS.some((t) => t.id === raw);
+}
+function screenTabOf(tab) {
+  return { label: TABS.find((t) => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) };
+}
 var ROW_TABS = TABS.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TABS.filter((t) => isListedTab(t.id));
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
@@ -942,10 +948,6 @@ var TAB_OPEN_MS = 15e3;
 function isTabOpen(s, now) {
   return now - s.tabSeenAt < TAB_OPEN_MS;
 }
-function screenTabOf(s) {
-  const shown = TABS.find((t) => t.id === s.shownTab);
-  return { label: shown?.label ?? s.shownTab, isPage: s.shownTab === "overview" };
-}
 function notePrompt2(s, text, now) {
   return notePrompt(CODEX, s, text, isTabOpen(s, now));
 }
@@ -956,7 +958,7 @@ function patchFiles(patch) {
   return [...patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((m) => (m[1] ?? "").trim()).filter(Boolean);
 }
 function endTurn2(s, reply, now) {
-  return endTurn(CODEX, s, reply, isTabOpen(s, now), { tab: screenTabOf(s) });
+  return endTurn(CODEX, s, reply, isTabOpen(s, now), { tab: screenTabOf(s.shownTab) });
 }
 var MAX_PROMPT_TURNS = 10;
 function noteHook(s, hook, now, turnId) {
@@ -1047,7 +1049,7 @@ function upgraded(saved, sessionId) {
       turn,
       pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex }))
     }),
-    shownTab: TABS.some((t) => t.id === saved.shownTab) ? saved.shownTab ?? base.shownTab : base.shownTab,
+    shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
     // A file saved before the hooks kept this record came from hooks that ran, so it reads as heard.
     // Its turns were not recorded, so `promptAt` is set too: a tool call then falls back to the time rule.
     heard: saved.heard ? { ...NOTHING_HEARD, ...saved.heard } : {

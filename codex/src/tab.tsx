@@ -23,6 +23,7 @@ import {
   entryId,
   isListedTab,
   isRowTab,
+  isShownTab,
   LISTED_TABS,
   TABS,
   feedbackOf,
@@ -293,7 +294,7 @@ function restoreState(incoming?: Kept) {
   }
   if (kept?.version !== 1 && kept?.version !== 2) return
   isDemo = kept.isDemo
-  if (TABS.some(t => t.id === kept.tab)) tab = kept.tab
+  if (isShownTab(kept.tab)) tab = kept.tab
   for (const t of ARRIVAL_TABS) {
     const id = kept.selection[t]
     selection[t] = id ? { id, openedAt: 0 } : null
