@@ -19,6 +19,10 @@ function numberBlocks(reply) {
   let n = 0;
   return reply.replace(FENCE, (block) => `[block ${n += 1}]${NL}${block}`);
 }
+function dash(value) {
+  const v = (value ?? "").trim();
+  return v === "" || v === "-" ? null : v;
+}
 function clip(text, max) {
   return text.length <= max ? text : text.slice(0, max) + " \u2026[cut]";
 }
@@ -199,17 +203,13 @@ function clipWords(text, limit) {
   const words = text.trim().split(/\s+/).filter(Boolean);
   return words.length <= limit ? words.join(" ") : `${words.slice(0, limit).join(" ")}\u2026`;
 }
-function plain(value) {
-  const text = value.trim();
-  return text === "-" ? "" : text;
-}
 function itemOf(value) {
   const [status, text, ...detail] = value.split("|").map((part) => part.trim());
   const isStatus = (s) => STATUSES2.includes(s);
   if (!isStatus(status) || !text)
     return null;
-  const rest = plain(detail.join(" | "));
-  return { status, text: clipWords(text, ITEM_WORDS), detail: rest === "" ? null : clipWords(rest, DETAIL_WORDS) };
+  const rest = dash(detail.join(" | "));
+  return { status, text: clipWords(text, ITEM_WORDS), detail: rest === null ? null : clipWords(rest, DETAIL_WORDS) };
 }
 function parseOverview(text) {
   const overview = { ...EMPTY_OVERVIEW };
@@ -240,13 +240,13 @@ function parseOverview(text) {
       overview.state = STATES.find((s) => s === value.toLowerCase()) ?? "on-track";
     else if (key === "HEADLINE") {
       hasHeadline = true;
-      overview.headline = clipWords(plain(value), HEADLINE_WORDS);
+      overview.headline = clipWords(dash(value) ?? "", HEADLINE_WORDS);
     } else if (key === "STATUS")
-      overview.status = clipWords(plain(value), SENTENCE_WORDS);
+      overview.status = clipWords(dash(value) ?? "", SENTENCE_WORDS);
     else if (key === "COURSE")
-      overview.course = clipWords(plain(value), SENTENCE_WORDS);
+      overview.course = clipWords(dash(value) ?? "", SENTENCE_WORDS);
     else if (key === "FOLDED")
-      folded = clipWords(plain(value), ITEM_WORDS * 2);
+      folded = clipWords(dash(value) ?? "", ITEM_WORDS * 2);
     else {
       const item = itemOf(value);
       const list = lists[LIST_OF_KEY[key]];
@@ -291,7 +291,6 @@ function upgradeOverview(saved) {
   const o = saved;
   if (typeof o !== "object" || o === null || typeof o.headline !== "string")
     return null;
-  const text = (value) => typeof value === "string" ? value : "";
   return {
     isCoordinator: o.isCoordinator === true,
     state: STATES.find((s) => s === o.state) ?? "on-track",
@@ -299,7 +298,7 @@ function upgradeOverview(saved) {
     status: text(o.status),
     course: text(o.course),
     ...Object.fromEntries(LIST_KEYS.map((k) => [k, itemsOf(o[k])])),
-    earlier: Array.isArray(o.earlier) ? o.earlier.filter((e) => typeof e === "string") : [],
+    earlier: strings(o.earlier),
     lastLookAt: typeof o.lastLookAt === "number" ? o.lastLookAt : null,
     look: lookOf(o.look),
     seen: seenOf(o.seen)
@@ -310,11 +309,14 @@ function lookOf(saved) {
   if (typeof l !== "object" || l === null || typeof l.startedAt !== "number")
     return null;
   const away = AWAYS.find((a) => a === l.away);
-  return away === undefined ? null : { startedAt: l.startedAt, away, since: strings(l.since), course: typeof l.course === "string" ? l.course : "" };
+  return away === undefined ? null : { startedAt: l.startedAt, away, since: strings(l.since), course: text(l.course) };
 }
 function seenOf(saved) {
   const s = saved;
-  return { since: strings(s?.since), course: typeof s?.course === "string" ? s.course : "" };
+  return { since: strings(s?.since), course: text(s?.course) };
+}
+function text(value) {
+  return typeof value === "string" ? value : "";
 }
 function strings(value) {
   return Array.isArray(value) ? value.filter((v) => typeof v === "string") : [];
@@ -577,10 +579,6 @@ function withHelp(helps, help) {
   const kept = isCommand(help) ? helps.filter((h) => h.kind !== "copy" || commandOf(h) !== command) : helps;
   const isCovered = kept.some((h) => helpTarget(h) === helpTarget(help));
   return isCovered || kept.length >= MAX_HELPS ? kept : [...kept, help];
-}
-function dash(value) {
-  const v = (value ?? "").trim();
-  return v === "" || v === "-" ? null : v;
 }
 var KEY_LINE2 = /^\s*[-*]?\s*(?:(NONE)(?::|\s|$)|(CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:)\s*(.*)$/;
 function keyOf(line) {

@@ -3,7 +3,7 @@ import type { Closed, ClosedFinding, Exchange, Finding, Help, Item, Ledger, Pres
 export type { Exchange, Press } from '../types'
 import type { Host } from './model-text'
 import { upgradeOverview } from './overview'
-import { codeBlocks } from './text'
+import { codeBlocks, dash } from './text'
 
 /** How many saved sessions each host keeps; the newest by save time. */
 export const KEPT_SESSIONS = 40
@@ -258,12 +258,6 @@ export function tasksRunBy(ledger: Ledger, command: string): Item[] {
 
 function squash(command: string): string {
   return command.trim().replace(/\s+/g, ' ')
-}
-
-function dash(value: string | undefined): string | null {
-  const v = (value ?? '').trim()
-
-  return v === '' || v === '-' ? null : v
 }
 
 const KEY_LINE = /^\s*[-*]?\s*(?:(NONE)(?::|\s|$)|(CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:)\s*(.*)$/

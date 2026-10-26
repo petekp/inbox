@@ -12,6 +12,13 @@ export function numberBlocks(reply: string): string {
   return reply.replace(FENCE, block => `[block ${(n += 1)}]${NL}${block}`)
 }
 
+/** A model's field, trimmed. Null when it is empty or a lone dash, which a model writes for none. */
+export function dash(value: string | undefined): string | null {
+  const v = (value ?? '').trim()
+
+  return v === '' || v === '-' ? null : v
+}
+
 export function clip(text: string, max: number): string {
   return text.length <= max ? text : text.slice(0, max) + ' …[cut]'
 }
