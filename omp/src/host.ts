@@ -8,7 +8,7 @@ import type { AssistantMessage, Context, Model } from '@oh-my-pi/pi-ai'
 import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent'
 
 import { flattenConversation } from '../../hooks/conversation'
-import { ompTodoFromBranch } from '../../hooks/host-tasks'
+import { isSameTaskList, ompTodoFromBranch } from '../../hooks/host-tasks'
 import type { Turn } from '../../hooks/conversation'
 import { dialogActivity, dialogQuestions, guidanceText, screenText, toolActivity } from '../../hooks/model-text'
 import type { DialogOutcome, ScreenTab } from '../../hooks/model-text'
@@ -621,7 +621,8 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         .then(async () => {
           const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
           const saved = await readState(dir, id).catch(() => null)
-          if (hostTasks.length > 0 || (saved?.hostTasks.length ?? 0) > 0) await change(id, s => ({ ...s, hostTasks }))
+          if (hostTasks.length > 0 || (saved?.hostTasks.length ?? 0) > 0)
+            await change(id, s => (isSameTaskList(s.hostTasks, hostTasks) ? s : { ...s, hostTasks }))
         })
         .catch(() => undefined)
         .then(() => catchUpUnseen(ctx)),

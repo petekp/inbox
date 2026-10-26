@@ -106,8 +106,8 @@ function ompTodoOf(details) {
   return numberedTasks(tasks, "content");
 }
 function ompTodoFromBranch(entries) {
-  for (const raw of [...entries].reverse()) {
-    const entry = recordOf(raw);
+  for (let n = entries.length - 1;n >= 0; n--) {
+    const entry = recordOf(entries[n]);
     if (entry.type === "custom" && entry.customType === "user_todo_edit") {
       const tasks = ompTodoOf(entry.data);
       if (tasks !== null)
@@ -124,6 +124,9 @@ function ompTodoFromBranch(entries) {
       return tasks;
   }
   return [];
+}
+function isSameTaskList(a, b) {
+  return a.length === b.length && a.every((t, n) => t.id === b[n]?.id && t.text === b[n]?.text && t.status === b[n]?.status);
 }
 function upgradeHostTasks(saved) {
   if (!Array.isArray(saved))
@@ -6262,7 +6265,7 @@ function createInbox(pi, deps = defaultDeps) {
       const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
       const saved = await readState(dir, id).catch(() => null);
       if (hostTasks.length > 0 || (saved?.hostTasks.length ?? 0) > 0)
-        await change(id, (s) => ({ ...s, hostTasks }));
+        await change(id, (s) => isSameTaskList(s.hostTasks, hostTasks) ? s : { ...s, hostTasks });
     }).catch(() => {
       return;
     }).then(() => catchUpUnseen(ctx)));

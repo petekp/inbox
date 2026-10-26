@@ -88,8 +88,8 @@ export function ompTodoOf(details: unknown): HostTask[] | null {
  * reads it (`getLatestTodoPhasesFromEntries`). Empty when the branch holds neither.
  */
 export function ompTodoFromBranch(entries: readonly unknown[]): HostTask[] {
-  for (const raw of [...entries].reverse()) {
-    const entry = recordOf(raw)
+  for (let n = entries.length - 1; n >= 0; n--) {
+    const entry = recordOf(entries[n])
     if (entry.type === 'custom' && entry.customType === 'user_todo_edit') {
       const tasks = ompTodoOf(entry.data)
       if (tasks !== null) return tasks
@@ -103,6 +103,13 @@ export function ompTodoFromBranch(entries: readonly unknown[]): HostTask[] {
   }
 
   return []
+}
+
+/** Whether two lists hold the same tasks in the same order. */
+export function isSameTaskList(a: readonly HostTask[], b: readonly HostTask[]): boolean {
+  return (
+    a.length === b.length && a.every((t, n) => t.id === b[n]?.id && t.text === b[n]?.text && t.status === b[n]?.status)
+  )
 }
 
 function safeJson(text: string): unknown {
