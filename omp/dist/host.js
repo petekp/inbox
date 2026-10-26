@@ -34,6 +34,32 @@ function clipMiddle(text, max, head) {
     return text;
   return `${text.slice(0, head)}${NL}\u2026[cut]${NL}${text.slice(text.length - (max - head))}`;
 }
+var graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+var ZERO_WIDTH = /^[\p{Mn}\p{Me}\p{Cc}\p{Cf}]+$/u;
+var EMOJI = /\p{Emoji_Presentation}|\uFE0F/u;
+var WIDE = /^[\u1100-\u115F\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6\u{20000}-\u{3FFFD}]/u;
+function cellWidth(text) {
+  let cells = 0;
+  for (const { segment } of graphemes.segment(text))
+    cells += graphemeCells(segment);
+  return cells;
+}
+function cutToCells(text, cells) {
+  let out = "";
+  let used = 0;
+  for (const { segment } of graphemes.segment(text)) {
+    used += graphemeCells(segment);
+    if (used > cells)
+      break;
+    out += segment;
+  }
+  return out;
+}
+function graphemeCells(grapheme) {
+  if (ZERO_WIDTH.test(grapheme))
+    return 0;
+  return EMOJI.test(grapheme) || WIDE.test(grapheme) ? 2 : 1;
+}
 function ago(ms) {
   const min = Math.round(ms / 60000);
   if (min < 1)
@@ -2604,11 +2630,22 @@ function stepKind(step) {
   return step.step.some((h) => h.kind === "run") ? "handoff" : "local";
 }
 var TABS = [
-  { id: "overview", label: "Overview", hotkey: "1" },
-  { id: "needsYou", label: "Needs you", hotkey: "2" },
-  { id: "findings", label: "Findings", hotkey: "3" },
-  { id: "prs", label: "PRs", hotkey: "4" }
+  { id: "overview", label: "Overview", symbol: "\uD83E\uDDED", hotkey: "1" },
+  { id: "needsYou", label: "Needs you", symbol: "\uD83D\uDE4B", hotkey: "2" },
+  { id: "findings", label: "Findings", symbol: "\uD83D\uDD0D", hotkey: "3" },
+  { id: "prs", label: "PRs", symbol: "\uD83D\uDD00", hotkey: "4" }
 ];
+var TAB_NAMINGS = ["words", "symbols"];
+function tabName(tab, naming) {
+  return naming === "words" ? tab.label : tab.symbol;
+}
+function fitTabs(layouts, fits) {
+  for (const naming of TAB_NAMINGS)
+    for (const layout of layouts)
+      if (fits(naming, layout))
+        return { naming, layout };
+  return { naming: "symbols", layout: layouts.at(-1) };
+}
 function isListedTab(tab) {
   return tab === "needsYou" || tab === "findings";
 }
@@ -4962,7 +4999,7 @@ function noticeFor(outcome, now) {
   return text === null ? null : { text, at: now };
 }
 var ANSI = /\x1b\[[0-9;]*m/g;
-var visibleLength = (s) => [...s.replace(ANSI, "")].length;
+var visibleLength = (s) => cellWidth(s.replace(ANSI, ""));
 function fit(s, width) {
   if (visibleLength(s) <= width)
     return s;
@@ -4973,12 +5010,11 @@ function fit(s, width) {
       out += part;
       continue;
     }
-    for (const ch of part) {
-      if (n >= width - 1)
-        return `${out}\u2026\x1B[0m`;
-      out += ch;
-      n++;
-    }
+    const cells = cellWidth(part);
+    if (n + cells > width - 1)
+      return `${out}${cutToCells(part, width - 1 - n)}\u2026\x1B[0m`;
+    out += part;
+    n += cells;
   }
   return out;
 }
@@ -4992,10 +5028,10 @@ function wrapText(text, width) {
 `)) {
     let line = "";
     for (const word of paragraph.split(/\s+/).filter(Boolean)) {
-      const long = [...word].length > width ? [...word].slice(0, width - 1).join("") + "\u2026" : word;
+      const long = cellWidth(word) > width ? cutToCells(word, width - 1) + "\u2026" : word;
       if (line === "")
         line = long;
-      else if ([...line].length + 1 + [...long].length <= width)
+      else if (cellWidth(line) + 1 + cellWidth(long) <= width)
         line += ` ${long}`;
       else {
         out.push(line);
@@ -5103,14 +5139,13 @@ function drawPageRow(row, d) {
   return out;
 }
 var TAB_FORMS = [{ isBracketed: true }, { isBracketed: false }];
-var MIN_LABEL = 3;
-function tabCell(t, label, form, s) {
+function tabCell(t, name, form, s) {
   const key = form.isBracketed ? `[${t.hotkey}]` : t.hotkey;
   const count = t.count ? String(t.count) : null;
   if (t.isShown)
-    return s.inverse(s.bold(` ${key} ${label}${count === null ? "" : ` ${count}`} `));
+    return s.inverse(s.bold(` ${key} ${name}${count === null ? "" : ` ${count}`} `));
   const countText = count === null ? "" : ` ${t.tone ? s.tone(t.tone, count) : count}`;
-  return ` ${s.dim(`${key} ${label}`)}${countText} `;
+  return ` ${s.dim(`${key} ${name}`)}${countText} `;
 }
 function tabBar(d) {
   const { screen, ui, width, style: s } = d;
@@ -5125,23 +5160,9 @@ function tabBar(d) {
     count: isRowTab(t.id) ? counts[t.id] : null,
     isShown: t.id === ui.tab
   }));
-  const lineOf = (form, lengths) => ` ${tabs.map((t, i) => tabCell(t, clipLabel(t.label, lengths[i]), form, s)).join(" ")}`;
-  const lengths = tabs.map((t) => [...t.label].length);
-  const hint = s.dim("esc to close ");
-  for (const form of TAB_FORMS) {
-    const line = lineOf(form, lengths);
-    if (visibleLength(line) <= width)
-      return spread(line, hint, width);
-  }
-  const narrowest = TAB_FORMS.at(-1);
-  for (;; ) {
-    const line = lineOf(narrowest, lengths);
-    const cuttable = tabs.map((t, i) => t.isShown || lengths[i] <= MIN_LABEL ? -1 : lengths[i]);
-    const longest = cuttable.indexOf(Math.max(...cuttable));
-    if (visibleLength(line) <= width || cuttable[longest] === -1)
-      return line;
-    lengths[longest]--;
-  }
+  const lineOf = (naming, form) => ` ${tabs.map((t) => tabCell(t, tabName(t, naming), form, s)).join(" ")}`;
+  const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => visibleLength(lineOf(naming, form)) <= width);
+  return spread(lineOf(naming, layout), s.dim("esc to close "), width);
 }
 function footer(d, isPageScrolling) {
   const { screen, ui, width, now, style: s } = d;

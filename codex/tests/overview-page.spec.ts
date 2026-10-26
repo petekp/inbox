@@ -4,6 +4,7 @@ import { Window } from 'happy-dom'
 import { EMPTY } from '../../hooks/ledger'
 import { EMPTY_OVERVIEW } from '../../hooks/overview'
 import { recordItem } from '../../hooks/tools'
+import { TABS } from '../../hooks/view'
 import { CODEX } from '../src/texts'
 import { emptyState } from '../src/state'
 import { lookOnView, viewOf } from '../src/core'
@@ -99,13 +100,29 @@ test('the Codex tab draws the Overview page from the view, and new rows, j and k
     for (let n = 0; n < 50 && !ready(); n++) await new Promise<void>(resolve => setImmediate(resolve))
     assert.ok(ready())
   }
-  const tabLabels = () => [...root.querySelectorAll('.tab')].map(b => b.textContent)
-  const shownTab = () => root.querySelector('.tab.shown')?.textContent
+  const spokenText = (b: Element) =>
+    [...b.children]
+      .filter(c => c.getAttribute('aria-hidden') !== 'true')
+      .map(c => c.textContent)
+      .join('')
+  const tabLabels = () => [...root.querySelectorAll('.tab')].map(spokenText)
+  const shownTab = () => {
+    const shown = root.querySelector('.tab.shown')
+
+    return shown ? spokenText(shown) : undefined
+  }
   const key = (k: string) => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }))
   try {
     await import('../src/tab')
     await until(() => root.querySelector('.overview-goal') !== null)
     assert.deepEqual(tabLabels(), ['Overview', 'Needs you', 'Findings', 'PRs'])
+    assert.deepEqual(
+      [...root.querySelectorAll('.tab')].map(b => [
+        b.getAttribute('title'),
+        b.querySelector('.tab-symbol')?.textContent,
+      ]),
+      TABS.map(t => [t.label, t.symbol]),
+    )
     assert.equal(shownTab(), 'Overview')
     assert.equal(shownTabs[0], 'overview')
     assert.equal(root.querySelector('.overview-goal')?.textContent, 'Shipping the Overview tab')

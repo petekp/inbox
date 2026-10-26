@@ -1841,12 +1841,16 @@ function TabBar({ v }: { v: View }) {
           <button
             type="button"
             class={`tab ${shown === t.id ? 'shown' : ''}`}
+            title={t.label}
             onClick={() => {
               tab = t.id
               draw()
             }}
           >
-            {t.label}
+            <span class="tab-symbol" aria-hidden="true">
+              {t.symbol}
+            </span>
+            <span class="tab-word">{t.label}</span>
             {isRowTab(t.id) && counts[t.id] > 0 ? <span class={`count tone-${t.id}`}>{counts[t.id]}</span> : null}
           </button>
         ))}
