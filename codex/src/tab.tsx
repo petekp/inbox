@@ -18,6 +18,7 @@ import {
   DOT,
   earlierLabel,
   drawnLists,
+  earlierTitle,
   emptyText,
   groupEmptyText,
   entryId,
@@ -1352,7 +1353,7 @@ function OverviewTab({ page }: { page: OverviewPage }) {
       ))}
       {earlier.length > 0 ? (
         <section>
-          <GroupTitle title="Earlier in this chat" count={0} />
+          <GroupTitle title={earlierTitle('chat')} count={0} />
           <div class="list">
             {earlier.map((text, n) => (
               <div class="earlier muted" key={n}>

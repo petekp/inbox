@@ -41,6 +41,7 @@ import { ago } from '../../hooks/text'
 import {
   canUndoRefused,
   closedMark,
+  earlierTitle,
   settledMark,
   settledTone,
   DEMO_NOTICE,
@@ -576,7 +577,7 @@ function pageEntries(page: OverviewPage): Entry[] {
   }
   if (page.earlier.length > 0) {
     out.push({ kind: 'note', text: '' })
-    out.push({ kind: 'heading', text: 'Earlier in this session' })
+    out.push({ kind: 'heading', text: earlierTitle('session') })
     out.push(...page.earlier.map((text): Entry => ({ kind: 'note', text, indent: TITLE_AT })))
   }
 

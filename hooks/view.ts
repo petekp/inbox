@@ -685,6 +685,11 @@ const SECTION_TITLES: Partial<Record<PartId, string | null>> = {
   next: 'Next',
 }
 
+/** The heading over the Overview's earlier topics. `place` is the host's word for a conversation with the agent. */
+export function earlierTitle(place: string): string {
+  return `Earlier in this ${place}`
+}
+
 /** The marks a running row cycles through in the text looks, one each `RUNNING_FRAME_MS`. */
 export const RUNNING_FRAMES = ['●', '◉', '◎', '◉'] as const
 

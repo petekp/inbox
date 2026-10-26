@@ -2638,6 +2638,9 @@ var SECTION_TITLES = {
   open: "Still open",
   next: "Next"
 };
+function earlierTitle(place) {
+  return `Earlier in this ${place}`;
+}
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
@@ -4774,7 +4777,7 @@ function pageEntries(page) {
   }
   if (page.earlier.length > 0) {
     out.push({ kind: "note", text: "" });
-    out.push({ kind: "heading", text: "Earlier in this session" });
+    out.push({ kind: "heading", text: earlierTitle("session") });
     out.push(...page.earlier.map((text) => ({ kind: "note", text, indent: TITLE_AT })));
   }
   return out;

@@ -196,6 +196,7 @@ import {
   stopFix,
   stopText,
   drawnLists,
+  earlierTitle,
   emptyText,
   isRowTab,
   isShownTab,
@@ -5158,7 +5159,7 @@ export const register: Register = on => {
         ...(page.earlier.length > 0
           ? [
               section([
-                groupTitle('Earlier in this session', 0),
+                groupTitle(earlierTitle('session'), 0),
                 ...titleGap(),
                 ...page.earlier.map((text, n) =>
                   overviewTextRow(`earlier-${n}`, text, childPos(n, page.earlier.length)),
