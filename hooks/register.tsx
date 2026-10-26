@@ -234,6 +234,10 @@ import {
   ROW_COPY,
   READING_TEXT,
   rowsIn,
+  hasRunningMark,
+  RUNNING_FRAME_MS,
+  RUNNING_PULSE_MS,
+  runningMark,
   SETTLED_MS,
   settledIn,
   settledRowIds,
@@ -301,6 +305,7 @@ const DRAFTS = atom({ plugin: 'inbox', key: 'drafts' } as const, {} as Record<st
 const DISCARDED = atom({ plugin: 'inbox', key: 'discarded' } as const, {} as Record<string, number>)
 const NOTES = atom({ plugin: 'inbox', key: 'notes' } as const, {} as Record<string, RowNote>)
 const REDRAW = atom({ plugin: 'inbox', key: 'redraw' } as const, 0)
+const RUNNING_FRAME = atom({ plugin: 'inbox', key: 'runningFrame' } as const, 0)
 const SESSION = atom({ plugin: 'inbox', key: 'session' } as const, NO_SESSION)
 const AWAY = atom({ plugin: 'inbox', key: 'away' } as const, PRESENT)
 const UNREADABLE = atom({ plugin: 'inbox', key: 'unreadable' } as const, null as string | null)
@@ -401,6 +406,25 @@ function toneSvg(tone: ToneName, mark: string): string {
       ? `<text class="mark" x="0" y="${height / 2}" dominant-baseline="central">${escapeXml(mark)}</text>`
       : `<g class="mark">${shape}</g>`) +
     `</svg>`
+  )
+}
+/** The pane's ● and ○ glyphs, as measured in the app: 11 pt across, centred 6.55 pt into the mark column. */
+const MARK_GLYPH_PT = 11
+const MARK_GLYPH_MID_PT = 6.55
+const RUNNING_SVG_CELLS = 2
+/**
+ * A running mark on desktop: a dot that fades and returns. SMIL runs it, since a pane redraw loop stops clicks there.
+ * Each pane redraw starts the animation again, so it begins at the clock's point in the pulse.
+ */
+function runningSvg(now: number): string {
+  const width = RUNNING_SVG_CELLS * DESKTOP_CELL_PT
+  const height = DESKTOP_LINE_PT
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+    `<style>.mark{fill:#595959}@media (prefers-color-scheme: dark){.mark{fill:#a8a8a8}}</style>` +
+    `<circle class="mark" cx="${MARK_GLYPH_MID_PT}" cy="${height / 2}" r="${MARK_GLYPH_PT / 2}">` +
+    `<animate attributeName="opacity" values="1;0.3;1" dur="${RUNNING_PULSE_MS}ms" begin="-${now % RUNNING_PULSE_MS}ms" repeatCount="indefinite"/>` +
+    `</circle></svg>`
   )
 }
 /**
@@ -982,6 +1006,27 @@ function redrawWhileLeaving($: EngineInterface, expiresAt: number) {
   })().catch(() => undefined)
 }
 
+let runningMarkTimer: Timer | null = null
+let isRunningMarkDrawn = false
+
+/**
+ * Redraws the terminal pane each frame while it shows a running mark. A tick that follows no such drawing stops the
+ * timer, as when the pane closed or left the Overview. Desktop runs no loop, as `redrawWhileLeaving` says why.
+ */
+function animateRunningMarks($: EngineInterface, isDrawn: boolean) {
+  isRunningMarkDrawn = isDrawn
+  if (!isDrawn || runningMarkTimer !== null) return
+  runningMarkTimer = $.clock.every(RUNNING_FRAME_MS, () => {
+    if (!isRunningMarkDrawn || paneLook === 'desktop') {
+      runningMarkTimer?.cancel()
+      runningMarkTimer = null
+      return
+    }
+    isRunningMarkDrawn = false
+    void update($, RUNNING_FRAME, n => n + 1).catch(() => undefined)
+  })
+}
+
 function later($: EngineInterface, waitMs: number, run: () => unknown) {
   void (async () => {
     await $.clock.sleep(waitMs)
@@ -1093,6 +1138,7 @@ function hostOf($: EngineInterface, owner: Owner, surface?: UiPressArgument['sur
       void commit($, owner, s =>
         s.prViews.isGhMissing === isGhMissing ? s : { ...s, prViews: { ...s.prViews, isGhMissing } },
       ).catch(() => undefined),
+    refreshPrs: () => fetchPrs($, true),
   })
 }
 
@@ -1882,7 +1928,8 @@ async function wakeForDone($: EngineInterface) {
 }
 
 async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPressArgument['surface']) {
-  const mayStayOnRow = 'ref' in p ? ['pr-open', 'thread-open', 'log'].includes(p.action) : p.action === 'step'
+  const mayStayOnRow =
+    'ref' in p ? ['pr-open', 'pr-refresh', 'thread-open', 'log'].includes(p.action) : p.action === 'step'
   const undoRevision = mayStayOnRow ? suspendUndoReveal() : cancelUndoScroll()
   const rowId = pressRowId(p)
   if (p.action !== 'undo' && !rowId.startsWith('pr:')) await keepPressedOpen($, rowId)
@@ -2122,6 +2169,7 @@ const PR_KEYS: Record<PrPress['action'], string> = {
   'pr-address-all': 'address-all',
   'pr-merge': 'merge',
   'pr-open': 'open',
+  'pr-refresh': 'refresh',
   'pr-dismiss': 'dismiss-pr',
   'pr-undo': 'undo-pr',
   'check-fix': 'fix',
@@ -3111,10 +3159,13 @@ export const register: Register = on => {
       read($, IS_KEY_LIST_SHOWN),
       read($, OPTIONS_SHOWN),
       $.env.get('TERM_PROGRAM'),
+      read($, RUNNING_FRAME),
     ])
     const tab: Tab = ROW_TABS.some(t => t.id === savedTab) ? savedTab : 'needsYou'
     const isOverviewShown = savedPage === 'overview'
     const shownTab: ShownTab = isOverviewShown ? 'overview' : tab
+    const isRunningMarkShown = isOverviewShown && hasRunningMark(view.overviewPage)
+    if (look === 'terminal') animateRunningMarks($, isRunningMarkShown)
     // A hot reload keeps TYPING but empties openFields, so an open field takes its key and seed again here.
     if (typing !== null && !openFields.has(typing))
       openFields.set(typing, openedField(typing, (await read($, DRAFTS))[typing]))
@@ -3251,15 +3302,20 @@ export const register: Register = on => {
     const isThreadSent = threadSentIn(lastActions)
     const presses = { lastActions, turns, now }
     const prPress = (p: PrPress) => (press: UiPressArgument) => runPress($, p, press.surface)
-    const prKeyAction = (a: PrAction, row: string): KeyAction => ({
-      key: `${a.icon === 'retry' ? 'retry' : PR_KEYS[a.press.action]}-${row}`,
-      label: a.label,
-      emphasis: a.emphasis,
-      kind: a.kind,
-      ...(a.icon ? { icon: ACTION_GLYPHS[a.icon] } : {}),
-      ...(a.hotkey ? { hotkey: a.hotkey } : {}),
-      onPress: prPress(a.press),
-    })
+    const prKeyAction = (a: PrAction, row: string): KeyAction => {
+      // A failed send's Try again repeats its button's press, so it needs a key of its own.
+      const isResend = a.icon === 'retry' && a.press.action !== 'pr-refresh'
+
+      return {
+        key: `${isResend ? 'retry' : PR_KEYS[a.press.action]}-${row}`,
+        label: a.label,
+        emphasis: a.emphasis,
+        kind: a.kind,
+        ...(a.icon ? { icon: ACTION_GLYPHS[a.icon] } : {}),
+        ...(a.hotkey ? { hotkey: a.hotkey } : {}),
+        onPress: prPress(a.press),
+      }
+    }
     const checkRowBase = (pr: PrView, c: PrCheck): Row => ({
       id: prCheckId(pr, c),
       handle: checkRowText(c).mark.text,
@@ -4902,10 +4958,6 @@ export const register: Register = on => {
               <Text color={pal.tone.error} wrap="wrap">
                 {prRefreshFailedText(pr.error)}
               </Text>
-              {prState.isFetching ? <Text color={pal.muted}>Refreshing…</Text> : null}
-              <Box flexDirection="row">
-                <Button key={`refresh-${pr.ref}`} label={ROW_COPY.retry} onPress={() => void findPrs($)} />
-              </Box>
             </Box>
           ) : null}
           <Box
@@ -5035,7 +5087,21 @@ export const register: Register = on => {
           })
         : treeRow(pos, null, <Text wrap="wrap">{text}</Text>, `overview-${id}`, 0, markColumns.textAt)
     const markedRow = (m: OverviewRow, pos: TreePos) => {
-      const mark = <Text color={m.tone ? pal.mark[m.tone] : pal.muted}>{m.mark}</Text>
+      const RunningSvg = m.isRunning && look === 'desktop' && 'Svg' in elements ? elements.Svg : null
+      const mark = RunningSvg ? (
+        <Box width={RUNNING_SVG_CELLS} height={1} flexShrink={0}>
+          <RunningSvg
+            source={runningSvg(now)}
+            alt={m.mark}
+            width={RUNNING_SVG_CELLS * DESKTOP_CELL_PT}
+            height={DESKTOP_LINE_PT}
+          />
+        </Box>
+      ) : (
+        <Text color={m.tone ? pal.mark[m.tone] : pal.muted}>
+          {m.isRunning && look === 'terminal' ? runningMark(now) : m.mark}
+        </Text>
+      )
       const lines = [
         <Text key="text" wrap="wrap">
           {m.text}

@@ -9,7 +9,7 @@ import { ago } from '../../hooks/text'
 import type { ClosedState } from '../../hooks/ledger'
 import { canUndoRefused, closedMark, settledMark } from '../../hooks/view'
 import { capitalized, clipLabel, noteText, pendingResult, stepEffects } from '../../hooks/presses'
-import type { RowPress } from '../../hooks/presses'
+import type { Effect, RowPress } from '../../hooks/presses'
 import {
   allRows,
   closedShown,
@@ -45,6 +45,7 @@ import {
   replyHint,
   rowMark,
   rowFeedbackText,
+  RUNNING_PULSE_MS,
   settledLabel,
   ROW_COPY,
   READING_TEXT,
@@ -80,6 +81,7 @@ import {
   prMarkId,
   prRowWaits,
   prsEmptyText,
+  PR_REFRESH,
   prRefreshFailedText,
   PR_DISMISSED_LABEL,
   prThreadId,
@@ -832,10 +834,12 @@ function prKey(rowId: string, a: PrAction, pending?: string): Key {
   }
 }
 
-function opening(name: string): string {
-  const result = pendingResult([{ kind: 'open', target: '', name }], Date.now())
+function pendingText(effect: Effect): string {
+  return feedbackText({ is: 'local', result: pendingResult([effect], Date.now()) }, 'codex')
+}
 
-  return feedbackText({ is: 'local', result }, 'codex')
+function opening(name: string): string {
+  return pendingText({ kind: 'open', target: '', name })
 }
 
 function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
@@ -1282,11 +1286,20 @@ function Entries({ entries, group, all, now }: { entries: Entry[]; group: Group;
   )
 }
 
+/** Starts every running mark's pulse at the page's time origin, so a mark drawn at a later poll moves in step. */
+function pulseInStep(el: HTMLElement | null) {
+  for (const a of el?.getAnimations?.() ?? []) a.startTime = 0
+}
+
 function MarkedRow({ row }: { row: OverviewRow }) {
+  const markClass = ['mark', row.tone, row.isRunning ? 'running' : null].filter(Boolean).join(' ')
+
   return (
     <div class="entry">
       <div class="row">
-        <span class={row.tone ? `mark ${row.tone}` : 'mark'}>{row.mark}</span>
+        <span class={markClass} ref={row.isRunning ? pulseInStep : undefined}>
+          {row.mark}
+        </span>
         <div class="content tight">
           <div>{row.text}</div>
           {row.detail ? <div class="outcome">{row.detail}</div> : null}
@@ -1690,7 +1703,7 @@ function PrBlock({
   const tone = PR_TONES[status]
   const id = prMarkId(pr.ref)
   const keys = prBlockActions(pr, isSent, v.prs.branchRef, pressesOf(v)).map(a =>
-    prKey(id, a, opening(`PR #${pr.number}`)),
+    prKey(id, a, a.press.action === 'pr-refresh' ? pendingText(PR_REFRESH) : opening(`PR #${pr.number}`)),
   )
   const last = prLastLine(v, id)
 
@@ -2113,6 +2126,7 @@ function applyPageVariables() {
   document.documentElement.style.setProperty('--row-pad', `${ROW_PAD_PT}px`)
   document.documentElement.style.setProperty('--lead-gap', `${LEAD_GAP_PT}px`)
   document.documentElement.style.setProperty('--overview-row-pad', `${OVERVIEW_ROW_PAD_PT}px`)
+  document.documentElement.style.setProperty('--pulse', `${RUNNING_PULSE_MS}ms`)
   document.documentElement.style.setProperty('--move', `${MOVE_MS}ms ${MOVE.easing}`)
   document.documentElement.style.setProperty('--enter', `${ENTER_MS}ms ${ENTER.easing}`)
 }

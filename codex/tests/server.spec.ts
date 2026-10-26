@@ -7,7 +7,7 @@ import { test } from 'node:test'
 
 import { demoView } from '../../hooks/demo'
 import { applyUpdate, parseReply } from '../../hooks/ledger'
-import { feedbackOf, QUEUED_AFTER_MS } from '../../hooks/view'
+import { feedbackOf, feedbackText, QUEUED_AFTER_MS } from '../../hooks/view'
 import type { Feedback } from '../../hooks/view'
 import { screenText } from '../../hooks/model-text'
 import { noteHook, notePrompt, screenTabOf, viewOf } from '../src/core'
@@ -1017,6 +1017,35 @@ test('gh is found again at another path after the first one stops starting', asy
   assert.equal(next.result.structuredContent.prs.drawn.length, 1)
   assert.equal(next.result.structuredContent.prs.drawn[0]?.pr.error ?? null, null)
   assert.ok(calls.some(c => c[0] === '/opt/homebrew/bin/gh' && c[1] === 'pr'))
+})
+
+test('Refresh PRs under a failed refresh fetches again inside the refresh window, and its row reads Refreshed', async () => {
+  let at = 100
+  let isFailing = false
+  const { dir, calls, call } = await prServer(
+    args =>
+      isFailing && args[0] === 'gh' && args[1] === 'pr' ? { code: 1, stdout: '', stderr: 'HTTP 502' } : ghAnswer(args),
+    () => at,
+  )
+  await viewAfterFetch(call)
+  isFailing = true
+  at += PRS_STALE_MS
+  const failed = await viewAfterFetch(call)
+  const pr = failed.result.structuredContent.prs.drawn[0]!.pr
+  assert.equal(pr.error, 'HTTP 502')
+  isFailing = false
+  at += 1_000
+  const lookups = () => calls.filter(c => c[0] === 'gh' && c[1] === 'pr').length
+  const before = lookups()
+  const r = await call('inbox_press', { press: { action: 'pr-refresh', ref: pr.ref }, thread: 's1' })
+  assert.equal(r.result.structuredContent.error, null)
+  assert.equal(lookups(), before + 1)
+  const s = await readState(dir, 's1')
+  assert.equal(s.prViews.views[pr.ref]?.error, null)
+  assert.equal(
+    feedbackText(feedbackOf(`pr:${pr.ref}`, s.lastActions[`pr:${pr.ref}`], undefined, s.presence, at)!, 'codex'),
+    '✓ Refreshed PRs',
+  )
 })
 
 test('a PR press sends its prompt through codex queue and records the press on its row', async () => {

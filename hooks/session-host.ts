@@ -98,7 +98,10 @@ export type SessionHost<S extends Session> = {
   isDeliveryHeldUntilRun?: boolean
   /** Throws when `deliver` could not start. Run before a sent record is saved, so a message that cannot go leaves no record. */
   prepare?(s: S): Promise<void>
-  /** Opens a link or path, or copies text. Returns why it could not, or null. */
+  /**
+   * Opens a link or path, copies text, or refreshes the PRs and returns once the refresh ends. Returns why it could not,
+   * or null. A refresh that fails returns null, since each PR's own error says why.
+   */
   perform(s: S, effect: Exclude<Effect, { kind: 'send' }>): Promise<string | null>
   gh: {
     /** The gh to run, or null when none starts. */
@@ -530,23 +533,28 @@ export function prFetchTracker(now: () => number): {
    * never rejects, or null when nothing started.
    */
   fetchWhenDue(id: string, s: Session, fetch: () => Promise<void>): Promise<void> | null
+  /** Runs `fetch` now, as a press asks, unless a fetch for `id` already runs. Returns the run, which never rejects. */
+  fetchNow(id: string, fetch: () => Promise<void>): Promise<void>
 } {
-  const running = new Set<string>()
+  const running = new Map<string, Promise<void>>()
   const endedAt = new Map<string, number>()
+  const start = (id: string, fetch: () => Promise<void>) => {
+    const run = fetch()
+      .catch(() => undefined)
+      .finally(() => {
+        endedAt.set(id, now())
+        running.delete(id)
+      })
+    running.set(id, run)
+
+    return run
+  }
 
   return {
     isFetching: id => running.has(id),
-    fetchWhenDue: (id, s, fetch) => {
-      if (running.has(id) || !isPrFetchDue(s, endedAt.get(id), now())) return null
-      running.add(id)
-
-      return fetch()
-        .catch(() => undefined)
-        .finally(() => {
-          endedAt.set(id, now())
-          running.delete(id)
-        })
-    },
+    fetchWhenDue: (id, s, fetch) =>
+      running.has(id) || !isPrFetchDue(s, endedAt.get(id), now()) ? null : start(id, fetch),
+    fetchNow: (id, fetch) => running.get(id) ?? start(id, fetch),
   }
 }
 

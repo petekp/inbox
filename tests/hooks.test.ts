@@ -20,6 +20,9 @@ import {
   perTurnStatus,
   overviewPage,
   rowKeyPlan,
+  RUNNING_FRAME_MS,
+  RUNNING_FRAMES,
+  runningMark,
 } from '../hooks/view'
 
 const LEDGER_REPLY = `NEW: decide | 1 | Use Node or Python? | Node / Python | Node
@@ -2795,22 +2798,24 @@ test('a PR’s Dismiss settles its block with Undo, which brings it back, a read
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
 
   expect(await pane.find({ text: 'Last refresh failed: HTTP 502' })).toBeDefined()
-  expect(await pane.find({ text: 'Refreshing…' })).toBeUndefined()
+  expect((await pane.find({ key: 'refresh-acme/greet#13' }))?.props.label).toBe('Refresh PRs')
   branchFails = undefined
   branchHold = true
   const lookups = () => ran.filter(argv => argv[0] === 'gh' && argv.includes('view')).length
   const before = lookups()
-  await pane.press({ key: 'refresh-acme/greet#13' })
+  const refreshing = pane.press({ key: 'refresh-acme/greet#13' })
   await clock.settle()
   expect(await pane.find({ text: 'Last refresh failed: HTTP 502' })).toBeDefined()
-  expect(await pane.find({ text: 'Refreshing…' })).toBeDefined()
+  expect(await pane.find({ text: 'Refreshing PRs…' })).toBeDefined()
   expect(await pane.find({ key: 'refresh-acme/greet#13' })).toBeDefined()
   branchHold = false
   releaseBranch()
+  await refreshing
   await clock.settle()
   expect(lookups()).toBe(before + 1)
-  expect(await pane.find({ text: 'Refreshing…' })).toBeUndefined()
+  expect(await pane.find({ text: '✓ Refreshed PRs' })).toBeDefined()
   expect(await pane.find({ text: /Last refresh failed/ })).toBeUndefined()
+  expect(await pane.find({ key: 'refresh-acme/greet#13' })).toBeUndefined()
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
 })
 
@@ -4282,6 +4287,60 @@ test('a forked conversation keeps the parent’s findings and closed records, an
   await clock.settle()
   await clock.advance(SETTLED_MS)
   expect(await contextOf()).toContain('- issue: Retry loop never backs off (close id: f1)')
+})
+
+test('a stream’s mark on the Overview moves each frame, and any other working item’s only while a turn runs', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  paneState = { isShown: true, isFocused: true }
+  overviewReply = [
+    'KIND: coordinator',
+    'HEADLINE: Adding a greeting CLI',
+    'STATUS: Writing the parser.',
+    'QUEUE: working | Write the help text',
+    'QUEUE: queued | Add a --loud flag',
+    'STREAM: working | Parser: reads the new format',
+  ].join('\n')
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-key-overview' })
+  await clock.settle()
+  const markOf = async (key: string) =>
+    [...((await pane.find({ key }))?.text ?? '')].filter(c => RUNNING_FRAMES.some(f => f === c)).join('')
+  const frames = async () => {
+    const stream: string[] = []
+    const queue: string[] = []
+    const moving: string[] = []
+    for (let n = 0; n < RUNNING_FRAMES.length; n++) {
+      stream.push(await markOf('overview-workstreams-0'))
+      queue.push(await markOf('overview-queue-0'))
+      moving.push(runningMark(clock.now()))
+      await clock.advance(RUNNING_FRAME_MS)
+    }
+    expect(new Set(moving).size).toBeGreaterThan(1)
+
+    return { stream, queue, moving, still: moving.map(() => '●') }
+  }
+
+  const idle = await frames()
+  expect(idle.stream).toEqual(idle.moving)
+  expect(idle.queue).toEqual(idle.still)
+
+  await $.turn.start({ text: 'go on', turnId: 't2' })
+  await clock.settle()
+  const running = await frames()
+  expect(running.stream).toEqual(running.moving)
+  expect(running.queue).toEqual(running.moving)
+
+  await $.turn.complete({ answer: 'Parser written.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
+  await clock.settle()
+  const ended = await frames()
+  expect(ended.stream).toEqual(ended.moving)
+  expect(ended.queue).toEqual(ended.still)
 })
 
 test('the Overview page shows the headline, the status and the queue in place of rows, leaves the row keys idle, and a row tab shows its rows again', async ($, on) => {
