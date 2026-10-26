@@ -1003,6 +1003,13 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
     ...isHandedStep ? { isHandedStep: true } : {}
   };
 }
+function feedbackIn(id, state, last, note, turns, now, reportedAt) {
+  if (state.is === "settled") return null;
+  const f = feedbackOf(id, last, note, turns, now, reportedAt);
+  if (state.is !== "held") return f;
+  const isFailedReply = f?.is === "notSent" && last?.action === "type" && last.at >= state.at;
+  return f?.is === "note" || isFailedReply ? f : { is: "closed", label: state.label, at: state.at };
+}
 var fixLabel = (f) => f.kind === "opportunity" ? "Do it" : "Fix";
 var WORKING_LABELS = {
   explain: "Explaining\u2026",
@@ -1292,16 +1299,9 @@ function inboxView({
       };
     return isHandedOff(last, turns) ? { is: "handedOff" } : { is: "open" };
   };
-  const feedbackIn = (id, state, reportedAt) => {
-    if (state.is === "settled") return null;
-    const f = feedbackOf(id, lastActions[id], notes[id], turns, now, reportedAt);
-    if (state.is !== "held") return f;
-    const isFailedReply = f?.is === "notSent" && lastActions[id]?.action === "type" && lastActions[id].at >= state.at;
-    return f?.is === "note" || isFailedReply ? f : { is: "closed", label: state.label, at: state.at };
-  };
   const rowOf = (row) => {
     const state = stateOf(row.id);
-    const feedback = feedbackIn(row.id, state, row.item?.reportedAt);
+    const feedback = feedbackIn(row.id, state, lastActions[row.id], notes[row.id], turns, now, row.item?.reportedAt);
     const actions = actionsOf(row, lastActions[row.id], state, feedback);
     return {
       ...row,

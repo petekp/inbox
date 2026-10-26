@@ -25,6 +25,7 @@ import {
   upgradeSession,
 } from '../hooks/session'
 import type { Session } from '../hooks/session'
+import type { RowNote } from '../types'
 import { press, runUpdates, wakeForDone } from '../hooks/session-host'
 import type { CatchUpReply } from '../hooks/session-host'
 import { allRows, COMPARE_LIMIT_MS, feedbackText, NO_HOLDS } from '../hooks/view'
@@ -114,6 +115,28 @@ test('Compare reads Comparing… after its reply until the agent records the que
     feedback: 'Comparing…',
     actions: ['Redis', 'In-memory', 'Open caches.html', 'Reply', 'Explain', 'Compare again', 'Dismiss'],
   })
+})
+
+test('a press sends nothing while its button draws as out, and sends once a newer note shows on its row', async () => {
+  const { host } = fakeHost(async () => null)
+  const question = { kind: 'question', ask: 'Ship it?', options: ['Yes', 'No'] }
+  await host.update(s => recorded(CLAUDE_CODE, s, 'record', question, 1).state)
+  const id = (await host.read()).ledger.items[0]!.id
+  await press(host, { action: 'explain', id }, false, NO_HOLDS)
+  const s = await host.read()
+  const at = await host.now()
+  const explainAgain = (notes: Record<string, RowNote>) => {
+    const row = allRows(sessionView(s, at, host.settleWindowMs, true, NO_HOLDS, notes)).find(r => r.id === id)!
+    const r = pressOn(s, { action: 'explain', id }, at, { settleWindowMs: host.settleWindowMs, holds: NO_HOLDS, notes })
+
+    return {
+      isOut: row.actions.find(a => a.press.action === 'explain')!.isOut,
+      sends: 'stale' in r ? null : r.effects.map(e => e.kind),
+    }
+  }
+
+  expect(explainAgain({})).toEqual({ isOut: true, sends: [] })
+  expect(explainAgain({ [id]: { note: 'stale', at } })).toEqual({ isOut: false, sends: ['send'] })
 })
 
 test('a command that prints local URLs notes each once, and gh pr create links the PR it names', () => {

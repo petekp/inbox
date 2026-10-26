@@ -383,6 +383,7 @@ type PressHost<S extends Session> = Pick<
   | 'newId'
   | 'isDeliveryHeldUntilRun'
   | 'answerMessage'
+  | 'settleWindowMs'
 >
 
 /** A press that is saved, with what it still runs. */
@@ -395,13 +396,15 @@ export type StartedPress = {
 
 /**
  * Applies and saves a press. When it sends a message, the sent record is saved with it. A look can update its own
- * drawing before `finish` delivers, since a host's delivery can run the host's own handlers before it returns.
+ * drawing before `finish` delivers, since a host's delivery can run the host's own handlers before it returns. `holds`
+ * and `notes` are what the look draws the rows with, so a press its button draws as out sends nothing.
  */
 export async function startPress<S extends Session>(
   host: PressHost<S>,
   p: RowPress | PrPress,
   isStale: boolean,
   holds: ReplyHolds,
+  notes: Record<string, RowNote> = {},
 ): Promise<StartedPress> {
   const rowId = pressRowId(p)
   const localPressId = host.newId()
@@ -445,7 +448,14 @@ export async function startPress<S extends Session>(
       if (note) return s
       // Read under the lock, so the press is timed after every write that landed before it.
       const at = await host.now()
-      const r = pressOn(s, p, at, localPressId, host.answerMessage)
+      const r = pressOn(
+        s,
+        p,
+        at,
+        { settleWindowMs: host.settleWindowMs, holds, notes },
+        localPressId,
+        host.answerMessage,
+      )
       if ('stale' in r) {
         note = 'stale'
         return s

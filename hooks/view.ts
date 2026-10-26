@@ -422,6 +422,27 @@ export function feedbackOf(
   }
 }
 
+/**
+ * The feedback a row draws in its state. A settled row draws none. A held row draws why it closed, unless a note shows
+ * or a reply sent since the close failed.
+ */
+export function feedbackIn(
+  id: string,
+  state: RowState,
+  last: LastAction | undefined,
+  note: RowNote | undefined,
+  turns: Turns,
+  now: number,
+  reportedAt?: number,
+): Feedback | null {
+  if (state.is === 'settled') return null
+  const f = feedbackOf(id, last, note, turns, now, reportedAt)
+  if (state.is !== 'held') return f
+  const isFailedReply = f?.is === 'notSent' && last?.action === 'type' && last.at >= state.at
+
+  return f?.is === 'note' || isFailedReply ? f : { is: 'closed', label: state.label, at: state.at }
+}
+
 const fixLabel = (f: Pick<Finding, 'kind'>) => (f.kind === 'opportunity' ? 'Do it' : 'Fix')
 
 const WORKING_LABELS: Record<string, string> = {
@@ -505,7 +526,7 @@ export function isAgain(last: LastAction | undefined, action: string, isOut: boo
 }
 
 /** What a PR row's buttons read their presses from. */
-export type PressState = Pick<ViewInput, 'lastActions' | 'turns' | 'now'>
+export type PressState = Pick<ViewInput, 'lastActions' | 'turns' | 'now'> & Partial<Pick<ViewInput, 'notes'>>
 
 /**
  * A press status follows the row's title. While the press is out, an open row draws its status, such as "Comparing…",
@@ -1206,17 +1227,9 @@ export function inboxView({
 
     return isHandedOff(last, turns) ? { is: 'handedOff' } : { is: 'open' }
   }
-  const feedbackIn = (id: string, state: RowState, reportedAt: number | undefined): Feedback | null => {
-    if (state.is === 'settled') return null
-    const f = feedbackOf(id, lastActions[id], notes[id], turns, now, reportedAt)
-    if (state.is !== 'held') return f
-    const isFailedReply = f?.is === 'notSent' && lastActions[id]?.action === 'type' && lastActions[id].at >= state.at
-
-    return f?.is === 'note' || isFailedReply ? f : { is: 'closed', label: state.label, at: state.at }
-  }
   const rowOf = (row: Omit<RowView, 'state' | 'feedback' | 'actions' | 'optionDescriptions'>): RowView => {
     const state = stateOf(row.id)
-    const feedback = feedbackIn(row.id, state, row.item?.reportedAt)
+    const feedback = feedbackIn(row.id, state, lastActions[row.id], notes[row.id], turns, now, row.item?.reportedAt)
     // A button must keep its width while its press is out, or the buttons after it can move to another line.
     const actions = actionsOf(row, lastActions[row.id], state, feedback)
 

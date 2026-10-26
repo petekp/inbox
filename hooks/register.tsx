@@ -1960,11 +1960,19 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
     })
     await update($, TYPING, t => (t === p.id ? null : t))
   }
-  const [typing, drafts, discarded] = await Promise.all([read($, TYPING), read($, DRAFTS), read($, DISCARDED)])
-  const started = await startPress(hostOf($, currentOwner(), surface), p, false, {
-    replies: heldReplies(typing, drafts),
-    discarded,
-  })
+  const [typing, drafts, discarded, notes] = await Promise.all([
+    read($, TYPING),
+    read($, DRAFTS),
+    read($, DISCARDED),
+    read($, NOTES),
+  ])
+  const started = await startPress(
+    hostOf($, currentOwner(), surface),
+    p,
+    false,
+    { replies: heldReplies(typing, drafts), discarded },
+    notes,
+  )
   const effects = started.effects
   if (!effects) {
     const outcome = await started.finish()
@@ -2106,8 +2114,9 @@ async function runDemoPress(
   if (!('ref' in p) && p.action === 'type') await update($, TYPING, t => (t === p.id ? null : t))
   let applied = { stale: true } as Applied
   let isClosing = false
-  const [typing, drafts] = await Promise.all([read($, TYPING), read($, DRAFTS)])
-  const held = new Set(Object.keys(heldReplies(typing, drafts)))
+  const [typing, drafts, discarded] = await Promise.all([read($, TYPING), read($, DRAFTS), read($, DISCARDED)])
+  const holds = { replies: heldReplies(typing, drafts), discarded }
+  const held = new Set(Object.keys(holds.replies))
   await update($, DEMO, d => {
     if (!d) return d
     const sample = emptySession()
@@ -2121,6 +2130,7 @@ async function runDemoPress(
       },
       p,
       now,
+      { settleWindowMs: SETTLED_MS, holds, notes: d.notes },
     )
     applied = r
     const { [rowId]: _replaced, ...notes } = d.notes
@@ -3310,7 +3320,7 @@ export const register: Register = on => {
       moreKeys: () => rowKeyActions($, r, true).more,
     })
     const isThreadSent = threadSentIn(lastActions)
-    const presses = { lastActions, turns, now }
+    const presses = { lastActions, turns, now, notes }
     const prPress = (p: PrPress) => (press: UiPressArgument) => runPress($, p, press.surface)
     const prKeyAction = (a: PrAction, row: string): KeyAction => {
       // A failed send's Try again repeats its button's press, so it needs a key of its own.

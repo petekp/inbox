@@ -411,7 +411,8 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     holds: ReplyHolds,
   ): Promise<PressReply> {
     const s = demoOf(id)
-    const r = thread === id ? pressOn(s, p, now()) : ({ stale: true } as const)
+    const r =
+      thread === id ? pressOn(s, p, now(), { settleWindowMs: SETTLE_WINDOW_MS, holds }) : ({ stale: true } as const)
     if ('stale' in r) return { view: await served(s, id, true, holds), copy: null, error: null, note: 'stale' }
     const after = demoAfterPress(
       { lastActions: s.lastActions, turns: s.presence },

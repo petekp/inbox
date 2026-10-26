@@ -33,7 +33,7 @@ export function demoSource(deps: {
     }),
     press: async (p, holds) => {
       const at = deps.now()
-      const r = pressOn(state, p, at)
+      const r = pressOn(state, p, at, { settleWindowMs: deps.settleWindowMs, holds })
       if ('stale' in r) return { error: null, note: 'stale', isUnconfirmed: false }
       const after = demoAfterPress(
         { lastActions: state.lastActions, turns: state.presence },
