@@ -543,6 +543,49 @@
     ]
   },
   {
+    "name": "record-after-dismissed-other-subject",
+    "about": "The agent can record a question that shares the words of a dismissed question but asks about something else, and the record goes through.",
+    "ledger": {
+      "nextId": 8,
+      "turn": 3,
+      "closed": [
+        {
+          "id": "i7",
+          "kind": "question",
+          "ask": "Which license should package.json use?",
+          "outcome": "dismissed",
+          "how": "dismissed",
+          "at": 2,
+          "item": {
+            "id": "i7",
+            "kind": "question",
+            "label": null,
+            "from": "record",
+            "ask": "Which license should package.json use?",
+            "options": ["MIT", "Apache-2.0"],
+            "rec": null,
+            "helps": [],
+            "turn": 1,
+            "at": 1
+          }
+        }
+      ]
+    },
+    "prompt": "Leave the license out of package.json for now. Next is the engines field: we could support Node 20 and up, or only Node 22 and up. Ask me which engines package.json should use, with your recommendation.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "min": 1,
+        "has": ["rec"],
+        "result": "^Recorded"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
     "name": "carry-overview-answers-where-we-are",
     "about": "The first prompt of a conversation carries the Overview's headline and status, and the agent answers from it. Only the mod carries it this way; Codex and omp carry it at session start.",
     "ledger": {
