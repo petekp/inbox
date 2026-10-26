@@ -7,7 +7,7 @@ import { linkDialogs } from '../../hooks/dialogs'
 import { addAgentItem, EMPTY } from '../../hooks/ledger'
 import { inboxText } from '../../hooks/model-text'
 import { EMPTY_OVERVIEW } from '../../hooks/overview'
-import { applied } from '../../hooks/session'
+import { applied, parsedReply } from '../../hooks/session'
 import { feedbackText } from '../../hooks/view'
 import { notePrompt, noteToolCall, viewOf } from '../src/core'
 import { handleHook } from '../src/hook'
@@ -159,7 +159,8 @@ test('a dialog question links to the question the agent recorded for it or the u
     rows.push(...more)
     writeFileSync(transcript, rows.map(row => JSON.stringify(row)).join('\n'))
   }
-  const applyAnswer = (answer: string) => updateState(dir, 's1', s => applied(s, answer, 2000, 2000))
+  const applyAnswer = (answer: string) =>
+    updateState(dir, 's1', s => applied(s, parsedReply(s.pending[0]!.ex, answer), 2000, 2000))
   const links = async () => (await readState(dir, 's1')).ledger.items.map(i => [i.ask, i.dialog ?? null])
   const linkedQuestions = async () => (await readState(dir, 's1')).dialogQuestions.map(q => q.itemId !== null)
   const record = (ask: string, options: string[]) =>

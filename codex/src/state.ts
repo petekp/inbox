@@ -28,7 +28,7 @@ import {
   upgradeSession,
 } from '../../hooks/session'
 import type { Session } from '../../hooks/session'
-import { TABS } from '../../hooks/view'
+import { isShownTab } from '../../hooks/view'
 import type { ShownTab } from '../../hooks/view'
 
 export type SessionState = Session & {
@@ -128,7 +128,7 @@ function upgraded(saved: Saved, sessionId: string): SessionState {
       turn,
       pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex })),
     }),
-    shownTab: TABS.some(t => t.id === saved.shownTab) ? (saved.shownTab ?? base.shownTab) : base.shownTab,
+    shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
     // A file saved before the hooks kept this record came from hooks that ran, so it reads as heard.
     // Its turns were not recorded, so `promptAt` is set too: a tool call then falls back to the time rule.
     heard: saved.heard

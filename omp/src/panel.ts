@@ -37,10 +37,11 @@ import { capitalized, noteText } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
 import type { SessionView } from '../../hooks/session'
 import type { ToneName } from '../../hooks/tones'
-import { ago } from '../../hooks/text'
+import { ago, cellWidth, cutToCells } from '../../hooks/text'
 import {
   canUndoRefused,
   closedMark,
+  earlierTitle,
   settledMark,
   settledTone,
   DEMO_NOTICE,
@@ -52,6 +53,8 @@ import {
   SETTLED_MS,
   TABS,
   actionLabel,
+  fitTabs,
+  tabName,
   closedShown,
   closedTotal,
   earlierLabel,
@@ -90,6 +93,7 @@ import type {
   ReplyHolds,
   RowView,
   ShownTab,
+  TabNaming,
 } from '../../hooks/view'
 
 export type ResumePress = { action: 'resume' }
@@ -126,7 +130,7 @@ export type PanelUi = {
   focus: { rowId: string; index: number } | null
   /** The row whose reply field is open. */
   typing: string | null
-  /** Replies begun and not sent, by row id. Cancelling the field keeps its draft. */
+  /** Replies begun and not sent, by row id. Cancelling the field keeps its draft, and so does a send that is not confirmed. */
   drafts: Record<string, Draft>
   /** Rows whose draft the person discarded, and when. */
   discarded: Record<string, number>
@@ -519,7 +523,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
           title: text.title,
           isDim: text.fold !== null,
           detail: [text.meta, text.fold?.note].filter(Boolean).join(' · ') || null,
-          feedback: pressFeedback(screen, id, now, text.mark.text),
+          feedback: pressFeedback(screen, id, now, text.mark.isDone),
           buttons: prButtons(threadActions(pr, t, presses)),
           isWaiting: isWaiting(id),
           isFolded: text.fold !== null,
@@ -539,7 +543,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
           lead: markLead(text.mark),
           title: text.lead ? `${text.lead} / ${text.title}` : text.title,
           detail: text.meta,
-          feedback: pressFeedback(screen, id, now, text.mark.text),
+          feedback: pressFeedback(screen, id, now, text.mark.isDone),
           buttons: prButtons(checkActions(pr, c, presses)),
           isWaiting: isWaiting(id),
         },
@@ -551,10 +555,10 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
   return out
 }
 
-function pressFeedback(screen: PanelScreen, id: string, now: number, mark = ''): Line['feedback'] {
+function pressFeedback(screen: PanelScreen, id: string, now: number, isMarkDone = false): Line['feedback'] {
   const f = feedbackOf(id, screen.view.lastActions[id], undefined, screen.view.turns, now)
 
-  return f ? { text: markedFeedbackText(f, mark, AGENT), tone: feedbackTone(f), source: f } : null
+  return f ? { text: markedFeedbackText(f, isMarkDone, AGENT), tone: feedbackTone(f), source: f } : null
 }
 
 /** Where a row's title starts, after the cursor and the mark. The Overview page's text and details start here too. */
@@ -572,15 +576,13 @@ function pageEntries(page: OverviewPage): Entry[] {
     out.push({ kind: 'note', text: line.text, isStrong: line.id === 'headline' })
   }
   for (const part of page.sections) {
-    if (part.title) {
-      if (out.length > 0) out.push({ kind: 'note', text: '' })
-      out.push({ kind: 'heading', text: part.title })
-    }
+    if (out.length > 0) out.push({ kind: 'note', text: '' })
+    out.push({ kind: 'heading', text: part.title })
     out.push(...part.rows.map((row): Entry => ({ kind: 'page', row })))
   }
   if (page.earlier.length > 0) {
     out.push({ kind: 'note', text: '' })
-    out.push({ kind: 'heading', text: 'Earlier in this session' })
+    out.push({ kind: 'heading', text: earlierTitle('session') })
     out.push(...page.earlier.map((text): Entry => ({ kind: 'note', text, indent: TITLE_AT })))
   }
 
@@ -679,9 +681,8 @@ function typingKey(ui: PanelUi, id: string, key: string, now: number, text: stri
   if (key === 'escape') return { ui: { ...ui, typing: null } }
   if (key === 'enter') {
     if (draft.text.trim() === '') return { ui }
-    const { [id]: _sent, ...drafts } = ui.drafts
 
-    return { ui: { ...ui, typing: null, drafts }, press: { action: 'type', id, text: draft.text } }
+    return { ui: { ...ui, typing: null }, press: { action: 'type', id, text: draft.text } }
   }
   if (key === 'backspace') return edit([...draft.text].slice(0, -1).join(''))
   if (text !== undefined) return edit(draft.text + text.replace(/[\r\n]+/g, ' '))
@@ -824,7 +825,7 @@ export function noticeFor(outcome: { error: string | null; note: 'stale' | null 
 }
 
 const ANSI = /\x1b\[[0-9;]*m/g
-export const visibleLength = (s: string): number => [...s.replace(ANSI, '')].length
+export const visibleLength = (s: string): number => cellWidth(s.replace(ANSI, ''))
 
 function fit(s: string, width: number): string {
   if (visibleLength(s) <= width) return s
@@ -835,11 +836,10 @@ function fit(s: string, width: number): string {
       out += part
       continue
     }
-    for (const ch of part) {
-      if (n >= width - 1) return `${out}…\x1b[0m`
-      out += ch
-      n++
-    }
+    const cells = cellWidth(part)
+    if (n + cells > width - 1) return `${out}${cutToCells(part, width - 1 - n)}…\x1b[0m`
+    out += part
+    n += cells
   }
 
   return out
@@ -856,9 +856,9 @@ function wrapText(text: string, width: number): string[] {
   for (const paragraph of text.split('\n')) {
     let line = ''
     for (const word of paragraph.split(/\s+/).filter(Boolean)) {
-      const long = [...word].length > width ? [...word].slice(0, width - 1).join('') + '…' : word
+      const long = cellWidth(word) > width ? cutToCells(word, width - 1) + '…' : word
       if (line === '') line = long
-      else if ([...line].length + 1 + [...long].length <= width) line += ` ${long}`
+      else if (cellWidth(line) + 1 + cellWidth(long) <= width) line += ` ${long}`
       else {
         out.push(line)
         line = long
@@ -998,33 +998,29 @@ type TabCell = {
   id: ShownTab
   hotkey: string
   label: string
+  symbol: string
   tone: ToneName | null
   count: number | null
   isShown: boolean
 }
 
-/** One form of the tab line. Each later form is narrower. */
+/** One layout of the tab line. Each later layout is narrower. */
 type TabForm = { isBracketed: boolean }
 
 const TAB_FORMS: readonly TabForm[] = [{ isBracketed: true }, { isBracketed: false }]
-/** The fewest letters a cut label keeps, its ellipsis included. */
-const MIN_LABEL = 3
 
-const cutLabel = (label: string, length: number) =>
-  [...label].length <= length ? label : `${[...label].slice(0, length - 1).join('')}…`
-
-function tabCell(t: TabCell, label: string, form: TabForm, s: Style): string {
+function tabCell(t: TabCell, name: string, form: TabForm, s: Style): string {
   const key = form.isBracketed ? `[${t.hotkey}]` : t.hotkey
   const count = t.count ? String(t.count) : null
-  if (t.isShown) return s.inverse(s.bold(` ${key} ${label}${count === null ? '' : ` ${count}`} `))
+  if (t.isShown) return s.inverse(s.bold(` ${key} ${name}${count === null ? '' : ` ${count}`} `))
   const countText = count === null ? '' : ` ${t.tone ? s.tone(t.tone, count) : count}`
 
-  return ` ${s.dim(`${key} ${label}`)}${countText} `
+  return ` ${s.dim(`${key} ${name}`)}${countText} `
 }
 
 /**
- * The tab line. As the panel narrows, it drops the `[n]` brackets, then cuts the other tabs' labels,
- * longest first. Only the final `fit()` in `render` cuts the shown tab's label, once the other labels are at their shortest.
+ * The tab line. As the panel narrows, it drops the `[n]` brackets, then names the tabs by their symbols, with and then
+ * without brackets. Narrower still, the final `fit()` in `drawPanel` cuts the line's end.
  */
 function tabBar(d: Draw): string {
   const { screen, ui, width, style: s } = d
@@ -1039,22 +1035,11 @@ function tabBar(d: Draw): string {
     count: isRowTab(t.id) ? counts[t.id] : null,
     isShown: t.id === ui.tab,
   }))
-  const lineOf = (form: TabForm, lengths: number[]) =>
-    ` ${tabs.map((t, i) => tabCell(t, cutLabel(t.label, lengths[i]!), form, s)).join(' ')}`
-  const lengths = tabs.map(t => [...t.label].length)
-  const hint = s.dim('esc to close ')
-  for (const form of TAB_FORMS) {
-    const line = lineOf(form, lengths)
-    if (visibleLength(line) <= width) return spread(line, hint, width)
-  }
-  const narrowest = TAB_FORMS.at(-1)!
-  for (;;) {
-    const line = lineOf(narrowest, lengths)
-    const cuttable = tabs.map((t, i) => (t.isShown || lengths[i]! <= MIN_LABEL ? -1 : lengths[i]!))
-    const longest = cuttable.indexOf(Math.max(...cuttable))
-    if (visibleLength(line) <= width || cuttable[longest] === -1) return line
-    lengths[longest]!--
-  }
+  const lineOf = (naming: TabNaming, form: TabForm) =>
+    ` ${tabs.map(t => tabCell(t, tabName(t, naming), form, s)).join(' ')}`
+  const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => visibleLength(lineOf(naming, form)) <= width)
+
+  return spread(lineOf(naming, layout), s.dim('esc to close '), width)
 }
 
 function footer(d: Draw, isPageScrolling: boolean): string[] {
@@ -1098,7 +1083,7 @@ export function render(
   return drawPanel(screen, ui, width, now, style, height).lines
 }
 
-/** The panel's lines, and the Progress page's scroll clamped to what the panel can show. */
+/** The panel's lines, and the Overview page's scroll clamped to what the panel can show. */
 export function drawPanel(
   screen: PanelScreen,
   ui: PanelUi,

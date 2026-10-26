@@ -214,7 +214,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
   root.remove()
 })
 
-test('the actual Codex tab replaces actions and shortcuts while replying, restores a cancelled draft, and sends its current words', async () => {
+test('the actual Codex tab replaces actions and shortcuts while replying, restores a cancelled draft, sends its current words, and keeps them when the send cannot be confirmed', async () => {
   const state = emptyState('renderer')
   state.ledger = task().ledger
   state.heard.startAt = 1
@@ -248,6 +248,8 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
   for (const [key, value] of Object.entries(globals))
     Object.defineProperty(globalThis, key, { value, writable: true, configurable: true })
   const presses: RowPress[] = []
+  let isUnconfirmed = false
+  let pressesAnswered = 0
   const tabView = (holds?: Partial<ReplyHolds>): TabView => ({
     ...viewOf(state, Date.now(), { replies: holds?.replies ?? {}, discarded: holds?.discarded ?? {} }),
     thread: state.sessionId,
@@ -278,11 +280,20 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
       assert.ok(!('stale' in applied))
       state.ledger = applied.ledger
       if (applied.last) state.lastActions[press.id] = applied.last
-      result = { structuredContent: { view: tabView(request.params.arguments) } }
+      result = {
+        structuredContent: {
+          view: tabView(request.params.arguments),
+          copy: null,
+          error: null,
+          note: null,
+          ...(isUnconfirmed ? { delivery: 'unconfirmed' } : {}),
+        },
+      }
     } else throw new Error(`Unexpected request: ${request.method} ${request.params?.name ?? ''}`)
-    queueMicrotask(() =>
-      window.dispatchEvent(new window.MessageEvent('message', { data: { jsonrpc: '2.0', id: request.id, result } })),
-    )
+    queueMicrotask(() => {
+      window.dispatchEvent(new window.MessageEvent('message', { data: { jsonrpc: '2.0', id: request.id, result } }))
+      if (request.params?.name === 'inbox_press') pressesAnswered++
+    })
   }
   const root = document.getElementById('app')!
   const until = async (ready: () => boolean) => {
@@ -335,9 +346,16 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
     root.querySelector<HTMLElement>('.row .line')!.click()
     await pause(PRESS_GUARD_MS + 50)
     named(root, 'Reply').click()
+    const unconfirmed = root.querySelector('input')!
+    unconfirmed.value = 'Still blocked'
+    unconfirmed.dispatchEvent(new Event('input', { bubbles: true }))
+    isUnconfirmed = true
+    named(root, 'Send').click()
+    await until(() => pressesAnswered === 3 && root.querySelector('input') === null)
+    isUnconfirmed = false
+    named(root, 'Reply').click()
     const held = root.querySelector('input')!
-    held.value = 'Still blocked'
-    held.dispatchEvent(new Event('input', { bubbles: true }))
+    assert.equal(held.value, 'Still blocked')
     state.ledger = recordClose(CODEX, state.ledger, { id: 'i1', reason: 'the build passed' }, Date.now()).ledger
     await pause(POLL_MS + 100)
     assert.equal(root.querySelector('input'), held)
@@ -356,7 +374,7 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
     assert.doesNotMatch(root.textContent ?? '', /the build passed/)
     await pause(POLL_MS + 100)
     assert.doesNotMatch(root.textContent ?? '', /the build passed/)
-    assert.equal(presses.length, 2)
+    assert.equal(presses.length, 3)
   } finally {
     await window.happyDOM.abort()
     for (const [key, descriptor] of previous) {

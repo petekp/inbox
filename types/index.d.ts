@@ -363,7 +363,6 @@ export type DemoCopy = {
   /** Each sample row's latest note, by the row's id. */
   notes: Record<string, RowNote>
   turns: Turns
-  presence: Pick<Session['presence'], 'isTurnRunning'>
 }
 
 export type Exchange = {

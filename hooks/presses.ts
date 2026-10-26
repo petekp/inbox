@@ -1,12 +1,10 @@
-import type { Closed, Delivery, Finding, Help, Item, LastAction, Ledger, LocalResult, Turns } from '../types'
+import type { Closed, Delivery, Finding, Help, Item, LastAction, Ledger, LocalResult, RowNote, Turns } from '../types'
 import type { Run } from './gh'
 import { closeFinding, closeItem, pruneClosed, reopenFinding, reopenItem } from './ledger'
 import type { Press } from './ledger'
 import { namedPrs, parseRef } from './prs'
 import type { Pressed } from './session'
 import { clipLabel } from './text'
-
-export { clipLabel }
 
 export function baseName(path: string): string {
   return path.replace(/\/+$/, '').split('/').pop() ?? path
@@ -336,6 +334,18 @@ const STALE_TEXT = 'This changed before your press. Nothing was sent.'
 
 export function noteText(): string {
   return STALE_TEXT
+}
+
+/**
+ * Whether a press was saved and the message it sent, if any, is known to have reached the agent. A reply's draft is
+ * deleted only then, so Reply brings back words whose send failed, went stale or could not be confirmed.
+ */
+export function isPressConfirmed(outcome: {
+  error: string | null
+  note: RowNote['note'] | null
+  isUnconfirmed: boolean
+}): boolean {
+  return outcome.error === null && outcome.note === null && !outcome.isUnconfirmed
 }
 
 function helpEffect(item: Item, help: Help): Effect {

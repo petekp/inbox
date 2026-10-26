@@ -5,10 +5,10 @@ import type { ComponentChildren, JSX } from 'preact'
 import type { IconName } from './row-actions'
 
 import { closedState } from '../../hooks/ledger'
-import { ago } from '../../hooks/text'
+import { ago, clipLabel } from '../../hooks/text'
 import type { ClosedState } from '../../hooks/ledger'
 import { canUndoRefused, closedMark, settledMark, versionLabel } from '../../hooks/view'
-import { actionId, capitalized, clipLabel, noteText, pendingResult, stepEffects } from '../../hooks/presses'
+import { actionId, capitalized, isPressConfirmed, noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { Effect, RowPress } from '../../hooks/presses'
 import {
   allRows,
@@ -18,11 +18,13 @@ import {
   DOT,
   earlierLabel,
   drawnLists,
+  earlierTitle,
   emptyText,
   groupEmptyText,
   entryId,
   isListedTab,
   isRowTab,
+  isShownTab,
   LISTED_TABS,
   TABS,
   feedbackOf,
@@ -81,7 +83,7 @@ import {
   prMarkId,
   prRowWaits,
   prsEmptyText,
-  PR_REFRESH,
+  prPressEffect,
   prRefreshFailedText,
   PR_DISMISSED_LABEL,
   prThreadId,
@@ -122,6 +124,8 @@ type Row = {
   view?: RowView
   handle: string
   handleTone?: Tone
+  /** A PR row's mark says its work is done. */
+  isMarkDone?: boolean
   kind?: Finding['kind']
   lead?: string
   title: string
@@ -296,7 +300,7 @@ function restoreState(incoming?: Kept) {
   }
   if (kept?.version !== 1 && kept?.version !== 2) return
   isDemo = kept.isDemo
-  if (TABS.some(t => t.id === kept.tab)) tab = kept.tab
+  if (isShownTab(kept.tab)) tab = kept.tab
   for (const t of ARRIVAL_TABS) {
     const id = kept.selection[t]
     selection[t] = id ? { id, openedAt: 0 } : null
@@ -634,10 +638,10 @@ async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void
     if (isDisposed || generation !== viewGeneration || !isLatest()) return
     if (r.view) applyView(r.view, seq)
     if (r.error && !(view && isNotSent(view, rowId))) errors.set(rowId, r.error)
+    const isConfirmed = isPressConfirmed({ error: r.error, note: r.note, isUnconfirmed: r.delivery === 'unconfirmed' })
     // After the view, so `onSent` reads the rows as they are after the press.
-    if (!r.error && r.note !== 'stale' && r.delivery !== 'unconfirmed') onSent?.()
-    if (!r.error && r.note !== 'stale' && r.delivery !== 'unconfirmed' && r.view && wasWaiting && typing !== rowId)
-      openAfterClose(r.view, rowId)
+    if (isConfirmed) onSent?.()
+    if (isConfirmed && r.view && wasWaiting && typing !== rowId) openAfterClose(r.view, rowId)
     const { note } = r
     if (note && view && isListed(view, rowId)) {
       notes.set(rowId, { text: noteText(), at: Date.now() })
@@ -830,7 +834,10 @@ function findingRow(v: View, r: RowView, f: Finding): Row {
 
 const pressesOf = (v: View): PressState => ({ lastActions: v.lastActions, turns: v.turns, now: v.at })
 
-function prKey(rowId: string, a: PrAction, pending: Feedback | null): Key {
+function prKey(rowId: string, pr: PrView, a: PrAction): Key {
+  const effect = a.kind === 'local' ? prPressEffect(pr, a.press) : null
+  const pending = effect ? pendingLocal(effect) : null
+
   return {
     ...(a.hotkey ? { hotkey: a.hotkey } : {}),
     label: a.label,
@@ -838,16 +845,12 @@ function prKey(rowId: string, a: PrAction, pending: Feedback | null): Key {
     ...(a.icon ? { icon: a.icon } : {}),
     ...(a.press.action === 'pr-dismiss' ? { isDismiss: true } : {}),
     ...(a.isOut || pressing.get(rowId) === a.press.action ? { isOut: true } : {}),
-    run: () => void act(rowId, a.press, undefined, a.kind === 'local' ? pending : null),
+    run: () => void act(rowId, a.press, undefined, pending),
   }
 }
 
 function pendingLocal(effect: Effect): Feedback {
   return { is: 'local', result: pendingResult([effect], Date.now()) }
-}
-
-function opening(name: string): Feedback {
-  return pendingLocal({ kind: 'open', target: '', name })
 }
 
 function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
@@ -860,11 +863,13 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
   const where = threadWhere(t)
   const { rest } = commentParts(t.body)
   const actions = splitFollowUps(threadActions(pr, t, pressesOf(v)))
+  const openEffect = prPressEffect(pr, { action: 'thread-open', ref: pr.ref, thread: t.id })
 
   return {
     id,
     handle: text.mark.text,
     handleTone: text.mark.tone ?? undefined,
+    isMarkDone: text.mark.isDone,
     ...(text.fold ? { fold: text.fold } : {}),
     title: text.title,
     meta: text.meta,
@@ -873,7 +878,7 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
       <div>
         {rest ? <p class="quote">{inlineHtml(clipLabel(rest, PR_QUOTE_CHARS))}</p> : null}
         <p class="muted">
-          <button type="button" class="link" onClick={press('thread-open', opening('the comment'))}>
+          <button type="button" class="link" onClick={press('thread-open', openEffect && pendingLocal(openEffect))}>
             {where}
           </button>
           {`${DOT}@${t.author}`}
@@ -885,8 +890,8 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
         ) : null}
       </div>
     ),
-    keys: actions.keys.map(a => prKey(id, a, opening('the comment'))),
-    more: actions.more.map(a => prKey(id, a, null)),
+    keys: actions.keys.map(a => prKey(id, pr, a)),
+    more: actions.more.map(a => prKey(id, pr, a)),
     feedback: feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at),
   }
 }
@@ -895,18 +900,18 @@ function prCheckRow(v: View, pr: PrView, c: PrCheck): Row {
   const id = prCheckId(pr, c)
   const text = checkRowText(c)
   const ran = text.meta
-  const target = c.url ? 'the log' : `PR #${pr.number}`
 
   return {
     id,
     handle: text.mark.text,
     handleTone: text.mark.tone ?? undefined,
+    isMarkDone: text.mark.isDone,
     ...(text.lead ? { lead: `${text.lead} /` } : {}),
     title: text.title,
     meta: ran,
     age: c.finishedAt === undefined ? undefined : shortAgo(v.at - c.finishedAt),
     body: <div class="muted">{ran}</div>,
-    keys: checkActions(pr, c, pressesOf(v)).map(a => prKey(id, a, opening(target))),
+    keys: checkActions(pr, c, pressesOf(v)).map(a => prKey(id, pr, a)),
     more: [],
     feedback: feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at),
   }
@@ -1089,7 +1094,7 @@ function feedbackLabel(row: Row): string | null {
   const f = row.feedback
   if (!f) return null
 
-  return row.view ? rowFeedbackText(row.view, 'codex') : markedFeedbackText(f, row.handle, 'codex')
+  return row.view ? rowFeedbackText(row.view, 'codex') : markedFeedbackText(f, row.isMarkDone ?? false, 'codex')
 }
 
 function noteOf(id: string): string | null {
@@ -1348,7 +1353,7 @@ function OverviewTab({ page }: { page: OverviewPage }) {
       ) : null}
       {sections.map(part => (
         <section key={part.id}>
-          {part.title ? <GroupTitle title={part.title} count={0} /> : null}
+          <GroupTitle title={part.title} count={0} />
           <div class="list">
             {part.rows.map(r => (
               <MarkedRow key={r.id} row={r} />
@@ -1358,7 +1363,7 @@ function OverviewTab({ page }: { page: OverviewPage }) {
       ))}
       {earlier.length > 0 ? (
         <section>
-          <GroupTitle title="Earlier in this chat" count={0} />
+          <GroupTitle title={earlierTitle('chat')} count={0} />
           <div class="list">
             {earlier.map((text, n) => (
               <div class="earlier muted" key={n}>
@@ -1714,9 +1719,7 @@ function PrBlock({
   const { status, head, unlisted } = readiness(pr, isSent)
   const tone = PR_TONES[status]
   const id = prMarkId(pr.ref)
-  const keys = prBlockActions(pr, isSent, v.prs.branchRef, pressesOf(v)).map(a =>
-    prKey(id, a, a.press.action === 'pr-refresh' ? pendingLocal(PR_REFRESH) : opening(`PR #${pr.number}`)),
-  )
+  const keys = prBlockActions(pr, isSent, v.prs.branchRef, pressesOf(v)).map(a => prKey(id, pr, a))
   const last = prLastLine(v, id)
 
   return (
@@ -1845,12 +1848,16 @@ function TabBar({ v }: { v: View }) {
           <button
             type="button"
             class={`tab ${shown === t.id ? 'shown' : ''}`}
+            title={t.label}
             onClick={() => {
               tab = t.id
               draw()
             }}
           >
-            {t.label}
+            <span class="tab-symbol" aria-hidden="true">
+              {t.symbol}
+            </span>
+            <span class="tab-word">{t.label}</span>
             {isRowTab(t.id) && counts[t.id] > 0 ? <span class={`count tone-${t.id}`}>{counts[t.id]}</span> : null}
           </button>
         ))}

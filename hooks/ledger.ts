@@ -3,7 +3,7 @@ import type { Closed, ClosedFinding, Exchange, Finding, Help, Item, Ledger, Pres
 export type { Exchange, Press } from '../types'
 import type { Host } from './model-text'
 import { upgradeOverview } from './overview'
-import { codeBlocks } from './text'
+import { codeBlocks, dash } from './text'
 
 /** How many saved sessions each host keeps; the newest by save time. */
 export const KEPT_SESSIONS = 40
@@ -260,12 +260,6 @@ function squash(command: string): string {
   return command.trim().replace(/\s+/g, ' ')
 }
 
-function dash(value: string | undefined): string | null {
-  const v = (value ?? '').trim()
-
-  return v === '' || v === '-' ? null : v
-}
-
 const KEY_LINE = /^\s*[-*]?\s*(?:(NONE)(?::|\s|$)|(CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:)\s*(.*)$/
 
 function keyOf(line: string): { key: string; value: string } | null {
@@ -431,6 +425,19 @@ export function restates(a: string, b: string): boolean {
   return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b)
 }
 
+/**
+ * Whether `b` repeats `a` with no subject of its own: it restates `a`, and one of the two has no key word the other
+ * lacks. "Hotkeys vanish in the ANSI mode" repeats "Hotkeys vanish in ANSI mode", but "package.json has no engines
+ * field" does not repeat "package.json has no license field".
+ */
+function repeatsSubject(a: string, b: string): boolean {
+  const x = keyWords(a)
+  const y = keyWords(b)
+  const within = (inner: Set<string>, outer: Set<string>) => [...inner].every(w => outer.has(w))
+
+  return sameAsk(a, b) || (restates(a, b) && (within(x, y) || within(y, x)))
+}
+
 function sameAsk(a: string, b: string): boolean {
   const norm = (s: string) => words(s).join(' ')
 
@@ -480,12 +487,14 @@ export function isAskedForChoices(c: Closed): boolean {
 /**
  * An answered question repeats only in the same words or label: a follow-up shares its words but asks something new,
  * as "Which cache size should the product API use?" after "Which cache should the product API use?". A dismissed or
- * handled item repeats in other words too. A question answered with LIST_CHOICES repeats nothing.
+ * handled item repeats in other words too, as `repeatsSubject` says: "Which engines should package.json use?" does not
+ * repeat "Which license should package.json use?". A question answered with LIST_CHOICES repeats nothing.
  */
 function repeatsSettled(c: Closed, a: Update['added'][number]): boolean {
   if (isAskedForChoices(c)) return false
+  if (c.how === 'answered') return c.id === a.label || sameAsk(c.ask, a.ask)
 
-  return c.how === 'answered' ? c.id === a.label || sameAsk(c.ask, a.ask) : matchOpen([c], a) >= 0
+  return c.id === a.label || sameAsk(c.ask, a.ask) || (c.kind === a.kind && repeatsSubject(c.ask, a.ask))
 }
 
 function closedRecord(item: Item, closing: Closing, now: number): Closed {
@@ -803,7 +812,8 @@ function withUpdate(item: Item, updated: Update['updated']): Item {
 /**
  * Adds a finding Claude recorded. One whose title matches an open finding, or
  * rewords an open item's ask, is skipped, so one thing shows in one list. So is
- * one the person dismissed (`dismissed` is that record); a finding that expired
+ * one that repeats a finding the person dismissed (`dismissed` is that record) as
+ * `repeatsSubject` says; a finding that expired
  * or was closed as fixed can be recorded again. When the list is full, the
  * oldest finding closes as expired to make room.
  */
@@ -815,9 +825,7 @@ export function addFinding(
     ledger.findings.find(f => sameAsk(f.title, finding.title)) ?? ledger.items.find(i => restates(i.ask, finding.title))
   if (same) return { ledger, id: same.id, isAdded: false, expired: null, dismissed: null }
   const dismissed =
-    ledger.closedFindings.findLast(
-      f => f.how === 'dismissed' && (sameAsk(f.title, finding.title) || restates(f.title, finding.title)),
-    ) ?? null
+    ledger.closedFindings.findLast(f => f.how === 'dismissed' && repeatsSubject(f.title, finding.title)) ?? null
   if (dismissed) return { ledger, id: dismissed.id, isAdded: false, expired: null, dismissed }
   const id = `f${ledger.nextId}`
   const expired = ledger.findings.length >= MAX_FINDINGS ? ledger.findings[0]! : null

@@ -26,6 +26,7 @@ import {
 } from '../../hooks/view'
 import type { RowView } from '../../hooks/view'
 import { sessionView } from '../../hooks/session'
+import { cellWidth } from '../../hooks/text'
 import { demoSource, demoState } from '../src/demo'
 import { INITIAL_UI, afterHandOff, bandLines, drawPanel, followRows, handleKey, holdsOf, render } from '../src/panel'
 import type { PanelScreen, PanelUi, Style } from '../src/panel'
@@ -213,7 +214,7 @@ test('r opens a reply field in place of the buttons, and Enter sends the typed w
   const sent = handleKey(screen, ui, 'enter', NOW)
   expect(sent.press).toEqual({ action: 'type', id: row.id, text: 'hi a' })
   expect(sent.ui.typing).toBeNull()
-  expect(sent.ui.drafts[row.id]).toBeUndefined()
+  expect(sent.ui.drafts[row.id]?.text).toBe('hi a')
 })
 
 test('Enter in an empty reply field sends nothing', () => {
@@ -729,23 +730,36 @@ test('rows that arrive while the Overview page shows leave the panel on the page
   expect(followRows(findingsOnly(), opened.ui, opened.seen, false, NOW).ui).toEqual(onPage)
 })
 
-test('a narrowing tab line drops the brackets, then cuts other labels, never the shown one, and draws no zero count', () => {
+test('a narrowing tab line drops the brackets, then names every tab by its symbol, and draws no zero count', () => {
   const zeros = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
   for (const screen of [screenOf(), zeros])
     for (const shown of TABS) {
       const ui = { ...INITIAL_UI, tab: shown.id }
-      const full = tabLine(screen, ui, 200).length + 1
-      expect(tabLine(screen, ui, full)).toContain(`[${shown.hotkey}] ${shown.label}`)
-      const bare = tabLine(screen, ui, full - 1)
+      const wordsAt = cellWidth(tabLine(screen, ui, 200)) + 1
+      expect(tabLine(screen, ui, wordsAt)).toContain(`[${shown.hotkey}] ${shown.label}`)
+      const bare = tabLine(screen, ui, wordsAt - 1)
       expect(bare).not.toContain('[')
-      expect(bare).not.toContain('…')
+      expect(bare).toContain(`${shown.hotkey} ${shown.label}`)
+      const symbolsAt = cellWidth(bare) - 1
+      expect(tabLine(screen, ui, symbolsAt)).toContain(`[${shown.hotkey}] ${shown.symbol}`)
       if (screen === zeros) expect(tabLine(screen, ui, 200)).not.toMatch(/ 0 /)
-      for (const width of [45, 50, 60, 80])
+      for (const width of [34, symbolsAt]) {
+        const line = tabLine(screen, ui, width).replace(/[[\]]/g, '')
+        expect(line).not.toContain('…')
         for (const t of TABS) {
-          const line = tabLine(screen, ui, width).replace(/[[\]]/g, '')
-          const letters = t.id === shown.id ? t.label : [...t.label].slice(0, 2).join('')
-          expect(line).toContain(`${t.hotkey} ${letters}`)
+          expect(line).toContain(`${t.hotkey} ${t.symbol}`)
+          expect(line).not.toContain(t.label)
         }
+      }
+    }
+})
+
+test('the tab line counts each symbol as two cells, so it fits the panel and keeps "esc to close" whole', () => {
+  for (const shown of TABS)
+    for (let width = 34; width <= 120; width++) {
+      const bar = strip(drawn(screenOf(), { ...INITIAL_UI, tab: shown.id }, width)[0]!)
+      expect(cellWidth(bar)).toBeLessThanOrEqual(width)
+      if (bar.includes('esc')) expect(bar.trimEnd()).toEndWith('esc to close')
     }
 })
 
@@ -759,5 +773,5 @@ test('the page tab draws no count', () => {
 test('no line on the Overview page is wider than the panel', () => {
   const screen = screenOf()
   for (const width of [30, 50, 60, 80, 120])
-    for (const line of drawn(screen, onPage, width)) expect([...strip(line)].length).toBeLessThanOrEqual(width)
+    for (const line of drawn(screen, onPage, width)) expect(cellWidth(strip(line))).toBeLessThanOrEqual(width)
 })

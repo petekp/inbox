@@ -10,7 +10,7 @@ import type { Effect } from '../hooks/presses'
 export type ScriptedHost<S extends Session = Session> = {
   host: SessionHost<S> & Pick<UpdateHost<S>, 'inOrder'> & { names: Host }
   delivered: string[]
-  performed: Exclude<Effect, { kind: 'send' }>[]
+  performed: Extract<Effect, { kind: 'open' | 'copy' }>[]
 }
 
 export type MakeHost<S extends Session = Session> = (ask: Ask) => ScriptedHost<S>
@@ -23,7 +23,7 @@ export function fakeHostWith<S extends Session>(
     let ids = 0
     const order = orderedKeys()
     const delivered: string[] = []
-    const performed: Exclude<Effect, { kind: 'send' }>[] = []
+    const performed: Extract<Effect, { kind: 'open' | 'copy' }>[] = []
     const host: SessionHost<S> & Pick<UpdateHost<S>, 'inOrder'> & { names: Host } = {
       ...storage,
       names: CLAUDE_CODE,
@@ -38,6 +38,7 @@ export function fakeHostWith<S extends Session>(
         performed.push(effect)
         return null
       },
+      refreshPrs: async () => {},
       gh: {
         find: async () => null,
         forget: () => {},

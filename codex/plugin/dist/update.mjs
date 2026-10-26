@@ -36,6 +36,30 @@ import {
 import { homedir as homedir2 } from "node:os";
 import { basename, dirname, isAbsolute, join as join2, resolve } from "node:path";
 
+// ../hooks/text.ts
+var NL = "\n";
+var FENCE = /```[^\n]*\n([\s\S]*?)```/g;
+function codeBlocks(reply) {
+  return [...reply.matchAll(FENCE)].map((m) => (m[1] ?? "").replace(/\n$/, ""));
+}
+function numberBlocks(reply) {
+  let n = 0;
+  return reply.replace(FENCE, (block) => `[block ${n += 1}]${NL}${block}`);
+}
+function dash(value) {
+  const v = (value ?? "").trim();
+  return v === "" || v === "-" ? null : v;
+}
+function clip(text2, max) {
+  return text2.length <= max ? text2 : text2.slice(0, max) + " \u2026[cut]";
+}
+function clipMiddle(text2, max, head) {
+  if (text2.length <= max) return text2;
+  return `${text2.slice(0, head)}${NL}\u2026[cut]${NL}${text2.slice(text2.length - (max - head))}`;
+}
+var graphemes = new Intl.Segmenter(void 0, { granularity: "grapheme" });
+var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
+
 // ../hooks/overview.ts
 var HEADLINE_WORDS = 12;
 var ITEM_WORDS = 12;
@@ -43,7 +67,7 @@ var SENTENCE_WORDS = 30;
 var DETAIL_WORDS = 20;
 var LIST_ITEMS = 6;
 var EARLIER_KEPT = 6;
-var NL = "\n";
+var NL2 = "\n";
 var EMPTY_OVERVIEW = {
   isCoordinator: false,
   state: "on-track",
@@ -61,7 +85,8 @@ var EMPTY_OVERVIEW = {
   look: null,
   seen: { since: [], course: "" }
 };
-var LIST_KEYS = {
+var LIST_KEYS = ["queue", "works", "open", "next", "since", "workstreams"];
+var LIST_OF_KEY = {
   QUEUE: "queue",
   WORKS: "works",
   OPEN: "open",
@@ -82,37 +107,26 @@ var STATUSES = [
 var STATES = ["on-track", "stuck", "finished"];
 var BULLET_ITEM = /^\s*[-*]\s*[a-z-]+\s*\|/;
 var KEY_LINE = /^\s*[-*]?\s*(UNCHANGED|KIND|TOPIC|STATE|HEADLINE|STATUS|COURSE|FOLDED|QUEUE|WORKS|OPEN|NEXT|SINCE|STREAM)\s*(?::\s*(.*)|$)/;
-function clipWords(text, limit) {
-  const words2 = text.trim().split(/\s+/).filter(Boolean);
+function clipWords(text2, limit) {
+  const words2 = text2.trim().split(/\s+/).filter(Boolean);
   return words2.length <= limit ? words2.join(" ") : `${words2.slice(0, limit).join(" ")}\u2026`;
 }
-function plain(value) {
-  const text = value.trim();
-  return text === "-" ? "" : text;
-}
 function itemOf(value) {
-  const [status, text, ...detail] = value.split("|").map((part) => part.trim());
+  const [status, text2, ...detail] = value.split("|").map((part) => part.trim());
   const isStatus = (s) => STATUSES.includes(s);
-  if (!isStatus(status) || !text) return null;
-  const rest = plain(detail.join(" | "));
-  return { status, text: clipWords(text, ITEM_WORDS), detail: rest === "" ? null : clipWords(rest, DETAIL_WORDS) };
+  if (!isStatus(status) || !text2) return null;
+  const rest = dash(detail.join(" | "));
+  return { status, text: clipWords(text2, ITEM_WORDS), detail: rest === null ? null : clipWords(rest, DETAIL_WORDS) };
 }
-function parseOverview(text) {
+function parseOverview(text2) {
   const overview = { ...EMPTY_OVERVIEW };
-  const lists = {
-    queue: [],
-    works: [],
-    open: [],
-    next: [],
-    since: [],
-    workstreams: []
-  };
+  const lists = Object.fromEntries(LIST_KEYS.map((k) => [k, []]));
   let isUnchanged = false;
   let hasHeadline = false;
   let isNewTopic = false;
   let folded = "";
   let current = null;
-  for (const line of (text ?? "").split(NL)) {
+  for (const line of (text2 ?? "").split(NL2)) {
     const m = KEY_LINE.exec(line);
     if (!m) {
       const item = current && BULLET_ITEM.test(line) ? itemOf(line.replace(/^\s*[-*]\s*/, "")) : null;
@@ -128,13 +142,13 @@ function parseOverview(text) {
     else if (key === "STATE") overview.state = STATES.find((s) => s === value.toLowerCase()) ?? "on-track";
     else if (key === "HEADLINE") {
       hasHeadline = true;
-      overview.headline = clipWords(plain(value), HEADLINE_WORDS);
-    } else if (key === "STATUS") overview.status = clipWords(plain(value), SENTENCE_WORDS);
-    else if (key === "COURSE") overview.course = clipWords(plain(value), SENTENCE_WORDS);
-    else if (key === "FOLDED") folded = clipWords(plain(value), ITEM_WORDS * 2);
+      overview.headline = clipWords(dash(value) ?? "", HEADLINE_WORDS);
+    } else if (key === "STATUS") overview.status = clipWords(dash(value) ?? "", SENTENCE_WORDS);
+    else if (key === "COURSE") overview.course = clipWords(dash(value) ?? "", SENTENCE_WORDS);
+    else if (key === "FOLDED") folded = clipWords(dash(value) ?? "", ITEM_WORDS * 2);
     else {
       const item = itemOf(value);
-      const list = lists[LIST_KEYS[key]];
+      const list = lists[LIST_OF_KEY[key]];
       if (item && list.length < LIST_ITEMS) list.push(item);
       if (value === "") current = list;
     }
@@ -170,20 +184,14 @@ function itemsOf(value) {
 function upgradeOverview(saved) {
   const o = saved;
   if (typeof o !== "object" || o === null || typeof o.headline !== "string") return null;
-  const text = (value) => typeof value === "string" ? value : "";
   return {
     isCoordinator: o.isCoordinator === true,
     state: STATES.find((s) => s === o.state) ?? "on-track",
     headline: o.headline,
     status: text(o.status),
     course: text(o.course),
-    queue: itemsOf(o.queue),
-    works: itemsOf(o.works),
-    open: itemsOf(o.open),
-    next: itemsOf(o.next),
-    since: itemsOf(o.since),
-    workstreams: itemsOf(o.workstreams),
-    earlier: Array.isArray(o.earlier) ? o.earlier.filter((e) => typeof e === "string") : [],
+    ...Object.fromEntries(LIST_KEYS.map((k) => [k, itemsOf(o[k])])),
+    earlier: strings(o.earlier),
     lastLookAt: typeof o.lastLookAt === "number" ? o.lastLookAt : null,
     look: lookOf(o.look),
     seen: seenOf(o.seen)
@@ -193,17 +201,20 @@ function lookOf(saved) {
   const l = saved;
   if (typeof l !== "object" || l === null || typeof l.startedAt !== "number") return null;
   const away = AWAYS.find((a) => a === l.away);
-  return away === void 0 ? null : { startedAt: l.startedAt, away, since: strings(l.since), course: typeof l.course === "string" ? l.course : "" };
+  return away === void 0 ? null : { startedAt: l.startedAt, away, since: strings(l.since), course: text(l.course) };
 }
 function seenOf(saved) {
   const s = saved;
-  return { since: strings(s?.since), course: typeof s?.course === "string" ? s.course : "" };
+  return { since: strings(s?.since), course: text(s?.course) };
+}
+function text(value) {
+  return typeof value === "string" ? value : "";
 }
 function strings(value) {
   return Array.isArray(value) ? value.filter((v) => typeof v === "string") : [];
 }
-function nameKey(text) {
-  return (text.split(":")[0].toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).sort().join(" ");
+function nameKey(text2) {
+  return (text2.split(":")[0].toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).sort().join(" ");
 }
 function withoutStreams(o) {
   if (!o.isCoordinator) return o.queue;
@@ -233,32 +244,14 @@ function overviewText(o) {
     ...o.course ? [`COURSE: ${o.course}`] : [],
     ...lists.flatMap(([key, items]) => items.map((i) => itemLine(key, i))),
     ...o.earlier.map((e) => `EARLIER: ${e}`)
-  ].join(NL);
+  ].join(NL2);
 }
 function sinceText(o) {
-  return (o?.since ?? []).map((i) => itemLine("SINCE", i)).join(NL);
+  return (o?.since ?? []).map((i) => itemLine("SINCE", i)).join(NL2);
 }
 var HERE_MS = 5 * 6e4;
 var SHORT_MS = 60 * 6e4;
 var AWAYS = ["here", "short", "long"];
-
-// ../hooks/text.ts
-var NL2 = "\n";
-var FENCE = /```[^\n]*\n([\s\S]*?)```/g;
-function codeBlocks(reply) {
-  return [...reply.matchAll(FENCE)].map((m) => (m[1] ?? "").replace(/\n$/, ""));
-}
-function numberBlocks(reply) {
-  let n = 0;
-  return reply.replace(FENCE, (block) => `[block ${n += 1}]${NL2}${block}`);
-}
-function clip(text, max) {
-  return text.length <= max ? text : text.slice(0, max) + " \u2026[cut]";
-}
-function clipMiddle(text, max, head) {
-  if (text.length <= max) return text;
-  return `${text.slice(0, head)}${NL2}\u2026[cut]${NL2}${text.slice(text.length - (max - head))}`;
-}
 
 // ../hooks/ledger.ts
 var EMPTY = {
@@ -322,8 +315,8 @@ function upgradeItem(item) {
     from: item.from ?? "update"
   };
 }
-function words(text) {
-  return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+function words(text2) {
+  return text2.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 function recommendedOption(options, rec) {
   if (!rec) return null;
@@ -333,7 +326,7 @@ function recommendedOption(options, rec) {
     const w = words(option);
     if (w.length > words(best ?? "").length && w.every((x) => named.has(x))) best = option;
   }
-  const label = (text) => text.match(/^\s*\(?([a-z]|\d{1,2})\s*[:.)]/i)?.[1]?.toLowerCase();
+  const label = (text2) => text2.match(/^\s*\(?([a-z]|\d{1,2})\s*[:.)]/i)?.[1]?.toLowerCase();
   const byLabel = /^\s*(?:option\s+)?([a-z]|\d{1,2})\s*[.!]?\s*$/i.exec(rec)?.[1]?.toLowerCase();
   return best ?? (byLabel ? options.find((o) => label(o) === byLabel) ?? null : null);
 }
@@ -347,14 +340,14 @@ function howFromOutcome(outcome) {
 var NEEDS_PERSON = /(?:^|[\s;&|])(?:login|logout|signin|sign-in|sudo|passwd|ssh-add|ssh-keygen)(?=[\s:]|$)|\binit --interactive\b/i;
 var PERSON_ONLY_REASON = /credential|password|passphrase|secret|\btoken|\b2fa\b|\bmfa\b|\bdevice\b|phone|android|tablet|account|sign(?:ed)?[- ]?in|log(?:ged)?[- ]?in|only you|you hold|your (?:mac|machine|laptop|computer|keychain)|\bsudo\b/i;
 function readHelp(kind, value, name, blocks, source) {
-  const isQuoted = (text) => source === null || source.includes(text);
+  const isQuoted = (text2) => source === null || source.includes(text2);
   const block = value.match(/^block\s+(\d+)$/i);
   const quoted = block ? blocks[Number(block[1]) - 1] ?? "" : value.replace(/^`|`$/g, "");
-  const isFromReply = (text) => block !== null || isQuoted(text);
+  const isFromReply = (text2) => block !== null || isQuoted(text2);
   if (kind === "open") {
     const path = value.replace(/^`|`$/g, "");
     const isPath = /[/.~]/.test(path) && !/^[a-z]+:/i.test(path) && path.length <= 300;
-    const standsAlone = (text) => new RegExp(`(?<![\\w.~-])${escaped(path)}(?![\\w/-])`).test(text);
+    const standsAlone = (text2) => new RegExp(`(?<![\\w.~-])${escaped(path)}(?![\\w/-])`).test(text2);
     return isPath && (source === null || standsAlone(source)) ? { kind, path } : null;
   }
   if (kind === "copy") {
@@ -382,11 +375,11 @@ function helpFields(tail, source) {
     return { help: whole, name: null };
   return { help: tail.slice(0, -1).join("|").trim(), name: dash(tail.at(-1)) };
 }
-function escaped(text) {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function escaped(text2) {
+  return text2.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
-function commandText(text) {
-  return text.trim().replace(/^!\s*/, "");
+function commandText(text2) {
+  return text2.trim().replace(/^!\s*/, "");
 }
 function commandOf(help) {
   if (isCommand(help)) return help.command;
@@ -407,10 +400,6 @@ function withHelp(helps, help) {
   const isCovered = kept.some((h) => helpTarget(h) === helpTarget(help));
   return isCovered || kept.length >= MAX_HELPS ? kept : [...kept, help];
 }
-function dash(value) {
-  const v = (value ?? "").trim();
-  return v === "" || v === "-" ? null : v;
-}
 var KEY_LINE2 = /^\s*[-*]?\s*(?:(NONE)(?::|\s|$)|(CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:)\s*(.*)$/;
 function keyOf(line) {
   const m = KEY_LINE2.exec(line);
@@ -429,7 +418,7 @@ function lastAnswerStart(lines) {
   });
   return start;
 }
-function parseReply(text, source = null) {
+function parseReply(text2, source = null) {
   const blocks = source === null ? [] : codeBlocks(source);
   const closed = [];
   const added = [];
@@ -439,7 +428,7 @@ function parseReply(text, source = null) {
   const asks = [];
   const todos = [];
   let seen = 0;
-  const lines = text.split(NL3);
+  const lines = text2.split(NL3);
   const newLines = [];
   for (const raw of lines.slice(lastAnswerStart(lines))) {
     const parsed = keyOf(raw);
@@ -533,8 +522,8 @@ var FILLER = /* @__PURE__ */ new Set([
   "add",
   "all"
 ]);
-function keyWords(text) {
-  return new Set(words(text).filter((w) => new RegExp("\\p{N}", "u").test(w) || w.length > 2 && !FILLER.has(w)));
+function keyWords(text2) {
+  return new Set(words(text2).filter((w) => new RegExp("\\p{N}", "u").test(w) || w.length > 2 && !FILLER.has(w)));
 }
 function restates(a, b) {
   const x = keyWords(a);
@@ -544,6 +533,12 @@ function restates(a, b) {
   const numbers = (words2) => [...words2].filter((w) => new RegExp("\\p{N}", "u").test(w)).sort().join(" ");
   if (numbers(x) !== "" && numbers(y) !== "" && numbers(x) !== numbers(y)) return false;
   return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b);
+}
+function repeatsSubject(a, b) {
+  const x = keyWords(a);
+  const y = keyWords(b);
+  const within = (inner, outer) => [...inner].every((w) => outer.has(w));
+  return sameAsk(a, b) || restates(a, b) && (within(x, y) || within(y, x));
 }
 function sameAsk(a, b) {
   const norm = (s) => words(s).join(" ");
@@ -565,7 +560,8 @@ function isAskedForChoices(c) {
 }
 function repeatsSettled(c, a) {
   if (isAskedForChoices(c)) return false;
-  return c.how === "answered" ? c.id === a.label || sameAsk(c.ask, a.ask) : matchOpen([c], a) >= 0;
+  if (c.how === "answered") return c.id === a.label || sameAsk(c.ask, a.ask);
+  return c.id === a.label || sameAsk(c.ask, a.ask) || c.kind === a.kind && repeatsSubject(c.ask, a.ask);
 }
 function closedRecord(item, closing, now) {
   const { id, kind, ask, label } = item;
@@ -603,8 +599,8 @@ function reopenAskedFindings(ledger, closes) {
     };
   }, ledger);
 }
-function prNumbers(text) {
-  return new Set([...text.matchAll(/(?:#|\bPR\s*#?|\/pull\/)(\d+)/gi)].map((m) => m[1]));
+function prNumbers(text2) {
+  return new Set([...text2.matchAll(/(?:#|\bPR\s*#?|\/pull\/)(\d+)/gi)].map((m) => m[1]));
 }
 function asksAbout(item, finding, isClaimed = false) {
   if (item.label === finding.id) return true;
@@ -869,17 +865,17 @@ function addActivity(activity, line) {
   return !line || activity.length >= MAX_ACTIVITY || activity.includes(line) ? activity : [...activity, line];
 }
 function toolActivity(tool, input) {
-  const text = (key) => typeof input[key] === "string" ? input[key] : "";
+  const text2 = (key) => typeof input[key] === "string" ? input[key] : "";
   switch (tool) {
     case "Bash":
-      return `${input.run_in_background ? "started in background" : "ran"}: ${text("command").slice(0, 140)}`;
+      return `${input.run_in_background ? "started in background" : "ran"}: ${text2("command").slice(0, 140)}`;
     case "Edit":
     case "Write":
-      return `edited ${text("file_path")}`;
+      return `edited ${text2("file_path")}`;
     case "Skill":
-      return `used skill ${text("skill")}`;
+      return `used skill ${text2("skill")}`;
     case "Agent":
-      return `started agent: ${text("description")}`;
+      return `started agent: ${text2("description")}`;
   }
   return tool.startsWith("mcp__") ? `called ${tool.slice(5)}` : null;
 }
@@ -893,8 +889,8 @@ function dialogQuestions(raw) {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((q) => {
     const fields = q ?? {};
-    const text = [fields.question, fields.title].find((v) => typeof v === "string" && v.trim() !== "");
-    if (!text) return [];
+    const text2 = [fields.question, fields.title].find((v) => typeof v === "string" && v.trim() !== "");
+    if (!text2) return [];
     const options = (Array.isArray(fields.options) ? fields.options : []).flatMap((o) => {
       const option = typeof o === "string" ? { label: o } : o ?? {};
       const label = typeof option.label === "string" ? option.label.trim() : "";
@@ -903,7 +899,7 @@ function dialogQuestions(raw) {
     });
     return [
       {
-        question: text.trim(),
+        question: text2.trim(),
         options: options.map((o) => o.label),
         descriptions: Object.fromEntries(options.filter((o) => o.description !== "").map((o) => [o.label, o.description]))
       }
@@ -912,9 +908,9 @@ function dialogQuestions(raw) {
 }
 function dialogQuestionText(q) {
   const shown = q.options.slice(0, DIALOG_OPTIONS_SHOWN).map((label) => {
-    const plain2 = label.replace(RECOMMENDED_SUFFIX, "");
-    const text = clip(plain2, DIALOG_OPTION_MAX);
-    return plain2 === label ? text : `${text} (recommended)`;
+    const plain = label.replace(RECOMMENDED_SUFFIX, "");
+    const text2 = clip(plain, DIALOG_OPTION_MAX);
+    return plain === label ? text2 : `${text2} (recommended)`;
   });
   const more = q.options.length > shown.length ? ` / and ${q.options.length - shown.length} more` : "";
   const options = shown.length > 0 ? ` (options: ${shown.join(" / ")}${more})` : "";
@@ -1058,10 +1054,10 @@ function copyOf(q, items, questions) {
   return restated.length === 1 ? asked : null;
 }
 function descriptionsFor(options, descriptions) {
-  const byKey = new Map(Object.entries(descriptions).map(([label, text]) => [optionKey(label), text]));
+  const byKey = new Map(Object.entries(descriptions).map(([label, text2]) => [optionKey(label), text2]));
   const matched = options.flatMap((o) => {
-    const text = byKey.get(optionKey(o));
-    return text === void 0 ? [] : [[o, text]];
+    const text2 = byKey.get(optionKey(o));
+    return text2 === void 0 ? [] : [[o, text2]];
   });
   return matched.length > 0 ? Object.fromEntries(matched) : null;
 }
@@ -1154,16 +1150,22 @@ var CHOICE_KEYS = [..."abcfghilm"];
 var SETTLED_MS = 5120;
 var COMPARE_LIMIT_MS = 30 * 6e4;
 var TABS = [
-  { id: "overview", label: "Overview", hotkey: "1" },
-  { id: "needsYou", label: "Needs you", hotkey: "2" },
-  { id: "findings", label: "Findings", hotkey: "3" },
-  { id: "prs", label: "PRs", hotkey: "4" }
+  { id: "overview", label: "Overview", symbol: "\u{1F9ED}", hotkey: "1" },
+  { id: "needsYou", label: "Needs you", symbol: "\u{1F64B}", hotkey: "2" },
+  { id: "findings", label: "Findings", symbol: "\u{1F50D}", hotkey: "3" },
+  { id: "prs", label: "PRs", symbol: "\u{1F500}", hotkey: "4" }
 ];
 function isListedTab(tab) {
   return tab === "needsYou" || tab === "findings";
 }
 function isRowTab(tab) {
   return tab !== "overview";
+}
+function isShownTab(raw) {
+  return TABS.some((t) => t.id === raw);
+}
+function screenTabOf(tab) {
+  return { label: TABS.find((t) => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) };
 }
 var ROW_TABS = TABS.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TABS.filter((t) => isListedTab(t.id));
@@ -1259,14 +1261,9 @@ function upgradeSession(saved) {
 function parsedReply(ex, reply) {
   return reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join("\n"));
 }
-function isReplyApplied(s, reply) {
-  const next = s.pending[0];
-  return next !== void 0 && parsedReply(next.ex, reply) !== null;
-}
-function applied(s, reply, now, promptAt) {
+function applied(s, parsed, now, promptAt) {
   const next = s.pending[0];
   if (!next) return s;
-  const parsed = parsedReply(next.ex, reply);
   const { ex } = next;
   if (!parsed && !next.failed)
     return {
@@ -1361,7 +1358,7 @@ function upgraded(saved, sessionId) {
       turn,
       pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex }))
     }),
-    shownTab: TABS.some((t) => t.id === saved.shownTab) ? saved.shownTab ?? base.shownTab : base.shownTab,
+    shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
     // A file saved before the hooks kept this record came from hooks that ran, so it reads as heard.
     // Its turns were not recorded, so `promptAt` is set too: a tool call then falls back to the time rule.
     heard: saved.heard ? { ...NOTHING_HEARD, ...saved.heard } : {
@@ -1584,10 +1581,10 @@ function orderedKeys() {
 }
 async function askOverConversation(ask, names, s, screen, conversation) {
   if (!conversation) return { kind: "unreadable" };
-  const text = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names)).catch(() => null);
-  return text === null ? { kind: "failed" } : {
+  const text2 = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names)).catch(() => null);
+  return text2 === null ? { kind: "failed" } : {
     kind: "reply",
-    text,
+    text: text2,
     source: conversation,
     overview: (last, tasks) => ask(overviewCatchUpPrompt(last, conversation, tasks), OVERVIEW_SYSTEM)
   };
@@ -1621,22 +1618,23 @@ async function runUpdates(host) {
                 canCatchUp = false;
                 continue;
               }
-              const parsed = reply2.kind === "reply" ? parseReply(reply2.text, reply2.source) : null;
+              const parsed2 = reply2.kind === "reply" ? parseReply(reply2.text, reply2.source) : null;
               const at = await host.now();
-              const after2 = await host.update((x) => appliedCatchUp(x, s, parsed, at));
-              if (!parsed) return "stop";
+              const after2 = await host.update((x) => appliedCatchUp(x, s, parsed2, at));
+              if (!parsed2) return "stop";
               if (reply2.kind === "reply") followUp(writeOverview(after2, reply2.overview, s.hostTasks));
               continue;
             }
             const next = s.pending[0];
             const promptAt = await host.now();
             const reply = await host.ask(buildPrompt(s.ledger, next.ex), systemText(host.names)).catch(() => null);
+            const parsed = parsedReply(next.ex, reply);
             let isApplied = false;
             const after = await host.update(async (x) => {
               isApplied = false;
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x;
-              isApplied = isReplyApplied(x, reply);
-              return applied(x, reply, await host.now(), promptAt);
+              isApplied = parsed !== null;
+              return applied(x, parsed, await host.now(), promptAt);
             });
             if (isApplied)
               followUp(
@@ -1679,10 +1677,6 @@ var TAB_OPEN_MS = 15e3;
 function isTabOpen(s, now) {
   return now - s.tabSeenAt < TAB_OPEN_MS;
 }
-function screenTabOf(s) {
-  const shown = TABS.find((t) => t.id === s.shownTab);
-  return { label: shown?.label ?? s.shownTab, isPage: s.shownTab === "overview" };
-}
 function activityOf(tool, input) {
   return toolActivity(tool, input);
 }
@@ -1711,13 +1705,13 @@ var MESSAGE_MAX = 6e3;
 function flattenConversation(turns) {
   const lines = [];
   for (const turn of turns) {
-    const text = turn.text.trim();
-    const shown = turn.isVerbatim ? text : clip(text, MESSAGE_MAX);
+    const text2 = turn.text.trim();
+    const shown = turn.isVerbatim ? text2 : clip(text2, MESSAGE_MAX);
     if (turn.role === "person") {
-      if (text && !text.startsWith("inbox:")) lines.push(`Person: ${shown}`);
+      if (text2 && !text2.startsWith("inbox:")) lines.push(`Person: ${shown}`);
       continue;
     }
-    if (text) lines.push(`Agent: ${shown}`);
+    if (text2) lines.push(`Agent: ${shown}`);
     for (const line of turn.activity) lines.push(`Agent ${line}`);
   }
   const kept = [];
@@ -1888,8 +1882,8 @@ function turnsOf(rows, cwd) {
     turns.push(turn);
     return turn;
   };
-  const person = (text) => {
-    if (text && !text.startsWith("<")) turns.push({ role: "person", text, activity: [] });
+  const person = (text2) => {
+    if (text2 && !text2.startsWith("<")) turns.push({ role: "person", text: text2, activity: [] });
   };
   const act = (lines) => {
     if (lines.length === 0) return;
@@ -2041,9 +2035,9 @@ function codexAsk(exec, cli, dir, personHome) {
         continue;
       }
       if (r.code !== 0) return null;
-      const text = await readFile2(out, "utf8").catch(() => null);
+      const text2 = await readFile2(out, "utf8").catch(() => null);
       await rm(out, { force: true });
-      return text;
+      return text2;
     }
     return null;
   };
@@ -2060,7 +2054,7 @@ var runUpdates2 = (dir, sessionId, ask, now) => runUpdates({
     ask,
     CODEX,
     s,
-    screenText(CODEX, isTabOpen(s, now()), screenTabOf(s)),
+    screenText(CODEX, isTabOpen(s, now()), screenTabOf(s.shownTab)),
     (await readRollout(s.transcriptPath, s.root))?.conversation ?? null
   )
 });

@@ -6,6 +6,7 @@ import type { FoldProps } from '../hooks/fold-client'
 import type { LinksProps } from '../hooks/links-client'
 import type { RowProps } from '../hooks/row-client'
 import { TAB_HEIGHT, tabLines, type TabsProps } from '../hooks/tabs-client'
+import { cellWidth } from '../hooks/text'
 import type { Item } from '../types'
 import { demoView } from '../hooks/demo'
 import { OVERVIEW_SYSTEM } from '../hooks/model-text'
@@ -23,6 +24,7 @@ import {
   RUNNING_FRAME_MS,
   RUNNING_FRAMES,
   runningMark,
+  TABS,
 } from '../hooks/view'
 
 const LEDGER_REPLY = `NEW: decide | 1 | Use Node or Python? | Node / Python | Node
@@ -1981,6 +1983,41 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   await clock.settle()
   expect(sent.at(-1)).toBe('Re "Use Node or Python?": Node')
   expect(await pane.find({ key: 'row-i1' })).toBeUndefined()
+})
+
+test('a reply another plugin rewrote to the text of a pending press reads Not confirmed and keeps its draft', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  on('ui.focus', () => ({}))
+  let drafts: unknown = null
+  on('state.set', { plugin: 'inbox', key: 'drafts' } as const, ($, e, next) => {
+    drafts = e.value
+    return next(e)
+  })
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  submitAnswer = 'hold'
+  inFlight.push(pane.press({ key: 'explain-i1-key' }))
+  await clock.settle()
+  await pane.press({ key: 'select-i2' })
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'typekey-i2' })
+  submitAnswer = { rewrite: held[0]!.text }
+  await pane.input({ key: await replyKey(pane, 'i2'), text: 'greet is fine' })
+  await clock.settle()
+  expect(await pane.find({ text: /Not\s+confirmed/ })).toBeDefined()
+  expect(drafts).toEqual({ i2: { text: 'greet is fine', since: expect.any(Number) } })
+  await arrive($)
 })
 
 test('a second Explain press while the first is out sends nothing, and the first reads Explaining… once it enters', async ($, on) => {
@@ -4421,7 +4458,7 @@ test('the Overview page says what it is for before the session has any work', as
   expect(await desktop.find({ text: /It fills in once the work starts/ })).toBeDefined()
 })
 
-test('at 34 desktop columns the tabs drop their counts and frame only the shown tab, and the Overview page draws there', async ($, on) => {
+test('at 34 desktop columns the tabs show their symbols with their counts, at 69 their words, and the Overview page draws there', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   overviewReply =
@@ -4442,14 +4479,11 @@ test('at 34 desktop columns the tabs drop their counts and frame only the shown 
   await clock.settle()
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 34 } })
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
-  expect((await tabBar()).tabs.map(t => [t.id, t.count])).toEqual([
-    ['overview', 0],
-    ['needsYou', 0],
-    ['findings', 0],
-    ['prs', 0],
-  ])
-  expect((await tabBar()).isEachFramed).toBe(false)
+  expect((await tabBar()).tabs.map(t => [t.id, t.label, t.count])).toEqual(
+    TABS.map(t => [t.id, t.symbol, t.id === 'needsYou' ? 2 : t.id === 'findings' ? 1 : 0]),
+  )
   await pane.redraw({ ...PANE.props, bodyColumns: 69 })
+  expect((await tabBar()).tabs.map(t => t.label)).toEqual(TABS.map(t => t.label))
   expect((await tabBar()).isEachFramed).toBe(true)
 
   const { tabs, gap } = await tabBar()
@@ -4462,6 +4496,34 @@ test('at 34 desktop columns the tabs drop their counts and frame only the shown 
   expect((await pane.find({ key: 'overview-headline' }))?.text).toBe('Adding a greeting CLI')
   expect(await pane.find({ text: /^Plan written$/ })).toBeDefined()
   expect(await pane.find({ key: 'select-f3' })).toBeUndefined()
+})
+
+test('the terminal tabs show their words down to the narrowest pane they fit, docked and inline, and their symbols below it', async ($, on) => {
+  expect(['✅', '👩‍💻', ...TABS.map(t => t.symbol)].map(cellWidth)).toEqual([2, 2, 2, 2, 2, 2])
+  mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  for (const placement of ['dock', 'inline'] as const) {
+    const pane = await $.ui.mount({ ...PANE, props: { ...PANE.props, placement } })
+    const names = async (bodyColumns: number) => {
+      await pane.redraw({ ...PANE.props, placement, bodyColumns })
+      const buttons = await pane.findAll({ type: 'Button' })
+
+      return TABS.flatMap(t => buttons.filter(b => b.key === `tab-${t.id}`).map(b => [t, b.props.label] as const))
+    }
+    const namings = []
+    for (let bodyColumns = 79; bodyColumns >= 20; bodyColumns--) {
+      const drawn = await names(bodyColumns)
+      expect(drawn.length).toBeGreaterThan(0)
+      const isWords = drawn.every(([t, label]) => label === t.label)
+      if (!isWords) for (const [t, label] of drawn) expect(label).toBe(t.symbol)
+      namings.push(isWords)
+    }
+    expect(namings[0]).toBe(true)
+    expect(namings.at(-1)).toBe(false)
+    expect(namings.indexOf(false)).toBe(namings.lastIndexOf(true) + 1)
+    await pane.unmount()
+  }
 })
 
 test('a PR that arrives while the Needs you tab is empty moves the pane to the PRs tab', async ($, on) => {
@@ -4525,13 +4587,17 @@ test('a PR that arrives while the Needs you tab is empty moves the pane to the P
   expect(await pane.find({ text: /Add a greeting CLI/ })).toBeDefined()
 })
 
-test('the desktop tabs that do not fit one line wrap, each line within the pane, and a tab on the second line takes its click', async ($, on) => {
+test('the desktop tabs fit one line by their symbols at the narrowest dock, and narrower still they wrap, each line within the pane, and a tab on the second line takes its click', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   surfaces = ['desktop']
   await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 26 } })
   const tabBar = async () => await pane.find({ key: 'tabs' })
+  const narrowest = (await tabBar())?.props.props as TabsProps
+  expect(narrowest.tabs.map(t => t.label)).toEqual(TABS.map(t => t.symbol))
+  expect(tabLines(narrowest.tabs, narrowest.gap, narrowest.columns)).toHaveLength(1)
+  await pane.redraw({ ...PANE.props, bodyColumns: 16 })
   const { tabs, gap, columns } = (await tabBar())?.props.props as TabsProps
   const lines = tabLines(tabs, gap, columns)
   expect(lines.length).toBeGreaterThan(1)

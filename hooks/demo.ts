@@ -4,11 +4,8 @@ import { emptySession } from './session'
 const MIN = 60_000
 const REPO = 'https://github.com/acme/visor'
 
-/** A saved sample as an earlier build seeded it, without the fields added since. */
-export type SavedDemoCopy = Omit<DemoCopy, 'presence'> & Partial<Pick<DemoCopy, 'presence'>>
-
 /** The demo's atom outlives a hot reload, so a copy an earlier build seeded may lack a field. */
-export function isDemoCopy(saved: unknown): saved is SavedDemoCopy {
+export function isDemoCopy(saved: unknown): saved is DemoCopy {
   if (!saved || typeof saved !== 'object') return false
   const d = saved as Record<string, unknown>
 
@@ -18,14 +15,6 @@ export function isDemoCopy(saved: unknown): saved is SavedDemoCopy {
     hasOverview &&
     ['ledger', 'prViews', 'lastActions', 'notes', 'turns'].every(k => d[k] !== null && typeof d[k] === 'object')
   )
-}
-
-/** A saved sample in the current shape: a field added since it was saved starts empty. */
-export function upgradeDemoCopy(saved: SavedDemoCopy): DemoCopy {
-  return {
-    ...saved,
-    presence: { isTurnRunning: false, ...saved.presence },
-  }
 }
 
 /** The sample as a session a host can draw and press on. */
@@ -38,7 +27,7 @@ export function demoSession(now: number, agent: string): Session {
     ledger: d.ledger,
     lastActions: d.lastActions,
     prViews: d.prViews,
-    presence: { ...s.presence, ...d.turns, ...d.presence },
+    presence: { ...s.presence, ...d.turns },
   }
 }
 
@@ -456,6 +445,5 @@ export function demoView(now: number, agent: string): DemoCopy {
     },
     notes: {},
     turns: { turnsStarted: 14, turnsApplied: 14 },
-    presence: { isTurnRunning: false },
   }
 }

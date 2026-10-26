@@ -18,8 +18,9 @@ import type {
 import { isLapsed, reopenFinding, reopenItem } from './ledger'
 import { awayOf, orderParts, workOf } from './overview'
 import type { PartId } from './overview'
-import { ago } from './text'
+import { ago, clipLabel } from './text'
 import { questionNumbers } from './model-text'
+import type { ScreenTab } from './model-text'
 import type { ListedTab } from './arrivals'
 import type { ClosedState } from './ledger'
 import {
@@ -27,7 +28,6 @@ import {
   baseName,
   stepIconKind,
   capitalized,
-  clipLabel,
   isAwaitingReply,
   isFixSent,
   ISSUE_LABEL,
@@ -264,9 +264,9 @@ export function waitingCount(rows: readonly (RowView | undefined)[]): number {
   return rows.filter(r => r !== undefined && isWaitingRow(r)).length
 }
 
-/** A press result's text on a row with no row view, as a PR row. A row already marked ✓ shows a done result's bare label. */
-export function markedFeedbackText(f: Feedback, mark: string, look: Look): string {
-  return f.is === 'done' && mark === '✓' ? f.label : feedbackText(f, look)
+/** A press result's text on a row with no row view, as a PR row. A row whose mark says done shows a done result's bare label. */
+export function markedFeedbackText(f: Feedback, isMarkDone: boolean, look: Look): string {
+  return f.is === 'done' && isMarkDone ? f.label : feedbackText(f, look)
 }
 
 export function rowFeedbackText(row: RowView, look: Look): string | null {
@@ -613,12 +613,40 @@ function stepKind(step: HelpStep): PressKind {
 /** Any tab a look can show: a row tab or a page tab. */
 export type ShownTab = Tab | PageTab
 
-export const TABS: readonly { id: ShownTab; label: string; hotkey: string }[] = [
-  { id: 'overview', label: 'Overview', hotkey: '1' },
-  { id: 'needsYou', label: 'Needs you', hotkey: '2' },
-  { id: 'findings', label: 'Findings', hotkey: '3' },
-  { id: 'prs', label: 'PRs', hotkey: '4' },
+/** The band and the inbox model always read a tab's words. A look draws its symbol in their place where the words do not fit. */
+export const TABS: readonly { id: ShownTab; label: string; symbol: string; hotkey: string }[] = [
+  { id: 'overview', label: 'Overview', symbol: '\u{1F9ED}', hotkey: '1' },
+  { id: 'needsYou', label: 'Needs you', symbol: '\u{1F64B}', hotkey: '2' },
+  { id: 'findings', label: 'Findings', symbol: '\u{1F50D}', hotkey: '3' },
+  { id: 'prs', label: 'PRs', symbol: '\u{1F500}', hotkey: '4' },
 ]
+
+/** How a look names its tabs: by their words, or by their symbols. */
+export type TabNaming = 'words' | 'symbols'
+
+/** The namings a look tries, in order: the words wherever they fit, and the symbols only where they do not. */
+export const TAB_NAMINGS: readonly TabNaming[] = ['words', 'symbols']
+
+export function tabName(tab: { label: string; symbol: string }, naming: TabNaming): string {
+  return naming === 'words' ? tab.label : tab.symbol
+}
+
+/**
+ * The naming and layout a look draws its tabs in: the words at the first of the look's layouts, roomiest first, where
+ * they fit on one line, else the symbols at the first layout where those fit. When neither fits, the symbols at the
+ * tightest layout, which the look wraps or cuts.
+ */
+export function fitTabs<L>(
+  layouts: readonly L[],
+  fits: (naming: TabNaming, layout: L) => boolean,
+): {
+  naming: TabNaming
+  layout: L
+} {
+  for (const naming of TAB_NAMINGS) for (const layout of layouts) if (fits(naming, layout)) return { naming, layout }
+
+  return { naming: 'symbols', layout: layouts.at(-1)! }
+}
 /** Whether a shown tab lists rows you answer or close: Needs you and Findings. */
 export function isListedTab(tab: ShownTab): tab is ListedTab {
   return tab === 'needsYou' || tab === 'findings'
@@ -627,6 +655,16 @@ export function isListedTab(tab: ShownTab): tab is ListedTab {
 /** Whether a shown tab is a row tab, which has rows, a count and a cursor. */
 export function isRowTab(tab: ShownTab): tab is Tab {
   return tab !== 'overview'
+}
+
+/** Whether a saved or sent value names a tab a look can show. */
+export function isShownTab(raw: unknown): raw is ShownTab {
+  return TABS.some(t => t.id === raw)
+}
+
+/** The tab a look shows, as the inbox model is told. */
+export function screenTabOf(tab: ShownTab): ScreenTab {
+  return { label: TABS.find(t => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) }
 }
 
 /** The tabs that list rows: Needs you, Findings and PRs. */
@@ -656,15 +694,13 @@ export type OverviewLead = {
   hasGapAbove: boolean
 }
 
-export type OverviewSection = { id: string; title: string | null; rows: OverviewRow[] }
+export type OverviewSection = { id: string; title: string; rows: OverviewRow[] }
 
 /** What the Overview page shows. Every look draws it as it is. */
 export type OverviewPage = {
   isEmpty: boolean
   /** The text lines above the lists, in the order to draw them. */
   lead: OverviewLead[]
-  /** The parts in the order to draw them. A look draws these and no others. */
-  parts: PartId[]
   sections: OverviewSection[]
   /** One line for each earlier topic, oldest first. */
   earlier: string[]
@@ -685,13 +721,18 @@ const OVERVIEW_MARKS: Record<OverviewStatus, Pick<OverviewRow, 'mark' | 'tone'>>
 }
 
 /** A section's title. Every section has one, so rows never sit directly under the lead lines without a name. */
-const SECTION_TITLES: Partial<Record<PartId, string | null>> = {
+const SECTION_TITLES: Partial<Record<PartId, string>> = {
   workstreams: 'Streams',
   queue: 'Work',
   since: 'Since you looked',
   works: 'What works now',
   open: 'Still open',
   next: 'Next',
+}
+
+/** The heading over the Overview's earlier topics. `place` is the host's word for a conversation with the agent. */
+export function earlierTitle(place: string): string {
+  return `Earlier in this ${place}`
 }
 
 /** The marks a running row cycles through in the text looks, one each `RUNNING_FRAME_MS`. */
@@ -776,7 +817,6 @@ export function overviewPage(
   return {
     isEmpty: headline === null && !isTurnRunning,
     lead,
-    parts,
     sections,
     earlier: parts.includes('earlier') ? (overview?.earlier ?? []) : [],
     empty: {

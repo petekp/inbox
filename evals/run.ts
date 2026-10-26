@@ -15,8 +15,8 @@ import {
   systemText,
   transcriptCatchUpPrompt,
 } from '../hooks/model-text'
-import { applyOverview, parseOverview } from '../hooks/overview'
-import type { OverviewAnswer } from '../hooks/overview'
+import { applyOverview, LIST_KEYS, parseOverview } from '../hooks/overview'
+import type { ListKey, OverviewAnswer } from '../hooks/overview'
 import { CODEX } from '../codex/src/texts'
 import type { Exchange, Update } from '../hooks/ledger'
 import type { HostTask, Ledger, Overview, OverviewItem } from '../types'
@@ -40,8 +40,6 @@ import type { Job, Run } from './harness'
 type Agent = 'claude' | 'codex'
 
 /** Patterns are case-insensitive regular expressions. */
-type OverviewList = 'queue' | 'works' | 'open' | 'next' | 'since' | 'workstreams'
-
 type Check =
   | { open: string }
   | { closed: string; outcome?: string }
@@ -85,7 +83,7 @@ type Check =
   /** No two SINCE items say the same thing. */
   | { sinceNoRepeat: true }
   | { workstreamsAtLeast: number }
-  | { overviewItem: string; list: OverviewList; status?: OverviewItem['status'] }
+  | { overviewItem: string; list: ListKey; status?: OverviewItem['status'] }
 
 type Case = {
   name: string
@@ -263,13 +261,11 @@ function isOverviewCheck(c: Check): c is OverviewCheck {
 /** What the Overview call did in one run: its parsed answer and the guide after it. */
 type OverviewRun = { answer: OverviewAnswer | null; before: Overview | null; after: Overview | null }
 
-const LISTS: OverviewList[] = ['queue', 'works', 'open', 'next', 'since', 'workstreams']
-
 const textsOf = (o: Overview): string[] => [
   o.headline,
   o.status,
   o.course,
-  ...LISTS.flatMap(l => o[l].flatMap(i => [i.text, i.detail ?? ''])),
+  ...LIST_KEYS.flatMap(l => o[l].flatMap(i => [i.text, i.detail ?? ''])),
   ...o.earlier,
 ]
 
@@ -278,7 +274,7 @@ const joinedTextsOf = (o: Overview): string[] => [
   o.headline,
   o.status,
   o.course,
-  ...LISTS.flatMap(l => o[l].map(i => `${i.text} ${i.detail ?? ''}`.trim())),
+  ...LIST_KEYS.flatMap(l => o[l].map(i => `${i.text} ${i.detail ?? ''}`.trim())),
   ...o.earlier,
 ]
 
@@ -340,7 +336,7 @@ function overviewFailures(c: OverviewCheck, after: Ledger, run: OverviewRun | nu
   }
   if ('noOverviewItem' in c) {
     const re = new RegExp(c.noOverviewItem, 'i')
-    return LISTS.flatMap(l =>
+    return LIST_KEYS.flatMap(l =>
       o[l].filter(i => i.status === c.status && re.test(i.text)).map(i => `${l} still has ${c.status}: "${i.text}"`),
     )
   }

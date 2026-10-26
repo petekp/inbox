@@ -476,6 +476,20 @@ describe('applyUpdate', () => {
     expect(applyUpdate({ ...dismissed, turn: 2 }, reworded, 4, 2, 3).items).toEqual([])
   })
 
+  test('a dismissed question blocks a rewording of it, but not a question about something else in the same words', () => {
+    const question = (ask: string) => ({ kind: 'question' as const, ask, options: [], rec: null, helps: [] })
+    const asked = addAgentItem({ ...EMPTY, turn: 1 }, question('Which license should package.json use?'), 1).ledger
+    const dismissed = { ...closeItem(asked, 'i1', { how: 'dismissed', outcome: 'dismissed' }, 2), turn: 2 }
+    const engines = 'Which engines should package.json use?'
+    expect(addAgentItem(dismissed, question(engines), 3).is).toBe('added')
+    const asksEngines = parseReply(`NEW: decide | - | ${engines} | - | -`)!
+    expect(applyUpdate(dismissed, asksEngines, 4, 2, 3).items.map(i => i.ask)).toEqual([engines])
+    const reworded = 'Which license should we use in package.json?'
+    expect(addAgentItem(dismissed, question(reworded), 3).is).toBe('closed')
+    const asksReworded = parseReply(`NEW: decide | - | ${reworded} | - | -`)!
+    expect(applyUpdate(dismissed, asksReworded, 4, 2, 3).items).toEqual([])
+  })
+
   test('the inbox model can add a question again with choices after the person answered it with List the choices', () => {
     const question = { kind: 'question' as const, ask: 'Where should the job run?', options: [], rec: null, helps: [] }
     const asked = addAgentItem({ ...EMPTY, turn: 1 }, question, 1).ledger
@@ -675,7 +689,8 @@ describe('reopening', () => {
     const dismissed = closeFinding(open, 'f1', { how: 'dismissed', outcome: 'dismissed' }, 5)
     const again = addFinding(dismissed, { ...finding, title: 'Hotkeys vanish in ANSI mode', at: 6 })
     expect([again.isAdded, again.dismissed?.id, again.ledger]).toEqual([false, 'f1', dismissed])
-    expect(addFinding(dismissed, { ...finding, title: 'Hotkeys disappear in ANSI mode' }).isAdded).toBe(false)
+    expect(addFinding(dismissed, { ...finding, title: 'In the ANSI mode, hotkeys vanish' }).isAdded).toBe(false)
+    expect(addFinding(dismissed, { ...finding, title: 'Hotkeys vanish in ANSI mode on macOS' }).isAdded).toBe(false)
     expect(addFinding(dismissed, { ...finding, title: 'Tabs unreadable' }).isAdded).toBe(true)
     for (const closing of [
       { how: 'expired' as const, outcome: 'list full' },
@@ -684,6 +699,24 @@ describe('reopening', () => {
       const r = addFinding(closeFinding(open, 'f1', closing, 5), finding)
       expect([r.isAdded, r.dismissed]).toEqual([true, null])
     }
+  })
+
+  test('a dismissed finding does not block one about a different subject in the same words', () => {
+    const finding = {
+      kind: 'issue' as const,
+      title: 'package.json has no license field',
+      detail: 'd',
+      path: null,
+      at: 1,
+    }
+    const dismissed = closeFinding(
+      addFinding(EMPTY, finding).ledger,
+      'f1',
+      { how: 'dismissed', outcome: 'dismissed' },
+      5,
+    )
+    const r = addFinding(dismissed, { ...finding, title: 'package.json has no engines field', at: 6 })
+    expect([r.isAdded, r.dismissed]).toEqual([true, null])
   })
 
   test('a finding an item asks about closes into that item', () => {

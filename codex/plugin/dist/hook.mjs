@@ -20,12 +20,20 @@ function detachedUpdate(dir, env, script) {
 // src/hook.ts
 import { resolve as resolve3 } from "node:path";
 
+// ../hooks/text.ts
+function clip(text2, max) {
+  return text2.length <= max ? text2 : text2.slice(0, max) + " \u2026[cut]";
+}
+var graphemes = new Intl.Segmenter(void 0, { granularity: "grapheme" });
+var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
+
 // ../hooks/overview.ts
 var HEADLINE_WORDS = 12;
 var ITEM_WORDS = 12;
 var SENTENCE_WORDS = 30;
 var DETAIL_WORDS = 20;
 var LIST_ITEMS = 6;
+var LIST_KEYS = ["queue", "works", "open", "next", "since", "workstreams"];
 var STATUSES = [
   "working",
   "queued",
@@ -47,20 +55,14 @@ function itemsOf(value) {
 function upgradeOverview(saved) {
   const o = saved;
   if (typeof o !== "object" || o === null || typeof o.headline !== "string") return null;
-  const text = (value) => typeof value === "string" ? value : "";
   return {
     isCoordinator: o.isCoordinator === true,
     state: STATES.find((s) => s === o.state) ?? "on-track",
     headline: o.headline,
     status: text(o.status),
     course: text(o.course),
-    queue: itemsOf(o.queue),
-    works: itemsOf(o.works),
-    open: itemsOf(o.open),
-    next: itemsOf(o.next),
-    since: itemsOf(o.since),
-    workstreams: itemsOf(o.workstreams),
-    earlier: Array.isArray(o.earlier) ? o.earlier.filter((e) => typeof e === "string") : [],
+    ...Object.fromEntries(LIST_KEYS.map((k) => [k, itemsOf(o[k])])),
+    earlier: strings(o.earlier),
     lastLookAt: typeof o.lastLookAt === "number" ? o.lastLookAt : null,
     look: lookOf(o.look),
     seen: seenOf(o.seen)
@@ -70,11 +72,14 @@ function lookOf(saved) {
   const l = saved;
   if (typeof l !== "object" || l === null || typeof l.startedAt !== "number") return null;
   const away = AWAYS.find((a) => a === l.away);
-  return away === void 0 ? null : { startedAt: l.startedAt, away, since: strings(l.since), course: typeof l.course === "string" ? l.course : "" };
+  return away === void 0 ? null : { startedAt: l.startedAt, away, since: strings(l.since), course: text(l.course) };
 }
 function seenOf(saved) {
   const s = saved;
-  return { since: strings(s?.since), course: typeof s?.course === "string" ? s.course : "" };
+  return { since: strings(s?.since), course: text(s?.course) };
+}
+function text(value) {
+  return typeof value === "string" ? value : "";
 }
 function strings(value) {
   return Array.isArray(value) ? value.filter((v) => typeof v === "string") : [];
@@ -82,11 +87,6 @@ function strings(value) {
 var HERE_MS = 5 * 6e4;
 var SHORT_MS = 60 * 6e4;
 var AWAYS = ["here", "short", "long"];
-
-// ../hooks/text.ts
-function clip(text, max) {
-  return text.length <= max ? text : text.slice(0, max) + " \u2026[cut]";
-}
 
 // ../hooks/ledger.ts
 var EMPTY = {
@@ -148,8 +148,8 @@ function upgradeItem(item) {
     from: item.from ?? "update"
   };
 }
-function words(text) {
-  return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+function words(text2) {
+  return text2.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 function recommendedOption(options, rec) {
   if (!rec) return null;
@@ -159,7 +159,7 @@ function recommendedOption(options, rec) {
     const w = words(option);
     if (w.length > words(best ?? "").length && w.every((x) => named.has(x))) best = option;
   }
-  const label = (text) => text.match(/^\s*\(?([a-z]|\d{1,2})\s*[:.)]/i)?.[1]?.toLowerCase();
+  const label = (text2) => text2.match(/^\s*\(?([a-z]|\d{1,2})\s*[:.)]/i)?.[1]?.toLowerCase();
   const byLabel = /^\s*(?:option\s+)?([a-z]|\d{1,2})\s*[.!]?\s*$/i.exec(rec)?.[1]?.toLowerCase();
   return best ?? (byLabel ? options.find((o) => label(o) === byLabel) ?? null : null);
 }
@@ -187,8 +187,8 @@ var FILLER = /* @__PURE__ */ new Set([
   "add",
   "all"
 ]);
-function keyWords(text) {
-  return new Set(words(text).filter((w) => new RegExp("\\p{N}", "u").test(w) || w.length > 2 && !FILLER.has(w)));
+function keyWords(text2) {
+  return new Set(words(text2).filter((w) => new RegExp("\\p{N}", "u").test(w) || w.length > 2 && !FILLER.has(w)));
 }
 function restates(a, b) {
   const x = keyWords(a);
@@ -225,15 +225,18 @@ var STATUSES2 = {
 var statusOf = (raw) => STATUSES2[String(raw)] ?? "pending";
 var textOf = (raw) => typeof raw === "string" ? raw.trim() : "";
 var recordOf = (raw) => typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
+function numberedTasks(rows, textKey) {
+  return rows.map(recordOf).map((row, n) => ({ id: String(n + 1), text: textOf(row[textKey]), status: statusOf(row.status) })).filter((t) => t.text !== "");
+}
 function codexPlanOf(args) {
   const parsed = typeof args === "string" ? safeJson(args) : args;
   const plan = recordOf(parsed).plan;
   if (!Array.isArray(plan)) return null;
-  return plan.map((row, n) => ({ id: String(n + 1), text: textOf(recordOf(row).step), status: statusOf(recordOf(row).status) })).filter((t) => t.text !== "");
+  return numberedTasks(plan, "step");
 }
-function safeJson(text) {
+function safeJson(text2) {
   try {
-    return JSON.parse(text);
+    return JSON.parse(text2);
   } catch {
     return null;
   }
@@ -282,17 +285,17 @@ function addActivity(activity, line) {
   return !line || activity.length >= MAX_ACTIVITY || activity.includes(line) ? activity : [...activity, line];
 }
 function toolActivity(tool, input) {
-  const text = (key) => typeof input[key] === "string" ? input[key] : "";
+  const text2 = (key) => typeof input[key] === "string" ? input[key] : "";
   switch (tool) {
     case "Bash":
-      return `${input.run_in_background ? "started in background" : "ran"}: ${text("command").slice(0, 140)}`;
+      return `${input.run_in_background ? "started in background" : "ran"}: ${text2("command").slice(0, 140)}`;
     case "Edit":
     case "Write":
-      return `edited ${text("file_path")}`;
+      return `edited ${text2("file_path")}`;
     case "Skill":
-      return `used skill ${text("skill")}`;
+      return `used skill ${text2("skill")}`;
     case "Agent":
-      return `started agent: ${text("description")}`;
+      return `started agent: ${text2("description")}`;
   }
   return tool.startsWith("mcp__") ? `called ${tool.slice(5)}` : null;
 }
@@ -306,8 +309,8 @@ function dialogQuestions(raw) {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((q) => {
     const fields = q ?? {};
-    const text = [fields.question, fields.title].find((v) => typeof v === "string" && v.trim() !== "");
-    if (!text) return [];
+    const text2 = [fields.question, fields.title].find((v) => typeof v === "string" && v.trim() !== "");
+    if (!text2) return [];
     const options = (Array.isArray(fields.options) ? fields.options : []).flatMap((o) => {
       const option = typeof o === "string" ? { label: o } : o ?? {};
       const label = typeof option.label === "string" ? option.label.trim() : "";
@@ -316,7 +319,7 @@ function dialogQuestions(raw) {
     });
     return [
       {
-        question: text.trim(),
+        question: text2.trim(),
         options: options.map((o) => o.label),
         descriptions: Object.fromEntries(options.filter((o) => o.description !== "").map((o) => [o.label, o.description]))
       }
@@ -326,8 +329,8 @@ function dialogQuestions(raw) {
 function dialogQuestionText(q) {
   const shown = q.options.slice(0, DIALOG_OPTIONS_SHOWN).map((label) => {
     const plain = label.replace(RECOMMENDED_SUFFIX, "");
-    const text = clip(plain, DIALOG_OPTION_MAX);
-    return plain === label ? text : `${text} (recommended)`;
+    const text2 = clip(plain, DIALOG_OPTION_MAX);
+    return plain === label ? text2 : `${text2} (recommended)`;
   });
   const more = q.options.length > shown.length ? ` / and ${q.options.length - shown.length} more` : "";
   const options = shown.length > 0 ? ` (options: ${shown.join(" / ")}${more})` : "";
@@ -426,21 +429,21 @@ var LINE_ANSWER = /(?:^|\n)\s*(?:[QqDd#]\s?)?(\d{1,2})\s*[.):\-–]\s*\S/g;
 var INLINE_ANSWER = /\s(?:[QqDd#]\s?)?(\d{1,2})\s*[.)]\s+\S/g;
 var ACCEPT_ALL = /^\s*(go|go ahead|yes|yep|yeah|sure|ok|okay|sgtm|lgtm|sounds good|do it|proceed|all good|ship it)\s*[.!]*\s*$/i;
 var ACCEPT_RECS = /\b(all|both|everything|your)\b[^.\n]{0,40}\b(recommend\w*|recs?|suggest\w*|picks?|calls?)\b/i;
-function answerNote(ledger, text) {
+function answerNote(ledger, text2) {
   const lines = [];
   const batch = answerableBatch(ledger, ledger.turn);
   if (batch.length > 0) {
     const numbers = /* @__PURE__ */ new Set();
-    for (const m of text.matchAll(LINE_ANSWER)) numbers.add(Number(m[1]));
-    if (/^\s*(?:[QqDd#]\s?)?\d{1,2}\s*[.):\-–]\s/.test(text)) {
-      for (const m of text.matchAll(INLINE_ANSWER)) numbers.add(Number(m[1]));
+    for (const m of text2.matchAll(LINE_ANSWER)) numbers.add(Number(m[1]));
+    if (/^\s*(?:[QqDd#]\s?)?\d{1,2}\s*[.):\-–]\s/.test(text2)) {
+      for (const m of text2.matchAll(INLINE_ANSWER)) numbers.add(Number(m[1]));
     }
     const byNumber = batchNumbers(batch);
     for (const n of [...numbers].sort((a, b) => a - b)) {
       const item = byNumber.get(n);
       if (item) lines.push(`- ${n} \u2192 ${describe(item)}`);
     }
-    if (lines.length === 0 && (ACCEPT_ALL.test(text) || ACCEPT_RECS.test(text))) {
+    if (lines.length === 0 && (ACCEPT_ALL.test(text2) || ACCEPT_RECS.test(text2))) {
       const withRecs = batch.filter((i) => i.rec);
       if (withRecs.length > 0) {
         return [
@@ -548,10 +551,10 @@ function copyOf(q, items, questions) {
   return restated.length === 1 ? asked : null;
 }
 function descriptionsFor(options, descriptions) {
-  const byKey = new Map(Object.entries(descriptions).map(([label, text]) => [optionKey(label), text]));
+  const byKey = new Map(Object.entries(descriptions).map(([label, text2]) => [optionKey(label), text2]));
   const matched = options.flatMap((o) => {
-    const text = byKey.get(optionKey(o));
-    return text === void 0 ? [] : [[o, text]];
+    const text2 = byKey.get(optionKey(o));
+    return text2 === void 0 ? [] : [[o, text2]];
   });
   return matched.length > 0 ? Object.fromEntries(matched) : null;
 }
@@ -594,8 +597,8 @@ function noteDialog(s, callId, questions) {
 
 // ../hooks/prs.ts
 var PR_URL = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g;
-function prRefs(text) {
-  return [...new Set([...text.matchAll(PR_URL)].map((m) => `${m[1]}#${m[2]}`))];
+function prRefs(text2) {
+  return [...new Set([...text2.matchAll(PR_URL)].map((m) => `${m[1]}#${m[2]}`))];
 }
 
 // ../hooks/presses.ts
@@ -680,16 +683,22 @@ var CHOICE_KEYS = [..."abcfghilm"];
 var SETTLED_MS = 5120;
 var COMPARE_LIMIT_MS = 30 * 6e4;
 var TABS = [
-  { id: "overview", label: "Overview", hotkey: "1" },
-  { id: "needsYou", label: "Needs you", hotkey: "2" },
-  { id: "findings", label: "Findings", hotkey: "3" },
-  { id: "prs", label: "PRs", hotkey: "4" }
+  { id: "overview", label: "Overview", symbol: "\u{1F9ED}", hotkey: "1" },
+  { id: "needsYou", label: "Needs you", symbol: "\u{1F64B}", hotkey: "2" },
+  { id: "findings", label: "Findings", symbol: "\u{1F50D}", hotkey: "3" },
+  { id: "prs", label: "PRs", symbol: "\u{1F500}", hotkey: "4" }
 ];
 function isListedTab(tab) {
   return tab === "needsYou" || tab === "findings";
 }
 function isRowTab(tab) {
   return tab !== "overview";
+}
+function isShownTab(raw) {
+  return TABS.some((t) => t.id === raw);
+}
+function screenTabOf(tab) {
+  return { label: TABS.find((t) => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) };
 }
 var ROW_TABS = TABS.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TABS.filter((t) => isListedTab(t.id));
@@ -811,12 +820,12 @@ function cleared(s) {
     stop: null
   };
 }
-function notePrompt(host, s, text, isOpen) {
-  const matched = matchSent(s, text);
-  return recordPrompt(host, startTurn(matched.state), text, isOpen, matched.sentBy);
+function notePrompt(host, s, text2, isOpen) {
+  const matched = matchSent(s, text2);
+  return recordPrompt(host, startTurn(matched.state), text2, isOpen, matched.sentBy);
 }
-function matchSent(s, text) {
-  const matchingAt = s.sent.findIndex((x) => x.text === text);
+function matchSent(s, text2) {
+  const matchingAt = s.sent.findIndex((x) => x.text === text2);
   const matching = matchingAt >= 0 ? s.sent[matchingAt] : void 0;
   const isMatchable = matching !== void 0 && (matching.phase === void 0 || matching.phase === "accepted" || matching.phase === "attempting" && matching.deliveryId !== null);
   const sentAt = isMatchable ? matchingAt : -1;
@@ -828,10 +837,10 @@ function matchSent(s, text) {
   ) : s.lastActions;
   const arrived = sent && sent.row !== null ? {
     ...s.lastActions,
-    ...sent.deliveryId === null ? withUnconfirmed(eligible, text) : withArrival(eligible, text, sent.pressedAt ?? void 0, sent.deliveryId)
+    ...sent.deliveryId === null ? withUnconfirmed(eligible, text2) : withArrival(eligible, text2, sent.pressedAt ?? void 0, sent.deliveryId)
   } : s.lastActions;
   const lastActions = s.sent.slice(matchingAt + 1).reduce(
-    (actions, later) => later.text === text && later.row !== null ? withUnconfirmed(actions, text, later.pressedAt ?? void 0, later.deliveryId) : actions,
+    (actions, later) => later.text === text2 && later.row !== null ? withUnconfirmed(actions, text2, later.pressedAt ?? void 0, later.deliveryId) : actions,
     arrived
   );
   return {
@@ -848,12 +857,12 @@ function turnEnded(s) {
 function startTurn(s) {
   return { ...s, presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }, stop: null };
 }
-function recordPrompt(host, s, text, isOpen, sentBy) {
+function recordPrompt(host, s, text2, isOpen, sentBy) {
   const ledger = { ...s.ledger, turn: s.ledger.turn + 1 };
-  const r = promptNotes(host, ledger, { text, isPress: sentBy !== null, isOpen }, s.told);
-  const person = s.turn.person === null ? text : `${s.turn.person}
+  const r = promptNotes(host, ledger, { text: text2, isPress: sentBy !== null, isOpen }, s.told);
+  const person = s.turn.person === null ? text2 : `${s.turn.person}
 
-${text}`;
+${text2}`;
   return {
     state: {
       ...s,
@@ -942,12 +951,8 @@ var TAB_OPEN_MS = 15e3;
 function isTabOpen(s, now) {
   return now - s.tabSeenAt < TAB_OPEN_MS;
 }
-function screenTabOf(s) {
-  const shown = TABS.find((t) => t.id === s.shownTab);
-  return { label: shown?.label ?? s.shownTab, isPage: s.shownTab === "overview" };
-}
-function notePrompt2(s, text, now) {
-  return notePrompt(CODEX, s, text, isTabOpen(s, now));
+function notePrompt2(s, text2, now) {
+  return notePrompt(CODEX, s, text2, isTabOpen(s, now));
 }
 function activityOf(tool, input) {
   return toolActivity(tool, input);
@@ -956,7 +961,7 @@ function patchFiles(patch) {
   return [...patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((m) => (m[1] ?? "").trim()).filter(Boolean);
 }
 function endTurn2(s, reply, now) {
-  return endTurn(CODEX, s, reply, isTabOpen(s, now), { tab: screenTabOf(s) });
+  return endTurn(CODEX, s, reply, isTabOpen(s, now), { tab: screenTabOf(s.shownTab) });
 }
 var MAX_PROMPT_TURNS = 10;
 function noteHook(s, hook, now, turnId) {
@@ -1047,7 +1052,7 @@ function upgraded(saved, sessionId) {
       turn,
       pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex }))
     }),
-    shownTab: TABS.some((t) => t.id === saved.shownTab) ? saved.shownTab ?? base.shownTab : base.shownTab,
+    shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
     // A file saved before the hooks kept this record came from hooks that ran, so it reads as heard.
     // Its turns were not recorded, so `promptAt` is set too: a tool call then falls back to the time rule.
     heard: saved.heard ? { ...NOTHING_HEARD, ...saved.heard } : {
@@ -1212,13 +1217,13 @@ var MESSAGE_MAX = 6e3;
 function flattenConversation(turns) {
   const lines = [];
   for (const turn of turns) {
-    const text = turn.text.trim();
-    const shown = turn.isVerbatim ? text : clip(text, MESSAGE_MAX);
+    const text2 = turn.text.trim();
+    const shown = turn.isVerbatim ? text2 : clip(text2, MESSAGE_MAX);
     if (turn.role === "person") {
-      if (text && !text.startsWith("inbox:")) lines.push(`Person: ${shown}`);
+      if (text2 && !text2.startsWith("inbox:")) lines.push(`Person: ${shown}`);
       continue;
     }
-    if (text) lines.push(`Agent: ${shown}`);
+    if (text2) lines.push(`Agent: ${shown}`);
     for (const line of turn.activity) lines.push(`Agent ${line}`);
   }
   const kept = [];
@@ -1474,8 +1479,8 @@ function turnsOf(rows, cwd) {
     turns.push(turn);
     return turn;
   };
-  const person = (text) => {
-    if (text && !text.startsWith("<")) turns.push({ role: "person", text, activity: [] });
+  const person = (text2) => {
+    if (text2 && !text2.startsWith("<")) turns.push({ role: "person", text: text2, activity: [] });
   };
   const act = (lines) => {
     if (lines.length === 0) return;

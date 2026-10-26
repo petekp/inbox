@@ -28,7 +28,7 @@ import type { Session } from '../hooks/session'
 import { press, runUpdates, wakeForDone } from '../hooks/session-host'
 import type { CatchUpReply } from '../hooks/session-host'
 import { allRows, COMPARE_LIMIT_MS, feedbackText, NO_HOLDS } from '../hooks/view'
-import { demoSession, demoView, isDemoCopy, upgradeDemoCopy } from '../hooks/demo'
+import { demoSession, demoView, isDemoCopy } from '../hooks/demo'
 import { fakeHost } from './session-fake-host'
 import { runSessionScript } from './session-script'
 
@@ -345,10 +345,10 @@ test('a session saved by the Progress trial build loads without its results, sub
 })
 
 test('a sample saved without an Overview is replaced, and the sample session carries its own', () => {
-  const { presence: _p, ...old } = demoView(1_000_000, 'Claude')
+  const old = demoView(1_000_000, 'Claude')
 
   expect(isDemoCopy(old)).toBe(true)
-  expect(upgradeDemoCopy(old)).toMatchObject({ presence: { isTurnRunning: false } })
+  expect(isDemoCopy({ ...old, presence: { isTurnRunning: false } })).toBe(true)
   expect(isDemoCopy({ ...old, ledger: { ...old.ledger, overview: undefined } })).toBe(false)
   const page = sessionView(demoSession(1_000_000, 'Claude'), 1_000_000, 1000, true, NO_HOLDS).overviewPage
   expect(page.lead[0]?.text).toBe('Adding pinch-to-dismiss to glances')

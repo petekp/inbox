@@ -32,6 +32,7 @@ export type FeatureId =
   | 'hooks-need-trust'
   | 'compare-in-background'
   | 'running-marks'
+  | 'tab-symbols'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -69,6 +70,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'compare-in-background': { kind: 'full' },
       'running-marks': { kind: 'full' },
+      'tab-symbols': { kind: 'full' },
     },
   },
   codex: {
@@ -144,6 +146,7 @@ export const CLIENTS: Record<ClientId, Client> = {
           "Codex's subagents are experimental and off by default, and no source says one can report after the agent's turn ends, so a comparison runs in the turn.",
       },
       'running-marks': { kind: 'full' },
+      'tab-symbols': { kind: 'full' },
     },
   },
   omp: {
@@ -192,6 +195,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'compare-in-background': { kind: 'full' },
       'running-marks': { kind: 'full' },
+      'tab-symbols': { kind: 'full' },
     },
   },
 }
