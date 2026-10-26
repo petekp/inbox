@@ -1,4 +1,4 @@
-import { prRowId } from '../../hooks/pr-tab'
+import { pressRowId } from '../../hooks/pr-tab'
 import type { PrPress } from '../../hooks/pr-tab'
 import { isPressConfirmed } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
@@ -121,7 +121,7 @@ export function createPanel(deps: PanelDeps): Panel {
 
   async function press(p: PanelPress): Promise<void> {
     if (p.action === 'resume') return resume()
-    const rowId = 'ref' in p ? prRowId(p) : p.id
+    const rowId = pressRowId(p)
     const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now())
     const sentDraft = !('ref' in p) && p.action === 'type' ? ui.drafts[p.id] : undefined
     const outcome = await source.press(p, holdsOf(ui)).catch((err: unknown) => ({

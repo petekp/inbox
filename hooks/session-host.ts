@@ -9,7 +9,7 @@ import {
   transcriptCatchUpPrompt,
 } from './model-text'
 import type { Host } from './model-text'
-import { fetchTracked, prRowId, splitLinked } from './pr-tab'
+import { fetchTracked, pressRowId, splitLinked } from './pr-tab'
 import type { GhRun, PrPress } from './pr-tab'
 import {
   doneWake,
@@ -403,7 +403,7 @@ export async function startPress<S extends Session>(
   isStale: boolean,
   holds: ReplyHolds,
 ): Promise<StartedPress> {
-  const rowId = 'ref' in p ? prRowId(p) : p.id
+  const rowId = pressRowId(p)
   const localPressId = host.newId()
   let isUnconfirmed = false
   let isRowFailed = false

@@ -1,6 +1,6 @@
 import type { Item, LastAction, Ledger, PressKind, PrCheck, PrThread, PrView, PrViews } from '../types'
 import { baseName, isFoldingPress, localLast, pendingResult, prSteps, recordPress, withQueued } from './presses'
-import type { Effect, HelpStep, PrActionId } from './presses'
+import type { Effect, HelpStep, PrActionId, RowPress } from './presses'
 import { clipLabel } from './text'
 import {
   commentLine,
@@ -395,6 +395,10 @@ export function prRowId(p: PrPress): string {
   if ('thread' in p) return threadRowId(p.ref, p.thread)
 
   return prMarkId(p.ref)
+}
+
+export function pressRowId(p: RowPress | PrPress): string {
+  return 'ref' in p ? prRowId(p) : p.id
 }
 
 function prRetryOf(

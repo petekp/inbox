@@ -3375,6 +3375,9 @@ function prRowId(p) {
     return threadRowId(p.ref, p.thread);
   return prMarkId(p.ref);
 }
+function pressRowId(p) {
+  return "ref" in p ? prRowId(p) : p.id;
+}
 function prRetryOf(last, ref, thread, check = null) {
   if (last?.delivery?.state !== "failed")
     return null;
@@ -4070,7 +4073,7 @@ function appliedCatchUp(s, begun, parsed, now) {
   });
 }
 function isRepeatWhileOut(s, p, at) {
-  const rowId = "ref" in p ? prRowId(p) : p.id;
+  const rowId = pressRowId(p);
   const saved = s.lastActions[rowId];
   const last = saved && withoutStaleResult(saved, at);
   const reportedAt = "ref" in p ? undefined : s.ledger.items.find((i) => i.id === p.id)?.reportedAt;
@@ -4372,7 +4375,7 @@ async function wakeForDone(host, current) {
   });
 }
 async function startPress(host, p, isStale, holds) {
-  const rowId = "ref" in p ? prRowId(p) : p.id;
+  const rowId = pressRowId(p);
   const localPressId = host.newId();
   let isUnconfirmed = false;
   let isRowFailed = false;
@@ -5465,7 +5468,7 @@ function createPanel(deps) {
   async function press(p) {
     if (p.action === "resume")
       return resume();
-    const rowId = "ref" in p ? prRowId(p) : p.id;
+    const rowId = pressRowId(p);
     const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now());
     const sentDraft = !("ref" in p) && p.action === "type" ? ui.drafts[p.id] : undefined;
     const outcome = await source.press(p, holdsOf(ui)).catch((err) => ({

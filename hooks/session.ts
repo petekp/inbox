@@ -19,7 +19,7 @@ import {
   keepsView,
   olderPrsText,
   linkedPrs,
-  prRowId,
+  pressRowId,
   threadSentIn,
 } from './pr-tab'
 import type { Applied, PrPress } from './pr-tab'
@@ -538,7 +538,7 @@ export type Pressed = Exclude<Applied, { stale: true }>
 
 /** A press of the action whose press is still out on its row. It changes nothing, so a second press sends nothing. */
 function isRepeatWhileOut(s: Session, p: RowPress | PrPress, at: number): boolean {
-  const rowId = 'ref' in p ? prRowId(p) : p.id
+  const rowId = pressRowId(p)
   const saved = s.lastActions[rowId]
   const last = saved && withoutStaleResult(saved, at)
   const reportedAt = 'ref' in p ? undefined : s.ledger.items.find(i => i.id === p.id)?.reportedAt

@@ -99,7 +99,7 @@ import {
   prBlockActions,
   prCheckId,
   prMarkId,
-  prRowId,
+  pressRowId,
   prRowWaits,
   prThreadId,
   threadActions,
@@ -1930,10 +1930,6 @@ function leavePr($: EngineInterface, ref: string, at: number) {
       return { ...s, prViews: { ...s.prViews, views } }
     }),
   )
-}
-
-function pressRowId(p: RowPress | PrPress): string {
-  return 'ref' in p ? prRowId(p) : p.id
 }
 
 /** Tells Claude about rows closed with Done once their settle window has passed, unless a turn runs. */
