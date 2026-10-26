@@ -166,6 +166,7 @@ function claude(prompt: string, system: string): Promise<Answer> {
       'claude',
       [
         '-p',
+        '--no-session-persistence',
         '--model',
         CLAUDE_MODEL,
         '--effort',

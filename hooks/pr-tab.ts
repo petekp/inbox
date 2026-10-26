@@ -197,6 +197,14 @@ export function prRefreshFailedText(error: string): string {
   return `Last refresh failed: ${error}`
 }
 
+/**
+ * The button under a failed refresh. It is not "Try again", since a failed send on the same block draws that.
+ */
+export const PR_REFRESH_LABEL = 'Refresh PRs'
+
+/** Fetches every PR the session tracks, so the row reads "Refreshing PRs…". */
+export const PR_REFRESH: Effect = { kind: 'refresh-prs', name: 'PRs' }
+
 /** The label of a dismissed PR's block while its Undo lasts. */
 export const PR_DISMISSED_LABEL = 'Dismissed'
 
@@ -338,7 +346,10 @@ export const PR_TONES: Record<PrStatus, 'needsYou' | 'done' | 'findings' | 'erro
 
 export type PrPress =
   | { action: 'thread-address' | 'thread-draft' | 'thread-discuss' | 'thread-open'; ref: string; thread: string }
-  | { action: 'pr-conflicts' | 'pr-address-all' | 'pr-merge' | 'pr-open' | 'pr-dismiss' | 'pr-undo'; ref: string }
+  | {
+      action: 'pr-conflicts' | 'pr-address-all' | 'pr-merge' | 'pr-open' | 'pr-refresh' | 'pr-dismiss' | 'pr-undo'
+      ref: string
+    }
   | { action: 'check-fix' | 'log'; ref: string; check: string }
 
 /**
@@ -504,6 +515,17 @@ export function prBlockActions(
   ]
 
   return [
+    ...(pr.error
+      ? [
+          {
+            press: { action: 'pr-refresh' as const, ref: pr.ref },
+            label: PR_REFRESH_LABEL,
+            kind: 'local' as const,
+            emphasis: 'normal' as const,
+            icon: 'retry' as const,
+          },
+        ]
+      : []),
     ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, null)),
     ...moves.map((m, n): PrAction => ({ ...m, emphasis: n === 0 ? 'primary' : 'normal' })),
     { press: { action: 'pr-open', ref: pr.ref }, label: 'Open PR', kind: 'local', emphasis: 'normal', icon: 'open' },
@@ -551,8 +573,8 @@ export function applyPrPress(
   const record = (rowId: string, kind: 'talk' | 'handoff' | 'mark', action: PrActionId, text: string) =>
     recordPress(kind, action, text, ctx, lastActions[rowId])
   const send = (text: string): Effect => ({ kind: 'send', text, by: null })
-  const open = (rowId: string, text: string, url: string, name: string): Applied => {
-    const effects: Effect[] = [{ kind: 'open', target: url, name }]
+  const local = (rowId: string, text: string, effect: Effect): Applied => {
+    const effects = [effect]
     const result = pendingResult(effects, ctx.now, ctx.localPressId)
 
     return applied({ lasts: { [rowId]: localLast(lastActions[rowId], { action: p.action, text }, result) }, effects })
@@ -566,7 +588,8 @@ export function applyPrPress(
       if (!t) return stale
       if (p.action === 'thread-address' && !t.isWaiting) return stale
       const id = prThreadId(pr, t)
-      if (p.action === 'thread-open') return open(id, 'Open', t.reply?.url || t.url || pr.url, 'the comment')
+      if (p.action === 'thread-open')
+        return local(id, 'Open', { kind: 'open', target: t.reply?.url || t.url || pr.url, name: 'the comment' })
       if (p.action === 'thread-address')
         return applied({
           lasts: { [id]: record(id, 'handoff', p.action, 'Address') },
@@ -610,7 +633,9 @@ export function applyPrPress(
         effects: [send(prompts.merge(pr))],
       })
     case 'pr-open':
-      return open(markId, 'Open PR', pr.url, `PR #${pr.number}`)
+      return local(markId, 'Open PR', { kind: 'open', target: pr.url, name: `PR #${pr.number}` })
+    case 'pr-refresh':
+      return local(markId, PR_REFRESH_LABEL, PR_REFRESH)
     case 'pr-dismiss':
       if (!ledger.prs.includes(p.ref) || prState.branchRef === p.ref) return stale
       return applied({
@@ -629,7 +654,11 @@ export function applyPrPress(
     case 'log': {
       const check = pr.checks.find(c => c.name === p.check)
       if (!check) return stale
-      return open(prCheckId(pr, check), 'Open log', check.url ?? pr.url, check.url ? 'the log' : `PR #${pr.number}`)
+      return local(prCheckId(pr, check), 'Open log', {
+        kind: 'open',
+        target: check.url ?? pr.url,
+        name: check.url ? 'the log' : `PR #${pr.number}`,
+      })
     }
   }
 }

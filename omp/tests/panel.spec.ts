@@ -378,6 +378,14 @@ test('a local press reads its pending and failed results on the PR block', () =>
     },
   })
   expect(text(pending, ui)).toContain(`Opening PR #${block.number}…`)
+  const refreshing = withLast(screen, id, {
+    kind: 'local',
+    action: 'pr-refresh',
+    text: 'Refresh PRs',
+    at: NOW,
+    result: { state: 'pending', at: NOW, parts: [{ kind: 'refresh-prs', name: 'PRs', error: null, isCommand: false }] },
+  })
+  expect(text(refreshing, ui)).toContain('Refreshing PRs…')
   const failed = withLast(screen, id, {
     kind: 'local',
     action: 'pr-open',
@@ -412,13 +420,28 @@ test('a failed send shows why and offers Try again first', () => {
 })
 
 test('PR buttons follow the shared plan order for the block, its threads and its checks', () => {
-  const screen = screenOf()
+  const state = demoState(NOW)
+  const ref = screenOf().view.prs.drawn[0]!.pr.ref
+  state.prViews.views[ref] = { ...state.prViews.views[ref]!, error: 'HTTP 502' }
+  state.lastActions[prMarkId(ref)] = {
+    kind: 'handoff',
+    action: 'pr-address-all',
+    text: 'Address all 2 threads',
+    at: NOW,
+    delivery: { state: 'failed', reason: 'omp is busy' },
+  }
+  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, true) })
   const { lastActions, turns, prs } = screen.view
   const { pr } = prs.drawn[0]!
   const isSent = threadSentIn(lastActions)
   const presses = { lastActions, turns, now: NOW }
+  const block = prBlockActions(pr, isSent, prs.branchRef, presses)
+  expect(block.slice(0, 2).map(a => a.label)).toEqual(['Refresh PRs', 'Try again'])
+  expect(text(screen, { ...INITIAL_UI, tab: 'prs', selectedId: prMarkId(ref) })).toContain(
+    'Last refresh failed: HTTP 502',
+  )
   const plans = [
-    prBlockActions(pr, isSent, prs.branchRef, presses),
+    block,
     ...waitingThreads(pr).map(t => threadActions(pr, t, presses)),
     ...failingChecks(pr).map(c => checkActions(pr, c, presses)),
   ]

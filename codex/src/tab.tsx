@@ -9,7 +9,7 @@ import { ago } from '../../hooks/text'
 import type { ClosedState } from '../../hooks/ledger'
 import { canUndoRefused, closedMark, settledMark } from '../../hooks/view'
 import { capitalized, clipLabel, noteText, pendingResult, stepEffects } from '../../hooks/presses'
-import type { RowPress } from '../../hooks/presses'
+import type { Effect, RowPress } from '../../hooks/presses'
 import {
   allRows,
   closedShown,
@@ -81,6 +81,7 @@ import {
   prMarkId,
   prRowWaits,
   prsEmptyText,
+  PR_REFRESH,
   prRefreshFailedText,
   PR_DISMISSED_LABEL,
   prThreadId,
@@ -833,10 +834,12 @@ function prKey(rowId: string, a: PrAction, pending?: string): Key {
   }
 }
 
-function opening(name: string): string {
-  const result = pendingResult([{ kind: 'open', target: '', name }], Date.now())
+function pendingText(effect: Effect): string {
+  return feedbackText({ is: 'local', result: pendingResult([effect], Date.now()) }, 'codex')
+}
 
-  return feedbackText({ is: 'local', result }, 'codex')
+function opening(name: string): string {
+  return pendingText({ kind: 'open', target: '', name })
 }
 
 function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
@@ -1700,7 +1703,7 @@ function PrBlock({
   const tone = PR_TONES[status]
   const id = prMarkId(pr.ref)
   const keys = prBlockActions(pr, isSent, v.prs.branchRef, pressesOf(v)).map(a =>
-    prKey(id, a, opening(`PR #${pr.number}`)),
+    prKey(id, a, a.press.action === 'pr-refresh' ? pendingText(PR_REFRESH) : opening(`PR #${pr.number}`)),
   )
   const last = prLastLine(v, id)
 

@@ -1138,6 +1138,7 @@ function hostOf($: EngineInterface, owner: Owner, surface?: UiPressArgument['sur
       void commit($, owner, s =>
         s.prViews.isGhMissing === isGhMissing ? s : { ...s, prViews: { ...s.prViews, isGhMissing } },
       ).catch(() => undefined),
+    refreshPrs: () => fetchPrs($, true),
   })
 }
 
@@ -1927,7 +1928,8 @@ async function wakeForDone($: EngineInterface) {
 }
 
 async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPressArgument['surface']) {
-  const mayStayOnRow = 'ref' in p ? ['pr-open', 'thread-open', 'log'].includes(p.action) : p.action === 'step'
+  const mayStayOnRow =
+    'ref' in p ? ['pr-open', 'pr-refresh', 'thread-open', 'log'].includes(p.action) : p.action === 'step'
   const undoRevision = mayStayOnRow ? suspendUndoReveal() : cancelUndoScroll()
   const rowId = pressRowId(p)
   if (p.action !== 'undo' && !rowId.startsWith('pr:')) await keepPressedOpen($, rowId)
@@ -2167,6 +2169,7 @@ const PR_KEYS: Record<PrPress['action'], string> = {
   'pr-address-all': 'address-all',
   'pr-merge': 'merge',
   'pr-open': 'open',
+  'pr-refresh': 'refresh',
   'pr-dismiss': 'dismiss-pr',
   'pr-undo': 'undo-pr',
   'check-fix': 'fix',
@@ -3299,15 +3302,20 @@ export const register: Register = on => {
     const isThreadSent = threadSentIn(lastActions)
     const presses = { lastActions, turns, now }
     const prPress = (p: PrPress) => (press: UiPressArgument) => runPress($, p, press.surface)
-    const prKeyAction = (a: PrAction, row: string): KeyAction => ({
-      key: `${a.icon === 'retry' ? 'retry' : PR_KEYS[a.press.action]}-${row}`,
-      label: a.label,
-      emphasis: a.emphasis,
-      kind: a.kind,
-      ...(a.icon ? { icon: ACTION_GLYPHS[a.icon] } : {}),
-      ...(a.hotkey ? { hotkey: a.hotkey } : {}),
-      onPress: prPress(a.press),
-    })
+    const prKeyAction = (a: PrAction, row: string): KeyAction => {
+      // A failed send's Try again repeats its button's press, so it needs a key of its own.
+      const isResend = a.icon === 'retry' && a.press.action !== 'pr-refresh'
+
+      return {
+        key: `${isResend ? 'retry' : PR_KEYS[a.press.action]}-${row}`,
+        label: a.label,
+        emphasis: a.emphasis,
+        kind: a.kind,
+        ...(a.icon ? { icon: ACTION_GLYPHS[a.icon] } : {}),
+        ...(a.hotkey ? { hotkey: a.hotkey } : {}),
+        onPress: prPress(a.press),
+      }
+    }
     const checkRowBase = (pr: PrView, c: PrCheck): Row => ({
       id: prCheckId(pr, c),
       handle: checkRowText(c).mark.text,
@@ -4950,10 +4958,6 @@ export const register: Register = on => {
               <Text color={pal.tone.error} wrap="wrap">
                 {prRefreshFailedText(pr.error)}
               </Text>
-              {prState.isFetching ? <Text color={pal.muted}>Refreshing…</Text> : null}
-              <Box flexDirection="row">
-                <Button key={`refresh-${pr.ref}`} label={ROW_COPY.retry} onPress={() => void findPrs($)} />
-              </Box>
             </Box>
           ) : null}
           <Box

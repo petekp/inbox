@@ -2535,7 +2535,8 @@ function isStatusUnderActions(f, isOpen) {
 var runIt = (look) => isTerminalLike(look) ? "Run it in a terminal, or type ! and paste." : "Run it in Terminal.";
 var VERBS = {
   open: { pending: "Opening", done: "Opened", failed: "open" },
-  copy: { pending: "Copying", done: "Copied", failed: "copy" }
+  copy: { pending: "Copying", done: "Copied", failed: "copy" },
+  "refresh-prs": { pending: "Refreshing", done: "Refreshed", failed: "refresh" }
 };
 function localText(r, look) {
   const isPrs = r.parts.length > 1 && r.parts.every((p) => p.kind === "open" && p.error === null && /^PR #\d+$/.test(p.name));
@@ -3105,6 +3106,8 @@ function prsEmptyText(prs, place) {
 function prRefreshFailedText(error) {
   return `Last refresh failed: ${error}`;
 }
+var PR_REFRESH_LABEL = "Refresh PRs";
+var PR_REFRESH = { kind: "refresh-prs", name: "PRs" };
 var PR_DISMISSED_LABEL = "Dismissed";
 var PR_GROUP_TITLES = { threads: "Review threads", checks: "Failing checks" };
 function threadRowText(pr, t, lastActions) {
@@ -3287,6 +3290,15 @@ function prBlockActions(pr, isThreadSent, branchRef, presses) {
     ] : []
   ];
   return [
+    ...pr.error ? [
+      {
+        press: { action: "pr-refresh", ref: pr.ref },
+        label: PR_REFRESH_LABEL,
+        kind: "local",
+        emphasis: "normal",
+        icon: "retry"
+      }
+    ] : [],
     ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, null)),
     ...moves.map((m, n) => ({ ...m, emphasis: n === 0 ? "primary" : "normal" })),
     { press: { action: "pr-open", ref: pr.ref }, label: "Open PR", kind: "local", emphasis: "normal", icon: "open" },
@@ -3318,8 +3330,8 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
     return stale;
   const record = (rowId, kind, action, text) => recordPress(kind, action, text, ctx, lastActions[rowId]);
   const send = (text) => ({ kind: "send", text, by: null });
-  const open = (rowId, text, url, name) => {
-    const effects = [{ kind: "open", target: url, name }];
+  const local = (rowId, text, effect) => {
+    const effects = [effect];
     const result = pendingResult(effects, ctx.now, ctx.localPressId);
     return applied({ lasts: { [rowId]: localLast(lastActions[rowId], { action: p.action, text }, result) }, effects });
   };
@@ -3335,7 +3347,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
         return stale;
       const id = prThreadId(pr, t);
       if (p.action === "thread-open")
-        return open(id, "Open", t.reply?.url || t.url || pr.url, "the comment");
+        return local(id, "Open", { kind: "open", target: t.reply?.url || t.url || pr.url, name: "the comment" });
       if (p.action === "thread-address")
         return applied({
           lasts: { [id]: record(id, "handoff", p.action, "Address") },
@@ -3382,7 +3394,9 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
         effects: [send(prompts.merge(pr))]
       });
     case "pr-open":
-      return open(markId, "Open PR", pr.url, `PR #${pr.number}`);
+      return local(markId, "Open PR", { kind: "open", target: pr.url, name: `PR #${pr.number}` });
+    case "pr-refresh":
+      return local(markId, PR_REFRESH_LABEL, PR_REFRESH);
     case "pr-dismiss":
       if (!ledger.prs.includes(p.ref) || prState.branchRef === p.ref)
         return stale;
@@ -3404,7 +3418,11 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
       const check = pr.checks.find((c) => c.name === p.check);
       if (!check)
         return stale;
-      return open(prCheckId(pr, check), "Open log", check.url ?? pr.url, check.url ? "the log" : `PR #${pr.number}`);
+      return local(prCheckId(pr, check), "Open log", {
+        kind: "open",
+        target: check.url ?? pr.url,
+        name: check.url ? "the log" : `PR #${pr.number}`
+      });
     }
   }
 }
@@ -4261,21 +4279,22 @@ function isPrFetchDue(s, lastFetchedAt, now) {
   return now - lastFetchedAt >= PRS_REFRESH_MS || hasNewPr && now - lastFetchedAt >= NEW_PR_FETCH_MS;
 }
 function prFetchTracker(now) {
-  const running = new Set;
+  const running = new Map;
   const endedAt = new Map;
+  const start = (id, fetch) => {
+    const run = fetch().catch(() => {
+      return;
+    }).finally(() => {
+      endedAt.set(id, now());
+      running.delete(id);
+    });
+    running.set(id, run);
+    return run;
+  };
   return {
     isFetching: (id) => running.has(id),
-    fetchWhenDue: (id, s, fetch) => {
-      if (running.has(id) || !isPrFetchDue(s, endedAt.get(id), now()))
-        return null;
-      running.add(id);
-      return fetch().catch(() => {
-        return;
-      }).finally(() => {
-        endedAt.set(id, now());
-        running.delete(id);
-      });
-    }
+    fetchWhenDue: (id, s, fetch) => running.has(id) || !isPrFetchDue(s, endedAt.get(id), now()) ? null : start(id, fetch),
+    fetchNow: (id, fetch) => running.get(id) ?? start(id, fetch)
   };
 }
 async function fetchPrs(host, findsBranchPr) {
@@ -6118,7 +6137,13 @@ function createInbox(pi, deps = defaultDeps) {
         const why = sendToAgent(ctx, text);
         return why === null ? { state: "accepted", queuedId: null } : { state: "rejected", reason: why };
       },
-      perform: async (_s, effect) => effect.kind === "copy" ? deps.copy(effect.text) : openTarget2(run, effect.target, ctx.cwd, deps.home),
+      perform: async (_s, effect) => {
+        if (effect.kind === "refresh-prs") {
+          await prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true));
+          return null;
+        }
+        return effect.kind === "copy" ? deps.copy(effect.text) : openTarget2(run, effect.target, ctx.cwd, deps.home);
+      },
       gh: {
         find: gh.find,
         forget: gh.forget,
