@@ -1510,12 +1510,15 @@ function isAgain(last, action, isOut) {
 function stepKind(step) {
   return step.step.some((h) => h.kind === "run") ? "handoff" : "local";
 }
-var TABS = [
-  { id: "overview", label: "Overview", symbol: "\u{1F9ED}", hotkey: "1" },
-  { id: "needsYou", label: "Asks", symbol: "\u{1F64B}", hotkey: "2" },
-  { id: "findings", label: "Finds", symbol: "\u{1F50D}", hotkey: "3" },
-  { id: "prs", label: "PRs", symbol: "\u{1F500}", hotkey: "4" }
+var TAB_NAMES = [
+  { id: "overview", label: "Overview", symbol: "\u{1F9ED}" },
+  { id: "needsYou", label: "Asks", symbol: "\u{1F64B}" },
+  { id: "findings", label: "Finds", symbol: "\u{1F50D}" },
+  { id: "prs", label: "PRs", symbol: "\u{1F500}" }
 ];
+var numbered = (tabs) => tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }));
+var NEXT_BUILD_TABS = numbered(TAB_NAMES);
+var RELEASE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview"));
 function isListedTab(tab) {
   return tab === "needsYou" || tab === "findings";
 }
@@ -1523,13 +1526,13 @@ function isRowTab(tab) {
   return tab !== "overview";
 }
 function isShownTab(raw) {
-  return TABS.some((t) => t.id === raw);
+  return TAB_NAMES.some((t) => t.id === raw);
 }
 function screenTabOf(tab) {
-  return { label: TABS.find((t) => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) };
+  return { label: TAB_NAMES.find((t) => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) };
 }
-var ROW_TABS = TABS.filter((t) => isRowTab(t.id));
-var LISTED_TABS = TABS.filter((t) => isListedTab(t.id));
+var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
+var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 var WORKING_TEXT = "Working\u2026";
 var OVERVIEW_MARKS = {
   working: { mark: "\u25CF", tone: null },

@@ -101,7 +101,7 @@ test('a failed send shows its reason below the rows', async () => {
 test('after Address on a PR thread, the selection moves to the next PR row that waits', async () => {
   const { panel, pressed } = open()
   await panel.start()
-  for (const key of ['4', 'a', 'enter', 'a']) {
+  for (const key of ['3', 'a', 'enter', 'a']) {
     panel.handleInput(key)
     await flush()
   }
@@ -128,7 +128,7 @@ test('the redraw timer runs only while something on the screen moves', async () 
 })
 
 test('the frame timer runs while the Overview shows a running mark, re-renders without reading the session, and stops on another tab and on dispose', async () => {
-  const demo = demoSource({ now: () => 0, after: () => undefined, settleWindowMs: SETTLED_MS })
+  const demo = demoSource({ now: () => 0, after: () => undefined, settleWindowMs: SETTLED_MS, isNextBuild: true })
   let reads = 0
   const { panel, timers, calls } = open({
     screen: async holds => {

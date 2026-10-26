@@ -650,12 +650,35 @@ function stepKind(step: HelpStep): PressKind {
 export type ShownTab = Tab | PageTab
 
 /** The band and the inbox model always read a tab's words. A look draws its symbol in their place where the words do not fit. */
-export const TABS: readonly { id: ShownTab; label: string; symbol: string; hotkey: string }[] = [
-  { id: 'overview', label: 'Overview', symbol: '\u{1F9ED}', hotkey: '1' },
-  { id: 'needsYou', label: 'Asks', symbol: '\u{1F64B}', hotkey: '2' },
-  { id: 'findings', label: 'Finds', symbol: '\u{1F50D}', hotkey: '3' },
-  { id: 'prs', label: 'PRs', symbol: '\u{1F500}', hotkey: '4' },
+type TabName = { id: ShownTab; label: string; symbol: string }
+
+/** A tab a build draws, with the number key that shows it. */
+export type DrawnTab = TabName & { hotkey: string }
+
+const TAB_NAMES: readonly TabName[] = [
+  { id: 'overview', label: 'Overview', symbol: '\u{1F9ED}' },
+  { id: 'needsYou', label: 'Asks', symbol: '\u{1F64B}' },
+  { id: 'findings', label: 'Finds', symbol: '\u{1F50D}' },
+  { id: 'prs', label: 'PRs', symbol: '\u{1F500}' },
 ]
+
+const numbered = (tabs: readonly TabName[]): readonly DrawnTab[] =>
+  tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }))
+
+const NEXT_BUILD_TABS = numbered(TAB_NAMES)
+const RELEASE_TABS = numbered(TAB_NAMES.filter(t => t.id !== 'overview'))
+
+/** The tabs a build draws, in order, each keyed by its place. Only a next build draws the Overview. */
+export function shownTabs(isNextBuild: boolean): readonly DrawnTab[] {
+  return isNextBuild ? NEXT_BUILD_TABS : RELEASE_TABS
+}
+
+/** The tab a build draws for a saved or sent one: that tab when the build draws it, else the build's first tab. */
+export function drawnTabOf(tab: ShownTab, isNextBuild: boolean): ShownTab {
+  const tabs = shownTabs(isNextBuild)
+
+  return tabs.some(t => t.id === tab) ? tab : tabs[0]!.id
+}
 
 /** How a look names its tabs: by their words, or by their symbols. */
 export type TabNaming = 'words' | 'symbols'
@@ -693,20 +716,20 @@ export function isRowTab(tab: ShownTab): tab is Tab {
   return tab !== 'overview'
 }
 
-/** Whether a saved or sent value names a tab a look can show. */
+/** Whether a saved or sent value names a tab that some build draws. */
 export function isShownTab(raw: unknown): raw is ShownTab {
-  return TABS.some(t => t.id === raw)
+  return TAB_NAMES.some(t => t.id === raw)
 }
 
 /** The tab a look shows, as the inbox model is told. */
 export function screenTabOf(tab: ShownTab): ScreenTab {
-  return { label: TABS.find(t => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) }
+  return { label: TAB_NAMES.find(t => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) }
 }
 
 /** The tabs that list rows: Asks, Finds and PRs. */
-export const ROW_TABS = TABS.filter((t): t is (typeof TABS)[number] & { id: Tab } => isRowTab(t.id))
+export const ROW_TABS = TAB_NAMES.filter((t): t is TabName & { id: Tab } => isRowTab(t.id))
 
-export const LISTED_TABS = TABS.filter((t): t is (typeof TABS)[number] & { id: ListedTab } => isListedTab(t.id))
+export const LISTED_TABS = TAB_NAMES.filter((t): t is TabName & { id: ListedTab } => isListedTab(t.id))
 
 /** A line on the Overview page. A null tone draws the mark muted. */
 export type OverviewRow = {
