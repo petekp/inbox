@@ -3335,23 +3335,19 @@ export const register: Register = on => {
         onPress: prPress(a.press),
       }
     }
-    const checkRowBase = (pr: PrView, c: PrCheck): Row => ({
-      id: prCheckId(pr, c),
-      handle: checkRowText(c).mark.text,
-      handleTone: checkRowText(c).mark.tone ?? undefined,
-      isMarkDone: checkRowText(c).mark.isDone,
-      title: c.name,
-      line: { text: c.name },
-      body: null,
-      keys: () => checkActions(pr, c, presses).map(a => prKeyAction(a, `${pr.ref}-${c.name}`)),
-    })
     const checkRow = (pr: PrView, c: PrCheck): Row => {
-      const { lead, meta } = checkRowText(c)
+      const { mark, lead, title, meta } = checkRowText(c)
       return {
-        ...checkRowBase(pr, c),
+        id: prCheckId(pr, c),
+        handle: mark.text,
+        handleTone: mark.tone ?? undefined,
+        isMarkDone: mark.isDone,
+        title,
         ...(c.finishedAt !== undefined ? { at: c.finishedAt } : {}),
-        line: { ...(lead ? { before: `${lead} / ` } : {}), text: c.name, after: meta },
+        line: { ...(lead ? { before: `${lead} / ` } : {}), text: title, after: meta },
         subtitle: <Text color={pal.muted}>{lead ? `${lead}${DOT}${meta}` : meta}</Text>,
+        body: null,
+        keys: () => checkActions(pr, c, presses).map(a => prKeyAction(a, `${pr.ref}-${c.name}`)),
       }
     }
     const threadRow = (pr: PrView, t: PrThread): Row => {
@@ -3397,6 +3393,7 @@ export const register: Register = on => {
         )
       }
       const text = threadRowText(pr, t, lastActions)
+      const actions = splitFollowUps(threadActions(pr, t, presses))
 
       return {
         id,
@@ -3413,8 +3410,8 @@ export const register: Register = on => {
         },
         body: comment,
         clippedBody: clippedComment,
-        keys: () => splitFollowUps(threadActions(pr, t, presses)).keys.map(a => prKeyAction(a, t.id)),
-        moreKeys: () => splitFollowUps(threadActions(pr, t, presses)).more.map(a => prKeyAction(a, t.id)),
+        keys: () => actions.keys.map(a => prKeyAction(a, t.id)),
+        moreKeys: () => actions.more.map(a => prKeyAction(a, t.id)),
       }
     }
 
