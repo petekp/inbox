@@ -3416,14 +3416,15 @@ export const register: Register = on => {
     }
 
     type Entry = DrawnEntry<Row>
+    // The Overview draws no rows, so none are built while it shows.
     const lists = drawnLists(
       view,
       () => true,
-      r => (r.item ? itemRow(r) : r.finding ? findingRow(r) : null),
+      r => (isOverviewShown ? null : r.item ? itemRow(r) : r.finding ? findingRow(r) : null),
     )
     const needsYouGroups = NEEDS_YOU_GROUPS.map(g => ({ ...g, entries: lists[g.list], rows: rowsIn(lists[g.list]) }))
     const findingEntries = lists.findings
-    const prGroups = shownPrs
+    const prGroups = (isOverviewShown ? [] : shownPrs)
       .map(({ pr, isSettled }) => ({
         pr,
         isSettled,
@@ -3439,7 +3440,7 @@ export const register: Register = on => {
     const tabCounts: Record<Tab, number> = {
       needsYou: view.needsYou.count,
       findings: view.findings.count,
-      prs: prGroups.filter(g => !g.isSettled && prNeedsYou(g.pr, isThreadSent)).length,
+      prs: shownPrs.filter(x => !x.isSettled && prNeedsYou(x.pr, isThreadSent)).length,
     }
     const tabCount = (id: ShownTab) => (isRowTab(id) ? tabCounts[id] : 0)
     const tabTone = (id: ShownTab) => (isRowTab(id) ? pal.tone[id] : undefined)
@@ -3450,15 +3451,17 @@ export const register: Register = on => {
     const ids = rows[tab].map(r => r.id)
     const indexOf = new Map(ids.map((id, n) => [id, n]))
     const cursor = selection[tab]
-    const settledIds = new Set(settledRowIds(allRows(view)))
-    const top = firstWaiting(
-      tabWaits(
-        tab,
-        view,
-        shownPrs.filter(x => !x.isSettled).map(x => x.pr),
-        lastActions,
-      ),
-    )
+    const settledIds = new Set(isOverviewShown ? [] : settledRowIds(allRows(view)))
+    const top = isOverviewShown
+      ? null
+      : firstWaiting(
+          tabWaits(
+            tab,
+            view,
+            shownPrs.filter(x => !x.isSettled).map(x => x.pr),
+            lastActions,
+          ),
+        )
     const at = selectedIndex(ids, cursor, top, id => settledIds.has(id))
     const isOpenGuarded = isGuarded(cursor.openedAt, now)
 
@@ -4175,10 +4178,8 @@ export const register: Register = on => {
     })
     const status = shownStatus.text ?? ''
 
-    const drawnIds = new Set([
-      ...Object.values(rows).flatMap(list => list.map(r => r.id)),
-      ...prViews.map(pr => prMarkId(pr.ref)),
-    ])
+    const openIds = openRowIds(view)
+    const drawnIds = new Set([...openIds.needsYou, ...openIds.findings, ...prRowIds(shownPrs)])
     const lineNote = Object.entries(notes)
       .filter(([id, n]) => !drawnIds.has(id) && now - n.at < SETTLED_MS)
       .map(([, n]) => n)
