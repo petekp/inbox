@@ -74,7 +74,7 @@ export function ledgerActions(
       ...(k.hotkey ? { hotkey: k.hotkey } : {}),
       ...(a.icon ? { icon: ACTION_ICONS[a.icon] } : {}),
       ...(a.press.action === 'dismiss' ? { isDismiss: true } : {}),
-      ...(a.isOut || (a.press.action !== 'type' && actionId(a.press) === pressing) ? { isOut: true } : {}),
+      ...(a.isOut || actionId(a.press) === pressing ? { isOut: true } : {}),
       run: a.press.action === 'type' ? on.reply : a.press.action === 'discard' ? on.discard : () => on.press(a.press),
     }
   }

@@ -171,12 +171,13 @@ const drafts = new Map<string, Draft>()
 const discarded = new Map<string, number>()
 const optionsShown = new Set<string>()
 const unfolded = new Set<FoldGroup>()
-/** A press on its way: its pending Local result, or null for a message, which reads SENDING. */
-const sending = new Map<string, Feedback | null>()
-/** The action of the press on its way, by row id, so its button draws as out before the view says so. */
-const pressing = new Map<string, string>()
+/**
+ * The latest press on its way, by row id: its request number, its pending Local result or null for a message, which
+ * reads SENDING, and its action, so its button draws as out before the view says so. A reply's action is null, since
+ * a reply is never out.
+ */
+const sending = new Map<string, { seq: number; pending: Feedback | null; action: string | null }>()
 const SENDING = 'Sending…'
-const latestPress = new Map<string, number>()
 const errors = new Map<string, string>()
 const notes = new Map<string, { text: string; at: number }>()
 const copies = new Map<string, { name: string; text: string }>()
@@ -614,14 +615,11 @@ async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void
   if (isDisposed) return
   const generation = viewGeneration
   const seq = ++requested
-  latestPress.set(rowId, seq)
-  const isLatest = () => latestPress.get(rowId) === seq
+  const isLatest = () => sending.get(rowId)?.seq === seq
   if (press.action !== 'undo' && !rowId.startsWith('pr:')) keepPressedOpen(rowId)
   const t = drawnTab()
   const wasWaiting = !!view && isRowTab(t) && tabWaits(view, t).some(r => r.id === rowId && r.isWaiting)
-  sending.set(rowId, pending)
-  if (press.action === 'type') pressing.delete(rowId)
-  else pressing.set(rowId, actionId(press))
+  sending.set(rowId, { seq, pending, action: press.action === 'type' ? null : actionId(press) })
   errors.delete(rowId)
   notes.delete(rowId)
   copies.delete(rowId)
@@ -657,9 +655,7 @@ async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void
   } finally {
     activePresses--
     if (isLatest()) {
-      latestPress.delete(rowId)
       sending.delete(rowId)
-      pressing.delete(rowId)
       draw()
     }
   }
@@ -741,7 +737,7 @@ function discardReply(id: string) {
 }
 
 function rowKeys(r: RowView): { keys: Key[]; more: Key[] } {
-  const actions = ledgerActions(r, optionsShown.has(r.id), pressing.get(r.id) ?? null, {
+  const actions = ledgerActions(r, optionsShown.has(r.id), sending.get(r.id)?.action ?? null, {
     press: p => {
       const step = p.action === 'step' ? r.steps[p.step] : undefined
       const action = r.actions.find(a => a.press.action === 'step' && p.action === 'step' && a.press.step === p.step)
@@ -844,7 +840,7 @@ function prKey(rowId: string, pr: PrView, a: PrAction): Key {
     emphasis: a.emphasis,
     ...(a.icon ? { icon: a.icon } : {}),
     ...(a.press.action === 'pr-dismiss' ? { isDismiss: true } : {}),
-    ...(a.isOut || pressing.get(rowId) === a.press.action ? { isOut: true } : {}),
+    ...(a.isOut || sending.get(rowId)?.action === a.press.action ? { isOut: true } : {}),
     run: () => void act(rowId, a.press, undefined, pending),
   }
 }
@@ -1113,7 +1109,7 @@ function ListRow({ row, track, onSelect, now }: { row: Row; track: RowTrack; onS
   const handle = <span class={`mark ${row.handleTone ?? ''}`}>{row.handle}</span>
 
   const isPressing = sending.has(row.id)
-  const pending = sending.get(row.id) ?? null
+  const pending = sending.get(row.id)?.pending ?? null
   const isSending = isPressing && pending === null
   const f = isFeedbackShown(row) ? row.feedback : null
   const label = isSending ? null : pending ? feedbackText(pending, 'codex') : f ? feedbackLabel(row) : null
@@ -1692,7 +1688,7 @@ async function undoPr(id: string, ref: string) {
 
 function prLastLine(v: View, id: string): { text: string; isError: boolean } | null {
   if (sending.has(id)) {
-    const pending = sending.get(id)
+    const pending = sending.get(id)?.pending
     return { text: pending ? feedbackText(pending, 'codex') : SENDING, isError: false }
   }
   const error = errors.get(id)
