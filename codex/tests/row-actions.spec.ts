@@ -16,7 +16,7 @@ import { CODEX } from '../src/texts'
 import { emptyState, updateState } from '../src/state'
 import { viewOf } from '../src/core'
 import type { TabView } from '../src/core'
-import { makeServer, tabUri } from '../src/server'
+import { makeServer } from '../src/server'
 import { POLL_MS } from '../src/settle'
 import TAB_HTML from '../src/tab.html'
 import { fakeRunner, tempDir } from './helpers'
@@ -384,7 +384,7 @@ test('the built tab starts without randomUUID and reloads without losing its hos
     fallbackCli: async () => '/codex',
     build: SERVER_BUILD,
   })
-  const page = await handle({ jsonrpc: '2.0', id: 1, method: 'resources/read', params: { uri: tabUri(TAB_HTML) } })
+  const page = await handle({ jsonrpc: '2.0', id: 1, method: 'resources/read', params: { uri: 'ui://inbox/view' } })
   assert.ok(page)
   const resource = page.result as { contents: { text: string }[] }
   const host = new Window({
