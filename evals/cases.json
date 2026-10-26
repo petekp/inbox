@@ -1950,7 +1950,7 @@
     "about": "With the pane open, a reply that repeats a question the pane already lists adds nothing.",
     "screen": {
       "isOpen": true,
-      "tab": "Needs you"
+      "tab": "Asks"
     },
     "ledger": {
       "turn": 6,
@@ -2096,7 +2096,7 @@
     "about": "With the pane open, a real question the pane does not list is added.",
     "screen": {
       "isOpen": true,
-      "tab": "Needs you"
+      "tab": "Asks"
     },
     "ledger": {
       "turn": 6,
@@ -2137,10 +2137,10 @@
   },
   {
     "name": "tab-open-needs-you-records-new-task",
-    "about": "With the inbox open on its Needs you tab, a step only the person can do that the tab does not list is added.",
+    "about": "With the inbox open on its Asks tab, a step only the person can do that the tab does not list is added.",
     "screen": {
       "isOpen": true,
-      "tab": "Needs you"
+      "tab": "Asks"
     },
     "ledger": {
       "turn": 6,

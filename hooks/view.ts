@@ -45,7 +45,7 @@ import type { HelpStep, RowPress } from './presses'
 const OPTIONS_FOLD_AT = 5
 const OPTION_LABEL_CHARS = 32
 // The digits switch tabs, and the letters left out are the
-// keys of a Needs you row's other actions and of moving the selection.
+// keys of an Asks row's other actions and of moving the selection.
 export const CHOICE_KEYS = [...'abcfghilm']
 /**
  * The dot between parts of a drawn line, as "title · 3m ago", set apart by spaces wider than a space. The one before
@@ -616,7 +616,7 @@ export type ShownTab = Tab | PageTab
 /** The band and the inbox model always read a tab's words. A look draws its symbol in their place where the words do not fit. */
 export const TABS: readonly { id: ShownTab; label: string; symbol: string; hotkey: string }[] = [
   { id: 'overview', label: 'Overview', symbol: '\u{1F9ED}', hotkey: '1' },
-  { id: 'needsYou', label: 'Needs you', symbol: '\u{1F64B}', hotkey: '2' },
+  { id: 'needsYou', label: 'Asks', symbol: '\u{1F64B}', hotkey: '2' },
   { id: 'findings', label: 'Findings', symbol: '\u{1F50D}', hotkey: '3' },
   { id: 'prs', label: 'PRs', symbol: '\u{1F500}', hotkey: '4' },
 ]
@@ -647,7 +647,7 @@ export function fitTabs<L>(
 
   return { naming: 'symbols', layout: layouts.at(-1)! }
 }
-/** Whether a shown tab lists rows you answer or close: Needs you and Findings. */
+/** Whether a shown tab lists rows you answer or close: Asks and Findings. */
 export function isListedTab(tab: ShownTab): tab is ListedTab {
   return tab === 'needsYou' || tab === 'findings'
 }
@@ -667,7 +667,7 @@ export function screenTabOf(tab: ShownTab): ScreenTab {
   return { label: TABS.find(t => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) }
 }
 
-/** The tabs that list rows: Needs you, Findings and PRs. */
+/** The tabs that list rows: Asks, Findings and PRs. */
 export const ROW_TABS = TABS.filter((t): t is (typeof TABS)[number] & { id: Tab } => isRowTab(t.id))
 
 export const LISTED_TABS = TABS.filter((t): t is (typeof TABS)[number] & { id: ListedTab } => isListedTab(t.id))
@@ -755,7 +755,7 @@ export function runningMark(now: number): string {
 export const QUIET_TEXT = 'Nothing new since you looked.'
 
 export function pointerText(count: number): string | null {
-  return count === 0 ? null : count === 1 ? 'Needs you has 1 item.' : `Needs you has ${count} items.`
+  return count === 0 ? null : count === 1 ? 'Asks has 1 item.' : `Asks has ${count} items.`
 }
 
 /** `parts` with `id` placed after the headline and the course. */
@@ -1323,7 +1323,7 @@ export function inboxView({
 
 /** A closed record's outcome as a look shows it. A finding a question replaced says where it went. */
 export function outcomeLabel(c: { outcome: string; askedAs?: string }): string {
-  return c.askedAs ? 'Now a question in Needs you' : capitalized(c.outcome)
+  return c.askedAs ? 'Now a question in Asks' : capitalized(c.outcome)
 }
 
 function heldLabel(c: Pick<Closed, 'how' | 'outcome'>): string {

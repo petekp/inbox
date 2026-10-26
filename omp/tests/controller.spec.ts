@@ -49,7 +49,7 @@ test('the panel shows a loading line until the first screen arrives', async () =
   const { panel } = open()
   expect(panel.render(80).join('\n')).toContain('Reading the inbox…')
   await panel.start()
-  expect(panel.render(80).join('\n')).toContain('Needs you')
+  expect(panel.render(80).join('\n')).toContain('Asks')
 })
 
 async function replyThenReopen(panel: ReturnType<typeof open>['panel'], reply: string): Promise<string> {

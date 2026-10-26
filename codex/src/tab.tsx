@@ -155,7 +155,7 @@ let stagedHostChanges: HostContext = {}
 let pollFailures = 0
 let readAt = 0
 let tab: ShownTab = 'needsYou'
-/** The tab drawn: the shown tab, or Needs you while the view has no Overview page, as from an older server. */
+/** The tab drawn: the shown tab, or Asks while the view has no Overview page, as from an older server. */
 function drawnTab(): ShownTab {
   return tab === 'overview' && !view?.overviewPage ? 'needsYou' : tab
 }

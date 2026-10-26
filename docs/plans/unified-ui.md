@@ -8,7 +8,7 @@ This proposal concerns the hierarchy and fitting of native drawings. A shared de
 
 ## Current structure
 
-- Needs you has Questions and Tasks. Findings has Issues and Opportunities. Each group has its own Closed fold.
+- Asks has Questions and Tasks. Findings has Issues and Opportunities. Each group has its own Closed fold.
 - Shared helpers choose row marks, reply hints, action labels and feedback. Fold labels count all closed rows outside the settle window and say how many earlier rows are not shown.
 - Action emphasis and action order are separate fields. Retry leads a failed row. Options or help steps precede Done or Fix. The desktop renderer follows the shared key plan.
 - The recommended option says "(recommended)" in every look. Done, Fix and Do it have primary emphasis on desktop and Codex. A terminal Button uses its plain native form.
@@ -27,7 +27,7 @@ These rules are current behavior. Their implementation does not depend on a new 
 | Align row marks and metadata across native drawings | Compare selected, handed-off, settled and closed forms in the current apps. Adjust each adapter only where a measured mismatch makes the hierarchy harder to read. |
 | Further align section separators and selected fills | Match each host's controls and appearance. Native desktop capabilities must come from the platform reference or a live probe. A shared CSS shape cannot establish a native requirement. |
 
-The Needs you count currently excludes PRs. A proposal to include blocked PRs changes the count's meaning and the text the models read. It is a separate product decision, followed by model evaluations if the text changes.
+The Asks count currently excludes PRs. A proposal to include blocked PRs changes the count's meaning and the text the models read. It is a separate product decision, followed by model evaluations if the text changes.
 
 Explain remains available by key in terminal and Codex. Desktop has no action keys, so it draws Explain. Reply uses the shared intent and order. Desktop draws that follow-up in a Client region because native Buttons fill and pad only their labels; Codex draws a normal button.
 

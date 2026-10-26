@@ -978,7 +978,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         ? await demoSource({ now: deps.now, after: () => {}, settleWindowMs: deps.settleWindowMs }).screen(NO_HOLDS)
         : await inbox.screen(ctx)
       const { needsYou, findings } = screen.view
-      ctx.ui.notify(`Needs you ${needsYou.count}, Findings ${findings.count}`, 'info')
+      ctx.ui.notify(`Asks ${needsYou.count}, Findings ${findings.count}`, 'info')
     },
   })
 

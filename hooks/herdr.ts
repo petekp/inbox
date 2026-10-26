@@ -14,7 +14,7 @@ const STATUS_TOKEN = 'inbox'
 
 const STOP_TOKEN = 'inbox-stop'
 
-/** Each row tab's token, which holds the tab's symbol and its count, as "🙋 2". */
+/** Each row tab's token, which holds the tab's count alone, as "2". The README's Herdr config colors each count by its tab. */
 const COUNT_TOKENS: Record<Tab, string> = {
   needsYou: 'inbox-needs-you',
   findings: 'inbox-findings',
@@ -79,7 +79,7 @@ export function herdrTokens(
   const counts = ROW_TABS.map(t => {
     const count = view[t.id].count
 
-    return [COUNT_TOKENS[t.id], stop || count === 0 ? null : `${t.symbol} ${count}`]
+    return [COUNT_TOKENS[t.id], stop || count === 0 ? null : String(count)]
   })
 
   return {

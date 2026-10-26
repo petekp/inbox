@@ -12,7 +12,7 @@ The facts behind it are in [docs/reference/](../reference/README.md), checked on
 
 - **Item**: a question the agent asked, or a task only the person can do.
 - **Row**: one entry in a list. A row is an item, a finding, a PR, a PR check or a review thread.
-- **Need you**: the rows the Needs you tab counts. Section 2.1 defines it.
+- **Need you**: the rows the Asks tab counts. Section 2.1 defines it.
 - **Per-turn update**: a model call after each reply that adds and closes items. It adds the items the agent did not record with its `record` tool. The Overview call that follows writes the session's headline and status.
 - **Headline and status**: the Overview call's one-line summary of the session: what it is for, and what the agent is doing now.
 - **Mod**: the Claude Code plugin in `hooks/` that draws the band and pane.
@@ -34,7 +34,7 @@ The mod draws the terminal and desktop looks. One HTML view draws the Codex tab.
 
 **Desktop.** The same band and pane, drawn for clicks. Actions are native buttons with no key letters. A tab, a closed row and a Closed fold line each take a click anywhere on them. The shown tab is a rounded raised segment with a bold label. The app's own ✕ closes the pane. Nothing depends on a key.
 
-**Codex.** The Inbox thread tab has the same rows as the pane and three tabs: Needs you, Findings and PRs. A send shows `Sending…` while the server accepts it, then the shared delivery feedback in section 2.3. An empty tab tells "the inbox has not heard from this chat's hooks" apart from "nothing needs you". The model's `inbox` tool returns text only, so it does not mount the full tab inline.
+**Codex.** The Inbox thread tab has the same rows as the pane and three tabs: Asks, Findings and PRs. A send shows `Sending…` while the server accepts it, then the shared delivery feedback in section 2.3. An empty tab tells "the inbox has not heard from this chat's hooks" apart from "nothing needs you". The model's `inbox` tool returns text only, so it does not mount the full tab inline.
 
 Each drawn action is clickable. Keys are an extra where the host supports them. Explain is key-only in terminal and Codex; desktop draws it because its action keys do nothing.
 
@@ -44,16 +44,16 @@ Each drawn action is clickable. Keys are an extra where the host supports them. 
 
 The count of what needs the person and the top row come first. The headline and status go to the agent, in the carry text. Every platform already shows which session waits on the person. The inbox adds the item itself.
 
-The count is named by its tab, Needs you. The band reads tab names with counts, and an empty inbox reads "Nothing needs you".
+The count is named by its tab, Asks. The band reads tab names with counts, and an empty inbox reads "Nothing needs you".
 
-**What the count holds.** Needs you counts:
+**What the count holds.** Asks counts:
 
 - open questions;
 - open tasks not handed off.
 
 It leaves out findings, PR rows, handed-off rows and the stop line. A queued send (2.3) counts as pressed: an answered question is closed and leaves, and a handed-off row leaves, while a row with a queued talk send stays in the count. The Findings tab has its own count. The PRs tab counts the open PRs that need the person: a merge conflict, a failing check, requested changes or a thread waiting on them.
 
-**The order of the Needs you list.** The top row is the first row of this list. [Open inbox] opens the pane with it open.
+**The order of the Asks list.** The top row is the first row of this list. [Open inbox] opens the pane with it open.
 
 1. Questions from the agent's newest reply, in the order asked.
 2. Questions from older replies, newest reply first and each reply in its original order.
@@ -70,8 +70,8 @@ A row has two forms:
 
 | Row | Where | Closed form | Open form adds |
 |---|---|---|---|
-| Question | Needs you | `ask · 3m ago`. The terminal adds `1)` or `•` before it (see numbers below) | Full ask, one button per option with the recommended one first, styled primary and labeled "(recommended)", help steps |
-| Task | Needs you | `ask · 3m ago`. The terminal adds `•` before it | Help steps (open, copy, run, terminal, link), "Open PR #N" when the ask names a tracked PR |
+| Question | Asks | `ask · 3m ago`. The terminal adds `1)` or `•` before it (see numbers below) | Full ask, one button per option with the recommended one first, styled primary and labeled "(recommended)", help steps |
+| Task | Asks | `ask · 3m ago`. The terminal adds `•` before it | Help steps (open, copy, run, terminal, link), "Open PR #N" when the ask names a tracked PR |
 | Finding | Findings, under Issues or Opportunities | The kind's mark as the handle (▲ for an issue, ✦ for an opportunity), the title and the age | Detail, and "Relevant file: " with the file's base name |
 | PR block | PRs | Always open: `#12 title`, readiness, one line of facts | PR actions |
 | PR check | PRs, inside the PR block | Two lines: `✗ Failing check`, then the check's name. | Fix, Open log |
@@ -233,7 +233,7 @@ An expired item closes as `Expired`. The rule behind it, 12 prompts or more than
 
 | State | Text |
 |---|---|
-| Needs you, empty | A title, `Nothing needs you.`, and a hint line: `Claude's questions and the tasks only you can do show up here.` (`Codex's` in the Codex tab) |
+| Asks, empty | A title, `Nothing needs you.`, and a hint line: `Claude's questions and the tasks only you can do show up here.` (`Codex's` in the Codex tab) |
 | Findings, empty | `No findings yet` and `Claude flags issues and opportunities it spots beyond your task.` |
 | PRs, empty | `No PRs` and `Your PRs show here when this session opens or links one, or when your branch has one.` |
 | PRs, loading | `Checking for PRs…` |
@@ -278,12 +278,12 @@ For a recording, `/inbox demo recording` hides those notices, the band's `Demo:`
 - The `/inbox` pane. It docks beside the transcript in a fullscreen terminal from 110 columns, and is otherwise a framed region above the prompt.
 - The Herdr sidebar line. It is the only place that names an open permission prompt or AskUserQuestion dialog.
 
-**The band.** One line: the counts for Needs you and Findings, with [Open inbox] at the right end. Each count reads as its tab does: the tab's name, muted, then the count in the tab's color. The button opens the pane with the top row open. The line is the same while Claude works and when the person comes back after a break.
+**The band.** One line: the counts for Asks and Findings, with [Open inbox] at the right end. Each count reads as its tab does: the tab's name, muted, then the count in the tab's color. The button opens the pane with the top row open. The line is the same while Claude works and when the person comes back after a break.
 
 ```
-Needs you 2 · Findings 1                                [Open inbox]
+Asks 2 · Findings 1                                     [Open inbox]
 Nothing needs you                                       [Open inbox]
-Demo: Needs you 7 · Findings 4              [Hide demo] [Open inbox]
+Demo: Asks 7 · Findings 4                   [Hide demo] [Open inbox]
 ```
 
 A count of zero drops out. During `/inbox demo` the line starts with "Demo:", so the sample counts do not pass for real ones.
@@ -291,7 +291,7 @@ A count of zero drops out. During `/inbox demo` the line starts with "Demo:", so
 A stop draws a second line under the counts, so [Open inbox] does not move. It starts with "Stopped 1m ago:" in red. An API error adds [Resume], which reads "Resuming…" under the same key while it sends.
 
 ```
-Needs you 2 · Findings 1                                [Open inbox]
+Asks 2 · Findings 1                                     [Open inbox]
 Stopped 1m ago: API error (overloaded). [Resume]
 ```
 
@@ -300,7 +300,7 @@ The band falls back to the engine default when the mod is off, a survey shows, o
 **The pane.** Raised tabs when docked, "a: Label" on each action, j and k, 1 2 3 for tabs, ctrl+x tab, Esc, and the Keys drawer.
 
 ```
- Needs you 3 │ Findings 2 │ PRs 1
+ Asks 3 │ Findings 2 │ PRs 1
  ─────────────────────────────────────────────────────────
  ! Stopped 3m ago: sign-in expired. Run /login, then send
    a message.
@@ -332,7 +332,7 @@ The mod picks the desktop drawing on each draw from `e.surface === 'desktop'`, n
 **The pane at 36 columns.**
 
 ```
-Needs you 3  [Findings 2]  [PRs]
+Asks 3  [Findings 2]  [PRs]
 Questions
 1) Rename the table to accou…
    Rename the users table to
@@ -400,10 +400,10 @@ A desktop row Client reserves a side column for the age at narrow widths too. Th
 
 The tool is split because the tab is already where the person acts. Codex mounts every model-called MCP App inline first, and inline cards would add a second, stale copy of the list each time the model calls the tool.
 
-**First thing seen.** The Needs you tab with its top row open.
+**First thing seen.** The Asks tab with its top row open.
 
 ```
- [Needs you 2] [Findings 1] [PRs]
+ [Asks 2] [Findings 1] [PRs]
  ──────────────────────────────────────────────────────
  Questions
  1) Use "inbox" or "attention" for the name?     2m ago
@@ -417,7 +417,7 @@ The tool is split because the tab is already where the person acts. Codex mounts
 
 The footer holds the status at its right. [Show demo] at its left follows the build settings in section 2.10. A read error or a note takes its own line under the tabs, so the status never moves the tabs. Codex's Activity view already shows which chat waits.
 
-**Tabs.** Needs you, Findings and PRs. The PRs tab has the same PR blocks as the pane (2.4). The server runs gh in the session's folder and refetches a view when the last fetch is over 2 minutes old.
+**Tabs.** Asks, Findings and PRs. The PRs tab has the same PR blocks as the pane (2.4). The server runs gh in the session's folder and refetches a view when the last fetch is over 2 minutes old.
 
 **Rows, groups and behavior.**
 
@@ -445,7 +445,7 @@ A failed `codex queue` shows `Not sent: <reason>` in red. Repeatable presses off
 - An inbox tool call arrives for a turn that `UserPromptSubmit` never recorded: that hook is skipped.
 - `UserPromptSubmit` has recorded two or more turns and `Stop` has recorded none: that hook is skipped, and the per-turn update never runs.
 
-Needs you then reads, above its rows or in place of the empty text:
+Asks then reads, above its rows or in place of the empty text:
 
 ```
 Items from Codex's replies are missing.

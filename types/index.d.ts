@@ -475,7 +475,7 @@ declare module 'claude-code' {
       discarded: Record<string, number>
       /** Each row's latest note, by the row's id. */
       notes: Record<string, RowNote>
-      /** The Needs you groups and the kinds of finding whose closed items show. Each starts folded. */
+      /** The Asks groups and the kinds of finding whose closed items show. Each starts folded. */
       unfolded: FoldKind[]
       foldHover: FoldKind | null
       /** The questions whose every option shows, by the row's id. */

@@ -396,7 +396,7 @@ function asked(id: string, kind: Item['kind'], turn: number): Item {
   }
 }
 
-test('Needs you lists the newest reply first and keeps each older reply in the order it asked', () => {
+test('Asks lists the newest reply first and keeps each older reply in the order it asked', () => {
   const s = emptyState('s1')
   const state: SessionState = {
     ...s,
@@ -425,7 +425,7 @@ test('Needs you lists the newest reply first and keeps each older reply in the o
   )
 })
 
-test('the tab lists Needs you in the mod’s order, numbers only the questions a typed number answers, and counts what waits', () => {
+test('the tab lists Asks in the mod’s order, numbers only the questions a typed number answers, and counts what waits', () => {
   const s = emptyState('s1')
   const state: SessionState = {
     ...s,
@@ -854,7 +854,7 @@ test('a tool call in a turn the prompt hook recorded, after a Stop sent Codex ba
   assert.equal(viewOf(called, 40).heard, 'heard')
 })
 
-test('the tab moves from an empty Needs you to Findings when it opens on a finding or a poll brings one, and counts as new only rows added since its first view', () => {
+test('the tab moves from an empty Asks to Findings when it opens on a finding or a poll brings one, and counts as new only rows added since its first view', () => {
   const s = noteHook(emptyState('s1'), 'start', 1)
   const first = newRows({}, viewOf(s, 10), false)
   assert.deepEqual(first.added, { needsYou: [], findings: [], prs: [] })

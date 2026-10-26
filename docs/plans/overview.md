@@ -73,7 +73,7 @@ A part has a `kind`. Text parts hold one short text. List parts hold items.
 | `next` | What comes next. | Model |
 | `since` | What changed after the last look. | Model writes, code clears |
 | `workstreams` | In a coordinator session: one line per stream of work. | Model |
-| `pointer` | "Needs you has N items." No buttons. Left out when nothing waits. | Code |
+| `pointer` | "Asks has N items." No buttons. Left out when nothing waits. | Code |
 
 An item has a status:
 
@@ -144,7 +144,7 @@ A changed direction leads, whatever else is true. After it:
 | stopped | any | headline, status, pointer, since, queue, next, open |
 | finished | any | headline, status, works, open |
 
-The pointer is "Needs you has N items." with the count of open questions and tasks. It has no buttons and is left out when the count is 0. `open` stays in every state so a problem is never hidden. `works` shows only when the work is finished, since the queue's done items already say what works while work goes on.
+The pointer is "Asks has N items." with the count of open questions and tasks. It has no buttons and is left out when the count is 0. `open` stays in every state so a problem is never hidden. `works` shows only when the work is finished, since the queue's done items already say what works while work goes on.
 
 The queue shows in every state except `finished`. In `stopped` it holds the ◆ item that says what the work waits on.
 
@@ -285,7 +285,7 @@ Readers of `card.goal` and their replacements:
 - **Merging an unseen list.** The call may drop an old change by mistake. The since case checks one merge. The trial shows more.
 - **Stale queue marks.** The queue updates after each reply, so a ● can be wrong between replies. The page shows `Working…` from the live turn state to cover the gap.
 - **Ledger evals move in step 5.** A new rule in the ledger call's text has moved unrelated ledger cases by 10 to 20 runs of 32. Step 5 compares against the baselines and stops if a case drops.
-- **Width.** The label "Overview" is 8 letters, as "Progress" was. The desktop pane at 36 to 38 columns may lose the Needs you and Findings counts. Step 3 measures it. If it does, the choice between a shorter label and losing the counts goes to the person.
+- **Width.** The label "Overview" is 8 letters, as "Progress" was. The desktop pane at 36 to 38 columns may lose the Asks and Findings counts. Step 3 measures it. If it does, the choice between a shorter label and losing the counts goes to the person.
 
 ## Out of scope
 

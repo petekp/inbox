@@ -200,7 +200,7 @@ test('the selected tab draws inverse and the others draw their counts', () => {
   const screen = screenOf()
   const bar = drawn(screen, keys(screen, INITIAL_UI, '3'))[0]!
   expect(bar).toContain(`${ESC}7m${ESC}1m [3] Findings ${screen.view.findings.count} `)
-  expect(strip(bar)).toContain(`[2] Needs you ${screen.view.needsYou.count}`)
+  expect(strip(bar)).toContain(`[2] Asks ${screen.view.needsYou.count}`)
   expect(strip(bar)).toContain(`[4] PRs ${screen.view.prs.count}`)
   expect(strip(bar)).toContain('esc to close')
 })
@@ -505,7 +505,7 @@ test('the PRs tab says when gh is missing and when there are no PRs', () => {
   expect(text({ ...empty, isFetchingPrs: true }, ui)).toContain('Checking for PRs…')
 })
 
-test('an empty Needs you tab explains itself', () => {
+test('an empty Asks tab explains itself', () => {
   const empty = { ...screenOf(), view: sessionView(emptyState('s'), NOW, SETTLED_MS, true) }
   expect(text(empty, INITIAL_UI)).toContain('Nothing needed')
 })
@@ -545,7 +545,7 @@ test('the demo says its presses send nothing', () => {
 test('the band shows both counts and how to open the inbox', () => {
   const screen = screenOf()
   const band = strip(bandLines(screen, 80, NOW, style)[0]!)
-  expect(band).toContain(`Needs you ${screen.view.needsYou.count}`)
+  expect(band).toContain(`Asks ${screen.view.needsYou.count}`)
   expect(band).toContain(`Findings ${screen.view.findings.count}`)
   expect(band).toContain('/inbox to open')
 })
@@ -590,7 +590,7 @@ test('a closed row whose Done message was refused offers Undo, which presses und
 
 const stopAt = NOW - 120_000
 
-test('a stop shows above the Needs you rows with its fix, and the band says it under the counts', () => {
+test('a stop shows above the Asks rows with its fix, and the band says it under the counts', () => {
   const stop: Stop = { kind: 'sign-in', detail: '401', resets: null, at: stopAt }
   const screen = screenOf({ stop })
   const lines = text(screen, INITIAL_UI).split('\n')
@@ -620,18 +620,18 @@ const findingsOnly = () => {
   })
 }
 
-test('a panel that opens on an empty Needs you moves to the first tab with open rows', () => {
+test('a panel that opens on an empty Asks moves to the first tab with open rows', () => {
   expect(followRows(findingsOnly(), INITIAL_UI, {}, true, NOW).ui.tab).toBe('findings')
 })
 
-test('rows that arrive while Needs you shows only its empty text move the panel to their tab', () => {
+test('rows that arrive while Asks shows only its empty text move the panel to their tab', () => {
   const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
   const opened = followRows(empty, INITIAL_UI, {}, true, NOW)
   expect(opened.ui.tab).toBe('needsYou')
   expect(followRows(findingsOnly(), opened.ui, opened.seen, false, NOW).ui.tab).toBe('findings')
 })
 
-test('a PR that arrives while Needs you shows only its empty text moves the panel to PRs', () => {
+test('a PR that arrives while Asks shows only its empty text moves the panel to PRs', () => {
   const empty = screenOf({ view: sessionView(emptyState('s1'), NOW, SETTLED_MS, true, NO_HOLDS) })
   const opened = followRows(empty, INITIAL_UI, {}, true, NOW)
   const withPr = screenOf({ view: sessionView(demoState(NOW), NOW, SETTLED_MS, true, NO_HOLDS) })
