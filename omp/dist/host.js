@@ -1962,6 +1962,9 @@ var STALE_TEXT = "This changed before your press. Nothing was sent.";
 function noteText() {
   return STALE_TEXT;
 }
+function isPressConfirmed(outcome) {
+  return outcome.error === null && outcome.note === null && !outcome.isUnconfirmed;
+}
 function helpEffect(item, help) {
   switch (help.kind) {
     case "run":
@@ -5284,12 +5287,12 @@ function createPanel(deps) {
     const sentDraft = !("ref" in p) && p.action === "type" ? ui.drafts[p.id] : undefined;
     const outcome = await source.press(p, holdsOf(ui)).catch((err) => ({
       error: err instanceof Error ? err.message : String(err),
-      note: null
+      note: null,
+      isUnconfirmed: false
     }));
     const now = deps.now();
-    const isSent = outcome.error === null && outcome.note !== "stale";
     const isDraftUnedited = sentDraft !== undefined && ui.drafts[rowId] === sentDraft;
-    if (isSent && isDraftUnedited) {
+    if (isPressConfirmed(outcome) && isDraftUnedited) {
       const { [rowId]: _sent, ...drafts } = ui.drafts;
       ui = { ...ui, drafts };
     }
@@ -5887,7 +5890,7 @@ function demoSource(deps) {
       const at = deps.now();
       const r = pressOn(state, p, at);
       if ("stale" in r)
-        return { error: null, note: "stale" };
+        return { error: null, note: "stale", isUnconfirmed: false };
       const after = demoAfterPress({ lastActions: state.lastActions, turns: state.presence }, r, new Set(Object.keys(holds.replies)));
       state = {
         ...state,
@@ -5901,7 +5904,7 @@ function demoSource(deps) {
           changed();
         }, deps.settleWindowMs);
       changed();
-      return { error: null, note: null };
+      return { error: null, note: null, isUnconfirmed: false };
     },
     resume: async () => null,
     fetchPrsWhenDue: () => {},
@@ -6496,7 +6499,7 @@ function createInbox(pi, deps = defaultDeps) {
     screen: (holds) => inbox.screen(ctx, holds),
     press: async (p, holds) => {
       const outcome = await inbox.press(ctx, p, holds);
-      return { error: outcome.error, note: outcome.note };
+      return { error: outcome.error, note: outcome.note, isUnconfirmed: outcome.isUnconfirmed };
     },
     resume: async () => inbox.resume(ctx),
     fetchPrsWhenDue: () => inbox.fetchPrsWhenDue(ctx),

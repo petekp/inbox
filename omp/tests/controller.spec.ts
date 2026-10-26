@@ -73,19 +73,25 @@ test('a reply typed in the panel reaches the source as a type press, and Reply t
 })
 
 test('a type press the source calls stale keeps the draft in the field', async () => {
-  const { panel } = open({ press: async () => ({ error: null, note: 'stale' }) })
+  const { panel } = open({ press: async () => ({ error: null, note: 'stale', isUnconfirmed: false }) })
   await panel.start()
   expect(await replyThenReopen(panel, 'oh')).toBe('oh')
 })
 
 test('a type press whose send fails keeps the draft in the field', async () => {
-  const { panel } = open({ press: async () => ({ error: 'Not sent: omp is busy', note: null }) })
+  const { panel } = open({ press: async () => ({ error: 'Not sent: omp is busy', note: null, isUnconfirmed: false }) })
+  await panel.start()
+  expect(await replyThenReopen(panel, 'oh')).toBe('oh')
+})
+
+test('a type press whose send cannot be confirmed keeps the draft in the field', async () => {
+  const { panel } = open({ press: async () => ({ error: null, note: null, isUnconfirmed: true }) })
   await panel.start()
   expect(await replyThenReopen(panel, 'oh')).toBe('oh')
 })
 
 test('a failed send shows its reason below the rows', async () => {
-  const { panel } = open({ press: async () => ({ error: 'Not sent: omp is busy', note: null }) })
+  const { panel } = open({ press: async () => ({ error: 'Not sent: omp is busy', note: null, isUnconfirmed: false }) })
   await panel.start()
   panel.handleInput('b')
   await flush()

@@ -1,5 +1,6 @@
 import { prRowId } from '../../hooks/pr-tab'
 import type { PrPress } from '../../hooks/pr-tab'
+import { isPressConfirmed } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
 import { READING_TEXT, compareEndsAt, RUNNING_FRAME_MS } from '../../hooks/view'
 import type { ReplyHolds, ShownTab } from '../../hooks/view'
@@ -24,7 +25,10 @@ const PRS_CHECK_MS = 120_000
 /** What the panel needs from a session, so the live inbox and the demo can both supply it. */
 export type PanelSource = {
   screen(holds: ReplyHolds): Promise<PanelScreen>
-  press(p: RowPress | PrPress, holds: ReplyHolds): Promise<{ error: string | null; note: 'stale' | null }>
+  press(
+    p: RowPress | PrPress,
+    holds: ReplyHolds,
+  ): Promise<{ error: string | null; note: 'stale' | null; isUnconfirmed: boolean }>
   /** Sends the message that resumes a stopped turn. Returns why it could not, or null. */
   resume(): Promise<string | null>
   fetchPrsWhenDue(): void
@@ -124,11 +128,11 @@ export function createPanel(deps: PanelDeps): Panel {
     const outcome = await source.press(p, holdsOf(ui)).catch((err: unknown) => ({
       error: err instanceof Error ? err.message : String(err),
       note: null,
+      isUnconfirmed: false,
     }))
     const now = deps.now()
-    const isSent = outcome.error === null && outcome.note !== 'stale'
     const isDraftUnedited = sentDraft !== undefined && ui.drafts[rowId] === sentDraft
-    if (isSent && isDraftUnedited) {
+    if (isPressConfirmed(outcome) && isDraftUnedited) {
       const { [rowId]: _sent, ...drafts } = ui.drafts
       ui = { ...ui, drafts }
     }

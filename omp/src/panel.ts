@@ -126,7 +126,7 @@ export type PanelUi = {
   focus: { rowId: string; index: number } | null
   /** The row whose reply field is open. */
   typing: string | null
-  /** Replies begun and not sent, by row id. Cancelling the field keeps its draft, and so does a failed or stale send. */
+  /** Replies begun and not sent, by row id. Cancelling the field keeps its draft, and so does a send that is not confirmed. */
   drafts: Record<string, Draft>
   /** Rows whose draft the person discarded, and when. */
   discarded: Record<string, number>
