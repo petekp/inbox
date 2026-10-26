@@ -37,7 +37,7 @@ import { capitalized, noteText } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
 import type { SessionView } from '../../hooks/session'
 import type { ToneName } from '../../hooks/tones'
-import { ago } from '../../hooks/text'
+import { ago, cellWidth, cutToCells } from '../../hooks/text'
 import {
   canUndoRefused,
   closedMark,
@@ -52,6 +52,8 @@ import {
   SETTLED_MS,
   TABS,
   actionLabel,
+  fitTabs,
+  tabName,
   closedShown,
   closedTotal,
   earlierLabel,
@@ -90,6 +92,7 @@ import type {
   ReplyHolds,
   RowView,
   ShownTab,
+  TabNaming,
 } from '../../hooks/view'
 
 export type ResumePress = { action: 'resume' }
@@ -819,7 +822,7 @@ export function noticeFor(outcome: { error: string | null; note: 'stale' | null 
 }
 
 const ANSI = /\x1b\[[0-9;]*m/g
-export const visibleLength = (s: string): number => [...s.replace(ANSI, '')].length
+export const visibleLength = (s: string): number => cellWidth(s.replace(ANSI, ''))
 
 function fit(s: string, width: number): string {
   if (visibleLength(s) <= width) return s
@@ -830,11 +833,10 @@ function fit(s: string, width: number): string {
       out += part
       continue
     }
-    for (const ch of part) {
-      if (n >= width - 1) return `${out}…\x1b[0m`
-      out += ch
-      n++
-    }
+    const cells = cellWidth(part)
+    if (n + cells > width - 1) return `${out}${cutToCells(part, width - 1 - n)}…\x1b[0m`
+    out += part
+    n += cells
   }
 
   return out
@@ -851,9 +853,9 @@ function wrapText(text: string, width: number): string[] {
   for (const paragraph of text.split('\n')) {
     let line = ''
     for (const word of paragraph.split(/\s+/).filter(Boolean)) {
-      const long = [...word].length > width ? [...word].slice(0, width - 1).join('') + '…' : word
+      const long = cellWidth(word) > width ? cutToCells(word, width - 1) + '…' : word
       if (line === '') line = long
-      else if ([...line].length + 1 + [...long].length <= width) line += ` ${long}`
+      else if (cellWidth(line) + 1 + cellWidth(long) <= width) line += ` ${long}`
       else {
         out.push(line)
         line = long
@@ -992,33 +994,29 @@ type TabCell = {
   id: ShownTab
   hotkey: string
   label: string
+  symbol: string
   tone: ToneName | null
   count: number | null
   isShown: boolean
 }
 
-/** One form of the tab line. Each later form is narrower. */
+/** One layout of the tab line. Each later layout is narrower. */
 type TabForm = { isBracketed: boolean }
 
 const TAB_FORMS: readonly TabForm[] = [{ isBracketed: true }, { isBracketed: false }]
-/** The fewest letters a cut label keeps, its ellipsis included. */
-const MIN_LABEL = 3
 
-const cutLabel = (label: string, length: number) =>
-  [...label].length <= length ? label : `${[...label].slice(0, length - 1).join('')}…`
-
-function tabCell(t: TabCell, label: string, form: TabForm, s: Style): string {
+function tabCell(t: TabCell, name: string, form: TabForm, s: Style): string {
   const key = form.isBracketed ? `[${t.hotkey}]` : t.hotkey
   const count = t.count ? String(t.count) : null
-  if (t.isShown) return s.inverse(s.bold(` ${key} ${label}${count === null ? '' : ` ${count}`} `))
+  if (t.isShown) return s.inverse(s.bold(` ${key} ${name}${count === null ? '' : ` ${count}`} `))
   const countText = count === null ? '' : ` ${t.tone ? s.tone(t.tone, count) : count}`
 
-  return ` ${s.dim(`${key} ${label}`)}${countText} `
+  return ` ${s.dim(`${key} ${name}`)}${countText} `
 }
 
 /**
- * The tab line. As the panel narrows, it drops the `[n]` brackets, then cuts the other tabs' labels,
- * longest first. Only the final `fit()` in `render` cuts the shown tab's label, once the other labels are at their shortest.
+ * The tab line. As the panel narrows, it drops the `[n]` brackets, then names the tabs by their symbols, with and then
+ * without brackets. Narrower still, the final `fit()` in `render` cuts the line's end.
  */
 function tabBar(d: Draw): string {
   const { screen, ui, width, style: s } = d
@@ -1033,22 +1031,11 @@ function tabBar(d: Draw): string {
     count: isRowTab(t.id) ? counts[t.id] : null,
     isShown: t.id === ui.tab,
   }))
-  const lineOf = (form: TabForm, lengths: number[]) =>
-    ` ${tabs.map((t, i) => tabCell(t, cutLabel(t.label, lengths[i]!), form, s)).join(' ')}`
-  const lengths = tabs.map(t => [...t.label].length)
-  const hint = s.dim('esc to close ')
-  for (const form of TAB_FORMS) {
-    const line = lineOf(form, lengths)
-    if (visibleLength(line) <= width) return spread(line, hint, width)
-  }
-  const narrowest = TAB_FORMS.at(-1)!
-  for (;;) {
-    const line = lineOf(narrowest, lengths)
-    const cuttable = tabs.map((t, i) => (t.isShown || lengths[i]! <= MIN_LABEL ? -1 : lengths[i]!))
-    const longest = cuttable.indexOf(Math.max(...cuttable))
-    if (visibleLength(line) <= width || cuttable[longest] === -1) return line
-    lengths[longest]!--
-  }
+  const lineOf = (naming: TabNaming, form: TabForm) =>
+    ` ${tabs.map(t => tabCell(t, tabName(t, naming), form, s)).join(' ')}`
+  const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => visibleLength(lineOf(naming, form)) <= width)
+
+  return spread(lineOf(naming, layout), s.dim('esc to close '), width)
 }
 
 function footer(d: Draw, isPageScrolling: boolean): string[] {

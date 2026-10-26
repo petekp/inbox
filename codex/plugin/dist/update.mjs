@@ -259,6 +259,8 @@ function clipMiddle(text, max, head) {
   if (text.length <= max) return text;
   return `${text.slice(0, head)}${NL2}\u2026[cut]${NL2}${text.slice(text.length - (max - head))}`;
 }
+var graphemes = new Intl.Segmenter(void 0, { granularity: "grapheme" });
+var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
 
 // ../hooks/ledger.ts
 var EMPTY = {
@@ -1154,10 +1156,10 @@ var CHOICE_KEYS = [..."abcfghilm"];
 var SETTLED_MS = 5120;
 var COMPARE_LIMIT_MS = 30 * 6e4;
 var TABS = [
-  { id: "overview", label: "Overview", hotkey: "1" },
-  { id: "needsYou", label: "Needs you", hotkey: "2" },
-  { id: "findings", label: "Findings", hotkey: "3" },
-  { id: "prs", label: "PRs", hotkey: "4" }
+  { id: "overview", label: "Overview", symbol: "\u{1F9ED}", hotkey: "1" },
+  { id: "needsYou", label: "Needs you", symbol: "\u{1F64B}", hotkey: "2" },
+  { id: "findings", label: "Findings", symbol: "\u{1F50D}", hotkey: "3" },
+  { id: "prs", label: "PRs", symbol: "\u{1F500}", hotkey: "4" }
 ];
 function isListedTab(tab) {
   return tab === "needsYou" || tab === "findings";
