@@ -2345,43 +2345,43 @@ var CLEARED_TOKENS = Object.fromEntries(
   [STATUS_TOKEN, STOP_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null])
 );
 var HERDR_TIMEOUT_MS = 5e3;
-function stopShort(stop) {
+function stopLine(stop) {
   switch (stop.kind) {
     case "sign-in":
-      return "Signed out: /login";
+      return "! Signed out: /login";
     case "billing":
-      return "Billing problem";
+      return "! Billing problem";
     case "usage-limit":
-      return stop.resets ? `Limit: resets ${stop.resets}` : "Usage limit reached";
+      return stop.resets ? `! Limit: resets ${stop.resets}` : "! Usage limit reached";
     default:
-      return "API error: resume";
+      return "! API error: resume";
   }
-}
-function stopLine(stop) {
-  return `! ${stopShort(stop)}`;
 }
 function dialogText(dialog) {
   return dialog.kind === "permission" ? `Allow ${dialog.text}?` : dialog.text;
 }
-function statusLine(ledger, stop, dialogs) {
+function statusLine(stop, dialogs, input) {
   if (stop) return stopLine(stop);
   const dialog = dialogs[0];
   if (dialog) return dialogText(dialog);
-  const first = ledger.items[0];
-  if (first) return ledger.items.length > 1 ? `${ledger.items.length} \xB7 ${first.ask}` : first.ask;
-  const count = ledger.findings.length;
-  const findings = count === 0 ? null : `${count} finding${count === 1 ? "" : "s"}`;
-  return [ledger.overview?.headline, findings].filter(Boolean).join(" \xB7 ");
+  const { firstAsk, asks, findings, headline } = input;
+  if (firstAsk !== null) return asks > 1 ? `${asks} \xB7 ${firstAsk}` : firstAsk;
+  const findingsText = findings === 0 ? null : `${findings} finding${findings === 1 ? "" : "s"}`;
+  return [headline, findingsText].filter(Boolean).join(" \xB7 ");
 }
 function herdrTokens(ledger, stop, view, dialogs) {
-  const items = [...view.needsYou.questions, ...view.needsYou.tasks].filter(isWaitingRow).flatMap((r) => r.item ? [r.item] : []);
-  const findings = view.findings.rows.filter(isWaitingRow).flatMap((r) => r.finding ? [r.finding] : []);
+  const input = {
+    firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
+    asks: view.needsYou.count,
+    findings: view.findings.count,
+    headline: ledger.overview?.headline ?? null
+  };
   const counts = ROW_TABS.map((t) => {
     const count = view[t.id].count;
     return [COUNT_TOKENS[t.id], stop || count === 0 ? null : String(count)];
   });
   return {
-    [STATUS_TOKEN]: statusLine({ ...ledger, items, findings }, stop, dialogs) || null,
+    [STATUS_TOKEN]: statusLine(stop, dialogs, input) || null,
     [STOP_TOKEN]: stop ? stopLine(stop) : null,
     ...Object.fromEntries(counts)
   };
