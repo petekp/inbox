@@ -120,6 +120,11 @@ An exchange whose update failed twice, so its reply never reached the ledger.
 covers it. A host that cannot read its conversation has no catch-up, so the
 warning stays until a clear.
 
+**Next build**:
+A checkout that follows the `next` branch and holds `NEXT_BUILD_MARK`, a file
+Git ignores, in each folder a host loads or installs. Each look's version label
+adds "next" on one. `hooks/view.ts:versionLabel`.
+
 **Parity record**:
 `hooks/clients.ts`. It lists, for each host, whether each feature is `full`,
 `different` or `unsupported`, with a reason for the last two. Each such entry

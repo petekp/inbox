@@ -256,7 +256,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
     copied.push(e.text)
     return { value: { isCopied: true as const } }
   })
-  on('fs.exists', ($, e) => ({ value: files.includes(e.path) }))
+  on('fs.exists', ($, e) => ({ value: files.some(f => e.path.endsWith(f)) }))
   on('fs.read', ($, e) => {
     if (!e.path.endsWith('/.claude-plugin/plugin.json')) throw new Error(`ENOENT: ${e.path}`)
     return { value: JSON.stringify({ name: 'inbox', version: '1.2.3' }) }
@@ -1409,6 +1409,18 @@ test('the pane footer shows the version from the plugin manifest', async ($, on)
   await $.command.run({ command: 'inbox', args: '' } as never)
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ text: 'v1.2.3' })).toBeDefined()
+})
+
+test('the pane footer marks a build that follows the next branch', async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  files = ['/.next-build']
+  paneState = { isShown: true, isFocused: true }
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'inbox', args: '' } as never)
+  const pane = await $.ui.mount(PANE)
+  expect(await pane.find({ text: 'v1.2.3 · next' })).toBeDefined()
 })
 
 test('a finding Claude records while the pane shows an empty tab brings the pane to it, and Fix hands it to Claude, settles its row as the choice made, and moves it to the Closed fold even when Claude’s reply leaves it open', async ($, on) => {

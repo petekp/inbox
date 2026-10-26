@@ -520,7 +520,7 @@ is ever listed publicly.
     destructiveHint to false."
   - [inference] `record`, `close` and `inbox_press` all need
     `readOnlyHint: false`. The inbox's tools set no annotations today
-    (codex/src/server.ts:toolsFor).
+    (codex/src/server.ts:TOOLS).
   - "Do not request the full conversation history … Your MCP server must not
     pull, reconstruct, or infer the full chat log from the client or
     elsewhere." The per-reply update reads the Stop hook's `last_assistant_message`
@@ -1041,7 +1041,7 @@ without the model calling it. The Inbox tab is a thread entrypoint.
 - **Declaration.** `_meta["openai/ui"].entrypoints: [{ type: "global" }]`
   beside `_meta.ui.resourceUri`. "Use `{ type: "thread" }` to add an
   entrypoint in a conversation's side panel." (D/build/extensions#sidebar-apps)
-  The inbox declares `[{ type: 'thread' }]` (codex/src/server.ts:toolsFor).
+  The inbox declares `[{ type: 'thread' }]` (codex/src/server.ts:TOOLS).
 - "Normally, MCP Apps can only be invoked via the model. However, it may be
   convenient to allow users to open your MCP App via static entrypoints."
   (SPEC:L36) Up to three per app: global, thread ("Available as a content tab
@@ -1067,7 +1067,7 @@ without the model calling it. The Inbox tab is a thread entrypoint.
   entrypoint that describes the view's contents and differs from the plugin
   name" (SPEC:L38). Title order: `title`, `annotations.title`, `name`
   (SPEC:L82-85). The inbox's tool is titled "Inbox", the plugin name
-  (codex/src/server.ts:toolsFor).
+  (codex/src/server.ts:TOOLS).
 - **Icons.** SHOULD be on each entrypoint tool: SVG, monochrome, transparent,
   `currentColor`, 20x20 viewport, 1.33px strokes (SPEC:L56-63). Fallback: the
   tool icon, then the "Local MCP Server icon, or the app logo registered with
@@ -1075,7 +1075,7 @@ without the model calling it. The Inbox tab is a thread entrypoint.
   come from `_meta["io.modelcontextprotocol/serverInfo"]["icons"]` in
   `server/discover`; servers without `server/discover` use
   `serverInfo["icons"]` in `initialize`." (SPEC:L67-73) The inbox sets no
-  icons on the tool or `serverInfo` (codex/src/server.ts:toolsFor, codex/src/server.ts:makeServer).
+  icons on the tool or `serverInfo` (codex/src/server.ts:TOOLS, codex/src/server.ts:makeServer).
 - **File entrypoints.** `extensions` MUST use the dot form (SPEC:L288). The
   tool gets `{file: {name, resourceUri}}`; `resourceUri` is opaque.
   "`resources/read` and `resources/subscribe` work. However, they will be
@@ -1176,7 +1176,7 @@ without the model calling it. The Inbox tab is a thread entrypoint.
   transcript." (D/reference#tool-results)
 - "Declare `outputSchema` for any tool that returns `structuredContent`."
   (D/reference#tool-descriptor-parameters) `inbox`, `inbox_view` and
-  `inbox_press` declare none (codex/src/server.ts:toolsFor).
+  `inbox_press` declare none (codex/src/server.ts:TOOLS).
 - "Tools MUST return meaningful content array even when UI is available"
   (APPSPEC:L1559). BB and SPEC's own settings examples return `content: []`.
 - "Return enough structured content for both the model and UI to understand
@@ -1271,8 +1271,29 @@ without the model calling it. The Inbox tab is a thread entrypoint.
 - **Live, Codex keeps a tab's page by its URI across server restarts**
   [live 2026-10-10]. A test build ran in the server Codex started for a new
   chat, and that chat's tab drew the old page. Under a new URI, a new chat's
-  tab drew the test build. The inbox's URI now carries a hash of the page
-  (`tabUri`, codex/src/server.ts).
+  tab drew the test build.
+- **Live, Codex removes an open tab when a later tool list names another URI
+  for its entrypoint** [live 2026-10-25, ChatGPT 26.1021.31345]. After a
+  reinstall whose server handler changed, a later thread change, not always
+  the first, started a new server process and loaded the MCP server catalog.
+  A reinstall that changed only the hook bundle, or changed nothing, started
+  none. Every open Inbox frame whose `inbox_view` URI the
+  new list no longer named was torn down ("Revoked app sandbox registration
+  … shouldRemoveFrame=true") and showed "Couldn't display Inbox"; Try again
+  failed the same way. With the URI unchanged across builds, the frame
+  stayed and swapped to the new page. So the inbox lists one fixed URI,
+  `ui://inbox/view` (`TAB_ADDRESS`, codex/src/server.ts), and names each
+  build's page separately (`pageName`).
+- **Live, so a new tab after an update starts on an earlier build's saved
+  page** [live 2026-10-25, ChatGPT 26.1021.31345]. An Inbox tab opened after
+  an update, in a thread that had none, drew Codex's saved copy of an earlier
+  build and swapped to the new page about 0.3 s later. In that run, one update
+  in, the saved copy was the build just before. When Codex refreshes its saved
+  copy under the fixed address is unknown, so after several updates it could
+  be older. Reopening the tab in a thread that already had one drew the new
+  page directly. So every new tab after an update relies on `swapPage`
+  (codex/src/tab.tsx). If the swap fails, the tab stays on the earlier build
+  and says "Could not load the inbox update."
 - **Historical document-replacement probe** [live 2026-10-10]. A tab that
   fetched a page through `tools/call` and ran `document.open`, `write` and
   `close` drew the new page. Its script sent `ui/initialize` again, Codex
@@ -1382,7 +1403,7 @@ without the model calling it. The Inbox tab is a thread entrypoint.
 - Neither lists Codex or Claude Code. Whether Claude Code or the Claude
   desktop app's Code mode renders MCP Apps is not answered here.
 - [inference] Of the inbox's MCP surface, only `_meta["openai/ui"].entrypoints`
-  is OpenAI-specific (codex/src/server.ts:toolsFor). The same `ui://inbox/tab-…`
+  is OpenAI-specific (codex/src/server.ts:TOOLS). The same `ui://inbox/view`
   resource could render in other MCP Apps hosts, opened by the model and
   inline.
 

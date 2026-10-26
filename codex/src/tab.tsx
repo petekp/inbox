@@ -7,7 +7,7 @@ import type { IconName } from './row-actions'
 import { closedState } from '../../hooks/ledger'
 import { ago } from '../../hooks/text'
 import type { ClosedState } from '../../hooks/ledger'
-import { canUndoRefused, closedMark, settledMark } from '../../hooks/view'
+import { canUndoRefused, closedMark, settledMark, versionLabel } from '../../hooks/view'
 import { capitalized, clipLabel, noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { Effect, RowPress } from '../../hooks/presses'
 import {
@@ -1946,7 +1946,7 @@ function App({ lists }: { lists: Lists | null }): ComponentChildren {
         )}
         <div class="footer-end">
           <Status v={v} />
-          <span class="version">v{manifest.version}</span>
+          <span class="version">{versionLabel(manifest.version, v.isNextBuild === true)}</span>
         </div>
       </footer>
     </>

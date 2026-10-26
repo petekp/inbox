@@ -15,6 +15,7 @@ export function demoSource(deps: {
   now(): number
   after(fn: () => void, ms: number): void
   settleWindowMs: number
+  isNextBuild?: boolean
 }): PanelSource {
   let state = demoState(deps.now())
   const listeners = new Set<() => void>()
@@ -27,6 +28,7 @@ export function demoSource(deps: {
       isGhMissing: false,
       isFetchingPrs: false,
       stop: null,
+      isNextBuild: deps.isNextBuild,
       isDemo: true,
     }),
     press: async (p, holds) => {

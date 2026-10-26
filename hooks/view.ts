@@ -360,6 +360,16 @@ export function stopFix(stop: Stop): string {
 export const DEMO_NOTICE = 'Sample entries. Buttons here send nothing.'
 export const READING_TEXT = 'Reading the inbox…'
 
+/**
+ * A checkout that follows the `next` branch can hold this file in each folder a host installs or loads: the repo root,
+ * `codex/plugin` and `omp`. Git ignores it, and the Codex and omp installs copy it.
+ */
+export const NEXT_BUILD_MARK = '.next-build'
+
+export function versionLabel(version: string, isNextBuild: boolean): string {
+  return isNextBuild ? `v${version} · next` : `v${version}`
+}
+
 const UPDATE_FAILED = 'Last update failed. Items from that reply may be missing.'
 const UPDATE_RETRIES = ' It retries after your next message.'
 

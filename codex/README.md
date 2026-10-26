@@ -63,8 +63,7 @@ npm test
 ```
 
 A change shows in Codex after `npm run build`, a reinstall with
-`codex plugin add inbox@inbox`, and a new chat. Each build gives the tab's
-page a new address, so Codex does not reuse its saved copy.
+`codex plugin add inbox@inbox`, and a new chat.
 
 To change the tab or the server while you watch them, run `npm run dev`. On
 each save it rebuilds the tab's page and the server's handler, and points the
@@ -78,11 +77,12 @@ handler, `dist/server-handler.mjs`, again whenever its file changes. Codex
 installs each version in its own folder and deletes the old one on update, so
 once the loader's own folder is gone it imports the handler from the newest
 version's folder. So a build, a reinstall and an update take effect without
-restarting Codex. Codex still asks
-for the page by the address it read when the process started, and it drops a
-tab whose page comes back under a different address. So the server answers
-under the address Codex asked for. Only a change to the loader itself needs
-Codex quit and reopened. The tab says when its page and the running handler
+restarting Codex. Codex removes an open tab once the server's tool list
+names another address for its page, so every build lists the same address,
+and an open tab swaps to the new build's page itself. Codex also drops a tab
+whose page comes back under another address than the one it asked for, so
+the server answers under the address asked for. Only a change to the loader
+itself needs Codex quit and reopened. The tab says when its page and the running handler
 come from different builds.
 
 `../scripts/check.sh` checks the bundles are current, the types and the

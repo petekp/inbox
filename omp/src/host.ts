@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import type { AssistantMessage, Context, Model } from '@oh-my-pi/pi-ai'
 import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent'
@@ -46,7 +48,7 @@ import type { PressOutcome, SessionHost, UpdateHost } from '../../hooks/session-
 import { agentTools } from '../../hooks/tools'
 import { DARK_TONES, LIGHT_TONES } from '../../hooks/tones'
 import { clip } from '../../hooks/text'
-import { NO_HOLDS, RESUME_TEXT, SETTLED_MS, TABS } from '../../hooks/view'
+import { NEXT_BUILD_MARK, NO_HOLDS, RESUME_TEXT, SETTLED_MS, TABS } from '../../hooks/view'
 import type { ReplyHolds, ShownTab } from '../../hooks/view'
 import { openTarget } from './commands'
 import { createPanel } from './controller'
@@ -79,6 +81,8 @@ export type HostDeps = {
   newId: () => string
   settleWindowMs: number
   home: string
+  /** Whether the installed extension's folder holds `NEXT_BUILD_MARK`. */
+  isNextBuild: boolean
   complete: Complete
   /** Copies text to the clipboard. Returns why it could not, or null. */
   copy: (text: string) => Promise<string | null>
@@ -96,6 +100,7 @@ export type InboxScreen = {
   isGhMissing: boolean
   isFetchingPrs: boolean
   stop: Stop | null
+  isNextBuild: boolean
 }
 
 /** What a panel needs from the host. */
@@ -156,6 +161,7 @@ const defaultDeps: HostDeps = {
   newId: randomUUID,
   settleWindowMs: SETTLED_MS,
   home: homedir(),
+  isNextBuild: existsSync(join(dirname(dirname(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK)),
   complete: defaultComplete,
   copy: copyToClipboard,
   background: work => void work.catch(() => undefined),
@@ -813,6 +819,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         isGhMissing,
         isFetchingPrs: prFetches.isFetching(id),
         stop: s.stop,
+        isNextBuild: deps.isNextBuild,
       }
     },
     openPanel: async ctx => {
@@ -903,6 +910,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
           now: deps.now,
           after: (fn, ms) => void ctx.setTimeout(fn, ms),
           settleWindowMs: deps.settleWindowMs,
+          isNextBuild: deps.isNextBuild,
         })
       : liveSource(ctx)
     hideBand(ctx)

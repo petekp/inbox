@@ -437,7 +437,7 @@ These are guidelines. Whether Claude enforces them is unknown.
 
 ## Codex and the ChatGPT Apps SDK
 
-- **Codex renders standard MCP Apps plus its own placement key.** The inbox's `inbox_view` tool sets `_meta.ui.resourceUri` and `'openai/ui': { entrypoints: [{ type: 'thread' }] }` (`codex/src/server.ts:toolsFor`). `thread` opens the app as a tab in a thread; `global` as a sidebar entry. Only `thread` is verified (verified live in this repo, `docs/plans/codex-plugin.md:54`).
+- **Codex renders standard MCP Apps plus its own placement key.** The inbox's `inbox_view` tool sets `_meta.ui.resourceUri` and `'openai/ui': { entrypoints: [{ type: 'thread' }] }` (`codex/src/server.ts:TOOLS`). `thread` opens the app as a tab in a thread; `global` as a sidebar entry. Only `thread` is verified (verified live in this repo, `docs/plans/codex-plugin.md:54`).
 - **Codex renders the tab without the server declaring the extension.** The server's `initialize` reply is `capabilities: { tools: {}, resources: {} }` (`codex/src/server.ts:makeServer`). [inference] Codex does not enforce the both-sides rule in the client matrix L13.
 - **`ui/message` becomes untrusted input** (verified live in this repo, `docs/plans/codex-plugin.md:55`, `:333`). The spec's "SHOULD ... preserving the specified role" ([S] L1033) expects a user message. This is a SHOULD deviation, not a violation.
 - **Resource subscriptions did not work from a thread tab** (verified live in this repo, `docs/plans/codex-plugin.md:56`). The tab polls instead.
@@ -470,7 +470,7 @@ and presses have timeouts, and page replacement retires the old instance.
 | Protocol era | Answers `initialize`, echoes the client's version or `2025-06-18` (`codex/src/server.ts:makeServer`). No `server/discover`; unknown methods get `-32601`. Answers `ping`. | `2026-07-28` removes `initialize` and `ping` and requires `server/discover`. | Works with legacy and dual-era clients. Fails with modern-only clients (versioning L169-171). |
 | Extension declaration | No `extensions` in the reply (`codex/src/server.ts:makeServer`). Does not read the client's `extensions`. | Both sides declare (client matrix L13). Servers SHOULD check the client ([S] L1531). | Codex renders anyway. A stricter host might not [inference]. |
 | Resource `_meta.ui` | `resources/list` and `resources/read` carry no `_meta` (`codex/src/server.ts:makeServer`). | Set `prefersBorder` explicitly ([S] L222). Declare `csp` and `permissions` as needed. | Default CSP applies. No `clipboardWrite`, no `assets.claude.ai` font origin. |
-| Legacy key | Only nested `_meta.ui.resourceUri` (`codex/src/server.ts:toolsFor`). | `registerAppTool` also writes `ui/resourceUri` for older hosts. | Unknown whether any target host needs it. |
+| Legacy key | Only nested `_meta.ui.resourceUri` (`codex/src/server.ts:TOOLS`). | `registerAppTool` also writes `ui/resourceUri` for older hosts. | Unknown whether any target host needs it. |
 | App capabilities | `appCapabilities: { tools: {} }` and no `availableDisplayModes` (`codex/src/tab.tsx:initialize`). | Declaring `tools` requires `tools/list` and `tools/call` handlers ([D] L1281, L1324). Declaring display modes is a MUST ([S] L781). | Drop `tools` or implement it. Add `availableDisplayModes`. |
 | Host requests | Answers every host request with `result: {}` (`codex/src/tab.tsx:window.addEventListener('message')`). | `ListToolsResult` needs `tools`; `CallToolResult` needs `content`. | Correct for `ping` and `ui/resource-teardown`. Malformed for `tools/*`. |
 | Message source | Accepts JSON-RPC from any window (`codex/src/tab.tsx:window.addEventListener('message')`). | `PostMessageTransport` checks `event.source` ([SDK] `src/message-transport.ts#L76`). | [inference] Any frame able to post into the tab could answer its requests. |
@@ -480,7 +480,7 @@ and presses have timeouts, and page replacement retires the old instance.
 | Theme | `applyHost` uses `theme` and `styles.variables` only (`codex/src/tab.tsx:applyHost`). `color-scheme` is set in CSS on `:root`, in its `prefers-color-scheme: dark` rule, and on `:root[data-theme='dark']` (`codex/src/tab.html`). The `body` paints `var(--bg)`. | Claude: transparent background, `<meta name="color-scheme">`, `styles.css.fonts`. | Opaque card and fallback font in Claude [inference]. |
 | Clipboard | Falls back to manual copy because "The tab's frame may not get the clipboard" (`codex/src/tab.tsx:copy`). | `permissions.clipboardWrite`, which hosts "MAY honor". | Declare it and keep the fallback. |
 | Session key | `sessionOf` reads Codex's `_meta["x-codex-turn-metadata"].session_id`, `thread_id` or `threadId` (`codex/src/server.ts:sessionOf`). A call without one fails (`codex/src/server.ts:callTool`). | The spec defines no conversation key. Claude sends none. | Every call fails in Claude as written. |
-| Visibility | `APP_ONLY = { ui: { visibility: ['app'] } }` on `inbox_press` and `inbox_tab_page`. `inbox_view` sets `visibility: ['app']` in its own `_meta.ui` (`codex/src/server.ts:toolsFor`). | Hiding depends on the host. | |
+| Visibility | `APP_ONLY = { ui: { visibility: ['app'] } }` on `inbox_press` and `inbox_tab_page`. `inbox_view` sets `visibility: ['app']` in its own `_meta.ui` (`codex/src/server.ts:TOOLS`). | Hiding depends on the host. | |
 
 ## What this means for an inbox view in Claude mode
 
