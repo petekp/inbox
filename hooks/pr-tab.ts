@@ -361,6 +361,38 @@ export type Applied =
   | { ledger: Ledger; lasts: Record<string, LastAction>; drop: string[]; effects: Effect[]; reopenedId?: string }
   | { stale: true }
 
+function commentEffect(pr: PrView, t: PrThread): Effect {
+  return { kind: 'open', target: t.reply?.url || t.url || pr.url, name: 'the comment' }
+}
+
+function prPageEffect(pr: PrView): Effect {
+  return { kind: 'open', target: pr.url, name: `PR #${pr.number}` }
+}
+
+function logEffect(pr: PrView, check: PrCheck): Effect {
+  return { kind: 'open', target: check.url ?? pr.url, name: check.url ? 'the log' : `PR #${pr.number}` }
+}
+
+/** The open or refresh a Local PR press runs. Null for a press that sends or marks, or whose row is gone. */
+export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
+  switch (p.action) {
+    case 'thread-open': {
+      const t = pr.threads.find(x => x.id === p.thread)
+      return t ? commentEffect(pr, t) : null
+    }
+    case 'pr-open':
+      return prPageEffect(pr)
+    case 'pr-refresh':
+      return PR_REFRESH
+    case 'log': {
+      const check = pr.checks.find(c => c.name === p.check)
+      return check ? logEffect(pr, check) : null
+    }
+    default:
+      return null
+  }
+}
+
 export function prRowId(p: PrPress): string {
   if ('check' in p) return checkRowId(p.ref, p.check)
   if ('thread' in p) return threadRowId(p.ref, p.thread)
@@ -588,8 +620,7 @@ export function applyPrPress(
       if (!t) return stale
       if (p.action === 'thread-address' && !t.isWaiting) return stale
       const id = prThreadId(pr, t)
-      if (p.action === 'thread-open')
-        return local(id, 'Open', { kind: 'open', target: t.reply?.url || t.url || pr.url, name: 'the comment' })
+      if (p.action === 'thread-open') return local(id, 'Open', commentEffect(pr, t))
       if (p.action === 'thread-address')
         return applied({
           lasts: { [id]: record(id, 'handoff', p.action, 'Address') },
@@ -633,7 +664,7 @@ export function applyPrPress(
         effects: [send(prompts.merge(pr))],
       })
     case 'pr-open':
-      return local(markId, 'Open PR', { kind: 'open', target: pr.url, name: `PR #${pr.number}` })
+      return local(markId, 'Open PR', prPageEffect(pr))
     case 'pr-refresh':
       return local(markId, PR_REFRESH_LABEL, PR_REFRESH)
     case 'pr-dismiss':
@@ -654,11 +685,7 @@ export function applyPrPress(
     case 'log': {
       const check = pr.checks.find(c => c.name === p.check)
       if (!check) return stale
-      return local(prCheckId(pr, check), 'Open log', {
-        kind: 'open',
-        target: check.url ?? pr.url,
-        name: check.url ? 'the log' : `PR #${pr.number}`,
-      })
+      return local(prCheckId(pr, check), 'Open log', logEffect(pr, check))
     }
   }
 }

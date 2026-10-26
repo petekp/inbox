@@ -3188,6 +3188,15 @@ var PR_TONES = {
   merged: "findings",
   closed: "error"
 };
+function commentEffect(pr, t) {
+  return { kind: "open", target: t.reply?.url || t.url || pr.url, name: "the comment" };
+}
+function prPageEffect(pr) {
+  return { kind: "open", target: pr.url, name: `PR #${pr.number}` };
+}
+function logEffect(pr, check) {
+  return { kind: "open", target: check.url ?? pr.url, name: check.url ? "the log" : `PR #${pr.number}` };
+}
 function prRowId(p) {
   if ("check" in p)
     return checkRowId(p.ref, p.check);
@@ -3359,7 +3368,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
         return stale;
       const id = prThreadId(pr, t);
       if (p.action === "thread-open")
-        return local(id, "Open", { kind: "open", target: t.reply?.url || t.url || pr.url, name: "the comment" });
+        return local(id, "Open", commentEffect(pr, t));
       if (p.action === "thread-address")
         return applied({
           lasts: { [id]: record(id, "handoff", p.action, "Address") },
@@ -3406,7 +3415,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
         effects: [send(prompts.merge(pr))]
       });
     case "pr-open":
-      return local(markId, "Open PR", { kind: "open", target: pr.url, name: `PR #${pr.number}` });
+      return local(markId, "Open PR", prPageEffect(pr));
     case "pr-refresh":
       return local(markId, PR_REFRESH_LABEL, PR_REFRESH);
     case "pr-dismiss":
@@ -3430,11 +3439,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
       const check = pr.checks.find((c) => c.name === p.check);
       if (!check)
         return stale;
-      return local(prCheckId(pr, check), "Open log", {
-        kind: "open",
-        target: check.url ?? pr.url,
-        name: check.url ? "the log" : `PR #${pr.number}`
-      });
+      return local(prCheckId(pr, check), "Open log", logEffect(pr, check));
     }
   }
 }

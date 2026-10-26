@@ -83,7 +83,7 @@ import {
   prMarkId,
   prRowWaits,
   prsEmptyText,
-  PR_REFRESH,
+  prPressEffect,
   prRefreshFailedText,
   PR_DISMISSED_LABEL,
   prThreadId,
@@ -826,23 +826,22 @@ function findingRow(v: View, r: RowView, f: Finding): Row {
 
 const pressesOf = (v: View): PressState => ({ lastActions: v.lastActions, turns: v.turns, now: v.at })
 
-function prKey(rowId: string, a: PrAction, pending: Feedback | null): Key {
+function prKey(rowId: string, pr: PrView, a: PrAction): Key {
+  const effect = a.kind === 'local' ? prPressEffect(pr, a.press) : null
+  const pending = effect ? pendingLocal(effect) : null
+
   return {
     ...(a.hotkey ? { hotkey: a.hotkey } : {}),
     label: a.label,
     emphasis: a.emphasis,
     ...(a.icon ? { icon: a.icon } : {}),
     ...(a.press.action === 'pr-dismiss' ? { isDismiss: true } : {}),
-    run: () => void act(rowId, a.press, undefined, a.kind === 'local' ? pending : null),
+    run: () => void act(rowId, a.press, undefined, pending),
   }
 }
 
 function pendingLocal(effect: Effect): Feedback {
   return { is: 'local', result: pendingResult([effect], Date.now()) }
-}
-
-function opening(name: string): Feedback {
-  return pendingLocal({ kind: 'open', target: '', name })
 }
 
 function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
@@ -855,6 +854,7 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
   const where = threadWhere(t)
   const { rest } = commentParts(t.body)
   const actions = splitFollowUps(threadActions(pr, t, pressesOf(v)))
+  const openEffect = prPressEffect(pr, { action: 'thread-open', ref: pr.ref, thread: t.id })
 
   return {
     id,
@@ -868,7 +868,7 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
       <div>
         {rest ? <p class="quote">{inlineHtml(clipLabel(rest, PR_QUOTE_CHARS))}</p> : null}
         <p class="muted">
-          <button type="button" class="link" onClick={press('thread-open', opening('the comment'))}>
+          <button type="button" class="link" onClick={press('thread-open', openEffect && pendingLocal(openEffect))}>
             {where}
           </button>
           {`${DOT}@${t.author}`}
@@ -880,8 +880,8 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
         ) : null}
       </div>
     ),
-    keys: actions.keys.map(a => prKey(id, a, opening('the comment'))),
-    more: actions.more.map(a => prKey(id, a, null)),
+    keys: actions.keys.map(a => prKey(id, pr, a)),
+    more: actions.more.map(a => prKey(id, pr, a)),
     feedback: feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at),
   }
 }
@@ -890,7 +890,6 @@ function prCheckRow(v: View, pr: PrView, c: PrCheck): Row {
   const id = prCheckId(pr, c)
   const text = checkRowText(c)
   const ran = text.meta
-  const target = c.url ? 'the log' : `PR #${pr.number}`
 
   return {
     id,
@@ -901,7 +900,7 @@ function prCheckRow(v: View, pr: PrView, c: PrCheck): Row {
     meta: ran,
     age: c.finishedAt === undefined ? undefined : shortAgo(v.at - c.finishedAt),
     body: <div class="muted">{ran}</div>,
-    keys: checkActions(pr, c, pressesOf(v)).map(a => prKey(id, a, opening(target))),
+    keys: checkActions(pr, c, pressesOf(v)).map(a => prKey(id, pr, a)),
     more: [],
     feedback: feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at),
   }
@@ -1709,9 +1708,7 @@ function PrBlock({
   const { status, head, unlisted } = readiness(pr, isSent)
   const tone = PR_TONES[status]
   const id = prMarkId(pr.ref)
-  const keys = prBlockActions(pr, isSent, v.prs.branchRef, pressesOf(v)).map(a =>
-    prKey(id, a, a.press.action === 'pr-refresh' ? pendingLocal(PR_REFRESH) : opening(`PR #${pr.number}`)),
-  )
+  const keys = prBlockActions(pr, isSent, v.prs.branchRef, pressesOf(v)).map(a => prKey(id, pr, a))
   const last = prLastLine(v, id)
 
   return (
