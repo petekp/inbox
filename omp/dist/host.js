@@ -1993,10 +1993,12 @@ function finishedResult(pending, errors, at) {
     state: parts.some((part) => part.error !== null) ? "failed" : "done",
     parts,
     at,
-    ...pending.pressId ? { pressId: pending.pressId } : {}
+    ...pending.pressId ? { pressId: pending.pressId } : {},
+    ...pending.action ? { action: pending.action } : {}
   };
 }
-function localLast(last, pressed, result) {
+function localLast(last, pressed, pending) {
+  const result = { ...pending, action: pressed.action };
   return last && last.kind !== "local" ? { ...last, result } : { kind: "local", ...pressed, at: result.at, result };
 }
 function withResult(lastActions, rowId, pendingAt, result) {
@@ -2532,6 +2534,15 @@ function isFailure(f) {
 function isPressOut(f) {
   return f?.is === "working" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";
 }
+function pressOutAction(last, f) {
+  if (!isPressOut(f))
+    return null;
+  return (f?.is === "local" ? f.result.action : last?.action) ?? null;
+}
+function outAction(last, f) {
+  const action = f?.is === "unconfirmed" ? null : pressOutAction(last, f);
+  return action === "type" ? null : action;
+}
 function isAgain(last, action, isOut) {
   return isRepeatOf(last, action) && (!isOut || last?.isRepeat === true);
 }
@@ -2717,19 +2728,25 @@ var ACTION_KEYS = {
   dismiss: "x",
   discard: "x"
 };
-function actionsOf(row, last, state, isOut) {
+function actionsOf(row, last, state, feedback) {
   const { id, item, steps } = row;
-  const action = (press, label, kind, flags = {}) => ({
-    press,
-    label: press.action !== "type" && isAgain(last, actionId(press), isOut) ? `${label} again` : label,
-    kind,
-    emphasis: flags.isPrimary || press.action === "done" || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
-    ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps[press.step]) ? { icon: stepIconKind(steps[press.step]) } : {},
-    isPrimary: flags.isPrimary ?? false,
-    isFolded: flags.isFolded ?? false,
-    isFollowUp: FOLLOW_UPS.has(press.action),
-    ...ACTION_KEYS[press.action] ? { hotkey: ACTION_KEYS[press.action] } : {}
-  });
+  const pressing = pressOutAction(last, feedback);
+  const out = outAction(last, feedback);
+  const action = (press, label, kind, flags = {}) => {
+    const pressAction = actionId(press);
+    return {
+      press,
+      label: press.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
+      kind,
+      emphasis: flags.isPrimary || press.action === "done" || press.action === "address" ? "primary" : press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
+      ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps[press.step]) ? { icon: stepIconKind(steps[press.step]) } : {},
+      isPrimary: flags.isPrimary ?? false,
+      isFolded: flags.isFolded ?? false,
+      isFollowUp: FOLLOW_UPS.has(press.action),
+      ...ACTION_KEYS[press.action] ? { hotkey: ACTION_KEYS[press.action] } : {},
+      isOut: out === pressAction
+    };
+  };
   if (state.is === "settled")
     return state.canUndo ? [action({ action: "undo", id }, "Undo", "view")] : [];
   if (state.is === "held")
@@ -2899,7 +2916,7 @@ function inboxView({
   const rowOf = (row) => {
     const state = stateOf(row.id);
     const feedback = feedbackIn(row.id, state, row.item?.reportedAt);
-    const actions = actionsOf(row, lastActions[row.id], state, isPressOut(feedback));
+    const actions = actionsOf(row, lastActions[row.id], state, feedback);
     return {
       ...row,
       state,
@@ -3201,10 +3218,17 @@ function prRetryOf(last, ref, thread, check = null) {
     return { press: { action: a, ref }, kind: last.kind };
   return null;
 }
+function rowFeedback(presses, rowId) {
+  return feedbackOf(rowId, presses.lastActions[rowId], undefined, presses.turns, presses.now);
+}
 function again(presses, rowId, action, label) {
   const last = presses.lastActions[rowId];
-  const isOut = isPressOut(feedbackOf(rowId, last, undefined, presses.turns, presses.now));
-  return isAgain(last, action, isOut) ? `${label} again` : label;
+  const isPressing = pressOutAction(last, rowFeedback(presses, rowId)) === action;
+  return isAgain(last, action, isPressing) ? `${label} again` : label;
+}
+function withOut(presses, rowId, actions) {
+  const out = outAction(presses.lastActions[rowId], rowFeedback(presses, rowId));
+  return actions.map((a) => ({ ...a, isOut: a.press.action === out }));
 }
 function retryAction(retry) {
   return retry ? [{ press: retry.press, label: "Try again", kind: retry.kind, emphasis: "normal", icon: "retry" }] : [];
@@ -3212,7 +3236,7 @@ function retryAction(retry) {
 function threadActions(pr, t, presses) {
   const id = threadRowId(pr.ref, t.id);
   const on = { ref: pr.ref, thread: t.id };
-  return [
+  return withOut(presses, id, [
     ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, t.id)),
     {
       press: { action: "thread-address", ...on },
@@ -3244,12 +3268,12 @@ function threadActions(pr, t, presses) {
       hotkey: "d",
       isFollowUp: true
     }
-  ];
+  ]);
 }
 function checkActions(pr, c, presses) {
   const id = checkRowId(pr.ref, c.name);
   const on = { ref: pr.ref, check: c.name };
-  return [
+  return withOut(presses, id, [
     ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, null, c.name)),
     {
       press: { action: "check-fix", ...on },
@@ -3266,7 +3290,7 @@ function checkActions(pr, c, presses) {
       icon: "open",
       hotkey: "o"
     }
-  ];
+  ]);
 }
 function prBlockActions(pr, isThreadSent, branchRef, presses) {
   const id = prMarkId(pr.ref);
@@ -3295,7 +3319,7 @@ function prBlockActions(pr, isThreadSent, branchRef, presses) {
       }
     ] : []
   ];
-  return [
+  return withOut(presses, id, [
     ...pr.error ? [
       {
         press: { action: "pr-refresh", ref: pr.ref },
@@ -3316,7 +3340,7 @@ function prBlockActions(pr, isThreadSent, branchRef, presses) {
         emphasis: "quiet"
       }
     ]
-  ];
+  ]);
 }
 function applyPrPress(ledger, prState, lastActions, p, ctx) {
   const stale = { stale: true };
@@ -3880,7 +3904,17 @@ function appliedCatchUp(s, begun, parsed, now) {
     }
   });
 }
+function isRepeatWhileOut(s, p, at) {
+  const rowId = "ref" in p ? prRowId(p) : p.id;
+  const saved = s.lastActions[rowId];
+  const last = saved && withoutStaleResult(saved, at);
+  const reportedAt = "ref" in p ? undefined : s.ledger.items.find((i) => i.id === p.id)?.reportedAt;
+  const pressed = "ref" in p ? p.action : actionId(p);
+  return outAction(last, feedbackOf(rowId, last, undefined, s.presence, at, reportedAt)) === pressed;
+}
 function pressOn(s, p, at, localPressId, answerMessage) {
+  if (isRepeatWhileOut(s, p, at))
+    return { ledger: s.ledger, lasts: {}, drop: [], effects: [] };
   const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId };
   if ("ref" in p)
     return applyPrPress(s.ledger, s.prViews, s.lastActions, p, ctx);
@@ -3937,14 +3971,14 @@ function withFetchedPrs(s, fetched, branchRef, at) {
   const views = Object.fromEntries(Object.entries(merged.views).filter(([ref]) => keepsView(merged, s.ledger.prs, ref) || isDismissing(s.lastActions, ref, at)));
   return { ...s, prViews: { ...merged, views } };
 }
+function withoutStaleResult(last, now) {
+  if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS)
+    return last;
+  const { result: _result, ...rest } = last;
+  return rest;
+}
 function withoutStalePending(lastActions, now) {
-  const isStale = (last) => last.result?.state === "pending" && now - last.result.at > PRESS_TIMEOUT_MS;
-  return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => {
-    if (!isStale(last))
-      return [id, last];
-    const { result: _result, ...rest } = last;
-    return [id, rest];
-  }));
+  return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]));
 }
 function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes = {}) {
   const l = s.ledger;
@@ -4479,7 +4513,8 @@ function rowButtons(row) {
         key,
         press,
         isRecommended: k.slot === "choice" && press.action === "answer" && press.option === recommended,
-        isFollowUp: k.slot === "action" && k.action.isFollowUp
+        isFollowUp: k.slot === "action" && k.action.isFollowUp,
+        isOut: k.action.isOut
       }
     ];
   });
@@ -4490,7 +4525,8 @@ function prButtons(actions) {
     key: a.hotkey ?? null,
     press: a.press,
     isRecommended: false,
-    isFollowUp: a.isFollowUp === true
+    isFollowUp: a.isFollowUp === true,
+    isOut: a.isOut
   }));
 }
 function leadOf(row) {
@@ -4807,6 +4843,8 @@ function afterHandOff(screen, ui, id, now) {
 }
 function activate(screen, ui, line, button, now) {
   const { press } = button;
+  if (button.isOut)
+    return { ui };
   if (press.action === "resume") {
     const { stop } = screen;
     const isSending = ui.resuming?.is === "sending" && ui.resuming.stopAt === stop?.at;
@@ -4994,7 +5032,9 @@ function indented(text, indent, width, maxLines, paint) {
 }
 function buttonCell(b, isFocused, s, mark = "") {
   if (isFocused)
-    return s.inverse(s.bold(` \u21B5 ${b.label}${mark} `));
+    return s.inverse(b.isOut ? s.dim(` \u21B5 ${b.label}${mark} `) : s.bold(` \u21B5 ${b.label}${mark} `));
+  if (b.isOut && !b.isFollowUp)
+    return s.dim(b.key ? ` ${b.key} ${b.label}${mark} ` : ` ${b.label}${mark} `);
   if (b.isFollowUp)
     return s.dim(b.key ? ` ${b.key} ${b.label} ` : ` ${b.label} `);
   const label = (b.isRecommended ? s.underline(b.label) : b.label) + mark;

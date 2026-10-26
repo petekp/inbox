@@ -31,7 +31,7 @@ import {
   waitingThreads,
 } from './prs'
 import type { IsThreadSent, PrStatus } from './prs'
-import { DOT, SETTLED_MS, feedbackOf, isAgain, isPressOut } from './view'
+import { DOT, SETTLED_MS, feedbackOf, isAgain, outAction, pressOutAction } from './view'
 import type { ActionEmphasis, PressState, RowWait } from './view'
 
 export const MAX_PRS = 12
@@ -396,16 +396,30 @@ export type PrAction = {
   icon?: 'retry' | 'open'
   hotkey?: string
   isFollowUp?: boolean
+  /** Its press is out, so it draws dim and ignores another press until the press settles. */
+  isOut: boolean
+}
+
+type PlannedPrAction = Omit<PrAction, 'isOut'>
+
+function rowFeedback(presses: PressState, rowId: string) {
+  return feedbackOf(rowId, presses.lastActions[rowId], undefined, presses.turns, presses.now)
 }
 
 function again(presses: PressState, rowId: string, action: PrActionId, label: string): string {
   const last = presses.lastActions[rowId]
-  const isOut = isPressOut(feedbackOf(rowId, last, undefined, presses.turns, presses.now))
+  const isPressing = pressOutAction(last, rowFeedback(presses, rowId)) === action
 
-  return isAgain(last, action, isOut) ? `${label} again` : label
+  return isAgain(last, action, isPressing) ? `${label} again` : label
 }
 
-function retryAction(retry: { press: PrPress; kind: PressKind } | null): PrAction[] {
+function withOut(presses: PressState, rowId: string, actions: PlannedPrAction[]): PrAction[] {
+  const out = outAction(presses.lastActions[rowId], rowFeedback(presses, rowId))
+
+  return actions.map(a => ({ ...a, isOut: a.press.action === out }))
+}
+
+function retryAction(retry: { press: PrPress; kind: PressKind } | null): PlannedPrAction[] {
   return retry ? [{ press: retry.press, label: 'Try again', kind: retry.kind, emphasis: 'normal', icon: 'retry' }] : []
 }
 
@@ -413,7 +427,7 @@ export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrA
   const id = threadRowId(pr.ref, t.id)
   const on = { ref: pr.ref, thread: t.id }
 
-  return [
+  return withOut(presses, id, [
     ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, t.id)),
     {
       press: { action: 'thread-address', ...on },
@@ -445,14 +459,14 @@ export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrA
       hotkey: 'd',
       isFollowUp: true,
     },
-  ]
+  ])
 }
 
 export function checkActions(pr: PrView, c: PrCheck, presses: PressState): PrAction[] {
   const id = checkRowId(pr.ref, c.name)
   const on = { ref: pr.ref, check: c.name }
 
-  return [
+  return withOut(presses, id, [
     ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, null, c.name)),
     {
       press: { action: 'check-fix', ...on },
@@ -469,7 +483,7 @@ export function checkActions(pr: PrView, c: PrCheck, presses: PressState): PrAct
       icon: 'open',
       hotkey: 'o',
     },
-  ]
+  ])
 }
 
 /**
@@ -484,7 +498,7 @@ export function prBlockActions(
   const id = prMarkId(pr.ref)
   const { status } = readiness(pr, isThreadSent)
   const waitingOn = threadsOnYou(pr, isThreadSent).length
-  const moves: Omit<PrAction, 'emphasis'>[] = [
+  const moves: Omit<PlannedPrAction, 'emphasis'>[] = [
     ...(status === 'ready'
       ? [
           {
@@ -514,7 +528,7 @@ export function prBlockActions(
       : []),
   ]
 
-  return [
+  return withOut(presses, id, [
     ...(pr.error
       ? [
           {
@@ -527,7 +541,7 @@ export function prBlockActions(
         ]
       : []),
     ...retryAction(prRetryOf(presses.lastActions[id], pr.ref, null)),
-    ...moves.map((m, n): PrAction => ({ ...m, emphasis: n === 0 ? 'primary' : 'normal' })),
+    ...moves.map((m, n): PlannedPrAction => ({ ...m, emphasis: n === 0 ? 'primary' : 'normal' })),
     { press: { action: 'pr-open', ref: pr.ref }, label: 'Open PR', kind: 'local', emphasis: 'normal', icon: 'open' },
     ...(pr.ref === branchRef
       ? []
@@ -539,7 +553,7 @@ export function prBlockActions(
             emphasis: 'quiet' as const,
           },
         ]),
-  ]
+  ])
 }
 
 /**

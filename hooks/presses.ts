@@ -378,14 +378,17 @@ export function finishedResult(pending: LocalResult, errors: (string | null)[], 
     parts,
     at,
     ...(pending.pressId ? { pressId: pending.pressId } : {}),
+    ...(pending.action ? { action: pending.action } : {}),
   }
 }
 
 export function localLast(
   last: LastAction | undefined,
   pressed: Pick<LastAction, 'action' | 'text'>,
-  result: LocalResult,
+  pending: LocalResult,
 ): LastAction {
+  const result = { ...pending, action: pressed.action }
+
   return last && last.kind !== 'local' ? { ...last, result } : { kind: 'local', ...pressed, at: result.at, result }
 }
 

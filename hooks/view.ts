@@ -182,6 +182,8 @@ export type ActionView = {
   isFolded: boolean
   isFollowUp: boolean
   hotkey?: string
+  /** Its press is out, so it draws dim and ignores another press until the press settles. */
+  isOut: boolean
 }
 
 export type RowView = {
@@ -474,6 +476,24 @@ export function isPressOut(f: Feedback | null): boolean {
     f?.is === 'unconfirmed' ||
     (f?.is === 'local' && f.result.state === 'pending')
   )
+}
+
+/** The id of the action whose press is out on a row, as `actionId` makes it, or null. */
+export function pressOutAction(last: LastAction | undefined, f: Feedback | null): string | null {
+  if (!isPressOut(f)) return null
+
+  return (f?.is === 'local' ? f.result.action : last?.action) ?? null
+}
+
+/**
+ * The id of the action whose button draws dim and ignores another press until its press settles. A press that reads
+ * Not confirmed does not, since pressing again is how the person resends a message that may be lost. A reply never
+ * does, since each one sends new words.
+ */
+export function outAction(last: LastAction | undefined, f: Feedback | null): string | null {
+  const action = f?.is === 'unconfirmed' ? null : pressOutAction(last, f)
+
+  return action === 'type' ? null : action
 }
 
 /**
@@ -796,38 +816,45 @@ function actionsOf(
   row: { id: string; item: Item | null; finding: Finding | null; steps: HelpStep[] },
   last: LastAction | undefined,
   state: RowState,
-  isOut: boolean,
+  feedback: Feedback | null,
 ): ActionView[] {
   const { id, item, steps } = row
+  const pressing = pressOutAction(last, feedback)
+  const out = outAction(last, feedback)
   const action = (
     press: RowPress,
     label: string,
     kind: PressKind,
     flags: Partial<Pick<ActionView, 'isPrimary' | 'isFolded'>> = {},
-  ): ActionView => ({
-    press,
-    label: press.action !== 'type' && isAgain(last, actionId(press), isOut) ? `${label} again` : label,
-    kind,
-    emphasis:
-      flags.isPrimary || press.action === 'done' || press.action === 'address'
-        ? 'primary'
-        : press.action === 'discuss' ||
-            press.action === 'explain' ||
-            press.action === 'compare' ||
-            press.action === 'dismiss' ||
-            press.action === 'discard'
-          ? 'quiet'
-          : 'normal',
-    ...(press.action === 'done'
-      ? { icon: 'done' as const }
-      : press.action === 'step' && stepIconKind(steps[press.step])
-        ? { icon: stepIconKind(steps[press.step])! }
-        : {}),
-    isPrimary: flags.isPrimary ?? false,
-    isFolded: flags.isFolded ?? false,
-    isFollowUp: FOLLOW_UPS.has(press.action),
-    ...(ACTION_KEYS[press.action] ? { hotkey: ACTION_KEYS[press.action] } : {}),
-  })
+  ): ActionView => {
+    const pressAction = actionId(press)
+
+    return {
+      press,
+      label: press.action !== 'type' && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
+      kind,
+      emphasis:
+        flags.isPrimary || press.action === 'done' || press.action === 'address'
+          ? 'primary'
+          : press.action === 'discuss' ||
+              press.action === 'explain' ||
+              press.action === 'compare' ||
+              press.action === 'dismiss' ||
+              press.action === 'discard'
+            ? 'quiet'
+            : 'normal',
+      ...(press.action === 'done'
+        ? { icon: 'done' as const }
+        : press.action === 'step' && stepIconKind(steps[press.step])
+          ? { icon: stepIconKind(steps[press.step])! }
+          : {}),
+      isPrimary: flags.isPrimary ?? false,
+      isFolded: flags.isFolded ?? false,
+      isFollowUp: FOLLOW_UPS.has(press.action),
+      ...(ACTION_KEYS[press.action] ? { hotkey: ACTION_KEYS[press.action] } : {}),
+      isOut: out === pressAction,
+    }
+  }
   if (state.is === 'settled') return state.canUndo ? [action({ action: 'undo', id }, 'Undo', 'view')] : []
   if (state.is === 'held')
     return [
@@ -1113,7 +1140,7 @@ export function inboxView({
     const state = stateOf(row.id)
     const feedback = feedbackIn(row.id, state, row.item?.reportedAt)
     // A button must keep its width while its press is out, or the buttons after it can move to another line.
-    const actions = actionsOf(row, lastActions[row.id], state, isPressOut(feedback))
+    const actions = actionsOf(row, lastActions[row.id], state, feedback)
 
     return {
       ...row,

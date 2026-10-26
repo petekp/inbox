@@ -180,8 +180,17 @@ export type LocalPart = {
   error: string | null
 }
 
-/** The words are built per surface when the row is drawn. */
-export type LocalResult = { state: 'pending' | 'done' | 'failed'; parts: LocalPart[]; at: number; pressId?: string }
+/**
+ * The words are built per surface when the row is drawn. `action` is the id of the action pressed, as `actionId`
+ * makes it, so its button draws as out while the result is pending. Missing on a result saved before the mod kept it.
+ */
+export type LocalResult = {
+  state: 'pending' | 'done' | 'failed'
+  parts: LocalPart[]
+  at: number
+  pressId?: string
+  action?: string
+}
 
 /**
  * A short note on a row that is not a press's result: a press that found its

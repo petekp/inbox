@@ -19,17 +19,26 @@ import {
   keepsView,
   olderPrsText,
   linkedPrs,
+  prRowId,
   threadSentIn,
 } from './pr-tab'
 import type { Applied, PrPress } from './pr-tab'
-import { applyPress, upgradeLastActions, withAcceptedSend, withArrival, withRewrite, withUnconfirmed } from './presses'
+import {
+  actionId,
+  applyPress,
+  upgradeLastActions,
+  withAcceptedSend,
+  withArrival,
+  withRewrite,
+  withUnconfirmed,
+} from './presses'
 import type { AnswerMessage, RowPress } from './presses'
 import { prNeedsYou, prRefs } from './prs'
 import { recordClose, recordItem } from './tools'
 import { upgradeHostTasks } from './host-tasks'
 import { applyOverview, lookEnded, lookStarted } from './overview'
 import type { OverviewAnswer } from './overview'
-import { inboxView, NO_HOLDS, overviewPage, perTurnStatus } from './view'
+import { feedbackOf, inboxView, NO_HOLDS, outAction, overviewPage, perTurnStatus } from './view'
 import type { InboxView, OverviewPage, ReplyHolds } from './view'
 import type { LastAction, Ledger, PrView, PrViews, RowNote, Session, Stop, Turns, TurnDialogQuestion } from '../types'
 
@@ -521,6 +530,18 @@ export function appliedCatchUp<S extends Session>(s: S, begun: Session, parsed: 
 
 export type Pressed = Exclude<Applied, { stale: true }>
 
+/** A press of the action whose press is still out on its row. It changes nothing, so a second press sends nothing. */
+function isRepeatWhileOut(s: Session, p: RowPress | PrPress, at: number): boolean {
+  const rowId = 'ref' in p ? prRowId(p) : p.id
+  const saved = s.lastActions[rowId]
+  const last = saved && withoutStaleResult(saved, at)
+  const reportedAt = 'ref' in p ? undefined : s.ledger.items.find(i => i.id === p.id)?.reportedAt
+
+  const pressed = 'ref' in p ? p.action : actionId(p)
+
+  return outAction(last, feedbackOf(rowId, last, undefined, s.presence, at, reportedAt)) === pressed
+}
+
 export function pressOn(
   s: Session,
   p: RowPress | PrPress,
@@ -528,6 +549,7 @@ export function pressOn(
   localPressId?: string,
   answerMessage?: AnswerMessage,
 ): Pressed | { stale: true } {
+  if (isRepeatWhileOut(s, p, at)) return { ledger: s.ledger, lasts: {}, drop: [], effects: [] }
   const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId }
   if ('ref' in p) return applyPrPress(s.ledger, s.prViews, s.lastActions, p, ctx)
   const item = s.ledger.items.find(i => i.id === p.id)
@@ -641,16 +663,16 @@ export type SessionView = InboxView & {
   overviewPage: OverviewPage
 }
 
-function withoutStalePending(lastActions: Record<string, LastAction>, now: number): Record<string, LastAction> {
-  const isStale = (last: LastAction) => last.result?.state === 'pending' && now - last.result.at > PRESS_TIMEOUT_MS
+/** Drops a Local result still pending after `PRESS_TIMEOUT_MS`, whose press will not finish. */
+function withoutStaleResult(last: LastAction, now: number): LastAction {
+  if (last.result?.state !== 'pending' || now - last.result.at <= PRESS_TIMEOUT_MS) return last
+  const { result: _result, ...rest } = last
 
-  return Object.fromEntries(
-    Object.entries(lastActions).map(([id, last]) => {
-      if (!isStale(last)) return [id, last]
-      const { result: _result, ...rest } = last
-      return [id, rest]
-    }),
-  )
+  return rest
+}
+
+function withoutStalePending(lastActions: Record<string, LastAction>, now: number): Record<string, LastAction> {
+  return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]))
 }
 
 /**

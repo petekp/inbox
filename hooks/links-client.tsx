@@ -1,6 +1,7 @@
 import type { ClientModule } from 'claude-code'
 
-export type ClientLink = { key: string; label: string; width: number }
+/** `isOut`: its press is out, so it draws dim and does not highlight under the pointer. */
+export type ClientLink = { key: string; label: string; width: number; isOut?: boolean }
 
 export type LinksProps = {
   links: ClientLink[]
@@ -63,13 +64,19 @@ const Links: ClientModule<LinksProps, State> = (props, surface) => {
         flexDirection: 'row',
         gap: props.gap,
         children: line.map(link => {
-          const color = link.key === hover && !props.isGuarded ? props.colors.hover : props.colors.muted
+          const isHovered = link.key === hover && !props.isGuarded && !link.isOut
+          const color = isHovered ? props.colors.hover : props.colors.muted
 
           return Box({
             key: link.key,
             width: link.width,
             flexShrink: 0,
-            children: Text({ ...(color ? { color } : {}), wrap: 'truncate-end', children: link.label }),
+            children: Text({
+              ...(color ? { color } : {}),
+              ...(link.isOut ? { dimColor: true } : {}),
+              wrap: 'truncate-end',
+              children: link.label,
+            }),
           })
         }),
       }),

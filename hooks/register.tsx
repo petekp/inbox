@@ -2111,7 +2111,7 @@ async function runDemoPress(
         ledger: d.ledger,
         prViews: d.prViews,
         lastActions: d.lastActions,
-        presence: { ...sample.presence, turnsStarted: d.turns.turnsStarted },
+        presence: { ...sample.presence, ...d.turns },
       },
       p,
       now,
@@ -2160,7 +2160,7 @@ type Action = {
   onPress: (press: UiPressArgument) => void | Promise<void>
 }
 
-type KeyAction = Action & { hotkey?: string }
+type KeyAction = Action & { hotkey?: string; isOut?: boolean }
 
 const ACTION_GLYPHS: Partial<Record<ActionIcon, string>> = { run: '▶', copy: '⧉', open: '↗', retry: '↻' }
 
@@ -2208,6 +2208,7 @@ function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { k
           label: a.label,
           kind: a.kind,
           emphasis: a.emphasis,
+          isOut: a.isOut,
           ...(hotkey ? { hotkey } : {}),
           onPress: (press: UiPressArgument) => runPress($, p, press.surface),
         }
@@ -2223,7 +2224,7 @@ function rowKeyActions($: EngineInterface, r: RowView, isAllShown: boolean): { k
       case 'action': {
         const { action: a, hotkey } = k
         const p = a.press
-        const presentation = { emphasis: a.emphasis }
+        const presentation = { emphasis: a.emphasis, isOut: a.isOut }
         if (p.action === 'type')
           return {
             label: a.label,
@@ -3318,6 +3319,7 @@ export const register: Register = on => {
         kind: a.kind,
         ...(a.icon ? { icon: ACTION_GLYPHS[a.icon] } : {}),
         ...(a.hotkey ? { hotkey: a.hotkey } : {}),
+        isOut: a.isOut,
         onPress: prPress(a.press),
       }
     }
@@ -3466,15 +3468,16 @@ export const register: Register = on => {
     }
     const keyedButton =
       (rowId: string, isFollowUp = false) =>
-      ({ hotkey, kind: _kind, emphasis, icon, ...action }: KeyAction) => {
+      ({ hotkey, kind: _kind, emphasis, icon, isOut = false, ...action }: KeyAction) => {
         const { label: _label, ...unlabeled } = action
+        const isDim = isOpenGuarded || isOut
 
         return look === 'desktop' ? (
           <Button
             {...action}
             {...(isFollowUp ? { plain: true } : emphasis === 'primary' ? { variant: 'primary' as const } : {})}
             label={fittedDesktopLabel(rowId, { ...action, ...(icon ? { icon } : {}) })}
-            {...(isOpenGuarded ? { dimColor: true } : {})}
+            {...(isDim ? { dimColor: true } : {})}
             onPress={press => unlessGuarded($, rowId, press, action.onPress)}
           />
         ) : (
@@ -3482,12 +3485,12 @@ export const register: Register = on => {
             <Button
               plain
               {...unlabeled}
-              {...(isOpenGuarded ? { dimColor: true } : {})}
+              {...(isDim ? { dimColor: true } : {})}
               hover={{ color: pal.muted, inverse: true }}
               onPress={press => unlessGuarded($, rowId, press, action.onPress)}
             >
               {hotkey ? (
-                <Text color={pal.key} dimColor={isOpenGuarded} hover={{ color: pal.muted, inverse: true }}>
+                <Text color={pal.key} dimColor={isDim} hover={{ color: pal.muted, inverse: true }}>
                   {hotkey}
                 </Text>
               ) : null}
@@ -3504,7 +3507,12 @@ export const register: Register = on => {
       const props: LinksProps = {
         links: more.map(a => {
           const label = desktopLabel(a)
-          return { key: a.key, label, width: desktopTextPt(label) / DESKTOP_CELL_PT }
+          return {
+            key: a.key,
+            label,
+            width: desktopTextPt(label) / DESKTOP_CELL_PT,
+            ...(a.isOut ? { isOut: true } : {}),
+          }
         }),
         gap: 1.5,
         fallbackColumns: desktopTextColumns(rowId),
@@ -3533,7 +3541,7 @@ export const register: Register = on => {
       </Box>
     )
     const keyBindings = (keys: KeyAction[], suffix = '') =>
-      keys.flatMap(({ key, hotkey, kind: _kind, emphasis: _emphasis, icon: _icon, ...k }) =>
+      keys.flatMap(({ key, hotkey, kind: _kind, emphasis: _emphasis, icon: _icon, isOut: _isOut, ...k }) =>
         hotkey ? [<Button key={`${key}${suffix}`} plain hotkey={hotkey} {...k} label={shownLabel(k)} />] : [],
       )
     const keysWidth = (keys: KeyAction[], more: KeyAction[]) => {
@@ -4981,10 +4989,11 @@ export const register: Register = on => {
                   key={a.key}
                   label={desktopLabel(a)}
                   {...(a.emphasis === 'primary' ? { variant: 'primary' as const } : {})}
+                  {...(a.isOut ? { dimColor: true } : {})}
                   onPress={a.onPress}
                 />
               ) : (
-                <Button key={a.key} label={a.label} onPress={a.onPress} />
+                <Button key={a.key} label={a.label} {...(a.isOut ? { dimColor: true } : {})} onPress={a.onPress} />
               ),
             )}
           </Box>
