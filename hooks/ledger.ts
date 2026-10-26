@@ -431,6 +431,19 @@ export function restates(a: string, b: string): boolean {
   return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b)
 }
 
+/**
+ * Whether `b` repeats `a` with no subject of its own: it restates `a`, and one of the two has no key word the other
+ * lacks. "Hotkeys vanish in the ANSI mode" repeats "Hotkeys vanish in ANSI mode", but "package.json has no engines
+ * field" does not repeat "package.json has no license field".
+ */
+function repeatsSubject(a: string, b: string): boolean {
+  const x = keyWords(a)
+  const y = keyWords(b)
+  const within = (inner: Set<string>, outer: Set<string>) => [...inner].every(w => outer.has(w))
+
+  return sameAsk(a, b) || (restates(a, b) && (within(x, y) || within(y, x)))
+}
+
 function sameAsk(a: string, b: string): boolean {
   const norm = (s: string) => words(s).join(' ')
 
@@ -803,7 +816,8 @@ function withUpdate(item: Item, updated: Update['updated']): Item {
 /**
  * Adds a finding Claude recorded. One whose title matches an open finding, or
  * rewords an open item's ask, is skipped, so one thing shows in one list. So is
- * one the person dismissed (`dismissed` is that record); a finding that expired
+ * one that repeats a finding the person dismissed (`dismissed` is that record) as
+ * `repeatsSubject` says; a finding that expired
  * or was closed as fixed can be recorded again. When the list is full, the
  * oldest finding closes as expired to make room.
  */
@@ -815,9 +829,7 @@ export function addFinding(
     ledger.findings.find(f => sameAsk(f.title, finding.title)) ?? ledger.items.find(i => restates(i.ask, finding.title))
   if (same) return { ledger, id: same.id, isAdded: false, expired: null, dismissed: null }
   const dismissed =
-    ledger.closedFindings.findLast(
-      f => f.how === 'dismissed' && (sameAsk(f.title, finding.title) || restates(f.title, finding.title)),
-    ) ?? null
+    ledger.closedFindings.findLast(f => f.how === 'dismissed' && repeatsSubject(f.title, finding.title)) ?? null
   if (dismissed) return { ledger, id: dismissed.id, isAdded: false, expired: null, dismissed }
   const id = `f${ledger.nextId}`
   const expired = ledger.findings.length >= MAX_FINDINGS ? ledger.findings[0]! : null
