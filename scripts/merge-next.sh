@@ -13,8 +13,8 @@
 # Then it runs ./scripts/check.sh, writes its output to .scratch/merge-next-check.log, and exits with its status. It
 # exits 1 when it stops before that. It never pushes.
 #
-# Installs the Codex plugin's or the omp extension's tools when they are missing, with the commands check.sh names.
-# Needs git, npm and bun.
+# Installs a look's tools, with the commands check.sh names, when they are missing or the merge changed the look's
+# lockfile, since a rebuild with older tools writes bundles that differ from next's. Needs git, npm and bun.
 #
 # Usage: ./scripts/merge-next.sh [--from <ref>]
 #        ./scripts/merge-next.sh --continue
@@ -66,13 +66,25 @@ is_merging() {
     git rev-parse -q --verify MERGE_HEAD >/dev/null
 }
 
+# Prints why the tools in folder $1 need installing, given its lockfile $2, or nothing when they are current. Git sets
+# ORIG_HEAD to the branch as it was before the merge.
+install_reason() {
+    if [ ! -d "$1/node_modules" ]; then
+        echo "they are missing"
+    elif ! git diff --quiet ORIG_HEAD -- "$2"; then
+        echo "the merge changed $2"
+    fi
+}
+
 rebuild() {
-    if [ ! -d codex/node_modules ]; then
-        echo "Installing the Codex plugin's tools"
+    reason=$(install_reason codex codex/package-lock.json)
+    if [ -n "$reason" ]; then
+        echo "Installing the Codex plugin's tools: $reason"
         npm --prefix "$DIR/codex" ci || return 1
     fi
-    if [ ! -d omp/node_modules ]; then
-        echo "Installing the omp extension's tools"
+    reason=$(install_reason omp omp/bun.lock)
+    if [ -n "$reason" ]; then
+        echo "Installing the omp extension's tools: $reason"
         bun install --cwd "$DIR/omp" --frozen-lockfile --ignore-scripts || return 1
     fi
     echo "Rebuilding the bundles"
