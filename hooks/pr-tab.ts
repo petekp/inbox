@@ -210,8 +210,8 @@ export const PR_DISMISSED_LABEL = 'Dismissed'
 
 export const PR_GROUP_TITLES = { threads: 'Review threads', checks: 'Failing checks' }
 
-/** The mark before a PR row's title, and its tone. */
-export type PrRowMark = { text: string; tone: 'done' | 'error' | null }
+/** The mark before a PR row's title, its tone, and whether it says the row's work is done. */
+export type PrRowMark = { text: string; tone: 'done' | 'error' | null; isDone: boolean }
 
 /** What a review thread's row says, for each look to draw in its own controls. */
 export type ThreadRowText = {
@@ -230,7 +230,7 @@ export function threadRowText(pr: PrView, t: PrThread, lastActions: Record<strin
   const showsCheck = threadShowsCheckIn(lastActions)(pr, t)
 
   return {
-    mark: showsCheck ? { text: '✓', tone: 'done' } : { text: '◦', tone: null },
+    mark: showsCheck ? { text: '✓', tone: 'done', isDone: true } : { text: '◦', tone: null, isDone: false },
     fold:
       isSent || isChanged
         ? t.isLinesChanged
@@ -250,7 +250,12 @@ export function threadRowText(pr: PrView, t: PrThread, lastActions: Record<strin
 
 /** What a failing check's row says. `lead` names its workflow, drawn before the check's name. */
 export function checkRowText(c: PrCheck): { mark: PrRowMark; lead: string | null; title: string; meta: string } {
-  return { mark: { text: '✗', tone: 'error' }, lead: c.workflow || null, title: c.name, meta: checkRunText(c) }
+  return {
+    mark: { text: '✗', tone: 'error', isDone: false },
+    lead: c.workflow || null,
+    title: c.name,
+    meta: checkRunText(c),
+  }
 }
 
 /** How many characters of a review comment, or of its latest reply, an open thread row shows. */

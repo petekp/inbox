@@ -123,6 +123,8 @@ type Row = {
   view?: RowView
   handle: string
   handleTone?: Tone
+  /** A PR row's mark says its work is done. */
+  isMarkDone?: boolean
   kind?: Finding['kind']
   lead?: string
   title: string
@@ -860,6 +862,7 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
     id,
     handle: text.mark.text,
     handleTone: text.mark.tone ?? undefined,
+    isMarkDone: text.mark.isDone,
     ...(text.fold ? { fold: text.fold } : {}),
     title: text.title,
     meta: text.meta,
@@ -895,6 +898,7 @@ function prCheckRow(v: View, pr: PrView, c: PrCheck): Row {
     id,
     handle: text.mark.text,
     handleTone: text.mark.tone ?? undefined,
+    isMarkDone: text.mark.isDone,
     ...(text.lead ? { lead: `${text.lead} /` } : {}),
     title: text.title,
     meta: ran,
@@ -1083,7 +1087,7 @@ function feedbackLabel(row: Row): string | null {
   const f = row.feedback
   if (!f) return null
 
-  return row.view ? rowFeedbackText(row.view, 'codex') : markedFeedbackText(f, row.handle, 'codex')
+  return row.view ? rowFeedbackText(row.view, 'codex') : markedFeedbackText(f, row.isMarkDone ?? false, 'codex')
 }
 
 function noteOf(id: string): string | null {

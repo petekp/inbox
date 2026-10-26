@@ -516,7 +516,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
           title: text.title,
           isDim: text.fold !== null,
           detail: [text.meta, text.fold?.note].filter(Boolean).join(' · ') || null,
-          feedback: pressFeedback(screen, id, now, text.mark.text),
+          feedback: pressFeedback(screen, id, now, text.mark.isDone),
           buttons: prButtons(threadActions(pr, t, presses)),
           isWaiting: isWaiting(id),
           isFolded: text.fold !== null,
@@ -536,7 +536,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
           lead: markLead(text.mark),
           title: text.lead ? `${text.lead} / ${text.title}` : text.title,
           detail: text.meta,
-          feedback: pressFeedback(screen, id, now, text.mark.text),
+          feedback: pressFeedback(screen, id, now, text.mark.isDone),
           buttons: prButtons(checkActions(pr, c, presses)),
           isWaiting: isWaiting(id),
         },
@@ -548,10 +548,10 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
   return out
 }
 
-function pressFeedback(screen: PanelScreen, id: string, now: number, mark = ''): Line['feedback'] {
+function pressFeedback(screen: PanelScreen, id: string, now: number, isMarkDone = false): Line['feedback'] {
   const f = feedbackOf(id, screen.view.lastActions[id], undefined, screen.view.turns, now)
 
-  return f ? { text: markedFeedbackText(f, mark, AGENT), tone: feedbackTone(f), source: f } : null
+  return f ? { text: markedFeedbackText(f, isMarkDone, AGENT), tone: feedbackTone(f), source: f } : null
 }
 
 /** Where a row's title starts, after the cursor and the mark. The Overview page's text and details start here too. */

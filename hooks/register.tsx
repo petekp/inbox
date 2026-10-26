@@ -3229,6 +3229,8 @@ export const register: Register = on => {
       handle: string
       /** A Button takes no color, so this handle is Text and only the row's text selects it. */
       handleTone?: Tone
+      /** A PR row's mark says its work is done. */
+      isMarkDone?: boolean
       title: string
       titleAfter?: string
       at?: number
@@ -3318,6 +3320,7 @@ export const register: Register = on => {
       id: prCheckId(pr, c),
       handle: checkRowText(c).mark.text,
       handleTone: checkRowText(c).mark.tone ?? undefined,
+      isMarkDone: checkRowText(c).mark.isDone,
       title: c.name,
       line: { text: c.name },
       body: null,
@@ -3380,6 +3383,7 @@ export const register: Register = on => {
         id,
         handle: text.mark.text,
         handleTone: text.mark.tone ?? undefined,
+        isMarkDone: text.mark.isDone,
         ...(text.fold ? { fold: text.fold } : {}),
         title: text.title,
         ...(t.at === null ? {} : { at: t.at }),
@@ -3601,7 +3605,7 @@ export const register: Register = on => {
 
       return hasAge(f)
         ? {
-            text: row?.view ? rowFeedbackText(row.view, look)! : markedFeedbackText(f, row?.handle ?? '', look),
+            text: row?.view ? rowFeedbackText(row.view, look)! : markedFeedbackText(f, row?.isMarkDone ?? false, look),
             age: ago(now - f.at),
             isAfterTitle: true,
             isFailure: false,

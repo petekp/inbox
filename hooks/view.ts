@@ -263,9 +263,9 @@ export function waitingCount(rows: readonly (RowView | undefined)[]): number {
   return rows.filter(r => r !== undefined && isWaitingRow(r)).length
 }
 
-/** A press result's text on a row with no row view, as a PR row. A row already marked ✓ shows a done result's bare label. */
-export function markedFeedbackText(f: Feedback, mark: string, look: Look): string {
-  return f.is === 'done' && mark === '✓' ? f.label : feedbackText(f, look)
+/** A press result's text on a row with no row view, as a PR row. A row whose mark says done shows a done result's bare label. */
+export function markedFeedbackText(f: Feedback, isMarkDone: boolean, look: Look): string {
+  return f.is === 'done' && isMarkDone ? f.label : feedbackText(f, look)
 }
 
 export function rowFeedbackText(row: RowView, look: Look): string | null {
