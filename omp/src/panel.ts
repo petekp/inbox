@@ -1088,7 +1088,7 @@ export function render(
   return drawPanel(screen, ui, width, now, style, height).lines
 }
 
-/** The panel's lines, and the Progress page's scroll clamped to what the panel can show. */
+/** The panel's lines, and the Overview page's scroll clamped to what the panel can show. */
 export function drawPanel(
   screen: PanelScreen,
   ui: PanelUi,

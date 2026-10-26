@@ -1372,7 +1372,7 @@ async function focusField($: EngineInterface, id: string) {
   await redraw($)
 }
 
-/** The shown row tab; null while the Progress page shows, where no row is drawn, selected or scrolled to. */
+/** The shown row tab; null while the Overview page shows, where no row is drawn, selected or scrolled to. */
 async function readRowTab($: EngineInterface): Promise<Tab | null> {
   const [page, tab] = await Promise.all([read($, PAGE), read($, TAB)])
 
