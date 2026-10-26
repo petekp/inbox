@@ -14,6 +14,7 @@ The inbox is drawn in four looks: the Claude Code terminal, the Claude desktop a
 - The repo is public. Keep private paths, other people's names and session content out of commits.
 - Run `./scripts/check.sh` after every change.
 - Change shared behavior in the owner listed in `docs/looks.md`. Adapters map shared row and action descriptions to native controls. Hosts run events, storage and effects. Rebuild the Codex bundles after a shared-module change with `npm --prefix codex run build`, and the omp bundle with `npm --prefix omp run build`.
+- To bring `next` into a branch, run `./scripts/merge-next.sh`. It merges `origin/next`, rebuilds the bundles from the merged sources and runs `./scripts/check.sh`.
 - When you finish a change to a shared module or a look's drawing code, say for each look whether the change applies and what you checked there. A difference between looks that is not in the "Differences on purpose" table in `docs/looks.md` is drift: fix it, or add it to the table with its reason.
 - Before you bump the version, run every check in [docs/release.md](docs/release.md).
 - When an eval run, a review or a release pass shows a bug or a gap in the evals, tests or release pass, write it down in the repo before you finish, with the failure it would catch. File a product bug as a GitHub issue. Add a gap in the checks to the follow-ups in `docs/plans/eval-trust.md` or `docs/plans/release-pass.md`.

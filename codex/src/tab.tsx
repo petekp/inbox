@@ -8,7 +8,7 @@ import { closedState } from '../../hooks/ledger'
 import { ago, clipLabel } from '../../hooks/text'
 import type { ClosedState } from '../../hooks/ledger'
 import { canUndoRefused, closedMark, settledMark, versionLabel } from '../../hooks/view'
-import { capitalized, isPressConfirmed, noteText, pendingResult, stepEffects } from '../../hooks/presses'
+import { actionId, capitalized, isPressConfirmed, noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { Effect, RowPress } from '../../hooks/presses'
 import {
   allRows,
@@ -115,6 +115,7 @@ type Key = {
   emphasis: Emphasis
   isDismiss?: boolean
   icon?: IconName
+  isOut?: boolean
   run: () => void
 }
 
@@ -172,6 +173,8 @@ const optionsShown = new Set<string>()
 const unfolded = new Set<FoldGroup>()
 /** A press on its way: its pending Local result, or null for a message, which reads SENDING. */
 const sending = new Map<string, Feedback | null>()
+/** The action of the press on its way, by row id, so its button draws as out before the view says so. */
+const pressing = new Map<string, string>()
 const SENDING = 'Sending…'
 const latestPress = new Map<string, number>()
 const errors = new Map<string, string>()
@@ -617,6 +620,8 @@ async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void
   const t = drawnTab()
   const wasWaiting = !!view && isRowTab(t) && tabWaits(view, t).some(r => r.id === rowId && r.isWaiting)
   sending.set(rowId, pending)
+  if (press.action === 'type') pressing.delete(rowId)
+  else pressing.set(rowId, 'ref' in press ? press.action : actionId(press))
   errors.delete(rowId)
   notes.delete(rowId)
   copies.delete(rowId)
@@ -654,6 +659,7 @@ async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void
     if (isLatest()) {
       latestPress.delete(rowId)
       sending.delete(rowId)
+      pressing.delete(rowId)
       draw()
     }
   }
@@ -735,7 +741,7 @@ function discardReply(id: string) {
 }
 
 function rowKeys(r: RowView): { keys: Key[]; more: Key[] } {
-  const actions = ledgerActions(r, optionsShown.has(r.id), {
+  const actions = ledgerActions(r, optionsShown.has(r.id), pressing.get(r.id) ?? null, {
     press: p => {
       const step = p.action === 'step' ? r.steps[p.step] : undefined
       const action = r.actions.find(a => a.press.action === 'step' && p.action === 'step' && a.press.step === p.step)
@@ -838,6 +844,7 @@ function prKey(rowId: string, pr: PrView, a: PrAction): Key {
     emphasis: a.emphasis,
     ...(a.icon ? { icon: a.icon } : {}),
     ...(a.press.action === 'pr-dismiss' ? { isDismiss: true } : {}),
+    ...(a.isOut || pressing.get(rowId) === a.press.action ? { isOut: true } : {}),
     run: () => void act(rowId, a.press, undefined, pending),
   }
 }
@@ -2243,7 +2250,7 @@ document.addEventListener(
     const k = [...keys, ...more].find(x => x.hotkey === e.key)
     if (k) {
       e.preventDefault()
-      k.run()
+      if (!k.isOut) k.run()
     }
   },
   { signal: instanceAbort.signal },

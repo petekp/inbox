@@ -82,6 +82,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
       },
     },
     false,
+    null,
     {
       press: p => {
         const result = applyPress(state, undefined, p, { now: 20, turnsStarted: 1, extraSteps: [] })
@@ -143,7 +144,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
   let allOptions = false
   let answer: PressResult | null = null
   const drawQuestion = () => {
-    const choices = ledgerActions(question, allOptions, {
+    const choices = ledgerActions(question, allOptions, null, {
       press: p => {
         answer = applyPress(questionLedger, undefined, p, { now: 20, turnsStarted: 1, extraSteps: [] })
       },
@@ -186,7 +187,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
     discarded: {},
   }).findings.rows[0]!
   let discussion: PressResult | null = null
-  const followUps = ledgerActions(finding, false, {
+  const followUps = ledgerActions(finding, false, null, {
     press: p => {
       discussion = applyPress(findingLedger, undefined, p, { now: 20, turnsStarted: 1, extraSteps: [] })
     },

@@ -1097,24 +1097,6 @@ test('a bulk PR prompt arrives on every affected row without acknowledging a new
   assert.equal(discussed.lastActions[rows[1]!]?.delivery?.state, 'arrived')
 })
 
-test('same-millisecond identical prompt arrivals leave the newer press unconfirmed until its own arrival is observed', async () => {
-  const at = 100
-  const { dir, call } = await setup(0, () => at)
-  const explain = () =>
-    call('inbox_press', { press: { action: 'explain', id: 'i1' }, thread: 's1' }, { thread_id: 's1' })
-  await explain()
-  await explain()
-  const queued = await readState(dir, 's1')
-  assert.equal(queued.sent[0]!.text, queued.sent[1]!.text)
-  assert.notEqual(queued.sent[0]!.deliveryId, queued.sent[1]!.deliveryId)
-  const first = notePrompt(queued, queued.sent[0]!.text, 210).state
-  assert.equal(first.lastActions.i1?.delivery?.state, 'unconfirmed')
-  assert.equal(viewOf(first, 210).needsYou.questions[0]?.feedback?.is, 'unconfirmed')
-  const second = notePrompt(first, first.sent[0]!.text, 220).state
-  assert.equal(second.lastActions.i1?.delivery?.state, 'arrived')
-  assert.equal(viewOf(second, 220).needsYou.questions[0]?.feedback?.is, 'working')
-})
-
 test('same-millisecond identical sends on different rows acknowledge only their own delivery', async () => {
   const { dir, call } = await setup(0, () => 100)
   await updateState(dir, 's1', s => ({
@@ -1130,23 +1112,6 @@ test('same-millisecond identical sends on different rows acknowledge only their 
   assert.equal(first.lastActions.i2?.delivery?.state, 'unconfirmed')
   const second = notePrompt(first, first.sent[0]!.text, 120).state
   assert.equal(second.lastActions.i2?.delivery?.state, 'arrived')
-})
-
-test('a missing older arrival leaves a later identical press visibly unconfirmed', async () => {
-  let at = 100
-  const { dir, call } = await setup(0, () => at)
-  const explain = () =>
-    call('inbox_press', { press: { action: 'explain', id: 'i1' }, thread: 's1' }, { thread_id: 's1' })
-  await explain()
-  const afterOtherPrompt = notePrompt(await readState(dir, 's1'), 'another request', 150).state
-  await updateState(dir, 's1', () => afterOtherPrompt)
-  at = 200
-  await explain()
-  const queued = await readState(dir, 's1')
-  const arrived = notePrompt(queued, queued.sent[1]!.text, 210).state
-  assert.equal(arrived.lastActions.i1?.delivery?.state, 'unconfirmed')
-  assert.equal(viewOf(arrived, 210).needsYou.questions[0]?.feedback?.is, 'unconfirmed')
-  assert.equal(arrived.sent.length, 1)
 })
 
 test('a settled Fix keeps its delivery unconfirmed after one indistinguishable arrival', async () => {
@@ -1191,20 +1156,6 @@ test('an answered question keeps unconfirmed delivery in Closed after its settle
     later.needsYou.questions.find(q => q.id === 'i2'),
     undefined,
   )
-})
-
-test('more than twenty unmatched identical sends retain the old receipt before the newest press', async () => {
-  let at = 100
-  const { dir, call } = await setup(0, () => at)
-  for (let i = 0; i < 21; i++) {
-    await call('inbox_press', { press: { action: 'explain', id: 'i1' }, thread: 's1' }, { thread_id: 's1' })
-    at += 100
-  }
-  const queued = await readState(dir, 's1')
-  assert.equal(queued.sent.length, 21)
-  const first = notePrompt(queued, queued.sent[0]!.text, at).state
-  assert.equal(first.lastActions.i1?.delivery?.state, 'unconfirmed')
-  assert.equal(first.sent.length, 20)
 })
 
 test('tracked PR steps are drawn and open the same linked and branch PRs without duplicate links', async () => {

@@ -329,7 +329,13 @@ test('a run step on a question sends its command and folds the question, which s
   }
   assert.deepEqual(copyOpen, {
     ledger: s.ledger,
-    last: { kind: 'local', action: 'step-1', text: 'Copy env line and open .env.local', at: 50, result: pending },
+    last: {
+      kind: 'local',
+      action: 'step-1',
+      text: 'Copy env line and open .env.local',
+      at: 50,
+      result: { ...pending, action: 'step-1' },
+    },
     effects: [
       { kind: 'copy', text: 'API_KEY=x', name: 'env line', isCommand: false },
       { kind: 'open', target: '.env.local', name: '.env.local' },

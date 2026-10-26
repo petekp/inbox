@@ -2021,7 +2021,7 @@ test('a reply another plugin rewrote to the text of a pending press reads Not co
   await arrive($)
 })
 
-test('an older identical Claude prompt leaves the newer press unconfirmed until its prompt enters', async ($, on) => {
+test('a second Explain press while the first is out sends nothing, and the first reads Explaining… once it enters', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
 
@@ -2039,15 +2039,10 @@ test('an older identical Claude prompt leaves the newer press unconfirmed until 
   submitAnswer = 'hold'
   inFlight.push(pane.press({ key: 'explain-i1-key' }))
   await clock.advance(PRESS_GUARD_MS)
+  expect((await pane.find({ key: 'explain-i1' }))?.props.dimColor).toBe(true)
   inFlight.push(pane.press({ key: 'explain-i1-key' }))
   await clock.settle()
-  expect(held).toHaveLength(2)
-  expect(held[0]?.text).toBe(held[1]?.text)
-
-  await arriveFirst($)
-  await clock.settle()
-  expect(await pane.find({ text: /Not\s+confirmed:\s+Explain/ })).toBeDefined()
-  expect(await pane.find({ text: /✓\sExplained/ })).toBeUndefined()
+  expect(held).toHaveLength(1)
 
   await arriveFirst($)
   await clock.settle()
@@ -2098,32 +2093,6 @@ test('a press resent after the app quit with its first delivery lost reads as de
   await clock.advance(QUEUED_AFTER_MS)
   expect(await pane.find({ text: /Explaining…/ })).toBeDefined()
   expect(await pane.find({ text: /Not confirmed|Queued/ })).toBeUndefined()
-})
-
-test('a refused newer Claude send replaces ambiguity with Not sent after the older prompt enters', async ($, on) => {
-  const clock = mock.clock(on, { now: 1_000_000 })
-  world($, on, [])
-
-  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
-  await $.turn.complete({
-    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
-    durationMs: 5,
-    isAborted: false,
-    turnId: 't1',
-    reason: 'answer',
-  })
-  await clock.settle()
-  const pane = await $.ui.mount(PANE)
-  submitAnswer = 'hold'
-  inFlight.push(pane.press({ key: 'explain-i1-key' }))
-  await clock.advance(PRESS_GUARD_MS)
-  submitAnswer = { drop: 'a hook refused it', beforeDrop: () => arriveFirst($) }
-  await pane.press({ key: 'explain-i1-key' })
-  await clock.settle()
-
-  expect(await pane.find({ text: /Not\s+sent:\s+a hook refused it/ })).toBeDefined()
-  expect(await pane.find({ text: /Not\s+confirmed/ })).toBeUndefined()
 })
 
 test('a uniquely rewritten Claude prompt is confirmed when its row enters before submit returns', async ($, on) => {
@@ -2567,12 +2536,8 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   await clock.advance(PRESS_GUARD_MS)
   inFlight.push(pane.press({ key: 'address-T1-key' }))
   await clock.settle()
-  await arriveFirst($)
-  await clock.settle()
-  expect(await pane.find({ text: /Not\s+confirmed:\s+Address/ })).toBeDefined()
-  expect((await pane.find({ key: 'address-T1-key' }))?.props.label).toBe('Address again')
-  expect((await pane.find({ key: 'select-acme/greet#12 thread T1' }))?.props.label).toBe('◦')
-  expect(await pane.find({ text: /✓\sAddress/ })).toBeUndefined()
+  expect(held).toHaveLength(1)
+  expect((await pane.find({ key: 'address-T1' }))?.props.dimColor).toBe(true)
   await arrive($)
   await clock.settle()
   expect(await pane.find({ text: /^\u2007·\sAddressed$/ })).toBeDefined()

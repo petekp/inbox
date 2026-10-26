@@ -1,5 +1,6 @@
 import type { ActionEmphasis, ActionIcon, RowView } from '../../hooks/view'
 import type { RowPress } from '../../hooks/presses'
+import { actionId } from '../../hooks/presses'
 import { actionLabel, rowKeyPlan, ROW_COPY } from '../../hooks/view'
 
 const ICONS = {
@@ -43,14 +44,18 @@ export type RowAction = {
   emphasis: ActionEmphasis
   isDismiss?: boolean
   icon?: IconName
+  /** Its press is out, so it draws dim and ignores presses. */
+  isOut?: boolean
   run: () => void
 }
 
 export type LedgerAction = RowAction & { hotkey?: string }
 
+/** `pressing` is the action of a press on its way to the server, which the row's view does not show yet. */
 export function ledgerActions(
   row: RowView,
   allOptions: boolean,
+  pressing: string | null,
   on: {
     press: (press: RowPress) => void
     reply: () => void
@@ -69,6 +74,7 @@ export function ledgerActions(
       ...(k.hotkey ? { hotkey: k.hotkey } : {}),
       ...(a.icon ? { icon: ACTION_ICONS[a.icon] } : {}),
       ...(a.press.action === 'dismiss' ? { isDismiss: true } : {}),
+      ...(a.isOut || (a.press.action !== 'type' && actionId(a.press) === pressing) ? { isOut: true } : {}),
       run: a.press.action === 'type' ? on.reply : a.press.action === 'discard' ? on.discard : () => on.press(a.press),
     }
   }
@@ -89,10 +95,10 @@ export function ActionButton({ action, isBlocked }: { action: RowAction; isBlock
   return (
     <button
       type="button"
-      class={`${action.emphasis === 'primary' ? 'key primary' : action.emphasis === 'quiet' ? 'key ghost' : 'key'}${action.isDismiss ? ' dismiss' : ''}`}
-      disabled={isBlocked()}
+      class={`${action.emphasis === 'primary' ? 'key primary' : action.emphasis === 'quiet' ? 'key ghost' : 'key'}${action.isDismiss ? ' dismiss' : ''}${action.isOut ? ' out' : ''}`}
+      disabled={isBlocked() || action.isOut === true}
       onClick={() => {
-        if (!isBlocked()) action.run()
+        if (!isBlocked() && !action.isOut) action.run()
       }}
     >
       {action.icon ? <Icon name={action.icon} /> : null}
