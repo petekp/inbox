@@ -217,6 +217,7 @@ import {
   fieldExit,
   hasAge,
   heldReplies,
+  isAfterTitle,
   isFailure,
   isStatusUnderActions,
   waitingCount,
@@ -2000,11 +2001,11 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
     leavePr($, p.ref, now)
   }
   if (!('ref' in p) && p.action === 'undo') await selectRestored($, p.id)
-  // A success note clears after SETTLED_MS, and a message still on its way after QUEUED_AFTER_MS reads Queued from
-  // then. A fresh value is what redraws the pane at each.
-  if (effects.some(e => e.kind !== 'send')) later($, SETTLED_MS, () => redraw($))
+  // A success note clears SETTLED_MS after its effects finish, when its result is stamped, and a message still on its
+  // way after QUEUED_AFTER_MS reads Queued from then. A fresh value is what redraws the pane at each.
   if (sends) later($, QUEUED_AFTER_MS, () => redraw($))
   const outcome = await started.finish()
+  if (effects.some(e => e.kind !== 'send')) later($, SETTLED_MS, () => redraw($))
   if (!outcome.isRowFailed) return
   if (!('ref' in p) && p.action === 'type')
     await update($, DRAFTS, d => (d[p.id] ? d : { ...d, [p.id]: { text: p.text, since: draft?.since ?? now } }))
@@ -3609,10 +3610,11 @@ export const register: Register = on => {
         ? {
             text: row?.view ? rowFeedbackText(row.view, look)! : markedFeedbackText(f, row?.handle ?? '', look),
             age: ago(now - f.at),
+            isAfterTitle: true,
             isFailure: false,
             feedback: f,
           }
-        : { text: feedbackText(f, look), age: '', isFailure: isFailure(f), feedback: f }
+        : { text: feedbackText(f, look), age: '', isAfterTitle: isAfterTitle(f), isFailure: isFailure(f), feedback: f }
     }
     const lastActionText = (id: string) => {
       const f = feedbackLabel(id)
@@ -3622,7 +3624,7 @@ export const register: Register = on => {
     const pressedAge = (row: Row) => {
       const f = feedbackLabel(row.id, row)
 
-      return f?.age ? `${DOT}${[f.text, isAgeDropped ? '' : f.age].filter(Boolean).join(' ')}` : null
+      return f?.isAfterTitle ? `${DOT}${[f.text, isAgeDropped ? '' : f.age].filter(Boolean).join(' ')}` : null
     }
     // The row clips, not this Box: once its row scrolled out of view,
     // Claude Code drew lines this Box clipped elsewhere in the pane (anthropics/claude-code#100030).
@@ -3785,7 +3787,7 @@ export const register: Register = on => {
         sideCells: DESKTOP_SIDE_CELLS,
         before: row.line?.before ?? '',
         title: text.trim(),
-        after: f?.age ? f.text : (row.line?.after ?? '').replace(LEADING_DOT, '').trim(),
+        after: f?.isAfterTitle ? f.text : (row.line?.after ?? '').replace(LEADING_DOT, '').trim(),
         side: sideAge(row),
         padY: DESKTOP_ROW_PAD,
         maxLines: row.hasSecondLine ? 4 : 2,
@@ -3922,7 +3924,7 @@ export const register: Register = on => {
       const titleAfter = (isStatusUnder ? null : pressedAge(row)) ?? (isAgeInSide ? undefined : row.titleAfter)
       const status = [
         ...(row.fold?.note ? [{ text: row.fold.note, color: pal.muted }] : []),
-        ...(f && !f.age ? [{ text: f.text, color: f.isFailure ? pal.tone.error : pal.muted }] : []),
+        ...(f && !f.isAfterTitle ? [{ text: f.text, color: f.isFailure ? pal.tone.error : pal.muted }] : []),
         ...(isTyping && fieldWithoutKeys === row.id ? [{ text: ROW_COPY.clickField, color: pal.muted }] : []),
       ]
 
@@ -4002,7 +4004,7 @@ export const register: Register = on => {
             <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1} />,
             <Text wrap="wrap">
               <Text bold>{row.title}</Text>
-              {f?.age && !isStatusUnder ? (
+              {f?.isAfterTitle && !isStatusUnder ? (
                 <Text color={pal.muted}>{unbroken(`${DOT}${f.text}`, row.title, fitsTitleLine)}</Text>
               ) : null}
             </Text>,
