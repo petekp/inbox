@@ -26,6 +26,7 @@ var ITEM_WORDS = 12;
 var SENTENCE_WORDS = 30;
 var DETAIL_WORDS = 20;
 var LIST_ITEMS = 6;
+var LIST_KEYS = ["queue", "works", "open", "next", "since", "workstreams"];
 var STATUSES = [
   "working",
   "queued",
@@ -54,12 +55,7 @@ function upgradeOverview(saved) {
     headline: o.headline,
     status: text(o.status),
     course: text(o.course),
-    queue: itemsOf(o.queue),
-    works: itemsOf(o.works),
-    open: itemsOf(o.open),
-    next: itemsOf(o.next),
-    since: itemsOf(o.since),
-    workstreams: itemsOf(o.workstreams),
+    ...Object.fromEntries(LIST_KEYS.map((k) => [k, itemsOf(o[k])])),
     earlier: Array.isArray(o.earlier) ? o.earlier.filter((e) => typeof e === "string") : [],
     lastLookAt: typeof o.lastLookAt === "number" ? o.lastLookAt : null,
     look: lookOf(o.look),

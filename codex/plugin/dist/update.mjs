@@ -61,7 +61,8 @@ var EMPTY_OVERVIEW = {
   look: null,
   seen: { since: [], course: "" }
 };
-var LIST_KEYS = {
+var LIST_KEYS = ["queue", "works", "open", "next", "since", "workstreams"];
+var LIST_OF_KEY = {
   QUEUE: "queue",
   WORKS: "works",
   OPEN: "open",
@@ -99,14 +100,7 @@ function itemOf(value) {
 }
 function parseOverview(text) {
   const overview = { ...EMPTY_OVERVIEW };
-  const lists = {
-    queue: [],
-    works: [],
-    open: [],
-    next: [],
-    since: [],
-    workstreams: []
-  };
+  const lists = Object.fromEntries(LIST_KEYS.map((k) => [k, []]));
   let isUnchanged = false;
   let hasHeadline = false;
   let isNewTopic = false;
@@ -134,7 +128,7 @@ function parseOverview(text) {
     else if (key === "FOLDED") folded = clipWords(plain(value), ITEM_WORDS * 2);
     else {
       const item = itemOf(value);
-      const list = lists[LIST_KEYS[key]];
+      const list = lists[LIST_OF_KEY[key]];
       if (item && list.length < LIST_ITEMS) list.push(item);
       if (value === "") current = list;
     }
@@ -177,12 +171,7 @@ function upgradeOverview(saved) {
     headline: o.headline,
     status: text(o.status),
     course: text(o.course),
-    queue: itemsOf(o.queue),
-    works: itemsOf(o.works),
-    open: itemsOf(o.open),
-    next: itemsOf(o.next),
-    since: itemsOf(o.since),
-    workstreams: itemsOf(o.workstreams),
+    ...Object.fromEntries(LIST_KEYS.map((k) => [k, itemsOf(o[k])])),
     earlier: Array.isArray(o.earlier) ? o.earlier.filter((e) => typeof e === "string") : [],
     lastLookAt: typeof o.lastLookAt === "number" ? o.lastLookAt : null,
     look: lookOf(o.look),

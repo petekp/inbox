@@ -27,16 +27,20 @@ export const EMPTY_OVERVIEW: Overview = {
   seen: { since: [], course: '' },
 }
 
-const LIST_KEYS = {
+/** The Overview's item lists. */
+export const LIST_KEYS = ['queue', 'works', 'open', 'next', 'since', 'workstreams'] as const
+
+export type ListKey = (typeof LIST_KEYS)[number]
+
+/** The list each of the call's list keys writes. */
+const LIST_OF_KEY = {
   QUEUE: 'queue',
   WORKS: 'works',
   OPEN: 'open',
   NEXT: 'next',
   SINCE: 'since',
   STREAM: 'workstreams',
-} as const
-
-type ListKey = (typeof LIST_KEYS)[keyof typeof LIST_KEYS]
+} as const satisfies Record<string, ListKey>
 
 const STATUSES: readonly OverviewStatus[] = [
   'working',
@@ -94,14 +98,7 @@ export type OverviewAnswer =
 /** Parses the Overview call's lines. Null when the answer has neither UNCHANGED nor a headline. */
 export function parseOverview(text: string | null): OverviewAnswer | null {
   const overview: Overview = { ...EMPTY_OVERVIEW }
-  const lists: Record<ListKey, OverviewItem[]> = {
-    queue: [],
-    works: [],
-    open: [],
-    next: [],
-    since: [],
-    workstreams: [],
-  }
+  const lists = Object.fromEntries(LIST_KEYS.map(k => [k, []])) as unknown as Record<ListKey, OverviewItem[]>
   let isUnchanged = false
   let hasHeadline = false
   let isNewTopic = false
@@ -129,7 +126,7 @@ export function parseOverview(text: string | null): OverviewAnswer | null {
     else if (key === 'FOLDED') folded = clipWords(plain(value), ITEM_WORDS * 2)
     else {
       const item = itemOf(value)
-      const list = lists[LIST_KEYS[key as keyof typeof LIST_KEYS]]
+      const list = lists[LIST_OF_KEY[key as keyof typeof LIST_OF_KEY]]
       if (item && list.length < LIST_ITEMS) list.push(item)
       if (value === '') current = list
     }
@@ -188,12 +185,7 @@ export function upgradeOverview(saved: unknown): Overview | null {
     headline: o.headline,
     status: text(o.status),
     course: text(o.course),
-    queue: itemsOf(o.queue),
-    works: itemsOf(o.works),
-    open: itemsOf(o.open),
-    next: itemsOf(o.next),
-    since: itemsOf(o.since),
-    workstreams: itemsOf(o.workstreams),
+    ...(Object.fromEntries(LIST_KEYS.map(k => [k, itemsOf(o[k])])) as Record<ListKey, OverviewItem[]>),
     earlier: Array.isArray(o.earlier) ? o.earlier.filter((e): e is string => typeof e === 'string') : [],
     lastLookAt: typeof o.lastLookAt === 'number' ? o.lastLookAt : null,
     look: lookOf(o.look),
