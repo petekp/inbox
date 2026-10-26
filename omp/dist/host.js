@@ -5359,7 +5359,7 @@ function demoSession(now, agent) {
     ledger: d.ledger,
     lastActions: d.lastActions,
     prViews: d.prViews,
-    presence: { ...s.presence, ...d.turns, ...d.presence }
+    presence: { ...s.presence, ...d.turns }
   };
 }
 function demoView(now, agent) {
@@ -5770,8 +5770,7 @@ function demoView(now, agent) {
       }
     },
     notes: {},
-    turns: { turnsStarted: 14, turnsApplied: 14 },
-    presence: { isTurnRunning: false }
+    turns: { turnsStarted: 14, turnsApplied: 14 }
   };
 }
 

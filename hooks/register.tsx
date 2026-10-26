@@ -79,7 +79,7 @@ import {
   wakeForDone as wakeSessionForDone,
 } from './session-host'
 import type { AskCatchUpOverview, CatchUpReply, SessionHost } from './session-host'
-import { demoView, isDemoCopy, upgradeDemoCopy } from './demo'
+import { demoView, isDemoCopy } from './demo'
 import { claudeTasksAfter } from './host-tasks'
 import { noteDialog } from './dialogs'
 import type { Exchange, Press, Update } from './ledger'
@@ -977,12 +977,16 @@ async function commit(
   return after
 }
 
-/** The session a look draws: `session`, with the ledger, PR views, presses and turn counts of the sample while it shows. */
+/**
+ * The session a look draws: `session`, with the ledger, PR views, presses and turn counts of the sample while it shows.
+ * No turn runs in the sample.
+ */
 function drawnSession(
   session: Session,
-  drawn: Pick<DemoCopy, 'ledger' | 'stop' | 'prViews' | 'lastActions' | 'turns' | 'presence'>,
+  drawn: Pick<DemoCopy, 'ledger' | 'stop' | 'prViews' | 'lastActions' | 'turns'>,
+  isDemo: boolean,
 ): Session {
-  const { ledger, stop, prViews, lastActions, turns, presence } = drawn
+  const { ledger, stop, prViews, lastActions, turns } = drawn
 
   return {
     ...session,
@@ -990,7 +994,7 @@ function drawnSession(
     stop,
     prViews,
     lastActions,
-    presence: { ...session.presence, ...turns, ...presence },
+    presence: { ...session.presence, ...turns, ...(isDemo ? { isTurnRunning: false } : {}) },
   }
 }
 
@@ -1212,7 +1216,7 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
       ),
     ),
     // A demo an earlier build seeded may lack a field this one draws, so it ends; /inbox demo seeds a new one.
-    update($, DEMO, d => (d === null ? d : isDemoCopy(d) ? upgradeDemoCopy(d) : null)),
+    update($, DEMO, d => (d === null || isDemoCopy(d) ? d : null)),
     // A draft saved as bare text began before now, so a row that closed before this load stays closed.
     update($, DRAFTS, (d: Record<string, Draft | string>) =>
       Object.fromEntries(
@@ -2325,13 +2329,19 @@ async function drawnState(
     lastActions,
     notes,
     turns,
-    presence: { isTurnRunning: presence.isTurnRunning },
   }
   const holds = { replies: heldReplies(typing, drafts), discarded }
 
   const isUnread = demo === null && unreadable === conversation.id
 
-  const view = sessionView(drawnSession(session, drawn), now, SETTLED_MS, CAN_CATCH_UP, holds, drawn.notes)
+  const view = sessionView(
+    drawnSession(session, drawn, demo !== null),
+    now,
+    SETTLED_MS,
+    CAN_CATCH_UP,
+    holds,
+    drawn.notes,
+  )
 
   return {
     ...drawn,
