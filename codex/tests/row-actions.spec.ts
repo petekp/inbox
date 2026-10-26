@@ -68,7 +68,7 @@ function named(root: HTMLElement, label: string) {
   return button
 }
 
-test('the Codex renderer preserves retry, folded-option and finding action order, maps emphasis, and guards presses', async () => {
+test('the Codex renderer preserves retry, folded-option and finding action order, keeps a row’s follow-ups in one group that wraps as a unit, maps emphasis, and guards presses', async () => {
   const { row, ledger } = task()
   let state = ledger
   let retried: PressResult | null = null
@@ -98,7 +98,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
   document.body.append(root)
   let guarded = true
   const draw = () =>
-    render(h(RowActions, { actions: [...actions.keys, ...actions.more], reply: null, isBlocked: () => guarded }), root)
+    render(h(RowActions, { keys: actions.keys, more: actions.more, reply: null, isBlocked: () => guarded }), root)
   await act(draw)
   assert.deepEqual(
     buttons(root).map(b => b.textContent),
@@ -154,7 +154,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
         drawQuestion()
       },
     })
-    render(h(RowActions, { actions: [...choices.keys, ...choices.more], reply: null, isBlocked: () => false }), root)
+    render(h(RowActions, { keys: choices.keys, more: choices.more, reply: null, isBlocked: () => false }), root)
   }
   await act(drawQuestion)
   assert.deepEqual(
@@ -195,14 +195,15 @@ test('the Codex renderer preserves retry, folded-option and finding action order
     showOptions: () => {},
   })
   await act(() =>
-    render(
-      h(RowActions, { actions: [...followUps.keys, ...followUps.more], reply: null, isBlocked: () => false }),
-      root,
-    ),
+    render(h(RowActions, { keys: followUps.keys, more: followUps.more, reply: null, isBlocked: () => false }), root),
   )
   assert.deepEqual(
     buttons(root).map(b => b.textContent),
     ['Fix', 'File issue', 'Reply', 'Explain', 'Discuss', 'Dismiss'],
+  )
+  assert.deepEqual(
+    buttons(named(root, 'Explain').parentElement!).map(b => b.textContent),
+    ['Reply', 'Explain', 'Discuss', 'Dismiss'],
   )
   await act(() => named(root, 'Discuss').click())
   const discussed = discussion as PressResult | null

@@ -1170,7 +1170,8 @@ function Panel({ row, isClosing, status }: { row: Row; isClosing: boolean; statu
       {row.body ? <div class="body">{row.body}</div> : null}
       {notes.length > 0 ? <div>{notes}</div> : null}
       <RowActions
-        actions={[...keys, ...more]}
+        keys={keys}
+        more={more}
         reply={
           isTyping
             ? {

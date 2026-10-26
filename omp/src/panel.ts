@@ -53,6 +53,7 @@ import {
   SETTLED_MS,
   TABS,
   actionLabel,
+  actionLines,
   fitTabs,
   tabName,
   closedShown,
@@ -898,23 +899,18 @@ function labelMark(b: Button, room: number, s: Style): string {
 
 function buttonLines(line: Line, ui: PanelUi, indent: number, width: number, s: Style): string[] {
   const focused = focusOf(line, ui)
-  const out: string[] = []
-  let current = ' '.repeat(indent)
-  let used = indent
-  line.buttons.forEach((b, i) => {
-    const cell = buttonCell(b, i === focused, s, labelMark(b, width - indent, s))
-    const size = visibleLength(cell)
-    if (used + size > width && used > indent) {
-      out.push(current)
-      current = ' '.repeat(indent)
-      used = indent
-    }
-    current += cell
-    used += size
+  const cells = line.buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)))
+  const sizes = cells.map(visibleLength)
+  const firstFollowUp = line.buttons.findIndex(b => b.isFollowUp)
+  const keyCount = firstFollowUp < 0 ? cells.length : firstFollowUp
+  const { lines } = actionLines(sizes.slice(0, keyCount), sizes.slice(keyCount), {
+    width: width - indent,
+    gap: 0,
+    followUpGap: 0,
+    separator: 0,
   })
-  out.push(current)
 
-  return out
+  return lines.map(at => ' '.repeat(indent) + at.map(i => cells[i]).join(''))
 }
 
 function leadText(lead: Lead, s: Style): string {
