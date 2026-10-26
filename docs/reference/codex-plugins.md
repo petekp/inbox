@@ -878,11 +878,20 @@ Notes per event:
   `CLAUDE_PLUGIN_DATA` for compatibility with existing plugin hooks."
   (D/build/plugins#bundled-mcp-servers-and-lifecycle-hooks; L/hooks#plugin-bundled-hooks)
   No page says MCP servers get these.
-- **`CODEX_CLI_PATH`.** Every hook gets `CODEX_CLI_PATH`, the path of the
-  desktop app's `codex` [live] (docs/plans/codex-plugin.md:361-365). No docs
-  page mentions it or `CODEX_MCP_NODE_PATH`. The environment-variable page
-  "does not list internal development variables" (L/config-file/environment-variables),
-  so neither has a stability promise.
+- **`CODEX_CLI_PATH` and `CODEX_APP_RUNTIME_CLI_PATH`.** Earlier app releases
+  gave every hook `CODEX_CLI_PATH`, the path of the desktop app's `codex`
+  [live] (docs/plans/codex-plugin.md:361-365). The ChatGPT app 26.1021.31345,
+  which bundles `codex-cli 0.164.0-alpha.11.1`, does not. When it starts its
+  app-server, it deletes `CODEX_CLI_PATH` unless the app itself was started
+  with one, and sets `CODEX_APP_RUNTIME_CLI_PATH` to the `codex` it runs
+  (`/Applications/ChatGPT.app/Contents/Resources/app.asar`, byte offset
+  6359020). Hooks, and the update process a hook starts, inherit the
+  app-server's environment: two live updates had `CODEX_APP_RUNTIME_CLI_PATH`
+  and no `CODEX_CLI_PATH` [live 2026-10-26]. The app adds its `codex` folder
+  at the end of `PATH`, so a bare `codex` runs any other install first. No
+  docs page mentions these variables or `CODEX_MCP_NODE_PATH`. The
+  environment-variable page "does not list internal development variables"
+  (L/config-file/environment-variables), so none has a stability promise.
 - **Plugin hooks flag.** `plugin_hooks` is `Stage::Removed`
   (GH/codex-rs/features/src/lib.rs:1605-1609); Removed means "The feature flag
   is useless but kept for backward compatibility reason" (lib.rs:60-61).
@@ -1550,8 +1559,9 @@ threads a root thread and its forks belong to. They differ after a fork.
 | Ephemeral thread | `codex queue` fails | :398 |
 
 - **Which binary.** The server uses the CLI path a hook saved, then
-  `CODEX_CLI_PATH`, then its parent process if named `codex`, then `codex`
-  (codex/src/server-handler.ts `appCli`, codex/src/server.ts:queueMessage).
+  `CODEX_CLI_PATH`, then `CODEX_APP_RUNTIME_CLI_PATH`, then its parent
+  process if named `codex`, then `codex` (codex/src/cli.ts `findCli`,
+  codex/src/server.ts:queueMessage). The update process uses the same lookup.
 - A press from the tab in the desktop app is not yet confirmed end to end
   (docs/plans/codex-plugin.md:3-4).
 
@@ -1942,7 +1952,8 @@ read-only while writing this file.
 | `ui/message` is wrapped as `untrusted_input` | :333 |
 | 17 probe server processes in 3 minutes | :334 |
 | `codex queue` delivers to idle and busy threads | :357-359 |
-| Hooks get `CODEX_CLI_PATH` | :361-365 |
+| Hooks get `CODEX_CLI_PATH` from earlier app releases | :361-365 |
+| 2026-10-26: hooks get `CODEX_APP_RUNTIME_CLI_PATH` and no `CODEX_CLI_PATH` from the ChatGPT app 26.1021.31345 | This file, "`CODEX_CLI_PATH` and `CODEX_APP_RUNTIME_CLI_PATH`" |
 | A long command got no PostToolUse in the desktop app | :373-378 |
 | SessionStart fires on resume; Stop `block` continues the turn | :395-396 |
 | A server-started press works through `codex queue` / `thread/queue/add` | :397-398 |
