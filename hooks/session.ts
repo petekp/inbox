@@ -543,9 +543,7 @@ function isRepeatWhileOut(s: Session, p: RowPress | PrPress, at: number): boolea
   const last = saved && withoutStaleResult(saved, at)
   const reportedAt = 'ref' in p ? undefined : s.ledger.items.find(i => i.id === p.id)?.reportedAt
 
-  const pressed = 'ref' in p ? p.action : actionId(p)
-
-  return outAction(last, feedbackOf(rowId, last, undefined, s.presence, at, reportedAt)) === pressed
+  return outAction(last, feedbackOf(rowId, last, undefined, s.presence, at, reportedAt)) === actionId(p)
 }
 
 export function pressOn(

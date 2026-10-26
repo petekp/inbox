@@ -621,7 +621,7 @@ async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void
   const wasWaiting = !!view && isRowTab(t) && tabWaits(view, t).some(r => r.id === rowId && r.isWaiting)
   sending.set(rowId, pending)
   if (press.action === 'type') pressing.delete(rowId)
-  else pressing.set(rowId, 'ref' in press ? press.action : actionId(press))
+  else pressing.set(rowId, actionId(press))
   errors.delete(rowId)
   notes.delete(rowId)
   copies.delete(rowId)

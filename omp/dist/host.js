@@ -4077,8 +4077,7 @@ function isRepeatWhileOut(s, p, at) {
   const saved = s.lastActions[rowId];
   const last = saved && withoutStaleResult(saved, at);
   const reportedAt = "ref" in p ? undefined : s.ledger.items.find((i) => i.id === p.id)?.reportedAt;
-  const pressed = "ref" in p ? p.action : actionId(p);
-  return outAction(last, feedbackOf(rowId, last, undefined, s.presence, at, reportedAt)) === pressed;
+  return outAction(last, feedbackOf(rowId, last, undefined, s.presence, at, reportedAt)) === actionId(p);
 }
 function pressOn(s, p, at, localPressId, answerMessage) {
   if (isRepeatWhileOut(s, p, at))
