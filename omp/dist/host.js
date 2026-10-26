@@ -4401,7 +4401,7 @@ function recordRows(seen, listed) {
   }
   return { seen: next, added };
 }
-var ARRIVAL_TABS = ["needsYou", "findings", "prs"];
+var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
 function listedRowIds(v) {
   return {
     needsYou: [...v.needsYou.questions, ...v.needsYou.tasks].map((r) => r.id),
