@@ -33,6 +33,7 @@ export type FeatureId =
   | 'compare-in-background'
   | 'running-marks'
   | 'tab-symbols'
+  | 'dim-pressed-button'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -71,6 +72,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       'compare-in-background': { kind: 'full' },
       'running-marks': { kind: 'full' },
       'tab-symbols': { kind: 'full' },
+      'dim-pressed-button': {
+        kind: 'different',
+        reason:
+          "The desktop app's Button has no disabled state. `dimColor` fades only its label, and a click still shows the native press highlight before the shared press path ignores it.",
+      },
     },
   },
   codex: {
@@ -147,6 +153,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'running-marks': { kind: 'full' },
       'tab-symbols': { kind: 'full' },
+      'dim-pressed-button': { kind: 'full' },
     },
   },
   omp: {
@@ -196,6 +203,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       'compare-in-background': { kind: 'full' },
       'running-marks': { kind: 'full' },
       'tab-symbols': { kind: 'full' },
+      'dim-pressed-button': {
+        kind: 'different',
+        reason:
+          'The panel already draws a follow-up such as Discuss dim, and has no dimmer style, so an out follow-up looks as it does at rest until it is focused. Its key still does nothing.',
+      },
     },
   },
 }
