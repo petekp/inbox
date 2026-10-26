@@ -3227,7 +3227,7 @@ function again(presses, rowId, action, label) {
   return isAgain(last, action, isOut) ? `${label} again` : label;
 }
 function retryAction(retry) {
-  return retry ? [{ press: retry.press, label: "Try again", kind: retry.kind, emphasis: "normal", icon: "retry" }] : [];
+  return retry ? [{ press: retry.press, label: "Try again", kind: retry.kind, emphasis: "normal", icon: "retry", isRetry: true }] : [];
 }
 function threadActions(pr, t, presses) {
   const id = threadRowId(pr.ref, t.id);

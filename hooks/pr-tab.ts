@@ -433,6 +433,8 @@ export type PrAction = {
   icon?: 'retry' | 'open'
   hotkey?: string
   isFollowUp?: boolean
+  /** A failed send's Try again, which repeats its button's press. */
+  isRetry?: boolean
 }
 
 function again(presses: PressState, rowId: string, action: PrActionId, label: string): string {
@@ -443,7 +445,9 @@ function again(presses: PressState, rowId: string, action: PrActionId, label: st
 }
 
 function retryAction(retry: { press: PrPress; kind: PressKind } | null): PrAction[] {
-  return retry ? [{ press: retry.press, label: 'Try again', kind: retry.kind, emphasis: 'normal', icon: 'retry' }] : []
+  return retry
+    ? [{ press: retry.press, label: 'Try again', kind: retry.kind, emphasis: 'normal', icon: 'retry', isRetry: true }]
+    : []
 }
 
 export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrAction[] {

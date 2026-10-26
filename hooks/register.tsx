@@ -3304,7 +3304,7 @@ export const register: Register = on => {
     const prPress = (p: PrPress) => (press: UiPressArgument) => runPress($, p, press.surface)
     const prKeyAction = (a: PrAction, row: string): KeyAction => {
       // A failed send's Try again repeats its button's press, so it needs a key of its own.
-      const isResend = a.icon === 'retry' && a.press.action !== 'pr-refresh'
+      const isResend = a.isRetry === true
 
       return {
         key: `${isResend ? 'retry' : PR_KEYS[a.press.action]}-${row}`,
