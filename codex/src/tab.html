@@ -702,6 +702,14 @@
         padding-top: var(--overview-row-pad);
         padding-bottom: var(--overview-row-pad);
       }
+      .overview .mark.running {
+        animation: running-pulse var(--pulse) ease-in-out infinite;
+      }
+      @keyframes running-pulse {
+        50% {
+          opacity: 0.3;
+        }
+      }
       .overview .content {
         overflow-wrap: anywhere;
       }
@@ -736,7 +744,8 @@
           transition-duration: 0s !important;
         }
         .time-left,
-        .key.undo.undoing .icon {
+        .key.undo.undoing .icon,
+        .overview .mark.running {
           animation: none;
         }
       }
