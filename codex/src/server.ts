@@ -142,6 +142,7 @@ export type ServerDeps = {
   build?: string
   loadError?: () => string | null
   isPluginFolderGone?: () => boolean
+  isNextBuild?: boolean
   /**
    * Where a chat the inbox has not seen is caught up from when its tab opens. Without it, the chat catches up at its
    * first hook.
@@ -353,6 +354,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       ...(deps.build ? { serverBuild: deps.build } : {}),
       ...(loadError ? { serverLoadError: loadError } : {}),
       ...(deps.isPluginFolderGone?.() ? { isPluginFolderGone: true } : {}),
+      ...(deps.isNextBuild ? { isNextBuild: true } : {}),
     }
   }
 

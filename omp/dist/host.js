@@ -3,8 +3,10 @@
 
 // src/host.ts
 import { randomUUID } from "crypto";
+import { existsSync } from "fs";
 import { homedir } from "os";
-import { join as join2 } from "path";
+import { dirname, join as join2 } from "path";
+import { fileURLToPath } from "url";
 
 // ../hooks/text.ts
 var NL = `
@@ -2456,6 +2458,10 @@ function stopFix(stop) {
 }
 var DEMO_NOTICE = "Sample entries. Buttons here send nothing.";
 var READING_TEXT = "Reading the inbox\u2026";
+var NEXT_BUILD_MARK = ".next-build";
+function versionLabel(version, isNextBuild) {
+  return isNextBuild ? `v${version} \xB7 next` : `v${version}`;
+}
 var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
 var UPDATE_RETRIES = " It retries after your next message.";
 function needsYouOrder(ledger) {
@@ -5133,7 +5139,7 @@ function footer(d, isPageScrolling) {
   if (ui.notice && now - ui.notice.at < SETTLED_MS)
     out.push(...indented(ui.notice.text, 1, width, 2, (t) => s.tone("error", t)));
   const hints = ui.typing !== null ? [`\u21B5 ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch"] : isPageScrolling ? ["\u2191\u2193 scroll", "tab switch"] : ["tab switch"];
-  const model = `${screen.modelName ? `inbox model ${screen.modelName}` : "no inbox model: set @inbox"}  v${version} `;
+  const model = `${screen.modelName ? `inbox model ${screen.modelName}` : "no inbox model: set @inbox"}  ${versionLabel(version, screen.isNextBuild === true)} `;
   const hintLine = ` ${hints.map((h) => s.dim(h)).join(` ${s.tone("sep", "\xB7")} `)}`;
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2;
   if (fitsBesideHints)
@@ -5870,6 +5876,7 @@ function demoSource(deps) {
       isGhMissing: false,
       isFetchingPrs: false,
       stop: null,
+      isNextBuild: deps.isNextBuild,
       isDemo: true
     }),
     press: async (p, holds) => {
@@ -5934,6 +5941,7 @@ var defaultDeps = {
   newId: randomUUID,
   settleWindowMs: SETTLED_MS,
   home: homedir(),
+  isNextBuild: existsSync(join2(dirname(dirname(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK)),
   complete: defaultComplete,
   copy: copyToClipboard,
   background: (work) => void work.catch(() => {
@@ -6439,7 +6447,8 @@ function createInbox(pi, deps = defaultDeps) {
         modelName: modelNameOf(ctx),
         isGhMissing,
         isFetchingPrs: prFetches.isFetching(id),
-        stop: s.stop
+        stop: s.stop,
+        isNextBuild: deps.isNextBuild
       };
     },
     openPanel: async (ctx) => {
@@ -6517,7 +6526,8 @@ function createInbox(pi, deps = defaultDeps) {
     const source = isDemo ? demoSource({
       now: deps.now,
       after: (fn, ms) => void ctx.setTimeout(fn, ms),
-      settleWindowMs: deps.settleWindowMs
+      settleWindowMs: deps.settleWindowMs,
+      isNextBuild: deps.isNextBuild
     }) : liveSource(ctx);
     hideBand(ctx);
     if (!isDemo)
