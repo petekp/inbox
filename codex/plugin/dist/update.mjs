@@ -2923,6 +2923,16 @@ async function linesBefore(path, bytes, end = Infinity) {
   }
 }
 var TURN_ROW_BYTES = 64 * 1024;
+var TURN_EVENT_KINDS = /* @__PURE__ */ new Map([
+  ["task_started", "started"],
+  ["task_complete", "completed"],
+  ["turn_aborted", "aborted"]
+]);
+function turnEventOfRow(row) {
+  const p = record(row.payload);
+  const kind = row.type === "event_msg" ? TURN_EVENT_KINDS.get(textOf(p.type)) : void 0;
+  return kind === void 0 ? null : { id: textOf(p.turn_id) || textOf(record(p.turn_attribution).turn_id), kind };
+}
 async function historyLines(path, bytes) {
   const first = await linesBefore(path, bytes);
   const parts = [first.lines];
@@ -3034,26 +3044,28 @@ function rolloutTurns(lines, cwd) {
     } catch {
       continue;
     }
-    const p = record(row.payload);
-    if (row.type === "event_msg" && p.type === "task_started") {
-      groups.push({ id: textOf(p.turn_id) || textOf(record(p.turn_attribution).turn_id), isComplete: false, rows: [] });
+    const event = turnEventOfRow(row);
+    if (event?.kind === "started") {
+      groups.push({ id: event.id, isComplete: false, rows: [] });
       continue;
     }
     if (groups.length === 0) groups.push({ id: "", isComplete: false, rows: [] });
     const group = groups.at(-1);
-    if (row.type === "event_msg" && p.type === "task_complete") group.isComplete = true;
+    if (event?.kind === "completed") group.isComplete = true;
     else group.rows.push(row);
   }
   return groups.map((g) => ({ id: g.id, isComplete: g.isComplete, turns: turnsOf(g.rows, cwd) }));
 }
+var TURN_WINDOW_BYTES = [TURN_ROW_BYTES, 512 * 1024, TAIL_BYTES];
+function rolloutOfLines(lines, cwd, currentTurnId) {
+  const turns = rolloutTurns(lines, cwd);
+  const earlier = turns.filter((t) => t.id !== currentTurnId && (t.isComplete || t.turns.some((x) => x.role === "person")));
+  return { conversation: flattenConversation(turns.flatMap((t) => t.turns)), earlierTurns: earlier.length };
+}
 async function readRollout(path, cwd, currentTurnId) {
   if (path === null) return null;
   try {
-    const turns = rolloutTurns(await historyLines(path, ROLLOUT_BYTES), cwd);
-    const earlier = turns.filter(
-      (t) => t.id !== currentTurnId && (t.isComplete || t.turns.some((x) => x.role === "person"))
-    );
-    return { conversation: flattenConversation(turns.flatMap((t) => t.turns)), earlierTurns: earlier.length };
+    return rolloutOfLines(await historyLines(path, ROLLOUT_BYTES), cwd, currentTurnId);
   } catch {
     return null;
   }

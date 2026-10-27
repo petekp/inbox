@@ -943,6 +943,56 @@ test('turns that ended without a Stop, interrupted ones included, are caught up 
   assert.deepEqual(deps.updates.slice(updatesBefore), ['s4'])
 })
 
+test('a covered turn that started far back in a long rollout still decides which later turns are caught up, and a clear start covers turns that ended that far back', async () => {
+  const dir = tempDir()
+  const deps = execDeps(dir)
+  const path = join(tempDir(), 'rollout.jsonl')
+  const filler = (bytes: number) =>
+    JSON.stringify({ type: 'event_msg', payload: { type: 'agent_message', message: 'x'.repeat(bytes) } })
+  const turnRow = (type: string, turnId: string) =>
+    JSON.stringify({ type: 'event_msg', payload: { type, turn_id: turnId } })
+  const promptIn = async (id: string, rows: string[]) => {
+    writeFileSync(path, rows.join('\n'))
+    await updateState(dir, id, s => ({ ...s, heard: { ...s.heard, startAt: 1 }, coveredTurn: 'p' }))
+    await handleHook(
+      input('UserPromptSubmit', { session_id: id, turn_id: 'b', prompt: 'Go', transcript_path: path }),
+      deps,
+    )
+
+    return readState(dir, id)
+  }
+  const afterLongTurn = (bytes: number) => [turnRow('task_started', 'p'), filler(bytes), turnRow('task_complete', 'p')]
+
+  for (const [id, bytes] of [
+    ['s1', 100 * 1024],
+    ['s2', 600 * 1024],
+    ['s3', 5 * 1024 * 1024],
+  ] as const) {
+    const missed = await promptIn(id, [
+      ...afterLongTurn(bytes),
+      turnRow('task_started', 'a'),
+      turnRow('turn_aborted', 'a'),
+      turnRow('task_started', 'b'),
+    ])
+    assert.equal(missed.presence.ledgerState, 'behind', id)
+    assert.equal(missed.coveredTurn, 'a', id)
+  }
+
+  const current = await promptIn('s4', [...afterLongTurn(600 * 1024), turnRow('task_started', 'b')])
+  assert.equal(current.presence.ledgerState, 'current')
+  assert.equal(current.coveredTurn, 'p')
+
+  writeFileSync(path, [turnRow('task_started', 'x'), filler(600 * 1024), turnRow('task_complete', 'x')].join('\n'))
+  await updateState(dir, 's5', s => ({ ...s, heard: { ...s.heard, startAt: 1 }, coveredTurn: 'gone' }))
+  await handleHook(
+    input('SessionStart', { session_id: 's5', source: 'clear', cwd: '/repo', transcript_path: path }),
+    deps,
+  )
+  const cleared = await readState(dir, 's5')
+  assert.equal(cleared.coveredTurn, 'x')
+  assert.equal(cleared.presence.ledgerState, 'current')
+})
+
 test('a new session, a compaction start, a subagent and a session with recorded turns are not marked behind', async () => {
   const dir = tempDir()
   const deps = execDeps(dir)
