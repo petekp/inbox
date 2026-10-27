@@ -39,6 +39,7 @@ export type FeatureId =
   | 'overview-children'
   | 'overview-news-dot'
   | 'overview-look-line'
+  | 'overview-row-rules'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -87,6 +88,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'overview-children': { kind: 'full' },
       'overview-news-dot': { kind: 'full' },
       'overview-look-line': { kind: 'full' },
+      'overview-row-rules': { kind: 'full' },
     },
   },
   codex: {
@@ -177,6 +179,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'overview-news-dot': { kind: 'full' },
       'overview-look-line': { kind: 'full' },
+      'overview-row-rules': { kind: 'full' },
     },
   },
   omp: {
@@ -240,6 +243,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'overview-news-dot': { kind: 'full' },
       'overview-look-line': { kind: 'full' },
+      'overview-row-rules': { kind: 'full' },
     },
   },
 }

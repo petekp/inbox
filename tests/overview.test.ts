@@ -337,6 +337,33 @@ test('running children sit under their subject, at most three, each tied to it a
   expect(page(quiet, now).rows[0]).toMatchObject({ kind: 'child', isLoose: true, isQuiet: true, age: 'quiet 20m' })
 })
 
+test('a rule sets each item on the page apart: a subject and the rows under it are one item, and the look line takes none beside it', () => {
+  const now = 100 * MIN
+  let o = after(after(null, 'NEW: working | Fade-out | glances fade', 0), 'DONE: s1 | glances fade', 5 * MIN)
+  o = after(o, 'NEW: queued | Docs | outline ready', 10 * MIN)
+  o = after(o, 'NEW: working | Offline mode | queue built', 60 * MIN)
+  o = after(o, 'NEW: waits-on-you | Sync | needs a pick', 70 * MIN)
+  for (const ref of ['r1', 'r2', 'loose'])
+    o = withChild(
+      o,
+      { ref, kind: 'subagent', name: `Review ${ref}`, startedAt: 80 * MIN, endedAt: null, lastActivityAt: now - MIN },
+      now,
+    )
+  o = after(o, 'LINK: c1 | s3\nLINK: c2 | s3', 80 * MIN)
+  const rows = page({ ...o, lastLookAt: 50 * MIN }, now).rows
+
+  expect(rows.map(r => `${r.isRuledAbove ? '── ' : ''}${shape([r])[0]}`)).toEqual([
+    '● Review loose 1m',
+    '── ◆ Sync: needs a pick 30m',
+    '── ● Offline mode: queue built 40m ┐',
+    '├ ● Review r1 1m',
+    '└ ● Review r2 1m',
+    '-- you looked 50m',
+    '○ Docs: outline ready 2h',
+    '── ✓ 1 done 2h',
+  ])
+})
+
 test('a child whose host reports no activity shows how long it has run and never reads quiet', () => {
   const now = 100 * MIN
   const o = withChild(

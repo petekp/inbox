@@ -1223,6 +1223,10 @@ function liveOf(presence, now) {
   }
   return lastReplyAt === null ? null : `Idle \xB7 last reply ${ago(now - lastReplyAt)}`;
 }
+function isItemAfterItem(row, prev) {
+  const isUnderSubject = row.kind === "more" || row.kind === "child" && !row.isLoose;
+  return prev !== void 0 && prev.kind !== "look" && row.kind !== "look" && !isUnderSubject;
+}
 function childRow(c, now, branch) {
   const idle = c.lastActivityAt === null ? null : now - c.lastActivityAt;
   const isQuiet = idle !== null && idle >= QUIET_MS;
@@ -1316,7 +1320,7 @@ function overviewPage(s, now) {
     identity: identityOf(s.place ?? null, role),
     goal,
     live: liveOf(s.presence, now),
-    rows,
+    rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
     hasNews,
     empty: {
       title: "Overview",
