@@ -2611,6 +2611,9 @@ function isShownSince(at, shownSince) {
 function isDrawnInPlace(row, shownSince) {
   return row.state.is !== "settled" || isShownSince(row.state.at, shownSince);
 }
+function keptDiscards(discarded, shownSince) {
+  return Object.fromEntries(Object.entries(discarded).filter(([, at]) => isShownSince(at, shownSince)));
+}
 function heldReplies(typing, drafts) {
   return Object.fromEntries(Object.entries(drafts).flatMap(([id, d]) => id === typing || d.text.trim() !== "" ? [[id, d.since]] : []));
 }
@@ -3501,7 +3504,7 @@ function herdrReportKey(pane, tokens) {
 function herdrReporter() {
   let sent = null;
   let sending = Promise.resolve();
-  return (send, report) => {
+  return (run, report) => {
     sending = sending.then(async () => {
       const r = await report();
       if (!r)
@@ -3510,7 +3513,7 @@ function herdrReporter() {
       if (key === sent)
         return;
       sent = key;
-      await send(herdrReport(r.pane, r.tokens, r.seq));
+      await run(herdrReport(r.pane, r.tokens, r.seq), { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS });
     }).catch(() => {
       return;
     });
@@ -3691,18 +3694,29 @@ function isTracked(prState, linked, ref) {
 function keepsView(prState, linked, ref) {
   return isTracked(prState, linked, ref) || linked.includes(ref) && isLeftOut(prState, ref);
 }
-function isDismissed(lastActions, ref) {
-  return lastActions[prMarkId(ref)]?.action === "pr-dismiss";
+function dismissedAt(lastActions, ref) {
+  const mark = lastActions[prMarkId(ref)];
+  return mark?.action === "pr-dismiss" ? mark.at : null;
 }
-function drawnPrs(prState, linked, lastActions, now, shownSince) {
+function isDismissed(lastActions, ref) {
+  return dismissedAt(lastActions, ref) !== null;
+}
+function isViewKept(prState, linked, lastActions, ref, shownSince) {
+  const at = dismissedAt(lastActions, ref);
+  return keepsView(prState, linked, ref) || at !== null && isShownSince(at, shownSince);
+}
+function drawnPrs(prState, linked, lastActions, now, shownSince, settleWindowMs) {
   return inPrOrder(Object.values(prState.views)).flatMap((pr) => {
     if (isTracked(prState, linked, pr.ref))
-      return [{ pr, isSettled: false, canUndo: false }];
-    const mark = lastActions[prMarkId(pr.ref)];
-    if (mark?.action !== "pr-dismiss" || !isShownSince(mark.at, shownSince))
+      return [{ pr, isSettled: false }];
+    const at = dismissedAt(lastActions, pr.ref);
+    if (at === null || !isShownSince(at, shownSince))
       return [];
-    return [{ pr, isSettled: true, canUndo: now - mark.at < SETTLED_MS }];
+    return [{ pr, isSettled: true, at, canUndo: now - at < settleWindowMs, offersUndo: true }];
   });
+}
+function isPrDrawnInPlace(d, shownSince) {
+  return !d.isSettled || isShownSince(d.at, shownSince);
 }
 var PR_TONES = {
   ready: "done",
@@ -4183,6 +4197,7 @@ function emptySession() {
     sent: [],
     lastActions: {},
     heldRows: [],
+    shownSince: null,
     prViews: NO_PRS,
     stop: null,
     hostTasks: [],
@@ -4231,6 +4246,7 @@ function upgradeSession(saved) {
     })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
     heldRows: saved.heldRows ?? [],
+    shownSince: saved.shownSince ?? null,
     prViews: {
       ...NO_PRS,
       ...saved.prViews,
@@ -4502,9 +4518,24 @@ function recorded(host, s, tool, args, now) {
   const r = (tool === "close" ? recordClose : recordItem)(host, s.ledger, args, now);
   return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result };
 }
+function pruned(s) {
+  const inPlace = [
+    ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
+    ...s.ledger.closed,
+    ...s.ledger.closedFindings.map((f) => ({ id: f.id, at: f.closedAt }))
+  ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
+  const isLeftBehind = (ref) => isDismissed(s.lastActions, ref) && !isViewKept(s.prViews, s.ledger.prs, s.lastActions, ref, s.shownSince);
+  const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => !isLeftBehind(ref)));
+  const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
+  return {
+    ...s,
+    ledger: pruneClosed(s.ledger, new Set([...s.heldRows, ...inPlace])),
+    prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
+  };
+}
 function withFetchedPrs(s, fetched, branchRef) {
   const merged = { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false };
-  const views = Object.fromEntries(Object.entries(merged.views).filter(([ref]) => keepsView(merged, s.ledger.prs, ref) || isDismissed(s.lastActions, ref)));
+  const views = Object.fromEntries(Object.entries(merged.views).filter(([ref]) => isViewKept(merged, s.ledger.prs, s.lastActions, ref, s.shownSince)));
   return { ...s, prViews: { ...merged, views } };
 }
 function withoutStaleResult(last, now) {
@@ -4539,12 +4570,12 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now, holds.shownSince),
+    prs: prTabOf(s, lastActions, now, holds.shownSince, settleWindowMs),
     overviewPage: overviewPage(s, now)
   };
 }
-function prTabOf(s, lastActions, now, shownSince) {
-  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, shownSince);
+function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
+  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, shownSince, settleWindowMs);
   const isSent = threadSentIn(lastActions);
   return {
     drawn,
@@ -4786,7 +4817,7 @@ async function startPress(host, p, isStale, holds) {
   await host.update(async (saved) => {
     note = isStale ? "stale" : null;
     Object.assign(pressed, { r: undefined, at: undefined, deliveryId: undefined });
-    const s = { ...saved, heldRows: Object.keys(holds.replies) };
+    const s = { ...saved, heldRows: Object.keys(holds.replies), shownSince: holds.shownSince };
     if (note)
       return s;
     const at = await host.now();
@@ -5239,12 +5270,13 @@ function prEntries(screen, ui, now) {
   }
   if (screen.isGhMissing)
     out.push({ kind: "note", text: GH_MISSING_TEXT });
-  for (const { pr, isSettled, canUndo } of prs.drawn) {
+  for (const d of prs.drawn) {
+    const { pr } = d;
     const markId = prMarkId(pr.ref);
     const lead = { text: `#${pr.number}`, tone: "prs" };
-    if (isSettled) {
-      if (!isShownSince(lastActions[markId]?.at ?? 0, ui.shownSince))
-        continue;
+    if (!isPrDrawnInPlace(d, ui.shownSince))
+      continue;
+    if (d.isSettled) {
       out.push({
         kind: "row",
         line: {
@@ -5255,7 +5287,7 @@ function prEntries(screen, ui, now) {
           settled: {
             label: PR_DISMISSED_LABEL,
             tone: "done",
-            undo: canUndo ? { action: "pr-undo", ref: pr.ref } : null
+            undo: d.canUndo ? { action: "pr-undo", ref: pr.ref } : null
           }
         }
       });
@@ -5384,7 +5416,7 @@ var withTab = (ui, tab, now) => ({
   ...withSelection(ui, null),
   tab,
   pageTop: 0,
-  shownSince: now
+  shownSince: tab === ui.tab ? ui.shownSince : now
 });
 function isLineWaiting(screen, ui, id, now) {
   return waitsOf(linesOf(entriesOf(screen, ui, ui.tab, now))).some((w) => w.id === id && w.isWaiting);
@@ -5416,8 +5448,8 @@ function activate(screen, ui, line, button, now) {
   }
   if (!("ref" in press) && press.action === "discard") {
     const { [line.id]: _discarded, ...drafts } = ui.drafts;
-    const recent = Object.entries(ui.discarded).filter(([, at]) => isShownSince(at, ui.shownSince));
-    return { ui: { ...ui, focus: null, drafts, discarded: { ...Object.fromEntries(recent), [line.id]: now } } };
+    const discarded = { ...keptDiscards(ui.discarded, ui.shownSince), [line.id]: now };
+    return { ui: { ...ui, focus: null, drafts, discarded } };
   }
   return { ui: { ...ui, focus: null }, press };
 }
@@ -5527,7 +5559,7 @@ function isAnimating(screen, ui, now) {
   const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows];
   const isPressMoving = Object.values(view.lastActions).some((l) => l.result !== undefined && (l.result.state === "pending" || now - l.result.at < SETTLED_MS) || l.delivery?.state === "queued" && now - l.at < QUEUED_AFTER_MS);
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS;
-  return rows.some((r) => r.state.is === "settled" && r.state.canUndo) || view.prs.drawn.some((p) => p.canUndo) || isPressMoving || isNoticeShown;
+  return rows.some((r) => r.state.is === "settled" && r.state.canUndo) || view.prs.drawn.some((p) => p.isSettled && p.canUndo) || isPressMoving || isNoticeShown;
 }
 function isRunningMarkShown(screen, ui) {
   return !isRowTab(ui.tab) && hasRunningMark(screen.view.overviewPage);
@@ -6504,7 +6536,7 @@ async function updateState(dir, sessionId, change) {
     const changed = await change(current);
     if (isSaved && changed === current)
       return current;
-    const next = { ...changed, ledger: pruneClosed(changed.ledger, new Set(changed.heldRows)) };
+    const next = pruned(changed);
     const folder = join(dir, "sessions");
     if (!madeFolders.has(folder)) {
       await mkdir(folder, { recursive: true });
@@ -6804,12 +6836,11 @@ function createInbox(pi, deps = defaultDeps) {
   const gh = ghFinder(run);
   const reportToHerdr = herdrReporter();
   let shownId = null;
-  const sendToHerdr = (args) => run(args, { cwd: deps.home, timeoutMs: HERDR_TIMEOUT_MS });
   function reportCounts(id) {
     const pane = deps.herdrPane;
     if (!pane || id !== shownId)
       return;
-    deps.background(reportToHerdr(sendToHerdr, async () => {
+    deps.background(reportToHerdr(run, async () => {
       const s = await readState(dir, id);
       const view = sessionView(s, deps.now(), deps.settleWindowMs, true);
       return { pane, tokens: herdrTokens(s.ledger, s.stop, view, []) };
@@ -6972,9 +7003,8 @@ function createInbox(pi, deps = defaultDeps) {
       return;
     }).then(async () => {
       const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
-      const saved = await readState(dir, id).catch(() => null);
-      if (hostTasks.length > 0 || (saved?.hostTasks.length ?? 0) > 0)
-        await change(id, (s) => isSameTaskList(s.hostTasks, hostTasks) ? s : { ...s, hostTasks });
+      const branch = await branchIn(run, ctx.cwd);
+      await change(id, (s) => placed(isSameTaskList(s.hostTasks, hostTasks) ? s : { ...s, hostTasks }, ctx.cwd, branch));
     }).catch(() => {
       return;
     }).then(() => catchUpUnseen(ctx)));
@@ -7017,7 +7047,7 @@ function createInbox(pi, deps = defaultDeps) {
     if (id !== shownId || !pane)
       return;
     shownId = null;
-    await reportToHerdr(sendToHerdr, async () => ({ pane, tokens: CLEARED_TOKENS }));
+    await reportToHerdr(run, async () => ({ pane, tokens: CLEARED_TOKENS }));
   });
   pi.on("before_agent_start", async (event, ctx) => {
     if (isUnattended(ctx))
@@ -7054,7 +7084,6 @@ function createInbox(pi, deps = defaultDeps) {
     await change(id, (s) => turnStarted(s, startedAt)).catch(() => {
       return;
     });
-    deps.background(branchIn(run, ctx.cwd).then((branch) => change(id, (s) => placed(s, ctx.cwd, branch))));
   });
   pi.on("turn_start", async (_event, ctx) => {
     noted = null;
@@ -7154,7 +7183,10 @@ function createInbox(pi, deps = defaultDeps) {
     const isDialogDismissed = event.messages.some(isDismissedAsk);
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
     const saved = await readState(dir, id).catch(() => null);
-    const inHerdr = await delegatesInHerdr(saved?.ledger.overview ?? null, run);
+    const [inHerdr, branch] = await Promise.all([
+      delegatesInHerdr(saved?.ledger.overview ?? null, run),
+      branchIn(run, ctx.cwd)
+    ]);
     const endedAt = deps.now();
     const written = await change(id, (s) => {
       const ended = turnEnded(endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
@@ -7162,7 +7194,7 @@ function createInbox(pi, deps = defaultDeps) {
         queuesEmptyReply: isDialogDismissed
       }), endedAt);
       const settled = inHerdr ? overviewChanged(ended, (o) => delegatesSettled(o, inHerdr, endedAt)) : ended;
-      return { ...settled, stop };
+      return { ...placed(settled, ctx.cwd, branch), stop };
     }).catch(() => null);
     if (!written)
       return;
@@ -7211,8 +7243,12 @@ function createInbox(pi, deps = defaultDeps) {
         isNextBuild: deps.isNextBuild
       };
     },
-    openPanel: async (ctx) => {
-      openPanels.set(sessionIdOf(ctx), "needsYou");
+    openPanel: async (ctx, openedAt) => {
+      const id = sessionIdOf(ctx);
+      openPanels.set(id, "needsYou");
+      await change(id, (s) => ({ ...s, shownSince: openedAt })).catch(() => {
+        return;
+      });
       await wakeForDone(hostFor(ctx)).catch(() => {
         return;
       });
@@ -7224,13 +7260,14 @@ function createInbox(pi, deps = defaultDeps) {
         return;
       const isChanged = openPanels.get(id) !== tab;
       openPanels.set(id, tab);
+      const now = deps.now();
       if (isChanged)
-        deps.background(change(id, (s) => withLook(s, tab === "overview", deps.now())));
+        deps.background(change(id, (s) => ({ ...withLook(s, tab === "overview", now), shownSince: now })));
     },
     closePanel: (ctx) => {
       const id = sessionIdOf(ctx);
       openPanels.delete(id);
-      deps.background(change(id, (s) => lookEndedOn(s, deps.now())));
+      deps.background(change(id, (s) => ({ ...lookEndedOn(s, deps.now()), shownSince: null })));
     },
     fetchPrsWhenDue,
     onChange: (ctx, listener) => {
@@ -7294,7 +7331,7 @@ function createInbox(pi, deps = defaultDeps) {
     }) : liveSource(ctx);
     hideBand(ctx);
     if (!isDemo)
-      await inbox.openPanel(ctx);
+      await inbox.openPanel(ctx, openedAt);
     try {
       await ctx.ui.custom((tui, theme, _keybindings, done) => {
         const panel = createPanel({

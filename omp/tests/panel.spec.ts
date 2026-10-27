@@ -333,7 +333,7 @@ test('after the reply, an explained row that stays open reads its result', async
   expect(text(screen, onRow(waiting(screen, 'd11')))).toContain('✓ Explained')
 })
 
-test('a row closed with Done shows its label and Undo, u returns the undo press, and the row stays after Undo ends until the panel switches tab', async () => {
+test('a row closed with Done shows its label and Undo, u returns the undo press, and the row stays after Undo ends, through its own tab’s key, until the panel switches tab', async () => {
   const demo = await afterPresses({ action: 'done', id: 'd14' })
   const screen = await demo.screen()
   const out = text(screen, INITIAL_UI)
@@ -343,6 +343,8 @@ test('a row closed with Done shows its label and Undo, u returns the undo press,
   expect(text(later, INITIAL_UI)).toMatch(/Put on the glasses and pair them with this Mac\s+Done/)
   expect(text(later, INITIAL_UI)).not.toContain('u Undo')
   expect(text(later, INITIAL_UI)).toContain('1 closed')
+  const ownKey = shownTabs(later.isNextBuild === true).find(t => t.id === INITIAL_UI.tab)!.hotkey
+  expect(text(later, handleKey(later, INITIAL_UI, ownKey, NOW + 1).ui)).toContain('Put on the glasses')
   const away = handleKey(later, INITIAL_UI, 'tab', NOW + 1).ui
   const back = handleKey(later, away, 'shift+tab', NOW + 1).ui
   expect(text(later, back)).not.toContain('Put on the glasses')

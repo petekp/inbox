@@ -23,7 +23,7 @@ import {
   waitingThreads,
 } from './prs'
 import type { IsThreadSent, PrStatus } from './prs'
-import { DOT, SETTLED_MS, isAgain, isShownSince, outAction, pressFeedbackIn, pressOutAction } from './view'
+import { DOT, isAgain, isShownSince, outAction, pressFeedbackIn, pressOutAction } from './view'
 import type { ActionEmphasis, PressState, RowWait } from './view'
 
 export const MAX_PRS = 12
@@ -307,20 +307,47 @@ export function isTracked(prState: PrViews, linked: string[], ref: string): bool
 }
 
 /** Whether the session keeps a PR's view: the tab tracks the PR, or it is linked and left out, which keeps a fetch from reading it again. */
-export function keepsView(prState: PrViews, linked: string[], ref: string): boolean {
+function keepsView(prState: PrViews, linked: string[], ref: string): boolean {
   return isTracked(prState, linked, ref) || (linked.includes(ref) && isLeftOut(prState, ref))
 }
 
-/** Whether the PR's last press dismissed it. Its view stays, so its settled block and Undo can draw it. */
-export function isDismissed(lastActions: Record<string, LastAction>, ref: string): boolean {
-  return lastActions[prMarkId(ref)]?.action === 'pr-dismiss'
+/** When the PR was dismissed, or null when its last press did not dismiss it. */
+function dismissedAt(lastActions: Record<string, LastAction>, ref: string): number | null {
+  const mark = lastActions[prMarkId(ref)]
+
+  return mark?.action === 'pr-dismiss' ? mark.at : null
 }
 
-export type DrawnPr = { pr: PrView; isSettled: boolean; canUndo: boolean }
+export function isDismissed(lastActions: Record<string, LastAction>, ref: string): boolean {
+  return dismissedAt(lastActions, ref) !== null
+}
+
+/**
+ * Whether a session keeps a PR's view: `keepsView` keeps it, or the PR was dismissed while the look shows the PRs tab,
+ * so its settled block and Undo can draw it. Once the person leaves the tab, the block is gone and so is the view.
+ */
+export function isViewKept(
+  prState: PrViews,
+  linked: string[],
+  lastActions: Record<string, LastAction>,
+  ref: string,
+  shownSince: number | null,
+): boolean {
+  const at = dismissedAt(lastActions, ref)
+
+  return keepsView(prState, linked, ref) || (at !== null && isShownSince(at, shownSince))
+}
+
+/**
+ * A PR block a look draws: a tracked PR, or a PR dismissed while the look shows the PRs tab, which settles in place
+ * like a row, at `at`, with Undo while `canUndo`.
+ */
+export type DrawnPr =
+  { pr: PrView; isSettled: false } | { pr: PrView; isSettled: true; at: number; canUndo: boolean; offersUndo: boolean }
 
 /**
  * The PR blocks a look draws, in order. A PR dismissed while the look shows the PRs tab stays as a settled block until
- * the person leaves the tab, and offers Undo for `SETTLED_MS`.
+ * the person leaves the tab, and offers Undo for `settleWindowMs`.
  */
 export function drawnPrs(
   prState: PrViews,
@@ -328,14 +355,23 @@ export function drawnPrs(
   lastActions: Record<string, LastAction>,
   now: number,
   shownSince: number | null,
+  settleWindowMs: number,
 ): DrawnPr[] {
   return inPrOrder(Object.values(prState.views)).flatMap((pr): DrawnPr[] => {
-    if (isTracked(prState, linked, pr.ref)) return [{ pr, isSettled: false, canUndo: false }]
-    const mark = lastActions[prMarkId(pr.ref)]
-    if (mark?.action !== 'pr-dismiss' || !isShownSince(mark.at, shownSince)) return []
+    if (isTracked(prState, linked, pr.ref)) return [{ pr, isSettled: false }]
+    const at = dismissedAt(lastActions, pr.ref)
+    if (at === null || !isShownSince(at, shownSince)) return []
 
-    return [{ pr, isSettled: true, canUndo: now - mark.at < SETTLED_MS }]
+    return [{ pr, isSettled: true, at, canUndo: now - at < settleWindowMs, offersUndo: true }]
   })
+}
+
+/**
+ * Whether a look drawing from a view it read before switching tabs still draws `d`, as `isDrawnInPlace` says for a
+ * row.
+ */
+export function isPrDrawnInPlace(d: DrawnPr, shownSince: number | null): boolean {
+  return !d.isSettled || isShownSince(d.at, shownSince)
 }
 
 export const PR_TONES: Record<PrStatus, 'needsYou' | 'done' | 'findings' | 'error' | null> = {

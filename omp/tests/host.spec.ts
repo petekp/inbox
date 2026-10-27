@@ -730,7 +730,7 @@ test('opening the panel finds gh missing when no gh starts', async () => {
   const inbox = createInbox(pi(), deps())
   for (const gh of ['gh', '/opt/homebrew/bin/gh', '/usr/local/bin/gh']) execResults.set(gh, new Error('spawn failed'))
   await record({ kind: 'task', ask: 'Try the CLI by hand' })
-  await inbox.openPanel(makeCtx())
+  await inbox.openPanel(makeCtx(), clock)
   await settle()
   expect((await inbox.screen(makeCtx())).isGhMissing).toBe(true)
 })
@@ -739,7 +739,7 @@ test('opening the panel finds gh and fetches PRs again only after the refresh in
   const inbox = createInbox(pi(), deps())
   await record({ kind: 'task', ask: 'Try the CLI by hand' })
   const ghCalls = (sub: string) => execCalls.filter(c => c.args[0] === sub).length
-  await inbox.openPanel(makeCtx())
+  await inbox.openPanel(makeCtx(), clock)
   await settle()
   expect(ghCalls('--version')).toBe(1)
   expect(ghCalls('pr')).toBe(1)
@@ -760,7 +760,7 @@ test('the panel being open is told to the agent beside the prompt', async () => 
   const inbox = createInbox(pi(), deps())
   await prompt('hello')
   await record({ kind: 'task', ask: 'Try the CLI by hand' })
-  await inbox.openPanel(makeCtx())
+  await inbox.openPanel(makeCtx(), clock)
   await settle()
   const open = await prompt('next')
   inbox.closePanel(makeCtx())
@@ -1098,7 +1098,7 @@ test('a resume keeps its own ledger even when the event names another session fi
   await record({ kind: 'task', ask: 'Try the CLI by hand' }, makeCtx('parent'))
   await call('session_switch', { ...forkOf('parent'), reason: 'resume' }, makeCtx('other'))
   await settle()
-  expect(existsSync(join(dir, 'sessions', 'other.json'))).toBe(false)
+  expect(state('other').ledger.items).toEqual([])
 })
 
 test('a failed catch-up is tried again at the next agent end, before the exchange', async () => {
@@ -1182,7 +1182,7 @@ test('a look starts when the panel shows the Overview and ends on another tab or
   const saved = state()
   const overview = { ...EMPTY_OVERVIEW, goal: 'Ship it' }
   writeFileSync(join(dir, 'sessions', 's1.json'), JSON.stringify({ ...saved, ledger: { ...saved.ledger, overview } }))
-  await inbox.openPanel(makeCtx())
+  await inbox.openPanel(makeCtx(), clock)
   inbox.showTab(makeCtx(), 'overview')
   await settle()
   expect(state().ledger.overview.look).not.toBeNull()
@@ -1239,4 +1239,38 @@ test('the agent task list at a reply is the latest todo entry on the branch, inc
   await endAgent('Done.')
   await settle()
   expect(state().hostTasks).toEqual([])
+})
+
+test('every row the agent closes while the panel shows its tab keeps its closed record through more closes than the Closed list keeps, until the panel closes', async () => {
+  const inbox = createInbox(pi(), deps())
+  for (let n = 0; n < 14; n++) await record({ kind: 'task', ask: `Task ${n}` })
+  const ids = state().ledger.items.map((i: { id: string }) => i.id)
+  const openedAt = clock
+  await inbox.openPanel(makeCtx(), openedAt)
+  for (const id of ids)
+    await tools.get('close').execute('call', { id, reason: 'done' }, undefined, undefined, makeCtx())
+
+  expect(state().ledger.closed.map((c: { id: string }) => c.id)).toEqual(ids)
+  const shown = await inbox.screen(makeCtx(), { replies: {}, discarded: {}, shownSince: openedAt })
+  expect(shown.view.needsYou.tasks.filter(r => r.state.is === 'settled').map(r => r.id)).toEqual(ids)
+
+  inbox.closePanel(makeCtx())
+  await settle()
+  await record({ kind: 'task', ask: 'One more' })
+  expect(state().ledger.closed.map((c: { id: string }) => c.id)).toEqual(ids.slice(2))
+})
+
+test('the folder and branch show from the session’s start, and a checkout during a turn shows at its end', async () => {
+  createInbox(pi(), deps())
+  execResults.set('git', { code: 0, stdout: 'main\n' })
+  await call('session_start', { type: 'session_start' })
+  await settle()
+  expect(state().place).toEqual({ folder: '/work', branch: 'main' })
+
+  await prompt('switch to a feature branch')
+  await call('agent_start', { type: 'agent_start' })
+  execResults.set('git', { code: 0, stdout: 'feature\n' })
+  await endAgent('Switched.')
+  await settle()
+  expect(state().place).toEqual({ folder: '/work', branch: 'feature' })
 })

@@ -17,12 +17,13 @@ import {
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
-import { KEPT_SESSIONS, pruneClosed } from '../../hooks/ledger'
+import { KEPT_SESSIONS } from '../../hooks/ledger'
 import type { Exchange } from '../../hooks/ledger'
 import {
   emptySession,
   isSessionFile,
   missingAsNull,
+  pruned,
   sessionFile,
   staleSessionFiles,
   upgradeSession,
@@ -343,7 +344,7 @@ export async function tryWithLock<T>(
   }
 }
 
-/** Changes a session under its lock. Every save prunes the closed lists but keeps the records of `heldRows`. */
+/** Changes a session under its lock. Every save prunes it with `pruned`. */
 export async function updateState(
   dir: string,
   sessionId: string,
@@ -355,7 +356,7 @@ export async function updateState(
     const { state: current, isSaved } = await readSaved(dir, sessionId)
     const changed = await change(current)
     if (isSaved && changed === current) return current
-    const next = { ...changed, ledger: pruneClosed(changed.ledger, new Set(changed.heldRows)) }
+    const next = pruned(changed)
     const tmp = `${path}.${process.pid}.tmp`
     await writeFile(tmp, JSON.stringify(next))
     await rename(tmp, path)
