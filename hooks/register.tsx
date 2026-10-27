@@ -549,10 +549,14 @@ const DESKTOP_MARK_CELLS = 1
 /** One point, across in cells and down in lines: desktop draws a tree line as a filled Box, since it has no per-side borders. */
 const DESKTOP_HAIR_CELLS = 1 / DESKTOP_CELL_PT
 const DESKTOP_HAIR_LINES = 1 / DESKTOP_LINE_PT
-/** Where the Overview's tree line runs on desktop, in cells from a row's mark column: under the middle of a subject's mark. */
-const DESKTOP_TREE_AT = 0.5
+/**
+ * Where the Overview's tree line runs on desktop, in cells from a row's mark column: under the middle of a subject's
+ * mark, which the Claude app 3.6556 draws 6.4 pt into the column, where a cell is 8.8 pt.
+ */
+const DESKTOP_TREE_AT = 0.73
 /** The room the tree's arm leaves before a child's mark on desktop, in cells. */
 const DESKTOP_ARM_GAP = 0.4
+const OVERVIEW_PAD_Y = OVERVIEW_ROW_PAD_PT / DESKTOP_LINE_PT
 // How far a row frame's transparent border insets its content, in points.
 const FRAME_INSET_PT = 13.2
 const DESKTOP_SIDE_CELLS = 5
@@ -4040,7 +4044,7 @@ export const register: Register = on => {
       key?: string
       mark?: JSX.Element | null
       side?: JSX.Element | null
-      /** An absolute Box over the whole frame, drawn before the row's content. */
+      /** An absolute Box in the mark column, which the frame stretches to the row's height. */
       tree?: JSX.Element | null
       fill?: string | undefined
       padY?: number
@@ -4055,20 +4059,20 @@ export const register: Register = on => {
       <Box
         key={key}
         flexDirection="row"
-        alignItems={isCentered ? 'center' : 'flex-start'}
+        alignItems={isCentered ? 'center' : tree ? 'stretch' : 'flex-start'}
         marginY={gapY}
         borderStyle="single"
         borderColor="#0000"
         paddingY={padY}
         {...(fill ? { backgroundColor: fill } : {})}
       >
-        {tree}
         <Box
           width={indent + markCells + (isMarkHung ? 0 : 1)}
           {...(isCentered ? { height: 1 } : {})}
           flexShrink={0}
           paddingLeft={indent}
         >
+          {tree}
           {mark ? (
             <Box position="absolute" top={0} left={isMarkHung ? indent - 1 : indent}>
               {mark}
@@ -4078,7 +4082,14 @@ export const register: Register = on => {
         <Box flexDirection="column" flexShrink={1} flexGrow={1} minWidth={0}>
           {children}
         </Box>
-        <Box minWidth={DESKTOP_SIDE_CELLS} flexShrink={0} flexDirection="row" justifyContent="flex-end" paddingLeft={1}>
+        <Box
+          minWidth={DESKTOP_SIDE_CELLS}
+          flexShrink={0}
+          flexDirection="row"
+          justifyContent="flex-end"
+          alignItems="flex-start"
+          paddingLeft={1}
+        >
           {side}
         </Box>
       </Box>
@@ -5353,21 +5364,23 @@ export const register: Register = on => {
             <Text color={pal.line}>{treeText(shape === 'down' ? 'pass' : shape, 0)}</Text>
           </Box>
         )
-      // The frame pads in half lines, so its first line's middle sits half its padding and half a line down.
-      const firstLineMiddle = OVERVIEW_ROW_PAD_PT / DESKTOP_LINE_PT / 2 + 0.5
-      const hair = (key: string, grow: boolean) => (
+      // The line spans the mark column, which spans the frame's content. To meet the next row's line, each end reaches
+      // over the frame's padding and its 1 pt border, in margins, which count half lines.
+      const reach = -(OVERVIEW_PAD_Y + 2 * DESKTOP_HAIR_LINES)
+      const firstLineMiddle = 0.5
+      const hair = (key: string, grow: boolean, ends: { marginTop?: number; marginBottom?: number }) => (
         <Box key={key} flexDirection="row" {...(grow ? { flexGrow: 1 } : { height: firstLineMiddle })}>
-          <Box width={DESKTOP_HAIR_CELLS} backgroundColor={pal.divider} />
+          <Box width={DESKTOP_HAIR_CELLS} backgroundColor={pal.divider} {...ends} />
         </Box>
       )
       const arm = DESKTOP_MARK_CELLS * 2 - DESKTOP_TREE_AT - DESKTOP_ARM_GAP
       const parts =
         shape === 'down'
-          ? [<Box key="under-mark" height={firstLineMiddle + 0.4} />, hair('down', true)]
+          ? [<Box key="under-mark" height={firstLineMiddle + 0.4} />, hair('down', true, { marginBottom: reach })]
           : [
-              hair('to-arm', false),
+              hair('to-arm', false, { marginTop: reach }),
               <Box key="arm" height={DESKTOP_HAIR_LINES} width={arm} backgroundColor={pal.divider} />,
-              ...(shape === 'mid' ? [hair('on', true)] : []),
+              ...(shape === 'mid' ? [hair('on', true, { marginBottom: reach })] : []),
             ]
 
       return (
@@ -5404,7 +5417,7 @@ export const register: Register = on => {
           key,
           indent: DESKTOP_MARK_CELLS * (depth * 2),
           isMarkHung: false,
-          padY: OVERVIEW_ROW_PAD_PT / DESKTOP_LINE_PT,
+          padY: OVERVIEW_PAD_Y,
           mark,
           side,
           tree,
