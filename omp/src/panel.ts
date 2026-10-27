@@ -1130,7 +1130,10 @@ export function render(
   return drawPanel(screen, ui, width, now, style, height).lines
 }
 
-/** The panel's lines, and the Overview page's scroll clamped to what the panel can show. */
+/**
+ * The panel's lines, and the Overview page's scroll clamped to what the panel can show. With `minHeight`, blank lines
+ * above the footer make the panel at least that tall.
+ */
 export function drawPanel(
   screen: PanelScreen,
   ui: PanelUi,
@@ -1138,6 +1141,7 @@ export function drawPanel(
   now: number,
   style: Style,
   height?: number,
+  minHeight = 0,
 ): { lines: string[]; pageTop: number } {
   const d: Draw = { screen, ui, width, now, style }
   const entries = entriesOf(screen, ui, ui.tab, now)
@@ -1165,15 +1169,33 @@ export function drawPanel(
   const isPageTaller = isPage && body.length > roomBeside(footer(d, false))
   const foot = footer(d, isPageTaller)
   const room = roomBeside(foot)
+  const blanks = (shown: string[]) =>
+    Array<string>(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill('')
   if (isPage) {
     const top = Math.min(Math.max(0, ui.pageTop), body.length > room ? body.length - room + 1 : 0)
     const shown = body.length > room ? pageWindow(body, top, room, style) : body
 
-    return { lines: [...head, ...shown, ...foot].map(l => fit(l, width)), pageTop: top }
+    return { lines: [...head, ...shown, ...blanks(shown), ...foot].map(l => fit(l, width)), pageTop: top }
   }
   const shown = body.length > room ? scrolled(body, selectedAt, room, style) : body
 
-  return { lines: [...head, ...shown, ...foot].map(l => fit(l, width)), pageTop: ui.pageTop }
+  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map(l => fit(l, width)), pageTop: ui.pageTop }
+}
+
+/** The most lines a shown tab draws, each tab as switching to it would show it. */
+export function tallestTabHeight(
+  screen: PanelScreen,
+  ui: PanelUi,
+  width: number,
+  now: number,
+  style: Style,
+  height?: number,
+): number {
+  const heights = shownTabs(screen.isNextBuild === true).map(
+    t => drawPanel(screen, t.id === ui.tab ? ui : withTab(ui, t.id), width, now, style, height).lines.length,
+  )
+
+  return Math.max(...heights)
 }
 
 const moreLines = (arrow: string, n: number, s: Style) => s.dim(`  ${arrow} ${n} more line${n === 1 ? '' : 's'}`)
