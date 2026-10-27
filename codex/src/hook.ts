@@ -67,7 +67,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
   const meta = await rolloutMeta(input.transcript_path)
   // INBOX_IN_EXEC lets a test drive a whole session through `codex exec`.
   if (!env.INBOX_IN_EXEC && meta.isNonInteractive) return null
-  const { update: write } = codexStore(dir, id, now, deps.onWrite)
+  const { update: write, read } = codexStore(dir, id, now, deps.onWrite)
   const cliPath = namedCli(env)
   const withCli = (s: SessionState): SessionState => (cliPath && s.cliPath !== cliPath ? { ...s, cliPath } : s)
   // A subagent's hook names its own rollout, not the session's.
@@ -168,9 +168,15 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
     case 'Stop': {
       const reply = input.last_assistant_message ?? ''
       const folder = input.cwd
-      const [{ dialogs, commands, plan }, branch] = await Promise.all([
+      // Herdr is asked outside the write: its run can last its whole timeout, and the server's views and presses wait
+      // on the state lock.
+      const [{ dialogs, commands, plan }, branch, inHerdr] = await Promise.all([
         turnIn(input.transcript_path, input.turn_id),
         folder ? branchIn(deps.run, folder) : null,
+        read().then(
+          s => delegatesInHerdr(s.ledger.overview, deps.run),
+          () => null,
+        ),
       ])
       const lines = dialogs.map(d => dialogActivity(d.questions, { kind: 'open' }))
       const written = await write(async s => {
@@ -183,7 +189,6 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
         const waited = overviewChanged(withOutput, o =>
           commands.reduce((x, c) => delegateWaitsEnded(x, c.command, now()), o),
         )
-        const inHerdr = await delegatesInHerdr(waited.ledger.overview, deps.run)
         const withDelegates = inHerdr ? overviewChanged(waited, o => delegatesSettled(o, inHerdr, now())) : waited
         const withPlace = folder ? placed(withDelegates, folder, branch) : withDelegates
 

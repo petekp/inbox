@@ -2818,7 +2818,7 @@ async function handleHook(input, deps) {
   if (!id) return null;
   const meta = await rolloutMeta(input.transcript_path);
   if (!env.INBOX_IN_EXEC && meta.isNonInteractive) return null;
-  const { update: write } = codexStore(dir, id, now, deps.onWrite);
+  const { update: write, read } = codexStore(dir, id, now, deps.onWrite);
   const cliPath = namedCli(env);
   const withCli = (s) => cliPath && s.cliPath !== cliPath ? { ...s, cliPath } : s;
   const rolloutPath = input.agent_id ? null : input.transcript_path;
@@ -2900,9 +2900,13 @@ async function handleHook(input, deps) {
     case "Stop": {
       const reply = input.last_assistant_message ?? "";
       const folder = input.cwd;
-      const [{ dialogs, commands, plan }, branch] = await Promise.all([
+      const [{ dialogs, commands, plan }, branch, inHerdr] = await Promise.all([
         turnIn(input.transcript_path, input.turn_id),
-        folder ? branchIn(deps.run, folder) : null
+        folder ? branchIn(deps.run, folder) : null,
+        read().then(
+          (s) => delegatesInHerdr(s.ledger.overview, deps.run),
+          () => null
+        )
       ]);
       const lines = dialogs.map((d) => dialogActivity(d.questions, { kind: "open" }));
       const written = await write(async (s) => {
@@ -2915,7 +2919,6 @@ async function handleHook(input, deps) {
           withOutput,
           (o) => commands.reduce((x, c) => delegateWaitsEnded(x, c.command, now()), o)
         );
-        const inHerdr = await delegatesInHerdr(waited.ledger.overview, deps.run);
         const withDelegates = inHerdr ? overviewChanged(waited, (o) => delegatesSettled(o, inHerdr, now())) : waited;
         const withPlace = folder ? placed(withDelegates, folder, branch) : withDelegates;
         const ended = withCoveredTurn(noteHook(turnEnded(endTurn2(withPlace, reply, now()), now()), "stop", now()));

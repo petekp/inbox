@@ -7116,13 +7116,14 @@ function createInbox(pi, deps = defaultDeps) {
     const stop = await stopOf(last, deps.isUsageLimit, deps.now());
     const isDialogDismissed = event.messages.some(isDismissedAsk);
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
+    const saved = await readState(dir, id).catch(() => null);
+    const inHerdr = await delegatesInHerdr(saved?.ledger.overview ?? null, run);
     const endedAt = deps.now();
-    const written = await change(id, async (s) => {
+    const written = await change(id, (s) => {
       const ended = turnEnded(endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
         tab: panelScreenTab(id),
         queuesEmptyReply: isDialogDismissed
       }), endedAt);
-      const inHerdr = await delegatesInHerdr(ended.ledger.overview, run);
       const settled = inHerdr ? overviewChanged(ended, (o) => delegatesSettled(o, inHerdr, endedAt)) : ended;
       return { ...settled, stop };
     }).catch(() => null);

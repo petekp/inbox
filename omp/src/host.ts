@@ -848,8 +848,11 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     // Escape on the ask dialog aborts the turn, so it ends with no reply text.
     const isDialogDismissed = event.messages.some(isDismissedAsk)
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
+    // Herdr is asked outside the change: its run can last its whole timeout, and the session's changes run one at a time.
+    const saved = await readState(dir, id).catch(() => null)
+    const inHerdr = await delegatesInHerdr(saved?.ledger.overview ?? null, run)
     const endedAt = deps.now()
-    const written = await change(id, async s => {
+    const written = await change(id, s => {
       const ended = turnEnded(
         endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
           tab: panelScreenTab(id),
@@ -857,7 +860,6 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         }),
         endedAt,
       )
-      const inHerdr = await delegatesInHerdr(ended.ledger.overview, run)
       const settled = inHerdr ? overviewChanged(ended, o => delegatesSettled(o, inHerdr, endedAt)) : ended
 
       return { ...settled, stop }
