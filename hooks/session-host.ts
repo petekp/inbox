@@ -118,6 +118,8 @@ export type SessionHost<S extends Session> = {
   newId(): string
   /** The message an answer press sends, when the agent reads answers in its own form. */
   answerMessage?: AnswerMessage
+  /** The absolute path of the page template for a comparison, in the host's own folder. */
+  comparePage: string
 }
 
 /**
@@ -383,6 +385,7 @@ type PressHost<S extends Session> = Pick<
   | 'newId'
   | 'isDeliveryHeldUntilRun'
   | 'answerMessage'
+  | 'comparePage'
   | 'settleWindowMs'
 >
 
@@ -447,7 +450,7 @@ export async function startPress<S extends Session>(
       if (note) return s
       // Read under the lock, so the press is timed after every write that landed before it.
       const at = await host.now()
-      const r = pressOn(s, p, at, { settleWindowMs: host.settleWindowMs, holds }, localPressId, host.answerMessage)
+      const r = pressOn(s, p, at, { settleWindowMs: host.settleWindowMs, holds }, host, localPressId)
       if ('stale' in r) {
         note = 'stale'
         return s

@@ -293,7 +293,12 @@ test('Discard on a held row drops the draft and records the discard', () => {
 async function afterPresses(...presses: Parameters<ReturnType<typeof demoSource>['press']>[0][]) {
   let now = NOW
   const later: (() => void)[] = []
-  const source = demoSource({ now: () => now, after: fn => later.push(fn), settleWindowMs: SETTLED_MS })
+  const source = demoSource({
+    now: () => now,
+    after: fn => later.push(fn),
+    settleWindowMs: SETTLED_MS,
+    comparePage: '/omp/dist/compare-page.html',
+  })
   for (const p of presses) await source.press(p, NO_HOLDS)
   const screen = async () => ({ ...(await source.screen(NO_HOLDS)), modelName: null })
 

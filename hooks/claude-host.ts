@@ -8,7 +8,7 @@ import type { Away, LastAction, Ledger, OldPresence, PrViews, SentPrompt, Stop }
 import { EMPTY, KEPT_SESSIONS, pruneClosed } from './ledger'
 import { CLAUDE_CODE } from './model-text'
 import { SETTLED_MS } from './view'
-import { localPath, openCommands, withArrival, withRewrite, withUnconfirmed } from './presses'
+import { COMPARE_PAGE_FILE, localPath, openCommands, withArrival, withRewrite, withUnconfirmed } from './presses'
 import type { Effect } from './presses'
 import { emptySession, upgradeSession } from './session'
 import type { SavedSession, SendOutcome, SentBy, Session } from './session'
@@ -545,6 +545,11 @@ export async function deliver(
   return outcome
 }
 
+/** The page template for a comparison, as the mod ships it. */
+export function comparePagePath($: EngineInterface): string {
+  return `${$.plugin.root}/hooks/${COMPARE_PAGE_FILE}`
+}
+
 /** The mod's SessionHost for the conversation `owner`, with copies going to `surface`. */
 export function sessionHost(
   $: EngineInterface,
@@ -598,6 +603,7 @@ export function sessionHost(
       noteMissing: opts.onGhMissing,
     },
     settleWindowMs: opts.settleWindowMs,
+    comparePage: comparePagePath($),
     newId: () => crypto.randomUUID(),
   }
 }

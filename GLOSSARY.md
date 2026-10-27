@@ -22,6 +22,12 @@ A question whose options the agent could try and show side by side, such as
 two layouts. The agent marks it when it records the question, and the inbox
 model marks a question it adds. Only these show Compare.
 
+**Comparison page**:
+The page an agent makes after a Compare press when the choice is visual or has
+many states. The agent writes the comparison as JSON and appends it to a copy
+of the template `hooks/compare-page.html`. The page draws the pick first, then
+the choices with their measures, then the previews.
+
 **Task**:
 Something only the person can do, such as signing in.
 _Avoid_: do, todo

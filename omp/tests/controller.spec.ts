@@ -15,7 +15,12 @@ function open(overrides: Partial<PanelSource> = {}) {
   const pressed: PanelPress[] = []
   const calls = { renders: 0, closes: 0, fetches: 0 }
   const replies: (() => void)[] = []
-  const demo = demoSource({ now: () => now, after: fn => void replies.push(fn), settleWindowMs: SETTLED_MS })
+  const demo = demoSource({
+    now: () => now,
+    after: fn => void replies.push(fn),
+    settleWindowMs: SETTLED_MS,
+    comparePage: '/omp/dist/compare-page.html',
+  })
   const source: PanelSource = {
     ...demo,
     press: async (p, holds) => {
@@ -128,7 +133,13 @@ test('the redraw timer runs only while something on the screen moves', async () 
 })
 
 test('the frame timer runs while the Overview shows a running mark, re-renders without reading the session, and stops on another tab and on dispose', async () => {
-  const demo = demoSource({ now: () => 0, after: () => undefined, settleWindowMs: SETTLED_MS, isNextBuild: true })
+  const demo = demoSource({
+    now: () => 0,
+    after: () => undefined,
+    settleWindowMs: SETTLED_MS,
+    isNextBuild: true,
+    comparePage: '/omp/dist/compare-page.html',
+  })
   let reads = 0
   const { panel, timers, calls } = open({
     screen: async holds => {
@@ -206,7 +217,12 @@ test('a change in the saved state redraws the panel', async () => {
 })
 
 test('a refused Resume shows why on the stop row', async () => {
-  const demo = demoSource({ now: () => 0, after: () => {}, settleWindowMs: SETTLED_MS })
+  const demo = demoSource({
+    now: () => 0,
+    after: () => {},
+    settleWindowMs: SETTLED_MS,
+    comparePage: '/omp/dist/compare-page.html',
+  })
   const stop = { kind: 'api-error' as const, detail: 'overloaded', resets: null, at: 1_700_000_000_000 }
   const { panel } = open({
     screen: async holds => ({ ...(await demo.screen(holds)), stop }),

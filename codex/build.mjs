@@ -129,6 +129,9 @@ const common = {
   logLevel: 'warning',
 }
 
+// The page template for a comparison. The handler names the copy beside its own bundle in the Compare message.
+const comparePage = () => readFileSync(join(here, '..', 'hooks', 'compare-page.html'), 'utf8')
+
 const entries = {
   hook: 'src/hook-main.ts',
   server: 'src/server-main.ts',
@@ -162,6 +165,7 @@ if (mode === '--dev') {
         plugins: [inlineTab(script, pageTones)],
         write: false,
       })
+      writeFileSync(join(here, '.dev', 'compare-page.html'), comparePage())
       // The server imports the file once its time changes, so it must never see it half written.
       writeFileSync(`${handler}.tmp`, server.outputFiles[0].text)
       renameSync(`${handler}.tmp`, handler)
@@ -207,8 +211,10 @@ if (mode === '--dev') {
     banner: { js: '// Built by codex/build.mjs from codex/src and hooks/. Do not edit.' },
     write: mode !== '--check',
   })
+  const page = { path: join(here, 'plugin', 'dist', 'compare-page.html'), text: comparePage() }
+  if (mode !== '--check') writeFileSync(page.path, page.text)
   if (mode === '--check') {
-    const stale = result.outputFiles.filter(f => {
+    const stale = [...result.outputFiles, page].filter(f => {
       try {
         return readFileSync(f.path, 'utf8') !== f.text
       } catch {

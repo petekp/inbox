@@ -86,6 +86,7 @@ function pressed(s: SessionState, p: RowPress): PressResult {
     now: 50,
     turnsStarted: s.presence.turnsStarted,
     extraSteps: [],
+    comparePage: '/plugin/dist/compare-page.html',
   })
 }
 
@@ -741,6 +742,7 @@ test('a row Codex closes while the person types a reply stays held in place, out
       now: 70,
       turnsStarted: 1,
       extraSteps: [],
+      comparePage: '/plugin/dist/compare-page.html',
     },
   )
   assert.ok(!('stale' in r))
@@ -783,6 +785,7 @@ test('a held finding’s reply sends what a reply to the open finding sends, and
       now: 70,
       turnsStarted: 1,
       extraSteps: [],
+      comparePage: '/plugin/dist/compare-page.html',
     },
   )
   assert.ok(!('stale' in r))
@@ -1013,7 +1016,7 @@ test('a refused Done attempt cannot change a later close of the same task', () =
     initial,
     undefined,
     { id: 'i2', action: 'done' },
-    { now: 20, turnsStarted: 1, extraSteps: [] },
+    { now: 20, turnsStarted: 1, extraSteps: [], comparePage: '/plugin/dist/compare-page.html' },
   )
   assert.ok(!('stale' in first))
   const sent = markSentToAgent(first.ledger, ['i2'], 'old-attempt')
@@ -1022,14 +1025,14 @@ test('a refused Done attempt cannot change a later close of the same task', () =
     refused,
     undefined,
     { id: 'i2', action: 'undo' },
-    { now: 20, turnsStarted: 1, extraSteps: [] },
+    { now: 20, turnsStarted: 1, extraSteps: [], comparePage: '/plugin/dist/compare-page.html' },
   )
   assert.ok(!('stale' in undo))
   const second = applyPress(
     undo.ledger,
     undefined,
     { id: 'i2', action: 'done' },
-    { now: 20, turnsStarted: 1, extraSteps: [] },
+    { now: 20, turnsStarted: 1, extraSteps: [], comparePage: '/plugin/dist/compare-page.html' },
   )
   assert.ok(!('stale' in second))
   const newer = markSentToAgent(second.ledger, ['i2'], 'new-attempt')
