@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { Window } from 'happy-dom'
 import { EMPTY } from '../../hooks/ledger'
-import { applyOverview, parseOverview } from '../../hooks/overview'
+import { applyOverview, LOOK_MIN_MS, parseOverview } from '../../hooks/overview'
 import { recordItem } from '../../hooks/tools'
 import { shownTabs } from '../../hooks/view'
 import { CODEX } from '../src/texts'
@@ -211,7 +211,7 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
   }
 })
 
-test('a look starts when the tab shows the Overview, ends when it shows another tab, and ends at the last request when the pane closed', () => {
+test('a look starts when the tab shows the Overview, ends when it shows another tab, ends at the last request when the pane closed, and counts once it lasted five seconds', () => {
   const state = emptyState('look')
   state.ledger = {
     ...EMPTY,
@@ -221,12 +221,16 @@ test('a look starts when the tab shows the Overview, ends when it shows another 
   const open = lookOnView(state, 'overview', 2000)
   assert.equal(open.ledger.overview?.look?.startedAt, 2000)
 
-  const seen = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 3000)
+  const seen = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 2000 + LOOK_MIN_MS)
   assert.equal(seen.ledger.overview?.look, null)
-  assert.equal(seen.ledger.overview?.lastLookAt, 3000)
+  assert.equal(seen.ledger.overview?.lastLookAt, 2000 + LOOK_MIN_MS)
 
-  const closed = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 2000 + 60_000)
-  assert.equal(closed.ledger.overview?.lastLookAt, 2000)
+  const passed = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 3000)
+  assert.equal(passed.ledger.overview?.look, null)
+  assert.equal(passed.ledger.overview?.lastLookAt, null)
+
+  const closed = lookOnView({ ...open, tabSeenAt: 2000 + LOOK_MIN_MS }, 'needsYou', 2000 + 60_000)
+  assert.equal(closed.ledger.overview?.lastLookAt, 2000 + LOOK_MIN_MS)
 
   const never = lookOnView(state, 'needsYou', 2000)
   assert.equal(never.ledger.overview?.lastLookAt, null)

@@ -5,7 +5,7 @@ const MIN = 60_000
 const REPO = 'https://github.com/acme/visor'
 
 /** Where the sample session started. */
-export const DEMO_PLACE = { folder: '/Users/you/code/visor', branch: 'pinch-dismiss' }
+const DEMO_PLACE = { folder: '/Users/you/code/visor', branch: 'pinch-dismiss' }
 
 /** The demo's atom outlives a hot reload, so a copy an earlier build seeded may lack a field. */
 export function isDemoCopy(saved: unknown): saved is DemoCopy {

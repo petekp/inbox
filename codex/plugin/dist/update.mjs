@@ -1672,6 +1672,7 @@ var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 var WORKING_TEXT = "Working\u2026";
 var LOOK_TEXT = "you looked";
+var LOOK_RULE_LABEL = `\u2500\u2500 ${LOOK_TEXT} `;
 var OVERVIEW_TEXT_LINES = 3;
 var CHILD_ROWS = 3;
 var QUIET_MS = 15 * 6e4;
@@ -1706,16 +1707,24 @@ function isItemAfterItem(row, prev) {
   const isUnderSubject = row.kind === "more" || row.kind === "child" && !row.isLoose;
   return prev !== void 0 && prev.kind !== "look" && row.kind !== "look" && !isUnderSubject;
 }
+function idleOf(c, now) {
+  return c.lastActivityAt === null ? null : now - c.lastActivityAt;
+}
+function isQuiet(c, now) {
+  const idle = idleOf(c, now);
+  return idle !== null && idle >= QUIET_MS;
+}
 function childRow(c, now, branch) {
-  const idle = c.lastActivityAt === null ? null : now - c.lastActivityAt;
-  const isQuiet = idle !== null && idle >= QUIET_MS;
-  const age = shortAgo(idle ?? now - c.startedAt);
+  const isChildQuiet = isQuiet(c, now);
+  const age = shortAgo(idleOf(c, now) ?? now - c.startedAt);
   return {
     kind: "child",
     id: c.id,
+    mark: "\u25CF",
+    isRunning: !isChildQuiet,
     name: c.name,
-    age: isQuiet ? `quiet ${age}` : age,
-    isQuiet,
+    age: isChildQuiet ? `quiet ${age}` : age,
+    ageTone: isChildQuiet ? "needsYou" : null,
     isLoose: branch === null,
     branch,
     maxLines: OVERVIEW_TEXT_LINES
@@ -1738,13 +1747,10 @@ function overviewPage(s, now) {
   const shownIds = new Set(shown.map((x) => x.id));
   const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, now, null));
   const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT, age: shortAgo(now - look) };
-  let isLookDrawn = false;
+  const firstSeen = shown.findIndex((x) => !isNew(x));
   for (const [i, x] of shown.entries()) {
-    if (lookRow && !isLookDrawn && !isNew(x)) {
-      const hasNewAbove = i > 0;
-      if (hasNewAbove) rows.push(lookRow);
-      isLookDrawn = true;
-    }
+    const hasNewAbove = i > 0;
+    if (lookRow && i === firstSeen && hasNewAbove) rows.push(lookRow);
     const under = running.filter((c) => c.subjectId === x.id);
     const shownUnder = under.slice(0, CHILD_ROWS);
     const isMore = under.length > CHILD_ROWS;
@@ -1752,7 +1758,7 @@ function overviewPage(s, now) {
       kind: "subject",
       id: x.id,
       ...SUBJECT_MARKS[x.status],
-      isRunning: x.status === "working" && (s.presence.isTurnRunning || under.length > 0),
+      isRunning: x.status === "working" && (s.presence.isTurnRunning || under.some((c) => !isQuiet(c, now))),
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       was: isNew(x) ? x.was : null,
@@ -1769,7 +1775,8 @@ function overviewPage(s, now) {
         branch: "last"
       });
   }
-  if (lookRow && !isLookDrawn && shown.length > 0) rows.push(lookRow);
+  const isEveryShownNew = firstSeen === -1;
+  if (lookRow && isEveryShownNew && shown.length > 0) rows.push(lookRow);
   if (hiddenQueued.size > 0)
     rows.push({
       kind: "fold",

@@ -7,7 +7,7 @@ import type { IconName } from './row-actions'
 import { closedState } from '../../hooks/ledger'
 import { ago, clipLabel } from '../../hooks/text'
 import type { ClosedState } from '../../hooks/ledger'
-import { canUndoRefused, closedMark, settledMark, versionLabel } from '../../hooks/view'
+import { canUndoRefused, closedMark, settledMark, versionLabel, WAS_PREFIX } from '../../hooks/view'
 import { actionId, capitalized, isPressConfirmed, noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { Effect, RowPress } from '../../hooks/presses'
 import {
@@ -1332,7 +1332,8 @@ function OverviewLine({ row }: { row: OverviewRow }) {
           </div>
           {row.was ? (
             <div class="outcome muted clamp" style={{ '--lines': row.maxLines }}>
-              was: {row.was}
+              {WAS_PREFIX}
+              {row.was}
             </div>
           ) : null}
         </div>
@@ -1342,15 +1343,15 @@ function OverviewLine({ row }: { row: OverviewRow }) {
   if (row.kind === 'child')
     return (
       <div class={row.branch ? `row child branch-${row.branch}` : 'row'}>
-        <span class={markClassOf(null, !row.isQuiet)} ref={row.isQuiet ? undefined : pulseInStep}>
-          ●
+        <span class={markClassOf(null, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
+          {row.mark}
         </span>
         <div class="content tight muted">
           <div class="clamp" style={{ '--lines': row.maxLines }}>
             {row.name}
           </div>
         </div>
-        <span class={row.isQuiet ? 'side tone-needsYou' : 'side'}>{row.age}</span>
+        <span class={row.ageTone ? `side ${TONE_CLASS[row.ageTone]}` : 'side'}>{row.age}</span>
       </div>
     )
   if (row.kind === 'more')
@@ -1866,7 +1867,7 @@ function Status({ v }: { v: View }) {
 
 function TabBar({ v }: { v: View }) {
   const counts: Record<Tab, number> = { needsYou: v.needsYou.count, findings: v.findings.count, prs: v.prs.count }
-  const badgeOf = (id: ShownTab) => (v.overviewPage ? tabBadge(id, counts, v.overviewPage) : null)
+  const badgeOf = (id: ShownTab) => tabBadge(id, counts, v.overviewPage?.hasNews ?? false)
   const { error } = footerOf(v)
   const shown = drawnTab()
 

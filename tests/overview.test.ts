@@ -8,6 +8,7 @@ import {
   EMPTY_OVERVIEW,
   lookEnded,
   lookStarted,
+  LOOK_MIN_MS,
   parseOverview,
   runningText,
   subjectsText,
@@ -146,7 +147,7 @@ test('a DROP INTO folds a subject into another, which notes it, and a WAS keeps 
   const two = after(null, 'NEW: working | Offline mode | queue built\nNEW: working | Sync retry | backoff drafted', 100)
   const folded = after(two, 'DROP: s2 | part of offline | INTO s1\nWAS: s1 | retry on its own', 200)
   const finishedUnseen = after(folded, 'DONE: s1 | works offline', 300)
-  const seen = lookEnded(lookStarted(folded, 250), 260)
+  const seen = lookEnded(lookStarted(folded, 250), 250 + LOOK_MIN_MS)
 
   expect(folded.subjects.find(s => s.id === 's2')).toMatchObject({ status: 'dropped', into: 's1', closedAt: 200 })
   expect(folded.subjects.find(s => s.id === 's1')?.was).toBe('Sync retry folded in; was: retry on its own')
@@ -154,7 +155,7 @@ test('a DROP INTO folds a subject into another, which notes it, and a WAS keeps 
     status: 'done',
     was: 'Sync retry folded in; was: retry on its own',
   })
-  expect(after(seen, 'SET: s1 | waits-on-other | waits on review', 300).subjects[0]?.was).toBeNull()
+  expect(after(seen, 'SET: s1 | waits-on-other | waits on review', 300 + LOOK_MIN_MS).subjects[0]?.was).toBeNull()
 })
 
 test('the call reads open subjects with ids, finished ones by name, and running children with their links', () => {
@@ -197,13 +198,14 @@ test('a child the host reports again keeps its id and link, and old ended childr
   expect(later.children.map(c => c.ref)).toEqual(['t9'])
 })
 
-test('a look keeps the look line where it was until the look ends', () => {
+test('a look keeps the look line where it was until the look ends, and counts only once the Overview showed for five seconds', () => {
   const o = { ...after(null, 'NEW: working | Offline mode | queue built', 100), lastLookAt: 50 }
   const looking = lookStarted(o, 200)!
 
   expect(looking.lastLookAt).toBe(50)
   expect(lookStarted(looking, 300)).toBe(looking)
-  expect(lookEnded(looking, 400)).toMatchObject({ lastLookAt: 400, look: null })
+  expect(lookEnded(looking, 200 + LOOK_MIN_MS)).toMatchObject({ lastLookAt: 200 + LOOK_MIN_MS, look: null })
+  expect(lookEnded(looking, 199 + LOOK_MIN_MS)).toMatchObject({ lastLookAt: 50, look: null })
   expect(lookStarted(null, 1)).toBeNull()
 })
 
@@ -288,7 +290,7 @@ test('finished work folds into a count once seen, keeping at most two new finish
   ])
 })
 
-test('running children sit under their subject, at most three, each tied to it and the last ending its tree, and a quiet one says so', () => {
+test('running children sit under their subject, at most three, each tied to it and the last ending its tree, a quiet one says so, and a subject whose children are all quiet stops its mark', () => {
   const now = 100 * MIN
   let o = after(null, 'NEW: working | Offline mode | queue built', 10 * MIN)
   for (const [n, idle] of [0, 1, 2, 3, 20].entries())
@@ -334,7 +336,18 @@ test('running children sit under their subject, at most three, each tied to it a
     },
     now,
   )
-  expect(page(quiet, now).rows[0]).toMatchObject({ kind: 'child', isLoose: true, isQuiet: true, age: 'quiet 20m' })
+  expect(page(quiet, now).rows[0]).toMatchObject({
+    kind: 'child',
+    isLoose: true,
+    isRunning: false,
+    ageTone: 'needsYou',
+    age: 'quiet 20m',
+  })
+  expect(page(after(quiet, 'LINK: c1 | s1', now), now).rows[0]).toMatchObject({
+    kind: 'subject',
+    isRunning: false,
+    hasChildren: true,
+  })
 })
 
 test('a rule sets each item on the page apart: a subject and the rows under it are one item, and the look line takes none beside it', () => {
@@ -379,7 +392,7 @@ test('a child whose host reports no activity shows how long it has run and never
     now,
   )
 
-  expect(page(o, now).rows[0]).toMatchObject({ kind: 'child', age: '1h', isQuiet: false, isLoose: true })
+  expect(page(o, now).rows[0]).toMatchObject({ kind: 'child', age: '1h', isRunning: true, isLoose: true })
 })
 
 test('open subjects past seven fold their oldest queued ones into a count', () => {

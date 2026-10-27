@@ -83,8 +83,9 @@ follows it from the host's events. The inbox model only links it to a subject.
 _Avoid_: subitem, job
 
 **"You looked" line**:
-The rule on the Overview at the time the person last left the page. A row
-above it changed since then. Every open row shows where it stands, above or
+The rule on the Overview at the time the person last left the page, after it
+showed for at least five seconds. A shorter pass through the tab leaves the
+line where it was. A row above it changed since then. Every open row shows where it stands, above or
 below the line. A row below it leaves out its was line, and a finished row
 below it shows only its mark, name and age. When no row changed since then,
 the page draws no line.

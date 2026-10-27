@@ -675,7 +675,7 @@ export type ShownTab = Tab | PageTab
 type TabName = { id: ShownTab; label: string; symbol: string }
 
 /** A tab a build draws, with the number key that shows it. */
-export type DrawnTab = TabName & { hotkey: string }
+type DrawnTab = TabName & { hotkey: string }
 
 const TAB_NAMES: readonly TabName[] = [
   { id: 'overview', label: 'Overview', symbol: '\u{1F9ED}' },
@@ -739,14 +739,10 @@ export function fitTabs<L>(
  * What a tab draws after its name: a row tab's count when it has one, or `NEWS_DOT` on the Overview when it changed since
  * the person last looked. Null draws nothing.
  */
-export function tabBadge(
-  id: ShownTab,
-  counts: Readonly<Record<Tab, number>>,
-  page: Pick<OverviewPage, 'hasNews'>,
-): string | null {
+export function tabBadge(id: ShownTab, counts: Readonly<Record<Tab, number>>, hasNews: boolean): string | null {
   if (isRowTab(id)) return counts[id] > 0 ? String(counts[id]) : null
 
-  return page.hasNews ? NEWS_DOT : null
+  return hasNews ? NEWS_DOT : null
 }
 
 /** Whether a shown tab lists rows you answer or close: Asks and Finds. */
@@ -809,10 +805,14 @@ type OverviewRowParts =
   | {
       kind: 'child'
       id: string
+      mark: string
+      /** Whether it did anything in the last `QUIET_MS`, so a look animates the mark. */
+      isRunning: boolean
       name: string
       /** How long ago it last did anything, as "quiet 40m" once it is quiet; since it started when the host reports no activity. */
       age: string
-      isQuiet: boolean
+      /** The age's tone: `needsYou` once it is quiet, since a quiet child may be stuck. */
+      ageTone: OverviewTone
       /** Not linked to a subject the list shows, so it sits at the top of the list instead of under one. */
       isLoose: boolean
       /** Its place under its subject. Null for a loose child, which has no subject to tie to. */
@@ -842,8 +842,12 @@ export type OverviewPage = {
 }
 
 export const WORKING_TEXT = 'Working…'
-export const LOOK_TEXT = 'you looked'
-export const NEWS_DOT = '•'
+const LOOK_TEXT = 'you looked'
+/** The look line's label in a look that draws the rule as text, which fills the rest of the line with ─. */
+export const LOOK_RULE_LABEL = `── ${LOOK_TEXT} `
+/** What a subject's was line starts with, before the plan it replaces. */
+export const WAS_PREFIX = 'was: '
+const NEWS_DOT = '•'
 
 /** The most lines each text on an Overview row wraps to: a subject's name with where it stands, its was line, and a child's name. */
 export const OVERVIEW_TEXT_LINES = 3
@@ -852,9 +856,9 @@ export const CHILD_ROWS = 3
 /** A child with no activity for this long reads quiet. */
 export const QUIET_MS = 15 * 60_000
 /** Finished rows drawn above the look line; older ones fold into the count. */
-export const NEW_CLOSED_ROWS = 2
+const NEW_CLOSED_ROWS = 2
 /** Open rows drawn before the oldest queued ones fold into a count. */
-export const OPEN_ROWS = 7
+const OPEN_ROWS = 7
 
 const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: OverviewTone }> = {
   working: { mark: '●', tone: null },
@@ -875,7 +879,7 @@ export const RUNNING_FRAME_MS = 300
 export const RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS
 
 export function hasRunningMark(page: OverviewPage): boolean {
-  return page.rows.some(r => (r.kind === 'subject' && r.isRunning) || (r.kind === 'child' && !r.isQuiet))
+  return page.rows.some(r => (r.kind === 'subject' || r.kind === 'child') && r.isRunning)
 }
 
 /** A running row's mark at `now`. Every mark on a page takes its frame from the clock, so all of them move together. */
@@ -909,17 +913,29 @@ function isItemAfterItem(row: OverviewRowParts, prev: OverviewRowParts | undefin
   return prev !== undefined && prev.kind !== 'look' && row.kind !== 'look' && !isUnderSubject
 }
 
+/** How long ago `c` last did anything, or null when its host reports no activity. */
+function idleOf(c: Child, now: number): number | null {
+  return c.lastActivityAt === null ? null : now - c.lastActivityAt
+}
+
+function isQuiet(c: Child, now: number): boolean {
+  const idle = idleOf(c, now)
+
+  return idle !== null && idle >= QUIET_MS
+}
+
 function childRow(c: Child, now: number, branch: OverviewBranch | null): OverviewRowParts {
-  const idle = c.lastActivityAt === null ? null : now - c.lastActivityAt
-  const isQuiet = idle !== null && idle >= QUIET_MS
-  const age = shortAgo(idle ?? now - c.startedAt)
+  const isChildQuiet = isQuiet(c, now)
+  const age = shortAgo(idleOf(c, now) ?? now - c.startedAt)
 
   return {
     kind: 'child',
     id: c.id,
+    mark: '●',
+    isRunning: !isChildQuiet,
     name: c.name,
-    age: isQuiet ? `quiet ${age}` : age,
-    isQuiet,
+    age: isChildQuiet ? `quiet ${age}` : age,
+    ageTone: isChildQuiet ? 'needsYou' : null,
     isLoose: branch === null,
     branch,
     maxLines: OVERVIEW_TEXT_LINES,
@@ -958,13 +974,10 @@ export function overviewPage(
     .map(c => childRow(c, now, null))
   const lookRow: OverviewRowParts | null =
     look === null ? null : { kind: 'look', id: 'look', text: LOOK_TEXT, age: shortAgo(now - look) }
-  let isLookDrawn = false
+  const firstSeen = shown.findIndex(x => !isNew(x))
   for (const [i, x] of shown.entries()) {
-    if (lookRow && !isLookDrawn && !isNew(x)) {
-      const hasNewAbove = i > 0
-      if (hasNewAbove) rows.push(lookRow)
-      isLookDrawn = true
-    }
+    const hasNewAbove = i > 0
+    if (lookRow && i === firstSeen && hasNewAbove) rows.push(lookRow)
     const under = running.filter(c => c.subjectId === x.id)
     const shownUnder = under.slice(0, CHILD_ROWS)
     const isMore = under.length > CHILD_ROWS
@@ -972,7 +985,7 @@ export function overviewPage(
       kind: 'subject',
       id: x.id,
       ...SUBJECT_MARKS[x.status],
-      isRunning: x.status === 'working' && (s.presence.isTurnRunning || under.length > 0),
+      isRunning: x.status === 'working' && (s.presence.isTurnRunning || under.some(c => !isQuiet(c, now))),
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       was: isNew(x) ? x.was : null,
@@ -989,7 +1002,8 @@ export function overviewPage(
         branch: 'last',
       })
   }
-  if (lookRow && !isLookDrawn && shown.length > 0) rows.push(lookRow)
+  const isEveryShownNew = firstSeen === -1
+  if (lookRow && isEveryShownNew && shown.length > 0) rows.push(lookRow)
   if (hiddenQueued.size > 0)
     rows.push({
       kind: 'fold',

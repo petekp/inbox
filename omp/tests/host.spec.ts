@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { guidanceText, OVERVIEW_SYSTEM, systemText } from '../../hooks/model-text'
-import { EMPTY_OVERVIEW } from '../../hooks/overview'
+import { EMPTY_OVERVIEW, LOOK_MIN_MS } from '../../hooks/overview'
 import { NO_HOLDS } from '../../hooks/view'
 import { createInbox, stopOf } from '../src/host'
 import type { HostDeps } from '../src/host'
@@ -1176,7 +1176,7 @@ test('a Herdr delegate runs as a child from the bash call that starts it until a
   ])
 })
 
-test('a look starts when the panel shows the Overview and ends on another tab or when the panel closes', async () => {
+test('a look starts when the panel shows the Overview and ends on another tab or when the panel closes, and counts once it lasted five seconds', async () => {
   const inbox = createInbox(pi(), deps())
   await prompt('hello')
   const saved = state()
@@ -1190,6 +1190,13 @@ test('a look starts when the panel shows the Overview and ends on another tab or
   inbox.showTab(makeCtx(), 'needsYou')
   await settle()
   expect(state().ledger.overview.look).toBeNull()
+  expect(state().ledger.overview.lastLookAt).toBeNull()
+
+  inbox.showTab(makeCtx(), 'overview')
+  await settle()
+  clock += LOOK_MIN_MS
+  inbox.showTab(makeCtx(), 'needsYou')
+  await settle()
   expect(state().ledger.overview.lastLookAt).not.toBeNull()
 
   inbox.showTab(makeCtx(), 'overview')

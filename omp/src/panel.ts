@@ -80,6 +80,8 @@ import {
   rowKeyPlan,
   rowMark,
   hasRunningMark,
+  LOOK_RULE_LABEL,
+  WAS_PREFIX,
   runningMark,
   settledLabel,
   stopFix,
@@ -1040,13 +1042,14 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
       plainCells: cellWidth(row.name),
       maxLines: row.maxLines,
     })
-    if (row.was) out.push(...indented(`was: ${row.was}`, PAGE_TEXT_AT, width, row.maxLines, s.dim))
+    if (row.was) out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, row.maxLines, s.dim))
 
     return row.hasChildren ? withTree(out, null, '│', s) : out
   }
   if (row.kind === 'child') {
-    const mark = s.dim(row.isQuiet ? '●' : runningMark(now))
-    const agePaint = row.isQuiet ? (t: string) => s.tone('needsYou', t) : s.dim
+    const mark = s.dim(row.isRunning ? runningMark(now) : row.mark)
+    const tone = row.ageTone
+    const agePaint = tone ? (t: string) => s.tone(tone, t) : s.dim
     const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, row.age, {
       agePaint,
       maxLines: row.maxLines,
@@ -1060,7 +1063,7 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
     return withTree([' '.repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s)
   }
   if (row.kind === 'look') {
-    const label = `── ${row.text} `
+    const label = LOOK_RULE_LABEL
     const fill = '─'.repeat(Math.max(2, width - 1 - PAGE_TEXT_AT - cellWidth(label) - cellWidth(row.age) - 1))
 
     return [`${' '.repeat(PAGE_TEXT_AT)}${s.dim(label + fill)} ${s.dim(row.age)}`]
@@ -1114,7 +1117,7 @@ function tabBar(d: Draw): string {
   const tabs: TabCell[] = shownTabs(screen.isNextBuild === true).map(t => ({
     ...t,
     tone: isRowTab(t.id) ? t.id : null,
-    badge: tabBadge(t.id, counts, screen.view.overviewPage),
+    badge: tabBadge(t.id, counts, screen.view.overviewPage.hasNews),
     isShown: t.id === ui.tab,
   }))
   const lineOf = (naming: TabNaming, form: TabForm) =>
@@ -1212,15 +1215,15 @@ export function drawPanel(
   const room = roomBeside(foot)
   const blanks = (shown: string[]) =>
     Array<string>(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill('')
-  if (isPage) {
-    const top = Math.min(Math.max(0, ui.pageTop), body.length > room ? body.length - room + 1 : 0)
-    const shown = body.length > room ? pageWindow(body, top, room, style) : body
+  const isOverflowing = body.length > room
+  const pageTop = isPage ? Math.min(Math.max(0, ui.pageTop), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop
+  const shown = !isOverflowing
+    ? body
+    : isPage
+      ? pageWindow(body, pageTop, room, style)
+      : scrolled(body, selectedAt, room, style)
 
-    return { lines: [...head, ...shown, ...blanks(shown), ...foot].map(l => fit(l, width)), pageTop: top }
-  }
-  const shown = body.length > room ? scrolled(body, selectedAt, room, style) : body
-
-  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map(l => fit(l, width)), pageTop: ui.pageTop }
+  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map(l => fit(l, width)), pageTop }
 }
 
 /** The most lines a shown tab draws, each tab as switching to it would show it. */

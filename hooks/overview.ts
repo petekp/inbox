@@ -365,9 +365,15 @@ export function lookStarted(o: Overview | null, now: number): Overview | null {
   return o === null || o.look !== null ? o : { ...o, look: { startedAt: now } }
 }
 
-/** The Overview tab is no longer shown, at `at`. */
+/** How long the Overview must show before it counts as a look, so a pass through the tab keeps the look line. */
+export const LOOK_MIN_MS = 5_000
+
+/** The Overview tab is no longer shown, at `at`. A look shorter than `LOOK_MIN_MS` leaves the look line where it was. */
 export function lookEnded(o: Overview | null, at: number): Overview | null {
-  return o === null || o.look === null ? o : { ...o, lastLookAt: at, look: null }
+  if (o === null || o.look === null) return o
+  const isLongEnough = at - o.look.startedAt >= LOOK_MIN_MS
+
+  return { ...o, lastLookAt: isLongEnough ? at : o.lastLookAt, look: null }
 }
 
 function text(value: unknown): string {

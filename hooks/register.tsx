@@ -263,6 +263,8 @@ import {
   READING_TEXT,
   rowsIn,
   hasRunningMark,
+  LOOK_RULE_LABEL,
+  WAS_PREFIX,
   inboxCommandText,
   RUNNING_FRAME_MS,
   RUNNING_PULSE_MS,
@@ -3635,7 +3637,7 @@ export const register: Register = on => {
       findings: view.findings.count,
       prs: shownPrs.filter(x => !x.isSettled && prNeedsYou(x.pr, isThreadSent)).length,
     }
-    const badgeOf = (id: ShownTab) => tabBadge(id, tabCounts, view.overviewPage)
+    const badgeOf = (id: ShownTab) => tabBadge(id, tabCounts, view.overviewPage.hasNews)
     const tabTone = (id: ShownTab) => (isRowTab(id) ? pal.tone[id] : undefined)
     const tabText = (id: ShownTab, name: string) => `${name}${badgeOf(id) === null ? '' : ` ${badgeOf(id)}`}`
     const hasRail = isInline && look === 'terminal' && e.props.bodyColumns >= INLINE_RAIL_AT
@@ -5457,7 +5459,15 @@ export const register: Register = on => {
             r.age,
           ),
           ...(r.was
-            ? [overviewText(`overview-${r.id}-was`, [{ text: `was: ${r.was}`, isMuted: true }], r.maxLines, 0, r.age)]
+            ? [
+                overviewText(
+                  `overview-${r.id}-was`,
+                  [{ text: `${WAS_PREFIX}${r.was}`, isMuted: true }],
+                  r.maxLines,
+                  0,
+                  r.age,
+                ),
+              ]
             : []),
         ]
 
@@ -5470,7 +5480,7 @@ export const register: Register = on => {
         })
       }
       if (r.kind === 'child') {
-        const mark = r.isQuiet ? <Text color={pal.muted}>●</Text> : runningDot(r.id, '●', pal.muted)
+        const mark = r.isRunning ? runningDot(r.id, r.mark, pal.muted) : <Text color={pal.muted}>{r.mark}</Text>
         const depth = r.isLoose ? 0 : 1
 
         return overviewLine({
@@ -5479,7 +5489,7 @@ export const register: Register = on => {
           mark,
           content: overviewText(`overview-${r.id}-text`, [{ text: r.name, isMuted: true }], r.maxLines, depth, r.age),
           age: r.age,
-          ageColor: r.isQuiet ? (pal.tone.needsYou ?? pal.age) : pal.age,
+          ageColor: r.ageTone ? (pal.tone[r.ageTone] ?? pal.age) : pal.age,
           tree: r.branch ? overviewTree(`overview-${r.id}-tree`, r.branch) : null,
         })
       }
@@ -5493,7 +5503,7 @@ export const register: Register = on => {
           tree: overviewTree(`overview-${r.id}-tree`, r.branch),
         })
       if (r.kind === 'look') {
-        const label = `── ${r.text} `
+        const label = LOOK_RULE_LABEL
         const ruleColumns = overviewTextCells(0, r.age) - cellWidth(label)
         const fill = look === 'desktop' ? '' : '─'.repeat(Math.max(2, ruleColumns))
 
