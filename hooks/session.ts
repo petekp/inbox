@@ -14,7 +14,7 @@ import type { Host, ScreenTab, Told } from './model-text'
 import {
   applyPrPress,
   drawnPrs,
-  isDismissing,
+  isDismissed,
   itemPrSteps,
   keepsView,
   olderPrsText,
@@ -22,7 +22,7 @@ import {
   pressRowId,
   threadSentIn,
 } from './pr-tab'
-import type { Applied, PrPress } from './pr-tab'
+import type { Applied, DrawnPr, PrPress } from './pr-tab'
 import {
   actionId,
   applyPress,
@@ -39,7 +39,7 @@ import { upgradeHostTasks } from './host-tasks'
 import { applyOverview, lookEnded, lookStarted } from './overview'
 import type { OverviewAnswer } from './overview'
 import { allRows, inboxView, NO_HOLDS, outAction, overviewPage, perTurnStatus, pressFeedbackIn } from './view'
-import type { InboxView, OverviewPage, ReplyHolds, RowState } from './view'
+import type { InboxView, OverviewPage, Holds, RowState } from './view'
 import type {
   LastAction,
   Ledger,
@@ -572,8 +572,8 @@ export function appliedCatchUp<S extends Session>(s: S, begun: Session, parsed: 
 
 export type Pressed = Exclude<Applied, { stale: true }>
 
-/** What a look draws a session's rows with besides the session: the settle window and the reply holds. */
-export type DrawnWith = { settleWindowMs: number; holds: ReplyHolds }
+/** What a look draws a session's rows with besides the session: how long Undo lasts, and what the look holds in place. */
+export type DrawnWith = { settleWindowMs: number; holds: Holds }
 
 /**
  * A press of an action whose button the look draws as out, since its earlier press is still out. It changes nothing,
@@ -678,17 +678,12 @@ export function recorded<S extends Session>(
   return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result }
 }
 
-/** Merges fetched PRs into the session. A view stays while `keepsView` keeps it or its dismissal is still showing. */
-export function withFetchedPrs<S extends Session>(
-  s: S,
-  fetched: PrViews['views'],
-  branchRef: string | null,
-  at: number,
-): S {
+/** Merges fetched PRs into the session. A view stays while `keepsView` keeps it or the PR was dismissed. */
+export function withFetchedPrs<S extends Session>(s: S, fetched: PrViews['views'], branchRef: string | null): S {
   const merged = { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false }
   const views = Object.fromEntries(
     Object.entries(merged.views).filter(
-      ([ref]) => keepsView(merged, s.ledger.prs, ref) || isDismissing(s.lastActions, ref, at),
+      ([ref]) => keepsView(merged, s.ledger.prs, ref) || isDismissed(s.lastActions, ref),
     ),
   )
 
@@ -696,7 +691,7 @@ export function withFetchedPrs<S extends Session>(
 }
 
 type PrTab = {
-  drawn: { pr: PrView; isSettled: boolean }[]
+  drawn: DrawnPr[]
   branchRef: string | null
   /** How many open PRs wait on the person. */
   count: number
@@ -734,7 +729,7 @@ export function sessionView(
   now: number,
   settleWindowMs: number,
   canCatchUp: boolean,
-  holds: ReplyHolds = NO_HOLDS,
+  holds: Holds = NO_HOLDS,
   notes: Record<string, RowNote> = {},
 ): SessionView {
   const l = s.ledger
@@ -761,13 +756,13 @@ export function sessionView(
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now),
+    prs: prTabOf(s, lastActions, now, holds.shownSince),
     overviewPage: overviewPage(s, now),
   }
 }
 
-function prTabOf(s: Session, lastActions: Record<string, LastAction>, now: number): PrTab {
-  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now)
+function prTabOf(s: Session, lastActions: Record<string, LastAction>, now: number, shownSince: number | null): PrTab {
+  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, shownSince)
   const isSent = threadSentIn(lastActions)
 
   return {

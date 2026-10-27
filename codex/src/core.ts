@@ -9,7 +9,7 @@ import {
 } from '../../hooks/session'
 import type { SessionView } from '../../hooks/session'
 import { NO_HOLDS, screenTabOf } from '../../hooks/view'
-import type { ReplyHolds } from '../../hooks/view'
+import type { Holds } from '../../hooks/view'
 import { SETTLE_WINDOW_MS } from './settle'
 import type { Heard, SessionState } from './state'
 import { CODEX } from './texts'
@@ -133,7 +133,7 @@ export type TabView = View & {
   isGhMissing: boolean
 }
 
-export function viewOf(s: SessionState, now: number, holds: ReplyHolds = NO_HOLDS): View {
+export function viewOf(s: SessionState, now: number, holds: Holds = NO_HOLDS): View {
   const canCatchUp = s.transcriptPath !== null
 
   return { ...sessionView(s, now, SETTLE_WINDOW_MS, canCatchUp, holds), heard: heardState(s.heard), at: now }

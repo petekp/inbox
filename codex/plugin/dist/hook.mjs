@@ -1052,7 +1052,10 @@ function pendingDeliveryAt(last, now) {
   if (last?.delivery?.state === "unconfirmed") return "unconfirmed";
   return isQueuedAt(last, now) ? "queued" : null;
 }
-var NO_HOLDS = { replies: {}, discarded: {} };
+var NO_HOLDS = { replies: {}, discarded: {}, shownSince: null };
+function isShownSince(at, shownSince) {
+  return shownSince !== null && at >= shownSince;
+}
 var ROW_COPY = {
   retry: "Try again",
   send: "Send",
@@ -1390,14 +1393,16 @@ function inboxView({
   status,
   now,
   replies,
-  discarded
+  discarded,
+  shownSince
 }) {
-  const isSettling = (at) => now - at < settleWindowMs;
+  const isInPlace = (at) => isShownSince(at, shownSince);
+  const isUndoLeft = (at) => now - at < settleWindowMs;
   const isOpen2 = (id) => ledger.items.some((i) => i.id === id) || ledger.findings.some((f) => f.id === id);
   const closedAt = (c) => "closedAt" in c ? c.closedAt : c.at;
   const replyAfter = (c) => {
     const last = lastActions[c.id];
-    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isSettling(last.at) ? last : null;
+    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(last.at) ? last : null;
   };
   const isOwnClose = (c) => c.how === "done" || c.how === "dismissed" || c.how === "answered" && lastActions[c.id]?.kind === "mark" && lastActions[c.id]?.at === closedAt(c);
   const isHeld = (c) => {
@@ -1405,13 +1410,13 @@ function inboxView({
     return since !== void 0 && since <= closedAt(c) && !isOwnClose(c);
   };
   const isDiscarded = (c) => (discarded[c.id] ?? -Infinity) >= closedAt(c);
-  const isPlaced = (c) => replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isSettling(closedAt(c)));
+  const isPlaced = (c) => replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(closedAt(c)));
   const placedItems = new Map(
     ledger.closed.filter((d) => d.item && !isOpen2(d.id) && isPlaced(d)).map((d) => [d.id, d])
   );
   const isFixSettled = (id) => {
     const last = lastActions[id];
-    return isFixSent(last) && !isSettling(last.at);
+    return isFixSent(last) && !isInPlace(last.at);
   };
   const placedFindings = new Map(
     ledger.closedFindings.filter((f) => !isOpen2(f.id) && !isFixSettled(f.id) && isPlaced(f)).map((f) => [f.id, f])
@@ -1439,7 +1444,7 @@ function inboxView({
         is: "settled",
         label: outcomeLabel(closed2),
         at,
-        canUndo: isUndoable(closed2),
+        canUndo: isUndoable(closed2) && isUndoLeft(at),
         isLapsed: isLapsed(closed2),
         delivery: "doneNotification" in closed2 && closed2.doneNotification?.error !== void 0 ? { error: closed2.doneNotification.error, canUndo: isUndoable(closed2) } : (closed2.how === "answered" || closed2.how === "done") && last2?.kind === "mark" && last2.at === at ? pendingDeliveryAt(last2, now) : null
       };
@@ -1451,7 +1456,7 @@ function inboxView({
         is: "settled",
         label: fixLabel(sent),
         at: last.at,
-        canUndo: true,
+        canUndo: isUndoLeft(last.at),
         delivery: pendingDeliveryAt(last, now),
         isLapsed: false
       };
@@ -1599,14 +1604,13 @@ function threadSentIn(lastActions) {
 function isTracked(prState, linked, ref) {
   return splitLinked(prState, linked).tracked.includes(ref) || prState.branchRef === ref;
 }
-function isDismissing(lastActions, ref, now) {
-  const mark = lastActions[prMarkId(ref)];
-  return mark?.action === "pr-dismiss" && now - mark.at < SETTLED_MS;
-}
-function drawnPrs(prState, linked, lastActions, now) {
-  return inPrOrder(Object.values(prState.views)).flatMap(
-    (pr) => isTracked(prState, linked, pr.ref) ? [{ pr, isSettled: false }] : isDismissing(lastActions, pr.ref, now) ? [{ pr, isSettled: true }] : []
-  );
+function drawnPrs(prState, linked, lastActions, now, shownSince) {
+  return inPrOrder(Object.values(prState.views)).flatMap((pr) => {
+    if (isTracked(prState, linked, pr.ref)) return [{ pr, isSettled: false, canUndo: false }];
+    const mark = lastActions[prMarkId(pr.ref)];
+    if (mark?.action !== "pr-dismiss" || !isShownSince(mark.at, shownSince)) return [];
+    return [{ pr, isSettled: true, canUndo: now - mark.at < SETTLED_MS }];
+  });
 }
 
 // ../hooks/session.ts
@@ -1875,12 +1879,12 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now),
+    prs: prTabOf(s, lastActions, now, holds.shownSince),
     overviewPage: overviewPage(s, now)
   };
 }
-function prTabOf(s, lastActions, now) {
-  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now);
+function prTabOf(s, lastActions, now, shownSince) {
+  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, shownSince);
   const isSent = threadSentIn(lastActions);
   return {
     drawn,

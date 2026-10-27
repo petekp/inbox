@@ -3,7 +3,7 @@ import type { PrPress } from '../../hooks/pr-tab'
 import { isPressConfirmed } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
 import { READING_TEXT, compareEndsAt, RUNNING_FRAME_MS } from '../../hooks/view'
-import type { ReplyHolds, ShownTab } from '../../hooks/view'
+import type { Holds, ShownTab } from '../../hooks/view'
 import {
   INITIAL_UI,
   afterHandOff,
@@ -23,10 +23,10 @@ const PRS_CHECK_MS = 120_000
 
 /** What the panel needs from a session, so the live inbox and the demo can both supply it. */
 export type PanelSource = {
-  screen(holds: ReplyHolds): Promise<PanelScreen>
+  screen(holds: Holds): Promise<PanelScreen>
   press(
     p: RowPress | PrPress,
-    holds: ReplyHolds,
+    holds: Holds,
   ): Promise<{ error: string | null; note: 'stale' | null; isUnconfirmed: boolean }>
   /** Sends the message that resumes a stopped turn. Returns why it could not, or null. */
   resume(): Promise<string | null>
@@ -41,6 +41,8 @@ export type PanelDeps = {
   source: PanelSource
   style: Style
   now(): number
+  /** When the person asked for the panel. Its first tab shows from then, so a row the demo closes as it starts stays. */
+  openedAt: number
   requestRender(): void
   /** Closes the panel. */
   close(): void
@@ -63,7 +65,7 @@ export type Panel = {
  */
 export function createPanel(deps: PanelDeps): Panel {
   const { source, style, timers } = deps
-  let ui: PanelUi = INITIAL_UI
+  let ui: PanelUi = { ...INITIAL_UI, shownSince: deps.openedAt }
   let screen: PanelScreen | null = null
   let animation: unknown = null
   /** Redraws without reading the session again, since a running mark's frame needs only the clock. */

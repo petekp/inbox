@@ -8,8 +8,8 @@ import { EMPTY } from '../../hooks/ledger'
 import type { Ledger } from '../../types'
 import { applyPress } from '../../hooks/presses'
 import type { PressResult, RowPress } from '../../hooks/presses'
-import { inboxView, PRESS_GUARD_MS } from '../../hooks/view'
-import type { ReplyHolds } from '../../hooks/view'
+import { inboxView, PRESS_GUARD_MS, SETTLED_MS } from '../../hooks/view'
+import type { Holds } from '../../hooks/view'
 import { ledgerActions, RowActions } from '../src/row-actions'
 import { recordClose, recordItem } from '../../hooks/tools'
 import { CODEX } from '../src/texts'
@@ -54,6 +54,7 @@ function task() {
     now: 10,
     replies: {},
     discarded: {},
+    shownSince: null,
   })
   return { ledger, row: view.needsYou.tasks[0]! }
 }
@@ -145,6 +146,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
     now: 10,
     replies: {},
     discarded: {},
+    shownSince: null,
   }).needsYou.questions[0]!
   let allOptions = false
   let answer: PressResult | null = null
@@ -195,6 +197,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
     now: 10,
     replies: {},
     discarded: {},
+    shownSince: null,
   }).findings.rows[0]!
   let discussion: PressResult | null = null
   const followUps = ledgerActions(finding, false, null, {
@@ -230,7 +233,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
   root.remove()
 })
 
-test('the actual Codex tab replaces actions and shortcuts while replying, restores a cancelled draft, sends its current words, and keeps them when the send cannot be confirmed', async () => {
+test('the actual Codex tab replaces actions and shortcuts while replying, restores a cancelled draft, sends its current words, keeps them when the send cannot be confirmed, and keeps a done row in place past its Undo until the person switches tab', async () => {
   const state = emptyState('renderer')
   state.ledger = task().ledger
   state.heard.startAt = 1
@@ -268,8 +271,12 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
   const presses: RowPress[] = []
   let isUnconfirmed = false
   let pressesAnswered = 0
-  const tabView = (holds?: Partial<ReplyHolds>): TabView => ({
-    ...viewOf(state, Date.now(), { replies: holds?.replies ?? {}, discarded: holds?.discarded ?? {} }),
+  const tabView = (holds?: Partial<Holds>): TabView => ({
+    ...viewOf(state, Date.now(), {
+      replies: holds?.replies ?? {},
+      discarded: holds?.discarded ?? {},
+      shownSince: holds?.shownSince ?? null,
+    }),
     thread: state.sessionId,
     devPage: 'renderer-page',
     serverBuild: SERVER_BUILD,
@@ -280,7 +287,7 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
     const request = message as {
       id?: number
       method: string
-      params?: { name?: string; arguments?: { press?: RowPress } & Partial<ReplyHolds> }
+      params?: { name?: string; arguments?: { press?: RowPress } & Partial<Holds> }
     }
     if (request.id === undefined) return
     let result: unknown
@@ -394,6 +401,31 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
     await pause(POLL_MS + 100)
     assert.doesNotMatch(root.textContent ?? '', /the build passed/)
     assert.equal(presses.length, 3)
+
+    state.ledger = recordItem(CODEX, state.ledger, { kind: 'task', ask: 'Tag the release' }, Date.now()).ledger
+    await pause(POLL_MS + 100)
+    root.querySelector<HTMLElement>('.row .line')!.click()
+    await pause(PRESS_GUARD_MS + 50)
+    named(root, 'Done').click()
+    await until(() => buttons(root).some(b => b.textContent === 'Undo'))
+    const tabNamed = (label: string) =>
+      [...root.querySelectorAll<HTMLElement>('button.tab')].find(
+        b => b.querySelector('.tab-word')?.textContent === label,
+      )!
+    const realNow = Date.now
+    Date.now = () => realNow() + SETTLED_MS
+    try {
+      await pause(POLL_MS + 100)
+      assert.match(root.querySelector('.row.settled')?.textContent ?? '', /Tag the release/)
+      assert.equal(root.querySelector('.key.undo:not(.spent)'), null)
+      tabNamed('Finds').click()
+      tabNamed('Asks').click()
+      assert.equal(root.querySelector('.row.settled'), null)
+      await pause(POLL_MS + 100)
+      assert.equal(root.querySelector('.row.settled'), null)
+    } finally {
+      Date.now = realNow
+    }
   } finally {
     await window.happyDOM.abort()
     for (const [key, descriptor] of previous) {

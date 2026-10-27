@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { COMPARE_LIMIT_MS, RUNNING_FRAME_MS, SETTLED_MS } from '../../hooks/view'
+import { COMPARE_LIMIT_MS, NO_HOLDS, RUNNING_FRAME_MS, SETTLED_MS } from '../../hooks/view'
 import { createPanel } from '../src/controller'
 import type { PanelSource } from '../src/controller'
 import { demoSource } from '../src/demo'
@@ -35,6 +35,7 @@ function open(overrides: Partial<PanelSource> = {}) {
     source,
     style,
     now: () => now,
+    openedAt: now,
     requestRender: () => void calls.renders++,
     close: () => void calls.closes++,
     timers: {
@@ -44,7 +45,7 @@ function open(overrides: Partial<PanelSource> = {}) {
     height: () => undefined,
   })
 
-  return { panel, timers, pressed, calls, replies, advance: (ms: number) => void (now += ms) }
+  return { panel, timers, pressed, calls, replies, source, advance: (ms: number) => void (now += ms) }
 }
 
 const live = (timers: { fn: () => void; ms: number; stopped: boolean }[], ms: number) =>
@@ -122,9 +123,12 @@ test('Esc closes the panel', async () => {
   expect(calls.closes).toBe(1)
 })
 
-test('the redraw timer runs only while something on the screen moves', async () => {
-  const { panel, timers, advance } = open()
+test('the redraw timer runs only while something on the screen moves, as a settled row’s Undo', async () => {
+  const { panel, timers, advance, source } = open()
   await panel.start()
+  expect(live(timers, 200)).toHaveLength(0)
+  await source.press({ action: 'done', id: 'd14' }, NO_HOLDS)
+  await flush()
   expect(live(timers, 200)).toHaveLength(1)
   advance(SETTLED_MS + 1000)
   live(timers, 200)[0]!.fn()

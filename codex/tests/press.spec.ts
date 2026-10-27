@@ -23,6 +23,7 @@ import {
   listWaits,
   QUEUED_AFTER_MS,
   rowAfterClose,
+  NO_HOLDS,
   rowMark,
   SETTLED_MS,
 } from '../../hooks/view'
@@ -34,10 +35,12 @@ import { endTurn, noteHook, notePrompt, noteToolCall, viewOf } from '../src/core
 import { demoState } from '../src/demo'
 import { EXIT_MS, ROW_STATE_MS, stepRow } from '../src/rows'
 import type { RowState, RowTarget, RowTrack } from '../src/rows'
-import { drawnSettled, SETTLE_WINDOW_MS, settledIds, settledSeen } from '../src/settle'
+import { drawnSettled, SETTLE_WINDOW_MS } from '../src/settle'
 import { emptyState, NOTHING_HEARD } from '../src/state'
 import type { SessionState } from '../src/state'
 import { CODEX } from '../src/texts'
+
+const SHOWN = { ...NO_HOLDS, shownSince: 0 }
 
 function withItems(): SessionState {
   const s = emptyState('s1')
@@ -539,7 +542,7 @@ test('Fix hands a finding off and settles it as the choice made, then lists it i
     },
   ])
   const sent = after(s, { action: 'address', id: 'f3' })
-  const folded = viewOf(sent, 60).findings
+  const folded = viewOf(sent, 60, SHOWN).findings
   assert.deepEqual(
     folded.rows.map(r => [r.id, r.state.is, r.feedback && feedbackText(r.feedback, 'codex')]),
     [['f3', 'settled', null]],
@@ -600,7 +603,7 @@ test('Fix hands a finding off and settles it as the choice made, then lists it i
   assert.equal(discussed.count, 1)
   const closedBy = { ...sent, ledger: recordClose(CODEX, sent.ledger, { id: 'f3', reason: 'fixed' }, 90).ledger }
   assert.deepEqual(
-    viewOf(closedBy, 100).findings.rows.map(r => [r.id, r.state, r.actions]),
+    viewOf(closedBy, 100, SHOWN).findings.rows.map(r => [r.id, r.state, r.actions]),
     [
       [
         'f3',
@@ -627,7 +630,7 @@ test('Fix hands a finding off and settles it as the choice made, then lists it i
 test('Dismiss settles a row in place with Undo, and Undo puts it back open where it was; only a Done or Dismiss undoes', () => {
   const s = withItems()
   const dismissed = after(s, { action: 'dismiss', id: 'i1' })
-  const settled = viewOf(dismissed, 60).needsYou
+  const settled = viewOf(dismissed, 60, SHOWN).needsYou
   assert.deepEqual(
     settled.questions.map(r => [r.id, r.state, r.actions.map(a => a.press)]),
     [
@@ -639,7 +642,7 @@ test('Dismiss settles a row in place with Undo, and Undo puts it back open where
     ],
   )
   assert.equal(settled.count, 1)
-  assert.equal(firstWaiting(listWaits(viewOf(dismissed, 60)).needsYou), 'i2')
+  assert.equal(firstWaiting(listWaits(viewOf(dismissed, 60, SHOWN)).needsYou), 'i2')
   const undone = after(dismissed, { action: 'undo', id: 'i1' })
   const back = viewOf(undone, 70).needsYou
   assert.deepEqual(
@@ -688,24 +691,28 @@ test('Dismiss settles a row in place with Undo, and Undo puts it back open where
   )
 })
 
-test('the tab draws a settled row for SETTLED_MS from its first poll, then lists it in the Closed fold while the server still lists it settled', () => {
+test('the tab draws a settled row while it shows the tab the row closed in, and lists it in the Closed fold once the person switches tab', () => {
   const s = withItems()
   const dismissed = after(s, { action: 'dismiss', id: 'i1' })
-  let seen = settledSeen(new Map(), settledIds(viewOf(dismissed, 2050)), 2050)
-  assert.deepEqual([...drawnSettled(seen, 2050)], ['i1'])
-  const fold = (now: number) =>
-    closedShown(viewOf(dismissed, now).needsYou.closed.questions, drawnSettled(seen, now)).map(d => d.id)
-  assert.deepEqual(fold(2050), [])
-  const later = 2050 + SETTLED_MS + EXIT_MS + 1
-  seen = settledSeen(seen, settledIds(viewOf(dismissed, later)), later)
-  assert.equal(viewOf(dismissed, later).needsYou.questions[0]?.state.is, 'settled')
-  assert.deepEqual(fold(later), ['i1'])
+  const shown = viewOf(dismissed, 2050 + SETTLED_MS + EXIT_MS + 1, { ...NO_HOLDS, shownSince: 40 })
+  assert.equal(shown.needsYou.questions[0]?.state.is, 'settled')
+  const fold = (shownSince: number) =>
+    closedShown(shown.needsYou.closed.questions, drawnSettled(shown, shownSince)).map(d => d.id)
+  assert.deepEqual([...drawnSettled(shown, 40)], ['i1'])
+  assert.deepEqual(fold(40), [])
+  assert.deepEqual(fold(2060), ['i1'])
+  const switched = viewOf(dismissed, 2060, { ...NO_HOLDS, shownSince: 2060 }).needsYou
+  assert.deepEqual(switched.questions, [])
+  assert.deepEqual(
+    switched.closed.questions.map(d => d.id),
+    ['i1'],
+  )
 })
 
 test('a row Codex closes while the person types a reply stays held in place, out of the count and the Closed fold, Discard folds it at once, and its reply sends and settles it as Replied', () => {
   const s = withItems()
   const closed = { ...s, ledger: recordClose(CODEX, s.ledger, { id: 'i1', reason: 'settled in chat' }, 50).ledger }
-  const held = viewOf(closed, 50 + SETTLE_WINDOW_MS + 1, { replies: { i1: 40 }, discarded: {} }).needsYou
+  const held = viewOf(closed, 50 + SETTLE_WINDOW_MS + 1, { ...NO_HOLDS, replies: { i1: 40 } }).needsYou
   assert.deepEqual(
     held.questions.map(r => [r.id, r.state, r.feedback, r.actions.map(a => [a.label, a.kind])]),
     [
@@ -722,12 +729,12 @@ test('a row Codex closes while the person types a reply stays held in place, out
   )
   assert.equal(held.count, 1)
   assert.deepEqual(held.closed.questions, [])
-  assert.equal(firstWaiting(listWaits(viewOf(closed, 60, { replies: { i1: 40 }, discarded: {} })).needsYou), 'i2')
+  assert.equal(firstWaiting(listWaits(viewOf(closed, 60, { ...NO_HOLDS, replies: { i1: 40 } })).needsYou), 'i2')
   assert.deepEqual(
-    viewOf(closed, 50 + SETTLE_WINDOW_MS + 1, { replies: { i1: 51 }, discarded: {} }).needsYou.questions,
+    viewOf(closed, 50 + SETTLE_WINDOW_MS + 1, { ...NO_HOLDS, replies: { i1: 51 } }).needsYou.questions,
     [],
   )
-  const discarded = viewOf(closed, 60, { replies: {}, discarded: { i1: 55 } }).needsYou
+  const discarded = viewOf(closed, 60, { ...NO_HOLDS, discarded: { i1: 55 } }).needsYou
   assert.deepEqual(discarded.questions, [])
   assert.deepEqual(
     discarded.closed.questions.map(d => d.id),
@@ -750,7 +757,8 @@ test('a row Codex closes while the person types a reply stays held in place, out
   assert.deepEqual(r.effects, [{ kind: 'send', text: 'Re "Fix add.js or the test?": Fix add.js after all', by: null }])
   const replied = { ...closed, lastActions: { i1: r.last! } }
   assert.deepEqual(
-    viewOf(replied, 70 + QUEUED_AFTER_MS, { replies: { i1: 40 }, discarded: {} }).needsYou.questions[0]?.state,
+    viewOf(replied, 70 + QUEUED_AFTER_MS, { replies: { i1: 40 }, discarded: {}, shownSince: 40 }).needsYou.questions[0]
+      ?.state,
     {
       is: 'settled',
       label: 'Replied',
@@ -795,20 +803,17 @@ test('a held finding’s reply sends what a reply to the open finding sends, and
   )
   assert.deepEqual(
     viewOf({ ...s, ledger: closed }, 50 + SETTLE_WINDOW_MS + 1, {
+      ...NO_HOLDS,
       replies: { f3: 40 },
-      discarded: {},
     }).findings.rows.map(row => [row.id, row.state.is]),
     [['f3', 'held']],
   )
 
   const dismissed = after({ ...s, ledger: recorded }, { action: 'dismiss', id: 'f3' })
-  assert.deepEqual(
-    viewOf(dismissed, 50 + SETTLE_WINDOW_MS + 1, { replies: { f3: 40 }, discarded: {} }).findings.rows,
-    [],
-  )
+  assert.deepEqual(viewOf(dismissed, 50 + SETTLE_WINDOW_MS + 1, { ...NO_HOLDS, replies: { f3: 40 } }).findings.rows, [])
   const answered = after(s, { action: 'answer', id: 'i1', option: 'Fix add.js' })
   assert.deepEqual(
-    viewOf(answered, 50 + SETTLE_WINDOW_MS + 1, { replies: { i1: 40 }, discarded: {} }).needsYou.questions.map(
+    viewOf(answered, 50 + SETTLE_WINDOW_MS + 1, { ...NO_HOLDS, replies: { i1: 40 } }).needsYou.questions.map(
       row => row.id,
     ),
     [],
@@ -891,7 +896,7 @@ test('the tab moves from an empty Asks to Finds when it opens on a finding or a 
   assert.deepEqual(newRows(next.seen, viewOf(withFinding, 30), false).added, { needsYou: [], findings: [], prs: [] })
   const closed = recordClose(CODEX, withFinding.ledger, { id: 'f1', reason: 'fixed' }, 30)
   const afterClose = { ...withFinding, ledger: closed.ledger }
-  const settled = viewOf(afterClose, 31)
+  const settled = viewOf(afterClose, 31, { ...NO_HOLDS, shownSince: 20 })
   assert.equal(isShownEmpty(settled, 'findings', new Set(['f1']), new Set(), false), false)
   assert.equal(isShownEmpty(settled, 'findings', new Set(), new Set(), false), true)
   const history = viewOf(afterClose, 30_000)
@@ -920,7 +925,7 @@ test('a new PR counts as a new row, moves an empty tab to PRs, and counts nothin
   const withPrs = (refs: string[]) => {
     const v = viewOf(s, 10)
 
-    return { ...v, prs: { ...v.prs, drawn: refs.map(ref => ({ pr: pr(ref), isSettled: false })) } }
+    return { ...v, prs: { ...v.prs, drawn: refs.map(ref => ({ pr: pr(ref), isSettled: false, canUndo: false })) } }
   }
   const first = newRows({}, withPrs([]), false)
   const loading = newRows(first.seen, withPrs(['a/b#1']), true)

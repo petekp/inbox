@@ -54,6 +54,7 @@ import {
   READING_TEXT,
   SETTLED_MS,
   settledIn,
+  isShownSince,
   shortAgo,
   shownOptionDescriptions,
 } from '../../hooks/view'
@@ -67,7 +68,7 @@ import type {
   OverviewRow,
   OverviewTone,
   PressState,
-  ReplyHolds,
+  Holds,
   RowView,
   RowWait,
   ShownTab,
@@ -105,7 +106,7 @@ import type { PressReply } from './server'
 import { ENTER_MS, EXIT_MS, isMoving, MOVE_MS, ROW_STATE_MS, stepRow } from './rows'
 import type { RowState, RowTarget, RowTrack } from './rows'
 import { PRESS_TIMEOUT_MS } from '../../hooks/session'
-import { drawnSettled, POLL_MS, settledIds, settledSeen } from './settle'
+import { drawnSettled, isUndoLeft, POLL_MS, settledIds, settledSeen } from './settle'
 
 type Tone = 'needsYou' | 'issue' | 'findings' | 'done' | 'error'
 
@@ -157,6 +158,14 @@ let stagedHostChanges: HostContext = {}
 let pollFailures = 0
 let readAt = 0
 let tab: ShownTab = 'needsYou'
+/** When this page began showing `tab`. A row that closes since then stays in place until the person switches tab. */
+let shownSince = Date.now()
+
+function switchTab(to: ShownTab) {
+  if (to !== tab) shownSince = Date.now()
+  tab = to
+}
+
 /** The tab drawn: the shown tab when the view's build draws it, else the build's first tab, and Asks while the view has no Overview page, as from an older server. */
 function drawnTab(): ShownTab {
   const drawn = drawnTabOf(tab, view?.isNextBuild === true)
@@ -187,6 +196,8 @@ const notes = new Map<string, { text: string; at: number }>()
 const copies = new Map<string, { name: string; text: string }>()
 let lineNote: { text: string; at: number; isError?: boolean } | null = null
 let seen = new Map<string, number>()
+/** Settled rows that offered Undo. Once Undo ends, its button stays as unseen space, so the title keeps its wrap. */
+let undoOffered = new Set<string>()
 let rowsSeen: SeenRows = {}
 const entering = new Set<string>()
 const undoing = new Set<string>()
@@ -211,6 +222,8 @@ type Kept = {
   optionsShown: string[]
   /** An earlier page kept 'finding' for the one fold the Finds tab had. */
   unfolded: (FoldGroup | 'finding')[]
+  /** Missing on a state an earlier page kept. */
+  shownSince?: number
 }
 type CandidatePage = {
   initialize: () => Promise<boolean>
@@ -290,6 +303,7 @@ function capturedState(): Kept {
     drafts: [...drafts],
     optionsShown: [...optionsShown],
     unfolded: [...unfolded],
+    shownSince,
   }
 }
 
@@ -306,6 +320,8 @@ function restoreState(incoming?: Kept) {
   if (kept?.version !== 1 && kept?.version !== 2) return
   isDemo = kept.isDemo
   if (isShownTab(kept.tab)) tab = kept.tab
+  // A page swap is not a leave, so the rows the old page kept in place stay.
+  if (typeof kept.shownSince === 'number') shownSince = kept.shownSince
   for (const t of ARRIVAL_TABS) {
     const id = kept.selection[t]
     selection[t] = id ? { id, openedAt: 0 } : null
@@ -395,6 +411,8 @@ function applyView(next: View, seq: number) {
   readAt = Date.now()
   const before = seen
   seen = settledSeen(seen, settledIds(next), Date.now())
+  const offered = allRows(next).flatMap(r => (r.state.is === 'settled' && r.state.canUndo ? [r.id] : []))
+  undoOffered = new Set([...undoOffered, ...offered].filter(id => seen.has(id)))
   if ([...seen.keys()].some(id => !before.has(id))) drawIn(SETTLED_MS)
   view = next
   for (const { pr, isSettled } of next.prs.drawn)
@@ -415,10 +433,10 @@ function applyView(next: View, seq: number) {
 function follow(v: View, added: Record<Tab, string[]>) {
   const shownTab = drawnTab()
   if (!isRowTab(shownTab)) return
-  const drawn = shownSettled()
+  const drawn = shownSettled(v)
   const to = followTo(ARRIVAL_TABS, shownTab, isShownEmpty(v, shownTab, drawn, unfolded, v.isFetchingPrs), added)
   if (!to) return
-  tab = to
+  switchTab(to)
   selection[to] = null
 }
 
@@ -706,11 +724,11 @@ function replies(): Record<string, number> {
   return heldReplies(typing, Object.fromEntries(drafts))
 }
 
-function holds(): ReplyHolds {
-  const now = Date.now()
-  for (const [id, at] of discarded) if (now - at >= SETTLED_MS) discarded.delete(id)
+function holds(): Holds {
+  // A discard keeps its row folded for as long as the row could stay in place.
+  for (const [id, at] of discarded) if (!isShownSince(at, shownSince)) discarded.delete(id)
 
-  return { replies: replies(), discarded: Object.fromEntries(discarded) }
+  return { replies: replies(), discarded: Object.fromEntries(discarded), shownSince }
 }
 
 function sendReply(id: string, text: string) {
@@ -929,7 +947,7 @@ function prPlan(v: View): { blocks: PrBlockPlan[]; rows: Row[] } {
   for (const { pr, isSettled } of v.prs.drawn) {
     if (isSettled) {
       const id = prMarkId(pr.ref)
-      if (undoing.has(id) || Date.now() - prSettledStart(v, pr) < SETTLED_MS)
+      if (undoing.has(id) || isShownSince(v.lastActions[id]?.at ?? 0, shownSince))
         blocks.push({ pr, isSettled, threads: [], checks: [] })
     } else
       blocks.push({
@@ -948,7 +966,7 @@ function prRows(v: View): Row[] {
 }
 
 function tabRows(v: View, t: Tab): Row[] {
-  return t === 'prs' ? prRows(v) : listsOf(v, shownSettled()).byTab[t]
+  return t === 'prs' ? prRows(v) : listsOf(v, shownSettled(v)).byTab[t]
 }
 
 type Lists = DrawnLists<Row>
@@ -970,15 +988,15 @@ function listsOf(v: View, drawn: ReadonlySet<string>): Lists {
   )
 }
 
-function shownSettled(): Set<string> {
-  return drawnSettled(seen, Date.now(), undoing)
+function shownSettled(v: View): Set<string> {
+  return drawnSettled(v, shownSince, undoing)
 }
 
 const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as const
 
 function stepLists(v: View): { lists: Lists; changed: Set<string> } {
   const now = Date.now()
-  const lists = listsOf(v, shownSettled())
+  const lists = listsOf(v, shownSettled(v))
   const t = drawnTab()
   const rows = isListedTab(t) ? lists.byTab[t] : []
   const openId = isRowTab(t) ? rows[selectedIndex(rows, t, v)]?.id : undefined
@@ -1231,6 +1249,7 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
   if (state.is !== 'settled') return null
   const start = seen.get(r.id) ?? Date.now()
   const isUndoing = undoing.has(r.id)
+  const isUndoShown = state.canUndo && (isUndoing || isUndoLeft(start, Date.now()))
   const error = errors.get(r.id)
 
   return (
@@ -1251,7 +1270,7 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
               </span>
             ) : null}
           </div>
-          {state.canUndo ? (
+          {isUndoShown ? (
             <button
               type="button"
               class={isUndoing ? 'key undo undoing' : 'key undo'}
@@ -1270,6 +1289,8 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
               <Icon name="undo" />
               Undo
             </button>
+          ) : undoOffered.has(r.id) ? (
+            <UndoSpace />
           ) : null}
         </div>
         {panel ? <Panel row={panel} isClosing /> : null}
@@ -1681,26 +1702,40 @@ function SettledPr({ v, pr }: { v: View; pr: PrView }) {
             <span class="outcome-label">{`${DOT}${PR_DISMISSED_LABEL}`}</span>
             {error ? <span class="tone-error">{`${DOT}${error}`}</span> : null}
           </div>
-          <button
-            type="button"
-            class={isUndoing ? 'key undo undoing' : 'key undo'}
-            disabled={isUndoing}
-            onClick={() => void undoPr(id, pr.ref)}
-          >
-            <span
-              key={start}
-              class={isUndoing ? 'time-left paused' : 'time-left'}
-              style={{ animationDuration: `${SETTLED_MS}ms` }}
-              ref={el => {
-                if (el && !el.style.animationDelay) el.style.animationDelay = `-${Math.max(0, Date.now() - start)}ms`
-              }}
-            />
-            <Icon name="undo" />
-            Undo
-          </button>
+          {isUndoing || isUndoLeft(start, Date.now()) ? (
+            <button
+              type="button"
+              class={isUndoing ? 'key undo undoing' : 'key undo'}
+              disabled={isUndoing}
+              onClick={() => void undoPr(id, pr.ref)}
+            >
+              <span
+                key={start}
+                class={isUndoing ? 'time-left paused' : 'time-left'}
+                style={{ animationDuration: `${SETTLED_MS}ms` }}
+                ref={el => {
+                  if (el && !el.style.animationDelay) el.style.animationDelay = `-${Math.max(0, Date.now() - start)}ms`
+                }}
+              />
+              <Icon name="undo" />
+              Undo
+            </button>
+          ) : (
+            <UndoSpace />
+          )}
         </div>
       </div>
     </div>
+  )
+}
+
+/** Undo's width, unseen, after Undo ends. */
+function UndoSpace() {
+  return (
+    <button type="button" class="key undo spent" disabled tabIndex={-1} aria-hidden="true">
+      <Icon name="undo" />
+      Undo
+    </button>
   )
 }
 
@@ -1877,7 +1912,7 @@ function TabBar({ v }: { v: View }) {
             class={`tab ${shown === t.id ? 'shown' : ''}`}
             title={t.label}
             onClick={() => {
-              tab = t.id
+              switchTab(t.id)
               draw()
             }}
           >
@@ -1921,6 +1956,8 @@ function TabBar({ v }: { v: View }) {
 async function toggleDemo() {
   viewGeneration++
   isDemo = !isDemo
+  // A new showing. The server makes the sample at its first read after this, so the row it closes as it starts stays.
+  shownSince = Date.now()
   readError = null
   pollFailures = 0
   view = null
@@ -2256,7 +2293,7 @@ document.addEventListener(
     }
     const switched = shownTabs(view.isNextBuild === true).find(t => t.hotkey === e.key)
     if (switched) {
-      tab = switched.id
+      switchTab(switched.id)
       draw()
       return
     }

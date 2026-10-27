@@ -6,7 +6,7 @@ import { isAbsolute } from 'node:path'
 
 import { ghFinder, ghIn } from '../../hooks/gh'
 import type { Run } from '../../hooks/gh'
-import { isDismissing, keepsView } from '../../hooks/pr-tab'
+import { isDismissed, keepsView } from '../../hooks/pr-tab'
 import type { PrPress } from '../../hooks/pr-tab'
 import { demoAfterPress, demoTurns, noteText, openTarget } from '../../hooks/presses'
 import type { PathProbe, RowPress } from '../../hooks/presses'
@@ -22,7 +22,7 @@ import type { SendOutcome } from '../../hooks/session'
 import { fetchPrs, prFetchTracker, press, wakeForDone as wakeSessionForDone } from '../../hooks/session-host'
 import type { SessionHost } from '../../hooks/session-host'
 import { NO_HOLDS, SETTLED_MS, drawnTabOf, isShownTab } from '../../hooks/view'
-import type { ReplyHolds, ShownTab } from '../../hooks/view'
+import type { Holds, ShownTab } from '../../hooks/view'
 import { SETTLE_WINDOW_MS } from './settle'
 import { pruneSessions, readState, updateState } from './state'
 import { reconcileUpdateStatus } from './update'
@@ -54,14 +54,9 @@ const TAB_MIME = 'text/html;profile=mcp-app'
 
 const APP_ONLY = { ui: { visibility: ['app'] } }
 
-function viewsStillShown(
-  prs: PrViews,
-  linked: string[],
-  lastActions: Record<string, LastAction>,
-  at: number,
-): PrViews['views'] {
+function viewsStillShown(prs: PrViews, linked: string[], lastActions: Record<string, LastAction>): PrViews['views'] {
   return Object.fromEntries(
-    Object.entries(prs.views).filter(([ref]) => keepsView(prs, linked, ref) || isDismissing(lastActions, ref, at)),
+    Object.entries(prs.views).filter(([ref]) => keepsView(prs, linked, ref) || isDismissed(lastActions, ref)),
   )
 }
 
@@ -81,6 +76,7 @@ const TOOLS = [
         tab: { type: 'string' },
         replies: { type: 'object' },
         discarded: { type: 'object' },
+        shownSince: { type: 'number' },
       },
     },
     _meta: {
@@ -99,6 +95,7 @@ const TOOLS = [
         demo: { type: 'boolean' },
         replies: { type: 'object' },
         discarded: { type: 'object' },
+        shownSince: { type: 'number' },
       },
       required: ['press'],
     },
@@ -112,8 +109,11 @@ const TOOLS = [
   },
 ]
 
-/** The tab's replies in progress and discarded holds, each a time by row id. Anything else in the arguments is dropped. */
-function holdsOf(args: Record<string, unknown>): ReplyHolds {
+/**
+ * The tab's replies in progress and discarded holds, each a time by row id, and when the tab began showing its tab.
+ * Anything else in the arguments is dropped.
+ */
+function holdsOf(args: Record<string, unknown>): Holds {
   const times = (raw: unknown): Record<string, number> =>
     typeof raw !== 'object' || raw === null
       ? {}
@@ -121,7 +121,9 @@ function holdsOf(args: Record<string, unknown>): ReplyHolds {
           Object.entries(raw).filter((e): e is [string, number] => typeof e[1] === 'number' && Number.isFinite(e[1])),
         )
 
-  return { replies: times(args.replies), discarded: times(args.discarded) }
+  const shownSince = typeof args.shownSince === 'number' && Number.isFinite(args.shownSince) ? args.shownSince : null
+
+  return { replies: times(args.replies), discarded: times(args.discarded), shownSince }
 }
 
 /** The tab the page says it shows, or null for anything that is not a tab. */
@@ -337,12 +339,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     void prFetches.fetchWhenDue(id, s, () => fetchPrs(hostFor(id), true))
   }
 
-  const served = async (
-    s: SessionState,
-    id: string,
-    isDemo = false,
-    holds: ReplyHolds = NO_HOLDS,
-  ): Promise<TabView> => {
+  const served = async (s: SessionState, id: string, isDemo = false, holds: Holds = NO_HOLDS): Promise<TabView> => {
     const loadError = deps.loadError?.()
     const current = !isDemo && s.presence.isUpdating ? await reconcileUpdateStatus(dir, id) : s
     const view = viewOf(current, now(), holds)
@@ -375,7 +372,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     if (dialogs.length > 0) await updateState(dir, id, x => noteDialogs(x, dialogs))
   }
 
-  async function onPress(id: string, p: RowPress | PrPress, thread: unknown, holds: ReplyHolds): Promise<PressReply> {
+  async function onPress(id: string, p: RowPress | PrPress, thread: unknown, holds: Holds): Promise<PressReply> {
     await syncTurn(id).catch(() => undefined)
     if (!('ref' in p) && (p.action === 'answer' || p.action === 'type'))
       await linkRunningDialogs(id, p.id).catch(() => undefined)
@@ -407,12 +404,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     return s
   }
 
-  async function onDemoPress(
-    id: string,
-    p: RowPress | PrPress,
-    thread: unknown,
-    holds: ReplyHolds,
-  ): Promise<PressReply> {
+  async function onDemoPress(id: string, p: RowPress | PrPress, thread: unknown, holds: Holds): Promise<PressReply> {
     const s = demoOf(id)
     const r =
       thread === id
@@ -483,7 +475,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
             heldRows: Object.keys(holds.replies),
             tabSeenAt: now(),
             shownTab,
-            prViews: { ...s.prViews, views: viewsStillShown(s.prViews, s.ledger.prs, s.lastActions, now()) },
+            prViews: { ...s.prViews, views: viewsStillShown(s.prViews, s.ledger.prs, s.lastActions) },
           }
         })
         fetchPrsWhenDue(id, s)

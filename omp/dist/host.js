@@ -2530,7 +2530,13 @@ function pendingDeliveryAt(last, now) {
     return "unconfirmed";
   return isQueuedAt(last, now) ? "queued" : null;
 }
-var NO_HOLDS = { replies: {}, discarded: {} };
+var NO_HOLDS = { replies: {}, discarded: {}, shownSince: null };
+function isShownSince(at, shownSince) {
+  return shownSince !== null && at >= shownSince;
+}
+function isDrawnInPlace(row, shownSince) {
+  return row.state.is !== "settled" || isShownSince(row.state.at, shownSince);
+}
 function heldReplies(typing, drafts) {
   return Object.fromEntries(Object.entries(drafts).flatMap(([id, d]) => id === typing || d.text.trim() !== "" ? [[id, d.since]] : []));
 }
@@ -3127,14 +3133,16 @@ function inboxView({
   status,
   now,
   replies,
-  discarded
+  discarded,
+  shownSince
 }) {
-  const isSettling = (at) => now - at < settleWindowMs;
+  const isInPlace = (at) => isShownSince(at, shownSince);
+  const isUndoLeft = (at) => now - at < settleWindowMs;
   const isOpen = (id) => ledger.items.some((i) => i.id === id) || ledger.findings.some((f) => f.id === id);
   const closedAt = (c) => ("closedAt" in c) ? c.closedAt : c.at;
   const replyAfter = (c) => {
     const last = lastActions[c.id];
-    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isSettling(last.at) ? last : null;
+    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(last.at) ? last : null;
   };
   const isOwnClose = (c) => c.how === "done" || c.how === "dismissed" || c.how === "answered" && lastActions[c.id]?.kind === "mark" && lastActions[c.id]?.at === closedAt(c);
   const isHeld = (c) => {
@@ -3142,11 +3150,11 @@ function inboxView({
     return since !== undefined && since <= closedAt(c) && !isOwnClose(c);
   };
   const isDiscarded = (c) => (discarded[c.id] ?? -Infinity) >= closedAt(c);
-  const isPlaced = (c) => replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isSettling(closedAt(c)));
+  const isPlaced = (c) => replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(closedAt(c)));
   const placedItems = new Map(ledger.closed.filter((d) => d.item && !isOpen(d.id) && isPlaced(d)).map((d) => [d.id, d]));
   const isFixSettled = (id) => {
     const last = lastActions[id];
-    return isFixSent(last) && !isSettling(last.at);
+    return isFixSent(last) && !isInPlace(last.at);
   };
   const placedFindings = new Map(ledger.closedFindings.filter((f) => !isOpen(f.id) && !isFixSettled(f.id) && isPlaced(f)).map((f) => [f.id, f]));
   const placed = [...placedFindings.keys()].reduce(reopenFinding, [...placedItems.keys()].reduce(reopenItem, ledger));
@@ -3173,7 +3181,7 @@ function inboxView({
         is: "settled",
         label: outcomeLabel(closed),
         at,
-        canUndo: isUndoable(closed),
+        canUndo: isUndoable(closed) && isUndoLeft(at),
         isLapsed: isLapsed(closed),
         delivery: "doneNotification" in closed && closed.doneNotification?.error !== undefined ? { error: closed.doneNotification.error, canUndo: isUndoable(closed) } : (closed.how === "answered" || closed.how === "done") && last?.kind === "mark" && last.at === at ? pendingDeliveryAt(last, now) : null
       };
@@ -3185,7 +3193,7 @@ function inboxView({
         is: "settled",
         label: fixLabel(sent),
         at: last.at,
-        canUndo: true,
+        canUndo: isUndoLeft(last.at),
         delivery: pendingDeliveryAt(last, now),
         isLapsed: false
       };
@@ -3570,12 +3578,18 @@ function isTracked(prState, linked, ref) {
 function keepsView(prState, linked, ref) {
   return isTracked(prState, linked, ref) || linked.includes(ref) && isLeftOut(prState, ref);
 }
-function isDismissing(lastActions, ref, now) {
-  const mark = lastActions[prMarkId(ref)];
-  return mark?.action === "pr-dismiss" && now - mark.at < SETTLED_MS;
+function isDismissed(lastActions, ref) {
+  return lastActions[prMarkId(ref)]?.action === "pr-dismiss";
 }
-function drawnPrs(prState, linked, lastActions, now) {
-  return inPrOrder(Object.values(prState.views)).flatMap((pr) => isTracked(prState, linked, pr.ref) ? [{ pr, isSettled: false }] : isDismissing(lastActions, pr.ref, now) ? [{ pr, isSettled: true }] : []);
+function drawnPrs(prState, linked, lastActions, now, shownSince) {
+  return inPrOrder(Object.values(prState.views)).flatMap((pr) => {
+    if (isTracked(prState, linked, pr.ref))
+      return [{ pr, isSettled: false, canUndo: false }];
+    const mark = lastActions[prMarkId(pr.ref)];
+    if (mark?.action !== "pr-dismiss" || !isShownSince(mark.at, shownSince))
+      return [];
+    return [{ pr, isSettled: true, canUndo: now - mark.at < SETTLED_MS }];
+  });
 }
 var PR_TONES = {
   ready: "done",
@@ -4375,9 +4389,9 @@ function recorded(host, s, tool, args, now) {
   const r = (tool === "close" ? recordClose : recordItem)(host, s.ledger, args, now);
   return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result };
 }
-function withFetchedPrs(s, fetched, branchRef, at) {
+function withFetchedPrs(s, fetched, branchRef) {
   const merged = { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false };
-  const views = Object.fromEntries(Object.entries(merged.views).filter(([ref]) => keepsView(merged, s.ledger.prs, ref) || isDismissing(s.lastActions, ref, at)));
+  const views = Object.fromEntries(Object.entries(merged.views).filter(([ref]) => keepsView(merged, s.ledger.prs, ref) || isDismissed(s.lastActions, ref)));
   return { ...s, prViews: { ...merged, views } };
 }
 function withoutStaleResult(last, now) {
@@ -4412,12 +4426,12 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now),
+    prs: prTabOf(s, lastActions, now, holds.shownSince),
     overviewPage: overviewPage(s, now)
   };
 }
-function prTabOf(s, lastActions, now) {
-  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now);
+function prTabOf(s, lastActions, now, shownSince) {
+  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, shownSince);
   const isSent = threadSentIn(lastActions);
   return {
     drawn,
@@ -4831,7 +4845,7 @@ async function fetchPrs(host, findsBranchPr) {
       fetch = await fetchWith(refound);
   }
   const { views: fetched, branchRef } = fetch;
-  await host.update(async (cur) => withFetchedPrs(cur, fetched, branchRef, await host.now()));
+  await host.update((cur) => withFetchedPrs(cur, fetched, branchRef));
 }
 
 // ../hooks/tones.ts
@@ -4933,10 +4947,11 @@ var INITIAL_UI = {
   unfolded: [],
   resuming: null,
   opened: null,
-  pageTop: 0
+  pageTop: 0,
+  shownSince: 0
 };
 function holdsOf(ui) {
-  return { replies: heldReplies(ui.typing, ui.drafts), discarded: ui.discarded };
+  return { replies: heldReplies(ui.typing, ui.drafts), discarded: ui.discarded, shownSince: ui.shownSince };
 }
 var AGENT = "omp";
 var REPLY_KEY = "r";
@@ -5129,12 +5144,12 @@ function rowEntries(screen, ui, tab) {
   const groups = tab === "needsYou" ? NEEDS_YOU_GROUPS.map((g) => ({
     kind: g.kind,
     title: g.title,
-    rows: view.needsYou[g.list],
+    rows: view.needsYou[g.list].filter((r) => isDrawnInPlace(r, ui.shownSince)),
     closed: view.needsYou.closed[g.list].map((d) => ({ ...d, title: d.ask }))
   })) : Object.keys(FINDING_GROUPS).map((kind) => ({
     kind,
     title: FINDING_GROUPS[kind].title,
-    rows: view.findings.rows.filter((r) => r.finding?.kind === kind),
+    rows: view.findings.rows.filter((r) => r.finding?.kind === kind && isDrawnInPlace(r, ui.shownSince)),
     closed: view.findings.closed.filter((f) => f.kind === kind).map((f) => ({ ...f, at: f.closedAt }))
   }));
   const stops = tab === "needsYou" ? stopEntries(screen, ui) : [];
@@ -5147,7 +5162,7 @@ function rowEntries(screen, ui, tab) {
   }
   return [...stops, ...groups.flatMap((g) => groupEntries(g, ui.unfolded))];
 }
-function prEntries(screen, now) {
+function prEntries(screen, ui, now) {
   const { prs, lastActions, turns } = screen.view;
   const isSent = threadSentIn(lastActions);
   const presses = { lastActions, turns, now };
@@ -5164,10 +5179,12 @@ function prEntries(screen, now) {
   }
   if (screen.isGhMissing)
     out.push({ kind: "note", text: GH_MISSING_TEXT });
-  for (const { pr, isSettled } of prs.drawn) {
+  for (const { pr, isSettled, canUndo } of prs.drawn) {
     const markId = prMarkId(pr.ref);
     const lead = { text: `#${pr.number}`, tone: "prs" };
     if (isSettled) {
+      if (!isShownSince(lastActions[markId]?.at ?? 0, ui.shownSince))
+        continue;
       out.push({
         kind: "row",
         line: {
@@ -5175,7 +5192,11 @@ function prEntries(screen, now) {
           lead,
           title: pr.title,
           isDim: true,
-          settled: { label: PR_DISMISSED_LABEL, tone: "done", undo: { action: "pr-undo", ref: pr.ref } }
+          settled: {
+            label: PR_DISMISSED_LABEL,
+            tone: "done",
+            undo: canUndo ? { action: "pr-undo", ref: pr.ref } : null
+          }
         }
       });
       continue;
@@ -5272,7 +5293,7 @@ function pageEntries(page) {
 function entriesOf(screen, ui, tab, now) {
   if (!isRowTab(tab))
     return pageEntries(screen.view.overviewPage);
-  return tab === "prs" ? prEntries(screen, now) : rowEntries(screen, ui, tab);
+  return tab === "prs" ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab);
 }
 var linesOf = (entries) => entries.flatMap((e) => e.kind === "row" ? [e.line] : []);
 var waitsOf = (lines) => lines.map((l) => ({ id: l.id, isWaiting: isSelectable(l) && l.isWaiting }));
@@ -5294,7 +5315,12 @@ var focusOf = (line, ui) => ui.focus?.rowId === line.id ? Math.min(ui.focus.inde
 function withSelection(ui, id) {
   return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null };
 }
-var withTab = (ui, tab) => ({ ...withSelection(ui, null), tab, pageTop: 0 });
+var withTab = (ui, tab, now) => ({
+  ...withSelection(ui, null),
+  tab,
+  pageTop: 0,
+  shownSince: now
+});
 function isLineWaiting(screen, ui, id, now) {
   return waitsOf(linesOf(entriesOf(screen, ui, ui.tab, now))).some((w) => w.id === id && w.isWaiting);
 }
@@ -5325,7 +5351,7 @@ function activate(screen, ui, line, button, now) {
   }
   if (!("ref" in press) && press.action === "discard") {
     const { [line.id]: _discarded, ...drafts } = ui.drafts;
-    const recent = Object.entries(ui.discarded).filter(([, at]) => now - at < SETTLED_MS);
+    const recent = Object.entries(ui.discarded).filter(([, at]) => isShownSince(at, ui.shownSince));
     return { ui: { ...ui, focus: null, drafts, discarded: { ...Object.fromEntries(recent), [line.id]: now } } };
   }
   return { ui: { ...ui, focus: null }, press };
@@ -5370,10 +5396,10 @@ function handleKey(screen, ui, key, now, text) {
   const pickedTab = shown.find((t) => t.hotkey === key);
   if (key === "tab" || key === "shift+tab") {
     const step = key === "tab" ? 1 : -1;
-    return { ui: withTab(base, tabs[wrapIndex(tabs.indexOf(base.tab) + step, tabs.length)]) };
+    return { ui: withTab(base, tabs[wrapIndex(tabs.indexOf(base.tab) + step, tabs.length)], now) };
   }
   if (pickedTab)
-    return { ui: withTab(base, pickedTab.id) };
+    return { ui: withTab(base, pickedTab.id, now) };
   if (key === "u") {
     const undoable = lines.filter((l) => l.settled?.undo).at(-1);
     const press = undoable?.settled?.undo;
@@ -5424,7 +5450,7 @@ function followRows(screen, ui, seen, isOpening, now) {
     return { ui, seen: recorded.seen };
   const to = followTo(ARRIVAL_TABS, tab, isShownEmpty(screen, ui, tab), isOpening ? open : recorded.added);
   if (to)
-    return { ui: withTab(ui, to), seen: recorded.seen };
+    return { ui: withTab(ui, to, now), seen: recorded.seen };
   const arrived = recorded.added[tab];
   if (ui.selectedId !== null || arrived.length === 0)
     return { ui, seen: recorded.seen };
@@ -5436,7 +5462,7 @@ function isAnimating(screen, ui, now) {
   const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows];
   const isPressMoving = Object.values(view.lastActions).some((l) => l.result !== undefined && (l.result.state === "pending" || now - l.result.at < SETTLED_MS) || l.delivery?.state === "queued" && now - l.at < QUEUED_AFTER_MS);
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS;
-  return rows.some((r) => r.state.is === "settled") || view.prs.drawn.some((p) => p.isSettled) || isPressMoving || isNoticeShown;
+  return rows.some((r) => r.state.is === "settled" && r.state.canUndo) || view.prs.drawn.some((p) => p.canUndo) || isPressMoving || isNoticeShown;
 }
 function isRunningMarkShown(screen, ui) {
   return !isRowTab(ui.tab) && hasRunningMark(screen.view.overviewPage);
@@ -5740,7 +5766,7 @@ var ANIMATION_MS = 200;
 var PRS_CHECK_MS = 120000;
 function createPanel(deps) {
   const { source, style, timers } = deps;
-  let ui = INITIAL_UI;
+  let ui = { ...INITIAL_UI, shownSince: deps.openedAt };
   let screen = null;
   let animation = null;
   let frames = null;
@@ -7154,6 +7180,7 @@ function createInbox(pi, deps = defaultDeps) {
     }, { placement: "aboveEditor" });
   }
   async function openPanelUi(ctx, isDemo) {
+    const openedAt = deps.now();
     const { parseKey, extractPrintableText, truncateToWidth } = await import("@oh-my-pi/pi-tui");
     const source = isDemo ? demoSource({
       now: deps.now,
@@ -7171,6 +7198,7 @@ function createInbox(pi, deps = defaultDeps) {
           source,
           style: styleOf(theme),
           now: deps.now,
+          openedAt,
           requestRender: () => tui.requestRender(),
           close: () => done(null),
           timers: { every: (fn, ms) => ctx.setInterval(fn, ms), stop: (handle) => ctx.clearTimer(handle) },

@@ -43,8 +43,14 @@ A closed item or finding that stays in place while the person replies to it.
 A row is held when its reply field is open or its draft holds unsent words,
 and the reply began before the close. It shows why it closed, does not count
 toward Asks, and offers Reply and Discard. After its reply sends, it
-shows its settled form, then folds into the Closed fold. After Discard, it
-folds at once.
+becomes a settled row. After Discard, it folds at once.
+
+**Settled row**:
+A row drawn in place with its result after the person pressed it or the agent
+closed it, such as "Done" or "Closed by Claude: fixed". It stays until the
+person switches tab or closes the inbox, then folds into the Closed fold or
+leaves the list. It offers Undo, where its press allows one, for `SETTLED_MS`
+after the close.
 
 **Finding**:
 An issue or opportunity the agent noticed outside the current task.

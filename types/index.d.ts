@@ -492,6 +492,11 @@ declare module 'claude-code' {
       drafts: Record<string, Draft>
       /** When the person discarded each held row's reply, by the row's id, so the row folds without settling. */
       discarded: Record<string, number>
+      /**
+       * The tab the pane shows, whether it shows the sample, and since when. Rows that close since then stay in place.
+       * Null while the pane is closed.
+       */
+      shown: { tab: Tab | PageTab; isDemo: boolean; since: number } | null
       /** Each row's latest note, by the row's id. */
       notes: Record<string, RowNote>
       /** The Asks groups and the kinds of finding whose closed items show. Each starts folded. */
