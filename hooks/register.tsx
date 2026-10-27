@@ -296,6 +296,7 @@ import type {
   TabNaming,
 } from './view'
 import { agentTools, recordClose, recordItem } from './tools'
+import type { ToolAnswer } from './tools'
 import type { UndoProps } from './undo-client'
 import {
   ARRIVAL_TABS,
@@ -1294,7 +1295,7 @@ async function runTool(
   toolUseId: string | undefined,
 ): Promise<string> {
   const now = await $.clock.now()
-  let answer: { result: string; personLine: string | null } = { result: '', personLine: null }
+  let answer: Omit<ToolAnswer, 'ledger'> = { result: '', personLine: null }
   await commit($, currentOwner(), s => {
     const r = recorded(CLAUDE_CODE, s, tool, input, now)
     answer = r

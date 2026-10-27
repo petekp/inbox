@@ -63,6 +63,7 @@ import {
 } from '../../hooks/session-host'
 import type { PressOutcome, SessionHost, UpdateHost } from '../../hooks/session-host'
 import { agentTools } from '../../hooks/tools'
+import type { ToolAnswer } from '../../hooks/tools'
 import { DARK_TONES, LIGHT_TONES } from '../../hooks/tones'
 import { clip } from '../../hooks/text'
 import { NEXT_BUILD_MARK, NO_HOLDS, RESUME_TEXT, SETTLED_MS, inboxCommandText, screenTabOf } from '../../hooks/view'
@@ -911,7 +912,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       approval: 'read',
       execute: async (_toolCallId, args, _signal, _onUpdate, ctx) => {
         if (isUnattended(ctx)) return { content: [{ type: 'text', text: 'The inbox is not shown in this session.' }] }
-        let answer: { result: string; personLine: string | null } = { result: '', personLine: null }
+        let answer: Omit<ToolAnswer, 'ledger'> = { result: '', personLine: null }
         await change(sessionIdOf(ctx), s => {
           const r = recorded(OMP, s, name, args as Record<string, unknown>, deps.now())
           answer = r

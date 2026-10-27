@@ -215,16 +215,19 @@ export function recordClose(host: Host, ledger: Ledger, input: Record<string, un
   const reason = cut(input.reason, 80)
   if (id === '' || (answer === '' && reason === ''))
     return unchanged(ledger, "Not closed: give the id, and the user's answer or a reason.")
-  const openText = ledger.items.find(i => i.id === id)?.ask ?? ledger.findings.find(f => f.id === id)?.title
-  const personLine = openText === undefined ? null : `Closed: ${openText}`
   const r = closeByAgent(host, ledger, id, answer ? { answer } : { reason }, now)
-  if (r.closed === 'item')
+  if (r.closed && 'item' in r.closed)
     return {
       ledger: r.ledger,
       result: `Closed. The user sees it in ${host.surface} with its outcome. ${NAME_BY_CONTENT}`,
-      personLine,
+      personLine: `Closed: ${r.closed.item.ask}`,
     }
-  if (r.closed === 'finding') return { ledger: r.ledger, result: `Closed the finding. ${NAME_BY_CONTENT}`, personLine }
+  if (r.closed)
+    return {
+      ledger: r.ledger,
+      result: `Closed the finding. ${NAME_BY_CONTENT}`,
+      personLine: `Closed: ${r.closed.finding.title}`,
+    }
   const earlier = [...ledger.closed, ...ledger.closedFindings].findLast(c => c.id === id)
   if (earlier) return unchanged(ledger, `Already closed: ${closedHow(earlier)}.`)
 

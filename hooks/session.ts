@@ -38,6 +38,7 @@ import {
 import type { PressTexts, RowPress } from './presses'
 import { prNeedsYou, prRefs } from './prs'
 import { recordClose, recordItem } from './tools'
+import type { ToolAnswer } from './tools'
 import { upgradeHostTasks } from './host-tasks'
 import { applyOverview, lookEnded, lookStarted } from './overview'
 import type { OverviewAnswer } from './overview'
@@ -689,7 +690,7 @@ export function recorded<S extends Session>(
   tool: 'record' | 'close',
   args: Record<string, unknown>,
   now: number,
-): { state: S; result: string; personLine: string | null } {
+): { state: S } & Omit<ToolAnswer, 'ledger'> {
   const r = (tool === 'close' ? recordClose : recordItem)(host, s.ledger, args, now)
 
   return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result, personLine: r.personLine }
