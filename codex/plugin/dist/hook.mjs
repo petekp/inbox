@@ -387,6 +387,9 @@ function closedState(d) {
   const isOvertaken = OVERTAKEN.test(d.outcome);
   return (d.how === "claude" || d.how === "update") && isOvertaken ? "lapsed" : "handled";
 }
+function closedAt(c) {
+  return "closedAt" in c ? c.closedAt : c.at;
+}
 function isLapsed(d) {
   return closedState(d) !== "handled";
 }
@@ -1440,7 +1443,6 @@ function inboxView({
 }) {
   const isInPlace = (at) => isShownSince(at, shownSince);
   const isOpen2 = (id) => ledger.items.some((i) => i.id === id) || ledger.findings.some((f) => f.id === id);
-  const closedAt = (c) => "closedAt" in c ? c.closedAt : c.at;
   const replyAfter = (c) => {
     const last = lastActions[c.id];
     return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(last.at) ? last : null;
@@ -1911,8 +1913,7 @@ function isUnseen(s) {
 function pruned(s) {
   const inPlace = [
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
-    ...s.ledger.closed,
-    ...s.ledger.closedFindings.map((f) => ({ id: f.id, at: f.closedAt }))
+    ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
   ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
   const isLeftBehind = (ref) => isDismissed(s.lastActions, ref) && !isViewKept(s.prViews, s.ledger.prs, s.lastActions, ref, s.shownSince);
   const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => !isLeftBehind(ref)));

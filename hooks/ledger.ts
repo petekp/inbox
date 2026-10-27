@@ -918,6 +918,11 @@ export function closedState(d: Pick<Closed, 'how' | 'outcome'>): ClosedState {
   return (d.how === 'claude' || d.how === 'update') && isOvertaken ? 'lapsed' : 'handled'
 }
 
+/** When a closed item or finding closed. */
+export function closedAt(c: Closed | ClosedFinding): number {
+  return 'closedAt' in c ? c.closedAt : c.at
+}
+
 export function isLapsed(d: Pick<Closed, 'how' | 'outcome'>): boolean {
   return closedState(d) !== 'handled'
 }

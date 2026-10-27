@@ -18,7 +18,7 @@ import type {
   Tab,
   Turns,
 } from '../types'
-import { isLapsed, reopenFinding, reopenItem } from './ledger'
+import { closedAt, isLapsed, reopenFinding, reopenItem } from './ledger'
 import { isChildRunning, isOpen } from './overview'
 import { ago, clipLabel } from './text'
 import { questionNumbers } from './model-text'
@@ -1386,7 +1386,6 @@ export function inboxView({
 }: ViewInput): InboxView {
   const isInPlace = (at: number) => isShownSince(at, shownSince)
   const isOpen = (id: string) => ledger.items.some(i => i.id === id) || ledger.findings.some(f => f.id === id)
-  const closedAt = (c: Closed | ClosedFinding) => ('closedAt' in c ? c.closedAt : c.at)
   const replyAfter = (c: Closed | ClosedFinding) => {
     const last = lastActions[c.id]
 

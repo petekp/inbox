@@ -2,6 +2,7 @@ import { linkDialogs } from './dialogs'
 import {
   applyExchangeUpdate,
   applyUpdate,
+  closedAt,
   EMPTY,
   isBlankLedger,
   KEPT_SESSIONS,
@@ -702,8 +703,7 @@ export function recorded<S extends Session>(
 export function pruned<S extends Session>(s: S): S {
   const inPlace = [
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
-    ...s.ledger.closed,
-    ...s.ledger.closedFindings.map(f => ({ id: f.id, at: f.closedAt })),
+    ...[...s.ledger.closed, ...s.ledger.closedFindings].map(c => ({ id: c.id, at: closedAt(c) })),
   ].flatMap(x => (isShownSince(x.at, s.shownSince) ? [x.id] : []))
   const isLeftBehind = (ref: string) =>
     isDismissed(s.lastActions, ref) && !isViewKept(s.prViews, s.ledger.prs, s.lastActions, ref, s.shownSince)
