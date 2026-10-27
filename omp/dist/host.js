@@ -2858,6 +2858,7 @@ var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 var WORKING_TEXT = "Working\u2026";
 var LOOK_TEXT = "you looked";
 var NEWS_DOT = "\u2022";
+var OVERVIEW_TEXT_LINES = 3;
 var CHILD_ROWS = 3;
 var QUIET_MS = 15 * 60000;
 var NEW_CLOSED_ROWS = 2;
@@ -2894,11 +2895,20 @@ function liveOf(presence, now) {
   }
   return lastReplyAt === null ? null : `Idle \xB7 last reply ${ago(now - lastReplyAt)}`;
 }
-function childRow(c, now, isLoose) {
+function childRow(c, now, branch) {
   const idle = c.lastActivityAt === null ? null : now - c.lastActivityAt;
   const isQuiet = idle !== null && idle >= QUIET_MS;
   const age = shortAgo(idle ?? now - c.startedAt);
-  return { kind: "child", id: c.id, name: c.name, age: isQuiet ? `quiet ${age}` : age, isQuiet, isLoose };
+  return {
+    kind: "child",
+    id: c.id,
+    name: c.name,
+    age: isQuiet ? `quiet ${age}` : age,
+    isQuiet,
+    isLoose: branch === null,
+    branch,
+    maxLines: OVERVIEW_TEXT_LINES
+  };
 }
 function overviewPage(s, now) {
   const o = s.ledger.overview;
@@ -2913,7 +2923,7 @@ function overviewPage(s, now) {
   const folded = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const shownIds = new Set(shown.map((x) => x.id));
-  const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, now, true));
+  const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, now, null));
   const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT, age: shortAgo(now - look) };
   let isLookDrawn = false;
   for (const [i, x] of shown.entries()) {
@@ -2924,19 +2934,28 @@ function overviewPage(s, now) {
       isLookDrawn = true;
     }
     const under = running.filter((c) => c.subjectId === x.id);
+    const shownUnder = under.slice(0, CHILD_ROWS);
+    const isMore = under.length > CHILD_ROWS;
     rows.push({
       kind: "subject",
       id: x.id,
       ...SUBJECT_MARKS[x.status],
       isRunning: x.status === "working" && (s.presence.isTurnRunning || under.length > 0),
       name: x.name,
-      text: isNew(x) ? x.text || null : null,
+      text: isNew(x) || isOpen(x) ? x.text || null : null,
       was: isNew(x) ? x.was : null,
-      age: shortAgo(now - x.changedAt)
+      age: shortAgo(now - x.changedAt),
+      maxLines: OVERVIEW_TEXT_LINES,
+      hasChildren: under.length > 0
     });
-    rows.push(...under.slice(0, CHILD_ROWS).map((c) => childRow(c, now, false)));
-    if (under.length > CHILD_ROWS)
-      rows.push({ kind: "more", id: `${x.id}-more`, text: `+ ${under.length - CHILD_ROWS} more running` });
+    rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
+    if (isMore)
+      rows.push({
+        kind: "more",
+        id: `${x.id}-more`,
+        text: `+ ${under.length - CHILD_ROWS} more running`,
+        branch: "last"
+      });
   }
   if (lookRow && !isLookDrawn && shown.length > 0)
     rows.push(lookRow);
@@ -5264,6 +5283,11 @@ function pressFeedback(screen, id, now, isMarkDone = false) {
 var doneAt = (f) => f?.source?.is === "done" ? f.source.at : null;
 var PAGE_MARK_AT = 3;
 var PAGE_TEXT_AT = PAGE_MARK_AT + 2;
+var PAGE_CHILD_AT = PAGE_MARK_AT + 3;
+var TREE_ARMS = {
+  mid: { first: "\u251C\u2500", rest: "\u2502" },
+  last: { first: "\u2514\u2500", rest: " " }
+};
 function pageEntries(page) {
   if (page.isEmpty)
     return [
@@ -5574,17 +5598,34 @@ function drawLine(line, isSelected, d) {
     out.push(...indented(statusUnder.text, indent, width, 4, feedbackPaint(statusUnder.tone, s)));
   return out;
 }
-function pageLine(d, indent, mark, text, age, { plainCells = 0, agePaint = d.style.dim } = {}) {
+function pageLine(d, indent, mark, text, age, {
+  plainCells = 0,
+  agePaint = d.style.dim,
+  maxLines = Infinity
+} = {}) {
   const { width, style: s } = d;
   const textAt = indent + 2;
   const side = age ? cellWidth(age) + 1 : 0;
-  const [first = "", ...rest] = wrapText(text, Math.max(10, width - textAt - side - 1));
-  const firstPainted = cutToCells(first, plainCells) + s.dim(first.slice(cutToCells(first, plainCells).length));
-  const gap = Math.max(1, width - 1 - textAt - cellWidth(first) - (age ? cellWidth(age) : 0));
+  const room = Math.max(10, width - textAt - side - 1);
+  const wrapped = wrapText(text, room);
+  const lines = wrapped.slice(0, maxLines);
+  if (wrapped.length > lines.length)
+    lines[lines.length - 1] = `${cutToCells(lines.at(-1), room - 1).replace(/[\s.,;:]+$/, "")}\u2026`;
+  let plainLeft = plainCells;
+  const painted = lines.map((l) => {
+    const plain = cutToCells(l, Math.max(0, plainLeft));
+    plainLeft -= cellWidth(l) + 1;
+    return plain + s.dim(l.slice(plain.length));
+  });
+  const gap = Math.max(1, width - 1 - textAt - cellWidth(lines[0] ?? "") - (age ? cellWidth(age) : 0));
   return [
-    `${" ".repeat(indent)}${mark} ${firstPainted}${age ? " ".repeat(gap) + agePaint(age) : ""}`,
-    ...rest.map((l) => " ".repeat(textAt) + s.dim(l))
+    `${" ".repeat(indent)}${mark} ${painted[0] ?? ""}${age ? " ".repeat(gap) + agePaint(age) : ""}`,
+    ...painted.slice(1).map((l) => " ".repeat(textAt) + l)
   ];
+}
+function withTree(lines, first, rest, s) {
+  const drawn = (line, glyph) => glyph.trim() === "" ? line : line.slice(0, PAGE_MARK_AT) + s.dim(glyph) + line.slice(PAGE_MARK_AT + glyph.length);
+  return lines.map((l, n) => n === 0 ? first ? drawn(l, first) : l : drawn(l, rest));
 }
 function drawPageRow(row, d) {
   const { width, now, style: s } = d;
@@ -5592,21 +5633,27 @@ function drawPageRow(row, d) {
     const glyph = row.isRunning ? runningMark(now) : row.mark;
     const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph);
     const text = row.text ? `${row.name}: ${row.text}` : row.name;
-    const out = pageLine(d, PAGE_MARK_AT, mark, text, row.age, { plainCells: cellWidth(row.name) });
+    const out = pageLine(d, PAGE_MARK_AT, mark, text, row.age, {
+      plainCells: cellWidth(row.name),
+      maxLines: row.maxLines
+    });
     if (row.was)
-      out.push(...indented(`was: ${row.was}`, PAGE_TEXT_AT, width, 2, s.dim));
-    return out;
+      out.push(...indented(`was: ${row.was}`, PAGE_TEXT_AT, width, row.maxLines, s.dim));
+    return row.hasChildren ? withTree(out, null, "\u2502", s) : out;
   }
   if (row.kind === "child") {
-    const indent = row.isLoose ? PAGE_MARK_AT : PAGE_TEXT_AT;
     const mark = s.dim(row.isQuiet ? "\u25CF" : runningMark(now));
-    const room = Math.max(6, width - indent - 2 - cellWidth(row.age) - 2);
-    const name = cellWidth(row.name) > room ? `${cutToCells(row.name, room - 1)}\u2026` : row.name;
     const agePaint = row.isQuiet ? (t) => s.tone("needsYou", t) : s.dim;
-    return pageLine(d, indent, mark, name, row.age, { agePaint });
+    const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, row.age, {
+      agePaint,
+      maxLines: row.maxLines
+    });
+    return row.branch ? withTree(out, TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s) : out;
   }
-  if (row.kind === "more")
-    return [" ".repeat(PAGE_TEXT_AT + 2) + s.dim(row.text)];
+  if (row.kind === "more") {
+    const arm = TREE_ARMS[row.branch];
+    return withTree([" ".repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s);
+  }
   if (row.kind === "look") {
     const label = `\u2500\u2500 ${row.text} `;
     const fill = "\u2500".repeat(Math.max(2, width - 1 - PAGE_TEXT_AT - cellWidth(label) - cellWidth(row.age) - 1));
@@ -5954,10 +6001,20 @@ function demoView(now, agent) {
             startedAt: now - 50 * MIN,
             endedAt: null,
             lastActivityAt: now - 40 * MIN
+          },
+          {
+            id: "c3",
+            ref: "demo-tuning",
+            kind: "delegate",
+            name: "Tune how hard a pinch must be",
+            subjectId: "s1",
+            startedAt: now - 9 * MIN,
+            endedAt: null,
+            lastActivityAt: null
           }
         ],
         nextId: 8,
-        nextChildId: 3,
+        nextChildId: 4,
         lastLookAt: now - 30 * MIN,
         look: null
       },
