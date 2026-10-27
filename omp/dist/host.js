@@ -2907,9 +2907,11 @@ function overviewPage(s, now) {
   const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, now, true));
   const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT, age: shortAgo(now - look) };
   let isLookDrawn = false;
-  for (const x of shown) {
+  for (const [i, x] of shown.entries()) {
     if (lookRow && !isLookDrawn && !isNew(x)) {
-      rows.push(lookRow);
+      const hasNewAbove = i > 0;
+      if (hasNewAbove)
+        rows.push(lookRow);
       isLookDrawn = true;
     }
     const under = running.filter((c) => c.subjectId === x.id);
