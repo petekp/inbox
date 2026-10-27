@@ -6,7 +6,7 @@ import { isAbsolute } from 'node:path'
 
 import { ghFinder, ghIn } from '../../hooks/gh'
 import type { Run } from '../../hooks/gh'
-import { isDismissed, keepsView } from '../../hooks/pr-tab'
+import { isViewKept } from '../../hooks/pr-tab'
 import type { PrPress } from '../../hooks/pr-tab'
 import { demoAfterPress, demoTurns, noteText, openTarget } from '../../hooks/presses'
 import type { PathProbe, RowPress } from '../../hooks/presses'
@@ -54,9 +54,14 @@ const TAB_MIME = 'text/html;profile=mcp-app'
 
 const APP_ONLY = { ui: { visibility: ['app'] } }
 
-function viewsStillShown(prs: PrViews, linked: string[], lastActions: Record<string, LastAction>): PrViews['views'] {
+function viewsStillShown(
+  prs: PrViews,
+  linked: string[],
+  lastActions: Record<string, LastAction>,
+  shownSince: number | null,
+): PrViews['views'] {
   return Object.fromEntries(
-    Object.entries(prs.views).filter(([ref]) => keepsView(prs, linked, ref) || isDismissed(lastActions, ref)),
+    Object.entries(prs.views).filter(([ref]) => isViewKept(prs, linked, lastActions, ref, shownSince)),
   )
 }
 
@@ -500,9 +505,13 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
           return {
             ...lookOnView(s, shownTab, now()),
             heldRows: Object.keys(holds.replies),
+            shownSince: holds.shownSince,
             tabSeenAt: now(),
             shownTab,
-            prViews: { ...s.prViews, views: viewsStillShown(s.prViews, s.ledger.prs, s.lastActions) },
+            prViews: {
+              ...s.prViews,
+              views: viewsStillShown(s.prViews, s.ledger.prs, s.lastActions, holds.shownSince),
+            },
           }
         })
         fetchPrsWhenDue(id, s)

@@ -730,7 +730,7 @@ test('opening the panel finds gh missing when no gh starts', async () => {
   const inbox = createInbox(pi(), deps())
   for (const gh of ['gh', '/opt/homebrew/bin/gh', '/usr/local/bin/gh']) execResults.set(gh, new Error('spawn failed'))
   await record({ kind: 'task', ask: 'Try the CLI by hand' })
-  await inbox.openPanel(makeCtx())
+  await inbox.openPanel(makeCtx(), clock)
   await settle()
   expect((await inbox.screen(makeCtx())).isGhMissing).toBe(true)
 })
@@ -739,7 +739,7 @@ test('opening the panel finds gh and fetches PRs again only after the refresh in
   const inbox = createInbox(pi(), deps())
   await record({ kind: 'task', ask: 'Try the CLI by hand' })
   const ghCalls = (sub: string) => execCalls.filter(c => c.args[0] === sub).length
-  await inbox.openPanel(makeCtx())
+  await inbox.openPanel(makeCtx(), clock)
   await settle()
   expect(ghCalls('--version')).toBe(1)
   expect(ghCalls('pr')).toBe(1)
@@ -760,7 +760,7 @@ test('the panel being open is told to the agent beside the prompt', async () => 
   const inbox = createInbox(pi(), deps())
   await prompt('hello')
   await record({ kind: 'task', ask: 'Try the CLI by hand' })
-  await inbox.openPanel(makeCtx())
+  await inbox.openPanel(makeCtx(), clock)
   await settle()
   const open = await prompt('next')
   inbox.closePanel(makeCtx())
@@ -1098,7 +1098,7 @@ test('a resume keeps its own ledger even when the event names another session fi
   await record({ kind: 'task', ask: 'Try the CLI by hand' }, makeCtx('parent'))
   await call('session_switch', { ...forkOf('parent'), reason: 'resume' }, makeCtx('other'))
   await settle()
-  expect(existsSync(join(dir, 'sessions', 'other.json'))).toBe(false)
+  expect(state('other').ledger.items).toEqual([])
 })
 
 test('a failed catch-up is tried again at the next agent end, before the exchange', async () => {
@@ -1182,7 +1182,7 @@ test('a look starts when the panel shows the Overview and ends on another tab or
   const saved = state()
   const overview = { ...EMPTY_OVERVIEW, goal: 'Ship it' }
   writeFileSync(join(dir, 'sessions', 's1.json'), JSON.stringify({ ...saved, ledger: { ...saved.ledger, overview } }))
-  await inbox.openPanel(makeCtx())
+  await inbox.openPanel(makeCtx(), clock)
   inbox.showTab(makeCtx(), 'overview')
   await settle()
   expect(state().ledger.overview.look).not.toBeNull()

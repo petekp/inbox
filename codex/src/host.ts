@@ -2,7 +2,7 @@ import { statePath, readState, tryWithLock, updateState } from './state'
 import type { SessionState } from './state'
 import { viewOf } from './core'
 import type { Run } from '../../hooks/gh'
-import { HERDR_TIMEOUT_MS, herdrReporter, herdrReportKey, herdrTokens } from '../../hooks/herdr'
+import { herdrReporter, herdrReportKey, herdrTokens } from '../../hooks/herdr'
 import type { SessionHost } from '../../hooks/session-host'
 
 /** Runs after each write to the session's file, with the state written. */
@@ -45,10 +45,7 @@ export function herdrOnWrite(env: NodeJS.ProcessEnv, run: Run, dir: string, now:
     const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, seq), [])
     const key = herdrReportKey(pane, tokens)
     if (key === s.herdrReport?.key) return
-    await report(
-      args => run(args, { cwd: dir, timeoutMs: HERDR_TIMEOUT_MS }),
-      async () => ({ pane, tokens, seq }),
-    )
+    await report(run, async () => ({ pane, tokens, seq }))
     await updateState(dir, s.sessionId, saved =>
       saved.herdrReport && saved.herdrReport.seq >= seq ? saved : { ...saved, herdrReport: { key, seq } },
     )
