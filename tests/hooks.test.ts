@@ -2538,7 +2538,7 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   expect(sent.at(-1)).toContain('The test check failed on PR #12')
   await clock.settle()
   expect(await pane.find({ key: 'fix-acme/greet#12-test-key' })).toBeUndefined()
-  expect(await pane.find({ text: /^ ·\s✓\sAsked\sto\sfix/ })).toBeDefined()
+  expect(await pane.find({ text: /^ ·\s✓\sAsked\sto\sfix$/ })).toBeDefined()
   await pane.press({ key: 'title-acme/greet#12 check test' })
   await clock.advance(PRESS_GUARD_MS)
   expect((await pane.find({ key: 'fix-acme/greet#12-test-key' }))?.props.label).toMatch(/Fix again$/)

@@ -536,6 +536,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
     for (const c of checks) {
       const id = prCheckId(pr, c)
       const text = checkRowText(c)
+      const feedback = pressFeedback(screen, id, now, text.mark.isDone)
       out.push({
         kind: 'row',
         line: {
@@ -544,7 +545,8 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
           lead: markLead(text.mark),
           title: text.lead ? `${text.lead} / ${text.title}` : text.title,
           detail: text.meta,
-          feedback: pressFeedback(screen, id, now, text.mark.isDone),
+          age: feedback?.source?.is === 'done' ? feedback.source.at : null,
+          feedback,
           buttons: prButtons(checkActions(pr, c, presses)),
           isWaiting: isWaiting(id),
         },

@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import {
   GH_MISSING_TEXT,
   checkActions,
+  checkRowId,
   prBlockActions,
   prMarkId,
   prsEmptyHint,
@@ -428,6 +429,19 @@ test('a local press reads its pending and failed results on the PR block', () =>
     },
   })
   expect(text(failed, ui)).toContain(`Could not open PR #${block.number}: no browser`)
+})
+
+test('a failing check whose Fix was pressed says the agent was asked to fix it, and when', () => {
+  const screen = screenOf()
+  const { pr } = screen.view.prs.drawn[0]!
+  const check = failingChecks(pr)[0]!
+  const fixed = withLast(screen, checkRowId(pr.ref, check.name), {
+    kind: 'handoff',
+    action: 'check-fix',
+    text: 'Fix',
+    at: NOW - 14 * 60_000,
+  })
+  expect(text(fixed, { ...INITIAL_UI, tab: 'prs' })).toMatch(new RegExp(`${check.name}\\s+✓ Asked to fix\\s+14m ago`))
 })
 
 test('a failed send shows why and offers Try again first', () => {
