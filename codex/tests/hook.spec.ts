@@ -303,23 +303,48 @@ test('a patch notes each edited file, resolved against the folder it ran in', as
   assert.deepEqual(s.turn.activity, ['edited /work/new/b.txt'])
 })
 
-test('a subagent runs as a child from SubagentStart to SubagentStop, its tool calls move its activity, and a start that is not a compact ends it', async () => {
+test('a session takes its folder from the rollout, and the branch that folder is on at its start and at each turn’s end', async () => {
+  const dir = tempDir()
+  const folder = tempDir()
+  const transcript = join(tempDir(), 'rollout.jsonl')
+  writeFileSync(transcript, `${JSON.stringify({ type: 'session_meta', payload: { cwd: folder } })}\n`)
+  let branch = 'main'
+  const deps = hookDeps(dir)
+  deps.run = async (args, { cwd }) =>
+    args.join(' ') === 'git branch --show-current' && cwd === folder
+      ? { code: 0, stdout: `${branch}\n`, stderr: '' }
+      : { code: 1, stdout: '', stderr: 'not a repository' }
+  const place = async () => (await readState(dir, 's1')).place
+
+  await handleHook(input('SessionStart', { cwd: folder, source: 'startup', transcript_path: transcript }), deps)
+  assert.deepEqual(await place(), { folder, branch: 'main' })
+  branch = 'fix-login'
+  await handleHook(input('UserPromptSubmit', { prompt: 'Switch', turn_id: 't1', transcript_path: transcript }), deps)
+  await handleHook(input('Stop', { turn_id: 't1', cwd: folder, transcript_path: transcript }), deps)
+  assert.deepEqual(await place(), { folder, branch: 'fix-login' })
+})
+
+test('a subagent runs as a child from SubagentStart to SubagentStop, its tool calls move its activity at most each 30 seconds, and a start that is not a compact ends it', async () => {
   const dir = tempDir()
   let clock = 1000
   const deps = hookDeps(dir, () => clock)
   const children = async () =>
     ((await readState(dir, 's1')).ledger.overview?.children ?? []).map(c => [c.name, c.endedAt, c.lastActivityAt])
   const sub = { agent_id: 'sub1', agent_type: 'explorer' }
+  const read = { ...sub, tool_name: 'Read', tool_input: {} }
 
   await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
   await handleHook(input('SubagentStart', sub), deps)
   assert.deepEqual(await children(), [['explorer', null, 1000]])
   clock = 5000
-  await handleHook(input('PreToolUse', { ...sub, tool_name: 'Bash', tool_input: { command: 'ls' } }), deps)
-  assert.deepEqual(await children(), [['explorer', null, 5000]])
-  clock = 9000
+  await handleHook(input('PreToolUse', read), deps)
+  assert.deepEqual(await children(), [['explorer', null, 1000]])
+  clock = 31_000
+  await handleHook(input('PreToolUse', read), deps)
+  assert.deepEqual(await children(), [['explorer', null, 31_000]])
+  clock = 39_000
   await handleHook(input('SubagentStop', sub), deps)
-  assert.deepEqual(await children(), [['explorer', 9000, 5000]])
+  assert.deepEqual(await children(), [['explorer', 39_000, 31_000]])
 
   await handleHook(input('SubagentStart', { ...sub, agent_id: 'sub2' }), deps)
   await handleHook(input('SessionStart', { cwd: '/repo', source: 'compact' }), deps)

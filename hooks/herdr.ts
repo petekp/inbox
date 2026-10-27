@@ -1,4 +1,6 @@
-import type { Dialog, Ledger, Stop, Tab } from '../types'
+import type { Dialog, Ledger, Overview, Stop, Tab } from '../types'
+import { hasRunningDelegate } from './children'
+import type { Run } from './gh'
 import type { SessionView } from './session'
 import { isWaitingRow, ROW_TABS } from './view'
 
@@ -29,13 +31,25 @@ export const CLEARED_TOKENS: HerdrTokens = Object.fromEntries(
 export const HERDR_TIMEOUT_MS = 5000
 
 /** Lists the agents of the Herdr session the host runs in, as JSON. */
-export const HERDR_AGENT_LIST = ['herdr', 'agent', 'list']
+const HERDR_AGENT_LIST = ['herdr', 'agent', 'list']
 
 /** Herdr states in which an agent still runs. `unknown` does not show that its turn ended. */
 const HERDR_RUNNING = new Set(['working', 'unknown'])
 
+/**
+ * The delegates Herdr shows running, asked only while `o` holds a running one. Null when none runs, or Herdr gave no
+ * answer. Herdr finds its session from the pane's environment, not the folder, so the command runs in `/`, which
+ * always exists.
+ */
+export async function delegatesInHerdr(o: Overview | null, run: Run): Promise<Set<string> | null> {
+  if (!hasRunningDelegate(o)) return null
+  const r = await run(HERDR_AGENT_LIST, { cwd: '/', timeoutMs: HERDR_TIMEOUT_MS })
+
+  return r.code === 0 ? herdrRunning(r.stdout) : null
+}
+
 /** The names of the agents `herdr agent list` shows running. Null when its output cannot be read. */
-export function herdrRunning(stdout: string): Set<string> | null {
+function herdrRunning(stdout: string): Set<string> | null {
   try {
     const agents: unknown = JSON.parse(stdout)?.result?.agents
     if (!Array.isArray(agents)) return null
