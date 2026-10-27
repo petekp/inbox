@@ -709,7 +709,7 @@ test('a failed catch-up leaves the ledger behind, and the next Stop catches up a
   assert.deepEqual(caught.pending, [])
 })
 
-test('turns that ended without a Stop are caught up at the next hook, a prompt recorded for one of them does not join the next turn’s, and a clear start covers them instead', async () => {
+test('turns that ended without a Stop are caught up at the next hook, also in a session saved before the covered turn existed or whose covered turn the rollout lacks; a prompt recorded for one of them does not join the next turn’s; and a clear start covers them instead', async () => {
   const dir = tempDir()
   const deps = execDeps(dir)
   const rows = readFileSync(ROLLOUT_FIXTURE, 'utf8').split('\n')
@@ -772,6 +772,24 @@ test('turns that ended without a Stop are caught up at the next hook, a prompt r
   assert.equal(cleared.presence.ledgerState, 'current')
   assert.equal(cleared.coveredTurn, fourth)
   assert.equal(deps.updates.length, updates)
+
+  rolloutThrough(38)
+  await updateState(dir, 's2', s => ({
+    ...s,
+    heard: { ...s.heard, startAt: 1, promptAt: 2, prompts: 1, promptTurns: [first], stopAt: 3, stops: 1 },
+  }))
+  const { coveredTurn: _covered, ...savedBefore } = JSON.parse(readFileSync(statePath(dir, 's2'), 'utf8'))
+  writeFileSync(statePath(dir, 's2'), JSON.stringify(savedBefore))
+  await updateState(dir, 's3', s => ({ ...s, heard: { ...s.heard, startAt: 1 }, coveredTurn: 'gone' }))
+  for (const id of ['s2', 's3']) {
+    await handleHook(
+      input('UserPromptSubmit', { session_id: id, turn_id: fourth, prompt: 'Go', transcript_path: path }),
+      deps,
+    )
+    const caughtUp = await readState(dir, id)
+    assert.equal(caughtUp.presence.ledgerState, 'behind', id)
+    assert.equal(caughtUp.coveredTurn, third, id)
+  }
 })
 
 test('a new session, a compaction start, a subagent and a session with recorded turns are not marked behind', async () => {

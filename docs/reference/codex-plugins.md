@@ -2009,8 +2009,9 @@ repo, and a probe client speaking app-server JSON-RPC over stdio.
   turn as `interrupted` and no Stop hook started [live 0.163.0]. Stop runs
   only when the turn's sampling loop ends with no follow-up
   (core/src/session/turn.rs:718-725); an abort returns first [source 0.163.0].
-  The inbox then keeps the interrupted prompt in `turn.person` and joins it
-  with the next prompt, so that exchange is summarized with the next one.
+  The next hook finds the turn ended in the rollout after `coveredTurn`, so
+  the inbox drops the interrupted prompt and catches up over the whole
+  conversation (`withMissedTurns`).
 - A steer arrives as more input in the running turn, so Stop runs once at the
   end [source 0.163.0].
 
@@ -2158,9 +2159,10 @@ This changes what the inbox's users must do after every update.
   for the chat's folder or else the home folder, at most every 30 s and without blocking a view, and the tab's line under its
   tab bar says "Codex is not running the inbox's hooks…" (`untrusted`) or "Codex
   stopped the inbox's hooks when the inbox updated…" (`modified`). It keeps the "not heard"
-  text when the call fails or the hooks read trusted. Checked on 0.164.0 in a
-  scratch home, in both themes, in a local page that hosts the built tab
-  (`codex/src/hook-trust.ts`).
+  text when the call fails or the hooks read trusted (`codex/src/hook-trust.ts`).
+  Checked live in the ChatGPT app's Codex 0.164.0 on 2026-10-27: after a
+  reinstall made the hooks `modified`, a chat with rows showed the line, the
+  hook icon's Review hooks dialog offered Allow all, and the line left after it.
 - The app-server starts in the home folder. The MCP server's own folder is the
   plugin's version folder under `plugins/cache`, which an update deletes
   while the server runs, and a process started there fails with `ENOENT`.
@@ -2212,8 +2214,8 @@ defaults."
 - #56044 lets Stop and Interrupt hooks of plugins found through V2 capability
   discovery run for remote executors. It adds no event.
 - `Interrupt` already exists. Stop does not run when a turn is interrupted
-  (see 0.163.0 above). An Interrupt hook could tell the inbox to keep the
-  interrupted prompt. Not built.
+  (see 0.163.0 above). An Interrupt hook could save the interrupted turn as
+  `coveredTurn`, so the next hook would not catch it up. Not built.
 - Nothing adopted.
 
 **MCP (#55263, #54656, #54686)**
