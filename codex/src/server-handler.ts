@@ -10,6 +10,7 @@ import { devBuild } from './data-dir'
 import TAB_HTML from './tab.html'
 import { run } from './run'
 import { listHooksTrust } from './hook-trust'
+import { COMPARE_PAGE_FILE } from '../../hooks/presses'
 import { NEXT_BUILD_MARK } from '../../hooks/view'
 
 function devPageIn(dir: string): () => Promise<string | null> {
@@ -54,6 +55,7 @@ export function createHandler(
     loadError,
     isPluginFolderGone,
     isNextBuild: existsSync(join(dirname(dirname(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK)),
+    comparePage: join(dirname(fileURLToPath(import.meta.url)), COMPARE_PAGE_FILE),
     openCatchUp: startUpdate && {
       codexHome: process.env.CODEX_HOME || join(homedir(), '.codex'),
       startUpdate,

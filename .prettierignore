@@ -17,3 +17,7 @@ omp/dist/
 
 # Written by evals/harness.ts with --set-baseline
 evals/baselines.json
+
+# Ends in an open <plaintext> element that holds the JSON an agent appends.
+# Prettier would close it, and the appended data would land after </html>.
+hooks/compare-page.html

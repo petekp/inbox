@@ -17,6 +17,7 @@ import { noteDialog } from '../../hooks/dialogs'
 import { ghFinder, ghIn } from '../../hooks/gh'
 import { CLEARED_TOKENS, HERDR_TIMEOUT_MS, herdrReporter, herdrTokens } from '../../hooks/herdr'
 import type { Run } from '../../hooks/gh'
+import { COMPARE_PAGE_FILE } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
 import {
   endTurn,
@@ -85,6 +86,8 @@ export type HostDeps = {
   home: string
   /** Whether the installed extension's folder holds `NEXT_BUILD_MARK`. */
   isNextBuild: boolean
+  /** The page template for a comparison, beside the extension's bundle. */
+  comparePage: string
   complete: Complete
   /** Copies text to the clipboard. Returns why it could not, or null. */
   copy: (text: string) => Promise<string | null>
@@ -166,6 +169,7 @@ const defaultDeps: HostDeps = {
   settleWindowMs: SETTLED_MS,
   home: homedir(),
   isNextBuild: existsSync(join(dirname(dirname(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK)),
+  comparePage: join(dirname(fileURLToPath(import.meta.url)), COMPARE_PAGE_FILE),
   complete: defaultComplete,
   copy: copyToClipboard,
   background: work => void work.catch(() => undefined),
@@ -522,6 +526,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       },
       settleWindowMs: deps.settleWindowMs,
       newId: deps.newId,
+      comparePage: deps.comparePage,
     }
   }
 
@@ -936,6 +941,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
           after: (fn, ms) => void ctx.setTimeout(fn, ms),
           settleWindowMs: deps.settleWindowMs,
           isNextBuild: deps.isNextBuild,
+          comparePage: deps.comparePage,
         })
       : liveSource(ctx)
     hideBand(ctx)
@@ -975,7 +981,12 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       const isDemo = args.trim() === 'demo'
       if (ctx.mode === 'tui') return openPanelUi(ctx, isDemo)
       const screen = isDemo
-        ? await demoSource({ now: deps.now, after: () => {}, settleWindowMs: deps.settleWindowMs }).screen(NO_HOLDS)
+        ? await demoSource({
+            now: deps.now,
+            after: () => {},
+            settleWindowMs: deps.settleWindowMs,
+            comparePage: deps.comparePage,
+          }).screen(NO_HOLDS)
         : await inbox.screen(ctx)
       const { needsYou, findings } = screen.view
       ctx.ui.notify(`Asks ${needsYou.count}, Finds ${findings.count}`, 'info')

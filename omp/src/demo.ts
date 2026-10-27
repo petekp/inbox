@@ -16,6 +16,7 @@ export function demoSource(deps: {
   after(fn: () => void, ms: number): void
   settleWindowMs: number
   isNextBuild?: boolean
+  comparePage: string
 }): PanelSource {
   let state = demoState(deps.now())
   const listeners = new Set<() => void>()
@@ -33,7 +34,7 @@ export function demoSource(deps: {
     }),
     press: async (p, holds) => {
       const at = deps.now()
-      const r = pressOn(state, p, at, { settleWindowMs: deps.settleWindowMs, holds })
+      const r = pressOn(state, p, at, { settleWindowMs: deps.settleWindowMs, holds }, { comparePage: deps.comparePage })
       if ('stale' in r) return { error: null, note: 'stale', isUnconfirmed: false }
       const after = demoAfterPress(
         { lastActions: state.lastActions, turns: state.presence },
