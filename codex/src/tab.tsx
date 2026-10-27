@@ -1399,9 +1399,10 @@ function OverviewTab({ page }: { page: OverviewPage }) {
       {page.rows.length > 0 ? (
         <section>
           <div class="list">
-            {page.rows.map(r => (
-              <OverviewLine key={r.id} row={r} />
-            ))}
+            {page.rows.flatMap(r => [
+              ...(r.isRuledAbove ? [<div key={`rule-${r.id}`} class="overview-rule" />] : []),
+              <OverviewLine key={r.id} row={r} />,
+            ])}
           </div>
         </section>
       ) : null}

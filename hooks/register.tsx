@@ -5380,6 +5380,21 @@ export const register: Register = on => {
         </Box>
       )
     }
+    /** The rule above an Overview row that starts an item. It starts at the text column, as the rules between sections and between Asks rows do. */
+    const overviewRule = (id: string) =>
+      look === 'desktop' ? (
+        <Box
+          key={`overview-rule-${id}`}
+          marginLeft={FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS}
+          height={DESKTOP_HAIR_LINES}
+          backgroundColor={pal.divider}
+        />
+      ) : (
+        <Box key={`overview-rule-${id}`} flexDirection="row">
+          <Box width={markColumns.textAt} flexShrink={0} />
+          {rule(markColumns.textAt + 2)}
+        </Box>
+      )
     /** One line of the Overview's list: a mark, its text, and an age in the side column. `depth` 1 sits under a subject's text. */
     const overviewLine = ({
       key,
@@ -5519,7 +5534,17 @@ export const register: Register = on => {
               </Box>,
             ]
           : []),
-        ...(page.rows.length > 0 ? [section(page.rows.map(overviewRow))] : []),
+        ...(page.rows.length > 0
+          ? [
+              section(
+                page.rows.flatMap(r => {
+                  const isRuleDrawn = r.isRuledAbove && !isInline
+
+                  return isRuleDrawn ? [overviewRule(r.id), overviewRow(r)] : [overviewRow(r)]
+                }),
+              ),
+            ]
+          : []),
       ])
     }
 
