@@ -176,9 +176,9 @@ export type Changed = { before: Session; after: Session; isDrawn: boolean }
 /**
  * Changes the session of `owner`. While its conversation is drawn, the change runs on the drawn session and is
  * written only if no other write landed meanwhile; otherwise it runs again on what landed. Once the conversation
- * moved on, the change goes to its saved session. Every write prunes the closed lists, keeping `held` rows and the
- * rows a press settled less than SETTLED_MS ago, which are still drawn. A write that changes more than the running
- * turn saves.
+ * moved on, the change goes to its saved session. A change that returns the session it was given writes nothing.
+ * Every write prunes the closed lists, keeping `held` rows and the rows a press settled less than SETTLED_MS ago, which
+ * are still drawn. A write that changes more than the running turn saves.
  */
 export async function changeSession(
   $: EngineInterface,
@@ -193,6 +193,7 @@ export async function changeSession(
     const upgraded = upgradeSession(drawn)
     const before = { ...upgraded, prViews: { ...upgraded.prViews, isFetching: drawn.prViews.isFetching } }
     const changed = await change(before)
+    if (changed === before) return { before, after: before, isDrawn: true }
     // A resume drops the running turn, so a write that changes only the turn, such as each tool call's activity,
     // leaves the saved copy alone.
     const isTurnOnly = (Object.keys(changed) as (keyof Session)[]).every(k => k === 'turn' || changed[k] === before[k])
@@ -231,6 +232,7 @@ async function changeSaved(
     if (!saved?.session) return { before: emptySession(), after: emptySession(), isDrawn: false }
     const before = upgradeSession(saved.session)
     const after = await change(before)
+    if (after === before) return { before, after, isDrawn: false }
     await $.store.set(sessionKey(id), { savedAt: saved.session.savedAt, ...after })
 
     return { before, after, isDrawn: false }
