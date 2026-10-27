@@ -2,13 +2,11 @@ import { forkedFrom, hasLedger, isUnseen, NO_TURN } from '../../hooks/session'
 import { heardState, isTurnHeard } from './core'
 import { readState } from './state'
 import type { SessionState } from './state'
-import { forkedFromId } from './transcript'
 import type { RolloutReads, TurnRow } from './transcript'
 
 export type EarlierHistory = {
   /** The data folder, where a forked chat's parent keeps its state. */
   dir: string
-  rolloutPath: string
   /** This hook's reads of the rollout. */
   reads: RolloutReads
   /** The folder the rollout's paths are shown relative to. */
@@ -22,8 +20,8 @@ export type EarlierHistory = {
 }
 
 /** A forked chat takes the parent's ledger when the parent has one. */
-async function withForkedLedger(s: SessionState, { dir, rolloutPath }: EarlierHistory): Promise<SessionState> {
-  const parentId = await forkedFromId(rolloutPath)
+async function withForkedLedger(s: SessionState, { dir, reads }: EarlierHistory): Promise<SessionState> {
+  const parentId = await reads.forkedFromId()
   const parent = parentId === null ? null : await readState(dir, parentId).catch(() => null)
 
   return parent !== null && hasLedger(parent) ? forkedFrom(s, parent) : s
