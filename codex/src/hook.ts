@@ -34,7 +34,6 @@ import type { OnWrite } from './host'
 import type { SessionState } from './state'
 import { CODEX } from './texts'
 import { rolloutMeta, rolloutReads, rolloutTail, turnOf } from './transcript'
-import type { RolloutReads } from './transcript'
 
 export type HookInput = {
   hook_event_name: string
@@ -77,33 +76,38 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
     rolloutPath !== null && s.transcriptPath !== rolloutPath ? { ...s, transcriptPath: rolloutPath } : s
   const withHost = (s: SessionState): SessionState => withRollout(withCli(s))
   let isMarkedBehind = false
-  let reads: RolloutReads | null = null
-  /** A compaction start runs in the middle of a turn, so it marks nothing behind. */
-  const withHistory = async (s: SessionState): Promise<SessionState> => {
-    if (rolloutPath === null) return s
-    reads ??= rolloutReads(rolloutPath)
-    const history = {
-      dir,
-      rolloutPath,
-      reads,
-      cwd: input.cwd ?? s.root,
-      currentTurnId: input.turn_id,
-      canMarkBehind: input.source !== 'compact',
-      isCleared: input.source === 'clear',
-    }
-    const r = heardState(s.heard) === 'none' ? await withEarlierHistory(s, history) : await withMissedTurns(s, history)
-    isMarkedBehind = r.isBehind
-
-    return r.state
-  }
   /**
-   * Makes the reads of the rollout that `withHistory` needs before the state lock, so the check under the lock reads
-   * more only when another hook changed the state in between. `tail` is the end of the rollout this hook read already.
+   * Makes the reads of the rollout that the history check needs before the state lock, by checking the state
+   * `readBefore` gives. It returns the check to run under the lock, which reuses those reads, so it reads more only when
+   * another hook changed the state in between. `tail` is the end of the rollout this hook read already. A compaction
+   * start runs in the middle of a turn, so it marks nothing behind.
    */
-  const readHistoryAhead = async (tail?: string[]) => {
-    if (rolloutPath === null) return
-    reads = rolloutReads(rolloutPath, tail)
-    await withHistory(await read())
+  const readHistoryAhead = async (
+    readBefore: () => Promise<SessionState>,
+    tail?: string[],
+  ): Promise<(s: SessionState) => Promise<SessionState>> => {
+    if (rolloutPath === null) return async s => s
+    const reads = rolloutReads(rolloutPath, tail)
+    const check = (s: SessionState) => {
+      const history = {
+        dir,
+        reads,
+        cwd: input.cwd ?? s.root,
+        currentTurnId: input.turn_id,
+        canMarkBehind: input.source !== 'compact',
+        isCleared: input.source === 'clear',
+      }
+
+      return heardState(s.heard) === 'none' ? withEarlierHistory(s, history) : withMissedTurns(s, history)
+    }
+    await check(await readBefore())
+
+    return async s => {
+      const r = await check(s)
+      isMarkedBehind = r.isBehind
+
+      return r.state
+    }
   }
   const withCoveredTurn = (s: SessionState): SessionState =>
     rolloutPath !== null && input.turn_id ? { ...s, coveredTurn: input.turn_id } : s
@@ -115,9 +119,11 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const endsTurn = (s: SessionState) =>
         input.source === 'compact' ? s : overviewChanged(turnEnded(s, null), o => childrenCutOff(o, now()))
       const folder = rolloutPath === null ? null : meta.folder
-      const branch = folder === null ? null : await branchIn(deps.run, folder)
+      const [branch, withHistory] = await Promise.all([
+        folder === null ? null : branchIn(deps.run, folder),
+        readHistoryAhead(read),
+      ])
       const withPlace = (s: SessionState) => (folder === null ? s : placed(s, folder, branch))
-      await readHistoryAhead()
       const s = await write(async s =>
         noteHook(
           withHost(await withHistory(endsTurn(withPlace({ ...(input.source === 'clear' ? cleared(s) : s), root })))),
@@ -133,7 +139,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
     }
     case 'UserPromptSubmit': {
       let notes: string[] = []
-      await readHistoryAhead()
+      const withHistory = await readHistoryAhead(read)
       await write(async s => {
         const r = notePrompt(withHost(await withHistory(s)), input.prompt ?? '', now())
         notes = r.notes
@@ -183,18 +189,19 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
     case 'Stop': {
       const reply = input.last_assistant_message ?? ''
       const folder = input.cwd
+      const before = read()
       // Herdr is asked outside the write: its run can last its whole timeout, and the server's views and presses wait
       // on the state lock.
       const [tail, branch, inHerdr] = await Promise.all([
         rolloutTail(input.transcript_path),
         folder ? branchIn(deps.run, folder) : null,
-        read().then(
+        before.then(
           s => delegatesInHerdr(s.ledger.overview, deps.run),
           () => null,
         ),
       ])
       const { dialogs, commands, plan } = turnOf(tail, input.turn_id)
-      await readHistoryAhead(tail)
+      const withHistory = await readHistoryAhead(() => before, tail)
       const lines = dialogs.map(d => dialogActivity(d.questions, { kind: 'open' }))
       const written = await write(async s => {
         const withLines = lines.reduce(

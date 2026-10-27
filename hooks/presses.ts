@@ -287,8 +287,12 @@ export type Effect =
 export type PressResult =
   { ledger: Ledger; last: LastAction | null; effects: Effect[]; reopenedId?: string } | { stale: true }
 
+export function offersUndo(c: Pick<Closed, 'how'>): boolean {
+  return c.how === 'done' || c.how === 'dismissed'
+}
+
 export function isUndoable(c: Pick<Closed, 'how' | 'isSentToAgent'>): boolean {
-  return (c.how === 'done' || c.how === 'dismissed') && !c.isSentToAgent
+  return offersUndo(c) && !c.isSentToAgent
 }
 
 export function doneWake(

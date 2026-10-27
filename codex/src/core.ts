@@ -9,7 +9,7 @@ import {
 } from '../../hooks/session'
 import type { SessionView } from '../../hooks/session'
 import { NO_HOLDS, screenTabOf } from '../../hooks/view'
-import type { ReplyHolds } from '../../hooks/view'
+import type { Holds } from '../../hooks/view'
 import { SETTLE_WINDOW_MS } from './settle'
 import type { Heard, SessionState } from './state'
 import { CODEX } from './texts'
@@ -86,6 +86,11 @@ export function isPromptMissed(h: Heard, turnId: string | null): boolean {
   return h.promptAt === null || (h.stopAt !== null && h.promptAt < h.stopAt)
 }
 
+/** Whether the inbox heard the turn: its Stop, which makes it the covered turn, or its prompt. */
+export function isTurnHeard(s: SessionState, turnId: string): boolean {
+  return turnId === s.coveredTurn || !isPromptMissed(s.heard, turnId)
+}
+
 export function noteToolCall(s: SessionState, turnId: string | null, now: number): SessionState {
   return isPromptMissed(s.heard, turnId) ? { ...s, heard: { ...s.heard, promptMissedAt: now } } : s
 }
@@ -133,7 +138,7 @@ export type TabView = View & {
   isGhMissing: boolean
 }
 
-export function viewOf(s: SessionState, now: number, holds: ReplyHolds = NO_HOLDS): View {
+export function viewOf(s: SessionState, now: number, holds: Holds = NO_HOLDS): View {
   const canCatchUp = s.transcriptPath !== null
 
   return { ...sessionView(s, now, SETTLE_WINDOW_MS, canCatchUp, holds), heard: heardState(s.heard), at: now }

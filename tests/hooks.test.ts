@@ -357,6 +357,18 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   })
 }
 
+async function leaveAndReturn(
+  pane: Pick<Mounted, 'press'>,
+  clock: Pick<ReturnType<typeof mock.clock>, 'advance' | 'settle'>,
+  tab: 'needsYou' | 'findings' | 'prs',
+) {
+  await clock.advance(1)
+  await pane.press({ key: tab === 'findings' ? 'tab-needsYou' : 'tab-findings' })
+  await clock.settle()
+  await pane.press({ key: `tab-${tab}` })
+  await clock.settle()
+}
+
 async function replyField(pane: Pick<Mounted, 'findAll'>, id: string) {
   return (await pane.findAll({ type: 'Input' })).find(e => e.key?.startsWith(`type-${id}-`))
 }
@@ -696,6 +708,8 @@ test('a Done message that waits for its prompt to run reads Queued instead of No
   await clock.advance(SETTLED_MS)
   await clock.advance(QUEUED_AFTER_MS)
   expect(await pane.find({ text: /Not\s+confirmed/ })).toBeUndefined()
+  expect(await pane.find({ text: /Queued/ })).toBeDefined()
+  await leaveAndReturn(pane, clock, 'needsYou')
   await pane.press({ key: 'fold-task' })
   expect(await pane.find({ text: /Queued/ })).toBeDefined()
   await arrive($)
@@ -730,6 +744,7 @@ const doneWakeAfterRewrite = async ($: Engine, on: On, isMatched: boolean) => {
   await clock.advance(SETTLED_MS)
   await clock.advance(QUEUED_AFTER_MS)
   await clock.settle()
+  await leaveAndReturn(pane, clock, 'needsYou')
   await pane.press({ key: 'fold-task' })
   return pane
 }
@@ -837,6 +852,7 @@ for (const switchAt of [null, 'before-submit', 'during-submit'] as const)
       await $.classic.SessionStart({ source: 'resume', session_id: 'session-1' })
       await clock.settle()
     }
+    await leaveAndReturn(pane, clock, 'needsYou')
     await pane.press({ key: 'fold-task' })
     expect({ refusalVisible: !!(await pane.find({ text: /Not sent:/ })) }).toEqual({ refusalVisible: true })
     expect({ firstUndoVisible: !!(await pane.find({ key: 'undo-i1' })) }).toEqual({ firstUndoVisible: true })
@@ -1122,7 +1138,7 @@ test('the guidance reaches Claude in the close tool’s description and nowhere 
   expect(record.description).toBe('Record an item.')
 })
 
-test('the band is [Open inbox] and the counts, the same while working and after 15 idle minutes', async ($, on) => {
+test('the band is [Open inbox] and the counts with full-brightness labels, the same while working and after 15 idle minutes', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   const band = (props: Partial<typeof BAND.props> = {}) =>
@@ -1144,6 +1160,9 @@ test('the band is [Open inbox] and the counts, the same while working and after 
   const standing = await band()
   expect(await standing.find({ key: 'open-inbox' })).toBeDefined()
   expect(await standing.find({ text: /^Asks 2\u2007·\u2002Finds 1$/ })).toBeDefined()
+  const labels = await standing.findAll({ type: 'Text', text: /^(Asks|Finds) $/ })
+  expect(labels).toHaveLength(2)
+  expect(labels.some(l => l.props.dimColor)).toBe(false)
   expect(await standing.find({ text: /Use Node or Python|Add a greeting CLI|Waiting on two choices/ })).toBeUndefined()
 
   const working = await band({ isWorking: true })
@@ -1438,10 +1457,12 @@ test('after a failed update, the next reply catches up over the whole conversati
   expect(await pane.find({ text: /Name the command greet\?/ })).toBeDefined()
   expect(await pane.find({ text: /Review the welcome copy/ })).toBeDefined()
   expect(await pane.find({ text: /update failed/ })).toBeUndefined()
+  await clock.advance(1)
   await pane.press({ key: 'tab-findings' })
+  await clock.settle()
   expect(await pane.find({ key: 'row-f3' })).toBeUndefined()
-  expect(await pane.find({ key: 'settled-f3' })).toBeDefined()
-  expect(await pane.find({ key: 'undo-f3' })).toBeUndefined()
+  expect(await pane.find({ key: 'settled-f3' })).toBeUndefined()
+  expect((await pane.find({ key: 'fold-issue' }))?.props.label).toBe('▸ 1 closed')
 })
 
 test('a reload that cuts off the end-of-turn hook catches up on load, and a subagent’s turn leaves nothing to catch up', async ($, on) => {
@@ -1501,7 +1522,7 @@ test('the pane footer marks a build that follows the next branch', async ($, on)
   expect(await pane.find({ text: 'v1.2.3 · next' })).toBeDefined()
 })
 
-test('a finding Claude records while the pane shows an empty tab brings the pane to it, and Fix hands it to Claude, settles its row as the choice made, and moves it to the Closed fold even when Claude’s reply leaves it open', async ($, on) => {
+test('a finding Claude records while the pane shows an empty tab brings the pane to it, and Fix hands it to Claude, settles its row as the choice made until the person leaves the tab, then moves it to the Closed fold even when Claude’s reply leaves it open', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   paneState = { isShown: true, isFocused: true }
@@ -1533,6 +1554,9 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
   expect(await pane.find({ key: 'undo-f1' })).toBeDefined()
   expect(await band.find({ text: /Finds 1/ })).toBeUndefined()
   await clock.advance(9000)
+  expect(await pane.find({ key: 'settled-f1' })).toBeDefined()
+  expect(await pane.find({ key: 'undo-f1' })).toBeUndefined()
+  await leaveAndReturn(pane, clock, 'findings')
   expect(await pane.find({ key: 'settled-f1' })).toBeUndefined()
   expect(await pane.find({ text: /1 closed/ })).toBeDefined()
 
@@ -1799,7 +1823,7 @@ test('a press on a question Claude closed since the draw sends nothing and says 
   expect(await pane.find({ text: stale })).toBeUndefined()
 })
 
-test('a question Claude closes while the person types an answer stays in place with its field and words, out of the count, until its answer sends and it folds into Closed', async ($, on) => {
+test('a question Claude closes while the person types an answer stays in place with its field and words, out of the count, until its answer sends and the person leaves the tab, then folds into Closed', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   on('ui.focus', () => ({}))
@@ -1838,12 +1862,14 @@ test('a question Claude closes while the person types an answer stays in place w
   expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
   expect(await pane.find({ text: /^Replied$/ })).toBeDefined()
   await clock.advance(9000)
+  expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
+  await leaveAndReturn(pane, clock, 'needsYou')
   expect(await pane.find({ key: 'row-i2' })).toBeUndefined()
   expect(await pane.find({ key: 'settled-i2' })).toBeUndefined()
   expect(await pane.find({ text: /1 closed/ })).toBeDefined()
 })
 
-test('a held row stays in place, and its reply still sends, after more items close than the Closed list keeps', async ($, on) => {
+test('a held row and the rows that closed while the tab shows stay in place, and the reply still sends, after more items close than the Closed list keeps', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   on('ui.focus', () => ({}))
@@ -1898,7 +1924,8 @@ test('a held row stays in place, and its reply still sends, after more items clo
   await reply('all done', 't3')
   await clock.advance(9000)
 
-  expect(await pane.find({ text: /Renew the domain/ })).toBeUndefined()
+  expect(await pane.find({ key: 'settled-i3' })).toBeDefined()
+  expect(await pane.find({ key: 'settled-i15' })).toBeDefined()
   expect(await replyField(pane, 'i2')).toBeDefined()
   expect((await pane.find({ key: 'row-i2' }))?.text).toMatch(/Closed\sby\sClaude:\ssettled\sin\schat/)
   expect((await pane.find({ key: 'row-i2' }))?.text).toContain('Claude: settled in chat, since the team')
@@ -1953,6 +1980,9 @@ test('Discard ends a held row’s reply and folds it into Closed at once, and a 
   await clock.settle()
   expect(await pane.find({ key: 'undo-i1' })).toBeDefined()
   await clock.advance(9000)
+  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
+  expect(await pane.find({ key: 'undo-i1' })).toBeUndefined()
+  await leaveAndReturn(pane, clock, 'needsYou')
   expect(await pane.find({ key: 'row-i1' })).toBeUndefined()
   expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
   expect(await pane.find({ text: /2 closed/ })).toBeDefined()
@@ -2327,6 +2357,8 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   expect((await close({ id: 'f3', reason: 'fixed again' })).result).toBe('Already closed: you closed it earlier.')
 
   await clock.advance(9000)
+  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
+  await leaveAndReturn(pane, clock, 'needsYou')
   expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
   expect(await pane.find({ text: /^Deno$/ })).toBeUndefined()
   await pane.press({ key: 'fold-question' })
@@ -2391,6 +2423,9 @@ test('Dismiss settles a question in place with Undo, which brings it back open a
   await pane.press({ key: 'dismiss-i1' })
   expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
   await clock.advance(SETTLED_MS)
+  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
+  expect(await pane.find({ key: 'undo-i1' })).toBeUndefined()
+  await leaveAndReturn(pane, clock, 'needsYou')
   expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
   expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('▸ 1 closed')
   expect(await pane.find({ key: 'explain-i2-key' })).toBeDefined()
@@ -2798,7 +2833,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
   })
 }
 
-test('a PR’s Dismiss settles its block with Undo, which brings it back, a ready PR’s Merge asks Claude unless it stopped being ready, and a fetch keeps a Dismiss made while it ran, and the branch PR when its lookup fails', async ($, on) => {
+test('a PR’s Dismiss settles its block until the person leaves the tab, with Undo that brings it back, a ready PR’s Merge asks Claude unless it stopped being ready, and a fetch keeps a Dismiss made while it ran, and the branch PR when its lookup fails', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   let decision = 'APPROVED'
@@ -2903,6 +2938,9 @@ test('a PR’s Dismiss settles its block with Undo, which brings it back, a read
   await clock.advance(2600)
   expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeDefined()
   await clock.advance(SETTLED_MS)
+  expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeDefined()
+  expect(await pane.find({ key: 'undo-pr:acme/greet#12' })).toBeUndefined()
+  await leaveAndReturn(pane, clock, 'prs')
 
   expect(await pane.find({ text: /Linked work/ })).toBeUndefined()
   expect(await pane.find({ text: /Branch work/ })).toBeDefined()
@@ -3134,7 +3172,7 @@ test('a stop and an open permission prompt lead the sidebar line until they clea
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await band.find({ text: /Run \/login, then send a message to resume\./ })).toBeDefined()
   expect(await band.find({ key: 'open-inbox' })).toBeDefined()
-  expect(await band.find({ text: 'Nothing needed' })).toBeDefined()
+  expect((await band.findAll({ type: 'Text', text: /^Nothing needed$/ })).some(t => t.props.dimColor)).toBe(true)
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ key: 'resume' })).toBeUndefined()
   expect(await band.find({ key: 'resume' })).toBeUndefined()
@@ -3345,6 +3383,7 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   expect(await pane.find({ text: /Use Node or Python/ })).toBeUndefined()
   expect(await band.find({ text: /^Demo: Asks 7/ })).toBeDefined()
   for (const view of [pane, band]) expect(await view.find({ key: 'hide-demo' })).toBeDefined()
+  expect(await pane.find({ key: 'settled-d10' })).toBeDefined()
 
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'answer-d11-0' })
@@ -3379,7 +3418,8 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'done-d14' })
   await clock.advance(SETTLED_MS)
-  expect(await pane.find({ text: doneTask })).toBeUndefined()
+  expect(await pane.find({ key: 'settled-d14' })).toBeDefined()
+  expect(await pane.find({ key: 'undo-d14' })).toBeUndefined()
   expect(sent).toEqual([])
 
   await pane.press({ key: 'tab-findings' })
@@ -3391,7 +3431,13 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   await pane.press({ key: `dismiss-pr-${linkedRef}` })
   expect(await pane.find({ key: `settled-pr:${linkedRef}` })).toBeDefined()
   await clock.advance(SETTLED_MS)
+  expect(await pane.find({ key: `undo-pr:${linkedRef}` })).toBeUndefined()
+  await leaveAndReturn(pane, clock, 'prs')
   expect(await pane.find({ text: literal(demo.prViews.views[linkedRef]!.title) })).toBeUndefined()
+  await pane.press({ key: 'tab-needsYou' })
+  expect(await pane.find({ key: 'settled-d10' })).toBeUndefined()
+  expect(await pane.find({ key: 'settled-d14' })).toBeUndefined()
+  await pane.press({ key: 'tab-prs' })
   expect(stored.get('s:session-1')).toBe(saved)
   expect(ran.slice(ranBeforeDemo).filter(argv => argv[0] === 'gh' || argv[0] === 'open')).toEqual([])
 
@@ -4038,7 +4084,7 @@ for (const isAttachedFirst of [true, false]) {
   })
 }
 
-test('the desktop task keeps help before Done and puts Try again first when its send fails', async ($, on) => {
+test('the desktop task keeps help before Done, puts Try again first when its send fails, and keeps Undo’s place after Done once Undo ends', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   ledgerReply = ['NEW: do | - | Run the load script | - | -', 'HELP: new 1 | run | ./load.sh | load script'].join('\n')
@@ -4056,6 +4102,22 @@ test('the desktop task keeps help before Done and puts Try again first when its 
   await clock.settle()
   expect(await actions()).toEqual(['retry-i1', 'help-i1-0', 'done-i1'])
   expect(await pane.find({ text: /Not sent/ })).toBeDefined()
+
+  submitAnswer = 'enter'
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'done-i1' })
+  await clock.settle()
+  const undoPlace = async () => {
+    const place = await pane.find({ key: 'undo-place-i1' })
+    return place && { width: place.props.width, height: place.props.height }
+  }
+  const whileUndoLasts = await undoPlace()
+  expect(whileUndoLasts).toBeDefined()
+  expect(await pane.find({ key: 'undo-i1' })).toBeDefined()
+  await clock.advance(SETTLED_MS)
+  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
+  expect(await pane.find({ key: 'undo-i1' })).toBeUndefined()
+  expect(await undoPlace()).toEqual(whileUndoLasts)
 })
 
 test('the desktop pane draws each action as one button and the tabs as one click region, with no keys and no close button of its own', async ($, on) => {
@@ -4119,6 +4181,12 @@ test('the desktop pane draws each action as one button and the tabs as one click
   })
   await $.tool.call({ tool: 'mcp__inbox__close', id: 'f3', reason: 'fixed' } as never)
   await clock.advance(9000)
+  expect(await pane.find({ key: 'settled-f3' })).toBeDefined()
+  await pane.pointer({ type: 'down', x: 1, y: 1.1, button: 'left', in: 'tabs' })
+  await clock.settle()
+  expect((await tabBar()).shown).toBe('needsYou')
+  await pane.pointer({ type: 'down', x: findingsEnd - 1, y: 1.1, button: 'left', in: 'tabs' })
+  await clock.settle()
   const fold = async () => (await pane.find({ key: 'fold-issue' }))?.props.props as FoldProps
   const closedItem = { text: /^Closed by Claude: fixed$/ } as const
   expect((await pane.find({ key: 'fold-issue' }))?.type).toBe('Client')
@@ -4197,6 +4265,7 @@ test('no two buttons on a row share a hotkey, for every row kind in the demo', a
     status: perTurnStatus({ isUpdating: false, isFailed: false, retries: true }),
     replies: {},
     discarded: {},
+    shownSince: 1_000_000,
     now: 1_000_000,
   })
   const itemRows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows].map(row => {
@@ -4243,6 +4312,7 @@ for (const isNextBuild of [false, true])
       now: 1_000_000,
       replies: {},
       discarded: {},
+      shownSince: 1_000_000,
     })
     const TITLE_START = 20
     const expectedLabels = (row: (typeof view.findings.rows)[number]) => {
@@ -4420,6 +4490,7 @@ test('in the terminal and desktop looks, an open row’s follow-ups are never sp
     now: 1_000_000,
     replies: {},
     discarded: {},
+    shownSince: 1_000_000,
   })
   const row = view.findings.rows.find(r => r.state.is === 'open')!
   const plan = rowKeyPlan(row, false)
@@ -4515,8 +4586,12 @@ test('a forked conversation keeps the parent’s findings and closed records, an
   await clock.settle()
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ text: /Add a backoff to the retry loop\?/ })).toBeDefined()
+  await clock.advance(1)
   await pane.press({ key: 'tab-findings' })
-  expect((await pane.find({ key: 'settled-f1' }))?.text).toContain('Now a question in Asks')
+  await clock.settle()
+  expect(await pane.find({ key: 'settled-f1' })).toBeUndefined()
+  await pane.press({ key: 'fold-issue' })
+  expect(await pane.find({ text: /^Now a question in Asks$/ })).toBeDefined()
   await pane.press({ key: 'tab-needsYou' })
   const contextOf = async () =>
     ((await $.prompt.submit({ text: 'where are we?', wait: false, origin: { kind: 'composer' } })).context ?? []).join(

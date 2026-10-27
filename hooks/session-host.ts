@@ -35,7 +35,7 @@ import {
   withFetchedPrs,
 } from './session'
 import type { Pressed, SendOutcome, Session } from './session'
-import type { ReplyHolds } from './view'
+import type { Holds } from './view'
 import type { HostTask, RowNote } from '../types'
 
 export type Exclusive<T> = { acquired: true; value: T } | { acquired: false }
@@ -414,7 +414,7 @@ export async function startPress<S extends Session>(
   host: PressHost<S>,
   p: RowPress | PrPress,
   isStale: boolean,
-  holds: ReplyHolds,
+  holds: Holds,
 ): Promise<StartedPress> {
   const rowId = pressRowId(p)
   const localPressId = host.newId()
@@ -535,7 +535,7 @@ export async function press<S extends Session>(
   host: PressHost<S>,
   p: RowPress | PrPress,
   isStale: boolean,
-  holds: ReplyHolds,
+  holds: Holds,
 ): Promise<PressOutcome> {
   return (await startPress(host, p, isStale, holds)).finish()
 }
@@ -615,5 +615,5 @@ export async function fetchPrs<S extends Session>(
     if (refound !== bin) fetch = await fetchWith(refound)
   }
   const { views: fetched, branchRef } = fetch
-  await host.update(async cur => withFetchedPrs(cur, fetched, branchRef, await host.now()))
+  await host.update(cur => withFetchedPrs(cur, fetched, branchRef))
 }

@@ -1485,8 +1485,11 @@ function upgradeLastActions(saved) {
     })
   );
 }
+function offersUndo(c) {
+  return c.how === "done" || c.how === "dismissed";
+}
 function isUndoable(c) {
-  return (c.how === "done" || c.how === "dismissed") && !c.isSentToAgent;
+  return offersUndo(c) && !c.isSentToAgent;
 }
 var ISSUE_LABEL = "File issue";
 function retryOf(id, last) {
@@ -1529,7 +1532,10 @@ function pendingDeliveryAt(last, now) {
   if (last?.delivery?.state !== "queued") return null;
   return isQueuedAt(last, now) ? "queued" : "sending";
 }
-var NO_HOLDS = { replies: {}, discarded: {} };
+var NO_HOLDS = { replies: {}, discarded: {}, shownSince: null };
+function isShownSince(at, shownSince) {
+  return shownSince !== null && at >= shownSince;
+}
 var ROW_COPY = {
   retry: "Try again",
   send: "Send",
@@ -1670,7 +1676,7 @@ function screenTabOf(tab) {
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 var WORKING_TEXT = "Working\u2026";
-var LOOK_TEXT = "you looked";
+var LOOK_TEXT = "Seen";
 var LOOK_RULE_LABEL = `\u2500\u2500 ${LOOK_TEXT} `;
 var OVERVIEW_TEXT_LINES = 3;
 var CHILD_ROWS = 3;
@@ -1746,7 +1752,7 @@ function overviewPage(s, now) {
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const shownIds = new Set(shown.map((x) => x.id));
   const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, now, null));
-  const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT, age: shortAgo(now - look) };
+  const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
   const firstSeen = shown.findIndex((x) => !isNew(x));
   for (const [i, x] of shown.entries()) {
     const hasNewAbove = i > 0;
@@ -1906,14 +1912,16 @@ function inboxView({
   status,
   now,
   replies,
-  discarded
+  discarded,
+  shownSince
 }) {
-  const isSettling = (at) => now - at < settleWindowMs;
+  const isInPlace = (at) => isShownSince(at, shownSince);
+  const isUndoLeft = (at) => now - at < settleWindowMs;
   const isOpen2 = (id) => ledger.items.some((i) => i.id === id) || ledger.findings.some((f) => f.id === id);
   const closedAt = (c) => "closedAt" in c ? c.closedAt : c.at;
   const replyAfter = (c) => {
     const last = lastActions[c.id];
-    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isSettling(last.at) ? last : null;
+    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(last.at) ? last : null;
   };
   const isOwnClose = (c) => c.how === "done" || c.how === "dismissed" || c.how === "answered" && lastActions[c.id]?.kind === "mark" && lastActions[c.id]?.at === closedAt(c);
   const isHeld = (c) => {
@@ -1921,13 +1929,13 @@ function inboxView({
     return since !== void 0 && since <= closedAt(c) && !isOwnClose(c);
   };
   const isDiscarded = (c) => (discarded[c.id] ?? -Infinity) >= closedAt(c);
-  const isPlaced = (c) => replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isSettling(closedAt(c)));
+  const isPlaced = (c) => replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(closedAt(c)));
   const placedItems = new Map(
     ledger.closed.filter((d) => d.item && !isOpen2(d.id) && isPlaced(d)).map((d) => [d.id, d])
   );
   const isFixSettled = (id) => {
     const last = lastActions[id];
-    return isFixSent(last) && !isSettling(last.at);
+    return isFixSent(last) && !isInPlace(last.at);
   };
   const placedFindings = new Map(
     ledger.closedFindings.filter((f) => !isOpen2(f.id) && !isFixSettled(f.id) && isPlaced(f)).map((f) => [f.id, f])
@@ -1947,6 +1955,7 @@ function inboxView({
           label: DONE_LABELS[reply.action]?.(reply.text) ?? reply.text,
           at: reply.at,
           canUndo: false,
+          offersUndo: false,
           delivery: pendingDeliveryAt(reply, now),
           isLapsed: false
         };
@@ -1955,7 +1964,8 @@ function inboxView({
         is: "settled",
         label: outcomeLabel(closed2),
         at,
-        canUndo: isUndoable(closed2),
+        canUndo: isUndoable(closed2) && isUndoLeft(at),
+        offersUndo: offersUndo(closed2),
         isLapsed: isLapsed(closed2),
         delivery: "doneNotification" in closed2 && closed2.doneNotification?.error !== void 0 ? { error: closed2.doneNotification.error, canUndo: isUndoable(closed2) } : (closed2.how === "answered" || closed2.how === "done") && last2?.kind === "mark" && last2.at === at ? pendingDeliveryAt(last2, now) : null
       };
@@ -1967,7 +1977,8 @@ function inboxView({
         is: "settled",
         label: fixLabel(sent),
         at: last.at,
-        canUndo: true,
+        canUndo: isUndoLeft(last.at),
+        offersUndo: true,
         delivery: pendingDeliveryAt(last, now),
         isLapsed: false
       };
@@ -2114,14 +2125,13 @@ function threadSentIn(lastActions) {
 function isTracked(prState, linked, ref) {
   return splitLinked(prState, linked).tracked.includes(ref) || prState.branchRef === ref;
 }
-function isDismissing(lastActions, ref, now) {
-  const mark = lastActions[prMarkId(ref)];
-  return mark?.action === "pr-dismiss" && now - mark.at < SETTLED_MS;
-}
-function drawnPrs(prState, linked, lastActions, now) {
-  return inPrOrder(Object.values(prState.views)).flatMap(
-    (pr) => isTracked(prState, linked, pr.ref) ? [{ pr, isSettled: false }] : isDismissing(lastActions, pr.ref, now) ? [{ pr, isSettled: true }] : []
-  );
+function drawnPrs(prState, linked, lastActions, now, shownSince) {
+  return inPrOrder(Object.values(prState.views)).flatMap((pr) => {
+    if (isTracked(prState, linked, pr.ref)) return [{ pr, isSettled: false, canUndo: false }];
+    const mark = lastActions[prMarkId(pr.ref)];
+    if (mark?.action !== "pr-dismiss" || !isShownSince(mark.at, shownSince)) return [];
+    return [{ pr, isSettled: true, canUndo: now - mark.at < SETTLED_MS }];
+  });
 }
 
 // ../hooks/session.ts
@@ -2311,12 +2321,12 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now),
+    prs: prTabOf(s, lastActions, now, holds.shownSince),
     overviewPage: overviewPage(s, now)
   };
 }
-function prTabOf(s, lastActions, now) {
-  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now);
+function prTabOf(s, lastActions, now, shownSince) {
+  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, shownSince);
   const isSent = threadSentIn(lastActions);
   return {
     drawn,
@@ -2714,18 +2724,22 @@ function herdrOnWrite(env, run2, dir, now) {
 import { execFile } from "node:child_process";
 var run = (args, { cwd, timeoutMs, env, input }) => new Promise((resolve3) => {
   const [file = "", ...rest] = args;
-  const child = execFile(
-    file,
-    rest,
-    { cwd, env: { ...process.env, ...env }, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, encoding: "utf8" },
-    (err, stdout, stderr) => {
-      const code = err ? typeof err.code === "number" ? err.code : -1 : 0;
-      resolve3({ code, stdout: String(stdout), stderr: String(stderr) });
-    }
-  );
-  child.stdin?.on("error", () => {
-  });
-  child.stdin?.end(input);
+  try {
+    const child = execFile(
+      file,
+      rest,
+      { cwd, env: { ...process.env, ...env }, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, encoding: "utf8" },
+      (err, stdout, stderr) => {
+        const code = err ? typeof err.code === "number" ? err.code : -1 : 0;
+        resolve3({ code, stdout: String(stdout), stderr: String(stderr) });
+      }
+    );
+    child.stdin?.on("error", () => {
+    });
+    child.stdin?.end(input);
+  } catch (err) {
+    resolve3({ code: -1, stdout: "", stderr: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 // src/update.ts
@@ -3188,7 +3202,7 @@ function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
           "-"
         ],
         { cwd: work, timeoutMs: TIMEOUT_MS, env: home ? { CODEX_HOME: home } : {}, input: prompt }
-      ).catch((err) => ({ code: -1, stdout: "", stderr: err instanceof Error ? err.message : String(err) }));
+      );
       const unknown = r.stderr.match(/Unknown feature flag: (\S+)/)?.[1];
       if (r.code !== 0 && unknown && off.includes(unknown)) {
         off = off.filter((f) => f !== unknown);
