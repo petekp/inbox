@@ -546,7 +546,9 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
   if (c.midTurn) {
     const base = { ...runInfo, model: null, answer: null, outputTokens: null, error: null, failed: [], masked: [] }
 
-    return withOverview(base, ledger, [], overviewMidTurnPrompt(overviewInput(ledger), ex))
+    const r = await withOverview(base, ledger, [], overviewMidTurnPrompt(overviewInput(ledger), ex))
+
+    return { ...r, model: r.overviewModel ?? null }
   }
   const prompt =
     c.catchUp === undefined ? buildPrompt(ledger, ex) : transcriptCatchUpPrompt(ledger, ex.screen, c.catchUp)
