@@ -9,6 +9,7 @@ import {
   pendingResult,
   runLocalEffects,
   runSends,
+  withArrival,
   withLasts,
 } from '../../hooks/presses'
 import type { EffectHost, PressResult, RowPress } from '../../hooks/presses'
@@ -25,6 +26,8 @@ import {
   rowAfterClose,
   rowMark,
   SETTLED_MS,
+  settledLabel,
+  settledMark,
 } from '../../hooks/view'
 import type { RowView, RowWait } from '../../hooks/view'
 import type { Item, LastAction, LocalResult } from '../../types'
@@ -518,7 +521,7 @@ test('the tab reports active work separately from pending exchanges and failed u
   assert.equal(viewOf(s, 60).status.error, 'Last update failed. Items from that reply may be missing.')
 })
 
-test('Fix hands a finding off and settles it as the choice made, then lists it in the Closed fold though an applied turn leaves it open; File issue folds it until the reply, which leaves it Still open or closes it with the issue; Discuss keeps it open; a close moves it to Closed', () => {
+test('Fix hands a finding off and settles it as the choice made, each press with no ✓ until its message arrives, then lists it in the Closed fold though an applied turn leaves it open; File issue folds it until the reply, which leaves it Still open or closes it with the issue; Discuss keeps it open; a close moves it to Closed', () => {
   const w = withItems()
   const s = {
     ...w,
@@ -546,6 +549,16 @@ test('Fix hands a finding off and settles it as the choice made, then lists it i
   )
   assert.equal(folded.count, 0)
   assert.equal(folded.rows[0]?.state.is === 'settled' && folded.rows[0].state.label, 'Fix')
+  const drawnAt = (state: SessionState, at: number) => {
+    const row = viewOf(state, at).findings.rows[0]
+    assert.ok(row?.state.is === 'settled')
+
+    return [settledMark(row.state.delivery), settledLabel(row.state.label, row.state.delivery)]
+  }
+  assert.deepEqual(drawnAt(sent, 60), ['', 'Fix'])
+  assert.deepEqual(drawnAt(sent, 50 + QUEUED_AFTER_MS), ['', 'Queued: Fix'])
+  const message = 'Please address this finding you recorded:\nIssue: No lint script\nOnly tests run.'
+  assert.deepEqual(drawnAt({ ...sent, lastActions: withArrival(sent.lastActions, message) }, 80), ['✓', 'Fix'])
   const started = notePrompt(sent, 'Please address this finding you recorded:', 70).state
   const applied = { ...started, presence: { ...started.presence, turnsApplied: started.presence.turnsStarted } }
   const moved = viewOf(applied, 80 + SETTLE_WINDOW_MS).findings
@@ -565,9 +578,14 @@ test('Fix hands a finding off and settles it as the choice made, then lists it i
   const filedRows = viewOf(filed, 60).findings
   assert.deepEqual(
     filedRows.rows.map(r => [r.id, r.state.is, r.feedback && feedbackText(r.feedback, 'codex')]),
-    [['f3', 'handedOff', '✓ Asked to file']],
+    [['f3', 'handedOff', 'File issue']],
   )
   assert.equal(filedRows.count, 0)
+  const filedArrived = viewOf({ ...filed, lastActions: withArrival(filed.lastActions, filingText) }, 60).findings
+  assert.deepEqual(
+    filedArrived.rows.map(r => r.feedback && feedbackText(r.feedback, 'codex')),
+    ['✓ Asked to file'],
+  )
   const filedStarted = notePrompt(filed, 'Please file an issue for this finding you recorded', 70).state
   const leftOpen: SessionState = {
     ...filedStarted,

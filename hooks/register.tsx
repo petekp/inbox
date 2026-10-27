@@ -261,6 +261,7 @@ import {
   READING_TEXT,
   rowsIn,
   hasRunningMark,
+  inboxCommandText,
   RUNNING_FRAME_MS,
   RUNNING_PULSE_MS,
   runningMark,
@@ -2401,14 +2402,12 @@ async function setDemo($: EngineInterface, isShown: boolean, isRecording = false
   await followNewRows($, true)
 }
 
-function registerInboxCommand($: EngineInterface) {
-  return $.command
-    .register({
-      name: 'inbox',
-      description: 'Show where this session stands and what waits on you',
-      immediate: true,
-    })
-    .catch(() => undefined)
+const readIsNextBuild = ($: EngineInterface) => $.fs.exists(`${$.plugin.root}/${NEXT_BUILD_MARK}`).catch(() => false)
+
+async function registerInboxCommand($: EngineInterface) {
+  const description = inboxCommandText(await readIsNextBuild($))
+
+  return $.command.register({ name: 'inbox', description, immediate: true }).catch(() => undefined)
 }
 
 function ensureOn($: EngineInterface): Promise<void> {
@@ -2429,7 +2428,7 @@ async function readVersion($: EngineInterface) {
   } catch {
     version = null
   }
-  isNextBuild = await $.fs.exists(`${$.plugin.root}/${NEXT_BUILD_MARK}`).catch(() => false)
+  isNextBuild = await readIsNextBuild($)
 }
 
 async function initializeInbox($: EngineInterface) {
