@@ -808,7 +808,12 @@ export type OverviewTone = 'needsYou' | 'done' | 'issue' | null
 export type OverviewBranch = 'mid' | 'last'
 
 /** One line of the Overview's list, in the order to draw it. Each look lays out the parts; none chooses them. */
-export type OverviewRow =
+export type OverviewRow = OverviewRowParts & {
+  /** Whether a rule sets it apart from the row above. A subject and the rows under it are one item, and the look line is a rule already. */
+  isRuledAbove: boolean
+}
+
+type OverviewRowParts =
   | {
       kind: 'subject'
       id: string
@@ -924,7 +929,14 @@ function liveOf(presence: Session['presence'], now: number): string | null {
   return lastReplyAt === null ? null : `Idle · last reply ${ago(now - lastReplyAt)}`
 }
 
-function childRow(c: Child, now: number, branch: OverviewBranch | null): OverviewRow {
+/** Whether `row` starts an item after another, with no look line between them. */
+function isItemAfterItem(row: OverviewRowParts, prev: OverviewRowParts | undefined): boolean {
+  const isUnderSubject = row.kind === 'more' || (row.kind === 'child' && !row.isLoose)
+
+  return prev !== undefined && prev.kind !== 'look' && row.kind !== 'look' && !isUnderSubject
+}
+
+function childRow(c: Child, now: number, branch: OverviewBranch | null): OverviewRowParts {
   const idle = c.lastActivityAt === null ? null : now - c.lastActivityAt
   const isQuiet = idle !== null && idle >= QUIET_MS
   const age = shortAgo(idle ?? now - c.startedAt)
@@ -968,10 +980,10 @@ export function overviewPage(
     .filter(c => isChildRunning(c, now))
     .sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt))
   const shownIds = new Set(shown.map(x => x.id))
-  const rows: OverviewRow[] = running
+  const rows: OverviewRowParts[] = running
     .filter(c => c.subjectId === null || !shownIds.has(c.subjectId))
     .map(c => childRow(c, now, null))
-  const lookRow: OverviewRow | null =
+  const lookRow: OverviewRowParts | null =
     look === null ? null : { kind: 'look', id: 'look', text: LOOK_TEXT, age: shortAgo(now - look) }
   let isLookDrawn = false
   for (const [i, x] of shown.entries()) {
@@ -1035,7 +1047,7 @@ export function overviewPage(
     identity: identityOf(s.place ?? null, role),
     goal,
     live: liveOf(s.presence, now),
-    rows,
+    rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
     hasNews,
     empty: {
       title: 'Overview',

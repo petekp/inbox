@@ -2973,6 +2973,10 @@ function liveOf(presence, now) {
   }
   return lastReplyAt === null ? null : `Idle \xB7 last reply ${ago(now - lastReplyAt)}`;
 }
+function isItemAfterItem(row, prev) {
+  const isUnderSubject = row.kind === "more" || row.kind === "child" && !row.isLoose;
+  return prev !== undefined && prev.kind !== "look" && row.kind !== "look" && !isUnderSubject;
+}
 function childRow(c, now, branch) {
   const idle = c.lastActivityAt === null ? null : now - c.lastActivityAt;
   const isQuiet = idle !== null && idle >= QUIET_MS;
@@ -3066,7 +3070,7 @@ function overviewPage(s, now) {
     identity: identityOf(s.place ?? null, role),
     goal,
     live: liveOf(s.presence, now),
-    rows,
+    rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
     hasNews,
     empty: {
       title: "Overview",
@@ -5780,13 +5784,14 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const selected = resolveSelected(linesOf(entries), ui.selectedId);
   const rule = style.dim("\u2500".repeat(width));
   const head = [rule, tabBar(d), rule];
+  const pageRule = `${" ".repeat(PAGE_TEXT_AT)}${style.dim("\u2500".repeat(Math.max(0, width - PAGE_TEXT_AT - 1)))}`;
   const body = [];
   let selectedAt = [0, 0];
   for (const e of entries) {
     if (e.kind === "heading")
       body.push(` ${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
     else if (e.kind === "page")
-      body.push(...drawPageRow(e.row, d));
+      body.push(...e.row.isRuledAbove ? [pageRule] : [], ...drawPageRow(e.row, d));
     else if (e.kind === "note")
       body.push(...indented(e.text, e.indent ?? 1, width, e.isWhole ? Infinity : 3, e.isStrong ? style.bold : style.dim));
     else {

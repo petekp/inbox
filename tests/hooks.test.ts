@@ -5074,6 +5074,36 @@ test('on the Overview in the terminal, the rows under a subject hang from its ma
   expect(await textLines('c3')).toEqual(['Tune how hard a pinch must be'])
 })
 
+test('on the Overview, a rule sets each item apart in the docked terminal and on desktop, with none inside a subject’s tree or beside the look line, and the inline pane draws none', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  files = ['/.next-build']
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'inbox', args: 'demo' } as never)
+  const ruledAbove = async (pane: Pick<Mounted, 'findAll'>) =>
+    (await pane.findAll({ type: 'Box' })).flatMap(b =>
+      b.key?.startsWith('overview-rule-') ? [b.key.slice('overview-rule-'.length)] : [],
+    )
+  const docked = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 40 } })
+  await docked.press({ key: 'tab-key-overview' })
+  await clock.settle()
+  expect(await ruledAbove(docked)).toEqual(['s2', 's3', 's4', 'done'])
+  await docked.unmount()
+
+  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 36 } })
+  await desktop.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
+  await clock.settle()
+  expect(await ruledAbove(desktop)).toEqual(['s2', 's3', 's4', 'done'])
+  await desktop.unmount()
+
+  const inline = await $.ui.mount({ ...PANE, props: { ...PANE.props, placement: 'inline', bodyColumns: 90 } })
+  await inline.press({ key: 'tab-key-overview' })
+  await clock.settle()
+  expect(await inline.find({ key: 'overview-s1' })).toBeDefined()
+  expect(await ruledAbove(inline)).toEqual([])
+})
+
 for (const isNextBuild of [false, true])
   test(`on a ${isNextBuild ? 'next' : 'release'} build, the terminal tabs show their words down to the narrowest pane they fit, docked and inline, and their symbols below it`, async ($, on) => {
     const tabs = shownTabs(isNextBuild)

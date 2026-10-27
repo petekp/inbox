@@ -1206,11 +1206,12 @@ export function drawPanel(
   const selected = resolveSelected(linesOf(entries), ui.selectedId)
   const rule = style.dim('─'.repeat(width))
   const head = [rule, tabBar(d), rule]
+  const pageRule = `${' '.repeat(PAGE_TEXT_AT)}${style.dim('─'.repeat(Math.max(0, width - PAGE_TEXT_AT - 1)))}`
   const body: string[] = []
   let selectedAt = [0, 0]
   for (const e of entries) {
     if (e.kind === 'heading') body.push(` ${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`)
-    else if (e.kind === 'page') body.push(...drawPageRow(e.row, d))
+    else if (e.kind === 'page') body.push(...(e.row.isRuledAbove ? [pageRule] : []), ...drawPageRow(e.row, d))
     else if (e.kind === 'note')
       body.push(
         ...indented(e.text, e.indent ?? 1, width, e.isWhole ? Infinity : 3, e.isStrong ? style.bold : style.dim),

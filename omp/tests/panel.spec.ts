@@ -750,6 +750,17 @@ test('on the Overview page, the rows under a subject hang from its mark, ├─ 
   expect(glyphs(last, next)).toEqual(['└─', ...Array<string>(next - last - 1).fill('  ')])
 })
 
+test('on the Overview page, a rule from the text column sets each item apart, with none inside a subject’s tree or beside the look line', () => {
+  const lines = text(screenOf(), onPage, 40).split('\n')
+  const subject = lines.find(l => l.includes('Dismiss gesture'))!
+  const rule = new RegExp(`^ {${subject.indexOf('Dismiss')}}─+$`)
+  const rowsAfterRules = lines.flatMap((l, n) => (rule.test(l) ? [lines[n + 1]!] : []))
+
+  expect(rowsAfterRules).toHaveLength(4)
+  for (const [n, row] of ['Glasses pairing', 'Flick option', 'Fade-out', 'more done'].entries())
+    expect(rowsAfterRules[n]).toContain(row)
+})
+
 test('on the Overview page, a subject’s text wraps to three lines and is cut with an ellipsis past them, and its name stays plain on each line', () => {
   const name = 'Help text for every greeting command'
   const state = emptyState('s1')
