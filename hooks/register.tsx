@@ -95,7 +95,7 @@ import {
   wakeForDone as wakeSessionForDone,
 } from './session-host'
 import type { AskCatchUpOverview, CatchUpReply, SessionHost } from './session-host'
-import { demoView, isDemoCopy } from './demo'
+import { demoView, isDemoCopy, withDemoPresence } from './demo'
 import { claudeTasksAfter } from './host-tasks'
 import { noteDialog } from './dialogs'
 import type { Exchange, Press, Update } from './ledger'
@@ -998,24 +998,19 @@ async function commit(
 }
 
 /**
- * The session a look draws: `session`, with the ledger, PR views, presses and turn counts of the sample while it shows.
- * No turn runs in the sample.
+ * The session a look draws: `session`, with the ledger, PR views, presses and turn counts of the sample while it shows,
+ * and the sample's place and presence.
  */
 function drawnSession(
   session: Session,
   drawn: Pick<DemoCopy, 'ledger' | 'stop' | 'prViews' | 'lastActions' | 'turns'>,
   isDemo: boolean,
+  now: number,
 ): Session {
   const { ledger, stop, prViews, lastActions, turns } = drawn
+  const s = { ...session, ledger, stop, prViews, lastActions, presence: { ...session.presence, ...turns } }
 
-  return {
-    ...session,
-    ledger,
-    stop,
-    prViews,
-    lastActions,
-    presence: { ...session.presence, ...turns, ...(isDemo ? { isTurnRunning: false } : {}) },
-  }
+  return isDemo ? withDemoPresence(s, now) : s
 }
 
 function redrawWhileLeaving($: EngineInterface, expiresAt: number) {
@@ -2369,7 +2364,7 @@ async function drawnState(
   const isUnread = demo === null && unreadable === conversation.id
 
   const view = sessionView(
-    drawnSession(session, drawn, demo !== null),
+    drawnSession(session, drawn, demo !== null, now),
     now,
     SETTLED_MS,
     CAN_CATCH_UP,
@@ -5345,8 +5340,8 @@ export const register: Register = on => {
         })
       if (r.kind === 'look') {
         const label = `── ${r.text} `
-        const fill =
-          look === 'desktop' ? '' : '─'.repeat(Math.max(2, e.props.bodyColumns - label.length - r.age.length - 6))
+        const ruleColumns = listColumns - 1 - markColumns.textAt - (cellWidth(r.age) + 2) - cellWidth(label)
+        const fill = look === 'desktop' ? '' : '─'.repeat(Math.max(2, ruleColumns))
 
         return overviewLine({
           key: 'overview-look',

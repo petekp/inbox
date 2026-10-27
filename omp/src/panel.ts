@@ -213,7 +213,8 @@ type Line = {
 
 type Entry =
   | { kind: 'heading'; text: string; count?: number }
-  | { kind: 'note'; text: string; isStrong?: boolean; indent?: number }
+  /** A note stops at 3 lines. One with `isWhole`, such as an empty page's hint, is the page's content and wraps in full. */
+  | { kind: 'note'; text: string; isStrong?: boolean; indent?: number; isWhole?: boolean }
   | { kind: 'row'; line: Line }
   | { kind: 'page'; row: OverviewRow }
 
@@ -452,7 +453,7 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
       ? stops
       : [
           { kind: 'note', text: empty.title, isStrong: true },
-          { kind: 'note', text: empty.hint },
+          { kind: 'note', text: empty.hint, isWhole: true },
         ]
   }
 
@@ -474,7 +475,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
     const empty = prsEmptyText({ isFetching: screen.isFetchingPrs, isGhMissing: screen.isGhMissing }, 'session')
     return [
       { kind: 'note', text: empty.title, isStrong: true },
-      { kind: 'note', text: empty.hint },
+      { kind: 'note', text: empty.hint, isWhole: true },
     ]
   }
   if (screen.isGhMissing) out.push({ kind: 'note', text: GH_MISSING_TEXT })
@@ -569,14 +570,15 @@ function pressFeedback(screen: PanelScreen, id: string, now: number, isMarkDone 
 
 const doneAt = (f: Line['feedback']): number | null => (f?.source?.is === 'done' ? f.source.at : null)
 
-/** Where a row's title starts, after the cursor and the mark. The Overview page's text and details start here too. */
-const TITLE_AT = 6
+/** Where an Overview row's mark sits. A subject's text, its was line, its children's marks and the look line start at `PAGE_TEXT_AT`. */
+const PAGE_MARK_AT = 3
+const PAGE_TEXT_AT = PAGE_MARK_AT + 2
 
 function pageEntries(page: OverviewPage): Entry[] {
   if (page.isEmpty)
     return [
       { kind: 'note', text: page.empty.title, isStrong: true },
-      { kind: 'note', text: page.empty.hint },
+      { kind: 'note', text: page.empty.hint, isWhole: true },
     ]
   const head: Entry[] = [
     ...(page.identity ? [{ kind: 'note' as const, text: page.identity }] : []),
@@ -1003,13 +1005,13 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
     const glyph = row.isRunning ? runningMark(now) : row.mark
     const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph)
     const text = row.text ? `${row.name}: ${row.text}` : row.name
-    const out = pageLine(d, 3, mark, text, row.age, { plainCells: cellWidth(row.name) })
-    if (row.was) out.push(...indented(`was: ${row.was}`, TITLE_AT, width, 2, s.dim))
+    const out = pageLine(d, PAGE_MARK_AT, mark, text, row.age, { plainCells: cellWidth(row.name) })
+    if (row.was) out.push(...indented(`was: ${row.was}`, PAGE_TEXT_AT, width, 2, s.dim))
 
     return out
   }
   if (row.kind === 'child') {
-    const indent = row.isLoose ? 3 : TITLE_AT - 1
+    const indent = row.isLoose ? PAGE_MARK_AT : PAGE_TEXT_AT
     const mark = s.dim(row.isQuiet ? '●' : runningMark(now))
     const room = Math.max(6, width - indent - 2 - cellWidth(row.age) - 2)
     const name = cellWidth(row.name) > room ? `${cutToCells(row.name, room - 1)}…` : row.name
@@ -1017,16 +1019,16 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
 
     return pageLine(d, indent, mark, name, row.age, { agePaint })
   }
-  if (row.kind === 'more') return [' '.repeat(TITLE_AT + 1) + s.dim(row.text)]
+  if (row.kind === 'more') return [' '.repeat(PAGE_TEXT_AT + 2) + s.dim(row.text)]
   if (row.kind === 'look') {
     const label = `── ${row.text} `
-    const fill = '─'.repeat(Math.max(2, width - 1 - 3 - cellWidth(label) - cellWidth(row.age) - 1))
+    const fill = '─'.repeat(Math.max(2, width - 1 - PAGE_TEXT_AT - cellWidth(label) - cellWidth(row.age) - 1))
 
-    return [`   ${s.dim(label + fill)} ${s.dim(row.age)}`]
+    return [`${' '.repeat(PAGE_TEXT_AT)}${s.dim(label + fill)} ${s.dim(row.age)}`]
   }
   const mark = row.tone ? s.tone(row.tone, row.mark) : s.dim(row.mark)
 
-  return pageLine(d, 3, mark, row.text, row.age, {})
+  return pageLine(d, PAGE_MARK_AT, mark, row.text, row.age, {})
 }
 
 type TabCell = {
@@ -1147,7 +1149,9 @@ export function drawPanel(
     if (e.kind === 'heading') body.push(` ${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`)
     else if (e.kind === 'page') body.push(...drawPageRow(e.row, d))
     else if (e.kind === 'note')
-      body.push(...indented(e.text, e.indent ?? 1, width, 3, e.isStrong ? style.bold : style.dim))
+      body.push(
+        ...indented(e.text, e.indent ?? 1, width, e.isWhole ? Infinity : 3, e.isStrong ? style.bold : style.dim),
+      )
     else {
       const isSelected = e.line.id === selected?.id
       const start = body.length

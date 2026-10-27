@@ -298,6 +298,10 @@
         white-space: nowrap;
         text-align: right;
       }
+      .mark.tone-needsYou,
+      .side.tone-needsYou {
+        color: var(--needs-you);
+      }
       .side[data-room]::after {
         content: attr(data-room);
         display: block;
@@ -755,6 +759,7 @@
       }
       .overview .look-rule {
         display: flex;
+        flex-direction: row;
         align-items: center;
         gap: 8px;
         color: var(--muted);

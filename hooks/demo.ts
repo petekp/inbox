@@ -20,19 +20,30 @@ export function isDemoCopy(saved: unknown): saved is DemoCopy {
   )
 }
 
+/** `s` placed where the sample started, with no turn running and the last reply 2 minutes before `now`. */
+export function withDemoPresence(s: Session, now: number): Session {
+  return {
+    ...s,
+    presence: { ...s.presence, isTurnRunning: false, lastReplyAt: now - 2 * MIN },
+    place: DEMO_PLACE,
+  }
+}
+
 /** The sample as a session a host can draw and press on. */
 export function demoSession(now: number, agent: string): Session {
   const d = demoView(now, agent)
   const s = emptySession()
 
-  return {
-    ...s,
-    ledger: d.ledger,
-    lastActions: d.lastActions,
-    prViews: d.prViews,
-    presence: { ...s.presence, ...d.turns, lastReplyAt: now - 2 * MIN },
-    place: DEMO_PLACE,
-  }
+  return withDemoPresence(
+    {
+      ...s,
+      ledger: d.ledger,
+      lastActions: d.lastActions,
+      prViews: d.prViews,
+      presence: { ...s.presence, ...d.turns },
+    },
+    now,
+  )
 }
 
 /** A demo subject that last changed at `at`, closed then when it is done. */

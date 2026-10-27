@@ -1341,7 +1341,9 @@ function OverviewLine({ row }: { row: OverviewRow }) {
         <span class={markClassOf(null, !row.isQuiet)} ref={row.isQuiet ? undefined : pulseInStep}>
           ●
         </span>
-        <div class="content tight child-name muted">{row.name}</div>
+        <div class="content tight muted">
+          <span class="child-name">{row.name}</span>
+        </div>
         <span class={row.isQuiet ? 'side tone-needsYou' : 'side'}>{row.age}</span>
       </div>
     )

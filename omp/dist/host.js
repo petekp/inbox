@@ -5108,7 +5108,7 @@ function rowEntries(screen, ui, tab) {
     const empty = emptyText(tab, AGENT);
     return stops.length > 0 ? stops : [
       { kind: "note", text: empty.title, isStrong: true },
-      { kind: "note", text: empty.hint }
+      { kind: "note", text: empty.hint, isWhole: true }
     ];
   }
   return [...stops, ...groups.flatMap((g) => groupEntries(g, ui.unfolded))];
@@ -5125,7 +5125,7 @@ function prEntries(screen, now) {
     const empty = prsEmptyText({ isFetching: screen.isFetchingPrs, isGhMissing: screen.isGhMissing }, "session");
     return [
       { kind: "note", text: empty.title, isStrong: true },
-      { kind: "note", text: empty.hint }
+      { kind: "note", text: empty.hint, isWhole: true }
     ];
   }
   if (screen.isGhMissing)
@@ -5219,12 +5219,13 @@ function pressFeedback(screen, id, now, isMarkDone = false) {
   return f ? { text: markedFeedbackText(f, isMarkDone, AGENT), tone: feedbackTone(f), source: f } : null;
 }
 var doneAt = (f) => f?.source?.is === "done" ? f.source.at : null;
-var TITLE_AT = 6;
+var PAGE_MARK_AT = 3;
+var PAGE_TEXT_AT = PAGE_MARK_AT + 2;
 function pageEntries(page) {
   if (page.isEmpty)
     return [
       { kind: "note", text: page.empty.title, isStrong: true },
-      { kind: "note", text: page.empty.hint }
+      { kind: "note", text: page.empty.hint, isWhole: true }
     ];
   const head = [
     ...page.identity ? [{ kind: "note", text: page.identity }] : [],
@@ -5548,13 +5549,13 @@ function drawPageRow(row, d) {
     const glyph = row.isRunning ? runningMark(now) : row.mark;
     const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph);
     const text = row.text ? `${row.name}: ${row.text}` : row.name;
-    const out = pageLine(d, 3, mark, text, row.age, { plainCells: cellWidth(row.name) });
+    const out = pageLine(d, PAGE_MARK_AT, mark, text, row.age, { plainCells: cellWidth(row.name) });
     if (row.was)
-      out.push(...indented(`was: ${row.was}`, TITLE_AT, width, 2, s.dim));
+      out.push(...indented(`was: ${row.was}`, PAGE_TEXT_AT, width, 2, s.dim));
     return out;
   }
   if (row.kind === "child") {
-    const indent = row.isLoose ? 3 : TITLE_AT - 1;
+    const indent = row.isLoose ? PAGE_MARK_AT : PAGE_TEXT_AT;
     const mark = s.dim(row.isQuiet ? "\u25CF" : runningMark(now));
     const room = Math.max(6, width - indent - 2 - cellWidth(row.age) - 2);
     const name = cellWidth(row.name) > room ? `${cutToCells(row.name, room - 1)}\u2026` : row.name;
@@ -5562,14 +5563,14 @@ function drawPageRow(row, d) {
     return pageLine(d, indent, mark, name, row.age, { agePaint });
   }
   if (row.kind === "more")
-    return [" ".repeat(TITLE_AT + 1) + s.dim(row.text)];
+    return [" ".repeat(PAGE_TEXT_AT + 2) + s.dim(row.text)];
   if (row.kind === "look") {
     const label = `\u2500\u2500 ${row.text} `;
-    const fill = "\u2500".repeat(Math.max(2, width - 1 - 3 - cellWidth(label) - cellWidth(row.age) - 1));
-    return [`   ${s.dim(label + fill)} ${s.dim(row.age)}`];
+    const fill = "\u2500".repeat(Math.max(2, width - 1 - PAGE_TEXT_AT - cellWidth(label) - cellWidth(row.age) - 1));
+    return [`${" ".repeat(PAGE_TEXT_AT)}${s.dim(label + fill)} ${s.dim(row.age)}`];
   }
   const mark = row.tone ? s.tone(row.tone, row.mark) : s.dim(row.mark);
-  return pageLine(d, 3, mark, row.text, row.age, {});
+  return pageLine(d, PAGE_MARK_AT, mark, row.text, row.age, {});
 }
 var TAB_FORMS = [
   { isBracketed: true, hasNewsDot: true },
@@ -5642,7 +5643,7 @@ function drawPanel(screen, ui, width, now, style, height) {
     else if (e.kind === "page")
       body.push(...drawPageRow(e.row, d));
     else if (e.kind === "note")
-      body.push(...indented(e.text, e.indent ?? 1, width, 3, e.isStrong ? style.bold : style.dim));
+      body.push(...indented(e.text, e.indent ?? 1, width, e.isWhole ? Infinity : 3, e.isStrong ? style.bold : style.dim));
     else {
       const isSelected = e.line.id === selected?.id;
       const start = body.length;
@@ -5829,17 +5830,23 @@ function createPanel(deps) {
 var MIN = 60000;
 var REPO = "https://github.com/acme/visor";
 var DEMO_PLACE = { folder: "/Users/you/code/visor", branch: "pinch-dismiss" };
+function withDemoPresence(s, now) {
+  return {
+    ...s,
+    presence: { ...s.presence, isTurnRunning: false, lastReplyAt: now - 2 * MIN },
+    place: DEMO_PLACE
+  };
+}
 function demoSession(now, agent) {
   const d = demoView(now, agent);
   const s = emptySession();
-  return {
+  return withDemoPresence({
     ...s,
     ledger: d.ledger,
     lastActions: d.lastActions,
     prViews: d.prViews,
-    presence: { ...s.presence, ...d.turns, lastReplyAt: now - 2 * MIN },
-    place: DEMO_PLACE
-  };
+    presence: { ...s.presence, ...d.turns }
+  }, now);
 }
 function subject(id, status, name, text, at, more = {}) {
   const isClosed = status === "done" || status === "dropped";
