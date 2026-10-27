@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { fork } from 'node:child_process'
 import { once } from 'node:events'
 import { fileURLToPath } from 'node:url'
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdir, rm, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -13,6 +14,8 @@ import { endTurn, notePrompt, viewOf } from '../src/core'
 import { readState, statePath, updateState } from '../src/state'
 import { codexAsk, recordModelFailure, runUpdates as runBothCalls } from '../src/update'
 import { findCli } from '../src/cli'
+import { run } from '../src/run'
+import type { RunWithInput } from '../src/run'
 import { makeServer } from '../src/server'
 import { OVERVIEW_SYSTEM } from '../../hooks/model-text'
 import { fakeRunner, ledgerOnly, tempDir } from './helpers'
@@ -395,6 +398,85 @@ test('a failed update saves the CLI it ran, its exit code and the end of its std
   assert.equal(s.lastModelFailure?.at, 7)
   assert.ok(s.lastModelFailure?.stderr.endsWith(error))
   assert.ok(s.lastModelFailure.stderr.length < stderr.length)
+})
+
+test('a reply with a NUL byte reaches codex on stdin, and both calls of its update apply', async t => {
+  const dir = tempDir()
+  const personHome = tempDir()
+  const bin = tempDir()
+  t.after(() => Promise.all([dir, personHome, bin].map(d => rm(d, { recursive: true, force: true }))))
+  const reply = 'Pasted \0 from a file. Should I deploy?'
+  await updateState(dir, 's1', s => ({ ...s, pending: [{ ex: ex(1, reply), turnsStarted: 1 }] }))
+  const cli = join(bin, 'codex')
+  const prompts = join(bin, 'prompts.jsonl')
+  const answers = join(bin, 'answers.json')
+  writeFileSync(answers, JSON.stringify({ [OVERVIEW_SYSTEM]: 'GOAL: Building the deploy script' }))
+  writeFileSync(
+    cli,
+    [
+      `#!${process.execPath}`,
+      `const fs = require('node:fs')`,
+      `const args = process.argv.slice(2)`,
+      `fs.appendFileSync(${JSON.stringify(prompts)}, JSON.stringify(fs.readFileSync(0, 'utf8')) + '\\n')`,
+      `const system = args.find(a => a.startsWith('model_instructions_file=')).slice('model_instructions_file='.length)`,
+      `const answer = JSON.parse(fs.readFileSync(${JSON.stringify(answers)}, 'utf8'))[fs.readFileSync(JSON.parse(system), 'utf8')]`,
+      `fs.writeFileSync(args[args.indexOf('-o') + 1], answer ?? ${JSON.stringify(LEDGER_ANSWER)})`,
+    ].join('\n'),
+  )
+  chmodSync(cli, 0o755)
+
+  await runBothCalls(
+    dir,
+    's1',
+    codexAsk(
+      run,
+      cli,
+      dir,
+      personHome,
+      recordModelFailure(dir, 's1', () => 7),
+    ),
+    () => 7,
+  )
+
+  const s = await readState(dir, 's1')
+  const received: string[] = readFileSync(prompts, 'utf8')
+    .trim()
+    .split('\n')
+    .map(line => JSON.parse(line))
+  assert.equal(s.presence.ledgerState, 'current')
+  assert.deepEqual(
+    s.ledger.items.map(i => i.ask),
+    ['Deploy now?'],
+  )
+  assert.equal(s.ledger.overview?.goal, 'Building the deploy script')
+  assert.equal(s.lastModelFailure, null)
+  assert.equal(received.length, 2)
+  assert.ok(received.every(prompt => prompt.includes(reply)))
+})
+
+test('an update whose codex call throws saves the error as its failure beside the failed state', async t => {
+  const dir = tempDir()
+  const personHome = tempDir()
+  t.after(() => Promise.all([dir, personHome].map(d => rm(d, { recursive: true, force: true }))))
+  await updateState(dir, 's1', s => ({ ...s, pending: [{ ex: ex(1, 'Should I deploy?'), turnsStarted: 1 }] }))
+  const throwing: RunWithInput = () => Promise.reject(new Error('spawn EAGAIN'))
+
+  await runBothCalls(
+    dir,
+    's1',
+    codexAsk(
+      throwing,
+      '/apps/codex',
+      dir,
+      personHome,
+      recordModelFailure(dir, 's1', () => 7),
+    ),
+    () => 7,
+  )
+
+  const s = await readState(dir, 's1')
+  assert.equal(s.presence.ledgerState, 'failed')
+  assert.deepEqual(s.lastModelFailure, { cli: '/apps/codex', code: -1, stderr: 'spawn EAGAIN', at: 7 })
 })
 
 test('an Explain exchange keeps its question open while applying the rest of the model update', async () => {
