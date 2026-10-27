@@ -328,17 +328,36 @@ test('a subagent runs as a child from SubagentStart to SubagentStop, its tool ca
   assert.equal((await children())[1]?.[1], 12000)
 })
 
-test('a Herdr delegate runs as a child from the command that starts it until a turn that waited on it ends', async () => {
+test('a Herdr delegate runs as a child from the command that starts it until a turn that waited on it ends, or Herdr shows it no longer working at a turn’s end', async () => {
   const dir = tempDir()
-  const deps = hookDeps(dir)
+  let at = 1000
+  const deps = hookDeps(dir, () => at)
+  const listed: string[][] = []
+  deps.run = async args => {
+    listed.push(args)
+    const agents = [
+      { name: 'reviewer', agent_status: 'idle' },
+      { name: 'helper', agent_status: 'working' },
+      { name: 'scout', agent_status: 'idle' },
+    ]
+    return { code: 0, stdout: JSON.stringify({ id: 'q', result: { type: 'agent_list', agents } }), stderr: '' }
+  }
   const transcript = join(tempDir(), 'rollout.jsonl')
   const delegates = async () =>
-    ((await readState(dir, 's1')).ledger.overview?.children ?? []).map(c => [c.kind, c.name, c.endedAt === null])
+    ((await readState(dir, 's1')).ledger.overview?.children ?? []).map(c => [c.name, c.endedAt === null])
   const bash = (command: string) => input('PreToolUse', { tool_name: 'Bash', tool_input: { command } })
 
   await handleHook(input('UserPromptSubmit', { prompt: 'Hand it off', turn_id: 't1' }), deps)
   await handleHook(bash('herdr agent start fixer --cmd codex'), deps)
-  assert.deepEqual(await delegates(), [['delegate', 'fixer', true]])
+  await handleHook(bash('herdr agent start reviewer --cmd codex && herdr agent start helper --cmd codex'), deps)
+  assert.deepEqual(await delegates(), [
+    ['fixer', true],
+    ['reviewer', true],
+    ['helper', true],
+  ])
+  at += 60_000
+  await handleHook(bash('herdr agent prompt scout "look around"'), deps)
+  at += 5_000
   writeFileSync(
     transcript,
     [
@@ -360,7 +379,13 @@ test('a Herdr delegate runs as a child from the command that starts it until a t
       .join('\n'),
   )
   await handleHook(input('Stop', { turn_id: 't1', transcript_path: transcript, last_assistant_message: 'Done.' }), deps)
-  assert.deepEqual(await delegates(), [['delegate', 'fixer', false]])
+  assert.deepEqual(listed, [['herdr', 'agent', 'list']])
+  assert.deepEqual(await delegates(), [
+    ['fixer', false],
+    ['reviewer', false],
+    ['helper', true],
+    ['scout', true],
+  ])
 })
 
 test('hooks do nothing in a codex exec run or an ephemeral thread', async () => {

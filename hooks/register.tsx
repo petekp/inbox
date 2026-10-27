@@ -82,7 +82,9 @@ import {
   childrenCutOff,
   delegateRef,
   delegateRunning,
+  delegatesSettled,
   delegateSteps,
+  hasRunningDelegate,
   noticeApplied,
   subagentsSettled,
   taskNotice,
@@ -181,7 +183,7 @@ import {
   TURN_BOX_TOOL,
   turnBoxText,
 } from './claude'
-import { CLEARED_TOKENS, HERDR_TIMEOUT_MS, herdrReporter, herdrTokens } from './herdr'
+import { CLEARED_TOKENS, HERDR_AGENT_LIST, HERDR_TIMEOUT_MS, herdrReporter, herdrRunning, herdrTokens } from './herdr'
 import { ago, cellWidth, clipLabel } from './text'
 import {
   applyPress,
@@ -2510,6 +2512,15 @@ async function noteAgentWork($: EngineInterface, agentId: string) {
   if (isActivityWorthSaving(ref, await $.clock.now())) await noteChild($, (o, at) => childActive(o, ref, at))
 }
 
+/** The delegates Herdr shows running, asked only while one runs. Null when none runs or Herdr gave no answer. */
+async function delegatesInHerdr($: EngineInterface): Promise<ReadonlySet<string> | null> {
+  const s = await read($, SESSION).then(upgradeSession)
+  if (!hasRunningDelegate(s.ledger.overview)) return null
+  const r = await $.process.run(HERDR_AGENT_LIST, { timeoutMs: HERDR_TIMEOUT_MS }).catch(() => null)
+
+  return r?.exitCode === 0 ? herdrRunning(r.stdout) : null
+}
+
 async function notePlace($: EngineInterface) {
   const root = conversation.root
   if (!root) return
@@ -3002,12 +3013,13 @@ export const register: Register = on => {
     await closeDialogs($, null)
     if (!isOn) return r
     const endedAt = await $.clock.now()
-    const listed = await $.agent.list().catch(() => null)
+    const [listed, inHerdr] = await Promise.all([$.agent.list().catch(() => null), delegatesInHerdr($)])
     const running =
       listed && new Set(listed.filter(a => a.status === 'running' || a.status === 'pending').map(a => a.id))
     await commit($, currentOwner(), s => {
       const ended = turnEnded(s, endedAt)
-      return running ? overviewChanged(ended, o => subagentsSettled(o, running, endedAt)) : ended
+      const withSubagents = running ? overviewChanged(ended, o => subagentsSettled(o, running, endedAt)) : ended
+      return inHerdr ? overviewChanged(withSubagents, o => delegatesSettled(o, inHerdr, endedAt)) : withSubagents
     })
     void notePlace($)
     if (e.reason === 'error' && !hasStopFromError) await setStopFromLastReply($)

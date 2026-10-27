@@ -19,6 +19,7 @@ async function main() {
     now: Date.now,
     startUpdate: detachedUpdate(dir, process.env, join(dist, 'update.mjs')),
     onWrite: herdrOnWrite(process.env, run, dir, Date.now),
+    run,
   })
   if (out) process.stdout.write(JSON.stringify(out))
 }

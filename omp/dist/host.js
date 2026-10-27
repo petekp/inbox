@@ -3303,6 +3303,18 @@ var COUNT_TOKENS = {
 };
 var CLEARED_TOKENS = Object.fromEntries([STATUS_TOKEN, STOP_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null]));
 var HERDR_TIMEOUT_MS = 5000;
+var HERDR_AGENT_LIST = ["herdr", "agent", "list"];
+var HERDR_RUNNING = new Set(["working", "unknown"]);
+function herdrRunning(stdout) {
+  try {
+    const agents = JSON.parse(stdout)?.result?.agents;
+    if (!Array.isArray(agents))
+      return null;
+    return new Set(agents.filter((a) => typeof a?.name === "string" && HERDR_RUNNING.has(a?.agent_status)).map((a) => a.name));
+  } catch {
+    return null;
+  }
+}
 function stopLine(stop) {
   switch (stop.kind) {
     case "sign-in":
@@ -4437,6 +4449,17 @@ function delegateRunning(o, name, at) {
   if (o && isRunning)
     return changedChild(o, ref, () => ({ lastActivityAt: at })) ?? o;
   return withChild(o, { ref, kind: "delegate", name: childName(name), startedAt: at, endedAt: null, lastActivityAt: at }, at);
+}
+var HERDR_PROMPT_SETTLE_MS = 15000;
+function hasRunningDelegate(o) {
+  return o?.children.some((c) => c.kind === "delegate" && c.endedAt === null) ?? false;
+}
+function delegatesSettled(o, running, at) {
+  const refs = new Set([...running].map(delegateRef));
+  const isGone = (c) => c.kind === "delegate" && c.endedAt === null && !refs.has(c.ref) && at - (c.lastActivityAt ?? c.startedAt) >= HERDR_PROMPT_SETTLE_MS;
+  if (!o?.children.some(isGone))
+    return o;
+  return { ...o, children: o.children.map((c) => isGone(c) ? { ...c, endedAt: at } : c) };
 }
 function activityGate() {
   const saved = new Map;
@@ -6984,6 +7007,13 @@ function createInbox(pi, deps = defaultDeps) {
       return;
     }
   });
+  const delegatesInHerdr = async (id, cwd) => {
+    const s = await readState(dir, id).catch(() => null);
+    if (!hasRunningDelegate(s?.ledger.overview ?? null))
+      return null;
+    const r = await run(HERDR_AGENT_LIST, { cwd, timeoutMs: HERDR_TIMEOUT_MS });
+    return r.code === 0 ? herdrRunning(r.stdout) : null;
+  };
   pi.on("agent_end", async (event, ctx) => {
     if (isUnattended(ctx) || event.willContinue)
       return;
@@ -6994,14 +7024,16 @@ function createInbox(pi, deps = defaultDeps) {
     const stop = await stopOf(last, deps.isUsageLimit, deps.now());
     const isDialogDismissed = event.messages.some(isDismissedAsk);
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
+    const inHerdr = await delegatesInHerdr(id, ctx.cwd);
     const endedAt = deps.now();
-    const written = await change(id, (s) => ({
-      ...turnEnded(endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
+    const written = await change(id, (s) => {
+      const ended = turnEnded(endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
         tab: panelScreenTab(id),
         queuesEmptyReply: isDialogDismissed
-      }), endedAt),
-      stop
-    })).catch(() => null);
+      }), endedAt);
+      const settled = inHerdr ? overviewChanged(ended, (o) => delegatesSettled(o, inHerdr, endedAt)) : ended;
+      return { ...settled, stop };
+    }).catch(() => null);
     if (!written)
       return;
     const host = hostFor(ctx);

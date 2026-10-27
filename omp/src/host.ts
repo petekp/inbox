@@ -15,7 +15,14 @@ import type { DialogOutcome, ScreenTab } from '../../hooks/model-text'
 import type { PrPress } from '../../hooks/pr-tab'
 import { noteDialog } from '../../hooks/dialogs'
 import { ghFinder, ghIn } from '../../hooks/gh'
-import { CLEARED_TOKENS, HERDR_TIMEOUT_MS, herdrReporter, herdrTokens } from '../../hooks/herdr'
+import {
+  CLEARED_TOKENS,
+  HERDR_AGENT_LIST,
+  HERDR_TIMEOUT_MS,
+  herdrReporter,
+  herdrRunning,
+  herdrTokens,
+} from '../../hooks/herdr'
 import type { Run } from '../../hooks/gh'
 import { COMPARE_PAGE_FILE } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
@@ -44,7 +51,9 @@ import {
   childrenCutOff,
   delegateRef,
   delegateRunning,
+  delegatesSettled,
   delegateSteps,
+  hasRunningDelegate,
 } from '../../hooks/children'
 import { childActive, childEnded, withChild } from '../../hooks/overview'
 import type { SessionView } from '../../hooks/session'
@@ -840,6 +849,15 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     }
   })
 
+  /** The delegates Herdr shows running, asked only while one runs. Null when none runs or Herdr gave no answer. */
+  const delegatesInHerdr = async (id: string, cwd: string): Promise<Set<string> | null> => {
+    const s = await readState(dir, id).catch(() => null)
+    if (!hasRunningDelegate(s?.ledger.overview ?? null)) return null
+    const r = await run(HERDR_AGENT_LIST, { cwd, timeoutMs: HERDR_TIMEOUT_MS })
+
+    return r.code === 0 ? herdrRunning(r.stdout) : null
+  }
+
   pi.on('agent_end', async (event, ctx) => {
     if (isUnattended(ctx) || event.willContinue) return
     prepare(ctx)
@@ -850,17 +868,20 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     // Escape on the ask dialog aborts the turn, so it ends with no reply text.
     const isDialogDismissed = event.messages.some(isDismissedAsk)
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
+    const inHerdr = await delegatesInHerdr(id, ctx.cwd)
     const endedAt = deps.now()
-    const written = await change(id, s => ({
-      ...turnEnded(
+    const written = await change(id, s => {
+      const ended = turnEnded(
         endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
           tab: panelScreenTab(id),
           queuesEmptyReply: isDialogDismissed,
         }),
         endedAt,
-      ),
-      stop,
-    })).catch(() => null)
+      )
+      const settled = inHerdr ? overviewChanged(ended, o => delegatesSettled(o, inHerdr, endedAt)) : ended
+
+      return { ...settled, stop }
+    }).catch(() => null)
     if (!written) return
     const host = hostFor(ctx)
     if (needsUpdate(written)) deps.background(runUpdates(updateHostFor(ctx)))

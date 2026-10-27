@@ -28,6 +28,26 @@ export const CLEARED_TOKENS: HerdrTokens = Object.fromEntries(
 
 export const HERDR_TIMEOUT_MS = 5000
 
+/** Lists the agents of the Herdr session the host runs in, as JSON. */
+export const HERDR_AGENT_LIST = ['herdr', 'agent', 'list']
+
+/** Herdr states in which an agent still runs. `unknown` does not show that its turn ended. */
+const HERDR_RUNNING = new Set(['working', 'unknown'])
+
+/** The names of the agents `herdr agent list` shows running. Null when its output cannot be read. */
+export function herdrRunning(stdout: string): Set<string> | null {
+  try {
+    const agents: unknown = JSON.parse(stdout)?.result?.agents
+    if (!Array.isArray(agents)) return null
+
+    return new Set(
+      agents.filter(a => typeof a?.name === 'string' && HERDR_RUNNING.has(a?.agent_status)).map(a => a.name as string),
+    )
+  } catch {
+    return null
+  }
+}
+
 function stopLine(stop: Stop): string {
   switch (stop.kind) {
     case 'sign-in':

@@ -1142,19 +1142,38 @@ test('a subagent runs as a child from its started frame to its end, its progress
   ])
 })
 
-test('a Herdr delegate runs as a child from the bash call that starts it until a wait on it returns', async () => {
+test('a Herdr delegate runs as a child from the bash call that starts it until a wait on it returns, or Herdr shows it no longer working at the turn’s end', async () => {
   createInbox(pi(), deps())
   const delegates = () =>
-    state().ledger.overview.children.map((c: { kind: string; name: string; endedAt: number | null }) => [
-      c.kind,
-      c.name,
-      c.endedAt === null,
-    ])
+    state().ledger.overview.children.map((c: { name: string; endedAt: number | null }) => [c.name, c.endedAt === null])
+  const bash = (command: string) => call('tool_execution_start', { toolName: 'bash', args: { command } })
   await prompt('Hand it off')
-  await call('tool_execution_start', { toolName: 'bash', args: { command: 'herdr agent start fixer --cmd omp' } })
-  expect(delegates()).toEqual([['delegate', 'fixer', true]])
+  await bash('herdr agent start fixer --cmd omp')
+  await bash('herdr agent start reviewer --cmd omp && herdr agent start helper --cmd omp')
+  expect(delegates()).toEqual([
+    ['fixer', true],
+    ['reviewer', true],
+    ['helper', true],
+  ])
   await call('tool_result', { toolName: 'bash', input: { command: 'herdr agent wait fixer' }, content: [] })
-  expect(delegates()).toEqual([['delegate', 'fixer', false]])
+  expect(delegates()[0]).toEqual(['fixer', false])
+  clock += 60_000
+  await bash('herdr agent prompt scout "look around"')
+  clock += 5_000
+  const agents = [
+    { name: 'reviewer', agent_status: 'idle' },
+    { name: 'helper', agent_status: 'working' },
+    { name: 'scout', agent_status: 'idle' },
+  ]
+  execResults.set('herdr', { code: 0, stdout: JSON.stringify({ id: 'q', result: { type: 'agent_list', agents } }) })
+  await endAgent('Done.')
+  expect(execCalls.filter(c => c.command === 'herdr').map(c => c.args)).toEqual([['agent', 'list']])
+  expect(delegates()).toEqual([
+    ['fixer', false],
+    ['reviewer', false],
+    ['helper', true],
+    ['scout', true],
+  ])
 })
 
 test('a look starts when the panel shows the Overview and ends on another tab or when the panel closes', async () => {

@@ -69,6 +69,27 @@ export function delegateRunning(o: Overview | null, name: string, at: number): O
   )
 }
 
+/** Herdr shows a prompted agent working within 5 seconds. A delegate prompted closer than this to a check waits for the next one. */
+const HERDR_PROMPT_SETTLE_MS = 15_000
+
+/** Whether a delegate runs, so a host asks Herdr only then. */
+export function hasRunningDelegate(o: Overview | null): boolean {
+  return o?.children.some(c => c.kind === 'delegate' && c.endedAt === null) ?? false
+}
+
+/** Every running delegate that `running`, read from Herdr at `at`, does not name ended then. */
+export function delegatesSettled(o: Overview | null, running: ReadonlySet<string>, at: number): Overview | null {
+  const refs = new Set([...running].map(delegateRef))
+  const isGone = (c: Child) =>
+    c.kind === 'delegate' &&
+    c.endedAt === null &&
+    !refs.has(c.ref) &&
+    at - (c.lastActivityAt ?? c.startedAt) >= HERDR_PROMPT_SETTLE_MS
+  if (!o?.children.some(isGone)) return o
+
+  return { ...o, children: o.children.map(c => (isGone(c) ? { ...c, endedAt: at } : c)) }
+}
+
 /**
  * Keeps a host from saving every call a child makes. Answers true when a child's activity at `at` is worth saving:
  * the first since the host started, or `ACTIVITY_SAVE_MS` after the last one it saved.

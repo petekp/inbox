@@ -1,6 +1,16 @@
 import { resolve } from 'node:path'
 
-import { childName, childrenCutOff, delegateRef, delegateRunning, delegateSteps } from '../../hooks/children'
+import {
+  childName,
+  childrenCutOff,
+  delegateRef,
+  delegateRunning,
+  delegatesSettled,
+  delegateSteps,
+  hasRunningDelegate,
+} from '../../hooks/children'
+import type { Run } from '../../hooks/gh'
+import { HERDR_AGENT_LIST, HERDR_TIMEOUT_MS, herdrRunning } from '../../hooks/herdr'
 import { dialogActivity } from '../../hooks/model-text'
 import { childActive, childEnded, withChild } from '../../hooks/overview'
 import {
@@ -44,6 +54,7 @@ export type HookDeps = {
   dir: string
   env: NodeJS.ProcessEnv
   now: () => number
+  run: Run
   startUpdate: (sessionId: string) => void
   onWrite: OnWrite
 }
@@ -53,7 +64,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
   const { dir, env, now } = deps
   // INBOX_IN_EXEC lets a test drive a whole session through `codex exec`.
   if (!id || (!env.INBOX_IN_EXEC && (await isNonInteractiveRun(input.transcript_path)))) return null
-  const { update: write } = codexStore(dir, id, now, deps.onWrite)
+  const { update: write, read } = codexStore(dir, id, now, deps.onWrite)
   const cliPath = namedCli(env)
   const withCli = (s: SessionState): SessionState => (cliPath && s.cliPath !== cliPath ? { ...s, cliPath } : s)
   // A subagent's hook names its own rollout, not the session's.
@@ -156,6 +167,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
     case 'Stop': {
       const reply = input.last_assistant_message ?? ''
       const { dialogs, commands, plan } = await turnIn(input.transcript_path, input.turn_id)
+      const inHerdr = hasRunningDelegate((await read()).ledger.overview) ? await delegatesInHerdr(deps.run, dir) : null
       const lines = dialogs.map(d => dialogActivity(d.questions, { kind: 'open' }))
       const written = await write(async s => {
         const withLines = lines.reduce(
@@ -165,9 +177,10 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines)
         // A wait on a delegate holds the turn, so the delegate's turn settled by Stop, where the turn's commands are read.
         const settled = commands.flatMap(c => delegateSteps(c.command).filter(step => step.isWaitForEnd))
-        const withDelegates = overviewChanged(withOutput, o =>
-          settled.reduce((x, step) => childEnded(x, delegateRef(step.name), now()), o),
-        )
+        const withDelegates = overviewChanged(withOutput, o => {
+          const waited = settled.reduce((x, step) => childEnded(x, delegateRef(step.name), now()), o)
+          return inHerdr ? delegatesSettled(waited, inHerdr, now()) : waited
+        })
 
         const ended = noteHook(turnEnded(endTurn(withDelegates, reply, now()), now()), 'stop', now())
 
@@ -180,4 +193,11 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
   }
 
   return null
+}
+
+/** The delegates Herdr shows running. Null outside Herdr, or when it gave no answer. */
+async function delegatesInHerdr(run: Run, cwd: string): Promise<Set<string> | null> {
+  const r = await run(HERDR_AGENT_LIST, { cwd, timeoutMs: HERDR_TIMEOUT_MS }).catch(() => null)
+
+  return r?.code === 0 ? herdrRunning(r.stdout) : null
 }

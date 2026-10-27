@@ -4835,7 +4835,7 @@ test('a subagent that runs inside its Agent call ends at the call’s result, an
   expect(running()).toEqual([])
 })
 
-test('a Herdr delegate runs as a child from the command that starts it until a wait on it ends, and keeps its id when prompted again', async ($, on) => {
+test('a Herdr delegate runs as a child from the command that starts it until a wait on it ends, keeps its id when prompted again, and ends at a turn’s end once Herdr shows it no longer working', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   const delegates = () => childrenOf(stored).map(c => [c.kind, c.name, c.endedAt === null])
@@ -4857,6 +4857,29 @@ test('a Herdr delegate runs as a child from the command that starts it until a w
   await clock.settle()
   expect(delegates()).toEqual([['delegate', 'fixer', false]])
   expect(childrenOf(stored)).toHaveLength(1)
+
+  await $.tool.call({ tool: 'Bash', command: 'herdr agent start reviewer --cmd codex' })
+  await $.tool.call({ tool: 'Bash', command: 'herdr agent start helper --cmd codex' })
+  await clock.advance(60_000)
+  await $.tool.call({ tool: 'Bash', command: 'herdr agent prompt scout "look around"' })
+  await clock.advance(5_000)
+  const agents = [
+    { name: 'reviewer', agent_status: 'idle' },
+    { name: 'helper', agent_status: 'working' },
+    { name: 'scout', agent_status: 'idle' },
+  ]
+  ghAnswers.push({
+    match: argv => argv.join(' ') === 'herdr agent list',
+    stdout: JSON.stringify({ id: 'q', result: { type: 'agent_list', agents } }),
+  })
+  await $.turn.complete({ answer: 'Handed off.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  expect(delegates()).toEqual([
+    ['delegate', 'fixer', false],
+    ['delegate', 'reviewer', false],
+    ['delegate', 'helper', true],
+    ['delegate', 'scout', true],
+  ])
 })
 
 test('the Overview page says what it is for before the session has any work', async ($, on) => {

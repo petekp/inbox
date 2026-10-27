@@ -2177,6 +2177,19 @@ var CLEARED_TOKENS = Object.fromEntries(
   [STATUS_TOKEN, STOP_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null])
 );
 var HERDR_TIMEOUT_MS = 5e3;
+var HERDR_AGENT_LIST = ["herdr", "agent", "list"];
+var HERDR_RUNNING = /* @__PURE__ */ new Set(["working", "unknown"]);
+function herdrRunning(stdout) {
+  try {
+    const agents = JSON.parse(stdout)?.result?.agents;
+    if (!Array.isArray(agents)) return null;
+    return new Set(
+      agents.filter((a) => typeof a?.name === "string" && HERDR_RUNNING.has(a?.agent_status)).map((a) => a.name)
+    );
+  } catch {
+    return null;
+  }
+}
 function stopLine(stop) {
   switch (stop.kind) {
     case "sign-in":
@@ -2313,6 +2326,16 @@ function delegateRunning(o, name, at) {
     { ref, kind: "delegate", name: childName(name), startedAt: at, endedAt: null, lastActivityAt: at },
     at
   );
+}
+var HERDR_PROMPT_SETTLE_MS = 15e3;
+function hasRunningDelegate(o) {
+  return o?.children.some((c) => c.kind === "delegate" && c.endedAt === null) ?? false;
+}
+function delegatesSettled(o, running, at) {
+  const refs = new Set([...running].map(delegateRef));
+  const isGone = (c) => c.kind === "delegate" && c.endedAt === null && !refs.has(c.ref) && at - (c.lastActivityAt ?? c.startedAt) >= HERDR_PROMPT_SETTLE_MS;
+  if (!o?.children.some(isGone)) return o;
+  return { ...o, children: o.children.map((c) => isGone(c) ? { ...c, endedAt: at } : c) };
 }
 function childrenCutOff(o, at) {
   const isCut = (c) => c.endedAt === null && c.kind !== "delegate";
@@ -2687,7 +2710,7 @@ async function handleHook(input, deps) {
   const id = input.session_id;
   const { dir, env, now } = deps;
   if (!id || !env.INBOX_IN_EXEC && await isNonInteractiveRun(input.transcript_path)) return null;
-  const { update: write } = codexStore(dir, id, now, deps.onWrite);
+  const { update: write, read } = codexStore(dir, id, now, deps.onWrite);
   const cliPath = namedCli(env);
   const withCli = (s) => cliPath && s.cliPath !== cliPath ? { ...s, cliPath } : s;
   const rolloutPath = input.agent_id ? null : input.transcript_path;
@@ -2773,6 +2796,7 @@ async function handleHook(input, deps) {
     case "Stop": {
       const reply = input.last_assistant_message ?? "";
       const { dialogs, commands, plan } = await turnIn(input.transcript_path, input.turn_id);
+      const inHerdr = hasRunningDelegate((await read()).ledger.overview) ? await delegatesInHerdr(deps.run, dir) : null;
       const lines = dialogs.map((d) => dialogActivity(d.questions, { kind: "open" }));
       const written = await write(async (s) => {
         const withLines = lines.reduce(
@@ -2781,10 +2805,10 @@ async function handleHook(input, deps) {
         );
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines);
         const settled = commands.flatMap((c) => delegateSteps(c.command).filter((step) => step.isWaitForEnd));
-        const withDelegates = overviewChanged(
-          withOutput,
-          (o) => settled.reduce((x, step) => childEnded(x, delegateRef(step.name), now()), o)
-        );
+        const withDelegates = overviewChanged(withOutput, (o) => {
+          const waited = settled.reduce((x, step) => childEnded(x, delegateRef(step.name), now()), o);
+          return inHerdr ? delegatesSettled(waited, inHerdr, now()) : waited;
+        });
         const ended = noteHook(turnEnded(endTurn2(withDelegates, reply, now()), now()), "stop", now());
         return plan === null ? ended : { ...ended, hostTasks: plan };
       });
@@ -2793,6 +2817,10 @@ async function handleHook(input, deps) {
     }
   }
   return null;
+}
+async function delegatesInHerdr(run2, cwd) {
+  const r = await run2(HERDR_AGENT_LIST, { cwd, timeoutMs: HERDR_TIMEOUT_MS }).catch(() => null);
+  return r?.code === 0 ? herdrRunning(r.stdout) : null;
 }
 
 // src/data-dir.ts
@@ -2833,7 +2861,8 @@ async function main() {
     env: process.env,
     now: Date.now,
     startUpdate: detachedUpdate(dir, process.env, join4(dist, "update.mjs")),
-    onWrite: herdrOnWrite(process.env, run, dir, Date.now)
+    onWrite: herdrOnWrite(process.env, run, dir, Date.now),
+    run
   });
   if (out) process.stdout.write(JSON.stringify(out));
 }
