@@ -964,6 +964,9 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   out.push(spread(` ${' '.repeat(pad)}${cursor} ${leadText(line.lead, s)} ${title}${status}${after}`, `${age} `, width))
   if (line.settled || isShut(line, ui)) return out
   const indent = INDENT + pad
+  // A next build draws the Overview, so only it names the subject an ask holds up.
+  const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null
+  if (holdsUp) out.push(fit(' '.repeat(indent) + s.dim(holdsUp), width))
   if (line.detail && (isSelected || line.isDetailShown)) out.push(...indented(line.detail, indent, width, 4, s.dim))
   if (!isSelected) return out
   if (line.file) out.push(' '.repeat(indent) + s.tone('accent', line.file))

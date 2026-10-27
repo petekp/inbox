@@ -4593,7 +4593,7 @@ test('a working subject’s mark on the Overview moves each frame only while a t
   expect(ended.working).toEqual(ended.still)
 })
 
-test('on a next build, the Overview tab’s news dot clears when the page shows, the page shows the goal and the subjects in place of rows, leaves the row keys idle, and a row tab shows its rows again', async ($, on) => {
+test('on a next build, the Overview tab’s news dot clears when the page shows, the page shows the goal and the subjects in place of rows, leaves the row keys idle, a row tab shows its rows again, and an ask names the subject it holds up', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
@@ -4607,6 +4607,7 @@ test('on a next build, the Overview tab’s news dot clears when the page shows,
   await clock.settle()
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
+  expect(await pane.find({ text: /Holds up Runtime/ })).toBeDefined()
 
   const lookOf = () => {
     const saved = [...stored].find(([k]) => k.startsWith('s:'))
@@ -4650,12 +4651,12 @@ test('on a next build, the Overview tab’s news dot clears when the page shows,
   expect(await pane.find({ key: 'address-f3' })).toBeDefined()
 })
 
-test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Overview page shows Asks, tells Claude so, starts no look and stays saved', async ($, on) => {
+test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Overview page shows Asks, tells Claude so, starts no look, stays saved, and names no subject an ask holds up', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
   world($, on, prompts)
   paneState = { isShown: true, isFocused: true }
-  overviewReply = 'GOAL: Adding a greeting CLI\nNEW: working | Runtime | Node or Python'
+  overviewReply = 'GOAL: Adding a greeting CLI\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime'
   let page: { value: unknown; version: number } = { value: 'overview', version: 1 }
   on('state.get', { plugin: 'inbox', key: 'page' } as const, () => ({ value: page as never }))
   on('state.set', { plugin: 'inbox', key: 'page' } as const, ($, e) => {
@@ -4671,6 +4672,7 @@ test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Overview page
   await clock.settle()
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
   expect(await pane.find({ key: 'overview-goal' })).toBeUndefined()
+  expect(await pane.find({ text: /Holds up/ })).toBeUndefined()
   const tabKeys = (await pane.findAll({ type: 'Button' }))
     .filter(b => (b.key ?? '').startsWith('tab-key-'))
     .map(b => [b.key, b.props.hotkey])
@@ -4681,6 +4683,7 @@ test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Overview page
   ])
   const saved = [...stored].find(([k]) => k.startsWith('s:'))
   expect(saved && JSON.parse(saved[1]).ledger.overview.look).toBeNull()
+  expect(saved && JSON.parse(saved[1]).ledger.overview.askSubjects).toEqual({ i1: 's1' })
   expect(page.value).toBe('overview')
   expect(prompts.at(-1)).toContain('is open beside the conversation, on its Asks tab, listing every open item.')
 

@@ -15,7 +15,7 @@ const window = new Window()
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
 
-test('the Codex tab draws the Overview page from a next build’s view, and new rows, j and k leave it in place, while a release build’s view draws Asks for it', async () => {
+test('the Codex tab draws the Overview page from a next build’s view, and new rows, j and k leave it in place, while a release build’s view draws Asks for it, and only a next build names on an Asks row the subject it holds up', async () => {
   const now = Date.now()
   const state = emptyState('overview')
   state.heard.startAt = 1
@@ -179,6 +179,11 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
     key('1')
     assert.equal(shownTab(), 'Overview')
     assert.ok(root.querySelector('.overview-goal'))
+    key('2')
+    assert.equal(shownTab(), 'Asks1')
+    assert.equal(root.querySelector('main .holds-up')?.textContent, 'Holds up Label')
+    key('1')
+    assert.equal(shownTab(), 'Overview')
 
     isOlderServer = true
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
@@ -199,6 +204,7 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
     )
     assert.equal(shownTab(), 'Asks1')
     assert.equal(root.querySelector('.overview-goal'), null)
+    assert.equal(root.querySelector('main .holds-up'), null)
     key('4')
     assert.equal(shownTab(), 'Asks1')
     isNextBuild = true

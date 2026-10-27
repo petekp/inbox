@@ -7,6 +7,7 @@ import type {
   LastAction,
   Ledger,
   LocalResult,
+  Overview,
   PressKind,
   RowNote,
   PageTab,
@@ -211,6 +212,11 @@ export type RowView = {
   actions: ActionView[]
   /** The description of each answer button that has one, in button order. A folded button's is folded with it. */
   optionDescriptions: OptionDescription[]
+  /**
+   * "Holds up" and the open subject's name, on an open ask the Overview call linked to an open subject. A look draws it
+   * on a next build, which draws the Overview.
+   */
+  holdsUpLine: string | null
 }
 
 export type OptionDescription = { label: string; description: string; isFolded: boolean }
@@ -381,6 +387,7 @@ export function versionLabel(version: string, isNextBuild: boolean): string {
 }
 
 const UPDATE_FAILED = 'Last update failed. Items from that reply may be missing.'
+const HOLDS_UP_TEXT = 'Holds up'
 const OVERVIEW_FAILED = 'Last Overview update failed. Changes from that reply may be missing.'
 const UPDATE_RETRIES = ' It retries after your next message.'
 
@@ -1341,6 +1348,13 @@ export function actionLines(
   return { lines, isFollowUpLineNew }
 }
 
+/** The open subject the Overview call linked an ask to, by the ask's id. */
+function heldSubjectOf(o: Overview | null, askId: string): Subject | null {
+  const subjectId = o?.askSubjects[askId]
+
+  return o?.subjects.find(s => s.id === subjectId && isOpen(s)) ?? null
+}
+
 export function inboxView({
   ledger,
   lastActions,
@@ -1435,12 +1449,16 @@ export function inboxView({
 
     return isHandedOff(last, turns) ? { is: 'handedOff' } : { is: 'open' }
   }
-  const rowOf = (row: Omit<RowView, 'state' | 'feedback' | 'actions' | 'optionDescriptions'>): RowView => {
+  const rowOf = (
+    row: Omit<RowView, 'state' | 'feedback' | 'actions' | 'optionDescriptions' | 'holdsUpLine'>,
+  ): RowView => {
     const state = stateOf(row.id)
     const last = lastActions[row.id]
     const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt)
     // A button must keep its width while its press is out, or the buttons after it can move to another line.
     const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt))
+
+    const heldSubject = state.is === 'open' ? heldSubjectOf(ledger.overview, row.id) : null
 
     return {
       ...row,
@@ -1448,6 +1466,7 @@ export function inboxView({
       feedback,
       actions,
       optionDescriptions: optionDescriptionsOf(row.item, actions),
+      holdsUpLine: heldSubject ? `${HOLDS_UP_TEXT} ${heldSubject.name}` : null,
     }
   }
   const itemRow = (item: Item): RowView => {

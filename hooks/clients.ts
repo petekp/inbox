@@ -41,6 +41,7 @@ export type FeatureId =
   | 'overview-look-line'
   | 'overview-row-rules'
   | 'overview-failed-warning'
+  | 'asks-holds-up-line'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -91,6 +92,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'overview-look-line': { kind: 'full' },
       'overview-row-rules': { kind: 'full' },
       'overview-failed-warning': { kind: 'full' },
+      'asks-holds-up-line': { kind: 'full' },
     },
   },
   codex: {
@@ -183,6 +185,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'overview-look-line': { kind: 'full' },
       'overview-row-rules': { kind: 'full' },
       'overview-failed-warning': { kind: 'full' },
+      'asks-holds-up-line': { kind: 'full' },
     },
   },
   omp: {
@@ -248,6 +251,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'overview-look-line': { kind: 'full' },
       'overview-row-rules': { kind: 'full' },
       'overview-failed-warning': { kind: 'full' },
+      'asks-holds-up-line': { kind: 'full' },
     },
   },
 }

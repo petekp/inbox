@@ -74,7 +74,7 @@ it last changed. The statuses are working, queued, waits on others, done and
 dropped. The inbox model adds and changes subjects by id, and code keeps their
 times. The inbox model also links an open question or task to the subject it
 holds up. While that item is open, the subject's mark reads ◆ in place of its
-status's mark.
+status's mark, and the item's Asks row reads "Holds up" and the subject's name.
 _Avoid_: workstream, stream, item (an item is a question or task)
 
 **Child**:

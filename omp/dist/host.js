@@ -2717,6 +2717,7 @@ function versionLabel(version, isNextBuild) {
   return isNextBuild ? `v${version} \xB7 next` : `v${version}`;
 }
 var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
+var HOLDS_UP_TEXT = "Holds up";
 var OVERVIEW_FAILED = "Last Overview update failed. Changes from that reply may be missing.";
 var UPDATE_RETRIES = " It retries after your next message.";
 function needsYouOrder(ledger) {
@@ -3232,6 +3233,10 @@ function actionLines(keys, more, { width, gap, separator }) {
   });
   return { lines, isFollowUpLineNew };
 }
+function heldSubjectOf(o, askId) {
+  const subjectId = o?.askSubjects[askId];
+  return o?.subjects.find((s) => s.id === subjectId && isOpen(s)) ?? null;
+}
 function inboxView({
   ledger,
   lastActions,
@@ -3311,12 +3316,14 @@ function inboxView({
     const last = lastActions[row.id];
     const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt);
     const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt));
+    const heldSubject = state.is === "open" ? heldSubjectOf(ledger.overview, row.id) : null;
     return {
       ...row,
       state,
       feedback,
       actions,
-      optionDescriptions: optionDescriptionsOf(row.item, actions)
+      optionDescriptions: optionDescriptionsOf(row.item, actions),
+      holdsUpLine: heldSubject ? `${HOLDS_UP_TEXT} ${heldSubject.name}` : null
     };
   };
   const itemRow = (item) => {
@@ -5631,6 +5638,9 @@ function drawLine(line, isSelected, d) {
   if (line.settled || isShut(line, ui))
     return out;
   const indent = INDENT + pad;
+  const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null;
+  if (holdsUp)
+    out.push(fit(" ".repeat(indent) + s.dim(holdsUp), width));
   if (line.detail && (isSelected || line.isDetailShown))
     out.push(...indented(line.detail, indent, width, 4, s.dim));
   if (!isSelected)

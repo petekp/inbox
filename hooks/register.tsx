@@ -3459,10 +3459,13 @@ export const register: Register = on => {
       typeHint?: string
       fold?: { note?: string }
     }
+    /** A next build draws the Overview, so only it names the subject an ask holds up. */
+    const holdsUpLineOf = (r: RowView | undefined) => (isNextBuild ? (r?.holdsUpLine ?? null) : null)
     const itemRow = (r: RowView): Row => {
       const asked = r.at === null ? undefined : `${DOT}${ago(now - r.at)}`
       const mark = rowMark(r, look)
       const isHandedOff = r.state.is === 'handedOff'
+      const holdsUpLine = holdsUpLineOf(r)
 
       return {
         id: r.id,
@@ -3473,6 +3476,15 @@ export const register: Register = on => {
         title: r.title,
         titleAfter: asked,
         ...(r.at === null ? {} : { at: r.at }),
+        ...(holdsUpLine
+          ? {
+              subtitle: (
+                <Text color={pal.muted} wrap="wrap">
+                  {holdsUpLine}
+                </Text>
+              ),
+            }
+          : {}),
         hasSecondLine: r.replyKind === 'answer',
         body: null,
         keys: () => rowKeyActions($, r, optionsShown.includes(r.id)).keys,
@@ -3943,6 +3955,7 @@ export const register: Register = on => {
             : undefined
           : line.after
       const hover = second ? { hover: { scope: `title-${row.id}`.slice(0, 64), inverse: true } } : {}
+      const holdsUpLine = holdsUpLineOf(row.view)
 
       return (
         <Box flexDirection="column">
@@ -3970,6 +3983,11 @@ export const register: Register = on => {
             <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
               {meta}
             </Text>
+          ) : null}
+          {holdsUpLine ? (
+            <Box paddingLeft={line.before?.length ?? 0}>
+              <Text color={pal.muted}>{clipLabel(holdsUpLine, Math.max(12, width))}</Text>
+            </Box>
           ) : null}
         </Box>
       )
@@ -4003,6 +4021,7 @@ export const register: Register = on => {
         before: row.line?.before ?? '',
         title: text.trim(),
         after: f?.isAfterTitle ? f.text : (row.line?.after ?? '').replace(LEADING_DOT, '').trim(),
+        note: holdsUpLineOf(row.view) ?? '',
         side: sideAge(row),
         padY: DESKTOP_ROW_PAD,
         maxLines: row.hasSecondLine ? 4 : 2,

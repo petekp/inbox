@@ -132,6 +132,8 @@ type Row = {
   lead?: string
   title: string
   meta?: string
+  /** The open subject an ask holds up, as "Holds up Offline sync". */
+  holdsUp?: string
   age?: string
   body?: JSX.Element | null
   keys: Key[]
@@ -775,6 +777,8 @@ function itemRow(v: View, r: RowView): Row {
     handleTone: mark.tone,
     ...(isHandedOff ? { fold: {} } : {}),
     title: r.title,
+    // A next build draws the Overview, so only it names the subject an ask holds up.
+    ...(v.isNextBuild === true && r.holdsUpLine ? { holdsUp: r.holdsUpLine } : {}),
     age: r.at === null ? undefined : shortAgo(v.at - r.at),
     ...(described.length > 0
       ? {
@@ -1151,6 +1155,7 @@ function ListRow({ row, track, onSelect, now }: { row: Row; track: RowTrack; onS
               {isSelected || isClosing ? `${DOT}${last}` : last}
             </span>
           ) : null}
+          {row.holdsUp ? <span class="holds-up">{row.holdsUp}</span> : null}
         </button>
       </div>
       <span class="side" data-room={SENDING}>

@@ -363,7 +363,7 @@ const ITEM: Item = {
   from: 'record',
 }
 
-test('the Overview page draws each status with its mark and tone, and ◆ on a subject an open ask holds up', () => {
+test('the Overview page draws each status with its mark and tone, and ◆ on a subject an open ask holds up, whose Asks row names it until the subject closes', () => {
   const statuses = ['working', 'queued', 'waits-on-other', 'queued'] as const
   const asks = new Set([ITEM.id])
   const opened = applyOverview(
@@ -373,13 +373,10 @@ test('the Overview page draws each status with its mark and tone, and ◆ on a s
     asks,
   )
   const closed = applyOverview(opened, parseOverview('DONE: s1 | built')!, 2000, asks)
-  const rows = sessionView(
-    { ...emptySession(), ledger: { ...EMPTY, items: [ITEM], overview: closed } },
-    3000,
-    1000,
-    true,
-    NO_HOLDS,
-  ).overviewPage.rows.flatMap(r => (r.kind === 'subject' ? [[r.name, r.mark, r.tone]] : []))
+  const held = { ...emptySession(), ledger: { ...EMPTY, items: [ITEM], overview: closed } }
+  const rows = sessionView(held, 3000, 1000, true, NO_HOLDS).overviewPage.rows.flatMap(r =>
+    r.kind === 'subject' ? [[r.name, r.mark, r.tone]] : [],
+  )
 
   expect(rows).toEqual([
     ['Part 0', '✓', 'done'],
@@ -387,6 +384,14 @@ test('the Overview page draws each status with its mark and tone, and ◆ on a s
     ['Part 2', '◌', null],
     ['Part 3', '◆', 'needsYou'],
   ])
+  expect(allRows(sessionView(held, 3000, 1000, true, NO_HOLDS)).find(r => r.id === ITEM.id)?.holdsUpLine).toBe(
+    'Holds up Part 3',
+  )
+  const heldDone = {
+    ...held,
+    ledger: { ...held.ledger, overview: applyOverview(closed, parseOverview('DONE: s4 | built')!, 2500, asks) },
+  }
+  expect(allRows(sessionView(heldDone, 3000, 1000, true, NO_HOLDS)).find(r => r.id === ITEM.id)?.holdsUpLine).toBeNull()
 })
 
 test('a session saved by the Progress trial build loads without its results, subagents and stated step', () => {
