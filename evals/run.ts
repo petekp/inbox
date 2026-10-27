@@ -154,7 +154,8 @@ type Answer = {
 }
 
 /**
- * Sonnet as the mod calls it: at low effort, and with no settings, so the runner's own CLAUDE.md never reaches it.
+ * Sonnet as the mod calls it: at low effort, and with no settings or MCP servers, so neither the runner's own CLAUDE.md
+ * nor its account's connectors reach it.
  */
 function claude(prompt: string, system: string): Promise<Answer> {
   const cwd = mkdtempSync(join(tmpdir(), 'inbox-eval-claude-'))
@@ -169,6 +170,7 @@ function claude(prompt: string, system: string): Promise<Answer> {
         CLAUDE_MODEL,
         '--effort',
         'low',
+        '--strict-mcp-config',
         '--setting-sources',
         '',
         '--tools',
