@@ -91,6 +91,7 @@ import {
 import type {
   ClosedDelivery,
   Feedback,
+  OverviewBranch,
   OverviewPage,
   OverviewRow,
   Holds,
@@ -580,9 +581,15 @@ function pressFeedback(screen: PanelScreen, id: string, now: number, isMarkDone 
 
 const doneAt = (f: Line['feedback']): number | null => (f?.source?.is === 'done' ? f.source.at : null)
 
-/** Where an Overview row's mark sits. A subject's text, its was line, its children's marks and the look line start at `PAGE_TEXT_AT`. */
+/** Where an Overview row's mark sits. A subject's text, its was line and the look line start at `PAGE_TEXT_AT`. */
 const PAGE_MARK_AT = 3
 const PAGE_TEXT_AT = PAGE_MARK_AT + 2
+/** Where the mark of a child under a subject sits: after the tree's arm, which starts under the subject's mark. */
+const PAGE_CHILD_AT = PAGE_MARK_AT + 3
+const TREE_ARMS: Record<OverviewBranch, { first: string; rest: string }> = {
+  mid: { first: '├─', rest: '│' },
+  last: { first: '└─', rest: ' ' },
+}
 
 function pageEntries(page: OverviewPage): Entry[] {
   if (page.isEmpty)
@@ -994,8 +1001,9 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
 }
 
 /**
- * One line of the Overview's list: a mark, its text wrapped after it, and the age at the panel's right edge. `paint`
- * styles the text from `plainCells` on, so a subject's name stays plain and where it stands draws dim.
+ * One line of the Overview's list: a mark, its text wrapped after it to at most `maxLines` lines and cut with an
+ * ellipsis past them, and the age at the panel's right edge. `paint` styles the text from `plainCells` on, so a
+ * subject's name stays plain and where it stands draws dim.
  */
 function pageLine(
   d: Draw,
@@ -1003,19 +1011,41 @@ function pageLine(
   mark: string,
   text: string,
   age: string | null,
-  { plainCells = 0, agePaint = d.style.dim }: { plainCells?: number; agePaint?: (t: string) => string } = {},
+  {
+    plainCells = 0,
+    agePaint = d.style.dim,
+    maxLines = Infinity,
+  }: { plainCells?: number; agePaint?: (t: string) => string; maxLines?: number } = {},
 ): string[] {
   const { width, style: s } = d
   const textAt = indent + 2
   const side = age ? cellWidth(age) + 1 : 0
-  const [first = '', ...rest] = wrapText(text, Math.max(10, width - textAt - side - 1))
-  const firstPainted = cutToCells(first, plainCells) + s.dim(first.slice(cutToCells(first, plainCells).length))
-  const gap = Math.max(1, width - 1 - textAt - cellWidth(first) - (age ? cellWidth(age) : 0))
+  const room = Math.max(10, width - textAt - side - 1)
+  const wrapped = wrapText(text, room)
+  const lines = wrapped.slice(0, maxLines)
+  if (wrapped.length > lines.length)
+    lines[lines.length - 1] = `${cutToCells(lines.at(-1)!, room - 1).replace(/[\s.,;:]+$/, '')}…`
+  let plainLeft = plainCells
+  const painted = lines.map(l => {
+    const plain = cutToCells(l, Math.max(0, plainLeft))
+    plainLeft -= cellWidth(l) + 1
+
+    return plain + s.dim(l.slice(plain.length))
+  })
+  const gap = Math.max(1, width - 1 - textAt - cellWidth(lines[0] ?? '') - (age ? cellWidth(age) : 0))
 
   return [
-    `${' '.repeat(indent)}${mark} ${firstPainted}${age ? ' '.repeat(gap) + agePaint(age) : ''}`,
-    ...rest.map(l => ' '.repeat(textAt) + s.dim(l)),
+    `${' '.repeat(indent)}${mark} ${painted[0] ?? ''}${age ? ' '.repeat(gap) + agePaint(age) : ''}`,
+    ...painted.slice(1).map(l => ' '.repeat(textAt) + l),
   ]
+}
+
+/** A row's lines with the tree line at `PAGE_MARK_AT`: `first` on its first line when given, and `rest` on each line after. */
+function withTree(lines: string[], first: string | null, rest: string, s: Style): string[] {
+  const drawn = (line: string, glyph: string) =>
+    glyph.trim() === '' ? line : line.slice(0, PAGE_MARK_AT) + s.dim(glyph) + line.slice(PAGE_MARK_AT + glyph.length)
+
+  return lines.map((l, n) => (n === 0 ? (first ? drawn(l, first) : l) : drawn(l, rest)))
 }
 
 /** A line on the Overview page, laid out as the shared row says. */
@@ -1025,21 +1055,29 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
     const glyph = row.isRunning ? runningMark(now) : row.mark
     const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph)
     const text = row.text ? `${row.name}: ${row.text}` : row.name
-    const out = pageLine(d, PAGE_MARK_AT, mark, text, row.age, { plainCells: cellWidth(row.name) })
-    if (row.was) out.push(...indented(`was: ${row.was}`, PAGE_TEXT_AT, width, 2, s.dim))
+    const out = pageLine(d, PAGE_MARK_AT, mark, text, row.age, {
+      plainCells: cellWidth(row.name),
+      maxLines: row.maxLines,
+    })
+    if (row.was) out.push(...indented(`was: ${row.was}`, PAGE_TEXT_AT, width, row.maxLines, s.dim))
 
-    return out
+    return row.hasChildren ? withTree(out, null, '│', s) : out
   }
   if (row.kind === 'child') {
-    const indent = row.isLoose ? PAGE_MARK_AT : PAGE_TEXT_AT
     const mark = s.dim(row.isQuiet ? '●' : runningMark(now))
-    const room = Math.max(6, width - indent - 2 - cellWidth(row.age) - 2)
-    const name = cellWidth(row.name) > room ? `${cutToCells(row.name, room - 1)}…` : row.name
     const agePaint = row.isQuiet ? (t: string) => s.tone('needsYou', t) : s.dim
+    const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, row.age, {
+      agePaint,
+      maxLines: row.maxLines,
+    })
 
-    return pageLine(d, indent, mark, name, row.age, { agePaint })
+    return row.branch ? withTree(out, TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s) : out
   }
-  if (row.kind === 'more') return [' '.repeat(PAGE_TEXT_AT + 2) + s.dim(row.text)]
+  if (row.kind === 'more') {
+    const arm = TREE_ARMS[row.branch]
+
+    return withTree([' '.repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s)
+  }
   if (row.kind === 'look') {
     const label = `── ${row.text} `
     const fill = '─'.repeat(Math.max(2, width - 1 - PAGE_TEXT_AT - cellWidth(label) - cellWidth(row.age) - 1))

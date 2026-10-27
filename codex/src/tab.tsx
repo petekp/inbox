@@ -1342,35 +1342,41 @@ function markClassOf(tone: OverviewTone, isRunning: boolean): string {
 function OverviewLine({ row }: { row: OverviewRow }) {
   if (row.kind === 'subject')
     return (
-      <div class="row">
+      <div class={row.hasChildren ? 'row has-children' : 'row'}>
         <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
           {row.mark}
         </span>
         <div class="content tight">
-          <div>
+          <div class="clamp" style={{ '--lines': row.maxLines }}>
             {row.name}
             {row.text ? <span class="muted">: {row.text}</span> : null}
           </div>
-          {row.was ? <div class="outcome muted">was: {row.was}</div> : null}
+          {row.was ? (
+            <div class="outcome muted clamp" style={{ '--lines': row.maxLines }}>
+              was: {row.was}
+            </div>
+          ) : null}
         </div>
         <span class="side">{row.age}</span>
       </div>
     )
   if (row.kind === 'child')
     return (
-      <div class={row.isLoose ? 'row' : 'row child'}>
+      <div class={row.branch ? `row child branch-${row.branch}` : 'row'}>
         <span class={markClassOf(null, !row.isQuiet)} ref={row.isQuiet ? undefined : pulseInStep}>
           ●
         </span>
         <div class="content tight muted">
-          <span class="child-name">{row.name}</span>
+          <div class="clamp" style={{ '--lines': row.maxLines }}>
+            {row.name}
+          </div>
         </div>
         <span class={row.isQuiet ? 'side tone-needsYou' : 'side'}>{row.age}</span>
       </div>
     )
   if (row.kind === 'more')
     return (
-      <div class="row child">
+      <div class={`row child branch-${row.branch}`}>
         <span class="mark" />
         <div class="content tight muted">{row.text}</div>
       </div>

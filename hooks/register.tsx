@@ -285,6 +285,7 @@ import type {
   InboxView,
   ModLook,
   PlannedKey,
+  OverviewBranch,
   OverviewRow,
   RowView,
   RowWait,
@@ -387,6 +388,38 @@ function desktopTextPt(text: string): number {
   let pt = 0
   for (const c of text) pt += DESKTOP_CHAR_PT.get(c) ?? DESKTOP_WIDEST_CHAR_PT
   return pt
+}
+/** The words of `text` in lines `widthPt` wide. `desktopTextPt` never counts a line narrower than desktop draws it, so desktop needs no more lines. */
+function desktopLines(text: string, widthPt: number): string[] {
+  const lines: string[] = []
+  let line = ''
+  for (const word of text.split(' ').filter(Boolean)) {
+    const longer = line ? `${line} ${word}` : word
+    if (line && desktopTextPt(longer) > widthPt) {
+      lines.push(line)
+      line = word
+    } else line = longer
+  }
+  if (line) lines.push(line)
+  return lines
+}
+/** `spans` cut to what desktop draws in `limit` lines `widthPt` wide, with an ellipsis when cut. */
+function desktopSpanLines(spans: TerminalSpan[], widthPt: number, limit: number): TerminalSpan[] {
+  const words = spans.map(s => ({ ...s, text: s.text.replace(/\s+/g, ' ') }))
+  const lines = desktopLines(words.map(s => s.text).join(''), widthPt)
+  if (lines.length <= limit) return words
+  let last = lines[limit - 1]!
+  while (last.length > 0 && desktopTextPt(`${last}…`) > widthPt) last = last.slice(0, -1)
+  let room = [...lines.slice(0, limit - 1), last.replace(/[\s.,;:]+$/, '')].join(' ').length
+  const kept: TerminalSpan[] = []
+  for (const s of words) {
+    if (room <= 0) break
+    kept.push({ ...s, text: s.text.slice(0, room) })
+    room -= s.text.length
+  }
+  const isMuted = kept.at(-1)?.isMuted
+
+  return [...kept, { text: '…', ...(isMuted ? { isMuted } : {}) }]
 }
 const DESKTOP_TAB_PAD = '\u00a0'.repeat(3)
 const DESKTOP_LINE_PT = 19
@@ -515,6 +548,17 @@ const ROW_COLUMNS = {
   desktop: { lead: 1, handleAt: 1, textAt: 3 },
 } as const
 const DESKTOP_MARK_CELLS = 1
+/** One point, across in cells and down in lines: desktop draws a tree line as a filled Box, since it has no per-side borders. */
+const DESKTOP_HAIR_CELLS = 1 / DESKTOP_CELL_PT
+const DESKTOP_HAIR_LINES = 1 / DESKTOP_LINE_PT
+/**
+ * Where the Overview's tree line runs on desktop, in cells from a row's mark column: under the middle of a subject's
+ * mark, which the Claude app 3.6556 draws 6.4 pt into the column, where a cell is 8.8 pt.
+ */
+const DESKTOP_TREE_AT = 0.73
+/** The room the tree's arm leaves before a child's mark on desktop, in cells. */
+const DESKTOP_ARM_GAP = 0.4
+const OVERVIEW_PAD_Y = OVERVIEW_ROW_PAD_PT / DESKTOP_LINE_PT
 // How far a row frame's transparent border insets its content, in points.
 const FRAME_INSET_PT = 13.2
 const DESKTOP_SIDE_CELLS = 5
@@ -1489,10 +1533,20 @@ function lineCount(text: string, width: number): number {
   return wrapped(text, width).length
 }
 
-type TerminalSpan = Span & { isLinkAddress?: true }
+type TerminalSpan = Span & { isLinkAddress?: true; isMuted?: true }
 
 function terminalTextLines(text: string, width: number, limit = Infinity): TerminalSpan[][] {
-  if (!text || limit < 1) return []
+  if (!text) return []
+  const spans: TerminalSpan[] = parseInline(text).flatMap(span =>
+    span.link ? [span, { text: ` ${span.link}`, isLinkAddress: true as const }] : [span],
+  )
+
+  return terminalSpanLines(spans, width, limit)
+}
+
+/** `spans` wrapped at word breaks to `width` cells, cut after `limit` lines with an ellipsis. */
+function terminalSpanLines(spans: TerminalSpan[], width: number, limit = Infinity): TerminalSpan[][] {
+  if (spans.every(s => !s.text) || limit < 1) return []
   const size = Math.max(1, width)
   type Character = { text: string; span: TerminalSpan }
   const lines: Character[][] = []
@@ -1525,9 +1579,6 @@ function terminalTextLines(text: string, width: number, limit = Infinity): Termi
     spaces = []
     word = []
   }
-  const spans: TerminalSpan[] = parseInline(text).flatMap(span =>
-    span.link ? [span, { text: ` ${span.link}`, isLinkAddress: true as const }] : [span],
-  )
   for (const span of spans) {
     for (const character of span.text) {
       endsWithNewline = character === '\n'
@@ -1548,7 +1599,8 @@ function terminalTextLines(text: string, width: number, limit = Infinity): Termi
     const last = kept.at(-1)!
     while (last.length > 0 && columns(last) >= size) last.pop()
     while (last.length > 0 && /[\s.,;:]/.test(last.at(-1)!.text)) last.pop()
-    last.push({ text: '…', span: { text: '…' } })
+    const isMuted = last.at(-1)?.span.isMuted
+    last.push({ text: '…', span: { text: '…', ...(isMuted ? { isMuted } : {}) } })
   }
   return kept.map(characters => {
     const runs: TerminalSpan[] = []
@@ -3403,7 +3455,7 @@ export const register: Register = on => {
             italic={span.italic}
             strikethrough={span.strike}
             underline={span.link ? true : undefined}
-            color={span.isLinkAddress ? pal.muted : span.code ? 'permission' : undefined}
+            color={span.isLinkAddress || span.isMuted ? pal.muted : span.code ? 'permission' : undefined}
           >
             {span.text}
           </Text>
@@ -4002,11 +4054,14 @@ export const register: Register = on => {
       isMarkHung = true,
       markCells = DESKTOP_MARK_CELLS,
       gapY = 0,
+      tree = null,
       children,
     }: {
       key?: string
       mark?: JSX.Element | null
       side?: JSX.Element | null
+      /** An absolute Box in the mark column, which the frame stretches to the row's height. */
+      tree?: JSX.Element | null
       fill?: string | undefined
       padY?: number
       isCentered?: boolean
@@ -4020,7 +4075,7 @@ export const register: Register = on => {
       <Box
         key={key}
         flexDirection="row"
-        alignItems={isCentered ? 'center' : 'flex-start'}
+        alignItems={isCentered ? 'center' : tree ? 'stretch' : 'flex-start'}
         marginY={gapY}
         borderStyle="single"
         borderColor="#0000"
@@ -4033,6 +4088,7 @@ export const register: Register = on => {
           flexShrink={0}
           paddingLeft={indent}
         >
+          {tree}
           {mark ? (
             <Box position="absolute" top={0} left={isMarkHung ? indent - 1 : indent}>
               {mark}
@@ -4042,7 +4098,14 @@ export const register: Register = on => {
         <Box flexDirection="column" flexShrink={1} flexGrow={1} minWidth={0}>
           {children}
         </Box>
-        <Box minWidth={DESKTOP_SIDE_CELLS} flexShrink={0} flexDirection="row" justifyContent="flex-end" paddingLeft={1}>
+        <Box
+          minWidth={DESKTOP_SIDE_CELLS}
+          flexShrink={0}
+          flexDirection="row"
+          justifyContent="flex-end"
+          alignItems="flex-start"
+          paddingLeft={1}
+        >
           {side}
         </Box>
       </Box>
@@ -5271,6 +5334,72 @@ export const register: Register = on => {
         <Text color={color}>{look === 'terminal' ? runningMark(now) : glyph}</Text>
       )
     }
+    /** The text column of an Overview line at `depth`, in cells, less the age beside it. */
+    const overviewTextCells = (depth: number, age: string | null) =>
+      listColumns - 1 - markColumns.textAt - markWidth * depth - (age ? cellWidth(age) + 2 : 0)
+    /** The same column on desktop, in points, less a cell as `desktopRowTextPt` leaves. */
+    const overviewTextPt = (depth: number) =>
+      (listColumns - 1 - DESKTOP_MARK_CELLS * (depth * 2 + 1) - 1 - DESKTOP_SIDE_CELLS) * DESKTOP_CELL_PT -
+      2 * FRAME_INSET_PT
+    /** One text of an Overview line, wrapped to at most `maxLines` lines and cut with an ellipsis past them. */
+    const overviewText = (key: string, spans: TerminalSpan[], maxLines: number, depth: number, age: string | null) => (
+      <Box key={key}>
+        <Text wrap="wrap">
+          {terminalText(
+            look === 'desktop'
+              ? [desktopSpanLines(spans, overviewTextPt(depth), maxLines)]
+              : terminalSpanLines(spans, overviewTextCells(depth, age), maxLines),
+          )}
+        </Text>
+      </Box>
+    )
+    /**
+     * The line that ties the rows under a subject to it, in the subject's mark column. `down` runs from under the
+     * subject's mark to the end of its row. `mid` and `last` reach across to a child's mark, and `mid` runs on to the
+     * next row, so a row that wraps keeps the line beside each of its lines.
+     */
+    const overviewTree = (key: string, shape: 'down' | OverviewBranch) => {
+      if (look === 'terminal')
+        return (
+          <Box
+            key={key}
+            position="absolute"
+            top={shape === 'down' ? 1 : 0}
+            bottom={0}
+            left={markColumns.handleAt}
+            width={2}
+          >
+            <Text color={pal.line}>{treeText(shape === 'down' ? 'pass' : shape, 0)}</Text>
+          </Box>
+        )
+      // The line spans the mark column, which spans the frame's content. To meet the next row's line, each end reaches
+      // over the frame's padding and its 1 pt border, in margins, which count half lines.
+      const reach = -(OVERVIEW_PAD_Y + 2 * DESKTOP_HAIR_LINES)
+      const firstLineMiddle = 0.5
+      const hair = (key: string, grow: boolean, ends: { marginTop?: number; marginBottom?: number }) => (
+        <Box key={key} flexDirection="row" {...(grow ? { flexGrow: 1 } : { height: firstLineMiddle })}>
+          <Box width={DESKTOP_HAIR_CELLS} backgroundColor={pal.divider} {...ends} />
+        </Box>
+      )
+      const arm = DESKTOP_MARK_CELLS * 2 - DESKTOP_TREE_AT - DESKTOP_ARM_GAP
+      const parts =
+        shape === 'down'
+          ? [<Box key="under-mark" height={firstLineMiddle + 0.4} />, hair('down', true, { marginBottom: reach })]
+          : [
+              hair('to-arm', false, { marginTop: reach }),
+              <Box key="arm" height={DESKTOP_HAIR_LINES} width={arm} backgroundColor={pal.divider} />,
+              ...(shape === 'mid' ? [hair('on', true, { marginBottom: reach })] : []),
+            ]
+
+      return (
+        <Box key={key} position="absolute" top={0} bottom={0} left={0} flexDirection="row">
+          <Box width={DESKTOP_TREE_AT - DESKTOP_HAIR_CELLS / 2} flexShrink={0} />
+          <Box flexDirection="column" flexShrink={0}>
+            {parts}
+          </Box>
+        </Box>
+      )
+    }
     /** One line of the Overview's list: a mark, its text, and an age in the side column. `depth` 1 sits under a subject's text. */
     const overviewLine = ({
       key,
@@ -5279,6 +5408,7 @@ export const register: Register = on => {
       content,
       age,
       ageColor = pal.age,
+      tree = null,
     }: {
       key: string
       depth?: number
@@ -5286,6 +5416,7 @@ export const register: Register = on => {
       content: JSX.Element | JSX.Element[]
       age: string | null
       ageColor?: string
+      tree?: JSX.Element | null
     }) => {
       const side = age ? <Text color={ageColor}>{age}</Text> : null
 
@@ -5294,9 +5425,10 @@ export const register: Register = on => {
           key,
           indent: DESKTOP_MARK_CELLS * (depth * 2),
           isMarkHung: false,
-          padY: OVERVIEW_ROW_PAD_PT / DESKTOP_LINE_PT,
+          padY: OVERVIEW_PAD_Y,
           mark,
           side,
+          tree,
           children: Array.isArray(content) ? content : [content],
         })
       ) : (
@@ -5313,6 +5445,7 @@ export const register: Register = on => {
               {side}
             </Box>
           ) : null}
+          {tree}
         </Box>
       )
     }
@@ -5321,35 +5454,38 @@ export const register: Register = on => {
         const color = r.tone ? pal.mark[r.tone] : pal.muted
         const mark = r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
         const content = [
-          <Text key="text" wrap="wrap">
-            {r.name}
-            {r.text ? <Text color={pal.muted}>{`: ${r.text}`}</Text> : null}
-          </Text>,
+          overviewText(
+            `overview-${r.id}-text`,
+            [{ text: r.name }, ...(r.text ? [{ text: `: ${r.text}`, isMuted: true as const }] : [])],
+            r.maxLines,
+            0,
+            r.age,
+          ),
           ...(r.was
-            ? [
-                <Text key="was" wrap="wrap" color={pal.muted}>
-                  {`was: ${r.was}`}
-                </Text>,
-              ]
+            ? [overviewText(`overview-${r.id}-was`, [{ text: `was: ${r.was}`, isMuted: true }], r.maxLines, 0, r.age)]
             : []),
         ]
 
-        return overviewLine({ key: `overview-${r.id}`, mark, content, age: r.age })
+        return overviewLine({
+          key: `overview-${r.id}`,
+          mark,
+          content,
+          age: r.age,
+          tree: r.hasChildren ? overviewTree(`overview-${r.id}-tree`, 'down') : null,
+        })
       }
       if (r.kind === 'child') {
         const mark = r.isQuiet ? <Text color={pal.muted}>●</Text> : runningDot(r.id, '●', pal.muted)
+        const depth = r.isLoose ? 0 : 1
 
         return overviewLine({
           key: `overview-${r.id}`,
-          depth: r.isLoose ? 0 : 1,
+          depth,
           mark,
-          content: (
-            <Text wrap="truncate-end" color={pal.muted}>
-              {r.name}
-            </Text>
-          ),
+          content: overviewText(`overview-${r.id}-text`, [{ text: r.name, isMuted: true }], r.maxLines, depth, r.age),
           age: r.age,
           ageColor: r.isQuiet ? (pal.tone.needsYou ?? pal.age) : pal.age,
+          tree: r.branch ? overviewTree(`overview-${r.id}-tree`, r.branch) : null,
         })
       }
       if (r.kind === 'more')
@@ -5359,10 +5495,11 @@ export const register: Register = on => {
           mark: null,
           content: <Text color={pal.muted}>{r.text}</Text>,
           age: null,
+          tree: overviewTree(`overview-${r.id}-tree`, r.branch),
         })
       if (r.kind === 'look') {
         const label = `── ${r.text} `
-        const ruleColumns = listColumns - 1 - markColumns.textAt - (cellWidth(r.age) + 2) - cellWidth(label)
+        const ruleColumns = overviewTextCells(0, r.age) - cellWidth(label)
         const fill = look === 'desktop' ? '' : '─'.repeat(Math.max(2, ruleColumns))
 
         return overviewLine({

@@ -801,6 +801,9 @@ export const LISTED_TABS = TAB_NAMES.filter((t): t is TabName & { id: ListedTab 
 /** A mark's tone on the Overview. Null draws it muted. */
 export type OverviewTone = 'needsYou' | 'done' | 'issue' | null
 
+/** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */
+export type OverviewBranch = 'mid' | 'last'
+
 /** One line of the Overview's list, in the order to draw it. Each look lays out the parts; none chooses them. */
 export type OverviewRow =
   | {
@@ -811,12 +814,16 @@ export type OverviewRow =
       /** Whether its work runs now, so a look animates the mark: this session's turn runs, or a child of it does. */
       isRunning: boolean
       name: string
-      /** Where it stands. Null below the look line, where the person has seen it. */
+      /** Where it stands. Null for a finished row below the look line, which the person has seen. */
       text: string | null
       /** The plan a reversal replaced, while the person has not seen it. */
       was: string | null
       /** How long ago it last changed. */
       age: string
+      /** The most lines its name with where it stands wraps to, and its was line too. A look cuts past them with an ellipsis. */
+      maxLines: number
+      /** Whether rows of its children follow, so its tree line runs down from its mark. */
+      hasChildren: boolean
     }
   | {
       kind: 'child'
@@ -827,9 +834,13 @@ export type OverviewRow =
       isQuiet: boolean
       /** Not linked to a subject the list shows, so it sits at the top of the list instead of under one. */
       isLoose: boolean
+      /** Its place under its subject. Null for a loose child, which has no subject to tie to. */
+      branch: OverviewBranch | null
+      /** The most lines its name wraps to. A look cuts past them with an ellipsis. */
+      maxLines: number
     }
-  /** The children of a subject past `CHILD_ROWS`, as "+ 2 more running". */
-  | { kind: 'more'; id: string; text: string }
+  /** The children of a subject past `CHILD_ROWS`, as "+ 2 more running". It is always the last row under its subject. */
+  | { kind: 'more'; id: string; text: string; branch: 'last' }
   /** Where the person last looked: rows above it changed since. */
   | { kind: 'look'; id: string; text: string; age: string }
   /** Rows folded into a count, as "✓ 3 done" or "○ 2 more queued". */
@@ -853,6 +864,8 @@ export const WORKING_TEXT = 'Working…'
 export const LOOK_TEXT = 'you looked'
 export const NEWS_DOT = '•'
 
+/** The most lines each text on an Overview row wraps to: a subject's name with where it stands, its was line, and a child's name. */
+export const OVERVIEW_TEXT_LINES = 3
 /** The most children drawn under one subject; the rest fold into "+ N more running". */
 export const CHILD_ROWS = 3
 /** A child with no activity for this long reads quiet. */
@@ -908,12 +921,21 @@ function liveOf(presence: Session['presence'], now: number): string | null {
   return lastReplyAt === null ? null : `Idle · last reply ${ago(now - lastReplyAt)}`
 }
 
-function childRow(c: Child, now: number, isLoose: boolean): OverviewRow {
+function childRow(c: Child, now: number, branch: OverviewBranch | null): OverviewRow {
   const idle = c.lastActivityAt === null ? null : now - c.lastActivityAt
   const isQuiet = idle !== null && idle >= QUIET_MS
   const age = shortAgo(idle ?? now - c.startedAt)
 
-  return { kind: 'child', id: c.id, name: c.name, age: isQuiet ? `quiet ${age}` : age, isQuiet, isLoose }
+  return {
+    kind: 'child',
+    id: c.id,
+    name: c.name,
+    age: isQuiet ? `quiet ${age}` : age,
+    isQuiet,
+    isLoose: branch === null,
+    branch,
+    maxLines: OVERVIEW_TEXT_LINES,
+  }
 }
 
 export function overviewPage(
@@ -945,7 +967,7 @@ export function overviewPage(
   const shownIds = new Set(shown.map(x => x.id))
   const rows: OverviewRow[] = running
     .filter(c => c.subjectId === null || !shownIds.has(c.subjectId))
-    .map(c => childRow(c, now, true))
+    .map(c => childRow(c, now, null))
   const lookRow: OverviewRow | null =
     look === null ? null : { kind: 'look', id: 'look', text: LOOK_TEXT, age: shortAgo(now - look) }
   let isLookDrawn = false
@@ -956,19 +978,28 @@ export function overviewPage(
       isLookDrawn = true
     }
     const under = running.filter(c => c.subjectId === x.id)
+    const shownUnder = under.slice(0, CHILD_ROWS)
+    const isMore = under.length > CHILD_ROWS
     rows.push({
       kind: 'subject',
       id: x.id,
       ...SUBJECT_MARKS[x.status],
       isRunning: x.status === 'working' && (s.presence.isTurnRunning || under.length > 0),
       name: x.name,
-      text: isNew(x) ? x.text || null : null,
+      text: isNew(x) || isOpen(x) ? x.text || null : null,
       was: isNew(x) ? x.was : null,
       age: shortAgo(now - x.changedAt),
+      maxLines: OVERVIEW_TEXT_LINES,
+      hasChildren: under.length > 0,
     })
-    rows.push(...under.slice(0, CHILD_ROWS).map(c => childRow(c, now, false)))
-    if (under.length > CHILD_ROWS)
-      rows.push({ kind: 'more', id: `${x.id}-more`, text: `+ ${under.length - CHILD_ROWS} more running` })
+    rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? 'last' : 'mid')))
+    if (isMore)
+      rows.push({
+        kind: 'more',
+        id: `${x.id}-more`,
+        text: `+ ${under.length - CHILD_ROWS} more running`,
+        branch: 'last',
+      })
   }
   if (lookRow && !isLookDrawn && shown.length > 0) rows.push(lookRow)
   if (hiddenQueued.size > 0)

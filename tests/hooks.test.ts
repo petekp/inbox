@@ -18,6 +18,7 @@ import {
   QUEUED_AFTER_MS,
   SETTLED_MS,
   inboxView,
+  OVERVIEW_TEXT_LINES,
   perTurnStatus,
   overviewPage,
   rowKeyPlan,
@@ -4997,6 +4998,64 @@ test('on a next build, at 31 desktop columns the tabs show their symbols with th
   expect((await pane.find({ key: 'overview-goal' }))?.text).toBe('Adding a greeting CLI')
   expect((await pane.find({ key: 'overview-s2' }))?.text).toContain('Plan: written')
   expect(await pane.find({ key: 'select-f3' })).toBeUndefined()
+})
+
+test('on the Overview, a subject’s text wraps to three lines at the docked width and is cut with an ellipsis past them, in the terminal and on desktop', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  files = ['/.next-build']
+  paneState = { isShown: true, isFocused: true }
+  const name = 'Help text for every greeting command'
+  const text = 'being written with an example for each flag and its default'
+  overviewReply = `GOAL: Adding a greeting CLI\nNEW: working | ${name} | ${text}\nNEW: queued | Loud flag | after help`
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  const terminal = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 40 } })
+  await terminal.press({ key: 'tab-key-overview' })
+  await clock.settle()
+  const textOf = async (pane: Pick<Mounted, 'find'>, key: string) => (await pane.find({ key }))?.text
+  const lines = (await textOf(terminal, 'overview-s1-text'))!.split('\n')
+  expect(lines).toHaveLength(OVERVIEW_TEXT_LINES)
+  expect(lines[0]).toBe('Help text for every')
+  expect(lines.at(-1)).toMatch(/…$/)
+  expect(await textOf(terminal, 'overview-s2-text')).toBe('Loud flag: after help')
+  await terminal.redraw({ ...PANE.props, bodyColumns: 120 })
+  expect(await textOf(terminal, 'overview-s1-text')).toBe(`${name}: ${text}`)
+
+  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 36 } })
+  await desktop.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
+  await clock.settle()
+  const shown = (await textOf(desktop, 'overview-s1-text'))!
+  expect(shown).toMatch(/^Help text for every greeting command: .+…$/)
+  expect(shown.length).toBeLessThan(`${name}: ${text}`.length)
+  await desktop.redraw({ ...PANE.props, bodyColumns: 120 })
+  expect(await textOf(desktop, 'overview-s1-text')).toBe(`${name}: ${text}`)
+})
+
+test('on the Overview in the terminal, the rows under a subject hang from its mark, ├─ for each and └─ for the last, and the line runs beside each wrapped line', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  files = ['/.next-build']
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'inbox', args: 'demo' } as never)
+  const pane = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 40 } })
+  await pane.press({ key: 'tab-key-overview' })
+  await clock.settle()
+  const tree = async (id: string) => (await pane.find({ key: `overview-${id}-tree` }))?.text.split('\n').slice(0, 3)
+  const textLines = async (id: string) => (await pane.find({ key: `overview-${id}-text` }))!.text.split('\n')
+
+  expect(await tree('s1')).toEqual(['│', '│', '│'])
+  expect(await tree('c1')).toEqual(['├─', '│', '│'])
+  expect(await tree('c3')).toEqual(['└─', ' ', ' '])
+  expect(await tree('c2')).toEqual(['└─', ' ', ' '])
+  expect(await tree('s3')).toBeUndefined()
+  expect((await textLines('c3')).length).toBeGreaterThan(1)
+  await pane.redraw({ ...PANE.props, bodyColumns: 120 })
+  expect(await textLines('c3')).toEqual(['Tune how hard a pinch must be'])
 })
 
 for (const isNextBuild of [false, true])

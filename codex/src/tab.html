@@ -755,10 +755,50 @@
       .overview .row.child {
         padding-left: var(--text-x);
       }
-      .overview .child-name {
+      .overview .clamp {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: var(--lines);
         overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+      }
+      /* The tree line runs under the middle of a subject's mark, and its arm reaches to a child's mark. */
+      .overview .list {
+        --tree-x: calc(var(--mark-x) + (var(--text-x) - var(--mark-x) - 8px) / 2);
+        --tree-line: color-mix(in oklab, var(--text) 15%, transparent);
+      }
+      .overview .row.has-children,
+      .overview .row.branch-mid,
+      .overview .row.branch-last {
+        position: relative;
+      }
+      .overview .row.has-children::before,
+      .overview .row.branch-mid::before,
+      .overview .row.branch-last::before {
+        content: '';
+        position: absolute;
+        left: var(--tree-x);
+        border-left: 1px solid var(--tree-line);
+      }
+      .overview .row.has-children::before {
+        top: calc(var(--overview-row-pad) + 1lh);
+        bottom: 0;
+      }
+      .overview .row.branch-mid::before {
+        top: 0;
+        bottom: 0;
+      }
+      .overview .row.branch-last::before {
+        top: 0;
+        height: calc(var(--overview-row-pad) + 0.5lh);
+      }
+      .overview .row.branch-mid::after,
+      .overview .row.branch-last::after {
+        content: '';
+        position: absolute;
+        left: var(--tree-x);
+        top: calc(var(--overview-row-pad) + 0.5lh);
+        width: calc(var(--text-x) - var(--tree-x) + 2px);
+        border-top: 1px solid var(--tree-line);
       }
       .overview .look-rule {
         display: flex;

@@ -1675,6 +1675,7 @@ var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 var WORKING_TEXT = "Working\u2026";
 var LOOK_TEXT = "you looked";
+var OVERVIEW_TEXT_LINES = 3;
 var CHILD_ROWS = 3;
 var QUIET_MS = 15 * 6e4;
 var NEW_CLOSED_ROWS = 2;
@@ -1704,11 +1705,20 @@ function liveOf(presence, now) {
   }
   return lastReplyAt === null ? null : `Idle \xB7 last reply ${ago(now - lastReplyAt)}`;
 }
-function childRow(c, now, isLoose) {
+function childRow(c, now, branch) {
   const idle = c.lastActivityAt === null ? null : now - c.lastActivityAt;
   const isQuiet = idle !== null && idle >= QUIET_MS;
   const age = shortAgo(idle ?? now - c.startedAt);
-  return { kind: "child", id: c.id, name: c.name, age: isQuiet ? `quiet ${age}` : age, isQuiet, isLoose };
+  return {
+    kind: "child",
+    id: c.id,
+    name: c.name,
+    age: isQuiet ? `quiet ${age}` : age,
+    isQuiet,
+    isLoose: branch === null,
+    branch,
+    maxLines: OVERVIEW_TEXT_LINES
+  };
 }
 function overviewPage(s, now) {
   const o = s.ledger.overview;
@@ -1725,7 +1735,7 @@ function overviewPage(s, now) {
   const folded = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const shownIds = new Set(shown.map((x) => x.id));
-  const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, now, true));
+  const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, now, null));
   const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT, age: shortAgo(now - look) };
   let isLookDrawn = false;
   for (const [i, x] of shown.entries()) {
@@ -1735,19 +1745,28 @@ function overviewPage(s, now) {
       isLookDrawn = true;
     }
     const under = running.filter((c) => c.subjectId === x.id);
+    const shownUnder = under.slice(0, CHILD_ROWS);
+    const isMore = under.length > CHILD_ROWS;
     rows.push({
       kind: "subject",
       id: x.id,
       ...SUBJECT_MARKS[x.status],
       isRunning: x.status === "working" && (s.presence.isTurnRunning || under.length > 0),
       name: x.name,
-      text: isNew(x) ? x.text || null : null,
+      text: isNew(x) || isOpen(x) ? x.text || null : null,
       was: isNew(x) ? x.was : null,
-      age: shortAgo(now - x.changedAt)
+      age: shortAgo(now - x.changedAt),
+      maxLines: OVERVIEW_TEXT_LINES,
+      hasChildren: under.length > 0
     });
-    rows.push(...under.slice(0, CHILD_ROWS).map((c) => childRow(c, now, false)));
-    if (under.length > CHILD_ROWS)
-      rows.push({ kind: "more", id: `${x.id}-more`, text: `+ ${under.length - CHILD_ROWS} more running` });
+    rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
+    if (isMore)
+      rows.push({
+        kind: "more",
+        id: `${x.id}-more`,
+        text: `+ ${under.length - CHILD_ROWS} more running`,
+        branch: "last"
+      });
   }
   if (lookRow && !isLookDrawn && shown.length > 0) rows.push(lookRow);
   if (hiddenQueued.size > 0)
