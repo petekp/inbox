@@ -838,7 +838,7 @@
   },
   {
     "name": "record-repeat-adds-step",
-    "about": "After a Compare press, the agent records the open question again with the comparison page as an absolute path, and the record adds the page as a step.",
+    "about": "After a Compare press, the agent records the open question again with the comparison page as an absolute path, and the record adds the page as a step. The reply has no table, and gives the pick, the unexpected finding and the page's path.",
     "ledger": {
       "nextId": 4,
       "turn": 2,
@@ -860,7 +860,7 @@
     "files": {
       ".scratch/compare/caches.html": "<!doctype html><title>Caches</title><table><tr><th>Redis</th><th>In-memory</th></tr><tr><td>Same prices on all 4 instances</td><td>Up to 5 minutes of stale prices</td></tr></table>\n"
     },
-    "prompt": "I pressed Compare on the open cache question. Your background subagent has reported back: with In-memory, each of the API's four instances can serve prices up to five minutes stale, and reads are 3 ms faster. With Redis, every instance serves the same prices. It wrote a side-by-side page at .scratch/compare/caches.html in this checkout. The Compare request said: \"When the comparison is done, call the inbox's record tool yourself with this question's ask and options as listed, and the page's absolute path in steps if you made one. That marks it compared.\" Finish the comparison now.",
+    "prompt": "I pressed Compare on the open cache question. Your background subagent has reported back: with In-memory, each of the API's four instances can serve prices up to five minutes stale, and reads are 3 ms faster. With Redis, every instance serves the same prices. One thing it did not expect: the staging stack already runs a Redis server, so choosing Redis adds no new service there. It built the comparison page from the inbox's template at .scratch/compare/caches.html in this checkout. The Compare request said: \"When the comparison is done, reply without a table, since the page holds the measures. Give your pick and say whether it changed, your reason in one line, one line on anything you did not expect, and the page's absolute path. Also call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps. That marks it compared. Call each choice by its name as listed.\" Below it, it quoted the question: \"Which cache should the product API use?\" Options: Redis / In-memory. Finish the comparison now.",
     "checks": [
       {
         "calls": "record",
@@ -880,13 +880,22 @@
         "reply": "redis"
       },
       {
+        "notReply": "\\|\\s*:?-{3,}"
+      },
+      {
+        "reply": "caches\\.html"
+      },
+      {
+        "reply": "staging"
+      },
+      {
         "noIds": true
       }
     ]
   },
   {
     "name": "compare-page-step-is-built-page",
-    "about": "After a Compare press that built a page from the comparison template, the agent records the built page as the step, not the template or the JSON file the page was built from.",
+    "about": "After a Compare press that built a page from the comparison template, the agent records the built page as the step, not the template or the JSON file the page was built from. The reply has no table, and gives the pick, the unexpected finding and the page's path.",
     "ledger": {
       "nextId": 4,
       "turn": 2,
@@ -909,7 +918,7 @@
       ".scratch/compare/caches.json": "{\n  \"question\": \"Which cache should the product API use?\",\n  \"pick\": \"Redis\",\n  \"reason\": \"Every instance serves the same prices.\",\n  \"choices\": [\n    {\n      \"name\": \"Redis\",\n      \"summary\": \"One shared cache\"\n    },\n    {\n      \"name\": \"In-memory\",\n      \"summary\": \"A cache in each instance\"\n    }\n  ],\n  \"measures\": [\n    {\n      \"name\": \"Stale prices\",\n      \"better\": \"lower\",\n      \"values\": {\n        \"Redis\": \"None\",\n        \"In-memory\": \"Up to 5 minutes\"\n      },\n      \"best\": [\n        \"Redis\"\n      ]\n    },\n    {\n      \"name\": \"Read time\",\n      \"better\": \"lower\",\n      \"values\": {\n        \"Redis\": \"4 ms\",\n        \"In-memory\": \"1 ms\"\n      },\n      \"best\": [\n        \"In-memory\"\n      ]\n    }\n  ]\n}\n",
       ".scratch/compare/caches.html": "<!doctype html><title>Comparison</title><main id=\"page\"></main><plaintext id=\"compare-data\" hidden>{\n  \"question\": \"Which cache should the product API use?\",\n  \"pick\": \"Redis\",\n  \"reason\": \"Every instance serves the same prices.\",\n  \"choices\": [\n    {\n      \"name\": \"Redis\",\n      \"summary\": \"One shared cache\"\n    },\n    {\n      \"name\": \"In-memory\",\n      \"summary\": \"A cache in each instance\"\n    }\n  ],\n  \"measures\": [\n    {\n      \"name\": \"Stale prices\",\n      \"better\": \"lower\",\n      \"values\": {\n        \"Redis\": \"None\",\n        \"In-memory\": \"Up to 5 minutes\"\n      },\n      \"best\": [\n        \"Redis\"\n      ]\n    },\n    {\n      \"name\": \"Read time\",\n      \"better\": \"lower\",\n      \"values\": {\n        \"Redis\": \"4 ms\",\n        \"In-memory\": \"1 ms\"\n      },\n      \"best\": [\n        \"In-memory\"\n      ]\n    }\n  ]\n}\n"
     },
-    "prompt": "I pressed Compare on the open cache question. Your background subagent has reported back. With Redis, all four of the API's instances serve the same prices. With In-memory, each instance can serve prices up to five minutes stale, and reads are 3 ms faster. It wrote the comparison as JSON at .scratch/compare/caches.json in this checkout, then built the page from the inbox's comparison template with: cat \"/opt/inbox/hooks/compare-page.html\" .scratch/compare/caches.json > .scratch/compare/caches.html. The Compare request said: \"When the comparison is done, call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps if you made one. That marks it compared. Call each choice by its name as listed.\" Finish the comparison now.",
+    "prompt": "I pressed Compare on the open cache question. Your background subagent has reported back. With Redis, all four of the API's instances serve the same prices. With In-memory, each instance can serve prices up to five minutes stale, and reads are 3 ms faster. One thing it did not expect: the API client already retries a failed Redis read, so a Redis restart would not drop requests. It wrote the comparison as JSON at .scratch/compare/caches.json in this checkout, then built the page from the inbox's comparison template with: cat \"/opt/inbox/hooks/compare-page.html\" .scratch/compare/caches.json > .scratch/compare/caches.html. The Compare request said: \"When the comparison is done, reply without a table, since the page holds the measures. Give your pick and say whether it changed, your reason in one line, one line on anything you did not expect, and the page's absolute path. Also call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps. That marks it compared. Call each choice by its name as listed.\" Below it, it quoted the question: \"Which cache should the product API use?\" Options: Redis / In-memory. Finish the comparison now.",
     "checks": [
       {
         "calls": "record",
@@ -933,6 +942,15 @@
       },
       {
         "reply": "redis"
+      },
+      {
+        "notReply": "\\|\\s*:?-{3,}"
+      },
+      {
+        "reply": "caches\\.html"
+      },
+      {
+        "reply": "retr"
       },
       {
         "noIds": true
