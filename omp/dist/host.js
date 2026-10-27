@@ -4882,7 +4882,7 @@ function openTarget2(run, target, root, home) {
   }, target, root, home);
 }
 // package.json
-var version = "0.2.11";
+var version = "0.2.12";
 
 // ../hooks/arrivals.ts
 function recordRows(seen, listed) {
@@ -5690,7 +5690,7 @@ function footer(d, isPageScrolling) {
     out.push(fit(hintLine, width), fit(` ${s.dim(model.trimEnd())}`, width));
   return out;
 }
-function drawPanel(screen, ui, width, now, style, height) {
+function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const d = { screen, ui, width, now, style };
   const entries = entriesOf(screen, ui, ui.tab, now);
   const selected = resolveSelected(linesOf(entries), ui.selectedId);
@@ -5717,13 +5717,18 @@ function drawPanel(screen, ui, width, now, style, height) {
   const isPageTaller = isPage && body.length > roomBeside(footer(d, false));
   const foot = footer(d, isPageTaller);
   const room = roomBeside(foot);
+  const blanks = (shown) => Array(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill("");
   if (isPage) {
     const top = Math.min(Math.max(0, ui.pageTop), body.length > room ? body.length - room + 1 : 0);
     const shown = body.length > room ? pageWindow(body, top, room, style) : body;
-    return { lines: [...head, ...shown, ...foot].map((l) => fit(l, width)), pageTop: top };
+    return { lines: [...head, ...shown, ...blanks(shown), ...foot].map((l) => fit(l, width)), pageTop: top };
   }
   const shown = body.length > room ? scrolled(body, selectedAt, room, style) : body;
-  return { lines: [...head, ...shown, ...foot].map((l) => fit(l, width)), pageTop: ui.pageTop };
+  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map((l) => fit(l, width)), pageTop: ui.pageTop };
+}
+function tallestTabHeight(screen, ui, width, now, style, height) {
+  const heights = shownTabs(screen.isNextBuild === true).map((t) => drawPanel(screen, t.id === ui.tab ? ui : withTab(ui, t.id), width, now, style, height).lines.length);
+  return Math.max(...heights);
 }
 var moreLines = (arrow, n, s) => s.dim(`  ${arrow} ${n} more line${n === 1 ? "" : "s"}`);
 function pageWindow(body, top, room, s) {
@@ -5774,6 +5779,7 @@ function createPanel(deps) {
   let version = 0;
   let seen = {};
   let isOpening = true;
+  let heldHeight = null;
   const stops = [];
   const syncAnimation = () => {
     const isMoving = screen !== null && isAnimating(screen, ui, deps.now());
@@ -5845,7 +5851,11 @@ function createPanel(deps) {
     render(width) {
       if (screen === null)
         return [` ${READING_TEXT}`];
-      const drawn = drawPanel(screen, ui, width, deps.now(), style, deps.height());
+      const now = deps.now();
+      const maxHeight = deps.height();
+      heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight);
+      const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity));
+      heldHeight = Math.max(heldHeight, drawn.lines.length);
       ui = { ...ui, pageTop: drawn.pageTop };
       return drawn.lines;
     },

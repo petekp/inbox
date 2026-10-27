@@ -1,6 +1,6 @@
 {
   "name": "inbox",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "description": "Gathers the questions, tasks, findings and PRs waiting on you in a session",
   "author": { "name": "Pete Petrash" },
   "repository": "https://github.com/petekp/inbox",
