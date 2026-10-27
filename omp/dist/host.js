@@ -3710,6 +3710,9 @@ function isViewKept(prState, linked, lastActions, ref, shownSince) {
   const at = dismissedAt(lastActions, ref);
   return keepsView(prState, linked, ref) || at !== null && isShownSince(at, shownSince);
 }
+function keptViews(prState, linked, lastActions, shownSince) {
+  return Object.fromEntries(Object.entries(prState.views).filter(([ref]) => isViewKept(prState, linked, lastActions, ref, shownSince)));
+}
 var DISMISSED_PR = { how: "dismissed", outcome: PR_DISMISSED_LABEL };
 function drawnPrs(prState, linked, lastActions, now, shownSince, settleWindowMs) {
   return inPrOrder(Object.values(prState.views)).flatMap((pr) => {
@@ -4537,8 +4540,7 @@ function pruned(s) {
 }
 function withFetchedPrs(s, fetched, branchRef) {
   const merged = { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false };
-  const views = Object.fromEntries(Object.entries(merged.views).filter(([ref]) => isViewKept(merged, s.ledger.prs, s.lastActions, ref, s.shownSince)));
-  return { ...s, prViews: { ...merged, views } };
+  return { ...s, prViews: { ...merged, views: keptViews(merged, s.ledger.prs, s.lastActions, s.shownSince) } };
 }
 function withoutStaleResult(last, now) {
   if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS)

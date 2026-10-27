@@ -18,6 +18,7 @@ import {
   isDismissed,
   isViewKept,
   itemPrSteps,
+  keptViews,
   olderPrsText,
   linkedPrs,
   pressRowId,
@@ -719,11 +720,8 @@ export function pruned<S extends Session>(s: S): S {
 /** Merges fetched PRs into the session. A view stays while `isViewKept` keeps it. */
 export function withFetchedPrs<S extends Session>(s: S, fetched: PrViews['views'], branchRef: string | null): S {
   const merged = { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false }
-  const views = Object.fromEntries(
-    Object.entries(merged.views).filter(([ref]) => isViewKept(merged, s.ledger.prs, s.lastActions, ref, s.shownSince)),
-  )
 
-  return { ...s, prViews: { ...merged, views } }
+  return { ...s, prViews: { ...merged, views: keptViews(merged, s.ledger.prs, s.lastActions, s.shownSince) } }
 }
 
 type PrTab = {
