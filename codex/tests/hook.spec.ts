@@ -302,6 +302,67 @@ test('a patch notes each edited file, resolved against the folder it ran in', as
   assert.deepEqual(s.turn.activity, ['edited /work/new/b.txt'])
 })
 
+test('a subagent runs as a child from SubagentStart to SubagentStop, its tool calls move its activity, and a start that is not a compact ends it', async () => {
+  const dir = tempDir()
+  let clock = 1000
+  const deps = hookDeps(dir, () => clock)
+  const children = async () =>
+    ((await readState(dir, 's1')).ledger.overview?.children ?? []).map(c => [c.name, c.endedAt, c.lastActivityAt])
+  const sub = { agent_id: 'sub1', agent_type: 'explorer' }
+
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
+  await handleHook(input('SubagentStart', sub), deps)
+  assert.deepEqual(await children(), [['explorer', null, 1000]])
+  clock = 5000
+  await handleHook(input('PreToolUse', { ...sub, tool_name: 'Bash', tool_input: { command: 'ls' } }), deps)
+  assert.deepEqual(await children(), [['explorer', null, 5000]])
+  clock = 9000
+  await handleHook(input('SubagentStop', sub), deps)
+  assert.deepEqual(await children(), [['explorer', 9000, 5000]])
+
+  await handleHook(input('SubagentStart', { ...sub, agent_id: 'sub2' }), deps)
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'compact' }), deps)
+  assert.equal((await children())[1]?.[1], null)
+  clock = 12000
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'resume' }), deps)
+  assert.equal((await children())[1]?.[1], 12000)
+})
+
+test('a Herdr delegate runs as a child from the command that starts it until a turn that waited on it ends', async () => {
+  const dir = tempDir()
+  const deps = hookDeps(dir)
+  const transcript = join(tempDir(), 'rollout.jsonl')
+  const delegates = async () =>
+    ((await readState(dir, 's1')).ledger.overview?.children ?? []).map(c => [c.kind, c.name, c.endedAt === null])
+  const bash = (command: string) => input('PreToolUse', { tool_name: 'Bash', tool_input: { command } })
+
+  await handleHook(input('UserPromptSubmit', { prompt: 'Hand it off', turn_id: 't1' }), deps)
+  await handleHook(bash('herdr agent start fixer --cmd codex'), deps)
+  assert.deepEqual(await delegates(), [['delegate', 'fixer', true]])
+  writeFileSync(
+    transcript,
+    [
+      { type: 'event_msg', payload: { type: 'task_started', turn_id: 't1' } },
+      {
+        type: 'event_msg',
+        payload: {
+          type: 'item_completed',
+          item: {
+            type: 'CommandExecution',
+            command: ['/bin/zsh', '-lc', 'herdr agent wait fixer'],
+            aggregated_output: '',
+            exit_code: 0,
+          },
+        },
+      },
+    ]
+      .map(row => JSON.stringify(row))
+      .join('\n'),
+  )
+  await handleHook(input('Stop', { turn_id: 't1', transcript_path: transcript, last_assistant_message: 'Done.' }), deps)
+  assert.deepEqual(await delegates(), [['delegate', 'fixer', false]])
+})
+
 test('hooks do nothing in a codex exec run or an ephemeral thread', async () => {
   const dir = tempDir()
   const deps = hookDeps(dir)

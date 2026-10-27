@@ -60,6 +60,7 @@ let activeTools: string[]
 const pi = () =>
   ({
     on: (name: string, handler: Handler) => handlers.set(name, handler),
+    events: { on: (channel: string, handler: Handler) => handlers.set(channel, handler) },
     registerTool: (tool: any) => tools.set(tool.name, tool),
     registerCommand: (name: string, command: any) => commands.set(name, command),
     sendMessage: (message: { content: string }, options: unknown) => {
@@ -1115,6 +1116,44 @@ test('a failed catch-up is tried again at the next agent end, before the exchang
   expect(completions[1]!.prompt).toContain('<conversation>')
   expect(state().presence.ledgerState).toBe('current')
   expect(state().pending).toEqual([])
+})
+
+test('a subagent runs as a child from its started frame to its end, its progress moves its activity, and a new session start ends one left running', async () => {
+  createInbox(pi(), deps())
+  type Saved = { name: string; endedAt: number | null; lastActivityAt: number }
+  const children = (): Saved[] => state().ledger.overview.children
+  const running = () => children().map(c => [c.name, c.endedAt === null])
+  await call('session_start', { type: 'session_start' })
+  await call('task:subagent:lifecycle', { id: 'Scout', agent: 'task', description: 'Map the repo', status: 'started' })
+  expect(running()).toEqual([['Map the repo', true]])
+  const startedActivity = children()[0]!.lastActivityAt
+  clock += 60_000
+  await call('task:subagent:progress', { progress: { id: 'Scout' } })
+  expect(children()[0]!.lastActivityAt).toBeGreaterThan(startedActivity + 60_000 - 1)
+  await call('task:subagent:lifecycle', { id: 'Scout', agent: 'task', status: 'completed' })
+  expect(running()).toEqual([['Map the repo', false]])
+
+  await call('task:subagent:lifecycle', { id: 'Reader', agent: 'task', status: 'started' })
+  await call('session_start', { type: 'session_start' })
+  expect(running()).toEqual([
+    ['Map the repo', false],
+    ['task', false],
+  ])
+})
+
+test('a Herdr delegate runs as a child from the bash call that starts it until a wait on it returns', async () => {
+  createInbox(pi(), deps())
+  const delegates = () =>
+    state().ledger.overview.children.map((c: { kind: string; name: string; endedAt: number | null }) => [
+      c.kind,
+      c.name,
+      c.endedAt === null,
+    ])
+  await prompt('Hand it off')
+  await call('tool_execution_start', { toolName: 'bash', args: { command: 'herdr agent start fixer --cmd omp' } })
+  expect(delegates()).toEqual([['delegate', 'fixer', true]])
+  await call('tool_result', { toolName: 'bash', input: { command: 'herdr agent wait fixer' }, content: [] })
+  expect(delegates()).toEqual([['delegate', 'fixer', false]])
 })
 
 test('a look starts when the panel shows the Overview and ends on another tab or when the panel closes', async () => {

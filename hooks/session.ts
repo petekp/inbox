@@ -40,7 +40,18 @@ import { applyOverview, lookEnded, lookStarted } from './overview'
 import type { OverviewAnswer } from './overview'
 import { allRows, inboxView, NO_HOLDS, outAction, overviewPage, perTurnStatus, pressFeedbackIn } from './view'
 import type { InboxView, OverviewPage, ReplyHolds, RowState } from './view'
-import type { LastAction, Ledger, PrView, PrViews, RowNote, Session, Stop, Turns, TurnDialogQuestion } from '../types'
+import type {
+  LastAction,
+  Ledger,
+  Overview,
+  PrView,
+  PrViews,
+  RowNote,
+  Session,
+  Stop,
+  Turns,
+  TurnDialogQuestion,
+} from '../types'
 
 export type { Session } from '../types'
 
@@ -483,14 +494,20 @@ export function needsUpdate(s: Session): boolean {
 
 /** The Overview tab is shown: a look starts. */
 export function lookStartedOn<S extends { ledger: Ledger }>(s: S, now: number): S {
-  const overview = lookStarted(s.ledger.overview, now)
-
-  return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } }
+  return overviewChanged(s, o => lookStarted(o, now))
 }
 
 /** The Overview tab stopped being shown at `at`: the look ends. */
 export function lookEndedOn<S extends { ledger: Ledger }>(s: S, at: number): S {
-  const overview = lookEnded(s.ledger.overview, at)
+  return overviewChanged(s, o => lookEnded(o, at))
+}
+
+/** The session with its Overview after `change`, or the same session when the Overview did not change. */
+export function overviewChanged<S extends { ledger: Ledger }>(
+  s: S,
+  change: (o: Overview | null) => Overview | null,
+): S {
+  const overview = change(s.ledger.overview)
 
   return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } }
 }

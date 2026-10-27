@@ -34,8 +34,18 @@ import {
   turnStarted,
   placed,
   cutOffTurn,
+  overviewChanged,
   withLook,
 } from '../../hooks/session'
+import {
+  activityGate,
+  childName,
+  childrenCutOff,
+  delegateRef,
+  delegateRunning,
+  delegateSteps,
+} from '../../hooks/children'
+import { childActive, childEnded, withChild } from '../../hooks/overview'
 import type { SessionView } from '../../hooks/session'
 import {
   askOverConversation,
@@ -638,9 +648,13 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     // No turn runs as a session starts, so a running turn saved here was cut off by a process that ended.
     const id = sessionIdOf(ctx)
     shownId = id
+    framesFor = id
     reportCounts(id)
-    if ((await readState(dir, id).catch(() => null))?.presence.isTurnRunning)
-      await change(id, cutOffTurn).catch(() => undefined)
+    // Subagents run in this process, so the ones a saved session lists running ended with the process that ran them.
+    const saved = await readState(dir, id).catch(() => null)
+    const isCutOff = saved?.presence.isTurnRunning || saved?.ledger.overview?.children.some(c => c.endedAt === null)
+    if (isCutOff)
+      await change(id, s => overviewChanged(cutOffTurn(s), o => childrenCutOff(o, deps.now()))).catch(() => undefined)
     prepare(ctx)
     showBand(ctx)
     deps.background(
@@ -656,6 +670,32 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         .then(() => catchUpUnseen(ctx)),
     )
   }
+  /** The session the main agent runs. A `task:subagent:*` frame names no session, and only the main agent's own subagents send one here. */
+  let framesFor: string | null = null
+  const isActivityWorthSaving = activityGate()
+  pi.events.on('task:subagent:lifecycle', async data => {
+    const frame = data as { id?: unknown; agent?: unknown; description?: unknown; status?: unknown }
+    const id = framesFor
+    const ref = frame.id
+    if (!id || typeof ref !== 'string') return
+    const at = deps.now()
+    const label = typeof frame.description === 'string' && frame.description ? frame.description : frame.agent
+    const name = childName(typeof label === 'string' ? label : 'subagent')
+    await change(id, s =>
+      overviewChanged(s, o =>
+        frame.status === 'started'
+          ? withChild(o, { ref, kind: 'subagent', name, startedAt: at, endedAt: null, lastActivityAt: at }, at)
+          : childEnded(o, ref, at),
+      ),
+    ).catch(() => undefined)
+  })
+  pi.events.on('task:subagent:progress', async data => {
+    const ref = (data as { progress?: { id?: unknown } }).progress?.id
+    const id = framesFor
+    const at = deps.now()
+    if (!id || typeof ref !== 'string' || !isActivityWorthSaving(ref, at)) return
+    await change(id, s => overviewChanged(s, o => childActive(o, ref, at))).catch(() => undefined)
+  })
   pi.on('session_start', (_event, ctx) => start(ctx))
   pi.on('session_switch', (event, ctx) => start(ctx, event.reason === 'fork' ? event.previousSessionFile : undefined))
   // A `/btw` promotion, a fork from an entry and a command's branch give the session a new id, with the old file as
@@ -728,7 +768,15 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   // Noted as the tool starts, not in tool_call, which omp waits on before every tool runs.
   pi.on('tool_execution_start', async (event, ctx) => {
     if (isUnattended(ctx)) return
-    await noteQuietly(ctx, activityOf(event.toolName, (event.args ?? {}) as Record<string, unknown>))
+    const args = (event.args ?? {}) as Record<string, unknown>
+    await noteQuietly(ctx, activityOf(event.toolName, args))
+    const command = event.toolName === 'bash' && typeof args.command === 'string' ? args.command : ''
+    const delegates = delegateSteps(command).map(step => step.name)
+    if (delegates.length === 0) return
+    const at = deps.now()
+    await change(sessionIdOf(ctx), s =>
+      overviewChanged(s, o => delegates.reduce<typeof o>((x, name) => delegateRunning(x, name, at), o)),
+    ).catch(() => undefined)
   })
 
   pi.on('tool_result', async (event, ctx) => {
@@ -737,11 +785,13 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       const command = (event.input as { command?: unknown }).command
       if (typeof command !== 'string') return
       let isLinked = false
+      const settled = delegateSteps(command).filter(step => step.isWaitForEnd)
+      const at = deps.now()
       try {
         await change(sessionIdOf(ctx), s => {
           const after = noteCommandOutput(s, command, textOfBlocks(event.content))
           isLinked = after.ledger !== s.ledger
-          return after
+          return overviewChanged(after, o => settled.reduce((x, step) => childEnded(x, delegateRef(step.name), at), o))
         })
       } catch {
         return

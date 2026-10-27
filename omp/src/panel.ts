@@ -51,6 +51,7 @@ import {
   LISTED_TABS,
   SETTLED_MS,
   shownTabs,
+  tabBadge,
   actionLabel,
   actionLines,
   fitTabs,
@@ -1034,22 +1035,28 @@ type TabCell = {
   label: string
   symbol: string
   tone: ToneName | null
-  count: number | null
+  /** What follows the name: a count, or the Overview's news dot. */
+  badge: string | null
   isShown: boolean
 }
 
 /** One layout of the tab line. Each later layout is narrower. */
-type TabForm = { isBracketed: boolean }
+type TabForm = { isBracketed: boolean; hasNewsDot: boolean }
 
-const TAB_FORMS: readonly TabForm[] = [{ isBracketed: true }, { isBracketed: false }]
+/** The narrowest form, tried only with the symbols, drops the Overview's news dot so a row tab's count still fits. */
+const TAB_FORMS: readonly TabForm[] = [
+  { isBracketed: true, hasNewsDot: true },
+  { isBracketed: false, hasNewsDot: true },
+  { isBracketed: false, hasNewsDot: false },
+]
 
 function tabCell(t: TabCell, name: string, form: TabForm, s: Style): string {
   const key = form.isBracketed ? `[${t.hotkey}]` : t.hotkey
-  const count = t.count ? String(t.count) : null
-  if (t.isShown) return s.inverse(s.bold(` ${key} ${name}${count === null ? '' : ` ${count}`} `))
-  const countText = count === null ? '' : ` ${t.tone ? s.tone(t.tone, count) : count}`
+  const badge = form.hasNewsDot || isRowTab(t.id) ? t.badge : null
+  if (t.isShown) return s.inverse(s.bold(` ${key} ${name}${badge === null ? '' : ` ${badge}`} `))
+  const badgeText = badge === null ? '' : ` ${t.tone ? s.tone(t.tone, badge) : badge}`
 
-  return ` ${s.dim(`${key} ${name}`)}${countText} `
+  return ` ${s.dim(`${key} ${name}`)}${badgeText} `
 }
 
 /**
@@ -1066,12 +1073,16 @@ function tabBar(d: Draw): string {
   const tabs: TabCell[] = shownTabs(screen.isNextBuild === true).map(t => ({
     ...t,
     tone: isRowTab(t.id) ? t.id : null,
-    count: isRowTab(t.id) ? counts[t.id] : null,
+    badge: tabBadge(t.id, counts, screen.view.overviewPage),
     isShown: t.id === ui.tab,
   }))
   const lineOf = (naming: TabNaming, form: TabForm) =>
     ` ${tabs.map(t => tabCell(t, tabName(t, naming), form, s)).join(' ')}`
-  const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => visibleLength(lineOf(naming, form)) <= width)
+  const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => {
+    const isDotDroppedEarly = naming === 'words' && !form.hasNewsDot
+
+    return !isDotDroppedEarly && visibleLength(lineOf(naming, form)) <= width
+  })
 
   return spread(lineOf(naming, layout), s.dim('esc to close '), width)
 }

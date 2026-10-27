@@ -34,6 +34,28 @@
         ]
       }
     ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CODEX_MCP_NODE_PATH:-node}\" \"${PLUGIN_ROOT}/dist/hook.mjs\"",
+            "statusMessage": "Inbox: noting a subagent"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CODEX_MCP_NODE_PATH:-node}\" \"${PLUGIN_ROOT}/dist/hook.mjs\"",
+            "statusMessage": "Inbox: noting a subagent"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

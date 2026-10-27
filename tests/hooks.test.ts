@@ -66,6 +66,8 @@ let transcriptRows: { role: 'user' | 'assistant'; text: string; toolUses: never[
 
 let dialogAnswer: Record<string, unknown> = { result: 'ok', text: 'ok' }
 let otherToolAnswer: Record<string, unknown> = { result: 'ok', text: 'ok' }
+let spawnedAgentId = 'a1'
+let listedAgents: { id: string; status: string }[] = []
 
 let isGhMissing = false
 
@@ -181,6 +183,8 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   transcriptRows = []
   dialogAnswer = { result: 'ok', text: 'ok' }
   otherToolAnswer = { result: 'ok', text: 'ok' }
+  spawnedAgentId = 'a1'
+  listedAgents = []
   ghAnswers = []
   isGhMissing = false
   ledgerReply = LEDGER_REPLY
@@ -339,6 +343,8 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
     if (e.tool !== 'AskUserQuestion') return otherToolAnswer as never
     return dialogAnswer as never
   })
+  on('agent.spawn', () => ({ model: 'sonnet', agentId: spawnedAgentId }))
+  on('agent.list', () => ({ value: listedAgents as never }))
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
   on('ui.press', async ($, e, next) => {
     await runBeforeAct()
@@ -4576,7 +4582,7 @@ test('a working subject’s mark on the Overview moves each frame only while a t
   expect(ended.working).toEqual(ended.still)
 })
 
-test('on a next build, the Overview page shows the goal and the subjects in place of rows, leaves the row keys idle, and a row tab shows its rows again', async ($, on) => {
+test('on a next build, the Overview tab’s news dot clears when the page shows, the page shows the goal and the subjects in place of rows, leaves the row keys idle, and a row tab shows its rows again', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
@@ -4596,9 +4602,11 @@ test('on a next build, the Overview page shows the goal and the subjects in plac
     return saved && JSON.parse(saved[1]).ledger.overview.look
   }
   expect(lookOf()).toBeNull()
+  expect(await pane.find({ text: /^ •$/ })).toBeDefined()
   await pane.press({ key: 'tab-key-overview' })
   await clock.settle()
   expect(lookOf()).not.toBeNull()
+  expect(await pane.find({ text: /^ •$/ })).toBeUndefined()
   expect((await pane.find({ key: 'overview-goal' }))?.text).toBe('Adding a greeting CLI')
   expect((await pane.find({ key: 'overview-s1' }))?.text).toContain('Runtime: Node or Python')
   expect((await pane.find({ key: 'overview-s2' }))?.text).toContain('Plan: written')
@@ -4694,6 +4702,163 @@ test('Claude Code task calls build the agent task list the Overview call reads',
   expect(after && JSON.parse(after[1]).hostTasks[1].status).toBe('pending')
 })
 
+const childrenOf = (stored: Map<string, string>) => {
+  const saved = [...stored].find(([k]) => k.startsWith('s:'))
+  const children: { kind: string; name: string; endedAt: number | null; lastActivityAt: number | null }[] =
+    (saved && JSON.parse(saved[1]).ledger.overview?.children) ?? []
+
+  return children
+}
+const notice = (id: string, status: string) =>
+  `<task-notification>\n<task-id>${id}</task-id>\n<status>${status}</status>\n<summary>Done</summary>\n</task-notification>`
+
+test('a subagent, a background command, a Monitor and a Workflow each run as a child on the Overview until their result or notice ends them', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  const running = () =>
+    childrenOf(stored)
+      .filter(c => c.endedAt === null)
+      .map(c => [c.kind, c.name])
+  const fromCall = (id: string) => ({
+    tool_use_id: id,
+    parentModel: 'opus',
+    fork: false,
+    background: true,
+    provider: { tier: 'core' },
+  })
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'review it', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'review it', turnId: 't1' })
+  await $.agent.spawn({
+    ...fromCall('tu1'),
+    prompt: 'Review',
+    description: 'Review the diff',
+    subagentType: 'Explore',
+  } as never)
+  otherToolAnswer = {
+    result: {
+      status: 'async_launched',
+      agentId: 'a1',
+      description: 'Review the diff',
+      prompt: 'Review',
+      outputFile: '/tmp/a1',
+    },
+    text: '',
+  }
+  await $.tool.call({ tool: 'Agent', description: 'Review the diff', prompt: 'Review', tool_use_id: 'tu1' } as never)
+  otherToolAnswer = { result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'b1' }, text: '' }
+  await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'Run the tests', run_in_background: true })
+  otherToolAnswer = { result: { taskId: 'm1', timeoutMs: 0 }, text: '' }
+  await $.tool.call({ tool: 'Monitor', description: 'Watch the deploy', timeout_ms: 1000, command: 'tail -f log' })
+  otherToolAnswer = { result: { status: 'async_launched', taskId: 'w1', workflowName: 'review-changes' }, text: '' }
+  await $.tool.call({ tool: 'Workflow', script: 'export const meta = {}', tool_use_id: 'tu5' } as never)
+  await clock.settle()
+  expect(running()).toEqual([
+    ['subagent', 'Review the diff'],
+    ['background', 'Run the tests'],
+    ['background', 'Watch the deploy'],
+    ['workflow', 'review-changes'],
+  ])
+
+  await clock.advance(20 * 60_000)
+  spawnedAgentId = 'wa1'
+  await $.agent.spawn({
+    ...fromCall('tu5'),
+    prompt: 'x',
+    description: 'x',
+    subagentType: 'x',
+    workflow: { runId: 'wf_1', agentIndex: 1 },
+  } as never)
+  await $.tool.call({ tool: 'Read', file_path: '/tmp/a', agentId: 'a1' } as never)
+  await clock.settle()
+  const activeAt = (name: string) => childrenOf(stored).find(c => c.name === name)?.lastActivityAt
+  expect(activeAt('review-changes')).toBe(clock.now())
+  expect(activeAt('Review the diff')).toBe(clock.now())
+  expect(activeAt('Run the tests')).toBeNull()
+
+  for (const [id, status] of [
+    ['a1', 'completed'],
+    ['b1', 'failed'],
+    ['m1', 'killed'],
+    ['w1', 'completed'],
+  ] as const)
+    await $.prompt.submit({ text: notice(id, status), wait: false, origin: { kind: 'task-notification' } })
+  await clock.settle()
+  expect(running()).toEqual([])
+})
+
+test('a subagent that runs inside its Agent call ends at the call’s result, and one the agent list no longer names ends at the turn’s end', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  const running = () =>
+    childrenOf(stored)
+      .filter(c => c.endedAt === null)
+      .map(c => c.name)
+  const spawn = (description: string) =>
+    $.agent.spawn({
+      tool_use_id: description,
+      parentModel: 'opus',
+      fork: false,
+      background: false,
+      provider: { tier: 'core' },
+      prompt: 'x',
+      description,
+      subagentType: 'Explore',
+    } as never)
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'look around', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'look around', turnId: 't1' })
+  await spawn('Map the repo')
+  expect(running()).toEqual(['Map the repo'])
+  otherToolAnswer = {
+    result: {
+      status: 'completed',
+      agentId: 'a1',
+      content: [],
+      prompt: 'x',
+      totalToolUseCount: 1,
+      totalDurationMs: 1,
+      totalTokens: 1,
+    },
+    text: 'done',
+  }
+  await $.tool.call({ tool: 'Agent', description: 'Map the repo', prompt: 'x' })
+  expect(running()).toEqual([])
+
+  spawnedAgentId = 'a2'
+  await spawn('Read the tests')
+  listedAgents = [{ id: 'a2', status: 'completed' }]
+  await $.turn.complete({ answer: 'Mapped.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  expect(running()).toEqual([])
+})
+
+test('a Herdr delegate runs as a child from the command that starts it until a wait on it ends, and keeps its id when prompted again', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  const delegates = () => childrenOf(stored).map(c => [c.kind, c.name, c.endedAt === null])
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'hand it off', wait: false, origin: { kind: 'composer' } })
+  await $.tool.call({ tool: 'Bash', command: 'herdr agent start fixer --cmd claude' })
+  expect(delegates()).toEqual([['delegate', 'fixer', true]])
+  await $.tool.call({ tool: 'Bash', command: 'herdr agent wait fixer --until working' })
+  expect(delegates()).toEqual([['delegate', 'fixer', true]])
+  await $.tool.call({ tool: 'Bash', command: 'herdr agent wait fixer --until idle' })
+  expect(delegates()).toEqual([['delegate', 'fixer', false]])
+
+  await $.tool.call({ tool: 'Bash', command: 'herdr agent prompt fixer "go on"' })
+  otherToolAnswer = { result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'bw1' }, text: '' }
+  await $.tool.call({ tool: 'Bash', command: 'herdr agent wait fixer', run_in_background: true })
+  expect(delegates()).toEqual([['delegate', 'fixer', true]])
+  await $.prompt.submit({ text: notice('bw1', 'completed'), wait: false, origin: { kind: 'task-notification' } })
+  await clock.settle()
+  expect(delegates()).toEqual([['delegate', 'fixer', false]])
+  expect(childrenOf(stored)).toHaveLength(1)
+})
+
 test('the Overview page says what it is for before the session has any work', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world($, on, [])
@@ -4707,7 +4872,7 @@ test('the Overview page says what it is for before the session has any work', as
   expect(await desktop.find({ text: /once the work starts\./ })).toBeDefined()
 })
 
-test('on a next build, at 31 desktop columns the tabs show their symbols with their counts, at 69 their words, and the Overview page draws there', async ($, on) => {
+test('on a next build, at 31 desktop columns the tabs show their symbols with their counts and the Overview’s news dot, at 69 their words, and the Overview page draws there', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
@@ -4729,15 +4894,19 @@ test('on a next build, at 31 desktop columns the tabs show their symbols with th
   await clock.settle()
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 31 } })
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
-  expect((await tabBar()).tabs.map(t => [t.id, t.label, t.count])).toEqual(
-    shownTabs(true).map(t => [t.id, t.symbol, t.id === 'needsYou' ? 2 : t.id === 'findings' ? 1 : 0]),
+  expect((await tabBar()).tabs.map(t => [t.id, t.label, t.badge])).toEqual(
+    shownTabs(true).map(t => [
+      t.id,
+      t.symbol,
+      t.id === 'overview' ? '•' : t.id === 'needsYou' ? '2' : t.id === 'findings' ? '1' : null,
+    ]),
   )
   await pane.redraw({ ...PANE.props, bodyColumns: 69 })
   expect((await tabBar()).tabs.map(t => t.label)).toEqual(shownTabs(true).map(t => t.label))
   expect((await tabBar()).isEachFramed).toBe(true)
 
   const { tabs, gap } = await tabBar()
-  await pane.pointer({ type: 'down', x: tabs[1]!.width + gap, y: 1, button: 'left', in: 'tabs' })
+  await pane.pointer({ type: 'down', x: tabs[0]!.width + gap, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
   expect((await tabBar()).shown).toBe('needsYou')
   await pane.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })

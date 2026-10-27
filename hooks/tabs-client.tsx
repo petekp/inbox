@@ -3,8 +3,10 @@ import type { ClientModule } from 'claude-code'
 export type ClientTab = {
   id: string
   label: string
-  count: number
-  countColor: string
+  /** What follows the label: a count, or the Overview's news dot. */
+  badge: string | null
+  /** A null color is the theme's own. */
+  badgeColor: string | null
   width: number
 }
 
@@ -72,7 +74,8 @@ const Tabs: ClientModule<TabsProps, State> = (props, surface) => {
     const background = isShown ? colors.raised : isHovered && isFramed ? (colors.tab ?? colors.raised) : null
     const onRaised = background !== null && background === colors.raised ? colors.raisedText : null
     const labelColor = onRaised ?? (isShown || isHovered ? null : colors.muted)
-    const count = Text({ color: tab.countColor, children: String(tab.count) })
+    const badge =
+      tab.badge === null ? null : Text({ ...(tab.badgeColor ? { color: tab.badgeColor } : {}), children: tab.badge })
 
     return Box({
       key: tab.id,
@@ -85,7 +88,7 @@ const Tabs: ClientModule<TabsProps, State> = (props, surface) => {
       children: Text({
         ...(labelColor ? { color: labelColor } : {}),
         bold: isShown,
-        children: tab.count > 0 ? [tab.label, TAB_COUNT_GAP, count] : tab.label,
+        children: badge ? [tab.label, TAB_COUNT_GAP, badge] : tab.label,
       }),
     })
   }

@@ -190,6 +190,7 @@ var TEXT_KEPT = 12;
 var GOAL_KEPT = 14;
 var FINISHED_READ = 10;
 var CHILD_KEPT_MS = 24 * 60 * 60000;
+var CHILDREN_KEPT = 50;
 var REWORD_OVERLAP = 0.5;
 var STOP_WORDS = new Set([
   "a",
@@ -418,6 +419,30 @@ function applyOverview(last, answer, now) {
 }
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
+}
+function withChild(last, c, now) {
+  const o = last ?? EMPTY_OVERVIEW;
+  const kept = o.children.filter((x) => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS);
+  const known = kept.find((x) => x.ref === c.ref);
+  if (known)
+    return { ...o, children: kept.map((x) => x === known ? { ...x, ...c } : x) };
+  return {
+    ...o,
+    nextChildId: o.nextChildId + 1,
+    children: [...kept, { ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT)
+  };
+}
+function changedChild(o, ref, change) {
+  const known = o?.children.find((c) => c.ref === ref);
+  if (!o || !known)
+    return o;
+  return { ...o, children: o.children.map((c) => c === known ? { ...c, ...change(c) } : c) };
+}
+function childEnded(o, ref, at) {
+  return changedChild(o, ref, (c) => ({ endedAt: c.endedAt ?? at }));
+}
+function childActive(o, ref, at) {
+  return changedChild(o, ref, (c) => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }));
 }
 function subjectsText(o) {
   const subjects = o?.subjects ?? [];
@@ -2792,6 +2817,11 @@ function fitTabs(layouts, fits) {
         return { naming, layout };
   return { naming: "symbols", layout: layouts.at(-1) };
 }
+function tabBadge(id, counts, page) {
+  if (isRowTab(id))
+    return counts[id] > 0 ? String(counts[id]) : null;
+  return page.hasNews ? NEWS_DOT : null;
+}
 function isListedTab(tab) {
   return tab === "needsYou" || tab === "findings";
 }
@@ -2805,6 +2835,7 @@ var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 var WORKING_TEXT = "Working\u2026";
 var LOOK_TEXT = "you looked";
+var NEWS_DOT = "\u2022";
 var CHILD_ROWS = 3;
 var QUIET_MS = 15 * 60000;
 var NEW_CLOSED_ROWS = 2;
@@ -4214,11 +4245,13 @@ function needsUpdate(s) {
   return s.pending.length > 0 || s.presence.ledgerState !== "current";
 }
 function lookStartedOn(s, now) {
-  const overview = lookStarted(s.ledger.overview, now);
-  return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } };
+  return overviewChanged(s, (o) => lookStarted(o, now));
 }
 function lookEndedOn(s, at) {
-  const overview = lookEnded(s.ledger.overview, at);
+  return overviewChanged(s, (o) => lookEnded(o, at));
+}
+function overviewChanged(s, change) {
+  const overview = change(s.ledger.overview);
   return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } };
 }
 function withLook(s, isOverviewShown, now) {
@@ -4364,6 +4397,48 @@ function prTabOf(s, lastActions, now) {
     count: drawn.filter((d) => !d.isSettled && prNeedsYou(d.pr, isSent)).length,
     olderText: olderPrsText(s.prViews, s.ledger.prs)
   };
+}
+
+// ../hooks/children.ts
+var ACTIVITY_SAVE_MS = 30000;
+var NAME_CHARS = 80;
+function childName(text) {
+  const line = text.trim().split(`
+`)[0] ?? "";
+  return line.length > NAME_CHARS ? `${line.slice(0, NAME_CHARS - 1)}\u2026` : line;
+}
+var ENDED = new Set(["completed", "failed", "killed", "stopped"]);
+var HERDR = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^;&|\n]*)/g;
+function delegateSteps(command) {
+  return [...command.matchAll(HERDR)].map(([, verb, name, args]) => ({
+    name,
+    isWaitForEnd: verb === "wait" && !/--until working/.test(args ?? "")
+  }));
+}
+var delegateRef = (name) => `herdr:${name}`;
+function delegateRunning(o, name, at) {
+  const ref = delegateRef(name);
+  const known = o?.children.find((c) => c.ref === ref);
+  const isRunning = known !== undefined && known.endedAt === null;
+  if (o && isRunning)
+    return changedChild(o, ref, () => ({ lastActivityAt: at })) ?? o;
+  return withChild(o, { ref, kind: "delegate", name: childName(name), startedAt: at, endedAt: null, lastActivityAt: at }, at);
+}
+function activityGate() {
+  const saved = new Map;
+  return (ref, at) => {
+    const last = saved.get(ref);
+    if (last !== undefined && at - last < ACTIVITY_SAVE_MS)
+      return false;
+    saved.set(ref, at);
+    return true;
+  };
+}
+function childrenCutOff(o, at) {
+  const isCut = (c) => c.endedAt === null && c.kind !== "delegate";
+  if (!o?.children.some(isCut))
+    return o;
+  return { ...o, children: o.children.map((c) => isCut(c) ? { ...c, endedAt: at } : c) };
 }
 
 // ../hooks/session-host.ts
@@ -5491,14 +5566,18 @@ function drawPageRow(row, d) {
   const mark = row.tone ? s.tone(row.tone, row.mark) : s.dim(row.mark);
   return pageLine(d, 3, mark, row.text, row.age, {});
 }
-var TAB_FORMS = [{ isBracketed: true }, { isBracketed: false }];
+var TAB_FORMS = [
+  { isBracketed: true, hasNewsDot: true },
+  { isBracketed: false, hasNewsDot: true },
+  { isBracketed: false, hasNewsDot: false }
+];
 function tabCell(t, name, form, s) {
   const key = form.isBracketed ? `[${t.hotkey}]` : t.hotkey;
-  const count = t.count ? String(t.count) : null;
+  const badge = form.hasNewsDot || isRowTab(t.id) ? t.badge : null;
   if (t.isShown)
-    return s.inverse(s.bold(` ${key} ${name}${count === null ? "" : ` ${count}`} `));
-  const countText = count === null ? "" : ` ${t.tone ? s.tone(t.tone, count) : count}`;
-  return ` ${s.dim(`${key} ${name}`)}${countText} `;
+    return s.inverse(s.bold(` ${key} ${name}${badge === null ? "" : ` ${badge}`} `));
+  const badgeText = badge === null ? "" : ` ${t.tone ? s.tone(t.tone, badge) : badge}`;
+  return ` ${s.dim(`${key} ${name}`)}${badgeText} `;
 }
 function tabBar(d) {
   const { screen, ui, width, style: s } = d;
@@ -5510,11 +5589,14 @@ function tabBar(d) {
   const tabs = shownTabs(screen.isNextBuild === true).map((t) => ({
     ...t,
     tone: isRowTab(t.id) ? t.id : null,
-    count: isRowTab(t.id) ? counts[t.id] : null,
+    badge: tabBadge(t.id, counts, screen.view.overviewPage),
     isShown: t.id === ui.tab
   }));
   const lineOf = (naming, form) => ` ${tabs.map((t) => tabCell(t, tabName(t, naming), form, s)).join(" ")}`;
-  const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => visibleLength(lineOf(naming, form)) <= width);
+  const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => {
+    const isDotDroppedEarly = naming === "words" && !form.hasNewsDot;
+    return !isDotDroppedEarly && visibleLength(lineOf(naming, form)) <= width;
+  });
   return spread(lineOf(naming, layout), s.dim("esc to close "), width);
 }
 function footer(d, isPageScrolling) {
@@ -6692,9 +6774,12 @@ function createInbox(pi, deps = defaultDeps) {
       return dropTools();
     const id = sessionIdOf(ctx);
     shownId = id;
+    framesFor = id;
     reportCounts(id);
-    if ((await readState(dir, id).catch(() => null))?.presence.isTurnRunning)
-      await change(id, cutOffTurn).catch(() => {
+    const saved = await readState(dir, id).catch(() => null);
+    const isCutOff = saved?.presence.isTurnRunning || saved?.ledger.overview?.children.some((c) => c.endedAt === null);
+    if (isCutOff)
+      await change(id, (s) => overviewChanged(cutOffTurn(s), (o) => childrenCutOff(o, deps.now()))).catch(() => {
         return;
       });
     prepare(ctx);
@@ -6710,6 +6795,31 @@ function createInbox(pi, deps = defaultDeps) {
       return;
     }).then(() => catchUpUnseen(ctx)));
   };
+  let framesFor = null;
+  const isActivityWorthSaving = activityGate();
+  pi.events.on("task:subagent:lifecycle", async (data) => {
+    const frame = data;
+    const id = framesFor;
+    const ref = frame.id;
+    if (!id || typeof ref !== "string")
+      return;
+    const at = deps.now();
+    const label = typeof frame.description === "string" && frame.description ? frame.description : frame.agent;
+    const name = childName(typeof label === "string" ? label : "subagent");
+    await change(id, (s) => overviewChanged(s, (o) => frame.status === "started" ? withChild(o, { ref, kind: "subagent", name, startedAt: at, endedAt: null, lastActivityAt: at }, at) : childEnded(o, ref, at))).catch(() => {
+      return;
+    });
+  });
+  pi.events.on("task:subagent:progress", async (data) => {
+    const ref = data.progress?.id;
+    const id = framesFor;
+    const at = deps.now();
+    if (!id || typeof ref !== "string" || !isActivityWorthSaving(ref, at))
+      return;
+    await change(id, (s) => overviewChanged(s, (o) => childActive(o, ref, at))).catch(() => {
+      return;
+    });
+  });
   pi.on("session_start", (_event, ctx) => start(ctx));
   pi.on("session_switch", (event, ctx) => start(ctx, event.reason === "fork" ? event.previousSessionFile : undefined));
   pi.on("session_branch", (event, ctx) => start(ctx, event.previousSessionFile));
@@ -6782,7 +6892,16 @@ function createInbox(pi, deps = defaultDeps) {
   pi.on("tool_execution_start", async (event, ctx) => {
     if (isUnattended(ctx))
       return;
-    await noteQuietly(ctx, activityOf(event.toolName, event.args ?? {}));
+    const args = event.args ?? {};
+    await noteQuietly(ctx, activityOf(event.toolName, args));
+    const command = event.toolName === "bash" && typeof args.command === "string" ? args.command : "";
+    const delegates = delegateSteps(command).map((step) => step.name);
+    if (delegates.length === 0)
+      return;
+    const at = deps.now();
+    await change(sessionIdOf(ctx), (s) => overviewChanged(s, (o) => delegates.reduce((x, name) => delegateRunning(x, name, at), o))).catch(() => {
+      return;
+    });
   });
   pi.on("tool_result", async (event, ctx) => {
     if (isUnattended(ctx))
@@ -6792,11 +6911,13 @@ function createInbox(pi, deps = defaultDeps) {
       if (typeof command !== "string")
         return;
       let isLinked = false;
+      const settled = delegateSteps(command).filter((step) => step.isWaitForEnd);
+      const at = deps.now();
       try {
         await change(sessionIdOf(ctx), (s) => {
           const after = noteCommandOutput(s, command, textOfBlocks(event.content));
           isLinked = after.ledger !== s.ledger;
-          return after;
+          return overviewChanged(after, (o) => settled.reduce((x, step) => childEnded(x, delegateRef(step.name), at), o));
         });
       } catch {
         return;

@@ -1,11 +1,14 @@
 import { resolve } from 'node:path'
 
+import { childName, childrenCutOff, delegateRef, delegateRunning, delegateSteps } from '../../hooks/children'
 import { dialogActivity } from '../../hooks/model-text'
+import { childActive, childEnded, withChild } from '../../hooks/overview'
 import {
   cleared,
   needsUpdate,
   noteActivity,
   noteCommandOutput,
+  overviewChanged,
   placed,
   startContext,
   turnEnded,
@@ -27,6 +30,7 @@ export type HookInput = {
   turn_id?: string
   /** Set when a subagent's hook fires. It carries the parent's session id. */
   agent_id?: string
+  agent_type?: string
   transcript_path: string | null
   cwd?: string
   source?: string
@@ -77,7 +81,8 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
     case 'SessionStart': {
       const root = input.cwd ?? ''
       // Codex runs SessionStart after compacting too, in the middle of a turn.
-      const endsTurn = (s: SessionState) => (input.source === 'compact' ? s : turnEnded(s, null))
+      const endsTurn = (s: SessionState) =>
+        input.source === 'compact' ? s : overviewChanged(turnEnded(s, null), o => childrenCutOff(o, now()))
       const place = rolloutPath === null ? null : await placeIn(rolloutPath)
       const withPlace = (s: SessionState) => (place ? placed(s, place.folder, place.branch) : s)
       const s = await write(async s =>
@@ -118,7 +123,33 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
         return null
       }
       const line = activityOf(tool, toolInput)
-      if (line) await write(s => noteActivity(withRollout(s), line))
+      const agentId = input.agent_id
+      const delegates = agentId ? [] : delegateSteps(command).map(step => step.name)
+      const withWork = (s: SessionState) =>
+        overviewChanged(s, o => {
+          const ran = delegates.reduce<typeof o>((x, name) => delegateRunning(x, name, now()), o)
+          return agentId ? childActive(ran, agentId, now()) : ran
+        })
+      const hasWork = line !== null || agentId !== undefined || delegates.length > 0
+      if (hasWork) await write(s => withWork(line ? noteActivity(withRollout(s), line) : withRollout(s)))
+
+      return null
+    }
+    case 'SubagentStart': {
+      const ref = input.agent_id
+      if (!ref) return null
+      const name = childName(input.agent_type || 'subagent')
+      await write(s =>
+        overviewChanged(s, o =>
+          withChild(o, { ref, kind: 'subagent', name, startedAt: now(), endedAt: null, lastActivityAt: now() }, now()),
+        ),
+      )
+
+      return null
+    }
+    case 'SubagentStop': {
+      const ref = input.agent_id
+      if (ref) await write(s => overviewChanged(s, o => childEnded(o, ref, now())))
 
       return null
     }
@@ -132,8 +163,13 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
           noteDialogs(withHost(await withHistory(s)), dialogs),
         )
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines)
+        // A wait on a delegate holds the turn, so the delegate's turn settled by Stop, where the turn's commands are read.
+        const settled = commands.flatMap(c => delegateSteps(c.command).filter(step => step.isWaitForEnd))
+        const withDelegates = overviewChanged(withOutput, o =>
+          settled.reduce((x, step) => childEnded(x, delegateRef(step.name), now()), o),
+        )
 
-        const ended = noteHook(turnEnded(endTurn(withOutput, reply, now()), now()), 'stop', now())
+        const ended = noteHook(turnEnded(endTurn(withDelegates, reply, now()), now()), 'stop', now())
 
         return plan === null ? ended : { ...ended, hostTasks: plan }
       })

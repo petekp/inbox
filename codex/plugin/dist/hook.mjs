@@ -46,6 +46,7 @@ var NAME_KEPT = 8;
 var TEXT_KEPT = 12;
 var GOAL_KEPT = 14;
 var CHILD_KEPT_MS = 24 * 60 * 6e4;
+var CHILDREN_KEPT = 50;
 var STOP_WORDS = /* @__PURE__ */ new Set([
   "a",
   "an",
@@ -94,6 +95,28 @@ function isOpen(s) {
 }
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
+}
+function withChild(last, c, now) {
+  const o = last ?? EMPTY_OVERVIEW;
+  const kept = o.children.filter((x) => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS);
+  const known = kept.find((x) => x.ref === c.ref);
+  if (known) return { ...o, children: kept.map((x) => x === known ? { ...x, ...c } : x) };
+  return {
+    ...o,
+    nextChildId: o.nextChildId + 1,
+    children: [...kept, { ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT)
+  };
+}
+function changedChild(o, ref, change) {
+  const known = o?.children.find((c) => c.ref === ref);
+  if (!o || !known) return o;
+  return { ...o, children: o.children.map((c) => c === known ? { ...c, ...change(c) } : c) };
+}
+function childEnded(o, ref, at) {
+  return changedChild(o, ref, (c) => ({ endedAt: c.endedAt ?? at }));
+}
+function childActive(o, ref, at) {
+  return changedChild(o, ref, (c) => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }));
 }
 function text(value) {
   return typeof value === "string" ? value : "";
@@ -1810,6 +1833,10 @@ function endTurn(host, s, reply, isOpen2, { tab = null, queuesEmptyReply = false
 function needsUpdate(s) {
   return s.pending.length > 0 || s.presence.ledgerState !== "current";
 }
+function overviewChanged(s, change) {
+  const overview = change(s.ledger.overview);
+  return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } };
+}
 function hasLedger(s) {
   return !isBlankLedger(s.ledger);
 }
@@ -2267,6 +2294,37 @@ function herdrOnWrite(env, run2, dir, now) {
 // src/hook.ts
 import { resolve as resolve3 } from "node:path";
 
+// ../hooks/children.ts
+var NAME_CHARS = 80;
+function childName(text2) {
+  const line = text2.trim().split("\n")[0] ?? "";
+  return line.length > NAME_CHARS ? `${line.slice(0, NAME_CHARS - 1)}\u2026` : line;
+}
+var HERDR = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^;&|\n]*)/g;
+function delegateSteps(command) {
+  return [...command.matchAll(HERDR)].map(([, verb, name, args]) => ({
+    name,
+    isWaitForEnd: verb === "wait" && !/--until working/.test(args ?? "")
+  }));
+}
+var delegateRef = (name) => `herdr:${name}`;
+function delegateRunning(o, name, at) {
+  const ref = delegateRef(name);
+  const known = o?.children.find((c) => c.ref === ref);
+  const isRunning = known !== void 0 && known.endedAt === null;
+  if (o && isRunning) return changedChild(o, ref, () => ({ lastActivityAt: at })) ?? o;
+  return withChild(
+    o,
+    { ref, kind: "delegate", name: childName(name), startedAt: at, endedAt: null, lastActivityAt: at },
+    at
+  );
+}
+function childrenCutOff(o, at) {
+  const isCut = (c) => c.endedAt === null && c.kind !== "delegate";
+  if (!o?.children.some(isCut)) return o;
+  return { ...o, children: o.children.map((c) => isCut(c) ? { ...c, endedAt: at } : c) };
+}
+
 // src/cli.ts
 function namedCli(env) {
   return env.CODEX_CLI_PATH || env.CODEX_APP_RUNTIME_CLI_PATH || null;
@@ -2656,7 +2714,7 @@ async function handleHook(input, deps) {
   switch (input.hook_event_name) {
     case "SessionStart": {
       const root = input.cwd ?? "";
-      const endsTurn = (s2) => input.source === "compact" ? s2 : turnEnded(s2, null);
+      const endsTurn = (s2) => input.source === "compact" ? s2 : overviewChanged(turnEnded(s2, null), (o) => childrenCutOff(o, now()));
       const place = rolloutPath === null ? null : await placeIn(rolloutPath);
       const withPlace = (s2) => place ? placed(s2, place.folder, place.branch) : s2;
       const s = await write(
@@ -2690,7 +2748,31 @@ async function handleHook(input, deps) {
         return null;
       }
       const line = activityOf(tool, toolInput);
-      if (line) await write((s) => noteActivity(withRollout(s), line));
+      const agentId = input.agent_id;
+      const delegates = agentId ? [] : delegateSteps(command).map((step) => step.name);
+      const withWork = (s) => overviewChanged(s, (o) => {
+        const ran = delegates.reduce((x, name) => delegateRunning(x, name, now()), o);
+        return agentId ? childActive(ran, agentId, now()) : ran;
+      });
+      const hasWork = line !== null || agentId !== void 0 || delegates.length > 0;
+      if (hasWork) await write((s) => withWork(line ? noteActivity(withRollout(s), line) : withRollout(s)));
+      return null;
+    }
+    case "SubagentStart": {
+      const ref = input.agent_id;
+      if (!ref) return null;
+      const name = childName(input.agent_type || "subagent");
+      await write(
+        (s) => overviewChanged(
+          s,
+          (o) => withChild(o, { ref, kind: "subagent", name, startedAt: now(), endedAt: null, lastActivityAt: now() }, now())
+        )
+      );
+      return null;
+    }
+    case "SubagentStop": {
+      const ref = input.agent_id;
+      if (ref) await write((s) => overviewChanged(s, (o) => childEnded(o, ref, now())));
       return null;
     }
     case "Stop": {
@@ -2703,7 +2785,12 @@ async function handleHook(input, deps) {
           noteDialogs(withHost(await withHistory(s)), dialogs)
         );
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines);
-        const ended = noteHook(turnEnded(endTurn2(withOutput, reply, now()), now()), "stop", now());
+        const settled = commands.flatMap((c) => delegateSteps(c.command).filter((step) => step.isWaitForEnd));
+        const withDelegates = overviewChanged(
+          withOutput,
+          (o) => settled.reduce((x, step) => childEnded(x, delegateRef(step.name), now()), o)
+        );
+        const ended = noteHook(turnEnded(endTurn2(withDelegates, reply, now()), now()), "stop", now());
         return plan === null ? ended : { ...ended, hostTasks: plan };
       });
       if (needsUpdate(written)) deps.startUpdate(id);

@@ -35,6 +35,9 @@ export type FeatureId =
   | 'tab-symbols'
   | 'dim-pressed-button'
   | 'herdr-sidebar'
+  | 'overview-children'
+  | 'overview-news-dot'
+  | 'overview-look-line'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -79,6 +82,9 @@ export const CLIENTS: Record<ClientId, Client> = {
           "The desktop app's Button has no disabled state. `dimColor` fades only its label, and a click still shows the native press highlight before the shared press path ignores it.",
       },
       'herdr-sidebar': { kind: 'full' },
+      'overview-children': { kind: 'full' },
+      'overview-news-dot': { kind: 'full' },
+      'overview-look-line': { kind: 'full' },
     },
   },
   codex: {
@@ -161,6 +167,13 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           "Only Codex's hooks and the update a hook starts know the Herdr pane, so a record or close during a turn reaches the sidebar at the next hook. Codex finds no stops, and runs no hook when a session ends.",
       },
+      'overview-children': {
+        kind: 'different',
+        reason:
+          "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so background commands and workflows do not show. The end of a wait on a Herdr delegate is read at Stop.",
+      },
+      'overview-news-dot': { kind: 'full' },
+      'overview-look-line': { kind: 'full' },
     },
   },
   omp: {
@@ -216,6 +229,13 @@ export const CLIENTS: Record<ClientId, Client> = {
           'The panel already draws a follow-up such as Discuss dim, and has no dimmer style, so an out follow-up looks as it does at rest until it is focused. Its key still does nothing.',
       },
       'herdr-sidebar': { kind: 'full' },
+      'overview-children': {
+        kind: 'different',
+        reason:
+          "omp's extension events report subagents and bash calls. omp's reference names no event for a background job or a workflow run, so those do not show.",
+      },
+      'overview-news-dot': { kind: 'full' },
+      'overview-look-line': { kind: 'full' },
     },
   },
 }

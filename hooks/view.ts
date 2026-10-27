@@ -717,6 +717,20 @@ export function fitTabs<L>(
 
   return { naming: 'symbols', layout: layouts.at(-1)! }
 }
+/**
+ * What a tab draws after its name: a row tab's count when it has one, or `NEWS_DOT` on the Overview when it changed since
+ * the person last looked. Null draws nothing.
+ */
+export function tabBadge(
+  id: ShownTab,
+  counts: Readonly<Record<Tab, number>>,
+  page: Pick<OverviewPage, 'hasNews'>,
+): string | null {
+  if (isRowTab(id)) return counts[id] > 0 ? String(counts[id]) : null
+
+  return page.hasNews ? NEWS_DOT : null
+}
+
 /** Whether a shown tab lists rows you answer or close: Asks and Finds. */
 export function isListedTab(tab: ShownTab): tab is ListedTab {
   return tab === 'needsYou' || tab === 'findings'

@@ -26,6 +26,7 @@ import {
   isShownTab,
   LISTED_TABS,
   shownTabs,
+  tabBadge,
   drawnTabOf,
   feedbackOf,
   feedbackText,
@@ -1861,6 +1862,7 @@ function Status({ v }: { v: View }) {
 
 function TabBar({ v }: { v: View }) {
   const counts: Record<Tab, number> = { needsYou: v.needsYou.count, findings: v.findings.count, prs: v.prs.count }
+  const badgeOf = (id: ShownTab) => (v.overviewPage ? tabBadge(id, counts, v.overviewPage) : null)
   const { error } = footerOf(v)
   const shown = drawnTab()
 
@@ -1881,7 +1883,9 @@ function TabBar({ v }: { v: View }) {
               {t.symbol}
             </span>
             <span class="tab-word">{t.label}</span>
-            {isRowTab(t.id) && counts[t.id] > 0 ? <span class={`count tone-${t.id}`}>{counts[t.id]}</span> : null}
+            {badgeOf(t.id) === null ? null : (
+              <span class={isRowTab(t.id) ? `count tone-${t.id}` : 'count'}>{badgeOf(t.id)}</span>
+            )}
           </button>
         ))}
       </div>
