@@ -14,9 +14,10 @@
         --rule: #dcdfe5;
         --code: #eceef2;
         --pick: #243bf5;
-        --on-pick: #ffffff;
+        --tag: #243bf5;
+        --on-tag: #ffffff;
+        --band: color-mix(in srgb, var(--pick) 6%, var(--page));
         --best: #25652f;
-        --best-tint: #e3f0e5;
         --odd: #745417;
         --error: #a5293d;
         --error-tint: #fbe9ec;
@@ -29,10 +30,11 @@
           --muted: #a3a9b4;
           --rule: #2e3139;
           --code: #15171b;
-          --pick: #b1b9f9;
-          --on-pick: #15171b;
+          --pick: #8f9cff;
+          --tag: #4b63ff;
+          --on-tag: #ffffff;
+          --band: color-mix(in srgb, var(--pick) 9%, var(--page));
           --best: #7ecd8f;
-          --best-tint: #1c3324;
           --odd: #ffc107;
           --error: #ffa3b0;
           --error-tint: #3a1d23;
@@ -56,9 +58,10 @@
         -webkit-text-size-adjust: 100%;
       }
       main {
+        container: page / inline-size;
         max-width: 76rem;
         margin: 0 auto;
-        padding: 24px 16px 48px;
+        padding: 24px 20px 48px;
       }
       @media (min-width: 720px) {
         main {
@@ -67,6 +70,7 @@
       }
       h1,
       h2,
+      h3,
       p,
       ul,
       figure {
@@ -83,14 +87,16 @@
 
       .tag {
         display: inline-block;
-        padding: 1px 7px;
+        margin-left: 8px;
+        padding: 2px 8px;
         border-radius: 5px;
-        background: var(--pick);
-        color: var(--on-pick);
+        background: var(--tag);
+        color: var(--on-tag);
         font-size: 12px;
-        font-weight: 650;
-        line-height: 18px;
-        vertical-align: 0.15em;
+        font-weight: 700;
+        line-height: 16px;
+        letter-spacing: 0.01em;
+        vertical-align: 2px;
         white-space: nowrap;
       }
 
@@ -112,7 +118,12 @@
         overflow-wrap: anywhere;
       }
       .pick .tag {
-        margin-right: 10px;
+        margin-left: 12px;
+        padding: 4px 11px;
+        border-radius: 7px;
+        font-size: 15px;
+        line-height: 20px;
+        letter-spacing: 0;
         vertical-align: 0.3em;
       }
       .pick.is-missing {
@@ -150,43 +161,34 @@
         padding-left: 18px;
       }
 
-      .choices {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
-        column-gap: 16px;
-        margin-top: 32px;
+      .better {
+        color: var(--muted);
+        font-weight: 400;
+        white-space: nowrap;
       }
-      .card {
-        display: grid;
-        grid-template-rows: subgrid;
-        margin-bottom: 16px;
-        border: 1px solid var(--rule);
-        border-radius: 12px;
-        background: var(--surface);
-        overflow-wrap: anywhere;
+      .value {
+        position: relative;
+        font-size: 15px;
+        line-height: 1.4;
       }
-      .card.is-pick {
-        border: 2px solid var(--pick);
-      }
-      .card > * {
-        padding: 10px 16px;
-      }
-      .card.is-pick > * {
-        padding-inline: 15px;
-      }
-      .card-head {
-        padding-top: 14px;
-      }
-      .card.is-pick .card-head {
-        padding-top: 13px;
-      }
-      .card-head h2 {
-        font-size: 17px;
+      .value.is-best {
+        color: var(--best);
         font-weight: 650;
-        line-height: 1.3;
       }
-      .card-head .tag {
-        margin-left: 6px;
+      .value.is-best::before {
+        content: '✓';
+        position: absolute;
+        left: -16px;
+      }
+      .value.is-empty {
+        color: var(--muted);
+        font-style: italic;
+      }
+      .note {
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
       }
       .summary {
         margin-top: 4px;
@@ -198,7 +200,6 @@
         flex-wrap: wrap;
         align-items: center;
         gap: 4px 10px;
-        padding-top: 0;
         color: var(--muted);
         font-size: 13px;
       }
@@ -216,42 +217,103 @@
         border-color: var(--best);
         background: var(--best);
       }
+
+      .matrix {
+        display: none;
+        margin: 32px -18px 0;
+        overflow-wrap: anywhere;
+      }
+      .band {
+        border-radius: 10px 10px 0 0;
+        background: var(--band);
+      }
+      .col-name {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        padding: 14px 18px 8px;
+        background: var(--page);
+        font-size: 17px;
+        font-weight: 650;
+        line-height: 1.3;
+      }
+      .col-name.is-pick {
+        padding-top: 11px;
+        border-top: 3px solid var(--pick);
+        border-radius: 10px 10px 0 0;
+        background: var(--band);
+      }
+      .matrix.is-stuck .col-name {
+        box-shadow: 0 1px 0 var(--rule);
+      }
+      .stuck-mark {
+        align-self: start;
+        height: 1px;
+      }
+      .col-summary {
+        padding: 0 18px 6px;
+      }
+      .col-summary .summary {
+        margin-top: 0;
+      }
+      .col-tally {
+        padding: 2px 18px 14px;
+      }
+      .m-head {
+        padding: 14px 18px 4px;
+        border-top: 1px solid var(--rule);
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.4;
+      }
+      .cell {
+        padding: 2px 18px 14px;
+      }
+
+      .cards {
+        display: grid;
+        gap: 16px;
+        margin-top: 28px;
+      }
+      .card {
+        border: 1px solid var(--rule);
+        border-radius: 12px;
+        background: var(--surface);
+        overflow-wrap: anywhere;
+      }
+      .card.is-pick {
+        border: 2px solid var(--pick);
+      }
+      .card > * {
+        padding: 10px 22px;
+      }
+      .card.is-pick > * {
+        padding-inline: 21px;
+      }
+      .card-head {
+        padding-top: 14px;
+        padding-bottom: 12px;
+      }
+      .card-head h2 {
+        font-size: 17px;
+        font-weight: 650;
+        line-height: 1.3;
+      }
+      .card-head .tally {
+        margin-top: 8px;
+      }
       .row {
         border-top: 1px solid var(--rule);
       }
       .label {
-        color: var(--muted);
+        margin-bottom: 2px;
         font-size: 13px;
+        font-weight: 600;
         line-height: 1.4;
-      }
-      .value {
-        margin-top: 2px;
-        font-size: 15.5px;
-        line-height: 1.4;
-      }
-      .value.is-best {
-        display: inline-flex;
-        gap: 6px;
-        margin-left: -6px;
-        padding: 1px 8px 1px 6px;
-        border-radius: 6px;
-        background: var(--best-tint);
-        color: var(--best);
-        font-weight: 650;
-      }
-      .value.is-empty {
-        color: var(--muted);
-        font-style: italic;
-      }
-      .note {
-        margin-top: 3px;
-        color: var(--muted);
-        font-size: 13px;
-        line-height: 1.45;
       }
 
       .previews {
-        margin-top: 24px;
+        margin-top: 40px;
       }
       .preview-group + .preview-group {
         margin-top: 32px;
@@ -286,9 +348,6 @@
           'Segoe UI',
           system-ui,
           sans-serif;
-      }
-      .preview figcaption .tag {
-        margin-left: 6px;
       }
       .preview pre {
         margin: 0;
@@ -354,7 +413,8 @@
       document.addEventListener('DOMContentLoaded', () => {
         const page = document.getElementById('page')
         const holder = document.getElementById('compare-data')
-        const raw = (holder ? holder.textContent : '').replace(/^﻿/, '').trim()
+        const raw = (holder ? holder.textContent : '').trim()
+        const COLUMN_MIN_PX = 184
 
         function h(tag, props, ...kids) {
           const el = document.createElement(tag)
@@ -410,17 +470,12 @@
         const pickName = pick ? pick.name : text(data.pick)
         const before = text(data.pickBefore)
         const isSamePick = before && keyOf(before) === keyOf(pickName)
+        const isPick = choice => keyOf(choice.name) === keyOf(pickName)
         document.title = question || 'Comparison'
 
-        const valueOf = (m, choice) => {
-          const entry = Object.entries(m.values || {}).find(([name]) => keyOf(name) === keyOf(choice.name))
-          const v = entry ? entry[1] : undefined
-          return v && typeof v === 'object'
-            ? { value: text(v.value), note: text(v.note) }
-            : { value: text(v), note: '' }
-        }
+        const measureName = (m, i) => text(m.name) || `Measure ${i + 1}`
         const bestSets = measures.map((m, i) => {
-          const where = `named as best on “${text(m.name) || `measure ${i + 1}`}”`
+          const where = `named as best on “${measureName(m, i)}”`
           return new Set(
             list(m.best)
               .map(name => choiceNamed(name, where))
@@ -430,22 +485,55 @@
         })
         measures.forEach((m, i) => {
           for (const name of Object.keys(m.values || {}))
-            choiceNamed(name, `named in the values of “${text(m.name) || `measure ${i + 1}`}”`)
+            choiceNamed(name, `named in the values of “${measureName(m, i)}”`)
         })
         previews.forEach((p, i) => {
           for (const name of Object.keys(p.texts || {}))
             choiceNamed(name, `named in the preview “${text(p.title) || i + 1}”`)
         })
-        const judged = bestSets.filter(s => s.size > 0).length
+        const judgedSets = bestSets.filter(s => s.size > 0)
 
         const tag = () => h('span', { class: 'tag' }, 'Pick')
-        const isPick = choice => keyOf(choice.name) === keyOf(pickName)
+        const better = m => text(m.better) && h('span', { class: 'better' }, ` (${text(m.better)})`)
+        function tally(choice) {
+          if (judgedSets.length === 0) return null
+          const won = judgedSets.filter(s => s.has(keyOf(choice.name))).length
+          return h(
+            'p',
+            { class: 'tally' },
+            `Best on ${won} of ${judgedSets.length} measures`,
+            h(
+              'span',
+              { class: 'pips', 'aria-hidden': 'true' },
+              judgedSets.map(s => h('i', { class: s.has(keyOf(choice.name)) ? 'won' : null })),
+            ),
+          )
+        }
+        function result(m, i, choice) {
+          const entry = Object.entries(m.values || {}).find(([name]) => keyOf(name) === keyOf(choice.name))
+          const raw = entry ? entry[1] : undefined
+          const isObject = raw && typeof raw === 'object'
+          const value = isObject ? text(raw.value) : text(raw)
+          const note = isObject ? text(raw.note) : ''
+          const isBest = bestSets[i].has(keyOf(choice.name))
+          return [
+            value
+              ? h(
+                  'p',
+                  { class: isBest ? 'value is-best' : 'value' },
+                  value,
+                  isBest && h('span', { class: 'sr' }, ' (best)'),
+                )
+              : h('p', { class: 'value is-empty' }, 'Not measured'),
+            note && h('p', { class: 'note' }, note),
+          ]
+        }
 
         const verdict = h(
           'header',
           { class: 'verdict' },
           question && h('h1', { class: 'question' }, question),
-          pickName ? h('p', { class: 'pick' }, tag(), pickName) : h('p', { class: 'pick is-missing' }, 'No pick'),
+          pickName ? h('p', { class: 'pick' }, pickName, tag()) : h('p', { class: 'pick is-missing' }, 'No pick'),
           before &&
             pickName &&
             h(
@@ -457,54 +545,82 @@
           text(data.unexpected) && h('p', { class: 'odd' }, h('strong', null, 'Unexpected: '), text(data.unexpected)),
         )
 
-        const rowCount = 1 + (judged > 0 ? 1 : 0) + measures.length
+        const headRows = 3
+        const stuckMark = h('div', { class: 'stuck-mark', style: 'grid-column: 1; grid-row: 1', 'aria-hidden': 'true' })
+        const pickColumn = choices.findIndex(isPick) + 1
+        const matrix = h(
+          'section',
+          {
+            class: 'matrix',
+            'aria-label': 'Choices',
+            style: `grid-template-columns: repeat(${choices.length}, minmax(0, 1fr)); grid-template-rows: repeat(${headRows + 2 * measures.length}, auto)`,
+          },
+          pickColumn > 0 && h('div', { class: 'band', style: `grid-column: ${pickColumn}; grid-row: 1 / -1` }),
+          stuckMark,
+          choices.map((choice, c) => [
+            h(
+              'h2',
+              { class: isPick(choice) ? 'col-name is-pick' : 'col-name', style: `grid-column: ${c + 1}; grid-row: 1` },
+              choice.name,
+              isPick(choice) && tag(),
+            ),
+            h(
+              'div',
+              { class: 'col-summary', style: `grid-column: ${c + 1}; grid-row: 2` },
+              choice.summary && h('p', { class: 'summary' }, choice.summary),
+            ),
+            h('div', { class: 'col-tally', style: `grid-column: ${c + 1}; grid-row: 3` }, tally(choice)),
+          ]),
+          measures.map((m, i) => [
+            h(
+              'h3',
+              { class: 'm-head', style: `grid-column: 1 / -1; grid-row: ${headRows + 1 + 2 * i}` },
+              measureName(m, i),
+              better(m),
+            ),
+            choices.map((choice, c) =>
+              h(
+                'div',
+                { class: 'cell', style: `grid-column: ${c + 1}; grid-row: ${headRows + 2 + 2 * i}` },
+                h('span', { class: 'sr' }, `${choice.name}: `),
+                result(m, i, choice),
+              ),
+            ),
+          ]),
+        )
+        const columnsFit = h(
+          'style',
+          null,
+          `@container page (min-width: ${choices.length * COLUMN_MIN_PX}px) {
+            .matrix { display: grid; }
+            .cards { display: none; }
+          }`,
+        )
+
         const cards = h(
           'section',
-          { class: 'choices', 'aria-label': 'Choices' },
-          choices.map(choice => {
-            const won = bestSets.filter(s => s.has(keyOf(choice.name))).length
-            return h(
+          { class: 'cards', 'aria-label': 'Choices' },
+          choices.map(choice =>
+            h(
               'article',
-              { class: isPick(choice) ? 'card is-pick' : 'card', style: `grid-row: span ${rowCount}` },
+              { class: isPick(choice) ? 'card is-pick' : 'card' },
               h(
                 'div',
                 { class: 'card-head' },
                 h('h2', null, choice.name, isPick(choice) && tag()),
                 choice.summary && h('p', { class: 'summary' }, choice.summary),
+                tally(choice),
               ),
-              judged > 0 &&
+              measures.map((m, i) =>
                 h(
                   'div',
-                  { class: 'tally' },
-                  `Best on ${won} of ${judged} measures`,
-                  h(
-                    'span',
-                    { class: 'pips', 'aria-hidden': 'true' },
-                    bestSets
-                      .filter(s => s.size > 0)
-                      .map(s => h('i', { class: s.has(keyOf(choice.name)) ? 'won' : null })),
-                  ),
-                ),
-              measures.map((m, i) => {
-                const { value, note } = valueOf(m, choice)
-                const isBest = bestSets[i].has(keyOf(choice.name))
-                return h(
-                  'div',
                   { class: 'row' },
-                  h('p', { class: 'label' }, text(m.name), text(m.better) && ` (${text(m.better)})`),
-                  value
-                    ? h(
-                        'p',
-                        { class: isBest ? 'value is-best' : 'value' },
-                        isBest && h('span', { 'aria-hidden': 'true' }, '✓'),
-                        h('span', null, value, isBest && h('span', { class: 'sr' }, ' (best)')),
-                      )
-                    : h('p', { class: 'value is-empty' }, 'Not measured'),
-                  note && h('p', { class: 'note' }, note),
-                )
-              }),
-            )
-          }),
+                  h('p', { class: 'label' }, measureName(m, i), better(m)),
+                  result(m, i, choice),
+                ),
+              ),
+            ),
+          ),
         )
 
         const previewSection =
@@ -581,7 +697,11 @@
             ),
           )
 
-        page.replaceChildren(verdict, problemNote || '', cards, previewSection || '', folds || '')
+        document.head.append(columnsFit)
+        new IntersectionObserver(([entry]) => {
+          matrix.classList.toggle('is-stuck', !entry.isIntersecting && entry.boundingClientRect.top < 0)
+        }).observe(stuckMark)
+        page.replaceChildren(verdict, problemNote || '', matrix, cards, previewSection || '', folds || '')
       })
     </script>
   </head>
