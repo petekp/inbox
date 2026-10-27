@@ -2819,6 +2819,9 @@ var RELEASE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview"));
 function shownTabs(isNextBuild) {
   return isNextBuild ? NEXT_BUILD_TABS : RELEASE_TABS;
 }
+function inboxCommandText(isNextBuild) {
+  return isNextBuild ? "Show where this session stands and what waits on you" : "Show this session's questions, tasks, findings and PRs";
+}
 var TAB_NAMINGS = ["words", "symbols"];
 function tabName(tab, naming) {
   return naming === "words" ? tab.label : tab.symbol;
@@ -5538,7 +5541,7 @@ function drawLine(line, isSelected, d) {
   const statusUnder = line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(line.feedback.source, isSelected) ? line.feedback : null;
   const after = line.settled ? `  ${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim("u Undo")}` : ""}` : line.feedback && !statusUnder ? `  ${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const title = line.isDim ? s.dim(line.title) : isSelected ? s.bold(line.title) : line.title;
-  const cursor = isSelected ? s.tone("accent", "\u25B8") : " ";
+  const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
   out.push(spread(` ${" ".repeat(pad)}${cursor} ${leadText(line.lead, s)} ${title}${status}${after}`, `${age} `, width));
   if (line.settled || isShut(line, ui))
@@ -5668,7 +5671,8 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const d = { screen, ui, width, now, style };
   const entries = entriesOf(screen, ui, ui.tab, now);
   const selected = resolveSelected(linesOf(entries), ui.selectedId);
-  const head = [tabBar(d), style.dim("\u2500".repeat(width))];
+  const rule = style.dim("\u2500".repeat(width));
+  const head = [rule, tabBar(d), rule];
   const body = [];
   let selectedAt = [0, 0];
   for (const e of entries) {
@@ -6442,7 +6446,7 @@ function demoSource(deps) {
   return {
     screen: async (holds) => ({
       view: sessionView(state, deps.now(), deps.settleWindowMs, true, holds),
-      modelName: null,
+      modelName: deps.modelName,
       isGhMissing: false,
       isFetchingPrs: false,
       stop: null,
@@ -7170,7 +7174,8 @@ function createInbox(pi, deps = defaultDeps) {
       after: (fn, ms) => void ctx.setTimeout(fn, ms),
       settleWindowMs: deps.settleWindowMs,
       isNextBuild: deps.isNextBuild,
-      comparePage: deps.comparePage
+      comparePage: deps.comparePage,
+      modelName: modelNameOf(ctx)
     }) : liveSource(ctx);
     hideBand(ctx);
     if (!isDemo)
@@ -7204,7 +7209,7 @@ function createInbox(pi, deps = defaultDeps) {
     }
   }
   pi.registerCommand("inbox", {
-    description: "Show where this session stands and what waits on you",
+    description: inboxCommandText(deps.isNextBuild),
     handler: async (args, ctx) => {
       const isDemo = args.trim() === "demo";
       if (ctx.mode === "tui")
@@ -7213,7 +7218,8 @@ function createInbox(pi, deps = defaultDeps) {
         now: deps.now,
         after: () => {},
         settleWindowMs: deps.settleWindowMs,
-        comparePage: deps.comparePage
+        comparePage: deps.comparePage,
+        modelName: modelNameOf(ctx)
       }).screen(NO_HOLDS) : await inbox.screen(ctx);
       const { needsYou, findings } = screen.view;
       ctx.ui.notify(`Asks ${needsYou.count}, Finds ${findings.count}`, "info");

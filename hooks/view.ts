@@ -684,6 +684,13 @@ export function shownTabs(isNextBuild: boolean): readonly DrawnTab[] {
   return isNextBuild ? NEXT_BUILD_TABS : RELEASE_TABS
 }
 
+/** The `/inbox` command's description: what the build's tabs show. */
+export function inboxCommandText(isNextBuild: boolean): string {
+  return isNextBuild
+    ? 'Show where this session stands and what waits on you'
+    : "Show this session's questions, tasks, findings and PRs"
+}
+
 /** The tab a build draws for a saved or sent one: that tab when the build draws it, else the build's first tab. */
 export function drawnTabOf(tab: ShownTab, isNextBuild: boolean): ShownTab {
   const tabs = shownTabs(isNextBuild)
