@@ -772,7 +772,7 @@ export type OverviewRow =
       /** Whether its work runs now, so a look animates the mark: this session's turn runs, or a child of it does. */
       isRunning: boolean
       name: string
-      /** Where it stands. Null below the look line, where the person has seen it. */
+      /** Where it stands. Null for a finished row below the look line, which the person has seen. */
       text: string | null
       /** The plan a reversal replaced, while the person has not seen it. */
       was: string | null
@@ -944,7 +944,7 @@ export function overviewPage(
       ...SUBJECT_MARKS[x.status],
       isRunning: x.status === 'working' && (s.presence.isTurnRunning || under.length > 0),
       name: x.name,
-      text: isNew(x) ? x.text || null : null,
+      text: isNew(x) || isOpen(x) ? x.text || null : null,
       was: isNew(x) ? x.was : null,
       age: shortAgo(now - x.changedAt),
       maxLines: OVERVIEW_TEXT_LINES,

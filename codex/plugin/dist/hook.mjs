@@ -1269,7 +1269,7 @@ function overviewPage(s, now) {
       ...SUBJECT_MARKS[x.status],
       isRunning: x.status === "working" && (s.presence.isTurnRunning || under.length > 0),
       name: x.name,
-      text: isNew(x) ? x.text || null : null,
+      text: isNew(x) || isOpen(x) ? x.text || null : null,
       was: isNew(x) ? x.was : null,
       age: shortAgo(now - x.changedAt),
       maxLines: OVERVIEW_TEXT_LINES,
