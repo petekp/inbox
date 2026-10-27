@@ -425,7 +425,7 @@ test('a rule sets each item on the page apart: a subject and the rows under it a
   ])
 })
 
-test('a child whose host reports no activity shows how long it has run and never reads quiet', () => {
+test('a child whose host reports no activity shows how long it has run, never reads quiet, and stops running QUIET_MS after it started', () => {
   const now = 100 * MIN
   const o = withChild(
     null,
@@ -440,7 +440,14 @@ test('a child whose host reports no activity shows how long it has run and never
     now,
   )
 
-  expect(page(o, now).rows[0]).toMatchObject({ kind: 'child', age: '1h', isRunning: true, branch: null })
+  expect(page(o, 50 * MIN).rows[0]).toMatchObject({ kind: 'child', age: '10m', isRunning: true, ageTone: null })
+  expect(page(o, now).rows[0]).toMatchObject({
+    kind: 'child',
+    age: '1h',
+    isRunning: false,
+    ageTone: null,
+    branch: null,
+  })
 })
 
 test('open subjects past seven fold their oldest queued ones into a count', () => {

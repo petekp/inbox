@@ -844,7 +844,10 @@ type OverviewRowParts =
       kind: 'child'
       id: string
       mark: string
-      /** Whether it did anything in the last `QUIET_MS`, so a look animates the mark. */
+      /**
+       * Whether it did anything in the last `QUIET_MS`, or, when its host reports no activity, started less than
+       * `QUIET_MS` ago. A look animates the mark while it is set.
+       */
       isRunning: boolean
       name: string
       /** How long ago it last did anything, as "quiet 40m" once it is quiet; since it started when the host reports no activity. */
@@ -960,6 +963,14 @@ function isQuiet(c: Child, now: number): boolean {
   return idle !== null && idle >= QUIET_MS
 }
 
+/**
+ * Whether `c` shows work under way: it did something in the last `QUIET_MS`, or its host reports no activity and it
+ * started less than `QUIET_MS` ago.
+ */
+function isChildWorking(c: Child, now: number): boolean {
+  return now - (c.lastActivityAt ?? c.startedAt) < QUIET_MS
+}
+
 function childRow(c: Child, now: number, branch: OverviewBranch | null): OverviewRowParts {
   const isChildQuiet = isQuiet(c, now)
   const age = shortAgo(idleOf(c, now) ?? now - c.startedAt)
@@ -968,7 +979,7 @@ function childRow(c: Child, now: number, branch: OverviewBranch | null): Overvie
     kind: 'child',
     id: c.id,
     mark: '●',
-    isRunning: !isChildQuiet,
+    isRunning: isChildWorking(c, now),
     name: c.name,
     age: isChildQuiet ? `quiet ${age}` : age,
     ageTone: isChildQuiet ? 'needsYou' : null,
@@ -1026,7 +1037,7 @@ export function overviewPage(
       id: x.id,
       ...(isHeld(x) ? HELD_MARK : SUBJECT_MARKS[x.status]),
       isRunning:
-        x.status === 'working' && !isHeld(x) && (s.presence.isTurnRunning || under.some(c => !isQuiet(c, now))),
+        x.status === 'working' && !isHeld(x) && (s.presence.isTurnRunning || under.some(c => isChildWorking(c, now))),
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       was: isNew(x) ? x.was : null,

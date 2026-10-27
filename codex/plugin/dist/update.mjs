@@ -1728,6 +1728,9 @@ function isQuiet(c, now) {
   const idle = idleOf(c, now);
   return idle !== null && idle >= QUIET_MS;
 }
+function isChildWorking(c, now) {
+  return now - (c.lastActivityAt ?? c.startedAt) < QUIET_MS;
+}
 function childRow(c, now, branch) {
   const isChildQuiet = isQuiet(c, now);
   const age = shortAgo(idleOf(c, now) ?? now - c.startedAt);
@@ -1735,7 +1738,7 @@ function childRow(c, now, branch) {
     kind: "child",
     id: c.id,
     mark: "\u25CF",
-    isRunning: !isChildQuiet,
+    isRunning: isChildWorking(c, now),
     name: c.name,
     age: isChildQuiet ? `quiet ${age}` : age,
     ageTone: isChildQuiet ? "needsYou" : null,
@@ -1772,7 +1775,7 @@ function overviewPage(s, now) {
       kind: "subject",
       id: x.id,
       ...isHeld(x) ? HELD_MARK : SUBJECT_MARKS[x.status],
-      isRunning: x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some((c) => !isQuiet(c, now))),
+      isRunning: x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some((c) => isChildWorking(c, now))),
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       was: isNew(x) ? x.was : null,
