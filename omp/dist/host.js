@@ -4076,21 +4076,24 @@ var MAX_STEPS = 3;
 function list(value, max, each) {
   return Array.isArray(value) ? value.map((v) => cut(v, each)).filter(Boolean).slice(0, max) : [];
 }
+function unchanged(ledger, result) {
+  return { ledger, result, personLine: null };
+}
 function recordItem(host, ledger, input, now) {
   if (input.kind === "finding")
     return recordFinding(host, ledger, input, now);
   if (input.kind !== "question" && input.kind !== "task")
-    return { ledger, result: "Not recorded: kind must be question, task or finding." };
+    return unchanged(ledger, "Not recorded: kind must be question, task or finding.");
   const ask = cut(input.ask, MAX_ASK);
   if (ask === "")
-    return { ledger, result: `Not recorded: a ${input.kind} needs an ask.` };
+    return unchanged(ledger, `Not recorded: a ${input.kind} needs an ask.`);
   const options = input.kind === "question" ? list(input.options, MAX_OPTIONS, MAX_OPTION) : [];
   if (input.kind === "question" && options.length === 0)
-    return { ledger, result: "Not recorded: a question needs at least one option." };
+    return unchanged(ledger, "Not recorded: a question needs at least one option.");
   const recInput = input.kind === "question" ? cut(input.rec, MAX_OPTION) : "";
   const rec = recInput === "" ? null : recommendedOption(options, recInput);
   if (recInput !== "" && rec === null)
-    return { ledger, result: "Not recorded: rec must be one of the options." };
+    return unchanged(ledger, "Not recorded: rec must be one of the options.");
   const steps = list(input.steps, MAX_STEPS + 3, 4000);
   const isUsable = (h) => input.kind === "task" || h.kind === "open" || h.kind === "link";
   const helps = steps.flatMap((step) => stepHelp(step) ?? []).filter(isUsable).slice(0, MAX_STEPS);
@@ -4103,36 +4106,32 @@ function recordItem(host, ledger, input, now) {
       ...r.isNewlyMarked ? ["marked it as a design choice"] : []
     ];
     const updated = changes.length > 0 ? ` and ${changes.join(" and ")}` : "";
-    return { ledger: r.ledger, result: `Already open, so this record updated it${updated}.${leftOut}` };
+    return unchanged(r.ledger, `Already open, so this record updated it${updated}.${leftOut}`);
   }
   if (r.is === "closed")
-    return { ledger, result: `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.` };
+    return unchanged(ledger, `Not recorded: ${closedHow(r.record)}. Ask it again only if they bring it up.`);
   return {
     ledger: r.ledger,
-    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : "")
+    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ""),
+    personLine: `${input.kind === "question" ? "Question" : "Task"}: ${ask}`
   };
 }
 function recordFinding(host, ledger, input, now) {
   const title = cut(input.title, 120);
   const detail = cut(input.detail, 600);
   if (title === "" || detail === "")
-    return { ledger, result: "Not recorded: a finding needs a title and a detail." };
+    return unchanged(ledger, "Not recorded: a finding needs a title and a detail.");
   const path = cut(input.path, 300);
-  const r = addFinding(ledger, {
-    kind: input.finding_kind === "opportunity" ? "opportunity" : "issue",
-    title,
-    detail,
-    path: path || null,
-    at: now
-  });
+  const kind = input.finding_kind === "opportunity" ? "opportunity" : "issue";
+  const r = addFinding(ledger, { kind, title, detail, path: path || null, at: now });
   if (r.dismissed)
-    return {
-      ledger,
-      result: `Not recorded: the user already closed this (${r.dismissed.outcome}). Record it again only if they bring it up.`
-    };
+    return unchanged(ledger, `Not recorded: the user already closed this (${r.dismissed.outcome}). Record it again only if they bring it up.`);
+  if (!r.isAdded)
+    return unchanged(r.ledger, "Already recorded.");
   return {
     ledger: r.ledger,
-    result: !r.isAdded ? "Already recorded." : `Recorded. The user sees it in ${host.findingsIn}.` + (r.expired ? ` The list was full, so the oldest finding closed: ${r.expired.title}.` : "")
+    result: `Recorded. The user sees it in ${host.findingsIn}.` + (r.expired ? ` The list was full, so the oldest finding closed: ${r.expired.title}.` : ""),
+    personLine: `${kind === "opportunity" ? "Opportunity" : "Issue"}: ${title}`
   };
 }
 function closedHow(c) {
@@ -4156,22 +4155,22 @@ function recordClose(host, ledger, input, now) {
   const answer = cut(input.answer, 80);
   const reason = cut(input.reason, 80);
   if (id === "" || answer === "" && reason === "")
-    return { ledger, result: "Not closed: give the id, and the user's answer or a reason." };
+    return unchanged(ledger, "Not closed: give the id, and the user's answer or a reason.");
+  const openText = ledger.items.find((i) => i.id === id)?.ask ?? ledger.findings.find((f) => f.id === id)?.title;
+  const personLine = openText === undefined ? null : `Closed: ${openText}`;
   const r = closeByAgent(host, ledger, id, answer ? { answer } : { reason }, now);
   if (r.closed === "item")
     return {
       ledger: r.ledger,
-      result: `Closed. The user sees it in ${host.surface} with its outcome. ${NAME_BY_CONTENT}`
+      result: `Closed. The user sees it in ${host.surface} with its outcome. ${NAME_BY_CONTENT}`,
+      personLine
     };
   if (r.closed === "finding")
-    return { ledger: r.ledger, result: `Closed the finding. ${NAME_BY_CONTENT}` };
+    return { ledger: r.ledger, result: `Closed the finding. ${NAME_BY_CONTENT}`, personLine };
   const earlier = [...ledger.closed, ...ledger.closedFindings].findLast((c) => c.id === id);
   if (earlier)
-    return { ledger, result: `Already closed: ${closedHow(earlier)}.` };
-  return {
-    ledger,
-    result: `Not closed: no open item or finding has the id ${id}. The open ones are listed beside the user's latest message.`
-  };
+    return unchanged(ledger, `Already closed: ${closedHow(earlier)}.`);
+  return unchanged(ledger, `Not closed: no open item or finding has the id ${id}. The open ones are listed beside the user's latest message.`);
 }
 
 // ../hooks/session.ts
@@ -4516,7 +4515,7 @@ function completedAttempt(state, deliveryId, outcome) {
 }
 function recorded(host, s, tool, args, now) {
   const r = (tool === "close" ? recordClose : recordItem)(host, s.ledger, args, now);
-  return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result };
+  return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result, personLine: r.personLine };
 }
 function pruned(s) {
   const inPlace = [
@@ -6797,6 +6796,13 @@ function styleOf(theme) {
     tone: (name, text) => name === "sep" || name === "accent" ? theme.fg(name === "sep" ? "statusLineSep" : "accent", text) : truecolor(tones[name], text)
   };
 }
+function shownLine(result) {
+  if (result.isError)
+    return result.content.map((c) => c.text ?? "").join(`
+`).trim() || null;
+  const details = result.details;
+  return typeof details?.personLine === "string" ? details.personLine : null;
+}
 function createInbox(pi, deps = defaultDeps) {
   const dir = deps.stateDir(pi);
   const openPanels = new Map;
@@ -7214,13 +7220,25 @@ function createInbox(pi, deps = defaultDeps) {
       execute: async (_toolCallId, args, _signal, _onUpdate, ctx) => {
         if (isUnattended(ctx))
           return { content: [{ type: "text", text: "The inbox is not shown in this session." }] };
-        let result = "";
+        let answer = { result: "", personLine: null };
         await change(sessionIdOf(ctx), (s) => {
           const r = recorded(OMP, s, name, args, deps.now());
-          result = r.result;
+          answer = r;
           return r.state;
         });
-        return { content: [{ type: "text", text: result }] };
+        const details = { personLine: answer.personLine };
+        return { content: [{ type: "text", text: answer.result }], details };
+      },
+      renderResult: (result, _options, theme) => {
+        const line = shownLine(result);
+        return {
+          render: (width) => line === null ? [] : wrapText(line, width).map((l) => theme.fg("toolOutput", l)),
+          invalidate: () => {}
+        };
+      },
+      describeResult: (result) => {
+        const line = shownLine(result);
+        return { tool: {}, body: line === null ? undefined : [{ k: "text", p: { text: line } }] };
       }
     });
   };

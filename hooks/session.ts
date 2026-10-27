@@ -677,17 +677,20 @@ export function completedAttempt<S extends Session>(state: S, deliveryId: string
   }
 }
 
-/** Applies a `record` or `close` call from the agent to the ledger. `result` is the tool's answer. */
+/**
+ * Applies a `record` or `close` call from the agent to the ledger. `result` is the tool's answer, and `personLine` the
+ * line the person sees under the call, as `hooks/tools.ts:ToolAnswer` says.
+ */
 export function recorded<S extends Session>(
   host: Host,
   s: S,
   tool: 'record' | 'close',
   args: Record<string, unknown>,
   now: number,
-): { state: S; result: string } {
+): { state: S; result: string; personLine: string | null } {
   const r = (tool === 'close' ? recordClose : recordItem)(host, s.ledger, args, now)
 
-  return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result }
+  return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result, personLine: r.personLine }
 }
 
 /**

@@ -106,6 +106,13 @@ counts and [Open inbox]. When the session stops, a second line says why, with
 [Resume] after an API error. Codex has no band. omp has a band with the same
 counts and no button, which says `/inbox` opens the panel.
 
+**Person's line**:
+The line the conversation shows under the agent's `record` or `close` call,
+written for the person, such as "Question: Which cache should the API use?". A
+call that changed nothing shows none. The agent reads its own answer to the
+call, which Codex shows in place of the line. `personLine` in
+`hooks/tools.ts:ToolAnswer`.
+
 **Pane**:
 The `/inbox` panel beside the conversation in Claude Code, with its Asks,
 Finds and PRs tabs, and an Overview tab before them on a next build. Codex shows the same tabs in its Inbox tab. omp
