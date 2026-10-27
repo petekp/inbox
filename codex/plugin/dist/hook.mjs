@@ -2191,6 +2191,61 @@ function viewOf(s, now, holds = NO_HOLDS) {
   return { ...sessionView(s, now, SETTLE_WINDOW_MS, canCatchUp, holds), heard: heardState(s.heard), at: now };
 }
 
+// ../hooks/children.ts
+var ACTIVITY_SAVE_MS = 3e4;
+var NAME_CHARS = 80;
+function childStarted(o, { ref, kind, name }, at, { reportsActivity = true } = {}) {
+  const line = name.trim().split("\n")[0] ?? "";
+  const lastActivityAt = reportsActivity ? at : null;
+  return withChild(
+    o,
+    { ref, kind, name: clipLabel(line, NAME_CHARS), startedAt: at, endedAt: null, lastActivityAt },
+    at
+  );
+}
+function childWorked(o, ref, at) {
+  const saved = o?.children.find((c) => c.ref === ref)?.lastActivityAt ?? null;
+  const isSavedRecently = saved !== null && at - saved < ACTIVITY_SAVE_MS;
+  return isSavedRecently ? o : childActive(o, ref, at);
+}
+function childrenEnded(o, isEnded, at) {
+  const isEnding = (c) => c.endedAt === null && isEnded(c);
+  if (!o?.children.some(isEnding)) return o;
+  return { ...o, children: o.children.map((c) => isEnding(c) ? { ...c, endedAt: at } : c) };
+}
+var HERDR = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^;&|\n]*)/g;
+function delegateSteps(command) {
+  return [...command.matchAll(HERDR)].map(([, verb, name, args]) => ({
+    name,
+    isWaitForEnd: verb === "wait" && !/--until working/.test(args ?? "")
+  }));
+}
+var delegateRef = (name) => `herdr:${name}`;
+function delegateRunning(o, name, at) {
+  const ref = delegateRef(name);
+  const known = o?.children.find((c) => c.ref === ref);
+  const isRunning = known !== void 0 && known.endedAt === null;
+  return isRunning ? childActive(o, ref, at) : childStarted(o, { ref, kind: "delegate", name }, at);
+}
+function delegatesStarted(o, command, at) {
+  return delegateSteps(command).reduce((x, step) => delegateRunning(x, step.name, at), o);
+}
+function delegateWaitsEnded(o, command, at) {
+  return delegateSteps(command).filter((step) => step.isWaitForEnd).reduce((x, step) => childEnded(x, delegateRef(step.name), at), o);
+}
+var HERDR_PROMPT_SETTLE_MS = 15e3;
+function hasRunningDelegate(o) {
+  return o?.children.some((c) => c.kind === "delegate" && c.endedAt === null) ?? false;
+}
+function delegatesSettled(o, running, at) {
+  const refs = new Set([...running].map(delegateRef));
+  const isGone = (c) => c.kind === "delegate" && !refs.has(c.ref) && at - (c.lastActivityAt ?? c.startedAt) >= HERDR_PROMPT_SETTLE_MS;
+  return childrenEnded(o, isGone, at);
+}
+function childrenCutOff(o, at) {
+  return childrenEnded(o, (c) => c.kind !== "delegate", at);
+}
+
 // ../hooks/herdr.ts
 var STATUS_TOKEN = "inbox";
 var STOP_TOKEN = "inbox-stop";
@@ -2205,6 +2260,11 @@ var CLEARED_TOKENS = Object.fromEntries(
 var HERDR_TIMEOUT_MS = 5e3;
 var HERDR_AGENT_LIST = ["herdr", "agent", "list"];
 var HERDR_RUNNING = /* @__PURE__ */ new Set(["working", "unknown"]);
+async function delegatesInHerdr(o, run2) {
+  if (!hasRunningDelegate(o)) return null;
+  const r = await run2(HERDR_AGENT_LIST, { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS });
+  return r.code === 0 ? herdrRunning(r.stdout) : null;
+}
 function herdrRunning(stdout) {
   try {
     const agents = JSON.parse(stdout)?.result?.agents;
@@ -2328,45 +2388,11 @@ function herdrOnWrite(env, run2, dir, now) {
 // src/hook.ts
 import { resolve as resolve3 } from "node:path";
 
-// ../hooks/children.ts
-var NAME_CHARS = 80;
-function childName(text2) {
-  const line = text2.trim().split("\n")[0] ?? "";
-  return line.length > NAME_CHARS ? `${line.slice(0, NAME_CHARS - 1)}\u2026` : line;
-}
-var HERDR = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^;&|\n]*)/g;
-function delegateSteps(command) {
-  return [...command.matchAll(HERDR)].map(([, verb, name, args]) => ({
-    name,
-    isWaitForEnd: verb === "wait" && !/--until working/.test(args ?? "")
-  }));
-}
-var delegateRef = (name) => `herdr:${name}`;
-function delegateRunning(o, name, at) {
-  const ref = delegateRef(name);
-  const known = o?.children.find((c) => c.ref === ref);
-  const isRunning = known !== void 0 && known.endedAt === null;
-  if (o && isRunning) return changedChild(o, ref, () => ({ lastActivityAt: at })) ?? o;
-  return withChild(
-    o,
-    { ref, kind: "delegate", name: childName(name), startedAt: at, endedAt: null, lastActivityAt: at },
-    at
-  );
-}
-var HERDR_PROMPT_SETTLE_MS = 15e3;
-function hasRunningDelegate(o) {
-  return o?.children.some((c) => c.kind === "delegate" && c.endedAt === null) ?? false;
-}
-function delegatesSettled(o, running, at) {
-  const refs = new Set([...running].map(delegateRef));
-  const isGone = (c) => c.kind === "delegate" && c.endedAt === null && !refs.has(c.ref) && at - (c.lastActivityAt ?? c.startedAt) >= HERDR_PROMPT_SETTLE_MS;
-  if (!o?.children.some(isGone)) return o;
-  return { ...o, children: o.children.map((c) => isGone(c) ? { ...c, endedAt: at } : c) };
-}
-function childrenCutOff(o, at) {
-  const isCut = (c) => c.endedAt === null && c.kind !== "delegate";
-  if (!o?.children.some(isCut)) return o;
-  return { ...o, children: o.children.map((c) => isCut(c) ? { ...c, endedAt: at } : c) };
+// ../hooks/gh.ts
+var GIT_TIMEOUT_MS = 5e3;
+async function branchIn(run2, folder) {
+  const r = await run2(["git", "branch", "--show-current"], { cwd: folder, timeoutMs: GIT_TIMEOUT_MS });
+  return r.code === 0 ? r.stdout.trim() || null : null;
 }
 
 // src/cli.ts
@@ -2429,15 +2455,11 @@ async function readSessionMeta(path) {
     return null;
   }
 }
-async function placeIn(path) {
-  const payload = (await readSessionMeta(path))?.payload;
-  if (typeof payload?.cwd !== "string" || payload.cwd === "") return null;
-  const branch = payload.git?.branch;
-  return { folder: payload.cwd, branch: typeof branch === "string" && branch !== "" ? branch : null };
-}
-async function isNonInteractiveRun(path) {
-  if (path === null) return true;
-  return isExecMeta(await readSessionMeta(path));
+async function rolloutMeta(path) {
+  if (path === null) return { isNonInteractive: true, folder: null };
+  const meta = await readSessionMeta(path);
+  const cwd = meta?.payload?.cwd;
+  return { isNonInteractive: isExecMeta(meta), folder: typeof cwd === "string" && cwd !== "" ? cwd : null };
 }
 function isExecMeta(meta) {
   return meta?.payload?.originator === "codex_exec" || meta?.payload?.source === "exec";
@@ -2793,7 +2815,9 @@ async function withMissedTurns(s, { rolloutPath, currentTurnId, canMarkBehind = 
 async function handleHook(input, deps) {
   const id = input.session_id;
   const { dir, env, now } = deps;
-  if (!id || !env.INBOX_IN_EXEC && await isNonInteractiveRun(input.transcript_path)) return null;
+  if (!id) return null;
+  const meta = await rolloutMeta(input.transcript_path);
+  if (!env.INBOX_IN_EXEC && meta.isNonInteractive) return null;
   const { update: write, read } = codexStore(dir, id, now, deps.onWrite);
   const cliPath = namedCli(env);
   const withCli = (s) => cliPath && s.cliPath !== cliPath ? { ...s, cliPath } : s;
@@ -2820,8 +2844,9 @@ async function handleHook(input, deps) {
     case "SessionStart": {
       const root = input.cwd ?? "";
       const endsTurn = (s2) => input.source === "compact" ? s2 : overviewChanged(turnEnded(s2, null), (o) => childrenCutOff(o, now()));
-      const place = rolloutPath === null ? null : await placeIn(rolloutPath);
-      const withPlace = (s2) => place ? placed(s2, place.folder, place.branch) : s2;
+      const folder = rolloutPath === null ? null : meta.folder;
+      const branch = folder === null ? null : await branchIn(deps.run, folder);
+      const withPlace = (s2) => folder === null ? s2 : placed(s2, folder, branch);
       const s = await write(
         async (s2) => noteHook(
           withHost(await withHistory(endsTurn(withPlace({ ...input.source === "clear" ? cleared(s2) : s2, root })))),
@@ -2854,25 +2879,17 @@ async function handleHook(input, deps) {
       }
       const line = activityOf(tool, toolInput);
       const agentId = input.agent_id;
-      const delegates = agentId ? [] : delegateSteps(command).map((step) => step.name);
-      const withWork = (s) => overviewChanged(s, (o) => {
-        const ran = delegates.reduce((x, name) => delegateRunning(x, name, now()), o);
-        return agentId ? childActive(ran, agentId, now()) : ran;
-      });
-      const hasWork = line !== null || agentId !== void 0 || delegates.length > 0;
+      const isDelegateCommand = agentId === void 0 && delegateSteps(command).length > 0;
+      const withWork = (s) => overviewChanged(s, (o) => agentId ? childWorked(o, agentId, now()) : delegatesStarted(o, command, now()));
+      const hasWork = line !== null || agentId !== void 0 || isDelegateCommand;
       if (hasWork) await write((s) => withWork(line ? noteActivity(withRollout(s), line) : withRollout(s)));
       return null;
     }
     case "SubagentStart": {
       const ref = input.agent_id;
       if (!ref) return null;
-      const name = childName(input.agent_type || "subagent");
-      await write(
-        (s) => overviewChanged(
-          s,
-          (o) => withChild(o, { ref, kind: "subagent", name, startedAt: now(), endedAt: null, lastActivityAt: now() }, now())
-        )
-      );
+      const name = input.agent_type || "subagent";
+      await write((s) => overviewChanged(s, (o) => childStarted(o, { ref, kind: "subagent", name }, now())));
       return null;
     }
     case "SubagentStop": {
@@ -2882,8 +2899,15 @@ async function handleHook(input, deps) {
     }
     case "Stop": {
       const reply = input.last_assistant_message ?? "";
-      const { dialogs, commands, plan } = await turnIn(input.transcript_path, input.turn_id);
-      const inHerdr = hasRunningDelegate((await read()).ledger.overview) ? await delegatesInHerdr(deps.run, dir) : null;
+      const folder = input.cwd;
+      const [{ dialogs, commands, plan }, branch, inHerdr] = await Promise.all([
+        turnIn(input.transcript_path, input.turn_id),
+        folder ? branchIn(deps.run, folder) : null,
+        read().then(
+          (s) => delegatesInHerdr(s.ledger.overview, deps.run),
+          () => null
+        )
+      ]);
       const lines = dialogs.map((d) => dialogActivity(d.questions, { kind: "open" }));
       const written = await write(async (s) => {
         const withLines = lines.reduce(
@@ -2891,12 +2915,13 @@ async function handleHook(input, deps) {
           noteDialogs(withHost(await withHistory(s)), dialogs)
         );
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines);
-        const settled = commands.flatMap((c) => delegateSteps(c.command).filter((step) => step.isWaitForEnd));
-        const withDelegates = overviewChanged(withOutput, (o) => {
-          const waited = settled.reduce((x, step) => childEnded(x, delegateRef(step.name), now()), o);
-          return inHerdr ? delegatesSettled(waited, inHerdr, now()) : waited;
-        });
-        const ended = withCoveredTurn(noteHook(turnEnded(endTurn2(withDelegates, reply, now()), now()), "stop", now()));
+        const waited = overviewChanged(
+          withOutput,
+          (o) => commands.reduce((x, c) => delegateWaitsEnded(x, c.command, now()), o)
+        );
+        const withDelegates = inHerdr ? overviewChanged(waited, (o) => delegatesSettled(o, inHerdr, now())) : waited;
+        const withPlace = folder ? placed(withDelegates, folder, branch) : withDelegates;
+        const ended = withCoveredTurn(noteHook(turnEnded(endTurn2(withPlace, reply, now()), now()), "stop", now()));
         return plan === null ? ended : { ...ended, hostTasks: plan };
       });
       if (needsUpdate(written)) deps.startUpdate(id);
@@ -2904,10 +2929,6 @@ async function handleHook(input, deps) {
     }
   }
   return null;
-}
-async function delegatesInHerdr(run2, cwd) {
-  const r = await run2(HERDR_AGENT_LIST, { cwd, timeoutMs: HERDR_TIMEOUT_MS }).catch(() => null);
-  return r?.code === 0 ? herdrRunning(r.stdout) : null;
 }
 
 // src/data-dir.ts

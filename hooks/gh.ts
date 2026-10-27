@@ -12,6 +12,15 @@ const GH_TIMEOUT_MS = 20_000
 
 const UNSTARTABLE_CODE = -1
 
+const GIT_TIMEOUT_MS = 5000
+
+/** The branch `folder` is on now. Null when git names none, as outside a repository or on a detached HEAD. */
+export async function branchIn(run: Run, folder: string): Promise<string | null> {
+  const r = await run(['git', 'branch', '--show-current'], { cwd: folder, timeoutMs: GIT_TIMEOUT_MS })
+
+  return r.code === 0 ? r.stdout.trim() || null : null
+}
+
 /**
  * Finds the first gh that starts: `exec` ends with code -1 for a command it cannot start. The one found is kept
  * until `forget` is called; while none starts, each call looks again, since the person may install gh without

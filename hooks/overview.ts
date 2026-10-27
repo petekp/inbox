@@ -13,7 +13,7 @@ const GOAL_KEPT = 14
 /** Finished subjects the call reads, so it does not add one again. */
 const FINISHED_READ = 10
 /** How long an ended child stays saved, so a delegate prompted again keeps its link. */
-export const CHILD_KEPT_MS = 24 * 60 * 60_000
+const CHILD_KEPT_MS = 24 * 60 * 60_000
 const CHILDREN_KEPT = 50
 /** Share of content words two texts must share for code to keep the old text and age of a subject. */
 const REWORD_OVERLAP = 0.5
@@ -323,11 +323,7 @@ export function withChild(last: Overview | null, c: ChildReport, now: number): O
 }
 
 /** The child with `ref` after `change`, or the Overview unchanged when it holds none. */
-export function changedChild(
-  o: Overview | null,
-  ref: string,
-  change: (c: Child) => Partial<ChildReport>,
-): Overview | null {
+function changedChild(o: Overview | null, ref: string, change: (c: Child) => Partial<ChildReport>): Overview | null {
   const known = o?.children.find(c => c.ref === ref)
   if (!o || !known) return o
 
