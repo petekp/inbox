@@ -3210,6 +3210,77 @@
     ]
   },
   {
+    "name": "overview-mid-turn-moves-on",
+    "about": "Mid-turn, with no reply yet, the activity shows the work finishing one subject and starting the next. The Overview puts the next subject under way without adding a subject or naming files.",
+    "midTurn": true,
+    "ledger": {
+      "turn": 3,
+      "overview": {
+        "role": "session",
+        "goal": "Ship offline notes",
+        "subjects": [
+          {
+            "id": "s1",
+            "name": "Offline sync",
+            "status": "working",
+            "text": "queue being built",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 70,
+            "closedAt": null,
+            "into": null
+          },
+          {
+            "id": "s2",
+            "name": "Settings page",
+            "status": "queued",
+            "text": "after offline sync",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 40,
+            "closedAt": null,
+            "into": null
+          }
+        ],
+        "children": [],
+        "askSubjects": {},
+        "nextId": 3,
+        "nextChildId": 1,
+        "lastLookAt": 60,
+        "look": null
+      }
+    },
+    "exchange": {
+      "turn": 3,
+      "person": "Finish the offline sync queue, then start on the settings page.",
+      "activity": [
+        "edited src/sync/queue.ts",
+        "edited src/sync/replay.ts",
+        "ran npm test -- sync",
+        "edited src/settings/page.tsx",
+        "edited src/settings/toggles.tsx"
+      ]
+    },
+    "checks": [
+      {
+        "overview": "changed"
+      },
+      {
+        "subject": "settings",
+        "status": "working"
+      },
+      {
+        "noNewSubject": true
+      },
+      {
+        "featureLevel": true
+      },
+      {
+        "noTimeWords": true
+      }
+    ]
+  },
+  {
     "name": "overview-new-goal",
     "about": "A different task sets a new goal and a new working subject. The finished one stays done.",
     "ledger": {

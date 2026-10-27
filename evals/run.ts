@@ -10,6 +10,7 @@ import {
   CLAUDE_CODE,
   OVERVIEW_SYSTEM,
   overviewCatchUpPrompt,
+  overviewMidTurnPrompt,
   overviewPrompt,
   screenText,
   systemText,
@@ -89,11 +90,13 @@ type Case = {
   name: string
   about: string
   ledger: Partial<Ledger>
-  exchange: Partial<Omit<Exchange, 'screen'>> & { reply: string }
+  exchange: Partial<Omit<Exchange, 'screen'>>
   /** What the inbox shows, built with `screenText` for each agent's host. Closed when left out. */
   screen?: { isOpen: boolean; tab?: string; isPage?: boolean }
   /** A conversation to catch the ledger up on, in place of the exchange's per-reply update. */
   catchUp?: string
+  /** The exchange is a turn still running: no ledger call, and the Overview call reads `overviewMidTurnPrompt`. */
+  midTurn?: true
   /** The agent's own task list the Overview call reads beside the exchange. */
   hostTasks?: HostTask[]
   checks: Check[]
@@ -136,6 +139,7 @@ const about = provenance(
     'overview prompts': [
       overviewPrompt(SAMPLE_INPUT, { turn: 1, person: 'p', activity: ['a'], reply: 'r' } as Exchange),
       overviewCatchUpPrompt(SAMPLE_INPUT, 'c'),
+      overviewMidTurnPrompt(SAMPLE_INPUT, { person: 'p', trigger: null, activity: ['a'] }),
     ].join('\n'),
     'overview parser': [parseOverview, askOverview, applyOverview, applyOps].map(String).join('\n'),
     cases: readFileSync(values.cases, 'utf8'),
@@ -493,6 +497,7 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
     person: null,
     trigger: null,
     activity: [],
+    reply: '',
     turn: ledger.turn,
     press: null,
     tasks: c.hostTasks ?? [],
@@ -504,27 +509,59 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
     ...c.exchange,
   }
   const host = agent === 'codex' ? CODEX : CLAUDE_CODE
-  const prompt =
-    c.catchUp === undefined ? buildPrompt(ledger, ex) : transcriptCatchUpPrompt(ledger, ex.screen, c.catchUp)
   const ask = (input: string, system: string): Promise<Answer> =>
     agent === 'codex'
       ? askCodex(input, system).then(text => ({ text, model: null, outputTokens: null }))
       : claude(input, system)
+  const overviewInput = (l: Ledger) => ({ last: l.overview, asks: l.items, tasks: c.hostTasks ?? [], now: NOW })
+  const withOverview = async (base: Result, applied: Ledger, masked: string[], prompt: string): Promise<Result> => {
+    const overviewStarted = Date.now()
+    const { first: firstCall, last: overviewCall } = await askOverview(() => ask(prompt, OVERVIEW_SYSTEM))
+    const isRetried = overviewCall !== firstCall
+    const withAnswer = {
+      ...base,
+      overviewMs: Date.now() - overviewStarted,
+      overviewAnswer: overviewCall.text,
+      overviewFirstAnswer: isRetried ? firstCall.text : null,
+      overviewModel: overviewCall.model,
+      overviewOutputTokens: overviewCall.outputTokens,
+      overviewInputTokens: overviewCall.inputTokens ?? null,
+      overviewCachedTokens: overviewCall.cachedTokens ?? null,
+    }
+    if (overviewCall.text === null)
+      return { ...withAnswer, error: `${agent} gave no Overview answer`, failed: [], masked: [] }
+    const overviewParsed = parseOverview(overviewCall.text)
+    const overview: OverviewRun = {
+      answer: overviewParsed,
+      before: applied.overview,
+      after: overviewParsed
+        ? applyOverview(applied.overview, overviewParsed, NOW, new Set(applied.items.map(i => i.id)))
+        : applied.overview,
+    }
+    const after = { ...applied, overview: overview.after }
+
+    return { ...withAnswer, error: null, failed: failures(ledger, after, c.checks, masked, overview), masked }
+  }
+  const runInfo = { ...job(agent, c, n), attempts: 1, earlier: [], durationMs: 0 }
+  if (c.midTurn) {
+    const base = { ...runInfo, model: null, answer: null, outputTokens: null, error: null, failed: [], masked: [] }
+
+    return withOverview(base, ledger, [], overviewMidTurnPrompt(overviewInput(ledger), ex))
+  }
+  const prompt =
+    c.catchUp === undefined ? buildPrompt(ledger, ex) : transcriptCatchUpPrompt(ledger, ex.screen, c.catchUp)
   const ledgerStarted = Date.now()
   const ledgerCall = await ask(prompt, systemText(host))
   const ledgerMs = Date.now() - ledgerStarted
   const { text: answer, model, outputTokens } = ledgerCall
   const base = {
-    ...job(agent, c, n),
+    ...runInfo,
     model,
     answer,
     outputTokens,
     inputTokens: ledgerCall.inputTokens ?? null,
     cachedTokens: ledgerCall.cachedTokens ?? null,
     ledgerMs,
-    attempts: 1,
-    earlier: [],
-    durationMs: 0,
   }
   if (answer === null) return { ...base, error: `${agent} gave no answer`, failed: [], masked: [] }
   const parsed = parseReply(answer, c.catchUp ?? `${ex.reply}\n${ex.activity.join('\n')}`)
@@ -536,34 +573,12 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
   const masked = maskedAsks(parsed, ledger, applied)
   const needsOverview = c.checks.some(isOverviewCheck)
   if (!needsOverview) return { ...base, error: null, failed: failures(ledger, applied, c.checks, masked, null), masked }
-  const input = { last: applied.overview, asks: applied.items, tasks: c.hostTasks ?? [], now: NOW }
-  const overviewInput = c.catchUp === undefined ? overviewPrompt(input, ex) : overviewCatchUpPrompt(input, c.catchUp)
-  const overviewStarted = Date.now()
-  const { first: firstCall, last: overviewCall } = await askOverview(() => ask(overviewInput, OVERVIEW_SYSTEM))
-  const isRetried = overviewCall !== firstCall
-  const withAnswer = {
-    ...base,
-    overviewMs: Date.now() - overviewStarted,
-    overviewAnswer: overviewCall.text,
-    overviewFirstAnswer: isRetried ? firstCall.text : null,
-    overviewModel: overviewCall.model,
-    overviewOutputTokens: overviewCall.outputTokens,
-    overviewInputTokens: overviewCall.inputTokens ?? null,
-    overviewCachedTokens: overviewCall.cachedTokens ?? null,
-  }
-  if (overviewCall.text === null)
-    return { ...withAnswer, error: `${agent} gave no Overview answer`, failed: [], masked: [] }
-  const overviewParsed = parseOverview(overviewCall.text)
-  const overview: OverviewRun = {
-    answer: overviewParsed,
-    before: applied.overview,
-    after: overviewParsed
-      ? applyOverview(applied.overview, overviewParsed, NOW, new Set(applied.items.map(i => i.id)))
-      : applied.overview,
-  }
-  const after = { ...applied, overview: overview.after }
+  const overviewPromptText =
+    c.catchUp === undefined
+      ? overviewPrompt(overviewInput(applied), ex)
+      : overviewCatchUpPrompt(overviewInput(applied), c.catchUp)
 
-  return { ...withAnswer, error: null, failed: failures(ledger, after, c.checks, masked, overview), masked }
+  return withOverview({ ...base, error: null, failed: [], masked }, applied, masked, overviewPromptText)
 }
 
 function job(agent: Agent, c: Case, n: number) {
