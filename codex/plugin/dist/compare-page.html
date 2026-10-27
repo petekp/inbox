@@ -153,6 +153,18 @@
         gap: 4px 8px;
       }
 
+      code {
+        padding: 0.05em 0.3em;
+        border-radius: 4px;
+        background: color-mix(in srgb, var(--ink) 8%, transparent);
+        font:
+          0.9em/1 ui-monospace,
+          'SF Mono',
+          Menlo,
+          Consolas,
+          monospace;
+      }
+
       .verdict {
         max-width: 44rem;
       }
@@ -483,6 +495,7 @@
         const text = v => (typeof v === 'string' ? v.trim() : typeof v === 'number' ? String(v) : '')
         const list = v => (Array.isArray(v) ? v : v === null || v === undefined || v === '' ? [] : [v])
         const keyOf = name => text(name).toLowerCase().replace(/\s+/g, ' ')
+        const inline = s => s.split(/`([^`\n]+)`/).map((part, i) => (i % 2 === 1 ? h('code', null, part) : part))
 
         function fail(message) {
           page.replaceChildren(h('p', { class: 'problems' }, message))
@@ -523,7 +536,7 @@
         const before = text(data.pickBefore)
         const isSamePick = before && keyOf(before) === keyOf(pickName)
         const isPick = choice => keyOf(choice.name) === keyOf(pickName)
-        document.title = question || 'Comparison'
+        document.title = question.replace(/`/g, '') || 'Comparison'
 
         const measureName = (m, i) => text(m.name) || `Measure ${i + 1}`
         const bestSets = measures.map((m, i) => {
@@ -564,18 +577,18 @@
               ? h(
                   'p',
                   { class: isBest ? 'value is-best' : 'value' },
-                  value,
+                  inline(value),
                   isBest && h('span', { class: 'best' }, 'Best'),
                 )
               : h('p', { class: 'value is-empty' }, 'Not measured'),
-            note && h('p', { class: 'note' }, note),
+            note && h('p', { class: 'note' }, inline(note)),
           ]
         }
 
         const verdict = h(
           'header',
           { class: 'verdict' },
-          question && h('h1', { class: 'question' }, question),
+          question && h('h1', { class: 'question' }, inline(question)),
           pickName ? h('p', { class: 'pick' }, pickName, tag()) : h('p', { class: 'pick is-missing' }, 'No pick'),
           before &&
             pickName &&
@@ -584,8 +597,8 @@
               { class: 'change' },
               isSamePick ? 'Same pick as before the comparison.' : `Before the comparison, the pick was ${before}.`,
             ),
-          text(data.reason) && h('p', { class: 'reason' }, text(data.reason)),
-          text(data.unexpected) && h('p', { class: 'odd' }, h('strong', null, 'Unexpected: '), text(data.unexpected)),
+          text(data.reason) && h('p', { class: 'reason' }, inline(text(data.reason))),
+          text(data.unexpected) && h('p', { class: 'odd' }, h('strong', null, 'Unexpected: '), inline(text(data.unexpected))),
         )
 
         const headRows = 3
@@ -611,7 +624,7 @@
             h(
               'div',
               { class: 'col-summary', style: `grid-column: ${c + 1}; grid-row: 2` },
-              choice.summary && h('p', { class: 'summary' }, choice.summary),
+              choice.summary && h('p', { class: 'summary' }, inline(choice.summary)),
             ),
             h('div', { class: 'col-tally', style: `grid-column: ${c + 1}; grid-row: 3` }, tally(choice)),
           ]),
@@ -619,7 +632,7 @@
             h(
               'h3',
               { class: 'm-head', style: `grid-column: 1 / -1; grid-row: ${headRows + 1 + 2 * i}` },
-              measureName(m, i),
+              inline(measureName(m, i)),
               better(m),
             ),
             choices.map((choice, c) =>
@@ -652,14 +665,14 @@
                 'div',
                 { class: 'card-head' },
                 h('h2', null, choice.name, isPick(choice) && tag()),
-                choice.summary && h('p', { class: 'summary' }, choice.summary),
+                choice.summary && h('p', { class: 'summary' }, inline(choice.summary)),
                 tally(choice),
               ),
               measures.map((m, i) =>
                 h(
                   'div',
                   { class: 'row' },
-                  h('p', { class: 'label' }, measureName(m, i), better(m)),
+                  h('p', { class: 'label' }, inline(measureName(m, i)), better(m)),
                   result(m, i, choice),
                 ),
               ),
@@ -695,8 +708,8 @@
               return h(
                 'div',
                 { class: 'preview-group', id: `preview-${i}` },
-                h('h2', null, text(p.title) || 'Preview'),
-                text(p.note) && h('p', null, text(p.note)),
+                h('h2', null, inline(text(p.title) || 'Preview')),
+                text(p.note) && h('p', null, inline(text(p.note))),
                 h(
                   'div',
                   { class: 'preview-grid' },
@@ -728,7 +741,7 @@
                 h(
                   'ul',
                   null,
-                  caveats.map(c => h('li', null, c)),
+                  caveats.map(c => h('li', null, inline(c))),
                 ),
               ),
             method.length > 0 &&
@@ -736,7 +749,7 @@
                 'details',
                 null,
                 h('summary', null, 'How the choices were compared'),
-                method.map(p => h('p', null, p)),
+                method.map(p => h('p', null, inline(p))),
               ),
           )
 
