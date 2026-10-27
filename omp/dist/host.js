@@ -5727,7 +5727,7 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   return { lines: [...head, ...shown, ...blanks(shown), ...foot].map((l) => fit(l, width)), pageTop: ui.pageTop };
 }
 function tallestTabHeight(screen, ui, width, now, style, height) {
-  const heights = shownTabs(screen.isNextBuild === true).map((t) => drawPanel(screen, t.id === ui.tab ? ui : withTab(ui, t.id), width, now, style, height).lines.length);
+  const heights = shownTabs(screen.isNextBuild === true).map((t) => drawPanel(screen, t.id === ui.tab ? ui : withTab(ui, t.id, now), width, now, style, height).lines.length);
   return Math.max(...heights);
 }
 var moreLines = (arrow, n, s) => s.dim(`  ${arrow} ${n} more line${n === 1 ? "" : "s"}`);

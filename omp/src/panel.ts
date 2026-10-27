@@ -1211,7 +1211,7 @@ export function tallestTabHeight(
   height?: number,
 ): number {
   const heights = shownTabs(screen.isNextBuild === true).map(
-    t => drawPanel(screen, t.id === ui.tab ? ui : withTab(ui, t.id), width, now, style, height).lines.length,
+    t => drawPanel(screen, t.id === ui.tab ? ui : withTab(ui, t.id, now), width, now, style, height).lines.length,
   )
 
   return Math.max(...heights)
