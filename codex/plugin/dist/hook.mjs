@@ -2944,7 +2944,7 @@ function dataDir(env, pluginRoot) {
 
 // src/run.ts
 import { execFile } from "node:child_process";
-var run = (args, { cwd, timeoutMs, env }) => new Promise((resolve4) => {
+var run = (args, { cwd, timeoutMs, env, input }) => new Promise((resolve4) => {
   const [file = "", ...rest] = args;
   const child = execFile(
     file,
@@ -2955,7 +2955,9 @@ var run = (args, { cwd, timeoutMs, env }) => new Promise((resolve4) => {
       resolve4({ code, stdout: String(stdout), stderr: String(stderr) });
     }
   );
-  child.stdin?.end();
+  child.stdin?.on("error", () => {
+  });
+  child.stdin?.end(input);
 });
 
 // src/hook-main.ts
