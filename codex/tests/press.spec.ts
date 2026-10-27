@@ -553,7 +553,7 @@ test('Fix hands a finding off and settles it as the choice made, each press with
   assert.equal(folded.count, 0)
   assert.equal(folded.rows[0]?.state.is === 'settled' && folded.rows[0].state.label, 'Fix')
   const drawnAt = (state: SessionState, at: number) => {
-    const row = viewOf(state, at).findings.rows[0]
+    const row = viewOf(state, at, SHOWN).findings.rows[0]
     assert.ok(row?.state.is === 'settled')
 
     return [settledMark(row.state.delivery), settledLabel(row.state.label, row.state.delivery)]

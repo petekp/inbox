@@ -1790,7 +1790,7 @@ function selectedIndex(ids: string[], cursor: Cursor, top: string | null, isSett
 }
 
 async function openLeftRows($: EngineInterface) {
-  const { ledger, prViews: prState, lastActions, view, now } = await drawnState($)
+  const { view, now } = await drawnState($)
   const prViews = view.prs.drawn.filter(x => !x.isSettled).map(x => x.pr)
   const ids = tabRowIds(view, prViews)
   const settled = new Set(settledRowIds(allRows(view)))
@@ -1866,7 +1866,7 @@ async function followNewRows($: EngineInterface, isOpening = false) {
     read($, UNFOLDED),
     isPaneShown($),
   ])
-  const { ledger, prViews: prState, lastActions, stop, isDemo, isUnread, view, now } = drawn
+  const { prViews: prState, lastActions, stop, isDemo, isUnread, view } = drawn
   const prs = view.prs.drawn
   const prViews = prs.filter(x => !x.isSettled).map(x => x.pr)
   const ids = tabRowIds(view, prViews)
