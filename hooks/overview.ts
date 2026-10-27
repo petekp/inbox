@@ -201,8 +201,11 @@ export function applyOps(last: Overview | null, ops: Op[], now: number): Applied
   let rewordsKept = 0
   const unknownRefs: string[] = []
   const changed = new Set<string>()
-  const find = (ref: string) =>
-    o.subjects.find(s => s.id === ref) ?? o.subjects.find(s => isOpen(s) && nameKey(s.name) === nameKey(ref)) ?? null
+  const find = (ref: string) => {
+    const key = nameKey(clipWords(ref, NAME_KEPT))
+
+    return o.subjects.find(s => s.id === ref) ?? o.subjects.find(s => isOpen(s) && nameKey(s.name) === key) ?? null
+  }
   const touch = (s: Subject) => {
     s.changedAt = now
     changed.add(s.id)

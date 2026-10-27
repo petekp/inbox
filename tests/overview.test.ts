@@ -137,6 +137,15 @@ test('a LINK may name a subject the same answer adds, whatever the order of the 
   expect(linked.overview.children[0]?.subjectId).toBe('s1')
 })
 
+test('a DONE may name a subject the same answer adds, even a name longer than the list keeps', () => {
+  const name = 'Week start follows the locale in the date picker everywhere'
+  const done = applyOps(null, opsOf(`NEW: working | ${name} | fixed\nDONE: ${name} | starts on the locale day`), 100)
+
+  expect(done.unknownRefs).toEqual([])
+  expect(done.overview.subjects).toHaveLength(1)
+  expect(done.overview.subjects[0]).toMatchObject({ status: 'done', closedAt: 100 })
+})
+
 test('a DROP INTO folds a subject into another, which notes it, and a WAS keeps the replaced plan until the person has seen it', () => {
   const two = after(null, 'NEW: working | Offline mode | queue built\nNEW: working | Sync retry | backoff drafted', 100)
   const folded = after(two, 'DROP: s2 | part of offline | INTO s1\nWAS: s1 | retry on its own', 200)

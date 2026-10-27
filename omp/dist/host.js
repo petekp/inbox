@@ -324,7 +324,10 @@ function applyOps(last, ops, now) {
   let rewordsKept = 0;
   const unknownRefs = [];
   const changed = new Set;
-  const find = (ref) => o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === nameKey(ref)) ?? null;
+  const find = (ref) => {
+    const key = nameKey(clipWords(ref, NAME_KEPT));
+    return o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === key) ?? null;
+  };
   const touch = (s) => {
     s.changedAt = now;
     changed.add(s.id);
@@ -1382,7 +1385,7 @@ Input:
 - <subjects>: the open subjects, one per line: id | status | name | where it stands
 - <finished>: subjects already done or dropped. Do not add them again.
 - <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
-- <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature.
+- <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
 - <reply>: the agent's final reply
@@ -1391,10 +1394,10 @@ Answer with lines only. No other text, and no corrections: every line you write 
 
 Otherwise write only the lines that apply:
 NEW: status | name | where it stands
-SET: id | status | where it stands
-DONE: id | where it ended
-DROP: id | why
-DROP: id | why | INTO id or name
+SET: id or name | status | where it stands
+DONE: id or name | where it ended
+DROP: id or name | why
+DROP: id or name | why | INTO id or name
 WAS: id or name | the plan it replaces
 LINK: running id | subject id or name
 ROLE: coordinator or session
@@ -1413,10 +1416,11 @@ Status is one of: working, queued, waits-on-you, waits-on-other, problem.
 
 Rules:
 - Change a subject by its id. Write NEW only when no subject in <subjects> covers it.
+- When work started and finished in this exchange, write NEW for it, then DONE with its name.
 - Write SET only when where a subject stands changed. Never reword a subject that did not change.
 - Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
-- Do not write what an open question or task asks the person, or its options. Mark the subject waits-on-you and stop.
+- The inbox shows each question and task for the person, with its options. Mark the subject waits-on-you, and say where its work stands or "needs your decision". Never name the choices.
 - Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
 - Write ROLE coordinator when the session hands out work and reviews what comes back instead of doing the work itself. Write ROLE only when it changes.
 - Write GOAL only when <goal> is empty, when the person states a new goal, or when the work moves to a different task.`;
