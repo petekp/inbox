@@ -130,8 +130,9 @@ The PRs tab needs the GitHub CLI, `gh`, signed in.
 
 Type `/inbox` in Claude Code or omp, or open the Inbox tab in the ChatGPT app. The
 inbox has three tabs: Asks, Finds and PRs. A build that follows the `next`
-branch also shows an Overview tab before them, with a guide to the session's
-work.
+branch also shows an Overview tab before them: the session's goal, each part
+of the work with how long ago it changed, the subagents and other work running
+under each part, and a line where you last looked.
 
 ### Asks
 
