@@ -43,16 +43,18 @@ const page = (
   place: Session['place'] = null,
 ) => overviewPage({ ledger: { overview }, presence: presence(over), place }, now)
 
+const ARMS = { mid: '├ ', last: '└ ' } as const
+
 const shape = (rows: OverviewRow[]) =>
   rows.map(r =>
     r.kind === 'subject'
-      ? `${r.mark} ${r.name}${r.text ? `: ${r.text}` : ''} ${r.age}`
+      ? `${r.mark} ${r.name}${r.text ? `: ${r.text}` : ''} ${r.age}${r.hasChildren ? ' ┐' : ''}`
       : r.kind === 'child'
-        ? `${r.isLoose ? '' : '  '}● ${r.name} ${r.age}`
+        ? `${r.branch ? ARMS[r.branch] : ''}● ${r.name} ${r.age}`
         : r.kind === 'look'
           ? `-- ${r.text} ${r.age}`
           : r.kind === 'more'
-            ? `  ${r.text}`
+            ? `${ARMS[r.branch]}${r.text}`
             : `${r.mark} ${r.text}${r.age ? ` ${r.age}` : ''}`,
   )
 
@@ -205,7 +207,7 @@ test('a look keeps the look line where it was until the look ends', () => {
   expect(lookStarted(null, 1)).toBeNull()
 })
 
-test('the page lists subjects newest first with code-written ages, and a seen row shows its name only', () => {
+test('the page lists subjects newest first with code-written ages, and an open row below the look line keeps where it stands but not its was line', () => {
   const now = 100 * MIN
   const o = after(
     after(
@@ -226,8 +228,14 @@ test('the page lists subjects newest first with code-written ages, and a seen ro
   expect(p.identity).toBe('visor · offline')
   expect(p.goal).toBe('Work offline')
   expect(p.live).toBe('Idle · last reply 2m ago')
-  expect(shape(p.rows)).toEqual(['◆ Offline mode: needs a sync pick 10m', '-- you looked 50m', '○ Docs 2h'])
-  expect(shape(page({ ...o, lastLookAt: 95 * MIN }, now).rows)).toEqual(['◆ Offline mode 10m', '○ Docs 2h'])
+  expect(shape(p.rows)).toEqual([
+    '◆ Offline mode: needs a sync pick 10m',
+    '-- you looked 50m',
+    '○ Docs: outline ready 2h',
+  ])
+  const seen = page({ ...after(o, 'WAS: s2 | sync on every save', 90 * MIN), lastLookAt: 95 * MIN }, now).rows
+  expect(shape(seen)).toEqual(['◆ Offline mode: needs a sync pick 10m', '○ Docs: outline ready 2h'])
+  expect(seen[0]).toMatchObject({ kind: 'subject', was: null })
 })
 
 test('with no look yet every row is new, so the page draws no look line and shows where each stands', () => {
@@ -280,7 +288,7 @@ test('finished work folds into a count once seen, keeping at most two new finish
   ])
 })
 
-test('running children sit under their subject, at most three, and a quiet one says so', () => {
+test('running children sit under their subject, at most three, each tied to it and the last ending its tree, and a quiet one says so', () => {
   const now = 100 * MIN
   let o = after(null, 'NEW: working | Offline mode | queue built', 10 * MIN)
   for (const [n, idle] of [0, 1, 2, 3, 20].entries())
@@ -300,11 +308,17 @@ test('running children sit under their subject, at most three, and a quiet one s
   const rows = page(o, now).rows
 
   expect(shape(rows)).toEqual([
-    '● Offline mode: queue built 2h',
-    '  ● Review 0 now',
-    '  ● Review 1 1m',
-    '  ● Review 2 2m',
-    `  + 2 more running`,
+    '● Offline mode: queue built 2h ┐',
+    '├ ● Review 0 now',
+    '├ ● Review 1 1m',
+    '├ ● Review 2 2m',
+    `└ + 2 more running`,
+  ])
+  const two = ['t2', 't3', 't4'].reduce<Overview | null>((x, ref) => childEnded(x, ref, now - MIN), o)
+  expect(shape(page(two, now).rows)).toEqual([
+    '● Offline mode: queue built 2h ┐',
+    '├ ● Review 0 now',
+    '└ ● Review 1 1m',
   ])
   expect(rows.filter(r => r.kind === 'child')).toHaveLength(CHILD_ROWS)
   expect(rows[0]).toMatchObject({ kind: 'subject', isRunning: true })
