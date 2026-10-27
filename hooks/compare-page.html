@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Comparison</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --page: #f4f5f7;
+        --surface: #ffffff;
+        --ink: #1a1c21;
+        --muted: #5b616c;
+        --rule: #dcdfe5;
+        --code: #eceef2;
+        --pick: #243bf5;
+        --on-pick: #ffffff;
+        --best: #25652f;
+        --best-tint: #e3f0e5;
+        --odd: #745417;
+        --error: #a5293d;
+        --error-tint: #fbe9ec;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --page: #131418;
+          --surface: #1b1d22;
+          --ink: #e8e9ed;
+          --muted: #a3a9b4;
+          --rule: #2e3139;
+          --code: #15171b;
+          --pick: #b1b9f9;
+          --on-pick: #15171b;
+          --best: #7ecd8f;
+          --best-tint: #1c3324;
+          --odd: #ffc107;
+          --error: #ffa3b0;
+          --error-tint: #3a1d23;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--page);
+        color: var(--ink);
+        font:
+          15px/1.5 -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          system-ui,
+          sans-serif;
+        font-variant-numeric: tabular-nums;
+        -webkit-text-size-adjust: 100%;
+      }
+      main {
+        max-width: 76rem;
+        margin: 0 auto;
+        padding: 24px 16px 48px;
+      }
+      @media (min-width: 720px) {
+        main {
+          padding: 40px 32px 64px;
+        }
+      }
+      h1,
+      h2,
+      p,
+      ul,
+      figure {
+        margin: 0;
+      }
+      .sr {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+
+      .tag {
+        display: inline-block;
+        padding: 1px 7px;
+        border-radius: 5px;
+        background: var(--pick);
+        color: var(--on-pick);
+        font-size: 12px;
+        font-weight: 650;
+        line-height: 18px;
+        vertical-align: 0.15em;
+        white-space: nowrap;
+      }
+
+      .verdict {
+        max-width: 44rem;
+      }
+      .question {
+        color: var(--muted);
+        font-size: 16px;
+        font-weight: 550;
+        line-height: 1.4;
+      }
+      .pick {
+        margin-top: 10px;
+        font-size: clamp(26px, 6vw, 34px);
+        font-weight: 700;
+        line-height: 1.15;
+        letter-spacing: -0.012em;
+        overflow-wrap: anywhere;
+      }
+      .pick .tag {
+        margin-right: 10px;
+        vertical-align: 0.3em;
+      }
+      .pick.is-missing {
+        color: var(--muted);
+      }
+      .change {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .reason {
+        margin-top: 14px;
+        font-size: 17px;
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+      }
+      .odd {
+        margin-top: 18px;
+        padding-left: 12px;
+        border-left: 3px solid var(--odd);
+        overflow-wrap: anywhere;
+      }
+      .odd strong {
+        color: var(--odd);
+      }
+      .problems {
+        margin-top: 18px;
+        padding: 12px 14px;
+        border-radius: 8px;
+        background: var(--error-tint);
+        color: var(--error);
+        font-size: 14px;
+      }
+      .problems ul {
+        padding-left: 18px;
+      }
+
+      .choices {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+        column-gap: 16px;
+        margin-top: 32px;
+      }
+      .card {
+        display: grid;
+        grid-template-rows: subgrid;
+        margin-bottom: 16px;
+        border: 1px solid var(--rule);
+        border-radius: 12px;
+        background: var(--surface);
+        overflow-wrap: anywhere;
+      }
+      .card.is-pick {
+        border: 2px solid var(--pick);
+      }
+      .card > * {
+        padding: 10px 16px;
+      }
+      .card.is-pick > * {
+        padding-inline: 15px;
+      }
+      .card-head {
+        padding-top: 14px;
+      }
+      .card.is-pick .card-head {
+        padding-top: 13px;
+      }
+      .card-head h2 {
+        font-size: 17px;
+        font-weight: 650;
+        line-height: 1.3;
+      }
+      .card-head .tag {
+        margin-left: 6px;
+      }
+      .summary {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .tally {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 10px;
+        padding-top: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .pips {
+        display: inline-flex;
+        gap: 3px;
+      }
+      .pips i {
+        width: 8px;
+        height: 8px;
+        border: 1.5px solid var(--rule);
+        border-radius: 2px;
+      }
+      .pips i.won {
+        border-color: var(--best);
+        background: var(--best);
+      }
+      .row {
+        border-top: 1px solid var(--rule);
+      }
+      .label {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.4;
+      }
+      .value {
+        margin-top: 2px;
+        font-size: 15.5px;
+        line-height: 1.4;
+      }
+      .value.is-best {
+        display: inline-flex;
+        gap: 6px;
+        margin-left: -6px;
+        padding: 1px 8px 1px 6px;
+        border-radius: 6px;
+        background: var(--best-tint);
+        color: var(--best);
+        font-weight: 650;
+      }
+      .value.is-empty {
+        color: var(--muted);
+        font-style: italic;
+      }
+      .note {
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .previews {
+        margin-top: 24px;
+      }
+      .preview-group + .preview-group {
+        margin-top: 32px;
+      }
+      .preview-group h2 {
+        font-size: 16px;
+        font-weight: 650;
+      }
+      .preview-group > p {
+        max-width: 44rem;
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .preview-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--cols) * 1ch + 30px)), 1fr));
+        gap: 16px;
+        margin-top: 12px;
+        font:
+          12.5px/1.4 ui-monospace,
+          'SF Mono',
+          Menlo,
+          Consolas,
+          monospace;
+      }
+      .preview figcaption {
+        margin-bottom: 6px;
+        font:
+          600 14px/1.4 -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          system-ui,
+          sans-serif;
+      }
+      .preview figcaption .tag {
+        margin-left: 6px;
+      }
+      .preview pre {
+        margin: 0;
+        padding: 12px 14px;
+        overflow-x: auto;
+        border: 1px solid var(--rule);
+        border-radius: 8px;
+        background: var(--code);
+        font: inherit;
+        tab-size: 4;
+      }
+      .preview.is-pick pre {
+        border-color: var(--pick);
+      }
+      @media (max-width: 400px) {
+        .preview pre {
+          padding: 10px 11px;
+        }
+      }
+
+      .folds {
+        max-width: 44rem;
+        margin-top: 36px;
+      }
+      details {
+        border-top: 1px solid var(--rule);
+      }
+      details:last-child {
+        border-bottom: 1px solid var(--rule);
+      }
+      summary {
+        padding: 12px 0;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      summary::marker {
+        color: var(--muted);
+      }
+      summary:focus-visible {
+        outline: 2px solid var(--pick);
+        outline-offset: 2px;
+        border-radius: 4px;
+      }
+      summary .count {
+        margin-left: 6px;
+        color: var(--muted);
+        font-weight: 400;
+      }
+      details > ul,
+      details > p {
+        padding-bottom: 14px;
+        overflow-wrap: anywhere;
+      }
+      details > ul {
+        padding-left: 20px;
+      }
+      details li + li,
+      details p + p {
+        margin-top: 8px;
+      }
+    </style>
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        const page = document.getElementById('page')
+        const holder = document.getElementById('compare-data')
+        const raw = (holder ? holder.textContent : '').replace(/^﻿/, '').trim()
+
+        function h(tag, props, ...kids) {
+          const el = document.createElement(tag)
+          for (const [name, value] of Object.entries(props || {})) {
+            if (value === null || value === undefined || value === false) continue
+            el.setAttribute(name, value === true ? '' : String(value))
+          }
+          for (const kid of kids.flat(Infinity)) {
+            if (kid === null || kid === undefined || kid === false || kid === '') continue
+            el.append(kid instanceof Node ? kid : String(kid))
+          }
+          return el
+        }
+        const text = v => (typeof v === 'string' ? v.trim() : typeof v === 'number' ? String(v) : '')
+        const list = v => (Array.isArray(v) ? v : v === null || v === undefined || v === '' ? [] : [v])
+        const keyOf = name => text(name).toLowerCase().replace(/\s+/g, ' ')
+
+        function fail(message) {
+          page.replaceChildren(h('p', { class: 'problems' }, message))
+        }
+        if (!raw) return fail('This page has no comparison data. Add it as JSON after the last line of this file.')
+        let data
+        try {
+          data = JSON.parse(raw)
+        } catch (e) {
+          return fail(`The comparison data is not valid JSON: ${e.message}`)
+        }
+        if (!data || typeof data !== 'object') return fail('The comparison data is not a JSON object.')
+
+        const problems = []
+        const measures = list(data.measures).filter(m => m && typeof m === 'object')
+        const previews = list(data.previews).filter(p => p && typeof p === 'object')
+        let choices = list(data.choices)
+          .map(c => (typeof c === 'string' ? { name: c } : c && typeof c === 'object' ? c : {}))
+          .map(c => ({ name: text(c.name), summary: text(c.summary) }))
+          .filter(c => c.name)
+        if (choices.length === 0) {
+          problems.push('The data lists no choices.')
+          const seen = new Map()
+          for (const m of measures)
+            for (const name of Object.keys(m.values || {})) if (!seen.has(keyOf(name))) seen.set(keyOf(name), name)
+          choices = [...seen.values()].map(name => ({ name: text(name), summary: '' }))
+        }
+        const byKey = new Map(choices.map(c => [keyOf(c.name), c]))
+        function choiceNamed(name, where) {
+          const choice = byKey.get(keyOf(name))
+          if (!choice && text(name)) problems.push(`“${text(name)}”, ${where}, is not one of the choices.`)
+          return choice
+        }
+
+        const question = text(data.question)
+        const pick = text(data.pick) ? choiceNamed(data.pick, 'the pick') : undefined
+        const pickName = pick ? pick.name : text(data.pick)
+        const before = text(data.pickBefore)
+        const isSamePick = before && keyOf(before) === keyOf(pickName)
+        document.title = question || 'Comparison'
+
+        const valueOf = (m, choice) => {
+          const entry = Object.entries(m.values || {}).find(([name]) => keyOf(name) === keyOf(choice.name))
+          const v = entry ? entry[1] : undefined
+          return v && typeof v === 'object'
+            ? { value: text(v.value), note: text(v.note) }
+            : { value: text(v), note: '' }
+        }
+        const bestSets = measures.map((m, i) => {
+          const where = `named as best on “${text(m.name) || `measure ${i + 1}`}”`
+          return new Set(
+            list(m.best)
+              .map(name => choiceNamed(name, where))
+              .filter(Boolean)
+              .map(c => keyOf(c.name)),
+          )
+        })
+        measures.forEach((m, i) => {
+          for (const name of Object.keys(m.values || {}))
+            choiceNamed(name, `named in the values of “${text(m.name) || `measure ${i + 1}`}”`)
+        })
+        previews.forEach((p, i) => {
+          for (const name of Object.keys(p.texts || {}))
+            choiceNamed(name, `named in the preview “${text(p.title) || i + 1}”`)
+        })
+        const judged = bestSets.filter(s => s.size > 0).length
+
+        const tag = () => h('span', { class: 'tag' }, 'Pick')
+        const isPick = choice => keyOf(choice.name) === keyOf(pickName)
+
+        const verdict = h(
+          'header',
+          { class: 'verdict' },
+          question && h('h1', { class: 'question' }, question),
+          pickName ? h('p', { class: 'pick' }, tag(), pickName) : h('p', { class: 'pick is-missing' }, 'No pick'),
+          before &&
+            pickName &&
+            h(
+              'p',
+              { class: 'change' },
+              isSamePick ? 'Same pick as before the comparison.' : `Before the comparison, the pick was ${before}.`,
+            ),
+          text(data.reason) && h('p', { class: 'reason' }, text(data.reason)),
+          text(data.unexpected) && h('p', { class: 'odd' }, h('strong', null, 'Unexpected: '), text(data.unexpected)),
+        )
+
+        const rowCount = 1 + (judged > 0 ? 1 : 0) + measures.length
+        const cards = h(
+          'section',
+          { class: 'choices', 'aria-label': 'Choices' },
+          choices.map(choice => {
+            const won = bestSets.filter(s => s.has(keyOf(choice.name))).length
+            return h(
+              'article',
+              { class: isPick(choice) ? 'card is-pick' : 'card', style: `grid-row: span ${rowCount}` },
+              h(
+                'div',
+                { class: 'card-head' },
+                h('h2', null, choice.name, isPick(choice) && tag()),
+                choice.summary && h('p', { class: 'summary' }, choice.summary),
+              ),
+              judged > 0 &&
+                h(
+                  'div',
+                  { class: 'tally' },
+                  `Best on ${won} of ${judged} measures`,
+                  h(
+                    'span',
+                    { class: 'pips', 'aria-hidden': 'true' },
+                    bestSets
+                      .filter(s => s.size > 0)
+                      .map(s => h('i', { class: s.has(keyOf(choice.name)) ? 'won' : null })),
+                  ),
+                ),
+              measures.map((m, i) => {
+                const { value, note } = valueOf(m, choice)
+                const isBest = bestSets[i].has(keyOf(choice.name))
+                return h(
+                  'div',
+                  { class: 'row' },
+                  h('p', { class: 'label' }, text(m.name), text(m.better) && ` (${text(m.better)})`),
+                  value
+                    ? h(
+                        'p',
+                        { class: isBest ? 'value is-best' : 'value' },
+                        isBest && h('span', { 'aria-hidden': 'true' }, '✓'),
+                        h('span', null, value, isBest && h('span', { class: 'sr' }, ' (best)')),
+                      )
+                    : h('p', { class: 'value is-empty' }, 'Not measured'),
+                  note && h('p', { class: 'note' }, note),
+                )
+              }),
+            )
+          }),
+        )
+
+        const previewSection =
+          previews.length > 0 &&
+          h(
+            'section',
+            { class: 'previews', 'aria-label': 'Previews' },
+            previews.map(p => {
+              const blocks = choices
+                .map(choice => {
+                  const entry = Object.entries(p.texts || {}).find(([name]) => keyOf(name) === keyOf(choice.name))
+                  return entry && typeof entry[1] === 'string' ? { choice, body: entry[1].replace(/\s+$/, '') } : null
+                })
+                .filter(Boolean)
+              const widest = Math.max(20, ...blocks.flatMap(b => b.body.split('\n').map(line => line.length)))
+              return h(
+                'div',
+                { class: 'preview-group' },
+                h('h2', null, text(p.title) || 'Preview'),
+                text(p.note) && h('p', null, text(p.note)),
+                h(
+                  'div',
+                  { class: 'preview-grid', style: `--cols: ${Math.min(widest, 100)}` },
+                  blocks.map(b =>
+                    h(
+                      'figure',
+                      { class: isPick(b.choice) ? 'preview is-pick' : 'preview' },
+                      h('figcaption', null, b.choice.name, isPick(b.choice) && tag()),
+                      h('pre', null, b.body),
+                    ),
+                  ),
+                ),
+              )
+            }),
+          )
+
+        const caveats = list(data.caveats).map(text).filter(Boolean)
+        const method = list(data.method).map(text).filter(Boolean)
+        const folds =
+          (caveats.length > 0 || method.length > 0) &&
+          h(
+            'section',
+            { class: 'folds' },
+            caveats.length > 0 &&
+              h(
+                'details',
+                null,
+                h('summary', null, 'Caveats', h('span', { class: 'count' }, caveats.length)),
+                h(
+                  'ul',
+                  null,
+                  caveats.map(c => h('li', null, c)),
+                ),
+              ),
+            method.length > 0 &&
+              h(
+                'details',
+                null,
+                h('summary', null, 'How the choices were compared'),
+                method.map(p => h('p', null, p)),
+              ),
+          )
+
+        const problemNote =
+          problems.length > 0 &&
+          h(
+            'div',
+            { class: 'problems', role: 'note' },
+            h('p', null, 'Problems in the comparison data:'),
+            h(
+              'ul',
+              null,
+              problems.map(p => h('li', null, p)),
+            ),
+          )
+
+        page.replaceChildren(verdict, problemNote || '', cards, previewSection || '', folds || '')
+      })
+    </script>
+  </head>
+  <body>
+    <main id="page">
+      <noscript>This page needs JavaScript to draw the comparison.</noscript>
+    </main>
+    <plaintext id="compare-data" hidden>
