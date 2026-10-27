@@ -2535,7 +2535,8 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
     is: "done",
     label: DONE_LABELS[last.action]?.(last.text) ?? last.text,
     at: last.at,
-    ...isHandedStep ? { isHandedStep: true } : {}
+    ...isHandedStep ? { isHandedStep: true } : {},
+    ...STILL_WAITING_AFTER.has(last.action) ? { isStillWaiting: true } : {}
   };
 }
 function feedbackIn(id, state, last, note, turns, now, reportedAt) {
@@ -2571,8 +2572,10 @@ var DONE_LABELS = {
   "thread-draft": () => "Drafted a reply",
   "pr-conflicts": () => "Asked to resolve conflicts",
   "pr-merge": () => "Asked to merge",
-  "pr-address-all": (text) => text.replace(/^Address\b/, "Addressed")
+  "pr-address-all": (text) => text.replace(/^Address\b/, "Addressed"),
+  "check-fix": () => "Asked to fix"
 };
+var STILL_WAITING_AFTER = new Set(["check-fix"]);
 function isFailure(f) {
   return f?.is === "notSent" || f?.is === "local" && f.result.state === "failed";
 }
@@ -2592,7 +2595,8 @@ function isAgain(last, action, isOut) {
   return isRepeatOf(last, action) && (!isOut || last?.isRepeat === true);
 }
 function isStatusUnderActions(f, isOpen) {
-  return isOpen && isPressOut(f);
+  const isDoneStillWaiting = f?.is === "done" && f.isStillWaiting === true;
+  return isOpen && (isPressOut(f) || isDoneStillWaiting);
 }
 var runIt = (look) => isTerminalLike(look) ? "Run it in a terminal, or type ! and paste." : "Run it in Terminal.";
 var VERBS = {
@@ -4911,6 +4915,7 @@ function prEntries(screen, now) {
         lead,
         title: pr.title,
         status: { text: head, tone: PR_TONES[status], rest: unlisted.map((r) => ` \xB7 ${r}`).join("") },
+        age: doneAt(f),
         feedback: f,
         detail: pr.error ? prRefreshFailedText(pr.error) : null,
         buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses)),
@@ -4923,6 +4928,7 @@ function prEntries(screen, now) {
     for (const t of threads) {
       const id = prThreadId(pr, t);
       const text = threadRowText(pr, t, lastActions);
+      const feedback = pressFeedback(screen, id, now, text.mark.isDone);
       out.push({
         kind: "row",
         line: {
@@ -4932,7 +4938,8 @@ function prEntries(screen, now) {
           title: text.title,
           isDim: text.fold !== null,
           detail: [text.meta, text.fold?.note].filter(Boolean).join(" \xB7 ") || null,
-          feedback: pressFeedback(screen, id, now, text.mark.isDone),
+          age: doneAt(feedback),
+          feedback,
           buttons: prButtons(threadActions(pr, t, presses)),
           isWaiting: isWaiting(id),
           isFolded: text.fold !== null
@@ -4945,6 +4952,7 @@ function prEntries(screen, now) {
     for (const c of checks) {
       const id = prCheckId(pr, c);
       const text = checkRowText(c);
+      const feedback = pressFeedback(screen, id, now, text.mark.isDone);
       out.push({
         kind: "row",
         line: {
@@ -4953,7 +4961,8 @@ function prEntries(screen, now) {
           lead: markLead(text.mark),
           title: text.lead ? `${text.lead} / ${text.title}` : text.title,
           detail: text.meta,
-          feedback: pressFeedback(screen, id, now, text.mark.isDone),
+          age: doneAt(feedback),
+          feedback,
           buttons: prButtons(checkActions(pr, c, presses)),
           isWaiting: isWaiting(id)
         }
@@ -4968,6 +4977,7 @@ function pressFeedback(screen, id, now, isMarkDone = false) {
   const f = feedbackOf(id, screen.view.lastActions[id], undefined, screen.view.turns, now);
   return f ? { text: markedFeedbackText(f, isMarkDone, AGENT), tone: feedbackTone(f), source: f } : null;
 }
+var doneAt = (f) => f?.source?.is === "done" ? f.source.at : null;
 var TITLE_AT = 6;
 function pageEntries(page) {
   if (page.isEmpty)

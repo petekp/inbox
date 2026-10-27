@@ -504,6 +504,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
         lead,
         title: pr.title,
         status: { text: head, tone: PR_TONES[status], rest: unlisted.map(r => ` · ${r}`).join('') },
+        age: doneAt(f),
         feedback: f,
         detail: pr.error ? prRefreshFailedText(pr.error) : null,
         buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses)),
@@ -515,6 +516,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
     for (const t of threads) {
       const id = prThreadId(pr, t)
       const text = threadRowText(pr, t, lastActions)
+      const feedback = pressFeedback(screen, id, now, text.mark.isDone)
       out.push({
         kind: 'row',
         line: {
@@ -524,7 +526,8 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
           title: text.title,
           isDim: text.fold !== null,
           detail: [text.meta, text.fold?.note].filter(Boolean).join(' · ') || null,
-          feedback: pressFeedback(screen, id, now, text.mark.isDone),
+          age: doneAt(feedback),
+          feedback,
           buttons: prButtons(threadActions(pr, t, presses)),
           isWaiting: isWaiting(id),
           isFolded: text.fold !== null,
@@ -536,6 +539,7 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
     for (const c of checks) {
       const id = prCheckId(pr, c)
       const text = checkRowText(c)
+      const feedback = pressFeedback(screen, id, now, text.mark.isDone)
       out.push({
         kind: 'row',
         line: {
@@ -544,7 +548,8 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
           lead: markLead(text.mark),
           title: text.lead ? `${text.lead} / ${text.title}` : text.title,
           detail: text.meta,
-          feedback: pressFeedback(screen, id, now, text.mark.isDone),
+          age: doneAt(feedback),
+          feedback,
           buttons: prButtons(checkActions(pr, c, presses)),
           isWaiting: isWaiting(id),
         },
@@ -561,6 +566,8 @@ function pressFeedback(screen: PanelScreen, id: string, now: number, isMarkDone 
 
   return f ? { text: markedFeedbackText(f, isMarkDone, AGENT), tone: feedbackTone(f), source: f } : null
 }
+
+const doneAt = (f: Line['feedback']): number | null => (f?.source?.is === 'done' ? f.source.at : null)
 
 /** Where a row's title starts, after the cursor and the mark. The Overview page's text and details start here too. */
 const TITLE_AT = 6
