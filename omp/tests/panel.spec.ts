@@ -204,7 +204,7 @@ for (const isNextBuild of [false, true])
 
 test('the selected tab draws inverse and the others draw their counts', () => {
   const screen = screenOf()
-  const bar = drawn(screen, keys(screen, INITIAL_UI, '2'))[0]!
+  const bar = drawn(screen, keys(screen, INITIAL_UI, '2'))[1]!
   expect(bar).toContain(`${ESC}7m${ESC}1m [2] Finds ${screen.view.findings.count} `)
   expect(strip(bar)).toContain(`[1] Asks ${screen.view.needsYou.count}`)
   expect(strip(bar)).toContain(`[3] PRs ${screen.view.prs.count}`)
@@ -295,6 +295,7 @@ async function afterPresses(...presses: Parameters<ReturnType<typeof demoSource>
   let now = NOW
   const later: (() => void)[] = []
   const source = demoSource({
+    modelName: 'Claude Sonnet 5.5',
     now: () => now,
     after: fn => later.push(fn),
     settleWindowMs: SETTLED_MS,
@@ -354,7 +355,7 @@ test('a settled row is skipped when moving and the selection leaves it', async (
   expect(next.selectedId).not.toBe('d14')
   expect(
     drawn(screen, ui)
-      .filter(l => strip(l).includes('▸'))
+      .filter(l => strip(l).includes('❯'))
       .every(l => !strip(l).includes('Put on the glasses')),
   ).toBe(true)
 })
@@ -375,7 +376,7 @@ test('a reply folds its row to one line with its mark and label, and the selecti
   const { row, screen } = await afterReply()
   const lines = text(screen, onRow(row)).split('\n')
   const at = lines.findIndex(l => l.includes(row.title))
-  expect(lines[at]).toMatch(/▸ ✓ .*Replied/)
+  expect(lines[at]).toMatch(/❯ ✓ .*Replied/)
   expect(lines[at + 1]).not.toContain('↵')
 
   const moved = afterHandOff(screen, onRow(row), row.id, NOW)
@@ -608,7 +609,7 @@ test('no drawn line is wider than the panel, and a short panel keeps the selecte
   const last = rows.at(-1)!
   const short = render(screen, onRow(last), 80, NOW, style, 12).map(strip)
   expect(short.length).toBeLessThanOrEqual(12)
-  expect(short.some(l => l.includes('▸') && l.includes(last.title.slice(0, 20)))).toBe(true)
+  expect(short.some(l => l.includes('❯') && l.includes(last.title.slice(0, 20)))).toBe(true)
 })
 
 test('Enter on a Closed line shows the newest closed rows and how many are earlier, and Enter again folds them', () => {
@@ -709,7 +710,7 @@ test('a new row above the default selection leaves the selection on its row', ()
 const onPage: PanelUi = { ...INITIAL_UI, tab: 'overview' }
 const toneNamed: Style = { ...style, tone: (name, s) => `<${name}>${s}</${name}>` }
 const tabLine = (screen: PanelScreen, ui: PanelUi, width: number) =>
-  strip(drawn(screen, ui, width)[0]!)
+  strip(drawn(screen, ui, width)[1]!)
     .replace(/esc to close\s*$/, '')
     .trimEnd()
 
@@ -766,7 +767,7 @@ test('on a Overview page taller than the panel, each ↑↓ or j/k press shows o
   const bodyOf = (lines: string[]) => {
     const rule = lines.findLastIndex(l => /^─+$/.test(l))
 
-    return lines.slice(2, rule)
+    return lines.slice(3, rule)
   }
   const page = bodyOf(text(screen, onPage, 80).split('\n'))
   const drawnAt = (pageTop: number) => drawPanel(screen, { ...onPage, pageTop }, 80, NOW, style, height)
@@ -837,7 +838,7 @@ test('the tab line counts each symbol as two cells, so it fits the panel and kee
   for (const isNextBuild of [false, true])
     for (const shown of shownTabs(isNextBuild))
       for (let width = 34; width <= 120; width++) {
-        const bar = strip(drawn(screenOf({ isNextBuild }), { ...INITIAL_UI, tab: shown.id }, width)[0]!)
+        const bar = strip(drawn(screenOf({ isNextBuild }), { ...INITIAL_UI, tab: shown.id }, width)[1]!)
         expect(cellWidth(bar)).toBeLessThanOrEqual(width)
         if (bar.includes('esc')) expect(bar.trimEnd()).toEndWith('esc to close')
       }

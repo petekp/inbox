@@ -71,7 +71,7 @@ import type { PressOutcome, SessionHost, UpdateHost } from '../../hooks/session-
 import { agentTools } from '../../hooks/tools'
 import { DARK_TONES, LIGHT_TONES } from '../../hooks/tones'
 import { clip } from '../../hooks/text'
-import { NEXT_BUILD_MARK, NO_HOLDS, RESUME_TEXT, SETTLED_MS, screenTabOf } from '../../hooks/view'
+import { NEXT_BUILD_MARK, NO_HOLDS, RESUME_TEXT, SETTLED_MS, inboxCommandText, screenTabOf } from '../../hooks/view'
 import type { Holds, ShownTab } from '../../hooks/view'
 import { openTarget } from './commands'
 import { createPanel } from './controller'
@@ -1020,6 +1020,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
           settleWindowMs: deps.settleWindowMs,
           isNextBuild: deps.isNextBuild,
           comparePage: deps.comparePage,
+          modelName: modelNameOf(ctx),
         })
       : liveSource(ctx)
     hideBand(ctx)
@@ -1055,7 +1056,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   }
 
   pi.registerCommand('inbox', {
-    description: 'Show where this session stands and what waits on you',
+    description: inboxCommandText(deps.isNextBuild),
     handler: async (args, ctx) => {
       const isDemo = args.trim() === 'demo'
       if (ctx.mode === 'tui') return openPanelUi(ctx, isDemo)
@@ -1065,6 +1066,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
             after: () => {},
             settleWindowMs: deps.settleWindowMs,
             comparePage: deps.comparePage,
+            modelName: modelNameOf(ctx),
           }).screen(NO_HOLDS)
         : await inbox.screen(ctx)
       const { needsYou, findings } = screen.view

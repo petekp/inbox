@@ -968,7 +968,8 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
       ? `  ${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}`
       : ''
   const title = line.isDim ? s.dim(line.title) : isSelected ? s.bold(line.title) : line.title
-  const cursor = isSelected ? s.tone('accent', '▸') : ' '
+  // omp marks a selected item with ❯, its `nav.cursor` symbol, and keeps ▸ and ▾ for expand and collapse.
+  const cursor = isSelected ? s.tone('accent', '❯') : ' '
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : ''
   out.push(spread(` ${' '.repeat(pad)}${cursor} ${leadText(line.lead, s)} ${title}${status}${after}`, `${age} `, width))
   if (line.settled || isShut(line, ui)) return out
@@ -1165,7 +1166,8 @@ export function drawPanel(
   const d: Draw = { screen, ui, width, now, style }
   const entries = entriesOf(screen, ui, ui.tab, now)
   const selected = resolveSelected(linesOf(entries), ui.selectedId)
-  const head = [tabBar(d), style.dim('─'.repeat(width))]
+  const rule = style.dim('─'.repeat(width))
+  const head = [rule, tabBar(d), rule]
   const body: string[] = []
   let selectedAt = [0, 0]
   for (const e of entries) {

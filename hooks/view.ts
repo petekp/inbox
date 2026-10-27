@@ -92,9 +92,14 @@ export function isQueuedAt(last: LastAction | undefined, now: number): boolean {
   return last?.delivery?.state === 'queued' && now - last.at >= QUEUED_AFTER_MS
 }
 
-function pendingDeliveryAt(last: LastAction | undefined, now: number): 'queued' | 'unconfirmed' | null {
+/**
+ * A send still on its way. For its first QUEUED_AFTER_MS a queued send reads as sending, so a send that the agent takes
+ * at once never reads Queued. Neither reads as delivered, so neither draws a ✓.
+ */
+function pendingDeliveryAt(last: LastAction | undefined, now: number): 'sending' | 'queued' | 'unconfirmed' | null {
   if (last?.delivery?.state === 'unconfirmed') return 'unconfirmed'
-  return isQueuedAt(last, now) ? 'queued' : null
+  if (last?.delivery?.state !== 'queued') return null
+  return isQueuedAt(last, now) ? 'queued' : 'sending'
 }
 
 /** 0 means no click opened it, so nothing is guarded. */
@@ -153,7 +158,7 @@ export function heldReplies(typing: string | null, drafts: Record<string, Draft>
   )
 }
 
-export type ClosedDelivery = 'queued' | 'unconfirmed' | { error: string; canUndo: boolean } | null
+export type ClosedDelivery = 'sending' | 'queued' | 'unconfirmed' | { error: string; canUndo: boolean } | null
 
 export type RowState =
   | { is: 'open' }
@@ -173,6 +178,7 @@ export type Feedback =
   | { is: 'working'; label: string; at: number }
   | { is: 'stillOpen'; at: number }
   | { is: 'noComparison'; at: number }
+  | { is: 'sending'; label: string; at: number }
   | { is: 'queued'; label: string; at: number }
   | { is: 'unconfirmed'; label: string; at: number }
   | { is: 'notSent'; reason: string; retry: RowPress | null }
@@ -427,7 +433,7 @@ export function feedbackOf(
   if (!last || last.kind === 'local') return null
   const delivery = last.delivery
   const pending = pendingDeliveryAt(last, now)
-  if (pending) return { is: pending, label: last.text, at: last.at }
+  if (pending === 'queued' || pending === 'unconfirmed') return { is: pending, label: last.text, at: last.at }
   if (delivery?.state === 'failed') return { is: 'notSent', reason: delivery.reason, retry: retryOf(id, last) }
   const isAwaiting = isAwaitingReply(last, turns)
   const isUnreported = last.action === 'compare' && !(reportedAt !== undefined && reportedAt >= last.at)
@@ -435,6 +441,7 @@ export function feedbackOf(
   const working = WORKING_LABELS[last.action]
   if (last.kind === 'talk' && working && (isAwaiting || (isUnreported && !isPastLimit)))
     return { is: 'working', label: working, at: last.at }
+  if (pending === 'sending') return { is: 'sending', label: last.text, at: last.at }
   if (isUnreported) return { is: 'noComparison', at: last.at }
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last)) return { is: 'stillOpen', at: last.at }
 
@@ -523,13 +530,14 @@ export function hasAge(
   f: Feedback,
 ): f is Extract<
   Feedback,
-  { is: 'done' | 'working' | 'stillOpen' | 'noComparison' | 'queued' | 'unconfirmed' | 'closed' }
+  { is: 'done' | 'working' | 'stillOpen' | 'noComparison' | 'sending' | 'queued' | 'unconfirmed' | 'closed' }
 > {
   return (
     f.is === 'done' ||
     f.is === 'working' ||
     f.is === 'stillOpen' ||
     f.is === 'noComparison' ||
+    f.is === 'sending' ||
     f.is === 'queued' ||
     f.is === 'unconfirmed' ||
     f.is === 'closed'
@@ -539,6 +547,7 @@ export function hasAge(
 export function isPressOut(f: Feedback | null): boolean {
   return (
     f?.is === 'working' ||
+    f?.is === 'sending' ||
     f?.is === 'queued' ||
     f?.is === 'unconfirmed' ||
     (f?.is === 'local' && f.result.state === 'pending')
@@ -625,6 +634,8 @@ export function feedbackText(f: Feedback, look: Look): string {
       return noteText()
     case 'local':
       return localText(f.result, look)
+    case 'sending':
+      return f.label
     case 'queued':
       return deliveryLabel(f.is, f.label)
     case 'unconfirmed':
@@ -674,7 +685,7 @@ export function settledTone(state: { delivery: ClosedDelivery; isLapsed: boolean
 
 export function settledLabel(label: string, delivery: ClosedDelivery): string {
   if (delivery && typeof delivery === 'object') return `${label} · Not sent: ${delivery.error}`
-  return delivery === null ? label : deliveryLabel(delivery, label)
+  return delivery === null || delivery === 'sending' ? label : deliveryLabel(delivery, label)
 }
 
 function stepKind(step: HelpStep): PressKind {
@@ -706,6 +717,13 @@ const RELEASE_TABS = numbered(TAB_NAMES.filter(t => t.id !== 'overview'))
 /** The tabs a build draws, in order, each keyed by its place. Only a next build draws the Overview. */
 export function shownTabs(isNextBuild: boolean): readonly DrawnTab[] {
   return isNextBuild ? NEXT_BUILD_TABS : RELEASE_TABS
+}
+
+/** The `/inbox` command's description: what the build's tabs show. */
+export function inboxCommandText(isNextBuild: boolean): string {
+  return isNextBuild
+    ? 'Show where this session stands and what waits on you'
+    : "Show this session's questions, tasks, findings and PRs"
 }
 
 /** The tab a build draws for a saved or sent one: that tab when the build draws it, else the build's first tab. */
