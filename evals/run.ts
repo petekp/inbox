@@ -15,7 +15,7 @@ import {
   systemText,
   transcriptCatchUpPrompt,
 } from '../hooks/model-text'
-import { applyOps, isOpen, parseOverview } from '../hooks/overview'
+import { applyOps, applyOverview, askOverview, isOpen, parseOverview } from '../hooks/overview'
 import type { OverviewAnswer } from '../hooks/overview'
 import { CODEX } from '../codex/src/texts'
 import type { Exchange, Update } from '../hooks/ledger'
@@ -130,7 +130,7 @@ const about = provenance(
       overviewPrompt(null, { turn: 1, person: 'p', activity: ['a'], reply: 'r' } as Exchange, [], NOW),
       overviewCatchUpPrompt(null, 'c', [], NOW),
     ].join('\n'),
-    'overview parser': [parseOverview, applyOps].map(String).join('\n'),
+    'overview parser': [parseOverview, askOverview, applyOverview, applyOps].map(String).join('\n'),
     cases: readFileSync(values.cases, 'utf8'),
     models: JSON.stringify({ claude: CLAUDE_MODEL, codex: MODEL }),
     runner: readFileSync(process.argv[1]!, 'utf8'),
@@ -515,10 +515,8 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
       ? overviewPrompt(applied.overview, ex, c.hostTasks ?? [], NOW)
       : overviewCatchUpPrompt(applied.overview, c.catchUp, c.hostTasks ?? [], NOW)
   const overviewStarted = Date.now()
-  // The hosts ask once more when the answer holds prose, so the eval does too.
-  const firstCall = await ask(overviewInput, OVERVIEW_SYSTEM)
-  const isRetried = firstCall.text !== null && parseOverview(firstCall.text) === null
-  const overviewCall = isRetried ? await ask(overviewInput, OVERVIEW_SYSTEM) : firstCall
+  const { first: firstCall, last: overviewCall } = await askOverview(() => ask(overviewInput, OVERVIEW_SYSTEM))
+  const isRetried = overviewCall !== firstCall
   const withAnswer = {
     ...base,
     overviewMs: Date.now() - overviewStarted,
@@ -535,8 +533,7 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
   const overview: OverviewRun = {
     answer: overviewParsed,
     before: applied.overview,
-    after:
-      overviewParsed?.kind === 'ops' ? applyOps(applied.overview, overviewParsed.ops, NOW).overview : applied.overview,
+    after: overviewParsed ? applyOverview(applied.overview, overviewParsed, NOW) : applied.overview,
   }
   const after = { ...applied, overview: overview.after }
 

@@ -30,7 +30,7 @@ const opsOf = (text: string): Op[] => {
   return answer.ops
 }
 
-const after = (last: Overview | null, text: string, now: number) => applyOps(last, opsOf(text), now).overview
+const after = (last: Overview | null, text: string, now: number) => applyOps(last, opsOf(text), now)
 
 const presence = (over: Partial<Session['presence']> = {}): Session['presence'] => ({
   ...emptySession().presence,
@@ -104,18 +104,16 @@ test('code dates each change, and a NEW for an open subject changes that subject
   const one = after(null, 'GOAL: Work offline\nNEW: working | Offline mode | sync queue built', 100)
   const two = applyOps(one, opsOf('NEW: waits-on-you | offline mode | needs a sync pick'), 200)
 
-  expect(two.newMerged).toBe(1)
-  expect(two.overview.subjects).toHaveLength(1)
-  expect(two.overview.subjects[0]).toMatchObject({ status: 'waits-on-you', text: 'needs a sync pick', changedAt: 200 })
-  expect(two.overview.goal).toBe('Work offline')
+  expect(two.subjects).toHaveLength(1)
+  expect(two.subjects[0]).toMatchObject({ status: 'waits-on-you', text: 'needs a sync pick', changedAt: 200 })
+  expect(two.goal).toBe('Work offline')
 })
 
 test('a SET that keeps the status and most words keeps the old text and age', () => {
   const one = after(null, 'NEW: working | Offline mode | sync queue built and tested', 100)
   const reworded = applyOps(one, opsOf('SET: s1 | working | the sync queue is built and tested'), 200)
 
-  expect(reworded.rewordsKept).toBe(1)
-  expect(reworded.overview.subjects[0]).toMatchObject({ text: 'sync queue built and tested', changedAt: 100 })
+  expect(reworded.subjects[0]).toMatchObject({ text: 'sync queue built and tested', changedAt: 100 })
 })
 
 test('a LINK may name a subject the same answer adds, whatever the order of the lines', () => {
@@ -130,17 +128,15 @@ test('a LINK may name a subject the same answer adds, whatever the order of the 
     100,
   )
 
-  expect(linked.unknownRefs).toEqual([])
-  expect(linked.overview.children[0]?.subjectId).toBe('s1')
+  expect(linked.children[0]?.subjectId).toBe('s1')
 })
 
 test('a DONE may name a subject the same answer adds, even a name longer than the list keeps', () => {
   const name = 'Week start follows the locale in the date picker everywhere'
   const done = applyOps(null, opsOf(`NEW: working | ${name} | fixed\nDONE: ${name} | starts on the locale day`), 100)
 
-  expect(done.unknownRefs).toEqual([])
-  expect(done.overview.subjects).toHaveLength(1)
-  expect(done.overview.subjects[0]).toMatchObject({ status: 'done', closedAt: 100 })
+  expect(done.subjects).toHaveLength(1)
+  expect(done.subjects[0]).toMatchObject({ status: 'done', closedAt: 100 })
 })
 
 test('a DROP INTO folds a subject into another, which notes it, and a WAS keeps the replaced plan until the person has seen it', () => {
@@ -401,7 +397,7 @@ test('open subjects past seven fold their oldest queued ones into a count', () =
     null,
     lines.map(l => opsOf(l)[0]!),
     0,
-  ).overview
+  )
   const rows = page(o, MIN).rows
 
   expect(rows.filter(r => r.kind === 'subject')).toHaveLength(7)

@@ -1,5 +1,5 @@
 import { parseReply } from './ledger'
-import { parseOverview } from './overview'
+import { askOverview, parseOverview } from './overview'
 import {
   buildPrompt,
   OVERVIEW_SYSTEM,
@@ -228,10 +228,10 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
     host.inOrder(async () => {
       const { ledger } = await host.read()
       const at = await host.now()
-      const asked = () => ask(ledger.overview, tasks, at).catch(() => null)
-      const first = await asked()
-      if (first === null) return
-      const answer = parseOverview(first) ?? parseOverview(await asked())
+      const { last } = await askOverview(async () => ({
+        text: await ask(ledger.overview, tasks, at).catch(() => null),
+      }))
+      const answer = last.text === null ? null : parseOverview(last.text)
       if (answer === null) return
       const now = await host.now()
       await host.update(x => appliedOverview(x, answer, after.presence.turnsApplied, now))

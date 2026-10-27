@@ -143,6 +143,11 @@ function parseOverview(text2) {
   if (ops.length === 0) return null;
   return ops.every((o) => o.kind === "none") ? { kind: "unchanged" } : { kind: "ops", ops };
 }
+async function askOverview(ask) {
+  const first = await ask();
+  const holdsProse = first.text !== null && parseOverview(first.text) === null;
+  return { first, last: holdsProse ? await ask() : first };
+}
 function words(text2) {
   return new Set((text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
 }
@@ -176,49 +181,33 @@ function applyOps(last, ops, now) {
     subjects: (last?.subjects ?? []).map((s) => ({ ...s })),
     children: (last?.children ?? []).map((c) => ({ ...c }))
   };
-  const counts = { none: 0, new: 0, set: 0, done: 0, drop: 0, was: 0, role: 0, goal: 0, link: 0 };
-  let newMerged = 0;
-  let rewordsKept = 0;
-  const unknownRefs = [];
-  const changed = /* @__PURE__ */ new Set();
   const find = (ref) => {
     const key = nameKey(clipWords(ref, NAME_KEPT));
     return o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === key) ?? null;
-  };
-  const touch = (s) => {
-    s.changedAt = now;
-    changed.add(s.id);
   };
   const forgetSeenWas = (s) => {
     const isSeen = o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
     if (isSeen) s.was = null;
   };
   const set = (s, status, text2) => {
-    if (s.status === status && overlap(s.text, text2) >= REWORD_OVERLAP) {
-      rewordsKept++;
-      return;
-    }
+    if (s.status === status && overlap(s.text, text2) >= REWORD_OVERLAP) return;
     s.status = status;
     s.text = clipWords(text2, TEXT_KEPT);
     forgetSeenWas(s);
-    touch(s);
+    s.changedAt = now;
   };
   const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
   for (const { op } of ordered) {
-    counts[op.kind]++;
     if (op.kind === "none") continue;
     if (op.kind === "role") o.role = op.role;
     else if (op.kind === "goal") o.goal = clipWords(op.text, GOAL_KEPT);
     else if (op.kind === "link") {
       const child = o.children.find((c) => c.id === op.child);
       const subject = find(op.subject);
-      if (!child) unknownRefs.push(op.child);
-      else if (!subject) unknownRefs.push(op.subject);
-      else child.subjectId = subject.id;
+      if (child && subject) child.subjectId = subject.id;
     } else if (op.kind === "new") {
       const known = find(op.name);
       if (known && isOpen(known)) {
-        newMerged++;
         set(known, op.status, op.text);
         continue;
       }
@@ -234,43 +223,38 @@ function applyOps(last, ops, now) {
         into: null
       };
       o = { ...o, nextId: o.nextId + 1, subjects: [...o.subjects, s] };
-      changed.add(s.id);
     } else {
       const s = find(op.ref);
-      if (!s) {
-        unknownRefs.push(op.ref);
-        continue;
-      }
+      if (!s) continue;
       if (op.kind === "set") set(s, op.status, op.text);
       else if (op.kind === "done") {
         s.status = "done";
         if (op.text) s.text = clipWords(op.text, TEXT_KEPT);
         forgetSeenWas(s);
         s.closedAt = now;
-        touch(s);
+        s.changedAt = now;
       } else if (op.kind === "drop") {
         const target = op.into ? find(op.into) : null;
-        if (op.into && !target) unknownRefs.push(op.into);
         s.status = "dropped";
         s.text = clipWords(op.why, TEXT_KEPT);
         s.closedAt = now;
         s.into = target && target.id !== s.id ? target.id : null;
-        touch(s);
+        s.changedAt = now;
         if (target && s.into) {
           target.was = target.was ?? `${s.name} folded in`;
-          touch(target);
+          target.changedAt = now;
         }
       } else {
         const folded = o.subjects.find((x) => x.into === s.id && x.closedAt === now);
         s.was = folded ? `${folded.name} folded in; was: ${op.text}` : op.text;
-        touch(s);
+        s.changedAt = now;
       }
     }
   }
-  return { overview: o, counts, newMerged, rewordsKept, unknownRefs, changedIds: [...changed] };
+  return o;
 }
 function applyOverview(last, answer, now) {
-  return answer.kind === "unchanged" ? last : applyOps(last, answer.ops, now).overview;
+  return answer.kind === "unchanged" ? last : applyOps(last, answer.ops, now);
 }
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
@@ -2756,10 +2740,10 @@ async function runUpdates(host) {
   const writeOverview = async (after, ask, tasks) => host.inOrder(async () => {
     const { ledger } = await host.read();
     const at = await host.now();
-    const asked = () => ask(ledger.overview, tasks, at).catch(() => null);
-    const first = await asked();
-    if (first === null) return;
-    const answer = parseOverview(first) ?? parseOverview(await asked());
+    const { last } = await askOverview(async () => ({
+      text: await ask(ledger.overview, tasks, at).catch(() => null)
+    }));
+    const answer = last.text === null ? null : parseOverview(last.text);
     if (answer === null) return;
     const now = await host.now();
     await host.update((x) => appliedOverview(x, answer, after.presence.turnsApplied, now));

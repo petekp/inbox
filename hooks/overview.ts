@@ -140,6 +140,20 @@ export function parseOverview(text: string | null): OverviewAnswer | null {
   return ops.every(o => o.kind === 'none') ? { kind: 'unchanged' } : { kind: 'ops', ops }
 }
 
+/**
+ * Asks the Overview call through `ask`, and once more when the answer holds prose, as `parseOverview` refuses it. A
+ * call that gives no text is not asked again. Returns the first answer and the one to apply, which are the same when
+ * the call was asked once.
+ */
+export async function askOverview<T extends { text: string | null }>(
+  ask: () => Promise<T>,
+): Promise<{ first: T; last: T }> {
+  const first = await ask()
+  const holdsProse = first.text !== null && parseOverview(first.text) === null
+
+  return { first, last: holdsProse ? await ask() : first }
+}
+
 function words(text: string): Set<string> {
   return new Set((text.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter(w => !STOP_WORDS.has(w)))
 }
@@ -162,20 +176,6 @@ export function isOpen(s: Pick<Subject, 'status'>): boolean {
   return s.status !== 'done' && s.status !== 'dropped'
 }
 
-/** What one answer did to the list, beyond the list itself. */
-export type Applied = {
-  overview: Overview
-  counts: Record<Op['kind'], number>
-  /** NEW lines that named an open subject, so code changed that subject instead. */
-  newMerged: number
-  /** SET lines that kept the status and most of the words, so code kept the old text and age. */
-  rewordsKept: number
-  /** Ids and names the answer used that the list does not hold. */
-  unknownRefs: string[]
-  /** The subjects whose status or text changed. */
-  changedIds: string[]
-}
-
 /** Subject changes first, then reversals, then links, so a WAS or LINK can name a subject the same answer added. */
 const OP_ORDER: Record<Op['kind'], number> = {
   none: 0,
@@ -189,26 +189,17 @@ const OP_ORDER: Record<Op['kind'], number> = {
   link: 2,
 }
 
-/** The list after `ops`, applied at `now`. */
-export function applyOps(last: Overview | null, ops: Op[], now: number): Applied {
+/** The list after `ops`, applied at `now`. A line that names an id or a name the list does not hold changes nothing. */
+export function applyOps(last: Overview | null, ops: Op[], now: number): Overview {
   let o: Overview = {
     ...(last ?? EMPTY_OVERVIEW),
     subjects: (last?.subjects ?? []).map(s => ({ ...s })),
     children: (last?.children ?? []).map(c => ({ ...c })),
   }
-  const counts: Applied['counts'] = { none: 0, new: 0, set: 0, done: 0, drop: 0, was: 0, role: 0, goal: 0, link: 0 }
-  let newMerged = 0
-  let rewordsKept = 0
-  const unknownRefs: string[] = []
-  const changed = new Set<string>()
   const find = (ref: string) => {
     const key = nameKey(clipWords(ref, NAME_KEPT))
 
     return o.subjects.find(s => s.id === ref) ?? o.subjects.find(s => isOpen(s) && nameKey(s.name) === key) ?? null
-  }
-  const touch = (s: Subject) => {
-    s.changedAt = now
-    changed.add(s.id)
   }
   /** A `was:` line stays until the person has seen it. The page shows it only on rows that changed since the last look. */
   const forgetSeenWas = (s: Subject) => {
@@ -216,31 +207,24 @@ export function applyOps(last: Overview | null, ops: Op[], now: number): Applied
     if (isSeen) s.was = null
   }
   const set = (s: Subject, status: OpenStatus, text: string) => {
-    if (s.status === status && overlap(s.text, text) >= REWORD_OVERLAP) {
-      rewordsKept++
-      return
-    }
+    if (s.status === status && overlap(s.text, text) >= REWORD_OVERLAP) return
     s.status = status
     s.text = clipWords(text, TEXT_KEPT)
     forgetSeenWas(s)
-    touch(s)
+    s.changedAt = now
   }
   const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n)
   for (const { op } of ordered) {
-    counts[op.kind]++
     if (op.kind === 'none') continue
     if (op.kind === 'role') o.role = op.role
     else if (op.kind === 'goal') o.goal = clipWords(op.text, GOAL_KEPT)
     else if (op.kind === 'link') {
       const child = o.children.find(c => c.id === op.child)
       const subject = find(op.subject)
-      if (!child) unknownRefs.push(op.child)
-      else if (!subject) unknownRefs.push(op.subject)
-      else child.subjectId = subject.id
+      if (child && subject) child.subjectId = subject.id
     } else if (op.kind === 'new') {
       const known = find(op.name)
       if (known && isOpen(known)) {
-        newMerged++
         set(known, op.status, op.text)
         continue
       }
@@ -256,46 +240,41 @@ export function applyOps(last: Overview | null, ops: Op[], now: number): Applied
         into: null,
       }
       o = { ...o, nextId: o.nextId + 1, subjects: [...o.subjects, s] }
-      changed.add(s.id)
     } else {
       const s = find(op.ref)
-      if (!s) {
-        unknownRefs.push(op.ref)
-        continue
-      }
+      if (!s) continue
       if (op.kind === 'set') set(s, op.status, op.text)
       else if (op.kind === 'done') {
         s.status = 'done'
         if (op.text) s.text = clipWords(op.text, TEXT_KEPT)
         forgetSeenWas(s)
         s.closedAt = now
-        touch(s)
+        s.changedAt = now
       } else if (op.kind === 'drop') {
         const target = op.into ? find(op.into) : null
-        if (op.into && !target) unknownRefs.push(op.into)
         s.status = 'dropped'
         s.text = clipWords(op.why, TEXT_KEPT)
         s.closedAt = now
         s.into = target && target.id !== s.id ? target.id : null
-        touch(s)
+        s.changedAt = now
         if (target && s.into) {
           target.was = target.was ?? `${s.name} folded in`
-          touch(target)
+          target.changedAt = now
         }
       } else {
         const folded = o.subjects.find(x => x.into === s.id && x.closedAt === now)
         s.was = folded ? `${folded.name} folded in; was: ${op.text}` : op.text
-        touch(s)
+        s.changedAt = now
       }
     }
   }
 
-  return { overview: o, counts, newMerged, rewordsKept, unknownRefs, changedIds: [...changed] }
+  return o
 }
 
 /** The Overview after an answer, applied at `now`. */
 export function applyOverview(last: Overview | null, answer: OverviewAnswer, now: number): Overview | null {
-  return answer.kind === 'unchanged' ? last : applyOps(last, answer.ops, now).overview
+  return answer.kind === 'unchanged' ? last : applyOps(last, answer.ops, now)
 }
 
 export function isChildRunning(c: Pick<Child, 'startedAt' | 'endedAt'>, now: number): boolean {
