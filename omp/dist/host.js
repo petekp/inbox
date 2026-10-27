@@ -4585,7 +4585,7 @@ function openTarget2(run, target, root, home) {
   }, target, root, home);
 }
 // package.json
-var version = "0.2.11";
+var version = "0.2.12";
 
 // ../hooks/arrivals.ts
 function recordRows(seen, listed) {
