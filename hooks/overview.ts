@@ -207,6 +207,11 @@ export function applyOps(last: Overview | null, ops: Op[], now: number): Applied
     s.changedAt = now
     changed.add(s.id)
   }
+  /** A `was:` line stays until the person has seen it. The page shows it only on rows that changed since the last look. */
+  const forgetSeenWas = (s: Subject) => {
+    const isSeen = o.lastLookAt !== null && s.changedAt <= o.lastLookAt
+    if (isSeen) s.was = null
+  }
   const set = (s: Subject, status: OpenStatus, text: string) => {
     if (s.status === status && overlap(s.text, text) >= REWORD_OVERLAP) {
       rewordsKept++
@@ -214,7 +219,7 @@ export function applyOps(last: Overview | null, ops: Op[], now: number): Applied
     }
     s.status = status
     s.text = clipWords(text, TEXT_KEPT)
-    s.was = null
+    forgetSeenWas(s)
     touch(s)
   }
   const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n)
@@ -259,7 +264,7 @@ export function applyOps(last: Overview | null, ops: Op[], now: number): Applied
       else if (op.kind === 'done') {
         s.status = 'done'
         if (op.text) s.text = clipWords(op.text, TEXT_KEPT)
-        s.was = null
+        forgetSeenWas(s)
         s.closedAt = now
         touch(s)
       } else if (op.kind === 'drop') {

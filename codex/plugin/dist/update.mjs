@@ -186,6 +186,10 @@ function applyOps(last, ops, now) {
     s.changedAt = now;
     changed.add(s.id);
   };
+  const forgetSeenWas = (s) => {
+    const isSeen = o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
+    if (isSeen) s.was = null;
+  };
   const set = (s, status, text2) => {
     if (s.status === status && overlap(s.text, text2) >= REWORD_OVERLAP) {
       rewordsKept++;
@@ -193,7 +197,7 @@ function applyOps(last, ops, now) {
     }
     s.status = status;
     s.text = clipWords(text2, TEXT_KEPT);
-    s.was = null;
+    forgetSeenWas(s);
     touch(s);
   };
   const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
@@ -238,7 +242,7 @@ function applyOps(last, ops, now) {
       else if (op.kind === "done") {
         s.status = "done";
         if (op.text) s.text = clipWords(op.text, TEXT_KEPT);
-        s.was = null;
+        forgetSeenWas(s);
         s.closedAt = now;
         touch(s);
       } else if (op.kind === "drop") {

@@ -137,13 +137,19 @@ test('a LINK may name a subject the same answer adds, whatever the order of the 
   expect(linked.overview.children[0]?.subjectId).toBe('s1')
 })
 
-test('a DROP INTO folds a subject into another, which notes it, and a WAS keeps the replaced plan until the next change', () => {
+test('a DROP INTO folds a subject into another, which notes it, and a WAS keeps the replaced plan until the person has seen it', () => {
   const two = after(null, 'NEW: working | Offline mode | queue built\nNEW: working | Sync retry | backoff drafted', 100)
   const folded = after(two, 'DROP: s2 | part of offline | INTO s1\nWAS: s1 | retry on its own', 200)
+  const finishedUnseen = after(folded, 'DONE: s1 | works offline', 300)
+  const seen = lookEnded(lookStarted(folded, 250), 260)
 
   expect(folded.subjects.find(s => s.id === 's2')).toMatchObject({ status: 'dropped', into: 's1', closedAt: 200 })
   expect(folded.subjects.find(s => s.id === 's1')?.was).toBe('Sync retry folded in; was: retry on its own')
-  expect(after(folded, 'SET: s1 | waits-on-other | waits on review', 300).subjects[0]?.was).toBeNull()
+  expect(finishedUnseen.subjects[0]).toMatchObject({
+    status: 'done',
+    was: 'Sync retry folded in; was: retry on its own',
+  })
+  expect(after(seen, 'SET: s1 | waits-on-other | waits on review', 300).subjects[0]?.was).toBeNull()
 })
 
 test('the call reads open subjects with ids, finished ones by name, and running children with their links', () => {
