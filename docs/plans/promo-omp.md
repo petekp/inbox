@@ -1,6 +1,6 @@
 # omp promo video
 
-Status: built. The render is `videos/out/omp.mp4`, 56.3 s, with Pete's approved captions. It waits on Pete's approval of the render and his call on the length. It is a 16:9 master; a 9:16 cut is not made yet.
+Status: building. The render is `videos/out/omp.mp4`, 56.3 s, with Pete's approved captions. The take is recorded again once #126 merges into next, so omp shows the person a line under each `record` and `close` call in place of the text written for the agent. It is a 16:9 master; a 9:16 cut is not made yet.
 
 A 56-second video that premieres the inbox in omp, a terminal coding agent. It shows one real omp session: the agent asks a question and notices an issue, both land above the prompt, and you answer and hand off the issue with single keys. It has no voiceover. Short captions carry the words, so it works muted in a feed.
 
@@ -126,7 +126,7 @@ The render uses "Focus Flow", the launch video's track, from where its full groo
 
 ## Decisions
 
-1. **The length.** About 52 seconds, at the launch video's pace. Pete chose no 15-second cut. This version runs 56.3 s.
+1. **The length.** 56.3 s, at the launch video's pace. Pete chose to keep it, and chose no 15-second cut.
 2. **The music.** "Focus Flow", as above. Pete chose to keep it.
 3. **The app label.** omp's logo beside its name, as the launch video shows each app's icon. The logo is `assets/icon.svg` from omp's repo. omp is MIT-licensed, and neither its repo nor its packages hold a trademark or brand notice. The file goes in `public/icons/omp.svg`, which Git ignores, as it does every app's icon.
 4. **The sample project.** Written again for the first version's take. Pete chose to keep it.
