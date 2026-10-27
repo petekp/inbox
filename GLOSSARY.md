@@ -88,12 +88,13 @@ it runs, with how long ago it last did anything, and leaves when it ends. Code
 follows it from the host's events. The inbox model only links it to a subject.
 _Avoid_: subitem, job
 
-**"You looked" line**:
-The rule on the Overview at the time the person last left the page. A row
-above it changed since then. Every open row shows where it stands, above or
-below the line. A row below it leaves out its was line, and a finished row
-below it shows only its mark, name and age. When no row changed since then,
-the page draws no line.
+**Seen line**:
+The rule labeled "Seen" on the Overview, at the time the person last left the
+page. A row above it changed since then. Every open row shows where it stands,
+above or below the line. A row below it leaves out its was line, and a finished
+row below it shows only its mark, name and age. When no row changed since then,
+the page draws no line. The code calls it the look line, after `lastLookAt`.
+_Avoid_: "you looked" line
 
 **News dot**:
 The `•` after the Overview tab's name while the page holds a change the person

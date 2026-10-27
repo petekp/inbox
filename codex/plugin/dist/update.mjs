@@ -1677,7 +1677,7 @@ function screenTabOf(tab) {
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 var WORKING_TEXT = "Working\u2026";
-var LOOK_TEXT = "you looked";
+var LOOK_TEXT = "Seen";
 var OVERVIEW_TEXT_LINES = 3;
 var CHILD_ROWS = 3;
 var QUIET_MS = 15 * 6e4;
@@ -1743,7 +1743,7 @@ function overviewPage(s, now) {
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const shownIds = new Set(shown.map((x) => x.id));
   const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, now, null));
-  const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT, age: shortAgo(now - look) };
+  const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
   let isLookDrawn = false;
   for (const [i, x] of shown.entries()) {
     if (lookRow && !isLookDrawn && !isNew(x)) {

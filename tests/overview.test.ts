@@ -52,7 +52,7 @@ const shape = (rows: OverviewRow[]) =>
       : r.kind === 'child'
         ? `${r.branch ? ARMS[r.branch] : ''}● ${r.name} ${r.age}`
         : r.kind === 'look'
-          ? `-- ${r.text} ${r.age}`
+          ? `-- ${r.text}`
           : r.kind === 'more'
             ? `${ARMS[r.branch]}${r.text}`
             : `${r.mark} ${r.text}${r.age ? ` ${r.age}` : ''}`,
@@ -228,11 +228,7 @@ test('the page lists subjects newest first with code-written ages, and an open r
   expect(p.identity).toBe('visor · offline')
   expect(p.goal).toBe('Work offline')
   expect(p.live).toBe('Idle · last reply 2m ago')
-  expect(shape(p.rows)).toEqual([
-    '◆ Offline mode: needs a sync pick 10m',
-    '-- you looked 50m',
-    '○ Docs: outline ready 2h',
-  ])
+  expect(shape(p.rows)).toEqual(['◆ Offline mode: needs a sync pick 10m', '-- Seen', '○ Docs: outline ready 2h'])
   const seen = page({ ...after(o, 'WAS: s2 | sync on every save', 90 * MIN), lastLookAt: 95 * MIN }, now).rows
   expect(shape(seen)).toEqual(['◆ Offline mode: needs a sync pick 10m', '○ Docs: outline ready 2h'])
   expect(seen[0]).toMatchObject({ kind: 'subject', was: null })
@@ -283,7 +279,7 @@ test('finished work folds into a count once seen, keeping at most two new finish
   expect(shape(page({ ...fresh, lastLookAt: 60 * MIN }, now).rows)).toEqual([
     '✓ Four: done d 10m',
     '✓ Three: done c 20m',
-    '-- you looked 40m',
+    '-- Seen',
     '✓ 2 more done 30m',
   ])
 })
@@ -358,7 +354,7 @@ test('a rule sets each item on the page apart: a subject and the rows under it a
     '── ● Offline mode: queue built 40m ┐',
     '├ ● Review r1 1m',
     '└ ● Review r2 1m',
-    '-- you looked 50m',
+    '-- Seen',
     '○ Docs: outline ready 2h',
     '── ✓ 1 done 2h',
   ])
