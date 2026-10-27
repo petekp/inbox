@@ -43,12 +43,10 @@ This installs it for your user account, so it works in the terminal too.
 app's cloud sessions.
 
 If your organization manages Claude Code, an inbox you install yourself
-works only in part. Claude Code skips the hooks it uses to add to what Claude
-reads, so Claude gets neither the inbox's instructions nor its list of what
-waits on you. The inbox also keeps the old conversation's list after `/clear`
-or a resume, and shows no permission prompts or failed turns. Questions,
-tasks and findings still reach it. To get everything, ask an admin to list
-the inbox in your organization's managed settings.
+works with two differences. After `/clear` or a resume, it loads that
+conversation's list at your first message. A permission prompt reaches the
+inbox about a second and a half after it appears. To get everything, ask
+an admin to list the inbox in your organization's managed settings.
 
 To update, run these, then `/reload-plugins` in any session that's already
 open:
