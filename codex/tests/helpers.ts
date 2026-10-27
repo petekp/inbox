@@ -31,6 +31,7 @@ export function hookDeps(dir: string, now = () => 1000): HookDeps & { updates: s
     now,
     startUpdate: id => updates.push(id),
     onWrite: async () => {},
+    run: async () => ({ code: 1, stdout: '', stderr: 'not in Herdr' }),
     updates,
   }
 }

@@ -6,7 +6,7 @@ import { test } from 'node:test'
 import { linkDialogs } from '../../hooks/dialogs'
 import { addAgentItem, EMPTY } from '../../hooks/ledger'
 import { inboxText } from '../../hooks/model-text'
-import { EMPTY_OVERVIEW } from '../../hooks/overview'
+import { applyOverview, parseOverview } from '../../hooks/overview'
 import { applied, parsedReply } from '../../hooks/session'
 import { feedbackText } from '../../hooks/view'
 import { notePrompt, noteToolCall, viewOf } from '../src/core'
@@ -128,7 +128,7 @@ test('a Stop notes the dialogs the agent opened in the ending turn as open, and 
   assert.deepEqual((await readState(dir, 's1')).pending[1]?.ex.activity, [])
 })
 
-test('a start after compaction carries the Overview headline and status', async () => {
+test('a start after compaction carries the Overview goal and where each open subject stands', async () => {
   const dir = tempDir()
   const deps = hookDeps(dir)
   await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
@@ -137,19 +137,23 @@ test('a start after compaction carries the Overview headline and status', async 
     ledger: {
       ...s.ledger,
       updates: 1,
-      overview: { ...EMPTY_OVERVIEW, headline: 'Adding caching', status: 'Waiting on a choice.' },
+      overview: applyOverview(
+        null,
+        parseOverview('GOAL: Adding caching\nNEW: waits-on-you | Cache | Redis or memory')!,
+        1,
+      )!,
     },
   }))
   const context = JSON.stringify(await handleHook(input('SessionStart', { cwd: '/repo', source: 'compact' }), deps))
   assert.match(context, /Working on: Adding caching/)
-  assert.match(context, /Status: Waiting on a choice\./)
+  assert.match(context, /- Cache: Redis or memory \(waits-on-you\)/)
 })
 
 test('a main-agent prompt reads Working… until Stop or a start that is not a compact, and a subagent prompt does not', async () => {
   const dir = tempDir()
   const deps = hookDeps(dir)
   const now = async () =>
-    viewOf(await readState(dir, 's1'), 1000).overviewPage.lead.find(l => l.id === 'status')?.text ?? null
+    viewOf(await readState(dir, 's1'), 1000).overviewPage.live === 'Working…' ? 'Working…' : null
 
   await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
   await handleHook(input('UserPromptSubmit', { prompt: 'Look around', agent_id: 'a1' }), deps)
@@ -296,6 +300,92 @@ test('a patch notes each edited file, resolved against the folder it ran in', as
   )
   const s = await readState(dir, 's1')
   assert.deepEqual(s.turn.activity, ['edited /work/new/b.txt'])
+})
+
+test('a subagent runs as a child from SubagentStart to SubagentStop, its tool calls move its activity, and a start that is not a compact ends it', async () => {
+  const dir = tempDir()
+  let clock = 1000
+  const deps = hookDeps(dir, () => clock)
+  const children = async () =>
+    ((await readState(dir, 's1')).ledger.overview?.children ?? []).map(c => [c.name, c.endedAt, c.lastActivityAt])
+  const sub = { agent_id: 'sub1', agent_type: 'explorer' }
+
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
+  await handleHook(input('SubagentStart', sub), deps)
+  assert.deepEqual(await children(), [['explorer', null, 1000]])
+  clock = 5000
+  await handleHook(input('PreToolUse', { ...sub, tool_name: 'Bash', tool_input: { command: 'ls' } }), deps)
+  assert.deepEqual(await children(), [['explorer', null, 5000]])
+  clock = 9000
+  await handleHook(input('SubagentStop', sub), deps)
+  assert.deepEqual(await children(), [['explorer', 9000, 5000]])
+
+  await handleHook(input('SubagentStart', { ...sub, agent_id: 'sub2' }), deps)
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'compact' }), deps)
+  assert.equal((await children())[1]?.[1], null)
+  clock = 12000
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'resume' }), deps)
+  assert.equal((await children())[1]?.[1], 12000)
+})
+
+test('a Herdr delegate runs as a child from the command that starts it until a turn that waited on it ends, or Herdr shows it no longer working at a turn’s end', async () => {
+  const dir = tempDir()
+  let at = 1000
+  const deps = hookDeps(dir, () => at)
+  const listed: string[][] = []
+  deps.run = async args => {
+    listed.push(args)
+    const agents = [
+      { name: 'reviewer', agent_status: 'idle' },
+      { name: 'helper', agent_status: 'working' },
+      { name: 'scout', agent_status: 'idle' },
+    ]
+    return { code: 0, stdout: JSON.stringify({ id: 'q', result: { type: 'agent_list', agents } }), stderr: '' }
+  }
+  const transcript = join(tempDir(), 'rollout.jsonl')
+  const delegates = async () =>
+    ((await readState(dir, 's1')).ledger.overview?.children ?? []).map(c => [c.name, c.endedAt === null])
+  const bash = (command: string) => input('PreToolUse', { tool_name: 'Bash', tool_input: { command } })
+
+  await handleHook(input('UserPromptSubmit', { prompt: 'Hand it off', turn_id: 't1' }), deps)
+  await handleHook(bash('herdr agent start fixer --cmd codex'), deps)
+  await handleHook(bash('herdr agent start reviewer --cmd codex && herdr agent start helper --cmd codex'), deps)
+  assert.deepEqual(await delegates(), [
+    ['fixer', true],
+    ['reviewer', true],
+    ['helper', true],
+  ])
+  at += 60_000
+  await handleHook(bash('herdr agent prompt scout "look around"'), deps)
+  at += 5_000
+  writeFileSync(
+    transcript,
+    [
+      { type: 'event_msg', payload: { type: 'task_started', turn_id: 't1' } },
+      {
+        type: 'event_msg',
+        payload: {
+          type: 'item_completed',
+          item: {
+            type: 'CommandExecution',
+            command: ['/bin/zsh', '-lc', 'herdr agent wait fixer'],
+            aggregated_output: '',
+            exit_code: 0,
+          },
+        },
+      },
+    ]
+      .map(row => JSON.stringify(row))
+      .join('\n'),
+  )
+  await handleHook(input('Stop', { turn_id: 't1', transcript_path: transcript, last_assistant_message: 'Done.' }), deps)
+  assert.deepEqual(listed, [['herdr', 'agent', 'list']])
+  assert.deepEqual(await delegates(), [
+    ['fixer', false],
+    ['reviewer', false],
+    ['helper', true],
+    ['scout', true],
+  ])
 })
 
 test('hooks do nothing in a codex exec run or an ephemeral thread', async () => {

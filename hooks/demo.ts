@@ -1,8 +1,11 @@
-import type { DemoCopy, Session } from '../types'
+import type { DemoCopy, Session, Subject } from '../types'
 import { emptySession } from './session'
 
 const MIN = 60_000
 const REPO = 'https://github.com/acme/visor'
+
+/** Where the sample session started. */
+export const DEMO_PLACE = { folder: '/Users/you/code/visor', branch: 'pinch-dismiss' }
 
 /** The demo's atom outlives a hot reload, so a copy an earlier build seeded may lack a field. */
 export function isDemoCopy(saved: unknown): saved is DemoCopy {
@@ -17,17 +20,54 @@ export function isDemoCopy(saved: unknown): saved is DemoCopy {
   )
 }
 
+/** `s` placed where the sample started, with no turn running and the last reply 2 minutes before `now`. */
+export function withDemoPresence(s: Session, now: number): Session {
+  return {
+    ...s,
+    presence: { ...s.presence, isTurnRunning: false, lastReplyAt: now - 2 * MIN },
+    place: DEMO_PLACE,
+  }
+}
+
 /** The sample as a session a host can draw and press on. */
 export function demoSession(now: number, agent: string): Session {
   const d = demoView(now, agent)
   const s = emptySession()
 
+  return withDemoPresence(
+    {
+      ...s,
+      ledger: d.ledger,
+      lastActions: d.lastActions,
+      prViews: d.prViews,
+      presence: { ...s.presence, ...d.turns },
+    },
+    now,
+  )
+}
+
+/** A demo subject that last changed at `at`, closed then when it is done. */
+function subject(
+  id: string,
+  status: Subject['status'],
+  name: string,
+  text: string,
+  at: number,
+  more: Partial<Subject> = {},
+): Subject {
+  const isClosed = status === 'done' || status === 'dropped'
+
   return {
-    ...s,
-    ledger: d.ledger,
-    lastActions: d.lastActions,
-    prViews: d.prViews,
-    presence: { ...s.presence, ...d.turns },
+    id,
+    name,
+    status,
+    text,
+    was: null,
+    createdAt: at,
+    changedAt: at,
+    closedAt: isClosed ? at : null,
+    into: null,
+    ...more,
   }
 }
 
@@ -36,28 +76,45 @@ export function demoView(now: number, agent: string): DemoCopy {
   return {
     ledger: {
       overview: {
-        isCoordinator: false,
-        state: 'on-track',
-        headline: 'Adding pinch-to-dismiss to glances',
-        status: 'A pinch already dismisses a glance. Two design questions and the glasses pairing wait on you.',
-        course: '',
-        queue: [
-          { status: 'working', text: 'Finish the dismiss gesture', detail: 'The glance fades out as you pinch.' },
-          { status: 'queued', text: 'Try it on the paired glasses', detail: null },
-          { status: 'waits-on-you', text: 'Pair the glasses with this Mac', detail: null },
-          { status: 'done', text: 'A pinch dismisses the glance you look at', detail: null },
+        role: 'session',
+        goal: 'Pinch to dismiss glances',
+        subjects: [
+          subject('s1', 'working', 'Dismiss gesture', 'pinch fades the glance', now - 2 * MIN),
+          subject('s2', 'waits-on-you', 'Glasses pairing', 'needs this Mac paired', now - 12 * MIN),
+          subject('s3', 'waits-on-you', 'Flick option', 'waits on your pick', now - 12 * MIN, {
+            was: 'flick and pinch both',
+          }),
+          subject('s4', 'done', 'Fade-out', 'dismissed glances fade', now - 25 * MIN),
+          subject('s5', 'queued', 'Glasses trial', 'after pairing', now - 3 * 60 * MIN),
+          subject('s6', 'done', 'Glance hit test', 'finds the glance you look at', now - 5 * 60 * MIN),
+          subject('s7', 'done', 'Settings toggle', 'pinch can be turned off', now - 6 * 60 * MIN),
         ],
-        works: [{ status: 'done', text: 'Dismissed glances fade out', detail: null }],
-        open: [
-          { status: 'unknown', text: 'Whether a flick feels better than a pinch', detail: 'Waits on your answer.' },
+        children: [
+          {
+            id: 'c1',
+            ref: 'demo-review',
+            kind: 'subagent',
+            name: 'Review the gesture code',
+            subjectId: 's1',
+            startedAt: now - 4 * MIN,
+            endedAt: null,
+            lastActivityAt: now - MIN,
+          },
+          {
+            id: 'c2',
+            ref: 'demo-log',
+            kind: 'background',
+            name: 'Watch the pairing log',
+            subjectId: 's2',
+            startedAt: now - 50 * MIN,
+            endedAt: null,
+            lastActivityAt: now - 40 * MIN,
+          },
         ],
-        next: [],
-        since: [{ status: 'done', text: 'PR #31 opened', detail: null }],
-        workstreams: [],
-        earlier: [],
-        lastLookAt: null,
+        nextId: 8,
+        nextChildId: 3,
+        lastLookAt: now - 30 * MIN,
         look: null,
-        seen: { since: [], course: '' },
       },
       items: [
         {

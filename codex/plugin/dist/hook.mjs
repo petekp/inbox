@@ -37,6 +37,186 @@ import {
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
+// ../hooks/overview.ts
+var NAME_WORDS = 3;
+var TEXT_WORDS = 4;
+var GOAL_WORDS = 8;
+var OPEN_SUBJECTS = 6;
+var NAME_KEPT = 8;
+var TEXT_KEPT = 12;
+var GOAL_KEPT = 14;
+var CHILD_KEPT_MS = 24 * 60 * 6e4;
+var CHILDREN_KEPT = 50;
+var STOP_WORDS = /* @__PURE__ */ new Set([
+  "a",
+  "an",
+  "the",
+  "of",
+  "for",
+  "to",
+  "in",
+  "on",
+  "and",
+  "or",
+  "is",
+  "it",
+  "its",
+  "now",
+  "be",
+  "by",
+  "at",
+  "with"
+]);
+var EMPTY_OVERVIEW = {
+  role: "session",
+  goal: "",
+  subjects: [],
+  children: [],
+  nextId: 1,
+  nextChildId: 1,
+  lastLookAt: null,
+  look: null
+};
+var OPEN_STATUSES = ["working", "queued", "waits-on-you", "waits-on-other", "problem"];
+var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
+var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
+function clipWords(text2, limit) {
+  const words3 = text2.trim().split(/\s+/).filter(Boolean);
+  return words3.length <= limit ? words3.join(" ") : `${words3.slice(0, limit).join(" ")}\u2026`;
+}
+function words(text2) {
+  return new Set((text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
+}
+function nameKey(name) {
+  return [...words(name)].sort().join(" ");
+}
+function isOpen(s) {
+  return s.status !== "done" && s.status !== "dropped";
+}
+function isChildRunning(c, now) {
+  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
+}
+function withChild(last, c, now) {
+  const o = last ?? EMPTY_OVERVIEW;
+  const kept = o.children.filter((x) => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS);
+  const known = kept.find((x) => x.ref === c.ref);
+  if (known) return { ...o, children: kept.map((x) => x === known ? { ...x, ...c } : x) };
+  return {
+    ...o,
+    nextChildId: o.nextChildId + 1,
+    children: [...kept, { ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT)
+  };
+}
+function changedChild(o, ref, change) {
+  const known = o?.children.find((c) => c.ref === ref);
+  if (!o || !known) return o;
+  return { ...o, children: o.children.map((c) => c === known ? { ...c, ...change(c) } : c) };
+}
+function childEnded(o, ref, at) {
+  return changedChild(o, ref, (c) => ({ endedAt: c.endedAt ?? at }));
+}
+function childActive(o, ref, at) {
+  return changedChild(o, ref, (c) => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }));
+}
+function text(value) {
+  return typeof value === "string" ? value : "";
+}
+function time(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+function subjectOf(saved) {
+  const s = saved;
+  const status = STATUSES.find((x) => x === s?.status);
+  const changedAt = time(s?.changedAt);
+  if (!s || typeof s.id !== "string" || typeof s.name !== "string" || !status || changedAt === null) return null;
+  return {
+    id: s.id,
+    name: s.name,
+    status,
+    text: text(s.text),
+    was: typeof s.was === "string" ? s.was : null,
+    createdAt: time(s.createdAt) ?? changedAt,
+    changedAt,
+    closedAt: time(s.closedAt),
+    into: typeof s.into === "string" ? s.into : null
+  };
+}
+function childOf(saved) {
+  const c = saved;
+  const kind = CHILD_KINDS.find((k) => k === c?.kind);
+  const startedAt = time(c?.startedAt);
+  if (!c || typeof c.id !== "string" || typeof c.ref !== "string" || !kind || startedAt === null) return null;
+  return {
+    id: c.id,
+    ref: c.ref,
+    kind,
+    name: text(c.name),
+    subjectId: typeof c.subjectId === "string" ? c.subjectId : null,
+    startedAt,
+    endedAt: time(c.endedAt),
+    lastActivityAt: time(c.lastActivityAt)
+  };
+}
+var OLD_STATUS = {
+  working: "working",
+  queued: "queued",
+  "waits-on-you": "waits-on-you",
+  "waits-on-other": "waits-on-other",
+  problem: "problem",
+  unknown: "queued",
+  done: null,
+  "ruled-out": null
+};
+function fromLists(o) {
+  const lastLookAt = time(o.lastLookAt);
+  const items = lastLookAt === null ? [] : ["workstreams", "queue", "open"].flatMap((k) => Array.isArray(o[k]) ? o[k] : []);
+  const subjects = items.flatMap((raw) => {
+    const item = raw;
+    const status = OLD_STATUS[String(item?.status)] ?? null;
+    if (!status || typeof item?.text !== "string") return [];
+    return [
+      { status, name: clipWords(item.text, NAME_KEPT), text: typeof item.detail === "string" ? item.detail : "" }
+    ];
+  }).filter((s, n, all) => all.findIndex((t) => nameKey(t.name) === nameKey(s.name)) === n).slice(0, OPEN_SUBJECTS).map((s, n) => ({
+    id: `s${n + 1}`,
+    ...s,
+    text: clipWords(s.text, TEXT_KEPT),
+    was: null,
+    createdAt: lastLookAt,
+    changedAt: lastLookAt,
+    closedAt: null,
+    into: null
+  }));
+  return {
+    ...EMPTY_OVERVIEW,
+    role: o.isCoordinator === true ? "coordinator" : "session",
+    goal: clipWords(text(o.headline), GOAL_KEPT),
+    subjects,
+    nextId: subjects.length + 1,
+    lastLookAt
+  };
+}
+function upgradeOverview(saved) {
+  const o = saved;
+  if (typeof o !== "object" || o === null) return null;
+  if (typeof o.headline === "string") return fromLists(o);
+  if (!Array.isArray(o.subjects)) return null;
+  const subjects = o.subjects.map(subjectOf).filter((s) => s !== null);
+  const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c) => c !== null) : [];
+  const look = o.look;
+  const lookAt = time(look?.startedAt);
+  return {
+    role: o.role === "coordinator" ? "coordinator" : "session",
+    goal: text(o.goal),
+    subjects,
+    children,
+    nextId: Math.max(time(o.nextId) ?? 1, subjects.length + 1),
+    nextChildId: Math.max(time(o.nextChildId) ?? 1, children.length + 1),
+    lastLookAt: time(o.lastLookAt),
+    look: lookAt === null ? null : { startedAt: lookAt }
+  };
+}
+
 // ../hooks/text.ts
 function clip(text2, max) {
   return text2.length <= max ? text2 : text2.slice(0, max) + " \u2026[cut]";
@@ -46,96 +226,13 @@ function clipLabel(text2, max) {
 }
 var graphemes = new Intl.Segmenter(void 0, { granularity: "grapheme" });
 var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
-
-// ../hooks/overview.ts
-var HEADLINE_WORDS = 12;
-var ITEM_WORDS = 12;
-var SENTENCE_WORDS = 30;
-var DETAIL_WORDS = 20;
-var LIST_ITEMS = 6;
-var LIST_KEYS = ["queue", "works", "open", "next", "since", "workstreams"];
-var STATUSES = [
-  "working",
-  "queued",
-  "waits-on-you",
-  "waits-on-other",
-  "done",
-  "ruled-out",
-  "problem",
-  "unknown"
-];
-var STATES = ["on-track", "stuck", "finished"];
-function isItem(value) {
-  const item = value;
-  return typeof item === "object" && item !== null && STATUSES.includes(item.status) && typeof item.text === "string" && (item.detail === null || typeof item.detail === "string");
-}
-function itemsOf(value) {
-  return Array.isArray(value) ? value.filter(isItem).slice(0, LIST_ITEMS) : [];
-}
-function upgradeOverview(saved) {
-  const o = saved;
-  if (typeof o !== "object" || o === null || typeof o.headline !== "string") return null;
-  return {
-    isCoordinator: o.isCoordinator === true,
-    state: STATES.find((s) => s === o.state) ?? "on-track",
-    headline: o.headline,
-    status: text(o.status),
-    course: text(o.course),
-    ...Object.fromEntries(LIST_KEYS.map((k) => [k, itemsOf(o[k])])),
-    earlier: strings(o.earlier),
-    lastLookAt: typeof o.lastLookAt === "number" ? o.lastLookAt : null,
-    look: lookOf(o.look),
-    seen: seenOf(o.seen)
-  };
-}
-function lookOf(saved) {
-  const l = saved;
-  if (typeof l !== "object" || l === null || typeof l.startedAt !== "number") return null;
-  const away = AWAYS.find((a) => a === l.away);
-  return away === void 0 ? null : { startedAt: l.startedAt, away, since: strings(l.since), course: text(l.course) };
-}
-function seenOf(saved) {
-  const s = saved;
-  return { since: strings(s?.since), course: text(s?.course) };
-}
-function text(value) {
-  return typeof value === "string" ? value : "";
-}
-function strings(value) {
-  return Array.isArray(value) ? value.filter((v) => typeof v === "string") : [];
-}
-var HERE_MS = 5 * 6e4;
-var SHORT_MS = 60 * 6e4;
-var AWAYS = ["here", "short", "long"];
-function awayOf(lastLookAt, now) {
-  if (lastLookAt === null) return "long";
-  const gone = now - lastLookAt;
-  return gone < HERE_MS ? "here" : gone < SHORT_MS ? "short" : "long";
-}
-function workOf(o, signals) {
-  const waits = o.queue.some((i) => i.status === "waits-on-you");
-  if (signals.isTurnRunning) return "running";
-  if (signals.isStopped || signals.waitingOnYou > 0 || o.state === "stuck" || waits) return "stopped";
-  return o.state === "finished" ? "finished" : "idle";
-}
-function orderParts(o, away, work) {
-  const hasQueued = o.queue.some((i) => i.status === "queued");
-  const isQuiet = o.since.length === 0 && o.course === "" && away !== "here" && o.lastLookAt !== null;
-  const quiet = isQuiet ? ["quiet"] : [];
-  const order = o.isCoordinator ? ["headline", "workstreams", "since", "queue", "next", "open"] : work === "running" && away === "here" ? ["headline", "queue"] : work === "stopped" ? ["headline", "status", "pointer", "since", "queue", "next", "open"] : work === "finished" ? ["headline", "status", o.works.length > 0 ? "works" : "queue", "open"] : away === "short" ? ["headline", ...quiet, "since", "queue", "open"] : ["headline", "status", ...quiet, "since", "queue", "next", "open"];
-  const withCourse = o.course === "" ? order : [order[0], "course", ...order.slice(1)];
-  const lists = {
-    workstreams: o.workstreams.length > 0,
-    queue: o.queue.length > 0,
-    works: o.works.length > 0,
-    open: o.open.length > 0,
-    next: o.next.length > 0 && !hasQueued,
-    since: o.since.length > 0,
-    headline: o.headline !== "",
-    status: o.status !== ""
-  };
-  const parts = withCourse.filter((p) => lists[p] ?? true);
-  return o.earlier.length > 0 ? [...parts, "earlier"] : parts;
+function ago(ms) {
+  const min = Math.round(ms / 6e4);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const h = Math.round(min / 60);
+  if (h < 48) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
 }
 
 // ../hooks/ledger.ts
@@ -152,7 +249,8 @@ var EMPTY = {
   updates: 0
 };
 function isBlankLedger(ledger) {
-  return ledger.updates === 0 && ledger.overview === null && ledger.items.length === 0 && ledger.findings.length === 0;
+  const isOverviewBlank = !ledger.overview || ledger.overview.goal === "" && ledger.overview.subjects.length === 0;
+  return ledger.updates === 0 && isOverviewBlank && ledger.items.length === 0 && ledger.findings.length === 0;
 }
 var MAX_CLOSED = 12;
 var EXPIRED = "expired, unanswered";
@@ -198,16 +296,16 @@ function upgradeItem(item) {
     from: item.from ?? "update"
   };
 }
-function words(text2) {
+function words2(text2) {
   return text2.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 function recommendedOption(options, rec) {
   if (!rec) return null;
-  const named = new Set(words(rec));
+  const named = new Set(words2(rec));
   let best = null;
   for (const option of options) {
-    const w = words(option);
-    if (w.length > words(best ?? "").length && w.every((x) => named.has(x))) best = option;
+    const w = words2(option);
+    if (w.length > words2(best ?? "").length && w.every((x) => named.has(x))) best = option;
   }
   const label = (text2) => text2.match(/^\s*\(?([a-z]|\d{1,2})\s*[:.)]/i)?.[1]?.toLowerCase();
   const byLabel = /^\s*(?:option\s+)?([a-z]|\d{1,2})\s*[.!]?\s*$/i.exec(rec)?.[1]?.toLowerCase();
@@ -238,19 +336,19 @@ var FILLER = /* @__PURE__ */ new Set([
   "all"
 ]);
 function keyWords(text2) {
-  return new Set(words(text2).filter((w) => new RegExp("\\p{N}", "u").test(w) || w.length > 2 && !FILLER.has(w)));
+  return new Set(words2(text2).filter((w) => new RegExp("\\p{N}", "u").test(w) || w.length > 2 && !FILLER.has(w)));
 }
 function restates(a, b) {
   const x = keyWords(a);
   const y = keyWords(b);
   const fewer = Math.min(x.size, y.size);
   const shared = [...x].filter((w) => y.has(w)).length;
-  const numbers = (words2) => [...words2].filter((w) => new RegExp("\\p{N}", "u").test(w)).sort().join(" ");
+  const numbers = (words3) => [...words3].filter((w) => new RegExp("\\p{N}", "u").test(w)).sort().join(" ");
   if (numbers(x) !== "" && numbers(y) !== "" && numbers(x) !== numbers(y)) return false;
   return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b);
 }
 function sameAsk(a, b) {
-  const norm = (s) => words(s).join(" ");
+  const norm = (s) => words2(s).join(" ");
   return norm(a) !== "" && norm(a) === norm(b);
 }
 var CLOSED_BY_CLAUDE = "closed by Claude";
@@ -433,49 +531,59 @@ function dialogActivity(questions, outcome) {
       return `${head}; still open, waiting on the user's answer`;
   }
 }
-var OVERVIEW_SYSTEM = `You keep a one-page guide to a coding session, for the person who works with the agent. They read it when they come back, to see what the work is, how it is going and what comes next. You read the guide as it was and one exchange, and write the guide as it should be now.
+var OVERVIEW_SYSTEM = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
 
-The guide is about the work. It is not a log of what the agent did, and it is not a list of what waits on the person: the inbox lists that. Write at the level of the feature or the fix. Never write a command, a file name, a commit, a test run, a tool call or a ticket number, and leave out a number, an id or a time unless the person needs it to find the work again.
+You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
 
 Input:
-- <last>: the guide as it was, in the same lines you write
-- <unseen>: the changes the person has not yet looked at, as SINCE lines
-- <tasks>: the agent's own task list, when it keeps one, as TASK lines. It is evidence for QUEUE, not the guide: write each item at the level of the feature. Write each in your own words as the outcome it reaches, not in the task's words: "Reset emails reach the person", not "Run the mailer tests". A queue item names a result, never an action that begins with Run, Check or Test. For a task that runs a command or a test, write the outcome it checks, or leave it out. Leave out a task that is only a step of another.
+- <goal>: the session's goal. Do not restate it.
+- <subjects>: the open subjects, one per line: id | status | name | where it stands
+- <finished>: subjects already done or dropped. Do not add them again.
+- <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
+- <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
 - <reply>: the agent's final reply
 
-Answer with lines only. No other text. If the exchange changed nothing about the work, answer with the one line UNCHANGED.
+Answer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, answer with the one line NO CHANGE. Most exchanges change nothing.
 
-Otherwise write every line below that applies, in this order:
-KIND: session, or coordinator when the session hands out work and reviews what comes back instead of doing the work itself
-TOPIC: same, or new when the work moved to a different task. Write new only for a different task, not for the next step of the same one.
-STATE: on-track, stuck or finished
-HEADLINE: one plain sentence naming what the session is doing, at most ${HEADLINE_WORDS} words. "-" when no work has started.
-STATUS: how it is going, in one or two plain sentences, at most ${SENTENCE_WORDS} words. Say what it waits on, if anything.
-COURSE: only in the reply where the approach changed, in one or two sentences, at most ${SENTENCE_WORDS} words: what changed and why. A new step is not a change. Leave the line out otherwise: the page keeps the last one until the person looks.
-FOLDED: only when TOPIC is new, one line saying what the old topic was and where it was left.
-Then lists, one item per line, each as KEY: status | text | detail, with the key on every line. The detail is optional. Text is at most ${ITEM_WORDS} words and detail at most ${DETAIL_WORDS}. At most ${LIST_ITEMS} items in a list.
-QUEUE: the work now: what is under way, what is queued behind it, what waits, and what just finished
-WORKS: what holds now: what works, what exists
-OPEN: risks, problems and unknowns
-NEXT: what comes next
-SINCE: what changed since the person last looked. Start from <unseen>, merge this exchange into it, and keep it short.
-STREAM: only in a coordinator session, in the same form as the other lists: one line for each stream of work, saying what it is for and where it stands. Put the work handed out in STREAM, and use QUEUE only for the coordinator's own steps, such as reviewing what a stream sends back. If a stream is already in QUEUE in the guide as it was, take it out of QUEUE.
+Otherwise write only the lines that apply:
+NEW: status | name | where it stands
+SET: id or name | status | where it stands
+DONE: id or name | where it ended
+DROP: id or name | why
+DROP: id or name | why | INTO id or name
+WAS: id or name | the plan it replaces
+LINK: running id | subject id or name
+ROLE: coordinator or session
+GOAL: the goal in the person's words, at most ${GOAL_WORDS} words
 
-Status is one of: working, queued, waits-on-you, waits-on-other, done, ruled-out, problem, unknown. Use waits-on-you when the agent cannot go on until the person acts, and waits-on-other for something else, such as a build. Use ruled-out for an approach tried or considered and dropped, and put the reason in the detail.
+A subject is one piece of the work that the person would name: a feature, a fix, a release, a problem, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call.
+
+The name is at most ${NAME_WORDS} words, the handle the person would use. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
+
+Status is one of: working, queued, waits-on-you, waits-on-other, problem.
+- working: being worked on now, in this session or in a session it handed the work to. When the work stopped, it is queued, waits on someone, or is done.
+- queued: planned, not started.
+- waits-on-you: the subject's work has stopped until the person acts. A question to the person is not a subject of its own.
+- waits-on-other: it waits on something else, such as a build, a review or another session.
+- problem: something broken or wrong that no one is fixing now.
 
 Rules:
-- Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed. The next rule wins over this one: when the guide as it was already repeats a fact in two lists, remove the repeat.
-- Do not write a question or task the agent put to the person, and do not say what the choice is. Say only that the work waits on the person, and stop.
-- Leave out that something was committed, pushed, merged or tested, in every line. Say what now works or is fixed.
-- Say each fact once, in the list that fits it best. Work that finished stays in QUEUE as done. WORKS holds only what works that QUEUE does not already name. What a stream is doing, and what it finished, stays on its STREAM line and is not written again in QUEUE, WORKS or OPEN. NEXT holds only what the queue does not already name. SINCE may repeat the other lists, since it says what changed.
-- Leave a list out when it has nothing worth saying. Do not fill a list to fill it.`;
+- Change a subject by its id. Write NEW only when no subject in <subjects> covers it.
+- When work started and finished in this exchange, write NEW for it, then DONE with its name.
+- Write SET only when where a subject stands changed. Never reword a subject that did not change.
+- Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.
+- When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
+- The inbox shows each question and task for the person, with its options. Mark the subject waits-on-you, and say where its work stands or "needs your decision". Never name the choices.
+- Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
+- Write ROLE coordinator when the session hands out work and reviews what comes back instead of doing the work itself. Write ROLE only when it changes.
+- Write GOAL only when <goal> is empty, when the person states a new goal, or when the work moves to a different task.`;
 function surfaceAtStart(host) {
   return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
 }
-function screenText(host, isOpen, tab) {
-  if (!isOpen) return `${surfaceAtStart(host)} is closed.`;
+function screenText(host, isOpen2, tab) {
+  if (!isOpen2) return `${surfaceAtStart(host)} is closed.`;
   if (tab?.isPage)
     return `${surfaceAtStart(host)} is open beside the conversation, on its ${tab.label} tab, which shows a guide to the session's work, not rows.`;
   return `${surfaceAtStart(host)} is open beside the conversation, ${tab ? `on its ${tab.label} tab, ` : ""}listing every open item.`;
@@ -549,14 +657,18 @@ function findingLine(finding) {
   return `- ${finding.kind}: ${finding.title} (close id: ${finding.id})`;
 }
 function overviewLines(ledger) {
-  const overview = ledger.overview;
-  if (!overview?.headline) return [];
-  return [`Working on: ${overview.headline}`, ...overview.status ? [`Status: ${overview.status}`] : []];
+  const goal = ledger.overview?.goal ?? "";
+  const open2 = (ledger.overview?.subjects ?? []).filter(isOpen);
+  return [
+    ...goal ? [`Working on: ${goal}`] : [],
+    ...open2.length > 0 ? ["Where it stands:", ...open2.map((s) => `- ${s.name}: ${s.text || "-"} (${s.status})`)] : []
+  ];
 }
 function carryText(ledger, title) {
   const findings = ledger.findings;
-  if (!ledger.overview?.headline && ledger.items.length === 0 && findings.length === 0) return null;
-  const out = [title, ...overviewLines(ledger)];
+  const lines = overviewLines(ledger);
+  if (lines.length === 0 && ledger.items.length === 0 && findings.length === 0) return null;
+  const out = [title, ...lines];
   if (ledger.items.length > 0) {
     out.push("Waiting on the user:");
     for (const item of ledger.items) out.push(itemLine(item));
@@ -572,7 +684,7 @@ function carryText(ledger, title) {
   return out.join(NL);
 }
 var CLOSE_ID_RULE = "A close id is only for the close tool. Never write one in a reply.";
-function inboxText(host, ledger, isOpen) {
+function inboxText(host, ledger, isOpen2) {
   const out = [
     `inbox: what waits on the user, as of your last reply. Anything not listed here is closed. ${CLOSE_ID_RULE}`
   ];
@@ -586,7 +698,7 @@ function inboxText(host, ledger, isOpen) {
     out.push("Findings you recorded, still open:");
     for (const f of ledger.findings) out.push(findingLine(f));
   }
-  out.push(isOpen ? `The user has ${host.surface} open beside the conversation.` : `${surfaceAtStart(host)} is closed.`);
+  out.push(isOpen2 ? `The user has ${host.surface} open beside the conversation.` : `${surfaceAtStart(host)} is closed.`);
   return out.join(NL);
 }
 function outcomeText(d) {
@@ -962,6 +1074,10 @@ function optionDescriptionsOf(item, actions) {
 function isWaitingRow(row) {
   return row.state.is === "open";
 }
+function shortAgo(ms) {
+  const age = ago(ms);
+  return age === "just now" ? "now" : age.replace(/ ago$/, "");
+}
 var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
 var UPDATE_RETRIES = " It retries after your next message.";
 function needsYouOrder(ledger) {
@@ -1074,77 +1190,115 @@ function screenTabOf(tab) {
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 var WORKING_TEXT = "Working\u2026";
-var OVERVIEW_MARKS = {
+var LOOK_TEXT = "you looked";
+var CHILD_ROWS = 3;
+var QUIET_MS = 15 * 6e4;
+var NEW_CLOSED_ROWS = 2;
+var OPEN_ROWS = 7;
+var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: null },
   queued: { mark: "\u25CB", tone: null },
   "waits-on-you": { mark: "\u25C6", tone: "needsYou" },
   "waits-on-other": { mark: "\u25CC", tone: null },
-  done: { mark: "\u2713", tone: "done" },
-  "ruled-out": { mark: "\u2717", tone: null },
   problem: { mark: "!", tone: "issue" },
-  unknown: { mark: "?", tone: null }
-};
-var SECTION_TITLES = {
-  workstreams: "Streams",
-  queue: "Work",
-  since: "Since you looked",
-  works: "What works now",
-  open: "Still open",
-  next: "Next"
+  done: { mark: "\u2713", tone: "done" },
+  dropped: { mark: "\u2717", tone: null }
 };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
-var QUIET_TEXT = "Nothing new since you looked.";
-function pointerText(count) {
-  return count === 0 ? null : count === 1 ? "Asks has 1 item." : `Asks has ${count} items.`;
+function identityOf(place, role) {
+  if (!place) return null;
+  const folder = place.folder.split(/[\\/]/).filter(Boolean).pop() ?? place.folder;
+  return [folder, place.branch, role === "coordinator" ? "coordinator" : null].filter(Boolean).join(" \xB7 ");
 }
-function withAfterHeading(parts, id) {
-  const at = parts.filter((p) => p === "headline" || p === "course").length;
-  return [...parts.slice(0, at), id, ...parts.slice(at)];
+function liveOf(presence, now) {
+  const { isTurnRunning, turnStartedAt, lastReplyAt } = presence;
+  if (isTurnRunning) {
+    const isPastAMinute = turnStartedAt !== null && now - turnStartedAt >= 6e4;
+    return isPastAMinute ? `${WORKING_TEXT} for ${shortAgo(now - turnStartedAt)}` : WORKING_TEXT;
+  }
+  return lastReplyAt === null ? null : `Idle \xB7 last reply ${ago(now - lastReplyAt)}`;
 }
-function overviewPage(s, now, waitingOnYou = 0) {
-  const { overview } = s.ledger;
-  const { isTurnRunning } = s.presence;
-  const headline = overview?.headline || null;
-  const parts = overview ? orderParts(
-    overview,
-    overview.look?.away ?? awayOf(overview.lastLookAt, now),
-    workOf(overview, { isTurnRunning, isStopped: Boolean(s.stop), waitingOnYou })
-  ) : [];
-  const sections = overview ? parts.flatMap((id) => {
-    const title = SECTION_TITLES[id];
-    if (title === void 0) return [];
-    const rows = overview[id].map((item, n) => ({
-      id: `${id}-${n}`,
-      ...OVERVIEW_MARKS[item.status],
-      isRunning: item.status === "working" && (id === "workstreams" || isTurnRunning),
-      text: item.text,
-      detail: item.detail
-    }));
-    return rows.length > 0 ? [{ id, title, rows }] : [];
-  }) : [];
-  const texts = {
-    headline,
-    course: overview?.course || null,
-    status: isTurnRunning ? WORKING_TEXT : overview?.status || null,
-    pointer: pointerText(waitingOnYou),
-    quiet: QUIET_TEXT
-  };
-  const withWorking = isTurnRunning && !parts.includes("status") ? withAfterHeading(parts, "status") : parts;
-  const leadIds = overview ? withWorking : isTurnRunning ? ["status"] : [];
-  const lead = leadIds.flatMap((id) => {
-    const text2 = id in texts ? texts[id] : null;
-    return text2 === null ? [] : [{ id, text: text2, hasGapAbove: false }];
-  }).map((line, n, all) => ({ ...line, hasGapAbove: n > 0 && all[n - 1].id !== "headline" }));
+function childRow(c, now, isLoose) {
+  const idle = c.lastActivityAt === null ? null : now - c.lastActivityAt;
+  const isQuiet = idle !== null && idle >= QUIET_MS;
+  const age = shortAgo(idle ?? now - c.startedAt);
+  return { kind: "child", id: c.id, name: c.name, age: isQuiet ? `quiet ${age}` : age, isQuiet, isLoose };
+}
+function overviewPage(s, now) {
+  const o = s.ledger.overview;
+  const look = o?.lastLookAt ?? null;
+  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
+  const isNew = (x) => look === null || x.changedAt > look;
+  const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
+  const open2 = subjects.filter(isOpen);
+  const queuedOver = Math.max(0, open2.length - OPEN_ROWS);
+  const hiddenQueued = new Set(
+    open2.filter((x) => x.status === "queued").sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id)
+  );
+  const shown = [...open2.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort((x, y) => y.changedAt - x.changedAt);
+  const folded = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
+  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const shownIds = new Set(shown.map((x) => x.id));
+  const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, now, true));
+  const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT, age: shortAgo(now - look) };
+  let isLookDrawn = false;
+  for (const x of shown) {
+    if (lookRow && !isLookDrawn && !isNew(x)) {
+      rows.push(lookRow);
+      isLookDrawn = true;
+    }
+    const under = running.filter((c) => c.subjectId === x.id);
+    rows.push({
+      kind: "subject",
+      id: x.id,
+      ...SUBJECT_MARKS[x.status],
+      isRunning: x.status === "working" && (s.presence.isTurnRunning || under.length > 0),
+      name: x.name,
+      text: isNew(x) ? x.text || null : null,
+      was: isNew(x) ? x.was : null,
+      age: shortAgo(now - x.changedAt)
+    });
+    rows.push(...under.slice(0, CHILD_ROWS).map((c) => childRow(c, now, false)));
+    if (under.length > CHILD_ROWS)
+      rows.push({ kind: "more", id: `${x.id}-more`, text: `+ ${under.length - CHILD_ROWS} more running` });
+  }
+  if (lookRow && !isLookDrawn && shown.length > 0) rows.push(lookRow);
+  if (hiddenQueued.size > 0)
+    rows.push({
+      kind: "fold",
+      id: "queued",
+      mark: "\u25CB",
+      tone: null,
+      text: `${hiddenQueued.size} more queued`,
+      age: null
+    });
+  if (folded.length > 0) {
+    const newest = Math.max(...folded.map((x) => x.closedAt ?? x.changedAt));
+    const isMore = newClosed.some((x) => x.status === "done");
+    rows.push({
+      kind: "fold",
+      id: "done",
+      mark: "\u2713",
+      tone: "done",
+      text: `${folded.length}${isMore ? " more" : ""} done`,
+      age: shortAgo(now - newest)
+    });
+  }
+  const goal = o?.goal || null;
+  const role = o?.role ?? "session";
+  const hasNews = o !== null && o.look === null && subjects.some(isNew);
   return {
-    isEmpty: headline === null && !isTurnRunning,
-    lead,
-    sections,
-    earlier: parts.includes("earlier") ? overview?.earlier ?? [] : [],
+    isEmpty: goal === null && rows.length === 0 && !s.presence.isTurnRunning,
+    identity: identityOf(s.place ?? null, role),
+    goal,
+    live: liveOf(s.presence, now),
+    rows,
+    hasNews,
     empty: {
       title: "Overview",
-      hint: "Where the work stands and where it's heading. It fills in once the work starts."
+      hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
     }
   };
 }
@@ -1238,7 +1392,7 @@ function inboxView({
   discarded
 }) {
   const isSettling = (at) => now - at < settleWindowMs;
-  const isOpen = (id) => ledger.items.some((i) => i.id === id) || ledger.findings.some((f) => f.id === id);
+  const isOpen2 = (id) => ledger.items.some((i) => i.id === id) || ledger.findings.some((f) => f.id === id);
   const closedAt = (c) => "closedAt" in c ? c.closedAt : c.at;
   const replyAfter = (c) => {
     const last = lastActions[c.id];
@@ -1252,17 +1406,17 @@ function inboxView({
   const isDiscarded = (c) => (discarded[c.id] ?? -Infinity) >= closedAt(c);
   const isPlaced = (c) => replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isSettling(closedAt(c)));
   const placedItems = new Map(
-    ledger.closed.filter((d) => d.item && !isOpen(d.id) && isPlaced(d)).map((d) => [d.id, d])
+    ledger.closed.filter((d) => d.item && !isOpen2(d.id) && isPlaced(d)).map((d) => [d.id, d])
   );
   const isFixSettled = (id) => {
     const last = lastActions[id];
     return isFixSent(last) && !isSettling(last.at);
   };
   const placedFindings = new Map(
-    ledger.closedFindings.filter((f) => !isOpen(f.id) && !isFixSettled(f.id) && isPlaced(f)).map((f) => [f.id, f])
+    ledger.closedFindings.filter((f) => !isOpen2(f.id) && !isFixSettled(f.id) && isPlaced(f)).map((f) => [f.id, f])
   );
-  const placed = [...placedFindings.keys()].reduce(reopenFinding, [...placedItems.keys()].reduce(reopenItem, ledger));
-  const { questions, tasks } = needsYouOrder(placed);
+  const placed2 = [...placedFindings.keys()].reduce(reopenFinding, [...placedItems.keys()].reduce(reopenItem, ledger));
+  const { questions, tasks } = needsYouOrder(placed2);
   const numbers = questionNumbers(ledger, ledger.turn + 1);
   const stateOf = (id) => {
     const closed2 = placedItems.get(id) ?? placedFindings.get(id);
@@ -1336,7 +1490,7 @@ function inboxView({
   const counted = [...questionRows, ...taskRows].filter(isWaitingRow);
   const kinds = Object.keys(FINDING_GROUPS);
   const byGroup = (a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind);
-  const findingRows = [...placed.findings].filter((f) => !isFixSettled(f.id)).reverse().sort(byGroup).map(
+  const findingRows = [...placed2.findings].filter((f) => !isFixSettled(f.id)).reverse().sort(byGroup).map(
     (finding) => rowOf({
       id: finding.id,
       type: "finding",
@@ -1468,8 +1622,11 @@ function emptySession() {
       ledgerState: "current",
       hasDroppedReply: false,
       isUpdating: false,
-      isTurnRunning: false
+      isTurnRunning: false,
+      turnStartedAt: null,
+      lastReplyAt: null
     },
+    place: null,
     pending: [],
     sent: [],
     lastActions: {},
@@ -1502,6 +1659,7 @@ function upgradeSession(saved) {
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
+    place: saved.place ?? null,
     pending: (saved.pending ?? []).map((p) => ({ ...p, ex: { ...p.ex, tasks: p.ex.tasks ?? [] } })),
     sent: (saved.sent ?? []).map((x) => ({
       ...x,
@@ -1564,9 +1722,9 @@ function cleared(s) {
     stop: null
   };
 }
-function notePrompt(host, s, text2, isOpen) {
+function notePrompt(host, s, text2, isOpen2) {
   const matched = matchSent(s, text2);
-  return recordPrompt(host, startTurn(matched.state), text2, isOpen, matched.sentBy);
+  return recordPrompt(host, startTurn(matched.state), text2, isOpen2, matched.sentBy);
 }
 function matchSent(s, text2) {
   const matchingAt = s.sent.findIndex((x) => x.text === text2);
@@ -1592,18 +1750,25 @@ function matchSent(s, text2) {
     sentBy: sent ? { press: sent.press } : null
   };
 }
-function turnStarted(s) {
-  return { ...s, presence: { ...s.presence, isTurnRunning: true } };
+function turnStarted(s, at) {
+  const startedAt = s.presence.isTurnRunning ? s.presence.turnStartedAt ?? at : at;
+  return { ...s, presence: { ...s.presence, isTurnRunning: true, turnStartedAt: startedAt } };
 }
-function turnEnded(s) {
-  return { ...s, presence: { ...s.presence, isTurnRunning: false } };
+function turnEnded(s, at) {
+  const lastReplyAt = at ?? s.presence.lastReplyAt;
+  return { ...s, presence: { ...s.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt } };
+}
+function placed(s, folder, branch) {
+  const place = { folder: s.place?.folder || folder, branch: branch === "HEAD" ? null : branch };
+  const isSame = s.place?.folder === place.folder && s.place.branch === place.branch;
+  return isSame ? s : { ...s, place };
 }
 function startTurn(s) {
   return { ...s, presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }, stop: null };
 }
-function recordPrompt(host, s, text2, isOpen, sentBy) {
+function recordPrompt(host, s, text2, isOpen2, sentBy) {
   const ledger = { ...s.ledger, turn: s.ledger.turn + 1 };
-  const r = promptNotes(host, ledger, { text: text2, isPress: sentBy !== null, isOpen }, s.told);
+  const r = promptNotes(host, ledger, { text: text2, isPress: sentBy !== null, isOpen: isOpen2 }, s.told);
   const person = s.turn.person === null ? text2 : `${s.turn.person}
 
 ${text2}`;
@@ -1640,7 +1805,7 @@ function noteCommandOutput(s, command, output) {
   const ledger = withNewPrRefs(noted.ledger, found.prRefs);
   return ledger === noted.ledger ? noted : { ...noted, ledger };
 }
-function endTurn(host, s, reply, isOpen, { tab = null, queuesEmptyReply = false } = {}) {
+function endTurn(host, s, reply, isOpen2, { tab = null, queuesEmptyReply = false } = {}) {
   const refs = prRefs(reply);
   const base = {
     ...s,
@@ -1655,13 +1820,17 @@ function endTurn(host, s, reply, isOpen, { tab = null, queuesEmptyReply = false 
     reply,
     turn: s.ledger.turn,
     press: s.turn.press,
-    screen: screenText(host, isOpen, tab),
+    screen: screenText(host, isOpen2, tab),
     tasks: s.hostTasks
   };
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] };
 }
 function needsUpdate(s) {
   return s.pending.length > 0 || s.presence.ledgerState !== "current";
+}
+function overviewChanged(s, change) {
+  const overview = change(s.ledger.overview);
+  return overview === s.ledger.overview ? s : { ...s, ledger: { ...s.ledger, overview } };
 }
 function hasLedger(s) {
   return !isBlankLedger(s.ledger);
@@ -1706,7 +1875,7 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now),
-    overviewPage: overviewPage(s, now, inbox.needsYou.count)
+    overviewPage: overviewPage(s, now)
   };
 }
 function prTabOf(s, lastActions, now) {
@@ -2008,6 +2177,19 @@ var CLEARED_TOKENS = Object.fromEntries(
   [STATUS_TOKEN, STOP_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null])
 );
 var HERDR_TIMEOUT_MS = 5e3;
+var HERDR_AGENT_LIST = ["herdr", "agent", "list"];
+var HERDR_RUNNING = /* @__PURE__ */ new Set(["working", "unknown"]);
+function herdrRunning(stdout) {
+  try {
+    const agents = JSON.parse(stdout)?.result?.agents;
+    if (!Array.isArray(agents)) return null;
+    return new Set(
+      agents.filter((a) => typeof a?.name === "string" && HERDR_RUNNING.has(a?.agent_status)).map((a) => a.name)
+    );
+  } catch {
+    return null;
+  }
+}
 function stopLine(stop) {
   switch (stop.kind) {
     case "sign-in":
@@ -2027,17 +2209,17 @@ function statusLine(stop, dialogs, input) {
   if (stop) return stopLine(stop);
   const dialog = dialogs[0];
   if (dialog) return dialogText(dialog);
-  const { firstAsk, asks, findings, headline } = input;
+  const { firstAsk, asks, findings, goal } = input;
   if (firstAsk !== null) return asks > 1 ? `${asks} \xB7 ${firstAsk}` : firstAsk;
   const findingsText = findings === 0 ? null : `${findings} finding${findings === 1 ? "" : "s"}`;
-  return [headline, findingsText].filter(Boolean).join(" \xB7 ");
+  return [goal, findingsText].filter(Boolean).join(" \xB7 ");
 }
 function herdrTokens(ledger, stop, view, dialogs) {
   const input = {
     firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
     asks: view.needsYou.count,
     findings: view.findings.count,
-    headline: ledger.overview?.headline ?? null
+    goal: ledger.overview?.goal || null
   };
   const counts = ROW_TABS.map((t) => {
     const count = view[t.id].count;
@@ -2120,6 +2302,47 @@ function herdrOnWrite(env, run2, dir, now) {
 // src/hook.ts
 import { resolve as resolve3 } from "node:path";
 
+// ../hooks/children.ts
+var NAME_CHARS = 80;
+function childName(text2) {
+  const line = text2.trim().split("\n")[0] ?? "";
+  return line.length > NAME_CHARS ? `${line.slice(0, NAME_CHARS - 1)}\u2026` : line;
+}
+var HERDR = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^;&|\n]*)/g;
+function delegateSteps(command) {
+  return [...command.matchAll(HERDR)].map(([, verb, name, args]) => ({
+    name,
+    isWaitForEnd: verb === "wait" && !/--until working/.test(args ?? "")
+  }));
+}
+var delegateRef = (name) => `herdr:${name}`;
+function delegateRunning(o, name, at) {
+  const ref = delegateRef(name);
+  const known = o?.children.find((c) => c.ref === ref);
+  const isRunning = known !== void 0 && known.endedAt === null;
+  if (o && isRunning) return changedChild(o, ref, () => ({ lastActivityAt: at })) ?? o;
+  return withChild(
+    o,
+    { ref, kind: "delegate", name: childName(name), startedAt: at, endedAt: null, lastActivityAt: at },
+    at
+  );
+}
+var HERDR_PROMPT_SETTLE_MS = 15e3;
+function hasRunningDelegate(o) {
+  return o?.children.some((c) => c.kind === "delegate" && c.endedAt === null) ?? false;
+}
+function delegatesSettled(o, running, at) {
+  const refs = new Set([...running].map(delegateRef));
+  const isGone = (c) => c.kind === "delegate" && c.endedAt === null && !refs.has(c.ref) && at - (c.lastActivityAt ?? c.startedAt) >= HERDR_PROMPT_SETTLE_MS;
+  if (!o?.children.some(isGone)) return o;
+  return { ...o, children: o.children.map((c) => isGone(c) ? { ...c, endedAt: at } : c) };
+}
+function childrenCutOff(o, at) {
+  const isCut = (c) => c.endedAt === null && c.kind !== "delegate";
+  if (!o?.children.some(isCut)) return o;
+  return { ...o, children: o.children.map((c) => isCut(c) ? { ...c, endedAt: at } : c) };
+}
+
 // src/cli.ts
 function namedCli(env) {
   return env.CODEX_CLI_PATH || env.CODEX_APP_RUNTIME_CLI_PATH || null;
@@ -2179,6 +2402,12 @@ async function readSessionMeta(path) {
   } catch {
     return null;
   }
+}
+async function placeIn(path) {
+  const payload = (await readSessionMeta(path))?.payload;
+  if (typeof payload?.cwd !== "string" || payload.cwd === "") return null;
+  const branch = payload.git?.branch;
+  return { folder: payload.cwd, branch: typeof branch === "string" && branch !== "" ? branch : null };
 }
 async function isNonInteractiveRun(path) {
   if (path === null) return true;
@@ -2391,10 +2620,10 @@ function callLines(p, hasCommandRows, cwd) {
   const line = activityOf(textOf2(p.namespace).startsWith("mcp__") ? textOf2(p.namespace) + name : name, {});
   return line ? [line] : [];
 }
-var isItem2 = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf2(record(record(row.payload).item).type));
+var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf2(record(record(row.payload).item).type));
 function turnsOf(rows, cwd) {
-  const hasMessageRows = rows.some((row) => isItem2(row, "UserMessage", "AgentMessage"));
-  const hasCommandRows = rows.some((row) => isItem2(row, "CommandExecution"));
+  const hasMessageRows = rows.some((row) => isItem(row, "UserMessage", "AgentMessage"));
+  const hasCommandRows = rows.some((row) => isItem(row, "CommandExecution"));
   const turns = [];
   const agentTurn = () => {
     const last = turns.at(-1);
@@ -2414,9 +2643,9 @@ function turnsOf(rows, cwd) {
   for (const row of rows) {
     const p = record(row.payload);
     const item = record(p.item);
-    if (isItem2(row, "UserMessage")) person(contentText(item.content));
-    else if (isItem2(row, "AgentMessage")) turns.push({ role: "agent", text: contentText(item.content), activity: [] });
-    else if (isItem2(row, "CommandExecution")) act(shellLines(commandText(item.command)));
+    if (isItem(row, "UserMessage")) person(contentText(item.content));
+    else if (isItem(row, "AgentMessage")) turns.push({ role: "agent", text: contentText(item.content), activity: [] });
+    else if (isItem(row, "CommandExecution")) act(shellLines(commandText(item.command)));
     else if (row.type === "response_item") {
       if (p.type === "message" && !hasMessageRows && p.role === "user") person(contentText(p.content));
       else if (p.type === "message" && !hasMessageRows && p.role === "assistant")
@@ -2481,7 +2710,7 @@ async function handleHook(input, deps) {
   const id = input.session_id;
   const { dir, env, now } = deps;
   if (!id || !env.INBOX_IN_EXEC && await isNonInteractiveRun(input.transcript_path)) return null;
-  const { update: write } = codexStore(dir, id, now, deps.onWrite);
+  const { update: write, read } = codexStore(dir, id, now, deps.onWrite);
   const cliPath = namedCli(env);
   const withCli = (s) => cliPath && s.cliPath !== cliPath ? { ...s, cliPath } : s;
   const rolloutPath = input.agent_id ? null : input.transcript_path;
@@ -2503,10 +2732,12 @@ async function handleHook(input, deps) {
   switch (input.hook_event_name) {
     case "SessionStart": {
       const root = input.cwd ?? "";
-      const endsTurn = (s2) => input.source === "compact" ? s2 : turnEnded(s2);
+      const endsTurn = (s2) => input.source === "compact" ? s2 : overviewChanged(turnEnded(s2, null), (o) => childrenCutOff(o, now()));
+      const place = rolloutPath === null ? null : await placeIn(rolloutPath);
+      const withPlace = (s2) => place ? placed(s2, place.folder, place.branch) : s2;
       const s = await write(
         async (s2) => noteHook(
-          withHost(await withHistory(endsTurn({ ...input.source === "clear" ? cleared(s2) : s2, root }))),
+          withHost(await withHistory(endsTurn(withPlace({ ...input.source === "clear" ? cleared(s2) : s2, root })))),
           "start",
           now()
         )
@@ -2520,7 +2751,7 @@ async function handleHook(input, deps) {
       await write(async (s) => {
         const r = notePrompt2(withHost(await withHistory(s)), input.prompt ?? "", now());
         notes = r.notes;
-        return input.agent_id ? r.state : noteHook(turnStarted(r.state), "prompt", now(), input.turn_id);
+        return input.agent_id ? r.state : noteHook(turnStarted(r.state, now()), "prompt", now(), input.turn_id);
       });
       if (isMarkedBehind) deps.startUpdate(id);
       return notes.length === 0 ? null : { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: notes.join("\n\n") } };
@@ -2535,12 +2766,37 @@ async function handleHook(input, deps) {
         return null;
       }
       const line = activityOf(tool, toolInput);
-      if (line) await write((s) => noteActivity(withRollout(s), line));
+      const agentId = input.agent_id;
+      const delegates = agentId ? [] : delegateSteps(command).map((step) => step.name);
+      const withWork = (s) => overviewChanged(s, (o) => {
+        const ran = delegates.reduce((x, name) => delegateRunning(x, name, now()), o);
+        return agentId ? childActive(ran, agentId, now()) : ran;
+      });
+      const hasWork = line !== null || agentId !== void 0 || delegates.length > 0;
+      if (hasWork) await write((s) => withWork(line ? noteActivity(withRollout(s), line) : withRollout(s)));
+      return null;
+    }
+    case "SubagentStart": {
+      const ref = input.agent_id;
+      if (!ref) return null;
+      const name = childName(input.agent_type || "subagent");
+      await write(
+        (s) => overviewChanged(
+          s,
+          (o) => withChild(o, { ref, kind: "subagent", name, startedAt: now(), endedAt: null, lastActivityAt: now() }, now())
+        )
+      );
+      return null;
+    }
+    case "SubagentStop": {
+      const ref = input.agent_id;
+      if (ref) await write((s) => overviewChanged(s, (o) => childEnded(o, ref, now())));
       return null;
     }
     case "Stop": {
       const reply = input.last_assistant_message ?? "";
       const { dialogs, commands, plan } = await turnIn(input.transcript_path, input.turn_id);
+      const inHerdr = hasRunningDelegate((await read()).ledger.overview) ? await delegatesInHerdr(deps.run, dir) : null;
       const lines = dialogs.map((d) => dialogActivity(d.questions, { kind: "open" }));
       const written = await write(async (s) => {
         const withLines = lines.reduce(
@@ -2548,7 +2804,12 @@ async function handleHook(input, deps) {
           noteDialogs(withHost(await withHistory(s)), dialogs)
         );
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines);
-        const ended = noteHook(turnEnded(endTurn2(withOutput, reply, now())), "stop", now());
+        const settled = commands.flatMap((c) => delegateSteps(c.command).filter((step) => step.isWaitForEnd));
+        const withDelegates = overviewChanged(withOutput, (o) => {
+          const waited = settled.reduce((x, step) => childEnded(x, delegateRef(step.name), now()), o);
+          return inHerdr ? delegatesSettled(waited, inHerdr, now()) : waited;
+        });
+        const ended = noteHook(turnEnded(endTurn2(withDelegates, reply, now()), now()), "stop", now());
         return plan === null ? ended : { ...ended, hostTasks: plan };
       });
       if (needsUpdate(written)) deps.startUpdate(id);
@@ -2556,6 +2817,10 @@ async function handleHook(input, deps) {
     }
   }
   return null;
+}
+async function delegatesInHerdr(run2, cwd) {
+  const r = await run2(HERDR_AGENT_LIST, { cwd, timeoutMs: HERDR_TIMEOUT_MS }).catch(() => null);
+  return r?.code === 0 ? herdrRunning(r.stdout) : null;
 }
 
 // src/data-dir.ts
@@ -2596,7 +2861,8 @@ async function main() {
     env: process.env,
     now: Date.now,
     startUpdate: detachedUpdate(dir, process.env, join4(dist, "update.mjs")),
-    onWrite: herdrOnWrite(process.env, run, dir, Date.now)
+    onWrite: herdrOnWrite(process.env, run, dir, Date.now),
+    run
   });
   if (out) process.stdout.write(JSON.stringify(out));
 }

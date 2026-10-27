@@ -11,13 +11,15 @@ import type {
   RowNote,
   PageTab,
   Stop,
-  OverviewStatus,
+  Session,
+  SubjectStatus,
+  Subject,
+  Child,
   Tab,
   Turns,
 } from '../types'
 import { isLapsed, reopenFinding, reopenItem } from './ledger'
-import { awayOf, orderParts, workOf } from './overview'
-import type { PartId } from './overview'
+import { isChildRunning, isOpen } from './overview'
 import { ago, clipLabel } from './text'
 import { questionNumbers } from './model-text'
 import type { ScreenTab } from './model-text'
@@ -715,6 +717,20 @@ export function fitTabs<L>(
 
   return { naming: 'symbols', layout: layouts.at(-1)! }
 }
+/**
+ * What a tab draws after its name: a row tab's count when it has one, or `NEWS_DOT` on the Overview when it changed since
+ * the person last looked. Null draws nothing.
+ */
+export function tabBadge(
+  id: ShownTab,
+  counts: Readonly<Record<Tab, number>>,
+  page: Pick<OverviewPage, 'hasNews'>,
+): string | null {
+  if (isRowTab(id)) return counts[id] > 0 ? String(counts[id]) : null
+
+  return page.hasNews ? NEWS_DOT : null
+}
+
 /** Whether a shown tab lists rows you answer or close: Asks and Finds. */
 export function isListedTab(tab: ShownTab): tab is ListedTab {
   return tab === 'needsYou' || tab === 'findings'
@@ -740,67 +756,78 @@ export const ROW_TABS = TAB_NAMES.filter((t): t is TabName & { id: Tab } => isRo
 
 export const LISTED_TABS = TAB_NAMES.filter((t): t is TabName & { id: ListedTab } => isListedTab(t.id))
 
-/** A line on the Overview page. A null tone draws the mark muted. */
-export type OverviewRow = {
-  id: string
-  mark: string
-  tone: 'needsYou' | 'done' | 'issue' | null
-  /**
-   * Whether the work is running now, so a look animates the mark. A stream runs in its own session, so its status
-   * holds while this one is idle. Any other row runs only while this session's turn does.
-   */
-  isRunning: boolean
-  text: string
-  detail: string | null
-}
+/** A mark's tone on the Overview. Null draws it muted. */
+export type OverviewTone = 'needsYou' | 'done' | 'issue' | null
 
-/** One text line of the page: the headline, why the direction changed, how it is going, a pointer to the Inbox, or a quiet note. */
-export type OverviewLead = {
-  id: 'headline' | 'course' | 'status' | 'pointer' | 'quiet'
-  text: string
-  /** Whether a blank line separates it from the line above, as when the status follows a course or the pointer follows the status. */
-  hasGapAbove: boolean
-}
-
-export type OverviewSection = { id: string; title: string; rows: OverviewRow[] }
+/** One line of the Overview's list, in the order to draw it. Each look lays out the parts; none chooses them. */
+export type OverviewRow =
+  | {
+      kind: 'subject'
+      id: string
+      mark: string
+      tone: OverviewTone
+      /** Whether its work runs now, so a look animates the mark: this session's turn runs, or a child of it does. */
+      isRunning: boolean
+      name: string
+      /** Where it stands. Null below the look line, where the person has seen it. */
+      text: string | null
+      /** The plan a reversal replaced, while the person has not seen it. */
+      was: string | null
+      /** How long ago it last changed. */
+      age: string
+    }
+  | {
+      kind: 'child'
+      id: string
+      name: string
+      /** How long ago it last did anything, as "quiet 40m" once it is quiet; since it started when the host reports no activity. */
+      age: string
+      isQuiet: boolean
+      /** Not linked to a subject the list shows, so it sits at the top of the list instead of under one. */
+      isLoose: boolean
+    }
+  /** The children of a subject past `CHILD_ROWS`, as "+ 2 more running". */
+  | { kind: 'more'; id: string; text: string }
+  /** Where the person last looked: rows above it changed since. */
+  | { kind: 'look'; id: string; text: string; age: string }
+  /** Rows folded into a count, as "✓ 3 done" or "○ 2 more queued". */
+  | { kind: 'fold'; id: string; mark: string; tone: OverviewTone; text: string; age: string | null }
 
 /** What the Overview page shows. Every look draws it as it is. */
 export type OverviewPage = {
   isEmpty: boolean
-  /** The text lines above the lists, in the order to draw them. */
-  lead: OverviewLead[]
-  sections: OverviewSection[]
-  /** One line for each earlier topic, oldest first. */
-  earlier: string[]
+  /** Which session this is: the folder it started in, its branch, and whether it coordinates. */
+  identity: string | null
+  goal: string | null
+  /** What the agent does now: Working…, for how long once a minute has passed, or Idle with its last reply's age. */
+  live: string | null
+  rows: OverviewRow[]
+  /** Whether a subject changed since the person last looked, so the tab name gets a dot while another tab shows. */
+  hasNews: boolean
   empty: { title: string; hint: string }
 }
 
 export const WORKING_TEXT = 'Working…'
+export const LOOK_TEXT = 'you looked'
+export const NEWS_DOT = '•'
 
-const OVERVIEW_MARKS: Record<OverviewStatus, Pick<OverviewRow, 'mark' | 'tone'>> = {
+/** The most children drawn under one subject; the rest fold into "+ N more running". */
+export const CHILD_ROWS = 3
+/** A child with no activity for this long reads quiet. */
+export const QUIET_MS = 15 * 60_000
+/** Finished rows drawn above the look line; older ones fold into the count. */
+export const NEW_CLOSED_ROWS = 2
+/** Open rows drawn before the oldest queued ones fold into a count. */
+export const OPEN_ROWS = 7
+
+const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: OverviewTone }> = {
   working: { mark: '●', tone: null },
   queued: { mark: '○', tone: null },
   'waits-on-you': { mark: '◆', tone: 'needsYou' },
   'waits-on-other': { mark: '◌', tone: null },
-  done: { mark: '✓', tone: 'done' },
-  'ruled-out': { mark: '✗', tone: null },
   problem: { mark: '!', tone: 'issue' },
-  unknown: { mark: '?', tone: null },
-}
-
-/** A section's title. Every section has one, so rows never sit directly under the lead lines without a name. */
-const SECTION_TITLES: Partial<Record<PartId, string>> = {
-  workstreams: 'Streams',
-  queue: 'Work',
-  since: 'Since you looked',
-  works: 'What works now',
-  open: 'Still open',
-  next: 'Next',
-}
-
-/** The heading over the Overview's earlier topics. `place` is the host's word for a conversation with the agent. */
-export function earlierTitle(place: string): string {
-  return `Earlier in this ${place}`
+  done: { mark: '✓', tone: 'done' },
+  dropped: { mark: '✗', tone: null },
 }
 
 /** The marks a running row cycles through in the text looks, one each `RUNNING_FRAME_MS`. */
@@ -812,7 +839,7 @@ export const RUNNING_FRAME_MS = 300
 export const RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS
 
 export function hasRunningMark(page: OverviewPage): boolean {
-  return page.sections.some(p => p.rows.some(r => r.isRunning))
+  return page.rows.some(r => (r.kind === 'subject' && r.isRunning) || (r.kind === 'child' && !r.isQuiet))
 }
 
 /** A running row's mark at `now`. Every mark on a page takes its frame from the clock, so all of them move together. */
@@ -820,76 +847,122 @@ export function runningMark(now: number): string {
   return RUNNING_FRAMES[Math.floor(now / RUNNING_FRAME_MS) % RUNNING_FRAMES.length]!
 }
 
-export const QUIET_TEXT = 'Nothing new since you looked.'
+/** The first line: the session's folder, its branch, and "coordinator" for a session that hands out work. */
+function identityOf(place: Session['place'], role: 'coordinator' | 'session'): string | null {
+  if (!place) return null
+  const folder = place.folder.split(/[\\/]/).filter(Boolean).pop() ?? place.folder
 
-export function pointerText(count: number): string | null {
-  return count === 0 ? null : count === 1 ? 'Asks has 1 item.' : `Asks has ${count} items.`
+  return [folder, place.branch, role === 'coordinator' ? 'coordinator' : null].filter(Boolean).join(' · ')
 }
 
-/** `parts` with `id` placed after the headline and the course. */
-function withAfterHeading(parts: PartId[], id: PartId): PartId[] {
-  const at = parts.filter(p => p === 'headline' || p === 'course').length
+function liveOf(presence: Session['presence'], now: number): string | null {
+  const { isTurnRunning, turnStartedAt, lastReplyAt } = presence
+  if (isTurnRunning) {
+    const isPastAMinute = turnStartedAt !== null && now - turnStartedAt >= 60_000
 
-  return [...parts.slice(0, at), id, ...parts.slice(at)]
+    return isPastAMinute ? `${WORKING_TEXT} for ${shortAgo(now - turnStartedAt)}` : WORKING_TEXT
+  }
+
+  return lastReplyAt === null ? null : `Idle · last reply ${ago(now - lastReplyAt)}`
+}
+
+function childRow(c: Child, now: number, isLoose: boolean): OverviewRow {
+  const idle = c.lastActivityAt === null ? null : now - c.lastActivityAt
+  const isQuiet = idle !== null && idle >= QUIET_MS
+  const age = shortAgo(idle ?? now - c.startedAt)
+
+  return { kind: 'child', id: c.id, name: c.name, age: isQuiet ? `quiet ${age}` : age, isQuiet, isLoose }
 }
 
 export function overviewPage(
-  s: { ledger: Pick<Ledger, 'overview'>; presence: { isTurnRunning: boolean }; stop?: unknown },
+  s: { ledger: Pick<Ledger, 'overview'>; presence: Session['presence']; place?: Session['place'] },
   now: number,
-  waitingOnYou = 0,
 ): OverviewPage {
-  const { overview } = s.ledger
-  const { isTurnRunning } = s.presence
-  const headline = overview?.headline || null
-  const parts = overview
-    ? orderParts(
-        overview,
-        overview.look?.away ?? awayOf(overview.lastLookAt, now),
-        workOf(overview, { isTurnRunning, isStopped: Boolean(s.stop), waitingOnYou }),
-      )
-    : []
-  const sections = overview
-    ? parts.flatMap(id => {
-        const title = SECTION_TITLES[id]
-        if (title === undefined) return []
-
-        const rows = overview[id as 'queue'].map((item, n) => ({
-          id: `${id}-${n}`,
-          ...OVERVIEW_MARKS[item.status],
-          isRunning: item.status === 'working' && (id === 'workstreams' || isTurnRunning),
-          text: item.text,
-          detail: item.detail,
-        }))
-
-        return rows.length > 0 ? [{ id, title, rows }] : []
-      })
-    : []
-
-  const texts: Record<OverviewLead['id'], string | null> = {
-    headline,
-    course: overview?.course || null,
-    status: isTurnRunning ? WORKING_TEXT : overview?.status || null,
-    pointer: pointerText(waitingOnYou),
-    quiet: QUIET_TEXT,
-  }
-  const withWorking: PartId[] = isTurnRunning && !parts.includes('status') ? withAfterHeading(parts, 'status') : parts
-  const leadIds: PartId[] = overview ? withWorking : isTurnRunning ? ['status'] : []
-  const lead = leadIds
-    .flatMap(id => {
-      const text = id in texts ? texts[id as OverviewLead['id']] : null
-
-      return text === null ? [] : [{ id: id as OverviewLead['id'], text, hasGapAbove: false }]
+  const o = s.ledger.overview
+  const look = o?.lastLookAt ?? null
+  const subjects = (o?.subjects ?? []).filter(x => x.into === null)
+  const isNew = (x: Subject) => look === null || x.changedAt > look
+  const newClosed = subjects
+    .filter(x => !isOpen(x) && isNew(x))
+    .sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0))
+    .slice(0, NEW_CLOSED_ROWS)
+  const open = subjects.filter(isOpen)
+  const queuedOver = Math.max(0, open.length - OPEN_ROWS)
+  const hiddenQueued = new Set(
+    open
+      .filter(x => x.status === 'queued')
+      .sort((x, y) => x.changedAt - y.changedAt)
+      .slice(0, queuedOver)
+      .map(x => x.id),
+  )
+  const shown = [...open.filter(x => !hiddenQueued.has(x.id)), ...newClosed].sort((x, y) => y.changedAt - x.changedAt)
+  const folded = subjects.filter(x => x.status === 'done' && !newClosed.includes(x))
+  const running = (o?.children ?? [])
+    .filter(c => isChildRunning(c, now))
+    .sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt))
+  const shownIds = new Set(shown.map(x => x.id))
+  const rows: OverviewRow[] = running
+    .filter(c => c.subjectId === null || !shownIds.has(c.subjectId))
+    .map(c => childRow(c, now, true))
+  const lookRow: OverviewRow | null =
+    look === null ? null : { kind: 'look', id: 'look', text: LOOK_TEXT, age: shortAgo(now - look) }
+  let isLookDrawn = false
+  for (const x of shown) {
+    if (lookRow && !isLookDrawn && !isNew(x)) {
+      rows.push(lookRow)
+      isLookDrawn = true
+    }
+    const under = running.filter(c => c.subjectId === x.id)
+    rows.push({
+      kind: 'subject',
+      id: x.id,
+      ...SUBJECT_MARKS[x.status],
+      isRunning: x.status === 'working' && (s.presence.isTurnRunning || under.length > 0),
+      name: x.name,
+      text: isNew(x) ? x.text || null : null,
+      was: isNew(x) ? x.was : null,
+      age: shortAgo(now - x.changedAt),
     })
-    .map((line, n, all) => ({ ...line, hasGapAbove: n > 0 && all[n - 1]!.id !== 'headline' }))
+    rows.push(...under.slice(0, CHILD_ROWS).map(c => childRow(c, now, false)))
+    if (under.length > CHILD_ROWS)
+      rows.push({ kind: 'more', id: `${x.id}-more`, text: `+ ${under.length - CHILD_ROWS} more running` })
+  }
+  if (lookRow && !isLookDrawn && shown.length > 0) rows.push(lookRow)
+  if (hiddenQueued.size > 0)
+    rows.push({
+      kind: 'fold',
+      id: 'queued',
+      mark: '○',
+      tone: null,
+      text: `${hiddenQueued.size} more queued`,
+      age: null,
+    })
+  if (folded.length > 0) {
+    const newest = Math.max(...folded.map(x => x.closedAt ?? x.changedAt))
+    const isMore = newClosed.some(x => x.status === 'done')
+    rows.push({
+      kind: 'fold',
+      id: 'done',
+      mark: '✓',
+      tone: 'done',
+      text: `${folded.length}${isMore ? ' more' : ''} done`,
+      age: shortAgo(now - newest),
+    })
+  }
+  const goal = o?.goal || null
+  const role = o?.role ?? 'session'
+  const hasNews = o !== null && o.look === null && subjects.some(isNew)
 
   return {
-    isEmpty: headline === null && !isTurnRunning,
-    lead,
-    sections,
-    earlier: parts.includes('earlier') ? (overview?.earlier ?? []) : [],
+    isEmpty: goal === null && rows.length === 0 && !s.presence.isTurnRunning,
+    identity: identityOf(s.place ?? null, role),
+    goal,
+    live: liveOf(s.presence, now),
+    rows,
+    hasNews,
     empty: {
       title: 'Overview',
-      hint: "Where the work stands and where it's heading. It fills in once the work starts.",
+      hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts.",
     },
   }
 }

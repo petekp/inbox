@@ -57,11 +57,39 @@ _Avoid_: Findings, as the tab's name. A find, for one finding.
 ### Surfaces
 
 **Overview**:
-The first tab on a next build: a guide to the session's work, what it is
-doing, how it is going, what changed since the person last looked, and what is
-next. A release build does not draw it. The inbox model still rewrites it after
-each reply, in a second call after the one that updates the rows. It is not a
-list of events.
+The first tab on a next build: what the session's work is for, and where each
+part of it stands, newest first, with how long ago each changed. A release
+build does not draw it. The inbox model updates it after each reply, in a
+second call after the one that updates the rows. It is not a list of events.
+
+**Goal**:
+The session's aim in a few words, on the Overview's second line. The inbox
+model sets it, and changes it only when the person states a new goal or the
+work moves to a different task.
+
+**Subject**:
+One part of the session's work on the Overview, such as a feature, a fix or a
+decision. It has a name, a status, a few words on where it stands, and the time
+it last changed. The statuses are working, queued, waits on you, waits on
+others, problem, done and dropped. The inbox model adds and changes subjects by
+id, and code keeps their times.
+_Avoid_: workstream, stream, item (an item is a question or task)
+
+**Child**:
+Work that runs apart from the session's turn: a subagent, a background command
+or task, a workflow run, or a Herdr delegate. It shows under its subject while
+it runs, with how long ago it last did anything, and leaves when it ends. Code
+follows it from the host's events. The inbox model only links it to a subject.
+_Avoid_: subitem, job
+
+**"You looked" line**:
+The rule on the Overview at the time the person last left the page. A row
+above it changed since then and shows where it stands. A row below it shows
+only its mark, name and age.
+
+**News dot**:
+The `•` after the Overview tab's name while the page holds a change the person
+has not seen.
 
 **Band**:
 In Claude Code, the line above the prompt with the Asks and Finds

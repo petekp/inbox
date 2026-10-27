@@ -1,319 +1,465 @@
 import { expect, test } from 'claude-code/testing'
 
 import {
+  applyOps,
   applyOverview,
-  awayOf,
+  childActive,
+  childEnded,
   EMPTY_OVERVIEW,
-  HERE_MS,
   lookEnded,
   lookStarted,
-  orderParts,
   parseOverview,
-  SHORT_MS,
+  runningText,
+  subjectsText,
   upgradeOverview,
-  workOf,
+  withChild,
 } from '../hooks/overview'
-import { overviewPage, pointerText, QUIET_TEXT } from '../hooks/view'
-import type { OverviewAnswer } from '../hooks/overview'
-import type { Overview } from '../types'
+import type { Op } from '../hooks/overview'
+import { CHILD_ROWS, overviewPage, QUIET_MS } from '../hooks/view'
+import type { OverviewRow } from '../hooks/view'
+import type { Overview, Session } from '../types'
 
-const written = (text: string) => {
+const MIN = 60_000
+
+const opsOf = (text: string): Op[] => {
   const answer = parseOverview(text)
-  if (answer?.kind !== 'written') throw new Error('not written')
+  if (answer?.kind !== 'ops') throw new Error(`not ops: ${text}`)
 
-  return answer
+  return answer.ops
 }
 
-test('an answer of UNCHANGED keeps the last Overview, and one with no headline is unusable', () => {
-  const last = written('HEADLINE: Adding offline mode').overview
+const after = (last: Overview | null, text: string, now: number) => applyOps(last, opsOf(text), now).overview
 
-  expect(applyOverview(last, parseOverview('UNCHANGED')!)).toBe(last)
-  expect(applyOverview(null, parseOverview('UNCHANGED')!)).toBeNull()
-  expect(parseOverview('STATUS: fine')).toBeNull()
-  expect(parseOverview(null)).toBeNull()
-  expect(parseOverview('')).toBeNull()
-})
-
-test('reads every line of the answer, tolerating dashes and bullets', () => {
-  const { overview } = written(
-    [
-      'KIND: coordinator',
-      'STATE: stuck',
-      'HEADLINE: Rewriting the import',
-      '- STATUS: Waiting on the parser.',
-      'COURSE: Moved to streaming because files are large.',
-      'QUEUE: working | Parser rewrite | Reads the new format',
-      'QUEUE: waits-on-you | Pick a format',
-      'QUEUE: bogus | Dropped',
-      'QUEUE: done |',
-      'WORKS: done | Old format still reads',
-      'OPEN: unknown | Memory use on large files | -',
-      'NEXT: queued | Error reporting',
-      'SINCE: done | Parser started',
-      'STREAM: working | Parser: reads the new format',
-    ].join('\n'),
-  )
-
-  expect(overview).toMatchObject({
-    isCoordinator: true,
-    state: 'stuck',
-    headline: 'Rewriting the import',
-    status: 'Waiting on the parser.',
-    course: 'Moved to streaming because files are large.',
-  })
-  expect(overview.queue).toEqual([
-    { status: 'working', text: 'Parser rewrite', detail: 'Reads the new format' },
-    { status: 'waits-on-you', text: 'Pick a format', detail: null },
-  ])
-  expect(overview.open).toEqual([{ status: 'unknown', text: 'Memory use on large files', detail: null }])
-  expect(overview.next).toHaveLength(1)
-  expect(overview.since).toHaveLength(1)
-  expect(overview.workstreams).toHaveLength(1)
-})
-
-test('reads a list written as a key alone on a line with bulleted items under it', () => {
-  const { overview } = written('HEADLINE: h\nQUEUE:\n- working | a\n- done | b | why\nWORKS:\n* done | c\nSTATUS: s')
-
-  expect(overview.queue.map(i => i.text)).toEqual(['a', 'b'])
-  expect(overview.works.map(i => i.text)).toEqual(['c'])
-  expect(overview.status).toBe('s')
-})
-
-test('clips texts to their word limits and lists to six items', () => {
-  const long = (n: number) => Array.from({ length: n }, (_, i) => `w${i}`).join(' ')
-  const items = Array.from({ length: 9 }, (_, i) => `QUEUE: queued | item ${i}`).join('\n')
-  const { overview } = written(
-    `HEADLINE: ${long(20)}\nSTATUS: ${long(40)}\nQUEUE: working | ${long(20)} | ${long(30)}\n${items}`,
-  )
-
-  expect(overview.headline.split(' ')).toHaveLength(12)
-  expect(overview.headline.endsWith('…')).toBe(true)
-  expect(overview.status.split(' ')).toHaveLength(30)
-  expect(overview.queue).toHaveLength(6)
-  expect(overview.queue[0]!.text.split(' ')).toHaveLength(12)
-  expect(overview.queue[0]!.detail!.split(' ')).toHaveLength(20)
-})
-
-test('a new topic folds the last headline into one earlier line, and the same topic keeps the earlier ones', () => {
-  const first = written('HEADLINE: Fixing the checkout total').overview
-  const folded = applyOverview(
-    first,
-    written('TOPIC: new\nFOLDED: Fixed the checkout total; committed.\nHEADLINE: Adding dark mode\nCOURSE: ignored'),
-  )!
-
-  expect(folded.headline).toBe('Adding dark mode')
-  expect(folded.course).toBe('')
-  expect(folded.earlier).toEqual(['Fixed the checkout total; committed.'])
-
-  const same = applyOverview(folded, written('TOPIC: same\nHEADLINE: Adding dark mode to settings'))!
-  expect(same.earlier).toEqual(folded.earlier)
-
-  const unfolded = applyOverview(first, written('TOPIC: new\nHEADLINE: Something else'))!
-  expect(unfolded.earlier).toEqual(['Fixing the checkout total'])
-})
-
-test('keeps only the six newest earlier lines', () => {
-  let current = written('HEADLINE: Topic 0').overview
-  for (let n = 1; n <= 8; n++)
-    current = applyOverview(current, written(`TOPIC: new\nFOLDED: Topic ${n - 1} left\nHEADLINE: Topic ${n}`))!
-
-  expect(current.earlier).toEqual([3, 4, 5, 6, 7, 8].map(n => `Topic ${n - 1} left`))
-})
-
-test('a saved Overview with missing or wrong fields upgrades to the current shape', () => {
-  expect(upgradeOverview(null)).toBeNull()
-  expect(upgradeOverview({})).toBeNull()
-  expect(
-    upgradeOverview({ headline: 'h', queue: [{ status: 'bogus', text: 't', detail: null }, 4], earlier: ['a', 3] }),
-  ).toEqual({
-    ...EMPTY_OVERVIEW,
-    headline: 'h',
-    earlier: ['a'],
-  })
-  const answer: OverviewAnswer = written('HEADLINE: h\nQUEUE: done | x')
-  expect(upgradeOverview(answer.kind === 'written' ? answer.overview : null)?.queue).toHaveLength(1)
-})
-
-const guide = (over: Partial<Overview> = {}): Overview => ({
-  ...EMPTY_OVERVIEW,
-  headline: 'Adding offline mode',
-  status: 'Going well.',
-  queue: [{ status: 'working', text: 'Cache layer', detail: null }],
-  works: [{ status: 'done', text: 'Reads work offline', detail: null }],
-  open: [{ status: 'problem', text: 'Sync conflicts', detail: null }],
-  next: [{ status: 'queued', text: 'Sync on reconnect', detail: null }],
-  since: [{ status: 'done', text: 'Cache layer started', detail: null }],
+const presence = (over: Partial<Session['presence']> = {}): Session['presence'] => ({
+  turnsStarted: 0,
+  turnsApplied: 0,
+  ledgerState: 'current',
+  hasDroppedReply: false,
+  isUpdating: false,
+  isTurnRunning: false,
+  turnStartedAt: null,
+  lastReplyAt: null,
   ...over,
 })
 
-test('how long the person was away falls in three bands, and no earlier look counts as long', () => {
-  expect(awayOf(null, 1000)).toBe('long')
-  expect(awayOf(1000, 1000 + HERE_MS - 1)).toBe('here')
-  expect(awayOf(1000, 1000 + HERE_MS)).toBe('short')
-  expect(awayOf(1000, 1000 + SHORT_MS - 1)).toBe('short')
-  expect(awayOf(1000, 1000 + SHORT_MS)).toBe('long')
+const page = (
+  overview: Overview | null,
+  now: number,
+  over: Partial<Session['presence']> = {},
+  place: Session['place'] = null,
+) => overviewPage({ ledger: { overview }, presence: presence(over), place }, now)
+
+const shape = (rows: OverviewRow[]) =>
+  rows.map(r =>
+    r.kind === 'subject'
+      ? `${r.mark} ${r.name}${r.text ? `: ${r.text}` : ''} ${r.age}`
+      : r.kind === 'child'
+        ? `${r.isLoose ? '' : '  '}● ${r.name} ${r.age}`
+        : r.kind === 'look'
+          ? `-- ${r.text} ${r.age}`
+          : r.kind === 'more'
+            ? `  ${r.text}`
+            : `${r.mark} ${r.text}${r.age ? ` ${r.age}` : ''}`,
+  )
+
+test('NO CHANGE keeps the list, and an empty answer or one holding prose cannot be read', () => {
+  const last = after(null, 'NEW: working | Offline mode | sync queue built', 0)
+
+  expect(applyOverview(last, parseOverview('NO CHANGE')!, 5)).toBe(last)
+  expect(parseOverview('UNCHANGED')).toEqual({ kind: 'unchanged' })
+  expect(parseOverview(null)).toBeNull()
+  expect(parseOverview('')).toBeNull()
+  expect(parseOverview('SET: s1 | done | built\nCorrection: the status was wrong.\nDONE: s1 | built')).toBeNull()
+  expect(parseOverview('SET: s1 | finished | built')).toBeNull()
 })
 
-test('the work is running, stopped, finished or idle', () => {
-  const calm = { isTurnRunning: false, isStopped: false, waitingOnYou: 0 }
-  expect(workOf(guide(), { ...calm, isTurnRunning: true })).toBe('running')
-  expect(workOf(guide(), { ...calm, isStopped: true })).toBe('stopped')
-  expect(workOf(guide({ state: 'stuck' }), calm)).toBe('stopped')
-  expect(workOf(guide(), { ...calm, waitingOnYou: 2 })).toBe('stopped')
-  expect(workOf(guide(), { ...calm, isTurnRunning: true, waitingOnYou: 2 })).toBe('running')
-  expect(workOf(guide({ queue: [{ status: 'waits-on-you', text: 'x', detail: null }] }), calm)).toBe('stopped')
-  expect(workOf(guide({ state: 'finished' }), calm)).toBe('finished')
-  expect(workOf(guide(), calm)).toBe('idle')
-})
-
-test('orders the parts for each pair of away and work, leaving out empty parts and next while items are queued', () => {
-  const queuedBehind = guide({ queue: [{ status: 'queued', text: 'Cache layer', detail: null }] })
-  expect(orderParts(guide(), 'here', 'running')).toEqual(['headline', 'queue'])
-  expect(orderParts(guide(), 'short', 'running')).toEqual(['headline', 'since', 'queue', 'open'])
-  expect(orderParts(guide(), 'short', 'idle')).toEqual(['headline', 'since', 'queue', 'open'])
-  expect(orderParts(guide(), 'long', 'idle')).toEqual(['headline', 'status', 'since', 'queue', 'next', 'open'])
-  expect(orderParts(guide({ queue: [{ status: 'done', text: 'x', detail: null }] }), 'long', 'running')).toEqual([
-    'headline',
-    'status',
-    'since',
-    'queue',
-    'next',
-    'open',
+test('reads each operation, tolerating bullets, and takes SET with done as DONE', () => {
+  expect(
+    opsOf(
+      [
+        '- NEW: working | Offline mode | sync queue built',
+        '* SET: s2 | waits-on-you | needs a pick',
+        'SET: s3 | done | ships',
+        'DONE: s4 | merged in',
+        'DROP: s5 | not needed',
+        'DROP: s6 | moved | INTO s1',
+        'WAS: s1 | sync on launch',
+        'LINK: c1 | Offline mode',
+        'ROLE: coordinator',
+        'GOAL: Work offline',
+      ].join('\n'),
+    ),
+  ).toEqual([
+    { kind: 'new', status: 'working', name: 'Offline mode', text: 'sync queue built' },
+    { kind: 'set', ref: 's2', status: 'waits-on-you', text: 'needs a pick' },
+    { kind: 'done', ref: 's3', text: 'ships' },
+    { kind: 'done', ref: 's4', text: 'merged in' },
+    { kind: 'drop', ref: 's5', why: 'not needed', into: null },
+    { kind: 'drop', ref: 's6', why: 'moved', into: 's1' },
+    { kind: 'was', ref: 's1', text: 'sync on launch' },
+    { kind: 'link', child: 'c1', subject: 'Offline mode' },
+    { kind: 'role', role: 'coordinator' },
+    { kind: 'goal', text: 'Work offline' },
   ])
-  expect(orderParts(queuedBehind, 'long', 'idle')).not.toContain('next')
-  expect(orderParts(guide(), 'long', 'stopped')).toEqual([
-    'headline',
-    'status',
-    'pointer',
-    'since',
-    'queue',
-    'next',
-    'open',
-  ])
-  expect(orderParts(guide({ state: 'finished' }), 'long', 'finished')).toEqual(['headline', 'status', 'works', 'open'])
 })
 
-test('says nothing new when the person was away and nothing changed, and not while they are here', () => {
-  const calm = guide({ since: [], lastLookAt: 0 })
-  expect(orderParts(calm, 'short', 'idle')).toEqual(['headline', 'quiet', 'queue', 'open'])
-  expect(orderParts(calm, 'here', 'idle')).not.toContain('quiet')
-  expect(orderParts(guide({ since: [] }), 'long', 'idle')).not.toContain('quiet')
+test('code dates each change, and a NEW for an open subject changes that subject instead', () => {
+  const one = after(null, 'GOAL: Work offline\nNEW: working | Offline mode | sync queue built', 100)
+  const two = applyOps(one, opsOf('NEW: waits-on-you | offline mode | needs a sync pick'), 200)
+
+  expect(two.newMerged).toBe(1)
+  expect(two.overview.subjects).toHaveLength(1)
+  expect(two.overview.subjects[0]).toMatchObject({ status: 'waits-on-you', text: 'needs a sync pick', changedAt: 200 })
+  expect(two.overview.goal).toBe('Work offline')
 })
 
-test('a changed course leads right after the headline, in any order', () => {
-  const changed = guide({ course: 'Moved to streaming.' })
-  expect(orderParts(changed, 'here', 'running')).toEqual(['headline', 'course', 'queue'])
-  expect(orderParts(changed, 'long', 'finished').slice(0, 3)).toEqual(['headline', 'course', 'status'])
+test('a SET that keeps the status and most words keeps the old text and age', () => {
+  const one = after(null, 'NEW: working | Offline mode | sync queue built and tested', 100)
+  const reworded = applyOps(one, opsOf('SET: s1 | working | the sync queue is built and tested'), 200)
+
+  expect(reworded.rewordsKept).toBe(1)
+  expect(reworded.overview.subjects[0]).toMatchObject({ text: 'sync queue built and tested', changedAt: 100 })
 })
 
-test('a coordinator shows its streams first, then what changed and its own steps', () => {
-  const lead = guide({ isCoordinator: true, workstreams: [{ status: 'working', text: 'Parser', detail: null }] })
-  expect(orderParts(lead, 'long', 'idle')).toEqual(['headline', 'workstreams', 'since', 'queue', 'next', 'open'])
-  expect(orderParts(lead, 'here', 'running')).toEqual(['headline', 'workstreams', 'since', 'queue', 'next', 'open'])
+test('a LINK may name a subject the same answer adds, whatever the order of the lines', () => {
+  const withChildRunning = withChild(
+    null,
+    { ref: 't1', kind: 'subagent', name: 'Review sync', startedAt: 50, endedAt: null, lastActivityAt: 50 },
+    50,
+  )
+  const linked = applyOps(
+    withChildRunning,
+    opsOf('LINK: c1 | Offline mode\nNEW: working | Offline mode | in review'),
+    100,
+  )
+
+  expect(linked.unknownRefs).toEqual([])
+  expect(linked.overview.children[0]?.subjectId).toBe('s1')
 })
 
-test('earlier topics come last, after every other part', () => {
-  expect(orderParts(guide({ earlier: ['Fixed the total'] }), 'here', 'running').at(-1)).toBe('earlier')
+test('a DONE may name a subject the same answer adds, even a name longer than the list keeps', () => {
+  const name = 'Week start follows the locale in the date picker everywhere'
+  const done = applyOps(null, opsOf(`NEW: working | ${name} | fixed\nDONE: ${name} | starts on the locale day`), 100)
+
+  expect(done.unknownRefs).toEqual([])
+  expect(done.overview.subjects).toHaveLength(1)
+  expect(done.overview.subjects[0]).toMatchObject({ status: 'done', closedAt: 100 })
 })
 
-test('a look keeps its away time and clears only what it showed, so a change that landed during it stays', () => {
-  const started = lookStarted(guide({ course: 'Moved to streaming.', lastLookAt: 0 }), SHORT_MS * 2)!
+test('a DROP INTO folds a subject into another, which notes it, and a WAS keeps the replaced plan until the person has seen it', () => {
+  const two = after(null, 'NEW: working | Offline mode | queue built\nNEW: working | Sync retry | backoff drafted', 100)
+  const folded = after(two, 'DROP: s2 | part of offline | INTO s1\nWAS: s1 | retry on its own', 200)
+  const finishedUnseen = after(folded, 'DONE: s1 | works offline', 300)
+  const seen = lookEnded(lookStarted(folded, 250), 260)
 
-  expect(started.look).toMatchObject({ away: 'long', startedAt: SHORT_MS * 2, course: 'Moved to streaming.' })
-  expect(lookStarted(started, SHORT_MS * 3)).toBe(started)
-  const landed = {
-    ...started,
-    since: [...started.since, { status: 'done' as const, text: 'Late change', detail: null }],
+  expect(folded.subjects.find(s => s.id === 's2')).toMatchObject({ status: 'dropped', into: 's1', closedAt: 200 })
+  expect(folded.subjects.find(s => s.id === 's1')?.was).toBe('Sync retry folded in; was: retry on its own')
+  expect(finishedUnseen.subjects[0]).toMatchObject({
+    status: 'done',
+    was: 'Sync retry folded in; was: retry on its own',
+  })
+  expect(after(seen, 'SET: s1 | waits-on-other | waits on review', 300).subjects[0]?.was).toBeNull()
+})
+
+test('the call reads open subjects with ids, finished ones by name, and running children with their links', () => {
+  const o = withChild(
+    after(null, 'NEW: working | Offline mode | queue built\nNEW: queued | Docs | not started', 100),
+    { ref: 't1', kind: 'background', name: 'npm test', startedAt: 150, endedAt: null, lastActivityAt: 150 },
+    150,
+  )
+  const closed = after(o, 'DONE: s2 | written', 200)
+
+  expect(subjectsText(closed)).toEqual({
+    open: 's1 | working | Offline mode | queue built',
+    finished: 's2 | done | Docs',
+  })
+  expect(subjectsText(null).open).toBe('(none yet)')
+  expect(runningText(closed, 300)).toBe('c1 | background | npm test | -')
+  expect(runningText(childEnded(closed, 't1', 250), 300)).toBe('')
+})
+
+test('a child the host reports again keeps its id and link, and old ended children are let go', () => {
+  const report = {
+    ref: 'herdr:docs',
+    kind: 'delegate' as const,
+    name: 'delegate docs',
+    startedAt: 10,
+    endedAt: null,
+    lastActivityAt: null,
   }
-  const ended = lookEnded(landed, 5000)!
+  const linked = after(
+    after(withChild(null, report, 10), 'NEW: working | Docs | being written', 20),
+    'LINK: c1 | s1',
+    30,
+  )
+  const ended = childEnded(linked, 'herdr:docs', 40)!
+  const again = withChild(ended, { ...report, startedAt: 50 }, 50)
 
-  expect(ended.since.map(i => i.text)).toEqual(['Late change'])
-  expect(ended.course).toBe('')
-  expect(ended.lastLookAt).toBe(5000)
-  expect(ended.look).toBeNull()
-  expect(ended.queue).toEqual(guide().queue)
-  expect(lookEnded(guide(), 5)).toEqual(guide())
+  expect(again.children).toEqual([{ ...report, id: 'c1', subjectId: 's1', startedAt: 50 }])
+  expect(childActive(again, 'herdr:docs', 60)!.children[0]?.lastActivityAt).toBe(60)
+  const later = withChild(ended, { ...report, ref: 't9', name: 'npm test' }, 40 + 25 * 60 * MIN)
+  expect(later.children.map(c => c.ref)).toEqual(['t9'])
+})
+
+test('a look keeps the look line where it was until the look ends', () => {
+  const o = { ...after(null, 'NEW: working | Offline mode | queue built', 100), lastLookAt: 50 }
+  const looking = lookStarted(o, 200)!
+
+  expect(looking.lastLookAt).toBe(50)
+  expect(lookStarted(looking, 300)).toBe(looking)
+  expect(lookEnded(looking, 400)).toMatchObject({ lastLookAt: 400, look: null })
   expect(lookStarted(null, 1)).toBeNull()
 })
 
-test('a course that changed during a look survives it', () => {
-  const started = lookStarted(guide({ course: 'First.' }), 1000)!
-
-  expect(lookEnded({ ...started, course: 'Second.' }, 2000)!.course).toBe('Second.')
-})
-
-test('an answer from a call that began before a look ended does not write back what the look cleared', () => {
-  const started = lookStarted(guide({ course: 'Moved to streaming.' }), 1000)!
-  const ended = lookEnded(started, 2000)!
-  const answer = written(
-    'HEADLINE: Adding offline mode\nCOURSE: Moved to streaming.\nSINCE: done | Cache layer started\nSINCE: done | New change',
+test('the page lists subjects newest first with code-written ages, and a seen row shows its name only', () => {
+  const now = 100 * MIN
+  const o = after(
+    after(
+      null,
+      'GOAL: Work offline\nNEW: queued | Docs | outline ready\nNEW: working | Offline mode | queue built',
+      10 * MIN,
+    ),
+    'SET: s2 | waits-on-you | needs a sync pick',
+    90 * MIN,
   )
-  const after = applyOverview(ended, answer)!
-
-  expect(after.since.map(i => i.text)).toEqual(['New change'])
-  expect(after.course).toBe('')
-  expect(after.look).toBeNull()
-  expect(after.lastLookAt).toBe(2000)
-})
-
-test('the page counts what waits on the person and draws parts in order', () => {
-  expect(pointerText(0)).toBeNull()
-  expect(pointerText(1)).toBe('Asks has 1 item.')
-  expect(pointerText(3)).toBe('Asks has 3 items.')
-  const stopped = { ledger: { overview: guide({ state: 'stuck', lastLookAt: 0 }) }, presence: { isTurnRunning: false } }
-  const page = overviewPage(stopped, SHORT_MS * 2, 2)
-
-  expect(page.lead.map(l => l.id)).toEqual(['headline', 'status', 'pointer'])
-  expect(page.lead[2]?.text).toBe('Asks has 2 items.')
-  expect(page.lead.find(l => l.id === 'status')?.text).toBe('Going well.')
-  expect(page.sections.map(x => x.id)).toEqual(['since', 'queue', 'next', 'open'])
-  const here = overviewPage({ ...stopped, presence: { isTurnRunning: true } }, 1000, 2)
-  expect(here.lead.map(l => l.text)).toEqual(['Adding offline mode', 'Working…'])
-  const quiet = overviewPage(
-    { ledger: { overview: guide({ since: [], lastLookAt: 0 }) }, presence: { isTurnRunning: false } },
-    SHORT_MS / 2,
-  )
-  expect(quiet.lead.map(l => l.text)).toEqual(['Adding offline mode', QUIET_TEXT])
-})
-
-test('a line that only starts with a key word is not a key line', () => {
-  const { overview } = written(
-    'HEADLINE: h\nSTATUS: fine\nOPENING the file went well\nNEXTSTEP is a word\nQUEUE:\n- working | a',
+  const p = page(
+    { ...o, lastLookAt: 50 * MIN },
+    now,
+    { lastReplyAt: now - 2 * MIN },
+    { folder: '/code/visor', branch: 'offline' },
   )
 
-  expect(overview.headline).toBe('h')
-  expect(overview.status).toBe('fine')
-  expect(overview.queue.map(i => i.text)).toEqual(['a'])
+  expect(p.identity).toBe('visor · offline')
+  expect(p.goal).toBe('Work offline')
+  expect(p.live).toBe('Idle · last reply 2m ago')
+  expect(shape(p.rows)).toEqual(['◆ Offline mode: needs a sync pick 10m', '-- you looked 50m', '○ Docs 2h'])
 })
 
-test('a coordinator keeps its own steps in QUEUE and loses an item that only names a stream', () => {
-  const answer = written(
-    [
-      'KIND: coordinator',
-      'HEADLINE: Rewriting the import',
-      'QUEUE: working | Parser rewrite',
-      'QUEUE: queued | Review the parser rewrite',
-      'STREAM: working | Parser rewrite: reads the new format',
-    ].join('\n'),
+test('with no look yet every row is new, so the page draws no look line and shows where each stands', () => {
+  const o = after(null, 'NEW: working | Offline mode | queue built', 10 * MIN)
+
+  expect(shape(page(o, 12 * MIN).rows)).toEqual(['● Offline mode: queue built 2m'])
+  expect(page(o, 12 * MIN).hasNews).toBe(true)
+  expect(page({ ...o, lastLookAt: 11 * MIN }, 12 * MIN).hasNews).toBe(false)
+  expect(page({ ...o, look: { startedAt: 11 * MIN } }, 12 * MIN).hasNews).toBe(false)
+})
+
+test('the live line reads Working… alone in a turn’s first minute, then for how long', () => {
+  expect(page(null, 30_000, { isTurnRunning: true, turnStartedAt: 0 }).live).toBe('Working…')
+  expect(page(null, 3 * MIN, { isTurnRunning: true, turnStartedAt: 0 }).live).toBe('Working… for 3m')
+  expect(page(null, 3 * MIN, { isTurnRunning: true, turnStartedAt: null }).live).toBe('Working…')
+  expect(page(null, 3 * MIN).live).toBeNull()
+  expect(page(null, 3 * MIN).isEmpty).toBe(true)
+})
+
+test('the first line names the folder and a coordinator, and leaves out a branch it does not know', () => {
+  const coordinator = { ...EMPTY_OVERVIEW, role: 'coordinator' as const, goal: 'Ship 0.3' }
+
+  expect(page(coordinator, 0, {}, { folder: '/Users/me/code/inbox/', branch: null }).identity).toBe(
+    'inbox · coordinator',
   )
-  expect(applyOverview(null, answer)!.queue.map(i => i.text)).toEqual(['Review the parser rewrite'])
-
-  const plain = written('HEADLINE: h\nQUEUE: working | Parser rewrite\nSTREAM: working | Parser rewrite: x')
-  expect(applyOverview(null, plain)!.queue).toHaveLength(1)
+  expect(page(coordinator, 0).identity).toBeNull()
 })
 
-test('a gap separates lead lines after the first, and every section has a title', () => {
-  const stopped = {
-    ledger: { overview: guide({ state: 'stuck', course: 'Moved to streaming.', lastLookAt: 0 }) },
-    presence: { isTurnRunning: false },
-  }
-  const page = overviewPage(stopped, SHORT_MS * 2, 2)
+test('finished work folds into a count once seen, keeping at most two new finished rows', () => {
+  const now = 100 * MIN
+  const opened = after(
+    null,
+    ['NEW: working | One | a', 'NEW: working | Two | b', 'NEW: working | Three | c', 'NEW: working | Four | d'].join(
+      '\n',
+    ),
+    10 * MIN,
+  )
+  const old = after(opened, 'DONE: s1 | done a', 20 * MIN)
+  const fresh = after(
+    after(after(old, 'DONE: s2 | done b', 70 * MIN), 'DONE: s3 | done c', 80 * MIN),
+    'DONE: s4 | done d',
+    90 * MIN,
+  )
 
-  expect(page.lead.map(l => [l.id, l.hasGapAbove])).toEqual([
-    ['headline', false],
-    ['course', false],
-    ['status', true],
-    ['pointer', true],
+  expect(shape(page({ ...fresh, lastLookAt: 60 * MIN }, now).rows)).toEqual([
+    '✓ Four: done d 10m',
+    '✓ Three: done c 20m',
+    '-- you looked 40m',
+    '✓ 2 more done 30m',
   ])
-  expect(page.sections.every(part => part.title !== null)).toBe(true)
+})
+
+test('running children sit under their subject, at most three, and a quiet one says so', () => {
+  const now = 100 * MIN
+  let o = after(null, 'NEW: working | Offline mode | queue built', 10 * MIN)
+  for (const [n, idle] of [0, 1, 2, 3, 20].entries())
+    o = withChild(
+      o,
+      {
+        ref: `t${n}`,
+        kind: 'subagent',
+        name: `Review ${n}`,
+        startedAt: 50 * MIN,
+        endedAt: null,
+        lastActivityAt: now - idle * MIN,
+      },
+      now,
+    )
+  o = after(o, ['c1', 'c2', 'c3', 'c4', 'c5'].map(c => `LINK: ${c} | s1`).join('\n'), 50 * MIN)
+  const rows = page(o, now).rows
+
+  expect(shape(rows)).toEqual([
+    '● Offline mode: queue built 2h',
+    '  ● Review 0 now',
+    '  ● Review 1 1m',
+    '  ● Review 2 2m',
+    `  + 2 more running`,
+  ])
+  expect(rows.filter(r => r.kind === 'child')).toHaveLength(CHILD_ROWS)
+  expect(rows[0]).toMatchObject({ kind: 'subject', isRunning: true })
+  const quiet = withChild(
+    after(null, 'NEW: working | Offline mode | queue built', 10 * MIN),
+    {
+      ref: 'q',
+      kind: 'background',
+      name: 'Tail the log',
+      startedAt: 0,
+      endedAt: null,
+      lastActivityAt: now - QUIET_MS - 5 * MIN,
+    },
+    now,
+  )
+  expect(page(quiet, now).rows[0]).toMatchObject({ kind: 'child', isLoose: true, isQuiet: true, age: 'quiet 20m' })
+})
+
+test('a child whose host reports no activity shows how long it has run and never reads quiet', () => {
+  const now = 100 * MIN
+  const o = withChild(
+    null,
+    {
+      ref: 'herdr:docs',
+      kind: 'delegate',
+      name: 'delegate docs',
+      startedAt: 40 * MIN,
+      endedAt: null,
+      lastActivityAt: null,
+    },
+    now,
+  )
+
+  expect(page(o, now).rows[0]).toMatchObject({ kind: 'child', age: '1h', isQuiet: false, isLoose: true })
+})
+
+test('open subjects past seven fold their oldest queued ones into a count', () => {
+  const lines = Array.from({ length: 9 }, (_, n) => `NEW: ${n < 3 ? 'queued' : 'working'} | Part ${n} | step ${n}`)
+  const o = applyOps(
+    null,
+    lines.map(l => opsOf(l)[0]!),
+    0,
+  ).overview
+  const rows = page(o, MIN).rows
+
+  expect(rows.filter(r => r.kind === 'subject')).toHaveLength(7)
+  expect(rows.at(-1)).toMatchObject({ kind: 'fold', text: '2 more queued' })
+})
+
+test('an Overview saved before subjects keeps its open work, dated at the last look, and its headline as the goal', () => {
+  const old = {
+    isCoordinator: true,
+    headline: 'Releasing 0.2.11',
+    queue: [
+      { status: 'working', text: 'Release notes', detail: 'drafted' },
+      { status: 'done', text: 'Fix #81', detail: null },
+    ],
+    workstreams: [{ status: 'waits-on-other', text: 'VM pass', detail: null }],
+    open: [{ status: 'problem', text: 'Flaky row test', detail: null }],
+    lastLookAt: 5000,
+  }
+
+  expect(upgradeOverview(old)).toEqual({
+    ...EMPTY_OVERVIEW,
+    role: 'coordinator',
+    goal: 'Releasing 0.2.11',
+    subjects: [
+      {
+        id: 's1',
+        name: 'VM pass',
+        status: 'waits-on-other',
+        text: '',
+        was: null,
+        createdAt: 5000,
+        changedAt: 5000,
+        closedAt: null,
+        into: null,
+      },
+      {
+        id: 's2',
+        name: 'Release notes',
+        status: 'working',
+        text: 'drafted',
+        was: null,
+        createdAt: 5000,
+        changedAt: 5000,
+        closedAt: null,
+        into: null,
+      },
+      {
+        id: 's3',
+        name: 'Flaky row test',
+        status: 'problem',
+        text: '',
+        was: null,
+        createdAt: 5000,
+        changedAt: 5000,
+        closedAt: null,
+        into: null,
+      },
+    ],
+    nextId: 4,
+    lastLookAt: 5000,
+  })
+  expect(upgradeOverview({ ...old, lastLookAt: null })?.subjects).toEqual([])
+  expect(upgradeOverview({ headline: 'x', lastLookAt: null })?.goal).toBe('x')
+})
+
+test('a saved Overview drops subjects and children it cannot read, and nothing else is an Overview', () => {
+  const saved = {
+    ...EMPTY_OVERVIEW,
+    subjects: [
+      { id: 's1', name: 'A', status: 'working', text: 'b', changedAt: 5 },
+      { id: 's2', status: 'odd' },
+    ],
+    children: [
+      { id: 'c1', ref: 'r', kind: 'subagent', name: 'n', startedAt: 1 },
+      { id: 'c2', kind: 'robot' },
+    ],
+    look: { startedAt: 'soon' },
+  }
+  const o = upgradeOverview(saved)!
+
+  expect(o.subjects).toEqual([
+    {
+      id: 's1',
+      name: 'A',
+      status: 'working',
+      text: 'b',
+      was: null,
+      createdAt: 5,
+      changedAt: 5,
+      closedAt: null,
+      into: null,
+    },
+  ])
+  expect(o.children).toEqual([
+    {
+      id: 'c1',
+      ref: 'r',
+      kind: 'subagent',
+      name: 'n',
+      subjectId: null,
+      startedAt: 1,
+      endedAt: null,
+      lastActivityAt: null,
+    },
+  ])
+  expect(o.look).toBeNull()
+  expect(upgradeOverview(null)).toBeNull()
+  expect(upgradeOverview('x')).toBeNull()
+  expect(upgradeOverview({ role: 'session' })).toBeNull()
 })

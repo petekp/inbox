@@ -4,6 +4,7 @@ import type {
   Register,
   SessionAppendMessage,
   Timer,
+  ToolResultOf,
   UiCopyResult,
   RenderSurface,
   UiPressArgument,
@@ -25,12 +26,14 @@ import type {
   PrView,
   PrViews,
   LastAction,
+  Overview,
   PressKind,
   PageTab,
   RowNote,
   Stop,
   Tab,
 } from '../types'
+import { childActive, childEnded, withChild } from './overview'
 import {
   NO_SESSION,
   PRESENT,
@@ -66,11 +69,26 @@ import {
   startTurn,
   turnEnded,
   turnStarted,
+  placed,
   upgradeSession,
   cutOffTurn,
+  overviewChanged,
   withLook,
   withNewPrRefs,
 } from './session'
+import {
+  activityGate,
+  childName,
+  childrenCutOff,
+  delegateRef,
+  delegateRunning,
+  delegatesSettled,
+  delegateSteps,
+  hasRunningDelegate,
+  noticeApplied,
+  subagentsSettled,
+  taskNotice,
+} from './children'
 import type { SentBy, Session, SessionView } from './session'
 import {
   fetchPrs as fetchSessionPrs,
@@ -80,7 +98,7 @@ import {
   wakeForDone as wakeSessionForDone,
 } from './session-host'
 import type { AskCatchUpOverview, CatchUpReply, SessionHost } from './session-host'
-import { demoView, isDemoCopy } from './demo'
+import { demoView, isDemoCopy, withDemoPresence } from './demo'
 import { claudeTasksAfter } from './host-tasks'
 import { noteDialog } from './dialogs'
 import type { Exchange, Press, Update } from './ledger'
@@ -165,7 +183,7 @@ import {
   TURN_BOX_TOOL,
   turnBoxText,
 } from './claude'
-import { CLEARED_TOKENS, HERDR_TIMEOUT_MS, herdrReporter, herdrTokens } from './herdr'
+import { CLEARED_TOKENS, HERDR_AGENT_LIST, HERDR_TIMEOUT_MS, herdrReporter, herdrRunning, herdrTokens } from './herdr'
 import { ago, cellWidth, clipLabel } from './text'
 import {
   applyPress,
@@ -197,7 +215,6 @@ import {
   stopFix,
   stopText,
   drawnLists,
-  earlierTitle,
   emptyText,
   isRowTab,
   isShownTab,
@@ -206,6 +223,7 @@ import {
   shownTabs,
   drawnTabOf,
   fitTabs,
+  tabBadge,
   tabName,
   canUndoRefused,
   closedMark,
@@ -289,7 +307,7 @@ import {
 import { parseInline } from './inline'
 import type { Span } from './inline'
 import type { RowRecord } from './arrivals'
-import { LEAD_GAP_PT, OVERVIEW_ROW_PAD_PT, ROW_PAD_PT } from './layout'
+import { OVERVIEW_ROW_PAD_PT, ROW_PAD_PT } from './layout'
 import { DARK_DALTONIZED_TONES, DARK_TONES, LIGHT_DALTONIZED_TONES, LIGHT_TONES, toneColors } from './tones'
 import type { ToneName } from './tones'
 import type { FoldProps } from './fold-client'
@@ -693,6 +711,13 @@ let isDialogDismissed = false
 let hasPermissionRequestHook = false
 /** The calls whose tool.check asked and that have not finished: tool_use_id to `callKey`, the key their dialog has. */
 const askedCalls = new Map<string, string>()
+/** Each agent this session spawned inside a child: its id to the Workflow call or the agent that spawned it. */
+const spawnedBy = new Map<string, string>()
+/** Each Workflow call's tool_use_id to the task id its child is kept under. */
+const workflowTasks = new Map<string, string>()
+/** Each background `herdr agent wait`'s task id and tool_use_id to the delegate it waits on. */
+const delegateWaits = new Map<string, string>()
+const isActivityWorthSaving = activityGate()
 let fetchingPrs: Promise<void> = Promise.resolve()
 let nextFetchFindsBranchPr: boolean | null = null
 let recordedRows: { isDemo: boolean; ids: RowRecord<Tab> } | null = null
@@ -976,24 +1001,19 @@ async function commit(
 }
 
 /**
- * The session a look draws: `session`, with the ledger, PR views, presses and turn counts of the sample while it shows.
- * No turn runs in the sample.
+ * The session a look draws: `session`, with the ledger, PR views, presses and turn counts of the sample while it shows,
+ * and the sample's place and presence.
  */
 function drawnSession(
   session: Session,
   drawn: Pick<DemoCopy, 'ledger' | 'stop' | 'prViews' | 'lastActions' | 'turns'>,
   isDemo: boolean,
+  now: number,
 ): Session {
   const { ledger, stop, prViews, lastActions, turns } = drawn
+  const s = { ...session, ledger, stop, prViews, lastActions, presence: { ...session.presence, ...turns } }
 
-  return {
-    ...session,
-    ledger,
-    stop,
-    prViews,
-    lastActions,
-    presence: { ...session.presence, ...turns, ...(isDemo ? { isTurnRunning: false } : {}) },
-  }
+  return isDemo ? withDemoPresence(s, now) : s
 }
 
 function redrawWhileLeaving($: EngineInterface, expiresAt: number) {
@@ -1084,9 +1104,9 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
     $.session.messages().then(transcriptText),
   ])
   // The Overview call reads the transcript. With none to read, it writes no Overview.
-  const overview: AskCatchUpOverview = async (last, tasks) => {
+  const overview: AskCatchUpOverview = async (last, tasks, at) => {
     if (!transcript || !isCurrent(owner)) return null
-    const r = await askLedgerModel($, overviewCatchUpPrompt(last, transcript, tasks), OVERVIEW_SYSTEM, 90_000)
+    const r = await askLedgerModel($, overviewCatchUpPrompt(last, transcript, tasks, at), OVERVIEW_SYSTEM, 90_000)
 
     return r.isAnswered ? r.text : null
   }
@@ -2283,7 +2303,7 @@ type ClosedLine = Pick<Closed, 'id' | 'ask' | 'at' | 'how' | 'outcome'> & {
 }
 
 function desktopTabSizes(
-  tabs: { label: string; symbol: string; count: number; isShown: boolean }[],
+  tabs: { label: string; symbol: string; badge: string | null; isShown: boolean }[],
   columns: number,
 ): { widths: number[]; gap: number; isEachFramed: boolean; naming: TabNaming } {
   const steps = [
@@ -2295,7 +2315,7 @@ function desktopTabSizes(
   const widthsOf = (naming: TabNaming, { padding, isEachFramed }: (typeof steps)[number]) =>
     tabs.map(t => {
       const name = tabName(t, naming)
-      const text = t.count > 0 ? `${name}${TAB_COUNT_GAP}${t.count}` : name
+      const text = t.badge === null ? name : `${name}${TAB_COUNT_GAP}${t.badge}`
       const isFramed = isEachFramed || t.isShown
       // A tab's rounded frame insets its label FRAME_INSET_PT on each side, so its width adds those columns,
       // rounded up, to what the label needs. Narrower, the label wraps inside the tab.
@@ -2348,7 +2368,7 @@ async function drawnState(
   const isUnread = demo === null && unreadable === conversation.id
 
   const view = sessionView(
-    drawnSession(session, drawn, demo !== null),
+    drawnSession(session, drawn, demo !== null, now),
     now,
     SETTLED_MS,
     CAN_CATCH_UP,
@@ -2468,6 +2488,47 @@ async function prepareConversation($: EngineInterface, id: string, revision: num
   return applying
 }
 
+/** Names the folder the session started in, and the branch that folder is on now. */
+/** A tool's structured result, or undefined when the call answered with text alone. */
+function toolRecord<Name extends string>(_tool: Name, result: unknown): ToolResultOf<Name> | undefined {
+  return typeof result === 'object' && result !== null ? (result as ToolResultOf<Name>) : undefined
+}
+
+async function noteChild($: EngineInterface, change: (o: Overview | null, at: number) => Overview | null) {
+  const at = await $.clock.now()
+  await commit($, currentOwner(), s => overviewChanged(s, o => change(o, at))).catch(() => undefined)
+}
+
+/** The child an agent's work belongs to: the subagent itself, or the workflow or subagent that spawned it. */
+function childRefOf(agentId: string): string {
+  let id = agentId
+  for (let depth = 0; depth < 8 && spawnedBy.has(id); depth++) id = spawnedBy.get(id)!
+
+  return workflowTasks.get(id) ?? id
+}
+
+async function noteAgentWork($: EngineInterface, agentId: string) {
+  const ref = childRefOf(agentId)
+  if (isActivityWorthSaving(ref, await $.clock.now())) await noteChild($, (o, at) => childActive(o, ref, at))
+}
+
+/** The delegates Herdr shows running, asked only while one runs. Null when none runs or Herdr gave no answer. */
+async function delegatesInHerdr($: EngineInterface): Promise<ReadonlySet<string> | null> {
+  const s = await read($, SESSION).then(upgradeSession)
+  if (!hasRunningDelegate(s.ledger.overview)) return null
+  const r = await $.process.run(HERDR_AGENT_LIST, { timeoutMs: HERDR_TIMEOUT_MS }).catch(() => null)
+
+  return r?.exitCode === 0 ? herdrRunning(r.stdout) : null
+}
+
+async function notePlace($: EngineInterface) {
+  const root = conversation.root
+  if (!root) return
+  const r = await $.process.run(['git', 'branch', '--show-current'], { cwd: root, timeoutMs: 5_000 }).catch(() => null)
+  const branch = r?.exitCode === 0 ? r.stdout.trim() || null : null
+  await commit($, currentOwner(), s => placed(s, root, branch)).catch(() => undefined)
+}
+
 async function applyConversation(
   $: EngineInterface,
   id: string,
@@ -2489,8 +2550,10 @@ async function applyConversation(
   // it, so an update in flight at load was cut off: record it as failed.
   // The theme read at the start is gone after /clear, so each conversation reads it.
   const [current] = await Promise.all([upgradeState($), syncTheme($)])
-  await replaceDrawn($, s => cutOffTurn(cutOffUpdate(s)))
+  const loadedAt = await $.clock.now()
+  await replaceDrawn($, s => overviewChanged(cutOffTurn(cutOffUpdate(s)), o => childrenCutOff(o, loadedAt)))
   if (revision !== loadRevision) return
+  void notePlace($)
   const isFresh = isBlankLedger(current)
   const isUnread =
     (await update($, UNREADABLE, u =>
@@ -2702,6 +2765,13 @@ export const register: Register = on => {
     const origin = e.origin
     // send() already recorded this mod's own prompts.
     if (origin.kind === 'plugin' && origin.name === 'inbox') return next(e)
+    const notice = origin.kind === 'task-notification' ? taskNotice(e.text) : null
+    if (notice) {
+      const delegate = notice.ids.map(id => delegateWaits.get(id)).find(name => name !== undefined)
+      await noteChild($, (o, at) =>
+        delegate && notice.hasEnded ? childEnded(o, delegateRef(delegate), at) : noticeApplied(o, notice, at),
+      )
+    }
     const isPersonsWords =
       origin.kind === 'composer' || origin.kind === 'bridge' || (origin.kind === 'plugin' && origin.asUser === true)
     if (!isPersonsWords) {
@@ -2721,14 +2791,18 @@ export const register: Register = on => {
   })
 
   on('turn.start', async ($, e, next) => {
-    if (e.agentId) return next(e)
+    if (e.agentId) {
+      if (isOn) await noteAgentWork($, e.agentId)
+      return next(e)
+    }
     finalReply = null
     hasStopFromError = false
     // Counted here, before the
     // turn can end, since a reload can cut off its end-of-turn hook.
     if (isOn) {
       const before = await read($, SESSION)
-      await commit($, currentOwner(), s => turnStarted(startTurn(s)))
+      const startedAt = await $.clock.now()
+      await commit($, currentOwner(), s => turnStarted(startTurn(s), startedAt))
       if (before.stop) {
         stopGeneration++
         resuming = null
@@ -2737,6 +2811,25 @@ export const register: Register = on => {
     }
 
     return next(e)
+  })
+
+  on('agent.spawn', async ($, e, next) => {
+    const r = await next(e)
+    const agentId = r.deny === undefined ? r.agentId : undefined
+    if (!isOn || !agentId || e.isTeammate) return r
+    const parent = e.parentAgentId ?? (e.workflow ? e.tool_use_id : undefined)
+    if (parent) {
+      spawnedBy.set(agentId, parent)
+      await noteAgentWork($, agentId)
+
+      return r
+    }
+    const name = childName(e.description)
+    await noteChild($, (o, at) =>
+      withChild(o, { ref: agentId, kind: 'subagent', name, startedAt: at, endedAt: null, lastActivityAt: at }, at),
+    )
+
+    return r
   })
 
   on('tool.describe', { tool: RECORD_TOOL }, async ($, e, next) => ({ ...(await next(e)), isDeferred: false }))
@@ -2760,15 +2853,61 @@ export const register: Register = on => {
       clearingDialog($, key, () => next(e)).finally(() => {
         if (e.tool_use_id) askedCalls.delete(e.tool_use_id)
       })
-    if (e.agentId) return run()
+    if (e.agentId) {
+      await noteAgentWork($, e.agentId)
+      return run()
+    }
     const line = toolActivity(String(e.tool), input)
     if (line) await noteActivity($, line)
     if (String(e.tool) === TURN_BOX_TOOL) turnBox = turnBoxText(input) ?? turnBox
     if (e.tool === 'Bash') {
+      const steps = delegateSteps(e.command)
+      for (const step of steps) await noteChild($, (o, at) => delegateRunning(o, step.name, at))
       const ran = await run()
       const found = commandFindings(e.command, ran.text ?? '')
       for (const line of found.lines) await noteActivity($, line)
       void linkPrs($, found.prRefs)
+      const taskId = toolRecord('Bash', ran.result)?.backgroundTaskId
+      const waitsOn = steps.filter(step => step.isWaitForEnd).map(step => step.name)
+      const isDelegateCommand = steps.length > 0
+      if (taskId && isDelegateCommand) {
+        for (const name of waitsOn) for (const id of [taskId, e.tool_use_id]) if (id) delegateWaits.set(id, name)
+      } else if (taskId) {
+        const name = childName(e.description || e.command)
+        await noteChild($, (o, at) =>
+          withChild(
+            o,
+            { ref: taskId, kind: 'background', name, startedAt: at, endedAt: null, lastActivityAt: null },
+            at,
+          ),
+        )
+      } else {
+        for (const name of waitsOn) await noteChild($, (o, at) => childEnded(o, delegateRef(name), at))
+      }
+
+      return ran
+    }
+    if (e.tool === 'Agent') {
+      const ran = await run()
+      const result = toolRecord('Agent', ran.result)
+      const isRunningOn = result && 'status' in result && result.status !== 'completed'
+      const agentId = result && 'agentId' in result ? result.agentId : undefined
+      if (agentId && !isRunningOn) await noteChild($, (o, at) => childEnded(o, agentId, at))
+
+      return ran
+    }
+    if (e.tool === 'Monitor' || e.tool === 'Workflow') {
+      const ran = await run()
+      const workflow = e.tool === 'Workflow' ? toolRecord('Workflow', ran.result) : undefined
+      const taskId = workflow?.taskId ?? (e.tool === 'Monitor' ? toolRecord('Monitor', ran.result)?.taskId : undefined)
+      if (taskId) {
+        if (workflow && e.tool_use_id) workflowTasks.set(e.tool_use_id, taskId)
+        const kind = workflow ? 'workflow' : 'background'
+        const name = childName(workflow?.workflowName ?? e.description ?? e.tool)
+        await noteChild($, (o, at) =>
+          withChild(o, { ref: taskId, kind, name, startedAt: at, endedAt: null, lastActivityAt: at }, at),
+        )
+      }
 
       return ran
     }
@@ -2873,7 +3012,16 @@ export const register: Register = on => {
     askedCalls.clear()
     await closeDialogs($, null)
     if (!isOn) return r
-    await commit($, currentOwner(), turnEnded)
+    const endedAt = await $.clock.now()
+    const [listed, inHerdr] = await Promise.all([$.agent.list().catch(() => null), delegatesInHerdr($)])
+    const running =
+      listed && new Set(listed.filter(a => a.status === 'running' || a.status === 'pending').map(a => a.id))
+    await commit($, currentOwner(), s => {
+      const ended = turnEnded(s, endedAt)
+      const withSubagents = running ? overviewChanged(ended, o => subagentsSettled(o, running, endedAt)) : ended
+      return inHerdr ? overviewChanged(withSubagents, o => delegatesSettled(o, inHerdr, endedAt)) : withSubagents
+    })
+    void notePlace($)
     if (e.reason === 'error' && !hasStopFromError) await setStopFromLastReply($)
     void wakeForDone($).catch(() => undefined)
     void followNewRows($).catch(() => undefined)
@@ -3447,9 +3595,9 @@ export const register: Register = on => {
       findings: view.findings.count,
       prs: shownPrs.filter(x => !x.isSettled && prNeedsYou(x.pr, isThreadSent)).length,
     }
-    const tabCount = (id: ShownTab) => (isRowTab(id) ? tabCounts[id] : 0)
+    const badgeOf = (id: ShownTab) => tabBadge(id, tabCounts, view.overviewPage)
     const tabTone = (id: ShownTab) => (isRowTab(id) ? pal.tone[id] : undefined)
-    const tabText = (id: ShownTab, name: string) => `${name}${tabCount(id) > 0 ? ` ${tabCount(id)}` : ''}`
+    const tabText = (id: ShownTab, name: string) => `${name}${badgeOf(id) === null ? '' : ` ${badgeOf(id)}`}`
     const hasRail = isInline && look === 'terminal' && e.props.bodyColumns >= INLINE_RAIL_AT
     const railWidth = Math.max(...tabList.map(t => cellWidth(tabText(t.id, t.label)))) + 2 * TAB_PAD.length
     const listColumns = e.props.bodyColumns - 2 - (hasRail ? railWidth + RAIL_GUTTER : 0)
@@ -4199,7 +4347,7 @@ export const register: Register = on => {
 
     const tabColumns = e.props.bodyColumns - 2
     const tabSizes = desktopTabSizes(
-      tabList.map(t => ({ ...t, count: tabCount(t.id), isShown: t.id === shownTab })),
+      tabList.map(t => ({ ...t, badge: badgeOf(t.id), isShown: t.id === shownTab })),
       tabColumns,
     )
     const tabProps: TabsProps | null = hasClient
@@ -4207,8 +4355,8 @@ export const register: Register = on => {
           tabs: tabList.map((t, n) => ({
             id: t.id,
             label: tabName(t, tabSizes.naming),
-            count: tabCount(t.id),
-            countColor: isRowTab(t.id) ? (pal.tone[t.id] ?? pal.mark[t.id]) : pal.muted,
+            badge: badgeOf(t.id),
+            badgeColor: isRowTab(t.id) ? (pal.tone[t.id] ?? pal.mark[t.id]) : null,
             width: tabSizes.widths[n]!,
           })),
           shown: shownTab,
@@ -4291,7 +4439,7 @@ export const register: Register = on => {
             : tabList.map(t => {
                 const { id } = t
                 const label = tabName(t, tabNaming)
-                const count = tabCount(id)
+                const badge = badgeOf(id)
 
                 if (isInline)
                   return (
@@ -4303,10 +4451,10 @@ export const register: Register = on => {
                       ) : (
                         <Button plain key={`tab-${id}`} label={label} onPress={() => void showTab($, id)} />
                       )}
-                      {count > 0 ? (
+                      {badge !== null ? (
                         <Text bold={shownTab === id} color={tabTone(id)}>
                           {' '}
-                          {count}
+                          {badge}
                         </Text>
                       ) : null}
                     </Box>
@@ -4323,7 +4471,7 @@ export const register: Register = on => {
                   return (
                     <Button
                       key={`tab-${id}`}
-                      label={`${DESKTOP_TAB_PAD}${count > 0 ? `${label} ${count}` : label}${DESKTOP_TAB_PAD}`}
+                      label={`${DESKTOP_TAB_PAD}${badge === null ? label : `${label} ${badge}`}${DESKTOP_TAB_PAD}`}
                       {...(shownTab === id ? { variant: 'primary' as const } : {})}
                       onPress={() => void showTab($, id)}
                     />
@@ -4338,10 +4486,10 @@ export const register: Register = on => {
                         <Text bold color={pal.raisedText} backgroundColor={pal.raised}>
                           {label}
                         </Text>
-                        {count > 0 ? (
+                        {badge !== null ? (
                           <Text bold color={tabTone(id) ?? pal.raisedText} backgroundColor={pal.raised}>
                             {' '}
-                            {count}
+                            {badge}
                           </Text>
                         ) : null}
                         {pad}
@@ -4372,10 +4520,10 @@ export const register: Register = on => {
                     <Box flexDirection="row" backgroundColor={pal.tab}>
                       {pad ? <Button plain key={`tab-${id}-before`} label={pad} hover={raise} onPress={show} /> : null}
                       <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show} />
-                      {count > 0 ? (
+                      {badge !== null ? (
                         <Text color={tabTone(id)} hover={raise}>
                           {' '}
-                          {count}
+                          {badge}
                         </Text>
                       ) : null}
                       {pad ? <Button plain key={`tab-${id}-after`} label={pad} hover={raise} onPress={show} /> : null}
@@ -4402,7 +4550,7 @@ export const register: Register = on => {
     const rail = (
       <Box flexDirection="column" flexShrink={0} paddingLeft={1} marginRight={RAIL_GUTTER}>
         {tabList.map(({ id, label }) => {
-          const count = tabCount(id)
+          const badge = badgeOf(id)
           const fill = ' '.repeat(railWidth - cellWidth(tabText(id, label)) - TAB_PAD.length)
           if (shownTab === id)
             return (
@@ -4411,10 +4559,10 @@ export const register: Register = on => {
                 <Text bold color={pal.raisedText} backgroundColor={pal.raised}>
                   {label}
                 </Text>
-                {count > 0 ? (
+                {badge !== null ? (
                   <Text bold color={tabTone(id) ?? pal.raisedText} backgroundColor={pal.raised}>
                     {' '}
-                    {count}
+                    {badge}
                   </Text>
                 ) : null}
                 {fill}
@@ -4426,9 +4574,9 @@ export const register: Register = on => {
             <Box key={`rail-${id}`} flexDirection="row">
               <Button plain key={`tab-${id}-before`} label={TAB_PAD} hover={raise} onPress={show} />
               <Button plain key={`tab-${id}`} label={label} hover={raise} onPress={show} />
-              {count > 0 ? (
+              {badge !== null ? (
                 <Button plain key={`tab-${id}-count`} hover={raise} onPress={show}>
-                  <Text color={tabTone(id)}> {count}</Text>
+                  <Text color={tabTone(id)}> {badge}</Text>
                 </Button>
               ) : null}
               <Button plain key={`tab-${id}-after`} label={fill} hover={raise} onPress={show} />
@@ -5084,88 +5232,145 @@ export const register: Register = on => {
         sections([...(prState.isGhMissing ? [ghMissingNotice()] : []), ...prGroups.map(prBlock), ...olderPrs()], 2)
       )
 
-    const overviewTextLine = (text: string, key: string, isBold: boolean, hasGapAbove: boolean) => {
+    const overviewTextLine = (text: string, key: string, isBold: boolean) => {
       const line = (
         <Text wrap="wrap" bold={isBold} {...(isBold ? {} : { color: pal.muted })}>
           {text}
         </Text>
       )
 
-      const framed =
-        look === 'desktop' ? (
-          desktopFrame({ key, padY: 0, children: line })
-        ) : (
-          <Box key={key} paddingLeft={TREE_LINE_AT}>
-            {line}
-          </Box>
-        )
-
-      return hasGapAbove ? (
-        <Box
-          key={`${key}-gap`}
-          marginTop={look === 'desktop' ? LEAD_GAP_PT / (DESKTOP_LINE_PT / 2) : 1}
-          flexDirection="column"
-        >
-          {framed}
-        </Box>
+      return look === 'desktop' ? (
+        desktopFrame({ key, padY: 0, children: line })
       ) : (
-        framed
+        <Box key={key} paddingLeft={TREE_LINE_AT}>
+          {line}
+        </Box>
       )
     }
-    const overviewTextRow = (id: string, text: string, pos: TreePos) =>
-      look === 'desktop'
-        ? desktopFrame({
-            key: `overview-${id}`,
-            indent: DESKTOP_MARK_CELLS,
-            isMarkHung: false,
-            padY: space.rowPad / 2,
-            children: <Text wrap="wrap">{text}</Text>,
-          })
-        : treeRow(pos, null, <Text wrap="wrap">{text}</Text>, `overview-${id}`, 0, markColumns.textAt)
-    const markedRow = (m: OverviewRow, pos: TreePos) => {
-      const RunningSvg = m.isRunning && look === 'desktop' && 'Svg' in elements ? elements.Svg : null
-      const mark = RunningSvg ? (
-        <Box width={RUNNING_SVG_CELLS} height={1} flexShrink={0}>
+    const runningDot = (id: string, glyph: string, color: string) => {
+      const RunningSvg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null
+
+      return RunningSvg ? (
+        <Box key={`${id}-mark`} width={RUNNING_SVG_CELLS} height={1} flexShrink={0}>
           <RunningSvg
             source={runningSvg(now)}
-            alt={m.mark}
+            alt={glyph}
             width={RUNNING_SVG_CELLS * DESKTOP_CELL_PT}
             height={DESKTOP_LINE_PT}
           />
         </Box>
       ) : (
-        <Text color={m.tone ? pal.mark[m.tone] : pal.muted}>
-          {m.isRunning && look === 'terminal' ? runningMark(now) : m.mark}
-        </Text>
+        <Text color={color}>{look === 'terminal' ? runningMark(now) : glyph}</Text>
       )
-      const lines = [
-        <Text key="text" wrap="wrap">
-          {m.text}
-        </Text>,
-        m.detail ? (
-          <Text key="detail" wrap="wrap" color={pal.muted}>
-            {m.detail}
-          </Text>
-        ) : null,
-      ]
+    }
+    /** One line of the Overview's list: a mark, its text, and an age in the side column. `depth` 1 sits under a subject's text. */
+    const overviewLine = ({
+      key,
+      depth = 0,
+      mark,
+      content,
+      age,
+      ageColor = pal.age,
+    }: {
+      key: string
+      depth?: number
+      mark: JSX.Element | null
+      content: JSX.Element | JSX.Element[]
+      age: string | null
+      ageColor?: string
+    }) => {
+      const side = age ? <Text color={ageColor}>{age}</Text> : null
 
-      return look === 'desktop'
-        ? desktopFrame({
-            key: `overview-${m.id}`,
-            indent: DESKTOP_MARK_CELLS,
-            isMarkHung: false,
-            padY: OVERVIEW_ROW_PAD_PT / DESKTOP_LINE_PT,
-            mark,
-            children: lines,
-          })
-        : treeRow(
-            pos,
-            mark,
-            <Box flexDirection="column" flexGrow={1} flexShrink={1}>
-              {lines}
-            </Box>,
-            `overview-${m.id}`,
-          )
+      return look === 'desktop' ? (
+        desktopFrame({
+          key,
+          indent: DESKTOP_MARK_CELLS * (depth * 2),
+          isMarkHung: false,
+          padY: OVERVIEW_ROW_PAD_PT / DESKTOP_LINE_PT,
+          mark,
+          side,
+          children: Array.isArray(content) ? content : [content],
+        })
+      ) : (
+        <Box key={key} flexDirection="row" alignItems="flex-start" overflow="hidden">
+          <Box width={markColumns.handleAt + markWidth * depth} flexShrink={0} />
+          <Box width={markWidth} flexShrink={0}>
+            {mark}
+          </Box>
+          <Box flexDirection="column" flexShrink={1} flexGrow={1}>
+            {content}
+          </Box>
+          {side ? (
+            <Box flexShrink={0} paddingLeft={1} paddingRight={1}>
+              {side}
+            </Box>
+          ) : null}
+        </Box>
+      )
+    }
+    const overviewRow = (r: OverviewRow) => {
+      if (r.kind === 'subject') {
+        const color = r.tone ? pal.mark[r.tone] : pal.muted
+        const mark = r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
+        const content = [
+          <Text key="text" wrap="wrap">
+            {r.name}
+            {r.text ? <Text color={pal.muted}>{`: ${r.text}`}</Text> : null}
+          </Text>,
+          ...(r.was
+            ? [
+                <Text key="was" wrap="wrap" color={pal.muted}>
+                  {`was: ${r.was}`}
+                </Text>,
+              ]
+            : []),
+        ]
+
+        return overviewLine({ key: `overview-${r.id}`, mark, content, age: r.age })
+      }
+      if (r.kind === 'child') {
+        const mark = r.isQuiet ? <Text color={pal.muted}>●</Text> : runningDot(r.id, '●', pal.muted)
+
+        return overviewLine({
+          key: `overview-${r.id}`,
+          depth: r.isLoose ? 0 : 1,
+          mark,
+          content: (
+            <Text wrap="truncate-end" color={pal.muted}>
+              {r.name}
+            </Text>
+          ),
+          age: r.age,
+          ageColor: r.isQuiet ? (pal.tone.needsYou ?? pal.age) : pal.age,
+        })
+      }
+      if (r.kind === 'more')
+        return overviewLine({
+          key: `overview-${r.id}`,
+          depth: 1,
+          mark: null,
+          content: <Text color={pal.muted}>{r.text}</Text>,
+          age: null,
+        })
+      if (r.kind === 'look') {
+        const label = `── ${r.text} `
+        const ruleColumns = listColumns - 1 - markColumns.textAt - (cellWidth(r.age) + 2) - cellWidth(label)
+        const fill = look === 'desktop' ? '' : '─'.repeat(Math.max(2, ruleColumns))
+
+        return overviewLine({
+          key: 'overview-look',
+          mark: null,
+          content: <Text color={pal.divider}>{`${label}${fill}`}</Text>,
+          age: r.age,
+        })
+      }
+
+      return overviewLine({
+        key: `overview-${r.id}`,
+        mark: <Text color={r.tone ? pal.mark[r.tone] : pal.muted}>{r.mark}</Text>,
+        content: <Text color={pal.muted}>{r.text}</Text>,
+        age: r.age,
+      })
     }
     const overviewView = () => {
       const page = view.overviewPage
@@ -5175,9 +5380,11 @@ export const register: Register = on => {
             {emptyState(page.empty)}
           </Box>
         )
-      const head = page.lead.map(line =>
-        overviewTextLine(line.text, `overview-${line.id}`, line.id === 'headline', line.hasGapAbove),
-      )
+      const head = [
+        ...(page.identity ? [overviewTextLine(page.identity, 'overview-identity', false)] : []),
+        ...(page.goal ? [overviewTextLine(page.goal, 'overview-goal', true)] : []),
+        ...(page.live ? [overviewTextLine(page.live, 'overview-live', false)] : []),
+      ]
 
       return sections([
         ...(head.length > 0
@@ -5187,24 +5394,7 @@ export const register: Register = on => {
               </Box>,
             ]
           : []),
-        ...page.sections.map(part =>
-          section([
-            groupTitle(part.title, 0),
-            ...titleGap(),
-            ...part.rows.map((m, n) => markedRow(m, childPos(n, part.rows.length))),
-          ]),
-        ),
-        ...(page.earlier.length > 0
-          ? [
-              section([
-                groupTitle(earlierTitle('session'), 0),
-                ...titleGap(),
-                ...page.earlier.map((text, n) =>
-                  overviewTextRow(`earlier-${n}`, text, childPos(n, page.earlier.length)),
-                ),
-              ]),
-            ]
-          : []),
+        ...(page.rows.length > 0 ? [section(page.rows.map(overviewRow))] : []),
       ])
     }
 

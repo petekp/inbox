@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { flattenConversation } from '../hooks/conversation'
 import { EMPTY, applyUpdate, parseReply, upgradeLedger } from '../hooks/ledger'
-import { EMPTY_OVERVIEW, parseOverview } from '../hooks/overview'
+import { applyOverview, parseOverview, withChild } from '../hooks/overview'
 import { CLAUDE_CODE } from '../hooks/model-text'
 import {
   appliedCatchUp,
@@ -284,76 +284,70 @@ test('the conversation keeps its newest lines when it is too long, and leaves ou
   expect(text).not.toContain('inbox: nothing waits')
 })
 
-const overviewLines = [
-  'HEADLINE: Adding offline mode',
-  'STATUS: Loading works offline.',
-  'QUEUE: working | Save notes offline',
-].join('\n')
-const answer = parseOverview(overviewLines)!
+const answer = parseOverview('GOAL: Work offline\nNEW: working | Offline mode | queue built')!
 
 const withOverview = (s: Session): Session => ({
   ...s,
-  ledger: { ...EMPTY, overview: applyOverviewOf(answer) },
+  ledger: { ...EMPTY, overview: applyOverview(null, answer, 1000) },
 })
-
-function applyOverviewOf(a: NonNullable<ReturnType<typeof parseOverview>>) {
-  return a.kind === 'written' ? { ...a.overview, earlier: [] } : null
-}
 
 test('an Overview answer is written to the ledger after later updates, and dropped when its update is gone', () => {
   const later = { ...emptySession(), presence: { ...emptySession().presence, turnsApplied: 5 } }
 
-  expect(appliedOverview(later, answer, 3).ledger.overview?.headline).toBe('Adding offline mode')
-  expect(appliedOverview(emptySession(), answer, 3).ledger.overview).toBeNull()
+  expect(appliedOverview(later, answer, 3, 1000).ledger.overview?.goal).toBe('Work offline')
+  expect(appliedOverview(emptySession(), answer, 3, 1000).ledger.overview).toBeNull()
 })
 
 test('a session whose only record is an Overview has a ledger, is not unseen, is copied by a fork and is cleared', () => {
   const parent = withOverview(emptySession())
+  const onlyChildren = withChild(
+    null,
+    { ref: 't1', kind: 'subagent', name: 'Review', startedAt: 1, endedAt: null, lastActivityAt: 1 },
+    1,
+  )
 
   expect(hasLedger(emptySession())).toBe(false)
   expect(isUnseen(emptySession())).toBe(true)
   expect(hasLedger(parent)).toBe(true)
   expect(isUnseen(parent)).toBe(false)
+  expect(hasLedger({ ...emptySession(), ledger: { ...EMPTY, overview: onlyChildren } })).toBe(false)
   expect(forkedFrom(emptySession(), parent).ledger.overview).toEqual(parent.ledger.overview)
   expect(cleared(parent).ledger.overview).toBeNull()
 })
 
-test('the Overview page is empty for a new session and reads Working… only while the main turn runs', () => {
+test('the Overview page is empty for a new session, reads Working… while the main turn runs, and the last reply after', () => {
   const view = (s: Session) => sessionView(s, 10_000, 1000, true, NO_HOLDS).overviewPage
   const idle = emptySession()
 
   expect(view(idle).isEmpty).toBe(true)
-  expect(view(turnStarted(idle)).isEmpty).toBe(false)
-  expect(view(turnStarted(idle)).lead.find(l => l.id === 'status')?.text ?? null).toBe('Working…')
-  expect(view(turnEnded(turnStarted(idle))).lead.find(l => l.id === 'status')?.text ?? null).toBeNull()
-  expect(view(withOverview(idle)).lead.map(l => l.text)).toEqual(['Adding offline mode', 'Loading works offline.'])
+  expect(view(turnStarted(idle, 9_000)).isEmpty).toBe(false)
+  expect(view(turnStarted(idle, 9_000)).live).toBe('Working…')
+  expect(view(turnEnded(turnStarted(idle, 9_000), 9_500)).live).toBe('Idle · last reply just now')
+  expect(view(withOverview(idle)).goal).toBe('Work offline')
 })
 
-test('the Overview page draws each item with its mark and tone', () => {
-  const lines = [
-    'HEADLINE: h',
-    'QUEUE: working | a',
-    'QUEUE: queued | b',
-    'QUEUE: waits-on-you | c',
-    'QUEUE: waits-on-other | d',
-    'QUEUE: done | e',
-    'QUEUE: ruled-out | f',
-    'OPEN: problem | g',
-    'OPEN: unknown | h',
-  ].join('\n')
-  const parsed = parseOverview(lines)!
-  const s = { ...emptySession(), ledger: { ...EMPTY, overview: applyOverviewOf(parsed) } }
-  const rows = sessionView(s, 0, 1000, true, NO_HOLDS).overviewPage.sections.flatMap(part => part.rows)
+test('the Overview page draws each status with its mark and tone', () => {
+  const statuses = ['working', 'queued', 'waits-on-you', 'waits-on-other', 'problem'] as const
+  const opened = applyOverview(
+    null,
+    parseOverview(statuses.map((st, n) => `NEW: ${st} | Part ${n} | step`).join('\n'))!,
+    1000,
+  )
+  const closed = applyOverview(opened, parseOverview('DONE: s1 | built')!, 2000)
+  const rows = sessionView(
+    { ...emptySession(), ledger: { ...EMPTY, overview: closed } },
+    3000,
+    1000,
+    true,
+    NO_HOLDS,
+  ).overviewPage.rows.flatMap(r => (r.kind === 'subject' ? [[r.name, r.mark, r.tone]] : []))
 
-  expect(rows.map(r => [r.mark, r.tone])).toEqual([
-    ['●', null],
-    ['○', null],
-    ['◆', 'needsYou'],
-    ['◌', null],
-    ['✓', 'done'],
-    ['✗', null],
-    ['!', 'issue'],
-    ['?', null],
+  expect(rows).toEqual([
+    ['Part 0', '✓', 'done'],
+    ['Part 1', '○', null],
+    ['Part 2', '◆', 'needsYou'],
+    ['Part 3', '◌', null],
+    ['Part 4', '!', 'issue'],
   ])
 })
 
@@ -379,20 +373,28 @@ test('a sample saved without an Overview is replaced, and the sample session car
   expect(isDemoCopy({ ...old, presence: { isTurnRunning: false } })).toBe(true)
   expect(isDemoCopy({ ...old, ledger: { ...old.ledger, overview: undefined } })).toBe(false)
   const page = sessionView(demoSession(1_000_000, 'Claude'), 1_000_000, 1000, true, NO_HOLDS).overviewPage
-  expect(page.lead[0]?.text).toBe('Adding pinch-to-dismiss to glances')
-  expect(page.sections.map(part => part.id)).toEqual(['since', 'queue', 'open'])
+  expect(page.identity).toBe('visor · pinch-dismiss')
+  expect(page.goal).toBe('Pinch to dismiss glances')
+  expect(page.rows.map(r => r.kind)).toEqual([
+    'subject',
+    'child',
+    'subject',
+    'child',
+    'subject',
+    'subject',
+    'look',
+    'subject',
+    'fold',
+  ])
 })
 
-test('a conversation start carries the Overview headline and status, not on a resume the guidance, and nothing for an empty session', () => {
+test('a conversation start carries the goal and where each open subject stands, not on a resume the guidance, and nothing for an empty session', () => {
   const described = emptySession()
-  const ledger = {
-    ...described.ledger,
-    overview: { ...EMPTY_OVERVIEW, headline: 'Adding caching', status: 'Waiting on a choice.' },
-  }
+  const ledger = { ...described.ledger, overview: applyOverview(null, answer, 1000) }
   const carried = startContext(CLAUDE_CODE, { ...described, ledger }, 'resume')
-  expect(carried).toContain('Working on: Adding caching')
-  expect(carried).toContain('Status: Waiting on a choice.')
-  expect(startContext(CLAUDE_CODE, { ...described, ledger }, 'startup')).toContain('Working on: Adding caching')
+  expect(carried).toContain('Working on: Work offline')
+  expect(carried).toContain('- Offline mode: queue built (working)')
+  expect(startContext(CLAUDE_CODE, { ...described, ledger }, 'startup')).toContain('Working on: Work offline')
   expect(startContext(CLAUDE_CODE, described, 'resume')).toBeNull()
 })
 

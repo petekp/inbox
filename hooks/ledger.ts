@@ -23,7 +23,9 @@ export const EMPTY: Ledger = {
 
 /** Whether nothing has been recorded: no model answer applied, no Overview, no item and no finding. */
 export function isBlankLedger(ledger: Ledger): boolean {
-  return ledger.updates === 0 && ledger.overview === null && ledger.items.length === 0 && ledger.findings.length === 0
+  const isOverviewBlank = !ledger.overview || (ledger.overview.goal === '' && ledger.overview.subjects.length === 0)
+
+  return ledger.updates === 0 && isOverviewBlank && ledger.items.length === 0 && ledger.findings.length === 0
 }
 
 const NL = '\n'

@@ -2311,7 +2311,7 @@
   },
   {
     "name": "catch-up-records-open-question-and-result",
-    "about": "A catch-up over a conversation the inbox never saw records the question the last reply left open, and its Overview does not leave the finished loader work under way.",
+    "about": "A catch-up over a conversation the inbox never saw records the question the last reply left open. Its Overview marks the work as waiting on the person, and does not leave the finished loader work under way.",
     "ledger": {
       "turn": 3,
       "nextId": 1
@@ -2329,10 +2329,14 @@
         "kind": "question"
       },
       {
-        "overview": "written"
+        "overview": "changed"
       },
       {
-        "noOverviewItem": "yaml|loader",
+        "subject": "yaml|loader|json",
+        "status": "waits-on-you"
+      },
+      {
+        "noSubject": "yaml|loader",
         "status": "working"
       },
       {
@@ -2592,7 +2596,7 @@
   },
   {
     "name": "overview-feature-level",
-    "about": "A turn full of reads, edits, test runs and a commit still gives a guide at the level of the fix, with no commands, files, hashes or counts.",
+    "about": "A turn full of reads, edits, test runs and a commit still gives subjects at the level of the fix, with no commands, files, hashes, counts or time words.",
     "ledger": {
       "turn": 1,
       "nextId": 1,
@@ -2613,60 +2617,68 @@
     },
     "checks": [
       {
-        "overview": "written"
+        "overview": "changed"
       },
       {
         "featureLevel": true
       },
       {
-        "sinceAtMost": 4
+        "noTimeWords": true
       },
       {
-        "partsNotRepeated": true
+        "openAtMost": 3
       }
     ]
   },
   {
     "name": "overview-direction-change",
-    "about": "The person redirects the approach. The guide reports a change of direction and why.",
+    "about": "The person reverses the approach. The subject keeps the replaced plan as its was line, and no new subject repeats it.",
     "ledger": {
       "turn": 5,
       "nextId": 1,
       "overview": {
-        "isCoordinator": false,
-        "state": "on-track",
-        "headline": "Adding offline mode to the notes app",
-        "status": "The note list now loads without a connection. Saving offline is next.",
-        "course": "",
-        "queue": [
+        "role": "session",
+        "goal": "Add offline mode to the notes app",
+        "subjects": [
           {
+            "id": "s1",
+            "name": "Offline saving",
             "status": "working",
-            "text": "Save notes while offline",
-            "detail": null
+            "text": "through the browser database",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 70,
+            "closedAt": null,
+            "into": null
           },
           {
+            "id": "s2",
+            "name": "Merge on reconnect",
             "status": "queued",
-            "text": "Merge saved notes when the connection returns",
-            "detail": null
+            "text": "after saving works",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 40,
+            "closedAt": null,
+            "into": null
           },
           {
+            "id": "s3",
+            "name": "Offline note list",
             "status": "done",
-            "text": "Notes list loads offline",
-            "detail": null
+            "text": "loads without a connection",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 30,
+            "closedAt": 30,
+            "into": null
           }
         ],
-        "works": [
-          {
-            "status": "done",
-            "text": "Notes list loads offline",
-            "detail": null
-          }
-        ],
-        "open": [],
-        "next": [],
-        "since": [],
-        "workstreams": [],
-        "earlier": []
+        "children": [],
+        "nextId": 4,
+        "nextChildId": 1,
+        "lastLookAt": 60,
+        "look": null
       }
     },
     "exchange": {
@@ -2677,10 +2689,17 @@
     },
     "checks": [
       {
-        "overview": "written"
+        "overview": "changed"
       },
       {
-        "course": true
+        "was": "browser|database"
+      },
+      {
+        "subject": "sav|sync|file",
+        "status": "working"
+      },
+      {
+        "subjectsNotRepeated": true
       },
       {
         "featureLevel": true
@@ -2689,40 +2708,53 @@
   },
   {
     "name": "overview-plain-progress-no-course",
-    "about": "Ordinary progress on the same plan is not a change of direction.",
+    "about": "Ordinary progress on the same plan closes the finished subject and keeps the next one open, with no new subject and no reversal. The next one may read queued or working, since the reply names it as next.",
     "ledger": {
       "turn": 5,
       "nextId": 1,
       "overview": {
-        "isCoordinator": false,
-        "state": "on-track",
-        "headline": "Adding offline mode to the notes app",
-        "status": "The note list now loads without a connection. Saving offline is next.",
-        "course": "",
-        "queue": [
+        "role": "session",
+        "goal": "Add offline mode to the notes app",
+        "subjects": [
           {
+            "id": "s1",
+            "name": "Offline saving",
             "status": "working",
-            "text": "Save notes while offline",
-            "detail": null
+            "text": "through file-system sync",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 70,
+            "closedAt": null,
+            "into": null
           },
           {
+            "id": "s2",
+            "name": "Merge on reconnect",
             "status": "queued",
-            "text": "Merge saved notes when the connection returns",
-            "detail": null
-          }
-        ],
-        "works": [
+            "text": "after saving works",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 40,
+            "closedAt": null,
+            "into": null
+          },
           {
+            "id": "s3",
+            "name": "Offline note list",
             "status": "done",
-            "text": "Notes list loads offline",
-            "detail": null
+            "text": "loads without a connection",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 30,
+            "closedAt": 30,
+            "into": null
           }
         ],
-        "open": [],
-        "next": [],
-        "since": [],
-        "workstreams": [],
-        "earlier": []
+        "children": [],
+        "nextId": 4,
+        "nextChildId": 1,
+        "lastLookAt": 60,
+        "look": null
       }
     },
     "exchange": {
@@ -2733,29 +2765,77 @@
     },
     "checks": [
       {
-        "overview": "written"
+        "overview": "changed"
       },
       {
-        "course": false
+        "goal": "^Add offline mode to the notes app$"
+      },
+      {
+        "subject": "sav",
+        "status": "done"
+      },
+      {
+        "subject": "merg"
+      },
+      {
+        "noSubject": "merg",
+        "status": "done"
+      },
+      {
+        "noNewSubject": true
       },
       {
         "featureLevel": true
-      },
-      {
-        "partsNotRepeated": true
-      },
-      {
-        "sameTopicNoCourseLine": true
       }
     ]
   },
   {
     "name": "overview-coordinator",
-    "about": "A session that hands out work and reviews what comes back is a coordinator, with a line for each stream of work.",
+    "about": "A session that hands out work is a coordinator. It adds a subject for each part and links each running delegate to its part.",
     "ledger": {
       "turn": 1,
       "nextId": 1,
-      "overview": null
+      "overview": {
+        "role": "session",
+        "goal": "",
+        "subjects": [],
+        "children": [
+          {
+            "id": "c1",
+            "ref": "herdr:parser",
+            "kind": "delegate",
+            "name": "parser",
+            "subjectId": null,
+            "startedAt": 90,
+            "endedAt": null,
+            "lastActivityAt": 95
+          },
+          {
+            "id": "c2",
+            "ref": "herdr:errors",
+            "kind": "delegate",
+            "name": "errors",
+            "subjectId": null,
+            "startedAt": 90,
+            "endedAt": null,
+            "lastActivityAt": 95
+          },
+          {
+            "id": "c3",
+            "ref": "herdr:progress-bar",
+            "kind": "delegate",
+            "name": "progress-bar",
+            "subjectId": null,
+            "startedAt": 90,
+            "endedAt": null,
+            "lastActivityAt": 95
+          }
+        ],
+        "nextId": 1,
+        "nextChildId": 4,
+        "lastLookAt": null,
+        "look": null
+      }
     },
     "exchange": {
       "turn": 1,
@@ -2765,25 +2845,34 @@
     },
     "checks": [
       {
-        "overview": "written"
+        "overview": "changed"
       },
       {
-        "overviewKind": "coordinator"
+        "role": "coordinator"
       },
       {
-        "workstreamsAtLeast": 2
+        "linked": "parser",
+        "to": "pars"
+      },
+      {
+        "linked": "errors",
+        "to": "error"
+      },
+      {
+        "linked": "progress",
+        "to": "progress"
+      },
+      {
+        "subjectsNotRepeated": true
       },
       {
         "featureLevel": true
-      },
-      {
-        "partsNotRepeated": true
       }
     ]
   },
   {
     "name": "overview-single-task-not-coordinator",
-    "about": "A session that does the work itself is not a coordinator.",
+    "about": "A session that does the work itself is not a coordinator. A fix that starts and finishes in one exchange is recorded as done, not under way.",
     "ledger": {
       "turn": 1,
       "nextId": 1,
@@ -2797,75 +2886,66 @@
     },
     "checks": [
       {
-        "overview": "written"
+        "overview": "changed"
       },
       {
-        "overviewKind": "session"
+        "role": "session"
+      },
+      {
+        "subject": "comma|header",
+        "status": "done"
       }
     ]
   },
   {
-    "name": "overview-since-merges",
-    "about": "The unseen changes and the new exchange become one short list, with no repeated change.",
+    "name": "overview-coordinator-update",
+    "about": "A coordinator's update closes the finished part, leaves the others open, and adds no subject for work it already lists.",
     "ledger": {
       "turn": 4,
       "nextId": 1,
       "overview": {
-        "isCoordinator": true,
-        "state": "on-track",
-        "headline": "Rewriting the import in three parts",
-        "status": "The parser is under way; the other two have started.",
-        "course": "",
-        "queue": [
+        "role": "coordinator",
+        "goal": "Rewrite the import in three parts",
+        "subjects": [
           {
+            "id": "s1",
+            "name": "Parser rewrite",
             "status": "working",
-            "text": "Parser rewrite",
-            "detail": null
+            "text": "agent under way",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 70,
+            "closedAt": null,
+            "into": null
           },
           {
+            "id": "s2",
+            "name": "Error reporting",
             "status": "working",
-            "text": "Error reporting",
-            "detail": null
+            "text": "agent started",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 70,
+            "closedAt": null,
+            "into": null
           },
           {
+            "id": "s3",
+            "name": "Progress bar",
             "status": "working",
-            "text": "Progress bar",
-            "detail": null
+            "text": "agent started",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 70,
+            "closedAt": null,
+            "into": null
           }
         ],
-        "works": [],
-        "open": [],
-        "next": [],
-        "since": [
-          {
-            "status": "working",
-            "text": "Parser rewrite under way",
-            "detail": null
-          },
-          {
-            "status": "working",
-            "text": "Error reporting started",
-            "detail": null
-          }
-        ],
-        "workstreams": [
-          {
-            "status": "working",
-            "text": "Parser rewrite: reads the new file format",
-            "detail": null
-          },
-          {
-            "status": "working",
-            "text": "Error reporting: shows why a row failed",
-            "detail": null
-          },
-          {
-            "status": "working",
-            "text": "Progress bar: shows the import advancing",
-            "detail": null
-          }
-        ],
-        "earlier": []
+        "children": [],
+        "nextId": 4,
+        "nextChildId": 1,
+        "lastLookAt": 60,
+        "look": null
       }
     },
     "exchange": {
@@ -2876,53 +2956,62 @@
     },
     "checks": [
       {
-        "overview": "written"
+        "overview": "changed"
       },
       {
-        "sinceNoRepeat": true
-      },
-      {
-        "sinceAtMost": 4
-      },
-      {
-        "overviewItem": "parser",
-        "list": "since",
+        "subject": "parser",
         "status": "done"
       },
       {
-        "partsNotRepeated": true
+        "noSubject": "parser",
+        "status": "working"
       },
       {
-        "noOverviewItem": "parser",
-        "status": "working"
+        "noNewSubject": true
+      },
+      {
+        "subjectsNotRepeated": true
       }
     ]
   },
   {
     "name": "overview-ask-not-restated",
-    "about": "A question the agent put to the person stays in the inbox. The guide may say the work waits, and nothing more.",
+    "about": "A question the agent put to the person stays in the inbox. The subject may say it waits on the person, and nothing more.",
     "ledger": {
       "turn": 3,
       "nextId": 2,
       "overview": {
-        "isCoordinator": false,
-        "state": "on-track",
-        "headline": "Rewriting the import parser",
-        "status": "The new parser reads most files.",
-        "course": "",
-        "queue": [
+        "role": "session",
+        "goal": "Rewrite the import parser",
+        "subjects": [
           {
+            "id": "s1",
+            "name": "Unreadable rows",
             "status": "working",
-            "text": "Handle rows the parser cannot read",
-            "detail": null
+            "text": "parser skips them",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 70,
+            "closedAt": null,
+            "into": null
+          },
+          {
+            "id": "s2",
+            "name": "New parser",
+            "status": "done",
+            "text": "reads well-formed rows",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 40,
+            "closedAt": 40,
+            "into": null
           }
         ],
-        "works": [],
-        "open": [],
-        "next": [],
-        "since": [],
-        "workstreams": [],
-        "earlier": []
+        "children": [],
+        "nextId": 3,
+        "nextChildId": 1,
+        "lastLookAt": 60,
+        "look": null
       },
       "items": [
         {
@@ -2947,44 +3036,50 @@
     },
     "checks": [
       {
-        "overview": "written"
+        "overview": "changed"
+      },
+      {
+        "subject": "row",
+        "status": "waits-on-you"
       },
       {
         "asksNotRestated": true
       },
       {
-        "featureLevel": true
+        "noTextWithAll": ["keep", "skip"]
       },
       {
-        "noTextWithAll": ["keep", "skip"]
+        "featureLevel": true
       }
     ]
   },
   {
-    "name": "overview-new-topic-folds",
-    "about": "A different task starts a new topic. The old one folds into one earlier line.",
+    "name": "overview-new-goal",
+    "about": "A different task sets a new goal and a new working subject. The finished one stays done.",
     "ledger": {
       "turn": 6,
       "nextId": 1,
       "overview": {
-        "isCoordinator": false,
-        "state": "finished",
-        "headline": "Fixing the checkout total after a coupon",
-        "status": "The fix is committed and the checkout tests pass.",
-        "course": "",
-        "queue": [],
-        "works": [
+        "role": "session",
+        "goal": "Fix the checkout total after a coupon",
+        "subjects": [
           {
+            "id": "s1",
+            "name": "Coupon total",
             "status": "done",
-            "text": "Total is recomputed after a coupon",
-            "detail": null
+            "text": "recomputed after a coupon",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 70,
+            "closedAt": 70,
+            "into": null
           }
         ],
-        "open": [],
-        "next": [],
-        "since": [],
-        "workstreams": [],
-        "earlier": []
+        "children": [],
+        "nextId": 2,
+        "nextChildId": 1,
+        "lastLookAt": 60,
+        "look": null
       }
     },
     "exchange": {
@@ -2995,16 +3090,21 @@
     },
     "checks": [
       {
-        "overview": "written"
+        "overview": "changed"
       },
       {
-        "earlierAtLeast": 1
+        "goal": "dark|theme"
+      },
+      {
+        "subject": "dark|toggle|theme",
+        "status": "working"
+      },
+      {
+        "subject": "coupon",
+        "status": "done"
       },
       {
         "featureLevel": true
-      },
-      {
-        "foldsWithLine": true
       }
     ]
   },
@@ -3015,40 +3115,48 @@
       "turn": 5,
       "nextId": 1,
       "overview": {
-        "isCoordinator": false,
-        "state": "on-track",
-        "headline": "Adding offline mode to the notes app",
-        "status": "The note list now loads without a connection. Saving offline is next.",
-        "course": "",
-        "queue": [
+        "role": "session",
+        "goal": "Add offline mode to the notes app",
+        "subjects": [
           {
+            "id": "s1",
+            "name": "Offline saving",
             "status": "working",
-            "text": "Save notes while offline",
-            "detail": null
+            "text": "through file-system sync",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 70,
+            "closedAt": null,
+            "into": null
           },
           {
+            "id": "s2",
+            "name": "Merge on reconnect",
             "status": "queued",
-            "text": "Merge saved notes when the connection returns",
-            "detail": null
+            "text": "after saving works",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 40,
+            "closedAt": null,
+            "into": null
           },
           {
+            "id": "s3",
+            "name": "Offline note list",
             "status": "done",
-            "text": "Notes list loads offline",
-            "detail": null
+            "text": "loads without a connection",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 30,
+            "closedAt": 30,
+            "into": null
           }
         ],
-        "works": [
-          {
-            "status": "done",
-            "text": "Notes list loads offline",
-            "detail": null
-          }
-        ],
-        "open": [],
-        "next": [],
-        "since": [],
-        "workstreams": [],
-        "earlier": []
+        "children": [],
+        "nextId": 4,
+        "nextChildId": 1,
+        "lastLookAt": 60,
+        "look": null
       }
     },
     "exchange": {
@@ -3064,35 +3172,54 @@
     ]
   },
   {
-    "name": "overview-course-carries",
-    "about": "A course already reported stays through ordinary progress. The call neither rewrites nor drops it.",
+    "name": "overview-reversal-then-progress",
+    "about": "Progress after a reversal closes the subject and keeps its was line, without a new subject.",
     "ledger": {
       "turn": 6,
       "nextId": 1,
       "overview": {
-        "isCoordinator": false,
-        "state": "on-track",
-        "headline": "Adding offline mode to the notes app",
-        "status": "Saving offline now goes through the file system.",
-        "course": "Moved to file-system sync because the browser database cannot hold attachments.",
-        "queue": [
+        "role": "session",
+        "goal": "Add offline mode to the notes app",
+        "subjects": [
           {
+            "id": "s1",
+            "name": "Offline saving",
             "status": "working",
-            "text": "Save notes to the file system",
-            "detail": null
+            "text": "through file-system sync",
+            "was": "through the browser database",
+            "createdAt": 10,
+            "changedAt": 80,
+            "closedAt": null,
+            "into": null
           },
           {
+            "id": "s2",
+            "name": "Merge on reconnect",
             "status": "queued",
-            "text": "Merge saved notes when the connection returns",
-            "detail": null
+            "text": "after saving works",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 40,
+            "closedAt": null,
+            "into": null
+          },
+          {
+            "id": "s3",
+            "name": "Offline note list",
+            "status": "done",
+            "text": "loads without a connection",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 30,
+            "closedAt": 30,
+            "into": null
           }
         ],
-        "works": [],
-        "open": [],
-        "next": [],
-        "since": [],
-        "workstreams": [],
-        "earlier": []
+        "children": [],
+        "nextId": 4,
+        "nextChildId": 1,
+        "lastLookAt": 60,
+        "look": null
       }
     },
     "exchange": {
@@ -3103,10 +3230,20 @@
     },
     "checks": [
       {
-        "courseKept": true
+        "overview": "changed"
       },
       {
-        "course": true
+        "goal": "^Add offline mode to the notes app$"
+      },
+      {
+        "subject": "sav",
+        "status": "done"
+      },
+      {
+        "was": "browser|database"
+      },
+      {
+        "noNewSubject": true
       },
       {
         "featureLevel": true
@@ -3114,35 +3251,43 @@
     ]
   },
   {
-    "name": "overview-course-not-rewritten",
-    "about": "A reply that explains the earlier change again does not make the call write a new course.",
+    "name": "overview-reversal-explained-again",
+    "about": "A reply that explains an earlier reversal again changes nothing on the Overview.",
     "ledger": {
       "turn": 6,
       "nextId": 1,
       "overview": {
-        "isCoordinator": false,
-        "state": "on-track",
-        "headline": "Adding offline mode to the notes app",
-        "status": "Saving offline now goes through the file system.",
-        "course": "Moved to file-system sync because the browser database cannot hold attachments.",
-        "queue": [
+        "role": "session",
+        "goal": "Add offline mode to the notes app",
+        "subjects": [
           {
+            "id": "s1",
+            "name": "Offline saving",
             "status": "working",
-            "text": "Save notes to the file system",
-            "detail": null
+            "text": "through file-system sync",
+            "was": "through the browser database",
+            "createdAt": 10,
+            "changedAt": 80,
+            "closedAt": null,
+            "into": null
           },
           {
+            "id": "s2",
+            "name": "Merge on reconnect",
             "status": "queued",
-            "text": "Merge saved notes when the connection returns",
-            "detail": null
+            "text": "after saving works",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 40,
+            "closedAt": null,
+            "into": null
           }
         ],
-        "works": [],
-        "open": [],
-        "next": [],
-        "since": [],
-        "workstreams": [],
-        "earlier": []
+        "children": [],
+        "nextId": 3,
+        "nextChildId": 1,
+        "lastLookAt": 60,
+        "look": null
       }
     },
     "exchange": {
@@ -3153,19 +3298,13 @@
     },
     "checks": [
       {
-        "courseKept": true
-      },
-      {
-        "course": true
-      },
-      {
-        "featureLevel": true
+        "overview": "unchanged"
       }
     ]
   },
   {
     "name": "overview-host-tasks",
-    "about": "The agent's own task list is evidence for the queue. Its steps become work at the level of the feature, not file names or commands.",
+    "about": "The agent's own task list is evidence for subjects. Its steps become work at the level of the feature, not file names or commands.",
     "ledger": {
       "turn": 1,
       "nextId": 1,
@@ -3206,21 +3345,405 @@
     },
     "checks": [
       {
-        "overview": "written"
+        "overview": "changed"
       },
       {
         "featureLevel": true
       },
       {
-        "overviewItem": "browser|total",
-        "list": "queue"
+        "subject": "browser|total"
       },
       {
-        "overviewItem": "receipt|email|discount",
-        "list": "queue"
+        "subject": "receipt|email|discount"
       },
       {
-        "partsNotRepeated": true
+        "subjectsNotRepeated": true
+      }
+    ]
+  },
+  {
+    "name": "overview-long-session",
+    "about": "A session at real size, with six open subjects and six closed, finishes one subject and starts the next. The list stays one line per subject, with no repeats and no new subject for work it holds.",
+    "ledger": {
+      "overview": {
+        "role": "session",
+        "goal": "Ship pinch to dismiss for glances",
+        "subjects": [
+          {
+            "id": "s1",
+            "name": "Pinch to dismiss",
+            "status": "working",
+            "text": "gesture tracks the finger",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 80,
+            "closedAt": null,
+            "into": null
+          },
+          {
+            "id": "s2",
+            "name": "Glance colors",
+            "status": "waits-on-other",
+            "text": "design review pending",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 75,
+            "closedAt": null,
+            "into": null
+          },
+          {
+            "id": "s3",
+            "name": "Crash on rotate",
+            "status": "problem",
+            "text": "reproduces on iPad only",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 72,
+            "closedAt": null,
+            "into": null
+          },
+          {
+            "id": "s4",
+            "name": "Haptics",
+            "status": "queued",
+            "text": "after the gesture lands",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 50,
+            "closedAt": null,
+            "into": null
+          },
+          {
+            "id": "s5",
+            "name": "Settings toggle",
+            "status": "queued",
+            "text": "after haptics",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 45,
+            "closedAt": null,
+            "into": null
+          },
+          {
+            "id": "s6",
+            "name": "Release notes",
+            "status": "queued",
+            "text": "for the next build",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 44,
+            "closedAt": null,
+            "into": null
+          },
+          {
+            "id": "s7",
+            "name": "Glance layout",
+            "status": "done",
+            "text": "fits small screens",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 40,
+            "closedAt": 40,
+            "into": null
+          },
+          {
+            "id": "s8",
+            "name": "Dismiss animation",
+            "status": "done",
+            "text": "springs back when cancelled",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 38,
+            "closedAt": 38,
+            "into": null
+          },
+          {
+            "id": "s9",
+            "name": "Accessibility labels",
+            "status": "done",
+            "text": "read by VoiceOver",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 35,
+            "closedAt": 35,
+            "into": null
+          },
+          {
+            "id": "s10",
+            "name": "Analytics event",
+            "status": "dropped",
+            "text": "not needed",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 30,
+            "closedAt": 30,
+            "into": null
+          },
+          {
+            "id": "s11",
+            "name": "Snapshot tests",
+            "status": "done",
+            "text": "cover both themes",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 28,
+            "closedAt": 28,
+            "into": null
+          },
+          {
+            "id": "s12",
+            "name": "Swipe threshold",
+            "status": "done",
+            "text": "tuned with design",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 25,
+            "closedAt": 25,
+            "into": null
+          }
+        ],
+        "children": [],
+        "nextId": 13,
+        "nextChildId": 1,
+        "lastLookAt": 60,
+        "look": null
+      }
+    },
+    "exchange": {
+      "person": "Go on with the gesture.",
+      "reply": "Pinch to dismiss is finished: the glance follows the finger and closes past the threshold, and cancelling springs it back. I am starting on haptics now, a light tap when the glance closes.",
+      "activity": []
+    },
+    "checks": [
+      {
+        "overview": "changed"
+      },
+      {
+        "subject": "pinch",
+        "status": "done"
+      },
+      {
+        "subject": "haptic",
+        "status": "working"
+      },
+      {
+        "noNewSubject": true
+      },
+      {
+        "openAtMost": 6
+      },
+      {
+        "subjectsNotRepeated": true
+      },
+      {
+        "noTimeWords": true
+      },
+      {
+        "featureLevel": true
+      }
+    ]
+  },
+  {
+    "name": "overview-child-linked",
+    "about": "A running subagent that has no subject yet is linked to the subject whose work it does, and gets no subject of its own.",
+    "ledger": {
+      "overview": {
+        "role": "session",
+        "goal": "Fix the checkout total after a coupon",
+        "subjects": [
+          {
+            "id": "s1",
+            "name": "Coupon total",
+            "status": "working",
+            "text": "fix written, under review",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 80,
+            "closedAt": null,
+            "into": null
+          },
+          {
+            "id": "s2",
+            "name": "Browser check",
+            "status": "queued",
+            "text": "after the review",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 60,
+            "closedAt": null,
+            "into": null
+          }
+        ],
+        "children": [
+          {
+            "id": "c1",
+            "ref": "a1",
+            "kind": "subagent",
+            "name": "Review the coupon fix",
+            "subjectId": null,
+            "startedAt": 90,
+            "endedAt": null,
+            "lastActivityAt": 95
+          }
+        ],
+        "nextId": 3,
+        "nextChildId": 2,
+        "lastLookAt": 60,
+        "look": null
+      }
+    },
+    "exchange": {
+      "person": "Get a second opinion on the fix.",
+      "reply": "I started a subagent to review the coupon fix. I will check the total in a browser once its review comes back.",
+      "activity": []
+    },
+    "checks": [
+      {
+        "linked": "review",
+        "to": "coupon"
+      },
+      {
+        "noNewSubject": true
+      }
+    ]
+  },
+  {
+    "name": "overview-reword-only",
+    "about": "A reply that restates where a paused subject stands, with no news, changes nothing on the Overview.",
+    "ledger": {
+      "turn": 5,
+      "nextId": 1,
+      "overview": {
+        "role": "session",
+        "goal": "Add offline mode to the notes app",
+        "subjects": [
+          {
+            "id": "s1",
+            "name": "Offline saving",
+            "status": "working",
+            "text": "through file-system sync",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 70,
+            "closedAt": null,
+            "into": null
+          },
+          {
+            "id": "s2",
+            "name": "Merge on reconnect",
+            "status": "queued",
+            "text": "after saving works",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 40,
+            "closedAt": null,
+            "into": null
+          },
+          {
+            "id": "s3",
+            "name": "Offline note list",
+            "status": "done",
+            "text": "loads without a connection",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 30,
+            "closedAt": 30,
+            "into": null
+          }
+        ],
+        "children": [],
+        "nextId": 4,
+        "nextChildId": 1,
+        "lastLookAt": 60,
+        "look": null
+      }
+    },
+    "exchange": {
+      "turn": 6,
+      "person": "Where are we with merging?",
+      "activity": [],
+      "reply": "Merging notes on reconnect has not started. It comes after offline saving works, and I am still on saving through file-system sync."
+    },
+    "checks": [
+      {
+        "overview": "unchanged"
+      },
+      {
+        "subject": "merg",
+        "status": "queued"
+      }
+    ]
+  },
+  {
+    "name": "overview-no-time-words",
+    "about": "A reply full of times and dates leaves none of them in a name or a text. Code shows how long ago each subject changed.",
+    "ledger": {
+      "turn": 5,
+      "nextId": 1,
+      "overview": {
+        "role": "session",
+        "goal": "Add offline mode to the notes app",
+        "subjects": [
+          {
+            "id": "s1",
+            "name": "Offline saving",
+            "status": "working",
+            "text": "through file-system sync",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 70,
+            "closedAt": null,
+            "into": null
+          },
+          {
+            "id": "s2",
+            "name": "Merge on reconnect",
+            "status": "queued",
+            "text": "after saving works",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 40,
+            "closedAt": null,
+            "into": null
+          },
+          {
+            "id": "s3",
+            "name": "Offline note list",
+            "status": "done",
+            "text": "loads without a connection",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 30,
+            "closedAt": 30,
+            "into": null
+          }
+        ],
+        "children": [],
+        "nextId": 4,
+        "nextChildId": 1,
+        "lastLookAt": 60,
+        "look": null
+      }
+    },
+    "exchange": {
+      "turn": 6,
+      "person": "Status?",
+      "activity": ["edited src/storage/save.ts", "ran npm test -- storage (9 passed)"],
+      "reply": "Offline saving works as of this morning: a note saved an hour ago survived yesterday's restart test, and today's run passed. Merging on reconnect starts now."
+    },
+    "checks": [
+      {
+        "overview": "changed"
+      },
+      {
+        "subject": "sav",
+        "status": "done"
+      },
+      {
+        "noTimeWords": true
+      },
+      {
+        "featureLevel": true
       }
     ]
   }

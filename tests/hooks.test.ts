@@ -45,7 +45,7 @@ const BAND = {
 }
 
 let ledgerReply = LEDGER_REPLY
-let overviewReply: string | null = 'UNCHANGED'
+let overviewReply: string | null | string[] = 'UNCHANGED'
 let overviewPrompts: string[] = []
 let overviewHold: Promise<void> | null = null
 let sessionId = 'session-1'
@@ -66,6 +66,8 @@ let transcriptRows: { role: 'user' | 'assistant'; text: string; toolUses: never[
 
 let dialogAnswer: Record<string, unknown> = { result: 'ok', text: 'ok' }
 let otherToolAnswer: Record<string, unknown> = { result: 'ok', text: 'ok' }
+let spawnedAgentId = 'a1'
+let listedAgents: { id: string; status: string }[] = []
 
 let isGhMissing = false
 
@@ -181,6 +183,8 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   transcriptRows = []
   dialogAnswer = { result: 'ok', text: 'ok' }
   otherToolAnswer = { result: 'ok', text: 'ok' }
+  spawnedAgentId = 'a1'
+  listedAgents = []
   ghAnswers = []
   isGhMissing = false
   ledgerReply = LEDGER_REPLY
@@ -278,12 +282,17 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
     if (isOverview) overviewPrompts.push(e.prompt)
     else prompts.push(e.prompt)
     if (isOverview) await overviewHold
-    if (isOverview && overviewReply === null) return { deny: 'the Overview call failed' }
+    const overviewText = !isOverview
+      ? null
+      : Array.isArray(overviewReply)
+        ? (overviewReply.shift() ?? 'UNCHANGED')
+        : overviewReply
+    if (isOverview && overviewText === null) return { deny: 'the Overview call failed' }
 
     return {
       value: {
         isAnswered: true,
-        text: isOverview ? overviewReply! : ledgerReply,
+        text: isOverview ? overviewText! : ledgerReply,
         usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
       },
     }
@@ -334,6 +343,8 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
     if (e.tool !== 'AskUserQuestion') return otherToolAnswer as never
     return dialogAnswer as never
   })
+  on('agent.spawn', () => ({ model: 'sonnet', agentId: spawnedAgentId }))
+  on('agent.list', () => ({ value: listedAgents as never }))
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
   on('ui.press', async ($, e, next) => {
     await runBeforeAct()
@@ -742,7 +753,7 @@ test('Working… shows from the main agent’s turn.start to its turn.complete, 
     session = e.value as never
     return next(e)
   })
-  const now = async () => overviewPage(session!, 1_000_000).lead.find(l => l.id === 'status')?.text ?? null
+  const now = async () => (overviewPage(session!, 1_000_000).live === 'Working…' ? 'Working…' : null)
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   ledgerReply = 'NEW: do | - | Sign in to npm | - | -'
@@ -1177,12 +1188,17 @@ test('the band keeps what the mods after the inbox draw there, with its counts a
   }
 })
 
-const replyWithOverview = async ($: Engine, on: On, overview: string | null, ledgerAnswer = LEDGER_REPLY) => {
+const replyWithOverview = async (
+  $: Engine,
+  on: On,
+  overview: string | null | string[],
+  ledgerAnswer = LEDGER_REPLY,
+) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   overviewReply = overview
   ledgerReply = ledgerAnswer
-  let session: { ledger: { overview: { headline: string } | null; items: { ask: string }[] } } | null = null
+  let session: { ledger: { overview: { goal: string } | null; items: { ask: string }[] } } | null = null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
     session = e.value as never
     return next(e)
@@ -1202,9 +1218,9 @@ const replyWithOverview = async ($: Engine, on: On, overview: string | null, led
 }
 
 test('a reply’s Overview comes from the separate Overview call, after the ledger update', async ($, on) => {
-  const ledger = await replyWithOverview($, on, 'HEADLINE: Adding a greeting CLI\nSTATUS: Planning.')
+  const ledger = await replyWithOverview($, on, 'GOAL: Adding a greeting CLI\nNEW: working | Plan | Planning')
 
-  expect(ledger.overview?.headline).toBe('Adding a greeting CLI')
+  expect(ledger.overview?.goal).toBe('Adding a greeting CLI')
   expect(ledger.items.map(i => i.ask)).toEqual(['Use Node or Python?', 'Name the command greet?'])
   expect(overviewPrompts).toHaveLength(1)
 })
@@ -1214,6 +1230,17 @@ test('a failed Overview call leaves the ledger update applied and no Overview', 
 
   expect(ledger.overview).toBeNull()
   expect(ledger.items.map(i => i.ask)).toEqual(['Use Node or Python?', 'Name the command greet?'])
+  expect(overviewPrompts).toHaveLength(1)
+})
+
+test('an Overview answer that holds prose is asked once more, and the second answer applies', async ($, on) => {
+  const ledger = await replyWithOverview($, on, [
+    'The person wants a CLI.\nGOAL: Adding a greeting CLI',
+    'GOAL: Adding a greeting CLI',
+  ])
+
+  expect(overviewPrompts).toHaveLength(2)
+  expect(ledger.overview?.goal).toBe('Adding a greeting CLI')
 })
 
 test('an Overview answer of UNCHANGED leaves the last Overview as it was', async ($, on) => {
@@ -1225,7 +1252,7 @@ test('an Overview answer of UNCHANGED leaves the last Overview as it was', async
 test('a ledger update shows before its Overview call returns', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  let session: { ledger: { overview: { headline: string } | null; items: { id: string }[] } } | null = null
+  let session: { ledger: { overview: { goal: string } | null; items: { id: string }[] } } | null = null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
     session = e.value as never
     return next(e)
@@ -1242,7 +1269,7 @@ test('a ledger update shows before its Overview call returns', async ($, on) => 
 
   let release: () => void = () => undefined
   overviewHold = new Promise<void>(resolve => (release = resolve))
-  overviewReply = 'HEADLINE: Scaffolding the command'
+  overviewReply = 'GOAL: Scaffolding the command'
   ledgerReply = 'CLOSED: i1 | Node chosen'
   await reply('use node', 't2')
 
@@ -1251,11 +1278,11 @@ test('a ledger update shows before its Overview call returns', async ($, on) => 
   expect(overviewPrompts.at(-1)).not.toContain('Use Node or Python?')
   release()
   await clock.settle()
-  expect(session!.ledger.overview?.headline).toBe('Scaffolding the command')
+  expect(session!.ledger.overview?.goal).toBe('Scaffolding the command')
 })
 
 test('a ledger call that gives no usable answer runs no Overview call', async ($, on) => {
-  const ledger = await replyWithOverview($, on, 'HEADLINE: Adding a greeting CLI', 'not a ledger')
+  const ledger = await replyWithOverview($, on, 'GOAL: Adding a greeting CLI', 'not a ledger')
 
   expect(overviewPrompts).toEqual([])
   expect(ledger.overview).toBeNull()
@@ -1264,7 +1291,7 @@ test('a ledger call that gives no usable answer runs no Overview call', async ($
 test('the next ledger update does not wait for an earlier Overview call, and Overview calls run one at a time', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  let session: { ledger: { overview: { headline: string } | null; items: { ask: string }[] } } | null = null
+  let session: { ledger: { overview: { goal: string } | null; items: { ask: string }[] } } | null = null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
     session = e.value as never
     return next(e)
@@ -1278,7 +1305,7 @@ test('the next ledger update does not wait for an earlier Overview call, and Ove
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   let release: () => void = () => undefined
   overviewHold = new Promise<void>(resolve => (release = resolve))
-  overviewReply = 'HEADLINE: Scaffolding the command'
+  overviewReply = 'GOAL: Scaffolding the command'
   ledgerReply = 'NEW: do | - | Water the plants | - | -'
   await reply('add a greeting cli', 't1')
   ledgerReply = 'NEW: do | - | Feed the cat | - | -'
@@ -1289,7 +1316,7 @@ test('the next ledger update does not wait for an earlier Overview call, and Ove
   release()
   await clock.settle()
   expect(overviewPrompts).toHaveLength(2)
-  expect(overviewPrompts[1]).toContain('HEADLINE: Scaffolding the command')
+  expect(overviewPrompts[1]).toContain('<goal>\nScaffolding the command\n</goal>')
 })
 
 test('resumed into a conversation it cannot fork yet, it catches up from the transcript before any reply', async ($, on) => {
@@ -1319,8 +1346,9 @@ test('resumed into a conversation it cannot fork yet, it catches up from the tra
 test('a catch-up writes its Overview with a separate call over the transcript', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  overviewReply = 'HEADLINE: Adding a greeting CLI\nSTATUS: The plan is written.'
-  let session: { ledger: { overview: { headline: string; status: string } | null } } | null = null
+  overviewReply = 'GOAL: Adding a greeting CLI\nNEW: queued | Command | named greet'
+  let session: { ledger: { overview: { goal: string; subjects: { name: string; status: string }[] } | null } } | null =
+    null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
     session = e.value as never
     return next(e)
@@ -1339,7 +1367,10 @@ test('a catch-up writes its Overview with a separate call over the transcript', 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.settle()
 
-  expect(session!.ledger.overview).toMatchObject({ headline: 'Adding a greeting CLI', status: 'The plan is written.' })
+  expect(session!.ledger.overview).toMatchObject({
+    goal: 'Adding a greeting CLI',
+    subjects: [{ name: 'Command', status: 'queued' }],
+  })
   expect(overviewPrompts.at(-1)).toContain('<conversation>\nPerson: Add a greeting CLI.')
 })
 
@@ -3433,9 +3464,9 @@ test('/clear and /resume switch the inbox to the other conversation, and each ke
 test('where classic.SessionStart is skipped, the first prompt after /clear, /resume and /branch loads that conversation and carries its open questions', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  const turn = async (text: string, reply: string, headline: string) => {
+  const turn = async (text: string, reply: string, goal: string) => {
     ledgerReply = reply
-    overviewReply = `HEADLINE: ${headline}\nSTATUS: Waiting on an answer.`
+    overviewReply = `GOAL: ${goal}\nNEW: waits-on-you | Answer | Waiting on an answer`
     await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
     await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: text, reason: 'answer' })
     await clock.settle()
@@ -3458,7 +3489,7 @@ test('where classic.SessionStart is skipped, the first prompt after /clear, /res
   const branched = await contextOf('session-3', 'resume', 'try another way')
   expect(branched).toContain('Pin Node?')
   expect(branched).toContain('Working on: Fixing the build')
-  expect(branched).toContain('Status: Waiting on an answer.')
+  expect(branched).toContain('- Answer: Waiting on an answer (waits-on-you)')
 
   const resumed = await contextOf('session-1', 'resume', 'where were we?')
   expect(resumed).toContain('Pick a cache?')
@@ -3568,7 +3599,7 @@ test('a session saved mid-turn by a process that ended loads with no turn runnin
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.settle()
-  expect(overviewPage(session!, 1_000_000).lead.find(l => l.id === 'status')?.text ?? null).toBeNull()
+  expect(overviewPage(session!, 1_000_000).live).not.toBe('Working…')
   const pane = await $.ui.mount(PANE)
   await pane.press({ key: 'select-i1' })
   await clock.advance(PRESS_GUARD_MS)
@@ -4493,18 +4524,16 @@ test('a forked conversation keeps the parent’s findings and closed records, an
   expect(await contextOf()).toContain('- issue: Retry loop never backs off (close id: f1)')
 })
 
-test('a stream’s mark on the Overview moves each frame, and any other working item’s only while a turn runs', async ($, on) => {
+test('a working subject’s mark on the Overview moves each frame only while a turn runs, and a queued subject’s never does', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
   paneState = { isShown: true, isFocused: true }
   overviewReply = [
-    'KIND: coordinator',
-    'HEADLINE: Adding a greeting CLI',
-    'STATUS: Writing the parser.',
-    'QUEUE: working | Write the help text',
-    'QUEUE: queued | Add a --loud flag',
-    'STREAM: working | Parser: reads the new format',
+    'ROLE: coordinator',
+    'GOAL: Adding a greeting CLI',
+    'NEW: working | Help text | being written',
+    'NEW: queued | Loud flag | after the help text',
   ].join('\n')
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
@@ -4517,44 +4546,49 @@ test('a stream’s mark on the Overview moves each frame, and any other working 
   const markOf = async (key: string) =>
     [...((await pane.find({ key }))?.text ?? '')].filter(c => RUNNING_FRAMES.some(f => f === c)).join('')
   const frames = async () => {
-    const stream: string[] = []
-    const queue: string[] = []
+    const working: string[] = []
+    const queued: string[] = []
     const moving: string[] = []
     for (let n = 0; n < RUNNING_FRAMES.length; n++) {
-      stream.push(await markOf('overview-workstreams-0'))
-      queue.push(await markOf('overview-queue-0'))
+      working.push(await markOf('overview-s1'))
+      queued.push(await markOf('overview-s2'))
       moving.push(runningMark(clock.now()))
       await clock.advance(RUNNING_FRAME_MS)
     }
     expect(new Set(moving).size).toBeGreaterThan(1)
 
-    return { stream, queue, moving, still: moving.map(() => '●') }
+    return { working, queued, moving, still: moving.map(() => '●') }
   }
 
   const idle = await frames()
-  expect(idle.stream).toEqual(idle.moving)
-  expect(idle.queue).toEqual(idle.still)
+  expect(idle.working).toEqual(idle.still)
+  expect(idle.queued).toEqual(idle.moving.map(() => ''))
 
   await $.turn.start({ text: 'go on', turnId: 't2' })
   await clock.settle()
   const running = await frames()
-  expect(running.stream).toEqual(running.moving)
-  expect(running.queue).toEqual(running.moving)
+  expect(running.working).toEqual(running.moving)
+  expect(running.queued).toEqual(running.moving.map(() => ''))
 
-  await $.turn.complete({ answer: 'Parser written.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
+  await $.turn.complete({
+    answer: 'Help text written.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't2',
+    reason: 'answer',
+  })
   await clock.settle()
   const ended = await frames()
-  expect(ended.stream).toEqual(ended.moving)
-  expect(ended.queue).toEqual(ended.still)
+  expect(ended.working).toEqual(ended.still)
 })
 
-test('on a next build, the Overview page shows the headline, the status and the queue in place of rows, leaves the row keys idle, and a row tab shows its rows again', async ($, on) => {
+test('on a next build, the Overview tab’s news dot clears when the page shows, the page shows the goal and the subjects in place of rows, leaves the row keys idle, and a row tab shows its rows again', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
   paneState = { isShown: true, isFocused: true }
   overviewReply =
-    'HEADLINE: Adding a greeting CLI\nSTATUS: Waiting on two choices.\nQUEUE: waits-on-you | Pick a runtime\nQUEUE: done | Plan written'
+    'GOAL: Adding a greeting CLI\nNEW: waits-on-you | Runtime | Node or Python\nNEW: working | Plan | being written\nDONE: s2 | written'
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
@@ -4568,12 +4602,14 @@ test('on a next build, the Overview page shows the headline, the status and the 
     return saved && JSON.parse(saved[1]).ledger.overview.look
   }
   expect(lookOf()).toBeNull()
+  expect(await pane.find({ text: /^ •$/ })).toBeDefined()
   await pane.press({ key: 'tab-key-overview' })
   await clock.settle()
   expect(lookOf()).not.toBeNull()
-  expect((await pane.find({ key: 'overview-headline' }))?.text).toBe('Adding a greeting CLI')
-  expect((await pane.find({ key: 'overview-status' }))?.text).toBe('Waiting on two choices.')
-  expect(await pane.find({ text: /^Plan written$/ })).toBeDefined()
+  expect(await pane.find({ text: /^ •$/ })).toBeUndefined()
+  expect((await pane.find({ key: 'overview-goal' }))?.text).toBe('Adding a greeting CLI')
+  expect((await pane.find({ key: 'overview-s1' }))?.text).toContain('Runtime: Node or Python')
+  expect((await pane.find({ key: 'overview-s2' }))?.text).toContain('Plan: written')
   expect(await pane.find({ text: /Use Node or Python\?/ })).toBeUndefined()
   const rowKeys = async () =>
     (await pane.findAll({ type: 'Button' }))
@@ -4590,13 +4626,13 @@ test('on a next build, the Overview page shows the headline, the status and the 
     detail: 'Only tests run.',
   })
   await clock.settle()
-  expect(await pane.find({ key: 'overview-headline' })).toBeDefined()
+  expect(await pane.find({ key: 'overview-goal' })).toBeDefined()
   expect(await rowKeys()).toEqual(['no-row-d-key', 'no-row-x-key'])
 
   await pane.press({ key: 'tab-key-needsYou' })
   await clock.settle()
   expect(lookOf()).toBeNull()
-  expect(await pane.find({ key: 'overview-headline' })).toBeUndefined()
+  expect(await pane.find({ key: 'overview-goal' })).toBeUndefined()
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
   await pane.press({ key: 'tab-findings' })
   expect(await pane.find({ key: 'address-f3' })).toBeDefined()
@@ -4607,7 +4643,7 @@ test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Overview page
   const prompts: string[] = []
   world($, on, prompts)
   paneState = { isShown: true, isFocused: true }
-  overviewReply = 'HEADLINE: Adding a greeting CLI\nSTATUS: Waiting on two choices.'
+  overviewReply = 'GOAL: Adding a greeting CLI\nNEW: waits-on-you | Runtime | Node or Python'
   let page: { value: unknown; version: number } = { value: 'overview', version: 1 }
   on('state.get', { plugin: 'inbox', key: 'page' } as const, () => ({ value: page as never }))
   on('state.set', { plugin: 'inbox', key: 'page' } as const, ($, e) => {
@@ -4622,7 +4658,7 @@ test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Overview page
   const pane = await $.ui.mount(PANE)
   await clock.settle()
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
-  expect(await pane.find({ key: 'overview-headline' })).toBeUndefined()
+  expect(await pane.find({ key: 'overview-goal' })).toBeUndefined()
   const tabKeys = (await pane.findAll({ type: 'Button' }))
     .filter(b => (b.key ?? '').startsWith('tab-key-'))
     .map(b => [b.key, b.props.hotkey])
@@ -4666,6 +4702,186 @@ test('Claude Code task calls build the agent task list the Overview call reads',
   expect(after && JSON.parse(after[1]).hostTasks[1].status).toBe('pending')
 })
 
+const childrenOf = (stored: Map<string, string>) => {
+  const saved = [...stored].find(([k]) => k.startsWith('s:'))
+  const children: { kind: string; name: string; endedAt: number | null; lastActivityAt: number | null }[] =
+    (saved && JSON.parse(saved[1]).ledger.overview?.children) ?? []
+
+  return children
+}
+const notice = (id: string, status: string) =>
+  `<task-notification>\n<task-id>${id}</task-id>\n<status>${status}</status>\n<summary>Done</summary>\n</task-notification>`
+
+test('a subagent, a background command, a Monitor and a Workflow each run as a child on the Overview until their result or notice ends them', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  const running = () =>
+    childrenOf(stored)
+      .filter(c => c.endedAt === null)
+      .map(c => [c.kind, c.name])
+  const fromCall = (id: string) => ({
+    tool_use_id: id,
+    parentModel: 'opus',
+    fork: false,
+    background: true,
+    provider: { tier: 'core' },
+  })
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'review it', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'review it', turnId: 't1' })
+  await $.agent.spawn({
+    ...fromCall('tu1'),
+    prompt: 'Review',
+    description: 'Review the diff',
+    subagentType: 'Explore',
+  } as never)
+  otherToolAnswer = {
+    result: {
+      status: 'async_launched',
+      agentId: 'a1',
+      description: 'Review the diff',
+      prompt: 'Review',
+      outputFile: '/tmp/a1',
+    },
+    text: '',
+  }
+  await $.tool.call({ tool: 'Agent', description: 'Review the diff', prompt: 'Review', tool_use_id: 'tu1' } as never)
+  otherToolAnswer = { result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'b1' }, text: '' }
+  await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'Run the tests', run_in_background: true })
+  otherToolAnswer = { result: { taskId: 'm1', timeoutMs: 0 }, text: '' }
+  await $.tool.call({ tool: 'Monitor', description: 'Watch the deploy', timeout_ms: 1000, command: 'tail -f log' })
+  otherToolAnswer = { result: { status: 'async_launched', taskId: 'w1', workflowName: 'review-changes' }, text: '' }
+  await $.tool.call({ tool: 'Workflow', script: 'export const meta = {}', tool_use_id: 'tu5' } as never)
+  await clock.settle()
+  expect(running()).toEqual([
+    ['subagent', 'Review the diff'],
+    ['background', 'Run the tests'],
+    ['background', 'Watch the deploy'],
+    ['workflow', 'review-changes'],
+  ])
+
+  await clock.advance(20 * 60_000)
+  spawnedAgentId = 'wa1'
+  await $.agent.spawn({
+    ...fromCall('tu5'),
+    prompt: 'x',
+    description: 'x',
+    subagentType: 'x',
+    workflow: { runId: 'wf_1', agentIndex: 1 },
+  } as never)
+  await $.tool.call({ tool: 'Read', file_path: '/tmp/a', agentId: 'a1' } as never)
+  await clock.settle()
+  const activeAt = (name: string) => childrenOf(stored).find(c => c.name === name)?.lastActivityAt
+  expect(activeAt('review-changes')).toBe(clock.now())
+  expect(activeAt('Review the diff')).toBe(clock.now())
+  expect(activeAt('Run the tests')).toBeNull()
+
+  for (const [id, status] of [
+    ['a1', 'completed'],
+    ['b1', 'failed'],
+    ['m1', 'killed'],
+    ['w1', 'completed'],
+  ] as const)
+    await $.prompt.submit({ text: notice(id, status), wait: false, origin: { kind: 'task-notification' } })
+  await clock.settle()
+  expect(running()).toEqual([])
+})
+
+test('a subagent that runs inside its Agent call ends at the call’s result, and one the agent list no longer names ends at the turn’s end', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  const running = () =>
+    childrenOf(stored)
+      .filter(c => c.endedAt === null)
+      .map(c => c.name)
+  const spawn = (description: string) =>
+    $.agent.spawn({
+      tool_use_id: description,
+      parentModel: 'opus',
+      fork: false,
+      background: false,
+      provider: { tier: 'core' },
+      prompt: 'x',
+      description,
+      subagentType: 'Explore',
+    } as never)
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'look around', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'look around', turnId: 't1' })
+  await spawn('Map the repo')
+  expect(running()).toEqual(['Map the repo'])
+  otherToolAnswer = {
+    result: {
+      status: 'completed',
+      agentId: 'a1',
+      content: [],
+      prompt: 'x',
+      totalToolUseCount: 1,
+      totalDurationMs: 1,
+      totalTokens: 1,
+    },
+    text: 'done',
+  }
+  await $.tool.call({ tool: 'Agent', description: 'Map the repo', prompt: 'x' })
+  expect(running()).toEqual([])
+
+  spawnedAgentId = 'a2'
+  await spawn('Read the tests')
+  listedAgents = [{ id: 'a2', status: 'completed' }]
+  await $.turn.complete({ answer: 'Mapped.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  expect(running()).toEqual([])
+})
+
+test('a Herdr delegate runs as a child from the command that starts it until a wait on it ends, keeps its id when prompted again, and ends at a turn’s end once Herdr shows it no longer working', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  const delegates = () => childrenOf(stored).map(c => [c.kind, c.name, c.endedAt === null])
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'hand it off', wait: false, origin: { kind: 'composer' } })
+  await $.tool.call({ tool: 'Bash', command: 'herdr agent start fixer --cmd claude' })
+  expect(delegates()).toEqual([['delegate', 'fixer', true]])
+  await $.tool.call({ tool: 'Bash', command: 'herdr agent wait fixer --until working' })
+  expect(delegates()).toEqual([['delegate', 'fixer', true]])
+  await $.tool.call({ tool: 'Bash', command: 'herdr agent wait fixer --until idle' })
+  expect(delegates()).toEqual([['delegate', 'fixer', false]])
+
+  await $.tool.call({ tool: 'Bash', command: 'herdr agent prompt fixer "go on"' })
+  otherToolAnswer = { result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'bw1' }, text: '' }
+  await $.tool.call({ tool: 'Bash', command: 'herdr agent wait fixer', run_in_background: true })
+  expect(delegates()).toEqual([['delegate', 'fixer', true]])
+  await $.prompt.submit({ text: notice('bw1', 'completed'), wait: false, origin: { kind: 'task-notification' } })
+  await clock.settle()
+  expect(delegates()).toEqual([['delegate', 'fixer', false]])
+  expect(childrenOf(stored)).toHaveLength(1)
+
+  await $.tool.call({ tool: 'Bash', command: 'herdr agent start reviewer --cmd codex' })
+  await $.tool.call({ tool: 'Bash', command: 'herdr agent start helper --cmd codex' })
+  await clock.advance(60_000)
+  await $.tool.call({ tool: 'Bash', command: 'herdr agent prompt scout "look around"' })
+  await clock.advance(5_000)
+  const agents = [
+    { name: 'reviewer', agent_status: 'idle' },
+    { name: 'helper', agent_status: 'working' },
+    { name: 'scout', agent_status: 'idle' },
+  ]
+  ghAnswers.push({
+    match: argv => argv.join(' ') === 'herdr agent list',
+    stdout: JSON.stringify({ id: 'q', result: { type: 'agent_list', agents } }),
+  })
+  await $.turn.complete({ answer: 'Handed off.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  expect(delegates()).toEqual([
+    ['delegate', 'fixer', false],
+    ['delegate', 'reviewer', false],
+    ['delegate', 'helper', true],
+    ['delegate', 'scout', true],
+  ])
+})
+
 test('the Overview page says what it is for before the session has any work', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   world($, on, [])
@@ -4674,17 +4890,17 @@ test('the Overview page says what it is for before the session has any work', as
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   const terminal = await $.ui.mount(PANE)
   await terminal.press({ key: 'tab-key-overview' })
-  expect(await terminal.find({ text: /It fills in once the work starts/ })).toBeDefined()
+  expect(await terminal.find({ text: /once the work starts\./ })).toBeDefined()
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  expect(await desktop.find({ text: /It fills in once the work starts/ })).toBeDefined()
+  expect(await desktop.find({ text: /once the work starts\./ })).toBeDefined()
 })
 
-test('on a next build, at 31 desktop columns the tabs show their symbols with their counts, at 69 their words, and the Overview page draws there', async ($, on) => {
+test('on a next build, at 31 desktop columns the tabs show their symbols with their counts and the Overview’s news dot, at 69 their words, and the Overview page draws there', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
   overviewReply =
-    'HEADLINE: Adding a greeting CLI\nSTATUS: Waiting on two choices.\nQUEUE: waits-on-you | Pick a runtime\nQUEUE: done | Plan written'
+    'GOAL: Adding a greeting CLI\nNEW: waits-on-you | Runtime | Node or Python\nNEW: working | Plan | being written\nDONE: s2 | written'
   surfaces = ['desktop']
 
   await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
@@ -4701,22 +4917,26 @@ test('on a next build, at 31 desktop columns the tabs show their symbols with th
   await clock.settle()
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 31 } })
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
-  expect((await tabBar()).tabs.map(t => [t.id, t.label, t.count])).toEqual(
-    shownTabs(true).map(t => [t.id, t.symbol, t.id === 'needsYou' ? 2 : t.id === 'findings' ? 1 : 0]),
+  expect((await tabBar()).tabs.map(t => [t.id, t.label, t.badge])).toEqual(
+    shownTabs(true).map(t => [
+      t.id,
+      t.symbol,
+      t.id === 'overview' ? '•' : t.id === 'needsYou' ? '2' : t.id === 'findings' ? '1' : null,
+    ]),
   )
   await pane.redraw({ ...PANE.props, bodyColumns: 69 })
   expect((await tabBar()).tabs.map(t => t.label)).toEqual(shownTabs(true).map(t => t.label))
   expect((await tabBar()).isEachFramed).toBe(true)
 
   const { tabs, gap } = await tabBar()
-  await pane.pointer({ type: 'down', x: tabs[1]!.width + gap, y: 1, button: 'left', in: 'tabs' })
+  await pane.pointer({ type: 'down', x: tabs[0]!.width + gap, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
   expect((await tabBar()).shown).toBe('needsYou')
   await pane.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
   expect((await tabBar()).shown).toBe('overview')
-  expect((await pane.find({ key: 'overview-headline' }))?.text).toBe('Adding a greeting CLI')
-  expect(await pane.find({ text: /^Plan written$/ })).toBeDefined()
+  expect((await pane.find({ key: 'overview-goal' }))?.text).toBe('Adding a greeting CLI')
+  expect((await pane.find({ key: 'overview-s2' }))?.text).toContain('Plan: written')
   expect(await pane.find({ key: 'select-f3' })).toBeUndefined()
 })
 

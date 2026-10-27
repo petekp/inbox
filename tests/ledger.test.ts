@@ -1073,13 +1073,13 @@ describe('the Herdr status line', () => {
   const statusOf = (ledger: Ledger, stop: Stop | null, dialogs: Dialog[]) =>
     herdrTokens(ledger, stop, sessionView({ ...emptySession(), ledger }, 3, 0, false), dialogs).inbox ?? ''
 
-  test('names the first waiting item after the count, and says where the work stands when nothing waits', () => {
+  test('names the first waiting item after the count, and the session’s goal when nothing waits', () => {
     const waiting = applyUpdate(EMPTY, parseReply(REPLY)!, 1, 1)
     expect(statusOf(waiting, null, [])).toBe('3 · Rename greet.mjs to hello.mjs?')
     const settled = applyUpdate(waiting, parseReply('CLOSED: i1 | yes\nCLOSED: i2 | no\nCLOSED: i3 | done')!, 2, 2)
     expect(statusOf(settled, null, [])).toBe('')
-    const described = { ...settled, overview: { ...EMPTY_OVERVIEW, headline: 'Reducer merged' } }
-    expect(statusOf(described, null, [])).toBe('Reducer merged')
+    const described = { ...settled, overview: { ...EMPTY_OVERVIEW, goal: 'Merge the reducer' } }
+    expect(statusOf(described, null, [])).toBe('Merge the reducer')
     expect(statusOf(EMPTY, null, [])).toBe('')
   })
 

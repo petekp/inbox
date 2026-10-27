@@ -64,8 +64,9 @@
         user-select: none;
       }
       /* Text a person may copy: what an item, PR or Overview line says, an error, and the reply field. */
+      .overview-identity,
       .overview-goal,
-      .overview-now,
+      .overview-live,
       .overview .content,
       .earlier,
       .body,
@@ -296,6 +297,10 @@
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
         text-align: right;
+      }
+      .mark.tone-needsYou,
+      .side.tone-needsYou {
+        color: var(--needs-you);
       }
       .side[data-room]::after {
         content: attr(data-room);
@@ -723,8 +728,9 @@
       .earlier {
         padding: 2px 14px 2px var(--text-x);
       }
+      .overview-identity,
       .overview-goal,
-      .overview-now {
+      .overview-live {
         padding: 0 14px 0 var(--text-x);
         overflow-wrap: anywhere;
       }
@@ -743,19 +749,31 @@
       .overview .content {
         overflow-wrap: anywhere;
       }
-      .overview-gap {
-        margin-top: var(--lead-gap);
+      .overview .row.child {
+        padding-left: var(--text-x);
+      }
+      .overview .child-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .overview .look-rule {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+      }
+      .overview .look-rule::after {
+        content: '';
+        flex: 1;
+        border-top: 1px solid color-mix(in oklab, var(--text) 15%, transparent);
       }
       .overview-goal {
         margin: 0;
         font-size: 15px;
         line-height: 22px;
         font-weight: 600;
-      }
-      .overview .group-title {
-        padding-top: 6px;
-        padding-bottom: 8px;
-        font-size: 14px;
       }
       .status-line,
       .demo-note,

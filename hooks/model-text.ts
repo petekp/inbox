@@ -3,15 +3,7 @@ import type { Closed, DialogQuestion, Finding, HostTask, Item, Ledger, Overview,
 export type { Told } from '../types'
 import type { Exchange } from './ledger'
 import { isAskedForChoices, LIST_CHOICES } from './ledger'
-import {
-  DETAIL_WORDS,
-  HEADLINE_WORDS,
-  ITEM_WORDS,
-  LIST_ITEMS,
-  overviewText,
-  SENTENCE_WORDS,
-  sinceText,
-} from './overview'
+import { GOAL_WORDS, isOpen, NAME_WORDS, OPEN_SUBJECTS, runningText, subjectsText, TEXT_WORDS } from './overview'
 import { tasksText } from './host-tasks'
 import { clip, clipMiddle, numberBlocks } from './text'
 
@@ -285,72 +277,91 @@ export const CLAUDE_CODE: Host = {
     "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox pane, and your findings, in the pane's Finds tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings.",
 }
 
-/** The system text of the call that writes the Overview page, apart from the ledger call. */
-export const OVERVIEW_SYSTEM = `You keep a one-page guide to a coding session, for the person who works with the agent. They read it when they come back, to see what the work is, how it is going and what comes next. You read the guide as it was and one exchange, and write the guide as it should be now.
+/** The system text of the call that changes the Overview's list, apart from the ledger call. */
+export const OVERVIEW_SYSTEM = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
 
-The guide is about the work. It is not a log of what the agent did, and it is not a list of what waits on the person: the inbox lists that. Write at the level of the feature or the fix. Never write a command, a file name, a commit, a test run, a tool call or a ticket number, and leave out a number, an id or a time unless the person needs it to find the work again.
+You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
 
 Input:
-- <last>: the guide as it was, in the same lines you write
-- <unseen>: the changes the person has not yet looked at, as SINCE lines
-- <tasks>: the agent's own task list, when it keeps one, as TASK lines. It is evidence for QUEUE, not the guide: write each item at the level of the feature. Write each in your own words as the outcome it reaches, not in the task's words: "Reset emails reach the person", not "Run the mailer tests". A queue item names a result, never an action that begins with Run, Check or Test. For a task that runs a command or a test, write the outcome it checks, or leave it out. Leave out a task that is only a step of another.
+- <goal>: the session's goal. Do not restate it.
+- <subjects>: the open subjects, one per line: id | status | name | where it stands
+- <finished>: subjects already done or dropped. Do not add them again.
+- <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
+- <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
 - <reply>: the agent's final reply
 
-Answer with lines only. No other text. If the exchange changed nothing about the work, answer with the one line UNCHANGED.
+Answer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, answer with the one line NO CHANGE. Most exchanges change nothing.
 
-Otherwise write every line below that applies, in this order:
-KIND: session, or coordinator when the session hands out work and reviews what comes back instead of doing the work itself
-TOPIC: same, or new when the work moved to a different task. Write new only for a different task, not for the next step of the same one.
-STATE: on-track, stuck or finished
-HEADLINE: one plain sentence naming what the session is doing, at most ${HEADLINE_WORDS} words. "-" when no work has started.
-STATUS: how it is going, in one or two plain sentences, at most ${SENTENCE_WORDS} words. Say what it waits on, if anything.
-COURSE: only in the reply where the approach changed, in one or two sentences, at most ${SENTENCE_WORDS} words: what changed and why. A new step is not a change. Leave the line out otherwise: the page keeps the last one until the person looks.
-FOLDED: only when TOPIC is new, one line saying what the old topic was and where it was left.
-Then lists, one item per line, each as KEY: status | text | detail, with the key on every line. The detail is optional. Text is at most ${ITEM_WORDS} words and detail at most ${DETAIL_WORDS}. At most ${LIST_ITEMS} items in a list.
-QUEUE: the work now: what is under way, what is queued behind it, what waits, and what just finished
-WORKS: what holds now: what works, what exists
-OPEN: risks, problems and unknowns
-NEXT: what comes next
-SINCE: what changed since the person last looked. Start from <unseen>, merge this exchange into it, and keep it short.
-STREAM: only in a coordinator session, in the same form as the other lists: one line for each stream of work, saying what it is for and where it stands. Put the work handed out in STREAM, and use QUEUE only for the coordinator's own steps, such as reviewing what a stream sends back. If a stream is already in QUEUE in the guide as it was, take it out of QUEUE.
+Otherwise write only the lines that apply:
+NEW: status | name | where it stands
+SET: id or name | status | where it stands
+DONE: id or name | where it ended
+DROP: id or name | why
+DROP: id or name | why | INTO id or name
+WAS: id or name | the plan it replaces
+LINK: running id | subject id or name
+ROLE: coordinator or session
+GOAL: the goal in the person's words, at most ${GOAL_WORDS} words
 
-Status is one of: working, queued, waits-on-you, waits-on-other, done, ruled-out, problem, unknown. Use waits-on-you when the agent cannot go on until the person acts, and waits-on-other for something else, such as a build. Use ruled-out for an approach tried or considered and dropped, and put the reason in the detail.
+A subject is one piece of the work that the person would name: a feature, a fix, a release, a problem, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call.
+
+The name is at most ${NAME_WORDS} words, the handle the person would use. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
+
+Status is one of: working, queued, waits-on-you, waits-on-other, problem.
+- working: being worked on now, in this session or in a session it handed the work to. When the work stopped, it is queued, waits on someone, or is done.
+- queued: planned, not started.
+- waits-on-you: the subject's work has stopped until the person acts. A question to the person is not a subject of its own.
+- waits-on-other: it waits on something else, such as a build, a review or another session.
+- problem: something broken or wrong that no one is fixing now.
 
 Rules:
-- Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed. The next rule wins over this one: when the guide as it was already repeats a fact in two lists, remove the repeat.
-- Do not write a question or task the agent put to the person, and do not say what the choice is. Say only that the work waits on the person, and stop.
-- Leave out that something was committed, pushed, merged or tested, in every line. Say what now works or is fixed.
-- Say each fact once, in the list that fits it best. Work that finished stays in QUEUE as done. WORKS holds only what works that QUEUE does not already name. What a stream is doing, and what it finished, stays on its STREAM line and is not written again in QUEUE, WORKS or OPEN. NEXT holds only what the queue does not already name. SINCE may repeat the other lists, since it says what changed.
-- Leave a list out when it has nothing worth saying. Do not fill a list to fill it.`
+- Change a subject by its id. Write NEW only when no subject in <subjects> covers it.
+- When work started and finished in this exchange, write NEW for it, then DONE with its name.
+- Write SET only when where a subject stands changed. Never reword a subject that did not change.
+- Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.
+- When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
+- The inbox shows each question and task for the person, with its options. Mark the subject waits-on-you, and say where its work stands or "needs your decision". Never name the choices.
+- Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
+- Write ROLE coordinator when the session hands out work and reviews what comes back instead of doing the work itself. Write ROLE only when it changes.
+- Write GOAL only when <goal> is empty, when the person states a new goal, or when the work moves to a different task.`
 
-function overviewBlocks(last: Overview | null, tasks: HostTask[]): string[] {
+function overviewBlocks(last: Overview | null, tasks: HostTask[], now: number): string[] {
+  const { open, finished } = subjectsText(last)
+  const running = runningText(last, now)
   const list = tasksText(tasks)
 
   return [
-    `<last>${NL}${overviewText(last)}${NL}</last>`,
-    `<unseen>${NL}${sinceText(last)}${NL}</unseen>`,
+    `<goal>${NL}${last?.goal || '(none yet)'}${NL}</goal>`,
+    `<subjects>${NL}${open}${NL}</subjects>`,
+    ...(finished === '' ? [] : [`<finished>${NL}${finished}${NL}</finished>`]),
+    ...(running === '' ? [] : [`<running>${NL}${running}${NL}</running>`]),
     ...(list === '' ? [] : [`<tasks>${NL}${list}${NL}</tasks>`]),
   ]
 }
 
-/** `last` is the Overview before the exchange. */
-export function overviewPrompt(last: Overview | null, ex: Exchange, tasks: HostTask[] = []): string {
+/** `last` is the Overview before the exchange, and `now` the time the running children are read at. */
+export function overviewPrompt(last: Overview | null, ex: Exchange, tasks: HostTask[], now: number): string {
   const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? 'unknown'}.)`
 
   return [
-    ...overviewBlocks(last, tasks),
+    ...overviewBlocks(last, tasks, now),
     `<person>${NL}${clipMiddle(person, 4000, 1500)}${NL}</person>`,
     `<activity>${NL}${clipMiddle(ex.activity.join(NL), 2500, 500)}${NL}</activity>`,
     `<reply>${NL}${clipMiddle(numberBlocks(ex.reply), 12000, 4000)}${NL}</reply>`,
   ].join(NL)
 }
 
-export function overviewCatchUpPrompt(last: Overview | null, transcript: string, tasks: HostTask[] = []): string {
+export function overviewCatchUpPrompt(
+  last: Overview | null,
+  transcript: string,
+  tasks: HostTask[],
+  now: number,
+): string {
   return [
-    'Treat the conversation in <conversation> as the exchange. Its start may be cut. Write the guide as it stands at the end of the conversation.',
-    ...overviewBlocks(last, tasks),
+    'Treat the conversation in <conversation> as the exchange. Its start may be cut. Answer with the changes that bring the list to where the conversation ends.',
+    ...overviewBlocks(last, tasks, now),
     `<conversation>${NL}${numberBlocks(transcript)}${NL}</conversation>`,
   ].join(NL)
 }
@@ -462,10 +473,13 @@ function findingLine(finding: Finding): string {
 
 /** What the Overview says the session is doing and how it is going. */
 function overviewLines(ledger: Ledger): string[] {
-  const overview = ledger.overview
-  if (!overview?.headline) return []
+  const goal = ledger.overview?.goal ?? ''
+  const open = (ledger.overview?.subjects ?? []).filter(isOpen)
 
-  return [`Working on: ${overview.headline}`, ...(overview.status ? [`Status: ${overview.status}`] : [])]
+  return [
+    ...(goal ? [`Working on: ${goal}`] : []),
+    ...(open.length > 0 ? ['Where it stands:', ...open.map(s => `- ${s.name}: ${s.text || '-'} (${s.status})`)] : []),
+  ]
 }
 
 export const CARRY_TITLE =
@@ -480,8 +494,9 @@ export function overviewCarryText(ledger: Ledger): string | null {
 
 export function carryText(ledger: Ledger, title: string): string | null {
   const findings = ledger.findings
-  if (!ledger.overview?.headline && ledger.items.length === 0 && findings.length === 0) return null
-  const out = [title, ...overviewLines(ledger)]
+  const lines = overviewLines(ledger)
+  if (lines.length === 0 && ledger.items.length === 0 && findings.length === 0) return null
+  const out = [title, ...lines]
   if (ledger.items.length > 0) {
     out.push('Waiting on the user:')
     for (const item of ledger.items) out.push(itemLine(item))

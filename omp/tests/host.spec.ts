@@ -60,6 +60,7 @@ let activeTools: string[]
 const pi = () =>
   ({
     on: (name: string, handler: Handler) => handlers.set(name, handler),
+    events: { on: (channel: string, handler: Handler) => handlers.set(channel, handler) },
     registerTool: (tool: any) => tools.set(tool.name, tool),
     registerCommand: (name: string, command: any) => commands.set(name, command),
     sendMessage: (message: { content: string }, options: unknown) => {
@@ -295,11 +296,11 @@ test('a turn that ends queues the exchange and the inbox model fills the ledger'
 
 test('a reply’s Overview comes from the separate Overview call, after the ledger update', async () => {
   createInbox(pi(), deps())
-  overviewReply = 'HEADLINE: Adding a greeting CLI'
+  overviewReply = 'GOAL: Adding a greeting CLI'
   await prompt('Add a greeting CLI')
   await endAgent('Plan written. Which runtime?')
   await settle()
-  expect(state().ledger.overview.headline).toBe('Adding a greeting CLI')
+  expect(state().ledger.overview.goal).toBe('Adding a greeting CLI')
   expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Use Node or Python?'])
   expect(overviewCompletions).toHaveLength(1)
   expect(overviewCompletions[0]!.prompt).toContain('Plan written. Which runtime?')
@@ -325,7 +326,7 @@ test('a ledger update shows before its Overview call returns', async () => {
   await settle()
   let release: () => void = () => undefined
   overviewHold = new Promise<void>(resolve => (release = resolve))
-  overviewReply = 'HEADLINE: Scaffolding the command'
+  overviewReply = 'GOAL: Scaffolding the command'
   reply = 'CLOSED: i1 | Node chosen'
   await prompt('Use Node')
   await endAgent('Scaffolded the command with Node.')
@@ -336,13 +337,13 @@ test('a ledger update shows before its Overview call returns', async () => {
   expect(state().ledger.overview).toBeNull()
   release()
   await settle()
-  expect(state().ledger.overview.headline).toBe('Scaffolding the command')
+  expect(state().ledger.overview.goal).toBe('Scaffolding the command')
 })
 
 test('a ledger call that fails runs no Overview call', async () => {
   createInbox(pi(), deps())
   reply = new Error('overloaded')
-  overviewReply = 'HEADLINE: Adding a greeting CLI'
+  overviewReply = 'GOAL: Adding a greeting CLI'
   await prompt('Add a greeting CLI')
   await endAgent('Plan written. Which runtime?')
   await settle()
@@ -354,7 +355,7 @@ test('the next ledger update does not wait for an earlier Overview call, and Ove
   createInbox(pi(), deps())
   let release: () => void = () => undefined
   overviewHold = new Promise<void>(resolve => (release = resolve))
-  overviewReply = 'HEADLINE: Scaffolding the command'
+  overviewReply = 'GOAL: Scaffolding the command'
   reply = 'NEW: do | - | Water the plants | - | -'
   await prompt('Add a greeting CLI')
   await endAgent('Plan written.')
@@ -373,7 +374,7 @@ test('the next ledger update does not wait for an earlier Overview call, and Ove
   for (let waited = 0; overviewCompletions.length < 2 && waited < 200; waited += 1)
     await new Promise(resolve => setTimeout(resolve, 10))
   expect(overviewCompletions).toHaveLength(2)
-  expect(overviewCompletions[1]!.prompt).toContain('HEADLINE: Scaffolding the command')
+  expect(overviewCompletions[1]!.prompt).toContain('<goal>\nScaffolding the command\n</goal>')
 })
 
 test('a settle that will continue does not end the turn', async () => {
@@ -668,8 +669,7 @@ async function withSteps() {
 
 test('Working… shows from agent_start to the run’s end, and a Done message waits for Esc to end the run', async () => {
   const inbox = createInbox(pi(), deps())
-  const now = async () =>
-    (await inbox.screen(makeCtx())).view.overviewPage.lead.find(l => l.id === 'status')?.text ?? null
+  const now = async () => ((await inbox.screen(makeCtx())).view.overviewPage.live === 'Working…' ? 'Working…' : null)
   await prompt('hello')
   await record({ kind: 'task', ask: 'Try the CLI by hand' })
   await endAgent('Done.')
@@ -1119,11 +1119,68 @@ test('a failed catch-up is tried again at the next agent end, before the exchang
   expect(state().pending).toEqual([])
 })
 
+test('a subagent runs as a child from its started frame to its end, its progress moves its activity, and a new session start ends one left running', async () => {
+  createInbox(pi(), deps())
+  type Saved = { name: string; endedAt: number | null; lastActivityAt: number }
+  const children = (): Saved[] => state().ledger.overview.children
+  const running = () => children().map(c => [c.name, c.endedAt === null])
+  await call('session_start', { type: 'session_start' })
+  await call('task:subagent:lifecycle', { id: 'Scout', agent: 'task', description: 'Map the repo', status: 'started' })
+  expect(running()).toEqual([['Map the repo', true]])
+  const startedActivity = children()[0]!.lastActivityAt
+  clock += 60_000
+  await call('task:subagent:progress', { progress: { id: 'Scout' } })
+  expect(children()[0]!.lastActivityAt).toBeGreaterThan(startedActivity + 60_000 - 1)
+  await call('task:subagent:lifecycle', { id: 'Scout', agent: 'task', status: 'completed' })
+  expect(running()).toEqual([['Map the repo', false]])
+
+  await call('task:subagent:lifecycle', { id: 'Reader', agent: 'task', status: 'started' })
+  await call('session_start', { type: 'session_start' })
+  expect(running()).toEqual([
+    ['Map the repo', false],
+    ['task', false],
+  ])
+})
+
+test('a Herdr delegate runs as a child from the bash call that starts it until a wait on it returns, or Herdr shows it no longer working at the turn’s end', async () => {
+  createInbox(pi(), deps())
+  const delegates = () =>
+    state().ledger.overview.children.map((c: { name: string; endedAt: number | null }) => [c.name, c.endedAt === null])
+  const bash = (command: string) => call('tool_execution_start', { toolName: 'bash', args: { command } })
+  await prompt('Hand it off')
+  await bash('herdr agent start fixer --cmd omp')
+  await bash('herdr agent start reviewer --cmd omp && herdr agent start helper --cmd omp')
+  expect(delegates()).toEqual([
+    ['fixer', true],
+    ['reviewer', true],
+    ['helper', true],
+  ])
+  await call('tool_result', { toolName: 'bash', input: { command: 'herdr agent wait fixer' }, content: [] })
+  expect(delegates()[0]).toEqual(['fixer', false])
+  clock += 60_000
+  await bash('herdr agent prompt scout "look around"')
+  clock += 5_000
+  const agents = [
+    { name: 'reviewer', agent_status: 'idle' },
+    { name: 'helper', agent_status: 'working' },
+    { name: 'scout', agent_status: 'idle' },
+  ]
+  execResults.set('herdr', { code: 0, stdout: JSON.stringify({ id: 'q', result: { type: 'agent_list', agents } }) })
+  await endAgent('Done.')
+  expect(execCalls.filter(c => c.command === 'herdr').map(c => c.args)).toEqual([['agent', 'list']])
+  expect(delegates()).toEqual([
+    ['fixer', false],
+    ['reviewer', false],
+    ['helper', true],
+    ['scout', true],
+  ])
+})
+
 test('a look starts when the panel shows the Overview and ends on another tab or when the panel closes', async () => {
   const inbox = createInbox(pi(), deps())
   await prompt('hello')
   const saved = state()
-  const overview = { ...EMPTY_OVERVIEW, headline: 'h', since: [{ status: 'done', text: 'Changed', detail: null }] }
+  const overview = { ...EMPTY_OVERVIEW, goal: 'Ship it' }
   writeFileSync(join(dir, 'sessions', 's1.json'), JSON.stringify({ ...saved, ledger: { ...saved.ledger, overview } }))
   await inbox.openPanel(makeCtx())
   inbox.showTab(makeCtx(), 'overview')
@@ -1133,7 +1190,6 @@ test('a look starts when the panel shows the Overview and ends on another tab or
   inbox.showTab(makeCtx(), 'needsYou')
   await settle()
   expect(state().ledger.overview.look).toBeNull()
-  expect(state().ledger.overview.since).toEqual([])
   expect(state().ledger.overview.lastLookAt).not.toBeNull()
 
   inbox.showTab(makeCtx(), 'overview')

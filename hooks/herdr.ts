@@ -9,7 +9,7 @@ import { isWaitingRow, ROW_TABS } from './view'
  */
 export type HerdrTokens = Record<string, string | null>
 
-/** What waits on the person, in one line: a stop, a dialog, the first item's ask, or the Overview's headline. */
+/** What waits on the person, in one line: a stop, a dialog, the first item's ask, or the session's goal. */
 const STATUS_TOKEN = 'inbox'
 
 const STOP_TOKEN = 'inbox-stop'
@@ -27,6 +27,26 @@ export const CLEARED_TOKENS: HerdrTokens = Object.fromEntries(
 )
 
 export const HERDR_TIMEOUT_MS = 5000
+
+/** Lists the agents of the Herdr session the host runs in, as JSON. */
+export const HERDR_AGENT_LIST = ['herdr', 'agent', 'list']
+
+/** Herdr states in which an agent still runs. `unknown` does not show that its turn ended. */
+const HERDR_RUNNING = new Set(['working', 'unknown'])
+
+/** The names of the agents `herdr agent list` shows running. Null when its output cannot be read. */
+export function herdrRunning(stdout: string): Set<string> | null {
+  try {
+    const agents: unknown = JSON.parse(stdout)?.result?.agents
+    if (!Array.isArray(agents)) return null
+
+    return new Set(
+      agents.filter(a => typeof a?.name === 'string' && HERDR_RUNNING.has(a?.agent_status)).map(a => a.name as string),
+    )
+  } catch {
+    return null
+  }
+}
 
 function stopLine(stop: Stop): string {
   switch (stop.kind) {
@@ -47,19 +67,19 @@ function dialogText(dialog: Dialog): string {
 
 /**
  * What the status line reads when no stop or dialog leads it: the first ask that waits, how many asks and findings
- * wait, and the Overview's headline.
+ * wait, and the session's goal.
  */
-export type StatusInput = { firstAsk: string | null; asks: number; findings: number; headline: string | null }
+export type StatusInput = { firstAsk: string | null; asks: number; findings: number; goal: string | null }
 
 export function statusLine(stop: Stop | null, dialogs: readonly Dialog[], input: StatusInput): string {
   if (stop) return stopLine(stop)
   const dialog = dialogs[0]
   if (dialog) return dialogText(dialog)
-  const { firstAsk, asks, findings, headline } = input
+  const { firstAsk, asks, findings, goal } = input
   if (firstAsk !== null) return asks > 1 ? `${asks} · ${firstAsk}` : firstAsk
   const findingsText = findings === 0 ? null : `${findings} finding${findings === 1 ? '' : 's'}`
 
-  return [headline, findingsText].filter(Boolean).join(' · ')
+  return [goal, findingsText].filter(Boolean).join(' · ')
 }
 
 /**
@@ -77,7 +97,7 @@ export function herdrTokens(
     firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
     asks: view.needsYou.count,
     findings: view.findings.count,
-    headline: ledger.overview?.headline ?? null,
+    goal: ledger.overview?.goal || null,
   }
   const counts = ROW_TABS.map(t => {
     const count = view[t.id].count
