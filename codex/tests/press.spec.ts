@@ -560,7 +560,7 @@ test('Fix hands a finding off and settles it as the choice made, each press with
   }
   assert.deepEqual(drawnAt(sent, 60), ['', 'Fix'])
   assert.deepEqual(drawnAt(sent, 50 + QUEUED_AFTER_MS), ['', 'Queued: Fix'])
-  const message = 'Please address this finding you recorded:\nIssue: No lint script\nOnly tests run.'
+  const message = r.effects[0]?.kind === 'send' ? r.effects[0].text : ''
   assert.deepEqual(drawnAt({ ...sent, lastActions: withArrival(sent.lastActions, message) }, 80), ['✓', 'Fix'])
   const started = notePrompt(sent, 'Please address this finding you recorded:', 70).state
   const applied = { ...started, presence: { ...started.presence, turnsApplied: started.presence.turnsStarted } }

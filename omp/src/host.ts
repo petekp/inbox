@@ -14,15 +14,8 @@ import { dialogActivity, dialogQuestions, guidanceText, screenText, toolActivity
 import type { DialogOutcome, ScreenTab } from '../../hooks/model-text'
 import type { PrPress } from '../../hooks/pr-tab'
 import { noteDialog } from '../../hooks/dialogs'
-import { ghFinder, ghIn } from '../../hooks/gh'
-import {
-  CLEARED_TOKENS,
-  HERDR_AGENT_LIST,
-  HERDR_TIMEOUT_MS,
-  herdrReporter,
-  herdrRunning,
-  herdrTokens,
-} from '../../hooks/herdr'
+import { branchIn, ghFinder, ghIn } from '../../hooks/gh'
+import { CLEARED_TOKENS, delegatesInHerdr, HERDR_TIMEOUT_MS, herdrReporter, herdrTokens } from '../../hooks/herdr'
 import type { Run } from '../../hooks/gh'
 import { COMPARE_PAGE_FILE } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
@@ -47,15 +40,15 @@ import {
 } from '../../hooks/session'
 import {
   activityGate,
-  childName,
   childrenCutOff,
-  delegateRef,
-  delegateRunning,
+  childStarted,
+  childWorked,
   delegatesSettled,
+  delegatesStarted,
   delegateSteps,
-  hasRunningDelegate,
+  delegateWaitsEnded,
 } from '../../hooks/children'
-import { childActive, childEnded, withChild } from '../../hooks/overview'
+import { childEnded } from '../../hooks/overview'
 import type { SessionView } from '../../hooks/session'
 import {
   askOverConversation,
@@ -694,12 +687,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     if (!id || typeof ref !== 'string') return
     const at = deps.now()
     const label = typeof frame.description === 'string' && frame.description ? frame.description : frame.agent
-    const name = childName(typeof label === 'string' ? label : 'subagent')
+    const name = typeof label === 'string' ? label : 'subagent'
     await change(id, s =>
       overviewChanged(s, o =>
-        frame.status === 'started'
-          ? withChild(o, { ref, kind: 'subagent', name, startedAt: at, endedAt: null, lastActivityAt: at }, at)
-          : childEnded(o, ref, at),
+        frame.status === 'started' ? childStarted(o, { ref, kind: 'subagent', name }, at) : childEnded(o, ref, at),
       ),
     ).catch(() => undefined)
   })
@@ -708,7 +699,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const id = framesFor
     const at = deps.now()
     if (!id || typeof ref !== 'string' || !isActivityWorthSaving(ref, at)) return
-    await change(id, s => overviewChanged(s, o => childActive(o, ref, at))).catch(() => undefined)
+    await change(id, s => overviewChanged(s, o => childWorked(o, ref, at))).catch(() => undefined)
   })
   pi.on('session_start', (_event, ctx) => start(ctx))
   pi.on('session_switch', (event, ctx) => start(ctx, event.reason === 'fork' ? event.previousSessionFile : undefined))
@@ -757,10 +748,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   // Not before_agent_start, which can run twice for one prompt and does not run for a queued message.
   pi.on('agent_start', async (_event, ctx) => {
     if (isUnattended(ctx)) return
+    const id = sessionIdOf(ctx)
     const startedAt = deps.now()
-    const r = await run(['git', 'branch', '--show-current'], { cwd: ctx.cwd, timeoutMs: 5_000 })
-    const branch = r.code === 0 ? r.stdout.trim() || null : null
-    await change(sessionIdOf(ctx), s => placed(turnStarted(s, startedAt), ctx.cwd, branch)).catch(() => undefined)
+    await change(id, s => turnStarted(s, startedAt)).catch(() => undefined)
+    deps.background(branchIn(run, ctx.cwd).then(branch => change(id, s => placed(s, ctx.cwd, branch))))
   })
 
   pi.on('turn_start', async (_event, ctx) => {
@@ -785,12 +776,11 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const args = (event.args ?? {}) as Record<string, unknown>
     await noteQuietly(ctx, activityOf(event.toolName, args))
     const command = event.toolName === 'bash' && typeof args.command === 'string' ? args.command : ''
-    const delegates = delegateSteps(command).map(step => step.name)
-    if (delegates.length === 0) return
+    if (delegateSteps(command).length === 0) return
     const at = deps.now()
-    await change(sessionIdOf(ctx), s =>
-      overviewChanged(s, o => delegates.reduce<typeof o>((x, name) => delegateRunning(x, name, at), o)),
-    ).catch(() => undefined)
+    await change(sessionIdOf(ctx), s => overviewChanged(s, o => delegatesStarted(o, command, at))).catch(
+      () => undefined,
+    )
   })
 
   pi.on('tool_result', async (event, ctx) => {
@@ -799,13 +789,12 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       const command = (event.input as { command?: unknown }).command
       if (typeof command !== 'string') return
       let isLinked = false
-      const settled = delegateSteps(command).filter(step => step.isWaitForEnd)
       const at = deps.now()
       try {
         await change(sessionIdOf(ctx), s => {
           const after = noteCommandOutput(s, command, textOfBlocks(event.content))
           isLinked = after.ledger !== s.ledger
-          return overviewChanged(after, o => settled.reduce((x, step) => childEnded(x, delegateRef(step.name), at), o))
+          return overviewChanged(after, o => delegateWaitsEnded(o, command, at))
         })
       } catch {
         return
@@ -849,15 +838,6 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     }
   })
 
-  /** The delegates Herdr shows running, asked only while one runs. Null when none runs or Herdr gave no answer. */
-  const delegatesInHerdr = async (id: string, cwd: string): Promise<Set<string> | null> => {
-    const s = await readState(dir, id).catch(() => null)
-    if (!hasRunningDelegate(s?.ledger.overview ?? null)) return null
-    const r = await run(HERDR_AGENT_LIST, { cwd, timeoutMs: HERDR_TIMEOUT_MS })
-
-    return r.code === 0 ? herdrRunning(r.stdout) : null
-  }
-
   pi.on('agent_end', async (event, ctx) => {
     if (isUnattended(ctx) || event.willContinue) return
     prepare(ctx)
@@ -868,7 +848,9 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     // Escape on the ask dialog aborts the turn, so it ends with no reply text.
     const isDialogDismissed = event.messages.some(isDismissedAsk)
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
-    const inHerdr = await delegatesInHerdr(id, ctx.cwd)
+    // Herdr is asked outside the change: its run can last its whole timeout, and the session's changes run one at a time.
+    const saved = await readState(dir, id).catch(() => null)
+    const inHerdr = await delegatesInHerdr(saved?.ledger.overview ?? null, run)
     const endedAt = deps.now()
     const written = await change(id, s => {
       const ended = turnEnded(

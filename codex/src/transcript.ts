@@ -19,7 +19,6 @@ type SessionMeta = {
     forked_from_id?: unknown
     parent_thread_id?: unknown
     cwd?: unknown
-    git?: { branch?: unknown } | null
     history_base?: { thread_id?: unknown; end_byte_offset?: unknown }
   }
 }
@@ -43,27 +42,26 @@ async function readSessionMeta(path: string): Promise<SessionMeta | null> {
   }
 }
 
-/** The folder a session started in and its branch then, from the rollout's first row. Null when the row names no folder. */
-export async function placeIn(path: string): Promise<{ folder: string; branch: string | null } | null> {
-  const payload = (await readSessionMeta(path))?.payload
-  if (typeof payload?.cwd !== 'string' || payload.cwd === '') return null
-  const branch = payload.git?.branch
-
-  return { folder: payload.cwd, branch: typeof branch === 'string' && branch !== '' ? branch : null }
+/** What a hook reads from the rollout's first row, `session_meta`. */
+export type RolloutMeta = {
+  /**
+   * Whether the session is a run no person chats in, where the hooks do nothing.
+   * An ephemeral thread, such as the Codex app's own background jobs that
+   * suggest a next message, saves no transcript, so its hooks get a null path.
+   * A `codex exec` run names its originator in `session_meta`, which covers the
+   * inbox's own update call and runs other tools start.
+   */
+  isNonInteractive: boolean
+  /** The folder the session started in. Null when the row names none. */
+  folder: string | null
 }
 
-/**
- * Whether the session is a run no person chats in, where the hooks do nothing.
- * An ephemeral thread, such as the Codex app's own background jobs that
- * suggest a next message, saves no transcript, so its hooks get a null path.
- * A `codex exec` run names its originator in the transcript's first line,
- * `session_meta`, which covers the inbox's own update call and runs other
- * tools start.
- */
-export async function isNonInteractiveRun(path: string | null): Promise<boolean> {
-  if (path === null) return true
+export async function rolloutMeta(path: string | null): Promise<RolloutMeta> {
+  if (path === null) return { isNonInteractive: true, folder: null }
+  const meta = await readSessionMeta(path)
+  const cwd = meta?.payload?.cwd
 
-  return isExecMeta(await readSessionMeta(path))
+  return { isNonInteractive: isExecMeta(meta), folder: typeof cwd === 'string' && cwd !== '' ? cwd : null }
 }
 
 function isExecMeta(meta: SessionMeta | null): boolean {
