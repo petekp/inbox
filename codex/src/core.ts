@@ -86,6 +86,11 @@ export function isPromptMissed(h: Heard, turnId: string | null): boolean {
   return h.promptAt === null || (h.stopAt !== null && h.promptAt < h.stopAt)
 }
 
+/** Whether the inbox heard the turn: its Stop, which makes it the covered turn, or its prompt. */
+export function isTurnHeard(s: SessionState, turnId: string): boolean {
+  return turnId === s.coveredTurn || !isPromptMissed(s.heard, turnId)
+}
+
 export function noteToolCall(s: SessionState, turnId: string | null, now: number): SessionState {
   return isPromptMissed(s.heard, turnId) ? { ...s, heard: { ...s.heard, promptMissedAt: now } } : s
 }

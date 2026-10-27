@@ -2695,18 +2695,22 @@ function herdrOnWrite(env, run2, dir, now) {
 import { execFile } from "node:child_process";
 var run = (args, { cwd, timeoutMs, env, input }) => new Promise((resolve3) => {
   const [file = "", ...rest] = args;
-  const child = execFile(
-    file,
-    rest,
-    { cwd, env: { ...process.env, ...env }, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, encoding: "utf8" },
-    (err, stdout, stderr) => {
-      const code = err ? typeof err.code === "number" ? err.code : -1 : 0;
-      resolve3({ code, stdout: String(stdout), stderr: String(stderr) });
-    }
-  );
-  child.stdin?.on("error", () => {
-  });
-  child.stdin?.end(input);
+  try {
+    const child = execFile(
+      file,
+      rest,
+      { cwd, env: { ...process.env, ...env }, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, encoding: "utf8" },
+      (err, stdout, stderr) => {
+        const code = err ? typeof err.code === "number" ? err.code : -1 : 0;
+        resolve3({ code, stdout: String(stdout), stderr: String(stderr) });
+      }
+    );
+    child.stdin?.on("error", () => {
+    });
+    child.stdin?.end(input);
+  } catch (err) {
+    resolve3({ code: -1, stdout: "", stderr: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 // src/update.ts
@@ -3172,7 +3176,7 @@ function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
           "-"
         ],
         { cwd: work, timeoutMs: TIMEOUT_MS, env: home ? { CODEX_HOME: home } : {}, input: prompt }
-      ).catch((err) => ({ code: -1, stdout: "", stderr: err instanceof Error ? err.message : String(err) }));
+      );
       const unknown = r.stderr.match(/Unknown feature flag: (\S+)/)?.[1];
       if (r.code !== 0 && unknown && off.includes(unknown)) {
         off = off.filter((f) => f !== unknown);

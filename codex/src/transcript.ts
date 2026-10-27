@@ -589,6 +589,8 @@ export type RolloutReads = {
   turns(isEnough: (turns: TurnRow[]) => boolean): Promise<TurnRow[] | null>
   /** The conversation over the whole history, as `readRollout` gives it. */
   rollout(cwd: string, currentTurnId?: string): Promise<Rollout | null>
+  /** The session the chat was forked from, as `forkedFromId` gives it. */
+  forkedFromId(): Promise<string | null>
 }
 
 /**
@@ -599,6 +601,8 @@ export type RolloutReads = {
 export function rolloutReads(path: string, tail?: string[]): RolloutReads {
   let history: Promise<string[]> | null = null
   let read: { turns: TurnRow[]; isWhole: boolean } | null = null
+  const rollouts = new Map<string, Promise<Rollout | null>>()
+  let forkedFrom: Promise<string | null> | null = null
   const wholeHistory = () => (history ??= historyLines(path, ROLLOUT_BYTES))
 
   async function windowTurns(isEnough: (turns: TurnRow[]) => boolean): Promise<TurnRow[] | null> {
@@ -632,12 +636,19 @@ export function rolloutReads(path: string, tail?: string[]): RolloutReads {
         return null
       }
     },
-    async rollout(cwd, currentTurnId) {
-      try {
-        return rolloutOfLines(await wholeHistory(), cwd, currentTurnId)
-      } catch {
-        return null
-      }
+    rollout(cwd, currentTurnId) {
+      const key = JSON.stringify([cwd, currentTurnId ?? null])
+      const known = rollouts.get(key)
+      if (known !== undefined) return known
+      const rollout = wholeHistory()
+        .then(lines => rolloutOfLines(lines, cwd, currentTurnId))
+        .catch(() => null)
+      rollouts.set(key, rollout)
+
+      return rollout
+    },
+    forkedFromId() {
+      return (forkedFrom ??= forkedFromId(path))
     },
   }
 }
