@@ -28,7 +28,7 @@ import { pruneSessions, readState, updateState } from './state'
 import { reconcileUpdateStatus } from './update'
 import type { SessionState } from './state'
 import { CODEX, INBOX_DESCRIPTION, inboxToolText, VIEW_DESCRIPTION } from './texts'
-import { rolloutFor, turnIn, turnRunningIn } from './transcript'
+import { newestTurnEvent, rolloutFor, rolloutReads, turnIn } from './transcript'
 import type { HooksTrust } from './hook-trust'
 import type { LastAction, PrViews, RowNote } from '../../types'
 
@@ -257,9 +257,12 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     const rollout = await rolloutFor(openCatchUp.codexHome, id)
     if (rollout === null) return
     const cli = await deps.fallbackCli().catch(() => null)
+    const history = { dir, rolloutPath: rollout.path, cwd: rollout.cwd, reads: rolloutReads(rollout.path) }
+    // Reads the rollout before the state lock. The check under the lock reuses what it read.
+    await withEarlierHistory(before, history)
     let isBehind = false
     await updateState(dir, id, async s => {
-      const r = await withEarlierHistory(s, { dir, rolloutPath: rollout.path, cwd: rollout.cwd })
+      const r = await withEarlierHistory(s, history)
       isBehind = r.isBehind
       if (r.state === s) return s
 
@@ -320,7 +323,8 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   /** Sets whether a turn runs from the rollout's last turn row, read inside the state lock so no hook writes between. */
   async function syncTurn(id: string): Promise<SessionState> {
     return updateState(dir, id, async s => {
-      const isRunning = s.transcriptPath === null ? null : await turnRunningIn(s.transcriptPath)
+      const newest = s.transcriptPath === null ? null : await newestTurnEvent(s.transcriptPath)
+      const isRunning = newest === null ? null : newest.kind === 'started'
       if (isRunning === null || isRunning === s.presence.isTurnRunning) return s
 
       return isRunning ? turnStarted(s, null) : turnEnded(s, null)
