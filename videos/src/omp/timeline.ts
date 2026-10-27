@@ -85,8 +85,10 @@ const PACE = {
   startHold: 2.7,
   /** After the prompt is sent, before the agent's work starts its beat. */
   afterSend: 1,
-  /** After Esc closes the panel, to the end card's start and the last moments under it. */
-  afterClose: 4,
+  /** After Esc closes the panel: the band's spotlight, then the agent at work, before the jump to its fix. */
+  afterClose: 2.5,
+  /** The agent's edit to gaze.js, from the jump to the end card's start and the last moments under it. */
+  fixHold: 3.5,
 }
 
 /** Times in the session take, read from its log, for the keys and the screens they lead to. */
@@ -113,7 +115,9 @@ const TAKE_TIMES = {
   queuedHeld: 83.62,
   closed: 84.797,
   closedShows: 84.8619,
-  end: 92,
+  /** The queued Fix runs: the agent's edit box names gaze.js above "Resetting gaze on look away", until it scrolls. */
+  fixShows: 127.541,
+  fixScrolls: 127.878,
 }
 
 /**
@@ -131,7 +135,7 @@ function stretches(): Stretch[] {
     { from: T.startShows, to: T.promptTyping, length: PACE.startHold },
     // The prompt is typed at the take's own pace and sent, and the agent starts reading.
     { from: T.promptTyping, to: T.readsFiles },
-    // The one jump: past the agent's reading, to its thinking, the two records and the reply.
+    // The first jump: past the agent's reading, to its thinking, the two records and the reply.
     { from: T.thinking, to: T.replyEnds + PACE.afterResult + 0.05 },
     // Nothing changes until /inbox, so the take runs through that stretch at once.
     { from: T.replyEnds + PACE.afterResult + 0.05, to: T.stillUntil, length: 0.05 },
@@ -143,8 +147,10 @@ function stretches(): Stretch[] {
     { from: T.finds, to: T.queuedHeld },
     // The still panel holds Queued, and the next caption before Esc.
     { from: T.queuedHeld, to: T.closed, length: PACE.afterResult + PACE.captionFirst - 0.05 },
-    // Esc, the band, and the agent at work.
-    { from: T.closed, to: T.end },
+    // Esc, the band, and the agent at work on the fade.
+    { from: T.closed, to: T.closedShows + PACE.afterClose },
+    // The second jump: to the agent making the fix. Only two spinners change while it holds.
+    { from: T.fixShows, to: T.fixScrolls, length: PACE.fixHold },
   ]
 }
 
@@ -196,14 +202,14 @@ function beats(): Beat[] {
     { on: 'band', from: 0.7, to: PACE.startHold - 0.15, easeIn: true, easeOut: true },
     { on: 'band', from: V(T.recordsBoth) - 0.15, to: V(T.recordsBoth) + 2.7, easeIn: true, easeOut: true },
     { on: 'panel', from: V(T.panelShows), to: V(T.closedShows), easeIn: true, easeOut: false },
-    { on: 'band', from: V(T.closedShows), to: V(T.closedShows) + 2.6, easeIn: false, easeOut: true },
+    { on: 'band', from: V(T.closedShows), to: V(T.closedShows) + PACE.afterClose - 0.2, easeIn: false, easeOut: true },
   ]
   const ends = [
     V(T.promptSent) + PACE.afterSend,
     V(T.replyEnds) + PACE.afterResult,
     V(T.finds) - PACE.captionFirst,
     V(T.closed) - PACE.captionFirst,
-    V(T.closedShows) + PACE.afterClose,
+    V(T.fixShows) + PACE.fixHold,
   ]
   const captions = [
     ['in-omp', 'Inbox is now in omp.'],
