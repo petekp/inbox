@@ -12,6 +12,7 @@ Shared modules are in `hooks/`. Every host consumes them, directly or through a 
 | --- | --- |
 | `hooks/view.ts` | Shared module. The inbox view: Asks order and count, handles, row state, feedback, done labels, action order, key plan, timing constants. |
 | `hooks/presses.ts` | Shared module. The press reducer, its effects, and the saved last-action shape. |
+| `hooks/compare-page.html` | Shared file. The page template for a comparison. An agent appends its comparison as JSON after the file's last line, and the page draws it. |
 | `hooks/arrivals.ts` | Shared module. Which rows are new, and where a look moves for them. |
 | `hooks/ledger.ts` | Shared module. Saved ledger, upgrades, reply parsing and ledger writes. |
 | `hooks/host-tasks.ts` | Shared module. The agent's own task list: how each host's tool calls become `Session.hostTasks`, and the `<tasks>` lines the Overview call reads. |
