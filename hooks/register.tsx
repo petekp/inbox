@@ -127,7 +127,6 @@ import {
   GH_MISSING_TEXT,
   prsEmptyText,
   prRefreshFailedText,
-  PR_DISMISSED_LABEL,
 } from './pr-tab'
 import type { Applied, DrawnPr, GhRun, PrAction, PrPress } from './pr-tab'
 import {
@@ -292,9 +291,9 @@ import type {
   PlannedKey,
   OverviewBranch,
   OverviewRow,
-  RowState,
   RowView,
   RowWait,
+  SettledState,
   ShownTab,
   TabNaming,
 } from './view'
@@ -1411,7 +1410,7 @@ async function matchPaneEscape($: EngineInterface) {
 async function openTopRow($: EngineInterface) {
   const [{ view, ledger, prViews: prState, lastActions, now }, tab] = await Promise.all([drawnState($), readRowTab($)])
   if (tab === null) return
-  const prViews = view.prs.drawn.filter(x => !x.isSettled).map(x => x.pr)
+  const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
   const ids = tabRowIds(view, prViews)[tab]
   const top = firstWaiting(tabWaits(tab, view, prViews, lastActions))
   if (top === null) await update($, SELECTION, s => ({ ...s, [tab]: NO_CURSOR }))
@@ -1687,7 +1686,7 @@ function sameCursor(a: Cursor, b: Cursor): boolean {
 function settledLayoutId(
   tab: Tab,
   view: InboxView,
-  prs: { pr: PrView; isSettled: boolean }[],
+  prs: DrawnPr[],
   lastActions: Record<string, LastAction>,
   notes: Record<string, RowNote>,
   now: number,
@@ -1703,7 +1702,7 @@ function settledLayoutId(
     size,
     ...rows.map(r => r.id),
     ...rows.flatMap(r => (r.state.is === 'settled' ? [[r.id, r.state.at]] : [])),
-    ...(tab === 'prs' ? prs.map(x => [x.pr.ref, x.isSettled ? (lastActions[prMarkId(x.pr.ref)]?.at ?? 0) : null]) : []),
+    ...(tab === 'prs' ? prs.map(x => [x.pr.ref, x.state.is === 'settled' ? x.state.at : null]) : []),
     ...Object.entries(lastActions).flatMap(([id, action]) =>
       action.result ? [[id, action.result.at, now - action.result.at < SETTLED_MS]] : [],
     ),
@@ -1762,7 +1761,7 @@ async function finishPendingUndoScroll($: EngineInterface) {
             tabWaits(
               tab,
               drawn.view,
-              prs.filter(x => !x.isSettled).map(x => x.pr),
+              prs.filter(x => x.state.is === 'open').map(x => x.pr),
               drawn.lastActions,
             ),
           )
@@ -1791,7 +1790,7 @@ async function scrollToOpenRow($: EngineInterface, tab: Tab, surface?: RenderSur
       read($, SELECTION),
       drawnState($),
     ])
-    const prViews = view.prs.drawn.filter(x => !x.isSettled).map(x => x.pr)
+    const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
     const cursor = selection[tab]
     const id = cursor.id ?? (cursor.openedAt === 0 ? firstWaiting(tabWaits(tab, view, prViews, lastActions)) : null)
     if (revision !== undoScrollRevision) return
@@ -1811,7 +1810,7 @@ async function selectClicked($: EngineInterface, id: string) {
     read($, SELECTION),
   ])
   if (tab === null) return
-  const prViews = view.prs.drawn.filter(x => !x.isSettled).map(x => x.pr)
+  const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
   const index = tabRowIds(view, prViews)[tab].indexOf(id)
   if (index < 0 || isGuarded(selection[tab].openedAt, now)) return
   // The Client leaves the drawing as its row opens, so the focus repair moves the focus to the row's first action.
@@ -1850,7 +1849,7 @@ function selectedIndex(ids: string[], cursor: Cursor, top: string | null, isSett
 
 async function openLeftRows($: EngineInterface) {
   const { view, now } = await drawnState($)
-  const prViews = view.prs.drawn.filter(x => !x.isSettled).map(x => x.pr)
+  const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
   const ids = tabRowIds(view, prViews)
   const settled = new Set(settledRowIds(allRows(view)))
   let isMoved = false
@@ -1927,7 +1926,7 @@ async function followNewRows($: EngineInterface, isOpening = false) {
   ])
   const { prViews: prState, lastActions, stop, isDemo, isUnread, view } = drawn
   const prs = view.prs.drawn
-  const prViews = prs.filter(x => !x.isSettled).map(x => x.pr)
+  const prViews = prs.filter(x => x.state.is === 'open').map(x => x.pr)
   const ids = tabRowIds(view, prViews)
   if (isOpening) recordedRows = null
   const added = newRows(isDemo, {
@@ -2140,7 +2139,7 @@ async function undoKeyAfterPress(
   const { ledger, prViews, lastActions, view, now } = await drawnState($)
   if ('ref' in p) {
     if (p.action !== 'pr-dismiss') return null
-    return view.prs.drawn.some(x => x.pr.ref === p.ref && x.isSettled) ? `undo-${pressRowId(p)}` : null
+    return view.prs.drawn.some(x => x.pr.ref === p.ref && x.state.is === 'settled') ? `undo-${pressRowId(p)}` : null
   }
   const row = allRows(view).find(r => r.id === p.id)
   return row?.state.is === 'settled' && row.actions.some(a => a.press.action === 'undo')
@@ -2150,7 +2149,7 @@ async function undoKeyAfterPress(
 
 async function shownWaits($: EngineInterface) {
   const [{ ledger, prViews: prState, lastActions, view, now }, tab] = await Promise.all([drawnState($), readRowTab($)])
-  const prViews = view.prs.drawn.filter(x => !x.isSettled).map(x => x.pr)
+  const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
   if (tab === null) return { tab, rows: [], ids: [] }
 
   return {
@@ -3655,8 +3654,8 @@ export const register: Register = on => {
     const prGroups = (isOverviewShown ? [] : shownPrs)
       .map(d => ({
         ...d,
-        checks: d.isSettled ? [] : failingChecks(d.pr).map(c => checkRow(d.pr, c)),
-        threads: d.isSettled ? [] : waitingThreads(d.pr).map(t => threadRow(d.pr, t)),
+        checks: d.state.is === 'settled' ? [] : failingChecks(d.pr).map(c => checkRow(d.pr, c)),
+        threads: d.state.is === 'settled' ? [] : waitingThreads(d.pr).map(t => threadRow(d.pr, t)),
       }))
       .map(g => ({ ...g, rows: [...g.threads, ...g.checks] }))
     const rows: Record<Tab, Row[]> = {
@@ -3667,7 +3666,7 @@ export const register: Register = on => {
     const tabCounts: Record<Tab, number> = {
       needsYou: view.needsYou.count,
       findings: view.findings.count,
-      prs: shownPrs.filter(x => !x.isSettled && prNeedsYou(x.pr, isThreadSent)).length,
+      prs: shownPrs.filter(x => x.state.is === 'open' && prNeedsYou(x.pr, isThreadSent)).length,
     }
     const badgeOf = (id: ShownTab) => tabBadge(id, tabCounts, view.overviewPage)
     const tabTone = (id: ShownTab) => (isRowTab(id) ? pal.tone[id] : undefined)
@@ -3685,7 +3684,7 @@ export const register: Register = on => {
           tabWaits(
             tab,
             view,
-            shownPrs.filter(x => !x.isSettled).map(x => x.pr),
+            shownPrs.filter(x => x.state.is === 'open').map(x => x.pr),
             lastActions,
           ),
         )
@@ -4958,7 +4957,7 @@ export const register: Register = on => {
     const settledContent = (
       what: string,
       id: string,
-      { label, at, delivery, isLapsed, offersUndo }: Omit<Extract<RowState, { is: 'settled' }>, 'is' | 'canUndo'>,
+      { label, at, delivery, isLapsed, offersUndo }: SettledState,
       undo: RowPress | PrPress | null,
     ) => {
       if (look === 'desktop') {
@@ -5155,7 +5154,7 @@ export const register: Register = on => {
       return sections(groups)
     }
 
-    const settledPrBlock = ({ pr, at, canUndo, offersUndo }: Extract<DrawnPr, { isSettled: true }>) =>
+    const settledPrBlock = (pr: PrView, state: SettledState) =>
       section([
         treeRow(
           null,
@@ -5163,8 +5162,8 @@ export const register: Register = on => {
           settledContent(
             `#${pr.number} ${pr.title}`,
             prMarkId(pr.ref),
-            { label: PR_DISMISSED_LABEL, at, delivery: null, isLapsed: true, offersUndo },
-            canUndo ? { action: 'pr-undo', ref: pr.ref } : null,
+            state,
+            state.canUndo ? { action: 'pr-undo', ref: pr.ref } : null,
           ),
           `settled-pr:${pr.ref}`,
         ),
@@ -5183,7 +5182,7 @@ export const register: Register = on => {
             ),
           ]
     const prBlock = (b: DrawnPr & { rows: Row[]; checks: Row[]; threads: Row[] }) => {
-      if (b.isSettled) return settledPrBlock(b)
+      if (b.state.is === 'settled') return settledPrBlock(b.pr, b.state)
       const { pr, checks, threads } = b
       const { status, head: statusHead, unlisted } = readiness(pr, isThreadSent)
       const tone = PR_TONES[status]

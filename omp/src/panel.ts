@@ -15,10 +15,8 @@ import type { RowRecord } from '../../hooks/arrivals'
 import { closedState } from '../../hooks/ledger'
 import {
   GH_MISSING_TEXT,
-  isPrDrawnInPlace,
   prsEmptyText,
   prRefreshFailedText,
-  PR_DISMISSED_LABEL,
   PR_GROUP_TITLES,
   PR_TONES,
   checkActions,
@@ -472,7 +470,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
   const isSent = threadSentIn(lastActions)
   const presses = { lastActions, turns, now }
   const waits = prRowWaits(
-    prs.drawn.filter(d => !d.isSettled).map(d => d.pr),
+    prs.drawn.filter(d => d.state.is === 'open').map(d => d.pr),
     lastActions,
   )
   const isWaiting = (id: string) => waits.some(w => w.id === id && w.isWaiting)
@@ -487,11 +485,11 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
   }
   if (screen.isGhMissing) out.push({ kind: 'note', text: GH_MISSING_TEXT })
   for (const d of prs.drawn) {
-    const { pr } = d
+    const { pr, state } = d
     const markId = prMarkId(pr.ref)
     const lead: Lead = { text: `#${pr.number}`, tone: 'prs' }
-    if (!isPrDrawnInPlace(d, ui.shownSince)) continue
-    if (d.isSettled) {
+    if (!isDrawnInPlace(d, ui.shownSince)) continue
+    if (state.is === 'settled') {
       out.push({
         kind: 'row',
         line: {
@@ -500,9 +498,9 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
           title: pr.title,
           isDim: true,
           settled: {
-            label: PR_DISMISSED_LABEL,
-            tone: 'done',
-            undo: d.canUndo ? { action: 'pr-undo', ref: pr.ref } : null,
+            label: settledLabel(state.label, state.delivery),
+            tone: settledTone(state),
+            undo: state.canUndo ? { action: 'pr-undo', ref: pr.ref } : null,
           },
         },
       })
@@ -836,7 +834,7 @@ export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): bool
 
   return (
     rows.some(r => r.state.is === 'settled' && r.state.canUndo) ||
-    view.prs.drawn.some(p => p.isSettled && p.canUndo) ||
+    view.prs.drawn.some(p => p.state.is === 'settled' && p.state.canUndo) ||
     isPressMoving ||
     isNoticeShown
   )

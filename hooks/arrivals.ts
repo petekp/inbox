@@ -1,5 +1,6 @@
 import { failingChecks, waitingThreads } from './prs'
 import { prCheckId, prMarkId, prThreadId } from './pr-tab'
+import type { DrawnPr } from './pr-tab'
 import { FINDING_GROUPS, NEEDS_YOU_GROUPS, ROW_TABS } from './view'
 import type { InboxView, RowView } from './view'
 import type { Finding, FoldKind, PrView, Tab } from '../types'
@@ -96,10 +97,10 @@ export function followTo<T extends string>(
  * The PRs tab's row ids: each drawn PR's mark, and for a PR not settled, its waiting threads and failing checks. A new
  * PR counts as a new row through its mark.
  */
-export function prRowIds(drawn: readonly { pr: PrView; isSettled: boolean }[]): string[] {
-  return drawn.flatMap(({ pr, isSettled }) => [
+export function prRowIds(drawn: readonly DrawnPr[]): string[] {
+  return drawn.flatMap(({ pr, state }) => [
     prMarkId(pr.ref),
-    ...(isSettled
+    ...(state.is === 'settled'
       ? []
       : [...waitingThreads(pr).map(t => prThreadId(pr, t)), ...failingChecks(pr).map(c => prCheckId(pr, c))]),
   ])

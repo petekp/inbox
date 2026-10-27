@@ -810,7 +810,7 @@ function prTabOf(
   return {
     drawn,
     branchRef: s.prViews.branchRef,
-    count: drawn.filter(d => !d.isSettled && prNeedsYou(d.pr, isSent)).length,
+    count: drawn.filter(d => d.state.is === 'open' && prNeedsYou(d.pr, isSent)).length,
     olderText: olderPrsText(s.prViews, s.ledger.prs),
   }
 }

@@ -36,6 +36,7 @@ import {
   hasAge,
   heldReplies,
   isFailure,
+  isDrawnInPlace,
   isGuarded,
   isStatusUnderActions,
   waitingCount,
@@ -71,6 +72,7 @@ import type {
   Holds,
   RowView,
   RowWait,
+  SettledState,
   ShownTab,
 } from '../../hooks/view'
 import {
@@ -79,7 +81,6 @@ import {
   PR_QUOTE_CHARS,
   splitFollowUps,
   GH_MISSING_TEXT,
-  isPrDrawnInPlace,
   PR_GROUP_TITLES,
   PR_TONES,
   prBlockActions,
@@ -89,7 +90,6 @@ import {
   prsEmptyText,
   prPressEffect,
   prRefreshFailedText,
-  PR_DISMISSED_LABEL,
   prThreadId,
   threadActions,
   threadRowText,
@@ -412,7 +412,8 @@ function applyView(next: View, seq: number) {
   seen = settledSeen(seen, settledIds(next), Date.now())
   if ([...seen.keys()].some(id => !before.has(id))) drawIn(SETTLED_MS)
   view = next
-  for (const d of next.prs.drawn) if (d.isSettled && d.canUndo) drawIn(Math.max(0, SETTLED_MS - (next.at - d.at)))
+  for (const { state } of next.prs.drawn)
+    if (state.is === 'settled' && state.canUndo) drawIn(Math.max(0, SETTLED_MS - (next.at - state.at)))
   const isOpening = LISTED_TABS.every(t => rowsSeen[t.id] === undefined)
   const rows = newRows(rowsSeen, next, next.isFetchingPrs)
   rowsSeen = rows.seen
@@ -683,7 +684,7 @@ async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void
 function tabWaits(v: View, t: Tab): RowWait[] {
   return t === 'prs'
     ? prRowWaits(
-        v.prs.drawn.filter(x => !x.isSettled).map(x => x.pr),
+        v.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr),
         v.lastActions,
       )
     : listWaits(v)[t]
@@ -931,16 +932,14 @@ function prCheckRow(v: View, pr: PrView, c: PrCheck): Row {
   }
 }
 
-type SettledPrView = Extract<DrawnPr, { isSettled: true }>
-
 type PrBlockPlan = DrawnPr & { threads: Row[]; checks: Row[] }
 
 function prPlan(v: View): { blocks: PrBlockPlan[]; rows: Row[] } {
   const blocks: PrBlockPlan[] = []
   for (const d of v.prs.drawn) {
-    if (!isPrDrawnInPlace(d, shownSince) && !undoing.has(prMarkId(d.pr.ref))) continue
+    if (!isDrawnInPlace(d, shownSince) && !undoing.has(prMarkId(d.pr.ref))) continue
     blocks.push(
-      d.isSettled
+      d.state.is === 'settled'
         ? { ...d, threads: [], checks: [] }
         : {
             ...d,
@@ -1661,12 +1660,11 @@ function Findings({ v, lists, now }: { v: View; lists: Lists; now: number }) {
   )
 }
 
-function SettledPr({ v, settled }: { v: View; settled: SettledPrView }) {
-  const { pr } = settled
+function SettledPr({ v, pr, state }: { v: View; pr: PrView; state: SettledState }) {
   const id = prMarkId(pr.ref)
-  const start = readAt - (v.at - settled.at)
+  const start = readAt - (v.at - state.at)
   const isUndoing = undoing.has(id)
-  const isUndoShown = settled.canUndo && (isUndoing || isUndoLeft(start, Date.now()))
+  const isUndoShown = state.canUndo && (isUndoing || isUndoLeft(start, Date.now()))
   const error = errors.get(id)
 
   return (
@@ -1678,14 +1676,14 @@ function SettledPr({ v, settled }: { v: View; settled: SettledPrView }) {
             <span class="what">
               <span class="tone-prs">#{pr.number}</span> {pr.title}
             </span>
-            <span class="outcome-label">{`${DOT}${PR_DISMISSED_LABEL}`}</span>
+            <span class="outcome-label">{`${DOT}${settledLabel(state.label, state.delivery)}`}</span>
             {error ? <span class="tone-error">{`${DOT}${error}`}</span> : null}
           </div>
           <UndoPlace
             start={start}
             isUndoing={isUndoing}
             isShown={isUndoShown}
-            offersUndo={settled.offersUndo}
+            offersUndo={state.offersUndo}
             onUndo={() => void undoPr(id, pr.ref)}
           />
         </div>
@@ -1856,9 +1854,9 @@ function Prs({ v, now }: { v: View; now: number }) {
         </section>
       ) : null}
       {blocks.map(b =>
-        b.isSettled ? (
+        b.state.is === 'settled' ? (
           <section>
-            <SettledPr v={v} settled={b} />
+            <SettledPr v={v} pr={b.pr} state={b.state} />
           </section>
         ) : (
           <PrBlock {...b} v={v} openId={openId} all={rows} now={now} />

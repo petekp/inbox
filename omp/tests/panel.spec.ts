@@ -397,11 +397,12 @@ test('Enter opens a folded row again, and moving off it folds it', async () => {
   expect(text(screen, keys(screen, opened, 'down', 'up'))).not.toContain('r Reply')
 })
 
-test('a dismissed PR shows its label and Undo, and u returns pr-undo', async () => {
+test('a dismissed PR shows its label dim, as a dismissed row does, with Undo, and u returns pr-undo', async () => {
   const demo = await afterPresses({ action: 'pr-dismiss', ref: 'acme/visor#29' })
   const screen = await demo.screen()
   const ui = { ...INITIAL_UI, tab: 'prs' as const }
   expect(text(screen, ui)).toMatch(/#29 Show the battery level as a glance\s+Dismissed\s+u Undo/)
+  expect(drawn(screen, ui).join('\n')).toContain(`${ESC}2mDismissed${ESC}22m`)
   expect(handleKey(screen, ui, 'u', NOW).press).toEqual({ action: 'pr-undo', ref: 'acme/visor#29' })
 })
 
