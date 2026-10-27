@@ -153,6 +153,11 @@ export function isDrawnInPlace(row: Pick<RowView, 'state'>, shownSince: number |
   return row.state.is !== 'settled' || isShownSince(row.state.at, shownSince)
 }
 
+/** The discards a look keeps: a discard keeps its row folded for as long as the row could stay in place. */
+export function keptDiscards(discarded: Record<string, number>, shownSince: number | null): Record<string, number> {
+  return Object.fromEntries(Object.entries(discarded).filter(([, at]) => isShownSince(at, shownSince)))
+}
+
 /** The row whose field is open and each row whose draft holds words. Opening a field gives its row a draft. */
 export function heldReplies(typing: string | null, drafts: Record<string, Draft>): Record<string, number> {
   return Object.fromEntries(

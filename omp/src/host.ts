@@ -15,7 +15,7 @@ import type { DialogOutcome, ScreenTab } from '../../hooks/model-text'
 import type { PrPress } from '../../hooks/pr-tab'
 import { noteDialog } from '../../hooks/dialogs'
 import { branchIn, ghFinder, ghIn } from '../../hooks/gh'
-import { CLEARED_TOKENS, delegatesInHerdr, HERDR_TIMEOUT_MS, herdrReporter, herdrTokens } from '../../hooks/herdr'
+import { CLEARED_TOKENS, delegatesInHerdr, herdrReporter, herdrTokens } from '../../hooks/herdr'
 import type { Run } from '../../hooks/gh'
 import { COMPARE_PAGE_FILE } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
@@ -128,9 +128,12 @@ export type InboxScreen = {
 /** What a panel needs from the host. */
 export type Inbox = {
   screen(ctx: ExtensionContext, holds?: Holds): Promise<InboxScreen>
-  /** Marks the panel open, and runs what a freshly opened panel needs: Done messages due, and a PR fetch when due. */
-  openPanel(ctx: ExtensionContext): Promise<void>
-  /** Records the tab an open panel shows. */
+  /**
+   * Marks the panel open, showing its first tab from `openedAt`, and runs what a freshly opened panel needs: Done
+   * messages due, and a PR fetch when due.
+   */
+  openPanel(ctx: ExtensionContext, openedAt: number): Promise<void>
+  /** Records the tab an open panel shows. A new tab starts a showing. */
   showTab(ctx: ExtensionContext, tab: ShownTab): void
   closePanel(ctx: ExtensionContext): void
   fetchPrsWhenDue(ctx: ExtensionContext): void
@@ -460,13 +463,12 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   const reportToHerdr = herdrReporter()
   /** The session omp shows now. Only it reports to the pane. */
   let shownId: string | null = null
-  const sendToHerdr = (args: string[]) => run(args, { cwd: deps.home, timeoutMs: HERDR_TIMEOUT_MS })
 
   function reportCounts(id: string): void {
     const pane = deps.herdrPane
     if (!pane || id !== shownId) return
     deps.background(
-      reportToHerdr(sendToHerdr, async () => {
+      reportToHerdr(run, async () => {
         const s = await readState(dir, id)
         const view = sessionView(s, deps.now(), deps.settleWindowMs, true)
 
@@ -671,9 +673,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         .catch(() => undefined)
         .then(async () => {
           const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
-          const saved = await readState(dir, id).catch(() => null)
-          if (hostTasks.length > 0 || (saved?.hostTasks.length ?? 0) > 0)
-            await change(id, s => (isSameTaskList(s.hostTasks, hostTasks) ? s : { ...s, hostTasks }))
+          const branch = await branchIn(run, ctx.cwd)
+          await change(id, s =>
+            placed(isSameTaskList(s.hostTasks, hostTasks) ? s : { ...s, hostTasks }, ctx.cwd, branch),
+          )
         })
         .catch(() => undefined)
         .then(() => catchUpUnseen(ctx)),
@@ -716,7 +719,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const pane = deps.herdrPane
     if (id !== shownId || !pane) return
     shownId = null
-    await reportToHerdr(sendToHerdr, async () => ({ pane, tokens: CLEARED_TOKENS }))
+    await reportToHerdr(run, async () => ({ pane, tokens: CLEARED_TOKENS }))
   })
 
   pi.on('before_agent_start', async (event, ctx) => {
@@ -753,7 +756,6 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const id = sessionIdOf(ctx)
     const startedAt = deps.now()
     await change(id, s => turnStarted(s, startedAt)).catch(() => undefined)
-    deps.background(branchIn(run, ctx.cwd).then(branch => change(id, s => placed(s, ctx.cwd, branch))))
   })
 
   pi.on('turn_start', async (_event, ctx) => {
@@ -860,9 +862,13 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     // Escape on the ask dialog aborts the turn, so it ends with no reply text.
     const isDialogDismissed = event.messages.some(isDismissedAsk)
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
-    // Herdr is asked outside the change: its run can last its whole timeout, and the session's changes run one at a time.
+    // Herdr and git are asked outside the change: each run can last its whole timeout, and the session's changes run
+    // one at a time.
     const saved = await readState(dir, id).catch(() => null)
-    const inHerdr = await delegatesInHerdr(saved?.ledger.overview ?? null, run)
+    const [inHerdr, branch] = await Promise.all([
+      delegatesInHerdr(saved?.ledger.overview ?? null, run),
+      branchIn(run, ctx.cwd),
+    ])
     const endedAt = deps.now()
     const written = await change(id, s => {
       const ended = turnEnded(
@@ -874,7 +880,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       )
       const settled = inHerdr ? overviewChanged(ended, o => delegatesSettled(o, inHerdr, endedAt)) : ended
 
-      return { ...settled, stop }
+      return { ...placed(settled, ctx.cwd, branch), stop }
     }).catch(() => null)
     if (!written) return
     const host = hostFor(ctx)
@@ -926,8 +932,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         isNextBuild: deps.isNextBuild,
       }
     },
-    openPanel: async ctx => {
-      openPanels.set(sessionIdOf(ctx), 'needsYou')
+    openPanel: async (ctx, openedAt) => {
+      const id = sessionIdOf(ctx)
+      openPanels.set(id, 'needsYou')
+      await change(id, s => ({ ...s, shownSince: openedAt })).catch(() => undefined)
       await wakeForDone(hostFor(ctx)).catch(() => undefined)
       fetchPrsWhenDue(ctx)
     },
@@ -936,12 +944,13 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       if (!openPanels.has(id)) return
       const isChanged = openPanels.get(id) !== tab
       openPanels.set(id, tab)
-      if (isChanged) deps.background(change(id, s => withLook(s, tab === 'overview', deps.now())))
+      const now = deps.now()
+      if (isChanged) deps.background(change(id, s => ({ ...withLook(s, tab === 'overview', now), shownSince: now })))
     },
     closePanel: ctx => {
       const id = sessionIdOf(ctx)
       openPanels.delete(id)
-      deps.background(change(id, s => lookEndedOn(s, deps.now())))
+      deps.background(change(id, s => ({ ...lookEndedOn(s, deps.now()), shownSince: null })))
     },
     fetchPrsWhenDue,
     onChange: (ctx, listener) => {
@@ -1018,7 +1027,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         })
       : liveSource(ctx)
     hideBand(ctx)
-    if (!isDemo) await inbox.openPanel(ctx)
+    if (!isDemo) await inbox.openPanel(ctx, openedAt)
     try {
       await ctx.ui.custom<null>((tui, theme, _keybindings, done) => {
         const panel = createPanel({

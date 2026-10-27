@@ -54,7 +54,7 @@ import {
   READING_TEXT,
   SETTLED_MS,
   settledIn,
-  isShownSince,
+  keptDiscards,
   shortAgo,
   shownOptionDescriptions,
 } from '../../hooks/view'
@@ -79,6 +79,7 @@ import {
   PR_QUOTE_CHARS,
   splitFollowUps,
   GH_MISSING_TEXT,
+  isPrDrawnInPlace,
   PR_GROUP_TITLES,
   PR_TONES,
   prBlockActions,
@@ -94,7 +95,7 @@ import {
   threadRowText,
   threadSentIn,
 } from '../../hooks/pr-tab'
-import type { PrAction, PrPress } from '../../hooks/pr-tab'
+import type { DrawnPr, PrAction, PrPress } from '../../hooks/pr-tab'
 import { commentParts, failingChecks, readableComment, readiness, threadWhere, waitingThreads } from '../../hooks/prs'
 import type { Draft, Finding, PrCheck, PrThread, PrView, Tab } from '../../types'
 import { ARRIVAL_TABS, followTo } from '../../hooks/arrivals'
@@ -183,7 +184,7 @@ const selection: Record<Tab, { id: string; openedAt: number; index?: number } | 
 let typing: string | null = null
 let focusTyping = false
 const drafts = new Map<string, Draft>()
-const discarded = new Map<string, number>()
+let discarded: Record<string, number> = {}
 const optionsShown = new Set<string>()
 const unfolded = new Set<FoldGroup>()
 /**
@@ -413,8 +414,7 @@ function applyView(next: View, seq: number) {
   seen = settledSeen(seen, settledIds(next), Date.now())
   if ([...seen.keys()].some(id => !before.has(id))) drawIn(SETTLED_MS)
   view = next
-  for (const { pr, isSettled } of next.prs.drawn)
-    if (isSettled) drawIn(Math.max(0, SETTLED_MS - (next.at - (next.lastActions[prMarkId(pr.ref)]?.at ?? next.at))))
+  for (const d of next.prs.drawn) if (d.isSettled && d.canUndo) drawIn(Math.max(0, SETTLED_MS - (next.at - d.at)))
   const isOpening = LISTED_TABS.every(t => rowsSeen[t.id] === undefined)
   const rows = newRows(rowsSeen, next, next.isFetchingPrs)
   rowsSeen = rows.seen
@@ -723,10 +723,9 @@ function replies(): Record<string, number> {
 }
 
 function holds(): Holds {
-  // A discard keeps its row folded for as long as the row could stay in place.
-  for (const [id, at] of discarded) if (!isShownSince(at, shownSince)) discarded.delete(id)
+  discarded = keptDiscards(discarded, shownSince)
 
-  return { replies: replies(), discarded: Object.fromEntries(discarded), shownSince }
+  return { replies: replies(), discarded, shownSince }
 }
 
 function sendReply(id: string, text: string) {
@@ -750,7 +749,7 @@ function startTyping(id: string) {
 }
 
 function discardReply(id: string) {
-  discarded.set(id, Date.now())
+  discarded = { ...discarded, [id]: Date.now() }
   drafts.delete(id)
   if (typing === id) typing = null
   draw()
@@ -936,26 +935,23 @@ function prCheckRow(v: View, pr: PrView, c: PrCheck): Row {
   }
 }
 
-function prSettledStart(v: View, pr: PrView): number {
-  return readAt - (v.at - (v.lastActions[prMarkId(pr.ref)]?.at ?? v.at))
-}
+type SettledPrView = Extract<DrawnPr, { isSettled: true }>
 
-type PrBlockPlan = { pr: PrView; isSettled: boolean; threads: Row[]; checks: Row[] }
+type PrBlockPlan = DrawnPr & { threads: Row[]; checks: Row[] }
 
 function prPlan(v: View): { blocks: PrBlockPlan[]; rows: Row[] } {
   const blocks: PrBlockPlan[] = []
-  for (const { pr, isSettled } of v.prs.drawn) {
-    if (isSettled) {
-      const id = prMarkId(pr.ref)
-      if (undoing.has(id) || isShownSince(v.lastActions[id]?.at ?? 0, shownSince))
-        blocks.push({ pr, isSettled, threads: [], checks: [] })
-    } else
-      blocks.push({
-        pr,
-        isSettled,
-        threads: waitingThreads(pr).map(t => prThreadRow(v, pr, t)),
-        checks: failingChecks(pr).map(c => prCheckRow(v, pr, c)),
-      })
+  for (const d of v.prs.drawn) {
+    if (!isPrDrawnInPlace(d, shownSince) && !undoing.has(prMarkId(d.pr.ref))) continue
+    blocks.push(
+      d.isSettled
+        ? { ...d, threads: [], checks: [] }
+        : {
+            ...d,
+            threads: waitingThreads(d.pr).map(t => prThreadRow(v, d.pr, t)),
+            checks: failingChecks(d.pr).map(c => prCheckRow(v, d.pr, c)),
+          },
+    )
   }
 
   return { blocks, rows: blocks.flatMap(b => [...b.threads, ...b.checks]) }
@@ -1050,13 +1046,12 @@ async function undo(r: RowView) {
   } finally {
     undoing.delete(r.id)
     const at = seen.get(r.id)
-    const isTimeLeft = at !== undefined && Date.now() - at < SETTLED_MS
+    const isTimeLeft = at !== undefined && isUndoLeft(at, Date.now())
     const error = errors.get(r.id)
     if (error && !isTimeLeft) {
       lineNote = { text: error, at: Date.now(), isError: true }
       drawIn(SETTLED_MS)
     }
-    if (at !== undefined && !isTimeLeft) seen.set(r.id, Date.now() - SETTLED_MS)
     draw()
   }
 }
@@ -1271,28 +1266,13 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
               </span>
             ) : null}
           </div>
-          {isUndoShown ? (
-            <button
-              type="button"
-              class={isUndoing ? 'key undo undoing' : 'key undo'}
-              disabled={isUndoing}
-              onClick={() => void undo(r)}
-            >
-              {/* The delay is set once, when it is drawn: the animation keeps its own time after that. */}
-              <span
-                key={start}
-                class={isUndoing ? 'time-left paused' : 'time-left'}
-                style={{ animationDuration: `${SETTLED_MS}ms` }}
-                ref={el => {
-                  if (el && !el.style.animationDelay) el.style.animationDelay = `-${Math.max(0, Date.now() - start)}ms`
-                }}
-              />
-              <Icon name="undo" />
-              Undo
-            </button>
-          ) : state.offersUndo ? (
-            <UndoSpace />
-          ) : null}
+          <UndoPlace
+            start={start}
+            isUndoing={isUndoing}
+            isShown={isUndoShown}
+            offersUndo={state.offersUndo}
+            onUndo={() => void undo(r)}
+          />
         </div>
         {panel ? <Panel row={panel} isClosing /> : null}
       </div>
@@ -1686,10 +1666,12 @@ function Findings({ v, lists, now }: { v: View; lists: Lists; now: number }) {
   )
 }
 
-function SettledPr({ v, pr }: { v: View; pr: PrView }) {
+function SettledPr({ v, settled }: { v: View; settled: SettledPrView }) {
+  const { pr } = settled
   const id = prMarkId(pr.ref)
-  const start = prSettledStart(v, pr)
+  const start = readAt - (v.at - settled.at)
   const isUndoing = undoing.has(id)
+  const isUndoShown = settled.canUndo && (isUndoing || isUndoLeft(start, Date.now()))
   const error = errors.get(id)
 
   return (
@@ -1704,37 +1686,55 @@ function SettledPr({ v, pr }: { v: View; pr: PrView }) {
             <span class="outcome-label">{`${DOT}${PR_DISMISSED_LABEL}`}</span>
             {error ? <span class="tone-error">{`${DOT}${error}`}</span> : null}
           </div>
-          {isUndoing || isUndoLeft(start, Date.now()) ? (
-            <button
-              type="button"
-              class={isUndoing ? 'key undo undoing' : 'key undo'}
-              disabled={isUndoing}
-              onClick={() => void undoPr(id, pr.ref)}
-            >
-              <span
-                key={start}
-                class={isUndoing ? 'time-left paused' : 'time-left'}
-                style={{ animationDuration: `${SETTLED_MS}ms` }}
-                ref={el => {
-                  if (el && !el.style.animationDelay) el.style.animationDelay = `-${Math.max(0, Date.now() - start)}ms`
-                }}
-              />
-              <Icon name="undo" />
-              Undo
-            </button>
-          ) : (
-            <UndoSpace />
-          )}
+          <UndoPlace
+            start={start}
+            isUndoing={isUndoing}
+            isShown={isUndoShown}
+            offersUndo={settled.offersUndo}
+            onUndo={() => void undoPr(id, pr.ref)}
+          />
         </div>
       </div>
     </div>
   )
 }
 
-/** Undo's width, unseen, after Undo ends. */
-function UndoSpace() {
+/**
+ * Undo on a settled row or PR, from `start`, while `isShown`. Once Undo ends, a row that offered it keeps Undo's
+ * width, unseen, so its title keeps its wrap.
+ */
+function UndoPlace({
+  start,
+  isUndoing,
+  isShown,
+  offersUndo,
+  onUndo,
+}: {
+  start: number
+  isUndoing: boolean
+  isShown: boolean
+  offersUndo: boolean
+  onUndo: () => void
+}) {
+  if (!isShown)
+    return offersUndo ? (
+      <button type="button" class="key undo spent" disabled tabIndex={-1} aria-hidden="true">
+        <Icon name="undo" />
+        Undo
+      </button>
+    ) : null
+
   return (
-    <button type="button" class="key undo spent" disabled tabIndex={-1} aria-hidden="true">
+    <button type="button" class={isUndoing ? 'key undo undoing' : 'key undo'} disabled={isUndoing} onClick={onUndo}>
+      {/* The delay is set once, when it is drawn: the animation keeps its own time after that. */}
+      <span
+        key={start}
+        class={isUndoing ? 'time-left paused' : 'time-left'}
+        style={{ animationDuration: `${SETTLED_MS}ms` }}
+        ref={el => {
+          if (el && !el.style.animationDelay) el.style.animationDelay = `-${Math.max(0, Date.now() - start)}ms`
+        }}
+      />
       <Icon name="undo" />
       Undo
     </button>
@@ -1863,7 +1863,7 @@ function Prs({ v, now }: { v: View; now: number }) {
       {blocks.map(b =>
         b.isSettled ? (
           <section>
-            <SettledPr v={v} pr={b.pr} />
+            <SettledPr v={v} settled={b} />
           </section>
         ) : (
           <PrBlock {...b} v={v} openId={openId} all={rows} now={now} />

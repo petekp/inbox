@@ -642,6 +642,7 @@ test('a question’s handle is the number a typed answer reaches, and the band c
 test('Done on a task Claude just left tells Claude once Undo ends, and a task from an earlier reply or one already read stays silent', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
+  paneState = { isShown: true, isFocused: true }
   const reply = async (text: string, answer: string, turnId: string) => {
     await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
     await $.turn.start({ text, turnId })
@@ -687,6 +688,7 @@ test('Done on a task Claude just left tells Claude once Undo ends, and a task fr
 test('a Done message that waits for its prompt to run reads Queued instead of Not confirmed', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
+  paneState = { isShown: true, isFocused: true }
   ledgerReply = 'NEW: do | - | Sign in to npm | - | -'
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'publish it', wait: false, origin: { kind: 'composer' } })
@@ -1436,6 +1438,7 @@ test('a catch-up writes its Overview with a separate call over the transcript', 
 test('after a failed update, the next reply catches up over the whole conversation', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
+  paneState = { isShown: true, isFocused: true }
   on('model.fork', () => ({
     value: {
       isAnswered: true,
@@ -2350,6 +2353,7 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   expect(told.context?.join('\n')).toContain('- issue: README is stale (close id: f3)')
 
   const close = (input: Record<string, string>) => $.tool.call({ tool: 'mcp__inbox__close', ...input } as never)
+  paneState = { isShown: true, isFocused: true }
   const pane = await $.ui.mount(PANE)
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
 
@@ -2408,6 +2412,7 @@ test('Claude closes an item or finding that no longer applies, by the id it read
 test('Dismiss settles a question in place with Undo, which brings it back open and selected, and a second close reaches Claude too', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
+  paneState = { isShown: true, isFocused: true }
   const start = () => $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   const prompt = async (text: string) =>
     (await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })).context?.join('\n') ?? ''
@@ -2920,6 +2925,7 @@ test('a PR’s Dismiss settles its block until the person leaves the tab, with U
     turnId: 't1',
     reason: 'answer',
   })
+  paneState = { isShown: true, isFocused: true }
   const pane = await $.ui.mount(PANE)
   await pane.press({ key: 'tab-prs' })
   await clock.settle()
@@ -3406,6 +3412,7 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   const ranBeforeDemo = ran.length
 
   expect((await $.command.run({ command: 'inbox', args: 'demo' } as never)).text).toContain('Showing sample entries')
+  paneState = { isShown: true, isFocused: true }
   const pane = await $.ui.mount(PANE)
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await pane.find({ text: 'Sample entries. Buttons here send nothing.' })).toBeDefined()
@@ -4116,6 +4123,7 @@ for (const isAttachedFirst of [true, false]) {
 test('the desktop task keeps help before Done, puts Try again first when its send fails, and keeps Undo’s place after Done once Undo ends', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
+  paneState = { isShown: true, isFocused: true }
   ledgerReply = ['NEW: do | - | Run the load script | - | -', 'HELP: new 1 | run | ./load.sh | load script'].join('\n')
   surfaces = ['desktop']
   await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
@@ -4159,6 +4167,7 @@ test('the desktop pane draws each action as one button and the tabs as one click
   await clock.settle()
   await clock.advance(3 * 60_000)
 
+  paneState = { isShown: true, isFocused: true }
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 36 } })
   const buttons = await pane.findAll({ type: 'Button' })
   expect(buttons.filter(b => b.props.hotkey !== undefined || String(b.props.label).startsWith(': '))).toEqual([])

@@ -952,7 +952,7 @@ test('a new PR counts as a new row, moves an empty tab to PRs, and counts nothin
   const withPrs = (refs: string[]) => {
     const v = viewOf(s, 10)
 
-    return { ...v, prs: { ...v.prs, drawn: refs.map(ref => ({ pr: pr(ref), isSettled: false, canUndo: false })) } }
+    return { ...v, prs: { ...v.prs, drawn: refs.map(ref => ({ pr: pr(ref), isSettled: false as const })) } }
   }
   const first = newRows({}, withPrs([]), false)
   const loading = newRows(first.seen, withPrs(['a/b#1']), true)

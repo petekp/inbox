@@ -468,6 +468,11 @@ export type Session = {
   lastActions: Record<string, LastAction>
   /** The rows the person's replies in progress held at the latest view or press. Every write keeps their closed records. */
   heldRows: string[]
+  /**
+   * When the look began showing the tab it shows, at the latest write that knew. Null while no look shows the inbox.
+   * Every write keeps the closed records of the rows closed or pressed since then, which stay drawn in place.
+   */
+  shownSince: number | null
   /** The PRs tab's data: each PR's latest view and the current branch's PR. `isFetching` is always false here; the host knows what runs. */
   prViews: PrViews
   /** Why the last turn stopped, until the next turn starts. */

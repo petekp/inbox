@@ -28,7 +28,7 @@ export const CLEARED_TOKENS: HerdrTokens = Object.fromEntries(
   [STATUS_TOKEN, STOP_TOKEN, ...Object.values(COUNT_TOKENS)].map(name => [name, null]),
 )
 
-export const HERDR_TIMEOUT_MS = 5000
+const HERDR_TIMEOUT_MS = 5000
 
 /** Lists the agents of the Herdr session the host runs in, as JSON. */
 const HERDR_AGENT_LIST = ['herdr', 'agent', 'list']
@@ -155,17 +155,15 @@ export function herdrReportKey(pane: string, tokens: HerdrTokens): string {
 export type HerdrReport = { pane: string; tokens: HerdrTokens; seq?: number } | null
 
 /**
- * Sends reports one at a time, in the order they were asked for. Each reads its pane and tokens when its turn comes, so
- * a later report never carries older tokens, and a report that would change nothing is skipped.
+ * Sends reports one at a time, in the order they were asked for, with `run`. Each reads its pane and tokens when its
+ * turn comes, so a later report never carries older tokens, and a report that would change nothing is skipped. Herdr
+ * finds the pane from its id, so the command runs in `/`, as `delegatesInHerdr` does.
  */
-export function herdrReporter(): (
-  send: (args: string[]) => Promise<unknown>,
-  report: () => Promise<HerdrReport>,
-) => Promise<void> {
+export function herdrReporter(): (run: Run, report: () => Promise<HerdrReport>) => Promise<void> {
   let sent: string | null = null
   let sending: Promise<void> = Promise.resolve()
 
-  return (send, report) => {
+  return (run, report) => {
     sending = sending
       .then(async () => {
         const r = await report()
@@ -173,7 +171,7 @@ export function herdrReporter(): (
         const key = herdrReportKey(r.pane, r.tokens)
         if (key === sent) return
         sent = key
-        await send(herdrReport(r.pane, r.tokens, r.seq))
+        await run(herdrReport(r.pane, r.tokens, r.seq), { cwd: '/', timeoutMs: HERDR_TIMEOUT_MS })
       })
       .catch(() => undefined)
 

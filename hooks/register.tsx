@@ -53,6 +53,7 @@ import {
   replaceDrawn,
   savedWriteCount,
   sessionHost,
+  showingAt,
   upgradeDrawn,
 } from './claude-host'
 import type { Owner, SavedRecord, Shown } from './claude-host'
@@ -79,6 +80,7 @@ import {
   withNewPrRefs,
 } from './session'
 import {
+  activityGate,
   childrenCutOff,
   childStarted,
   childWorked,
@@ -129,7 +131,7 @@ import {
   prRefreshFailedText,
   PR_DISMISSED_LABEL,
 } from './pr-tab'
-import type { Applied, GhRun, PrAction, PrPress } from './pr-tab'
+import type { Applied, DrawnPr, GhRun, PrAction, PrPress } from './pr-tab'
 import {
   commentLine,
   commentParts,
@@ -184,7 +186,7 @@ import {
   turnBoxText,
 } from './claude'
 import { branchIn } from './gh'
-import { CLEARED_TOKENS, delegatesInHerdr, HERDR_TIMEOUT_MS, herdrReporter, herdrTokens } from './herdr'
+import { CLEARED_TOKENS, delegatesInHerdr, herdrReporter, herdrTokens } from './herdr'
 import { ago, cellWidth, clipLabel } from './text'
 import {
   applyPress,
@@ -196,6 +198,7 @@ import {
   isPressConfirmed,
   localPath,
   markSentToAgent,
+  offersUndo,
   refuseDoneNotification,
   openCommands,
   runLocalEffects,
@@ -247,7 +250,6 @@ import {
   isStatusUnderActions,
   waitingCount,
   isGuarded,
-  isShownSince,
   PERMISSION_FALLBACK_DELAY_MS,
   PRESS_GUARD_MS,
   QUEUED_AFTER_MS,
@@ -275,6 +277,7 @@ import {
   allRows,
   firstWaiting,
   footerStatus,
+  keptDiscards,
   keptOpen,
   listWaits,
   NEXT_BUILD_MARK,
@@ -293,6 +296,7 @@ import type {
   PlannedKey,
   OverviewBranch,
   OverviewRow,
+  RowState,
   RowView,
   RowWait,
   ShownTab,
@@ -883,18 +887,15 @@ async function syncTheme($: EngineInterface) {
 }
 
 function publishStatus($: EngineInterface, isEnding = false): Promise<void> {
-  return reportToHerdr(
-    args => $.process.run(args, { timeoutMs: HERDR_TIMEOUT_MS }),
-    async () => {
-      const pane = await $.env.get('HERDR_PANE_ID')
-      if (!pane) return null
-      if (isEnding) return { pane, tokens: CLEARED_TOKENS }
-      const [session, dialogs, now] = await Promise.all([read($, SESSION), read($, DIALOGS), $.clock.now()])
-      const view = sessionView(session, now, SETTLED_MS, CAN_CATCH_UP)
+  return reportToHerdr(processRun($), async () => {
+    const pane = await $.env.get('HERDR_PANE_ID')
+    if (!pane) return null
+    if (isEnding) return { pane, tokens: CLEARED_TOKENS }
+    const [session, dialogs, now] = await Promise.all([read($, SESSION), read($, DIALOGS), $.clock.now()])
+    const view = sessionView(session, now, SETTLED_MS, CAN_CATCH_UP)
 
-      return { pane, tokens: herdrTokens(session.ledger, session.stop, view, dialogs) }
-    },
-  )
+    return { pane, tokens: herdrTokens(session.ledger, session.stop, view, dialogs) }
+  })
 }
 
 async function setStop($: EngineInterface, stop: Stop | null) {
@@ -1017,18 +1018,18 @@ function commitLedger(
   return commit($, owner, s => ({ ...s, ledger: change(s.ledger) }))
 }
 
-function isOpenIn(ledger: Ledger, id: string): boolean {
-  return ledger.items.some(i => i.id === id) || ledger.findings.some(f => f.id === id)
-}
-
-function hasNewClose(before: Ledger, after: Ledger): boolean {
+/** When the newest close that `after` adds and that offers Undo happened, or null when it adds none. */
+function newUndoCloseAt(before: Ledger, after: Ledger): number | null {
   const closes = (l: Ledger) => [
-    ...l.closed.map(d => `${d.id} ${d.at}`),
-    ...l.closedFindings.map(f => `${f.id} ${f.closedAt}`),
+    ...l.closed.map(d => ({ key: `${d.id} ${d.at}`, at: d.at, how: d.how })),
+    ...l.closedFindings.map(f => ({ key: `${f.id} ${f.closedAt}`, at: f.closedAt, how: f.how })),
   ]
-  const was = new Set(closes(before))
+  const was = new Set(closes(before).map(c => c.key))
+  const times = closes(after)
+    .filter(c => !was.has(c.key) && offersUndo(c))
+    .map(c => c.at)
 
-  return closes(after).some(c => !was.has(c))
+  return times.length > 0 ? Math.max(...times) : null
 }
 
 /**
@@ -1047,15 +1048,10 @@ async function commit(
     change,
     new Set(Object.keys(heldReplies(typing, drafts))),
   )
-  if (!isDrawn) return after
+  if (!isDrawn || after === before) return after
   void publishStatus($)
-  if (hasNewClose(before.ledger, after.ledger)) {
-    const closedAt = Math.max(
-      ...after.ledger.closed.map(d => d.at),
-      ...after.ledger.closedFindings.map(f => f.closedAt),
-    )
-    redrawWhileUndoLasts($, closedAt + SETTLED_MS)
-  }
+  const undoCloseAt = newUndoCloseAt(before.ledger, after.ledger)
+  if (undoCloseAt !== null) redrawWhileUndoLasts($, undoCloseAt + SETTLED_MS)
   void followNewRows($).catch(() => undefined)
 
   return after
@@ -1140,8 +1136,8 @@ async function redrawAtCompareEnd($: EngineInterface) {
 async function redrawAfterReload($: EngineInterface) {
   const { ledger, lastActions, notes, now } = await drawnState($)
   const times = [
-    ...ledger.closed.map(d => d.at),
-    ...ledger.closedFindings.map(f => f.closedAt),
+    ...ledger.closed.filter(offersUndo).map(d => d.at),
+    ...ledger.closedFindings.filter(offersUndo).map(f => f.closedAt),
     ...Object.values(lastActions).flatMap(a => [
       ...(a.result ? [a.result.at] : []),
       ...(a.action === 'pr-dismiss' || a.action === 'address' ? [a.at] : []),
@@ -1337,7 +1333,7 @@ function openPane($: EngineInterface, isFieldOpen = false) {
     focus: true,
     ...(isFieldOpen ? {} : { closeOnEscape: true as const }),
   })
-  void opened.then(() => syncLook($, true)).catch(() => undefined)
+  void opened.then(() => syncLook($, { isOpen: true })).catch(() => undefined)
 
   return opened
 }
@@ -1347,25 +1343,26 @@ function openPane($: EngineInterface, isFieldOpen = false) {
  * idempotent, so every place that opens, closes or changes the pane's page can call it. The sample leaves the
  * real session's look alone.
  */
-async function syncLook($: EngineInterface, isOpen?: boolean) {
-  await syncShown($, isOpen)
+async function syncLook($: EngineInterface, showing: Showing = {}) {
+  await syncShown($, showing)
   if (await read($, DEMO)) return
-  const [page, isPaneOpen, now, drawn] = await Promise.all([
-    readPage($),
-    isOpen ?? isPaneShown($),
-    $.clock.now(),
-    read($, SESSION).then(upgradeSession),
-  ])
+  const [page, isPaneOpen, now] = await Promise.all([readPage($), showing.isOpen ?? isPaneShown($), $.clock.now()])
   const isShown = isPaneOpen && page === 'overview'
-  if (withLook(drawn, isShown, now) === drawn) return
   await commit($, currentOwner(), s => withLook(s, isShown, now)).catch(() => undefined)
 }
 
 /**
- * Starts a showing when the pane opens or shows another tab or the sample, and ends it when the pane closes. A row that
- * closes during a showing stays in place until it ends. Idempotent, like `syncLook`.
+ * What a caller knows about the showing: `isOpen` when it knows whether the pane shows, and `since` when a showing
+ * starts then even on the same tab, as when another conversation loads.
  */
-async function syncShown($: EngineInterface, isOpen?: boolean) {
+type Showing = { isOpen?: boolean; since?: number }
+
+/**
+ * Starts a showing when the pane opens or shows another tab or the sample, and ends it when the pane closes. A row that
+ * closes during a showing stays in place until it ends. Every write of the shown tab calls it before the pane draws
+ * the tab. Idempotent without `since`, like `syncLook`.
+ */
+async function syncShown($: EngineInterface, { isOpen, since }: Showing = {}) {
   const [tab, isDemo, isPaneOpen, now] = await Promise.all([
     readShownTab($),
     read($, DEMO).then(d => d !== null),
@@ -1375,7 +1372,7 @@ async function syncShown($: EngineInterface, isOpen?: boolean) {
   await update($, SHOWN, s => {
     if (!isPaneOpen) return null
 
-    return s?.tab === tab && s.isDemo === isDemo ? s : { tab, isDemo, since: now }
+    return since === undefined ? showingAt(s, tab, isDemo, now) : { tab, isDemo, since }
   })
 }
 
@@ -1385,14 +1382,9 @@ async function readShownTab($: EngineInterface): Promise<ShownTab> {
   return page ?? tab
 }
 
-/**
- * When the pane began showing the tab it shows now. Null while the pane is closed, and in the moment between a tab
- * change and `syncShown`, when no row has closed on the new tab since it showed.
- */
+/** When the pane began showing the tab it shows now. Null while the pane is closed. */
 async function readShownSince($: EngineInterface): Promise<number | null> {
-  const [shown, tab, isDemo] = await Promise.all([read($, SHOWN), readShownTab($), read($, DEMO).then(d => d !== null)])
-
-  return shown?.tab === tab && shown.isDemo === isDemo ? shown.since : null
+  return (await read($, SHOWN))?.since ?? null
 }
 
 /** What the pane holds in place: the rows replies hold, and the rows closed since it showed its tab. */
@@ -1478,11 +1470,7 @@ async function startTyping($: EngineInterface, id: string) {
 async function discardReply($: EngineInterface, id: string) {
   openFields.delete(id)
   const [now, shownSince] = await Promise.all([$.clock.now(), readShownSince($)])
-  // A discard keeps its row folded for as long as the row could stay in place.
-  await update($, DISCARDED, d => ({
-    ...Object.fromEntries(Object.entries(d).filter(([, at]) => isShownSince(at, shownSince))),
-    [id]: now,
-  }))
+  await update($, DISCARDED, d => ({ ...keptDiscards(d, shownSince), [id]: now }))
   await Promise.all([
     update($, TYPING, t => (t === id ? null : t)),
     update($, DRAFTS, ({ [id]: _discarded, ...rest }) => rest),
@@ -1507,6 +1495,7 @@ async function focusField($: EngineInterface, id: string) {
 /** Shows the row tab `tab`, leaving any page tab. */
 async function writeRowTab($: EngineInterface, tab: Tab) {
   await Promise.all([update($, TAB, () => tab), update($, PAGE, () => null)])
+  await syncShown($)
 }
 
 /** The page tab the pane shows, or null. A saved page this build does not draw reads as null and stays saved. */
@@ -1527,6 +1516,7 @@ async function showTab($: EngineInterface, tab: ShownTab) {
   cancelUndoScroll()
   if (!isRowTab(tab)) {
     await update($, PAGE, () => tab)
+    await syncShown($)
     void syncLook($)
     return
   }
@@ -2065,8 +2055,6 @@ async function wakeForDone($: EngineInterface) {
 }
 
 async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPressArgument['surface']) {
-  // A press shows the pane is open on its row's tab, so the row it closes stays in place.
-  await syncShown($, true)
   const mayStayOnRow =
     'ref' in p ? ['pr-open', 'pr-refresh', 'thread-open', 'log'].includes(p.action) : p.action === 'step'
   const undoRevision = mayStayOnRow ? suspendUndoReveal() : cancelUndoScroll()
@@ -2074,13 +2062,12 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   if (p.action !== 'undo' && !rowId.startsWith('pr:')) await keepPressedOpen($, rowId)
   const wasWaiting = (await shownWaits($)).rows.some(r => r.id === rowId && r.isWaiting)
   if (await read($, DEMO)) return runDemoPress($, p, wasWaiting, undoRevision, surface)
-  const [now, { ledger }] = await Promise.all([$.clock.now(), read($, SESSION)])
+  const now = await $.clock.now()
   const draft = !('ref' in p) && p.action === 'type' ? (await read($, DRAFTS))[p.id] : undefined
   const keepReply = () =>
     !('ref' in p) && p.action === 'type'
       ? update($, DRAFTS, d => (d[p.id] ? d : { ...d, [p.id]: { text: p.text, since: draft?.since ?? now } }))
       : undefined
-  const isReplyToClosed = !('ref' in p) && p.action === 'type' && !isOpenIn(ledger, p.id)
   if (!('ref' in p) && p.action === 'type') {
     // A held row stays drawn by its draft's words once its field closes, until the press records its reply.
     await update($, DRAFTS, d => {
@@ -2127,7 +2114,6 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   if (!('ref' in p) && p.action === 'done') later($, SETTLED_MS, () => wakeForDone($))
   if (!('ref' in p) && p.action === 'compare') void redrawAtCompareEnd($).catch(() => undefined)
   if (!('ref' in p) && p.action === 'address') redrawWhileUndoLasts($, now + SETTLED_MS)
-  if (isReplyToClosed && effects.length > 0) redrawWhileUndoLasts($, now + SETTLED_MS)
   if ('ref' in p && p.action === 'pr-dismiss') redrawWhileUndoLasts($, now + SETTLED_MS)
   if (!('ref' in p) && p.action === 'undo') await selectRestored($, p.id)
   // A success note clears SETTLED_MS after its effects finish, when its result is stamped, and a message still on its
@@ -2223,7 +2209,7 @@ async function runDemoPress(
   const rowId = pressRowId(p)
   if (!('ref' in p) && p.action === 'type') await update($, TYPING, t => (t === p.id ? null : t))
   let applied = { stale: true } as Applied
-  let isClosing = false
+  let isUndoOffered = false
   const holds = await readHolds($)
   const held = new Set(Object.keys(holds.replies))
   await update($, DEMO, d => {
@@ -2245,10 +2231,8 @@ async function runDemoPress(
     applied = r
     const { [rowId]: _replaced, ...notes } = d.notes
     if ('stale' in r) return { ...d, notes: { ...notes, [rowId]: { note: 'stale' as const, at: now } } }
-    isClosing =
-      hasNewClose(d.ledger, r.ledger) ||
-      ('ref' in p ? p.action === 'pr-dismiss' : p.action === 'address') ||
-      (!('ref' in p) && p.action === 'type' && !isOpenIn(d.ledger, p.id))
+    isUndoOffered =
+      newUndoCloseAt(d.ledger, r.ledger) !== null || ('ref' in p ? p.action === 'pr-dismiss' : p.action === 'address')
     const after = demoAfterPress({ lastActions: d.lastActions, turns: d.turns }, r, held)
 
     return { ...d, ...after, notes }
@@ -2269,7 +2253,7 @@ async function runDemoPress(
   }
   if ('stale' in pressed || pressed.effects.length > 0)
     later($, SETTLED_MS, () => update($, DEMO, d => d && { ...d, turns: demoTurns(d.turns, [], true) }))
-  if (isClosing) redrawWhileUndoLasts($, now + SETTLED_MS)
+  if (isUndoOffered) redrawWhileUndoLasts($, now + SETTLED_MS)
 }
 
 type Action = {
@@ -2480,10 +2464,9 @@ async function setDemo($: EngineInterface, isShown: boolean, isRecording = false
     update($, DEMO_RECORDING, () => isShown && isRecording),
   ])
   await Promise.all([update($, SELECTION, () => NO_SELECTION), update($, TYPING, () => null)])
-  await syncLook($)
-  // The sample closes a row as it starts, at `now`, so its showing starts then too and the row stays in place.
-  const tab = await readShownTab($)
-  await update($, SHOWN, () => ({ tab, isDemo: isShown, since: now }))
+  // The sample closes a row as it starts, at `now`, so its showing starts then too and the row stays in place. The
+  // pane shows the sample or opens on it next.
+  await syncLook($, { isOpen: true, since: now })
   if (isShown) redrawWhileUndoLasts($, now + SETTLED_MS)
   if ((await read($, TAB)) === 'prs') await findPrs($)
   await followNewRows($, true)
@@ -2580,9 +2563,7 @@ function toolRecord<Name extends string>(_tool: Name, result: unknown): ToolResu
 }
 
 async function noteChild($: EngineInterface, change: (o: Overview | null, at: number) => Overview | null) {
-  const [drawn, at] = await Promise.all([read($, SESSION), $.clock.now()])
-  const o = upgradeSession(drawn).ledger.overview
-  if (change(o, at) === o) return
+  const at = await $.clock.now()
   await commit($, currentOwner(), s => overviewChanged(s, o => change(o, at))).catch(() => undefined)
 }
 
@@ -2594,9 +2575,13 @@ function childRefOf(agentId: string): string {
   return workflowTasks.get(id) ?? id
 }
 
+const isActivityWorthSaving = activityGate()
+
 async function noteAgentWork($: EngineInterface, agentId: string) {
   const ref = childRefOf(agentId)
-  await noteChild($, (o, at) => childWorked(o, ref, at))
+  const at = await $.clock.now()
+  if (!isActivityWorthSaving(ref, at)) return
+  await commit($, currentOwner(), s => overviewChanged(s, o => childWorked(o, ref, at))).catch(() => undefined)
 }
 
 async function notePlace($: EngineInterface) {
@@ -2629,7 +2614,7 @@ async function applyConversation(
   const [current] = await Promise.all([upgradeState($), syncTheme($)])
   const loadedAt = await $.clock.now()
   // The pane now shows another conversation, so it starts a new showing.
-  await update($, SHOWN, s => s && { ...s, since: loadedAt })
+  await syncShown($, { since: loadedAt })
   await replaceDrawn($, s => overviewChanged(cutOffTurn(cutOffUpdate(s)), o => childrenCutOff(o, loadedAt)))
   if (revision !== loadRevision) return
   void notePlace($)
@@ -3230,7 +3215,7 @@ export const register: Register = on => {
   on('ui.close', { id: PANE }, async ($, e, next) => {
     cancelUndoScroll()
     const r = await next(e)
-    void syncLook($, false)
+    void syncLook($, { isOpen: false })
     paneHasKeys.clear()
     await update($, TYPING, () => null)
     await update($, FOLD_HOVER, () => null)
@@ -3391,7 +3376,6 @@ export const register: Register = on => {
       isKeyListShown,
       optionsShown,
       termProgram,
-      shown,
     ] = await Promise.all([
       drawnState($),
       read($, TAB),
@@ -3404,14 +3388,11 @@ export const register: Register = on => {
       read($, IS_KEY_LIST_SHOWN),
       read($, OPTIONS_SHOWN),
       $.env.get('TERM_PROGRAM'),
-      read($, SHOWN),
       read($, RUNNING_FRAME),
     ])
     const tab: Tab = isShownTab(savedTab) && isRowTab(savedTab) ? savedTab : 'needsYou'
     const isOverviewShown = savedPage === 'overview'
     const shownTab: ShownTab = isOverviewShown ? 'overview' : tab
-    // Covers a pane drawn while no showing matches it, as after a hot reload or a tab change that called no syncShown.
-    if (shown?.tab !== shownTab || shown.isDemo !== isDemo) later($, 0, () => syncShown($, true))
     const tabList = shownTabs(isNextBuild)
     const isRunningMarkShown = isOverviewShown && hasRunningMark(view.overviewPage)
     if (look === 'terminal') animateRunningMarks($, isRunningMarkShown)
@@ -3670,12 +3651,10 @@ export const register: Register = on => {
     const needsYouGroups = NEEDS_YOU_GROUPS.map(g => ({ ...g, entries: lists[g.list], rows: rowsIn(lists[g.list]) }))
     const findingEntries = lists.findings
     const prGroups = (isOverviewShown ? [] : shownPrs)
-      .map(({ pr, isSettled, canUndo }) => ({
-        pr,
-        isSettled,
-        canUndo,
-        checks: isSettled ? [] : failingChecks(pr).map(c => checkRow(pr, c)),
-        threads: isSettled ? [] : waitingThreads(pr).map(t => threadRow(pr, t)),
+      .map(d => ({
+        ...d,
+        checks: d.isSettled ? [] : failingChecks(d.pr).map(c => checkRow(d.pr, c)),
+        threads: d.isSettled ? [] : waitingThreads(d.pr).map(t => threadRow(d.pr, t)),
       }))
       .map(g => ({ ...g, rows: [...g.threads, ...g.checks] }))
     const rows: Record<Tab, Row[]> = {
@@ -4985,17 +4964,13 @@ export const register: Register = on => {
       ) : null
     const settledContent = (
       what: string,
-      outcome: string,
-      at: number,
+      id: string,
+      { label, at, delivery, isLapsed, offersUndo }: Omit<Extract<RowState, { is: 'settled' }>, 'is' | 'canUndo'>,
       undo: RowPress | PrPress | null,
-      delivery: Parameters<typeof settledLabel>[1] = null,
-      isLapsed = false,
-      undoPlaceId: string | null = null,
     ) => {
       if (look === 'desktop') {
-        const after = `${DOT}${settledLabel(outcome, delivery)}`
-        const side =
-          undoPlaceId === null ? (undo ? undoButton(undo, at) : null) : undoPlace(undoPlaceId, undo, at, true)
+        const after = `${DOT}${settledLabel(label, delivery)}`
+        const side = undoPlace(id, undo, at, offersUndo)
         return (
           <Box flexDirection="column">
             <Box flexDirection="row" alignItems="center">
@@ -5032,7 +5007,7 @@ export const register: Register = on => {
               />
             ) : null}
             <Text wrap="wrap" color={settledTone({ delivery, isLapsed }) === 'done' ? pal.tone.done : pal.muted}>
-              {settledLabel(outcome, delivery)}
+              {settledLabel(label, delivery)}
             </Text>
             {undo ? undoButton(undo, at) : null}
           </Box>
@@ -5058,7 +5033,7 @@ export const register: Register = on => {
           ],
         })
       }
-      const content = settledContent(r.title, state.label, state.at, undo, state.delivery, state.isLapsed)
+      const content = settledContent(r.title, r.id, state, undo)
       const mark = <Text color={pal.muted}>{settledMark(state.delivery) || ' '}</Text>
       return (
         <Box key={`settled-${r.id}`} flexDirection="column" paddingY={space.settledPad}>
@@ -5187,19 +5162,16 @@ export const register: Register = on => {
       return sections(groups)
     }
 
-    const settledPrBlock = (pr: PrView, canUndo: boolean) =>
+    const settledPrBlock = ({ pr, at, canUndo, offersUndo }: Extract<DrawnPr, { isSettled: true }>) =>
       section([
         treeRow(
           null,
           <Text color={pal.muted}>✓</Text>,
           settledContent(
             `#${pr.number} ${pr.title}`,
-            PR_DISMISSED_LABEL,
-            lastActions[prMarkId(pr.ref)]?.at ?? now,
-            canUndo ? { action: 'pr-undo', ref: pr.ref } : null,
-            null,
-            true,
             prMarkId(pr.ref),
+            { label: PR_DISMISSED_LABEL, at, delivery: null, isLapsed: true, offersUndo },
+            canUndo ? { action: 'pr-undo', ref: pr.ref } : null,
           ),
           `settled-pr:${pr.ref}`,
         ),
@@ -5217,21 +5189,9 @@ export const register: Register = on => {
               key,
             ),
           ]
-    const prBlock = ({
-      pr,
-      isSettled,
-      canUndo,
-      checks,
-      threads,
-    }: {
-      pr: PrView
-      isSettled: boolean
-      canUndo: boolean
-      rows: Row[]
-      checks: Row[]
-      threads: Row[]
-    }) => {
-      if (isSettled) return settledPrBlock(pr, canUndo)
+    const prBlock = (b: DrawnPr & { rows: Row[]; checks: Row[]; threads: Row[] }) => {
+      if (b.isSettled) return settledPrBlock(b)
+      const { pr, checks, threads } = b
       const { status, head: statusHead, unlisted } = readiness(pr, isThreadSent)
       const tone = PR_TONES[status]
       const prLast = lastActions[prMarkId(pr.ref)]?.action === 'pr-dismiss' ? null : lastActionText(prMarkId(pr.ref))

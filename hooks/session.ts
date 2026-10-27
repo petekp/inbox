@@ -6,6 +6,7 @@ import {
   isBlankLedger,
   KEPT_SESSIONS,
   parseReply,
+  pruneClosed,
   upgradeLedger,
 } from './ledger'
 import type { Exchange, Press, Update } from './ledger'
@@ -15,8 +16,8 @@ import {
   applyPrPress,
   drawnPrs,
   isDismissed,
+  isViewKept,
   itemPrSteps,
-  keepsView,
   olderPrsText,
   linkedPrs,
   pressRowId,
@@ -38,7 +39,16 @@ import { recordClose, recordItem } from './tools'
 import { upgradeHostTasks } from './host-tasks'
 import { applyOverview, lookEnded, lookStarted } from './overview'
 import type { OverviewAnswer } from './overview'
-import { allRows, inboxView, NO_HOLDS, outAction, overviewPage, perTurnStatus, pressFeedbackIn } from './view'
+import {
+  allRows,
+  inboxView,
+  isShownSince,
+  NO_HOLDS,
+  outAction,
+  overviewPage,
+  perTurnStatus,
+  pressFeedbackIn,
+} from './view'
 import type { InboxView, OverviewPage, Holds, RowState } from './view'
 import type {
   LastAction,
@@ -80,6 +90,7 @@ export function emptySession(): Session {
     sent: [],
     lastActions: {},
     heldRows: [],
+    shownSince: null,
     prViews: NO_PRS,
     stop: null,
     overviewFailure: null,
@@ -168,6 +179,7 @@ export function upgradeSession(saved: SavedSession): Session {
     })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
     heldRows: saved.heldRows ?? [],
+    shownSince: saved.shownSince ?? null,
     prViews: {
       ...NO_PRS,
       ...saved.prViews,
@@ -726,13 +738,34 @@ export function recorded<S extends Session>(
   return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result }
 }
 
-/** Merges fetched PRs into the session. A view stays while `keepsView` keeps it or the PR was dismissed. */
+/**
+ * `s` as every write saves it. Each closed list is cut to its newest records, and keeps the records of the rows a look
+ * still draws: the rows `heldRows` names, and the rows closed or pressed since `shownSince`. A dismissed PR's view
+ * goes once `isViewKept` no longer keeps it.
+ */
+export function pruned<S extends Session>(s: S): S {
+  const inPlace = [
+    ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
+    ...s.ledger.closed,
+    ...s.ledger.closedFindings.map(f => ({ id: f.id, at: f.closedAt })),
+  ].flatMap(x => (isShownSince(x.at, s.shownSince) ? [x.id] : []))
+  const isLeftBehind = (ref: string) =>
+    isDismissed(s.lastActions, ref) && !isViewKept(s.prViews, s.ledger.prs, s.lastActions, ref, s.shownSince)
+  const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => !isLeftBehind(ref)))
+  const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length
+
+  return {
+    ...s,
+    ledger: pruneClosed(s.ledger, new Set([...s.heldRows, ...inPlace])),
+    prViews: isViewDropped ? { ...s.prViews, views } : s.prViews,
+  }
+}
+
+/** Merges fetched PRs into the session. A view stays while `isViewKept` keeps it. */
 export function withFetchedPrs<S extends Session>(s: S, fetched: PrViews['views'], branchRef: string | null): S {
   const merged = { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false }
   const views = Object.fromEntries(
-    Object.entries(merged.views).filter(
-      ([ref]) => keepsView(merged, s.ledger.prs, ref) || isDismissed(s.lastActions, ref),
-    ),
+    Object.entries(merged.views).filter(([ref]) => isViewKept(merged, s.ledger.prs, s.lastActions, ref, s.shownSince)),
   )
 
   return { ...s, prViews: { ...merged, views } }
@@ -804,13 +837,19 @@ export function sessionView(
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now, holds.shownSince),
+    prs: prTabOf(s, lastActions, now, holds.shownSince, settleWindowMs),
     overviewPage: overviewPage(s, now),
   }
 }
 
-function prTabOf(s: Session, lastActions: Record<string, LastAction>, now: number, shownSince: number | null): PrTab {
-  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, shownSince)
+function prTabOf(
+  s: Session,
+  lastActions: Record<string, LastAction>,
+  now: number,
+  shownSince: number | null,
+  settleWindowMs: number,
+): PrTab {
+  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, shownSince, settleWindowMs)
   const isSent = threadSentIn(lastActions)
 
   return {

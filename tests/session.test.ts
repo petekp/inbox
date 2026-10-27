@@ -20,6 +20,7 @@ import {
   OVERVIEW_REFRESH_MS,
   notePrompt,
   pressOn,
+  pruned,
   recordPrompt,
   recorded,
   sessionView,
@@ -33,6 +34,7 @@ import type { Item, RowNote } from '../types'
 import { press, refreshOverview, runUpdates, wakeForDone } from '../hooks/session-host'
 import type { CatchUpReply } from '../hooks/session-host'
 import { allRows, COMPARE_LIMIT_MS, feedbackText, footerStatus, NO_HOLDS } from '../hooks/view'
+import { prMarkId } from '../hooks/pr-tab'
 import { demoSession, demoView, isDemoCopy } from '../hooks/demo'
 import { fakeHost } from './session-fake-host'
 import { runSessionScript } from './session-script'
@@ -489,4 +491,30 @@ test('an applied model answer that changes nothing still makes the session seen,
 
   const parent = { ...none, hostTasks: [{ id: '1', text: 'Fix it', status: 'pending' as const }] }
   expect(forkedFrom(emptySession(), parent).hostTasks).toEqual(parent.hostTasks)
+})
+
+test('a prune keeps the closed records of held rows and of rows closed since the showing began, and a dismissed PR’s view only while the showing that dismissed it lasts', () => {
+  const tasks = Array.from({ length: 14 }, (_, n) => `NEW: do | - | Task ${n} | - | -`).join('\n')
+  const opened = applyUpdate(EMPTY, parseReply(tasks)!, 10, 1)
+  const ids = opened.items.map(i => i.id)
+  const closes = (some: string[]) => parseReply(some.map(id => `CLOSED: ${id} | done`).join('\n'))!
+  const ledger = applyUpdate(applyUpdate(opened, closes(ids.slice(0, 2)), 20, 2), closes(ids.slice(2)), 50, 3)
+  const demo = demoView(0, 'Claude')
+  const ref = Object.keys(demo.prViews.views)[0]!
+  const s = {
+    ...emptySession(),
+    ledger,
+    prViews: { ...demo.prViews, branchRef: null },
+    lastActions: { [prMarkId(ref)]: { kind: 'mark' as const, action: 'pr-dismiss', text: 'Dismissed', at: 30 } },
+  }
+  const closedIds = (x: Session) => x.ledger.closed.map(c => c.id)
+
+  const shownEarly = pruned({ ...s, shownSince: 20 })
+  expect(closedIds(shownEarly)).toEqual(ids)
+  expect(ref in shownEarly.prViews.views).toBe(true)
+  expect(closedIds(pruned({ ...s, shownSince: 50, heldRows: [ids[0]!] }))).toEqual([ids[0], ...ids.slice(2)])
+  const left = pruned({ ...s, shownSince: null })
+  expect(closedIds(left)).toEqual(ids.slice(2))
+  expect(ref in left.prViews.views).toBe(false)
+  expect(Object.keys(left.prViews.views).length).toBe(Object.keys(s.prViews.views).length - 1)
 })
