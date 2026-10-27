@@ -709,7 +709,7 @@ test('a failed catch-up leaves the ledger behind, and the next Stop catches up a
   assert.deepEqual(caught.pending, [])
 })
 
-test('turns that ended without a Stop are caught up at the next hook, also in a session saved before the covered turn existed or whose covered turn the rollout lacks; a prompt recorded for one of them does not join the next turn’s; and a clear start covers them instead', async () => {
+test('turns that ended without a Stop, interrupted ones included, are caught up at the next hook, also in a session saved before the covered turn existed or whose covered turn the rollout lacks; a prompt recorded for one of them does not join the next turn’s; and a clear start covers them instead', async () => {
   const dir = tempDir()
   const deps = execDeps(dir)
   const rows = readFileSync(ROLLOUT_FIXTURE, 'utf8').split('\n')
@@ -790,6 +790,42 @@ test('turns that ended without a Stop are caught up at the next hook, also in a 
     assert.equal(caughtUp.presence.ledgerState, 'behind', id)
     assert.equal(caughtUp.coveredTurn, third, id)
   }
+
+  const interrupted = join(tempDir(), 'rollout.jsonl')
+  const turnRows = (rows: [string, string][]) =>
+    writeFileSync(
+      interrupted,
+      rows
+        .map(([type, turnId]) => JSON.stringify({ type: 'event_msg', payload: { type, turn_id: turnId } }))
+        .join('\n'),
+    )
+  await updateState(dir, 's4', s => ({ ...s, heard: { ...s.heard, startAt: 1 }, coveredTurn: 'p' }))
+  const prompt = (turnId: string, text: string) =>
+    handleHook(
+      input('UserPromptSubmit', { session_id: 's4', turn_id: turnId, prompt: text, transcript_path: interrupted }),
+      deps,
+    )
+  turnRows([
+    ['task_started', 'p'],
+    ['task_complete', 'p'],
+    ['task_started', 'a'],
+  ])
+  await prompt('a', 'Rename the module')
+  assert.equal((await readState(dir, 's4')).presence.ledgerState, 'current')
+  turnRows([
+    ['task_started', 'p'],
+    ['task_complete', 'p'],
+    ['task_started', 'a'],
+    ['turn_aborted', 'a'],
+    ['task_started', 'b'],
+  ])
+  const updatesBefore = deps.updates.length
+  await prompt('b', 'Keep the old name')
+  const afterInterrupt = await readState(dir, 's4')
+  assert.equal(afterInterrupt.presence.ledgerState, 'behind')
+  assert.equal(afterInterrupt.coveredTurn, 'a')
+  assert.equal(afterInterrupt.turn.person, 'Keep the old name')
+  assert.deepEqual(deps.updates.slice(updatesBefore), ['s4'])
 })
 
 test('a new session, a compaction start, a subagent and a session with recorded turns are not marked behind', async () => {
