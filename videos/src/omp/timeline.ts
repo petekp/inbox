@@ -34,7 +34,7 @@ export const WHOLE: Rect = { x: -MARGIN, y: -MARGIN, w: WINDOW.width + 2 * MARGI
 
 /** Keycaps sit at the right end of the caption band, beside the caption, so they never cover the panel. */
 export const KEYCAPS = { right: 72, bottom: (CAPTION_BAND - 62) / 2 }
-/** How far captions stay from each side of the frame, so a long one wraps before it reaches the keycaps. */
+/** How far a caption in a beat with keycaps stays from each side of the frame, so it wraps before it reaches them. */
 export const CAPTION_INSET = 320
 
 /** How far the rows outside the focus dim, as the share of the terminal's background laid over them. */
@@ -212,11 +212,11 @@ function beats(): Beat[] {
     V(T.fixShows) + PACE.fixHold,
   ]
   const captions = [
-    ['in-omp', 'Inbox is now in omp.'],
-    ['above-the-prompt', 'Questions are easy to miss in a long reply. Inbox keeps them above your prompt.'],
-    ['answer', 'Each comes with answers. Enter sends the selected one.'],
-    ['fix', 'Bugs your agent spots wait there too. One more key asks for the fix.'],
-    ['on-both', 'Nothing waits on you. Your agent is on both.'],
+    ['in-omp', 'Inbox now supports omp (oh-my-pi)!'],
+    ['above-the-prompt', "Inbox surfaces what's easy to miss in a long, noisy thread."],
+    ['answer', "It anticipates what you'll want to do with each item."],
+    ['fix', 'It also catches issues and opportunities your agent notices along the way.'],
+    ['on-both', "Your agent manages Inbox so it's always up to date."],
   ] as const
   const terminal = captions.map(([id, caption], i): TerminalBeat => {
     const start = i === 0 ? 0 : ends[i - 1]!

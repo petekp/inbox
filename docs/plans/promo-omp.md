@@ -1,6 +1,6 @@
 # omp promo video
 
-Status: building. The second version is in its third draft: the render is `videos/out/omp-draft3.mp4`, 56.3 s. Pete is rewriting the captions and end-card copy, and the final render waits on his text. It is a 16:9 master; a 9:16 cut is not made yet.
+Status: built. The render is `videos/out/omp.mp4`, 56.3 s, with Pete's approved captions. It waits on Pete's approval of the render and his call on the length. It is a 16:9 master; a 9:16 cut is not made yet.
 
 A 56-second video that premieres the inbox in omp, a terminal coding agent. It shows one real omp session: the agent asks a question and notices an issue, both land above the prompt, and you answer and hand off the issue with single keys. It has no voiceover. Short captions carry the words, so it works muted in a feed.
 
@@ -45,7 +45,7 @@ Every big change left is a real UI event: the prompt sent, the agent's records a
 - **Two jumps.** The take dissolves twice: in beat 2, past the agent's reading, and at the end of beat 5, to the agent's fix. Everywhere else it plays straight through. It runs slower or faster only where the screen doesn't change: the start screen, the 33 s between the reply and `/inbox`, and the panel's holds after the answer and after Fix, and the fix's last frame.
 - **The inbox is the only bright thing.** While the panel is open, the session above it dims. When the band changes, everything but the band dims for about 2.5 s: under the first caption, when the agent records both items, and after Esc. The dim lays the terminal's background over the other rows at 78%. The rows that stay bright come from the screen the take shows at that moment.
 - **A calmer take.** The prompt fits one line, so the input box doesn't grow while it is typed. `/inbox` goes in as one burst, so omp's command menu shows once, with two rows. Tab comes about 2 s after the answer lands, while the agent is still thinking, so nothing streams above the issue while it is read.
-- **Keycaps beside the caption.** Keycaps sit at the right end of the caption band, and captions keep 320 px from each side, so a long one wraps before it reaches them. Neither covers the panel.
+- **Keycaps beside the caption.** Keycaps sit at the right end of the caption band. In a beat with keycaps, the caption keeps 320 px from each side, so a long one wraps before it reaches them. Neither covers the panel.
 
 Before the take, the inbox itself changed five things in omp:
 
@@ -69,11 +69,11 @@ The pace matches the launch video's, which Pete approved, or is slower:
 
 | # | Time | Take | Picture | Caption |
 | --- | --- | --- | --- | --- |
-| 1 | 0–10.2 s | 1.5 s | The terminal window rises in, with omp's logo and name in the band above it. The band's "Nothing needed" is spotlit. After 2.7 s the prompt is typed. Enter sends it, and "Working…" shows. | Inbox is now in omp. |
-| 2 | 10.2–19.5 s | 10.5 and 24.9 s | The agent reads both files. One dissolve skips to its thinking. It records the question and the issue, and the band, spotlit, changes to "Asks 1 · Finds 1". Then the reply prints above it. | Questions are easy to miss in a long reply. Inbox keeps them above your prompt. |
-| 3 | 19.5–33.2 s | 31.2 s | `/inbox` goes in, and omp's menu shows the inbox command. Enter opens the panel with the question, its answers in a row and "300 ms (recommended)" selected, and the session above dims. It holds 8.6 s. Enter answers it, and the row reads ✓ 300 ms. | Each comes with answers. Enter sends the selected one. |
-| 4 | 33.2–42.8 s | 76.1 s | Tab switches to Finds. The issue is open, with its description and Fix, File issue, Reply, Explain, Discuss and Dismiss, and holds 5.5 s. Enter on Fix hands it to the agent. The row reads "Fix", then "Queued: Fix". | Bugs your agent spots wait there too. One more key asks for the fix. |
-| 5 | 42.8–50.3 s | 84.2 and 127.5 s | Esc closes the panel. The band reads "Nothing needed", spotlit, and the agent goes on building the fade. One dissolve skips to the queued fix: the agent's edit box names `src/gaze.js` above "Resetting gaze on look away", held still until the end card. | Nothing waits on you. Your agent is on both. |
+| 1 | 0–10.2 s | 1.5 s | The terminal window rises in, with omp's logo and name in the band above it. The band's "Nothing needed" is spotlit. After 2.7 s the prompt is typed. Enter sends it, and "Working…" shows. | Inbox now supports omp (oh-my-pi)! |
+| 2 | 10.2–19.5 s | 10.5 and 24.9 s | The agent reads both files. One dissolve skips to its thinking. It records the question and the issue, and the band, spotlit, changes to "Asks 1 · Finds 1". Then the reply prints above it. | Inbox surfaces what's easy to miss in a long, noisy thread. |
+| 3 | 19.5–33.2 s | 31.2 s | `/inbox` goes in, and omp's menu shows the inbox command. Enter opens the panel with the question, its answers in a row and "300 ms (recommended)" selected, and the session above dims. It holds 8.6 s. Enter answers it, and the row reads ✓ 300 ms. | It anticipates what you'll want to do with each item. |
+| 4 | 33.2–42.8 s | 76.1 s | Tab switches to Finds. The issue is open, with its description and Fix, File issue, Reply, Explain, Discuss and Dismiss, and holds 5.5 s. Enter on Fix hands it to the agent. The row reads "Fix", then "Queued: Fix". | It also catches issues and opportunities your agent notices along the way. |
+| 5 | 42.8–50.3 s | 84.2 and 127.5 s | Esc closes the panel. The band reads "Nothing needed", spotlit, and the agent goes on building the fade. One dissolve skips to the queued fix: the agent's edit box names `src/gaze.js` above "Resetting gaze on look away", held still until the end card. | Your agent manages Inbox so it's always up to date. |
 | 6 | 50.3–56.3 s | | The end card: streams of light leave the window's lines and braid through "inbox", with `github.com/petekp/inbox` under it. | |
 
 The end card starts 0.8 s before its beat, over beat 5's last moments, as in the launch video. It runs 6 s, so the address reads for about 3 s.
@@ -132,7 +132,8 @@ The render uses "Focus Flow", the launch video's track, from where its full groo
 4. **The sample project.** Written again for the first version's take. Pete chose to keep it.
 5. **Calmer picture.** Pete chose the changes under "Keeping the eye on the inbox": one held framing, the dim, Tab about 2 s after the answer, and the inbox's own fixes first.
 6. **The answer letters.** The answers' letter keys skip the ones a row's other buttons use. Pete chose to keep them. This take's question has three answers, so its letters read b and c with no gap.
-7. **The ending.** Pete chose to end on the agent fixing `gaze.js`, so "Your agent is on both" shows both.
+7. **The ending.** Pete chose to end on the agent fixing `gaze.js`, so the video shows the agent taking both items.
+8. **The captions.** Pete wrote the five captions in the Beats table.
 
 ## Open decisions
 

@@ -69,6 +69,7 @@ function TerminalBeatView(props: { beat: Placed & TerminalBeat; previous: Placed
   // As the end card starts over the last beat, the window dims and sinks back while its lines turn into light.
   const next = placed[placed.indexOf(beat) + 1]
   const fading = next?.kind === 'end' ? clamp01((t - (beat.length - END_CARD_LEAD)) / 0.6) : 0
+  const hasKeys = beat.keys.length > 0
   return (
     <AbsoluteFill>
       <div style={{ opacity: risen * (1 - fading) }}>
@@ -114,7 +115,14 @@ function TerminalBeatView(props: { beat: Placed & TerminalBeat; previous: Placed
         </div>
       </div>
       <KeyCaps presses={beat.keys} t={t} right={KEYCAPS.right} bottom={KEYCAPS.bottom} />
-      <Caption text={beat.caption} t={t} from={0} to={captionEnd(placed, beat)} inBand inset={CAPTION_INSET} />
+      <Caption
+        text={beat.caption}
+        t={t}
+        from={0}
+        to={captionEnd(placed, beat)}
+        inBand
+        inset={hasKeys ? CAPTION_INSET : undefined}
+      />
     </AbsoluteFill>
   )
 }
