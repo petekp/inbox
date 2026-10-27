@@ -1593,15 +1593,25 @@ test('a chat says why Codex is not running the inbox’s hooks from Codex’s ho
   assert.equal(asked.length, 6)
 })
 
-test('each chat folder gets its own answer about the hooks’ trust, asked once', async () => {
+test('each chat folder gets its own answer about the hooks’ trust, and each chat asks once about each turn its hooks did not hear', async () => {
   const asked: string[] = []
   const dir = tempDir()
+  const rolloutStarting = (turnId: string) => {
+    const path = join(tempDir(), 'rollout.jsonl')
+    writeFileSync(path, JSON.stringify({ type: 'event_msg', payload: { type: 'task_started', turn_id: turnId } }))
+    return path
+  }
   for (const [id, root] of [
     ['a', '/one'],
     ['b', '/two'],
     ['c', '/one'],
   ] as const)
-    await updateState(dir, id, s => ({ ...s, root, cliPath: '/apps/codex' }))
+    await updateState(dir, id, s => ({
+      ...s,
+      root,
+      cliPath: '/apps/codex',
+      transcriptPath: rolloutStarting(`${id}-compact`),
+    }))
   const handle = makeServer({
     comparePage: '/plugin/dist/compare-page.html',
     dir,
@@ -1624,11 +1634,20 @@ test('each chat folder gets its own answer about the hooks’ trust, asked once'
       })) as { result: { structuredContent: { hooksTrust?: string } } }
     ).result.structuredContent.hooksTrust
 
-  for (const thread of ['a', 'b', 'c']) await view(thread)
-  await new Promise(resolve => setImmediate(resolve))
+  const settle = () => new Promise(resolve => setImmediate(resolve))
+  const asksFor = (folder: string) => asked.filter(f => f === folder).length
 
-  assert.deepEqual(asked.toSorted(), ['/one', '/two'])
+  for (const thread of ['a', 'b', 'c']) await view(thread)
+  await settle()
   assert.deepEqual(await Promise.all(['a', 'b', 'c'].map(view)), [undefined, 'modified', undefined])
+
+  for (let round = 0; round < 3; round++)
+    for (const thread of ['a', 'c']) {
+      await view(thread)
+      await settle()
+    }
+  assert.equal(asksFor('/one'), 2)
+  assert.equal(asksFor('/two'), 1)
 })
 
 test('a chat whose folder is not known yet asks Codex’s hook list for the home folder', async () => {

@@ -214,14 +214,13 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   const prunedFor = new Set<string>()
   const checkedOnOpen = new Set<string>()
   let isGhMissing = false
-  /** Codex's last answer about the hooks' trust in each chat folder, and the unheard turn it was asked after. */
-  const hooksTrust = new Map<
-    string,
-    { at: number; answer: HooksTrust | 'trusted' | null; unheardTurn: string | null }
-  >()
+  /** Codex's last answer about the hooks' trust in each chat folder. */
+  const hooksTrust = new Map<string, { at: number; answer: HooksTrust | 'trusted' | null }>()
   const askingHooksIn = new Set<string>()
   /** Each chat's newest turn in its rollout, as its last view read it. */
   const newestTurns = new Map<string, string>()
+  /** The unheard turn each chat last asked about. */
+  const askedTurns = new Map<string, string>()
 
   /** The chat's newest turn, when the inbox heard neither its prompt nor its Stop, as while Codex skips the hooks. */
   function unheardTurnOf(s: SessionState, id: string): string | null {
@@ -234,9 +233,10 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   /**
    * Why Codex does not run the inbox's hooks in the chat's folder, from the last answer. A view starts a new call for
    * the next view to read, so no view waits on it: on a folder's first view, a few seconds after a stopped answer, a
-   * while after a failed or unclear one, and after a trusted one only once a turn ran that the hooks did not hear. A
-   * plugin update, which stops the hooks, also loads a new handler, whose first view asks again. A failed or unclear
-   * answer reads as null.
+   * while after a failed or unclear one, and after a trusted one only once the chat's view sees a turn the hooks did not
+   * hear. Each chat asks once per such turn, so chats in one folder never ask in turn after each other. A plugin update,
+   * which stops the hooks, also loads a new handler, whose first view asks again. A failed or unclear answer reads as
+   * null.
    */
   function hooksTrustNow(s: SessionState, id: string): HooksTrust | null {
     const { hooksTrust: ask } = deps
@@ -247,15 +247,16 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     const isAskDue =
       known === undefined ||
       (known.answer === 'trusted'
-        ? unheardTurn !== null && unheardTurn !== known.unheardTurn
+        ? unheardTurn !== null && askedTurns.get(id) !== unheardTurn
         : now() - known.at >= (known.answer === null ? HOOKS_UNCLEAR_CACHE_MS : HOOKS_STOPPED_CACHE_MS))
     if (isAskDue && !askingHooksIn.has(folder)) {
       askingHooksIn.add(folder)
+      if (unheardTurn !== null) askedTurns.set(id, unheardTurn)
       void (async () => {
         const answer = await Promise.resolve(s.cliPath ?? deps.fallbackCli())
           .then(cli => ask(cli, folder))
           .catch(() => null)
-        hooksTrust.set(folder, { at: now(), answer, unheardTurn })
+        hooksTrust.set(folder, { at: now(), answer })
         askingHooksIn.delete(folder)
       })()
     }
