@@ -31,7 +31,10 @@ import type { Session } from '../../hooks/session'
 import { isShownTab } from '../../hooks/view'
 import type { ShownTab } from '../../hooks/view'
 
-/** A failed `codex exec` call: when it ended, the binary it ran, its exit code, and the end of its stderr. */
+/**
+ * A failed `codex exec` call: when it ended, the binary it ran, its exit code, and the end of its stderr. A call that
+ * threw has code -1 and its error's message as `stderr`.
+ */
 export type ModelFailure = { at: number; cli: string; code: number; stderr: string }
 
 export type SessionState = Session & {

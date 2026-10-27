@@ -2,8 +2,11 @@ import { execFile } from 'node:child_process'
 
 import type { Run } from '../../hooks/gh'
 
+/** A `Run` that also writes `input` to the command's stdin. */
+export type RunWithInput = (args: string[], opts: Parameters<Run>[1] & { input?: string }) => ReturnType<Run>
+
 /** Runs a command, never throwing: a command that can't start ends with code -1. */
-export const run: Run = (args, { cwd, timeoutMs, env }) =>
+export const run: RunWithInput = (args, { cwd, timeoutMs, env, input }) =>
   new Promise(resolve => {
     const [file = '', ...rest] = args
     const child = execFile(
@@ -15,5 +18,7 @@ export const run: Run = (args, { cwd, timeoutMs, env }) =>
         resolve({ code, stdout: String(stdout), stderr: String(stderr) })
       },
     )
-    child.stdin?.end()
+    // A command that exits before reading all its input fails the write with EPIPE, which Node throws when nothing listens.
+    child.stdin?.on('error', () => {})
+    child.stdin?.end(input)
   })

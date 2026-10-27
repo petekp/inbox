@@ -30,7 +30,7 @@ import { statePath, updateState, withLock } from './state'
 import type { ModelFailure, SessionState } from './state'
 import { CODEX } from './texts'
 import { readRollout } from './transcript'
-import type { Run } from '../../hooks/gh'
+import type { RunWithInput } from './run'
 
 /** The inbox model, at low reasoning effort. gpt-6-luna is faster but closed a finding the reply only mentioned. */
 export const MODEL = 'gpt-6.1-sol'
@@ -111,7 +111,7 @@ const FAILURE_TAIL_CHARS = 2000
  * their sign-in.
  */
 export function codexAsk(
-  exec: Run,
+  exec: RunWithInput,
   cli: string,
   dir: string,
   personHome: string,
@@ -127,6 +127,7 @@ export function codexAsk(
     let off = [...OFF]
     for (let tries = 0; tries <= OFF.length; tries += 1) {
       await rm(out, { force: true })
+      // `-` reads the prompt from stdin. No argument can hold a NUL byte, and the conversation in a prompt can.
       const r = await exec(
         [
           cli,
@@ -151,10 +152,10 @@ export function codexAsk(
           ...off.flatMap(f => ['--disable', f]),
           '-o',
           out,
-          prompt,
+          '-',
         ],
-        { cwd: work, timeoutMs: TIMEOUT_MS, env: home ? { CODEX_HOME: home } : {} },
-      )
+        { cwd: work, timeoutMs: TIMEOUT_MS, env: home ? { CODEX_HOME: home } : {}, input: prompt },
+      ).catch((err: unknown) => ({ code: -1, stdout: '', stderr: err instanceof Error ? err.message : String(err) }))
       const unknown = r.stderr.match(/Unknown feature flag: (\S+)/)?.[1]
       if (r.code !== 0 && unknown && off.includes(unknown)) {
         off = off.filter(f => f !== unknown)

@@ -2683,7 +2683,7 @@ function herdrOnWrite(env, run2, dir, now) {
 
 // src/run.ts
 import { execFile } from "node:child_process";
-var run = (args, { cwd, timeoutMs, env }) => new Promise((resolve3) => {
+var run = (args, { cwd, timeoutMs, env, input }) => new Promise((resolve3) => {
   const [file = "", ...rest] = args;
   const child = execFile(
     file,
@@ -2694,7 +2694,9 @@ var run = (args, { cwd, timeoutMs, env }) => new Promise((resolve3) => {
       resolve3({ code, stdout: String(stdout), stderr: String(stderr) });
     }
   );
-  child.stdin?.end();
+  child.stdin?.on("error", () => {
+  });
+  child.stdin?.end(input);
 });
 
 // src/update.ts
@@ -3145,10 +3147,10 @@ function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
           ...off.flatMap((f) => ["--disable", f]),
           "-o",
           out,
-          prompt
+          "-"
         ],
-        { cwd: work, timeoutMs: TIMEOUT_MS, env: home ? { CODEX_HOME: home } : {} }
-      );
+        { cwd: work, timeoutMs: TIMEOUT_MS, env: home ? { CODEX_HOME: home } : {}, input: prompt }
+      ).catch((err) => ({ code: -1, stdout: "", stderr: err instanceof Error ? err.message : String(err) }));
       const unknown = r.stderr.match(/Unknown feature flag: (\S+)/)?.[1];
       if (r.code !== 0 && unknown && off.includes(unknown)) {
         off = off.filter((f) => f !== unknown);
