@@ -1,3 +1,5 @@
+import { prMarkId } from '../../hooks/pr-tab'
+import type { SessionView } from '../../hooks/session'
 import { allRows, isDrawnInPlace, SETTLED_MS, settledRowIds } from '../../hooks/view'
 import type { InboxView } from '../../hooks/view'
 
@@ -5,8 +7,11 @@ export const POLL_MS = 3000
 
 export const SETTLE_WINDOW_MS = SETTLED_MS + 2 * POLL_MS
 
-export function settledIds(v: InboxView): string[] {
-  return settledRowIds(allRows(v))
+export function settledIds(v: SessionView): string[] {
+  return [
+    ...settledRowIds(allRows(v)),
+    ...v.prs.drawn.flatMap(d => (d.state.is === 'settled' ? [prMarkId(d.pr.ref)] : [])),
+  ]
 }
 
 export function settledSeen(seen: ReadonlyMap<string, number>, listed: string[], now: number): Map<string, number> {
@@ -25,7 +30,7 @@ export function drawnSettled(v: InboxView, shownSince: number, undoing: Readonly
   )
 }
 
-/** Whether a settled row still offers Undo: for `SETTLED_MS` from the first view that listed it. */
+/** Whether a settled row or PR still offers Undo: for `SETTLED_MS` from the first view that listed it. */
 export function isUndoLeft(seenAt: number, now: number): boolean {
   return now - seenAt < SETTLED_MS
 }

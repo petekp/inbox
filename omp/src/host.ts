@@ -312,7 +312,7 @@ function askOutcome(event: {
   details?: unknown
 }): DialogOutcome {
   const details = (event.details ?? {}) as { timedOut?: boolean; chatRedirect?: boolean }
-  const answer = event.content.flatMap(b => (b.type === 'text' && b.text ? [b.text] : [])).join('\n')
+  const answer = textOfBlocks(event.content).trim()
   if (event.isError || details.chatRedirect || answer === '') return { kind: 'dismissed' }
 
   return { kind: details.timedOut ? 'timed-out' : 'answered', answer }
@@ -425,13 +425,7 @@ function shownLine(result: {
   details?: unknown
   isError?: boolean
 }): string | null {
-  if (result.isError)
-    return (
-      result.content
-        .map(c => c.text ?? '')
-        .join('\n')
-        .trim() || null
-    )
+  if (result.isError) return textOfBlocks(result.content).trim() || null
   const details = result.details as Partial<ToolDetails> | null | undefined
 
   return typeof details?.personLine === 'string' ? details.personLine : null
@@ -878,9 +872,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
     // Herdr and git are asked outside the change: each run can last its whole timeout, and the session's changes run
     // one at a time.
-    const saved = await readState(dir, id).catch(() => null)
     const [inHerdr, branch] = await Promise.all([
-      delegatesInHerdr(saved?.ledger.overview ?? null, run),
+      readState(dir, id)
+        .catch(() => null)
+        .then(saved => delegatesInHerdr(saved?.ledger.overview ?? null, run)),
       branchIn(run, ctx.cwd),
     ])
     const endedAt = deps.now()
@@ -963,7 +958,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     openPanel: async (ctx, openedAt) => {
       const id = sessionIdOf(ctx)
       openPanels.set(id, 'needsYou')
-      await change(id, s => ({ ...s, shownSince: openedAt })).catch(() => undefined)
+      deps.background(change(id, s => ({ ...s, shownSince: openedAt })))
       await wakeForDone(hostFor(ctx)).catch(() => undefined)
       fetchPrsWhenDue(ctx)
     },

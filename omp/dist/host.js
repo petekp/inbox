@@ -5306,8 +5306,7 @@ function prEntries(screen, ui, now) {
       continue;
     }
     const { status, head, unlisted } = readiness(pr, isSent);
-    const last = lastActions[markId];
-    const f = last?.action === "pr-dismiss" ? null : pressFeedback(screen, markId, now);
+    const f = isDismissed(lastActions, pr.ref) ? null : pressFeedback(screen, markId, now);
     out.push({
       kind: "row",
       line: {
@@ -6762,8 +6761,7 @@ function activityOf(tool, input) {
 }
 function askOutcome(event) {
   const details = event.details ?? {};
-  const answer = event.content.flatMap((b) => b.type === "text" && b.text ? [b.text] : []).join(`
-`);
+  const answer = textOfBlocks(event.content).trim();
   if (event.isError || details.chatRedirect || answer === "")
     return { kind: "dismissed" };
   return { kind: details.timedOut ? "timed-out" : "answered", answer };
@@ -6811,8 +6809,7 @@ function styleOf(theme) {
 }
 function shownLine(result) {
   if (result.isError)
-    return result.content.map((c) => c.text ?? "").join(`
-`).trim() || null;
+    return textOfBlocks(result.content).trim() || null;
   const details = result.details;
   return typeof details?.personLine === "string" ? details.personLine : null;
 }
@@ -7201,9 +7198,8 @@ function createInbox(pi, deps = defaultDeps) {
     const stop = await stopOf(last, deps.isUsageLimit, deps.now());
     const isDialogDismissed = event.messages.some(isDismissedAsk);
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
-    const saved = await readState(dir, id).catch(() => null);
     const [inHerdr, branch] = await Promise.all([
-      delegatesInHerdr(saved?.ledger.overview ?? null, run),
+      readState(dir, id).catch(() => null).then((saved) => delegatesInHerdr(saved?.ledger.overview ?? null, run)),
       branchIn(run, ctx.cwd)
     ]);
     const endedAt = deps.now();
@@ -7277,9 +7273,7 @@ function createInbox(pi, deps = defaultDeps) {
     openPanel: async (ctx, openedAt) => {
       const id = sessionIdOf(ctx);
       openPanels.set(id, "needsYou");
-      await change(id, (s) => ({ ...s, shownSince: openedAt })).catch(() => {
-        return;
-      });
+      deps.background(change(id, (s) => ({ ...s, shownSince: openedAt })));
       await wakeForDone(hostFor(ctx)).catch(() => {
         return;
       });

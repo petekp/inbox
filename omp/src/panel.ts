@@ -15,6 +15,7 @@ import type { RowRecord } from '../../hooks/arrivals'
 import { closedState } from '../../hooks/ledger'
 import {
   GH_MISSING_TEXT,
+  isDismissed,
   prsEmptyText,
   prRefreshFailedText,
   PR_GROUP_TITLES,
@@ -507,8 +508,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
       continue
     }
     const { status, head, unlisted } = readiness(pr, isSent)
-    const last = lastActions[markId]
-    const f = last?.action === 'pr-dismiss' ? null : pressFeedback(screen, markId, now)
+    const f = isDismissed(lastActions, pr.ref) ? null : pressFeedback(screen, markId, now)
     out.push({
       kind: 'row',
       line: {

@@ -111,6 +111,7 @@ import {
   PR_QUOTE_CHARS,
   splitFollowUps,
   fetchTracked,
+  isDismissed,
   olderPrsText,
   PR_GROUP_TITLES,
   PR_TONES,
@@ -5177,7 +5178,7 @@ export const register: Register = on => {
       const { pr, checks, threads } = b
       const { status, head: statusHead, unlisted } = readiness(pr, isThreadSent)
       const tone = PR_TONES[status]
-      const prLast = lastActions[prMarkId(pr.ref)]?.action === 'pr-dismiss' ? null : lastActionText(prMarkId(pr.ref))
+      const prLast = isDismissed(lastActions, pr.ref) ? null : lastActionText(prMarkId(pr.ref))
       const prActions = prBlockActions(pr, isThreadSent, prState.branchRef, presses).map(a => prKeyAction(a, pr.ref))
 
       const titleLine = (
