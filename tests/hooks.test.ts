@@ -1661,6 +1661,47 @@ test('a question Claude records waits in the pane with its recommendation, a rep
   )
 })
 
+test("the result under a record or close call reads the person's line, nothing when the call changed nothing, and the agent's text in the ctrl+o transcript", async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  on('ui.render', { component: 'ToolResult' }, ($, e) => $.ui.resolve(e).Text({ children: [String(e.props.output)] }))
+  world($, on, [])
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  const question = {
+    tool: 'mcp__inbox__record',
+    kind: 'question',
+    ask: 'Which cache should the API use?',
+    options: ['Redis', 'In-memory'],
+  } as const
+  const calls = [
+    { use: 'u1', call: question },
+    { use: 'u2', call: question },
+    { use: 'u3', call: { tool: 'mcp__inbox__close', id: 'i1', answer: 'Redis' } },
+  ] as const
+  const results: unknown[] = []
+  for (const { use, call } of calls) results.push((await $.tool.call({ ...call, tool_use_id: use } as never)).result)
+  const resultRow = (i: number, isExpanded = false) =>
+    $.ui.mount({
+      plugin: 'inbox',
+      surface: 'terminal',
+      component: 'ToolResult',
+      props: {
+        tool_use_id: calls[i]!.use,
+        tool: calls[i]!.call.tool,
+        output: results[i],
+        isErrored: false,
+        isExpanded,
+      },
+    } as never)
+
+  expect(await (await resultRow(0)).find({ text: 'Question: Which cache should the API use?' })).toBeDefined()
+  expect(await (await resultRow(1)).find({ text: /./ })).toBeUndefined()
+  expect(await (await resultRow(2)).find({ text: 'Closed: Which cache should the API use?' })).toBeDefined()
+  expect(
+    await (await resultRow(0, true)).find({ text: 'Recorded. The user sees it in the /inbox pane.' }),
+  ).toBeDefined()
+})
+
 test('/inbox opens on the tab that has rows when the tab it would show is empty', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])

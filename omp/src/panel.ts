@@ -884,7 +884,7 @@ function spread(left: string, right: string, width: number): string {
   return gap >= 2 ? left + ' '.repeat(gap) + right : fit(left, width)
 }
 
-function wrapText(text: string, width: number): string[] {
+export function wrapText(text: string, width: number): string[] {
   const out: string[] = []
   for (const paragraph of text.split('\n')) {
     let line = ''

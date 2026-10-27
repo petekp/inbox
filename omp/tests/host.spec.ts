@@ -249,6 +249,34 @@ test('a close call closes the recorded item', async () => {
   expect(state().ledger.closed).toHaveLength(1)
 })
 
+test("record and close draw the person's line under the call while the agent reads its own text", async () => {
+  createInbox(pi(), deps())
+  const theme = { fg: (_color: string, text: string) => text }
+  const drawn = (name: string, result: unknown) =>
+    tools.get(name).renderResult(result, { expanded: false, isPartial: false }, theme).render(80)
+  const close = (args: Record<string, unknown>) =>
+    tools.get('close').execute('call', args, undefined, undefined, makeCtx())
+
+  const recorded = await record({ kind: 'task', ask: 'Try the CLI by hand' })
+  expect(recorded.content[0].text).toBe('Recorded. The user sees it in the /inbox panel.')
+  expect(drawn('record', recorded)).toEqual(['Task: Try the CLI by hand'])
+  expect(tools.get('record').describeResult(recorded).body).toEqual([
+    { k: 'text', p: { text: 'Task: Try the CLI by hand' } },
+  ])
+  const again = await record({ kind: 'task', ask: 'Try the CLI by hand' })
+  expect(drawn('record', again)).toEqual([])
+  expect(tools.get('record').describeResult(again).body).toBeUndefined()
+
+  const closed = await close({ id: state().ledger.items[0].id, reason: 'done by the agent' })
+  expect(closed.content[0].text).toStartWith('Closed. The user sees it in the /inbox panel')
+  expect(drawn('close', closed)).toEqual(['Closed: Try the CLI by hand'])
+
+  const failed = { content: [{ type: 'text', text: 'Could not save the inbox.' }], isError: true }
+  expect(drawn('record', failed)).toEqual(['Could not save the inbox.'])
+  const savedBeforeDetails = { content: [{ type: 'text', text: 'Recorded. The user sees it in the /inbox panel.' }] }
+  expect(drawn('record', savedBeforeDetails)).toEqual([])
+})
+
 test('bash, edit and write runs become turn activity and other tools do not', async () => {
   createInbox(pi(), deps())
   const run = (toolName: string, args: Record<string, unknown>) =>

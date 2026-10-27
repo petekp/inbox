@@ -576,6 +576,34 @@ describe('items the agent recorded', () => {
     ])
   })
 
+  test('a record or close gives the person a line naming what it changed, and none when it changed nothing', () => {
+    const question = { kind: 'question', ask: 'Which cache should the API use?', options: ['Redis', 'Memcached'] }
+    const first = recordItem(CLAUDE_CODE, EMPTY, question, 1000)
+    expect(first.personLine).toBe('Question: Which cache should the API use?')
+    expect(recordItem(CLAUDE_CODE, first.ledger, question, 1100).personLine).toBeNull()
+    expect(recordItem(CLAUDE_CODE, EMPTY, { kind: 'question', ask: 'Ship it?' }, 1000).personLine).toBeNull()
+    expect(recordItem(CLAUDE_CODE, EMPTY, { kind: 'task', ask: 'Sign in to npm' }, 1000).personLine).toBe(
+      'Task: Sign in to npm',
+    )
+
+    const finding = { kind: 'finding', title: 'Retry loop never backs off', detail: 'It hammers the API.' }
+    const found = recordItem(CLAUDE_CODE, first.ledger, finding, 1200)
+    expect(found.personLine).toBe('Issue: Retry loop never backs off')
+    expect(recordItem(CLAUDE_CODE, found.ledger, finding, 1300).personLine).toBeNull()
+    expect(
+      recordItem(CLAUDE_CODE, EMPTY, { ...finding, finding_kind: 'opportunity', title: 'Cache the token' }, 1200)
+        .personLine,
+    ).toBe('Opportunity: Cache the token')
+
+    const closed = recordClose(CLAUDE_CODE, found.ledger, { id: 'i1', answer: 'Redis' }, 1400)
+    expect(closed.personLine).toBe('Closed: Which cache should the API use?')
+    expect(recordClose(CLAUDE_CODE, closed.ledger, { id: 'i1', answer: 'Redis' }, 1500).personLine).toBeNull()
+    const findingId = found.ledger.findings[0]!.id
+    expect(recordClose(CLAUDE_CODE, found.ledger, { id: findingId, reason: 'fixed' }, 1400).personLine).toBe(
+      'Closed: Retry loop never backs off',
+    )
+  })
+
   test('the agent can record again what it closed, but not what the person or the update closed', () => {
     const closedByAgent = closeByAgent(
       CLAUDE_CODE,

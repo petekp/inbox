@@ -532,6 +532,8 @@ declare module 'claude-code' {
       redraw: number
       /** A fresh value redraws only the pane, for the next frame of a running mark. */
       runningFrame: number
+      /** The line the person sees under each `record` or `close` call that has one, by the call's `tool_use_id`. */
+      personLines: Record<string, string>
       /** Builds before the shared session kept the session in these fields. `upgradeDrawn` moves them into `session`. */
       ledger: Ledger
       presence: OldPresence
