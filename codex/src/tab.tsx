@@ -1573,9 +1573,9 @@ function GroupEnd({
 
 const HOOKS_TRUST_TEXT: Record<NonNullable<View['hooksTrust']>, string> = {
   untrusted:
-    'Codex is not running the inbox’s hooks, so the inbox is not reading Codex’s replies. Click the hook icon beside the approval setting, then Allow all.',
+    'Codex is not running the inbox’s hooks, so the inbox is not reading Codex’s replies. Click the hook icon beside the approval setting, then Allow all. If the icon isn’t there, open Settings, then Hooks, then Inbox, then Trust all.',
   modified:
-    'Codex stopped the inbox’s hooks when the inbox updated, so the inbox is not reading Codex’s replies. To trust them again, click the hook icon beside the approval setting, then Allow all.',
+    'Codex stopped the inbox’s hooks when the inbox updated, so the inbox is not reading Codex’s replies. To trust them again, click the hook icon beside the approval setting, then Allow all. If the icon isn’t there, open Settings, then Hooks, then Inbox, then Trust all.',
 }
 
 /** What the Asks tab says about the hooks the inbox has not heard from. The tab bar's line says why Codex is not running them. */

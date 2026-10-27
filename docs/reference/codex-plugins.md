@@ -2144,9 +2144,19 @@ This changes what the inbox's users must do after every update.
 - `codex plugin marketplace upgrade` reports "No configured Git marketplaces
   to upgrade" for a local-path marketplace; the install reads the source
   folder when `codex plugin add` runs [live 0.164.0].
-- What the app shows for a `modified` hook is not known. The 0.164.0 CLI
-  reports it through `hooks/list`; the README sends people to the hook icon
-  beside the approval setting.
+- **Where the app asks for trust** [source, ChatGPT.app 26.1021.31345
+  `app.asar` webview bundle, read 2026-10-27]. The composer shows a "Review
+  hooks" button while an enabled hook for the chat's folder reads `untrusted`
+  or `modified` in `hooks/list`. Its dialog lists each hook as "New" or
+  "Modified", with "Allow all". The app reuses its `hooks/list` answer for 5
+  minutes (`staleTime`). It reads the list again when a composer mounts after
+  that, after one of its own hook actions, or after a restart. So after an
+  update run from a terminal, the button stays hidden until the app reads the
+  list again. Settings, then Hooks (under Coding), lists plugin hooks under
+  "From Plugins", one row per plugin, named by its `displayName`. The row's
+  dialog has "Trust all". The plugin's own page shows "N hooks need review
+  before they can run", with "Review" and "Trust all". The README and the
+  tab's line name the button first, then Settings' Hooks page.
 - The inbox's own signal is `heard`: `none` when no hook has run in the chat.
   In the failing thread above `inbox_view` returned `"heard":"none"` and the
   tab read "The inbox has not heard from this chat's hooks."
