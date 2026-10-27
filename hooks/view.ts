@@ -143,7 +143,7 @@ export type RowState =
     }
 
 export type Feedback =
-  | { is: 'done'; label: string; at: number; isHandedStep?: true }
+  | { is: 'done'; label: string; at: number; isHandedStep?: true; isStillWaiting?: true }
   | { is: 'working'; label: string; at: number }
   | { is: 'stillOpen'; at: number }
   | { is: 'noComparison'; at: number }
@@ -419,6 +419,7 @@ export function feedbackOf(
     label: DONE_LABELS[last.action]?.(last.text) ?? last.text,
     at: last.at,
     ...(isHandedStep ? { isHandedStep: true as const } : {}),
+    ...(STILL_WAITING_AFTER.has(last.action) ? { isStillWaiting: true as const } : {}),
   }
 }
 
@@ -485,6 +486,9 @@ const DONE_LABELS: Record<string, (text: string) => string> = {
   'check-fix': () => 'Asked to fix',
 }
 
+/** Presses after which their row still waits on the person, as a failing check does after Fix. */
+const STILL_WAITING_AFTER = new Set(['check-fix'])
+
 export function isFailure(f: Feedback | null): boolean {
   return f?.is === 'notSent' || (f?.is === 'local' && f.result.state === 'failed')
 }
@@ -546,15 +550,19 @@ export type PressState = Pick<ViewInput, 'lastActions' | 'turns' | 'now'>
 
 /**
  * A press status follows the row's title. While the press is out, an open row draws its status, such as "Comparing…",
- * under its buttons instead, so a status that wraps adds a line below them and never moves them.
+ * under its buttons instead, so a status that wraps adds a line below them and never moves them. A row that still
+ * waits after its press, such as a failing check after Fix, keeps its done status there, beside the button that
+ * presses again, as a PR block does.
  */
 export function isStatusUnderActions(f: Feedback | null, isOpen: boolean): boolean {
-  return isOpen && isPressOut(f)
+  const isDoneStillWaiting = f?.is === 'done' && f.isStillWaiting === true
+
+  return isOpen && (isPressOut(f) || isDoneStillWaiting)
 }
 
 /**
- * Whether a row in the terminal and desktop looks draws a press status after its title, once
- * `isStatusUnderActions` has placed a press that is out. A status with an age and a Local result that did not fail
+ * Whether a row in the terminal and desktop looks draws a press status after its title, unless
+ * `isStatusUnderActions` places it under the buttons. A status with an age and a Local result that did not fail
  * do. A failure takes its own line above an open row's buttons, in the error color.
  */
 export function isAfterTitle(f: Feedback): boolean {

@@ -2542,6 +2542,8 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   await pane.press({ key: 'title-acme/greet#12 check test' })
   await clock.advance(PRESS_GUARD_MS)
   expect((await pane.find({ key: 'fix-acme/greet#12-test-key' }))?.props.label).toMatch(/Fix again$/)
+  expect(await pane.find({ text: '✓ Asked to fix' })).toBeDefined()
+  expect(await pane.find({ text: /^ ·\s✓\sAsked\sto\sfix$/ })).toBeUndefined()
   await pane.press({ key: 'log-acme/greet#12-test-key' })
   await clock.settle()
   expect(ran.at(-1)).toEqual(['open', 'https://github.com/acme/greet/actions/runs/7/job/1'])
