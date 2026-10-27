@@ -2528,7 +2528,9 @@ function isQueuedAt(last, now) {
 function pendingDeliveryAt(last, now) {
   if (last?.delivery?.state === "unconfirmed")
     return "unconfirmed";
-  return isQueuedAt(last, now) ? "queued" : null;
+  if (last?.delivery?.state !== "queued")
+    return null;
+  return isQueuedAt(last, now) ? "queued" : "sending";
 }
 var NO_HOLDS = { replies: {}, discarded: {} };
 function heldReplies(typing, drafts) {
@@ -2661,7 +2663,7 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
     return null;
   const delivery = last.delivery;
   const pending = pendingDeliveryAt(last, now);
-  if (pending)
+  if (pending === "queued" || pending === "unconfirmed")
     return { is: pending, label: last.text, at: last.at };
   if (delivery?.state === "failed")
     return { is: "notSent", reason: delivery.reason, retry: retryOf(id, last) };
@@ -2671,6 +2673,8 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   const working = WORKING_LABELS[last.action];
   if (last.kind === "talk" && working && (isAwaiting || isUnreported && !isPastLimit))
     return { is: "working", label: working, at: last.at };
+  if (pending === "sending")
+    return { is: "sending", label: last.text, at: last.at };
   if (isUnreported)
     return { is: "noComparison", at: last.at };
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last))
@@ -2725,7 +2729,7 @@ function isFailure(f) {
   return f?.is === "notSent" || f?.is === "local" && f.result.state === "failed";
 }
 function isPressOut(f) {
-  return f?.is === "working" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";
+  return f?.is === "working" || f?.is === "sending" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";
 }
 function pressOutAction(last, f) {
   if (!isPressOut(f))
@@ -2766,6 +2770,8 @@ function feedbackText(f, look) {
       return noteText();
     case "local":
       return localText(f.result, look);
+    case "sending":
+      return f.label;
     case "queued":
       return deliveryLabel(f.is, f.label);
     case "unconfirmed":
@@ -2802,7 +2808,7 @@ function settledTone(state) {
 function settledLabel(label, delivery) {
   if (delivery && typeof delivery === "object")
     return `${label} \xB7 Not sent: ${delivery.error}`;
-  return delivery === null ? label : deliveryLabel(delivery, label);
+  return delivery === null || delivery === "sending" ? label : deliveryLabel(delivery, label);
 }
 function stepKind(step) {
   return step.step.some((h) => h.kind === "run") ? "handoff" : "local";
@@ -2818,6 +2824,9 @@ var NEXT_BUILD_TABS = numbered(TAB_NAMES);
 var RELEASE_TABS = numbered(TAB_NAMES.filter((t) => t.id !== "overview"));
 function shownTabs(isNextBuild) {
   return isNextBuild ? NEXT_BUILD_TABS : RELEASE_TABS;
+}
+function inboxCommandText(isNextBuild) {
+  return isNextBuild ? "Show where this session stands and what waits on you" : "Show this session's questions, tasks, findings and PRs";
 }
 var TAB_NAMINGS = ["words", "symbols"];
 function tabName(tab, naming) {
@@ -4887,7 +4896,7 @@ function openTarget2(run, target, root, home) {
   }, target, root, home);
 }
 // package.json
-var version = "0.2.11";
+var version = "0.2.12";
 
 // ../hooks/arrivals.ts
 function recordRows(seen, listed) {
@@ -5562,7 +5571,7 @@ function drawLine(line, isSelected, d) {
   const statusUnder = line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(line.feedback.source, isSelected) ? line.feedback : null;
   const after = line.settled ? `  ${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim("u Undo")}` : ""}` : line.feedback && !statusUnder ? `  ${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const title = line.isDim ? s.dim(line.title) : isSelected ? s.bold(line.title) : line.title;
-  const cursor = isSelected ? s.tone("accent", "\u25B8") : " ";
+  const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
   out.push(spread(` ${" ".repeat(pad)}${cursor} ${leadText(line.lead, s)} ${title}${status}${after}`, `${age} `, width));
   if (line.settled || isShut(line, ui))
@@ -5711,11 +5720,12 @@ function footer(d, isPageScrolling) {
     out.push(fit(hintLine, width), fit(` ${s.dim(model.trimEnd())}`, width));
   return out;
 }
-function drawPanel(screen, ui, width, now, style, height) {
+function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const d = { screen, ui, width, now, style };
   const entries = entriesOf(screen, ui, ui.tab, now);
   const selected = resolveSelected(linesOf(entries), ui.selectedId);
-  const head = [tabBar(d), style.dim("\u2500".repeat(width))];
+  const rule = style.dim("\u2500".repeat(width));
+  const head = [rule, tabBar(d), rule];
   const body = [];
   let selectedAt = [0, 0];
   for (const e of entries) {
@@ -5738,13 +5748,18 @@ function drawPanel(screen, ui, width, now, style, height) {
   const isPageTaller = isPage && body.length > roomBeside(footer(d, false));
   const foot = footer(d, isPageTaller);
   const room = roomBeside(foot);
+  const blanks = (shown) => Array(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill("");
   if (isPage) {
     const top = Math.min(Math.max(0, ui.pageTop), body.length > room ? body.length - room + 1 : 0);
     const shown = body.length > room ? pageWindow(body, top, room, style) : body;
-    return { lines: [...head, ...shown, ...foot].map((l) => fit(l, width)), pageTop: top };
+    return { lines: [...head, ...shown, ...blanks(shown), ...foot].map((l) => fit(l, width)), pageTop: top };
   }
   const shown = body.length > room ? scrolled(body, selectedAt, room, style) : body;
-  return { lines: [...head, ...shown, ...foot].map((l) => fit(l, width)), pageTop: ui.pageTop };
+  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map((l) => fit(l, width)), pageTop: ui.pageTop };
+}
+function tallestTabHeight(screen, ui, width, now, style, height) {
+  const heights = shownTabs(screen.isNextBuild === true).map((t) => drawPanel(screen, t.id === ui.tab ? ui : withTab(ui, t.id), width, now, style, height).lines.length);
+  return Math.max(...heights);
 }
 var moreLines = (arrow, n, s) => s.dim(`  ${arrow} ${n} more line${n === 1 ? "" : "s"}`);
 function pageWindow(body, top, room, s) {
@@ -5795,6 +5810,7 @@ function createPanel(deps) {
   let version = 0;
   let seen = {};
   let isOpening = true;
+  let heldHeight = null;
   const stops = [];
   const syncAnimation = () => {
     const isMoving = screen !== null && isAnimating(screen, ui, deps.now());
@@ -5866,7 +5882,11 @@ function createPanel(deps) {
     render(width) {
       if (screen === null)
         return [` ${READING_TEXT}`];
-      const drawn = drawPanel(screen, ui, width, deps.now(), style, deps.height());
+      const now = deps.now();
+      const maxHeight = deps.height();
+      heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight);
+      const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity));
+      heldHeight = Math.max(heldHeight, drawn.lines.length);
       ui = { ...ui, pageTop: drawn.pageTop };
       return drawn.lines;
     },
@@ -6489,7 +6509,7 @@ function demoSource(deps) {
   return {
     screen: async (holds) => ({
       view: sessionView(state, deps.now(), deps.settleWindowMs, true, holds),
-      modelName: null,
+      modelName: deps.modelName,
       isGhMissing: false,
       isFetchingPrs: false,
       stop: null,
@@ -7217,7 +7237,8 @@ function createInbox(pi, deps = defaultDeps) {
       after: (fn, ms) => void ctx.setTimeout(fn, ms),
       settleWindowMs: deps.settleWindowMs,
       isNextBuild: deps.isNextBuild,
-      comparePage: deps.comparePage
+      comparePage: deps.comparePage,
+      modelName: modelNameOf(ctx)
     }) : liveSource(ctx);
     hideBand(ctx);
     if (!isDemo)
@@ -7251,7 +7272,7 @@ function createInbox(pi, deps = defaultDeps) {
     }
   }
   pi.registerCommand("inbox", {
-    description: "Show where this session stands and what waits on you",
+    description: inboxCommandText(deps.isNextBuild),
     handler: async (args, ctx) => {
       const isDemo = args.trim() === "demo";
       if (ctx.mode === "tui")
@@ -7260,7 +7281,8 @@ function createInbox(pi, deps = defaultDeps) {
         now: deps.now,
         after: () => {},
         settleWindowMs: deps.settleWindowMs,
-        comparePage: deps.comparePage
+        comparePage: deps.comparePage,
+        modelName: modelNameOf(ctx)
       }).screen(NO_HOLDS) : await inbox.screen(ctx);
       const { needsYou, findings } = screen.view;
       ctx.ui.notify(`Asks ${needsYou.count}, Finds ${findings.count}`, "info");

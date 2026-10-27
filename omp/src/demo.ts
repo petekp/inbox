@@ -17,6 +17,8 @@ export function demoSource(deps: {
   settleWindowMs: number
   isNextBuild?: boolean
   comparePage: string
+  /** The person's inbox model, which the footer names as the live panel's does. */
+  modelName: string | null
 }): PanelSource {
   let state = demoState(deps.now())
   const listeners = new Set<() => void>()
@@ -25,7 +27,7 @@ export function demoSource(deps: {
   return {
     screen: async holds => ({
       view: sessionView(state, deps.now(), deps.settleWindowMs, true, holds),
-      modelName: null,
+      modelName: deps.modelName,
       isGhMissing: false,
       isFetchingPrs: false,
       stop: null,

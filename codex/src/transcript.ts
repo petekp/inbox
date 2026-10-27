@@ -527,6 +527,45 @@ function rolloutTurns(lines: string[], cwd: string): RolloutTurn[] {
   return groups.map(g => ({ id: g.id, isComplete: g.isComplete, turns: turnsOf(g.rows, cwd) }))
 }
 
+/** A turn of the rollout, by its `task_started` row, and whether a `task_complete` or `turn_aborted` row ended it. */
+export type TurnRow = { id: string; hasEnded: boolean }
+
+const TURN_END_EVENTS = new Set(['task_complete', 'turn_aborted'])
+
+/**
+ * The rollout's turns, oldest first, over the history the catch-up reads. Only the turn rows are parsed. An end row whose
+ * start is before the history read is a turn of its own. Null when the file cannot be read.
+ */
+export async function rolloutTurnRows(path: string): Promise<TurnRow[] | null> {
+  try {
+    const rows: TurnRow[] = []
+    for (const line of await historyLines(path, ROLLOUT_BYTES)) {
+      if (!line.includes('"task_') && !line.includes('"turn_aborted"')) continue
+      let row: RolloutRow
+      try {
+        row = record(JSON.parse(line)) as RolloutRow
+      } catch {
+        continue
+      }
+      const p = record(row.payload)
+      const type = textOf(p.type)
+      if (row.type !== 'event_msg' || (type !== 'task_started' && !TURN_END_EVENTS.has(type))) continue
+      const id = textOf(p.turn_id) || textOf(record(p.turn_attribution).turn_id)
+      if (type === 'task_started') {
+        rows.push({ id, hasEnded: false })
+        continue
+      }
+      const started = rows.findLast(t => t.id === id) ?? (id === '' ? rows.at(-1) : undefined)
+      if (started) started.hasEnded = true
+      else rows.push({ id, hasEnded: true })
+    }
+
+    return rows
+  } catch {
+    return null
+  }
+}
+
 export type Rollout = {
   /** The whole conversation, oldest first, as the inbox model reads it. */
   conversation: string

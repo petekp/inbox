@@ -15,6 +15,7 @@ import {
   isLineWaiting,
   isRunningMarkShown,
   noticeFor,
+  tallestTabHeight,
 } from './panel'
 import type { PanelPress, PanelScreen, PanelUi, SeenRows, Style } from './panel'
 
@@ -72,6 +73,11 @@ export function createPanel(deps: PanelDeps): Panel {
   let version = 0
   let seen: SeenRows = {}
   let isOpening = true
+  /**
+   * The panel's height while it is open: its tallest tab's when it opens, and after that only taller, so the session
+   * above it stays still as tabs switch and rows grow or close.
+   */
+  let heldHeight: number | null = null
   const stops: (() => void)[] = []
 
   const syncAnimation = () => {
@@ -143,7 +149,11 @@ export function createPanel(deps: PanelDeps): Panel {
   return {
     render(width) {
       if (screen === null) return [` ${READING_TEXT}`]
-      const drawn = drawPanel(screen, ui, width, deps.now(), style, deps.height())
+      const now = deps.now()
+      const maxHeight = deps.height()
+      heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight)
+      const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity))
+      heldHeight = Math.max(heldHeight, drawn.lines.length)
       ui = { ...ui, pageTop: drawn.pageTop }
 
       return drawn.lines

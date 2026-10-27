@@ -57,7 +57,7 @@ export type { Session } from '../types'
 
 const NO_PRS: PrViews = { views: {}, branchRef: null, isFetching: false }
 
-const NO_TURN: Session['turn'] = { person: null, trigger: null, activity: [], press: null }
+export const NO_TURN: Session['turn'] = { person: null, trigger: null, activity: [], press: null }
 
 export function emptySession(): Session {
   return {

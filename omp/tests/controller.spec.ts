@@ -16,6 +16,7 @@ function open(overrides: Partial<PanelSource> = {}) {
   const calls = { renders: 0, closes: 0, fetches: 0 }
   const replies: (() => void)[] = []
   const demo = demoSource({
+    modelName: 'Claude Sonnet 5.5',
     now: () => now,
     after: fn => void replies.push(fn),
     settleWindowMs: SETTLED_MS,
@@ -132,8 +133,31 @@ test('the redraw timer runs only while something on the screen moves', async () 
   expect(live(timers, 200)).toHaveLength(0)
 })
 
+test('the open panel keeps its line count through tab switches, presses and a closed row leaving, and never shrinks after it grows', async () => {
+  const { panel, timers, advance } = open()
+  await panel.start()
+  const height = panel.render(100).length
+  for (const key of ['tab', 'tab', 'tab', '2', 'enter', '1', 'enter']) {
+    panel.handleInput(key)
+    await flush()
+    expect(panel.render(100), `after ${key}`).toHaveLength(height)
+  }
+  panel.handleInput('r')
+  await flush()
+  const withField = panel.render(100).length
+  expect(withField).toBeGreaterThan(height)
+  panel.handleInput('escape')
+  await flush()
+  expect(panel.render(100)).toHaveLength(withField)
+  advance(SETTLED_MS + 1000)
+  live(timers, 200)[0]!.fn()
+  await flush()
+  expect(panel.render(100)).toHaveLength(withField)
+})
+
 test('the frame timer runs while the Overview shows a running mark, re-renders without reading the session, and stops on another tab and on dispose', async () => {
   const demo = demoSource({
+    modelName: 'Claude Sonnet 5.5',
     now: () => 0,
     after: () => undefined,
     settleWindowMs: SETTLED_MS,
@@ -215,6 +239,7 @@ test('a change in the saved state redraws the panel', async () => {
 
 test('a refused Resume shows why on the stop row', async () => {
   const demo = demoSource({
+    modelName: 'Claude Sonnet 5.5',
     now: () => 0,
     after: () => {},
     settleWindowMs: SETTLED_MS,

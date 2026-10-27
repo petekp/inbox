@@ -50,6 +50,11 @@ export type SessionState = Session & {
   shownTab: ShownTab
   heard: Heard
   /**
+   * The newest turn whose end the inbox has covered, by its turn id: its Stop ran, or an update was started to catch
+   * up to it. A turn that ended after it in the rollout reached no Stop. Null when the inbox has covered none.
+   */
+  coveredTurn: string | null
+  /**
    * The newest report a hook or an update sent to the session's Herdr pane: its key from `herdrReportKey`, and its
    * `seq`. Each runs in its own process, so this is how a later one knows its report would change nothing.
    */
@@ -96,6 +101,7 @@ export function emptyState(sessionId: string): SessionState {
     tabSeenAt: 0,
     shownTab: 'needsYou',
     heard: NOTHING_HEARD,
+    coveredTurn: null,
   }
 }
 
@@ -130,6 +136,17 @@ function upgraded(saved: Saved, sessionId: string): SessionState {
     ...kept
   } = saved
   const { sentBack: _sentBack, ...turn } = saved.turn ?? {}
+  // A file saved before the hooks kept this record came from hooks that ran, so it reads as heard.
+  // Its turns were not recorded, so `promptAt` is set too: a tool call then falls back to the time rule.
+  const heard: Heard = saved.heard
+    ? { ...NOTHING_HEARD, ...saved.heard }
+    : {
+        ...NOTHING_HEARD,
+        startAt: 0,
+        promptAt: 0,
+        prompts: saved.presence?.turnsStarted ?? 0,
+        stops: saved.presence?.turnsStarted ?? 0,
+      }
 
   return {
     ...base,
@@ -140,18 +157,17 @@ function upgraded(saved: Saved, sessionId: string): SessionState {
       pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex })),
     }),
     shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
-    // A file saved before the hooks kept this record came from hooks that ran, so it reads as heard.
-    // Its turns were not recorded, so `promptAt` is set too: a tool call then falls back to the time rule.
-    heard: saved.heard
-      ? { ...NOTHING_HEARD, ...saved.heard }
-      : {
-          ...NOTHING_HEARD,
-          startAt: 0,
-          promptAt: 0,
-          prompts: saved.presence?.turnsStarted ?? 0,
-          stops: saved.presence?.turnsStarted ?? 0,
-        },
+    heard,
+    coveredTurn: saved.coveredTurn !== undefined ? saved.coveredTurn : coveredBefore(heard, turn.person ?? null),
   }
+}
+
+/**
+ * The newest turn a build that kept no `coveredTurn` covered: the turn of the last prompt it recorded, or the turn before
+ * that while the last one's Stop has not run, since a Stop clears the recorded prompt.
+ */
+function coveredBefore(heard: Heard, person: string | null): string | null {
+  return heard.promptTurns.at(person === null ? -1 : -2) ?? null
 }
 
 async function readSaved(dir: string, sessionId: string): Promise<{ state: SessionState; isSaved: boolean }> {
