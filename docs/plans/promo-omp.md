@@ -1,6 +1,6 @@
 # omp promo video
 
-Status: built. The render is `videos/out/omp.mp4`, 56.3 s, with Pete's approved captions, recorded on #126's head so omp shows the person a line under each `record` and `close` call. It waits on Pete's approval. It is a 16:9 master; a 9:16 cut is not made yet.
+Status: built. The render is `videos/out/omp.mp4`, 56.3 s, with Pete's approved captions, recorded on #126's head so omp shows the person a line under each `record` and `close` call. It is a 16:9 master; a 9:16 cut is not made yet.
 
 A 56-second video that premieres the inbox in omp, a terminal coding agent. It shows one real omp session: the agent asks a question and notices an issue, both land above the prompt, and you answer and hand off the issue with single keys. It has no voiceover. Short captions carry the words, so it works muted in a feed.
 
@@ -101,7 +101,7 @@ As in the launch video, no beat changes on a hard cut:
 
 The take is `videos/takes/omp/session.term.jsonl`, which Git ignores. `session.build.txt` beside it records the build.
 
-- **Build.** #126's head at `31322f3`: next at `da0f863` with #126 merged in, which is what next becomes once #126 lands. It ran in a worktree at that commit. The version was set to 0.2.13 there in the five places `docs/release.md` lists, and `omp/dist/host.js` rebuilt, none of it committed, so the footer reads "v0.2.13" ahead of the release. The rebuilt bundle differs from the committed one only in its version line, and `npm --prefix omp run check` confirmed it matches its sources. It has no `.next-build` mark, so it runs as a release build, with no Overview tab. omp was 18.12.3.
+- **Build.** #126's head at `31322f3`: next at `da0f863` with #126 merged in. Next at `5698261`, where #126 landed, holds the same code. The take ran in a worktree at `31322f3`. The version was set to 0.2.13 there in the five places `docs/release.md` lists, and `omp/dist/host.js` rebuilt, none of it committed, so the footer reads "v0.2.13" ahead of the release. The rebuilt bundle differs from the committed one only in its version line, and `npm --prefix omp run check` confirmed it matches its sources. It has no `.next-build` mark, so it runs as a release build, with no Overview tab. omp was 18.12.3.
 - **No screen.** `videos/record/term.py` ran omp in a private tmux server that draws nowhere. A driver script read the take's log as it was written, and fed keys to `term.py`'s stdin as each screen was ready:
   1. The prompt, a letter at a time, then Enter.
   2. After the agent's turn ended, 35 s for the inbox model to finish.
