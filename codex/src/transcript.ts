@@ -229,27 +229,47 @@ async function linesBefore(
 }
 
 const TURN_ROW_BYTES = 64 * 1024
-const TURN_EVENTS = new Set(['task_started', 'task_complete', 'turn_aborted'])
 
 /**
- * Whether the rollout's last turn still runs: true after its `task_started` row, false after its `task_complete` or
- * `turn_aborted` row. Stop does not run for an interrupted turn, and another plugin's Stop can continue a turn after
- * the inbox's Stop ran, so only the rollout says whether the turn runs. Only the last `TURN_ROW_BYTES` are read. Null
- * when they hold no turn row or the file cannot be read.
+ * A row of the rollout that starts a turn (`task_started`), or ends it by completing (`task_complete`) or by an
+ * interrupt (`turn_aborted`).
  */
-export async function turnRunningIn(path: string): Promise<boolean | null> {
+export type TurnEvent = { id: string; kind: 'started' | 'completed' | 'aborted' }
+
+const TURN_EVENT_KINDS = new Map<string, TurnEvent['kind']>([
+  ['task_started', 'started'],
+  ['task_complete', 'completed'],
+  ['turn_aborted', 'aborted'],
+])
+
+/** The turn event a parsed rollout row is, or null. Codex writes the turn id in `turn_id` or in `turn_attribution`. */
+function turnEventOfRow(row: RolloutRow): TurnEvent | null {
+  const p = record(row.payload)
+  const kind = row.type === 'event_msg' ? TURN_EVENT_KINDS.get(textOf(p.type)) : undefined
+
+  return kind === undefined ? null : { id: textOf(p.turn_id) || textOf(record(p.turn_attribution).turn_id), kind }
+}
+
+/** The turn event a rollout line holds, or null. Only a line that names one is parsed. */
+function turnEventOf(line: string): TurnEvent | null {
+  if (!line.includes('"task_') && !line.includes('"turn_aborted"')) return null
   try {
-    const lines = await tailLines(path, TURN_ROW_BYTES)
-    for (const line of lines.reverse()) {
-      if (!line.includes('"task_') && !line.includes('"turn_aborted"')) continue
-      let row: TranscriptLine
-      try {
-        row = JSON.parse(line) as TranscriptLine
-      } catch {
-        continue
-      }
-      const type = row.payload?.type
-      if (row.type === 'event_msg' && type !== undefined && TURN_EVENTS.has(type)) return type === 'task_started'
+    return turnEventOfRow(record(JSON.parse(line)) as RolloutRow)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The rollout's newest turn event. Its turn still runs when it is a start. Stop does not run for an interrupted turn,
+ * and another plugin's Stop can continue a turn after the inbox's Stop ran, so only the rollout says whether the turn
+ * runs. Only the last `TURN_ROW_BYTES` are read. Null when they hold no turn event or the file cannot be read.
+ */
+export async function newestTurnEvent(path: string): Promise<TurnEvent | null> {
+  try {
+    for (const line of (await tailLines(path, TURN_ROW_BYTES)).reverse()) {
+      const event = turnEventOf(line)
+      if (event !== null) return event
     }
 
     return null
@@ -309,10 +329,18 @@ type TurnRows = { dialogs: Dialog[]; commands: FinishedCommand[]; plan: HostTask
  * them. A turn with none falls back to older shell calls and their outputs.
  */
 export async function turnIn(path: string | null, turnId: string | undefined): Promise<TurnRows> {
+  return turnOf(await rolloutTail(path), turnId)
+}
+
+/** The last few megabytes of a rollout, as lines. Empty when the file cannot be read. */
+export async function rolloutTail(path: string | null): Promise<string[]> {
+  return path === null ? [] : tailLines(path, TAIL_BYTES).catch(() => [])
+}
+
+/** What the agent did in a turn, as `turnIn` says, read from the lines `rolloutTail` gives. */
+export function turnOf(lines: string[], turnId: string | undefined): TurnRows {
   const none: TurnRows = { dialogs: [], commands: [], plan: null }
-  if (path === null) return none
   try {
-    const lines = await tailLines(path, TAIL_BYTES)
     type Turn = {
       dialogs: Dialog[]
       executions: FinishedCommand[]
@@ -511,56 +539,106 @@ function rolloutTurns(lines: string[], cwd: string): RolloutTurn[] {
     } catch {
       continue
     }
-    const p = record(row.payload)
-    if (row.type === 'event_msg' && p.type === 'task_started') {
-      groups.push({ id: textOf(p.turn_id) || textOf(record(p.turn_attribution).turn_id), isComplete: false, rows: [] })
+    const event = turnEventOfRow(row)
+    if (event?.kind === 'started') {
+      groups.push({ id: event.id, isComplete: false, rows: [] })
       continue
     }
     if (groups.length === 0) groups.push({ id: '', isComplete: false, rows: [] })
     const group = groups.at(-1)!
-    if (row.type === 'event_msg' && p.type === 'task_complete') group.isComplete = true
+    if (event?.kind === 'completed') group.isComplete = true
     else group.rows.push(row)
   }
 
   return groups.map(g => ({ id: g.id, isComplete: g.isComplete, turns: turnsOf(g.rows, cwd) }))
 }
 
-/** A turn of the rollout, by its `task_started` row, and whether a `task_complete` or `turn_aborted` row ended it. */
+/** A turn of the rollout, by its start, and whether it ended, by completing or by an interrupt. */
 export type TurnRow = { id: string; hasEnded: boolean }
 
-const TURN_END_EVENTS = new Set(['task_complete', 'turn_aborted'])
+/**
+ * The turns of `lines`, oldest first. An end whose start is not in `lines` is a turn of its own, except in a window
+ * cut from the end of a rollout: there the ends before the first start belong to turns that started before the window,
+ * and are skipped.
+ */
+function turnRowsOf(lines: string[], isWindow: boolean): TurnRow[] {
+  const rows: TurnRow[] = []
+  for (const line of lines) {
+    const event = turnEventOf(line)
+    if (event === null || (isWindow && rows.length === 0 && event.kind !== 'started')) continue
+    if (event.kind === 'started') {
+      rows.push({ id: event.id, hasEnded: false })
+      continue
+    }
+    const started = rows.findLast(t => t.id === event.id) ?? (event.id === '' ? rows.at(-1) : undefined)
+    if (started) started.hasEnded = true
+    else rows.push({ id: event.id, hasEnded: true })
+  }
+
+  return rows
+}
+
+/** The windows at the end of a rollout that `RolloutReads.turns` reads, smallest first, before the whole history. */
+const TURN_WINDOW_BYTES = [TURN_ROW_BYTES, 512 * 1024, TAIL_BYTES]
+
+export type RolloutReads = {
+  /**
+   * The rollout's turns, oldest first. They come from the smallest window at the end of the rollout whose turns satisfy
+   * `isEnough`, else from the whole history the catch-up reads. Null when the file cannot be read.
+   */
+  turns(isEnough: (turns: TurnRow[]) => boolean): Promise<TurnRow[] | null>
+  /** The conversation over the whole history, as `readRollout` gives it. */
+  rollout(cwd: string, currentTurnId?: string): Promise<Rollout | null>
+}
 
 /**
- * The rollout's turns, oldest first, over the history the catch-up reads. Only the turn rows are parsed. An end row whose
- * start is before the history read is a turn of its own. Null when the file cannot be read.
+ * One hook's reads of a rollout. Each read is kept, so a check made again under the state lock reads only what the
+ * state it checks newly needs. `tail` is the end of the rollout the hook has read already, from `rolloutTail`, and takes
+ * the place of the windows.
  */
-export async function rolloutTurnRows(path: string): Promise<TurnRow[] | null> {
-  try {
-    const rows: TurnRow[] = []
-    for (const line of await historyLines(path, ROLLOUT_BYTES)) {
-      if (!line.includes('"task_') && !line.includes('"turn_aborted"')) continue
-      let row: RolloutRow
-      try {
-        row = record(JSON.parse(line)) as RolloutRow
-      } catch {
-        continue
-      }
-      const p = record(row.payload)
-      const type = textOf(p.type)
-      if (row.type !== 'event_msg' || (type !== 'task_started' && !TURN_END_EVENTS.has(type))) continue
-      const id = textOf(p.turn_id) || textOf(record(p.turn_attribution).turn_id)
-      if (type === 'task_started') {
-        rows.push({ id, hasEnded: false })
-        continue
-      }
-      const started = rows.findLast(t => t.id === id) ?? (id === '' ? rows.at(-1) : undefined)
-      if (started) started.hasEnded = true
-      else rows.push({ id, hasEnded: true })
+export function rolloutReads(path: string, tail?: string[]): RolloutReads {
+  let history: Promise<string[]> | null = null
+  let read: { turns: TurnRow[]; isWhole: boolean } | null = null
+  const wholeHistory = () => (history ??= historyLines(path, ROLLOUT_BYTES))
+
+  async function windowTurns(isEnough: (turns: TurnRow[]) => boolean): Promise<TurnRow[] | null> {
+    if (tail !== undefined) {
+      const turns = turnRowsOf(tail, true)
+      return isEnough(turns) ? turns : null
+    }
+    for (const bytes of TURN_WINDOW_BYTES) {
+      const { lines, start } = await linesBefore(path, bytes)
+      const turns = turnRowsOf(lines, true)
+      if (isEnough(turns)) return turns
+      if (start === 0) break
     }
 
-    return rows
-  } catch {
     return null
+  }
+
+  return {
+    async turns(isEnough) {
+      try {
+        if (read === null || !(read.isWhole || isEnough(read.turns))) {
+          const window = history === null ? await windowTurns(isEnough) : null
+          read =
+            window === null
+              ? { turns: turnRowsOf(await wholeHistory(), false), isWhole: true }
+              : { turns: window, isWhole: false }
+        }
+
+        return read.turns
+      } catch {
+        return null
+      }
+    },
+    async rollout(cwd, currentTurnId) {
+      try {
+        return rolloutOfLines(await wholeHistory(), cwd, currentTurnId)
+      } catch {
+        return null
+      }
+    },
   }
 }
 
@@ -569,6 +647,13 @@ export type Rollout = {
   conversation: string
   /** How many turns other than the current one finished or hold a person's message. */
   earlierTurns: number
+}
+
+function rolloutOfLines(lines: string[], cwd: string, currentTurnId: string | undefined): Rollout {
+  const turns = rolloutTurns(lines, cwd)
+  const earlier = turns.filter(t => t.id !== currentTurnId && (t.isComplete || t.turns.some(x => x.role === 'person')))
+
+  return { conversation: flattenConversation(turns.flatMap(t => t.turns)), earlierTurns: earlier.length }
 }
 
 /**
@@ -580,12 +665,7 @@ export type Rollout = {
 export async function readRollout(path: string | null, cwd: string, currentTurnId?: string): Promise<Rollout | null> {
   if (path === null) return null
   try {
-    const turns = rolloutTurns(await historyLines(path, ROLLOUT_BYTES), cwd)
-    const earlier = turns.filter(
-      t => t.id !== currentTurnId && (t.isComplete || t.turns.some(x => x.role === 'person')),
-    )
-
-    return { conversation: flattenConversation(turns.flatMap(t => t.turns)), earlierTurns: earlier.length }
+    return rolloutOfLines(await historyLines(path, ROLLOUT_BYTES), cwd, currentTurnId)
   } catch {
     return null
   }

@@ -2538,6 +2538,24 @@ async function linesBefore(path, bytes, end = Infinity) {
   }
 }
 var TURN_ROW_BYTES = 64 * 1024;
+var TURN_EVENT_KINDS = /* @__PURE__ */ new Map([
+  ["task_started", "started"],
+  ["task_complete", "completed"],
+  ["turn_aborted", "aborted"]
+]);
+function turnEventOfRow(row) {
+  const p = record(row.payload);
+  const kind = row.type === "event_msg" ? TURN_EVENT_KINDS.get(textOf2(p.type)) : void 0;
+  return kind === void 0 ? null : { id: textOf2(p.turn_id) || textOf2(record(p.turn_attribution).turn_id), kind };
+}
+function turnEventOf(line) {
+  if (!line.includes('"task_') && !line.includes('"turn_aborted"')) return null;
+  try {
+    return turnEventOfRow(record(JSON.parse(line)));
+  } catch {
+    return null;
+  }
+}
 async function tailLines(path, bytes) {
   return (await linesBefore(path, bytes)).lines;
 }
@@ -2561,11 +2579,12 @@ async function historyLines(path, bytes) {
   }
   return parts.flat();
 }
-async function turnIn(path, turnId) {
+async function rolloutTail(path) {
+  return path === null ? [] : tailLines(path, TAIL_BYTES).catch(() => []);
+}
+function turnOf(lines, turnId) {
   const none = { dialogs: [], commands: [], plan: null };
-  if (path === null) return none;
   try {
-    const lines = await tailLines(path, TAIL_BYTES);
     const byTurn = /* @__PURE__ */ new Map();
     const newTurn = () => ({ dialogs: [], executions: [], calls: /* @__PURE__ */ new Map(), called: [], plan: null });
     let current = "";
@@ -2712,58 +2731,76 @@ function rolloutTurns(lines, cwd) {
     } catch {
       continue;
     }
-    const p = record(row.payload);
-    if (row.type === "event_msg" && p.type === "task_started") {
-      groups.push({ id: textOf2(p.turn_id) || textOf2(record(p.turn_attribution).turn_id), isComplete: false, rows: [] });
+    const event = turnEventOfRow(row);
+    if (event?.kind === "started") {
+      groups.push({ id: event.id, isComplete: false, rows: [] });
       continue;
     }
     if (groups.length === 0) groups.push({ id: "", isComplete: false, rows: [] });
     const group = groups.at(-1);
-    if (row.type === "event_msg" && p.type === "task_complete") group.isComplete = true;
+    if (event?.kind === "completed") group.isComplete = true;
     else group.rows.push(row);
   }
   return groups.map((g) => ({ id: g.id, isComplete: g.isComplete, turns: turnsOf(g.rows, cwd) }));
 }
-var TURN_END_EVENTS = /* @__PURE__ */ new Set(["task_complete", "turn_aborted"]);
-async function rolloutTurnRows(path) {
-  try {
-    const rows = [];
-    for (const line of await historyLines(path, ROLLOUT_BYTES)) {
-      if (!line.includes('"task_') && !line.includes('"turn_aborted"')) continue;
-      let row;
-      try {
-        row = record(JSON.parse(line));
-      } catch {
-        continue;
-      }
-      const p = record(row.payload);
-      const type = textOf2(p.type);
-      if (row.type !== "event_msg" || type !== "task_started" && !TURN_END_EVENTS.has(type)) continue;
-      const id = textOf2(p.turn_id) || textOf2(record(p.turn_attribution).turn_id);
-      if (type === "task_started") {
-        rows.push({ id, hasEnded: false });
-        continue;
-      }
-      const started = rows.findLast((t) => t.id === id) ?? (id === "" ? rows.at(-1) : void 0);
-      if (started) started.hasEnded = true;
-      else rows.push({ id, hasEnded: true });
+function turnRowsOf(lines, isWindow) {
+  const rows = [];
+  for (const line of lines) {
+    const event = turnEventOf(line);
+    if (event === null || isWindow && rows.length === 0 && event.kind !== "started") continue;
+    if (event.kind === "started") {
+      rows.push({ id: event.id, hasEnded: false });
+      continue;
     }
-    return rows;
-  } catch {
-    return null;
+    const started = rows.findLast((t) => t.id === event.id) ?? (event.id === "" ? rows.at(-1) : void 0);
+    if (started) started.hasEnded = true;
+    else rows.push({ id: event.id, hasEnded: true });
   }
+  return rows;
 }
-async function readRollout(path, cwd, currentTurnId) {
-  if (path === null) return null;
-  try {
-    const turns = rolloutTurns(await historyLines(path, ROLLOUT_BYTES), cwd);
-    const earlier = turns.filter(
-      (t) => t.id !== currentTurnId && (t.isComplete || t.turns.some((x) => x.role === "person"))
-    );
-    return { conversation: flattenConversation(turns.flatMap((t) => t.turns)), earlierTurns: earlier.length };
-  } catch {
+var TURN_WINDOW_BYTES = [TURN_ROW_BYTES, 512 * 1024, TAIL_BYTES];
+function rolloutReads(path, tail) {
+  let history = null;
+  let read = null;
+  const wholeHistory = () => history ??= historyLines(path, ROLLOUT_BYTES);
+  async function windowTurns(isEnough) {
+    if (tail !== void 0) {
+      const turns = turnRowsOf(tail, true);
+      return isEnough(turns) ? turns : null;
+    }
+    for (const bytes of TURN_WINDOW_BYTES) {
+      const { lines, start } = await linesBefore(path, bytes);
+      const turns = turnRowsOf(lines, true);
+      if (isEnough(turns)) return turns;
+      if (start === 0) break;
+    }
     return null;
   }
+  return {
+    async turns(isEnough) {
+      try {
+        if (read === null || !(read.isWhole || isEnough(read.turns))) {
+          const window = history === null ? await windowTurns(isEnough) : null;
+          read = window === null ? { turns: turnRowsOf(await wholeHistory(), false), isWhole: true } : { turns: window, isWhole: false };
+        }
+        return read.turns;
+      } catch {
+        return null;
+      }
+    },
+    async rollout(cwd, currentTurnId) {
+      try {
+        return rolloutOfLines(await wholeHistory(), cwd, currentTurnId);
+      } catch {
+        return null;
+      }
+    }
+  };
+}
+function rolloutOfLines(lines, cwd, currentTurnId) {
+  const turns = rolloutTurns(lines, cwd);
+  const earlier = turns.filter((t) => t.id !== currentTurnId && (t.isComplete || t.turns.some((x) => x.role === "person")));
+  return { conversation: flattenConversation(turns.flatMap((t) => t.turns)), earlierTurns: earlier.length };
 }
 
 // src/history.ts
@@ -2775,22 +2812,25 @@ async function withForkedLedger(s, { dir, rolloutPath }) {
 function newestEndedTurn(rows, currentTurnId) {
   return rows?.findLast((t) => t.hasEnded && t.id !== currentTurnId)?.id ?? null;
 }
+var holdsEndedTurn = (currentTurnId) => (rows) => newestEndedTurn(rows, currentTurnId) !== null;
 async function withEarlierHistory(s, history) {
   if (heardState(s.heard) !== "none") return { state: s, isBehind: false };
   const forked = await withForkedLedger(s, history);
-  const { rolloutPath, cwd, currentTurnId, canMarkBehind = true } = history;
+  const { reads, cwd, currentTurnId, canMarkBehind = true } = history;
   if (!canMarkBehind) return { state: forked, isBehind: false };
-  const coveredTurn = newestEndedTurn(await rolloutTurnRows(rolloutPath), currentTurnId);
+  const rollout = isUnseen(forked) ? await reads.rollout(cwd, currentTurnId) : null;
+  const coveredTurn = newestEndedTurn(await reads.turns(holdsEndedTurn(currentTurnId)), currentTurnId);
   const covered = coveredTurn === forked.coveredTurn ? forked : { ...forked, coveredTurn };
-  if (!isUnseen(covered)) return { state: covered, isBehind: false };
-  const rollout = await readRollout(rolloutPath, cwd, currentTurnId);
   if ((rollout?.earlierTurns ?? 0) === 0) return { state: covered, isBehind: false };
   return { state: { ...covered, presence: { ...covered.presence, ledgerState: "behind" } }, isBehind: true };
 }
-async function withMissedTurns(s, { rolloutPath, currentTurnId, canMarkBehind = true, isCleared = false }) {
+async function withMissedTurns(s, { reads, currentTurnId, canMarkBehind = true, isCleared = false }) {
   const unchanged = { state: s, isBehind: false };
-  if (!canMarkBehind || currentTurnId !== void 0 && s.coveredTurn === currentTurnId) return unchanged;
-  const rows = await rolloutTurnRows(rolloutPath);
+  const isTurnChecked = currentTurnId !== void 0 && (s.coveredTurn === currentTurnId || s.heard.promptTurns.at(-1) === currentTurnId);
+  if (!canMarkBehind || isTurnChecked) return unchanged;
+  const rows = await reads.turns(
+    isCleared ? holdsEndedTurn(currentTurnId) : (turns) => turns.some((t) => t.id === s.coveredTurn)
+  );
   if (rows === null) return unchanged;
   if (isCleared) return { state: { ...s, coveredTurn: newestEndedTurn(rows, currentTurnId) }, isBehind: false };
   const coveredAt = rows.findLastIndex((t) => t.id === s.coveredTurn);
@@ -2825,11 +2865,14 @@ async function handleHook(input, deps) {
   const withRollout = (s) => rolloutPath !== null && s.transcriptPath !== rolloutPath ? { ...s, transcriptPath: rolloutPath } : s;
   const withHost = (s) => withRollout(withCli(s));
   let isMarkedBehind = false;
+  let reads = null;
   const withHistory = async (s) => {
     if (rolloutPath === null) return s;
+    reads ??= rolloutReads(rolloutPath);
     const history = {
       dir,
       rolloutPath,
+      reads,
       cwd: input.cwd ?? s.root,
       currentTurnId: input.turn_id,
       canMarkBehind: input.source !== "compact",
@@ -2839,6 +2882,11 @@ async function handleHook(input, deps) {
     isMarkedBehind = r.isBehind;
     return r.state;
   };
+  const readHistoryAhead = async (tail) => {
+    if (rolloutPath === null) return;
+    reads = rolloutReads(rolloutPath, tail);
+    await withHistory(await read());
+  };
   const withCoveredTurn = (s) => rolloutPath !== null && input.turn_id ? { ...s, coveredTurn: input.turn_id } : s;
   switch (input.hook_event_name) {
     case "SessionStart": {
@@ -2847,6 +2895,7 @@ async function handleHook(input, deps) {
       const folder = rolloutPath === null ? null : meta.folder;
       const branch = folder === null ? null : await branchIn(deps.run, folder);
       const withPlace = (s2) => folder === null ? s2 : placed(s2, folder, branch);
+      await readHistoryAhead();
       const s = await write(
         async (s2) => noteHook(
           withHost(await withHistory(endsTurn(withPlace({ ...input.source === "clear" ? cleared(s2) : s2, root })))),
@@ -2860,6 +2909,7 @@ async function handleHook(input, deps) {
     }
     case "UserPromptSubmit": {
       let notes = [];
+      await readHistoryAhead();
       await write(async (s) => {
         const r = notePrompt2(withHost(await withHistory(s)), input.prompt ?? "", now());
         notes = r.notes;
@@ -2900,14 +2950,16 @@ async function handleHook(input, deps) {
     case "Stop": {
       const reply = input.last_assistant_message ?? "";
       const folder = input.cwd;
-      const [{ dialogs, commands, plan }, branch, inHerdr] = await Promise.all([
-        turnIn(input.transcript_path, input.turn_id),
+      const [tail, branch, inHerdr] = await Promise.all([
+        rolloutTail(input.transcript_path),
         folder ? branchIn(deps.run, folder) : null,
         read().then(
           (s) => delegatesInHerdr(s.ledger.overview, deps.run),
           () => null
         )
       ]);
+      const { dialogs, commands, plan } = turnOf(tail, input.turn_id);
+      await readHistoryAhead(tail);
       const lines = dialogs.map((d) => dialogActivity(d.questions, { kind: "open" }));
       const written = await write(async (s) => {
         const withLines = lines.reduce(
