@@ -67,11 +67,11 @@ codex plugin add inbox@inbox
 ```
 
 Then, in the ChatGPT desktop app, trust the plugin's hooks: click the hook icon
-beside the prompt's approval setting, then Allow all. Codex runs a plugin's
+beside the prompt's approval setting, then Allow all. If the icon isn't there,
+open Settings, then Hooks, then Inbox, then Trust all. Codex runs a plugin's
 hooks only after you trust them. On Codex 0.164.0 and later, an update stops
-the hooks until you trust them again: after each update, click the hook icon
-and choose Allow all. To open the inbox, press + at the top right of the window, then choose
-More tools, then Inbox.
+the hooks, so trust them again after each update. To open the inbox, press + at
+the top right of the window, then choose More tools, then Inbox.
 
 [codex/README.md](codex/README.md) covers updating and running the `codex`
 command from inside the app.
