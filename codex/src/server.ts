@@ -145,8 +145,8 @@ export type ServerDeps = {
   fallbackCli: () => Promise<string>
   devPage?: () => Promise<string | null>
   /**
-   * What Codex lists for the inbox's hooks in a folder, the chat's or else the home folder, or null when it cannot say. Without it, the tab does not say why
-   * a chat has heard from no hook.
+   * What Codex lists for the inbox's hooks in a folder, the chat's or else the home folder, or null when it cannot say.
+   * Without it, the tab does not say when Codex is not running the inbox's hooks.
    */
   hooksTrust?: (cli: string, folder: string) => Promise<HooksTrust | 'trusted' | null>
   build?: string
@@ -346,7 +346,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     const loadError = deps.loadError?.()
     const current = !isDemo && s.presence.isUpdating ? await reconcileUpdateStatus(dir, id) : s
     const view = viewOf(current, now(), holds)
-    const trust = !isDemo && view.heard === 'none' ? hooksTrustNow(current) : null
+    const trust = isDemo ? null : hooksTrustNow(current)
 
     return {
       ...view,
@@ -512,7 +512,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         return ok({
           protocolVersion: (params?.protocolVersion as string) ?? '2025-06-18',
           capabilities: { tools: {}, resources: {} },
-          serverInfo: { name: 'inbox', version: '0.2.11' },
+          serverInfo: { name: 'inbox', version: '0.2.12' },
         })
       case 'tools/list':
         return ok({ tools: TOOLS })

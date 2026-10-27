@@ -1564,21 +1564,16 @@ function GroupEnd({
   )
 }
 
-const HOOKS_TRUST_TEXT: Record<NonNullable<View['hooksTrust']>, [string, string]> = {
-  untrusted: [
-    'The inbox stays empty until Codex runs its hooks.',
-    'Click the hook icon beside the approval setting, then Allow all.',
-  ],
-  modified: [
-    'Codex stopped the inbox’s hooks when the inbox updated.',
-    'To trust them again, click the hook icon beside the approval setting, then Allow all.',
-  ],
+const HOOKS_TRUST_TEXT: Record<NonNullable<View['hooksTrust']>, string> = {
+  untrusted:
+    'Codex is not running the inbox’s hooks, so the inbox is not reading Codex’s replies. Click the hook icon beside the approval setting, then Allow all.',
+  modified:
+    'Codex stopped the inbox’s hooks when the inbox updated, so the inbox is not reading Codex’s replies. To trust them again, click the hook icon beside the approval setting, then Allow all.',
 }
 
+/** What the Asks tab says about the hooks the inbox has not heard from. The tab bar's line says why Codex is not running them. */
 function notHeardText(v: View): [string, string?] | null {
-  if (v.heard === 'heard') return null
-  if (v.heard === 'none' && v.hooksTrust) return HOOKS_TRUST_TEXT[v.hooksTrust]
-
+  if (v.heard === 'heard' || v.hooksTrust) return null
   if (v.heard === 'none') return ['The inbox starts with your next message.']
 
   return ['Items from Codex’s replies are missing.', 'The inbox has not heard from this chat’s hooks.']
@@ -1898,6 +1893,7 @@ function TabBar({ v }: { v: View }) {
           <div class="status-line tone-error">{serverNote.text}</div>
         )
       ) : null}
+      {v.hooksTrust ? <div class="status-line tone-error">{HOOKS_TRUST_TEXT[v.hooksTrust]}</div> : null}
       {updateError ? (
         <ErrorStrip
           text={updateError.text}
@@ -2302,7 +2298,7 @@ function initialize(): Promise<boolean> {
     'ui/initialize',
     {
       protocolVersion: '2026-01-26',
-      appInfo: { name: 'inbox', version: '0.2.11' },
+      appInfo: { name: 'inbox', version: '0.2.12' },
       appCapabilities: { tools: {} },
     },
     READ_TIMEOUT_MS,
