@@ -1501,12 +1501,35 @@ test('a call the model makes does not catch up the chat', async () => {
   assert.deepEqual(updates, [])
 })
 
-test('a chat says why Codex is not running the inbox’s hooks from Codex’s hook list, heard or not, asks again within seconds while the hooks are stopped and after the cache window otherwise, and says nothing when the list fails', async () => {
+test('a chat says why Codex is not running the inbox’s hooks from Codex’s hook list, asks again within seconds while they are stopped and a while after the list fails, and after a trusted answer only once a turn runs that the hooks did not hear', async () => {
   let t = 1000
-  const answers: ('untrusted' | 'modified' | 'trusted' | null)[] = ['untrusted', 'trusted', null, 'modified', 'trusted']
+  const answers: ('untrusted' | 'modified' | 'trusted' | null)[] = [
+    'untrusted',
+    'trusted',
+    'modified',
+    'trusted',
+    null,
+    'trusted',
+  ]
   const asked: string[][] = []
   const dir = tempDir()
-  await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
+  const rollout = join(tempDir(), 'rollout.jsonl')
+  const turns = (...ids: string[]) =>
+    writeFileSync(
+      rollout,
+      ids
+        .map(turnId => JSON.stringify({ type: 'event_msg', payload: { type: 'task_started', turn_id: turnId } }))
+        .join('\n'),
+    )
+  turns('h1')
+  await updateState(dir, 's1', s => ({
+    ...s,
+    root: '/repo',
+    cliPath: '/apps/codex',
+    transcriptPath: rollout,
+    coveredTurn: 'h1',
+    heard: { ...s.heard, startAt: 1 },
+  }))
   const handle = makeServer({
     comparePage: '/plugin/dist/compare-page.html',
     dir,
@@ -1540,29 +1563,98 @@ test('a chat says why Codex is not running the inbox’s hooks from Codex’s ho
   assert.equal(await view(), 'untrusted')
   await settle()
   assert.equal(await view(), undefined)
-  t += 5_000
+  t += 60 * 60_000
   await view()
   await settle()
   assert.equal(asked.length, 2)
 
-  t += 30_000
+  turns('h1', 'u1')
+  assert.equal(await view(), undefined)
+  await settle()
+  assert.equal(await view(), 'modified')
+  assert.equal(asked.length, 3)
+
+  t += 5_000
   await view()
   await settle()
   assert.equal(await view(), undefined)
-
-  t += 30_000
+  t += 60 * 60_000
   await view()
   await settle()
-  assert.equal(await view(), 'modified')
   assert.equal(asked.length, 4)
 
-  await updateState(dir, 's1', s => noteHook(s, 'start', t))
-  assert.equal(await view(), 'modified')
-  t += 5_000
-  assert.equal(await view(), 'modified')
+  await updateState(dir, 's1', s => noteHook(s, 'prompt', t, 'h2'))
+  turns('h1', 'u1', 'h2')
+  await view()
   await settle()
-  assert.equal(asked.length, 5)
+  assert.equal(asked.length, 4)
+
+  turns('h1', 'u1', 'h2', 'u2')
+  await view()
+  await settle()
   assert.equal(await view(), undefined)
+  assert.equal(asked.length, 5)
+  t += 30_000
+  await view()
+  await settle()
+  assert.equal(asked.length, 6)
+})
+
+test('each chat folder gets its own answer about the hooks’ trust, and each chat asks once about each turn its hooks did not hear', async () => {
+  const asked: string[] = []
+  const dir = tempDir()
+  const rolloutStarting = (turnId: string) => {
+    const path = join(tempDir(), 'rollout.jsonl')
+    writeFileSync(path, JSON.stringify({ type: 'event_msg', payload: { type: 'task_started', turn_id: turnId } }))
+    return path
+  }
+  for (const [id, root] of [
+    ['a', '/one'],
+    ['b', '/two'],
+    ['c', '/one'],
+  ] as const)
+    await updateState(dir, id, s => ({
+      ...s,
+      root,
+      cliPath: '/apps/codex',
+      transcriptPath: rolloutStarting(`${id}-compact`),
+    }))
+  const handle = makeServer({
+    comparePage: '/plugin/dist/compare-page.html',
+    dir,
+    now: () => 1000,
+    exec: fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec,
+    tabHtml: '',
+    fallbackCli: async () => 'codex',
+    hooksTrust: async (_cli, folder) => {
+      asked.push(folder)
+      return folder === '/two' ? 'modified' : 'trusted'
+    },
+  })
+  const view = async (thread: string) =>
+    (
+      (await handle({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'inbox_view', arguments: {}, _meta: { thread_id: thread } },
+      })) as { result: { structuredContent: { hooksTrust?: string } } }
+    ).result.structuredContent.hooksTrust
+
+  const settle = () => new Promise(resolve => setImmediate(resolve))
+  const asksFor = (folder: string) => asked.filter(f => f === folder).length
+
+  for (const thread of ['a', 'b', 'c']) await view(thread)
+  await settle()
+  assert.deepEqual(await Promise.all(['a', 'b', 'c'].map(view)), [undefined, 'modified', undefined])
+
+  for (let round = 0; round < 3; round++)
+    for (const thread of ['a', 'c']) {
+      await view(thread)
+      await settle()
+    }
+  assert.equal(asksFor('/one'), 2)
+  assert.equal(asksFor('/two'), 1)
 })
 
 test('a chat whose folder is not known yet asks Codex’s hook list for the home folder', async () => {

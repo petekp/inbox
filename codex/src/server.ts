@@ -28,7 +28,7 @@ import { pruneSessions, readState, updateState } from './state'
 import { reconcileUpdateStatus } from './update'
 import type { SessionState } from './state'
 import { CODEX, INBOX_DESCRIPTION, inboxToolText, VIEW_DESCRIPTION } from './texts'
-import { rolloutFor, turnIn, turnRunningIn } from './transcript'
+import { newestTurnEvent, rolloutFor, rolloutReads, turnIn } from './transcript'
 import type { HooksTrust } from './hook-trust'
 import type { LastAction, PrViews, RowNote } from '../../types'
 
@@ -46,8 +46,8 @@ export function pageName(tabHtml: string): string {
  * this one. A tab then swaps to the new build's page itself.
  */
 const TAB_ADDRESS = 'ui://inbox/view'
-/** How long an answer about the hooks' trust stands before a view asks Codex again. */
-const HOOKS_TRUST_CACHE_MS = 30_000
+/** How long a failed or unclear answer about the hooks' trust stands before a view asks Codex again. */
+const HOOKS_UNCLEAR_CACHE_MS = 30_000
 /** How long an answer that Codex does not run the hooks stands, so its notice leaves soon after the person trusts them. */
 const HOOKS_STOPPED_CACHE_MS = 5_000
 const TAB_MIME = 'text/html;profile=mcp-app'
@@ -216,33 +216,55 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   const prunedFor = new Set<string>()
   const checkedOnOpen = new Set<string>()
   let isGhMissing = false
-  let hooksTrust: { at: number; value: HooksTrust | null } | null = null
-  let isAskingHooks = false
+  /** Codex's last answer about the hooks' trust in each chat folder. */
+  const hooksTrust = new Map<string, { at: number; answer: HooksTrust | 'trusted' | null }>()
+  const askingHooksIn = new Set<string>()
+  /** Each chat's newest turn in its rollout, as its last view read it. */
+  const newestTurns = new Map<string, string>()
+  /** The unheard turn each chat last asked about. */
+  const askedTurns = new Map<string, string>()
+
+  /** The chat's newest turn, when the inbox heard neither its prompt nor its Stop, as while Codex skips the hooks. */
+  function unheardTurnOf(s: SessionState, id: string): string | null {
+    const newest = newestTurns.get(id)
+    const isHeard = newest === undefined || newest === s.coveredTurn || s.heard.promptTurns.includes(newest)
+
+    return isHeard ? null : newest
+  }
 
   /**
-   * Why Codex does not run the inbox's hooks, from the last answer. When that answer is older than the cache window,
-   * a new call starts for the next view to read, so no view waits on it. A failed or unclear answer reads as null.
+   * Why Codex does not run the inbox's hooks in the chat's folder, from the last answer. A view starts a new call for
+   * the next view to read, so no view waits on it: on a folder's first view, a few seconds after a stopped answer, a
+   * while after a failed or unclear one, and after a trusted one only once the chat's view sees a turn the hooks did not
+   * hear. Each chat asks once per such turn, so chats in one folder never ask in turn after each other. A plugin update,
+   * which stops the hooks, also loads a new handler, whose first view asks again. A failed or unclear answer reads as
+   * null.
    */
-  function hooksTrustNow(s: SessionState): HooksTrust | null {
+  function hooksTrustNow(s: SessionState, id: string): HooksTrust | null {
     const { hooksTrust: ask } = deps
     if (!ask) return null
-    const cacheMs = hooksTrust?.value ? HOOKS_STOPPED_CACHE_MS : HOOKS_TRUST_CACHE_MS
-    if (!isAskingHooks && (hooksTrust === null || now() - hooksTrust.at >= cacheMs)) {
-      isAskingHooks = true
+    const folder = s.root || homedir()
+    const known = hooksTrust.get(folder)
+    const unheardTurn = unheardTurnOf(s, id)
+    const isAskDue =
+      known === undefined ||
+      (known.answer === 'trusted'
+        ? unheardTurn !== null && askedTurns.get(id) !== unheardTurn
+        : now() - known.at >= (known.answer === null ? HOOKS_UNCLEAR_CACHE_MS : HOOKS_STOPPED_CACHE_MS))
+    if (isAskDue && !askingHooksIn.has(folder)) {
+      askingHooksIn.add(folder)
+      if (unheardTurn !== null) askedTurns.set(id, unheardTurn)
       void (async () => {
-        try {
-          const cli = s.cliPath ?? (await deps.fallbackCli())
-          const answer = await ask(cli, s.root || homedir())
-          hooksTrust = { at: now(), value: answer === 'untrusted' || answer === 'modified' ? answer : null }
-        } catch {
-          hooksTrust = { at: now(), value: null }
-        } finally {
-          isAskingHooks = false
-        }
+        const answer = await Promise.resolve(s.cliPath ?? deps.fallbackCli())
+          .then(cli => ask(cli, folder))
+          .catch(() => null)
+        hooksTrust.set(folder, { at: now(), answer })
+        askingHooksIn.delete(folder)
       })()
     }
+    const answer = known?.answer
 
-    return hooksTrust?.value ?? null
+    return answer === 'untrusted' || answer === 'modified' ? answer : null
   }
 
   /**
@@ -259,9 +281,12 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     const rollout = await rolloutFor(openCatchUp.codexHome, id)
     if (rollout === null) return
     const cli = await deps.fallbackCli().catch(() => null)
+    const history = { dir, rolloutPath: rollout.path, cwd: rollout.cwd, reads: rolloutReads(rollout.path) }
+    // Reads the rollout before the state lock. The check under the lock reuses what it read.
+    await withEarlierHistory(before, history)
     let isBehind = false
     await updateState(dir, id, async s => {
-      const r = await withEarlierHistory(s, { dir, rolloutPath: rollout.path, cwd: rollout.cwd })
+      const r = await withEarlierHistory(s, history)
       isBehind = r.isBehind
       if (r.state === s) return s
 
@@ -322,7 +347,9 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   /** Sets whether a turn runs from the rollout's last turn row, read inside the state lock so no hook writes between. */
   async function syncTurn(id: string): Promise<SessionState> {
     return updateState(dir, id, async s => {
-      const isRunning = s.transcriptPath === null ? null : await turnRunningIn(s.transcriptPath)
+      const newest = s.transcriptPath === null ? null : await newestTurnEvent(s.transcriptPath)
+      if (newest !== null) newestTurns.set(id, newest.id)
+      const isRunning = newest === null ? null : newest.kind === 'started'
       if (isRunning === null || isRunning === s.presence.isTurnRunning) return s
 
       return isRunning ? turnStarted(s, null) : turnEnded(s, null)
@@ -343,7 +370,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     const loadError = deps.loadError?.()
     const current = !isDemo && s.presence.isUpdating ? await reconcileUpdateStatus(dir, id) : s
     const view = viewOf(current, now(), holds)
-    const trust = isDemo ? null : hooksTrustNow(current)
+    const trust = isDemo ? null : hooksTrustNow(current, id)
 
     return {
       ...view,

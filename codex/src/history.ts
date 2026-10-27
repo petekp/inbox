@@ -2,13 +2,15 @@ import { forkedFrom, hasLedger, isUnseen, NO_TURN } from '../../hooks/session'
 import { heardState } from './core'
 import { readState } from './state'
 import type { SessionState } from './state'
-import { forkedFromId, readRollout, rolloutTurnRows } from './transcript'
-import type { TurnRow } from './transcript'
+import { forkedFromId } from './transcript'
+import type { RolloutReads, TurnRow } from './transcript'
 
 export type EarlierHistory = {
   /** The data folder, where a forked chat's parent keeps its state. */
   dir: string
   rolloutPath: string
+  /** This hook's reads of the rollout. */
+  reads: RolloutReads
   /** The folder the rollout's paths are shown relative to. */
   cwd: string
   /** The turn a hook runs in, which is not an earlier turn. */
@@ -32,6 +34,9 @@ function newestEndedTurn(rows: TurnRow[] | null, currentTurnId: string | undefin
   return rows?.findLast(t => t.hasEnded && t.id !== currentTurnId)?.id ?? null
 }
 
+const holdsEndedTurn = (currentTurnId: string | undefined) => (rows: TurnRow[]) =>
+  newestEndedTurn(rows, currentTurnId) !== null
+
 /**
  * What the first sight of a session the inbox has heard nothing from takes from its rollout. A fork takes its parent's
  * ledger. A session whose rollout holds earlier turns and whose ledger is still empty, as when the plugin was turned
@@ -45,12 +50,12 @@ export async function withEarlierHistory(
 ): Promise<{ state: SessionState; isBehind: boolean }> {
   if (heardState(s.heard) !== 'none') return { state: s, isBehind: false }
   const forked = await withForkedLedger(s, history)
-  const { rolloutPath, cwd, currentTurnId, canMarkBehind = true } = history
+  const { reads, cwd, currentTurnId, canMarkBehind = true } = history
   if (!canMarkBehind) return { state: forked, isBehind: false }
-  const coveredTurn = newestEndedTurn(await rolloutTurnRows(rolloutPath), currentTurnId)
+  // An unseen session reads the whole conversation, so its turns come from that same read.
+  const rollout = isUnseen(forked) ? await reads.rollout(cwd, currentTurnId) : null
+  const coveredTurn = newestEndedTurn(await reads.turns(holdsEndedTurn(currentTurnId)), currentTurnId)
   const covered = coveredTurn === forked.coveredTurn ? forked : { ...forked, coveredTurn }
-  if (!isUnseen(covered)) return { state: covered, isBehind: false }
-  const rollout = await readRollout(rolloutPath, cwd, currentTurnId)
   if ((rollout?.earlierTurns ?? 0) === 0) return { state: covered, isBehind: false }
 
   return { state: { ...covered, presence: { ...covered.presence, ledgerState: 'behind' } }, isBehind: true }
@@ -62,15 +67,20 @@ export async function withEarlierHistory(
  * so an update catches it up over the whole conversation, and `coveredTurn` moves to the newest ended turn. A
  * `coveredTurn` the rollout does not hold counts every ended turn. The turn the inbox recorded a prompt for is dropped
  * when it is one of them, so its prompt does not join the next turn's. A compaction start checks nothing, and a clear
- * start covers every turn before it.
+ * start covers every turn before it. A hook in a turn whose prompt or Stop the inbox heard checks nothing either: that
+ * hook checked, and no other turn ends while this one runs.
  */
 export async function withMissedTurns(
   s: SessionState,
-  { rolloutPath, currentTurnId, canMarkBehind = true, isCleared = false }: EarlierHistory,
+  { reads, currentTurnId, canMarkBehind = true, isCleared = false }: EarlierHistory,
 ): Promise<{ state: SessionState; isBehind: boolean }> {
   const unchanged = { state: s, isBehind: false }
-  if (!canMarkBehind || (currentTurnId !== undefined && s.coveredTurn === currentTurnId)) return unchanged
-  const rows = await rolloutTurnRows(rolloutPath)
+  const isTurnChecked =
+    currentTurnId !== undefined && (s.coveredTurn === currentTurnId || s.heard.promptTurns.at(-1) === currentTurnId)
+  if (!canMarkBehind || isTurnChecked) return unchanged
+  const rows = await reads.turns(
+    isCleared ? holdsEndedTurn(currentTurnId) : turns => turns.some(t => t.id === s.coveredTurn),
+  )
   if (rows === null) return unchanged
   if (isCleared) return { state: { ...s, coveredTurn: newestEndedTurn(rows, currentTurnId) }, isBehind: false }
   const coveredAt = rows.findLastIndex(t => t.id === s.coveredTurn)
