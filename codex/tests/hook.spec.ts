@@ -17,7 +17,7 @@ import type { OnWrite } from '../src/host'
 import { readState, statePath, updateState } from '../src/state'
 import { CODEX } from '../src/texts'
 import { runUpdates as runBothCalls } from '../src/update'
-import { fakeRunner, hookDeps, input, ledgerOnly, ROLLOUT_FIXTURE, rolloutCopy, tempDir } from './helpers'
+import { fakeRunner, hookDeps, input, ledgerOnly, ROLLOUT_FIXTURE, rolloutCopy, tempDir, turnRow } from './helpers'
 import { reportedTokens } from '../../tests/session-script'
 
 const runUpdates = (
@@ -907,13 +907,8 @@ test('turns that ended without a Stop, interrupted ones included, are caught up 
   }
 
   const interrupted = join(tempDir(), 'rollout.jsonl')
-  const turnRows = (rows: [string, string][]) =>
-    writeFileSync(
-      interrupted,
-      rows
-        .map(([type, turnId]) => JSON.stringify({ type: 'event_msg', payload: { type, turn_id: turnId } }))
-        .join('\n'),
-    )
+  const turnRows = (rows: Parameters<typeof turnRow>[]) =>
+    writeFileSync(interrupted, rows.map(row => turnRow(...row)).join('\n'))
   await updateState(dir, 's4', s => ({ ...s, heard: { ...s.heard, startAt: 1 }, coveredTurn: 'p' }))
   const prompt = (turnId: string, text: string) =>
     handleHook(
@@ -949,8 +944,6 @@ test('a covered turn that started far back in a long rollout still decides which
   const path = join(tempDir(), 'rollout.jsonl')
   const filler = (bytes: number) =>
     JSON.stringify({ type: 'event_msg', payload: { type: 'agent_message', message: 'x'.repeat(bytes) } })
-  const turnRow = (type: string, turnId: string) =>
-    JSON.stringify({ type: 'event_msg', payload: { type, turn_id: turnId } })
   const promptIn = async (id: string, rows: string[]) => {
     writeFileSync(path, rows.join('\n'))
     await updateState(dir, id, s => ({ ...s, heard: { ...s.heard, startAt: 1 }, coveredTurn: 'p' }))
@@ -997,7 +990,7 @@ test('a new session, a compaction start, a subagent and a session with recorded 
   const dir = tempDir()
   const deps = execDeps(dir)
   const fresh = join(tempDir(), 'fresh.jsonl')
-  writeFileSync(fresh, JSON.stringify({ type: 'event_msg', payload: { type: 'task_started', turn_id: 't1' } }))
+  writeFileSync(fresh, turnRow('task_started', 't1'))
   const earlier = rolloutCopy()
 
   await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup', transcript_path: fresh }), deps)
