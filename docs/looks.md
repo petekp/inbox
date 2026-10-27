@@ -23,8 +23,8 @@ Shared modules are in `hooks/`. Every host consumes them, directly or through a 
 | `hooks/conversation.ts` | Shared module. `flattenConversation` turns a conversation's `Turn`s into the text a catch-up reads, and clips it. Each host maps its own conversation to turns. |
 | `hooks/clients.ts` | Shared module. The parity record: how each host supports each feature, and why where it does not. |
 | `hooks/session-host.ts` | Shared module. The `SessionHost` flows that run on a host's store: `runUpdates`, `askOverConversation`, `reconcileUpdateStatus`, `wakeForDone`, `press`, `fetchPrs`, `isPrFetchDue`, `prFetchTracker` and `exclusiveKeys`. |
-| `hooks/gh.ts` | Shared module. `ghFinder` finds a gh that starts, and `ghIn` runs it, over a host's command runner. |
-| `hooks/herdr.ts` | Shared module. What a host reports to the Herdr pane it runs in: the `inbox` status line, the stop, and each row tab's count, as pane tokens in one `herdr pane report-metadata` command. Also the `herdr agent list` command and which agents its answer shows running. |
+| `hooks/gh.ts` | Shared module. `ghFinder` finds a gh that starts, and `ghIn` runs it, over a host's command runner. `branchIn` reads a folder's git branch over the same runner. |
+| `hooks/herdr.ts` | Shared module. What a host reports to the Herdr pane it runs in: the `inbox` status line, the stop, and each row tab's count, as pane tokens in one `herdr pane report-metadata` command. Also `delegatesInHerdr`, which asks `herdr agent list` which delegates still run, only while one runs. |
 | `hooks/text.ts` | Shared module. Clipping, code-block formatting and relative ages. |
 | `hooks/claude.ts` | Mod only. Claude transcript, command, dialog and stop helpers. |
 | `hooks/prs.ts` | Shared module. PR parsing, readiness and prompts. |

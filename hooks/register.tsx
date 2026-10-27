@@ -33,7 +33,7 @@ import type {
   Stop,
   Tab,
 } from '../types'
-import { childActive, childEnded, withChild } from './overview'
+import { childEnded } from './overview'
 import {
   NO_SESSION,
   PRESENT,
@@ -47,6 +47,7 @@ import {
   forgetStored,
   isCurrent,
   noteStored,
+  processRun,
   readSaved,
   readSettled,
   replaceDrawn,
@@ -77,14 +78,14 @@ import {
   withNewPrRefs,
 } from './session'
 import {
-  activityGate,
-  childName,
   childrenCutOff,
+  childStarted,
+  childWorked,
   delegateRef,
-  delegateRunning,
   delegatesSettled,
+  delegatesStarted,
   delegateSteps,
-  hasRunningDelegate,
+  delegateWaitsEnded,
   noticeApplied,
   subagentsSettled,
   taskNotice,
@@ -183,7 +184,8 @@ import {
   TURN_BOX_TOOL,
   turnBoxText,
 } from './claude'
-import { CLEARED_TOKENS, HERDR_AGENT_LIST, HERDR_TIMEOUT_MS, herdrReporter, herdrRunning, herdrTokens } from './herdr'
+import { branchIn } from './gh'
+import { CLEARED_TOKENS, delegatesInHerdr, HERDR_TIMEOUT_MS, herdrReporter, herdrTokens } from './herdr'
 import { ago, cellWidth, clipLabel } from './text'
 import {
   applyPress,
@@ -762,7 +764,6 @@ const spawnedBy = new Map<string, string>()
 const workflowTasks = new Map<string, string>()
 /** Each background `herdr agent wait`'s task id and tool_use_id to the delegate it waits on. */
 const delegateWaits = new Map<string, string>()
-const isActivityWorthSaving = activityGate()
 let fetchingPrs: Promise<void> = Promise.resolve()
 let nextFetchFindsBranchPr: boolean | null = null
 let recordedRows: { isDemo: boolean; ids: RowRecord<Tab> } | null = null
@@ -2539,14 +2540,15 @@ async function prepareConversation($: EngineInterface, id: string, revision: num
   return applying
 }
 
-/** Names the folder the session started in, and the branch that folder is on now. */
 /** A tool's structured result, or undefined when the call answered with text alone. */
 function toolRecord<Name extends string>(_tool: Name, result: unknown): ToolResultOf<Name> | undefined {
   return typeof result === 'object' && result !== null ? (result as ToolResultOf<Name>) : undefined
 }
 
 async function noteChild($: EngineInterface, change: (o: Overview | null, at: number) => Overview | null) {
-  const at = await $.clock.now()
+  const [drawn, at] = await Promise.all([read($, SESSION), $.clock.now()])
+  const o = upgradeSession(drawn).ledger.overview
+  if (change(o, at) === o) return
   await commit($, currentOwner(), s => overviewChanged(s, o => change(o, at))).catch(() => undefined)
 }
 
@@ -2560,23 +2562,13 @@ function childRefOf(agentId: string): string {
 
 async function noteAgentWork($: EngineInterface, agentId: string) {
   const ref = childRefOf(agentId)
-  if (isActivityWorthSaving(ref, await $.clock.now())) await noteChild($, (o, at) => childActive(o, ref, at))
-}
-
-/** The delegates Herdr shows running, asked only while one runs. Null when none runs or Herdr gave no answer. */
-async function delegatesInHerdr($: EngineInterface): Promise<ReadonlySet<string> | null> {
-  const s = await read($, SESSION).then(upgradeSession)
-  if (!hasRunningDelegate(s.ledger.overview)) return null
-  const r = await $.process.run(HERDR_AGENT_LIST, { timeoutMs: HERDR_TIMEOUT_MS }).catch(() => null)
-
-  return r?.exitCode === 0 ? herdrRunning(r.stdout) : null
+  await noteChild($, (o, at) => childWorked(o, ref, at))
 }
 
 async function notePlace($: EngineInterface) {
   const root = conversation.root
   if (!root) return
-  const r = await $.process.run(['git', 'branch', '--show-current'], { cwd: root, timeoutMs: 5_000 }).catch(() => null)
-  const branch = r?.exitCode === 0 ? r.stdout.trim() || null : null
+  const branch = await branchIn(processRun($), root)
   await commit($, currentOwner(), s => placed(s, root, branch)).catch(() => undefined)
 }
 
@@ -2875,10 +2867,7 @@ export const register: Register = on => {
 
       return r
     }
-    const name = childName(e.description)
-    await noteChild($, (o, at) =>
-      withChild(o, { ref: agentId, kind: 'subagent', name, startedAt: at, endedAt: null, lastActivityAt: at }, at),
-    )
+    await noteChild($, (o, at) => childStarted(o, { ref: agentId, kind: 'subagent', name: e.description }, at))
 
     return r
   })
@@ -2913,27 +2902,21 @@ export const register: Register = on => {
     if (String(e.tool) === TURN_BOX_TOOL) turnBox = turnBoxText(input) ?? turnBox
     if (e.tool === 'Bash') {
       const steps = delegateSteps(e.command)
-      for (const step of steps) await noteChild($, (o, at) => delegateRunning(o, step.name, at))
+      const isDelegateCommand = steps.length > 0
+      if (isDelegateCommand) await noteChild($, (o, at) => delegatesStarted(o, e.command, at))
       const ran = await run()
       const found = commandFindings(e.command, ran.text ?? '')
       for (const line of found.lines) await noteActivity($, line)
       void linkPrs($, found.prRefs)
       const taskId = toolRecord('Bash', ran.result)?.backgroundTaskId
       const waitsOn = steps.filter(step => step.isWaitForEnd).map(step => step.name)
-      const isDelegateCommand = steps.length > 0
       if (taskId && isDelegateCommand) {
         for (const name of waitsOn) for (const id of [taskId, e.tool_use_id]) if (id) delegateWaits.set(id, name)
       } else if (taskId) {
-        const name = childName(e.description || e.command)
-        await noteChild($, (o, at) =>
-          withChild(
-            o,
-            { ref: taskId, kind: 'background', name, startedAt: at, endedAt: null, lastActivityAt: null },
-            at,
-          ),
-        )
-      } else {
-        for (const name of waitsOn) await noteChild($, (o, at) => childEnded(o, delegateRef(name), at))
+        const child = { ref: taskId, kind: 'background', name: e.description || e.command } as const
+        await noteChild($, (o, at) => childStarted(o, child, at, { reportsActivity: false }))
+      } else if (waitsOn.length > 0) {
+        await noteChild($, (o, at) => delegateWaitsEnded(o, e.command, at))
       }
 
       return ran
@@ -2954,10 +2937,8 @@ export const register: Register = on => {
       if (taskId) {
         if (workflow && e.tool_use_id) workflowTasks.set(e.tool_use_id, taskId)
         const kind = workflow ? 'workflow' : 'background'
-        const name = childName(workflow?.workflowName ?? e.description ?? e.tool)
-        await noteChild($, (o, at) =>
-          withChild(o, { ref: taskId, kind, name, startedAt: at, endedAt: null, lastActivityAt: at }, at),
-        )
+        const name = workflow?.workflowName ?? e.description ?? e.tool
+        await noteChild($, (o, at) => childStarted(o, { ref: taskId, kind, name }, at))
       }
 
       return ran
@@ -3064,15 +3045,23 @@ export const register: Register = on => {
     await closeDialogs($, null)
     if (!isOn) return r
     const endedAt = await $.clock.now()
-    const [listed, inHerdr] = await Promise.all([$.agent.list().catch(() => null), delegatesInHerdr($)])
+    const root = conversation.root
+    const run = processRun($)
+    const [listed, inHerdr, branch] = await Promise.all([
+      $.agent.list().catch(() => null),
+      read($, SESSION).then(s => delegatesInHerdr(upgradeSession(s).ledger.overview, run)),
+      root ? branchIn(run, root) : null,
+    ])
     const running =
       listed && new Set(listed.filter(a => a.status === 'running' || a.status === 'pending').map(a => a.id))
     await commit($, currentOwner(), s => {
       const ended = turnEnded(s, endedAt)
       const withSubagents = running ? overviewChanged(ended, o => subagentsSettled(o, running, endedAt)) : ended
-      return inHerdr ? overviewChanged(withSubagents, o => delegatesSettled(o, inHerdr, endedAt)) : withSubagents
+      const withDelegates = inHerdr
+        ? overviewChanged(withSubagents, o => delegatesSettled(o, inHerdr, endedAt))
+        : withSubagents
+      return root ? placed(withDelegates, root, branch) : withDelegates
     })
-    void notePlace($)
     if (e.reason === 'error' && !hasStopFromError) await setStopFromLastReply($)
     void wakeForDone($).catch(() => undefined)
     void followNewRows($).catch(() => undefined)
