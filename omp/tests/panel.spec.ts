@@ -579,12 +579,18 @@ test('the demo says its presses send nothing', () => {
   expect(text(screenOf({ isDemo: true }), INITIAL_UI)).toContain('Buttons here send nothing.')
 })
 
-test('the band shows both counts and how to open the inbox', () => {
+test('the band shows both counts with their labels at full brightness, and how to open the inbox', () => {
   const screen = screenOf()
-  const band = strip(bandLines(screen, 80, NOW, style)[0]!)
-  expect(band).toContain(`Asks ${screen.view.needsYou.count}`)
-  expect(band).toContain(`Finds ${screen.view.findings.count}`)
-  expect(band).toContain('/inbox to open')
+  const line = bandLines(screen, 80, NOW, style)[0]!
+  const dimmed = [...line.matchAll(/\x1b\[2m(.*?)\x1b\[22m/g)].map(m => m[1])
+  expect(strip(line)).toContain(`Asks ${screen.view.needsYou.count}`)
+  expect(strip(line)).toContain(`Finds ${screen.view.findings.count}`)
+  expect(dimmed.some(t => t?.includes('Asks') || t?.includes('Finds'))).toBe(false)
+  expect(strip(line)).toContain('/inbox to open')
+  const empty = { ...screenOf(), view: sessionView(emptyState('s'), NOW, SETTLED_MS, true) }
+  expect([...bandLines(empty, 80, NOW, style)[0]!.matchAll(/\x1b\[2m(.*?)\x1b\[22m/g)].map(m => m[1])).toContain(
+    'Nothing needed',
+  )
 })
 
 test('no drawn line is wider than the panel, and a short panel keeps the selected row in view', () => {

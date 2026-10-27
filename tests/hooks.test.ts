@@ -1121,7 +1121,7 @@ test('the guidance reaches Claude in the close tool’s description and nowhere 
   expect(record.description).toBe('Record an item.')
 })
 
-test('the band is [Open inbox] and the counts, the same while working and after 15 idle minutes', async ($, on) => {
+test('the band is [Open inbox] and the counts with full-brightness labels, the same while working and after 15 idle minutes', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   const band = (props: Partial<typeof BAND.props> = {}) =>
@@ -1143,6 +1143,9 @@ test('the band is [Open inbox] and the counts, the same while working and after 
   const standing = await band()
   expect(await standing.find({ key: 'open-inbox' })).toBeDefined()
   expect(await standing.find({ text: /^Asks 2\u2007·\u2002Finds 1$/ })).toBeDefined()
+  const labels = await standing.findAll({ type: 'Text', text: /^(Asks|Finds) $/ })
+  expect(labels).toHaveLength(2)
+  expect(labels.some(l => l.props.dimColor)).toBe(false)
   expect(await standing.find({ text: /Use Node or Python|Add a greeting CLI|Waiting on two choices/ })).toBeUndefined()
 
   const working = await band({ isWorking: true })
@@ -3123,7 +3126,7 @@ test('a stop and an open permission prompt lead the sidebar line until they clea
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await band.find({ text: /Run \/login, then send a message to resume\./ })).toBeDefined()
   expect(await band.find({ key: 'open-inbox' })).toBeDefined()
-  expect(await band.find({ text: 'Nothing needed' })).toBeDefined()
+  expect((await band.findAll({ type: 'Text', text: /^Nothing needed$/ })).some(t => t.props.dimColor)).toBe(true)
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ key: 'resume' })).toBeUndefined()
   expect(await band.find({ key: 'resume' })).toBeUndefined()

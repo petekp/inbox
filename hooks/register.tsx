@@ -3189,7 +3189,7 @@ export const register: Register = on => {
     const pal = paletteFor(theme, lookOf(e.surface))
     const counts = LISTED_TABS.filter(t => view[t.id].count > 0).map(t => (
       <Text>
-        <Text dimColor>{t.label} </Text>
+        <Text>{t.label} </Text>
         <Text color={pal.tone[t.id] ?? pal.mark[t.id]}>{view[t.id].count}</Text>
       </Text>
     ))
