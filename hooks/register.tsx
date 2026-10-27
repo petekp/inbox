@@ -53,7 +53,6 @@ import {
   replaceDrawn,
   savedWriteCount,
   sessionHost,
-  showingAt,
   upgradeDrawn,
 } from './claude-host'
 import type { Owner, SavedRecord, Shown } from './claude-host'
@@ -1326,20 +1325,24 @@ function openPane($: EngineInterface, isFieldOpen = false) {
     focus: true,
     ...(isFieldOpen ? {} : { closeOnEscape: true as const }),
   })
-  void opened.then(() => syncLook($, { isOpen: true })).catch(() => undefined)
+  void opened
+    .then(async () => {
+      await syncShown($, { isOpen: true })
+      await syncLook($, true)
+    })
+    .catch(() => undefined)
 
   return opened
 }
 
 /**
  * Starts a look while the Overview shows in the pane, and ends it when it stops showing there. Both are
- * idempotent, so every place that opens, closes or changes the pane's page can call it. The sample leaves the
- * real session's look alone.
+ * idempotent, so every place that opens, closes or changes the pane's page can call it, after `syncShown`. The sample
+ * leaves the real session's look alone. `isOpen` is whether the pane shows, when the caller knows.
  */
-async function syncLook($: EngineInterface, showing: Showing = {}) {
-  await syncShown($, showing)
+async function syncLook($: EngineInterface, isOpen?: boolean) {
   if (await read($, DEMO)) return
-  const [page, isPaneOpen, now] = await Promise.all([readPage($), showing.isOpen ?? isPaneShown($), $.clock.now()])
+  const [page, isPaneOpen, now] = await Promise.all([readPage($), isOpen ?? isPaneShown($), $.clock.now()])
   const isShown = isPaneOpen && page === 'overview'
   await commit($, currentOwner(), s => withLook(s, isShown, now)).catch(() => undefined)
 }
@@ -1364,8 +1367,9 @@ async function syncShown($: EngineInterface, { isOpen, since }: Showing = {}) {
   ])
   await update($, SHOWN, s => {
     if (!isPaneOpen) return null
+    const isSameShowing = since === undefined && s?.tab === tab && s.isDemo === isDemo
 
-    return since === undefined ? showingAt(s, tab, isDemo, now) : { tab, isDemo, since }
+    return isSameShowing ? s : { tab, isDemo, since: since ?? now }
   })
 }
 
@@ -2453,7 +2457,8 @@ async function setDemo($: EngineInterface, isShown: boolean, isRecording = false
   await Promise.all([update($, SELECTION, () => NO_SELECTION), update($, TYPING, () => null)])
   // The sample closes a row as it starts, at `now`, so its showing starts then too and the row stays in place. The
   // pane shows the sample or opens on it next.
-  await syncLook($, { isOpen: true, since: now })
+  await syncShown($, { isOpen: true, since: now })
+  await syncLook($, true)
   if ((await read($, TAB)) === 'prs') await findPrs($)
   await followNewRows($, true)
 }
@@ -3202,7 +3207,7 @@ export const register: Register = on => {
   on('ui.close', { id: PANE }, async ($, e, next) => {
     cancelUndoScroll()
     const r = await next(e)
-    void syncLook($, { isOpen: false })
+    void syncShown($, { isOpen: false }).then(() => syncLook($, false))
     paneHasKeys.clear()
     await update($, TYPING, () => null)
     await update($, FOLD_HOVER, () => null)

@@ -1204,23 +1204,25 @@ test('a Herdr delegate runs as a child from the bash call that starts it until a
   ])
 })
 
-test('a look starts when the panel shows the Overview and ends on another tab or when the panel closes', async () => {
+test('a look starts when the panel shows the Overview and ends on another tab or when the panel closes, and each new tab saves the showing the panel started', async () => {
   const inbox = createInbox(pi(), deps())
   await prompt('hello')
   const saved = state()
   const overview = { ...EMPTY_OVERVIEW, goal: 'Ship it' }
   writeFileSync(join(dir, 'sessions', 's1.json'), JSON.stringify({ ...saved, ledger: { ...saved.ledger, overview } }))
   await inbox.openPanel(makeCtx(), clock)
-  inbox.showTab(makeCtx(), 'overview')
+  inbox.showTab(makeCtx(), 'overview', { ...NO_HOLDS, shownSince: 1234 })
   await settle()
   expect(state().ledger.overview.look).not.toBeNull()
+  expect(state().shownSince).toBe(1234)
 
-  inbox.showTab(makeCtx(), 'needsYou')
+  inbox.showTab(makeCtx(), 'needsYou', { ...NO_HOLDS, shownSince: 5678 })
   await settle()
   expect(state().ledger.overview.look).toBeNull()
   expect(state().ledger.overview.lastLookAt).not.toBeNull()
+  expect(state().shownSince).toBe(5678)
 
-  inbox.showTab(makeCtx(), 'overview')
+  inbox.showTab(makeCtx(), 'overview', NO_HOLDS)
   await settle()
   inbox.closePanel(makeCtx())
   await settle()

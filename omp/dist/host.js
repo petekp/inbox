@@ -4525,6 +4525,9 @@ function recorded(host, s, tool, args, now) {
   const r = (tool === "close" ? recordClose : recordItem)(host, s.ledger, args, now);
   return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result, personLine: r.personLine };
 }
+function withHolds(s, holds) {
+  return { ...s, heldRows: Object.keys(holds.replies), shownSince: holds.shownSince };
+}
 function pruned(s) {
   const inPlace = [
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
@@ -4822,7 +4825,7 @@ async function startPress(host, p, isStale, holds) {
   await host.update(async (saved) => {
     note = isStale ? "stale" : null;
     Object.assign(pressed, { r: undefined, at: undefined, deliveryId: undefined });
-    const s = { ...saved, heldRows: Object.keys(holds.replies), shownSince: holds.shownSince };
+    const s = withHolds(saved, holds);
     if (note)
       return s;
     const at = await host.now();
@@ -5942,7 +5945,7 @@ function createPanel(deps) {
     ui = pressedId === undefined ? followed.ui : afterHandOff(next, followed.ui, pressedId, deps.now());
     seen = followed.seen;
     isOpening = false;
-    source.shown(ui.tab);
+    source.shown(ui.tab, holdsOf(ui));
     syncAnimation();
     deps.requestRender();
   }
@@ -5991,7 +5994,7 @@ function createPanel(deps) {
         return;
       const result = handleKey(screen, ui, key, deps.now(), text);
       ui = result.ui;
-      source.shown(ui.tab);
+      source.shown(ui.tab, holdsOf(ui));
       if (result.close)
         deps.close();
       if (result.press)
@@ -7278,7 +7281,7 @@ function createInbox(pi, deps = defaultDeps) {
       });
       fetchPrsWhenDue(ctx);
     },
-    showTab: (ctx, tab) => {
+    showTab: (ctx, tab, holds) => {
       const id = sessionIdOf(ctx);
       if (!openPanels.has(id))
         return;
@@ -7286,7 +7289,7 @@ function createInbox(pi, deps = defaultDeps) {
       openPanels.set(id, tab);
       const now = deps.now();
       if (isChanged)
-        deps.background(change(id, (s) => ({ ...withLook(s, tab === "overview", now), shownSince: now })));
+        deps.background(change(id, (s) => withHolds(withLook(s, tab === "overview", now), holds)));
     },
     closePanel: (ctx) => {
       const id = sessionIdOf(ctx);
@@ -7317,7 +7320,7 @@ function createInbox(pi, deps = defaultDeps) {
     },
     resume: async () => inbox.resume(ctx),
     fetchPrsWhenDue: () => inbox.fetchPrsWhenDue(ctx),
-    shown: (tab) => inbox.showTab(ctx, tab),
+    shown: (tab, holds) => inbox.showTab(ctx, tab, holds),
     onChange: (listener) => inbox.onChange(ctx, listener)
   });
   const hideBand = (ctx) => ctx.ui.setWidget(BAND_KEY, undefined);

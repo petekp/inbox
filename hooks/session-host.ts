@@ -32,6 +32,7 @@ import {
   needsCatchUp,
   pressOn,
   withFetchedPrs,
+  withHolds,
 } from './session'
 import type { Pressed, SendOutcome, Session } from './session'
 import type { Holds } from './view'
@@ -451,7 +452,7 @@ export async function startPress<S extends Session>(
       // A host may run the change again on a newer session, where the press can be stale.
       note = isStale ? 'stale' : null
       Object.assign(pressed, { r: undefined, at: undefined, deliveryId: undefined })
-      const s: S = { ...saved, heldRows: Object.keys(holds.replies), shownSince: holds.shownSince }
+      const s = withHolds(saved, holds)
       if (note) return s
       // Read under the lock, so the press is timed after every write that landed before it.
       const at = await host.now()

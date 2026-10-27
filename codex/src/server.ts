@@ -17,7 +17,7 @@ import { demoState } from './demo'
 import { answerMessage, noteDialogs } from './dialogs'
 import { withEarlierHistory } from './history'
 import { codexStore } from './host'
-import { isUnseen, pressOn, recorded, turnEnded, turnStarted } from '../../hooks/session'
+import { isUnseen, pressOn, recorded, turnEnded, turnStarted, withHolds } from '../../hooks/session'
 import type { SendOutcome } from '../../hooks/session'
 import { fetchPrs, prFetchTracker, press, wakeForDone as wakeSessionForDone } from '../../hooks/session-host'
 import type { SessionHost } from '../../hooks/session-host'
@@ -491,9 +491,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
           const shownTab = drawnTabOf(sentTab ?? s.shownTab, deps.isNextBuild === true)
 
           return {
-            ...lookOnView(s, shownTab, now()),
-            heldRows: Object.keys(holds.replies),
-            shownSince: holds.shownSince,
+            ...withHolds(lookOnView(s, shownTab, now()), holds),
             tabSeenAt: now(),
             shownTab,
             prViews: {

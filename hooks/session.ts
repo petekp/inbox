@@ -695,6 +695,11 @@ export function recorded<S extends Session>(
   return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result, personLine: r.personLine }
 }
 
+/** `s` with the rows a look holds in place and the start of its showing, which `pruned` keeps the records of. */
+export function withHolds<S extends Session>(s: S, holds: Holds): S {
+  return { ...s, heldRows: Object.keys(holds.replies), shownSince: holds.shownSince }
+}
+
 /**
  * `s` as every write saves it. Each closed list is cut to its newest records, and keeps the records of the rows a look
  * still draws: the rows `heldRows` names, and the rows closed or pressed since `shownSince`. A dismissed PR's view

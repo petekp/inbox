@@ -36,6 +36,7 @@ import {
   placed,
   cutOffTurn,
   overviewChanged,
+  withHolds,
   withLook,
 } from '../../hooks/session'
 import {
@@ -131,8 +132,8 @@ export type Inbox = {
    * messages due, and a PR fetch when due.
    */
   openPanel(ctx: ExtensionContext, openedAt: number): Promise<void>
-  /** Records the tab an open panel shows. A new tab starts a showing. */
-  showTab(ctx: ExtensionContext, tab: ShownTab): void
+  /** Records the tab an open panel shows. A new tab saves `holds`, with the showing the panel started. */
+  showTab(ctx: ExtensionContext, tab: ShownTab, holds: Holds): void
   closePanel(ctx: ExtensionContext): void
   fetchPrsWhenDue(ctx: ExtensionContext): void
   /** Calls `listener` after the session's saved state changes. Returns how to stop. */
@@ -965,13 +966,13 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       await wakeForDone(hostFor(ctx)).catch(() => undefined)
       fetchPrsWhenDue(ctx)
     },
-    showTab: (ctx, tab) => {
+    showTab: (ctx, tab, holds) => {
       const id = sessionIdOf(ctx)
       if (!openPanels.has(id)) return
       const isChanged = openPanels.get(id) !== tab
       openPanels.set(id, tab)
       const now = deps.now()
-      if (isChanged) deps.background(change(id, s => ({ ...withLook(s, tab === 'overview', now), shownSince: now })))
+      if (isChanged) deps.background(change(id, s => withHolds(withLook(s, tab === 'overview', now), holds)))
     },
     closePanel: ctx => {
       const id = sessionIdOf(ctx)
@@ -1005,7 +1006,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     },
     resume: async () => inbox.resume(ctx),
     fetchPrsWhenDue: () => inbox.fetchPrsWhenDue(ctx),
-    shown: tab => inbox.showTab(ctx, tab),
+    shown: (tab, holds) => inbox.showTab(ctx, tab, holds),
     onChange: listener => inbox.onChange(ctx, listener),
   })
 
