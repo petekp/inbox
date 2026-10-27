@@ -5,6 +5,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, UiCopyResult, UiPressArgument } from 'claude-code'
 
 import type { Away, LastAction, Ledger, OldPresence, PrViews, SentPrompt, Stop } from '../types'
+import type { Run } from './gh'
 import { EMPTY, KEPT_SESSIONS, pruneClosed } from './ledger'
 import { CLAUDE_CODE } from './model-text'
 import { SETTLED_MS } from './view'
@@ -492,6 +493,15 @@ async function perform(
 
 export function gh($: EngineInterface, args: string[]) {
   return $.process.run(['gh', ...args], { cwd: conversation.root, timeoutMs: 20_000 })
+}
+
+/** `$.process.run` as the shared `Run`: a run that rejects, because it could not start or outlived its timeout, ends with code -1. */
+export function processRun($: EngineInterface): Run {
+  return (args, { cwd, timeoutMs, env }) =>
+    $.process.run(args, { cwd, timeoutMs, env }).then(
+      r => ({ code: r.exitCode, stdout: r.stdout, stderr: r.stderr }),
+      (err: unknown) => ({ code: -1, stdout: '', stderr: err instanceof Error ? err.message : String(err) }),
+    )
 }
 
 /**

@@ -1661,6 +1661,11 @@ function noteDialog(s, callId, questions) {
 var CANDIDATES = ["gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"];
 var GH_TIMEOUT_MS = 20000;
 var UNSTARTABLE_CODE = -1;
+var GIT_TIMEOUT_MS = 5000;
+async function branchIn(run, folder) {
+  const r = await run(["git", "branch", "--show-current"], { cwd: folder, timeoutMs: GIT_TIMEOUT_MS });
+  return r.code === 0 ? r.stdout.trim() || null : null;
+}
 function ghFinder(exec) {
   let found = null;
   return {
@@ -1688,6 +1693,70 @@ function ghIn(exec, bin, cwd, onUnstartable) {
       onUnstartable();
     return { exitCode: r.code, stdout: r.stdout, stderr: r.stderr };
   };
+}
+
+// ../hooks/children.ts
+var ACTIVITY_SAVE_MS = 30000;
+var NAME_CHARS = 80;
+function childStarted(o, { ref, kind, name }, at, { reportsActivity = true } = {}) {
+  const line = name.trim().split(`
+`)[0] ?? "";
+  const lastActivityAt = reportsActivity ? at : null;
+  return withChild(o, { ref, kind, name: clipLabel(line, NAME_CHARS), startedAt: at, endedAt: null, lastActivityAt }, at);
+}
+function childWorked(o, ref, at) {
+  const saved = o?.children.find((c) => c.ref === ref)?.lastActivityAt ?? null;
+  const isSavedRecently = saved !== null && at - saved < ACTIVITY_SAVE_MS;
+  return isSavedRecently ? o : childActive(o, ref, at);
+}
+function childrenEnded(o, isEnded, at) {
+  const isEnding = (c) => c.endedAt === null && isEnded(c);
+  if (!o?.children.some(isEnding))
+    return o;
+  return { ...o, children: o.children.map((c) => isEnding(c) ? { ...c, endedAt: at } : c) };
+}
+var ENDED = new Set(["completed", "failed", "killed", "stopped"]);
+var HERDR = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^;&|\n]*)/g;
+function delegateSteps(command) {
+  return [...command.matchAll(HERDR)].map(([, verb, name, args]) => ({
+    name,
+    isWaitForEnd: verb === "wait" && !/--until working/.test(args ?? "")
+  }));
+}
+var delegateRef = (name) => `herdr:${name}`;
+function delegateRunning(o, name, at) {
+  const ref = delegateRef(name);
+  const known = o?.children.find((c) => c.ref === ref);
+  const isRunning = known !== undefined && known.endedAt === null;
+  return isRunning ? childActive(o, ref, at) : childStarted(o, { ref, kind: "delegate", name }, at);
+}
+function delegatesStarted(o, command, at) {
+  return delegateSteps(command).reduce((x, step) => delegateRunning(x, step.name, at), o);
+}
+function delegateWaitsEnded(o, command, at) {
+  return delegateSteps(command).filter((step) => step.isWaitForEnd).reduce((x, step) => childEnded(x, delegateRef(step.name), at), o);
+}
+var HERDR_PROMPT_SETTLE_MS = 15000;
+function hasRunningDelegate(o) {
+  return o?.children.some((c) => c.kind === "delegate" && c.endedAt === null) ?? false;
+}
+function delegatesSettled(o, running, at) {
+  const refs = new Set([...running].map(delegateRef));
+  const isGone = (c) => c.kind === "delegate" && !refs.has(c.ref) && at - (c.lastActivityAt ?? c.startedAt) >= HERDR_PROMPT_SETTLE_MS;
+  return childrenEnded(o, isGone, at);
+}
+function activityGate() {
+  const saved = new Map;
+  return (ref, at) => {
+    const last = saved.get(ref);
+    if (last !== undefined && at - last < ACTIVITY_SAVE_MS)
+      return false;
+    saved.set(ref, at);
+    return true;
+  };
+}
+function childrenCutOff(o, at) {
+  return childrenEnded(o, (c) => c.kind !== "delegate", at);
 }
 
 // ../hooks/prs.ts
@@ -3316,6 +3385,12 @@ var CLEARED_TOKENS = Object.fromEntries([STATUS_TOKEN, STOP_TOKEN, ...Object.val
 var HERDR_TIMEOUT_MS = 5000;
 var HERDR_AGENT_LIST = ["herdr", "agent", "list"];
 var HERDR_RUNNING = new Set(["working", "unknown"]);
+async function delegatesInHerdr(o, run) {
+  if (!hasRunningDelegate(o))
+    return null;
+  const r = await run(HERDR_AGENT_LIST, { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS });
+  return r.code === 0 ? herdrRunning(r.stdout) : null;
+}
 function herdrRunning(stdout) {
   try {
     const agents = JSON.parse(stdout)?.result?.agents;
@@ -4434,59 +4509,6 @@ function prTabOf(s, lastActions, now) {
     count: drawn.filter((d) => !d.isSettled && prNeedsYou(d.pr, isSent)).length,
     olderText: olderPrsText(s.prViews, s.ledger.prs)
   };
-}
-
-// ../hooks/children.ts
-var ACTIVITY_SAVE_MS = 30000;
-var NAME_CHARS = 80;
-function childName(text) {
-  const line = text.trim().split(`
-`)[0] ?? "";
-  return line.length > NAME_CHARS ? `${line.slice(0, NAME_CHARS - 1)}\u2026` : line;
-}
-var ENDED = new Set(["completed", "failed", "killed", "stopped"]);
-var HERDR = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^;&|\n]*)/g;
-function delegateSteps(command) {
-  return [...command.matchAll(HERDR)].map(([, verb, name, args]) => ({
-    name,
-    isWaitForEnd: verb === "wait" && !/--until working/.test(args ?? "")
-  }));
-}
-var delegateRef = (name) => `herdr:${name}`;
-function delegateRunning(o, name, at) {
-  const ref = delegateRef(name);
-  const known = o?.children.find((c) => c.ref === ref);
-  const isRunning = known !== undefined && known.endedAt === null;
-  if (o && isRunning)
-    return changedChild(o, ref, () => ({ lastActivityAt: at })) ?? o;
-  return withChild(o, { ref, kind: "delegate", name: childName(name), startedAt: at, endedAt: null, lastActivityAt: at }, at);
-}
-var HERDR_PROMPT_SETTLE_MS = 15000;
-function hasRunningDelegate(o) {
-  return o?.children.some((c) => c.kind === "delegate" && c.endedAt === null) ?? false;
-}
-function delegatesSettled(o, running, at) {
-  const refs = new Set([...running].map(delegateRef));
-  const isGone = (c) => c.kind === "delegate" && c.endedAt === null && !refs.has(c.ref) && at - (c.lastActivityAt ?? c.startedAt) >= HERDR_PROMPT_SETTLE_MS;
-  if (!o?.children.some(isGone))
-    return o;
-  return { ...o, children: o.children.map((c) => isGone(c) ? { ...c, endedAt: at } : c) };
-}
-function activityGate() {
-  const saved = new Map;
-  return (ref, at) => {
-    const last = saved.get(ref);
-    if (last !== undefined && at - last < ACTIVITY_SAVE_MS)
-      return false;
-    saved.set(ref, at);
-    return true;
-  };
-}
-function childrenCutOff(o, at) {
-  const isCut = (c) => c.endedAt === null && c.kind !== "delegate";
-  if (!o?.children.some(isCut))
-    return o;
-  return { ...o, children: o.children.map((c) => isCut(c) ? { ...c, endedAt: at } : c) };
 }
 
 // ../hooks/session-host.ts
@@ -6873,8 +6895,8 @@ function createInbox(pi, deps = defaultDeps) {
       return;
     const at = deps.now();
     const label = typeof frame.description === "string" && frame.description ? frame.description : frame.agent;
-    const name = childName(typeof label === "string" ? label : "subagent");
-    await change(id, (s) => overviewChanged(s, (o) => frame.status === "started" ? withChild(o, { ref, kind: "subagent", name, startedAt: at, endedAt: null, lastActivityAt: at }, at) : childEnded(o, ref, at))).catch(() => {
+    const name = typeof label === "string" ? label : "subagent";
+    await change(id, (s) => overviewChanged(s, (o) => frame.status === "started" ? childStarted(o, { ref, kind: "subagent", name }, at) : childEnded(o, ref, at))).catch(() => {
       return;
     });
   });
@@ -6884,7 +6906,7 @@ function createInbox(pi, deps = defaultDeps) {
     const at = deps.now();
     if (!id || typeof ref !== "string" || !isActivityWorthSaving(ref, at))
       return;
-    await change(id, (s) => overviewChanged(s, (o) => childActive(o, ref, at))).catch(() => {
+    await change(id, (s) => overviewChanged(s, (o) => childWorked(o, ref, at))).catch(() => {
       return;
     });
   });
@@ -6933,12 +6955,12 @@ function createInbox(pi, deps = defaultDeps) {
   pi.on("agent_start", async (_event, ctx) => {
     if (isUnattended(ctx))
       return;
+    const id = sessionIdOf(ctx);
     const startedAt = deps.now();
-    const r = await run(["git", "branch", "--show-current"], { cwd: ctx.cwd, timeoutMs: 5000 });
-    const branch = r.code === 0 ? r.stdout.trim() || null : null;
-    await change(sessionIdOf(ctx), (s) => placed(turnStarted(s, startedAt), ctx.cwd, branch)).catch(() => {
+    await change(id, (s) => turnStarted(s, startedAt)).catch(() => {
       return;
     });
+    deps.background(branchIn(run, ctx.cwd).then((branch) => change(id, (s) => placed(s, ctx.cwd, branch))));
   });
   pi.on("turn_start", async (_event, ctx) => {
     noted = null;
@@ -6963,11 +6985,10 @@ function createInbox(pi, deps = defaultDeps) {
     const args = event.args ?? {};
     await noteQuietly(ctx, activityOf(event.toolName, args));
     const command = event.toolName === "bash" && typeof args.command === "string" ? args.command : "";
-    const delegates = delegateSteps(command).map((step) => step.name);
-    if (delegates.length === 0)
+    if (delegateSteps(command).length === 0)
       return;
     const at = deps.now();
-    await change(sessionIdOf(ctx), (s) => overviewChanged(s, (o) => delegates.reduce((x, name) => delegateRunning(x, name, at), o))).catch(() => {
+    await change(sessionIdOf(ctx), (s) => overviewChanged(s, (o) => delegatesStarted(o, command, at))).catch(() => {
       return;
     });
   });
@@ -6979,13 +7000,12 @@ function createInbox(pi, deps = defaultDeps) {
       if (typeof command !== "string")
         return;
       let isLinked = false;
-      const settled = delegateSteps(command).filter((step) => step.isWaitForEnd);
       const at = deps.now();
       try {
         await change(sessionIdOf(ctx), (s) => {
           const after = noteCommandOutput(s, command, textOfBlocks(event.content));
           isLinked = after.ledger !== s.ledger;
-          return overviewChanged(after, (o) => settled.reduce((x, step) => childEnded(x, delegateRef(step.name), at), o));
+          return overviewChanged(after, (o) => delegateWaitsEnded(o, command, at));
         });
       } catch {
         return;
@@ -7029,13 +7049,6 @@ function createInbox(pi, deps = defaultDeps) {
       return;
     }
   });
-  const delegatesInHerdr = async (id, cwd) => {
-    const s = await readState(dir, id).catch(() => null);
-    if (!hasRunningDelegate(s?.ledger.overview ?? null))
-      return null;
-    const r = await run(HERDR_AGENT_LIST, { cwd, timeoutMs: HERDR_TIMEOUT_MS });
-    return r.code === 0 ? herdrRunning(r.stdout) : null;
-  };
   pi.on("agent_end", async (event, ctx) => {
     if (isUnattended(ctx) || event.willContinue)
       return;
@@ -7046,13 +7059,13 @@ function createInbox(pi, deps = defaultDeps) {
     const stop = await stopOf(last, deps.isUsageLimit, deps.now());
     const isDialogDismissed = event.messages.some(isDismissedAsk);
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
-    const inHerdr = await delegatesInHerdr(id, ctx.cwd);
     const endedAt = deps.now();
-    const written = await change(id, (s) => {
+    const written = await change(id, async (s) => {
       const ended = turnEnded(endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
         tab: panelScreenTab(id),
         queuesEmptyReply: isDialogDismissed
       }), endedAt);
+      const inHerdr = await delegatesInHerdr(ended.ledger.overview, run);
       const settled = inHerdr ? overviewChanged(ended, (o) => delegatesSettled(o, inHerdr, endedAt)) : ended;
       return { ...settled, stop };
     }).catch(() => null);
