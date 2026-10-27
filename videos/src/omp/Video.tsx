@@ -36,7 +36,7 @@ function rowLines(): RowLines {
   const at = fit(PICTURE, WHOLE)
   const x = (col: number) => at.x + col * CELL.w * at.scale
   const y = (row: number) => Math.round(at.y + (TITLE_BAR + (row + 0.5) * CELL.h) * at.scale)
-  const ys = [0, 2, 3, 5, 7, 12, 15, 17, 18].map(y)
+  const ys = [0, 2, 3, 5, 7, 11, 12, 17, 18].map(y)
   return [
     { from: x(2), to: x(32), ys },
     { from: x(34), to: x(64), ys },

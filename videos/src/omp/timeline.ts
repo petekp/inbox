@@ -87,37 +87,44 @@ const PACE = {
   afterSend: 1,
   /** After Esc closes the panel: the band's spotlight, then the agent at work, before the jump to its fix. */
   afterClose: 2.5,
-  /** The agent's edit to gaze.js, from the jump to the end card's start and the last moments under it. */
-  fixHold: 3.5,
+  /** The agent's close of the fixed finding, from the jump to the end card's start and the last moments under it. */
+  closedHold: 3.5,
 }
 
 /** Times in the session take, read from its log, for the keys and the screens they lead to. */
 const TAKE_TIMES = {
-  startShows: 1.5,
-  promptTyping: 3.0637,
-  promptSent: 9.5132,
-  /** The agent has read both files, and the band has moved to its place above the prompt for the rest of the turn. */
-  readsFiles: 13.6,
-  thinking: 24.9,
-  recordsBoth: 26.1648,
-  replyEnds: 29.6189,
+  startShows: 1.7,
+  promptTyping: 3.1804,
+  promptSent: 9.6593,
+  /**
+   * The agent has read both files, and the band has moved to its place above the prompt for the rest of the turn.
+   * Only the spinner changes from here until its thinking streams in.
+   */
+  readsFiles: 15.55,
+  /** omp draws the agent's two record calls, before their lines show. */
+  recordCalls: 25.86,
+  recordsBoth: 26.7629,
+  replyEnds: 28.7763,
   /** From the reply's end until /inbox, nothing on the screen changes. */
-  stillUntil: 63.06,
-  inboxTyped: 64.6601,
-  panelOpened: 66.2651,
-  panelShows: 66.3041,
-  answered: 74.873,
-  answerShows: 74.9361,
-  answerHeld: 75,
-  finds: 76.9808,
-  fixed: 82.5368,
-  queuedShows: 83.585,
-  queuedHeld: 83.62,
-  closed: 84.797,
-  closedShows: 84.8619,
-  /** The queued Fix runs: the agent's edit box names gaze.js above "Resetting gaze on look away", until it scrolls. */
-  fixShows: 127.541,
-  fixScrolls: 127.878,
+  stillUntil: 62.2371,
+  inboxTyped: 63.8371,
+  panelOpened: 65.4404,
+  panelShows: 65.4785,
+  answered: 73.996,
+  answerShows: 74.0498,
+  answerHeld: 74.1,
+  finds: 76.1072,
+  fixed: 81.716,
+  queuedShows: 82.7497,
+  /** The agent's edit, dimmed above the panel, stops streaming. */
+  queuedHeld: 82.96,
+  closed: 83.9758,
+  closedShows: 84.0885,
+  /**
+   * The queued Fix has run, and the agent closes the finding: "Closed: …" shows under its check's output. Only the
+   * spinner changes after it.
+   */
+  closedLine: 109.1,
 }
 
 /**
@@ -135,22 +142,22 @@ function stretches(): Stretch[] {
     { from: T.startShows, to: T.promptTyping, length: PACE.startHold },
     // The prompt is typed at the take's own pace and sent, and the agent starts reading.
     { from: T.promptTyping, to: T.readsFiles },
-    // The first jump: past the agent's reading, to its thinking, the two records and the reply.
-    { from: T.thinking, to: T.replyEnds + PACE.afterResult + 0.05 },
+    // The first jump: past the agent's thinking, to its two records and the reply.
+    { from: T.recordCalls, to: T.replyEnds + PACE.afterResult + 0.05 },
     // Nothing changes until /inbox, so the take runs through that stretch at once.
     { from: T.replyEnds + PACE.afterResult + 0.05, to: T.stillUntil, length: 0.05 },
     // /inbox, the question panel, Enter, and the answered row.
     { from: T.stillUntil, to: T.answerHeld },
     // The still panel holds the answered row long enough to read, and the next caption before Tab.
-    { from: T.answerHeld, to: T.finds, length: PACE.afterResult + PACE.captionFirst + 0.1 },
+    { from: T.answerHeld, to: T.finds, length: PACE.afterResult + PACE.captionFirst },
     // Tab, the issue, Enter on Fix, and Queued.
     { from: T.finds, to: T.queuedHeld },
-    // The still panel holds Queued, and the next caption before Esc.
-    { from: T.queuedHeld, to: T.closed, length: PACE.afterResult + PACE.captionFirst - 0.05 },
+    // The still panel holds Queued, shown while the agent's edit streamed above it, and the next caption before Esc.
+    { from: T.queuedHeld, to: T.closed, length: PACE.afterResult + PACE.captionFirst - 0.16 },
     // Esc, the band, and the agent at work on the fade.
     { from: T.closed, to: T.closedShows + PACE.afterClose },
-    // The second jump: to the agent making the fix. Only two spinners change while it holds.
-    { from: T.fixShows, to: T.fixScrolls, length: PACE.fixHold },
+    // The second jump: to the agent closing the finding it fixed. The spinner changes twice while it holds.
+    { from: T.closedLine, to: T.closedLine + 0.15, length: PACE.closedHold },
   ]
 }
 
@@ -209,7 +216,7 @@ function beats(): Beat[] {
     V(T.replyEnds) + PACE.afterResult,
     V(T.finds) - PACE.captionFirst,
     V(T.closed) - PACE.captionFirst,
-    V(T.fixShows) + PACE.fixHold,
+    V(T.closedLine) + PACE.closedHold,
   ]
   const captions = [
     ['in-omp', 'Inbox now supports omp (oh-my-pi)!'],
