@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import { demoView } from '../../hooks/demo'
 import { applyUpdate, parseReply } from '../../hooks/ledger'
 import { EMPTY_OVERVIEW } from '../../hooks/overview'
-import { feedbackOf, feedbackText, NO_HOLDS, QUEUED_AFTER_MS, screenTabOf } from '../../hooks/view'
+import { feedbackOf, feedbackText, NO_HOLDS, QUEUED_AFTER_MS, screenTabOf, SETTLED_MS } from '../../hooks/view'
 import type { Feedback } from '../../hooks/view'
 import { screenText } from '../../hooks/model-text'
 import { noteHook, notePrompt, viewOf } from '../src/core'
@@ -16,7 +16,7 @@ import { CODEX } from '../src/texts'
 import type { View } from '../src/core'
 import { makeServer, pageName } from '../src/server'
 import { PRESS_TIMEOUT_MS } from '../../hooks/session'
-import { SETTLE_WINDOW_MS } from '../src/settle'
+import { POLL_MS, SETTLE_WINDOW_MS } from '../src/settle'
 import { readState, statePath, updateState } from '../src/state'
 import { handleHook } from '../src/hook'
 import { findCli } from '../src/cli'
@@ -134,6 +134,39 @@ test('a row the tab holds keeps its closed record through more closes than the C
   assert.deepEqual(
     calls.filter(c => c[1] === 'queue'),
     [['/apps/codex', 'queue', '--thread', 's1', '--message', 'Re "Ship it?": Ship it anyway']],
+  )
+})
+
+test('every row the agent closes while the tab shows its tab keeps its closed record and stays in place, through more closes than the Closed list keeps', async () => {
+  const { dir, call } = await setup(0)
+  const others = Array.from({ length: 13 }, (_, n) => `i${n + 2}`)
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: {
+      ...s.ledger,
+      nextId: 15,
+      items: [...s.ledger.items, ...others.map(id => ({ ...s.ledger.items[0]!, id, ask: `Ship ${id}?` }))],
+    },
+  }))
+  const agent = { 'x-codex-turn-metadata': { session_id: 's1', turn_id: 't1' } }
+  const tab = { thread_id: 's1' }
+  await call('inbox_view', { shownSince: 50 }, tab)
+  for (const id of ['i1', ...others]) await call('close', { id, reason: 'done' }, agent)
+
+  assert.deepEqual(
+    (await readState(dir, 's1')).ledger.closed.map(c => c.id),
+    ['i1', ...others],
+  )
+  const shown = (await call('inbox_view', { shownSince: 50 }, tab)).result.structuredContent as unknown as View
+  assert.deepEqual(
+    shown.needsYou.questions.filter(q => q.state.is === 'settled').map(q => q.id),
+    ['i1', ...others],
+  )
+
+  await call('inbox_view', { shownSince: 200 }, tab)
+  assert.deepEqual(
+    (await readState(dir, 's1')).ledger.closed.map(c => c.id),
+    others.slice(1),
   )
 })
 
@@ -1281,14 +1314,16 @@ test('dismissing a linked PR unlinks it and settles its block until the tab show
   const drawn = (v: PrView) => v.prs.drawn.map(x => x.pr.ref)
   assert.ok(drawn(dismissed.result.structuredContent.view).includes(ref))
   assert.equal((await readState(dir, 's1')).ledger.prs.includes(ref), false)
+  const undoOf = (v: PrView) => v.prs.drawn.filter(x => x.pr.ref === ref).map(x => [x.isSettled, x.canUndo])
+  t += SETTLED_MS + POLL_MS
+  assert.deepEqual(undoOf((await call('inbox_view', { shownSince: 0 })).result.structuredContent), [[true, true]])
   t += SETTLE_WINDOW_MS
   const stayed = await call('inbox_view', { shownSince: 0 })
-  assert.deepEqual(
-    stayed.result.structuredContent.prs.drawn.filter(x => x.pr.ref === ref).map(x => [x.isSettled, x.canUndo]),
-    [[true, false]],
-  )
+  assert.deepEqual(undoOf(stayed.result.structuredContent), [[true, false]])
+  assert.ok(ref in (await readState(dir, 's1')).prViews.views)
   const switched = await call('inbox_view', { shownSince: t })
   assert.equal(drawn(switched.result.structuredContent).includes(ref), false)
+  assert.equal(ref in (await readState(dir, 's1')).prViews.views, false)
 })
 
 for (const failure of ['none', 'checkpoint', 'completion', 'queue', 'lookup'] as const) {

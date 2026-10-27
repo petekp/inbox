@@ -1240,3 +1240,37 @@ test('the agent task list at a reply is the latest todo entry on the branch, inc
   await settle()
   expect(state().hostTasks).toEqual([])
 })
+
+test('every row the agent closes while the panel shows its tab keeps its closed record through more closes than the Closed list keeps, until the panel closes', async () => {
+  const inbox = createInbox(pi(), deps())
+  for (let n = 0; n < 14; n++) await record({ kind: 'task', ask: `Task ${n}` })
+  const ids = state().ledger.items.map((i: { id: string }) => i.id)
+  const openedAt = clock
+  await inbox.openPanel(makeCtx(), openedAt)
+  for (const id of ids)
+    await tools.get('close').execute('call', { id, reason: 'done' }, undefined, undefined, makeCtx())
+
+  expect(state().ledger.closed.map((c: { id: string }) => c.id)).toEqual(ids)
+  const shown = await inbox.screen(makeCtx(), { replies: {}, discarded: {}, shownSince: openedAt })
+  expect(shown.view.needsYou.tasks.filter(r => r.state.is === 'settled').map(r => r.id)).toEqual(ids)
+
+  inbox.closePanel(makeCtx())
+  await settle()
+  await record({ kind: 'task', ask: 'One more' })
+  expect(state().ledger.closed.map((c: { id: string }) => c.id)).toEqual(ids.slice(2))
+})
+
+test('the folder and branch show from the session’s start, and a checkout during a turn shows at its end', async () => {
+  createInbox(pi(), deps())
+  execResults.set('git', { code: 0, stdout: 'main\n' })
+  await call('session_start', { type: 'session_start' })
+  await settle()
+  expect(state().place).toEqual({ folder: '/work', branch: 'main' })
+
+  await prompt('switch to a feature branch')
+  await call('agent_start', { type: 'agent_start' })
+  execResults.set('git', { code: 0, stdout: 'feature\n' })
+  await endAgent('Switched.')
+  await settle()
+  expect(state().place).toEqual({ folder: '/work', branch: 'feature' })
+})
