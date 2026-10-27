@@ -2934,7 +2934,7 @@ function screenTabOf(tab) {
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 var WORKING_TEXT = "Working\u2026";
-var LOOK_TEXT = "you looked";
+var LOOK_TEXT = "Seen";
 var NEWS_DOT = "\u2022";
 var OVERVIEW_TEXT_LINES = 3;
 var CHILD_ROWS = 3;
@@ -3006,7 +3006,7 @@ function overviewPage(s, now) {
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const shownIds = new Set(shown.map((x) => x.id));
   const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, now, null));
-  const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT, age: shortAgo(now - look) };
+  const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
   let isLookDrawn = false;
   for (const [i, x] of shown.entries()) {
     if (lookRow && !isLookDrawn && !isNew(x)) {
@@ -5713,8 +5713,8 @@ function drawPageRow(row, d) {
   }
   if (row.kind === "look") {
     const label = `\u2500\u2500 ${row.text} `;
-    const fill = "\u2500".repeat(Math.max(2, width - 1 - PAGE_TEXT_AT - cellWidth(label) - cellWidth(row.age) - 1));
-    return [`${" ".repeat(PAGE_TEXT_AT)}${s.dim(label + fill)} ${s.dim(row.age)}`];
+    const fill = "\u2500".repeat(Math.max(2, width - 1 - PAGE_TEXT_AT - cellWidth(label)));
+    return [`${" ".repeat(PAGE_TEXT_AT)}${s.dim(label + fill)}`];
   }
   const mark = row.tone ? s.tone(row.tone, row.mark) : s.dim(row.mark);
   return pageLine(d, PAGE_MARK_AT, mark, row.text, row.age, {});

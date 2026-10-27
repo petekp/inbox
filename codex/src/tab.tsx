@@ -1384,7 +1384,6 @@ function OverviewLine({ row }: { row: OverviewRow }) {
         <div class="content tight look-rule">
           <span>{row.text}</span>
         </div>
-        <span class="side">{row.age}</span>
       </div>
     )
 

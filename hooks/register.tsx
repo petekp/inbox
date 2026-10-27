@@ -5547,14 +5547,14 @@ export const register: Register = on => {
         })
       if (r.kind === 'look') {
         const label = `── ${r.text} `
-        const ruleColumns = overviewTextCells(0, r.age) - cellWidth(label)
-        const fill = look === 'desktop' ? '' : '─'.repeat(Math.max(2, ruleColumns))
+        const fill =
+          look === 'desktop' ? '' : '─'.repeat(Math.max(2, listColumns - markColumns.textAt - cellWidth(label)))
 
         return overviewLine({
           key: 'overview-look',
           mark: null,
           content: <Text color={pal.divider}>{`${label}${fill}`}</Text>,
-          age: r.age,
+          age: null,
         })
       }
 

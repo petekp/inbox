@@ -1080,9 +1080,9 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
   }
   if (row.kind === 'look') {
     const label = `── ${row.text} `
-    const fill = '─'.repeat(Math.max(2, width - 1 - PAGE_TEXT_AT - cellWidth(label) - cellWidth(row.age) - 1))
+    const fill = '─'.repeat(Math.max(2, width - 1 - PAGE_TEXT_AT - cellWidth(label)))
 
-    return [`${' '.repeat(PAGE_TEXT_AT)}${s.dim(label + fill)} ${s.dim(row.age)}`]
+    return [`${' '.repeat(PAGE_TEXT_AT)}${s.dim(label + fill)}`]
   }
   const mark = row.tone ? s.tone(row.tone, row.mark) : s.dim(row.mark)
 
