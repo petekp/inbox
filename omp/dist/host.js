@@ -325,7 +325,7 @@ function applyOps(last, ops, now, askIds) {
     ...last ?? EMPTY_OVERVIEW,
     subjects: (last?.subjects ?? []).map((s) => ({ ...s })),
     children: (last?.children ?? []).map((c) => ({ ...c })),
-    askSubjects: { ...last?.askSubjects }
+    askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask)))
   };
   const find = (ref) => {
     const key = nameKey(clipWords(ref, NAME_KEPT));
@@ -1439,13 +1439,24 @@ function overviewBlocks({ last, asks, tasks, now }) {
     ...list === "" ? [] : [`<tasks>${NL6}${list}${NL6}</tasks>`]
   ];
 }
+function personText(person, trigger) {
+  return person ?? `(The person sent nothing. The turn was started by: ${trigger ?? "unknown"}.)`;
+}
 function overviewPrompt(input, ex) {
-  const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? "unknown"}.)`;
+  const person = personText(ex.person, ex.trigger);
   return [
     ...overviewBlocks(input),
     `<person>${NL6}${clipMiddle(person, 4000, 1500)}${NL6}</person>`,
     `<activity>${NL6}${clipMiddle(ex.activity.join(NL6), 2500, 500)}${NL6}</activity>`,
     `<reply>${NL6}${clipMiddle(numberBlocks(ex.reply), 12000, 4000)}${NL6}</reply>`
+  ].join(NL6);
+}
+function overviewMidTurnPrompt(input, turn) {
+  return [
+    "The turn is still running. Treat <person> and <activity> as the exchange so far: there is no reply yet. Answer with the changes the work so far makes.",
+    ...overviewBlocks(input),
+    `<person>${NL6}${clipMiddle(personText(turn.person, turn.trigger), 4000, 1500)}${NL6}</person>`,
+    `<activity>${NL6}${clipMiddle(turn.activity.join(NL6), 2500, 500)}${NL6}</activity>`
   ].join(NL6);
 }
 function overviewCatchUpPrompt(input, transcript) {
@@ -4208,6 +4219,7 @@ function emptySession() {
     prViews: NO_PRS,
     stop: null,
     overviewFailure: null,
+    lastOverviewCallAt: null,
     hostTasks: [],
     dialogQuestions: []
   };
@@ -4275,6 +4287,7 @@ function upgradeSession(saved) {
     },
     stop: saved.stop ?? null,
     overviewFailure: saved.overviewFailure ?? null,
+    lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     hostTasks: upgradeHostTasks(saved.hostTasks),
     dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
@@ -4418,7 +4431,8 @@ function appliedOverview(s, answer, appliedAfter, now) {
       ...s.ledger,
       overview: applyOverview(s.ledger.overview, answer, now, new Set(s.ledger.items.map((i) => i.id)))
     },
-    overviewFailure: null
+    overviewFailure: null,
+    lastOverviewCallAt: now
   };
 }
 var REFUSED_ANSWER_CHARS = 500;
@@ -4426,7 +4440,14 @@ function failedOverview(s, text, appliedAfter, now) {
   if (s.presence.turnsApplied < appliedAfter)
     return s;
   const failure = text === null ? { at: now, cause: "no-answer", answer: null } : { at: now, cause: "refused", answer: text.slice(0, REFUSED_ANSWER_CHARS) };
-  return { ...s, overviewFailure: failure };
+  return { ...s, overviewFailure: failure, lastOverviewCallAt: now };
+}
+var OVERVIEW_REFRESH_MS = 10 * 60000;
+function claimedOverviewRefresh(s, now) {
+  const { isTurnRunning, turnStartedAt } = s.presence;
+  const times = [s.lastOverviewCallAt, turnStartedAt].filter((t) => t !== null);
+  const isDue = isTurnRunning && times.length > 0 && now - Math.max(...times) >= OVERVIEW_REFRESH_MS;
+  return isDue ? { ...s, lastOverviewCallAt: now } : s;
 }
 function needsCatchUp(s) {
   const { presence } = s;
@@ -4626,6 +4647,22 @@ function orderedKeys() {
     }
   };
 }
+async function askAndWriteOverview(host, s, ask, tasks, appliedAfter) {
+  const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() };
+  const { last } = await askOverview(async () => ({ text: await ask(input).catch(() => null) }));
+  const answer = last.text === null ? null : parseOverview(last.text);
+  const now = await host.now();
+  await host.update((x) => answer === null ? failedOverview(x, last.text, appliedAfter, now) : appliedOverview(x, answer, appliedAfter, now));
+}
+function refreshOverview(host) {
+  return host.inOrder(async () => {
+    const s = await host.read();
+    if (!s.presence.isTurnRunning)
+      return;
+    const ask = (input) => host.ask(overviewMidTurnPrompt(input, s.turn), OVERVIEW_SYSTEM);
+    await askAndWriteOverview(host, s, ask, s.hostTasks, s.presence.turnsApplied);
+  });
+}
 async function askOverConversation(ask, names, s, screen, conversation) {
   if (!conversation)
     return { kind: "unreadable" };
@@ -4656,16 +4693,7 @@ async function runUpdates(host) {
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
   const writing = [];
-  const writeOverview = async (after, ask, tasks) => host.inOrder(async () => {
-    const { ledger } = await host.read();
-    const at = await host.now();
-    const input = { last: ledger.overview, asks: ledger.items, tasks, now: at };
-    const { last } = await askOverview(async () => ({ text: await ask(input).catch(() => null) }));
-    const answer = last.text === null ? null : parseOverview(last.text);
-    const now = await host.now();
-    const appliedAfter = after.presence.turnsApplied;
-    await host.update((x) => answer === null ? failedOverview(x, last.text, appliedAfter, now) : appliedOverview(x, answer, appliedAfter, now));
-  });
+  const writeOverview = (after, ask, tasks) => host.inOrder(async () => askAndWriteOverview(host, await host.read(), ask, tasks, after.presence.turnsApplied));
   const followUp = (run) => {
     const settled = run.catch(() => {
       return;
@@ -7101,11 +7129,19 @@ function createInbox(pi, deps = defaultDeps) {
   const noteQuietly = async (ctx, line) => {
     if (!line)
       return;
+    let isClaimed = false;
     try {
-      await change(sessionIdOf(ctx), (s) => noteActivity(s, line));
+      await change(sessionIdOf(ctx), (s) => {
+        const noted = noteActivity(s, line);
+        const claimed = claimedOverviewRefresh(noted, deps.now());
+        isClaimed = claimed !== noted;
+        return claimed;
+      });
     } catch {
       return;
     }
+    if (isClaimed)
+      deps.background(refreshOverview(updateHostFor(ctx)));
   };
   pi.on("tool_execution_start", async (event, ctx) => {
     if (isUnattended(ctx))

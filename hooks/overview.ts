@@ -194,15 +194,15 @@ const OP_ORDER: Record<Op['kind'], number> = {
 }
 
 /**
- * The list after `ops`, applied at `now`. `askIds` are the open asks a LINK may name. A line that names an id or a name
- * the list does not hold, or an ask that is not open, changes nothing.
+ * The list after `ops`, applied at `now`. `askIds` are the open asks: a LINK may name one, and the links of the others
+ * go. A line that names an id or a name the list does not hold, or an ask that is not open, changes nothing.
  */
 export function applyOps(last: Overview | null, ops: Op[], now: number, askIds: ReadonlySet<string>): Overview {
   let o: Overview = {
     ...(last ?? EMPTY_OVERVIEW),
     subjects: (last?.subjects ?? []).map(s => ({ ...s })),
     children: (last?.children ?? []).map(c => ({ ...c })),
-    askSubjects: { ...last?.askSubjects },
+    askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask))),
   }
   const find = (ref: string) => {
     const key = nameKey(clipWords(ref, NAME_KEPT))

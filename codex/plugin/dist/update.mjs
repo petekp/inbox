@@ -182,7 +182,7 @@ function applyOps(last, ops, now, askIds) {
     ...last ?? EMPTY_OVERVIEW,
     subjects: (last?.subjects ?? []).map((s) => ({ ...s })),
     children: (last?.children ?? []).map((c) => ({ ...c })),
-    askSubjects: { ...last?.askSubjects }
+    askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask)))
   };
   const find = (ref) => {
     const key = nameKey(clipWords(ref, NAME_KEPT));
@@ -1181,13 +1181,24 @@ function overviewBlocks({ last, asks, tasks, now }) {
     ...list === "" ? [] : [`<tasks>${NL5}${list}${NL5}</tasks>`]
   ];
 }
+function personText(person, trigger) {
+  return person ?? `(The person sent nothing. The turn was started by: ${trigger ?? "unknown"}.)`;
+}
 function overviewPrompt(input, ex) {
-  const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? "unknown"}.)`;
+  const person = personText(ex.person, ex.trigger);
   return [
     ...overviewBlocks(input),
     `<person>${NL5}${clipMiddle(person, 4e3, 1500)}${NL5}</person>`,
     `<activity>${NL5}${clipMiddle(ex.activity.join(NL5), 2500, 500)}${NL5}</activity>`,
     `<reply>${NL5}${clipMiddle(numberBlocks(ex.reply), 12e3, 4e3)}${NL5}</reply>`
+  ].join(NL5);
+}
+function overviewMidTurnPrompt(input, turn) {
+  return [
+    "The turn is still running. Treat <person> and <activity> as the exchange so far: there is no reply yet. Answer with the changes the work so far makes.",
+    ...overviewBlocks(input),
+    `<person>${NL5}${clipMiddle(personText(turn.person, turn.trigger), 4e3, 1500)}${NL5}</person>`,
+    `<activity>${NL5}${clipMiddle(turn.activity.join(NL5), 2500, 500)}${NL5}</activity>`
   ].join(NL5);
 }
 function overviewCatchUpPrompt(input, transcript) {
@@ -2160,6 +2171,7 @@ function emptySession() {
     prViews: NO_PRS,
     stop: null,
     overviewFailure: null,
+    lastOverviewCallAt: null,
     hostTasks: [],
     dialogQuestions: []
   };
@@ -2222,6 +2234,7 @@ function upgradeSession(saved) {
     },
     stop: saved.stop ?? null,
     overviewFailure: saved.overviewFailure ?? null,
+    lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     hostTasks: upgradeHostTasks(saved.hostTasks),
     dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
@@ -2261,15 +2274,17 @@ function appliedOverview(s, answer, appliedAfter, now) {
       ...s.ledger,
       overview: applyOverview(s.ledger.overview, answer, now, new Set(s.ledger.items.map((i) => i.id)))
     },
-    overviewFailure: null
+    overviewFailure: null,
+    lastOverviewCallAt: now
   };
 }
 var REFUSED_ANSWER_CHARS = 500;
 function failedOverview(s, text2, appliedAfter, now) {
   if (s.presence.turnsApplied < appliedAfter) return s;
   const failure = text2 === null ? { at: now, cause: "no-answer", answer: null } : { at: now, cause: "refused", answer: text2.slice(0, REFUSED_ANSWER_CHARS) };
-  return { ...s, overviewFailure: failure };
+  return { ...s, overviewFailure: failure, lastOverviewCallAt: now };
 }
+var OVERVIEW_REFRESH_MS = 10 * 6e4;
 function needsCatchUp(s) {
   const { presence } = s;
   const hasUnappliedTurn = s.pending.length === 0 && s.turn.person === null && presence.turnsStarted > presence.turnsApplied;
@@ -2774,6 +2789,23 @@ function orderedKeys() {
     }
   };
 }
+async function askAndWriteOverview(host, s, ask, tasks, appliedAfter) {
+  const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() };
+  const { last } = await askOverview(async () => ({ text: await ask(input).catch(() => null) }));
+  const answer = last.text === null ? null : parseOverview(last.text);
+  const now = await host.now();
+  await host.update(
+    (x) => answer === null ? failedOverview(x, last.text, appliedAfter, now) : appliedOverview(x, answer, appliedAfter, now)
+  );
+}
+function refreshOverview(host) {
+  return host.inOrder(async () => {
+    const s = await host.read();
+    if (!s.presence.isTurnRunning) return;
+    const ask = (input) => host.ask(overviewMidTurnPrompt(input, s.turn), OVERVIEW_SYSTEM);
+    await askAndWriteOverview(host, s, ask, s.hostTasks, s.presence.turnsApplied);
+  });
+}
 async function askOverConversation(ask, names, s, screen, conversation) {
   if (!conversation) return { kind: "unreadable" };
   const text2 = await ask(transcriptCatchUpPrompt(s.ledger, screen, conversation), systemText(names)).catch(() => null);
@@ -2789,18 +2821,7 @@ async function runUpdates(host) {
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
   const writing = [];
-  const writeOverview = async (after, ask, tasks) => host.inOrder(async () => {
-    const { ledger } = await host.read();
-    const at = await host.now();
-    const input = { last: ledger.overview, asks: ledger.items, tasks, now: at };
-    const { last } = await askOverview(async () => ({ text: await ask(input).catch(() => null) }));
-    const answer = last.text === null ? null : parseOverview(last.text);
-    const now = await host.now();
-    const appliedAfter = after.presence.turnsApplied;
-    await host.update(
-      (x) => answer === null ? failedOverview(x, last.text, appliedAfter, now) : appliedOverview(x, answer, appliedAfter, now)
-    );
-  });
+  const writeOverview = (after, ask, tasks) => host.inOrder(async () => askAndWriteOverview(host, await host.read(), ask, tasks, after.presence.turnsApplied));
   const followUp = (run2) => {
     const settled = run2.catch(() => void 0);
     if (host.background) host.background(settled);
@@ -3219,14 +3240,16 @@ function codexAsk(exec, cli, dir, personHome, onFailure = async () => {
 var recordModelFailure = (dir, sessionId, now) => async (failure) => {
   await updateState(dir, sessionId, (s) => ({ ...s, lastModelFailure: { ...failure, at: now() } }));
 };
+var inOrderFor = (dir, sessionId) => (fn) => resultsOrder.run(
+  statePath(dir, sessionId),
+  () => withLock(`${statePath(dir, sessionId)}.results`, fn, RESULTS_WAIT_MS)
+);
+var refreshOverview2 = (dir, sessionId, ask, now, onWrite) => refreshOverview({ ...codexStore(dir, sessionId, now, onWrite), ask, inOrder: inOrderFor(dir, sessionId) });
 var runUpdates2 = (dir, sessionId, ask, now, onWrite) => runUpdates({
   ...codexStore(dir, sessionId, now, onWrite),
   ask,
   names: CODEX,
-  inOrder: (fn) => resultsOrder.run(
-    statePath(dir, sessionId),
-    () => withLock(`${statePath(dir, sessionId)}.results`, fn, RESULTS_WAIT_MS)
-  ),
+  inOrder: inOrderFor(dir, sessionId),
   catchUp: async (s) => askOverConversation(
     ask,
     CODEX,
@@ -3236,14 +3259,20 @@ var runUpdates2 = (dir, sessionId, ask, now, onWrite) => runUpdates({
   )
 });
 
+// src/detached-update.ts
+var OVERVIEW_REFRESH = "overview-refresh";
+
 // src/update-main.ts
 async function main() {
   const sessionId = process.argv[2] ?? "";
+  const isOverviewRefresh = process.argv[3] === OVERVIEW_REFRESH;
   const dir = dataDir(process.env, dirname3(dirname3(fileURLToPath(import.meta.url))));
   const { cliPath } = await readState(dir, sessionId);
   const cli = cliPath ?? await findCli(process.env, run, process.ppid);
   const personHome = process.env.CODEX_HOME || join5(homedir3(), ".codex");
   const ask = codexAsk(run, cli, dir, personHome, recordModelFailure(dir, sessionId, Date.now));
-  await runUpdates2(dir, sessionId, ask, Date.now, herdrOnWrite(process.env, run, dir, Date.now));
+  const onWrite = herdrOnWrite(process.env, run, dir, Date.now);
+  if (isOverviewRefresh) await refreshOverview2(dir, sessionId, ask, Date.now, onWrite);
+  else await runUpdates2(dir, sessionId, ask, Date.now, onWrite);
 }
 main().catch(() => process.exit(0));

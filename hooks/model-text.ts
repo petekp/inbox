@@ -1,4 +1,4 @@
-import type { Closed, DialogQuestion, Finding, HostTask, Item, Ledger, Overview, Told } from '../types'
+import type { Closed, DialogQuestion, Finding, HostTask, Item, Ledger, Overview, Session, Told } from '../types'
 
 export type { Told } from '../types'
 import type { Exchange } from './ledger'
@@ -357,14 +357,31 @@ function overviewBlocks({ last, asks, tasks, now }: OverviewInput): string[] {
   ]
 }
 
+function personText(person: string | null, trigger: string | null): string {
+  return person ?? `(The person sent nothing. The turn was started by: ${trigger ?? 'unknown'}.)`
+}
+
 export function overviewPrompt(input: OverviewInput, ex: Exchange): string {
-  const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? 'unknown'}.)`
+  const person = personText(ex.person, ex.trigger)
 
   return [
     ...overviewBlocks(input),
     `<person>${NL}${clipMiddle(person, 4000, 1500)}${NL}</person>`,
     `<activity>${NL}${clipMiddle(ex.activity.join(NL), 2500, 500)}${NL}</activity>`,
     `<reply>${NL}${clipMiddle(numberBlocks(ex.reply), 12000, 4000)}${NL}</reply>`,
+  ].join(NL)
+}
+
+/** The Overview call for a turn that is still running: what the person sent, and the work so far. */
+export function overviewMidTurnPrompt(
+  input: OverviewInput,
+  turn: Pick<Session['turn'], 'person' | 'trigger' | 'activity'>,
+): string {
+  return [
+    'The turn is still running. Treat <person> and <activity> as the exchange so far: there is no reply yet. Answer with the changes the work so far makes.',
+    ...overviewBlocks(input),
+    `<person>${NL}${clipMiddle(personText(turn.person, turn.trigger), 4000, 1500)}${NL}</person>`,
+    `<activity>${NL}${clipMiddle(turn.activity.join(NL), 2500, 500)}${NL}</activity>`,
   ].join(NL)
 }
 

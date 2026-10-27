@@ -8,13 +8,16 @@ import {
   appliedCatchUp,
   appliedOverview,
   cleared,
+  claimedOverviewRefresh,
   emptySession,
   endTurn,
   failedOverview,
   forkedFrom,
   hasLedger,
   isUnseen,
+  noteActivity,
   noteCommandOutput,
+  OVERVIEW_REFRESH_MS,
   notePrompt,
   pressOn,
   recordPrompt,
@@ -27,7 +30,7 @@ import {
 } from '../hooks/session'
 import type { Session } from '../hooks/session'
 import type { Item, RowNote } from '../types'
-import { press, runUpdates, wakeForDone } from '../hooks/session-host'
+import { press, refreshOverview, runUpdates, wakeForDone } from '../hooks/session-host'
 import type { CatchUpReply } from '../hooks/session-host'
 import { allRows, COMPARE_LIMIT_MS, feedbackText, footerStatus, NO_HOLDS } from '../hooks/view'
 import { demoSession, demoView, isDemoCopy } from '../hooks/demo'
@@ -332,6 +335,38 @@ test('the Overview page is empty for a new session, reads Working… while the m
   expect(view(turnEnded(turnStarted(idle, 9_000), 9_500)).live).toBe('Idle · last reply just now')
   expect(view(withOverview(idle)).goal).toBe('Work offline')
   expect(view(idle).error).toBeNull()
+})
+
+test('a running turn claims an Overview call once the wait has passed since it started and since the last call, claims it once, and an idle session never does', () => {
+  const started = turnStarted(emptySession(), 0)
+  const claimed = claimedOverviewRefresh(started, OVERVIEW_REFRESH_MS)
+  const calledLater = { ...started, lastOverviewCallAt: 5 * 60_000 }
+
+  expect(claimedOverviewRefresh(started, OVERVIEW_REFRESH_MS - 1)).toBe(started)
+  expect(claimed.lastOverviewCallAt).toBe(OVERVIEW_REFRESH_MS)
+  expect(claimedOverviewRefresh(claimed, OVERVIEW_REFRESH_MS + 1)).toBe(claimed)
+  expect(claimedOverviewRefresh(calledLater, OVERVIEW_REFRESH_MS)).toBe(calledLater)
+  expect(claimedOverviewRefresh(turnEnded(started, 1), 2 * OVERVIEW_REFRESH_MS).lastOverviewCallAt).toBeNull()
+})
+
+test('a claimed Overview call reads the running turn’s work with no reply and writes its answer, and a turn that ended first is left to the call after its reply', async () => {
+  const prompts: string[] = []
+  const { host } = fakeHost(async prompt => {
+    prompts.push(prompt)
+    return 'GOAL: Work offline\nNEW: working | Offline mode | queue built'
+  })
+  await host.update(s => noteActivity(notePrompt(CLAUDE_CODE, turnStarted(s, 0), 'go', false).state, 'edited sync.ts'))
+  await refreshOverview(host)
+  const written = await host.read()
+
+  expect(prompts).toHaveLength(1)
+  expect(prompts[0]).toContain('<activity>\nedited sync.ts\n</activity>')
+  expect(prompts[0]).not.toContain('<reply>')
+  expect(written.ledger.overview?.goal).toBe('Work offline')
+  expect(written.lastOverviewCallAt).not.toBeNull()
+  await host.update(s => turnEnded(s, 1))
+  await refreshOverview(host)
+  expect(prompts).toHaveLength(1)
 })
 
 test('a failed Overview call shows in the status line on the Overview tab, in place of a failed update, and on no other tab', () => {

@@ -83,6 +83,7 @@ export function emptySession(): Session {
     prViews: NO_PRS,
     stop: null,
     overviewFailure: null,
+    lastOverviewCallAt: null,
     hostTasks: [],
     dialogQuestions: [],
   }
@@ -191,6 +192,7 @@ export function upgradeSession(saved: SavedSession): Session {
     },
     stop: saved.stop ?? null,
     overviewFailure: saved.overviewFailure ?? null,
+    lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     hostTasks: upgradeHostTasks(saved.hostTasks),
     dialogQuestions: (saved.dialogQuestions ?? []).map(q => ({ ...q, descriptions: q.descriptions ?? {} })),
   }
@@ -225,6 +227,7 @@ export function cleared<S extends Session>(s: S): S {
     lastActions: {},
     stop: null,
     overviewFailure: null,
+    lastOverviewCallAt: null,
   }
 }
 
@@ -483,6 +486,7 @@ export function appliedOverview<S extends Session>(s: S, answer: OverviewAnswer,
       overview: applyOverview(s.ledger.overview, answer, now, new Set(s.ledger.items.map(i => i.id))),
     },
     overviewFailure: null,
+    lastOverviewCallAt: now,
   }
 }
 
@@ -500,7 +504,23 @@ export function failedOverview<S extends Session>(s: S, text: string | null, app
       ? { at: now, cause: 'no-answer', answer: null }
       : { at: now, cause: 'refused', answer: text.slice(0, REFUSED_ANSWER_CHARS) }
 
-  return { ...s, overviewFailure: failure }
+  return { ...s, overviewFailure: failure, lastOverviewCallAt: now }
+}
+
+/** How long a running turn goes between Overview calls. */
+export const OVERVIEW_REFRESH_MS = 10 * 60_000
+
+/**
+ * The session with an Overview call claimed for the running turn, when `OVERVIEW_REFRESH_MS` has passed since the
+ * last Overview call and since the turn started. Unchanged otherwise, so a host that gets a new session back runs the
+ * call, and two events in a row claim it once.
+ */
+export function claimedOverviewRefresh<S extends Session>(s: S, now: number): S {
+  const { isTurnRunning, turnStartedAt } = s.presence
+  const times = [s.lastOverviewCallAt, turnStartedAt].filter((t): t is number => t !== null)
+  const isDue = isTurnRunning && times.length > 0 && now - Math.max(...times) >= OVERVIEW_REFRESH_MS
+
+  return isDue ? { ...s, lastOverviewCallAt: now } : s
 }
 
 /**

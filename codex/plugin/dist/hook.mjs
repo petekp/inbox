@@ -6,9 +6,10 @@ import { fileURLToPath } from "node:url";
 
 // src/detached-update.ts
 import { spawn } from "node:child_process";
+var OVERVIEW_REFRESH = "overview-refresh";
 function detachedUpdate(dir, env, script) {
-  return (sessionId) => {
-    const child = spawn(process.execPath, [script, sessionId], {
+  return (sessionId, mode) => {
+    const child = spawn(process.execPath, [script, sessionId, ...mode ? [mode] : []], {
       detached: true,
       stdio: "ignore",
       env: { ...env, INBOX_DATA: dir }
@@ -1691,6 +1692,7 @@ function emptySession() {
     prViews: NO_PRS,
     stop: null,
     overviewFailure: null,
+    lastOverviewCallAt: null,
     hostTasks: [],
     dialogQuestions: []
   };
@@ -1753,6 +1755,7 @@ function upgradeSession(saved) {
     },
     stop: saved.stop ?? null,
     overviewFailure: saved.overviewFailure ?? null,
+    lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     hostTasks: upgradeHostTasks(saved.hostTasks),
     dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
@@ -1779,7 +1782,8 @@ function cleared(s) {
     },
     lastActions: {},
     stop: null,
-    overviewFailure: null
+    overviewFailure: null,
+    lastOverviewCallAt: null
   };
 }
 function notePrompt(host, s, text2, isOpen2) {
@@ -1884,6 +1888,13 @@ function endTurn(host, s, reply, isOpen2, { tab = null, queuesEmptyReply = false
     tasks: s.hostTasks
   };
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] };
+}
+var OVERVIEW_REFRESH_MS = 10 * 6e4;
+function claimedOverviewRefresh(s, now) {
+  const { isTurnRunning, turnStartedAt } = s.presence;
+  const times = [s.lastOverviewCallAt, turnStartedAt].filter((t) => t !== null);
+  const isDue = isTurnRunning && times.length > 0 && now - Math.max(...times) >= OVERVIEW_REFRESH_MS;
+  return isDue ? { ...s, lastOverviewCallAt: now } : s;
 }
 function needsUpdate(s) {
   return s.pending.length > 0 || s.presence.ledgerState !== "current";
@@ -2984,7 +2995,16 @@ async function handleHook(input, deps) {
       const isDelegateCommand = agentId === void 0 && delegateSteps(command).length > 0;
       const withWork = (s) => overviewChanged(s, (o) => agentId ? childWorked(o, agentId, now()) : delegatesStarted(o, command, now()));
       const hasWork = line !== null || agentId !== void 0 || isDelegateCommand;
-      if (hasWork) await write((s) => withWork(line ? noteActivity(withRollout(s), line) : withRollout(s)));
+      const isMainActivity = line !== null && agentId === void 0;
+      let isClaimed = false;
+      if (hasWork)
+        await write((s) => {
+          const worked = withWork(line ? noteActivity(withRollout(s), line) : withRollout(s));
+          const claimed = isMainActivity ? claimedOverviewRefresh(worked, now()) : worked;
+          isClaimed = claimed !== worked;
+          return claimed;
+        });
+      if (isClaimed) deps.startOverviewRefresh(id);
       return null;
     }
     case "SubagentStart": {
@@ -3075,11 +3095,13 @@ async function main() {
   for await (const chunk of process.stdin) raw += chunk;
   const dist = dirname3(fileURLToPath(import.meta.url));
   const dir = dataDir(process.env, dirname3(dist));
+  const startUpdate = detachedUpdate(dir, process.env, join4(dist, "update.mjs"));
   const out = await handleHook(JSON.parse(raw), {
     dir,
     env: process.env,
     now: Date.now,
-    startUpdate: detachedUpdate(dir, process.env, join4(dist, "update.mjs")),
+    startUpdate: (id) => startUpdate(id),
+    startOverviewRefresh: (id) => startUpdate(id, OVERVIEW_REFRESH),
     onWrite: herdrOnWrite(process.env, run, dir, Date.now),
     run
   });

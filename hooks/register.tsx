@@ -57,6 +57,7 @@ import {
 } from './claude-host'
 import type { Owner, SavedRecord, Shown } from './claude-host'
 import {
+  claimedOverviewRefresh,
   cleared,
   commandFindings,
   emptySession,
@@ -94,6 +95,7 @@ import type { SentBy, Session, SessionView } from './session'
 import {
   fetchPrs as fetchSessionPrs,
   orderedKeys,
+  refreshOverview,
   runUpdates,
   startPress,
   wakeForDone as wakeSessionForDone,
@@ -857,8 +859,18 @@ function notePerson($: EngineInterface, line: string) {
   }))
 }
 
-function noteActivity($: EngineInterface, line: string) {
-  return commit($, currentOwner(), s => noteTurnActivity(s, line)).catch(() => undefined)
+/** Notes the main agent's activity, and runs the Overview call when the running turn is due one. */
+async function noteActivity($: EngineInterface, line: string) {
+  const owner = currentOwner()
+  const now = await $.clock.now()
+  let isClaimed = false
+  await commit($, owner, s => {
+    const noted = noteTurnActivity(s, line)
+    const claimed = claimedOverviewRefresh(noted, now)
+    isClaimed = claimed !== noted
+    return claimed
+  }).catch(() => undefined)
+  if (isClaimed) void refreshOverview({ ...hostOf($, owner), inOrder: fn => resultsOrder.run(owner.id, fn) })
 }
 
 function messageText(message: SessionAppendMessage): string {

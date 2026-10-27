@@ -4,6 +4,7 @@ import {
   buildPrompt,
   OVERVIEW_SYSTEM,
   overviewCatchUpPrompt,
+  overviewMidTurnPrompt,
   overviewPrompt,
   systemText,
   transcriptCatchUpPrompt,
@@ -158,6 +159,42 @@ export type UpdateHost<S extends Session> = Pick<SessionHost<S>, 'now' | 'read' 
   background?(overviews: Promise<void>): void
 }
 
+type OverviewHost<S extends Session> = Pick<UpdateHost<S>, 'now' | 'read' | 'update' | 'ask' | 'inOrder'>
+
+/**
+ * Runs the Overview call on the Overview and asks in `s`, and writes its answer, or saves why it wrote nothing. An
+ * answer that holds prose is asked once more. `appliedAfter` drops the write as `appliedOverview` does.
+ */
+async function askAndWriteOverview<S extends Session>(
+  host: Pick<OverviewHost<S>, 'now' | 'update'>,
+  s: S,
+  ask: AskCatchUpOverview,
+  tasks: HostTask[],
+  appliedAfter: number,
+): Promise<void> {
+  const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() }
+  const { last } = await askOverview(async () => ({ text: await ask(input).catch(() => null) }))
+  const answer = last.text === null ? null : parseOverview(last.text)
+  const now = await host.now()
+  await host.update(x =>
+    answer === null ? failedOverview(x, last.text, appliedAfter, now) : appliedOverview(x, answer, appliedAfter, now),
+  )
+}
+
+/**
+ * Runs the Overview call on the running turn's work so far, once the session's earlier Overview calls have finished.
+ * A host calls it after `claimedOverviewRefresh` claimed the call. A turn that ended meanwhile is left to the call after
+ * its reply.
+ */
+export function refreshOverview<S extends Session>(host: OverviewHost<S>): Promise<void> {
+  return host.inOrder(async () => {
+    const s = await host.read()
+    if (!s.presence.isTurnRunning) return
+    const ask: AskCatchUpOverview = input => host.ask(overviewMidTurnPrompt(input, s.turn), OVERVIEW_SYSTEM)
+    await askAndWriteOverview(host, s, ask, s.hostTasks, s.presence.turnsApplied)
+  })
+}
+
 /**
  * Asks the model to catch the ledger up over `conversation`, for a host that reads the conversation as text. A null
  * or empty `conversation` is unreadable. `screen` is what the person sees of the inbox.
@@ -224,25 +261,9 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
   const wantsCatchUp = (s: S) => canCatchUp && needsCatchUp(s)
   const hasWork = (s: S) => s.pending.length > 0 || wantsCatchUp(s)
   const writing: Promise<void>[] = []
-  /**
-   * Runs the Overview call for an applied update and writes its answer, or saves why it wrote nothing. An answer that
-   * holds prose is asked once more.
-   */
-  const writeOverview = async (after: S, ask: AskCatchUpOverview, tasks: HostTask[]) =>
-    host.inOrder(async () => {
-      const { ledger } = await host.read()
-      const at = await host.now()
-      const input = { last: ledger.overview, asks: ledger.items, tasks, now: at }
-      const { last } = await askOverview(async () => ({ text: await ask(input).catch(() => null) }))
-      const answer = last.text === null ? null : parseOverview(last.text)
-      const now = await host.now()
-      const appliedAfter = after.presence.turnsApplied
-      await host.update(x =>
-        answer === null
-          ? failedOverview(x, last.text, appliedAfter, now)
-          : appliedOverview(x, answer, appliedAfter, now),
-      )
-    })
+  /** Runs the Overview call for an applied update, once the session's earlier Overview calls have finished. */
+  const writeOverview = (after: S, ask: AskCatchUpOverview, tasks: HostTask[]) =>
+    host.inOrder(async () => askAndWriteOverview(host, await host.read(), ask, tasks, after.presence.turnsApplied))
   const followUp = (run: Promise<void>) => {
     const settled = run.catch(() => undefined)
     if (host.background) host.background(settled)

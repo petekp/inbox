@@ -151,6 +151,7 @@ test('a LINK ties a running child or an open ask to a subject, even one the same
 
   expect(linked.children[0]?.subjectId).toBe('s1')
   expect(linked.askSubjects).toEqual({ i1: 's1' })
+  expect(after(linked, 'NEW: queued | Docs | outline', 200).askSubjects).toEqual({})
 })
 
 test('a subject folded into another passes its linked asks to it', () => {
@@ -161,7 +162,7 @@ test('a subject folded into another passes its linked asks to it', () => {
     new Set(['i1']),
   )
 
-  expect(after(two, 'DROP: s2 | part of offline | INTO s1', 200).askSubjects).toEqual({ i1: 's1' })
+  expect(after(two, 'DROP: s2 | part of offline | INTO s1', 200, new Set(['i1'])).askSubjects).toEqual({ i1: 's1' })
 })
 
 test('a DONE may name a subject the same answer adds, even a name longer than the list keeps', () => {
@@ -267,7 +268,7 @@ test('the page lists subjects newest first with code-written ages, and an open r
   expect(p.goal).toBe('Work offline')
   expect(p.live).toBe('Idle · last reply 2m ago')
   expect(shape(p.rows)).toEqual(['◆ Offline mode: needs a sync pick 10m', '-- Seen', '○ Docs: outline ready 2h'])
-  const seenAt = { ...after(o, 'WAS: s2 | sync on every save', 90 * MIN), lastLookAt: 95 * MIN }
+  const seenAt = { ...after(o, 'WAS: s2 | sync on every save', 90 * MIN, new Set(['i1'])), lastLookAt: 95 * MIN }
   const seen = page(seenAt, now, {}, null, [askItem('i1')]).rows
   expect(shape(seen)).toEqual(['◆ Offline mode: needs a sync pick 10m', '○ Docs: outline ready 2h'])
   expect(seen[0]).toMatchObject({ kind: 'subject', was: null })
@@ -409,7 +410,7 @@ test('a rule sets each item on the page apart: a subject and the rows under it a
       { ref, kind: 'subagent', name: `Review ${ref}`, startedAt: 80 * MIN, endedAt: null, lastActivityAt: now - MIN },
       now,
     )
-  o = after(o, 'LINK: c1 | s3\nLINK: c2 | s3', 80 * MIN)
+  o = after(o, 'LINK: c1 | s3\nLINK: c2 | s3', 80 * MIN, new Set(['i1']))
   const rows = page({ ...o, lastLookAt: 50 * MIN }, now, {}, null, [askItem('i1')]).rows
 
   expect(rows.map(r => `${r.isRuledAbove ? '── ' : ''}${shape([r])[0]}`)).toEqual([

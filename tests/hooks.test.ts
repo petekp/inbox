@@ -10,6 +10,7 @@ import { cellWidth } from '../hooks/text'
 import type { Item, Session } from '../types'
 import { demoView } from '../hooks/demo'
 import { OVERVIEW_SYSTEM } from '../hooks/model-text'
+import { OVERVIEW_REFRESH_MS } from '../hooks/session'
 import { checkActions, prBlockActions, prCheckId, prThreadId, threadActions, threadSentIn } from '../hooks/pr-tab'
 import { failingChecks, waitingThreads } from '../hooks/prs'
 import {
@@ -1309,6 +1310,34 @@ test('a ledger update shows before its Overview call returns', async ($, on) => 
   release()
   await clock.settle()
   expect(session!.ledger.overview?.goal).toBe('Scaffolding the command')
+})
+
+test('a turn past the wait runs the Overview call on its work so far at its next tool call, once, and no ledger call until the reply', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  const prompts: string[] = []
+  world($, on, prompts)
+  overviewReply = 'GOAL: Adding a greeting CLI'
+  let session: Pick<Session, 'ledger'> | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'add a greeting cli', turnId: 't1' })
+  await $.tool.call({ tool: 'Bash', command: 'ls', description: 'ls' } as never)
+  await clock.settle()
+  expect(overviewPrompts).toEqual([])
+
+  await clock.advance(OVERVIEW_REFRESH_MS)
+  await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'npm test' } as never)
+  await $.tool.call({ tool: 'Bash', command: 'npm run build', description: 'build' } as never)
+  await clock.settle()
+  expect(overviewPrompts).toHaveLength(1)
+  expect(overviewPrompts[0]).toContain('npm test')
+  expect(overviewPrompts[0]).not.toContain('<reply>')
+  expect(prompts).toEqual([])
+  expect(session!.ledger.overview?.goal).toBe('Adding a greeting CLI')
 })
 
 test('a ledger call that gives no usable answer runs no Overview call', async ($, on) => {

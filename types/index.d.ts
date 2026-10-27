@@ -474,6 +474,8 @@ export type Session = {
   stop: Stop | null
   /** The last Overview call that wrote nothing, until a later one writes. */
   overviewFailure: OverviewFailure | null
+  /** When an Overview call last wrote, or failed, or started while a turn ran. Null before the first. */
+  lastOverviewCallAt: number | null
   /** The agent's own task list, when its host reports one. Empty when the agent keeps none. */
   hostTasks: HostTask[]
   /**

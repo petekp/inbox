@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import { guidanceText, OVERVIEW_SYSTEM, systemText } from '../../hooks/model-text'
 import { EMPTY_OVERVIEW, LOOK_MIN_MS } from '../../hooks/overview'
+import { OVERVIEW_REFRESH_MS } from '../../hooks/session'
 import { NO_HOLDS } from '../../hooks/view'
 import { createInbox, stopOf } from '../src/host'
 import type { HostDeps } from '../src/host'
@@ -304,6 +305,25 @@ test('a reply’s Overview comes from the separate Overview call, after the ledg
   expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Use Node or Python?'])
   expect(overviewCompletions).toHaveLength(1)
   expect(overviewCompletions[0]!.prompt).toContain('Plan written. Which runtime?')
+})
+
+test('a run past the wait runs the Overview call on its work so far at its next tool start, once', async () => {
+  createInbox(pi(), deps())
+  overviewReply = 'GOAL: Adding caching'
+  const bash = (command: string) => call('tool_execution_start', { toolName: 'bash', args: { command } })
+  await prompt('Add caching')
+  await call('agent_start', { type: 'agent_start' })
+  await bash('ls')
+  await settle()
+  expect(overviewCompletions).toHaveLength(0)
+  clock += OVERVIEW_REFRESH_MS
+  await bash('npm test')
+  await bash('npm run build')
+  await settle()
+  expect(overviewCompletions).toHaveLength(1)
+  expect(overviewCompletions[0]!.prompt).toContain('ran: npm test')
+  expect(overviewCompletions[0]!.prompt).not.toContain('<reply>')
+  expect(state().ledger.overview.goal).toBe('Adding caching')
 })
 
 test('a failed Overview call leaves the ledger update applied with no Overview', async () => {
