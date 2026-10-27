@@ -894,6 +894,54 @@
     ]
   },
   {
+    "name": "record-repeat-changes-rec",
+    "about": "After a Compare press whose comparison changes the pick, the agent records the open question again with the new recommendation, and the record's answer says the recommendation changed. The reply gives the new pick.",
+    "ledger": {
+      "nextId": 4,
+      "turn": 2,
+      "items": [
+        {
+          "id": "i3",
+          "kind": "question",
+          "label": null,
+          "from": "record",
+          "ask": "Which cache should the product API use?",
+          "options": ["Redis", "In-memory"],
+          "rec": "In-memory",
+          "helps": [],
+          "turn": 1,
+          "at": 1
+        }
+      ]
+    },
+    "files": {
+      ".scratch/compare/caches.html": "<!doctype html><title>Caches</title><table><tr><th>Redis</th><th>In-memory</th></tr><tr><td>Same prices on all 4 instances</td><td>Up to 5 minutes of stale prices</td></tr></table>\n"
+    },
+    "prompt": "I pressed Compare on the open cache question. Your background subagent has reported back. With In-memory, each of the API's four instances can serve prices up to five minutes stale, so a checkout can charge a price the product page no longer shows. With Redis, every instance serves the same prices, and reads are 3 ms slower. One thing it did not expect: the staging stack already runs a Redis server, so choosing Redis adds no new service there. It built the comparison page from the inbox's template at .scratch/compare/caches.html in this checkout. The Compare request said: \"When the comparison is done, reply without a table, since the page holds the measures. Give your pick and say whether it changed, your reason in one line, one line on anything you did not expect, and the page's absolute path. Also call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps. That marks it compared. Call each choice by its name as listed.\" Below it, it quoted the question: \"Which cache should the product API use?\" Options: Redis / In-memory. Finish the comparison now.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "min": 1,
+        "match": {
+          "rec": "^redis$"
+        },
+        "result": "changed its recommendation to Redis"
+      },
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
+      },
+      {
+        "reply": "redis"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
     "name": "compare-page-step-is-built-page",
     "about": "After a Compare press that built a page from the comparison template, the agent records the built page as the step, not the template or the JSON file the page was built from. The reply has no table, and gives the pick, the unexpected finding and the page's path.",
     "ledger": {

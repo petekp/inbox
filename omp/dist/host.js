@@ -657,6 +657,9 @@ function recommendedOption(options, rec) {
   const byLabel = /^\s*(?:option\s+)?([a-z]|\d{1,2})\s*[.!]?\s*$/i.exec(rec)?.[1]?.toLowerCase();
   return best ?? (byLabel ? options.find((o) => label(o) === byLabel) ?? null : null);
 }
+function restatedRec(options, old, stated) {
+  return recommendedOption(options, stated) ?? recommendedOption(options, old);
+}
 function howFromOutcome(outcome) {
   if (outcome === "dismissed")
     return "dismissed";
@@ -1052,6 +1055,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
       items[at] = {
         ...restated,
         helps: a.helps.reduce((all, h) => withHelp(all, h), restated.helps),
+        rec: restatedRec(restated.options, restated.rec, a.rec),
         ...a.isDesignChoice ? { isDesignChoice: true } : {}
       };
       addedIds.push(restated.id);
@@ -1121,7 +1125,7 @@ function withUpdate(item, updated) {
   if (!change || item.kind !== "question")
     return item;
   const options = change.options ?? item.options;
-  return { ...item, options, rec: recommendedOption(options, change.rec ?? item.rec) };
+  return { ...item, options, rec: restatedRec(options, item.rec, change.rec) };
 }
 function addFinding(ledger, finding) {
   const same = ledger.findings.find((f) => sameAsk(f.title, finding.title)) ?? ledger.items.find((i) => restates(i.ask, finding.title));
@@ -1149,14 +1153,16 @@ function addAgentItem(ledger, entry, now) {
   if (openItem) {
     const helps = entry.helps.reduce(withHelp, openItem.helps);
     const isDesignChoice = openItem.isDesignChoice === true || entry.isDesignChoice === true;
-    const reported = { ...openItem, helps, isDesignChoice, reportedAt: now };
+    const rec = restatedRec(openItem.options, openItem.rec, entry.rec);
+    const reported = { ...openItem, helps, isDesignChoice, rec, reportedAt: now };
     const items = ledger.items.map((i) => i === openItem ? reported : i);
     return {
       ledger: { ...ledger, items },
       is: "open",
       id: openItem.id,
       addedSteps: helps.length - openItem.helps.length,
-      isNewlyMarked: isDesignChoice && openItem.isDesignChoice !== true
+      isNewlyMarked: isDesignChoice && openItem.isDesignChoice !== true,
+      newRec: rec !== openItem.rec ? rec : null
     };
   }
   const isAskable = (c) => c.how === "expired" || c.how === "claude";
@@ -4103,7 +4109,8 @@ function recordItem(host, ledger, input, now) {
   if (r.is === "open") {
     const changes = [
       ...r.addedSteps > 0 ? ["added its new steps"] : [],
-      ...r.isNewlyMarked ? ["marked it as a design choice"] : []
+      ...r.isNewlyMarked ? ["marked it as a design choice"] : [],
+      ...r.newRec ? [`changed its recommendation to ${r.newRec}`] : []
     ];
     const updated = changes.length > 0 ? ` and ${changes.join(" and ")}` : "";
     return unchanged(r.ledger, `Already open, so this record updated it${updated}.${leftOut}`);

@@ -495,6 +495,9 @@ function recommendedOption(options, rec) {
   const byLabel = /^\s*(?:option\s+)?([a-z]|\d{1,2})\s*[.!]?\s*$/i.exec(rec)?.[1]?.toLowerCase();
   return best ?? (byLabel ? options.find((o) => label(o) === byLabel) ?? null : null);
 }
+function restatedRec(options, old, stated) {
+  return recommendedOption(options, stated) ?? recommendedOption(options, old);
+}
 function howFromOutcome(outcome) {
   if (outcome === "dismissed") return "dismissed";
   if (outcome === EXPIRED) return "expired";
@@ -859,6 +862,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
       items[at] = {
         ...restated,
         helps: a.helps.reduce((all, h) => withHelp(all, h), restated.helps),
+        rec: restatedRec(restated.options, restated.rec, a.rec),
         ...a.isDesignChoice ? { isDesignChoice: true } : {}
       };
       addedIds.push(restated.id);
@@ -923,7 +927,7 @@ function withUpdate(item, updated) {
   const change = updated.findLast((c) => c.id === item.id);
   if (!change || item.kind !== "question") return item;
   const options = change.options ?? item.options;
-  return { ...item, options, rec: recommendedOption(options, change.rec ?? item.rec) };
+  return { ...item, options, rec: restatedRec(options, item.rec, change.rec) };
 }
 function closedState(d) {
   if (d.how === "dismissed") return "dismissed";
