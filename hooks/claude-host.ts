@@ -8,7 +8,8 @@ import type { Away, LastAction, Ledger, OldPresence, PrViews, SentPrompt, Stop }
 import type { Run } from './gh'
 import { EMPTY, KEPT_SESSIONS, pruneClosed } from './ledger'
 import { CLAUDE_CODE } from './model-text'
-import { SETTLED_MS } from './view'
+import { isShownSince } from './view'
+import type { ShownTab } from './view'
 import { COMPARE_PAGE_FILE, localPath, openCommands, withArrival, withRewrite, withUnconfirmed } from './presses'
 import type { Effect } from './presses'
 import { emptySession, upgradeSession } from './session'
@@ -22,11 +23,16 @@ export type ModSession = Session & { revision: number }
 export const NO_SESSION: ModSession = { ...emptySession(), revision: 0 }
 export const PRESENT: Away = { lastActiveAt: 0, isAway: false, minute: 0 }
 
+/** The tab the pane shows, whether it shows the sample, and since when. */
+export type Shown = { tab: ShownTab; isDemo: boolean; since: number }
+
 // The engine lists the values a file reads and writes from that file's own consts, so register.tsx defines these
-// three again.
+// four again.
 const SESSION = atom({ plugin: 'inbox', key: 'session' } as const, NO_SESSION)
 const AWAY = atom({ plugin: 'inbox', key: 'away' } as const, PRESENT)
 const UNREADABLE = atom({ plugin: 'inbox', key: 'unreadable' } as const, null as string | null)
+/** Null while the pane is closed. */
+const SHOWN = atom({ plugin: 'inbox', key: 'shown' } as const, null as Shown | null)
 
 const OLD_LEDGER = atom({ plugin: 'inbox', key: 'ledger' } as const, EMPTY)
 const OLD_PRESENCE = atom(
@@ -178,8 +184,8 @@ export type Changed = { before: Session; after: Session; isDrawn: boolean }
  * Changes the session of `owner`. While its conversation is drawn, the change runs on the drawn session and is
  * written only if no other write landed meanwhile; otherwise it runs again on what landed. Once the conversation
  * moved on, the change goes to its saved session. A change that returns the session it was given writes nothing.
- * Every write prunes the closed lists, keeping `held` rows and the rows a press settled less than SETTLED_MS ago, which
- * are still drawn. A write that changes more than the running turn saves.
+ * Every write prunes the closed lists, keeping `held` rows and the rows closed or pressed while the pane shows its
+ * tab, which stay drawn. A write that changes more than the running turn saves.
  */
 export async function changeSession(
   $: EngineInterface,
@@ -198,9 +204,13 @@ export async function changeSession(
     // A resume drops the running turn, so a write that changes only the turn, such as each tool call's activity,
     // leaves the saved copy alone.
     const isTurnOnly = (Object.keys(changed) as (keyof Session)[]).every(k => k === 'turn' || changed[k] === before[k])
-    const now = await $.clock.now()
-    const settling = Object.entries(changed.lastActions).flatMap(([id, a]) => (now - a.at < SETTLED_MS ? [id] : []))
-    const kept = new Set([...held, ...settling])
+    const shownSince = (await read($, SHOWN))?.since ?? null
+    const inPlace = [
+      ...Object.entries(changed.lastActions).map(([id, a]) => ({ id, at: a.at })),
+      ...changed.ledger.closed,
+      ...changed.ledger.closedFindings.map(f => ({ id: f.id, at: f.closedAt })),
+    ].flatMap(x => (isShownSince(x.at, shownSince) ? [x.id] : []))
+    const kept = new Set([...held, ...inPlace])
     const next = { ...changed, ledger: pruneClosed(changed.ledger, kept), heldRows: [...held] }
     let landed: ModSession | null = null
     await update($, SESSION, cur => {

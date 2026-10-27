@@ -283,7 +283,7 @@ test('keys in the reply field never switch tabs or move the selection', () => {
 test('Discard on a held row drops the draft and records the discard', () => {
   const state = demoState(NOW)
   state.ledger = closeItem(state.ledger, 'd11', { how: 'claude', outcome: 'closed by omp: answered in chat' }, NOW)
-  const holds = { replies: { d11: NOW }, discarded: {} }
+  const holds = { replies: { d11: NOW }, discarded: {}, shownSince: NOW }
   const held = { ...screenOf(), view: sessionView(state, NOW, SETTLED_MS, true, holds) }
   const heldRow = waiting(held, 'd11')
   expect(heldRow.state.is).toBe('held')
@@ -303,8 +303,9 @@ async function afterPresses(...presses: Parameters<ReturnType<typeof demoSource>
     settleWindowMs: SETTLED_MS,
     comparePage: '/omp/dist/compare-page.html',
   })
-  for (const p of presses) await source.press(p, NO_HOLDS)
-  const screen = async () => ({ ...(await source.screen(NO_HOLDS)), modelName: null })
+  const holds = { ...NO_HOLDS, shownSince: NOW }
+  for (const p of presses) await source.press(p, holds)
+  const screen = async () => ({ ...(await source.screen(holds)), modelName: null })
 
   return {
     screen,
@@ -332,14 +333,20 @@ test('after the reply, an explained row that stays open reads its result', async
   expect(text(screen, onRow(waiting(screen, 'd11')))).toContain('✓ Explained')
 })
 
-test('a row closed with Done shows its label and Undo, and u returns the undo press', async () => {
+test('a row closed with Done shows its label and Undo, u returns the undo press, and the row stays after Undo ends until the panel switches tab', async () => {
   const demo = await afterPresses({ action: 'done', id: 'd14' })
   const screen = await demo.screen()
   const out = text(screen, INITIAL_UI)
   expect(out).toMatch(/Put on the glasses and pair them with this Mac\s+Done\s+u Undo/)
   expect(handleKey(screen, INITIAL_UI, 'u', NOW).press).toEqual({ action: 'undo', id: 'd14' })
-  const gone = await demo.advance()
-  expect(text(gone, INITIAL_UI)).not.toContain('u Undo')
+  const later = await demo.advance()
+  expect(text(later, INITIAL_UI)).toMatch(/Put on the glasses and pair them with this Mac\s+Done/)
+  expect(text(later, INITIAL_UI)).not.toContain('u Undo')
+  expect(text(later, INITIAL_UI)).toContain('1 closed')
+  const away = handleKey(later, INITIAL_UI, 'tab', NOW + 1).ui
+  const back = handleKey(later, away, 'shift+tab', NOW + 1).ui
+  expect(text(later, back)).not.toContain('Put on the glasses')
+  expect(text(later, back)).toContain('2 closed')
 })
 
 test('a settled row is skipped when moving and the selection leaves it', async () => {
@@ -582,12 +589,18 @@ test('the demo says its presses send nothing', () => {
   expect(text(screenOf({ isDemo: true }), INITIAL_UI)).toContain('Buttons here send nothing.')
 })
 
-test('the band shows both counts and how to open the inbox', () => {
+test('the band shows both counts with their labels at full brightness, and how to open the inbox', () => {
   const screen = screenOf()
-  const band = strip(bandLines(screen, 80, NOW, style)[0]!)
-  expect(band).toContain(`Asks ${screen.view.needsYou.count}`)
-  expect(band).toContain(`Finds ${screen.view.findings.count}`)
-  expect(band).toContain('/inbox to open')
+  const line = bandLines(screen, 80, NOW, style)[0]!
+  const dimmed = [...line.matchAll(/\x1b\[2m(.*?)\x1b\[22m/g)].map(m => m[1])
+  expect(strip(line)).toContain(`Asks ${screen.view.needsYou.count}`)
+  expect(strip(line)).toContain(`Finds ${screen.view.findings.count}`)
+  expect(dimmed.some(t => t?.includes('Asks') || t?.includes('Finds'))).toBe(false)
+  expect(strip(line)).toContain('/inbox to open')
+  const empty = { ...screenOf(), view: sessionView(emptyState('s'), NOW, SETTLED_MS, true) }
+  expect([...bandLines(empty, 80, NOW, style)[0]!.matchAll(/\x1b\[2m(.*?)\x1b\[22m/g)].map(m => m[1])).toContain(
+    'Nothing needed',
+  )
 })
 
 test('no drawn line is wider than the panel, and a short panel keeps the selected row in view', () => {

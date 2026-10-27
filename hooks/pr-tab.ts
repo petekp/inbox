@@ -23,7 +23,7 @@ import {
   waitingThreads,
 } from './prs'
 import type { IsThreadSent, PrStatus } from './prs'
-import { DOT, SETTLED_MS, isAgain, outAction, pressFeedbackIn, pressOutAction } from './view'
+import { DOT, SETTLED_MS, isAgain, isShownSince, outAction, pressFeedbackIn, pressOutAction } from './view'
 import type { ActionEmphasis, PressState, RowWait } from './view'
 
 export const MAX_PRS = 12
@@ -311,25 +311,31 @@ export function keepsView(prState: PrViews, linked: string[], ref: string): bool
   return isTracked(prState, linked, ref) || (linked.includes(ref) && isLeftOut(prState, ref))
 }
 
-export function isDismissing(lastActions: Record<string, LastAction>, ref: string, now: number): boolean {
-  const mark = lastActions[prMarkId(ref)]
-
-  return mark?.action === 'pr-dismiss' && now - mark.at < SETTLED_MS
+/** Whether the PR's last press dismissed it. Its view stays, so its settled block and Undo can draw it. */
+export function isDismissed(lastActions: Record<string, LastAction>, ref: string): boolean {
+  return lastActions[prMarkId(ref)]?.action === 'pr-dismiss'
 }
 
+export type DrawnPr = { pr: PrView; isSettled: boolean; canUndo: boolean }
+
+/**
+ * The PR blocks a look draws, in order. A PR dismissed while the look shows the PRs tab stays as a settled block until
+ * the person leaves the tab, and offers Undo for `SETTLED_MS`.
+ */
 export function drawnPrs(
   prState: PrViews,
   linked: string[],
   lastActions: Record<string, LastAction>,
   now: number,
-): { pr: PrView; isSettled: boolean }[] {
-  return inPrOrder(Object.values(prState.views)).flatMap((pr): { pr: PrView; isSettled: boolean }[] =>
-    isTracked(prState, linked, pr.ref)
-      ? [{ pr, isSettled: false }]
-      : isDismissing(lastActions, pr.ref, now)
-        ? [{ pr, isSettled: true }]
-        : [],
-  )
+  shownSince: number | null,
+): DrawnPr[] {
+  return inPrOrder(Object.values(prState.views)).flatMap((pr): DrawnPr[] => {
+    if (isTracked(prState, linked, pr.ref)) return [{ pr, isSettled: false, canUndo: false }]
+    const mark = lastActions[prMarkId(pr.ref)]
+    if (mark?.action !== 'pr-dismiss' || !isShownSince(mark.at, shownSince)) return []
+
+    return [{ pr, isSettled: true, canUndo: now - mark.at < SETTLED_MS }]
+  })
 }
 
 export const PR_TONES: Record<PrStatus, 'needsYou' | 'done' | 'findings' | 'error' | null> = {
@@ -620,7 +626,7 @@ export function applyPrPress(
     return { ledger, drop: [], ...a, lasts, effects }
   }
   if (p.action === 'pr-undo') {
-    // Like an item's Undo, it does not check the settle window, so a press just after it ends still lands.
+    // Like an item's Undo, it does not check SETTLED_MS, so a press just after its button goes still lands.
     if (!pr || isTracked(prState, ledger.prs, p.ref) || lastActions[markId]?.action !== 'pr-dismiss') return stale
     return applied({ ledger: { ...ledger, prs: [...ledger.prs, p.ref] }, drop: [markId] })
   }
