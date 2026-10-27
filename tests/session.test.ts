@@ -26,7 +26,7 @@ import {
   upgradeSession,
 } from '../hooks/session'
 import type { Session } from '../hooks/session'
-import type { RowNote } from '../types'
+import type { Item, RowNote } from '../types'
 import { press, runUpdates, wakeForDone } from '../hooks/session-host'
 import type { CatchUpReply } from '../hooks/session-host'
 import { allRows, COMPARE_LIMIT_MS, feedbackText, footerStatus, NO_HOLDS } from '../hooks/view'
@@ -289,7 +289,7 @@ const answer = parseOverview('GOAL: Work offline\nNEW: working | Offline mode | 
 
 const withOverview = (s: Session): Session => ({
   ...s,
-  ledger: { ...EMPTY, overview: applyOverview(null, answer, 1000) },
+  ledger: { ...EMPTY, overview: applyOverview(null, answer, 1000, new Set()) },
 })
 
 test('an Overview answer is written to the ledger after later updates and clears a saved failure, and both are dropped when their update is gone', () => {
@@ -350,16 +350,31 @@ test('a failed Overview call shows in the status line on the Overview tab, in pl
   expect(footerStatus('prs', v.status, prs, v.overviewPage.error).error).toBeNull()
 })
 
-test('the Overview page draws each status with its mark and tone', () => {
-  const statuses = ['working', 'queued', 'waits-on-you', 'waits-on-other', 'problem'] as const
+const ITEM: Item = {
+  id: 'i1',
+  kind: 'question',
+  label: null,
+  ask: 'Use Node or Python?',
+  options: ['Node', 'Python'],
+  rec: 'Node',
+  helps: [],
+  turn: 1,
+  at: null,
+  from: 'record',
+}
+
+test('the Overview page draws each status with its mark and tone, and ◆ on a subject an open ask holds up', () => {
+  const statuses = ['working', 'queued', 'waits-on-other', 'queued'] as const
+  const asks = new Set([ITEM.id])
   const opened = applyOverview(
     null,
-    parseOverview(statuses.map((st, n) => `NEW: ${st} | Part ${n} | step`).join('\n'))!,
+    parseOverview([...statuses.map((st, n) => `NEW: ${st} | Part ${n} | step`), `LINK: ${ITEM.id} | s4`].join('\n'))!,
     1000,
+    asks,
   )
-  const closed = applyOverview(opened, parseOverview('DONE: s1 | built')!, 2000)
+  const closed = applyOverview(opened, parseOverview('DONE: s1 | built')!, 2000, asks)
   const rows = sessionView(
-    { ...emptySession(), ledger: { ...EMPTY, overview: closed } },
+    { ...emptySession(), ledger: { ...EMPTY, items: [ITEM], overview: closed } },
     3000,
     1000,
     true,
@@ -369,9 +384,8 @@ test('the Overview page draws each status with its mark and tone', () => {
   expect(rows).toEqual([
     ['Part 0', '✓', 'done'],
     ['Part 1', '○', null],
-    ['Part 2', '◆', 'needsYou'],
-    ['Part 3', '◌', null],
-    ['Part 4', '!', 'issue'],
+    ['Part 2', '◌', null],
+    ['Part 3', '◆', 'needsYou'],
   ])
 })
 
@@ -417,7 +431,7 @@ test('a sample saved without an Overview is replaced, and the sample session car
 
 test('a conversation start carries the goal and where each open subject stands, not on a resume the guidance, and nothing for an empty session', () => {
   const described = emptySession()
-  const ledger = { ...described.ledger, overview: applyOverview(null, answer, 1000) }
+  const ledger = { ...described.ledger, overview: applyOverview(null, answer, 1000, new Set()) }
   const carried = startContext(CLAUDE_CODE, { ...described, ledger }, 'resume')
   expect(carried).toContain('Working on: Work offline')
   expect(carried).toContain('- Offline mode: queue built (working)')

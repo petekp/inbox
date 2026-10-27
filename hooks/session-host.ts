@@ -8,7 +8,7 @@ import {
   systemText,
   transcriptCatchUpPrompt,
 } from './model-text'
-import type { Host } from './model-text'
+import type { Host, OverviewInput } from './model-text'
 import { fetchTracked, pressRowId, splitLinked } from './pr-tab'
 import type { GhRun, PrPress } from './pr-tab'
 import {
@@ -36,7 +36,7 @@ import {
 } from './session'
 import type { Pressed, SendOutcome, Session } from './session'
 import type { ReplyHolds } from './view'
-import type { HostTask, Overview, RowNote } from '../types'
+import type { HostTask, RowNote } from '../types'
 
 export type Exclusive<T> = { acquired: true; value: T } | { acquired: false }
 
@@ -123,11 +123,8 @@ export type SessionHost<S extends Session> = {
   comparePage: string
 }
 
-/**
- * Asks the Overview call for the changes the exchange or the whole conversation makes, given the Overview before and
- * the time its running children are read at. Null when the call fails.
- */
-export type AskCatchUpOverview = (last: Overview | null, tasks: HostTask[], now: number) => Promise<string | null>
+/** Asks the Overview call for the changes the exchange or the whole conversation makes. Null when the call fails. */
+export type AskCatchUpOverview = (input: OverviewInput) => Promise<string | null>
 
 /** What a host's catch-up found: the model's answer to apply, or why there is none. */
 export type CatchUpReply =
@@ -181,7 +178,7 @@ export async function askOverConversation(
         kind: 'reply',
         text,
         source: conversation,
-        overview: (last, tasks, now) => ask(overviewCatchUpPrompt(last, conversation, tasks, now), OVERVIEW_SYSTEM),
+        overview: input => ask(overviewCatchUpPrompt(input, conversation), OVERVIEW_SYSTEM),
       }
 }
 
@@ -235,9 +232,8 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
     host.inOrder(async () => {
       const { ledger } = await host.read()
       const at = await host.now()
-      const { last } = await askOverview(async () => ({
-        text: await ask(ledger.overview, tasks, at).catch(() => null),
-      }))
+      const input = { last: ledger.overview, asks: ledger.items, tasks, now: at }
+      const { last } = await askOverview(async () => ({ text: await ask(input).catch(() => null) }))
       const answer = last.text === null ? null : parseOverview(last.text)
       const now = await host.now()
       const appliedAfter = after.presence.turnsApplied
@@ -286,11 +282,7 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
             })
             if (isApplied)
               followUp(
-                writeOverview(
-                  after,
-                  (last, tasks, now) => host.ask(overviewPrompt(last, next.ex, tasks, now), OVERVIEW_SYSTEM),
-                  next.ex.tasks,
-                ),
+                writeOverview(after, input => host.ask(overviewPrompt(input, next.ex), OVERVIEW_SYSTEM), next.ex.tasks),
               )
             if (after.pending[0]?.failed && !next.failed) return 'stop' as const
           }

@@ -1153,9 +1153,9 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
   ])
   // The Overview call reads the transcript.
   const overview: AskCatchUpOverview | null = transcript
-    ? async (last, tasks, at) => {
+    ? async input => {
         if (!isCurrent(owner)) return null
-        const r = await askLedgerModel($, overviewCatchUpPrompt(last, transcript, tasks, at), OVERVIEW_SYSTEM, 90_000)
+        const r = await askLedgerModel($, overviewCatchUpPrompt(input, transcript), OVERVIEW_SYSTEM, 90_000)
 
         return r.isAnswered ? r.text : null
       }

@@ -772,7 +772,7 @@ export const ROW_TABS = TAB_NAMES.filter((t): t is TabName & { id: Tab } => isRo
 export const LISTED_TABS = TAB_NAMES.filter((t): t is TabName & { id: ListedTab } => isListedTab(t.id))
 
 /** A mark's tone on the Overview. Null draws it muted. */
-export type OverviewTone = 'needsYou' | 'done' | 'issue' | null
+export type OverviewTone = 'needsYou' | 'done' | null
 
 /** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */
 export type OverviewBranch = 'mid' | 'last'
@@ -866,12 +866,12 @@ const OPEN_ROWS = 7
 const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: OverviewTone }> = {
   working: { mark: '●', tone: null },
   queued: { mark: '○', tone: null },
-  'waits-on-you': { mark: '◆', tone: 'needsYou' },
   'waits-on-other': { mark: '◌', tone: null },
-  problem: { mark: '!', tone: 'issue' },
   done: { mark: '✓', tone: 'done' },
   dropped: { mark: '✗', tone: null },
 }
+/** The mark of an open subject that an open ask holds up, in place of its status's mark. */
+const HELD_MARK: { mark: string; tone: OverviewTone } = { mark: '◆', tone: 'needsYou' }
 
 /** The marks a running row cycles through in the text looks, one each `RUNNING_FRAME_MS`. */
 export const RUNNING_FRAMES = ['●', '◉', '◎', '◉'] as const
@@ -947,7 +947,7 @@ function childRow(c: Child, now: number, branch: OverviewBranch | null): Overvie
 
 export function overviewPage(
   s: {
-    ledger: Pick<Ledger, 'overview'>
+    ledger: Pick<Ledger, 'overview' | 'items'>
     presence: Session['presence']
     place?: Session['place']
     overviewFailure?: Session['overviewFailure']
@@ -958,6 +958,8 @@ export function overviewPage(
   const look = o?.lastLookAt ?? null
   const subjects = (o?.subjects ?? []).filter(x => x.into === null)
   const isNew = (x: Subject) => look === null || x.changedAt > look
+  const heldIds = new Set(s.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
+  const isHeld = (x: Subject) => isOpen(x) && heldIds.has(x.id)
   const newClosed = subjects
     .filter(x => !isOpen(x) && isNew(x))
     .sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0))
@@ -966,7 +968,7 @@ export function overviewPage(
   const queuedOver = Math.max(0, open.length - OPEN_ROWS)
   const hiddenQueued = new Set(
     open
-      .filter(x => x.status === 'queued')
+      .filter(x => x.status === 'queued' && !isHeld(x))
       .sort((x, y) => x.changedAt - y.changedAt)
       .slice(0, queuedOver)
       .map(x => x.id),
@@ -992,8 +994,9 @@ export function overviewPage(
     rows.push({
       kind: 'subject',
       id: x.id,
-      ...SUBJECT_MARKS[x.status],
-      isRunning: x.status === 'working' && (s.presence.isTurnRunning || under.some(c => !isQuiet(c, now))),
+      ...(isHeld(x) ? HELD_MARK : SUBJECT_MARKS[x.status]),
+      isRunning:
+        x.status === 'working' && !isHeld(x) && (s.presence.isTurnRunning || under.some(c => !isQuiet(c, now))),
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       was: isNew(x) ? x.was : null,

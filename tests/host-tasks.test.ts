@@ -115,6 +115,8 @@ test('a saved list keeps only well-formed tasks, and the Overview call reads the
   expect(tasksText(saved)).toBe('TASK: done | Fine')
 
   const ex = { turn: 1, person: 'go', trigger: null, activity: [], reply: 'ok', press: null, screen: '', tasks: [] }
-  expect(overviewPrompt(null, ex, saved, 0)).toContain('<tasks>\nTASK: done | Fine\n</tasks>')
-  expect(overviewPrompt(null, ex, [], 0)).not.toContain('<tasks>')
+  expect(overviewPrompt({ last: null, asks: [], tasks: saved, now: 0 }, ex)).toContain(
+    '<tasks>\nTASK: done | Fine\n</tasks>',
+  )
+  expect(overviewPrompt({ last: null, asks: [], tasks: [], now: 0 }, ex)).not.toContain('<tasks>')
 })

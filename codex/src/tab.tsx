@@ -1311,7 +1311,6 @@ function pulseInStep(el: HTMLElement | null) {
 const TONE_CLASS: Record<NonNullable<OverviewTone>, string> = {
   needsYou: 'tone-needsYou',
   done: 'done',
-  issue: 'issue',
 }
 
 function markClassOf(tone: OverviewTone, isRunning: boolean): string {

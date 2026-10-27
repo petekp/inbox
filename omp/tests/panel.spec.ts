@@ -757,6 +757,7 @@ test('on the Overview page, a subject’s text wraps to three lines and is cut w
       null,
       parseOverview(`NEW: working | ${name} | being written with an example for each flag and its default`)!,
       NOW,
+      new Set(),
     ),
   }
   const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, true, NO_HOLDS) })

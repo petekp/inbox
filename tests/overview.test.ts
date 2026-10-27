@@ -3,6 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import {
   applyOps,
   applyOverview,
+  asksText,
   childActive,
   childEnded,
   EMPTY_OVERVIEW,
@@ -19,7 +20,7 @@ import type { Op } from '../hooks/overview'
 import { emptySession } from '../hooks/session'
 import { CHILD_ROWS, overviewPage, QUIET_MS } from '../hooks/view'
 import type { OverviewRow } from '../hooks/view'
-import type { Overview, Session } from '../types'
+import type { Item, Overview, Session } from '../types'
 
 const MIN = 60_000
 
@@ -30,7 +31,23 @@ const opsOf = (text: string): Op[] => {
   return answer.ops
 }
 
-const after = (last: Overview | null, text: string, now: number) => applyOps(last, opsOf(text), now)
+const NO_ASKS: ReadonlySet<string> = new Set()
+
+const after = (last: Overview | null, text: string, now: number, askIds = NO_ASKS) =>
+  applyOps(last, opsOf(text), now, askIds)
+
+const askItem = (id: string): Item => ({
+  id,
+  kind: 'question',
+  label: null,
+  ask: `Ask ${id}?`,
+  options: [],
+  rec: null,
+  helps: [],
+  turn: 1,
+  at: null,
+  from: 'record',
+})
 
 const presence = (over: Partial<Session['presence']> = {}): Session['presence'] => ({
   ...emptySession().presence,
@@ -42,7 +59,8 @@ const page = (
   now: number,
   over: Partial<Session['presence']> = {},
   place: Session['place'] = null,
-) => overviewPage({ ledger: { overview }, presence: presence(over), place }, now)
+  items: Item[] = [],
+) => overviewPage({ ledger: { overview, items }, presence: presence(over), place }, now)
 
 const ARMS = { mid: '├ ', last: '└ ' } as const
 
@@ -62,7 +80,7 @@ const shape = (rows: OverviewRow[]) =>
 test('NO CHANGE keeps the list, and an empty answer or one holding prose cannot be read', () => {
   const last = after(null, 'NEW: working | Offline mode | sync queue built', 0)
 
-  expect(applyOverview(last, parseOverview('NO CHANGE')!, 5)).toBe(last)
+  expect(applyOverview(last, parseOverview('NO CHANGE')!, 5, NO_ASKS)).toBe(last)
   expect(parseOverview('UNCHANGED')).toEqual({ kind: 'unchanged' })
   expect(parseOverview(null)).toBeNull()
   expect(parseOverview('')).toBeNull()
@@ -75,26 +93,28 @@ test('reads each operation, tolerating bullets, and takes SET with done as DONE'
     opsOf(
       [
         '- NEW: working | Offline mode | sync queue built',
-        '* SET: s2 | waits-on-you | needs a pick',
+        '* SET: s2 | waits-on-other | needs a review',
         'SET: s3 | done | ships',
         'DONE: s4 | merged in',
         'DROP: s5 | not needed',
         'DROP: s6 | moved | INTO s1',
         'WAS: s1 | sync on launch',
         'LINK: c1 | Offline mode',
+        'LINK: i3 | s1',
         'ROLE: coordinator',
         'GOAL: Work offline',
       ].join('\n'),
     ),
   ).toEqual([
     { kind: 'new', status: 'working', name: 'Offline mode', text: 'sync queue built' },
-    { kind: 'set', ref: 's2', status: 'waits-on-you', text: 'needs a pick' },
+    { kind: 'set', ref: 's2', status: 'waits-on-other', text: 'needs a review' },
     { kind: 'done', ref: 's3', text: 'ships' },
     { kind: 'done', ref: 's4', text: 'merged in' },
     { kind: 'drop', ref: 's5', why: 'not needed', into: null },
     { kind: 'drop', ref: 's6', why: 'moved', into: 's1' },
     { kind: 'was', ref: 's1', text: 'sync on launch' },
-    { kind: 'link', child: 'c1', subject: 'Offline mode' },
+    { kind: 'link', ref: 'c1', subject: 'Offline mode' },
+    { kind: 'link', ref: 'i3', subject: 's1' },
     { kind: 'role', role: 'coordinator' },
     { kind: 'goal', text: 'Work offline' },
   ])
@@ -102,21 +122,21 @@ test('reads each operation, tolerating bullets, and takes SET with done as DONE'
 
 test('code dates each change, and a NEW for an open subject changes that subject instead', () => {
   const one = after(null, 'GOAL: Work offline\nNEW: working | Offline mode | sync queue built', 100)
-  const two = applyOps(one, opsOf('NEW: waits-on-you | offline mode | needs a sync pick'), 200)
+  const two = applyOps(one, opsOf('NEW: waits-on-other | offline mode | needs a sync review'), 200, NO_ASKS)
 
   expect(two.subjects).toHaveLength(1)
-  expect(two.subjects[0]).toMatchObject({ status: 'waits-on-you', text: 'needs a sync pick', changedAt: 200 })
+  expect(two.subjects[0]).toMatchObject({ status: 'waits-on-other', text: 'needs a sync review', changedAt: 200 })
   expect(two.goal).toBe('Work offline')
 })
 
 test('a SET that keeps the status and most words keeps the old text and age', () => {
   const one = after(null, 'NEW: working | Offline mode | sync queue built and tested', 100)
-  const reworded = applyOps(one, opsOf('SET: s1 | working | the sync queue is built and tested'), 200)
+  const reworded = applyOps(one, opsOf('SET: s1 | working | the sync queue is built and tested'), 200, NO_ASKS)
 
   expect(reworded.subjects[0]).toMatchObject({ text: 'sync queue built and tested', changedAt: 100 })
 })
 
-test('a LINK may name a subject the same answer adds, whatever the order of the lines', () => {
+test('a LINK ties a running child or an open ask to a subject, even one the same answer adds, and an ask that is not open to none', () => {
   const withChildRunning = withChild(
     null,
     { ref: 't1', kind: 'subagent', name: 'Review sync', startedAt: 50, endedAt: null, lastActivityAt: 50 },
@@ -124,16 +144,34 @@ test('a LINK may name a subject the same answer adds, whatever the order of the 
   )
   const linked = applyOps(
     withChildRunning,
-    opsOf('LINK: c1 | Offline mode\nNEW: working | Offline mode | in review'),
+    opsOf('LINK: c1 | Offline mode\nLINK: i1 | Offline mode\nLINK: i2 | s1\nNEW: working | Offline mode | in review'),
     100,
+    new Set(['i1']),
   )
 
   expect(linked.children[0]?.subjectId).toBe('s1')
+  expect(linked.askSubjects).toEqual({ i1: 's1' })
+})
+
+test('a subject folded into another passes its linked asks to it', () => {
+  const two = after(
+    null,
+    'NEW: working | Offline mode | queue built\nNEW: working | Sync retry | backoff drafted\nLINK: i1 | s2',
+    100,
+    new Set(['i1']),
+  )
+
+  expect(after(two, 'DROP: s2 | part of offline | INTO s1', 200).askSubjects).toEqual({ i1: 's1' })
 })
 
 test('a DONE may name a subject the same answer adds, even a name longer than the list keeps', () => {
   const name = 'Week start follows the locale in the date picker everywhere'
-  const done = applyOps(null, opsOf(`NEW: working | ${name} | fixed\nDONE: ${name} | starts on the locale day`), 100)
+  const done = applyOps(
+    null,
+    opsOf(`NEW: working | ${name} | fixed\nDONE: ${name} | starts on the locale day`),
+    100,
+    NO_ASKS,
+  )
 
   expect(done.subjects).toHaveLength(1)
   expect(done.subjects[0]).toMatchObject({ status: 'done', closedAt: 100 })
@@ -213,14 +251,16 @@ test('the page lists subjects newest first with code-written ages, and an open r
       'GOAL: Work offline\nNEW: queued | Docs | outline ready\nNEW: working | Offline mode | queue built',
       10 * MIN,
     ),
-    'SET: s2 | waits-on-you | needs a sync pick',
+    'SET: s2 | working | needs a sync pick\nLINK: i1 | s2',
     90 * MIN,
+    new Set(['i1']),
   )
   const p = page(
     { ...o, lastLookAt: 50 * MIN },
     now,
     { lastReplyAt: now - 2 * MIN },
     { folder: '/code/visor', branch: 'offline' },
+    [askItem('i1')],
   )
 
   expect(p.identity).toBe('visor · offline')
@@ -231,9 +271,24 @@ test('the page lists subjects newest first with code-written ages, and an open r
     '-- you looked 50m',
     '○ Docs: outline ready 2h',
   ])
-  const seen = page({ ...after(o, 'WAS: s2 | sync on every save', 90 * MIN), lastLookAt: 95 * MIN }, now).rows
+  const seenAt = { ...after(o, 'WAS: s2 | sync on every save', 90 * MIN), lastLookAt: 95 * MIN }
+  const seen = page(seenAt, now, {}, null, [askItem('i1')]).rows
   expect(shape(seen)).toEqual(['◆ Offline mode: needs a sync pick 10m', '○ Docs: outline ready 2h'])
   expect(seen[0]).toMatchObject({ kind: 'subject', was: null })
+})
+
+test('an open ask linked to an open subject marks it ◆ and stops its running mark until the ask closes, and the call reads each ask with its link', () => {
+  const o = after(null, 'NEW: working | Offline mode | queue built\nLINK: i1 | s1\nLINK: i2 | s1', 0, new Set(['i1']))
+  const held = page(o, MIN, { isTurnRunning: true }, null, [askItem('i1')]).rows[0]
+  const answered = page(o, MIN, { isTurnRunning: true }, null, []).rows[0]
+
+  expect(o.askSubjects).toEqual({ i1: 's1' })
+  expect(asksText(o, [askItem('i1'), askItem('i3')])).toBe('i1 | Ask i1? | s1\ni3 | Ask i3? | -')
+  expect(held).toMatchObject({ mark: '◆', tone: 'needsYou', isRunning: false })
+  expect(answered).toMatchObject({ mark: '●', tone: null, isRunning: true })
+  expect(page(after(o, 'DONE: s1 | works offline', MIN), MIN, {}, null, [askItem('i1')]).rows[0]).toMatchObject({
+    mark: '✓',
+  })
 })
 
 test('with no look yet every row is new, so the page draws no look line and shows where each stands', () => {
@@ -351,7 +406,7 @@ test('a rule sets each item on the page apart: a subject and the rows under it a
   let o = after(after(null, 'NEW: working | Fade-out | glances fade', 0), 'DONE: s1 | glances fade', 5 * MIN)
   o = after(o, 'NEW: queued | Docs | outline ready', 10 * MIN)
   o = after(o, 'NEW: working | Offline mode | queue built', 60 * MIN)
-  o = after(o, 'NEW: waits-on-you | Sync | needs a pick', 70 * MIN)
+  o = after(o, 'NEW: working | Sync | needs a pick\nLINK: i1 | Sync', 70 * MIN, new Set(['i1']))
   for (const ref of ['r1', 'r2', 'loose'])
     o = withChild(
       o,
@@ -359,7 +414,7 @@ test('a rule sets each item on the page apart: a subject and the rows under it a
       now,
     )
   o = after(o, 'LINK: c1 | s3\nLINK: c2 | s3', 80 * MIN)
-  const rows = page({ ...o, lastLookAt: 50 * MIN }, now).rows
+  const rows = page({ ...o, lastLookAt: 50 * MIN }, now, {}, null, [askItem('i1')]).rows
 
   expect(rows.map(r => `${r.isRuledAbove ? '── ' : ''}${shape([r])[0]}`)).toEqual([
     '● Review loose 1m',
@@ -397,11 +452,15 @@ test('open subjects past seven fold their oldest queued ones into a count', () =
     null,
     lines.map(l => opsOf(l)[0]!),
     0,
+    NO_ASKS,
   )
   const rows = page(o, MIN).rows
+  const heldOldest = page(after(o, 'LINK: i1 | s1', 0, new Set(['i1'])), MIN, {}, null, [askItem('i1')]).rows
 
   expect(rows.filter(r => r.kind === 'subject')).toHaveLength(7)
   expect(rows.at(-1)).toMatchObject({ kind: 'fold', text: '2 more queued' })
+  expect(heldOldest.filter(r => r.kind === 'subject').map(r => r.id)).toContain('s1')
+  expect(heldOldest.at(-1)).toMatchObject({ kind: 'fold', text: '2 more queued' })
 })
 
 test('an Overview saved before subjects keeps its open work, dated at the last look, and its headline as the goal', () => {
@@ -447,7 +506,7 @@ test('an Overview saved before subjects keeps its open work, dated at the last l
       {
         id: 's3',
         name: 'Flaky row test',
-        status: 'problem',
+        status: 'queued',
         text: '',
         was: null,
         createdAt: 5000,
@@ -469,7 +528,10 @@ test('a saved Overview drops subjects and children it cannot read, and nothing e
     subjects: [
       { id: 's1', name: 'A', status: 'working', text: 'b', changedAt: 5 },
       { id: 's2', status: 'odd' },
+      { id: 's3', name: 'C', status: 'waits-on-you', text: 'needs a pick', changedAt: 6 },
+      { id: 's4', name: 'D', status: 'problem', text: 'flaky', changedAt: 7 },
     ],
+    askSubjects: { i1: 's3', i2: 7 },
     children: [
       { id: 'c1', ref: 'r', kind: 'subagent', name: 'n', startedAt: 1 },
       { id: 'c2', kind: 'robot' },
@@ -490,7 +552,30 @@ test('a saved Overview drops subjects and children it cannot read, and nothing e
       closedAt: null,
       into: null,
     },
+    {
+      id: 's3',
+      name: 'C',
+      status: 'queued',
+      text: 'needs a pick',
+      was: null,
+      createdAt: 6,
+      changedAt: 6,
+      closedAt: null,
+      into: null,
+    },
+    {
+      id: 's4',
+      name: 'D',
+      status: 'queued',
+      text: 'flaky',
+      was: null,
+      createdAt: 7,
+      changedAt: 7,
+      closedAt: null,
+      into: null,
+    },
   ])
+  expect(o.askSubjects).toEqual({ i1: 's3' })
   expect(o.children).toEqual([
     {
       id: 'c1',

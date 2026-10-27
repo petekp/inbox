@@ -478,7 +478,10 @@ export function appliedOverview<S extends Session>(s: S, answer: OverviewAnswer,
 
   return {
     ...s,
-    ledger: { ...s.ledger, overview: applyOverview(s.ledger.overview, answer, now) },
+    ledger: {
+      ...s.ledger,
+      overview: applyOverview(s.ledger.overview, answer, now, new Set(s.ledger.items.map(i => i.id))),
+    },
     overviewFailure: null,
   }
 }

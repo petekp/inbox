@@ -3,7 +3,16 @@ import type { Closed, DialogQuestion, Finding, HostTask, Item, Ledger, Overview,
 export type { Told } from '../types'
 import type { Exchange } from './ledger'
 import { isAskedForChoices, LIST_CHOICES } from './ledger'
-import { GOAL_WORDS, isOpen, NAME_WORDS, OPEN_SUBJECTS, runningText, subjectsText, TEXT_WORDS } from './overview'
+import {
+  asksText,
+  GOAL_WORDS,
+  isOpen,
+  NAME_WORDS,
+  OPEN_SUBJECTS,
+  runningText,
+  subjectsText,
+  TEXT_WORDS,
+} from './overview'
 import { tasksText } from './host-tasks'
 import { clip, clipMiddle, numberBlocks } from './text'
 
@@ -287,6 +296,7 @@ Input:
 - <subjects>: the open subjects, one per line: id | status | name | where it stands
 - <finished>: subjects already done or dropped. Do not add them again.
 - <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
+- <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subject it holds up, or - when it has none yet
 - <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
@@ -301,20 +311,18 @@ DONE: id or name | where it ended
 DROP: id or name | why
 DROP: id or name | why | INTO id or name
 WAS: id or name | the plan it replaces
-LINK: running id | subject id or name
+LINK: running or ask id | subject id or name
 ROLE: coordinator or session
 GOAL: the goal in the person's words, at most ${GOAL_WORDS} words
 
-A subject is one piece of the work that the person would name: a feature, a fix, a release, a problem, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call.
+A subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.
 
-The name is at most ${NAME_WORDS} words, the handle the person would use. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
+The name is a label of at most ${NAME_WORDS} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
 
-Status is one of: working, queued, waits-on-you, waits-on-other, problem.
-- working: being worked on now, in this session or in a session it handed the work to. When the work stopped, it is queued, waits on someone, or is done.
+Status is one of: working, queued, waits-on-other.
+- working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask. When the work stopped for another reason, it is queued, waits on something, or is done.
 - queued: planned, not started.
-- waits-on-you: the subject's work has stopped until the person acts. A question to the person is not a subject of its own.
-- waits-on-other: it waits on something else, such as a build, a review or another session.
-- problem: something broken or wrong that no one is fixing now.
+- waits-on-other: it waits on something other than the person, such as a build, a review or another session.
 
 Rules:
 - Change a subject by its id. Write NEW only when no subject in <subjects> covers it.
@@ -322,14 +330,21 @@ Rules:
 - Write SET only when where a subject stands changed. Never reword a subject that did not change.
 - Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
-- The inbox shows each question and task for the person, with its options. Mark the subject waits-on-you, and say where its work stands or "needs your decision". Never name the choices.
+- Write LINK for each item in <asks> that has no subject yet, naming the subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
 - Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
 - Write ROLE coordinator when the session hands out work and reviews what comes back instead of doing the work itself. Write ROLE only when it changes.
 - Write GOAL only when <goal> is empty, when the person states a new goal, or when the work moves to a different task.`
 
-function overviewBlocks(last: Overview | null, tasks: HostTask[], now: number): string[] {
+/**
+ * What the Overview call reads besides the exchange: the Overview before it, the open asks, the agent's task list, and
+ * the time the running children are read at.
+ */
+export type OverviewInput = { last: Overview | null; asks: readonly Item[]; tasks: HostTask[]; now: number }
+
+function overviewBlocks({ last, asks, tasks, now }: OverviewInput): string[] {
   const { open, finished } = subjectsText(last)
   const running = runningText(last, now)
+  const held = asksText(last, asks)
   const list = tasksText(tasks)
 
   return [
@@ -337,31 +352,26 @@ function overviewBlocks(last: Overview | null, tasks: HostTask[], now: number): 
     `<subjects>${NL}${open}${NL}</subjects>`,
     ...(finished === '' ? [] : [`<finished>${NL}${finished}${NL}</finished>`]),
     ...(running === '' ? [] : [`<running>${NL}${running}${NL}</running>`]),
+    ...(held === '' ? [] : [`<asks>${NL}${held}${NL}</asks>`]),
     ...(list === '' ? [] : [`<tasks>${NL}${list}${NL}</tasks>`]),
   ]
 }
 
-/** `last` is the Overview before the exchange, and `now` the time the running children are read at. */
-export function overviewPrompt(last: Overview | null, ex: Exchange, tasks: HostTask[], now: number): string {
+export function overviewPrompt(input: OverviewInput, ex: Exchange): string {
   const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? 'unknown'}.)`
 
   return [
-    ...overviewBlocks(last, tasks, now),
+    ...overviewBlocks(input),
     `<person>${NL}${clipMiddle(person, 4000, 1500)}${NL}</person>`,
     `<activity>${NL}${clipMiddle(ex.activity.join(NL), 2500, 500)}${NL}</activity>`,
     `<reply>${NL}${clipMiddle(numberBlocks(ex.reply), 12000, 4000)}${NL}</reply>`,
   ].join(NL)
 }
 
-export function overviewCatchUpPrompt(
-  last: Overview | null,
-  transcript: string,
-  tasks: HostTask[],
-  now: number,
-): string {
+export function overviewCatchUpPrompt(input: OverviewInput, transcript: string): string {
   return [
     'Treat the conversation in <conversation> as the exchange. Its start may be cut. Answer with the changes that bring the list to where the conversation ends.',
-    ...overviewBlocks(last, tasks, now),
+    ...overviewBlocks(input),
     `<conversation>${NL}${numberBlocks(transcript)}${NL}</conversation>`,
   ].join(NL)
 }

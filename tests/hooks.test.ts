@@ -3477,7 +3477,7 @@ test('where classic.SessionStart is skipped, the first prompt after /clear, /res
   world($, on, [])
   const turn = async (text: string, reply: string, goal: string) => {
     ledgerReply = reply
-    overviewReply = `GOAL: ${goal}\nNEW: waits-on-you | Answer | Waiting on an answer`
+    overviewReply = `GOAL: ${goal}\nNEW: queued | Answer | Waiting on an answer`
     await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
     await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: text, reason: 'answer' })
     await clock.settle()
@@ -3500,7 +3500,7 @@ test('where classic.SessionStart is skipped, the first prompt after /clear, /res
   const branched = await contextOf('session-3', 'resume', 'try another way')
   expect(branched).toContain('Pin Node?')
   expect(branched).toContain('Working on: Fixing the build')
-  expect(branched).toContain('- Answer: Waiting on an answer (waits-on-you)')
+  expect(branched).toContain('- Answer: Waiting on an answer (queued)')
 
   const resumed = await contextOf('session-1', 'resume', 'where were we?')
   expect(resumed).toContain('Pick a cache?')
@@ -4599,7 +4599,7 @@ test('on a next build, the Overview tab’s news dot clears when the page shows,
   files = ['/.next-build']
   paneState = { isShown: true, isFocused: true }
   overviewReply =
-    'GOAL: Adding a greeting CLI\nNEW: waits-on-you | Runtime | Node or Python\nNEW: working | Plan | being written\nDONE: s2 | written'
+    'GOAL: Adding a greeting CLI\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime\nNEW: working | Plan | being written\nDONE: s2 | written'
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
@@ -4620,6 +4620,7 @@ test('on a next build, the Overview tab’s news dot clears when the page shows,
   expect(await pane.find({ text: /^ •$/ })).toBeUndefined()
   expect((await pane.find({ key: 'overview-goal' }))?.text).toBe('Adding a greeting CLI')
   expect((await pane.find({ key: 'overview-s1' }))?.text).toContain('Runtime: Node or Python')
+  expect((await pane.find({ key: 'overview-s1' }))?.text).toContain('◆')
   expect((await pane.find({ key: 'overview-s2' }))?.text).toContain('Plan: written')
   expect(await pane.find({ text: /Use Node or Python\?/ })).toBeUndefined()
   const rowKeys = async () =>
@@ -4654,7 +4655,7 @@ test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Overview page
   const prompts: string[] = []
   world($, on, prompts)
   paneState = { isShown: true, isFocused: true }
-  overviewReply = 'GOAL: Adding a greeting CLI\nNEW: waits-on-you | Runtime | Node or Python'
+  overviewReply = 'GOAL: Adding a greeting CLI\nNEW: working | Runtime | Node or Python'
   let page: { value: unknown; version: number } = { value: 'overview', version: 1 }
   on('state.get', { plugin: 'inbox', key: 'page' } as const, () => ({ value: page as never }))
   on('state.set', { plugin: 'inbox', key: 'page' } as const, ($, e) => {
@@ -4911,7 +4912,7 @@ test('on a next build, at 31 desktop columns the tabs show their symbols with th
   world($, on, [])
   files = ['/.next-build']
   overviewReply =
-    'GOAL: Adding a greeting CLI\nNEW: waits-on-you | Runtime | Node or Python\nNEW: working | Plan | being written\nDONE: s2 | written'
+    'GOAL: Adding a greeting CLI\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime\nNEW: working | Plan | being written\nDONE: s2 | written'
   surfaces = ['desktop']
 
   await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })

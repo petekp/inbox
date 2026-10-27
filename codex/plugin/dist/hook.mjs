@@ -42,7 +42,7 @@ var NAME_WORDS = 3;
 var TEXT_WORDS = 4;
 var GOAL_WORDS = 8;
 var OPEN_SUBJECTS = 6;
-var NAME_KEPT = 8;
+var NAME_KEPT = 20;
 var TEXT_KEPT = 12;
 var GOAL_KEPT = 14;
 var CHILD_KEPT_MS = 24 * 60 * 6e4;
@@ -72,12 +72,13 @@ var EMPTY_OVERVIEW = {
   goal: "",
   subjects: [],
   children: [],
+  askSubjects: {},
   nextId: 1,
   nextChildId: 1,
   lastLookAt: null,
   look: null
 };
-var OPEN_STATUSES = ["working", "queued", "waits-on-you", "waits-on-other", "problem"];
+var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
 var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
 var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
 function clipWords(text2, limit) {
@@ -124,9 +125,10 @@ function text(value) {
 function time(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
+var DROPPED_STATUSES = { "waits-on-you": "queued", problem: "queued" };
 function subjectOf(saved) {
   const s = saved;
-  const status = STATUSES.find((x) => x === s?.status);
+  const status = STATUSES.find((x) => x === s?.status) ?? DROPPED_STATUSES[String(s?.status)];
   const changedAt = time(s?.changedAt);
   if (!s || typeof s.id !== "string" || typeof s.name !== "string" || !status || changedAt === null) return null;
   return {
@@ -160,9 +162,9 @@ function childOf(saved) {
 var OLD_STATUS = {
   working: "working",
   queued: "queued",
-  "waits-on-you": "waits-on-you",
+  "waits-on-you": "queued",
   "waits-on-other": "waits-on-other",
-  problem: "problem",
+  problem: "queued",
   unknown: "queued",
   done: null,
   "ruled-out": null
@@ -203,6 +205,8 @@ function upgradeOverview(saved) {
   if (!Array.isArray(o.subjects)) return null;
   const subjects = o.subjects.map(subjectOf).filter((s) => s !== null);
   const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c) => c !== null) : [];
+  const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
+  const askSubjects = Object.fromEntries(savedLinks.filter((e) => typeof e[1] === "string"));
   const look = o.look;
   const lookAt = time(look?.startedAt);
   return {
@@ -210,6 +214,7 @@ function upgradeOverview(saved) {
     goal: text(o.goal),
     subjects,
     children,
+    askSubjects,
     nextId: Math.max(time(o.nextId) ?? 1, subjects.length + 1),
     nextChildId: Math.max(time(o.nextChildId) ?? 1, children.length + 1),
     lastLookAt: time(o.lastLookAt),
@@ -540,6 +545,7 @@ Input:
 - <subjects>: the open subjects, one per line: id | status | name | where it stands
 - <finished>: subjects already done or dropped. Do not add them again.
 - <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
+- <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subject it holds up, or - when it has none yet
 - <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
@@ -554,20 +560,18 @@ DONE: id or name | where it ended
 DROP: id or name | why
 DROP: id or name | why | INTO id or name
 WAS: id or name | the plan it replaces
-LINK: running id | subject id or name
+LINK: running or ask id | subject id or name
 ROLE: coordinator or session
 GOAL: the goal in the person's words, at most ${GOAL_WORDS} words
 
-A subject is one piece of the work that the person would name: a feature, a fix, a release, a problem, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call.
+A subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.
 
-The name is at most ${NAME_WORDS} words, the handle the person would use. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
+The name is a label of at most ${NAME_WORDS} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
 
-Status is one of: working, queued, waits-on-you, waits-on-other, problem.
-- working: being worked on now, in this session or in a session it handed the work to. When the work stopped, it is queued, waits on someone, or is done.
+Status is one of: working, queued, waits-on-other.
+- working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask. When the work stopped for another reason, it is queued, waits on something, or is done.
 - queued: planned, not started.
-- waits-on-you: the subject's work has stopped until the person acts. A question to the person is not a subject of its own.
-- waits-on-other: it waits on something else, such as a build, a review or another session.
-- problem: something broken or wrong that no one is fixing now.
+- waits-on-other: it waits on something other than the person, such as a build, a review or another session.
 
 Rules:
 - Change a subject by its id. Write NEW only when no subject in <subjects> covers it.
@@ -575,7 +579,7 @@ Rules:
 - Write SET only when where a subject stands changed. Never reword a subject that did not change.
 - Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
-- The inbox shows each question and task for the person, with its options. Mark the subject waits-on-you, and say where its work stands or "needs your decision". Never name the choices.
+- Write LINK for each item in <asks> that has no subject yet, naming the subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
 - Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
 - Write ROLE coordinator when the session hands out work and reviews what comes back instead of doing the work itself. Write ROLE only when it changes.
 - Write GOAL only when <goal> is empty, when the person states a new goal, or when the work moves to a different task.`;
@@ -1203,12 +1207,11 @@ var OPEN_ROWS = 7;
 var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: null },
   queued: { mark: "\u25CB", tone: null },
-  "waits-on-you": { mark: "\u25C6", tone: "needsYou" },
   "waits-on-other": { mark: "\u25CC", tone: null },
-  problem: { mark: "!", tone: "issue" },
   done: { mark: "\u2713", tone: "done" },
   dropped: { mark: "\u2717", tone: null }
 };
+var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
@@ -1257,11 +1260,13 @@ function overviewPage(s, now) {
   const look = o?.lastLookAt ?? null;
   const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
   const isNew = (x) => look === null || x.changedAt > look;
+  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
+  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
   const open2 = subjects.filter(isOpen);
   const queuedOver = Math.max(0, open2.length - OPEN_ROWS);
   const hiddenQueued = new Set(
-    open2.filter((x) => x.status === "queued").sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id)
+    open2.filter((x) => x.status === "queued" && !isHeld(x)).sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id)
   );
   const shown = [...open2.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort((x, y) => y.changedAt - x.changedAt);
   const folded = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
@@ -1279,8 +1284,8 @@ function overviewPage(s, now) {
     rows.push({
       kind: "subject",
       id: x.id,
-      ...SUBJECT_MARKS[x.status],
-      isRunning: x.status === "working" && (s.presence.isTurnRunning || under.some((c) => !isQuiet(c, now))),
+      ...isHeld(x) ? HELD_MARK : SUBJECT_MARKS[x.status],
+      isRunning: x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some((c) => !isQuiet(c, now))),
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       was: isNew(x) ? x.was : null,

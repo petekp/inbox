@@ -15,11 +15,12 @@ import {
   systemText,
   transcriptCatchUpPrompt,
 } from '../hooks/model-text'
+import type { OverviewInput } from '../hooks/model-text'
 import { applyOps, applyOverview, askOverview, isOpen, parseOverview } from '../hooks/overview'
 import type { OverviewAnswer } from '../hooks/overview'
 import { CODEX } from '../codex/src/texts'
 import type { Exchange, Update } from '../hooks/ledger'
-import type { HostTask, Ledger, Overview, SubjectStatus } from '../types'
+import type { HostTask, Item, Ledger, Overview, SubjectStatus } from '../types'
 import { run } from '../codex/src/run'
 import { codexAsk, MODEL } from '../codex/src/update'
 import { codexCli } from './codex-cli'
@@ -118,6 +119,8 @@ const selected = AGENTS[values.agent]
 if (!selected) throw new Error(`Unknown --agent ${values.agent}. Use claude, codex or both.`)
 const agents: Agent[] = selected
 const runs = runCount(values.runs)
+/** An input whose prompt holds every block the asks change, so the provenance hash covers how they are written. */
+const SAMPLE_INPUT: OverviewInput = { last: null, asks: [{ id: 'i1', ask: 'a' } as Item], tasks: [], now: NOW }
 const cases: Case[] = selectCases(JSON.parse(readFileSync(values.cases, 'utf8')), values.case)
 const about = provenance(
   'model',
@@ -127,8 +130,8 @@ const about = provenance(
     'systemText codex': systemText(CODEX),
     'overview systemText': OVERVIEW_SYSTEM,
     'overview prompts': [
-      overviewPrompt(null, { turn: 1, person: 'p', activity: ['a'], reply: 'r' } as Exchange, [], NOW),
-      overviewCatchUpPrompt(null, 'c', [], NOW),
+      overviewPrompt(SAMPLE_INPUT, { turn: 1, person: 'p', activity: ['a'], reply: 'r' } as Exchange),
+      overviewCatchUpPrompt(SAMPLE_INPUT, 'c'),
     ].join('\n'),
     'overview parser': [parseOverview, askOverview, applyOverview, applyOps].map(String).join('\n'),
     cases: readFileSync(values.cases, 'utf8'),
@@ -510,10 +513,8 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
   const masked = maskedAsks(parsed, ledger, applied)
   const needsOverview = c.checks.some(isOverviewCheck)
   if (!needsOverview) return { ...base, error: null, failed: failures(ledger, applied, c.checks, masked, null), masked }
-  const overviewInput =
-    c.catchUp === undefined
-      ? overviewPrompt(applied.overview, ex, c.hostTasks ?? [], NOW)
-      : overviewCatchUpPrompt(applied.overview, c.catchUp, c.hostTasks ?? [], NOW)
+  const input = { last: applied.overview, asks: applied.items, tasks: c.hostTasks ?? [], now: NOW }
+  const overviewInput = c.catchUp === undefined ? overviewPrompt(input, ex) : overviewCatchUpPrompt(input, c.catchUp)
   const overviewStarted = Date.now()
   const { first: firstCall, last: overviewCall } = await askOverview(() => ask(overviewInput, OVERVIEW_SYSTEM))
   const isRetried = overviewCall !== firstCall
@@ -533,7 +534,9 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
   const overview: OverviewRun = {
     answer: overviewParsed,
     before: applied.overview,
-    after: overviewParsed ? applyOverview(applied.overview, overviewParsed, NOW) : applied.overview,
+    after: overviewParsed
+      ? applyOverview(applied.overview, overviewParsed, NOW, new Set(applied.items.map(i => i.id)))
+      : applied.overview,
   }
   const after = { ...applied, overview: overview.after }
 

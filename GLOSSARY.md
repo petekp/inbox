@@ -69,10 +69,12 @@ work moves to a different task.
 
 **Subject**:
 One part of the session's work on the Overview, such as a feature, a fix or a
-decision. It has a name, a status, a few words on where it stands, and the time
-it last changed. The statuses are working, queued, waits on you, waits on
-others, problem, done and dropped. The inbox model adds and changes subjects by
-id, and code keeps their times.
+release. It has a name, a status, a few words on where it stands, and the time
+it last changed. The statuses are working, queued, waits on others, done and
+dropped. The inbox model adds and changes subjects by id, and code keeps their
+times. The inbox model also links an open question or task to the subject it
+holds up. While that item is open, the subject's mark reads ◆ in place of its
+status's mark.
 _Avoid_: workstream, stream, item (an item is a question or task)
 
 **Child**:

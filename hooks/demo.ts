@@ -80,8 +80,8 @@ export function demoView(now: number, agent: string): DemoCopy {
         goal: 'Pinch to dismiss glances',
         subjects: [
           subject('s1', 'working', 'Dismiss gesture', 'pinch fades the glance', now - 2 * MIN),
-          subject('s2', 'waits-on-you', 'Glasses pairing', 'needs this Mac paired', now - 12 * MIN),
-          subject('s3', 'waits-on-you', 'Flick option', 'waits on your pick', now - 12 * MIN, {
+          subject('s2', 'working', 'Glasses pairing', 'needs this Mac paired', now - 12 * MIN),
+          subject('s3', 'queued', 'Flick option', 'waits on your pick', now - 12 * MIN, {
             was: 'flick and pinch both',
           }),
           subject('s4', 'done', 'Fade-out', 'dismissed glances fade', now - 25 * MIN),
@@ -121,6 +121,7 @@ export function demoView(now: number, agent: string): DemoCopy {
             lastActivityAt: null,
           },
         ],
+        askSubjects: { d11: 's3', d14: 's2' },
         nextId: 8,
         nextChildId: 4,
         lastLookAt: now - 30 * MIN,

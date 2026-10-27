@@ -1,7 +1,7 @@
 /** Where a subject of the session's work stands. `done` and `dropped` close it. */
-export type SubjectStatus = 'working' | 'queued' | 'waits-on-you' | 'waits-on-other' | 'problem' | 'done' | 'dropped'
+export type SubjectStatus = 'working' | 'queued' | 'waits-on-other' | 'done' | 'dropped'
 
-/** One piece of the session's work that the person would name: a feature, a fix, a release, a problem or a stream. */
+/** One piece of the session's work that the person would name: a feature, a fix, a release or a stream. */
 export type Subject = {
   id: string
   /** The handle the person would use, at most a few words. */
@@ -43,6 +43,8 @@ export type Overview = {
   goal: string
   subjects: Subject[]
   children: Child[]
+  /** The subject each ask holds up, by the ask's item id, as the Overview call linked them. */
+  askSubjects: Record<string, string>
   nextId: number
   nextChildId: number
   /** When the person last looked: the last time a look ended. Null before the first look. */

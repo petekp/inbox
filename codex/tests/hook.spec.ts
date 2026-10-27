@@ -140,14 +140,15 @@ test('a start after compaction carries the Overview goal and where each open sub
       updates: 1,
       overview: applyOverview(
         null,
-        parseOverview('GOAL: Adding caching\nNEW: waits-on-you | Cache | Redis or memory')!,
+        parseOverview('GOAL: Adding caching\nNEW: queued | Cache | Redis or memory')!,
         1,
+        new Set(),
       )!,
     },
   }))
   const context = JSON.stringify(await handleHook(input('SessionStart', { cwd: '/repo', source: 'compact' }), deps))
   assert.match(context, /Working on: Adding caching/)
-  assert.match(context, /- Cache: Redis or memory \(waits-on-you\)/)
+  assert.match(context, /- Cache: Redis or memory \(queued\)/)
 })
 
 test('a main-agent prompt reads Working… until Stop or a start that is not a compact, and a subagent prompt does not', async () => {
