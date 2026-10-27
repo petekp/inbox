@@ -70,7 +70,7 @@ import { openTarget } from './commands'
 import { createPanel } from './controller'
 import type { PanelSource } from './controller'
 import { demoSource } from './demo'
-import { bandLines } from './panel'
+import { bandLines, wrapText } from './panel'
 import type { Style, Tone } from './panel'
 import { exclusiveRun, pruneSessions, readState, updateState } from './state'
 import type { OmpState } from './state'
@@ -406,6 +406,30 @@ export function styleOf(theme: OmpTheme): Style {
         ? theme.fg(name === 'sep' ? 'statusLineSep' : 'accent', text)
         : truecolor(tones[name], text),
   }
+}
+
+/** A `record` or `close` result's details, which omp keeps out of the model's context. */
+type ToolDetails = { personLine: string | null }
+
+/**
+ * The line drawn under a `record` or `close` call: its person line, else the error when the call failed, else
+ * nothing. A call saved before results carried details draws nothing.
+ */
+function shownLine(result: {
+  content: readonly { type: string; text?: string }[]
+  details?: unknown
+  isError?: boolean
+}): string | null {
+  if (result.isError)
+    return (
+      result.content
+        .map(c => c.text ?? '')
+        .join('\n')
+        .trim() || null
+    )
+  const details = result.details as Partial<ToolDetails> | null | undefined
+
+  return typeof details?.personLine === 'string' ? details.personLine : null
 }
 
 export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inbox {
@@ -880,15 +904,29 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       approval: 'read',
       execute: async (_toolCallId, args, _signal, _onUpdate, ctx) => {
         if (isUnattended(ctx)) return { content: [{ type: 'text', text: 'The inbox is not shown in this session.' }] }
-        let result = ''
+        let answer: { result: string; personLine: string | null } = { result: '', personLine: null }
         await change(sessionIdOf(ctx), s => {
           const r = recorded(OMP, s, name, args as Record<string, unknown>, deps.now())
-          result = r.result
+          answer = r
 
           return r.state
         })
+        const details: ToolDetails = { personLine: answer.personLine }
 
-        return { content: [{ type: 'text', text: result }] }
+        return { content: [{ type: 'text', text: answer.result }], details }
+      },
+      renderResult: (result, _options, theme) => {
+        const line = shownLine(result)
+
+        return {
+          render: width => (line === null ? [] : wrapText(line, width).map(l => theme.fg('toolOutput', l))),
+          invalidate: () => {},
+        }
+      },
+      describeResult: result => {
+        const line = shownLine(result)
+
+        return { tool: {}, body: line === null ? undefined : [{ k: 'text', p: { text: line } }] }
       },
     })
   }

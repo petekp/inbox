@@ -360,6 +360,12 @@ const PR_POLL_MS = 2 * 60_000
 
 const RECORD_TOOL = 'mcp__inbox__record'
 const CLOSE_TOOL = 'mcp__inbox__close'
+/**
+ * The person's line for each `record` or `close` call that has one, by `tool_use_id`. It lives as long as the
+ * process, so a call from before it draws nothing under its row.
+ */
+const PERSON_LINES = atom({ plugin: 'inbox', key: 'personLines' } as const, {} as Record<string, string>)
+const MAX_PERSON_LINES = 200
 
 const PANE = 'inbox'
 const REPLY_ROWS = 3
@@ -1293,16 +1299,26 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
   return session.ledger
 }
 
-async function runTool($: EngineInterface, tool: 'record' | 'close', input: Record<string, unknown>): Promise<string> {
+async function runTool(
+  $: EngineInterface,
+  tool: 'record' | 'close',
+  input: Record<string, unknown>,
+  toolUseId: string | undefined,
+): Promise<string> {
   const now = await $.clock.now()
-  let result = ''
+  let answer: { result: string; personLine: string | null } = { result: '', personLine: null }
   await commit($, currentOwner(), s => {
     const r = recorded(CLAUDE_CODE, s, tool, input, now)
-    result = r.result
+    answer = r
     return r.state
   })
+  const { personLine } = answer
+  if (personLine !== null && toolUseId)
+    await update($, PERSON_LINES, lines =>
+      Object.fromEntries([...Object.entries(lines), [toolUseId, personLine]].slice(-MAX_PERSON_LINES)),
+    )
 
-  return result
+  return answer.result
 }
 
 /**
@@ -2894,7 +2910,7 @@ export const register: Register = on => {
 
   on('tool.describe', { tool: RECORD_TOOL }, async ($, e, next) => ({ ...(await next(e)), isDeferred: false }))
   on('tool.call', { tool: RECORD_TOOL }, async ($, e) => ({
-    result: await runTool($, 'record', e as unknown as Record<string, unknown>),
+    result: await runTool($, 'record', e as unknown as Record<string, unknown>, e.tool_use_id),
   }))
   on('tool.describe', { tool: CLOSE_TOOL }, async ($, e, next) => {
     const r = await next(e)
@@ -2902,7 +2918,7 @@ export const register: Register = on => {
     return { ...r, description: guidedCloseDescription(CLAUDE_CODE, r.description), isDeferred: false }
   })
   on('tool.call', { tool: CLOSE_TOOL }, async ($, e) => ({
-    result: await runTool($, 'close', e as unknown as Record<string, unknown>),
+    result: await runTool($, 'close', e as unknown as Record<string, unknown>, e.tool_use_id),
   }))
 
   on('tool.call', async ($, e, next) => {
@@ -3236,6 +3252,20 @@ export const register: Register = on => {
     if (isOn) for (const call of e.props.calls) if (call.isRunning) endWaitFor($, call.tool_use_id)
 
     return next(e)
+  })
+
+  // The ctrl+o transcript draws the text the agent read.
+  on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
+    const isInboxTool = e.props.tool === RECORD_TOOL || e.props.tool === CLOSE_TOOL
+    if (!isOn || !isInboxTool || e.props.isExpanded || e.props.isErrored) return next(e)
+    const line = (await read($, PERSON_LINES))[e.props.tool_use_id]
+    if (line === undefined) {
+      const { Box } = $.ui.resolve(e)
+
+      return <Box />
+    }
+
+    return next({ ...e, props: { ...e.props, output: line } })
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {

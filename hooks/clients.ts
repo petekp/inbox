@@ -40,6 +40,7 @@ export type FeatureId =
   | 'overview-news-dot'
   | 'overview-look-line'
   | 'overview-row-rules'
+  | 'tool-result-line'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -89,6 +90,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'overview-news-dot': { kind: 'full' },
       'overview-look-line': { kind: 'full' },
       'overview-row-rules': { kind: 'full' },
+      'tool-result-line': { kind: 'full' },
     },
   },
   codex: {
@@ -180,6 +182,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       'overview-news-dot': { kind: 'full' },
       'overview-look-line': { kind: 'full' },
       'overview-row-rules': { kind: 'full' },
+      'tool-result-line': {
+        kind: 'unsupported',
+        reason:
+          "Codex draws an MCP tool call's result from its content, which is the text the model reads. structuredContent reaches the model too, and _meta reaches only an MCP App view, so a result has no field for the person alone.",
+      },
     },
   },
   omp: {
@@ -244,6 +251,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'overview-news-dot': { kind: 'full' },
       'overview-look-line': { kind: 'full' },
       'overview-row-rules': { kind: 'full' },
+      'tool-result-line': { kind: 'full' },
     },
   },
 }
