@@ -1,4 +1,43 @@
 <!doctype html>
+<!--
+  The inbox's page for a comparison of a question's choices. To make one, write the comparison as JSON, then append
+  it to a copy of this file:
+
+    cat "<this file>" comparison.json > comparison.html
+
+  The JSON. Only "pick" and "choices" are required:
+
+  {
+    "question": "Which cache should the product API use?",
+    "pick": "Redis",
+    "pickBefore": "In-memory",
+    "reason": "Every instance serves the same prices, for 3 ms more per read.",
+    "unexpected": "In-memory kept a changed price for up to 5 minutes.",
+    "choices": [
+      { "name": "Redis", "summary": "One cache that all four instances share." },
+      { "name": "In-memory", "summary": "Each instance keeps its own cache." }
+    ],
+    "measures": [
+      {
+        "name": "Stale prices after a change",
+        "better": "fewer is better",
+        "values": { "Redis": "None", "In-memory": { "value": "Up to 5 minutes", "note": "Until each cache expires" } },
+        "best": ["Redis"]
+      },
+      { "name": "Read time", "better": "less is better", "values": { "Redis": "4 ms", "In-memory": "1 ms" }, "best": ["In-memory"] }
+    ],
+    "previews": [{ "title": "After a price change", "note": "One request to each instance.", "texts": { "Redis": "...", "In-memory": "..." } }],
+    "caveats": ["Measured on a laptop, not in production."],
+    "method": "How you compared them: one string, or a list of paragraphs."
+  }
+
+  - Name each choice exactly as the question lists it, everywhere a choice is named.
+  - "pickBefore" is the choice you would have picked before comparing. Leave it out when you had none.
+  - Put first the measures a person notices when using the choice.
+  - A value is text, or an object with the "value" and a "note" that explains it.
+  - "best" names the choice or choices with the best value on that measure. Leave it out when none is best.
+  - A preview is preformatted text for each choice, such as a mock or a diagram.
+-->
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -14,10 +53,11 @@
         --rule: #dcdfe5;
         --code: #eceef2;
         --pick: #243bf5;
-        --tag: #243bf5;
-        --on-tag: #ffffff;
-        --band: color-mix(in srgb, var(--pick) 6%, var(--page));
+        --on-pick: #ffffff;
+        --band: color-mix(in srgb, var(--pick) 7%, var(--page));
+        --card-band: color-mix(in srgb, var(--pick) 6%, var(--surface));
         --best: #25652f;
+        --best-tint: #dcefdf;
         --odd: #745417;
         --error: #a5293d;
         --error-tint: #fbe9ec;
@@ -30,11 +70,12 @@
           --muted: #a3a9b4;
           --rule: #2e3139;
           --code: #15171b;
-          --pick: #8f9cff;
-          --tag: #4b63ff;
-          --on-tag: #ffffff;
-          --band: color-mix(in srgb, var(--pick) 9%, var(--page));
+          --pick: #4b63ff;
+          --on-pick: #ffffff;
+          --band: color-mix(in srgb, var(--pick) 14%, var(--page));
+          --card-band: color-mix(in srgb, var(--pick) 14%, var(--surface));
           --best: #7ecd8f;
+          --best-tint: #1d3a26;
           --odd: #ffc107;
           --error: #ffa3b0;
           --error-tint: #3a1d23;
@@ -63,11 +104,6 @@
         margin: 0 auto;
         padding: 24px 20px 48px;
       }
-      @media (min-width: 720px) {
-        main {
-          padding: 40px 32px 64px;
-        }
-      }
       h1,
       h2,
       h3,
@@ -85,19 +121,36 @@
         white-space: nowrap;
       }
 
-      .tag {
-        display: inline-block;
-        margin-left: 8px;
-        padding: 2px 8px;
+      .tag,
+      .best {
+        flex: none;
         border-radius: 5px;
-        background: var(--tag);
-        color: var(--on-tag);
-        font-size: 12px;
         font-weight: 700;
-        line-height: 16px;
-        letter-spacing: 0.01em;
-        vertical-align: 2px;
         white-space: nowrap;
+      }
+      .tag {
+        padding: 2px 8px;
+        background: var(--pick);
+        color: var(--on-pick);
+        font-size: 12px;
+        line-height: 16px;
+      }
+      .best {
+        padding: 1px 6px;
+        background: var(--best-tint);
+        color: var(--best);
+        font-size: 11.5px;
+        line-height: 15px;
+      }
+      .pick,
+      .col-name,
+      .card-head h2,
+      .preview figcaption {
+        display: flex;
+        flex-wrap: wrap;
+        align-content: flex-start;
+        align-items: center;
+        gap: 4px 8px;
       }
 
       .verdict {
@@ -117,14 +170,14 @@
         letter-spacing: -0.012em;
         overflow-wrap: anywhere;
       }
+      .pick {
+        column-gap: 12px;
+      }
       .pick .tag {
-        margin-left: 12px;
         padding: 4px 11px;
         border-radius: 7px;
         font-size: 15px;
         line-height: 20px;
-        letter-spacing: 0;
-        vertical-align: 0.3em;
       }
       .pick.is-missing {
         color: var(--muted);
@@ -167,18 +220,15 @@
         white-space: nowrap;
       }
       .value {
-        position: relative;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 2px 8px;
         font-size: 15px;
-        line-height: 1.4;
+        line-height: 1.45;
       }
       .value.is-best {
-        color: var(--best);
         font-weight: 650;
-      }
-      .value.is-best::before {
-        content: '✓';
-        position: absolute;
-        left: -16px;
       }
       .value.is-empty {
         color: var(--muted);
@@ -191,83 +241,67 @@
         line-height: 1.45;
       }
       .summary {
-        margin-top: 4px;
         color: var(--muted);
         font-size: 14px;
       }
       .tally {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 4px 10px;
         color: var(--muted);
         font-size: 13px;
       }
-      .pips {
-        display: inline-flex;
-        gap: 3px;
-      }
-      .pips i {
-        width: 8px;
-        height: 8px;
-        border: 1.5px solid var(--rule);
-        border-radius: 2px;
-      }
-      .pips i.won {
-        border-color: var(--best);
-        background: var(--best);
+      .tally b {
+        color: var(--ink);
+        font-weight: 650;
       }
 
       .matrix {
         display: none;
-        margin: 32px -18px 0;
+        margin-top: 32px;
         overflow-wrap: anywhere;
       }
       .band {
-        border-radius: 10px 10px 0 0;
+        margin-bottom: 10px;
+        border-radius: 10px;
         background: var(--band);
       }
       .col-name {
         position: sticky;
         top: 0;
         z-index: 1;
-        padding: 14px 18px 8px;
+        padding: 14px 14px 6px;
         background: var(--page);
         font-size: 17px;
         font-weight: 650;
         line-height: 1.3;
       }
       .col-name.is-pick {
-        padding-top: 11px;
-        border-top: 3px solid var(--pick);
         border-radius: 10px 10px 0 0;
         background: var(--band);
       }
       .matrix.is-stuck .col-name {
         box-shadow: 0 1px 0 var(--rule);
       }
+      .matrix.is-stuck .col-name.is-pick {
+        border-radius: 0;
+      }
       .stuck-mark {
         align-self: start;
         height: 1px;
       }
       .col-summary {
-        padding: 0 18px 6px;
-      }
-      .col-summary .summary {
-        margin-top: 0;
+        padding: 0 14px 8px;
       }
       .col-tally {
-        padding: 2px 18px 14px;
+        padding: 0 14px 24px;
       }
       .m-head {
-        padding: 14px 18px 4px;
+        padding: 14px 14px 4px;
         border-top: 1px solid var(--rule);
         font-size: 14px;
         font-weight: 600;
         line-height: 1.4;
       }
       .cell {
-        padding: 2px 18px 14px;
+        padding: 2px 14px 14px;
       }
 
       .cards {
@@ -276,28 +310,28 @@
         margin-top: 28px;
       }
       .card {
+        overflow: hidden;
         border: 1px solid var(--rule);
         border-radius: 12px;
         background: var(--surface);
         overflow-wrap: anywhere;
       }
-      .card.is-pick {
-        border: 2px solid var(--pick);
-      }
       .card > * {
-        padding: 10px 22px;
-      }
-      .card.is-pick > * {
-        padding-inline: 21px;
+        padding: 12px 18px;
       }
       .card-head {
-        padding-top: 14px;
-        padding-bottom: 12px;
+        padding-block: 16px 14px;
+      }
+      .card.is-pick .card-head {
+        background: var(--card-band);
       }
       .card-head h2 {
         font-size: 17px;
         font-weight: 650;
         line-height: 1.3;
+      }
+      .card-head .summary {
+        margin-top: 4px;
       }
       .card-head .tally {
         margin-top: 8px;
@@ -310,6 +344,15 @@
         font-size: 13px;
         font-weight: 600;
         line-height: 1.4;
+      }
+
+      @media (min-width: 600px) {
+        main {
+          padding: 40px 32px 64px;
+        }
+        .matrix {
+          margin-inline: -14px;
+        }
       }
 
       .previews {
@@ -330,15 +373,23 @@
       }
       .preview-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--cols) * 1ch + 30px)), 1fr));
+        grid-template-columns: minmax(0, 1fr);
         gap: 16px;
         margin-top: 12px;
+      }
+      .preview-grid,
+      .mono-probe {
         font:
           12.5px/1.4 ui-monospace,
           'SF Mono',
           Menlo,
           Consolas,
           monospace;
+      }
+      .mono-probe {
+        position: absolute;
+        visibility: hidden;
+        white-space: pre;
       }
       .preview figcaption {
         margin-bottom: 6px;
@@ -358,9 +409,6 @@
         background: var(--code);
         font: inherit;
         tab-size: 4;
-      }
-      .preview.is-pick pre {
-        border-color: var(--pick);
       }
       @media (max-width: 400px) {
         .preview pre {
@@ -398,8 +446,10 @@
       }
       details > ul,
       details > p {
-        padding-bottom: 14px;
         overflow-wrap: anywhere;
+      }
+      details > :last-child {
+        padding-bottom: 14px;
       }
       details > ul {
         padding-left: 20px;
@@ -415,6 +465,8 @@
         const holder = document.getElementById('compare-data')
         const raw = (holder ? holder.textContent : '').trim()
         const COLUMN_MIN_PX = 184
+        const PRE_FRAME_PX = 30
+        const PREVIEW_GAP_PX = 16
 
         function h(tag, props, ...kids) {
           const el = document.createElement(tag)
@@ -498,16 +550,7 @@
         function tally(choice) {
           if (judgedSets.length === 0) return null
           const won = judgedSets.filter(s => s.has(keyOf(choice.name))).length
-          return h(
-            'p',
-            { class: 'tally' },
-            `Best on ${won} of ${judgedSets.length} measures`,
-            h(
-              'span',
-              { class: 'pips', 'aria-hidden': 'true' },
-              judgedSets.map(s => h('i', { class: s.has(keyOf(choice.name)) ? 'won' : null })),
-            ),
-          )
+          return h('p', { class: 'tally' }, 'Best on ', h('b', null, won), ` of ${judgedSets.length} measures`)
         }
         function result(m, i, choice) {
           const entry = Object.entries(m.values || {}).find(([name]) => keyOf(name) === keyOf(choice.name))
@@ -522,7 +565,7 @@
                   'p',
                   { class: isBest ? 'value is-best' : 'value' },
                   value,
-                  isBest && h('span', { class: 'sr' }, ' (best)'),
+                  isBest && h('span', { class: 'best' }, 'Best'),
                 )
               : h('p', { class: 'value is-empty' }, 'Not measured'),
             note && h('p', { class: 'note' }, note),
@@ -555,7 +598,8 @@
             'aria-label': 'Choices',
             style: `grid-template-columns: repeat(${choices.length}, minmax(0, 1fr)); grid-template-rows: repeat(${headRows + 2 * measures.length}, auto)`,
           },
-          pickColumn > 0 && h('div', { class: 'band', style: `grid-column: ${pickColumn}; grid-row: 1 / ${headRows + 1}` }),
+          pickColumn > 0 &&
+            h('div', { class: 'band', style: `grid-column: ${pickColumn}; grid-row: 1 / ${headRows + 1}` }),
           stuckMark,
           choices.map((choice, c) => [
             h(
@@ -623,12 +667,17 @@
           ),
         )
 
+        const probe = h('span', { class: 'mono-probe' }, '0'.repeat(100))
+        document.body.append(probe)
+        const monoCharPx = probe.getBoundingClientRect().width / 100
+        probe.remove()
+        const previewRowsFit = []
         const previewSection =
           previews.length > 0 &&
           h(
             'section',
             { class: 'previews', 'aria-label': 'Previews' },
-            previews.map(p => {
+            previews.map((p, i) => {
               const blocks = choices
                 .map(choice => {
                   const entry = Object.entries(p.texts || {}).find(([name]) => keyOf(name) === keyOf(choice.name))
@@ -636,18 +685,25 @@
                 })
                 .filter(Boolean)
               const widest = Math.max(20, ...blocks.flatMap(b => b.body.split('\n').map(line => line.length)))
+              const blockPx = Math.min(widest, 100) * monoCharPx + PRE_FRAME_PX
+              const rowPx = Math.ceil(blocks.length * blockPx + (blocks.length - 1) * PREVIEW_GAP_PX)
+              previewRowsFit.push(
+                `@container page (min-width: ${rowPx}px) {
+                  #preview-${i} .preview-grid { grid-template-columns: repeat(${blocks.length}, minmax(0, 1fr)); }
+                }`,
+              )
               return h(
                 'div',
-                { class: 'preview-group' },
+                { class: 'preview-group', id: `preview-${i}` },
                 h('h2', null, text(p.title) || 'Preview'),
                 text(p.note) && h('p', null, text(p.note)),
                 h(
                   'div',
-                  { class: 'preview-grid', style: `--cols: ${Math.min(widest, 100)}` },
+                  { class: 'preview-grid' },
                   blocks.map(b =>
                     h(
                       'figure',
-                      { class: isPick(b.choice) ? 'preview is-pick' : 'preview' },
+                      { class: 'preview' },
                       h('figcaption', null, b.choice.name, isPick(b.choice) && tag()),
                       h('pre', null, b.body),
                     ),
@@ -697,11 +753,11 @@
             ),
           )
 
-        document.head.append(columnsFit)
+        document.head.append(columnsFit, h('style', null, previewRowsFit.join('\n')))
+        page.replaceChildren(verdict, problemNote || '', matrix, cards, previewSection || '', folds || '')
         new IntersectionObserver(([entry]) => {
           matrix.classList.toggle('is-stuck', !entry.isIntersecting && entry.boundingClientRect.top < 0)
         }).observe(stuckMark)
-        page.replaceChildren(verdict, problemNote || '', matrix, cards, previewSection || '', folds || '')
       })
     </script>
   </head>
