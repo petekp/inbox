@@ -850,7 +850,7 @@ type OverviewRowParts =
   /** The children of a subject past `CHILD_ROWS`, as "+ 2 more running". It is always the last row under its subject. */
   | { kind: 'more'; id: string; text: string; branch: 'last' }
   /** Where the person last looked: rows above it changed since. */
-  | { kind: 'look'; id: string; text: string; age: string }
+  | { kind: 'look'; id: string; text: string }
   /** Rows folded into a count, as "✓ 3 done" or "○ 2 more queued". */
   | { kind: 'fold'; id: string; mark: string; tone: OverviewTone; text: string; age: string | null }
 
@@ -869,7 +869,7 @@ export type OverviewPage = {
 }
 
 export const WORKING_TEXT = 'Working…'
-export const LOOK_TEXT = 'you looked'
+export const LOOK_TEXT = 'Seen'
 export const NEWS_DOT = '•'
 
 /** The most lines each text on an Overview row wraps to: a subject's name with where it stands, its was line, and a child's name. */
@@ -983,8 +983,7 @@ export function overviewPage(
   const rows: OverviewRowParts[] = running
     .filter(c => c.subjectId === null || !shownIds.has(c.subjectId))
     .map(c => childRow(c, now, null))
-  const lookRow: OverviewRowParts | null =
-    look === null ? null : { kind: 'look', id: 'look', text: LOOK_TEXT, age: shortAgo(now - look) }
+  const lookRow: OverviewRowParts | null = look === null ? null : { kind: 'look', id: 'look', text: LOOK_TEXT }
   let isLookDrawn = false
   for (const [i, x] of shown.entries()) {
     if (lookRow && !isLookDrawn && !isNew(x)) {
