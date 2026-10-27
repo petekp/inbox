@@ -2554,8 +2554,13 @@ function toolRecord<Name extends string>(_tool: Name, result: unknown): ToolResu
   return typeof result === 'object' && result !== null ? (result as ToolResultOf<Name>) : undefined
 }
 
-async function noteChild($: EngineInterface, change: (o: Overview | null, at: number) => Overview | null) {
+async function noteChild(
+  $: EngineInterface,
+  change: (o: Overview | null, at: number) => Overview | null,
+  isWorthSaving: (at: number) => boolean = () => true,
+) {
   const at = await $.clock.now()
+  if (!isWorthSaving(at)) return
   await commit($, currentOwner(), s => overviewChanged(s, o => change(o, at))).catch(() => undefined)
 }
 
@@ -2571,9 +2576,11 @@ const isActivityWorthSaving = activityGate()
 
 async function noteAgentWork($: EngineInterface, agentId: string) {
   const ref = childRefOf(agentId)
-  const at = await $.clock.now()
-  if (!isActivityWorthSaving(ref, at)) return
-  await commit($, currentOwner(), s => overviewChanged(s, o => childWorked(o, ref, at))).catch(() => undefined)
+  await noteChild(
+    $,
+    (o, at) => childWorked(o, ref, at),
+    at => isActivityWorthSaving(ref, at),
+  )
 }
 
 async function notePlace($: EngineInterface) {
@@ -4951,56 +4958,31 @@ export const register: Register = on => {
       ) : null
     const settledContent = (
       what: string,
-      id: string,
-      { label, at, delivery, isLapsed, offersUndo }: SettledState,
+      { label, at, delivery, isLapsed }: SettledState,
       undo: RowPress | PrPress | null,
-    ) => {
-      if (look === 'desktop') {
-        const after = `${DOT}${settledLabel(label, delivery)}`
-        const side = undoPlace(id, undo, at, offersUndo)
-        return (
-          <Box flexDirection="column">
-            <Box flexDirection="row" alignItems="center">
-              <Box flexGrow={1} flexShrink={1}>
-                <Text wrap="wrap">
-                  {what}
-                  <Text color={pal.muted}>{after}</Text>
-                </Text>
-              </Box>
-              {side ? (
-                <Box flexShrink={0} paddingLeft={1}>
-                  {side}
-                </Box>
-              ) : null}
-            </Box>
-          </Box>
-        )
-      }
-
-      return (
-        <Box flexDirection="column">
-          <Text wrap="truncate-end" color={pal.muted}>
-            {what}
+    ) => (
+      <Box flexDirection="column">
+        <Text wrap="truncate-end" color={pal.muted}>
+          {what}
+        </Text>
+        <Box position="relative" flexDirection="row" columnGap={2}>
+          {undo ? (
+            <Box
+              key={settledScrollKey(`undo-${pressRowId(undo)}`, settledLayout)}
+              position="absolute"
+              top={0}
+              bottom={0}
+              left={0}
+              width={1}
+            />
+          ) : null}
+          <Text wrap="wrap" color={settledTone({ delivery, isLapsed }) === 'done' ? pal.tone.done : pal.muted}>
+            {settledLabel(label, delivery)}
           </Text>
-          <Box position="relative" flexDirection="row" columnGap={2}>
-            {undo ? (
-              <Box
-                key={settledScrollKey(`undo-${pressRowId(undo)}`, settledLayout)}
-                position="absolute"
-                top={0}
-                bottom={0}
-                left={0}
-                width={1}
-              />
-            ) : null}
-            <Text wrap="wrap" color={settledTone({ delivery, isLapsed }) === 'done' ? pal.tone.done : pal.muted}>
-              {settledLabel(label, delivery)}
-            </Text>
-            {undo ? undoButton(undo, at) : null}
-          </Box>
+          {undo ? undoButton(undo, at) : null}
         </Box>
-      )
-    }
+      </Box>
+    )
     const settledRow = ({ settled: r, state }: Extract<Entry, { settled: RowView }>, pos: TreePos) => {
       const undo = r.actions.find(a => a.press.action === 'undo')?.press ?? null
       if (look === 'desktop') {
@@ -5020,7 +5002,7 @@ export const register: Register = on => {
           ],
         })
       }
-      const content = settledContent(r.title, r.id, state, undo)
+      const content = settledContent(r.title, state, undo)
       const mark = <Text color={pal.muted}>{settledMark(state.delivery) || ' '}</Text>
       return (
         <Box key={`settled-${r.id}`} flexDirection="column" paddingY={space.settledPad}>
@@ -5149,20 +5131,33 @@ export const register: Register = on => {
       return sections(groups)
     }
 
-    const settledPrBlock = (pr: PrView, state: SettledState) =>
-      section([
-        treeRow(
-          null,
-          <Text color={pal.muted}>✓</Text>,
-          settledContent(
-            `#${pr.number} ${pr.title}`,
-            prMarkId(pr.ref),
-            state,
-            state.canUndo ? { action: 'pr-undo', ref: pr.ref } : null,
-          ),
-          `settled-pr:${pr.ref}`,
-        ),
-      ])
+    const settledPrBlock = (pr: PrView, state: SettledState) => {
+      const what = `#${pr.number} ${pr.title}`
+      const undo: PrPress | null = state.canUndo ? { action: 'pr-undo', ref: pr.ref } : null
+      const side = look === 'desktop' ? undoPlace(prMarkId(pr.ref), undo, state.at, state.offersUndo) : null
+      const content =
+        look === 'desktop' ? (
+          <Box flexDirection="column">
+            <Box flexDirection="row" alignItems="center">
+              <Box flexGrow={1} flexShrink={1}>
+                <Text wrap="wrap">
+                  {what}
+                  <Text color={pal.muted}>{`${DOT}${settledLabel(state.label, state.delivery)}`}</Text>
+                </Text>
+              </Box>
+              {side ? (
+                <Box flexShrink={0} paddingLeft={1}>
+                  {side}
+                </Box>
+              ) : null}
+            </Box>
+          </Box>
+        ) : (
+          settledContent(what, state, undo)
+        )
+
+      return section([treeRow(null, <Text color={pal.muted}>✓</Text>, content, `settled-pr:${pr.ref}`)])
+    }
     const prRowGroup = (title: string, group: Row[], key: string) =>
       group.length === 0
         ? []
