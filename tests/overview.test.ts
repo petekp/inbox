@@ -49,16 +49,18 @@ const page = (
   place: Session['place'] = null,
 ) => overviewPage({ ledger: { overview }, presence: presence(over), place }, now)
 
+const ARMS = { mid: '├ ', last: '└ ' } as const
+
 const shape = (rows: OverviewRow[]) =>
   rows.map(r =>
     r.kind === 'subject'
-      ? `${r.mark} ${r.name}${r.text ? `: ${r.text}` : ''} ${r.age}`
+      ? `${r.mark} ${r.name}${r.text ? `: ${r.text}` : ''} ${r.age}${r.hasChildren ? ' ┐' : ''}`
       : r.kind === 'child'
-        ? `${r.isLoose ? '' : '  '}● ${r.name} ${r.age}`
+        ? `${r.branch ? ARMS[r.branch] : ''}● ${r.name} ${r.age}`
         : r.kind === 'look'
           ? `-- ${r.text} ${r.age}`
           : r.kind === 'more'
-            ? `  ${r.text}`
+            ? `${ARMS[r.branch]}${r.text}`
             : `${r.mark} ${r.text}${r.age ? ` ${r.age}` : ''}`,
   )
 
@@ -286,7 +288,7 @@ test('finished work folds into a count once seen, keeping at most two new finish
   ])
 })
 
-test('running children sit under their subject, at most three, and a quiet one says so', () => {
+test('running children sit under their subject, at most three, each tied to it and the last ending its tree, and a quiet one says so', () => {
   const now = 100 * MIN
   let o = after(null, 'NEW: working | Offline mode | queue built', 10 * MIN)
   for (const [n, idle] of [0, 1, 2, 3, 20].entries())
@@ -306,11 +308,17 @@ test('running children sit under their subject, at most three, and a quiet one s
   const rows = page(o, now).rows
 
   expect(shape(rows)).toEqual([
-    '● Offline mode: queue built 2h',
-    '  ● Review 0 now',
-    '  ● Review 1 1m',
-    '  ● Review 2 2m',
-    `  + 2 more running`,
+    '● Offline mode: queue built 2h ┐',
+    '├ ● Review 0 now',
+    '├ ● Review 1 1m',
+    '├ ● Review 2 2m',
+    `└ + 2 more running`,
+  ])
+  const two = ['t2', 't3', 't4'].reduce<Overview | null>((x, ref) => childEnded(x, ref, now - MIN), o)
+  expect(shape(page(two, now).rows)).toEqual([
+    '● Offline mode: queue built 2h ┐',
+    '├ ● Review 0 now',
+    '└ ● Review 1 1m',
   ])
   expect(rows.filter(r => r.kind === 'child')).toHaveLength(CHILD_ROWS)
   expect(rows[0]).toMatchObject({ kind: 'subject', isRunning: true })

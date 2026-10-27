@@ -14,6 +14,7 @@ import { version } from '../package.json'
 import { failingChecks, waitingThreads } from '../../hooks/prs'
 import type { LastAction, Stop } from '../../types'
 import { closeItem } from '../../hooks/ledger'
+import { applyOverview, parseOverview } from '../../hooks/overview'
 import {
   CLOSED_SHOWN,
   SETTLED_MS,
@@ -23,6 +24,7 @@ import {
   earlierLabel,
   foldLabel,
   isRowTab,
+  OVERVIEW_TEXT_LINES,
   rowKeyPlan,
 } from '../../hooks/view'
 import type { OverviewRow, RowView } from '../../hooks/view'
@@ -713,6 +715,48 @@ test('the Overview page shows the identity, the goal and the live line, then its
   const withWas = page.rows.filter(r => r.kind === 'subject' && r.was !== null)
   expect(withWas.length).toBeGreaterThan(0)
   for (const row of withWas) if (row.kind === 'subject') expect(lines[at(row.name) + 1]).toContain(`was: ${row.was}`)
+})
+
+test('on the Overview page, the rows under a subject hang from its mark, ├─ for each and └─ for the last, and the line runs beside each wrapped line', () => {
+  const lines = text(screenOf(), onPage, 34).split('\n')
+  const at = (s: string) => lines.findIndex(l => l.includes(s))
+  const [subject, mid, last, next] = [
+    at('Dismiss gesture'),
+    at('Review the'),
+    at('Tune how hard'),
+    at('Glasses pairing'),
+  ]
+  const col = lines[subject]!.search(/\S/)
+  const glyphs = (from: number, to: number) => lines.slice(from, to).map(l => l.slice(col, col + 2))
+
+  expect(subject).toBeLessThan(mid)
+  expect(glyphs(subject + 1, mid).every(g => g.startsWith('│'))).toBe(true)
+  expect(glyphs(mid, last)).toEqual(['├─', ...Array<string>(last - mid - 1).fill('│ ')])
+  expect(last - mid).toBeGreaterThan(1)
+  expect(glyphs(last, next)).toEqual(['└─', ...Array<string>(next - last - 1).fill('  ')])
+})
+
+test('on the Overview page, a subject’s text wraps to three lines and is cut with an ellipsis past them, and its name stays plain on each line', () => {
+  const name = 'Help text for every greeting command'
+  const state = emptyState('s1')
+  state.ledger = {
+    ...state.ledger,
+    overview: applyOverview(
+      null,
+      parseOverview(`NEW: working | ${name} | being written with an example for each flag and its default`)!,
+      NOW,
+    ),
+  }
+  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, true, NO_HOLDS) })
+  const raw = drawn(screen, onPage, 34)
+  const first = raw.findIndex(l => strip(l).includes('Help text'))
+  const subject = raw.slice(first, first + OVERVIEW_TEXT_LINES + 1).map(strip)
+
+  expect(subject[0]).toMatch(/Help text for every\s+now$/)
+  expect(subject[OVERVIEW_TEXT_LINES - 1]).toMatch(/…$/)
+  expect(subject[OVERVIEW_TEXT_LINES]?.trim() ?? '').not.toMatch(/^[a-z]/)
+  expect(raw[first + 1]).toContain(`greeting command${ESC}2m: being`)
+  expect(text(screen, onPage, 200)).toContain(`${name}: being written with an example for each flag and its default`)
 })
 
 test('each subject’s mark takes its tone, and a mark with no tone is muted', () => {
