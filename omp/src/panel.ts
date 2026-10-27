@@ -15,6 +15,7 @@ import type { RowRecord } from '../../hooks/arrivals'
 import { closedState } from '../../hooks/ledger'
 import {
   GH_MISSING_TEXT,
+  isPrDrawnInPlace,
   prsEmptyText,
   prRefreshFailedText,
   PR_DISMISSED_LABEL,
@@ -51,7 +52,7 @@ import {
   LISTED_TABS,
   SETTLED_MS,
   isDrawnInPlace,
-  isShownSince,
+  keptDiscards,
   shownTabs,
   tabBadge,
   actionLabel,
@@ -485,11 +486,12 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
     ]
   }
   if (screen.isGhMissing) out.push({ kind: 'note', text: GH_MISSING_TEXT })
-  for (const { pr, isSettled, canUndo } of prs.drawn) {
+  for (const d of prs.drawn) {
+    const { pr } = d
     const markId = prMarkId(pr.ref)
     const lead: Lead = { text: `#${pr.number}`, tone: 'prs' }
-    if (isSettled) {
-      if (!isShownSince(lastActions[markId]?.at ?? 0, ui.shownSince)) continue
+    if (!isPrDrawnInPlace(d, ui.shownSince)) continue
+    if (d.isSettled) {
       out.push({
         kind: 'row',
         line: {
@@ -500,7 +502,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
           settled: {
             label: PR_DISMISSED_LABEL,
             tone: 'done',
-            undo: canUndo ? { action: 'pr-undo', ref: pr.ref } : null,
+            undo: d.canUndo ? { action: 'pr-undo', ref: pr.ref } : null,
           },
         },
       })
@@ -645,11 +647,12 @@ function withSelection(ui: PanelUi, id: string | null): PanelUi {
   return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null }
 }
 
+/** Shows `tab`. Its showing starts at `now` unless it already shows, so its settled rows stay. */
 const withTab = (ui: PanelUi, tab: ShownTab, now: number): PanelUi => ({
   ...withSelection(ui, null),
   tab,
   pageTop: 0,
-  shownSince: now,
+  shownSince: tab === ui.tab ? ui.shownSince : now,
 })
 
 /** Whether the line `id` on the shown tab waits on the person. */
@@ -688,10 +691,9 @@ function activate(screen: PanelScreen, ui: PanelUi, line: Line, button: Button, 
   }
   if (!('ref' in press) && press.action === 'discard') {
     const { [line.id]: _discarded, ...drafts } = ui.drafts
-    // A discard keeps its row folded for as long as the row could stay in place.
-    const recent = Object.entries(ui.discarded).filter(([, at]) => isShownSince(at, ui.shownSince))
+    const discarded = { ...keptDiscards(ui.discarded, ui.shownSince), [line.id]: now }
 
-    return { ui: { ...ui, focus: null, drafts, discarded: { ...Object.fromEntries(recent), [line.id]: now } } }
+    return { ui: { ...ui, focus: null, drafts, discarded } }
   }
 
   return { ui: { ...ui, focus: null }, press }
@@ -834,7 +836,7 @@ export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): bool
 
   return (
     rows.some(r => r.state.is === 'settled' && r.state.canUndo) ||
-    view.prs.drawn.some(p => p.canUndo) ||
+    view.prs.drawn.some(p => p.isSettled && p.canUndo) ||
     isPressMoving ||
     isNoticeShown
   )

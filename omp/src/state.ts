@@ -1,11 +1,12 @@
 import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { KEPT_SESSIONS, pruneClosed } from '../../hooks/ledger'
+import { KEPT_SESSIONS } from '../../hooks/ledger'
 import {
   emptySession,
   isSessionFile,
   missingAsNull,
+  pruned,
   sessionFile,
   staleSessionFiles,
   upgradeSession,
@@ -68,10 +69,7 @@ function inTurn<T>(key: string, fn: () => Promise<T>): Promise<T> {
   return run
 }
 
-/**
- * Changes a session in turn with every other change to it in this process. Every save prunes the closed lists and
- * keeps the records of `heldRows`.
- */
+/** Changes a session in turn with every other change to it in this process. Every save prunes it with `pruned`. */
 export async function updateState(
   dir: string,
   sessionId: string,
@@ -83,7 +81,7 @@ export async function updateState(
     const { state: current, isSaved } = await readSaved(dir, sessionId)
     const changed = await change(current)
     if (isSaved && changed === current) return current
-    const next = { ...changed, ledger: pruneClosed(changed.ledger, new Set(changed.heldRows)) }
+    const next = pruned(changed)
     const folder = join(dir, 'sessions')
     if (!madeFolders.has(folder)) {
       await mkdir(folder, { recursive: true })

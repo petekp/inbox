@@ -778,8 +778,8 @@ function asksAbout(item, finding, isClaimed = false) {
   return [...prNumbers(`${finding.title} ${finding.detail}`)].some((n) => itemPrs.has(n));
 }
 function pruneClosed(ledger, keep) {
-  const pruned = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id));
-  return { ...ledger, closed: pruned(ledger.closed), closedFindings: pruned(ledger.closedFindings) };
+  const pruned2 = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id));
+  return { ...ledger, closed: pruned2(ledger.closed), closedFindings: pruned2(ledger.closedFindings) };
 }
 function idNumber(id) {
   return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
@@ -2111,12 +2111,26 @@ function threadSentIn(lastActions) {
 function isTracked(prState, linked, ref) {
   return splitLinked(prState, linked).tracked.includes(ref) || prState.branchRef === ref;
 }
-function drawnPrs(prState, linked, lastActions, now, shownSince) {
+function keepsView(prState, linked, ref) {
+  return isTracked(prState, linked, ref) || linked.includes(ref) && isLeftOut(prState, ref);
+}
+function dismissedAt(lastActions, ref) {
+  const mark = lastActions[prMarkId(ref)];
+  return mark?.action === "pr-dismiss" ? mark.at : null;
+}
+function isDismissed(lastActions, ref) {
+  return dismissedAt(lastActions, ref) !== null;
+}
+function isViewKept(prState, linked, lastActions, ref, shownSince) {
+  const at = dismissedAt(lastActions, ref);
+  return keepsView(prState, linked, ref) || at !== null && isShownSince(at, shownSince);
+}
+function drawnPrs(prState, linked, lastActions, now, shownSince, settleWindowMs) {
   return inPrOrder(Object.values(prState.views)).flatMap((pr) => {
-    if (isTracked(prState, linked, pr.ref)) return [{ pr, isSettled: false, canUndo: false }];
-    const mark = lastActions[prMarkId(pr.ref)];
-    if (mark?.action !== "pr-dismiss" || !isShownSince(mark.at, shownSince)) return [];
-    return [{ pr, isSettled: true, canUndo: now - mark.at < SETTLED_MS }];
+    if (isTracked(prState, linked, pr.ref)) return [{ pr, isSettled: false }];
+    const at = dismissedAt(lastActions, pr.ref);
+    if (at === null || !isShownSince(at, shownSince)) return [];
+    return [{ pr, isSettled: true, at, canUndo: now - at < settleWindowMs, offersUndo: true }];
   });
 }
 
@@ -2143,6 +2157,7 @@ function emptySession() {
     sent: [],
     lastActions: {},
     heldRows: [],
+    shownSince: null,
     prViews: NO_PRS,
     stop: null,
     hostTasks: [],
@@ -2183,6 +2198,7 @@ function upgradeSession(saved) {
     })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
     heldRows: saved.heldRows ?? [],
+    shownSince: saved.shownSince ?? null,
     prViews: {
       ...NO_PRS,
       ...saved.prViews,
@@ -2261,6 +2277,21 @@ function appliedCatchUp(s, begun, parsed, now) {
     }
   });
 }
+function pruned(s) {
+  const inPlace = [
+    ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
+    ...s.ledger.closed,
+    ...s.ledger.closedFindings.map((f) => ({ id: f.id, at: f.closedAt }))
+  ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
+  const isLeftBehind = (ref) => isDismissed(s.lastActions, ref) && !isViewKept(s.prViews, s.ledger.prs, s.lastActions, ref, s.shownSince);
+  const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => !isLeftBehind(ref)));
+  const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
+  return {
+    ...s,
+    ledger: pruneClosed(s.ledger, /* @__PURE__ */ new Set([...s.heldRows, ...inPlace])),
+    prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
+  };
+}
 function withoutStaleResult(last, now) {
   if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS) return last;
   const { result: _result, ...rest } = last;
@@ -2292,12 +2323,12 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now, holds.shownSince),
+    prs: prTabOf(s, lastActions, now, holds.shownSince, settleWindowMs),
     overviewPage: overviewPage(s, now)
   };
 }
-function prTabOf(s, lastActions, now, shownSince) {
-  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, shownSince);
+function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
+  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, shownSince, settleWindowMs);
   const isSent = threadSentIn(lastActions);
   return {
     drawn,
@@ -2525,7 +2556,7 @@ async function updateState(dir, sessionId, change) {
     const { state: current, isSaved } = await readSaved(dir, sessionId);
     const changed = await change(current);
     if (isSaved && changed === current) return current;
-    const next = { ...changed, ledger: pruneClosed(changed.ledger, new Set(changed.heldRows)) };
+    const next = pruned(changed);
     const tmp = `${path}.${process.pid}.tmp`;
     await writeFile(tmp, JSON.stringify(next));
     await rename(tmp, path);
@@ -2643,14 +2674,14 @@ function herdrReportKey(pane, tokens) {
 function herdrReporter() {
   let sent = null;
   let sending = Promise.resolve();
-  return (send, report) => {
+  return (run2, report) => {
     sending = sending.then(async () => {
       const r = await report();
       if (!r) return;
       const key = herdrReportKey(r.pane, r.tokens);
       if (key === sent) return;
       sent = key;
-      await send(herdrReport(r.pane, r.tokens, r.seq));
+      await run2(herdrReport(r.pane, r.tokens, r.seq), { cwd: "/", timeoutMs: HERDR_TIMEOUT_MS });
     }).catch(() => void 0);
     return sending;
   };
@@ -2679,10 +2710,7 @@ function herdrOnWrite(env, run2, dir, now) {
     const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, seq), []);
     const key = herdrReportKey(pane, tokens);
     if (key === s.herdrReport?.key) return;
-    await report(
-      (args) => run2(args, { cwd: dir, timeoutMs: HERDR_TIMEOUT_MS }),
-      async () => ({ pane, tokens, seq })
-    );
+    await report(run2, async () => ({ pane, tokens, seq }));
     await updateState(
       dir,
       s.sessionId,

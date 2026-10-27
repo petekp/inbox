@@ -128,9 +128,10 @@ export function delegatesSettled(o: Overview | null, running: ReadonlySet<string
 }
 
 /**
- * Keeps a host that reads its saved session from a file from reading it for every call a child makes. Answers true
+ * Keeps a long-lived host, the mod or omp, from reading its saved session for every call a child makes. Answers true
  * when a child's activity at `at` is worth a read: the first since the host started, or `ACTIVITY_SAVE_MS` after the
- * last one it let through.
+ * last one it let through. Codex runs each hook in its own process, which keeps nothing between calls, so it relies on
+ * `childWorked` alone.
  */
 export function activityGate(): (ref: Child['ref'], at: number) => boolean {
   const saved = new Map<string, number>()

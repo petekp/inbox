@@ -6,13 +6,12 @@ import type { EngineInterface, UiCopyResult, UiPressArgument } from 'claude-code
 
 import type { Away, LastAction, Ledger, OldPresence, PrViews, SentPrompt, Stop } from '../types'
 import type { Run } from './gh'
-import { EMPTY, KEPT_SESSIONS, pruneClosed } from './ledger'
+import { EMPTY, KEPT_SESSIONS } from './ledger'
 import { CLAUDE_CODE } from './model-text'
-import { isShownSince } from './view'
 import type { ShownTab } from './view'
 import { COMPARE_PAGE_FILE, localPath, openCommands, withArrival, withRewrite, withUnconfirmed } from './presses'
 import type { Effect } from './presses'
-import { emptySession, upgradeSession } from './session'
+import { emptySession, pruned, upgradeSession } from './session'
 import type { SavedSession, SendOutcome, SentBy, Session } from './session'
 import { exclusiveKeys } from './session-host'
 import type { SessionHost } from './session-host'
@@ -25,6 +24,11 @@ export const PRESENT: Away = { lastActiveAt: 0, isAway: false, minute: 0 }
 
 /** The tab the pane shows, whether it shows the sample, and since when. */
 export type Shown = { tab: ShownTab; isDemo: boolean; since: number }
+
+/** The showing once the pane shows `tab`, with or without the sample: `shown` while neither changed, else one from `now`. */
+export function showingAt(shown: Shown | null, tab: ShownTab, isDemo: boolean, now: number): Shown {
+  return shown?.tab === tab && shown.isDemo === isDemo ? shown : { tab, isDemo, since: now }
+}
 
 // The engine lists the values a file reads and writes from that file's own consts, so register.tsx defines these
 // four again.
@@ -184,8 +188,8 @@ export type Changed = { before: Session; after: Session; isDrawn: boolean }
  * Changes the session of `owner`. While its conversation is drawn, the change runs on the drawn session and is
  * written only if no other write landed meanwhile; otherwise it runs again on what landed. Once the conversation
  * moved on, the change goes to its saved session. A change that returns the session it was given writes nothing.
- * Every write prunes the closed lists, keeping `held` rows and the rows closed or pressed while the pane shows its
- * tab, which stay drawn. A write that changes more than the running turn saves.
+ * Every write saves the pane's `held` rows and its showing of the real session, and prunes the session with `pruned`.
+ * A write that changes more than the running turn saves.
  */
 export async function changeSession(
   $: EngineInterface,
@@ -204,14 +208,8 @@ export async function changeSession(
     // A resume drops the running turn, so a write that changes only the turn, such as each tool call's activity,
     // leaves the saved copy alone.
     const isTurnOnly = (Object.keys(changed) as (keyof Session)[]).every(k => k === 'turn' || changed[k] === before[k])
-    const shownSince = (await read($, SHOWN))?.since ?? null
-    const inPlace = [
-      ...Object.entries(changed.lastActions).map(([id, a]) => ({ id, at: a.at })),
-      ...changed.ledger.closed,
-      ...changed.ledger.closedFindings.map(f => ({ id: f.id, at: f.closedAt })),
-    ].flatMap(x => (isShownSince(x.at, shownSince) ? [x.id] : []))
-    const kept = new Set([...held, ...inPlace])
-    const next = { ...changed, ledger: pruneClosed(changed.ledger, kept), heldRows: [...held] }
+    const shown = await read($, SHOWN)
+    const next = pruned({ ...changed, heldRows: [...held], shownSince: shown && !shown.isDemo ? shown.since : null })
     let landed: ModSession | null = null
     await update($, SESSION, cur => {
       if (!isCurrent(owner) || cur.revision !== drawn.revision) {
