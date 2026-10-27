@@ -145,10 +145,10 @@ Press an answer and it goes to the agent as your message. You can also type
 your own reply, or press Explain to have the agent say more before you decide.
 
 When a question is a design choice, such as two layouts or two ways to build a
-feature, Compare has the agent try each answer against your
-code and reply with a table of how they differ. For a visual
-choice it also makes a page that shows them side by side, which opens from the
-question. Where the agent can run a subagent in the background, the
+feature, Compare has the agent try each answer against your code and make a
+page that shows them side by side, which opens from the question. The page
+leads with the agent's pick, and the agent's reply gives the pick, its reason
+and the page's path. Where the agent can run a subagent in the background, the
 comparison runs there, so you can keep working. The question reads
 "Comparing…" until the agent reports back. After 30 minutes with no report, it
 reads "No comparison came back", and you can press Compare again.

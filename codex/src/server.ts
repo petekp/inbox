@@ -153,6 +153,8 @@ export type ServerDeps = {
   loadError?: () => string | null
   isPluginFolderGone?: () => boolean
   isNextBuild?: boolean
+  /** The page template for a comparison, beside the handler's bundle. */
+  comparePage: string
   /**
    * Where a chat the inbox has not seen is caught up from when its tab opens. Without it, the chat catches up at its
    * first hook.
@@ -311,6 +313,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       settleWindowMs: SETTLE_WINDOW_MS,
       newId: randomUUID,
       answerMessage,
+      comparePage: deps.comparePage,
     }
   }
 
@@ -412,7 +415,9 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   ): Promise<PressReply> {
     const s = demoOf(id)
     const r =
-      thread === id ? pressOn(s, p, now(), { settleWindowMs: SETTLE_WINDOW_MS, holds }) : ({ stale: true } as const)
+      thread === id
+        ? pressOn(s, p, now(), { settleWindowMs: SETTLE_WINDOW_MS, holds }, { comparePage: deps.comparePage })
+        : ({ stale: true } as const)
     if ('stale' in r) return { view: await served(s, id, true, holds), copy: null, error: null, note: 'stale' }
     const after = demoAfterPress(
       { lastActions: s.lastActions, turns: s.presence },

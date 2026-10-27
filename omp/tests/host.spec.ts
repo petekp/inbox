@@ -108,6 +108,7 @@ const deps = (): HostDeps => ({
   settleWindowMs: 1000,
   home: '/home/me',
   isNextBuild: false,
+  comparePage: '/omp/dist/compare-page.html',
   complete: async (model, context) => {
     const isOverview = context.systemPrompt?.[0] === OVERVIEW_SYSTEM
     const call = {

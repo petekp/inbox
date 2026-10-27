@@ -131,7 +131,13 @@ test('while a press is out, its button stays out and a second press sends nothin
 
     return { feedback: row.feedback?.is, label: explain.label, isOut: explain.isOut }
   }
-  const again = pressOn(s, { action: 'explain', id }, at, { settleWindowMs: host.settleWindowMs, holds: NO_HOLDS })
+  const again = pressOn(
+    s,
+    { action: 'explain', id },
+    at,
+    { settleWindowMs: host.settleWindowMs, holds: NO_HOLDS },
+    host,
+  )
 
   expect('stale' in again ? null : again.effects).toEqual([])
   expect(explainOf({})).toEqual({ feedback: 'working', label: 'Explain', isOut: true })

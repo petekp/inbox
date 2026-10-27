@@ -59,8 +59,18 @@ if (!result.success) {
   process.exit(1)
 }
 const bundle = await result.outputs[0]!.text()
+// The page template for a comparison. The host names the copy beside its bundle in the Compare message.
+const pageOutput = join(here, 'dist', 'compare-page.html')
+const page = await Bun.file(join(here, '..', 'hooks', 'compare-page.html')).text()
 
 if (isCheck) {
+  const currentPage = await Bun.file(pageOutput)
+    .text()
+    .catch(() => null)
+  if (currentPage !== page) {
+    console.error(`Out of date: omp/dist/compare-page.html. Run: npm --prefix ${here} run build`)
+    process.exit(1)
+  }
   const current = await Bun.file(output)
     .text()
     .catch(() => null)
@@ -75,4 +85,5 @@ if (isCheck) {
   }
 } else {
   await Bun.write(output, bundle)
+  await Bun.write(pageOutput, page)
 }

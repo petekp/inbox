@@ -53,6 +53,7 @@ async function setup(queueCode: number, now = () => 100, fallbackCli = async () 
       : { code: queueCode, stdout: '', stderr: 'no such thread' },
   )
   const handle = makeServer({
+    comparePage: '/plugin/dist/compare-page.html',
     dir,
     now,
     exec: runner.exec,
@@ -274,6 +275,7 @@ test('an accepted queue survives a failed final state write as an unconfirmed pr
   const { dir } = await setup(0)
   let accepted = false
   const handle = makeServer({
+    comparePage: '/plugin/dist/compare-page.html',
     dir,
     now: () => 100,
     exec: async args => {
@@ -329,6 +331,7 @@ test('a local Open does not run when its press could not be saved', async () => 
   mkdirSync(`${statePath(dir, 's1')}.${process.pid}.tmp`)
   const calls: string[][] = []
   const handle = makeServer({
+    comparePage: '/plugin/dist/compare-page.html',
     dir,
     now: () => 100,
     exec: async args => {
@@ -358,6 +361,7 @@ test('an unknown older send blocks identical later arrivals from certifying the 
   const { dir } = await setup(0)
   let queues = 0
   const handle = makeServer({
+    comparePage: '/plugin/dist/compare-page.html',
     dir,
     now: () => 100,
     exec: async args =>
@@ -755,6 +759,7 @@ test('a chat saved mid-turn reads Working… until a view or a press finds the t
     }))
   await running()
   const handle = makeServer({
+    comparePage: '/plugin/dist/compare-page.html',
     dir,
     now: () => 100,
     exec: fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec,
@@ -792,6 +797,7 @@ test('a turn another plugin’s Stop continues reads Working… again once a vie
   writeFileSync(rollout, '')
   const deps = hookDeps(dir)
   const handle = makeServer({
+    comparePage: '/plugin/dist/compare-page.html',
     dir,
     now: () => 100,
     exec: fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec,
@@ -852,6 +858,7 @@ test('Done on a task Codex just left waits while a turn runs, queues one message
   let t = 100
   const runner = fakeRunner(() => ({ code: 0, stdout: 'Queued message q1\n', stderr: '' }))
   const handle = makeServer({
+    comparePage: '/plugin/dist/compare-page.html',
     dir,
     now: () => t,
     exec: runner.exec,
@@ -941,6 +948,7 @@ async function prServer(answer: (args: string[]) => { code: number; stdout: stri
   await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
   const runner = fakeRunner(answer)
   const handle = makeServer({
+    comparePage: '/plugin/dist/compare-page.html',
     dir,
     now,
     exec: runner.exec,
@@ -1248,7 +1256,14 @@ test('dismissing a linked PR unlinks it, and its view leaves once its settled bl
   const dir = tempDir()
   await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
   const runner = fakeRunner(() => ({ code: -1, stdout: '', stderr: '' }))
-  const handle = makeServer({ dir, now: () => t, exec: runner.exec, tabHtml: '', fallbackCli: async () => 'codex' })
+  const handle = makeServer({
+    dir,
+    now: () => t,
+    exec: runner.exec,
+    tabHtml: '',
+    fallbackCli: async () => 'codex',
+    comparePage: '/plugin/dist/compare-page.html',
+  })
   const call = (name: string, args: Record<string, unknown>) =>
     handle({
       jsonrpc: '2.0',
@@ -1303,6 +1318,7 @@ for (const failure of ['none', 'checkpoint', 'completion', 'queue', 'lookup'] as
     const temporary = `${statePath(dir, 's1')}.${process.pid}.tmp`
     const server = () =>
       makeServer({
+        comparePage: '/plugin/dist/compare-page.html',
         dir,
         now: () => now,
         tabHtml: '<html></html>',
@@ -1394,6 +1410,7 @@ function openSetup() {
   const home = tempDir()
   const updates: string[] = []
   const handle = makeServer({
+    comparePage: '/plugin/dist/compare-page.html',
     dir,
     now: () => 100,
     exec: fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec,
@@ -1484,6 +1501,7 @@ test('a chat no hook has run in says why from Codex’s hook list, asks again wi
   const dir = tempDir()
   await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
   const handle = makeServer({
+    comparePage: '/plugin/dist/compare-page.html',
     dir,
     now: () => t,
     exec: fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec,
@@ -1541,6 +1559,7 @@ test('a chat no hook has run in says why from Codex’s hook list, asks again wi
 test('a chat whose folder is not known yet asks Codex’s hook list for the home folder', async () => {
   const asked: string[] = []
   const handle = makeServer({
+    comparePage: '/plugin/dist/compare-page.html',
     dir: tempDir(),
     now: () => 1000,
     exec: fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec,

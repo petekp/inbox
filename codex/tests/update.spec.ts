@@ -466,6 +466,7 @@ test('view polls preserve live worker activity and reconcile a killed worker wit
   await once(worker, 'message', { signal: AbortSignal.timeout(5_000) })
   const server = () =>
     makeServer({
+      comparePage: '/plugin/dist/compare-page.html',
       dir,
       now: Date.now,
       exec: async () => ({ code: 1, stdout: '', stderr: 'No external commands' }),

@@ -423,12 +423,11 @@ export function applyPress(
   ledger: Ledger,
   last: LastAction | undefined,
   p: RowPress,
-  ctx: {
+  ctx: PressTexts & {
     now: number
     turnsStarted: number
     extraSteps: HelpStep[]
     localPressId?: string
-    answerMessage?: AnswerMessage
   },
 ): PressResult {
   const r = pressed(ledger, last, p, ctx)
@@ -762,12 +761,11 @@ function pressed(
   ledger: Ledger,
   last: LastAction | undefined,
   p: RowPress,
-  ctx: {
+  ctx: PressTexts & {
     now: number
     turnsStarted: number
     extraSteps: HelpStep[]
     localPressId?: string
-    answerMessage?: AnswerMessage
   },
 ): PressResult {
   const stale = { stale: true as const }
@@ -853,7 +851,9 @@ function pressed(
       return {
         ledger,
         last: record('talk'),
-        effects: [{ kind: 'send', text: messages.compare(item), by: { id: item.id, action: 'compare' } }],
+        effects: [
+          { kind: 'send', text: messages.compare(item, ctx.comparePage), by: { id: item.id, action: 'compare' } },
+        ],
       }
     case 'done':
       return { ledger: closeItem(ledger, item.id, { how: 'done', outcome: 'done' }, ctx.now), last: null, effects: [] }
@@ -920,12 +920,24 @@ const EXPLAIN_REPLY_FORM =
 /** The message an answer to a question sends. A host whose agent reads answers in its own form supplies its own. */
 export type AnswerMessage = (item: Item, answer: string) => string
 
-const COMPARE_REQUEST = [
-  'Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.',
-  "For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session's data outside this repo.",
-  'Then reply with a table: one row per choice, and the few measures that tell them apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Add one line on anything you did not expect. After the table, give your pick and say whether it changed. When the choice is visual or has many states, also write one HTML page that shows the choices side by side.',
-  "When the comparison is done, call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps if you made one. That marks it compared. Call each choice by its name as listed.",
-].join('\n\n')
+/** What a host adds to the messages its presses send. */
+export type PressTexts = {
+  answerMessage?: AnswerMessage
+  /** The absolute path of the page template for a comparison, in the host's own folder. */
+  comparePage: string
+}
+
+/** The file name of the page template for a comparison, which each host ships in its own folder. */
+export const COMPARE_PAGE_FILE = 'compare-page.html'
+
+const compareRequest = (comparePage: string) =>
+  [
+    'Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.',
+    "For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session's data outside this repo.",
+    `Then make a page from the inbox's comparison template. Write the comparison as JSON in the shape the comment at the top of the template shows, with the few measures that tell the choices apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Build the page with: cat "${comparePage}" <your JSON file> > <your page>.html`,
+    "When the comparison is done, reply without a table, since the page holds the measures. Give your pick and say whether it changed, your reason in one line, one line on anything you did not expect, and the page's absolute path.",
+    "Also call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps. That marks it compared. Call each choice by its name as listed.",
+  ].join('\n\n')
 
 /** A question or task as a message quotes it: its ask, then its options when it has some. */
 function quotedAsk(item: Item): string {
@@ -942,7 +954,7 @@ export const messages = {
 
     return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.\n${quotedAsk(item)}`
   },
-  compare: (item: Item) => `${COMPARE_REQUEST}\n${quotedAsk(item)}`,
+  compare: (item: Item, comparePage: string) => `${compareRequest(comparePage)}\n${quotedAsk(item)}`,
   run: (item: Item, command: string) => `For "${item.ask}", run this:\n\`\`\`\n${command}\n\`\`\``,
   taskReply: (item: Item, words: string) => `Re the task you left for me, "${item.ask}": ${words}`,
   done: (asks: string[]) => (asks.length === 1 ? `Done: ${asks[0]}` : `Done:\n${asks.map(a => `- ${a}`).join('\n')}`),

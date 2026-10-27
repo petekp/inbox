@@ -2410,7 +2410,9 @@ function pressed(ledger, last, p, ctx) {
       return {
         ledger,
         last: record("talk"),
-        effects: [{ kind: "send", text: messages.compare(item), by: { id: item.id, action: "compare" } }]
+        effects: [
+          { kind: "send", text: messages.compare(item, ctx.comparePage), by: { id: item.id, action: "compare" } }
+        ]
       };
     case "done":
       return { ledger: closeItem(ledger, item.id, { how: "done", outcome: "done" }, ctx.now), last: null, effects: [] };
@@ -2456,11 +2458,13 @@ function findingBody(finding) {
   ];
 }
 var EXPLAIN_REPLY_FORM = "Keep it under 80 words of plain language, not counting a diagram: no jargon, and name each thing by what it does. Call each choice by its name as listed. When a small ASCII diagram would show it faster than words, such as steps in order or a before-and-after, put one in a code block in your reply.";
-var COMPARE_REQUEST = [
+var COMPARE_PAGE_FILE = "compare-page.html";
+var compareRequest = (comparePage) => [
   "Compare the choices in this question you asked me by trying them against the code, not from memory. If you can run a subagent in the background, hand it this work and tell me in one line that it started, so we can keep talking. Otherwise do it now.",
   "For each choice, find out what it would change: read the code it touches, and where it is cheap, prototype it and run the tests or a small script. Work only in a folder Git ignores or a temporary folder. Leave every tracked file as it was, and never commit or push. Ask me before you call another model, or before you read my files or another session's data outside this repo.",
-  "Then reply with a table: one row per choice, and the few measures that tell them apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Add one line on anything you did not expect. After the table, give your pick and say whether it changed. When the choice is visual or has many states, also write one HTML page that shows the choices side by side.",
-  "When the comparison is done, call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps if you made one. That marks it compared. Call each choice by its name as listed."
+  `Then make a page from the inbox's comparison template. Write the comparison as JSON in the shape the comment at the top of the template shows, with the few measures that tell the choices apart. Put first the measures I would notice when using it, and judge the choices by those, not by how much code each takes. Build the page with: cat "${comparePage}" <your JSON file> > <your page>.html`,
+  "When the comparison is done, reply without a table, since the page holds the measures. Give your pick and say whether it changed, your reason in one line, one line on anything you did not expect, and the page's absolute path.",
+  "Also call the inbox's record tool yourself with this question's ask and options as listed below, and the page's absolute path in steps. That marks it compared. Call each choice by its name as listed."
 ].join(`
 
 `);
@@ -2475,7 +2479,7 @@ var messages = {
     return `Remind me what ${what}. ${EXPLAIN_REPLY_FORM} Don't act on it yet.
 ${quotedAsk(item)}`;
   },
-  compare: (item) => `${COMPARE_REQUEST}
+  compare: (item, comparePage) => `${compareRequest(comparePage)}
 ${quotedAsk(item)}`,
   run: (item, command) => `For "${item.ask}", run this:
 \`\`\`
@@ -4298,7 +4302,7 @@ function isRepeatWhileOut(s, p, at, drawn) {
   const feedback = pressFeedbackIn(rowId, state, last, s.presence, at, row?.item?.reportedAt);
   return outAction(last, feedback) === actionId(p);
 }
-function pressOn(s, p, at, drawn, localPressId, answerMessage) {
+function pressOn(s, p, at, drawn, texts, localPressId) {
   if (isRepeatWhileOut(s, p, at, drawn))
     return { ledger: s.ledger, lasts: {}, drop: [], effects: [] };
   const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId };
@@ -4308,7 +4312,8 @@ function pressOn(s, p, at, drawn, localPressId, answerMessage) {
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
     extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prs) : [],
-    answerMessage
+    answerMessage: texts.answerMessage,
+    comparePage: texts.comparePage
   });
   if ("stale" in r)
     return r;
@@ -4682,7 +4687,7 @@ async function startPress(host, p, isStale, holds) {
     if (note)
       return s;
     const at = await host.now();
-    const r = pressOn(s, p, at, { settleWindowMs: host.settleWindowMs, holds }, localPressId, host.answerMessage);
+    const r = pressOn(s, p, at, { settleWindowMs: host.settleWindowMs, holds }, host, localPressId);
     if ("stale" in r) {
       note = "stale";
       return s;
@@ -6407,7 +6412,7 @@ function demoSource(deps) {
     }),
     press: async (p, holds) => {
       const at = deps.now();
-      const r = pressOn(state, p, at, { settleWindowMs: deps.settleWindowMs, holds });
+      const r = pressOn(state, p, at, { settleWindowMs: deps.settleWindowMs, holds }, { comparePage: deps.comparePage });
       if ("stale" in r)
         return { error: null, note: "stale", isUnconfirmed: false };
       const after = demoAfterPress({ lastActions: state.lastActions, turns: state.presence }, r, new Set(Object.keys(holds.replies)));
@@ -6468,6 +6473,7 @@ var defaultDeps = {
   settleWindowMs: SETTLED_MS,
   home: homedir(),
   isNextBuild: existsSync(join2(dirname(dirname(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK)),
+  comparePage: join2(dirname(fileURLToPath(import.meta.url)), COMPARE_PAGE_FILE),
   complete: defaultComplete,
   copy: copyToClipboard,
   background: (work) => void work.catch(() => {
@@ -6698,7 +6704,8 @@ function createInbox(pi, deps = defaultDeps) {
         }
       },
       settleWindowMs: deps.settleWindowMs,
-      newId: deps.newId
+      newId: deps.newId,
+      comparePage: deps.comparePage
     };
   }
   const conversationText = (ctx) => {
@@ -7114,7 +7121,8 @@ function createInbox(pi, deps = defaultDeps) {
       now: deps.now,
       after: (fn, ms) => void ctx.setTimeout(fn, ms),
       settleWindowMs: deps.settleWindowMs,
-      isNextBuild: deps.isNextBuild
+      isNextBuild: deps.isNextBuild,
+      comparePage: deps.comparePage
     }) : liveSource(ctx);
     hideBand(ctx);
     if (!isDemo)
@@ -7153,7 +7161,12 @@ function createInbox(pi, deps = defaultDeps) {
       const isDemo = args.trim() === "demo";
       if (ctx.mode === "tui")
         return openPanelUi(ctx, isDemo);
-      const screen = isDemo ? await demoSource({ now: deps.now, after: () => {}, settleWindowMs: deps.settleWindowMs }).screen(NO_HOLDS) : await inbox.screen(ctx);
+      const screen = isDemo ? await demoSource({
+        now: deps.now,
+        after: () => {},
+        settleWindowMs: deps.settleWindowMs,
+        comparePage: deps.comparePage
+      }).screen(NO_HOLDS) : await inbox.screen(ctx);
       const { needsYou, findings } = screen.view;
       ctx.ui.notify(`Asks ${needsYou.count}, Finds ${findings.count}`, "info");
     }

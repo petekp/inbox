@@ -40,6 +40,7 @@ import {
   arrived,
   askLedgerModel,
   changeSession,
+  comparePagePath,
   conversation,
   currentOwner,
   deliver,
@@ -2149,6 +2150,7 @@ async function runDemoPress(
       p,
       now,
       { settleWindowMs: SETTLED_MS, holds },
+      { comparePage: comparePagePath($) },
     )
     applied = r
     const { [rowId]: _replaced, ...notes } = d.notes

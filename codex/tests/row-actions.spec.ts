@@ -85,7 +85,12 @@ test('the Codex renderer preserves retry, folded-option and finding action order
     null,
     {
       press: p => {
-        const result = applyPress(state, undefined, p, { now: 20, turnsStarted: 1, extraSteps: [] })
+        const result = applyPress(state, undefined, p, {
+          now: 20,
+          turnsStarted: 1,
+          extraSteps: [],
+          comparePage: '/plugin/dist/compare-page.html',
+        })
         assert.ok(!('stale' in result))
         retried = result
         state = result.ledger
@@ -146,7 +151,12 @@ test('the Codex renderer preserves retry, folded-option and finding action order
   const drawQuestion = () => {
     const choices = ledgerActions(question, allOptions, null, {
       press: p => {
-        answer = applyPress(questionLedger, undefined, p, { now: 20, turnsStarted: 1, extraSteps: [] })
+        answer = applyPress(questionLedger, undefined, p, {
+          now: 20,
+          turnsStarted: 1,
+          extraSteps: [],
+          comparePage: '/plugin/dist/compare-page.html',
+        })
       },
       reply: () => {},
       discard: () => {},
@@ -189,7 +199,12 @@ test('the Codex renderer preserves retry, folded-option and finding action order
   let discussion: PressResult | null = null
   const followUps = ledgerActions(finding, false, null, {
     press: p => {
-      discussion = applyPress(findingLedger, undefined, p, { now: 20, turnsStarted: 1, extraSteps: [] })
+      discussion = applyPress(findingLedger, undefined, p, {
+        now: 20,
+        turnsStarted: 1,
+        extraSteps: [],
+        comparePage: '/plugin/dist/compare-page.html',
+      })
     },
     reply: () => {},
     discard: () => {},
@@ -279,6 +294,7 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
         now: Date.now(),
         turnsStarted: 1,
         extraSteps: [],
+        comparePage: '/plugin/dist/compare-page.html',
       })
       assert.ok(!('stale' in applied))
       state.ledger = applied.ledger
@@ -398,6 +414,7 @@ test('the built tab starts without randomUUID and reloads without losing its hos
   let html = TAB_HTML
   const runner = fakeRunner(() => ({ code: 1, stdout: '', stderr: 'No external commands in this test' }))
   const handle = makeServer({
+    comparePage: '/plugin/dist/compare-page.html',
     dir,
     now: Date.now,
     exec: runner.exec,

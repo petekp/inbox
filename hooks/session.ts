@@ -32,7 +32,7 @@ import {
   withRewrite,
   withUnconfirmed,
 } from './presses'
-import type { AnswerMessage, RowPress } from './presses'
+import type { PressTexts, RowPress } from './presses'
 import { prNeedsYou, prRefs } from './prs'
 import { recordClose, recordItem } from './tools'
 import { upgradeHostTasks } from './host-tasks'
@@ -595,8 +595,8 @@ export function pressOn(
   p: RowPress | PrPress,
   at: number,
   drawn: DrawnWith,
+  texts: PressTexts,
   localPressId?: string,
-  answerMessage?: AnswerMessage,
 ): Pressed | { stale: true } {
   if (isRepeatWhileOut(s, p, at, drawn)) return { ledger: s.ledger, lasts: {}, drop: [], effects: [] }
   const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId }
@@ -605,7 +605,8 @@ export function pressOn(
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
     extraSteps: item ? itemPrSteps(item, s.prViews, s.ledger.prs) : [],
-    answerMessage,
+    answerMessage: texts.answerMessage,
+    comparePage: texts.comparePage,
   })
   if ('stale' in r) return r
 

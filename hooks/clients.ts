@@ -31,6 +31,7 @@ export type FeatureId =
   | 'host-task-list'
   | 'hooks-need-trust'
   | 'compare-in-background'
+  | 'compare-page'
   | 'running-marks'
   | 'tab-symbols'
   | 'dim-pressed-button'
@@ -74,6 +75,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason: "Claude Code asks no one to trust a plugin's hooks, so no hook stops running for want of trust.",
       },
       'compare-in-background': { kind: 'full' },
+      'compare-page': { kind: 'full' },
       'running-marks': { kind: 'full' },
       'tab-symbols': { kind: 'full' },
       'dim-pressed-button': {
@@ -159,6 +161,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           "Codex's subagents are experimental and off by default, and no source says one can report after the agent's turn ends, so a comparison runs in the turn.",
       },
+      'compare-page': { kind: 'full' },
       'running-marks': { kind: 'full' },
       'tab-symbols': { kind: 'full' },
       'dim-pressed-button': { kind: 'full' },
@@ -221,6 +224,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason: "omp runs an installed extension's events without asking anyone to trust them.",
       },
       'compare-in-background': { kind: 'full' },
+      'compare-page': { kind: 'full' },
       'running-marks': { kind: 'full' },
       'tab-symbols': { kind: 'full' },
       'dim-pressed-button': {
