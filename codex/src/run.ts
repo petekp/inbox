@@ -23,7 +23,7 @@ export const run: RunWithInput = (args, { cwd, timeoutMs, env, input }) =>
       child.stdin?.on('error', () => {})
       child.stdin?.end(input)
     } catch (err) {
-      // execFile throws before it starts a command it cannot run, as for an argument holding a NUL byte.
+      // execFile throws, instead of calling back, for an argument it rejects, such as one holding a NUL byte.
       resolve({ code: -1, stdout: '', stderr: err instanceof Error ? err.message : String(err) })
     }
   })
