@@ -287,16 +287,14 @@ function restatesText(text: string, other: string): boolean {
   return theirs.length >= 3 && theirs.filter(w => mine.has(w)).length / theirs.length >= 0.7
 }
 
-/** Whether two subjects name the same work: the same name words, or one restating most of the other. */
-function repeatsSubject(a: { name: string; text: string }, b: { name: string; text: string }): boolean {
-  const key = (t: string) => [...keyWordsOf(t)].sort().join(' ')
-  const whole = (x: { name: string; text: string }) => `${x.name} ${x.text}`
+/**
+ * Whether two subjects name the same work: every key word of one name is in the other. Texts are left out, since
+ * parallel parts, such as three delegated parts awaiting review, often stand in the same place.
+ */
+function repeatsSubject(a: { name: string }, b: { name: string }): boolean {
+  const [shorter, longer] = [keyWordsOf(a.name), keyWordsOf(b.name)].sort((x, y) => x.size - y.size)
 
-  return (
-    (key(a.name) !== '' && key(a.name) === key(b.name)) ||
-    restatesText(whole(a), whole(b)) ||
-    restatesText(whole(b), whole(a))
-  )
+  return shorter!.size > 0 && [...shorter!].every(w => longer!.has(w))
 }
 
 function overviewFailures(c: OverviewCheck, after: Ledger, run: OverviewRun | null): string[] {
