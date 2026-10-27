@@ -60,8 +60,8 @@ type Check =
   | { goal: string }
   /** A shown subject whose name or text matches the pattern has this status, open or closed. */
   | { subject: string; status?: SubjectStatus }
-  /** No shown subject with this status matches the pattern: finished work does not stay under way. */
-  | { noSubject: string; status: SubjectStatus }
+  /** No shown subject matches the pattern, or none with `status` when one is given, as finished work stays under way. */
+  | { noSubject: string; status?: SubjectStatus }
   /** The answer adds no subject, as an update to a subject the list already holds should not. */
   | { noNewSubject: true }
   /** At most this many subjects are open after the exchange. */
@@ -72,6 +72,10 @@ type Check =
   | { was: string }
   /** The running child whose name matches `child` is linked to a subject whose name matches `to`. */
   | { linked: string; to: string }
+  /** An open item whose ask matches `askLinked` is linked to an open subject whose name or text matches `to`. */
+  | { askLinked: string; to: string }
+  /** Every name a NEW line of the answer writes has at most this many words, before code clips it. */
+  | { newNamesAtMost: number }
   /** No text names a command, a file, a commit, a ticket, a test run or a tool step. */
   | { featureLevel: true }
   /** No text names a time, which code writes. */
@@ -244,6 +248,8 @@ const OVERVIEW_KEYS = [
   'subjectsNotRepeated',
   'was',
   'linked',
+  'askLinked',
+  'newNamesAtMost',
   'featureLevel',
   'noTimeWords',
   'asksNotRestated',
@@ -314,8 +320,8 @@ function overviewFailures(c: OverviewCheck, after: Ledger, run: OverviewRun | nu
   if ('goal' in c) return new RegExp(c.goal, 'i').test(o.goal) ? [] : [`goal "${o.goal}" is not like /${c.goal}/`]
   if ('noSubject' in c)
     return shownOf(o)
-      .filter(s => s.status === c.status && matches(c.noSubject, s))
-      .map(s => `still ${c.status}: "${s.name}: ${s.text}"`)
+      .filter(s => (c.status === undefined || s.status === c.status) && matches(c.noSubject, s))
+      .map(s => `${c.status ? `still ${c.status}` : 'a subject'}: "${s.name}: ${s.text}"`)
   if ('subject' in c) {
     const found = shownOf(o).filter(s => matches(c.subject, s))
     if (found.length === 0) return [`no subject like /${c.subject}/`]
@@ -350,6 +356,23 @@ function overviewFailures(c: OverviewCheck, after: Ledger, run: OverviewRun | nu
     const subject = o.subjects.find(s => s.id === child.subjectId)
     if (!subject) return [`"${child.name}" is not linked`]
     return matches(c.to, subject) ? [] : [`"${child.name}" is linked to "${subject.name}", not /${c.to}/`]
+  }
+  if ('askLinked' in c) {
+    const asks = after.items.filter(i => new RegExp(c.askLinked, 'i').test(i.ask))
+    if (asks.length === 0) return [`no open ask like /${c.askLinked}/`]
+    const linked = asks.flatMap(i => o.subjects.filter(s => s.id === o.askSubjects[i.id] && isOpen(s)))
+    if (linked.length === 0) return [`no ask like /${c.askLinked}/ is linked to an open subject`]
+    return linked.some(s => matches(c.to, s))
+      ? []
+      : [`/${c.askLinked}/ is linked to ${linked.map(s => `"${s.name}"`).join(', ')}, not /${c.to}/`]
+  }
+  if ('newNamesAtMost' in c) {
+    const ops = run.answer.kind === 'ops' ? run.answer.ops : []
+    return ops.flatMap(op =>
+      op.kind === 'new' && op.name.split(/\s+/).filter(Boolean).length > c.newNamesAtMost
+        ? [`long name: "${op.name}"`]
+        : [],
+    )
   }
   if ('featureLevel' in c)
     return textsOf(o)

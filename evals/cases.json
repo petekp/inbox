@@ -2311,7 +2311,7 @@
   },
   {
     "name": "catch-up-records-open-question-and-result",
-    "about": "A catch-up over a conversation the inbox never saw records the question the last reply left open. Its Overview marks the work as waiting on the person, and does not leave the finished loader work under way.",
+    "about": "A catch-up over a conversation the inbox never saw records the question the last reply left open, and its Overview links the question to the open subject it holds up.",
     "ledger": {
       "turn": 3,
       "nextId": 1
@@ -2332,12 +2332,8 @@
         "overview": "changed"
       },
       {
-        "subject": "yaml|loader|json",
-        "status": "waits-on-you"
-      },
-      {
-        "noSubject": "yaml|loader",
-        "status": "working"
+        "askLinked": "json|yaml",
+        "to": "yaml|loader|json|config"
       },
       {
         "featureLevel": true
@@ -2976,7 +2972,7 @@
   },
   {
     "name": "overview-ask-not-restated",
-    "about": "A question the agent put to the person stays in the inbox. The subject may say it waits on the person, and nothing more.",
+    "about": "A question the agent put to the person stays in the inbox. The Overview links it to the subject it holds up, and its text says nothing about the question.",
     "ledger": {
       "turn": 3,
       "nextId": 2,
@@ -3039,14 +3035,174 @@
         "overview": "changed"
       },
       {
-        "subject": "row",
-        "status": "waits-on-you"
+        "askLinked": "keep|skip",
+        "to": "row|pars"
       },
       {
         "asksNotRestated": true
       },
       {
         "noTextWithAll": ["keep", "skip"]
+      },
+      {
+        "featureLevel": true
+      }
+    ]
+  },
+  {
+    "name": "overview-ask-links-right-subject",
+    "about": "With two subjects under way, a question about one of them links to that one, not the other, and the Overview does not restate it.",
+    "ledger": {
+      "turn": 4,
+      "nextId": 2,
+      "overview": {
+        "role": "session",
+        "goal": "Ship offline notes",
+        "subjects": [
+          {
+            "id": "s1",
+            "name": "Offline sync",
+            "status": "working",
+            "text": "queue built",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 70,
+            "closedAt": null,
+            "into": null
+          },
+          {
+            "id": "s2",
+            "name": "Settings page",
+            "status": "working",
+            "text": "toggles drafted",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 72,
+            "closedAt": null,
+            "into": null
+          }
+        ],
+        "children": [],
+        "askSubjects": {},
+        "nextId": 3,
+        "nextChildId": 1,
+        "lastLookAt": 60,
+        "look": null
+      },
+      "items": [
+        {
+          "id": "i1",
+          "kind": "question",
+          "label": null,
+          "ask": "When two devices edit the same note offline, should the newer edit win, or should both be kept?",
+          "options": ["Newer edit wins", "Keep both"],
+          "rec": null,
+          "helps": [],
+          "turn": 4,
+          "at": 1,
+          "from": "record"
+        }
+      ]
+    },
+    "exchange": {
+      "turn": 4,
+      "person": "Keep going on both.",
+      "activity": ["edited src/settings/page.tsx", "edited src/sync/queue.ts"],
+      "reply": "The settings page now saves all three toggles. Offline sync replays queued edits in order after the app reconnects. Before I write the merge step I need your call on conflicts: when two devices edit the same note offline, should the newer edit win, or should both be kept? I've put it in the inbox."
+    },
+    "checks": [
+      {
+        "overview": "changed"
+      },
+      {
+        "askLinked": "devices|offline|newer",
+        "to": "offline|sync"
+      },
+      {
+        "asksNotRestated": true
+      },
+      {
+        "noTextWithAll": ["newer", "both"]
+      },
+      {
+        "featureLevel": true
+      }
+    ]
+  },
+  {
+    "name": "overview-problem-outside-task-not-subject",
+    "about": "A problem the agent noticed outside the work goes to the inbox as a finding. The Overview keeps to the work and adds no subject for it.",
+    "ledger": {
+      "turn": 2,
+      "nextId": 1,
+      "overview": {
+        "role": "session",
+        "goal": "Fix the sign-out bug",
+        "subjects": [
+          {
+            "id": "s1",
+            "name": "Sign-out bug",
+            "status": "working",
+            "text": "token survives sign-out",
+            "was": null,
+            "createdAt": 10,
+            "changedAt": 70,
+            "closedAt": null,
+            "into": null
+          }
+        ],
+        "children": [],
+        "askSubjects": {},
+        "nextId": 2,
+        "nextChildId": 1,
+        "lastLookAt": 60,
+        "look": null
+      }
+    },
+    "exchange": {
+      "turn": 2,
+      "person": "Go ahead with the fix.",
+      "activity": ["edited src/auth/session.ts", "ran npm test -- auth"],
+      "reply": "Signing out now clears the cached token, so the web app asks for a password again. While the auth tests ran I noticed that the date picker tests fail whenever they run on a Sunday. That's outside this fix, so I've noted it as a finding rather than touching it."
+    },
+    "checks": [
+      {
+        "overview": "changed"
+      },
+      {
+        "subject": "sign",
+        "status": "done"
+      },
+      {
+        "noSubject": "date|picker|sunday"
+      },
+      {
+        "featureLevel": true
+      }
+    ]
+  },
+  {
+    "name": "overview-long-name",
+    "about": "A request worded as a long task gets a short name, the handle the person would use, with the details in where it stands.",
+    "ledger": {
+      "turn": 1,
+      "nextId": 1
+    },
+    "exchange": {
+      "turn": 1,
+      "person": "Can you make the week start follow the user's locale setting in the date picker on every screen, instead of always starting on Sunday?",
+      "activity": ["edited src/ui/date-picker.tsx"],
+      "reply": "The date picker now takes the first day of the week from the user's locale on every screen, so a German locale starts on Monday. A screen that sets its own start day keeps it."
+    },
+    "checks": [
+      {
+        "overview": "changed"
+      },
+      {
+        "newNamesAtMost": 4
+      },
+      {
+        "subject": "week|locale|date"
       },
       {
         "featureLevel": true
@@ -3394,7 +3550,7 @@
           {
             "id": "s3",
             "name": "Crash on rotate",
-            "status": "problem",
+            "status": "queued",
             "text": "reproduces on iPad only",
             "was": null,
             "createdAt": 10,
