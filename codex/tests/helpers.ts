@@ -36,6 +36,10 @@ export function hookDeps(dir: string, now = () => 1000): HookDeps & { updates: s
   }
 }
 
+export function turnRow(type: 'task_started' | 'task_complete' | 'turn_aborted', turnId: string): string {
+  return JSON.stringify({ type: 'event_msg', payload: { type, turn_id: turnId } })
+}
+
 export function input(event: string, fields: Partial<HookInput> = {}): HookInput {
   return { hook_event_name: event, session_id: 's1', transcript_path: join(tmpdir(), 'rollout.jsonl'), ...fields }
 }
