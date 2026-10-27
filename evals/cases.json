@@ -2872,7 +2872,7 @@
   },
   {
     "name": "overview-single-task-not-coordinator",
-    "about": "A session that does the work itself is not a coordinator.",
+    "about": "A session that does the work itself is not a coordinator. A fix that starts and finishes in one exchange is recorded as done, not under way.",
     "ledger": {
       "turn": 1,
       "nextId": 1,
@@ -2890,6 +2890,10 @@
       },
       {
         "role": "session"
+      },
+      {
+        "subject": "comma|header",
+        "status": "done"
       }
     ]
   },
