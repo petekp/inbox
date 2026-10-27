@@ -303,17 +303,27 @@ test('tryWithLock preserves a nested lock timeout after acquiring its own lock',
   }
 })
 
-test('a file saved before the rollout path and the dropped-reply flag existed reads with their defaults', async t => {
+test('a file saved before the rollout path, the dropped-reply flag and the covered turn existed reads with their defaults, and its covered turn is the last recorded prompt’s, or the one before while that turn runs', async t => {
   const dir = tempDir()
   t.after(() => rm(dir, { recursive: true, force: true }))
   const initial = await updateState(dir, 's1', s => s)
-  const { transcriptPath: _path, ...older } = initial
+  const { transcriptPath: _path, coveredTurn: _covered, ...older } = initial
   const { hasDroppedReply: _flag, ...presence } = initial.presence
   await writeFile(statePath(dir, 's1'), JSON.stringify({ ...older, presence }))
 
   const read = await readState(dir, 's1')
   assert.equal(read.transcriptPath, null)
   assert.equal(read.presence.hasDroppedReply, false)
+  assert.equal(read.coveredTurn, null)
+
+  const heard = { ...older.heard, promptTurns: ['t1', 't2'] }
+  await writeFile(statePath(dir, 's2'), JSON.stringify({ ...older, sessionId: 's2', heard }))
+  await writeFile(
+    statePath(dir, 's3'),
+    JSON.stringify({ ...older, sessionId: 's3', heard, turn: { ...older.turn, person: 'Run the tests' } }),
+  )
+  assert.equal((await readState(dir, 's2')).coveredTurn, 't2')
+  assert.equal((await readState(dir, 's3')).coveredTurn, 't1')
 })
 
 test('a file saved by the Progress trial build reads without its subagents and stated step', async t => {

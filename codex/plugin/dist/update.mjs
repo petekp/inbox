@@ -2116,7 +2116,8 @@ function emptyState(sessionId) {
     ...emptySession(),
     tabSeenAt: 0,
     shownTab: "needsYou",
-    heard: NOTHING_HEARD
+    heard: NOTHING_HEARD,
+    coveredTurn: null
   };
 }
 function statePath(dir, sessionId) {
@@ -2135,6 +2136,13 @@ function upgraded(saved, sessionId) {
     ...kept
   } = saved;
   const { sentBack: _sentBack, ...turn } = saved.turn ?? {};
+  const heard = saved.heard ? { ...NOTHING_HEARD, ...saved.heard } : {
+    ...NOTHING_HEARD,
+    startAt: 0,
+    promptAt: 0,
+    prompts: saved.presence?.turnsStarted ?? 0,
+    stops: saved.presence?.turnsStarted ?? 0
+  };
   return {
     ...base,
     ...kept,
@@ -2144,16 +2152,12 @@ function upgraded(saved, sessionId) {
       pending: (saved.pending ?? []).map(({ ex: { checks: _exChecks, ...ex }, ...p }) => ({ ...p, ex }))
     }),
     shownTab: isShownTab(saved.shownTab) ? saved.shownTab : base.shownTab,
-    // A file saved before the hooks kept this record came from hooks that ran, so it reads as heard.
-    // Its turns were not recorded, so `promptAt` is set too: a tool call then falls back to the time rule.
-    heard: saved.heard ? { ...NOTHING_HEARD, ...saved.heard } : {
-      ...NOTHING_HEARD,
-      startAt: 0,
-      promptAt: 0,
-      prompts: saved.presence?.turnsStarted ?? 0,
-      stops: saved.presence?.turnsStarted ?? 0
-    }
+    heard,
+    coveredTurn: saved.coveredTurn !== void 0 ? saved.coveredTurn : coveredBefore(heard, turn.person ?? null)
   };
+}
+function coveredBefore(heard, person) {
+  return heard.promptTurns.at(person === null ? -1 : -2) ?? null;
 }
 async function readSaved(dir, sessionId) {
   const saved = await readFile(statePath(dir, sessionId), "utf8").catch(missingAsNull);

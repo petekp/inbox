@@ -1477,9 +1477,9 @@ test('a call the model makes does not catch up the chat', async () => {
   assert.deepEqual(updates, [])
 })
 
-test('a chat no hook has run in says why from Codex’s hook list, asks again within seconds while the hooks are stopped and after the cache window otherwise, and says nothing when the list fails', async () => {
+test('a chat says why Codex is not running the inbox’s hooks from Codex’s hook list, heard or not, asks again within seconds while the hooks are stopped and after the cache window otherwise, and says nothing when the list fails', async () => {
   let t = 1000
-  const answers: ('untrusted' | 'modified' | 'trusted' | null)[] = ['untrusted', 'trusted', null, 'modified']
+  const answers: ('untrusted' | 'modified' | 'trusted' | null)[] = ['untrusted', 'trusted', null, 'modified', 'trusted']
   const asked: string[][] = []
   const dir = tempDir()
   await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
@@ -1532,10 +1532,12 @@ test('a chat no hook has run in says why from Codex’s hook list, asks again wi
   assert.equal(asked.length, 4)
 
   await updateState(dir, 's1', s => noteHook(s, 'start', t))
-  t += 30_000
-  assert.equal(await view(), undefined)
+  assert.equal(await view(), 'modified')
+  t += 5_000
+  assert.equal(await view(), 'modified')
   await settle()
-  assert.equal(asked.length, 4)
+  assert.equal(asked.length, 5)
+  assert.equal(await view(), undefined)
 })
 
 test('a chat whose folder is not known yet asks Codex’s hook list for the home folder', async () => {

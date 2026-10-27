@@ -2154,10 +2154,10 @@ This changes what the inbox's users must do after every update.
   tab also asks `hooks/list`, as the next point says.
 - `hooks/list` is not experimental (app-server-protocol common.rs:917), and
   the inbox's MCP server gets `CODEX_CLI_PATH`. The server now asks a
-  short-lived `codex app-server` for `hooks/list` while a chat has heard from
-  no hook, for the chat's folder or else the home folder, at most every 30 s and without blocking a view, and the tab says
-  "The inbox stays empty until Codex runs its hooks." (`untrusted`) or "Codex
-  stopped the inbox's hooks when the inbox updated." (`modified`). It keeps the "not heard"
+  short-lived `codex app-server` for `hooks/list` on a chat's view, heard or not,
+  for the chat's folder or else the home folder, at most every 30 s and without blocking a view, and the tab's line under its
+  tab bar says "Codex is not running the inbox's hooks…" (`untrusted`) or "Codex
+  stopped the inbox's hooks when the inbox updated…" (`modified`). It keeps the "not heard"
   text when the call fails or the hooks read trusted. Checked on 0.164.0 in a
   scratch home, in both themes, in a local page that hosts the built tab
   (`codex/src/hook-trust.ts`).

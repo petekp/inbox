@@ -11,12 +11,13 @@ import { applied, parsedReply } from '../../hooks/session'
 import { feedbackText } from '../../hooks/view'
 import { notePrompt, noteToolCall, viewOf } from '../src/core'
 import { handleHook } from '../src/hook'
+import type { HookInput } from '../src/hook'
 import { herdrOnWrite } from '../src/host'
 import type { OnWrite } from '../src/host'
 import { readState, statePath, updateState } from '../src/state'
 import { CODEX } from '../src/texts'
 import { runUpdates as runBothCalls } from '../src/update'
-import { fakeRunner, hookDeps, input, ledgerOnly, rolloutCopy, tempDir } from './helpers'
+import { fakeRunner, hookDeps, input, ledgerOnly, ROLLOUT_FIXTURE, rolloutCopy, tempDir } from './helpers'
 import { reportedTokens } from '../../tests/session-script'
 
 const runUpdates = (
@@ -706,6 +707,71 @@ test('a failed catch-up leaves the ledger behind, and the next Stop catches up a
   assert.match(prompts[1] ?? '', /<conversation>/)
   assert.equal(caught.presence.ledgerState, 'current')
   assert.deepEqual(caught.pending, [])
+})
+
+test('turns that ended without a Stop are caught up at the next hook, a prompt recorded for one of them does not join the next turn’s, and a clear start covers them instead', async () => {
+  const dir = tempDir()
+  const deps = execDeps(dir)
+  const rows = readFileSync(ROLLOUT_FIXTURE, 'utf8').split('\n')
+  const path = join(tempDir(), 'rollout.jsonl')
+  const rolloutThrough = (row: number) => writeFileSync(path, rows.slice(0, row + 1).join('\n'))
+  const [first, second, third, fourth] = [1, 20, 30, 38].map(row => JSON.parse(rows[row] ?? '').payload.turn_id)
+  const hook = (event: string, turnId: string, fields: Partial<HookInput> = {}) =>
+    handleHook(input(event, { turn_id: turnId, transcript_path: path, ...fields }), deps)
+  const prompts: string[] = []
+
+  rolloutThrough(1)
+  await hook('UserPromptSubmit', first, { prompt: 'List the files here and say what each does' })
+  rolloutThrough(19)
+  await hook('Stop', first, { last_assistant_message: 'Here are the files.' })
+  assert.equal((await readState(dir, 's1')).coveredTurn, first)
+
+  rolloutThrough(30)
+  await hook('UserPromptSubmit', third, { prompt: 'In one sentence, what did we discuss so far?' })
+  const behind = await readState(dir, 's1')
+  assert.equal(behind.presence.ledgerState, 'behind')
+  assert.equal(behind.coveredTurn, second)
+  assert.deepEqual(deps.updates, ['s1', 's1'])
+
+  rolloutThrough(38)
+  await hook('UserPromptSubmit', fourth, { prompt: 'SYNTHETIC: what do you suggest?' })
+  const dropped = await readState(dir, 's1')
+  assert.equal(dropped.coveredTurn, third)
+  assert.equal(dropped.turn.person, 'SYNTHETIC: what do you suggest?')
+
+  await runUpdates(
+    dir,
+    's1',
+    async prompt => (prompts.push(prompt), CATCH_UP_REPLY),
+    () => 7,
+  )
+  const caught = await readState(dir, 's1')
+  assert.equal(prompts.length, 1)
+  assert.match(prompts[0] ?? '', /Person: Now add a subtract function to calc\.py/)
+  assert.equal(caught.presence.ledgerState, 'current')
+  assert.deepEqual(caught.pending, [])
+  assert.deepEqual(
+    caught.ledger.items.map(i => i.ask),
+    ['Allow edits?'],
+  )
+
+  rolloutThrough(44)
+  await hook('Stop', fourth, { last_assistant_message: 'Add tests next.' })
+  const after = await readState(dir, 's1')
+  assert.equal(after.presence.ledgerState, 'current')
+  assert.equal(after.coveredTurn, fourth)
+  assert.deepEqual(
+    after.pending.map(p => p.ex.person),
+    ['SYNTHETIC: what do you suggest?'],
+  )
+
+  await updateState(dir, 's1', s => ({ ...s, coveredTurn: first }))
+  const updates = deps.updates.length
+  await handleHook(input('SessionStart', { source: 'clear', cwd: '/repo', transcript_path: path }), deps)
+  const cleared = await readState(dir, 's1')
+  assert.equal(cleared.presence.ledgerState, 'current')
+  assert.equal(cleared.coveredTurn, fourth)
+  assert.equal(deps.updates.length, updates)
 })
 
 test('a new session, a compaction start, a subagent and a session with recorded turns are not marked behind', async () => {
