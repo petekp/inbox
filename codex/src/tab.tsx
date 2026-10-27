@@ -7,7 +7,14 @@ import type { IconName } from './row-actions'
 import { closedState } from '../../hooks/ledger'
 import { ago, clipLabel } from '../../hooks/text'
 import type { ClosedState } from '../../hooks/ledger'
-import { canUndoRefused, closedMark, settledMark, versionLabel, WAS_PREFIX } from '../../hooks/view'
+import {
+  canUndoRefused,
+  closedMark,
+  OVERVIEW_TEXT_LINES,
+  settledMark,
+  versionLabel,
+  WAS_PREFIX,
+} from '../../hooks/view'
 import { actionId, capitalized, isPressConfirmed, noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { Effect, RowPress } from '../../hooks/presses'
 import {
@@ -1327,12 +1334,12 @@ function OverviewLine({ row }: { row: OverviewRow }) {
           {row.mark}
         </span>
         <div class="content tight">
-          <div class="clamp" style={{ '--lines': row.maxLines }}>
+          <div class="clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
             {row.name}
             {row.text ? <span class="muted">: {row.text}</span> : null}
           </div>
           {row.was ? (
-            <div class="outcome muted clamp" style={{ '--lines': row.maxLines }}>
+            <div class="outcome muted clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
               {WAS_PREFIX}
               {row.was}
             </div>
@@ -1348,7 +1355,7 @@ function OverviewLine({ row }: { row: OverviewRow }) {
           {row.mark}
         </span>
         <div class="content tight muted">
-          <div class="clamp" style={{ '--lines': row.maxLines }}>
+          <div class="clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
             {row.name}
           </div>
         </div>

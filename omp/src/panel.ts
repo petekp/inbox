@@ -38,7 +38,7 @@ import { capitalized, noteText } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
 import type { SessionView } from '../../hooks/session'
 import type { ToneName } from '../../hooks/tones'
-import { ago, cellWidth, cutToCells } from '../../hooks/text'
+import { ago, cellWidth, cutForEllipsis, cutToCells } from '../../hooks/text'
 import {
   canUndoRefused,
   closedMark,
@@ -84,6 +84,7 @@ import {
   rowMark,
   hasRunningMark,
   LOOK_RULE_LABEL,
+  OVERVIEW_TEXT_LINES,
   WAS_PREFIX,
   runningMark,
   settledLabel,
@@ -909,9 +910,11 @@ function indented(
   maxLines: number,
   paint: (s: string) => string,
 ): string[] {
-  const wrapped = wrapText(text, Math.max(10, width - indent - 1))
+  const room = Math.max(10, width - indent - 1)
+  const wrapped = wrapText(text, room)
   const shown = wrapped.slice(0, maxLines)
-  if (wrapped.length > maxLines) shown[maxLines - 1] = `${shown[maxLines - 1]!.replace(/.$/, '')}…`
+  if (wrapped.length > maxLines)
+    shown[maxLines - 1] = `${cutForEllipsis(shown[maxLines - 1]!, t => cellWidth(t) <= room)}…`
 
   return shown.map(l => ' '.repeat(indent) + paint(l))
 }
@@ -1031,7 +1034,7 @@ function pageLine(
   const wrapped = wrapText(text, room)
   const lines = wrapped.slice(0, maxLines)
   if (wrapped.length > lines.length)
-    lines[lines.length - 1] = `${cutToCells(lines.at(-1)!, room - 1).replace(/[\s.,;:]+$/, '')}…`
+    lines[lines.length - 1] = `${cutForEllipsis(lines.at(-1)!, t => cellWidth(t) <= room)}…`
   let plainLeft = plainCells
   const painted = lines.map(l => {
     const plain = cutToCells(l, Math.max(0, plainLeft))
@@ -1064,9 +1067,9 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
     const text = row.text ? `${row.name}: ${row.text}` : row.name
     const out = pageLine(d, PAGE_MARK_AT, mark, text, row.age, {
       plainCells: cellWidth(row.name),
-      maxLines: row.maxLines,
+      maxLines: OVERVIEW_TEXT_LINES,
     })
-    if (row.was) out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, row.maxLines, s.dim))
+    if (row.was) out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim))
 
     return row.hasChildren ? withTree(out, null, '│', s) : out
   }
@@ -1076,7 +1079,7 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
     const agePaint = tone ? (t: string) => s.tone(tone, t) : s.dim
     const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, row.age, {
       agePaint,
-      maxLines: row.maxLines,
+      maxLines: OVERVIEW_TEXT_LINES,
     })
 
     return row.branch ? withTree(out, TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s) : out

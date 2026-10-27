@@ -1207,7 +1207,6 @@ var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 var WORKING_TEXT = "Working\u2026";
 var LOOK_TEXT = "Seen";
 var LOOK_RULE_LABEL = `\u2500\u2500 ${LOOK_TEXT} `;
-var OVERVIEW_TEXT_LINES = 3;
 var CHILD_ROWS = 3;
 var QUIET_MS = 15 * 6e4;
 var NEW_CLOSED_ROWS = 2;
@@ -1237,7 +1236,7 @@ function liveOf(presence, now) {
   return lastReplyAt === null ? null : `Idle \xB7 last reply ${ago(now - lastReplyAt)}`;
 }
 function isItemAfterItem(row, prev) {
-  const isUnderSubject = row.kind === "more" || row.kind === "child" && !row.isLoose;
+  const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
   return prev !== void 0 && prev.kind !== "look" && row.kind !== "look" && !isUnderSubject;
 }
 function idleOf(c, now) {
@@ -1258,9 +1257,7 @@ function childRow(c, now, branch) {
     name: c.name,
     age: isChildQuiet ? `quiet ${age}` : age,
     ageTone: isChildQuiet ? "needsYou" : null,
-    isLoose: branch === null,
-    branch,
-    maxLines: OVERVIEW_TEXT_LINES
+    branch
   };
 }
 function overviewPage(s, now) {
@@ -1298,7 +1295,6 @@ function overviewPage(s, now) {
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       was: isNew(x) ? x.was : null,
       age: shortAgo(now - x.changedAt),
-      maxLines: OVERVIEW_TEXT_LINES,
       hasChildren: under.length > 0
     });
     rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));

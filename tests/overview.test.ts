@@ -386,7 +386,7 @@ test('running children sit under their subject, at most three, each tied to it a
   )
   expect(page(quiet, now).rows[0]).toMatchObject({
     kind: 'child',
-    isLoose: true,
+    branch: null,
     isRunning: false,
     ageTone: 'needsYou',
     age: 'quiet 20m',
@@ -440,7 +440,7 @@ test('a child whose host reports no activity shows how long it has run and never
     now,
   )
 
-  expect(page(o, now).rows[0]).toMatchObject({ kind: 'child', age: '1h', isRunning: true, isLoose: true })
+  expect(page(o, now).rows[0]).toMatchObject({ kind: 'child', age: '1h', isRunning: true, branch: null })
 })
 
 test('open subjects past seven fold their oldest queued ones into a count', () => {

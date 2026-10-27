@@ -27,6 +27,14 @@ export function clipLabel(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }
 
+/** The longest start of `line` that `fits` with an ellipsis after it, with no space or punctuation before the ellipsis. */
+export function cutForEllipsis(line: string, fits: (withEllipsis: string) => boolean): string {
+  const parts = [...graphemes.segment(line)].map(p => p.segment)
+  while (parts.length > 0 && !fits(`${parts.join('')}…`)) parts.pop()
+
+  return parts.join('').replace(/[\s.,;:]+$/, '')
+}
+
 export function clipMiddle(text: string, max: number, head: number): string {
   if (text.length <= max) return text
 

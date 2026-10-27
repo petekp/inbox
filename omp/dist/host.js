@@ -29,6 +29,12 @@ function clip(text, max) {
 function clipLabel(text, max) {
   return text.length > max ? `${text.slice(0, max - 1)}\u2026` : text;
 }
+function cutForEllipsis(line, fits) {
+  const parts = [...graphemes.segment(line)].map((p) => p.segment);
+  while (parts.length > 0 && !fits(`${parts.join("")}\u2026`))
+    parts.pop();
+  return parts.join("").replace(/[\s.,;:]+$/, "");
+}
 function clipMiddle(text, max, head) {
   if (text.length <= max)
     return text;
@@ -2994,7 +3000,7 @@ function liveOf(presence, now) {
   return lastReplyAt === null ? null : `Idle \xB7 last reply ${ago(now - lastReplyAt)}`;
 }
 function isItemAfterItem(row, prev) {
-  const isUnderSubject = row.kind === "more" || row.kind === "child" && !row.isLoose;
+  const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
   return prev !== undefined && prev.kind !== "look" && row.kind !== "look" && !isUnderSubject;
 }
 function idleOf(c, now) {
@@ -3015,9 +3021,7 @@ function childRow(c, now, branch) {
     name: c.name,
     age: isChildQuiet ? `quiet ${age}` : age,
     ageTone: isChildQuiet ? "needsYou" : null,
-    isLoose: branch === null,
-    branch,
-    maxLines: OVERVIEW_TEXT_LINES
+    branch
   };
 }
 function overviewPage(s, now) {
@@ -3054,7 +3058,6 @@ function overviewPage(s, now) {
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       was: isNew(x) ? x.was : null,
       age: shortAgo(now - x.changedAt),
-      maxLines: OVERVIEW_TEXT_LINES,
       hasChildren: under.length > 0
     });
     rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
@@ -5676,10 +5679,11 @@ function wrapText(text, width) {
   return out;
 }
 function indented(text, indent, width, maxLines, paint) {
-  const wrapped = wrapText(text, Math.max(10, width - indent - 1));
+  const room = Math.max(10, width - indent - 1);
+  const wrapped = wrapText(text, room);
   const shown = wrapped.slice(0, maxLines);
   if (wrapped.length > maxLines)
-    shown[maxLines - 1] = `${shown[maxLines - 1].replace(/.$/, "")}\u2026`;
+    shown[maxLines - 1] = `${cutForEllipsis(shown[maxLines - 1], (t) => cellWidth(t) <= room)}\u2026`;
   return shown.map((l) => " ".repeat(indent) + paint(l));
 }
 function buttonCell(b, isFocused, s, mark = "") {
@@ -5766,7 +5770,7 @@ function pageLine(d, indent, mark, text, age, {
   const wrapped = wrapText(text, room);
   const lines = wrapped.slice(0, maxLines);
   if (wrapped.length > lines.length)
-    lines[lines.length - 1] = `${cutToCells(lines.at(-1), room - 1).replace(/[\s.,;:]+$/, "")}\u2026`;
+    lines[lines.length - 1] = `${cutForEllipsis(lines.at(-1), (t) => cellWidth(t) <= room)}\u2026`;
   let plainLeft = plainCells;
   const painted = lines.map((l) => {
     const plain = cutToCells(l, Math.max(0, plainLeft));
@@ -5791,10 +5795,10 @@ function drawPageRow(row, d) {
     const text = row.text ? `${row.name}: ${row.text}` : row.name;
     const out = pageLine(d, PAGE_MARK_AT, mark, text, row.age, {
       plainCells: cellWidth(row.name),
-      maxLines: row.maxLines
+      maxLines: OVERVIEW_TEXT_LINES
     });
     if (row.was)
-      out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, row.maxLines, s.dim));
+      out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim));
     return row.hasChildren ? withTree(out, null, "\u2502", s) : out;
   }
   if (row.kind === "child") {
@@ -5803,7 +5807,7 @@ function drawPageRow(row, d) {
     const agePaint = tone ? (t) => s.tone(tone, t) : s.dim;
     const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, row.age, {
       agePaint,
-      maxLines: row.maxLines
+      maxLines: OVERVIEW_TEXT_LINES
     });
     return row.branch ? withTree(out, TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s) : out;
   }

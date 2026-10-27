@@ -837,8 +837,6 @@ type OverviewRowParts =
       was: string | null
       /** How long ago it last changed. */
       age: string
-      /** The most lines its name with where it stands wraps to, and its was line too. A look cuts past them with an ellipsis. */
-      maxLines: number
       /** Whether rows of its children follow, so its tree line runs down from its mark. */
       hasChildren: boolean
     }
@@ -853,12 +851,8 @@ type OverviewRowParts =
       age: string
       /** The age's tone: `needsYou` once it is quiet, since a quiet child may be stuck. */
       ageTone: OverviewTone
-      /** Not linked to a subject the list shows, so it sits at the top of the list instead of under one. */
-      isLoose: boolean
-      /** Its place under its subject. Null for a loose child, which has no subject to tie to. */
+      /** Its place under its subject. Null when it is linked to no subject the list shows, so it sits at the top of the list. */
       branch: OverviewBranch | null
-      /** The most lines its name wraps to. A look cuts past them with an ellipsis. */
-      maxLines: number
     }
   /** The children of a subject past `CHILD_ROWS`, as "+ 2 more running". It is always the last row under its subject. */
   | { kind: 'more'; id: string; text: string; branch: 'last' }
@@ -891,7 +885,7 @@ export const LOOK_RULE_LABEL = `── ${LOOK_TEXT} `
 export const WAS_PREFIX = 'was: '
 const NEWS_DOT = '•'
 
-/** The most lines each text on an Overview row wraps to: a subject's name with where it stands, its was line, and a child's name. */
+/** The most lines each text on an Overview row wraps to: a subject's name with where it stands, its was line, and a child's name. A look cuts past them with an ellipsis. */
 export const OVERVIEW_TEXT_LINES = 3
 /** The most children drawn under one subject; the rest fold into "+ N more running". */
 export const CHILD_ROWS = 3
@@ -950,7 +944,7 @@ function liveOf(presence: Session['presence'], now: number): string | null {
 
 /** Whether `row` starts an item after another, with no look line between them. */
 function isItemAfterItem(row: OverviewRowParts, prev: OverviewRowParts | undefined): boolean {
-  const isUnderSubject = row.kind === 'more' || (row.kind === 'child' && !row.isLoose)
+  const isUnderSubject = row.kind === 'more' || (row.kind === 'child' && row.branch !== null)
 
   return prev !== undefined && prev.kind !== 'look' && row.kind !== 'look' && !isUnderSubject
 }
@@ -978,9 +972,7 @@ function childRow(c: Child, now: number, branch: OverviewBranch | null): Overvie
     name: c.name,
     age: isChildQuiet ? `quiet ${age}` : age,
     ageTone: isChildQuiet ? 'needsYou' : null,
-    isLoose: branch === null,
     branch,
-    maxLines: OVERVIEW_TEXT_LINES,
   }
 }
 
@@ -1039,7 +1031,6 @@ export function overviewPage(
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       was: isNew(x) ? x.was : null,
       age: shortAgo(now - x.changedAt),
-      maxLines: OVERVIEW_TEXT_LINES,
       hasChildren: under.length > 0,
     })
     rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? 'last' : 'mid')))
