@@ -7,7 +7,7 @@ import type { LinksProps } from '../hooks/links-client'
 import type { RowProps } from '../hooks/row-client'
 import { TAB_HEIGHT, tabLines, type TabsProps } from '../hooks/tabs-client'
 import { cellWidth } from '../hooks/text'
-import type { Item } from '../types'
+import type { Item, Session } from '../types'
 import { demoView } from '../hooks/demo'
 import { OVERVIEW_SYSTEM } from '../hooks/model-text'
 import { checkActions, prBlockActions, prCheckId, prThreadId, threadActions, threadSentIn } from '../hooks/pr-tab'
@@ -1199,7 +1199,7 @@ const replyWithOverview = async (
   world($, on, [])
   overviewReply = overview
   ledgerReply = ledgerAnswer
-  let session: { ledger: { overview: { goal: string } | null; items: { ask: string }[] } } | null = null
+  let session: Pick<Session, 'ledger' | 'overviewFailure'> | null = null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
     session = e.value as never
     return next(e)
@@ -1215,37 +1215,47 @@ const replyWithOverview = async (
   })
   await clock.settle()
 
-  return session!.ledger
+  return session!
 }
 
 test('a reply’s Overview comes from the separate Overview call, after the ledger update', async ($, on) => {
-  const ledger = await replyWithOverview($, on, 'GOAL: Adding a greeting CLI\nNEW: working | Plan | Planning')
+  const { ledger } = await replyWithOverview($, on, 'GOAL: Adding a greeting CLI\nNEW: working | Plan | Planning')
 
   expect(ledger.overview?.goal).toBe('Adding a greeting CLI')
   expect(ledger.items.map(i => i.ask)).toEqual(['Use Node or Python?', 'Name the command greet?'])
   expect(overviewPrompts).toHaveLength(1)
 })
 
-test('a failed Overview call leaves the ledger update applied and no Overview', async ($, on) => {
-  const ledger = await replyWithOverview($, on, null)
+test('a failed Overview call leaves the ledger update applied and no Overview, and saves that it gave no answer', async ($, on) => {
+  const { ledger, overviewFailure } = await replyWithOverview($, on, null)
 
   expect(ledger.overview).toBeNull()
   expect(ledger.items.map(i => i.ask)).toEqual(['Use Node or Python?', 'Name the command greet?'])
   expect(overviewPrompts).toHaveLength(1)
+  expect(overviewFailure).toMatchObject({ cause: 'no-answer', answer: null })
 })
 
 test('an Overview answer that holds prose is asked once more, and the second answer applies', async ($, on) => {
-  const ledger = await replyWithOverview($, on, [
+  const { ledger, overviewFailure } = await replyWithOverview($, on, [
     'The person wants a CLI.\nGOAL: Adding a greeting CLI',
     'GOAL: Adding a greeting CLI',
   ])
 
   expect(overviewPrompts).toHaveLength(2)
   expect(ledger.overview?.goal).toBe('Adding a greeting CLI')
+  expect(overviewFailure).toBeNull()
+})
+
+test('an Overview call that answers with prose twice writes nothing and saves its second answer', async ($, on) => {
+  const { ledger, overviewFailure } = await replyWithOverview($, on, ['The person wants a CLI.', 'Still prose.'])
+
+  expect(overviewPrompts).toHaveLength(2)
+  expect(ledger.overview).toBeNull()
+  expect(overviewFailure).toMatchObject({ cause: 'refused', answer: 'Still prose.' })
 })
 
 test('an Overview answer of UNCHANGED leaves the last Overview as it was', async ($, on) => {
-  const ledger = await replyWithOverview($, on, 'UNCHANGED')
+  const { ledger } = await replyWithOverview($, on, 'UNCHANGED')
 
   expect(ledger.overview).toBeNull()
 })
@@ -1283,7 +1293,7 @@ test('a ledger update shows before its Overview call returns', async ($, on) => 
 })
 
 test('a ledger call that gives no usable answer runs no Overview call', async ($, on) => {
-  const ledger = await replyWithOverview($, on, 'GOAL: Adding a greeting CLI', 'not a ledger')
+  const { ledger } = await replyWithOverview($, on, 'GOAL: Adding a greeting CLI', 'not a ledger')
 
   expect(overviewPrompts).toEqual([])
   expect(ledger.overview).toBeNull()

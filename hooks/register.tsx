@@ -1151,13 +1151,15 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
     screen($),
     $.session.messages().then(transcriptText),
   ])
-  // The Overview call reads the transcript. With none to read, it writes no Overview.
-  const overview: AskCatchUpOverview = async (last, tasks, at) => {
-    if (!transcript || !isCurrent(owner)) return null
-    const r = await askLedgerModel($, overviewCatchUpPrompt(last, transcript, tasks, at), OVERVIEW_SYSTEM, 90_000)
+  // The Overview call reads the transcript.
+  const overview: AskCatchUpOverview | null = transcript
+    ? async (last, tasks, at) => {
+        if (!isCurrent(owner)) return null
+        const r = await askLedgerModel($, overviewCatchUpPrompt(last, transcript, tasks, at), OVERVIEW_SYSTEM, 90_000)
 
-    return r.isAnswered ? r.text : null
-  }
+        return r.isAnswered ? r.text : null
+      }
+    : null
   const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
   if (!isCurrent(owner)) return { kind: 'failed' }
   if (forked.isAnswered) return { kind: 'reply', text: forked.text, source: null, overview }
@@ -4378,10 +4380,12 @@ export const register: Register = on => {
       )
     }
 
-    const shownStatus = footerStatus(shownTab, view.status, {
-      isFetching: prState.isFetching,
-      hasPrs: prViews.length > 0,
-    })
+    const shownStatus = footerStatus(
+      shownTab,
+      view.status,
+      { isFetching: prState.isFetching, hasPrs: prViews.length > 0 },
+      view.overviewPage.error,
+    )
     const status = shownStatus.text ?? ''
 
     const openIds = openRowIds(view)

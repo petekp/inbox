@@ -10,6 +10,7 @@ import {
   cleared,
   emptySession,
   endTurn,
+  failedOverview,
   forkedFrom,
   hasLedger,
   isUnseen,
@@ -28,7 +29,7 @@ import type { Session } from '../hooks/session'
 import type { RowNote } from '../types'
 import { press, runUpdates, wakeForDone } from '../hooks/session-host'
 import type { CatchUpReply } from '../hooks/session-host'
-import { allRows, COMPARE_LIMIT_MS, feedbackText, NO_HOLDS } from '../hooks/view'
+import { allRows, COMPARE_LIMIT_MS, feedbackText, footerStatus, NO_HOLDS } from '../hooks/view'
 import { demoSession, demoView, isDemoCopy } from '../hooks/demo'
 import { fakeHost } from './session-fake-host'
 import { runSessionScript } from './session-script'
@@ -291,11 +292,17 @@ const withOverview = (s: Session): Session => ({
   ledger: { ...EMPTY, overview: applyOverview(null, answer, 1000) },
 })
 
-test('an Overview answer is written to the ledger after later updates, and dropped when its update is gone', () => {
+test('an Overview answer is written to the ledger after later updates and clears a saved failure, and both are dropped when their update is gone', () => {
   const later = { ...emptySession(), presence: { ...emptySession().presence, turnsApplied: 5 } }
+  const failed = failedOverview(later, 'The person wants a CLI.', 3, 900)
 
-  expect(appliedOverview(later, answer, 3, 1000).ledger.overview?.goal).toBe('Work offline')
+  expect(failed.overviewFailure).toEqual({ at: 900, cause: 'refused', answer: 'The person wants a CLI.' })
+  expect(failedOverview(later, null, 3, 900).overviewFailure).toEqual({ at: 900, cause: 'no-answer', answer: null })
+  expect(appliedOverview(failed, answer, 3, 1000).ledger.overview?.goal).toBe('Work offline')
+  expect(appliedOverview(failed, answer, 3, 1000).overviewFailure).toBeNull()
   expect(appliedOverview(emptySession(), answer, 3, 1000).ledger.overview).toBeNull()
+  expect(failedOverview(emptySession(), null, 3, 900).overviewFailure).toBeNull()
+  expect(cleared(failed).overviewFailure).toBeNull()
 })
 
 test('a session whose only record is an Overview has a ledger, is not unseen, is copied by a fork and is cleared', () => {
@@ -324,6 +331,23 @@ test('the Overview page is empty for a new session, reads Working… while the m
   expect(view(turnStarted(idle, 9_000)).live).toBe('Working…')
   expect(view(turnEnded(turnStarted(idle, 9_000), 9_500)).live).toBe('Idle · last reply just now')
   expect(view(withOverview(idle)).goal).toBe('Work offline')
+  expect(view(idle).error).toBeNull()
+})
+
+test('a failed Overview call shows in the status line on the Overview tab, in place of a failed update, and on no other tab', () => {
+  const failed = failedOverview(
+    { ...emptySession(), presence: { ...emptySession().presence, ledgerState: 'failed' } },
+    null,
+    0,
+    900,
+  )
+  const v = sessionView(failed, 1000, 1000, true, NO_HOLDS)
+  const prs = { isFetching: false, hasPrs: false }
+
+  expect(v.overviewPage.error).not.toBeNull()
+  expect(footerStatus('overview', v.status, prs, v.overviewPage.error).error).toBe(v.overviewPage.error)
+  expect(footerStatus('needsYou', v.status, prs, v.overviewPage.error).error).toBe(v.status.error)
+  expect(footerStatus('prs', v.status, prs, v.overviewPage.error).error).toBeNull()
 })
 
 test('the Overview page draws each status with its mark and tone', () => {
@@ -354,6 +378,7 @@ test('the Overview page draws each status with its mark and tone', () => {
 test('a session saved by the Progress trial build loads without its results, subagents and stated step', () => {
   const saved = {
     ...emptySession(),
+    overviewFailure: undefined,
     ledger: { ...EMPTY, milestones: [{ id: 'm1', source: 'done', text: 'Reducer built' }] },
     subagents: [{ id: 'a1', task: 'Find the handler' }],
     presence: { turnsStarted: 2, isTurnRunning: true, statedStep: 'Reading x' },
@@ -364,6 +389,7 @@ test('a session saved by the Progress trial build loads without its results, sub
   expect(loaded.ledger).not.toHaveProperty('milestones')
   expect(loaded.presence).not.toHaveProperty('statedStep')
   expect(loaded.presence).toMatchObject({ turnsStarted: 2, isTurnRunning: true })
+  expect(loaded.overviewFailure).toBeNull()
 })
 
 test('a sample saved without an Overview is replaced, and the sample session carries its own', () => {

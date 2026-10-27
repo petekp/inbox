@@ -1543,6 +1543,7 @@ function shortAgo(ms) {
   return age === "just now" ? "now" : age.replace(/ ago$/, "");
 }
 var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
+var OVERVIEW_FAILED = "Last Overview update failed. Changes from that reply may be missing.";
 var UPDATE_RETRIES = " It retries after your next message.";
 function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
@@ -1792,6 +1793,7 @@ function overviewPage(s, now) {
     live: liveOf(s.presence, now),
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
     hasNews,
+    error: s.overviewFailure ? OVERVIEW_FAILED : null,
     empty: {
       title: "Overview",
       hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
@@ -2126,6 +2128,7 @@ function emptySession() {
     heldRows: [],
     prViews: NO_PRS,
     stop: null,
+    overviewFailure: null,
     hostTasks: [],
     dialogQuestions: []
   };
@@ -2187,6 +2190,7 @@ function upgradeSession(saved) {
       isFetching: false
     },
     stop: saved.stop ?? null,
+    overviewFailure: saved.overviewFailure ?? null,
     hostTasks: upgradeHostTasks(saved.hostTasks),
     dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
@@ -2220,7 +2224,17 @@ function applied(s, parsed, now, promptAt) {
 }
 function appliedOverview(s, answer, appliedAfter, now) {
   if (s.presence.turnsApplied < appliedAfter) return s;
-  return { ...s, ledger: { ...s.ledger, overview: applyOverview(s.ledger.overview, answer, now) } };
+  return {
+    ...s,
+    ledger: { ...s.ledger, overview: applyOverview(s.ledger.overview, answer, now) },
+    overviewFailure: null
+  };
+}
+var REFUSED_ANSWER_CHARS = 500;
+function failedOverview(s, text2, appliedAfter, now) {
+  if (s.presence.turnsApplied < appliedAfter) return s;
+  const failure = text2 === null ? { at: now, cause: "no-answer", answer: null } : { at: now, cause: "refused", answer: text2.slice(0, REFUSED_ANSWER_CHARS) };
+  return { ...s, overviewFailure: failure };
 }
 function needsCatchUp(s) {
   const { presence } = s;
@@ -2744,9 +2758,11 @@ async function runUpdates(host) {
       text: await ask(ledger.overview, tasks, at).catch(() => null)
     }));
     const answer = last.text === null ? null : parseOverview(last.text);
-    if (answer === null) return;
     const now = await host.now();
-    await host.update((x) => appliedOverview(x, answer, after.presence.turnsApplied, now));
+    const appliedAfter = after.presence.turnsApplied;
+    await host.update(
+      (x) => answer === null ? failedOverview(x, last.text, appliedAfter, now) : appliedOverview(x, answer, appliedAfter, now)
+    );
   });
   const followUp = (run2) => {
     const settled = run2.catch(() => void 0);
@@ -2770,7 +2786,7 @@ async function runUpdates(host) {
               const at = await host.now();
               const after2 = await host.update((x) => appliedCatchUp(x, s, parsed2, at));
               if (!parsed2) return "stop";
-              if (reply2.kind === "reply") followUp(writeOverview(after2, reply2.overview, s.hostTasks));
+              if (reply2.kind === "reply" && reply2.overview) followUp(writeOverview(after2, reply2.overview, s.hostTasks));
               continue;
             }
             const next = s.pending[0];

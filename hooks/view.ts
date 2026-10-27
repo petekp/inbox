@@ -381,6 +381,7 @@ export function versionLabel(version: string, isNextBuild: boolean): string {
 }
 
 const UPDATE_FAILED = 'Last update failed. Items from that reply may be missing.'
+const OVERVIEW_FAILED = 'Last Overview update failed. Changes from that reply may be missing.'
 const UPDATE_RETRIES = ' It retries after your next message.'
 
 function needsYouOrder(ledger: Ledger): { questions: Item[]; tasks: Item[] } {
@@ -838,6 +839,8 @@ export type OverviewPage = {
   rows: OverviewRow[]
   /** Whether a subject changed since the person last looked, so the tab name gets a dot while another tab shows. */
   hasNews: boolean
+  /** The status line's error while the last Overview call wrote nothing. */
+  error: string | null
   empty: { title: string; hint: string }
 }
 
@@ -943,7 +946,12 @@ function childRow(c: Child, now: number, branch: OverviewBranch | null): Overvie
 }
 
 export function overviewPage(
-  s: { ledger: Pick<Ledger, 'overview'>; presence: Session['presence']; place?: Session['place'] },
+  s: {
+    ledger: Pick<Ledger, 'overview'>
+    presence: Session['presence']
+    place?: Session['place']
+    overviewFailure?: Session['overviewFailure']
+  },
   now: number,
 ): OverviewPage {
   const o = s.ledger.overview
@@ -1036,6 +1044,7 @@ export function overviewPage(
     live: liveOf(s.presence, now),
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
     hasNews,
+    error: s.overviewFailure ? OVERVIEW_FAILED : null,
     empty: {
       title: 'Overview',
       hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts.",
@@ -1548,16 +1557,18 @@ const REFRESHING_PRS_TEXT = 'Refreshing PRs…'
 /**
  * The status line under the inbox for the shown tab. The PRs tab says when PRs refresh, and only once it lists some,
  * since an empty PRs tab already reads "Checking for PRs…". A failed ledger update is about rows, so it shows on every
- * tab but the PRs tab.
+ * tab but the PRs tab. On the Overview tab, `overviewError` shows in its place.
  */
 export function footerStatus(
   tab: ShownTab,
   status: ItemStatus,
   prs: { isFetching: boolean; hasPrs: boolean },
+  overviewError: string | null,
 ): { text: string | null; error: string | null } {
   if (tab === 'prs') return { text: prs.isFetching && prs.hasPrs ? REFRESHING_PRS_TEXT : null, error: null }
+  const error = (tab === 'overview' ? overviewError : null) ?? status.error
 
-  return { text: status.isUpdating ? UPDATING_TEXT : null, error: status.error }
+  return { text: status.isUpdating ? UPDATING_TEXT : null, error }
 }
 
 export function perTurnStatus(update: { isUpdating: boolean; isFailed: boolean; retries: boolean }): ItemStatus {

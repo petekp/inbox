@@ -402,6 +402,12 @@ export type HostTaskStatus = 'pending' | 'in-progress' | 'done' | 'dropped' | 'b
 /** One task of the agent's own task list, as its host reports it. */
 export type HostTask = { id: string; text: string; status: HostTaskStatus }
 
+/**
+ * Why an Overview call wrote nothing. `no-answer`: the call gave no text. `refused`: it answered twice with text the
+ * parser refused, and `answer` holds the start of the second answer.
+ */
+export type OverviewFailure = { at: number; cause: 'no-answer' | 'refused'; answer: string | null }
+
 /** One conversation's inbox: what every host saves and the shared session functions change. */
 export type Session = {
   ledger: Ledger
@@ -464,6 +470,8 @@ export type Session = {
   prViews: PrViews
   /** Why the last turn stopped, until the next turn starts. */
   stop: Stop | null
+  /** The last Overview call that wrote nothing, until a later one writes. */
+  overviewFailure: OverviewFailure | null
   /** The agent's own task list, when its host reports one. Empty when the agent keeps none. */
   hostTasks: HostTask[]
   /**

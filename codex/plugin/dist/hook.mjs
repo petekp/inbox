@@ -1080,6 +1080,7 @@ function shortAgo(ms) {
   return age === "just now" ? "now" : age.replace(/ ago$/, "");
 }
 var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
+var OVERVIEW_FAILED = "Last Overview update failed. Changes from that reply may be missing.";
 var UPDATE_RETRIES = " It retries after your next message.";
 function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
@@ -1329,6 +1330,7 @@ function overviewPage(s, now) {
     live: liveOf(s.presence, now),
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
     hasNews,
+    error: s.overviewFailure ? OVERVIEW_FAILED : null,
     empty: {
       title: "Overview",
       hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
@@ -1666,6 +1668,7 @@ function emptySession() {
     heldRows: [],
     prViews: NO_PRS,
     stop: null,
+    overviewFailure: null,
     hostTasks: [],
     dialogQuestions: []
   };
@@ -1727,6 +1730,7 @@ function upgradeSession(saved) {
       isFetching: false
     },
     stop: saved.stop ?? null,
+    overviewFailure: saved.overviewFailure ?? null,
     hostTasks: upgradeHostTasks(saved.hostTasks),
     dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
@@ -1752,7 +1756,8 @@ function cleared(s) {
       isTurnRunning: false
     },
     lastActions: {},
-    stop: null
+    stop: null,
+    overviewFailure: null
   };
 }
 function notePrompt(host, s, text2, isOpen2) {

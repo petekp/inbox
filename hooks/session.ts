@@ -44,6 +44,7 @@ import type {
   LastAction,
   Ledger,
   Overview,
+  OverviewFailure,
   PrView,
   PrViews,
   RowNote,
@@ -81,6 +82,7 @@ export function emptySession(): Session {
     heldRows: [],
     prViews: NO_PRS,
     stop: null,
+    overviewFailure: null,
     hostTasks: [],
     dialogQuestions: [],
   }
@@ -188,6 +190,7 @@ export function upgradeSession(saved: SavedSession): Session {
       isFetching: false,
     },
     stop: saved.stop ?? null,
+    overviewFailure: saved.overviewFailure ?? null,
     hostTasks: upgradeHostTasks(saved.hostTasks),
     dialogQuestions: (saved.dialogQuestions ?? []).map(q => ({ ...q, descriptions: q.descriptions ?? {} })),
   }
@@ -221,6 +224,7 @@ export function cleared<S extends Session>(s: S): S {
     },
     lastActions: {},
     stop: null,
+    overviewFailure: null,
   }
 }
 
@@ -472,7 +476,28 @@ export function applied<S extends Session>(s: S, parsed: Update | null, now: num
 export function appliedOverview<S extends Session>(s: S, answer: OverviewAnswer, appliedAfter: number, now: number): S {
   if (s.presence.turnsApplied < appliedAfter) return s
 
-  return { ...s, ledger: { ...s.ledger, overview: applyOverview(s.ledger.overview, answer, now) } }
+  return {
+    ...s,
+    ledger: { ...s.ledger, overview: applyOverview(s.ledger.overview, answer, now) },
+    overviewFailure: null,
+  }
+}
+
+/** How much of a refused Overview answer a failure keeps. */
+const REFUSED_ANSWER_CHARS = 500
+
+/**
+ * Saves why the Overview call for an applied update wrote nothing: `text` is its last answer, or null when it gave
+ * none. `appliedAfter` drops the failure as `appliedOverview` drops an answer.
+ */
+export function failedOverview<S extends Session>(s: S, text: string | null, appliedAfter: number, now: number): S {
+  if (s.presence.turnsApplied < appliedAfter) return s
+  const failure: OverviewFailure =
+    text === null
+      ? { at: now, cause: 'no-answer', answer: null }
+      : { at: now, cause: 'refused', answer: text.slice(0, REFUSED_ANSWER_CHARS) }
+
+  return { ...s, overviewFailure: failure }
 }
 
 /**

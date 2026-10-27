@@ -1847,7 +1847,12 @@ function Prs({ v, now }: { v: View; now: number }) {
 const LATE_READ_MS = 60_000
 
 function footerOf(v: View) {
-  return footerStatus(drawnTab(), v.status, { isFetching: v.isFetchingPrs, hasPrs: v.prs.drawn.length > 0 })
+  return footerStatus(
+    drawnTab(),
+    v.status,
+    { isFetching: v.isFetchingPrs, hasPrs: v.prs.drawn.length > 0 },
+    v.overviewPage?.error ?? null,
+  )
 }
 
 function Status({ v }: { v: View }) {

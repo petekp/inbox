@@ -40,6 +40,7 @@ export type FeatureId =
   | 'overview-news-dot'
   | 'overview-look-line'
   | 'overview-row-rules'
+  | 'overview-failed-warning'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -89,6 +90,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'overview-news-dot': { kind: 'full' },
       'overview-look-line': { kind: 'full' },
       'overview-row-rules': { kind: 'full' },
+      'overview-failed-warning': { kind: 'full' },
     },
   },
   codex: {
@@ -180,6 +182,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'overview-news-dot': { kind: 'full' },
       'overview-look-line': { kind: 'full' },
       'overview-row-rules': { kind: 'full' },
+      'overview-failed-warning': { kind: 'full' },
     },
   },
   omp: {
@@ -244,6 +247,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'overview-news-dot': { kind: 'full' },
       'overview-look-line': { kind: 'full' },
       'overview-row-rules': { kind: 'full' },
+      'overview-failed-warning': { kind: 'full' },
     },
   },
 }

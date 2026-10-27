@@ -2701,6 +2701,7 @@ function versionLabel(version, isNextBuild) {
   return isNextBuild ? `v${version} \xB7 next` : `v${version}`;
 }
 var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
+var OVERVIEW_FAILED = "Last Overview update failed. Changes from that reply may be missing.";
 var UPDATE_RETRIES = " It retries after your next message.";
 function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
@@ -3058,6 +3059,7 @@ function overviewPage(s, now) {
     live: liveOf(s.presence, now),
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
     hasNews,
+    error: s.overviewFailure ? OVERVIEW_FAILED : null,
     empty: {
       title: "Overview",
       hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
@@ -3379,10 +3381,11 @@ function heldLabel(c) {
 }
 var UPDATING_TEXT = "Updating\u2026";
 var REFRESHING_PRS_TEXT = "Refreshing PRs\u2026";
-function footerStatus(tab, status, prs) {
+function footerStatus(tab, status, prs, overviewError) {
   if (tab === "prs")
     return { text: prs.isFetching && prs.hasPrs ? REFRESHING_PRS_TEXT : null, error: null };
-  return { text: status.isUpdating ? UPDATING_TEXT : null, error: status.error };
+  const error = (tab === "overview" ? overviewError : null) ?? status.error;
+  return { text: status.isUpdating ? UPDATING_TEXT : null, error };
 }
 function perTurnStatus(update) {
   return {
@@ -4160,6 +4163,7 @@ function emptySession() {
     heldRows: [],
     prViews: NO_PRS,
     stop: null,
+    overviewFailure: null,
     hostTasks: [],
     dialogQuestions: []
   };
@@ -4226,6 +4230,7 @@ function upgradeSession(saved) {
       isFetching: false
     },
     stop: saved.stop ?? null,
+    overviewFailure: saved.overviewFailure ?? null,
     hostTasks: upgradeHostTasks(saved.hostTasks),
     dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
@@ -4363,7 +4368,18 @@ function applied(s, parsed, now, promptAt) {
 function appliedOverview(s, answer, appliedAfter, now) {
   if (s.presence.turnsApplied < appliedAfter)
     return s;
-  return { ...s, ledger: { ...s.ledger, overview: applyOverview(s.ledger.overview, answer, now) } };
+  return {
+    ...s,
+    ledger: { ...s.ledger, overview: applyOverview(s.ledger.overview, answer, now) },
+    overviewFailure: null
+  };
+}
+var REFUSED_ANSWER_CHARS = 500;
+function failedOverview(s, text, appliedAfter, now) {
+  if (s.presence.turnsApplied < appliedAfter)
+    return s;
+  const failure = text === null ? { at: now, cause: "no-answer", answer: null } : { at: now, cause: "refused", answer: text.slice(0, REFUSED_ANSWER_CHARS) };
+  return { ...s, overviewFailure: failure };
 }
 function needsCatchUp(s) {
   const { presence } = s;
@@ -4600,10 +4616,9 @@ async function runUpdates(host) {
       text: await ask(ledger.overview, tasks, at).catch(() => null)
     }));
     const answer = last.text === null ? null : parseOverview(last.text);
-    if (answer === null)
-      return;
     const now = await host.now();
-    await host.update((x) => appliedOverview(x, answer, after.presence.turnsApplied, now));
+    const appliedAfter = after.presence.turnsApplied;
+    await host.update((x) => answer === null ? failedOverview(x, last.text, appliedAfter, now) : appliedOverview(x, answer, appliedAfter, now));
   });
   const followUp = (run) => {
     const settled = run.catch(() => {
@@ -4633,7 +4648,7 @@ async function runUpdates(host) {
               const after = await host.update((x) => appliedCatchUp(x, s, parsed, at));
               if (!parsed)
                 return "stop";
-              if (reply.kind === "reply")
+              if (reply.kind === "reply" && reply.overview)
                 followUp(writeOverview(after, reply.overview, s.hostTasks));
               continue;
             }
@@ -5719,10 +5734,7 @@ function tabBar(d) {
 function footer(d, isPageScrolling) {
   const { screen, ui, width, now, style: s } = d;
   const out = [s.dim("\u2500".repeat(width))];
-  const status = footerStatus(ui.tab, screen.view.status, {
-    isFetching: screen.isFetchingPrs,
-    hasPrs: screen.view.prs.drawn.length > 0
-  });
+  const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.overviewPage.error);
   if (screen.isDemo)
     out.push(fit(` ${s.dim(DEMO_NOTICE)}`, width));
   if (status.text)

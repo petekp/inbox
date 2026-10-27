@@ -1134,10 +1134,12 @@ function tabBar(d: Draw): string {
 function footer(d: Draw, isPageScrolling: boolean): string[] {
   const { screen, ui, width, now, style: s } = d
   const out: string[] = [s.dim('─'.repeat(width))]
-  const status = footerStatus(ui.tab, screen.view.status, {
-    isFetching: screen.isFetchingPrs,
-    hasPrs: screen.view.prs.drawn.length > 0,
-  })
+  const status = footerStatus(
+    ui.tab,
+    screen.view.status,
+    { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 },
+    screen.view.overviewPage.error,
+  )
   if (screen.isDemo) out.push(fit(` ${s.dim(DEMO_NOTICE)}`, width))
   if (status.text) out.push(` ${s.dim(status.text)}`)
   if (status.error) out.push(...indented(status.error, 1, width, 2, t => s.tone('error', t)))
