@@ -25,9 +25,9 @@ import {
   turnStarted,
 } from '../../hooks/session'
 import { namedCli } from './cli'
-import { activityOf, endTurn, noteHook, notePrompt, patchFiles } from './core'
+import { activityOf, endTurn, heardState, noteHook, notePrompt, patchFiles } from './core'
 import { noteDialogs } from './dialogs'
-import { withEarlierHistory } from './history'
+import { withEarlierHistory, withMissedTurns } from './history'
 import { codexStore } from './host'
 import type { OnWrite } from './host'
 import type { SessionState } from './state'
@@ -76,17 +76,21 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
   /** A compaction start runs in the middle of a turn, so it marks nothing behind. */
   const withHistory = async (s: SessionState): Promise<SessionState> => {
     if (rolloutPath === null) return s
-    const r = await withEarlierHistory(s, {
+    const history = {
       dir,
       rolloutPath,
       cwd: input.cwd ?? s.root,
       currentTurnId: input.turn_id,
       canMarkBehind: input.source !== 'compact',
-    })
+      isCleared: input.source === 'clear',
+    }
+    const r = heardState(s.heard) === 'none' ? await withEarlierHistory(s, history) : await withMissedTurns(s, history)
     isMarkedBehind = r.isBehind
 
     return r.state
   }
+  const withCoveredTurn = (s: SessionState): SessionState =>
+    rolloutPath !== null && input.turn_id ? { ...s, coveredTurn: input.turn_id } : s
 
   switch (input.hook_event_name) {
     case 'SessionStart': {
@@ -182,7 +186,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
           return inHerdr ? delegatesSettled(waited, inHerdr, now()) : waited
         })
 
-        const ended = noteHook(turnEnded(endTurn(withDelegates, reply, now()), now()), 'stop', now())
+        const ended = withCoveredTurn(noteHook(turnEnded(endTurn(withDelegates, reply, now()), now()), 'stop', now()))
 
         return plan === null ? ended : { ...ended, hostTasks: plan }
       })
