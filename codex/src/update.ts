@@ -155,7 +155,7 @@ export function codexAsk(
           '-',
         ],
         { cwd: work, timeoutMs: TIMEOUT_MS, env: home ? { CODEX_HOME: home } : {}, input: prompt },
-      ).catch((err: unknown) => ({ code: -1, stdout: '', stderr: err instanceof Error ? err.message : String(err) }))
+      )
       const unknown = r.stderr.match(/Unknown feature flag: (\S+)/)?.[1]
       if (r.code !== 0 && unknown && off.includes(unknown)) {
         off = off.filter(f => f !== unknown)

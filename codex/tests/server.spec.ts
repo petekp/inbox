@@ -20,7 +20,7 @@ import { SETTLE_WINDOW_MS } from '../src/settle'
 import { readState, statePath, updateState } from '../src/state'
 import { handleHook } from '../src/hook'
 import { findCli } from '../src/cli'
-import { fakeRunner, hookDeps, input, rolloutAt, tempDir } from './helpers'
+import { fakeRunner, hookDeps, input, rolloutAt, tempDir, turnRow } from './helpers'
 
 async function setup(queueCode: number, now = () => 100, fallbackCli = async () => 'codex', isNextBuild = false) {
   const dir = tempDir()
@@ -748,8 +748,6 @@ test('an open still pending after the press timeout shows nothing on its row, an
 test('a chat saved mid-turn reads Working… until a view or a press finds the turn ended in its rollout', async () => {
   const dir = tempDir()
   const rollout = join(dir, 'rollout.jsonl')
-  const turnRow = (type: string, turn: string) =>
-    JSON.stringify({ type: 'event_msg', payload: { type, turn_id: turn } })
   writeFileSync(rollout, `${turnRow('task_started', 't1')}\n`)
   const running = () =>
     updateState(dir, 's1', s => ({
@@ -793,7 +791,6 @@ test('a chat saved mid-turn reads Working… until a view or a press finds the t
 test('a turn another plugin’s Stop continues reads Working… again once a view finds it running in the rollout', async () => {
   const dir = tempDir()
   const rollout = join(dir, 'rollout.jsonl')
-  const turnRow = (type: string) => JSON.stringify({ type: 'event_msg', payload: { type, turn_id: 't1' } })
   writeFileSync(rollout, '')
   const deps = hookDeps(dir)
   const handle = makeServer({
@@ -817,12 +814,12 @@ test('a turn another plugin’s Stop continues reads Working… again once a vie
 
   await handleHook(input('UserPromptSubmit', { prompt: 'Ship it', turn_id: 't1', transcript_path: rollout }), deps)
   assert.equal(await viewNow(), 'Working…')
-  writeFileSync(rollout, `${turnRow('task_started')}\n`)
+  writeFileSync(rollout, `${turnRow('task_started', 't1')}\n`)
   await handleHook(input('Stop', { last_assistant_message: '', turn_id: 't1', transcript_path: rollout }), deps)
   assert.equal((await readState(dir, 's1')).presence.isTurnRunning, false)
   assert.equal(await viewNow(), 'Working…')
 
-  writeFileSync(rollout, `${turnRow('task_started')}\n${turnRow('task_complete')}\n`)
+  writeFileSync(rollout, `${turnRow('task_started', 't1')}\n${turnRow('task_complete', 't1')}\n`)
   assert.equal(await viewNow(), null)
 })
 
@@ -841,8 +838,7 @@ test('Done on a task Codex just left waits while a turn runs, queues one message
     at: 1,
   })
   const rollout = join(dir, 'rollout.jsonl')
-  const turnRow = (type: string) => JSON.stringify({ type: 'event_msg', payload: { type, turn_id: 't3' } })
-  writeFileSync(rollout, `${turnRow('task_started')}\n`)
+  writeFileSync(rollout, `${turnRow('task_started', 't3')}\n`)
   await updateState(dir, 's1', s => ({
     ...s,
     root: '/repo',
@@ -884,7 +880,7 @@ test('Done on a task Codex just left waits while a turn runs, queues one message
   const queued = () => runner.calls.filter(c => c[0] === '/apps/codex')
   assert.deepEqual(queued(), [])
 
-  writeFileSync(rollout, `${turnRow('task_started')}\n${turnRow('turn_aborted')}\n`)
+  writeFileSync(rollout, `${turnRow('task_started', 't3')}\n${turnRow('turn_aborted', 't3')}\n`)
   await poll()
   await poll()
   assert.deepEqual(queued(), [['/apps/codex', 'queue', '--thread', 's1', '--message', 'Done: Sign in to npm']])
@@ -1515,12 +1511,7 @@ test('a chat says why Codex is not running the inbox’s hooks from Codex’s ho
   const dir = tempDir()
   const rollout = join(tempDir(), 'rollout.jsonl')
   const turns = (...ids: string[]) =>
-    writeFileSync(
-      rollout,
-      ids
-        .map(turnId => JSON.stringify({ type: 'event_msg', payload: { type: 'task_started', turn_id: turnId } }))
-        .join('\n'),
-    )
+    writeFileSync(rollout, ids.map(turnId => turnRow('task_started', turnId)).join('\n'))
   turns('h1')
   await updateState(dir, 's1', s => ({
     ...s,
@@ -1605,7 +1596,7 @@ test('each chat folder gets its own answer about the hooks’ trust, and each ch
   const dir = tempDir()
   const rolloutStarting = (turnId: string) => {
     const path = join(tempDir(), 'rollout.jsonl')
-    writeFileSync(path, JSON.stringify({ type: 'event_msg', payload: { type: 'task_started', turn_id: turnId } }))
+    writeFileSync(path, turnRow('task_started', turnId))
     return path
   }
   for (const [id, root] of [
