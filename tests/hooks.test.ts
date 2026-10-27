@@ -4074,7 +4074,7 @@ for (const isAttachedFirst of [true, false]) {
   })
 }
 
-test('the desktop task keeps help before Done and puts Try again first when its send fails', async ($, on) => {
+test('the desktop task keeps help before Done, puts Try again first when its send fails, and keeps Undo’s place after Done once Undo ends', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   ledgerReply = ['NEW: do | - | Run the load script | - | -', 'HELP: new 1 | run | ./load.sh | load script'].join('\n')
@@ -4092,6 +4092,22 @@ test('the desktop task keeps help before Done and puts Try again first when its 
   await clock.settle()
   expect(await actions()).toEqual(['retry-i1', 'help-i1-0', 'done-i1'])
   expect(await pane.find({ text: /Not sent/ })).toBeDefined()
+
+  submitAnswer = 'enter'
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'done-i1' })
+  await clock.settle()
+  const undoPlace = async () => {
+    const place = await pane.find({ key: 'undo-place-i1' })
+    return place && { width: place.props.width, height: place.props.height }
+  }
+  const whileUndoLasts = await undoPlace()
+  expect(whileUndoLasts).toBeDefined()
+  expect(await pane.find({ key: 'undo-i1' })).toBeDefined()
+  await clock.advance(SETTLED_MS)
+  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
+  expect(await pane.find({ key: 'undo-i1' })).toBeUndefined()
+  expect(await undoPlace()).toEqual(whileUndoLasts)
 })
 
 test('the desktop pane draws each action as one button and the tabs as one click region, with no keys and no close button of its own', async ($, on) => {

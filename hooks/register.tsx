@@ -4909,23 +4909,24 @@ export const register: Register = on => {
               : []),
           ]
     }
+    const svgClientElements = hasClient && 'Svg' in elements ? elements : null
     const undoButton = (undo: RowPress | PrPress, at: number | null) => {
       const key = `undo-${pressRowId(undo)}`
       const label = ' ↺ Undo '
       const onPress = (press: { surface: UiPressArgument['surface'] }) => runPress($, undo, press.surface)
-      if (hasClient && 'Svg' in elements) {
+      if (svgClientElements) {
         followUpPresses.set(key, onPress)
         const leftMs = at === null ? 0 : Math.max(0, SETTLED_MS - (now - at))
         return (
           <Box key={`${key}-${at}`} width={UNDO_CELLS} height={UNDO_HEIGHT_PT / DESKTOP_LINE_PT}>
-            <elements.Svg
+            <svgClientElements.Svg
               source={undoSvg(leftMs / SETTLED_MS, leftMs)}
               alt="Undo"
               width={UNDO_CELLS * DESKTOP_CELL_PT}
               height={UNDO_HEIGHT_PT}
             />
             <Box position="absolute" top={0} left={0}>
-              <elements.Client
+              <svgClientElements.Client
                 key={key}
                 module="./undo-client.tsx"
                 width={UNDO_CELLS}
@@ -4947,6 +4948,15 @@ export const register: Register = on => {
         </Button>
       )
     }
+    // A desktop title wraps beside Undo, so Undo's place keeps its size after Undo ends and the title keeps its wrap.
+    const undoPlace = (id: string, undo: RowPress | PrPress | null, at: number, offersUndo: boolean) =>
+      svgClientElements && offersUndo ? (
+        <Box key={`undo-place-${id}`} width={UNDO_CELLS} height={UNDO_HEIGHT_PT / DESKTOP_LINE_PT}>
+          {undo ? undoButton(undo, at) : null}
+        </Box>
+      ) : undo ? (
+        undoButton(undo, at)
+      ) : null
     const settledContent = (
       what: string,
       outcome: string,
@@ -4954,9 +4964,12 @@ export const register: Register = on => {
       undo: RowPress | PrPress | null,
       delivery: Parameters<typeof settledLabel>[1] = null,
       isLapsed = false,
+      undoPlaceId: string | null = null,
     ) => {
       if (look === 'desktop') {
         const after = `${DOT}${settledLabel(outcome, delivery)}`
+        const side =
+          undoPlaceId === null ? (undo ? undoButton(undo, at) : null) : undoPlace(undoPlaceId, undo, at, true)
         return (
           <Box flexDirection="column">
             <Box flexDirection="row" alignItems="center">
@@ -4966,9 +4979,9 @@ export const register: Register = on => {
                   <Text color={pal.muted}>{after}</Text>
                 </Text>
               </Box>
-              {undo ? (
+              {side ? (
                 <Box flexShrink={0} paddingLeft={1}>
-                  {undoButton(undo, at)}
+                  {side}
                 </Box>
               ) : null}
             </Box>
@@ -5008,7 +5021,7 @@ export const register: Register = on => {
           key: `settled-${r.id}`,
           markCells: DESKTOP_MARK_CELLS + markExtra(r.id),
           mark: settledMark(state.delivery) ? <Text color={pal.muted}>{settledMark(state.delivery)}</Text> : null,
-          side: undo ? undoButton(undo, state.at) : null,
+          side: undoPlace(r.id, undo, state.at, state.offersUndo),
           padY: space.settledPad,
           isCentered: true,
           children: [
@@ -5160,6 +5173,7 @@ export const register: Register = on => {
             canUndo ? { action: 'pr-undo', ref: pr.ref } : null,
             null,
             true,
+            prMarkId(pr.ref),
           ),
           `settled-pr:${pr.ref}`,
         ),

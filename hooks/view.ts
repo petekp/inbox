@@ -39,6 +39,7 @@ import {
   isRepeatOf,
   isUndoable,
   noteText,
+  offersUndo,
   retryOf,
   stepsOf,
 } from './presses'
@@ -169,6 +170,8 @@ export type RowState =
       label: string
       at: number
       canUndo: boolean
+      /** Whether this kind of close offers Undo while Undo lasts. `canUndo` is whether Undo is on offer now. */
+      offersUndo: boolean
       delivery: ClosedDelivery
       isLapsed: boolean
     }
@@ -1389,6 +1392,7 @@ export function inboxView({
           label: DONE_LABELS[reply.action]?.(reply.text) ?? reply.text,
           at: reply.at,
           canUndo: false,
+          offersUndo: false,
           delivery: pendingDeliveryAt(reply, now),
           isLapsed: false,
         }
@@ -1399,6 +1403,7 @@ export function inboxView({
         label: outcomeLabel(closed),
         at,
         canUndo: isUndoable(closed) && isUndoLeft(at),
+        offersUndo: offersUndo(closed),
         isLapsed: isLapsed(closed),
         delivery:
           'doneNotification' in closed && closed.doneNotification?.error !== undefined
@@ -1417,6 +1422,7 @@ export function inboxView({
         label: fixLabel(sent),
         at: last.at,
         canUndo: isUndoLeft(last.at),
+        offersUndo: true,
         delivery: pendingDeliveryAt(last, now),
         isLapsed: false,
       }

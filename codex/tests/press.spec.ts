@@ -625,7 +625,15 @@ test('Fix hands a finding off and settles it as the choice made, each press with
     [
       [
         'f3',
-        { is: 'settled', label: 'Closed by Codex: fixed', at: 90, canUndo: false, delivery: null, isLapsed: false },
+        {
+          is: 'settled',
+          label: 'Closed by Codex: fixed',
+          at: 90,
+          canUndo: false,
+          offersUndo: false,
+          delivery: null,
+          isLapsed: false,
+        },
         [],
       ],
     ],
@@ -654,7 +662,7 @@ test('Dismiss settles a row in place with Undo, and Undo puts it back open where
     [
       [
         'i1',
-        { is: 'settled', label: 'Dismissed', at: 50, canUndo: true, delivery: null, isLapsed: true },
+        { is: 'settled', label: 'Dismissed', at: 50, canUndo: true, offersUndo: true, delivery: null, isLapsed: true },
         [{ action: 'undo', id: 'i1' }],
       ],
     ],
@@ -782,6 +790,7 @@ test('a row Codex closes while the person types a reply stays held in place, out
       label: 'Replied',
       at: 70,
       canUndo: false,
+      offersUndo: false,
       delivery: 'queued',
       isLapsed: false,
     },

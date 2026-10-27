@@ -1488,8 +1488,11 @@ function upgradeLastActions(saved) {
     })
   );
 }
+function offersUndo(c) {
+  return c.how === "done" || c.how === "dismissed";
+}
 function isUndoable(c) {
-  return (c.how === "done" || c.how === "dismissed") && !c.isSentToAgent;
+  return offersUndo(c) && !c.isSentToAgent;
 }
 var ISSUE_LABEL = "File issue";
 function retryOf(id, last) {
@@ -1936,6 +1939,7 @@ function inboxView({
           label: DONE_LABELS[reply.action]?.(reply.text) ?? reply.text,
           at: reply.at,
           canUndo: false,
+          offersUndo: false,
           delivery: pendingDeliveryAt(reply, now),
           isLapsed: false
         };
@@ -1945,6 +1949,7 @@ function inboxView({
         label: outcomeLabel(closed2),
         at,
         canUndo: isUndoable(closed2) && isUndoLeft(at),
+        offersUndo: offersUndo(closed2),
         isLapsed: isLapsed(closed2),
         delivery: "doneNotification" in closed2 && closed2.doneNotification?.error !== void 0 ? { error: closed2.doneNotification.error, canUndo: isUndoable(closed2) } : (closed2.how === "answered" || closed2.how === "done") && last2?.kind === "mark" && last2.at === at ? pendingDeliveryAt(last2, now) : null
       };
@@ -1957,6 +1962,7 @@ function inboxView({
         label: fixLabel(sent),
         at: last.at,
         canUndo: isUndoLeft(last.at),
+        offersUndo: true,
         delivery: pendingDeliveryAt(last, now),
         isLapsed: false
       };

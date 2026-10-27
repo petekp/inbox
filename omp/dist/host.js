@@ -2094,8 +2094,11 @@ function upgradeLastActions(saved) {
     return upgraded ? [[key, upgraded]] : [];
   }));
 }
+function offersUndo(c) {
+  return c.how === "done" || c.how === "dismissed";
+}
 function isUndoable(c) {
-  return (c.how === "done" || c.how === "dismissed") && !c.isSentToAgent;
+  return offersUndo(c) && !c.isSentToAgent;
 }
 function doneWake(ledger, ctx) {
   if (ctx.isTurnRunning)
@@ -3200,6 +3203,7 @@ function inboxView({
           label: DONE_LABELS[reply.action]?.(reply.text) ?? reply.text,
           at: reply.at,
           canUndo: false,
+          offersUndo: false,
           delivery: pendingDeliveryAt(reply, now),
           isLapsed: false
         };
@@ -3210,6 +3214,7 @@ function inboxView({
         label: outcomeLabel(closed),
         at,
         canUndo: isUndoable(closed) && isUndoLeft(at),
+        offersUndo: offersUndo(closed),
         isLapsed: isLapsed(closed),
         delivery: "doneNotification" in closed && closed.doneNotification?.error !== undefined ? { error: closed.doneNotification.error, canUndo: isUndoable(closed) } : (closed.how === "answered" || closed.how === "done") && last?.kind === "mark" && last.at === at ? pendingDeliveryAt(last, now) : null
       };
@@ -3222,6 +3227,7 @@ function inboxView({
         label: fixLabel(sent),
         at: last.at,
         canUndo: isUndoLeft(last.at),
+        offersUndo: true,
         delivery: pendingDeliveryAt(last, now),
         isLapsed: false
       };
