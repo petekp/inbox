@@ -285,7 +285,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     const rollout = await rolloutFor(openCatchUp.codexHome, id)
     if (rollout === null) return
     const cli = await deps.fallbackCli().catch(() => null)
-    const history = { dir, rolloutPath: rollout.path, cwd: rollout.cwd, reads: rolloutReads(rollout.path) }
+    const history = { dir, cwd: rollout.cwd, reads: rolloutReads(rollout.path) }
     // Reads the rollout before the state lock. The check under the lock reuses what it read.
     await withEarlierHistory(before, history)
     let isBehind = false
