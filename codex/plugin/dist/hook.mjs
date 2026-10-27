@@ -1034,7 +1034,8 @@ var DONE_LABELS = {
   "thread-draft": () => "Drafted a reply",
   "pr-conflicts": () => "Asked to resolve conflicts",
   "pr-merge": () => "Asked to merge",
-  "pr-address-all": (text2) => text2.replace(/^Address\b/, "Addressed")
+  "pr-address-all": (text2) => text2.replace(/^Address\b/, "Addressed"),
+  "check-fix": () => "Asked to fix"
 };
 function isPressOut(f) {
   return f?.is === "working" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";

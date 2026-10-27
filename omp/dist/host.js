@@ -2568,7 +2568,8 @@ var DONE_LABELS = {
   "thread-draft": () => "Drafted a reply",
   "pr-conflicts": () => "Asked to resolve conflicts",
   "pr-merge": () => "Asked to merge",
-  "pr-address-all": (text) => text.replace(/^Address\b/, "Addressed")
+  "pr-address-all": (text) => text.replace(/^Address\b/, "Addressed"),
+  "check-fix": () => "Asked to fix"
 };
 function isFailure(f) {
   return f?.is === "notSent" || f?.is === "local" && f.result.state === "failed";

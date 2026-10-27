@@ -482,6 +482,7 @@ const DONE_LABELS: Record<string, (text: string) => string> = {
   'pr-conflicts': () => 'Asked to resolve conflicts',
   'pr-merge': () => 'Asked to merge',
   'pr-address-all': text => text.replace(/^Address\b/, 'Addressed'),
+  'check-fix': () => 'Asked to fix',
 }
 
 export function isFailure(f: Feedback | null): boolean {
