@@ -555,7 +555,7 @@
             'aria-label': 'Choices',
             style: `grid-template-columns: repeat(${choices.length}, minmax(0, 1fr)); grid-template-rows: repeat(${headRows + 2 * measures.length}, auto)`,
           },
-          pickColumn > 0 && h('div', { class: 'band', style: `grid-column: ${pickColumn}; grid-row: 1 / -1` }),
+          pickColumn > 0 && h('div', { class: 'band', style: `grid-column: ${pickColumn}; grid-row: 1 / ${headRows + 1}` }),
           stuckMark,
           choices.map((choice, c) => [
             h(
