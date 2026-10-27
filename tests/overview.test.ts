@@ -233,6 +233,7 @@ test('the page lists subjects newest first with code-written ages, and a seen ro
   expect(p.goal).toBe('Work offline')
   expect(p.live).toBe('Idle · last reply 2m ago')
   expect(shape(p.rows)).toEqual(['◆ Offline mode: needs a sync pick 10m', '-- you looked 50m', '○ Docs 2h'])
+  expect(shape(page({ ...o, lastLookAt: 95 * MIN }, now).rows)).toEqual(['◆ Offline mode 10m', '○ Docs 2h'])
 })
 
 test('with no look yet every row is new, so the page draws no look line and shows where each stands', () => {
