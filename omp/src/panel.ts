@@ -41,7 +41,6 @@ import { ago, cellWidth, cutToCells } from '../../hooks/text'
 import {
   canUndoRefused,
   closedMark,
-  earlierTitle,
   settledMark,
   settledTone,
   DEMO_NOTICE,
@@ -578,23 +577,14 @@ function pageEntries(page: OverviewPage): Entry[] {
       { kind: 'note', text: page.empty.title, isStrong: true },
       { kind: 'note', text: page.empty.hint },
     ]
-  const out: Entry[] = []
-  for (const line of page.lead) {
-    if (line.hasGapAbove) out.push({ kind: 'note', text: '' })
-    out.push({ kind: 'note', text: line.text, isStrong: line.id === 'headline' })
-  }
-  for (const part of page.sections) {
-    if (out.length > 0) out.push({ kind: 'note', text: '' })
-    out.push({ kind: 'heading', text: part.title })
-    out.push(...part.rows.map((row): Entry => ({ kind: 'page', row })))
-  }
-  if (page.earlier.length > 0) {
-    out.push({ kind: 'note', text: '' })
-    out.push({ kind: 'heading', text: earlierTitle('session') })
-    out.push(...page.earlier.map((text): Entry => ({ kind: 'note', text, indent: TITLE_AT })))
-  }
+  const head: Entry[] = [
+    ...(page.identity ? [{ kind: 'note' as const, text: page.identity }] : []),
+    ...(page.goal ? [{ kind: 'note' as const, text: page.goal, isStrong: true }] : []),
+    ...(page.live ? [{ kind: 'note' as const, text: page.live }] : []),
+  ]
+  const rows = page.rows.map((row): Entry => ({ kind: 'page', row }))
 
-  return out
+  return head.length > 0 && rows.length > 0 ? [...head, { kind: 'note', text: '' }, ...rows] : [...head, ...rows]
 }
 
 function entriesOf(screen: PanelScreen, ui: PanelUi, tab: ShownTab, now: number): Entry[] {
@@ -980,21 +970,62 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   return out
 }
 
-/** A line on the Overview page: its mark, its text wrapped, and its detail under it. */
+/**
+ * One line of the Overview's list: a mark, its text wrapped after it, and the age at the panel's right edge. `paint`
+ * styles the text from `plainCells` on, so a subject's name stays plain and where it stands draws dim.
+ */
+function pageLine(
+  d: Draw,
+  indent: number,
+  mark: string,
+  text: string,
+  age: string | null,
+  { plainCells = 0, agePaint = d.style.dim }: { plainCells?: number; agePaint?: (t: string) => string } = {},
+): string[] {
+  const { width, style: s } = d
+  const textAt = indent + 2
+  const side = age ? cellWidth(age) + 1 : 0
+  const [first = '', ...rest] = wrapText(text, Math.max(10, width - textAt - side - 1))
+  const firstPainted = cutToCells(first, plainCells) + s.dim(first.slice(cutToCells(first, plainCells).length))
+  const gap = Math.max(1, width - 1 - textAt - cellWidth(first) - (age ? cellWidth(age) : 0))
+
+  return [
+    `${' '.repeat(indent)}${mark} ${firstPainted}${age ? ' '.repeat(gap) + agePaint(age) : ''}`,
+    ...rest.map(l => ' '.repeat(textAt) + s.dim(l)),
+  ]
+}
+
+/** A line on the Overview page, laid out as the shared row says. */
 function drawPageRow(row: OverviewRow, d: Draw): string[] {
   const { width, now, style: s } = d
-  const mark = (row.isRunning ? runningMark(now) : row.mark).padEnd(2)
-  const room = width - TITLE_AT - 2
-  const wrapped = wrapText(row.text, Math.max(10, room))
-  const [first = '', ...rest] = wrapped.slice(0, 3)
-  if (wrapped.length > 3) rest[1] = `${rest[1]!.replace(/.$/, '')}…`
-  const out = [
-    `   ${row.tone ? s.tone(row.tone, mark) : s.dim(mark)} ${first}`,
-    ...rest.map(l => ' '.repeat(TITLE_AT) + l),
-  ]
-  if (row.detail) out.push(...indented(row.detail, TITLE_AT, width, 4, s.dim))
+  if (row.kind === 'subject') {
+    const glyph = row.isRunning ? runningMark(now) : row.mark
+    const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph)
+    const text = row.text ? `${row.name}: ${row.text}` : row.name
+    const out = pageLine(d, 3, mark, text, row.age, { plainCells: cellWidth(row.name) })
+    if (row.was) out.push(...indented(`was: ${row.was}`, TITLE_AT, width, 2, s.dim))
 
-  return out
+    return out
+  }
+  if (row.kind === 'child') {
+    const indent = row.isLoose ? 3 : TITLE_AT - 1
+    const mark = s.dim(row.isQuiet ? '●' : runningMark(now))
+    const room = Math.max(6, width - indent - 2 - cellWidth(row.age) - 2)
+    const name = cellWidth(row.name) > room ? `${cutToCells(row.name, room - 1)}…` : row.name
+    const agePaint = row.isQuiet ? (t: string) => s.tone('needsYou', t) : s.dim
+
+    return pageLine(d, indent, mark, name, row.age, { agePaint })
+  }
+  if (row.kind === 'more') return [' '.repeat(TITLE_AT + 1) + s.dim(row.text)]
+  if (row.kind === 'look') {
+    const label = `── ${row.text} `
+    const fill = '─'.repeat(Math.max(2, width - 1 - 3 - cellWidth(label) - cellWidth(row.age) - 1))
+
+    return [`   ${s.dim(label + fill)} ${s.dim(row.age)}`]
+  }
+  const mark = row.tone ? s.tone(row.tone, row.mark) : s.dim(row.mark)
+
+  return pageLine(d, 3, mark, row.text, row.age, {})
 }
 
 type TabCell = {

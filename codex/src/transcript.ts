@@ -19,6 +19,7 @@ type SessionMeta = {
     forked_from_id?: unknown
     parent_thread_id?: unknown
     cwd?: unknown
+    git?: { branch?: unknown } | null
     history_base?: { thread_id?: unknown; end_byte_offset?: unknown }
   }
 }
@@ -40,6 +41,15 @@ async function readSessionMeta(path: string): Promise<SessionMeta | null> {
   } catch {
     return null
   }
+}
+
+/** The folder a session started in and its branch then, from the rollout's first row. Null when the row names no folder. */
+export async function placeIn(path: string): Promise<{ folder: string; branch: string | null } | null> {
+  const payload = (await readSessionMeta(path))?.payload
+  if (typeof payload?.cwd !== 'string' || payload.cwd === '') return null
+  const branch = payload.git?.branch
+
+  return { folder: payload.cwd, branch: typeof branch === 'string' && branch !== '' ? branch : null }
 }
 
 /**

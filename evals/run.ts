@@ -15,11 +15,11 @@ import {
   systemText,
   transcriptCatchUpPrompt,
 } from '../hooks/model-text'
-import { applyOverview, LIST_KEYS, parseOverview } from '../hooks/overview'
-import type { ListKey, OverviewAnswer } from '../hooks/overview'
+import { applyOps, isOpen, parseOverview } from '../hooks/overview'
+import type { OverviewAnswer } from '../hooks/overview'
 import { CODEX } from '../codex/src/texts'
 import type { Exchange, Update } from '../hooks/ledger'
-import type { HostTask, Ledger, Overview, OverviewItem } from '../types'
+import type { HostTask, Ledger, Overview, SubjectStatus } from '../types'
 import { run } from '../codex/src/run'
 import { codexAsk, MODEL } from '../codex/src/update'
 import { codexCli } from './codex-cli'
@@ -52,38 +52,33 @@ type Check =
   | { openItems: number }
   /** NEW lines the code dropped as repeats, which the other checks cannot see. */
   | { dropped: number }
-  /** The Overview call's answer: whether it changed the guide. */
-  | { overview: 'unchanged' | 'written' }
-  | { overviewKind: 'coordinator' | 'session' }
-  /** Whether the guide reports a change of direction. */
-  | { course: boolean }
-  /** The earlier lines the guide has after the exchange, at least this many. */
-  | { earlierAtLeast: number }
+  /** The Overview call's answer: whether it changed the list. */
+  | { overview: 'unchanged' | 'changed' }
+  | { role: 'coordinator' | 'session' }
+  /** The goal after the exchange matches the pattern. */
+  | { goal: string }
+  /** A shown subject whose name or text matches the pattern has this status, open or closed. */
+  | { subject: string; status?: SubjectStatus }
+  /** No shown subject with this status matches the pattern: finished work does not stay under way. */
+  | { noSubject: string; status: SubjectStatus }
+  /** The answer adds no subject, as an update to a subject the list already holds should not. */
+  | { noNewSubject: true }
+  /** At most this many subjects are open after the exchange. */
+  | { openAtMost: number }
+  /** No two open subjects name the same work. */
+  | { subjectsNotRepeated: true }
+  /** A subject keeps the plan a reversal replaced, matching the pattern. */
+  | { was: string }
+  /** The running child whose name matches `child` is linked to a subject whose name matches `to`. */
+  | { linked: string; to: string }
   /** No text names a command, a file, a commit, a ticket, a test run or a tool step. */
   | { featureLevel: true }
+  /** No text names a time, which code writes. */
+  | { noTimeWords: true }
   /** No text restates what an open item or finding of the ledger asks. */
   | { asksNotRestated: true }
-  | { sinceAtMost: number }
-  /**
-   * No two items of different lists, other than SINCE, say the same thing. Two pairs are not compared since the page
-   * never draws them together: QUEUE with WORKS, QUEUE with NEXT while the queue has a queued item, and WORKS in a
-   * coordinator session, whose page does not draw it.
-   */
-  | { partsNotRepeated: true }
-  /** No item with this status matches the pattern in any list: finished work does not stay as under way. */
-  | { noOverviewItem: string; status: OverviewItem['status'] }
   /** No text holds all of these words, as a paraphrase of a question that offers these choices would. */
   | { noTextWithAll: string[] }
-  /** The answer stays on the same topic and writes no COURSE line. */
-  | { sameTopicNoCourseLine: true }
-  /** The answer does not rewrite a course the guide already had: it leaves it out or writes the same one. */
-  | { courseKept: true }
-  /** The answer starts a new topic with a FOLDED line that differs from the old headline. */
-  | { foldsWithLine: true }
-  /** No two SINCE items say the same thing. */
-  | { sinceNoRepeat: true }
-  | { workstreamsAtLeast: number }
-  | { overviewItem: string; list: ListKey; status?: OverviewItem['status'] }
 
 type Case = {
   name: string
@@ -132,10 +127,10 @@ const about = provenance(
     'systemText codex': systemText(CODEX),
     'overview systemText': OVERVIEW_SYSTEM,
     'overview prompts': [
-      overviewPrompt(null, { turn: 1, person: 'p', activity: ['a'], reply: 'r' } as Exchange),
-      overviewCatchUpPrompt(null, 'c'),
+      overviewPrompt(null, { turn: 1, person: 'p', activity: ['a'], reply: 'r' } as Exchange, [], NOW),
+      overviewCatchUpPrompt(null, 'c', [], NOW),
     ].join('\n'),
-    'overview parser': [parseOverview, applyOverview].map(String).join('\n'),
+    'overview parser': [parseOverview, applyOps].map(String).join('\n'),
     cases: readFileSync(values.cases, 'utf8'),
     models: JSON.stringify({ claude: CLAUDE_MODEL, codex: MODEL }),
     runner: readFileSync(process.argv[1]!, 'utf8'),
@@ -237,21 +232,19 @@ function matchEach<C, I>(checks: C[], items: I[], fits: (c: C, i: I) => boolean)
 
 const OVERVIEW_KEYS = [
   'overview',
-  'overviewKind',
-  'course',
-  'earlierAtLeast',
+  'role',
+  'goal',
+  'subject',
+  'noSubject',
+  'noNewSubject',
+  'openAtMost',
+  'subjectsNotRepeated',
+  'was',
+  'linked',
   'featureLevel',
+  'noTimeWords',
   'asksNotRestated',
-  'sinceAtMost',
-  'partsNotRepeated',
-  'noOverviewItem',
   'noTextWithAll',
-  'sameTopicNoCourseLine',
-  'courseKept',
-  'foldsWithLine',
-  'sinceNoRepeat',
-  'workstreamsAtLeast',
-  'overviewItem',
 ] as const
 
 type OverviewCheck = Extract<Check, Partial<Record<(typeof OVERVIEW_KEYS)[number], unknown>>>
@@ -260,25 +253,12 @@ function isOverviewCheck(c: Check): c is OverviewCheck {
   return OVERVIEW_KEYS.some(k => k in c)
 }
 
-/** What the Overview call did in one run: its parsed answer and the guide after it. */
+/** What the Overview call did in one run: its parsed answer and the list before and after it. */
 type OverviewRun = { answer: OverviewAnswer | null; before: Overview | null; after: Overview | null }
 
-const textsOf = (o: Overview): string[] => [
-  o.headline,
-  o.status,
-  o.course,
-  ...LIST_KEYS.flatMap(l => o[l].flatMap(i => [i.text, i.detail ?? ''])),
-  ...o.earlier,
-]
+const shownOf = (o: Overview) => o.subjects.filter(s => s.into === null)
 
-/** Every text with an item's detail joined to its text, as a sentence the person reads. */
-const joinedTextsOf = (o: Overview): string[] => [
-  o.headline,
-  o.status,
-  o.course,
-  ...LIST_KEYS.flatMap(l => o[l].map(i => `${i.text} ${i.detail ?? ''}`.trim())),
-  ...o.earlier,
-]
+const textsOf = (o: Overview): string[] => [o.goal, ...shownOf(o).flatMap(s => [s.name, s.text, s.was ?? ''])]
 
 /** What an event list is made of: a command, a path, a commit, a ticket, a test run or a tool step. */
 const EVENT_PATTERNS: RegExp[] = [
@@ -289,9 +269,12 @@ const EVENT_PATTERNS: RegExp[] = [
   /\b\d+\s+(?:[\p{L}-]+\s+){0,2}(?:tests?|files?|commits?|lines?|calls?|ms|seconds?|minutes?|checks?)\b/iu,
   /\bcommit(?:s|ted|ting)?\b/i,
   /^(?:ran|run|edited|editing|opened|searched|grepped|installed|executed|called)\b/i,
-  /\b(?:tests? (?:ran|run)|tool call|npm |git )\b/i,
-  /\b(?:pushed|merged|tested)\b/i,
+  /\b(?:tests? (?:ran|run|pass(?:ing|es)?)|tool call|npm |git )\b/i,
+  /\b(?:pushed|merged|tested|rebuilt|restarted)\b/i,
 ]
+
+const TIME_WORDS =
+  /\b(today|yesterday|tonight|tomorrow|this (morning|afternoon|evening|week)|last night|ago|just now|earlier today|\d+\s*(m|h|d|min|mins|minutes?|hours?|days?))\b/i
 
 const WORD = /[\p{L}\p{N}]+/gu
 const keyWordsOf = (text: string) => new Set((text.toLowerCase().match(WORD) ?? []).filter(w => w.length > 3))
@@ -304,103 +287,86 @@ function restatesText(text: string, other: string): boolean {
   return theirs.length >= 3 && theirs.filter(w => mine.has(w)).length / theirs.length >= 0.7
 }
 
-/**
- * Whether two items say the same thing: the same words once a stream's "name: what it does" is cut to its name, so a
- * one- or two-word item is compared too, or a restatement of most of the key words. A step that names a stream, such
- * as a review of it, has other words and is not a repeat.
- */
-function repeatsFact(a: string, b: string): boolean {
-  const key = (t: string) => [...keyWordsOf(t.split(':')[0]!)].sort().join(' ')
+/** Whether two subjects name the same work: the same name words, or one restating most of the other. */
+function repeatsSubject(a: { name: string; text: string }, b: { name: string; text: string }): boolean {
+  const key = (t: string) => [...keyWordsOf(t)].sort().join(' ')
+  const whole = (x: { name: string; text: string }) => `${x.name} ${x.text}`
 
-  return (key(a) !== '' && key(a) === key(b)) || restatesText(a, b) || restatesText(b, a)
+  return (
+    (key(a.name) !== '' && key(a.name) === key(b.name)) ||
+    restatesText(whole(a), whole(b)) ||
+    restatesText(whole(b), whole(a))
+  )
 }
 
 function overviewFailures(c: OverviewCheck, after: Ledger, run: OverviewRun | null): string[] {
   if (run === null || run.answer === null) return ['no Overview answer the mod can read']
-  const o = run.after
   if ('overview' in c) {
-    const kind = run.answer.kind
+    const kind = run.answer.kind === 'ops' ? 'changed' : 'unchanged'
     return kind === c.overview ? [] : [`the Overview call answered ${kind}, not ${c.overview}`]
   }
+  const o = run.after
   if (o === null) return ['no Overview written']
-  if ('overviewKind' in c)
-    return (o.isCoordinator ? 'coordinator' : 'session') === c.overviewKind ? [] : [`kind is not ${c.overviewKind}`]
-  if ('course' in c)
-    return (o.course !== '') === c.course ? [] : [c.course ? 'no course reported' : `course reported: "${o.course}"`]
-  if ('earlierAtLeast' in c) return o.earlier.length >= c.earlierAtLeast ? [] : [`${o.earlier.length} earlier lines`]
-  if ('featureLevel' in c) {
-    const bad = textsOf(o).filter(t => EVENT_PATTERNS.some(re => re.test(t)))
-    return bad.map(t => `event text: "${t}"`)
+  const matches = (pattern: string, s: { name: string; text: string }) =>
+    new RegExp(pattern, 'i').test(`${s.name}: ${s.text}`)
+  if ('role' in c) return o.role === c.role ? [] : [`role is ${o.role}, not ${c.role}`]
+  if ('goal' in c) return new RegExp(c.goal, 'i').test(o.goal) ? [] : [`goal "${o.goal}" is not like /${c.goal}/`]
+  if ('noSubject' in c)
+    return shownOf(o)
+      .filter(s => s.status === c.status && matches(c.noSubject, s))
+      .map(s => `still ${c.status}: "${s.name}: ${s.text}"`)
+  if ('subject' in c) {
+    const found = shownOf(o).filter(s => matches(c.subject, s))
+    if (found.length === 0) return [`no subject like /${c.subject}/`]
+    return !c.status || found.some(s => s.status === c.status)
+      ? []
+      : [`/${c.subject}/ is ${found.map(s => s.status).join(', ')}, not ${c.status}`]
   }
+  if ('noNewSubject' in c) {
+    const added = o.subjects.filter(s => !(run.before?.subjects ?? []).some(b => b.id === s.id))
+    return added.map(s => `added "${s.name}: ${s.text}"`)
+  }
+  if ('openAtMost' in c) {
+    const open = o.subjects.filter(isOpen).length
+    return open <= c.openAtMost ? [] : [`${open} open subjects`]
+  }
+  if ('subjectsNotRepeated' in c) {
+    const open = o.subjects.filter(isOpen)
+    return open.flatMap((a, n) =>
+      open
+        .slice(n + 1)
+        .filter(b => repeatsSubject(a, b))
+        .map(b => `repeated: "${a.name}: ${a.text}" and "${b.name}: ${b.text}"`),
+    )
+  }
+  if ('was' in c)
+    return shownOf(o).some(s => s.was !== null && new RegExp(c.was, 'i').test(s.was))
+      ? []
+      : [`no subject keeps a plan like /${c.was}/`]
+  if ('linked' in c) {
+    const child = o.children.find(x => new RegExp(c.linked, 'i').test(x.name))
+    if (!child) return [`no child like /${c.linked}/`]
+    const subject = o.subjects.find(s => s.id === child.subjectId)
+    if (!subject) return [`"${child.name}" is not linked`]
+    return matches(c.to, subject) ? [] : [`"${child.name}" is linked to "${subject.name}", not /${c.to}/`]
+  }
+  if ('featureLevel' in c)
+    return textsOf(o)
+      .filter(t => EVENT_PATTERNS.some(re => re.test(t)))
+      .map(t => `event text: "${t}"`)
+  if ('noTimeWords' in c)
+    return textsOf(o)
+      .filter(t => TIME_WORDS.test(t))
+      .map(t => `time word: "${t}"`)
   if ('asksNotRestated' in c) {
     const asks = [...after.items.map(i => i.ask), ...after.findings.map(f => f.title)]
     return textsOf(o).flatMap(t => asks.filter(a => restatesText(t, a)).map(a => `"${t}" restates "${a}"`))
   }
-  if ('noOverviewItem' in c) {
-    const re = new RegExp(c.noOverviewItem, 'i')
-    return LIST_KEYS.flatMap(l =>
-      o[l].filter(i => i.status === c.status && re.test(i.text)).map(i => `${l} still has ${c.status}: "${i.text}"`),
-    )
-  }
-  if ('courseKept' in c) {
-    const a = run.answer
-    const was = run.before?.course ?? ''
-    return a.kind === 'unchanged' || a.overview.course === '' || a.overview.course === was
-      ? []
-      : [`the answer rewrote the course: "${a.overview.course}"`]
-  }
-  if ('noTextWithAll' in c) {
-    const words = c.noTextWithAll
-    return joinedTextsOf(o)
-      .filter(t => words.every(w => t.toLowerCase().includes(w.toLowerCase())))
-      .map(t => `"${t}" names all of ${words.join(', ')}`)
-  }
-  if ('sameTopicNoCourseLine' in c) {
-    const a = run.answer
-    return a.kind === 'written' && !a.isNewTopic && a.overview.course === ''
-      ? []
-      : ['the answer started a new topic or wrote a COURSE line']
-  }
-  if ('foldsWithLine' in c) {
-    const a = run.answer
-    if (a.kind !== 'written' || !a.isNewTopic) return ['the answer did not start a new topic']
-    return a.folded !== '' && a.folded !== run.before?.headline ? [] : ['no FOLDED line beyond the old headline']
-  }
-  if ('sinceAtMost' in c) return o.since.length <= c.sinceAtMost ? [] : [`${o.since.length} since items`]
-  if ('partsNotRepeated' in c) {
-    const hasQueued = o.queue.some(i => i.status === 'queued')
-    const lists = [
-      o.queue,
-      ...(o.isCoordinator ? [] : [o.works]),
-      o.open,
-      ...(hasQueued ? [] : [o.next]),
-      o.workstreams,
-    ]
-    return lists.flatMap((a, n) =>
-      a.flatMap(x =>
-        lists
-          .slice(n + 1)
-          .filter(b => !(a === o.queue && b === o.works))
-          .flat()
-          .filter(y => repeatsFact(x.text, y.text))
-          .map(y => `repeated across lists: "${x.text}" and "${y.text}"`),
-      ),
-    )
-  }
-  if ('sinceNoRepeat' in c)
-    return o.since.flatMap((a, n) =>
-      o.since
-        .slice(n + 1)
-        .filter(b => restatesText(a.text, b.text) || restatesText(b.text, a.text))
-        .map(b => `repeated: "${a.text}" and "${b.text}"`),
-    )
-  if ('workstreamsAtLeast' in c)
-    return o.workstreams.length >= c.workstreamsAtLeast ? [] : [`${o.workstreams.length} workstreams`]
-  const found = o[c.list].some(
-    i => new RegExp(c.overviewItem, 'i').test(i.text) && (!c.status || i.status === c.status),
-  )
-
-  return found ? [] : [`no ${c.list} item like /${c.overviewItem}/`]
+  const words = c.noTextWithAll
+  return shownOf(o)
+    .map(s => `${s.name} ${s.text} ${s.was ?? ''}`)
+    .filter(t => words.every(w => t.toLowerCase().includes(w.toLowerCase())))
+    .map(t => `"${t}" names all of ${words.join(', ')}`)
 }
 
 function failures(
@@ -548,14 +514,18 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
   if (!needsOverview) return { ...base, error: null, failed: failures(ledger, applied, c.checks, masked, null), masked }
   const overviewInput =
     c.catchUp === undefined
-      ? overviewPrompt(applied.overview, ex, c.hostTasks)
-      : overviewCatchUpPrompt(applied.overview, c.catchUp, c.hostTasks)
+      ? overviewPrompt(applied.overview, ex, c.hostTasks ?? [], NOW)
+      : overviewCatchUpPrompt(applied.overview, c.catchUp, c.hostTasks ?? [], NOW)
   const overviewStarted = Date.now()
-  const overviewCall = await ask(overviewInput, OVERVIEW_SYSTEM)
+  // The hosts ask once more when the answer holds prose, so the eval does too.
+  const firstCall = await ask(overviewInput, OVERVIEW_SYSTEM)
+  const isRetried = firstCall.text !== null && parseOverview(firstCall.text) === null
+  const overviewCall = isRetried ? await ask(overviewInput, OVERVIEW_SYSTEM) : firstCall
   const withAnswer = {
     ...base,
     overviewMs: Date.now() - overviewStarted,
     overviewAnswer: overviewCall.text,
+    overviewFirstAnswer: isRetried ? firstCall.text : null,
     overviewModel: overviewCall.model,
     overviewOutputTokens: overviewCall.outputTokens,
     overviewInputTokens: overviewCall.inputTokens ?? null,
@@ -567,7 +537,8 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
   const overview: OverviewRun = {
     answer: overviewParsed,
     before: applied.overview,
-    after: overviewParsed ? applyOverview(applied.overview, overviewParsed) : applied.overview,
+    after:
+      overviewParsed?.kind === 'ops' ? applyOps(applied.overview, overviewParsed.ops, NOW).overview : applied.overview,
   }
   const after = { ...applied, overview: overview.after }
 

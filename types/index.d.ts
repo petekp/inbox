@@ -1,45 +1,58 @@
-/** What an Overview item reports about a piece of work. */
-export type OverviewStatus =
-  'working' | 'queued' | 'waits-on-you' | 'waits-on-other' | 'done' | 'ruled-out' | 'problem' | 'unknown'
+/** Where a subject of the session's work stands. `done` and `dropped` close it. */
+export type SubjectStatus = 'working' | 'queued' | 'waits-on-you' | 'waits-on-other' | 'problem' | 'done' | 'dropped'
 
-export type OverviewItem = { status: OverviewStatus; text: string; detail: string | null }
+/** One piece of the session's work that the person would name: a feature, a fix, a release, a problem or a stream. */
+export type Subject = {
+  id: string
+  /** The handle the person would use, at most a few words. */
+  name: string
+  status: SubjectStatus
+  /** Where it stands, in a few words. */
+  text: string
+  /** The plan a reversal replaced, shown until the person looks. */
+  was: string | null
+  createdAt: number
+  /** When its status or where it stands last changed. Code sets it; the model never writes a time. */
+  changedAt: number
+  closedAt: number | null
+  /** The subject a DROP moved this one's work into. A subject with one never shows. */
+  into: string | null
+}
 
-/** The Overview tab's parts as the Overview call last wrote them. Empty text and empty lists are left out when drawn. */
+/** What kind of work runs apart from the session's own turn. */
+export type ChildKind = 'subagent' | 'background' | 'workflow' | 'delegate'
+
+/** Work that runs apart from the turn. Code sets every field from the host's events except `subjectId`, which the Overview call links. */
+export type Child = {
+  id: string
+  /** The host's handle for it: a tool call id, a task id or a delegate's Herdr name. */
+  ref: string
+  kind: ChildKind
+  name: string
+  subjectId: string | null
+  startedAt: number
+  endedAt: number | null
+  /** When it last did anything. Null when the host reports no activity for its kind, so it never reads quiet. */
+  lastActivityAt: number | null
+}
+
+/** The Overview tab's list. The Overview call changes it by id; code keeps the order and every time. */
 export type Overview = {
-  /** Whether the session hands out work and reviews it, so its parts read as workstreams. */
-  isCoordinator: boolean
-  /** How the work is going. */
-  state: 'on-track' | 'stuck' | 'finished'
-  headline: string
-  status: string
-  /** Why the direction changed; empty while it has not. */
-  course: string
-  queue: OverviewItem[]
-  works: OverviewItem[]
-  open: OverviewItem[]
-  next: OverviewItem[]
-  /** The changes after the person's last look. */
-  since: OverviewItem[]
-  workstreams: OverviewItem[]
-  /** One line for each earlier topic, oldest first, saying where it was left. */
-  earlier: string[]
+  role: 'coordinator' | 'session'
+  /** What the session is for, in the person's words; empty until the call writes it. */
+  goal: string
+  subjects: Subject[]
+  children: Child[]
+  nextId: number
+  nextChildId: number
   /** When the person last looked: the last time a look ended. Null before the first look. */
   lastLookAt: number | null
   /** The look in progress, while the Overview tab is shown. Null otherwise. */
-  look: OverviewLook | null
-  /** What the last look cleared, so an Overview call that began before it ended does not write it back. */
-  seen: { since: string[]; course: string }
+  look: { startedAt: number } | null
 }
 
-/** What the page held when the tab was shown, and how long the person had been away then. */
-export type OverviewLook = {
-  startedAt: number
-  away: 'here' | 'short' | 'long'
-  /** The keys of the since items shown at the start. */
-  since: string[]
-  /** The course shown at the start. */
-  course: string
-}
+/** The folder a session started in, and its branch when the host last read it. */
+export type Place = { folder: string; branch: string | null }
 
 export type Item = {
   id: string
@@ -416,7 +429,13 @@ export type Session = {
     isUpdating: boolean
     /** Whether the main agent's turn runs. A subagent's turn does not set it. */
     isTurnRunning: boolean
+    /** When the running turn started; null when the host did not say. */
+    turnStartedAt: number | null
+    /** When the agent's last turn ended. */
+    lastReplyAt: number | null
   }
+  /** Where the session started. Null until the host names it. */
+  place: Place | null
   /**
    * Exchanges waiting for the inbox model, oldest first, with the turns started when each ended. `failed` marks
    * one whose first update failed: the next update tries it once more, then drops it.

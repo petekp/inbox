@@ -32,6 +32,7 @@ import {
   sessionView,
   turnEnded,
   turnStarted,
+  placed,
   cutOffTurn,
   withLook,
 } from '../../hooks/session'
@@ -702,7 +703,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   // Not before_agent_start, which can run twice for one prompt and does not run for a queued message.
   pi.on('agent_start', async (_event, ctx) => {
     if (isUnattended(ctx)) return
-    await change(sessionIdOf(ctx), turnStarted).catch(() => undefined)
+    const startedAt = deps.now()
+    const r = await run(['git', 'branch', '--show-current'], { cwd: ctx.cwd, timeoutMs: 5_000 })
+    const branch = r.code === 0 ? r.stdout.trim() || null : null
+    await change(sessionIdOf(ctx), s => placed(turnStarted(s, startedAt), ctx.cwd, branch)).catch(() => undefined)
   })
 
   pi.on('turn_start', async (_event, ctx) => {
@@ -791,12 +795,14 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     // Escape on the ask dialog aborts the turn, so it ends with no reply text.
     const isDialogDismissed = event.messages.some(isDismissedAsk)
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
+    const endedAt = deps.now()
     const written = await change(id, s => ({
       ...turnEnded(
         endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
           tab: panelScreenTab(id),
           queuesEmptyReply: isDialogDismissed,
         }),
+        endedAt,
       ),
       stop,
     })).catch(() => null)

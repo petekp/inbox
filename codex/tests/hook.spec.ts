@@ -6,7 +6,7 @@ import { test } from 'node:test'
 import { linkDialogs } from '../../hooks/dialogs'
 import { addAgentItem, EMPTY } from '../../hooks/ledger'
 import { inboxText } from '../../hooks/model-text'
-import { EMPTY_OVERVIEW } from '../../hooks/overview'
+import { applyOverview, parseOverview } from '../../hooks/overview'
 import { applied, parsedReply } from '../../hooks/session'
 import { feedbackText } from '../../hooks/view'
 import { notePrompt, noteToolCall, viewOf } from '../src/core'
@@ -128,7 +128,7 @@ test('a Stop notes the dialogs the agent opened in the ending turn as open, and 
   assert.deepEqual((await readState(dir, 's1')).pending[1]?.ex.activity, [])
 })
 
-test('a start after compaction carries the Overview headline and status', async () => {
+test('a start after compaction carries the Overview goal and where each open subject stands', async () => {
   const dir = tempDir()
   const deps = hookDeps(dir)
   await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
@@ -137,19 +137,23 @@ test('a start after compaction carries the Overview headline and status', async 
     ledger: {
       ...s.ledger,
       updates: 1,
-      overview: { ...EMPTY_OVERVIEW, headline: 'Adding caching', status: 'Waiting on a choice.' },
+      overview: applyOverview(
+        null,
+        parseOverview('GOAL: Adding caching\nNEW: waits-on-you | Cache | Redis or memory')!,
+        1,
+      )!,
     },
   }))
   const context = JSON.stringify(await handleHook(input('SessionStart', { cwd: '/repo', source: 'compact' }), deps))
   assert.match(context, /Working on: Adding caching/)
-  assert.match(context, /Status: Waiting on a choice\./)
+  assert.match(context, /- Cache: Redis or memory \(waits-on-you\)/)
 })
 
 test('a main-agent prompt reads Working… until Stop or a start that is not a compact, and a subagent prompt does not', async () => {
   const dir = tempDir()
   const deps = hookDeps(dir)
   const now = async () =>
-    viewOf(await readState(dir, 's1'), 1000).overviewPage.lead.find(l => l.id === 'status')?.text ?? null
+    viewOf(await readState(dir, 's1'), 1000).overviewPage.live === 'Working…' ? 'Working…' : null
 
   await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
   await handleHook(input('UserPromptSubmit', { prompt: 'Look around', agent_id: 'a1' }), deps)

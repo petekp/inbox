@@ -95,9 +95,9 @@ async function updateWithOverview(overview: string | null) {
 }
 
 test('a replyâ€™s Overview comes from the separate Overview call, after the ledger update', async () => {
-  const { state, systems } = await updateWithOverview('HEADLINE: Building the deploy script')
+  const { state, systems } = await updateWithOverview('GOAL: Building the deploy script')
 
-  assert.equal(state.ledger.overview?.headline, 'Building the deploy script')
+  assert.equal(state.ledger.overview?.goal, 'Building the deploy script')
   assert.deepEqual(
     state.ledger.items.map(i => i.ask),
     ['Deploy now?'],
@@ -167,11 +167,11 @@ test('a ledger update shows before its Overview call returns', async () => {
   assert.deepEqual(shown.ledger.items, [])
   assert.equal(shown.ledger.closed[0]?.outcome, 'MIT')
   assert.equal(shown.presence.isUpdating, false)
-  assert.ok(overviewPrompt.includes('<last>'))
-  release('HEADLINE: Adding a license')
+  assert.ok(overviewPrompt.includes('<subjects>'))
+  release('GOAL: Adding a license')
   await running
 
-  assert.equal((await readState(dir, 's1')).ledger.overview?.headline, 'Adding a license')
+  assert.equal((await readState(dir, 's1')).ledger.overview?.goal, 'Adding a license')
 })
 
 test('a ledger call with no answer runs no Overview call', async () => {
@@ -187,7 +187,7 @@ test('a ledger call with no answer runs no Overview call', async () => {
     async (_prompt, system) => {
       systems.push(system)
 
-      return system === OVERVIEW_SYSTEM ? 'HEADLINE: Building the deploy script' : null
+      return system === OVERVIEW_SYSTEM ? 'GOAL: Building the deploy script' : null
     },
     () => 5,
   )
@@ -223,10 +223,10 @@ test('Overview calls run one after another, and the second reads the first oneâ€
       if (overviewPrompts.length === 1) {
         await held
 
-        return 'HEADLINE: Deploy script built'
+        return 'GOAL: Deploy script built'
       }
 
-      return 'HEADLINE: Rollback script built'
+      return 'GOAL: Rollback script built'
     },
     () => 5,
   )
@@ -242,7 +242,7 @@ test('Overview calls run one after another, and the second reads the first oneâ€
 
   assert.equal(overviewPrompts.length, 2)
   assert.ok((overviewPrompts[1] ?? '').includes('Deploy script built'))
-  assert.equal((await readState(dir, 's1')).ledger.overview?.headline, 'Rollback script built')
+  assert.equal((await readState(dir, 's1')).ledger.overview?.goal, 'Rollback script built')
 })
 
 test('three Overview calls write in the order their updates landed', async () => {
@@ -268,7 +268,7 @@ test('three Overview calls write in the order their updates landed', async () =>
       const mine = overviewCalls
       if (mine === 1) await held
 
-      return `HEADLINE: Script ${mine} built`
+      return `GOAL: Script ${mine} built`
     },
     () => 5,
   )
@@ -281,7 +281,7 @@ test('three Overview calls write in the order their updates landed', async () =>
   release()
   await running
 
-  assert.equal((await readState(dir, 's1')).ledger.overview?.headline, 'Script 3 built')
+  assert.equal((await readState(dir, 's1')).ledger.overview?.goal, 'Script 3 built')
 })
 
 test('pending exchanges reach the ledger in order, a failed one waits for the next update, and a second failure drops it', async () => {
@@ -318,6 +318,8 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     hasDroppedReply: false,
     isUpdating: false,
     isTurnRunning: false,
+    turnStartedAt: null,
+    lastReplyAt: null,
   })
   assert.equal(viewOf(kept, 5).status.isUpdating, false)
   assert.match(viewOf(kept, 5).status.error ?? '', /Last update failed.*retries after your next message/)
@@ -345,6 +347,8 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     hasDroppedReply: true,
     isUpdating: false,
     isTurnRunning: false,
+    turnStartedAt: null,
+    lastReplyAt: null,
   })
   assert.equal(viewOf(dropped, 6).status.isUpdating, false)
   assert.match(viewOf(dropped, 6).status.error ?? '', /Last update failed/)

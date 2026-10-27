@@ -121,10 +121,10 @@ export type SessionHost<S extends Session> = {
 }
 
 /**
- * Asks the Overview call for the guide as the whole conversation leaves it, given the Overview before. Null when the
- * call fails.
+ * Asks the Overview call for the changes the exchange or the whole conversation makes, given the Overview before and
+ * the time its running children are read at. Null when the call fails.
  */
-export type AskCatchUpOverview = (last: Overview | null, tasks: HostTask[]) => Promise<string | null>
+export type AskCatchUpOverview = (last: Overview | null, tasks: HostTask[], now: number) => Promise<string | null>
 
 /** What a host's catch-up found: the model's answer to apply, or why there is none. */
 export type CatchUpReply =
@@ -175,7 +175,7 @@ export async function askOverConversation(
         kind: 'reply',
         text,
         source: conversation,
-        overview: (last, tasks) => ask(overviewCatchUpPrompt(last, conversation, tasks), OVERVIEW_SYSTEM),
+        overview: (last, tasks, now) => ask(overviewCatchUpPrompt(last, conversation, tasks, now), OVERVIEW_SYSTEM),
       }
 }
 
@@ -221,13 +221,18 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
   const wantsCatchUp = (s: S) => canCatchUp && needsCatchUp(s)
   const hasWork = (s: S) => s.pending.length > 0 || wantsCatchUp(s)
   const writing: Promise<void>[] = []
-  /** Runs the Overview call for an applied update and writes its answer. */
+  /** Runs the Overview call for an applied update and writes its answer. An answer that holds prose is asked once more. */
   const writeOverview = async (after: S, ask: AskCatchUpOverview, tasks: HostTask[]) =>
     host.inOrder(async () => {
       const { ledger } = await host.read()
-      const answer = parseOverview(await ask(ledger.overview, tasks).catch(() => null))
+      const at = await host.now()
+      const asked = () => ask(ledger.overview, tasks, at).catch(() => null)
+      const first = await asked()
+      if (first === null) return
+      const answer = parseOverview(first) ?? parseOverview(await asked())
       if (answer === null) return
-      await host.update(x => appliedOverview(x, answer, after.presence.turnsApplied))
+      const now = await host.now()
+      await host.update(x => appliedOverview(x, answer, after.presence.turnsApplied, now))
     })
   const followUp = (run: Promise<void>) => {
     const settled = run.catch(() => undefined)
@@ -270,7 +275,7 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
               followUp(
                 writeOverview(
                   after,
-                  (last, tasks) => host.ask(overviewPrompt(last, next.ex, tasks), OVERVIEW_SYSTEM),
+                  (last, tasks, now) => host.ask(overviewPrompt(last, next.ex, tasks, now), OVERVIEW_SYSTEM),
                   next.ex.tasks,
                 ),
               )

@@ -294,11 +294,11 @@ test('a turn that ends queues the exchange and the inbox model fills the ledger'
 
 test('a reply’s Overview comes from the separate Overview call, after the ledger update', async () => {
   createInbox(pi(), deps())
-  overviewReply = 'HEADLINE: Adding a greeting CLI'
+  overviewReply = 'GOAL: Adding a greeting CLI'
   await prompt('Add a greeting CLI')
   await endAgent('Plan written. Which runtime?')
   await settle()
-  expect(state().ledger.overview.headline).toBe('Adding a greeting CLI')
+  expect(state().ledger.overview.goal).toBe('Adding a greeting CLI')
   expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Use Node or Python?'])
   expect(overviewCompletions).toHaveLength(1)
   expect(overviewCompletions[0]!.prompt).toContain('Plan written. Which runtime?')
@@ -324,7 +324,7 @@ test('a ledger update shows before its Overview call returns', async () => {
   await settle()
   let release: () => void = () => undefined
   overviewHold = new Promise<void>(resolve => (release = resolve))
-  overviewReply = 'HEADLINE: Scaffolding the command'
+  overviewReply = 'GOAL: Scaffolding the command'
   reply = 'CLOSED: i1 | Node chosen'
   await prompt('Use Node')
   await endAgent('Scaffolded the command with Node.')
@@ -335,13 +335,13 @@ test('a ledger update shows before its Overview call returns', async () => {
   expect(state().ledger.overview).toBeNull()
   release()
   await settle()
-  expect(state().ledger.overview.headline).toBe('Scaffolding the command')
+  expect(state().ledger.overview.goal).toBe('Scaffolding the command')
 })
 
 test('a ledger call that fails runs no Overview call', async () => {
   createInbox(pi(), deps())
   reply = new Error('overloaded')
-  overviewReply = 'HEADLINE: Adding a greeting CLI'
+  overviewReply = 'GOAL: Adding a greeting CLI'
   await prompt('Add a greeting CLI')
   await endAgent('Plan written. Which runtime?')
   await settle()
@@ -353,7 +353,7 @@ test('the next ledger update does not wait for an earlier Overview call, and Ove
   createInbox(pi(), deps())
   let release: () => void = () => undefined
   overviewHold = new Promise<void>(resolve => (release = resolve))
-  overviewReply = 'HEADLINE: Scaffolding the command'
+  overviewReply = 'GOAL: Scaffolding the command'
   reply = 'NEW: do | - | Water the plants | - | -'
   await prompt('Add a greeting CLI')
   await endAgent('Plan written.')
@@ -372,7 +372,7 @@ test('the next ledger update does not wait for an earlier Overview call, and Ove
   for (let waited = 0; overviewCompletions.length < 2 && waited < 200; waited += 1)
     await new Promise(resolve => setTimeout(resolve, 10))
   expect(overviewCompletions).toHaveLength(2)
-  expect(overviewCompletions[1]!.prompt).toContain('HEADLINE: Scaffolding the command')
+  expect(overviewCompletions[1]!.prompt).toContain('<goal>\nScaffolding the command\n</goal>')
 })
 
 test('a settle that will continue does not end the turn', async () => {
@@ -667,8 +667,7 @@ async function withSteps() {
 
 test('Working… shows from agent_start to the run’s end, and a Done message waits for Esc to end the run', async () => {
   const inbox = createInbox(pi(), deps())
-  const now = async () =>
-    (await inbox.screen(makeCtx())).view.overviewPage.lead.find(l => l.id === 'status')?.text ?? null
+  const now = async () => ((await inbox.screen(makeCtx())).view.overviewPage.live === 'Working…' ? 'Working…' : null)
   await prompt('hello')
   await record({ kind: 'task', ask: 'Try the CLI by hand' })
   await endAgent('Done.')
@@ -1122,7 +1121,7 @@ test('a look starts when the panel shows the Overview and ends on another tab or
   const inbox = createInbox(pi(), deps())
   await prompt('hello')
   const saved = state()
-  const overview = { ...EMPTY_OVERVIEW, headline: 'h', since: [{ status: 'done', text: 'Changed', detail: null }] }
+  const overview = { ...EMPTY_OVERVIEW, goal: 'Ship it' }
   writeFileSync(join(dir, 'sessions', 's1.json'), JSON.stringify({ ...saved, ledger: { ...saved.ledger, overview } }))
   await inbox.openPanel(makeCtx())
   inbox.showTab(makeCtx(), 'overview')
@@ -1132,7 +1131,6 @@ test('a look starts when the panel shows the Overview and ends on another tab or
   inbox.showTab(makeCtx(), 'needsYou')
   await settle()
   expect(state().ledger.overview.look).toBeNull()
-  expect(state().ledger.overview.since).toEqual([])
   expect(state().ledger.overview.lastLookAt).not.toBeNull()
 
   inbox.showTab(makeCtx(), 'overview')

@@ -181,270 +181,362 @@ function tasksText(tasks) {
 }
 
 // ../hooks/overview.ts
-var HEADLINE_WORDS = 12;
-var ITEM_WORDS = 12;
-var SENTENCE_WORDS = 30;
-var DETAIL_WORDS = 20;
-var LIST_ITEMS = 6;
-var EARLIER_KEPT = 6;
+var NAME_WORDS = 3;
+var TEXT_WORDS = 4;
+var GOAL_WORDS = 8;
+var OPEN_SUBJECTS = 6;
+var NAME_KEPT = 8;
+var TEXT_KEPT = 12;
+var GOAL_KEPT = 14;
+var FINISHED_READ = 10;
+var CHILD_KEPT_MS = 24 * 60 * 60000;
+var REWORD_OVERLAP = 0.5;
+var STOP_WORDS = new Set([
+  "a",
+  "an",
+  "the",
+  "of",
+  "for",
+  "to",
+  "in",
+  "on",
+  "and",
+  "or",
+  "is",
+  "it",
+  "its",
+  "now",
+  "be",
+  "by",
+  "at",
+  "with"
+]);
 var NL4 = `
 `;
 var EMPTY_OVERVIEW = {
-  isCoordinator: false,
-  state: "on-track",
-  headline: "",
-  status: "",
-  course: "",
-  queue: [],
-  works: [],
-  open: [],
-  next: [],
-  since: [],
-  workstreams: [],
-  earlier: [],
+  role: "session",
+  goal: "",
+  subjects: [],
+  children: [],
+  nextId: 1,
+  nextChildId: 1,
   lastLookAt: null,
-  look: null,
-  seen: { since: [], course: "" }
+  look: null
 };
-var LIST_KEYS = ["queue", "works", "open", "next", "since", "workstreams"];
-var LIST_OF_KEY = {
-  QUEUE: "queue",
-  WORKS: "works",
-  OPEN: "open",
-  NEXT: "next",
-  SINCE: "since",
-  STREAM: "workstreams"
-};
-var STATUSES2 = [
-  "working",
-  "queued",
-  "waits-on-you",
-  "waits-on-other",
-  "done",
-  "ruled-out",
-  "problem",
-  "unknown"
-];
-var STATES = ["on-track", "stuck", "finished"];
-var BULLET_ITEM = /^\s*[-*]\s*[a-z-]+\s*\|/;
-var KEY_LINE = /^\s*[-*]?\s*(UNCHANGED|KIND|TOPIC|STATE|HEADLINE|STATUS|COURSE|FOLDED|QUEUE|WORKS|OPEN|NEXT|SINCE|STREAM)\s*(?::\s*(.*)|$)/;
+var OPEN_STATUSES = ["working", "queued", "waits-on-you", "waits-on-other", "problem"];
+var STATUSES2 = [...OPEN_STATUSES, "done", "dropped"];
+var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
+var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|ROLE|GOAL|LINK)\s*(?::\s*(.*))?$/i;
 function clipWords(text, limit) {
   const words = text.trim().split(/\s+/).filter(Boolean);
   return words.length <= limit ? words.join(" ") : `${words.slice(0, limit).join(" ")}\u2026`;
 }
-function itemOf(value) {
-  const [status, text, ...detail] = value.split("|").map((part) => part.trim());
-  const isStatus = (s) => STATUSES2.includes(s);
-  if (!isStatus(status) || !text)
-    return null;
-  const rest = dash(detail.join(" | "));
-  return { status, text: clipWords(text, ITEM_WORDS), detail: rest === null ? null : clipWords(rest, DETAIL_WORDS) };
+function fields(value) {
+  return value.split("|").map((f) => f.trim());
+}
+function openStatus(s) {
+  return OPEN_STATUSES.find((o) => o === s?.toLowerCase()) ?? null;
+}
+function opOf(key, f) {
+  if (key === "NOCHANGE" || key === "UNCHANGED")
+    return { kind: "none" };
+  if (key === "NEW") {
+    const status = openStatus(f[0]);
+    return status && f[1] ? { kind: "new", status, name: f[1], text: f[2] ?? "" } : null;
+  }
+  if (key === "SET") {
+    const isDone = f[1]?.toLowerCase() === "done";
+    if (f[0] && isDone)
+      return { kind: "done", ref: f[0], text: f[2] ?? "" };
+    const status = openStatus(f[1]);
+    return f[0] && status ? { kind: "set", ref: f[0], status, text: f[2] ?? "" } : null;
+  }
+  if (key === "DONE")
+    return f[0] ? { kind: "done", ref: f[0], text: f[1] ?? "" } : null;
+  if (key === "DROP") {
+    const into = (f[2] ?? "").replace(/^INTO\s+/i, "").trim();
+    return f[0] ? { kind: "drop", ref: f[0], why: f[1] ?? "", into: into || null } : null;
+  }
+  if (key === "WAS")
+    return f[0] && f[1] ? { kind: "was", ref: f[0], text: f[1] } : null;
+  if (key === "ROLE") {
+    const role = f[0]?.toLowerCase();
+    return role === "coordinator" || role === "session" ? { kind: "role", role } : null;
+  }
+  if (key === "GOAL")
+    return f[0] ? { kind: "goal", text: f[0] } : null;
+  if (key === "LINK")
+    return f[0] && f[1] ? { kind: "link", child: f[0], subject: f[1] } : null;
+  return null;
 }
 function parseOverview(text) {
-  const overview = { ...EMPTY_OVERVIEW };
-  const lists = Object.fromEntries(LIST_KEYS.map((k) => [k, []]));
-  let isUnchanged = false;
-  let hasHeadline = false;
-  let isNewTopic = false;
-  let folded = "";
-  let current = null;
-  for (const line of (text ?? "").split(NL4)) {
-    const m = KEY_LINE.exec(line);
-    if (!m) {
-      const item = current && BULLET_ITEM.test(line) ? itemOf(line.replace(/^\s*[-*]\s*/, "")) : null;
-      if (current && item && current.length < LIST_ITEMS)
-        current.push(item);
+  const ops = [];
+  for (const raw of (text ?? "").split(NL4)) {
+    const line = raw.trim();
+    if (line === "")
       continue;
+    const m = LINE.exec(line);
+    const op = m ? opOf(m[1].toUpperCase().replace(" ", ""), fields(m[2] ?? "")) : null;
+    if (op === null)
+      return null;
+    ops.push(op);
+  }
+  if (ops.length === 0)
+    return null;
+  return ops.every((o) => o.kind === "none") ? { kind: "unchanged" } : { kind: "ops", ops };
+}
+function words(text) {
+  return new Set((text.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
+}
+function overlap(a, b) {
+  const x = words(a);
+  const y = words(b);
+  const both = [...x].filter((w) => y.has(w)).length;
+  const either = new Set([...x, ...y]).size;
+  return either === 0 ? 1 : both / either;
+}
+function nameKey(name) {
+  return [...words(name)].sort().join(" ");
+}
+function isOpen(s) {
+  return s.status !== "done" && s.status !== "dropped";
+}
+var OP_ORDER = {
+  none: 0,
+  role: 0,
+  goal: 0,
+  new: 0,
+  set: 0,
+  done: 0,
+  drop: 0,
+  was: 1,
+  link: 2
+};
+function applyOps(last, ops, now) {
+  let o = {
+    ...last ?? EMPTY_OVERVIEW,
+    subjects: (last?.subjects ?? []).map((s) => ({ ...s })),
+    children: (last?.children ?? []).map((c) => ({ ...c }))
+  };
+  const counts = { none: 0, new: 0, set: 0, done: 0, drop: 0, was: 0, role: 0, goal: 0, link: 0 };
+  let newMerged = 0;
+  let rewordsKept = 0;
+  const unknownRefs = [];
+  const changed = new Set;
+  const find = (ref) => o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === nameKey(ref)) ?? null;
+  const touch = (s) => {
+    s.changedAt = now;
+    changed.add(s.id);
+  };
+  const set = (s, status, text) => {
+    if (s.status === status && overlap(s.text, text) >= REWORD_OVERLAP) {
+      rewordsKept++;
+      return;
     }
-    current = null;
-    const key = m[1];
-    const value = (m[2] ?? "").trim();
-    if (key === "UNCHANGED")
-      isUnchanged = true;
-    else if (key === "KIND")
-      overview.isCoordinator = value.toLowerCase() === "coordinator";
-    else if (key === "TOPIC")
-      isNewTopic = value.toLowerCase() === "new";
-    else if (key === "STATE")
-      overview.state = STATES.find((s) => s === value.toLowerCase()) ?? "on-track";
-    else if (key === "HEADLINE") {
-      hasHeadline = true;
-      overview.headline = clipWords(dash(value) ?? "", HEADLINE_WORDS);
-    } else if (key === "STATUS")
-      overview.status = clipWords(dash(value) ?? "", SENTENCE_WORDS);
-    else if (key === "COURSE")
-      overview.course = clipWords(dash(value) ?? "", SENTENCE_WORDS);
-    else if (key === "FOLDED")
-      folded = clipWords(dash(value) ?? "", ITEM_WORDS * 2);
-    else {
-      const item = itemOf(value);
-      const list = lists[LIST_OF_KEY[key]];
-      if (item && list.length < LIST_ITEMS)
-        list.push(item);
-      if (value === "")
-        current = list;
+    s.status = status;
+    s.text = clipWords(text, TEXT_KEPT);
+    s.was = null;
+    touch(s);
+  };
+  const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
+  for (const { op } of ordered) {
+    counts[op.kind]++;
+    if (op.kind === "none")
+      continue;
+    if (op.kind === "role")
+      o.role = op.role;
+    else if (op.kind === "goal")
+      o.goal = clipWords(op.text, GOAL_KEPT);
+    else if (op.kind === "link") {
+      const child = o.children.find((c) => c.id === op.child);
+      const subject = find(op.subject);
+      if (!child)
+        unknownRefs.push(op.child);
+      else if (!subject)
+        unknownRefs.push(op.subject);
+      else
+        child.subjectId = subject.id;
+    } else if (op.kind === "new") {
+      const known = find(op.name);
+      if (known && isOpen(known)) {
+        newMerged++;
+        set(known, op.status, op.text);
+        continue;
+      }
+      const s = {
+        id: `s${o.nextId}`,
+        name: clipWords(op.name, NAME_KEPT),
+        status: op.status,
+        text: clipWords(op.text, TEXT_KEPT),
+        was: null,
+        createdAt: now,
+        changedAt: now,
+        closedAt: null,
+        into: null
+      };
+      o = { ...o, nextId: o.nextId + 1, subjects: [...o.subjects, s] };
+      changed.add(s.id);
+    } else {
+      const s = find(op.ref);
+      if (!s) {
+        unknownRefs.push(op.ref);
+        continue;
+      }
+      if (op.kind === "set")
+        set(s, op.status, op.text);
+      else if (op.kind === "done") {
+        s.status = "done";
+        if (op.text)
+          s.text = clipWords(op.text, TEXT_KEPT);
+        s.was = null;
+        s.closedAt = now;
+        touch(s);
+      } else if (op.kind === "drop") {
+        const target = op.into ? find(op.into) : null;
+        if (op.into && !target)
+          unknownRefs.push(op.into);
+        s.status = "dropped";
+        s.text = clipWords(op.why, TEXT_KEPT);
+        s.closedAt = now;
+        s.into = target && target.id !== s.id ? target.id : null;
+        touch(s);
+        if (target && s.into) {
+          target.was = target.was ?? `${s.name} folded in`;
+          touch(target);
+        }
+      } else {
+        const folded = o.subjects.find((x) => x.into === s.id && x.closedAt === now);
+        s.was = folded ? `${folded.name} folded in; was: ${op.text}` : op.text;
+        touch(s);
+      }
     }
   }
-  if (isUnchanged && !hasHeadline)
-    return { kind: "unchanged" };
-  if (!hasHeadline)
-    return null;
-  return { kind: "written", overview: { ...overview, ...lists }, isNewTopic, folded };
+  return { overview: o, counts, newMerged, rewordsKept, unknownRefs, changedIds: [...changed] };
 }
-function applyOverview(last, answer) {
-  if (answer.kind === "unchanged")
-    return last;
-  const kept = {
-    earlier: last?.earlier ?? [],
-    lastLookAt: last?.lastLookAt ?? null,
-    look: last?.look ?? null,
-    seen: last?.seen ?? EMPTY_OVERVIEW.seen
-  };
-  const since = answer.overview.since.filter((i) => !kept.seen.since.includes(itemKey(i)));
-  const isSeenCourse = kept.seen.course !== "" && answer.overview.course === kept.seen.course;
-  const course = isSeenCourse ? "" : answer.overview.course;
-  const written = { ...answer.overview, since, queue: withoutStreams(answer.overview) };
-  if (!answer.isNewTopic || last === null || last.headline === "")
-    return { ...written, ...kept, course: course || last?.course || "" };
-  const left = answer.folded || last.headline;
-  return { ...written, ...kept, course: "", earlier: [...kept.earlier, left].slice(-EARLIER_KEPT) };
+function applyOverview(last, answer, now) {
+  return answer.kind === "unchanged" ? last : applyOps(last, answer.ops, now).overview;
 }
-function isItem(value) {
-  const item = value;
-  return typeof item === "object" && item !== null && STATUSES2.includes(item.status) && typeof item.text === "string" && (item.detail === null || typeof item.detail === "string");
+function isChildRunning(c, now) {
+  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
 }
-function itemsOf(value) {
-  return Array.isArray(value) ? value.filter(isItem).slice(0, LIST_ITEMS) : [];
+function subjectsText(o) {
+  const subjects = o?.subjects ?? [];
+  const open = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"}`);
+  const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}`);
+  return { open: open.join(NL4) || "(none yet)", finished: finished.join(NL4) };
 }
-function upgradeOverview(saved) {
-  const o = saved;
-  if (typeof o !== "object" || o === null || typeof o.headline !== "string")
-    return null;
-  return {
-    isCoordinator: o.isCoordinator === true,
-    state: STATES.find((s) => s === o.state) ?? "on-track",
-    headline: o.headline,
-    status: text(o.status),
-    course: text(o.course),
-    ...Object.fromEntries(LIST_KEYS.map((k) => [k, itemsOf(o[k])])),
-    earlier: strings(o.earlier),
-    lastLookAt: typeof o.lastLookAt === "number" ? o.lastLookAt : null,
-    look: lookOf(o.look),
-    seen: seenOf(o.seen)
-  };
+function runningText(o, now) {
+  return (o?.children ?? []).filter((c) => isChildRunning(c, now)).map((c) => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? "-"}`).join(NL4);
 }
-function lookOf(saved) {
-  const l = saved;
-  if (typeof l !== "object" || l === null || typeof l.startedAt !== "number")
-    return null;
-  const away = AWAYS.find((a) => a === l.away);
-  return away === undefined ? null : { startedAt: l.startedAt, away, since: strings(l.since), course: text(l.course) };
+function lookStarted(o, now) {
+  return o === null || o.look !== null ? o : { ...o, look: { startedAt: now } };
 }
-function seenOf(saved) {
-  const s = saved;
-  return { since: strings(s?.since), course: text(s?.course) };
+function lookEnded(o, at) {
+  return o === null || o.look === null ? o : { ...o, lastLookAt: at, look: null };
 }
 function text(value) {
   return typeof value === "string" ? value : "";
 }
-function strings(value) {
-  return Array.isArray(value) ? value.filter((v) => typeof v === "string") : [];
+function time(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
-function nameKey(text) {
-  return (text.split(":")[0].toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).sort().join(" ");
-}
-function withoutStreams(o) {
-  if (!o.isCoordinator)
-    return o.queue;
-  const names = new Set(o.workstreams.map((i) => nameKey(i.text)));
-  return o.queue.filter((i) => !names.has(nameKey(i.text)));
-}
-function itemKey(i) {
-  return `${i.status}|${i.text}`;
-}
-function itemLine(key, i) {
-  return `${key}: ${i.status} | ${i.text}${i.detail ? ` | ${i.detail}` : ""}`;
-}
-function overviewText(o) {
-  if (o === null)
-    return "(none yet)";
-  const lists = [
-    ["QUEUE", o.queue],
-    ["WORKS", o.works],
-    ["OPEN", o.open],
-    ["NEXT", o.next],
-    ["STREAM", o.workstreams]
-  ];
-  return [
-    `KIND: ${o.isCoordinator ? "coordinator" : "session"}`,
-    `STATE: ${o.state}`,
-    `HEADLINE: ${o.headline || "-"}`,
-    `STATUS: ${o.status || "-"}`,
-    ...o.course ? [`COURSE: ${o.course}`] : [],
-    ...lists.flatMap(([key, items]) => items.map((i) => itemLine(key, i))),
-    ...o.earlier.map((e) => `EARLIER: ${e}`)
-  ].join(NL4);
-}
-function sinceText(o) {
-  return (o?.since ?? []).map((i) => itemLine("SINCE", i)).join(NL4);
-}
-function lookStarted(o, now) {
-  if (o === null || o.look !== null)
-    return o;
+function subjectOf(saved) {
+  const s = saved;
+  const status = STATUSES2.find((x) => x === s?.status);
+  const changedAt = time(s?.changedAt);
+  if (!s || typeof s.id !== "string" || typeof s.name !== "string" || !status || changedAt === null)
+    return null;
   return {
-    ...o,
-    look: { startedAt: now, away: awayOf(o.lastLookAt, now), since: o.since.map(itemKey), course: o.course },
-    seen: { since: [], course: "" }
+    id: s.id,
+    name: s.name,
+    status,
+    text: text(s.text),
+    was: typeof s.was === "string" ? s.was : null,
+    createdAt: time(s.createdAt) ?? changedAt,
+    changedAt,
+    closedAt: time(s.closedAt),
+    into: typeof s.into === "string" ? s.into : null
   };
 }
-function lookEnded(o, at) {
-  if (o === null || o.look === null)
-    return o;
-  const { look } = o;
+function childOf(saved) {
+  const c = saved;
+  const kind = CHILD_KINDS.find((k) => k === c?.kind);
+  const startedAt = time(c?.startedAt);
+  if (!c || typeof c.id !== "string" || typeof c.ref !== "string" || !kind || startedAt === null)
+    return null;
   return {
-    ...o,
-    since: o.since.filter((i) => !look.since.includes(itemKey(i))),
-    course: o.course === look.course ? "" : o.course,
-    lastLookAt: at,
-    look: null,
-    seen: { since: look.since, course: look.course }
+    id: c.id,
+    ref: c.ref,
+    kind,
+    name: text(c.name),
+    subjectId: typeof c.subjectId === "string" ? c.subjectId : null,
+    startedAt,
+    endedAt: time(c.endedAt),
+    lastActivityAt: time(c.lastActivityAt)
   };
 }
-var HERE_MS = 5 * 60000;
-var SHORT_MS = 60 * 60000;
-var AWAYS = ["here", "short", "long"];
-function awayOf(lastLookAt, now) {
-  if (lastLookAt === null)
-    return "long";
-  const gone = now - lastLookAt;
-  return gone < HERE_MS ? "here" : gone < SHORT_MS ? "short" : "long";
-}
-function workOf(o, signals) {
-  const waits = o.queue.some((i) => i.status === "waits-on-you");
-  if (signals.isTurnRunning)
-    return "running";
-  if (signals.isStopped || signals.waitingOnYou > 0 || o.state === "stuck" || waits)
-    return "stopped";
-  return o.state === "finished" ? "finished" : "idle";
-}
-function orderParts(o, away, work) {
-  const hasQueued = o.queue.some((i) => i.status === "queued");
-  const isQuiet = o.since.length === 0 && o.course === "" && away !== "here" && o.lastLookAt !== null;
-  const quiet = isQuiet ? ["quiet"] : [];
-  const order = o.isCoordinator ? ["headline", "workstreams", "since", "queue", "next", "open"] : work === "running" && away === "here" ? ["headline", "queue"] : work === "stopped" ? ["headline", "status", "pointer", "since", "queue", "next", "open"] : work === "finished" ? ["headline", "status", o.works.length > 0 ? "works" : "queue", "open"] : away === "short" ? ["headline", ...quiet, "since", "queue", "open"] : ["headline", "status", ...quiet, "since", "queue", "next", "open"];
-  const withCourse = o.course === "" ? order : [order[0], "course", ...order.slice(1)];
-  const lists = {
-    workstreams: o.workstreams.length > 0,
-    queue: o.queue.length > 0,
-    works: o.works.length > 0,
-    open: o.open.length > 0,
-    next: o.next.length > 0 && !hasQueued,
-    since: o.since.length > 0,
-    headline: o.headline !== "",
-    status: o.status !== ""
+var OLD_STATUS = {
+  working: "working",
+  queued: "queued",
+  "waits-on-you": "waits-on-you",
+  "waits-on-other": "waits-on-other",
+  problem: "problem",
+  unknown: "queued",
+  done: null,
+  "ruled-out": null
+};
+function fromLists(o) {
+  const lastLookAt = time(o.lastLookAt);
+  const items = lastLookAt === null ? [] : ["workstreams", "queue", "open"].flatMap((k) => Array.isArray(o[k]) ? o[k] : []);
+  const subjects = items.flatMap((raw) => {
+    const item = raw;
+    const status = OLD_STATUS[String(item?.status)] ?? null;
+    if (!status || typeof item?.text !== "string")
+      return [];
+    return [
+      { status, name: clipWords(item.text, NAME_KEPT), text: typeof item.detail === "string" ? item.detail : "" }
+    ];
+  }).filter((s, n, all) => all.findIndex((t) => nameKey(t.name) === nameKey(s.name)) === n).slice(0, OPEN_SUBJECTS).map((s, n) => ({
+    id: `s${n + 1}`,
+    ...s,
+    text: clipWords(s.text, TEXT_KEPT),
+    was: null,
+    createdAt: lastLookAt,
+    changedAt: lastLookAt,
+    closedAt: null,
+    into: null
+  }));
+  return {
+    ...EMPTY_OVERVIEW,
+    role: o.isCoordinator === true ? "coordinator" : "session",
+    goal: clipWords(text(o.headline), GOAL_KEPT),
+    subjects,
+    nextId: subjects.length + 1,
+    lastLookAt
   };
-  const parts = withCourse.filter((p) => lists[p] ?? true);
-  return o.earlier.length > 0 ? [...parts, "earlier"] : parts;
+}
+function upgradeOverview(saved) {
+  const o = saved;
+  if (typeof o !== "object" || o === null)
+    return null;
+  if (typeof o.headline === "string")
+    return fromLists(o);
+  if (!Array.isArray(o.subjects))
+    return null;
+  const subjects = o.subjects.map(subjectOf).filter((s) => s !== null);
+  const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c) => c !== null) : [];
+  const look = o.look;
+  const lookAt = time(look?.startedAt);
+  return {
+    role: o.role === "coordinator" ? "coordinator" : "session",
+    goal: text(o.goal),
+    subjects,
+    children,
+    nextId: Math.max(time(o.nextId) ?? 1, subjects.length + 1),
+    nextChildId: Math.max(time(o.nextChildId) ?? 1, children.length + 1),
+    lastLookAt: time(o.lastLookAt),
+    look: lookAt === null ? null : { startedAt: lookAt }
+  };
 }
 
 // ../hooks/ledger.ts
@@ -462,7 +554,8 @@ var EMPTY = {
   updates: 0
 };
 function isBlankLedger(ledger) {
-  return ledger.updates === 0 && ledger.overview === null && ledger.items.length === 0 && ledger.findings.length === 0;
+  const isOverviewBlank = !ledger.overview || ledger.overview.goal === "" && ledger.overview.subjects.length === 0;
+  return ledger.updates === 0 && isOverviewBlank && ledger.items.length === 0 && ledger.findings.length === 0;
 }
 var NL5 = `
 `;
@@ -514,17 +607,17 @@ function upgradeItem(item) {
     from: item.from ?? "update"
   };
 }
-function words(text) {
+function words2(text) {
   return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 function recommendedOption(options, rec) {
   if (!rec)
     return null;
-  const named = new Set(words(rec));
+  const named = new Set(words2(rec));
   let best = null;
   for (const option of options) {
-    const w = words(option);
-    if (w.length > words(best ?? "").length && w.every((x) => named.has(x)))
+    const w = words2(option);
+    if (w.length > words2(best ?? "").length && w.every((x) => named.has(x)))
       best = option;
   }
   const label = (text) => text.match(/^\s*\(?([a-z]|\d{1,2})\s*[:.)]/i)?.[1]?.toLowerCase();
@@ -609,9 +702,9 @@ function withHelp(helps, help) {
   const isCovered = kept.some((h) => helpTarget(h) === helpTarget(help));
   return isCovered || kept.length >= MAX_HELPS ? kept : [...kept, help];
 }
-var KEY_LINE2 = /^\s*[-*]?\s*(?:(NONE)(?::|\s|$)|(CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:)\s*(.*)$/;
+var KEY_LINE = /^\s*[-*]?\s*(?:(NONE)(?::|\s|$)|(CLOSED|FIXED|ASKED|NEW|UPDATE|HELP|TODO)\s*:)\s*(.*)$/;
 function keyOf(line) {
-  const m = KEY_LINE2.exec(line);
+  const m = KEY_LINE.exec(line);
   return m ? { key: m[1] ?? m[2], value: m[3] ?? "" } : null;
 }
 function lastAnswerStart(lines) {
@@ -719,7 +812,7 @@ function parseReply(text, source = null) {
 }
 function isTakenUp(work, reply) {
   const key = [...keyWords(work)];
-  const said = new Set(words(reply ?? ""));
+  const said = new Set(words2(reply ?? ""));
   return key.length > 0 && key.filter((w) => said.has(w)).length * 2 >= key.length;
 }
 function todoAsk(work) {
@@ -743,7 +836,7 @@ var FILLER = new Set([
   "all"
 ]);
 function keyWords(text) {
-  return new Set(words(text).filter((w) => /\p{N}/u.test(w) || w.length > 2 && !FILLER.has(w)));
+  return new Set(words2(text).filter((w) => /\p{N}/u.test(w) || w.length > 2 && !FILLER.has(w)));
 }
 function restates(a, b) {
   const x = keyWords(a);
@@ -762,7 +855,7 @@ function repeatsSubject(a, b) {
   return sameAsk(a, b) || restates(a, b) && (within(x, y) || within(y, x));
 }
 function sameAsk(a, b) {
-  const norm = (s) => words(s).join(" ");
+  const norm = (s) => words2(s).join(" ");
   return norm(a) !== "" && norm(a) === norm(b);
 }
 function matchOpen(items, a, sameBatch = new Set) {
@@ -1250,65 +1343,78 @@ function buildPrompt(ledger, ex) {
     `<screen>${NL6}${ex.screen}${NL6}</screen>`
   ].join(NL6);
 }
-var OVERVIEW_SYSTEM = `You keep a one-page guide to a coding session, for the person who works with the agent. They read it when they come back, to see what the work is, how it is going and what comes next. You read the guide as it was and one exchange, and write the guide as it should be now.
+var OVERVIEW_SYSTEM = `You keep the Overview of a coding session: one list of the subjects its work is about, for the person who works with the agent. They read it when they come back, to see what the work is for, where each part stands, and what changed.
 
-The guide is about the work. It is not a log of what the agent did, and it is not a list of what waits on the person: the inbox lists that. Write at the level of the feature or the fix. Never write a command, a file name, a commit, a test run, a tool call or a ticket number, and leave out a number, an id or a time unless the person needs it to find the work again.
+You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
 
 Input:
-- <last>: the guide as it was, in the same lines you write
-- <unseen>: the changes the person has not yet looked at, as SINCE lines
-- <tasks>: the agent's own task list, when it keeps one, as TASK lines. It is evidence for QUEUE, not the guide: write each item at the level of the feature. Write each in your own words as the outcome it reaches, not in the task's words: "Reset emails reach the person", not "Run the mailer tests". A queue item names a result, never an action that begins with Run, Check or Test. For a task that runs a command or a test, write the outcome it checks, or leave it out. Leave out a task that is only a step of another.
+- <goal>: the session's goal. Do not restate it.
+- <subjects>: the open subjects, one per line: id | status | name | where it stands
+- <finished>: subjects already done or dropped. Do not add them again.
+- <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
+- <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature.
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
 - <reply>: the agent's final reply
 
-Answer with lines only. No other text. If the exchange changed nothing about the work, answer with the one line UNCHANGED.
+Answer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, answer with the one line NO CHANGE. Most exchanges change nothing.
 
-Otherwise write every line below that applies, in this order:
-KIND: session, or coordinator when the session hands out work and reviews what comes back instead of doing the work itself
-TOPIC: same, or new when the work moved to a different task. Write new only for a different task, not for the next step of the same one.
-STATE: on-track, stuck or finished
-HEADLINE: one plain sentence naming what the session is doing, at most ${HEADLINE_WORDS} words. "-" when no work has started.
-STATUS: how it is going, in one or two plain sentences, at most ${SENTENCE_WORDS} words. Say what it waits on, if anything.
-COURSE: only in the reply where the approach changed, in one or two sentences, at most ${SENTENCE_WORDS} words: what changed and why. A new step is not a change. Leave the line out otherwise: the page keeps the last one until the person looks.
-FOLDED: only when TOPIC is new, one line saying what the old topic was and where it was left.
-Then lists, one item per line, each as KEY: status | text | detail, with the key on every line. The detail is optional. Text is at most ${ITEM_WORDS} words and detail at most ${DETAIL_WORDS}. At most ${LIST_ITEMS} items in a list.
-QUEUE: the work now: what is under way, what is queued behind it, what waits, and what just finished
-WORKS: what holds now: what works, what exists
-OPEN: risks, problems and unknowns
-NEXT: what comes next
-SINCE: what changed since the person last looked. Start from <unseen>, merge this exchange into it, and keep it short.
-STREAM: only in a coordinator session, in the same form as the other lists: one line for each stream of work, saying what it is for and where it stands. Put the work handed out in STREAM, and use QUEUE only for the coordinator's own steps, such as reviewing what a stream sends back. If a stream is already in QUEUE in the guide as it was, take it out of QUEUE.
+Otherwise write only the lines that apply:
+NEW: status | name | where it stands
+SET: id | status | where it stands
+DONE: id | where it ended
+DROP: id | why
+DROP: id | why | INTO id or name
+WAS: id or name | the plan it replaces
+LINK: running id | subject id or name
+ROLE: coordinator or session
+GOAL: the goal in the person's words, at most ${GOAL_WORDS} words
 
-Status is one of: working, queued, waits-on-you, waits-on-other, done, ruled-out, problem, unknown. Use waits-on-you when the agent cannot go on until the person acts, and waits-on-other for something else, such as a build. Use ruled-out for an approach tried or considered and dropped, and put the reason in the detail.
+A subject is one piece of the work that the person would name: a feature, a fix, a release, a problem, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call.
+
+The name is at most ${NAME_WORDS} words, the handle the person would use. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
+
+Status is one of: working, queued, waits-on-you, waits-on-other, problem.
+- working: being worked on now, in this session or in a session it handed the work to. When the work stopped, it is queued, waits on someone, or is done.
+- queued: planned, not started.
+- waits-on-you: the subject's work has stopped until the person acts. A question to the person is not a subject of its own.
+- waits-on-other: it waits on something else, such as a build, a review or another session.
+- problem: something broken or wrong that no one is fixing now.
 
 Rules:
-- Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed. The next rule wins over this one: when the guide as it was already repeats a fact in two lists, remove the repeat.
-- Do not write a question or task the agent put to the person, and do not say what the choice is. Say only that the work waits on the person, and stop.
-- Leave out that something was committed, pushed, merged or tested, in every line. Say what now works or is fixed.
-- Say each fact once, in the list that fits it best. Work that finished stays in QUEUE as done. WORKS holds only what works that QUEUE does not already name. What a stream is doing, and what it finished, stays on its STREAM line and is not written again in QUEUE, WORKS or OPEN. NEXT holds only what the queue does not already name. SINCE may repeat the other lists, since it says what changed.
-- Leave a list out when it has nothing worth saying. Do not fill a list to fill it.`;
-function overviewBlocks(last, tasks) {
+- Change a subject by its id. Write NEW only when no subject in <subjects> covers it.
+- Write SET only when where a subject stands changed. Never reword a subject that did not change.
+- Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.
+- When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
+- Do not write what an open question or task asks the person, or its options. Mark the subject waits-on-you and stop.
+- Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
+- Write ROLE coordinator when the session hands out work and reviews what comes back instead of doing the work itself. Write ROLE only when it changes.
+- Write GOAL only when <goal> is empty, when the person states a new goal, or when the work moves to a different task.`;
+function overviewBlocks(last, tasks, now) {
+  const { open, finished } = subjectsText(last);
+  const running = runningText(last, now);
   const list = tasksText(tasks);
   return [
-    `<last>${NL6}${overviewText(last)}${NL6}</last>`,
-    `<unseen>${NL6}${sinceText(last)}${NL6}</unseen>`,
+    `<goal>${NL6}${last?.goal || "(none yet)"}${NL6}</goal>`,
+    `<subjects>${NL6}${open}${NL6}</subjects>`,
+    ...finished === "" ? [] : [`<finished>${NL6}${finished}${NL6}</finished>`],
+    ...running === "" ? [] : [`<running>${NL6}${running}${NL6}</running>`],
     ...list === "" ? [] : [`<tasks>${NL6}${list}${NL6}</tasks>`]
   ];
 }
-function overviewPrompt(last, ex, tasks = []) {
+function overviewPrompt(last, ex, tasks, now) {
   const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? "unknown"}.)`;
   return [
-    ...overviewBlocks(last, tasks),
+    ...overviewBlocks(last, tasks, now),
     `<person>${NL6}${clipMiddle(person, 4000, 1500)}${NL6}</person>`,
     `<activity>${NL6}${clipMiddle(ex.activity.join(NL6), 2500, 500)}${NL6}</activity>`,
     `<reply>${NL6}${clipMiddle(numberBlocks(ex.reply), 12000, 4000)}${NL6}</reply>`
   ].join(NL6);
 }
-function overviewCatchUpPrompt(last, transcript, tasks = []) {
+function overviewCatchUpPrompt(last, transcript, tasks, now) {
   return [
-    "Treat the conversation in <conversation> as the exchange. Its start may be cut. Write the guide as it stands at the end of the conversation.",
-    ...overviewBlocks(last, tasks),
+    "Treat the conversation in <conversation> as the exchange. Its start may be cut. Answer with the changes that bring the list to where the conversation ends.",
+    ...overviewBlocks(last, tasks, now),
     `<conversation>${NL6}${numberBlocks(transcript)}${NL6}</conversation>`
   ].join(NL6);
 }
@@ -1392,7 +1498,7 @@ function answerNote(ledger, text) {
   }
   return lines.length === 0 ? null : ["inbox: the user's message answers these open items from your earlier replies:", ...lines].join(NL6);
 }
-function itemLine2(item) {
+function itemLine(item) {
   return `- ${item.label ? `(${item.label}) ` : ""}${describe(item)} (close id: ${item.id})`;
 }
 function findingLine(finding) {
@@ -1406,7 +1512,7 @@ function inboxText(host, ledger, isOpen) {
   if (ledger.items.length > 0) {
     out.push("Waiting on the user:");
     for (const item of ledger.items)
-      out.push(itemLine2(item));
+      out.push(itemLine(item));
   } else {
     out.push("Nothing is waiting on the user.");
   }
@@ -2457,6 +2563,10 @@ function foldLabel(total) {
 function earlierLabel(total, shown) {
   return total > shown ? `${total - shown} earlier` : null;
 }
+function shortAgo(ms) {
+  const age = ago(ms);
+  return age === "just now" ? "now" : age.replace(/ ago$/, "");
+}
 function groupEmptyText(title) {
   return `No open ${title.toLowerCase()}`;
 }
@@ -2694,83 +2804,121 @@ function screenTabOf(tab) {
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 var WORKING_TEXT = "Working\u2026";
-var OVERVIEW_MARKS = {
+var LOOK_TEXT = "you looked";
+var CHILD_ROWS = 3;
+var QUIET_MS = 15 * 60000;
+var NEW_CLOSED_ROWS = 2;
+var OPEN_ROWS = 7;
+var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: null },
   queued: { mark: "\u25CB", tone: null },
   "waits-on-you": { mark: "\u25C6", tone: "needsYou" },
   "waits-on-other": { mark: "\u25CC", tone: null },
-  done: { mark: "\u2713", tone: "done" },
-  "ruled-out": { mark: "\u2717", tone: null },
   problem: { mark: "!", tone: "issue" },
-  unknown: { mark: "?", tone: null }
+  done: { mark: "\u2713", tone: "done" },
+  dropped: { mark: "\u2717", tone: null }
 };
-var SECTION_TITLES = {
-  workstreams: "Streams",
-  queue: "Work",
-  since: "Since you looked",
-  works: "What works now",
-  open: "Still open",
-  next: "Next"
-};
-function earlierTitle(place) {
-  return `Earlier in this ${place}`;
-}
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 function hasRunningMark(page) {
-  return page.sections.some((p) => p.rows.some((r) => r.isRunning));
+  return page.rows.some((r) => r.kind === "subject" && r.isRunning || r.kind === "child" && !r.isQuiet);
 }
 function runningMark(now) {
   return RUNNING_FRAMES[Math.floor(now / RUNNING_FRAME_MS) % RUNNING_FRAMES.length];
 }
-var QUIET_TEXT = "Nothing new since you looked.";
-function pointerText(count) {
-  return count === 0 ? null : count === 1 ? "Asks has 1 item." : `Asks has ${count} items.`;
+function identityOf(place, role) {
+  if (!place)
+    return null;
+  const folder = place.folder.split(/[\\/]/).filter(Boolean).pop() ?? place.folder;
+  return [folder, place.branch, role === "coordinator" ? "coordinator" : null].filter(Boolean).join(" \xB7 ");
 }
-function withAfterHeading(parts, id) {
-  const at = parts.filter((p) => p === "headline" || p === "course").length;
-  return [...parts.slice(0, at), id, ...parts.slice(at)];
+function liveOf(presence, now) {
+  const { isTurnRunning, turnStartedAt, lastReplyAt } = presence;
+  if (isTurnRunning) {
+    const isPastAMinute = turnStartedAt !== null && now - turnStartedAt >= 60000;
+    return isPastAMinute ? `${WORKING_TEXT} for ${shortAgo(now - turnStartedAt)}` : WORKING_TEXT;
+  }
+  return lastReplyAt === null ? null : `Idle \xB7 last reply ${ago(now - lastReplyAt)}`;
 }
-function overviewPage(s, now, waitingOnYou = 0) {
-  const { overview } = s.ledger;
-  const { isTurnRunning } = s.presence;
-  const headline = overview?.headline || null;
-  const parts = overview ? orderParts(overview, overview.look?.away ?? awayOf(overview.lastLookAt, now), workOf(overview, { isTurnRunning, isStopped: Boolean(s.stop), waitingOnYou })) : [];
-  const sections = overview ? parts.flatMap((id) => {
-    const title = SECTION_TITLES[id];
-    if (title === undefined)
-      return [];
-    const rows = overview[id].map((item, n) => ({
-      id: `${id}-${n}`,
-      ...OVERVIEW_MARKS[item.status],
-      isRunning: item.status === "working" && (id === "workstreams" || isTurnRunning),
-      text: item.text,
-      detail: item.detail
-    }));
-    return rows.length > 0 ? [{ id, title, rows }] : [];
-  }) : [];
-  const texts = {
-    headline,
-    course: overview?.course || null,
-    status: isTurnRunning ? WORKING_TEXT : overview?.status || null,
-    pointer: pointerText(waitingOnYou),
-    quiet: QUIET_TEXT
-  };
-  const withWorking = isTurnRunning && !parts.includes("status") ? withAfterHeading(parts, "status") : parts;
-  const leadIds = overview ? withWorking : isTurnRunning ? ["status"] : [];
-  const lead = leadIds.flatMap((id) => {
-    const text = id in texts ? texts[id] : null;
-    return text === null ? [] : [{ id, text, hasGapAbove: false }];
-  }).map((line, n, all) => ({ ...line, hasGapAbove: n > 0 && all[n - 1].id !== "headline" }));
+function childRow(c, now, isLoose) {
+  const idle = c.lastActivityAt === null ? null : now - c.lastActivityAt;
+  const isQuiet = idle !== null && idle >= QUIET_MS;
+  const age = shortAgo(idle ?? now - c.startedAt);
+  return { kind: "child", id: c.id, name: c.name, age: isQuiet ? `quiet ${age}` : age, isQuiet, isLoose };
+}
+function overviewPage(s, now) {
+  const o = s.ledger.overview;
+  const look = o?.lastLookAt ?? null;
+  const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
+  const isNew = (x) => look === null || x.changedAt > look;
+  const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
+  const open = subjects.filter(isOpen);
+  const queuedOver = Math.max(0, open.length - OPEN_ROWS);
+  const hiddenQueued = new Set(open.filter((x) => x.status === "queued").sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id));
+  const shown = [...open.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort((x, y) => y.changedAt - x.changedAt);
+  const folded = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
+  const running = (o?.children ?? []).filter((c) => isChildRunning(c, now)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
+  const shownIds = new Set(shown.map((x) => x.id));
+  const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, now, true));
+  const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT, age: shortAgo(now - look) };
+  let isLookDrawn = false;
+  for (const x of shown) {
+    if (lookRow && !isLookDrawn && !isNew(x)) {
+      rows.push(lookRow);
+      isLookDrawn = true;
+    }
+    const under = running.filter((c) => c.subjectId === x.id);
+    rows.push({
+      kind: "subject",
+      id: x.id,
+      ...SUBJECT_MARKS[x.status],
+      isRunning: x.status === "working" && (s.presence.isTurnRunning || under.length > 0),
+      name: x.name,
+      text: isNew(x) ? x.text || null : null,
+      was: isNew(x) ? x.was : null,
+      age: shortAgo(now - x.changedAt)
+    });
+    rows.push(...under.slice(0, CHILD_ROWS).map((c) => childRow(c, now, false)));
+    if (under.length > CHILD_ROWS)
+      rows.push({ kind: "more", id: `${x.id}-more`, text: `+ ${under.length - CHILD_ROWS} more running` });
+  }
+  if (lookRow && !isLookDrawn && shown.length > 0)
+    rows.push(lookRow);
+  if (hiddenQueued.size > 0)
+    rows.push({
+      kind: "fold",
+      id: "queued",
+      mark: "\u25CB",
+      tone: null,
+      text: `${hiddenQueued.size} more queued`,
+      age: null
+    });
+  if (folded.length > 0) {
+    const newest = Math.max(...folded.map((x) => x.closedAt ?? x.changedAt));
+    const isMore = newClosed.some((x) => x.status === "done");
+    rows.push({
+      kind: "fold",
+      id: "done",
+      mark: "\u2713",
+      tone: "done",
+      text: `${folded.length}${isMore ? " more" : ""} done`,
+      age: shortAgo(now - newest)
+    });
+  }
+  const goal = o?.goal || null;
+  const role = o?.role ?? "session";
+  const hasNews = o !== null && o.look === null && subjects.some(isNew);
   return {
-    isEmpty: headline === null && !isTurnRunning,
-    lead,
-    sections,
-    earlier: parts.includes("earlier") ? overview?.earlier ?? [] : [],
+    isEmpty: goal === null && rows.length === 0 && !s.presence.isTurnRunning,
+    identity: identityOf(s.place ?? null, role),
+    goal,
+    live: liveOf(s.presence, now),
+    rows,
+    hasNews,
     empty: {
       title: "Overview",
-      hint: "Where the work stands and where it's heading. It fills in once the work starts."
+      hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
     }
   };
 }
@@ -3132,18 +3280,18 @@ function statusLine(stop, dialogs, input) {
   const dialog = dialogs[0];
   if (dialog)
     return dialogText(dialog);
-  const { firstAsk, asks, findings, headline } = input;
+  const { firstAsk, asks, findings, goal } = input;
   if (firstAsk !== null)
     return asks > 1 ? `${asks} \xB7 ${firstAsk}` : firstAsk;
   const findingsText = findings === 0 ? null : `${findings} finding${findings === 1 ? "" : "s"}`;
-  return [headline, findingsText].filter(Boolean).join(" \xB7 ");
+  return [goal, findingsText].filter(Boolean).join(" \xB7 ");
 }
 function herdrTokens(ledger, stop, view, dialogs) {
   const input = {
     firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
     asks: view.needsYou.count,
     findings: view.findings.count,
-    headline: ledger.overview?.headline ?? null
+    goal: ledger.overview?.goal || null
   };
   const counts = ROW_TABS.map((t) => {
     const count = view[t.id].count;
@@ -3841,8 +3989,11 @@ function emptySession() {
       ledgerState: "current",
       hasDroppedReply: false,
       isUpdating: false,
-      isTurnRunning: false
+      isTurnRunning: false,
+      turnStartedAt: null,
+      lastReplyAt: null
     },
+    place: null,
     pending: [],
     sent: [],
     lastActions: {},
@@ -3883,6 +4034,7 @@ function upgradeSession(saved) {
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
+    place: saved.place ?? null,
     pending: (saved.pending ?? []).map((p) => ({ ...p, ex: { ...p.ex, tasks: p.ex.tasks ?? [] } })),
     sent: (saved.sent ?? []).map((x) => ({
       ...x,
@@ -3939,14 +4091,21 @@ function matchSent(s, text) {
     sentBy: sent ? { press: sent.press } : null
   };
 }
-function turnStarted(s) {
-  return { ...s, presence: { ...s.presence, isTurnRunning: true } };
+function turnStarted(s, at) {
+  const startedAt = s.presence.isTurnRunning ? s.presence.turnStartedAt ?? at : at;
+  return { ...s, presence: { ...s.presence, isTurnRunning: true, turnStartedAt: startedAt } };
 }
-function turnEnded(s) {
-  return { ...s, presence: { ...s.presence, isTurnRunning: false } };
+function turnEnded(s, at) {
+  const lastReplyAt = at ?? s.presence.lastReplyAt;
+  return { ...s, presence: { ...s.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt } };
 }
 function cutOffTurn(s) {
-  return s.presence.isTurnRunning ? turnEnded(s) : s;
+  return s.presence.isTurnRunning ? turnEnded(s, null) : s;
+}
+function placed(s, folder, branch) {
+  const place = { folder: s.place?.folder || folder, branch: branch === "HEAD" ? null : branch };
+  const isSame = s.place?.folder === place.folder && s.place.branch === place.branch;
+  return isSame ? s : { ...s, place };
 }
 function startTurn(s) {
   return { ...s, presence: { ...s.presence, turnsStarted: s.presence.turnsStarted + 1 }, stop: null };
@@ -4041,10 +4200,10 @@ function applied(s, parsed, now, promptAt) {
     }
   });
 }
-function appliedOverview(s, answer, appliedAfter) {
+function appliedOverview(s, answer, appliedAfter, now) {
   if (s.presence.turnsApplied < appliedAfter)
     return s;
-  return { ...s, ledger: { ...s.ledger, overview: applyOverview(s.ledger.overview, answer) } };
+  return { ...s, ledger: { ...s.ledger, overview: applyOverview(s.ledger.overview, answer, now) } };
 }
 function needsCatchUp(s) {
   const { presence } = s;
@@ -4193,7 +4352,7 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now),
-    overviewPage: overviewPage(s, now, inbox.needsYou.count)
+    overviewPage: overviewPage(s, now)
   };
 }
 function prTabOf(s, lastActions, now) {
@@ -4249,7 +4408,7 @@ async function askOverConversation(ask, names, s, screen, conversation) {
     kind: "reply",
     text,
     source: conversation,
-    overview: (last, tasks) => ask(overviewCatchUpPrompt(last, conversation, tasks), OVERVIEW_SYSTEM)
+    overview: (last, tasks, now) => ask(overviewCatchUpPrompt(last, conversation, tasks, now), OVERVIEW_SYSTEM)
   };
 }
 async function reconcileUpdateStatus(host) {
@@ -4273,10 +4432,16 @@ async function runUpdates(host) {
   const writing = [];
   const writeOverview = async (after, ask, tasks) => host.inOrder(async () => {
     const { ledger } = await host.read();
-    const answer = parseOverview(await ask(ledger.overview, tasks).catch(() => null));
+    const at = await host.now();
+    const asked = () => ask(ledger.overview, tasks, at).catch(() => null);
+    const first = await asked();
+    if (first === null)
+      return;
+    const answer = parseOverview(first) ?? parseOverview(await asked());
     if (answer === null)
       return;
-    await host.update((x) => appliedOverview(x, answer, after.presence.turnsApplied));
+    const now = await host.now();
+    await host.update((x) => appliedOverview(x, answer, after.presence.turnsApplied, now));
   });
   const followUp = (run) => {
     const settled = run.catch(() => {
@@ -4323,7 +4488,7 @@ async function runUpdates(host) {
               return applied(x, parsed, await host.now(), promptAt);
             });
             if (isApplied)
-              followUp(writeOverview(after, (last, tasks) => host.ask(overviewPrompt(last, next.ex, tasks), OVERVIEW_SYSTEM), next.ex.tasks));
+              followUp(writeOverview(after, (last, tasks, now) => host.ask(overviewPrompt(last, next.ex, tasks, now), OVERVIEW_SYSTEM), next.ex.tasks));
             if (after.pending[0]?.failed && !next.failed)
               return "stop";
           }
@@ -4981,24 +5146,13 @@ function pageEntries(page) {
       { kind: "note", text: page.empty.title, isStrong: true },
       { kind: "note", text: page.empty.hint }
     ];
-  const out = [];
-  for (const line of page.lead) {
-    if (line.hasGapAbove)
-      out.push({ kind: "note", text: "" });
-    out.push({ kind: "note", text: line.text, isStrong: line.id === "headline" });
-  }
-  for (const part of page.sections) {
-    if (out.length > 0)
-      out.push({ kind: "note", text: "" });
-    out.push({ kind: "heading", text: part.title });
-    out.push(...part.rows.map((row) => ({ kind: "page", row })));
-  }
-  if (page.earlier.length > 0) {
-    out.push({ kind: "note", text: "" });
-    out.push({ kind: "heading", text: earlierTitle("session") });
-    out.push(...page.earlier.map((text) => ({ kind: "note", text, indent: TITLE_AT })));
-  }
-  return out;
+  const head = [
+    ...page.identity ? [{ kind: "note", text: page.identity }] : [],
+    ...page.goal ? [{ kind: "note", text: page.goal, isStrong: true }] : [],
+    ...page.live ? [{ kind: "note", text: page.live }] : []
+  ];
+  const rows = page.rows.map((row) => ({ kind: "page", row }));
+  return head.length > 0 && rows.length > 0 ? [...head, { kind: "note", text: "" }, ...rows] : [...head, ...rows];
 }
 function entriesOf(screen, ui, tab, now) {
   if (!isRowTab(tab))
@@ -5296,21 +5450,46 @@ function drawLine(line, isSelected, d) {
     out.push(...indented(statusUnder.text, indent, width, 4, feedbackPaint(statusUnder.tone, s)));
   return out;
 }
+function pageLine(d, indent, mark, text, age, { plainCells = 0, agePaint = d.style.dim } = {}) {
+  const { width, style: s } = d;
+  const textAt = indent + 2;
+  const side = age ? cellWidth(age) + 1 : 0;
+  const [first = "", ...rest] = wrapText(text, Math.max(10, width - textAt - side - 1));
+  const firstPainted = cutToCells(first, plainCells) + s.dim(first.slice(cutToCells(first, plainCells).length));
+  const gap = Math.max(1, width - 1 - textAt - cellWidth(first) - (age ? cellWidth(age) : 0));
+  return [
+    `${" ".repeat(indent)}${mark} ${firstPainted}${age ? " ".repeat(gap) + agePaint(age) : ""}`,
+    ...rest.map((l) => " ".repeat(textAt) + s.dim(l))
+  ];
+}
 function drawPageRow(row, d) {
   const { width, now, style: s } = d;
-  const mark = (row.isRunning ? runningMark(now) : row.mark).padEnd(2);
-  const room = width - TITLE_AT - 2;
-  const wrapped = wrapText(row.text, Math.max(10, room));
-  const [first = "", ...rest] = wrapped.slice(0, 3);
-  if (wrapped.length > 3)
-    rest[1] = `${rest[1].replace(/.$/, "")}\u2026`;
-  const out = [
-    `   ${row.tone ? s.tone(row.tone, mark) : s.dim(mark)} ${first}`,
-    ...rest.map((l) => " ".repeat(TITLE_AT) + l)
-  ];
-  if (row.detail)
-    out.push(...indented(row.detail, TITLE_AT, width, 4, s.dim));
-  return out;
+  if (row.kind === "subject") {
+    const glyph = row.isRunning ? runningMark(now) : row.mark;
+    const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph);
+    const text = row.text ? `${row.name}: ${row.text}` : row.name;
+    const out = pageLine(d, 3, mark, text, row.age, { plainCells: cellWidth(row.name) });
+    if (row.was)
+      out.push(...indented(`was: ${row.was}`, TITLE_AT, width, 2, s.dim));
+    return out;
+  }
+  if (row.kind === "child") {
+    const indent = row.isLoose ? 3 : TITLE_AT - 1;
+    const mark = s.dim(row.isQuiet ? "\u25CF" : runningMark(now));
+    const room = Math.max(6, width - indent - 2 - cellWidth(row.age) - 2);
+    const name = cellWidth(row.name) > room ? `${cutToCells(row.name, room - 1)}\u2026` : row.name;
+    const agePaint = row.isQuiet ? (t) => s.tone("needsYou", t) : s.dim;
+    return pageLine(d, indent, mark, name, row.age, { agePaint });
+  }
+  if (row.kind === "more")
+    return [" ".repeat(TITLE_AT + 1) + s.dim(row.text)];
+  if (row.kind === "look") {
+    const label = `\u2500\u2500 ${row.text} `;
+    const fill = "\u2500".repeat(Math.max(2, width - 1 - 3 - cellWidth(label) - cellWidth(row.age) - 1));
+    return [`   ${s.dim(label + fill)} ${s.dim(row.age)}`];
+  }
+  const mark = row.tone ? s.tone(row.tone, row.mark) : s.dim(row.mark);
+  return pageLine(d, 3, mark, row.text, row.age, {});
 }
 var TAB_FORMS = [{ isBracketed: true }, { isBracketed: false }];
 function tabCell(t, name, form, s) {
@@ -5562,6 +5741,7 @@ function createPanel(deps) {
 // ../hooks/demo.ts
 var MIN = 60000;
 var REPO = "https://github.com/acme/visor";
+var DEMO_PLACE = { folder: "/Users/you/code/visor", branch: "pinch-dismiss" };
 function demoSession(now, agent) {
   const d = demoView(now, agent);
   const s = emptySession();
@@ -5570,35 +5750,68 @@ function demoSession(now, agent) {
     ledger: d.ledger,
     lastActions: d.lastActions,
     prViews: d.prViews,
-    presence: { ...s.presence, ...d.turns }
+    presence: { ...s.presence, ...d.turns, lastReplyAt: now - 2 * MIN },
+    place: DEMO_PLACE
+  };
+}
+function subject(id, status, name, text, at, more = {}) {
+  const isClosed = status === "done" || status === "dropped";
+  return {
+    id,
+    name,
+    status,
+    text,
+    was: null,
+    createdAt: at,
+    changedAt: at,
+    closedAt: isClosed ? at : null,
+    into: null,
+    ...more
   };
 }
 function demoView(now, agent) {
   return {
     ledger: {
       overview: {
-        isCoordinator: false,
-        state: "on-track",
-        headline: "Adding pinch-to-dismiss to glances",
-        status: "A pinch already dismisses a glance. Two design questions and the glasses pairing wait on you.",
-        course: "",
-        queue: [
-          { status: "working", text: "Finish the dismiss gesture", detail: "The glance fades out as you pinch." },
-          { status: "queued", text: "Try it on the paired glasses", detail: null },
-          { status: "waits-on-you", text: "Pair the glasses with this Mac", detail: null },
-          { status: "done", text: "A pinch dismisses the glance you look at", detail: null }
+        role: "session",
+        goal: "Pinch to dismiss glances",
+        subjects: [
+          subject("s1", "working", "Dismiss gesture", "pinch fades the glance", now - 2 * MIN),
+          subject("s2", "waits-on-you", "Glasses pairing", "needs this Mac paired", now - 12 * MIN),
+          subject("s3", "waits-on-you", "Flick option", "waits on your pick", now - 12 * MIN, {
+            was: "flick and pinch both"
+          }),
+          subject("s4", "done", "Fade-out", "dismissed glances fade", now - 25 * MIN),
+          subject("s5", "queued", "Glasses trial", "after pairing", now - 3 * 60 * MIN),
+          subject("s6", "done", "Glance hit test", "finds the glance you look at", now - 5 * 60 * MIN),
+          subject("s7", "done", "Settings toggle", "pinch can be turned off", now - 6 * 60 * MIN)
         ],
-        works: [{ status: "done", text: "Dismissed glances fade out", detail: null }],
-        open: [
-          { status: "unknown", text: "Whether a flick feels better than a pinch", detail: "Waits on your answer." }
+        children: [
+          {
+            id: "c1",
+            ref: "demo-review",
+            kind: "subagent",
+            name: "Review the gesture code",
+            subjectId: "s1",
+            startedAt: now - 4 * MIN,
+            endedAt: null,
+            lastActivityAt: now - MIN
+          },
+          {
+            id: "c2",
+            ref: "demo-log",
+            kind: "background",
+            name: "Watch the pairing log",
+            subjectId: "s2",
+            startedAt: now - 50 * MIN,
+            endedAt: null,
+            lastActivityAt: now - 40 * MIN
+          }
         ],
-        next: [],
-        since: [{ status: "done", text: "PR #31 opened", detail: null }],
-        workstreams: [],
-        earlier: [],
-        lastLookAt: null,
-        look: null,
-        seen: { since: [], course: "" }
+        nextId: 8,
+        nextChildId: 3,
+        lastLookAt: now - 30 * MIN,
+        look: null
       },
       items: [
         {
@@ -6542,7 +6755,10 @@ function createInbox(pi, deps = defaultDeps) {
   pi.on("agent_start", async (_event, ctx) => {
     if (isUnattended(ctx))
       return;
-    await change(sessionIdOf(ctx), turnStarted).catch(() => {
+    const startedAt = deps.now();
+    const r = await run(["git", "branch", "--show-current"], { cwd: ctx.cwd, timeoutMs: 5000 });
+    const branch = r.code === 0 ? r.stdout.trim() || null : null;
+    await change(sessionIdOf(ctx), (s) => placed(turnStarted(s, startedAt), ctx.cwd, branch)).catch(() => {
       return;
     });
   });
@@ -6634,11 +6850,12 @@ function createInbox(pi, deps = defaultDeps) {
     const stop = await stopOf(last, deps.isUsageLimit, deps.now());
     const isDialogDismissed = event.messages.some(isDismissedAsk);
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
+    const endedAt = deps.now();
     const written = await change(id, (s) => ({
       ...turnEnded(endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
         tab: panelScreenTab(id),
         queuesEmptyReply: isDialogDismissed
-      })),
+      }), endedAt),
       stop
     })).catch(() => null);
     if (!written)

@@ -133,11 +133,8 @@ test('the frame timer runs while the Overview shows a running mark, re-renders w
   const { panel, timers, calls } = open({
     screen: async holds => {
       reads++
-      const s = await demo.screen(holds)
-      const page = s.view.overviewPage
-      const sections = page.sections.map(p => ({ ...p, rows: p.rows.map(r => ({ ...r, isRunning: r.mark === '●' })) }))
 
-      return { ...s, view: { ...s.view, overviewPage: { ...page, sections } } }
+      return demo.screen(holds)
     },
   })
   await panel.start()

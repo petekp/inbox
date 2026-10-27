@@ -60,7 +60,10 @@ export function emptySession(): Session {
       hasDroppedReply: false,
       isUpdating: false,
       isTurnRunning: false,
+      turnStartedAt: null,
+      lastReplyAt: null,
     },
+    place: null,
     pending: [],
     sent: [],
     lastActions: {},
@@ -139,6 +142,7 @@ export function upgradeSession(saved: SavedSession): Session {
     turn: { ...base.turn, ...saved.turn },
     told: { ...base.told, ...saved.told },
     presence: { ...base.presence, ...withoutStatedStep(saved.presence) },
+    place: saved.place ?? null,
     pending: (saved.pending ?? []).map(p => ({ ...p, ex: { ...p.ex, tasks: p.ex.tasks ?? [] } })),
     sent: (saved.sent ?? []).map(x => ({
       ...x,
@@ -278,14 +282,21 @@ export function matchSent<S extends Session>(s: S, text: string): { state: S; se
   }
 }
 
-/** Marks the main agent's turn as running. A subagent's turn does not call it. */
-export function turnStarted<S extends Session>(s: S): S {
-  return { ...s, presence: { ...s.presence, isTurnRunning: true } }
+/**
+ * Marks the main agent's turn as running since `at`, or since a time the host did not say. A subagent's turn does not
+ * call it. A turn already running keeps the start it has.
+ */
+export function turnStarted<S extends Session>(s: S, at: number | null): S {
+  const startedAt = s.presence.isTurnRunning ? (s.presence.turnStartedAt ?? at) : at
+
+  return { ...s, presence: { ...s.presence, isTurnRunning: true, turnStartedAt: startedAt } }
 }
 
-/** Marks the main agent's turn as ended. */
-export function turnEnded<S extends Session>(s: S): S {
-  return { ...s, presence: { ...s.presence, isTurnRunning: false } }
+/** Marks the main agent's turn as ended at `at`, or at a time the host did not say. */
+export function turnEnded<S extends Session>(s: S, at: number | null): S {
+  const lastReplyAt = at ?? s.presence.lastReplyAt
+
+  return { ...s, presence: { ...s.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt } }
 }
 
 /**
@@ -293,7 +304,15 @@ export function turnEnded<S extends Session>(s: S): S {
  * its next start.
  */
 export function cutOffTurn<S extends Session>(s: S): S {
-  return s.presence.isTurnRunning ? turnEnded(s) : s
+  return s.presence.isTurnRunning ? turnEnded(s, null) : s
+}
+
+/** The session with the folder it started in, kept from the first time a host names it, and the branch it is on now. */
+export function placed<S extends Session>(s: S, folder: string, branch: string | null): S {
+  const place = { folder: s.place?.folder || folder, branch: branch === 'HEAD' ? null : branch }
+  const isSame = s.place?.folder === place.folder && s.place.branch === place.branch
+
+  return isSame ? s : { ...s, place }
 }
 
 /** Counts a turn that started, and clears the stop the last turn ended with. */
@@ -439,10 +458,10 @@ export function applied<S extends Session>(s: S, parsed: Update | null, now: num
  * `turnsApplied` when the update landed. The answer is dropped when the session now has fewer applied turns than that:
  * it was replaced by one that never applied this update.
  */
-export function appliedOverview<S extends Session>(s: S, answer: OverviewAnswer, appliedAfter: number): S {
+export function appliedOverview<S extends Session>(s: S, answer: OverviewAnswer, appliedAfter: number, now: number): S {
   if (s.presence.turnsApplied < appliedAfter) return s
 
-  return { ...s, ledger: { ...s.ledger, overview: applyOverview(s.ledger.overview, answer) } }
+  return { ...s, ledger: { ...s.ledger, overview: applyOverview(s.ledger.overview, answer, now) } }
 }
 
 /**
@@ -725,7 +744,7 @@ export function sessionView(
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs: prTabOf(s, lastActions, now),
-    overviewPage: overviewPage(s, now, inbox.needsYou.count),
+    overviewPage: overviewPage(s, now),
   }
 }
 

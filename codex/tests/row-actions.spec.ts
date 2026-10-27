@@ -226,6 +226,8 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
     isTurnRunning: false,
     ledgerState: 'current',
     hasDroppedReply: false,
+    turnStartedAt: null,
+    lastReplyAt: null,
   }
   document.body.innerHTML = '<div id="app"></div>'
   Object.defineProperty(window, '__inboxPage', { value: 'renderer-page', configurable: true })

@@ -18,7 +18,6 @@ import {
   DOT,
   earlierLabel,
   drawnLists,
-  earlierTitle,
   emptyText,
   groupEmptyText,
   entryId,
@@ -57,7 +56,7 @@ import {
   shortAgo,
   shownOptionDescriptions,
 } from '../../hooks/view'
-import { LEAD_GAP_PT, OVERVIEW_ROW_PAD_PT, ROW_PAD_PT } from '../../hooks/layout'
+import { OVERVIEW_ROW_PAD_PT, ROW_PAD_PT } from '../../hooks/layout'
 import type {
   ActionEmphasis,
   DrawnEntry,
@@ -65,6 +64,7 @@ import type {
   Feedback,
   OverviewPage,
   OverviewRow,
+  OverviewTone,
   PressState,
   ReplyHolds,
   RowView,
@@ -1307,20 +1307,66 @@ function pulseInStep(el: HTMLElement | null) {
   for (const a of el?.getAnimations?.() ?? []) a.startTime = 0
 }
 
-function MarkedRow({ row }: { row: OverviewRow }) {
-  const markClass = ['mark', row.tone, row.isRunning ? 'running' : null].filter(Boolean).join(' ')
+const TONE_CLASS: Record<NonNullable<OverviewTone>, string> = {
+  needsYou: 'tone-needsYou',
+  done: 'done',
+  issue: 'issue',
+}
 
-  return (
-    <div class="entry">
+function markClassOf(tone: OverviewTone, isRunning: boolean): string {
+  return ['mark', tone ? TONE_CLASS[tone] : null, isRunning ? 'running' : null].filter(Boolean).join(' ')
+}
+
+function OverviewLine({ row }: { row: OverviewRow }) {
+  if (row.kind === 'subject')
+    return (
       <div class="row">
-        <span class={markClass} ref={row.isRunning ? pulseInStep : undefined}>
+        <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
           {row.mark}
         </span>
         <div class="content tight">
-          <div>{row.text}</div>
-          {row.detail ? <div class="outcome">{row.detail}</div> : null}
+          <div>
+            {row.name}
+            {row.text ? <span class="muted">: {row.text}</span> : null}
+          </div>
+          {row.was ? <div class="outcome muted">was: {row.was}</div> : null}
         </div>
+        <span class="side">{row.age}</span>
       </div>
+    )
+  if (row.kind === 'child')
+    return (
+      <div class={row.isLoose ? 'row' : 'row child'}>
+        <span class={markClassOf(null, !row.isQuiet)} ref={row.isQuiet ? undefined : pulseInStep}>
+          ●
+        </span>
+        <div class="content tight child-name muted">{row.name}</div>
+        <span class={row.isQuiet ? 'side tone-needsYou' : 'side'}>{row.age}</span>
+      </div>
+    )
+  if (row.kind === 'more')
+    return (
+      <div class="row child">
+        <span class="mark" />
+        <div class="content tight muted">{row.text}</div>
+      </div>
+    )
+  if (row.kind === 'look')
+    return (
+      <div class="row look-line">
+        <span class="mark" />
+        <div class="content tight look-rule">
+          <span>{row.text}</span>
+        </div>
+        <span class="side">{row.age}</span>
+      </div>
+    )
+
+  return (
+    <div class="row">
+      <span class={markClassOf(row.tone, false)}>{row.mark}</span>
+      <div class="content tight muted">{row.text}</div>
+      <span class="side">{row.age ?? ''}</span>
     </div>
   )
 }
@@ -1333,43 +1379,19 @@ function OverviewTab({ page }: { page: OverviewPage }) {
         <div class="muted">{page.empty.hint}</div>
       </div>
     )
-  const { lead, sections, earlier } = page
 
   return (
     <main class="overview">
-      {lead.length > 0 ? (
+      <section>
+        {page.identity ? <div class="overview-identity muted">{page.identity}</div> : null}
+        {page.goal ? <h1 class="overview-goal">{page.goal}</h1> : null}
+        {page.live ? <div class="overview-live muted">{page.live}</div> : null}
+      </section>
+      {page.rows.length > 0 ? (
         <section>
-          {lead.map(line =>
-            line.id === 'headline' ? (
-              <h1 class="overview-goal" key={line.id}>
-                {line.text}
-              </h1>
-            ) : (
-              <div class={line.hasGapAbove ? 'overview-now overview-gap muted' : 'overview-now muted'} key={line.id}>
-                {line.text}
-              </div>
-            ),
-          )}
-        </section>
-      ) : null}
-      {sections.map(part => (
-        <section key={part.id}>
-          <GroupTitle title={part.title} count={0} />
           <div class="list">
-            {part.rows.map(r => (
-              <MarkedRow key={r.id} row={r} />
-            ))}
-          </div>
-        </section>
-      ))}
-      {earlier.length > 0 ? (
-        <section>
-          <GroupTitle title={earlierTitle('chat')} count={0} />
-          <div class="list">
-            {earlier.map((text, n) => (
-              <div class="earlier muted" key={n}>
-                {text}
-              </div>
+            {page.rows.map(r => (
+              <OverviewLine key={r.id} row={r} />
             ))}
           </div>
         </section>
@@ -2144,7 +2166,6 @@ function revealSelected() {
 
 function applyPageVariables() {
   document.documentElement.style.setProperty('--row-pad', `${ROW_PAD_PT}px`)
-  document.documentElement.style.setProperty('--lead-gap', `${LEAD_GAP_PT}px`)
   document.documentElement.style.setProperty('--overview-row-pad', `${OVERVIEW_ROW_PAD_PT}px`)
   document.documentElement.style.setProperty('--pulse', `${RUNNING_PULSE_MS}ms`)
   document.documentElement.style.setProperty('--move', `${MOVE_MS}ms ${MOVE.easing}`)

@@ -1,66 +1,78 @@
-import type { Overview, OverviewItem, OverviewLook, OverviewStatus } from '../types'
-import { dash } from './text'
+import type { Child, ChildKind, Overview, Subject, SubjectStatus } from '../types'
 
-export const HEADLINE_WORDS = 12
-export const ITEM_WORDS = 12
-export const SENTENCE_WORDS = 30
-export const DETAIL_WORDS = 20
-export const LIST_ITEMS = 6
-export const EARLIER_KEPT = 6
+/** The most words the call may write in a subject's name, where it stands, and the goal. */
+export const NAME_WORDS = 3
+export const TEXT_WORDS = 4
+export const GOAL_WORDS = 8
+/** The most open subjects the call keeps. */
+export const OPEN_SUBJECTS = 6
+/** Limits code holds an answer to when the call writes past the words it was asked for. */
+const NAME_KEPT = 8
+const TEXT_KEPT = 12
+const GOAL_KEPT = 14
+/** Finished subjects the call reads, so it does not add one again. */
+const FINISHED_READ = 10
+/** How long an ended child stays saved, so a delegate prompted again keeps its link. */
+export const CHILD_KEPT_MS = 24 * 60 * 60_000
+const CHILDREN_KEPT = 50
+/** Share of content words two texts must share for code to keep the old text and age of a subject. */
+const REWORD_OVERLAP = 0.5
+const STOP_WORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'of',
+  'for',
+  'to',
+  'in',
+  'on',
+  'and',
+  'or',
+  'is',
+  'it',
+  'its',
+  'now',
+  'be',
+  'by',
+  'at',
+  'with',
+])
 
 const NL = '\n'
 
 export const EMPTY_OVERVIEW: Overview = {
-  isCoordinator: false,
-  state: 'on-track',
-  headline: '',
-  status: '',
-  course: '',
-  queue: [],
-  works: [],
-  open: [],
-  next: [],
-  since: [],
-  workstreams: [],
-  earlier: [],
+  role: 'session',
+  goal: '',
+  subjects: [],
+  children: [],
+  nextId: 1,
+  nextChildId: 1,
   lastLookAt: null,
   look: null,
-  seen: { since: [], course: '' },
 }
 
-/** The Overview's item lists. */
-export const LIST_KEYS = ['queue', 'works', 'open', 'next', 'since', 'workstreams'] as const
+export type OpenStatus = Exclude<SubjectStatus, 'done' | 'dropped'>
 
-export type ListKey = (typeof LIST_KEYS)[number]
+const OPEN_STATUSES: readonly OpenStatus[] = ['working', 'queued', 'waits-on-you', 'waits-on-other', 'problem']
+const STATUSES: readonly SubjectStatus[] = [...OPEN_STATUSES, 'done', 'dropped']
+const CHILD_KINDS: readonly ChildKind[] = ['subagent', 'background', 'workflow', 'delegate']
 
-/** The list each of the call's list keys writes. */
-const LIST_OF_KEY = {
-  QUEUE: 'queue',
-  WORKS: 'works',
-  OPEN: 'open',
-  NEXT: 'next',
-  SINCE: 'since',
-  STREAM: 'workstreams',
-} as const satisfies Record<string, ListKey>
+/** One line of the Overview call's answer. */
+export type Op =
+  | { kind: 'none' }
+  | { kind: 'new'; status: OpenStatus; name: string; text: string }
+  | { kind: 'set'; ref: string; status: OpenStatus; text: string }
+  | { kind: 'done'; ref: string; text: string }
+  | { kind: 'drop'; ref: string; why: string; into: string | null }
+  | { kind: 'was'; ref: string; text: string }
+  | { kind: 'role'; role: Overview['role'] }
+  | { kind: 'goal'; text: string }
+  | { kind: 'link'; child: string; subject: string }
 
-const STATUSES: readonly OverviewStatus[] = [
-  'working',
-  'queued',
-  'waits-on-you',
-  'waits-on-other',
-  'done',
-  'ruled-out',
-  'problem',
-  'unknown',
-]
+/** What the Overview call answered: nothing to change, or the changes to make. */
+export type OverviewAnswer = { kind: 'unchanged' } | { kind: 'ops'; ops: Op[] }
 
-const STATES: readonly Overview['state'][] = ['on-track', 'stuck', 'finished']
-
-/** A bulleted item under a list key that stands alone on its line. */
-const BULLET_ITEM = /^\s*[-*]\s*[a-z-]+\s*\|/
-
-const KEY_LINE =
-  /^\s*[-*]?\s*(UNCHANGED|KIND|TOPIC|STATE|HEADLINE|STATUS|COURSE|FOLDED|QUEUE|WORKS|OPEN|NEXT|SINCE|STREAM)\s*(?::\s*(.*)|$)/
+const LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|ROLE|GOAL|LINK)\s*(?::\s*(.*))?$/i
 
 /** The first `limit` words of `text`, with an ellipsis when words were cut. */
 export function clipWords(text: string, limit: number): string {
@@ -69,312 +81,409 @@ export function clipWords(text: string, limit: number): string {
   return words.length <= limit ? words.join(' ') : `${words.slice(0, limit).join(' ')}…`
 }
 
-function itemOf(value: string): OverviewItem | null {
-  const [status, text, ...detail] = value.split('|').map(part => part.trim())
-  const isStatus = (s: string | undefined): s is OverviewStatus => STATUSES.includes(s as OverviewStatus)
-  if (!isStatus(status) || !text) return null
-  const rest = dash(detail.join(' | '))
-
-  return { status, text: clipWords(text, ITEM_WORDS), detail: rest === null ? null : clipWords(rest, DETAIL_WORDS) }
+function fields(value: string): string[] {
+  return value.split('|').map(f => f.trim())
 }
 
-/** What the Overview call answered: nothing to change, or a whole new Overview. */
-export type OverviewAnswer =
-  | { kind: 'unchanged' }
-  | {
-      kind: 'written'
-      overview: Overview
-      /** Whether the exchange started a new topic, so the topic it left folds into one earlier line. */
-      isNewTopic: boolean
-      /** The earlier line for the topic left; empty when the call wrote none. */
-      folded: string
-    }
+function openStatus(s: string | undefined): OpenStatus | null {
+  return OPEN_STATUSES.find(o => o === s?.toLowerCase()) ?? null
+}
 
-/** Parses the Overview call's lines. Null when the answer has neither UNCHANGED nor a headline. */
+function opOf(key: string, f: string[]): Op | null {
+  if (key === 'NOCHANGE' || key === 'UNCHANGED') return { kind: 'none' }
+  if (key === 'NEW') {
+    const status = openStatus(f[0])
+
+    return status && f[1] ? { kind: 'new', status, name: f[1], text: f[2] ?? '' } : null
+  }
+  if (key === 'SET') {
+    const isDone = f[1]?.toLowerCase() === 'done'
+    if (f[0] && isDone) return { kind: 'done', ref: f[0], text: f[2] ?? '' }
+    const status = openStatus(f[1])
+
+    return f[0] && status ? { kind: 'set', ref: f[0], status, text: f[2] ?? '' } : null
+  }
+  if (key === 'DONE') return f[0] ? { kind: 'done', ref: f[0], text: f[1] ?? '' } : null
+  if (key === 'DROP') {
+    const into = (f[2] ?? '').replace(/^INTO\s+/i, '').trim()
+
+    return f[0] ? { kind: 'drop', ref: f[0], why: f[1] ?? '', into: into || null } : null
+  }
+  if (key === 'WAS') return f[0] && f[1] ? { kind: 'was', ref: f[0], text: f[1] } : null
+  if (key === 'ROLE') {
+    const role = f[0]?.toLowerCase()
+
+    return role === 'coordinator' || role === 'session' ? { kind: 'role', role } : null
+  }
+  if (key === 'GOAL') return f[0] ? { kind: 'goal', text: f[0] } : null
+  if (key === 'LINK') return f[0] && f[1] ? { kind: 'link', child: f[0], subject: f[1] } : null
+
+  return null
+}
+
+/**
+ * Parses the Overview call's answer. Null when it is empty, or when any line is not an operation: an answer that
+ * holds prose has more than once corrected itself partway, and applying any of it could apply the wrong half.
+ */
 export function parseOverview(text: string | null): OverviewAnswer | null {
-  const overview: Overview = { ...EMPTY_OVERVIEW }
-  const lists = Object.fromEntries(LIST_KEYS.map(k => [k, [] as OverviewItem[]])) as Record<ListKey, OverviewItem[]>
-  let isUnchanged = false
-  let hasHeadline = false
-  let isNewTopic = false
-  let folded = ''
-  let current: OverviewItem[] | null = null
-  for (const line of (text ?? '').split(NL)) {
-    const m = KEY_LINE.exec(line)
-    if (!m) {
-      const item = current && BULLET_ITEM.test(line) ? itemOf(line.replace(/^\s*[-*]\s*/, '')) : null
-      if (current && item && current.length < LIST_ITEMS) current.push(item)
-      continue
+  const ops: Op[] = []
+  for (const raw of (text ?? '').split(NL)) {
+    const line = raw.trim()
+    if (line === '') continue
+    const m = LINE.exec(line)
+    const op = m ? opOf(m[1]!.toUpperCase().replace(' ', ''), fields(m[2] ?? '')) : null
+    if (op === null) return null
+    ops.push(op)
+  }
+  if (ops.length === 0) return null
+
+  return ops.every(o => o.kind === 'none') ? { kind: 'unchanged' } : { kind: 'ops', ops }
+}
+
+function words(text: string): Set<string> {
+  return new Set((text.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter(w => !STOP_WORDS.has(w)))
+}
+
+/** The share of content words two texts have in common, over the words either has. */
+export function overlap(a: string, b: string): number {
+  const x = words(a)
+  const y = words(b)
+  const both = [...x].filter(w => y.has(w)).length
+  const either = new Set([...x, ...y]).size
+
+  return either === 0 ? 1 : both / either
+}
+
+function nameKey(name: string): string {
+  return [...words(name)].sort().join(' ')
+}
+
+export function isOpen(s: Pick<Subject, 'status'>): boolean {
+  return s.status !== 'done' && s.status !== 'dropped'
+}
+
+/** What one answer did to the list, beyond the list itself. */
+export type Applied = {
+  overview: Overview
+  counts: Record<Op['kind'], number>
+  /** NEW lines that named an open subject, so code changed that subject instead. */
+  newMerged: number
+  /** SET lines that kept the status and most of the words, so code kept the old text and age. */
+  rewordsKept: number
+  /** Ids and names the answer used that the list does not hold. */
+  unknownRefs: string[]
+  /** The subjects whose status or text changed. */
+  changedIds: string[]
+}
+
+/** Subject changes first, then reversals, then links, so a WAS or LINK can name a subject the same answer added. */
+const OP_ORDER: Record<Op['kind'], number> = {
+  none: 0,
+  role: 0,
+  goal: 0,
+  new: 0,
+  set: 0,
+  done: 0,
+  drop: 0,
+  was: 1,
+  link: 2,
+}
+
+/** The list after `ops`, applied at `now`. */
+export function applyOps(last: Overview | null, ops: Op[], now: number): Applied {
+  let o: Overview = {
+    ...(last ?? EMPTY_OVERVIEW),
+    subjects: (last?.subjects ?? []).map(s => ({ ...s })),
+    children: (last?.children ?? []).map(c => ({ ...c })),
+  }
+  const counts: Applied['counts'] = { none: 0, new: 0, set: 0, done: 0, drop: 0, was: 0, role: 0, goal: 0, link: 0 }
+  let newMerged = 0
+  let rewordsKept = 0
+  const unknownRefs: string[] = []
+  const changed = new Set<string>()
+  const find = (ref: string) =>
+    o.subjects.find(s => s.id === ref) ?? o.subjects.find(s => isOpen(s) && nameKey(s.name) === nameKey(ref)) ?? null
+  const touch = (s: Subject) => {
+    s.changedAt = now
+    changed.add(s.id)
+  }
+  const set = (s: Subject, status: OpenStatus, text: string) => {
+    if (s.status === status && overlap(s.text, text) >= REWORD_OVERLAP) {
+      rewordsKept++
+      return
     }
-    current = null
-    const key = m[1]!
-    const value = (m[2] ?? '').trim()
-    if (key === 'UNCHANGED') isUnchanged = true
-    else if (key === 'KIND') overview.isCoordinator = value.toLowerCase() === 'coordinator'
-    else if (key === 'TOPIC') isNewTopic = value.toLowerCase() === 'new'
-    else if (key === 'STATE') overview.state = STATES.find(s => s === value.toLowerCase()) ?? 'on-track'
-    else if (key === 'HEADLINE') {
-      hasHeadline = true
-      overview.headline = clipWords(dash(value) ?? '', HEADLINE_WORDS)
-    } else if (key === 'STATUS') overview.status = clipWords(dash(value) ?? '', SENTENCE_WORDS)
-    else if (key === 'COURSE') overview.course = clipWords(dash(value) ?? '', SENTENCE_WORDS)
-    else if (key === 'FOLDED') folded = clipWords(dash(value) ?? '', ITEM_WORDS * 2)
-    else {
-      const item = itemOf(value)
-      const list = lists[LIST_OF_KEY[key as keyof typeof LIST_OF_KEY]]
-      if (item && list.length < LIST_ITEMS) list.push(item)
-      if (value === '') current = list
+    s.status = status
+    s.text = clipWords(text, TEXT_KEPT)
+    s.was = null
+    touch(s)
+  }
+  const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n)
+  for (const { op } of ordered) {
+    counts[op.kind]++
+    if (op.kind === 'none') continue
+    if (op.kind === 'role') o.role = op.role
+    else if (op.kind === 'goal') o.goal = clipWords(op.text, GOAL_KEPT)
+    else if (op.kind === 'link') {
+      const child = o.children.find(c => c.id === op.child)
+      const subject = find(op.subject)
+      if (!child) unknownRefs.push(op.child)
+      else if (!subject) unknownRefs.push(op.subject)
+      else child.subjectId = subject.id
+    } else if (op.kind === 'new') {
+      const known = find(op.name)
+      if (known && isOpen(known)) {
+        newMerged++
+        set(known, op.status, op.text)
+        continue
+      }
+      const s: Subject = {
+        id: `s${o.nextId}`,
+        name: clipWords(op.name, NAME_KEPT),
+        status: op.status,
+        text: clipWords(op.text, TEXT_KEPT),
+        was: null,
+        createdAt: now,
+        changedAt: now,
+        closedAt: null,
+        into: null,
+      }
+      o = { ...o, nextId: o.nextId + 1, subjects: [...o.subjects, s] }
+      changed.add(s.id)
+    } else {
+      const s = find(op.ref)
+      if (!s) {
+        unknownRefs.push(op.ref)
+        continue
+      }
+      if (op.kind === 'set') set(s, op.status, op.text)
+      else if (op.kind === 'done') {
+        s.status = 'done'
+        if (op.text) s.text = clipWords(op.text, TEXT_KEPT)
+        s.was = null
+        s.closedAt = now
+        touch(s)
+      } else if (op.kind === 'drop') {
+        const target = op.into ? find(op.into) : null
+        if (op.into && !target) unknownRefs.push(op.into)
+        s.status = 'dropped'
+        s.text = clipWords(op.why, TEXT_KEPT)
+        s.closedAt = now
+        s.into = target && target.id !== s.id ? target.id : null
+        touch(s)
+        if (target && s.into) {
+          target.was = target.was ?? `${s.name} folded in`
+          touch(target)
+        }
+      } else {
+        const folded = o.subjects.find(x => x.into === s.id && x.closedAt === now)
+        s.was = folded ? `${folded.name} folded in; was: ${op.text}` : op.text
+        touch(s)
+      }
     }
   }
-  if (isUnchanged && !hasHeadline) return { kind: 'unchanged' }
-  if (!hasHeadline) return null
 
-  return { kind: 'written', overview: { ...overview, ...lists }, isNewTopic, folded }
+  return { overview: o, counts, newMerged, rewordsKept, unknownRefs, changedIds: [...changed] }
 }
 
-/** The Overview after an answer. A new topic folds the last headline into the earlier lines. */
-export function applyOverview(last: Overview | null, answer: OverviewAnswer): Overview | null {
-  if (answer.kind === 'unchanged') return last
-  const kept = {
-    earlier: last?.earlier ?? [],
-    lastLookAt: last?.lastLookAt ?? null,
-    look: last?.look ?? null,
-    seen: last?.seen ?? EMPTY_OVERVIEW.seen,
-  }
-  const since = answer.overview.since.filter(i => !kept.seen.since.includes(itemKey(i)))
-  const isSeenCourse = kept.seen.course !== '' && answer.overview.course === kept.seen.course
-  const course = isSeenCourse ? '' : answer.overview.course
-  const written = { ...answer.overview, since, queue: withoutStreams(answer.overview) }
-  if (!answer.isNewTopic || last === null || last.headline === '')
-    return { ...written, ...kept, course: course || last?.course || '' }
-  const left = answer.folded || last.headline
-
-  return { ...written, ...kept, course: '', earlier: [...kept.earlier, left].slice(-EARLIER_KEPT) }
+/** The Overview after an answer, applied at `now`. */
+export function applyOverview(last: Overview | null, answer: OverviewAnswer, now: number): Overview | null {
+  return answer.kind === 'unchanged' ? last : applyOps(last, answer.ops, now).overview
 }
 
-function isItem(value: unknown): value is OverviewItem {
-  const item = value as Partial<OverviewItem> | null
-
-  return (
-    typeof item === 'object' &&
-    item !== null &&
-    STATUSES.includes(item.status as OverviewStatus) &&
-    typeof item.text === 'string' &&
-    (item.detail === null || typeof item.detail === 'string')
-  )
+export function isChildRunning(c: Pick<Child, 'startedAt' | 'endedAt'>, now: number): boolean {
+  return c.startedAt <= now && (c.endedAt === null || c.endedAt > now)
 }
 
-function itemsOf(value: unknown): OverviewItem[] {
-  return Array.isArray(value) ? value.filter(isItem).slice(0, LIST_ITEMS) : []
-}
+/** What a host reports about a child: everything but the id and the link, which the Overview owns. */
+export type ChildReport = Omit<Child, 'id' | 'subjectId'>
 
-/** A saved Overview with any field it lacks or has wrongly shaped replaced by an empty one. Null for no Overview. */
-export function upgradeOverview(saved: unknown): Overview | null {
-  const o = saved as Partial<Record<keyof Overview, unknown>> | null | undefined
-  if (typeof o !== 'object' || o === null || typeof o.headline !== 'string') return null
+/**
+ * Adds a child the host reports, or updates the one it holds with the same `ref`. A delegate prompted again keeps its
+ * id and link. Children that ended more than `CHILD_KEPT_MS` before `now` are let go.
+ */
+export function withChild(last: Overview | null, c: ChildReport, now: number): Overview {
+  const o = last ?? EMPTY_OVERVIEW
+  const kept = o.children.filter(x => x.ref === c.ref || x.endedAt === null || now - x.endedAt < CHILD_KEPT_MS)
+  const known = kept.find(x => x.ref === c.ref)
+  if (known) return { ...o, children: kept.map(x => (x === known ? { ...x, ...c } : x)) }
 
   return {
-    isCoordinator: o.isCoordinator === true,
-    state: STATES.find(s => s === o.state) ?? 'on-track',
-    headline: o.headline,
-    status: text(o.status),
-    course: text(o.course),
-    ...(Object.fromEntries(LIST_KEYS.map(k => [k, itemsOf(o[k])])) as Record<ListKey, OverviewItem[]>),
-    earlier: strings(o.earlier),
-    lastLookAt: typeof o.lastLookAt === 'number' ? o.lastLookAt : null,
-    look: lookOf(o.look),
-    seen: seenOf(o.seen),
+    ...o,
+    nextChildId: o.nextChildId + 1,
+    children: [...kept, { ...c, id: `c${o.nextChildId}`, subjectId: null }].slice(-CHILDREN_KEPT),
   }
 }
 
-function lookOf(saved: unknown): OverviewLook | null {
-  const l = saved as Partial<OverviewLook> | null | undefined
-  if (typeof l !== 'object' || l === null || typeof l.startedAt !== 'number') return null
-  const away = AWAYS.find(a => a === l.away)
+/** The child with `ref` after `change`, or the Overview unchanged when it holds none. */
+export function changedChild(
+  o: Overview | null,
+  ref: string,
+  change: (c: Child) => Partial<ChildReport>,
+): Overview | null {
+  const known = o?.children.find(c => c.ref === ref)
+  if (!o || !known) return o
 
-  return away === undefined ? null : { startedAt: l.startedAt, away, since: strings(l.since), course: text(l.course) }
+  return { ...o, children: o.children.map(c => (c === known ? { ...c, ...change(c) } : c)) }
 }
 
-function seenOf(saved: unknown): Overview['seen'] {
-  const s = saved as Partial<Overview['seen']> | null | undefined
+/** The child with `ref` ended at `at`. */
+export function childEnded(o: Overview | null, ref: string, at: number): Overview | null {
+  return changedChild(o, ref, c => ({ endedAt: c.endedAt ?? at }))
+}
 
-  return { since: strings(s?.since), course: text(s?.course) }
+/** The child with `ref` did something at `at`. Only a kind the host reports activity for has a time to move. */
+export function childActive(o: Overview | null, ref: string, at: number): Overview | null {
+  return changedChild(o, ref, c => ({ lastActivityAt: Math.max(c.lastActivityAt ?? at, at) }))
+}
+
+/** The subjects as the call reads them: open ones with ids, and finished names it must not add again. */
+export function subjectsText(o: Overview | null): { open: string; finished: string } {
+  const subjects = o?.subjects ?? []
+  const open = subjects.filter(isOpen).map(s => `${s.id} | ${s.status} | ${s.name} | ${s.text || '-'}`)
+  const finished = subjects
+    .filter(s => !isOpen(s))
+    .slice(-FINISHED_READ)
+    .map(s => `${s.id} | ${s.status} | ${s.name}`)
+
+  return { open: open.join(NL) || '(none yet)', finished: finished.join(NL) }
+}
+
+/** The running children as the call reads them. */
+export function runningText(o: Overview | null, now: number): string {
+  return (o?.children ?? [])
+    .filter(c => isChildRunning(c, now))
+    .map(c => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? '-'}`)
+    .join(NL)
+}
+
+/** The Overview tab is shown. The look line stays where it was until the look ends, so the page keeps its order. */
+export function lookStarted(o: Overview | null, now: number): Overview | null {
+  return o === null || o.look !== null ? o : { ...o, look: { startedAt: now } }
+}
+
+/** The Overview tab is no longer shown, at `at`. */
+export function lookEnded(o: Overview | null, at: number): Overview | null {
+  return o === null || o.look === null ? o : { ...o, lastLookAt: at, look: null }
 }
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
-function strings(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
+function time(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
-/** The words of an item's name, which for a stream is the part before its colon. */
-function nameKey(text: string): string {
-  return (
-    text
-      .split(':')[0]!
-      .toLowerCase()
-      .match(/[\p{L}\p{N}]+/gu) ?? []
-  )
-    .sort()
-    .join(' ')
-}
-
-/**
- * A coordinator's QUEUE holds its own steps. An item there that only names a stream repeats the STREAM line, so it is
- * dropped, whichever of the two the call kept from the last guide.
- */
-function withoutStreams(o: Overview): OverviewItem[] {
-  if (!o.isCoordinator) return o.queue
-  const names = new Set(o.workstreams.map(i => nameKey(i.text)))
-
-  return o.queue.filter(i => !names.has(nameKey(i.text)))
-}
-
-/** What identifies a since item, so a look can tell the items it showed from ones that came after. */
-export function itemKey(i: OverviewItem): string {
-  return `${i.status}|${i.text}`
-}
-
-function itemLine(key: string, i: OverviewItem): string {
-  return `${key}: ${i.status} | ${i.text}${i.detail ? ` | ${i.detail}` : ''}`
-}
-
-/** The Overview as the lines the call writes, which is how the call reads the last one. */
-export function overviewText(o: Overview | null): string {
-  if (o === null) return '(none yet)'
-  const lists: [string, OverviewItem[]][] = [
-    ['QUEUE', o.queue],
-    ['WORKS', o.works],
-    ['OPEN', o.open],
-    ['NEXT', o.next],
-    ['STREAM', o.workstreams],
-  ]
-
-  return [
-    `KIND: ${o.isCoordinator ? 'coordinator' : 'session'}`,
-    `STATE: ${o.state}`,
-    `HEADLINE: ${o.headline || '-'}`,
-    `STATUS: ${o.status || '-'}`,
-    ...(o.course ? [`COURSE: ${o.course}`] : []),
-    ...lists.flatMap(([key, items]) => items.map(i => itemLine(key, i))),
-    ...o.earlier.map(e => `EARLIER: ${e}`),
-  ].join(NL)
-}
-
-/** The since list as the lines the call reads it and writes it back. */
-export function sinceText(o: Overview | null): string {
-  return (o?.since ?? []).map(i => itemLine('SINCE', i)).join(NL)
-}
-
-/**
- * The Overview tab is shown. The away time is fixed now, so the page keeps its order while it is shown. A look
- * already in progress stays as it is.
- */
-export function lookStarted(o: Overview | null, now: number): Overview | null {
-  if (o === null || o.look !== null) return o
+function subjectOf(saved: unknown): Subject | null {
+  const s = saved as Partial<Record<keyof Subject, unknown>> | null
+  const status = STATUSES.find(x => x === s?.status)
+  const changedAt = time(s?.changedAt)
+  if (!s || typeof s.id !== 'string' || typeof s.name !== 'string' || !status || changedAt === null) return null
 
   return {
-    ...o,
-    look: { startedAt: now, away: awayOf(o.lastLookAt, now), since: o.since.map(itemKey), course: o.course },
-    seen: { since: [], course: '' },
+    id: s.id,
+    name: s.name,
+    status,
+    text: text(s.text),
+    was: typeof s.was === 'string' ? s.was : null,
+    createdAt: time(s.createdAt) ?? changedAt,
+    changedAt,
+    closedAt: time(s.closedAt),
+    into: typeof s.into === 'string' ? s.into : null,
   }
 }
 
-/**
- * The Overview tab is no longer shown, at `at`. Only the changes and the course the look showed start over: a change
- * that landed while the tab was shown stays for the next look.
- */
-export function lookEnded(o: Overview | null, at: number): Overview | null {
-  if (o === null || o.look === null) return o
-  const { look } = o
+function childOf(saved: unknown): Child | null {
+  const c = saved as Partial<Record<keyof Child, unknown>> | null
+  const kind = CHILD_KINDS.find(k => k === c?.kind)
+  const startedAt = time(c?.startedAt)
+  if (!c || typeof c.id !== 'string' || typeof c.ref !== 'string' || !kind || startedAt === null) return null
 
   return {
-    ...o,
-    since: o.since.filter(i => !look.since.includes(itemKey(i))),
-    course: o.course === look.course ? '' : o.course,
-    lastLookAt: at,
-    look: null,
-    seen: { since: look.since, course: look.course },
+    id: c.id,
+    ref: c.ref,
+    kind,
+    name: text(c.name),
+    subjectId: typeof c.subjectId === 'string' ? c.subjectId : null,
+    startedAt,
+    endedAt: time(c.endedAt),
+    lastActivityAt: time(c.lastActivityAt),
   }
 }
 
-/** How long the person was away, as the page orders itself by it. */
-export const HERE_MS = 5 * 60_000
-export const SHORT_MS = 60 * 60_000
-
-const AWAYS = ['here', 'short', 'long'] as const
-export type Away = (typeof AWAYS)[number]
-export type Work = 'running' | 'stopped' | 'finished' | 'idle'
-
-export function awayOf(lastLookAt: number | null, now: number): Away {
-  if (lastLookAt === null) return 'long'
-  const gone = now - lastLookAt
-
-  return gone < HERE_MS ? 'here' : gone < SHORT_MS ? 'short' : 'long'
+/** The statuses an Overview saved before subjects had, as a subject's status; null for one that closed. */
+const OLD_STATUS: Record<string, OpenStatus | null> = {
+  working: 'working',
+  queued: 'queued',
+  'waits-on-you': 'waits-on-you',
+  'waits-on-other': 'waits-on-other',
+  problem: 'problem',
+  unknown: 'queued',
+  done: null,
+  'ruled-out': null,
 }
 
 /**
- * Whether the work waits on the person: a stop row shows, something in the inbox waits on them, the guide says it is
- * stuck, or an item in it waits on them. The inbox count counts even when the guide says nothing about it.
+ * An Overview saved before subjects, as subjects. Its streams, work and problems that were still open become subjects
+ * dated at the last look, since the person saw them then. With no look there is no honest time to give them, and the
+ * person never read that page, so only the headline carries over, as the goal.
  */
-export function workOf(
-  o: Overview,
-  signals: { isTurnRunning: boolean; isStopped: boolean; waitingOnYou: number },
-): Work {
-  const waits = o.queue.some(i => i.status === 'waits-on-you')
-  if (signals.isTurnRunning) return 'running'
-  if (signals.isStopped || signals.waitingOnYou > 0 || o.state === 'stuck' || waits) return 'stopped'
+function fromLists(o: Record<string, unknown>): Overview {
+  const lastLookAt = time(o.lastLookAt)
+  const items =
+    lastLookAt === null ? [] : ['workstreams', 'queue', 'open'].flatMap(k => (Array.isArray(o[k]) ? o[k] : []))
+  const subjects = items
+    .flatMap((raw: unknown) => {
+      const item = raw as { status?: unknown; text?: unknown; detail?: unknown } | null
+      const status = OLD_STATUS[String(item?.status)] ?? null
+      if (!status || typeof item?.text !== 'string') return []
 
-  return o.state === 'finished' ? 'finished' : 'idle'
-}
+      return [
+        { status, name: clipWords(item.text, NAME_KEPT), text: typeof item.detail === 'string' ? item.detail : '' },
+      ]
+    })
+    .filter((s, n, all) => all.findIndex(t => nameKey(t.name) === nameKey(s.name)) === n)
+    .slice(0, OPEN_SUBJECTS)
+    .map((s, n): Subject => ({
+      id: `s${n + 1}`,
+      ...s,
+      text: clipWords(s.text, TEXT_KEPT),
+      was: null,
+      createdAt: lastLookAt!,
+      changedAt: lastLookAt!,
+      closedAt: null,
+      into: null,
+    }))
 
-export type PartId =
-  | 'headline'
-  | 'course'
-  | 'status'
-  | 'quiet'
-  | 'pointer'
-  | 'workstreams'
-  | 'queue'
-  | 'works'
-  | 'open'
-  | 'next'
-  | 'since'
-  | 'earlier'
-
-/**
- * The parts to draw, in order, from the three signals. A changed direction leads. A part with nothing in it is
- * left out, and `next` is left out while the queue has queued items, since they already say what comes next.
- */
-export function orderParts(o: Overview, away: Away, work: Work): PartId[] {
-  const hasQueued = o.queue.some(i => i.status === 'queued')
-  const isQuiet = o.since.length === 0 && o.course === '' && away !== 'here' && o.lastLookAt !== null
-  const quiet: PartId[] = isQuiet ? ['quiet'] : []
-  const order: PartId[] = o.isCoordinator
-    ? ['headline', 'workstreams', 'since', 'queue', 'next', 'open']
-    : work === 'running' && away === 'here'
-      ? ['headline', 'queue']
-      : work === 'stopped'
-        ? ['headline', 'status', 'pointer', 'since', 'queue', 'next', 'open']
-        : work === 'finished'
-          ? ['headline', 'status', o.works.length > 0 ? 'works' : 'queue', 'open']
-          : away === 'short'
-            ? ['headline', ...quiet, 'since', 'queue', 'open']
-            : ['headline', 'status', ...quiet, 'since', 'queue', 'next', 'open']
-  const withCourse: PartId[] = o.course === '' ? order : [order[0]!, 'course', ...order.slice(1)]
-  const lists: Partial<Record<PartId, boolean>> = {
-    workstreams: o.workstreams.length > 0,
-    queue: o.queue.length > 0,
-    works: o.works.length > 0,
-    open: o.open.length > 0,
-    next: o.next.length > 0 && !hasQueued,
-    since: o.since.length > 0,
-    headline: o.headline !== '',
-    status: o.status !== '',
+  return {
+    ...EMPTY_OVERVIEW,
+    role: o.isCoordinator === true ? 'coordinator' : 'session',
+    goal: clipWords(text(o.headline), GOAL_KEPT),
+    subjects,
+    nextId: subjects.length + 1,
+    lastLookAt,
   }
-  const parts = withCourse.filter(p => lists[p] ?? true)
+}
 
-  return o.earlier.length > 0 ? [...parts, 'earlier'] : parts
+/** A saved Overview, from this build or an earlier one, with anything wrongly shaped left out. Null for none. */
+export function upgradeOverview(saved: unknown): Overview | null {
+  const o = saved as Record<string, unknown> | null | undefined
+  if (typeof o !== 'object' || o === null) return null
+  if (typeof o.headline === 'string') return fromLists(o)
+  if (!Array.isArray(o.subjects)) return null
+  const subjects = o.subjects.map(subjectOf).filter((s): s is Subject => s !== null)
+  const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c): c is Child => c !== null) : []
+  const look = o.look as { startedAt?: unknown } | null | undefined
+  const lookAt = time(look?.startedAt)
+
+  return {
+    role: o.role === 'coordinator' ? 'coordinator' : 'session',
+    goal: text(o.goal),
+    subjects,
+    children,
+    nextId: Math.max(time(o.nextId) ?? 1, subjects.length + 1),
+    nextChildId: Math.max(time(o.nextChildId) ?? 1, children.length + 1),
+    lastLookAt: time(o.lastLookAt),
+    look: lookAt === null ? null : { startedAt: lookAt },
+  }
 }

@@ -320,7 +320,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       const isRunning = s.transcriptPath === null ? null : await turnRunningIn(s.transcriptPath)
       if (isRunning === null || isRunning === s.presence.isTurnRunning) return s
 
-      return isRunning ? turnStarted(s) : turnEnded(s)
+      return isRunning ? turnStarted(s, null) : turnEnded(s, null)
     })
   }
 

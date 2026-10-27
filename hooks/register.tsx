@@ -65,6 +65,7 @@ import {
   startTurn,
   turnEnded,
   turnStarted,
+  placed,
   upgradeSession,
   cutOffTurn,
   withLook,
@@ -196,7 +197,6 @@ import {
   stopFix,
   stopText,
   drawnLists,
-  earlierTitle,
   emptyText,
   isRowTab,
   isShownTab,
@@ -288,7 +288,7 @@ import {
 import { parseInline } from './inline'
 import type { Span } from './inline'
 import type { RowRecord } from './arrivals'
-import { LEAD_GAP_PT, OVERVIEW_ROW_PAD_PT, ROW_PAD_PT } from './layout'
+import { OVERVIEW_ROW_PAD_PT, ROW_PAD_PT } from './layout'
 import { DARK_DALTONIZED_TONES, DARK_TONES, LIGHT_DALTONIZED_TONES, LIGHT_TONES, toneColors } from './tones'
 import type { ToneName } from './tones'
 import type { FoldProps } from './fold-client'
@@ -1083,9 +1083,9 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
     $.session.messages().then(transcriptText),
   ])
   // The Overview call reads the transcript. With none to read, it writes no Overview.
-  const overview: AskCatchUpOverview = async (last, tasks) => {
+  const overview: AskCatchUpOverview = async (last, tasks, at) => {
     if (!transcript || !isCurrent(owner)) return null
-    const r = await askLedgerModel($, overviewCatchUpPrompt(last, transcript, tasks), OVERVIEW_SYSTEM, 90_000)
+    const r = await askLedgerModel($, overviewCatchUpPrompt(last, transcript, tasks, at), OVERVIEW_SYSTEM, 90_000)
 
     return r.isAnswered ? r.text : null
   }
@@ -2466,6 +2466,15 @@ async function prepareConversation($: EngineInterface, id: string, revision: num
   return applying
 }
 
+/** Names the folder the session started in, and the branch that folder is on now. */
+async function notePlace($: EngineInterface) {
+  const root = conversation.root
+  if (!root) return
+  const r = await $.process.run(['git', 'branch', '--show-current'], { cwd: root, timeoutMs: 5_000 }).catch(() => null)
+  const branch = r?.exitCode === 0 ? r.stdout.trim() || null : null
+  await commit($, currentOwner(), s => placed(s, root, branch)).catch(() => undefined)
+}
+
 async function applyConversation(
   $: EngineInterface,
   id: string,
@@ -2489,6 +2498,7 @@ async function applyConversation(
   const [current] = await Promise.all([upgradeState($), syncTheme($)])
   await replaceDrawn($, s => cutOffTurn(cutOffUpdate(s)))
   if (revision !== loadRevision) return
+  void notePlace($)
   const isFresh = isBlankLedger(current)
   const isUnread =
     (await update($, UNREADABLE, u =>
@@ -2726,7 +2736,8 @@ export const register: Register = on => {
     // turn can end, since a reload can cut off its end-of-turn hook.
     if (isOn) {
       const before = await read($, SESSION)
-      await commit($, currentOwner(), s => turnStarted(startTurn(s)))
+      const startedAt = await $.clock.now()
+      await commit($, currentOwner(), s => turnStarted(startTurn(s), startedAt))
       if (before.stop) {
         stopGeneration++
         resuming = null
@@ -2871,7 +2882,9 @@ export const register: Register = on => {
     askedCalls.clear()
     await closeDialogs($, null)
     if (!isOn) return r
-    await commit($, currentOwner(), turnEnded)
+    const endedAt = await $.clock.now()
+    await commit($, currentOwner(), s => turnEnded(s, endedAt))
+    void notePlace($)
     if (e.reason === 'error' && !hasStopFromError) await setStopFromLastReply($)
     void wakeForDone($).catch(() => undefined)
     void followNewRows($).catch(() => undefined)
@@ -5082,88 +5095,145 @@ export const register: Register = on => {
         sections([...(prState.isGhMissing ? [ghMissingNotice()] : []), ...prGroups.map(prBlock), ...olderPrs()], 2)
       )
 
-    const overviewTextLine = (text: string, key: string, isBold: boolean, hasGapAbove: boolean) => {
+    const overviewTextLine = (text: string, key: string, isBold: boolean) => {
       const line = (
         <Text wrap="wrap" bold={isBold} {...(isBold ? {} : { color: pal.muted })}>
           {text}
         </Text>
       )
 
-      const framed =
-        look === 'desktop' ? (
-          desktopFrame({ key, padY: 0, children: line })
-        ) : (
-          <Box key={key} paddingLeft={TREE_LINE_AT}>
-            {line}
-          </Box>
-        )
-
-      return hasGapAbove ? (
-        <Box
-          key={`${key}-gap`}
-          marginTop={look === 'desktop' ? LEAD_GAP_PT / (DESKTOP_LINE_PT / 2) : 1}
-          flexDirection="column"
-        >
-          {framed}
-        </Box>
+      return look === 'desktop' ? (
+        desktopFrame({ key, padY: 0, children: line })
       ) : (
-        framed
+        <Box key={key} paddingLeft={TREE_LINE_AT}>
+          {line}
+        </Box>
       )
     }
-    const overviewTextRow = (id: string, text: string, pos: TreePos) =>
-      look === 'desktop'
-        ? desktopFrame({
-            key: `overview-${id}`,
-            indent: DESKTOP_MARK_CELLS,
-            isMarkHung: false,
-            padY: space.rowPad / 2,
-            children: <Text wrap="wrap">{text}</Text>,
-          })
-        : treeRow(pos, null, <Text wrap="wrap">{text}</Text>, `overview-${id}`, 0, markColumns.textAt)
-    const markedRow = (m: OverviewRow, pos: TreePos) => {
-      const RunningSvg = m.isRunning && look === 'desktop' && 'Svg' in elements ? elements.Svg : null
-      const mark = RunningSvg ? (
-        <Box width={RUNNING_SVG_CELLS} height={1} flexShrink={0}>
+    const runningDot = (id: string, glyph: string, color: string) => {
+      const RunningSvg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null
+
+      return RunningSvg ? (
+        <Box key={`${id}-mark`} width={RUNNING_SVG_CELLS} height={1} flexShrink={0}>
           <RunningSvg
             source={runningSvg(now)}
-            alt={m.mark}
+            alt={glyph}
             width={RUNNING_SVG_CELLS * DESKTOP_CELL_PT}
             height={DESKTOP_LINE_PT}
           />
         </Box>
       ) : (
-        <Text color={m.tone ? pal.mark[m.tone] : pal.muted}>
-          {m.isRunning && look === 'terminal' ? runningMark(now) : m.mark}
-        </Text>
+        <Text color={color}>{look === 'terminal' ? runningMark(now) : glyph}</Text>
       )
-      const lines = [
-        <Text key="text" wrap="wrap">
-          {m.text}
-        </Text>,
-        m.detail ? (
-          <Text key="detail" wrap="wrap" color={pal.muted}>
-            {m.detail}
-          </Text>
-        ) : null,
-      ]
+    }
+    /** One line of the Overview's list: a mark, its text, and an age in the side column. `depth` 1 sits under a subject's text. */
+    const overviewLine = ({
+      key,
+      depth = 0,
+      mark,
+      content,
+      age,
+      ageColor = pal.age,
+    }: {
+      key: string
+      depth?: number
+      mark: JSX.Element | null
+      content: JSX.Element | JSX.Element[]
+      age: string | null
+      ageColor?: string
+    }) => {
+      const side = age ? <Text color={ageColor}>{age}</Text> : null
 
-      return look === 'desktop'
-        ? desktopFrame({
-            key: `overview-${m.id}`,
-            indent: DESKTOP_MARK_CELLS,
-            isMarkHung: false,
-            padY: OVERVIEW_ROW_PAD_PT / DESKTOP_LINE_PT,
-            mark,
-            children: lines,
-          })
-        : treeRow(
-            pos,
-            mark,
-            <Box flexDirection="column" flexGrow={1} flexShrink={1}>
-              {lines}
-            </Box>,
-            `overview-${m.id}`,
-          )
+      return look === 'desktop' ? (
+        desktopFrame({
+          key,
+          indent: DESKTOP_MARK_CELLS * (depth * 2),
+          isMarkHung: false,
+          padY: OVERVIEW_ROW_PAD_PT / DESKTOP_LINE_PT,
+          mark,
+          side,
+          children: Array.isArray(content) ? content : [content],
+        })
+      ) : (
+        <Box key={key} flexDirection="row" alignItems="flex-start" overflow="hidden">
+          <Box width={markColumns.handleAt + markWidth * depth} flexShrink={0} />
+          <Box width={markWidth} flexShrink={0}>
+            {mark}
+          </Box>
+          <Box flexDirection="column" flexShrink={1} flexGrow={1}>
+            {content}
+          </Box>
+          {side ? (
+            <Box flexShrink={0} paddingLeft={1} paddingRight={1}>
+              {side}
+            </Box>
+          ) : null}
+        </Box>
+      )
+    }
+    const overviewRow = (r: OverviewRow) => {
+      if (r.kind === 'subject') {
+        const color = r.tone ? pal.mark[r.tone] : pal.muted
+        const mark = r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
+        const content = [
+          <Text key="text" wrap="wrap">
+            {r.name}
+            {r.text ? <Text color={pal.muted}>{`: ${r.text}`}</Text> : null}
+          </Text>,
+          ...(r.was
+            ? [
+                <Text key="was" wrap="wrap" color={pal.muted}>
+                  {`was: ${r.was}`}
+                </Text>,
+              ]
+            : []),
+        ]
+
+        return overviewLine({ key: `overview-${r.id}`, mark, content, age: r.age })
+      }
+      if (r.kind === 'child') {
+        const mark = r.isQuiet ? <Text color={pal.muted}>●</Text> : runningDot(r.id, '●', pal.muted)
+
+        return overviewLine({
+          key: `overview-${r.id}`,
+          depth: r.isLoose ? 0 : 1,
+          mark,
+          content: (
+            <Text wrap="truncate-end" color={pal.muted}>
+              {r.name}
+            </Text>
+          ),
+          age: r.age,
+          ageColor: r.isQuiet ? (pal.tone.needsYou ?? pal.age) : pal.age,
+        })
+      }
+      if (r.kind === 'more')
+        return overviewLine({
+          key: `overview-${r.id}`,
+          depth: 1,
+          mark: null,
+          content: <Text color={pal.muted}>{r.text}</Text>,
+          age: null,
+        })
+      if (r.kind === 'look') {
+        const label = `── ${r.text} `
+        const fill =
+          look === 'desktop' ? '' : '─'.repeat(Math.max(2, e.props.bodyColumns - label.length - r.age.length - 6))
+
+        return overviewLine({
+          key: 'overview-look',
+          mark: null,
+          content: <Text color={pal.divider}>{`${label}${fill}`}</Text>,
+          age: r.age,
+        })
+      }
+
+      return overviewLine({
+        key: `overview-${r.id}`,
+        mark: <Text color={r.tone ? pal.mark[r.tone] : pal.muted}>{r.mark}</Text>,
+        content: <Text color={pal.muted}>{r.text}</Text>,
+        age: r.age,
+      })
     }
     const overviewView = () => {
       const page = view.overviewPage
@@ -5173,9 +5243,11 @@ export const register: Register = on => {
             {emptyState(page.empty)}
           </Box>
         )
-      const head = page.lead.map(line =>
-        overviewTextLine(line.text, `overview-${line.id}`, line.id === 'headline', line.hasGapAbove),
-      )
+      const head = [
+        ...(page.identity ? [overviewTextLine(page.identity, 'overview-identity', false)] : []),
+        ...(page.goal ? [overviewTextLine(page.goal, 'overview-goal', true)] : []),
+        ...(page.live ? [overviewTextLine(page.live, 'overview-live', false)] : []),
+      ]
 
       return sections([
         ...(head.length > 0
@@ -5185,24 +5257,7 @@ export const register: Register = on => {
               </Box>,
             ]
           : []),
-        ...page.sections.map(part =>
-          section([
-            groupTitle(part.title, 0),
-            ...titleGap(),
-            ...part.rows.map((m, n) => markedRow(m, childPos(n, part.rows.length))),
-          ]),
-        ),
-        ...(page.earlier.length > 0
-          ? [
-              section([
-                groupTitle(earlierTitle('session'), 0),
-                ...titleGap(),
-                ...page.earlier.map((text, n) =>
-                  overviewTextRow(`earlier-${n}`, text, childPos(n, page.earlier.length)),
-                ),
-              ]),
-            ]
-          : []),
+        ...(page.rows.length > 0 ? [section(page.rows.map(overviewRow))] : []),
       ])
     }
 

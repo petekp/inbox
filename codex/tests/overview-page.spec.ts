@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { Window } from 'happy-dom'
 import { EMPTY } from '../../hooks/ledger'
-import { EMPTY_OVERVIEW } from '../../hooks/overview'
+import { applyOverview, parseOverview } from '../../hooks/overview'
 import { recordItem } from '../../hooks/tools'
 import { shownTabs } from '../../hooks/view'
 import { CODEX } from '../src/texts'
@@ -21,16 +21,19 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
   state.heard.startAt = 1
   state.ledger = {
     ...EMPTY,
-    overview: {
-      ...EMPTY_OVERVIEW,
-      headline: 'Shipping the Overview tab',
-      status: 'Reviewing the diff.',
-      queue: [
-        { status: 'working', text: 'Check the omp panel', detail: 'Reading the draw code' },
-        { status: 'waits-on-you', text: 'Pick the label', detail: null },
-        { status: 'done', text: 'Built the page', detail: null },
-      ],
-    },
+    overview: applyOverview(
+      null,
+      parseOverview(
+        [
+          'GOAL: Shipping the Overview tab',
+          'NEW: working | omp panel | reading the draw code',
+          'NEW: waits-on-you | Label | pick one',
+          'NEW: working | Page | being built',
+          'DONE: s3 | built',
+        ].join('\n'),
+      )!,
+      now,
+    ),
   }
   state.presence = { ...state.presence, isTurnRunning: true }
   document.body.innerHTML = '<div id="app"></div>'
@@ -128,7 +131,7 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
     assert.equal(shownTab(), 'Overview')
     assert.equal(sentTabs[0], 'overview')
     assert.equal(root.querySelector('.overview-goal')?.textContent, 'Shipping the Overview tab')
-    assert.equal(root.querySelector('.overview-now')?.textContent, 'Working…')
+    assert.equal(root.querySelector('.overview-live')?.textContent, 'Working…')
     assert.deepEqual(
       [...root.querySelectorAll('main .row')].map(r => [
         r.querySelector('.mark')?.className,
@@ -136,9 +139,9 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
         r.querySelector('.content')?.textContent,
       ]),
       [
-        ['mark running', '●', 'Check the omp panelReading the draw code'],
-        ['mark needsYou', '◆', 'Pick the label'],
-        ['mark done', '✓', 'Built the page'],
+        ['mark running', '●', 'omp panel: reading the draw code'],
+        ['mark tone-needsYou', '◆', 'Label: pick one'],
+        ['mark done', '✓', 'Page: built'],
       ],
     )
     assert.equal(root.querySelectorAll('main button').length, 0)
@@ -206,7 +209,7 @@ test('a look starts when the tab shows the Overview, ends when it shows another 
   const state = emptyState('look')
   state.ledger = {
     ...EMPTY,
-    overview: { ...EMPTY_OVERVIEW, headline: 'h', since: [{ status: 'done', text: 'Changed', detail: null }] },
+    overview: applyOverview(null, parseOverview('GOAL: Ship it\nNEW: queued | Docs | after the code')!, 500),
   }
   state.tabSeenAt = 1000
   const open = lookOnView(state, 'overview', 2000)
@@ -215,12 +218,10 @@ test('a look starts when the tab shows the Overview, ends when it shows another 
   const seen = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 3000)
   assert.equal(seen.ledger.overview?.look, null)
   assert.equal(seen.ledger.overview?.lastLookAt, 3000)
-  assert.deepEqual(seen.ledger.overview?.since, [])
 
   const closed = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 2000 + 60_000)
   assert.equal(closed.ledger.overview?.lastLookAt, 2000)
 
   const never = lookOnView(state, 'needsYou', 2000)
   assert.equal(never.ledger.overview?.lastLookAt, null)
-  assert.equal(never.ledger.overview?.since.length, 1)
 })

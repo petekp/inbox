@@ -25,7 +25,7 @@ import {
   isRowTab,
   rowKeyPlan,
 } from '../../hooks/view'
-import type { RowView } from '../../hooks/view'
+import type { OverviewRow, RowView } from '../../hooks/view'
 import { sessionView } from '../../hooks/session'
 import { cellWidth } from '../../hooks/text'
 import { demoSource, demoState } from '../src/demo'
@@ -695,30 +695,30 @@ const tabLine = (screen: PanelScreen, ui: PanelUi, width: number) =>
     .replace(/esc to close\s*$/, '')
     .trimEnd()
 
-test('the Overview page shows the headline, the status, then its sections in order', () => {
+const labelOf = (row: OverviewRow) => (row.kind === 'subject' || row.kind === 'child' ? row.name : row.text)
+
+test('the Overview page shows the identity, the goal and the live line, then its rows in order, each was line under its subject', () => {
   const screen = screenOf()
   const page = screen.view.overviewPage
   const lines = text(screen, onPage).split('\n')
   const at = (s: string) => lines.findIndex(l => l.includes(s))
-  const order = [
-    ...page.lead.map(l => l.text),
-    ...page.sections.flatMap(part => [...(part.title ? [part.title] : []), ...part.rows.map(r => r.text)]),
-  ].map(at)
+  const order = [page.identity!, page.goal!, page.live!, ...page.rows.map(labelOf)].map(at)
   expect(order.every(n => n >= 0)).toBe(true)
   expect(order).toEqual([...order].sort((a, b) => a - b))
-  for (const row of page.sections.flatMap(part => part.rows))
-    if (row.detail) expect(lines[at(row.text) + 1]).toContain(row.detail)
+  const withWas = page.rows.filter(r => r.kind === 'subject' && r.was !== null)
+  expect(withWas.length).toBeGreaterThan(0)
+  for (const row of withWas) if (row.kind === 'subject') expect(lines[at(row.name) + 1]).toContain(`was: ${row.was}`)
 })
 
-test('each item’s mark takes its tone, and a mark with no tone is muted', () => {
+test('each subject’s mark takes its tone, and a mark with no tone is muted', () => {
   const screen = screenOf()
-  const rows = screen.view.overviewPage.sections.flatMap(part => part.rows)
+  const subjects = screen.view.overviewPage.rows.flatMap(r => (r.kind === 'subject' ? [r] : []))
   const lines = render(screen, onPage, 200, NOW, toneNamed)
   const lineOf = (s: string) => lines.find(l => l.includes(s))!
-  for (const row of rows.filter(r => r.tone !== null))
-    expect(lineOf(row.text)).toContain(`<${row.tone}>${row.mark} </${row.tone}>`)
-  const muted = rows.find(r => r.tone === null && !r.isRunning)!
-  expect(lineOf(muted.text)).toContain(`${ESC}2m${muted.mark} ${ESC}22m`)
+  for (const row of subjects.filter(r => r.tone !== null))
+    expect(lineOf(row.name)).toContain(`<${row.tone}>${row.mark}</${row.tone}> `)
+  const muted = subjects.find(r => r.tone === null && !r.isRunning)!
+  expect(lineOf(muted.name)).toContain(`${ESC}2m${muted.mark}${ESC}22m `)
 })
 
 test('an Overview page with nothing yet reads its empty text', () => {

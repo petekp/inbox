@@ -6,6 +6,7 @@ import {
   needsUpdate,
   noteActivity,
   noteCommandOutput,
+  placed,
   startContext,
   turnEnded,
   turnStarted,
@@ -18,7 +19,7 @@ import { codexStore } from './host'
 import type { OnWrite } from './host'
 import type { SessionState } from './state'
 import { CODEX } from './texts'
-import { isNonInteractiveRun, turnIn } from './transcript'
+import { isNonInteractiveRun, placeIn, turnIn } from './transcript'
 
 export type HookInput = {
   hook_event_name: string
@@ -76,10 +77,12 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
     case 'SessionStart': {
       const root = input.cwd ?? ''
       // Codex runs SessionStart after compacting too, in the middle of a turn.
-      const endsTurn = (s: SessionState) => (input.source === 'compact' ? s : turnEnded(s))
+      const endsTurn = (s: SessionState) => (input.source === 'compact' ? s : turnEnded(s, null))
+      const place = rolloutPath === null ? null : await placeIn(rolloutPath)
+      const withPlace = (s: SessionState) => (place ? placed(s, place.folder, place.branch) : s)
       const s = await write(async s =>
         noteHook(
-          withHost(await withHistory(endsTurn({ ...(input.source === 'clear' ? cleared(s) : s), root }))),
+          withHost(await withHistory(endsTurn(withPlace({ ...(input.source === 'clear' ? cleared(s) : s), root })))),
           'start',
           now(),
         ),
@@ -96,7 +99,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
         const r = notePrompt(withHost(await withHistory(s)), input.prompt ?? '', now())
         notes = r.notes
 
-        return input.agent_id ? r.state : noteHook(turnStarted(r.state), 'prompt', now(), input.turn_id)
+        return input.agent_id ? r.state : noteHook(turnStarted(r.state, now()), 'prompt', now(), input.turn_id)
       })
       if (isMarkedBehind) deps.startUpdate(id)
 
@@ -130,7 +133,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
         )
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withLines)
 
-        const ended = noteHook(turnEnded(endTurn(withOutput, reply, now())), 'stop', now())
+        const ended = noteHook(turnEnded(endTurn(withOutput, reply, now()), now()), 'stop', now())
 
         return plan === null ? ended : { ...ended, hostTasks: plan }
       })
