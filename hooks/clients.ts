@@ -143,7 +143,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'settle-window': {
         kind: 'different',
-        reason: 'The tab only learns of a close at its next poll, so the settle window adds two polls.',
+        reason: 'The tab only learns of a close at its next poll, so the server offers Undo for two polls longer.',
       },
       'version-label': { kind: 'full' },
       'overview-tab': { kind: 'full' },

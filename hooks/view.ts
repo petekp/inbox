@@ -39,6 +39,7 @@ import {
   isRepeatOf,
   isUndoable,
   noteText,
+  offersUndo,
   retryOf,
   stepsOf,
 } from './presses'
@@ -68,6 +69,7 @@ export const NEEDS_YOU_GROUPS: { kind: Item['kind']; title: string; list: 'quest
 export const CLOSED_MARKS: Record<ClosedState, string> = { handled: '✓', dismissed: '✕', lapsed: '' }
 
 export const CLOSED_SHOWN = 3
+/** How long Undo can take back a close or a press. Once it passes, Done tells the agent. */
 export const SETTLED_MS = 5120
 
 /** How long an ask waits before its permission row shows, where no classic.PermissionRequest hook runs. */
@@ -114,6 +116,7 @@ export type ViewInput = {
   notes: Record<string, RowNote>
   turns: Turns
   extraSteps: Record<string, HelpStep[]>
+  /** How long a settled row offers Undo. */
   settleWindowMs: number
   status: ItemStatus
   now: number
@@ -121,11 +124,33 @@ export type ViewInput = {
   replies: Record<string, number>
   /** The held rows whose reply the person discarded: each row's id, and when. */
   discarded: Record<string, number>
+  /**
+   * When the look began showing the tab it shows, by opening the inbox on it or switching to it. Null while no look
+   * shows the inbox.
+   */
+  shownSince: number | null
 }
 
-export type ReplyHolds = Pick<ViewInput, 'replies' | 'discarded'>
+/** What a look holds in place besides the session: the rows replies hold, and the rows closed while it shows them. */
+export type Holds = Pick<ViewInput, 'replies' | 'discarded' | 'shownSince'>
 
-export const NO_HOLDS: ReplyHolds = { replies: {}, discarded: {} }
+export const NO_HOLDS: Holds = { replies: {}, discarded: {}, shownSince: null }
+
+/**
+ * Whether a row that closed or was pressed at `at` stays in place, with its result: the look has shown its tab since
+ * then. It folds once the person leaves the tab, by switching tab or closing the inbox.
+ */
+export function isShownSince(at: number, shownSince: number | null): boolean {
+  return shownSince !== null && at >= shownSince
+}
+
+/**
+ * Whether a look drawing from a view it read before switching tabs still draws `row`. The view it reads next leaves a
+ * settled row out once the look shows its tab from after the row settled, so the row folds without being drawn first.
+ */
+export function isDrawnInPlace(row: Pick<RowView, 'state'>, shownSince: number | null): boolean {
+  return row.state.is !== 'settled' || isShownSince(row.state.at, shownSince)
+}
 
 /** The row whose field is open and each row whose draft holds words. Opening a field gives its row a draft. */
 export function heldReplies(typing: string | null, drafts: Record<string, Draft>): Record<string, number> {
@@ -145,6 +170,8 @@ export type RowState =
       label: string
       at: number
       canUndo: boolean
+      /** Whether this kind of close offers Undo while Undo lasts. `canUndo` is whether Undo is on offer now. */
+      offersUndo: boolean
       delivery: ClosedDelivery
       isLapsed: boolean
     }
@@ -1326,14 +1353,16 @@ export function inboxView({
   now,
   replies,
   discarded,
+  shownSince,
 }: ViewInput): InboxView {
-  const isSettling = (at: number) => now - at < settleWindowMs
+  const isInPlace = (at: number) => isShownSince(at, shownSince)
+  const isUndoLeft = (at: number) => now - at < settleWindowMs
   const isOpen = (id: string) => ledger.items.some(i => i.id === id) || ledger.findings.some(f => f.id === id)
   const closedAt = (c: Closed | ClosedFinding) => ('closedAt' in c ? c.closedAt : c.at)
   const replyAfter = (c: Closed | ClosedFinding) => {
     const last = lastActions[c.id]
 
-    return last?.action === 'type' && last.at >= closedAt(c) && last.delivery?.state !== 'failed' && isSettling(last.at)
+    return last?.action === 'type' && last.at >= closedAt(c) && last.delivery?.state !== 'failed' && isInPlace(last.at)
       ? last
       : null
   }
@@ -1348,14 +1377,14 @@ export function inboxView({
   }
   const isDiscarded = (c: Closed | ClosedFinding) => (discarded[c.id] ?? -Infinity) >= closedAt(c)
   const isPlaced = (c: Closed | ClosedFinding) =>
-    replyAfter(c) !== null || (!isDiscarded(c) && (isHeld(c) || isSettling(closedAt(c))))
+    replyAfter(c) !== null || (!isDiscarded(c) && (isHeld(c) || isInPlace(closedAt(c))))
   const placedItems = new Map(
     ledger.closed.filter(d => d.item && !isOpen(d.id) && isPlaced(d)).map(d => [d.id, d] as const),
   )
   const isFixSettled = (id: string) => {
     const last = lastActions[id]
 
-    return isFixSent(last) && !isSettling(last.at)
+    return isFixSent(last) && !isInPlace(last.at)
   }
   const placedFindings = new Map(
     ledger.closedFindings.filter(f => !isOpen(f.id) && !isFixSettled(f.id) && isPlaced(f)).map(f => [f.id, f] as const),
@@ -1375,6 +1404,7 @@ export function inboxView({
           label: DONE_LABELS[reply.action]?.(reply.text) ?? reply.text,
           at: reply.at,
           canUndo: false,
+          offersUndo: false,
           delivery: pendingDeliveryAt(reply, now),
           isLapsed: false,
         }
@@ -1384,7 +1414,8 @@ export function inboxView({
         is: 'settled',
         label: outcomeLabel(closed),
         at,
-        canUndo: isUndoable(closed),
+        canUndo: isUndoable(closed) && isUndoLeft(at),
+        offersUndo: offersUndo(closed),
         isLapsed: isLapsed(closed),
         delivery:
           'doneNotification' in closed && closed.doneNotification?.error !== undefined
@@ -1402,7 +1433,8 @@ export function inboxView({
         is: 'settled',
         label: fixLabel(sent),
         at: last.at,
-        canUndo: true,
+        canUndo: isUndoLeft(last.at),
+        offersUndo: true,
         delivery: pendingDeliveryAt(last, now),
         isLapsed: false,
       }

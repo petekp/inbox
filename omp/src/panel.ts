@@ -50,6 +50,8 @@ import {
   ROW_COPY,
   LISTED_TABS,
   SETTLED_MS,
+  isDrawnInPlace,
+  isShownSince,
   shownTabs,
   tabBadge,
   actionLabel,
@@ -92,7 +94,7 @@ import type {
   OverviewBranch,
   OverviewPage,
   OverviewRow,
-  ReplyHolds,
+  Holds,
   RowView,
   ShownTab,
   TabNaming,
@@ -146,6 +148,8 @@ export type PanelUi = {
   opened: string | null
   /** How many lines of the Overview page are scrolled above the panel. Drawing clamps it to the page's end. */
   pageTop: number
+  /** When the panel opened or last switched tab. A row that closes since then stays in place until the next of either. */
+  shownSince: number
 }
 
 export const INITIAL_UI: PanelUi = {
@@ -160,10 +164,11 @@ export const INITIAL_UI: PanelUi = {
   resuming: null,
   opened: null,
   pageTop: 0,
+  shownSince: 0,
 }
 
-export function holdsOf(ui: Pick<PanelUi, 'typing' | 'drafts' | 'discarded'>): ReplyHolds {
-  return { replies: heldReplies(ui.typing, ui.drafts), discarded: ui.discarded }
+export function holdsOf(ui: Pick<PanelUi, 'typing' | 'drafts' | 'discarded' | 'shownSince'>): Holds {
+  return { replies: heldReplies(ui.typing, ui.drafts), discarded: ui.discarded, shownSince: ui.shownSince }
 }
 
 const AGENT = 'omp'
@@ -437,13 +442,13 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
       ? NEEDS_YOU_GROUPS.map(g => ({
           kind: g.kind,
           title: g.title,
-          rows: view.needsYou[g.list],
+          rows: view.needsYou[g.list].filter(r => isDrawnInPlace(r, ui.shownSince)),
           closed: view.needsYou.closed[g.list].map(d => ({ ...d, title: d.ask })),
         }))
       : (Object.keys(FINDING_GROUPS) as (keyof typeof FINDING_GROUPS)[]).map(kind => ({
           kind,
           title: FINDING_GROUPS[kind].title,
-          rows: view.findings.rows.filter(r => r.finding?.kind === kind),
+          rows: view.findings.rows.filter(r => r.finding?.kind === kind && isDrawnInPlace(r, ui.shownSince)),
           closed: view.findings.closed.filter(f => f.kind === kind).map(f => ({ ...f, at: f.closedAt })),
         }))
   const stops = tab === 'needsYou' ? stopEntries(screen, ui) : []
@@ -461,7 +466,7 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
   return [...stops, ...groups.flatMap(g => groupEntries(g, ui.unfolded))]
 }
 
-function prEntries(screen: PanelScreen, now: number): Entry[] {
+function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
   const { prs, lastActions, turns } = screen.view
   const isSent = threadSentIn(lastActions)
   const presses = { lastActions, turns, now }
@@ -480,10 +485,11 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
     ]
   }
   if (screen.isGhMissing) out.push({ kind: 'note', text: GH_MISSING_TEXT })
-  for (const { pr, isSettled } of prs.drawn) {
+  for (const { pr, isSettled, canUndo } of prs.drawn) {
     const markId = prMarkId(pr.ref)
     const lead: Lead = { text: `#${pr.number}`, tone: 'prs' }
     if (isSettled) {
+      if (!isShownSince(lastActions[markId]?.at ?? 0, ui.shownSince)) continue
       out.push({
         kind: 'row',
         line: {
@@ -491,7 +497,11 @@ function prEntries(screen: PanelScreen, now: number): Entry[] {
           lead,
           title: pr.title,
           isDim: true,
-          settled: { label: PR_DISMISSED_LABEL, tone: 'done', undo: { action: 'pr-undo', ref: pr.ref } },
+          settled: {
+            label: PR_DISMISSED_LABEL,
+            tone: 'done',
+            undo: canUndo ? { action: 'pr-undo', ref: pr.ref } : null,
+          },
         },
       })
       continue
@@ -600,7 +610,7 @@ function pageEntries(page: OverviewPage): Entry[] {
 function entriesOf(screen: PanelScreen, ui: PanelUi, tab: ShownTab, now: number): Entry[] {
   if (!isRowTab(tab)) return pageEntries(screen.view.overviewPage)
 
-  return tab === 'prs' ? prEntries(screen, now) : rowEntries(screen, ui, tab)
+  return tab === 'prs' ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab)
 }
 
 const linesOf = (entries: Entry[]): Line[] => entries.flatMap(e => (e.kind === 'row' ? [e.line] : []))
@@ -635,7 +645,12 @@ function withSelection(ui: PanelUi, id: string | null): PanelUi {
   return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null }
 }
 
-const withTab = (ui: PanelUi, tab: ShownTab): PanelUi => ({ ...withSelection(ui, null), tab, pageTop: 0 })
+const withTab = (ui: PanelUi, tab: ShownTab, now: number): PanelUi => ({
+  ...withSelection(ui, null),
+  tab,
+  pageTop: 0,
+  shownSince: now,
+})
 
 /** Whether the line `id` on the shown tab waits on the person. */
 export function isLineWaiting(screen: PanelScreen, ui: PanelUi, id: string, now: number): boolean {
@@ -673,7 +688,8 @@ function activate(screen: PanelScreen, ui: PanelUi, line: Line, button: Button, 
   }
   if (!('ref' in press) && press.action === 'discard') {
     const { [line.id]: _discarded, ...drafts } = ui.drafts
-    const recent = Object.entries(ui.discarded).filter(([, at]) => now - at < SETTLED_MS)
+    // A discard keeps its row folded for as long as the row could stay in place.
+    const recent = Object.entries(ui.discarded).filter(([, at]) => isShownSince(at, ui.shownSince))
 
     return { ui: { ...ui, focus: null, drafts, discarded: { ...Object.fromEntries(recent), [line.id]: now } } }
   }
@@ -724,9 +740,9 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
   if (key === 'tab' || key === 'shift+tab') {
     const step = key === 'tab' ? 1 : -1
 
-    return { ui: withTab(base, tabs[wrapIndex(tabs.indexOf(base.tab) + step, tabs.length)]!) }
+    return { ui: withTab(base, tabs[wrapIndex(tabs.indexOf(base.tab) + step, tabs.length)]!, now) }
   }
-  if (pickedTab) return { ui: withTab(base, pickedTab.id) }
+  if (pickedTab) return { ui: withTab(base, pickedTab.id, now) }
   if (key === 'u') {
     const undoable = lines.filter(l => l.settled?.undo).at(-1)
     const press = undoable?.settled?.undo
@@ -794,7 +810,7 @@ export function followRows(
   const { tab } = ui
   if (!isRowTab(tab)) return { ui, seen: recorded.seen }
   const to = followTo(ARRIVAL_TABS, tab, isShownEmpty(screen, ui, tab), isOpening ? open : recorded.added)
-  if (to) return { ui: withTab(ui, to), seen: recorded.seen }
+  if (to) return { ui: withTab(ui, to, now), seen: recorded.seen }
   const arrived = recorded.added[tab]
   if (ui.selectedId !== null || arrived.length === 0) return { ui, seen: recorded.seen }
   const kept = keptOpen(waitsOf(linesOf(entriesOf(screen, ui, tab, now))), arrived)
@@ -803,7 +819,7 @@ export function followRows(
 }
 
 /**
- * True while the view changes with the clock alone: a closed row counting down to leave, a local press's result
+ * True while the view changes with the clock alone: a settled row's Undo counting down, a local press's result
  * showing, a send waiting to read as queued, or a notice. Changes the host saves arrive as events instead.
  */
 export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): boolean {
@@ -817,7 +833,10 @@ export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): bool
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS
 
   return (
-    rows.some(r => r.state.is === 'settled') || view.prs.drawn.some(p => p.isSettled) || isPressMoving || isNoticeShown
+    rows.some(r => r.state.is === 'settled' && r.state.canUndo) ||
+    view.prs.drawn.some(p => p.canUndo) ||
+    isPressMoving ||
+    isNoticeShown
   )
 }
 
@@ -1233,7 +1252,7 @@ export function tallestTabHeight(
   height?: number,
 ): number {
   const heights = shownTabs(screen.isNextBuild === true).map(
-    t => drawPanel(screen, t.id === ui.tab ? ui : withTab(ui, t.id), width, now, style, height).lines.length,
+    t => drawPanel(screen, t.id === ui.tab ? ui : withTab(ui, t.id, now), width, now, style, height).lines.length,
   )
 
   return Math.max(...heights)
@@ -1274,7 +1293,7 @@ export function bandLines(screen: PanelScreen, width: number, now: number, style
   const { needsYou, findings } = screen.view
   const counts = LISTED_TABS.map(t => ({ t, count: t.id === 'needsYou' ? needsYou.count : findings.count }))
     .filter(x => x.count > 0)
-    .map(x => `${style.dim(x.t.label)} ${style.tone(x.t.id, String(x.count))}`)
+    .map(x => `${x.t.label} ${style.tone(x.t.id, String(x.count))}`)
   const left = ` ${counts.length > 0 ? counts.join(` ${style.tone('sep', '·')} `) : style.dim('Nothing needed')}`
   const countLine = spread(left, style.dim('/inbox to open '), width)
   const { stop } = screen

@@ -65,7 +65,7 @@ import { agentTools } from '../../hooks/tools'
 import { DARK_TONES, LIGHT_TONES } from '../../hooks/tones'
 import { clip } from '../../hooks/text'
 import { NEXT_BUILD_MARK, NO_HOLDS, RESUME_TEXT, SETTLED_MS, inboxCommandText, screenTabOf } from '../../hooks/view'
-import type { ReplyHolds, ShownTab } from '../../hooks/view'
+import type { Holds, ShownTab } from '../../hooks/view'
 import { openTarget } from './commands'
 import { createPanel } from './controller'
 import type { PanelSource } from './controller'
@@ -125,7 +125,7 @@ export type InboxScreen = {
 
 /** What a panel needs from the host. */
 export type Inbox = {
-  screen(ctx: ExtensionContext, holds?: ReplyHolds): Promise<InboxScreen>
+  screen(ctx: ExtensionContext, holds?: Holds): Promise<InboxScreen>
   /** Marks the panel open, and runs what a freshly opened panel needs: Done messages due, and a PR fetch when due. */
   openPanel(ctx: ExtensionContext): Promise<void>
   /** Records the tab an open panel shows. */
@@ -135,7 +135,7 @@ export type Inbox = {
   /** Calls `listener` after the session's saved state changes. Returns how to stop. */
   onChange(ctx: ExtensionContext, listener: () => void): () => void
   /** Applies a press for the session. */
-  press(ctx: ExtensionContext, p: RowPress | PrPress, holds: ReplyHolds): Promise<PressOutcome>
+  press(ctx: ExtensionContext, p: RowPress | PrPress, holds: Holds): Promise<PressOutcome>
   /** Sends the message that resumes a stopped turn. Returns why it could not, or null. */
   resume(ctx: ExtensionContext): string | null
 }
@@ -993,6 +993,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   }
 
   async function openPanelUi(ctx: ExtensionContext, isDemo: boolean): Promise<void> {
+    const openedAt = deps.now()
     const { parseKey, extractPrintableText, truncateToWidth } = await import('@oh-my-pi/pi-tui')
     const source = isDemo
       ? demoSource({
@@ -1012,6 +1013,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
           source,
           style: styleOf(theme),
           now: deps.now,
+          openedAt,
           requestRender: () => tui.requestRender(),
           close: () => done(null),
           timers: { every: (fn, ms) => ctx.setInterval(fn, ms), stop: handle => ctx.clearTimer(handle as never) },

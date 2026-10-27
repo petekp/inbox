@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import { demoView } from '../../hooks/demo'
 import { applyUpdate, parseReply } from '../../hooks/ledger'
 import { EMPTY_OVERVIEW } from '../../hooks/overview'
-import { feedbackOf, feedbackText, QUEUED_AFTER_MS, screenTabOf } from '../../hooks/view'
+import { feedbackOf, feedbackText, NO_HOLDS, QUEUED_AFTER_MS, screenTabOf } from '../../hooks/view'
 import type { Feedback } from '../../hooks/view'
 import { screenText } from '../../hooks/model-text'
 import { noteHook, notePrompt, viewOf } from '../src/core'
@@ -80,7 +80,7 @@ const ANSWER = { press: { action: 'answer', id: 'i1', option: 'Yes' }, thread: '
 
 test('a press sends its message into the tab’s thread with the codex binary the hooks saw, and the next prompt reads it as a press', async () => {
   const { dir, calls, call } = await setup(0)
-  const r = await call('inbox_press', ANSWER, { thread_id: 's1' })
+  const r = await call('inbox_press', { ...ANSWER, shownSince: 0 }, { thread_id: 's1' })
   assert.equal(r.result.structuredContent.error, null)
   assert.equal(r.result.structuredContent.note, null)
   assert.deepEqual(calls, [['/apps/codex', 'queue', '--thread', 's1', '--message', 'Re "Ship it?": Yes']])
@@ -614,7 +614,7 @@ test('a press in the demo changes only the demo, sends nothing into the conversa
   const option = first.item.options[0]
   const r = await call(
     'inbox_press',
-    { press: { action: 'answer', id: first.id, option }, thread: 's1', demo: true },
+    { press: { action: 'answer', id: first.id, option }, thread: 's1', demo: true, shownSince: 0 },
     { thread_id: 's1' },
   )
   assert.deepEqual(calls, [])
@@ -936,7 +936,10 @@ const GH_THREADS = JSON.stringify({
 })
 
 type PrView = {
-  prs: { drawn: { pr: { ref: string; threads: unknown[]; error?: string | null } }[]; count: number }
+  prs: {
+    drawn: { pr: { ref: string; threads: unknown[]; error?: string | null }; isSettled: boolean; canUndo: boolean }[]
+    count: number
+  }
   isFetchingPrs: boolean
   isGhMissing: boolean
   lastActions: Record<string, { action: string }>
@@ -1169,7 +1172,7 @@ test('a settled Fix keeps its delivery unconfirmed after one indistinguishable a
   const queued = await readState(dir, 's1')
   assert.equal(queued.sent[0]!.text, queued.sent[1]!.text)
   const first = notePrompt(queued, queued.sent[0]!.text, 210).state
-  const row = viewOf(first, 210).findings.rows.find(r => r.id === 'f2')
+  const row = viewOf(first, 210, { ...NO_HOLDS, shownSince: 100 }).findings.rows.find(r => r.id === 'f2')
   assert.equal(row?.state.is, 'settled')
   assert.equal(row?.state.is === 'settled' ? row.state.delivery : null, 'unconfirmed')
   const later = viewOf(first, 210 + SETTLE_WINDOW_MS + 1)
@@ -1251,7 +1254,7 @@ test('a PR press with an unknown queue outcome keeps its receipt and unconfirmed
   assert.equal(s.sent[0]?.phase, 'uncertain')
 })
 
-test('dismissing a linked PR unlinks it, and its view leaves once its settled block has', async () => {
+test('dismissing a linked PR unlinks it and settles its block until the tab shows another tab', async () => {
   let t = 100
   const dir = tempDir()
   await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
@@ -1278,14 +1281,18 @@ test('dismissing a linked PR unlinks it, and its view leaves once its settled bl
     prViews: { ...d.prViews, branchRef: null },
   }))
   const ref = d.ledger.prs.find(r => r !== d.prViews.branchRef)!
-  const dismissed = await call('inbox_press', { press: { action: 'pr-dismiss', ref }, thread: 's1' })
+  const dismissed = await call('inbox_press', { press: { action: 'pr-dismiss', ref }, thread: 's1', shownSince: 0 })
   const drawn = (v: PrView) => v.prs.drawn.map(x => x.pr.ref)
   assert.ok(drawn(dismissed.result.structuredContent.view).includes(ref))
   assert.equal((await readState(dir, 's1')).ledger.prs.includes(ref), false)
   t += SETTLE_WINDOW_MS
-  const later = await call('inbox_view', {})
-  assert.equal(drawn(later.result.structuredContent).includes(ref), false)
-  assert.equal(ref in (await readState(dir, 's1')).prViews.views, false)
+  const stayed = await call('inbox_view', { shownSince: 0 })
+  assert.deepEqual(
+    stayed.result.structuredContent.prs.drawn.filter(x => x.pr.ref === ref).map(x => [x.isSettled, x.canUndo]),
+    [[true, false]],
+  )
+  const switched = await call('inbox_view', { shownSince: t })
+  assert.equal(drawn(switched.result.structuredContent).includes(ref), false)
 })
 
 for (const failure of ['none', 'checkpoint', 'completion', 'queue', 'lookup'] as const) {

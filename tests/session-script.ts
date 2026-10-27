@@ -61,9 +61,10 @@ const MODEL_ANSWER = ['NEW: decide | 1 | Use Node or Python? | Node / Python | N
 
 export async function runSessionScript<S extends Session>(makeHost: MakeHost<S>, equal: Equal): Promise<void> {
   const { host, delivered, performed } = makeHost(async () => MODEL_ANSWER)
+  const holds = { ...NO_HOLDS, shownSince: await host.now() }
   const snapshot = async () => {
     const s = await host.read()
-    const view = sessionView(s, await host.now(), SETTLE_WINDOW_MS, true)
+    const view = sessionView(s, await host.now(), SETTLE_WINDOW_MS, true, holds)
 
     return {
       rows: allRows(view).map(r => `${r.title}: ${r.state.is}`),
@@ -116,7 +117,7 @@ export async function runSessionScript<S extends Session>(makeHost: MakeHost<S>,
   )
 
   const questionId = await idOf('question')
-  const answered = await press(host, { action: 'answer', id: questionId, option: 'Node' }, false, NO_HOLDS)
+  const answered = await press(host, { action: 'answer', id: questionId, option: 'Node' }, false, holds)
   equal(
     answered,
     { copy: null, error: null, note: null, isUnconfirmed: false, isRowFailed: false, wakesForDone: false },
@@ -149,12 +150,12 @@ export async function runSessionScript<S extends Session>(makeHost: MakeHost<S>,
   )
 
   const taskId = await idOf('task')
-  const done = await press(host, { action: 'done', id: taskId }, false, NO_HOLDS)
+  const done = await press(host, { action: 'done', id: taskId }, false, holds)
   equal(done.wakesForDone, true, 'Done asks for a wake')
-  const undone = await press(host, { action: 'undo', id: taskId }, false, NO_HOLDS)
+  const undone = await press(host, { action: 'undo', id: taskId }, false, holds)
   equal(undone.note, null, 'Undo on the task')
   equal((await snapshot()).rows, ['Use Node or Python?: settled', 'Try the CLI by hand: open'], 'after Undo')
-  const undoneAnswer = await press(host, { action: 'undo', id: questionId }, false, NO_HOLDS)
+  const undoneAnswer = await press(host, { action: 'undo', id: questionId }, false, holds)
   equal(undoneAnswer.note, 'stale', 'Undo on a row the agent already has')
   equal((await snapshot()).delivered, [ANSWER], 'Undo sends nothing')
 }
