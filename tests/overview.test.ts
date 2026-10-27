@@ -15,6 +15,7 @@ import {
   withChild,
 } from '../hooks/overview'
 import type { Op } from '../hooks/overview'
+import { emptySession } from '../hooks/session'
 import { CHILD_ROWS, overviewPage, QUIET_MS } from '../hooks/view'
 import type { OverviewRow } from '../hooks/view'
 import type { Overview, Session } from '../types'
@@ -31,14 +32,7 @@ const opsOf = (text: string): Op[] => {
 const after = (last: Overview | null, text: string, now: number) => applyOps(last, opsOf(text), now).overview
 
 const presence = (over: Partial<Session['presence']> = {}): Session['presence'] => ({
-  turnsStarted: 0,
-  turnsApplied: 0,
-  ledgerState: 'current',
-  hasDroppedReply: false,
-  isUpdating: false,
-  isTurnRunning: false,
-  turnStartedAt: null,
-  lastReplyAt: null,
+  ...emptySession().presence,
   ...over,
 })
 
