@@ -11,7 +11,7 @@ import type { PrPress } from '../../hooks/pr-tab'
 import { demoAfterPress, demoTurns, noteText, openTarget } from '../../hooks/presses'
 import type { PathProbe, RowPress } from '../../hooks/presses'
 import { agentTools } from '../../hooks/tools'
-import { heardState, lookOnView, noteToolCall, viewOf } from './core'
+import { heardState, isTurnHeard, lookOnView, noteToolCall, viewOf } from './core'
 import type { TabView } from './core'
 import { demoState } from './demo'
 import { answerMessage, noteDialogs } from './dialogs'
@@ -227,9 +227,8 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
   /** The chat's newest turn, when the inbox heard neither its prompt nor its Stop, as while Codex skips the hooks. */
   function unheardTurnOf(s: SessionState, id: string): string | null {
     const newest = newestTurns.get(id)
-    const isHeard = newest === undefined || newest === s.coveredTurn || s.heard.promptTurns.includes(newest)
 
-    return isHeard ? null : newest
+    return newest === undefined || isTurnHeard(s, newest) ? null : newest
   }
 
   /**

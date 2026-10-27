@@ -15,7 +15,6 @@ import { readState, statePath, updateState } from '../src/state'
 import { codexAsk, recordModelFailure, runUpdates as runBothCalls } from '../src/update'
 import { findCli } from '../src/cli'
 import { run } from '../src/run'
-import type { RunWithInput } from '../src/run'
 import { makeServer } from '../src/server'
 import { OVERVIEW_SYSTEM } from '../../hooks/model-text'
 import { fakeRunner, ledgerOnly, tempDir } from './helpers'
@@ -454,19 +453,19 @@ test('a reply with a NUL byte reaches codex on stdin, and both calls of its upda
   assert.ok(received.every(prompt => prompt.includes(reply)))
 })
 
-test('an update whose codex call throws saves the error as its failure beside the failed state', async t => {
+test('an update whose codex command cannot start saves why as its failure beside the failed state', async t => {
   const dir = tempDir()
   const personHome = tempDir()
   t.after(() => Promise.all([dir, personHome].map(d => rm(d, { recursive: true, force: true }))))
   await updateState(dir, 's1', s => ({ ...s, pending: [{ ex: ex(1, 'Should I deploy?'), turnsStarted: 1 }] }))
-  const throwing: RunWithInput = () => Promise.reject(new Error('spawn EAGAIN'))
+  const cli = '/apps/co\0dex'
 
   await runBothCalls(
     dir,
     's1',
     codexAsk(
-      throwing,
-      '/apps/codex',
+      run,
+      cli,
       dir,
       personHome,
       recordModelFailure(dir, 's1', () => 7),
@@ -476,7 +475,9 @@ test('an update whose codex call throws saves the error as its failure beside th
 
   const s = await readState(dir, 's1')
   assert.equal(s.presence.ledgerState, 'failed')
-  assert.deepEqual(s.lastModelFailure, { cli: '/apps/codex', code: -1, stderr: 'spawn EAGAIN', at: 7 })
+  assert.equal(s.lastModelFailure?.cli, cli)
+  assert.equal(s.lastModelFailure?.code, -1)
+  assert.match(s.lastModelFailure?.stderr ?? '', /null bytes/)
 })
 
 test('an Explain exchange keeps its question open while applying the rest of the model update', async () => {

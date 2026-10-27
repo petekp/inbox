@@ -1,5 +1,5 @@
 import { forkedFrom, hasLedger, isUnseen, NO_TURN } from '../../hooks/session'
-import { heardState } from './core'
+import { heardState, isTurnHeard } from './core'
 import { readState } from './state'
 import type { SessionState } from './state'
 import { forkedFromId } from './transcript'
@@ -75,8 +75,7 @@ export async function withMissedTurns(
   { reads, currentTurnId, canMarkBehind = true, isCleared = false }: EarlierHistory,
 ): Promise<{ state: SessionState; isBehind: boolean }> {
   const unchanged = { state: s, isBehind: false }
-  const isTurnChecked =
-    currentTurnId !== undefined && (s.coveredTurn === currentTurnId || s.heard.promptTurns.at(-1) === currentTurnId)
+  const isTurnChecked = currentTurnId !== undefined && isTurnHeard(s, currentTurnId)
   if (!canMarkBehind || isTurnChecked) return unchanged
   const rows = await reads.turns(
     isCleared ? holdsEndedTurn(currentTurnId) : turns => turns.some(t => t.id === s.coveredTurn),

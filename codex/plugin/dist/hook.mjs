@@ -2194,6 +2194,13 @@ function noteHook(s, hook, now, turnId) {
   } : { ...h, stopAt: now, stops: h.stops + 1 };
   return { ...s, heard };
 }
+function isPromptMissed(h, turnId) {
+  if (turnId !== null && (h.promptTurns.length > 0 || h.promptAt === null)) return !h.promptTurns.includes(turnId);
+  return h.promptAt === null || h.stopAt !== null && h.promptAt < h.stopAt;
+}
+function isTurnHeard(s, turnId) {
+  return turnId === s.coveredTurn || !isPromptMissed(s.heard, turnId);
+}
 function heardState(h) {
   if (h.startAt === null && h.promptAt === null && h.stopAt === null) return "none";
   const isMissed = h.promptMissedAt !== null && (h.promptAt === null || h.promptMissedAt >= h.promptAt);
@@ -2840,7 +2847,7 @@ async function withEarlierHistory(s, history) {
 }
 async function withMissedTurns(s, { reads, currentTurnId, canMarkBehind = true, isCleared = false }) {
   const unchanged = { state: s, isBehind: false };
-  const isTurnChecked = currentTurnId !== void 0 && (s.coveredTurn === currentTurnId || s.heard.promptTurns.at(-1) === currentTurnId);
+  const isTurnChecked = currentTurnId !== void 0 && isTurnHeard(s, currentTurnId);
   if (!canMarkBehind || isTurnChecked) return unchanged;
   const rows = await reads.turns(
     isCleared ? holdsEndedTurn(currentTurnId) : (turns) => turns.some((t) => t.id === s.coveredTurn)
@@ -3012,18 +3019,22 @@ function dataDir(env, pluginRoot) {
 import { execFile } from "node:child_process";
 var run = (args, { cwd, timeoutMs, env, input }) => new Promise((resolve4) => {
   const [file = "", ...rest] = args;
-  const child = execFile(
-    file,
-    rest,
-    { cwd, env: { ...process.env, ...env }, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, encoding: "utf8" },
-    (err, stdout, stderr) => {
-      const code = err ? typeof err.code === "number" ? err.code : -1 : 0;
-      resolve4({ code, stdout: String(stdout), stderr: String(stderr) });
-    }
-  );
-  child.stdin?.on("error", () => {
-  });
-  child.stdin?.end(input);
+  try {
+    const child = execFile(
+      file,
+      rest,
+      { cwd, env: { ...process.env, ...env }, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, encoding: "utf8" },
+      (err, stdout, stderr) => {
+        const code = err ? typeof err.code === "number" ? err.code : -1 : 0;
+        resolve4({ code, stdout: String(stdout), stderr: String(stderr) });
+      }
+    );
+    child.stdin?.on("error", () => {
+    });
+    child.stdin?.end(input);
+  } catch (err) {
+    resolve4({ code: -1, stdout: "", stderr: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 // src/hook-main.ts
