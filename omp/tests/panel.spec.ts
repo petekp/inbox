@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import {
   GH_MISSING_TEXT,
   checkActions,
+  checkRowId,
   prBlockActions,
   prMarkId,
   prsEmptyHint,
@@ -428,6 +429,32 @@ test('a local press reads its pending and failed results on the PR block', () =>
     },
   })
   expect(text(failed, ui)).toContain(`Could not open PR #${block.number}: no browser`)
+})
+
+test('a press on the PRs tab says when it was made, and a failing check keeps Asked to fix under its buttons when open', () => {
+  const screen = screenOf()
+  const { pr } = screen.view.prs.drawn[0]!
+  const check = failingChecks(pr)[0]!
+  const checkId = checkRowId(pr.ref, check.name)
+  const resolving = withLast(screen, prMarkId(pr.ref), {
+    kind: 'handoff',
+    action: 'pr-conflicts',
+    text: 'Resolve conflicts',
+    at: NOW - 5 * 60_000,
+  })
+  const pressed = withLast(resolving, checkId, {
+    kind: 'handoff',
+    action: 'check-fix',
+    text: 'Fix',
+    at: NOW - 14 * 60_000,
+  })
+  const drawn = text(pressed, { ...INITIAL_UI, tab: 'prs' })
+  expect(drawn).toMatch(/✓ Asked to resolve conflicts\s+5m ago/)
+  expect(drawn).toMatch(/Addressed\s+2m ago/)
+  expect(drawn).toMatch(new RegExp(`${check.name}\\s+✓ Asked to fix\\s+14m ago`))
+  const open = text(pressed, { ...INITIAL_UI, tab: 'prs', selectedId: checkId }).split('\n')
+  const buttons = open.findIndex(l => l.includes('Fix again'))
+  expect(open[buttons + 1]?.trim()).toBe('✓ Asked to fix')
 })
 
 test('a failed send shows why and offers Try again first', () => {
