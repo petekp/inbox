@@ -196,8 +196,6 @@ const notes = new Map<string, { text: string; at: number }>()
 const copies = new Map<string, { name: string; text: string }>()
 let lineNote: { text: string; at: number; isError?: boolean } | null = null
 let seen = new Map<string, number>()
-/** Settled rows that offered Undo. Once Undo ends, its button stays as unseen space, so the title keeps its wrap. */
-let undoOffered = new Set<string>()
 let rowsSeen: SeenRows = {}
 const entering = new Set<string>()
 const undoing = new Set<string>()
@@ -411,8 +409,6 @@ function applyView(next: View, seq: number) {
   readAt = Date.now()
   const before = seen
   seen = settledSeen(seen, settledIds(next), Date.now())
-  const offered = allRows(next).flatMap(r => (r.state.is === 'settled' && r.state.canUndo ? [r.id] : []))
-  undoOffered = new Set([...undoOffered, ...offered].filter(id => seen.has(id)))
   if ([...seen.keys()].some(id => !before.has(id))) drawIn(SETTLED_MS)
   view = next
   for (const { pr, isSettled } of next.prs.drawn)
@@ -1289,7 +1285,7 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
               <Icon name="undo" />
               Undo
             </button>
-          ) : undoOffered.has(r.id) ? (
+          ) : state.offersUndo ? (
             <UndoSpace />
           ) : null}
         </div>

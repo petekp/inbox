@@ -409,11 +409,37 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
       await pause(POLL_MS + 100)
       assert.match(root.querySelector('.row.settled')?.textContent ?? '', /Tag the release/)
       assert.equal(root.querySelector('.key.undo:not(.spent)'), null)
+      assert.ok(root.querySelector('.row.settled .key.undo.spent'))
       tabNamed('Finds').click()
       tabNamed('Asks').click()
       assert.equal(root.querySelector('.row.settled'), null)
       await pause(POLL_MS + 100)
       assert.equal(root.querySelector('.row.settled'), null)
+
+      state.ledger = recordItem(CODEX, state.ledger, { kind: 'task', ask: 'Publish the notes' }, Date.now()).ledger
+      const notes = state.ledger.items.find(i => i.ask === 'Publish the notes')!.id
+      const doneElsewhere = applyPress(
+        state.ledger,
+        undefined,
+        { action: 'done', id: notes },
+        {
+          now: Date.now(),
+          turnsStarted: 1,
+          extraSteps: [],
+          comparePage: '/plugin/dist/compare-page.html',
+        },
+      )
+      assert.ok(!('stale' in doneElsewhere))
+      state.ledger = doneElsewhere.ledger
+      if (doneElsewhere.last) state.lastActions[notes] = doneElsewhere.last
+      Date.now = () => realNow() + 2 * SETTLED_MS + 4 * POLL_MS
+      await pause(POLL_MS + 100)
+      const notesRow = [...root.querySelectorAll('.row.settled')].find(r =>
+        /Publish the notes/.test(r.textContent ?? ''),
+      )
+      assert.ok(notesRow)
+      assert.equal(notesRow.querySelector('.key.undo:not(.spent)'), null)
+      assert.ok(notesRow.querySelector('.key.undo.spent'))
     } finally {
       Date.now = realNow
     }
