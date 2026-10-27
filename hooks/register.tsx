@@ -195,7 +195,6 @@ import {
   isPressConfirmed,
   localPath,
   markSentToAgent,
-  offersUndo,
   refuseDoneNotification,
   openCommands,
   runLocalEffects,
@@ -1009,20 +1008,6 @@ function commitLedger(
   return commit($, owner, s => ({ ...s, ledger: change(s.ledger) }))
 }
 
-/** When the newest close that `after` adds and that offers Undo happened, or null when it adds none. */
-function newUndoCloseAt(before: Ledger, after: Ledger): number | null {
-  const closes = (l: Ledger) => [
-    ...l.closed.map(d => ({ key: `${d.id} ${d.at}`, at: d.at, how: d.how })),
-    ...l.closedFindings.map(f => ({ key: `${f.id} ${f.closedAt}`, at: f.closedAt, how: f.how })),
-  ]
-  const was = new Set(closes(before).map(c => c.key))
-  const times = closes(after)
-    .filter(c => !was.has(c.key) && offersUndo(c))
-    .map(c => c.at)
-
-  return times.length > 0 ? Math.max(...times) : null
-}
-
 /**
  * Changes `owner`'s session, keeping the rows the person replies on. After a write to the drawn session, the status
  * line follows it, rows that just closed redraw as they leave, and the pane moves to rows that arrived.
@@ -1041,8 +1026,6 @@ async function commit(
   )
   if (!isDrawn || after === before) return after
   void publishStatus($)
-  const undoCloseAt = newUndoCloseAt(before.ledger, after.ledger)
-  if (undoCloseAt !== null) redrawWhileUndoLasts($, undoCloseAt + SETTLED_MS)
   void followNewRows($).catch(() => undefined)
 
   return after
@@ -1064,7 +1047,21 @@ function drawnSession(
   return isDemo ? withDemoPresence(s, now) : s
 }
 
+/** When the last Undo the view offers ends, or null when it offers none. */
+function lastUndoEnd(view: SessionView): number | null {
+  const ends = [...allRows(view).map(r => r.state), ...view.prs.drawn.map(d => d.state)].flatMap(state =>
+    state.is === 'settled' && state.canUndo ? [state.at + SETTLED_MS] : [],
+  )
+
+  return ends.length > 0 ? Math.max(...ends) : null
+}
+
+let undoRedrawsUntil = -Infinity
+
+/** Redraws the pane while Undo lasts, to `expiresAt`, unless a redraw already runs to then or later. */
 function redrawWhileUndoLasts($: EngineInterface, expiresAt: number) {
+  if (expiresAt <= undoRedrawsUntil) return
+  undoRedrawsUntil = expiresAt
   // Desktop redraws once, when Undo ends: while the terminal's steps redrew every 213 ms there, clicks on the
   // pane's Buttons, Undo among them, did nothing.
   void (async () => {
@@ -1124,19 +1121,16 @@ async function redrawAtCompareEnd($: EngineInterface) {
   })
 }
 
+/** Redraws once the pane draws the loaded session, so its render times Undo, and again as its results and notes clear. */
 async function redrawAfterReload($: EngineInterface) {
-  const { ledger, lastActions, notes, now } = await drawnState($)
+  const { lastActions, notes, now } = await drawnState($)
   const times = [
-    ...ledger.closed.filter(offersUndo).map(d => d.at),
-    ...ledger.closedFindings.filter(offersUndo).map(f => f.closedAt),
-    ...Object.values(lastActions).flatMap(a => [
-      ...(a.result ? [a.result.at] : []),
-      ...(a.action === 'pr-dismiss' || a.action === 'address' ? [a.at] : []),
-    ]),
+    ...Object.values(lastActions).flatMap(a => (a.result ? [a.result.at] : [])),
     ...Object.values(notes).map(n => n.at),
   ]
   const latest = Math.max(...times)
-  if (times.length > 0 && latest + SETTLED_MS > now) redrawWhileUndoLasts($, latest + SETTLED_MS)
+  if (times.length > 0 && latest + SETTLED_MS > now) later($, latest + SETTLED_MS - now, () => redraw($))
+  await redraw($)
   await redrawAtCompareEnd($)
 }
 
@@ -2112,8 +2106,6 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   if (canRevealUndo) await keepUndoVisible($, undoKey, undoBlock, now, undoRevision)
   if (!('ref' in p) && p.action === 'done') later($, SETTLED_MS, () => wakeForDone($))
   if (!('ref' in p) && p.action === 'compare') void redrawAtCompareEnd($).catch(() => undefined)
-  if (!('ref' in p) && p.action === 'address') redrawWhileUndoLasts($, now + SETTLED_MS)
-  if ('ref' in p && p.action === 'pr-dismiss') redrawWhileUndoLasts($, now + SETTLED_MS)
   if (!('ref' in p) && p.action === 'undo') await selectRestored($, p.id)
   // A success note clears SETTLED_MS after its effects finish, when its result is stamped, and a message still on its
   // way after QUEUED_AFTER_MS reads Queued from then. A fresh value is what redraws the pane at each.
@@ -2208,7 +2200,6 @@ async function runDemoPress(
   const rowId = pressRowId(p)
   if (!('ref' in p) && p.action === 'type') await update($, TYPING, t => (t === p.id ? null : t))
   let applied = { stale: true } as Applied
-  let isUndoOffered = false
   const holds = await readHolds($)
   const held = new Set(Object.keys(holds.replies))
   await update($, DEMO, d => {
@@ -2230,8 +2221,6 @@ async function runDemoPress(
     applied = r
     const { [rowId]: _replaced, ...notes } = d.notes
     if ('stale' in r) return { ...d, notes: { ...notes, [rowId]: { note: 'stale' as const, at: now } } }
-    isUndoOffered =
-      newUndoCloseAt(d.ledger, r.ledger) !== null || ('ref' in p ? p.action === 'pr-dismiss' : p.action === 'address')
     const after = demoAfterPress({ lastActions: d.lastActions, turns: d.turns }, r, held)
 
     return { ...d, ...after, notes }
@@ -2252,7 +2241,6 @@ async function runDemoPress(
   }
   if ('stale' in pressed || pressed.effects.length > 0)
     later($, SETTLED_MS, () => update($, DEMO, d => d && { ...d, turns: demoTurns(d.turns, [], true) }))
-  if (isUndoOffered) redrawWhileUndoLasts($, now + SETTLED_MS)
 }
 
 type Action = {
@@ -2466,7 +2454,6 @@ async function setDemo($: EngineInterface, isShown: boolean, isRecording = false
   // The sample closes a row as it starts, at `now`, so its showing starts then too and the row stays in place. The
   // pane shows the sample or opens on it next.
   await syncLook($, { isOpen: true, since: now })
-  if (isShown) redrawWhileUndoLasts($, now + SETTLED_MS)
   if ((await read($, TAB)) === 'prs') await findPrs($)
   await followNewRows($, true)
 }
@@ -2507,6 +2494,7 @@ async function initializeInbox($: EngineInterface) {
   isOn = true
   toolsRefused = false
   compareRedrawAt = null
+  undoRedrawsUntil = -Infinity
   const refused = () => {
     toolsRefused = true
   }
@@ -3409,6 +3397,8 @@ export const register: Register = on => {
     const tabList = shownTabs(isNextBuild)
     const isRunningMarkShown = isOverviewShown && hasRunningMark(view.overviewPage)
     if (look === 'terminal') animateRunningMarks($, isRunningMarkShown)
+    const undoEnd = lastUndoEnd(view)
+    if (undoEnd !== null) redrawWhileUndoLasts($, undoEnd)
     // A hot reload keeps TYPING but empties openFields, so an open field takes its key and seed again here.
     if (typing !== null && !openFields.has(typing))
       openFields.set(typing, openedField(typing, (await read($, DRAFTS))[typing]))
