@@ -2528,7 +2528,9 @@ function isQueuedAt(last, now) {
 function pendingDeliveryAt(last, now) {
   if (last?.delivery?.state === "unconfirmed")
     return "unconfirmed";
-  return isQueuedAt(last, now) ? "queued" : null;
+  if (last?.delivery?.state !== "queued")
+    return null;
+  return isQueuedAt(last, now) ? "queued" : "sending";
 }
 var NO_HOLDS = { replies: {}, discarded: {} };
 function heldReplies(typing, drafts) {
@@ -2661,7 +2663,7 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
     return null;
   const delivery = last.delivery;
   const pending = pendingDeliveryAt(last, now);
-  if (pending)
+  if (pending === "queued" || pending === "unconfirmed")
     return { is: pending, label: last.text, at: last.at };
   if (delivery?.state === "failed")
     return { is: "notSent", reason: delivery.reason, retry: retryOf(id, last) };
@@ -2671,6 +2673,8 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   const working = WORKING_LABELS[last.action];
   if (last.kind === "talk" && working && (isAwaiting || isUnreported && !isPastLimit))
     return { is: "working", label: working, at: last.at };
+  if (pending === "sending")
+    return { is: "sending", label: last.text, at: last.at };
   if (isUnreported)
     return { is: "noComparison", at: last.at };
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last))
@@ -2725,7 +2729,7 @@ function isFailure(f) {
   return f?.is === "notSent" || f?.is === "local" && f.result.state === "failed";
 }
 function isPressOut(f) {
-  return f?.is === "working" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";
+  return f?.is === "working" || f?.is === "sending" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";
 }
 function pressOutAction(last, f) {
   if (!isPressOut(f))
@@ -2766,6 +2770,8 @@ function feedbackText(f, look) {
       return noteText();
     case "local":
       return localText(f.result, look);
+    case "sending":
+      return f.label;
     case "queued":
       return deliveryLabel(f.is, f.label);
     case "unconfirmed":
@@ -2802,7 +2808,7 @@ function settledTone(state) {
 function settledLabel(label, delivery) {
   if (delivery && typeof delivery === "object")
     return `${label} \xB7 Not sent: ${delivery.error}`;
-  return delivery === null ? label : deliveryLabel(delivery, label);
+  return delivery === null || delivery === "sending" ? label : deliveryLabel(delivery, label);
 }
 function stepKind(step) {
   return step.step.some((h) => h.kind === "run") ? "handoff" : "local";

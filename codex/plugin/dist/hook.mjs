@@ -1050,7 +1050,8 @@ function isQueuedAt(last, now) {
 }
 function pendingDeliveryAt(last, now) {
   if (last?.delivery?.state === "unconfirmed") return "unconfirmed";
-  return isQueuedAt(last, now) ? "queued" : null;
+  if (last?.delivery?.state !== "queued") return null;
+  return isQueuedAt(last, now) ? "queued" : "sending";
 }
 var NO_HOLDS = { replies: {}, discarded: {} };
 var ROW_COPY = {
@@ -1095,7 +1096,7 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   if (!last || last.kind === "local") return null;
   const delivery = last.delivery;
   const pending = pendingDeliveryAt(last, now);
-  if (pending) return { is: pending, label: last.text, at: last.at };
+  if (pending === "queued" || pending === "unconfirmed") return { is: pending, label: last.text, at: last.at };
   if (delivery?.state === "failed") return { is: "notSent", reason: delivery.reason, retry: retryOf(id, last) };
   const isAwaiting = isAwaitingReply(last, turns);
   const isUnreported = last.action === "compare" && !(reportedAt !== void 0 && reportedAt >= last.at);
@@ -1103,6 +1104,7 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   const working = WORKING_LABELS[last.action];
   if (last.kind === "talk" && working && (isAwaiting || isUnreported && !isPastLimit))
     return { is: "working", label: working, at: last.at };
+  if (pending === "sending") return { is: "sending", label: last.text, at: last.at };
   if (isUnreported) return { is: "noComparison", at: last.at };
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last)) return { is: "stillOpen", at: last.at };
   const isHandedStep = last.kind === "handoff" && last.action.startsWith("step-");
@@ -1150,7 +1152,7 @@ var DONE_LABELS = {
 };
 var STILL_WAITING_AFTER = /* @__PURE__ */ new Set(["check-fix"]);
 function isPressOut(f) {
-  return f?.is === "working" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";
+  return f?.is === "working" || f?.is === "sending" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";
 }
 function pressOutAction(last, f) {
   if (!isPressOut(f)) return null;
