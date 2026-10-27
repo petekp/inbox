@@ -2569,6 +2569,8 @@ async function applyConversation(
   // The theme read at the start is gone after /clear, so each conversation reads it.
   const [current] = await Promise.all([upgradeState($), syncTheme($)])
   const loadedAt = await $.clock.now()
+  // The pane now shows another conversation, so it starts a new showing.
+  await update($, SHOWN, s => s && { ...s, since: loadedAt })
   await replaceDrawn($, s => overviewChanged(cutOffTurn(cutOffUpdate(s)), o => childrenCutOff(o, loadedAt)))
   if (revision !== loadRevision) return
   void notePlace($)
