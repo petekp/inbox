@@ -3766,9 +3766,6 @@ function isViewKept(prState, linked, lastActions, ref, shownSince) {
   const at = dismissedAt(lastActions, ref);
   return keepsView(prState, linked, ref) || at !== null && isShownSince(at, shownSince);
 }
-function keptViews(prState, linked, lastActions, shownSince) {
-  return Object.fromEntries(Object.entries(prState.views).filter(([ref]) => isViewKept(prState, linked, lastActions, ref, shownSince)));
-}
 var DISMISSED_PR = { how: "dismissed", outcome: PR_DISMISSED_LABEL };
 function drawnPrs(prState, linked, lastActions, now, shownSince, settleWindowMs) {
   return inPrOrder(Object.values(prState.views)).flatMap((pr) => {
@@ -4616,8 +4613,7 @@ function pruned(s) {
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
   ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
-  const isLeftBehind = (ref) => isDismissed(s.lastActions, ref) && !isViewKept(s.prViews, s.ledger.prs, s.lastActions, ref, s.shownSince);
-  const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => !isLeftBehind(ref)));
+  const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isViewKept(s.prViews, s.ledger.prs, s.lastActions, ref, s.shownSince)));
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
   return {
     ...s,
@@ -4626,8 +4622,7 @@ function pruned(s) {
   };
 }
 function withFetchedPrs(s, fetched, branchRef) {
-  const merged = { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false };
-  return { ...s, prViews: { ...merged, views: keptViews(merged, s.ledger.prs, s.lastActions, s.shownSince) } };
+  return { ...s, prViews: { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false } };
 }
 function withoutStaleResult(last, now) {
   if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS)

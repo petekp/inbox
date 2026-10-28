@@ -1677,9 +1677,6 @@ function dismissedAt(lastActions, ref) {
   const mark = lastActions[prMarkId(ref)];
   return mark?.action === "pr-dismiss" ? mark.at : null;
 }
-function isDismissed(lastActions, ref) {
-  return dismissedAt(lastActions, ref) !== null;
-}
 function isViewKept(prState, linked, lastActions, ref, shownSince) {
   const at = dismissedAt(lastActions, ref);
   return keepsView(prState, linked, ref) || at !== null && isShownSince(at, shownSince);
@@ -1949,8 +1946,11 @@ function pruned(s) {
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
   ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
-  const isLeftBehind = (ref) => isDismissed(s.lastActions, ref) && !isViewKept(s.prViews, s.ledger.prs, s.lastActions, ref, s.shownSince);
-  const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => !isLeftBehind(ref)));
+  const views = Object.fromEntries(
+    Object.entries(s.prViews.views).filter(
+      ([ref]) => isViewKept(s.prViews, s.ledger.prs, s.lastActions, ref, s.shownSince)
+    )
+  );
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
   return {
     ...s,
