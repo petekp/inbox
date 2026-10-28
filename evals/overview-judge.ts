@@ -11,14 +11,18 @@ export const JUDGE_CHECKS = [
     property: 4,
     text: 'No two rows are the same work by meaning, and no new row is finished work under a new name.',
   },
-  { id: 'marks', property: 5, text: "Each mark fits the piece's real state." },
+  { id: 'marks', property: 5, text: "Each mark on a row of work fits its piece's real state." },
   {
     id: 'where-it-stands',
     property: 6,
     text: 'Where it stands says the state of the work, and keeps parts whose states differ.',
   },
   { id: 'child-labels', property: 7, text: 'Each row of running work says in plain words what the work does.' },
-  { id: 'no-restating', property: 9, text: 'No text restates an open ask or a finding in other words.' },
+  {
+    id: 'no-restating',
+    property: 9,
+    text: "No text repeats an open ask or a finding in any words, or says that its piece waits on the person's decision.",
+  },
   { id: 'was-lines', property: 12, text: 'A was line names the plan that was replaced, or the piece that merged in.' },
 ] as const
 

@@ -1,4 +1,4 @@
-import type { Child, Item, Overview, Subject, SubjectStatus } from '../types'
+import type { Child, HostTask, Item, Overview, Subject, SubjectStatus } from '../types'
 import type { Facts, Piece } from './overview-facts'
 import { minutes } from './overview-replay'
 import type { Replay } from './overview-replay'
@@ -578,6 +578,14 @@ const searchTurnAfter = [
   'Read src/notes/model.ts',
 ]
 
+const searchTasks: HostTask[] = [
+  { id: 't1', text: 'Read src/search/index.ts', status: 'done' },
+  { id: 't2', text: 'Rebuild the search index', status: 'done' },
+  { id: 't3', text: 'Rank results by recency in rank.ts', status: 'in-progress' },
+  { id: 't4', text: 'Run the search tests', status: 'pending' },
+  { id: 't5', text: 'Add typo tolerance', status: 'pending' },
+]
+
 /** A long turn with two mid-turn calls, its reply, then a catch-up after two replies were dropped. */
 const longTurn: Replay = {
   name: 'long-turn',
@@ -624,11 +632,7 @@ const longTurn: Replay = {
         person: 'Speed up search on large libraries, then rank results by recency.',
         activity: searchTurnBefore,
         turnStartedAt: 0,
-        tasks: [
-          { id: 't1', text: 'Rebuild the search index', status: 'done' },
-          { id: 't2', text: 'Rank results by recency', status: 'in-progress' },
-          { id: 't3', text: 'Add typo tolerance', status: 'pending' },
-        ],
+        tasks: searchTasks,
       },
       facts: {
         pieces: [
@@ -646,11 +650,7 @@ const longTurn: Replay = {
         person: 'Speed up search on large libraries, then rank results by recency.',
         activity: searchTurnAfter,
         turnStartedAt: 0,
-        tasks: [
-          { id: 't1', text: 'Rebuild the search index', status: 'done' },
-          { id: 't2', text: 'Rank results by recency', status: 'in-progress' },
-          { id: 't3', text: 'Add typo tolerance', status: 'pending' },
-        ],
+        tasks: searchTasks,
       },
       checkpoint: true,
       targets: ['no-news-no-move'],

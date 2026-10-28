@@ -67,7 +67,7 @@ The page fails when it reads as a log, when it copies Asks or Finds, or when it 
 
 ## Terms
 
-From `GLOSSARY.md`: Overview, Goal, Subject, Child, Seen line, News dot, Look, Host and Catch-up. The new terms:
+From `GLOSSARY.md`: Overview, Goal, Subject, Child, Seen line, Look, Host and Catch-up. The new terms:
 
 - **Overview call:** the inbox model call after the ledger call. It reads the open subjects and the new exchange, and answers with edits.
 - **Head:** the top of the page. Today it is the goal and the live line. Decision 19 makes it a title and a one-line description, with no live line.
@@ -129,7 +129,6 @@ More rules of the drawn page, all in `hooks/view.ts:overviewPage`:
 - At most 3 children show under one subject. The rest read "+ 2 more running".
 - A child whose subject is not shown, or that has no link yet, sits at the top of the list.
 - A held subject never folds into the queued count, and its mark does not move.
-- The tab's name gets a dot while the page holds a change the person has not seen.
 - The Asks row of a linked ask reads "Holds up" and the subject's name.
 
 Before any work, the page reads: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
@@ -423,14 +422,14 @@ At every step, the pieces set aside or waiting on a vendor stay on the page.
 
 | Step | What happens | What it checks |
 | --- | --- | --- |
-| 1 | A mid-turn call at 12 minutes. The activity finishes one piece and starts another, and the host's task list is present. | The finished piece closes, and the next is ●. No file names. |
+| 1 | A mid-turn call at 12 minutes. The activity finishes one piece and starts another. The host's task list holds file and test steps beside the features. | The finished piece closes, and the next is ●. No file name or test step becomes a row. |
 | 2 | A mid-turn call at 25 minutes. The activity shows more investigation and nothing new. | `UNCHANGED` is right, and no row moves |
 | 3 | The reply ends the turn | |
 | 4 | Two replies were dropped, and a catch-up reads the whole conversation | Finished work is not ●. The missed change reaches the page. |
 
 **One short case** stays outside the replays: a catch-up of a conversation the inbox never saw, from an empty page. It links the question the last reply left open to its subject. Finished work marked ● after a catch-up was a real failure, and Replay C's catch-up starts from a page that already holds the work.
 
-The 20 single-exchange Overview cases in `evals/cases.json` leave the release run. Each one's scenario is a step above, and their checks run at every step. `overview-shown-records-question` checks only the ledger, so it stays in the ledger suite.
+The 20 single-exchange Overview cases left `evals/cases.json`. Each one's scenario is a step above, and their checks run at every step. `overview-shown-records-question` checks only the ledger, so it stays in the ledger suite. `catch-up-records-open-question-and-result` keeps its ledger check, and the short case above checks its Overview.
 
 | Case | Replay step |
 | --- | --- |
@@ -492,9 +491,9 @@ The judge reads the drawn page as plain text, the page at the last checkpoint, a
 - Each child's label says what its work does.
 - Each row is a piece of the session's work.
 - No two rows are the same work by meaning, and no new row is finished work under a new name.
-- Each mark fits the piece's real state.
+- Each mark on a row of work fits its piece's real state.
 - Where it stands says the state, and keeps parts whose states differ.
-- No text restates an ask or a finding in other words.
+- No text repeats an ask or a finding in any words, or says that its piece waits on the person's decision.
 - A was line names the plan that was replaced, or the piece that merged in.
 
 **Checkpoints:** Replay A after step 3, at the return, and after step 12. Replay B after steps 4 and 8. Replay C after step 2. The judge runs there only with `--judge`.
