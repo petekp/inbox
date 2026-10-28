@@ -130,6 +130,8 @@ export type ViewInput = {
    * shows the inbox.
    */
   shownSince: number | null
+  /** When the person last sent a message they typed, from `Session.presence`. */
+  lastTypedMessageAt: number | null
 }
 
 /** What a look holds in place besides the session: the rows replies hold, and the rows closed while it shows them. */
@@ -138,11 +140,25 @@ export type Holds = Pick<ViewInput, 'replies' | 'discarded' | 'shownSince'>
 export const NO_HOLDS: Holds = { replies: {}, discarded: {}, shownSince: null }
 
 /**
- * Whether a row that closed or was pressed at `at` stays in place, with its result: the look has shown its tab since
- * then. It folds once the person leaves the tab, by switching tab or closing the inbox.
+ * Whether the look has shown its tab since `at`. Every row that closed or was pressed since then can still be drawn in
+ * place, as `isSettledInPlace` says, so a prune keeps its record.
  */
 export function isShownSince(at: number, shownSince: number | null): boolean {
   return shownSince !== null && at >= shownSince
+}
+
+/**
+ * Whether a settled row stays in place, with its result. It stays while the look shows the tab it settled on, until
+ * the person sends a message they typed. While its Undo lasts, it stays through that message and folds when Undo ends.
+ * Leaving the tab, by switching tab or closing the inbox, folds it at once.
+ */
+export function isSettledInPlace(
+  state: Pick<SettledState, 'at' | 'canUndo'>,
+  { shownSince, lastTypedMessageAt }: Pick<ViewInput, 'shownSince' | 'lastTypedMessageAt'>,
+): boolean {
+  const isTypedSince = lastTypedMessageAt !== null && lastTypedMessageAt > state.at
+
+  return isShownSince(state.at, shownSince) && (state.canUndo || !isTypedSince)
 }
 
 /**
@@ -188,6 +204,16 @@ function isUndoLeft(at: number, now: number, settleWindowMs: number): boolean {
   return now - at < settleWindowMs
 }
 
+/** Whether Undo can still take back a close made at `at`. */
+function canUndoClose(
+  closed: Pick<Closed, 'how' | 'isSentToAgent'>,
+  at: number,
+  now: number,
+  settleWindowMs: number,
+): boolean {
+  return isUndoable(closed) && isUndoLeft(at, now, settleWindowMs)
+}
+
 /** The state of a row closed at `at`, drawn in place with its outcome. Its close sets whether it offers Undo. */
 export function closedRowState(
   closed: Pick<Closed, 'how' | 'outcome' | 'isSentToAgent'> & { askedAs?: string },
@@ -200,7 +226,7 @@ export function closedRowState(
     is: 'settled',
     label: outcomeLabel(closed),
     at,
-    canUndo: isUndoable(closed) && isUndoLeft(at, now, settleWindowMs),
+    canUndo: canUndoClose(closed, at, now, settleWindowMs),
     offersUndo: offersUndo(closed),
     isLapsed: isLapsed(closed),
     delivery,
@@ -1425,13 +1451,18 @@ export function inboxView({
   replies,
   discarded,
   shownSince,
+  lastTypedMessageAt,
 }: ViewInput): InboxView {
-  const isInPlace = (at: number) => isShownSince(at, shownSince)
+  const isInPlace = (at: number, canUndo: boolean) =>
+    isSettledInPlace({ at, canUndo }, { shownSince, lastTypedMessageAt })
   const isOpen = (id: string) => ledger.items.some(i => i.id === id) || ledger.findings.some(f => f.id === id)
   const replyAfter = (c: Closed | ClosedFinding) => {
     const last = lastActions[c.id]
 
-    return last?.action === 'type' && last.at >= closedAt(c) && last.delivery?.state !== 'failed' && isInPlace(last.at)
+    return last?.action === 'type' &&
+      last.at >= closedAt(c) &&
+      last.delivery?.state !== 'failed' &&
+      isInPlace(last.at, false)
       ? last
       : null
   }
@@ -1445,15 +1476,21 @@ export function inboxView({
     return since !== undefined && since <= closedAt(c) && !isOwnClose(c)
   }
   const isDiscarded = (c: Closed | ClosedFinding) => (discarded[c.id] ?? -Infinity) >= closedAt(c)
-  const isPlaced = (c: Closed | ClosedFinding) =>
-    replyAfter(c) !== null || (!isDiscarded(c) && (isHeld(c) || isInPlace(closedAt(c))))
+  const isPlaced = (c: Closed | ClosedFinding) => {
+    const at = closedAt(c)
+
+    return (
+      replyAfter(c) !== null ||
+      (!isDiscarded(c) && (isHeld(c) || isInPlace(at, canUndoClose(c, at, now, settleWindowMs))))
+    )
+  }
   const placedItems = new Map(
     ledger.closed.filter(d => d.item && !isOpen(d.id) && isPlaced(d)).map(d => [d.id, d] as const),
   )
   const isFixSettled = (id: string) => {
     const last = lastActions[id]
 
-    return isFixSent(last) && !isInPlace(last.at)
+    return isFixSent(last) && !isInPlace(last.at, isUndoLeft(last.at, now, settleWindowMs))
   }
   const placedFindings = new Map(
     ledger.closedFindings.filter(f => !isOpen(f.id) && !isFixSettled(f.id) && isPlaced(f)).map(f => [f.id, f] as const),

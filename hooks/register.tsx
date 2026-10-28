@@ -66,6 +66,7 @@ import {
   emptySession,
   endTurn,
   forkedFrom,
+  messageTyped,
   noteActivity as noteTurnActivity,
   pressOn,
   recordPrompt,
@@ -1258,12 +1259,15 @@ async function appendContext($: EngineInterface, context: string[]) {
 
 /**
  * Records a prompt's words for the turn and returns what Claude reads beside it. `match` finds the press that sent a
- * message of the mod's own, when its row is stored.
+ * message of the mod's own, when its row is stored. `isTyped` says the person typed the prompt.
  */
 async function notePrompt(
   $: EngineInterface,
   text: string,
-  match: (s: Session) => { state: Session; sentBy: SentBy | null } = s => ({ state: s, sentBy: null }),
+  {
+    match = s => ({ state: s, sentBy: null }),
+    isTyped = false,
+  }: { match?: (s: Session) => { state: Session; sentBy: SentBy | null }; isTyped?: boolean } = {},
 ): Promise<string[]> {
   const [now, isShown] = await Promise.all([$.clock.now(), isPaneShown($)])
   await update($, AWAY, a => ({ ...a, lastActiveAt: now, isAway: false }))
@@ -1272,7 +1276,7 @@ async function notePrompt(
     const matched = match(s)
     const r = recordPrompt(CLAUDE_CODE, matched.state, text, isShown, matched.sentBy)
     notes = r.notes
-    return r.state
+    return isTyped ? messageTyped(r.state, now) : r.state
   })
 
   return notes
@@ -1386,8 +1390,8 @@ type Showing = { isOpen?: boolean; since?: number }
 
 /**
  * Starts a showing when the pane opens or shows another tab or the sample, and ends it when the pane closes. A row that
- * closes during a showing stays in place until it ends. Every write of the shown tab calls it before the pane draws
- * the tab. Idempotent without `since`, like `syncLook`.
+ * closes during a showing stays in place no longer than it lasts, as `isSettledInPlace` says. Every write of the shown
+ * tab calls it before the pane draws the tab. Idempotent without `since`, like `syncLook`.
  */
 async function syncShown($: EngineInterface, { isOpen, since }: Showing = {}) {
   const [tab, isDemo, isPaneOpen, now] = await Promise.all([
@@ -2870,15 +2874,15 @@ export const register: Register = on => {
         delegate && notice.hasEnded ? childEnded(o, delegateRef(delegate), at) : noticeApplied(o, notice, at),
       )
     }
-    const isPersonsWords =
-      origin.kind === 'composer' || origin.kind === 'bridge' || (origin.kind === 'plugin' && origin.asUser === true)
+    const isTyped = origin.kind === 'composer' || origin.kind === 'bridge'
+    const isPersonsWords = isTyped || (origin.kind === 'plugin' && origin.asUser === true)
     if (!isPersonsWords) {
       if (!e.turnId) await commit($, currentOwner(), s => ({ ...s, turn: { ...s.turn, trigger: origin.kind } }))
 
       return next(e)
     }
 
-    const notes = await notePrompt($, e.text)
+    const notes = await notePrompt($, e.text, { isTyped })
     if (carriedFor !== conversation.id) {
       carriedFor = conversation.id
       const carry = overviewCarryText((await read($, SESSION)).ledger)
@@ -3148,7 +3152,7 @@ export const register: Register = on => {
       if (!isOn || e.agentId) return next(e)
       const text = messageText(e.message)
       const count = noteStored(text)
-      const notes = await notePrompt($, text, current => arrived(current, text, count))
+      const notes = await notePrompt($, text, { match: current => arrived(current, text, count) })
       if (notes.length > 0) await appendContext($, notes)
 
       return next(e)

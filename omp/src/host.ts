@@ -27,6 +27,7 @@ import {
   hasLedger,
   isUnseen,
   lookEndedOn,
+  messageTyped,
   needsUpdate,
   noteActivity,
   noteCommandOutput,
@@ -803,6 +804,14 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
           }
         : {}),
     }
+  })
+
+  // omp fires `input` with source `interactive` only for what the person submits in its editor. `sendUserMessage`,
+  // which a press sends with, fires no `input` event.
+  pi.on('input', async (event, ctx) => {
+    if (isUnattended(ctx) || event.source !== 'interactive') return
+    const at = deps.now()
+    await change(sessionIdOf(ctx), s => messageTyped(s, at)).catch(() => undefined)
   })
 
   // Not before_agent_start, which can run twice for one prompt and does not run for a queued message.
