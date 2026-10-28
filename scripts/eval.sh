@@ -12,13 +12,24 @@
 # extension, evals/omp-probe.ts, that registers the two tools as native omp tools. Run it before a release, and
 # after a change to guidanceText, a tool description or a tool answer.
 #
+# The overview suite is the Overview call: the replays in evals/overview-replays.ts on Sonnet, the Codex model, or
+# both, 3 runs each by default. Fixed rules check the page after every step, and a replay fails a check that fails at
+# a step in more than one run of three. The report also says which targeted steps reproduced their failure.
+# --judge also runs the judge on Opus at each replay's checkpoints. --judge-pages <folder> runs only the judge, once
+# on each page of set-1.json and set-2.json in that folder, and fails unless it calls every page right. --judge-set 1
+# judges only set 1, as each revision of the judge's instructions does. The judge's pages are kept in the main
+# checkout's .scratch/overview-judge-pages/. Run the suite at each release, and after a
+# change to OVERVIEW_SYSTEM, overviewPrompt or the code that applies an Overview answer.
+#
 # Needs the claude CLI for Sonnet and Opus, the codex CLI, or CODEX_CLI_PATH, for Codex, and the omp CLI and
 # a Claude sign-in in omp (run omp, then /login) for omp.
 #
-# Usage: ./scripts/eval.sh [--suite model|agent] [--agent claude|codex|omp|both|all]
+# Usage: ./scripts/eval.sh [--suite model|agent|overview] [--agent claude|codex|omp|both|all]
 #                          [--claude-model opus|haiku|...] [--omp-model provider/model]
 #                          [--runs N] [--case name,name] [--out results.json]
 #                          [--with first-results.json] [--set-baseline]
+#        ./scripts/eval.sh --suite overview [--agent claude|codex|both] [--runs N] [--replay name,name]
+#                          [--judge] [--judge-pages folder [--judge-set 1|2]] [--out results.json]
 # --agent both runs claude and codex. --agent all runs claude, codex and omp.
 # --claude-model sets the model of the Claude agent in the agent suite. It defaults to opus.
 # --omp-model sets the model of the omp agent. It defaults to Claude Opus 5.5, which omp lists from 18.12.3. A run
@@ -58,8 +69,13 @@ case "$suite" in
             --outdir="$bundle" --out-extension:.js=.mjs --log-level=warning
         INBOX_EVAL_ROOT="$DIR" node "$bundle/agent.mjs" --cases "$DIR/evals/agent-cases.json" "$@"
         ;;
+    overview)
+        "$esbuild" "$DIR/evals/overview-run.ts" --bundle --platform=node --format=esm \
+            --outfile="$bundle/overview-run.mjs" --log-level=warning
+        INBOX_EVAL_ROOT="$DIR" node "$bundle/overview-run.mjs" "$@"
+        ;;
     *)
-        echo "Unknown suite: $suite. Use model or agent." >&2
+        echo "Unknown suite: $suite. Use model, agent or overview." >&2
         exit 2
         ;;
 esac
