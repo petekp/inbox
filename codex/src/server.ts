@@ -6,7 +6,6 @@ import { isAbsolute } from 'node:path'
 
 import { ghFinder, ghIn } from '../../hooks/gh'
 import type { Run } from '../../hooks/gh'
-import { keptViews } from '../../hooks/pr-tab'
 import type { PrPress } from '../../hooks/pr-tab'
 import { demoAfterPress, demoTurns, noteText, openTarget } from '../../hooks/presses'
 import type { PathProbe, RowPress } from '../../hooks/presses'
@@ -490,15 +489,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         const s = await updateState(dir, id, s => {
           const shownTab = drawnTabOf(sentTab ?? s.shownTab, deps.isNextBuild === true)
 
-          return {
-            ...withHolds(lookOnView(s, shownTab, now()), holds),
-            tabSeenAt: now(),
-            shownTab,
-            prViews: {
-              ...s.prViews,
-              views: keptViews(s.prViews, s.ledger.prs, s.lastActions, holds.shownSince),
-            },
-          }
+          return { ...withHolds(lookOnView(s, shownTab, now()), holds), tabSeenAt: now(), shownTab }
         })
         fetchPrsWhenDue(id, s)
         return { ...text('Inbox view'), structuredContent: await served(s, id, false, holds) }
