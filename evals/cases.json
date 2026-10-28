@@ -2501,6 +2501,49 @@
     ]
   },
   {
+    "name": "changed-recommendation-reaches-agent-question",
+    "about": "A reply that changes its recommendation for an agent-recorded question gives that question the new recommendation, and adds nothing.",
+    "ledger": {
+      "turn": 5,
+      "nextId": 4,
+      "card": {
+        "goal": "Add a snooze button to the inbox",
+        "done": ["Snooze state saved per row"],
+        "now": "Waiting on which looks get it first",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i3",
+          "kind": "question",
+          "label": null,
+          "from": "record",
+          "ask": "Build the snooze button for omp and the terminal first, or every look?",
+          "options": ["omp and the terminal", "Every look at once"],
+          "rec": "omp and the terminal",
+          "helps": [],
+          "turn": 4,
+          "at": 4
+        }
+      ]
+    },
+    "exchange": {
+      "person": "how much more work is every look?",
+      "turn": 5,
+      "activity": ["ran: sed -n 1,20p AGENTS.md"],
+      "reply": "About a day more: the desktop pane and the Codex tab each need their own button. I also checked AGENTS.md: it asks for every client from the start, and leaves a host out only for a real host limit. Snooze has none, so I'd now build it in every look, not omp and the terminal first. Say go and I'll start."
+    },
+    "checks": [
+      {
+        "item": "i3",
+        "rec": "every look"
+      },
+      {
+        "added": 0
+      }
+    ]
+  },
+  {
     "name": "question-without-recommendation-has-no-rec",
     "about": "A question whose reply weighs both answers but recommends neither gets no recommendation.",
     "ledger": {
