@@ -4290,6 +4290,31 @@ for (const isAttachedFirst of [true, false]) {
   })
 }
 
+test('a session the desktop app started carries its saved rows into a first prompt that comes before the attach', async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  world($, on, [], { CLAUDE_CODE_ENTRYPOINT: 'claude-desktop' })
+  stored.set('s:session-1', JSON.stringify(SAVED_SESSION))
+
+  await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
+  const firstPrompt = await $.prompt.submit({ text: 'continue', wait: false, origin: { kind: 'composer' } })
+
+  expect(firstPrompt.context?.join('\n')).toContain('Use Node or Python?')
+})
+
+test('a claude -p run from a desktop session stays off', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  const prompts: string[] = []
+  world($, on, prompts, { CLAUDE_CODE_ENTRYPOINT: 'claude-desktop', CLAUDE_CODE_CHILD_SESSION: '1' })
+
+  await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'sdk' } })
+  await $.turn.complete({ answer: 'Node or Python?', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+
+  expect(prompts).toEqual([])
+  expect(stored.size).toBe(0)
+})
+
 test('the desktop task keeps help before Done, puts Try again first when its send fails, and keeps Undo’s place after Done once Undo ends', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
