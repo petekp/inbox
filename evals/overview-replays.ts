@@ -219,7 +219,7 @@ const coordinatorDay: Replay = {
           },
         ],
       },
-      targets: ['piece-once', 'no-duplicates', 'short-names', 'was-not-cut', 'each-once'],
+      targets: ['piece-once', 'no-duplicates', 'short-names', 'was-not-cut'],
     },
     {
       label: 'The coordinator asks whether 2.5 waits for the fix',
@@ -244,7 +244,7 @@ const coordinatorDay: Replay = {
           { match: '2\\.5 wait', text: 'Should 2.5 wait for the archive fix, or ship without it?', holdsUp: ['r25'] },
         ],
       },
-      targets: ['asks-linked', 'held-text', 'not-work', 'no-restating'],
+      targets: ['asks-linked', 'held-text', 'not-work'],
     },
     {
       label: 'The person answers, and the ask closes',
@@ -280,7 +280,7 @@ const coordinatorDay: Replay = {
       facts: {
         notWork: [{ kind: 'finding', text: 'The settings page test fails now and then', match: 'flak|settings' }],
       },
-      targets: ['not-work', 'no-news-no-move', 'rows-are-work'],
+      targets: ['not-work', 'no-news-no-move'],
     },
     {
       label: "The fix's PR opens, and a reviewer subagent starts",
@@ -305,6 +305,7 @@ const coordinatorDay: Replay = {
           { ref: 'toolu_r1', does: 'Review the archive fix', serves: 'vanish' },
         ],
       },
+      checkpoint: true,
       targets: ['piece-once', 'text-is-state', 'children-linked', 'each-once', 'where-it-stands'],
     },
     {
@@ -329,7 +330,7 @@ const coordinatorDay: Replay = {
         ],
         children: [],
       },
-      targets: ['marks-true', 'piece-once', 'each-once'],
+      targets: ['marks-true', 'piece-once'],
     },
     {
       label: 'The person asks why export sometimes picks the wrong default folder on one platform',
@@ -348,7 +349,7 @@ const coordinatorDay: Replay = {
       },
       targets: ['short-names'],
     },
-    { label: 'Three hours pass', at: 410, checkpoint: true, targets: ['stall-times'] },
+    { label: 'Three hours pass', at: 410, targets: ['stall-times'] },
     {
       label: '2.5 is published, and nothing follows',
       at: 420,
@@ -411,7 +412,7 @@ const singleTask: Replay = {
           }),
         ],
       },
-      targets: ['head-no-status', 'head-follows', 'head'],
+      targets: ['head-no-status', 'head-follows'],
     },
     {
       label: 'The engine works. The agent fixes a lint error, runs two review subagents and asks about conflicts.',
@@ -446,7 +447,7 @@ const singleTask: Replay = {
           { ref: 'toolu_b', does: 'Check sync engine edge cases', serves: 'engine' },
         ],
       },
-      targets: ['head-follows', 'children-linked', 'asks-linked', 'held-text', 'no-restating'],
+      targets: ['head-follows', 'children-linked', 'asks-linked', 'held-text', 'not-work'],
     },
     {
       label: 'The person answers "manual merge"',

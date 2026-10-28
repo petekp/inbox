@@ -159,6 +159,16 @@ type StepRecord = {
 
 type ReplayRun = Run & { steps: StepRecord[] }
 
+/**
+ * A step as the replay tables in `docs/plans/overview.md` name it: by its call's number, or by its label when it
+ * makes no call.
+ */
+function stepName(replay: Replay, i: number): string {
+  const step = replay.steps[i]!
+
+  return step.call ? `step ${replay.steps.slice(0, i + 1).filter(s => s.call).length}` : `"${step.label}"`
+}
+
 async function once(agent: Agent, replay: Replay, n: number): Promise<ReplayRun> {
   const steps = await runReplay(replay, { agent, ask: modelCall(agent) })
   const graded = gradeReplay(replay, steps)
@@ -181,7 +191,7 @@ async function once(agent: Agent, replay: Replay, n: number): Promise<ReplayRun>
   const failed = records.flatMap((r, i) =>
     r.rules
       .filter(x => x.until === null && x.failures.length > 0)
-      .map(x => `step ${i + 1} ${x.rule}: ${x.failures.join('; ')}`),
+      .map(x => `${stepName(replay, i)} ${x.rule}: ${x.failures.join('; ')}`),
   )
 
   return { ...job(agent, replay, n), error: null, failed, attempts: 1, earlier: [], durationMs: 0, steps: records }
@@ -230,6 +240,7 @@ function reportReplay(agent: Agent, replay: Replay): 'pass' | 'fail' | 'not run'
   const known = new Set<string>()
   const reproduced: string[] = []
   const missed: string[] = []
+  const unjudged: string[] = []
   for (const [i, step] of replay.steps.entries()) {
     const failing = (id: string) =>
       graded.filter(r => {
@@ -250,13 +261,13 @@ function reportReplay(agent: Agent, replay: Replay): 'pass' | 'fail' | 'not run'
       if (fails === 0) continue
       if (until) known.add(`${id}, until ${until}`)
       else if (graded.length - fails < needed)
-        blocking.push(`step ${i + 1} ${id}: failed in ${fails} of ${graded.length}`)
-      else once.push(`step ${i + 1} ${id}: failed in ${fails} of ${graded.length}`)
+        blocking.push(`${stepName(replay, i)} ${id}: failed in ${fails} of ${graded.length}`)
+      else once.push(`${stepName(replay, i)} ${id}: failed in ${fails} of ${graded.length}`)
     }
     for (const t of step.targets ?? []) {
-      const isJudgeCheck = JUDGE_CHECKS.some(c => c.id === t)
-      if (isJudgeCheck && !(values.judge && step.checkpoint)) continue
-      ;(failing(t) >= needed ? reproduced : missed).push(`step ${i + 1} ${t}`)
+      const isJudgeOnly = !RULES.some(r => r.id === t)
+      const list = isJudgeOnly && !values.judge ? unjudged : failing(t) >= needed ? reproduced : missed
+      list.push(`${stepName(replay, i)} ${t}`)
     }
   }
   console.log(`${blocking.length === 0 ? '  ok' : '  x '} ${agent} ${replay.name}: ${graded.length} runs`)
@@ -265,6 +276,7 @@ function reportReplay(agent: Agent, replay: Replay): 'pass' | 'fail' | 'not run'
   if (known.size > 0) console.log(`       known failing: ${[...known].join('; ')}`)
   console.log(`       reproduced: ${reproduced.join(', ') || 'none'}`)
   console.log(`       not reproduced: ${missed.join(', ') || 'none'}`)
+  if (unjudged.length > 0) console.log(`       needs --judge: ${unjudged.join(', ')}`)
 
   return blocking.length === 0 ? 'pass' : 'fail'
 }

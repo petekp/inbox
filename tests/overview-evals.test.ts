@@ -344,9 +344,10 @@ test('a bad run of each replay fails the rule it breaks at the step it breaks, a
   }
 })
 
-const KNOWN_IDS = new Set([...RULES.map(r => r.id), ...JUDGE_CHECKS.map(c => c.id)])
+const RULE_IDS = new Set<string>(RULES.map(r => r.id))
+const JUDGE_ONLY_IDS = new Set<string>(JUDGE_CHECKS.map(c => c.id).filter(id => !RULE_IDS.has(id)))
 
-test('every replay is well formed: times rise, facts name known pieces, asks open before they close, and targets are checks', () => {
+test('every replay is well formed: times rise, facts name known pieces, asks open before they close, and each target is a check its step runs', () => {
   for (const r of REPLAYS) {
     let facts: Facts = { ...r.start.facts, changed: [] }
     const opened = new Set(r.start.ledger.items?.map(i => i.id) ?? [])
@@ -376,8 +377,10 @@ test('every replay is well formed: times rise, facts name known pieces, asks ope
             ok: true,
           })
       }
-      for (const t of step.targets ?? [])
-        expect({ where, target: t, ok: KNOWN_IDS.has(t) }).toEqual({ where, target: t, ok: true })
+      for (const t of step.targets ?? []) {
+        const isRun = RULE_IDS.has(t) || (JUDGE_ONLY_IDS.has(t) && step.checkpoint === true)
+        expect({ where, target: t, ok: isRun }).toEqual({ where, target: t, ok: true })
+      }
     }
   }
 })

@@ -397,10 +397,10 @@ Three replays, each run 3 times on Sonnet and on Codex. Fixed rules check the pa
 | Look | The person reads the page | The Seen line moves to this point |
 | 7 | A reply that only explains how releases work | Nothing moves |
 | 8 | The coordinator records a flaky test elsewhere as a finding | No subject for it |
-| 9 | The fix's PR opens, and a reviewer subagent starts | No new "PR" piece. The text says the state of the fix. The reviewer sits under the fix. |
+| 9 | The fix's PR opens, and a reviewer subagent starts | Checkpoint. No new "PR" piece. The text says the state of the fix. The reviewer sits under the fix. |
 | 10 | The PR merges, and 2.5 prep starts | The fix closes as ✓ under its own name. 2.5 is ●. |
 | 11 | The person asks why export sometimes picks the wrong default folder on one platform | The new piece gets a short name |
-| Return | Three hours pass | Checkpoint. Only the held, waiting and quiet work shows a time. |
+| Return | Three hours pass | Only the held, waiting and quiet work shows a time. |
 | 12 | 2.5 is published, and nothing follows | The head names the finished push. The export piece, set aside since the start, is still ○. |
 
 At every step, the pieces set aside or waiting on a vendor stay on the page.
@@ -496,7 +496,7 @@ The judge reads the drawn page as plain text, the page at the last checkpoint, a
 - No text repeats an ask or a finding in any words, or says that its piece waits on the person's decision.
 - A was line names the plan that was replaced, or the piece that merged in.
 
-**Checkpoints:** Replay A after step 3, at the return, and after step 12. Replay B after steps 4 and 8. Replay C after step 2. The judge runs there only with `--judge`.
+**Checkpoints:** Replay A after steps 3, 9 and 12. Replay B after steps 4 and 8. Replay C after step 2. The judge runs there only with `--judge`.
 
 **How it is checked:** the good and bad pages are written by hand, each bad page breaking one property and otherwise the same as a good page. They are split into two sets. A fresh agent writes the judge's instructions from this spec alone, without seeing either set. When the judge gets a page in the first set wrong, its author is told the kind of mistake the judge made, but not the page, and revises the instructions. The second set is used for nothing else, so it shows whether a revision holds. The judge must call every page in both sets right: a bad page is caught only when the property it breaks is the one the judge fails. The pages come from sessions other than the notes app above, since the judge's author reads this spec. They are kept out of Git, in `.scratch/overview-judge-pages/` in the main checkout, and the judge's author is not given that folder. `./scripts/eval.sh --suite overview --judge-pages <folder>` runs the check, once on each page. It runs again at each release, and after any change to the judge's instructions, its model, or how the page is drawn as text.
 
@@ -504,7 +504,7 @@ The judge reads the drawn page as plain text, the page at the last checkpoint, a
 
 A replay passes when each check passes in at least 2 of its 3 runs at every step. A check that fails in one run is listed for reading. Known failing cases are listed apart and do not block a release.
 
-The report also lists, for each step, the targets that failed in at least 2 of 3 runs, as reproduced, and the rest as not reproduced. A call that ends with no answer before the host's time limit, as on a network error, failed outside the model, so the runner runs that replay again. A call that answers past the limit fails as it would in the host.
+The report also lists, for each step, the targets that failed in at least 2 of 3 runs, as reproduced, and the rest as not reproduced. A target only the judge checks sits on a checkpoint, and a run without `--judge` lists it apart. A call that ends with no answer before the host's time limit, as on a network error, failed outside the model, so the runner runs that replay again. A call that answers past the limit fails as it would in the host.
 
 ### Free checks in `check.sh`
 
