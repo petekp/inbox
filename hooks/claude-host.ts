@@ -14,7 +14,7 @@ import type { Effect } from './presses'
 import { emptySession, pruned, upgradeSession } from './session'
 import type { SavedSession, SendOutcome, SentBy, Session } from './session'
 import { exclusiveKeys } from './session-host'
-import type { SessionHost } from './session-host'
+import type { Ask, CallReport, OverviewRecords, RecordFiles, SessionHost } from './session-host'
 
 /** The drawn conversation's session. `revision` counts its writes, so a write computed from an older one is retried. */
 export type ModSession = Session & { revision: number }
@@ -457,6 +457,45 @@ export function askLedgerModel(
   })
 }
 
+/** The engine does not say which model answered. */
+function callReport(r: ModelResult): CallReport {
+  if (r.isAnswered) return { model: MODEL }
+  const error = r.reason === 'api-error' ? `api-error ${r.status ?? 'with no response'}: ${r.error}` : r.reason
+
+  return { model: MODEL, error }
+}
+
+/** Calls the inbox model as `askLedgerModel` does, waiting up to `timeoutMs`. */
+export function modelAsk($: EngineInterface, timeoutMs: number): Ask {
+  return async (prompt, system, report) => {
+    const r = await askLedgerModel($, prompt, system, timeoutMs)
+    report?.(callReport(r))
+    return r.isAnswered ? r.text : null
+  }
+}
+
+/** The engine has no call that removes a file, so removing runs `rm` and `rmdir`. */
+function recordFiles($: EngineInterface): RecordFiles {
+  return {
+    write: (path, text) => $.fs.write(path, text),
+    list: async folder => (await $.fs.list(folder).catch(() => [])).map(e => e.name),
+    removeFiles: async paths => void (await $.process.run(['rm', '-f', '--', ...paths])),
+    removeFolder: async path => void (await $.process.run(['rmdir', '--', path])),
+  }
+}
+
+/** The folder a next build keeps its Overview call records in, under Claude Code's configuration folder. */
+export async function recordsFolder($: EngineInterface): Promise<string | null> {
+  const home = await $.env.get('HOME')
+  const config = (await $.env.get('CLAUDE_CONFIG_DIR')) || (home ? `${home}/.claude` : null)
+
+  return config ? `${config}/plugins/data/inbox/overview-calls` : null
+}
+
+export function overviewRecords($: EngineInterface, folder: string, owner: Owner): OverviewRecords {
+  return { host: 'claude-code', folder, session: owner.id, files: recordFiles($) }
+}
+
 const COPY_FAILURES: Record<Extract<UiCopyResult, { isCopied: false }>['reason'], string> = {
   'no-surface': 'no app is attached',
   'no-clipboard': 'the clipboard did not take it',
@@ -596,10 +635,7 @@ export function sessionHost(
     },
     update: opts.update,
     exclusive: fn => updating.run(owner.id, fn),
-    ask: async (prompt, system) => {
-      const r = await askLedgerModel($, prompt, system, 45_000)
-      return r.isAnswered ? r.text : null
-    },
+    ask: modelAsk($, 45_000),
     deliver: (_s, text, deliveryId) => deliver($, owner, text, deliveryId),
     isDeliveryHeldUntilRun: true,
     perform: async (_s, effect) => (opts.surface ? perform($, effect, opts.surface) : COPY_FAILURES['no-surface']),
