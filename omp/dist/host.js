@@ -910,10 +910,59 @@ function restates(a, b) {
     return false;
   return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b);
 }
+var GENERIC = new Set([
+  "which",
+  "what",
+  "how",
+  "when",
+  "where",
+  "whether",
+  "why",
+  "who",
+  "pick",
+  "choose",
+  "select",
+  "prefer",
+  "want",
+  "decide",
+  "need",
+  "like",
+  "are",
+  "was",
+  "were",
+  "been",
+  "being",
+  "can",
+  "could",
+  "would",
+  "will",
+  "shall",
+  "might",
+  "must",
+  "does",
+  "did",
+  "has",
+  "have",
+  "had",
+  "new",
+  "current",
+  "existing",
+  "its",
+  "our",
+  "their",
+  "now",
+  "still",
+  "also",
+  "just",
+  "again",
+  "already",
+  "instead",
+  "yet"
+]);
 function repeatsSubject(a, b) {
   const x = keyWords(a);
   const y = keyWords(b);
-  const within = (inner, outer) => [...inner].every((w) => outer.has(w));
+  const within = (inner, outer) => [...inner].every((w) => GENERIC.has(w) || outer.has(w));
   return sameAsk(a, b) || restates(a, b) && (within(x, y) || within(y, x));
 }
 function sameAsk(a, b) {
@@ -2804,6 +2853,7 @@ var BANNER_TONES = {
   "read-failed": "error",
   stopped: "error",
   "gh-missing": "warning",
+  "gh-signed-out": "warning",
   "press-note": "notice",
   "press-failed": "error",
   "hooks-trust": "error",
@@ -3637,6 +3687,10 @@ function herdrReporter() {
 
 // ../hooks/pr-tab.ts
 var MAX_PRS = 12;
+var GH_SIGN_IN_CODE = 4;
+function asksForSignIn(r) {
+  return r.exitCode === GH_SIGN_IN_CODE || r.exitCode !== 0 && /\bHTTP 401\b/.test(r.stderr);
+}
 function linkedPrs(prs, refs) {
   return [...prs.filter((r) => !refs.includes(r)), ...refs];
 }
@@ -3659,7 +3713,14 @@ function olderPrsText(prState, linked) {
   const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
   return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
 }
-async function fetchTracked(gh, state, linked, findsBranchPr) {
+async function fetchTracked(run, state, linked, findsBranchPr) {
+  let isGhSignedOut = null;
+  const gh = async (args) => {
+    const r = await run(args);
+    if (r.exitCode !== UNSTARTABLE_CODE)
+      isGhSignedOut = isGhSignedOut === true || asksForSignIn(r);
+    return r;
+  };
   const { tracked } = splitLinked(state, linked);
   const branchTarget = findsBranchPr ? null : state.branchRef;
   const isBranchLinked = branchTarget !== null && tracked.includes(branchTarget);
@@ -3671,7 +3732,7 @@ async function fetchTracked(gh, state, linked, findsBranchPr) {
   for (const v of [...rest, branch])
     if (v)
       views[v.ref] = v;
-  return { views, branchRef: findsBranchPr ? branch?.ref ?? null : state.branchRef };
+  return { views, branchRef: findsBranchPr ? branch?.ref ?? null : state.branchRef, isGhSignedOut };
 }
 async function fetchPr(gh, target, views, knownBranchRef) {
   const threadsOf = (ref) => {
@@ -3700,9 +3761,12 @@ async function fetchPr(gh, target, views, knownBranchRef) {
     return null;
   const previous = views[ref];
   const base = view.exitCode === 0 ? readView(ref, view.stdout) : null;
-  if (!base)
-    return previous ? { ...previous, error: view.stderr.trim().split(`
-`)[0] || "gh could not read the PR" } : null;
+  if (!base) {
+    if (!previous || asksForSignIn(view))
+      return previous ?? null;
+    return { ...previous, error: view.stderr.trim().split(`
+`)[0] || "gh could not read the PR" };
+  }
   const threads = early ?? await threadsOf(ref);
   const answer = threads.exitCode === 0 ? readThreadsAnswer(threads.stdout) : null;
   return {
@@ -3736,13 +3800,21 @@ function prMarkId(ref) {
   return `pr:${ref}`;
 }
 var GH_MISSING_TEXT = "The inbox could not find gh. It needs gh to read your PRs.";
+var GH_SIGNED_OUT_TEXT = "gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.";
+function ghNoticeOf(gh) {
+  if (gh.isGhMissing)
+    return { kind: "gh-missing", text: GH_MISSING_TEXT };
+  if (gh.isGhSignedOut)
+    return { kind: "gh-signed-out", text: GH_SIGNED_OUT_TEXT };
+  return null;
+}
 function prsEmptyHint(place) {
   return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
 }
 function prsEmptyText(prs, place) {
   return {
     title: prs.isFetching ? "Checking for PRs\u2026" : "No PRs",
-    hint: prs.isGhMissing ? GH_MISSING_TEXT : prsEmptyHint(place)
+    hint: ghNoticeOf(prs)?.text ?? prsEmptyHint(place)
   };
 }
 function prRefreshFailedText(error) {
@@ -4679,8 +4751,17 @@ function pruned(s) {
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
   };
 }
-function withFetchedPrs(s, fetched, branchRef) {
-  return { ...s, prViews: { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false } };
+function withFetchedPrs(s, fetched, branchRef, isGhSignedOut) {
+  const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true;
+  return {
+    ...s,
+    prViews: {
+      views: { ...s.prViews.views, ...fetched },
+      branchRef,
+      isFetching: false,
+      ...isSignedOut ? { isGhSignedOut: true } : {}
+    }
+  };
 }
 function withoutStaleResult(last, now) {
   if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS)
@@ -4729,7 +4810,8 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
     drawn,
     branchRef: s.prViews.branchRef,
     count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent)).length,
-    olderText: olderPrsText(s.prViews, s.ledger.prs)
+    olderText: olderPrsText(s.prViews, s.ledger.prs),
+    isGhSignedOut: s.prViews.isGhSignedOut === true
   };
 }
 
@@ -5185,8 +5267,8 @@ async function fetchPrs(host, findsBranchPr) {
     if (refound !== bin)
       fetch = await fetchWith(refound);
   }
-  const { views: fetched, branchRef } = fetch;
-  await host.update((cur) => withFetchedPrs(cur, fetched, branchRef));
+  const { views: fetched, branchRef, isGhSignedOut } = fetch;
+  await host.update((cur) => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut));
 }
 
 // ../hooks/tones.ts
@@ -5521,15 +5603,17 @@ function prEntries(screen, ui, now) {
   const isWaiting = (id) => waits.some((w) => w.id === id && w.isWaiting);
   const markLead = (mark) => ({ text: mark.text, tone: mark.tone ?? "sep" });
   const out = [];
+  const ghState = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut };
   if (prs.drawn.length === 0) {
-    const empty = prsEmptyText({ isFetching: screen.isFetchingPrs, isGhMissing: screen.isGhMissing }, "session");
+    const empty = prsEmptyText({ isFetching: screen.isFetchingPrs, ...ghState }, "session");
     return [
       { kind: "note", text: empty.title, isStrong: true },
       { kind: "note", text: empty.hint, isWhole: true }
     ];
   }
-  if (screen.isGhMissing)
-    out.push({ kind: "banner", banner: bannerOf("gh-missing", GH_MISSING_TEXT) });
+  const ghNotice = ghNoticeOf(ghState);
+  if (ghNotice)
+    out.push({ kind: "banner", banner: bannerOf(ghNotice.kind, ghNotice.text) });
   for (const d of prs.drawn) {
     const { pr, state } = d;
     const markId = prMarkId(pr.ref);
@@ -7115,7 +7199,15 @@ function createInbox(pi, deps = defaultDeps) {
   const prFetches = prFetchTracker(deps.now);
   const listeners = new Map;
   let noted = null;
+  let replied = null;
   let isGhMissing = false;
+  function endedTurn(id, s, reply, at, { hostTasks, queuesEmptyReply = false }) {
+    const ended = endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
+      tab: panelScreenTab(id),
+      queuesEmptyReply
+    });
+    return turnEnded(ended, at);
+  }
   const notifyChanged = (id) => {
     listeners.get(id)?.forEach((listener) => listener());
     reportCounts(id);
@@ -7288,14 +7380,26 @@ function createInbox(pi, deps = defaultDeps) {
   function wakeLater(ctx) {
     ctx.setTimeout(() => deps.background(wakeForDone(hostFor(ctx))), deps.settleWindowMs + WAKE_MARGIN_MS);
   }
-  async function arrive(id, text) {
+  async function arrive(ctx, id, text, finishedReply) {
+    const at = deps.now();
+    const hostTasks = finishedReply === null ? [] : ompTodoFromBranch(ctx.sessionManager.getBranch());
     let notes = [];
-    await change(id, (s) => {
-      const r = notePrompt(OMP, s, text, openPanels.has(id));
+    const written = await change(id, (s) => {
+      const before = finishedReply === null ? s : turnStarted(endedTurn(id, s, finishedReply, at, { hostTasks }), at);
+      const r = notePrompt(OMP, before, text, openPanels.has(id));
       notes = r.notes;
       return r.state;
     });
+    if (finishedReply !== null && needsUpdate(written))
+      deps.background(runUpdates(updateHostFor(ctx)));
     return notes;
+  }
+  function takeFinishedReply(id) {
+    if (replied?.id !== id)
+      return null;
+    const { text } = replied;
+    replied = null;
+    return text;
   }
   const dropTools = async () => {
     const active = pi.getActiveTools();
@@ -7362,6 +7466,8 @@ function createInbox(pi, deps = defaultDeps) {
     prepared.delete(id);
     if (noted?.id === id)
       noted = null;
+    if (replied?.id === id)
+      replied = null;
     const pane = deps.herdrPane;
     if (id !== shownId || !pane)
       return;
@@ -7376,7 +7482,7 @@ function createInbox(pi, deps = defaultDeps) {
     const guidance = guidanceText(OMP);
     const systemPrompt = event.systemPrompt.includes(guidance) ? event.systemPrompt : [...event.systemPrompt, guidance];
     if (noted?.id !== id || noted.prompt !== event.prompt) {
-      const notes = await arrive(id, event.prompt).catch(() => null);
+      const notes = await arrive(ctx, id, event.prompt, takeFinishedReply(id)).catch(() => null);
       if (notes)
         noted = { id, prompt: event.prompt, notes };
     }
@@ -7407,6 +7513,8 @@ function createInbox(pi, deps = defaultDeps) {
     if (isUnattended(ctx))
       return;
     const id = sessionIdOf(ctx);
+    if (replied?.id === id)
+      replied = null;
     const startedAt = deps.now();
     await change(id, (s) => turnStarted(s, startedAt)).catch(() => {
       return;
@@ -7484,6 +7592,13 @@ function createInbox(pi, deps = defaultDeps) {
       return;
     });
   });
+  pi.on("message_end", (event, ctx) => {
+    const message = event.message;
+    if (isUnattended(ctx) || message.role !== "assistant" || !Array.isArray(message.content))
+      return;
+    const isWorking = message.content.some((b) => b.type === "toolCall");
+    replied = isWorking ? null : { id: sessionIdOf(ctx), text: textOfBlocks(message.content) };
+  });
   pi.on("message_start", async (event, ctx) => {
     const message = event.message;
     if (isUnattended(ctx) || message.role !== "user")
@@ -7492,11 +7607,14 @@ function createInbox(pi, deps = defaultDeps) {
     const text = userText(message.content);
     if (text === "" || noted?.id === id && noted.prompt === text)
       return;
+    const finished = replied?.id === id ? replied : null;
     try {
       const isSentByPress = (await readState(dir, id)).sent.some((x) => x.text === text);
       if (!isSentByPress)
         return;
-      const notes = await arrive(id, text);
+      if (replied === finished)
+        replied = null;
+      const notes = await arrive(ctx, id, text, finished?.text ?? null);
       noted = { id, prompt: text, notes };
       if (notes.length > 0) {
         pi.sendMessage({ customType: MESSAGE_TYPE, content: notes.join(`
@@ -7512,6 +7630,8 @@ function createInbox(pi, deps = defaultDeps) {
       return;
     prepare(ctx);
     const id = sessionIdOf(ctx);
+    if (replied?.id === id)
+      replied = null;
     const last = lastAssistant(event.messages);
     const reply = last ? textOfBlocks(last.content) : "";
     const stop = await stopOf(last, deps.isUsageLimit, deps.now());
@@ -7523,10 +7643,7 @@ function createInbox(pi, deps = defaultDeps) {
     ]);
     const endedAt = deps.now();
     const written = await change(id, (s) => {
-      const ended = turnEnded(endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
-        tab: panelScreenTab(id),
-        queuesEmptyReply: isDialogDismissed
-      }), endedAt);
+      const ended = endedTurn(id, s, reply, endedAt, { hostTasks, queuesEmptyReply: isDialogDismissed });
       const settled = inHerdr ? overviewChanged(ended, (o) => delegatesSettled(o, inHerdr, endedAt)) : ended;
       return { ...placed(settled, ctx.cwd, branch), stop };
     }).catch(() => null);

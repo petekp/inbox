@@ -809,6 +809,13 @@ function noteDialog(s, callId, questions) {
   return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
 }
 
+// ../hooks/gh.ts
+var GIT_TIMEOUT_MS = 5e3;
+async function branchIn(run2, folder) {
+  const r = await run2(["git", "branch", "--show-current"], { cwd: folder, timeoutMs: GIT_TIMEOUT_MS });
+  return r.code === 0 ? r.stdout.trim() || null : null;
+}
+
 // ../hooks/prs.ts
 var PR_URL = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g;
 function prRefs(text2) {
@@ -2012,7 +2019,8 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
     drawn,
     branchRef: s.prViews.branchRef,
     count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent)).length,
-    olderText: olderPrsText(s.prViews, s.ledger.prs)
+    olderText: olderPrsText(s.prViews, s.ledger.prs),
+    isGhSignedOut: s.prViews.isGhSignedOut === true
   };
 }
 
@@ -2496,13 +2504,6 @@ function herdrOnWrite(env, run2, dir, now) {
 
 // src/hook.ts
 import { resolve as resolve3 } from "node:path";
-
-// ../hooks/gh.ts
-var GIT_TIMEOUT_MS = 5e3;
-async function branchIn(run2, folder) {
-  const r = await run2(["git", "branch", "--show-current"], { cwd: folder, timeoutMs: GIT_TIMEOUT_MS });
-  return r.code === 0 ? r.stdout.trim() || null : null;
-}
 
 // src/cli.ts
 function namedCli(env) {

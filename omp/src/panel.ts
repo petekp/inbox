@@ -14,7 +14,7 @@ import {
 import type { RowRecord } from '../../hooks/arrivals'
 import { closedState } from '../../hooks/ledger'
 import {
-  GH_MISSING_TEXT,
+  ghNoticeOf,
   isDismissed,
   prsEmptyText,
   prRefreshFailedText,
@@ -488,14 +488,16 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
   const isWaiting = (id: string) => waits.some(w => w.id === id && w.isWaiting)
   const markLead = (mark: PrRowMark): Lead => ({ text: mark.text, tone: mark.tone ?? 'sep' })
   const out: Entry[] = []
+  const ghState = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut }
   if (prs.drawn.length === 0) {
-    const empty = prsEmptyText({ isFetching: screen.isFetchingPrs, isGhMissing: screen.isGhMissing }, 'session')
+    const empty = prsEmptyText({ isFetching: screen.isFetchingPrs, ...ghState }, 'session')
     return [
       { kind: 'note', text: empty.title, isStrong: true },
       { kind: 'note', text: empty.hint, isWhole: true },
     ]
   }
-  if (screen.isGhMissing) out.push({ kind: 'banner', banner: bannerOf('gh-missing', GH_MISSING_TEXT) })
+  const ghNotice = ghNoticeOf(ghState)
+  if (ghNotice) out.push({ kind: 'banner', banner: bannerOf(ghNotice.kind, ghNotice.text) })
   for (const d of prs.drawn) {
     const { pr, state } = d
     const markId = prMarkId(pr.ref)

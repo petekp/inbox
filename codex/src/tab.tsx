@@ -92,7 +92,7 @@ import {
   checkRowText,
   PR_QUOTE_CHARS,
   splitFollowUps,
-  GH_MISSING_TEXT,
+  ghNoticeOf,
   isDismissed,
   PR_GROUP_TITLES,
   PR_TONES,
@@ -1878,7 +1878,9 @@ function PrRows({
 
 function Prs({ v, now }: { v: View; now: number }) {
   const { blocks, rows } = prPlan(v)
-  const empty = prsEmptyText({ isFetching: v.isFetchingPrs, isGhMissing: v.isGhMissing }, 'chat')
+  const ghState = { isGhMissing: v.isGhMissing, isGhSignedOut: v.prs.isGhSignedOut }
+  const ghNotice = ghNoticeOf(ghState)
+  const empty = prsEmptyText({ isFetching: v.isFetchingPrs, ...ghState }, 'chat')
   if (blocks.length === 0)
     return (
       <div class="empty">
@@ -1890,9 +1892,9 @@ function Prs({ v, now }: { v: View; now: number }) {
 
   return (
     <main>
-      {v.isGhMissing ? (
+      {ghNotice ? (
         <div class="banner-place">
-          <Banner banner={bannerOf('gh-missing', GH_MISSING_TEXT)} />
+          <Banner banner={bannerOf(ghNotice.kind, ghNotice.text)} />
         </div>
       ) : null}
       {blocks.map(b =>

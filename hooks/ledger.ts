@@ -433,14 +433,69 @@ export function restates(a: string, b: string): boolean {
 }
 
 /**
+ * Key words that fit an ask or a finding about anything, so they never tell two apart: question words, verbs of
+ * choosing, auxiliaries, words that point at the thing in context, and adverbs of time.
+ */
+const GENERIC = new Set([
+  'which',
+  'what',
+  'how',
+  'when',
+  'where',
+  'whether',
+  'why',
+  'who',
+  'pick',
+  'choose',
+  'select',
+  'prefer',
+  'want',
+  'decide',
+  'need',
+  'like',
+  'are',
+  'was',
+  'were',
+  'been',
+  'being',
+  'can',
+  'could',
+  'would',
+  'will',
+  'shall',
+  'might',
+  'must',
+  'does',
+  'did',
+  'has',
+  'have',
+  'had',
+  'new',
+  'current',
+  'existing',
+  'its',
+  'our',
+  'their',
+  'now',
+  'still',
+  'also',
+  'just',
+  'again',
+  'already',
+  'instead',
+  'yet',
+])
+
+/**
  * Whether `b` repeats `a` with no subject of its own: it restates `a`, and one of the two has no key word the other
- * lacks. "Hotkeys vanish in the ANSI mode" repeats "Hotkeys vanish in ANSI mode", but "package.json has no engines
- * field" does not repeat "package.json has no license field".
+ * lacks, apart from GENERIC words. "Which test runner should we choose?" repeats "Which test runner should we pick?",
+ * and "Add a feature flag to the cache before merging?" repeats "Should I add a feature flag for the new cache?". But
+ * "package.json has no engines field" does not repeat "package.json has no license field".
  */
 function repeatsSubject(a: string, b: string): boolean {
   const x = keyWords(a)
   const y = keyWords(b)
-  const within = (inner: Set<string>, outer: Set<string>) => [...inner].every(w => outer.has(w))
+  const within = (inner: Set<string>, outer: Set<string>) => [...inner].every(w => GENERIC.has(w) || outer.has(w))
 
   return sameAsk(a, b) || (restates(a, b) && (within(x, y) || within(y, x)))
 }

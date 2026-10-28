@@ -20,6 +20,7 @@ export type FeatureId =
   | 'pr-link-from-output'
   | 'pr-arrivals'
   | 'prs-empty-hint'
+  | 'gh-signed-out-notice'
   | 'link-open-rule'
   | 'fork-ledger'
   | 'band-and-stop-rows'
@@ -67,6 +68,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'pr-link-from-output': { kind: 'full' },
       'pr-arrivals': { kind: 'full' },
       'prs-empty-hint': { kind: 'full' },
+      'gh-signed-out-notice': { kind: 'full' },
       'link-open-rule': { kind: 'full' },
       'fork-ledger': { kind: 'full' },
       'band-and-stop-rows': { kind: 'full' },
@@ -132,6 +134,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         kind: 'different',
         reason: 'The Codex app calls a conversation a chat, so its hint says chat where the mod says session.',
       },
+      'gh-signed-out-notice': { kind: 'full' },
       'link-open-rule': {
         kind: 'different',
         reason:
@@ -217,6 +220,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'pr-link-from-output': { kind: 'full' },
       'pr-arrivals': { kind: 'full' },
       'prs-empty-hint': { kind: 'full' },
+      'gh-signed-out-notice': { kind: 'full' },
       'link-open-rule': {
         kind: 'different',
         reason:
