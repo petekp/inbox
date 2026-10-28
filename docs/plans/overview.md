@@ -25,8 +25,8 @@ The page fails when it reads as a log, when it copies Asks or Finds, or when it 
    - Reason: a model that rewrites the whole page from the last page drifts toward the newest exchange. In a replay of one real session, 33 of 35 replies rewrote the page.
 3. **Code writes every time and the order. The model never writes a time.**
    - Reason: a time word in model text freezes when it is written, so "merged today" reads wrong the next day. When things happened, and how far apart, carries meaning, so the ages must be true.
-4. **A row's age is when its work last changed, not when the page last checked it.**
-   - Reason: a page checked a minute ago that found nothing new is current. A fresh age on a row that did not change would claim a change that did not happen.
+4. **A row's age is when its work last changed, not when the page last checked it. During a turn, the live line says when the page last checked.**
+   - Reason: a page checked a minute ago that found nothing new is current. A fresh age on a row that did not change would claim a change that did not happen. Without the time of the last check, rows that all read "3h" in a long turn look stale.
 5. **A changed state always reaches the page.** Code keeps the old text and age only when the new text means the same.
    - Reason: "manual merge ready" becoming "manual merge broken" is a change, though half the words match.
 6. **◆ comes from a link between an open ask and the subjects it holds up.** The Overview call writes the link. Code draws ◆ while the ask is open and clears it when the ask closes. One ask can hold up several subjects. There is no "waits on you" status and no "problem" status.
@@ -56,6 +56,8 @@ The page fails when it reads as a log, when it copies Asks or Finds, or when it 
     - This reverses the decision to check the tab with fixed rules only.
 17. **Only next builds draw the tab.**
     - Reason: it is not ready to release. A release build treats a saved Overview tab as unknown and shows its first tab.
+18. **The page has no identity line.**
+    - Reason: the line takes space without telling sessions apart. Folder, branch and role are often the same across sessions, and each host already names the session in its own window, tab or title.
 
 ## Terms
 
@@ -64,7 +66,7 @@ From `GLOSSARY.md`: Overview, Goal, Subject, Child, Seen line, News dot, Look, H
 - **Overview call:** the inbox model call after the ledger call. It reads the open subjects and the new exchange, and answers with edits.
 - **Live line:** the line under the goal that says what the agent does now: "Working…", "Working… for 25m", or "Idle · last reply 12m ago".
 - **Where it stands:** the few words after a subject's name.
-- **Was line:** a line under a subject that names the plan a change replaced, as "was: last-write-wins", or a piece merged into it.
+- **Was line:** a line under a subject that names the plan a change replaced, as "was: last-write-wins", or a piece merged into it, as "merged in: Banner on hover".
 - **Link:** the Overview call's tie from an open ask or a child to the subject it belongs to.
 - **Fold:** one line that stands for several rows: "✓ 3 done" or "○ 2 more queued".
 - **Last changed:** when a subject's status or meaning last changed. Its age shows this.
@@ -91,7 +93,7 @@ From top to bottom:
 | Folds | "○ N more queued" past 7 open rows. "✓ N done" for the done subjects not drawn as a row, or "✓ N more done" when a done row shows above it. | Code |
 | Status line | "Last Overview update failed. Changes from that reply may be missing." while the last call wrote nothing | Code |
 
-Today the page also opens with an identity line, such as `notes-app · main · coordinator`. It is to be removed from every look; see "Not built yet".
+Today the page also opens with an identity line, such as `notes-app · main · coordinator`. Decision 18 removes it from every look; see "Not built yet".
 
 The marks:
 
@@ -293,16 +295,16 @@ A reply that changed nothing about the work leaves every row, age and the Seen l
 When the session drops one approach for another, the person sees both until they have looked. When one piece merges into another, the row names the merged piece by its short name.
 
 - **Good:** `● Sync conflicts: manual merge`, with `was: last-write-wins` under it.
-- **Good:** `● Offline banner: option A built`, with a line under it naming `Banner on hover` as merged in.
+- **Good:** `● Offline banner: option A built`, with `merged in: Banner on hover` under it.
 - **Bad:** the text changes to "manual merge", and nothing says the plan changed.
 - **Bad:** a was line on a row that only made progress.
-- **Bad:** `was: Show the offline banner on hover and keep it open… folded in`. The merged piece had a sentence for a name, and the line ends cut.
+- **Bad:** `merged in: Show the offline banner on hover and keep it open…`. The merged piece had a sentence for a name, and the line ends cut.
 
 #### 13. The page is current, and says when it is not
 
-The page covers the work up to the last reply, or up to about 10 minutes ago during a turn. An age says when the work last changed, not when the page last checked it, so an old age on a current page is right. When an update fails, the page says so. Every time on the page comes from code.
+The page covers the work up to the last reply, or up to about 10 minutes ago during a turn. An age says when the work last changed, not when the page last checked it, so an old age on a current page is right. During a turn, the live line says when the page last checked. When an update fails, the page says so. Every time on the page comes from code.
 
-- **Good:** `Working… for 3h` above `● Sync conflicts: cause unknown  3h`, when the last update, a minute ago, found nothing new.
+- **Good:** `Working… for 3h · checked 1m ago` above `● Sync conflicts: cause unknown  3h`, when the last update found nothing new.
 - **Good:** "Last Overview update failed. Changes from that reply may be missing."
 - **Bad:** the agent finished the conflicts work two hours into a three-hour turn, and the row still reads ●, since no update ran during the turn.
 - **Bad:** `2.4 release: goes out tomorrow`, read two days later.
@@ -446,7 +448,7 @@ The judge reads the drawn page as plain text, the page at the last checkpoint, a
 
 **Checkpoints:** Replay A after step 3, at the return, and after step 12. Replay B after steps 4 and 8. Replay C after step 2.
 
-**How it is checked:** the good and bad pages are written by hand, each bad page breaking one property and otherwise the same as a good page. They are split into two sets. A fresh agent writes the judge's instructions from this spec alone, without seeing either set. When the judge gets a page in the first set wrong, its author is told the kind of mistake the judge made, but not the page, and revises the instructions. The second set is used for nothing else, so it shows whether a revision holds. The judge must call every page in both sets right: a bad page is caught only when the property it breaks is the one the judge fails. The pages come from sessions other than the notes app above, since the judge's author reads this spec. They are kept out of the repo, in a folder the judge's author is not given. The check runs again at each release, and after any change to the judge's instructions, its model, or how the page is drawn as text.
+**How it is checked:** the good and bad pages are written by hand, each bad page breaking one property and otherwise the same as a good page. They are split into two sets. A fresh agent writes the judge's instructions from this spec alone, without seeing either set. When the judge gets a page in the first set wrong, its author is told the kind of mistake the judge made, but not the page, and revises the instructions. The second set is used for nothing else, so it shows whether a revision holds. The judge must call every page in both sets right: a bad page is caught only when the property it breaks is the one the judge fails. The pages come from sessions other than the notes app above, since the judge's author reads this spec. They are kept out of Git, in `.scratch/overview-judge-pages/` in the main checkout, and the judge's author is not given that folder. The check runs again at each release, and after any change to the judge's instructions, its model, or how the page is drawn as text.
 
 ### The pass bar
 
@@ -462,11 +464,12 @@ These make no model calls.
 - **The replay harness grades a known run.** A recorded good run of each replay passes every rule. A recorded bad run fails at the step and property it was written to break.
 - **Schedules the hosts allow.** With fixed answers, through the real update path: replies that overlap, two Codex update processes in either order, a mid-turn call that overlaps the turn's end, a look during a call, a clear during a call, and a failed call followed by a catch-up.
 - **Known failing cases.** Each failure that code owns is a test marked as expected to fail, so `check.sh` stays green and turns red when the fix lands:
-  - the fold names every finished piece the person has not seen;
-  - a change in meaning that shares half its words reaches the page;
-  - one ask holds up two subjects;
-  - a look marks as seen only the rows that were on screen;
-  - work filed for later closes with its own mark.
+  - a change in meaning that shares half its words reaches the page, #136;
+  - work filed for later closes with its own mark, #137;
+  - the fold names every finished piece the person has not seen, #138;
+  - a look marks as seen only the rows that were on screen, #139;
+  - one ask holds up two subjects, #140;
+  - during a turn, the live line says when the page last checked, #141.
 
 ### Calls for one release run
 
@@ -493,12 +496,14 @@ An answer that holds prose is asked once more, so the Overview calls can reach a
 
 Decided, and still to build:
 
-- Code keeps an update's old text and age only when the meaning is the same.
-- A closed mark and a fold of its own for work filed for later.
-- One ask holds up several subjects.
-- The page names every piece finished since the person last saw it.
-- A look marks as seen only the rows that were on screen.
+- Code keeps an update's old text and age only when the meaning is the same: #136.
+- A closed mark and a fold of its own for work filed for later: #137.
+- The page names every piece finished since the person last saw it: #138.
+- A look marks as seen only the rows that were on screen: #139.
+- One ask holds up several subjects: #140.
+- During a turn, the live line says when the page last checked: #141.
 - The page has no identity line, in every look.
+- A merged piece's line reads "merged in: <name>". Today it reads "was: <name> folded in".
 - The evals above.
 
 ## Left out
