@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
+import { mkdir, readdir, rm, rmdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -37,6 +38,7 @@ import {
   placed,
   cutOffTurn,
   overviewChanged,
+  withHolds,
   withLook,
 } from '../../hooks/session'
 import {
@@ -62,8 +64,9 @@ import {
   runUpdates,
   wakeForDone,
 } from '../../hooks/session-host'
-import type { PressOutcome, SessionHost, UpdateHost } from '../../hooks/session-host'
+import type { OverviewRecords, PressOutcome, RecordFiles, SessionHost, UpdateHost } from '../../hooks/session-host'
 import { agentTools } from '../../hooks/tools'
+import type { ToolAnswer } from '../../hooks/tools'
 import { DARK_TONES, LIGHT_TONES } from '../../hooks/tones'
 import { clip } from '../../hooks/text'
 import { NEXT_BUILD_MARK, NO_HOLDS, RESUME_TEXT, SETTLED_MS, inboxCommandText, screenTabOf } from '../../hooks/view'
@@ -133,8 +136,8 @@ export type Inbox = {
    * messages due, and a PR fetch when due.
    */
   openPanel(ctx: ExtensionContext, openedAt: number): Promise<void>
-  /** Records the tab an open panel shows. A new tab starts a showing. */
-  showTab(ctx: ExtensionContext, tab: ShownTab): void
+  /** Records the tab an open panel shows. A new tab saves `holds`, with the showing the panel started. */
+  showTab(ctx: ExtensionContext, tab: ShownTab, holds: Holds): void
   closePanel(ctx: ExtensionContext): void
   fetchPrsWhenDue(ctx: ExtensionContext): void
   /** Calls `listener` after the session's saved state changes. Returns how to stop. */
@@ -222,6 +225,24 @@ function byNewestRevision(a: Model, b: Model): number {
 
   return differing === -1 ? 0 : (y[differing] ?? 0) - (x[differing] ?? 0)
 }
+
+const recordFiles: RecordFiles = {
+  write: async (path, text) => {
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, text)
+  },
+  list: folder => readdir(folder).catch(() => []),
+  removeFiles: async paths => void (await Promise.all(paths.map(p => rm(p, { force: true })))),
+  removeFolder: path => rmdir(path),
+}
+
+/** A next build's Overview call records for the session, beside the inbox's saved sessions. */
+export const overviewRecords = (dir: string, sessionId: string): OverviewRecords => ({
+  host: 'omp',
+  folder: join(dir, 'overview-calls'),
+  session: sessionId,
+  files: recordFiles,
+})
 
 /**
  * The inbox model: the person's `@inbox` role when it names a model omp can use. omp's `resolve` returns nothing for
@@ -425,13 +446,7 @@ function shownLine(result: {
   details?: unknown
   isError?: boolean
 }): string | null {
-  if (result.isError)
-    return (
-      result.content
-        .map(c => c.text ?? '')
-        .join('\n')
-        .trim() || null
-    )
+  if (result.isError) return textOfBlocks(result.content).trim() || null
   const details = result.details as Partial<ToolDetails> | null | undefined
 
   return typeof details?.personLine === 'string' ? details.personLine : null
@@ -513,12 +528,19 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   }
 
   function askFor(ctx: ExtensionContext, id: string): SessionHost<OmpState>['ask'] {
-    return async (prompt, system) => {
+    return async (prompt, system, report) => {
       const model = inboxModel(ctx)
-      if (!model) return null
+      if (!model) {
+        report?.({ model: 'none', error: 'omp offers no model for the inbox' })
+        return null
+      }
+      const asked = `${model.provider}/${model.id}`
       try {
         const apiKey = await ctx.modelRegistry.getApiKey(model, id)
-        if (!apiKey) return null
+        if (!apiKey) {
+          report?.({ model: asked, error: 'omp has no sign-in for the model' })
+          return null
+        }
         const reply = await deps.complete(
           model,
           {
@@ -527,11 +549,19 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
           },
           { apiKey, signal: AbortSignal.timeout(INBOX_MODEL_TIMEOUT_MS) },
         )
-        if (reply.stopReason === 'error' || reply.stopReason === 'aborted') return null
+        if (reply.stopReason === 'error' || reply.stopReason === 'aborted') {
+          const status = reply.errorStatus === undefined ? '' : ` ${reply.errorStatus}`
+          report?.({ model: asked, error: `${reply.stopReason}${status}: ${reply.errorMessage ?? ''}`.trim() })
+          return null
+        }
         const text = reply.content.flatMap(b => (b.type === 'text' ? [b.text] : [])).join('')
+        // `model` repeats the id asked for. `upstreamModel` names the model that answered, when omp can tell.
+        const answeredBy = reply.upstreamModel === undefined ? {} : { answeredBy: reply.upstreamModel }
+        report?.({ model: asked, ...answeredBy, ...(text === '' ? { error: 'the reply held no text' } : {}) })
 
         return text === '' ? null : text
-      } catch {
+      } catch (err) {
+        report?.({ model: asked, error: messageOf(err) })
         return null
       }
     }
@@ -590,6 +620,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       names: OMP,
       inOrder: fn => resultsOrder.run(id, fn),
       background: results => deps.background(results),
+      ...(deps.isNextBuild ? { records: overviewRecords(dir, id) } : {}),
       catchUp: s =>
         askOverConversation(
           host.ask,
@@ -888,9 +919,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
     // Herdr and git are asked outside the change: each run can last its whole timeout, and the session's changes run
     // one at a time.
-    const saved = await readState(dir, id).catch(() => null)
     const [inHerdr, branch] = await Promise.all([
-      delegatesInHerdr(saved?.ledger.overview ?? null, run),
+      readState(dir, id)
+        .catch(() => null)
+        .then(saved => delegatesInHerdr(saved?.ledger.overview ?? null, run)),
       branchIn(run, ctx.cwd),
     ])
     const endedAt = deps.now()
@@ -922,7 +954,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       approval: 'read',
       execute: async (_toolCallId, args, _signal, _onUpdate, ctx) => {
         if (isUnattended(ctx)) return { content: [{ type: 'text', text: 'The inbox is not shown in this session.' }] }
-        let answer: { result: string; personLine: string | null } = { result: '', personLine: null }
+        let answer: Omit<ToolAnswer, 'ledger'> = { result: '', personLine: null }
         await change(sessionIdOf(ctx), s => {
           const r = recorded(OMP, s, name, args as Record<string, unknown>, deps.now())
           answer = r
@@ -973,17 +1005,17 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     openPanel: async (ctx, openedAt) => {
       const id = sessionIdOf(ctx)
       openPanels.set(id, 'needsYou')
-      await change(id, s => ({ ...s, shownSince: openedAt })).catch(() => undefined)
+      deps.background(change(id, s => ({ ...s, shownSince: openedAt })))
       await wakeForDone(hostFor(ctx)).catch(() => undefined)
       fetchPrsWhenDue(ctx)
     },
-    showTab: (ctx, tab) => {
+    showTab: (ctx, tab, holds) => {
       const id = sessionIdOf(ctx)
       if (!openPanels.has(id)) return
       const isChanged = openPanels.get(id) !== tab
       openPanels.set(id, tab)
       const now = deps.now()
-      if (isChanged) deps.background(change(id, s => ({ ...withLook(s, tab === 'overview', now), shownSince: now })))
+      if (isChanged) deps.background(change(id, s => withHolds(withLook(s, tab === 'overview', now), holds)))
     },
     closePanel: ctx => {
       const id = sessionIdOf(ctx)
@@ -1017,7 +1049,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     },
     resume: async () => inbox.resume(ctx),
     fetchPrsWhenDue: () => inbox.fetchPrsWhenDue(ctx),
-    shown: tab => inbox.showTab(ctx, tab),
+    shown: (tab, holds) => inbox.showTab(ctx, tab, holds),
     onChange: listener => inbox.onChange(ctx, listener),
   })
 

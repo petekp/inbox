@@ -34,10 +34,12 @@ import {
   needsCatchUp,
   pressOn,
   withFetchedPrs,
+  withHolds,
 } from './session'
 import type { Pressed, SendOutcome, Session } from './session'
 import type { Holds } from './view'
-import type { HostTask, RowNote } from '../types'
+import type { ClientId } from './clients'
+import type { Exchange, HostTask, Overview, RowNote } from '../types'
 
 export type Exclusive<T> = { acquired: true; value: T } | { acquired: false }
 
@@ -81,8 +83,14 @@ export function orderedKeys(): { run<T>(key: string, fn: () => Promise<T>): Prom
   }
 }
 
-/** Calls the inbox model with `system` as its system text. Null when the call fails. */
-export type Ask = (prompt: string, system: string) => Promise<string | null>
+/**
+ * What a host knows about one model call besides its answer: the model it asked for, the model that answered when
+ * the host says, and why the call gave no answer.
+ */
+export type CallReport = { model: string; answeredBy?: string; error?: string }
+
+/** Calls the inbox model with `system` as its system text. Null when the call fails. `report` hears about the call. */
+export type Ask = (prompt: string, system: string, report?: (r: CallReport) => void) => Promise<string | null>
 
 /** Everything a host supplies to run one session. A function here takes the members it uses. */
 export type SessionHost<S extends Session> = {
@@ -124,8 +132,31 @@ export type SessionHost<S extends Session> = {
   comparePage: string
 }
 
-/** Asks the Overview call for the changes the exchange or the whole conversation makes. Null when the call fails. */
-export type AskCatchUpOverview = (input: OverviewInput) => Promise<string | null>
+/**
+ * What an Overview call reads as its exchange: a reply's exchange, the running turn's work so far, or a whole
+ * conversation for a catch-up.
+ */
+export type OverviewExchange =
+  | { kind: 'reply'; exchange: Exchange }
+  | { kind: 'mid-turn'; turn: Pick<Session['turn'], 'person' | 'trigger' | 'activity'> }
+  | { kind: 'catch-up'; conversation: string }
+
+export type OverviewCallKind = OverviewExchange['kind']
+
+/** The prompt that asks for the changes `read` makes to the Overview, asks and task list in `input`. */
+export function overviewCallPrompt(input: OverviewInput, read: OverviewExchange): string {
+  switch (read.kind) {
+    case 'reply':
+      return overviewPrompt(input, read.exchange)
+    case 'mid-turn':
+      return overviewMidTurnPrompt(input, read.turn)
+    case 'catch-up':
+      return overviewCatchUpPrompt(input, read.conversation)
+  }
+}
+
+/** An Overview call: what it reads as its exchange, and the model call that sends its prompt with `OVERVIEW_SYSTEM`. */
+export type OverviewCall = { exchange: OverviewExchange; ask: Ask }
 
 /** What a host's catch-up found: the model's answer to apply, or why there is none. */
 export type CatchUpReply =
@@ -133,7 +164,7 @@ export type CatchUpReply =
    * `source` is the text the answer may quote code blocks from, or null when the model read the conversation itself.
    * `overview` is null when the host has nothing for the Overview call to read, so it writes no Overview.
    */
-  | { kind: 'reply'; text: string; source: string | null; overview: AskCatchUpOverview | null }
+  | { kind: 'reply'; text: string; source: string | null; overview: OverviewCall | null }
   /** The model gave no answer. */
   | { kind: 'failed' }
   /** There is no conversation to read, so the pending exchanges run instead. */
@@ -157,28 +188,174 @@ export type UpdateHost<S extends Session> = Pick<SessionHost<S>, 'now' | 'read' 
    * returns only once they have finished, as a Codex update process must stay alive until its calls end.
    */
   background?(overviews: Promise<void>): void
+  /** Where a next build keeps a record of each Overview call. A release build passes none, and records nothing. */
+  records?: OverviewRecords
 }
 
-type OverviewHost<S extends Session> = Pick<UpdateHost<S>, 'now' | 'read' | 'update' | 'ask' | 'inOrder'>
+type OverviewHost<S extends Session> = Pick<UpdateHost<S>, 'now' | 'read' | 'update' | 'ask' | 'inOrder' | 'records'>
+
+/** One model call of an Overview call. An answer that holds prose is asked once more, so a call makes one or two. */
+export type OverviewAttempt = {
+  /** The model the host asked for, and the one that answered. Null when the host does not say. */
+  model: string | null
+  answeredBy: string | null
+  /** The raw answer, or null with the error when there was none. */
+  answer: string | null
+  error: string | null
+  ms: number
+}
+
+/** A reader refuses a record of another version. */
+export const OVERVIEW_RECORD_VERSION = 1
+
+/** A next build's record of one Overview call, so that an Overview can be traced to the call that wrote it. */
+export type OverviewRecord = {
+  version: typeof OVERVIEW_RECORD_VERSION
+  host: ClientId
+  session: string
+  at: number
+  system: string
+  prompt: string
+  /**
+   * What the prompt was built from, so `overviewCallPrompt` builds it again. `input.last` is the Overview the call
+   * read, with its children, and `exchange.kind` says which call it was.
+   */
+  input: OverviewInput
+  exchange: OverviewExchange
+  attempts: OverviewAttempt[]
+  isParsed: boolean
+  /** False when the update the call followed was gone by the time it answered, so nothing was written. */
+  isWritten: boolean
+  /** The saved Overview just before the answer was applied, and just after. */
+  before: Overview | null
+  after: Overview | null
+}
+
+/** The file calls a record needs. `list` gives a folder's entry names, and none when it is missing. */
+export type RecordFiles = {
+  write(path: string, text: string): Promise<void>
+  list(folder: string): Promise<string[]>
+  removeFiles(paths: string[]): Promise<void>
+  /** Removes a folder that is empty. */
+  removeFolder(path: string): Promise<void>
+}
+
+/** A next build's folder of Overview call records, one folder per session and one file per call. */
+export type OverviewRecords = { host: ClientId; folder: string; session: string; files: RecordFiles }
+
+export const RECORDS_PER_SESSION = 100
+/** How long after its last Overview call a session's records are dropped. */
+export const RECORDS_KEPT_MS = 14 * 24 * 60 * 60_000
+/** How often a process looks for sessions whose records are past `RECORDS_KEPT_MS`. */
+const RECORDS_SWEEP_MS = 60 * 60_000
+const RECORD_NAME = /^(\d{13})-[a-z-]+\.jsonl$/
+const sweptAt = new Map<string, number>()
+
+/** A session's folder name: its id, with anything that could leave the records folder replaced. */
+export function recordsFolderName(session: string): string {
+  return session.replace(/[^A-Za-z0-9_-]/g, '_') || '_'
+}
+
+/** A record's file name: the call's start time, which sorts the session's records oldest first, and its kind. */
+export function recordFileName(at: number, kind: OverviewCallKind): string {
+  return `${String(at).padStart(13, '0')}-${kind}.jsonl`
+}
+
+/**
+ * Writes `record` as one JSON line in a file of its own, then drops the session's oldest records past
+ * `RECORDS_PER_SESSION`, and the records of sessions whose last call is older than `RECORDS_KEPT_MS`.
+ */
+export async function writeOverviewRecord(records: OverviewRecords, record: OverviewRecord): Promise<void> {
+  const { files, folder } = records
+  const own = `${folder}/${recordsFolderName(records.session)}`
+  await files.write(`${own}/${recordFileName(record.at, record.exchange.kind)}`, `${JSON.stringify(record)}\n`)
+  const names = (await files.list(own)).filter(n => RECORD_NAME.test(n)).sort()
+  const past = names.slice(0, Math.max(0, names.length - RECORDS_PER_SESSION))
+  if (past.length > 0) await files.removeFiles(past.map(n => `${own}/${n}`))
+  if (record.at - (sweptAt.get(folder) ?? -Infinity) < RECORDS_SWEEP_MS) return
+  sweptAt.set(folder, record.at)
+  for (const session of await files.list(folder)) {
+    const theirs = `${folder}/${session}`
+    if (theirs === own) continue
+    const kept = (await files.list(theirs)).filter(n => RECORD_NAME.test(n))
+    const lastAt = Math.max(...kept.map(n => Number(RECORD_NAME.exec(n)![1])))
+    if (record.at - lastAt < RECORDS_KEPT_MS) continue
+    if (kept.length > 0) await files.removeFiles(kept.map(n => `${theirs}/${n}`))
+    await files.removeFolder(theirs).catch(() => undefined)
+  }
+}
+
+/** Sends `prompt` once, and notes what the host says of the call. */
+async function attempt(
+  host: Pick<OverviewHost<Session>, 'now'>,
+  ask: Ask,
+  prompt: string,
+): Promise<OverviewAttempt & { text: string | null }> {
+  const heard: { report?: CallReport; thrown?: string } = {}
+  const startedAt = await host.now()
+  const text = await ask(prompt, OVERVIEW_SYSTEM, r => (heard.report = r)).catch((err: unknown) => {
+    heard.thrown = err instanceof Error ? err.message : String(err)
+    return null
+  })
+
+  return {
+    text,
+    model: heard.report?.model ?? null,
+    answeredBy: heard.report?.answeredBy ?? null,
+    answer: text,
+    error: text === null ? (heard.thrown ?? heard.report?.error ?? 'no answer, and the host gave no reason') : null,
+    ms: (await host.now()) - startedAt,
+  }
+}
 
 /**
  * Runs the Overview call on the Overview and asks in `s`, and writes its answer, or saves why it wrote nothing. An
- * answer that holds prose is asked once more. `appliedAfter` drops the write as `appliedOverview` does.
+ * answer that holds prose is asked once more. `appliedAfter` drops the write as `appliedOverview` does. With
+ * `records`, it then writes the call's record in the background, and drops a failed write.
  */
 async function askAndWriteOverview<S extends Session>(
-  host: Pick<OverviewHost<S>, 'now' | 'update'>,
+  host: Pick<OverviewHost<S>, 'now' | 'update' | 'records'>,
   s: S,
-  ask: AskCatchUpOverview,
+  call: OverviewCall,
   tasks: HostTask[],
   appliedAfter: number,
 ): Promise<void> {
   const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() }
-  const { last } = await askOverview(async () => ({ text: await ask(input).catch(() => null) }))
+  const prompt = overviewCallPrompt(input, call.exchange)
+  const attempts: OverviewAttempt[] = []
+  const { last } = await askOverview(async () => {
+    const { text, ...made } = await attempt(host, call.ask, prompt)
+    attempts.push(made)
+    return { text }
+  })
   const answer = last.text === null ? null : parseOverview(last.text)
   const now = await host.now()
-  await host.update(x =>
-    answer === null ? failedOverview(x, last.text, appliedAfter, now) : appliedOverview(x, answer, appliedAfter, now),
-  )
+  let before: Overview | null = null
+  let isWritten = false
+  const after = await host.update(x => {
+    before = x.ledger.overview
+    isWritten = x.presence.turnsApplied >= appliedAfter
+    return answer === null
+      ? failedOverview(x, last.text, appliedAfter, now)
+      : appliedOverview(x, answer, appliedAfter, now)
+  })
+  if (!host.records) return
+  const record: OverviewRecord = {
+    version: OVERVIEW_RECORD_VERSION,
+    host: host.records.host,
+    session: host.records.session,
+    at: input.now,
+    system: OVERVIEW_SYSTEM,
+    prompt,
+    input,
+    exchange: call.exchange,
+    attempts,
+    isParsed: answer !== null,
+    isWritten,
+    before,
+    after: after.ledger.overview,
+  }
+  void writeOverviewRecord(host.records, record).catch(() => undefined)
 }
 
 /**
@@ -190,8 +367,9 @@ export function refreshOverview<S extends Session>(host: OverviewHost<S>): Promi
   return host.inOrder(async () => {
     const s = await host.read()
     if (!s.presence.isTurnRunning) return
-    const ask: AskCatchUpOverview = input => host.ask(overviewMidTurnPrompt(input, s.turn), OVERVIEW_SYSTEM)
-    await askAndWriteOverview(host, s, ask, s.hostTasks, s.presence.turnsApplied)
+    const { person, trigger, activity } = s.turn
+    const call: OverviewCall = { exchange: { kind: 'mid-turn', turn: { person, trigger, activity } }, ask: host.ask }
+    await askAndWriteOverview(host, s, call, s.hostTasks, s.presence.turnsApplied)
   })
 }
 
@@ -215,7 +393,7 @@ export async function askOverConversation(
         kind: 'reply',
         text,
         source: conversation,
-        overview: input => ask(overviewCatchUpPrompt(input, conversation), OVERVIEW_SYSTEM),
+        overview: { exchange: { kind: 'catch-up', conversation }, ask },
       }
 }
 
@@ -262,8 +440,8 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
   const hasWork = (s: S) => s.pending.length > 0 || wantsCatchUp(s)
   const writing: Promise<void>[] = []
   /** Runs the Overview call for an applied update, once the session's earlier Overview calls have finished. */
-  const writeOverview = (after: S, ask: AskCatchUpOverview, tasks: HostTask[]) =>
-    host.inOrder(async () => askAndWriteOverview(host, await host.read(), ask, tasks, after.presence.turnsApplied))
+  const writeOverview = (after: S, call: OverviewCall, tasks: HostTask[]) =>
+    host.inOrder(async () => askAndWriteOverview(host, await host.read(), call, tasks, after.presence.turnsApplied))
   const followUp = (run: Promise<void>) => {
     const settled = run.catch(() => undefined)
     if (host.background) host.background(settled)
@@ -303,7 +481,7 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
             })
             if (isApplied)
               followUp(
-                writeOverview(after, input => host.ask(overviewPrompt(input, next.ex), OVERVIEW_SYSTEM), next.ex.tasks),
+                writeOverview(after, { exchange: { kind: 'reply', exchange: next.ex }, ask: host.ask }, next.ex.tasks),
               )
             if (after.pending[0]?.failed && !next.failed) return 'stop' as const
           }
@@ -475,7 +653,7 @@ export async function startPress<S extends Session>(
       // A host may run the change again on a newer session, where the press can be stale.
       note = isStale ? 'stale' : null
       Object.assign(pressed, { r: undefined, at: undefined, deliveryId: undefined })
-      const s: S = { ...saved, heldRows: Object.keys(holds.replies), shownSince: holds.shownSince }
+      const s = withHolds(saved, holds)
       if (note) return s
       // Read under the lock, so the press is timed after every write that landed before it.
       const at = await host.now()

@@ -530,14 +530,15 @@ export function closeByAgent(
   id: string,
   how: { answer: string } | { reason: string },
   now: number,
-): { ledger: Ledger; closed: 'item' | 'finding' | null } {
+): { ledger: Ledger; closed: { item: Item } | { finding: Finding } | null } {
   const closing: Closing =
     'answer' in how
       ? { how: 'answered', outcome: how.answer }
       : { how: 'claude', outcome: `closed by ${host.agent}: ${how.reason}` }
-  if (ledger.items.some(i => i.id === id)) return { ledger: closeItem(ledger, id, closing, now), closed: 'item' }
-  if (ledger.findings.some(f => f.id === id))
-    return { ledger: closeFinding(ledger, id, closing, now), closed: 'finding' }
+  const item = ledger.items.find(i => i.id === id)
+  if (item) return { ledger: closeItem(ledger, id, closing, now), closed: { item } }
+  const finding = ledger.findings.find(f => f.id === id)
+  if (finding) return { ledger: closeFinding(ledger, id, closing, now), closed: { finding } }
 
   return { ledger, closed: null }
 }
@@ -926,6 +927,11 @@ export function closedState(d: Pick<Closed, 'how' | 'outcome'>): ClosedState {
   const isOvertaken = OVERTAKEN.test(d.outcome)
 
   return (d.how === 'claude' || d.how === 'update') && isOvertaken ? 'lapsed' : 'handled'
+}
+
+/** When a closed item or finding closed. */
+export function closedAt(c: Closed | ClosedFinding): number {
+  return 'closedAt' in c ? c.closedAt : c.at
 }
 
 export function isLapsed(d: Pick<Closed, 'how' | 'outcome'>): boolean {

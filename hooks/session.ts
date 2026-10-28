@@ -2,6 +2,7 @@ import { linkDialogs } from './dialogs'
 import {
   applyExchangeUpdate,
   applyUpdate,
+  closedAt,
   EMPTY,
   isBlankLedger,
   KEPT_SESSIONS,
@@ -18,6 +19,7 @@ import {
   isDismissed,
   isViewKept,
   itemPrSteps,
+  keptViews,
   olderPrsText,
   linkedPrs,
   pressRowId,
@@ -36,6 +38,7 @@ import {
 import type { PressTexts, RowPress } from './presses'
 import { prNeedsYou, prRefs } from './prs'
 import { recordClose, recordItem } from './tools'
+import type { ToolAnswer } from './tools'
 import { upgradeHostTasks } from './host-tasks'
 import { applyOverview, lookEnded, lookStarted } from './overview'
 import type { OverviewAnswer } from './overview'
@@ -735,10 +738,15 @@ export function recorded<S extends Session>(
   tool: 'record' | 'close',
   args: Record<string, unknown>,
   now: number,
-): { state: S; result: string; personLine: string | null } {
+): { state: S } & Omit<ToolAnswer, 'ledger'> {
   const r = (tool === 'close' ? recordClose : recordItem)(host, s.ledger, args, now)
 
   return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result, personLine: r.personLine }
+}
+
+/** `s` with the rows a look holds in place and the start of its showing, which `pruned` keeps the records of. */
+export function withHolds<S extends Session>(s: S, holds: Holds): S {
+  return { ...s, heldRows: Object.keys(holds.replies), shownSince: holds.shownSince }
 }
 
 /**
@@ -749,8 +757,7 @@ export function recorded<S extends Session>(
 export function pruned<S extends Session>(s: S): S {
   const inPlace = [
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
-    ...s.ledger.closed,
-    ...s.ledger.closedFindings.map(f => ({ id: f.id, at: f.closedAt })),
+    ...[...s.ledger.closed, ...s.ledger.closedFindings].map(c => ({ id: c.id, at: closedAt(c) })),
   ].flatMap(x => (isShownSince(x.at, s.shownSince) ? [x.id] : []))
   const isLeftBehind = (ref: string) =>
     isDismissed(s.lastActions, ref) && !isViewKept(s.prViews, s.ledger.prs, s.lastActions, ref, s.shownSince)
@@ -767,11 +774,8 @@ export function pruned<S extends Session>(s: S): S {
 /** Merges fetched PRs into the session. A view stays while `isViewKept` keeps it. */
 export function withFetchedPrs<S extends Session>(s: S, fetched: PrViews['views'], branchRef: string | null): S {
   const merged = { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false }
-  const views = Object.fromEntries(
-    Object.entries(merged.views).filter(([ref]) => isViewKept(merged, s.ledger.prs, s.lastActions, ref, s.shownSince)),
-  )
 
-  return { ...s, prViews: { ...merged, views } }
+  return { ...s, prViews: { ...merged, views: keptViews(merged, s.ledger.prs, s.lastActions, s.shownSince) } }
 }
 
 type PrTab = {
@@ -858,7 +862,7 @@ function prTabOf(
   return {
     drawn,
     branchRef: s.prViews.branchRef,
-    count: drawn.filter(d => !d.isSettled && prNeedsYou(d.pr, isSent)).length,
+    count: drawn.filter(d => d.state.is === 'open' && prNeedsYou(d.pr, isSent)).length,
     olderText: olderPrsText(s.prViews, s.ledger.prs),
   }
 }

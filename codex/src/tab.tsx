@@ -45,6 +45,7 @@ import {
   hasAge,
   heldReplies,
   isFailure,
+  isDrawnInPlace,
   isGuarded,
   isStatusUnderActions,
   waitingCount,
@@ -80,6 +81,7 @@ import type {
   Holds,
   RowView,
   RowWait,
+  SettledState,
   ShownTab,
 } from '../../hooks/view'
 import {
@@ -88,7 +90,7 @@ import {
   PR_QUOTE_CHARS,
   splitFollowUps,
   GH_MISSING_TEXT,
-  isPrDrawnInPlace,
+  isDismissed,
   PR_GROUP_TITLES,
   PR_TONES,
   prBlockActions,
@@ -98,7 +100,6 @@ import {
   prsEmptyText,
   prPressEffect,
   prRefreshFailedText,
-  PR_DISMISSED_LABEL,
   prThreadId,
   threadActions,
   threadRowText,
@@ -423,7 +424,6 @@ function applyView(next: View, seq: number) {
   seen = settledSeen(seen, settledIds(next), Date.now())
   if ([...seen.keys()].some(id => !before.has(id))) drawIn(SETTLED_MS)
   view = next
-  for (const d of next.prs.drawn) if (d.isSettled && d.canUndo) drawIn(Math.max(0, SETTLED_MS - (next.at - d.at)))
   const isOpening = LISTED_TABS.every(t => rowsSeen[t.id] === undefined)
   const rows = newRows(rowsSeen, next, next.isFetchingPrs)
   rowsSeen = rows.seen
@@ -694,7 +694,7 @@ async function act(rowId: string, press: RowPress | PrPress, onSent?: () => void
 function tabWaits(v: View, t: Tab): RowWait[] {
   return t === 'prs'
     ? prRowWaits(
-        v.prs.drawn.filter(x => !x.isSettled).map(x => x.pr),
+        v.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr),
         v.lastActions,
       )
     : listWaits(v)[t]
@@ -944,16 +944,14 @@ function prCheckRow(v: View, pr: PrView, c: PrCheck): Row {
   }
 }
 
-type SettledPrView = Extract<DrawnPr, { isSettled: true }>
-
 type PrBlockPlan = DrawnPr & { threads: Row[]; checks: Row[] }
 
 function prPlan(v: View): { blocks: PrBlockPlan[]; rows: Row[] } {
   const blocks: PrBlockPlan[] = []
   for (const d of v.prs.drawn) {
-    if (!isPrDrawnInPlace(d, shownSince) && !undoing.has(prMarkId(d.pr.ref))) continue
+    if (!isDrawnInPlace(d, shownSince) && !undoing.has(prMarkId(d.pr.ref))) continue
     blocks.push(
-      d.isSettled
+      d.state.is === 'settled'
         ? { ...d, threads: [], checks: [] }
         : {
             ...d,
@@ -1253,8 +1251,6 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
   const { state } = r
   if (state.is !== 'settled') return null
   const start = seen.get(r.id) ?? Date.now()
-  const isUndoing = undoing.has(r.id)
-  const isUndoShown = state.canUndo && (isUndoing || isUndoLeft(start, Date.now()))
   const error = errors.get(r.id)
 
   return (
@@ -1277,8 +1273,8 @@ function SettledView({ settled: r, panel }: { settled: RowView; panel: Row | und
           </div>
           <UndoPlace
             start={start}
-            isUndoing={isUndoing}
-            isShown={isUndoShown}
+            isUndoing={undoing.has(r.id)}
+            canUndo={state.canUndo}
             offersUndo={state.offersUndo}
             onUndo={() => void undo(r)}
           />
@@ -1698,12 +1694,9 @@ function Findings({ v, lists, now }: { v: View; lists: Lists; now: number }) {
   )
 }
 
-function SettledPr({ v, settled }: { v: View; settled: SettledPrView }) {
-  const { pr } = settled
+function SettledPr({ pr, state }: { pr: PrView; state: SettledState }) {
   const id = prMarkId(pr.ref)
-  const start = readAt - (v.at - settled.at)
-  const isUndoing = undoing.has(id)
-  const isUndoShown = settled.canUndo && (isUndoing || isUndoLeft(start, Date.now()))
+  const start = seen.get(id) ?? Date.now()
   const error = errors.get(id)
 
   return (
@@ -1715,14 +1708,14 @@ function SettledPr({ v, settled }: { v: View; settled: SettledPrView }) {
             <span class="what">
               <span class="tone-prs">#{pr.number}</span> {pr.title}
             </span>
-            <span class="outcome-label">{`${DOT}${PR_DISMISSED_LABEL}`}</span>
+            <span class="outcome-label">{`${DOT}${settledLabel(state.label, state.delivery)}`}</span>
             {error ? <span class="tone-error">{`${DOT}${error}`}</span> : null}
           </div>
           <UndoPlace
             start={start}
-            isUndoing={isUndoing}
-            isShown={isUndoShown}
-            offersUndo={settled.offersUndo}
+            isUndoing={undoing.has(id)}
+            canUndo={state.canUndo}
+            offersUndo={state.offersUndo}
             onUndo={() => void undoPr(id, pr.ref)}
           />
         </div>
@@ -1732,22 +1725,23 @@ function SettledPr({ v, settled }: { v: View; settled: SettledPrView }) {
 }
 
 /**
- * Undo on a settled row or PR, from `start`, while `isShown`. Once Undo ends, a row that offered it keeps Undo's
- * width, unseen, so its title keeps its wrap.
+ * Undo on a settled row or PR, for `SETTLED_MS` from `start` while `canUndo`, or while its Undo is out. Once Undo
+ * ends, a row that offered it keeps Undo's width, unseen, so its title keeps its wrap.
  */
 function UndoPlace({
   start,
   isUndoing,
-  isShown,
+  canUndo,
   offersUndo,
   onUndo,
 }: {
   start: number
   isUndoing: boolean
-  isShown: boolean
+  canUndo: boolean
   offersUndo: boolean
   onUndo: () => void
 }) {
+  const isShown = canUndo && (isUndoing || isUndoLeft(start, Date.now()))
   if (!isShown)
     return offersUndo ? (
       <button type="button" class="key undo spent" disabled tabIndex={-1} aria-hidden="true">
@@ -1784,7 +1778,8 @@ async function undoPr(id: string, ref: string) {
   }
 }
 
-function prLastLine(v: View, id: string): { text: string; isError: boolean } | null {
+function prLastLine(v: View, ref: string): { text: string; isError: boolean } | null {
+  const id = prMarkId(ref)
   if (sending.has(id)) {
     const pending = sending.get(id)?.pending
     return { text: pending ? feedbackText(pending, 'codex') : SENDING, isError: false }
@@ -1793,8 +1788,7 @@ function prLastLine(v: View, id: string): { text: string; isError: boolean } | n
   if (error) return { text: error, isError: true }
   const note = noteOf(id)
   if (note) return { text: note, isError: false }
-  const f =
-    v.lastActions[id]?.action === 'pr-dismiss' ? null : feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at)
+  const f = isDismissed(v.lastActions, ref) ? null : feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at)
   if (!f) return null
   const text = feedbackText(f, 'codex')
 
@@ -1815,7 +1809,7 @@ function PrBlock({
   const tone = PR_TONES[status]
   const id = prMarkId(pr.ref)
   const keys = prBlockActions(pr, isSent, v.prs.branchRef, pressesOf(v)).map(a => prKey(id, pr, a))
-  const last = prLastLine(v, id)
+  const last = prLastLine(v, pr.ref)
 
   return (
     <section>
@@ -1893,9 +1887,9 @@ function Prs({ v, now }: { v: View; now: number }) {
         </section>
       ) : null}
       {blocks.map(b =>
-        b.isSettled ? (
+        b.state.is === 'settled' ? (
           <section>
-            <SettledPr v={v} settled={b} />
+            <SettledPr pr={b.pr} state={b.state} />
           </section>
         ) : (
           <PrBlock {...b} v={v} openId={openId} all={rows} now={now} />
