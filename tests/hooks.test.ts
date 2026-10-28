@@ -3239,6 +3239,10 @@ function permissionCalls($: Engine) {
       toolVerdict = 'ask'
       return $.tool.check({ tool: 'Bash', input: PUSH, ...(use === null ? {} : { tool_use_id: use }) } as never)
     },
+    allow(use: string) {
+      toolVerdict = 'allow'
+      return $.tool.check({ tool: 'Bash', input: PUSH, tool_use_id: use } as never)
+    },
     run(use: string) {
       toolVerdict = 'allow'
       return $.tool.call({ tool: 'Bash', ...PUSH, tool_use_id: use } as never)
@@ -3273,7 +3277,7 @@ function permissionCalls($: Engine) {
   }
 }
 
-test('where classic.PermissionRequest is skipped, an ask shows its row only if the call is still waiting after the delay', async ($, on) => {
+test('where classic.PermissionRequest is skipped, an ask shows its row only if the call is still waiting after the delay, and an allowed call shows none', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [], { HERDR_PANE_ID: 'p1' })
   const calls = permissionCalls($)
@@ -3304,6 +3308,12 @@ test('where classic.PermissionRequest is skipped, an ask shows its row only if t
   await calls.run('u3')
   await clock.settle()
   expect(sidebarLines().at(-1)).toBe('')
+
+  const linesBeforeAllowed = sidebarLines().length
+  await calls.allow('u4')
+  await clock.advance(PERMISSION_FALLBACK_DELAY_MS * 2)
+  await clock.settle()
+  expect(sidebarLines().slice(linesBeforeAllowed)).toEqual([])
 })
 
 test('a query without a tool_use_id never arms the permission row', async ($, on) => {

@@ -58,7 +58,7 @@ type Case = {
 
 const MIN = 0.75
 const NOW = 100
-/** The mod's limits on the inbox model's call, in `askLedgerModel` and its caller in `hooks/claude-host.ts`. */
+/** The mod's limits on the inbox model's call, in `askLedgerModel` and its caller in `hooks/register.tsx`. */
 const MOD_TIMEOUT_MS = 45_000
 const MOD_MAX_TOKENS = 1600
 

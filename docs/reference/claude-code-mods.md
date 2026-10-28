@@ -264,6 +264,7 @@ The public docs describe "three tabs: **Chat** for conversations, **Cowork** for
 - Static rules. Each one fails validation, and the mod then fails to load: [C#check-what-claude-code-reads-from-your-mod]
   - Write each call in full, as `$.ns.method`.
   - Pass `$` only to a function declared at the top level of the same file. The `calls:` line then shows `(via fn)`. "Passing `$` to a method, a function defined inside the hook, or a function you import from another of your files fails validation." `$.state`'s `read` and `update` are the imports that can take it.
+    - Live, 2026-10-28, Claude Code 2.1.312: `claude plugin validate` passes a module that passes `$` to functions imported from another of its files, with or without `--profile directory`. Its `calls:` line names those functions with `(via fn)`. The plugin directory's scan refuses the same code with `MOD_CAPABILITY_USE_NOT_PLAIN`, as `docs/plans/directory-submission.md` records.
   - "Don't assign `$` or one of its namespaces to a variable, destructure it, or index it with a computed name. `const ui = $.ui` fails with `$.ui is used as a value`."
   - Event names must be string literals: "`the event name passed to on() is not a string literal`".
   - Don't shadow `on`: "`\"on\" is declared again (shadowed)`".
@@ -1591,7 +1592,7 @@ the version each names, and the Claude Code changelog.
 - **Notes only, from the 2.1.309 notes.** "Fixed a mod's `turn.step` hook that
   names a model by alias, such as `haiku`, failing every request with a model
   error": the inbox names `sonnet` in `$.model.complete`
-  (`hooks/claude-host.ts`), not in a `turn.step` hook. "Improved the error when
+  (`hooks/register.tsx`), not in a `turn.step` hook. "Improved the error when
   a hooks module is nested too deep to load: it now names the file": the
   inbox's module is `hooks/register.tsx`. "Fixed plugins and skills synced from
   claude.ai being removed, sometimes mid-session, after a disk read error."
