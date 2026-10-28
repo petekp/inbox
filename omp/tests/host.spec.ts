@@ -704,6 +704,84 @@ test('a follow-up that starts inside a running turn matches its press once', asy
   expect(state().presence.turnsStarted).toBe(2)
 })
 
+const userMessage = (text: string) => ({ role: 'user', content: [{ type: 'text', text }] })
+const assistantMessage = (text: string) => ({ role: 'assistant', content: [{ type: 'text', text }] })
+
+test('a press queued during a turn gets its own update, after one for the reply the turn gave before it', async () => {
+  const { inbox, id } = await withQuestion()
+  const opened = 'Opened https://github.com/acme/app/pull/12 for the fix.'
+  await prompt('Open a PR for the fix')
+  await call('agent_start', { type: 'agent_start' })
+  await call('message_end', { type: 'message_end', message: assistantMessage(opened) })
+  await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  const pressed = sent[0]!.text
+  await prompt(pressed)
+  await call('message_start', { type: 'message_start', message: userMessage(pressed) })
+  expect(state().ledger.prs).toEqual(['acme/app#12'])
+
+  await call('message_end', { type: 'message_end', message: assistantMessage('Using Node.') })
+  await call('agent_end', {
+    type: 'agent_end',
+    messages: [
+      userMessage('Open a PR for the fix'),
+      assistantMessage(opened),
+      userMessage(pressed),
+      assistantMessage('Using Node.'),
+    ],
+  })
+  await settle()
+  expect(completions).toHaveLength(3)
+  expect(completions[1]!.prompt).toContain(opened)
+  expect(completions[1]!.prompt).not.toContain(pressed)
+  expect(completions[2]!.prompt).toContain(pressed)
+  expect(completions[2]!.prompt).toContain('Using Node.')
+  expect(completions[2]!.prompt).not.toContain(opened)
+  expect(state().pending).toEqual([])
+  expect(state().presence).toMatchObject({ turnsStarted: 3, turnsApplied: 3, isTurnRunning: false })
+})
+
+test('two presses that start before any new reply share one turn and its reply', async () => {
+  const { inbox, id } = await withQuestion()
+  await record({ kind: 'task', ask: 'Try the CLI by hand' })
+  const task = state().ledger.items.find((i: { kind: string }) => i.kind === 'task').id
+  await prompt('Add a test')
+  await call('agent_start', { type: 'agent_start' })
+  await call('message_end', { type: 'message_end', message: assistantMessage('Test added.') })
+  await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  await inbox.press(makeCtx(), { action: 'explain', id: task }, NO_HOLDS)
+  const answered = sent[0]!.text
+  const explained = sent[1]!.text
+  await call('message_start', { type: 'message_start', message: userMessage(answered) })
+  await call('message_start', { type: 'message_start', message: userMessage(explained) })
+  await call('message_end', { type: 'message_end', message: assistantMessage('Both handled.') })
+  await endAgent('Both handled.')
+  await settle()
+  expect(completions).toHaveLength(3)
+  expect(completions[1]!.prompt).toContain('Test added.')
+  expect(completions[2]!.prompt).toContain(answered)
+  expect(completions[2]!.prompt).toContain(explained)
+  expect(completions[2]!.prompt).toContain('Both handled.')
+  expect(completions[2]!.prompt).not.toContain('Test added.')
+})
+
+test('a message that arrives after the agent’s tool calls, before it replies, stays in the running turn', async () => {
+  createInbox(pi(), deps())
+  await prompt('Add a test')
+  await call('agent_start', { type: 'agent_start' })
+  await call('message_end', {
+    type: 'message_end',
+    message: { role: 'assistant', content: [{ type: 'text', text: 'Running the tests.' }, { type: 'toolCall' }] },
+  })
+  await prompt('Also run the linter')
+  await call('message_end', { type: 'message_end', message: assistantMessage('Tests and lint pass.') })
+  await endAgent('Tests and lint pass.')
+  await settle()
+  expect(completions).toHaveLength(1)
+  expect(completions[0]!.prompt).toContain('Add a test')
+  expect(completions[0]!.prompt).toContain('Also run the linter')
+  expect(completions[0]!.prompt).toContain('Tests and lint pass.')
+})
+
 test('a user message that no press sent is left to before_agent_start', async () => {
   createInbox(pi(), deps())
   await prompt('hello')

@@ -476,7 +476,25 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   const prFetches = prFetchTracker(deps.now)
   const listeners = new Map<string, Set<() => void>>()
   let noted: { id: string; prompt: string; notes: string[] } | null = null
+  /** The text of the reply the agent finished in this run since the turn's prompt. */
+  let replied: { id: string; text: string } | null = null
   let isGhMissing = false
+
+  /** Queues the running turn's exchange with its reply, and marks the turn ended at `at`. */
+  function endedTurn(
+    id: string,
+    s: OmpState,
+    reply: string,
+    at: number,
+    { hostTasks, queuesEmptyReply = false }: { hostTasks: OmpState['hostTasks']; queuesEmptyReply?: boolean },
+  ): OmpState {
+    const ended = endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
+      tab: panelScreenTab(id),
+      queuesEmptyReply,
+    })
+
+    return turnEnded(ended, at)
+  }
 
   /** Changes a session's saved state, then tells whoever draws it and the Herdr pane. */
   const notifyChanged = (id: string) => {
@@ -699,17 +717,40 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     ctx.setTimeout(() => deps.background(wakeForDone(hostFor(ctx))), deps.settleWindowMs + WAKE_MARGIN_MS)
   }
 
-  /** Counts a prompt that reached the agent: matches it to a press and returns the notes the agent is told. */
-  async function arrive(id: string, text: string): Promise<string[]> {
+  /**
+   * Counts a prompt that reached the agent: matches it to a press and returns the notes the agent is told.
+   * `finishedReply` is the reply the agent finished in this run since the turn's prompt, if any. omp runs a queued
+   * follow-up in the same run as the turn before it and fires agent_end once for both. So a prompt that comes after a
+   * finished reply first ends the running turn with that reply, and starts a turn of its own.
+   */
+  async function arrive(
+    ctx: ExtensionContext,
+    id: string,
+    text: string,
+    finishedReply: string | null,
+  ): Promise<string[]> {
+    const at = deps.now()
+    const hostTasks = finishedReply === null ? [] : ompTodoFromBranch(ctx.sessionManager.getBranch())
     let notes: string[] = []
-    await change(id, s => {
-      const r = notePrompt(OMP, s, text, openPanels.has(id))
+    const written = await change(id, s => {
+      const before = finishedReply === null ? s : turnStarted(endedTurn(id, s, finishedReply, at, { hostTasks }), at)
+      const r = notePrompt(OMP, before, text, openPanels.has(id))
       notes = r.notes
 
       return r.state
     })
+    if (finishedReply !== null && needsUpdate(written)) deps.background(runUpdates(updateHostFor(ctx)))
 
     return notes
+  }
+
+  /** Takes the reply the agent finished in this run since the turn's prompt, if any. */
+  function takeFinishedReply(id: string): string | null {
+    if (replied?.id !== id) return null
+    const { text } = replied
+    replied = null
+
+    return text
   }
 
   /** Takes record and close out of a session nobody watches, so its agent does not spend calls on them. */
@@ -781,6 +822,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     openPanels.delete(id)
     prepared.delete(id)
     if (noted?.id === id) noted = null
+    if (replied?.id === id) replied = null
     const pane = deps.herdrPane
     if (id !== shownId || !pane) return
     shownId = null
@@ -795,7 +837,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const systemPrompt = event.systemPrompt.includes(guidance) ? event.systemPrompt : [...event.systemPrompt, guidance]
     // omp can run this handler again for one prompt. The prompt counts once.
     if (noted?.id !== id || noted.prompt !== event.prompt) {
-      const notes = await arrive(id, event.prompt).catch(() => null)
+      const notes = await arrive(ctx, id, event.prompt, takeFinishedReply(id)).catch(() => null)
       if (notes) noted = { id, prompt: event.prompt, notes }
     }
     const notes = noted?.notes ?? []
@@ -827,6 +869,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   pi.on('agent_start', async (_event, ctx) => {
     if (isUnattended(ctx)) return
     const id = sessionIdOf(ctx)
+    if (replied?.id === id) replied = null
     const startedAt = deps.now()
     await change(id, s => turnStarted(s, startedAt)).catch(() => undefined)
   })
@@ -899,9 +942,17 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     }).catch(() => undefined)
   })
 
+  // An assistant message with tool calls goes on working, so only one without them finishes a reply.
+  pi.on('message_end', (event, ctx) => {
+    const message = event.message as Reply
+    if (isUnattended(ctx) || message.role !== 'assistant' || !Array.isArray(message.content)) return
+    const isWorking = message.content.some((b: { type?: unknown }) => b.type === 'toolCall')
+    replied = isWorking ? null : { id: sessionIdOf(ctx), text: textOfBlocks(message.content) }
+  })
+
   /**
-   * A press sent while a turn runs reaches the agent as a queued message, and omp does not run before_agent_start for
-   * it. Its arrival is noted here, once the message starts.
+   * A press sent while a turn runs reaches the agent as a queued message. omp 18.12.3 runs before_agent_start for it.
+   * When that has not noted the message, its arrival is noted here, once the message starts.
    */
   pi.on('message_start', async (event, ctx) => {
     const message = event.message as { role?: unknown; content?: unknown }
@@ -909,10 +960,13 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const id = sessionIdOf(ctx)
     const text = userText(message.content)
     if (text === '' || (noted?.id === id && noted.prompt === text)) return
+    // Taken before the state read, since the press's own reply can finish during it.
+    const finished = replied?.id === id ? replied : null
     try {
       const isSentByPress = (await readState(dir, id)).sent.some(x => x.text === text)
       if (!isSentByPress) return
-      const notes = await arrive(id, text)
+      if (replied === finished) replied = null
+      const notes = await arrive(ctx, id, text, finished?.text ?? null)
       noted = { id, prompt: text, notes }
       if (notes.length > 0) {
         pi.sendMessage(
@@ -929,6 +983,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     if (isUnattended(ctx) || event.willContinue) return
     prepare(ctx)
     const id = sessionIdOf(ctx)
+    if (replied?.id === id) replied = null
     const last = lastAssistant(event.messages)
     const reply = last ? textOfBlocks(last.content) : ''
     const stop = await stopOf(last, deps.isUsageLimit, deps.now())
@@ -945,13 +1000,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     ])
     const endedAt = deps.now()
     const written = await change(id, s => {
-      const ended = turnEnded(
-        endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
-          tab: panelScreenTab(id),
-          queuesEmptyReply: isDialogDismissed,
-        }),
-        endedAt,
-      )
+      const ended = endedTurn(id, s, reply, endedAt, { hostTasks, queuesEmptyReply: isDialogDismissed })
       const settled = inHerdr ? overviewChanged(ended, o => delegatesSettled(o, inHerdr, endedAt)) : ended
 
       return { ...placed(settled, ctx.cwd, branch), stop }
