@@ -5529,7 +5529,7 @@ export const register: Register = on => {
           mark,
           content: overviewText(`overview-${r.id}-text`, [{ text: r.name, isMuted: true }], depth, r.age),
           age: r.age,
-          ageColor: r.ageTone ? (pal.tone[r.ageTone] ?? pal.age) : pal.age,
+          ageColor: r.ageTone ? (pal.tone[r.ageTone] ?? pal.mark[r.ageTone]) : pal.age,
           tree: r.branch ? overviewTree(`overview-${r.id}-tree`, r.branch) : null,
         })
       }
