@@ -1,6 +1,6 @@
 # The Overview tab
 
-Status: built, on next builds only. Release builds leave the tab out. "Not built yet" lists the decided changes still to build. The evals that judge the tab are planned in "How the Overview is judged".
+Status: built, on next builds only. Release builds leave the tab out. "Not built yet" lists the decided changes still to build. The evals that judge the tab are in "How the Overview is judged".
 
 ## Summary
 
@@ -514,7 +514,7 @@ These make no model calls.
 - **Compare keeps its question open.** Each agent case after a Compare press checks that the agent makes no `close` call. `evals/check-cases.ts` checks both.
 - **The rules catch what they claim.** Each fixed rule runs on a hand-written good page and a bad one.
 - **The replay harness grades a known run.** A recorded good run of each replay passes every rule. A recorded bad run fails at the step and property it was written to break.
-- **Schedules the hosts allow.** With fixed answers, through the real update path: replies that overlap, a Codex update whose Overview call waits on another update process, a mid-turn call that overlaps the turn's end, a look during a call, a clear during a call, and a failed call followed by a catch-up. Two Codex schedules have no passing test, because Codex gets them wrong today. An Overview answer that lands after a clear writes into the cleared session. When two update processes run their Overview calls newer-first, the older answer overwrites the newer one.
+- **Schedules the hosts allow.** With fixed answers, through the real update path: replies that overlap, a Codex update whose Overview call waits on another update process, a mid-turn call that overlaps the turn's end, a look during a call, a clear during a call, and a failed call followed by a catch-up. Two Codex schedules have no passing test, because Codex gets them wrong today. An Overview answer that lands after a clear writes into the cleared session: #152. When two update processes run their Overview calls newer-first, the older answer overwrites the newer one: #153.
 - **Known failing cases.** Each failure that code owns is a test marked as expected to fail, so `check.sh` stays green and turns red when the fix lands:
   - work filed for later closes with its own mark, #137;
   - the fold names every finished piece the person has not seen, #138;
@@ -561,7 +561,9 @@ Decided, and still to build:
 - Where it stands draws on its own line, under the name.
 - A child row says in plain words what its work does: #149.
 - A merged piece's line reads "merged in: <name>". Today it reads "was: <name> folded in".
-- The evals above.
+- In Codex, an Overview answer from before a clear stays out of the cleared session: #152.
+- An older Overview answer never overwrites a newer one: #153.
+- The judge's instructions, in `evals/overview-judge.md`.
 
 ## Left out
 
