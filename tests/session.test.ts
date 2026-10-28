@@ -8,12 +8,16 @@ import {
   appliedCatchUp,
   appliedOverview,
   cleared,
+  claimedOverviewRefresh,
   emptySession,
   endTurn,
+  failedOverview,
   forkedFrom,
   hasLedger,
   isUnseen,
+  noteActivity,
   noteCommandOutput,
+  OVERVIEW_REFRESH_MS,
   notePrompt,
   pressOn,
   pruned,
@@ -26,10 +30,10 @@ import {
   upgradeSession,
 } from '../hooks/session'
 import type { Session } from '../hooks/session'
-import type { RowNote } from '../types'
-import { press, runUpdates, wakeForDone } from '../hooks/session-host'
+import type { Item, RowNote } from '../types'
+import { press, refreshOverview, runUpdates, wakeForDone } from '../hooks/session-host'
 import type { CatchUpReply } from '../hooks/session-host'
-import { allRows, COMPARE_LIMIT_MS, feedbackText, NO_HOLDS } from '../hooks/view'
+import { allRows, COMPARE_LIMIT_MS, feedbackText, footerStatus, NO_HOLDS } from '../hooks/view'
 import { prMarkId } from '../hooks/pr-tab'
 import { demoSession, demoView, isDemoCopy } from '../hooks/demo'
 import { fakeHost } from './session-fake-host'
@@ -290,14 +294,20 @@ const answer = parseOverview('GOAL: Work offline\nNEW: working | Offline mode | 
 
 const withOverview = (s: Session): Session => ({
   ...s,
-  ledger: { ...EMPTY, overview: applyOverview(null, answer, 1000) },
+  ledger: { ...EMPTY, overview: applyOverview(null, answer, 1000, new Set()) },
 })
 
-test('an Overview answer is written to the ledger after later updates, and dropped when its update is gone', () => {
+test('an Overview answer is written to the ledger after later updates and clears a saved failure, and both are dropped when their update is gone', () => {
   const later = { ...emptySession(), presence: { ...emptySession().presence, turnsApplied: 5 } }
+  const failed = failedOverview(later, 'The person wants a CLI.', 3, 900)
 
-  expect(appliedOverview(later, answer, 3, 1000).ledger.overview?.goal).toBe('Work offline')
+  expect(failed.overviewFailure).toEqual({ at: 900, cause: 'refused', answer: 'The person wants a CLI.' })
+  expect(failedOverview(later, null, 3, 900).overviewFailure).toEqual({ at: 900, cause: 'no-answer', answer: null })
+  expect(appliedOverview(failed, answer, 3, 1000).ledger.overview?.goal).toBe('Work offline')
+  expect(appliedOverview(failed, answer, 3, 1000).overviewFailure).toBeNull()
   expect(appliedOverview(emptySession(), answer, 3, 1000).ledger.overview).toBeNull()
+  expect(failedOverview(emptySession(), null, 3, 900).overviewFailure).toBeNull()
+  expect(cleared(failed).overviewFailure).toBeNull()
 })
 
 test('a session whose only record is an Overview has a ledger, is not unseen, is copied by a fork and is cleared', () => {
@@ -326,36 +336,105 @@ test('the Overview page is empty for a new session, reads Working… while the m
   expect(view(turnStarted(idle, 9_000)).live).toBe('Working…')
   expect(view(turnEnded(turnStarted(idle, 9_000), 9_500)).live).toBe('Idle · last reply just now')
   expect(view(withOverview(idle)).goal).toBe('Work offline')
+  expect(view(idle).error).toBeNull()
 })
 
-test('the Overview page draws each status with its mark and tone', () => {
-  const statuses = ['working', 'queued', 'waits-on-you', 'waits-on-other', 'problem'] as const
+test('a running turn claims an Overview call once the wait has passed since it started and since the last call, claims it once, and an idle session never does', () => {
+  const started = turnStarted(emptySession(), 0)
+  const claimed = claimedOverviewRefresh(started, OVERVIEW_REFRESH_MS)
+  const calledLater = { ...started, lastOverviewCallAt: 5 * 60_000 }
+
+  expect(claimedOverviewRefresh(started, OVERVIEW_REFRESH_MS - 1)).toBe(started)
+  expect(claimed.lastOverviewCallAt).toBe(OVERVIEW_REFRESH_MS)
+  expect(claimedOverviewRefresh(claimed, OVERVIEW_REFRESH_MS + 1)).toBe(claimed)
+  expect(claimedOverviewRefresh(calledLater, OVERVIEW_REFRESH_MS)).toBe(calledLater)
+  expect(claimedOverviewRefresh(turnEnded(started, 1), 2 * OVERVIEW_REFRESH_MS).lastOverviewCallAt).toBeNull()
+})
+
+test('a claimed Overview call reads the running turn’s work with no reply and writes its answer, and a turn that ended first is left to the call after its reply', async () => {
+  const prompts: string[] = []
+  const { host } = fakeHost(async prompt => {
+    prompts.push(prompt)
+    return 'GOAL: Work offline\nNEW: working | Offline mode | queue built'
+  })
+  await host.update(s => noteActivity(notePrompt(CLAUDE_CODE, turnStarted(s, 0), 'go', false).state, 'edited sync.ts'))
+  await refreshOverview(host)
+  const written = await host.read()
+
+  expect(prompts).toHaveLength(1)
+  expect(prompts[0]).toContain('<activity>\nedited sync.ts\n</activity>')
+  expect(prompts[0]).not.toContain('<reply>')
+  expect(written.ledger.overview?.goal).toBe('Work offline')
+  expect(written.lastOverviewCallAt).not.toBeNull()
+  await host.update(s => turnEnded(s, 1))
+  await refreshOverview(host)
+  expect(prompts).toHaveLength(1)
+})
+
+test('a failed Overview call shows in the status line on the Overview tab, in place of a failed update, and on no other tab', () => {
+  const failed = failedOverview(
+    { ...emptySession(), presence: { ...emptySession().presence, ledgerState: 'failed' } },
+    null,
+    0,
+    900,
+  )
+  const v = sessionView(failed, 1000, 1000, true, NO_HOLDS)
+  const prs = { isFetching: false, hasPrs: false }
+
+  expect(v.overviewPage.error).not.toBeNull()
+  expect(footerStatus('overview', v.status, prs, v.overviewPage.error).error).toBe(v.overviewPage.error)
+  expect(footerStatus('needsYou', v.status, prs, v.overviewPage.error).error).toBe(v.status.error)
+  expect(footerStatus('prs', v.status, prs, v.overviewPage.error).error).toBeNull()
+})
+
+const ITEM: Item = {
+  id: 'i1',
+  kind: 'question',
+  label: null,
+  ask: 'Use Node or Python?',
+  options: ['Node', 'Python'],
+  rec: 'Node',
+  helps: [],
+  turn: 1,
+  at: null,
+  from: 'record',
+}
+
+test('the Overview page draws each status with its mark and tone, and ◆ on a subject an open ask holds up, whose Asks row names it until the subject closes', () => {
+  const statuses = ['working', 'queued', 'waits-on-other', 'queued'] as const
+  const asks = new Set([ITEM.id])
   const opened = applyOverview(
     null,
-    parseOverview(statuses.map((st, n) => `NEW: ${st} | Part ${n} | step`).join('\n'))!,
+    parseOverview([...statuses.map((st, n) => `NEW: ${st} | Part ${n} | step`), `LINK: ${ITEM.id} | s4`].join('\n'))!,
     1000,
+    asks,
   )
-  const closed = applyOverview(opened, parseOverview('DONE: s1 | built')!, 2000)
-  const rows = sessionView(
-    { ...emptySession(), ledger: { ...EMPTY, overview: closed } },
-    3000,
-    1000,
-    true,
-    NO_HOLDS,
-  ).overviewPage.rows.flatMap(r => (r.kind === 'subject' ? [[r.name, r.mark, r.tone]] : []))
+  const closed = applyOverview(opened, parseOverview('DONE: s1 | built')!, 2000, asks)
+  const held = { ...emptySession(), ledger: { ...EMPTY, items: [ITEM], overview: closed } }
+  const rows = sessionView(held, 3000, 1000, true, NO_HOLDS).overviewPage.rows.flatMap(r =>
+    r.kind === 'subject' ? [[r.name, r.mark, r.tone]] : [],
+  )
 
   expect(rows).toEqual([
     ['Part 0', '✓', 'done'],
     ['Part 1', '○', null],
-    ['Part 2', '◆', 'needsYou'],
-    ['Part 3', '◌', null],
-    ['Part 4', '!', 'issue'],
+    ['Part 2', '◌', null],
+    ['Part 3', '◆', 'needsYou'],
   ])
+  expect(allRows(sessionView(held, 3000, 1000, true, NO_HOLDS)).find(r => r.id === ITEM.id)?.holdsUpLine).toBe(
+    'Holds up Part 3',
+  )
+  const heldDone = {
+    ...held,
+    ledger: { ...held.ledger, overview: applyOverview(closed, parseOverview('DONE: s4 | built')!, 2500, asks) },
+  }
+  expect(allRows(sessionView(heldDone, 3000, 1000, true, NO_HOLDS)).find(r => r.id === ITEM.id)?.holdsUpLine).toBeNull()
 })
 
 test('a session saved by the Progress trial build loads without its results, subagents and stated step', () => {
   const saved = {
     ...emptySession(),
+    overviewFailure: undefined,
     ledger: { ...EMPTY, milestones: [{ id: 'm1', source: 'done', text: 'Reducer built' }] },
     subagents: [{ id: 'a1', task: 'Find the handler' }],
     presence: { turnsStarted: 2, isTurnRunning: true, statedStep: 'Reading x' },
@@ -366,6 +445,7 @@ test('a session saved by the Progress trial build loads without its results, sub
   expect(loaded.ledger).not.toHaveProperty('milestones')
   expect(loaded.presence).not.toHaveProperty('statedStep')
   expect(loaded.presence).toMatchObject({ turnsStarted: 2, isTurnRunning: true })
+  expect(loaded.overviewFailure).toBeNull()
 })
 
 test('a sample saved without an Overview is replaced, and the sample session carries its own', () => {
@@ -393,7 +473,7 @@ test('a sample saved without an Overview is replaced, and the sample session car
 
 test('a conversation start carries the goal and where each open subject stands, not on a resume the guidance, and nothing for an empty session', () => {
   const described = emptySession()
-  const ledger = { ...described.ledger, overview: applyOverview(null, answer, 1000) }
+  const ledger = { ...described.ledger, overview: applyOverview(null, answer, 1000, new Set()) }
   const carried = startContext(CLAUDE_CODE, { ...described, ledger }, 'resume')
   expect(carried).toContain('Working on: Work offline')
   expect(carried).toContain('- Offline mode: queue built (working)')

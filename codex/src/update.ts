@@ -19,6 +19,7 @@ import {
   askOverConversation,
   orderedKeys,
   reconcileUpdateStatus as reconcileStatus,
+  refreshOverview as refreshSessionOverview,
   runUpdates as runSessionUpdates,
 } from '../../hooks/session-host'
 import type { Ask } from '../../hooks/session-host'
@@ -182,6 +183,24 @@ export const recordModelFailure =
 export const reconcileUpdateStatus = (dir: string, sessionId: string): Promise<SessionState> =>
   reconcileStatus(codexStore(dir, sessionId, Date.now))
 
+/** Runs `fn` once the session's earlier Overview calls have finished, in this process and in any other. */
+const inOrderFor =
+  (dir: string, sessionId: string) =>
+  <T>(fn: () => Promise<T>): Promise<T> =>
+    resultsOrder.run(statePath(dir, sessionId), () =>
+      withLock(`${statePath(dir, sessionId)}.results`, fn, RESULTS_WAIT_MS),
+    )
+
+/** Runs the Overview call that a hook claimed for the running turn. */
+export const refreshOverview = (
+  dir: string,
+  sessionId: string,
+  ask: Ask,
+  now: () => number,
+  onWrite?: OnWrite,
+): Promise<void> =>
+  refreshSessionOverview({ ...codexStore(dir, sessionId, now, onWrite), ask, inOrder: inOrderFor(dir, sessionId) })
+
 export const runUpdates = (
   dir: string,
   sessionId: string,
@@ -193,10 +212,7 @@ export const runUpdates = (
     ...codexStore(dir, sessionId, now, onWrite),
     ask,
     names: CODEX,
-    inOrder: fn =>
-      resultsOrder.run(statePath(dir, sessionId), () =>
-        withLock(`${statePath(dir, sessionId)}.results`, fn, RESULTS_WAIT_MS),
-      ),
+    inOrder: inOrderFor(dir, sessionId),
     catchUp: async s =>
       askOverConversation(
         ask,

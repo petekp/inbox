@@ -6,9 +6,10 @@ import { fileURLToPath } from "node:url";
 
 // src/detached-update.ts
 import { spawn } from "node:child_process";
+var OVERVIEW_REFRESH = "overview-refresh";
 function detachedUpdate(dir, env, script) {
-  return (sessionId) => {
-    const child = spawn(process.execPath, [script, sessionId], {
+  return (sessionId, mode) => {
+    const child = spawn(process.execPath, [script, sessionId, ...mode ? [mode] : []], {
       detached: true,
       stdio: "ignore",
       env: { ...env, INBOX_DATA: dir }
@@ -42,7 +43,7 @@ var NAME_WORDS = 3;
 var TEXT_WORDS = 4;
 var GOAL_WORDS = 8;
 var OPEN_SUBJECTS = 6;
-var NAME_KEPT = 8;
+var NAME_KEPT = 20;
 var TEXT_KEPT = 12;
 var GOAL_KEPT = 14;
 var CHILD_KEPT_MS = 24 * 60 * 6e4;
@@ -72,12 +73,13 @@ var EMPTY_OVERVIEW = {
   goal: "",
   subjects: [],
   children: [],
+  askSubjects: {},
   nextId: 1,
   nextChildId: 1,
   lastLookAt: null,
   look: null
 };
-var OPEN_STATUSES = ["working", "queued", "waits-on-you", "waits-on-other", "problem"];
+var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
 var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
 var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
 function clipWords(text2, limit) {
@@ -124,9 +126,10 @@ function text(value) {
 function time(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
+var DROPPED_STATUSES = { "waits-on-you": "queued", problem: "queued" };
 function subjectOf(saved) {
   const s = saved;
-  const status = STATUSES.find((x) => x === s?.status);
+  const status = STATUSES.find((x) => x === s?.status) ?? DROPPED_STATUSES[String(s?.status)];
   const changedAt = time(s?.changedAt);
   if (!s || typeof s.id !== "string" || typeof s.name !== "string" || !status || changedAt === null) return null;
   return {
@@ -160,9 +163,9 @@ function childOf(saved) {
 var OLD_STATUS = {
   working: "working",
   queued: "queued",
-  "waits-on-you": "waits-on-you",
+  "waits-on-you": "queued",
   "waits-on-other": "waits-on-other",
-  problem: "problem",
+  problem: "queued",
   unknown: "queued",
   done: null,
   "ruled-out": null
@@ -203,6 +206,8 @@ function upgradeOverview(saved) {
   if (!Array.isArray(o.subjects)) return null;
   const subjects = o.subjects.map(subjectOf).filter((s) => s !== null);
   const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c) => c !== null) : [];
+  const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
+  const askSubjects = Object.fromEntries(savedLinks.filter((e) => typeof e[1] === "string"));
   const look = o.look;
   const lookAt = time(look?.startedAt);
   return {
@@ -210,6 +215,7 @@ function upgradeOverview(saved) {
     goal: text(o.goal),
     subjects,
     children,
+    askSubjects,
     nextId: Math.max(time(o.nextId) ?? 1, subjects.length + 1),
     nextChildId: Math.max(time(o.nextChildId) ?? 1, children.length + 1),
     lastLookAt: time(o.lastLookAt),
@@ -543,6 +549,7 @@ Input:
 - <subjects>: the open subjects, one per line: id | status | name | where it stands
 - <finished>: subjects already done or dropped. Do not add them again.
 - <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
+- <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subject it holds up, or - when it has none yet
 - <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
@@ -557,20 +564,18 @@ DONE: id or name | where it ended
 DROP: id or name | why
 DROP: id or name | why | INTO id or name
 WAS: id or name | the plan it replaces
-LINK: running id | subject id or name
+LINK: running or ask id | subject id or name
 ROLE: coordinator or session
 GOAL: the goal in the person's words, at most ${GOAL_WORDS} words
 
-A subject is one piece of the work that the person would name: a feature, a fix, a release, a problem, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call.
+A subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.
 
-The name is at most ${NAME_WORDS} words, the handle the person would use. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
+The name is a label of at most ${NAME_WORDS} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
 
-Status is one of: working, queued, waits-on-you, waits-on-other, problem.
-- working: being worked on now, in this session or in a session it handed the work to. When the work stopped, it is queued, waits on someone, or is done.
+Status is one of: working, queued, waits-on-other.
+- working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask. When the work stopped for another reason, it is queued, waits on something, or is done.
 - queued: planned, not started.
-- waits-on-you: the subject's work has stopped until the person acts. A question to the person is not a subject of its own.
-- waits-on-other: it waits on something else, such as a build, a review or another session.
-- problem: something broken or wrong that no one is fixing now.
+- waits-on-other: it waits on something other than the person, such as a build, a review or another session.
 
 Rules:
 - Change a subject by its id. Write NEW only when no subject in <subjects> covers it.
@@ -578,7 +583,7 @@ Rules:
 - Write SET only when where a subject stands changed. Never reword a subject that did not change.
 - Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
-- The inbox shows each question and task for the person, with its options. Mark the subject waits-on-you, and say where its work stands or "needs your decision". Never name the choices.
+- Write LINK for each item in <asks> that has no subject yet, naming the subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
 - Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
 - Write ROLE coordinator when the session hands out work and reviews what comes back instead of doing the work itself. Write ROLE only when it changes.
 - Write GOAL only when <goal> is empty, when the person states a new goal, or when the work moves to a different task.`;
@@ -1103,6 +1108,8 @@ function shortAgo(ms) {
   return age === "just now" ? "now" : age.replace(/ ago$/, "");
 }
 var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
+var HOLDS_UP_TEXT = "Holds up";
+var OVERVIEW_FAILED = "Last Overview update failed. Changes from that reply may be missing.";
 var UPDATE_RETRIES = " It retries after your next message.";
 function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
@@ -1216,7 +1223,7 @@ var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 var WORKING_TEXT = "Working\u2026";
 var LOOK_TEXT = "Seen";
-var OVERVIEW_TEXT_LINES = 3;
+var LOOK_RULE_LABEL = `\u2500\u2500 ${LOOK_TEXT} `;
 var CHILD_ROWS = 3;
 var QUIET_MS = 15 * 6e4;
 var NEW_CLOSED_ROWS = 2;
@@ -1224,12 +1231,11 @@ var OPEN_ROWS = 7;
 var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: null },
   queued: { mark: "\u25CB", tone: null },
-  "waits-on-you": { mark: "\u25C6", tone: "needsYou" },
   "waits-on-other": { mark: "\u25CC", tone: null },
-  problem: { mark: "!", tone: "issue" },
   done: { mark: "\u2713", tone: "done" },
   dropped: { mark: "\u2717", tone: null }
 };
+var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
@@ -1247,22 +1253,31 @@ function liveOf(presence, now) {
   return lastReplyAt === null ? null : `Idle \xB7 last reply ${ago(now - lastReplyAt)}`;
 }
 function isItemAfterItem(row, prev) {
-  const isUnderSubject = row.kind === "more" || row.kind === "child" && !row.isLoose;
+  const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
   return prev !== void 0 && prev.kind !== "look" && row.kind !== "look" && !isUnderSubject;
 }
+function idleOf(c, now) {
+  return c.lastActivityAt === null ? null : now - c.lastActivityAt;
+}
+function isQuiet(c, now) {
+  const idle = idleOf(c, now);
+  return idle !== null && idle >= QUIET_MS;
+}
+function isChildWorking(c, now) {
+  return now - (c.lastActivityAt ?? c.startedAt) < QUIET_MS;
+}
 function childRow(c, now, branch) {
-  const idle = c.lastActivityAt === null ? null : now - c.lastActivityAt;
-  const isQuiet = idle !== null && idle >= QUIET_MS;
-  const age = shortAgo(idle ?? now - c.startedAt);
+  const isChildQuiet = isQuiet(c, now);
+  const age = shortAgo(idleOf(c, now) ?? now - c.startedAt);
   return {
     kind: "child",
     id: c.id,
+    mark: "\u25CF",
+    isRunning: isChildWorking(c, now),
     name: c.name,
-    age: isQuiet ? `quiet ${age}` : age,
-    isQuiet,
-    isLoose: branch === null,
-    branch,
-    maxLines: OVERVIEW_TEXT_LINES
+    age: isChildQuiet ? `quiet ${age}` : age,
+    ageTone: isChildQuiet ? "needsYou" : null,
+    branch
   };
 }
 function overviewPage(s, now) {
@@ -1270,11 +1285,13 @@ function overviewPage(s, now) {
   const look = o?.lastLookAt ?? null;
   const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
   const isNew = (x) => look === null || x.changedAt > look;
+  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
+  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
   const open2 = subjects.filter(isOpen);
   const queuedOver = Math.max(0, open2.length - OPEN_ROWS);
   const hiddenQueued = new Set(
-    open2.filter((x) => x.status === "queued").sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id)
+    open2.filter((x) => x.status === "queued" && !isHeld(x)).sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id)
   );
   const shown = [...open2.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort((x, y) => y.changedAt - x.changedAt);
   const folded = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
@@ -1282,26 +1299,22 @@ function overviewPage(s, now) {
   const shownIds = new Set(shown.map((x) => x.id));
   const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, now, null));
   const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
-  let isLookDrawn = false;
+  const firstSeen = shown.findIndex((x) => !isNew(x));
   for (const [i, x] of shown.entries()) {
-    if (lookRow && !isLookDrawn && !isNew(x)) {
-      const hasNewAbove = i > 0;
-      if (hasNewAbove) rows.push(lookRow);
-      isLookDrawn = true;
-    }
+    const hasNewAbove = i > 0;
+    if (lookRow && i === firstSeen && hasNewAbove) rows.push(lookRow);
     const under = running.filter((c) => c.subjectId === x.id);
     const shownUnder = under.slice(0, CHILD_ROWS);
     const isMore = under.length > CHILD_ROWS;
     rows.push({
       kind: "subject",
       id: x.id,
-      ...SUBJECT_MARKS[x.status],
-      isRunning: x.status === "working" && (s.presence.isTurnRunning || under.length > 0),
+      ...isHeld(x) ? HELD_MARK : SUBJECT_MARKS[x.status],
+      isRunning: x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some((c) => isChildWorking(c, now))),
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       was: isNew(x) ? x.was : null,
       age: shortAgo(now - x.changedAt),
-      maxLines: OVERVIEW_TEXT_LINES,
       hasChildren: under.length > 0
     });
     rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
@@ -1313,7 +1326,8 @@ function overviewPage(s, now) {
         branch: "last"
       });
   }
-  if (lookRow && !isLookDrawn && shown.length > 0) rows.push(lookRow);
+  const isEveryShownNew = firstSeen === -1;
+  if (lookRow && isEveryShownNew && shown.length > 0) rows.push(lookRow);
   if (hiddenQueued.size > 0)
     rows.push({
       kind: "fold",
@@ -1345,6 +1359,7 @@ function overviewPage(s, now) {
     live: liveOf(s.presence, now),
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
     hasNews,
+    error: s.overviewFailure ? OVERVIEW_FAILED : null,
     empty: {
       title: "Overview",
       hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
@@ -1427,6 +1442,10 @@ function actionsOf(row, last, state, feedback) {
     ...showsCompare(item) ? [action({ action: "compare", id }, "Compare", "talk")] : [],
     action({ action: "dismiss", id }, "Dismiss", "mark")
   ];
+}
+function heldSubjectOf(o, askId) {
+  const subjectId = o?.askSubjects[askId];
+  return o?.subjects.find((s) => s.id === subjectId && isOpen(s)) ?? null;
 }
 function inboxView({
   ledger,
@@ -1511,12 +1530,14 @@ function inboxView({
     const last = lastActions[row.id];
     const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt);
     const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt));
+    const heldSubject = state.is === "open" ? heldSubjectOf(ledger.overview, row.id) : null;
     return {
       ...row,
       state,
       feedback,
       actions,
-      optionDescriptions: optionDescriptionsOf(row.item, actions)
+      optionDescriptions: optionDescriptionsOf(row.item, actions),
+      holdsUpLine: heldSubject ? `${HOLDS_UP_TEXT} ${heldSubject.name}` : null
     };
   };
   const itemRow = (item) => {
@@ -1699,6 +1720,8 @@ function emptySession() {
     shownSince: null,
     prViews: NO_PRS,
     stop: null,
+    overviewFailure: null,
+    lastOverviewCallAt: null,
     hostTasks: [],
     dialogQuestions: []
   };
@@ -1761,6 +1784,8 @@ function upgradeSession(saved) {
       isFetching: false
     },
     stop: saved.stop ?? null,
+    overviewFailure: saved.overviewFailure ?? null,
+    lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     hostTasks: upgradeHostTasks(saved.hostTasks),
     dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
@@ -1786,7 +1811,9 @@ function cleared(s) {
       isTurnRunning: false
     },
     lastActions: {},
-    stop: null
+    stop: null,
+    overviewFailure: null,
+    lastOverviewCallAt: null
   };
 }
 function notePrompt(host, s, text2, isOpen2) {
@@ -1891,6 +1918,13 @@ function endTurn(host, s, reply, isOpen2, { tab = null, queuesEmptyReply = false
     tasks: s.hostTasks
   };
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] };
+}
+var OVERVIEW_REFRESH_MS = 10 * 6e4;
+function claimedOverviewRefresh(s, now) {
+  const { isTurnRunning, turnStartedAt } = s.presence;
+  const times = [s.lastOverviewCallAt, turnStartedAt].filter((t) => t !== null);
+  const isDue = isTurnRunning && times.length > 0 && now - Math.max(...times) >= OVERVIEW_REFRESH_MS;
+  return isDue ? { ...s, lastOverviewCallAt: now } : s;
 }
 function needsUpdate(s) {
   return s.pending.length > 0 || s.presence.ledgerState !== "current";
@@ -3002,7 +3036,16 @@ async function handleHook(input, deps) {
       const isDelegateCommand = agentId === void 0 && delegateSteps(command).length > 0;
       const withWork = (s) => overviewChanged(s, (o) => agentId ? childWorked(o, agentId, now()) : delegatesStarted(o, command, now()));
       const hasWork = line !== null || agentId !== void 0 || isDelegateCommand;
-      if (hasWork) await write((s) => withWork(line ? noteActivity(withRollout(s), line) : withRollout(s)));
+      const isMainActivity = line !== null && agentId === void 0;
+      let isClaimed = false;
+      if (hasWork)
+        await write((s) => {
+          const worked = withWork(line ? noteActivity(withRollout(s), line) : withRollout(s));
+          const claimed = isMainActivity ? claimedOverviewRefresh(worked, now()) : worked;
+          isClaimed = claimed !== worked;
+          return claimed;
+        });
+      if (isClaimed) deps.startOverviewRefresh(id);
       return null;
     }
     case "SubagentStart": {
@@ -3093,11 +3136,13 @@ async function main() {
   for await (const chunk of process.stdin) raw += chunk;
   const dist = dirname3(fileURLToPath(import.meta.url));
   const dir = dataDir(process.env, dirname3(dist));
+  const startUpdate = detachedUpdate(dir, process.env, join4(dist, "update.mjs"));
   const out = await handleHook(JSON.parse(raw), {
     dir,
     env: process.env,
     now: Date.now,
-    startUpdate: detachedUpdate(dir, process.env, join4(dist, "update.mjs")),
+    startUpdate: (id) => startUpdate(id),
+    startOverviewRefresh: (id) => startUpdate(id, OVERVIEW_REFRESH),
     onWrite: herdrOnWrite(process.env, run, dir, Date.now),
     run
   });

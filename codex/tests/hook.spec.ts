@@ -7,7 +7,7 @@ import { linkDialogs } from '../../hooks/dialogs'
 import { addAgentItem, EMPTY } from '../../hooks/ledger'
 import { inboxText } from '../../hooks/model-text'
 import { applyOverview, parseOverview } from '../../hooks/overview'
-import { applied, parsedReply } from '../../hooks/session'
+import { applied, OVERVIEW_REFRESH_MS, parsedReply } from '../../hooks/session'
 import { feedbackText } from '../../hooks/view'
 import { notePrompt, noteToolCall, viewOf } from '../src/core'
 import { handleHook } from '../src/hook'
@@ -140,14 +140,15 @@ test('a start after compaction carries the Overview goal and where each open sub
       updates: 1,
       overview: applyOverview(
         null,
-        parseOverview('GOAL: Adding caching\nNEW: waits-on-you | Cache | Redis or memory')!,
+        parseOverview('GOAL: Adding caching\nNEW: queued | Cache | Redis or memory')!,
         1,
+        new Set(),
       )!,
     },
   }))
   const context = JSON.stringify(await handleHook(input('SessionStart', { cwd: '/repo', source: 'compact' }), deps))
   assert.match(context, /Working on: Adding caching/)
-  assert.match(context, /- Cache: Redis or memory \(waits-on-you\)/)
+  assert.match(context, /- Cache: Redis or memory \(queued\)/)
 })
 
 test('a main-agent prompt reads Working… until Stop or a start that is not a compact, and a subagent prompt does not', async () => {
@@ -721,6 +722,26 @@ test('a session resumed with earlier turns is marked behind at its first hook an
     [...seqs].sort((a, b) => a - b),
   )
   assert.equal(new Set(seqs).size, seqs.length)
+})
+
+test('the main agent’s tool call starts the Overview call once the running turn is due one, and only once, and a subagent’s never does', async () => {
+  const dir = tempDir()
+  let clock = 1000
+  const deps = hookDeps(dir, () => clock)
+  const bash = (command: string, fields: Partial<HookInput> = {}) =>
+    input('PreToolUse', { tool_name: 'Bash', tool_input: { command }, ...fields })
+
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
+  await handleHook(input('UserPromptSubmit', { prompt: 'add caching', turn_id: 't1' }), deps)
+  await handleHook(bash('ls'), deps)
+  assert.deepEqual(deps.refreshes, [])
+  clock = 1000 + OVERVIEW_REFRESH_MS
+  await handleHook(bash('npm test', { agent_id: 'sub1' }), deps)
+  assert.deepEqual(deps.refreshes, [])
+  await handleHook(bash('npm test'), deps)
+  await handleHook(bash('npm run build'), deps)
+  assert.deepEqual(deps.refreshes, ['s1'])
+  assert.equal((await readState(dir, 's1')).lastOverviewCallAt, 1000 + OVERVIEW_REFRESH_MS)
 })
 
 test('a hook in a new process sends no Herdr report that would change nothing, and reports a change the MCP server made', async () => {

@@ -7,9 +7,10 @@ import type { LinksProps } from '../hooks/links-client'
 import type { RowProps } from '../hooks/row-client'
 import { TAB_HEIGHT, tabLines, type TabsProps } from '../hooks/tabs-client'
 import { cellWidth } from '../hooks/text'
-import type { Item } from '../types'
+import type { Item, Session } from '../types'
 import { demoView } from '../hooks/demo'
 import { OVERVIEW_SYSTEM } from '../hooks/model-text'
+import { OVERVIEW_REFRESH_MS } from '../hooks/session'
 import { checkActions, prBlockActions, prCheckId, prThreadId, threadActions, threadSentIn } from '../hooks/pr-tab'
 import { failingChecks, waitingThreads } from '../hooks/prs'
 import {
@@ -1220,7 +1221,7 @@ const replyWithOverview = async (
   world($, on, [])
   overviewReply = overview
   ledgerReply = ledgerAnswer
-  let session: { ledger: { overview: { goal: string } | null; items: { ask: string }[] } } | null = null
+  let session: Pick<Session, 'ledger' | 'overviewFailure'> | null = null
   on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
     session = e.value as never
     return next(e)
@@ -1236,37 +1237,47 @@ const replyWithOverview = async (
   })
   await clock.settle()
 
-  return session!.ledger
+  return session!
 }
 
 test('a reply’s Overview comes from the separate Overview call, after the ledger update', async ($, on) => {
-  const ledger = await replyWithOverview($, on, 'GOAL: Adding a greeting CLI\nNEW: working | Plan | Planning')
+  const { ledger } = await replyWithOverview($, on, 'GOAL: Adding a greeting CLI\nNEW: working | Plan | Planning')
 
   expect(ledger.overview?.goal).toBe('Adding a greeting CLI')
   expect(ledger.items.map(i => i.ask)).toEqual(['Use Node or Python?', 'Name the command greet?'])
   expect(overviewPrompts).toHaveLength(1)
 })
 
-test('a failed Overview call leaves the ledger update applied and no Overview', async ($, on) => {
-  const ledger = await replyWithOverview($, on, null)
+test('a failed Overview call leaves the ledger update applied and no Overview, and saves that it gave no answer', async ($, on) => {
+  const { ledger, overviewFailure } = await replyWithOverview($, on, null)
 
   expect(ledger.overview).toBeNull()
   expect(ledger.items.map(i => i.ask)).toEqual(['Use Node or Python?', 'Name the command greet?'])
   expect(overviewPrompts).toHaveLength(1)
+  expect(overviewFailure).toMatchObject({ cause: 'no-answer', answer: null })
 })
 
 test('an Overview answer that holds prose is asked once more, and the second answer applies', async ($, on) => {
-  const ledger = await replyWithOverview($, on, [
+  const { ledger, overviewFailure } = await replyWithOverview($, on, [
     'The person wants a CLI.\nGOAL: Adding a greeting CLI',
     'GOAL: Adding a greeting CLI',
   ])
 
   expect(overviewPrompts).toHaveLength(2)
   expect(ledger.overview?.goal).toBe('Adding a greeting CLI')
+  expect(overviewFailure).toBeNull()
+})
+
+test('an Overview call that answers with prose twice writes nothing and saves its second answer', async ($, on) => {
+  const { ledger, overviewFailure } = await replyWithOverview($, on, ['The person wants a CLI.', 'Still prose.'])
+
+  expect(overviewPrompts).toHaveLength(2)
+  expect(ledger.overview).toBeNull()
+  expect(overviewFailure).toMatchObject({ cause: 'refused', answer: 'Still prose.' })
 })
 
 test('an Overview answer of UNCHANGED leaves the last Overview as it was', async ($, on) => {
-  const ledger = await replyWithOverview($, on, 'UNCHANGED')
+  const { ledger } = await replyWithOverview($, on, 'UNCHANGED')
 
   expect(ledger.overview).toBeNull()
 })
@@ -1303,8 +1314,36 @@ test('a ledger update shows before its Overview call returns', async ($, on) => 
   expect(session!.ledger.overview?.goal).toBe('Scaffolding the command')
 })
 
+test('a turn past the wait runs the Overview call on its work so far at its next tool call, once, and no ledger call until the reply', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  const prompts: string[] = []
+  world($, on, prompts)
+  overviewReply = 'GOAL: Adding a greeting CLI'
+  let session: Pick<Session, 'ledger'> | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'add a greeting cli', turnId: 't1' })
+  await $.tool.call({ tool: 'Bash', command: 'ls', description: 'ls' } as never)
+  await clock.settle()
+  expect(overviewPrompts).toEqual([])
+
+  await clock.advance(OVERVIEW_REFRESH_MS)
+  await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'npm test' } as never)
+  await $.tool.call({ tool: 'Bash', command: 'npm run build', description: 'build' } as never)
+  await clock.settle()
+  expect(overviewPrompts).toHaveLength(1)
+  expect(overviewPrompts[0]).toContain('npm test')
+  expect(overviewPrompts[0]).not.toContain('<reply>')
+  expect(prompts).toEqual([])
+  expect(session!.ledger.overview?.goal).toBe('Adding a greeting CLI')
+})
+
 test('a ledger call that gives no usable answer runs no Overview call', async ($, on) => {
-  const ledger = await replyWithOverview($, on, 'GOAL: Adding a greeting CLI', 'not a ledger')
+  const { ledger } = await replyWithOverview($, on, 'GOAL: Adding a greeting CLI', 'not a ledger')
 
   expect(overviewPrompts).toEqual([])
   expect(ledger.overview).toBeNull()
@@ -3561,7 +3600,7 @@ test('where classic.SessionStart is skipped, the first prompt after /clear, /res
   world($, on, [])
   const turn = async (text: string, reply: string, goal: string) => {
     ledgerReply = reply
-    overviewReply = `GOAL: ${goal}\nNEW: waits-on-you | Answer | Waiting on an answer`
+    overviewReply = `GOAL: ${goal}\nNEW: queued | Answer | Waiting on an answer`
     await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
     await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: text, reason: 'answer' })
     await clock.settle()
@@ -3584,7 +3623,7 @@ test('where classic.SessionStart is skipped, the first prompt after /clear, /res
   const branched = await contextOf('session-3', 'resume', 'try another way')
   expect(branched).toContain('Pin Node?')
   expect(branched).toContain('Working on: Fixing the build')
-  expect(branched).toContain('- Answer: Waiting on an answer (waits-on-you)')
+  expect(branched).toContain('- Answer: Waiting on an answer (queued)')
 
   const resumed = await contextOf('session-1', 'resume', 'where were we?')
   expect(resumed).toContain('Pick a cache?')
@@ -4708,13 +4747,13 @@ test('a working subject’s mark on the Overview moves each frame only while a t
   expect(ended.working).toEqual(ended.still)
 })
 
-test('on a next build, the Overview tab’s news dot clears when the page shows, the page shows the goal and the subjects in place of rows, leaves the row keys idle, and a row tab shows its rows again', async ($, on) => {
+test('on a next build, the Overview tab’s news dot clears when the page shows, the page shows the goal and the subjects in place of rows, leaves the row keys idle, a row tab shows its rows again, and an ask names the subject it holds up', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
   paneState = { isShown: true, isFocused: true }
   overviewReply =
-    'GOAL: Adding a greeting CLI\nNEW: waits-on-you | Runtime | Node or Python\nNEW: working | Plan | being written\nDONE: s2 | written'
+    'GOAL: Adding a greeting CLI\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime\nNEW: working | Plan | being written\nDONE: s2 | written'
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
@@ -4722,6 +4761,7 @@ test('on a next build, the Overview tab’s news dot clears when the page shows,
   await clock.settle()
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
+  expect(await pane.find({ text: /Holds up Runtime/ })).toBeDefined()
 
   const lookOf = () => {
     const saved = [...stored].find(([k]) => k.startsWith('s:'))
@@ -4735,6 +4775,7 @@ test('on a next build, the Overview tab’s news dot clears when the page shows,
   expect(await pane.find({ text: /^ •$/ })).toBeUndefined()
   expect((await pane.find({ key: 'overview-goal' }))?.text).toBe('Adding a greeting CLI')
   expect((await pane.find({ key: 'overview-s1' }))?.text).toContain('Runtime: Node or Python')
+  expect((await pane.find({ key: 'overview-s1' }))?.text).toContain('◆')
   expect((await pane.find({ key: 'overview-s2' }))?.text).toContain('Plan: written')
   expect(await pane.find({ text: /Use Node or Python\?/ })).toBeUndefined()
   const rowKeys = async () =>
@@ -4764,12 +4805,12 @@ test('on a next build, the Overview tab’s news dot clears when the page shows,
   expect(await pane.find({ key: 'address-f3' })).toBeDefined()
 })
 
-test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Overview page shows Asks, tells Claude so, starts no look and stays saved', async ($, on) => {
+test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Overview page shows Asks, tells Claude so, starts no look, stays saved, and names no subject an ask holds up', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
   world($, on, prompts)
   paneState = { isShown: true, isFocused: true }
-  overviewReply = 'GOAL: Adding a greeting CLI\nNEW: waits-on-you | Runtime | Node or Python'
+  overviewReply = 'GOAL: Adding a greeting CLI\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime'
   let page: { value: unknown; version: number } = { value: 'overview', version: 1 }
   on('state.get', { plugin: 'inbox', key: 'page' } as const, () => ({ value: page as never }))
   on('state.set', { plugin: 'inbox', key: 'page' } as const, ($, e) => {
@@ -4785,6 +4826,7 @@ test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Overview page
   await clock.settle()
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
   expect(await pane.find({ key: 'overview-goal' })).toBeUndefined()
+  expect(await pane.find({ text: /Holds up/ })).toBeUndefined()
   const tabKeys = (await pane.findAll({ type: 'Button' }))
     .filter(b => (b.key ?? '').startsWith('tab-key-'))
     .map(b => [b.key, b.props.hotkey])
@@ -4795,6 +4837,7 @@ test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Overview page
   ])
   const saved = [...stored].find(([k]) => k.startsWith('s:'))
   expect(saved && JSON.parse(saved[1]).ledger.overview.look).toBeNull()
+  expect(saved && JSON.parse(saved[1]).ledger.overview.askSubjects).toEqual({ i1: 's1' })
   expect(page.value).toBe('overview')
   expect(prompts.at(-1)).toContain('is open beside the conversation, on its Asks tab, listing every open item.')
 
@@ -5026,7 +5069,7 @@ test('on a next build, at 31 desktop columns the tabs show their symbols with th
   world($, on, [])
   files = ['/.next-build']
   overviewReply =
-    'GOAL: Adding a greeting CLI\nNEW: waits-on-you | Runtime | Node or Python\nNEW: working | Plan | being written\nDONE: s2 | written'
+    'GOAL: Adding a greeting CLI\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime\nNEW: working | Plan | being written\nDONE: s2 | written'
   surfaces = ['desktop']
 
   await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
