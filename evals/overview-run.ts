@@ -33,6 +33,7 @@ const { values } = parseArgs({
     replay: { type: 'string' },
     judge: { type: 'boolean', default: false },
     'judge-pages': { type: 'string' },
+    'judge-set': { type: 'string' },
     out: { type: 'string' },
   },
 })
@@ -44,6 +45,9 @@ const wanted = values.replay?.split(',')
 const unknown = (wanted ?? []).filter(n => !REPLAYS.some(r => r.name === n))
 if (unknown.length > 0) throw new Error(`Unknown --replay ${unknown.join(', ')}`)
 const replays = REPLAYS.filter(r => !wanted || wanted.includes(r.name))
+const judgeSets = values['judge-set'] === undefined ? [1, 2] : [Number(values['judge-set'])]
+if (!judgeSets.every(n => n === 1 || n === 2))
+  throw new Error(`Unknown --judge-set ${values['judge-set']}. Use 1 or 2.`)
 
 const judgeFile = readFileSync(join(ROOT, 'evals', 'overview-judge.md'), 'utf8')
 const judgeSystem = judgeFile.split('\n---\n')[1]?.trim() ?? ''
@@ -77,9 +81,9 @@ async function judge(
 
 if (values['judge-pages'] !== undefined) await checkJudge(values['judge-pages'])
 
-/** Judges every page in both sets, once, and prints each wrong verdict. Exits 0 only when every page was called right. */
+/** Judges every page in the chosen sets, once, and prints each wrong verdict. Exits 0 only when every page was called right. */
 async function checkJudge(dir: string): Promise<never> {
-  const sets = [1, 2].map(n => JSON.parse(readFileSync(join(dir, `set-${n}.json`), 'utf8')) as JudgePageSet)
+  const sets = judgeSets.map(n => JSON.parse(readFileSync(join(dir, `set-${n}.json`), 'utf8')) as JudgePageSet)
   type PageRun = Run & { set: number; answer: string | null; mistakes: string[] }
   const jobs: Job<PageRun>[] = sets.flatMap(s =>
     s.pages.map(page => {
