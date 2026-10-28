@@ -1,296 +1,301 @@
-# The Overview tab in every look
+# The Overview tab
 
-Status: building (steps 1 to 4 built)
+Status: built, on next builds only. Release builds leave the tab out. The evals that judge it are being rebuilt from "What a good Overview is" below.
 
 ## Summary
 
-The Overview tab is the inbox's first tab. It is a guide to the session's work, not a list of what waits on the person. It answers four questions:
+The Overview is the inbox's first tab on a next build. It is about the session's work. Asks and Finds are about what the person has to do. As of the agent's last reply, it answers four questions:
 
-- What is the session doing, and why?
-- How is it going?
-- What changed since the person last looked?
-- What is next?
+- **What is this session's work?**
+- **Where does each piece of it stand?**
+- **Which pieces wait on me?**
+- **What moved since I last looked?**
 
-The inbox model writes the tab's parts. Code orders them when the tab opens. All four looks draw the same parts from one shared view: the Claude Code terminal, the Claude desktop app's pane, the Codex Inbox tab and the omp panel.
+The page is one list of subjects, newest change first. A subject is one piece of the work, such as a feature, a fix or a release. Each row shows a status mark, a short name, a few words on where the work stands, and how long ago it last changed. A Seen line marks where the person last looked. Every row above it changed since then. The inbox model adds, updates and closes subjects. Code owns every time, the order, the Seen line, the folds and the rows of running work.
 
-The tab replaces the Progress tab, which listed finished results. Nothing of Progress has shipped. Its tab id, FeatureIds and identifiers are renamed to `overview`, and its results list, goal field and subagent section are removed.
+All four looks draw the same page from one shared view: the Claude Code terminal, the Claude desktop app's pane, the Codex tab and the omp panel. `docs/looks.md` says where they differ.
 
-The tab fails if it reads as a log. It has no timestamps, ids, hashes or counts unless they carry meaning. It never lists events. Every prompt line and eval case in this plan pushes away from event lists.
-
-The build order:
-
-1. Parts, the Overview call and the stored state. Nothing is drawn.
-2. Ordering, "since you looked", topic changes and coordinator sessions.
-3. Draw the tab in each look.
-4. Host task lists.
-5. Remove the card's goal, running and done fields, and the results list.
-6. Docs and the full live pass.
+The page fails when it reads as a log, when it copies Asks or Finds, or when it says something the session has moved past.
 
 ## Decisions
 
-1. **Where the work queue comes from.** The Overview call writes it from the exchange in every host. A host's own task list is extra input where the host has one.
-   - Reason: only omp offers a task list by default (`docs/reference/task-lists.md`). A queue that needs a task list would be empty in Claude Code and Codex.
-2. **No `step` tool.** The agent is not asked to report steps.
-   - Reason: the tool adds guidance text for every agent, a trust step for Codex hooks and a case in the agent evals. The exchange and the host's task list already carry the same information. Revisit it only if the queue evals show the exchange is not enough.
-3. **No subagent rows, and no subagent events.** The call infers delegated work from what the agent did and said.
-   - Reason: nothing populates `Session.subagents` today. Filling it needs new Codex hook entries that each person must trust, and omp's internal channels. That is the largest unbuilt part of the Progress plan, and the Overview does not need it to read well. `Session.subagents`, `Subagent` and `presence.statedStep` are removed.
-4. **The call gets no inbox text.** The code writes the one pointer line from the live counts.
-   - Reason: a model that sees the asks restates them, and the tab becomes a second inbox. Counts drawn by code cannot go stale.
-5. **Code owns "since you looked", the last look and the order.** The model owns the words.
-   - Reason: opening the tab must not wait for a model, and the model cannot know when the person looked.
-6. **The old card is removed last.** The ledger call keeps writing `GOAL`, `NOW`, `RUNNING` and `DONE` lines until step 5.
-   - Reason: those lines are in the ledger call's text. Changing them moves the ledger evals, so the change gets its own step and its own eval run.
+1. **One list of subjects, newest change first, with no sections.**
+   - Reason: each piece of work shows once, with its change attached, and the ages read down the column as a timeline. The earlier six-section page showed one subject in up to six places.
+2. **The inbox model edits subjects by id. Code applies each edit.**
+   - Reason: a model that rewrites the whole page from the last page drifts toward the newest exchange. In a replay of one real session, 33 of 35 replies rewrote the page.
+3. **Code writes every time and the order. The model never writes a time.**
+   - Reason: a time word in model text freezes when it is written, so "merged today" reads wrong the next day. When things happened, and how far apart, carries meaning, so the ages must be true.
+4. **◆ comes from a link between an open ask and the subject it holds up.** The Overview call writes the link. Code draws ◆ while the ask is open and clears it when the ask closes. There is no "waits on you" status and no "problem" status.
+   - Reason: a ◆ set by the model could not see Asks, so it went stale and could disagree with Asks. A problem nobody is fixing is a to-do for the person, so it belongs in Asks, or in Finds when it is outside the task.
+   - This replaces the rule that the Overview call reads no inbox text. It now reads each open ask's id and first words, so it can link the ask. It never restates one.
+5. **No buttons that act on an ask or a finding.**
+   - Reason: an Answer or Fix button on a row would make the Overview a weaker copy of Asks and Finds, with less context.
+6. **Code follows running work from host events, and draws each as a child row under its subject.** The model only links a child to a subject.
+   - Reason: code knows when a subagent, background command, workflow run or delegate starts and ends. The person wants delegated work shown under the piece it serves.
+   - This replaces the decision to have no subagent rows.
+7. **The page updates after each reply, and during a long turn once 10 minutes have passed.**
+   - Reason: between replies, a long turn left the rows hours old.
+8. **A look counts once the tab has shown for 5 seconds.**
+   - Reason: a pass through the tab on the way to another one moved the Seen line past changes the person never read.
+9. **The model reads the work from the exchange.** A host's own task list is extra input.
+   - Reason: Claude Code and Codex offer no task list by default, so work read only from a task list would be missing there. `docs/reference/task-lists.md` has the sources.
+10. **No step tool.** The agent is not asked to report its steps.
+    - Reason: the exchange and the host's task list already say the same, and a tool would add guidance text for every agent.
+11. **One page for every session.** A coordinator's streams and a single task's pieces are both subjects. The first line says "coordinator" for a session that hands out work.
+    - Reason: one form keeps the page the same shape wherever the person opens it.
+12. **The job is the four questions above.** The page shows no reason for a decision, and has no separate "next" part.
+    - Reason: reasons need a line of prose under each decision, which brings back sections. ○ rows already say what comes next.
+13. **Evals check the page with fixed rules and a model judge.** A fixed rule checks what code can measure, such as a name's length or a time word. The judge checks what only reading can tell, such as a stale goal or one piece of work under two names. The judge grades nothing until it agrees with pages the person has labeled good or bad.
+    - Reason: the Overview cases passed 42 of 42 while a live Overview kept a goal about a release that had shipped, and listed the same work under two names. Each case checked one rule of the Overview prompt, most of them in one exchange, so the prompt was tested against itself.
+    - This reverses the decision to check the tab with fixed rules only.
+14. **Only next builds draw the tab.**
+    - Reason: it is not ready to release. A release build treats a saved Overview tab as unknown and shows its first tab.
 
 ## Terms
 
-Terms from `GLOSSARY.md`: Band, Pane, Catch-up, Host, Look, Difference on purpose and Parity record. The new ones:
+From `GLOSSARY.md`: Overview, Goal, Subject, Child, Seen line, News dot, Look, Host and Catch-up. The new terms:
 
-- **Overview:** the tab this plan adds. Its page is made of parts.
-- **Part:** one block of the page, with a kind and either text or a list of items.
-- **Item:** one line of a list part, with a status mark, short text and optional detail.
-- **Mark:** the glyph that shows an item's status.
-- **Queue:** the list part of the session's work: what is under way, queued, waiting or done.
-- **Overview call:** the inbox model call after the ledger call. It reads the last Overview and the new exchange and writes the next Overview.
-- **Last look:** the time the person last had the Overview tab shown.
-- **Since list:** the changes that landed after the last look.
-- **Arc:** one topic of work in a session. A change of topic starts a new arc.
-- **Coordinator session:** a session whose work is handing out work and reviewing the result, not doing it.
-- **Page tab:** a tab that shows a page instead of rows. It has no count, no buttons and no row selection.
-- **Host task list:** the list an agent keeps with its own tool, such as omp's `todo`.
+- **Overview call:** the inbox model call after the ledger call. It reads the open subjects and the new exchange, and answers with edits.
+- **Identity line:** the page's first line. It names the folder the session started in, its branch, and "coordinator" when it hands out work.
+- **Live line:** the line under the goal that says what the agent does now: "Working…", "Working… for 25m", or "Idle · last reply 12m ago".
+- **Where it stands:** the few words after a subject's name.
+- **Was line:** a line under a subject that names the plan a change replaced, as "was: last-write-wins".
+- **Link:** the Overview call's tie from an open ask or a child to the subject it belongs to.
+- **Fold:** one line that stands for several rows: "✓ 3 done" or "○ 2 more queued".
+- **Property:** something true of a good Overview that a person can check by reading the page, knowing what happened in the session.
+- **Rule:** a check written in code, run on the saved Overview or the drawn page.
+- **Judge:** a model that reads a drawn page and the session's facts, and says whether a property holds.
 
-## The parts
+## The page
 
-A part has a `kind`. Text parts hold one short text. List parts hold items.
+From top to bottom:
 
-| Kind | Holds | Who writes it |
+| Part | What it shows | Who writes it |
 | --- | --- | --- |
-| `headline` | One plain sentence: what the session is doing. It is never labeled "goal". | Model |
-| `status` | One sentence on how it is going, with a state: `on-track`, `stuck` or `finished`. | Model |
-| `course` | Why the direction changed, when it did. | Model |
-| `queue` | What is under way, queued, waiting and done. | Model |
-| `works` | What holds now: what works, what exists. | Model |
-| `open` | Risks, problems and unknowns. | Model |
-| `next` | What comes next. | Model |
-| `since` | What changed after the last look. | Model writes, code clears |
-| `workstreams` | In a coordinator session: one line per stream of work. | Model |
-| `pointer` | "Asks has N items." No buttons. Left out when nothing waits. | Code |
+| Identity line | The folder the session started in, its branch, and "coordinator" | Code. The model says whether the session is a coordinator. |
+| Goal | What the session's work is for. The call is asked for at most 8 words, and code clips it at 14. | Model |
+| Live line | "Working…", "Working… for 25m", or "Idle · last reply 12m ago" | Code |
+| Subject rows | A mark, a short name, a few words on where it stands, and the age of the last change. The call is asked for a name of at most 3 words and a text of at most 4. Code clips them at 20 and 12. | The model writes the status, name and text. Code draws the mark and the age, and orders the rows by last change. |
+| Was line | The plan a change replaced, until the person has seen it | The model writes it. Code shows it only until the person has looked. |
+| Child rows | Running work under its subject, with how long since it last did anything. After 15 minutes with no activity it reads "quiet 40m". | Code, from host events. The model writes the link. |
+| Seen line | Where the person last looked. Rows above it changed since. It is left out when nothing changed. | Code |
+| Folds | "○ N more queued" past 7 open rows. "✓ N done" for the done subjects not drawn as a row, or "✓ N more done" when a done row shows above it. Dropped subjects that are not drawn leave the page. | Code |
+| Status line | "Last Overview update failed. Changes from that reply may be missing." while the last call wrote nothing | Code |
 
-An item has a status:
+The marks:
 
-| Status | Mark | Meaning |
+| Mark | Meaning | Source |
 | --- | --- | --- |
-| `working` | ● | Under way now |
-| `queued` | ○ | Waiting its turn |
-| `waits-on-you` | ◆ | Needs the person |
-| `waits-on-other` | ◌ | Needs something else, such as a build |
-| `done` | ✓ | Finished |
-| `ruled-out` | ✗ | Tried or considered and dropped |
-| `problem` | ! | Something is wrong |
-| `unknown` | ? | Not known yet |
+| ● | Work in progress in this session. It moves while the turn runs or a child under it works. | Model's status `working` |
+| ○ | Work planned in this session, not started | `queued` |
+| ◌ | Work that waits on something outside the session, such as another team or a build | `waits-on-other` |
+| ✓ | Finished | `done` |
+| ✗ | Dropped, with why | `dropped` |
+| ◆ | Held up by an open ask. It replaces the status's mark until the ask closes. | Code, from the link |
 
-Each mark is drawn with a color and also reads alone, so the terminal and omp need no color to tell them apart. The glyphs differ in shape. Colors come from the existing tones in `hooks/tones.ts`: `waits-on-you` takes `needsYou`, `done` takes `done`, `problem` takes `issue`. The other five use the faint text color, so no tone is added. omp's light theme is checked in step 3.
+More rules of the drawn page, all in `hooks/view.ts:overviewPage`:
 
-The `course` and `status` texts are at most 30 words, in at most two sentences. The headline and each item's text are at most 12 words. A detail is at most 20. A list holds at most 6 items. The call sees these limits in its prompt, and code clips what exceeds them.
+- A subject's text wraps to at most 3 lines.
+- At most 2 finished rows show, both changed since the last look. The rest fold into the count.
+- Below the Seen line, an open row keeps where it stands, and drops its was line.
+- At most 3 children show under one subject. The rest read "+ 2 more running".
+- A child whose subject is not shown, or that has no link yet, sits at the top of the list.
+- A held subject never folds into the queued count, and its mark does not move.
+- The tab's name gets a dot while the page holds a change the person has not seen.
+- The Asks row of a linked ask reads "Holds up" and the subject's name.
 
-## The Overview call
+Before any work, the page reads: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
 
-It runs after the ledger call, in the slot the results call has now: after the ledger update applies, one after another per session (`inOrder`), in the background where the host allows it (`background`). A failed call leaves the last Overview in place. A failed ledger call skips it.
+### How it updates
 
-**What it reads:**
+- **After each reply.** The ledger call runs first, then the Overview call. A failed ledger call skips it.
+- **What the Overview call reads:**
+  - the goal and the role;
+  - the open subjects, each with its id, status, name and text;
+  - the names of the last 10 finished subjects, so it does not add one again;
+  - each open ask's id, its first 30 words and its linked subject;
+  - the running children;
+  - the host's task list, where there is one;
+  - the person's message, the agent's tool activity and the reply.
+- **What it answers:** edits by id, one per line: add a subject, update one, finish one, drop one or drop it into another, write a was line, link an ask or a child, set the goal or the role. Or `UNCHANGED`. `hooks/overview.ts` parses and applies the answer.
+- **What code does with it:**
+  - A new subject whose name holds the same key words as an open one updates that one.
+  - An update that keeps the status and shares half its words with the old text keeps the old text and the old age.
+  - An answer that holds any line that is not an edit is asked once more. If that fails too, the page stays as it was and the status line says so.
+- **During a long turn.** The main agent's next tool call, once 10 minutes have passed since the turn began and since the last Overview call, starts an Overview call. That call reads the person's message and the turn's activity so far.
+- **On a catch-up.** The call reads the whole conversation and edits the current subjects.
 
-| Block | Holds |
-| --- | --- |
-| `<last>` | The last Overview as text: its parts and items. |
-| `<unseen>` | The since list, so the call can merge a new change into an old one. |
-| `<person>` | The person's message. |
-| `<activity>` | The agent's tool activity this turn, as the ledger call reads it. |
-| `<reply>` | The agent's reply. |
-| `<tasks>` | The host task list, when the host has one. |
-| `<state>` | Whether the person has asked for anything yet, and whether the turn was cut off. |
+`hooks/overview.ts` owns the saved Overview, the parser and how an answer applies. `hooks/view.ts` owns the drawn page. `hooks/model-text.ts` owns the call's prompts. `docs/looks.md` names the owner of every other rule.
 
-It gets no inbox rows or counts, and nothing about when the person looked. Opening the tab never calls it.
+## What a good Overview is
 
-**What it writes:** a whole new Overview in a line format that code parses the way it parses the ledger update. It says whether the topic is the same or new and whether the session is a coordinator. If the direction changed, it says so and gives the reason. It writes a new `since` list that merges the unseen changes with this reply's.
+Each property below says what the person needs from the page, and is tied to one of the four questions. A person who knows what happened in the session can check each one by reading the page. Evals check these properties. They do not check the wording of the Overview prompt.
 
-It writes nothing for a reply that changes nothing about the work. Code then keeps `<last>` as it was.
+The examples come from one sample session. It adds offline sync to a notes app. Its pieces are the sync conflicts, an export button and the 2.4 release. A delegate builds the export's PDF layout.
 
-**The rules in its prompt:**
+A good page after the person was away two hours:
 
-- Write at the level of the feature. Describe what the work is for and where it stands. Never list commands, files, commits, tests or tool calls.
-- Leave out any number, id, time or hash that the person would not need to find the work again.
-- Do not restate a question or task the agent put to the person. Say that the work is waiting, and stop.
-- Keep an item until it is done, ruled out or no longer true. Do not reword an item that has not changed.
-- Say a direction changed only when the approach changed, and give the reason. A new step is not a change.
+```text
+notes-app · offline-sync
+Add offline sync to the notes app
+Idle · last reply 12m ago
 
-These lines are the first draft. They are tested before they are kept (`AGENTS.md`, "Text a model reads").
+◆ Sync conflicts: merge logic ready     12m
+✓ Sync engine: syncs on reconnect       40m
+── Seen ─────────────────────────────────
+● Export button: works on web            2h
+  └ ● pdf-layout delegate         quiet 40m
+○ 2.4 release: after export              3h
+✓ 2 more done                            2h
+```
 
-## Order when the tab opens
+The question "Which conflict rule ships?" waits in Asks, and its row there reads "Holds up Sync conflicts".
 
-Code orders the parts from three signals. The model writes nothing at this point.
+### What is this session's work?
 
-| Signal | Values |
-| --- | --- |
-| Away | `here` under 5 minutes since the last look, `short` under 1 hour, `long` beyond |
-| Work | `running` while the main agent's turn runs, `stopped` when the agent waits on the person or a stop row shows, `finished` when the status state is `finished`, else `idle` |
-| Course | Whether the direction changed since the last look |
+#### 1. The goal says what the session is working toward now
 
-A changed direction leads, whatever else is true. After it:
+The first words the person reads tell them what the session is for, in their own terms. The goal stays the same while the work goes on, and changes when the session takes up different work.
 
-| Work | Away | Order |
-| --- | --- | --- |
-| running | here | headline, queue |
-| running or idle | short | headline, since (or "Nothing new since you looked."), queue, open |
-| running or idle | long | headline, status, since (or the same line), queue, next, open |
-| stopped | any | headline, status, pointer, since, queue, next, open |
-| finished | any | headline, status, works, open |
+- **Good:** "Add offline sync to the notes app", unchanged through a lint fix, new tests and a question.
+- **Good:** a coordinator that shipped 2.4 and now runs the sync fix and 2.5 reads "Fix sync and ship 2.5".
+- **Bad:** "Ship the 2.4 release", two hours after 2.4 shipped.
+- **Bad:** "Fix the lint error", after one step on the way.
+- **Bad:** "Offline sync PR ready for review". That is where one piece stands, not what the session is for.
 
-The pointer is "Asks has N items." with the count of open questions and tasks. It has no buttons and is left out when the count is 0. `open` stays in every state so a problem is never hidden. `works` shows only when the work is finished, since the queue's done items already say what works while work goes on.
+#### 2. The first line tells this session from its siblings
 
-The queue shows in every state except `finished`. In `stopped` it holds the ◆ item that says what the work waits on.
+When several sessions work in one project, the person can tell which one this is.
 
-`next` is drawn only when the queue has no queued (○) items. Otherwise the ○ items already say what comes next.
+- **Good:** `notes-app · offline-sync`. A session that hands out work and reviews it reads `notes-app · main · coordinator`.
+- **Bad:** `notes-app · offline-sync · coordinator` on a session that only ran two review subagents of its own.
 
-A part with nothing in it is left out. The earlier lines come last. The cutoffs and the table are constants in a shared module, tested as a pure function. They are tuned in the trial build.
+### Where does each piece of it stand?
 
-**Coordinator sessions** use a different order: headline, workstreams, since, queue, next, open. The model decides a session is a coordinator from what it does, as it hands out work and reviews the result. There is no flag. The view comes from what the coordinator itself knows, not from the other sessions' own tabs.
+#### 3. Each row is one piece of this session's work, named the way the person would name it
 
-## Since you looked
+A row is something the session builds, fixes, ships or hands to a delegate. Its name is a short handle the person could say aloud.
 
-The since list holds the changes after the last look. It starts over when the person looks.
+- **Good:** `Sync conflicts`, `Export button`, `2.4 release`.
+- **Bad:** `Choose the conflict rule`. That is a question, and it belongs in Asks.
+- **Bad:** `Restart the app to load the build`. That is a task for the person.
+- **Bad:** `Settings page warning`, a problem outside the task. It belongs in Finds.
+- **Bad:** `Merge freeze`. That is a standing rule, not work.
+- **Bad:** `A chat whose archived history can't rebuild…`. That is a sentence, cut off.
 
-- The call rewrites the list after each reply, merging new changes into the unseen ones. This keeps it short after many replies.
-- A look starts when the Overview tab is shown and ends when it stops being shown: a tab change, the pane closing, or the band opening the inbox. The start fixes the away time, so the order does not change while the tab is shown. It also records which since items and which course were shown.
-- The end clears only those items and that course, stamps `Overview.lastLookAt`, and remembers what it cleared in `Overview.seen`. A change that landed while the tab was shown stays for the next look. An Overview call that began before the look ended is applied without the cleared items and course.
-- "Nothing new since you looked." is not drawn before the first look.
-- A reply that lands while the tab is shown is added to the since list and shows at once.
-- The call writes COURSE only in the reply where the approach changed. The saved course stays through later replies until a look or a new topic clears it.
-- The mod syncs the look whenever the pane opens or closes or its page changes. Codex starts and ends it from each `inbox_view` request, and ends it at the last request's time when requests stopped. omp does it in `showTab` and `closePanel`. The sample never changes a look.
-- A coordinator's QUEUE item that only names a stream is dropped in code when the answer is applied, since the STREAM line already says it.
-- Each fact is written once: the call's rule is "each fact once, in the list that fits it best". `evals` checks that no two items in QUEUE, WORKS, OPEN, NEXT and STREAM say the same thing.
+#### 4. Each piece of work shows once
 
-## A change of topic
+One row per piece, whatever words the conversation used for it. Finished work does not come back as new work under another name.
 
-When the call reports a new topic, the old arc folds into one line under "Earlier in this session". That line says where the arc was left. The page then starts from the new headline. Code keeps at most 6 earlier lines and drops the oldest.
+- **Good:** one row, `● Checkout total: fixed on web, iOS left`, after the person calls it "the cart rounding bug".
+- **Bad:** `Checkout total` and `Cart rounding bug`, both open, for one fix.
+- **Bad:** `✓ Export button` when its PR opens, and a new `● Export PR`.
 
-## The empty page
+#### 5. Each mark is true, and a row closes when its work does
 
-Before any work starts, the page says what the tab is, in one or two plain lines. It does not name a tab or use the word "goal". It reads: "Where the work stands and where it's heading. It fills in once the work starts." The words go through `refine-prose` when they are built.
+The person can trust a mark at a glance. Work that is finished, dropped or filed for later leaves the open rows. Work that is still open stays, however old. So the open rows stay few, and each is work the session will still do.
 
-## Host task lists
+- **Good:** `✓ 2.4 release: live in the store`, with a separate `● Sync bug: cause found`.
+- **Good:** a piece paused for a day keeps its row: `○ Export button: works on web`.
+- **Bad:** `● 2.4 release: published, sync bug next`. The release is over.
+- **Bad:** ten `○` rows that read "filed for later", all evening.
+- **Bad:** `Export button` disappears with no ✓ or ✗ while its iOS half is not done.
 
-Each host reads the list into `Session.hostTasks`, a list of `{ text, status }` with `status` one of `pending`, `in-progress`, `done`, `dropped` or `blocked`. Shared code turns it into the `<tasks>` block.
+#### 6. Where it stands says the state of the work
 
-| Host | Read from | When |
-| --- | --- | --- |
-| Claude Code | `tool.call` for `TaskCreate` and `TaskUpdate`, keeping an id to text map | When the tools are on. They are off by default. |
-| Codex | The turn's `update_plan` rows in the rollout, at Stop | When the agent calls it. It is not offered by default. |
-| omp | The newest `todo` result or `/todo` edit on the session branch | Always on |
+A few words on what works, what is left or what it waits on, in the work's own terms. Not the step that ran, the tool that runs now, an id, or what was said in the conversation.
 
-Only omp has a list most of the time. Claude Code and Codex are built anyway, since the code is small and a person can turn the tools on. `docs/reference/task-lists.md` has the sources. Each host's row in `docs/looks.md` says the list is usually empty there. The unknowns it lists are checked in step 4: whether Claude Code's task ids restart after `/clear`, and whether the Codex app offers `update_plan`.
+- **Good:** `Export button: works on web and iOS`.
+- **Good:** `2.5 release: in review`, for a coordinator's stream.
+- **Bad:** `Export button: tests running`, or `PR open, reviewer running` when the reviewer already shows as a child row.
+- **Bad:** `Export button: export button merged`.
+- **Bad:** `Sync conflicts: discussed three options`.
 
-## What is reused and what is replaced
+#### 7. Running work shows under the piece it serves
 
-| Keep | Replace |
-| --- | --- |
-| The page-tab plumbing: `PageTab`, `ShownTab`, `LISTED_TABS`, `ARRIVAL_TABS`, the mod's `PAGE` atom and Codex's `shownTab` | The tab id `progress`, now `overview` |
-| The drawing of a page tab in all four looks, with new parts | `progressPage` and `ProgressPage`, now `overviewPage` and `OverviewPage` |
-| The second model call and its host plumbing (`inOrder`, `background`, `appliedResults`, the skip on a bad ledger answer) | `RESULTS_SYSTEM`, `resultsPrompt`, `resultsCatchUpPrompt`, `handledBy` and `addResults` |
-| `presence.isTurnRunning` and the Working… line (`turn-working`) | `Ledger.milestones`, `listResults`, the DONE count, and `card.goal`, `card.running` and `card.done` |
-| The sample data path (`demoView`, `drawnSession`) | `Session.subagents`, `Subagent`, `presence.statedStep` and `DemoCopy.subagents` |
+A delegate, subagent, background command or workflow run shows under the subject it works on while it runs, with how long since it last did anything.
 
-The `Working…` mark moves next to the headline. Code draws it from `isTurnRunning`, since it changes faster than the model writes.
+- **Good:** `● Export button` with `└ ● pdf-layout delegate  2m` under it.
+- **Good:** the same delegate, idle for 40 minutes, reads `quiet 40m`.
+- **Bad:** the PDF layout delegate under `Sync conflicts`.
 
-## Stored state
+### Which pieces wait on me?
 
-- `Ledger.milestones` is replaced by `Ledger.overview`. Step 1 stores the parts as fields: the headline, the status and its state, the course text, one list for each list part, the earlier lines and the coordinator flag. Step 2 adds `lastLookAt`; the course flag is whether `course` is set. A new field, `Session.hostTasks`, is the task list.
-- `Ledger.overview` lives in the ledger so that `forkedFrom`, `cleared`, `hasLedger` and `isUnseen` carry it with the rest. A fork takes its parent's Overview. A `/clear` empties it.
-- The page tab id `overview` is stored in the mod's `PAGE` atom and in Codex's `shownTab`. It is final once released.
-- Main never stored `progress`, `shownTab`, `milestones`, `subagents` or `statedStep`. A trial build of the Progress tab may have. The Overview build ignores a `PAGE` or `shownTab` value it does not know, and drops `milestones`, `subagents` and `statedStep` when it loads. Step 1 tests this with a state saved by that trial build.
-- Step 3 checks that main's build loads a session record saved by this branch, before the trial build is frozen.
+#### 8. ◆ marks exactly the work an open ask holds up
 
-The Overview is derived text, so a lost or stale one costs a better summary, not data. The next reply rewrites it. A catch-up writes it from the whole conversation.
+From the page alone, the person sees which pieces cannot move until they act. The ◆ goes when they answer.
 
-## Per host
+- **Good:** the open question "Which conflict rule ships?" puts ◆ on `Sync conflicts`.
+- **Bad:** ◆ on `Export button` for that question.
+- **Bad:** `● Sync conflicts` while the work cannot move until the answer.
 
-- **Mod (terminal and desktop).** The call runs in the background after the ledger update. `tool.call` feeds the task list. The page draws in `hooks/register.tsx`, which both looks share. The desktop pane redraws only on events, so the new Overview shows on the next event after the call returns.
-- **Codex.** The update process runs the call after the ledger call, in the same process. The Stop hook reads `update_plan` rows. The tab draws the page without row motion.
-- **omp.** The extension runs the call as it runs the results call now. `tool_result` feeds the task list. The panel draws plain lines with ANSI styles.
+#### 9. The page points to Asks and never repeats them
 
-All three consume `Ledger.overview` through `sessionView`, so every look draws what the shared module decides: which parts show, in what order, with what marks.
+The Overview shows the work. Asks and Finds show the person's to-dos. A row held up by an ask says where its work stands.
 
-## Parity record
+- **Good:** `◆ Sync conflicts: merge logic ready`.
+- **Bad:** `◆ Sync conflicts: needs your decision`. ◆ and the band already say so.
+- **Bad:** `◆ Sync conflicts: last-write-wins or manual merge?`. That is the question, copied.
+- **Bad:** a row for a finding, a PR check or an option.
 
-Each FeatureId needs an entry for every host. `scripts/check-structure.mjs` fails on a `different` or `unsupported` entry without a row in `docs/looks.md`.
+### What moved since I last looked?
 
-| FeatureId | claude-code | codex | omp |
-| --- | --- | --- | --- |
-| `overview-tab` | full | full | full |
-| `turn-working` | full | different (as today) | full |
-| `host-task-list` | different | different | full |
+#### 10. Every real change shows above the Seen line, on its piece of work
 
-`milestones`, `progress-tab`, `subagent-rows`, `subagent-step-tool` and `step-tool` are not added. `host-task-list` is `different` in Claude Code and Codex because the host does not offer the tool by default. The row says so, with the sources.
+Back after a break, the person learns from the rows above the Seen line what finished, started, stalled or changed course, without reading the conversation. Each change sits on the row of the piece it changed.
 
-## Model-read text and evals
+- **Good:** the sample page above. The conflicts work and the sync engine changed since the look, and the export did not.
+- **Bad:** 2.4 shipped, but `2.4 release` still sits below the Seen line with its old text.
+- **Bad:** six pieces finished while the person was away. The page names two and folds the release into "✓ 4 more done".
 
-The Overview call's prompt is text a model reads. `AGENTS.md` names the checks.
+#### 11. Nothing moves that did not change
 
-- The ledger call's text is unchanged until step 5.
-- Step 5 changes `systemText`, so it runs the whole `./scripts/eval.sh`. It compares each ledger case with the baselines before the change.
-- `carryText` and `overviewCarryText` (was `cardCarryText`) change in step 5. They are text the agent reads, so `./scripts/eval.sh --suite agent` runs too.
-- The eval harness (`evals/run.ts`) runs the Overview call as its second call. Its `results`, `result` and `noResult` checks, and the baselines for the DONE cases, go.
-- The new cases check the tab's shape with fixed rules, not a model judge.
+A reply that changed nothing about the work leaves every row, age and the Seen line where they were. So a row above the line always means a change.
 
-| Case | What it checks |
-| --- | --- |
-| Feature level | A long exchange full of reads, edits, commands and test runs. No item contains a command, a path, a hash, a ticket number or a count, and no item starts with a tool verb. |
-| Change of direction | The person redirects the approach. The call reports a change and gives the reason. A control exchange of plain progress reports none. |
-| Coordinator | An exchange that hands work to other agents and reviews their results is a coordinator, with at least two workstreams. A single-task control is not. |
-| Since you looked | An unseen list plus a new reply gives one merged list with no duplicate. The restart on a look is a unit test of the shared code, not an eval. |
-| Asks only as a pointer | The agent asks the person a question this turn. No item repeats its words, and the status may say the work waits. |
-| New topic | A change of topic folds the old arc into one earlier line that says where it was left. |
-| Nothing to say | A reply that changes nothing about the work leaves the last Overview as it was. |
+- **Good:** the person asks what the export button's label should say. The agent answers, and the page stays as it was.
+- **Bad:** `Export button: works on web, iOS left` becomes `web done, iOS remaining`, moves above the Seen line, and its age reads "now".
 
+#### 12. A change of plan says what it replaced
 
-## Build steps and checks
+When the session drops one approach for another, the person sees both until they have looked.
 
-Every step runs `./scripts/check.sh`. After a shared-module change it rebuilds with `npm --prefix codex run build` and `npm --prefix omp run build`. Every commit stays on `progress-tab`, unpushed. The work stops for review after step 1 and after step 3, with a report in `.scratch/REPORT.md` each time.
+- **Good:** `● Sync conflicts: manual merge`, with `was: last-write-wins` under it.
+- **Bad:** the text changes to "manual merge", and nothing says the plan changed.
+- **Bad:** a was line on a row that only made progress.
 
-1. **Parts, the call and the state.** Types, the line format and its parser, `Ledger.overview`, the prompt, the eval harness change and the seven cases, the upgrade, and the swap of the results call for the Overview call in all three hosts. Remove the milestones code and the results prompts. Nothing is drawn. Checks: unit tests of the parser and the clip; the model suite; a state saved by the Progress trial build loads without error.
-2. **Order and behavior.** The three signals, the order table, the last look, the since list, the course flag, topic folding and the coordinator order, as pure functions in a shared module, with tests for each row of the table.
-3. **Draw the tab, then freeze a trial build.** One commit per look, then one that renames the entry in `TABS`. Rename the tab, the page view and the FeatureId. Draw the marks and the pointer line. Checks, in each look and each state:
-   - the demo test's tab order;
-   - desktop at its narrowest pane, with counts, and at 36 and 43 columns, with the label "Overview";
-   - the Codex tab measured in a local page that hosts the built tab, in both themes and with reduced motion;
-   - omp at 50, 60 and 80 columns, in the dark and light themes;
-   - the terminal with no color, read from the glyphs alone.
+#### 13. The page says how current it is
 
-   After the terminal look draws and the review passes, check that main's build loads a session record this branch saved. Then freeze a trial build in a detached worktree, `overview-try`, at the reviewed tip, so the person can use it while steps 4 to 6 continue.
-4. **Host task lists.** The three reads, `Session.hostTasks`, the `<tasks>` block and the `host-task-list` entry and rows. Live checks answer the two unknowns above.
-5. **Remove the old card fields.** Drop `GOAL`, `NOW`, `RUNNING` and `DONE` from the ledger call. Point the carry texts, the sidebar line (`hooks/claude.ts`) and `screenText` at the Overview. Replace the page hint. Run the whole model suite and the agent suite.
-6. **Docs and the full pass.** `docs/looks.md`, `GLOSSARY.md`, `README.md`, `docs/release.md`, `AGENTS.md`. Then every check in `docs/release.md` and the live pass in all four looks. Then a refreshed trial build.
+The person can tell how far to trust the page. The live line says whether the agent is working, or when it last replied. A failed update says so. A long turn does not leave the rows hours behind. Every time on the page comes from code.
 
-Readers of `card.goal` and their replacements:
+- **Good:** `Working… for 25m`, with rows that changed 4 minutes ago.
+- **Good:** "Last Overview update failed. Changes from that reply may be missing."
+- **Bad:** the agent has worked for three hours, and every row is three hours old.
+- **Bad:** `2.4 release: goes out tomorrow`, read two days later.
 
-| Reader | Replacement |
-| --- | --- |
-| `cardCarryText` (first prompt) | The headline and the status text |
-| `hooks/claude.ts` sidebar line | The headline |
-| `screenText` | Says the tab shows the session's work |
-| The page's empty hint | The empty page text above |
-| Codex `row-actions` and `tab`, omp panel | `OverviewPage` |
+## How the Overview is judged
+
+Decision 13 sets the method: fixed rules where code can measure a property, and a judge where only reading can tell. The work runs in four phases:
+
+1. **The spec.** "What a good Overview is" above, and a private catalog of failures seen in real sessions. Each failure names the property it breaks.
+2. **The design.** Cases, checks and the harness. Long sessions are replayed exchange by exchange, with each answer applied before the next, since most failures build up over a session.
+3. **Review.** Fresh reviewers attack the design. They look for bad pages that pass, good pages that fail, and prompt changes for the worse that no case catches.
+4. **The build.** A case joins the suite only after it fails on the real failure, fails on a deliberately broken prompt, and passes a good page written by hand.
+
+The judge reads the drawn page, not the model's answer, since the person reads the page. It grades nothing until its verdicts agree with pages the person has labeled.
+
+Every check holds both sides of its property. A case for a goal that went stale runs beside a case for a goal that must not change. A case that open rows close runs beside one where paused work stays open. A case that a reply with no news changes nothing runs beside one where a real change must reach the page. A prompt that does only one half fails one case of the pair.
 
 ## Risks
 
-- **The tab reads as a log anyway.** The model may list events when the exchange is full of them. The feature-level case and the trial build are the checks. If the case passes and the trial still reads as a log, the prompt changes, not the draw.
-- **Merging an unseen list.** The call may drop an old change by mistake. The since case checks one merge. The trial shows more.
-- **Stale queue marks.** The queue updates after each reply, so a ● can be wrong between replies. The page shows `Working…` from the live turn state to cover the gap.
-- **Ledger evals move in step 5.** A new rule in the ledger call's text has moved unrelated ledger cases by 10 to 20 runs of 32. Step 5 compares against the baselines and stops if a case drops.
-- **Width.** The label "Overview" is 8 letters, as "Progress" was. The desktop pane at 36 to 38 columns may lose the Asks and Finds counts. Step 3 measures it. If it does, the choice between a shorter label and losing the counts goes to the person.
+- **A fix for one failure causes its pair.** Pushing the goal to follow the work can make it change at every step. Pushing rows to close can close paused work. The paired cases above are the guard.
+- **The page is only as current as the last reply.** While the agent sits idle, the subject rows do not change. A delegate that finishes while its coordinator is idle leaves the child rows, and its subject changes at the coordinator's next turn. The live line dates the page.
+- **A wrong link draws ◆ on the wrong work.** Code clears ◆ when an ask closes, but it cannot tell whether the link was right.
+- **The judge agrees with itself.** A judge written from these properties can pass pages the person would call bad. Checking it against the person's labels first is the guard.
+- **The fold can hide a change.** After a long absence, only 2 finished rows show above the Seen line. A finished release can fall into "✓ 4 more done", which breaks property 10.
 
-## Out of scope
+## Not built
 
-- Subagent rows and subagent events.
-- A `step` tool.
-- A line in the band about the Overview.
-- A coordinator view built from the other sessions' own Overviews.
-- PR results.
+- Opening a delegate's session from its child row, in every look.
+- A one-line status that each delegate reports, drawn on its child row in the coordinator.
+- A coordinator showing ◆ when a delegate's own ask waits on the person.
+- A reason under a decision, shown on demand.
