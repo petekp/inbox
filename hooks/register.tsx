@@ -4601,13 +4601,14 @@ export const register: Register = on => {
           {b.lead}
         </Text>
       )
+      const isActionBelow = isNarrowDesktop && Boolean(more.action)
 
       return (
         <Box
           key={`banner-${b.kind}`}
-          flexDirection="row"
-          alignItems="center"
-          columnGap={2}
+          {...(isActionBelow
+            ? { flexDirection: 'column', alignItems: 'flex-start', rowGap: (2 * BANNER_PAD_Y_PT) / DESKTOP_LINE_PT }
+            : { flexDirection: 'row', alignItems: 'center', columnGap: 2 })}
           {...frame}
           {...(fill ? { backgroundColor: fill } : {})}
         >
@@ -5224,7 +5225,7 @@ export const register: Register = on => {
         ? [
             section(
               banner(stopBanner(stop), {
-                after: <Text color={pal.muted}>{`${DOT}${ago(now - stop.at).replaceAll(' ', '\u00a0')}`}</Text>,
+                after: <Text color={pal.muted}>{glued(`${DOT}${ago(now - stop.at)}`)}</Text>,
                 isBodyBelow: true,
                 extra:
                   resuming?.is === 'refused' ? (
