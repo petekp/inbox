@@ -19,7 +19,7 @@ Versions on 2026-10-08:
 ### Key constraints
 
 1. **Only the terminal and desktop Code mode draw.** "A mod's hooks run in every kind of session that loads the plugin. Drawing is narrower: only the terminal and the Desktop app show a mod's panes, bands, and replaced rows." [O#where-mods-run] `-p`, the Agent SDK and the VS Code chat panel run hooks and draw nothing. Under Remote Control, hooks run on the host machine and the phone or browser shows nothing a mod draws. A cloud session runs hooks only for a plugin that reaches it.
-2. **Desktop Code mode starts headless.** The app is an SDK host that runs the engine as a stream-json child process (live `ps`; changelog 2.1.208, 2.1.260, 2.1.282). The types say a remote client joins through `session.attach` "(… the desktop app connected)". [T: `SessionAttachInput`] No public doc says this. Live: `session.start` has `isInteractive: false` and no surfaces, and the attach follows about 0.1 s later ([desktop](claude-desktop-app.md#live-probe-of-a-code-mode-session)). The inbox turns on at `session.start` or `session.attach` (`hooks/register.tsx:on('session.start')` and `hooks/register.tsx:on('session.attach')`, commit `05c3548`).
+2. **Desktop Code mode starts headless.** The app is an SDK host that runs the engine as a stream-json child process (live `ps`; changelog 2.1.208, 2.1.260, 2.1.282). The types say a remote client joins through `session.attach` "(… the desktop app connected)". [T: `SessionAttachInput`] No public doc says this. Live: `session.start` has `isInteractive: false` and no surfaces, and the attach follows about 0.1 s later ([desktop](claude-desktop-app.md#live-probe-of-a-code-mode-session)). The inbox turns on at `session.start` when the app started the process or has already attached, and otherwise at `session.attach` (`hooks/register.tsx:on('session.start')` and `hooks/register.tsx:on('session.attach')`). `hooks/register.tsx:isStartedByDesktopApp` tells the app's process from `CLAUDE_CODE_ENTRYPOINT`.
 3. **A prompt typed in Code mode counts as the person's words.** It arrives with `origin.kind` `composer`, as in the terminal (live probe, [desktop](claude-desktop-app.md#live-probe-of-a-code-mode-session)). The inbox counts `composer`, `bridge` and `plugin` with `asUser` (`hooks/register.tsx:isPersonsWords`).
 4. **`/clear`, `/resume` and `/branch` change the conversation without a new `session.start`.** On `/clear` "the conversation ends, the process goes on under a new session id, and no `session.start` fires for it." [T: `SessionEndInput.reason`] `classic.SessionStart` with source `clear`, `resume` or `fork` is the reload point. [IF] All `session.end` work shares one 1.5-second bound, `$` waits included. [T; H#sessionend]
 5. **On Team and Enterprise sign-ins and managed machines, a built-in guard limits the inbox.** The inbox installs from GitHub, so it "counts as a user's" mod. [A#apply-your-plugin-controls-to-mods] The guard's public source skips user-tier hooks on `prompt.compose`, `prompt.context` and `classic.*`. [G] Inference: the inbox's guidance and carry text would not reach Claude there. Not verified live.
@@ -155,13 +155,14 @@ Public docs say nothing about this. It comes from the engine types, the changelo
 - `$.session.surfaces()` "Returns every surface the session draws on … `terminal` under the REPL first, then the remote ones in the order they attached. A session may draw on several at once (a terminal and two phones) … Empty in a plain -p run". `$.session.surface()` is deprecated. [T: `session.surfaces`]
 - `PromptComposeInput.surfaces` gives "Where the session draws at this render … empty where nothing draws". [T: `PromptComposeInput`]
 
-The inbox's gate (`hooks/register.tsx`, live 2026-10-08):
+The inbox's gate (`hooks/register.tsx`):
 
 ```ts
 on('session.start', async ($, e, next) => {
   await registerInboxCommand($)
   const r = await next(e)
-  if (e.isInteractive || (await $.session.surfaces()).includes('desktop')) await turnOn($)
+  const isDesktop = (await $.session.surfaces()).includes('desktop') || (await isStartedByDesktopApp($))
+  if (e.isInteractive || isDesktop) await turnOn($)
   return r
 })
 on('session.attach', { surface: 'desktop' }, async ($, e, next) => {
@@ -171,8 +172,9 @@ on('session.attach', { surface: 'desktop' }, async ($, e, next) => {
 ```
 
 - `session.start` is at `hooks/register.tsx:on('session.start')`, the gate inside it, `session.attach` at `hooks/register.tsx:on('session.attach')`. Commit `05c3548` added the desktop gate.
+- `isStartedByDesktopApp` is true when `CLAUDE_CODE_ENTRYPOINT` is `claude-desktop` or `claude-desktop-3p` and `CLAUDE_CODE_CHILD_SESSION` is unset. The app sets the entrypoint and removes `CLAUDE_CODE_CHILD_SESSION` ([desktop](claude-desktop-app.md#how-the-app-runs-claude-code)). Claude Code sets `CLAUDE_CODE_CHILD_SESSION=1` for every command it runs. So a `claude -p` that a desktop session runs inherits the entrypoint, reads as a child, and stays off.
 - It handles the attach arriving before or after the start. `hooks/register.tsx:turnOn` shares one `turningOn` promise, so two calls that overlap run `hooks/register.tsx:initializeInbox` once. `initializeInbox` sets `isOn`. `hooks/register.tsx:ensureOn` returns early when `isOn` is set or `turningOn` is pending. The start path calls `turnOn` without that check, so a start that follows a finished attach runs `initializeInbox` again. That run cancels the intervals the first one started before it starts its own. Whether a start can follow an attach is not verified.
-- Tests: `tests/hooks.test.ts` test "a headless run stays inactive when ${origin.kind} invokes the inbox command" checks that a headless start does nothing. The tests `tests/hooks.test.ts` "the desktop app turns the mod on when it attaches before the start" and "… after the start" check a desktop attach in both orders and mount the band with `surface: 'desktop'`.
+- Tests: `tests/hooks.test.ts` test "a headless run stays inactive when ${origin.kind} invokes the inbox command" checks that a headless start does nothing. The tests `tests/hooks.test.ts` "the desktop app turns the mod on when it attaches before the start" and "… after the start" check a desktop attach in both orders and mount the band with `surface: 'desktop'`. "a session the desktop app started carries its saved rows into a first prompt that comes before the attach" and "a claude -p run from a desktop session stays off" check the entrypoint path.
 
 ## The desktop app
 
@@ -533,7 +535,7 @@ Namespaces and methods. [R#mods-api-methods; T]
 ### `$.tool.register` and `$.command.register`
 
 - "Register both in a `session.start` hook. Claude Code waits for that hook before the first prompt, so what you register is available from the first turn." [A#add-a-command-or-a-tool]
-  - Inference: on desktop the inbox may first register at `session.attach`. If the attach comes after the first prompt, `/inbox` and the tools are missing for that turn. Unknown.
+  - Seen in [#97](https://github.com/petekp/inbox/issues/97): a session the desktop app reopened had no inbox tools on its first prompt, because the inbox registered them at `session.attach`. The resumed transcript had announced them, so that prompt's `deferred_tools_delta` retracted them with cause `not_configured`. The inbox now turns on in `session.start` for a process the app started. The details and a repro are in [desktop](claude-desktop-app.md#a-reopened-sessions-first-prompt).
 - `register` "Rejects until the session binds, at `session.start`". "a name registered again is replaced". With `isDeferred` left out, "the engine's rule places it: behind ToolSearch … A `tool.describe` hook's answer is read first." [T: `ToolSpec`]
 - `$.tool.register({ isDeferred: false })` "requires Claude Code v2.1.293 or later, and earlier versions ignore it". [A#add-a-tool] `tool.describe` returning `isDeferred: false` has no stated version gate. [R#tools] The inbox registers with `name`, `description` and `inputSchema` only (`hooks/register.tsx:initializeInbox`) and sets `isDeferred: false` through `tool.describe`.
 - A command hook that throws is skipped, "so the rest of your `session.start` hook doesn't run either. Register commands last … or wrap the call in `try` and `catch`." `immediate: true` lets the command run mid-turn. The returned `{ text }` "prints in the transcript and Claude reads it", "after the plugin's name". [A#add-a-command]

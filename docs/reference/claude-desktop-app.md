@@ -125,6 +125,19 @@ with Haiku 5.5 in Auto permission mode. The terminal `claude` in the VM is
   Undo in time; a press while a turn runs; quitting the app with a session open;
   the light theme.
 
+## A reopened session's first prompt
+
+[#97](https://github.com/petekp/inbox/issues/97) reports it on app 3.6556.2 with engine 2.1.308. The person quit the app and reopened a saved Code session with `claude --desktop --resume <id>`. The first prompt went out without the inbox's tools, and the band was missing until that prompt.
+
+- **What the model read.** The transcript's `deferred_tools_delta` for that prompt retracted `mcp__inbox__close` and `mcp__inbox__record` with cause `not_configured`, and the model was told the inbox server had disconnected. It replied that it could not record. The next prompt's delta restored both tools.
+- **Cause.** The inbox turned on at `session.attach`, and its tools were not registered when Claude Code built the first prompt. Claude Code compares the tools a resumed transcript announced with the tools it holds, and retracts each missing one with cause `not_configured`. Claude Code waits for a `session.start` hook before the first prompt, so a tool registered there is offered on the first turn. It does not wait for a registration that starts at the attach.
+- **Repro outside the app, 2026-10-28.** Engine 2.1.308 ran with the app's stream-json flags, `CLAUDE_CODE_ENTRYPOINT=claude-desktop` and a stand-in API. A resumed conversation whose first prompt came 2 s before `ui_attach` got the same retraction, and the next prompt restored the tools. The model's text for the first prompt read "do not call these tools", "MCP server removed from the configuration" and "The following MCP servers have disconnected", followed by `inbox`. With the inbox turning on in `session.start`, the first prompt kept both tools and the transcript had no retraction.
+- **Live, 2026-10-28, app 4.29.0 with engine 2.1.309.** A test VM blocked `api.anthropic.com`, so no prompt reached a model, and a probe mod logged event times.
+  - `claude --desktop --resume <id>` opened the session in the app with no engine running. The engine started at the first prompt. `session.start` read `isInteractive: false`, no surfaces, `CLAUDE_CODE_ENTRYPOINT=claude-desktop` and no `CLAUDE_CODE_CHILD_SESSION`. The attach came about 280 ms later, and the prompt 4 ms after the attach.
+  - With the inbox turning on at the attach, that prompt's `deferred_tools_delta` removed `mcp__inbox__close` and `mcp__inbox__record`, and its `mcp_instructions_delta` removed the `inbox` server. With the inbox turning on at `session.start`, the first prompt kept both tools.
+  - Opening a saved session from the app's search started its engine at once. The attach came about 250 ms after `session.start`, before any prompt, so both builds offered the tools on the first prompt.
+  - In a new session, the attach came 3 ms before the first prompt, and the inbox's tools still reached that prompt's request.
+
 ## Modes and tabs
 
 The public docs and the app disagree on naming.
@@ -157,6 +170,8 @@ Plugin parts by app, from https://claude.com/docs/plugins/platform-support#compa
 
 There is no `-p` flag and no `--plugin-dir` on the command line. It is still a headless SDK session.
 
+**Environment (app bundle 3.6556.2):** the app's Code-session spawn sets `CLAUDE_CODE_ENTRYPOINT` to `claude-desktop`, or to `claude-desktop-3p` for a third-party provider. It removes `CLAUDECODE` and `CLAUDE_CODE_CHILD_SESSION`, which Claude Code sets for every command it runs.
+
 **What the engine types say** (`.claude-plugin/types/claude-code/index.d.ts`, cite by symbol because the file is rewritten by whichever engine last loaded the mod; it read "Written by Claude Code 2.1.293" on 2026-10-08):
 
 - `SessionStartInput.isInteractive` is "true under the REPL, false for a `-p` run or the SDK".
@@ -174,7 +189,7 @@ There is no `-p` flag and no `--plugin-dir` on the command line. It is still a h
 **How the inbox handles it now** (`hooks/register.tsx`):
 
 - `session.start` calls `registerInboxCommand` before `next(e)`, so `/inbox` is registered before the first prompt. Registration retries when Inbox activates.
-- An interactive start or a desktop attach activates Inbox. A shared initialization promise prevents concurrent handlers from loading it twice.
+- An interactive start, a start in a process the app started, or a desktop attach activates Inbox. Only a start is sure to register the tools before the first prompt: see "A reopened session's first prompt". A shared initialization promise prevents concurrent handlers from loading it twice.
 - `command.run` waits for initialization. While Inbox is inactive, only an engine-stamped `composer` origin can activate it; SDK and plugin command calls leave it inactive.
 - `classic.SessionStart` with source `clear`, `resume` or `fork` loads the conversation the event names.
 - Prompt bookkeeping skips Inbox's own plugin prompts and counts origins `composer`, `bridge`, or `plugin` with `asUser` as the person's words.

@@ -2542,6 +2542,22 @@ async function registerInboxCommand($: EngineInterface) {
   return $.command.register({ name: 'inbox', description, immediate: true }).catch(() => undefined)
 }
 
+/** The `CLAUDE_CODE_ENTRYPOINT` values the desktop app gives the Claude Code sessions it starts. */
+const DESKTOP_APP_ENTRYPOINTS = ['claude-desktop', 'claude-desktop-3p']
+
+/**
+ * Whether the desktop app started this process. Claude Code sets `CLAUDE_CODE_CHILD_SESSION` for every command it
+ * runs and the app leaves it out, so a `claude -p` run from a desktop session inherits the entrypoint but not this.
+ */
+async function isStartedByDesktopApp($: EngineInterface) {
+  const [entrypoint, childSession] = await Promise.all([
+    $.env.get('CLAUDE_CODE_ENTRYPOINT'),
+    $.env.get('CLAUDE_CODE_CHILD_SESSION'),
+  ])
+
+  return DESKTOP_APP_ENTRYPOINTS.includes(entrypoint ?? '') && childSession === undefined
+}
+
 function ensureOn($: EngineInterface): Promise<void> {
   return turningOn ?? (isOn ? Promise.resolve() : turnOn($))
 }
@@ -2823,9 +2839,11 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await registerInboxCommand($)
     const r = await next(e)
-    // The desktop app runs its sessions headless and attaches to them, before
-    // or after this start. -p, the SDK and VS Code draw nothing, so the mod stays off there.
-    if (e.isInteractive || (await $.session.surfaces()).includes('desktop')) await turnOn($)
+    // The desktop app runs its sessions headless and attaches to them, before or after this start. Only tools
+    // registered during this hook are sure to be offered on the first prompt, so a session the app started turns on
+    // here too. -p, the SDK and VS Code draw nothing, so the mod stays off there.
+    const isDesktop = (await $.session.surfaces()).includes('desktop') || (await isStartedByDesktopApp($))
+    if (e.isInteractive || isDesktop) await turnOn($)
 
     return r
   })
