@@ -18,7 +18,7 @@ import {
 } from '../hooks/overview'
 import type { Op } from '../hooks/overview'
 import { emptySession } from '../hooks/session'
-import { CHILD_ROWS, mergedLine, overviewPage, QUIET_MS, WAITING_MS } from '../hooks/view'
+import { CHILD_ROWS, mergedLine, overviewPage, STALL_MS } from '../hooks/view'
 import type { OverviewRow } from '../hooks/view'
 import type { Item, Overview, Session } from '../types'
 
@@ -279,7 +279,7 @@ test('the page lists subjects newest first, and an open row below the look line 
   expect(seen[0]).toMatchObject({ kind: 'subject', was: null })
 })
 
-test('a subject waiting on someone says for how long once that passes WAITING_MS, from the oldest open ask holding it up, else from its last change', () => {
+test('a subject waiting on someone says for how long once that passes STALL_MS, from the oldest open ask holding it up, else from its last change', () => {
   const o = after(
     null,
     'NEW: waits-on-other | Review | sent for review\nNEW: working | Sync | needs a pick\nNEW: queued | Docs | not started\nLINK: i1 | s2\nLINK: i2 | s2',
@@ -292,19 +292,20 @@ test('a subject waiting on someone says for how long once that passes WAITING_MS
   ]
   const stalls = (now: number) => page(o, now, {}, asks).rows.map(r => (r.kind === 'subject' ? r.stall : r.kind))
 
-  expect(stalls(29 * MIN)).toEqual([null, null, null])
-  expect(stalls(10 * MIN + WAITING_MS)).toEqual(['waiting 40m', 'waiting 30m', null])
+  expect(stalls(14 * MIN)).toEqual([null, null, null])
+  expect(stalls(10 * MIN + STALL_MS)).toEqual(['waiting 25m', 'waiting 15m', null])
   expect(shape(page(o, 2 * 60 * MIN, {}, asks).rows)[0]).toBe('◌ Review: sent for review · waiting 2h')
 })
 
-test('a merged line is cut at the last phrase that fits, and with no phrase that fits, at the last word', () => {
+test('a merged line is cut at the last phrase that fits, and keeps its first phrase whole when none fits', () => {
   const fits = (most: number) => (text: string) => text.length <= most
   const names = 'Dragging in Arrange, hover to reveal, and open in Finder'
 
   expect(mergedLine(names, fits(67))).toBe(`merged in: ${names}`)
   expect(mergedLine(names, fits(60))).toBe('merged in: Dragging in Arrange, hover to reveal…')
   expect(mergedLine(names, fits(40))).toBe('merged in: Dragging in Arrange…')
-  expect(mergedLine('Sync retry with backoff', fits(30))).toBe('merged in: Sync retry with…')
+  expect(mergedLine(names, fits(20))).toBe('merged in: Dragging in Arrange…')
+  expect(mergedLine('Sync retry with backoff', fits(20))).toBe('merged in: Sync retry with backoff')
 })
 
 test('an open ask linked to an open subject marks it ◆ and stops its running mark until the ask closes, and the call reads each ask with its link', () => {
@@ -325,9 +326,6 @@ test('with no look yet every row is new, so the page draws no look line and show
   const o = after(null, 'NEW: working | Offline mode | queue built', 10 * MIN)
 
   expect(shape(page(o, 12 * MIN).rows)).toEqual(['● Offline mode: queue built'])
-  expect(page(o, 12 * MIN).hasNews).toBe(true)
-  expect(page({ ...o, lastLookAt: 11 * MIN }, 12 * MIN).hasNews).toBe(false)
-  expect(page({ ...o, look: { startedAt: 11 * MIN } }, 12 * MIN).hasNews).toBe(false)
 })
 
 test('a page with no goal and no rows shows its empty state, even while a turn runs', () => {
@@ -397,7 +395,7 @@ test('running children sit under their subject, at most three, each tied to it a
       name: 'Tail the log',
       startedAt: 0,
       endedAt: null,
-      lastActivityAt: now - QUIET_MS - 5 * MIN,
+      lastActivityAt: now - STALL_MS - 5 * MIN,
     },
     now,
   )
@@ -441,7 +439,7 @@ test('a rule sets each item on the page apart: a subject and the rows under it a
   ])
 })
 
-test('a child whose host reports no activity never reads quiet, and stops running QUIET_MS after it started', () => {
+test('a child whose host reports no activity never reads quiet, and stops running STALL_MS after it started', () => {
   const now = 100 * MIN
   const o = withChild(
     null,

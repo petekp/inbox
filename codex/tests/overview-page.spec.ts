@@ -170,11 +170,6 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
     key('3')
     assert.equal(shownTab(), 'Finds1')
     assert.match(root.textContent ?? '', /The bar wraps at 320 px/)
-    state.ledger = { ...state.ledger, overview: { ...shownOverview, look: null } }
-    await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
-    assert.equal(tabLabels()[0], 'Overview•')
-    state.ledger = { ...state.ledger, overview: shownOverview }
-    await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
     key('1')
     assert.equal(shownTab(), 'Overview')
     assert.ok(root.querySelector('.overview-goal'))

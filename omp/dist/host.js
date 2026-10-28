@@ -40,13 +40,8 @@ var PHRASE_END = /[,;](?=\s)|\s(?=and\s)/g;
 function cutAtPhrase(text, fits) {
   if (fits(text))
     return text;
-  const endsOf = (pattern) => [...text.matchAll(pattern)].map((m) => m.index).reverse();
-  for (const end of [...endsOf(PHRASE_END), ...endsOf(/\s+/g)]) {
-    const head = text.slice(0, end).replace(/[\s.,;:]+$/, "");
-    if (head && fits(`${head}\u2026`))
-      return `${head}\u2026`;
-  }
-  return `${cutForEllipsis(text, fits)}\u2026`;
+  const heads = [...text.matchAll(PHRASE_END)].map((m) => `${text.slice(0, m.index).replace(/[\s.,;:]+$/, "")}\u2026`);
+  return heads.findLast(fits) ?? heads[0] ?? text;
 }
 function clipMiddle(text, max, head) {
   if (text.length <= max)
@@ -2998,10 +2993,8 @@ function fitTabs(layouts, fits) {
         return { naming, layout };
   return { naming: "symbols", layout: layouts.at(-1) };
 }
-function tabBadge(id, counts, hasNews) {
-  if (isRowTab(id))
-    return counts[id] > 0 ? String(counts[id]) : null;
-  return hasNews ? NEWS_DOT : null;
+function tabBadge(id, counts) {
+  return isRowTab(id) && counts[id] > 0 ? String(counts[id]) : null;
 }
 function isListedTab(tab) {
   return tab === "needsYou" || tab === "findings";
@@ -3018,11 +3011,9 @@ var LOOK_TEXT = "Seen";
 var WAS_PREFIX = "was: ";
 var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " \xB7 ";
-var NEWS_DOT = "\u2022";
 var OVERVIEW_TEXT_LINES = 3;
 var CHILD_ROWS = 3;
-var QUIET_MS = 15 * 60000;
-var WAITING_MS = 30 * 60000;
+var STALL_MS = 15 * 60000;
 var NEW_CLOSED_ROWS = 2;
 var OPEN_ROWS = 7;
 var SUBJECT_MARKS = {
@@ -3054,10 +3045,10 @@ function idleOf(c, now) {
 }
 function isQuiet(c, now) {
   const idle = idleOf(c, now);
-  return idle !== null && idle >= QUIET_MS;
+  return idle !== null && idle >= STALL_MS;
 }
 function isChildWorking(c, now) {
-  return now - (c.lastActivityAt ?? c.startedAt) < QUIET_MS;
+  return now - (c.lastActivityAt ?? c.startedAt) < STALL_MS;
 }
 function childRow(c, now, branch) {
   const idle = idleOf(c, now);
@@ -3085,7 +3076,7 @@ function overviewPage(s, now) {
   const stallOf = (x) => {
     const isWaiting = isHeld(x) || isOpen(x) && x.status === "waits-on-other";
     const waited = now - waitingSince(x);
-    return isWaiting && waited >= WAITING_MS ? `waiting ${shortAgo(waited)}` : null;
+    return isWaiting && waited >= STALL_MS ? `waiting ${shortAgo(waited)}` : null;
   };
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
   const open = subjects.filter(isOpen);
@@ -3148,12 +3139,10 @@ function overviewPage(s, now) {
     });
   }
   const goal = o?.goal || null;
-  const hasNews = o !== null && o.look === null && subjects.some(isNew);
   return {
     isEmpty: goal === null && rows.length === 0,
     goal,
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
-    hasNews,
     error: s.overviewFailure ? OVERVIEW_FAILED : null,
     empty: {
       title: "Overview",
@@ -5896,6 +5885,7 @@ function drawLine(line, isSelected, d) {
     out.push(...indented(statusUnder.text, indent, width, 4, feedbackPaint(statusUnder.tone, s)));
   return out;
 }
+var UNBROKEN_SPACE = "\uE000";
 var pageRoom = (indent, width) => Math.max(10, width - indent - 2 - 1);
 function pageText(text, room, maxLines, first, firstCells = Infinity, rest = first) {
   const wrapped = wrapText(text, room);
@@ -5914,9 +5904,10 @@ function pageLine(d, indent, mark, name, namePaint, second = { text: null, stall
   const textAt = indent + 2;
   const room = pageRoom(indent, width);
   const names = pageText(name, room, OVERVIEW_TEXT_LINES, namePaint);
-  const secondText = [second.text, second.stall].filter(Boolean).join(STALL_GAP);
-  const dimCells = second.text ? cellWidth(second.text) + (second.stall ? cellWidth(STALL_GAP) : 0) : 0;
-  const seconds = secondText ? pageText(secondText, room, OVERVIEW_TEXT_LINES, s.dim, dimCells, (t) => s.tone("needsYou", t)) : [];
+  const stall = second.stall?.replaceAll(" ", UNBROKEN_SPACE) ?? null;
+  const secondText = [second.text, stall].filter(Boolean).join(STALL_GAP);
+  const dimCells = second.text ? cellWidth(second.text) + (stall ? cellWidth(STALL_GAP) : 0) : 0;
+  const seconds = secondText ? pageText(secondText, room, OVERVIEW_TEXT_LINES, s.dim, dimCells, (t) => s.tone("needsYou", t)).map((l) => l.replaceAll(UNBROKEN_SPACE, " ")) : [];
   return [
     `${" ".repeat(indent)}${mark} ${names[0] ?? ""}`,
     ...[...names.slice(1), ...seconds].map((l) => " ".repeat(textAt) + l)
@@ -5934,7 +5925,7 @@ function drawPageRow(row, d) {
     const out = pageLine(d, PAGE_MARK_AT, mark, row.name, (t) => t, { text: row.text, stall: row.stall });
     const room = pageRoom(PAGE_MARK_AT, width);
     if (row.merged)
-      out.push(" ".repeat(PAGE_TEXT_AT) + s.dim(mergedLine(row.merged, (t) => cellWidth(t) <= room)));
+      out.push(...indented(mergedLine(row.merged, (t) => cellWidth(t) <= room), PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim));
     if (row.was)
       out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim));
     return row.hasChildren ? withTree(out, null, "\u2502", s) : out;
@@ -5960,14 +5951,10 @@ function drawPageRow(row, d) {
   const mark = row.tone ? s.tone(row.tone, row.mark) : s.dim(row.mark);
   return pageLine(d, PAGE_MARK_AT, mark, row.text, s.dim);
 }
-var TAB_FORMS = [
-  { isBracketed: true, hasNewsDot: true },
-  { isBracketed: false, hasNewsDot: true },
-  { isBracketed: false, hasNewsDot: false }
-];
+var TAB_FORMS = [{ isBracketed: true }, { isBracketed: false }];
 function tabCell(t, name, form, s) {
   const key = form.isBracketed ? `[${t.hotkey}]` : t.hotkey;
-  const badge = form.hasNewsDot || isRowTab(t.id) ? t.badge : null;
+  const { badge } = t;
   if (t.isShown)
     return s.inverse(s.bold(` ${key} ${name}${badge === null ? "" : ` ${badge}`} `));
   const badgeText = badge === null ? "" : ` ${t.tone ? s.tone(t.tone, badge) : badge}`;
@@ -5983,14 +5970,11 @@ function tabBar(d) {
   const tabs = shownTabs(screen.isNextBuild === true).map((t) => ({
     ...t,
     tone: isRowTab(t.id) ? t.id : null,
-    badge: tabBadge(t.id, counts, screen.view.overviewPage.hasNews),
+    badge: tabBadge(t.id, counts),
     isShown: t.id === ui.tab
   }));
   const lineOf = (naming, form) => ` ${tabs.map((t) => tabCell(t, tabName(t, naming), form, s)).join(" ")}`;
-  const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => {
-    const isDotDroppedEarly = naming === "words" && !form.hasNewsDot;
-    return !isDotDroppedEarly && visibleLength(lineOf(naming, form)) <= width;
-  });
+  const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => visibleLength(lineOf(naming, form)) <= width);
   return spread(lineOf(naming, layout), s.dim("esc to close "), width);
 }
 function footer(d, isPageScrolling) {

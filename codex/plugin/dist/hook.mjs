@@ -1230,8 +1230,7 @@ var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 var LOOK_TEXT = "Seen";
 var CHILD_ROWS = 3;
-var QUIET_MS = 15 * 6e4;
-var WAITING_MS = 30 * 6e4;
+var STALL_MS = 15 * 6e4;
 var NEW_CLOSED_ROWS = 2;
 var OPEN_ROWS = 7;
 var SUBJECT_MARKS = {
@@ -1254,10 +1253,10 @@ function idleOf(c, now) {
 }
 function isQuiet(c, now) {
   const idle = idleOf(c, now);
-  return idle !== null && idle >= QUIET_MS;
+  return idle !== null && idle >= STALL_MS;
 }
 function isChildWorking(c, now) {
-  return now - (c.lastActivityAt ?? c.startedAt) < QUIET_MS;
+  return now - (c.lastActivityAt ?? c.startedAt) < STALL_MS;
 }
 function childRow(c, now, branch) {
   const idle = idleOf(c, now);
@@ -1285,7 +1284,7 @@ function overviewPage(s, now) {
   const stallOf = (x) => {
     const isWaiting = isHeld(x) || isOpen(x) && x.status === "waits-on-other";
     const waited = now - waitingSince(x);
-    return isWaiting && waited >= WAITING_MS ? `waiting ${shortAgo(waited)}` : null;
+    return isWaiting && waited >= STALL_MS ? `waiting ${shortAgo(waited)}` : null;
   };
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
   const open2 = subjects.filter(isOpen);
@@ -1348,12 +1347,10 @@ function overviewPage(s, now) {
     });
   }
   const goal = o?.goal || null;
-  const hasNews = o !== null && o.look === null && subjects.some(isNew);
   return {
     isEmpty: goal === null && rows.length === 0,
     goal,
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
-    hasNews,
     error: s.overviewFailure ? OVERVIEW_FAILED : null,
     empty: {
       title: "Overview",

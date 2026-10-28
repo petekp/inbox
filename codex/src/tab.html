@@ -769,14 +769,13 @@
         -webkit-line-clamp: var(--lines);
         overflow: hidden;
       }
-      .overview .one-line {
+      .overview .unbroken {
         white-space: nowrap;
-        overflow: hidden;
       }
       /* The tree line runs under the middle of a subject's mark, and its arm reaches to a child's mark. */
       .overview .list {
-        --mark-middle: 4px;
-        --arm-gap: 3px;
+        --mark-middle: 6px;
+        --arm-gap: 2px;
         --tree-x: calc(var(--mark-x) + var(--mark-middle));
         --tree-line: color-mix(in oklab, var(--text) 15%, transparent);
       }

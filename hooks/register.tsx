@@ -1570,7 +1570,7 @@ function lineCount(text: string, width: number): number {
   return wrapped(text, width).length
 }
 
-type TerminalSpan = Span & { isLinkAddress?: true; isMuted?: true; isNeedsYou?: true }
+type TerminalSpan = Span & { isLinkAddress?: true; isMuted?: true; isNeedsYou?: true; isUnbroken?: true }
 
 function terminalTextLines(text: string, width: number, limit = Infinity): TerminalSpan[][] {
   if (!text) return []
@@ -1623,7 +1623,7 @@ function terminalSpanLines(spans: TerminalSpan[], width: number, limit = Infinit
         appendWord()
         nextLine()
         spaces = []
-      } else if (/\s/.test(character)) {
+      } else if (/\s/.test(character) && !span.isUnbroken) {
         appendWord()
         spaces.push({ text: character, span })
       } else word.push({ text: character, span })
@@ -3727,7 +3727,7 @@ export const register: Register = on => {
       findings: view.findings.count,
       prs: shownPrs.filter(x => x.state.is === 'open' && prNeedsYou(x.pr, isThreadSent)).length,
     }
-    const badgeOf = (id: ShownTab) => tabBadge(id, tabCounts, view.overviewPage.hasNews)
+    const badgeOf = (id: ShownTab) => tabBadge(id, tabCounts)
     const tabTone = (id: ShownTab) => (isRowTab(id) ? pal.tone[id] : undefined)
     const tabText = (id: ShownTab, name: string) => `${name}${badgeOf(id) === null ? '' : ` ${badgeOf(id)}`}`
     const hasRail = isInline && look === 'terminal' && e.props.bodyColumns >= INLINE_RAIL_AT
@@ -5419,12 +5419,13 @@ export const register: Register = on => {
         </Text>
       </Box>
     )
-    /** A row's second line: where it stands, muted, then its stall words in the needs-you tone. */
+    /** A row's second line: where it stands, muted, then its stall words in the needs-you tone, never split by a wrap. */
     const overviewSecondLine = (key: string, text: string | null, stall: string | null, depth: number) => {
+      const unbroken = (words: string) => (look === 'desktop' ? words.replaceAll(' ', '\u00a0') : words)
       const spans: TerminalSpan[] = [
         ...(text ? [{ text, isMuted: true as const }] : []),
         ...(text && stall ? [{ text: STALL_GAP, isMuted: true as const }] : []),
-        ...(stall ? [{ text: stall, isNeedsYou: true as const }] : []),
+        ...(stall ? [{ text: unbroken(stall), isNeedsYou: true as const, isUnbroken: true as const }] : []),
       ]
 
       return spans.length > 0 ? [overviewText(key, spans, depth)] : []
@@ -5562,7 +5563,6 @@ export const register: Register = on => {
                   `overview-${r.id}-merged`,
                   [{ text: mergedLine(r.merged, fitsOverviewLine(0)), isMuted: true }],
                   0,
-                  1,
                 ),
               ]
             : []),

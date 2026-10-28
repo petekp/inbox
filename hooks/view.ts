@@ -800,14 +800,9 @@ export function fitTabs<L>(
 
   return { naming: 'symbols', layout: layouts.at(-1)! }
 }
-/**
- * What a tab draws after its name: a row tab's count when it has one, or `NEWS_DOT` on the Overview when it changed since
- * the person last looked. Null draws nothing.
- */
-export function tabBadge(id: ShownTab, counts: Readonly<Record<Tab, number>>, hasNews: boolean): string | null {
-  if (isRowTab(id)) return counts[id] > 0 ? String(counts[id]) : null
-
-  return hasNews ? NEWS_DOT : null
+/** What a tab draws after its name: a row tab's count when it has one. Null draws nothing. */
+export function tabBadge(id: ShownTab, counts: Readonly<Record<Tab, number>>): string | null {
+  return isRowTab(id) && counts[id] > 0 ? String(counts[id]) : null
 }
 
 /** Whether a shown tab lists rows you answer or close: Asks and Finds. */
@@ -862,7 +857,7 @@ type OverviewRowParts =
       name: string
       /** Where it stands. Null for a finished row below the look line, which the person has seen. */
       text: string | null
-      /** How long it has waited, as "waiting 2h", once it waits on someone for `WAITING_MS`. */
+      /** How long it has waited, as "waiting 2h", once it waits on someone for `STALL_MS`. */
       stall: string | null
       /** The names of the subjects merged into it, while the person has not seen them. */
       merged: string | null
@@ -876,12 +871,12 @@ type OverviewRowParts =
       id: string
       mark: string
       /**
-       * Whether it did anything in the last `QUIET_MS`, or, when its host reports no activity, started less than
-       * `QUIET_MS` ago. A look animates the mark while it is set.
+       * Whether it did anything in the last `STALL_MS`, or, when its host reports no activity, started less than
+       * `STALL_MS` ago. A look animates the mark while it is set.
        */
       isRunning: boolean
       name: string
-      /** How long it has done nothing, as "quiet 40m", once that passes `QUIET_MS`, since a quiet child may be stuck. */
+      /** How long it has done nothing, as "quiet 40m", once that passes `STALL_MS`, since a quiet child may be stuck. */
       stall: string | null
       /** Its place under its subject. Null when it is linked to no subject the list shows, so it sits at the top of the list. */
       branch: OverviewBranch | null
@@ -898,8 +893,6 @@ export type OverviewPage = {
   isEmpty: boolean
   goal: string | null
   rows: OverviewRow[]
-  /** Whether a subject changed since the person last looked, so the tab name gets a dot while another tab shows. */
-  hasNews: boolean
   /** The status line's error while the last Overview call wrote nothing. */
   error: string | null
   empty: { title: string; hint: string }
@@ -911,16 +904,13 @@ export const WAS_PREFIX = 'was: '
 const MERGED_PREFIX = 'merged in: '
 /** What separates where a row stands from its stall words. */
 export const STALL_GAP = ' · '
-const NEWS_DOT = '•'
 
 /** The most lines each text on an Overview row wraps to: a name, where it stands, a was line. A look cuts past them with an ellipsis. */
 export const OVERVIEW_TEXT_LINES = 3
 /** The most children drawn under one subject; the rest fold into "+ N more running". */
 export const CHILD_ROWS = 3
-/** A child with no activity for this long reads quiet. */
-export const QUIET_MS = 15 * 60_000
-/** A subject that waits on someone for this long says how long it has waited. */
-export const WAITING_MS = 30 * 60_000
+/** How long work goes before it has stalled: a child with no activity reads quiet, and a waiting subject says how long it has waited. */
+export const STALL_MS = 15 * 60_000
 /** Finished rows drawn above the look line; older ones fold into the count. */
 const NEW_CLOSED_ROWS = 2
 /** Open rows drawn before the oldest queued ones fold into a count. */
@@ -944,7 +934,10 @@ export const RUNNING_FRAME_MS = 300
 /** One pulse of a running mark, which the Codex tab and the desktop pane draw as a fade. */
 export const RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS
 
-/** A subject's merged line, as "merged in: Sync retry", cut at a phrase to the one line `fits` allows. */
+/**
+ * A subject's merged line, as "merged in: Sync retry", cut at a phrase to the one line `fits` allows. When its first
+ * phrase does not fit, the line keeps that phrase whole and a look wraps it.
+ */
 export function mergedLine(merged: string, fits: (text: string) => boolean): string {
   return `${MERGED_PREFIX}${cutAtPhrase(merged, names => fits(`${MERGED_PREFIX}${names}`))}`
 }
@@ -973,15 +966,15 @@ function idleOf(c: Child, now: number): number | null {
 function isQuiet(c: Child, now: number): boolean {
   const idle = idleOf(c, now)
 
-  return idle !== null && idle >= QUIET_MS
+  return idle !== null && idle >= STALL_MS
 }
 
 /**
- * Whether `c` shows work under way: it did something in the last `QUIET_MS`, or its host reports no activity and it
- * started less than `QUIET_MS` ago.
+ * Whether `c` shows work under way: it did something in the last `STALL_MS`, or its host reports no activity and it
+ * started less than `STALL_MS` ago.
  */
 function isChildWorking(c: Child, now: number): boolean {
-  return now - (c.lastActivityAt ?? c.startedAt) < QUIET_MS
+  return now - (c.lastActivityAt ?? c.startedAt) < STALL_MS
 }
 
 function childRow(c: Child, now: number, branch: OverviewBranch | null): OverviewRowParts {
@@ -1022,7 +1015,7 @@ export function overviewPage(
     const isWaiting = isHeld(x) || (isOpen(x) && x.status === 'waits-on-other')
     const waited = now - waitingSince(x)
 
-    return isWaiting && waited >= WAITING_MS ? `waiting ${shortAgo(waited)}` : null
+    return isWaiting && waited >= STALL_MS ? `waiting ${shortAgo(waited)}` : null
   }
   const newClosed = subjects
     .filter(x => !isOpen(x) && isNew(x))
@@ -1097,13 +1090,11 @@ export function overviewPage(
     })
   }
   const goal = o?.goal || null
-  const hasNews = o !== null && o.look === null && subjects.some(isNew)
 
   return {
     isEmpty: goal === null && rows.length === 0,
     goal,
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
-    hasNews,
     error: s.overviewFailure ? OVERVIEW_FAILED : null,
     empty: {
       title: 'Overview',

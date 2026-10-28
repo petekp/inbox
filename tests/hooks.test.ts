@@ -4751,7 +4751,7 @@ test('a working subject’s mark on the Overview moves each frame only while a t
   expect(ended.working).toEqual(ended.still)
 })
 
-test('on a next build, the Overview tab’s news dot clears when the page shows, the page shows the goal and the subjects in place of rows, leaves the row keys idle, a row tab shows its rows again, and an ask names the subject it holds up', async ($, on) => {
+test('on a next build, a look starts when the Overview page shows, the page shows the goal and the subjects in place of rows, leaves the row keys idle, a row tab shows its rows again, and an ask names the subject it holds up', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
@@ -4772,11 +4772,9 @@ test('on a next build, the Overview tab’s news dot clears when the page shows,
     return saved && JSON.parse(saved[1]).ledger.overview.look
   }
   expect(lookOf()).toBeNull()
-  expect(await pane.find({ text: /^ •$/ })).toBeDefined()
   await pane.press({ key: 'tab-key-overview' })
   await clock.settle()
   expect(lookOf()).not.toBeNull()
-  expect(await pane.find({ text: /^ •$/ })).toBeUndefined()
   expect((await pane.find({ key: 'overview-goal' }))?.text).toBe('Adding a greeting CLI')
   expect((await pane.find({ key: 'overview-s1-name' }))?.text).toBe('Runtime')
   expect((await pane.find({ key: 'overview-s1-text' }))?.text).toBe('Node or Python')
@@ -5069,7 +5067,7 @@ test('the Overview page says what it is for before the session has any work', as
   expect(await desktop.find({ text: /once the work starts\./ })).toBeDefined()
 })
 
-test('on a next build, at 31 desktop columns the tabs show their symbols with their counts and the Overview’s news dot, at 69 their words, and the Overview page draws there', async ($, on) => {
+test('on a next build, at 31 desktop columns the tabs show their symbols with their counts, at 69 their words, and the Overview page draws there', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
@@ -5092,11 +5090,7 @@ test('on a next build, at 31 desktop columns the tabs show their symbols with th
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 31 } })
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
   expect((await tabBar()).tabs.map(t => [t.id, t.label, t.badge])).toEqual(
-    shownTabs(true).map(t => [
-      t.id,
-      t.symbol,
-      t.id === 'overview' ? '•' : t.id === 'needsYou' ? '2' : t.id === 'findings' ? '1' : null,
-    ]),
+    shownTabs(true).map(t => [t.id, t.symbol, t.id === 'needsYou' ? '2' : t.id === 'findings' ? '1' : null]),
   )
   await pane.redraw({ ...PANE.props, bodyColumns: 69 })
   expect((await tabBar()).tabs.map(t => t.label)).toEqual(shownTabs(true).map(t => t.label))

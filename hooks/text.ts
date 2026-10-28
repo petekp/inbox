@@ -39,18 +39,14 @@ export function cutForEllipsis(line: string, fits: (withEllipsis: string) => boo
 const PHRASE_END = /[,;](?=\s)|\s(?=and\s)/g
 
 /**
- * `text` whole when it `fits`, or else cut with an ellipsis at the last phrase end that fits. With no phrase that
- * fits, it is cut at the last word that fits, and with no word that fits, within the first word.
+ * `text` whole when it `fits`, or else cut with an ellipsis at the last phrase end that fits. When no phrase fits, it
+ * keeps the first phrase whole, which may not fit, so it never ends in the middle of a phrase.
  */
 export function cutAtPhrase(text: string, fits: (text: string) => boolean): string {
   if (fits(text)) return text
-  const endsOf = (pattern: RegExp) => [...text.matchAll(pattern)].map(m => m.index).reverse()
-  for (const end of [...endsOf(PHRASE_END), ...endsOf(/\s+/g)]) {
-    const head = text.slice(0, end).replace(/[\s.,;:]+$/, '')
-    if (head && fits(`${head}…`)) return `${head}…`
-  }
+  const heads = [...text.matchAll(PHRASE_END)].map(m => `${text.slice(0, m.index).replace(/[\s.,;:]+$/, '')}…`)
 
-  return `${cutForEllipsis(text, fits)}…`
+  return heads.findLast(fits) ?? heads[0] ?? text
 }
 
 export function clipMiddle(text: string, max: number, head: number): string {

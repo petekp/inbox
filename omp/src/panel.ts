@@ -1005,6 +1005,9 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   return out
 }
 
+/** Stands in for each space of the stall words while they wrap, so a wrap never splits them. */
+const UNBROKEN_SPACE = '\uE000'
+
 /** The room for an Overview text after a mark at `indent`. */
 const pageRoom = (indent: number, width: number) => Math.max(10, width - indent - 2 - 1)
 
@@ -1050,10 +1053,13 @@ function pageLine(
   const textAt = indent + 2
   const room = pageRoom(indent, width)
   const names = pageText(name, room, OVERVIEW_TEXT_LINES, namePaint)
-  const secondText = [second.text, second.stall].filter(Boolean).join(STALL_GAP)
-  const dimCells = second.text ? cellWidth(second.text) + (second.stall ? cellWidth(STALL_GAP) : 0) : 0
+  const stall = second.stall?.replaceAll(' ', UNBROKEN_SPACE) ?? null
+  const secondText = [second.text, stall].filter(Boolean).join(STALL_GAP)
+  const dimCells = second.text ? cellWidth(second.text) + (stall ? cellWidth(STALL_GAP) : 0) : 0
   const seconds = secondText
-    ? pageText(secondText, room, OVERVIEW_TEXT_LINES, s.dim, dimCells, t => s.tone('needsYou', t))
+    ? pageText(secondText, room, OVERVIEW_TEXT_LINES, s.dim, dimCells, t => s.tone('needsYou', t)).map(l =>
+        l.replaceAll(UNBROKEN_SPACE, ' '),
+      )
     : []
 
   return [
@@ -1078,7 +1084,16 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
     const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph)
     const out = pageLine(d, PAGE_MARK_AT, mark, row.name, t => t, { text: row.text, stall: row.stall })
     const room = pageRoom(PAGE_MARK_AT, width)
-    if (row.merged) out.push(' '.repeat(PAGE_TEXT_AT) + s.dim(mergedLine(row.merged, t => cellWidth(t) <= room)))
+    if (row.merged)
+      out.push(
+        ...indented(
+          mergedLine(row.merged, t => cellWidth(t) <= room),
+          PAGE_TEXT_AT,
+          width,
+          OVERVIEW_TEXT_LINES,
+          s.dim,
+        ),
+      )
     if (row.was) out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim))
 
     return row.hasChildren ? withTree(out, null, '│', s) : out
@@ -1115,24 +1130,19 @@ type TabCell = {
   label: string
   symbol: string
   tone: ToneName | null
-  /** What follows the name: a count, or the Overview's news dot. */
+  /** What follows the name: a row tab's count. */
   badge: string | null
   isShown: boolean
 }
 
 /** One layout of the tab line. Each later layout is narrower. */
-type TabForm = { isBracketed: boolean; hasNewsDot: boolean }
+type TabForm = { isBracketed: boolean }
 
-/** The narrowest form, tried only with the symbols, drops the Overview's news dot so a row tab's count still fits. */
-const TAB_FORMS: readonly TabForm[] = [
-  { isBracketed: true, hasNewsDot: true },
-  { isBracketed: false, hasNewsDot: true },
-  { isBracketed: false, hasNewsDot: false },
-]
+const TAB_FORMS: readonly TabForm[] = [{ isBracketed: true }, { isBracketed: false }]
 
 function tabCell(t: TabCell, name: string, form: TabForm, s: Style): string {
   const key = form.isBracketed ? `[${t.hotkey}]` : t.hotkey
-  const badge = form.hasNewsDot || isRowTab(t.id) ? t.badge : null
+  const { badge } = t
   if (t.isShown) return s.inverse(s.bold(` ${key} ${name}${badge === null ? '' : ` ${badge}`} `))
   const badgeText = badge === null ? '' : ` ${t.tone ? s.tone(t.tone, badge) : badge}`
 
@@ -1153,16 +1163,12 @@ function tabBar(d: Draw): string {
   const tabs: TabCell[] = shownTabs(screen.isNextBuild === true).map(t => ({
     ...t,
     tone: isRowTab(t.id) ? t.id : null,
-    badge: tabBadge(t.id, counts, screen.view.overviewPage.hasNews),
+    badge: tabBadge(t.id, counts),
     isShown: t.id === ui.tab,
   }))
   const lineOf = (naming: TabNaming, form: TabForm) =>
     ` ${tabs.map(t => tabCell(t, tabName(t, naming), form, s)).join(' ')}`
-  const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => {
-    const isDotDroppedEarly = naming === 'words' && !form.hasNewsDot
-
-    return !isDotDroppedEarly && visibleLength(lineOf(naming, form)) <= width
-  })
+  const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => visibleLength(lineOf(naming, form)) <= width)
 
   return spread(lineOf(naming, layout), s.dim('esc to close '), width)
 }

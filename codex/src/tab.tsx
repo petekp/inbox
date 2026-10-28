@@ -1343,7 +1343,7 @@ function SecondLine({ text, stall }: { text: string | null; stall: string | null
     <div class="muted clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
       {text}
       {text && stall ? STALL_GAP : null}
-      {stall ? <span class="tone-needsYou">{stall}</span> : null}
+      {stall ? <span class="tone-needsYou unbroken">{stall}</span> : null}
     </div>
   )
 }
@@ -1362,7 +1362,13 @@ function OverviewLine({ row }: { row: OverviewRow }) {
             {row.name}
           </div>
           <SecondLine text={row.text} stall={row.stall} />
-          {merged ? <div class="outcome muted one-line" ref={el => fitMergedLine(el, merged)} /> : null}
+          {merged ? (
+            <div
+              class="outcome muted clamp"
+              style={{ '--lines': OVERVIEW_TEXT_LINES }}
+              ref={el => fitMergedLine(el, merged)}
+            />
+          ) : null}
           {row.was ? (
             <div class="outcome muted clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
               {WAS_PREFIX}
@@ -1932,7 +1938,7 @@ function Status({ v }: { v: View }) {
 
 function TabBar({ v }: { v: View }) {
   const counts: Record<Tab, number> = { needsYou: v.needsYou.count, findings: v.findings.count, prs: v.prs.count }
-  const badgeOf = (id: ShownTab) => tabBadge(id, counts, v.overviewPage?.hasNews ?? false)
+  const badgeOf = (id: ShownTab) => tabBadge(id, counts)
   const { error } = footerOf(v)
   const shown = drawnTab()
 

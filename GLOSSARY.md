@@ -93,7 +93,7 @@ _Avoid_: subitem, job
 **Stall words**:
 The words on an Overview row's second line that say how long its work has
 stalled: "quiet 40m" on a child that has done nothing for 15 minutes, and
-"waiting 2h" on an open subject that has waited 30 minutes on someone else or on
+"waiting 2h" on an open subject that has waited 15 minutes on someone else or on
 an open question or task. A row whose work moves shows none. The code calls them
 `stall`.
 _Avoid_: age
@@ -107,10 +107,6 @@ merged and was lines, and a finished row below it shows only its mark and name. 
 changed since then, the page draws no line. The code calls it the look line,
 after `lastLookAt`.
 _Avoid_: "you looked" line
-
-**News dot**:
-The `•` after the Overview tab's name while the page holds a change the person
-has not seen.
 
 **Band**:
 In Claude Code, the line above the prompt with the Asks and Finds

@@ -929,15 +929,6 @@ test('the tab line counts each symbol as two cells, so it fits the panel and kee
       }
 })
 
-test('the Overview tab draws the news dot while the page changed since the last look, and no count', () => {
-  const s = demoState(NOW)
-  const seen = { ...s, ledger: { ...s.ledger, overview: { ...s.ledger.overview!, lastLookAt: NOW } } }
-  const lineOf = (state: typeof s) =>
-    tabLine(screenOf({ view: sessionView(state, NOW, SETTLED_MS, true, NO_HOLDS), isNextBuild: true }), INITIAL_UI, 200)
-  expect(lineOf(s)).toMatch(/\[1\] Overview • +\[2\]/)
-  expect(lineOf(seen)).toMatch(/\[1\] Overview +\[2\]/)
-})
-
 test('no line on the Overview page is wider than the panel', () => {
   const screen = screenOf()
   for (const width of [30, 50, 60, 80, 120])
