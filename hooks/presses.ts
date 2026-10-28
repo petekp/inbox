@@ -597,10 +597,35 @@ export function reopenOnFailure(ledger: Ledger, id: string, at: number): Ledger 
   return closed?.item && closed.how === 'answered' && closed.at === at ? reopenItem(ledger, id) : ledger
 }
 
-export function demoTurns(turns: Turns, effects: Effect[], isReplied = false): Turns {
-  if (isReplied) return { ...turns, turnsApplied: turns.turnsStarted }
+const isSent = (r: Pressed) => r.effects.some(e => e.kind === 'send')
 
-  return effects.some(e => e.kind === 'send') ? { ...turns, turnsStarted: turns.turnsStarted + 1 } : turns
+/** What a demo press sent: the rows it recorded a press on, and the turn its message started. */
+export type DemoSent = { rows: string[]; turn: number }
+
+/** `after` is the demo's turns after the press. Null when the press sent nothing. */
+export function demoSent(r: Pressed, after: Turns): DemoSent | null {
+  return isSent(r) ? { rows: Object.keys(r.lasts), turn: after.turnsStarted } : null
+}
+
+/**
+ * The demo's stand-in for the agent's reply to what a press sent. It applies the press's turn. Each other last action
+ * that reply would answer moves to that turn, so a hand-off in the sample data keeps waiting.
+ */
+export function demoReplied(
+  s: { lastActions: Record<string, LastAction>; turns: Turns },
+  sent: DemoSent,
+): { lastActions: Record<string, LastAction>; turns: Turns } {
+  const turns = { ...s.turns, turnsApplied: Math.max(s.turns.turnsApplied, sent.turn) }
+  const isAnsweredByReply = (id: string, last: LastAction) =>
+    !sent.rows.includes(id) && isAwaitingReply(last, s.turns) && !isAwaitingReply(last, turns)
+  const lastActions = Object.fromEntries(
+    Object.entries(s.lastActions).map(([id, last]) => [
+      id,
+      isAnsweredByReply(id, last) ? { ...last, turnsStarted: turns.turnsApplied } : last,
+    ]),
+  )
+
+  return { lastActions, turns }
 }
 
 /**
@@ -623,7 +648,7 @@ export function demoAfterPress(
   return {
     ledger: pruneClosed(r.ledger, held),
     lastActions: withLasts(before.lastActions, lasts, r.drop),
-    turns: demoTurns(before.turns, r.effects),
+    turns: isSent(r) ? { ...before.turns, turnsStarted: before.turns.turnsStarted + 1 } : before.turns,
   }
 }
 

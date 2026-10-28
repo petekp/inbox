@@ -3405,7 +3405,7 @@ test('a turn an API error ended shows its stop from the error text in the transc
   expect(await band.find({ text: /API error \(server_error\)/ })).toBeDefined()
 })
 
-test('/inbox demo shows sample entries in every tab, presses change only its copy, and [Hide demo] goes back', async ($, on) => {
+test('/inbox demo shows sample entries in every tab, presses change only its copy, the reply to a press leaves the sample’s hand-off waiting, and [Hide demo] goes back', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   const demo = demoView(1_000_000, 'Claude')
@@ -3474,11 +3474,13 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   await pane.press({ key: 'explain-d17-key' })
   await clock.advance(SETTLED_MS)
   expect(await pane.find({ text: /✓\sExplain/ })).toBeDefined()
+  expect(await pane.find({ text: /Still open/ })).toBeUndefined()
+  expect(await band.find({ text: /Asks 6/ })).toBeDefined()
 
   await pane.press({ key: 'typekey-d17' })
   await pane.input({ key: await replyKey(pane, 'd17'), text: 'Done in both.' })
   await clock.settle()
-  expect(await band.find({ text: /Asks 6/ })).toBeDefined()
+  expect(await band.find({ text: /Asks 5/ })).toBeDefined()
 
   await pane.press({ key: 'title-d14' })
   await clock.advance(PRESS_GUARD_MS)
@@ -3488,15 +3490,17 @@ test('/inbox demo shows sample entries in every tab, presses change only its cop
   expect(await pane.find({ key: 'settled-d14' })).toBeDefined()
   const doneTask = literal(demo.ledger.items.find(i => i.id === 'd14')!.ask)
   expect(await pane.find({ text: doneTask })).toBeDefined()
-  expect(await band.find({ text: /Asks 5/ })).toBeDefined()
+  expect(await band.find({ text: /Asks 4/ })).toBeDefined()
   await pane.press({ key: 'undo-d14' })
   expect(await pane.find({ key: 'done-d14' })).toBeDefined()
-  expect(await band.find({ text: /Asks 6/ })).toBeDefined()
+  expect(await band.find({ text: /Asks 5/ })).toBeDefined()
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'done-d14' })
   await clock.advance(SETTLED_MS)
   expect(await pane.find({ key: 'settled-d14' })).toBeDefined()
   expect(await pane.find({ key: 'undo-d14' })).toBeUndefined()
+  expect(await pane.find({ text: /Still open/ })).toBeDefined()
+  expect(await band.find({ text: /Asks 5/ })).toBeDefined()
   expect(sent).toEqual([])
 
   await pane.press({ key: 'tab-findings' })

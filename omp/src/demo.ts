@@ -1,5 +1,5 @@
 import { demoSession } from '../../hooks/demo'
-import { demoAfterPress, demoTurns } from '../../hooks/presses'
+import { demoAfterPress, demoReplied, demoSent } from '../../hooks/presses'
 import { pressOn, sessionView } from '../../hooks/session'
 import type { PanelSource } from './controller'
 import { emptyState } from './state'
@@ -49,9 +49,11 @@ export function demoSource(deps: {
         lastActions: after.lastActions,
         presence: { ...state.presence, ...after.turns },
       }
-      if (r.effects.some(e => e.kind === 'send'))
+      const sent = demoSent(r, after.turns)
+      if (sent)
         deps.after(() => {
-          state = { ...state, presence: { ...state.presence, ...demoTurns(state.presence, [], true) } }
+          const replied = demoReplied({ lastActions: state.lastActions, turns: state.presence }, sent)
+          state = { ...state, lastActions: replied.lastActions, presence: { ...state.presence, ...replied.turns } }
           changed()
         }, deps.settleWindowMs)
       changed()
