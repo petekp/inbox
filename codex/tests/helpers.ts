@@ -22,17 +22,20 @@ export function fakeRunner(answer: (args: string[]) => { code: number; stdout: s
   return { exec, calls }
 }
 
-export function hookDeps(dir: string, now = () => 1000): HookDeps & { updates: string[] } {
+export function hookDeps(dir: string, now = () => 1000): HookDeps & { updates: string[]; refreshes: string[] } {
   const updates: string[] = []
+  const refreshes: string[] = []
 
   return {
     dir,
     env: { CODEX_CLI_PATH: '/apps/codex' },
     now,
     startUpdate: id => updates.push(id),
+    startOverviewRefresh: id => refreshes.push(id),
     onWrite: async () => {},
     run: async () => ({ code: 1, stdout: '', stderr: 'not in Herdr' }),
     updates,
+    refreshes,
   }
 }
 

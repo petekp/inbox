@@ -15,6 +15,7 @@ import { delegatesInHerdr } from '../../hooks/herdr'
 import { dialogActivity } from '../../hooks/model-text'
 import { childEnded } from '../../hooks/overview'
 import {
+  claimedOverviewRefresh,
   cleared,
   needsUpdate,
   noteActivity,
@@ -57,6 +58,8 @@ export type HookDeps = {
   now: () => number
   run: Run
   startUpdate: (sessionId: string) => void
+  /** Starts the Overview call a hook claimed for the running turn, in a process of its own. */
+  startOverviewRefresh: (sessionId: string) => void
   onWrite: OnWrite
 }
 
@@ -168,7 +171,17 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const withWork = (s: SessionState) =>
         overviewChanged(s, o => (agentId ? childWorked(o, agentId, now()) : delegatesStarted(o, command, now())))
       const hasWork = line !== null || agentId !== undefined || isDelegateCommand
-      if (hasWork) await write(s => withWork(line ? noteActivity(withRollout(s), line) : withRollout(s)))
+      // Only the main agent's activity is what the Overview call reads mid-turn, so only it claims the call.
+      const isMainActivity = line !== null && agentId === undefined
+      let isClaimed = false
+      if (hasWork)
+        await write(s => {
+          const worked = withWork(line ? noteActivity(withRollout(s), line) : withRollout(s))
+          const claimed = isMainActivity ? claimedOverviewRefresh(worked, now()) : worked
+          isClaimed = claimed !== worked
+          return claimed
+        })
+      if (isClaimed) deps.startOverviewRefresh(id)
 
       return null
     }

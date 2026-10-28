@@ -29,6 +29,12 @@ function clip(text, max) {
 function clipLabel(text, max) {
   return text.length > max ? `${text.slice(0, max - 1)}\u2026` : text;
 }
+function cutForEllipsis(line, fits) {
+  const parts = [...graphemes.segment(line)].map((p) => p.segment);
+  while (parts.length > 0 && !fits(`${parts.join("")}\u2026`))
+    parts.pop();
+  return parts.join("").replace(/[\s.,;:]+$/, "");
+}
 function clipMiddle(text, max, head) {
   if (text.length <= max)
     return text;
@@ -185,9 +191,10 @@ var NAME_WORDS = 3;
 var TEXT_WORDS = 4;
 var GOAL_WORDS = 8;
 var OPEN_SUBJECTS = 6;
-var NAME_KEPT = 8;
+var NAME_KEPT = 20;
 var TEXT_KEPT = 12;
 var GOAL_KEPT = 14;
+var ASK_READ_WORDS = 30;
 var FINISHED_READ = 10;
 var CHILD_KEPT_MS = 24 * 60 * 60000;
 var CHILDREN_KEPT = 50;
@@ -219,12 +226,13 @@ var EMPTY_OVERVIEW = {
   goal: "",
   subjects: [],
   children: [],
+  askSubjects: {},
   nextId: 1,
   nextChildId: 1,
   lastLookAt: null,
   look: null
 };
-var OPEN_STATUSES = ["working", "queued", "waits-on-you", "waits-on-other", "problem"];
+var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
 var STATUSES2 = [...OPEN_STATUSES, "done", "dropped"];
 var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
 var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|ROLE|GOAL|LINK)\s*(?::\s*(.*))?$/i;
@@ -267,7 +275,7 @@ function opOf(key, f) {
   if (key === "GOAL")
     return f[0] ? { kind: "goal", text: f[0] } : null;
   if (key === "LINK")
-    return f[0] && f[1] ? { kind: "link", child: f[0], subject: f[1] } : null;
+    return f[0] && f[1] ? { kind: "link", ref: f[0], subject: f[1] } : null;
   return null;
 }
 function parseOverview(text) {
@@ -285,6 +293,11 @@ function parseOverview(text) {
   if (ops.length === 0)
     return null;
   return ops.every((o) => o.kind === "none") ? { kind: "unchanged" } : { kind: "ops", ops };
+}
+async function askOverview(ask) {
+  const first = await ask();
+  const holdsProse = first.text !== null && parseOverview(first.text) === null;
+  return { first, last: holdsProse ? await ask() : first };
 }
 function words(text) {
   return new Set((text.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
@@ -313,24 +326,16 @@ var OP_ORDER = {
   was: 1,
   link: 2
 };
-function applyOps(last, ops, now) {
+function applyOps(last, ops, now, askIds) {
   let o = {
     ...last ?? EMPTY_OVERVIEW,
     subjects: (last?.subjects ?? []).map((s) => ({ ...s })),
-    children: (last?.children ?? []).map((c) => ({ ...c }))
+    children: (last?.children ?? []).map((c) => ({ ...c })),
+    askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask)))
   };
-  const counts = { none: 0, new: 0, set: 0, done: 0, drop: 0, was: 0, role: 0, goal: 0, link: 0 };
-  let newMerged = 0;
-  let rewordsKept = 0;
-  const unknownRefs = [];
-  const changed = new Set;
   const find = (ref) => {
     const key = nameKey(clipWords(ref, NAME_KEPT));
     return o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === key) ?? null;
-  };
-  const touch = (s) => {
-    s.changedAt = now;
-    changed.add(s.id);
   };
   const forgetSeenWas = (s) => {
     const isSeen = o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
@@ -338,18 +343,15 @@ function applyOps(last, ops, now) {
       s.was = null;
   };
   const set = (s, status, text) => {
-    if (s.status === status && overlap(s.text, text) >= REWORD_OVERLAP) {
-      rewordsKept++;
+    if (s.status === status && overlap(s.text, text) >= REWORD_OVERLAP)
       return;
-    }
     s.status = status;
     s.text = clipWords(text, TEXT_KEPT);
     forgetSeenWas(s);
-    touch(s);
+    s.changedAt = now;
   };
   const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
   for (const { op } of ordered) {
-    counts[op.kind]++;
     if (op.kind === "none")
       continue;
     if (op.kind === "role")
@@ -357,18 +359,15 @@ function applyOps(last, ops, now) {
     else if (op.kind === "goal")
       o.goal = clipWords(op.text, GOAL_KEPT);
     else if (op.kind === "link") {
-      const child = o.children.find((c) => c.id === op.child);
+      const child = o.children.find((c) => c.id === op.ref);
       const subject = find(op.subject);
-      if (!child)
-        unknownRefs.push(op.child);
-      else if (!subject)
-        unknownRefs.push(op.subject);
-      else
+      if (child && subject)
         child.subjectId = subject.id;
+      else if (subject && askIds.has(op.ref))
+        o.askSubjects[op.ref] = subject.id;
     } else if (op.kind === "new") {
       const known = find(op.name);
       if (known && isOpen(known)) {
-        newMerged++;
         set(known, op.status, op.text);
         continue;
       }
@@ -384,13 +383,10 @@ function applyOps(last, ops, now) {
         into: null
       };
       o = { ...o, nextId: o.nextId + 1, subjects: [...o.subjects, s] };
-      changed.add(s.id);
     } else {
       const s = find(op.ref);
-      if (!s) {
-        unknownRefs.push(op.ref);
+      if (!s)
         continue;
-      }
       if (op.kind === "set")
         set(s, op.status, op.text);
       else if (op.kind === "done") {
@@ -399,31 +395,32 @@ function applyOps(last, ops, now) {
           s.text = clipWords(op.text, TEXT_KEPT);
         forgetSeenWas(s);
         s.closedAt = now;
-        touch(s);
+        s.changedAt = now;
       } else if (op.kind === "drop") {
         const target = op.into ? find(op.into) : null;
-        if (op.into && !target)
-          unknownRefs.push(op.into);
         s.status = "dropped";
         s.text = clipWords(op.why, TEXT_KEPT);
         s.closedAt = now;
         s.into = target && target.id !== s.id ? target.id : null;
-        touch(s);
+        s.changedAt = now;
         if (target && s.into) {
           target.was = target.was ?? `${s.name} folded in`;
-          touch(target);
+          target.changedAt = now;
+          for (const [ask, id] of Object.entries(o.askSubjects))
+            if (id === s.id)
+              o.askSubjects[ask] = target.id;
         }
       } else {
         const folded = o.subjects.find((x) => x.into === s.id && x.closedAt === now);
         s.was = folded ? `${folded.name} folded in; was: ${op.text}` : op.text;
-        touch(s);
+        s.changedAt = now;
       }
     }
   }
-  return { overview: o, counts, newMerged, rewordsKept, unknownRefs, changedIds: [...changed] };
+  return o;
 }
-function applyOverview(last, answer, now) {
-  return answer.kind === "unchanged" ? last : applyOps(last, answer.ops, now).overview;
+function applyOverview(last, answer, now, askIds) {
+  return answer.kind === "unchanged" ? last : applyOps(last, answer.ops, now, askIds);
 }
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
@@ -458,14 +455,21 @@ function subjectsText(o) {
   const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}`);
   return { open: open.join(NL4) || "(none yet)", finished: finished.join(NL4) };
 }
+function asksText(o, asks) {
+  return asks.map((a) => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id] ?? "-"}`).join(NL4);
+}
 function runningText(o, now) {
   return (o?.children ?? []).filter((c) => isChildRunning(c, now)).map((c) => `${c.id} | ${c.kind} | ${c.name} | ${c.subjectId ?? "-"}`).join(NL4);
 }
 function lookStarted(o, now) {
   return o === null || o.look !== null ? o : { ...o, look: { startedAt: now } };
 }
+var LOOK_MIN_MS = 5000;
 function lookEnded(o, at) {
-  return o === null || o.look === null ? o : { ...o, lastLookAt: at, look: null };
+  if (o === null || o.look === null)
+    return o;
+  const isLongEnough = at - o.look.startedAt >= LOOK_MIN_MS;
+  return { ...o, lastLookAt: isLongEnough ? at : o.lastLookAt, look: null };
 }
 function text(value) {
   return typeof value === "string" ? value : "";
@@ -473,9 +477,10 @@ function text(value) {
 function time(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
+var DROPPED_STATUSES = { "waits-on-you": "queued", problem: "queued" };
 function subjectOf(saved) {
   const s = saved;
-  const status = STATUSES2.find((x) => x === s?.status);
+  const status = STATUSES2.find((x) => x === s?.status) ?? DROPPED_STATUSES[String(s?.status)];
   const changedAt = time(s?.changedAt);
   if (!s || typeof s.id !== "string" || typeof s.name !== "string" || !status || changedAt === null)
     return null;
@@ -511,9 +516,9 @@ function childOf(saved) {
 var OLD_STATUS = {
   working: "working",
   queued: "queued",
-  "waits-on-you": "waits-on-you",
+  "waits-on-you": "queued",
   "waits-on-other": "waits-on-other",
-  problem: "problem",
+  problem: "queued",
   unknown: "queued",
   done: null,
   "ruled-out": null
@@ -558,6 +563,8 @@ function upgradeOverview(saved) {
     return null;
   const subjects = o.subjects.map(subjectOf).filter((s) => s !== null);
   const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c) => c !== null) : [];
+  const savedLinks = typeof o.askSubjects === "object" && o.askSubjects !== null ? Object.entries(o.askSubjects) : [];
+  const askSubjects = Object.fromEntries(savedLinks.filter((e) => typeof e[1] === "string"));
   const look = o.look;
   const lookAt = time(look?.startedAt);
   return {
@@ -565,6 +572,7 @@ function upgradeOverview(saved) {
     goal: text(o.goal),
     subjects,
     children,
+    askSubjects,
     nextId: Math.max(time(o.nextId) ?? 1, subjects.length + 1),
     nextChildId: Math.max(time(o.nextChildId) ?? 1, children.length + 1),
     lastLookAt: time(o.lastLookAt),
@@ -1391,6 +1399,7 @@ Input:
 - <subjects>: the open subjects, one per line: id | status | name | where it stands
 - <finished>: subjects already done or dropped. Do not add them again.
 - <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
+- <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subject it holds up, or - when it has none yet
 - <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
 - <person>: what the person just sent
 - <activity>: what the agent did this turn
@@ -1405,20 +1414,18 @@ DONE: id or name | where it ended
 DROP: id or name | why
 DROP: id or name | why | INTO id or name
 WAS: id or name | the plan it replaces
-LINK: running id | subject id or name
+LINK: running or ask id | subject id or name
 ROLE: coordinator or session
 GOAL: the goal in the person's words, at most ${GOAL_WORDS} words
 
-A subject is one piece of the work that the person would name: a feature, a fix, a release, a problem, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call.
+A subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.
 
-The name is at most ${NAME_WORDS} words, the handle the person would use. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
+The name is a label of at most ${NAME_WORDS} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
 
-Status is one of: working, queued, waits-on-you, waits-on-other, problem.
-- working: being worked on now, in this session or in a session it handed the work to. When the work stopped, it is queued, waits on someone, or is done.
+Status is one of: working, queued, waits-on-other.
+- working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask. When the work stopped for another reason, it is queued, waits on something, or is done.
 - queued: planned, not started.
-- waits-on-you: the subject's work has stopped until the person acts. A question to the person is not a subject of its own.
-- waits-on-other: it waits on something else, such as a build, a review or another session.
-- problem: something broken or wrong that no one is fixing now.
+- waits-on-other: it waits on something other than the person, such as a build, a review or another session.
 
 Rules:
 - Change a subject by its id. Write NEW only when no subject in <subjects> covers it.
@@ -1426,35 +1433,48 @@ Rules:
 - Write SET only when where a subject stands changed. Never reword a subject that did not change.
 - Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
-- The inbox shows each question and task for the person, with its options. Mark the subject waits-on-you, and say where its work stands or "needs your decision". Never name the choices.
+- Write LINK for each item in <asks> that has no subject yet, naming the subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
 - Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
 - Write ROLE coordinator when the session hands out work and reviews what comes back instead of doing the work itself. Write ROLE only when it changes.
 - Write GOAL only when <goal> is empty, when the person states a new goal, or when the work moves to a different task.`;
-function overviewBlocks(last, tasks, now) {
+function overviewBlocks({ last, asks, tasks, now }) {
   const { open, finished } = subjectsText(last);
   const running = runningText(last, now);
+  const held = asksText(last, asks);
   const list = tasksText(tasks);
   return [
     `<goal>${NL6}${last?.goal || "(none yet)"}${NL6}</goal>`,
     `<subjects>${NL6}${open}${NL6}</subjects>`,
     ...finished === "" ? [] : [`<finished>${NL6}${finished}${NL6}</finished>`],
     ...running === "" ? [] : [`<running>${NL6}${running}${NL6}</running>`],
+    ...held === "" ? [] : [`<asks>${NL6}${held}${NL6}</asks>`],
     ...list === "" ? [] : [`<tasks>${NL6}${list}${NL6}</tasks>`]
   ];
 }
-function overviewPrompt(last, ex, tasks, now) {
-  const person = ex.person ?? `(The person sent nothing. The turn was started by: ${ex.trigger ?? "unknown"}.)`;
+function personText(person, trigger) {
+  return person ?? `(The person sent nothing. The turn was started by: ${trigger ?? "unknown"}.)`;
+}
+function overviewPrompt(input, ex) {
+  const person = personText(ex.person, ex.trigger);
   return [
-    ...overviewBlocks(last, tasks, now),
+    ...overviewBlocks(input),
     `<person>${NL6}${clipMiddle(person, 4000, 1500)}${NL6}</person>`,
     `<activity>${NL6}${clipMiddle(ex.activity.join(NL6), 2500, 500)}${NL6}</activity>`,
     `<reply>${NL6}${clipMiddle(numberBlocks(ex.reply), 12000, 4000)}${NL6}</reply>`
   ].join(NL6);
 }
-function overviewCatchUpPrompt(last, transcript, tasks, now) {
+function overviewMidTurnPrompt(input, turn) {
+  return [
+    "The turn is still running. Treat <person> and <activity> as the exchange so far: there is no reply yet. Answer with the changes the work so far makes.",
+    ...overviewBlocks(input),
+    `<person>${NL6}${clipMiddle(personText(turn.person, turn.trigger), 4000, 1500)}${NL6}</person>`,
+    `<activity>${NL6}${clipMiddle(turn.activity.join(NL6), 2500, 500)}${NL6}</activity>`
+  ].join(NL6);
+}
+function overviewCatchUpPrompt(input, transcript) {
   return [
     "Treat the conversation in <conversation> as the exchange. Its start may be cut. Answer with the changes that bring the list to where the conversation ends.",
-    ...overviewBlocks(last, tasks, now),
+    ...overviewBlocks(input),
     `<conversation>${NL6}${numberBlocks(transcript)}${NL6}</conversation>`
   ].join(NL6);
 }
@@ -2732,6 +2752,8 @@ function versionLabel(version, isNextBuild) {
   return isNextBuild ? `v${version} \xB7 next` : `v${version}`;
 }
 var UPDATE_FAILED = "Last update failed. Items from that reply may be missing.";
+var HOLDS_UP_TEXT = "Holds up";
+var OVERVIEW_FAILED = "Last Overview update failed. Changes from that reply may be missing.";
 var UPDATE_RETRIES = " It retries after your next message.";
 function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
@@ -2926,10 +2948,10 @@ function fitTabs(layouts, fits) {
         return { naming, layout };
   return { naming: "symbols", layout: layouts.at(-1) };
 }
-function tabBadge(id, counts, page) {
+function tabBadge(id, counts, hasNews) {
   if (isRowTab(id))
     return counts[id] > 0 ? String(counts[id]) : null;
-  return page.hasNews ? NEWS_DOT : null;
+  return hasNews ? NEWS_DOT : null;
 }
 function isListedTab(tab) {
   return tab === "needsYou" || tab === "findings";
@@ -2944,6 +2966,8 @@ var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 var WORKING_TEXT = "Working\u2026";
 var LOOK_TEXT = "Seen";
+var LOOK_RULE_LABEL = `\u2500\u2500 ${LOOK_TEXT} `;
+var WAS_PREFIX = "was: ";
 var NEWS_DOT = "\u2022";
 var OVERVIEW_TEXT_LINES = 3;
 var CHILD_ROWS = 3;
@@ -2953,17 +2977,16 @@ var OPEN_ROWS = 7;
 var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: null },
   queued: { mark: "\u25CB", tone: null },
-  "waits-on-you": { mark: "\u25C6", tone: "needsYou" },
   "waits-on-other": { mark: "\u25CC", tone: null },
-  problem: { mark: "!", tone: "issue" },
   done: { mark: "\u2713", tone: "done" },
   dropped: { mark: "\u2717", tone: null }
 };
+var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 function hasRunningMark(page) {
-  return page.rows.some((r) => r.kind === "subject" && r.isRunning || r.kind === "child" && !r.isQuiet);
+  return page.rows.some((r) => (r.kind === "subject" || r.kind === "child") && r.isRunning);
 }
 function runningMark(now) {
   return RUNNING_FRAMES[Math.floor(now / RUNNING_FRAME_MS) % RUNNING_FRAMES.length];
@@ -2983,22 +3006,31 @@ function liveOf(presence, now) {
   return lastReplyAt === null ? null : `Idle \xB7 last reply ${ago(now - lastReplyAt)}`;
 }
 function isItemAfterItem(row, prev) {
-  const isUnderSubject = row.kind === "more" || row.kind === "child" && !row.isLoose;
+  const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
   return prev !== undefined && prev.kind !== "look" && row.kind !== "look" && !isUnderSubject;
 }
+function idleOf(c, now) {
+  return c.lastActivityAt === null ? null : now - c.lastActivityAt;
+}
+function isQuiet(c, now) {
+  const idle = idleOf(c, now);
+  return idle !== null && idle >= QUIET_MS;
+}
+function isChildWorking(c, now) {
+  return now - (c.lastActivityAt ?? c.startedAt) < QUIET_MS;
+}
 function childRow(c, now, branch) {
-  const idle = c.lastActivityAt === null ? null : now - c.lastActivityAt;
-  const isQuiet = idle !== null && idle >= QUIET_MS;
-  const age = shortAgo(idle ?? now - c.startedAt);
+  const isChildQuiet = isQuiet(c, now);
+  const age = shortAgo(idleOf(c, now) ?? now - c.startedAt);
   return {
     kind: "child",
     id: c.id,
+    mark: "\u25CF",
+    isRunning: isChildWorking(c, now),
     name: c.name,
-    age: isQuiet ? `quiet ${age}` : age,
-    isQuiet,
-    isLoose: branch === null,
-    branch,
-    maxLines: OVERVIEW_TEXT_LINES
+    age: isChildQuiet ? `quiet ${age}` : age,
+    ageTone: isChildQuiet ? "needsYou" : null,
+    branch
   };
 }
 function overviewPage(s, now) {
@@ -3006,37 +3038,35 @@ function overviewPage(s, now) {
   const look = o?.lastLookAt ?? null;
   const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
   const isNew = (x) => look === null || x.changedAt > look;
+  const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
+  const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
   const open = subjects.filter(isOpen);
   const queuedOver = Math.max(0, open.length - OPEN_ROWS);
-  const hiddenQueued = new Set(open.filter((x) => x.status === "queued").sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id));
+  const hiddenQueued = new Set(open.filter((x) => x.status === "queued" && !isHeld(x)).sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id));
   const shown = [...open.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort((x, y) => y.changedAt - x.changedAt);
   const folded = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const shownIds = new Set(shown.map((x) => x.id));
   const rows = running.filter((c) => c.subjectId === null || !shownIds.has(c.subjectId)).map((c) => childRow(c, now, null));
   const lookRow = look === null ? null : { kind: "look", id: "look", text: LOOK_TEXT };
-  let isLookDrawn = false;
+  const firstSeen = shown.findIndex((x) => !isNew(x));
   for (const [i, x] of shown.entries()) {
-    if (lookRow && !isLookDrawn && !isNew(x)) {
-      const hasNewAbove = i > 0;
-      if (hasNewAbove)
-        rows.push(lookRow);
-      isLookDrawn = true;
-    }
+    const hasNewAbove = i > 0;
+    if (lookRow && i === firstSeen && hasNewAbove)
+      rows.push(lookRow);
     const under = running.filter((c) => c.subjectId === x.id);
     const shownUnder = under.slice(0, CHILD_ROWS);
     const isMore = under.length > CHILD_ROWS;
     rows.push({
       kind: "subject",
       id: x.id,
-      ...SUBJECT_MARKS[x.status],
-      isRunning: x.status === "working" && (s.presence.isTurnRunning || under.length > 0),
+      ...isHeld(x) ? HELD_MARK : SUBJECT_MARKS[x.status],
+      isRunning: x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some((c) => isChildWorking(c, now))),
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
       was: isNew(x) ? x.was : null,
       age: shortAgo(now - x.changedAt),
-      maxLines: OVERVIEW_TEXT_LINES,
       hasChildren: under.length > 0
     });
     rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
@@ -3048,7 +3078,8 @@ function overviewPage(s, now) {
         branch: "last"
       });
   }
-  if (lookRow && !isLookDrawn && shown.length > 0)
+  const isEveryShownNew = firstSeen === -1;
+  if (lookRow && isEveryShownNew && shown.length > 0)
     rows.push(lookRow);
   if (hiddenQueued.size > 0)
     rows.push({
@@ -3081,6 +3112,7 @@ function overviewPage(s, now) {
     live: liveOf(s.presence, now),
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
     hasNews,
+    error: s.overviewFailure ? OVERVIEW_FAILED : null,
     empty: {
       title: "Overview",
       hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
@@ -3236,6 +3268,10 @@ function actionLines(keys, more, { width, gap, separator }) {
   });
   return { lines, isFollowUpLineNew };
 }
+function heldSubjectOf(o, askId) {
+  const subjectId = o?.askSubjects[askId];
+  return o?.subjects.find((s) => s.id === subjectId && isOpen(s)) ?? null;
+}
 function inboxView({
   ledger,
   lastActions,
@@ -3320,12 +3356,14 @@ function inboxView({
     const last = lastActions[row.id];
     const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt);
     const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt));
+    const heldSubject = state.is === "open" ? heldSubjectOf(ledger.overview, row.id) : null;
     return {
       ...row,
       state,
       feedback,
       actions,
-      optionDescriptions: optionDescriptionsOf(row.item, actions)
+      optionDescriptions: optionDescriptionsOf(row.item, actions),
+      holdsUpLine: heldSubject ? `${HOLDS_UP_TEXT} ${heldSubject.name}` : null
     };
   };
   const itemRow = (item) => {
@@ -3407,10 +3445,11 @@ function heldLabel(c) {
 }
 var UPDATING_TEXT = "Updating\u2026";
 var REFRESHING_PRS_TEXT = "Refreshing PRs\u2026";
-function footerStatus(tab, status, prs) {
+function footerStatus(tab, status, prs, overviewError) {
   if (tab === "prs")
     return { text: prs.isFetching && prs.hasPrs ? REFRESHING_PRS_TEXT : null, error: null };
-  return { text: status.isUpdating ? UPDATING_TEXT : null, error: status.error };
+  const error = (tab === "overview" ? overviewError : null) ?? status.error;
+  return { text: status.isUpdating ? UPDATING_TEXT : null, error };
 }
 function perTurnStatus(update) {
   return {
@@ -4206,6 +4245,8 @@ function emptySession() {
     shownSince: null,
     prViews: NO_PRS,
     stop: null,
+    overviewFailure: null,
+    lastOverviewCallAt: null,
     hostTasks: [],
     dialogQuestions: []
   };
@@ -4273,6 +4314,8 @@ function upgradeSession(saved) {
       isFetching: false
     },
     stop: saved.stop ?? null,
+    overviewFailure: saved.overviewFailure ?? null,
+    lastOverviewCallAt: saved.lastOverviewCallAt ?? null,
     hostTasks: upgradeHostTasks(saved.hostTasks),
     dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} }))
   };
@@ -4410,7 +4453,29 @@ function applied(s, parsed, now, promptAt) {
 function appliedOverview(s, answer, appliedAfter, now) {
   if (s.presence.turnsApplied < appliedAfter)
     return s;
-  return { ...s, ledger: { ...s.ledger, overview: applyOverview(s.ledger.overview, answer, now) } };
+  return {
+    ...s,
+    ledger: {
+      ...s.ledger,
+      overview: applyOverview(s.ledger.overview, answer, now, new Set(s.ledger.items.map((i) => i.id)))
+    },
+    overviewFailure: null,
+    lastOverviewCallAt: now
+  };
+}
+var REFUSED_ANSWER_CHARS = 500;
+function failedOverview(s, text, appliedAfter, now) {
+  if (s.presence.turnsApplied < appliedAfter)
+    return s;
+  const failure = text === null ? { at: now, cause: "no-answer", answer: null } : { at: now, cause: "refused", answer: text.slice(0, REFUSED_ANSWER_CHARS) };
+  return { ...s, overviewFailure: failure, lastOverviewCallAt: now };
+}
+var OVERVIEW_REFRESH_MS = 10 * 60000;
+function claimedOverviewRefresh(s, now) {
+  const { isTurnRunning, turnStartedAt } = s.presence;
+  const times = [s.lastOverviewCallAt, turnStartedAt].filter((t) => t !== null);
+  const isDue = isTurnRunning && times.length > 0 && now - Math.max(...times) >= OVERVIEW_REFRESH_MS;
+  return isDue ? { ...s, lastOverviewCallAt: now } : s;
 }
 function needsCatchUp(s) {
   const { presence } = s;
@@ -4625,6 +4690,22 @@ function orderedKeys() {
     }
   };
 }
+async function askAndWriteOverview(host, s, ask, tasks, appliedAfter) {
+  const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() };
+  const { last } = await askOverview(async () => ({ text: await ask(input).catch(() => null) }));
+  const answer = last.text === null ? null : parseOverview(last.text);
+  const now = await host.now();
+  await host.update((x) => answer === null ? failedOverview(x, last.text, appliedAfter, now) : appliedOverview(x, answer, appliedAfter, now));
+}
+function refreshOverview(host) {
+  return host.inOrder(async () => {
+    const s = await host.read();
+    if (!s.presence.isTurnRunning)
+      return;
+    const ask = (input) => host.ask(overviewMidTurnPrompt(input, s.turn), OVERVIEW_SYSTEM);
+    await askAndWriteOverview(host, s, ask, s.hostTasks, s.presence.turnsApplied);
+  });
+}
 async function askOverConversation(ask, names, s, screen, conversation) {
   if (!conversation)
     return { kind: "unreadable" };
@@ -4633,7 +4714,7 @@ async function askOverConversation(ask, names, s, screen, conversation) {
     kind: "reply",
     text,
     source: conversation,
-    overview: (last, tasks, now) => ask(overviewCatchUpPrompt(last, conversation, tasks, now), OVERVIEW_SYSTEM)
+    overview: (input) => ask(overviewCatchUpPrompt(input, conversation), OVERVIEW_SYSTEM)
   };
 }
 async function reconcileUpdateStatus(host) {
@@ -4655,19 +4736,7 @@ async function runUpdates(host) {
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
   const writing = [];
-  const writeOverview = async (after, ask, tasks) => host.inOrder(async () => {
-    const { ledger } = await host.read();
-    const at = await host.now();
-    const asked = () => ask(ledger.overview, tasks, at).catch(() => null);
-    const first = await asked();
-    if (first === null)
-      return;
-    const answer = parseOverview(first) ?? parseOverview(await asked());
-    if (answer === null)
-      return;
-    const now = await host.now();
-    await host.update((x) => appliedOverview(x, answer, after.presence.turnsApplied, now));
-  });
+  const writeOverview = (after, ask, tasks) => host.inOrder(async () => askAndWriteOverview(host, await host.read(), ask, tasks, after.presence.turnsApplied));
   const followUp = (run) => {
     const settled = run.catch(() => {
       return;
@@ -4696,7 +4765,7 @@ async function runUpdates(host) {
               const after = await host.update((x) => appliedCatchUp(x, s, parsed, at));
               if (!parsed)
                 return "stop";
-              if (reply.kind === "reply")
+              if (reply.kind === "reply" && reply.overview)
                 followUp(writeOverview(after, reply.overview, s.hostTasks));
               continue;
             }
@@ -4713,7 +4782,7 @@ async function runUpdates(host) {
               return applied(x, parsed, await host.now(), promptAt);
             });
             if (isApplied)
-              followUp(writeOverview(after, (last, tasks, now) => host.ask(overviewPrompt(last, next.ex, tasks, now), OVERVIEW_SYSTEM), next.ex.tasks));
+              followUp(writeOverview(after, (input) => host.ask(overviewPrompt(input, next.ex), OVERVIEW_SYSTEM), next.ex.tasks));
             if (after.pending[0]?.failed && !next.failed)
               return "stop";
           }
@@ -5619,10 +5688,11 @@ function wrapText(text, width) {
   return out;
 }
 function indented(text, indent, width, maxLines, paint) {
-  const wrapped = wrapText(text, Math.max(10, width - indent - 1));
+  const room = Math.max(10, width - indent - 1);
+  const wrapped = wrapText(text, room);
   const shown = wrapped.slice(0, maxLines);
   if (wrapped.length > maxLines)
-    shown[maxLines - 1] = `${shown[maxLines - 1].replace(/.$/, "")}\u2026`;
+    shown[maxLines - 1] = `${cutForEllipsis(shown[maxLines - 1], (t) => cellWidth(t) <= room)}\u2026`;
   return shown.map((l) => " ".repeat(indent) + paint(l));
 }
 function buttonCell(b, isFocused, s, mark = "") {
@@ -5673,6 +5743,9 @@ function drawLine(line, isSelected, d) {
   if (line.settled || isShut(line, ui))
     return out;
   const indent = INDENT + pad;
+  const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null;
+  if (holdsUp)
+    out.push(fit(" ".repeat(indent) + s.dim(holdsUp), width));
   if (line.detail && (isSelected || line.isDetailShown))
     out.push(...indented(line.detail, indent, width, 4, s.dim));
   if (!isSelected)
@@ -5706,7 +5779,7 @@ function pageLine(d, indent, mark, text, age, {
   const wrapped = wrapText(text, room);
   const lines = wrapped.slice(0, maxLines);
   if (wrapped.length > lines.length)
-    lines[lines.length - 1] = `${cutToCells(lines.at(-1), room - 1).replace(/[\s.,;:]+$/, "")}\u2026`;
+    lines[lines.length - 1] = `${cutForEllipsis(lines.at(-1), (t) => cellWidth(t) <= room)}\u2026`;
   let plainLeft = plainCells;
   const painted = lines.map((l) => {
     const plain = cutToCells(l, Math.max(0, plainLeft));
@@ -5731,18 +5804,19 @@ function drawPageRow(row, d) {
     const text = row.text ? `${row.name}: ${row.text}` : row.name;
     const out = pageLine(d, PAGE_MARK_AT, mark, text, row.age, {
       plainCells: cellWidth(row.name),
-      maxLines: row.maxLines
+      maxLines: OVERVIEW_TEXT_LINES
     });
     if (row.was)
-      out.push(...indented(`was: ${row.was}`, PAGE_TEXT_AT, width, row.maxLines, s.dim));
+      out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim));
     return row.hasChildren ? withTree(out, null, "\u2502", s) : out;
   }
   if (row.kind === "child") {
-    const mark = s.dim(row.isQuiet ? "\u25CF" : runningMark(now));
-    const agePaint = row.isQuiet ? (t) => s.tone("needsYou", t) : s.dim;
+    const mark = s.dim(row.isRunning ? runningMark(now) : row.mark);
+    const tone = row.ageTone;
+    const agePaint = tone ? (t) => s.tone(tone, t) : s.dim;
     const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, row.age, {
       agePaint,
-      maxLines: row.maxLines
+      maxLines: OVERVIEW_TEXT_LINES
     });
     return row.branch ? withTree(out, TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s) : out;
   }
@@ -5751,7 +5825,7 @@ function drawPageRow(row, d) {
     return withTree([" ".repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s);
   }
   if (row.kind === "look") {
-    const label = `\u2500\u2500 ${row.text} `;
+    const label = LOOK_RULE_LABEL;
     const fill = "\u2500".repeat(Math.max(2, width - 1 - PAGE_TEXT_AT - cellWidth(label)));
     return [`${" ".repeat(PAGE_TEXT_AT)}${s.dim(label + fill)}`];
   }
@@ -5781,7 +5855,7 @@ function tabBar(d) {
   const tabs = shownTabs(screen.isNextBuild === true).map((t) => ({
     ...t,
     tone: isRowTab(t.id) ? t.id : null,
-    badge: tabBadge(t.id, counts, screen.view.overviewPage),
+    badge: tabBadge(t.id, counts, screen.view.overviewPage.hasNews),
     isShown: t.id === ui.tab
   }));
   const lineOf = (naming, form) => ` ${tabs.map((t) => tabCell(t, tabName(t, naming), form, s)).join(" ")}`;
@@ -5794,10 +5868,7 @@ function tabBar(d) {
 function footer(d, isPageScrolling) {
   const { screen, ui, width, now, style: s } = d;
   const out = [s.dim("\u2500".repeat(width))];
-  const status = footerStatus(ui.tab, screen.view.status, {
-    isFetching: screen.isFetchingPrs,
-    hasPrs: screen.view.prs.drawn.length > 0
-  });
+  const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.overviewPage.error);
   if (screen.isDemo)
     out.push(fit(` ${s.dim(DEMO_NOTICE)}`, width));
   if (status.text)
@@ -5846,13 +5917,10 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const foot = footer(d, isPageTaller);
   const room = roomBeside(foot);
   const blanks = (shown) => Array(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill("");
-  if (isPage) {
-    const top = Math.min(Math.max(0, ui.pageTop), body.length > room ? body.length - room + 1 : 0);
-    const shown = body.length > room ? pageWindow(body, top, room, style) : body;
-    return { lines: [...head, ...shown, ...blanks(shown), ...foot].map((l) => fit(l, width)), pageTop: top };
-  }
-  const shown = body.length > room ? scrolled(body, selectedAt, room, style) : body;
-  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map((l) => fit(l, width)), pageTop: ui.pageTop };
+  const isOverflowing = body.length > room;
+  const pageTop = isPage ? Math.min(Math.max(0, ui.pageTop), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop;
+  const shown = !isOverflowing ? body : isPage ? pageWindow(body, pageTop, room, style) : scrolled(body, selectedAt, room, style);
+  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map((l) => fit(l, width)), pageTop };
 }
 function tallestTabHeight(screen, ui, width, now, style, height) {
   const heights = shownTabs(screen.isNextBuild === true).map((t) => drawPanel(screen, t.id === ui.tab ? ui : withTab(ui, t.id, now), width, now, style, height).lines.length);
@@ -6069,8 +6137,8 @@ function demoView(now, agent) {
         goal: "Pinch to dismiss glances",
         subjects: [
           subject("s1", "working", "Dismiss gesture", "pinch fades the glance", now - 2 * MIN),
-          subject("s2", "waits-on-you", "Glasses pairing", "needs this Mac paired", now - 12 * MIN),
-          subject("s3", "waits-on-you", "Flick option", "waits on your pick", now - 12 * MIN, {
+          subject("s2", "working", "Glasses pairing", "needs this Mac paired", now - 12 * MIN),
+          subject("s3", "queued", "Flick option", "waits on your pick", now - 12 * MIN, {
             was: "flick and pinch both"
           }),
           subject("s4", "done", "Fade-out", "dismissed glances fade", now - 25 * MIN),
@@ -6110,6 +6178,7 @@ function demoView(now, agent) {
             lastActivityAt: null
           }
         ],
+        askSubjects: { d11: "s3", d14: "s2" },
         nextId: 8,
         nextChildId: 4,
         lastLookAt: now - 30 * MIN,
@@ -7109,11 +7178,19 @@ function createInbox(pi, deps = defaultDeps) {
   const noteQuietly = async (ctx, line) => {
     if (!line)
       return;
+    let isClaimed = false;
     try {
-      await change(sessionIdOf(ctx), (s) => noteActivity(s, line));
+      await change(sessionIdOf(ctx), (s) => {
+        const noted = noteActivity(s, line);
+        const claimed = claimedOverviewRefresh(noted, deps.now());
+        isClaimed = claimed !== noted;
+        return claimed;
+      });
     } catch {
       return;
     }
+    if (isClaimed)
+      deps.background(refreshOverview(updateHostFor(ctx)));
   };
   pi.on("tool_execution_start", async (event, ctx) => {
     if (isUnattended(ctx))

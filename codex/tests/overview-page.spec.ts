@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { Window } from 'happy-dom'
 import { EMPTY } from '../../hooks/ledger'
-import { applyOverview, parseOverview } from '../../hooks/overview'
+import { applyOverview, LOOK_MIN_MS, parseOverview } from '../../hooks/overview'
 import { recordItem } from '../../hooks/tools'
 import { shownTabs } from '../../hooks/view'
 import { CODEX } from '../src/texts'
@@ -15,10 +15,16 @@ const window = new Window()
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
 
-test('the Codex tab draws the Overview page from a next build’s view, and new rows, j and k leave it in place, while a release build’s view draws Asks for it', async () => {
+test('the Codex tab draws the Overview page from a next build’s view, and new rows, j and k leave it in place, while a release build’s view draws Asks for it, and only a next build names on an Asks row the subject it holds up', async () => {
   const now = Date.now()
   const state = emptyState('overview')
   state.heard.startAt = 1
+  const asked = recordItem(
+    CODEX,
+    EMPTY,
+    { kind: 'question', ask: 'Which label?', options: ['Tab', 'Page'] },
+    now,
+  ).ledger
   const shownOverview = {
     ...applyOverview(
       null,
@@ -26,16 +32,18 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
         [
           'GOAL: Shipping the Overview tab',
           'NEW: working | omp panel | reading the draw code',
-          'NEW: waits-on-you | Label | pick one',
+          'NEW: working | Label | pick one',
+          `LINK: ${asked.items[0]!.id} | Label`,
           'NEW: working | Page | being built',
           'DONE: s3 | built',
         ].join('\n'),
       )!,
       now,
+      new Set(asked.items.map(i => i.id)),
     )!,
     look: { startedAt: now },
   }
-  state.ledger = { ...EMPTY, overview: shownOverview }
+  state.ledger = { ...asked, overview: shownOverview }
   state.presence = { ...state.presence, isTurnRunning: true }
   document.body.innerHTML = '<div id="app"></div>'
   Object.defineProperty(window, '__inboxPage', { value: 'overview-page', configurable: true })
@@ -121,7 +129,7 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
   try {
     await import('../src/tab')
     await until(() => root.querySelector('.overview-goal') !== null)
-    assert.deepEqual(tabLabels(), ['Overview', 'Asks', 'Finds', 'PRs'])
+    assert.deepEqual(tabLabels(), ['Overview', 'Asks1', 'Finds', 'PRs'])
     assert.deepEqual(
       [...root.querySelectorAll('.tab')].map(b => [
         b.getAttribute('title'),
@@ -158,7 +166,7 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
     assert.equal(shownTab(), 'Overview')
     assert.equal(root.querySelector('.row.selected'), null)
-    assert.deepEqual(tabLabels(), ['Overview', 'Asks', 'Finds1', 'PRs'])
+    assert.deepEqual(tabLabels(), ['Overview', 'Asks1', 'Finds1', 'PRs'])
 
     key('3')
     assert.equal(shownTab(), 'Finds1')
@@ -171,10 +179,15 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
     key('1')
     assert.equal(shownTab(), 'Overview')
     assert.ok(root.querySelector('.overview-goal'))
+    key('2')
+    assert.equal(shownTab(), 'Asks1')
+    assert.equal(root.querySelector('main .holds-up')?.textContent, 'Holds up Label')
+    key('1')
+    assert.equal(shownTab(), 'Overview')
 
     isOlderServer = true
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
-    assert.equal(shownTab(), 'Asks')
+    assert.equal(shownTab(), 'Asks1')
     assert.equal(root.querySelector('.overview-goal'), null)
     assert.equal(sentTabs.at(-1), 'overview')
     isOlderServer = false
@@ -184,15 +197,16 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
 
     isNextBuild = false
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
-    assert.deepEqual(tabLabels(), ['Asks', 'Finds1', 'PRs'])
+    assert.deepEqual(tabLabels(), ['Asks1', 'Finds1', 'PRs'])
     assert.deepEqual(
       [...root.querySelectorAll('.tab')].map(b => b.getAttribute('title')),
       shownTabs(false).map(t => t.label),
     )
-    assert.equal(shownTab(), 'Asks')
+    assert.equal(shownTab(), 'Asks1')
     assert.equal(root.querySelector('.overview-goal'), null)
+    assert.equal(root.querySelector('main .holds-up'), null)
     key('4')
-    assert.equal(shownTab(), 'Asks')
+    assert.equal(shownTab(), 'Asks1')
     isNextBuild = true
     await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
     assert.equal(shownTab(), 'Overview')
@@ -201,7 +215,7 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
     key('3')
     assert.equal(shownTab(), 'PRs')
     key('1')
-    assert.equal(shownTab(), 'Asks')
+    assert.equal(shownTab(), 'Asks1')
   } finally {
     await window.happyDOM.abort()
     for (const [key, descriptor] of previous) {
@@ -211,22 +225,26 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
   }
 })
 
-test('a look starts when the tab shows the Overview, ends when it shows another tab, and ends at the last request when the pane closed', () => {
+test('a look starts when the tab shows the Overview, ends when it shows another tab, ends at the last request when the pane closed, and counts once it lasted five seconds', () => {
   const state = emptyState('look')
   state.ledger = {
     ...EMPTY,
-    overview: applyOverview(null, parseOverview('GOAL: Ship it\nNEW: queued | Docs | after the code')!, 500),
+    overview: applyOverview(null, parseOverview('GOAL: Ship it\nNEW: queued | Docs | after the code')!, 500, new Set()),
   }
   state.tabSeenAt = 1000
   const open = lookOnView(state, 'overview', 2000)
   assert.equal(open.ledger.overview?.look?.startedAt, 2000)
 
-  const seen = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 3000)
+  const seen = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 2000 + LOOK_MIN_MS)
   assert.equal(seen.ledger.overview?.look, null)
-  assert.equal(seen.ledger.overview?.lastLookAt, 3000)
+  assert.equal(seen.ledger.overview?.lastLookAt, 2000 + LOOK_MIN_MS)
 
-  const closed = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 2000 + 60_000)
-  assert.equal(closed.ledger.overview?.lastLookAt, 2000)
+  const passed = lookOnView({ ...open, tabSeenAt: 2000 }, 'needsYou', 3000)
+  assert.equal(passed.ledger.overview?.look, null)
+  assert.equal(passed.ledger.overview?.lastLookAt, null)
+
+  const closed = lookOnView({ ...open, tabSeenAt: 2000 + LOOK_MIN_MS }, 'needsYou', 2000 + 60_000)
+  assert.equal(closed.ledger.overview?.lastLookAt, 2000 + LOOK_MIN_MS)
 
   const never = lookOnView(state, 'needsYou', 2000)
   assert.equal(never.ledger.overview?.lastLookAt, null)

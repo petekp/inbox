@@ -58,6 +58,7 @@ import {
 } from './claude-host'
 import type { Owner, SavedRecord, Shown } from './claude-host'
 import {
+  claimedOverviewRefresh,
   cleared,
   commandFindings,
   emptySession,
@@ -96,6 +97,7 @@ import type { SentBy, Session, SessionView } from './session'
 import {
   fetchPrs as fetchSessionPrs,
   orderedKeys,
+  refreshOverview,
   runUpdates,
   startPress,
   wakeForDone as wakeSessionForDone,
@@ -185,7 +187,7 @@ import {
 } from './claude'
 import { branchIn } from './gh'
 import { CLEARED_TOKENS, delegatesInHerdr, herdrReporter, herdrTokens } from './herdr'
-import { ago, cellWidth, clipLabel } from './text'
+import { ago, cellWidth, clipLabel, cutForEllipsis } from './text'
 import {
   applyPress,
   baseName,
@@ -263,6 +265,8 @@ import {
   READING_TEXT,
   rowsIn,
   hasRunningMark,
+  LOOK_RULE_LABEL,
+  WAS_PREFIX,
   inboxCommandText,
   RUNNING_FRAME_MS,
   RUNNING_PULSE_MS,
@@ -277,6 +281,7 @@ import {
   keptOpen,
   listWaits,
   NEXT_BUILD_MARK,
+  OVERVIEW_TEXT_LINES,
   rowAfterClose,
   shortAgo,
   shownOptionDescriptions,
@@ -420,9 +425,8 @@ function desktopSpanLines(spans: TerminalSpan[], widthPt: number, limit: number)
   const words = spans.map(s => ({ ...s, text: s.text.replace(/\s+/g, ' ') }))
   const lines = desktopLines(words.map(s => s.text).join(''), widthPt)
   if (lines.length <= limit) return words
-  let last = lines[limit - 1]!
-  while (last.length > 0 && desktopTextPt(`${last}…`) > widthPt) last = last.slice(0, -1)
-  let room = [...lines.slice(0, limit - 1), last.replace(/[\s.,;:]+$/, '')].join(' ').length
+  const last = cutForEllipsis(lines[limit - 1]!, t => desktopTextPt(t) <= widthPt)
+  let room = [...lines.slice(0, limit - 1), last].join(' ').length
   const kept: TerminalSpan[] = []
   for (const s of words) {
     if (room <= 0) break
@@ -865,8 +869,18 @@ function notePerson($: EngineInterface, line: string) {
   }))
 }
 
-function noteActivity($: EngineInterface, line: string) {
-  return commit($, currentOwner(), s => noteTurnActivity(s, line)).catch(() => undefined)
+/** Notes the main agent's activity, and runs the Overview call when the running turn is due one. */
+async function noteActivity($: EngineInterface, line: string) {
+  const owner = currentOwner()
+  const now = await $.clock.now()
+  let isClaimed = false
+  await commit($, owner, s => {
+    const noted = noteTurnActivity(s, line)
+    const claimed = claimedOverviewRefresh(noted, now)
+    isClaimed = claimed !== noted
+    return claimed
+  }).catch(() => undefined)
+  if (isClaimed) void refreshOverview({ ...hostOf($, owner), inOrder: fn => resultsOrder.run(owner.id, fn) })
 }
 
 function messageText(message: SessionAppendMessage): string {
@@ -1152,13 +1166,15 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
     screen($),
     $.session.messages().then(transcriptText),
   ])
-  // The Overview call reads the transcript. With none to read, it writes no Overview.
-  const overview: AskCatchUpOverview = async (last, tasks, at) => {
-    if (!transcript || !isCurrent(owner)) return null
-    const r = await askLedgerModel($, overviewCatchUpPrompt(last, transcript, tasks, at), OVERVIEW_SYSTEM, 90_000)
+  // The Overview call reads the transcript.
+  const overview: AskCatchUpOverview | null = transcript
+    ? async input => {
+        if (!isCurrent(owner)) return null
+        const r = await askLedgerModel($, overviewCatchUpPrompt(input, transcript), OVERVIEW_SYSTEM, 90_000)
 
-    return r.isAnswered ? r.text : null
-  }
+        return r.isAnswered ? r.text : null
+      }
+    : null
   const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
   if (!isCurrent(owner)) return { kind: 'failed' }
   if (forked.isAnswered) return { kind: 'reply', text: forked.text, source: null, overview }
@@ -1604,8 +1620,8 @@ function terminalSpanLines(spans: TerminalSpan[], width: number, limit = Infinit
   const kept = lines.slice(0, limit)
   if (kept.length < lines.length) {
     const last = kept.at(-1)!
-    while (last.length > 0 && columns(last) >= size) last.pop()
-    while (last.length > 0 && /[\s.,;:]/.test(last.at(-1)!.text)) last.pop()
+    const shown = cutForEllipsis(last.map(c => c.text).join(''), t => t.length <= size)
+    while (columns(last) > shown.length) last.pop()
     const isMuted = last.at(-1)?.span.isMuted
     last.push({ text: '…', span: { text: '…', ...(isMuted ? { isMuted } : {}) } })
   }
@@ -3490,10 +3506,13 @@ export const register: Register = on => {
       typeHint?: string
       fold?: { note?: string }
     }
+    /** A next build draws the Overview, so only it names the subject an ask holds up. */
+    const holdsUpLineOf = (r: RowView | undefined) => (isNextBuild ? (r?.holdsUpLine ?? null) : null)
     const itemRow = (r: RowView): Row => {
       const asked = r.at === null ? undefined : `${DOT}${ago(now - r.at)}`
       const mark = rowMark(r, look)
       const isHandedOff = r.state.is === 'handedOff'
+      const holdsUpLine = holdsUpLineOf(r)
 
       return {
         id: r.id,
@@ -3504,6 +3523,15 @@ export const register: Register = on => {
         title: r.title,
         titleAfter: asked,
         ...(r.at === null ? {} : { at: r.at }),
+        ...(holdsUpLine
+          ? {
+              subtitle: (
+                <Text color={pal.muted} wrap="wrap">
+                  {holdsUpLine}
+                </Text>
+              ),
+            }
+          : {}),
         hasSecondLine: r.replyKind === 'answer',
         body: null,
         keys: () => rowKeyActions($, r, optionsShown.includes(r.id)).keys,
@@ -3669,7 +3697,7 @@ export const register: Register = on => {
       findings: view.findings.count,
       prs: shownPrs.filter(x => !x.isSettled && prNeedsYou(x.pr, isThreadSent)).length,
     }
-    const badgeOf = (id: ShownTab) => tabBadge(id, tabCounts, view.overviewPage)
+    const badgeOf = (id: ShownTab) => tabBadge(id, tabCounts, view.overviewPage.hasNews)
     const tabTone = (id: ShownTab) => (isRowTab(id) ? pal.tone[id] : undefined)
     const tabText = (id: ShownTab, name: string) => `${name}${badgeOf(id) === null ? '' : ` ${badgeOf(id)}`}`
     const hasRail = isInline && look === 'terminal' && e.props.bodyColumns >= INLINE_RAIL_AT
@@ -3694,10 +3722,11 @@ export const register: Register = on => {
 
     const shownLabel = (a: Pick<KeyAction, 'label' | 'variant'>) =>
       actionLabel({ label: a.label, isPrimary: a.variant === 'primary' })
-    const desktopTextColumns = (rowId: string) =>
-      listColumns - DESKTOP_MARK_CELLS - markExtra(rowId) - DESKTOP_SIDE_CELLS - 1
-    // An open desktop row's text column, less a cell, since the measured column ran up to 10 pt narrower than this.
-    const desktopRowTextPt = (rowId: string) => desktopTextColumns(rowId) * DESKTOP_CELL_PT - 2 * FRAME_INSET_PT
+    const desktopTextColumns = (markCells: number) => listColumns - markCells - DESKTOP_SIDE_CELLS - 1
+    // A desktop text column after `markCells`, less a cell, since the measured column ran up to 10 pt narrower than this.
+    const desktopColumnPt = (markCells: number) => desktopTextColumns(markCells) * DESKTOP_CELL_PT - 2 * FRAME_INSET_PT
+    const rowMarkCells = (rowId: string) => DESKTOP_MARK_CELLS + markExtra(rowId)
+    const desktopRowTextPt = (rowId: string) => desktopColumnPt(rowMarkCells(rowId))
     const desktopLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'icon'>) =>
       a.icon ? `${a.icon} ${shownLabel(a)}` : shownLabel(a)
     // A native Button cuts a label wider than its row.
@@ -3756,7 +3785,7 @@ export const register: Register = on => {
           }
         }),
         gap: DESKTOP_LINK_GAP_CELLS,
-        fallbackColumns: desktopTextColumns(rowId),
+        fallbackColumns: desktopTextColumns(rowMarkCells(rowId)),
         isGuarded: isOpenGuarded,
         colors: { muted: pal.muted, hover: null },
       }
@@ -3866,12 +3895,25 @@ export const register: Register = on => {
     // The row clips, not this Box: once its row scrolled out of view,
     // Claude Code drew lines this Box clipped elsewhere in the pane (anthropics/claude-code#100030).
     // Desktop draws no tree: its lines differ in height, so stacked glyphs break into separate bars.
-    const branch = (pos: TreePos, lead = 0, left = TREE_LINE_AT, color = pal.line) =>
+    const branch = (pos: TreePos, lead = 0, left = TREE_LINE_AT, color = pal.line, top = 0, key?: string) =>
       look === 'desktop' ? null : (
-        <Box position="absolute" top={0} bottom={0} left={left} width={2}>
+        <Box key={key} position="absolute" top={top} bottom={0} left={left} width={2}>
           <Text color={color}>{treeText(pos, lead)}</Text>
         </Box>
       )
+    /** A 1 pt line in the divider color on desktop, `across` the pane or `down` it. */
+    const desktopHairline = (
+      key: string,
+      direction: 'across' | 'down',
+      box: { marginTop?: number; marginBottom?: number; marginLeft?: number; width?: number } = {},
+    ) => (
+      <Box
+        key={key}
+        {...(direction === 'across' ? { height: DESKTOP_HAIR_LINES } : { width: DESKTOP_HAIR_CELLS })}
+        backgroundColor={pal.divider}
+        {...box}
+      />
+    )
     const columnsFor = (extra = 0) => {
       const base = look === 'desktop' ? ROW_COLUMNS.desktop : ROW_COLUMNS.tree
       return { ...base, textAt: base.textAt + extra }
@@ -3965,6 +4007,7 @@ export const register: Register = on => {
             : undefined
           : line.after
       const hover = second ? { hover: { scope: `title-${row.id}`.slice(0, 64), inverse: true } } : {}
+      const holdsUpLine = holdsUpLineOf(row.view)
 
       return (
         <Box flexDirection="column">
@@ -3992,6 +4035,11 @@ export const register: Register = on => {
             <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
               {meta}
             </Text>
+          ) : null}
+          {holdsUpLine ? (
+            <Box paddingLeft={line.before?.length ?? 0}>
+              <Text color={pal.muted}>{clipLabel(holdsUpLine, Math.max(12, width))}</Text>
+            </Box>
           ) : null}
         </Box>
       )
@@ -4025,6 +4073,7 @@ export const register: Register = on => {
         before: row.line?.before ?? '',
         title: text.trim(),
         after: f?.isAfterTitle ? f.text : (row.line?.after ?? '').replace(LEADING_DOT, '').trim(),
+        note: holdsUpLineOf(row.view) ?? '',
         side: sideAge(row),
         padY: DESKTOP_ROW_PAD,
         maxLines: row.hasSecondLine ? 4 : 2,
@@ -4402,10 +4451,12 @@ export const register: Register = on => {
       )
     }
 
-    const shownStatus = footerStatus(shownTab, view.status, {
-      isFetching: prState.isFetching,
-      hasPrs: prViews.length > 0,
-    })
+    const shownStatus = footerStatus(
+      shownTab,
+      view.status,
+      { isFetching: prState.isFetching, hasPrs: prViews.length > 0 },
+      view.overviewPage.error,
+    )
     const status = shownStatus.text ?? ''
 
     const openIds = openRowIds(view)
@@ -4755,14 +4806,11 @@ export const register: Register = on => {
               n === 0
                 ? [el]
                 : [
-                    <Box
-                      key={`rule-${n}`}
-                      marginTop={space}
-                      marginBottom={space - blankLine}
-                      marginLeft={FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS}
-                      height={1 / DESKTOP_LINE_PT}
-                      backgroundColor={pal.divider}
-                    />,
+                    desktopHairline(`rule-${n}`, 'across', {
+                      marginTop: space,
+                      marginBottom: space - blankLine,
+                      marginLeft: FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS,
+                    }),
                     el,
                   ],
             )
@@ -5330,18 +5378,20 @@ export const register: Register = on => {
     /** The text column of an Overview line at `depth`, in cells, less the age beside it. */
     const overviewTextCells = (depth: number, age: string | null) =>
       listColumns - 1 - markColumns.textAt - markWidth * depth - (age ? cellWidth(age) + 2 : 0)
-    /** The same column on desktop, in points, less a cell as `desktopRowTextPt` leaves. */
-    const overviewTextPt = (depth: number) =>
-      (listColumns - 1 - DESKTOP_MARK_CELLS * (depth * 2 + 1) - 1 - DESKTOP_SIDE_CELLS) * DESKTOP_CELL_PT -
-      2 * FRAME_INSET_PT
-    /** One text of an Overview line, wrapped to at most `maxLines` lines and cut with an ellipsis past them. */
-    const overviewText = (key: string, spans: TerminalSpan[], maxLines: number, depth: number, age: string | null) => (
+    /** One text of an Overview line, wrapped to at most `OVERVIEW_TEXT_LINES` lines and cut with an ellipsis past them. */
+    const overviewText = (key: string, spans: TerminalSpan[], depth: number, age: string | null) => (
       <Box key={key}>
         <Text wrap="wrap">
           {terminalText(
             look === 'desktop'
-              ? [desktopSpanLines(spans, overviewTextPt(depth), maxLines)]
-              : terminalSpanLines(spans, overviewTextCells(depth, age), maxLines),
+              ? [
+                  desktopSpanLines(
+                    spans,
+                    desktopColumnPt(1 + DESKTOP_MARK_CELLS * (depth * 2 + 1)),
+                    OVERVIEW_TEXT_LINES,
+                  ),
+                ]
+              : terminalSpanLines(spans, overviewTextCells(depth, age), OVERVIEW_TEXT_LINES),
           )}
         </Text>
       </Box>
@@ -5353,25 +5403,16 @@ export const register: Register = on => {
      */
     const overviewTree = (key: string, shape: 'down' | OverviewBranch) => {
       if (look === 'terminal')
-        return (
-          <Box
-            key={key}
-            position="absolute"
-            top={shape === 'down' ? 1 : 0}
-            bottom={0}
-            left={markColumns.handleAt}
-            width={2}
-          >
-            <Text color={pal.line}>{treeText(shape === 'down' ? 'pass' : shape, 0)}</Text>
-          </Box>
-        )
+        return shape === 'down'
+          ? branch('pass', 0, markColumns.handleAt, pal.line, 1, key)
+          : branch(shape, 0, markColumns.handleAt, pal.line, 0, key)
       // The line spans the mark column, which spans the frame's content. To meet the next row's line, each end reaches
       // over the frame's padding and its 1 pt border, in margins, which count half lines.
       const reach = -(OVERVIEW_PAD_Y + 2 * DESKTOP_HAIR_LINES)
       const firstLineMiddle = 0.5
       const hair = (key: string, grow: boolean, ends: { marginTop?: number; marginBottom?: number }) => (
         <Box key={key} flexDirection="row" {...(grow ? { flexGrow: 1 } : { height: firstLineMiddle })}>
-          <Box width={DESKTOP_HAIR_CELLS} backgroundColor={pal.divider} {...ends} />
+          {desktopHairline('line', 'down', ends)}
         </Box>
       )
       const arm = DESKTOP_MARK_CELLS * 2 - DESKTOP_TREE_AT - DESKTOP_ARM_GAP
@@ -5380,7 +5421,7 @@ export const register: Register = on => {
           ? [<Box key="under-mark" height={firstLineMiddle + 0.4} />, hair('down', true, { marginBottom: reach })]
           : [
               hair('to-arm', false, { marginTop: reach }),
-              <Box key="arm" height={DESKTOP_HAIR_LINES} width={arm} backgroundColor={pal.divider} />,
+              desktopHairline('arm', 'across', { width: arm }),
               ...(shape === 'mid' ? [hair('on', true, { marginBottom: reach })] : []),
             ]
 
@@ -5396,12 +5437,9 @@ export const register: Register = on => {
     /** The rule above an Overview row that starts an item. It starts at the text column, as the rules between sections and between Asks rows do. */
     const overviewRule = (id: string) =>
       look === 'desktop' ? (
-        <Box
-          key={`overview-rule-${id}`}
-          marginLeft={FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS}
-          height={DESKTOP_HAIR_LINES}
-          backgroundColor={pal.divider}
-        />
+        desktopHairline(`overview-rule-${id}`, 'across', {
+          marginLeft: FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS,
+        })
       ) : (
         <Box key={`overview-rule-${id}`} flexDirection="row">
           <Box width={markColumns.textAt} flexShrink={0} />
@@ -5465,12 +5503,11 @@ export const register: Register = on => {
           overviewText(
             `overview-${r.id}-text`,
             [{ text: r.name }, ...(r.text ? [{ text: `: ${r.text}`, isMuted: true as const }] : [])],
-            r.maxLines,
             0,
             r.age,
           ),
           ...(r.was
-            ? [overviewText(`overview-${r.id}-was`, [{ text: `was: ${r.was}`, isMuted: true }], r.maxLines, 0, r.age)]
+            ? [overviewText(`overview-${r.id}-was`, [{ text: `${WAS_PREFIX}${r.was}`, isMuted: true }], 0, r.age)]
             : []),
         ]
 
@@ -5483,16 +5520,16 @@ export const register: Register = on => {
         })
       }
       if (r.kind === 'child') {
-        const mark = r.isQuiet ? <Text color={pal.muted}>●</Text> : runningDot(r.id, '●', pal.muted)
-        const depth = r.isLoose ? 0 : 1
+        const mark = r.isRunning ? runningDot(r.id, r.mark, pal.muted) : <Text color={pal.muted}>{r.mark}</Text>
+        const depth = r.branch === null ? 0 : 1
 
         return overviewLine({
           key: `overview-${r.id}`,
           depth,
           mark,
-          content: overviewText(`overview-${r.id}-text`, [{ text: r.name, isMuted: true }], r.maxLines, depth, r.age),
+          content: overviewText(`overview-${r.id}-text`, [{ text: r.name, isMuted: true }], depth, r.age),
           age: r.age,
-          ageColor: r.isQuiet ? (pal.tone.needsYou ?? pal.age) : pal.age,
+          ageColor: r.ageTone ? (pal.tone[r.ageTone] ?? pal.mark[r.ageTone]) : pal.age,
           tree: r.branch ? overviewTree(`overview-${r.id}-tree`, r.branch) : null,
         })
       }
@@ -5506,7 +5543,7 @@ export const register: Register = on => {
           tree: overviewTree(`overview-${r.id}-tree`, r.branch),
         })
       if (r.kind === 'look') {
-        const label = `── ${r.text} `
+        const label = LOOK_RULE_LABEL
         const fill =
           look === 'desktop' ? '' : '─'.repeat(Math.max(2, listColumns - markColumns.textAt - cellWidth(label)))
 

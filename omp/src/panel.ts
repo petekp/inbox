@@ -38,7 +38,7 @@ import { capitalized, noteText } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
 import type { SessionView } from '../../hooks/session'
 import type { ToneName } from '../../hooks/tones'
-import { ago, cellWidth, cutToCells } from '../../hooks/text'
+import { ago, cellWidth, cutForEllipsis, cutToCells } from '../../hooks/text'
 import {
   canUndoRefused,
   closedMark,
@@ -83,6 +83,9 @@ import {
   rowKeyPlan,
   rowMark,
   hasRunningMark,
+  LOOK_RULE_LABEL,
+  OVERVIEW_TEXT_LINES,
+  WAS_PREFIX,
   runningMark,
   settledLabel,
   stopFix,
@@ -907,9 +910,11 @@ function indented(
   maxLines: number,
   paint: (s: string) => string,
 ): string[] {
-  const wrapped = wrapText(text, Math.max(10, width - indent - 1))
+  const room = Math.max(10, width - indent - 1)
+  const wrapped = wrapText(text, room)
   const shown = wrapped.slice(0, maxLines)
-  if (wrapped.length > maxLines) shown[maxLines - 1] = `${shown[maxLines - 1]!.replace(/.$/, '')}…`
+  if (wrapped.length > maxLines)
+    shown[maxLines - 1] = `${cutForEllipsis(shown[maxLines - 1]!, t => cellWidth(t) <= room)}…`
 
   return shown.map(l => ' '.repeat(indent) + paint(l))
 }
@@ -983,6 +988,9 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   out.push(spread(` ${' '.repeat(pad)}${cursor} ${leadText(line.lead, s)} ${title}${status}${after}`, `${age} `, width))
   if (line.settled || isShut(line, ui)) return out
   const indent = INDENT + pad
+  // A next build draws the Overview, so only it names the subject an ask holds up.
+  const holdsUp = d.screen.isNextBuild === true ? line.row?.holdsUpLine : null
+  if (holdsUp) out.push(fit(' '.repeat(indent) + s.dim(holdsUp), width))
   if (line.detail && (isSelected || line.isDetailShown)) out.push(...indented(line.detail, indent, width, 4, s.dim))
   if (!isSelected) return out
   if (line.file) out.push(' '.repeat(indent) + s.tone('accent', line.file))
@@ -1026,7 +1034,7 @@ function pageLine(
   const wrapped = wrapText(text, room)
   const lines = wrapped.slice(0, maxLines)
   if (wrapped.length > lines.length)
-    lines[lines.length - 1] = `${cutToCells(lines.at(-1)!, room - 1).replace(/[\s.,;:]+$/, '')}…`
+    lines[lines.length - 1] = `${cutForEllipsis(lines.at(-1)!, t => cellWidth(t) <= room)}…`
   let plainLeft = plainCells
   const painted = lines.map(l => {
     const plain = cutToCells(l, Math.max(0, plainLeft))
@@ -1059,18 +1067,19 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
     const text = row.text ? `${row.name}: ${row.text}` : row.name
     const out = pageLine(d, PAGE_MARK_AT, mark, text, row.age, {
       plainCells: cellWidth(row.name),
-      maxLines: row.maxLines,
+      maxLines: OVERVIEW_TEXT_LINES,
     })
-    if (row.was) out.push(...indented(`was: ${row.was}`, PAGE_TEXT_AT, width, row.maxLines, s.dim))
+    if (row.was) out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim))
 
     return row.hasChildren ? withTree(out, null, '│', s) : out
   }
   if (row.kind === 'child') {
-    const mark = s.dim(row.isQuiet ? '●' : runningMark(now))
-    const agePaint = row.isQuiet ? (t: string) => s.tone('needsYou', t) : s.dim
+    const mark = s.dim(row.isRunning ? runningMark(now) : row.mark)
+    const tone = row.ageTone
+    const agePaint = tone ? (t: string) => s.tone(tone, t) : s.dim
     const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, row.age, {
       agePaint,
-      maxLines: row.maxLines,
+      maxLines: OVERVIEW_TEXT_LINES,
     })
 
     return row.branch ? withTree(out, TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s) : out
@@ -1081,7 +1090,7 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
     return withTree([' '.repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s)
   }
   if (row.kind === 'look') {
-    const label = `── ${row.text} `
+    const label = LOOK_RULE_LABEL
     const fill = '─'.repeat(Math.max(2, width - 1 - PAGE_TEXT_AT - cellWidth(label)))
 
     return [`${' '.repeat(PAGE_TEXT_AT)}${s.dim(label + fill)}`]
@@ -1135,7 +1144,7 @@ function tabBar(d: Draw): string {
   const tabs: TabCell[] = shownTabs(screen.isNextBuild === true).map(t => ({
     ...t,
     tone: isRowTab(t.id) ? t.id : null,
-    badge: tabBadge(t.id, counts, screen.view.overviewPage),
+    badge: tabBadge(t.id, counts, screen.view.overviewPage.hasNews),
     isShown: t.id === ui.tab,
   }))
   const lineOf = (naming: TabNaming, form: TabForm) =>
@@ -1152,10 +1161,12 @@ function tabBar(d: Draw): string {
 function footer(d: Draw, isPageScrolling: boolean): string[] {
   const { screen, ui, width, now, style: s } = d
   const out: string[] = [s.dim('─'.repeat(width))]
-  const status = footerStatus(ui.tab, screen.view.status, {
-    isFetching: screen.isFetchingPrs,
-    hasPrs: screen.view.prs.drawn.length > 0,
-  })
+  const status = footerStatus(
+    ui.tab,
+    screen.view.status,
+    { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 },
+    screen.view.overviewPage.error,
+  )
   if (screen.isDemo) out.push(fit(` ${s.dim(DEMO_NOTICE)}`, width))
   if (status.text) out.push(` ${s.dim(status.text)}`)
   if (status.error) out.push(...indented(status.error, 1, width, 2, t => s.tone('error', t)))
@@ -1233,15 +1244,15 @@ export function drawPanel(
   const room = roomBeside(foot)
   const blanks = (shown: string[]) =>
     Array<string>(Math.max(0, minHeight - head.length - shown.length - foot.length)).fill('')
-  if (isPage) {
-    const top = Math.min(Math.max(0, ui.pageTop), body.length > room ? body.length - room + 1 : 0)
-    const shown = body.length > room ? pageWindow(body, top, room, style) : body
+  const isOverflowing = body.length > room
+  const pageTop = isPage ? Math.min(Math.max(0, ui.pageTop), isOverflowing ? body.length - room + 1 : 0) : ui.pageTop
+  const shown = !isOverflowing
+    ? body
+    : isPage
+      ? pageWindow(body, pageTop, room, style)
+      : scrolled(body, selectedAt, room, style)
 
-    return { lines: [...head, ...shown, ...blanks(shown), ...foot].map(l => fit(l, width)), pageTop: top }
-  }
-  const shown = body.length > room ? scrolled(body, selectedAt, room, style) : body
-
-  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map(l => fit(l, width)), pageTop: ui.pageTop }
+  return { lines: [...head, ...shown, ...blanks(shown), ...foot].map(l => fit(l, width)), pageTop }
 }
 
 /** The most lines a shown tab draws, each tab as switching to it would show it. */

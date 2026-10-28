@@ -7,7 +7,14 @@ import type { IconName } from './row-actions'
 import { closedState } from '../../hooks/ledger'
 import { ago, clipLabel } from '../../hooks/text'
 import type { ClosedState } from '../../hooks/ledger'
-import { canUndoRefused, closedMark, settledMark, versionLabel } from '../../hooks/view'
+import {
+  canUndoRefused,
+  closedMark,
+  OVERVIEW_TEXT_LINES,
+  settledMark,
+  versionLabel,
+  WAS_PREFIX,
+} from '../../hooks/view'
 import { actionId, capitalized, isPressConfirmed, noteText, pendingResult, stepEffects } from '../../hooks/presses'
 import type { Effect, RowPress } from '../../hooks/presses'
 import {
@@ -134,6 +141,8 @@ type Row = {
   lead?: string
   title: string
   meta?: string
+  /** The open subject an ask holds up, as "Holds up Offline sync". */
+  holdsUp?: string
   age?: string
   body?: JSX.Element | null
   keys: Key[]
@@ -788,6 +797,8 @@ function itemRow(v: View, r: RowView): Row {
     handleTone: mark.tone,
     ...(isHandedOff ? { fold: {} } : {}),
     title: r.title,
+    // A next build draws the Overview, so only it names the subject an ask holds up.
+    ...(v.isNextBuild === true && r.holdsUpLine ? { holdsUp: r.holdsUpLine } : {}),
     age: r.at === null ? undefined : shortAgo(v.at - r.at),
     ...(described.length > 0
       ? {
@@ -1160,6 +1171,7 @@ function ListRow({ row, track, onSelect, now }: { row: Row; track: RowTrack; onS
               {isSelected || isClosing ? `${DOT}${last}` : last}
             </span>
           ) : null}
+          {row.holdsUp ? <span class="holds-up">{row.holdsUp}</span> : null}
         </button>
       </div>
       <span class="side" data-room={SENDING}>
@@ -1308,7 +1320,6 @@ function pulseInStep(el: HTMLElement | null) {
 const TONE_CLASS: Record<NonNullable<OverviewTone>, string> = {
   needsYou: 'tone-needsYou',
   done: 'done',
-  issue: 'issue',
 }
 
 function markClassOf(tone: OverviewTone, isRunning: boolean): string {
@@ -1323,13 +1334,14 @@ function OverviewLine({ row }: { row: OverviewRow }) {
           {row.mark}
         </span>
         <div class="content tight">
-          <div class="clamp" style={{ '--lines': row.maxLines }}>
+          <div class="clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
             {row.name}
             {row.text ? <span class="muted">: {row.text}</span> : null}
           </div>
           {row.was ? (
-            <div class="outcome muted clamp" style={{ '--lines': row.maxLines }}>
-              was: {row.was}
+            <div class="outcome muted clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
+              {WAS_PREFIX}
+              {row.was}
             </div>
           ) : null}
         </div>
@@ -1339,15 +1351,15 @@ function OverviewLine({ row }: { row: OverviewRow }) {
   if (row.kind === 'child')
     return (
       <div class={row.branch ? `row child branch-${row.branch}` : 'row'}>
-        <span class={markClassOf(null, !row.isQuiet)} ref={row.isQuiet ? undefined : pulseInStep}>
-          ●
+        <span class={markClassOf(null, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
+          {row.mark}
         </span>
         <div class="content tight muted">
-          <div class="clamp" style={{ '--lines': row.maxLines }}>
+          <div class="clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
             {row.name}
           </div>
         </div>
-        <span class={row.isQuiet ? 'side tone-needsYou' : 'side'}>{row.age}</span>
+        <span class={row.ageTone ? `side ${TONE_CLASS[row.ageTone]}` : 'side'}>{row.age}</span>
       </div>
     )
   if (row.kind === 'more')
@@ -1876,7 +1888,12 @@ function Prs({ v, now }: { v: View; now: number }) {
 const LATE_READ_MS = 60_000
 
 function footerOf(v: View) {
-  return footerStatus(drawnTab(), v.status, { isFetching: v.isFetchingPrs, hasPrs: v.prs.drawn.length > 0 })
+  return footerStatus(
+    drawnTab(),
+    v.status,
+    { isFetching: v.isFetchingPrs, hasPrs: v.prs.drawn.length > 0 },
+    v.overviewPage?.error ?? null,
+  )
 }
 
 function Status({ v }: { v: View }) {
@@ -1896,7 +1913,7 @@ function Status({ v }: { v: View }) {
 
 function TabBar({ v }: { v: View }) {
   const counts: Record<Tab, number> = { needsYou: v.needsYou.count, findings: v.findings.count, prs: v.prs.count }
-  const badgeOf = (id: ShownTab) => (v.overviewPage ? tabBadge(id, counts, v.overviewPage) : null)
+  const badgeOf = (id: ShownTab) => tabBadge(id, counts, v.overviewPage?.hasNews ?? false)
   const { error } = footerOf(v)
   const shown = drawnTab()
 
