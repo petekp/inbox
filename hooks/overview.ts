@@ -17,8 +17,6 @@ const FINISHED_READ = 10
 /** How long an ended child stays saved, so a delegate prompted again keeps its link. */
 const CHILD_KEPT_MS = 24 * 60 * 60_000
 const CHILDREN_KEPT = 50
-/** Share of content words two texts must share for code to keep the old text and age of a subject. */
-const REWORD_OVERLAP = 0.5
 const STOP_WORDS = new Set([
   'a',
   'an',
@@ -162,14 +160,12 @@ function words(text: string): Set<string> {
   return new Set((text.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter(w => !STOP_WORDS.has(w)))
 }
 
-/** The share of content words two texts have in common, over the words either has. */
-export function overlap(a: string, b: string): number {
+/** Whether two texts have the same content words, in any order. */
+function hasSameWords(a: string, b: string): boolean {
   const x = words(a)
   const y = words(b)
-  const both = [...x].filter(w => y.has(w)).length
-  const either = new Set([...x, ...y]).size
 
-  return either === 0 ? 1 : both / either
+  return x.size === y.size && [...x].every(w => y.has(w))
 }
 
 function nameKey(name: string): string {
@@ -215,7 +211,8 @@ export function applyOps(last: Overview | null, ops: Op[], now: number, askIds: 
     if (isSeen) s.was = null
   }
   const set = (s: Subject, status: OpenStatus, text: string) => {
-    if (s.status === status && overlap(s.text, text) >= REWORD_OVERLAP) return
+    const isReworded = s.status === status && hasSameWords(s.text, text)
+    if (isReworded) return
     s.status = status
     s.text = clipWords(text, TEXT_KEPT)
     forgetSeenWas(s)

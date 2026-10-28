@@ -4,6 +4,7 @@
 // src/host.ts
 import { randomUUID } from "crypto";
 import { existsSync } from "fs";
+import { mkdir as mkdir2, readdir as readdir2, rm, rmdir, writeFile as writeFile2 } from "fs/promises";
 import { homedir } from "os";
 import { dirname, join as join2 } from "path";
 import { fileURLToPath } from "url";
@@ -198,7 +199,6 @@ var ASK_READ_WORDS = 30;
 var FINISHED_READ = 10;
 var CHILD_KEPT_MS = 24 * 60 * 60000;
 var CHILDREN_KEPT = 50;
-var REWORD_OVERLAP = 0.5;
 var STOP_WORDS = new Set([
   "a",
   "an",
@@ -302,12 +302,10 @@ async function askOverview(ask) {
 function words(text) {
   return new Set((text.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
 }
-function overlap(a, b) {
+function hasSameWords(a, b) {
   const x = words(a);
   const y = words(b);
-  const both = [...x].filter((w) => y.has(w)).length;
-  const either = new Set([...x, ...y]).size;
-  return either === 0 ? 1 : both / either;
+  return x.size === y.size && [...x].every((w) => y.has(w));
 }
 function nameKey(name) {
   return [...words(name)].sort().join(" ");
@@ -343,7 +341,8 @@ function applyOps(last, ops, now, askIds) {
       s.was = null;
   };
   const set = (s, status, text) => {
-    if (s.status === status && overlap(s.text, text) >= REWORD_OVERLAP)
+    const isReworded = s.status === status && hasSameWords(s.text, text);
+    if (isReworded)
       return;
     s.status = status;
     s.text = clipWords(text, TEXT_KEPT);
@@ -4698,20 +4697,118 @@ function orderedKeys() {
     }
   };
 }
-async function askAndWriteOverview(host, s, ask, tasks, appliedAfter) {
+function overviewCallPrompt(input, read) {
+  switch (read.kind) {
+    case "reply":
+      return overviewPrompt(input, read.exchange);
+    case "mid-turn":
+      return overviewMidTurnPrompt(input, read.turn);
+    case "catch-up":
+      return overviewCatchUpPrompt(input, read.conversation);
+  }
+}
+var OVERVIEW_RECORD_VERSION = 1;
+var RECORDS_PER_SESSION = 100;
+var RECORDS_KEPT_MS = 14 * 24 * 60 * 60000;
+var RECORDS_SWEEP_MS = 60 * 60000;
+var RECORD_NAME = /^(\d{13})-[a-z-]+\.jsonl$/;
+var sweptAt = new Map;
+function recordsFolderName(session) {
+  return session.replace(/[^A-Za-z0-9_-]/g, "_") || "_";
+}
+function recordFileName(at, kind) {
+  return `${String(at).padStart(13, "0")}-${kind}.jsonl`;
+}
+async function writeOverviewRecord(records, record) {
+  const { files, folder } = records;
+  const own = `${folder}/${recordsFolderName(records.session)}`;
+  await files.write(`${own}/${recordFileName(record.at, record.exchange.kind)}`, `${JSON.stringify(record)}
+`);
+  const names = (await files.list(own)).filter((n) => RECORD_NAME.test(n)).sort();
+  const past = names.slice(0, Math.max(0, names.length - RECORDS_PER_SESSION));
+  if (past.length > 0)
+    await files.removeFiles(past.map((n) => `${own}/${n}`));
+  if (record.at - (sweptAt.get(folder) ?? -Infinity) < RECORDS_SWEEP_MS)
+    return;
+  sweptAt.set(folder, record.at);
+  for (const session of await files.list(folder)) {
+    const theirs = `${folder}/${session}`;
+    if (theirs === own)
+      continue;
+    const kept = (await files.list(theirs)).filter((n) => RECORD_NAME.test(n));
+    const lastAt = Math.max(...kept.map((n) => Number(RECORD_NAME.exec(n)[1])));
+    if (record.at - lastAt < RECORDS_KEPT_MS)
+      continue;
+    if (kept.length > 0)
+      await files.removeFiles(kept.map((n) => `${theirs}/${n}`));
+    await files.removeFolder(theirs).catch(() => {
+      return;
+    });
+  }
+}
+async function attempt(host, ask, prompt) {
+  const heard = {};
+  const startedAt = await host.now();
+  const text = await ask(prompt, OVERVIEW_SYSTEM, (r) => heard.report = r).catch((err) => {
+    heard.thrown = err instanceof Error ? err.message : String(err);
+    return null;
+  });
+  return {
+    text,
+    model: heard.report?.model ?? null,
+    answeredBy: heard.report?.answeredBy ?? null,
+    answer: text,
+    error: text === null ? heard.thrown ?? heard.report?.error ?? "no answer, and the host gave no reason" : null,
+    ms: await host.now() - startedAt
+  };
+}
+async function askAndWriteOverview(host, s, call, tasks, appliedAfter) {
   const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() };
-  const { last } = await askOverview(async () => ({ text: await ask(input).catch(() => null) }));
+  const prompt = overviewCallPrompt(input, call.exchange);
+  const attempts = [];
+  const { last } = await askOverview(async () => {
+    const { text, ...made } = await attempt(host, call.ask, prompt);
+    attempts.push(made);
+    return { text };
+  });
   const answer = last.text === null ? null : parseOverview(last.text);
   const now = await host.now();
-  await host.update((x) => answer === null ? failedOverview(x, last.text, appliedAfter, now) : appliedOverview(x, answer, appliedAfter, now));
+  let before = null;
+  let isWritten = false;
+  const after = await host.update((x) => {
+    before = x.ledger.overview;
+    isWritten = x.presence.turnsApplied >= appliedAfter;
+    return answer === null ? failedOverview(x, last.text, appliedAfter, now) : appliedOverview(x, answer, appliedAfter, now);
+  });
+  if (!host.records)
+    return;
+  const record = {
+    version: OVERVIEW_RECORD_VERSION,
+    host: host.records.host,
+    session: host.records.session,
+    at: input.now,
+    system: OVERVIEW_SYSTEM,
+    prompt,
+    input,
+    exchange: call.exchange,
+    attempts,
+    isParsed: answer !== null,
+    isWritten,
+    before,
+    after: after.ledger.overview
+  };
+  writeOverviewRecord(host.records, record).catch(() => {
+    return;
+  });
 }
 function refreshOverview(host) {
   return host.inOrder(async () => {
     const s = await host.read();
     if (!s.presence.isTurnRunning)
       return;
-    const ask = (input) => host.ask(overviewMidTurnPrompt(input, s.turn), OVERVIEW_SYSTEM);
-    await askAndWriteOverview(host, s, ask, s.hostTasks, s.presence.turnsApplied);
+    const { person, trigger, activity } = s.turn;
+    const call = { exchange: { kind: "mid-turn", turn: { person, trigger, activity } }, ask: host.ask };
+    await askAndWriteOverview(host, s, call, s.hostTasks, s.presence.turnsApplied);
   });
 }
 async function askOverConversation(ask, names, s, screen, conversation) {
@@ -4722,7 +4819,7 @@ async function askOverConversation(ask, names, s, screen, conversation) {
     kind: "reply",
     text,
     source: conversation,
-    overview: (input) => ask(overviewCatchUpPrompt(input, conversation), OVERVIEW_SYSTEM)
+    overview: { exchange: { kind: "catch-up", conversation }, ask }
   };
 }
 async function reconcileUpdateStatus(host) {
@@ -4744,7 +4841,7 @@ async function runUpdates(host) {
   const wantsCatchUp = (s) => canCatchUp && needsCatchUp(s);
   const hasWork = (s) => s.pending.length > 0 || wantsCatchUp(s);
   const writing = [];
-  const writeOverview = (after, ask, tasks) => host.inOrder(async () => askAndWriteOverview(host, await host.read(), ask, tasks, after.presence.turnsApplied));
+  const writeOverview = (after, call, tasks) => host.inOrder(async () => askAndWriteOverview(host, await host.read(), call, tasks, after.presence.turnsApplied));
   const followUp = (run) => {
     const settled = run.catch(() => {
       return;
@@ -4790,7 +4887,7 @@ async function runUpdates(host) {
               return applied(x, parsed, await host.now(), promptAt);
             });
             if (isApplied)
-              followUp(writeOverview(after, (input) => host.ask(overviewPrompt(input, next.ex), OVERVIEW_SYSTEM), next.ex.tasks));
+              followUp(writeOverview(after, { exchange: { kind: "reply", exchange: next.ex }, ask: host.ask }, next.ex.tasks));
             if (after.pending[0]?.failed && !next.failed)
               return "stop";
           }
@@ -6776,6 +6873,21 @@ function byNewestRevision(a, b) {
   const differing = x.findIndex((n, i) => n !== y[i]);
   return differing === -1 ? 0 : (y[differing] ?? 0) - (x[differing] ?? 0);
 }
+var recordFiles = {
+  write: async (path, text) => {
+    await mkdir2(dirname(path), { recursive: true });
+    await writeFile2(path, text);
+  },
+  list: (folder) => readdir2(folder).catch(() => []),
+  removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm(p, { force: true }))),
+  removeFolder: (path) => rmdir(path)
+};
+var overviewRecords = (dir, sessionId) => ({
+  host: "omp",
+  folder: join2(dir, "overview-calls"),
+  session: sessionId,
+  files: recordFiles
+});
 function inboxModel(ctx) {
   const sonnets = ctx.models.list().filter((m) => m.identity.family === "sonnet").toSorted(byNewestRevision);
   const sonnet = sonnets.find((m) => m.provider === "anthropic") ?? sonnets[0];
@@ -6943,23 +7055,34 @@ function createInbox(pi, deps = defaultDeps) {
     }
   };
   function askFor(ctx, id) {
-    return async (prompt, system) => {
+    return async (prompt, system, report) => {
       const model = inboxModel(ctx);
-      if (!model)
+      if (!model) {
+        report?.({ model: "none", error: "omp offers no model for the inbox" });
         return null;
+      }
+      const asked = `${model.provider}/${model.id}`;
       try {
         const apiKey = await ctx.modelRegistry.getApiKey(model, id);
-        if (!apiKey)
+        if (!apiKey) {
+          report?.({ model: asked, error: "omp has no sign-in for the model" });
           return null;
+        }
         const reply = await deps.complete(model, {
           systemPrompt: [system],
           messages: [{ role: "user", content: prompt, timestamp: deps.now() }]
         }, { apiKey, signal: AbortSignal.timeout(INBOX_MODEL_TIMEOUT_MS) });
-        if (reply.stopReason === "error" || reply.stopReason === "aborted")
+        if (reply.stopReason === "error" || reply.stopReason === "aborted") {
+          const status = reply.errorStatus === undefined ? "" : ` ${reply.errorStatus}`;
+          report?.({ model: asked, error: `${reply.stopReason}${status}: ${reply.errorMessage ?? ""}`.trim() });
           return null;
+        }
         const text = reply.content.flatMap((b) => b.type === "text" ? [b.text] : []).join("");
+        const answeredBy = reply.upstreamModel === undefined ? {} : { answeredBy: reply.upstreamModel };
+        report?.({ model: asked, ...answeredBy, ...text === "" ? { error: "the reply held no text" } : {} });
         return text === "" ? null : text;
-      } catch {
+      } catch (err) {
+        report?.({ model: asked, error: messageOf(err) });
         return null;
       }
     };
@@ -7007,6 +7130,7 @@ function createInbox(pi, deps = defaultDeps) {
       names: OMP,
       inOrder: (fn) => resultsOrder.run(id, fn),
       background: (results) => deps.background(results),
+      ...deps.isNextBuild ? { records: overviewRecords(dir, id) } : {},
       catchUp: (s) => askOverConversation(host.ask, OMP, s, screenText(OMP, openPanels.has(id), panelScreenTab(id)), conversationText(ctx))
     };
   }
@@ -7493,6 +7617,7 @@ export {
   createInbox,
   host_default as default,
   inboxModel,
+  overviewRecords,
   sessionIdInFile,
   stopOf,
   styleOf

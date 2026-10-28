@@ -129,11 +129,13 @@ test('code dates each change, and a NEW for an open subject changes that subject
   expect(two.goal).toBe('Work offline')
 })
 
-test('a SET that keeps the status and most words keeps the old text and age', () => {
+test('a SET that keeps the status keeps the old text and age only when its content words are the same', () => {
   const one = after(null, 'NEW: working | Offline mode | sync queue built and tested', 100)
   const reworded = applyOps(one, opsOf('SET: s1 | working | the sync queue is built and tested'), 200, NO_ASKS)
+  const broken = applyOps(one, opsOf('SET: s1 | working | sync queue built and broken'), 200, NO_ASKS)
 
   expect(reworded.subjects[0]).toMatchObject({ text: 'sync queue built and tested', changedAt: 100 })
+  expect(broken.subjects[0]).toMatchObject({ text: 'sync queue built and broken', changedAt: 200 })
 })
 
 test('a LINK ties a running child or an open ask to a subject, even one the same answer adds, and an ask that is not open to none', () => {

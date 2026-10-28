@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { flattenConversation } from '../hooks/conversation'
 import { EMPTY, applyUpdate, parseReply, upgradeLedger } from '../hooks/ledger'
 import { applyOverview, parseOverview, withChild } from '../hooks/overview'
-import { CLAUDE_CODE } from '../hooks/model-text'
+import { CLAUDE_CODE, OVERVIEW_SYSTEM } from '../hooks/model-text'
 import {
   appliedCatchUp,
   appliedOverview,
@@ -31,8 +31,19 @@ import {
 } from '../hooks/session'
 import type { Session } from '../hooks/session'
 import type { Item, RowNote } from '../types'
-import { press, refreshOverview, runUpdates, wakeForDone } from '../hooks/session-host'
-import type { CatchUpReply } from '../hooks/session-host'
+import {
+  OVERVIEW_RECORD_VERSION,
+  overviewCallPrompt,
+  RECORDS_KEPT_MS,
+  RECORDS_PER_SESSION,
+  press,
+  recordFileName,
+  refreshOverview,
+  runUpdates,
+  wakeForDone,
+  writeOverviewRecord,
+} from '../hooks/session-host'
+import type { CatchUpReply, OverviewCall, OverviewRecord, RecordFiles } from '../hooks/session-host'
 import { allRows, COMPARE_LIMIT_MS, feedbackText, footerStatus, NO_HOLDS } from '../hooks/view'
 import { prMarkId } from '../hooks/pr-tab'
 import { demoSession, demoView, isDemoCopy } from '../hooks/demo'
@@ -179,6 +190,8 @@ const LEDGER_REPLY = 'NEW: decide | 1 | Use Node or Python? | Node / Python | No
 const finishTurn = (s: Session, reply: string) =>
   endTurn(CLAUDE_CODE, notePrompt(CLAUDE_CODE, s, 'go', false).state, reply, false)
 
+const UNANSWERED: OverviewCall = { exchange: { kind: 'catch-up', conversation: '' }, ask: async () => null }
+
 const reading = (reply: CatchUpReply, calls: { catchUps: number; asks: number }) => ({
   ask: async () => (calls.asks++, null),
   catchUp: async () => (calls.catchUps++, reply),
@@ -194,7 +207,7 @@ test('a failed update catches up over the whole conversation instead of retrying
   })
   await runUpdates({
     ...host,
-    ...reading({ kind: 'reply', text: LEDGER_REPLY, source: 'Person: go', overview: async () => null }, calls),
+    ...reading({ kind: 'reply', text: LEDGER_REPLY, source: 'Person: go', overview: UNANSWERED }, calls),
   })
 
   const after = await host.read()
@@ -224,7 +237,7 @@ test('a catch-up that gets no usable answer ends the run, and the next update tr
   await host.update(s => ({ ...s, presence: { ...s.presence, ledgerState: 'behind' as const } }))
   await runUpdates({
     ...host,
-    ...reading({ kind: 'reply', text: 'not a ledger', source: null, overview: async () => null }, calls),
+    ...reading({ kind: 'reply', text: 'not a ledger', source: null, overview: UNANSWERED }, calls),
   })
   expect(calls.catchUps).toBe(1)
   expect((await host.read()).presence.ledgerState).toBe('failed')
@@ -240,7 +253,7 @@ test('an exchange that ends during a catch-up is still run afterward', async () 
     ...host,
     catchUp: async () => {
       await host.update(s => finishTurn(s, 'Which runtime?'))
-      return { kind: 'reply', text: 'NONE', source: null, overview: async () => null }
+      return { kind: 'reply', text: 'NONE', source: null, overview: UNANSWERED }
     },
   })
 
@@ -271,7 +284,7 @@ test('a dropped reply keeps the warning through later good updates, until a catc
 
   await runUpdates({
     ...host,
-    ...reading({ kind: 'reply', text: LEDGER_REPLY, source: null, overview: async () => null }, calls),
+    ...reading({ kind: 'reply', text: LEDGER_REPLY, source: null, overview: UNANSWERED }, calls),
   })
   expect((await host.read()).presence).toMatchObject({ ledgerState: 'current', hasDroppedReply: false })
   expect(calls.catchUps).toBe(1)
@@ -369,6 +382,140 @@ test('a claimed Overview call reads the running turn’s work with no reply and 
   await host.update(s => turnEnded(s, 1))
   await refreshOverview(host)
   expect(prompts).toHaveLength(1)
+})
+
+const writtenOnce = () => {
+  const writes: { path: string; text: string }[] = []
+  let wrote = () => {}
+  const written = new Promise<void>(resolve => (wrote = resolve))
+  const files = (fails: boolean): RecordFiles => ({
+    write: async (path, text) => {
+      writes.push({ path, text })
+      wrote()
+      if (fails) throw new Error('disk full')
+    },
+    list: async () => [],
+    removeFiles: async () => {},
+    removeFolder: async () => {},
+  })
+
+  return { writes, written, files }
+}
+
+test('a next build records an Overview call in a file of its own: the exact prompt and system text, each answer, and the Overview after', async () => {
+  const overviewPrompts: string[] = []
+  const answers = [
+    'The list gains a runtime subject.',
+    'GOAL: Pick a runtime\nNEW: working | Runtime choice | comparing two',
+  ]
+  const { host } = fakeHost(async (prompt, system) => {
+    if (system !== OVERVIEW_SYSTEM) return LEDGER_REPLY
+    overviewPrompts.push(prompt)
+    return answers[overviewPrompts.length - 1] ?? null
+  })
+  const { writes, written, files } = writtenOnce()
+  await host.update(s => finishTurn(s, 'Which runtime?'))
+  await runUpdates({
+    ...host,
+    records: { host: 'claude-code', folder: '/records', session: 'conv/1', files: files(false) },
+  })
+  await written
+  const record = JSON.parse(writes[0]!.text) as OverviewRecord
+
+  expect(writes).toHaveLength(1)
+  expect(writes[0]!.path).toBe(`/records/conv_1/${recordFileName(record.at, 'reply')}`)
+  expect(writes[0]!.text).toBe(`${JSON.stringify(record)}\n`)
+  expect(record).toMatchObject({
+    version: OVERVIEW_RECORD_VERSION,
+    host: 'claude-code',
+    session: 'conv/1',
+    exchange: { kind: 'reply', exchange: { person: 'go', reply: 'Which runtime?' } },
+    system: OVERVIEW_SYSTEM,
+    isParsed: true,
+    isWritten: true,
+    before: null,
+  })
+  expect(overviewPrompts).toEqual([record.prompt, record.prompt])
+  expect(overviewCallPrompt(record.input, record.exchange)).toBe(record.prompt)
+  expect(record.attempts.map(a => a.answer)).toEqual([
+    'The list gains a runtime subject.',
+    'GOAL: Pick a runtime\nNEW: working | Runtime choice | comparing two',
+  ])
+  expect(record.input.asks.map(i => i.ask)).toEqual(['Use Node or Python?'])
+  expect(record.after?.goal).toBe('Pick a runtime')
+  expect((await host.read()).ledger.overview?.goal).toBe('Pick a runtime')
+})
+
+test('a failed Overview call’s record holds the error the host reported, and a record that cannot be written leaves the update in place', async () => {
+  const { host } = fakeHost(async (_prompt, system, report) => {
+    if (system !== OVERVIEW_SYSTEM) return LEDGER_REPLY
+    report?.({ model: 'sonnet', error: 'api-error 529: overloaded' })
+    return null
+  })
+  const { writes, written, files } = writtenOnce()
+  await host.update(s => noteActivity(notePrompt(CLAUDE_CODE, turnStarted(s, 0), 'go', false).state, 'edited sync.ts'))
+  await refreshOverview({ ...host, records: { host: 'omp', folder: '/records', session: 's1', files: files(true) } })
+  await written
+  const record = JSON.parse(writes[0]!.text) as OverviewRecord
+
+  expect(record).toMatchObject({
+    exchange: { kind: 'mid-turn', turn: { person: 'go', trigger: null, activity: ['edited sync.ts'] } },
+    isParsed: false,
+    after: null,
+  })
+  expect(record.attempts.map(a => [a.model, a.answeredBy, a.answer, a.error])).toEqual([
+    ['sonnet', null, null, 'api-error 529: overloaded'],
+  ])
+  expect(overviewCallPrompt(record.input, record.exchange)).toBe(record.prompt)
+  expect((await host.read()).overviewFailure?.cause).toBe('no-answer')
+})
+
+test('a session keeps the records of its newest 100 Overview calls, and a session whose last call is 14 days old loses its records', async () => {
+  const saved = new Map<string, string>()
+  const removedFolders: string[] = []
+  const under = (folder: string) => [...saved.keys()].filter(p => p.startsWith(`${folder}/`))
+  const files: RecordFiles = {
+    write: async (path, text) => void saved.set(path, text),
+    list: async folder => [...new Set(under(folder).map(p => p.slice(folder.length + 1).split('/')[0]!))],
+    removeFiles: async paths => paths.forEach(p => saved.delete(p)),
+    removeFolder: async path => {
+      if (under(path).length > 0) throw new Error('not empty')
+      removedFolders.push(path)
+    },
+  }
+  const folder = '/capped-records'
+  const write = (session: string, at: number) =>
+    writeOverviewRecord(
+      { host: 'codex', folder, session, files },
+      {
+        version: OVERVIEW_RECORD_VERSION,
+        host: 'codex',
+        session,
+        at,
+        system: 's',
+        prompt: 'p',
+        input: { last: null, asks: [], tasks: [], now: at },
+        exchange: { kind: 'catch-up', conversation: 'c' },
+        attempts: [],
+        isParsed: false,
+        isWritten: true,
+        before: null,
+        after: null,
+      },
+    )
+  const start = 1_000_000_000_000
+  await write('ended', start)
+  for (let n = 0; n <= RECORDS_PER_SESSION; n += 1) await write('long', start + 1000 + n)
+
+  const long = under(`${folder}/long`).sort()
+  expect(long).toHaveLength(RECORDS_PER_SESSION)
+  expect(long[0]).toBe(`${folder}/long/${recordFileName(start + 1001, 'catch-up')}`)
+  expect(under(`${folder}/ended`)).toHaveLength(1)
+
+  await write('long', start + RECORDS_KEPT_MS + 60 * 60_000)
+  expect(under(`${folder}/ended`)).toEqual([])
+  expect(removedFolders).toEqual([`${folder}/ended`])
+  expect(under(`${folder}/long`)).toHaveLength(RECORDS_PER_SESSION)
 })
 
 test('a failed Overview call shows in the status line on the Overview tab, in place of a failed update, and on no other tab', () => {
