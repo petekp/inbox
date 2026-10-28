@@ -44,6 +44,7 @@ export type FeatureId =
   | 'asks-holds-up-line'
   | 'overview-mid-turn-refresh'
   | 'tool-result-line'
+  | 'overview-call-records'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -97,6 +98,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'asks-holds-up-line': { kind: 'full' },
       'overview-mid-turn-refresh': { kind: 'full' },
       'tool-result-line': { kind: 'full' },
+      'overview-call-records': { kind: 'full' },
     },
   },
   codex: {
@@ -196,6 +198,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           "Codex draws an MCP tool call's result from its content, which is the text the model reads. structuredContent reaches the model too, and _meta reaches only an MCP App view, so a result has no field for the person alone.",
       },
+      'overview-call-records': { kind: 'full' },
     },
   },
   omp: {
@@ -264,6 +267,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'asks-holds-up-line': { kind: 'full' },
       'overview-mid-turn-refresh': { kind: 'full' },
       'tool-result-line': { kind: 'full' },
+      'overview-call-records': { kind: 'full' },
     },
   },
 }
