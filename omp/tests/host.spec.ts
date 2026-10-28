@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -352,6 +352,36 @@ test('a run past the wait runs the Overview call on its work so far at its next 
   expect(overviewCompletions[0]!.prompt).toContain('ran: npm test')
   expect(overviewCompletions[0]!.prompt).not.toContain('<reply>')
   expect(state().ledger.overview.goal).toBe('Adding caching')
+})
+
+test('a next build keeps a record of each Overview call beside the saved sessions, and a release build keeps none', async () => {
+  overviewReply = 'GOAL: Adding a greeting CLI'
+  createInbox(pi(), deps())
+  await prompt('Add a greeting CLI')
+  await endAgent('Plan written. Which runtime?')
+  await settle()
+  expect(existsSync(join(dir, 'overview-calls'))).toBe(false)
+
+  createInbox(pi(), { ...deps(), isNextBuild: true })
+  const next = makeCtx('s2')
+  await prompt('Add a greeting CLI', next)
+  await endAgent('Plan written. Which runtime?', {}, next)
+  await settle()
+  const folder = join(dir, 'overview-calls', 's2')
+  for (let n = 0; n < 100 && !existsSync(folder); n += 1) await Bun.sleep(5)
+  const names = readdirSync(folder)
+  const record = JSON.parse(readFileSync(join(folder, names[0]!), 'utf8'))
+
+  expect(names).toEqual([expect.stringMatching(/^\d{13}-reply\.jsonl$/)])
+  expect(record).toMatchObject({
+    host: 'omp',
+    session: 's2',
+    exchange: { kind: 'reply', exchange: { reply: 'Plan written. Which runtime?' } },
+    isParsed: true,
+  })
+  expect(record.prompt).toBe(overviewCompletions.at(-1)!.prompt)
+  expect(record.attempts.map((a: { model: string }) => a.model)).toEqual([`${sonnet.provider}/${sonnet.id}`])
+  expect(record.after.goal).toBe('Adding a greeting CLI')
 })
 
 test('a failed Overview call leaves the ledger update applied with no Overview', async () => {
