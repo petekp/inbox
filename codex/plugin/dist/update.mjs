@@ -2458,7 +2458,8 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
     drawn,
     branchRef: s.prViews.branchRef,
     count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent)).length,
-    olderText: olderPrsText(s.prViews, s.ledger.prs)
+    olderText: olderPrsText(s.prViews, s.ledger.prs),
+    isGhSignedOut: s.prViews.isGhSignedOut === true
   };
 }
 

@@ -780,9 +780,27 @@ export function pruned<S extends Session>(s: S): S {
   }
 }
 
-/** Merges fetched PRs into the session. The write that saves it drops, through `pruned`, each view no look draws. */
-export function withFetchedPrs<S extends Session>(s: S, fetched: PrViews['views'], branchRef: string | null): S {
-  return { ...s, prViews: { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false } }
+/**
+ * Merges fetched PRs into the session. The write that saves it drops, through `pruned`, each view no look draws.
+ * `isGhSignedOut` is null when no gh run answered, and the saved one stands.
+ */
+export function withFetchedPrs<S extends Session>(
+  s: S,
+  fetched: PrViews['views'],
+  branchRef: string | null,
+  isGhSignedOut: boolean | null,
+): S {
+  const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true
+
+  return {
+    ...s,
+    prViews: {
+      views: { ...s.prViews.views, ...fetched },
+      branchRef,
+      isFetching: false,
+      ...(isSignedOut ? { isGhSignedOut: true } : {}),
+    },
+  }
 }
 
 type PrTab = {
@@ -792,6 +810,8 @@ type PrTab = {
   count: number
   /** Names the linked PRs too old for the tab to show, or null. */
   olderText: string | null
+  /** Whether gh asked for a sign-in at the last fetch it answered. */
+  isGhSignedOut: boolean
 }
 
 export type SessionView = InboxView & {
@@ -875,5 +895,6 @@ function prTabOf(
     branchRef: s.prViews.branchRef,
     count: drawn.filter(d => d.state.is === 'open' && prNeedsYou(d.pr, isSent)).length,
     olderText: olderPrsText(s.prViews, s.ledger.prs),
+    isGhSignedOut: s.prViews.isGhSignedOut === true,
   }
 }

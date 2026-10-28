@@ -130,7 +130,7 @@ import {
   threadActions,
   threadRowText,
   threadSentIn,
-  GH_MISSING_TEXT,
+  ghNoticeOf,
   prsEmptyText,
   prRefreshFailedText,
 } from './pr-tab'
@@ -5389,7 +5389,8 @@ export const register: Register = on => {
         ...prRowGroup(PR_GROUP_TITLES.checks, checks, `${pr.ref}-checks`),
       ])
     }
-    const ghMissingNotice = () => section(banner(bannerOf('gh-missing', GH_MISSING_TEXT)))
+    const ghState = { isGhMissing: Boolean(prState.isGhMissing), isGhSignedOut: Boolean(prState.isGhSignedOut) }
+    const ghNotice = ghNoticeOf(ghState)
     const olderPrs = () => {
       const text = olderPrsText(prState, ledger.prs)
       if (!text) return []
@@ -5412,12 +5413,17 @@ export const register: Register = on => {
     const prsView = () =>
       prGroups.length === 0 ? (
         <Box flexDirection="column" flexGrow={1}>
-          {emptyState(
-            prsEmptyText({ isFetching: prState.isFetching, isGhMissing: Boolean(prState.isGhMissing) }, 'session'),
-          )}
+          {emptyState(prsEmptyText({ isFetching: prState.isFetching, ...ghState }, 'session'))}
         </Box>
       ) : (
-        sections([...(prState.isGhMissing ? [ghMissingNotice()] : []), ...prGroups.map(prBlock), ...olderPrs()], 2)
+        sections(
+          [
+            ...(ghNotice ? [section(banner(bannerOf(ghNotice.kind, ghNotice.text)))] : []),
+            ...prGroups.map(prBlock),
+            ...olderPrs(),
+          ],
+          2,
+        )
       )
 
     const overviewGoal = (goal: string) => {

@@ -10,7 +10,7 @@ const CANDIDATES = ['gh', '/opt/homebrew/bin/gh', '/usr/local/bin/gh']
 
 const GH_TIMEOUT_MS = 20_000
 
-const UNSTARTABLE_CODE = -1
+export const UNSTARTABLE_CODE = -1
 
 const GIT_TIMEOUT_MS = 5000
 

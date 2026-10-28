@@ -1,4 +1,5 @@
 import type { Item, LastAction, Ledger, PressKind, PrCheck, PrThread, PrView, PrViews } from '../types'
+import { UNSTARTABLE_CODE } from './gh'
 import { baseName, isFoldingPress, localLast, pendingResult, prSteps, recordPress, withQueued } from './presses'
 import type { Effect, HelpStep, PrActionId, RowPress } from './presses'
 import { clipLabel } from './text'
@@ -33,12 +34,23 @@ import {
   pressFeedbackIn,
   pressOutAction,
 } from './view'
-import type { ActionEmphasis, PressState, RowWait, SettledState, ViewInput } from './view'
+import type { ActionEmphasis, BannerKind, PressState, RowWait, SettledState, ViewInput } from './view'
 
 export const MAX_PRS = 12
 
-/** Runs gh with these arguments in the session's folder. */
+/** Runs gh with these arguments in the session's folder. A run that cannot start or does not finish ends with code -1. */
 export type GhRun = (args: string[]) => Promise<{ exitCode: number; stdout: string; stderr: string }>
+
+/** gh's exit code for a command that needs a sign-in when gh has no token, as `gh help exit-codes` says. */
+const GH_SIGN_IN_CODE = 4
+
+/**
+ * Whether gh's answer asks for a sign-in: gh has no token, or GitHub refused the token with HTTP 401, as it does for
+ * an expired or revoked one.
+ */
+export function asksForSignIn(r: { exitCode: number; stderr: string }): boolean {
+  return r.exitCode === GH_SIGN_IN_CODE || (r.exitCode !== 0 && /\bHTTP 401\b/.test(r.stderr))
+}
 
 export function linkedPrs(prs: string[], refs: string[]): string[] {
   return [...prs.filter(r => !refs.includes(r)), ...refs]
@@ -79,13 +91,21 @@ export function olderPrsText(prState: PrViews, linked: string[]): string | null 
 
 /**
  * Only `findsBranchPr` asks gh which PR the branch has; otherwise the last one found is refreshed by its ref.
+ * `isGhSignedOut` says whether a gh run asked for a sign-in, and is null when no run gave an answer.
  */
 export async function fetchTracked(
-  gh: GhRun,
+  run: GhRun,
   state: PrViews,
   linked: string[],
   findsBranchPr: boolean,
-): Promise<{ views: Record<string, PrView>; branchRef: string | null }> {
+): Promise<{ views: Record<string, PrView>; branchRef: string | null; isGhSignedOut: boolean | null }> {
+  let isGhSignedOut: boolean | null = null
+  const gh: GhRun = async args => {
+    const r = await run(args)
+    if (r.exitCode !== UNSTARTABLE_CODE) isGhSignedOut = isGhSignedOut === true || asksForSignIn(r)
+
+    return r
+  }
   const { tracked } = splitLinked(state, linked)
   const branchTarget = findsBranchPr ? null : state.branchRef
   const isBranchLinked = branchTarget !== null && tracked.includes(branchTarget)
@@ -96,7 +116,7 @@ export async function fetchTracked(
   const views: Record<string, PrView> = {}
   for (const v of [...rest, branch]) if (v) views[v.ref] = v
 
-  return { views, branchRef: findsBranchPr ? (branch?.ref ?? null) : state.branchRef }
+  return { views, branchRef: findsBranchPr ? (branch?.ref ?? null) : state.branchRef, isGhSignedOut }
 }
 
 /**
@@ -104,6 +124,8 @@ export async function fetchTracked(
  * the current branch's PR, whose ref is known only from gh's answer.
  * `knownBranchRef` is the branch's PR as of the last fetch: it stays the
  * branch's PR when the lookup fails for any reason but "no pull requests found".
+ * A PR that gh could not read because it asked for a sign-in keeps its last view, since the PRs tab's sign-in notice
+ * says why.
  */
 export async function fetchPr(
   gh: GhRun,
@@ -136,8 +158,11 @@ export async function fetchPr(
   if (!ref) return null
   const previous = views[ref]
   const base = view.exitCode === 0 ? readView(ref, view.stdout) : null
-  if (!base)
-    return previous ? { ...previous, error: view.stderr.trim().split('\n')[0] || 'gh could not read the PR' } : null
+  if (!base) {
+    if (!previous || asksForSignIn(view)) return previous ?? null
+
+    return { ...previous, error: view.stderr.trim().split('\n')[0] || 'gh could not read the PR' }
+  }
   const threads = early ?? (await threadsOf(ref))
   const answer = threads.exitCode === 0 ? readThreadsAnswer(threads.stdout) : null
 
@@ -180,16 +205,32 @@ export function prMarkId(ref: string): string {
 
 export const GH_MISSING_TEXT = 'The inbox could not find gh. It needs gh to read your PRs.'
 
+export const GH_SIGNED_OUT_TEXT = 'gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.'
+
+/** Why gh cannot read the PRs, as the PRs tab says it, or null when nothing stops it. A missing gh comes first. */
+export function ghNoticeOf(gh: {
+  isGhMissing: boolean
+  isGhSignedOut: boolean
+}): { kind: Extract<BannerKind, 'gh-missing' | 'gh-signed-out'>; text: string } | null {
+  if (gh.isGhMissing) return { kind: 'gh-missing', text: GH_MISSING_TEXT }
+  if (gh.isGhSignedOut) return { kind: 'gh-signed-out', text: GH_SIGNED_OUT_TEXT }
+
+  return null
+}
+
 /** The hint under an empty PRs tab. `place` is the host's word for a conversation with the agent. */
 export function prsEmptyHint(place: string): string {
   return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`
 }
 
-/** What an empty PRs tab says. With gh missing, its hint is the missing-gh text. */
-export function prsEmptyText(prs: { isFetching: boolean; isGhMissing: boolean }, place: string) {
+/** What an empty PRs tab says. When gh cannot read the PRs, its hint is the `ghNoticeOf` text. */
+export function prsEmptyText(
+  prs: { isFetching: boolean; isGhMissing: boolean; isGhSignedOut: boolean },
+  place: string,
+) {
   return {
     title: prs.isFetching ? 'Checking for PRs…' : 'No PRs',
-    hint: prs.isGhMissing ? GH_MISSING_TEXT : prsEmptyHint(place),
+    hint: ghNoticeOf(prs)?.text ?? prsEmptyHint(place),
   }
 }
 

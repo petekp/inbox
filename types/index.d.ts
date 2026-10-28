@@ -360,6 +360,8 @@ export type PrViews = {
   isFetching: boolean
   /** The mod sets this when its last fetch found no gh to start. Codex keeps its own flag in the server. */
   isGhMissing?: boolean
+  /** Set by the last fetch whose gh runs answered: whether one of them asked for a sign-in. */
+  isGhSignedOut?: boolean
 }
 
 /**
