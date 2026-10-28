@@ -5,7 +5,7 @@ A Remotion project that holds the inbox's videos. Remotion renders React compone
 The videos so far:
 
 - `launch`: the 81.5-second launch video. Its plan is [docs/plans/launch-video.md](../docs/plans/launch-video.md).
-- `omp`: a 52-second promo that premieres the inbox in omp. Its plan is [docs/plans/promo-omp.md](../docs/plans/promo-omp.md).
+- `omp`: a 56-second promo that premieres the inbox in omp. Its plan is [docs/plans/promo-omp.md](../docs/plans/promo-omp.md).
 
 ## Layout
 
