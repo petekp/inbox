@@ -23,8 +23,17 @@ import {
   waitingThreads,
 } from './prs'
 import type { IsThreadSent, PrStatus } from './prs'
-import { closedRowState, DOT, isAgain, isShownSince, outAction, pressFeedbackIn, pressOutAction } from './view'
-import type { ActionEmphasis, PressState, RowWait, SettledState } from './view'
+import {
+  closedRowState,
+  DOT,
+  isAgain,
+  isSettledInPlace,
+  isShownSince,
+  outAction,
+  pressFeedbackIn,
+  pressOutAction,
+} from './view'
+import type { ActionEmphasis, PressState, RowWait, SettledState, ViewInput } from './view'
 
 export const MAX_PRS = 12
 
@@ -359,23 +368,24 @@ export type DrawnPr = { pr: PrView; state: { is: 'open' } | SettledState }
 const DISMISSED_PR = { how: 'dismissed', outcome: PR_DISMISSED_LABEL } as const
 
 /**
- * The PR blocks a look draws, in order. A PR dismissed while the look shows the PRs tab stays as a settled block until
- * the person leaves the tab, and offers Undo for `settleWindowMs`.
+ * The PR blocks a look draws, in order. A PR dismissed while the look shows the PRs tab stays as a settled block as
+ * long as a settled row would, by `isSettledInPlace`, and offers Undo for `settleWindowMs`.
  */
 export function drawnPrs(
   prState: PrViews,
   linked: string[],
   lastActions: Record<string, LastAction>,
   now: number,
-  shownSince: number | null,
   settleWindowMs: number,
+  placing: Pick<ViewInput, 'shownSince' | 'lastTypedMessageAt'>,
 ): DrawnPr[] {
   return inPrOrder(Object.values(prState.views)).flatMap((pr): DrawnPr[] => {
     if (isTracked(prState, linked, pr.ref)) return [{ pr, state: { is: 'open' } }]
     const at = dismissedAt(lastActions, pr.ref)
-    if (at === null || !isShownSince(at, shownSince)) return []
+    if (at === null) return []
+    const state = closedRowState(DISMISSED_PR, at, now, settleWindowMs, null)
 
-    return [{ pr, state: closedRowState(DISMISSED_PR, at, now, settleWindowMs, null) }]
+    return isSettledInPlace(state, placing) ? [{ pr, state }] : []
   })
 }
 

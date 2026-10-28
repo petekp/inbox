@@ -108,6 +108,7 @@ test('a file missing newer fields reads with their defaults', async () => {
     isTurnRunning: false,
     turnStartedAt: null,
     lastReplyAt: null,
+    lastTypedMessageAt: null,
   })
   expect(state.pending).toEqual([])
   expect(state.prViews.isFetching).toBe(false)

@@ -1857,7 +1857,7 @@ test('a press on a question Claude closed since the draw sends nothing and says 
   expect(await pane.find({ text: stale })).toBeUndefined()
 })
 
-test('a question Claude closes while the person types an answer stays in place with its field and words, out of the count, until its answer sends and the person leaves the tab, then folds into Closed', async ($, on) => {
+test('a question Claude closes while the person types an answer stays in place with its field and words, out of the count, until its answer sends and the person types their next message, then folds into Closed', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   on('ui.focus', () => ({}))
@@ -1897,7 +1897,8 @@ test('a question Claude closes while the person types an answer stays in place w
   expect(await pane.find({ text: /^Replied$/ })).toBeDefined()
   await clock.advance(9000)
   expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
-  await leaveAndReturn(pane, clock, 'needsYou')
+  await $.prompt.submit({ text: 'what is next?', wait: false, origin: { kind: 'composer' } })
+  await clock.settle()
   expect(await pane.find({ key: 'row-i2' })).toBeUndefined()
   expect(await pane.find({ key: 'settled-i2' })).toBeUndefined()
   expect(await pane.find({ text: /1 closed/ })).toBeDefined()
@@ -2411,7 +2412,7 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   await arrive($)
 })
 
-test('Dismiss settles a question in place with Undo, which brings it back open and selected, and a second close reaches Claude too', async ($, on) => {
+test('Dismiss settles a question in place with Undo, which brings it back open and selected, a second close reaches Claude too, and a message typed while Undo lasts folds the row when Undo ends', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   paneState = { isShown: true, isFocused: true }
@@ -2465,6 +2466,16 @@ test('Dismiss settles a question in place with Undo, which brings it back open a
   expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
   expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('▸ 1 closed')
   expect(await pane.find({ key: 'explain-i2-key' })).toBeDefined()
+
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'dismiss-i2' })
+  await clock.advance(100)
+  await prompt('what else?')
+  expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
+  expect(await pane.find({ key: 'undo-i2' })).toBeDefined()
+  await clock.advance(SETTLED_MS)
+  expect(await pane.find({ key: 'settled-i2' })).toBeUndefined()
+  expect((await pane.find({ key: 'fold-question' }))?.props.label).toBe('▸ 2 closed')
 })
 
 test('once the person answers or closes the last waiting row, a row from a later reply opens', async ($, on) => {
@@ -2869,7 +2880,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
   })
 }
 
-test('a PR’s Dismiss settles its block until the person leaves the tab, with Undo that brings it back, a ready PR’s Merge asks Claude unless it stopped being ready, and a fetch keeps a Dismiss made while it ran, and the branch PR when its lookup fails', async ($, on) => {
+test('a PR’s Dismiss settles its block until the person types their next message or leaves the tab, with Undo that brings it back, a ready PR’s Merge asks Claude unless it stopped being ready, and a fetch keeps a Dismiss made while it ran, and the branch PR when its lookup fails', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   let decision = 'APPROVED'
@@ -2977,6 +2988,9 @@ test('a PR’s Dismiss settles its block until the person leaves the tab, with U
   await clock.advance(SETTLED_MS)
   expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeDefined()
   expect(await pane.find({ key: 'undo-pr:acme/greet#12' })).toBeUndefined()
+  await $.prompt.submit({ text: 'what is next?', wait: false, origin: { kind: 'composer' } })
+  await clock.settle()
+  expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeUndefined()
   await leaveAndReturn(pane, clock, 'prs')
 
   expect(await pane.find({ text: /Linked work/ })).toBeUndefined()
@@ -4306,6 +4320,7 @@ test('no two buttons on a row share a hotkey, for every row kind in the demo', a
     replies: {},
     discarded: {},
     shownSince: 1_000_000,
+    lastTypedMessageAt: null,
     now: 1_000_000,
   })
   const itemRows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows].map(row => {
@@ -4353,6 +4368,7 @@ for (const isNextBuild of [false, true])
       replies: {},
       discarded: {},
       shownSince: 1_000_000,
+      lastTypedMessageAt: null,
     })
     const TITLE_START = 20
     const expectedLabels = (row: (typeof view.findings.rows)[number]) => {
@@ -4531,6 +4547,7 @@ test('in the terminal and desktop looks, an open row’s follow-ups are never sp
     replies: {},
     discarded: {},
     shownSince: 1_000_000,
+    lastTypedMessageAt: null,
   })
   const row = view.findings.rows.find(r => r.state.is === 'open')!
   const plan = rowKeyPlan(row, false)

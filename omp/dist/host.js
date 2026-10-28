@@ -2613,6 +2613,10 @@ var NO_HOLDS = { replies: {}, discarded: {}, shownSince: null };
 function isShownSince(at, shownSince) {
   return shownSince !== null && at >= shownSince;
 }
+function isSettledInPlace(state, { shownSince, lastTypedMessageAt }) {
+  const isTypedSince = lastTypedMessageAt !== null && lastTypedMessageAt > state.at;
+  return isShownSince(state.at, shownSince) && (state.canUndo || !isTypedSince);
+}
 function isDrawnInPlace(row, shownSince) {
   return row.state.is !== "settled" || isShownSince(row.state.at, shownSince);
 }
@@ -2625,12 +2629,15 @@ function heldReplies(typing, drafts) {
 function isUndoLeft(at, now, settleWindowMs) {
   return now - at < settleWindowMs;
 }
+function canUndoClose(closed, at, now, settleWindowMs) {
+  return isUndoable(closed) && isUndoLeft(at, now, settleWindowMs);
+}
 function closedRowState(closed, at, now, settleWindowMs, delivery) {
   return {
     is: "settled",
     label: outcomeLabel(closed),
     at,
-    canUndo: isUndoable(closed) && isUndoLeft(at, now, settleWindowMs),
+    canUndo: canUndoClose(closed, at, now, settleWindowMs),
     offersUndo: offersUndo(closed),
     isLapsed: isLapsed(closed),
     delivery
@@ -3260,13 +3267,14 @@ function inboxView({
   now,
   replies,
   discarded,
-  shownSince
+  shownSince,
+  lastTypedMessageAt
 }) {
-  const isInPlace = (at) => isShownSince(at, shownSince);
+  const isInPlace = (at, canUndo) => isSettledInPlace({ at, canUndo }, { shownSince, lastTypedMessageAt });
   const isOpen = (id) => ledger.items.some((i) => i.id === id) || ledger.findings.some((f) => f.id === id);
   const replyAfter = (c) => {
     const last = lastActions[c.id];
-    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(last.at) ? last : null;
+    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(last.at, false) ? last : null;
   };
   const isOwnClose = (c) => c.how === "done" || c.how === "dismissed" || c.how === "answered" && lastActions[c.id]?.kind === "mark" && lastActions[c.id]?.at === closedAt(c);
   const isHeld = (c) => {
@@ -3274,11 +3282,14 @@ function inboxView({
     return since !== undefined && since <= closedAt(c) && !isOwnClose(c);
   };
   const isDiscarded = (c) => (discarded[c.id] ?? -Infinity) >= closedAt(c);
-  const isPlaced = (c) => replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(closedAt(c)));
+  const isPlaced = (c) => {
+    const at = closedAt(c);
+    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(at, canUndoClose(c, at, now, settleWindowMs)));
+  };
   const placedItems = new Map(ledger.closed.filter((d) => d.item && !isOpen(d.id) && isPlaced(d)).map((d) => [d.id, d]));
   const isFixSettled = (id) => {
     const last = lastActions[id];
-    return isFixSent(last) && !isInPlace(last.at);
+    return isFixSent(last) && !isInPlace(last.at, isUndoLeft(last.at, now, settleWindowMs));
   };
   const placedFindings = new Map(ledger.closedFindings.filter((f) => !isOpen(f.id) && !isFixSettled(f.id) && isPlaced(f)).map((f) => [f.id, f]));
   const placed = [...placedFindings.keys()].reduce(reopenFinding, [...placedItems.keys()].reduce(reopenItem, ledger));
@@ -3718,14 +3729,15 @@ function keptViews(prState, linked, lastActions, shownSince) {
   return Object.fromEntries(Object.entries(prState.views).filter(([ref]) => isViewKept(prState, linked, lastActions, ref, shownSince)));
 }
 var DISMISSED_PR = { how: "dismissed", outcome: PR_DISMISSED_LABEL };
-function drawnPrs(prState, linked, lastActions, now, shownSince, settleWindowMs) {
+function drawnPrs(prState, linked, lastActions, now, settleWindowMs, placing) {
   return inPrOrder(Object.values(prState.views)).flatMap((pr) => {
     if (isTracked(prState, linked, pr.ref))
       return [{ pr, state: { is: "open" } }];
     const at = dismissedAt(lastActions, pr.ref);
-    if (at === null || !isShownSince(at, shownSince))
+    if (at === null)
       return [];
-    return [{ pr, state: closedRowState(DISMISSED_PR, at, now, settleWindowMs, null) }];
+    const state = closedRowState(DISMISSED_PR, at, now, settleWindowMs, null);
+    return isSettledInPlace(state, placing) ? [{ pr, state }] : [];
   });
 }
 var PR_TONES = {
@@ -4201,7 +4213,8 @@ function emptySession() {
       isUpdating: false,
       isTurnRunning: false,
       turnStartedAt: null,
-      lastReplyAt: null
+      lastReplyAt: null,
+      lastTypedMessageAt: null
     },
     place: null,
     pending: [],
@@ -4284,7 +4297,7 @@ function upgradeSession(saved) {
 }
 function notePrompt(host, s, text, isOpen) {
   const matched = matchSent(s, text);
-  return recordPrompt(host, startTurn(matched.state), text, isOpen, matched.sentBy);
+  return { ...recordPrompt(host, startTurn(matched.state), text, isOpen, matched.sentBy), sentBy: matched.sentBy };
 }
 function matchSent(s, text) {
   const matchingAt = s.sent.findIndex((x) => x.text === text);
@@ -4310,6 +4323,9 @@ function turnStarted(s, at) {
 function turnEnded(s, at) {
   const lastReplyAt = at ?? s.presence.lastReplyAt;
   return { ...s, presence: { ...s.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt } };
+}
+function messageTyped(s, at) {
+  return { ...s, presence: { ...s.presence, lastTypedMessageAt: at } };
 }
 function cutOffTurn(s) {
   return s.presence.isTurnRunning ? turnEnded(s, null) : s;
@@ -4576,7 +4592,8 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     settleWindowMs,
     status: perTurnStatus(update),
     now,
-    ...holds
+    ...holds,
+    lastTypedMessageAt: s.presence.lastTypedMessageAt
   });
   return {
     ...inbox,
@@ -4587,7 +4604,10 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
   };
 }
 function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
-  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, shownSince, settleWindowMs);
+  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, settleWindowMs, {
+    shownSince,
+    lastTypedMessageAt: s.presence.lastTypedMessageAt
+  });
   const isSent = threadSentIn(lastActions);
   return {
     drawn,
@@ -7092,6 +7112,14 @@ function createInbox(pi, deps = defaultDeps) {
         }
       } : {}
     };
+  });
+  pi.on("input", async (event, ctx) => {
+    if (isUnattended(ctx) || event.source !== "interactive")
+      return;
+    const at = deps.now();
+    await change(sessionIdOf(ctx), (s) => messageTyped(s, at)).catch(() => {
+      return;
+    });
   });
   pi.on("agent_start", async (_event, ctx) => {
     if (isUnattended(ctx))

@@ -16,6 +16,7 @@ import { dialogActivity } from '../../hooks/model-text'
 import { childEnded } from '../../hooks/overview'
 import {
   cleared,
+  messageTyped,
   needsUpdate,
   noteActivity,
   noteCommandOutput,
@@ -143,8 +144,12 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       await write(async s => {
         const r = notePrompt(withHost(await withHistory(s)), input.prompt ?? '', now())
         notes = r.notes
+        if (input.agent_id) return r.state
+        const started = noteHook(turnStarted(r.state, now()), 'prompt', now(), input.turn_id)
+        // Codex names no source for a prompt, so a prompt no press sent is one the person typed.
+        const isTyped = r.sentBy === null
 
-        return input.agent_id ? r.state : noteHook(turnStarted(r.state, now()), 'prompt', now(), input.turn_id)
+        return isTyped ? messageTyped(started, now()) : started
       })
       if (isMarkedBehind) deps.startUpdate(id)
 

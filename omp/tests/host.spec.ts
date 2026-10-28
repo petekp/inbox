@@ -603,6 +603,22 @@ async function withQuestion() {
   return { inbox, id: item.id as string }
 }
 
+test('only what the person submits in the editor counts as a typed message, not a press’s message or other input', async () => {
+  const { inbox, id } = await withQuestion()
+  const typedAt = () => state().presence.lastTypedMessageAt
+  await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  await prompt(sent[0]!.text)
+  await call('input', { type: 'input', text: 'from a client', source: 'rpc' })
+  await call('input', { type: 'input', text: 'from an extension', source: 'extension' })
+  expect(typedAt()).toBeNull()
+
+  await call('input', { type: 'input', text: 'what next?', source: 'interactive' })
+  const first = typedAt()
+  expect(first).toBeNumber()
+  await call('input', { type: 'input', text: 'and then?', source: 'interactive' })
+  expect(typedAt()).toBeGreaterThan(first!)
+})
+
 test('an answer press sends one follow-up while a turn runs, and the arriving prompt matches it', async () => {
   const { inbox, id } = await withQuestion()
   const outcome = await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)

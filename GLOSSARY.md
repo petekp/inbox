@@ -48,9 +48,10 @@ becomes a settled row. After Discard, it folds at once.
 **Settled row**:
 A row drawn in place with its result after the person pressed it or the agent
 closed it, such as "Done" or "Closed by Claude: fixed". It stays until the
-person switches tab or closes the inbox, then folds into the Closed fold or
-leaves the list. It offers Undo, where its press allows one, for `SETTLED_MS`
-after the close.
+person sends a message they typed, switches tab or closes the inbox, then
+folds into the Closed fold or leaves the list. A message a press sent does not
+fold it. It offers Undo, where its press allows one, for `SETTLED_MS` after the
+close, and while Undo lasts it stays through a typed message.
 
 **Finding**:
 An issue or opportunity the agent noticed outside the current task.
