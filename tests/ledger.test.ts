@@ -483,16 +483,32 @@ describe('applyUpdate', () => {
 
   test('a dismissed question blocks a rewording of it, but not a question about something else in the same words', () => {
     const question = (ask: string) => ({ kind: 'question' as const, ask, options: [], rec: null, helps: [] })
-    const asked = addAgentItem({ ...EMPTY, turn: 1 }, question('Which license should package.json use?'), 1).ledger
-    const dismissed = { ...closeItem(asked, 'i1', { how: 'dismissed', outcome: 'dismissed' }, 2), turn: 2 }
-    const engines = 'Which engines should package.json use?'
-    expect(addAgentItem(dismissed, question(engines), 3).is).toBe('added')
-    const asksEngines = parseReply(`NEW: decide | - | ${engines} | - | -`)!
-    expect(applyUpdate(dismissed, asksEngines, 4, 2, 3).items.map(i => i.ask)).toEqual([engines])
-    const reworded = 'Which license should we use in package.json?'
-    expect(addAgentItem(dismissed, question(reworded), 3).is).toBe('closed')
-    const asksReworded = parseReply(`NEW: decide | - | ${reworded} | - | -`)!
-    expect(applyUpdate(dismissed, asksReworded, 4, 2, 3).items).toEqual([])
+    for (const [first, reworded, other] of [
+      [
+        'Which license should package.json use?',
+        'Which license should we use in package.json?',
+        'Which engines should package.json use?',
+      ],
+      [
+        'Which test runner should we pick?',
+        'Which test runner should we choose?',
+        'Which test reporter should we pick?',
+      ],
+      [
+        'Should I add a feature flag for the new cache?',
+        'Add a feature flag to the cache before merging?',
+        'Should I add a feature flag for the new search index?',
+      ],
+    ] as const) {
+      const asked = addAgentItem({ ...EMPTY, turn: 1 }, question(first), 1).ledger
+      const dismissed = { ...closeItem(asked, 'i1', { how: 'dismissed', outcome: 'dismissed' }, 2), turn: 2 }
+      expect(addAgentItem(dismissed, question(other), 3).is).toBe('added')
+      const asksOther = parseReply(`NEW: decide | - | ${other} | - | -`)!
+      expect(applyUpdate(dismissed, asksOther, 4, 2, 3).items.map(i => i.ask)).toEqual([other])
+      expect(addAgentItem(dismissed, question(reworded), 3).is).toBe('closed')
+      const asksReworded = parseReply(`NEW: decide | - | ${reworded} | - | -`)!
+      expect(applyUpdate(dismissed, asksReworded, 4, 2, 3).items).toEqual([])
+    }
   })
 
   test('the inbox model can add a question again with choices after the person answered it with List the choices', () => {
@@ -752,7 +768,7 @@ describe('reopening', () => {
     }
   })
 
-  test('a dismissed finding does not block one about a different subject in the same words', () => {
+  test('a dismissed finding blocks a rewording of it, but not one about a different subject in the same words', () => {
     const finding = {
       kind: 'issue' as const,
       title: 'package.json has no license field',
@@ -768,6 +784,8 @@ describe('reopening', () => {
     )
     const r = addFinding(dismissed, { ...finding, title: 'package.json has no engines field', at: 6 })
     expect([r.isAdded, r.dismissed]).toEqual([true, null])
+    const reworded = addFinding(dismissed, { ...finding, title: 'package.json is missing a license field', at: 6 })
+    expect([reworded.isAdded, reworded.dismissed?.id]).toEqual([false, 'f1'])
   })
 
   test('a finding an item asks about closes into that item', () => {
