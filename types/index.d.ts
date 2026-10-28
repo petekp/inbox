@@ -443,6 +443,11 @@ export type Session = {
     turnStartedAt: number | null
     /** When the agent's last turn ended. */
     lastReplyAt: number | null
+    /**
+     * When the person last sent a message they typed. A message a press sent does not count. A row that settled before
+     * it folds, once its Undo ends.
+     */
+    lastTypedMessageAt: number | null
   }
   /** Where the session started. Null until the host names it. */
   place: Place | null

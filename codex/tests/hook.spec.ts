@@ -171,6 +171,40 @@ test('a main-agent prompt starts a turn that runs until Stop or a start that is 
   assert.equal(await now(), null)
 })
 
+test('a main-agent prompt no press sent counts as typed, and a press’s message and a subagent prompt do not', async () => {
+  const dir = tempDir()
+  let clock = 1000
+  const deps = hookDeps(dir, () => clock)
+  const typedAt = async () => (await readState(dir, 's1')).presence.lastTypedMessageAt
+  const answer = 'Re "Ship it?": Yes'
+
+  await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
+  await updateState(dir, 's1', s => ({
+    ...s,
+    sent: [
+      {
+        text: answer,
+        press: { id: 'i1', action: 'answer' },
+        at: 900,
+        row: 'i1',
+        queuedId: null,
+        pressedAt: 900,
+        deliveryId: 'd1',
+        phase: 'accepted',
+      },
+    ],
+  }))
+  clock = 2000
+  await handleHook(input('UserPromptSubmit', { prompt: answer, turn_id: 't1' }), deps)
+  clock = 3000
+  await handleHook(input('UserPromptSubmit', { prompt: 'Look around', agent_id: 'a1' }), deps)
+  assert.equal(await typedAt(), null)
+
+  clock = 4000
+  await handleHook(input('UserPromptSubmit', { prompt: 'Ship the docs too', turn_id: 't2' }), deps)
+  assert.equal(await typedAt(), 4000)
+})
+
 test('a dialog question links to the question the agent recorded for it or the update added from it, in the same turn, only when no other question shares the match', async () => {
   const dir = tempDir()
   const transcript = join(tempDir(), 'rollout.jsonl')

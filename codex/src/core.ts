@@ -7,7 +7,7 @@ import {
   sessionView,
   withLook,
 } from '../../hooks/session'
-import type { SessionView } from '../../hooks/session'
+import type { SentBy, SessionView } from '../../hooks/session'
 import { NO_HOLDS, screenTabOf } from '../../hooks/view'
 import type { Holds } from '../../hooks/view'
 import { SETTLE_WINDOW_MS } from './settle'
@@ -32,7 +32,11 @@ export function lookOnView(s: SessionState, shownTab: SessionState['shownTab'], 
   return withLook(closed, shownTab === 'overview', now)
 }
 
-export function notePrompt(s: SessionState, text: string, now: number): { state: SessionState; notes: string[] } {
+export function notePrompt(
+  s: SessionState,
+  text: string,
+  now: number,
+): { state: SessionState; notes: string[]; sentBy: SentBy | null } {
   return notePromptIn(CODEX, s, text, isTabOpen(s, now))
 }
 

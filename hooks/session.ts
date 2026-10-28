@@ -16,10 +16,8 @@ import type { Host, ScreenTab, Told } from './model-text'
 import {
   applyPrPress,
   drawnPrs,
-  isDismissed,
   isViewKept,
   itemPrSteps,
-  keptViews,
   olderPrsText,
   linkedPrs,
   pressRowId,
@@ -87,6 +85,7 @@ export function emptySession(): Session {
       isTurnRunning: false,
       turnStartedAt: null,
       lastReplyAt: null,
+      lastTypedMessageAt: null,
     },
     place: null,
     pending: [],
@@ -250,7 +249,7 @@ export function cleared<S extends Session>(s: S): S {
 export type SentBy = { press: Press | null }
 
 /**
- * Records a prompt that arrived and returns what the agent reads beside it.
+ * Records a prompt that arrived and returns what the agent reads beside it, and the press that sent it, if one did.
  * A host that tells its own sends apart from the person's words calls the parts below instead.
  */
 export function notePrompt<S extends Session>(
@@ -258,10 +257,10 @@ export function notePrompt<S extends Session>(
   s: S,
   text: string,
   isOpen: boolean,
-): { state: S; notes: string[] } {
+): { state: S; notes: string[]; sentBy: SentBy | null } {
   const matched = matchSent(s, text)
 
-  return recordPrompt(host, startTurn(matched.state), text, isOpen, matched.sentBy)
+  return { ...recordPrompt(host, startTurn(matched.state), text, isOpen, matched.sentBy), sentBy: matched.sentBy }
 }
 
 /**
@@ -330,6 +329,14 @@ export function turnEnded<S extends Session>(s: S, at: number | null): S {
   const lastReplyAt = at ?? s.presence.lastReplyAt
 
   return { ...s, presence: { ...s.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt } }
+}
+
+/**
+ * Notes that the person sent a message they typed, at `at`. A host calls it only for a message the person typed, never
+ * for one a press sent. The rows that settled before it fold, as `hooks/view.ts:isSettledInPlace` says.
+ */
+export function messageTyped<S extends Session>(s: S, at: number): S {
+  return { ...s, presence: { ...s.presence, lastTypedMessageAt: at } }
 }
 
 /**
@@ -751,17 +758,19 @@ export function withHolds<S extends Session>(s: S, holds: Holds): S {
 
 /**
  * `s` as every write saves it. Each closed list is cut to its newest records, and keeps the records of the rows a look
- * still draws: the rows `heldRows` names, and the rows closed or pressed since `shownSince`. A dismissed PR's view
- * goes once `isViewKept` no longer keeps it.
+ * still draws: the rows `heldRows` names, and the rows closed or pressed since `shownSince`. A PR's view goes once
+ * `isViewKept` no longer keeps it.
  */
 export function pruned<S extends Session>(s: S): S {
   const inPlace = [
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map(c => ({ id: c.id, at: closedAt(c) })),
   ].flatMap(x => (isShownSince(x.at, s.shownSince) ? [x.id] : []))
-  const isLeftBehind = (ref: string) =>
-    isDismissed(s.lastActions, ref) && !isViewKept(s.prViews, s.ledger.prs, s.lastActions, ref, s.shownSince)
-  const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => !isLeftBehind(ref)))
+  const views = Object.fromEntries(
+    Object.entries(s.prViews.views).filter(([ref]) =>
+      isViewKept(s.prViews, s.ledger.prs, s.lastActions, ref, s.shownSince),
+    ),
+  )
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length
 
   return {
@@ -771,11 +780,9 @@ export function pruned<S extends Session>(s: S): S {
   }
 }
 
-/** Merges fetched PRs into the session. A view stays while `isViewKept` keeps it. */
+/** Merges fetched PRs into the session. The write that saves it drops, through `pruned`, each view no look draws. */
 export function withFetchedPrs<S extends Session>(s: S, fetched: PrViews['views'], branchRef: string | null): S {
-  const merged = { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false }
-
-  return { ...s, prViews: { ...merged, views: keptViews(merged, s.ledger.prs, s.lastActions, s.shownSince) } }
+  return { ...s, prViews: { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false } }
 }
 
 type PrTab = {
@@ -838,6 +845,7 @@ export function sessionView(
     status: perTurnStatus(update),
     now,
     ...holds,
+    lastTypedMessageAt: s.presence.lastTypedMessageAt,
   })
 
   return {
@@ -856,7 +864,10 @@ function prTabOf(
   shownSince: number | null,
   settleWindowMs: number,
 ): PrTab {
-  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, shownSince, settleWindowMs)
+  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, settleWindowMs, {
+    shownSince,
+    lastTypedMessageAt: s.presence.lastTypedMessageAt,
+  })
   const isSent = threadSentIn(lastActions)
 
   return {

@@ -171,7 +171,7 @@ let stagedHostChanges: HostContext = {}
 let pollFailures = 0
 let readAt = 0
 let tab: ShownTab = 'needsYou'
-/** When this page began showing `tab`. A row that closes since then stays in place until the person switches tab. */
+/** When this page began showing `tab`. A row that closes since then stays in place no longer than that, as `isSettledInPlace` says. */
 let shownSince = Date.now()
 
 function switchTab(to: ShownTab) {

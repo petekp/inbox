@@ -25,6 +25,7 @@ export type FeatureId =
   | 'band-and-stop-rows'
   | 'exchange-trigger'
   | 'settle-window'
+  | 'fold-on-typed-message'
   | 'version-label'
   | 'overview-tab'
   | 'turn-working'
@@ -71,6 +72,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'band-and-stop-rows': { kind: 'full' },
       'exchange-trigger': { kind: 'full' },
       'settle-window': { kind: 'full' },
+      'fold-on-typed-message': { kind: 'full' },
       'version-label': { kind: 'full' },
       'overview-tab': { kind: 'full' },
       'turn-working': { kind: 'full' },
@@ -153,6 +155,7 @@ export const CLIENTS: Record<ClientId, Client> = {
         kind: 'different',
         reason: 'The tab only learns of a close at its next poll, so the server offers Undo for two polls longer.',
       },
+      'fold-on-typed-message': { kind: 'full' },
       'version-label': { kind: 'full' },
       'overview-tab': { kind: 'full' },
       'turn-working': {
@@ -231,6 +234,7 @@ export const CLIENTS: Record<ClientId, Client> = {
           "omp's `before_agent_start` event carries only the prompt text, so every turn has words and none reads as started by something else.",
       },
       'settle-window': { kind: 'full' },
+      'fold-on-typed-message': { kind: 'full' },
       'version-label': {
         kind: 'different',
         reason: "omp's panel footer ends with the inbox model's name, so the version follows it there.",

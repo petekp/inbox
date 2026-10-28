@@ -1,5 +1,5 @@
 import { CLAUDE_CODE } from '../hooks/model-text'
-import { endTurn, notePrompt, recorded, sessionView } from '../hooks/session'
+import { endTurn, messageTyped, notePrompt, recorded, sessionView } from '../hooks/session'
 import type { Session } from '../hooks/session'
 import { orderedKeys, press, runUpdates } from '../hooks/session-host'
 import type { Ask, SessionHost, UpdateHost } from '../hooks/session-host'
@@ -62,9 +62,9 @@ const MODEL_ANSWER = ['NEW: decide | 1 | Use Node or Python? | Node / Python | N
 export async function runSessionScript<S extends Session>(makeHost: MakeHost<S>, equal: Equal): Promise<void> {
   const { host, delivered, performed } = makeHost(async () => MODEL_ANSWER)
   const holds = { ...NO_HOLDS, shownSince: await host.now() }
-  const snapshot = async () => {
+  const snapshot = async (later = 0) => {
     const s = await host.read()
-    const view = sessionView(s, await host.now(), SETTLE_WINDOW_MS, true, holds)
+    const view = sessionView(s, (await host.now()) + later, SETTLE_WINDOW_MS, true, holds)
 
     return {
       rows: allRows(view).map(r => `${r.title}: ${r.state.is}`),
@@ -158,6 +158,11 @@ export async function runSessionScript<S extends Session>(makeHost: MakeHost<S>,
   const undoneAnswer = await press(host, { action: 'undo', id: questionId }, false, holds)
   equal(undoneAnswer.note, 'stale', 'Undo on a row the agent already has')
   equal((await snapshot()).delivered, [ANSWER], 'Undo sends nothing')
+
+  await press(host, { action: 'done', id: taskId }, false, holds)
+  await host.update(async s => messageTyped(notePrompt(CLAUDE_CODE, s, 'What is left?', false).state, await host.now()))
+  equal((await snapshot()).rows, ['Try the CLI by hand: settled'], 'after a typed message, while Undo lasts')
+  equal((await snapshot(SETTLE_WINDOW_MS)).rows, [], 'after a typed message, once Undo ends')
 }
 
 export function reportedTokens(argv: readonly string[]): Record<string, string | null> {
