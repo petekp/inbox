@@ -46,10 +46,13 @@ import {
   deliver,
   forgetStored,
   isCurrent,
+  modelAsk,
   noteStored,
+  overviewRecords,
   processRun,
   readSaved,
   readSettled,
+  recordsFolder,
   replaceDrawn,
   savedWriteCount,
   sessionHost,
@@ -102,7 +105,7 @@ import {
   startPress,
   wakeForDone as wakeSessionForDone,
 } from './session-host'
-import type { AskCatchUpOverview, CatchUpReply, SessionHost } from './session-host'
+import type { CatchUpReply, OverviewCall, OverviewRecords, SessionHost } from './session-host'
 import { demoView, isDemoCopy, withDemoPresence } from './demo'
 import { claudeTasksAfter } from './host-tasks'
 import { noteDialog } from './dialogs'
@@ -159,8 +162,6 @@ import {
   buildPrompt,
   overviewCarryText,
   catchUpPrompt,
-  OVERVIEW_SYSTEM,
-  overviewCatchUpPrompt,
   CLAUDE_CODE,
   dialogActivity,
   dialogQuestions,
@@ -816,6 +817,8 @@ let toolsRefused = false
 let isReadingAgain = false
 let version: string | null = null
 let isNextBuild = false
+/** Where a next build keeps its Overview call records, or null on a release build. */
+let overviewRecordsFolder: string | null = null
 /**
  * The desktop app takes the focus off the pane when the Button holding it leaves the drawing, and
  * the next click there only brings it back (anthropics/claude-code#100874).
@@ -880,7 +883,12 @@ async function noteActivity($: EngineInterface, line: string) {
     isClaimed = claimed !== noted
     return claimed
   }).catch(() => undefined)
-  if (isClaimed) void refreshOverview({ ...hostOf($, owner), inOrder: fn => resultsOrder.run(owner.id, fn) })
+  if (isClaimed)
+    void refreshOverview({
+      ...hostOf($, owner),
+      inOrder: fn => resultsOrder.run(owner.id, fn),
+      records: recordsOf($, owner),
+    })
 }
 
 function messageText(message: SessionAppendMessage): string {
@@ -1167,12 +1175,11 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
     $.session.messages().then(transcriptText),
   ])
   // The Overview call reads the transcript.
-  const overview: AskCatchUpOverview | null = transcript
-    ? async input => {
-        if (!isCurrent(owner)) return null
-        const r = await askLedgerModel($, overviewCatchUpPrompt(input, transcript), OVERVIEW_SYSTEM, 90_000)
-
-        return r.isAnswered ? r.text : null
+  const askLong = modelAsk($, 90_000)
+  const overview: OverviewCall | null = transcript
+    ? {
+        exchange: { kind: 'catch-up', conversation: transcript },
+        ask: async (prompt, system, report) => (isCurrent(owner) ? askLong(prompt, system, report) : null),
       }
     : null
   const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
@@ -1213,11 +1220,16 @@ function updateLedger($: EngineInterface) {
       catchUp: () => catchUpReply($, owner),
       inOrder: fn => resultsOrder.run(owner.id, fn),
       background: overviews => void overviews,
+      records: recordsOf($, owner),
     })
     if (isCurrent(owner)) void publishStatus($)
   })
   // A rejected link would skip every later update, so the chain swallows it.
   queue = queue.catch(() => undefined)
+}
+
+function recordsOf($: EngineInterface, owner: Owner): OverviewRecords | undefined {
+  return overviewRecordsFolder === null ? undefined : overviewRecords($, overviewRecordsFolder, owner)
 }
 
 /** The mod's SessionHost for `owner`'s conversation. A press passes its surface, which copies go to. */
@@ -2515,6 +2527,7 @@ async function readVersion($: EngineInterface) {
     version = null
   }
   isNextBuild = await readIsNextBuild($)
+  overviewRecordsFolder = isNextBuild ? await recordsFolder($).catch(() => null) : null
 }
 
 async function initializeInbox($: EngineInterface) {
