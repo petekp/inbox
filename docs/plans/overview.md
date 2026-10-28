@@ -11,7 +11,7 @@ The Overview is the inbox's first tab on a next build. It is about the session's
 - **Which pieces wait on me?**
 - **What moved since I last looked?**
 
-The page is one list of subjects, newest change first. A subject is one piece of the work, such as a feature, a fix or a release. Each row shows a status mark, a short name, a few words on where the work stands, and how long ago it last changed. A Seen line marks where the person last looked. Every row above it changed since then. The inbox model adds, updates and closes subjects. Code owns every time, the order, the Seen line, the folds and the rows of running work.
+The page is one list of subjects, newest change first. A subject is one piece of the work, such as a feature, a fix or a release. Each row shows a status mark, a short name and a few words on where the work stands. A Seen line marks where the person last looked. Every row above it changed since then. The inbox model adds, updates and closes subjects. Code owns every time, the order, the Seen line, the folds and the rows of running work.
 
 All four looks draw the same page from one shared view: the Claude Code terminal, the Claude desktop app's pane, the Codex tab and the omp panel. `docs/looks.md` says where they differ.
 
@@ -20,14 +20,14 @@ The page fails when it reads as a log, when it copies Asks or Finds, or when it 
 ## Decisions
 
 1. **One list of subjects, newest change first, with no sections.**
-   - Reason: each piece of work shows once, with its change attached, and the ages read down the column as a timeline. The earlier six-section page showed one subject in up to six places.
+   - Reason: each piece of work shows once, with its change attached, and the order reads down the page as a timeline. The earlier six-section page showed one subject in up to six places.
 2. **The inbox model edits subjects by id. Code applies each edit.**
    - Reason: a model that rewrites the whole page from the last page drifts toward the newest exchange. In a replay of one real session, 33 of 35 replies rewrote the page.
 3. **Code writes every time and the order. The model never writes a time.**
-   - Reason: a time word in model text freezes when it is written, so "merged today" reads wrong the next day. When things happened, and how far apart, carries meaning, so the ages must be true.
-4. **A row's age is when its work last changed, not when the page last checked it. During a turn, the live line says when the page last checked.**
-   - Reason: a page checked a minute ago that found nothing new is current. A fresh age on a row that did not change would claim a change that did not happen. Without the time of the last check, rows that all read "3h" in a long turn look stale.
-5. **A changed state always reaches the page.** Code keeps the old text and age only when the new text means the same.
+   - Reason: a time word in model text freezes when it is written, so "merged today" reads wrong the next day. How long work has stalled carries meaning, so the times must be true.
+4. **Time shows only on work that has stalled. Rows have no age column.** A subject held by an ask, or waiting on something outside the session, reads how long it has waited on its second line, as `waiting 2h`, once that passes 15 minutes. A child with no activity for 15 minutes reads `quiet 40m`. A row's place follows when its work last changed, not when the page last checked it.
+   - Reason: an age on every row was hard to read and said little. A time matters when work has stopped moving. A row that rose because the page checked it would claim a change that did not happen.
+5. **A changed state always reaches the page.** Code keeps the old text and place only when the new text means the same.
    - Reason: "manual merge ready" becoming "manual merge broken" is a change, though half the words match.
 6. **◆ comes from a link between an open ask and the subjects it holds up.** The Overview call writes the link. Code draws ◆ while the ask is open and clears it when the ask closes. One ask can hold up several subjects. There is no "waits on you" status and no "problem" status.
    - Reason: a ◆ set by the model could not see Asks, so it went stale and could disagree with Asks. A problem nobody is fixing is a to-do for the person, so it belongs in Asks, or in Finds when it is outside the task.
@@ -58,18 +58,26 @@ The page fails when it reads as a log, when it copies Asks or Finds, or when it 
     - Reason: it is not ready to release. A release build treats a saved Overview tab as unknown and shows its first tab.
 18. **The page has no identity line.**
     - Reason: the line takes space without telling sessions apart. Folder, branch and role are often the same across sessions, and each host already names the session in its own window, tab or title.
+19. **The head is a title and a one-line description of what the session is focused on now.** The title is short, like a row's name. The page has no live line.
+    - Reason: the head then reads like a row. The person scans the title, and reads the description for what the session is doing now. Each host already shows whether its agent is working, and a ● mark moves while a turn runs.
+20. **By default, a row draws where it stands on its own line, under its name.**
+    - Reason: the names line up down the page, so the person can scan them.
+21. **A child row says in a few plain words what its work does, never an id.** A Herdr delegate shows what its own session's Overview says it is focused on, which the inbox publishes to Herdr: today its goal, and once decision 19 is built, its head's description. Without one, it shows its name turned into words. A subagent, background command or workflow run shows the description it was started with.
+    - Reason: a name an agent made up for a delegate tells the person nothing about the work.
 
 ## Terms
 
 From `GLOSSARY.md`: Overview, Goal, Subject, Child, Seen line, News dot, Look, Host and Catch-up. The new terms:
 
 - **Overview call:** the inbox model call after the ledger call. It reads the open subjects and the new exchange, and answers with edits.
-- **Live line:** the line under the goal that says what the agent does now: "Working…", "Working… for 25m", or "Idle · last reply 12m ago".
+- **Head:** the top of the page. Today it is the goal and the live line. Decision 19 makes it a title and a one-line description, with no live line.
+- **Live line:** today, the line under the goal that says what the agent does now: "Working…", "Working… for 25m", or "Idle · last reply 12m ago". Decision 19 removes it.
+- **Stall time:** how long a piece of work has waited, or a child has done nothing, in words code writes, such as `waiting 2h` or `quiet 40m`.
 - **Where it stands:** the few words after a subject's name.
 - **Was line:** a line under a subject that names the plan a change replaced, as "was: last-write-wins", or a piece merged into it, as "merged in: Banner on hover".
 - **Link:** the Overview call's tie from an open ask or a child to the subject it belongs to.
 - **Fold:** one line that stands for several rows: "✓ 3 done" or "○ 2 more queued".
-- **Last changed:** when a subject's status or meaning last changed. Its age shows this.
+- **Last changed:** when a subject's status or meaning last changed. A row's place in the list follows it.
 - **Last checked:** when an Overview call last read the work, whatever it answered.
 - **Property:** something true of a good Overview that a person can check by reading the page, knowing what happened in the session.
 - **Fact list:** what really happened in an eval case, written by the case's author: each piece of work, its state at each step, the asks and the pieces each holds up, and what is not work.
@@ -88,12 +96,18 @@ From top to bottom:
 | Live line | "Working…", "Working… for 25m", or "Idle · last reply 12m ago" | Code |
 | Subject rows | A mark, a short name, a few words on where it stands, and the age of the last change. The call is asked for a name of at most 3 words and a text of at most 4. Code clips them at 20 and 12. | The model writes the status, name and text. Code draws the mark and the age, and orders the rows by last change. |
 | Was line | The plan a change replaced, or a piece merged into this one, until the person has seen it | The model writes it. Code shows it only until the person has looked. |
-| Child rows | Running work under its subject, with how long since it last did anything. After 15 minutes with no activity it reads "quiet 40m". | Code, from host events. The model writes the link. |
+| Child rows | Running work under its subject, named by the first line of the name its host gives it, with how long since it last did anything. After 15 minutes with no activity it reads "quiet 40m". | Code, from host events. The model writes the link. |
 | Seen line | Where the person last looked. Rows above it changed since. It is left out when nothing changed. | Code |
 | Folds | "○ N more queued" past 7 open rows. "✓ N done" for the done subjects not drawn as a row, or "✓ N more done" when a done row shows above it. | Code |
 | Status line | "Last Overview update failed. Changes from that reply may be missing." while the last call wrote nothing | Code |
 
-Today the page also opens with an identity line, such as `notes-app · main · coordinator`. Decision 18 removes it from every look; see "Not built yet".
+Today the page also opens with an identity line, such as `notes-app · main · coordinator`. Decided changes to this table, all in "Not built yet":
+
+- Decision 4 drops each row's age. Time shows only on stalled work.
+- Decision 18 removes the identity line from every look.
+- Decision 19 replaces the goal with a title and a one-line description, and removes the live line.
+- Decision 20 moves where it stands to its own line, under the name.
+- Decision 21 names each child row in plain words. A Herdr delegate's name is often an id today.
 
 The marks:
 
@@ -134,7 +148,7 @@ Before any work, the page reads: "What this session's work is for, where each pa
 - **What it answers:** edits by id, one per line: add a subject, update one, finish one, drop one or drop it into another, write a was line, link an ask or a child, set the goal. Or `UNCHANGED`. `hooks/overview.ts` parses and applies the answer.
 - **What code does with it:**
   - A new subject whose name holds the same key words as an open one updates that one.
-  - An update that keeps the status and means the same keeps the old text and the old age. Today code judges this by shared words, which drops some real changes; see "Not built yet".
+  - An update that keeps the status and means the same keeps the old text and its place. Today code judges this by shared words, which drops some real changes; see "Not built yet".
   - An answer that holds any line that is not an edit is asked once more. If that fails too, the page stays as it was and the status line says so.
 - **During a long turn.** The main agent's next tool call, once 10 minutes have passed since the turn began and since the last Overview call, starts an Overview call. That call reads the person's message and the turn's activity so far.
 - **On a catch-up.** The call reads the whole conversation and edits the current subjects.
@@ -149,22 +163,28 @@ The numbers stay fixed, so references to them stay valid. Number 2 is unused.
 
 The examples come from one sample session. It adds offline sync to a notes app. Its pieces are the sync conflicts, an export button and the 2.4 release. A delegate builds the export's PDF layout.
 
-A good page after the person was away two hours:
+A good page after the person was away two hours, drawn as decided:
 
 ```text
-Add offline sync to the notes app
-Idle · last reply 12m ago
+Offline sync
+Adding offline sync to the notes app
 
-◆ Sync conflicts: merge logic ready     12m
-✓ Sync engine: syncs on reconnect       40m
-── Seen ─────────────────────────────────
-● Export button: works on web            2h
-  └ ● pdf-layout delegate         quiet 40m
-○ 2.4 release: after export              3h
-✓ 2 more done                            2h
+◆ Sync conflicts
+  merge logic ready · waiting 40m
+✓ Sync engine
+  syncs on reconnect
+── Seen ──────────────────────────────
+● Export button
+  works on web
+  └ ● Lay out the PDF export  quiet 40m
+○ 2.4 release
+  after export
+✓ 2 more done
 ```
 
-The question "Which conflict rule ships?" waits in Asks, and its row there reads "Holds up Sync conflicts".
+The question "Which conflict rule ships?" has waited in Asks for 40 minutes, and its row there reads "Holds up Sync conflicts".
+
+To keep them short, the examples below write a row on one line, as `Name: where it stands`.
 
 ### What each property is judged against
 
@@ -172,31 +192,36 @@ A judge or a rule judges a page against the facts up to that point in the sessio
 
 | Property | Judged against |
 | --- | --- |
-| 1. The goal | The person's requests so far, and which pieces are open or finished |
+| 1. The head | The person's requests so far, and which pieces are open or finished |
 | 3. Each row is work | Each piece of work, and each thing that is not work: asks, findings, tasks for the person, standing rules |
 | 4. Each piece once | Each piece with every name the conversation used for it, and the pieces closed earlier |
 | 5. Marks and closing | Each piece's real state: being done, set aside, waiting on something outside, delivered, dropped or filed for later |
 | 6. Where it stands | The same states, part by part where the parts differ |
-| 7. Running work | The host's events for each child, and the piece each child serves |
+| 7. Running work | The host's events for each child, what each child was started to do, and the piece it serves |
 | 8. ◆ | The open asks, and the pieces each one holds up |
 | 9. No repeats of Asks | The text of the open asks and findings |
 | 10. Changes shown | What was on screen at the last look, and which pieces changed since |
 | 11. Nothing moves | The page before the exchange, and whether the exchange changed any piece |
 | 12. Changes of plan | The plan before and after, and which pieces merged into which |
-| 13. How current | When the turn started, when the last reply came, when each Overview call ran and whether it failed, and when the activity happened |
+| 13. How current | When each Overview call ran and whether it failed, when the activity happened, and how long each held or waiting piece and each quiet child has waited |
 
 ### What is this session's work?
 
-#### 1. The goal says what the session is working toward now
+#### 1. The head says what the session is focused on now
 
-The first words the person reads tell them what the session is for, in their own terms. The goal stays the same while the work goes on, and changes when the session takes up different work. When the work is done and nothing follows, the goal still names it.
+The first words the person reads tell them what the session is focused on, in their own terms. The title names that focus in a few words, like a row's name. The line under it says what the session is doing about it. The head stays the same while the work goes on, and changes when the focus moves. When the work is done and nothing follows, the head still names it.
 
-- **Good:** "Add offline sync to the notes app", unchanged through a lint fix, new tests and a question.
-- **Good:** a coordinator that shipped 2.4 and now runs the sync fix and 2.5 reads "Fix sync and ship 2.5".
-- **Good:** "Ship the 2.4 release", after 2.4 shipped, when the person asked for nothing more. Its row reads ✓ and the live line says idle.
-- **Bad:** "Ship the 2.4 release", two hours after 2.4 shipped, while the session works on the sync bug.
-- **Bad:** "Fix the lint error", after one step on the way.
-- **Bad:** "Offline sync PR ready for review". That is where one piece stands, not what the session is for.
+Until decision 19 is built, the head is one goal line. A page then fails the check for a title and a description, which is a known failing case, and the other checks read the goal.
+
+- **Good:** `Offline sync` over `Adding offline sync to the notes app`, unchanged through a lint fix, new tests and a question.
+- **Good:** a coordinator that shipped 2.4 and now runs the sync fix and 2.5 reads `2.5 release` over `Fixing the sync bug, then shipping 2.5`.
+- **Good:** `2.4 release` over `Shipping notes 2.4 to the store`, after 2.4 shipped, when the person asked for nothing more. Its row reads ✓.
+- **Bad:** the same head two hours after 2.4 shipped, while the session works on the sync bug.
+- **Bad:** a coordinator's head names one small stream, such as `Hooks release`, while most of its work is on sync and 2.5.
+- **Bad:** `Lint error` over `Fixing the lint error`, after one step on the way.
+- **Bad:** `Offline sync` over `PR ready for review`. That is where one piece stands, not the session's focus.
+- **Bad:** `Offline sync` over `Offline sync`. The description only repeats the title.
+- **Bad:** the title `Add offline sync so notes save without a connection`. That is a sentence.
 
 ### Where does each piece of it stand?
 
@@ -243,12 +268,16 @@ A few words on what works, what is left or what it waits on, in the work's own t
 - **Bad:** `Export button: export button merged`.
 - **Bad:** `Sync conflicts: discussed three options`.
 
-#### 7. Running work shows under the piece it serves
+#### 7. Running work shows under the piece it serves, in plain words
 
-A delegate, subagent, background command or workflow run shows under the subject it works on while it runs, with how long since it last did anything.
+A delegate, subagent, background command or workflow run shows under the subject it works on while it runs. It says in a few plain words what it does. A delegate shows the focus its own session's Overview publishes, and other running work shows the description it was started with. After 15 minutes with no activity, it says how long it has been quiet.
 
-- **Good:** `● Export button` with `└ ● pdf-layout delegate  2m` under it.
+Until decision 21 is built, a delegate shows its Herdr name, and a delegate whose name is an id fails this property. That is a known failing case.
+
+- **Good:** `● Export button` with `└ ● Lay out the PDF export` under it.
 - **Good:** the same delegate, idle for 40 minutes, reads `quiet 40m`.
+- **Good:** a review subagent started as "Review the sync engine diff" reads `Review the sync engine diff`.
+- **Bad:** `└ ● pdfx2`. An agent made up that name, and it says nothing about the work.
 - **Bad:** the PDF layout delegate under `Sync conflicts`.
 
 ### Which pieces wait on me?
@@ -284,11 +313,11 @@ Back after a break, the person learns from the rows above the Seen line what fin
 
 #### 11. Nothing moves that did not change
 
-A reply that changed nothing about the work leaves every row, age and the Seen line where they were. So a row above the line always means a change. A choice the person makes is a change.
+A reply that changed nothing about the work leaves every row and the Seen line where they were. So a row above the line always means a change. A choice the person makes is a change.
 
 - **Good:** the agent explains how export picks a file name, and nothing is decided. The page stays as it was.
 - **Good:** the person picks "Save as PDF" as the export button's label. The export row says so, and moves above the Seen line.
-- **Bad:** `Export button: works on web, iOS left` becomes `web done, iOS remaining`, moves above the Seen line, and its age reads "now".
+- **Bad:** `Export button: works on web, iOS left` becomes `web done, iOS remaining`, and moves to the top, above the Seen line.
 
 #### 12. A change of plan says what it replaced
 
@@ -302,11 +331,15 @@ When the session drops one approach for another, the person sees both until they
 
 #### 13. The page is current, and says when it is not
 
-The page covers the work up to the last reply, or up to about 10 minutes ago during a turn. An age says when the work last changed, not when the page last checked it, so an old age on a current page is right. During a turn, the live line says when the page last checked. When an update fails, the page says so. Every time on the page comes from code.
+The page covers the work up to the last reply, or up to about 10 minutes ago during a turn. When an update fails, the page says so. The only times on the page are stall times, and code writes each one. A row's place follows when its work last changed, so on a current page a row that did not change stays where it was.
 
-- **Good:** `Working… for 3h · checked 1m ago` above `● Sync conflicts: cause unknown  3h`, when the last update found nothing new.
+Until decision 4 is built, every row shows an age. That is a known failing case.
+
+- **Good:** three hours into a turn, `● Sync conflicts: cause unknown` stays where it was, because the last update found nothing new.
+- **Good:** `◌ 2.4 release: in store review · waiting 2h`, two hours after the build went to review.
 - **Good:** "Last Overview update failed. Changes from that reply may be missing."
 - **Bad:** the agent finished the conflicts work two hours into a three-hour turn, and the row still reads ●, since no update ran during the turn.
+- **Bad:** `● Export button: works on web  2h`. The export has not stalled, so it shows no time.
 - **Bad:** `2.4 release: goes out tomorrow`, read two days later.
 
 ## How the Overview is judged
@@ -338,13 +371,13 @@ A call record can start a case when it saves the call's input as data: the Overv
 
 Three replays, each run 3 times on Sonnet and on Codex. Fixed rules check the page after every step. The judge reads a few checkpoints. Each call has its host's limits: 45 seconds and 1600 output tokens for Claude, 120 seconds for Codex. A call past its limit fails, as it would in the host: the page stays as it was, and the status line says so.
 
-**Replay A: a coordinator's day.** Overview calls only. The fixture opens and closes the asks. It starts from a busy page: the goal "Ship notes 2.4", seven open pieces, three done, two running delegates and one open ask, last seen two hours earlier.
+**Replay A: a coordinator's day.** Overview calls only. The fixture opens and closes the asks. It starts from a busy page: a head about shipping notes 2.4, seven open pieces, three done, two running delegates and one open ask, last seen two hours earlier. One delegate's Herdr name is an id, and its session publishes a goal.
 
 | Step | What happens | What it checks |
 | --- | --- | --- |
 | 1 | A delegate reports the sync merge done, and the coordinator merges it | The piece closes as ✓. Its text names no step. |
 | 2 | The coordinator publishes 2.4. The reply is full of times. | The release closes. No time word reaches the page. |
-| 3 | The person asks to file dark mode and widgets for later, fix the vanishing-notes bug, and ship 2.5. A delegate starts on the bug. | The goal leaves 2.4. Both filed pieces leave the open rows, with the filed mark once it is built. The delegate sits under the bug. |
+| 3 | The person asks to file dark mode and widgets for later, fix the vanishing-notes bug, and ship 2.5. A delegate starts on the bug. | The head leaves 2.4. Both filed pieces leave the open rows, with the filed mark once it is built. The delegate sits under the bug, in plain words. |
 | 4 | The delegate calls it "the archive bug", and the person asks for a long, sentence-like extra on the same fix | One piece, not two. If the extra merges into the fix, the line naming it is readable. |
 | 5 | The coordinator asks whether 2.5 waits for the fix. The ask opens. | ◆ on 2.5 only. Its text does not restate the question. |
 | 6 | The person answers, and the ask closes | ◆ clears. The row shows the choice. |
@@ -354,8 +387,8 @@ Three replays, each run 3 times on Sonnet and on Codex. Fixed rules check the pa
 | 9 | The fix's PR opens, and a reviewer subagent starts | No new "PR" piece. The text says the state of the fix. The reviewer sits under the fix. |
 | 10 | The PR merges, and 2.5 prep starts | The fix closes as ✓ under its own name. 2.5 is ●. |
 | 11 | The person asks why export sometimes picks the wrong default folder on one platform | The new piece gets a short name |
-| Return | Three hours pass | Checkpoint |
-| 12 | 2.5 is published, and nothing follows | The goal names the finished push. The export piece, set aside since the start, is still ○. |
+| Return | Three hours pass | Checkpoint. Only the held, waiting and quiet work shows a time. |
+| 12 | 2.5 is published, and nothing follows | The head names the finished push. The export piece, set aside since the start, is still ○. |
 
 At every step, the pieces set aside or waiting on a vendor stay on the page.
 
@@ -363,8 +396,8 @@ At every step, the pieces set aside or waiting on a vendor stay on the page.
 
 | Step | What happens | What it checks |
 | --- | --- | --- |
-| 1 | The person asks for offline sync. The agent plans the engine, conflicts and a settings toggle, and starts the engine. | The goal is an aim. Three pieces. |
-| 2 | The engine works. On the way the agent fixes a lint error and runs two review subagents. It asks "last-write-wins or manual merge?" | The goal holds. The subagents sit under the engine. ◆ on conflicts, from the ledger's new ask. |
+| 1 | The person asks for offline sync. The agent plans the engine, conflicts and a settings toggle, and starts the engine. | The head names the aim. Three pieces. |
+| 2 | The engine works. On the way the agent fixes a lint error and runs two review subagents. It asks "last-write-wins or manual merge?" | The head holds. The subagents sit under the engine, each named by the description it was started with. ◆ on conflicts, from the ledger's new ask. |
 | 3 | The person answers "manual merge" | The ask closes, ◆ clears, and the conflicts row shows the choice |
 | 4 | The person reverses: last-write-wins with a backup copy | A was line on conflicts, and no new piece |
 | 5 | Conflicts progress. The person sets the toggle aside and asks for an offline banner first. | The toggle is ○ and stays. The banner is ●. No new was line. |
@@ -377,7 +410,7 @@ At every step, the pieces set aside or waiting on a vendor stay on the page.
 | Step | What happens | What it checks |
 | --- | --- | --- |
 | 1 | A mid-turn call at 12 minutes. The activity finishes one piece and starts another, and the host's task list is present. | The finished piece closes, and the next is ●. No file names. |
-| 2 | A mid-turn call at 25 minutes. The activity shows more investigation and nothing new. | `UNCHANGED` is right, and the old ages are right |
+| 2 | A mid-turn call at 25 minutes. The activity shows more investigation and nothing new. | `UNCHANGED` is right, and no row moves |
 | 3 | The reply ends the turn | |
 | 4 | Two replies were dropped, and a catch-up reads the whole conversation | Finished work is not ●. The missed change reaches the page. |
 
@@ -414,10 +447,11 @@ Two of these cases also check the coordinator role, which no step checks once th
 
 These run after every step of every replay, on the saved Overview, the page `overviewPage` draws, and the fact list:
 
-- No goal, name, text or was line holds a time word.
-- A name has at most 3 words, no "…" and no question mark.
+- No text the model writes holds a time word: the head, a name, where it stands, or a was line.
+- A name has at most 3 words, no "…" and no question mark. So does the head's title.
+- The head has a title and a one-line description, and the description does not repeat the title. Until decision 19 is built, this is a known failing check.
 - A text names no command, file, hash, ticket or PR number, count, or process step, such as "running", "started", "in progress" or "checks".
-- The goal holds no status word, such as "ready", "merged", "passes" or "waiting".
+- The head holds no status word, such as "ready", "merged", "passes" or "waiting".
 - No two open subjects share every key word of a name, numbers included, or the same issue or PR number. So "2.4 release" and "2.5 release" are two pieces.
 - No open subject's text says the work is over: "published", "merged", "shipped", "released" or "done".
 - Every open piece in the fact list matches a row or is in the queued fold.
@@ -425,11 +459,13 @@ These run after every step of every replay, on the saved Overview, the page `ove
 - No subject matches an ask, a finding, a task for the person or a standing rule in the fact list. No text restates an open ask or finding.
 - Each open ask is linked to every subject the fact list says it holds up, and to no other. A held subject's text names no decision, such as "needs your decision" or "your call".
 - Each running child is linked to the subject the fact list names.
-- On a step the fact list marks as no news, no row's age or place moves.
-- On a step the fact list marks as a change, each changed piece's age moves.
+- A child's label is not its host's handle, joins no words with "-" or "_", and has at least two words. Until decision 21 is built, this is a known failing check for a delegate named by an id.
+- On a step the fact list marks as no news, no row's last-changed time or place moves.
+- On a step the fact list marks as a change, each changed piece's last-changed time moves.
+- A time shows only as a stall time: on a held or waiting subject that has waited 15 minutes or more, or on a child quiet that long. Until decision 4 is built, this is a known failing check.
 - On a reversal step, the right subject has a was line, and on a step of plain progress no new was line appears.
 - No was line on the drawn page ends cut with "…".
-- The goal follows the fact list: it changes where the work moved, and holds where it did not.
+- The head follows the fact list: it changes where the work moved, and holds where it did not.
 - While a call has failed and none has written since, the status line shows the failure.
 
 ### The judge
@@ -438,7 +474,8 @@ The judge reads the drawn page as plain text, the page at the last checkpoint, a
 
 **What it checks:** the meaning that rules cannot read.
 
-- The goal names what the session works toward now.
+- The head's title and description name what the session is focused on now, not a small part of its work.
+- Each child's label says what its work does.
 - Each row is a piece of the session's work.
 - No two rows are the same work by meaning, and no new row is finished work under a new name.
 - Each mark fits the piece's real state.
@@ -469,7 +506,9 @@ These make no model calls.
   - the fold names every finished piece the person has not seen, #138;
   - a look marks as seen only the rows that were on screen, #139;
   - one ask holds up two subjects, #140;
-  - during a turn, the live line says when the page last checked, #141.
+  - the head draws a title and a one-line description;
+  - a delegate whose Herdr name is an id shows the focus its session publishes;
+  - a row shows no age, and a held subject that has waited 2 hours reads `waiting 2h`.
 
 ### Calls for one release run
 
@@ -486,7 +525,7 @@ An answer that holds prose is asked once more, so the Overview calls can reach a
 
 ## Risks
 
-- **A fix for one failure causes another.** Pushing the goal to follow the work can make it change at every step. Pushing rows to close can close set-aside work. The replays hold both sides at once, on a busy page, so a prompt that does only one half fails.
+- **A fix for one failure causes another.** Pushing the head to follow the work can make it change at every step. Pushing rows to close can close set-aside work. The replays hold both sides at once, on a busy page, so a prompt that does only one half fails.
 - **The page is only as current as the last reply or the last mid-turn call.** While the agent sits idle, the subject rows do not change. A delegate that finishes while its coordinator is idle leaves the child rows, and its subject changes at the coordinator's next turn.
 - **A wrong link draws ◆ on the wrong work.** Code clears ◆ when an ask closes, but it cannot tell whether the link was right.
 - **The judge learns its examples.** A judge tuned on a few pages can pass a bad page it has not seen. The second page set, which the judge's author never learns from, checks for this.
@@ -496,20 +535,23 @@ An answer that holds prose is asked once more, so the Overview calls can reach a
 
 Decided, and still to build:
 
-- Code keeps an update's old text and age only when the meaning is the same: #136.
+- Code keeps an update's old text and place only when the meaning is the same: #136.
 - A closed mark and a fold of its own for work filed for later: #137.
 - The page names every piece finished since the person last saw it: #138.
 - A look marks as seen only the rows that were on screen: #139.
 - One ask holds up several subjects: #140.
-- During a turn, the live line says when the page last checked: #141.
+- Rows have no age column. Time shows only on stalled work.
 - The page has no identity line, in every look.
+- The head is a title and a one-line description, and the page has no live line. The Overview call stops writing the coordinator role in the same change.
+- Where it stands draws on its own line, under the name.
+- A child row says in plain words what its work does.
 - A merged piece's line reads "merged in: <name>". Today it reads "was: <name> folded in".
 - The evals above.
 
 ## Left out
 
 - Opening a delegate's session from its child row.
-- A one-line status that each delegate reports, drawn on its child row in the coordinator.
+- Where a delegate's work stands, reported by the delegate and drawn on its child row in the coordinator.
 - A coordinator showing ◆ when a delegate's own ask waits on the person.
 - A name for each session that sets it apart from its siblings.
 - Showing which waiting piece matters most.
