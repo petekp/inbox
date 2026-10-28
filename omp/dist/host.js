@@ -2797,6 +2797,43 @@ function stopFix(stop) {
       return "Send a message to resume.";
   }
 }
+var BANNER_TONES = {
+  demo: "notice",
+  "update-failed": "warning",
+  "tools-refused": "error",
+  "read-failed": "error",
+  stopped: "error",
+  "gh-missing": "warning",
+  "press-note": "notice",
+  "press-failed": "error",
+  "hooks-trust": "error",
+  "server-gone": "error",
+  "server-load-failed": "error",
+  "server-builds-differ": "warning",
+  "tab-update-failed": "warning"
+};
+function bannerOf(kind, text) {
+  const end = text.indexOf(". ");
+  const lead = end < 0 ? text : text.slice(0, end + 1);
+  const body = end < 0 ? null : text.slice(end + 2);
+  return { kind, tone: BANNER_TONES[kind], lead, body };
+}
+function stopBanner(stop) {
+  const why = `${capitalized(stopText(stop))}.`;
+  return {
+    kind: "stopped",
+    tone: BANNER_TONES.stopped,
+    lead: "Stopped",
+    body: isResumable(stop) ? why : `${why} ${stopFix(stop)}`
+  };
+}
+function tabBarBanners(host, statusError, pressNote) {
+  return [
+    ...host,
+    ...statusError ? [bannerOf("update-failed", statusError)] : [],
+    ...pressNote ? [bannerOf(pressNote.isError ? "press-failed" : "press-note", pressNote.text)] : []
+  ];
+}
 var DEMO_NOTICE = "Sample entries. Buttons here send nothing.";
 var READING_TEXT = "Reading the inbox\u2026";
 var NEXT_BUILD_MARK = ".next-build";
@@ -3698,7 +3735,7 @@ function checkRowId(ref, check) {
 function prMarkId(ref) {
   return `pr:${ref}`;
 }
-var GH_MISSING_TEXT = "The inbox could not find gh, so it cannot read your PRs.";
+var GH_MISSING_TEXT = "The inbox could not find gh. It needs gh to read your PRs.";
 function prsEmptyHint(place) {
   return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
 }
@@ -5175,6 +5212,16 @@ var LIGHT_TONES = {
   errorMark: "#a5293d",
   key: "#243bf5"
 };
+var DARK_BANNER_TINTS = {
+  error: { line: "#7a4a52", fill: "#3d2a2e" },
+  warning: { line: "#6e5a2c", fill: "#3a3322" },
+  notice: { line: "#505050", fill: "#333333" }
+};
+var LIGHT_BANNER_TINTS = {
+  error: { line: "#d9a3ab", fill: "#f8e9eb" },
+  warning: { line: "#d6c19a", fill: "#f6efe1" },
+  notice: { line: "#c8c8c8", fill: "#efefef" }
+};
 
 // src/commands.ts
 import { constants } from "fs";
@@ -5482,7 +5529,7 @@ function prEntries(screen, ui, now) {
     ];
   }
   if (screen.isGhMissing)
-    out.push({ kind: "note", text: GH_MISSING_TEXT });
+    out.push({ kind: "banner", banner: bannerOf("gh-missing", GH_MISSING_TEXT) });
   for (const d of prs.drawn) {
     const { pr, state } = d;
     const markId = prMarkId(pr.ref);
@@ -5774,7 +5821,7 @@ function isRunningMarkShown(screen, ui) {
 }
 function noticeFor(outcome, now) {
   const text = outcome.error ?? (outcome.note ? noteText() : null);
-  return text === null ? null : { text, at: now };
+  return text === null ? null : { text, at: now, isError: outcome.error !== null };
 }
 var ANSI = /\x1b\[[0-9;]*m/g;
 var visibleLength = (s) => cellWidth(s.replace(ANSI, ""));
@@ -5827,6 +5874,25 @@ function indented(text, indent, width, maxLines, paint) {
   if (wrapped.length > maxLines)
     shown[maxLines - 1] = `${cutForEllipsis(shown[maxLines - 1], (t) => cellWidth(t) <= room)}\u2026`;
   return shown.map((l) => " ".repeat(indent) + paint(l));
+}
+function boxed(inner, tone, width, s) {
+  const room = width - 4;
+  const fill = (l) => s.banner(tone, "fill", ` ${l}${" ".repeat(Math.max(0, room - visibleLength(l)))} `);
+  const side = s.banner(tone, "line", "\u2502");
+  return [
+    s.banner(tone, "line", `\u256D${"\u2500".repeat(width - 2)}\u256E`),
+    ...inner.map((l) => `${side}${fill(l)}${side}`),
+    s.banner(tone, "line", `\u2570${"\u2500".repeat(width - 2)}\u256F`)
+  ];
+}
+var LEAD_TONES = { error: "error", warning: "needsYou", notice: null };
+function bannerLines(b, width, s) {
+  const text = b.body ? `${b.lead} ${b.body}` : b.lead;
+  const leadTone = LEAD_TONES[b.tone];
+  const lead = (w) => leadTone ? s.tone(leadTone, s.bold(w)) : s.bold(w);
+  let leadWords = b.lead.split(/\s+/).length;
+  const lines = wrapText(text, width - 4).map((line) => line.split(" ").map((w) => leadWords-- > 0 ? lead(w) : w).join(" "));
+  return boxed(lines, b.tone, width, s);
 }
 function buttonCell(b, isFocused, s, mark = "") {
   if (isFocused)
@@ -5996,14 +6062,8 @@ function footer(d, isPageScrolling) {
   const { screen, ui, width, now, style: s } = d;
   const out = [s.dim("\u2500".repeat(width))];
   const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.overviewPage.error);
-  if (screen.isDemo)
-    out.push(fit(` ${s.dim(DEMO_NOTICE)}`, width));
   if (status.text)
     out.push(` ${s.dim(status.text)}`);
-  if (status.error)
-    out.push(...indented(status.error, 1, width, 2, (t) => s.tone("error", t)));
-  if (ui.notice && now - ui.notice.at < SETTLED_MS)
-    out.push(...indented(ui.notice.text, 1, width, 2, (t) => s.tone("error", t)));
   const hints = ui.typing !== null ? [`\u21B5 ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch"] : isPageScrolling ? ["\u2191\u2193 scroll", "tab switch"] : ["tab switch"];
   const model = `${screen.modelName ? `inbox model ${screen.modelName}` : "no inbox model: set @inbox"}  ${versionLabel(version, screen.isNextBuild === true)} `;
   const hintLine = ` ${hints.map((h) => s.dim(h)).join(` ${s.tone("sep", "\xB7")} `)}`;
@@ -6019,7 +6079,16 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const entries = entriesOf(screen, ui, ui.tab, now);
   const selected = resolveSelected(linesOf(entries), ui.selectedId);
   const rule = style.dim("\u2500".repeat(width));
-  const head = [rule, tabBar(d), rule];
+  const status = footerStatus(ui.tab, screen.view.status, { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 }, screen.view.overviewPage.error);
+  const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS;
+  const banners = tabBarBanners([], status.error, isNoticeShown ? ui.notice : null);
+  const head = [
+    ...screen.isDemo ? bannerLines(bannerOf("demo", DEMO_NOTICE), width, style) : [],
+    rule,
+    tabBar(d),
+    rule,
+    ...banners.flatMap((b) => bannerLines(b, width, style))
+  ];
   const pageRule = `${" ".repeat(PAGE_TEXT_AT)}${style.dim("\u2500".repeat(Math.max(0, width - PAGE_TEXT_AT - 1)))}`;
   const body = [];
   let selectedAt = [0, 0];
@@ -6028,12 +6097,17 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
       body.push(` ${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
     else if (e.kind === "page")
       body.push(...e.row.isRuledAbove ? [pageRule] : [], ...drawPageRow(e.row, d));
+    else if (e.kind === "banner")
+      body.push(...bannerLines(e.banner, width, style));
     else if (e.kind === "note")
       body.push(...indented(e.text, e.indent ?? 1, width, e.isWhole ? Infinity : 3, e.isStrong ? style.bold : style.dim));
     else {
       const isSelected = e.line.id === selected?.id;
       const start = body.length;
-      body.push(...drawLine(e.line, isSelected, d));
+      if (e.line.id === STOP_ID && screen.stop)
+        body.push(...boxed(drawLine(e.line, isSelected, { ...d, width: width - 4 }), stopBanner(screen.stop).tone, width, style));
+      else
+        body.push(...drawLine(e.line, isSelected, d));
       if (isSelected)
         selectedAt = [start, body.length - 1];
     }
@@ -7003,18 +7077,25 @@ function conversationOf(entries) {
   });
 }
 var ESC = "\x1B[";
+function rgbOf(hex) {
+  return [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16)).join(";");
+}
 function truecolor(hex, text) {
-  const [r, g, b] = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
-  return `${ESC}38;2;${r};${g};${b}m${text}${ESC}39m`;
+  return `${ESC}38;2;${rgbOf(hex)}m${text}${ESC}39m`;
+}
+function truecolorFill(hex, text) {
+  return `${ESC}48;2;${rgbOf(hex)}m${text}${ESC}49m`;
 }
 function styleOf(theme) {
   const tones = theme.isLight ? LIGHT_TONES : DARK_TONES;
+  const tints = theme.isLight ? LIGHT_BANNER_TINTS : DARK_BANNER_TINTS;
   return {
     bold: theme.bold.bind(theme),
     dim: (text) => `${ESC}2m${text}${ESC}22m`,
     inverse: theme.inverse.bind(theme),
     underline: theme.underline.bind(theme),
-    tone: (name, text) => name === "sep" || name === "accent" ? theme.fg(name === "sep" ? "statusLineSep" : "accent", text) : truecolor(tones[name], text)
+    tone: (name, text) => name === "sep" || name === "accent" ? theme.fg(name === "sep" ? "statusLineSep" : "accent", text) : truecolor(tones[name], text),
+    banner: (tone, part, text) => part === "line" ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text)
   };
 }
 function shownLine(result) {

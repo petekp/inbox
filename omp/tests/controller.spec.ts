@@ -6,7 +6,14 @@ import type { PanelSource } from '../src/controller'
 import { demoSource } from '../src/demo'
 import type { PanelPress, Style } from '../src/panel'
 
-const style: Style = { bold: s => s, dim: s => s, inverse: s => s, underline: s => s, tone: (_n, s) => s }
+const style: Style = {
+  bold: s => s,
+  dim: s => s,
+  inverse: s => s,
+  underline: s => s,
+  tone: (_n, s) => s,
+  banner: (_t, _p, s) => s,
+}
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 
 function open(overrides: Partial<PanelSource> = {}) {

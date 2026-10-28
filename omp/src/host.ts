@@ -68,7 +68,7 @@ import {
 import type { OverviewRecords, PressOutcome, RecordFiles, SessionHost, UpdateHost } from '../../hooks/session-host'
 import { agentTools } from '../../hooks/tools'
 import type { ToolAnswer } from '../../hooks/tools'
-import { DARK_TONES, LIGHT_TONES } from '../../hooks/tones'
+import { DARK_BANNER_TINTS, DARK_TONES, LIGHT_BANNER_TINTS, LIGHT_TONES } from '../../hooks/tones'
 import { clip } from '../../hooks/text'
 import { NEXT_BUILD_MARK, NO_HOLDS, RESUME_TEXT, SETTLED_MS, inboxCommandText, screenTabOf } from '../../hooks/view'
 import type { Holds, ShownTab } from '../../hooks/view'
@@ -413,15 +413,22 @@ type OmpTheme = {
 
 const ESC = '\x1b['
 
-function truecolor(hex: string, text: string): string {
-  const [r, g, b] = [1, 3, 5].map(i => Number.parseInt(hex.slice(i, i + 2), 16))
+function rgbOf(hex: string): string {
+  return [1, 3, 5].map(i => Number.parseInt(hex.slice(i, i + 2), 16)).join(';')
+}
 
-  return `${ESC}38;2;${r};${g};${b}m${text}${ESC}39m`
+function truecolor(hex: string, text: string): string {
+  return `${ESC}38;2;${rgbOf(hex)}m${text}${ESC}39m`
+}
+
+function truecolorFill(hex: string, text: string): string {
+  return `${ESC}48;2;${rgbOf(hex)}m${text}${ESC}49m`
 }
 
 /** Maps the panel's styles onto omp's theme. The separator and the accent follow the theme; the tones follow `hooks/tones.ts`. */
 export function styleOf(theme: OmpTheme): Style {
   const tones = theme.isLight ? LIGHT_TONES : DARK_TONES
+  const tints = theme.isLight ? LIGHT_BANNER_TINTS : DARK_BANNER_TINTS
 
   return {
     bold: theme.bold.bind(theme),
@@ -432,6 +439,8 @@ export function styleOf(theme: OmpTheme): Style {
       name === 'sep' || name === 'accent'
         ? theme.fg(name === 'sep' ? 'statusLineSep' : 'accent', text)
         : truecolor(tones[name], text),
+    banner: (tone, part, text) =>
+      part === 'line' ? truecolor(tints[tone].line, text) : truecolorFill(tints[tone].fill, text),
   }
 }
 

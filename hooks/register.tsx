@@ -235,6 +235,9 @@ import {
   settledMark,
   settledTone,
   DEMO_NOTICE,
+  bannerOf,
+  stopBanner,
+  tabBarBanners,
   groupEmptyText,
   closedTotal,
   earlierLabel,
@@ -280,6 +283,7 @@ import {
   allRows,
   firstWaiting,
   footerStatus,
+  type BannerView,
   keptDiscards,
   keptOpen,
   listWaits,
@@ -323,9 +327,17 @@ import {
 import { parseInline } from './inline'
 import type { Span } from './inline'
 import type { RowRecord } from './arrivals'
-import { OVERVIEW_ROW_PAD_PT, ROW_PAD_PT } from './layout'
-import { DARK_DALTONIZED_TONES, DARK_TONES, LIGHT_DALTONIZED_TONES, LIGHT_TONES, toneColors } from './tones'
-import type { ToneName } from './tones'
+import { BANNER_GAP_PT, BANNER_PAD_Y_PT, OVERVIEW_ROW_PAD_PT, ROW_PAD_PT } from './layout'
+import {
+  DARK_BANNER_TINTS,
+  DARK_DALTONIZED_TONES,
+  DARK_TONES,
+  LIGHT_BANNER_TINTS,
+  LIGHT_DALTONIZED_TONES,
+  LIGHT_TONES,
+  toneColors,
+} from './tones'
+import type { BannerTone, ToneName } from './tones'
 import type { FoldProps } from './fold-client'
 import type { LinksProps } from './links-client'
 import type { RowProps } from './row-client'
@@ -367,8 +379,9 @@ const RESIZE_SCROLL_MS = 100
 const CAN_CATCH_UP = true
 const DEMO = atom({ plugin: 'inbox', key: 'demo' } as const, null as DemoCopy | null)
 const DEMO_RECORDING = atom({ plugin: 'inbox', key: 'isDemoRecording' } as const, false)
+const READ_FAILED_TEXT = 'Could not read the inbox.'
 const TOOLS_REFUSED_TEXT =
-  "Claude cannot record or close items here: your organization's settings block the inbox's tools."
+  "Claude cannot record or close items here. Your organization's settings block the inbox's tools."
 const PR_POLL_MS = 2 * 60_000
 
 const RECORD_TOOL = 'mcp__inbox__record'
@@ -628,8 +641,16 @@ type Palette = {
   divider: string
   tone: Partial<Record<Tone, string>>
   mark: Record<Tone, string>
+  /** A banner's border, and its fill where the palette can tint one. */
+  banner: Record<BannerTone, { line: string; fill?: string }>
 }
 
+/** Theme keys have no tint of each tone, so banners in these palettes draw their border alone. */
+const THEME_KEY_BANNERS: Palette['banner'] = {
+  error: { line: 'error' },
+  warning: { line: NEEDS_YOU },
+  notice: { line: 'inactive' },
+}
 const DARK_PALETTE: Palette = {
   card: '#373737',
   tab: '#373737',
@@ -643,6 +664,7 @@ const DARK_PALETTE: Palette = {
   divider: '#444444',
   tone: DARK_TONES,
   mark: { ...DARK_TONES, error: DARK_TONES.errorMark },
+  banner: DARK_BANNER_TINTS,
 }
 const LIGHT_PALETTE: Palette = {
   card: '#e6e6e6',
@@ -657,6 +679,7 @@ const LIGHT_PALETTE: Palette = {
   divider: '#c8c8c8',
   tone: LIGHT_TONES,
   mark: LIGHT_TONES,
+  banner: LIGHT_BANNER_TINTS,
 }
 const DARK_ANSI_PALETTE: Palette = {
   body: 'inverseText',
@@ -669,6 +692,7 @@ const DARK_ANSI_PALETTE: Palette = {
   divider: 'userMessageBackground',
   tone: {},
   mark: { needsYou: NEEDS_YOU, issue: NEEDS_YOU, findings: FINDINGS, prs: PRS, done: DONE, error: 'error' },
+  banner: THEME_KEY_BANNERS,
 }
 const LIGHT_ANSI_PALETTE: Palette = {
   body: 'userMessageBackgroundHover',
@@ -681,6 +705,7 @@ const LIGHT_ANSI_PALETTE: Palette = {
   divider: 'userMessageBackground',
   tone: {},
   mark: { needsYou: 'error', issue: 'error', findings: FINDINGS, prs: 'suggestion', done: DONE, error: 'error' },
+  banner: THEME_KEY_BANNERS,
 }
 const PALETTES: Record<string, Palette> = {
   dark: DARK_PALETTE,
@@ -717,6 +742,7 @@ const THEME_KEY_PALETTE: Palette = {
   divider: 'subtle',
   tone: {},
   mark: { needsYou: NEEDS_YOU, issue: NEEDS_YOU, findings: FINDINGS, prs: PRS, done: DONE, error: 'error' },
+  banner: THEME_KEY_BANNERS,
 }
 // Theme keys resolve to the app's colors, so the desktop pane draws text in theme keys.
 // The app refuses an hsl() alpha or color-mix() color.
@@ -732,6 +758,11 @@ const DESKTOP_PALETTE: Palette = {
   divider: 'rgba(128, 128, 128, 0.25)',
   tone: { error: 'error' },
   mark: { needsYou: NEEDS_YOU, issue: NEEDS_YOU, findings: FINDINGS, prs: 'suggestion', done: DONE, error: 'error' },
+  banner: {
+    error: { line: 'rgba(214, 69, 80, 0.32)', fill: 'rgba(214, 69, 80, 0.1)' },
+    warning: { line: 'rgba(212, 160, 23, 0.36)', fill: 'rgba(212, 160, 23, 0.1)' },
+    notice: { line: 'rgba(128, 120, 105, 0.28)', fill: 'rgba(128, 120, 105, 0.1)' },
+  },
 }
 /**
  * Mobile and VS Code get the terminal look, which nobody has checked
@@ -4538,23 +4569,69 @@ export const register: Register = on => {
           },
         }
       : null
-    const statusLines = [
-      shownStatus.error ? (
-        <Text color={pal.tone.error} wrap="wrap">
-          {shownStatus.error}
+    const leadColor: Record<BannerTone, string | undefined> = {
+      error: pal.tone.error ?? pal.mark.error,
+      warning: pal.tone.needsYou ?? pal.mark.needsYou,
+      notice: undefined,
+    }
+    /**
+     * A banner as a rounded box. The terminal paints a Box's fill inside its border, so a docked banner's fill sits
+     * inside its rounded border. The inline pane draws the fill alone, so a tab still fits its height.
+     */
+    const banner = (
+      b: BannerView,
+      more: {
+        /** Drawn in place of the bold lead, as while a press runs. */
+        lead?: JSX.Element
+        after?: JSX.Element
+        isBodyBelow?: boolean
+        extra?: JSX.Element | null
+        action?: JSX.Element | null
+      } = {},
+    ) => {
+      const { line, fill } = pal.banner[b.tone]
+      const frame =
+        look === 'desktop'
+          ? { borderStyle: 'single', borderColor: line, paddingY: (2 * BANNER_PAD_Y_PT) / DESKTOP_LINE_PT }
+          : isInline
+            ? { paddingX: 1 }
+            : { borderStyle: 'round', borderColor: line, paddingX: 1 }
+      const lead = more.lead ?? (
+        <Text bold color={leadColor[b.tone]}>
+          {b.lead}
         </Text>
-      ) : null,
-      toolsRefused ? (
-        <Text color={pal.tone.error} wrap="wrap">
-          {TOOLS_REFUSED_TEXT}
-        </Text>
-      ) : null,
-      lineNote ? (
-        <Text color={pal.muted} wrap="wrap">
-          {feedbackText({ is: 'note', note: lineNote.note, at: lineNote.at }, look)}
-        </Text>
-      ) : null,
-    ]
+      )
+      const isActionBelow = isNarrowDesktop && Boolean(more.action)
+
+      return (
+        <Box
+          key={`banner-${b.kind}`}
+          {...(isActionBelow
+            ? { flexDirection: 'column', alignItems: 'flex-start', rowGap: (2 * BANNER_PAD_Y_PT) / DESKTOP_LINE_PT }
+            : { flexDirection: 'row', alignItems: 'center', columnGap: 2 })}
+          {...frame}
+          {...(fill ? { backgroundColor: fill } : {})}
+        >
+          <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
+            <Text wrap="wrap">
+              {lead}
+              {more.after ?? null}
+              {b.body && !more.isBodyBelow ? ` ${b.body}` : ''}
+            </Text>
+            {b.body && more.isBodyBelow ? <Text wrap="wrap">{b.body}</Text> : null}
+            {more.extra ?? null}
+          </Box>
+          {more.action ? <Box flexShrink={0}>{more.action}</Box> : null}
+        </Box>
+      )
+    }
+    const statusLines = tabBarBanners(
+      toolsRefused ? [bannerOf('tools-refused', TOOLS_REFUSED_TEXT)] : [],
+      shownStatus.error,
+      lineNote
+        ? { text: feedbackText({ is: 'note', note: lineNote.note, at: lineNote.at }, look), isError: false }
+        : null,
+    ).map(b => banner(b))
     const namesWidth = (naming: TabNaming) =>
       tabList.reduce((sum, t) => sum + cellWidth(tabText(t.id, tabName(t, naming))), 0)
     const framedTabs = fitTabs(
@@ -4753,7 +4830,12 @@ export const register: Register = on => {
       </Box>
     )
     const statusBlock = statusLines.some(Boolean) ? (
-      <Box flexDirection="column" paddingX={hasRail ? 1 : isInline ? 2 : 1} paddingTop={hasRail ? 0 : 1}>
+      <Box
+        flexDirection="column"
+        rowGap={look === 'desktop' ? (2 * BANNER_GAP_PT) / DESKTOP_LINE_PT : isInline ? 0 : 1}
+        paddingX={hasRail ? 1 : isInline ? 2 : 1}
+        paddingTop={hasRail ? 0 : 1}
+      >
         {statusLines}
       </Box>
     ) : null
@@ -5131,14 +5213,10 @@ export const register: Register = on => {
       const unread = isUnread
         ? [
             section(
-              <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingLeft={2}>
-                {isReadingAgain ? (
-                  <Text color={pal.muted}>{READING_TEXT}</Text>
-                ) : (
-                  <Text color={pal.tone.error}>Could not read the inbox.</Text>
-                )}
-                <Button key="read-again" label="Try again" onPress={() => void readAgain($)} />
-              </Box>,
+              banner(bannerOf('read-failed', READ_FAILED_TEXT), {
+                ...(isReadingAgain ? { lead: <Text color={pal.muted}>{READING_TEXT}</Text> } : {}),
+                action: <Button key="read-again" label="Try again" onPress={() => void readAgain($)} />,
+              }),
             ),
           ]
         : []
@@ -5146,38 +5224,23 @@ export const register: Register = on => {
       const outside = stop
         ? [
             section(
-              <Box flexDirection="column" paddingLeft={1}>
-                <Text wrap="truncate-end">
-                  <Text color={pal.tone.error} bold>
-                    Stopped
-                  </Text>
-                  <Text color={pal.muted}>
-                    {DOT}
-                    {ago(now - stop.at)}
-                  </Text>
-                </Text>
-                {isResumable(stop) ? (
-                  <Box flexDirection="column">
-                    <Text wrap="wrap">{capitalized(stopText(stop))}.</Text>
-                    {resuming?.is === 'refused' ? (
-                      <Text color={pal.tone.error} wrap="wrap">
-                        Not sent: {resuming.why}
-                      </Text>
-                    ) : null}
-                    <Box flexDirection="row">
-                      <Button
-                        key="resume"
-                        label={resuming?.is === 'sending' ? 'Resuming…' : 'Resume'}
-                        onPress={() => void resume($)}
-                      />
-                    </Box>
-                  </Box>
-                ) : (
-                  <Text wrap="wrap">
-                    {capitalized(stopText(stop))}. {stopFix(stop)}
-                  </Text>
-                )}
-              </Box>,
+              banner(stopBanner(stop), {
+                after: <Text color={pal.muted}>{glued(`${DOT}${ago(now - stop.at)}`)}</Text>,
+                isBodyBelow: true,
+                extra:
+                  resuming?.is === 'refused' ? (
+                    <Text color={pal.tone.error} wrap="wrap">
+                      Not sent: {resuming.why}
+                    </Text>
+                  ) : null,
+                action: isResumable(stop) ? (
+                  <Button
+                    key="resume"
+                    label={resuming?.is === 'sending' ? 'Resuming…' : 'Resume'}
+                    onPress={() => void resume($)}
+                  />
+                ) : null,
+              }),
             ),
           ]
         : []
@@ -5326,21 +5389,7 @@ export const register: Register = on => {
         ...prRowGroup(PR_GROUP_TITLES.checks, checks, `${pr.ref}-checks`),
       ])
     }
-    const ghMissingNotice = () => {
-      const line = (
-        <Text color={pal.muted} wrap="wrap">
-          {GH_MISSING_TEXT}
-        </Text>
-      )
-
-      return section(
-        look === 'desktop' ? (
-          desktopFrame({ key: 'gh-missing', padY: 0, children: line })
-        ) : (
-          <Box paddingLeft={1}>{line}</Box>
-        ),
-      )
-    }
+    const ghMissingNotice = () => section(banner(bannerOf('gh-missing', GH_MISSING_TEXT)))
     const olderPrs = () => {
       const text = olderPrsText(prState, ledger.prs)
       if (!text) return []
@@ -5687,19 +5736,10 @@ export const register: Register = on => {
     const drawn = (
       <Box flexDirection="column" minHeight={e.props.scroll.bodyRows} backgroundColor={pal.body}>
         {showsDemoNotices ? (
-          <Box
-            flexDirection="row"
-            alignItems="center"
-            columnGap={2}
-            paddingX={isInline ? 2 : 1}
-            marginBottom={blankLine}
-          >
-            <Box flexGrow={1} flexShrink={1}>
-              <Text wrap="wrap" color={pal.muted}>
-                {DEMO_NOTICE}
-              </Text>
-            </Box>
-            <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo($, false)} />
+          <Box flexDirection="column" paddingX={isInline ? 2 : 1} marginBottom={blankLine}>
+            {banner(bannerOf('demo', DEMO_NOTICE), {
+              action: <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo($, false)} />,
+            })}
           </Box>
         ) : null}
         {hasRail ? (

@@ -36,7 +36,7 @@ import { failingChecks, readiness, waitingThreads } from '../../hooks/prs'
 import { capitalized, noteText } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
 import type { SessionView } from '../../hooks/session'
-import type { ToneName } from '../../hooks/tones'
+import type { BannerTone, ToneName } from '../../hooks/tones'
 import { ago, cellWidth, cutForEllipsis, cutToCells } from '../../hooks/text'
 import {
   canUndoRefused,
@@ -44,6 +44,9 @@ import {
   settledMark,
   settledTone,
   DEMO_NOTICE,
+  bannerOf,
+  stopBanner,
+  tabBarBanners,
   FINDING_GROUPS,
   NEEDS_YOU_GROUPS,
   QUEUED_AFTER_MS,
@@ -93,6 +96,7 @@ import {
   versionLabel,
 } from '../../hooks/view'
 import type {
+  BannerView,
   ClosedDelivery,
   Feedback,
   OverviewBranch,
@@ -129,6 +133,8 @@ export type Style = {
   inverse(s: string): string
   underline(s: string): string
   tone(name: Tone, s: string): string
+  /** A banner's border, or its fill behind `s`. */
+  banner(tone: BannerTone, part: 'line' | 'fill', s: string): string
 }
 
 export type PanelUi = {
@@ -143,7 +149,7 @@ export type PanelUi = {
   /** Rows whose draft the person discarded, and when. */
   discarded: Record<string, number>
   /** A line about the last press that the row itself cannot show, until `at` + SETTLED_MS. */
-  notice: { text: string; at: number } | null
+  notice: { text: string; at: number; isError: boolean } | null
   /** The groups whose closed rows show. Each starts folded. */
   unfolded: FoldKind[]
   /** A Resume press for the stop that began at `stopAt`. */
@@ -227,6 +233,7 @@ type Entry =
   | { kind: 'note'; text: string; isStrong?: boolean; indent?: number; isWhole?: boolean }
   | { kind: 'row'; line: Line }
   | { kind: 'page'; row: OverviewRow }
+  | { kind: 'banner'; banner: BannerView }
 
 const blankLine = (id: string): Line => ({
   id,
@@ -488,7 +495,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
       { kind: 'note', text: empty.hint, isWhole: true },
     ]
   }
-  if (screen.isGhMissing) out.push({ kind: 'note', text: GH_MISSING_TEXT })
+  if (screen.isGhMissing) out.push({ kind: 'banner', banner: bannerOf('gh-missing', GH_MISSING_TEXT) })
   for (const d of prs.drawn) {
     const { pr, state } = d
     const markId = prMarkId(pr.ref)
@@ -849,7 +856,7 @@ export function isRunningMarkShown(screen: PanelScreen, ui: PanelUi): boolean {
 export function noticeFor(outcome: { error: string | null; note: 'stale' | null }, now: number): PanelUi['notice'] {
   const text = outcome.error ?? (outcome.note ? noteText() : null)
 
-  return text === null ? null : { text, at: now }
+  return text === null ? null : { text, at: now, isError: outcome.error !== null }
 }
 
 const ANSI = /\x1b\[[0-9;]*m/g
@@ -915,6 +922,37 @@ function indented(
 }
 
 type Draw = { screen: PanelScreen; ui: PanelUi; width: number; now: number; style: Style }
+
+/** `inner` in a rounded box in the tone, filled with its tint. Each inner line fits `width - 4` cells. */
+function boxed(inner: string[], tone: BannerTone, width: number, s: Style): string[] {
+  const room = width - 4
+  const fill = (l: string) => s.banner(tone, 'fill', ` ${l}${' '.repeat(Math.max(0, room - visibleLength(l)))} `)
+  const side = s.banner(tone, 'line', '│')
+
+  return [
+    s.banner(tone, 'line', `╭${'─'.repeat(width - 2)}╮`),
+    ...inner.map(l => `${side}${fill(l)}${side}`),
+    s.banner(tone, 'line', `╰${'─'.repeat(width - 2)}╯`),
+  ]
+}
+
+const LEAD_TONES: Record<BannerTone, Tone | null> = { error: 'error', warning: 'needsYou', notice: null }
+
+/** A banner's lines: its lead in bold, in the tone's color, then its body, wrapped inside the box. */
+function bannerLines(b: BannerView, width: number, s: Style): string[] {
+  const text = b.body ? `${b.lead} ${b.body}` : b.lead
+  const leadTone = LEAD_TONES[b.tone]
+  const lead = (w: string) => (leadTone ? s.tone(leadTone, s.bold(w)) : s.bold(w))
+  let leadWords = b.lead.split(/\s+/).length
+  const lines = wrapText(text, width - 4).map(line =>
+    line
+      .split(' ')
+      .map(w => (leadWords-- > 0 ? lead(w) : w))
+      .join(' '),
+  )
+
+  return boxed(lines, b.tone, width, s)
+}
 
 function buttonCell(b: Button, isFocused: boolean, s: Style, mark = ''): string {
   if (isFocused) return s.inverse(b.isOut ? s.dim(` ↵ ${b.label}${mark} `) : s.bold(` ↵ ${b.label}${mark} `))
@@ -1182,11 +1220,7 @@ function footer(d: Draw, isPageScrolling: boolean): string[] {
     { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 },
     screen.view.overviewPage.error,
   )
-  if (screen.isDemo) out.push(fit(` ${s.dim(DEMO_NOTICE)}`, width))
   if (status.text) out.push(` ${s.dim(status.text)}`)
-  if (status.error) out.push(...indented(status.error, 1, width, 2, t => s.tone('error', t)))
-  if (ui.notice && now - ui.notice.at < SETTLED_MS)
-    out.push(...indented(ui.notice.text, 1, width, 2, t => s.tone('error', t)))
   const hints =
     ui.typing !== null
       ? [`↵ ${ROW_COPY.send}`, `esc ${ROW_COPY.cancel}`]
@@ -1233,13 +1267,28 @@ export function drawPanel(
   const entries = entriesOf(screen, ui, ui.tab, now)
   const selected = resolveSelected(linesOf(entries), ui.selectedId)
   const rule = style.dim('─'.repeat(width))
-  const head = [rule, tabBar(d), rule]
+  const status = footerStatus(
+    ui.tab,
+    screen.view.status,
+    { isFetching: screen.isFetchingPrs, hasPrs: screen.view.prs.drawn.length > 0 },
+    screen.view.overviewPage.error,
+  )
+  const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS
+  const banners = tabBarBanners([], status.error, isNoticeShown ? ui.notice : null)
+  const head = [
+    ...(screen.isDemo ? bannerLines(bannerOf('demo', DEMO_NOTICE), width, style) : []),
+    rule,
+    tabBar(d),
+    rule,
+    ...banners.flatMap(b => bannerLines(b, width, style)),
+  ]
   const pageRule = `${' '.repeat(PAGE_TEXT_AT)}${style.dim('─'.repeat(Math.max(0, width - PAGE_TEXT_AT - 1)))}`
   const body: string[] = []
   let selectedAt = [0, 0]
   for (const e of entries) {
     if (e.kind === 'heading') body.push(` ${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`)
     else if (e.kind === 'page') body.push(...(e.row.isRuledAbove ? [pageRule] : []), ...drawPageRow(e.row, d))
+    else if (e.kind === 'banner') body.push(...bannerLines(e.banner, width, style))
     else if (e.kind === 'note')
       body.push(
         ...indented(e.text, e.indent ?? 1, width, e.isWhole ? Infinity : 3, e.isStrong ? style.bold : style.dim),
@@ -1247,7 +1296,17 @@ export function drawPanel(
     else {
       const isSelected = e.line.id === selected?.id
       const start = body.length
-      body.push(...drawLine(e.line, isSelected, d))
+      // The stop stays a row Resume can focus, drawn as a banner.
+      if (e.line.id === STOP_ID && screen.stop)
+        body.push(
+          ...boxed(
+            drawLine(e.line, isSelected, { ...d, width: width - 4 }),
+            stopBanner(screen.stop).tone,
+            width,
+            style,
+          ),
+        )
+      else body.push(...drawLine(e.line, isSelected, d))
       if (isSelected) selectedAt = [start, body.length - 1]
     }
   }

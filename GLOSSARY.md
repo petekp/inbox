@@ -115,6 +115,15 @@ counts and [Open inbox]. When the session stops, a second line says why, with
 [Resume] after an API error. Codex has no band. omp has a band with the same
 counts and no button, which says `/inbox` opens the panel.
 
+**Banner**:
+A tinted, rounded box in the pane about the inbox's own state or the turn's
+stop, such as "Last update failed." or "Could not read the inbox.". Its first
+sentence is its lead, drawn in bold. Its tone says what it means: error, the
+inbox cannot do its job until something changes; warning, part of it is
+missing or out of date; notice, a fact. A row's own result is not a banner.
+`BannerView` in `hooks/view.ts`.
+_Avoid_: alert, error strip, status line
+
 **Person's line**:
 The line the conversation shows under the agent's `record` or `close` call,
 written for the person, such as "Question: Which cache should the API use?". A
