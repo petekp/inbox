@@ -236,7 +236,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
   root.remove()
 })
 
-test('the actual Codex tab replaces actions and shortcuts while replying, restores a cancelled draft, sends its current words, keeps them when the send cannot be confirmed, and keeps a done row in place past its Undo until the person switches tab', async () => {
+test('the actual Codex tab replaces actions and shortcuts while replying, restores a cancelled draft, sends its current words, keeps them when the send cannot be confirmed, and keeps a done row in place past its Undo until the person switches tab or types a message', async () => {
   const state = emptyState('renderer')
   state.ledger = task().ledger
   state.heard.startAt = 1
@@ -443,6 +443,11 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
       assert.ok(notesRow)
       assert.equal(notesRow.querySelector('.key.undo:not(.spent)'), null)
       assert.ok(notesRow.querySelector('.key.undo.spent'))
+
+      state.presence = { ...state.presence, lastTypedMessageAt: Date.now() }
+      await pause(POLL_MS + 100)
+      assert.doesNotMatch(root.querySelector('.row.settled')?.textContent ?? '', /Publish the notes/)
+      assert.match(root.textContent ?? '', /3 closed/)
     } finally {
       Date.now = realNow
     }
