@@ -8,7 +8,7 @@ import { ghFinder, ghIn } from '../../hooks/gh'
 import type { Run } from '../../hooks/gh'
 import { keptViews } from '../../hooks/pr-tab'
 import type { PrPress } from '../../hooks/pr-tab'
-import { demoAfterPress, demoTurns, noteText, openTarget } from '../../hooks/presses'
+import { demoAfterPress, demoReplied, demoSent, noteText, openTarget } from '../../hooks/presses'
 import type { PathProbe, RowPress } from '../../hooks/presses'
 import { agentTools } from '../../hooks/tools'
 import { heardState, isTurnHeard, lookOnView, noteToolCall, viewOf } from './core'
@@ -443,10 +443,13 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       presence: { ...s.presence, ...after.turns },
     }
     demos.set(id, next)
-    if (r.effects.some(e => e.kind === 'send'))
+    const sent = demoSent(r, after.turns)
+    if (sent)
       setTimeout(() => {
         const d = demos.get(id)
-        if (d) demos.set(id, { ...d, presence: { ...d.presence, ...demoTurns(d.presence, [], true) } })
+        if (!d) return
+        const replied = demoReplied({ lastActions: d.lastActions, turns: d.presence }, sent)
+        demos.set(id, { ...d, lastActions: replied.lastActions, presence: { ...d.presence, ...replied.turns } })
       }, SETTLED_MS).unref()
 
     return {

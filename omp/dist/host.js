@@ -2332,10 +2332,18 @@ function reopenOnFailure(ledger, id, at) {
   const closed = ledger.closed.findLast((c) => c.id === id);
   return closed?.item && closed.how === "answered" && closed.at === at ? reopenItem(ledger, id) : ledger;
 }
-function demoTurns(turns, effects, isReplied = false) {
-  if (isReplied)
-    return { ...turns, turnsApplied: turns.turnsStarted };
-  return effects.some((e) => e.kind === "send") ? { ...turns, turnsStarted: turns.turnsStarted + 1 } : turns;
+var isSent = (r) => r.effects.some((e) => e.kind === "send");
+function demoSent(r, after) {
+  return isSent(r) ? { rows: Object.keys(r.lasts), turn: after.turnsStarted } : null;
+}
+function demoReplied(s, sent) {
+  const turns = { ...s.turns, turnsApplied: Math.max(s.turns.turnsApplied, sent.turn) };
+  const isAnsweredByReply = (id, last) => !sent.rows.includes(id) && isAwaitingReply(last, s.turns) && !isAwaitingReply(last, turns);
+  const lastActions = Object.fromEntries(Object.entries(s.lastActions).map(([id, last]) => [
+    id,
+    isAnsweredByReply(id, last) ? { ...last, turnsStarted: turns.turnsApplied } : last
+  ]));
+  return { lastActions, turns };
 }
 function demoAfterPress(before, r, held) {
   const lasts = Object.fromEntries(Object.entries(r.lasts).map(([id, { delivery: _unsent, ...l }]) => [
@@ -2345,7 +2353,7 @@ function demoAfterPress(before, r, held) {
   return {
     ledger: pruneClosed(r.ledger, held),
     lastActions: withLasts(before.lastActions, lasts, r.drop),
-    turns: demoTurns(before.turns, r.effects)
+    turns: isSent(r) ? { ...before.turns, turnsStarted: before.turns.turnsStarted + 1 } : before.turns
   };
 }
 async function runLocalEffects(host, effects, rowId, pending) {
@@ -6803,9 +6811,11 @@ function demoSource(deps) {
         lastActions: after.lastActions,
         presence: { ...state.presence, ...after.turns }
       };
-      if (r.effects.some((e) => e.kind === "send"))
+      const sent = demoSent(r, after.turns);
+      if (sent)
         deps.after(() => {
-          state = { ...state, presence: { ...state.presence, ...demoTurns(state.presence, [], true) } };
+          const replied = demoReplied({ lastActions: state.lastActions, turns: state.presence }, sent);
+          state = { ...state, lastActions: replied.lastActions, presence: { ...state.presence, ...replied.turns } };
           changed();
         }, deps.settleWindowMs);
       changed();
