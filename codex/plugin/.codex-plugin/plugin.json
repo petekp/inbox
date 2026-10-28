@@ -1,6 +1,6 @@
 {
   "name": "inbox",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "description": "Collects what waits on you in a Codex session: questions, tasks, findings and PRs, in a tab beside the conversation",
   "author": { "name": "Pete Petrash" },
   "repository": "https://github.com/petekp/inbox",
