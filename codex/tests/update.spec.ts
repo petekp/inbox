@@ -9,9 +9,10 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import type { Exchange } from '../../hooks/ledger'
-import { noteActivity } from '../../hooks/session'
+import { parseOverview } from '../../hooks/overview'
+import { appliedOverview, noteActivity } from '../../hooks/session'
 import { endTurn, notePrompt, viewOf } from '../src/core'
-import { readState, statePath, updateState } from '../src/state'
+import { readState, statePath, updateState, withLock } from '../src/state'
 import { codexAsk, recordModelFailure, runUpdates as runBothCalls } from '../src/update'
 import { findCli } from '../src/cli'
 import { run } from '../src/run'
@@ -284,6 +285,48 @@ test('three Overview calls write in the order their updates landed', async () =>
   await running
 
   assert.equal((await readState(dir, 's1')).ledger.overview?.goal, 'Script 3 built')
+})
+
+test('an update’s Overview call waits while another process holds the Overview calls’ lock, then reads that process’s Overview and writes last', async t => {
+  const dir = tempDir()
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  await updateState(dir, 's1', s => ({
+    ...s,
+    presence: { ...s.presence, turnsStarted: 2, turnsApplied: 1 },
+    pending: [{ ex: ex(2, 'Built the rollback script.'), turnsStarted: 2 }],
+  }))
+  const overviewPrompts: string[] = []
+  let running: Promise<void> = Promise.resolve()
+  await withLock(`${statePath(dir, 's1')}.results`, async () => {
+    running = runBothCalls(
+      dir,
+      's1',
+      async (prompt, system) => {
+        if (system !== OVERVIEW_SYSTEM) return 'NEW: do | - | Roll back | - | -'
+        overviewPrompts.push(prompt)
+
+        return 'GOAL: Rollback script built'
+      },
+      () => 5,
+    )
+    let shown = await readState(dir, 's1')
+    for (let waited = 0; shown.pending.length > 0 && waited < 300; waited += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+      shown = await readState(dir, 's1')
+    }
+    await new Promise(resolve => setTimeout(resolve, 200))
+    assert.deepEqual(
+      shown.ledger.items.map(i => i.ask),
+      ['Roll back'],
+    )
+    assert.equal(overviewPrompts.length, 0)
+    await updateState(dir, 's1', s => appliedOverview(s, parseOverview('GOAL: Deploy script built')!, 1, 4))
+  })
+  await running
+
+  assert.equal(overviewPrompts.length, 1)
+  assert.ok((overviewPrompts[0] ?? '').includes('Deploy script built'))
+  assert.equal((await readState(dir, 's1')).ledger.overview?.goal, 'Rollback script built')
 })
 
 test('pending exchanges reach the ledger in order, a failed one waits for the next update, and a second failure drops it', async () => {

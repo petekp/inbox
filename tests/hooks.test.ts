@@ -10,6 +10,7 @@ import { cellWidth } from '../hooks/text'
 import type { Item, Session } from '../types'
 import { demoView } from '../hooks/demo'
 import { OVERVIEW_SYSTEM } from '../hooks/model-text'
+import { LOOK_MIN_MS } from '../hooks/overview'
 import { OVERVIEW_REFRESH_MS } from '../hooks/session'
 import { checkActions, prBlockActions, prCheckId, prThreadId, threadActions, threadSentIn } from '../hooks/pr-tab'
 import { failingChecks, waitingThreads } from '../hooks/prs'
@@ -1380,6 +1381,66 @@ test('the next ledger update does not wait for an earlier Overview call, and Ove
   expect(overviewPrompts[1]).toContain('<goal>\nScaffolding the command\n</goal>')
 })
 
+test('a mid-turn Overview call still out when its turn ends writes first, and the reply’s Overview call reads that write and writes last', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let session: Pick<Session, 'ledger'> | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'add a greeting cli', turnId: 't1' })
+  await clock.advance(OVERVIEW_REFRESH_MS)
+  let release: () => void = () => undefined
+  overviewHold = new Promise<void>(resolve => (release = resolve))
+  overviewReply = ['GOAL: Planning the CLI', 'GOAL: Building the CLI']
+  await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'npm test' } as never)
+  await clock.settle()
+  expect(overviewPrompts).toHaveLength(1)
+
+  await $.turn.complete({ answer: 'Built it.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  expect(session!.ledger.items.map(i => i.ask)).toEqual(['Use Node or Python?', 'Name the command greet?'])
+  expect(overviewPrompts).toHaveLength(1)
+  release()
+  await clock.settle()
+
+  expect(overviewPrompts).toHaveLength(2)
+  expect(overviewPrompts[1]).toContain('<reply>')
+  expect(overviewPrompts[1]).toContain('<goal>\nPlanning the CLI\n</goal>')
+  expect(session!.ledger.overview?.goal).toBe('Building the CLI')
+})
+
+test('an Overview answer that lands after /clear goes to the conversation it was for, and the new conversation keeps an empty Overview', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let session: Pick<Session, 'ledger'> | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  let release: () => void = () => undefined
+  overviewHold = new Promise<void>(resolve => (release = resolve))
+  overviewReply = 'GOAL: Adding a greeting CLI\nNEW: working | Plan | being written'
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Plan ready.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  expect(overviewPrompts).toHaveLength(1)
+
+  await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
+  await $.classic.SessionStart({ source: 'clear', session_id: 'session-2' })
+  await clock.settle()
+  release()
+  await clock.settle()
+
+  expect(session!.ledger.overview).toBeNull()
+  expect(stored.has('s:session-2')).toBe(false)
+  expect(JSON.parse(stored.get('s:session-1') ?? '{}').ledger.overview?.goal).toBe('Adding a greeting CLI')
+})
+
 test('resumed into a conversation it cannot fork yet, it catches up from the transcript before any reply', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
@@ -1433,6 +1494,50 @@ test('a catch-up writes its Overview with a separate call over the transcript', 
     subjects: [{ name: 'Command', status: 'queued' }],
   })
   expect(overviewPrompts.at(-1)).toContain('<conversation>\nPerson: Add a greeting CLI.')
+})
+
+test('a catch-up’s Overview call waits for a failing Overview call still out, and its answer clears the failure that call saved', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  const failureCauses: (string | null)[] = []
+  let session: Pick<Session, 'ledger' | 'overviewFailure'> | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    const written: Pick<Session, 'ledger' | 'overviewFailure'> = e.value as never
+    session = written
+    failureCauses.push(written.overviewFailure?.cause ?? null)
+    return next(e)
+  })
+  on('model.fork', () => ({
+    value: {
+      isAnswered: true,
+      text: 'NONE',
+      usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    },
+  }))
+  const said = (role: 'user' | 'assistant', text: string) => ({ role, text, toolUses: [] as never[] })
+  transcriptRows = [said('user', 'Add a greeting CLI.'), said('assistant', 'The plan is written. Command named greet.')]
+  const reply = async (answer: string, turnId: string) => {
+    await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
+    await $.turn.complete({ answer, durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+    await clock.settle()
+  }
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  let release: () => void = () => undefined
+  overviewHold = new Promise<void>(resolve => (release = resolve))
+  overviewReply = ['The plan is written.', 'Still prose.', 'GOAL: Adding a greeting CLI']
+  await reply('Plan ready.', 't1')
+  ledgerReply = 'not a ledger'
+  await reply('Using Node.', 't2')
+  await reply('Named it greet.', 't3')
+  expect(overviewPrompts).toHaveLength(1)
+
+  release()
+  await clock.settle()
+  expect(overviewPrompts).toHaveLength(3)
+  expect(overviewPrompts[2]).toContain('<conversation>\nPerson: Add a greeting CLI.')
+  expect(failureCauses).toContain('refused')
+  expect(failureCauses.at(-1)).toBeNull()
+  expect(session!.ledger.overview?.goal).toBe('Adding a greeting CLI')
 })
 
 test('after a failed update, the next reply catches up over the whole conversation', async ($, on) => {
@@ -4807,6 +4912,47 @@ test('on a next build, the Overview tab’s news dot clears when the page shows,
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
   await pane.press({ key: 'tab-findings' })
   expect(await pane.find({ key: 'address-f3' })).toBeDefined()
+})
+
+test('on a next build, a look at the Overview that ends while an Overview call is out keeps its Seen line, and the answer that lands after it shows above the line', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  files = ['/.next-build']
+  paneState = { isShown: true, isFocused: true }
+  let session: Parameters<typeof overviewPage>[0] | null = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, ($, e, next) => {
+    session = e.value as never
+    return next(e)
+  })
+  const reply = async (text: string, turnId: string) => {
+    await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
+    await $.turn.complete({ answer: 'Noted.', durationMs: 5, isAborted: false, turnId, reason: 'answer' })
+    await clock.settle()
+  }
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  overviewReply = 'GOAL: Adding a greeting CLI\nNEW: working | Plan | being written'
+  await reply('add a greeting cli', 't1')
+  const pane = await $.ui.mount(PANE)
+  let release: () => void = () => undefined
+  overviewHold = new Promise<void>(resolve => (release = resolve))
+  overviewReply = 'NEW: working | Command | named greet'
+  await reply('name it greet', 't2')
+  expect(overviewPrompts).toHaveLength(2)
+
+  await pane.press({ key: 'tab-key-overview' })
+  await clock.settle()
+  await clock.advance(LOOK_MIN_MS)
+  await pane.press({ key: 'tab-key-needsYou' })
+  await clock.settle()
+  const seenAt = session!.ledger.overview?.lastLookAt
+  expect(seenAt).toBe(1_000_000 + LOOK_MIN_MS)
+  await clock.advance(1)
+  release()
+  await clock.settle()
+
+  expect(session!.ledger.overview).toMatchObject({ lastLookAt: seenAt, look: null })
+  const rows = overviewPage(session!, clock.now()).rows
+  expect(rows.map(r => (r.kind === 'subject' ? r.name : r.kind))).toEqual(['Command', 'look', 'Plan'])
 })
 
 test('a release build keys Asks, Finds and PRs 1 to 3, and a saved Overview page shows Asks, tells Claude so, starts no look, stays saved, and names no subject an ask holds up', async ($, on) => {
