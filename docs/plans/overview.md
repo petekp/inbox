@@ -391,7 +391,7 @@ Three replays, each run 3 times on Sonnet and on Codex. Fixed rules check the pa
 | 7 | A reply that only explains how releases work | Nothing moves |
 | 8 | The coordinator records a flaky test elsewhere as a finding | No subject for it |
 | 9 | The fix's PR opens, and a reviewer subagent starts | Checkpoint. No new "PR" piece. The text says the state of the fix. The reviewer sits under the fix. |
-| 10 | The PR merges, and 2.5 prep starts | The fix closes as ✓ under its own name. 2.5 is ●. |
+| 10 | The PR merges, and 2.5 prep starts | The fix closes as ✓ under its own name. 2.5 is ● or ◌, since its build runs. |
 | 11 | The person asks why export sometimes picks the wrong default folder on one platform | The new piece gets a short name |
 | Return | Three hours pass | No call. Step 12 reads the page three hours on. |
 | 12 | 2.5 is published, and nothing follows | The head names the finished push. The export piece, set aside since the start, is still ○. |
@@ -420,7 +420,7 @@ At every step, the pieces set aside or waiting on a vendor stay on the page.
 | 3 | The reply ends the turn | |
 | 4 | Two replies were dropped, and a catch-up reads the whole conversation | Finished work is not ●. The missed change reaches the page. |
 
-**One short case** stays outside the replays: a catch-up of a conversation the inbox never saw, from an empty page. One feature is half done: images attach, and PDFs wait on a question. The page may draw it as one row with both parts, or give the finished part a ✓ row of its own. The case checks that the question links to the feature, and that the finished part is not ●. Finished work marked ● after a catch-up was a real failure, and Replay C's catch-up starts from a page that already holds the work.
+**One short case** stays outside the replays: a catch-up of a conversation the inbox never saw, from an empty page. One feature is half done: images attach, and PDFs wait on a question. The page may draw it as one row with both parts, or give the finished part a ✓ row of its own. The case checks that the question links to the feature, and that a finished part drawn as its own row is not ●. Finished work marked ● after a catch-up was a real failure, and Replay C's catch-up starts from a page that already holds the work.
 
 The 20 single-exchange Overview cases left `evals/cases.json`. Each one's scenario is a step above, and their checks run at every step. `overview-shown-records-question` checks only the ledger, so it stays in the ledger suite. `catch-up-records-open-question-and-result` keeps its ledger check, and the short case above checks its Overview.
 
