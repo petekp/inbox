@@ -199,7 +199,6 @@ var ASK_READ_WORDS = 30;
 var FINISHED_READ = 10;
 var CHILD_KEPT_MS = 24 * 60 * 60000;
 var CHILDREN_KEPT = 50;
-var REWORD_OVERLAP = 0.5;
 var STOP_WORDS = new Set([
   "a",
   "an",
@@ -303,12 +302,10 @@ async function askOverview(ask) {
 function words(text) {
   return new Set((text.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
 }
-function overlap(a, b) {
+function hasSameWords(a, b) {
   const x = words(a);
   const y = words(b);
-  const both = [...x].filter((w) => y.has(w)).length;
-  const either = new Set([...x, ...y]).size;
-  return either === 0 ? 1 : both / either;
+  return x.size === y.size && [...x].every((w) => y.has(w));
 }
 function nameKey(name) {
   return [...words(name)].sort().join(" ");
@@ -344,7 +341,8 @@ function applyOps(last, ops, now, askIds) {
       s.was = null;
   };
   const set = (s, status, text) => {
-    if (s.status === status && overlap(s.text, text) >= REWORD_OVERLAP)
+    const isReworded = s.status === status && hasSameWords(s.text, text);
+    if (isReworded)
       return;
     s.status = status;
     s.text = clipWords(text, TEXT_KEPT);

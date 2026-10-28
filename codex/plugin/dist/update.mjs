@@ -60,7 +60,6 @@ var GOAL_KEPT = 14;
 var ASK_READ_WORDS = 30;
 var FINISHED_READ = 10;
 var CHILD_KEPT_MS = 24 * 60 * 6e4;
-var REWORD_OVERLAP = 0.5;
 var STOP_WORDS = /* @__PURE__ */ new Set([
   "a",
   "an",
@@ -154,12 +153,10 @@ async function askOverview(ask) {
 function words(text2) {
   return new Set((text2.toLowerCase().match(/[\p{L}\p{N}#.]+/gu) ?? []).filter((w) => !STOP_WORDS.has(w)));
 }
-function overlap(a, b) {
+function hasSameWords(a, b) {
   const x = words(a);
   const y = words(b);
-  const both = [...x].filter((w) => y.has(w)).length;
-  const either = (/* @__PURE__ */ new Set([...x, ...y])).size;
-  return either === 0 ? 1 : both / either;
+  return x.size === y.size && [...x].every((w) => y.has(w));
 }
 function nameKey(name) {
   return [...words(name)].sort().join(" ");
@@ -194,7 +191,8 @@ function applyOps(last, ops, now, askIds) {
     if (isSeen) s.was = null;
   };
   const set = (s, status, text2) => {
-    if (s.status === status && overlap(s.text, text2) >= REWORD_OVERLAP) return;
+    const isReworded = s.status === status && hasSameWords(s.text, text2);
+    if (isReworded) return;
     s.status = status;
     s.text = clipWords(text2, TEXT_KEPT);
     forgetSeenWas(s);
