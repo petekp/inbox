@@ -25,11 +25,6 @@ export const PRESENT: Away = { lastActiveAt: 0, isAway: false, minute: 0 }
 /** The tab the pane shows, whether it shows the sample, and since when. */
 export type Shown = { tab: ShownTab; isDemo: boolean; since: number }
 
-/** The showing once the pane shows `tab`, with or without the sample: `shown` while neither changed, else one from `now`. */
-export function showingAt(shown: Shown | null, tab: ShownTab, isDemo: boolean, now: number): Shown {
-  return shown?.tab === tab && shown.isDemo === isDemo ? shown : { tab, isDemo, since: now }
-}
-
 // The engine lists the values a file reads and writes from that file's own consts, so register.tsx defines these
 // four again.
 const SESSION = atom({ plugin: 'inbox', key: 'session' } as const, NO_SESSION)

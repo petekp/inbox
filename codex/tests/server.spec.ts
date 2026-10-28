@@ -991,7 +991,10 @@ const GH_THREADS = JSON.stringify({
 
 type PrView = {
   prs: {
-    drawn: { pr: { ref: string; threads: unknown[]; error?: string | null }; isSettled: boolean; canUndo: boolean }[]
+    drawn: {
+      pr: { ref: string; threads: unknown[]; error?: string | null }
+      state: { is: string; canUndo?: boolean }
+    }[]
     count: number
   }
   isFetchingPrs: boolean
@@ -1308,7 +1311,7 @@ test('a PR press with an unknown queue outcome keeps its receipt and unconfirmed
   assert.equal(s.sent[0]?.phase, 'uncertain')
 })
 
-test('dismissing a linked PR unlinks it and settles its block until the tab shows another tab', async () => {
+test('dismissing a linked PR unlinks it and settles its block as a dismissed row, until the tab shows another tab', async () => {
   let t = 100
   const dir = tempDir()
   await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
@@ -1338,13 +1341,22 @@ test('dismissing a linked PR unlinks it and settles its block until the tab show
   const dismissed = await call('inbox_press', { press: { action: 'pr-dismiss', ref }, thread: 's1', shownSince: 0 })
   const drawn = (v: PrView) => v.prs.drawn.map(x => x.pr.ref)
   assert.ok(drawn(dismissed.result.structuredContent.view).includes(ref))
+  assert.deepEqual(dismissed.result.structuredContent.view.prs.drawn.find(x => x.pr.ref === ref)?.state, {
+    is: 'settled',
+    label: 'Dismissed',
+    at: 100,
+    canUndo: true,
+    offersUndo: true,
+    isLapsed: true,
+    delivery: null,
+  })
   assert.equal((await readState(dir, 's1')).ledger.prs.includes(ref), false)
-  const undoOf = (v: PrView) => v.prs.drawn.filter(x => x.pr.ref === ref).map(x => [x.isSettled, x.canUndo])
+  const undoOf = (v: PrView) => v.prs.drawn.filter(x => x.pr.ref === ref).map(x => [x.state.is, x.state.canUndo])
   t += SETTLED_MS + POLL_MS
-  assert.deepEqual(undoOf((await call('inbox_view', { shownSince: 0 })).result.structuredContent), [[true, true]])
+  assert.deepEqual(undoOf((await call('inbox_view', { shownSince: 0 })).result.structuredContent), [['settled', true]])
   t += SETTLE_WINDOW_MS
   const stayed = await call('inbox_view', { shownSince: 0 })
-  assert.deepEqual(undoOf(stayed.result.structuredContent), [[true, false]])
+  assert.deepEqual(undoOf(stayed.result.structuredContent), [['settled', false]])
   assert.ok(ref in (await readState(dir, 's1')).prViews.views)
   const switched = await call('inbox_view', { shownSince: t })
   assert.equal(drawn(switched.result.structuredContent).includes(ref), false)

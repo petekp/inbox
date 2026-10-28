@@ -19,7 +19,7 @@ import type {
   Tab,
   Turns,
 } from '../types'
-import { isLapsed, reopenFinding, reopenItem } from './ledger'
+import { closedAt, isLapsed, reopenFinding, reopenItem } from './ledger'
 import { isChildRunning, isOpen } from './overview'
 import { ago, clipLabel } from './text'
 import { questionNumbers } from './model-text'
@@ -181,6 +181,31 @@ export type RowState =
       delivery: ClosedDelivery
       isLapsed: boolean
     }
+
+export type SettledState = Extract<RowState, { is: 'settled' }>
+
+function isUndoLeft(at: number, now: number, settleWindowMs: number): boolean {
+  return now - at < settleWindowMs
+}
+
+/** The state of a row closed at `at`, drawn in place with its outcome. Its close sets whether it offers Undo. */
+export function closedRowState(
+  closed: Pick<Closed, 'how' | 'outcome' | 'isSentToAgent'> & { askedAs?: string },
+  at: number,
+  now: number,
+  settleWindowMs: number,
+  delivery: ClosedDelivery,
+): SettledState {
+  return {
+    is: 'settled',
+    label: outcomeLabel(closed),
+    at,
+    canUndo: isUndoable(closed) && isUndoLeft(at, now, settleWindowMs),
+    offersUndo: offersUndo(closed),
+    isLapsed: isLapsed(closed),
+    delivery,
+  }
+}
 
 export type Feedback =
   | { is: 'done'; label: string; at: number; isHandedStep?: true; isStillWaiting?: true }
@@ -1206,7 +1231,7 @@ function actionsOf(
   ]
 }
 
-export type DrawnEntry<R> = { row: R } | { settled: RowView; state: Extract<RowState, { is: 'settled' }> }
+export type DrawnEntry<R> = { row: R } | { settled: RowView; state: SettledState }
 
 export type DrawnLists<R> = {
   questions: DrawnEntry<R>[]
@@ -1402,9 +1427,7 @@ export function inboxView({
   shownSince,
 }: ViewInput): InboxView {
   const isInPlace = (at: number) => isShownSince(at, shownSince)
-  const isUndoLeft = (at: number) => now - at < settleWindowMs
   const isOpen = (id: string) => ledger.items.some(i => i.id === id) || ledger.findings.some(f => f.id === id)
-  const closedAt = (c: Closed | ClosedFinding) => ('closedAt' in c ? c.closedAt : c.at)
   const replyAfter = (c: Closed | ClosedFinding) => {
     const last = lastActions[c.id]
 
@@ -1456,20 +1479,17 @@ export function inboxView({
         }
       if (isHeld(closed)) return { is: 'held', label: heldLabel(closed), at }
 
-      return {
-        is: 'settled',
-        label: outcomeLabel(closed),
+      return closedRowState(
+        closed,
         at,
-        canUndo: isUndoable(closed) && isUndoLeft(at),
-        offersUndo: offersUndo(closed),
-        isLapsed: isLapsed(closed),
-        delivery:
-          'doneNotification' in closed && closed.doneNotification?.error !== undefined
-            ? { error: closed.doneNotification.error, canUndo: isUndoable(closed) }
-            : (closed.how === 'answered' || closed.how === 'done') && last?.kind === 'mark' && last.at === at
-              ? pendingDeliveryAt(last, now)
-              : null,
-      }
+        now,
+        settleWindowMs,
+        'doneNotification' in closed && closed.doneNotification?.error !== undefined
+          ? { error: closed.doneNotification.error, canUndo: isUndoable(closed) }
+          : (closed.how === 'answered' || closed.how === 'done') && last?.kind === 'mark' && last.at === at
+            ? pendingDeliveryAt(last, now)
+            : null,
+      )
     }
 
     const last = lastActions[id]
@@ -1479,7 +1499,7 @@ export function inboxView({
         is: 'settled',
         label: fixLabel(sent),
         at: last.at,
-        canUndo: isUndoLeft(last.at),
+        canUndo: isUndoLeft(last.at, now, settleWindowMs),
         offersUndo: true,
         delivery: pendingDeliveryAt(last, now),
         isLapsed: false,

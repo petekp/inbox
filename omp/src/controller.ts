@@ -32,8 +32,11 @@ export type PanelSource = {
   /** Sends the message that resumes a stopped turn. Returns why it could not, or null. */
   resume(): Promise<string | null>
   fetchPrsWhenDue(): void
-  /** Tells the session which tab the panel shows, for the inbox model's note on what the person sees. */
-  shown(tab: ShownTab): void
+  /**
+   * Tells the session which tab the panel shows, for the inbox model's note on what the person sees, and what the
+   * panel holds in place, from when it began showing that tab.
+   */
+  shown(tab: ShownTab, holds: Holds): void
   /** Calls `listener` after the session's saved state changes. Returns how to stop. */
   onChange(listener: () => void): () => void
 }
@@ -115,7 +118,7 @@ export function createPanel(deps: PanelDeps): Panel {
     ui = pressedId === undefined ? followed.ui : afterHandOff(next, followed.ui, pressedId, deps.now())
     seen = followed.seen
     isOpening = false
-    source.shown(ui.tab)
+    source.shown(ui.tab, holdsOf(ui))
     syncAnimation()
     deps.requestRender()
   }
@@ -164,7 +167,7 @@ export function createPanel(deps: PanelDeps): Panel {
       if (screen === null) return
       const result = handleKey(screen, ui, key, deps.now(), text)
       ui = result.ui
-      source.shown(ui.tab)
+      source.shown(ui.tab, holdsOf(ui))
       if (result.close) deps.close()
       if (result.press) void press(result.press)
       else void refresh()
