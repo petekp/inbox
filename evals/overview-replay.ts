@@ -1,0 +1,337 @@
+import { childStarted, childWorked } from '../hooks/children'
+import { applyExchangeUpdate, EMPTY, parseReply, upgradeLedger } from '../hooks/ledger'
+import { buildPrompt, CLAUDE_CODE, OVERVIEW_SYSTEM, screenText, systemText } from '../hooks/model-text'
+import type { OverviewInput } from '../hooks/model-text'
+import { askOverview, childEnded, lookEnded, lookStarted, parseOverview } from '../hooks/overview'
+import { appliedOverview, emptySession, failedOverview } from '../hooks/session'
+import type { Session } from '../hooks/session'
+import { overviewCallPrompt } from '../hooks/session-host'
+import type { OverviewExchange, OverviewRecord } from '../hooks/session-host'
+import { overviewPage } from '../hooks/view'
+import type { OverviewPage } from '../hooks/view'
+import { CODEX } from '../codex/src/texts'
+import type { ChildKind, Exchange, HostTask, Item, Ledger, Place } from '../types'
+import { factsAfter } from './overview-facts'
+import type { Facts, FactsChange } from './overview-facts'
+import type { JudgeCheckId } from './overview-judge'
+import { pageText } from './overview-page-text'
+
+/** Something a host reports between calls, which the replay runs through the host's own reducers. */
+export type HostEvent =
+  | { child: 'start'; ref: string; kind: ChildKind; name: string; reportsActivity?: boolean }
+  | { child: 'act'; ref: string }
+  | { child: 'end'; ref: string }
+  /** The person shows the Overview tab for this many seconds. */
+  | { look: number }
+  /** An ask opens or closes, in a replay that runs no ledger call. */
+  | { askOpens: { id: string; ask: string; kind?: Item['kind']; options?: string[] } }
+  | { askCloses: string }
+
+/** The Overview call a step runs, and what it reads. */
+export type StepCall =
+  | { kind: 'reply'; person: string | null; activity: string[]; reply: string; tasks?: HostTask[] }
+  /** A call during a turn that started `turnStartedAt` minutes into the replay. */
+  | { kind: 'mid-turn'; person: string | null; activity: string[]; turnStartedAt: number; tasks?: HostTask[] }
+  | { kind: 'catch-up'; conversation: string }
+  /** A recorded call's exchange and task list, read as they were. */
+  | { kind: 'recorded'; read: OverviewExchange; tasks: HostTask[] }
+
+export type Step = {
+  label: string
+  /** Minutes since the replay started. Each step is later than the one before. */
+  at: number
+  /** The step's exact time, in place of `at`, for a step from a call record. */
+  time?: number
+  /** Host events, run at `at` before the call. */
+  events?: HostEvent[]
+  call?: StepCall
+  facts?: FactsChange
+  /** The judge reads the page after this step. */
+  checkpoint?: boolean
+  /** The rule or judge check ids of the failure this step was written to reproduce. */
+  targets?: string[]
+  /** Judge checks this step fails until an issue is built, as a rule's `until` does for a rule. */
+  judgeUntil?: Partial<Record<JudgeCheckId, string>>
+}
+
+export type Replay = {
+  name: string
+  about: string
+  /** Each reply runs the ledger call, then the Overview call, as the product does. Else the steps open and close asks. */
+  hasLedgerCalls: boolean
+  start: { ledger: Partial<Ledger>; facts: Facts; place?: Place }
+  steps: Step[]
+}
+
+export type Agent = 'claude' | 'codex'
+
+export type CallAnswer = { text: string | null; model?: string | null; outputTokens?: number | null }
+
+/** One model call with `system` as its system text. */
+export type ModelCall = (prompt: string, system: string) => Promise<CallAnswer>
+
+/** A host's limits on an inbox model call. An answer past them is dropped, as the host drops it. */
+export type Limits = { ms: number; outputTokens: number | null }
+
+export const LIMITS: Record<Agent, Limits> = {
+  claude: { ms: 45_000, outputTokens: 1600 },
+  codex: { ms: 120_000, outputTokens: null },
+}
+
+export type ReplayDeps = { agent: Agent; ask: ModelCall; clock?: () => number }
+
+/** What one model call of a step did. */
+export type CallLog = {
+  kind: 'ledger' | 'overview'
+  answers: (string | null)[]
+  model: string | null
+  ms: number
+  outputTokens: number | null
+  /** Why the host would have dropped the answer, when it would. */
+  overLimit: string | null
+}
+
+export type StepResult = {
+  index: number
+  label: string
+  now: number
+  session: Session
+  page: OverviewPage
+  text: string
+  facts: Facts
+  calls: CallLog[]
+  /** The Overview call wrote nothing at this step. */
+  isOverviewFailed: boolean
+}
+
+/** When every replay starts. A fixed time, so a replay's prompts are the same from run to run. */
+export const REPLAY_START = Date.UTC(2026, 9, 1, 9, 0)
+
+export const minutes = (m: number) => REPLAY_START + m * 60_000
+
+function itemOf(e: Extract<HostEvent, { askOpens: unknown }>['askOpens'], turn: number, at: number): Item {
+  return {
+    id: e.id,
+    kind: e.kind ?? 'question',
+    label: null,
+    ask: e.ask,
+    options: e.options ?? [],
+    rec: null,
+    helps: [],
+    turn,
+    at,
+    from: 'record',
+  }
+}
+
+function withEvent(s: Session, e: HostEvent, now: number): Session {
+  const o = s.ledger.overview
+  const withOverview = (overview: Ledger['overview']) => ({ ...s, ledger: { ...s.ledger, overview } })
+  if ('child' in e) {
+    if (e.child === 'start')
+      return withOverview(childStarted(o, e, now, { reportsActivity: e.reportsActivity ?? true }))
+    return withOverview(e.child === 'act' ? childWorked(o, e.ref, now) : childEnded(o, e.ref, now))
+  }
+  if ('look' in e) return withOverview(lookEnded(lookStarted(o, now), now + e.look * 1000))
+  if ('askOpens' in e)
+    return { ...s, ledger: { ...s.ledger, items: [...s.ledger.items, itemOf(e.askOpens, s.ledger.turn, now)] } }
+
+  return { ...s, ledger: { ...s.ledger, items: s.ledger.items.filter(i => i.id !== e.askCloses) } }
+}
+
+async function timed(
+  deps: ReplayDeps,
+  kind: CallLog['kind'],
+  prompt: string,
+  system: string,
+): Promise<CallAnswer & { log: CallLog }> {
+  const clock = deps.clock ?? Date.now
+  const started = clock()
+  const answer = await deps.ask(prompt, system)
+  const ms = clock() - started
+  const limits = LIMITS[deps.agent]
+  const tokens = answer.outputTokens ?? null
+  const overLimit =
+    ms > limits.ms
+      ? `took ${Math.round(ms / 1000)} s, past the host's ${limits.ms / 1000} s`
+      : limits.outputTokens !== null && tokens !== null && tokens > limits.outputTokens
+        ? `wrote ${tokens} tokens, past the host's ${limits.outputTokens}`
+        : null
+  const text = overLimit === null ? answer.text : null
+  const log = { kind, answers: [answer.text], model: answer.model ?? null, ms, outputTokens: tokens, overLimit }
+
+  return { ...answer, text, log }
+}
+
+/** Runs the Overview call on `read`, and applies its answer or saves that it wrote nothing, as a host does. */
+async function overviewCall(
+  deps: ReplayDeps,
+  s: Session,
+  read: OverviewExchange,
+  tasks: HostTask[],
+  now: number,
+): Promise<{ session: Session; log: CallLog; isFailed: boolean }> {
+  const input: OverviewInput = { last: s.ledger.overview, asks: s.ledger.items, tasks, now }
+  const prompt = overviewCallPrompt(input, read)
+  const logs: CallLog[] = []
+  const { last } = await askOverview(async () => {
+    const answer = await timed(deps, 'overview', prompt, OVERVIEW_SYSTEM)
+    logs.push(answer.log)
+    return answer
+  })
+  const log = {
+    ...logs[logs.length - 1]!,
+    answers: logs.flatMap(l => l.answers),
+    ms: logs.reduce((n, l) => n + l.ms, 0),
+  }
+  const answer = last.text === null ? null : parseOverview(last.text)
+  const turns = s.presence.turnsApplied
+  const session = answer === null ? failedOverview(s, last.text, turns, now) : appliedOverview(s, answer, turns, now)
+
+  return { session, log, isFailed: answer === null }
+}
+
+function exchangeOf(call: Extract<StepCall, { kind: 'reply' }>, agent: Agent, turn: number): Exchange {
+  return {
+    person: call.person,
+    trigger: null,
+    activity: call.activity,
+    reply: call.reply,
+    turn,
+    press: null,
+    screen: screenText(agent === 'codex' ? CODEX : CLAUDE_CODE, false, null),
+    tasks: call.tasks ?? [],
+  }
+}
+
+/** The session a replay starts from. */
+export function startSession(replay: Pick<Replay, 'start'>): Session {
+  const base = emptySession()
+
+  return {
+    ...base,
+    ledger: upgradeLedger({ ...EMPTY, ...replay.start.ledger } as Ledger),
+    place: replay.start.place ?? null,
+  }
+}
+
+/**
+ * Runs one step: its host events, then its calls, then the page as it would draw at the step's time. A reply's ledger
+ * call that gives no usable answer skips the Overview call, as in the product.
+ */
+async function runStep(
+  replay: Replay,
+  deps: ReplayDeps,
+  s: Session,
+  step: Step,
+  index: number,
+  facts: Facts,
+): Promise<StepResult> {
+  const now = step.time ?? minutes(step.at)
+  let session = (step.events ?? []).reduce((x, e) => withEvent(x, e, now), s)
+  const calls: CallLog[] = []
+  let isOverviewFailed = false
+  const call = step.call
+  if (call?.kind === 'reply') {
+    const turn = session.ledger.turn + 1
+    const ex = exchangeOf(call, deps.agent, turn)
+    let isLedgerApplied = true
+    if (replay.hasLedgerCalls) {
+      const host = deps.agent === 'codex' ? CODEX : CLAUDE_CODE
+      const ledgerAnswer = await timed(deps, 'ledger', buildPrompt(session.ledger, ex), systemText(host))
+      calls.push(ledgerAnswer.log)
+      const parsed =
+        ledgerAnswer.text === null ? null : parseReply(ledgerAnswer.text, `${ex.reply}\n${ex.activity.join('\n')}`)
+      isLedgerApplied = parsed !== null
+      if (parsed !== null) session = { ...session, ledger: applyExchangeUpdate(session.ledger, parsed, ex, now, now) }
+    } else session = { ...session, ledger: { ...session.ledger, turn } }
+    session = {
+      ...session,
+      presence: { ...session.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt: now },
+    }
+    if (isLedgerApplied) {
+      const r = await overviewCall(deps, session, { kind: 'reply', exchange: ex }, ex.tasks, now)
+      ;({ session, isFailed: isOverviewFailed } = r)
+      calls.push(r.log)
+    }
+  } else if (call?.kind === 'mid-turn') {
+    session = {
+      ...session,
+      presence: { ...session.presence, isTurnRunning: true, turnStartedAt: minutes(call.turnStartedAt) },
+    }
+    const turn = { person: call.person, trigger: null, activity: call.activity }
+    const r = await overviewCall(deps, session, { kind: 'mid-turn', turn }, call.tasks ?? [], now)
+    ;({ session, isFailed: isOverviewFailed } = r)
+    calls.push(r.log)
+  } else if (call?.kind === 'catch-up') {
+    session = {
+      ...session,
+      presence: { ...session.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt: now },
+    }
+    const r = await overviewCall(deps, session, { kind: 'catch-up', conversation: call.conversation }, [], now)
+    ;({ session, isFailed: isOverviewFailed } = r)
+    calls.push(r.log)
+  } else if (call?.kind === 'recorded') {
+    const isTurnRunning = call.read.kind === 'mid-turn'
+    session = { ...session, presence: { ...session.presence, isTurnRunning, lastReplyAt: isTurnRunning ? null : now } }
+    const r = await overviewCall(deps, session, call.read, call.tasks, now)
+    ;({ session, isFailed: isOverviewFailed } = r)
+    calls.push(r.log)
+  }
+  const page = overviewPage(session, now)
+
+  return {
+    index,
+    label: step.label,
+    now,
+    session,
+    page,
+    text: pageText(page),
+    facts: factsAfter(facts, step.facts),
+    calls,
+    isOverviewFailed,
+  }
+}
+
+/** Runs every step of `replay` in order, each on the session the step before left. */
+export async function runReplay(replay: Replay, deps: ReplayDeps): Promise<StepResult[]> {
+  const results: StepResult[] = []
+  let session = startSession(replay)
+  let facts: Facts = { ...replay.start.facts, changed: [] }
+  for (const [index, step] of replay.steps.entries()) {
+    const r = await runStep(replay, deps, session, step, index, facts)
+    results.push(r)
+    session = r.session
+    facts = r.facts
+  }
+
+  return results
+}
+
+/**
+ * A one-step replay that starts from a call record: the Overview and asks the call read, and the exchange it read, at
+ * the time it ran. Its facts are the author's, since a record holds only what the call saw.
+ */
+export function replayFromRecord(
+  record: Pick<OverviewRecord, 'input' | 'exchange'>,
+  name: string,
+  facts: { before: Facts; after: FactsChange },
+): Replay {
+  const { input, exchange } = record
+
+  return {
+    name,
+    about: `Starts from a recorded ${exchange.kind} call.`,
+    hasLedgerCalls: false,
+    start: { ledger: { overview: input.last, items: [...input.asks] }, facts: facts.before },
+    steps: [
+      {
+        label: 'the recorded call',
+        at: (input.now - REPLAY_START) / 60_000,
+        time: input.now,
+        call: { kind: 'recorded', read: exchange, tasks: [...input.tasks] },
+        facts: facts.after,
+      },
+    ],
+  }
+}

@@ -877,6 +877,10 @@
         "count": 0
       },
       {
+        "calls": "close",
+        "count": 0
+      },
+      {
         "reply": "redis"
       },
       {
@@ -934,6 +938,10 @@
         "count": 0
       },
       {
+        "calls": "close",
+        "count": 0
+      },
+      {
         "reply": "redis"
       },
       {
@@ -986,6 +994,10 @@
       {
         "calls": "record",
         "kind": "finding",
+        "count": 0
+      },
+      {
+        "calls": "close",
         "count": 0
       },
       {
