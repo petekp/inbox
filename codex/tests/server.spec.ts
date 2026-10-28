@@ -628,15 +628,21 @@ test('a tool call from Codex in a turn UserPromptSubmit never recorded shows the
   assert.equal(await viewed(), 'partial')
 })
 
-test('a press in the demo changes only the demo, sends nothing into the conversation, and says so', async () => {
+test('a press in the demo changes only the demo, sends nothing into the conversation, and says so, and the reply to a press leaves the sample’s hand-off waiting', async context => {
   const { dir, calls, call } = await setup(0)
   const before = await readState(dir, 's1')
+  context.mock.timers.enable({ apis: ['setTimeout'] })
   type NeedsYou = {
     result: {
       structuredContent: {
         needsYou: {
           questions: { id: string; state: { is: string }; item: { options: string[] } }[]
-          tasks: { id: string; steps: { label: string; step: { kind: string }[] }[] }[]
+          tasks: {
+            id: string
+            state: { is: string }
+            feedback: { is: string } | null
+            steps: { label: string; step: { kind: string }[] }[]
+          }[]
         }
       }
     }
@@ -670,6 +676,25 @@ test('a press in the demo changes only the demo, sends nothing into the conversa
     }
   ).view.needsYou.tasks.find(t => t.id === copyTask.id)
   assert.deepEqual([copiedRow?.feedback?.is, copiedRow?.feedback?.result?.state], ['local', 'done'])
+
+  const tasks = demo.result.structuredContent.needsYou.tasks
+  const handedOff = tasks.find(t => t.state.is === 'handedOff')
+  const unhelped = tasks.find(t => t.state.is === 'open' && t.steps.length === 0)
+  assert.ok(handedOff && unhelped)
+  await call(
+    'inbox_press',
+    { press: { action: 'type', id: unhelped.id, text: 'Done in both.' }, thread: 's1', demo: true, shownSince: 0 },
+    { thread_id: 's1' },
+  )
+  context.mock.timers.tick(SETTLED_MS)
+  const replied = (await call('inbox_view', { demo: true }, { thread_id: 's1' })) as unknown as NeedsYou
+  const stateOf = (id: string) => {
+    const row = replied.result.structuredContent.needsYou.tasks.find(t => t.id === id)
+    return [row?.state.is, row?.feedback?.is]
+  }
+  assert.deepEqual(stateOf(handedOff.id), ['handedOff', 'done'])
+  assert.deepEqual(stateOf(unhelped.id), ['open', 'stillOpen'])
+  assert.deepEqual(calls, [])
   assert.deepEqual(await readState(dir, 's1'), before)
 })
 
@@ -966,7 +991,10 @@ const GH_THREADS = JSON.stringify({
 
 type PrView = {
   prs: {
-    drawn: { pr: { ref: string; threads: unknown[]; error?: string | null }; isSettled: boolean; canUndo: boolean }[]
+    drawn: {
+      pr: { ref: string; threads: unknown[]; error?: string | null }
+      state: { is: string; canUndo?: boolean }
+    }[]
     count: number
   }
   isFetchingPrs: boolean
@@ -1283,7 +1311,7 @@ test('a PR press with an unknown queue outcome keeps its receipt and unconfirmed
   assert.equal(s.sent[0]?.phase, 'uncertain')
 })
 
-test('dismissing a linked PR unlinks it and settles its block until the tab shows another tab', async () => {
+test('dismissing a linked PR unlinks it and settles its block as a dismissed row, until the tab shows another tab', async () => {
   let t = 100
   const dir = tempDir()
   await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
@@ -1313,13 +1341,22 @@ test('dismissing a linked PR unlinks it and settles its block until the tab show
   const dismissed = await call('inbox_press', { press: { action: 'pr-dismiss', ref }, thread: 's1', shownSince: 0 })
   const drawn = (v: PrView) => v.prs.drawn.map(x => x.pr.ref)
   assert.ok(drawn(dismissed.result.structuredContent.view).includes(ref))
+  assert.deepEqual(dismissed.result.structuredContent.view.prs.drawn.find(x => x.pr.ref === ref)?.state, {
+    is: 'settled',
+    label: 'Dismissed',
+    at: 100,
+    canUndo: true,
+    offersUndo: true,
+    isLapsed: true,
+    delivery: null,
+  })
   assert.equal((await readState(dir, 's1')).ledger.prs.includes(ref), false)
-  const undoOf = (v: PrView) => v.prs.drawn.filter(x => x.pr.ref === ref).map(x => [x.isSettled, x.canUndo])
+  const undoOf = (v: PrView) => v.prs.drawn.filter(x => x.pr.ref === ref).map(x => [x.state.is, x.state.canUndo])
   t += SETTLED_MS + POLL_MS
-  assert.deepEqual(undoOf((await call('inbox_view', { shownSince: 0 })).result.structuredContent), [[true, true]])
+  assert.deepEqual(undoOf((await call('inbox_view', { shownSince: 0 })).result.structuredContent), [['settled', true]])
   t += SETTLE_WINDOW_MS
   const stayed = await call('inbox_view', { shownSince: 0 })
-  assert.deepEqual(undoOf(stayed.result.structuredContent), [[true, false]])
+  assert.deepEqual(undoOf(stayed.result.structuredContent), [['settled', false]])
   assert.ok(ref in (await readState(dir, 's1')).prViews.views)
   const switched = await call('inbox_view', { shownSince: t })
   assert.equal(drawn(switched.result.structuredContent).includes(ref), false)

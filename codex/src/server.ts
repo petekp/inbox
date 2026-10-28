@@ -6,9 +6,8 @@ import { isAbsolute } from 'node:path'
 
 import { ghFinder, ghIn } from '../../hooks/gh'
 import type { Run } from '../../hooks/gh'
-import { isViewKept } from '../../hooks/pr-tab'
 import type { PrPress } from '../../hooks/pr-tab'
-import { demoAfterPress, demoTurns, noteText, openTarget } from '../../hooks/presses'
+import { demoAfterPress, demoReplied, demoSent, noteText, openTarget } from '../../hooks/presses'
 import type { PathProbe, RowPress } from '../../hooks/presses'
 import { agentTools } from '../../hooks/tools'
 import { heardState, isTurnHeard, lookOnView, noteToolCall, viewOf } from './core'
@@ -17,7 +16,7 @@ import { demoState } from './demo'
 import { answerMessage, noteDialogs } from './dialogs'
 import { withEarlierHistory } from './history'
 import { codexStore } from './host'
-import { isUnseen, pressOn, recorded, turnEnded, turnStarted } from '../../hooks/session'
+import { isUnseen, pressOn, recorded, turnEnded, turnStarted, withHolds } from '../../hooks/session'
 import type { SendOutcome } from '../../hooks/session'
 import { fetchPrs, prFetchTracker, press, wakeForDone as wakeSessionForDone } from '../../hooks/session-host'
 import type { SessionHost } from '../../hooks/session-host'
@@ -30,7 +29,7 @@ import type { SessionState } from './state'
 import { CODEX, INBOX_DESCRIPTION, inboxToolText, VIEW_DESCRIPTION } from './texts'
 import { newestTurnEvent, rolloutFor, rolloutReads, turnIn } from './transcript'
 import type { HooksTrust } from './hook-trust'
-import type { LastAction, PrViews, RowNote } from '../../types'
+import type { RowNote } from '../../types'
 
 /**
  * The name a build's page goes by. A tab whose page has another name than the server's swaps to the server's page.
@@ -53,17 +52,6 @@ const HOOKS_STOPPED_CACHE_MS = 5_000
 const TAB_MIME = 'text/html;profile=mcp-app'
 
 const APP_ONLY = { ui: { visibility: ['app'] } }
-
-function viewsStillShown(
-  prs: PrViews,
-  linked: string[],
-  lastActions: Record<string, LastAction>,
-  shownSince: number | null,
-): PrViews['views'] {
-  return Object.fromEntries(
-    Object.entries(prs.views).filter(([ref]) => isViewKept(prs, linked, lastActions, ref, shownSince)),
-  )
-}
 
 const TOOLS = [
   ...agentTools(CODEX),
@@ -454,10 +442,13 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
       presence: { ...s.presence, ...after.turns },
     }
     demos.set(id, next)
-    if (r.effects.some(e => e.kind === 'send'))
+    const sent = demoSent(r, after.turns)
+    if (sent)
       setTimeout(() => {
         const d = demos.get(id)
-        if (d) demos.set(id, { ...d, presence: { ...d.presence, ...demoTurns(d.presence, [], true) } })
+        if (!d) return
+        const replied = demoReplied({ lastActions: d.lastActions, turns: d.presence }, sent)
+        demos.set(id, { ...d, lastActions: replied.lastActions, presence: { ...d.presence, ...replied.turns } })
       }, SETTLED_MS).unref()
 
     return {
@@ -501,17 +492,7 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
         const s = await updateState(dir, id, s => {
           const shownTab = drawnTabOf(sentTab ?? s.shownTab, deps.isNextBuild === true)
 
-          return {
-            ...lookOnView(s, shownTab, now()),
-            heldRows: Object.keys(holds.replies),
-            shownSince: holds.shownSince,
-            tabSeenAt: now(),
-            shownTab,
-            prViews: {
-              ...s.prViews,
-              views: viewsStillShown(s.prViews, s.ledger.prs, s.lastActions, holds.shownSince),
-            },
-          }
+          return { ...withHolds(lookOnView(s, shownTab, now()), holds), tabSeenAt: now(), shownTab }
         })
         fetchPrsWhenDue(id, s)
         return { ...text('Inbox view'), structuredContent: await served(s, id, false, holds) }

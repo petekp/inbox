@@ -25,11 +25,6 @@ export const PRESENT: Away = { lastActiveAt: 0, isAway: false, minute: 0 }
 /** The tab the pane shows, whether it shows the sample, and since when. */
 export type Shown = { tab: ShownTab; isDemo: boolean; since: number }
 
-/** The showing once the pane shows `tab`, with or without the sample: `shown` while neither changed, else one from `now`. */
-export function showingAt(shown: Shown | null, tab: ShownTab, isDemo: boolean, now: number): Shown {
-  return shown?.tab === tab && shown.isDemo === isDemo ? shown : { tab, isDemo, since: now }
-}
-
 // The engine lists the values a file reads and writes from that file's own consts, so register.tsx defines these
 // four again.
 const SESSION = atom({ plugin: 'inbox', key: 'session' } as const, NO_SESSION)
@@ -227,7 +222,10 @@ export async function changeSession(
   throw new Error('The session kept changing under this write.')
 }
 
-/** Changes a conversation's saved session, after its pending saves. A session the store cannot read stays as it is. */
+/**
+ * Changes a conversation's saved session, after its pending saves, and prunes it with `pruned`. The pane draws another
+ * conversation, so this one holds no rows and has no showing. A session the store cannot read stays as it is.
+ */
 async function changeSaved(
   $: EngineInterface,
   id: string,
@@ -240,8 +238,9 @@ async function changeSaved(
     const saved = await readSaved($, id)
     if (!saved?.session) return { before: emptySession(), after: emptySession(), isDrawn: false }
     const before = upgradeSession(saved.session)
-    const after = await change(before)
-    if (after === before) return { before, after, isDrawn: false }
+    const result = await change(before)
+    if (result === before) return { before, after: before, isDrawn: false }
+    const after = pruned({ ...result, heldRows: [], shownSince: null })
     await $.store.set(sessionKey(id), { savedAt: saved.session.savedAt, ...after })
 
     return { before, after, isDrawn: false }
