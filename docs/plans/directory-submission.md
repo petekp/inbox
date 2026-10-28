@@ -1,6 +1,6 @@
 # Submitting the inbox to the Claude Code plugin directory
 
-Status: built. Validation passes with no blocks. Pete is filling in the submission form.
+Status: built. The directory's scan of 0.2.13 on `main` reported two blocks. Both are fixed for 0.2.14, as the last two rows of Fixes say. Only the directory's scan of `main` after that release confirms the fixes.
 
 The directory scans a submitted plugin and reports findings at four levels
 ([pre-submission checklist](https://claude.com/docs/plugins/pre-submission-checklist)):
@@ -22,6 +22,8 @@ The directory scans a submitted plugin and reports findings at four levels
 | No privacy policy link, after "Reads and stores" personal data | Set `privacyPolicyUrl` to the README's `#what-it-runs-sends-and-changes`, and say there what the inbox keeps: the 40 most recent sessions, in local plugin storage. Renaming that heading breaks the link. |
 | No `author` in plugin.json | Add `{ "name": "Pete Petrash" }`, plus `repository` and `license`. |
 | No `version` in plugin.json | Add a version that matches the Codex plugin's, now `0.2.5`. Installs update only when the version goes up, so each release raises it in both manifests. |
+| On 0.2.13: `$` passed to functions imported from `claude-host.ts` (`MOD_CAPABILITY_USE_NOT_PLAIN`, 3) | The directory allows `$` only as a whole argument to a function declared at the top of the same file. `hooks/register.tsx` passed `$` to 13 functions from `claude-host.ts`, which held the mod's storage and `SessionHost`, at 22 places. The scan flagged the first three in file order, lines 882, 933 and 1038, and reported that its validation did not finish. It left the same call, `processRun($)`, unflagged at lines 2590 and 3070, so it stopped early and the rest fail too. Every function that takes `$` moved from `claude-host.ts` into `hooks/register.tsx`, and `claude-host.ts` is gone. The moved code's `next` and `e` bindings were renamed, as the `PermissionRequest` row above requires. `readIsNextBuild`, a top-level `const` arrow that takes `$`, became a function declaration. |
+| On 0.2.13: directory couldn't confirm the `tool.check` hook leaves the decision with the user (`MOD_PERMISSION_ANSWER_UNREAD`) | The hook awaited `next(e)`, read whether the verdict was an ask, and returned the verdict by name. The directory accepts a permission hook that returns `next(e)` as written, or a fixed `deny` or `ask` written in the return. The hook now starts `waitForPermission` and returns `next(e)`. `waitForPermission` gets the verdict from a `$.tool.check` query, which runs no tool, opens no dialog and skips the inbox's own hook. Two `e =>` parameters elsewhere in `hooks/register.tsx` became `effect =>`, so `e` names only a hook's event. |
 
 ## Disclose in the README
 
@@ -42,7 +44,7 @@ Each of these is a policy hold. The README's "What it runs, sends and changes" s
 
 ## Decisions
 
-1. **Blocks.** The third validation had none. The holds and warnings left are listed above.
+1. **Blocks.** The scan of 0.2.13 had two, fixed in the last two rows of Fixes. The holds and warnings left are listed above.
 2. **Icon.** `.claude-plugin/icon.png`, 1024 px square: a white Geist Mono `i` and a block cursor as tall as the `i`, on a dark background with an indigo glow, after the launch video's end card. The directory takes the icon only the first time the plugin is saved or submitted.
 3. **Name.** `inbox` may be confused with other listings (4 holds). Pete chose to keep `inbox` for now. A later rename can change `displayName` alone, which changes only what people see. Changing `name` also changes the install command, the tool names Claude calls, and the key the saved state is stored under.
 4. **Data questions.** Personal data: reads and stores. Sends data to another service: yes, listed in the README. Retention by our service: not retained. For users under 18: no.

@@ -13,6 +13,7 @@ import type {
 } from 'claude-code'
 
 import type {
+  Away,
   Cursor,
   Closed,
   DemoCopy,
@@ -21,6 +22,7 @@ import type {
   FoldKind,
   Item,
   Ledger,
+  OldPresence,
   PrCheck,
   PrThread,
   PrView,
@@ -30,35 +32,11 @@ import type {
   PressKind,
   PageTab,
   RowNote,
+  SentPrompt,
   Stop,
   Tab,
 } from '../types'
 import { childEnded } from './overview'
-import {
-  NO_SESSION,
-  PRESENT,
-  arrived,
-  askLedgerModel,
-  changeSession,
-  comparePagePath,
-  conversation,
-  currentOwner,
-  deliver,
-  forgetStored,
-  isCurrent,
-  modelAsk,
-  noteStored,
-  overviewRecords,
-  processRun,
-  readSaved,
-  readSettled,
-  recordsFolder,
-  replaceDrawn,
-  savedWriteCount,
-  sessionHost,
-  upgradeDrawn,
-} from './claude-host'
-import type { Owner, SavedRecord, Shown } from './claude-host'
 import {
   claimedOverviewRefresh,
   cleared,
@@ -76,6 +54,7 @@ import {
   turnEnded,
   turnStarted,
   placed,
+  pruned,
   upgradeSession,
   cutOffTurn,
   overviewChanged,
@@ -96,8 +75,9 @@ import {
   subagentsSettled,
   taskNotice,
 } from './children'
-import type { SentBy, Session, SessionView } from './session'
+import type { SavedSession, SendOutcome, SentBy, Session, SessionView } from './session'
 import {
+  exclusiveKeys,
   fetchPrs as fetchSessionPrs,
   orderedKeys,
   refreshOverview,
@@ -105,7 +85,15 @@ import {
   startPress,
   wakeForDone as wakeSessionForDone,
 } from './session-host'
-import type { CatchUpReply, OverviewCall, OverviewRecords, SessionHost } from './session-host'
+import type {
+  Ask,
+  CallReport,
+  CatchUpReply,
+  OverviewCall,
+  OverviewRecords,
+  RecordFiles,
+  SessionHost,
+} from './session-host'
 import { demoView, isDemoCopy, withDemoPresence } from './demo'
 import { claudeTasksAfter } from './host-tasks'
 import { noteDialog } from './dialogs'
@@ -187,12 +175,14 @@ import {
   turnBoxText,
 } from './claude'
 import { branchIn } from './gh'
+import type { Run } from './gh'
 import { CLEARED_TOKENS, delegatesInHerdr, herdrReporter, herdrTokens } from './herdr'
 import { ago, cellWidth, clipLabel, cutForEllipsis } from './text'
 import {
   applyPress,
   baseName,
   capitalized,
+  COMPARE_PAGE_FILE,
   demoAfterPress,
   demoReplied,
   demoSent,
@@ -345,6 +335,15 @@ import { TAB_COUNT_GAP, TAB_HEIGHT, tabLines, type TabsProps } from './tabs-clie
 
 /** The tools Claude Code writes its own task list with. They are off unless the person turns them on. */
 const HOST_TASK_TOOLS: ReadonlySet<string> = new Set(['TaskCreate', 'TaskUpdate', 'TodoWrite'])
+
+/** The drawn conversation's session. `revision` counts its writes, so a write computed from an older one is retried. */
+type ModSession = Session & { revision: number }
+
+const NO_SESSION: ModSession = { ...emptySession(), revision: 0 }
+const PRESENT: Away = { lastActiveAt: 0, isAway: false, minute: 0 }
+
+/** The tab the pane shows, whether it shows the sample, and since when. */
+type Shown = { tab: ShownTab; isDemo: boolean; since: number }
 
 const TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'needsYou' as Tab)
 /**
@@ -806,7 +805,10 @@ let turnBox: string | null = null
 let isDialogDismissed = false
 /** True once a classic.PermissionRequest hook has run, which makes the tool.check fallback unnecessary. */
 let hasPermissionRequestHook = false
-/** The calls whose tool.check asked and that have not finished: tool_use_id to `callKey`, the key their dialog has. */
+/**
+ * The calls tool.check saw that may still wait on a dialog: tool_use_id to `callKey`, the key their dialog has. A
+ * call leaves when its verdict is not an ask, when it starts running and when it ends.
+ */
 const askedCalls = new Map<string, string>()
 /** Each agent this session spawned inside a child: its id to the Workflow call or the agent that spawned it. */
 const spawnedBy = new Map<string, string>()
@@ -961,6 +963,30 @@ async function setStopFromLastReply($: EngineInterface) {
   await setStop($, { ...stopOfMessage(message), at: await $.clock.now() })
 }
 
+/**
+ * Shows the permission row of the call `id` if its verdict is an ask and the call is still waiting
+ * PERMISSION_FALLBACK_DELAY_MS later. The auto-mode classifier can settle an ask well within the delay, and the
+ * verdict does not say whether a dialog or the classifier answers it. A query asks no PreToolUse hook, so an ask
+ * that only a PreToolUse hook makes shows no row.
+ */
+async function waitForPermission($: EngineInterface, id: string, tool: string, rawInput: unknown) {
+  const input = (rawInput ?? {}) as Record<string, unknown>
+  const key = callKey(tool, input)
+  askedCalls.set(id, key)
+  try {
+    const { decision } = await $.tool.check({ tool, input })
+    if (decision !== 'ask') {
+      askedCalls.delete(id)
+      return
+    }
+    await $.clock.sleep(PERMISSION_FALLBACK_DELAY_MS)
+    if (!askedCalls.has(id) || hasPermissionRequestHook) return
+    await openDialog($, { kind: 'permission', text: permissionText(tool, input), key })
+  } catch {
+    askedCalls.delete(id)
+  }
+}
+
 /** Ends the wait for a permission row, and closes the row, for a call that has started running. */
 function endWaitFor($: EngineInterface, id: string | undefined) {
   const key = id ? askedCalls.get(id) : undefined
@@ -1056,6 +1082,629 @@ function permissionText(tool: string, input: Record<string, unknown>): string {
       return tool.startsWith('mcp__') ? tool.slice(5).replace(/__/g, ' ') : tool
   }
 }
+
+// The plugin directory refuses `$` passed to a function that another of the mod's files declares, so every
+// function that takes `$`, the session's storage and the SessionHost included, lives in this file.
+
+const OLD_LEDGER = atom({ plugin: 'inbox', key: 'ledger' } as const, EMPTY)
+const OLD_PRESENCE = atom(
+  { plugin: 'inbox', key: 'presence' } as const,
+  {
+    lastActiveAt: 0,
+    isAway: false,
+    isUpdating: false,
+    ledgerState: 'current',
+    turnsStarted: 0,
+    turnsApplied: 0,
+    minute: 0,
+  } as OldPresence,
+)
+const OLD_PR_VIEWS = atom(
+  { plugin: 'inbox', key: 'prViews' } as const,
+  { views: {}, branchRef: null, isFetching: false } as PrViews,
+)
+const OLD_STOP = atom({ plugin: 'inbox', key: 'stop' } as const, null as Stop | null)
+const OLD_LAST_ACTIONS = atom({ plugin: 'inbox', key: 'lastActions' } as const, {} as Record<string, LastAction>)
+const OLD_SENT = atom({ plugin: 'inbox', key: 'sent' } as const, [] as SentPrompt[])
+const OLD_UNTRACKED_SENT = atom(
+  { plugin: 'inbox', key: 'untrackedSent' } as const,
+  [] as { sessionId: string; text: string }[],
+)
+
+/** The conversation the session runs. /clear, /resume and /branch move it to another id, and each move is a new generation. */
+const conversation = { id: '', root: '', generation: 0 }
+
+type Owner = { id: string; generation: number }
+
+function currentOwner(): Owner {
+  return { id: conversation.id, generation: conversation.generation }
+}
+
+function isCurrent(owner: Owner): boolean {
+  return owner.id === conversation.id && owner.generation === conversation.generation
+}
+
+/**
+ * The session as an older build left it in its separate fields, for a hot reload into this build. A sent message
+ * whose record those fields lost is kept as an uncertain record, so its arrival cannot be credited to a newer press.
+ */
+async function fromOldFields($: EngineInterface): Promise<Session> {
+  const [id, ledger, presence, prViews, stop, lastActions, sent, untracked] = await Promise.all([
+    $.session.id(),
+    read($, OLD_LEDGER),
+    read($, OLD_PRESENCE),
+    read($, OLD_PR_VIEWS),
+    read($, OLD_STOP),
+    read($, OLD_LAST_ACTIONS),
+    read($, OLD_SENT),
+    read($, OLD_UNTRACKED_SENT),
+  ])
+  await update($, AWAY, () => ({
+    lastActiveAt: presence.lastActiveAt,
+    isAway: presence.isAway,
+    minute: presence.minute,
+  }))
+
+  return upgradeSession({
+    ledger,
+    presence: {
+      isUpdating: presence.isUpdating,
+      ledgerState: presence.ledgerState,
+      // Presence from before the turn counts existed cannot say whether the last turn's update landed, so that
+      // load catches up once.
+      turnsStarted: presence.turnsStarted ?? 1,
+      turnsApplied: presence.turnsApplied ?? 0,
+    },
+    prViews,
+    stop,
+    lastActions,
+    sent: [
+      ...(sent ?? [])
+        .filter(p => p.sessionId === id)
+        .map(p => ({ text: p.text, press: null, at: p.pressedAt ?? 0, pressedAt: p.pressedAt, deliveryId: p.id })),
+      ...(untracked ?? []).filter(u => u.sessionId === id).map(u => uncertainRecord(u.text)),
+    ],
+  })
+}
+
+/** A sent message no record can be matched to. Its text arriving reads unconfirmed. */
+function uncertainRecord(text: string): Session['sent'][number] {
+  return {
+    text,
+    press: null,
+    at: 0,
+    row: null,
+    queuedId: null,
+    pressedAt: null,
+    deliveryId: null,
+    phase: 'uncertain',
+  }
+}
+
+function isUntracked(record: Session['sent'][number]): boolean {
+  return record.phase === 'uncertain' && record.deliveryId === null
+}
+
+/**
+ * Brings the drawn session to the current shape. A row's queued message that has no sent record lost it to an
+ * older build, so its record becomes uncertain and the row reads unconfirmed.
+ */
+async function upgradeDrawn($: EngineInterface): Promise<ModSession> {
+  const written = await $.state.get({ plugin: 'inbox', key: 'session' })
+  const base = written.value === undefined ? await fromOldFields($) : upgradeSession(written.value as SavedSession)
+
+  return update($, SESSION, cur => {
+    const s = written.value === undefined ? base : upgradeSession(cur as SavedSession)
+    const lost = Object.entries(s.lastActions).flatMap(([row, action]) => {
+      const delivery = action.delivery
+      return /^[if]\d+$/.test(row) &&
+        delivery?.state === 'queued' &&
+        !s.sent.some(x =>
+          delivery.id ? x.deliveryId === delivery.id : x.text === delivery.message && x.pressedAt === action.at,
+        )
+        ? [delivery.message]
+        : []
+    })
+    const fresh = lost.filter(text => !s.sent.some(x => isUntracked(x) && x.text === text))
+
+    return {
+      ...s,
+      sent: [...s.sent, ...fresh.map(uncertainRecord)],
+      lastActions: lost.reduce((actions, text) => withUnconfirmed(actions, text), s.lastActions),
+      revision: (cur.revision ?? 0) + 1,
+    }
+  })
+}
+
+/**
+ * Replaces the drawn session outside the write loop, as a conversation switch or load does. A change that returns
+ * the session it was given writes nothing.
+ */
+async function replaceDrawn($: EngineInterface, change: (s: ModSession) => Session): Promise<ModSession> {
+  const cur = await read($, SESSION)
+  if (change(cur) === cur) return cur
+
+  return update($, SESSION, s => ({ ...change(s), revision: s.revision + 1 }))
+}
+
+const MAX_TRIES = 20
+
+/** A session change that landed: the session it read and the one it wrote, and whether that session is the drawn one. */
+type Changed = { before: Session; after: Session; isDrawn: boolean }
+
+/**
+ * Changes the session of `owner`. While its conversation is drawn, the change runs on the drawn session and is
+ * written only if no other write landed meanwhile; otherwise it runs again on what landed. Once the conversation
+ * moved on, the change goes to its saved session. A change that returns the session it was given writes nothing.
+ * Every write saves the pane's `held` rows and its showing of the real session, and prunes the session with `pruned`.
+ * A write that changes more than the running turn saves.
+ */
+async function changeSession(
+  $: EngineInterface,
+  owner: Owner,
+  change: (s: Session) => Session | Promise<Session>,
+  held: Set<string>,
+): Promise<Changed> {
+  for (let tries = 0; tries < MAX_TRIES; tries++) {
+    if (!isCurrent(owner)) return changeSaved($, owner.id, change)
+    const drawn = await read($, SESSION)
+    // A hot reload can leave a session an earlier build wrote. The fetch that is running still runs.
+    const upgraded = upgradeSession(drawn)
+    const before = { ...upgraded, prViews: { ...upgraded.prViews, isFetching: drawn.prViews.isFetching } }
+    const changed = await change(before)
+    if (changed === before) return { before, after: before, isDrawn: true }
+    // A resume drops the running turn, so a write that changes only the turn, such as each tool call's activity,
+    // leaves the saved copy alone.
+    const isTurnOnly = (Object.keys(changed) as (keyof Session)[]).every(k => k === 'turn' || changed[k] === before[k])
+    const shown = await read($, SHOWN)
+    const kept = pruned({ ...changed, heldRows: [...held], shownSince: shown && !shown.isDemo ? shown.since : null })
+    let landed: ModSession | null = null
+    await update($, SESSION, cur => {
+      if (!isCurrent(owner) || cur.revision !== drawn.revision) {
+        landed = null
+        return cur
+      }
+      landed = { ...kept, revision: drawn.revision + 1 }
+      return landed
+    })
+    const written = landed as ModSession | null
+    if (!written) continue
+    if (!isTurnOnly && (await read($, UNREADABLE)) !== owner.id) await save($, owner, written)
+    return { before, after: written, isDrawn: isCurrent(owner) }
+  }
+  throw new Error('The session kept changing under this write.')
+}
+
+/**
+ * Changes a conversation's saved session, after its pending saves, and prunes it with `pruned`. The pane draws another
+ * conversation, so this one holds no rows and has no showing. A session the store cannot read stays as it is.
+ */
+async function changeSaved(
+  $: EngineInterface,
+  id: string,
+  change: (s: Session) => Session | Promise<Session>,
+): Promise<Changed> {
+  savedWrites++
+  // The read, the change and the write run in the save queue, so two changes to one saved session cannot both
+  // start from the same read.
+  const changed = saving.then(async (): Promise<Changed> => {
+    const saved = await readSaved($, id)
+    if (!saved?.session) return { before: emptySession(), after: emptySession(), isDrawn: false }
+    const before = upgradeSession(saved.session)
+    const result = await change(before)
+    if (result === before) return { before, after: before, isDrawn: false }
+    const after = pruned({ ...result, heldRows: [], shownSince: null })
+    await $.store.set(sessionKey(id), { savedAt: saved.session.savedAt, ...after })
+
+    return { before, after, isDrawn: false }
+  })
+  const write = changed.then(() => undefined)
+  saving = write.catch(() => undefined)
+  track(id, write)
+
+  return changed
+}
+
+type SavedRecord = SavedSession & { savedAt: number }
+
+const sessionKey = (id: string) => `s:${id}`
+
+let saving: Promise<void> = Promise.resolve()
+/** How many changes went to a saved session that is not drawn, so a load can tell its read is out of date. */
+let savedWrites = 0
+
+const savesBySession = new Map<string, Promise<void>>()
+const prunedSaves = new Set<string>()
+const savedRevisions = new Map<string, number>()
+
+function track(id: string, write: Promise<void>) {
+  savesBySession.set(id, write)
+  void write
+    .finally(() => {
+      if (savesBySession.get(id) === write) savesBySession.delete(id)
+    })
+    .catch(() => undefined)
+}
+
+/**
+ * Saves a conversation's session, once every earlier save has landed. A save older than one already resolved is
+ * skipped. The first save of each conversation also deletes the oldest saved sessions beyond the newest `KEPT_SESSIONS`.
+ */
+function save($: EngineInterface, owner: Owner, s: ModSession): Promise<void> {
+  const key = sessionKey(owner.id)
+  const generation = `${owner.id}:${owner.generation}`
+  savedRevisions.set(generation, Math.max(savedRevisions.get(generation) ?? 0, s.revision))
+  const { revision: _revision, ...session } = s
+  const write = Promise.all([saving, $.clock.now()]).then(async ([, savedAt]) => {
+    if (s.revision < (savedRevisions.get(generation) ?? 0)) return
+    await $.store.set(key, { savedAt, ...session })
+    if (prunedSaves.has(generation)) return
+    const keys = await $.store.keys()
+    const sessions = keys.filter(k => k.startsWith('s:'))
+    const ages = await Promise.all(
+      sessions.map(async candidate => {
+        try {
+          const saved = (await $.store.get(candidate)) as SavedRecord | undefined
+          return saved && Number.isFinite(saved.savedAt) && saved.ledger && typeof saved.ledger === 'object'
+            ? { key: candidate, savedAt: saved.savedAt }
+            : null
+        } catch {
+          return null
+        }
+      }),
+    )
+    const stale = ages
+      .filter((entry): entry is { key: string; savedAt: number } => entry !== null && entry.key !== key)
+      .sort((a, b) => a.savedAt - b.savedAt || a.key.localeCompare(b.key))
+      .slice(0, Math.max(0, sessions.length - KEPT_SESSIONS))
+      .map(entry => entry.key)
+    // `p:` keys held the last-session offer, which earlier builds saved per folder.
+    await Promise.all([...stale, ...keys.filter(k => k.startsWith('p:'))].map(old => $.store.delete(old)))
+    prunedSaves.add(generation)
+  })
+  saving = write.catch(() => undefined)
+  track(owner.id, write)
+
+  return write
+}
+
+/** A conversation's saved session, or `{ session: undefined }` when none is saved. Null when the store cannot read it. */
+async function readSaved($: EngineInterface, id: string): Promise<{ session: SavedRecord | undefined } | null> {
+  try {
+    return { session: (await $.store.get(sessionKey(id))) as SavedRecord | undefined }
+  } catch {
+    return null
+  }
+}
+
+/** A conversation's saved session, once its pending saves have landed. */
+async function readSettled($: EngineInterface, id: string) {
+  await savesBySession.get(id)?.catch(() => undefined)
+
+  return readSaved($, id)
+}
+
+/**
+ * The prompt rows of the mod's own messages Claude Code has stored, by text: how many rows were stored before
+ * each, and the sent record each matched. A rewritten message is confirmed from these, since its row may be stored
+ * before `$.prompt.submit` returns.
+ */
+const stored = {
+  count: 0,
+  at: new Map<string, number>(),
+  by: new Map<string, { count: number; deliveryId: string | null }>(),
+}
+
+function forgetStored() {
+  stored.at.clear()
+  stored.by.clear()
+}
+
+/** Records that Claude Code stored a prompt row of the mod's own. Returns the row's count, for `arrived`. */
+function noteStored(text: string): number {
+  const count = ++stored.count
+  stored.at.set(text, count)
+  stored.by.set(text, { count, deliveryId: null })
+
+  return count
+}
+
+/**
+ * Matches the stored prompt row `count` to the message a press sent. A message matches while its send is still
+ * running too, since Claude Code stores the row before `$.prompt.submit` returns. When an older build's untracked
+ * send has the same text, the row confirms nothing, so it reads unconfirmed.
+ */
+function arrived(s: Session, text: string, count: number): { state: Session; sentBy: SentBy } {
+  const tracked = s.sent.filter(x => !isUntracked(x))
+  const index = tracked.findIndex(x => x.text === text)
+  const match = tracked[index]
+  if (!match || s.sent.some(x => isUntracked(x) && x.text === text)) {
+    return {
+      state: {
+        ...s,
+        sent: match ? s.sent.filter(x => x !== match) : s.sent,
+        lastActions: withUnconfirmed(s.lastActions, text),
+      },
+      sentBy: { press: null },
+    }
+  }
+  if (stored.by.get(text)?.count === count) stored.by.set(text, { count, deliveryId: match.deliveryId })
+  const lastActions = tracked
+    .slice(index + 1)
+    .filter(x => x.text === text && x.row !== null)
+    .reduce(
+      (actions, later) => withUnconfirmed(actions, text, later.pressedAt ?? undefined, later.deliveryId),
+      match.row === null
+        ? s.lastActions
+        : withArrival(s.lastActions, text, match.pressedAt ?? undefined, match.deliveryId),
+    )
+
+  return { state: { ...s, sent: s.sent.filter(x => x !== match), lastActions }, sentBy: { press: match.press } }
+}
+
+/**
+ * Settles a message another plugin rewrote whose row Claude Code stored before `$.prompt.submit` returned. The row
+ * confirms the press only when no other record or untracked send shares the new text and the row matched no record.
+ * Returns how the send went, or null when the row is not stored yet and the shared code settles it.
+ */
+function settleRewrite(
+  s: Session,
+  deliveryId: string,
+  text: string,
+  entered: string,
+  since: number,
+): { state: Session; outcome: SendOutcome } | null {
+  if ((stored.at.get(entered) ?? 0) <= since) return null
+  const record = s.sent.find(x => x.deliveryId === deliveryId)
+  const rows = Object.entries(s.lastActions).filter(
+    ([_id, a]) => a.delivery && 'id' in a.delivery && a.delivery.id === deliveryId,
+  )
+  const moved = rows.reduce(
+    (actions, [id, a]) => withRewrite(actions, [id], a.at, text, entered, deliveryId),
+    s.lastActions,
+  )
+  const isConfirmed =
+    !s.sent.some(x => x.deliveryId !== deliveryId && x.text === entered) && stored.by.get(entered)?.deliveryId === null
+  if (isConfirmed)
+    return {
+      state: {
+        ...s,
+        sent: s.sent.filter(x => x.deliveryId !== deliveryId),
+        lastActions: withArrival(moved, entered, undefined, deliveryId),
+        turn: { ...s.turn, press: s.turn.press ?? record?.press ?? null },
+      },
+      outcome: { state: 'accepted', queuedId: null },
+    }
+
+  return {
+    state: {
+      ...s,
+      sent: s.sent.map(x => (x.deliveryId === deliveryId ? { ...x, text: entered } : x)),
+      lastActions: withUnconfirmed(moved, entered, undefined, deliveryId),
+    },
+    outcome: { state: 'unconfirmed', reason: 'Another plugin changed the message' },
+  }
+}
+
+const MODEL = 'sonnet'
+
+type ModelResult = Awaited<ReturnType<EngineInterface['model']['fork']>>
+
+function askLedgerModel($: EngineInterface, prompt: string, system: string, timeoutMs: number): Promise<ModelResult> {
+  return $.model.complete({
+    model: MODEL,
+    system: [{ text: system, cache: true as const }],
+    prompt,
+    maxTokens: 1600,
+    effort: 'low',
+    timeoutMs,
+  })
+}
+
+/** The engine does not say which model answered. */
+function callReport(r: ModelResult): CallReport {
+  if (r.isAnswered) return { model: MODEL }
+  const error = r.reason === 'api-error' ? `api-error ${r.status ?? 'with no response'}: ${r.error}` : r.reason
+
+  return { model: MODEL, error }
+}
+
+/** Calls the inbox model as `askLedgerModel` does, waiting up to `timeoutMs`. */
+function modelAsk($: EngineInterface, timeoutMs: number): Ask {
+  return async (prompt, system, report) => {
+    const r = await askLedgerModel($, prompt, system, timeoutMs)
+    report?.(callReport(r))
+    return r.isAnswered ? r.text : null
+  }
+}
+
+/** The engine has no call that removes a file, so removing runs `rm` and `rmdir`. */
+function recordFiles($: EngineInterface): RecordFiles {
+  return {
+    write: (path, text) => $.fs.write(path, text),
+    list: async folder => (await $.fs.list(folder).catch(() => [])).map(entry => entry.name),
+    removeFiles: async paths => void (await $.process.run(['rm', '-f', '--', ...paths])),
+    removeFolder: async path => void (await $.process.run(['rmdir', '--', path])),
+  }
+}
+
+/** The folder a next build keeps its Overview call records in, under Claude Code's configuration folder. */
+async function recordsFolder($: EngineInterface): Promise<string | null> {
+  const home = await $.env.get('HOME')
+  const config = (await $.env.get('CLAUDE_CONFIG_DIR')) || (home ? `${home}/.claude` : null)
+
+  return config ? `${config}/plugins/data/inbox/overview-calls` : null
+}
+
+function overviewRecords($: EngineInterface, folder: string, owner: Owner): OverviewRecords {
+  return { host: 'claude-code', folder, session: owner.id, files: recordFiles($) }
+}
+
+const COPY_FAILURES: Record<Extract<UiCopyResult, { isCopied: false }>['reason'], string> = {
+  'no-surface': 'no app is attached',
+  'no-clipboard': 'the clipboard did not take it',
+  refused: 'another plugin refused it',
+}
+
+async function openUrl($: EngineInterface, url: string): Promise<string | null> {
+  const r = await $.process.run(['open', url])
+
+  return r.exitCode === 0 ? null : r.stderr.trim() || `open exited ${r.exitCode}`
+}
+
+async function openPath($: EngineInterface, raw: string): Promise<string | null> {
+  const path = localPath(raw, conversation.root, (await $.env.get('HOME')) ?? '')
+  if (!(await $.fs.exists(path))) return 'it no longer exists'
+  const stat = await $.fs.stat(path)
+  const isFile = stat.kind === 'file'
+  const isExecutable = isFile && (await $.process.run(['test', '-x', path])).exitCode === 0
+  const { argv, fallback } = openCommands(path, isFile, isExecutable)
+  const r = await $.process.run(argv)
+  const retry = r.exitCode !== 0 && fallback ? await $.process.run(fallback) : r
+
+  return retry.exitCode === 0 ? null : retry.stderr.trim() || `open exited ${retry.exitCode}`
+}
+
+async function perform(
+  $: EngineInterface,
+  effect: Extract<Effect, { kind: 'open' | 'copy' }>,
+  surface: UiPressArgument['surface'],
+): Promise<string | null> {
+  try {
+    if (effect.kind === 'open')
+      return await (/^[a-z][a-z\d+.-]*:\/\//i.test(effect.target)
+        ? openUrl($, effect.target)
+        : openPath($, effect.target))
+    const r = await $.ui.copy({ text: effect.text, surface })
+    return r.isCopied ? null : COPY_FAILURES[r.reason]
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err)
+  }
+}
+
+function gh($: EngineInterface, args: string[]) {
+  return $.process.run(['gh', ...args], { cwd: conversation.root, timeoutMs: 20_000 })
+}
+
+/** `$.process.run` as the shared `Run`: a run that rejects, because it could not start or outlived its timeout, ends with code -1. */
+function processRun($: EngineInterface): Run {
+  return (args, { cwd, timeoutMs, env }) =>
+    $.process.run(args, { cwd, timeoutMs, env }).then(
+      r => ({ code: r.exitCode, stdout: r.stdout, stderr: r.stderr }),
+      (err: unknown) => ({ code: -1, stdout: '', stderr: err instanceof Error ? err.message : String(err) }),
+    )
+}
+
+/**
+ * `$.process.run` rejects when the command cannot start, and also when it is still running at the timeout. Asking
+ * for `gh --version` tells them apart: only a gh that cannot start makes this reject too.
+ */
+async function isGhUnstartable($: EngineInterface): Promise<boolean> {
+  try {
+    await gh($, ['--version'])
+
+    return false
+  } catch {
+    return true
+  }
+}
+
+/**
+ * Sends a message as the person's own prompt. Claude Code may store its row before `$.prompt.submit` returns, as
+ * the mod's `session.append` handler sees, and another plugin may rewrite it.
+ */
+async function deliver($: EngineInterface, owner: Owner, text: string, deliveryId: string): Promise<SendOutcome> {
+  if (!isCurrent(owner)) return { state: 'rejected', reason: 'the conversation changed first' }
+  const since = stored.count
+  type Submitted = { entered: string } | { notSent: string }
+  const sent = await $.prompt.submit({ text, asUser: true }).then(
+    (r): Submitted => (r.drop === undefined ? { entered: r.text } : { notSent: r.drop }),
+    (err: unknown): Submitted =>
+      (stored.at.get(text) ?? 0) > since
+        ? { entered: text }
+        : { notSent: (err instanceof Error ? err.message : String(err)) || 'the session refused it' },
+  )
+  if ('notSent' in sent) return { state: 'rejected', reason: sent.notSent }
+  const entered = sent.entered
+  if (entered === text) return { state: 'accepted', queuedId: null }
+  let outcome: SendOutcome = { state: 'accepted', queuedId: null, entered }
+  const { heldRows } = await read($, SESSION)
+  await changeSession(
+    $,
+    owner,
+    s => {
+      const settled = settleRewrite(s, deliveryId, text, entered, since)
+      outcome = settled?.outcome ?? { state: 'accepted', queuedId: null, entered }
+      return settled?.state ?? s
+    },
+    new Set(heldRows),
+  )
+
+  return outcome
+}
+
+/** The page template for a comparison, as the mod ships it. */
+function comparePagePath($: EngineInterface): string {
+  return `${$.plugin.root}/hooks/${COMPARE_PAGE_FILE}`
+}
+
+/** The mod's SessionHost for the conversation `owner`, with copies going to `surface`. */
+function sessionHost(
+  $: EngineInterface,
+  owner: Owner,
+  opts: {
+    /** Changes the session, with what the drawing does after each write. */
+    update: SessionHost<Session>['update']
+    surface?: UiPressArgument['surface']
+    settleWindowMs: number
+    onGhMissing: (isMissing: boolean) => void
+    /** Fetches the session's PRs, and resolves once that fetch ends. */
+    refreshPrs: () => Promise<void>
+  },
+): SessionHost<Session> {
+  // gh is taken to start until a run fails. Then `find` asks it for its version, which only an unstartable gh refuses.
+  let ghFound: string | null | undefined = 'gh'
+
+  return {
+    now: () => $.clock.now(),
+    read: async () => {
+      if (isCurrent(owner)) return upgradeSession(await read($, SESSION))
+      const saved = await readSettled($, owner.id)
+      return saved?.session ? upgradeSession(saved.session) : emptySession()
+    },
+    update: opts.update,
+    exclusive: fn => updating.run(owner.id, fn),
+    ask: modelAsk($, 45_000),
+    deliver: (_s, text, deliveryId) => deliver($, owner, text, deliveryId),
+    isDeliveryHeldUntilRun: true,
+    perform: async (_s, effect) => (opts.surface ? perform($, effect, opts.surface) : COPY_FAILURES['no-surface']),
+    refreshPrs: opts.refreshPrs,
+    gh: {
+      find: async () => {
+        if (ghFound === undefined) ghFound = (await isGhUnstartable($)) ? null : 'gh'
+        return ghFound
+      },
+      forget: () => {
+        ghFound = undefined
+      },
+      run: (_s, _bin, onUnstartable) => async args => {
+        try {
+          return await gh($, args)
+        } catch (err) {
+          onUnstartable()
+          return { exitCode: -1, stdout: '', stderr: err instanceof Error ? err.message : String(err) }
+        }
+      },
+      noteMissing: opts.onGhMissing,
+    },
+    settleWindowMs: opts.settleWindowMs,
+    comparePage: comparePagePath($),
+    newId: () => crypto.randomUUID(),
+  }
+}
+
+/** The conversations whose per-reply update runs now. */
+const updating = exclusiveKeys()
 
 /** Changes the ledger of `owner`'s session. */
 function commitLedger(
@@ -2157,7 +2806,7 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
     )
     return
   }
-  const sends = effects.some(e => e.kind === 'send')
+  const sends = effects.some(effect => effect.kind === 'send')
   if (mayStayOnRow && sends) cancelUndoScroll()
   await Promise.all([
     update($, NOTES, n => {
@@ -2183,7 +2832,7 @@ async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPr
   // way after QUEUED_AFTER_MS reads Queued from then. A fresh value is what redraws the pane at each.
   if (sends) later($, QUEUED_AFTER_MS, () => redraw($))
   const outcome = await started.finish()
-  if (effects.some(e => e.kind !== 'send')) later($, SETTLED_MS, () => redraw($))
+  if (effects.some(effect => effect.kind !== 'send')) later($, SETTLED_MS, () => redraw($))
   if (!isPressConfirmed(outcome)) await keepReply()
   if (!outcome.isRowFailed) return
   if (isMoved) {
@@ -2534,7 +3183,9 @@ async function setDemo($: EngineInterface, isShown: boolean, isRecording = false
   await followNewRows($, true)
 }
 
-const readIsNextBuild = ($: EngineInterface) => $.fs.exists(`${$.plugin.root}/${NEXT_BUILD_MARK}`).catch(() => false)
+function readIsNextBuild($: EngineInterface): Promise<boolean> {
+  return $.fs.exists(`${$.plugin.root}/${NEXT_BUILD_MARK}`).catch(() => false)
+}
 
 async function registerInboxCommand($: EngineInterface) {
   const description = inboxCommandText(await readIsNextBuild($))
@@ -2622,13 +3273,13 @@ function loadConversation($: EngineInterface, id: string, forkedFrom?: string): 
 }
 
 async function prepareConversation($: EngineInterface, id: string, revision: number, forkedFrom?: string) {
-  const savedWrites = savedWriteCount()
+  const writesAtRead = savedWrites
   const [sessionRoot, saved] = await Promise.all([$.session.root(), readSettled($, id)])
   if (revision !== loadRevision) return
   const applying = applyingConversation.then(async () => {
     if (revision !== loadRevision) return
     // A write to a saved session after the read above, such as a refused Done message, is read again.
-    const latest = savedWrites === savedWriteCount() ? saved : await readSettled($, id)
+    const latest = writesAtRead === savedWrites ? saved : await readSettled($, id)
     // A fork continues its parent's inbox, so a new id with no saved state starts from the parent's.
     const parent = latest?.session || !forkedFrom ? null : await readSettled($, forkedFrom)
     await applyConversation($, id, revision, sessionRoot, latest, parent?.session)
@@ -3100,26 +3751,14 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // Where the guard skips classic.PermissionRequest, an ask shows its row only if the
-  // call is still waiting after the delay: the auto-mode classifier can settle an ask in
-  // well under that, and tool.check carries nothing that tells the two apart.
+  // Where the guard skips classic.PermissionRequest, the permission row comes from here. The plugin
+  // directory accepts a permission hook only when it returns next(e) itself, so waitForPermission
+  // asks for the verdict with a query of its own.
   on('tool.check', async ($, e, next) => {
-    const r = await next(e)
-    const input = (e.input ?? {}) as Record<string, unknown>
-    const key = callKey(e.tool, input)
-    const id = e.tool_use_id
-    const isDialogAsk = isOn && !hasPermissionRequestHook && !e.agentId && r.decision === 'ask'
-    if (!id || !isDialogAsk || e.tool === 'AskUserQuestion') return r
-    askedCalls.set(id, key)
-    void $.clock
-      .sleep(PERMISSION_FALLBACK_DELAY_MS)
-      .then(async () => {
-        if (!askedCalls.has(id) || hasPermissionRequestHook) return
-        await openDialog($, { kind: 'permission', text: permissionText(e.tool, input), key })
-      })
-      .catch(() => undefined)
+    const mayShowRow = isOn && !hasPermissionRequestHook && !e.agentId && e.tool !== 'AskUserQuestion'
+    if (mayShowRow && e.tool_use_id) void waitForPermission($, e.tool_use_id, e.tool, e.input)
 
-    return r
+    return next(e)
   })
 
   on('classic.StopFailure', async ($, e, next) => {
