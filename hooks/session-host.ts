@@ -813,6 +813,6 @@ export async function fetchPrs<S extends Session>(
     if (refound === null) return
     if (refound !== bin) fetch = await fetchWith(refound)
   }
-  const { views: fetched, branchRef } = fetch
-  await host.update(cur => withFetchedPrs(cur, fetched, branchRef))
+  const { views: fetched, branchRef, isGhSignedOut } = fetch
+  await host.update(cur => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut))
 }

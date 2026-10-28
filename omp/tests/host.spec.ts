@@ -829,6 +829,23 @@ test('opening the panel finds gh missing when no gh starts', async () => {
   expect((await inbox.screen(makeCtx())).isGhMissing).toBe(true)
 })
 
+test('opening the panel finds gh signed out, and a later fetch that gh answers without asking clears it', async () => {
+  const inbox = createInbox(pi(), deps())
+  execResults.set('gh', { code: 4, stderr: 'To get started with GitHub CLI, please run:  gh auth login' })
+  await record({ kind: 'task', ask: 'Try the CLI by hand' })
+  await inbox.openPanel(makeCtx(), clock)
+  await settle()
+  const signedOut = await inbox.screen(makeCtx())
+  expect(signedOut.isGhMissing).toBe(false)
+  expect(signedOut.view.prs.isGhSignedOut).toBe(true)
+
+  execResults.set('gh', { code: 1, stderr: 'no pull requests found for branch "main"' })
+  clock += 130_000
+  inbox.fetchPrsWhenDue(makeCtx())
+  await settle()
+  expect((await inbox.screen(makeCtx())).view.prs.isGhSignedOut).toBe(false)
+})
+
 test('opening the panel finds gh and fetches PRs again only after the refresh interval', async () => {
   const inbox = createInbox(pi(), deps())
   await record({ kind: 'task', ask: 'Try the CLI by hand' })

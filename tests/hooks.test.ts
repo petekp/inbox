@@ -80,6 +80,7 @@ let ghAnswers: {
   stdout: string
   hold?: () => Promise<void>
   fails?: string
+  exitCode?: number
 }[] = []
 
 function gh(argv: readonly string[]) {
@@ -88,7 +89,7 @@ function gh(argv: readonly string[]) {
     return { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 
   return {
-    exitCode: hit && !hit.fails ? 0 : 1,
+    exitCode: hit?.exitCode ?? (hit && !hit.fails ? 0 : 1),
     stdout: hit && !hit.fails ? hit.stdout : '',
     stderr: hit ? (hit.fails ?? '') : 'no pull requests found',
     isStdoutTruncated: false,
@@ -3016,6 +3017,45 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await pane.find({ text: notice })).toBeDefined()
 
     isGhMissing = false
+    await show('needsYou')
+    await clock.settle()
+    await show('prs')
+    await clock.settle()
+    expect(await pane.find({ text: /No PRs/ })).toBeDefined()
+    expect(await pane.find({ text: notice })).toBeUndefined()
+  })
+
+  test(`the ${surface} PRs tab says gh is not signed in until gh answers without asking for a sign-in`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [])
+    const notice = /gh is not signed in to GitHub/
+    ghAnswers.push({
+      match: argv => argv[0] === 'gh' && argv[1] === 'pr',
+      stdout: '',
+      fails: 'To get started with GitHub CLI, please run:  gh auth login',
+      exitCode: 4,
+    })
+
+    await $.session.start({ cwd: '/tmp/project', surface, isInteractive: true })
+    const pane = await $.ui.mount({ ...PANE, surface })
+    const show = async (id: string) => {
+      if (surface === 'terminal') return pane.press({ key: `tab-${id}` })
+      const { tabs, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+      const x = tabs
+        .slice(
+          0,
+          tabs.findIndex(t => t.id === id),
+        )
+        .reduce((sum, t) => sum + t.width + gap, 0)
+
+      return pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+    }
+    await show('prs')
+    await clock.settle()
+    expect(await pane.find({ text: notice })).toBeDefined()
+    expect(await pane.find({ text: /could not find gh/ })).toBeUndefined()
+
+    ghAnswers.pop()
     await show('needsYou')
     await clock.settle()
     await show('prs')

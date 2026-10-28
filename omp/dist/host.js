@@ -2804,6 +2804,7 @@ var BANNER_TONES = {
   "read-failed": "error",
   stopped: "error",
   "gh-missing": "warning",
+  "gh-signed-out": "warning",
   "press-note": "notice",
   "press-failed": "error",
   "hooks-trust": "error",
@@ -3637,6 +3638,10 @@ function herdrReporter() {
 
 // ../hooks/pr-tab.ts
 var MAX_PRS = 12;
+var GH_SIGN_IN_CODE = 4;
+function asksForSignIn(r) {
+  return r.exitCode === GH_SIGN_IN_CODE || r.exitCode !== 0 && /\bHTTP 401\b/.test(r.stderr);
+}
 function linkedPrs(prs, refs) {
   return [...prs.filter((r) => !refs.includes(r)), ...refs];
 }
@@ -3659,7 +3664,14 @@ function olderPrsText(prState, linked) {
   const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
   return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
 }
-async function fetchTracked(gh, state, linked, findsBranchPr) {
+async function fetchTracked(run, state, linked, findsBranchPr) {
+  let isGhSignedOut = null;
+  const gh = async (args) => {
+    const r = await run(args);
+    if (r.exitCode !== UNSTARTABLE_CODE)
+      isGhSignedOut = isGhSignedOut === true || asksForSignIn(r);
+    return r;
+  };
   const { tracked } = splitLinked(state, linked);
   const branchTarget = findsBranchPr ? null : state.branchRef;
   const isBranchLinked = branchTarget !== null && tracked.includes(branchTarget);
@@ -3671,7 +3683,7 @@ async function fetchTracked(gh, state, linked, findsBranchPr) {
   for (const v of [...rest, branch])
     if (v)
       views[v.ref] = v;
-  return { views, branchRef: findsBranchPr ? branch?.ref ?? null : state.branchRef };
+  return { views, branchRef: findsBranchPr ? branch?.ref ?? null : state.branchRef, isGhSignedOut };
 }
 async function fetchPr(gh, target, views, knownBranchRef) {
   const threadsOf = (ref) => {
@@ -3700,9 +3712,12 @@ async function fetchPr(gh, target, views, knownBranchRef) {
     return null;
   const previous = views[ref];
   const base = view.exitCode === 0 ? readView(ref, view.stdout) : null;
-  if (!base)
-    return previous ? { ...previous, error: view.stderr.trim().split(`
-`)[0] || "gh could not read the PR" } : null;
+  if (!base) {
+    if (!previous || asksForSignIn(view))
+      return previous ?? null;
+    return { ...previous, error: view.stderr.trim().split(`
+`)[0] || "gh could not read the PR" };
+  }
   const threads = early ?? await threadsOf(ref);
   const answer = threads.exitCode === 0 ? readThreadsAnswer(threads.stdout) : null;
   return {
@@ -3736,13 +3751,21 @@ function prMarkId(ref) {
   return `pr:${ref}`;
 }
 var GH_MISSING_TEXT = "The inbox could not find gh. It needs gh to read your PRs.";
+var GH_SIGNED_OUT_TEXT = "gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.";
+function ghNoticeOf(gh) {
+  if (gh.isGhMissing)
+    return { kind: "gh-missing", text: GH_MISSING_TEXT };
+  if (gh.isGhSignedOut)
+    return { kind: "gh-signed-out", text: GH_SIGNED_OUT_TEXT };
+  return null;
+}
 function prsEmptyHint(place) {
   return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
 }
 function prsEmptyText(prs, place) {
   return {
     title: prs.isFetching ? "Checking for PRs\u2026" : "No PRs",
-    hint: prs.isGhMissing ? GH_MISSING_TEXT : prsEmptyHint(place)
+    hint: ghNoticeOf(prs)?.text ?? prsEmptyHint(place)
   };
 }
 function prRefreshFailedText(error) {
@@ -4679,8 +4702,17 @@ function pruned(s) {
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
   };
 }
-function withFetchedPrs(s, fetched, branchRef) {
-  return { ...s, prViews: { views: { ...s.prViews.views, ...fetched }, branchRef, isFetching: false } };
+function withFetchedPrs(s, fetched, branchRef, isGhSignedOut) {
+  const isSignedOut = isGhSignedOut ?? s.prViews.isGhSignedOut === true;
+  return {
+    ...s,
+    prViews: {
+      views: { ...s.prViews.views, ...fetched },
+      branchRef,
+      isFetching: false,
+      ...isSignedOut ? { isGhSignedOut: true } : {}
+    }
+  };
 }
 function withoutStaleResult(last, now) {
   if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS)
@@ -4729,7 +4761,8 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
     drawn,
     branchRef: s.prViews.branchRef,
     count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent)).length,
-    olderText: olderPrsText(s.prViews, s.ledger.prs)
+    olderText: olderPrsText(s.prViews, s.ledger.prs),
+    isGhSignedOut: s.prViews.isGhSignedOut === true
   };
 }
 
@@ -5185,8 +5218,8 @@ async function fetchPrs(host, findsBranchPr) {
     if (refound !== bin)
       fetch = await fetchWith(refound);
   }
-  const { views: fetched, branchRef } = fetch;
-  await host.update((cur) => withFetchedPrs(cur, fetched, branchRef));
+  const { views: fetched, branchRef, isGhSignedOut } = fetch;
+  await host.update((cur) => withFetchedPrs(cur, fetched, branchRef, isGhSignedOut));
 }
 
 // ../hooks/tones.ts
@@ -5521,15 +5554,17 @@ function prEntries(screen, ui, now) {
   const isWaiting = (id) => waits.some((w) => w.id === id && w.isWaiting);
   const markLead = (mark) => ({ text: mark.text, tone: mark.tone ?? "sep" });
   const out = [];
+  const ghState = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut };
   if (prs.drawn.length === 0) {
-    const empty = prsEmptyText({ isFetching: screen.isFetchingPrs, isGhMissing: screen.isGhMissing }, "session");
+    const empty = prsEmptyText({ isFetching: screen.isFetchingPrs, ...ghState }, "session");
     return [
       { kind: "note", text: empty.title, isStrong: true },
       { kind: "note", text: empty.hint, isWhole: true }
     ];
   }
-  if (screen.isGhMissing)
-    out.push({ kind: "banner", banner: bannerOf("gh-missing", GH_MISSING_TEXT) });
+  const ghNotice = ghNoticeOf(ghState);
+  if (ghNotice)
+    out.push({ kind: "banner", banner: bannerOf(ghNotice.kind, ghNotice.text) });
   for (const d of prs.drawn) {
     const { pr, state } = d;
     const markId = prMarkId(pr.ref);

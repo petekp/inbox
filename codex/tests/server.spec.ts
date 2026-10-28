@@ -998,6 +998,7 @@ type PrView = {
       state: { is: string; canUndo?: boolean }
     }[]
     count: number
+    isGhSignedOut: boolean
   }
   isFetchingPrs: boolean
   isGhMissing: boolean
@@ -1098,6 +1099,31 @@ test('a view says gh was not found when gh worked once and then stops starting',
   assert.equal(next.result.structuredContent.isGhMissing, true)
   assert.equal(next.result.structuredContent.prs.drawn.length, 1)
   assert.equal(next.result.structuredContent.prs.drawn[0]?.pr.error ?? null, null)
+})
+
+test('a view says gh is not signed in once GitHub refuses its token, keeps the PR as it was, and clears when gh answers again', async () => {
+  let at = 100
+  let isRefused = false
+  const { call } = await prServer(
+    args =>
+      isRefused && args[0] === 'gh' && args[1] !== '--version'
+        ? { code: 1, stdout: '', stderr: 'HTTP 401: Bad credentials (https://api.github.com/graphql)' }
+        : ghAnswer(args),
+    () => at,
+  )
+  const first = await viewAfterFetch(call)
+  assert.equal(first.result.structuredContent.prs.isGhSignedOut, false)
+  isRefused = true
+  at += PRS_STALE_MS
+  const refused = await viewAfterFetch(call)
+  assert.equal(refused.result.structuredContent.prs.isGhSignedOut, true)
+  assert.equal(refused.result.structuredContent.isGhMissing, false)
+  assert.equal(refused.result.structuredContent.prs.drawn.length, 1)
+  assert.equal(refused.result.structuredContent.prs.drawn[0]?.pr.error ?? null, null)
+  isRefused = false
+  at += PRS_STALE_MS
+  const answered = await viewAfterFetch(call)
+  assert.equal(answered.result.structuredContent.prs.isGhSignedOut, false)
 })
 
 test('gh is found again at another path after the first one stops starting', async () => {
