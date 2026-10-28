@@ -85,7 +85,7 @@ console.log(`\n== Overview before ==\n${overviewText(record.before)}`)
 console.log(`\n== Overview after ==\n${overviewText(record.after)}`)
 
 /** The record's model as the eval harness calls it, or why it cannot be called from here. */
-function sender(): { model: string; send: () => Promise<string | null> } | string {
+function sender(): { model: string; send: (onError: (error: string) => void) => Promise<string | null> } | string {
   const asked = record.attempts[0]?.model ?? null
   if (record.host === 'codex') {
     const home = process.env.CODEX_HOME || join(homedir(), '.codex')
@@ -96,7 +96,10 @@ function sender(): { model: string; send: () => Promise<string | null> } | strin
 
     return {
       model: MODEL,
-      send: () => ask(record.prompt, record.system).finally(() => rmSync(data, { recursive: true, force: true })),
+      send: onError =>
+        ask(record.prompt, record.system, r => r.error && onError(r.error)).finally(() =>
+          rmSync(data, { recursive: true, force: true }),
+        ),
     }
   }
   const model = record.host === 'claude-code' ? CLAUDE_MODEL : asked?.match(/^anthropic\/(.+)$/)?.[1]
@@ -112,9 +115,10 @@ if (values.run) {
     process.exit(2)
   }
   const startedAt = Date.now()
-  const answer = await s.send()
+  let error = 'no answer'
+  const answer = await s.send(e => (error = e))
   console.log(`\n== Sent again: ${s.model}, ${((Date.now() - startedAt) / 1000).toFixed(1)} s ==`)
-  console.log(answer ?? 'Error: no answer')
+  console.log(answer ?? `Error: ${error}`)
   if (answer !== null) console.log(`\nParsed: ${yesNo(parseOverview(answer) !== null)}`)
   process.exit(answer === null ? 1 : 0)
 }

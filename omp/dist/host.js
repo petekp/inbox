@@ -7068,18 +7068,14 @@ function createInbox(pi, deps = defaultDeps) {
           systemPrompt: [system],
           messages: [{ role: "user", content: prompt, timestamp: deps.now() }]
         }, { apiKey, signal: AbortSignal.timeout(INBOX_MODEL_TIMEOUT_MS) });
-        const answeredBy = reply.upstreamModel ?? reply.model;
         if (reply.stopReason === "error" || reply.stopReason === "aborted") {
           const status = reply.errorStatus === undefined ? "" : ` ${reply.errorStatus}`;
-          report?.({
-            model: asked,
-            answeredBy,
-            error: `${reply.stopReason}${status}: ${reply.errorMessage ?? ""}`.trim()
-          });
+          report?.({ model: asked, error: `${reply.stopReason}${status}: ${reply.errorMessage ?? ""}`.trim() });
           return null;
         }
         const text = reply.content.flatMap((b) => b.type === "text" ? [b.text] : []).join("");
-        report?.({ model: asked, answeredBy, ...text === "" ? { error: "the reply held no text" } : {} });
+        const answeredBy = reply.upstreamModel === undefined ? {} : { answeredBy: reply.upstreamModel };
+        report?.({ model: asked, ...answeredBy, ...text === "" ? { error: "the reply held no text" } : {} });
         return text === "" ? null : text;
       } catch (err) {
         report?.({ model: asked, error: messageOf(err) });
