@@ -327,14 +327,13 @@ test('a session whose only record is an Overview has a ledger, is not unseen, is
   expect(cleared(parent).ledger.overview).toBeNull()
 })
 
-test('the Overview page is empty for a new session, reads Working… while the main turn runs, and the last reply after', () => {
+test('the Overview page is empty for a new session, and while its first turn runs, until the Overview has a goal', () => {
   const view = (s: Session) => sessionView(s, 10_000, 1000, true, NO_HOLDS).overviewPage
   const idle = emptySession()
 
   expect(view(idle).isEmpty).toBe(true)
-  expect(view(turnStarted(idle, 9_000)).isEmpty).toBe(false)
-  expect(view(turnStarted(idle, 9_000)).live).toBe('Working…')
-  expect(view(turnEnded(turnStarted(idle, 9_000), 9_500)).live).toBe('Idle · last reply just now')
+  expect(view(turnStarted(idle, 9_000)).isEmpty).toBe(true)
+  expect(view(withOverview(turnStarted(idle, 9_000))).isEmpty).toBe(false)
   expect(view(withOverview(idle)).goal).toBe('Work offline')
   expect(view(idle).error).toBeNull()
 })
@@ -455,7 +454,6 @@ test('a sample saved without an Overview is replaced, and the sample session car
   expect(isDemoCopy({ ...old, presence: { isTurnRunning: false } })).toBe(true)
   expect(isDemoCopy({ ...old, ledger: { ...old.ledger, overview: undefined } })).toBe(false)
   const page = sessionView(demoSession(1_000_000, 'Claude'), 1_000_000, 1000, true, NO_HOLDS).overviewPage
-  expect(page.identity).toBe('visor · pinch-dismiss')
   expect(page.goal).toBe('Pinch to dismiss glances')
   expect(page.rows.map(r => r.kind)).toEqual([
     'subject',

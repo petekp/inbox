@@ -86,16 +86,24 @@ _Avoid_: workstream, stream, item (an item is a question or task)
 **Child**:
 Work that runs apart from the session's turn: a subagent, a background command
 or task, a workflow run, or a Herdr delegate. It shows under its subject while
-it runs, with how long ago it last did anything, and leaves when it ends. Code
-follows it from the host's events. The inbox model only links it to a subject.
+it runs, and leaves when it ends. Code follows it from the host's events. The
+inbox model only links it to a subject.
 _Avoid_: subitem, job
+
+**Stall words**:
+The words on an Overview row's second line that say how long its work has
+stalled: "quiet 40m" on a child that has done nothing for 15 minutes, and
+"waiting 2h" on an open subject that has waited 30 minutes on someone else or on
+an open question or task. A row whose work moves shows none. The code calls them
+`stall`.
+_Avoid_: age
 
 **Seen line**:
 The rule labeled "Seen" on the Overview, at the time the person last left the
 page after it showed for at least five seconds. A shorter pass through the tab
 leaves the line where it was. A row above it changed since then. Every open row
-shows where it stands, above or below the line. A row below it leaves out its was
-line, and a finished row below it shows only its mark, name and age. When no row
+shows where it stands, above or below the line. A row below it leaves out its
+merged and was lines, and a finished row below it shows only its mark and name. When no row
 changed since then, the page draws no line. The code calls it the look line,
 after `lastLookAt`.
 _Avoid_: "you looked" line

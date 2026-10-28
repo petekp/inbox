@@ -21,7 +21,7 @@ import type {
 } from '../types'
 import { isLapsed, reopenFinding, reopenItem } from './ledger'
 import { isChildRunning, isOpen } from './overview'
-import { ago, clipLabel } from './text'
+import { ago, clipLabel, cutAtPhrase } from './text'
 import { questionNumbers } from './model-text'
 import type { ScreenTab } from './model-text'
 import type { ListedTab } from './arrivals'
@@ -816,7 +816,11 @@ export type OverviewTone = 'needsYou' | 'done' | null
 /** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */
 export type OverviewBranch = 'mid' | 'last'
 
-/** One line of the Overview's list, in the order to draw it. Each look lays out the parts; none chooses them. */
+/**
+ * One line of the Overview's list, in the order to draw it. Each look lays out the parts; none chooses them. A subject
+ * or child draws its name, then a second line of where it stands and its stall words, the stall words after
+ * `STALL_GAP` and in the needs-you tone.
+ */
 export type OverviewRow = OverviewRowParts & {
   /** Whether a rule sets it apart from the row above. A subject and the rows under it are one item, and the look line is a rule already. */
   isRuledAbove: boolean
@@ -833,10 +837,12 @@ type OverviewRowParts =
       name: string
       /** Where it stands. Null for a finished row below the look line, which the person has seen. */
       text: string | null
+      /** How long it has waited, as "waiting 2h", once it waits on someone for `WAITING_MS`. */
+      stall: string | null
+      /** The names of the subjects merged into it, while the person has not seen them. */
+      merged: string | null
       /** The plan a reversal replaced, while the person has not seen it. */
       was: string | null
-      /** How long ago it last changed. */
-      age: string
       /** Whether rows of its children follow, so its tree line runs down from its mark. */
       hasChildren: boolean
     }
@@ -850,10 +856,8 @@ type OverviewRowParts =
        */
       isRunning: boolean
       name: string
-      /** How long ago it last did anything, as "quiet 40m" once it is quiet; since it started when the host reports no activity. */
-      age: string
-      /** The age's tone: `needsYou` once it is quiet, since a quiet child may be stuck. */
-      ageTone: OverviewTone
+      /** How long it has done nothing, as "quiet 40m", once that passes `QUIET_MS`, since a quiet child may be stuck. */
+      stall: string | null
       /** Its place under its subject. Null when it is linked to no subject the list shows, so it sits at the top of the list. */
       branch: OverviewBranch | null
     }
@@ -862,16 +866,12 @@ type OverviewRowParts =
   /** Where the person last looked: rows above it changed since. */
   | { kind: 'look'; id: string; text: string }
   /** Rows folded into a count, as "✓ 3 done" or "○ 2 more queued". */
-  | { kind: 'fold'; id: string; mark: string; tone: OverviewTone; text: string; age: string | null }
+  | { kind: 'fold'; id: string; mark: string; tone: OverviewTone; text: string }
 
 /** What the Overview page shows. Every look draws it as it is. */
 export type OverviewPage = {
   isEmpty: boolean
-  /** Which session this is: the folder it started in, its branch, and whether it coordinates. */
-  identity: string | null
   goal: string | null
-  /** What the agent does now: Working…, for how long once a minute has passed, or Idle with its last reply's age. */
-  live: string | null
   rows: OverviewRow[]
   /** Whether a subject changed since the person last looked, so the tab name gets a dot while another tab shows. */
   hasNews: boolean
@@ -880,20 +880,22 @@ export type OverviewPage = {
   empty: { title: string; hint: string }
 }
 
-export const WORKING_TEXT = 'Working…'
-const LOOK_TEXT = 'Seen'
-/** The look line's label in a look that draws the rule as text, which fills the rest of the line with ─. */
-export const LOOK_RULE_LABEL = `── ${LOOK_TEXT} `
+export const LOOK_TEXT = 'Seen'
 /** What a subject's was line starts with, before the plan it replaces. */
 export const WAS_PREFIX = 'was: '
+const MERGED_PREFIX = 'merged in: '
+/** What separates where a row stands from its stall words. */
+export const STALL_GAP = ' · '
 const NEWS_DOT = '•'
 
-/** The most lines each text on an Overview row wraps to: a subject's name with where it stands, its was line, and a child's name. A look cuts past them with an ellipsis. */
+/** The most lines each text on an Overview row wraps to: a name, where it stands, a was line. A look cuts past them with an ellipsis. */
 export const OVERVIEW_TEXT_LINES = 3
 /** The most children drawn under one subject; the rest fold into "+ N more running". */
 export const CHILD_ROWS = 3
 /** A child with no activity for this long reads quiet. */
 export const QUIET_MS = 15 * 60_000
+/** A subject that waits on someone for this long says how long it has waited. */
+export const WAITING_MS = 30 * 60_000
 /** Finished rows drawn above the look line; older ones fold into the count. */
 const NEW_CLOSED_ROWS = 2
 /** Open rows drawn before the oldest queued ones fold into a count. */
@@ -917,6 +919,11 @@ export const RUNNING_FRAME_MS = 300
 /** One pulse of a running mark, which the Codex tab and the desktop pane draw as a fade. */
 export const RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS
 
+/** A subject's merged line, as "merged in: Sync retry", cut at a phrase to the one line `fits` allows. */
+export function mergedLine(merged: string, fits: (text: string) => boolean): string {
+  return `${MERGED_PREFIX}${cutAtPhrase(merged, names => fits(`${MERGED_PREFIX}${names}`))}`
+}
+
 export function hasRunningMark(page: OverviewPage): boolean {
   return page.rows.some(r => (r.kind === 'subject' || r.kind === 'child') && r.isRunning)
 }
@@ -924,25 +931,6 @@ export function hasRunningMark(page: OverviewPage): boolean {
 /** A running row's mark at `now`. Every mark on a page takes its frame from the clock, so all of them move together. */
 export function runningMark(now: number): string {
   return RUNNING_FRAMES[Math.floor(now / RUNNING_FRAME_MS) % RUNNING_FRAMES.length]!
-}
-
-/** The first line: the session's folder, its branch, and "coordinator" for a session that hands out work. */
-function identityOf(place: Session['place'], role: 'coordinator' | 'session'): string | null {
-  if (!place) return null
-  const folder = place.folder.split(/[\\/]/).filter(Boolean).pop() ?? place.folder
-
-  return [folder, place.branch, role === 'coordinator' ? 'coordinator' : null].filter(Boolean).join(' · ')
-}
-
-function liveOf(presence: Session['presence'], now: number): string | null {
-  const { isTurnRunning, turnStartedAt, lastReplyAt } = presence
-  if (isTurnRunning) {
-    const isPastAMinute = turnStartedAt !== null && now - turnStartedAt >= 60_000
-
-    return isPastAMinute ? `${WORKING_TEXT} for ${shortAgo(now - turnStartedAt)}` : WORKING_TEXT
-  }
-
-  return lastReplyAt === null ? null : `Idle · last reply ${ago(now - lastReplyAt)}`
 }
 
 /** Whether `row` starts an item after another, with no look line between them. */
@@ -972,8 +960,7 @@ function isChildWorking(c: Child, now: number): boolean {
 }
 
 function childRow(c: Child, now: number, branch: OverviewBranch | null): OverviewRowParts {
-  const isChildQuiet = isQuiet(c, now)
-  const age = shortAgo(idleOf(c, now) ?? now - c.startedAt)
+  const idle = idleOf(c, now)
 
   return {
     kind: 'child',
@@ -981,8 +968,7 @@ function childRow(c: Child, now: number, branch: OverviewBranch | null): Overvie
     mark: '●',
     isRunning: isChildWorking(c, now),
     name: c.name,
-    age: isChildQuiet ? `quiet ${age}` : age,
-    ageTone: isChildQuiet ? 'needsYou' : null,
+    stall: idle !== null && isQuiet(c, now) ? `quiet ${shortAgo(idle)}` : null,
     branch,
   }
 }
@@ -991,7 +977,6 @@ export function overviewPage(
   s: {
     ledger: Pick<Ledger, 'overview' | 'items'>
     presence: Session['presence']
-    place?: Session['place']
     overviewFailure?: Session['overviewFailure']
   },
   now: number,
@@ -1002,6 +987,18 @@ export function overviewPage(
   const isNew = (x: Subject) => look === null || x.changedAt > look
   const heldIds = new Set(s.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
   const isHeld = (x: Subject) => isOpen(x) && heldIds.has(x.id)
+  /** When `x` began to wait: when the oldest open ask holding it up was asked, or when it last changed. */
+  const waitingSince = (x: Subject) => {
+    const asked = s.ledger.items.filter(i => o?.askSubjects[i.id] === x.id).flatMap(i => i.at ?? [])
+
+    return asked.length > 0 ? Math.min(...asked) : x.changedAt
+  }
+  const stallOf = (x: Subject) => {
+    const isWaiting = isHeld(x) || (isOpen(x) && x.status === 'waits-on-other')
+    const waited = now - waitingSince(x)
+
+    return isWaiting && waited >= WAITING_MS ? `waiting ${shortAgo(waited)}` : null
+  }
   const newClosed = subjects
     .filter(x => !isOpen(x) && isNew(x))
     .sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0))
@@ -1040,8 +1037,9 @@ export function overviewPage(
         x.status === 'working' && !isHeld(x) && (s.presence.isTurnRunning || under.some(c => isChildWorking(c, now))),
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
+      stall: stallOf(x),
+      merged: isNew(x) ? x.merged : null,
       was: isNew(x) ? x.was : null,
-      age: shortAgo(now - x.changedAt),
       hasChildren: under.length > 0,
     })
     rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? 'last' : 'mid')))
@@ -1062,10 +1060,8 @@ export function overviewPage(
       mark: '○',
       tone: null,
       text: `${hiddenQueued.size} more queued`,
-      age: null,
     })
   if (folded.length > 0) {
-    const newest = Math.max(...folded.map(x => x.closedAt ?? x.changedAt))
     const isMore = newClosed.some(x => x.status === 'done')
     rows.push({
       kind: 'fold',
@@ -1073,18 +1069,14 @@ export function overviewPage(
       mark: '✓',
       tone: 'done',
       text: `${folded.length}${isMore ? ' more' : ''} done`,
-      age: shortAgo(now - newest),
     })
   }
   const goal = o?.goal || null
-  const role = o?.role ?? 'session'
   const hasNews = o !== null && o.look === null && subjects.some(isNew)
 
   return {
-    isEmpty: goal === null && rows.length === 0 && !s.presence.isTurnRunning,
-    identity: identityOf(s.place ?? null, role),
+    isEmpty: goal === null && rows.length === 0,
     goal,
-    live: liveOf(s.presence, now),
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
     hasNews,
     error: s.overviewFailure ? OVERVIEW_FAILED : null,

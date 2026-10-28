@@ -35,6 +35,24 @@ export function cutForEllipsis(line: string, fits: (withEllipsis: string) => boo
   return parts.join('').replace(/[\s.,;:]+$/, '')
 }
 
+/** Where a phrase ends: after a comma or semicolon, or before "and". */
+const PHRASE_END = /[,;](?=\s)|\s(?=and\s)/g
+
+/**
+ * `text` whole when it `fits`, or else cut with an ellipsis at the last phrase end that fits. With no phrase that
+ * fits, it is cut at the last word that fits, and with no word that fits, within the first word.
+ */
+export function cutAtPhrase(text: string, fits: (text: string) => boolean): string {
+  if (fits(text)) return text
+  const endsOf = (pattern: RegExp) => [...text.matchAll(pattern)].map(m => m.index).reverse()
+  for (const end of [...endsOf(PHRASE_END), ...endsOf(/\s+/g)]) {
+    const head = text.slice(0, end).replace(/[\s.,;:]+$/, '')
+    if (head && fits(`${head}…`)) return `${head}…`
+  }
+
+  return `${cutForEllipsis(text, fits)}…`
+}
+
 export function clipMiddle(text: string, max: number, head: number): string {
   if (text.length <= max) return text
 

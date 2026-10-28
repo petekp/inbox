@@ -127,6 +127,12 @@ function time(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 var DROPPED_STATUSES = { "waits-on-you": "queued", problem: "queued" };
+var OLD_MERGE = /^(.+?) folded in(?:; was: (.*))?$/s;
+function wasAndMerged(was, merged) {
+  const old = typeof was === "string" && typeof merged !== "string" ? OLD_MERGE.exec(was) : null;
+  if (old) return { was: old[2] ?? null, merged: old[1] };
+  return { was: typeof was === "string" ? was : null, merged: typeof merged === "string" ? merged : null };
+}
 function subjectOf(saved) {
   const s = saved;
   const status = STATUSES.find((x) => x === s?.status) ?? DROPPED_STATUSES[String(s?.status)];
@@ -137,7 +143,7 @@ function subjectOf(saved) {
     name: s.name,
     status,
     text: text(s.text),
-    was: typeof s.was === "string" ? s.was : null,
+    ...wasAndMerged(s.was, s.merged),
     createdAt: time(s.createdAt) ?? changedAt,
     changedAt,
     closedAt: time(s.closedAt),
@@ -185,6 +191,7 @@ function fromLists(o) {
     ...s,
     text: clipWords(s.text, TEXT_KEPT),
     was: null,
+    merged: null,
     createdAt: lastLookAt,
     changedAt: lastLookAt,
     closedAt: null,
@@ -1204,11 +1211,10 @@ function screenTabOf(tab) {
 }
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
-var WORKING_TEXT = "Working\u2026";
 var LOOK_TEXT = "Seen";
-var LOOK_RULE_LABEL = `\u2500\u2500 ${LOOK_TEXT} `;
 var CHILD_ROWS = 3;
 var QUIET_MS = 15 * 6e4;
+var WAITING_MS = 30 * 6e4;
 var NEW_CLOSED_ROWS = 2;
 var OPEN_ROWS = 7;
 var SUBJECT_MARKS = {
@@ -1222,19 +1228,6 @@ var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
-function identityOf(place, role) {
-  if (!place) return null;
-  const folder = place.folder.split(/[\\/]/).filter(Boolean).pop() ?? place.folder;
-  return [folder, place.branch, role === "coordinator" ? "coordinator" : null].filter(Boolean).join(" \xB7 ");
-}
-function liveOf(presence, now) {
-  const { isTurnRunning, turnStartedAt, lastReplyAt } = presence;
-  if (isTurnRunning) {
-    const isPastAMinute = turnStartedAt !== null && now - turnStartedAt >= 6e4;
-    return isPastAMinute ? `${WORKING_TEXT} for ${shortAgo(now - turnStartedAt)}` : WORKING_TEXT;
-  }
-  return lastReplyAt === null ? null : `Idle \xB7 last reply ${ago(now - lastReplyAt)}`;
-}
 function isItemAfterItem(row, prev) {
   const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
   return prev !== void 0 && prev.kind !== "look" && row.kind !== "look" && !isUnderSubject;
@@ -1250,16 +1243,14 @@ function isChildWorking(c, now) {
   return now - (c.lastActivityAt ?? c.startedAt) < QUIET_MS;
 }
 function childRow(c, now, branch) {
-  const isChildQuiet = isQuiet(c, now);
-  const age = shortAgo(idleOf(c, now) ?? now - c.startedAt);
+  const idle = idleOf(c, now);
   return {
     kind: "child",
     id: c.id,
     mark: "\u25CF",
     isRunning: isChildWorking(c, now),
     name: c.name,
-    age: isChildQuiet ? `quiet ${age}` : age,
-    ageTone: isChildQuiet ? "needsYou" : null,
+    stall: idle !== null && isQuiet(c, now) ? `quiet ${shortAgo(idle)}` : null,
     branch
   };
 }
@@ -1270,6 +1261,15 @@ function overviewPage(s, now) {
   const isNew = (x) => look === null || x.changedAt > look;
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const waitingSince = (x) => {
+    const asked = s.ledger.items.filter((i) => o?.askSubjects[i.id] === x.id).flatMap((i) => i.at ?? []);
+    return asked.length > 0 ? Math.min(...asked) : x.changedAt;
+  };
+  const stallOf = (x) => {
+    const isWaiting = isHeld(x) || isOpen(x) && x.status === "waits-on-other";
+    const waited = now - waitingSince(x);
+    return isWaiting && waited >= WAITING_MS ? `waiting ${shortAgo(waited)}` : null;
+  };
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
   const open2 = subjects.filter(isOpen);
   const queuedOver = Math.max(0, open2.length - OPEN_ROWS);
@@ -1296,8 +1296,9 @@ function overviewPage(s, now) {
       isRunning: x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some((c) => isChildWorking(c, now))),
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
+      stall: stallOf(x),
+      merged: isNew(x) ? x.merged : null,
       was: isNew(x) ? x.was : null,
-      age: shortAgo(now - x.changedAt),
       hasChildren: under.length > 0
     });
     rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
@@ -1317,29 +1318,23 @@ function overviewPage(s, now) {
       id: "queued",
       mark: "\u25CB",
       tone: null,
-      text: `${hiddenQueued.size} more queued`,
-      age: null
+      text: `${hiddenQueued.size} more queued`
     });
   if (folded.length > 0) {
-    const newest = Math.max(...folded.map((x) => x.closedAt ?? x.changedAt));
     const isMore = newClosed.some((x) => x.status === "done");
     rows.push({
       kind: "fold",
       id: "done",
       mark: "\u2713",
       tone: "done",
-      text: `${folded.length}${isMore ? " more" : ""} done`,
-      age: shortAgo(now - newest)
+      text: `${folded.length}${isMore ? " more" : ""} done`
     });
   }
   const goal = o?.goal || null;
-  const role = o?.role ?? "session";
   const hasNews = o !== null && o.look === null && subjects.some(isNew);
   return {
-    isEmpty: goal === null && rows.length === 0 && !s.presence.isTurnRunning,
-    identity: identityOf(s.place ?? null, role),
+    isEmpty: goal === null && rows.length === 0,
     goal,
-    live: liveOf(s.presence, now),
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
     hasNews,
     error: s.overviewFailure ? OVERVIEW_FAILED : null,

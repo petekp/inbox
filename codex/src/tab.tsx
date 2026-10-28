@@ -10,8 +10,10 @@ import type { ClosedState } from '../../hooks/ledger'
 import {
   canUndoRefused,
   closedMark,
+  mergedLine,
   OVERVIEW_TEXT_LINES,
   settledMark,
+  STALL_GAP,
   versionLabel,
   WAS_PREFIX,
 } from '../../hooks/view'
@@ -1326,8 +1328,34 @@ function markClassOf(tone: OverviewTone, isRunning: boolean): string {
   return ['mark', tone ? TONE_CLASS[tone] : null, isRunning ? 'running' : null].filter(Boolean).join(' ')
 }
 
+let measuring: CanvasRenderingContext2D | null | undefined
+
+/** Writes a subject's merged line into `el`, cut at a phrase to the one line `el` has room for. */
+function fitMergedLine(el: HTMLElement | null, merged: string) {
+  if (!el) return
+  measuring ??= document.createElement('canvas').getContext('2d')
+  const measure = measuring
+  if (measure) measure.font = getComputedStyle(el).font
+  el.textContent = mergedLine(merged, text => !measure || measure.measureText(text).width <= el.clientWidth)
+}
+
+/** A row's second line: where it stands, muted, then its stall words in the needs-you tone. */
+function SecondLine({ text, stall }: { text: string | null; stall: string | null }) {
+  if (!text && !stall) return null
+
+  return (
+    <div class="muted clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
+      {text}
+      {text && stall ? STALL_GAP : null}
+      {stall ? <span class="tone-needsYou">{stall}</span> : null}
+    </div>
+  )
+}
+
 function OverviewLine({ row }: { row: OverviewRow }) {
-  if (row.kind === 'subject')
+  if (row.kind === 'subject') {
+    const merged = row.merged
+
     return (
       <div class={row.hasChildren ? 'row has-children' : 'row'}>
         <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
@@ -1336,8 +1364,9 @@ function OverviewLine({ row }: { row: OverviewRow }) {
         <div class="content tight">
           <div class="clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
             {row.name}
-            {row.text ? <span class="muted">: {row.text}</span> : null}
           </div>
+          <SecondLine text={row.text} stall={row.stall} />
+          {merged ? <div class="outcome muted one-line" ref={el => fitMergedLine(el, merged)} /> : null}
           {row.was ? (
             <div class="outcome muted clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
               {WAS_PREFIX}
@@ -1345,9 +1374,9 @@ function OverviewLine({ row }: { row: OverviewRow }) {
             </div>
           ) : null}
         </div>
-        <span class="side">{row.age}</span>
       </div>
     )
+  }
   if (row.kind === 'child')
     return (
       <div class={row.branch ? `row child branch-${row.branch}` : 'row'}>
@@ -1358,8 +1387,8 @@ function OverviewLine({ row }: { row: OverviewRow }) {
           <div class="clamp" style={{ '--lines': OVERVIEW_TEXT_LINES }}>
             {row.name}
           </div>
+          <SecondLine text={null} stall={row.stall} />
         </div>
-        <span class={row.ageTone ? `side ${TONE_CLASS[row.ageTone]}` : 'side'}>{row.age}</span>
       </div>
     )
   if (row.kind === 'more')
@@ -1372,10 +1401,7 @@ function OverviewLine({ row }: { row: OverviewRow }) {
   if (row.kind === 'look')
     return (
       <div class="row look-line">
-        <span class="mark" />
-        <div class="content tight look-rule">
-          <span>{row.text}</span>
-        </div>
+        <div class="look-rule">{row.text}</div>
       </div>
     )
 
@@ -1383,7 +1409,6 @@ function OverviewLine({ row }: { row: OverviewRow }) {
     <div class="row">
       <span class={markClassOf(row.tone, false)}>{row.mark}</span>
       <div class="content tight muted">{row.text}</div>
-      <span class="side">{row.age ?? ''}</span>
     </div>
   )
 }
@@ -1399,11 +1424,11 @@ function OverviewTab({ page }: { page: OverviewPage }) {
 
   return (
     <main class="overview">
-      <section>
-        {page.identity ? <div class="overview-identity muted">{page.identity}</div> : null}
-        {page.goal ? <h1 class="overview-goal">{page.goal}</h1> : null}
-        {page.live ? <div class="overview-live muted">{page.live}</div> : null}
-      </section>
+      {page.goal ? (
+        <section>
+          <h1 class="overview-goal">{page.goal}</h1>
+        </section>
+      ) : null}
       {page.rows.length > 0 ? (
         <section>
           <div class="list">
