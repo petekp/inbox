@@ -1,6 +1,6 @@
 # The Overview judge's instructions
 
-The judge's author replaces the placeholder below the line. Everything below the line becomes the judge's system text. The runner cuts the text at the next line that holds only `---`, so the instructions use no such line. The author writes from `docs/plans/overview.md` alone, and never sees the judge's page sets.
+The judge's author replaces the placeholder below the line. Everything below the line becomes the judge's system text. The author writes from `docs/plans/overview.md` alone, and never sees the judge's page sets.
 
 ## What the harness sends
 
@@ -52,7 +52,7 @@ Each line in `<checks>` is a short form of a check. The check's section under "T
 The facts have five parts:
 
 - `Focus now:` what the session is focused on now.
-- `Pieces of work:` one line per piece. Each line gives the piece's name, then `(also called …)` with the other names the conversation used for it, then its state, then where it stands. A line may add `Parts:` with the state of each part, `Plan changed; it was …` with the plan that the last change replaced, `Merged into it: …` with the pieces merged into this one, and `Changed at this step.`
+- `Pieces of work:` one line per piece. Each line gives the piece's name, then `(also called …)` with the other names the conversation used for it, then its state, then where it stands. A line may add `Parts:` with the state of each part, `Plan changed; it was …` with the plan that the last change replaced, `Merged into it: …` with the pieces merged into this one, `Its row may also show …` with other marks that fit the piece as well as its state's own, and `Changed at this step.`
 - `Open asks:` each open question or task for the person, in quotes, and the pieces it holds up.
 - `Not work:` things the session mentioned that are not pieces of its work. Each has a kind: `ask`, `finding`, `task` for a task only the person can do, or `rule` for a standing rule.
 - `Running work:` each delegate, subagent, background command or workflow run, as what it does and the piece it serves.
@@ -69,14 +69,10 @@ Base every verdict on what the current page shows, compared with the facts. Use 
 
 A model writes the head's words, and each row's name, status, where it stands and was line. Code draws the rest. From top to bottom, the page has these parts:
 
-1. **The head:** the lines above the first blank line. Two kinds of line there are not part of the head, and you do not judge them:
-   - An identity line, such as `billing-api · main` or `billing-api · main · coordinator`. It holds the folder, the branch, and sometimes the word `coordinator`.
-   - A live line, which starts with `Working…` or `Idle ·`.
-
-   The remaining lines are the head, in one of two forms. It is one goal line, or a title line with a one-line description under it. Both forms are drawn today. The `head` check judges the head's meaning in either form.
-2. **Subject rows.** Each starts with a mark, then the row's name. Where it stands follows the name after a colon, or sits on its own indented line under the name. A time may end the row, such as `2h`, `now` or `waiting 2h`. Code writes every time.
-3. **Was lines:** an indented line under a subject row. `was: <plan>` names a plan that a change replaced. A merge reads `merged in: <name>`. Today a merge reads `was: <name> folded in`, and that may go on with `; was: <plan>` when the plan changed in the same edit.
-4. **Child rows:** running work, which code draws from the host's events. A child under a subject row starts with `├` or `└`, then `●`, then the child's label and a time. A time such as `quiet 40m` says how long the child has done nothing. A child linked to no row on the page sits at the top of the list, with no `├` or `└`. Tell such a child from a subject row by matching it to a line under `Running work` in the facts. The line `└ + 2 more running` stands for children that are not drawn.
+1. **The head:** the lines above the first blank line. Today it is one goal line. Once titles are built, it is a title line with a one-line description under it. The `head` check judges the head's meaning in either form.
+2. **Subject rows.** Each starts with a mark, then the row's name. Where it stands sits on its own indented line under the name. Stall words may end that line after ` · `, such as `waiting 2h`. Code writes them.
+3. **Was lines:** indented lines under a subject row. `was: <plan>` names a plan that a change replaced. `merged in: <names>` names the pieces merged into this one.
+4. **Child rows:** running work, which code draws from the host's events. A child under a subject row starts with `├` or `└`, then `●`, then the child's label. Stall words such as `quiet 40m`, on the indented line under it, say how long the child has done nothing. A child linked to no row on the page sits at the top of the list, indented, with no `├` or `└`. The line `└ + 2 more running` stands for children that are not drawn.
 5. **The Seen line:** `── Seen`. The rows above it changed since the person last looked.
 6. **Folds:** `○ 3 more queued` counts open rows that are not drawn. `✓ 4 done` or `✓ 4 more done` counts delivered pieces that are not drawn.
 7. **The status line:** after a blank line at the end, `Last Overview update failed. Changes from that reply may be missing.`
@@ -99,9 +95,9 @@ The marks on subject rows, and the states each one fits:
 
 Rules in code check these things. None of them is a reason to fail a check:
 
-- Times and ages on any row, and time words in any text.
+- Stall words on any row, and time words in any text.
 - The order of the rows, and where the Seen line sits.
-- The identity line, the live line and the status line.
+- The status line.
 - The number of words in a name or a text. A name that is a sentence still fails `rows-are-work`.
 - Whether the head has one line or two, and whether its words changed while its meaning still fits the focus.
 - The counts in the folds, except as the `marks` check uses the queued fold.
@@ -326,7 +322,7 @@ The check fails when any of these is on the page:
 Examples:
 
 - Pass: `● Recovery codes: printable sheet`, with `was: codes by email` under it.
-- Pass: `● Authenticator setup: QR code works`, with `merged in: Manual key entry` under it, or today `was: Manual key entry folded in`.
+- Pass: `● Authenticator setup: QR code works`, with `merged in: Manual key entry` under it.
 - Fail: `● SMS codes: US works`, with `was: US not started`. The piece only made progress.
 - Fail: `● Recovery codes: printable sheet`, with `was: printable sheet`.
 - Fail: `merged in: Let people type the setup key by hand when the…`.

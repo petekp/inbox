@@ -942,7 +942,7 @@ const NEW_CLOSED_ROWS = 2
 /** Open rows drawn before the oldest queued ones fold into a count. */
 const OPEN_ROWS = 7
 
-const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: OverviewTone }> = {
+export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: OverviewTone }> = {
   working: { mark: '●', tone: null },
   queued: { mark: '○', tone: null },
   'waits-on-other': { mark: '◌', tone: null },

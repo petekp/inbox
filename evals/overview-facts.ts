@@ -1,3 +1,4 @@
+import { SUBJECT_MARKS } from '../hooks/view'
 import type { SubjectStatus } from '../types'
 
 /** What really happened to a piece of work at a step, as the case's author knows it. */
@@ -96,7 +97,7 @@ export function rightStatuses(p: Pick<Piece, 'state' | 'alsoRight'>): SubjectSta
     'waits-on-other': ['waits-on-other'],
     done: ['done'],
     dropped: ['dropped'],
-    filed: ['done', 'dropped'],
+    filed: ['dropped'],
   }
 
   return [...main[p.state], ...(p.alsoRight ?? [])]
@@ -129,8 +130,10 @@ export function factsText(f: Facts): string {
     const was = p.was ? ` Plan changed; it was ${p.was}.` : ''
     const merged = p.merged?.length ? ` Merged into it: ${p.merged.map(nameOf).join(', ')}.` : ''
     const isChanged = f.changed.includes(p.id) ? ' Changed at this step.' : ''
+    const alsoMarks = (p.alsoRight ?? []).map(s => SUBJECT_MARKS[s].mark)
+    const alsoRight = alsoMarks.length > 0 ? ` Its row may also show ${alsoMarks.join(' or ')}.` : ''
 
-    return `- ${p.names[0]}${also}: ${STATE_TEXT[p.state]}. ${p.stands}.${parts}${was}${merged}${isChanged}`
+    return `- ${p.names[0]}${also}: ${STATE_TEXT[p.state]}. ${p.stands}.${parts}${was}${merged}${alsoRight}${isChanged}`
   }
   const list = (lines: string[]) => (lines.length > 0 ? lines.join('\n') : '- none')
 

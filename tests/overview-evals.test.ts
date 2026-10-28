@@ -28,6 +28,7 @@ function subject(id: string, status: SubjectStatus, name: string, text: string, 
     status,
     text,
     was: null,
+    merged: null,
     createdAt: minutes(0),
     changedAt: minutes(changedAt),
     closedAt: isClosed ? minutes(changedAt) : null,
@@ -144,11 +145,6 @@ function contextOf(scene: Scene): RuleContext {
 const s1Of = (s: Scene) => s.after.subjects[0]!
 const s2Of = (s: Scene) => s.after.subjects[1]!
 
-const withoutAges = (p: OverviewPage): OverviewPage => ({
-  ...p,
-  rows: p.rows.map(r => (r.kind === 'subject' || r.kind === 'fold' ? { ...r, age: '' } : r)),
-})
-
 const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene) => void }> = {
   'no-time-words': { bad: s => (s1Of(s).text = 'synced 5m ago') },
   'short-names': { bad: s => (s1Of(s).name = 'The offline sync engine work') },
@@ -180,8 +176,6 @@ const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene) => voi
     good: s => (s.page = p => ({ ...p, title: 'Offline sync', description: 'Adding offline sync' }) as OverviewPage),
     bad: () => undefined,
   },
-  'no-live-line': { good: s => (s.page = p => ({ ...p, live: null })), bad: () => undefined },
-  'stall-times': { good: s => (s.page = withoutAges), bad: () => undefined },
   'filed-mark': {
     good: s => {
       s.facts.pieces[1]!.state = 'filed'
@@ -309,7 +303,7 @@ const BAD_RUNS: Record<string, { at: number; answer: string; breaks: string }> =
   'catch-up-from-empty': {
     at: 0,
     answer: GOOD_RUNS['catch-up-from-empty']![0]!.replace('DONE: Image attachments | show inline\n', ''),
-    breaks: 'marks-true',
+    breaks: 'piece-once',
   },
 }
 
@@ -347,7 +341,7 @@ test('a bad run of each replay fails the rule it breaks at the step it breaks, a
 const RULE_IDS = new Set<string>(RULES.map(r => r.id))
 const JUDGE_ONLY_IDS = new Set<string>(JUDGE_CHECKS.map(c => c.id).filter(id => !RULE_IDS.has(id)))
 
-test('every replay is well formed: times rise, facts name known pieces, asks open before they close, and each target is a check its step runs', () => {
+test('every replay is well formed: times rise, facts name known pieces, asks open before they close, and each target or known failing judge check is a check its step runs', () => {
   for (const r of REPLAYS) {
     let facts: Facts = { ...r.start.facts, changed: [] }
     const opened = new Set(r.start.ledger.items?.map(i => i.id) ?? [])
@@ -380,6 +374,10 @@ test('every replay is well formed: times rise, facts name known pieces, asks ope
       for (const t of step.targets ?? []) {
         const isRun = RULE_IDS.has(t) || (JUDGE_ONLY_IDS.has(t) && step.checkpoint === true)
         expect({ where, target: t, ok: isRun }).toEqual({ where, target: t, ok: true })
+      }
+      for (const id of Object.keys(step.judgeUntil ?? {})) {
+        const isJudged = JUDGE_ONLY_IDS.has(id) && step.checkpoint === true
+        expect({ where, judgeUntil: id, ok: isJudged }).toEqual({ where, judgeUntil: id, ok: true })
       }
     }
   }
@@ -527,7 +525,7 @@ knownFailing('#140: one ask holds up two subjects, and both show ◆', '#140', (
   expect(marks).toEqual(['◆', '◆'])
 })
 
-knownFailing('#148: the head is a title and a one-line description, with no live line', '#148', () => {
+knownFailing('#148: the head is a title and a one-line description', '#148', () => {
   const page = overviewPage(
     sessionOf(overviewOf([subject('s1', 'working', 'Sync engine', 'syncs', 0)]), [], 5),
     minutes(5),
@@ -536,7 +534,6 @@ knownFailing('#148: the head is a title and a one-line description, with no live
 
   expect(typeof head.title).toBe('string')
   expect(typeof head.description).toBe('string')
-  expect(page.live).toBeNull()
 })
 
 knownFailing('#149: a delegate with no published focus shows its name in words', '#149', () => {
@@ -544,22 +541,4 @@ knownFailing('#149: a delegate with no published focus shows its name in words',
   const row = overviewPage(sessionOf(o, [], 2), minutes(2)).rows.find(r => r.kind === 'child')
 
   expect(row?.kind === 'child' ? row.name : '').toMatch(/^pdf layout$/i)
-})
-
-knownFailing('#150: rows show no age, and a held subject that has waited 2 hours reads waiting 2h', '#150', () => {
-  const o = applyOps(
-    overviewOf([
-      subject('s1', 'working', 'Sync engine', 'syncs', 0),
-      subject('s2', 'queued', 'Sync conflicts', 'not started', 0),
-    ]),
-    opsOf('LINK: i1 | Sync conflicts'),
-    minutes(0),
-    new Set(['i1']),
-  )
-  const rows = overviewPage(sessionOf(o, [ask('i1', 'Which conflict rule ships?')], 120), minutes(120)).rows
-  const engine = rows.find(r => r.kind === 'subject' && r.name === 'Sync engine')
-  const held = rows.find(r => r.kind === 'subject' && r.name === 'Sync conflicts')
-
-  expect(JSON.stringify(engine)).not.toMatch(/"\d+[mhd]"/)
-  expect(JSON.stringify(held)).toMatch(/waiting 2h/)
 })

@@ -7,7 +7,18 @@ function subject(id: string, status: SubjectStatus, name: string, text: string, 
   const isClosed = status === 'done' || status === 'dropped'
   const at = minutes(changedAt)
 
-  return { id, name, status, text, was: null, createdAt: at, changedAt: at, closedAt: isClosed ? at : null, into: null }
+  return {
+    id,
+    name,
+    status,
+    text,
+    was: null,
+    merged: null,
+    createdAt: at,
+    changedAt: at,
+    closedAt: isClosed ? at : null,
+    into: null,
+  }
 }
 
 function delegate(id: string, name: string, subjectId: string, startedAt: number): Child {
@@ -196,6 +207,7 @@ const coordinatorDay: Replay = {
         children: [{ ref: 'herdr:vn2', does: 'Fix notes that vanish after archiving', serves: 'vanish' }],
       },
       checkpoint: true,
+      judgeUntil: { marks: '#137' },
       targets: ['head-follows', 'open-pieces-kept', 'marks-true', 'children-linked', 'child-labels', 'head'],
     },
     {
@@ -306,6 +318,7 @@ const coordinatorDay: Replay = {
         ],
       },
       checkpoint: true,
+      judgeUntil: { marks: '#137' },
       targets: ['piece-once', 'text-is-state', 'children-linked', 'each-once', 'where-it-stands'],
     },
     {
@@ -326,7 +339,7 @@ const coordinatorDay: Replay = {
         focusMatch: '2\\.5',
         pieces: [
           { id: 'vanish', state: 'done', stands: 'fixed' },
-          { id: 'r25', state: 'working', stands: 'release candidate on the way' },
+          { id: 'r25', state: 'working', stands: 'release candidate building', alsoRight: ['waits-on-other'] },
         ],
         children: [],
       },
@@ -349,7 +362,7 @@ const coordinatorDay: Replay = {
       },
       targets: ['short-names'],
     },
-    { label: 'Three hours pass', at: 410, targets: ['stall-times'] },
+    { label: 'Three hours pass', at: 410 },
     {
       label: '2.5 is published, and nothing follows',
       at: 420,
@@ -359,8 +372,9 @@ const coordinatorDay: Replay = {
         activity: ['Ran: fastlane release ios', 'Ran: fastlane release android'],
         reply: '2.5 is live in both stores. Nothing else is queued from you.',
       },
-      facts: { pieces: [{ id: 'r25', state: 'done', stands: 'live in both stores' }] },
+      facts: { pieces: [{ id: 'r25', state: 'done', stands: 'live in both stores', alsoRight: [] }] },
       checkpoint: true,
+      judgeUntil: { marks: '#137' },
       targets: ['head-follows', 'open-pieces-kept', 'marks-true', 'head'],
     },
   ],
@@ -391,8 +405,8 @@ const singleTask: Replay = {
         pieces: [
           piece({
             id: 'engine',
-            names: ['Sync engine'],
-            match: 'engine|queue',
+            names: ['Sync engine', 'Offline sync'],
+            match: 'engine|queue|offline sync',
             state: 'working',
             stands: 'queues edits offline',
           }),
@@ -480,7 +494,11 @@ const singleTask: Replay = {
         activity: ['Edited src/sync/conflicts.ts'],
         reply: 'Switched to last-write-wins: the later edit wins, and the losing edit is saved as a backup copy.',
       },
-      facts: { pieces: [{ id: 'conflicts', stands: 'last-write-wins with a backup copy', was: 'manual merge' }] },
+      facts: {
+        pieces: [
+          { id: 'conflicts', stands: 'last-write-wins with a backup copy', was: 'manual merge', alsoRight: ['done'] },
+        ],
+      },
       checkpoint: true,
       targets: ['was-on-reversal', 'piece-once', 'was-lines'],
     },
@@ -718,23 +736,24 @@ const catchUpFromEmpty: Replay = {
         focusMatch: 'attach|image|pdf',
         pieces: [
           piece({
-            id: 'images',
-            names: ['Image attachments'],
-            match: 'image|photo',
-            state: 'done',
-            stands: 'show inline',
-          }),
-          piece({
-            id: 'pdfs',
-            names: ['PDF attachments'],
-            match: 'pdf',
+            id: 'attachments',
+            names: ['Note attachments', 'Image attachments', 'PDF attachments'],
+            match: 'attach|image|photo|pdf',
             state: 'working',
-            stands: 'attach as a file row',
+            stands: 'images show inline; PDFs attach as a file row',
+            parts: { images: 'show inline', PDFs: 'attach as a file row; how they open is undecided' },
+            alsoRight: ['done'],
           }),
         ],
-        asks: [{ match: 'pdf', text: 'Should PDFs open inside the app or in the system viewer?', holdsUp: ['pdfs'] }],
+        asks: [
+          {
+            match: 'pdf',
+            text: 'Should PDFs open inside the app or in the system viewer?',
+            holdsUp: ['attachments'],
+          },
+        ],
       },
-      targets: ['marks-true', 'asks-linked'],
+      targets: ['asks-linked', 'piece-once', 'open-pieces-kept'],
     },
   ],
 }

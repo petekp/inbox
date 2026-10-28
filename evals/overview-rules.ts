@@ -185,11 +185,12 @@ export const RULES: Rule[] = [
   {
     id: 'marks-true',
     property: 5,
-    text: "Each piece's subject has a status its state allows.",
+    text: "Each piece's subject has a status its state allows. Filed work closed as done is left to filed-mark.",
     failures: ({ result }) =>
       result.facts.pieces.flatMap(p =>
         subjectsFor(p, result.session.ledger.overview)
           .filter(s => !rightStatuses(p).includes(s.status))
+          .filter(s => !(p.state === 'filed' && s.status === 'done'))
           .map(s => `${label(s)} is ${s.status}, and ${p.names[0]} is ${p.state}`),
       ),
   },
@@ -344,11 +345,13 @@ export const RULES: Rule[] = [
   {
     id: 'was-not-cut',
     property: 12,
-    text: 'No was line ends cut with "…".',
+    text: 'No was or merged-in line ends cut with "…".',
     failures: ({ result }) =>
-      shownOf(result.session.ledger.overview)
-        .filter(s => s.was?.includes('…'))
-        .map(s => `cut was line: "${s.was}"`),
+      shownOf(result.session.ledger.overview).flatMap(s =>
+        [s.was, s.merged]
+          .filter((line): line is string => line?.includes('…') === true)
+          .map(line => `cut line: "${line}"`),
+      ),
   },
   {
     id: 'failure-shown',
@@ -367,26 +370,6 @@ export const RULES: Rule[] = [
       const isHead = typeof head.title === 'string' && typeof head.description === 'string'
       return isHead && head.title !== head.description ? [] : ['the head is one goal line']
     },
-  },
-  {
-    id: 'no-live-line',
-    property: 13,
-    text: 'The page has no live line.',
-    until: '#148',
-    failures: ({ result }) => (result.page.live ? [`live line: "${result.page.live}"`] : []),
-  },
-  {
-    id: 'stall-times',
-    property: 13,
-    text: 'A time shows only as a stall time, on held or waiting work that has waited 15 minutes, or a quiet child.',
-    until: '#150',
-    failures: ({ result }) =>
-      result.page.rows.flatMap(r => {
-        if (r.kind !== 'subject' && r.kind !== 'fold') return []
-        const age = (r as { age?: string | null }).age
-        const isStallTime = age !== undefined && age !== null && /^waiting\b/.test(age)
-        return age && !isStallTime ? [`an age on a row: "${'name' in r ? r.name : r.text}  ${age}"`] : []
-      }),
   },
   {
     id: 'filed-mark',

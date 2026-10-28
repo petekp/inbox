@@ -13,7 +13,7 @@ import { provenance, resultsPath, runCount, runJobs, writeResults } from './harn
 import type { Job, Run } from './harness'
 import { factsText } from './overview-facts'
 import { JUDGE_CHECKS, judgePrompt, mistakeKind, pageMistakes, parseJudgeAnswer } from './overview-judge'
-import type { JudgePageSet, JudgeVerdict } from './overview-judge'
+import type { JudgeCheckId, JudgePageSet, JudgeVerdict } from './overview-judge'
 import { LIMITS, runReplay } from './overview-replay'
 import type { Agent, ModelCall, Replay, StepResult } from './overview-replay'
 import { REPLAYS } from './overview-replays'
@@ -50,7 +50,9 @@ if (!judgeSets.every(n => n === 1 || n === 2))
   throw new Error(`Unknown --judge-set ${values['judge-set']}. Use 1 or 2.`)
 
 const judgeFile = readFileSync(join(ROOT, 'evals', 'overview-judge.md'), 'utf8')
-const judgeSystem = judgeFile.split('\n---\n')[1]?.trim() ?? ''
+const JUDGE_SEPARATOR = '\n---\n'
+const separatorAt = judgeFile.indexOf(JUDGE_SEPARATOR)
+const judgeSystem = separatorAt === -1 ? '' : judgeFile.slice(separatorAt + JUDGE_SEPARATOR.length).trim()
 const isJudgeWritten = judgeSystem !== '' && !judgeSystem.startsWith('PLACEHOLDER')
 const isJudging = values.judge || values['judge-pages'] !== undefined
 if (isJudging && !isJudgeWritten)
@@ -261,7 +263,7 @@ function reportReplay(agent: Agent, replay: Replay): 'pass' | 'fail' | 'not run'
     const ids = [...RULES.map(r => r.id), ...(values.judge && step.checkpoint ? JUDGE_CHECKS.map(c => c.id) : [])]
     for (const id of ids) {
       const fails = failing(id)
-      const until = RULES.find(r => r.id === id)?.until
+      const until = RULES.find(r => r.id === id)?.until ?? step.judgeUntil?.[id as JudgeCheckId]
       if (fails === 0) continue
       if (until) known.add(`${id}, until ${until}`)
       else if (graded.length - fails < needed)

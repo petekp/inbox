@@ -13,6 +13,7 @@ import { CODEX } from '../codex/src/texts'
 import type { ChildKind, Exchange, HostTask, Item, Ledger, Place } from '../types'
 import { factsAfter } from './overview-facts'
 import type { Facts, FactsChange } from './overview-facts'
+import type { JudgeCheckId } from './overview-judge'
 import { pageText } from './overview-page-text'
 
 /** Something a host reports between calls, which the replay runs through the host's own reducers. */
@@ -49,6 +50,8 @@ export type Step = {
   checkpoint?: boolean
   /** The rule or judge check ids of the failure this step was written to reproduce. */
   targets?: string[]
+  /** Judge checks this step fails until an issue is built, as a rule's `until` does for a rule. */
+  judgeUntil?: Partial<Record<JudgeCheckId, string>>
 }
 
 export type Replay = {

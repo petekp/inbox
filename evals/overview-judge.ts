@@ -3,7 +3,7 @@ export const JUDGE_CHECKS = [
   {
     id: 'head',
     property: 1,
-    text: 'The head names what the session is focused on now, not a finished or small part of its work.',
+    text: 'The head names what the session is focused on now, not a small part of its work or work it has moved past.',
   },
   { id: 'rows-are-work', property: 3, text: "Each row is a piece of the session's work." },
   {
@@ -11,13 +11,21 @@ export const JUDGE_CHECKS = [
     property: 4,
     text: 'No two rows are the same work by meaning, and no new row is finished work under a new name.',
   },
-  { id: 'marks', property: 5, text: "Each mark on a row of work fits its piece's real state." },
+  {
+    id: 'marks',
+    property: 5,
+    text: "Each mark on a row of work fits its piece's real state, and every open piece has a row or a place in the queued fold.",
+  },
   {
     id: 'where-it-stands',
     property: 6,
     text: 'Where it stands says the state of the work, and keeps parts whose states differ.',
   },
-  { id: 'child-labels', property: 7, text: 'Each row of running work says in plain words what the work does.' },
+  {
+    id: 'child-labels',
+    property: 7,
+    text: 'Each row of running work sits under the piece it serves, and says in plain words what the work does.',
+  },
   {
     id: 'no-restating',
     property: 9,
