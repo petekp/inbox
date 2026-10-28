@@ -21,7 +21,7 @@ import type {
 } from '../types'
 import { closedAt, isLapsed, reopenFinding, reopenItem } from './ledger'
 import { isChildRunning, isOpen } from './overview'
-import { ago, clipLabel } from './text'
+import { ago, clipLabel, cutAtPhrase } from './text'
 import { questionNumbers } from './model-text'
 import type { ScreenTab } from './model-text'
 import type { ListedTab } from './arrivals'
@@ -130,6 +130,8 @@ export type ViewInput = {
    * shows the inbox.
    */
   shownSince: number | null
+  /** When the person last sent a message they typed, from `Session.presence`. */
+  lastTypedMessageAt: number | null
 }
 
 /** What a look holds in place besides the session: the rows replies hold, and the rows closed while it shows them. */
@@ -138,11 +140,25 @@ export type Holds = Pick<ViewInput, 'replies' | 'discarded' | 'shownSince'>
 export const NO_HOLDS: Holds = { replies: {}, discarded: {}, shownSince: null }
 
 /**
- * Whether a row that closed or was pressed at `at` stays in place, with its result: the look has shown its tab since
- * then. It folds once the person leaves the tab, by switching tab or closing the inbox.
+ * Whether the look has shown its tab since `at`. Every row that closed or was pressed since then can still be drawn in
+ * place, as `isSettledInPlace` says, so a prune keeps its record.
  */
 export function isShownSince(at: number, shownSince: number | null): boolean {
   return shownSince !== null && at >= shownSince
+}
+
+/**
+ * Whether a settled row stays in place, with its result. It stays while the look shows the tab it settled on, until
+ * the person sends a message they typed. While its Undo lasts, it stays through that message and folds when Undo ends.
+ * Leaving the tab, by switching tab or closing the inbox, folds it at once.
+ */
+export function isSettledInPlace(
+  state: Pick<SettledState, 'at' | 'canUndo'>,
+  { shownSince, lastTypedMessageAt }: Pick<ViewInput, 'shownSince' | 'lastTypedMessageAt'>,
+): boolean {
+  const isTypedSince = lastTypedMessageAt !== null && lastTypedMessageAt > state.at
+
+  return isShownSince(state.at, shownSince) && (state.canUndo || !isTypedSince)
 }
 
 /**
@@ -188,6 +204,16 @@ function isUndoLeft(at: number, now: number, settleWindowMs: number): boolean {
   return now - at < settleWindowMs
 }
 
+/** Whether Undo can still take back a close made at `at`. */
+function canUndoClose(
+  closed: Pick<Closed, 'how' | 'isSentToAgent'>,
+  at: number,
+  now: number,
+  settleWindowMs: number,
+): boolean {
+  return isUndoable(closed) && isUndoLeft(at, now, settleWindowMs)
+}
+
 /** The state of a row closed at `at`, drawn in place with its outcome. Its close sets whether it offers Undo. */
 export function closedRowState(
   closed: Pick<Closed, 'how' | 'outcome' | 'isSentToAgent'> & { askedAs?: string },
@@ -200,7 +226,7 @@ export function closedRowState(
     is: 'settled',
     label: outcomeLabel(closed),
     at,
-    canUndo: isUndoable(closed) && isUndoLeft(at, now, settleWindowMs),
+    canUndo: canUndoClose(closed, at, now, settleWindowMs),
     offersUndo: offersUndo(closed),
     isLapsed: isLapsed(closed),
     delivery,
@@ -800,14 +826,9 @@ export function fitTabs<L>(
 
   return { naming: 'symbols', layout: layouts.at(-1)! }
 }
-/**
- * What a tab draws after its name: a row tab's count when it has one, or `NEWS_DOT` on the Overview when it changed since
- * the person last looked. Null draws nothing.
- */
-export function tabBadge(id: ShownTab, counts: Readonly<Record<Tab, number>>, hasNews: boolean): string | null {
-  if (isRowTab(id)) return counts[id] > 0 ? String(counts[id]) : null
-
-  return hasNews ? NEWS_DOT : null
+/** What a tab draws after its name: a row tab's count when it has one. Null draws nothing. */
+export function tabBadge(id: ShownTab, counts: Readonly<Record<Tab, number>>): string | null {
+  return isRowTab(id) && counts[id] > 0 ? String(counts[id]) : null
 }
 
 /** Whether a shown tab lists rows you answer or close: Asks and Finds. */
@@ -841,7 +862,11 @@ export type OverviewTone = 'needsYou' | 'done' | null
 /** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */
 export type OverviewBranch = 'mid' | 'last'
 
-/** One line of the Overview's list, in the order to draw it. Each look lays out the parts; none chooses them. */
+/**
+ * One line of the Overview's list, in the order to draw it. Each look lays out the parts; none chooses them. A subject
+ * or child draws its name, then a second line of where it stands and its stall words, the stall words after
+ * `STALL_GAP` and in the needs-you tone.
+ */
 export type OverviewRow = OverviewRowParts & {
   /** Whether a rule sets it apart from the row above. A subject and the rows under it are one item, and the look line is a rule already. */
   isRuledAbove: boolean
@@ -858,10 +883,12 @@ type OverviewRowParts =
       name: string
       /** Where it stands. Null for a finished row below the look line, which the person has seen. */
       text: string | null
+      /** How long it has waited, as "waiting 2h", once it waits on someone for `STALL_MS`. */
+      stall: string | null
+      /** The names of the subjects merged into it, while the person has not seen them. */
+      merged: string | null
       /** The plan a reversal replaced, while the person has not seen it. */
       was: string | null
-      /** How long ago it last changed. */
-      age: string
       /** Whether rows of its children follow, so its tree line runs down from its mark. */
       hasChildren: boolean
     }
@@ -870,15 +897,13 @@ type OverviewRowParts =
       id: string
       mark: string
       /**
-       * Whether it did anything in the last `QUIET_MS`, or, when its host reports no activity, started less than
-       * `QUIET_MS` ago. A look animates the mark while it is set.
+       * Whether it did anything in the last `STALL_MS`, or, when its host reports no activity, started less than
+       * `STALL_MS` ago. A look animates the mark while it is set.
        */
       isRunning: boolean
       name: string
-      /** How long ago it last did anything, as "quiet 40m" once it is quiet; since it started when the host reports no activity. */
-      age: string
-      /** The age's tone: `needsYou` once it is quiet, since a quiet child may be stuck. */
-      ageTone: OverviewTone
+      /** How long it has done nothing, as "quiet 40m", once that passes `STALL_MS`, since a quiet child may be stuck. */
+      stall: string | null
       /** Its place under its subject. Null when it is linked to no subject the list shows, so it sits at the top of the list. */
       branch: OverviewBranch | null
     }
@@ -887,38 +912,31 @@ type OverviewRowParts =
   /** Where the person last looked: rows above it changed since. */
   | { kind: 'look'; id: string; text: string }
   /** Rows folded into a count, as "✓ 3 done" or "○ 2 more queued". */
-  | { kind: 'fold'; id: string; mark: string; tone: OverviewTone; text: string; age: string | null }
+  | { kind: 'fold'; id: string; mark: string; tone: OverviewTone; text: string }
 
 /** What the Overview page shows. Every look draws it as it is. */
 export type OverviewPage = {
   isEmpty: boolean
-  /** Which session this is: the folder it started in, its branch, and whether it coordinates. */
-  identity: string | null
   goal: string | null
-  /** What the agent does now: Working…, for how long once a minute has passed, or Idle with its last reply's age. */
-  live: string | null
   rows: OverviewRow[]
-  /** Whether a subject changed since the person last looked, so the tab name gets a dot while another tab shows. */
-  hasNews: boolean
   /** The status line's error while the last Overview call wrote nothing. */
   error: string | null
   empty: { title: string; hint: string }
 }
 
-export const WORKING_TEXT = 'Working…'
-const LOOK_TEXT = 'Seen'
-/** The look line's label in a look that draws the rule as text, which fills the rest of the line with ─. */
-export const LOOK_RULE_LABEL = `── ${LOOK_TEXT} `
+export const LOOK_TEXT = 'Seen'
 /** What a subject's was line starts with, before the plan it replaces. */
 export const WAS_PREFIX = 'was: '
-const NEWS_DOT = '•'
+const MERGED_PREFIX = 'merged in: '
+/** What separates where a row stands from its stall words. */
+export const STALL_GAP = ' · '
 
-/** The most lines each text on an Overview row wraps to: a subject's name with where it stands, its was line, and a child's name. A look cuts past them with an ellipsis. */
+/** The most lines each text on an Overview row wraps to: a name, where it stands, a was line. A look cuts past them with an ellipsis. */
 export const OVERVIEW_TEXT_LINES = 3
 /** The most children drawn under one subject; the rest fold into "+ N more running". */
 export const CHILD_ROWS = 3
-/** A child with no activity for this long reads quiet. */
-export const QUIET_MS = 15 * 60_000
+/** How long work goes before it has stalled: a child with no activity reads quiet, and a waiting subject says how long it has waited. */
+export const STALL_MS = 15 * 60_000
 /** Finished rows drawn above the look line; older ones fold into the count. */
 const NEW_CLOSED_ROWS = 2
 /** Open rows drawn before the oldest queued ones fold into a count. */
@@ -942,6 +960,14 @@ export const RUNNING_FRAME_MS = 300
 /** One pulse of a running mark, which the Codex tab and the desktop pane draw as a fade. */
 export const RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS
 
+/**
+ * A subject's merged line, as "merged in: Sync retry", cut at a phrase to the one line `fits` allows. When its first
+ * phrase does not fit, the line keeps that phrase whole and a look wraps it.
+ */
+export function mergedLine(merged: string, fits: (text: string) => boolean): string {
+  return `${MERGED_PREFIX}${cutAtPhrase(merged, names => fits(`${MERGED_PREFIX}${names}`))}`
+}
+
 export function hasRunningMark(page: OverviewPage): boolean {
   return page.rows.some(r => (r.kind === 'subject' || r.kind === 'child') && r.isRunning)
 }
@@ -949,25 +975,6 @@ export function hasRunningMark(page: OverviewPage): boolean {
 /** A running row's mark at `now`. Every mark on a page takes its frame from the clock, so all of them move together. */
 export function runningMark(now: number): string {
   return RUNNING_FRAMES[Math.floor(now / RUNNING_FRAME_MS) % RUNNING_FRAMES.length]!
-}
-
-/** The first line: the session's folder, its branch, and "coordinator" for a session that hands out work. */
-function identityOf(place: Session['place'], role: 'coordinator' | 'session'): string | null {
-  if (!place) return null
-  const folder = place.folder.split(/[\\/]/).filter(Boolean).pop() ?? place.folder
-
-  return [folder, place.branch, role === 'coordinator' ? 'coordinator' : null].filter(Boolean).join(' · ')
-}
-
-function liveOf(presence: Session['presence'], now: number): string | null {
-  const { isTurnRunning, turnStartedAt, lastReplyAt } = presence
-  if (isTurnRunning) {
-    const isPastAMinute = turnStartedAt !== null && now - turnStartedAt >= 60_000
-
-    return isPastAMinute ? `${WORKING_TEXT} for ${shortAgo(now - turnStartedAt)}` : WORKING_TEXT
-  }
-
-  return lastReplyAt === null ? null : `Idle · last reply ${ago(now - lastReplyAt)}`
 }
 
 /** Whether `row` starts an item after another, with no look line between them. */
@@ -985,20 +992,19 @@ function idleOf(c: Child, now: number): number | null {
 function isQuiet(c: Child, now: number): boolean {
   const idle = idleOf(c, now)
 
-  return idle !== null && idle >= QUIET_MS
+  return idle !== null && idle >= STALL_MS
 }
 
 /**
- * Whether `c` shows work under way: it did something in the last `QUIET_MS`, or its host reports no activity and it
- * started less than `QUIET_MS` ago.
+ * Whether `c` shows work under way: it did something in the last `STALL_MS`, or its host reports no activity and it
+ * started less than `STALL_MS` ago.
  */
 function isChildWorking(c: Child, now: number): boolean {
-  return now - (c.lastActivityAt ?? c.startedAt) < QUIET_MS
+  return now - (c.lastActivityAt ?? c.startedAt) < STALL_MS
 }
 
 function childRow(c: Child, now: number, branch: OverviewBranch | null): OverviewRowParts {
-  const isChildQuiet = isQuiet(c, now)
-  const age = shortAgo(idleOf(c, now) ?? now - c.startedAt)
+  const idle = idleOf(c, now)
 
   return {
     kind: 'child',
@@ -1006,8 +1012,7 @@ function childRow(c: Child, now: number, branch: OverviewBranch | null): Overvie
     mark: '●',
     isRunning: isChildWorking(c, now),
     name: c.name,
-    age: isChildQuiet ? `quiet ${age}` : age,
-    ageTone: isChildQuiet ? 'needsYou' : null,
+    stall: idle !== null && isQuiet(c, now) ? `quiet ${shortAgo(idle)}` : null,
     branch,
   }
 }
@@ -1016,7 +1021,6 @@ export function overviewPage(
   s: {
     ledger: Pick<Ledger, 'overview' | 'items'>
     presence: Session['presence']
-    place?: Session['place']
     overviewFailure?: Session['overviewFailure']
   },
   now: number,
@@ -1027,6 +1031,18 @@ export function overviewPage(
   const isNew = (x: Subject) => look === null || x.changedAt > look
   const heldIds = new Set(s.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
   const isHeld = (x: Subject) => isOpen(x) && heldIds.has(x.id)
+  /** When `x` began to wait: when the oldest open ask holding it up was asked, or when it last changed. */
+  const waitingSince = (x: Subject) => {
+    const asked = s.ledger.items.filter(i => o?.askSubjects[i.id] === x.id).flatMap(i => i.at ?? [])
+
+    return asked.length > 0 ? Math.min(...asked) : x.changedAt
+  }
+  const stallOf = (x: Subject) => {
+    const isWaiting = isHeld(x) || (isOpen(x) && x.status === 'waits-on-other')
+    const waited = now - waitingSince(x)
+
+    return isWaiting && waited >= STALL_MS ? `waiting ${shortAgo(waited)}` : null
+  }
   const newClosed = subjects
     .filter(x => !isOpen(x) && isNew(x))
     .sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0))
@@ -1065,8 +1081,9 @@ export function overviewPage(
         x.status === 'working' && !isHeld(x) && (s.presence.isTurnRunning || under.some(c => isChildWorking(c, now))),
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
+      stall: stallOf(x),
+      merged: isNew(x) ? x.merged : null,
       was: isNew(x) ? x.was : null,
-      age: shortAgo(now - x.changedAt),
       hasChildren: under.length > 0,
     })
     rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? 'last' : 'mid')))
@@ -1087,10 +1104,8 @@ export function overviewPage(
       mark: '○',
       tone: null,
       text: `${hiddenQueued.size} more queued`,
-      age: null,
     })
   if (folded.length > 0) {
-    const newest = Math.max(...folded.map(x => x.closedAt ?? x.changedAt))
     const isMore = newClosed.some(x => x.status === 'done')
     rows.push({
       kind: 'fold',
@@ -1098,20 +1113,14 @@ export function overviewPage(
       mark: '✓',
       tone: 'done',
       text: `${folded.length}${isMore ? ' more' : ''} done`,
-      age: shortAgo(now - newest),
     })
   }
   const goal = o?.goal || null
-  const role = o?.role ?? 'session'
-  const hasNews = o !== null && o.look === null && subjects.some(isNew)
 
   return {
-    isEmpty: goal === null && rows.length === 0 && !s.presence.isTurnRunning,
-    identity: identityOf(s.place ?? null, role),
+    isEmpty: goal === null && rows.length === 0,
     goal,
-    live: liveOf(s.presence, now),
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
-    hasNews,
     error: s.overviewFailure ? OVERVIEW_FAILED : null,
     empty: {
       title: 'Overview',
@@ -1425,13 +1434,18 @@ export function inboxView({
   replies,
   discarded,
   shownSince,
+  lastTypedMessageAt,
 }: ViewInput): InboxView {
-  const isInPlace = (at: number) => isShownSince(at, shownSince)
+  const isInPlace = (at: number, canUndo: boolean) =>
+    isSettledInPlace({ at, canUndo }, { shownSince, lastTypedMessageAt })
   const isOpen = (id: string) => ledger.items.some(i => i.id === id) || ledger.findings.some(f => f.id === id)
   const replyAfter = (c: Closed | ClosedFinding) => {
     const last = lastActions[c.id]
 
-    return last?.action === 'type' && last.at >= closedAt(c) && last.delivery?.state !== 'failed' && isInPlace(last.at)
+    return last?.action === 'type' &&
+      last.at >= closedAt(c) &&
+      last.delivery?.state !== 'failed' &&
+      isInPlace(last.at, false)
       ? last
       : null
   }
@@ -1445,15 +1459,21 @@ export function inboxView({
     return since !== undefined && since <= closedAt(c) && !isOwnClose(c)
   }
   const isDiscarded = (c: Closed | ClosedFinding) => (discarded[c.id] ?? -Infinity) >= closedAt(c)
-  const isPlaced = (c: Closed | ClosedFinding) =>
-    replyAfter(c) !== null || (!isDiscarded(c) && (isHeld(c) || isInPlace(closedAt(c))))
+  const isPlaced = (c: Closed | ClosedFinding) => {
+    const at = closedAt(c)
+
+    return (
+      replyAfter(c) !== null ||
+      (!isDiscarded(c) && (isHeld(c) || isInPlace(at, canUndoClose(c, at, now, settleWindowMs))))
+    )
+  }
   const placedItems = new Map(
     ledger.closed.filter(d => d.item && !isOpen(d.id) && isPlaced(d)).map(d => [d.id, d] as const),
   )
   const isFixSettled = (id: string) => {
     const last = lastActions[id]
 
-    return isFixSent(last) && !isInPlace(last.at)
+    return isFixSent(last) && !isInPlace(last.at, isUndoLeft(last.at, now, settleWindowMs))
   }
   const placedFindings = new Map(
     ledger.closedFindings.filter(f => !isOpen(f.id) && !isFixSettled(f.id) && isPlaced(f)).map(f => [f.id, f] as const),

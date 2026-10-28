@@ -85,6 +85,7 @@ export function emptySession(): Session {
       isTurnRunning: false,
       turnStartedAt: null,
       lastReplyAt: null,
+      lastTypedMessageAt: null,
     },
     place: null,
     pending: [],
@@ -248,7 +249,7 @@ export function cleared<S extends Session>(s: S): S {
 export type SentBy = { press: Press | null }
 
 /**
- * Records a prompt that arrived and returns what the agent reads beside it.
+ * Records a prompt that arrived and returns what the agent reads beside it, and the press that sent it, if one did.
  * A host that tells its own sends apart from the person's words calls the parts below instead.
  */
 export function notePrompt<S extends Session>(
@@ -256,10 +257,10 @@ export function notePrompt<S extends Session>(
   s: S,
   text: string,
   isOpen: boolean,
-): { state: S; notes: string[] } {
+): { state: S; notes: string[]; sentBy: SentBy | null } {
   const matched = matchSent(s, text)
 
-  return recordPrompt(host, startTurn(matched.state), text, isOpen, matched.sentBy)
+  return { ...recordPrompt(host, startTurn(matched.state), text, isOpen, matched.sentBy), sentBy: matched.sentBy }
 }
 
 /**
@@ -328,6 +329,14 @@ export function turnEnded<S extends Session>(s: S, at: number | null): S {
   const lastReplyAt = at ?? s.presence.lastReplyAt
 
   return { ...s, presence: { ...s.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt } }
+}
+
+/**
+ * Notes that the person sent a message they typed, at `at`. A host calls it only for a message the person typed, never
+ * for one a press sent. The rows that settled before it fold, as `hooks/view.ts:isSettledInPlace` says.
+ */
+export function messageTyped<S extends Session>(s: S, at: number): S {
+  return { ...s, presence: { ...s.presence, lastTypedMessageAt: at } }
 }
 
 /**
@@ -836,6 +845,7 @@ export function sessionView(
     status: perTurnStatus(update),
     now,
     ...holds,
+    lastTypedMessageAt: s.presence.lastTypedMessageAt,
   })
 
   return {
@@ -854,7 +864,10 @@ function prTabOf(
   shownSince: number | null,
   settleWindowMs: number,
 ): PrTab {
-  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, shownSince, settleWindowMs)
+  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, settleWindowMs, {
+    shownSince,
+    lastTypedMessageAt: s.presence.lastTypedMessageAt,
+  })
   const isSent = threadSentIn(lastActions)
 
   return {

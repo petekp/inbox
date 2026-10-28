@@ -365,6 +365,7 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     isTurnRunning: false,
     turnStartedAt: null,
     lastReplyAt: null,
+    lastTypedMessageAt: null,
   })
   assert.equal(viewOf(kept, 5).status.isUpdating, false)
   assert.match(viewOf(kept, 5).status.error ?? '', /Last update failed.*retries after your next message/)
@@ -394,6 +395,7 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     isTurnRunning: false,
     turnStartedAt: null,
     lastReplyAt: null,
+    lastTypedMessageAt: null,
   })
   assert.equal(viewOf(dropped, 6).status.isUpdating, false)
   assert.match(viewOf(dropped, 6).status.error ?? '', /Last update failed/)

@@ -36,6 +36,13 @@ function cutForEllipsis(line, fits) {
     parts.pop();
   return parts.join("").replace(/[\s.,;:]+$/, "");
 }
+var PHRASE_END = /[,;](?=\s)|\s(?=and\s)/g;
+function cutAtPhrase(text, fits) {
+  if (fits(text))
+    return text;
+  const heads = [...text.matchAll(PHRASE_END)].map((m) => `${text.slice(0, m.index).replace(/[\s.,;:]+$/, "")}\u2026`);
+  return heads.findLast(fits) ?? heads[0] ?? text;
+}
 function clipMiddle(text, max, head) {
   if (text.length <= max)
     return text;
@@ -337,8 +344,10 @@ function applyOps(last, ops, now, askIds) {
   };
   const forgetSeenWas = (s) => {
     const isSeen = o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
-    if (isSeen)
+    if (isSeen) {
       s.was = null;
+      s.merged = null;
+    }
   };
   const set = (s, status, text) => {
     const isReworded = s.status === status && hasSameWords(s.text, text);
@@ -376,6 +385,7 @@ function applyOps(last, ops, now, askIds) {
         status: op.status,
         text: clipWords(op.text, TEXT_KEPT),
         was: null,
+        merged: null,
         createdAt: now,
         changedAt: now,
         closedAt: null,
@@ -403,15 +413,16 @@ function applyOps(last, ops, now, askIds) {
         s.into = target && target.id !== s.id ? target.id : null;
         s.changedAt = now;
         if (target && s.into) {
-          target.was = target.was ?? `${s.name} folded in`;
+          forgetSeenWas(target);
+          target.merged = target.merged ? `${target.merged}, ${s.name}` : s.name;
           target.changedAt = now;
           for (const [ask, id] of Object.entries(o.askSubjects))
             if (id === s.id)
               o.askSubjects[ask] = target.id;
         }
       } else {
-        const folded = o.subjects.find((x) => x.into === s.id && x.closedAt === now);
-        s.was = folded ? `${folded.name} folded in; was: ${op.text}` : op.text;
+        forgetSeenWas(s);
+        s.was = op.text;
         s.changedAt = now;
       }
     }
@@ -477,6 +488,13 @@ function time(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 var DROPPED_STATUSES = { "waits-on-you": "queued", problem: "queued" };
+var OLD_MERGE = /^(.+?) folded in(?:; was: (.*))?$/s;
+function wasAndMerged(was, merged) {
+  const old = typeof was === "string" && typeof merged !== "string" ? OLD_MERGE.exec(was) : null;
+  if (old)
+    return { was: old[2] ?? null, merged: old[1] };
+  return { was: typeof was === "string" ? was : null, merged: typeof merged === "string" ? merged : null };
+}
 function subjectOf(saved) {
   const s = saved;
   const status = STATUSES2.find((x) => x === s?.status) ?? DROPPED_STATUSES[String(s?.status)];
@@ -488,7 +506,7 @@ function subjectOf(saved) {
     name: s.name,
     status,
     text: text(s.text),
-    was: typeof s.was === "string" ? s.was : null,
+    ...wasAndMerged(s.was, s.merged),
     createdAt: time(s.createdAt) ?? changedAt,
     changedAt,
     closedAt: time(s.closedAt),
@@ -538,6 +556,7 @@ function fromLists(o) {
     ...s,
     text: clipWords(s.text, TEXT_KEPT),
     was: null,
+    merged: null,
     createdAt: lastLookAt,
     changedAt: lastLookAt,
     closedAt: null,
@@ -2646,6 +2665,10 @@ var NO_HOLDS = { replies: {}, discarded: {}, shownSince: null };
 function isShownSince(at, shownSince) {
   return shownSince !== null && at >= shownSince;
 }
+function isSettledInPlace(state, { shownSince, lastTypedMessageAt }) {
+  const isTypedSince = lastTypedMessageAt !== null && lastTypedMessageAt > state.at;
+  return isShownSince(state.at, shownSince) && (state.canUndo || !isTypedSince);
+}
 function isDrawnInPlace(row, shownSince) {
   return row.state.is !== "settled" || isShownSince(row.state.at, shownSince);
 }
@@ -2658,12 +2681,15 @@ function heldReplies(typing, drafts) {
 function isUndoLeft(at, now, settleWindowMs) {
   return now - at < settleWindowMs;
 }
+function canUndoClose(closed, at, now, settleWindowMs) {
+  return isUndoable(closed) && isUndoLeft(at, now, settleWindowMs);
+}
 function closedRowState(closed, at, now, settleWindowMs, delivery) {
   return {
     is: "settled",
     label: outcomeLabel(closed),
     at,
-    canUndo: isUndoable(closed) && isUndoLeft(at, now, settleWindowMs),
+    canUndo: canUndoClose(closed, at, now, settleWindowMs),
     offersUndo: offersUndo(closed),
     isLapsed: isLapsed(closed),
     delivery
@@ -2974,10 +3000,8 @@ function fitTabs(layouts, fits) {
         return { naming, layout };
   return { naming: "symbols", layout: layouts.at(-1) };
 }
-function tabBadge(id, counts, hasNews) {
-  if (isRowTab(id))
-    return counts[id] > 0 ? String(counts[id]) : null;
-  return hasNews ? NEWS_DOT : null;
+function tabBadge(id, counts) {
+  return isRowTab(id) && counts[id] > 0 ? String(counts[id]) : null;
 }
 function isListedTab(tab) {
   return tab === "needsYou" || tab === "findings";
@@ -2990,14 +3014,13 @@ function screenTabOf(tab) {
 }
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
-var WORKING_TEXT = "Working\u2026";
 var LOOK_TEXT = "Seen";
-var LOOK_RULE_LABEL = `\u2500\u2500 ${LOOK_TEXT} `;
 var WAS_PREFIX = "was: ";
-var NEWS_DOT = "\u2022";
+var MERGED_PREFIX = "merged in: ";
+var STALL_GAP = " \xB7 ";
 var OVERVIEW_TEXT_LINES = 3;
 var CHILD_ROWS = 3;
-var QUIET_MS = 15 * 60000;
+var STALL_MS = 15 * 60000;
 var NEW_CLOSED_ROWS = 2;
 var OPEN_ROWS = 7;
 var SUBJECT_MARKS = {
@@ -3011,25 +3034,14 @@ var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
+function mergedLine(merged, fits) {
+  return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
+}
 function hasRunningMark(page) {
   return page.rows.some((r) => (r.kind === "subject" || r.kind === "child") && r.isRunning);
 }
 function runningMark(now) {
   return RUNNING_FRAMES[Math.floor(now / RUNNING_FRAME_MS) % RUNNING_FRAMES.length];
-}
-function identityOf(place, role) {
-  if (!place)
-    return null;
-  const folder = place.folder.split(/[\\/]/).filter(Boolean).pop() ?? place.folder;
-  return [folder, place.branch, role === "coordinator" ? "coordinator" : null].filter(Boolean).join(" \xB7 ");
-}
-function liveOf(presence, now) {
-  const { isTurnRunning, turnStartedAt, lastReplyAt } = presence;
-  if (isTurnRunning) {
-    const isPastAMinute = turnStartedAt !== null && now - turnStartedAt >= 60000;
-    return isPastAMinute ? `${WORKING_TEXT} for ${shortAgo(now - turnStartedAt)}` : WORKING_TEXT;
-  }
-  return lastReplyAt === null ? null : `Idle \xB7 last reply ${ago(now - lastReplyAt)}`;
 }
 function isItemAfterItem(row, prev) {
   const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
@@ -3040,22 +3052,20 @@ function idleOf(c, now) {
 }
 function isQuiet(c, now) {
   const idle = idleOf(c, now);
-  return idle !== null && idle >= QUIET_MS;
+  return idle !== null && idle >= STALL_MS;
 }
 function isChildWorking(c, now) {
-  return now - (c.lastActivityAt ?? c.startedAt) < QUIET_MS;
+  return now - (c.lastActivityAt ?? c.startedAt) < STALL_MS;
 }
 function childRow(c, now, branch) {
-  const isChildQuiet = isQuiet(c, now);
-  const age = shortAgo(idleOf(c, now) ?? now - c.startedAt);
+  const idle = idleOf(c, now);
   return {
     kind: "child",
     id: c.id,
     mark: "\u25CF",
     isRunning: isChildWorking(c, now),
     name: c.name,
-    age: isChildQuiet ? `quiet ${age}` : age,
-    ageTone: isChildQuiet ? "needsYou" : null,
+    stall: idle !== null && isQuiet(c, now) ? `quiet ${shortAgo(idle)}` : null,
     branch
   };
 }
@@ -3066,6 +3076,15 @@ function overviewPage(s, now) {
   const isNew = (x) => look === null || x.changedAt > look;
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const waitingSince = (x) => {
+    const asked = s.ledger.items.filter((i) => o?.askSubjects[i.id] === x.id).flatMap((i) => i.at ?? []);
+    return asked.length > 0 ? Math.min(...asked) : x.changedAt;
+  };
+  const stallOf = (x) => {
+    const isWaiting = isHeld(x) || isOpen(x) && x.status === "waits-on-other";
+    const waited = now - waitingSince(x);
+    return isWaiting && waited >= STALL_MS ? `waiting ${shortAgo(waited)}` : null;
+  };
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
   const open = subjects.filter(isOpen);
   const queuedOver = Math.max(0, open.length - OPEN_ROWS);
@@ -3091,8 +3110,9 @@ function overviewPage(s, now) {
       isRunning: x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some((c) => isChildWorking(c, now))),
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
+      stall: stallOf(x),
+      merged: isNew(x) ? x.merged : null,
       was: isNew(x) ? x.was : null,
-      age: shortAgo(now - x.changedAt),
       hasChildren: under.length > 0
     });
     rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
@@ -3113,31 +3133,23 @@ function overviewPage(s, now) {
       id: "queued",
       mark: "\u25CB",
       tone: null,
-      text: `${hiddenQueued.size} more queued`,
-      age: null
+      text: `${hiddenQueued.size} more queued`
     });
   if (folded.length > 0) {
-    const newest = Math.max(...folded.map((x) => x.closedAt ?? x.changedAt));
     const isMore = newClosed.some((x) => x.status === "done");
     rows.push({
       kind: "fold",
       id: "done",
       mark: "\u2713",
       tone: "done",
-      text: `${folded.length}${isMore ? " more" : ""} done`,
-      age: shortAgo(now - newest)
+      text: `${folded.length}${isMore ? " more" : ""} done`
     });
   }
   const goal = o?.goal || null;
-  const role = o?.role ?? "session";
-  const hasNews = o !== null && o.look === null && subjects.some(isNew);
   return {
-    isEmpty: goal === null && rows.length === 0 && !s.presence.isTurnRunning,
-    identity: identityOf(s.place ?? null, role),
+    isEmpty: goal === null && rows.length === 0,
     goal,
-    live: liveOf(s.presence, now),
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
-    hasNews,
     error: s.overviewFailure ? OVERVIEW_FAILED : null,
     empty: {
       title: "Overview",
@@ -3309,13 +3321,14 @@ function inboxView({
   now,
   replies,
   discarded,
-  shownSince
+  shownSince,
+  lastTypedMessageAt
 }) {
-  const isInPlace = (at) => isShownSince(at, shownSince);
+  const isInPlace = (at, canUndo) => isSettledInPlace({ at, canUndo }, { shownSince, lastTypedMessageAt });
   const isOpen = (id) => ledger.items.some((i) => i.id === id) || ledger.findings.some((f) => f.id === id);
   const replyAfter = (c) => {
     const last = lastActions[c.id];
-    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(last.at) ? last : null;
+    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(last.at, false) ? last : null;
   };
   const isOwnClose = (c) => c.how === "done" || c.how === "dismissed" || c.how === "answered" && lastActions[c.id]?.kind === "mark" && lastActions[c.id]?.at === closedAt(c);
   const isHeld = (c) => {
@@ -3323,11 +3336,14 @@ function inboxView({
     return since !== undefined && since <= closedAt(c) && !isOwnClose(c);
   };
   const isDiscarded = (c) => (discarded[c.id] ?? -Infinity) >= closedAt(c);
-  const isPlaced = (c) => replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(closedAt(c)));
+  const isPlaced = (c) => {
+    const at = closedAt(c);
+    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(at, canUndoClose(c, at, now, settleWindowMs)));
+  };
   const placedItems = new Map(ledger.closed.filter((d) => d.item && !isOpen(d.id) && isPlaced(d)).map((d) => [d.id, d]));
   const isFixSettled = (id) => {
     const last = lastActions[id];
-    return isFixSent(last) && !isInPlace(last.at);
+    return isFixSent(last) && !isInPlace(last.at, isUndoLeft(last.at, now, settleWindowMs));
   };
   const placedFindings = new Map(ledger.closedFindings.filter((f) => !isOpen(f.id) && !isFixSettled(f.id) && isPlaced(f)).map((f) => [f.id, f]));
   const placed = [...placedFindings.keys()].reduce(reopenFinding, [...placedItems.keys()].reduce(reopenItem, ledger));
@@ -3767,14 +3783,15 @@ function isViewKept(prState, linked, lastActions, ref, shownSince) {
   return keepsView(prState, linked, ref) || at !== null && isShownSince(at, shownSince);
 }
 var DISMISSED_PR = { how: "dismissed", outcome: PR_DISMISSED_LABEL };
-function drawnPrs(prState, linked, lastActions, now, shownSince, settleWindowMs) {
+function drawnPrs(prState, linked, lastActions, now, settleWindowMs, placing) {
   return inPrOrder(Object.values(prState.views)).flatMap((pr) => {
     if (isTracked(prState, linked, pr.ref))
       return [{ pr, state: { is: "open" } }];
     const at = dismissedAt(lastActions, pr.ref);
-    if (at === null || !isShownSince(at, shownSince))
+    if (at === null)
       return [];
-    return [{ pr, state: closedRowState(DISMISSED_PR, at, now, settleWindowMs, null) }];
+    const state = closedRowState(DISMISSED_PR, at, now, settleWindowMs, null);
+    return isSettledInPlace(state, placing) ? [{ pr, state }] : [];
   });
 }
 var PR_TONES = {
@@ -4251,7 +4268,8 @@ function emptySession() {
       isUpdating: false,
       isTurnRunning: false,
       turnStartedAt: null,
-      lastReplyAt: null
+      lastReplyAt: null,
+      lastTypedMessageAt: null
     },
     place: null,
     pending: [],
@@ -4338,7 +4356,7 @@ function upgradeSession(saved) {
 }
 function notePrompt(host, s, text, isOpen) {
   const matched = matchSent(s, text);
-  return recordPrompt(host, startTurn(matched.state), text, isOpen, matched.sentBy);
+  return { ...recordPrompt(host, startTurn(matched.state), text, isOpen, matched.sentBy), sentBy: matched.sentBy };
 }
 function matchSent(s, text) {
   const matchingAt = s.sent.findIndex((x) => x.text === text);
@@ -4364,6 +4382,9 @@ function turnStarted(s, at) {
 function turnEnded(s, at) {
   const lastReplyAt = at ?? s.presence.lastReplyAt;
   return { ...s, presence: { ...s.presence, isTurnRunning: false, turnStartedAt: null, lastReplyAt } };
+}
+function messageTyped(s, at) {
+  return { ...s, presence: { ...s.presence, lastTypedMessageAt: at } };
 }
 function cutOffTurn(s) {
   return s.presence.isTurnRunning ? turnEnded(s, null) : s;
@@ -4650,7 +4671,8 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     settleWindowMs,
     status: perTurnStatus(update),
     now,
-    ...holds
+    ...holds,
+    lastTypedMessageAt: s.presence.lastTypedMessageAt
   });
   return {
     ...inbox,
@@ -4661,7 +4683,10 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
   };
 }
 function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
-  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, shownSince, settleWindowMs);
+  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, settleWindowMs, {
+    shownSince,
+    lastTypedMessageAt: s.presence.lastTypedMessageAt
+  });
   const isSent = threadSentIn(lastActions);
   return {
     drawn,
@@ -5553,7 +5578,7 @@ function pressFeedback(screen, id, now, isMarkDone = false) {
   return f ? { text: markedFeedbackText(f, isMarkDone, AGENT), tone: feedbackTone(f), source: f } : null;
 }
 var doneAt = (f) => f?.source?.is === "done" ? f.source.at : null;
-var PAGE_MARK_AT = 3;
+var PAGE_MARK_AT = 1;
 var PAGE_TEXT_AT = PAGE_MARK_AT + 2;
 var PAGE_CHILD_AT = PAGE_MARK_AT + 3;
 var TREE_ARMS = {
@@ -5566,11 +5591,7 @@ function pageEntries(page) {
       { kind: "note", text: page.empty.title, isStrong: true },
       { kind: "note", text: page.empty.hint, isWhole: true }
     ];
-  const head = [
-    ...page.identity ? [{ kind: "note", text: page.identity }] : [],
-    ...page.goal ? [{ kind: "note", text: page.goal, isStrong: true }] : [],
-    ...page.live ? [{ kind: "note", text: page.live }] : []
-  ];
+  const head = page.goal ? [{ kind: "note", text: page.goal, isStrong: true, indent: PAGE_MARK_AT }] : [];
   const rows = page.rows.map((row) => ({ kind: "page", row }));
   return head.length > 0 && rows.length > 0 ? [...head, { kind: "note", text: "" }, ...rows] : [...head, ...rows];
 }
@@ -5879,29 +5900,32 @@ function drawLine(line, isSelected, d) {
     out.push(...indented(statusUnder.text, indent, width, 4, feedbackPaint(statusUnder.tone, s)));
   return out;
 }
-function pageLine(d, indent, mark, text, age, {
-  plainCells = 0,
-  agePaint = d.style.dim,
-  maxLines = Infinity
-} = {}) {
-  const { width, style: s } = d;
-  const textAt = indent + 2;
-  const side = age ? cellWidth(age) + 1 : 0;
-  const room = Math.max(10, width - textAt - side - 1);
+var UNBROKEN_SPACE = "\uE000";
+var pageRoom = (indent, width) => Math.max(10, width - indent - 2 - 1);
+function pageText(text, room, maxLines, first, firstCells = Infinity, rest = first) {
   const wrapped = wrapText(text, room);
   const lines = wrapped.slice(0, maxLines);
   if (wrapped.length > lines.length)
     lines[lines.length - 1] = `${cutForEllipsis(lines.at(-1), (t) => cellWidth(t) <= room)}\u2026`;
-  let plainLeft = plainCells;
-  const painted = lines.map((l) => {
-    const plain = cutToCells(l, Math.max(0, plainLeft));
-    plainLeft -= cellWidth(l) + 1;
-    return plain + s.dim(l.slice(plain.length));
+  let firstLeft = firstCells;
+  return lines.map((l) => {
+    const head = cutToCells(l, Math.max(0, firstLeft));
+    firstLeft -= cellWidth(l) + 1;
+    return first(head) + (head.length < l.length ? rest(l.slice(head.length)) : "");
   });
-  const gap = Math.max(1, width - 1 - textAt - cellWidth(lines[0] ?? "") - (age ? cellWidth(age) : 0));
+}
+function pageLine(d, indent, mark, name, namePaint, second = { text: null, stall: null }) {
+  const { width, style: s } = d;
+  const textAt = indent + 2;
+  const room = pageRoom(indent, width);
+  const names = pageText(name, room, OVERVIEW_TEXT_LINES, namePaint);
+  const stall = second.stall?.replaceAll(" ", UNBROKEN_SPACE) ?? null;
+  const secondText = [second.text, stall].filter(Boolean).join(STALL_GAP);
+  const dimCells = second.text ? cellWidth(second.text) + (stall ? cellWidth(STALL_GAP) : 0) : 0;
+  const seconds = secondText ? pageText(secondText, room, OVERVIEW_TEXT_LINES, s.dim, dimCells, (t) => s.tone("needsYou", t)).map((l) => l.replaceAll(UNBROKEN_SPACE, " ")) : [];
   return [
-    `${" ".repeat(indent)}${mark} ${painted[0] ?? ""}${age ? " ".repeat(gap) + agePaint(age) : ""}`,
-    ...painted.slice(1).map((l) => " ".repeat(textAt) + l)
+    `${" ".repeat(indent)}${mark} ${names[0] ?? ""}`,
+    ...[...names.slice(1), ...seconds].map((l) => " ".repeat(textAt) + l)
   ];
 }
 function withTree(lines, first, rest, s) {
@@ -5913,22 +5937,19 @@ function drawPageRow(row, d) {
   if (row.kind === "subject") {
     const glyph = row.isRunning ? runningMark(now) : row.mark;
     const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph);
-    const text = row.text ? `${row.name}: ${row.text}` : row.name;
-    const out = pageLine(d, PAGE_MARK_AT, mark, text, row.age, {
-      plainCells: cellWidth(row.name),
-      maxLines: OVERVIEW_TEXT_LINES
-    });
+    const out = pageLine(d, PAGE_MARK_AT, mark, row.name, (t) => t, { text: row.text, stall: row.stall });
+    const room = pageRoom(PAGE_MARK_AT, width);
+    if (row.merged)
+      out.push(...indented(mergedLine(row.merged, (t) => cellWidth(t) <= room), PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim));
     if (row.was)
       out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim));
     return row.hasChildren ? withTree(out, null, "\u2502", s) : out;
   }
   if (row.kind === "child") {
     const mark = s.dim(row.isRunning ? runningMark(now) : row.mark);
-    const tone = row.ageTone;
-    const agePaint = tone ? (t) => s.tone(tone, t) : s.dim;
-    const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, row.age, {
-      agePaint,
-      maxLines: OVERVIEW_TEXT_LINES
+    const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, s.dim, {
+      text: null,
+      stall: row.stall
     });
     return row.branch ? withTree(out, TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s) : out;
   }
@@ -5937,21 +5958,18 @@ function drawPageRow(row, d) {
     return withTree([" ".repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s);
   }
   if (row.kind === "look") {
-    const label = LOOK_RULE_LABEL;
-    const fill = "\u2500".repeat(Math.max(2, width - 1 - PAGE_TEXT_AT - cellWidth(label)));
-    return [`${" ".repeat(PAGE_TEXT_AT)}${s.dim(label + fill)}`];
+    const label = ` ${row.text} `;
+    const fill = Math.max(4, width - 1 - PAGE_MARK_AT - cellWidth(label));
+    const before = Math.floor(fill / 2);
+    return [`${" ".repeat(PAGE_MARK_AT)}${s.dim(`${"\u2500".repeat(before)}${label}${"\u2500".repeat(fill - before)}`)}`];
   }
   const mark = row.tone ? s.tone(row.tone, row.mark) : s.dim(row.mark);
-  return pageLine(d, PAGE_MARK_AT, mark, row.text, row.age, {});
+  return pageLine(d, PAGE_MARK_AT, mark, row.text, s.dim);
 }
-var TAB_FORMS = [
-  { isBracketed: true, hasNewsDot: true },
-  { isBracketed: false, hasNewsDot: true },
-  { isBracketed: false, hasNewsDot: false }
-];
+var TAB_FORMS = [{ isBracketed: true }, { isBracketed: false }];
 function tabCell(t, name, form, s) {
   const key = form.isBracketed ? `[${t.hotkey}]` : t.hotkey;
-  const badge = form.hasNewsDot || isRowTab(t.id) ? t.badge : null;
+  const { badge } = t;
   if (t.isShown)
     return s.inverse(s.bold(` ${key} ${name}${badge === null ? "" : ` ${badge}`} `));
   const badgeText = badge === null ? "" : ` ${t.tone ? s.tone(t.tone, badge) : badge}`;
@@ -5967,14 +5985,11 @@ function tabBar(d) {
   const tabs = shownTabs(screen.isNextBuild === true).map((t) => ({
     ...t,
     tone: isRowTab(t.id) ? t.id : null,
-    badge: tabBadge(t.id, counts, screen.view.overviewPage.hasNews),
+    badge: tabBadge(t.id, counts),
     isShown: t.id === ui.tab
   }));
   const lineOf = (naming, form) => ` ${tabs.map((t) => tabCell(t, tabName(t, naming), form, s)).join(" ")}`;
-  const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => {
-    const isDotDroppedEarly = naming === "words" && !form.hasNewsDot;
-    return !isDotDroppedEarly && visibleLength(lineOf(naming, form)) <= width;
-  });
+  const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => visibleLength(lineOf(naming, form)) <= width);
   return spread(lineOf(naming, layout), s.dim("esc to close "), width);
 }
 function footer(d, isPageScrolling) {
@@ -6234,6 +6249,7 @@ function subject(id, status, name, text, at, more = {}) {
     status,
     text,
     was: null,
+    merged: null,
     createdAt: at,
     changedAt: at,
     closedAt: isClosed ? at : null,
@@ -7297,6 +7313,14 @@ function createInbox(pi, deps = defaultDeps) {
         }
       } : {}
     };
+  });
+  pi.on("input", async (event, ctx) => {
+    if (isUnattended(ctx) || event.source !== "interactive")
+      return;
+    const at = deps.now();
+    await change(sessionIdOf(ctx), (s) => messageTyped(s, at)).catch(() => {
+      return;
+    });
   });
   pi.on("agent_start", async (_event, ctx) => {
     if (isUnattended(ctx))

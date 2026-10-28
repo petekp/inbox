@@ -188,7 +188,10 @@ function applyOps(last, ops, now, askIds) {
   };
   const forgetSeenWas = (s) => {
     const isSeen = o.lastLookAt !== null && s.changedAt <= o.lastLookAt;
-    if (isSeen) s.was = null;
+    if (isSeen) {
+      s.was = null;
+      s.merged = null;
+    }
   };
   const set = (s, status, text2) => {
     const isReworded = s.status === status && hasSameWords(s.text, text2);
@@ -220,6 +223,7 @@ function applyOps(last, ops, now, askIds) {
         status: op.status,
         text: clipWords(op.text, TEXT_KEPT),
         was: null,
+        merged: null,
         createdAt: now,
         changedAt: now,
         closedAt: null,
@@ -244,13 +248,14 @@ function applyOps(last, ops, now, askIds) {
         s.into = target && target.id !== s.id ? target.id : null;
         s.changedAt = now;
         if (target && s.into) {
-          target.was = target.was ?? `${s.name} folded in`;
+          forgetSeenWas(target);
+          target.merged = target.merged ? `${target.merged}, ${s.name}` : s.name;
           target.changedAt = now;
           for (const [ask, id] of Object.entries(o.askSubjects)) if (id === s.id) o.askSubjects[ask] = target.id;
         }
       } else {
-        const folded = o.subjects.find((x) => x.into === s.id && x.closedAt === now);
-        s.was = folded ? `${folded.name} folded in; was: ${op.text}` : op.text;
+        forgetSeenWas(s);
+        s.was = op.text;
         s.changedAt = now;
       }
     }
@@ -282,6 +287,12 @@ function time(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 var DROPPED_STATUSES = { "waits-on-you": "queued", problem: "queued" };
+var OLD_MERGE = /^(.+?) folded in(?:; was: (.*))?$/s;
+function wasAndMerged(was, merged) {
+  const old = typeof was === "string" && typeof merged !== "string" ? OLD_MERGE.exec(was) : null;
+  if (old) return { was: old[2] ?? null, merged: old[1] };
+  return { was: typeof was === "string" ? was : null, merged: typeof merged === "string" ? merged : null };
+}
 function subjectOf(saved) {
   const s = saved;
   const status = STATUSES.find((x) => x === s?.status) ?? DROPPED_STATUSES[String(s?.status)];
@@ -292,7 +303,7 @@ function subjectOf(saved) {
     name: s.name,
     status,
     text: text(s.text),
-    was: typeof s.was === "string" ? s.was : null,
+    ...wasAndMerged(s.was, s.merged),
     createdAt: time(s.createdAt) ?? changedAt,
     changedAt,
     closedAt: time(s.closedAt),
@@ -340,6 +351,7 @@ function fromLists(o) {
     ...s,
     text: clipWords(s.text, TEXT_KEPT),
     was: null,
+    merged: null,
     createdAt: lastLookAt,
     changedAt: lastLookAt,
     closedAt: null,
@@ -1553,15 +1565,22 @@ var NO_HOLDS = { replies: {}, discarded: {}, shownSince: null };
 function isShownSince(at, shownSince) {
   return shownSince !== null && at >= shownSince;
 }
+function isSettledInPlace(state, { shownSince, lastTypedMessageAt }) {
+  const isTypedSince = lastTypedMessageAt !== null && lastTypedMessageAt > state.at;
+  return isShownSince(state.at, shownSince) && (state.canUndo || !isTypedSince);
+}
 function isUndoLeft(at, now, settleWindowMs) {
   return now - at < settleWindowMs;
+}
+function canUndoClose(closed, at, now, settleWindowMs) {
+  return isUndoable(closed) && isUndoLeft(at, now, settleWindowMs);
 }
 function closedRowState(closed, at, now, settleWindowMs, delivery) {
   return {
     is: "settled",
     label: outcomeLabel(closed),
     at,
-    canUndo: isUndoable(closed) && isUndoLeft(at, now, settleWindowMs),
+    canUndo: canUndoClose(closed, at, now, settleWindowMs),
     offersUndo: offersUndo(closed),
     isLapsed: isLapsed(closed),
     delivery
@@ -1707,11 +1726,9 @@ function screenTabOf(tab) {
 }
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
-var WORKING_TEXT = "Working\u2026";
 var LOOK_TEXT = "Seen";
-var LOOK_RULE_LABEL = `\u2500\u2500 ${LOOK_TEXT} `;
 var CHILD_ROWS = 3;
-var QUIET_MS = 15 * 6e4;
+var STALL_MS = 15 * 6e4;
 var NEW_CLOSED_ROWS = 2;
 var OPEN_ROWS = 7;
 var SUBJECT_MARKS = {
@@ -1725,19 +1742,6 @@ var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
-function identityOf(place, role) {
-  if (!place) return null;
-  const folder = place.folder.split(/[\\/]/).filter(Boolean).pop() ?? place.folder;
-  return [folder, place.branch, role === "coordinator" ? "coordinator" : null].filter(Boolean).join(" \xB7 ");
-}
-function liveOf(presence, now) {
-  const { isTurnRunning, turnStartedAt, lastReplyAt } = presence;
-  if (isTurnRunning) {
-    const isPastAMinute = turnStartedAt !== null && now - turnStartedAt >= 6e4;
-    return isPastAMinute ? `${WORKING_TEXT} for ${shortAgo(now - turnStartedAt)}` : WORKING_TEXT;
-  }
-  return lastReplyAt === null ? null : `Idle \xB7 last reply ${ago(now - lastReplyAt)}`;
-}
 function isItemAfterItem(row, prev) {
   const isUnderSubject = row.kind === "more" || row.kind === "child" && row.branch !== null;
   return prev !== void 0 && prev.kind !== "look" && row.kind !== "look" && !isUnderSubject;
@@ -1747,22 +1751,20 @@ function idleOf(c, now) {
 }
 function isQuiet(c, now) {
   const idle = idleOf(c, now);
-  return idle !== null && idle >= QUIET_MS;
+  return idle !== null && idle >= STALL_MS;
 }
 function isChildWorking(c, now) {
-  return now - (c.lastActivityAt ?? c.startedAt) < QUIET_MS;
+  return now - (c.lastActivityAt ?? c.startedAt) < STALL_MS;
 }
 function childRow(c, now, branch) {
-  const isChildQuiet = isQuiet(c, now);
-  const age = shortAgo(idleOf(c, now) ?? now - c.startedAt);
+  const idle = idleOf(c, now);
   return {
     kind: "child",
     id: c.id,
     mark: "\u25CF",
     isRunning: isChildWorking(c, now),
     name: c.name,
-    age: isChildQuiet ? `quiet ${age}` : age,
-    ageTone: isChildQuiet ? "needsYou" : null,
+    stall: idle !== null && isQuiet(c, now) ? `quiet ${shortAgo(idle)}` : null,
     branch
   };
 }
@@ -1773,6 +1775,15 @@ function overviewPage(s, now) {
   const isNew = (x) => look === null || x.changedAt > look;
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const waitingSince = (x) => {
+    const asked = s.ledger.items.filter((i) => o?.askSubjects[i.id] === x.id).flatMap((i) => i.at ?? []);
+    return asked.length > 0 ? Math.min(...asked) : x.changedAt;
+  };
+  const stallOf = (x) => {
+    const isWaiting = isHeld(x) || isOpen(x) && x.status === "waits-on-other";
+    const waited = now - waitingSince(x);
+    return isWaiting && waited >= STALL_MS ? `waiting ${shortAgo(waited)}` : null;
+  };
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
   const open2 = subjects.filter(isOpen);
   const queuedOver = Math.max(0, open2.length - OPEN_ROWS);
@@ -1799,8 +1810,9 @@ function overviewPage(s, now) {
       isRunning: x.status === "working" && !isHeld(x) && (s.presence.isTurnRunning || under.some((c) => isChildWorking(c, now))),
       name: x.name,
       text: isNew(x) || isOpen(x) ? x.text || null : null,
+      stall: stallOf(x),
+      merged: isNew(x) ? x.merged : null,
       was: isNew(x) ? x.was : null,
-      age: shortAgo(now - x.changedAt),
       hasChildren: under.length > 0
     });
     rows.push(...shownUnder.map((c, n) => childRow(c, now, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
@@ -1820,31 +1832,23 @@ function overviewPage(s, now) {
       id: "queued",
       mark: "\u25CB",
       tone: null,
-      text: `${hiddenQueued.size} more queued`,
-      age: null
+      text: `${hiddenQueued.size} more queued`
     });
   if (folded.length > 0) {
-    const newest = Math.max(...folded.map((x) => x.closedAt ?? x.changedAt));
     const isMore = newClosed.some((x) => x.status === "done");
     rows.push({
       kind: "fold",
       id: "done",
       mark: "\u2713",
       tone: "done",
-      text: `${folded.length}${isMore ? " more" : ""} done`,
-      age: shortAgo(now - newest)
+      text: `${folded.length}${isMore ? " more" : ""} done`
     });
   }
   const goal = o?.goal || null;
-  const role = o?.role ?? "session";
-  const hasNews = o !== null && o.look === null && subjects.some(isNew);
   return {
-    isEmpty: goal === null && rows.length === 0 && !s.presence.isTurnRunning,
-    identity: identityOf(s.place ?? null, role),
+    isEmpty: goal === null && rows.length === 0,
     goal,
-    live: liveOf(s.presence, now),
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
-    hasNews,
     error: s.overviewFailure ? OVERVIEW_FAILED : null,
     empty: {
       title: "Overview",
@@ -1944,13 +1948,14 @@ function inboxView({
   now,
   replies,
   discarded,
-  shownSince
+  shownSince,
+  lastTypedMessageAt
 }) {
-  const isInPlace = (at) => isShownSince(at, shownSince);
+  const isInPlace = (at, canUndo) => isSettledInPlace({ at, canUndo }, { shownSince, lastTypedMessageAt });
   const isOpen2 = (id) => ledger.items.some((i) => i.id === id) || ledger.findings.some((f) => f.id === id);
   const replyAfter = (c) => {
     const last = lastActions[c.id];
-    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(last.at) ? last : null;
+    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(last.at, false) ? last : null;
   };
   const isOwnClose = (c) => c.how === "done" || c.how === "dismissed" || c.how === "answered" && lastActions[c.id]?.kind === "mark" && lastActions[c.id]?.at === closedAt(c);
   const isHeld = (c) => {
@@ -1958,13 +1963,16 @@ function inboxView({
     return since !== void 0 && since <= closedAt(c) && !isOwnClose(c);
   };
   const isDiscarded = (c) => (discarded[c.id] ?? -Infinity) >= closedAt(c);
-  const isPlaced = (c) => replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(closedAt(c)));
+  const isPlaced = (c) => {
+    const at = closedAt(c);
+    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(at, canUndoClose(c, at, now, settleWindowMs)));
+  };
   const placedItems = new Map(
     ledger.closed.filter((d) => d.item && !isOpen2(d.id) && isPlaced(d)).map((d) => [d.id, d])
   );
   const isFixSettled = (id) => {
     const last = lastActions[id];
-    return isFixSent(last) && !isInPlace(last.at);
+    return isFixSent(last) && !isInPlace(last.at, isUndoLeft(last.at, now, settleWindowMs));
   };
   const placedFindings = new Map(
     ledger.closedFindings.filter((f) => !isOpen2(f.id) && !isFixSettled(f.id) && isPlaced(f)).map((f) => [f.id, f])
@@ -2165,12 +2173,13 @@ function isViewKept(prState, linked, lastActions, ref, shownSince) {
   return keepsView(prState, linked, ref) || at !== null && isShownSince(at, shownSince);
 }
 var DISMISSED_PR = { how: "dismissed", outcome: PR_DISMISSED_LABEL };
-function drawnPrs(prState, linked, lastActions, now, shownSince, settleWindowMs) {
+function drawnPrs(prState, linked, lastActions, now, settleWindowMs, placing) {
   return inPrOrder(Object.values(prState.views)).flatMap((pr) => {
     if (isTracked(prState, linked, pr.ref)) return [{ pr, state: { is: "open" } }];
     const at = dismissedAt(lastActions, pr.ref);
-    if (at === null || !isShownSince(at, shownSince)) return [];
-    return [{ pr, state: closedRowState(DISMISSED_PR, at, now, settleWindowMs, null) }];
+    if (at === null) return [];
+    const state = closedRowState(DISMISSED_PR, at, now, settleWindowMs, null);
+    return isSettledInPlace(state, placing) ? [{ pr, state }] : [];
   });
 }
 
@@ -2190,7 +2199,8 @@ function emptySession() {
       isUpdating: false,
       isTurnRunning: false,
       turnStartedAt: null,
-      lastReplyAt: null
+      lastReplyAt: null,
+      lastTypedMessageAt: null
     },
     place: null,
     pending: [],
@@ -2378,7 +2388,8 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
     settleWindowMs,
     status: perTurnStatus(update),
     now,
-    ...holds
+    ...holds,
+    lastTypedMessageAt: s.presence.lastTypedMessageAt
   });
   return {
     ...inbox,
@@ -2389,7 +2400,10 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
   };
 }
 function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
-  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, shownSince, settleWindowMs);
+  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, settleWindowMs, {
+    shownSince,
+    lastTypedMessageAt: s.presence.lastTypedMessageAt
+  });
   const isSent = threadSentIn(lastActions);
   return {
     drawn,

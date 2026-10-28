@@ -3,7 +3,7 @@ import type { ClientModule } from 'claude-code'
 export type ClientTab = {
   id: string
   label: string
-  /** What follows the label: a count, or the Overview's news dot. */
+  /** What follows the label: a row tab's count. */
   badge: string | null
   /** A null color is the theme's own. */
   badgeColor: string | null

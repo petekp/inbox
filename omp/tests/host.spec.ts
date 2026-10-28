@@ -653,6 +653,22 @@ async function withQuestion() {
   return { inbox, id: item.id as string }
 }
 
+test('only what the person submits in the editor counts as a typed message, not a press’s message or other input', async () => {
+  const { inbox, id } = await withQuestion()
+  const typedAt = () => state().presence.lastTypedMessageAt
+  await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
+  await prompt(sent[0]!.text)
+  await call('input', { type: 'input', text: 'from a client', source: 'rpc' })
+  await call('input', { type: 'input', text: 'from an extension', source: 'extension' })
+  expect(typedAt()).toBeNull()
+
+  await call('input', { type: 'input', text: 'what next?', source: 'interactive' })
+  const first = typedAt()
+  expect(first).toBeNumber()
+  await call('input', { type: 'input', text: 'and then?', source: 'interactive' })
+  expect(typedAt()).toBeGreaterThan(first!)
+})
+
 test('an answer press sends one follow-up while a turn runs, and the arriving prompt matches it', async () => {
   const { inbox, id } = await withQuestion()
   const outcome = await inbox.press(makeCtx(), { action: 'answer', id, option: 'Node' }, NO_HOLDS)
@@ -745,23 +761,23 @@ async function withSteps() {
   return { inbox, stepPress }
 }
 
-test('Working… shows from agent_start to the run’s end, and a Done message waits for Esc to end the run', async () => {
+test('a turn runs from agent_start to the run’s end, and a Done message waits for Esc to end the run', async () => {
   const inbox = createInbox(pi(), deps())
-  const now = async () => ((await inbox.screen(makeCtx())).view.overviewPage.live === 'Working…' ? 'Working…' : null)
+  const now = async () => (state().presence.isTurnRunning ? 'running' : null)
   await prompt('hello')
   await record({ kind: 'task', ask: 'Try the CLI by hand' })
   await endAgent('Done.')
   await settle()
   await inbox.press(makeCtx(), { action: 'done', id: state().ledger.items[0].id }, NO_HOLDS)
   await call('agent_start', { type: 'agent_start' })
-  expect(await now()).toBe('Working…')
+  expect(await now()).toBe('running')
 
   clock += 5000
   timers[0]!.fn()
   await settle()
   expect(sent).toEqual([])
   await endAgent('', { willContinue: true })
-  expect(await now()).toBe('Working…')
+  expect(await now()).toBe('running')
 
   await endAgent('', { messages: [{ role: 'assistant', content: [], stopReason: 'aborted' }] })
   await settle()

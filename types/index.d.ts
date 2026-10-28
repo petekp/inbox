@@ -11,6 +11,8 @@ export type Subject = {
   text: string
   /** The plan a reversal replaced, shown until the person looks. */
   was: string | null
+  /** The names of the subjects dropped into this one since the person last looked, shown until they look. */
+  merged: string | null
   createdAt: number
   /** When its status or where it stands last changed. Code sets it; the model never writes a time. */
   changedAt: number
@@ -441,6 +443,11 @@ export type Session = {
     turnStartedAt: number | null
     /** When the agent's last turn ended. */
     lastReplyAt: number | null
+    /**
+     * When the person last sent a message they typed. A message a press sent does not count. A row that settled before
+     * it folds, once its Undo ends.
+     */
+    lastTypedMessageAt: number | null
   }
   /** Where the session started. Null until the host names it. */
   place: Place | null

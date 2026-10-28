@@ -66,6 +66,7 @@ import {
   emptySession,
   endTurn,
   forkedFrom,
+  messageTyped,
   noteActivity as noteTurnActivity,
   pressOn,
   recordPrompt,
@@ -265,7 +266,9 @@ import {
   READING_TEXT,
   rowsIn,
   hasRunningMark,
-  LOOK_RULE_LABEL,
+  LOOK_TEXT,
+  mergedLine,
+  STALL_GAP,
   WAS_PREFIX,
   inboxCommandText,
   RUNNING_FRAME_MS,
@@ -423,7 +426,7 @@ function desktopLines(text: string, widthPt: number): string[] {
 }
 /** `spans` cut to what desktop draws in `limit` lines `widthPt` wide, with an ellipsis when cut. */
 function desktopSpanLines(spans: TerminalSpan[], widthPt: number, limit: number): TerminalSpan[] {
-  const words = spans.map(s => ({ ...s, text: s.text.replace(/\s+/g, ' ') }))
+  const words = spans.map(s => ({ ...s, text: s.text.replace(/[^\S\u00a0]+/g, ' ') }))
   const lines = desktopLines(words.map(s => s.text).join(''), widthPt)
   if (lines.length <= limit) return words
   const last = cutForEllipsis(lines[limit - 1]!, t => desktopTextPt(t) <= widthPt)
@@ -1258,12 +1261,15 @@ async function appendContext($: EngineInterface, context: string[]) {
 
 /**
  * Records a prompt's words for the turn and returns what Claude reads beside it. `match` finds the press that sent a
- * message of the mod's own, when its row is stored.
+ * message of the mod's own, when its row is stored. `isTyped` says the person typed the prompt.
  */
 async function notePrompt(
   $: EngineInterface,
   text: string,
-  match: (s: Session) => { state: Session; sentBy: SentBy | null } = s => ({ state: s, sentBy: null }),
+  {
+    match = s => ({ state: s, sentBy: null }),
+    isTyped = false,
+  }: { match?: (s: Session) => { state: Session; sentBy: SentBy | null }; isTyped?: boolean } = {},
 ): Promise<string[]> {
   const [now, isShown] = await Promise.all([$.clock.now(), isPaneShown($)])
   await update($, AWAY, a => ({ ...a, lastActiveAt: now, isAway: false }))
@@ -1272,7 +1278,7 @@ async function notePrompt(
     const matched = match(s)
     const r = recordPrompt(CLAUDE_CODE, matched.state, text, isShown, matched.sentBy)
     notes = r.notes
-    return r.state
+    return isTyped ? messageTyped(r.state, now) : r.state
   })
 
   return notes
@@ -1386,8 +1392,8 @@ type Showing = { isOpen?: boolean; since?: number }
 
 /**
  * Starts a showing when the pane opens or shows another tab or the sample, and ends it when the pane closes. A row that
- * closes during a showing stays in place until it ends. Every write of the shown tab calls it before the pane draws
- * the tab. Idempotent without `since`, like `syncLook`.
+ * closes during a showing stays in place no longer than it lasts, as `isSettledInPlace` says. Every write of the shown
+ * tab calls it before the pane draws the tab. Idempotent without `since`, like `syncLook`.
  */
 async function syncShown($: EngineInterface, { isOpen, since }: Showing = {}) {
   const [tab, isDemo, isPaneOpen, now] = await Promise.all([
@@ -1568,7 +1574,7 @@ function lineCount(text: string, width: number): number {
   return wrapped(text, width).length
 }
 
-type TerminalSpan = Span & { isLinkAddress?: true; isMuted?: true }
+type TerminalSpan = Span & { isLinkAddress?: true; isMuted?: true; isNeedsYou?: true; isUnbroken?: true }
 
 function terminalTextLines(text: string, width: number, limit = Infinity): TerminalSpan[][] {
   if (!text) return []
@@ -1621,7 +1627,7 @@ function terminalSpanLines(spans: TerminalSpan[], width: number, limit = Infinit
         appendWord()
         nextLine()
         spaces = []
-      } else if (/\s/.test(character)) {
+      } else if (/\s/.test(character) && !span.isUnbroken) {
         appendWord()
         spaces.push({ text: character, span })
       } else word.push({ text: character, span })
@@ -2870,15 +2876,15 @@ export const register: Register = on => {
         delegate && notice.hasEnded ? childEnded(o, delegateRef(delegate), at) : noticeApplied(o, notice, at),
       )
     }
-    const isPersonsWords =
-      origin.kind === 'composer' || origin.kind === 'bridge' || (origin.kind === 'plugin' && origin.asUser === true)
+    const isTyped = origin.kind === 'composer' || origin.kind === 'bridge'
+    const isPersonsWords = isTyped || (origin.kind === 'plugin' && origin.asUser === true)
     if (!isPersonsWords) {
       if (!e.turnId) await commit($, currentOwner(), s => ({ ...s, turn: { ...s.turn, trigger: origin.kind } }))
 
       return next(e)
     }
 
-    const notes = await notePrompt($, e.text)
+    const notes = await notePrompt($, e.text, { isTyped })
     if (carriedFor !== conversation.id) {
       carriedFor = conversation.id
       const carry = overviewCarryText((await read($, SESSION)).ledger)
@@ -3148,7 +3154,7 @@ export const register: Register = on => {
       if (!isOn || e.agentId) return next(e)
       const text = messageText(e.message)
       const count = noteStored(text)
-      const notes = await notePrompt($, text, current => arrived(current, text, count))
+      const notes = await notePrompt($, text, { match: current => arrived(current, text, count) })
       if (notes.length > 0) await appendContext($, notes)
 
       return next(e)
@@ -3491,7 +3497,15 @@ export const register: Register = on => {
             italic={span.italic}
             strikethrough={span.strike}
             underline={span.link ? true : undefined}
-            color={span.isLinkAddress || span.isMuted ? pal.muted : span.code ? 'permission' : undefined}
+            color={
+              span.isNeedsYou
+                ? (pal.tone.needsYou ?? pal.mark.needsYou)
+                : span.isLinkAddress || span.isMuted
+                  ? pal.muted
+                  : span.code
+                    ? 'permission'
+                    : undefined
+            }
           >
             {span.text}
           </Text>
@@ -3717,7 +3731,7 @@ export const register: Register = on => {
       findings: view.findings.count,
       prs: shownPrs.filter(x => x.state.is === 'open' && prNeedsYou(x.pr, isThreadSent)).length,
     }
-    const badgeOf = (id: ShownTab) => tabBadge(id, tabCounts, view.overviewPage.hasNews)
+    const badgeOf = (id: ShownTab) => tabBadge(id, tabCounts)
     const tabTone = (id: ShownTab) => (isRowTab(id) ? pal.tone[id] : undefined)
     const tabText = (id: ShownTab, name: string) => `${name}${badgeOf(id) === null ? '' : ` ${badgeOf(id)}`}`
     const hasRail = isInline && look === 'terminal' && e.props.bodyColumns >= INLINE_RAIL_AT
@@ -4122,11 +4136,14 @@ export const register: Register = on => {
       markCells = DESKTOP_MARK_CELLS,
       gapY = 0,
       tree = null,
+      hasSide = true,
       children,
     }: {
       key?: string
       mark?: JSX.Element | null
       side?: JSX.Element | null
+      /** Whether it keeps the side column, so its text lines up with rows that show an age there. */
+      hasSide?: boolean
       /** An absolute Box in the mark column, which the frame stretches to the row's height. */
       tree?: JSX.Element | null
       fill?: string | undefined
@@ -4165,16 +4182,18 @@ export const register: Register = on => {
         <Box flexDirection="column" flexShrink={1} flexGrow={1} minWidth={0}>
           {children}
         </Box>
-        <Box
-          minWidth={DESKTOP_SIDE_CELLS}
-          flexShrink={0}
-          flexDirection="row"
-          justifyContent="flex-end"
-          alignItems="flex-start"
-          paddingLeft={1}
-        >
-          {side}
-        </Box>
+        {hasSide ? (
+          <Box
+            minWidth={DESKTOP_SIDE_CELLS}
+            flexShrink={0}
+            flexDirection="row"
+            justifyContent="flex-end"
+            alignItems="flex-start"
+            paddingLeft={1}
+          >
+            {side}
+          </Box>
+        ) : null}
       </Box>
     )
     const withSideAge = (row: Row, line: JSX.Element) =>
@@ -5352,17 +5371,17 @@ export const register: Register = on => {
         sections([...(prState.isGhMissing ? [ghMissingNotice()] : []), ...prGroups.map(prBlock), ...olderPrs()], 2)
       )
 
-    const overviewTextLine = (text: string, key: string, isBold: boolean) => {
+    const overviewGoal = (goal: string) => {
       const line = (
-        <Text wrap="wrap" bold={isBold} {...(isBold ? {} : { color: pal.muted })}>
-          {text}
+        <Text wrap="wrap" bold>
+          {goal}
         </Text>
       )
 
       return look === 'desktop' ? (
-        desktopFrame({ key, padY: 0, children: line })
+        desktopFrame({ key: 'overview-goal', padY: 0, markCells: 0, hasSide: false, children: line })
       ) : (
-        <Box key={key} paddingLeft={TREE_LINE_AT}>
+        <Box key="overview-goal" paddingLeft={TREE_LINE_AT}>
           {line}
         </Box>
       )
@@ -5383,27 +5402,38 @@ export const register: Register = on => {
         <Text color={color}>{look === 'terminal' ? runningMark(now) : glyph}</Text>
       )
     }
-    /** The text column of an Overview line at `depth`, in cells, less the age beside it. */
-    const overviewTextCells = (depth: number, age: string | null) =>
-      listColumns - 1 - markColumns.textAt - markWidth * depth - (age ? cellWidth(age) + 2 : 0)
-    /** One text of an Overview line, wrapped to at most `OVERVIEW_TEXT_LINES` lines and cut with an ellipsis past them. */
-    const overviewText = (key: string, spans: TerminalSpan[], depth: number, age: string | null) => (
+    /** Where an Overview row's mark sits in the terminal: in the goal's column, so the list lines up with it. */
+    const overviewMarkAt = TREE_LINE_AT
+    /** The text column of an Overview line at `depth`, in cells on the terminal and in points on desktop. */
+    const overviewTextWidth = (depth: number) =>
+      look === 'desktop'
+        ? desktopColumnPt(1 + DESKTOP_MARK_CELLS * (depth * 2 + 1)) + DESKTOP_SIDE_CELLS * DESKTOP_CELL_PT
+        : listColumns - 1 - overviewMarkAt - markWidth * (depth + 1)
+    const fitsOverviewLine = (depth: number) => (text: string) =>
+      look === 'desktop' ? desktopTextPt(text) <= overviewTextWidth(depth) : cellWidth(text) <= overviewTextWidth(depth)
+    /** One text of an Overview line, wrapped to at most `limit` lines and cut with an ellipsis past them. */
+    const overviewText = (key: string, spans: TerminalSpan[], depth: number, limit = OVERVIEW_TEXT_LINES) => (
       <Box key={key}>
         <Text wrap="wrap">
           {terminalText(
             look === 'desktop'
-              ? [
-                  desktopSpanLines(
-                    spans,
-                    desktopColumnPt(1 + DESKTOP_MARK_CELLS * (depth * 2 + 1)),
-                    OVERVIEW_TEXT_LINES,
-                  ),
-                ]
-              : terminalSpanLines(spans, overviewTextCells(depth, age), OVERVIEW_TEXT_LINES),
+              ? [desktopSpanLines(spans, overviewTextWidth(depth), limit)]
+              : terminalSpanLines(spans, overviewTextWidth(depth), limit),
           )}
         </Text>
       </Box>
     )
+    /** A row's second line: where it stands, muted, then its stall words in the needs-you tone, never split by a wrap. */
+    const overviewSecondLine = (key: string, text: string | null, stall: string | null, depth: number) => {
+      const unbroken = (words: string) => (look === 'desktop' ? words.replaceAll(' ', '\u00a0') : words)
+      const spans: TerminalSpan[] = [
+        ...(text ? [{ text, isMuted: true as const }] : []),
+        ...(text && stall ? [{ text: STALL_GAP, isMuted: true as const }] : []),
+        ...(stall ? [{ text: unbroken(stall), isNeedsYou: true as const, isUnbroken: true as const }] : []),
+      ]
+
+      return spans.length > 0 ? [overviewText(key, spans, depth)] : []
+    }
     /**
      * The line that ties the rows under a subject to it, in the subject's mark column. `down` runs from under the
      * subject's mark to the end of its row. `mid` and `last` reach across to a child's mark, and `mid` runs on to the
@@ -5412,8 +5442,8 @@ export const register: Register = on => {
     const overviewTree = (key: string, shape: 'down' | OverviewBranch) => {
       if (look === 'terminal')
         return shape === 'down'
-          ? branch('pass', 0, markColumns.handleAt, pal.line, 1, key)
-          : branch(shape, 0, markColumns.handleAt, pal.line, 0, key)
+          ? branch('pass', 0, overviewMarkAt, pal.line, 1, key)
+          : branch(shape, 0, overviewMarkAt, pal.line, 0, key)
       // The line spans the mark column, which spans the frame's content. To meet the next row's line, each end reaches
       // over the frame's padding and its 1 pt border, in margins, which count half lines.
       const reach = -(OVERVIEW_PAD_Y + 2 * DESKTOP_HAIR_LINES)
@@ -5450,72 +5480,98 @@ export const register: Register = on => {
         })
       ) : (
         <Box key={`overview-rule-${id}`} flexDirection="row">
-          <Box width={markColumns.textAt} flexShrink={0} />
-          {rule(markColumns.textAt + 2)}
+          <Box width={overviewMarkAt + markWidth} flexShrink={0} />
+          {rule(overviewMarkAt + markWidth + 2)}
         </Box>
       )
-    /** One line of the Overview's list: a mark, its text, and an age in the side column. `depth` 1 sits under a subject's text. */
+    /** The look line: "Seen" in the middle of a rule that runs from the mark column to the end of the row. */
+    const overviewLookLine = (text: string) => {
+      if (look === 'desktop')
+        return desktopFrame({
+          key: 'overview-look',
+          padY: OVERVIEW_PAD_Y,
+          markCells: 0,
+          hasSide: false,
+          children: (
+            <Box flexDirection="row" alignItems="center">
+              <Box flexGrow={1} flexDirection="column">
+                {desktopHairline('look-before', 'across')}
+              </Box>
+              <Box flexShrink={0} paddingX={1}>
+                <Text color={pal.muted}>{text}</Text>
+              </Box>
+              <Box flexGrow={1} flexDirection="column">
+                {desktopHairline('look-after', 'across')}
+              </Box>
+            </Box>
+          ),
+        })
+      const label = ` ${text} `
+      const fill = Math.max(4, listColumns - 1 - overviewMarkAt - cellWidth(label))
+      const before = Math.floor(fill / 2)
+
+      return (
+        <Box key="overview-look" flexDirection="row">
+          <Box width={overviewMarkAt} flexShrink={0} />
+          <Text color={pal.divider}>{`${'─'.repeat(before)}${label}${'─'.repeat(fill - before)}`}</Text>
+        </Box>
+      )
+    }
+    /** One line of the Overview's list: a mark and its text. `depth` 1 sits under a subject's text. */
     const overviewLine = ({
       key,
       depth = 0,
       mark,
       content,
-      age,
-      ageColor = pal.age,
       tree = null,
     }: {
       key: string
       depth?: number
       mark: JSX.Element | null
       content: JSX.Element | JSX.Element[]
-      age: string | null
-      ageColor?: string
       tree?: JSX.Element | null
-    }) => {
-      const side = age ? <Text color={ageColor}>{age}</Text> : null
-
-      return look === 'desktop' ? (
+    }) =>
+      look === 'desktop' ? (
         desktopFrame({
           key,
           indent: DESKTOP_MARK_CELLS * (depth * 2),
           isMarkHung: false,
           padY: OVERVIEW_PAD_Y,
+          hasSide: false,
           mark,
-          side,
           tree,
           children: Array.isArray(content) ? content : [content],
         })
       ) : (
         <Box key={key} flexDirection="row" alignItems="flex-start" overflow="hidden">
-          <Box width={markColumns.handleAt + markWidth * depth} flexShrink={0} />
+          <Box width={overviewMarkAt + markWidth * depth} flexShrink={0} />
           <Box width={markWidth} flexShrink={0}>
             {mark}
           </Box>
           <Box flexDirection="column" flexShrink={1} flexGrow={1}>
             {content}
           </Box>
-          {side ? (
-            <Box flexShrink={0} paddingLeft={1} paddingRight={1}>
-              {side}
-            </Box>
-          ) : null}
           {tree}
         </Box>
       )
-    }
     const overviewRow = (r: OverviewRow) => {
       if (r.kind === 'subject') {
         const color = r.tone ? pal.mark[r.tone] : pal.muted
         const mark = r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
         const content = [
-          overviewText(
-            `overview-${r.id}-text`,
-            [{ text: r.name }, ...(r.text ? [{ text: `: ${r.text}`, isMuted: true as const }] : [])],
-            0,
-            r.age,
-          ),
+          overviewText(`overview-${r.id}-name`, [{ text: r.name }], 0),
+          ...overviewSecondLine(`overview-${r.id}-text`, r.text, r.stall, 0),
+          ...(r.merged
+            ? [
+                overviewText(
+                  `overview-${r.id}-merged`,
+                  [{ text: mergedLine(r.merged, fitsOverviewLine(0)), isMuted: true }],
+                  0,
+                ),
+              ]
+            : []),
           ...(r.was
-            ? [overviewText(`overview-${r.id}-was`, [{ text: `${WAS_PREFIX}${r.was}`, isMuted: true }], 0, r.age)]
+            ? [overviewText(`overview-${r.id}-was`, [{ text: `${WAS_PREFIX}${r.was}`, isMuted: true }], 0)]
             : []),
         ]
 
@@ -5523,7 +5579,6 @@ export const register: Register = on => {
           key: `overview-${r.id}`,
           mark,
           content,
-          age: r.age,
           tree: r.hasChildren ? overviewTree(`overview-${r.id}-tree`, 'down') : null,
         })
       }
@@ -5535,9 +5590,10 @@ export const register: Register = on => {
           key: `overview-${r.id}`,
           depth,
           mark,
-          content: overviewText(`overview-${r.id}-text`, [{ text: r.name, isMuted: true }], depth, r.age),
-          age: r.age,
-          ageColor: r.ageTone ? (pal.tone[r.ageTone] ?? pal.mark[r.ageTone]) : pal.age,
+          content: [
+            overviewText(`overview-${r.id}-name`, [{ text: r.name, isMuted: true }], depth),
+            ...overviewSecondLine(`overview-${r.id}-text`, null, r.stall, depth),
+          ],
           tree: r.branch ? overviewTree(`overview-${r.id}-tree`, r.branch) : null,
         })
       }
@@ -5547,27 +5603,14 @@ export const register: Register = on => {
           depth: 1,
           mark: null,
           content: <Text color={pal.muted}>{r.text}</Text>,
-          age: null,
           tree: overviewTree(`overview-${r.id}-tree`, r.branch),
         })
-      if (r.kind === 'look') {
-        const label = LOOK_RULE_LABEL
-        const fill =
-          look === 'desktop' ? '' : '─'.repeat(Math.max(2, listColumns - markColumns.textAt - cellWidth(label)))
-
-        return overviewLine({
-          key: 'overview-look',
-          mark: null,
-          content: <Text color={pal.divider}>{`${label}${fill}`}</Text>,
-          age: null,
-        })
-      }
+      if (r.kind === 'look') return overviewLookLine(r.text)
 
       return overviewLine({
         key: `overview-${r.id}`,
         mark: <Text color={r.tone ? pal.mark[r.tone] : pal.muted}>{r.mark}</Text>,
         content: <Text color={pal.muted}>{r.text}</Text>,
-        age: r.age,
       })
     }
     const overviewView = () => {
@@ -5578,20 +5621,9 @@ export const register: Register = on => {
             {emptyState(page.empty)}
           </Box>
         )
-      const head = [
-        ...(page.identity ? [overviewTextLine(page.identity, 'overview-identity', false)] : []),
-        ...(page.goal ? [overviewTextLine(page.goal, 'overview-goal', true)] : []),
-        ...(page.live ? [overviewTextLine(page.live, 'overview-live', false)] : []),
-      ]
 
       return sections([
-        ...(head.length > 0
-          ? [
-              <Box key="overview-head" flexDirection="column">
-                {head}
-              </Box>,
-            ]
-          : []),
+        ...(page.goal ? [overviewGoal(page.goal)] : []),
         ...(page.rows.length > 0
           ? [
               section(

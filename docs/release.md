@@ -39,7 +39,7 @@ Run the pass in four looks, one at a time: Claude Code in a terminal, a Code ses
 
 Note the model each agent runs. A new install of Claude Code may default to a smaller model than the evals use, and the agent's side of a check can differ with the model.
 
-Capture each result and read the capture. A ✓ on a row lasts a few seconds before the row folds, so capture right after the press. For each look, note which states you did not see.
+Capture each result and read the capture. A row's Undo lasts a few seconds, so capture right after the press. For each look, note which states you did not see.
 
 | Check | Do | Expect |
 | --- | --- | --- |
