@@ -178,7 +178,7 @@ export function prMarkId(ref: string): string {
   return `pr:${ref}`
 }
 
-export const GH_MISSING_TEXT = 'The inbox could not find gh, so it cannot read your PRs.'
+export const GH_MISSING_TEXT = 'The inbox could not find gh. It needs gh to read your PRs.'
 
 /** The hint under an empty PRs tab. `place` is the host's word for a conversation with the agent. */
 export function prsEmptyHint(place: string): string {

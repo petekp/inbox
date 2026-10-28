@@ -7,6 +7,7 @@ import type { LinksProps } from '../hooks/links-client'
 import type { RowProps } from '../hooks/row-client'
 import { TAB_HEIGHT, tabLines, type TabsProps } from '../hooks/tabs-client'
 import { cellWidth } from '../hooks/text'
+import { DARK_TONES } from '../hooks/tones'
 import type { Item, Session } from '../types'
 import { demoView } from '../hooks/demo'
 import { OVERVIEW_SYSTEM } from '../hooks/model-text'
@@ -3974,7 +3975,7 @@ test('a delayed saved-session application cannot poison the next load', async ($
   expect(await pane.find({ text: /Second session question/ })).toBeUndefined()
 })
 
-test('tools the engine refuses turn the status line red on every tab, and the mod still loads the conversation', async ($, on) => {
+test('tools the engine refuses show an error banner on every tab, and the mod still loads the conversation', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   theme = 'dark'
@@ -3984,12 +3985,17 @@ test('tools the engine refuses turn the status line red on every tab, and the mo
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.settle()
   const pane = await $.ui.mount(PANE)
-  const refused = "Claude cannot record or close items here: your organization's settings block the inbox's tools."
-  const red = (await pane.find({ type: 'Text', text: refused }))?.props.color
-  expect(red).toBeDefined()
+  const isRedLead = async () =>
+    (await pane.findAll({ type: 'Text', text: /^Claude cannot record or close items here\.$/ })).some(
+      t => t.props.color === DARK_TONES.error,
+    )
+  const body = /Your organization's settings block the inbox's tools\./
+  expect(await isRedLead()).toBe(true)
+  expect(await pane.find({ text: body })).toBeDefined()
   expect(await pane.find({ text: /Use Node or Python\?/ })).toBeDefined()
   await pane.press({ key: 'tab-findings' })
-  expect((await pane.find({ type: 'Text', text: refused }))?.props.color).toBe(red)
+  expect(await isRedLead()).toBe(true)
+  expect(await pane.find({ text: body })).toBeDefined()
 })
 
 test('a saved session the store cannot read shows as unreadable, not empty, until [Try again] reads it', async ($, on) => {

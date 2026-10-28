@@ -24,6 +24,8 @@ import {
   closedShown,
   closedTotal,
   DEMO_NOTICE,
+  bannerOf,
+  tabBarBanners,
   DOT,
   earlierLabel,
   drawnLists,
@@ -68,9 +70,10 @@ import {
   shortAgo,
   shownOptionDescriptions,
 } from '../../hooks/view'
-import { OVERVIEW_ROW_PAD_PT, ROW_PAD_PT } from '../../hooks/layout'
+import { BANNER_GAP_PT, BANNER_PAD_Y_PT, OVERVIEW_ROW_PAD_PT, ROW_PAD_PT } from '../../hooks/layout'
 import type {
   ActionEmphasis,
+  BannerView,
   DrawnEntry,
   DrawnLists,
   Feedback,
@@ -160,7 +163,7 @@ type Entry = DrawnEntry<Row>
 let view: View | null = null
 let isDemo = false
 let readError: string | null = null
-let serverNote: { text: string; isReloadable: boolean } | null = null
+let serverNote: { text: string; kind: 'server-gone' | 'server-load-failed' | 'server-builds-differ' } | null = null
 let isLoadingShown = false
 let isConnected = false
 let initializing: Promise<boolean> | null = null
@@ -465,15 +468,15 @@ async function read() {
     serverNote = next.isPluginFolderGone
       ? {
           text: 'Quit and reopen Codex to load the installed inbox. Its files were moved or removed, so it still runs the version Codex started with.',
-          isReloadable: false,
+          kind: 'server-gone',
         }
       : next.serverLoadError
         ? {
             text: `The inbox server could not load its new build, so it still runs the last one. ${next.serverLoadError}`,
-            isReloadable: false,
+            kind: 'server-load-failed',
           }
         : next.serverBuild !== SERVER_BUILD && !isPageOld
-          ? { text: 'This tab and the inbox server are from different builds.', isReloadable: true }
+          ? { text: 'This tab and the inbox server are from different builds.', kind: 'server-builds-differ' }
           : null
     applyView(next, seq)
   } catch (err) {
@@ -1888,9 +1891,9 @@ function Prs({ v, now }: { v: View; now: number }) {
   return (
     <main>
       {v.isGhMissing ? (
-        <section>
-          <div class="group-title muted">{GH_MISSING_TEXT}</div>
-        </section>
+        <div class="banner-place">
+          <Banner banner={bannerOf('gh-missing', GH_MISSING_TEXT)} />
+        </div>
       ) : null}
       {blocks.map(b =>
         b.state.is === 'settled' ? (
@@ -1965,30 +1968,34 @@ function TabBar({ v }: { v: View }) {
           </button>
         ))}
       </div>
-      {serverNote ? (
-        serverNote.isReloadable ? (
-          <ErrorStrip text={serverNote.text} reload={() => location.reload()} />
+      {tabBarBanners(
+        [
+          ...(serverNote ? [bannerOf(serverNote.kind, serverNote.text)] : []),
+          ...(v.hooksTrust ? [bannerOf('hooks-trust', HOOKS_TRUST_TEXT[v.hooksTrust])] : []),
+          ...(updateError ? [bannerOf('tab-update-failed', updateError.text)] : []),
+        ],
+        error,
+        lineNote && Date.now() - lineNote.at < SETTLED_MS
+          ? { text: lineNote.text, isError: lineNote.isError === true }
+          : null,
+      ).map(b =>
+        b.kind === 'server-builds-differ' ? (
+          <Banner banner={b} label="Reload" press={() => location.reload()} />
+        ) : b.kind === 'tab-update-failed' ? (
+          <Banner
+            banner={b}
+            label={ROW_COPY.retry}
+            press={() => {
+              const page = updateError?.page
+              updateError = null
+              draw()
+              if (page) void swapPage(page)
+            }}
+          />
         ) : (
-          <div class="status-line tone-error">{serverNote.text}</div>
-        )
-      ) : null}
-      {v.hooksTrust ? <div class="status-line tone-error">{HOOKS_TRUST_TEXT[v.hooksTrust]}</div> : null}
-      {updateError ? (
-        <ErrorStrip
-          text={updateError.text}
-          label={ROW_COPY.retry}
-          reload={() => {
-            const page = updateError?.page
-            updateError = null
-            draw()
-            if (page) void swapPage(page)
-          }}
-        />
-      ) : null}
-      {error ? <div class="status-line tone-error">{error}</div> : null}
-      {lineNote && Date.now() - lineNote.at < SETTLED_MS ? (
-        <div class={lineNote.isError ? 'status-line tone-error' : 'status-line muted'}>{lineNote.text}</div>
-      ) : null}
+          <Banner banner={b} />
+        ),
+      )}
     </nav>
   )
 }
@@ -2013,13 +2020,18 @@ async function toggleDemo() {
   await read()
 }
 
-function ErrorStrip({ text, reload, label = 'Reload' }: { text: string; reload: () => void; label?: string }) {
+function Banner({ banner, label, press }: { banner: BannerView; label?: string; press?: () => void }) {
   return (
-    <div class="error-strip">
-      <span>{text}</span>
-      <button type="button" class="key" onClick={reload}>
-        {label}
-      </button>
+    <div class={`banner banner-${banner.tone}`} role={banner.tone === 'notice' ? 'status' : 'alert'}>
+      <span>
+        <strong class="lead">{banner.lead}</strong>
+        {banner.body ? ` ${banner.body}` : null}
+      </span>
+      {label && press ? (
+        <button type="button" class="key" onClick={press}>
+          {label}
+        </button>
+      ) : null}
     </div>
   )
 }
@@ -2027,9 +2039,10 @@ function ErrorStrip({ text, reload, label = 'Reload' }: { text: string; reload: 
 function App({ lists }: { lists: Lists | null }): ComponentChildren {
   if (!view || !lists)
     return readError !== null ? (
-      <ErrorStrip
-        text={`Could not read the inbox. ${readError}`}
-        reload={() => void (isConnected ? read() : initialize())}
+      <Banner
+        banner={bannerOf('read-failed', `Could not read the inbox. ${readError}`)}
+        label="Reload"
+        press={() => void (isConnected ? read() : initialize())}
       />
     ) : isLoadingShown ? (
       <div class="notice muted">{READING_TEXT}</div>
@@ -2041,11 +2054,8 @@ function App({ lists }: { lists: Lists | null }): ComponentChildren {
   return (
     <>
       {isDemo && !DEMO_RECORDING ? (
-        <div class="demo-note">
-          <span>{DEMO_NOTICE}</span>
-          <button type="button" class="key ghost" onClick={() => void toggleDemo()}>
-            Hide demo
-          </button>
+        <div class="banner-place">
+          <Banner banner={bannerOf('demo', DEMO_NOTICE)} label="Hide demo" press={() => void toggleDemo()} />
         </div>
       ) : null}
       <TabBar v={v} />
@@ -2250,6 +2260,8 @@ function revealSelected() {
 function applyPageVariables() {
   document.documentElement.style.setProperty('--row-pad', `${ROW_PAD_PT}px`)
   document.documentElement.style.setProperty('--overview-row-pad', `${OVERVIEW_ROW_PAD_PT}px`)
+  document.documentElement.style.setProperty('--banner-pad-y', `${BANNER_PAD_Y_PT}px`)
+  document.documentElement.style.setProperty('--banner-gap', `${BANNER_GAP_PT}px`)
   document.documentElement.style.setProperty('--pulse', `${RUNNING_PULSE_MS}ms`)
   document.documentElement.style.setProperty('--move', `${MOVE_MS}ms ${MOVE.easing}`)
   document.documentElement.style.setProperty('--enter', `${ENTER_MS}ms ${ENTER.easing}`)

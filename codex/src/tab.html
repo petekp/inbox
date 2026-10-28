@@ -112,26 +112,51 @@
         padding: 10px 16px;
         overflow-wrap: anywhere;
       }
-      .error-strip {
+      /* A message about the inbox's own state, in the tone of what it says. */
+      .banner {
+        --tone: var(--error);
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 12px;
         flex-basis: 100%;
-        margin: 4px 0 0;
-        padding: 8px 12px;
-        border-radius: 6px;
-        background: color-mix(in srgb, var(--error) 12%, var(--bg));
-        color: var(--error);
+        padding: var(--banner-pad-y) 12px;
+        border: 1px solid color-mix(in srgb, var(--tone) 30%, var(--bg));
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--tone) 9%, var(--bg));
+        color: var(--text);
+        line-height: 19px;
         overflow-wrap: anywhere;
+        cursor: auto;
+        user-select: text;
       }
-      #app > .error-strip {
+      .banner-warning {
+        --tone: var(--needs-you);
+      }
+      /* --muted is see-through in the Codex app, so a notice mixes from the text color. */
+      .banner-notice {
+        --tone: var(--text);
+      }
+      .banner .lead {
+        font-weight: 600;
+        color: var(--tone);
+      }
+      /* The tab bar's rows sit 4px apart. */
+      nav > .banner {
+        margin-top: calc(var(--banner-gap) - 4px);
+      }
+      #app > .banner {
         margin: 12px 12px 0;
       }
-      .error-strip .key {
+      .banner-place {
+        padding: 12px 12px 0;
+      }
+      .banner .key {
         flex: none;
         white-space: nowrap;
         color: var(--text);
+        cursor: default;
+        user-select: none;
       }
 
       nav {
@@ -187,12 +212,6 @@
         margin-left: auto;
         color: var(--muted);
         font-size: 12px;
-      }
-      .status-line {
-        flex-basis: 100%;
-        padding: 0 4px;
-        font-size: 12px;
-        overflow-wrap: anywhere;
       }
 
       main {
@@ -714,26 +733,6 @@
         color: var(--text);
         background: var(--hover);
       }
-      .demo-note {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 6px;
-        padding: 8px 12px 0;
-        font-size: 11px;
-        color: var(--muted);
-        white-space: nowrap;
-      }
-      .demo-note .key {
-        flex: none;
-        white-space: nowrap;
-        padding: 0;
-      }
-      .demo-note span {
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
       .earlier {
         padding: 2px 14px 2px var(--text-x);
       }
@@ -839,8 +838,7 @@
         line-height: 22px;
         font-weight: 600;
       }
-      .status-line,
-      .demo-note,
+      .banner,
       .empty,
       main,
       form {

@@ -43,6 +43,7 @@ const style: Style = {
   inverse: s => `${ESC}7m${s}${ESC}27m`,
   underline: s => `${ESC}4m${s}${ESC}24m`,
   tone: (_name, s) => `${ESC}35m${s}${ESC}39m`,
+  banner: (_tone, _part, s) => s,
 }
 const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
 
