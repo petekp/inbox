@@ -193,7 +193,8 @@ import {
   baseName,
   capitalized,
   demoAfterPress,
-  demoTurns,
+  demoReplied,
+  demoSent,
   doneWake,
   isPressConfirmed,
   localPath,
@@ -208,7 +209,7 @@ import {
   withRewrite,
   withUnconfirmed,
 } from './presses'
-import type { Effect, EffectHost, RowPress } from './presses'
+import type { DemoSent, Effect, EffectHost, RowPress } from './presses'
 import {
   closedShown,
   DOT,
@@ -2234,6 +2235,7 @@ async function runDemoPress(
   const rowId = pressRowId(p)
   if (!('ref' in p) && p.action === 'type') await update($, TYPING, t => (t === p.id ? null : t))
   let applied = { stale: true } as Applied
+  let sent = null as DemoSent | null
   const holds = await readHolds($)
   const held = new Set(Object.keys(holds.replies))
   await update($, DEMO, d => {
@@ -2256,10 +2258,12 @@ async function runDemoPress(
     const { [rowId]: _replaced, ...notes } = d.notes
     if ('stale' in r) return { ...d, notes: { ...notes, [rowId]: { note: 'stale' as const, at: now } } }
     const after = demoAfterPress({ lastActions: d.lastActions, turns: d.turns }, r, held)
+    sent = demoSent(r, after.turns)
 
     return { ...d, ...after, notes }
   })
   const pressed = applied
+  const reply = sent
   if (!('ref' in p) && p.action === 'type')
     await update($, DRAFTS, d => {
       if ('stale' in pressed) return { ...d, [p.id]: { text: p.text, since: d[p.id]?.since ?? now } }
@@ -2274,7 +2278,7 @@ async function runDemoPress(
     if (canRevealUndo) await keepUndoVisible($, undoKey, undoBlock, now, undoRevision)
   }
   if ('stale' in pressed || pressed.effects.length > 0)
-    later($, SETTLED_MS, () => update($, DEMO, d => d && { ...d, turns: demoTurns(d.turns, [], true) }))
+    later($, SETTLED_MS, () => update($, DEMO, d => d && { ...d, ...(reply ? demoReplied(d, reply) : {}) }))
 }
 
 type Action = {

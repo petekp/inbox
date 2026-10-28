@@ -371,9 +371,16 @@ test('a settled row is skipped when moving and the selection leaves it', async (
   ).toBe(true)
 })
 
-test('a handed-off row keeps its mark and reads Still open when nothing changed', async () => {
-  const demo = await afterPresses({ action: 'explain', id: 'd11' })
-  expect(text(await demo.advance(), INITIAL_UI)).toContain('Still open')
+test('after the replies to two presses, the row handed off reads Still open, the explained row reads its result, and the sample’s own hand-off keeps waiting', async () => {
+  const demo = await afterPresses(
+    { action: 'type', id: 'd17', text: 'Done in both.' },
+    { action: 'explain', id: 'd11' },
+  )
+  const out = text(await demo.advance(), INITIAL_UI)
+  expect(out).toMatch(/Calibrate eye tracking for the new lenses\s+Still open/)
+  expect(out).toMatch(/Dismiss a glance with a pinch, or a flick of the wrist\?\s+✓ Explained/)
+  expect(out).toMatch(/✓\s+Run the gesture tests and send back the failures\s+Run gesture tests/)
+  expect(out).toContain('Asks 7')
 })
 
 async function afterReply() {
