@@ -524,7 +524,7 @@ knownFailing('#140: one ask holds up two subjects, and both show ◆', '#140', (
   expect(marks).toEqual(['◆', '◆'])
 })
 
-knownFailing('decision 19: the head is a title and a one-line description, with no live line', 'decision 19', () => {
+knownFailing('#148: the head is a title and a one-line description, with no live line', '#148', () => {
   const page = overviewPage(
     sessionOf(overviewOf([subject('s1', 'working', 'Sync engine', 'syncs', 0)]), [], 5),
     minutes(5),
@@ -536,31 +536,27 @@ knownFailing('decision 19: the head is a title and a one-line description, with 
   expect(page.live).toBeNull()
 })
 
-knownFailing('decision 21: a delegate with no published focus shows its name in words', 'decision 21', () => {
+knownFailing('#149: a delegate with no published focus shows its name in words', '#149', () => {
   const o = childStarted(overviewOf([]), { ref: 'herdr:pdf-layout', kind: 'delegate', name: 'pdf-layout' }, minutes(1))
   const row = overviewPage(sessionOf(o, [], 2), minutes(2)).rows.find(r => r.kind === 'child')
 
   expect(row?.kind === 'child' ? row.name : '').toMatch(/^pdf layout$/i)
 })
 
-knownFailing(
-  'decision 4: rows show no age, and a held subject that has waited 2 hours reads waiting 2h',
-  'decision 4',
-  () => {
-    const o = applyOps(
-      overviewOf([
-        subject('s1', 'working', 'Sync engine', 'syncs', 0),
-        subject('s2', 'queued', 'Sync conflicts', 'not started', 0),
-      ]),
-      opsOf('LINK: i1 | Sync conflicts'),
-      minutes(0),
-      new Set(['i1']),
-    )
-    const rows = overviewPage(sessionOf(o, [ask('i1', 'Which conflict rule ships?')], 120), minutes(120)).rows
-    const engine = rows.find(r => r.kind === 'subject' && r.name === 'Sync engine')
-    const held = rows.find(r => r.kind === 'subject' && r.name === 'Sync conflicts')
+knownFailing('#150: rows show no age, and a held subject that has waited 2 hours reads waiting 2h', '#150', () => {
+  const o = applyOps(
+    overviewOf([
+      subject('s1', 'working', 'Sync engine', 'syncs', 0),
+      subject('s2', 'queued', 'Sync conflicts', 'not started', 0),
+    ]),
+    opsOf('LINK: i1 | Sync conflicts'),
+    minutes(0),
+    new Set(['i1']),
+  )
+  const rows = overviewPage(sessionOf(o, [ask('i1', 'Which conflict rule ships?')], 120), minutes(120)).rows
+  const engine = rows.find(r => r.kind === 'subject' && r.name === 'Sync engine')
+  const held = rows.find(r => r.kind === 'subject' && r.name === 'Sync conflicts')
 
-    expect(JSON.stringify(engine)).not.toMatch(/"\d+[mhd]"/)
-    expect(JSON.stringify(held)).toMatch(/waiting 2h/)
-  },
-)
+  expect(JSON.stringify(engine)).not.toMatch(/"\d+[mhd]"/)
+  expect(JSON.stringify(held)).toMatch(/waiting 2h/)
+})

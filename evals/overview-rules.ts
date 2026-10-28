@@ -283,7 +283,7 @@ export const RULES: Rule[] = [
     id: 'child-labels',
     property: 7,
     text: 'A running child reads in plain words: not its host handle, no words joined by "-" or "_", at least two words.',
-    until: 'decision 21',
+    until: '#149',
     failures: ({ result }) =>
       (result.session.ledger.overview?.children ?? [])
         .filter(c => c.endedAt === null && !isPlainLabel(c.name, c.ref))
@@ -361,7 +361,7 @@ export const RULES: Rule[] = [
     id: 'head-title',
     property: 1,
     text: 'The head is a title and a one-line description that does not repeat it.',
-    until: 'decision 19',
+    until: '#148',
     failures: ({ result }) => {
       const head = result.page as unknown as { title?: unknown; description?: unknown }
       const isHead = typeof head.title === 'string' && typeof head.description === 'string'
@@ -372,14 +372,14 @@ export const RULES: Rule[] = [
     id: 'no-live-line',
     property: 13,
     text: 'The page has no live line.',
-    until: 'decision 19',
+    until: '#148',
     failures: ({ result }) => (result.page.live ? [`live line: "${result.page.live}"`] : []),
   },
   {
     id: 'stall-times',
     property: 13,
     text: 'A time shows only as a stall time, on held or waiting work that has waited 15 minutes, or a quiet child.',
-    until: 'decision 4',
+    until: '#150',
     failures: ({ result }) =>
       result.page.rows.flatMap(r => {
         if (r.kind !== 'subject' && r.kind !== 'fold') return []
