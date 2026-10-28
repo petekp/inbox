@@ -347,18 +347,6 @@ export function isViewKept(
   return keepsView(prState, linked, ref) || (at !== null && isShownSince(at, shownSince))
 }
 
-/** The views `isViewKept` keeps. */
-export function keptViews(
-  prState: PrViews,
-  linked: string[],
-  lastActions: Record<string, LastAction>,
-  shownSince: number | null,
-): PrViews['views'] {
-  return Object.fromEntries(
-    Object.entries(prState.views).filter(([ref]) => isViewKept(prState, linked, lastActions, ref, shownSince)),
-  )
-}
-
 /**
  * A PR block a look draws: a tracked PR, which is open, or a PR dismissed while the look shows the PRs tab, which
  * settles in place as a dismissed row does.

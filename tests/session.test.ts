@@ -640,17 +640,17 @@ test('an applied model answer that changes nothing still makes the session seen,
   expect(forkedFrom(emptySession(), parent).hostTasks).toEqual(parent.hostTasks)
 })
 
-test('a prune keeps the closed records of held rows and of rows closed since the showing began, and a dismissed PR’s view only while the showing that dismissed it lasts', () => {
+test('a prune keeps the closed records of held rows and of rows closed since the showing began, a linked PR’s view, and a dismissed PR’s view only while the showing that dismissed it lasts', () => {
   const tasks = Array.from({ length: 14 }, (_, n) => `NEW: do | - | Task ${n} | - | -`).join('\n')
   const opened = applyUpdate(EMPTY, parseReply(tasks)!, 10, 1)
   const ids = opened.items.map(i => i.id)
   const closes = (some: string[]) => parseReply(some.map(id => `CLOSED: ${id} | done`).join('\n'))!
   const ledger = applyUpdate(applyUpdate(opened, closes(ids.slice(0, 2)), 20, 2), closes(ids.slice(2)), 50, 3)
   const demo = demoView(0, 'Claude')
-  const ref = Object.keys(demo.prViews.views)[0]!
+  const [ref, linked] = Object.keys(demo.prViews.views) as [string, string]
   const s = {
     ...emptySession(),
-    ledger,
+    ledger: { ...ledger, prs: [linked] },
     prViews: { ...demo.prViews, branchRef: null },
     lastActions: { [prMarkId(ref)]: { kind: 'mark' as const, action: 'pr-dismiss', text: 'Dismissed', at: 30 } },
   }
@@ -658,10 +658,9 @@ test('a prune keeps the closed records of held rows and of rows closed since the
 
   const shownEarly = pruned({ ...s, shownSince: 20 })
   expect(closedIds(shownEarly)).toEqual(ids)
-  expect(ref in shownEarly.prViews.views).toBe(true)
+  expect(Object.keys(shownEarly.prViews.views).sort()).toEqual([ref, linked].sort())
   expect(closedIds(pruned({ ...s, shownSince: 50, heldRows: [ids[0]!] }))).toEqual([ids[0], ...ids.slice(2)])
   const left = pruned({ ...s, shownSince: null })
   expect(closedIds(left)).toEqual(ids.slice(2))
-  expect(ref in left.prViews.views).toBe(false)
-  expect(Object.keys(left.prViews.views).length).toBe(Object.keys(s.prViews.views).length - 1)
+  expect(Object.keys(left.prViews.views)).toEqual([linked])
 })
