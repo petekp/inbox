@@ -910,10 +910,59 @@ function restates(a, b) {
     return false;
   return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b);
 }
+var GENERIC = new Set([
+  "which",
+  "what",
+  "how",
+  "when",
+  "where",
+  "whether",
+  "why",
+  "who",
+  "pick",
+  "choose",
+  "select",
+  "prefer",
+  "want",
+  "decide",
+  "need",
+  "like",
+  "are",
+  "was",
+  "were",
+  "been",
+  "being",
+  "can",
+  "could",
+  "would",
+  "will",
+  "shall",
+  "might",
+  "must",
+  "does",
+  "did",
+  "has",
+  "have",
+  "had",
+  "new",
+  "current",
+  "existing",
+  "its",
+  "our",
+  "their",
+  "now",
+  "still",
+  "also",
+  "just",
+  "again",
+  "already",
+  "instead",
+  "yet"
+]);
 function repeatsSubject(a, b) {
   const x = keyWords(a);
   const y = keyWords(b);
-  const within = (inner, outer) => [...inner].every((w) => outer.has(w));
+  const within = (inner, outer) => [...inner].every((w) => GENERIC.has(w) || outer.has(w));
   return sameAsk(a, b) || restates(a, b) && (within(x, y) || within(y, x));
 }
 function sameAsk(a, b) {
@@ -7150,7 +7199,15 @@ function createInbox(pi, deps = defaultDeps) {
   const prFetches = prFetchTracker(deps.now);
   const listeners = new Map;
   let noted = null;
+  let replied = null;
   let isGhMissing = false;
+  function endedTurn(id, s, reply, at, { hostTasks, queuesEmptyReply = false }) {
+    const ended = endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
+      tab: panelScreenTab(id),
+      queuesEmptyReply
+    });
+    return turnEnded(ended, at);
+  }
   const notifyChanged = (id) => {
     listeners.get(id)?.forEach((listener) => listener());
     reportCounts(id);
@@ -7323,14 +7380,26 @@ function createInbox(pi, deps = defaultDeps) {
   function wakeLater(ctx) {
     ctx.setTimeout(() => deps.background(wakeForDone(hostFor(ctx))), deps.settleWindowMs + WAKE_MARGIN_MS);
   }
-  async function arrive(id, text) {
+  async function arrive(ctx, id, text, finishedReply) {
+    const at = deps.now();
+    const hostTasks = finishedReply === null ? [] : ompTodoFromBranch(ctx.sessionManager.getBranch());
     let notes = [];
-    await change(id, (s) => {
-      const r = notePrompt(OMP, s, text, openPanels.has(id));
+    const written = await change(id, (s) => {
+      const before = finishedReply === null ? s : turnStarted(endedTurn(id, s, finishedReply, at, { hostTasks }), at);
+      const r = notePrompt(OMP, before, text, openPanels.has(id));
       notes = r.notes;
       return r.state;
     });
+    if (finishedReply !== null && needsUpdate(written))
+      deps.background(runUpdates(updateHostFor(ctx)));
     return notes;
+  }
+  function takeFinishedReply(id) {
+    if (replied?.id !== id)
+      return null;
+    const { text } = replied;
+    replied = null;
+    return text;
   }
   const dropTools = async () => {
     const active = pi.getActiveTools();
@@ -7397,6 +7466,8 @@ function createInbox(pi, deps = defaultDeps) {
     prepared.delete(id);
     if (noted?.id === id)
       noted = null;
+    if (replied?.id === id)
+      replied = null;
     const pane = deps.herdrPane;
     if (id !== shownId || !pane)
       return;
@@ -7411,7 +7482,7 @@ function createInbox(pi, deps = defaultDeps) {
     const guidance = guidanceText(OMP);
     const systemPrompt = event.systemPrompt.includes(guidance) ? event.systemPrompt : [...event.systemPrompt, guidance];
     if (noted?.id !== id || noted.prompt !== event.prompt) {
-      const notes = await arrive(id, event.prompt).catch(() => null);
+      const notes = await arrive(ctx, id, event.prompt, takeFinishedReply(id)).catch(() => null);
       if (notes)
         noted = { id, prompt: event.prompt, notes };
     }
@@ -7442,6 +7513,8 @@ function createInbox(pi, deps = defaultDeps) {
     if (isUnattended(ctx))
       return;
     const id = sessionIdOf(ctx);
+    if (replied?.id === id)
+      replied = null;
     const startedAt = deps.now();
     await change(id, (s) => turnStarted(s, startedAt)).catch(() => {
       return;
@@ -7519,6 +7592,13 @@ function createInbox(pi, deps = defaultDeps) {
       return;
     });
   });
+  pi.on("message_end", (event, ctx) => {
+    const message = event.message;
+    if (isUnattended(ctx) || message.role !== "assistant" || !Array.isArray(message.content))
+      return;
+    const isWorking = message.content.some((b) => b.type === "toolCall");
+    replied = isWorking ? null : { id: sessionIdOf(ctx), text: textOfBlocks(message.content) };
+  });
   pi.on("message_start", async (event, ctx) => {
     const message = event.message;
     if (isUnattended(ctx) || message.role !== "user")
@@ -7527,11 +7607,14 @@ function createInbox(pi, deps = defaultDeps) {
     const text = userText(message.content);
     if (text === "" || noted?.id === id && noted.prompt === text)
       return;
+    const finished = replied?.id === id ? replied : null;
     try {
       const isSentByPress = (await readState(dir, id)).sent.some((x) => x.text === text);
       if (!isSentByPress)
         return;
-      const notes = await arrive(id, text);
+      if (replied === finished)
+        replied = null;
+      const notes = await arrive(ctx, id, text, finished?.text ?? null);
       noted = { id, prompt: text, notes };
       if (notes.length > 0) {
         pi.sendMessage({ customType: MESSAGE_TYPE, content: notes.join(`
@@ -7547,6 +7630,8 @@ function createInbox(pi, deps = defaultDeps) {
       return;
     prepare(ctx);
     const id = sessionIdOf(ctx);
+    if (replied?.id === id)
+      replied = null;
     const last = lastAssistant(event.messages);
     const reply = last ? textOfBlocks(last.content) : "";
     const stop = await stopOf(last, deps.isUsageLimit, deps.now());
@@ -7558,10 +7643,7 @@ function createInbox(pi, deps = defaultDeps) {
     ]);
     const endedAt = deps.now();
     const written = await change(id, (s) => {
-      const ended = turnEnded(endTurn(OMP, { ...s, hostTasks }, reply, openPanels.has(id), {
-        tab: panelScreenTab(id),
-        queuesEmptyReply: isDialogDismissed
-      }), endedAt);
+      const ended = endedTurn(id, s, reply, endedAt, { hostTasks, queuesEmptyReply: isDialogDismissed });
       const settled = inHerdr ? overviewChanged(ended, (o) => delegatesSettled(o, inHerdr, endedAt)) : ended;
       return { ...placed(settled, ctx.cwd, branch), stop };
     }).catch(() => null);

@@ -709,10 +709,59 @@ function restates(a, b) {
   if (numbers(x) !== "" && numbers(y) !== "" && numbers(x) !== numbers(y)) return false;
   return fewer >= 2 ? shared / fewer >= 0.7 : sameAsk(a, b);
 }
+var GENERIC = /* @__PURE__ */ new Set([
+  "which",
+  "what",
+  "how",
+  "when",
+  "where",
+  "whether",
+  "why",
+  "who",
+  "pick",
+  "choose",
+  "select",
+  "prefer",
+  "want",
+  "decide",
+  "need",
+  "like",
+  "are",
+  "was",
+  "were",
+  "been",
+  "being",
+  "can",
+  "could",
+  "would",
+  "will",
+  "shall",
+  "might",
+  "must",
+  "does",
+  "did",
+  "has",
+  "have",
+  "had",
+  "new",
+  "current",
+  "existing",
+  "its",
+  "our",
+  "their",
+  "now",
+  "still",
+  "also",
+  "just",
+  "again",
+  "already",
+  "instead",
+  "yet"
+]);
 function repeatsSubject(a, b) {
   const x = keyWords(a);
   const y = keyWords(b);
-  const within = (inner, outer) => [...inner].every((w) => outer.has(w));
+  const within = (inner, outer) => [...inner].every((w) => GENERIC.has(w) || outer.has(w));
   return sameAsk(a, b) || restates(a, b) && (within(x, y) || within(y, x));
 }
 function sameAsk(a, b) {
