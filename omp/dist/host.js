@@ -6761,7 +6761,8 @@ function activityOf(tool, input) {
 }
 function askOutcome(event) {
   const details = event.details ?? {};
-  const answer = textOfBlocks(event.content).trim();
+  const answer = event.content.flatMap((b) => b.type === "text" && b.text ? [b.text] : []).join(`
+`);
   if (event.isError || details.chatRedirect || answer === "")
     return { kind: "dismissed" };
   return { kind: details.timedOut ? "timed-out" : "answered", answer };

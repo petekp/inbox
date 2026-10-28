@@ -312,7 +312,7 @@ function askOutcome(event: {
   details?: unknown
 }): DialogOutcome {
   const details = (event.details ?? {}) as { timedOut?: boolean; chatRedirect?: boolean }
-  const answer = textOfBlocks(event.content).trim()
+  const answer = event.content.flatMap(b => (b.type === 'text' && b.text ? [b.text] : [])).join('\n')
   if (event.isError || details.chatRedirect || answer === '') return { kind: 'dismissed' }
 
   return { kind: details.timedOut ? 'timed-out' : 'answered', answer }
