@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
+import { mkdir, readdir, rm, rmdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -62,7 +63,7 @@ import {
   runUpdates,
   wakeForDone,
 } from '../../hooks/session-host'
-import type { PressOutcome, SessionHost, UpdateHost } from '../../hooks/session-host'
+import type { OverviewRecords, PressOutcome, RecordFiles, SessionHost, UpdateHost } from '../../hooks/session-host'
 import { agentTools } from '../../hooks/tools'
 import { DARK_TONES, LIGHT_TONES } from '../../hooks/tones'
 import { clip } from '../../hooks/text'
@@ -222,6 +223,24 @@ function byNewestRevision(a: Model, b: Model): number {
 
   return differing === -1 ? 0 : (y[differing] ?? 0) - (x[differing] ?? 0)
 }
+
+const recordFiles: RecordFiles = {
+  write: async (path, text) => {
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, text)
+  },
+  list: folder => readdir(folder).catch(() => []),
+  removeFiles: async paths => void (await Promise.all(paths.map(p => rm(p, { force: true })))),
+  removeFolder: path => rmdir(path),
+}
+
+/** A next build's Overview call records for the session, beside the inbox's saved sessions. */
+export const overviewRecords = (dir: string, sessionId: string): OverviewRecords => ({
+  host: 'omp',
+  folder: join(dir, 'overview-calls'),
+  session: sessionId,
+  files: recordFiles,
+})
 
 /**
  * The inbox model: the person's `@inbox` role when it names a model omp can use. omp's `resolve` returns nothing for
@@ -513,12 +532,19 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   }
 
   function askFor(ctx: ExtensionContext, id: string): SessionHost<OmpState>['ask'] {
-    return async (prompt, system) => {
+    return async (prompt, system, report) => {
       const model = inboxModel(ctx)
-      if (!model) return null
+      if (!model) {
+        report?.({ model: 'none', error: 'omp offers no model for the inbox' })
+        return null
+      }
+      const asked = `${model.provider}/${model.id}`
       try {
         const apiKey = await ctx.modelRegistry.getApiKey(model, id)
-        if (!apiKey) return null
+        if (!apiKey) {
+          report?.({ model: asked, error: 'omp has no sign-in for the model' })
+          return null
+        }
         const reply = await deps.complete(
           model,
           {
@@ -527,11 +553,22 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
           },
           { apiKey, signal: AbortSignal.timeout(INBOX_MODEL_TIMEOUT_MS) },
         )
-        if (reply.stopReason === 'error' || reply.stopReason === 'aborted') return null
+        const answeredBy = reply.upstreamModel ?? reply.model
+        if (reply.stopReason === 'error' || reply.stopReason === 'aborted') {
+          const status = reply.errorStatus === undefined ? '' : ` ${reply.errorStatus}`
+          report?.({
+            model: asked,
+            answeredBy,
+            error: `${reply.stopReason}${status}: ${reply.errorMessage ?? ''}`.trim(),
+          })
+          return null
+        }
         const text = reply.content.flatMap(b => (b.type === 'text' ? [b.text] : [])).join('')
+        report?.({ model: asked, answeredBy, ...(text === '' ? { error: 'the reply held no text' } : {}) })
 
         return text === '' ? null : text
-      } catch {
+      } catch (err) {
+        report?.({ model: asked, error: messageOf(err) })
         return null
       }
     }
@@ -590,6 +627,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       names: OMP,
       inOrder: fn => resultsOrder.run(id, fn),
       background: results => deps.background(results),
+      ...(deps.isNextBuild ? { records: overviewRecords(dir, id) } : {}),
       catchUp: s =>
         askOverConversation(
           host.ask,

@@ -4,15 +4,17 @@ import {
   copyFile,
   lstat,
   mkdir,
+  readdir,
   readFile,
   readlink,
   rename,
   rm,
+  rmdir,
   stat,
   symlink,
   writeFile,
 } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { screenText } from '../../hooks/model-text'
 import {
@@ -22,7 +24,7 @@ import {
   refreshOverview as refreshSessionOverview,
   runUpdates as runSessionUpdates,
 } from '../../hooks/session-host'
-import type { Ask } from '../../hooks/session-host'
+import type { Ask, OverviewRecords, RecordFiles } from '../../hooks/session-host'
 import { screenTabOf } from '../../hooks/view'
 import { isTabOpen } from './core'
 import { codexStore } from './host'
@@ -118,7 +120,7 @@ export function codexAsk(
   personHome: string,
   onFailure: (failure: Omit<ModelFailure, 'at'>) => Promise<void> = async () => {},
 ): Ask {
-  return async (prompt, instructions) => {
+  return async (prompt, instructions, report) => {
     const work = join(dir, 'exec')
     const system = join(dir, `inbox-system-${createHash('sha256').update(instructions).digest('hex').slice(0, 12)}.md`)
     const out = join(work, `reply-${randomUUID()}.txt`)
@@ -164,10 +166,13 @@ export function codexAsk(
       }
       const text = r.code === 0 ? await readFile(out, 'utf8').catch(() => null) : null
       await rm(out, { force: true })
-      if (text === null) await onFailure({ cli, code: r.code, stderr: r.stderr.slice(-FAILURE_TAIL_CHARS) })
+      const stderr = r.stderr.slice(-FAILURE_TAIL_CHARS)
+      report?.({ model: MODEL, ...(text === null ? { error: `codex exec exited ${r.code}: ${stderr.trim()}` } : {}) })
+      if (text === null) await onFailure({ cli, code: r.code, stderr })
 
       return text
     }
+    report?.({ model: MODEL, error: 'codex exec refused every feature flag the inbox turns off' })
 
     return null
   }
@@ -191,6 +196,24 @@ const inOrderFor =
       withLock(`${statePath(dir, sessionId)}.results`, fn, RESULTS_WAIT_MS),
     )
 
+const recordFiles: RecordFiles = {
+  write: async (path, text) => {
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, text)
+  },
+  list: folder => readdir(folder).catch(() => []),
+  removeFiles: async paths => void (await Promise.all(paths.map(p => rm(p, { force: true })))),
+  removeFolder: path => rmdir(path),
+}
+
+/** A next build's Overview call records for the session, in the plugin's data folder. */
+export const overviewRecords = (dir: string, sessionId: string): OverviewRecords => ({
+  host: 'codex',
+  folder: join(dir, 'overview-calls'),
+  session: sessionId,
+  files: recordFiles,
+})
+
 /** Runs the Overview call that a hook claimed for the running turn. */
 export const refreshOverview = (
   dir: string,
@@ -198,8 +221,14 @@ export const refreshOverview = (
   ask: Ask,
   now: () => number,
   onWrite?: OnWrite,
+  records?: OverviewRecords,
 ): Promise<void> =>
-  refreshSessionOverview({ ...codexStore(dir, sessionId, now, onWrite), ask, inOrder: inOrderFor(dir, sessionId) })
+  refreshSessionOverview({
+    ...codexStore(dir, sessionId, now, onWrite),
+    ask,
+    inOrder: inOrderFor(dir, sessionId),
+    records,
+  })
 
 export const runUpdates = (
   dir: string,
@@ -207,12 +236,14 @@ export const runUpdates = (
   ask: Ask,
   now: () => number,
   onWrite?: OnWrite,
+  records?: OverviewRecords,
 ): Promise<void> =>
   runSessionUpdates({
     ...codexStore(dir, sessionId, now, onWrite),
     ask,
     names: CODEX,
     inOrder: inOrderFor(dir, sessionId),
+    records,
     catchUp: async s =>
       askOverConversation(
         ask,
