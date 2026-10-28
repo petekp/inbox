@@ -15,10 +15,10 @@ export type Answer = {
 }
 
 /**
- * Sonnet, or `model`, as the mod calls it: at low effort, and with no settings or MCP servers, so neither the runner's
- * own CLAUDE.md nor its account's connectors reach it.
+ * Sonnet, or `model`, as the mod calls it: at low effort unless `effort` says otherwise, and with no settings or MCP
+ * servers, so neither the runner's own CLAUDE.md nor its account's connectors reach it.
  */
-export function claude(prompt: string, system: string, model = CLAUDE_MODEL): Promise<Answer> {
+export function claude(prompt: string, system: string, model = CLAUDE_MODEL, effort = 'low'): Promise<Answer> {
   const cwd = mkdtempSync(join(tmpdir(), 'inbox-eval-claude-'))
 
   return new Promise<Answer>(resolve => {
@@ -30,7 +30,7 @@ export function claude(prompt: string, system: string, model = CLAUDE_MODEL): Pr
         '--model',
         model,
         '--effort',
-        'low',
+        effort,
         '--strict-mcp-config',
         '--setting-sources',
         '',

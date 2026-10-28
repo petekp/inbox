@@ -63,6 +63,12 @@ if [ -d "$DIR/codex/node_modules" ]; then
     check "codex bundles" npm --prefix "$DIR/codex" run --silent check
     check "codex types" npm --prefix "$DIR/codex" run --silent types
     check "codex tests" npm --prefix "$DIR/codex" test --silent
+    # The eval case files, with no model calls: every saved ledger loads, and every Compare case checks that the
+    # agent closes nothing. The check is TypeScript, so Codex's esbuild bundles it first.
+    cases=$(mktemp -d)
+    check "eval cases" sh -c '"$1/codex/node_modules/.bin/esbuild" "$1/evals/check-cases.ts" --bundle --platform=node \
+        --format=esm --outfile="$2/check-cases.mjs" --log-level=warning && node "$2/check-cases.mjs" "$1"' _ "$DIR" "$cases"
+    rm -rf "$cases"
 else
     echo "  x codex: not checked. Install its tools once: npm --prefix $DIR/codex ci"
     status=1
