@@ -150,6 +150,7 @@ export function recordItem(host: Host, ledger: Ledger, input: Record<string, unk
     const changes = [
       ...(r.addedSteps > 0 ? ['added its new steps'] : []),
       ...(r.isNewlyMarked ? ['marked it as a design choice'] : []),
+      ...(r.newRec ? [`changed its recommendation to ${r.newRec}`] : []),
     ]
     const updated = changes.length > 0 ? ` and ${changes.join(' and ')}` : ''
 

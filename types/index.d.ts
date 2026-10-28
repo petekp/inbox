@@ -1,7 +1,7 @@
 /** Where a subject of the session's work stands. `done` and `dropped` close it. */
-export type SubjectStatus = 'working' | 'queued' | 'waits-on-you' | 'waits-on-other' | 'problem' | 'done' | 'dropped'
+export type SubjectStatus = 'working' | 'queued' | 'waits-on-other' | 'done' | 'dropped'
 
-/** One piece of the session's work that the person would name: a feature, a fix, a release, a problem or a stream. */
+/** One piece of the session's work that the person would name: a feature, a fix, a release or a stream. */
 export type Subject = {
   id: string
   /** The handle the person would use, at most a few words. */
@@ -43,6 +43,8 @@ export type Overview = {
   goal: string
   subjects: Subject[]
   children: Child[]
+  /** The subject each ask holds up, by the ask's item id, as the Overview call linked them. */
+  askSubjects: Record<string, string>
   nextId: number
   nextChildId: number
   /** When the person last looked: the last time a look ended. Null before the first look. */
@@ -402,6 +404,12 @@ export type HostTaskStatus = 'pending' | 'in-progress' | 'done' | 'dropped' | 'b
 /** One task of the agent's own task list, as its host reports it. */
 export type HostTask = { id: string; text: string; status: HostTaskStatus }
 
+/**
+ * Why an Overview call wrote nothing. `no-answer`: the call gave no text. `refused`: it answered twice with text the
+ * parser refused, and `answer` holds the start of the second answer.
+ */
+export type OverviewFailure = { at: number; cause: 'no-answer' | 'refused'; answer: string | null }
+
 /** One conversation's inbox: what every host saves and the shared session functions change. */
 export type Session = {
   ledger: Ledger
@@ -474,6 +482,10 @@ export type Session = {
   prViews: PrViews
   /** Why the last turn stopped, until the next turn starts. */
   stop: Stop | null
+  /** The last Overview call that wrote nothing, until a later one writes. */
+  overviewFailure: OverviewFailure | null
+  /** When an Overview call last wrote, or failed, or started while a turn ran. Null before the first. */
+  lastOverviewCallAt: number | null
   /** The agent's own task list, when its host reports one. Empty when the agent keeps none. */
   hostTasks: HostTask[]
   /**

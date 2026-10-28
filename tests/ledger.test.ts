@@ -362,6 +362,9 @@ describe('applyUpdate', () => {
     const recommended = applyUpdate(first, parseReply('UPDATE: i1 | - | No')!, 2, 2)
     expect(recommended.items[0]).toMatchObject({ options: ['Yes', 'No'], rec: 'No' })
 
+    const unnamed = applyUpdate(recommended, parseReply('UPDATE: i1 | - | rename it later')!, 3, 3)
+    expect(unnamed.items[0]).toMatchObject({ options: ['Yes', 'No'], rec: 'No' })
+
     const narrowed = applyUpdate(recommended, parseReply('UPDATE: i1 | hello.mjs / hello.mts | -')!, 3, 3)
     expect(narrowed.items[0]).toMatchObject({ options: ['hello.mjs', 'hello.mts'], rec: null })
 
@@ -564,7 +567,7 @@ describe('items the agent recorded', () => {
     expect([later.items.map(i => i.id), later.closed.map(c => [c.id, c.how])]).toEqual([['i1'], [['i2', 'expired']]])
   })
 
-  test('a NEW line of its kind in the turn it was recorded adds nothing, and one that restates it adds its steps', () => {
+  test('a NEW line of its kind in the turn it was recorded adds nothing, and one that restates it adds its steps and recommendation', () => {
     const other = parseReply('NEW: decide | - | Ship the release today? | Yes / No | -')!
     expect(applyUpdate(recorded(3), other, 2000, 3).items.map(i => i.id)).toEqual(['i1'])
     expect(applyUpdate(recorded(3), other, 2000, 4).items.map(i => i.id)).toEqual(['i1', 'i2'])
@@ -573,6 +576,24 @@ describe('items the agent recorded', () => {
     )!
     expect(applyUpdate(recorded(3), restated, 2000, 3).items.map(i => [i.id, i.helps])).toEqual([
       ['i1', [{ kind: 'link', url: 'https://redis.io/', name: 'docs' }]],
+    ])
+    const recommending = parseReply('NEW: decide | - | Which cache should the API use? | Redis / Memcached | Redis')!
+    expect(applyUpdate(recorded(3), recommending, 2000, 4).items.map(i => [i.id, i.rec])).toEqual([['i1', 'Redis']])
+  })
+
+  test('a repeat record changes the recommendation to one of the open options and says so', () => {
+    const record = { kind: 'question', ask: 'Which cache should the API use?', options: ['Redis', 'Memcached'] }
+    const first = recordItem(CLAUDE_CODE, recorded(), { ...record, rec: 'Redis' }, 2000)
+    const second = recordItem(CLAUDE_CODE, first.ledger, { ...record, rec: 'Memcached' }, 2100)
+    const unstated = recordItem(CLAUDE_CODE, second.ledger, record, 2200)
+    const elsewhere = recordItem(CLAUDE_CODE, second.ledger, { ...record, options: ['Valkey'], rec: 'Valkey' }, 2300)
+    expect(
+      [first, second, unstated, elsewhere].map(r => [r.ledger.items.map(i => i.rec), r.result, r.personLine]),
+    ).toEqual([
+      [['Redis'], 'Already open, so this record updated it and changed its recommendation to Redis.', null],
+      [['Memcached'], 'Already open, so this record updated it and changed its recommendation to Memcached.', null],
+      [['Memcached'], 'Already open, so this record updated it.', null],
+      [['Memcached'], 'Already open, so this record updated it.', null],
     ])
   })
 

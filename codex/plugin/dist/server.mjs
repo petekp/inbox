@@ -31,8 +31,8 @@ async function devBuild(dir2) {
 // src/detached-update.ts
 import { spawn } from "node:child_process";
 function detachedUpdate(dir2, env, script) {
-  return (sessionId) => {
-    const child = spawn(process.execPath, [script, sessionId], {
+  return (sessionId, mode) => {
+    const child = spawn(process.execPath, [script, sessionId, ...mode ? [mode] : []], {
       detached: true,
       stdio: "ignore",
       env: { ...env, INBOX_DATA: dir2 }

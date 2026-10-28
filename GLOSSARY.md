@@ -76,10 +76,12 @@ work moves to a different task.
 
 **Subject**:
 One part of the session's work on the Overview, such as a feature, a fix or a
-decision. It has a name, a status, a few words on where it stands, and the time
-it last changed. The statuses are working, queued, waits on you, waits on
-others, problem, done and dropped. The inbox model adds and changes subjects by
-id, and code keeps their times.
+release. It has a name, a status, a few words on where it stands, and the time
+it last changed. The statuses are working, queued, waits on others, done and
+dropped. The inbox model adds and changes subjects by id, and code keeps their
+times. The inbox model also links an open question or task to the subject it
+holds up. While that item is open, the subject's mark reads ◆ in place of its
+status's mark, and the item's Asks row reads "Holds up" and the subject's name.
 _Avoid_: workstream, stream, item (an item is a question or task)
 
 **Child**:
@@ -91,10 +93,12 @@ _Avoid_: subitem, job
 
 **Seen line**:
 The rule labeled "Seen" on the Overview, at the time the person last left the
-page. A row above it changed since then. Every open row shows where it stands,
-above or below the line. A row below it leaves out its was line, and a finished
-row below it shows only its mark, name and age. When no row changed since then,
-the page draws no line. The code calls it the look line, after `lastLookAt`.
+page after it showed for at least five seconds. A shorter pass through the tab
+leaves the line where it was. A row above it changed since then. Every open row
+shows where it stands, above or below the line. A row below it leaves out its was
+line, and a finished row below it shows only its mark, name and age. When no row
+changed since then, the page draws no line. The code calls it the look line,
+after `lastLookAt`.
 _Avoid_: "you looked" line
 
 **News dot**:

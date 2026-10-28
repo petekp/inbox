@@ -204,6 +204,13 @@ for (const isNextBuild of [false, true])
     expect(keys(screen, INITIAL_UI, String(tabs.length + 1)).tab).toBe(INITIAL_UI.tab)
   })
 
+for (const isNextBuild of [false, true])
+  test(`on a ${isNextBuild ? 'next' : 'release'} build, an Asks row ${isNextBuild ? 'names' : 'leaves out'} the open subject it holds up`, () => {
+    const shown = text(screenOf({ isNextBuild }), { ...INITIAL_UI, tab: 'needsYou' })
+
+    expect(shown.includes('Holds up Glasses pairing')).toBe(isNextBuild)
+  })
+
 test('the selected tab draws inverse and the others draw their counts', () => {
   const screen = screenOf()
   const bar = drawn(screen, keys(screen, INITIAL_UI, '2'))[1]!
@@ -773,6 +780,7 @@ test('on the Overview page, a subject’s text wraps to three lines and is cut w
       null,
       parseOverview(`NEW: working | ${name} | being written with an example for each flag and its default`)!,
       NOW,
+      new Set(),
     ),
   }
   const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, true, NO_HOLDS) })

@@ -5,10 +5,18 @@ import { CAPTION_BAND } from './layout'
 
 /**
  * A caption that enters word by word from `from` seconds into its beat and leaves just before `to`, so a beat's caption
- * is gone before the next one enters. Under footage it sits in the band below the picture.
+ * is gone before the next one enters. Under footage it sits in the band below the picture. `inset` keeps it that far
+ * from each side of the frame, in pixels.
  */
-export function Caption(props: { text: string; t: number; from: number; to: number; inBand?: boolean }) {
-  const { text, t, from, to, inBand = false } = props
+export function Caption(props: {
+  text: string
+  t: number
+  from: number
+  to: number
+  inBand?: boolean
+  inset?: number
+}) {
+  const { text, t, from, to, inBand = false, inset = 120 } = props
   const { height } = useVideoConfig()
   const leaving = easeInOut((t - (to - 0.3)) / 0.3)
   const pill = clamp01((t - from) / 0.25)
@@ -20,8 +28,8 @@ export function Caption(props: { text: string; t: number; from: number; to: numb
     <div
       style={{
         position: 'absolute',
-        left: 120,
-        right: 120,
+        left: inset,
+        right: inset,
         ...place,
         display: 'flex',
         alignItems: 'center',

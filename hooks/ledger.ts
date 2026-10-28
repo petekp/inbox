@@ -129,6 +129,11 @@ export function recommendedOption(options: string[], rec: string | null): string
   return best ?? (byLabel ? (options.find(o => label(o) === byLabel) ?? null) : null)
 }
 
+/** The recommendation of a question asked again: the stated one when it names one of `options`, else the old one when it still does. */
+function restatedRec(options: string[], old: string | null, stated: string | null): string | null {
+  return recommendedOption(options, stated) ?? recommendedOption(options, old)
+}
+
 /** How a closed item saved before `how` existed closed, read from its outcome's wording. */
 function howFromOutcome(outcome: string): Closed['how'] {
   if (outcome === 'dismissed') return 'dismissed'
@@ -736,6 +741,7 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
       items[at] = {
         ...restated,
         helps: a.helps.reduce((all, h) => withHelp(all, h), restated.helps),
+        rec: restatedRec(restated.options, restated.rec, a.rec),
         ...(a.isDesignChoice ? { isDesignChoice: true } : {}),
       }
       addedIds.push(restated.id)
@@ -809,7 +815,7 @@ function withUpdate(item: Item, updated: Update['updated']): Item {
   if (!change || item.kind !== 'question') return item
   const options = change.options ?? item.options
 
-  return { ...item, options, rec: recommendedOption(options, change.rec ?? item.rec) }
+  return { ...item, options, rec: restatedRec(options, item.rec, change.rec) }
 }
 
 /**
@@ -845,12 +851,14 @@ export function addFinding(
 
 export type AgentItemResult =
   | { ledger: Ledger; is: 'added'; id: string; expired: Item | null }
-  | { ledger: Ledger; is: 'open'; id: string; addedSteps: number; isNewlyMarked: boolean }
+  /** `newRec` is the recommendation the record changed the item to, or null when it kept the item's own. */
+  | { ledger: Ledger; is: 'open'; id: string; addedSteps: number; isNewlyMarked: boolean; newRec: string | null }
   | { ledger: Ledger; is: 'closed'; record: Closed }
 
 /**
  * Adds a question or task the agent recorded. One that an open item restates adds its steps and its design-choice mark
- * to that item and stamps its `reportedAt`, and one that repeats a closed item is skipped, unless that item expired or the agent closed it.
+ * to that item, gives it the recommendation when that names one of the item's options, and stamps its `reportedAt`.
+ * One that repeats a closed item is skipped, unless that item expired or the agent closed it.
  * The list keeps its newest MAX_OPEN items. A finding the new ask restates closes, so one thing shows in one list.
  */
 export function addAgentItem(
@@ -865,7 +873,8 @@ export function addAgentItem(
   if (openItem) {
     const helps = entry.helps.reduce(withHelp, openItem.helps)
     const isDesignChoice = openItem.isDesignChoice === true || entry.isDesignChoice === true
-    const reported = { ...openItem, helps, isDesignChoice, reportedAt: now }
+    const rec = restatedRec(openItem.options, openItem.rec, entry.rec)
+    const reported = { ...openItem, helps, isDesignChoice, rec, reportedAt: now }
     const items = ledger.items.map(i => (i === openItem ? reported : i))
 
     return {
@@ -874,6 +883,7 @@ export function addAgentItem(
       id: openItem.id,
       addedSteps: helps.length - openItem.helps.length,
       isNewlyMarked: isDesignChoice && openItem.isDesignChoice !== true,
+      newRec: rec !== openItem.rec ? rec : null,
     }
   }
   const isAskable = (c: Closed) => c.how === 'expired' || c.how === 'claude'

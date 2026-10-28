@@ -1,14 +1,15 @@
 import { parseReply } from './ledger'
-import { parseOverview } from './overview'
+import { askOverview, parseOverview } from './overview'
 import {
   buildPrompt,
   OVERVIEW_SYSTEM,
   overviewCatchUpPrompt,
+  overviewMidTurnPrompt,
   overviewPrompt,
   systemText,
   transcriptCatchUpPrompt,
 } from './model-text'
-import type { Host } from './model-text'
+import type { Host, OverviewInput } from './model-text'
 import { fetchTracked, pressRowId, splitLinked } from './pr-tab'
 import type { GhRun, PrPress } from './pr-tab'
 import {
@@ -29,6 +30,7 @@ import {
   appliedCatchUp,
   appliedOverview,
   completedAttempt,
+  failedOverview,
   needsCatchUp,
   pressOn,
   withFetchedPrs,
@@ -36,7 +38,7 @@ import {
 } from './session'
 import type { Pressed, SendOutcome, Session } from './session'
 import type { Holds } from './view'
-import type { HostTask, Overview, RowNote } from '../types'
+import type { HostTask, RowNote } from '../types'
 
 export type Exclusive<T> = { acquired: true; value: T } | { acquired: false }
 
@@ -123,16 +125,16 @@ export type SessionHost<S extends Session> = {
   comparePage: string
 }
 
-/**
- * Asks the Overview call for the changes the exchange or the whole conversation makes, given the Overview before and
- * the time its running children are read at. Null when the call fails.
- */
-export type AskCatchUpOverview = (last: Overview | null, tasks: HostTask[], now: number) => Promise<string | null>
+/** Asks the Overview call for the changes the exchange or the whole conversation makes. Null when the call fails. */
+export type AskCatchUpOverview = (input: OverviewInput) => Promise<string | null>
 
 /** What a host's catch-up found: the model's answer to apply, or why there is none. */
 export type CatchUpReply =
-  /** `source` is the text the answer may quote code blocks from, or null when the model read the conversation itself. */
-  | { kind: 'reply'; text: string; source: string | null; overview: AskCatchUpOverview }
+  /**
+   * `source` is the text the answer may quote code blocks from, or null when the model read the conversation itself.
+   * `overview` is null when the host has nothing for the Overview call to read, so it writes no Overview.
+   */
+  | { kind: 'reply'; text: string; source: string | null; overview: AskCatchUpOverview | null }
   /** The model gave no answer. */
   | { kind: 'failed' }
   /** There is no conversation to read, so the pending exchanges run instead. */
@@ -158,6 +160,42 @@ export type UpdateHost<S extends Session> = Pick<SessionHost<S>, 'now' | 'read' 
   background?(overviews: Promise<void>): void
 }
 
+type OverviewHost<S extends Session> = Pick<UpdateHost<S>, 'now' | 'read' | 'update' | 'ask' | 'inOrder'>
+
+/**
+ * Runs the Overview call on the Overview and asks in `s`, and writes its answer, or saves why it wrote nothing. An
+ * answer that holds prose is asked once more. `appliedAfter` drops the write as `appliedOverview` does.
+ */
+async function askAndWriteOverview<S extends Session>(
+  host: Pick<OverviewHost<S>, 'now' | 'update'>,
+  s: S,
+  ask: AskCatchUpOverview,
+  tasks: HostTask[],
+  appliedAfter: number,
+): Promise<void> {
+  const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: await host.now() }
+  const { last } = await askOverview(async () => ({ text: await ask(input).catch(() => null) }))
+  const answer = last.text === null ? null : parseOverview(last.text)
+  const now = await host.now()
+  await host.update(x =>
+    answer === null ? failedOverview(x, last.text, appliedAfter, now) : appliedOverview(x, answer, appliedAfter, now),
+  )
+}
+
+/**
+ * Runs the Overview call on the running turn's work so far, once the session's earlier Overview calls have finished.
+ * A host calls it after `claimedOverviewRefresh` claimed the call. A turn that ended meanwhile is left to the call after
+ * its reply.
+ */
+export function refreshOverview<S extends Session>(host: OverviewHost<S>): Promise<void> {
+  return host.inOrder(async () => {
+    const s = await host.read()
+    if (!s.presence.isTurnRunning) return
+    const ask: AskCatchUpOverview = input => host.ask(overviewMidTurnPrompt(input, s.turn), OVERVIEW_SYSTEM)
+    await askAndWriteOverview(host, s, ask, s.hostTasks, s.presence.turnsApplied)
+  })
+}
+
 /**
  * Asks the model to catch the ledger up over `conversation`, for a host that reads the conversation as text. A null
  * or empty `conversation` is unreadable. `screen` is what the person sees of the inbox.
@@ -178,7 +216,7 @@ export async function askOverConversation(
         kind: 'reply',
         text,
         source: conversation,
-        overview: (last, tasks, now) => ask(overviewCatchUpPrompt(last, conversation, tasks, now), OVERVIEW_SYSTEM),
+        overview: input => ask(overviewCatchUpPrompt(input, conversation), OVERVIEW_SYSTEM),
       }
 }
 
@@ -224,19 +262,9 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
   const wantsCatchUp = (s: S) => canCatchUp && needsCatchUp(s)
   const hasWork = (s: S) => s.pending.length > 0 || wantsCatchUp(s)
   const writing: Promise<void>[] = []
-  /** Runs the Overview call for an applied update and writes its answer. An answer that holds prose is asked once more. */
-  const writeOverview = async (after: S, ask: AskCatchUpOverview, tasks: HostTask[]) =>
-    host.inOrder(async () => {
-      const { ledger } = await host.read()
-      const at = await host.now()
-      const asked = () => ask(ledger.overview, tasks, at).catch(() => null)
-      const first = await asked()
-      if (first === null) return
-      const answer = parseOverview(first) ?? parseOverview(await asked())
-      if (answer === null) return
-      const now = await host.now()
-      await host.update(x => appliedOverview(x, answer, after.presence.turnsApplied, now))
-    })
+  /** Runs the Overview call for an applied update, once the session's earlier Overview calls have finished. */
+  const writeOverview = (after: S, ask: AskCatchUpOverview, tasks: HostTask[]) =>
+    host.inOrder(async () => askAndWriteOverview(host, await host.read(), ask, tasks, after.presence.turnsApplied))
   const followUp = (run: Promise<void>) => {
     const settled = run.catch(() => undefined)
     if (host.background) host.background(settled)
@@ -259,7 +287,7 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
               const at = await host.now()
               const after = await host.update(x => appliedCatchUp(x, s, parsed, at))
               if (!parsed) return 'stop' as const
-              if (reply.kind === 'reply') followUp(writeOverview(after, reply.overview, s.hostTasks))
+              if (reply.kind === 'reply' && reply.overview) followUp(writeOverview(after, reply.overview, s.hostTasks))
               continue
             }
             const next = s.pending[0]!
@@ -276,11 +304,7 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
             })
             if (isApplied)
               followUp(
-                writeOverview(
-                  after,
-                  (last, tasks, now) => host.ask(overviewPrompt(last, next.ex, tasks, now), OVERVIEW_SYSTEM),
-                  next.ex.tasks,
-                ),
+                writeOverview(after, input => host.ask(overviewPrompt(input, next.ex), OVERVIEW_SYSTEM), next.ex.tasks),
               )
             if (after.pending[0]?.failed && !next.failed) return 'stop' as const
           }

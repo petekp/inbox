@@ -1,4 +1,4 @@
-import type { Child, ChildKind, Overview, Subject, SubjectStatus } from '../types'
+import type { Child, ChildKind, Item, Overview, Subject, SubjectStatus } from '../types'
 
 /** The most words the call may write in a subject's name, where it stands, and the goal. */
 export const NAME_WORDS = 3
@@ -7,9 +7,11 @@ export const GOAL_WORDS = 8
 /** The most open subjects the call keeps. */
 export const OPEN_SUBJECTS = 6
 /** Limits code holds an answer to when the call writes past the words it was asked for. */
-const NAME_KEPT = 8
+const NAME_KEPT = 20
 const TEXT_KEPT = 12
 const GOAL_KEPT = 14
+/** The words of each ask the call reads. */
+const ASK_READ_WORDS = 30
 /** Finished subjects the call reads, so it does not add one again. */
 const FINISHED_READ = 10
 /** How long an ended child stays saved, so a delegate prompted again keeps its link. */
@@ -45,6 +47,7 @@ export const EMPTY_OVERVIEW: Overview = {
   goal: '',
   subjects: [],
   children: [],
+  askSubjects: {},
   nextId: 1,
   nextChildId: 1,
   lastLookAt: null,
@@ -53,7 +56,7 @@ export const EMPTY_OVERVIEW: Overview = {
 
 export type OpenStatus = Exclude<SubjectStatus, 'done' | 'dropped'>
 
-const OPEN_STATUSES: readonly OpenStatus[] = ['working', 'queued', 'waits-on-you', 'waits-on-other', 'problem']
+const OPEN_STATUSES: readonly OpenStatus[] = ['working', 'queued', 'waits-on-other']
 const STATUSES: readonly SubjectStatus[] = [...OPEN_STATUSES, 'done', 'dropped']
 const CHILD_KINDS: readonly ChildKind[] = ['subagent', 'background', 'workflow', 'delegate']
 
@@ -67,7 +70,8 @@ export type Op =
   | { kind: 'was'; ref: string; text: string }
   | { kind: 'role'; role: Overview['role'] }
   | { kind: 'goal'; text: string }
-  | { kind: 'link'; child: string; subject: string }
+  /** `ref` is a running child's id or an open ask's id. */
+  | { kind: 'link'; ref: string; subject: string }
 
 /** What the Overview call answered: nothing to change, or the changes to make. */
 export type OverviewAnswer = { kind: 'unchanged' } | { kind: 'ops'; ops: Op[] }
@@ -116,7 +120,7 @@ function opOf(key: string, f: string[]): Op | null {
     return role === 'coordinator' || role === 'session' ? { kind: 'role', role } : null
   }
   if (key === 'GOAL') return f[0] ? { kind: 'goal', text: f[0] } : null
-  if (key === 'LINK') return f[0] && f[1] ? { kind: 'link', child: f[0], subject: f[1] } : null
+  if (key === 'LINK') return f[0] && f[1] ? { kind: 'link', ref: f[0], subject: f[1] } : null
 
   return null
 }
@@ -138,6 +142,20 @@ export function parseOverview(text: string | null): OverviewAnswer | null {
   if (ops.length === 0) return null
 
   return ops.every(o => o.kind === 'none') ? { kind: 'unchanged' } : { kind: 'ops', ops }
+}
+
+/**
+ * Asks the Overview call through `ask`, and once more when the answer holds prose, as `parseOverview` refuses it. A
+ * call that gives no text is not asked again. Returns the first answer and the one to apply, which are the same when
+ * the call was asked once.
+ */
+export async function askOverview<T extends { text: string | null }>(
+  ask: () => Promise<T>,
+): Promise<{ first: T; last: T }> {
+  const first = await ask()
+  const holdsProse = first.text !== null && parseOverview(first.text) === null
+
+  return { first, last: holdsProse ? await ask() : first }
 }
 
 function words(text: string): Set<string> {
@@ -162,20 +180,6 @@ export function isOpen(s: Pick<Subject, 'status'>): boolean {
   return s.status !== 'done' && s.status !== 'dropped'
 }
 
-/** What one answer did to the list, beyond the list itself. */
-export type Applied = {
-  overview: Overview
-  counts: Record<Op['kind'], number>
-  /** NEW lines that named an open subject, so code changed that subject instead. */
-  newMerged: number
-  /** SET lines that kept the status and most of the words, so code kept the old text and age. */
-  rewordsKept: number
-  /** Ids and names the answer used that the list does not hold. */
-  unknownRefs: string[]
-  /** The subjects whose status or text changed. */
-  changedIds: string[]
-}
-
 /** Subject changes first, then reversals, then links, so a WAS or LINK can name a subject the same answer added. */
 const OP_ORDER: Record<Op['kind'], number> = {
   none: 0,
@@ -189,26 +193,21 @@ const OP_ORDER: Record<Op['kind'], number> = {
   link: 2,
 }
 
-/** The list after `ops`, applied at `now`. */
-export function applyOps(last: Overview | null, ops: Op[], now: number): Applied {
+/**
+ * The list after `ops`, applied at `now`. `askIds` are the open asks: a LINK may name one, and the links of the others
+ * go. A line that names an id or a name the list does not hold, or an ask that is not open, changes nothing.
+ */
+export function applyOps(last: Overview | null, ops: Op[], now: number, askIds: ReadonlySet<string>): Overview {
   let o: Overview = {
     ...(last ?? EMPTY_OVERVIEW),
     subjects: (last?.subjects ?? []).map(s => ({ ...s })),
     children: (last?.children ?? []).map(c => ({ ...c })),
+    askSubjects: Object.fromEntries(Object.entries(last?.askSubjects ?? {}).filter(([ask]) => askIds.has(ask))),
   }
-  const counts: Applied['counts'] = { none: 0, new: 0, set: 0, done: 0, drop: 0, was: 0, role: 0, goal: 0, link: 0 }
-  let newMerged = 0
-  let rewordsKept = 0
-  const unknownRefs: string[] = []
-  const changed = new Set<string>()
   const find = (ref: string) => {
     const key = nameKey(clipWords(ref, NAME_KEPT))
 
     return o.subjects.find(s => s.id === ref) ?? o.subjects.find(s => isOpen(s) && nameKey(s.name) === key) ?? null
-  }
-  const touch = (s: Subject) => {
-    s.changedAt = now
-    changed.add(s.id)
   }
   /** A `was:` line stays until the person has seen it. The page shows it only on rows that changed since the last look. */
   const forgetSeenWas = (s: Subject) => {
@@ -216,31 +215,25 @@ export function applyOps(last: Overview | null, ops: Op[], now: number): Applied
     if (isSeen) s.was = null
   }
   const set = (s: Subject, status: OpenStatus, text: string) => {
-    if (s.status === status && overlap(s.text, text) >= REWORD_OVERLAP) {
-      rewordsKept++
-      return
-    }
+    if (s.status === status && overlap(s.text, text) >= REWORD_OVERLAP) return
     s.status = status
     s.text = clipWords(text, TEXT_KEPT)
     forgetSeenWas(s)
-    touch(s)
+    s.changedAt = now
   }
   const ordered = ops.map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n)
   for (const { op } of ordered) {
-    counts[op.kind]++
     if (op.kind === 'none') continue
     if (op.kind === 'role') o.role = op.role
     else if (op.kind === 'goal') o.goal = clipWords(op.text, GOAL_KEPT)
     else if (op.kind === 'link') {
-      const child = o.children.find(c => c.id === op.child)
+      const child = o.children.find(c => c.id === op.ref)
       const subject = find(op.subject)
-      if (!child) unknownRefs.push(op.child)
-      else if (!subject) unknownRefs.push(op.subject)
-      else child.subjectId = subject.id
+      if (child && subject) child.subjectId = subject.id
+      else if (subject && askIds.has(op.ref)) o.askSubjects[op.ref] = subject.id
     } else if (op.kind === 'new') {
       const known = find(op.name)
       if (known && isOpen(known)) {
-        newMerged++
         set(known, op.status, op.text)
         continue
       }
@@ -256,46 +249,47 @@ export function applyOps(last: Overview | null, ops: Op[], now: number): Applied
         into: null,
       }
       o = { ...o, nextId: o.nextId + 1, subjects: [...o.subjects, s] }
-      changed.add(s.id)
     } else {
       const s = find(op.ref)
-      if (!s) {
-        unknownRefs.push(op.ref)
-        continue
-      }
+      if (!s) continue
       if (op.kind === 'set') set(s, op.status, op.text)
       else if (op.kind === 'done') {
         s.status = 'done'
         if (op.text) s.text = clipWords(op.text, TEXT_KEPT)
         forgetSeenWas(s)
         s.closedAt = now
-        touch(s)
+        s.changedAt = now
       } else if (op.kind === 'drop') {
         const target = op.into ? find(op.into) : null
-        if (op.into && !target) unknownRefs.push(op.into)
         s.status = 'dropped'
         s.text = clipWords(op.why, TEXT_KEPT)
         s.closedAt = now
         s.into = target && target.id !== s.id ? target.id : null
-        touch(s)
+        s.changedAt = now
         if (target && s.into) {
           target.was = target.was ?? `${s.name} folded in`
-          touch(target)
+          target.changedAt = now
+          for (const [ask, id] of Object.entries(o.askSubjects)) if (id === s.id) o.askSubjects[ask] = target.id
         }
       } else {
         const folded = o.subjects.find(x => x.into === s.id && x.closedAt === now)
         s.was = folded ? `${folded.name} folded in; was: ${op.text}` : op.text
-        touch(s)
+        s.changedAt = now
       }
     }
   }
 
-  return { overview: o, counts, newMerged, rewordsKept, unknownRefs, changedIds: [...changed] }
+  return o
 }
 
-/** The Overview after an answer, applied at `now`. */
-export function applyOverview(last: Overview | null, answer: OverviewAnswer, now: number): Overview | null {
-  return answer.kind === 'unchanged' ? last : applyOps(last, answer.ops, now).overview
+/** The Overview after an answer, applied at `now`. `askIds` are the open asks. */
+export function applyOverview(
+  last: Overview | null,
+  answer: OverviewAnswer,
+  now: number,
+  askIds: ReadonlySet<string>,
+): Overview | null {
+  return answer.kind === 'unchanged' ? last : applyOps(last, answer.ops, now, askIds)
 }
 
 export function isChildRunning(c: Pick<Child, 'startedAt' | 'endedAt'>, now: number): boolean {
@@ -352,6 +346,11 @@ export function subjectsText(o: Overview | null): { open: string; finished: stri
   return { open: open.join(NL) || '(none yet)', finished: finished.join(NL) }
 }
 
+/** The open asks as the call reads them, each with the subject it holds up. */
+export function asksText(o: Overview | null, asks: readonly Pick<Item, 'id' | 'ask'>[]): string {
+  return asks.map(a => `${a.id} | ${clipWords(a.ask, ASK_READ_WORDS)} | ${o?.askSubjects[a.id] ?? '-'}`).join(NL)
+}
+
 /** The running children as the call reads them. */
 export function runningText(o: Overview | null, now: number): string {
   return (o?.children ?? [])
@@ -365,9 +364,15 @@ export function lookStarted(o: Overview | null, now: number): Overview | null {
   return o === null || o.look !== null ? o : { ...o, look: { startedAt: now } }
 }
 
-/** The Overview tab is no longer shown, at `at`. */
+/** How long the Overview must show before it counts as a look, so a pass through the tab keeps the look line. */
+export const LOOK_MIN_MS = 5_000
+
+/** The Overview tab is no longer shown, at `at`. A look shorter than `LOOK_MIN_MS` leaves the look line where it was. */
 export function lookEnded(o: Overview | null, at: number): Overview | null {
-  return o === null || o.look === null ? o : { ...o, lastLookAt: at, look: null }
+  if (o === null || o.look === null) return o
+  const isLongEnough = at - o.look.startedAt >= LOOK_MIN_MS
+
+  return { ...o, lastLookAt: isLongEnough ? at : o.lastLookAt, look: null }
 }
 
 function text(value: unknown): string {
@@ -378,9 +383,12 @@ function time(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
+/** Statuses an earlier build saved. An ask linked to the subject now marks one that waited on the person. */
+const DROPPED_STATUSES: Record<string, SubjectStatus> = { 'waits-on-you': 'queued', problem: 'queued' }
+
 function subjectOf(saved: unknown): Subject | null {
   const s = saved as Partial<Record<keyof Subject, unknown>> | null
-  const status = STATUSES.find(x => x === s?.status)
+  const status = STATUSES.find(x => x === s?.status) ?? DROPPED_STATUSES[String(s?.status)]
   const changedAt = time(s?.changedAt)
   if (!s || typeof s.id !== 'string' || typeof s.name !== 'string' || !status || changedAt === null) return null
 
@@ -419,9 +427,9 @@ function childOf(saved: unknown): Child | null {
 const OLD_STATUS: Record<string, OpenStatus | null> = {
   working: 'working',
   queued: 'queued',
-  'waits-on-you': 'waits-on-you',
+  'waits-on-you': 'queued',
   'waits-on-other': 'waits-on-other',
-  problem: 'problem',
+  problem: 'queued',
   unknown: 'queued',
   done: null,
   'ruled-out': null,
@@ -477,6 +485,8 @@ export function upgradeOverview(saved: unknown): Overview | null {
   if (!Array.isArray(o.subjects)) return null
   const subjects = o.subjects.map(subjectOf).filter((s): s is Subject => s !== null)
   const children = Array.isArray(o.children) ? o.children.map(childOf).filter((c): c is Child => c !== null) : []
+  const savedLinks = typeof o.askSubjects === 'object' && o.askSubjects !== null ? Object.entries(o.askSubjects) : []
+  const askSubjects = Object.fromEntries(savedLinks.filter((e): e is [string, string] => typeof e[1] === 'string'))
   const look = o.look as { startedAt?: unknown } | null | undefined
   const lookAt = time(look?.startedAt)
 
@@ -485,6 +495,7 @@ export function upgradeOverview(saved: unknown): Overview | null {
     goal: text(o.goal),
     subjects,
     children,
+    askSubjects,
     nextId: Math.max(time(o.nextId) ?? 1, subjects.length + 1),
     nextChildId: Math.max(time(o.nextChildId) ?? 1, children.length + 1),
     lastLookAt: time(o.lastLookAt),

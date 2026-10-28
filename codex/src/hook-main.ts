@@ -1,7 +1,7 @@
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { detachedUpdate } from './detached-update'
+import { detachedUpdate, OVERVIEW_REFRESH } from './detached-update'
 import { herdrOnWrite } from './host'
 import { handleHook } from './hook'
 import type { HookInput } from './hook'
@@ -13,11 +13,13 @@ async function main() {
   for await (const chunk of process.stdin) raw += chunk
   const dist = dirname(fileURLToPath(import.meta.url))
   const dir = dataDir(process.env, dirname(dist))
+  const startUpdate = detachedUpdate(dir, process.env, join(dist, 'update.mjs'))
   const out = await handleHook(JSON.parse(raw) as HookInput, {
     dir,
     env: process.env,
     now: Date.now,
-    startUpdate: detachedUpdate(dir, process.env, join(dist, 'update.mjs')),
+    startUpdate: id => startUpdate(id),
+    startOverviewRefresh: id => startUpdate(id, OVERVIEW_REFRESH),
     onWrite: herdrOnWrite(process.env, run, dir, Date.now),
     run,
   })

@@ -20,6 +20,7 @@ import type { Run } from '../../hooks/gh'
 import { COMPARE_PAGE_FILE } from '../../hooks/presses'
 import type { RowPress } from '../../hooks/presses'
 import {
+  claimedOverviewRefresh,
   endTurn,
   forkedFrom,
   hasLedger,
@@ -59,6 +60,7 @@ import {
   press,
   orderedKeys,
   reconcileUpdateStatus,
+  refreshOverview,
   runUpdates,
   wakeForDone,
 } from '../../hooks/session-host'
@@ -791,14 +793,24 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     await change(sessionIdOf(ctx), s => (s.stop ? { ...s, stop: null } : s)).catch(() => undefined)
   })
 
-  /** Activity notes are best effort, so a failed write never surfaces as an extension error. */
+  /**
+   * Notes the main agent's activity, and runs the Overview call when the running turn is due one. Activity notes are
+   * best effort, so a failed write never surfaces as an extension error.
+   */
   const noteQuietly = async (ctx: ExtensionContext, line: string | null) => {
     if (!line) return
+    let isClaimed = false
     try {
-      await change(sessionIdOf(ctx), s => noteActivity(s, line))
+      await change(sessionIdOf(ctx), s => {
+        const noted = noteActivity(s, line)
+        const claimed = claimedOverviewRefresh(noted, deps.now())
+        isClaimed = claimed !== noted
+        return claimed
+      })
     } catch {
       return
     }
+    if (isClaimed) deps.background(refreshOverview(updateHostFor(ctx)))
   }
 
   // Noted as the tool starts, not in tool_call, which omp waits on before every tool runs.
