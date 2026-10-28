@@ -27,7 +27,7 @@ The page fails when it reads as a log, when it copies Asks or Finds, or when it 
    - Reason: a time word in model text freezes when it is written, so "merged today" reads wrong the next day. How long work has stalled carries meaning, so the times must be true.
 4. **Time shows only on work that has stalled. Rows have no age column.** A subject held by an ask, or waiting on something outside the session, reads how long it has waited on its second line, as `waiting 2h`, once that passes 15 minutes. A child with no activity for 15 minutes reads `quiet 40m`. A row's place follows when its work last changed, not when the page last checked it.
    - Reason: an age on every row was hard to read and said little. A time matters when work has stopped moving. A row that rose because the page checked it would claim a change that did not happen.
-5. **A changed state always reaches the page.** Code keeps the old text and place only when the new text means the same.
+5. **A changed state always reaches the page.** Code keeps the old text and place only when the new text has the same content words, in any order.
    - Reason: "manual merge ready" becoming "manual merge broken" is a change, though half the words match.
 6. **◆ comes from a link between an open ask and the subjects it holds up.** The Overview call writes the link. Code draws ◆ while the ask is open and clears it when the ask closes. One ask can hold up several subjects. There is no "waits on you" status and no "problem" status.
    - Reason: a ◆ set by the model could not see Asks, so it went stale and could disagree with Asks. A problem nobody is fixing is a to-do for the person, so it belongs in Asks, or in Finds when it is outside the task.
@@ -148,7 +148,7 @@ Before any work, the page reads: "What this session's work is for, where each pa
 - **What it answers:** edits by id, one per line: add a subject, update one, finish one, drop one or drop it into another, write a was line, link an ask or a child, set the goal. Or `UNCHANGED`. `hooks/overview.ts` parses and applies the answer.
 - **What code does with it:**
   - A new subject whose name holds the same key words as an open one updates that one.
-  - An update that keeps the status and means the same keeps the old text and its place. Today code judges this by shared words, which drops some real changes; see "Not built yet".
+  - An update that keeps the status and has the same content words, in any order, keeps the old text and its place.
   - An answer that holds any line that is not an edit is asked once more. If that fails too, the page stays as it was and the status line says so.
 - **During a long turn.** The main agent's next tool call, once 10 minutes have passed since the turn began and since the last Overview call, starts an Overview call. That call reads the person's message and the turn's activity so far.
 - **On a catch-up.** The call reads the whole conversation and edits the current subjects.
@@ -501,7 +501,6 @@ These make no model calls.
 - **The replay harness grades a known run.** A recorded good run of each replay passes every rule. A recorded bad run fails at the step and property it was written to break.
 - **Schedules the hosts allow.** With fixed answers, through the real update path: replies that overlap, two Codex update processes in either order, a mid-turn call that overlaps the turn's end, a look during a call, a clear during a call, and a failed call followed by a catch-up.
 - **Known failing cases.** Each failure that code owns is a test marked as expected to fail, so `check.sh` stays green and turns red when the fix lands:
-  - a change in meaning that shares half its words reaches the page, #136;
   - work filed for later closes with its own mark, #137;
   - the fold names every finished piece the person has not seen, #138;
   - a look marks as seen only the rows that were on screen, #139;
@@ -535,7 +534,6 @@ An answer that holds prose is asked once more, so the Overview calls can reach a
 
 Decided, and still to build:
 
-- Code keeps an update's old text and place only when the meaning is the same: #136.
 - A closed mark and a fold of its own for work filed for later: #137.
 - The page names every piece finished since the person last saw it: #138.
 - A look marks as seen only the rows that were on screen: #139.
