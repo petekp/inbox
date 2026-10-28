@@ -38,6 +38,7 @@ import {
   placed,
   cutOffTurn,
   overviewChanged,
+  withHolds,
   withLook,
 } from '../../hooks/session'
 import {
@@ -65,6 +66,7 @@ import {
 } from '../../hooks/session-host'
 import type { OverviewRecords, PressOutcome, RecordFiles, SessionHost, UpdateHost } from '../../hooks/session-host'
 import { agentTools } from '../../hooks/tools'
+import type { ToolAnswer } from '../../hooks/tools'
 import { DARK_TONES, LIGHT_TONES } from '../../hooks/tones'
 import { clip } from '../../hooks/text'
 import { NEXT_BUILD_MARK, NO_HOLDS, RESUME_TEXT, SETTLED_MS, inboxCommandText, screenTabOf } from '../../hooks/view'
@@ -134,8 +136,8 @@ export type Inbox = {
    * messages due, and a PR fetch when due.
    */
   openPanel(ctx: ExtensionContext, openedAt: number): Promise<void>
-  /** Records the tab an open panel shows. A new tab starts a showing. */
-  showTab(ctx: ExtensionContext, tab: ShownTab): void
+  /** Records the tab an open panel shows. A new tab saves `holds`, with the showing the panel started. */
+  showTab(ctx: ExtensionContext, tab: ShownTab, holds: Holds): void
   closePanel(ctx: ExtensionContext): void
   fetchPrsWhenDue(ctx: ExtensionContext): void
   /** Calls `listener` after the session's saved state changes. Returns how to stop. */
@@ -444,13 +446,7 @@ function shownLine(result: {
   details?: unknown
   isError?: boolean
 }): string | null {
-  if (result.isError)
-    return (
-      result.content
-        .map(c => c.text ?? '')
-        .join('\n')
-        .trim() || null
-    )
+  if (result.isError) return textOfBlocks(result.content).trim() || null
   const details = result.details as Partial<ToolDetails> | null | undefined
 
   return typeof details?.personLine === 'string' ? details.personLine : null
@@ -923,9 +919,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
     // Herdr and git are asked outside the change: each run can last its whole timeout, and the session's changes run
     // one at a time.
-    const saved = await readState(dir, id).catch(() => null)
     const [inHerdr, branch] = await Promise.all([
-      delegatesInHerdr(saved?.ledger.overview ?? null, run),
+      readState(dir, id)
+        .catch(() => null)
+        .then(saved => delegatesInHerdr(saved?.ledger.overview ?? null, run)),
       branchIn(run, ctx.cwd),
     ])
     const endedAt = deps.now()
@@ -957,7 +954,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       approval: 'read',
       execute: async (_toolCallId, args, _signal, _onUpdate, ctx) => {
         if (isUnattended(ctx)) return { content: [{ type: 'text', text: 'The inbox is not shown in this session.' }] }
-        let answer: { result: string; personLine: string | null } = { result: '', personLine: null }
+        let answer: Omit<ToolAnswer, 'ledger'> = { result: '', personLine: null }
         await change(sessionIdOf(ctx), s => {
           const r = recorded(OMP, s, name, args as Record<string, unknown>, deps.now())
           answer = r
@@ -1008,17 +1005,17 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     openPanel: async (ctx, openedAt) => {
       const id = sessionIdOf(ctx)
       openPanels.set(id, 'needsYou')
-      await change(id, s => ({ ...s, shownSince: openedAt })).catch(() => undefined)
+      deps.background(change(id, s => ({ ...s, shownSince: openedAt })))
       await wakeForDone(hostFor(ctx)).catch(() => undefined)
       fetchPrsWhenDue(ctx)
     },
-    showTab: (ctx, tab) => {
+    showTab: (ctx, tab, holds) => {
       const id = sessionIdOf(ctx)
       if (!openPanels.has(id)) return
       const isChanged = openPanels.get(id) !== tab
       openPanels.set(id, tab)
       const now = deps.now()
-      if (isChanged) deps.background(change(id, s => ({ ...withLook(s, tab === 'overview', now), shownSince: now })))
+      if (isChanged) deps.background(change(id, s => withHolds(withLook(s, tab === 'overview', now), holds)))
     },
     closePanel: ctx => {
       const id = sessionIdOf(ctx)
@@ -1052,7 +1049,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     },
     resume: async () => inbox.resume(ctx),
     fetchPrsWhenDue: () => inbox.fetchPrsWhenDue(ctx),
-    shown: tab => inbox.showTab(ctx, tab),
+    shown: (tab, holds) => inbox.showTab(ctx, tab, holds),
     onChange: listener => inbox.onChange(ctx, listener),
   })
 

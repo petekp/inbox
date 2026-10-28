@@ -23,8 +23,8 @@ import {
   waitingThreads,
 } from './prs'
 import type { IsThreadSent, PrStatus } from './prs'
-import { DOT, isAgain, isShownSince, outAction, pressFeedbackIn, pressOutAction } from './view'
-import type { ActionEmphasis, PressState, RowWait } from './view'
+import { closedRowState, DOT, isAgain, isShownSince, outAction, pressFeedbackIn, pressOutAction } from './view'
+import type { ActionEmphasis, PressState, RowWait, SettledState } from './view'
 
 export const MAX_PRS = 12
 
@@ -338,12 +338,25 @@ export function isViewKept(
   return keepsView(prState, linked, ref) || (at !== null && isShownSince(at, shownSince))
 }
 
+/** The views `isViewKept` keeps. */
+export function keptViews(
+  prState: PrViews,
+  linked: string[],
+  lastActions: Record<string, LastAction>,
+  shownSince: number | null,
+): PrViews['views'] {
+  return Object.fromEntries(
+    Object.entries(prState.views).filter(([ref]) => isViewKept(prState, linked, lastActions, ref, shownSince)),
+  )
+}
+
 /**
- * A PR block a look draws: a tracked PR, or a PR dismissed while the look shows the PRs tab, which settles in place
- * like a row, at `at`, with Undo while `canUndo`.
+ * A PR block a look draws: a tracked PR, which is open, or a PR dismissed while the look shows the PRs tab, which
+ * settles in place as a dismissed row does.
  */
-export type DrawnPr =
-  { pr: PrView; isSettled: false } | { pr: PrView; isSettled: true; at: number; canUndo: boolean; offersUndo: boolean }
+export type DrawnPr = { pr: PrView; state: { is: 'open' } | SettledState }
+
+const DISMISSED_PR = { how: 'dismissed', outcome: PR_DISMISSED_LABEL } as const
 
 /**
  * The PR blocks a look draws, in order. A PR dismissed while the look shows the PRs tab stays as a settled block until
@@ -358,20 +371,12 @@ export function drawnPrs(
   settleWindowMs: number,
 ): DrawnPr[] {
   return inPrOrder(Object.values(prState.views)).flatMap((pr): DrawnPr[] => {
-    if (isTracked(prState, linked, pr.ref)) return [{ pr, isSettled: false }]
+    if (isTracked(prState, linked, pr.ref)) return [{ pr, state: { is: 'open' } }]
     const at = dismissedAt(lastActions, pr.ref)
     if (at === null || !isShownSince(at, shownSince)) return []
 
-    return [{ pr, isSettled: true, at, canUndo: now - at < settleWindowMs, offersUndo: true }]
+    return [{ pr, state: closedRowState(DISMISSED_PR, at, now, settleWindowMs, null) }]
   })
-}
-
-/**
- * Whether a look drawing from a view it read before switching tabs still draws `d`, as `isDrawnInPlace` says for a
- * row.
- */
-export function isPrDrawnInPlace(d: DrawnPr, shownSince: number | null): boolean {
-  return !d.isSettled || isShownSince(d.at, shownSince)
 }
 
 export const PR_TONES: Record<PrStatus, 'needsYou' | 'done' | 'findings' | 'error' | null> = {
