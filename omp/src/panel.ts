@@ -82,8 +82,9 @@ import {
   rowKeyPlan,
   rowMark,
   hasRunningMark,
-  LOOK_RULE_LABEL,
+  mergedLine,
   OVERVIEW_TEXT_LINES,
+  STALL_GAP,
   WAS_PREFIX,
   runningMark,
   settledLabel,
@@ -584,8 +585,8 @@ function pressFeedback(screen: PanelScreen, id: string, now: number, isMarkDone 
 
 const doneAt = (f: Line['feedback']): number | null => (f?.source?.is === 'done' ? f.source.at : null)
 
-/** Where an Overview row's mark sits. A subject's text, its was line and the look line start at `PAGE_TEXT_AT`. */
-const PAGE_MARK_AT = 3
+/** Where an Overview row's mark sits: in the goal's column, so the list lines up with it. A subject's text starts at `PAGE_TEXT_AT`. */
+const PAGE_MARK_AT = 1
 const PAGE_TEXT_AT = PAGE_MARK_AT + 2
 /** Where the mark of a child under a subject sits: after the tree's arm, which starts under the subject's mark. */
 const PAGE_CHILD_AT = PAGE_MARK_AT + 3
@@ -600,11 +601,7 @@ function pageEntries(page: OverviewPage): Entry[] {
       { kind: 'note', text: page.empty.title, isStrong: true },
       { kind: 'note', text: page.empty.hint, isWhole: true },
     ]
-  const head: Entry[] = [
-    ...(page.identity ? [{ kind: 'note' as const, text: page.identity }] : []),
-    ...(page.goal ? [{ kind: 'note' as const, text: page.goal, isStrong: true }] : []),
-    ...(page.live ? [{ kind: 'note' as const, text: page.live }] : []),
-  ]
+  const head: Entry[] = page.goal ? [{ kind: 'note', text: page.goal, isStrong: true, indent: PAGE_MARK_AT }] : []
   const rows = page.rows.map((row): Entry => ({ kind: 'page', row }))
 
   return head.length > 0 && rows.length > 0 ? [...head, { kind: 'note', text: '' }, ...rows] : [...head, ...rows]
@@ -1008,43 +1005,66 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   return out
 }
 
+/** Stands in for each space of the stall words while they wrap, so a wrap never splits them. */
+const UNBROKEN_SPACE = '\uE000'
+
+/** The room for an Overview text after a mark at `indent`. */
+const pageRoom = (indent: number, width: number) => Math.max(10, width - indent - 2 - 1)
+
 /**
- * One line of the Overview's list: a mark, its text wrapped after it to at most `maxLines` lines and cut with an
- * ellipsis past them, and the age at the panel's right edge. `paint` styles the text from `plainCells` on, so a
- * subject's name stays plain and where it stands draws dim.
+ * `text` wrapped to `room` cells, at most `maxLines` lines and cut with an ellipsis past them. `first` paints its
+ * first `firstCells` cells and `rest` the cells after.
+ */
+function pageText(
+  text: string,
+  room: number,
+  maxLines: number,
+  first: (t: string) => string,
+  firstCells = Infinity,
+  rest = first,
+): string[] {
+  const wrapped = wrapText(text, room)
+  const lines = wrapped.slice(0, maxLines)
+  if (wrapped.length > lines.length)
+    lines[lines.length - 1] = `${cutForEllipsis(lines.at(-1)!, t => cellWidth(t) <= room)}…`
+  let firstLeft = firstCells
+
+  return lines.map(l => {
+    const head = cutToCells(l, Math.max(0, firstLeft))
+    firstLeft -= cellWidth(l) + 1
+
+    return first(head) + (head.length < l.length ? rest(l.slice(head.length)) : '')
+  })
+}
+
+/**
+ * One row of the Overview's list: a mark and its name wrapped after it, then its second line of where it stands, dim,
+ * and its stall words in the needs-you tone.
  */
 function pageLine(
   d: Draw,
   indent: number,
   mark: string,
-  text: string,
-  age: string | null,
-  {
-    plainCells = 0,
-    agePaint = d.style.dim,
-    maxLines = Infinity,
-  }: { plainCells?: number; agePaint?: (t: string) => string; maxLines?: number } = {},
+  name: string,
+  namePaint: (t: string) => string,
+  second: { text: string | null; stall: string | null } = { text: null, stall: null },
 ): string[] {
   const { width, style: s } = d
   const textAt = indent + 2
-  const side = age ? cellWidth(age) + 1 : 0
-  const room = Math.max(10, width - textAt - side - 1)
-  const wrapped = wrapText(text, room)
-  const lines = wrapped.slice(0, maxLines)
-  if (wrapped.length > lines.length)
-    lines[lines.length - 1] = `${cutForEllipsis(lines.at(-1)!, t => cellWidth(t) <= room)}…`
-  let plainLeft = plainCells
-  const painted = lines.map(l => {
-    const plain = cutToCells(l, Math.max(0, plainLeft))
-    plainLeft -= cellWidth(l) + 1
-
-    return plain + s.dim(l.slice(plain.length))
-  })
-  const gap = Math.max(1, width - 1 - textAt - cellWidth(lines[0] ?? '') - (age ? cellWidth(age) : 0))
+  const room = pageRoom(indent, width)
+  const names = pageText(name, room, OVERVIEW_TEXT_LINES, namePaint)
+  const stall = second.stall?.replaceAll(' ', UNBROKEN_SPACE) ?? null
+  const secondText = [second.text, stall].filter(Boolean).join(STALL_GAP)
+  const dimCells = second.text ? cellWidth(second.text) + (stall ? cellWidth(STALL_GAP) : 0) : 0
+  const seconds = secondText
+    ? pageText(secondText, room, OVERVIEW_TEXT_LINES, s.dim, dimCells, t => s.tone('needsYou', t)).map(l =>
+        l.replaceAll(UNBROKEN_SPACE, ' '),
+      )
+    : []
 
   return [
-    `${' '.repeat(indent)}${mark} ${painted[0] ?? ''}${age ? ' '.repeat(gap) + agePaint(age) : ''}`,
-    ...painted.slice(1).map(l => ' '.repeat(textAt) + l),
+    `${' '.repeat(indent)}${mark} ${names[0] ?? ''}`,
+    ...[...names.slice(1), ...seconds].map(l => ' '.repeat(textAt) + l),
   ]
 }
 
@@ -1062,22 +1082,27 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
   if (row.kind === 'subject') {
     const glyph = row.isRunning ? runningMark(now) : row.mark
     const mark = row.tone ? s.tone(row.tone, glyph) : s.dim(glyph)
-    const text = row.text ? `${row.name}: ${row.text}` : row.name
-    const out = pageLine(d, PAGE_MARK_AT, mark, text, row.age, {
-      plainCells: cellWidth(row.name),
-      maxLines: OVERVIEW_TEXT_LINES,
-    })
+    const out = pageLine(d, PAGE_MARK_AT, mark, row.name, t => t, { text: row.text, stall: row.stall })
+    const room = pageRoom(PAGE_MARK_AT, width)
+    if (row.merged)
+      out.push(
+        ...indented(
+          mergedLine(row.merged, t => cellWidth(t) <= room),
+          PAGE_TEXT_AT,
+          width,
+          OVERVIEW_TEXT_LINES,
+          s.dim,
+        ),
+      )
     if (row.was) out.push(...indented(`${WAS_PREFIX}${row.was}`, PAGE_TEXT_AT, width, OVERVIEW_TEXT_LINES, s.dim))
 
     return row.hasChildren ? withTree(out, null, '│', s) : out
   }
   if (row.kind === 'child') {
     const mark = s.dim(row.isRunning ? runningMark(now) : row.mark)
-    const tone = row.ageTone
-    const agePaint = tone ? (t: string) => s.tone(tone, t) : s.dim
-    const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, row.age, {
-      agePaint,
-      maxLines: OVERVIEW_TEXT_LINES,
+    const out = pageLine(d, row.branch ? PAGE_CHILD_AT : PAGE_MARK_AT, mark, row.name, s.dim, {
+      text: null,
+      stall: row.stall,
     })
 
     return row.branch ? withTree(out, TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s) : out
@@ -1088,14 +1113,15 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
     return withTree([' '.repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s)
   }
   if (row.kind === 'look') {
-    const label = LOOK_RULE_LABEL
-    const fill = '─'.repeat(Math.max(2, width - 1 - PAGE_TEXT_AT - cellWidth(label)))
+    const label = ` ${row.text} `
+    const fill = Math.max(4, width - 1 - PAGE_MARK_AT - cellWidth(label))
+    const before = Math.floor(fill / 2)
 
-    return [`${' '.repeat(PAGE_TEXT_AT)}${s.dim(label + fill)}`]
+    return [`${' '.repeat(PAGE_MARK_AT)}${s.dim(`${'─'.repeat(before)}${label}${'─'.repeat(fill - before)}`)}`]
   }
   const mark = row.tone ? s.tone(row.tone, row.mark) : s.dim(row.mark)
 
-  return pageLine(d, PAGE_MARK_AT, mark, row.text, row.age, {})
+  return pageLine(d, PAGE_MARK_AT, mark, row.text, s.dim)
 }
 
 type TabCell = {
@@ -1104,24 +1130,19 @@ type TabCell = {
   label: string
   symbol: string
   tone: ToneName | null
-  /** What follows the name: a count, or the Overview's news dot. */
+  /** What follows the name: a row tab's count. */
   badge: string | null
   isShown: boolean
 }
 
 /** One layout of the tab line. Each later layout is narrower. */
-type TabForm = { isBracketed: boolean; hasNewsDot: boolean }
+type TabForm = { isBracketed: boolean }
 
-/** The narrowest form, tried only with the symbols, drops the Overview's news dot so a row tab's count still fits. */
-const TAB_FORMS: readonly TabForm[] = [
-  { isBracketed: true, hasNewsDot: true },
-  { isBracketed: false, hasNewsDot: true },
-  { isBracketed: false, hasNewsDot: false },
-]
+const TAB_FORMS: readonly TabForm[] = [{ isBracketed: true }, { isBracketed: false }]
 
 function tabCell(t: TabCell, name: string, form: TabForm, s: Style): string {
   const key = form.isBracketed ? `[${t.hotkey}]` : t.hotkey
-  const badge = form.hasNewsDot || isRowTab(t.id) ? t.badge : null
+  const { badge } = t
   if (t.isShown) return s.inverse(s.bold(` ${key} ${name}${badge === null ? '' : ` ${badge}`} `))
   const badgeText = badge === null ? '' : ` ${t.tone ? s.tone(t.tone, badge) : badge}`
 
@@ -1142,16 +1163,12 @@ function tabBar(d: Draw): string {
   const tabs: TabCell[] = shownTabs(screen.isNextBuild === true).map(t => ({
     ...t,
     tone: isRowTab(t.id) ? t.id : null,
-    badge: tabBadge(t.id, counts, screen.view.overviewPage.hasNews),
+    badge: tabBadge(t.id, counts),
     isShown: t.id === ui.tab,
   }))
   const lineOf = (naming: TabNaming, form: TabForm) =>
     ` ${tabs.map(t => tabCell(t, tabName(t, naming), form, s)).join(' ')}`
-  const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => {
-    const isDotDroppedEarly = naming === 'words' && !form.hasNewsDot
-
-    return !isDotDroppedEarly && visibleLength(lineOf(naming, form)) <= width
-  })
+  const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => visibleLength(lineOf(naming, form)) <= width)
 
   return spread(lineOf(naming, layout), s.dim('esc to close '), width)
 }

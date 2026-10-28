@@ -38,7 +38,6 @@ export type FeatureId =
   | 'dim-pressed-button'
   | 'herdr-sidebar'
   | 'overview-children'
-  | 'overview-news-dot'
   | 'overview-look-line'
   | 'overview-row-rules'
   | 'overview-failed-warning'
@@ -93,7 +92,6 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'herdr-sidebar': { kind: 'full' },
       'overview-children': { kind: 'full' },
-      'overview-news-dot': { kind: 'full' },
       'overview-look-line': { kind: 'full' },
       'overview-row-rules': { kind: 'full' },
       'overview-failed-warning': { kind: 'full' },
@@ -190,7 +188,6 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           "Codex's hooks report subagents and shell commands, and nothing else that runs apart from the turn, so background commands and workflows do not show. The end of a wait on a Herdr delegate is read at Stop.",
       },
-      'overview-news-dot': { kind: 'full' },
       'overview-look-line': { kind: 'full' },
       'overview-row-rules': { kind: 'full' },
       'overview-failed-warning': { kind: 'full' },
@@ -264,7 +261,6 @@ export const CLIENTS: Record<ClientId, Client> = {
         reason:
           "omp's extension events report subagents and bash calls. omp's reference names no event for a background job or a workflow run, so those do not show.",
       },
-      'overview-news-dot': { kind: 'full' },
       'overview-look-line': { kind: 'full' },
       'overview-row-rules': { kind: 'full' },
       'overview-failed-warning': { kind: 'full' },

@@ -803,7 +803,7 @@ test('an open still pending after the press timeout shows nothing on its row, an
   assert.deepEqual([saved.lastActions.i1?.result, saved.lastActions.i2?.result], [pending(staleAt), pending(100)])
 })
 
-test('a chat saved mid-turn reads Working… until a view or a press finds the turn ended in its rollout', async () => {
+test('a chat saved mid-turn stays running until a view or a press finds the turn ended in its rollout', async () => {
   const dir = tempDir()
   const rollout = join(dir, 'rollout.jsonl')
   writeFileSync(rollout, `${turnRow('task_started', 't1')}\n`)
@@ -822,31 +822,33 @@ test('a chat saved mid-turn reads Working… until a view or a press finds the t
     tabHtml: '<html></html>',
     fallbackCli: async () => 'codex',
   })
-  type Shown = { overviewPage: { live: string | null } }
   const call = (name: string, args: Record<string, unknown>) =>
     handle({
       jsonrpc: '2.0',
       id: 1,
       method: 'tools/call',
       params: { name, arguments: args, _meta: { thread_id: 's1' } },
-    }) as Promise<{ result: { structuredContent: Shown & { view: Shown } } }>
-  const viewNow = async () =>
-    (await call('inbox_view', {})).result.structuredContent.overviewPage.live === 'Working…' ? 'Working…' : null
+    })
+  const isRunning = async () => (await readState(dir, 's1')).presence.isTurnRunning
+  const viewNow = async () => {
+    await call('inbox_view', {})
 
-  assert.equal(await viewNow(), 'Working…')
+    return (await isRunning()) ? 'running' : null
+  }
+
+  assert.equal(await viewNow(), 'running')
   writeFileSync(rollout, `${turnRow('task_started', 't1')}\n${turnRow('task_complete', 't1')}\n`)
   assert.equal(await viewNow(), null)
-  assert.equal((await readState(dir, 's1')).presence.isTurnRunning, false)
 
   await running()
   writeFileSync(rollout, `${turnRow('task_started', 't2')}\n`)
-  assert.equal(await viewNow(), 'Working…')
+  assert.equal(await viewNow(), 'running')
   writeFileSync(rollout, `${turnRow('task_started', 't2')}\n${turnRow('turn_aborted', 't2')}\n`)
-  const pressed = await call('inbox_press', { press: { action: 'done', id: 'i1' }, thread: 'another chat' })
-  assert.equal(pressed.result.structuredContent.view.overviewPage.live === 'Working…', false)
+  await call('inbox_press', { press: { action: 'done', id: 'i1' }, thread: 'another chat' })
+  assert.equal(await isRunning(), false)
 })
 
-test('a turn another plugin’s Stop continues reads Working… again once a view finds it running in the rollout', async () => {
+test('a turn another plugin’s Stop continues runs again once a view finds it running in the rollout', async () => {
   const dir = tempDir()
   const rollout = join(dir, 'rollout.jsonl')
   writeFileSync(rollout, '')
@@ -860,22 +862,22 @@ test('a turn another plugin’s Stop continues reads Working… again once a vie
     fallbackCli: async () => 'codex',
   })
   const viewNow = async () => {
-    const r = (await handle({
+    await handle({
       jsonrpc: '2.0',
       id: 1,
       method: 'tools/call',
       params: { name: 'inbox_view', arguments: {}, _meta: { thread_id: 's1' } },
-    })) as { result: { structuredContent: { overviewPage: { live: string | null } } } }
+    })
 
-    return r.result.structuredContent.overviewPage.live === 'Working…' ? 'Working…' : null
+    return (await readState(dir, 's1')).presence.isTurnRunning ? 'running' : null
   }
 
   await handleHook(input('UserPromptSubmit', { prompt: 'Ship it', turn_id: 't1', transcript_path: rollout }), deps)
-  assert.equal(await viewNow(), 'Working…')
+  assert.equal(await viewNow(), 'running')
   writeFileSync(rollout, `${turnRow('task_started', 't1')}\n`)
   await handleHook(input('Stop', { last_assistant_message: '', turn_id: 't1', transcript_path: rollout }), deps)
   assert.equal((await readState(dir, 's1')).presence.isTurnRunning, false)
-  assert.equal(await viewNow(), 'Working…')
+  assert.equal(await viewNow(), 'running')
 
   writeFileSync(rollout, `${turnRow('task_started', 't1')}\n${turnRow('task_complete', 't1')}\n`)
   assert.equal(await viewNow(), null)

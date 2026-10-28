@@ -63,6 +63,7 @@ function subject(
     status,
     text,
     was: null,
+    merged: null,
     createdAt: at,
     changedAt: at,
     closedAt: isClosed ? at : null,

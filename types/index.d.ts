@@ -11,6 +11,8 @@ export type Subject = {
   text: string
   /** The plan a reversal replaced, shown until the person looks. */
   was: string | null
+  /** The names of the subjects dropped into this one since the person last looked, shown until they look. */
+  merged: string | null
   createdAt: number
   /** When its status or where it stands last changed. Code sets it; the model never writes a time. */
   changedAt: number

@@ -761,23 +761,23 @@ async function withSteps() {
   return { inbox, stepPress }
 }
 
-test('Working… shows from agent_start to the run’s end, and a Done message waits for Esc to end the run', async () => {
+test('a turn runs from agent_start to the run’s end, and a Done message waits for Esc to end the run', async () => {
   const inbox = createInbox(pi(), deps())
-  const now = async () => ((await inbox.screen(makeCtx())).view.overviewPage.live === 'Working…' ? 'Working…' : null)
+  const now = async () => (state().presence.isTurnRunning ? 'running' : null)
   await prompt('hello')
   await record({ kind: 'task', ask: 'Try the CLI by hand' })
   await endAgent('Done.')
   await settle()
   await inbox.press(makeCtx(), { action: 'done', id: state().ledger.items[0].id }, NO_HOLDS)
   await call('agent_start', { type: 'agent_start' })
-  expect(await now()).toBe('Working…')
+  expect(await now()).toBe('running')
 
   clock += 5000
   timers[0]!.fn()
   await settle()
   expect(sent).toEqual([])
   await endAgent('', { willContinue: true })
-  expect(await now()).toBe('Working…')
+  expect(await now()).toBe('running')
 
   await endAgent('', { messages: [{ role: 'assistant', content: [], stopReason: 'aborted' }] })
   await settle()

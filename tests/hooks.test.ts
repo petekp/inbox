@@ -764,7 +764,7 @@ test('a Done message another plugin rewrote to text a pending press also sent re
   await arrive($)
 })
 
-test('Working… shows from the main agent’s turn.start to its turn.complete, not for a subagent’s turn, a Done message waits for an interrupted turn to end, and a reload clears it', async ($, on) => {
+test('a turn runs from the main agent’s turn.start to its turn.complete, not for a subagent’s turn, a Done message waits for an interrupted turn to end, and a reload clears it', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   let session: Parameters<typeof overviewPage>[0] | null = null
@@ -772,13 +772,13 @@ test('Working… shows from the main agent’s turn.start to its turn.complete, 
     session = e.value as never
     return next(e)
   })
-  const now = async () => (overviewPage(session!, 1_000_000).live === 'Working…' ? 'Working…' : null)
+  const now = async () => (session!.presence.isTurnRunning ? 'running' : null)
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   ledgerReply = 'NEW: do | - | Sign in to npm | - | -'
   await $.prompt.submit({ text: 'publish it', wait: false, origin: { kind: 'composer' } })
   await $.turn.start({ text: 'publish it', turnId: 't1' })
-  expect(await now()).toBe('Working…')
+  expect(await now()).toBe('running')
   await $.turn.complete({ answer: 'Sign in to npm.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
   expect(await now()).toBe(null)
@@ -792,7 +792,7 @@ test('Working… shows from the main agent’s turn.start to its turn.complete, 
   expect(await now()).toBe(null)
   await $.turn.start({ text: '', turnId: 't2' })
   await clock.advance(SETTLED_MS)
-  expect(await now()).toBe('Working…')
+  expect(await now()).toBe('running')
   expect(sent).toEqual([])
 
   await $.turn.complete({ answer: '', durationMs: 5, isAborted: true, turnId: 't2', reason: 'aborted' })
@@ -801,7 +801,7 @@ test('Working… shows from the main agent’s turn.start to its turn.complete, 
   expect(sent).toEqual(['Done: Sign in to npm'])
 
   await $.turn.start({ text: '', turnId: 't3' })
-  expect(await now()).toBe('Working…')
+  expect(await now()).toBe('running')
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.settle()
   expect(await now()).toBe(null)
@@ -3751,7 +3751,7 @@ test('a session saved mid-turn by a process that ended loads with no turn runnin
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.settle()
-  expect(overviewPage(session!, 1_000_000).live).not.toBe('Working…')
+  expect(session!.presence.isTurnRunning).toBe(false)
   const pane = await $.ui.mount(PANE)
   await pane.press({ key: 'select-i1' })
   await clock.advance(PRESS_GUARD_MS)
@@ -4768,7 +4768,7 @@ test('a working subject’s mark on the Overview moves each frame only while a t
   expect(ended.working).toEqual(ended.still)
 })
 
-test('on a next build, the Overview tab’s news dot clears when the page shows, the page shows the goal and the subjects in place of rows, leaves the row keys idle, a row tab shows its rows again, and an ask names the subject it holds up', async ($, on) => {
+test('on a next build, a look starts when the Overview page shows, the page shows the goal and the subjects in place of rows, leaves the row keys idle, a row tab shows its rows again, and an ask names the subject it holds up', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
@@ -4789,15 +4789,14 @@ test('on a next build, the Overview tab’s news dot clears when the page shows,
     return saved && JSON.parse(saved[1]).ledger.overview.look
   }
   expect(lookOf()).toBeNull()
-  expect(await pane.find({ text: /^ •$/ })).toBeDefined()
   await pane.press({ key: 'tab-key-overview' })
   await clock.settle()
   expect(lookOf()).not.toBeNull()
-  expect(await pane.find({ text: /^ •$/ })).toBeUndefined()
   expect((await pane.find({ key: 'overview-goal' }))?.text).toBe('Adding a greeting CLI')
-  expect((await pane.find({ key: 'overview-s1' }))?.text).toContain('Runtime: Node or Python')
+  expect((await pane.find({ key: 'overview-s1-name' }))?.text).toBe('Runtime')
+  expect((await pane.find({ key: 'overview-s1-text' }))?.text).toBe('Node or Python')
   expect((await pane.find({ key: 'overview-s1' }))?.text).toContain('◆')
-  expect((await pane.find({ key: 'overview-s2' }))?.text).toContain('Plan: written')
+  expect((await pane.find({ key: 'overview-s2-text' }))?.text).toBe('written')
   expect(await pane.find({ text: /Use Node or Python\?/ })).toBeUndefined()
   const rowKeys = async () =>
     (await pane.findAll({ type: 'Button' }))
@@ -5085,7 +5084,7 @@ test('the Overview page says what it is for before the session has any work', as
   expect(await desktop.find({ text: /once the work starts\./ })).toBeDefined()
 })
 
-test('on a next build, at 31 desktop columns the tabs show their symbols with their counts and the Overview’s news dot, at 69 their words, and the Overview page draws there', async ($, on) => {
+test('on a next build, at 31 desktop columns the tabs show their symbols with their counts, at 69 their words, and the Overview page draws there', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
@@ -5108,11 +5107,7 @@ test('on a next build, at 31 desktop columns the tabs show their symbols with th
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 31 } })
   const tabBar = async () => (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
   expect((await tabBar()).tabs.map(t => [t.id, t.label, t.badge])).toEqual(
-    shownTabs(true).map(t => [
-      t.id,
-      t.symbol,
-      t.id === 'overview' ? '•' : t.id === 'needsYou' ? '2' : t.id === 'findings' ? '1' : null,
-    ]),
+    shownTabs(true).map(t => [t.id, t.symbol, t.id === 'needsYou' ? '2' : t.id === 'findings' ? '1' : null]),
   )
   await pane.redraw({ ...PANE.props, bodyColumns: 69 })
   expect((await tabBar()).tabs.map(t => t.label)).toEqual(shownTabs(true).map(t => t.label))
@@ -5126,18 +5121,24 @@ test('on a next build, at 31 desktop columns the tabs show their symbols with th
   await clock.settle()
   expect((await tabBar()).shown).toBe('overview')
   expect((await pane.find({ key: 'overview-goal' }))?.text).toBe('Adding a greeting CLI')
-  expect((await pane.find({ key: 'overview-s2' }))?.text).toContain('Plan: written')
+  expect((await pane.find({ key: 'overview-s2-text' }))?.text).toBe('written')
   expect(await pane.find({ key: 'select-f3' })).toBeUndefined()
 })
 
-test('on the Overview, a subject’s text wraps to three lines at the docked width and is cut with an ellipsis past them, in the terminal and on desktop', async ($, on) => {
+test('on the Overview, where a subject stands goes under its name, wraps to three lines at the docked width and is cut with an ellipsis past them, and a merged line is cut to one line at a phrase, in the terminal and on desktop', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   files = ['/.next-build']
   paneState = { isShown: true, isFocused: true }
   const name = 'Help text for every greeting command'
-  const text = 'being written with an example for each flag and its default'
-  overviewReply = `GOAL: Adding a greeting CLI\nNEW: working | ${name} | ${text}\nNEW: queued | Loud flag | after help`
+  const text = 'being written with examples, defaults, descriptions, environment variables, configuration precedence'
+  overviewReply = [
+    'GOAL: Adding a greeting CLI',
+    `NEW: working | ${name} | ${text}`,
+    'NEW: queued | Loud flag | after help',
+    'NEW: working | Sync retry, backoff, and jitter | drafted',
+    'DROP: s3 | part of help | INTO s1',
+  ].join('\n')
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
@@ -5148,21 +5149,27 @@ test('on the Overview, a subject’s text wraps to three lines at the docked wid
   await clock.settle()
   const textOf = async (pane: Pick<Mounted, 'find'>, key: string) => (await pane.find({ key }))?.text
   const lines = (await textOf(terminal, 'overview-s1-text'))!.split('\n')
+  expect(await textOf(terminal, 'overview-s1-name')).toBe('Help text for every greeting\ncommand')
   expect(lines).toHaveLength(OVERVIEW_TEXT_LINES)
-  expect(lines[0]).toBe('Help text for every')
+  expect(lines[0]).toBe('being written with examples,')
   expect(lines.at(-1)).toMatch(/…$/)
-  expect(await textOf(terminal, 'overview-s2-text')).toBe('Loud flag: after help')
+  expect(await textOf(terminal, 'overview-s1-merged')).toBe('merged in: Sync retry, backoff…')
+  expect(await textOf(terminal, 'overview-s2-name')).toBe('Loud flag')
+  expect(await textOf(terminal, 'overview-s2-text')).toBe('after help')
   await terminal.redraw({ ...PANE.props, bodyColumns: 120 })
-  expect(await textOf(terminal, 'overview-s1-text')).toBe(`${name}: ${text}`)
+  expect(await textOf(terminal, 'overview-s1-text')).toBe(text)
+  expect(await textOf(terminal, 'overview-s1-merged')).toBe('merged in: Sync retry, backoff, and jitter')
 
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 36 } })
   await desktop.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
   const shown = (await textOf(desktop, 'overview-s1-text'))!
-  expect(shown).toMatch(/^Help text for every greeting command: .+…$/)
-  expect(shown.length).toBeLessThan(`${name}: ${text}`.length)
+  expect(shown).toMatch(/^being written with .+…$/)
+  expect(shown.length).toBeLessThan(text.length)
+  expect(await textOf(desktop, 'overview-s1-merged')).toMatch(/^merged in: Sync retry(, backoff)?…$/)
   await desktop.redraw({ ...PANE.props, bodyColumns: 120 })
-  expect(await textOf(desktop, 'overview-s1-text')).toBe(`${name}: ${text}`)
+  expect(await textOf(desktop, 'overview-s1-text')).toBe(text)
+  expect(await textOf(desktop, 'overview-s1-merged')).toBe('merged in: Sync retry, backoff, and jitter')
 })
 
 test('on the Overview in the terminal, the rows under a subject hang from its mark, ├─ for each and └─ for the last, and the line runs beside each wrapped line', async ($, on) => {
@@ -5172,11 +5179,11 @@ test('on the Overview in the terminal, the rows under a subject hang from its ma
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'inbox', args: 'demo' } as never)
-  const pane = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 40 } })
+  const pane = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 34 } })
   await pane.press({ key: 'tab-key-overview' })
   await clock.settle()
   const tree = async (id: string) => (await pane.find({ key: `overview-${id}-tree` }))?.text.split('\n').slice(0, 3)
-  const textLines = async (id: string) => (await pane.find({ key: `overview-${id}-text` }))!.text.split('\n')
+  const textLines = async (id: string) => (await pane.find({ key: `overview-${id}-name` }))!.text.split('\n')
 
   expect(await tree('s1')).toEqual(['│', '│', '│'])
   expect(await tree('c1')).toEqual(['├─', '│', '│'])

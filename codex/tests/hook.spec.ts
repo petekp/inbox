@@ -151,19 +151,18 @@ test('a start after compaction carries the Overview goal and where each open sub
   assert.match(context, /- Cache: Redis or memory \(queued\)/)
 })
 
-test('a main-agent prompt reads Working… until Stop or a start that is not a compact, and a subagent prompt does not', async () => {
+test('a main-agent prompt starts a turn that runs until Stop or a start that is not a compact, and a subagent prompt does not', async () => {
   const dir = tempDir()
   const deps = hookDeps(dir)
-  const now = async () =>
-    viewOf(await readState(dir, 's1'), 1000).overviewPage.live === 'Working…' ? 'Working…' : null
+  const now = async () => ((await readState(dir, 's1')).presence.isTurnRunning ? 'running' : null)
 
   await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
   await handleHook(input('UserPromptSubmit', { prompt: 'Look around', agent_id: 'a1' }), deps)
   assert.equal(await now(), null)
   await handleHook(input('UserPromptSubmit', { prompt: 'Ship it', turn_id: 't1' }), deps)
-  assert.equal(await now(), 'Working…')
+  assert.equal(await now(), 'running')
   await handleHook(input('SessionStart', { cwd: '/repo', source: 'compact' }), deps)
-  assert.equal(await now(), 'Working…')
+  assert.equal(await now(), 'running')
   await handleHook(input('Stop', { last_assistant_message: '', turn_id: 't1' }), deps)
   assert.equal(await now(), null)
 

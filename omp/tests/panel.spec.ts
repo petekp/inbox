@@ -735,21 +735,31 @@ const tabLine = (screen: PanelScreen, ui: PanelUi, width: number) =>
 
 const labelOf = (row: OverviewRow) => (row.kind === 'subject' || row.kind === 'child' ? row.name : row.text)
 
-test('the Overview page shows the identity, the goal and the live line, then its rows in order, each was line under its subject', () => {
+test('the Overview page shows the goal, then its rows in order, each subject’s marks in the goal’s column, where it stands under its name and its was line under that, and Seen in the middle of its rule', () => {
   const screen = screenOf()
   const page = screen.view.overviewPage
   const lines = text(screen, onPage).split('\n')
   const at = (s: string) => lines.findIndex(l => l.includes(s))
-  const order = [page.identity!, page.goal!, page.live!, ...page.rows.map(labelOf)].map(at)
+  const order = [page.goal!, ...page.rows.map(labelOf)].map(at)
   expect(order.every(n => n >= 0)).toBe(true)
   expect(order).toEqual([...order].sort((a, b) => a - b))
-  const withWas = page.rows.filter(r => r.kind === 'subject' && r.was !== null)
+  const goalAt = lines[at(page.goal!)]!.search(/\S/)
+  const subjects = page.rows.flatMap(r => (r.kind === 'subject' ? [r] : []))
+  for (const row of subjects) expect(lines[at(row.name)]!.search(/\S/)).toBe(goalAt)
+  const withWas = subjects.filter(r => r.was !== null && r.text !== null)
   expect(withWas.length).toBeGreaterThan(0)
-  for (const row of withWas) if (row.kind === 'subject') expect(lines[at(row.name) + 1]).toContain(`was: ${row.was}`)
+  for (const row of withWas) {
+    expect(lines[at(row.name) + 1]).toContain(row.text!)
+    expect(lines[at(row.name) + 2]).toContain(`was: ${row.was}`)
+  }
+  const seen = lines[at(' Seen ')]!.trim()
+  const [left, right] = seen.split(' Seen ')
+  expect(left!.length - right!.length).toBeLessThanOrEqual(1)
+  expect(left).toMatch(/^─+$/)
 })
 
 test('on the Overview page, the rows under a subject hang from its mark, ├─ for each and └─ for the last, and the line runs beside each wrapped line', () => {
-  const lines = text(screenOf(), onPage, 34).split('\n')
+  const lines = text(screenOf(), onPage, 28).split('\n')
   const at = (s: string) => lines.findIndex(l => l.includes(s))
   const [subject, mid, last, next] = [
     at('Dismiss gesture'),
@@ -778,28 +788,30 @@ test('on the Overview page, a rule from the text column sets each item apart, wi
     expect(rowsAfterRules[n]).toContain(row)
 })
 
-test('on the Overview page, a subject’s text wraps to three lines and is cut with an ellipsis past them, and its name stays plain on each line', () => {
+test('on the Overview page, a subject’s name stays plain, and where it stands goes dim under it, wrapped to three lines and cut with an ellipsis past them', () => {
   const name = 'Help text for every greeting command'
+  const where = 'being written with examples, defaults, descriptions, environment variables, configuration precedence'
   const state = emptyState('s1')
   state.ledger = {
     ...state.ledger,
-    overview: applyOverview(
-      null,
-      parseOverview(`NEW: working | ${name} | being written with an example for each flag and its default`)!,
-      NOW,
-      new Set(),
-    ),
+    overview: applyOverview(null, parseOverview(`NEW: working | ${name} | ${where}`)!, NOW, new Set()),
   }
   const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, true, NO_HOLDS) })
   const raw = drawn(screen, onPage, 34)
   const first = raw.findIndex(l => strip(l).includes('Help text'))
-  const subject = raw.slice(first, first + OVERVIEW_TEXT_LINES + 1).map(strip)
+  const subject = raw.slice(first, first + 2 + OVERVIEW_TEXT_LINES + 1).map(strip)
 
-  expect(subject[0]).toMatch(/Help text for every\s+now$/)
-  expect(subject[OVERVIEW_TEXT_LINES - 1]).toMatch(/…$/)
-  expect(subject[OVERVIEW_TEXT_LINES]?.trim() ?? '').not.toMatch(/^[a-z]/)
-  expect(raw[first + 1]).toContain(`greeting command${ESC}2m: being`)
-  expect(text(screen, onPage, 200)).toContain(`${name}: being written with an example for each flag and its default`)
+  expect(subject.slice(0, 3)).toEqual([
+    ' ● Help text for every greeting',
+    '   command',
+    '   being written with examples,',
+  ])
+  expect(subject[1 + OVERVIEW_TEXT_LINES]).toMatch(/…$/)
+  expect(subject[2 + OVERVIEW_TEXT_LINES]?.trim() ?? '').not.toMatch(/^[a-z]/)
+  expect(raw[first + 1]).not.toContain(ESC)
+  expect(raw[first + 2]).toContain(`${ESC}2mbeing`)
+  const wide = text(screen, onPage, 200).split('\n')
+  expect(wide[wide.findIndex(l => l.includes(name)) + 1]?.trim()).toBe(where)
 })
 
 test('each subject’s mark takes its tone, and a mark with no tone is muted', () => {
@@ -915,15 +927,6 @@ test('the tab line counts each symbol as two cells, so it fits the panel and kee
         expect(cellWidth(bar)).toBeLessThanOrEqual(width)
         if (bar.includes('esc')) expect(bar.trimEnd()).toEndWith('esc to close')
       }
-})
-
-test('the Overview tab draws the news dot while the page changed since the last look, and no count', () => {
-  const s = demoState(NOW)
-  const seen = { ...s, ledger: { ...s.ledger, overview: { ...s.ledger.overview!, lastLookAt: NOW } } }
-  const lineOf = (state: typeof s) =>
-    tabLine(screenOf({ view: sessionView(state, NOW, SETTLED_MS, true, NO_HOLDS), isNextBuild: true }), INITIAL_UI, 200)
-  expect(lineOf(s)).toMatch(/\[1\] Overview • +\[2\]/)
-  expect(lineOf(seen)).toMatch(/\[1\] Overview +\[2\]/)
 })
 
 test('no line on the Overview page is wider than the panel', () => {

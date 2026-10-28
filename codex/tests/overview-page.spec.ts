@@ -140,17 +140,16 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
     assert.equal(shownTab(), 'Overview')
     assert.equal(sentTabs[0], 'overview')
     assert.equal(root.querySelector('.overview-goal')?.textContent, 'Shipping the Overview tab')
-    assert.equal(root.querySelector('.overview-live')?.textContent, 'Working…')
     assert.deepEqual(
       [...root.querySelectorAll('main .row')].map(r => [
         r.querySelector('.mark')?.className,
         r.querySelector('.mark')?.textContent,
-        r.querySelector('.content')?.textContent,
+        [...(r.querySelector('.content')?.children ?? [])].map(line => line.textContent),
       ]),
       [
-        ['mark running', '●', 'omp panel: reading the draw code'],
-        ['mark tone-needsYou', '◆', 'Label: pick one'],
-        ['mark done', '✓', 'Page: built'],
+        ['mark running', '●', ['omp panel', 'reading the draw code']],
+        ['mark tone-needsYou', '◆', ['Label', 'pick one']],
+        ['mark done', '✓', ['Page', 'built']],
       ],
     )
     assert.equal(root.querySelectorAll('main button').length, 0)
@@ -171,11 +170,6 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
     key('3')
     assert.equal(shownTab(), 'Finds1')
     assert.match(root.textContent ?? '', /The bar wraps at 320 px/)
-    state.ledger = { ...state.ledger, overview: { ...shownOverview, look: null } }
-    await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
-    assert.equal(tabLabels()[0], 'Overview•')
-    state.ledger = { ...state.ledger, overview: shownOverview }
-    await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
     key('1')
     assert.equal(shownTab(), 'Overview')
     assert.ok(root.querySelector('.overview-goal'))

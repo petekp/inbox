@@ -205,10 +205,13 @@ export function applyOps(last: Overview | null, ops: Op[], now: number, askIds: 
 
     return o.subjects.find(s => s.id === ref) ?? o.subjects.find(s => isOpen(s) && nameKey(s.name) === key) ?? null
   }
-  /** A `was:` line stays until the person has seen it. The page shows it only on rows that changed since the last look. */
+  /** A was line and a merged line stay until the person has seen them. The page shows them only on rows that changed since the last look. */
   const forgetSeenWas = (s: Subject) => {
     const isSeen = o.lastLookAt !== null && s.changedAt <= o.lastLookAt
-    if (isSeen) s.was = null
+    if (isSeen) {
+      s.was = null
+      s.merged = null
+    }
   }
   const set = (s: Subject, status: OpenStatus, text: string) => {
     const isReworded = s.status === status && hasSameWords(s.text, text)
@@ -240,6 +243,7 @@ export function applyOps(last: Overview | null, ops: Op[], now: number, askIds: 
         status: op.status,
         text: clipWords(op.text, TEXT_KEPT),
         was: null,
+        merged: null,
         createdAt: now,
         changedAt: now,
         closedAt: null,
@@ -264,13 +268,14 @@ export function applyOps(last: Overview | null, ops: Op[], now: number, askIds: 
         s.into = target && target.id !== s.id ? target.id : null
         s.changedAt = now
         if (target && s.into) {
-          target.was = target.was ?? `${s.name} folded in`
+          forgetSeenWas(target)
+          target.merged = target.merged ? `${target.merged}, ${s.name}` : s.name
           target.changedAt = now
           for (const [ask, id] of Object.entries(o.askSubjects)) if (id === s.id) o.askSubjects[ask] = target.id
         }
       } else {
-        const folded = o.subjects.find(x => x.into === s.id && x.closedAt === now)
-        s.was = folded ? `${folded.name} folded in; was: ${op.text}` : op.text
+        forgetSeenWas(s)
+        s.was = op.text
         s.changedAt = now
       }
     }
@@ -383,6 +388,16 @@ function time(value: unknown): number | null {
 /** Statuses an earlier build saved. An ask linked to the subject now marks one that waited on the person. */
 const DROPPED_STATUSES: Record<string, SubjectStatus> = { 'waits-on-you': 'queued', problem: 'queued' }
 
+/** An earlier build kept a merge in `was`, as "<name> folded in" or "<name> folded in; was: <plan>". */
+const OLD_MERGE = /^(.+?) folded in(?:; was: (.*))?$/s
+
+function wasAndMerged(was: unknown, merged: unknown): Pick<Subject, 'was' | 'merged'> {
+  const old = typeof was === 'string' && typeof merged !== 'string' ? OLD_MERGE.exec(was) : null
+  if (old) return { was: old[2] ?? null, merged: old[1]! }
+
+  return { was: typeof was === 'string' ? was : null, merged: typeof merged === 'string' ? merged : null }
+}
+
 function subjectOf(saved: unknown): Subject | null {
   const s = saved as Partial<Record<keyof Subject, unknown>> | null
   const status = STATUSES.find(x => x === s?.status) ?? DROPPED_STATUSES[String(s?.status)]
@@ -394,7 +409,7 @@ function subjectOf(saved: unknown): Subject | null {
     name: s.name,
     status,
     text: text(s.text),
-    was: typeof s.was === 'string' ? s.was : null,
+    ...wasAndMerged(s.was, s.merged),
     createdAt: time(s.createdAt) ?? changedAt,
     changedAt,
     closedAt: time(s.closedAt),
@@ -458,6 +473,7 @@ function fromLists(o: Record<string, unknown>): Overview {
       ...s,
       text: clipWords(s.text, TEXT_KEPT),
       was: null,
+      merged: null,
       createdAt: lastLookAt!,
       changedAt: lastLookAt!,
       closedAt: null,
