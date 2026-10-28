@@ -425,7 +425,7 @@ function desktopLines(text: string, widthPt: number): string[] {
 }
 /** `spans` cut to what desktop draws in `limit` lines `widthPt` wide, with an ellipsis when cut. */
 function desktopSpanLines(spans: TerminalSpan[], widthPt: number, limit: number): TerminalSpan[] {
-  const words = spans.map(s => ({ ...s, text: s.text.replace(/\s+/g, ' ') }))
+  const words = spans.map(s => ({ ...s, text: s.text.replace(/[^\S\u00a0]+/g, ' ') }))
   const lines = desktopLines(words.map(s => s.text).join(''), widthPt)
   if (lines.length <= limit) return words
   const last = cutForEllipsis(lines[limit - 1]!, t => desktopTextPt(t) <= widthPt)
