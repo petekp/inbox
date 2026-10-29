@@ -1116,6 +1116,17 @@ function withTree(lines: string[], first: string | null, rest: string, s: Style)
   return lines.map((l, n) => (n === 0 ? (first ? drawn(l, first) : l) : drawn(l, rest)))
 }
 
+/** The rule above an Overview row that starts an item, from the text column to the end of the row, with `label` in its middle. */
+function pageRule(width: number, s: Style, label: string | null = null): string {
+  const cells = Math.max(0, width - PAGE_TEXT_AT - 1)
+  if (label === null) return `${' '.repeat(PAGE_TEXT_AT)}${s.dim('─'.repeat(cells))}`
+  const text = ` ${label} `
+  const fill = Math.max(4, cells - cellWidth(text))
+  const before = Math.floor(fill / 2)
+
+  return `${' '.repeat(PAGE_TEXT_AT)}${s.dim(`${'─'.repeat(before)}${text}${'─'.repeat(fill - before)}`)}`
+}
+
 /** A line on the Overview page, laid out as the shared row says. */
 function drawPageRow(row: OverviewRow, d: Draw): string[] {
   const { width, now, style: s } = d
@@ -1152,13 +1163,7 @@ function drawPageRow(row: OverviewRow, d: Draw): string[] {
 
     return withTree([' '.repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s)
   }
-  if (row.kind === 'look') {
-    const label = ` ${row.text} `
-    const fill = Math.max(4, width - 1 - PAGE_MARK_AT - cellWidth(label))
-    const before = Math.floor(fill / 2)
-
-    return [`${' '.repeat(PAGE_MARK_AT)}${s.dim(`${'─'.repeat(before)}${label}${'─'.repeat(fill - before)}`)}`]
-  }
+  if (row.kind === 'look') return [pageRule(width, s, row.text)]
   const mark = row.tone ? s.tone(row.tone, row.mark) : s.dim(row.mark)
 
   return pageLine(d, PAGE_MARK_AT, mark, row.text, s.dim)
@@ -1284,12 +1289,12 @@ export function drawPanel(
     rule,
     ...banners.flatMap(b => bannerLines(b, width, style)),
   ]
-  const pageRule = `${' '.repeat(PAGE_TEXT_AT)}${style.dim('─'.repeat(Math.max(0, width - PAGE_TEXT_AT - 1)))}`
   const body: string[] = []
   let selectedAt = [0, 0]
   for (const e of entries) {
     if (e.kind === 'heading') body.push(` ${style.bold(e.text)}${e.count ? style.dim(` · ${e.count}`) : ''}`)
-    else if (e.kind === 'page') body.push(...(e.row.isRuledAbove ? [pageRule] : []), ...drawPageRow(e.row, d))
+    else if (e.kind === 'page')
+      body.push(...(e.row.isRuledAbove ? [pageRule(width, style)] : []), ...drawPageRow(e.row, d))
     else if (e.kind === 'banner') body.push(...bannerLines(e.banner, width, style))
     else if (e.kind === 'note')
       body.push(

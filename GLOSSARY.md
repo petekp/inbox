@@ -100,7 +100,7 @@ an open question or task. A row whose work moves shows none. The code calls them
 _Avoid_: age
 
 **Seen line**:
-The rule labeled "Seen" on the Overview, at the time the person last left the
+The rule labeled "Last seen" on the Overview, at the time the person last left the
 page after it showed for at least five seconds. A shorter pass through the tab
 leaves the line where it was. A row above it changed since then. Every open row
 shows where it stands, above or below the line. A row below it leaves out its

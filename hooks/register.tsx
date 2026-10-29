@@ -6148,6 +6148,8 @@ export const register: Register = on => {
 
       return spans.length > 0 ? [overviewText(key, spans, depth)] : []
     }
+    /** An Overview row frame's padding and 1 pt border above or below its text on desktop, in half lines. */
+    const overviewFrameEdge = OVERVIEW_PAD_Y + 2 * DESKTOP_HAIR_LINES
     /**
      * The line that ties the rows under a subject to it, in the subject's mark column. `down` runs from under the
      * subject's mark to the end of its row. `mid` and `last` reach across to a child's mark, and `mid` runs on to the
@@ -6159,8 +6161,8 @@ export const register: Register = on => {
           ? branch('pass', 0, overviewMarkAt, pal.line, 1, key)
           : branch(shape, 0, overviewMarkAt, pal.line, 0, key)
       // The line spans the mark column, which spans the frame's content. To meet the next row's line, each end reaches
-      // over the frame's padding and its 1 pt border, in margins, which count half lines.
-      const reach = -(OVERVIEW_PAD_Y + 2 * DESKTOP_HAIR_LINES)
+      // over the frame's padding and its border.
+      const reach = -overviewFrameEdge
       const firstLineMiddle = 0.5
       const hair = (key: string, grow: boolean, ends: { marginTop?: number; marginBottom?: number }) => (
         <Box key={key} flexDirection="row" {...(grow ? { flexGrow: 1 } : { height: firstLineMiddle })}>
@@ -6186,47 +6188,51 @@ export const register: Register = on => {
         </Box>
       )
     }
-    /** The rule above an Overview row that starts an item. It starts at the text column, as the rules between sections and between Asks rows do. */
+    // An Overview rule starts at the text column, as the rules between sections and between Asks rows do. In the
+    // terminal it stops at the end of the list's columns. On desktop it runs to the pane's edge.
+    const overviewRuleAt = overviewMarkAt + markWidth
+    const overviewRuleCells = Math.max(0, listColumns - overviewRuleAt)
+    const desktopOverviewRuleLeft = FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS
+    /** The rule above an Overview row that starts an item. */
     const overviewRule = (id: string) =>
       look === 'desktop' ? (
-        desktopHairline(`overview-rule-${id}`, 'across', {
-          marginLeft: FRAME_INSET_PT / DESKTOP_CELL_PT + DESKTOP_MARK_CELLS,
-        })
+        desktopHairline(`overview-rule-${id}`, 'across', { marginLeft: desktopOverviewRuleLeft })
       ) : (
         <Box key={`overview-rule-${id}`} flexDirection="row">
-          <Box width={overviewMarkAt + markWidth} flexShrink={0} />
-          {rule(overviewMarkAt + markWidth + 2)}
+          <Box width={overviewRuleAt} flexShrink={0} />
+          <Text color={pal.divider}>{'─'.repeat(overviewRuleCells)}</Text>
         </Box>
       )
-    /** The look line: "Seen" in the middle of a rule that runs from the mark column to the end of the row. */
+    /** The look line: "Last seen" in the middle of a rule that spans what the rule above a row spans. */
     const overviewLookLine = (text: string) => {
+      // Outside a frame, whose border would inset the rule's right end, so the padding stands in for the frame's.
       if (look === 'desktop')
-        return desktopFrame({
-          key: 'overview-look',
-          padY: OVERVIEW_PAD_Y,
-          markCells: 0,
-          hasSide: false,
-          children: (
-            <Box flexDirection="row" alignItems="center">
-              <Box flexGrow={1} flexDirection="column">
-                {desktopHairline('look-before', 'across')}
-              </Box>
-              <Box flexShrink={0} paddingX={1}>
-                <Text color={pal.muted}>{text}</Text>
-              </Box>
-              <Box flexGrow={1} flexDirection="column">
-                {desktopHairline('look-after', 'across')}
-              </Box>
+        return (
+          <Box
+            key="overview-look"
+            flexDirection="row"
+            alignItems="center"
+            marginLeft={desktopOverviewRuleLeft}
+            paddingY={overviewFrameEdge}
+          >
+            <Box flexGrow={1} flexDirection="column">
+              {desktopHairline('look-before', 'across')}
             </Box>
-          ),
-        })
+            <Box flexShrink={0} paddingX={1}>
+              <Text color={pal.muted}>{text}</Text>
+            </Box>
+            <Box flexGrow={1} flexDirection="column">
+              {desktopHairline('look-after', 'across')}
+            </Box>
+          </Box>
+        )
       const label = ` ${text} `
-      const fill = Math.max(4, listColumns - 1 - overviewMarkAt - cellWidth(label))
+      const fill = Math.max(4, overviewRuleCells - cellWidth(label))
       const before = Math.floor(fill / 2)
 
       return (
         <Box key="overview-look" flexDirection="row">
-          <Box width={overviewMarkAt} flexShrink={0} />
+          <Box width={overviewRuleAt} flexShrink={0} />
           <Text color={pal.divider}>{`${'─'.repeat(before)}${label}${'─'.repeat(fill - before)}`}</Text>
         </Box>
       )

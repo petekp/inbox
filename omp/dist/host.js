@@ -3119,7 +3119,7 @@ function screenTabOf(tab) {
 }
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
-var LOOK_TEXT = "Seen";
+var LOOK_TEXT = "Last seen";
 var WAS_PREFIX = "was: ";
 var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " \xB7 ";
@@ -6183,6 +6183,15 @@ function withTree(lines, first, rest, s) {
   const drawn = (line, glyph) => glyph.trim() === "" ? line : line.slice(0, PAGE_MARK_AT) + s.dim(glyph) + line.slice(PAGE_MARK_AT + glyph.length);
   return lines.map((l, n) => n === 0 ? first ? drawn(l, first) : l : drawn(l, rest));
 }
+function pageRule(width, s, label = null) {
+  const cells = Math.max(0, width - PAGE_TEXT_AT - 1);
+  if (label === null)
+    return `${" ".repeat(PAGE_TEXT_AT)}${s.dim("\u2500".repeat(cells))}`;
+  const text = ` ${label} `;
+  const fill = Math.max(4, cells - cellWidth(text));
+  const before = Math.floor(fill / 2);
+  return `${" ".repeat(PAGE_TEXT_AT)}${s.dim(`${"\u2500".repeat(before)}${text}${"\u2500".repeat(fill - before)}`)}`;
+}
 function drawPageRow(row, d) {
   const { width, now, style: s } = d;
   if (row.kind === "subject") {
@@ -6208,12 +6217,8 @@ function drawPageRow(row, d) {
     const arm = TREE_ARMS[row.branch];
     return withTree([" ".repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s);
   }
-  if (row.kind === "look") {
-    const label = ` ${row.text} `;
-    const fill = Math.max(4, width - 1 - PAGE_MARK_AT - cellWidth(label));
-    const before = Math.floor(fill / 2);
-    return [`${" ".repeat(PAGE_MARK_AT)}${s.dim(`${"\u2500".repeat(before)}${label}${"\u2500".repeat(fill - before)}`)}`];
-  }
+  if (row.kind === "look")
+    return [pageRule(width, s, row.text)];
   const mark = row.tone ? s.tone(row.tone, row.mark) : s.dim(row.mark);
   return pageLine(d, PAGE_MARK_AT, mark, row.text, s.dim);
 }
@@ -6274,14 +6279,13 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
     rule,
     ...banners.flatMap((b) => bannerLines(b, width, style))
   ];
-  const pageRule = `${" ".repeat(PAGE_TEXT_AT)}${style.dim("\u2500".repeat(Math.max(0, width - PAGE_TEXT_AT - 1)))}`;
   const body = [];
   let selectedAt = [0, 0];
   for (const e of entries) {
     if (e.kind === "heading")
       body.push(` ${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
     else if (e.kind === "page")
-      body.push(...e.row.isRuledAbove ? [pageRule] : [], ...drawPageRow(e.row, d));
+      body.push(...e.row.isRuledAbove ? [pageRule(width, style)] : [], ...drawPageRow(e.row, d));
     else if (e.kind === "banner")
       body.push(...bannerLines(e.banner, width, style));
     else if (e.kind === "note")

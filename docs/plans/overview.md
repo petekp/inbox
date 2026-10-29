@@ -166,7 +166,7 @@ Adding offline sync to the notes app
   merge logic ready · waiting 40m
 ✓ Sync engine
   syncs on reconnect
-── Seen ──────────────────────────────
+── Last seen ─────────────────────────
 ● Export button
   works on web
   └ ● Lay out the PDF export  quiet 40m
