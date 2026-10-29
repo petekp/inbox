@@ -230,9 +230,9 @@ test('a prompt with nothing to tell the agent returns no message', async () => {
   expect(first.message).toBeUndefined()
 })
 
-test('record and close are registered with the shared schemas and stay in the tool list', () => {
+test('record, close and order_prs are registered with the shared schemas and stay in the tool list', () => {
   createInbox(pi(), deps())
-  expect([...tools.keys()]).toEqual(['record', 'close'])
+  expect([...tools.keys()]).toEqual(['record', 'close', 'order_prs'])
   expect(tools.get('record')).toMatchObject({ loadMode: 'essential', approval: 'read' })
   expect(tools.get('record').parameters.properties.kind.enum).toEqual(['question', 'task', 'finding'])
 })

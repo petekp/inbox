@@ -48,6 +48,7 @@ export type FeatureId =
   | 'tool-result-line'
   | 'overview-call-records'
   | 'dismiss-merged-prs'
+  | 'pr-order'
   | 'help-page'
   | 'overview-view-ask'
 
@@ -107,6 +108,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'tool-result-line': { kind: 'full' },
       'overview-call-records': { kind: 'full' },
       'dismiss-merged-prs': { kind: 'full' },
+      'pr-order': { kind: 'full' },
       'help-page': {
         kind: 'different',
         reason:
@@ -216,6 +218,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'overview-call-records': { kind: 'full' },
       'dismiss-merged-prs': { kind: 'full' },
+      'pr-order': { kind: 'full' },
       'help-page': { kind: 'full' },
       'overview-view-ask': {
         kind: 'different',
@@ -294,6 +297,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'tool-result-line': { kind: 'full' },
       'overview-call-records': { kind: 'full' },
       'dismiss-merged-prs': { kind: 'full' },
+      'pr-order': { kind: 'full' },
       'help-page': {
         kind: 'different',
         reason: 'The panel takes keys only, so `?` opens Help, and no button does.',

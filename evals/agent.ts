@@ -30,6 +30,7 @@ import { CODEX } from '../codex/src/texts'
 import { OMP } from '../omp/src/texts'
 import { MODEL } from '../codex/src/update'
 import { agentTools } from '../hooks/tools'
+import type { AgentTool } from '../hooks/tools'
 import { codexCli } from './codex-cli'
 import {
   earlierRuns,
@@ -51,7 +52,7 @@ type Agent = 'claude' | 'codex' | 'omp'
 /** Patterns are case-insensitive regular expressions. */
 type Check =
   | {
-      calls: 'record' | 'close'
+      calls: AgentTool
       /** Matches the call's `kind`, as a whole. */
       kind?: string
       /** Matches each named argument. */
@@ -205,9 +206,9 @@ function sandbox(c: Case, agent: Agent) {
   return { dir, work, state, log, serverArgs, calls }
 }
 
-const PROBE_TOOLS = [`mcp__${PROBE}__record`, `mcp__${PROBE}__close`]
+const PROBE_TOOLS = agentTools(CLAUDE_CODE).map(t => `mcp__${PROBE}__${t.name}`)
 
-/** Throws unless the session has exactly the connected probe server and no tool besides its two. */
+/** Throws unless the session has exactly the connected probe server and no tool besides its own. */
 function assertOnlyProbe(init: Record<string, any>) {
   const servers: { name: string; status: string }[] = init.mcp_servers ?? []
   const tools: string[] = init.tools ?? []
@@ -245,7 +246,7 @@ async function claudeIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome
       '--tools',
       '',
       '--allowedTools',
-      `mcp__${PROBE}__record,mcp__${PROBE}__close`,
+      PROBE_TOOLS.join(','),
       '--output-format',
       'stream-json',
       '--verbose',
@@ -363,13 +364,13 @@ async function codexIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome>
   }
 }
 
-/** Throws unless the omp session offers exactly its `bash` and the probe's `record` and `close`, and no MCP server's tools. */
+/** Throws unless the omp session offers exactly its `bash` and the probe's tools, and no MCP server's tools. */
 function assertOnlyOmpProbe(toolsFile: string) {
   if (!existsSync(toolsFile)) throw new IsolationError('the omp probe wrote no tool list')
   const seen: { active: string[]; all: { name: string; source: string }[] } = JSON.parse(
     readFileSync(toolsFile, 'utf8'),
   )
-  const wanted = ['bash', 'close', 'record']
+  const wanted = ['bash', ...agentTools(OMP).map(t => t.name)].toSorted()
   if (seen.active.toSorted().join() !== wanted.join())
     throw new IsolationError(`omp's active tools are not just ${wanted.join(' and ')}: ${seen.active.join(', ')}`)
   const mcp = seen.all.filter(t => /mcp/i.test(t.source))

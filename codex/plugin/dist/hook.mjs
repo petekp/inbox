@@ -252,6 +252,14 @@ function clipLabel(text2, max) {
 }
 var graphemes = new Intl.Segmenter(void 0, { granularity: "grapheme" });
 var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
+function ago(ms) {
+  const min = Math.round(ms / 6e4);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const h = Math.round(min / 60);
+  if (h < 48) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
 
 // ../hooks/ledger.ts
 var EMPTY = {
@@ -261,6 +269,7 @@ var EMPTY = {
   findings: [],
   closedFindings: [],
   prs: [],
+  prOrder: null,
   nextId: 1,
   turn: 0,
   batchTurn: 0,
@@ -286,6 +295,7 @@ function upgradeLedger(ledger) {
   const updates = typeof rest.updates === "number" ? rest.updates : card ? 1 : 0;
   return {
     ...rest,
+    prOrder: rest.prOrder ?? null,
     updates,
     overview: upgradeOverview(rest.overview),
     findings: [...rest.findings ?? [], ...notes ?? []],
@@ -905,9 +915,20 @@ function readiness(pr, isSent = () => false) {
   );
 }
 var STATUS_ORDER = { blocked: 0, ready: 1, draft: 2, waiting: 3, merged: 4, closed: 5 };
-function inPrOrder(prs) {
-  const rank = new Map(prs.map((pr) => [pr, STATUS_ORDER[readiness(pr).status]]));
-  return [...prs].sort((a, b) => rank.get(a) - rank.get(b) || b.number - a.number || a.ref.localeCompare(b.ref));
+function rankOf(pr, ranked) {
+  const at = ranked.indexOf(pr.ref);
+  return at === -1 || pr.state !== "OPEN" ? null : at;
+}
+function inPrOrder(prs, ranked = []) {
+  const place = (pr) => rankOf(pr, ranked) ?? Infinity;
+  const status = new Map(prs.map((pr) => [pr, STATUS_ORDER[readiness(pr).status]]));
+  const byPlace = (a, b) => {
+    const [x, y] = [place(a), place(b)];
+    return x === y ? 0 : x < y ? -1 : 1;
+  };
+  return [...prs].sort(
+    (a, b) => byPlace(a, b) || status.get(a) - status.get(b) || b.number - a.number || a.ref.localeCompare(b.ref)
+  );
 }
 function failingChecks(pr) {
   return pr.checks.filter((c) => c.bucket === "fail");
@@ -1071,6 +1092,7 @@ function isRepeatOf(last, action) {
 var OPTIONS_FOLD_AT = 5;
 var OPTION_LABEL_CHARS = 32;
 var CHOICE_KEYS = [..."abcfghilm"];
+var DOT = "\u2007\xB7\u2002";
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
   opportunity: { title: "Opportunities", mark: "\u2726", tone: "done" }
@@ -1688,6 +1710,7 @@ function perTurnStatus(update) {
 
 // ../hooks/pr-tab.ts
 var MAX_PRS = 12;
+var MAX_ORDERED_PRS = 30;
 function linkedPrs(prs, refs) {
   return [...prs.filter((r) => !refs.includes(r)), ...refs];
 }
@@ -1702,12 +1725,15 @@ function isLeftOut(prState, ref) {
   const view = prState.views[ref];
   return view !== void 0 && !isKeptPr(view);
 }
-function splitLinked(prState, linked) {
-  const shown = linked.filter((ref) => !isLeftOut(prState, ref));
-  return { tracked: shown.slice(-MAX_PRS), older: shown.slice(0, Math.max(0, shown.length - MAX_PRS)) };
+function splitLinked(prState, links) {
+  const ranked = new Set(links.prOrder?.refs ?? []);
+  const shown = links.prs.filter((ref) => !isLeftOut(prState, ref));
+  const unranked = shown.filter((ref) => !ranked.has(ref));
+  const older = unranked.slice(0, Math.max(0, unranked.length - MAX_PRS));
+  return { tracked: shown.filter((ref) => !older.includes(ref)), older };
 }
-function olderPrsText(prState, linked) {
-  const { older } = splitLinked(prState, linked);
+function olderPrsText(prState, links) {
+  const { older } = splitLinked(prState, links);
   if (older.length === 0) return null;
   const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
   return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
@@ -1729,30 +1755,53 @@ function threadSentIn(lastActions) {
     return last?.kind === "handoff" && last.delivery?.state !== "failed" && last.at > ((t.reply ?? t).at ?? 0);
   };
 }
-function isTracked(prState, linked, ref) {
-  return splitLinked(prState, linked).tracked.includes(ref) || prState.branchRef === ref;
+function isTracked(prState, links, ref) {
+  return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref;
 }
-function keepsView(prState, linked, ref) {
-  return isTracked(prState, linked, ref) || linked.includes(ref) && isLeftOut(prState, ref);
+function keepsView(prState, links, ref) {
+  return isTracked(prState, links, ref) || links.prs.includes(ref) && isLeftOut(prState, ref);
 }
 function dismissedAt(lastActions, ref) {
   const mark = lastActions[prMarkId(ref)];
   return mark?.action === "pr-dismiss" ? mark.at : null;
 }
-function isViewKept(prState, linked, lastActions, ref, shownSince) {
+function isViewKept(prState, links, lastActions, ref, shownSince) {
   const at = dismissedAt(lastActions, ref);
-  return keepsView(prState, linked, ref) || at !== null && isShownSince(at, shownSince);
+  return keepsView(prState, links, ref) || at !== null && isShownSince(at, shownSince);
 }
 var DISMISSED_PR = { how: "dismissed", outcome: PR_DISMISSED_LABEL };
-function drawnPrs(prState, linked, lastActions, now, settleWindowMs, placing) {
-  return inPrOrder(Object.values(prState.views)).flatMap((pr) => {
-    if (isTracked(prState, linked, pr.ref)) return [{ pr, state: { is: "open" } }];
+function drawnPrs(prState, links, lastActions, now, settleWindowMs, placing) {
+  const ranked = links.prOrder?.refs ?? [];
+  const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr) => {
+    if (isTracked(prState, links, pr.ref)) return [{ pr, state: { is: "open" } }];
     const at = dismissedAt(lastActions, pr.ref);
     if (at === null) return [];
     const state = closedRowState(DISMISSED_PR, at, now, settleWindowMs, null);
     return isSettledInPlace(state, placing) ? [{ pr, state }] : [];
   });
+  let rank = 0;
+  return drawn.map((d) => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }));
 }
+function prOrderText(order, drawn, now) {
+  const isRanking = drawn.some((d) => d.rank !== null);
+  if (!order || !isRanking) return null;
+  return `${order.label ?? "Order"}${DOT}set by ${order.by} ${ago(now - order.at)}`;
+}
+
+// ../hooks/tools.ts
+var ORDER_SCHEMA = {
+  type: "object",
+  properties: {
+    repo: { type: "string", description: "The repository, as owner/name." },
+    numbers: {
+      type: "array",
+      items: { type: "integer" },
+      description: `The PR numbers, first to last, at most ${MAX_ORDERED_PRS}. Give an empty list to clear the order.`
+    },
+    label: { type: "string", description: 'What the order is, in at most 4 words, such as "Merge order".' }
+  },
+  required: ["numbers"]
+};
 
 // ../hooks/session.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
@@ -2015,7 +2064,7 @@ function pruned(s) {
   ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
   const views = Object.fromEntries(
     Object.entries(s.prViews.views).filter(
-      ([ref]) => isViewKept(s.prViews, s.ledger.prs, s.lastActions, ref, s.shownSince)
+      ([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)
     )
   );
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
@@ -2062,7 +2111,7 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
   };
 }
 function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
-  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, settleWindowMs, {
+  const drawn = drawnPrs(s.prViews, s.ledger, lastActions, now, settleWindowMs, {
     shownSince,
     lastTypedMessageAt: s.presence.lastTypedMessageAt
   });
@@ -2071,7 +2120,8 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
     drawn,
     branchRef: s.prViews.branchRef,
     count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent)).length,
-    olderText: olderPrsText(s.prViews, s.ledger.prs),
+    olderText: olderPrsText(s.prViews, s.ledger),
+    orderText: prOrderText(s.ledger.prOrder, drawn, now),
     isGhSignedOut: s.prViews.isGhSignedOut === true
   };
 }
@@ -2312,6 +2362,7 @@ var CODEX = {
   surface: "the Inbox tab",
   band: null,
   findingsIn: "the Finds section of the Inbox tab",
+  prsIn: "the PRs section of the Inbox tab",
   recordTool: "mcp__inbox__record",
   closeTool: "mcp__inbox__close",
   intro: "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, and your findings, in the Inbox tab beside the conversation."

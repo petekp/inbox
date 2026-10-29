@@ -833,7 +833,7 @@ const NEW_PR_FETCH_MS = 15_000
  */
 export function isPrFetchDue(s: Session, lastFetchedAt: number | undefined, now: number): boolean {
   if (lastFetchedAt === undefined) return true
-  const hasNewPr = splitLinked(s.prViews, s.ledger.prs).tracked.some(ref => !(ref in s.prViews.views))
+  const hasNewPr = splitLinked(s.prViews, s.ledger).tracked.some(ref => !(ref in s.prViews.views))
   const hasReplySince = (s.presence.lastReplyAt ?? 0) > lastFetchedAt
 
   return (
@@ -909,7 +909,7 @@ export async function fetchPrs<S extends Session>(
         sawUnstartable = true
       }),
       s.prViews,
-      s.ledger.prs,
+      s.ledger,
       findsBranchPr,
       () => host.now(),
     )

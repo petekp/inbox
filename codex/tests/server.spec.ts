@@ -997,11 +997,13 @@ const GH_THREADS = JSON.stringify({
 type PrView = {
   prs: {
     drawn: {
-      pr: { ref: string; threads: unknown[]; error?: string | null }
+      pr: { ref: string; number: number; threads: unknown[]; error?: string | null }
       state: { is: string; canUndo?: boolean }
+      rank: number | null
     }[]
     count: number
     isGhSignedOut: boolean
+    orderText: string | null
   }
   isFetchingPrs: boolean
   isGhMissing: boolean
@@ -1424,6 +1426,29 @@ test('dismissing a linked PR unlinks it and settles its block as a dismissed row
   const switched = await call('inbox_view', { shownSince: t })
   assert.equal(drawn(switched.result.structuredContent).includes(ref), false)
   assert.equal(ref in (await readState(dir, 's1')).prViews.views, false)
+})
+
+test('an order_prs call links the PRs it names, and the next view ranks them first under the order’s line', async () => {
+  const view = (number: number) =>
+    JSON.stringify({ ...JSON.parse(GH_VIEW), number, url: `https://github.com/acme/app/pull/${number}` })
+  const { dir, call } = await prServer(args => {
+    const named = args[0] === 'gh' && args[1] === 'pr' ? args.find(a => /^\d+$/.test(a)) : undefined
+    return named ? { code: 0, stdout: view(Number(named)), stderr: '' } : ghAnswer(args)
+  })
+  const set = (await call('order_prs', { repo: 'acme/app', numbers: [9, 7], label: 'Merge order' })) as unknown as {
+    result: { content: { text: string }[] }
+  }
+  assert.match(set.result.content[0]!.text, /^Set\. These 2 PRs show first in the PRs section of the Inbox tab/)
+  assert.deepEqual((await readState(dir, 's1')).ledger.prs, ['acme/app#9', 'acme/app#7'])
+  const { prs } = (await viewAfterFetch(call)).result.structuredContent
+  assert.deepEqual(
+    prs.drawn.map(d => [d.pr.number, d.rank]),
+    [
+      [9, 1],
+      [7, 2],
+    ],
+  )
+  assert.match(prs.orderText ?? '', /^Merge order · set by Codex/)
 })
 
 test('Dismiss merged unlinks the merged PRs and settles each block with its own Undo', async () => {

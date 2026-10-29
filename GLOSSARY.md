@@ -180,6 +180,13 @@ keeps only its latest. The pressed button reads "… again", as in "Explain
 again", once the press is no longer queued, unconfirmed or waiting on the
 agent. Until then it keeps its label, so its width holds.
 
+**PR order**:
+The order an agent set for the PRs tab with `order_prs`, first to last, such as
+a merge ranking. Its open PRs draw first, each with its rank, under a line that
+names the order and the agent that set it. The other PRs follow in the tab's
+own order. The conversation saves it as `Ledger.prOrder`.
+_Avoid_: ranking, as the stored thing
+
 ### Looks and hosts
 
 **Look**:

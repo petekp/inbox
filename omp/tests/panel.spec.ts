@@ -455,6 +455,23 @@ function withMerged(refs: string[]): PanelScreen {
   return screenOf({ view: sessionView({ ...s, prViews: { ...s.prViews, views } }, NOW, SETTLED_MS, true, NO_HOLDS) })
 }
 
+test('an order draws its line above the PR blocks and a dim rank before each ranked PR, ahead of the rest', () => {
+  const s = demoState(NOW)
+  const prOrder = { refs: ['acme/visor#29', 'acme/visor#33'], label: 'Merge order', by: 'omp', at: NOW - 2 * 60_000 }
+  const ordered = { ...s, ledger: { ...s.ledger, prOrder } }
+  const screen = screenOf({ view: sessionView(ordered, NOW, SETTLED_MS, true, NO_HOLDS) })
+  const ui = { ...INITIAL_UI, tab: 'prs' as const }
+  const lines = text(screen, ui).split('\n')
+  const heads = lines.flatMap(l => l.match(/(?:\d+\. )?#\d+ /) ?? []).map(h => h.trim())
+
+  expect(lines.findIndex(l => l.includes('Merge order · set by omp 2m ago'))).toBeLessThan(
+    lines.findIndex(l => /#\d+ /.test(l)),
+  )
+  expect(heads).toEqual(['1. #29', '2. #33', '#31'])
+  expect(drawn(screen, ui).join('\n')).toContain(`${ESC}2m1. ${ESC}22m`)
+  expect(text(screenOf(), ui)).not.toContain('Merge order')
+})
+
 test('Dismiss merged draws after the PR blocks, and m from any row or Enter on it returns the press', () => {
   const screen = withMerged(['acme/visor#29', 'acme/visor#33'])
   const ui = { ...INITIAL_UI, tab: 'prs' as const }

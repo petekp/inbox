@@ -47,8 +47,8 @@ import {
   writeOverviewRecord,
 } from '../hooks/session-host'
 import type { CatchUpReply, OverviewCall, OverviewRecord, RecordFiles } from '../hooks/session-host'
-import { allRows, COMPARE_LIMIT_MS, feedbackOf, feedbackText, footerStatus, NO_HOLDS } from '../hooks/view'
-import { checkRowId, prMarkId } from '../hooks/pr-tab'
+import { allRows, COMPARE_LIMIT_MS, DOT, feedbackOf, feedbackText, footerStatus, NO_HOLDS } from '../hooks/view'
+import { applyPrPress, checkRowId, fetchTracked, GH_RUNS_AT_ONCE, MAX_PRS, prMarkId } from '../hooks/pr-tab'
 import { demoSession, demoView, isDemoCopy } from '../hooks/demo'
 import { fakeHost } from './session-fake-host'
 import { runSessionScript } from './session-script'
@@ -754,6 +754,106 @@ test('a fix press whose check of the PR fails sends nothing and says why on its 
   expect(conflicts.note).toBe(null)
   expect(unread.delivered).toEqual([])
   expect(await unread.shownOn(prMarkId(FIX_REF))).toBe('Could not refresh PR #12: HTTP 502')
+})
+
+const openPr = (number: number): PrView => ({
+  ...BLOCKED_PR,
+  ref: `acme/app#${number}`,
+  number,
+  title: `Work ${number}`,
+  url: `https://github.com/acme/app/pull/${number}`,
+  mergeable: 'MERGEABLE',
+  checks: [],
+})
+
+test('an order_prs call ranks its PRs above the rest, links one the session lacks past the PR limit, ranks a merged PR no longer, keeps a dismissed PR’s place for Undo, and an empty call clears it', () => {
+  const linked = Array.from({ length: MAX_PRS + 3 }, (_, n) => n + 1)
+  const base = emptySession()
+  const s: Session = {
+    ...base,
+    ledger: { ...base.ledger, prs: linked.map(n => `acme/app#${n}`) },
+    prViews: { ...base.prViews, views: Object.fromEntries(linked.map(n => [`acme/app#${n}`, openPr(n)])) },
+  }
+  const at = 1_000_000
+  const order = recorded(
+    CLAUDE_CODE,
+    s,
+    'order_prs',
+    { repo: 'acme/app', numbers: [3, 20, 1], label: 'Merge order' },
+    at,
+  )
+  expect(order.personLine).toBe('PR order: Merge order, 3 PRs')
+  expect(order.result).toContain('1 of them was not in the tab yet')
+  expect(order.state.ledger.prs.at(-1)).toBe('acme/app#20')
+  const fetched = withFetchedPrs(order.state, { 'acme/app#20': openPr(20) }, null, false)
+  const tab = (x: Session) => sessionView(x, at + 2 * 60_000, 1000, true, NO_HOLDS).prs
+  const ranks = (x: Session) => tab(x).drawn.map(d => [d.pr.number, d.rank])
+
+  expect(ranks(fetched).slice(0, 4)).toEqual([
+    [3, 1],
+    [20, 2],
+    [1, 3],
+    [15, null],
+  ])
+  expect(tab(fetched).drawn).toHaveLength(MAX_PRS + 3)
+  expect(tab(fetched).olderText).toBe('1 older PR not shown: #2')
+  expect(tab(fetched).orderText).toBe(`Merge order${DOT}set by Claude 2m ago`)
+
+  const merged = withFetchedPrs(fetched, { 'acme/app#3': { ...openPr(3), state: 'MERGED' } }, null, false)
+  expect(ranks(merged).slice(0, 2)).toEqual([
+    [20, 1],
+    [1, 2],
+  ])
+  expect(ranks(merged).at(-1)).toEqual([3, null])
+
+  const press = (x: Session, p: Parameters<typeof applyPrPress>[3]) => {
+    const r = applyPrPress(x.ledger, x.prViews, x.lastActions, p, { now: at, turnsStarted: 0 })
+    if ('stale' in r) throw new Error('stale press')
+    return { ...x, ledger: r.ledger, lastActions: { ...x.lastActions, ...r.lasts } }
+  }
+  const dismissed = press(fetched, { action: 'pr-dismiss', ref: 'acme/app#20' })
+  expect(dismissed.ledger.prOrder?.refs).toEqual(['acme/app#3', 'acme/app#20', 'acme/app#1'])
+  expect(ranks(dismissed).slice(0, 2)).toEqual([
+    [3, 1],
+    [1, 2],
+  ])
+  const undone = press(dismissed, { action: 'pr-undo', ref: 'acme/app#20' })
+  expect(ranks(undone).slice(0, 3)).toEqual(ranks(fetched).slice(0, 3))
+  const onlyRanked = recorded(CLAUDE_CODE, fetched, 'order_prs', { repo: 'acme/app', numbers: [20] }, at).state
+  const showing = { ...NO_HOLDS, shownSince: at - 1 }
+  const settling = press(onlyRanked, { action: 'pr-dismiss', ref: 'acme/app#20' })
+  expect(sessionView(settling, at + 1000, 60_000, true, showing).prs.orderText).toBe(
+    `Order${DOT}set by Claude just now`,
+  )
+
+  const cleared = recorded(CLAUDE_CODE, fetched, 'order_prs', { numbers: [] }, at)
+  expect(cleared.state.ledger.prOrder).toBeNull()
+  expect(cleared.personLine).toBe('PR order cleared')
+  expect(tab(cleared.state).orderText).toBeNull()
+  expect(ranks(cleared.state).every(([, rank]) => rank === null)).toBe(true)
+  expect(recorded(CLAUDE_CODE, s, 'order_prs', { numbers: [3] }, at).result).toBe('Not set: give repo as owner/name.')
+})
+
+test('a fetch of many PRs runs at most GH_RUNS_AT_ONCE gh runs at once, and reads every PR', async () => {
+  let running = 0
+  let most = 0
+  const run = async (args: string[]) => {
+    running += 1
+    most = Math.max(most, running)
+    for (let n = 0; n < 3; n++) await Promise.resolve()
+    running -= 1
+    const number = Number(args[2])
+    const view = { number, title: `Work ${number}`, url: `https://github.com/acme/app/pull/${number}`, state: 'OPEN' }
+
+    return { exitCode: 0, stdout: args[0] === 'pr' ? JSON.stringify(view) : '{"data":{}}', stderr: '' }
+  }
+  const refs = Array.from({ length: 20 }, (_, n) => `acme/app#${n + 1}`)
+  const order = { refs, label: null, by: 'Claude', at: 0 }
+  const state = { views: {}, branchRef: null, isFetching: false }
+  const fetched = await fetchTracked(run, state, { prs: refs, prOrder: order }, false, () => 5)
+
+  expect(Object.keys(fetched.views)).toHaveLength(20)
+  expect(most).toBe(GH_RUNS_AT_ONCE)
 })
 
 test('PRs are due for a fetch 15 seconds after the last once the agent replied since it, and otherwise after 2 minutes', () => {

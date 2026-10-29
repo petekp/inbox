@@ -652,6 +652,7 @@ var EMPTY = {
   findings: [],
   closedFindings: [],
   prs: [],
+  prOrder: null,
   nextId: 1,
   turn: 0,
   batchTurn: 0,
@@ -684,6 +685,7 @@ function upgradeLedger(ledger) {
   const updates = typeof rest.updates === "number" ? rest.updates : card ? 1 : 0;
   return {
     ...rest,
+    prOrder: rest.prOrder ?? null,
     updates,
     overview: upgradeOverview(rest.overview),
     findings: [...rest.findings ?? [], ...notes ?? []],
@@ -2146,9 +2148,18 @@ function readiness(pr, isSent = () => false) {
   return result("ready", "Ready to merge", [...isApproved ? ["approved"] : [], "checks pass", "no threads waiting on you"], isApproved ? ": " : ", ");
 }
 var STATUS_ORDER = { blocked: 0, ready: 1, draft: 2, waiting: 3, merged: 4, closed: 5 };
-function inPrOrder(prs) {
-  const rank = new Map(prs.map((pr) => [pr, STATUS_ORDER[readiness(pr).status]]));
-  return [...prs].sort((a, b) => rank.get(a) - rank.get(b) || b.number - a.number || a.ref.localeCompare(b.ref));
+function rankOf(pr, ranked) {
+  const at = ranked.indexOf(pr.ref);
+  return at === -1 || pr.state !== "OPEN" ? null : at;
+}
+function inPrOrder(prs, ranked = []) {
+  const place = (pr) => rankOf(pr, ranked) ?? Infinity;
+  const status = new Map(prs.map((pr) => [pr, STATUS_ORDER[readiness(pr).status]]));
+  const byPlace = (a, b) => {
+    const [x, y] = [place(a), place(b)];
+    return x === y ? 0 : x < y ? -1 : 1;
+  };
+  return [...prs].sort((a, b) => byPlace(a, b) || status.get(a) - status.get(b) || b.number - a.number || a.ref.localeCompare(b.ref));
 }
 var HTML_TAG = /<\/?(?:a|b|br|code|details|div|em|h[1-6]|hr|i|img|kbd|li|ol|p|pre|span|strong|sub|summary|sup|table|tbody|td|th|thead|tr|ul)\b[^>]*>/g;
 function readableComment(body) {
@@ -3952,6 +3963,8 @@ function herdrReporter() {
 
 // ../hooks/pr-tab.ts
 var MAX_PRS = 12;
+var MAX_ORDERED_PRS = 30;
+var GH_RUNS_AT_ONCE = 8;
 var GH_SIGN_IN_CODE = 4;
 function asksForSignIn(r) {
   return r.exitCode === GH_SIGN_IN_CODE || r.exitCode !== 0 && /\bHTTP 401\b/.test(r.stderr);
@@ -3967,27 +3980,31 @@ function isLeftOut(prState, ref) {
   const view = prState.views[ref];
   return view !== undefined && !isKeptPr(view);
 }
-function splitLinked(prState, linked) {
-  const shown = linked.filter((ref) => !isLeftOut(prState, ref));
-  return { tracked: shown.slice(-MAX_PRS), older: shown.slice(0, Math.max(0, shown.length - MAX_PRS)) };
+function splitLinked(prState, links) {
+  const ranked = new Set(links.prOrder?.refs ?? []);
+  const shown = links.prs.filter((ref) => !isLeftOut(prState, ref));
+  const unranked = shown.filter((ref) => !ranked.has(ref));
+  const older = unranked.slice(0, Math.max(0, unranked.length - MAX_PRS));
+  return { tracked: shown.filter((ref) => !older.includes(ref)), older };
 }
-function olderPrsText(prState, linked) {
-  const { older } = splitLinked(prState, linked);
+function olderPrsText(prState, links) {
+  const { older } = splitLinked(prState, links);
   if (older.length === 0)
     return null;
   const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
   return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
 }
-async function fetchTracked(run, state, linked, findsBranchPr, now) {
+async function fetchTracked(run, state, links, findsBranchPr, now) {
   let isGhSignedOut = null;
+  const runs = limitedTo(GH_RUNS_AT_ONCE);
   const gh = async (args) => {
-    const r = await run(args);
+    const r = await runs(() => run(args));
     const isAnswer = r.exitCode !== UNSTARTABLE_CODE && r.exitCode !== TIMED_OUT_CODE;
     if (isAnswer)
       isGhSignedOut = isGhSignedOut === true || asksForSignIn(r);
     return r;
   };
-  const { tracked } = splitLinked(state, linked);
+  const { tracked } = splitLinked(state, links);
   const branchTarget = findsBranchPr ? null : state.branchRef;
   const isBranchLinked = branchTarget !== null && tracked.includes(branchTarget);
   const [branch, ...rest] = await Promise.all([
@@ -4150,11 +4167,11 @@ function prRowWaits(prs, lastActions) {
     })
   ]);
 }
-function isTracked(prState, linked, ref) {
-  return splitLinked(prState, linked).tracked.includes(ref) || prState.branchRef === ref;
+function isTracked(prState, links, ref) {
+  return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref;
 }
-function keepsView(prState, linked, ref) {
-  return isTracked(prState, linked, ref) || linked.includes(ref) && isLeftOut(prState, ref);
+function keepsView(prState, links, ref) {
+  return isTracked(prState, links, ref) || links.prs.includes(ref) && isLeftOut(prState, ref);
 }
 function dismissedAt(lastActions, ref) {
   const mark = lastActions[prMarkId(ref)];
@@ -4163,14 +4180,15 @@ function dismissedAt(lastActions, ref) {
 function isDismissed(lastActions, ref) {
   return dismissedAt(lastActions, ref) !== null;
 }
-function isViewKept(prState, linked, lastActions, ref, shownSince) {
+function isViewKept(prState, links, lastActions, ref, shownSince) {
   const at = dismissedAt(lastActions, ref);
-  return keepsView(prState, linked, ref) || at !== null && isShownSince(at, shownSince);
+  return keepsView(prState, links, ref) || at !== null && isShownSince(at, shownSince);
 }
 var DISMISSED_PR = { how: "dismissed", outcome: PR_DISMISSED_LABEL };
-function drawnPrs(prState, linked, lastActions, now, settleWindowMs, placing) {
-  return inPrOrder(Object.values(prState.views)).flatMap((pr) => {
-    if (isTracked(prState, linked, pr.ref))
+function drawnPrs(prState, links, lastActions, now, settleWindowMs, placing) {
+  const ranked = links.prOrder?.refs ?? [];
+  const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr) => {
+    if (isTracked(prState, links, pr.ref))
       return [{ pr, state: { is: "open" } }];
     const at = dismissedAt(lastActions, pr.ref);
     if (at === null)
@@ -4178,6 +4196,32 @@ function drawnPrs(prState, linked, lastActions, now, settleWindowMs, placing) {
     const state = closedRowState(DISMISSED_PR, at, now, settleWindowMs, null);
     return isSettledInPlace(state, placing) ? [{ pr, state }] : [];
   });
+  let rank = 0;
+  return drawn.map((d) => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }));
+}
+function prRankText(rank) {
+  return `${rank}.\u2002`;
+}
+function prOrderText(order, drawn, now) {
+  const isRanking = drawn.some((d) => d.rank !== null);
+  if (!order || !isRanking)
+    return null;
+  return `${order.label ?? "Order"}${DOT}set by ${order.by} ${ago(now - order.at)}`;
+}
+function limitedTo(limit) {
+  let running = 0;
+  const waiting = [];
+  return async (call) => {
+    if (running >= limit)
+      await new Promise((go) => waiting.push(go));
+    running += 1;
+    try {
+      return await call();
+    } finally {
+      running -= 1;
+      waiting.shift()?.();
+    }
+  };
 }
 var PR_TONES = {
   ready: "done",
@@ -4376,7 +4420,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
     return { ledger, drop: [], ...a, lasts, effects };
   };
   if (p.action === "pr-dismiss-merged") {
-    const refs = Object.values(prState.views).filter((pr) => isTracked(prState, ledger.prs, pr.ref) && isDismissedByMerged(pr, prState.branchRef)).map((pr) => pr.ref);
+    const refs = Object.values(prState.views).filter((pr) => isTracked(prState, ledger, pr.ref) && isDismissedByMerged(pr, prState.branchRef)).map((pr) => pr.ref);
     if (refs.length === 0)
       return stale;
     return applied({
@@ -4390,11 +4434,11 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
   const pr = prState.views[p.ref];
   const markId = prMarkId(p.ref);
   if (p.action === "pr-undo") {
-    if (!pr || isTracked(prState, ledger.prs, p.ref) || lastActions[markId]?.action !== "pr-dismiss")
+    if (!pr || isTracked(prState, ledger, p.ref) || lastActions[markId]?.action !== "pr-dismiss")
       return stale;
     return applied({ ledger: { ...ledger, prs: [...ledger.prs, p.ref] }, drop: [markId] });
   }
-  if (!pr || !isTracked(prState, ledger.prs, p.ref))
+  if (!pr || !isTracked(prState, ledger, p.ref))
     return stale;
   const record = (rowId, kind, action, text) => recordPress(kind, action, text, ctx, lastActions[rowId]);
   const send = (text) => ({ kind: "send", text, by: null });
@@ -4552,6 +4596,22 @@ var CLOSE_SCHEMA = {
   },
   required: ["id"]
 };
+var ORDER_SCHEMA = {
+  type: "object",
+  properties: {
+    repo: { type: "string", description: "The repository, as owner/name." },
+    numbers: {
+      type: "array",
+      items: { type: "integer" },
+      description: `The PR numbers, first to last, at most ${MAX_ORDERED_PRS}. Give an empty list to clear the order.`
+    },
+    label: { type: "string", description: 'What the order is, in at most 4 words, such as "Merge order".' }
+  },
+  required: ["numbers"]
+};
+function orderDescription(host) {
+  return `Set the order of the user's PRs in ${host.prsIn}, when the user asks for an order there. Those PRs show first, in this order. Each call replaces the order, and an empty numbers list clears it.`;
+}
 function recordDescription(host) {
   return `Record something the user must see in ${host.surface}, and still say it in your reply. Use it in the turn you raise it, once for each thing.
 - question: a decision, approval or piece of information only the user has, which you need before you go on. Give options, and rec when you recommend one. This includes an act you hold until they say so, such as "say when you want those committed".
@@ -4563,8 +4623,19 @@ var CLOSE_DESCRIPTION = `Close an open item or finding by its id, such as i35 or
 function agentTools(host) {
   return [
     { name: "record", description: recordDescription(host), inputSchema: RECORD_SCHEMA },
-    { name: "close", description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA }
+    { name: "close", description: CLOSE_DESCRIPTION, inputSchema: CLOSE_SCHEMA },
+    { name: "order_prs", description: orderDescription(host), inputSchema: ORDER_SCHEMA }
   ];
+}
+function toolAnswer(host, ledger, tool, input, now) {
+  switch (tool) {
+    case "record":
+      return recordItem(host, ledger, input, now);
+    case "close":
+      return recordClose(host, ledger, input, now);
+    case "order_prs":
+      return orderPrs(host, ledger, input, now);
+  }
 }
 function cut(value, max) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -4674,6 +4745,42 @@ function recordClose(host, ledger, input, now) {
   if (earlier)
     return unchanged(ledger, `Already closed: ${closedHow(earlier)}.`);
   return unchanged(ledger, `Not closed: no open item or finding has the id ${id}. The open ones are listed beside the user's latest message.`);
+}
+var REPO = /^[\w.-]+\/[\w.-]+$/;
+var MAX_ORDER_LABEL = 40;
+function prNumber(value) {
+  const n = typeof value === "number" ? value : typeof value === "string" ? Number(value.trim().replace(/^#/, "")) : NaN;
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+function orderPrs(host, ledger, input, now) {
+  if (!Array.isArray(input.numbers))
+    return unchanged(ledger, "Not set: numbers must be a list of PR numbers.");
+  if (input.numbers.length === 0) {
+    if (ledger.prOrder === null)
+      return unchanged(ledger, "No order was set.");
+    return {
+      ledger: { ...ledger, prOrder: null },
+      result: `Cleared. The PRs show in their usual order in ${host.prsIn}.`,
+      personLine: "PR order cleared"
+    };
+  }
+  const numbers = input.numbers.map(prNumber);
+  if (numbers.includes(null))
+    return unchanged(ledger, "Not set: numbers must be PR numbers, such as 3401.");
+  const repo = cut(input.repo, 200);
+  if (!REPO.test(repo))
+    return unchanged(ledger, "Not set: give repo as owner/name.");
+  const refs = [...new Set(numbers.map((n) => `${repo}#${n}`))];
+  if (refs.length > MAX_ORDERED_PRS)
+    return unchanged(ledger, `Not set: an order ranks at most ${MAX_ORDERED_PRS} PRs.`);
+  const label = cut(input.label, MAX_ORDER_LABEL) || null;
+  const added = refs.filter((ref) => !ledger.prs.includes(ref));
+  const addedText = added.length === 0 ? "" : added.length === 1 ? " 1 of them was not in the tab yet. It shows after the tab's next refresh, if the user wrote it and it is open." : ` ${added.length} of them were not in the tab yet. They show after the tab's next refresh, if the user wrote them and they are open.`;
+  return {
+    ledger: { ...ledger, prs: linkedPrs(ledger.prs, added), prOrder: { refs, label, by: host.agent, at: now } },
+    result: `Set. These ${refs.length} PRs show first in ${host.prsIn}, in this order.${addedText}`,
+    personLine: `PR order: ${label ? `${label}, ` : ""}${refs.length} ${refs.length === 1 ? "PR" : "PRs"}`
+  };
 }
 
 // ../hooks/session.ts
@@ -5047,7 +5154,7 @@ function completedAttempt(state, deliveryId, outcome) {
   };
 }
 function recorded(host, s, tool, args, now) {
-  const r = (tool === "close" ? recordClose : recordItem)(host, s.ledger, args, now);
+  const r = toolAnswer(host, s.ledger, tool, args, now);
   return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result, personLine: r.personLine };
 }
 function withHolds(s, holds) {
@@ -5058,7 +5165,7 @@ function pruned(s) {
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
   ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
-  const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isViewKept(s.prViews, s.ledger.prs, s.lastActions, ref, s.shownSince)));
+  const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)));
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
   return {
     ...s,
@@ -5116,7 +5223,7 @@ function sessionView(s, now, settleWindowMs, canCatchUp, holds = NO_HOLDS, notes
   };
 }
 function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
-  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, settleWindowMs, {
+  const drawn = drawnPrs(s.prViews, s.ledger, lastActions, now, settleWindowMs, {
     shownSince,
     lastTypedMessageAt: s.presence.lastTypedMessageAt
   });
@@ -5125,7 +5232,8 @@ function prTabOf(s, lastActions, now, shownSince, settleWindowMs) {
     drawn,
     branchRef: s.prViews.branchRef,
     count: drawn.filter((d) => d.state.is === "open" && prNeedsYou(d.pr, isSent)).length,
-    olderText: olderPrsText(s.prViews, s.ledger.prs),
+    olderText: olderPrsText(s.prViews, s.ledger),
+    orderText: prOrderText(s.ledger.prOrder, drawn, now),
     isGhSignedOut: s.prViews.isGhSignedOut === true
   };
 }
@@ -5600,7 +5708,7 @@ var NEW_PR_FETCH_MS = 15000;
 function isPrFetchDue(s, lastFetchedAt, now) {
   if (lastFetchedAt === undefined)
     return true;
-  const hasNewPr = splitLinked(s.prViews, s.ledger.prs).tracked.some((ref) => !(ref in s.prViews.views));
+  const hasNewPr = splitLinked(s.prViews, s.ledger).tracked.some((ref) => !(ref in s.prViews.views));
   const hasReplySince = (s.presence.lastReplyAt ?? 0) > lastFetchedAt;
   return now - lastFetchedAt >= PRS_REFRESH_MS || (hasNewPr || hasReplySince) && now - lastFetchedAt >= NEW_PR_FETCH_MS;
 }
@@ -5643,7 +5751,7 @@ async function fetchPrs(host, findsBranchPr) {
   let sawUnstartable = false;
   const fetchWith = (path) => fetchTracked(host.gh.run(s, path, () => {
     sawUnstartable = true;
-  }), s.prViews, s.ledger.prs, findsBranchPr, () => host.now());
+  }), s.prViews, s.ledger, findsBranchPr, () => host.now());
   let fetch = await fetchWith(bin);
   if (sawUnstartable) {
     host.gh.forget();
@@ -5785,6 +5893,7 @@ var blankLine = (id) => ({
   id,
   depth: 0,
   lead: { text: "", tone: null },
+  rank: null,
   mark: null,
   title: "",
   isDim: false,
@@ -6006,6 +6115,8 @@ function prEntries(screen, ui, now) {
   const ghNotice = ghNoticeOf(ghState);
   if (ghNotice)
     out.push({ kind: "banner", banner: bannerOf(ghNotice.kind, ghNotice.text) });
+  if (prs.orderText)
+    out.push({ kind: "note", text: prs.orderText });
   for (const d of prs.drawn) {
     const { pr, state } = d;
     const markId = prMarkId(pr.ref);
@@ -6037,6 +6148,7 @@ function prEntries(screen, ui, now) {
       line: {
         ...blankLine(markId),
         lead,
+        rank: d.rank === null ? null : prRankText(d.rank),
         title: pr.title,
         status: { text: head, tone: PR_TONES[status], rest: unlisted.map((r) => ` \xB7 ${r}`).join("") },
         age: doneAt(f),
@@ -6500,7 +6612,7 @@ function drawLine(line, isSelected, d) {
   const mark = markText(line.mark, now, s);
   const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim("u Undo")}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
-  const head = ` ${" ".repeat(pad)}${cursor} ${leadText(line.lead, s)}`;
+  const head = ` ${" ".repeat(pad)}${cursor} ${line.rank ? s.dim(line.rank) : ""}${leadText(line.lead, s)}`;
   const shownTitle = line.mark ? cutTitle(line.title, width - visibleLength(head) - visibleLength(status) - visibleLength(after)) : line.title;
   const title = line.isDim ? s.dim(shownTitle) : isSelected ? s.bold(shownTitle) : shownTitle;
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
@@ -6904,7 +7016,7 @@ function createPanel(deps) {
 
 // ../hooks/demo.ts
 var MIN = 60000;
-var REPO = "https://github.com/acme/visor";
+var REPO2 = "https://github.com/acme/visor";
 var DEMO_PLACE = { folder: "/Users/you/code/visor", branch: "pinch-dismiss" };
 function withDemoPresence(s, now) {
   return {
@@ -7228,6 +7340,7 @@ function demoView(now, agent) {
         }
       ],
       prs: ["acme/visor#31", "acme/visor#29", "acme/visor#33"],
+      prOrder: null,
       nextId: 24,
       turn: 14,
       batchTurn: 14,
@@ -7242,7 +7355,7 @@ function demoView(now, agent) {
           ref: "acme/visor#31",
           number: 31,
           title: "Add pinch-to-dismiss to glances",
-          url: `${REPO}/pull/31`,
+          url: `${REPO2}/pull/31`,
           isDraft: false,
           state: "OPEN",
           base: "main",
@@ -7252,7 +7365,7 @@ function demoView(now, agent) {
             {
               name: "format",
               bucket: "pass",
-              url: `${REPO}/actions/runs/1`,
+              url: `${REPO2}/actions/runs/1`,
               workflow: "CI",
               startedAt: now - 16 * MIN,
               finishedAt: now - 16 * MIN + 19000
@@ -7260,7 +7373,7 @@ function demoView(now, agent) {
             {
               name: "unit tests",
               bucket: "fail",
-              url: `${REPO}/actions/runs/2`,
+              url: `${REPO2}/actions/runs/2`,
               workflow: "CI",
               startedAt: now - 16 * MIN,
               finishedAt: now - 12 * MIN - 8000
@@ -7268,7 +7381,7 @@ function demoView(now, agent) {
             {
               name: "lint",
               bucket: "fail",
-              url: `${REPO}/actions/runs/3`,
+              url: `${REPO2}/actions/runs/3`,
               workflow: "CI",
               startedAt: now - 16 * MIN,
               finishedAt: now - 15 * MIN - 19000
@@ -7286,7 +7399,7 @@ function demoView(now, agent) {
               path: "src/view/Glance.tsx",
               line: 47,
               body: "A glance flickers for one frame before it fades out. Can it wait for the fade?",
-              url: `${REPO}/pull/31#discussion_r1`,
+              url: `${REPO2}/pull/31#discussion_r1`,
               at: now - 3 * 60 * MIN
             },
             {
@@ -7295,7 +7408,7 @@ function demoView(now, agent) {
               reply: {
                 author: "robin",
                 body: "Agreed, the glance you look at is the one you mean.",
-                url: `${REPO}/pull/31#discussion_r3`,
+                url: `${REPO2}/pull/31#discussion_r3`,
                 at: now - 5 * 60 * MIN
               },
               isWaiting: true,
@@ -7304,7 +7417,7 @@ function demoView(now, agent) {
               path: "src/input/gestures.ts",
               line: 87,
               body: "Should a pinch dismiss only the glance you look at?",
-              url: `${REPO}/pull/31#discussion_r2`,
+              url: `${REPO2}/pull/31#discussion_r2`,
               at: now - 26 * 60 * MIN
             },
             {
@@ -7313,7 +7426,7 @@ function demoView(now, agent) {
               reply: {
                 author: "you",
                 body: "Done in the latest push.",
-                url: `${REPO}/pull/31#discussion_r5`,
+                url: `${REPO2}/pull/31#discussion_r5`,
                 at: now - 2 * 60 * MIN
               },
               isWaiting: false,
@@ -7322,7 +7435,7 @@ function demoView(now, agent) {
               path: "src/view/glances.ts",
               line: 112,
               body: "Can the angle come from gaze.ts instead of being computed again here?",
-              url: `${REPO}/pull/31#discussion_r4`,
+              url: `${REPO2}/pull/31#discussion_r4`,
               at: now - 26 * 60 * MIN
             },
             {
@@ -7335,7 +7448,7 @@ function demoView(now, agent) {
               path: "src/input/gestures.ts",
               line: 114,
               body: "A dismissed glance still takes pinches.",
-              url: `${REPO}/pull/31#discussion_r6`,
+              url: `${REPO2}/pull/31#discussion_r6`,
               at: now - 50 * MIN
             }
           ],
@@ -7347,7 +7460,7 @@ function demoView(now, agent) {
           ref: "acme/visor#29",
           number: 29,
           title: "Show the battery level as a glance",
-          url: `${REPO}/pull/29`,
+          url: `${REPO2}/pull/29`,
           isDraft: false,
           state: "OPEN",
           base: "main",
@@ -7366,7 +7479,7 @@ function demoView(now, agent) {
           ref: "acme/visor#33",
           number: 33,
           title: "Remember where each glance was pinned",
-          url: `${REPO}/pull/33`,
+          url: `${REPO2}/pull/33`,
           isDraft: true,
           state: "OPEN",
           base: "main",
@@ -7494,9 +7607,15 @@ var OMP = {
   surface: "the /inbox panel",
   band: "a band above their prompt",
   findingsIn: "the Finds tab of the /inbox panel",
+  prsIn: "the PRs tab of the /inbox panel",
   recordTool: "record",
   closeTool: "close",
   intro: "The inbox extension shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox panel, and your findings, in the panel's Finds tab. A band above their prompt shows only two counts: one for your questions and their tasks together, and one for your findings."
+};
+var TOOL_LABELS = {
+  record: "Inbox record",
+  close: "Inbox close",
+  order_prs: "Inbox PR order"
 };
 
 // src/demo.ts
@@ -8218,7 +8337,7 @@ function createInbox(pi, deps = defaultDeps) {
   const tool = (name, description, parameters) => {
     pi.registerTool({
       name,
-      label: name === "record" ? "Inbox record" : "Inbox close",
+      label: TOOL_LABELS[name],
       description,
       parameters,
       loadMode: "essential",

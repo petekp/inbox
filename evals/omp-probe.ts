@@ -2,7 +2,8 @@ import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 
 import { EMPTY } from '../hooks/ledger'
 import { guidanceText, promptNotes, TOLD_NOTHING } from '../hooks/model-text'
-import { agentTools, recordClose, recordItem } from '../hooks/tools'
+import { agentTools, toolAnswer } from '../hooks/tools'
+import type { AgentTool } from '../hooks/tools'
 import { OMP } from '../omp/src/texts'
 import type { Ledger } from '../types'
 
@@ -83,7 +84,7 @@ export default function (pi: Pi): void {
     }
   })
 
-  const tool = (name: 'record' | 'close', description: string, parameters: object) => {
+  const tool = (name: AgentTool, description: string, parameters: object) => {
     pi.registerTool({
       name,
       label: `Inbox ${name}`,
@@ -92,8 +93,7 @@ export default function (pi: Pi): void {
       loadMode: 'essential',
       approval: 'read',
       execute: async (_toolCallId, args) => {
-        const run = name === 'record' ? recordItem : recordClose
-        const r = run(OMP, ledger, args as Record<string, unknown>, Date.now())
+        const r = toolAnswer(OMP, ledger, name, args as Record<string, unknown>, Date.now())
         ledger = r.ledger
         appendFileSync(logPath, `${JSON.stringify({ tool: name, args, result: r.result })}\n`)
 

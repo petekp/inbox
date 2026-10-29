@@ -973,6 +973,13 @@ describe('upgradeLedger', () => {
     expect(upgradeLedger({ ...base, updates: 4 } as never).updates).toBe(4)
   })
 
+  test('a ledger saved before PR orders loads with no order, and one with an order keeps it', () => {
+    const { prOrder: _prOrder, ...old } = EMPTY
+    const order = { refs: ['acme/greet#12'], label: 'Merge order', by: 'Claude', at: 5 }
+    expect(upgradeLedger(old as never).prOrder).toBeNull()
+    expect(upgradeLedger({ ...EMPTY, prOrder: order }).prOrder).toEqual(order)
+  })
+
   test('converts a ledger saved with `decided` and the kinds decide and do', () => {
     const item = { id: 'i1', label: null, ask: 'Push?', options: [], rec: null, helps: [], turn: 1, at: 5 }
     const record = { id: 'i3', ask: 'Login', outcome: 'done', how: 'done', at: 9 }

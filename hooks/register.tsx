@@ -109,6 +109,7 @@ import {
   isDismissed,
   isPrPress,
   olderPrsText,
+  prRankText,
   PR_GROUP_TITLES,
   PR_TONES,
   prBlockActions,
@@ -320,7 +321,8 @@ import type {
   ShownTab,
   TabNaming,
 } from './view'
-import { agentTools, recordClose, recordItem } from './tools'
+import { agentTools } from './tools'
+import type { AgentTool } from './tools'
 import type { ToolAnswer } from './tools'
 import type { UndoProps } from './undo-client'
 import {
@@ -409,6 +411,7 @@ const PR_POLL_MS = 2 * 60_000
 
 const RECORD_TOOL = 'mcp__inbox__record'
 const CLOSE_TOOL = 'mcp__inbox__close'
+const ORDER_TOOL = 'mcp__inbox__order_prs'
 /**
  * The person's line for each `record` or `close` call that has one, by `tool_use_id`. It lives as long as the
  * process, so a call from before it draws nothing under its row.
@@ -2019,7 +2022,7 @@ async function upgradeState($: EngineInterface): Promise<Ledger> {
 
 async function runTool(
   $: EngineInterface,
-  tool: 'record' | 'close',
+  tool: AgentTool,
   input: Record<string, unknown>,
   toolUseId: string | undefined,
 ): Promise<string> {
@@ -3718,6 +3721,10 @@ export const register: Register = on => {
   on('tool.call', { tool: CLOSE_TOOL }, async ($, e) => ({
     result: await runTool($, 'close', e as unknown as Record<string, unknown>, e.tool_use_id),
   }))
+  on('tool.describe', { tool: ORDER_TOOL }, async ($, e, next) => ({ ...(await next(e)), isDeferred: false }))
+  on('tool.call', { tool: ORDER_TOOL }, async ($, e) => ({
+    result: await runTool($, 'order_prs', e as unknown as Record<string, unknown>, e.tool_use_id),
+  }))
 
   on('tool.call', async ($, e, next) => {
     if (!isOn) return next(e)
@@ -4046,7 +4053,7 @@ export const register: Register = on => {
 
   // The ctrl+o transcript draws the text the agent read.
   on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
-    const isInboxTool = e.props.tool === RECORD_TOOL || e.props.tool === CLOSE_TOOL
+    const isInboxTool = [RECORD_TOOL, CLOSE_TOOL, ORDER_TOOL].includes(e.props.tool)
     if (!isOn || !isInboxTool || e.props.isExpanded || e.props.isErrored) return next(e)
     const line = (await read($, PERSON_LINES))[e.props.tool_use_id]
     if (line === undefined) {
@@ -6200,6 +6207,7 @@ export const register: Register = on => {
 
       const titleLine = (
         <Text wrap="wrap">
+          {b.rank === null ? null : <Text color={pal.muted}>{prRankText(b.rank)}</Text>}
           <Text color={look === 'desktop' ? pal.mark.prs : pal.tone.prs}>{`#${pr.number}\u2002`}</Text>
           <Text bold>{pr.title}</Text>
           <Text color={tone ? (pal.tone[tone] ?? pal.mark[tone]) : pal.muted}>{`\u2002${statusHead}`}</Text>
@@ -6262,7 +6270,7 @@ export const register: Register = on => {
     const ghState = { isGhMissing: Boolean(prState.isGhMissing), isGhSignedOut: Boolean(prState.isGhSignedOut) }
     const ghNotice = ghNoticeOf(ghState)
     const olderPrs = () => {
-      const text = olderPrsText(prState, ledger.prs)
+      const text = olderPrsText(prState, ledger)
       if (!text) return []
       const line = (
         <Text color={pal.muted} wrap="wrap">
@@ -6274,6 +6282,25 @@ export const register: Register = on => {
         section(
           look === 'desktop' ? (
             desktopFrame({ key: 'older-prs', padY: 0, children: line })
+          ) : (
+            <Box paddingLeft={1}>{line}</Box>
+          ),
+        ),
+      ]
+    }
+    const prOrderLine = () => {
+      const text = view.prs.orderText
+      if (!text) return []
+      const line = (
+        <Text color={pal.muted} wrap="wrap">
+          {text}
+        </Text>
+      )
+
+      return [
+        section(
+          look === 'desktop' ? (
+            desktopFrame({ key: 'pr-order', padY: 0, children: line })
           ) : (
             <Box paddingLeft={1}>{line}</Box>
           ),
@@ -6303,6 +6330,7 @@ export const register: Register = on => {
         sections(
           [
             ...(ghNotice ? [section(banner(bannerOf(ghNotice.kind, ghNotice.text)))] : []),
+            ...prOrderLine(),
             ...prGroups.map(prBlock),
             ...prTabButtons(),
             ...olderPrs(),

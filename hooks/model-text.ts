@@ -268,6 +268,8 @@ export type Host = {
   /** Where the person always sees how many items and findings are open, besides the surface; null when only the surface shows them. */
   band: string | null
   findingsIn: string
+  /** Where the person sees their PRs. */
+  prsIn: string
   /** The names the agent calls the inbox tools by. */
   recordTool: string
   closeTool: string
@@ -280,6 +282,7 @@ export const CLAUDE_CODE: Host = {
   surface: 'the /inbox pane',
   band: 'a band above their prompt',
   findingsIn: 'the Finds tab of the /inbox pane',
+  prsIn: 'the PRs tab of the /inbox pane',
   recordTool: 'mcp__inbox__record',
   closeTool: 'mcp__inbox__close',
   intro:

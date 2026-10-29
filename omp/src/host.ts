@@ -67,7 +67,7 @@ import {
 } from '../../hooks/session-host'
 import type { OverviewRecords, PressOutcome, RecordFiles, SessionHost, UpdateHost } from '../../hooks/session-host'
 import { agentTools } from '../../hooks/tools'
-import type { ToolAnswer } from '../../hooks/tools'
+import type { AgentTool, ToolAnswer } from '../../hooks/tools'
 import { DARK_BANNER_TINTS, DARK_TONES, LIGHT_BANNER_TINTS, LIGHT_TONES } from '../../hooks/tones'
 import { clip } from '../../hooks/text'
 import { NEXT_BUILD_MARK, NO_HOLDS, RESUME_TEXT, SETTLED_MS, inboxCommandText, screenTabOf } from '../../hooks/view'
@@ -80,7 +80,7 @@ import { bandLines, wrapText } from './panel'
 import type { Style, Tone } from './panel'
 import { exclusiveRun, pruneSessions, readState, updateState } from './state'
 import type { OmpState } from './state'
-import { OMP } from './texts'
+import { OMP, TOOL_LABELS } from './texts'
 import type { Stop } from '../../types'
 
 const INBOX_MODEL_TIMEOUT_MS = 120_000
@@ -1029,10 +1029,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     deps.background(wakeForDone(host))
   })
 
-  const tool = (name: 'record' | 'close', description: string, parameters: object) => {
+  const tool = (name: AgentTool, description: string, parameters: object) => {
     pi.registerTool({
       name,
-      label: name === 'record' ? 'Inbox record' : 'Inbox close',
+      label: TOOL_LABELS[name],
       description,
       parameters: parameters as never,
       loadMode: 'essential',

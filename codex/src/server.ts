@@ -486,7 +486,8 @@ export function makeServer(deps: ServerDeps): (m: Message) => Promise<Record<str
     const heard = (s: SessionState) => (turn === undefined ? s : noteToolCall(s, turn, now()))
     switch (name) {
       case 'record':
-      case 'close': {
+      case 'close':
+      case 'order_prs': {
         let result = ''
         await updateState(dir, id, s => {
           const r = recorded(CODEX, s, name, args, now())

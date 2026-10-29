@@ -15,6 +15,7 @@ export const EMPTY: Ledger = {
   findings: [],
   closedFindings: [],
   prs: [],
+  prOrder: null,
   nextId: 1,
   turn: 0,
   batchTurn: 0,
@@ -71,6 +72,7 @@ export function upgradeLedger(ledger: Ledger): Ledger {
 
   return {
     ...rest,
+    prOrder: rest.prOrder ?? null,
     updates,
     overview: upgradeOverview(rest.overview),
     findings: [...(rest.findings ?? []), ...(notes ?? [])],
