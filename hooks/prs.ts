@@ -317,14 +317,30 @@ export function readiness(
 
 const STATUS_ORDER: Record<PrStatus, number> = { blocked: 0, ready: 1, draft: 2, waiting: 3, merged: 4, closed: 5 }
 
-/**
- * The status is read without sent threads, so
- * sending a thread to the agent does not move its PR while the press shows; only a fetch from GitHub can.
- */
-export function inPrOrder(prs: PrView[]): PrView[] {
-  const rank = new Map(prs.map(pr => [pr, STATUS_ORDER[readiness(pr).status]]))
+/** A PR's place in the agent's order, or null when the order leaves it out or the PR is no longer open. */
+export function rankOf(pr: PrView, ranked: string[]): number | null {
+  const at = ranked.indexOf(pr.ref)
 
-  return [...prs].sort((a, b) => rank.get(a)! - rank.get(b)! || b.number - a.number || a.ref.localeCompare(b.ref))
+  return at === -1 || pr.state !== 'OPEN' ? null : at
+}
+
+/**
+ * The open PRs of `ranked` come first, in its order. The rest follow by status, then newest first. The status is
+ * read without sent threads, so sending a thread to the agent does not move its PR while the press shows; only a
+ * fetch from GitHub can.
+ */
+export function inPrOrder(prs: PrView[], ranked: string[] = []): PrView[] {
+  const place = (pr: PrView) => rankOf(pr, ranked) ?? Infinity
+  const status = new Map(prs.map(pr => [pr, STATUS_ORDER[readiness(pr).status]]))
+  const byPlace = (a: PrView, b: PrView) => {
+    const [x, y] = [place(a), place(b)]
+
+    return x === y ? 0 : x < y ? -1 : 1
+  }
+
+  return [...prs].sort(
+    (a, b) => byPlace(a, b) || status.get(a)! - status.get(b)! || b.number - a.number || a.ref.localeCompare(b.ref),
+  )
 }
 
 /**

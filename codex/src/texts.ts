@@ -8,6 +8,7 @@ export const CODEX: Host = {
   surface: 'the Inbox tab',
   band: null,
   findingsIn: 'the Finds section of the Inbox tab',
+  prsIn: 'the PRs section of the Inbox tab',
   recordTool: 'mcp__inbox__record',
   closeTool: 'mcp__inbox__close',
   intro:

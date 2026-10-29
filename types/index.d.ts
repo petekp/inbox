@@ -307,6 +307,12 @@ export type PrView = {
   fetchedAt?: number
 }
 
+/**
+ * The PRs an agent ranked, first to last, as "owner/repo#123", with its short name for the order, the agent's name, as
+ * "Claude", and when it set it.
+ */
+export type PrOrder = { refs: string[]; label: string | null; by: string; at: number }
+
 export type Ledger = {
   /** The session's Overview page; null until the Overview call writes one. */
   overview: Overview | null
@@ -317,6 +323,8 @@ export type Ledger = {
   closedFindings: ClosedFinding[]
   /** PRs this session created or linked, as "owner/repo#123", until the person dismisses one. The PRs tab leaves out those `isLeftOut` names. */
   prs: string[]
+  /** The order the agent set for the PRs tab with `order_prs`, or null for the tab's own order. */
+  prOrder: PrOrder | null
   nextId: number
   /** How many prompts the person has sent this session. */
   turn: number
@@ -517,6 +525,13 @@ export type Session = {
 }
 
 declare module 'claude-code' {
+  /**
+   * The inbox's `order_prs` call, as `hooks/tools.ts:ORDER_SCHEMA` gives it. A session writes the MCP tool types only
+   * for the tools it had connected, so an older build's session leaves this one out.
+   */
+  interface McpToolInputs {
+    mcp__inbox__order_prs: { repo?: string; numbers: number[]; label?: string }
+  }
   interface PluginState {
     inbox: {
       /** The Claude Code theme in use, such as `dark` or `light-ansi`; '' until read. */

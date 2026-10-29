@@ -365,6 +365,7 @@ export function demoView(now: number, agent: string): DemoCopy {
         },
       ],
       prs: ['acme/visor#31', 'acme/visor#29', 'acme/visor#33'],
+      prOrder: null,
       nextId: 24,
       turn: 14,
       batchTurn: 14,

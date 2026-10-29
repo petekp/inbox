@@ -272,7 +272,7 @@ describe('prs', () => {
     expect(readiness({ ...onOthers, checks: [], threads: [] }, sent).status).toBe('ready')
   })
 
-  test('PRs that wait on the person come first, then those waiting on others, then finished ones, newest first within each', () => {
+  test('PRs that wait on the person come first, then those waiting on others, then finished ones, newest first within each, and an order puts its open PRs first', () => {
     const view = readView('acme/greet#12', VIEW)!
     const base = {
       ...view,
@@ -298,5 +298,7 @@ describe('prs', () => {
       pr(13, { isDraft: true }),
     ]
     expect(inPrOrder(prs).map(p => p.number)).toEqual([14, 15, 11, 13, 20, 9])
+    const ranked = ['acme/greet#9', 'acme/greet#20', 'acme/greet#13', 'acme/greet#11']
+    expect(inPrOrder(prs, ranked).map(p => p.number)).toEqual([20, 13, 11, 14, 15, 9])
   })
 })

@@ -110,6 +110,7 @@ import {
   prsEmptyText,
   prPressEffect,
   prTabActions,
+  prRankText,
   prRefreshFailedText,
   prThreadId,
   threadActions,
@@ -1914,6 +1915,7 @@ function PrBlock({
   pr,
   threads,
   checks,
+  rank,
   openId,
   all,
   now,
@@ -1928,6 +1930,7 @@ function PrBlock({
   return (
     <section>
       <div class="pr-head">
+        {rank === null ? null : <span class="rank muted">{prRankText(rank)}</span>}
         <span class="tone-prs num">#{pr.number}</span> {pr.title}{' '}
         <span class={tone ? `pr-verdict tone-${tone}` : 'pr-verdict muted'}>{head}</span>
         <span class="pr-verdict muted">{unlisted.map(r => `${DOT}${r}`).join('')}</span>
@@ -2002,6 +2005,11 @@ function Prs({ v, now }: { v: View; now: number }) {
         <div class="banner-place">
           <Banner banner={bannerOf(ghNotice.kind, ghNotice.text)} />
         </div>
+      ) : null}
+      {v.prs.orderText ? (
+        <section>
+          <div class="group-title muted">{v.prs.orderText}</div>
+        </section>
       ) : null}
       {blocks.map(b =>
         b.state.is === 'settled' ? (

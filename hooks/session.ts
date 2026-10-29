@@ -22,6 +22,7 @@ import {
   olderPrsText,
   linkedPrs,
   pressRowId,
+  prOrderText,
   threadSentIn,
 } from './pr-tab'
 import type { Applied, DrawnPr, PrPress } from './pr-tab'
@@ -36,7 +37,8 @@ import {
 } from './presses'
 import type { PressTexts, RowPress } from './presses'
 import { prNeedsYou, prRefs } from './prs'
-import { recordClose, recordItem } from './tools'
+import { toolAnswer } from './tools'
+import type { AgentTool } from './tools'
 import type { ToolAnswer } from './tools'
 import { upgradeHostTasks } from './host-tasks'
 import { applyOverview, lookEnded, lookStarted } from './overview'
@@ -737,17 +739,17 @@ export function completedAttempt<S extends Session>(state: S, deliveryId: string
 }
 
 /**
- * Applies a `record` or `close` call from the agent to the ledger. `result` is the tool's answer, and `personLine` the
+ * Applies a call of one of `agentTools` from the agent to the ledger. `result` is the tool's answer, and `personLine` the
  * line the person sees under the call, as `hooks/tools.ts:ToolAnswer` says.
  */
 export function recorded<S extends Session>(
   host: Host,
   s: S,
-  tool: 'record' | 'close',
+  tool: AgentTool,
   args: Record<string, unknown>,
   now: number,
 ): { state: S } & Omit<ToolAnswer, 'ledger'> {
-  const r = (tool === 'close' ? recordClose : recordItem)(host, s.ledger, args, now)
+  const r = toolAnswer(host, s.ledger, tool, args, now)
 
   return { state: linkDialogs({ ...s, ledger: r.ledger }), result: r.result, personLine: r.personLine }
 }
@@ -769,7 +771,7 @@ export function pruned<S extends Session>(s: S): S {
   ].flatMap(x => (isShownSince(x.at, s.shownSince) ? [x.id] : []))
   const views = Object.fromEntries(
     Object.entries(s.prViews.views).filter(([ref]) =>
-      isViewKept(s.prViews, s.ledger.prs, s.lastActions, ref, s.shownSince),
+      isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince),
     ),
   )
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length
@@ -811,6 +813,8 @@ type PrTab = {
   count: number
   /** Names the linked PRs too old for the tab to show, or null. */
   olderText: string | null
+  /** Names the agent's order of the PRs above them, or null while it ranks no block the tab draws. `prOrderText`. */
+  orderText: string | null
   /** Whether gh asked for a sign-in at the last fetch it answered. */
   isGhSignedOut: boolean
 }
@@ -885,7 +889,7 @@ function prTabOf(
   shownSince: number | null,
   settleWindowMs: number,
 ): PrTab {
-  const drawn = drawnPrs(s.prViews, s.ledger.prs, lastActions, now, settleWindowMs, {
+  const drawn = drawnPrs(s.prViews, s.ledger, lastActions, now, settleWindowMs, {
     shownSince,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
   })
@@ -895,7 +899,8 @@ function prTabOf(
     drawn,
     branchRef: s.prViews.branchRef,
     count: drawn.filter(d => d.state.is === 'open' && prNeedsYou(d.pr, isSent)).length,
-    olderText: olderPrsText(s.prViews, s.ledger.prs),
+    olderText: olderPrsText(s.prViews, s.ledger),
+    orderText: prOrderText(s.ledger.prOrder, drawn, now),
     isGhSignedOut: s.prViews.isGhSignedOut === true,
   }
 }

@@ -2,7 +2,7 @@ import type { Item, LastAction, Ledger, PressKind, PrCheck, PrThread, PrView, Pr
 import { GH_TIMEOUT_MS, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import { baseName, isFoldingPress, localLast, pendingResult, prSteps, recordPress, withQueued } from './presses'
 import type { Effect, HelpStep, PrActionId, RowPress } from './presses'
-import { clipLabel } from './text'
+import { ago, clipLabel } from './text'
 import {
   commentLine,
   commentParts,
@@ -12,6 +12,7 @@ import {
   parseRef,
   prompts,
   prRefs,
+  rankOf,
   readiness,
   readThreadsAnswer,
   readView,
@@ -37,6 +38,15 @@ import {
 import type { ActionEmphasis, BannerKind, PressState, RowWait, SettledState, ViewInput } from './view'
 
 export const MAX_PRS = 12
+
+/** The most PRs an agent's order can rank. They are tracked beyond `MAX_PRS`. */
+export const MAX_ORDERED_PRS = 30
+
+/** How many gh runs a fetch has going at once. */
+export const GH_RUNS_AT_ONCE = 8
+
+/** The ledger's PR links, and the agent's order of them. */
+export type PrLinks = Pick<Ledger, 'prs' | 'prOrder'>
 
 /** Runs gh with these arguments in the session's folder. A run that cannot start or does not finish ends with code -1. */
 export type GhRun = (args: string[]) => Promise<{ exitCode: number; stdout: string; stderr: string }>
@@ -75,14 +85,21 @@ export function isLeftOut(prState: PrViews, ref: string): boolean {
   return view !== undefined && !isKeptPr(view)
 }
 
-export function splitLinked(prState: PrViews, linked: string[]): { tracked: string[]; older: string[] } {
-  const shown = linked.filter(ref => !isLeftOut(prState, ref))
+/**
+ * The linked PRs the tab tracks: those the agent's order ranks, and the newest `MAX_PRS` of the rest. `older` names
+ * the rest, which the tab does not show.
+ */
+export function splitLinked(prState: PrViews, links: PrLinks): { tracked: string[]; older: string[] } {
+  const ranked = new Set(links.prOrder?.refs ?? [])
+  const shown = links.prs.filter(ref => !isLeftOut(prState, ref))
+  const unranked = shown.filter(ref => !ranked.has(ref))
+  const older = unranked.slice(0, Math.max(0, unranked.length - MAX_PRS))
 
-  return { tracked: shown.slice(-MAX_PRS), older: shown.slice(0, Math.max(0, shown.length - MAX_PRS)) }
+  return { tracked: shown.filter(ref => !older.includes(ref)), older }
 }
 
-export function olderPrsText(prState: PrViews, linked: string[]): string | null {
-  const { older } = splitLinked(prState, linked)
+export function olderPrsText(prState: PrViews, links: PrLinks): string | null {
+  const { older } = splitLinked(prState, links)
   if (older.length === 0) return null
   const numbers = older.map(ref => `#${parseRef(ref).number}`).reverse()
 
@@ -96,19 +113,20 @@ export function olderPrsText(prState: PrViews, linked: string[]): string | null 
 export async function fetchTracked(
   run: GhRun,
   state: PrViews,
-  linked: string[],
+  links: PrLinks,
   findsBranchPr: boolean,
   now: () => number | Promise<number>,
 ): Promise<{ views: Record<string, PrView>; branchRef: string | null; isGhSignedOut: boolean | null }> {
   let isGhSignedOut: boolean | null = null
+  const runs = limitedTo(GH_RUNS_AT_ONCE)
   const gh: GhRun = async args => {
-    const r = await run(args)
+    const r = await runs(() => run(args))
     const isAnswer = r.exitCode !== UNSTARTABLE_CODE && r.exitCode !== TIMED_OUT_CODE
     if (isAnswer) isGhSignedOut = isGhSignedOut === true || asksForSignIn(r)
 
     return r
   }
-  const { tracked } = splitLinked(state, linked)
+  const { tracked } = splitLinked(state, links)
   const branchTarget = findsBranchPr ? null : state.branchRef
   const isBranchLinked = branchTarget !== null && tracked.includes(branchTarget)
   const [branch, ...rest] = await Promise.all([
@@ -371,13 +389,13 @@ export function prRowWaits(prs: PrView[], lastActions: Record<string, LastAction
   ])
 }
 
-export function isTracked(prState: PrViews, linked: string[], ref: string): boolean {
-  return splitLinked(prState, linked).tracked.includes(ref) || prState.branchRef === ref
+export function isTracked(prState: PrViews, links: PrLinks, ref: string): boolean {
+  return splitLinked(prState, links).tracked.includes(ref) || prState.branchRef === ref
 }
 
 /** Whether the session keeps a PR's view: the tab tracks the PR, or it is linked and left out, which keeps a fetch from reading it again. */
-function keepsView(prState: PrViews, linked: string[], ref: string): boolean {
-  return isTracked(prState, linked, ref) || (linked.includes(ref) && isLeftOut(prState, ref))
+function keepsView(prState: PrViews, links: PrLinks, ref: string): boolean {
+  return isTracked(prState, links, ref) || (links.prs.includes(ref) && isLeftOut(prState, ref))
 }
 
 /** When the PR was dismissed, or null when its last press did not dismiss it. */
@@ -397,21 +415,22 @@ export function isDismissed(lastActions: Record<string, LastAction>, ref: string
  */
 export function isViewKept(
   prState: PrViews,
-  linked: string[],
+  links: PrLinks,
   lastActions: Record<string, LastAction>,
   ref: string,
   shownSince: number | null,
 ): boolean {
   const at = dismissedAt(lastActions, ref)
 
-  return keepsView(prState, linked, ref) || (at !== null && isShownSince(at, shownSince))
+  return keepsView(prState, links, ref) || (at !== null && isShownSince(at, shownSince))
 }
 
 /**
  * A PR block a look draws: a tracked PR, which is open, or a PR dismissed while the look shows the PRs tab, which
- * settles in place as a dismissed row does.
+ * settles in place as a dismissed row does. `rank` is its number in the agent's order, from 1, or null when the order
+ * does not rank it. A look draws it before an open block's title.
  */
-export type DrawnPr = { pr: PrView; state: { is: 'open' } | SettledState }
+export type DrawnPr = { pr: PrView; state: { is: 'open' } | SettledState; rank: number | null }
 
 const DISMISSED_PR = { how: 'dismissed', outcome: PR_DISMISSED_LABEL } as const
 
@@ -421,20 +440,57 @@ const DISMISSED_PR = { how: 'dismissed', outcome: PR_DISMISSED_LABEL } as const
  */
 export function drawnPrs(
   prState: PrViews,
-  linked: string[],
+  links: PrLinks,
   lastActions: Record<string, LastAction>,
   now: number,
   settleWindowMs: number,
   placing: Pick<ViewInput, 'shownSince' | 'lastTypedMessageAt'>,
 ): DrawnPr[] {
-  return inPrOrder(Object.values(prState.views)).flatMap((pr): DrawnPr[] => {
-    if (isTracked(prState, linked, pr.ref)) return [{ pr, state: { is: 'open' } }]
+  const ranked = links.prOrder?.refs ?? []
+  const drawn = inPrOrder(Object.values(prState.views), ranked).flatMap((pr): Omit<DrawnPr, 'rank'>[] => {
+    if (isTracked(prState, links, pr.ref)) return [{ pr, state: { is: 'open' } }]
     const at = dismissedAt(lastActions, pr.ref)
     if (at === null) return []
     const state = closedRowState(DISMISSED_PR, at, now, settleWindowMs, null)
 
     return isSettledInPlace(state, placing) ? [{ pr, state }] : []
   })
+  let rank = 0
+
+  return drawn.map(d => ({ ...d, rank: rankOf(d.pr, ranked) === null ? null : ++rank }))
+}
+
+/** A ranked PR's number in the agent's order, as a look draws it before the PR's title: "1. ". */
+export function prRankText(rank: number): string {
+  return `${rank}.\u2002`
+}
+
+/**
+ * The line above the PR blocks while the agent's order ranks a block the tab draws, open or settling, as "Merge order ·
+ * set by Claude 2m ago". Null otherwise.
+ */
+export function prOrderText(order: PrLinks['prOrder'], drawn: DrawnPr[], now: number): string | null {
+  const isRanking = drawn.some(d => d.rank !== null)
+  if (!order || !isRanking) return null
+
+  return `${order.label ?? 'Order'}${DOT}set by ${order.by} ${ago(now - order.at)}`
+}
+
+/** Runs at most `limit` of the calls it is given at once, starting each in the order it was given. */
+function limitedTo(limit: number): <T>(call: () => Promise<T>) => Promise<T> {
+  let running = 0
+  const waiting: (() => void)[] = []
+
+  return async call => {
+    if (running >= limit) await new Promise<void>(go => waiting.push(go))
+    running += 1
+    try {
+      return await call()
+    } finally {
+      running -= 1
+      waiting.shift()?.()
+    }
+  }
 }
 
 export const PR_TONES: Record<PrStatus, 'needsYou' | 'done' | 'findings' | 'error' | null> = {
@@ -773,7 +829,7 @@ export function applyPrPress(
   }
   if (p.action === 'pr-dismiss-merged') {
     const refs = Object.values(prState.views)
-      .filter(pr => isTracked(prState, ledger.prs, pr.ref) && isDismissedByMerged(pr, prState.branchRef))
+      .filter(pr => isTracked(prState, ledger, pr.ref) && isDismissedByMerged(pr, prState.branchRef))
       .map(pr => pr.ref)
     if (refs.length === 0) return stale
     return applied({
@@ -790,10 +846,10 @@ export function applyPrPress(
   const markId = prMarkId(p.ref)
   if (p.action === 'pr-undo') {
     // Like an item's Undo, it does not check SETTLED_MS, so a press just after its button goes still lands.
-    if (!pr || isTracked(prState, ledger.prs, p.ref) || lastActions[markId]?.action !== 'pr-dismiss') return stale
+    if (!pr || isTracked(prState, ledger, p.ref) || lastActions[markId]?.action !== 'pr-dismiss') return stale
     return applied({ ledger: { ...ledger, prs: [...ledger.prs, p.ref] }, drop: [markId] })
   }
-  if (!pr || !isTracked(prState, ledger.prs, p.ref)) return stale
+  if (!pr || !isTracked(prState, ledger, p.ref)) return stale
   const record = (rowId: string, kind: 'talk' | 'handoff' | 'mark', action: PrActionId, text: string) =>
     recordPress(kind, action, text, ctx, lastActions[rowId])
   const send = (text: string): Effect => ({ kind: 'send', text, by: null })

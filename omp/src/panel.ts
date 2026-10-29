@@ -17,6 +17,7 @@ import {
   ghNoticeOf,
   isDismissed,
   prsEmptyText,
+  prRankText,
   prRefreshFailedText,
   PR_GROUP_TITLES,
   PR_TONES,
@@ -212,6 +213,8 @@ type Line = {
   depth: number
   /** The mark before the title. An Asks or Finds row has none, so its title starts in the mark's place. */
   lead: Lead | null
+  /** A ranked PR's number in the agent's order, drawn dim before the lead. */
+  rank: string | null
   /** The mark before the result: the settled label, a Closed line's outcome, or a handed-off row's feedback. */
   mark: ResultMark | null
   title: string
@@ -253,6 +256,7 @@ const blankLine = (id: string): Line => ({
   id,
   depth: 0,
   lead: { text: '', tone: null },
+  rank: null,
   mark: null,
   title: '',
   isDim: false,
@@ -508,6 +512,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
   }
   const ghNotice = ghNoticeOf(ghState)
   if (ghNotice) out.push({ kind: 'banner', banner: bannerOf(ghNotice.kind, ghNotice.text) })
+  if (prs.orderText) out.push({ kind: 'note', text: prs.orderText })
   for (const d of prs.drawn) {
     const { pr, state } = d
     const markId = prMarkId(pr.ref)
@@ -537,6 +542,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
       line: {
         ...blankLine(markId),
         lead,
+        rank: d.rank === null ? null : prRankText(d.rank),
         title: pr.title,
         status: { text: head, tone: PR_TONES[status], rest: unlisted.map(r => ` · ${r}`).join('') },
         age: doneAt(f),
@@ -1078,7 +1084,7 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
       : ''
   // omp marks a selected item with ❯, its `nav.cursor` symbol, and keeps ▸ and ▾ for expand and collapse.
   const cursor = isSelected ? s.tone('accent', '❯') : ' '
-  const head = ` ${' '.repeat(pad)}${cursor} ${leadText(line.lead, s)}`
+  const head = ` ${' '.repeat(pad)}${cursor} ${line.rank ? s.dim(line.rank) : ''}${leadText(line.lead, s)}`
   const shownTitle = line.mark
     ? cutTitle(line.title, width - visibleLength(head) - visibleLength(status) - visibleLength(after))
     : line.title

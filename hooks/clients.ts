@@ -48,6 +48,7 @@ export type FeatureId =
   | 'tool-result-line'
   | 'overview-call-records'
   | 'dismiss-merged-prs'
+  | 'pr-order'
 
 export type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
 
@@ -105,6 +106,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'tool-result-line': { kind: 'full' },
       'overview-call-records': { kind: 'full' },
       'dismiss-merged-prs': { kind: 'full' },
+      'pr-order': { kind: 'full' },
     },
   },
   codex: {
@@ -208,6 +210,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'overview-call-records': { kind: 'full' },
       'dismiss-merged-prs': { kind: 'full' },
+      'pr-order': { kind: 'full' },
     },
   },
   omp: {
@@ -280,6 +283,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'tool-result-line': { kind: 'full' },
       'overview-call-records': { kind: 'full' },
       'dismiss-merged-prs': { kind: 'full' },
+      'pr-order': { kind: 'full' },
     },
   },
 }

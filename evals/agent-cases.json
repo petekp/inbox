@@ -1016,5 +1016,86 @@
         "noIds": true
       }
     ]
+  },
+  {
+    "name": "order-prs-sets-ranking",
+    "about": "The user asks for their PRs in an order in the inbox, so the agent sets that order with order_prs, first to last.",
+    "prompt": "In my inbox, list my open PRs in acme/shop in this merge order: #412, #398, #405, then the draft #420. Then write your reply to me.",
+    "checks": [
+      {
+        "calls": "order_prs",
+        "count": 1
+      },
+      {
+        "calls": "order_prs",
+        "count": 1,
+        "match": {
+          "repo": "^acme/shop$",
+          "numbers": "^412,398,405,420$"
+        }
+      },
+      {
+        "calls": "record",
+        "count": 0
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "order-prs-clears",
+    "about": "The user asks for the inbox's own PR order back, so the agent clears the order it set with an empty list.",
+    "ledger": {
+      "prs": ["acme/shop#412", "acme/shop#398", "acme/shop#405"],
+      "prOrder": {
+        "refs": ["acme/shop#412", "acme/shop#398", "acme/shop#405"],
+        "label": "Merge order",
+        "by": "Claude",
+        "at": 0
+      }
+    },
+    "prompt": "You set a merge order for my PRs in the inbox earlier. Put them back in the inbox's usual order.",
+    "checks": [
+      {
+        "calls": "order_prs",
+        "count": 1
+      },
+      {
+        "calls": "order_prs",
+        "count": 1,
+        "match": {
+          "numbers": "^$"
+        }
+      },
+      {
+        "calls": "record",
+        "count": 0
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "order-prs-not-for-a-mention",
+    "about": "The user asks which PR to merge first and wants only an answer, so the agent answers in its reply and sets no order.",
+    "prompt": "Which of my open PRs in acme/shop should I merge first: #412, which is approved with its checks passing, or #398, which has a failing check? Just tell me.",
+    "checks": [
+      {
+        "calls": "order_prs",
+        "count": 0
+      },
+      {
+        "calls": "record",
+        "count": 0
+      },
+      {
+        "reply": "412"
+      },
+      {
+        "noIds": true
+      }
+    ]
   }
 ]

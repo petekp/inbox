@@ -4,7 +4,7 @@ import { parseArgs } from 'node:util'
 
 import { EMPTY } from '../hooks/ledger'
 import { CLAUDE_CODE, guidedCloseDescription } from '../hooks/model-text'
-import { agentTools, recordClose, recordItem } from '../hooks/tools'
+import { agentTools, isAgentTool, toolAnswer } from '../hooks/tools'
 import { CODEX } from '../codex/src/texts'
 import type { Ledger } from '../types'
 
@@ -30,9 +30,8 @@ function send(id: unknown, result: unknown) {
 }
 
 function call(name: string, args: Record<string, unknown>): { text: string; isError: boolean } {
-  const tool = name === 'record' ? recordItem : name === 'close' ? recordClose : null
-  if (!tool) return { text: `Unknown tool: ${name}`, isError: true }
-  const r = tool(host, ledger, args, Date.now())
+  if (!isAgentTool(name)) return { text: `Unknown tool: ${name}`, isError: true }
+  const r = toolAnswer(host, ledger, name, args, Date.now())
   ledger = r.ledger
   appendFileSync(values.log!, `${JSON.stringify({ tool: name, args, result: r.result })}\n`)
 
