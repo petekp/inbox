@@ -492,11 +492,15 @@ The judge reads the drawn page as plain text, the page at the last checkpoint, a
 
 **How it is checked:** the good and bad pages are written by hand, each bad page breaking one property and otherwise the same as a good page. They are split into two sets. A fresh agent writes the judge's instructions from this spec alone, without seeing either set. When the judge gets a page in the first set wrong, its author is told the kind of mistake the judge made, but not the page, and revises the instructions. The second set is used for nothing else, so it shows whether a revision holds. The judge must call every page in both sets right: a bad page is caught only when the property it breaks is the one the judge fails. The pages come from sessions other than the notes app above, since the judge's author reads this spec. They are kept out of Git, in `.scratch/overview-judge-pages/` in the main checkout, and the judge's author is not given that folder. `build-pages.ts` in that folder holds each page as saved state and draws it with `overviewPage`, so after a change to how the page is drawn, one run draws every page again. `./scripts/eval.sh --suite overview --judge-pages <folder>` runs the check, once on each page. A revision round adds `--judge-set 1`, so the second set is judged only at the end. It runs again at each release, and after any change to the judge's instructions, its model, or how the page is drawn as text.
 
+The judge calls 23 of the 24 pages right (`overview-judge-2026-10-28T23-54-21.726Z.json`). It passes `s1-bad-each-once`, a page that shows one piece twice, because it read "Popup menu" as another name for the popup. That breaks the bar above. Only next builds draw the Overview, so 0.2.14 shipped with it waived.
+
 ### The pass bar
 
 A replay passes when each check passes in at least 2 of its 3 runs at every step. A check that fails in one run is listed for reading. Known failing cases are listed apart and do not block a release.
 
 The report also lists, for each step, the targets that failed in at least 2 of 3 runs, as reproduced, and the rest as not reproduced. A target only the judge checks sits on a checkpoint, and a run without `--judge` lists it apart. A call that ends with no answer before the host's time limit, as on a network error, failed outside the model, so the runner runs that replay again. A call that answers past the limit fails as it would in the host.
+
+Replay A (`coordinator-day`) and Replay B (`single-task`) fail on Sonnet and on Codex (`overview-2026-10-29T00-14-52.391Z.json`). On Codex they failed when #154 merged, and the Sonnet half was not run then. Only next builds draw the Overview, so 0.2.14 shipped with both waived. Replay C (`long-turn`) and the short catch-up case pass.
 
 ### Free checks in `check.sh`
 
