@@ -370,14 +370,20 @@ export function markedFeedbackText(f: Feedback, isMarkDone: boolean, look: Look)
   return f.is === 'done' && isMarkDone ? f.label : feedbackText(f, look)
 }
 
-/** A handed-off row's ✓ leads its result line, so its result reads as the bare label. */
+/** A handed-off row's ✓ leads its result line, so its result reads without its own ✓. */
 export function rowFeedbackText(row: RowView, look: Look): string | null {
   const f = row.feedback
-  return f ? (isHandedOffDone(row) && f.is === 'done' ? f.label : feedbackText(f, look)) : null
+  if (!f) return null
+  if (!isHandedOffDone(row)) return feedbackText(f, look)
+
+  return f.is === 'done' ? f.label : feedbackText(f, look).replace(/^✓ /, '')
 }
 
+/** Whether a handed-off row's last press is done: its send arrived, or its open or copy worked. */
 function isHandedOffDone(row: Pick<RowView, 'state' | 'feedback'>): boolean {
-  return row.state.is === 'handedOff' && row.feedback?.is === 'done'
+  const f = row.feedback
+
+  return row.state.is === 'handedOff' && (f?.is === 'done' || (f?.is === 'local' && f.result.state === 'done'))
 }
 
 /**
@@ -399,7 +405,7 @@ export function rowResultMark(row: Pick<RowView, 'state' | 'feedback'>): ResultM
   const f = row.feedback
   if (row.state.is !== 'handedOff' || !f) return null
   if (f.is === 'sending' || f.is === 'queued') return RUNNING_RESULT
-  return f.is === 'done' ? { text: '✓', isRunning: false, tone: 'done' } : { text: '', isRunning: false }
+  return isHandedOffDone(row) ? { text: '✓', isRunning: false, tone: 'done' } : { text: '', isRunning: false }
 }
 
 /** Whether what a row sent is still on its way to the agent: `unconfirmed` and a refused send are not. */
@@ -1634,7 +1640,7 @@ export function inboxView({
           canUndo: false,
           offersUndo: false,
           delivery: pendingDeliveryAt(reply, now),
-          closedAs: 'handled',
+          closedAs: closedState(closed),
         }
       if (isHeld(closed)) return { is: 'held', label: heldLabel(closed), at }
 

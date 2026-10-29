@@ -1507,7 +1507,7 @@ function inboxView({
           canUndo: false,
           offersUndo: false,
           delivery: pendingDeliveryAt(reply, now),
-          closedAs: "handled"
+          closedAs: closedState(closed2)
         };
       if (isHeld(closed2)) return { is: "held", label: heldLabel(closed2), at };
       return closedRowState(

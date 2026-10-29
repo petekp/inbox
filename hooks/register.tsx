@@ -322,7 +322,7 @@ import { parseInline } from './inline'
 import type { Span } from './inline'
 import type { RowRecord } from './arrivals'
 import { BANNER_GAP_PT, BANNER_PAD_Y_PT, OVERVIEW_ROW_PAD_PT, ROW_PAD_PT } from './layout'
-import { markShape } from './marks'
+import { cancelledMarkShape, markShape } from './marks'
 import {
   DARK_BANNER_TINTS,
   DARK_DALTONIZED_TONES,
@@ -495,14 +495,17 @@ function undoSvg(fraction: number, leftMs: number): string {
 function toneSvg(tone: ToneName, mark: string): string {
   const { light, dark } = toneColors(tone)
   // A marker needs only 3:1, so an error mark takes a stronger red than text could.
-  return tone === 'error' ? markSvg(mark, LIGHT_TONES.errorMark, DARK_TONES.errorMark) : markSvg(mark, light, dark)
+  const shape = markShape(mark, DESKTOP_LINE_PT / 2)
+  return tone === 'error'
+    ? markSvg(mark, shape, LIGHT_TONES.errorMark, DARK_TONES.errorMark)
+    : markSvg(mark, shape, light, dark)
 }
 /** A muted mark's color in an Svg, in the light and dark appearances. */
 const MUTED_MARK = { light: '#595959', dark: '#a8a8a8' }
-function markSvg(mark: string, lightMark: string, darkMark: string): string {
+/** A mark in an Svg: its `shape` when it has one, else its text. */
+function markSvg(mark: string, shape: string | null, lightMark: string, darkMark: string): string {
   const width = DESKTOP_CELL_PT
   const height = DESKTOP_LINE_PT
-  const shape = markShape(mark, height / 2)
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
     `<style>text{font-family:-apple-system,system-ui,sans-serif;font-size:14px;fill:currentColor}` +
@@ -4587,7 +4590,7 @@ export const register: Register = on => {
       const f = row?.view ? row.view.feedback : feedbackOf(id, lastActions[id], notes[id], turns, now)
       if (!f) return null
       const mark = look === 'terminal' && row?.view ? rowResultMark(row.view) : null
-      const lead = mark?.isRunning ? `${runningMark(now)} ` : mark?.text ? `${mark.text} ` : ''
+      const lead = mark === null ? '' : `${mark.isRunning ? runningMark(now) : mark.text || ' '} `
 
       return hasAge(f)
         ? {
@@ -4595,15 +4598,15 @@ export const register: Register = on => {
             age: ago(now - f.at),
             isAfterTitle: true,
             isFailure: false,
-            isDone: mark?.tone === 'done',
+            doneMark: mark?.tone === 'done' ? mark.text : null,
             feedback: f,
           }
         : {
-            text: `${lead}${feedbackText(f, look)}`,
+            text: `${lead}${row?.view ? rowFeedbackText(row.view, look)! : feedbackText(f, look)}`,
             age: '',
             isAfterTitle: isAfterTitle(f),
             isFailure: isFailure(f),
-            isDone: false,
+            doneMark: null,
             feedback: f,
           }
     }
@@ -4696,10 +4699,28 @@ export const register: Register = on => {
         return {
           ...plain,
           after: `${DOT}${[f.text, isAgeDropped ? '' : f.age].filter(Boolean).join(' ')}`,
-          afterTone: f.isFailure ? ('error' as const) : f.isDone ? ('done' as const) : undefined,
+          afterTone: f.isFailure ? ('error' as const) : undefined,
+          afterDoneMark: f.doneMark,
         }
 
-      return { ...plain, after: [plain.after, isAgeDropped ? '' : plain.age].filter(Boolean).join('') || undefined }
+      return {
+        ...plain,
+        after: [plain.after, isAgeDropped ? '' : plain.age].filter(Boolean).join('') || undefined,
+        afterDoneMark: null,
+      }
+    }
+    /** A feedback text with its done mark in the done mark's color, which every palette defines. */
+    const withDoneMark = (text: string, doneMark: string | null | undefined) => {
+      const at = doneMark ? text.indexOf(doneMark) : -1
+      if (!doneMark || at < 0) return text
+
+      return [
+        text.slice(0, at),
+        <Text key="done" color={pal.mark.done}>
+          {doneMark}
+        </Text>,
+        text.slice(at + doneMark.length),
+      ]
     }
     const unselectedLine = (row: Row, onPress: (press: UiPressArgument) => void, inset: number) => {
       const line = closedLine(row)
@@ -4743,7 +4764,7 @@ export const register: Register = on => {
             </Box>
             {after ? (
               <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
-                {after}
+                {withDoneMark(after, line.afterDoneMark)}
               </Text>
             ) : null}
           </Box>
@@ -4754,7 +4775,7 @@ export const register: Register = on => {
           ) : null}
           {meta ? (
             <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
-              {meta}
+              {withDoneMark(meta, line.afterDoneMark)}
             </Text>
           ) : null}
           {holdsUpLine ? (
@@ -5022,7 +5043,7 @@ export const register: Register = on => {
           )}
           {isStatusUnder ? (
             <Text color={pal.muted} wrap="wrap">
-              {f.text}
+              {withDoneMark(f.text, f.doneMark)}
             </Text>
           ) : null}
         </Box>
@@ -5104,7 +5125,9 @@ export const register: Register = on => {
                 row,
                 <Text wrap="wrap">
                   <Text bold>{row.title}</Text>
-                  {titleAfter ? <Text color={pal.muted}>{shownAfter}</Text> : null}
+                  {titleAfter ? (
+                    <Text color={pal.muted}>{withDoneMark(shownAfter, isStatusUnder ? null : f?.doneMark)}</Text>
+                  ) : null}
                 </Text>,
               )}
               {row.subtitle}
@@ -5655,7 +5678,7 @@ export const register: Register = on => {
         return (
           <Box key={`${key}-mark`} width={1} height={1} flexShrink={0}>
             <ToneSvg
-              source={markSvg(mark.text, light, dark)}
+              source={markSvg(mark.text, cancelledMarkShape(DESKTOP_LINE_PT / 2), light, dark)}
               alt={mark.text}
               width={DESKTOP_CELL_PT}
               height={DESKTOP_LINE_PT}

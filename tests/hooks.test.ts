@@ -931,7 +931,8 @@ test('a task handed to Claude folds and leaves the count until Claude’s reply 
   ).toBeDefined()
   await pane.press({ key: 'help-i1-2' })
   await clock.settle()
-  const red = (await pane.find({ type: 'Text', text: 'Could not open load.md: it no longer exists' }))?.props.color
+  const red = (await pane.find({ type: 'Text', text: /^\s*Could not open load\.md: it no longer exists$/ }))?.props
+    .color
   expect(red).toBeDefined()
   expect(toasts).toEqual([])
   expect(await band.find({ text: /Asks 1/ })).toBeDefined()
@@ -2032,12 +2033,14 @@ test('a question Claude closes while the person types an answer stays in place w
   await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'typekey-i2' })
   await pane.input({ key: await replyKey(pane, 'i2'), text: 'Call it hello', kind: 'change' })
-  await $.tool.call({ tool: 'mcp__inbox__close', id: 'i2', reason: 'settled in chat' } as never)
+  await $.tool.call({ tool: 'mcp__inbox__close', id: 'i2', reason: 'no longer applies: settled in chat' } as never)
   await clock.settle()
   await clock.advance(9000)
 
   expect(await replyField(pane, 'i2')).toBeDefined()
-  expect((await pane.find({ key: 'row-i2' }))?.text).toMatch(/Closed\sby\sClaude:\ssettled\sin\schat/)
+  expect((await pane.find({ key: 'row-i2' }))?.text).toMatch(
+    /Closed\sby\sClaude:\sno\slonger\sapplies:\ssettled\sin\schat/,
+  )
   expect(await pane.find({ key: 'discard-i2' })).toBeDefined()
   expect(await pane.find({ key: 'cancel-i2' })).toBeUndefined()
   expect(await band.find({ text: /Asks 1/ })).toBeDefined()
@@ -2049,6 +2052,7 @@ test('a question Claude closes while the person types an answer stays in place w
   expect(await replyField(pane, 'i2')).toBeUndefined()
   expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
   expect(await pane.find({ text: /^Replied$/ })).toBeDefined()
+  expect((await pane.find({ key: 'settled-i2' }))?.text).toMatch(/✗\s*Replied/)
   await clock.advance(9000)
   expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
   await $.prompt.submit({ text: 'what is next?', wait: false, origin: { kind: 'composer' } })
@@ -2056,6 +2060,8 @@ test('a question Claude closes while the person types an answer stays in place w
   expect(await pane.find({ key: 'row-i2' })).toBeUndefined()
   expect(await pane.find({ key: 'settled-i2' })).toBeUndefined()
   expect(await pane.find({ text: /1 closed/ })).toBeDefined()
+  await pane.press({ key: 'fold-question' })
+  expect((await pane.find({ key: 'closed-i2' }))?.text).toMatch(/✗\s*Closed\sby\sClaude/)
 })
 
 test('a held row and the rows that closed while the tab shows stay in place, and the reply still sends, after more items close than the Closed list keeps', async ($, on) => {
@@ -4942,6 +4948,44 @@ test('an answer on its way runs its mark each frame in the terminal and as an Sv
   await clock.settle()
   expect(await markOf()).toBe('')
   expect((await pane.find({ key: 'settled-i1' }))?.text).toMatch(/✓\s*Node/)
+})
+
+test('in a theme without tone colors, a replied question’s ✓ takes the done color whether its row is selected or not', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  on('ui.focus', () => ({}))
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  await selectRow(pane, 'i1')
+  await clock.advance(PRESS_GUARD_MS)
+  await pane.press({ key: 'typekey-i1' })
+  await pane.input({ key: await replyKey(pane, 'i1'), text: 'Deno', kind: 'change' })
+  await pane.press({ key: 'send-i1' })
+  await clock.settle()
+  type Drawn = { type: string; props: Record<string, unknown>; children?: unknown[] }
+  const markIn = (el: Drawn | undefined): Drawn | undefined =>
+    el?.type === 'Text' && el.children?.join('') === '✓'
+      ? el
+      : (el?.children ?? [])
+          .filter((c): c is Drawn => typeof c === 'object')
+          .reduce<Drawn | undefined>((found, c) => found ?? markIn(c), undefined)
+  const doneMark = async () => markIn(await pane.find({ key: 'row-i1' }))?.props.color
+  expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/✓ Replied/)
+  expect(await doneMark()).toBe('success')
+
+  await selectRow(pane, 'i2')
+  expect((await pane.find({ key: 'row-i1' }))?.text).toMatch(/✓ Replied/)
+  expect(await doneMark()).toBe('success')
 })
 
 test('on desktop, a cancelled question’s ✗ is drawn as a shape and a dismissed one’s ✕ as text, so the two read apart', async ($, on) => {

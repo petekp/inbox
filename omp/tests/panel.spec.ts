@@ -387,6 +387,22 @@ test('after the replies to two presses, the row handed off reads Still open, the
   expect(out).toContain('Asks 7')
 })
 
+test('an opened handed-off row whose reply is on its way starts the status under its buttons with the running mark', () => {
+  const base = screenOf()
+  const row = firstQuestion(base)
+  const handedOff: RowView = {
+    ...row,
+    state: { is: 'handedOff' },
+    feedback: { is: 'queued', label: 'go with B', at: NOW },
+  }
+  const questions = base.view.needsYou.questions.map(r => (r.id === row.id ? handedOff : r))
+  const screen = { ...base, view: { ...base.view, needsYou: { ...base.view.needsYou, questions } } }
+  const lines = text(screen, { ...onRow(row), opened: row.id }).split('\n')
+  const status = lines.findIndex(l => l.includes('Queued: go with B'))
+  expect(lines[status]).toMatch(/[●◉◎] Queued: go with B/)
+  expect(status).toBeGreaterThan(lines.findIndex(l => l.includes('↵ ')))
+})
+
 async function afterReply() {
   const row = firstQuestion(screenOf())
   const demo = await afterPresses({ action: 'type', id: row.id, text: 'go with B' })

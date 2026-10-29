@@ -1071,7 +1071,17 @@ function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
     const field = wrapText(`${text}\u0000`, Math.max(10, width - indent - 1))
     out.push(...field.map(l => ' '.repeat(indent) + l.replace('\u0000', s.inverse(' '))))
   }
-  if (statusUnder) out.push(...indented(statusUnder.text, indent, width, 4, feedbackPaint(statusUnder.tone, s)))
+  if (statusUnder) {
+    const markCells = mark ? 2 : 0
+    const [first, ...rest] = indented(
+      statusUnder.text,
+      indent + markCells,
+      width,
+      4,
+      feedbackPaint(statusUnder.tone, s),
+    )
+    if (first !== undefined) out.push(' '.repeat(indent) + mark + first.slice(indent + markCells), ...rest)
+  }
 
   return out
 }

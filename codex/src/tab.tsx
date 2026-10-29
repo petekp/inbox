@@ -7,7 +7,7 @@ import type { IconName } from './row-actions'
 import { closedState } from '../../hooks/ledger'
 import { ago, clipLabel } from '../../hooks/text'
 import type { ClosedState } from '../../hooks/ledger'
-import { markShape } from '../../hooks/marks'
+import { cancelledMarkShape } from '../../hooks/marks'
 import {
   canUndoRefused,
   CLOSED_MARKS,
@@ -1467,7 +1467,7 @@ function OverviewTab({ page }: { page: OverviewPage }) {
 }
 
 function ResultMarkView({ mark }: { mark: ResultMark }) {
-  const shape = mark.text === CLOSED_MARKS.lapsed ? markShape(mark.text, 4) : null
+  const shape = mark.text === CLOSED_MARKS.lapsed ? cancelledMarkShape(4) : null
 
   return (
     <span class={mark.isRunning ? 'mark running' : 'mark'} ref={mark.isRunning ? pulseInStep : undefined}>

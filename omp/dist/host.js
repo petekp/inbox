@@ -2791,10 +2791,15 @@ function markedFeedbackText(f, isMarkDone, look) {
 }
 function rowFeedbackText(row, look) {
   const f = row.feedback;
-  return f ? isHandedOffDone(row) && f.is === "done" ? f.label : feedbackText(f, look) : null;
+  if (!f)
+    return null;
+  if (!isHandedOffDone(row))
+    return feedbackText(f, look);
+  return f.is === "done" ? f.label : feedbackText(f, look).replace(/^\u2713 /, "");
 }
 function isHandedOffDone(row) {
-  return row.state.is === "handedOff" && row.feedback?.is === "done";
+  const f = row.feedback;
+  return row.state.is === "handedOff" && (f?.is === "done" || f?.is === "local" && f.result.state === "done");
 }
 var RUNNING_RESULT = { text: "\u25CF", isRunning: true };
 function rowResultMark(row) {
@@ -2805,7 +2810,7 @@ function rowResultMark(row) {
     return null;
   if (f.is === "sending" || f.is === "queued")
     return RUNNING_RESULT;
-  return f.is === "done" ? { text: "\u2713", isRunning: false, tone: "done" } : { text: "", isRunning: false };
+  return isHandedOffDone(row) ? { text: "\u2713", isRunning: false, tone: "done" } : { text: "", isRunning: false };
 }
 function isSendMoving(delivery) {
   return delivery === "sending" || delivery === "queued";
@@ -3475,7 +3480,7 @@ function inboxView({
           canUndo: false,
           offersUndo: false,
           delivery: pendingDeliveryAt(reply, now),
-          closedAs: "handled"
+          closedAs: closedState(closed)
         };
       if (isHeld(closed))
         return { is: "held", label: heldLabel(closed), at };
@@ -6087,8 +6092,12 @@ function drawLine(line, isSelected, d) {
     const field = wrapText(`${text}\x00`, Math.max(10, width - indent - 1));
     out.push(...field.map((l) => " ".repeat(indent) + l.replace("\x00", s.inverse(" "))));
   }
-  if (statusUnder)
-    out.push(...indented(statusUnder.text, indent, width, 4, feedbackPaint(statusUnder.tone, s)));
+  if (statusUnder) {
+    const markCells = mark ? 2 : 0;
+    const [first, ...rest] = indented(statusUnder.text, indent + markCells, width, 4, feedbackPaint(statusUnder.tone, s));
+    if (first !== undefined)
+      out.push(" ".repeat(indent) + mark + first.slice(indent + markCells), ...rest);
+  }
   return out;
 }
 var UNBROKEN_SPACE = "\uE000";
