@@ -3691,6 +3691,7 @@ export const register: Register = on => {
   on('tool.call', { tool: CLOSE_TOOL }, async ($, e) => ({
     result: await runTool($, 'close', e as unknown as Record<string, unknown>, e.tool_use_id),
   }))
+  on('tool.describe', { tool: ORDER_TOOL }, async ($, e, next) => ({ ...(await next(e)), isDeferred: false }))
   on('tool.call', { tool: ORDER_TOOL }, async ($, e) => ({
     result: await runTool($, 'order_prs', e as unknown as Record<string, unknown>, e.tool_use_id),
   }))
