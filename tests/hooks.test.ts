@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { Engine, Mounted } from 'claude-code/testing'
+import type { Engine, MockClock, Mounted } from 'claude-code/testing'
 import type { On, PaneOpenArgs, PromptOrigin, RenderSurface } from 'claude-code'
 
 import type { FoldProps } from '../hooks/fold-client'
@@ -10,6 +10,7 @@ import { cellWidth } from '../hooks/text'
 import { DARK_TONES } from '../hooks/tones'
 import type { Item, Session } from '../types'
 import { demoView } from '../hooks/demo'
+import { GH_TIMEOUT_MS } from '../hooks/gh'
 import { OVERVIEW_SYSTEM } from '../hooks/model-text'
 import { HERDR_CHECK_MS } from '../hooks/herdr'
 import { LOOK_MIN_MS } from '../hooks/overview'
@@ -75,6 +76,7 @@ let spawnedAgentId = 'a1'
 let listedAgents: { id: string; status: string }[] = []
 
 let isGhMissing = false
+let slowGhClock: MockClock | null = null
 
 let ghAnswers: {
   match: (argv: readonly string[]) => boolean
@@ -193,6 +195,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   listedAgents = []
   ghAnswers = []
   isGhMissing = false
+  slowGhClock = null
   ledgerReply = LEDGER_REPLY
   overviewReply = 'UNCHANGED'
   overviewPrompts = []
@@ -279,6 +282,10 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   on('process.run', async ($, e) => {
     ran.push([...e.argv])
     if (isGhMissing && e.argv[0] === 'gh') throw new Error('spawn gh ENOENT')
+    if (slowGhClock && e.argv[0] === 'gh') {
+      await slowGhClock.sleep(GH_TIMEOUT_MS)
+      return { deny: 'killed at the timeout' }
+    }
     await ghAnswers.find(a => a.match(e.argv))?.hold?.()
     return { value: gh(e.argv) }
   })
@@ -2881,6 +2888,92 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   expect(sidebarTokens()['inbox-prs']).toBe('1')
 })
 
+test('Resolve conflicts reads the PR from GitHub before it sends: it reads Refreshing while gh answers, sends while the conflicts remain, and sends nothing once a push resolved them', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let mergeable = 'CONFLICTING'
+  let release: (() => void) | null = null
+  let isHeld = false
+  ghAnswers.push(
+    {
+      match: argv => argv.includes('view') && argv.includes('12'),
+      get stdout() {
+        return JSON.stringify({
+          number: 12,
+          title: 'Add a greeting CLI',
+          url: 'https://github.com/acme/greet/pull/12',
+          isDraft: false,
+          state: 'OPEN',
+          baseRefName: 'main',
+          mergeable,
+          reviewDecision: 'APPROVED',
+          statusCheckRollup: [
+            {
+              __typename: 'CheckRun',
+              name: 'test',
+              workflowName: 'CI',
+              status: 'COMPLETED',
+              conclusion: 'CANCELLED',
+              startedAt: '2026-10-08T09:00:00Z',
+            },
+            {
+              __typename: 'CheckRun',
+              name: 'test',
+              workflowName: 'CI',
+              status: 'COMPLETED',
+              conclusion: 'SUCCESS',
+              startedAt: '2026-10-08T09:05:00Z',
+            },
+          ],
+        })
+      },
+      hold: () => (isHeld ? new Promise<void>(r => (release = r)) : Promise.resolve()),
+    },
+    {
+      match: argv => argv.includes('graphql'),
+      stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
+    },
+  )
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'open the PR', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Opened https://github.com/acme/greet/pull/12.',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-prs' })
+  await clock.settle()
+  expect(await pane.find({ text: /^ ·\sconflicts with main$/ })).toBeDefined()
+  expect(await pane.find({ key: 'fix-acme/greet#12-test-key' })).toBeUndefined()
+
+  isHeld = true
+  const first = pane.press({ key: 'resolve-acme/greet#12' })
+  await clock.settle()
+  expect(await pane.find({ text: /Refreshing PR #12…/ })).toBeDefined()
+  expect(sent).toEqual([])
+  release!()
+  await first
+  await clock.settle()
+  expect(sent.at(-1)).toContain('PR #12 (https://github.com/acme/greet/pull/12) conflicts with main.')
+  expect(await pane.find({ text: /✓ Asked to resolve conflicts ·/ })).toBeDefined()
+
+  isHeld = false
+  mergeable = 'MERGEABLE'
+  await clock.advance(PRESS_GUARD_MS)
+  expect((await pane.find({ key: 'resolve-acme/greet#12' }))?.props.label).toBe('Resolve conflicts again')
+  const sends = sent.length
+  await pane.press({ key: 'resolve-acme/greet#12' })
+  await clock.settle()
+  expect(sent.length).toBe(sends)
+  expect(await pane.find({ key: 'resolve-acme/greet#12' })).toBeUndefined()
+  expect(await pane.find({ text: /^This changed before your press\. Nothing was sent\.$/ })).toBeDefined()
+})
+
 test('opening the PRs tab while another PR fetch runs still finds the branch’s PR', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
@@ -3024,6 +3117,31 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await clock.settle()
     expect(await pane.find({ text: /No PRs/ })).toBeDefined()
     expect(await pane.find({ text: notice })).toBeUndefined()
+  })
+
+  test(`the ${surface} PRs tab does not say gh is missing when every gh run times out`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [])
+    slowGhClock = clock
+
+    await $.session.start({ cwd: '/tmp/project', surface, isInteractive: true })
+    const pane = await $.ui.mount({ ...PANE, surface })
+    if (surface === 'terminal') await pane.press({ key: 'tab-prs' })
+    else {
+      const { tabs, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+      const x = tabs
+        .slice(
+          0,
+          tabs.findIndex(t => t.id === 'prs'),
+        )
+        .reduce((sum, t) => sum + t.width + gap, 0)
+      await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+    }
+    await clock.settle()
+    await clock.advance(GH_TIMEOUT_MS)
+    expect(ran.some(argv => argv[0] === 'gh' && argv[1] === 'pr')).toBe(true)
+    expect(await pane.find({ text: /No PRs/ })).toBeDefined()
+    expect(await pane.find({ text: /could not find gh/ })).toBeUndefined()
   })
 
   test(`the ${surface} PRs tab says gh is not signed in until gh answers without asking for a sign-in`, async ($, on) => {
@@ -5500,13 +5618,13 @@ test('on the Overview, a rule sets each item apart in the docked terminal and on
   const docked = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 40 } })
   await docked.press({ key: 'tab-key-overview' })
   await clock.settle()
-  expect(await ruledAbove(docked)).toEqual(['s2', 's3', 's4', 'done'])
+  expect(await ruledAbove(docked)).toEqual(['s3', 's1', 's4', 'done'])
   await docked.unmount()
 
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 36 } })
   await desktop.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
-  expect(await ruledAbove(desktop)).toEqual(['s2', 's3', 's4', 'done'])
+  expect(await ruledAbove(desktop)).toEqual(['s3', 's1', 's4', 'done'])
   await desktop.unmount()
 
   const inline = await $.ui.mount({ ...PANE, props: { ...PANE.props, placement: 'inline', bodyColumns: 90 } })

@@ -65,9 +65,9 @@ _Avoid_: Findings, as the tab's name. A find, for one finding.
 
 **Overview**:
 The first tab on a next build: what the session's work is for, and where each
-part of it stands, the most recently changed first. A release build does not
-draw it. The inbox model updates it after each reply, in a second call after the
-one that updates the rows. It is not a list of events.
+part of it stands, from what needs the person to what is finished. A release
+build does not draw it. The inbox model updates it after each reply, in a
+second call after the one that updates the rows. It is not a list of events.
 
 **Goal**:
 The session's aim in a few words, on the Overview's second line. The inbox
@@ -102,7 +102,7 @@ them `stall`.
 _Avoid_: age
 
 **Seen line**:
-The rule labeled "Seen" on the Overview, at the time the person last left the
+The rule labeled "Last seen" on the Overview, at the time the person last left the
 page after it showed for at least five seconds. A shorter pass through the tab
 leaves the line where it was. A row above it changed since then. Every open row
 shows where it stands, above or below the line. A row below it leaves out its

@@ -259,7 +259,7 @@ test('a look keeps the look line where it was until the look ends, and counts on
   expect(lookStarted(null, 1)).toBeNull()
 })
 
-test('the page lists subjects newest first, and an open row below the look line keeps where it stands but not its was line', () => {
+test('an open row below the look line keeps where it stands but not its was line', () => {
   const now = 100 * MIN
   const o = after(
     after(
@@ -274,11 +274,39 @@ test('the page lists subjects newest first, and an open row below the look line 
   const p = page({ ...o, lastLookAt: 50 * MIN }, now, { lastReplyAt: now - 2 * MIN }, [askItem('i1')])
 
   expect(p.goal).toBe('Work offline')
-  expect(shape(p.rows)).toEqual(['◆ Offline mode: needs a sync pick · waiting', '-- Seen', '○ Docs: outline ready'])
+  expect(shape(p.rows)).toEqual(['◆ Offline mode: needs a sync pick · waiting', '-- Last seen', '○ Docs: outline ready'])
   const seenAt = { ...after(o, 'WAS: s2 | sync on every save', 90 * MIN, new Set(['i1'])), lastLookAt: 95 * MIN }
   const seen = page(seenAt, now, {}, [askItem('i1')]).rows
   expect(shape(seen)).toEqual(['◆ Offline mode: needs a sync pick · waiting', '○ Docs: outline ready'])
   expect(seen[0]).toMatchObject({ kind: 'subject', was: null })
+})
+
+test('each side of the look line lists held, working, waiting, queued, then finished rows, newest change first within each', () => {
+  let o = after(null, 'NEW: working | Seen work | old step\nNEW: queued | Seen queue | later', 10 * MIN)
+  o = after(
+    o,
+    'NEW: working | Sync | step one\nNEW: queued | Help menu | not started\nNEW: working | Banner | built',
+    60 * MIN,
+  )
+  o = after(o, 'DONE: s5 | shipped', 65 * MIN)
+  o = after(o, 'NEW: working | Export | step one', 70 * MIN)
+  o = after(o, 'NEW: waits-on-other | Review | sent for review', 72 * MIN)
+  o = after(o, 'SET: s4 | queued | outline ready', 75 * MIN)
+  o = after(o, 'NEW: working | Flick | needs a pick\nLINK: i1 | s8\nLINK: i2 | s2', 80 * MIN, new Set(['i1', 'i2']))
+  o = after(o, 'SET: s3 | working | step two', 85 * MIN, new Set(['i1', 'i2']))
+  const rows = page({ ...o, lastLookAt: 50 * MIN }, 86 * MIN, {}, [askItem('i1'), askItem('i2')]).rows
+
+  expect(shape(rows)).toEqual([
+    '◆ Flick: needs a pick · waiting',
+    '● Sync: step two',
+    '● Export: step one',
+    '◌ Review: sent for review',
+    '○ Help menu: outline ready',
+    '✓ Banner: shipped',
+    '-- Last seen',
+    '◆ Seen queue: later · waiting',
+    '● Seen work: old step',
+  ])
 })
 
 test('only a subject an open ask holds up reads waiting, in the needs-you tone, with no time, and one waiting on someone else shows no word', () => {
@@ -294,10 +322,10 @@ test('only a subject an open ask holds up reads waiting, in the needs-you tone, 
   ]
   const stalls = (now: number) => page(o, now, {}, asks).rows.map(r => (r.kind === 'subject' ? r.stall : r.kind))
 
-  const waiting = [null, { text: 'waiting', tone: 'needsYou' }, null]
+  const waiting = [{ text: 'waiting', tone: 'needsYou' }, null, null]
   expect(stalls(20 * MIN)).toEqual(waiting)
   expect(stalls(2 * 60 * MIN)).toEqual(waiting)
-  expect(shape(page(o, 2 * 60 * MIN, {}, asks).rows)[0]).toBe('◌ Review: sent for review')
+  expect(shape(page(o, 2 * 60 * MIN, {}, asks).rows)[1]).toBe('◌ Review: sent for review')
 })
 
 test('a name before its stall word is cut at a word with an ellipsis until both fit, and keeps its first word when nothing fits', () => {
@@ -364,7 +392,7 @@ test('finished work folds into a count once seen, keeping at most two new finish
   expect(shape(page({ ...fresh, lastLookAt: 60 * MIN }, now).rows)).toEqual([
     '✓ Four: done d',
     '✓ Three: done c',
-    '-- Seen',
+    '-- Last seen',
     '✓ 2 more done',
   ])
 })
@@ -480,7 +508,7 @@ test('a rule sets each item on the page apart: a subject and the rows under it a
     '── ● Offline mode: queue built ┐',
     '├ ● Review r1',
     '└ ● Review r2',
-    '-- Seen',
+    '-- Last seen',
     '○ Docs: outline ready',
     '── ✓ 1 done',
   ])
@@ -511,8 +539,11 @@ test('open subjects past seven fold their oldest queued ones into a count', () =
 
   expect(rows.filter(r => r.kind === 'subject')).toHaveLength(7)
   expect(rows.at(-1)).toMatchObject({ kind: 'fold', text: '2 more queued' })
-  expect(heldOldest.filter(r => r.kind === 'subject').map(r => r.id)).toContain('s1')
-  expect(heldOldest.at(-1)).toMatchObject({ kind: 'fold', text: '2 more queued' })
+  expect(shape(heldOldest)).toEqual([
+    '◆ Part 0: step 0',
+    ...[3, 4, 5, 6, 7, 8].map(n => `● Part ${n}: step ${n}`),
+    '○ 2 more queued',
+  ])
 })
 
 test('an Overview saved before subjects keeps its open work, dated at the last look, and its headline as the goal', () => {

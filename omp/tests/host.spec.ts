@@ -907,6 +907,15 @@ test('opening the panel finds gh missing when no gh starts', async () => {
   expect((await inbox.screen(makeCtx())).isGhMissing).toBe(true)
 })
 
+test('opening the panel does not find gh missing when every gh run times out', async () => {
+  const inbox = createInbox(pi(), deps())
+  for (const gh of ['gh', '/opt/homebrew/bin/gh', '/usr/local/bin/gh']) execResults.set(gh, { code: -1, killed: true })
+  await record({ kind: 'task', ask: 'Try the CLI by hand' })
+  await inbox.openPanel(makeCtx(), clock)
+  await settle()
+  expect((await inbox.screen(makeCtx())).isGhMissing).toBe(false)
+})
+
 test('opening the panel finds gh signed out, and a later fetch that gh answers without asking clears it', async () => {
   const inbox = createInbox(pi(), deps())
   execResults.set('gh', { code: 4, stderr: 'To get started with GitHub CLI, please run:  gh auth login' })

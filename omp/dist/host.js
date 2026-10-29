@@ -1766,6 +1766,7 @@ function noteDialog(s, callId, questions) {
 var CANDIDATES = ["gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"];
 var GH_TIMEOUT_MS = 20000;
 var UNSTARTABLE_CODE = -1;
+var TIMED_OUT_CODE = -2;
 var GIT_TIMEOUT_MS = 5000;
 async function branchIn(run, folder) {
   const r = await run(["git", "branch", "--show-current"], { cwd: folder, timeoutMs: GIT_TIMEOUT_MS });
@@ -1950,12 +1951,29 @@ function bucket(e) {
     return "pending";
   return "fail";
 }
+function runStart(e) {
+  const isWaiting = !!e.status && e.status.toUpperCase() !== "COMPLETED";
+  return msOf(e.startedAt) ?? (isWaiting ? Infinity : undefined);
+}
+function latestRuns(rollup) {
+  const latest = new Map;
+  for (const e of rollup) {
+    const key = JSON.stringify([e.workflowName ?? "", e.name ?? e.context ?? ""]);
+    const kept = latest.get(key);
+    const keptStart = kept && runStart(kept);
+    const start = runStart(e);
+    const isOlder = start !== undefined && keptStart !== undefined && start < keptStart;
+    if (!isOlder)
+      latest.set(key, e);
+  }
+  return [...latest.values()];
+}
 function readView(ref, json) {
   try {
     const v = JSON.parse(json);
     if (typeof v.number !== "number")
       return null;
-    const rollup = Array.isArray(v.statusCheckRollup) ? v.statusCheckRollup : [];
+    const rollup = latestRuns(Array.isArray(v.statusCheckRollup) ? v.statusCheckRollup : []);
     return {
       ref,
       number: v.number,
@@ -3137,7 +3155,7 @@ function screenTabOf(tab) {
 }
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
-var LOOK_TEXT = "Seen";
+var LOOK_TEXT = "Last seen";
 var WAS_PREFIX = "was: ";
 var MERGED_PREFIX = "merged in: ";
 var STALL_GAP = " \xB7 ";
@@ -3155,6 +3173,7 @@ var SUBJECT_MARKS = {
 var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
 var CHILD_MARK = { mark: "\u25CF", tone: null };
 var FINISHED_MARK = { mark: "\u2713", tone: "done" };
+var OVERVIEW_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
@@ -3208,12 +3227,14 @@ function overviewPage(s, now) {
   const isNew = (x) => look === null || x.changedAt > look;
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
+  const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || OVERVIEW_PLACES.indexOf(placeOf(x)) - OVERVIEW_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
   const stallOf = (x) => isHeld(x) ? { text: "waiting", tone: "needsYou" } : null;
   const newClosed = subjects.filter((x) => !isOpen(x) && isNew(x)).sort((x, y) => (y.closedAt ?? 0) - (x.closedAt ?? 0)).slice(0, NEW_CLOSED_ROWS);
   const open = subjects.filter(isOpen);
   const queuedOver = Math.max(0, open.length - OPEN_ROWS);
-  const hiddenQueued = new Set(open.filter((x) => x.status === "queued" && !isHeld(x)).sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id));
-  const shown = [...open.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort((x, y) => y.changedAt - x.changedAt);
+  const hiddenQueued = new Set(open.filter((x) => placeOf(x) === "queued").sort((x, y) => x.changedAt - y.changedAt).slice(0, queuedOver).map((x) => x.id));
+  const shown = [...open.filter((x) => !hiddenQueued.has(x.id)), ...newClosed].sort(pageOrder);
   const folded = subjects.filter((x) => x.status === "done" && !newClosed.includes(x));
   const running = (o?.children ?? []).filter((c) => isChildRunning(c, now) || isFinishedUnseen(c, look)).sort((x, y) => (y.lastActivityAt ?? y.startedAt) - (x.lastActivityAt ?? x.startedAt));
   const shownIds = new Set(shown.map((x) => x.id));
@@ -3346,7 +3367,8 @@ function actionsOf(row, last, state, feedback) {
       ...stepActions,
       action({ action: "done", id }, "Done", "mark"),
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
-      action({ action: "explain", id }, "Explain", "talk")
+      action({ action: "explain", id }, "Explain", "talk"),
+      action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
   const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
@@ -3764,11 +3786,12 @@ function olderPrsText(prState, linked) {
   const numbers = older.map((ref) => `#${parseRef(ref).number}`).reverse();
   return `${older.length} older ${older.length === 1 ? "PR" : "PRs"} not shown: ${numbers.join(", ")}`;
 }
-async function fetchTracked(run, state, linked, findsBranchPr) {
+async function fetchTracked(run, state, linked, findsBranchPr, now) {
   let isGhSignedOut = null;
   const gh = async (args) => {
     const r = await run(args);
-    if (r.exitCode !== UNSTARTABLE_CODE)
+    const isAnswer = r.exitCode !== UNSTARTABLE_CODE && r.exitCode !== TIMED_OUT_CODE;
+    if (isAnswer)
       isGhSignedOut = isGhSignedOut === true || asksForSignIn(r);
     return r;
   };
@@ -3776,8 +3799,8 @@ async function fetchTracked(run, state, linked, findsBranchPr) {
   const branchTarget = findsBranchPr ? null : state.branchRef;
   const isBranchLinked = branchTarget !== null && tracked.includes(branchTarget);
   const [branch, ...rest] = await Promise.all([
-    findsBranchPr || branchTarget && !isBranchLinked ? fetchPr(gh, branchTarget, state.views, state.branchRef) : null,
-    ...tracked.map((ref) => fetchPr(gh, ref, state.views, null))
+    findsBranchPr || branchTarget && !isBranchLinked ? fetchPr(gh, branchTarget, state.views, state.branchRef, now) : null,
+    ...tracked.map((ref) => fetchPr(gh, ref, state.views, null, now))
   ]);
   const views = {};
   for (const v of [...rest, branch])
@@ -3785,7 +3808,7 @@ async function fetchTracked(run, state, linked, findsBranchPr) {
       views[v.ref] = v;
   return { views, branchRef: findsBranchPr ? branch?.ref ?? null : state.branchRef, isGhSignedOut };
 }
-async function fetchPr(gh, target, views, knownBranchRef) {
+async function fetchPr(gh, target, views, knownBranchRef, now) {
   const threadsOf = (ref) => {
     const r = parseRef(ref);
     return gh([
@@ -3806,6 +3829,7 @@ async function fetchPr(gh, target, views, knownBranchRef) {
     gh(["pr", "view", ...t ? [t.number, "-R", t.repo] : [], "--json", VIEW_FIELDS]),
     target ? threadsOf(target) : null
   ]);
+  const fetchedAt = await now();
   const hasNoPr = view.exitCode !== 0 && /no pull requests found/i.test(view.stderr);
   const ref = target ?? (view.exitCode === 0 ? urlRef(view.stdout) : hasNoPr ? null : knownBranchRef);
   if (!ref)
@@ -3815,8 +3839,9 @@ async function fetchPr(gh, target, views, knownBranchRef) {
   if (!base) {
     if (!previous || asksForSignIn(view))
       return previous ?? null;
-    return { ...previous, error: view.stderr.trim().split(`
-`)[0] || "gh could not read the PR" };
+    const error = view.exitCode === TIMED_OUT_CODE ? GH_TIMED_OUT_TEXT : view.stderr.trim().split(`
+`)[0] || "gh could not read the PR";
+    return { ...previous, error };
   }
   const threads = early ?? await threadsOf(ref);
   const answer = threads.exitCode === 0 ? readThreadsAnswer(threads.stdout) : null;
@@ -3825,7 +3850,8 @@ async function fetchPr(gh, target, views, knownBranchRef) {
     threads: answer?.threads ?? previous?.threads ?? [],
     isYours: answer?.isYours ?? previous?.isYours ?? null,
     wasSeenOpen: base.state === "OPEN" || previous?.wasSeenOpen === true,
-    error: answer ? null : "could not read review threads"
+    error: answer ? null : "could not read review threads",
+    fetchedAt
   };
 }
 function urlRef(json) {
@@ -3851,6 +3877,7 @@ function prMarkId(ref) {
   return `pr:${ref}`;
 }
 var GH_MISSING_TEXT = "The inbox could not find gh. It needs gh to read your PRs.";
+var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} seconds`;
 var GH_SIGNED_OUT_TEXT = "gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.";
 function ghNoticeOf(gh) {
   if (gh.isGhMissing)
@@ -3970,6 +3997,12 @@ function prPageEffect(pr) {
 }
 function logEffect(pr, check) {
   return { kind: "open", target: check.url ?? pr.url, name: check.url ? "the log" : `PR #${pr.number}` };
+}
+function isPrFixPress(p) {
+  return p.action === "pr-conflicts" || p.action === "check-fix";
+}
+function fixCheckEffect(pr) {
+  return { kind: "refresh-prs", name: `PR #${pr.number}` };
 }
 function prRowId(p) {
   if ("check" in p)
@@ -5162,6 +5195,50 @@ async function wakeForDone(host, current) {
     return outcome.state === "rejected" ? { ...after, ledger: refuseDoneNotification(after.ledger, sending.deliveryId, outcome.reason) } : after;
   });
 }
+var FIX_LABELS = { "pr-conflicts": "Resolve conflicts", "check-fix": "Fix" };
+function withoutCheck(s, check) {
+  const result = check ? s.lastActions[check.rowId]?.result : undefined;
+  if (!check || result?.at !== check.pendingAt || result.pressId !== check.pressId)
+    return s;
+  const { [check.rowId]: _check, ...rest } = s.lastActions;
+  return { ...s, lastActions: check.before ? { ...rest, [check.rowId]: check.before } : rest };
+}
+async function checkPrFirst(host, p, rowId, pressId, holds) {
+  const checking = {};
+  await host.update(async (saved) => {
+    delete checking.check;
+    const s = withHolds(saved, holds);
+    const at = await host.now();
+    const pr = s.prViews.views[p.ref];
+    if (!pr || "stale" in pressOn(s, p, at, { settleWindowMs: host.settleWindowMs, holds }, host))
+      return s;
+    const before = s.lastActions[rowId];
+    const pending = pendingResult([fixCheckEffect(pr)], at, pressId);
+    checking.check = { rowId, before, pendingAt: at, pressId };
+    return {
+      ...s,
+      lastActions: {
+        ...s.lastActions,
+        [rowId]: localLast(before, { action: p.action, text: FIX_LABELS[p.action] }, pending)
+      }
+    };
+  });
+  const check = checking.check;
+  if (!check)
+    return "stale";
+  await host.refreshPrs();
+  let isRead = false;
+  await host.update(async (s) => {
+    const pr = s.prViews.views[p.ref];
+    isRead = pr?.fetchedAt !== undefined && pr.fetchedAt >= check.pendingAt;
+    const pending = s.lastActions[rowId]?.result;
+    if (isRead || !pending)
+      return s;
+    const failed = finishedResult(pending, [pr?.error ?? "gh could not read it"], await host.now());
+    return { ...s, lastActions: withResult(s.lastActions, rowId, check.pendingAt, failed) };
+  });
+  return isRead ? check : "unread";
+}
 async function startPress(host, p, isStale, holds) {
   const rowId = pressRowId(p);
   const localPressId = host.newId();
@@ -5197,10 +5274,26 @@ async function startPress(host, p, isStale, holds) {
       await host.update((s) => ({ ...s, ledger: f(s.ledger) }));
     }
   };
+  const check = "ref" in p && isPrFixPress(p) && !isStale ? await checkPrFirst(host, p, rowId, localPressId, holds).catch((err) => {
+    error = `Not sent: ${err instanceof Error ? err.message : String(err)}`;
+    return "unread";
+  }) : null;
+  if (check === "stale" || check === "unread")
+    return {
+      effects: null,
+      finish: async () => ({
+        copy,
+        error,
+        note: check === "stale" ? "stale" : null,
+        isUnconfirmed,
+        isRowFailed,
+        wakesForDone: false
+      })
+    };
   await host.update(async (saved) => {
     note = isStale ? "stale" : null;
     Object.assign(pressed, { r: undefined, at: undefined, deliveryId: undefined });
-    const s = withHolds(saved, holds);
+    const s = withoutCheck(withHolds(saved, holds), check);
     if (note)
       return s;
     const at = await host.now();
@@ -5277,10 +5370,12 @@ function isPrFetchDue(s, lastFetchedAt, now) {
   if (lastFetchedAt === undefined)
     return true;
   const hasNewPr = splitLinked(s.prViews, s.ledger.prs).tracked.some((ref) => !(ref in s.prViews.views));
-  return now - lastFetchedAt >= PRS_REFRESH_MS || hasNewPr && now - lastFetchedAt >= NEW_PR_FETCH_MS;
+  const hasReplySince = (s.presence.lastReplyAt ?? 0) > lastFetchedAt;
+  return now - lastFetchedAt >= PRS_REFRESH_MS || (hasNewPr || hasReplySince) && now - lastFetchedAt >= NEW_PR_FETCH_MS;
 }
 function prFetchTracker(now) {
   const running = new Map;
+  const following = new Map;
   const endedAt = new Map;
   const start = (id, fetch) => {
     const run = fetch().catch(() => {
@@ -5295,7 +5390,17 @@ function prFetchTracker(now) {
   return {
     isFetching: (id) => running.has(id),
     fetchWhenDue: (id, s, fetch) => running.has(id) || !isPrFetchDue(s, endedAt.get(id), now()) ? null : start(id, fetch),
-    fetchNow: (id, fetch) => running.get(id) ?? start(id, fetch)
+    fetchNow: (id, fetch) => {
+      const current = running.get(id);
+      if (!current)
+        return start(id, fetch);
+      const next = following.get(id) ?? current.then(() => {
+        following.delete(id);
+        return running.get(id) ?? start(id, fetch);
+      });
+      following.set(id, next);
+      return next;
+    }
   };
 }
 async function fetchPrs(host, findsBranchPr) {
@@ -5307,7 +5412,7 @@ async function fetchPrs(host, findsBranchPr) {
   let sawUnstartable = false;
   const fetchWith = (path) => fetchTracked(host.gh.run(s, path, () => {
     sawUnstartable = true;
-  }), s.prViews, s.ledger.prs, findsBranchPr);
+  }), s.prViews, s.ledger.prs, findsBranchPr, () => host.now());
   let fetch = await fetchWith(bin);
   if (sawUnstartable) {
     host.gh.forget();
@@ -5366,7 +5471,7 @@ function openTarget2(run, target, root, home) {
   }, target, root, home);
 }
 // package.json
-var version = "0.2.13";
+var version = "0.2.14";
 
 // ../hooks/arrivals.ts
 function recordRows(seen, listed) {
@@ -6132,6 +6237,15 @@ function withTree(lines, first, rest, s) {
   const drawn = (line, glyph) => glyph.trim() === "" ? line : line.slice(0, PAGE_MARK_AT) + s.dim(glyph) + line.slice(PAGE_MARK_AT + glyph.length);
   return lines.map((l, n) => n === 0 ? first ? drawn(l, first) : l : drawn(l, rest));
 }
+function pageRule(width, s, label = null) {
+  const cells = Math.max(0, width - PAGE_TEXT_AT - 1);
+  if (label === null)
+    return `${" ".repeat(PAGE_TEXT_AT)}${s.dim("\u2500".repeat(cells))}`;
+  const text = ` ${label} `;
+  const fill = Math.max(4, cells - cellWidth(text));
+  const before = Math.floor(fill / 2);
+  return `${" ".repeat(PAGE_TEXT_AT)}${s.dim(`${"\u2500".repeat(before)}${text}${"\u2500".repeat(fill - before)}`)}`;
+}
 function drawPageRow(row, d) {
   const { width, now, style: s } = d;
   if (row.kind === "subject") {
@@ -6155,12 +6269,8 @@ function drawPageRow(row, d) {
     const arm = TREE_ARMS[row.branch];
     return withTree([" ".repeat(PAGE_CHILD_AT + 2) + s.dim(row.text)], arm.first, arm.rest, s);
   }
-  if (row.kind === "look") {
-    const label = ` ${row.text} `;
-    const fill = Math.max(4, width - 1 - PAGE_MARK_AT - cellWidth(label));
-    const before = Math.floor(fill / 2);
-    return [`${" ".repeat(PAGE_MARK_AT)}${s.dim(`${"\u2500".repeat(before)}${label}${"\u2500".repeat(fill - before)}`)}`];
-  }
+  if (row.kind === "look")
+    return [pageRule(width, s, row.text)];
   const mark = row.tone ? s.tone(row.tone, row.mark) : s.dim(row.mark);
   return pageLine(d, PAGE_MARK_AT, mark, row.text, s.dim);
 }
@@ -6221,14 +6331,13 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
     rule,
     ...banners.flatMap((b) => bannerLines(b, width, style))
   ];
-  const pageRule = `${" ".repeat(PAGE_TEXT_AT)}${style.dim("\u2500".repeat(Math.max(0, width - PAGE_TEXT_AT - 1)))}`;
   const body = [];
   let selectedAt = [0, 0];
   for (const e of entries) {
     if (e.kind === "heading")
       body.push(` ${style.bold(e.text)}${e.count ? style.dim(` \xB7 ${e.count}`) : ""}`);
     else if (e.kind === "page")
-      body.push(...e.row.isRuledAbove ? [pageRule] : [], ...drawPageRow(e.row, d));
+      body.push(...e.row.isRuledAbove ? [pageRule(width, style)] : [], ...drawPageRow(e.row, d));
     else if (e.kind === "banner")
       body.push(...bannerLines(e.banner, width, style));
     else if (e.kind === "note")
@@ -7306,9 +7415,9 @@ function createInbox(pi, deps = defaultDeps) {
     const [file = "", ...rest] = args;
     try {
       const r = await pi.exec(file, rest, { cwd, timeout: timeoutMs });
-      return { code: r.killed ? -1 : r.code, stdout: r.stdout, stderr: r.stderr };
+      return { code: r.killed ? TIMED_OUT_CODE : r.code, stdout: r.stdout, stderr: r.stderr };
     } catch (err) {
-      return { code: -1, stdout: "", stderr: messageOf(err) };
+      return { code: UNSTARTABLE_CODE, stdout: "", stderr: messageOf(err) };
     }
   };
   const gh = ghFinder(run);

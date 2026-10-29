@@ -1004,7 +1004,7 @@ export type OverviewPage = {
   empty: { title: string; hint: string }
 }
 
-export const LOOK_TEXT = 'Seen'
+export const LOOK_TEXT = 'Last seen'
 /** What a subject's was line starts with, before the plan it replaces. */
 export const WAS_PREFIX = 'was: '
 const MERGED_PREFIX = 'merged in: '
@@ -1031,6 +1031,11 @@ export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: Overview
 const HELD_MARK: { mark: string; tone: OverviewTone } = { mark: '◆', tone: 'needsYou' }
 const CHILD_MARK: { mark: string; tone: OverviewTone } = { mark: '●', tone: null }
 const FINISHED_MARK: { mark: string; tone: OverviewTone } = { mark: '✓', tone: 'done' }
+
+/** The order of subjects on each side of the look line, from what needs the person to what is finished. */
+const OVERVIEW_PLACES = ['held', 'working', 'waits-on-other', 'queued', 'closed'] as const
+
+type OverviewPlace = (typeof OVERVIEW_PLACES)[number]
 
 /** The marks a running row cycles through in the text looks, one each `RUNNING_FRAME_MS`. */
 export const RUNNING_FRAMES = ['●', '◉', '◎', '◉'] as const
@@ -1125,6 +1130,12 @@ export function overviewPage(
   const isNew = (x: Subject) => look === null || x.changedAt > look
   const heldIds = new Set(s.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
   const isHeld = (x: Subject) => isOpen(x) && heldIds.has(x.id)
+  const placeOf = (x: Subject): OverviewPlace =>
+    isHeld(x) ? 'held' : x.status === 'done' || x.status === 'dropped' ? 'closed' : x.status
+  const pageOrder = (x: Subject, y: Subject) =>
+    Number(isNew(y)) - Number(isNew(x)) ||
+    OVERVIEW_PLACES.indexOf(placeOf(x)) - OVERVIEW_PLACES.indexOf(placeOf(y)) ||
+    y.changedAt - x.changedAt
   const stallOf = (x: Subject): OverviewStall | null => (isHeld(x) ? { text: 'waiting', tone: 'needsYou' } : null)
   const newClosed = subjects
     .filter(x => !isOpen(x) && isNew(x))
@@ -1134,12 +1145,12 @@ export function overviewPage(
   const queuedOver = Math.max(0, open.length - OPEN_ROWS)
   const hiddenQueued = new Set(
     open
-      .filter(x => x.status === 'queued' && !isHeld(x))
+      .filter(x => placeOf(x) === 'queued')
       .sort((x, y) => x.changedAt - y.changedAt)
       .slice(0, queuedOver)
       .map(x => x.id),
   )
-  const shown = [...open.filter(x => !hiddenQueued.has(x.id)), ...newClosed].sort((x, y) => y.changedAt - x.changedAt)
+  const shown = [...open.filter(x => !hiddenQueued.has(x.id)), ...newClosed].sort(pageOrder)
   const folded = subjects.filter(x => x.status === 'done' && !newClosed.includes(x))
   const running = (o?.children ?? [])
     .filter(c => isChildRunning(c, now) || isFinishedUnseen(c, look))
@@ -1304,6 +1315,7 @@ function actionsOf(
       action({ action: 'done', id }, 'Done', 'mark'),
       action({ action: 'type', id, text: '' }, 'Reply', 'handoff'),
       action({ action: 'explain', id }, 'Explain', 'talk'),
+      action({ action: 'dismiss', id }, 'Dismiss', 'mark'),
     ]
   const isFolding = item.options.length > OPTIONS_FOLD_AT
   const options =
