@@ -334,8 +334,8 @@ function refusedReceiver(project, source, callee) {
 const isFunctionExpression = node => ts.isArrowFunction(node) || ts.isFunctionExpression(node)
 
 /**
- * The function expression around `node` that a `return` statement returns. The directory accepted a curried arrow,
- * `(p) => (press) => runPress($, p, press.surface)`, so an arrow's expression body does not count.
+ * The function expression around `node` that a `return` statement returns. Whether the directory also refuses a
+ * function that an arrow returns as its body, as in `(p) => (press) => runPress($, p, press.surface)`, is not known.
  */
 function returnedFunctionOf(node) {
   for (let at = node.parent; at && !ts.isSourceFile(at); at = at.parent) {
