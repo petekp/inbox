@@ -381,7 +381,7 @@ const UNREADABLE = atom({ plugin: 'inbox', key: 'unreadable' } as const, null as
 const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as FoldKind[])
 const FOLD_HOVER = atom({ plugin: 'inbox', key: 'foldHover' } as const, null as FoldKind | null)
 const OPTIONS_SHOWN = atom({ plugin: 'inbox', key: 'optionsShown' } as const, [] as string[])
-/** Switching tabs closes Help. */
+/** Switching tabs or closing the pane closes Help. */
 const IS_HELP_SHOWN = atom({ plugin: 'inbox', key: 'isHelpShown' } as const, false)
 /** How many times the terminal pane redraws while Undo's fill drains, two for each cell of the fill. */
 const UNDO_REDRAW_STEPS = 24
@@ -3943,6 +3943,7 @@ export const register: Register = on => {
     paneHasKeys.clear()
     await update($, TYPING, () => null)
     await update($, FOLD_HOVER, () => null)
+    await update($, IS_HELP_SHOWN, () => false)
 
     return r
   })
