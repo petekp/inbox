@@ -90,6 +90,7 @@ import {
   overviewKeyPlan,
   overviewKeyRows,
   overviewSelected,
+  isGuarded,
   mergedLine,
   nameBeforeStall,
   OVERVIEW_TEXT_LINES,
@@ -167,6 +168,11 @@ export type PanelUi = {
   pageTop: number
   /** The Overview row the next draw scrolls into view, after j or k selects it. */
   pageReveal: string | null
+  /**
+   * When an Overview press selected the shown row, as Answer does. The row's buttons ignore keys until
+   * `PRESS_GUARD_MS` has passed, so a second press of the same key does not press the row it opened.
+   */
+  openedAt: number
   /** When the panel opened or last switched tab. A row that closes since then stays in place until the next of either. */
   shownSince: number
 }
@@ -184,6 +190,7 @@ export const INITIAL_UI: PanelUi = {
   opened: null,
   pageTop: 0,
   pageReveal: null,
+  openedAt: 0,
   shownSince: 0,
 }
 
@@ -684,7 +691,7 @@ const focusOf = (line: Line, ui: PanelUi): number =>
 export type KeyResult = { ui: PanelUi; press?: PanelPress; close?: true }
 
 function withSelection(ui: PanelUi, id: string | null): PanelUi {
-  return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null }
+  return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null, openedAt: 0 }
 }
 
 /** Shows `tab`. Its showing starts at `now` unless it already shows, so its settled rows stay. */
@@ -809,7 +816,7 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
   }
   if (selected && isShut(selected, base))
     return key === 'enter' ? { ui: { ...base, opened: selected.id } } : { ui: base }
-  if (!selected || selected.buttons.length === 0) return { ui: base }
+  if (!selected || selected.buttons.length === 0 || isGuarded(base.openedAt, now)) return { ui: base }
   if (key === 'left' || key === 'right') {
     const index = wrapIndex(focusOf(selected, base) + (key === 'left' ? -1 : 1), selected.buttons.length)
 
@@ -844,7 +851,7 @@ function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): Ke
   const pressed = key === 'enter' ? keys[pageFocus(row, ui)] : keys.find(k => k.hotkey === key)
   if (!pressed) return null
 
-  return { ui: { ...withTab(ui, 'needsYou', now), selectedId: pressed.press.askId } }
+  return { ui: { ...withTab(ui, 'needsYou', now), selectedId: pressed.press.askId, openedAt: now } }
 }
 
 export type SeenRows = RowRecord<Tab>

@@ -29,6 +29,7 @@ import {
   rowKeyPlan,
   overviewKeyPlan,
   overviewKeyRows,
+  PRESS_GUARD_MS,
 } from '../../hooks/view'
 import type { OverviewRow, RowView } from '../../hooks/view'
 import { sessionView } from '../../hooks/session'
@@ -991,7 +992,10 @@ test('Answer on an Overview row shows Asks with the oldest ask that holds it up 
     expect(handleKey(screen, result.ui, 'noop', NOW).ui.selectedId).toBe('d17')
   }
   const onS3 = keys(screen, onPage, 'j')
-  expect(handleKey(screen, onS3, 'a', NOW).ui).toMatchObject({ tab: 'needsYou', selectedId: 'd11' })
+  const onAsk = handleKey(screen, onS3, 'a', NOW).ui
+  expect(onAsk).toMatchObject({ tab: 'needsYou', selectedId: 'd11' })
+  expect(handleKey(screen, onAsk, 'a', NOW + PRESS_GUARD_MS - 1).press).toBeUndefined()
+  expect(handleKey(screen, onAsk, 'a', NOW + PRESS_GUARD_MS).press).toMatchObject({ action: 'answer', id: 'd11' })
 })
 
 test('an Overview row’s Answer leaves once its asks close, and the selection moves to the row that still has one', () => {

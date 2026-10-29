@@ -210,7 +210,7 @@ export const CLIENTS: Record<ClientId, Client> = {
       'overview-answer': {
         kind: 'different',
         reason:
-          'Answer takes clicks only. The Codex tab draws no key on a button and marks no selected row on the Overview, so a key would press a row the page does not show as chosen.',
+          'Answer takes clicks only. The Codex tab draws no key on a button and marks no selected row on the Overview, so a key would press a row the page does not mark as selected.',
       },
     },
   },

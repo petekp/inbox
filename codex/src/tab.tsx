@@ -1458,13 +1458,7 @@ function OverviewLine({ row }: { row: OverviewRow }) {
               {row.was}
             </div>
           ) : null}
-          {keys.length > 0 ? (
-            <div class="line overview-keys">
-              {keys.map(k => (
-                <KeyButton k={k} />
-              ))}
-            </div>
-          ) : null}
+          {keys.length > 0 ? <RowActions keys={keys} more={[]} reply={null} isBlocked={() => false} /> : null}
         </div>
       </div>
     )

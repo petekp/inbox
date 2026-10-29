@@ -2797,6 +2797,7 @@ var NEEDS_YOU_GROUPS = [
 var CLOSED_MARKS = { handled: "\u2713", dismissed: "\u2715", lapsed: "" };
 var CLOSED_SHOWN = 3;
 var SETTLED_MS = 5120;
+var PRESS_GUARD_MS = 400;
 var QUEUED_AFTER_MS = 1000;
 var COMPARE_LIMIT_MS = 30 * 60000;
 function compareEndsAt(lastActions, now) {
@@ -2812,6 +2813,9 @@ function pendingDeliveryAt(last, now) {
   if (last?.delivery?.state !== "queued")
     return null;
   return isQueuedAt(last, now) ? "queued" : "sending";
+}
+function isGuarded(openedAt, now) {
+  return openedAt > 0 && now - openedAt < PRESS_GUARD_MS;
 }
 var NO_HOLDS = { replies: {}, discarded: {}, shownSince: null };
 function isShownSince(at, shownSince) {
@@ -5636,6 +5640,7 @@ var INITIAL_UI = {
   opened: null,
   pageTop: 0,
   pageReveal: null,
+  openedAt: 0,
   shownSince: 0
 };
 function holdsOf(ui) {
@@ -6015,7 +6020,7 @@ function defaultFocus(line) {
 }
 var focusOf2 = (line, ui) => ui.focus?.rowId === line.id ? Math.min(ui.focus.index, line.buttons.length - 1) : defaultFocus(line);
 function withSelection(ui, id) {
-  return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null };
+  return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null, openedAt: 0 };
 }
 var withTab = (ui, tab, now) => ({
   ...withSelection(ui, null),
@@ -6126,7 +6131,7 @@ function handleKey(screen, ui, key, now, text) {
   }
   if (selected && isShut(selected, base))
     return key === "enter" ? { ui: { ...base, opened: selected.id } } : { ui: base };
-  if (!selected || selected.buttons.length === 0)
+  if (!selected || selected.buttons.length === 0 || isGuarded(base.openedAt, now))
     return { ui: base };
   if (key === "left" || key === "right") {
     const index = wrapIndex(focusOf2(selected, base) + (key === "left" ? -1 : 1), selected.buttons.length);
@@ -6154,7 +6159,7 @@ function pageKey(screen, ui, key, now) {
   const pressed = key === "enter" ? keys[pageFocus(row, ui)] : keys.find((k) => k.hotkey === key);
   if (!pressed)
     return null;
-  return { ui: { ...withTab(ui, "needsYou", now), selectedId: pressed.press.askId } };
+  return { ui: { ...withTab(ui, "needsYou", now), selectedId: pressed.press.askId, openedAt: now } };
 }
 function tabRows(screen) {
   const { view } = screen;

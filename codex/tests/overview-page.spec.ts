@@ -182,7 +182,7 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
     assert.equal(root.querySelector('main .holds-up')?.textContent, 'Holds up Label')
     key('1')
     assert.equal(shownTab(), 'Overview')
-    ;(root.querySelector('main .overview-keys button') as HTMLElement).click()
+    ;(root.querySelector('main.overview .actions button') as HTMLElement).click()
     assert.equal(shownTab(), 'Asks1')
     assert.match(root.querySelector('.row.selected')?.textContent ?? '', /Which label\?/)
     key('1')
