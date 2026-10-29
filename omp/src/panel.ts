@@ -86,6 +86,7 @@ import {
   rowMark,
   hasRunningMark,
   mergedLine,
+  nameBeforeStall,
   OVERVIEW_TEXT_LINES,
   STALL_GAP,
   WAS_PREFIX,
@@ -1059,9 +1060,12 @@ function pageText(text: string, room: number, maxLines: number, paint: (t: strin
   return lines.map(paint)
 }
 
+/** Stands in for each space that joins a name's last word, `STALL_GAP` and the stall words, so a wrap never splits them. */
+const GLUE = '\uE000'
+
 /**
  * One row of the Overview's list: a mark and its name wrapped after it, with its stall words after `STALL_GAP` in the
- * stall's tone on the name's last line, or whole on the next line when they do not fit there. Then where it stands, dim.
+ * stall's tone on the line of the name's last word. Then where it stands, dim.
  */
 function pageLine(
   d: Draw,
@@ -1074,20 +1078,35 @@ function pageLine(
   const { width, style: s } = d
   const textAt = indent + 2
   const room = pageRoom(indent, width)
-  const names = pageText(name, room, OVERVIEW_TEXT_LINES, t => t)
-  const painted = names.map(namePaint)
-  if (stall) {
-    const words = stall.tone ? s.tone(stall.tone, stall.text) : s.dim(stall.text)
-    const isRoomOnLast = cellWidth(`${names.at(-1) ?? ''}${STALL_GAP}${stall.text}`) <= room
-    if (isRoomOnLast) painted[painted.length - 1] += s.dim(STALL_GAP) + words
-    else painted.push(words)
-  }
+  const names = stall
+    ? stalledName(name, stall, room, namePaint, s)
+    : pageText(name, room, OVERVIEW_TEXT_LINES, namePaint)
   const seconds = text ? pageText(text, room, OVERVIEW_TEXT_LINES, s.dim) : []
 
   return [
-    `${' '.repeat(indent)}${mark} ${painted[0] ?? ''}`,
-    ...[...painted.slice(1), ...seconds].map(l => ' '.repeat(textAt) + l),
+    `${' '.repeat(indent)}${mark} ${names[0] ?? ''}`,
+    ...[...names.slice(1), ...seconds].map(l => ' '.repeat(textAt) + l),
   ]
+}
+
+/** A name and its stall words wrapped to `room` cells, the name cut by `nameBeforeStall`, each part painted. */
+function stalledName(
+  name: string,
+  stall: OverviewStall,
+  room: number,
+  namePaint: (t: string) => string,
+  s: Style,
+): string[] {
+  const tail = `${STALL_GAP}${stall.text}`.replaceAll(' ', GLUE)
+  const wrapped = (shown: string) => wrapText(`${shown}${tail}`, room)
+  const lines = wrapped(nameBeforeStall(name, shown => wrapped(shown).length <= OVERVIEW_TEXT_LINES))
+  const words = stall.tone ? s.tone(stall.tone, stall.text) : s.dim(stall.text)
+
+  return lines.map(l =>
+    l.endsWith(tail)
+      ? namePaint(l.slice(0, -tail.length)) + s.dim(STALL_GAP) + words
+      : namePaint(l.replaceAll(GLUE, ' ')),
+  )
 }
 
 /** A row's lines with the tree line at `PAGE_MARK_AT`: `first` on its first line when given, and `rest` on each line after. */

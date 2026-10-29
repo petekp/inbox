@@ -1053,6 +1053,18 @@ export function mergedLine(merged: string, fits: (text: string) => boolean): str
   return `${MERGED_PREFIX}${cutAtPhrase(merged, names => fits(`${MERGED_PREFIX}${names}`))}`
 }
 
+/**
+ * A row's name as it shows before its stall words, which stay on the line of its last word. Whole when `fits` says the
+ * name and the stall words fit in `OVERVIEW_TEXT_LINES` lines, else cut at a word with an ellipsis until they do. The
+ * stall words are never cut. When no cut fits, the name keeps its first word.
+ */
+export function nameBeforeStall(name: string, fits: (shown: string) => boolean): string {
+  const words = name.split(' ')
+  const cuts = words.map((_, n) => (n === 0 ? name : `${words.slice(0, words.length - n).join(' ')}…`))
+
+  return cuts.find(fits) ?? cuts.at(-1)!
+}
+
 export function hasRunningMark(page: OverviewPage): boolean {
   return page.rows.some(r => (r.kind === 'subject' || r.kind === 'child') && r.isRunning)
 }

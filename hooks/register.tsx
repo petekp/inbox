@@ -261,6 +261,7 @@ import {
   hasRunningMark,
   LOOK_TEXT,
   mergedLine,
+  nameBeforeStall,
   STALL_GAP,
   WAS_PREFIX,
   inboxCommandText,
@@ -6186,33 +6187,36 @@ export const register: Register = on => {
       return { text, isUnbroken: true, ...tone }
     }
     /**
-     * A row's name, wrapped to `OVERVIEW_TEXT_LINES` lines and cut past them, with its stall words after `STALL_GAP` on
-     * its last line. Stall words that do not fit there take a line of their own, whole and without the gap.
+     * A row's name with its stall words after `STALL_GAP`, on the line of the name's last word, which a wrap never
+     * splits from them. `nameBeforeStall` cuts the name so the line fits `OVERVIEW_TEXT_LINES`.
      */
-    const overviewNameLines = (key: string, name: TerminalSpan, stall: OverviewStall | null, depth: number) => {
+    const overviewNameLine = (key: string, name: TerminalSpan, stall: OverviewStall | null, depth: number) => {
+      if (!stall) return overviewText(key, [name], depth)
       const width = overviewTextWidth(depth)
-      if (!stall) return [overviewText(key, [name], depth)]
-      const words = stallSpan(stall)
-      const gap: TerminalSpan = { text: STALL_GAP, isMuted: true }
-      const nameLines =
+      const gap = look === 'desktop' ? STALL_GAP.replaceAll(' ', '\u00a0') : STALL_GAP
+      const spans = (shown: string): TerminalSpan[] => [
+        { ...name, text: shown },
+        { text: gap, isMuted: true, isUnbroken: true },
+        stallSpan(stall),
+      ]
+      const lineCount = (shown: string) =>
         look === 'desktop'
-          ? [desktopSpanLines([name], width, OVERVIEW_TEXT_LINES)]
-          : terminalSpanLines([name], width, OVERVIEW_TEXT_LINES)
-      const last = nameLines.at(-1) ?? []
-      const lastText =
-        look === 'desktop'
-          ? (desktopLines(last.map(s => s.text).join(''), width).at(-1) ?? '')
-          : last.map(s => s.text).join('')
-      const isRoomOnLast = fitsOverviewLine(depth)(`${lastText}${STALL_GAP}${stall.text}`)
-      const box = (boxKey: string, lines: TerminalSpan[][]) => (
-        <Box key={boxKey}>
-          <Text wrap="wrap">{terminalText(lines)}</Text>
+          ? desktopLines(
+              spans(shown)
+                .map(s => s.text)
+                .join(''),
+              width,
+            ).length
+          : terminalSpanLines(spans(shown), width).length
+      const shown = nameBeforeStall(name.text, x => lineCount(x) <= OVERVIEW_TEXT_LINES)
+
+      return (
+        <Box key={key}>
+          <Text wrap="wrap">
+            {terminalText(look === 'desktop' ? [spans(shown)] : terminalSpanLines(spans(shown), width))}
+          </Text>
         </Box>
       )
-
-      return isRoomOnLast
-        ? [box(key, [...nameLines.slice(0, -1), [...last, gap, words]])]
-        : [box(key, nameLines), box(`${key}-stall`, [[words]])]
     }
     /**
      * The line that ties the rows under a subject to it, in the subject's mark column. `down` runs from under the
@@ -6339,7 +6343,7 @@ export const register: Register = on => {
         const color = r.tone ? pal.mark[r.tone] : pal.muted
         const mark = r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
         const content = [
-          ...overviewNameLines(`overview-${r.id}-name`, { text: r.name }, r.stall, 0),
+          overviewNameLine(`overview-${r.id}-name`, { text: r.name }, r.stall, 0),
           ...(r.text ? [overviewText(`overview-${r.id}-text`, [{ text: r.text, isMuted: true }], 0)] : []),
           ...(r.merged
             ? [
@@ -6371,7 +6375,7 @@ export const register: Register = on => {
           key: `overview-${r.id}`,
           depth,
           mark,
-          content: overviewNameLines(`overview-${r.id}-name`, { text: r.name, isMuted: true }, r.stall, depth),
+          content: overviewNameLine(`overview-${r.id}-name`, { text: r.name, isMuted: true }, r.stall, depth),
           tree: r.branch ? overviewTree(`overview-${r.id}-tree`, r.branch) : null,
         })
       }

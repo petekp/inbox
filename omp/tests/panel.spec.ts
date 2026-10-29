@@ -774,8 +774,8 @@ test('on the Overview page, the rows under a subject hang from its mark, ├─ 
     at('Dismiss gesture'),
     at('Review the'),
     at('Tune how hard'),
-    at('Time the fade'),
-    at('Glasses pairing'),
+    at('Time the'),
+    at('◆ Glasses'),
   ]
   const col = lines[subject]!.search(/\S/)
   const glyphs = (from: number, to: number) => lines.slice(from, to).map(l => l.slice(col, col + 2))
@@ -788,16 +788,17 @@ test('on the Overview page, the rows under a subject hang from its mark, ├─ 
   expect(glyphs(last, next)).toEqual(['└─', ...Array<string>(next - last - 1).fill('  ')])
 })
 
-test('on the Overview page, a row’s stall words follow its name on the same line, and take the next line whole, without the gap, when the line has no room', () => {
+test('on the Overview page, a row’s stall words follow its name on the line of its last word, at every width', () => {
   const wide = text(screenOf(), onPage, 80).split('\n')
   expect(wide.some(l => l.includes('Tune how hard a pinch must be · waiting for you'))).toBe(true)
   expect(wide.some(l => l.includes('Time the fade-out · finished'))).toBe(true)
   expect(wide.some(l => l.includes('Watch the pairing log · running 50m'))).toBe(true)
 
-  const narrow = text(screenOf(), onPage, 30).split('\n')
-  const stall = narrow.findIndex(l => l.includes('waiting for you'))
-  expect(narrow[stall]!.replace('│', '').trim()).toBe('waiting for you')
-  expect(narrow[stall - 1]).toContain('must be')
+  for (const width of [26, 28, 30, 34, 40, 50]) {
+    const lines = text(screenOf(), onPage, width).split('\n')
+    for (const words of ['waiting for you', 'last step 20m ago', 'running 50m', 'finished'])
+      expect(lines.filter(l => l.includes(words)).every(l => /\S · /.test(l))).toBe(true)
+  }
 })
 
 test('on the Overview page, a rule from the text column sets each item apart, with none inside a subject’s tree or beside the look line', () => {
@@ -807,7 +808,7 @@ test('on the Overview page, a rule from the text column sets each item apart, wi
   const rowsAfterRules = lines.flatMap((l, n) => (rule.test(l) ? [lines[n + 1]!] : []))
 
   expect(rowsAfterRules).toHaveLength(4)
-  for (const [n, row] of ['Glasses pairing', 'Flick option', 'Fade-out', 'more done'].entries())
+  for (const [n, row] of ['◆ Glasses', 'Flick option', 'Fade-out', 'more done'].entries())
     expect(rowsAfterRules[n]).toContain(row)
 })
 

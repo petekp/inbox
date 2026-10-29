@@ -20,7 +20,7 @@ import type { Op } from '../hooks/overview'
 import { delegatesSettled, delegatesStarted } from '../hooks/children'
 import type { HerdrStatus } from '../hooks/herdr'
 import { emptySession } from '../hooks/session'
-import { CHILD_ROWS, mergedLine, overviewPage, STALL_MS } from '../hooks/view'
+import { CHILD_ROWS, mergedLine, nameBeforeStall, overviewPage, STALL_MS } from '../hooks/view'
 import type { OverviewRow } from '../hooks/view'
 import type { Item, Overview, Session } from '../types'
 
@@ -301,6 +301,15 @@ test('a subject waiting on someone says for how long once that passes STALL_MS, 
     null,
   ])
   expect(shape(page(o, 2 * 60 * MIN, {}, asks).rows)[0]).toBe('◌ Review: sent for review · waiting 2h')
+})
+
+test('a name before stall words is cut at a word with an ellipsis until both fit, and keeps its first word when nothing fits', () => {
+  const fitsIn = (cells: number) => (shown: string) => `${shown} · waiting for you`.length <= cells
+
+  expect(nameBeforeStall('Tune how hard a pinch must be', fitsIn(60))).toBe('Tune how hard a pinch must be')
+  expect(nameBeforeStall('Tune how hard a pinch must be', fitsIn(36))).toBe('Tune how hard a…')
+  expect(nameBeforeStall('Tune how hard a pinch must be', fitsIn(10))).toBe('Tune…')
+  expect(nameBeforeStall('vn2', fitsIn(10))).toBe('vn2')
 })
 
 test('a merged line is cut at the last phrase that fits, and keeps its first phrase whole when none fits', () => {

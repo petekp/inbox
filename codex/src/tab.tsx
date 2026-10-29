@@ -11,6 +11,7 @@ import {
   canUndoRefused,
   closedMark,
   mergedLine,
+  nameBeforeStall,
   OVERVIEW_TEXT_LINES,
   settledMark,
   STALL_GAP,
@@ -1345,33 +1346,36 @@ const STALL_CLASS: Record<NonNullable<OverviewTone> | 'muted', string> = {
   muted: 'muted',
 }
 
-/**
- * Writes `name` into a name line's name span, cut at a word with an ellipsis to `OVERVIEW_TEXT_LINES` lines. Stall
- * words that do not fit on the name's last line take the next line whole, and the gap before them goes.
- */
-function fitNameLine(el: HTMLElement | null, name: string) {
-  const nameEl = el?.querySelector<HTMLElement>('.name')
-  const gapEl = el?.querySelector<HTMLElement>('.gap')
-  const stallEl = el?.querySelector<HTMLElement>('.stall')
-  if (!nameEl || !gapEl || !stallEl) return
-  nameEl.textContent = name
-  gapEl.textContent = STALL_GAP
-  gapEl.style.display = ''
-  let words = name.split(' ')
-  while (nameEl.getClientRects().length > OVERVIEW_TEXT_LINES && words.length > 1) {
-    words = words.slice(0, -1)
-    nameEl.textContent = `${words.join(' ')}…`
-  }
-  const lastNameLine = [...nameEl.getClientRects()].at(-1)
-  const stallLine = stallEl.getClientRects()[0]
-  const isStallBelow = lastNameLine !== undefined && stallLine !== undefined && stallLine.top >= lastNameLine.bottom
-  if (isStallBelow) {
-    gapEl.textContent = ''
-    gapEl.style.display = 'block'
-  }
+/** A name's words before its last, with the space after them, and its last word, which stays with the stall words. */
+function nameParts(name: string): { head: string; last: string } {
+  const at = name.lastIndexOf(' ')
+
+  return at < 0 ? { head: '', last: name } : { head: name.slice(0, at + 1), last: name.slice(at + 1) }
 }
 
-/** A row's name, with its stall words after `STALL_GAP` in the stall's tone, kept whole. */
+/** Writes into a name line the name `nameBeforeStall` cuts so the line takes at most `OVERVIEW_TEXT_LINES` lines. */
+function fitNameLine(el: HTMLElement | null, name: string) {
+  const flowEl = el?.querySelector<HTMLElement>('.flow')
+  const headEl = el?.querySelector<HTMLElement>('.head')
+  const lastEl = el?.querySelector<HTMLElement>('.last')
+  if (!flowEl || !headEl || !lastEl) return
+  const write = (shown: string) => {
+    const { head, last } = nameParts(shown)
+    headEl.textContent = head
+    lastEl.textContent = last
+  }
+  write(
+    nameBeforeStall(name, shown => {
+      write(shown)
+      return flowEl.getClientRects().length <= OVERVIEW_TEXT_LINES
+    }),
+  )
+}
+
+/**
+ * A row's name with its stall words after `STALL_GAP` in the stall's tone, on the line of the name's last word, which a
+ * wrap never splits from them.
+ */
 function NameLine({ name, stall }: { name: string; stall: OverviewStall | null }) {
   if (!stall)
     return (
@@ -1379,12 +1383,18 @@ function NameLine({ name, stall }: { name: string; stall: OverviewStall | null }
         {name}
       </div>
     )
+  const { head, last } = nameParts(name)
 
   return (
     <div ref={el => fitNameLine(el, name)}>
-      <span class="name">{name}</span>
-      <span class="gap muted">{STALL_GAP}</span>
-      <span class={`stall unbroken ${STALL_CLASS[stall.tone ?? 'muted']}`}>{stall.text}</span>
+      <span class="flow">
+        <span class="head">{head}</span>
+        <span class="unbroken">
+          <span class="last">{last}</span>
+          <span class="muted">{STALL_GAP}</span>
+          <span class={STALL_CLASS[stall.tone ?? 'muted']}>{stall.text}</span>
+        </span>
+      </span>
     </div>
   )
 }

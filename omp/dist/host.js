@@ -3166,6 +3166,11 @@ var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 function mergedLine(merged, fits) {
   return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
 }
+function nameBeforeStall(name, fits) {
+  const words = name.split(" ");
+  const cuts = words.map((_, n) => n === 0 ? name : `${words.slice(0, words.length - n).join(" ")}\u2026`);
+  return cuts.find(fits) ?? cuts.at(-1);
+}
 function hasRunningMark(page) {
   return page.rows.some((r) => (r.kind === "subject" || r.kind === "child") && r.isRunning);
 }
@@ -6130,25 +6135,24 @@ function pageText(text, room, maxLines, paint) {
     lines[lines.length - 1] = `${cutForEllipsis(lines.at(-1), (t) => cellWidth(t) <= room)}\u2026`;
   return lines.map(paint);
 }
+var GLUE = "\uE000";
 function pageLine(d, indent, mark, name, namePaint, { stall = null, text = null } = {}) {
   const { width, style: s } = d;
   const textAt = indent + 2;
   const room = pageRoom(indent, width);
-  const names = pageText(name, room, OVERVIEW_TEXT_LINES, (t) => t);
-  const painted = names.map(namePaint);
-  if (stall) {
-    const words = stall.tone ? s.tone(stall.tone, stall.text) : s.dim(stall.text);
-    const isRoomOnLast = cellWidth(`${names.at(-1) ?? ""}${STALL_GAP}${stall.text}`) <= room;
-    if (isRoomOnLast)
-      painted[painted.length - 1] += s.dim(STALL_GAP) + words;
-    else
-      painted.push(words);
-  }
+  const names = stall ? stalledName(name, stall, room, namePaint, s) : pageText(name, room, OVERVIEW_TEXT_LINES, namePaint);
   const seconds = text ? pageText(text, room, OVERVIEW_TEXT_LINES, s.dim) : [];
   return [
-    `${" ".repeat(indent)}${mark} ${painted[0] ?? ""}`,
-    ...[...painted.slice(1), ...seconds].map((l) => " ".repeat(textAt) + l)
+    `${" ".repeat(indent)}${mark} ${names[0] ?? ""}`,
+    ...[...names.slice(1), ...seconds].map((l) => " ".repeat(textAt) + l)
   ];
+}
+function stalledName(name, stall, room, namePaint, s) {
+  const tail = `${STALL_GAP}${stall.text}`.replaceAll(" ", GLUE);
+  const wrapped = (shown) => wrapText(`${shown}${tail}`, room);
+  const lines = wrapped(nameBeforeStall(name, (shown) => wrapped(shown).length <= OVERVIEW_TEXT_LINES));
+  const words = stall.tone ? s.tone(stall.tone, stall.text) : s.dim(stall.text);
+  return lines.map((l) => l.endsWith(tail) ? namePaint(l.slice(0, -tail.length)) + s.dim(STALL_GAP) + words : namePaint(l.replaceAll(GLUE, " ")));
 }
 function withTree(lines, first, rest, s) {
   const drawn = (line, glyph) => glyph.trim() === "" ? line : line.slice(0, PAGE_MARK_AT) + s.dim(glyph) + line.slice(PAGE_MARK_AT + glyph.length);
