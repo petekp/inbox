@@ -44,13 +44,20 @@ export type Child = {
   delegateState: DelegateState | null
 }
 
+/** The top of the Overview page: what the session is focused on now. */
+export type OverviewHead = {
+  /** A short name for the focus, like a subject's name. */
+  title: string
+  /** One line on what the session is doing about it. Empty until the Overview call writes one. */
+  description: string
+}
+
 export type DelegateState = 'working' | 'blocked' | 'finished'
 
 /** The Overview tab's list. The Overview call changes it by id; code keeps the order and every time. */
 export type Overview = {
-  role: 'coordinator' | 'session'
-  /** What the session is for, in the person's words; empty until the call writes it. */
-  goal: string
+  /** Null until the Overview call writes it. */
+  head: OverviewHead | null
   subjects: Subject[]
   children: Child[]
   /** The subject each ask holds up, by the ask's item id, as the Overview call linked them. */

@@ -129,7 +129,7 @@ test('a Stop notes the dialogs the agent opened in the ending turn as open, and 
   assert.deepEqual((await readState(dir, 's1')).pending[1]?.ex.activity, [])
 })
 
-test('a start after compaction carries the Overview goal and where each open subject stands', async () => {
+test('a start after compaction carries the Overview head and where each open subject stands', async () => {
   const dir = tempDir()
   const deps = hookDeps(dir)
   await handleHook(input('SessionStart', { cwd: '/repo', source: 'startup' }), deps)
@@ -140,7 +140,7 @@ test('a start after compaction carries the Overview goal and where each open sub
       updates: 1,
       overview: applyOverview(
         null,
-        parseOverview('GOAL: Adding caching\nNEW: queued | Cache | Redis or memory')!,
+        parseOverview('HEAD: Adding caching | Caching answers to cut load\nNEW: queued | Cache | Redis or memory')!,
         1,
         new Set(),
       )!,

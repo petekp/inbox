@@ -197,11 +197,11 @@ function tasksText(tasks) {
 // ../hooks/overview.ts
 var NAME_WORDS = 3;
 var TEXT_WORDS = 4;
-var GOAL_WORDS = 8;
+var DESCRIPTION_WORDS = 8;
 var OPEN_SUBJECTS = 6;
 var NAME_KEPT = 20;
 var TEXT_KEPT = 12;
-var GOAL_KEPT = 14;
+var DESCRIPTION_KEPT = 14;
 var ASK_READ_WORDS = 30;
 var FINISHED_READ = 10;
 var CHILD_KEPT_MS = 24 * 60 * 60000;
@@ -229,8 +229,7 @@ var STOP_WORDS = new Set([
 var NL4 = `
 `;
 var EMPTY_OVERVIEW = {
-  role: "session",
-  goal: "",
+  head: null,
   subjects: [],
   children: [],
   askSubjects: {},
@@ -243,7 +242,7 @@ var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
 var STATUSES2 = [...OPEN_STATUSES, "done", "dropped"];
 var CHILD_KINDS = ["subagent", "background", "workflow", "delegate"];
 var DELEGATE_STATES = ["working", "blocked", "finished"];
-var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|ROLE|GOAL|LINK)\s*(?::\s*(.*))?$/i;
+var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK)\s*(?::\s*(.*))?$/i;
 function clipWords(text, limit) {
   const words = text.trim().split(/\s+/).filter(Boolean);
   return words.length <= limit ? words.join(" ") : `${words.slice(0, limit).join(" ")}\u2026`;
@@ -276,12 +275,8 @@ function opOf(key, f) {
   }
   if (key === "WAS")
     return f[0] && f[1] ? { kind: "was", ref: f[0], text: f[1] } : null;
-  if (key === "ROLE") {
-    const role = f[0]?.toLowerCase();
-    return role === "coordinator" || role === "session" ? { kind: "role", role } : null;
-  }
-  if (key === "GOAL")
-    return f[0] ? { kind: "goal", text: f[0] } : null;
+  if (key === "HEAD")
+    return f[0] ? { kind: "head", title: f[0], description: f[1] ?? "" } : null;
   if (key === "LINK")
     return f[0] && f[1] ? { kind: "link", ref: f[0], subject: f[1] } : null;
   return null;
@@ -321,10 +316,45 @@ function nameKey(name) {
 function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
+function isUnderWay(s) {
+  return s.status === "working" || s.status === "waits-on-other";
+}
+function answerWork(before, o, now) {
+  const was = new Map(before.map((s) => [s.id, s]));
+  const closed = o.subjects.filter((s) => {
+    const earlier = was.get(s.id);
+    return !isOpen(s) && s.closedAt === now && (earlier === undefined || isOpen(earlier));
+  });
+  const isClosedWorkNew = closed.some((s) => !was.has(s.id));
+  const isUnderWayWorkClosed = closed.some((s) => {
+    const earlier = was.get(s.id);
+    return earlier !== undefined && isUnderWay(earlier);
+  });
+  return {
+    isEarlierWorkFinished: isUnderWayWorkClosed && !isClosedWorkNew,
+    isWorkUnderWay: o.subjects.some((s) => s.status === "working" || s.status === "waits-on-other" && s.changedAt === now),
+    namesClosed: (description) => {
+      const said = words(description);
+      return closed.some((s) => {
+        const name = [...words(s.name)];
+        return name.length > 0 && name.every((w) => said.has(w));
+      });
+    }
+  };
+}
+function isDescriptionStale(head, work) {
+  return head !== null && head.description !== "" && work.isWorkUnderWay && work.namesClosed(head.description);
+}
+function headAfter(last, op, work) {
+  const isComplete = last !== null && last.description !== "";
+  const isSameTitle = last !== null && hasSameWords(last.title, op.title);
+  const isStale = isDescriptionStale(last, work);
+  const isHeld = isComplete && (isSameTitle && !isStale || work.isEarlierWorkFinished && !work.isWorkUnderWay);
+  return isHeld ? last : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
+}
 var OP_ORDER = {
   none: 0,
-  role: 0,
-  goal: 0,
+  head: 1,
   new: 0,
   set: 0,
   done: 0,
@@ -363,10 +393,8 @@ function applyOps(last, ops, now, askIds) {
   for (const { op } of ordered) {
     if (op.kind === "none")
       continue;
-    if (op.kind === "role")
-      o.role = op.role;
-    else if (op.kind === "goal")
-      o.goal = clipWords(op.text, GOAL_KEPT);
+    if (op.kind === "head")
+      o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
     else if (op.kind === "link") {
       const child = o.children.find((c) => c.id === op.ref);
       const subject = find(op.subject);
@@ -428,6 +456,9 @@ function applyOps(last, ops, now, askIds) {
       }
     }
   }
+  const isHeadKept = o.head === (last?.head ?? null);
+  if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
+    o = { ...o, head: { ...o.head, description: "" } };
   return o;
 }
 function applyOverview(last, answer, now, askIds) {
@@ -547,6 +578,15 @@ var OLD_STATUS = {
   done: null,
   "ruled-out": null
 };
+function headOfGoal(goal) {
+  const title = clipWords(text(goal), DESCRIPTION_KEPT);
+  return title === "" ? null : { title, description: "" };
+}
+function headOf(saved) {
+  const h = saved;
+  const title = text(h?.title);
+  return title === "" ? null : { title, description: text(h?.description) };
+}
 function fromLists(o) {
   const lastLookAt = time(o.lastLookAt);
   const items = lastLookAt === null ? [] : ["workstreams", "queue", "open"].flatMap((k) => Array.isArray(o[k]) ? o[k] : []);
@@ -571,8 +611,7 @@ function fromLists(o) {
   }));
   return {
     ...EMPTY_OVERVIEW,
-    role: o.isCoordinator === true ? "coordinator" : "session",
-    goal: clipWords(text(o.headline), GOAL_KEPT),
+    head: headOfGoal(o.headline),
     subjects,
     nextId: subjects.length + 1,
     lastLookAt
@@ -593,8 +632,7 @@ function upgradeOverview(saved) {
   const look = o.look;
   const lookAt = time(look?.startedAt);
   return {
-    role: o.role === "coordinator" ? "coordinator" : "session",
-    goal: text(o.goal),
+    head: "head" in o ? headOf(o.head) : headOfGoal(o.goal),
     subjects,
     children,
     askSubjects,
@@ -620,7 +658,7 @@ var EMPTY = {
   updates: 0
 };
 function isBlankLedger(ledger) {
-  const isOverviewBlank = !ledger.overview || ledger.overview.goal === "" && ledger.overview.subjects.length === 0;
+  const isOverviewBlank = !ledger.overview || ledger.overview.head === null && ledger.overview.subjects.length === 0;
   return ledger.updates === 0 && isOverviewBlank && ledger.items.length === 0 && ledger.findings.length === 0;
 }
 var NL5 = `
@@ -1474,7 +1512,7 @@ var OVERVIEW_SYSTEM = `You keep the Overview of a coding session: one list of th
 You read the list as it is and one exchange, and answer with the changes the exchange makes. Code keeps the list, its order and every time. You never write the whole list.
 
 Input:
-- <goal>: the session's goal. Do not restate it.
+- <head>: the top of the page, as title | description: what the session is focused on now. Never write it into a subject.
 - <subjects>: the open subjects, one per line: id | status | name | where it stands
 - <finished>: subjects already done or dropped. Do not add them again.
 - <running>: work running apart from the turn, such as a subagent, a background task, a workflow or a delegate session, one per line: id | kind | name | the subject it belongs to, or - when it has none yet
@@ -1484,7 +1522,7 @@ Input:
 - <activity>: what the agent did this turn
 - <reply>: the agent's final reply
 
-Answer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, answer with the one line NO CHANGE. Most exchanges change nothing.
+Answer with lines only. No other text, and no corrections: every line you write is applied. When the exchange changed nothing about where any subject stands, and the head still holds, answer with the one line NO CHANGE. Most exchanges change nothing.
 
 Otherwise write only the lines that apply:
 NEW: status | name | where it stands
@@ -1494,12 +1532,13 @@ DROP: id or name | why
 DROP: id or name | why | INTO id or name
 WAS: id or name | the plan it replaces
 LINK: running or ask id | subject id or name
-ROLE: coordinator or session
-GOAL: the goal in the person's words, at most ${GOAL_WORDS} words
+HEAD: title | description
 
 A subject is one piece of the work that the person would name: a feature, a fix, a release, or a stream of work handed to another session. Keep at most ${OPEN_SUBJECTS} open. A fix, an option, a review or a question inside a larger piece of work belongs to that subject: change its text instead, as in "critique fixes: 4 of 9 done". A subject is never a command, a file, a commit, a test run or a tool call. A question to the person is never a subject of its own, and neither is a problem the agent noticed outside the work: the inbox shows those.
 
 The name is a label of at most ${NAME_WORDS} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
+
+The head says what the session is focused on now: the work the person would name if asked what this session is doing. It may cover several subjects. Its title is a label of at most ${NAME_WORDS} words, like a subject's name, such as "Offline sync" or "2.5 release". Its description is at most ${DESCRIPTION_WORDS} words on what the session is doing about that focus, such as "Adding offline sync to the notes app" or "Fixing the sync bug, then shipping 2.5". The description never repeats the title, and never says where one piece stands, such as "PR ready for review". The head follows the same rules on time words as where it stands.
 
 Status is one of: working, queued, waits-on-other.
 - working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask. When the work stopped for another reason, it is queued, waits on something, or is done.
@@ -1511,18 +1550,24 @@ Rules:
 - When work started and finished in this exchange, write NEW for it, then DONE with its name.
 - Write SET only when where a subject stands changed. Never reword a subject that did not change.
 - Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason.
+- When the person files a piece for later, out of this session's plan, as into an issue or a backlog, write DONE with "filed for later". A piece the person sets aside to come back to in this session stays queued.
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
 - Write LINK for each item in <asks> that has no subject yet, naming the subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
 - Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for a running item, or its progress in its subject's text: code shows it under its subject while it runs and removes it when it ends. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands.
-- Write ROLE coordinator when the session hands out work and reviews what comes back instead of doing the work itself. Write ROLE only when it changes.
-- Write GOAL only when <goal> is empty, when the person states a new goal, or when the work moves to a different task.`;
+- Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work.
+- The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.`;
+function headText(o) {
+  if (!o?.head)
+    return "(none yet)";
+  return `${o.head.title} | ${o.head.description || "(no description yet)"}`;
+}
 function overviewBlocks({ last, asks, tasks, now }) {
   const { open, finished } = subjectsText(last);
   const running = runningText(last, now);
   const held = asksText(last, asks);
   const list = tasksText(tasks);
   return [
-    `<goal>${NL6}${last?.goal || "(none yet)"}${NL6}</goal>`,
+    `<head>${NL6}${headText(last)}${NL6}</head>`,
     `<subjects>${NL6}${open}${NL6}</subjects>`,
     ...finished === "" ? [] : [`<finished>${NL6}${finished}${NL6}</finished>`],
     ...running === "" ? [] : [`<running>${NL6}${running}${NL6}</running>`],
@@ -3292,10 +3337,10 @@ function overviewPage(s, now) {
       text: `${folded.length}${isMore ? " more" : ""} done`
     });
   }
-  const goal = o?.goal || null;
+  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null;
   return {
-    isEmpty: goal === null && rows.length === 0,
-    goal,
+    isEmpty: head === null && rows.length === 0,
+    head,
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
     error: s.overviewFailure ? OVERVIEW_FAILED : null,
     empty: {
@@ -3699,18 +3744,21 @@ function statusLine(stop, dialogs, input) {
   const dialog = dialogs[0];
   if (dialog)
     return dialogText(dialog);
-  const { firstAsk, asks, findings, goal } = input;
+  const { firstAsk, asks, findings, focus } = input;
   if (firstAsk !== null)
     return asks > 1 ? `${asks} \xB7 ${firstAsk}` : firstAsk;
   const findingsText = findings === 0 ? null : `${findings} finding${findings === 1 ? "" : "s"}`;
-  return [goal, findingsText].filter(Boolean).join(" \xB7 ");
+  return [focus, findingsText].filter(Boolean).join(" \xB7 ");
+}
+function focusOf(head) {
+  return head ? head.description || head.title : null;
 }
 function herdrTokens(ledger, stop, view, dialogs) {
   const input = {
     firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
     asks: view.needsYou.count,
     findings: view.findings.count,
-    goal: ledger.overview?.goal || null
+    focus: focusOf(ledger.overview?.head ?? null)
   };
   const counts = ROW_TABS.map((t) => {
     const count = view[t.id].count;
@@ -5878,7 +5926,11 @@ function pageEntries(page) {
       { kind: "note", text: page.empty.title, isStrong: true },
       { kind: "note", text: page.empty.hint, isWhole: true }
     ];
-  const head = page.goal ? [{ kind: "note", text: page.goal, isStrong: true, indent: PAGE_MARK_AT }] : [];
+  const description = page.head?.description;
+  const head = page.head ? [
+    { kind: "note", text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
+    ...description ? [{ kind: "note", text: description, indent: PAGE_MARK_AT }] : []
+  ] : [];
   const rows = page.rows.map((row) => ({ kind: "page", row }));
   return head.length > 0 && rows.length > 0 ? [...head, { kind: "note", text: "" }, ...rows] : [...head, ...rows];
 }
@@ -5903,7 +5955,7 @@ function resolveSelected(lines, selectedId) {
 function defaultFocus(line) {
   return Math.max(0, line.buttons.findIndex((b) => b.isRecommended));
 }
-var focusOf = (line, ui) => ui.focus?.rowId === line.id ? Math.min(ui.focus.index, line.buttons.length - 1) : defaultFocus(line);
+var focusOf2 = (line, ui) => ui.focus?.rowId === line.id ? Math.min(ui.focus.index, line.buttons.length - 1) : defaultFocus(line);
 function withSelection(ui, id) {
   return { ...ui, selectedId: id, focus: null, opened: ui.opened === id ? ui.opened : null };
 }
@@ -6009,10 +6061,10 @@ function handleKey(screen, ui, key, now, text) {
   if (!selected || selected.buttons.length === 0)
     return { ui: base };
   if (key === "left" || key === "right") {
-    const index = wrapIndex(focusOf(selected, base) + (key === "left" ? -1 : 1), selected.buttons.length);
+    const index = wrapIndex(focusOf2(selected, base) + (key === "left" ? -1 : 1), selected.buttons.length);
     return { ui: { ...base, focus: { rowId: selected.id, index } } };
   }
-  const button = key === "enter" ? selected.buttons[focusOf(selected, base)] : selected.buttons.find((b) => b.key === key);
+  const button = key === "enter" ? selected.buttons[focusOf2(selected, base)] : selected.buttons.find((b) => b.key === key);
   return button ? activate(screen, base, selected, button, now) : { ui: base };
 }
 function tabRows(screen) {
@@ -6149,7 +6201,7 @@ function labelMark(b, room, s) {
   return actionLabel({ label: b.label, isPrimary: b.isRecommended }, fits).slice(b.label.length);
 }
 function buttonLines(line, ui, indent, width, s) {
-  const focused = focusOf(line, ui);
+  const focused = focusOf2(line, ui);
   const cells = line.buttons.map((b, i) => buttonCell(b, i === focused, s, labelMark(b, width - indent, s)));
   const sizes = cells.map(visibleLength);
   const firstFollowUp = line.buttons.findIndex((b) => b.isFollowUp);
@@ -6581,8 +6633,7 @@ function demoView(now, agent) {
   return {
     ledger: {
       overview: {
-        role: "session",
-        goal: "Pinch to dismiss glances",
+        head: { title: "Pinch to dismiss", description: "Adding a pinch that dismisses glances" },
         subjects: [
           subject("s1", "working", "Dismiss gesture", "pinch fades the glance", now - 2 * MIN),
           subject("s2", "working", "Glasses pairing", "needs this Mac paired", now - 12 * MIN),

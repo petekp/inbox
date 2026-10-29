@@ -8,7 +8,6 @@ import type { Session } from '../hooks/session'
 import { overviewCallPrompt } from '../hooks/session-host'
 import type { OverviewExchange } from '../hooks/session-host'
 import { overviewPage } from '../hooks/view'
-import type { OverviewPage } from '../hooks/view'
 import type { Item, Overview, Subject, SubjectStatus } from '../types'
 import { factsAfter, factsText } from '../evals/overview-facts'
 import type { Facts } from '../evals/overview-facts'
@@ -37,7 +36,8 @@ function subject(id: string, status: SubjectStatus, name: string, text: string, 
 }
 
 function overviewOf(subjects: Subject[], more: Partial<Overview> = {}): Overview {
-  return { ...EMPTY_OVERVIEW, goal: 'Add offline sync', subjects, nextId: subjects.length + 1, ...more }
+  const head = { title: 'Offline sync', description: 'Adding offline sync to the notes app' }
+  return { ...EMPTY_OVERVIEW, head, subjects, nextId: subjects.length + 1, ...more }
 }
 
 function sessionOf(o: Overview, items: Item[], at: number): Session {
@@ -71,7 +71,6 @@ type Scene = {
   facts: Facts
   step: Step
   isOverviewFailed: boolean
-  page?: (p: OverviewPage) => OverviewPage
 }
 
 function baseScene(): Scene {
@@ -125,8 +124,7 @@ function baseScene(): Scene {
 
 function contextOf(scene: Scene): RuleContext {
   const session = sessionOf(scene.after, scene.items, 10)
-  const drawn = overviewPage(session, minutes(10))
-  const page = scene.page ? scene.page(drawn) : drawn
+  const page = overviewPage(session, minutes(10))
   const result: StepResult = {
     index: 0,
     label: scene.step.label,
@@ -150,8 +148,8 @@ const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene) => voi
   'no-time-words': { bad: s => (s1Of(s).text = 'synced 5m ago') },
   'short-names': { bad: s => (s1Of(s).name = 'The offline sync engine work') },
   'text-is-state': { bad: s => (s1Of(s).text = 'tests running') },
-  'head-no-status': { bad: s => (s.after.goal = 'Offline sync ready') },
-  'head-follows': { bad: s => (s.after.goal = 'Fix the lint error') },
+  'head-no-status': { bad: s => (s.after.head = { title: 'Offline sync', description: 'Offline sync ready' }) },
+  'head-follows': { bad: s => (s.after.head = { title: 'Lint error', description: 'Fixing the lint error' }) },
   'no-duplicates': { bad: s => s.after.subjects.push(subject('s3', 'working', 'Sync engine work', 'tests', 10)) },
   'piece-once': { bad: s => s.after.subjects.push(subject('s3', 'working', 'Engine queue', 'syncs', 10)) },
   'open-not-over': { bad: s => (s1Of(s).text = 'shipped to users') },
@@ -173,10 +171,7 @@ const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene) => voi
   'was-on-reversal': { bad: s => (s.step.facts = { pieces: [{ id: 'conflicts', was: 'manual merge' }] }) },
   'was-not-cut': { bad: s => (s2Of(s).was = 'Show the banner on hover and keep…') },
   'failure-shown': { bad: s => (s.isOverviewFailed = true) },
-  'head-title': {
-    good: s => (s.page = p => ({ ...p, title: 'Offline sync', description: 'Adding offline sync' }) as OverviewPage),
-    bad: () => undefined,
-  },
+  'head-title': { bad: s => (s.after.head = { title: 'Offline sync', description: 'offline sync' }) },
   'filed-mark': {
     good: s => {
       s.facts.pieces[1]!.state = 'filed'
@@ -233,7 +228,7 @@ const GOOD_RUNS: Record<string, string[]> = {
     'DONE: s1 | merges edits on reconnect',
     'DONE: s2 | live in both stores',
     [
-      'GOAL: Fix vanishing notes, then ship 2.5',
+      'HEAD: Vanishing notes | Fixing the archive bug, then shipping 2.5',
       'DONE: s6 | filed for later',
       'DONE: s7 | filed for later',
       'NEW: working | Vanishing notes | cause unknown',
@@ -246,14 +241,17 @@ const GOOD_RUNS: Record<string, string[]> = {
     'UNCHANGED',
     'UNCHANGED',
     'SET: s11 | working | fix in review\nLINK: c4 | Vanishing notes',
-    'DONE: s11 | fixed\nSET: s12 | working | release candidate on the way',
+    'DONE: s11 | fixed\nSET: s12 | working | release candidate on the way\nHEAD: 2.5 release | Shipping 2.5 to both stores',
     'NEW: queued | Export folder | cause found',
     'DONE: s12 | live in both stores',
+    'SET: s13 | working | setting moves to a file\nHEAD: Export folder | Fixing the export folder on Windows',
+    'DONE: s13 | keeps the folder after an update\nSET: s5 | working | index rebuilds on each keystroke\nHEAD: Search speed | Speeding up note search',
+    'SET: s5 | working | fast on large libraries',
   ],
   'single-task': [
     'NONE',
     [
-      'GOAL: Add offline sync to the notes app',
+      'HEAD: Offline sync | Adding offline sync to the notes app',
       'NEW: working | Sync engine | queues edits offline',
       'NEW: queued | Sync conflicts | not started',
       'NEW: queued | Sync toggle | not started',
@@ -281,7 +279,7 @@ const GOOD_RUNS: Record<string, string[]> = {
   ],
   'catch-up-from-empty': [
     [
-      'GOAL: Attach images and PDFs to notes',
+      'HEAD: Attachments | Attaching images and PDFs to notes',
       'NEW: working | Image attachments | show inline',
       'NEW: working | PDF attachments | attach as a file row',
       'DONE: Image attachments | show inline',
@@ -526,15 +524,13 @@ knownFailing('#140: one ask holds up two subjects, and both show ◆', '#140', (
   expect(marks).toEqual(['◆', '◆'])
 })
 
-knownFailing('#148: the head is a title and a one-line description', '#148', () => {
+test('the head is a title and a one-line description', () => {
   const page = overviewPage(
     sessionOf(overviewOf([subject('s1', 'working', 'Sync engine', 'syncs', 0)]), [], 5),
     minutes(5),
   )
-  const head = page as unknown as { title?: unknown; description?: unknown }
 
-  expect(typeof head.title).toBe('string')
-  expect(typeof head.description).toBe('string')
+  expect(page.head).toEqual({ title: 'Offline sync', description: 'Adding offline sync to the notes app' })
 })
 
 knownFailing('#149: a delegate with no published focus shows its name in words', '#149', () => {

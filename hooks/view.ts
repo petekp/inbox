@@ -997,7 +997,8 @@ type OverviewRowParts =
 /** What the Overview page shows. Every look draws it as it is. */
 export type OverviewPage = {
   isEmpty: boolean
-  goal: string | null
+  /** What the session is focused on now. The description is null until the Overview call writes one. */
+  head: { title: string; description: string | null } | null
   rows: OverviewRow[]
   /** The status line's error while the last Overview call wrote nothing. */
   error: string | null
@@ -1210,11 +1211,11 @@ export function overviewPage(
       text: `${folded.length}${isMore ? ' more' : ''} done`,
     })
   }
-  const goal = o?.goal || null
+  const head = o?.head ? { title: o.head.title, description: o.head.description || null } : null
 
   return {
-    isEmpty: goal === null && rows.length === 0,
-    goal,
+    isEmpty: head === null && rows.length === 0,
+    head,
     rows: rows.map((r, n) => ({ ...r, isRuledAbove: isItemAfterItem(r, rows[n - 1]) })),
     error: s.overviewFailure ? OVERVIEW_FAILED : null,
     empty: {

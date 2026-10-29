@@ -596,7 +596,7 @@ function pressFeedback(screen: PanelScreen, id: string, now: number, isMarkDone 
 
 const doneAt = (f: Line['feedback']): number | null => (f?.source?.is === 'done' ? f.source.at : null)
 
-/** Where an Overview row's mark sits: in the goal's column, so the list lines up with it. A subject's text starts at `PAGE_TEXT_AT`. */
+/** Where an Overview row's mark sits: in the head's column, so the list lines up with it. A subject's text starts at `PAGE_TEXT_AT`. */
 const PAGE_MARK_AT = 1
 const PAGE_TEXT_AT = PAGE_MARK_AT + 2
 /** Where the mark of a child under a subject sits: after the tree's arm, which starts under the subject's mark. */
@@ -612,7 +612,13 @@ function pageEntries(page: OverviewPage): Entry[] {
       { kind: 'note', text: page.empty.title, isStrong: true },
       { kind: 'note', text: page.empty.hint, isWhole: true },
     ]
-  const head: Entry[] = page.goal ? [{ kind: 'note', text: page.goal, isStrong: true, indent: PAGE_MARK_AT }] : []
+  const description = page.head?.description
+  const head: Entry[] = page.head
+    ? [
+        { kind: 'note', text: page.head.title, isStrong: true, indent: PAGE_MARK_AT },
+        ...(description ? [{ kind: 'note' as const, text: description, indent: PAGE_MARK_AT }] : []),
+      ]
+    : []
   const rows = page.rows.map((row): Entry => ({ kind: 'page', row }))
 
   return head.length > 0 && rows.length > 0 ? [...head, { kind: 'note', text: '' }, ...rows] : [...head, ...rows]

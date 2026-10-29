@@ -50,7 +50,7 @@ function question(id: string, ask: string, at: number): Item {
   }
 }
 
-function overview(o: Pick<Overview, 'role' | 'goal' | 'subjects'> & Partial<Overview>): Overview {
+function overview(o: Pick<Overview, 'head' | 'subjects'> & Partial<Overview>): Overview {
   return {
     children: [],
     askSubjects: {},
@@ -70,7 +70,7 @@ const NO_FACTS: Facts = { focus: '', focusMatch: '.', pieces: [], asks: [], notW
 const coordinatorDay: Replay = {
   name: 'coordinator-day',
   about:
-    'A coordinator ships 2.4, files two features for later, runs a bug fix through a delegate and ships 2.5, from a busy page the person last saw two hours earlier.',
+    'A coordinator ships 2.4, files two features for later, runs a bug fix through a delegate and ships 2.5, from a busy page the person last saw two hours earlier. Then its work moves from one queued piece to the next with no one naming a new goal.',
   hasLedgerCalls: false,
   start: {
     place: { folder: '/work/notes', branch: 'main' },
@@ -78,8 +78,7 @@ const coordinatorDay: Replay = {
       turn: 6,
       items: [question('i1', 'Approve the 2.4 release notes?', -30)],
       overview: overview({
-        role: 'coordinator',
-        goal: 'Ship notes 2.4',
+        head: { title: '2.4 release', description: 'Shipping notes 2.4 to the stores' },
         subjects: [
           subject('s1', 'working', 'Sync merge', 'merge on reconnect in review', -40),
           subject('s2', 'working', '2.4 release', 'notes drafted, build signed', -30),
@@ -193,6 +192,7 @@ const coordinatorDay: Replay = {
       facts: {
         focus: 'fixing notes that vanish after archiving, then shipping 2.5',
         focusMatch: '2\\.5|vanish|archiv',
+        pastMatch: '2\\.4',
         pieces: [
           { id: 'dark', state: 'filed', stands: 'filed for later' },
           { id: 'widgets', state: 'filed', stands: 'filed for later' },
@@ -338,13 +338,14 @@ const coordinatorDay: Replay = {
       facts: {
         focus: 'shipping 2.5',
         focusMatch: '2\\.5',
+        pastMatch: 'vanish|archiv',
         pieces: [
           { id: 'vanish', state: 'done', stands: 'fixed' },
           { id: 'r25', state: 'working', stands: 'release candidate building', alsoRight: ['waits-on-other'] },
         ],
         children: [],
       },
-      targets: ['marks-true', 'piece-once'],
+      targets: ['marks-true', 'piece-once', 'head-follows'],
     },
     {
       label: 'The person asks why export sometimes picks the wrong default folder on one platform',
@@ -377,6 +378,60 @@ const coordinatorDay: Replay = {
       checkpoint: true,
       judgeUntil: { marks: '#137' },
       targets: ['head-follows', 'open-pieces-kept', 'marks-true', 'head'],
+    },
+    {
+      label: 'The coordinator picks up the export folder bug from the queue. Nobody names a new goal.',
+      at: 440,
+      call: {
+        kind: 'reply',
+        person: 'ok',
+        activity: ['Read src/export/folder.ts', 'Edit src/export/folder.ts'],
+        reply:
+          'Picking up the export folder bug from the queue. Windows resets the last-folder setting on update, so I am moving it to a file the update leaves alone.',
+      },
+      facts: {
+        focus: 'fixing the export folder on Windows',
+        focusMatch: 'export|folder',
+        pastMatch: '2\\.5',
+        pieces: [{ id: 'folder', state: 'working', stands: 'moving the setting to a file' }],
+      },
+      targets: ['head-follows'],
+    },
+    {
+      label: 'The export folder fix merges, and the coordinator starts on search speed',
+      at: 470,
+      call: {
+        kind: 'reply',
+        person: 'Good. What about the slow search?',
+        activity: ['Ran: gh pr merge 240', 'Ran: npm run profile:search'],
+        reply:
+          'The export folder fix is merged: the folder now survives a Windows update. On search, profiling a 20,000-note library shows the index rebuilds on every keystroke.',
+      },
+      facts: {
+        focus: 'speeding up note search',
+        focusMatch: 'search',
+        pastMatch: 'export|folder',
+        pieces: [
+          { id: 'folder', state: 'done', stands: 'keeps the folder after an update' },
+          { id: 'search', state: 'working', stands: 'index rebuilds on every keystroke' },
+        ],
+      },
+      checkpoint: true,
+      judgeUntil: { marks: '#137' },
+      targets: ['head-follows', 'marks-true', 'head'],
+    },
+    {
+      label: 'Search gets faster, on the same focus',
+      at: 490,
+      call: {
+        kind: 'reply',
+        person: 'Nice.',
+        activity: ['Edit src/search/index.ts', 'Ran: npm test (230 passed)'],
+        reply:
+          'Search now keeps its index between keystrokes, so a large library answers at once. Next I will test it on older phones.',
+      },
+      facts: { pieces: [{ id: 'search', stands: 'fast on large libraries' }] },
+      targets: ['head-follows'],
     },
   ],
 }
@@ -616,8 +671,7 @@ const longTurn: Replay = {
     ledger: {
       turn: 3,
       overview: overview({
-        role: 'session',
-        goal: 'Speed up note search',
+        head: { title: 'Note search', description: 'Speeding up note search' },
         subjects: [
           subject('s1', 'working', 'Search index', 'slow on large libraries', -5),
           subject('s2', 'queued', 'Recency ranking', 'not started', -5),
