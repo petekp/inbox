@@ -4913,7 +4913,7 @@ export const register: Register = on => {
       side = null,
       fill,
       padY = space.rowPad,
-      isCentered = false,
+      isSideCentered = false,
       indent = 0,
       isMarkHung = true,
       markCells = DESKTOP_MARK_CELLS,
@@ -4931,30 +4931,17 @@ export const register: Register = on => {
       tree?: JSX.Element | null
       fill?: string | undefined
       padY?: number
-      isCentered?: boolean
+      /** Centers the side and the mark with its text on each other, for a side taller than a line of text, as Undo is. */
+      isSideCentered?: boolean
       indent?: number
       isMarkHung?: boolean
       markCells?: number
       /** Space above and below the frame, in the hooks tree's half lines. */
       gapY?: number
       children: JSX.Element | (JSX.Element | null)[]
-    }) => (
-      <Box
-        key={key}
-        flexDirection="row"
-        alignItems={isCentered ? 'center' : tree ? 'stretch' : 'flex-start'}
-        marginY={gapY}
-        borderStyle="single"
-        borderColor="#0000"
-        paddingY={padY}
-        {...(fill ? { backgroundColor: fill } : {})}
-      >
-        <Box
-          width={indent + markCells + (isMarkHung ? 0 : 1)}
-          {...(isCentered ? { height: 1 } : {})}
-          flexShrink={0}
-          paddingLeft={indent}
-        >
+    }) => {
+      const markColumn = (
+        <Box key="mark" width={indent + markCells + (isMarkHung ? 0 : 1)} flexShrink={0} paddingLeft={indent}>
           {tree}
           {mark ? (
             <Box position="absolute" top={0} left={isMarkHung ? indent - 1 : indent}>
@@ -4962,23 +4949,46 @@ export const register: Register = on => {
             </Box>
           ) : null}
         </Box>
-        <Box flexDirection="column" flexShrink={1} flexGrow={1} minWidth={0}>
+      )
+      const textColumn = (
+        <Box key="text" flexDirection="column" flexShrink={1} flexGrow={1} minWidth={0}>
           {children}
         </Box>
-        {hasSide ? (
-          <Box
-            minWidth={DESKTOP_SIDE_CELLS}
-            flexShrink={0}
-            flexDirection="row"
-            justifyContent="flex-end"
-            alignItems="flex-start"
-            paddingLeft={1}
-          >
-            {side}
-          </Box>
-        ) : null}
-      </Box>
-    )
+      )
+      return (
+        <Box
+          key={key}
+          flexDirection="row"
+          alignItems={isSideCentered ? 'center' : tree ? 'stretch' : 'flex-start'}
+          marginY={gapY}
+          borderStyle="single"
+          borderColor="#0000"
+          paddingY={padY}
+          {...(fill ? { backgroundColor: fill } : {})}
+        >
+          {isSideCentered ? (
+            <Box flexDirection="row" alignItems="flex-start" flexShrink={1} flexGrow={1} minWidth={0}>
+              {markColumn}
+              {textColumn}
+            </Box>
+          ) : (
+            [markColumn, textColumn]
+          )}
+          {hasSide ? (
+            <Box
+              minWidth={DESKTOP_SIDE_CELLS}
+              flexShrink={0}
+              flexDirection="row"
+              justifyContent="flex-end"
+              alignItems="flex-start"
+              paddingLeft={1}
+            >
+              {side}
+            </Box>
+          ) : null}
+        </Box>
+      )
+    }
     const withSideAge = (row: Row, line: JSX.Element) =>
       isAgeInSide ? (
         <Box flexDirection="row">
@@ -5986,7 +5996,7 @@ export const register: Register = on => {
           mark: markGlyph(mark, `settled-${r.id}`, pal.muted),
           side: undoPlace(r.id, undo, state.at, state.offersUndo),
           padY: space.settledPad,
-          isCentered: true,
+          isSideCentered: true,
           children: [
             <Text wrap="wrap">
               {r.title}
