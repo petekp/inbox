@@ -2393,7 +2393,7 @@ function initialize(): Promise<boolean> {
     'ui/initialize',
     {
       protocolVersion: '2026-01-26',
-      appInfo: { name: 'inbox', version: '0.2.13' },
+      appInfo: { name: 'inbox', version: '0.2.14' },
       appCapabilities: { tools: {} },
     },
     READ_TIMEOUT_MS,
