@@ -1759,6 +1759,7 @@ function noteDialog(s, callId, questions) {
 var CANDIDATES = ["gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"];
 var GH_TIMEOUT_MS = 20000;
 var UNSTARTABLE_CODE = -1;
+var TIMED_OUT_CODE = -2;
 var GIT_TIMEOUT_MS = 5000;
 async function branchIn(run, folder) {
   const r = await run(["git", "branch", "--show-current"], { cwd: folder, timeoutMs: GIT_TIMEOUT_MS });
@@ -3717,7 +3718,8 @@ async function fetchTracked(run, state, linked, findsBranchPr) {
   let isGhSignedOut = null;
   const gh = async (args) => {
     const r = await run(args);
-    if (r.exitCode !== UNSTARTABLE_CODE)
+    const isAnswer = r.exitCode !== UNSTARTABLE_CODE && r.exitCode !== TIMED_OUT_CODE;
+    if (isAnswer)
       isGhSignedOut = isGhSignedOut === true || asksForSignIn(r);
     return r;
   };
@@ -3764,8 +3766,9 @@ async function fetchPr(gh, target, views, knownBranchRef) {
   if (!base) {
     if (!previous || asksForSignIn(view))
       return previous ?? null;
-    return { ...previous, error: view.stderr.trim().split(`
-`)[0] || "gh could not read the PR" };
+    const error = view.exitCode === TIMED_OUT_CODE ? GH_TIMED_OUT_TEXT : view.stderr.trim().split(`
+`)[0] || "gh could not read the PR";
+    return { ...previous, error };
   }
   const threads = early ?? await threadsOf(ref);
   const answer = threads.exitCode === 0 ? readThreadsAnswer(threads.stdout) : null;
@@ -3800,6 +3803,7 @@ function prMarkId(ref) {
   return `pr:${ref}`;
 }
 var GH_MISSING_TEXT = "The inbox could not find gh. It needs gh to read your PRs.";
+var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} seconds`;
 var GH_SIGNED_OUT_TEXT = "gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.";
 function ghNoticeOf(gh) {
   if (gh.isGhMissing)
@@ -5315,7 +5319,7 @@ function openTarget2(run, target, root, home) {
   }, target, root, home);
 }
 // package.json
-var version = "0.2.13";
+var version = "0.2.14";
 
 // ../hooks/arrivals.ts
 function recordRows(seen, listed) {
@@ -7231,9 +7235,9 @@ function createInbox(pi, deps = defaultDeps) {
     const [file = "", ...rest] = args;
     try {
       const r = await pi.exec(file, rest, { cwd, timeout: timeoutMs });
-      return { code: r.killed ? -1 : r.code, stdout: r.stdout, stderr: r.stderr };
+      return { code: r.killed ? TIMED_OUT_CODE : r.code, stdout: r.stdout, stderr: r.stderr };
     } catch (err) {
-      return { code: -1, stdout: "", stderr: messageOf(err) };
+      return { code: UNSTARTABLE_CODE, stdout: "", stderr: messageOf(err) };
     }
   };
   const gh = ghFinder(run);

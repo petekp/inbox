@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { Engine, Mounted } from 'claude-code/testing'
+import type { Engine, MockClock, Mounted } from 'claude-code/testing'
 import type { On, PaneOpenArgs, PromptOrigin, RenderSurface } from 'claude-code'
 
 import type { FoldProps } from '../hooks/fold-client'
@@ -10,6 +10,7 @@ import { cellWidth } from '../hooks/text'
 import { DARK_TONES } from '../hooks/tones'
 import type { Item, Session } from '../types'
 import { demoView } from '../hooks/demo'
+import { GH_TIMEOUT_MS } from '../hooks/gh'
 import { OVERVIEW_SYSTEM } from '../hooks/model-text'
 import { LOOK_MIN_MS } from '../hooks/overview'
 import { OVERVIEW_REFRESH_MS } from '../hooks/session'
@@ -74,6 +75,7 @@ let spawnedAgentId = 'a1'
 let listedAgents: { id: string; status: string }[] = []
 
 let isGhMissing = false
+let slowGhClock: MockClock | null = null
 
 let ghAnswers: {
   match: (argv: readonly string[]) => boolean
@@ -192,6 +194,7 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   listedAgents = []
   ghAnswers = []
   isGhMissing = false
+  slowGhClock = null
   ledgerReply = LEDGER_REPLY
   overviewReply = 'UNCHANGED'
   overviewPrompts = []
@@ -278,6 +281,10 @@ function world($: Engine, on: On, prompts: string[], vars: Record<string, string
   on('process.run', async ($, e) => {
     ran.push([...e.argv])
     if (isGhMissing && e.argv[0] === 'gh') throw new Error('spawn gh ENOENT')
+    if (slowGhClock && e.argv[0] === 'gh') {
+      await slowGhClock.sleep(GH_TIMEOUT_MS)
+      return { deny: 'killed at the timeout' }
+    }
     await ghAnswers.find(a => a.match(e.argv))?.hold?.()
     return { value: gh(e.argv) }
   })
@@ -3023,6 +3030,31 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await clock.settle()
     expect(await pane.find({ text: /No PRs/ })).toBeDefined()
     expect(await pane.find({ text: notice })).toBeUndefined()
+  })
+
+  test(`the ${surface} PRs tab does not say gh is missing when every gh run times out`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [])
+    slowGhClock = clock
+
+    await $.session.start({ cwd: '/tmp/project', surface, isInteractive: true })
+    const pane = await $.ui.mount({ ...PANE, surface })
+    if (surface === 'terminal') await pane.press({ key: 'tab-prs' })
+    else {
+      const { tabs, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+      const x = tabs
+        .slice(
+          0,
+          tabs.findIndex(t => t.id === 'prs'),
+        )
+        .reduce((sum, t) => sum + t.width + gap, 0)
+      await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+    }
+    await clock.settle()
+    await clock.advance(GH_TIMEOUT_MS)
+    expect(ran.some(argv => argv[0] === 'gh' && argv[1] === 'pr')).toBe(true)
+    expect(await pane.find({ text: /No PRs/ })).toBeDefined()
+    expect(await pane.find({ text: /could not find gh/ })).toBeUndefined()
   })
 
   test(`the ${surface} PRs tab says gh is not signed in until gh answers without asking for a sign-in`, async ($, on) => {
