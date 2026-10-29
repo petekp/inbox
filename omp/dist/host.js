@@ -1873,7 +1873,9 @@ function delegatesSettled(o, states, at) {
     const isSettling = at - (c.lastActivityAt ?? c.startedAt) < HERDR_PROMPT_SETTLE_MS;
     if (status === "unknown" || isSettling)
       return c;
-    return { ...c, endedAt: at, delegateState: c.delegateState === null ? null : "finished" };
+    const isReady = status === "idle" || status === "done";
+    const hasFinished = isReady && c.delegateState !== null;
+    return { ...c, endedAt: at, delegateState: hasFinished ? "finished" : c.delegateState };
   };
   const children = o.children.map(settled);
   if (children.every((c, n) => c === o.children[n]))

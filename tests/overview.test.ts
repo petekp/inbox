@@ -418,7 +418,7 @@ test('running children sit under their subject, at most three, each tied to it a
   })
 })
 
-test('a delegate says what Herdr shows: nothing while it works, waiting for you while blocked, and finished from when it stops until the person has looked, its subject moved above the Seen line', () => {
+test('a delegate says what Herdr shows: nothing while it works, waiting for you while blocked, and finished from when it is ready until the person has looked, its subject moved above the Seen line, and one Herdr no longer lists leaves', () => {
   let o: Overview | null = { ...after(null, 'NEW: working | Export | layout next', 10 * MIN), lastLookAt: 20 * MIN }
   o = delegatesStarted(o, 'herdr agent prompt pdf "lay out the export"', 30 * MIN)
   o = delegatesStarted(o, 'herdr agent start spare --cmd claude', 30 * MIN)
@@ -454,6 +454,8 @@ test('a delegate says what Herdr shows: nothing while it works, waiting for you 
   ])
   const looked = lookEnded(lookStarted(finished, 5 * 60 * MIN), 5 * 60 * MIN + LOOK_MIN_MS)
   expect(rows(looked, 6 * 60 * MIN)).toEqual(['● Export: layout next'])
+  const gone = delegatesSettled(blocked, new Map(), 4 * 60 * MIN)
+  expect(rows(gone, 4 * 60 * MIN)).toEqual(['● Export: layout next'])
 })
 
 test('a rule sets each item on the page apart: a subject and the rows under it are one item, and the look line takes none beside it', () => {

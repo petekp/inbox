@@ -139,8 +139,8 @@ export function hasRunningDelegate(o: Overview | null): boolean {
 
 /**
  * Each running delegate after Herdr's `states`, read at `at`, by agent name. A delegate Herdr shows working or blocked
- * takes that state. One Herdr shows ready, or no longer lists, ended then. It finished when it had worked, and its
- * subject changed then, so the subject shows above the look line. Herdr's `unknown` changes nothing.
+ * takes that state. One Herdr shows ready, or no longer lists, ended then. One that is ready after it worked finished,
+ * and its subject changed then, so the subject shows above the look line. Herdr's `unknown` changes nothing.
  */
 export function delegatesSettled(
   o: Overview | null,
@@ -157,7 +157,10 @@ export function delegatesSettled(
     const isSettling = at - (c.lastActivityAt ?? c.startedAt) < HERDR_PROMPT_SETTLE_MS
     if (status === 'unknown' || isSettling) return c
 
-    return { ...c, endedAt: at, delegateState: c.delegateState === null ? null : 'finished' }
+    const isReady = status === 'idle' || status === 'done'
+    const hasFinished = isReady && c.delegateState !== null
+
+    return { ...c, endedAt: at, delegateState: hasFinished ? 'finished' : c.delegateState }
   }
   const children = o.children.map(settled)
   if (children.every((c, n) => c === o.children[n])) return o

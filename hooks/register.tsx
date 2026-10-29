@@ -6187,11 +6187,11 @@ export const register: Register = on => {
     }
     /**
      * A row's name, wrapped to `OVERVIEW_TEXT_LINES` lines and cut past them, with its stall words after `STALL_GAP` on
-     * its last line. Stall words that do not fit there take the next line whole, without the gap.
+     * its last line. Stall words that do not fit there take a line of their own, whole and without the gap.
      */
-    const overviewNameLine = (key: string, name: TerminalSpan, stall: OverviewStall | null, depth: number) => {
+    const overviewNameLines = (key: string, name: TerminalSpan, stall: OverviewStall | null, depth: number) => {
       const width = overviewTextWidth(depth)
-      if (!stall) return overviewText(key, [name], depth)
+      if (!stall) return [overviewText(key, [name], depth)]
       const words = stallSpan(stall)
       const gap: TerminalSpan = { text: STALL_GAP, isMuted: true }
       const nameLines =
@@ -6204,13 +6204,15 @@ export const register: Register = on => {
           ? (desktopLines(last.map(s => s.text).join(''), width).at(-1) ?? '')
           : last.map(s => s.text).join('')
       const isRoomOnLast = fitsOverviewLine(depth)(`${lastText}${STALL_GAP}${stall.text}`)
-      const lines = isRoomOnLast ? [...nameLines.slice(0, -1), [...last, gap, words]] : [...nameLines, [words]]
-
-      return (
-        <Box key={key}>
+      const box = (boxKey: string, lines: TerminalSpan[][]) => (
+        <Box key={boxKey}>
           <Text wrap="wrap">{terminalText(lines)}</Text>
         </Box>
       )
+
+      return isRoomOnLast
+        ? [box(key, [...nameLines.slice(0, -1), [...last, gap, words]])]
+        : [box(key, nameLines), box(`${key}-stall`, [[words]])]
     }
     /**
      * The line that ties the rows under a subject to it, in the subject's mark column. `down` runs from under the
@@ -6337,7 +6339,7 @@ export const register: Register = on => {
         const color = r.tone ? pal.mark[r.tone] : pal.muted
         const mark = r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
         const content = [
-          overviewNameLine(`overview-${r.id}-name`, { text: r.name }, r.stall, 0),
+          ...overviewNameLines(`overview-${r.id}-name`, { text: r.name }, r.stall, 0),
           ...(r.text ? [overviewText(`overview-${r.id}-text`, [{ text: r.text, isMuted: true }], 0)] : []),
           ...(r.merged
             ? [
@@ -6369,7 +6371,7 @@ export const register: Register = on => {
           key: `overview-${r.id}`,
           depth,
           mark,
-          content: overviewNameLine(`overview-${r.id}-name`, { text: r.name, isMuted: true }, r.stall, depth),
+          content: overviewNameLines(`overview-${r.id}-name`, { text: r.name, isMuted: true }, r.stall, depth),
           tree: r.branch ? overviewTree(`overview-${r.id}-tree`, r.branch) : null,
         })
       }
