@@ -107,11 +107,14 @@ import {
   splitFollowUps,
   fetchTracked,
   isDismissed,
+  isPrPress,
   olderPrsText,
   PR_GROUP_TITLES,
   PR_TONES,
   prBlockActions,
   prCheckId,
+  prTabActions,
+  DISMISS_MERGED_ID,
   prMarkId,
   pressRowId,
   prRowWaits,
@@ -2812,8 +2815,9 @@ async function wakeForDone($: EngineInterface) {
 }
 
 async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPressArgument['surface']) {
-  const mayStayOnRow =
-    'ref' in p ? ['pr-open', 'pr-refresh', 'thread-open', 'log'].includes(p.action) : p.action === 'step'
+  const mayStayOnRow = isPrPress(p)
+    ? ['pr-open', 'pr-refresh', 'thread-open', 'log'].includes(p.action)
+    : p.action === 'step'
   const undoRevision = mayStayOnRow ? suspendUndoReveal() : cancelUndoScroll()
   const rowId = pressRowId(p)
   if (p.action !== 'undo' && !rowId.startsWith('pr:')) await keepPressedOpen($, rowId)
@@ -2893,7 +2897,11 @@ async function undoKeyAfterPress(
 ): Promise<string | null> {
   if (surface !== 'terminal' || !isInlineTerminalPane) return null
   const { ledger, prViews, lastActions, view, now } = await drawnState($)
-  if ('ref' in p) {
+  if (isPrPress(p)) {
+    if (p.action === 'pr-dismiss-merged') {
+      const nearest = view.prs.drawn.filter(x => x.state.is === 'settled' && x.state.canUndo).at(-1)
+      return nearest ? `undo-${prMarkId(nearest.pr.ref)}` : null
+    }
     if (p.action !== 'pr-dismiss') return null
     return view.prs.drawn.some(x => x.pr.ref === p.ref && x.state.is === 'settled') ? `undo-${pressRowId(p)}` : null
   }
@@ -3040,6 +3048,7 @@ const PR_KEYS: Record<PrPress['action'], string> = {
   'pr-refresh': 'refresh',
   'pr-dismiss': 'dismiss-pr',
   'pr-undo': 'undo-pr',
+  'pr-dismiss-merged': 'dismiss-merged',
   'check-fix': 'fix',
   log: 'log',
 }
@@ -4457,6 +4466,8 @@ export const register: Register = on => {
         threads: d.state.is === 'settled' ? [] : waitingThreads(d.pr).map(t => threadRow(d.pr, t)),
       }))
       .map(g => ({ ...g, rows: [...g.threads, ...g.checks] }))
+    const prTabKeys =
+      prGroups.length === 0 ? [] : prTabActions(prGroups, prState.branchRef).map(a => prKeyAction(a, 'tab'))
     const rows: Record<Tab, Row[]> = {
       needsYou: lists.byTab.needsYou,
       findings: lists.byTab.findings,
@@ -6115,6 +6126,20 @@ export const register: Register = on => {
         ),
       ]
     }
+    const prTabButtons = () => {
+      if (prTabKeys.length === 0) return []
+      const buttons = keyRow(DISMISS_MERGED_ID, prTabKeys)
+
+      return [
+        section(
+          look === 'desktop' ? (
+            desktopFrame({ key: 'pr-tab-actions', padY: 0, children: buttons })
+          ) : (
+            <Box paddingLeft={1}>{buttons}</Box>
+          ),
+        ),
+      ]
+    }
     const prsView = () =>
       prGroups.length === 0 ? (
         <Box flexDirection="column" flexGrow={1}>
@@ -6125,6 +6150,7 @@ export const register: Register = on => {
           [
             ...(ghNotice ? [section(banner(bannerOf(ghNotice.kind, ghNotice.text)))] : []),
             ...prGroups.map(prBlock),
+            ...prTabButtons(),
             ...olderPrs(),
           ],
           2,
@@ -6472,7 +6498,10 @@ export const register: Register = on => {
       kind: 'view',
       onPress: () => undefined,
     }))
-    const rowKeys = selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow
+    const rowKeys = [
+      ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow),
+      ...(tab === 'prs' ? prTabKeys : []),
+    ]
 
     // A pane takes a key
     // only as a Button's hotkey, so the tab keys, j, k and the selected row's keys

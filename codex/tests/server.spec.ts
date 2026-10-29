@@ -1426,6 +1426,53 @@ test('dismissing a linked PR unlinks it and settles its block as a dismissed row
   assert.equal(ref in (await readState(dir, 's1')).prViews.views, false)
 })
 
+test('Dismiss merged unlinks the merged PRs and settles each block with its own Undo', async () => {
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
+  const runner = fakeRunner(() => ({ code: -1, stdout: '', stderr: '' }))
+  const handle = makeServer({
+    dir,
+    now: () => 100,
+    exec: runner.exec,
+    tabHtml: '',
+    fallbackCli: async () => 'codex',
+    comparePage: '/plugin/dist/compare-page.html',
+  })
+  const d = demoView(100, 'Codex')
+  const merged = d.ledger.prs.filter(r => r !== d.prViews.branchRef)
+  const views = Object.fromEntries(
+    Object.entries(d.prViews.views).map(([ref, v]) => [ref, merged.includes(ref) ? { ...v, state: 'MERGED' } : v]),
+  )
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ledger: { ...s.ledger, prs: d.ledger.prs },
+    prViews: { ...d.prViews, views } as typeof d.prViews,
+  }))
+  const r = (await handle({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'tools/call',
+    params: {
+      name: 'inbox_press',
+      arguments: { press: { action: 'pr-dismiss-merged' }, thread: 's1', shownSince: 0 },
+      _meta: { thread_id: 's1' },
+    },
+  })) as PrReply
+  const states = r.result.structuredContent.view.prs.drawn.map(x => [
+    x.pr.ref,
+    x.state.is,
+    x.state.is === 'settled' ? x.state.canUndo : null,
+  ])
+  assert.deepEqual(
+    states.filter(([ref]) => merged.includes(ref as string)).map(([, is, canUndo]) => [is, canUndo]),
+    [
+      ['settled', true],
+      ['settled', true],
+    ],
+  )
+  assert.deepEqual((await readState(dir, 's1')).ledger.prs, [d.prViews.branchRef])
+})
+
 for (const failure of ['none', 'checkpoint', 'completion', 'queue', 'lookup'] as const) {
   test(`Done notification batches survive ${failure} and retain honest delivery and Undo state`, async t => {
     const dir = tempDir()
