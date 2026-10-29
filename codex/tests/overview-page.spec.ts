@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { Window } from 'happy-dom'
-import { EMPTY } from '../../hooks/ledger'
+import { closeItem, EMPTY } from '../../hooks/ledger'
 import { applyOverview, LOOK_MIN_MS, parseOverview } from '../../hooks/overview'
 import { recordItem } from '../../hooks/tools'
 import { shownTabs } from '../../hooks/view'
@@ -15,7 +15,7 @@ const window = new Window()
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
 after(() => window.happyDOM.close())
 
-test('the Codex tab draws the Overview page from a next build’s view, and new rows, j and k leave it in place, while a release build’s view draws Asks for it, and only a next build names on an Asks row the subject it holds up', async () => {
+test('the Codex tab draws the Overview page from a next build’s view, and new rows and keys leave it in place, a held subject’s View shows Asks with its ask selected until the ask closes, while a release build’s view draws Asks for it, and only a next build names on an Asks row the subject it holds up', async () => {
   const now = Date.now()
   const state = emptyState('overview')
   state.heard.startAt = 1
@@ -147,15 +147,19 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
         [...(r.querySelector('.content')?.children ?? [])].map(line => line.textContent),
       ]),
       [
-        ['mark tone-needsYou', '◆', ['Label · waiting', 'pick one']],
+        ['mark tone-needsYou', '◆', ['Label · waiting', 'pick one', 'View question']],
         ['mark running', '●', ['omp panel', 'reading the draw code']],
         ['mark done', '✓', ['Page', 'built']],
       ],
     )
-    assert.equal(root.querySelectorAll('main button').length, 0)
+    assert.deepEqual(
+      [...root.querySelectorAll('main button')].map(b => b.textContent),
+      ['View question'],
+    )
 
     key('j')
     key('k')
+    key('v')
     state.ledger = recordItem(
       CODEX,
       state.ledger,
@@ -175,7 +179,12 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
     assert.ok(root.querySelector('.overview-head'))
     key('2')
     assert.equal(shownTab(), 'Asks1')
-    assert.equal(root.querySelector('main .holds-up')?.textContent, 'Holds up Label')
+    assert.equal(root.querySelector('main .holds-up')?.textContent, '◆ Holds up Label')
+    key('1')
+    assert.equal(shownTab(), 'Overview')
+    ;(root.querySelector('main.overview .actions button') as HTMLElement).click()
+    assert.equal(shownTab(), 'Asks1')
+    assert.match(root.querySelector('.row.selected')?.textContent ?? '', /Which label\?/)
     key('1')
     assert.equal(shownTab(), 'Overview')
 
@@ -210,6 +219,15 @@ test('the Codex tab draws the Overview page from a next build’s view, and new 
     assert.equal(shownTab(), 'PRs')
     key('1')
     assert.equal(shownTab(), 'Asks1')
+
+    isNextBuild = true
+    state.ledger = closeItem(state.ledger, asked.items[0]!.id, { how: 'claude', outcome: 'answered in chat' }, now)
+    await new Promise<void>(resolve => setTimeout(resolve, POLL_MS + 100))
+    key('1')
+    assert.equal(shownTab(), 'Overview')
+    assert.ok(root.querySelector('.overview-head'))
+    assert.ok(![...root.querySelectorAll('main .mark')].some(m => m.textContent === '◆'))
+    assert.equal(root.querySelectorAll('main button').length, 0)
   } finally {
     await window.happyDOM.abort()
     for (const [key, descriptor] of previous) {

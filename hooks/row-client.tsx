@@ -8,6 +8,8 @@ export type RowProps = {
   after: string
   /** A muted line under the title and `after`, or empty for none. */
   note: string
+  /** A mark before the note, in its own color. */
+  noteMark: { text: string; color: string | null } | null
   side: string
   /** Lines of padding above and below the text. */
   padY: number
@@ -71,7 +73,7 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
   const perLine = Math.floor(textCells * props.charsPerCell)
   const title = fitTitle(perLine * props.maxLines, props.before, props.title)
   const after = clipAtSpace(props.after, perLine)
-  const note = clipAtSpace(props.note, perLine)
+  const note = clipAtSpace(props.note, perLine - (props.noteMark ? props.noteMark.text.length + 1 : 0))
   const background = pressed ? props.colors.pressed : hover ? props.colors.hover : null
   const isRaised = background !== null && background === props.colors.hover
   const color = (own: string | null) => (isRaised && props.colors.hoverText ? props.colors.hoverText : own)
@@ -105,7 +107,20 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
             ],
           }),
           ...(after ? [Text({ wrap: 'truncate-end', ...colored(ageColor), children: after })] : []),
-          ...(note ? [Text({ wrap: 'truncate-end', ...colored(props.colors.muted), children: note })] : []),
+          ...(note
+            ? [
+                Text({
+                  wrap: 'truncate-end',
+                  ...colored(props.colors.muted),
+                  children: [
+                    ...(props.noteMark
+                      ? [Text({ ...colored(props.noteMark.color), children: `${props.noteMark.text} ` })]
+                      : []),
+                    note,
+                  ],
+                }),
+              ]
+            : []),
         ],
       }),
       Box({

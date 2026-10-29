@@ -1,4 +1,4 @@
-import type { Item, LastAction, Ledger, PressKind, PrCheck, PrThread, PrView, PrViews } from '../types'
+import type { Delivery, Item, LastAction, Ledger, PressKind, PrCheck, PrThread, PrView, PrViews } from '../types'
 import { GH_TIMEOUT_MS, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import { baseName, isFoldingPress, localLast, pendingResult, prSteps, recordPress, withQueued } from './presses'
 import type { Effect, HelpStep, PrActionId, RowPress } from './presses'
@@ -34,6 +34,8 @@ import {
   outAction,
   pressFeedbackIn,
   pressOutAction,
+  PR_MARKS,
+  RUNNING_MARK,
 } from './view'
 import type { ActionEmphasis, BannerKind, PressState, RowWait, SettledState, ViewInput } from './view'
 
@@ -289,12 +291,20 @@ export const DISMISS_MERGED_ID = 'pr:merged'
 
 export const PR_GROUP_TITLES = { threads: 'Review threads', checks: 'Failing checks' }
 
-/** The mark before a PR row's title, its tone, and whether it says the row's work is done. */
-export type PrRowMark = { text: string; tone: 'done' | 'error' | null; isDone: boolean }
+/**
+ * The mark before a PR row's title, its tone, and whether it says the row's work is done. `isRunning` says the look
+ * draws its running mark in place of `text`, while what the row sent is on its way.
+ */
+export type PrRowMark = {
+  text: string
+  tone: 'done' | 'error' | 'needsYou' | null
+  isDone: boolean
+  isRunning: boolean
+}
 
 /** What a review thread's row says, for each look to draw in its own controls. */
 export type ThreadRowText = {
-  /** ✓ once the agent has the thread and its message arrived, else ◦. */
+  /** ◆ while the thread waits on the person, running while its message is on its way, then ✓. Blank while unconfirmed. */
   mark: PrRowMark
   /** Set when the row folds to one line: the agent has the thread, or its lines changed since the comment. */
   fold: { note?: string } | null
@@ -306,10 +316,8 @@ export function threadRowText(pr: PrView, t: PrThread, lastActions: Record<strin
   const isSent = threadSentIn(lastActions)(pr, t)
   const isChanged = !isSent && t.isLinesChanged
 
-  const showsCheck = threadShowsCheckIn(lastActions)(pr, t)
-
   return {
-    mark: showsCheck ? { text: '✓', tone: 'done', isDone: true } : { text: '◦', tone: null, isDone: false },
+    mark: threadMark(isSent ? lastActions[prThreadId(pr, t)]?.delivery : null),
     fold:
       isSent || isChanged
         ? t.isLinesChanged
@@ -327,10 +335,18 @@ export function threadRowText(pr: PrView, t: PrThread, lastActions: Record<strin
   }
 }
 
+/** A thread's mark from the delivery of its hand-off, or null while it waits on the person. */
+function threadMark(delivery: Delivery | null | undefined): PrRowMark {
+  if (delivery === null) return { ...PR_MARKS.waiting, isDone: false, isRunning: false }
+  if (delivery?.state === 'queued') return { text: RUNNING_MARK, tone: null, isDone: false, isRunning: true }
+  if (delivery?.state === 'unconfirmed') return { text: '', tone: null, isDone: false, isRunning: false }
+  return { ...PR_MARKS.sent, isDone: true, isRunning: false }
+}
+
 /** What a failing check's row says. `lead` names its workflow, drawn before the check's name. */
 export function checkRowText(c: PrCheck): { mark: PrRowMark; lead: string | null; title: string; meta: string } {
   return {
-    mark: { text: '✗', tone: 'error', isDone: false },
+    mark: { ...PR_MARKS.failing, isDone: false, isRunning: false },
     lead: c.workflow || null,
     title: c.name,
     meta: checkRunText(c),
@@ -363,12 +379,9 @@ export function threadSentIn(lastActions: Record<string, LastAction>): IsThreadS
   }
 }
 
-export function threadShowsCheckIn(lastActions: Record<string, LastAction>): IsThreadSent {
-  const isSent = threadSentIn(lastActions)
-  return (pr, t) => {
-    const delivery = lastActions[prThreadId(pr, t)]?.delivery
-    return isSent(pr, t) && delivery?.state !== 'unconfirmed'
-  }
+/** Whether a PR block draws a running mark, so the terminal and omp keep their frame timer going. */
+export function isPrTabRunning(prs: PrView[], lastActions: Record<string, LastAction>): boolean {
+  return prs.some(pr => waitingThreads(pr).some(t => threadRowText(pr, t, lastActions).mark.isRunning))
 }
 
 /**

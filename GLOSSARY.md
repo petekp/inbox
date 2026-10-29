@@ -53,6 +53,11 @@ folds into the Closed fold or leaves the list. A message a press sent does not
 fold it. Where its press allows Undo, it offers Undo for `SETTLED_MS` after
 the close, and stays through a typed message until Undo ends.
 
+**Mark**:
+The glyph before a row or a group title that says where its work stands or what
+kind it is, such as ◆, waits on you. Each glyph means one thing wherever a look
+draws it. `MARK_LEGEND` in `hooks/view.ts` lists them all.
+
 **Result mark**:
 The mark of what came of a row: ✓ when handled, ✕ when dismissed, ✗ when it
 lapsed, as when the agent closed it because the work overtook it. It runs, as
@@ -90,6 +95,8 @@ dropped. The inbox model adds and changes subjects by id, and code keeps their
 times. The inbox model also links an open question or task to the subject it
 holds up. While that item is open, the subject's mark reads ◆ in place of its
 status's mark, and the item's Asks row reads "Holds up" and the subject's name.
+Its row then has a View question or View task button, which opens Asks with
+the oldest of those items selected.
 _Avoid_: workstream, stream, item (an item is a question or task)
 
 **Child**:
@@ -133,6 +140,12 @@ inbox cannot do its job until something changes; warning, part of it is
 missing or out of date; notice, a fact. A row's own result is not a banner.
 `BannerView` in `hooks/view.ts`.
 _Avoid_: alert, error strip, status line
+
+**Help**:
+The page a look shows in place of the shown tab's body: the keys the look
+takes, then what each mark means. Desktop lists only the marks. The footer's
+Help button opens it, and so does `?` in Codex and omp. Switching tabs or
+closing the inbox closes it.
 
 **Person's line**:
 The line the conversation shows under the agent's `record` or `close` call,

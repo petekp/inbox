@@ -1667,6 +1667,57 @@ var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
   opportunity: { title: "Opportunities", mark: "\u2726", tone: "done" }
 };
+var SUBJECT_MARKS = {
+  working: { mark: "\u25CF", tone: null },
+  queued: { mark: "\u25CB", tone: null },
+  "waits-on-other": { mark: "\u25CC", tone: null },
+  done: { mark: "\u2713", tone: "done" },
+  dropped: { mark: "\u2717", tone: null }
+};
+var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
+var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
+var RUNNING_MARK = RUNNING_FRAMES[0];
+var CLOSED_MARKS = {
+  handled: SUBJECT_MARKS.done.mark,
+  dismissed: "\u2715",
+  lapsed: SUBJECT_MARKS.dropped.mark
+};
+var PR_MARKS = {
+  waiting: { text: HELD_MARK.mark, tone: "needsYou" },
+  sent: { text: SUBJECT_MARKS.done.mark, tone: "done" },
+  failing: { text: FINDING_GROUPS.issue.mark, tone: "error" }
+};
+var MARK_LEGEND = [
+  {
+    mark: RUNNING_MARK,
+    tone: null,
+    isRunning: true,
+    words: "Working. It moves while the work runs or your message is on its way."
+  },
+  { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: "Queued: not started yet" },
+  {
+    mark: SUBJECT_MARKS["waits-on-other"].mark,
+    tone: null,
+    isRunning: false,
+    words: "Waits on something other than you, such as a build or a review"
+  },
+  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  { mark: SUBJECT_MARKS.done.mark, tone: "done", isRunning: false, words: "Done, or handed to the agent" },
+  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: "Dropped before it was done" },
+  { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: "Dismissed by you" },
+  {
+    mark: FINDING_GROUPS.issue.mark,
+    tone: FINDING_GROUPS.issue.tone,
+    isRunning: false,
+    words: "Something is wrong: an issue or a failing check"
+  },
+  {
+    mark: FINDING_GROUPS.opportunity.mark,
+    tone: FINDING_GROUPS.opportunity.tone,
+    isRunning: false,
+    words: "Opportunity: something that could be better"
+  }
+];
 var SETTLED_MS = 5120;
 var QUEUED_AFTER_MS = 1e3;
 var COMPARE_LIMIT_MS = 30 * 6e4;
@@ -1843,18 +1894,8 @@ var LOOK_TEXT = "Last seen";
 var CHILD_ROWS = 3;
 var NEW_CLOSED_ROWS = 2;
 var OPEN_ROWS = 7;
-var SUBJECT_MARKS = {
-  working: { mark: "\u25CF", tone: null },
-  queued: { mark: "\u25CB", tone: null },
-  "waits-on-other": { mark: "\u25CC", tone: null },
-  done: { mark: "\u2713", tone: "done" },
-  dropped: { mark: "\u2717", tone: null }
-};
-var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
-var CHILD_MARK = { mark: "\u25CF", tone: null };
-var FINISHED_MARK = { mark: "\u2713", tone: "done" };
+var CHILD_MARK = { mark: SUBJECT_MARKS.working.mark, tone: null };
 var OVERVIEW_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
-var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 function isItemAfterItem(row, prev) {
@@ -1873,7 +1914,7 @@ function childStall(c) {
   return null;
 }
 function childRow(c, branch) {
-  const marks = c.delegateState === "finished" ? FINISHED_MARK : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
+  const marks = c.delegateState === "finished" ? SUBJECT_MARKS.done : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
   return {
     kind: "child",
     id: c.id,
@@ -1891,6 +1932,11 @@ function overviewPage(s, now) {
   const isNew = (x) => look === null || x.changedAt > look;
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const oldestAskOf = (x) => {
+    if (!isHeld(x)) return null;
+    const oldest = s.ledger.items.filter((i) => o?.askSubjects[i.id] === x.id).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
+    return oldest ? { id: oldest.id, kind: oldest.kind } : null;
+  };
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
   const pageOrder = (x, y) => Number(isNew(y)) - Number(isNew(x)) || OVERVIEW_PLACES.indexOf(placeOf(x)) - OVERVIEW_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
   const stallOf = (x) => isHeld(x) ? { text: "waiting", tone: "needsYou" } : null;
@@ -1923,7 +1969,8 @@ function overviewPage(s, now) {
       stall: stallOf(x),
       merged: isNew(x) ? x.merged : null,
       was: isNew(x) ? x.was : null,
-      hasChildren: under.length > 0
+      hasChildren: under.length > 0,
+      ask: oldestAskOf(x)
     });
     rows.push(...shownUnder.map((c, n) => childRow(c, n === shownUnder.length - 1 && !isMore ? "last" : "mid")));
     const hidden = under.slice(CHILD_ROWS);
@@ -1942,7 +1989,7 @@ function overviewPage(s, now) {
     rows.push({
       kind: "fold",
       id: "queued",
-      mark: "\u25CB",
+      mark: SUBJECT_MARKS.queued.mark,
       tone: null,
       text: `${hiddenQueued.size} more queued`
     });
@@ -1951,7 +1998,7 @@ function overviewPage(s, now) {
     rows.push({
       kind: "fold",
       id: "done",
-      mark: "\u2713",
+      mark: SUBJECT_MARKS.done.mark,
       tone: "done",
       text: `${folded.length}${isMore ? " more" : ""} done`
     });

@@ -11,10 +11,15 @@ import { cancelledMarkShape } from '../../hooks/marks'
 import {
   canUndoRefused,
   CLOSED_MARKS,
+  HELD_MARK,
+  HELP_COPY,
+  helpKeys,
+  MARK_LEGEND,
   closedMark,
   mergedLine,
   nameBeforeStall,
   OVERVIEW_TEXT_LINES,
+  overviewKeyPlan,
   settledMark,
   STALL_GAP,
   versionLabel,
@@ -88,6 +93,7 @@ import type {
   PressState,
   Holds,
   ResultMark,
+  LegendEntry,
   RowView,
   RowWait,
   SettledState,
@@ -188,9 +194,13 @@ let tab: ShownTab = 'needsYou'
 /** When this page began showing `tab`. A row that closes since then stays in place no longer than that, as `isSettledInPlace` says. */
 let shownSince = Date.now()
 
+/** Whether Help shows in place of the tab's body. Switching tabs closes it. */
+let isHelpShown = false
+
 function switchTab(to: ShownTab) {
   if (to !== tab) shownSince = Date.now()
   tab = to
+  isHelpShown = false
 }
 
 /** The tab drawn: the shown tab when the view's build draws it, else the build's first tab, and Asks while the view has no Overview page, as from an older server. */
@@ -926,6 +936,7 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
     id,
     handle: text.mark.text,
     handleTone: text.mark.tone ?? undefined,
+    ...(text.mark.isRunning ? { isHandleRunning: true } : {}),
     isMarkDone: text.mark.isDone,
     ...(text.fold ? { fold: text.fold } : {}),
     title: text.title,
@@ -1208,7 +1219,11 @@ function ListRow({ row, track, onSelect, now }: { row: Row; track: RowTrack; onS
               {isSelected || isClosing ? `${DOT}${last}` : last}
             </span>
           ) : null}
-          {row.holdsUp ? <span class="holds-up">{row.holdsUp}</span> : null}
+          {row.holdsUp ? (
+            <span class="holds-up">
+              <span class="tone-needsYou">{HELD_MARK.mark}</span> {row.holdsUp}
+            </span>
+          ) : null}
         </button>
       </div>
       <span class="side" data-room={SENDING}>
@@ -1433,9 +1448,23 @@ function NameLine({ name, stall }: { name: string; stall: OverviewStall | null }
   )
 }
 
+/** An Overview row's View press: Asks shows with the ask selected and in view. */
+function showAsk(askId: string) {
+  switchTab('needsYou')
+  const index = view ? tabRows(view, 'needsYou').findIndex(r => r.id === askId) : -1
+  open('needsYou', askId, index < 0 ? undefined : index)
+  draw()
+  revealSelected()
+}
+
 function OverviewLine({ row }: { row: OverviewRow }) {
   if (row.kind === 'subject') {
     const merged = row.merged
+    const keys = overviewKeyPlan(row).map((k): Key => ({
+      label: k.label,
+      emphasis: 'normal',
+      run: () => showAsk(k.press.askId),
+    }))
 
     return (
       <div class={row.hasChildren ? 'row has-children' : 'row'}>
@@ -1462,6 +1491,7 @@ function OverviewLine({ row }: { row: OverviewRow }) {
               {row.was}
             </div>
           ) : null}
+          {keys.length > 0 ? <RowActions keys={keys} more={[]} reply={null} isBlocked={() => false} /> : null}
         </div>
       </div>
     )
@@ -1532,23 +1562,67 @@ function OverviewTab({ page }: { page: OverviewPage }) {
   )
 }
 
-function ResultMarkView({ mark }: { mark: ResultMark }) {
-  const shape = mark.text === CLOSED_MARKS.lapsed ? cancelledMarkShape(4) : null
+/** A mark's text, or its shape where the system font draws it like another mark. */
+function MarkGlyph({ text }: { text: string }) {
+  const shape = text === CLOSED_MARKS.lapsed ? cancelledMarkShape(4) : null
 
+  return shape === null ? (
+    <>{text}</>
+  ) : (
+    <svg
+      class="mark-shape"
+      viewBox="0 0 8 8"
+      role="img"
+      aria-label={text}
+      dangerouslySetInnerHTML={{ __html: shape }}
+    />
+  )
+}
+
+function ResultMarkView({ mark }: { mark: ResultMark }) {
   return (
     <span class={mark.isRunning ? 'mark running' : 'mark'} ref={mark.isRunning ? pulseInStep : undefined}>
-      {shape === null ? (
-        mark.text
-      ) : (
-        <svg
-          class="mark-shape"
-          viewBox="0 0 8 8"
-          role="img"
-          aria-label={mark.text}
-          dangerouslySetInnerHTML={{ __html: shape }}
-        />
-      )}
+      <MarkGlyph text={mark.text} />
     </span>
+  )
+}
+
+function legendMarkClass(m: LegendEntry): string {
+  const tone = m.tone === 'needsYou' ? 'tone-needsYou' : m.tone
+  return ['mark', tone, m.isRunning ? 'running' : null].filter(Boolean).join(' ')
+}
+
+/** Help in place of the tab's body: the keys this tab takes, then what each mark means. */
+function HelpPage({ v }: { v: View }) {
+  const keys = helpKeys('codex', v.isNextBuild === true, drawnTab(), false)
+
+  return (
+    <main class="overview help">
+      <section>
+        <GroupTitle title={HELP_COPY.keys} count={0} />
+        <div class="help-keys">
+          {keys.flatMap(k => [
+            <b key={`${k.keys}-keys`}>{k.keys}</b>,
+            <span key={`${k.keys}-does`} class="muted">
+              {k.does}
+            </span>,
+          ])}
+        </div>
+      </section>
+      <section>
+        <GroupTitle title={HELP_COPY.marks} count={0} />
+        <div class="list">
+          {MARK_LEGEND.map(m => (
+            <div key={m.mark} class="row">
+              <span class={legendMarkClass(m)} ref={m.isRunning ? pulseInStep : undefined}>
+                <MarkGlyph text={m.mark} />
+              </span>
+              <div class="content tight muted">{m.words}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </main>
   )
 }
 
@@ -1816,7 +1890,7 @@ function SettledPr({ pr, state }: { pr: PrView; state: SettledState }) {
 
   return (
     <div class="row settled">
-      <span class="mark">✓</span>
+      <ResultMarkView mark={settledMark(state)} />
       <div class="content">
         <div class="settled-head">
           <div class="settled-line">
@@ -2184,7 +2258,9 @@ function App({ lists }: { lists: Lists | null }): ComponentChildren {
         </div>
       ) : null}
       <TabBar v={v} />
-      {shown === 'needsYou' ? (
+      {isHelpShown ? (
+        <HelpPage v={v} />
+      ) : shown === 'needsYou' ? (
         <NeedsYou v={v} lists={lists} now={now} />
       ) : shown === 'findings' ? (
         <Findings v={v} lists={lists} now={now} />
@@ -2194,6 +2270,18 @@ function App({ lists }: { lists: Lists | null }): ComponentChildren {
         <OverviewTab page={v.overviewPage} />
       )}
       <footer>
+        <button
+          type="button"
+          class="help-toggle"
+          title={`${HELP_COPY.open} (?)`}
+          aria-pressed={isHelpShown}
+          onClick={() => {
+            isHelpShown = !isHelpShown
+            draw()
+          }}
+        >
+          {isHelpShown ? HELP_COPY.close : HELP_COPY.open}
+        </button>
         {isDemo || !DEMO_BUTTON ? null : (
           <button type="button" class="demo-toggle" onClick={() => void toggleDemo()}>
             Show demo
@@ -2468,6 +2556,12 @@ document.addEventListener(
       }
       return
     }
+    if (e.key === '?' || (e.key === 'Escape' && isHelpShown)) {
+      e.preventDefault()
+      isHelpShown = e.key === '?' && !isHelpShown
+      draw()
+      return
+    }
     const switched = shownTabs(view.isNextBuild === true).find(t => t.hotkey === e.key)
     if (switched) {
       switchTab(switched.id)
@@ -2475,7 +2569,7 @@ document.addEventListener(
       return
     }
     const t = drawnTab()
-    if (!isRowTab(t)) return
+    if (isHelpShown || !isRowTab(t)) return
     const tabKey = t === 'prs' ? prTabKeys(view).find(x => x.hotkey === e.key) : undefined
     if (tabKey) {
       e.preventDefault()

@@ -46,7 +46,7 @@ import {
   stepsOf,
 } from './presses'
 import type { HelpStep, RowPress } from './presses'
-import type { BannerTone } from './tones'
+import type { BannerTone, ToneName } from './tones'
 
 const OPTIONS_FOLD_AT = 5
 const OPTION_LABEL_CHARS = 32
@@ -69,7 +69,128 @@ export const NEEDS_YOU_GROUPS: { kind: Item['kind']; title: string; list: 'quest
   { kind: 'task', title: 'Tasks', list: 'tasks' },
 ]
 
-export const CLOSED_MARKS: Record<ClosedState, string> = { handled: '✓', dismissed: '✕', lapsed: '✗' }
+export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: OverviewTone }> = {
+  working: { mark: '●', tone: null },
+  queued: { mark: '○', tone: null },
+  'waits-on-other': { mark: '◌', tone: null },
+  done: { mark: '✓', tone: 'done' },
+  dropped: { mark: '✗', tone: null },
+}
+/** The mark of an open subject that an open ask holds up, in place of its status's mark, and of a delegate that waits for the person. */
+export const HELD_MARK: { mark: string; tone: 'needsYou' } = { mark: '◆', tone: 'needsYou' }
+
+/** The marks a running row cycles through in the text looks, one each `RUNNING_FRAME_MS`. */
+export const RUNNING_FRAMES = ['●', '◉', '◎', '◉'] as const
+
+/** The running mark's first frame, the one a look draws still. */
+export const RUNNING_MARK = RUNNING_FRAMES[0]
+
+export const CLOSED_MARKS: Record<ClosedState, string> = {
+  handled: SUBJECT_MARKS.done.mark,
+  dismissed: '✕',
+  lapsed: SUBJECT_MARKS.dropped.mark,
+}
+
+/** A PR row's mark: a review thread that waits on the person, one sent to the agent, and a failing check. */
+export const PR_MARKS = {
+  waiting: { text: HELD_MARK.mark, tone: 'needsYou' },
+  sent: { text: SUBJECT_MARKS.done.mark, tone: 'done' },
+  failing: { text: FINDING_GROUPS.issue.mark, tone: 'error' },
+} as const
+
+/** One mark the legend explains. `isRunning` draws it as the running mark. */
+export type LegendEntry = { mark: string; tone: ToneName | null; isRunning: boolean; words: string }
+
+/** Every mark a look draws on a row or a group title, once each, with what it means wherever it appears. */
+export const MARK_LEGEND: readonly LegendEntry[] = [
+  {
+    mark: RUNNING_MARK,
+    tone: null,
+    isRunning: true,
+    words: 'Working. It moves while the work runs or your message is on its way.',
+  },
+  { mark: SUBJECT_MARKS.queued.mark, tone: null, isRunning: false, words: 'Queued: not started yet' },
+  {
+    mark: SUBJECT_MARKS['waits-on-other'].mark,
+    tone: null,
+    isRunning: false,
+    words: 'Waits on something other than you, such as a build or a review',
+  },
+  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: 'Waits on you' },
+  { mark: SUBJECT_MARKS.done.mark, tone: 'done', isRunning: false, words: 'Done, or handed to the agent' },
+  { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: 'Dropped before it was done' },
+  { mark: CLOSED_MARKS.dismissed, tone: null, isRunning: false, words: 'Dismissed by you' },
+  {
+    mark: FINDING_GROUPS.issue.mark,
+    tone: FINDING_GROUPS.issue.tone,
+    isRunning: false,
+    words: 'Something is wrong: an issue or a failing check',
+  },
+  {
+    mark: FINDING_GROUPS.opportunity.mark,
+    tone: FINDING_GROUPS.opportunity.tone,
+    isRunning: false,
+    words: 'Opportunity: something that could be better',
+  },
+]
+
+export const HELP_COPY = { open: 'Help', close: '✕ Close help', keys: 'Keys', marks: 'Marks' } as const
+
+export type HelpKey = { keys: string; does: string }
+
+/**
+ * The keys a look's Help lists, for the tab Help opened over. `hasOverviewButtons` says the Overview has a row with a
+ * button, which the terminal and omp select with j and k. Desktop takes no keys, so its Help lists marks only. Each
+ * look binds these keys in its own adapter.
+ */
+export function helpKeys(look: Look, isNextBuild: boolean, tab: ShownTab, hasOverviewButtons: boolean): HelpKey[] {
+  const tabKeys = shownTabs(isNextBuild)
+    .map(t => t.hotkey)
+    .join(' ')
+  const hasRows = isRowTab(tab)
+  const selectsOverviewRows = tab === 'overview' && hasOverviewButtons
+  const switchTabs = { keys: tabKeys, does: 'Switch tabs' }
+  switch (look) {
+    case 'desktop':
+      return []
+    case 'terminal':
+      return [
+        switchTabs,
+        ...(hasRows || selectsOverviewRows ? [{ keys: 'j k', does: 'Select the next or previous row' }] : []),
+        { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
+      ]
+    case 'codex':
+      return [
+        switchTabs,
+        ...(hasRows ? [{ keys: 'j k ↑ ↓', does: 'Select the next or previous row' }] : []),
+        { keys: '?', does: 'Open or close help' },
+        { keys: 'esc', does: 'Close help, or leave a reply field' },
+      ]
+    case 'omp':
+      return [
+        { keys: `tab ${tabKeys}`, does: 'Switch tabs' },
+        ...(hasRows
+          ? [
+              { keys: '↑ ↓ j k', does: 'Move between rows' },
+              { keys: '← →', does: 'Pick a button' },
+              { keys: '↵', does: 'Press the picked button' },
+              { keys: 'r', does: 'Reply to the selected row' },
+              { keys: 'u', does: 'Undo the last close' },
+            ]
+          : [
+              ...(selectsOverviewRows
+                ? [
+                    { keys: 'j k', does: 'Select the next or previous row with a button' },
+                    { keys: '↵', does: "Press the selected row's button" },
+                  ]
+                : []),
+              { keys: '↑ ↓', does: 'Scroll the page' },
+            ]),
+        { keys: '?', does: 'Open or close help' },
+        { keys: 'esc', does: 'Close help, then the panel' },
+      ]
+  }
+}
 
 export const CLOSED_SHOWN = 3
 /** How long Undo can take back a close or a press. Once it passes, Done tells the agent. */
@@ -393,7 +514,7 @@ function isHandedOffDone(row: Pick<RowView, 'state' | 'feedback'>): boolean {
  */
 export type ResultMark = { text: string; isRunning: boolean; tone?: 'done' }
 
-const RUNNING_RESULT: ResultMark = { text: '●', isRunning: true }
+const RUNNING_RESULT: ResultMark = { text: RUNNING_MARK, isRunning: true }
 
 /**
  * A row's result mark: a settled row's, or a handed-off row's, which runs while its message is on its way and is ✓
@@ -405,7 +526,9 @@ export function rowResultMark(row: Pick<RowView, 'state' | 'feedback'>): ResultM
   const f = row.feedback
   if (row.state.is !== 'handedOff' || !f) return null
   if (f.is === 'sending' || f.is === 'queued') return RUNNING_RESULT
-  return isHandedOffDone(row) ? { text: '✓', isRunning: false, tone: 'done' } : { text: '', isRunning: false }
+  return isHandedOffDone(row)
+    ? { text: SUBJECT_MARKS.done.mark, isRunning: false, tone: 'done' }
+    : { text: '', isRunning: false }
 }
 
 /** Whether what a row sent is still on its way to the agent: `unconfirmed` and a refused send are not. */
@@ -1039,6 +1162,8 @@ type OverviewRowParts =
       was: string | null
       /** Whether rows of its children follow, so its tree line runs down from its mark. */
       hasChildren: boolean
+      /** The oldest open ask that holds it up, which its View button opens. Null while no open ask holds it up. */
+      ask: { id: string; kind: Item['kind'] } | null
     }
   | {
       kind: 'child'
@@ -1087,25 +1212,12 @@ const NEW_CLOSED_ROWS = 2
 /** Open rows drawn before the oldest queued ones fold into a count. */
 const OPEN_ROWS = 7
 
-export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: OverviewTone }> = {
-  working: { mark: '●', tone: null },
-  queued: { mark: '○', tone: null },
-  'waits-on-other': { mark: '◌', tone: null },
-  done: { mark: '✓', tone: 'done' },
-  dropped: { mark: '✗', tone: null },
-}
-/** The mark of an open subject that an open ask holds up, in place of its status's mark, and of a delegate that waits for the person. */
-const HELD_MARK: { mark: string; tone: OverviewTone } = { mark: '◆', tone: 'needsYou' }
-const CHILD_MARK: { mark: string; tone: OverviewTone } = { mark: '●', tone: null }
-const FINISHED_MARK: { mark: string; tone: OverviewTone } = { mark: '✓', tone: 'done' }
+const CHILD_MARK: { mark: string; tone: OverviewTone } = { mark: SUBJECT_MARKS.working.mark, tone: null }
 
 /** The order of subjects on each side of the look line, from what needs the person to what is finished. */
 const OVERVIEW_PLACES = ['held', 'working', 'waits-on-other', 'queued', 'closed'] as const
 
 type OverviewPlace = (typeof OVERVIEW_PLACES)[number]
-
-/** The marks a running row cycles through in the text looks, one each `RUNNING_FRAME_MS`. */
-export const RUNNING_FRAMES = ['●', '◉', '◎', '◉'] as const
 
 export const RUNNING_FRAME_MS = 300
 
@@ -1170,7 +1282,8 @@ function childStall(c: Child): OverviewStall | null {
 }
 
 function childRow(c: Child, branch: OverviewBranch | null): OverviewRowParts {
-  const marks = c.delegateState === 'finished' ? FINISHED_MARK : c.delegateState === 'blocked' ? HELD_MARK : CHILD_MARK
+  const marks =
+    c.delegateState === 'finished' ? SUBJECT_MARKS.done : c.delegateState === 'blocked' ? HELD_MARK : CHILD_MARK
 
   return {
     kind: 'child',
@@ -1197,6 +1310,14 @@ export function overviewPage(
   const isNew = (x: Subject) => look === null || x.changedAt > look
   const heldIds = new Set(s.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
   const isHeld = (x: Subject) => isOpen(x) && heldIds.has(x.id)
+  const oldestAskOf = (x: Subject): { id: string; kind: Item['kind'] } | null => {
+    if (!isHeld(x)) return null
+    const oldest = s.ledger.items
+      .filter(i => o?.askSubjects[i.id] === x.id)
+      .sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0]
+
+    return oldest ? { id: oldest.id, kind: oldest.kind } : null
+  }
   const placeOf = (x: Subject): OverviewPlace =>
     isHeld(x) ? 'held' : x.status === 'done' || x.status === 'dropped' ? 'closed' : x.status
   const pageOrder = (x: Subject, y: Subject) =>
@@ -1245,6 +1366,7 @@ export function overviewPage(
       merged: isNew(x) ? x.merged : null,
       was: isNew(x) ? x.was : null,
       hasChildren: under.length > 0,
+      ask: oldestAskOf(x),
     })
     rows.push(...shownUnder.map((c, n) => childRow(c, n === shownUnder.length - 1 && !isMore ? 'last' : 'mid')))
     const hidden = under.slice(CHILD_ROWS)
@@ -1263,7 +1385,7 @@ export function overviewPage(
     rows.push({
       kind: 'fold',
       id: 'queued',
-      mark: '○',
+      mark: SUBJECT_MARKS.queued.mark,
       tone: null,
       text: `${hiddenQueued.size} more queued`,
     })
@@ -1272,7 +1394,7 @@ export function overviewPage(
     rows.push({
       kind: 'fold',
       id: 'done',
-      mark: '✓',
+      mark: SUBJECT_MARKS.done.mark,
       tone: 'done',
       text: `${folded.length}${isMore ? ' more' : ''} done`,
     })
@@ -1538,6 +1660,40 @@ export function rowKeyPlan(r: RowView, isAllShown: boolean): { keys: PlannedKey[
   }
 
   return { keys, more }
+}
+
+/** A press on an Overview row. `show-ask` opens Asks with that ask selected, and sends nothing. */
+export type OverviewPress = { action: 'show-ask'; askId: string }
+
+export type OverviewKey = { press: OverviewPress; label: string; hotkey: string; kind: PressKind }
+
+/** The View button's label, by the kind of ask it opens. */
+export const VIEW_ASK_LABELS: Record<Item['kind'], string> = { question: 'View question', task: 'View task' }
+
+/** An Overview row's buttons, in the order every look draws them. A row with none takes no press. */
+export function overviewKeyPlan(row: OverviewRow): OverviewKey[] {
+  if (row.kind !== 'subject' || row.ask === null) return []
+
+  return [
+    {
+      press: { action: 'show-ask', askId: row.ask.id },
+      label: VIEW_ASK_LABELS[row.ask.kind],
+      hotkey: 'v',
+      kind: 'view',
+    },
+  ]
+}
+
+/** The Overview rows that have buttons, in page order: the rows j and k move between. */
+export function overviewKeyRows(page: OverviewPage): OverviewRow[] {
+  return page.rows.filter(r => overviewKeyPlan(r).length > 0)
+}
+
+/** The Overview row whose keys work: the selected row while it still has buttons, else the first row that has. */
+export function overviewSelected(page: OverviewPage, selectedId: string | null): OverviewRow | null {
+  const rows = overviewKeyRows(page)
+
+  return rows.find(r => r.id === selectedId) ?? rows[0] ?? null
 }
 
 /** Widths in a look's own unit. `separator` is the extra room a look draws between the buttons and the follow-ups when they share a line. */

@@ -11,14 +11,15 @@
 # - A source file conflicts: stops with the merge in progress and lists the files. Resolve each, stage it with
 #   git add, and run the script again with --continue, which rebuilds the bundles and finishes the merge.
 #
-# Then it runs ./scripts/check.sh, writes its output to .scratch/merge-next-check.log, and exits with its status. It
-# exits 1 when it stops before that. It never pushes.
+# Then it runs ./scripts/check.sh, writes its output to .scratch/merge-next-check.log, and exits with its status. With
+# --no-check it skips check.sh and exits 0 after the rebuild, for a round of merges that runs check.sh once at the end.
+# It exits 1 when it stops before that. It never pushes.
 #
 # Installs a look's tools, with the commands check.sh names, when they are missing or the merge changed the look's
 # lockfile, since a rebuild with older tools writes bundles that differ from next's. Needs git, npm and bun.
 #
-# Usage: ./scripts/merge-next.sh [--from <ref>]
-#        ./scripts/merge-next.sh --continue
+# Usage: ./scripts/merge-next.sh [--from <ref>] [--no-check]
+#        ./scripts/merge-next.sh --continue [--no-check]
 # --from merges <ref> in place of origin/next.
 
 set -eu
@@ -28,6 +29,7 @@ BUNDLE_DIRS='codex/plugin/dist omp/dist'
 SCRIPT=./scripts/merge-next.sh
 from=origin/next
 resume=0
+check=1
 
 fail() {
     echo "merge-next: $*" >&2
@@ -37,12 +39,13 @@ fail() {
 while [ $# -gt 0 ]; do
     case $1 in
     --continue) resume=1 ;;
+    --no-check) check=0 ;;
     --from)
         [ $# -ge 2 ] || fail "--from needs a ref."
         from=$2
         shift
         ;;
-    *) fail "Unknown option $1. Usage: $SCRIPT [--from <ref>], or $SCRIPT --continue" ;;
+    *) fail "Unknown option $1. Usage: $SCRIPT [--from <ref>] [--no-check], or $SCRIPT --continue [--no-check]" ;;
     esac
     shift
 done
@@ -155,6 +158,11 @@ elif git diff --cached --quiet; then
     echo "The rebuild changed no bundle."
 else
     git commit -m "Rebuild the bundles after merging $from"
+fi
+
+if [ "$check" = 0 ]; then
+    echo "Skipped ./scripts/check.sh (--no-check)."
+    exit 0
 fi
 
 mkdir -p .scratch

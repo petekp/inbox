@@ -122,6 +122,7 @@ import {
   prThreadId,
   threadActions,
   threadRowText,
+  isPrTabRunning,
   threadSentIn,
   ghNoticeOf,
   prsEmptyText,
@@ -255,6 +256,9 @@ import {
   QUEUED_AFTER_MS,
   compareEndsAt,
   rowKeyPlan,
+  overviewKeyPlan,
+  overviewKeyRows,
+  overviewSelected,
   actionLines,
   settledLabel,
   actionLabel,
@@ -276,6 +280,10 @@ import {
   RUNNING_FRAME_MS,
   RUNNING_PULSE_MS,
   runningMark,
+  MARK_LEGEND,
+  HELD_MARK,
+  HELP_COPY,
+  helpKeys,
   SETTLED_MS,
   settledIn,
   settledRowIds,
@@ -307,6 +315,7 @@ import type {
   OverviewStall,
   RowView,
   ResultMark,
+  LegendEntry,
   RowWait,
   SettledState,
   ShownTab,
@@ -368,6 +377,8 @@ const PAGE = atom({ plugin: 'inbox', key: 'page' } as const, null as PageTab | n
 const NO_CURSOR: Cursor = { id: null, index: 0, openedAt: 0 }
 const NO_SELECTION: Record<Tab, Cursor> = { needsYou: NO_CURSOR, findings: NO_CURSOR, prs: NO_CURSOR }
 const SELECTION = atom({ plugin: 'inbox', key: 'selection' } as const, NO_SELECTION)
+/** The Overview row whose keys work, by id, as `overviewSelected` resolves it. */
+const OVERVIEW_SELECTION = atom({ plugin: 'inbox', key: 'overviewSelection' } as const, null as string | null)
 const THEME = atom({ plugin: 'inbox', key: 'theme' } as const, '')
 const DIALOGS = atom({ plugin: 'inbox', key: 'dialogs' } as const, [] as Dialog[])
 const TYPING = atom({ plugin: 'inbox', key: 'typing' } as const, null as string | null)
@@ -384,7 +395,8 @@ const UNREADABLE = atom({ plugin: 'inbox', key: 'unreadable' } as const, null as
 const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as FoldKind[])
 const FOLD_HOVER = atom({ plugin: 'inbox', key: 'foldHover' } as const, null as FoldKind | null)
 const OPTIONS_SHOWN = atom({ plugin: 'inbox', key: 'optionsShown' } as const, [] as string[])
-const IS_KEY_LIST_SHOWN = atom({ plugin: 'inbox', key: 'isKeyListShown' } as const, false)
+/** Switching tabs or closing the pane closes Help. */
+const IS_HELP_SHOWN = atom({ plugin: 'inbox', key: 'isHelpShown' } as const, false)
 /** How many times the terminal pane redraws while Undo's fill drains, two for each cell of the fill. */
 const UNDO_REDRAW_STEPS = 24
 const RESIZE_SCROLL_MS = 100
@@ -2267,6 +2279,7 @@ async function readRowTab($: EngineInterface): Promise<Tab | null> {
 
 async function showTab($: EngineInterface, tab: ShownTab) {
   cancelUndoScroll()
+  await update($, IS_HELP_SHOWN, () => false)
   if (!isRowTab(tab)) {
     await update($, PAGE, () => tab)
     await syncShown($)
@@ -2429,6 +2442,11 @@ async function scrollToKey(
   return false
 }
 
+async function selectOverviewRow($: EngineInterface, id: string) {
+  await update($, OVERVIEW_SELECTION, () => id)
+  await scrollToKey($, `overview-${id}`, 'nearest')
+}
+
 async function scrollToRow($: EngineInterface, id: string) {
   await scrollToKey($, `view-${id}`, isInlinePane ? 'start' : 'nearest')
 }
@@ -2571,6 +2589,18 @@ async function selectClicked($: EngineInterface, id: string) {
   focusedKey = `select-${id}`
   focusHint = null
   await select($, tab, id, index)
+}
+
+/** An Overview row's View press: Asks shows with the ask selected and in view. */
+async function showAsk($: EngineInterface, askId: string) {
+  const { view } = await drawnState($)
+  const prViews = view.prs.drawn.filter(x => x.state.is === 'open').map(x => x.pr)
+  const index = Math.max(0, tabRowIds(view, prViews).needsYou.indexOf(askId))
+  focusedKey = `select-${askId}`
+  focusHint = null
+  await select($, 'needsYou', askId, index, false)
+  await showTab($, 'needsYou')
+  await scrollToRow($, askId)
 }
 
 /**
@@ -4000,6 +4030,7 @@ export const register: Register = on => {
     paneHasKeys.clear()
     await update($, TYPING, () => null)
     await update($, FOLD_HOVER, () => null)
+    await update($, IS_HELP_SHOWN, () => false)
 
     return r
   })
@@ -4168,9 +4199,10 @@ export const register: Register = on => {
       typing,
       unfolded,
       foldHover,
-      isKeyListShown,
+      isHelpShown,
       optionsShown,
       termProgram,
+      overviewSelection,
     ] = await Promise.all([
       drawnState($),
       read($, TAB),
@@ -4180,18 +4212,26 @@ export const register: Register = on => {
       read($, TYPING),
       read($, UNFOLDED),
       read($, FOLD_HOVER),
-      read($, IS_KEY_LIST_SHOWN),
+      read($, IS_HELP_SHOWN),
       read($, OPTIONS_SHOWN),
       $.env.get('TERM_PROGRAM'),
+      read($, OVERVIEW_SELECTION),
       read($, RUNNING_FRAME),
     ])
     const tab: Tab = isShownTab(savedTab) && isRowTab(savedTab) ? savedTab : 'needsYou'
     const isOverviewShown = savedPage === 'overview'
     const shownTab: ShownTab = isOverviewShown ? 'overview' : tab
     const tabList = shownTabs(isNextBuild)
-    const isRunningMarkShown = isOverviewShown
-      ? hasRunningMark(view.overviewPage)
-      : tab !== 'prs' && isRowTabRunning(view, tab, kind => unfolded.includes(kind))
+    const isRunningMarkShown = isHelpShown
+      ? MARK_LEGEND.some(m => m.isRunning)
+      : isOverviewShown
+        ? hasRunningMark(view.overviewPage)
+        : tab === 'prs'
+          ? isPrTabRunning(
+              view.prs.drawn.flatMap(d => (d.state.is === 'settled' ? [] : [d.pr])),
+              lastActions,
+            )
+          : isRowTabRunning(view, tab, kind => unfolded.includes(kind))
     if (look === 'terminal') animateRunningMarks($, isRunningMarkShown)
     const undoEnd = lastUndoEnd(view)
     if (undoEnd !== null) redrawWhileUndoLasts($, undoEnd)
@@ -4275,6 +4315,8 @@ export const register: Register = on => {
       handle: string
       /** A Button takes no color, so this handle is Text and only the row's text selects it. */
       handleTone?: Tone
+      /** Desktop draws its running dot in place of `handle`. The terminal's `handle` is already the frame. */
+      isHandleRunning?: boolean
       /** A PR row's mark says its work is done. */
       isMarkDone?: boolean
       title: string
@@ -4310,6 +4352,7 @@ export const register: Register = on => {
           ? {
               subtitle: (
                 <Text color={pal.muted} wrap="wrap">
+                  <Text color={pal.mark[HELD_MARK.tone]}>{`${HELD_MARK.mark} `}</Text>
                   {holdsUpLine}
                 </Text>
               ),
@@ -4436,8 +4479,9 @@ export const register: Register = on => {
 
       return {
         id,
-        handle: text.mark.text,
+        handle: text.mark.isRunning && look !== 'desktop' ? runningMark(now) : text.mark.text,
         handleTone: text.mark.tone ?? undefined,
+        ...(text.mark.isRunning ? { isHandleRunning: true } : {}),
         isMarkDone: text.mark.isDone,
         ...(text.fold ? { fold: text.fold } : {}),
         title: text.title,
@@ -4503,7 +4547,9 @@ export const register: Register = on => {
           ),
         )
     const at = selectedIndex(ids, cursor, top, id => settledIds.has(id))
-    const isOpenGuarded = isGuarded(cursor.openedAt, now)
+    const isOpenGuarded = !isOverviewShown && isGuarded(cursor.openedAt, now)
+    const overviewKeyRow = isOverviewShown ? overviewSelected(view.overviewPage, overviewSelection) : null
+    const overviewPressRows = isOverviewShown ? overviewKeyRows(view.overviewPage) : []
 
     const shownLabel = (a: Pick<KeyAction, 'label' | 'variant'>) =>
       actionLabel({ label: a.label, isPrimary: a.variant === 'primary' })
@@ -4846,7 +4892,10 @@ export const register: Register = on => {
           ) : null}
           {holdsUpLine ? (
             <Box paddingLeft={line.before?.length ?? 0}>
-              <Text color={pal.muted}>{clipLabel(holdsUpLine, Math.max(12, width))}</Text>
+              <Text color={pal.muted}>
+                <Text color={pal.mark[HELD_MARK.tone]}>{`${HELD_MARK.mark} `}</Text>
+                {clipLabel(holdsUpLine, Math.max(12, width - 2))}
+              </Text>
             </Box>
           ) : null}
         </Box>
@@ -4869,7 +4918,24 @@ export const register: Register = on => {
         )
       return mark ? markGlyph(mark, `gutter-${row.id}`, mark.tone ? pal.mark[mark.tone] : pal.muted) : null
     }
+    const runningDot = (id: string, glyph: string, color: string) => {
+      const RunningSvg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null
+
+      return RunningSvg ? (
+        <Box key={`${id}-mark`} width={RUNNING_SVG_CELLS} height={1} flexShrink={0}>
+          <RunningSvg
+            source={runningSvg(now)}
+            alt={glyph}
+            width={RUNNING_SVG_CELLS * DESKTOP_CELL_PT}
+            height={DESKTOP_LINE_PT}
+          />
+        </Box>
+      ) : (
+        <Text color={color}>{look === 'terminal' ? runningMark(now) : glyph}</Text>
+      )
+    }
     const toned = (row: Row) => {
+      if (look === 'desktop' && row.isHandleRunning) return runningDot(`handle-${row.id}`, row.handle, pal.muted)
       if (ToneSvg === null || !row.handle || !row.handleTone) return null
       return (
         <Box width={1} height={1} flexShrink={0}>
@@ -4898,6 +4964,7 @@ export const register: Register = on => {
         title: text.trim(),
         after: f?.isAfterTitle ? f.text : (row.line?.after ?? '').replace(LEADING_DOT, '').trim(),
         note: holdsUpLineOf(row.view) ?? '',
+        noteMark: holdsUpLineOf(row.view) ? { text: HELD_MARK.mark, color: pal.mark[HELD_MARK.tone] } : null,
         side: sideAge(row),
         padY: DESKTOP_ROW_PAD,
         maxLines: row.hasSecondLine ? 4 : 2,
@@ -4920,7 +4987,7 @@ export const register: Register = on => {
       side = null,
       fill,
       padY = space.rowPad,
-      isCentered = false,
+      isSideCentered = false,
       indent = 0,
       isMarkHung = true,
       markCells = DESKTOP_MARK_CELLS,
@@ -4938,30 +5005,17 @@ export const register: Register = on => {
       tree?: JSX.Element | null
       fill?: string | undefined
       padY?: number
-      isCentered?: boolean
+      /** Centers the side and the mark with its text on each other, for a side taller than a line of text, as Undo is. */
+      isSideCentered?: boolean
       indent?: number
       isMarkHung?: boolean
       markCells?: number
       /** Space above and below the frame, in the hooks tree's half lines. */
       gapY?: number
       children: JSX.Element | (JSX.Element | null)[]
-    }) => (
-      <Box
-        key={key}
-        flexDirection="row"
-        alignItems={isCentered ? 'center' : tree ? 'stretch' : 'flex-start'}
-        marginY={gapY}
-        borderStyle="single"
-        borderColor="#0000"
-        paddingY={padY}
-        {...(fill ? { backgroundColor: fill } : {})}
-      >
-        <Box
-          width={indent + markCells + (isMarkHung ? 0 : 1)}
-          {...(isCentered ? { height: 1 } : {})}
-          flexShrink={0}
-          paddingLeft={indent}
-        >
+    }) => {
+      const markColumn = (
+        <Box key="mark" width={indent + markCells + (isMarkHung ? 0 : 1)} flexShrink={0} paddingLeft={indent}>
           {tree}
           {mark ? (
             <Box position="absolute" top={0} left={isMarkHung ? indent - 1 : indent}>
@@ -4969,23 +5023,46 @@ export const register: Register = on => {
             </Box>
           ) : null}
         </Box>
-        <Box flexDirection="column" flexShrink={1} flexGrow={1} minWidth={0}>
+      )
+      const textColumn = (
+        <Box key="text" flexDirection="column" flexShrink={1} flexGrow={1} minWidth={0}>
           {children}
         </Box>
-        {hasSide ? (
-          <Box
-            minWidth={DESKTOP_SIDE_CELLS}
-            flexShrink={0}
-            flexDirection="row"
-            justifyContent="flex-end"
-            alignItems="flex-start"
-            paddingLeft={1}
-          >
-            {side}
-          </Box>
-        ) : null}
-      </Box>
-    )
+      )
+      return (
+        <Box
+          key={key}
+          flexDirection="row"
+          alignItems={isSideCentered ? 'center' : tree ? 'stretch' : 'flex-start'}
+          marginY={gapY}
+          borderStyle="single"
+          borderColor="#0000"
+          paddingY={padY}
+          {...(fill ? { backgroundColor: fill } : {})}
+        >
+          {isSideCentered ? (
+            <Box flexDirection="row" alignItems="flex-start" flexShrink={1} flexGrow={1} minWidth={0}>
+              {markColumn}
+              {textColumn}
+            </Box>
+          ) : (
+            [markColumn, textColumn]
+          )}
+          {hasSide ? (
+            <Box
+              minWidth={DESKTOP_SIDE_CELLS}
+              flexShrink={0}
+              flexDirection="row"
+              justifyContent="flex-end"
+              alignItems="flex-start"
+              paddingLeft={1}
+            >
+              {side}
+            </Box>
+          ) : null}
+        </Box>
+      )
+    }
     const withSideAge = (row: Row, line: JSX.Element) =>
       isAgeInSide ? (
         <Box flexDirection="row">
@@ -5179,7 +5256,7 @@ export const register: Register = on => {
                 <Button
                   plain
                   key={`select-${row.id}`}
-                  label={row.handle}
+                  label={row.handle || ' '}
                   onPress={() => void select($, tab, row.id, index)}
                 />
               )}
@@ -5306,12 +5383,8 @@ export const register: Register = on => {
       .map(([, n]) => n)
       .sort((a, b) => b.at - a.at)[0]
 
-    const keyList = [
-      { keys: tabList.map(t => t.hotkey).join(' '), does: 'Switch tabs' },
-      ...(isOverviewShown ? [] : [{ keys: 'j k', does: 'Select the next or previous row' }]),
-      { keys: 'ctrl+x tab', does: 'Move focus to the line above the prompt, then the pane, then the prompt' },
-    ]
-    const keyColumn = Math.max(...keyList.map(k => k.keys.length)) + 2
+    const keyList = helpKeys(look, isNextBuild, shownTab, overviewPressRows.length > 0)
+    const keyColumn = Math.max(0, ...keyList.map(k => cellWidth(k.keys))) + 2
 
     const tabColumns = e.props.bodyColumns - 2
     const tabSizes = desktopTabSizes(
@@ -5612,46 +5685,18 @@ export const register: Register = on => {
     const footer = (
       <Box flexDirection="column" paddingX={1} paddingTop={blankLine}>
         <Box flexDirection="row" paddingX={1} justifyContent="space-between" columnGap={3}>
-          {look === 'desktop' ? (
-            <Box />
-          ) : (
-            <Button
-              plain
-              dimColor
-              key="key-list"
-              label={isKeyListShown ? '▾ Keys' : '▴ Keys'}
-              onPress={() => void update($, IS_KEY_LIST_SHOWN, shown => !shown)}
-            />
-          )}
+          {/* The same key in both states, so a desktop pane keeps its focus on the Button. */}
+          <Button
+            plain
+            dimColor={look !== 'desktop'}
+            key="help"
+            label={isHelpShown ? HELP_COPY.close : HELP_COPY.open}
+            onPress={() => void update($, IS_HELP_SHOWN, shown => !shown)}
+          />
           <Box flexDirection="row" columnGap={2}>
             {statusText}
             {versionText}
           </Box>
-          {look !== 'desktop' && isKeyListShown ? (
-            <Box
-              position="absolute"
-              bottom={1}
-              left={-1}
-              right={-1}
-              flexDirection="column"
-              paddingX={2}
-              paddingY={1}
-              backgroundColor={pal.raised}
-            >
-              {keyList.map(k => (
-                <Box key={`key-list-${k.keys}`} flexDirection="row">
-                  <Box width={keyColumn} flexShrink={0}>
-                    <Text bold color={pal.raisedText}>
-                      {k.keys}
-                    </Text>
-                  </Box>
-                  <Text color={pal.raisedText ?? pal.muted} wrap="wrap">
-                    {k.does}
-                  </Text>
-                </Box>
-              ))}
-            </Box>
-          ) : null}
         </Box>
       </Box>
     )
@@ -5993,7 +6038,7 @@ export const register: Register = on => {
           mark: markGlyph(mark, `settled-${r.id}`, pal.muted),
           side: undoPlace(r.id, undo, state.at, state.offersUndo),
           padY: space.settledPad,
-          isCentered: true,
+          isSideCentered: true,
           children: [
             <Text wrap="wrap">
               {r.title}
@@ -6135,7 +6180,9 @@ export const register: Register = on => {
           settledContent(what, state, undo, null)
         )
 
-      return section([treeRow(null, <Text color={pal.muted}>✓</Text>, content, `settled-pr:${pr.ref}`)])
+      const mark = markGlyph(settledMark(state), `settled-pr:${pr.ref}`, pal.muted)
+
+      return section([treeRow(null, mark, content, `settled-pr:${pr.ref}`)])
     }
     const prRowGroup = (title: string, group: Row[], key: string) =>
       group.length === 0
@@ -6315,22 +6362,6 @@ export const register: Register = on => {
         </Box>
       )
     }
-    const runningDot = (id: string, glyph: string, color: string) => {
-      const RunningSvg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null
-
-      return RunningSvg ? (
-        <Box key={`${id}-mark`} width={RUNNING_SVG_CELLS} height={1} flexShrink={0}>
-          <RunningSvg
-            source={runningSvg(now)}
-            alt={glyph}
-            width={RUNNING_SVG_CELLS * DESKTOP_CELL_PT}
-            height={DESKTOP_LINE_PT}
-          />
-        </Box>
-      ) : (
-        <Text color={color}>{look === 'terminal' ? runningMark(now) : glyph}</Text>
-      )
-    }
     /** Where an Overview row's mark sits in the terminal: in the head's column, so the list lines up with it. */
     const overviewMarkAt = TREE_LINE_AT
     /** The text column of an Overview line at `depth`, in cells on the terminal and in points on desktop. */
@@ -6487,12 +6518,15 @@ export const register: Register = on => {
       mark,
       content,
       tree = null,
+      isSelected = false,
     }: {
       key: string
       depth?: number
       mark: JSX.Element | null
       content: JSX.Element | JSX.Element[]
       tree?: JSX.Element | null
+      /** The row whose keys work, which the terminal marks with the selection bar, as on a row tab. */
+      isSelected?: boolean
     }) =>
       look === 'desktop' ? (
         desktopFrame({
@@ -6506,7 +6540,13 @@ export const register: Register = on => {
           children: Array.isArray(content) ? content : [content],
         })
       ) : (
-        <Box key={key} flexDirection="row" alignItems="flex-start" overflow="hidden">
+        <Box
+          key={key}
+          flexDirection="row"
+          alignItems="flex-start"
+          overflow="hidden"
+          backgroundColor={isSelected ? pal.selection : undefined}
+        >
           <Box width={overviewMarkAt + markWidth * depth} flexShrink={0} />
           <Box width={markWidth} flexShrink={0}>
             {mark}
@@ -6515,10 +6555,25 @@ export const register: Register = on => {
             {content}
           </Box>
           {tree}
+          {isSelected ? (
+            <Box position="absolute" top={0} bottom={0} left={0} width={1}>
+              {pal.selection ? null : <Text color={pal.key}>{SELECTION_BAR}</Text>}
+            </Box>
+          ) : null}
         </Box>
       )
+    /** An Overview row's buttons from its plan. Only the selected row's key presses it, so only that row names its key. */
+    const overviewKeys = (r: OverviewRow): KeyAction[] =>
+      overviewKeyPlan(r).map(k => ({
+        key: `${k.press.action}-${r.id}`,
+        label: k.label,
+        kind: k.kind,
+        ...(r.id === overviewKeyRow?.id ? { hotkey: k.hotkey } : {}),
+        onPress: () => showAsk($, k.press.askId),
+      }))
     const overviewRow = (r: OverviewRow) => {
       if (r.kind === 'subject') {
+        const keys = overviewKeys(r)
         const color = r.tone ? pal.mark[r.tone] : pal.muted
         const mark = r.isRunning ? runningDot(r.id, r.mark, color) : <Text color={color}>{r.mark}</Text>
         const content = [
@@ -6536,6 +6591,7 @@ export const register: Register = on => {
           ...(r.was
             ? [overviewText(`overview-${r.id}-was`, [{ text: `${WAS_PREFIX}${r.was}`, isMuted: true }], 0)]
             : []),
+          ...(keys.length > 0 ? [<Box key={`overview-${r.id}-keys`}>{keyRow(r.id, keys)}</Box>] : []),
         ]
 
         return overviewLine({
@@ -6543,6 +6599,7 @@ export const register: Register = on => {
           mark,
           content,
           tree: r.hasChildren ? overviewTree(`overview-${r.id}-tree`, 'down') : null,
+          isSelected: look === 'terminal' && r.id === overviewKeyRow?.id,
         })
       }
       if (r.kind === 'child') {
@@ -6599,22 +6656,96 @@ export const register: Register = on => {
       ])
     }
 
+    /** A legend mark, drawn as rows draw it: the running mark moves, and desktop draws a shape where it has one. */
+    const legendMark = (m: LegendEntry) => {
+      const color = m.tone ? pal.mark[m.tone] : pal.muted
+      if (m.isRunning) return runningDot(`legend-${m.mark}`, m.mark, color)
+      const shape =
+        m.mark === CLOSED_MARKS.lapsed
+          ? cancelledMarkShape(DESKTOP_LINE_PT / 2)
+          : m.tone
+            ? markShape(m.mark, DESKTOP_LINE_PT / 2)
+            : null
+      if (ToneSvg && shape !== null)
+        return (
+          <Box width={1} height={1} flexShrink={0}>
+            <ToneSvg
+              source={m.tone ? toneSvg(m.tone, m.mark) : markSvg(m.mark, shape, MUTED_MARK.light, MUTED_MARK.dark)}
+              alt={m.mark}
+              width={DESKTOP_CELL_PT}
+              height={DESKTOP_LINE_PT}
+            />
+          </Box>
+        )
+
+      return <Text color={color}>{m.mark}</Text>
+    }
+    const helpKeysSection = () =>
+      section([
+        groupTitle(HELP_COPY.keys, 0),
+        ...keyList.map(k => (
+          <Box key={`help-key-${k.keys}`} flexDirection="row" paddingLeft={TREE_LINE_AT}>
+            <Box width={keyColumn} flexShrink={0}>
+              <Text bold>{k.keys}</Text>
+            </Box>
+            <Box flexShrink={1}>
+              <Text color={pal.muted} wrap="wrap">
+                {k.does}
+              </Text>
+            </Box>
+          </Box>
+        )),
+      ])
+    const helpMarksSection = () =>
+      section([
+        groupTitle(HELP_COPY.marks, 0),
+        ...MARK_LEGEND.map(m =>
+          overviewLine({
+            key: `help-mark-${m.mark}`,
+            mark: legendMark(m),
+            content: (
+              <Text color={pal.muted} wrap="wrap">
+                {m.words}
+              </Text>
+            ),
+          }),
+        ),
+      ])
+    /** Help in place of the tab's body: the keys where keys work, then the legend. A wide inline pane sets them side by side. */
+    const helpView = () => {
+      if (keyList.length === 0) return sections([helpMarksSection()])
+      if (hasRail)
+        return (
+          <Box flexDirection="row" columnGap={4} flexGrow={1}>
+            <Box flexDirection="column" width="50%" flexShrink={1}>
+              {helpKeysSection()}
+            </Box>
+            <Box flexDirection="column" width="50%" flexShrink={1}>
+              {helpMarksSection()}
+            </Box>
+          </Box>
+        )
+
+      return sections([helpKeysSection(), helpMarksSection()])
+    }
+
     const move = (step: number) => {
       const to = Math.min(Math.max(at + step, 0), ids.length - 1)
       void select($, tab, ids[to] ?? '', to)
     }
-    const canMove = !isOverviewShown && (ids.length > 1 || (at < 0 && ids.length > 0))
+    const canMove = !isOverviewShown && !isHelpShown && (ids.length > 1 || (at < 0 && ids.length > 0))
+    const moveOverview = (step: number) => {
+      const from = overviewPressRows.findIndex(r => r.id === overviewKeyRow?.id)
+      const to = overviewPressRows[Math.min(Math.max(from + step, 0), overviewPressRows.length - 1)]
+      if (to) void selectOverviewRow($, to.id)
+    }
+    const moveBy = (by: number) =>
+      isHelpShown ? undefined : isOverviewShown ? moveOverview(by) : canMove ? move(by) : undefined
     // Claude Code sends a key no Button binds to the prompt and gives it the keyboard, so the keys
     // stay bound when there is nothing to move to or close.
     const moveKeys: KeyAction[] = [
-      { key: 'next', label: 'Next', hotkey: 'j', kind: 'view', onPress: () => (canMove ? move(1) : undefined) },
-      {
-        key: 'previous',
-        label: 'Previous',
-        hotkey: 'k',
-        kind: 'view',
-        onPress: () => (canMove ? move(-1) : undefined),
-      },
+      { key: 'next', label: 'Next', hotkey: 'j', kind: 'view', onPress: () => moveBy(1) },
+      { key: 'previous', label: 'Previous', hotkey: 'k', kind: 'view', onPress: () => moveBy(-1) },
     ]
     const tabKeys: KeyAction[] = tabList.map(({ id, label, hotkey }) => ({
       key: `tab-key-${id}`,
@@ -6624,7 +6755,7 @@ export const register: Register = on => {
       onPress: () => void showTab($, id),
     }))
 
-    const selectedRow = isOverviewShown ? undefined : rows[tab][at]
+    const selectedRow = isOverviewShown || isHelpShown ? undefined : rows[tab][at]
     const selectedActions = selectedRow ? rowActions(selectedRow) : null
     const closeKeysWithoutRow: KeyAction[] = ['d', 'x'].map(hotkey => ({
       key: `no-row-${hotkey}`,
@@ -6634,20 +6765,23 @@ export const register: Register = on => {
       onPress: () => undefined,
     }))
     const rowKeys = [
+      ...(overviewKeyRow && !isHelpShown ? overviewKeys(overviewKeyRow) : []),
       ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow),
-      ...(tab === 'prs' ? prTabKeys : []),
+      ...(tab === 'prs' && !isHelpShown ? prTabKeys : []),
     ]
 
     // A pane takes a key
     // only as a Button's hotkey, so the tab keys, j, k and the selected row's keys
     // are Buttons in a hidden Box.
-    const tabView = isOverviewShown
-      ? overviewView()
-      : tab === 'findings'
-        ? findingsView()
-        : tab === 'prs'
-          ? prsView()
-          : needsYouView()
+    const tabView = isHelpShown
+      ? helpView()
+      : isOverviewShown
+        ? overviewView()
+        : tab === 'findings'
+          ? findingsView()
+          : tab === 'prs'
+            ? prsView()
+            : needsYouView()
     const drawn = (
       <Box flexDirection="column" minHeight={e.props.scroll.bodyRows} backgroundColor={pal.body}>
         {showsDemoNotices ? (
