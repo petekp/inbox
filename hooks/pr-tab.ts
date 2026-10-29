@@ -264,6 +264,11 @@ export const PR_REFRESH: Effect = { kind: 'refresh-prs', name: 'PRs' }
 /** The label of a dismissed PR's block while its Undo lasts. */
 export const PR_DISMISSED_LABEL = 'Dismissed'
 
+export const DISMISS_MERGED_LABEL = 'Dismiss merged'
+
+/** The row id of the PRs tab's Dismiss merged press. It starts with `pr:`, as a PR's mark id does, so no host takes it for an Asks row. */
+export const DISMISS_MERGED_ID = 'pr:merged'
+
 export const PR_GROUP_TITLES = { threads: 'Review threads', checks: 'Failing checks' }
 
 /** The mark before a PR row's title, its tone, and whether it says the row's work is done. */
@@ -448,6 +453,11 @@ export type PrPress =
       ref: string
     }
   | { action: 'check-fix' | 'log'; ref: string; check: string }
+  | { action: 'pr-dismiss-merged' }
+
+export function isPrPress(p: RowPress | PrPress): p is PrPress {
+  return 'ref' in p || p.action === 'pr-dismiss-merged'
+}
 
 /**
  * A press's outcome as the runner applies it: the ledger after it, the last
@@ -507,6 +517,7 @@ export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
 }
 
 export function prRowId(p: PrPress): string {
+  if (p.action === 'pr-dismiss-merged') return DISMISS_MERGED_ID
   if ('check' in p) return checkRowId(p.ref, p.check)
   if ('thread' in p) return threadRowId(p.ref, p.thread)
 
@@ -514,7 +525,7 @@ export function prRowId(p: PrPress): string {
 }
 
 export function pressRowId(p: RowPress | PrPress): string {
-  return 'ref' in p ? prRowId(p) : p.id
+  return isPrPress(p) ? prRowId(p) : p.id
 }
 
 function prRetryOf(
@@ -713,11 +724,38 @@ export function prBlockActions(
   ])
 }
 
+/** Whether Dismiss merged dismisses the PR. The branch's own PR has no Dismiss, so it is left. */
+function isDismissedByMerged(pr: PrView, branchRef: string | null): boolean {
+  return pr.state === 'MERGED' && pr.ref !== branchRef
+}
+
+/**
+ * The PRs tab's own buttons, drawn after its PR blocks: Dismiss merged, while the tab draws a merged PR it can
+ * dismiss. It dismisses each as the PR's own Dismiss does, so each settles with its own Undo.
+ */
+export function prTabActions(drawn: DrawnPr[], branchRef: string | null): PrAction[] {
+  const hasMerged = drawn.some(d => d.state.is === 'open' && isDismissedByMerged(d.pr, branchRef))
+
+  return hasMerged
+    ? [
+        {
+          press: { action: 'pr-dismiss-merged' },
+          label: DISMISS_MERGED_LABEL,
+          kind: 'mark',
+          emphasis: 'normal',
+          hotkey: 'm',
+          isOut: false,
+        },
+      ]
+    : []
+}
+
 /**
  * Pure. Stale when the PR
  * is no longer tracked or drawn, its thread or check is gone, or what the
  * press acts on is over: the PR no longer conflicts, or no thread waits on the
- * person. Undo is stale unless the PR's block still holds its Dismiss.
+ * person. Undo is stale unless the PR's block still holds its Dismiss. Dismiss merged is stale when no PR it dismisses
+ * is left.
  */
 export function applyPrPress(
   ledger: Ledger,
@@ -727,14 +765,29 @@ export function applyPrPress(
   ctx: { now: number; turnsStarted: number; localPressId?: string },
 ): Applied {
   const stale = { stale: true as const }
-  const pr = prState.views[p.ref]
-  const markId = prMarkId(p.ref)
   const applied = (a: Partial<Exclude<Applied, { stale: true }>>): Applied => {
     const effects = a.effects ?? []
     const lasts = Object.fromEntries(Object.entries(a.lasts ?? {}).map(([id, l]) => [id, withQueued(l, effects)]))
 
     return { ledger, drop: [], ...a, lasts, effects }
   }
+  if (p.action === 'pr-dismiss-merged') {
+    const refs = Object.values(prState.views)
+      .filter(pr => isTracked(prState, ledger.prs, pr.ref) && isDismissedByMerged(pr, prState.branchRef))
+      .map(pr => pr.ref)
+    if (refs.length === 0) return stale
+    return applied({
+      ledger: { ...ledger, prs: ledger.prs.filter(r => !refs.includes(r)) },
+      lasts: Object.fromEntries(
+        refs.map(ref => {
+          const id = prMarkId(ref)
+          return [id, recordPress('mark', 'pr-dismiss', PR_DISMISSED_LABEL, ctx, lastActions[id])]
+        }),
+      ),
+    })
+  }
+  const pr = prState.views[p.ref]
+  const markId = prMarkId(p.ref)
   if (p.action === 'pr-undo') {
     // Like an item's Undo, it does not check SETTLED_MS, so a press just after its button goes still lands.
     if (!pr || isTracked(prState, ledger.prs, p.ref) || lastActions[markId]?.action !== 'pr-dismiss') return stale

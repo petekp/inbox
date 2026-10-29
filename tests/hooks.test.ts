@@ -3219,6 +3219,94 @@ for (const surface of ['terminal', 'desktop'] as const) {
   })
 }
 
+for (const look of ['terminal', 'desktop'] as const) {
+  test(`in the ${look} look, Dismiss merged draws after the PR blocks while a merged PR shows, and settles each merged PR with its own Undo`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [])
+    const states: Record<number, string> = { 12: 'OPEN', 14: 'OPEN', 15: 'OPEN' }
+    const view = (number: number) =>
+      JSON.stringify({
+        number,
+        title: `Work ${number}`,
+        url: `https://github.com/acme/greet/pull/${number}`,
+        isDraft: false,
+        state: states[number],
+        baseRefName: 'main',
+        mergeable: 'MERGEABLE',
+        reviewDecision: '',
+        statusCheckRollup: [],
+      })
+    ghAnswers.push(
+      ...[12, 14, 15].map(n => ({
+        match: (argv: readonly string[]) => argv.includes('view') && argv.includes(String(n)),
+        get stdout() {
+          return view(n)
+        },
+      })),
+      {
+        match: argv => argv.includes('graphql'),
+        stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
+      },
+    )
+    await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+    await $.prompt.submit({ text: 'open the PRs', wait: false, origin: { kind: 'composer' } })
+    await $.turn.complete({
+      answer:
+        'Opened https://github.com/acme/greet/pull/12, https://github.com/acme/greet/pull/14 and https://github.com/acme/greet/pull/15.',
+      durationMs: 5,
+      isAborted: false,
+      turnId: 't1',
+      reason: 'answer',
+    })
+    await clock.settle()
+    states[12] = 'MERGED'
+    states[14] = 'MERGED'
+    await clock.advance(3 * 60_000)
+    await $.command.run({ command: 'inbox', args: '' } as never)
+    await clock.settle()
+    paneState = { isShown: true, isFocused: true }
+    const pane =
+      look === 'terminal'
+        ? await $.ui.mount(PANE)
+        : await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 120 } })
+    if (look === 'terminal') await pane.press({ key: 'tab-prs' })
+    else {
+      const { tabs: bar, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
+      const x = bar
+        .slice(
+          0,
+          bar.findIndex(t => t.id === 'prs'),
+        )
+        .reduce((sum, t) => sum + t.width + gap, 0)
+      await pane.pointer({ type: 'down', x, y: 1, button: 'left', in: 'tabs' })
+    }
+    await clock.settle()
+    const buttonKeys = async () =>
+      (await pane.findAll({ type: 'Button' })).map(b => b.key ?? '').filter(k => !k.endsWith('-key'))
+    const keys = await buttonKeys()
+    expect(keys.filter(k => k === 'dismiss-merged-tab')).toHaveLength(1)
+    expect(keys.indexOf('dismiss-merged-tab')).toBeGreaterThan(
+      Math.max(...keys.flatMap((k, n) => (/-acme\/greet#\d+$/.test(k) ? [n] : []))),
+    )
+    const linked = () => (JSON.parse(stored.get('s:session-1') ?? '{}') as { ledger?: { prs: string[] } }).ledger?.prs
+
+    await clock.advance(PRESS_GUARD_MS)
+    await pane.press({ key: 'dismiss-merged-tab' })
+    await clock.settle()
+    expect(linked()).toEqual(['acme/greet#15'])
+    expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeDefined()
+    expect(await pane.find({ key: 'settled-pr:acme/greet#14' })).toBeDefined()
+    expect(await buttonKeys()).not.toContain('dismiss-merged-tab')
+    if (look === 'desktop') return
+    await pane.press({ key: 'undo-pr:acme/greet#12' })
+    await clock.settle()
+    expect(linked()).toEqual(['acme/greet#15', 'acme/greet#12'])
+    expect(await pane.find({ key: 'settled-pr:acme/greet#12' })).toBeUndefined()
+    expect(await pane.find({ key: 'settled-pr:acme/greet#14' })).toBeDefined()
+    expect(await buttonKeys()).toContain('dismiss-merged-tab')
+  })
+}
+
 test('a PR’s Dismiss settles its block until the person types their next message or leaves the tab, with Undo that brings it back, a ready PR’s Merge asks Claude unless it stopped being ready, and a fetch keeps a Dismiss made while it ran, and the branch PR when its lookup fails', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])

@@ -203,6 +203,41 @@ test('a review thread that stopped waiting rejects a stale Address press', () =>
   )
 })
 
+test('Dismiss merged dismisses every merged PR but the branch’s own, each with its own Undo, and is stale once none is left', () => {
+  const d = demoView(100, 'Codex')
+  const views = d.prViews.views
+  const open = { ...views['acme/visor#33']!, ref: 'acme/visor#35', number: 35 }
+  const asMerged = (ref: string) => ({ ...views[ref]!, state: 'MERGED' as const })
+  const prViews = {
+    ...d.prViews,
+    views: {
+      'acme/visor#31': asMerged('acme/visor#31'),
+      'acme/visor#29': asMerged('acme/visor#29'),
+      'acme/visor#33': asMerged('acme/visor#33'),
+      [open.ref]: open,
+    },
+  }
+  const ledger = { ...d.ledger, prs: [...d.ledger.prs, open.ref] }
+  const ctx = { now: 200, turnsStarted: 0 }
+
+  const r = applyPrPress(ledger, prViews, {}, { action: 'pr-dismiss-merged' }, ctx)
+  assert.ok(!('stale' in r))
+  assert.deepEqual(r.ledger.prs, ['acme/visor#31', 'acme/visor#35'])
+  assert.deepEqual(
+    Object.entries(r.lasts).map(([id, l]) => [id, l.kind, l.action, l.text]),
+    [
+      ['pr:acme/visor#29', 'mark', 'pr-dismiss', 'Dismissed'],
+      ['pr:acme/visor#33', 'mark', 'pr-dismiss', 'Dismissed'],
+    ],
+  )
+  assert.deepEqual(r.effects, [])
+
+  const undone = applyPrPress(r.ledger, prViews, r.lasts, { action: 'pr-undo', ref: 'acme/visor#29' }, ctx)
+  assert.ok(!('stale' in undone))
+  assert.deepEqual(undone.ledger.prs, ['acme/visor#31', 'acme/visor#35', 'acme/visor#29'])
+  assert.deepEqual(applyPrPress(r.ledger, prViews, r.lasts, { action: 'pr-dismiss-merged' }, ctx), { stale: true })
+})
+
 test('a delayed older press cannot replace a newer same-time last action', () => {
   const action = (id: string, pressOrder: number): LastAction => ({
     kind: 'talk',

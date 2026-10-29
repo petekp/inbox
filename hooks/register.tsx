@@ -107,11 +107,14 @@ import {
   splitFollowUps,
   fetchTracked,
   isDismissed,
+  isPrPress,
   olderPrsText,
   PR_GROUP_TITLES,
   PR_TONES,
   prBlockActions,
   prCheckId,
+  prTabActions,
+  DISMISS_MERGED_ID,
   prMarkId,
   pressRowId,
   prRowWaits,
@@ -1429,7 +1432,7 @@ function arrived(s: Session, text: string, count: number): { state: Session; sen
     .slice(index + 1)
     .filter(x => x.text === text && x.row !== null)
     .reduce(
-      (actions, later) => withUnconfirmed(actions, text, later.pressedAt ?? undefined, later.deliveryId),
+      (actions, laterSend) => withUnconfirmed(actions, text, laterSend.pressedAt ?? undefined, laterSend.deliveryId),
       match.row === null
         ? s.lastActions
         : withArrival(s.lastActions, text, match.pressedAt ?? undefined, match.deliveryId),
@@ -1505,13 +1508,17 @@ function callReport(r: ModelResult): CallReport {
   return { model: MODEL, error }
 }
 
-/** Calls the inbox model as `askLedgerModel` does, waiting up to `timeoutMs`. */
-function modelAsk($: EngineInterface, timeoutMs: number): Ask {
-  return async (prompt, system, report) => {
-    const r = await askLedgerModel($, prompt, system, timeoutMs)
-    report?.(callReport(r))
-    return r.isAnswered ? r.text : null
-  }
+/** Calls the inbox model as `askLedgerModel` does, reports the call, and returns the answer. */
+async function askInboxModel(
+  $: EngineInterface,
+  prompt: string,
+  system: string,
+  timeoutMs: number,
+  report: Parameters<Ask>[2],
+): Promise<string | null> {
+  const r = await askLedgerModel($, prompt, system, timeoutMs)
+  report?.(callReport(r))
+  return r.isAnswered ? r.text : null
 }
 
 /** The engine has no call that removes a file, so removing runs `rm` and `rmdir`. */
@@ -1673,7 +1680,7 @@ function sessionHost(
     },
     update: opts.update,
     exclusive: fn => updating.run(owner.id, fn),
-    ask: modelAsk($, 45_000),
+    ask: (prompt, system, report) => askInboxModel($, prompt, system, 45_000, report),
     deliver: (_s, text, deliveryId) => deliver($, owner, text, deliveryId),
     isDeliveryHeldUntilRun: true,
     perform: async (_s, effect) => (opts.surface ? perform($, effect, opts.surface) : COPY_FAILURES['no-surface']),
@@ -1833,6 +1840,14 @@ async function redrawAfterReload($: EngineInterface) {
   await redrawAtCompareEnd($)
 }
 
+/** The Overview call after a catch-up, over the whole transcript. */
+function catchUpOverview($: EngineInterface, owner: Owner, transcript: string): OverviewCall {
+  return {
+    exchange: { kind: 'catch-up', conversation: transcript },
+    ask: async (prompt, system, report) => (isCurrent(owner) ? askInboxModel($, prompt, system, 90_000, report) : null),
+  }
+}
+
 /**
  * The model's answer to a catch-up over the whole conversation: from a fork of it, or from the transcript when there
  * is nothing to fork.
@@ -1845,13 +1860,7 @@ async function catchUpReply($: EngineInterface, owner: Owner): Promise<CatchUpRe
     $.session.messages().then(transcriptText),
   ])
   // The Overview call reads the transcript.
-  const askLong = modelAsk($, 90_000)
-  const overview: OverviewCall | null = transcript
-    ? {
-        exchange: { kind: 'catch-up', conversation: transcript },
-        ask: async (prompt, system, report) => (isCurrent(owner) ? askLong(prompt, system, report) : null),
-      }
-    : null
+  const overview = transcript ? catchUpOverview($, owner, transcript) : null
   const forked = await $.model.fork({ prompt: catchUpPrompt(CLAUDE_CODE, ledger, shown) })
   if (!isCurrent(owner)) return { kind: 'failed' }
   if (forked.isAnswered) return { kind: 'reply', text: forked.text, source: null, overview }
@@ -2797,8 +2806,9 @@ async function wakeForDone($: EngineInterface) {
 }
 
 async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPressArgument['surface']) {
-  const mayStayOnRow =
-    'ref' in p ? ['pr-open', 'pr-refresh', 'thread-open', 'log'].includes(p.action) : p.action === 'step'
+  const mayStayOnRow = isPrPress(p)
+    ? ['pr-open', 'pr-refresh', 'thread-open', 'log'].includes(p.action)
+    : p.action === 'step'
   const undoRevision = mayStayOnRow ? suspendUndoReveal() : cancelUndoScroll()
   const rowId = pressRowId(p)
   if (p.action !== 'undo' && !rowId.startsWith('pr:')) await keepPressedOpen($, rowId)
@@ -2878,7 +2888,11 @@ async function undoKeyAfterPress(
 ): Promise<string | null> {
   if (surface !== 'terminal' || !isInlineTerminalPane) return null
   const { ledger, prViews, lastActions, view, now } = await drawnState($)
-  if ('ref' in p) {
+  if (isPrPress(p)) {
+    if (p.action === 'pr-dismiss-merged') {
+      const nearest = view.prs.drawn.filter(x => x.state.is === 'settled' && x.state.canUndo).at(-1)
+      return nearest ? `undo-${prMarkId(nearest.pr.ref)}` : null
+    }
     if (p.action !== 'pr-dismiss') return null
     return view.prs.drawn.some(x => x.pr.ref === p.ref && x.state.is === 'settled') ? `undo-${pressRowId(p)}` : null
   }
@@ -3025,6 +3039,7 @@ const PR_KEYS: Record<PrPress['action'], string> = {
   'pr-refresh': 'refresh',
   'pr-dismiss': 'dismiss-pr',
   'pr-undo': 'undo-pr',
+  'pr-dismiss-merged': 'dismiss-merged',
   'check-fix': 'fix',
   log: 'log',
 }
@@ -4448,6 +4463,8 @@ export const register: Register = on => {
         threads: d.state.is === 'settled' ? [] : waitingThreads(d.pr).map(t => threadRow(d.pr, t)),
       }))
       .map(g => ({ ...g, rows: [...g.threads, ...g.checks] }))
+    const prTabKeys =
+      prGroups.length === 0 ? [] : prTabActions(prGroups, prState.branchRef).map(a => prKeyAction(a, 'tab'))
     const rows: Record<Tab, Row[]> = {
       needsYou: lists.byTab.needsYou,
       findings: lists.byTab.findings,
@@ -6216,6 +6233,20 @@ export const register: Register = on => {
         ),
       ]
     }
+    const prTabButtons = () => {
+      if (prTabKeys.length === 0) return []
+      const buttons = keyRow(DISMISS_MERGED_ID, prTabKeys)
+
+      return [
+        section(
+          look === 'desktop' ? (
+            desktopFrame({ key: 'pr-tab-actions', padY: 0, children: buttons })
+          ) : (
+            <Box paddingLeft={1}>{buttons}</Box>
+          ),
+        ),
+      ]
+    }
     const prsView = () =>
       prGroups.length === 0 ? (
         <Box flexDirection="column" flexGrow={1}>
@@ -6226,6 +6257,7 @@ export const register: Register = on => {
           [
             ...(ghNotice ? [section(banner(bannerOf(ghNotice.kind, ghNotice.text)))] : []),
             ...prGroups.map(prBlock),
+            ...prTabButtons(),
             ...olderPrs(),
           ],
           2,
@@ -6573,7 +6605,10 @@ export const register: Register = on => {
       kind: 'view',
       onPress: () => undefined,
     }))
-    const rowKeys = selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow
+    const rowKeys = [
+      ...(selectedActions ? [...selectedActions.keys, ...selectedActions.more] : closeKeysWithoutRow),
+      ...(tab === 'prs' ? prTabKeys : []),
+    ]
 
     // A pane takes a key
     // only as a Button's hotkey, so the tab keys, j, k and the selected row's keys
