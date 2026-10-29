@@ -1430,9 +1430,11 @@ function OverviewTab({ page }: { page: OverviewPage }) {
   return (
     <main class="overview">
       {page.head ? (
-        <section class="overview-head">
-          <h1>{page.head.title}</h1>
-          {page.head.description ? <p class="muted">{page.head.description}</p> : null}
+        <section>
+          <div class="overview-head">
+            <h1>{page.head.title}</h1>
+            {page.head.description ? <p class="muted">{page.head.description}</p> : null}
+          </div>
         </section>
       ) : null}
       {page.rows.length > 0 ? (
