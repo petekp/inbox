@@ -12,6 +12,8 @@ The directory scans a submitted plugin and reports findings at four levels
 
 `claude plugin validate` does not run the directory's rules, so only a resubmit confirms a fix.
 
+`./scripts/check.sh` checks each hooks module that `hooks/hooks.json` names against the three rules behind the blocks so far. They cover where `$` may be passed, what a permission hook may return, and where `e`, `next` and `h` may be bound. A failure prints the directory's code, the line and what to change. A block from any other rule still shows up only in the directory's scan.
+
 ## Fixes
 
 | Finding | Fix |
